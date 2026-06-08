@@ -165,6 +165,7 @@ void ChatDemo::FinishAssistantReply(const std::string& raw_output, bool from_llm
                          : StructuredTextParser::ParseBlocksJson(raw_output);
   if (!parsed.ok) {
     log().warning << "Failed to parse assistant reply: " << parsed.error;
+    log().warning << "AI response: " << raw_output;
     chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(parsed.error)});
   } else {
     chat_.messages.push_back({Rml::String("assistant"), AssistantMessageRml(parsed.rml)});
