@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/Error.h"
 #include "mcp/McpClient.h"
 
 #include <nlohmann/json.hpp>
@@ -11,7 +12,7 @@ namespace pbr {
 class SchemaAdapter {
 public:
   static std::string ToolsToPromptContext(const std::vector<McpTool>& tools);
-  static nlohmann::json ToolResultToRows(const nlohmann::json& tool_result);
+  static Roe<nlohmann::json> ToolResultToRows(const nlohmann::json& tool_result);
   static std::string RiskClass(const McpTool& tool);
 };
 

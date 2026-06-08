@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/Error.h"
 #include "common/Module.h"
 
 #include <nlohmann/json.hpp>
@@ -26,14 +27,14 @@ public:
   void Stop();
   bool IsRunning() const { return running_; }
 
-  bool Initialize();
-  std::vector<McpTool> ListTools();
-  nlohmann::json CallTool(const std::string& name, const nlohmann::json& arguments);
+  Roe<void> Initialize();
+  Roe<std::vector<McpTool>> ListTools();
+  Roe<nlohmann::json> CallTool(const std::string& name, const nlohmann::json& arguments);
 
   static McpClient& MockInstance();
 
 private:
-  nlohmann::json Request(const std::string& method, const nlohmann::json& params);
+  Roe<nlohmann::json> Request(const std::string& method, const nlohmann::json& params);
 
   bool running_ = false;
   bool mock_ = false;

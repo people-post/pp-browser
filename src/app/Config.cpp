@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
-#include <stdexcept>
 
 namespace pbr {
 
@@ -47,7 +46,7 @@ Config& Config::Instance() {
   return config;
 }
 
-AppConfig Config::Load(int argc, char** argv) {
+Roe<AppConfig> Config::Load(int argc, char** argv) {
   auto& logger = Instance().log();
   const std::string path = ConfigPath(argc, argv);
   if (path.empty()) {
@@ -56,12 +55,13 @@ AppConfig Config::Load(int argc, char** argv) {
     return DefaultOllama();
   }
 
-  if (auto config = LoadFromFile(path)) {
-    logger.info << "Loaded config from " << path << " (model: " << config->llm.model << ")";
-    return *config;
+  auto config = LoadFromFile(path);
+  if (!config) {
+    return Error("Failed to read config: " + path + ": " + config.error().message);
   }
 
-  throw std::runtime_error("Failed to read config: " + path);
+  logger.info << "Loaded config from " << path << " (model: " << config->llm.model << ")";
+  return config.value();
 }
 
 AppConfig Config::DefaultOllama() {
@@ -75,17 +75,15 @@ AppConfig Config::DefaultOllama() {
   return config;
 }
 
-std::optional<AppConfig> Config::LoadFromFile(const std::string& path) {
+Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
   std::ifstream in(path);
   if (!in) {
-    return std::nullopt;
+    return Error("Failed to open config file: " + path);
   }
 
-  nlohmann::json root;
-  try {
-    in >> root;
-  } catch (const nlohmann::json::exception& e) {
-    throw std::runtime_error(std::string("Failed to parse config: ") + path + ": " + e.what());
+  nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
+  if (root.is_discarded()) {
+    return Error("Failed to parse config: " + path);
   }
 
   AppConfig config;

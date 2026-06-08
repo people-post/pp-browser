@@ -41,9 +41,10 @@ ValidationResult RmlValidator::ValidateRml(const std::string& rml) {
 ValidationResult RmlValidator::ValidateBindings(const std::string& bindings_json) {
   ValidationResult result;
   BindingsManifest manifest;
-  if (!BindingsManifest::Parse(bindings_json, manifest)) {
+  auto parse_result = BindingsManifest::Parse(bindings_json, manifest);
+  if (!parse_result) {
     result.ok = false;
-    result.errors.push_back("Invalid bindings manifest JSON");
+    result.errors.push_back(parse_result.error().message);
   }
   return result;
 }

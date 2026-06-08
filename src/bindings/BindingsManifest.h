@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Error.h"
+
 #include <nlohmann/json.hpp>
 #include <string>
 #include <unordered_map>
@@ -15,7 +17,7 @@ struct ActionBinding {
 
 class BindingsManifest {
 public:
-  static bool Parse(const std::string& json_text, BindingsManifest& out);
+  static Roe<void> Parse(const std::string& json_text, BindingsManifest& out);
 
   const ActionBinding* Find(const std::string& action) const;
 

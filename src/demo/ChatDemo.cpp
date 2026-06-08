@@ -149,14 +149,13 @@ void ChatDemo::OnSendMessage() {
   LlmClient client = *llm_;
 
   job->future = std::async(std::launch::async, [this, job, client, system_prompt, text]() {
-    try {
-      const std::string raw = client.Complete(system_prompt, text);
-      std::lock_guard lock(job->mutex);
-      job->response = raw;
-    } catch (const std::exception& e) {
-      log().error << "LLM request failed: " << e.what();
-      std::lock_guard lock(job->mutex);
-      job->error = e.what();
+    auto result = client.Complete(system_prompt, text);
+    std::lock_guard lock(job->mutex);
+    if (!result) {
+      log().error << "LLM request failed: " << result.error().message;
+      job->error = result.error().message;
+    } else {
+      job->response = result.value();
     }
   });
 }

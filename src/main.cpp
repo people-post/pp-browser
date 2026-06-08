@@ -24,13 +24,12 @@ int main(int argc, char** argv) {
                            : pbr::logging::Level::WARNING);
   root.info << "Logging level set to " << (debug_mode ? "DEBUG" : "WARNING");
 
-  pbr::AppConfig config;
-  try {
-    config = pbr::Config::Load(argc, argv);
-  } catch (const std::exception& e) {
-    root.error << "pp-browser: " << e.what();
+  auto config_result = pbr::Config::Load(argc, argv);
+  if (!config_result) {
+    root.error << "pp-browser: " << config_result.error().message;
     return 1;
   }
+  const pbr::AppConfig config = config_result.value();
 
   pbr::Application app;
   if (!app.Initialize("pp-browser", 1280, 720, demo, config)) {

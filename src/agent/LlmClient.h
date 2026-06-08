@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/Error.h"
 #include "common/Module.h"
 
 #include <string>
@@ -18,7 +19,7 @@ public:
   explicit LlmClient(LlmConfig config);
   LlmClient(const LlmClient& other);
 
-  std::string Complete(const std::string& system_prompt, const std::string& user_prompt) const;
+  Roe<std::string> Complete(const std::string& system_prompt, const std::string& user_prompt) const;
 
 private:
   LlmConfig config_;

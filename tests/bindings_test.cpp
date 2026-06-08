@@ -16,7 +16,8 @@ int main() {
   })";
 
   pbr::BindingsManifest manifest;
-  assert(pbr::BindingsManifest::Parse(json, manifest));
+  auto parse_result = pbr::BindingsManifest::Parse(json, manifest);
+  assert(parse_result);
   const auto* action = manifest.Find("search_users");
   assert(action != nullptr);
   assert(action->tool == "user_search");

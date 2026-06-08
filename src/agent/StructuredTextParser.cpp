@@ -115,11 +115,9 @@ ParseResult RenderBlock(const nlohmann::json& block) {
 } // namespace
 
 ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
-  nlohmann::json doc;
-  try {
-    doc = nlohmann::json::parse(json);
-  } catch (const nlohmann::json::exception& e) {
-    return Fail(std::string("Invalid JSON: ") + e.what());
+  nlohmann::json doc = nlohmann::json::parse(json, nullptr, false);
+  if (doc.is_discarded()) {
+    return Fail("Invalid JSON");
   }
 
   if (!doc.is_object() || !doc.contains("blocks") || !doc["blocks"].is_array()) {

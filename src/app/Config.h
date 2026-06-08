@@ -1,9 +1,9 @@
 #pragma once
 
 #include "agent/LlmClient.h"
+#include "common/Error.h"
 #include "common/Module.h"
 
-#include <optional>
 #include <string>
 
 namespace pbr {
@@ -17,8 +17,8 @@ class Config : public Module {
 public:
   static Config& Instance();
 
-  static AppConfig Load(int argc, char** argv);
-  static std::optional<AppConfig> LoadFromFile(const std::string& path);
+  static Roe<AppConfig> Load(int argc, char** argv);
+  static Roe<AppConfig> LoadFromFile(const std::string& path);
   static AppConfig DefaultOllama();
 
 private:

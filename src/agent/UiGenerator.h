@@ -2,6 +2,7 @@
 
 #include "agent/LlmClient.h"
 #include "bindings/BindingsManifest.h"
+#include "common/Error.h"
 #include "common/Module.h"
 
 #include <string>
@@ -18,7 +19,7 @@ class UiGenerator : public Module {
 public:
   UiGenerator(LlmClient& llm, std::string rml_profile);
 
-  GeneratedUi Generate(const std::string& tools_context);
+  Roe<GeneratedUi> Generate(const std::string& tools_context);
 
   static bool ExtractBlocks(const std::string& llm_output, GeneratedUi& out);
 

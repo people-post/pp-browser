@@ -7,16 +7,22 @@
 int main() {
   auto& client = pbr::McpClient::MockInstance();
   assert(client.IsRunning());
-  assert(client.Initialize());
 
-  auto tools = client.ListTools();
-  assert(!tools.empty());
-  assert(tools[0].name == "user_search");
+  auto init_result = client.Initialize();
+  assert(init_result);
 
-  auto result = client.CallTool("user_search", {{"query", "ada"}});
-  auto rows = pbr::SchemaAdapter::ToolResultToRows(result);
-  assert(rows.is_array());
-  assert(!rows.empty());
+  auto tools_result = client.ListTools();
+  assert(tools_result);
+  assert(!tools_result->empty());
+  assert(tools_result->front().name == "user_search");
+
+  auto call_result = client.CallTool("user_search", {{"query", "ada"}});
+  assert(call_result);
+
+  auto rows_result = pbr::SchemaAdapter::ToolResultToRows(*call_result);
+  assert(rows_result);
+  assert(rows_result->is_array());
+  assert(!rows_result->empty());
 
   std::cout << "mcp_mock_test ok\n";
   return 0;

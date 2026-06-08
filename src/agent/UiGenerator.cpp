@@ -4,7 +4,6 @@
 #include "agent/RmlValidator.h"
 
 #include <regex>
-#include <stdexcept>
 
 namespace pbr {
 
@@ -13,15 +12,19 @@ UiGenerator::UiGenerator(LlmClient& llm, std::string rml_profile)
   redirectLogger("UiGenerator");
 }
 
-GeneratedUi UiGenerator::Generate(const std::string& tools_context) {
+Roe<GeneratedUi> UiGenerator::Generate(const std::string& tools_context) {
   const std::string system = PromptBuilder::BuildUiGenerationPrompt(tools_context, rml_profile_);
   const std::string user = "Generate a minimal form UI for the listed tools.";
-  const std::string raw = llm_.Complete(system, user);
+
+  auto llm_result = llm_.Complete(system, user);
+  if (!llm_result) {
+    return llm_result.error();
+  }
 
   GeneratedUi ui;
-  if (!ExtractBlocks(raw, ui)) {
+  if (!ExtractBlocks(*llm_result, ui)) {
     log().error << "Failed to parse LLM UI blocks";
-    throw std::runtime_error("Failed to parse LLM UI blocks");
+    return Error("Failed to parse LLM UI blocks");
   }
 
   auto rml_check = RmlValidator::ValidateRml(ui.rml);
@@ -29,15 +32,17 @@ GeneratedUi UiGenerator::Generate(const std::string& tools_context) {
     for (const auto& err : rml_check.errors) {
       log().error << "RML validation failed: " << err;
     }
-    throw std::runtime_error("RML validation failed");
+    return Error("RML validation failed");
   }
+
   auto binding_check = RmlValidator::ValidateBindings(ui.bindings_json);
   if (!binding_check.ok) {
     for (const auto& err : binding_check.errors) {
       log().error << "Bindings validation failed: " << err;
     }
-    throw std::runtime_error("Bindings validation failed");
+    return Error("Bindings validation failed");
   }
+
   log().info << "UI generation succeeded";
   return ui;
 }

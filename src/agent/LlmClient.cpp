@@ -2,7 +2,6 @@
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
-#include <stdexcept>
 
 namespace pbr {
 
@@ -24,9 +23,9 @@ LlmClient::LlmClient(const LlmClient& other) : Module(), config_(other.config_) 
   redirectLogger("LlmClient");
 }
 
-std::string LlmClient::Complete(const std::string& system_prompt, const std::string& user_prompt) const {
+Roe<std::string> LlmClient::Complete(const std::string& system_prompt, const std::string& user_prompt) const {
   if (config_.require_api_key && config_.api_key.empty()) {
-    throw std::runtime_error("LLM API key not configured");
+    return Error("LLM API key not configured");
   }
 
   nlohmann::json body = {
@@ -41,7 +40,7 @@ std::string LlmClient::Complete(const std::string& system_prompt, const std::str
 
   CURL* curl = curl_easy_init();
   if (!curl) {
-    throw std::runtime_error("curl init failed");
+    return Error("curl init failed");
   }
 
   struct curl_slist* headers = nullptr;
@@ -66,15 +65,24 @@ std::string LlmClient::Complete(const std::string& system_prompt, const std::str
 
   if (code != CURLE_OK) {
     log().error << "curl failed: " << curl_easy_strerror(code);
-    throw std::runtime_error(std::string("curl failed: ") + curl_easy_strerror(code));
+    return Error(std::string("curl failed: ") + curl_easy_strerror(code));
   }
 
-  auto json = nlohmann::json::parse(response);
+  auto json = nlohmann::json::parse(response, nullptr, false);
+  if (json.is_discarded()) {
+    log().error << "Failed to parse LLM response JSON";
+    return Error("Failed to parse LLM response JSON");
+  }
+
   if (json.contains("error")) {
     const auto& err = json["error"];
     const std::string message = err.contains("message") ? err["message"].get<std::string>() : err.dump();
     log().error << "LLM API error: " << message;
-    throw std::runtime_error("LLM API error: " + message);
+    return Error("LLM API error: " + message);
+  }
+
+  if (!json.contains("choices") || !json["choices"].is_array() || json["choices"].empty()) {
+    return Error("LLM response missing choices");
   }
 
   log().debug << "LLM response received (" << response.size() << " bytes)";

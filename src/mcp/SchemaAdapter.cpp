@@ -13,18 +13,18 @@ std::string SchemaAdapter::ToolsToPromptContext(const std::vector<McpTool>& tool
   return out.str();
 }
 
-nlohmann::json SchemaAdapter::ToolResultToRows(const nlohmann::json& tool_result) {
+Roe<nlohmann::json> SchemaAdapter::ToolResultToRows(const nlohmann::json& tool_result) {
   if (!tool_result.contains("content")) {
     return nlohmann::json::array();
   }
   for (const auto& block : tool_result["content"]) {
     if (block.value("type", "") == "text") {
       const auto text = block.value("text", "[]");
-      try {
-        return nlohmann::json::parse(text);
-      } catch (...) {
-        return nlohmann::json::array();
+      auto rows = nlohmann::json::parse(text, nullptr, false);
+      if (rows.is_discarded()) {
+        return Error("Failed to parse tool result text as JSON");
       }
+      return rows;
     }
   }
   return nlohmann::json::array();
