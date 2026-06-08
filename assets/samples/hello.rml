@@ -1,0 +1,14 @@
+<rml>
+<head>
+  <title>Hello</title>
+  <link type="text/rcss" href="../themes/base.rcss"/>
+</head>
+<body>
+  <h1>pp-browser</h1>
+  <p>SDL3 + hard-forked RmlUi is running.</p>
+  <div class="card stack">
+    <p class="muted">Press Escape to quit.</p>
+    <button>Styled button</button>
+  </div>
+</body>
+</rml>

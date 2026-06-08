@@ -1,0 +1,62 @@
+# Building pp-browser
+
+## Prerequisites
+
+- CMake 3.24+
+- C++20 compiler (GCC 13+, Clang 16+, or MSVC 2022)
+- [vcpkg](https://vcpkg.io/) with `VCPKG_ROOT` set
+- OpenGL 3.3 drivers
+- Linux: `libx11-dev`, `libxext-dev`, `libxcursor-dev`, `libxinerama-dev`, `libxi-dev`, `libxrandr-dev`, `libxfixes-dev`, `libgl-dev`
+
+## Dependencies
+
+**vcpkg manifest:** FreeType, nlohmann-json, curl
+
+**FetchContent (first configure):** SDL3 and SDL3_image (built with `SDL_DBUS=OFF` to avoid extra system autotools)
+
+RmlUi is **hard-forked** under `thirdparty/rmlui/` (not from vcpkg).
+
+## Configure and build
+
+```bash
+export VCPKG_ROOT="$HOME/vcpkg"
+cmake -B build -S . \
+  -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+## Run
+
+From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
+
+```bash
+./build/pp-browser
+./build/pp-browser --demo search
+```
+
+**If no window appears** (or exit code 1), SDL was likely built without X11. Rebuild SDL with video support:
+
+```bash
+rm -rf build/_deps/sdl3-build build/_deps/sdl3-src
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake --build build -j
+```
+
+Do **not** pass `-DPP_BROWSER_HEADLESS=ON` unless you only need compile-only CI builds.
+
+Requires `DISPLAY` (or Wayland session) and X11 dev packages on Linux.
+
+## Tests
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+## Re-import upstream RmlUi
+
+```bash
+./scripts/import-rmlui.sh 6.2
+```
+
+See [RMLUI_UPSTREAM.md](./RMLUI_UPSTREAM.md).

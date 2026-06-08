@@ -1,0 +1,19 @@
+<rml>
+<head>
+  <title>Search demo</title>
+  <link type="text/rcss" href="../themes/base.rcss"/>
+</head>
+<body data-model="main">
+  <h1>User search</h1>
+  <div class="card stack">
+    <input type="text" placeholder="Name or email" data-value="query"/>
+    <button data-event-click="search_users()">Search</button>
+    <p class="error" data-if="error != ''" data-rml="error"></p>
+    <p class="muted" data-if="loading">Searching...</p>
+    <div data-for="row : results" class="card gap-sm">
+      <p data-rml="row.name"></p>
+      <p class="muted" data-rml="row.email"></p>
+    </div>
+  </div>
+</body>
+</rml>

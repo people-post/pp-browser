@@ -1,0 +1,74 @@
+body {
+  font-family: LatoLatin;
+  font-size: 16dp;
+  color: #e8e8e8;
+  background-color: #1a1a2e;
+  padding: 24dp;
+}
+
+h1 {
+  font-size: 28dp;
+  margin-bottom: 12dp;
+  color: #ffffff;
+}
+
+p {
+  margin-bottom: 8dp;
+  color: #c8c8d8;
+}
+
+button, input, textarea, select {
+  font-family: LatoLatin;
+  font-size: 14dp;
+  padding: 8dp 12dp;
+  border-radius: 6dp;
+  background-color: #2d2d44;
+  color: #e8e8e8;
+  border: 1dp #4a4a6a;
+}
+
+button {
+  cursor: pointer;
+  background-color: #4a6cf7;
+  border: 0;
+  color: #ffffff;
+}
+
+button:hover {
+  background-color: #5a7cff;
+}
+
+input, textarea, select {
+  width: 100%;
+  margin-bottom: 8dp;
+}
+
+.stack {
+  display: block;
+}
+
+.row {
+  display: flex;
+  flex-direction: row;
+  gap: 8dp;
+}
+
+.gap-sm {
+  margin-bottom: 8dp;
+}
+
+.card {
+  padding: 16dp;
+  background-color: #252538;
+  border-radius: 8dp;
+  border: 1dp #3a3a55;
+  margin-bottom: 12dp;
+}
+
+.error {
+  color: #ff6b6b;
+}
+
+.muted {
+  color: #8888a0;
+}

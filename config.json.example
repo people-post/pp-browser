@@ -1,0 +1,15 @@
+{
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4o-mini",
+    "api_key_env": "PP_BROWSER_LLM_API_KEY"
+  },
+  "mcp_servers": [
+    {
+      "name": "mock",
+      "command": "mock",
+      "args": []
+    }
+  ],
+  "theme": "assets/themes/base.rcss"
+}
