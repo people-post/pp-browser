@@ -1,10 +1,12 @@
 #include "TextSelectionController.h"
 
 #include "../../Include/RmlUi/Core/Context.h"
+#include "../../Include/RmlUi/Core/Core.h"
 #include "../../Include/RmlUi/Core/Element.h"
 #include "../../Include/RmlUi/Core/ElementDocument.h"
 #include "../../Include/RmlUi/Core/ElementText.h"
 #include "../../Include/RmlUi/Core/ElementUtilities.h"
+#include "../../Include/RmlUi/Core/FontEngineInterface.h"
 #include "../../Include/RmlUi/Core/Input.h"
 #include "../../Include/RmlUi/Core/MeshUtilities.h"
 #include "../../Include/RmlUi/Core/RenderManager.h"
@@ -23,26 +25,34 @@ bool IsBlockTag(const String& tag)
 		tag == "blockquote" || tag == "pre";
 }
 
-void CollectFlatText(Element* element, String& out, ElementText*& first_text)
+void AppendElementText(ElementText* text, String& out)
 {
-	for (int i = 0; i < element->GetNumChildren(); ++i)
+	const ElementText::LineList& layout_lines = text->GetLines();
+	if (!layout_lines.empty())
 	{
-		Element* child = element->GetChild(i);
-		if (auto* text = rmlui_dynamic_cast<ElementText*>(child))
-		{
-			if (!first_text)
-				first_text = text;
-			out += text->GetText();
-		}
-		else if (child->GetNumChildren() > 0)
-		{
-			if (!out.empty() && out.back() != '\n' && IsBlockTag(child->GetTagName()))
-				out += '\n';
-			CollectFlatText(child, out, first_text);
-			if (IsBlockTag(child->GetTagName()) && (out.empty() || out.back() != '\n'))
-				out += '\n';
-		}
+		for (const ElementText::Line& line : layout_lines)
+			out += line.text;
 	}
+	else
+	{
+		out += text->GetText();
+	}
+}
+
+void GetLineFontMetrics(ElementText* text_element, float& ascent, float& descent)
+{
+	ascent = 0.f;
+	descent = 0.f;
+	if (!text_element)
+		return;
+
+	const FontFaceHandle font_face_handle = text_element->GetFontFaceHandle();
+	if (font_face_handle == 0)
+		return;
+
+	const FontMetrics& metrics = GetFontEngineInterface()->GetFontMetrics(font_face_handle);
+	ascent = float(Math::RoundUpToInteger(metrics.ascent));
+	descent = float(Math::RoundUpToInteger(metrics.descent));
 }
 
 } // namespace
@@ -92,6 +102,33 @@ bool TextSelectionController::EnsureContainerAlive()
 	return true;
 }
 
+void TextSelectionController::CollectTextFromContainer(Element* element, String& out, ElementText*& first_text)
+{
+	for (int i = 0; i < element->GetNumChildren(); ++i)
+	{
+		Element* child = element->GetChild(i);
+		if (auto* text = rmlui_dynamic_cast<ElementText*>(child))
+		{
+			const int begin = (int)out.size();
+			AppendElementText(text, out);
+			if (begin < (int)out.size())
+			{
+				if (!first_text)
+					first_text = text;
+				segments.push_back({text, begin, (int)out.size()});
+			}
+		}
+		else if (child->GetNumChildren() > 0)
+		{
+			if (!out.empty() && out.back() != '\n' && IsBlockTag(child->GetTagName()))
+				out += '\n';
+			CollectTextFromContainer(child, out, first_text);
+			if (IsBlockTag(child->GetTagName()) && (out.empty() || out.back() != '\n'))
+				out += '\n';
+		}
+	}
+}
+
 void TextSelectionController::RefreshTextFromContainer()
 {
 	if (!container)
@@ -99,7 +136,8 @@ void TextSelectionController::RefreshTextFromContainer()
 
 	reference_text = nullptr;
 	flat_text.clear();
-	CollectFlatText(container, flat_text, reference_text);
+	segments.clear();
+	CollectTextFromContainer(container, flat_text, reference_text);
 	while (!flat_text.empty() && flat_text.back() == '\n')
 		flat_text.pop_back();
 }
@@ -110,6 +148,7 @@ void TextSelectionController::ClearSelection()
 	container = nullptr;
 	reference_text = nullptr;
 	flat_text.clear();
+	segments.clear();
 	lines.clear();
 	anchor_index = 0;
 	focus_index = 0;
@@ -122,93 +161,61 @@ void TextSelectionController::RebuildLayout()
 	if (!container || flat_text.empty() || !reference_text)
 		return;
 
-	const Vector2f content_origin = container->GetAbsoluteOffset() + container->GetBox().GetPosition(BoxArea::Content);
-	const float max_width = container->GetBox().GetSize(BoxArea::Content).x;
-	const float line_height = container->GetComputedValues().line_height().value;
-	const Style::WhiteSpace white_space = container->GetComputedValues().white_space();
-	const bool wrap = (white_space == Style::WhiteSpace::Prewrap || white_space == Style::WhiteSpace::Preline ||
-		white_space == Style::WhiteSpace::Normal);
-
-	Vector2f line_position = content_origin;
-	int line_begin = 0;
-
-	while (line_begin < (int)flat_text.size())
+	for (const TextSegment& segment : segments)
 	{
-		int line_end = line_begin;
-		if (wrap && max_width > 0.f)
+		ElementText* text_element = segment.element;
+		if (!text_element || text_element->GetFontFaceHandle() == 0)
+			continue;
+
+		float ascent = 0.f;
+		float descent = 0.f;
+		GetLineFontMetrics(text_element, ascent, descent);
+
+		const Vector2f text_origin = text_element->GetAbsoluteOffset();
+		int flat_cursor = segment.flat_begin;
+
+		const ElementText::LineList& layout_lines = text_element->GetLines();
+		if (!layout_lines.empty())
 		{
-			const char* p_line_start = flat_text.data() + line_begin;
-			const char* p_text_end = flat_text.data() + flat_text.size();
-			const char* p_hard_break = p_line_start;
-			while (p_hard_break < p_text_end && *p_hard_break != '\n')
-				++p_hard_break;
-
-			int best_byte_offset = 0;
-			for (auto it = StringIteratorU8(p_line_start, p_line_start, p_hard_break); it;)
+			for (const ElementText::Line& line : layout_lines)
 			{
-				++it;
-				const int byte_offset = (int)it.offset();
-				const float width = float(
-					ElementUtilities::GetStringWidth(reference_text, StringView(p_line_start, p_line_start + byte_offset)));
-				if (width > max_width)
-					break;
-				best_byte_offset = byte_offset;
-			}
+				if (line.text.empty())
+					continue;
 
-			if (best_byte_offset == 0 && p_line_start < p_hard_break)
-			{
-				auto it = StringIteratorU8(p_line_start, p_line_start, p_hard_break);
-				++it;
-				best_byte_offset = (int)it.offset();
+				LineLayout layout;
+				layout.text_element = text_element;
+				layout.begin = flat_cursor;
+				layout.length = (int)line.text.size();
+				layout.baseline = text_origin + line.position;
+				layout.width = float(line.width);
+				layout.ascent = ascent;
+				layout.descent = descent;
+				lines.push_back(layout);
+				flat_cursor += layout.length;
 			}
-
-			line_end = line_begin + best_byte_offset;
 		}
 		else
 		{
-			while (line_end < (int)flat_text.size() && flat_text[line_end] != '\n')
-				++line_end;
+			const String& raw_text = text_element->GetText();
+			if (!raw_text.empty())
+			{
+				LineLayout layout;
+				layout.text_element = text_element;
+				layout.begin = flat_cursor;
+				layout.length = (int)raw_text.size();
+				layout.baseline = text_origin;
+				layout.width = float(ElementUtilities::GetStringWidth(text_element, raw_text));
+				layout.ascent = ascent;
+				layout.descent = descent;
+				lines.push_back(layout);
+			}
 		}
-
-		if (line_end < (int)flat_text.size() && flat_text[line_end] == '\n')
-		{
-			LineLayout line;
-			line.begin = line_begin;
-			line.length = line_end - line_begin;
-			line.position = line_position;
-			line.height = line_height;
-			line.width = float(ElementUtilities::GetStringWidth(reference_text,
-				StringView(flat_text.data() + line.begin, flat_text.data() + line_end)));
-			lines.push_back(line);
-			line_begin = line_end + 1;
-		}
-		else
-		{
-			LineLayout line;
-			line.begin = line_begin;
-			line.length = line_end - line_begin;
-			line.position = line_position;
-			line.height = line_height;
-			line.width = float(ElementUtilities::GetStringWidth(reference_text,
-				StringView(flat_text.data() + line.begin, flat_text.data() + line_end)));
-			lines.push_back(line);
-			line_begin = line_end;
-		}
-
-		line_position.y += line_height;
 	}
-}
-
-void TextSelectionController::SetSelectionIndices(int anchor, int focus)
-{
-	anchor_index = Math::Clamp(anchor, 0, (int)flat_text.size());
-	focus_index = Math::Clamp(focus, 0, (int)flat_text.size());
-	BuildSelectionGeometry();
 }
 
 int TextSelectionController::HitTest(Vector2f absolute_mouse) const
 {
-	if (lines.empty() || !reference_text || !reference_text->GetOwnerDocument())
+	if (lines.empty())
 		return 0;
 
 	int best_index = 0;
@@ -216,7 +223,12 @@ int TextSelectionController::HitTest(Vector2f absolute_mouse) const
 
 	for (const LineLayout& line : lines)
 	{
-		if (absolute_mouse.y < line.position.y - line.height || absolute_mouse.y > line.position.y + line.height)
+		if (!line.text_element)
+			continue;
+
+		const float top = line.baseline.y - line.ascent;
+		const float bottom = line.baseline.y + line.descent;
+		if (absolute_mouse.y < top || absolute_mouse.y > bottom)
 			continue;
 
 		const char* p_begin = flat_text.data() + line.begin;
@@ -227,17 +239,17 @@ int TextSelectionController::HitTest(Vector2f absolute_mouse) const
 		for (auto it = StringIteratorU8(p_begin, p_begin, p_end); it; ++it)
 		{
 			const int offset = (int)it.offset();
-			const float width = float(ElementUtilities::GetStringWidth(reference_text, StringView(p_begin, p_begin + offset)));
-			const float distance = Math::Absolute(width - (absolute_mouse.x - line.position.x));
+			const float width = float(ElementUtilities::GetStringWidth(line.text_element, StringView(p_begin, p_begin + offset)));
+			const float distance = Math::Absolute(width - (absolute_mouse.x - line.baseline.x));
 			if (distance < best_distance)
 			{
 				best_distance = distance;
 				best_index = line.begin + offset;
 			}
-			if (width > absolute_mouse.x - line.position.x)
+			if (width > absolute_mouse.x - line.baseline.x)
 			{
-				const float left_distance = Math::Absolute(width - (absolute_mouse.x - line.position.x));
-				const float right_distance = Math::Absolute(prev_width - (absolute_mouse.x - line.position.x));
+				const float left_distance = Math::Absolute(width - (absolute_mouse.x - line.baseline.x));
+				const float right_distance = Math::Absolute(prev_width - (absolute_mouse.x - line.baseline.x));
 				return line.begin + (left_distance < right_distance ? prev_offset : offset);
 			}
 			prev_offset = offset;
@@ -261,7 +273,7 @@ String TextSelectionController::GetSelectedText() const
 
 void TextSelectionController::BuildSelectionGeometry()
 {
-	if (!EnsureContainerAlive() || !reference_text || !reference_text->GetOwnerDocument())
+	if (!EnsureContainerAlive())
 		return;
 
 	const int start = Math::Min(anchor_index, focus_index);
@@ -281,6 +293,9 @@ void TextSelectionController::BuildSelectionGeometry()
 
 	for (const LineLayout& line : lines)
 	{
+		if (!line.text_element)
+			continue;
+
 		const int line_start = line.begin;
 		const int line_end = line.begin + line.length;
 		const int sel_start = Math::Clamp(start, line_start, line_end);
@@ -289,12 +304,13 @@ void TextSelectionController::BuildSelectionGeometry()
 			continue;
 
 		const char* p_begin = flat_text.data() + line.begin;
-		const float pre_width = float(ElementUtilities::GetStringWidth(reference_text, StringView(p_begin, p_begin + (sel_start - line.begin))));
-		const float sel_width = float(ElementUtilities::GetStringWidth(reference_text,
+		const float pre_width = float(
+			ElementUtilities::GetStringWidth(line.text_element, StringView(p_begin, p_begin + (sel_start - line.begin))));
+		const float sel_width = float(ElementUtilities::GetStringWidth(line.text_element,
 			StringView(p_begin + (sel_start - line.begin), p_begin + (sel_end - line.begin))));
 
-		const Vector2f position = line.position + Vector2f(pre_width, 0.f);
-		const Vector2f size(sel_width, line.height);
+		const Vector2f position = line.baseline + Vector2f(pre_width, -line.ascent);
+		const Vector2f size(sel_width, line.ascent + line.descent);
 		MeshUtilities::GenerateQuad(mesh, position, size, fill);
 	}
 
@@ -319,11 +335,7 @@ void TextSelectionController::OnMouseDown(Element* hover, Vector2i mouse_positio
 	}
 
 	container = selectable;
-	reference_text = nullptr;
-	flat_text.clear();
-	CollectFlatText(container, flat_text, reference_text);
-	while (!flat_text.empty() && flat_text.back() == '\n')
-		flat_text.pop_back();
+	RefreshTextFromContainer();
 
 	if (flat_text.empty() || !reference_text)
 	{

@@ -26,12 +26,20 @@ public:
 	bool ShouldSuppressClick() const;
 
 private:
+	struct TextSegment {
+		ElementText* element = nullptr;
+		int flat_begin = 0;
+		int flat_end = 0;
+	};
+
 	struct LineLayout {
 		int begin = 0;
 		int length = 0;
-		Vector2f position;
+		Vector2f baseline;
 		float width = 0.f;
-		float height = 0.f;
+		float ascent = 0.f;
+		float descent = 0.f;
+		ElementText* text_element = nullptr;
 	};
 
 	bool IsSelectable(const Element* element) const;
@@ -39,9 +47,9 @@ private:
 	bool IsFormControl(const Element* element) const;
 	bool EnsureContainerAlive();
 	void RefreshTextFromContainer();
+	void CollectTextFromContainer(Element* element, String& out, ElementText*& first_text);
 	void ClearSelection();
 	void RebuildLayout();
-	void SetSelectionIndices(int anchor, int focus);
 	int HitTest(Vector2f absolute_mouse) const;
 	String GetSelectedText() const;
 	void BuildSelectionGeometry();
@@ -50,6 +58,7 @@ private:
 	Element* container = nullptr;
 	ElementText* reference_text = nullptr;
 	String flat_text;
+	Vector<TextSegment> segments;
 	Vector<LineLayout> lines;
 	int anchor_index = 0;
 	int focus_index = 0;
