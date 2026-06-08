@@ -16,6 +16,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(freetype)
 
+if(NOT TARGET Freetype::Freetype)
+  if(TARGET freetype-interface)
+    add_library(Freetype::Freetype ALIAS freetype-interface)
+  elseif(TARGET freetype)
+    add_library(Freetype::Freetype ALIAS freetype)
+  else()
+    message(FATAL_ERROR "FreeType target not found after FetchContent")
+  endif()
+endif()
+
 # nlohmann-json (header-only)
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 set(JSON_Install OFF CACHE BOOL "" FORCE)
