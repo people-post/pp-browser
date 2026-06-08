@@ -284,4 +284,30 @@ void ShutdownChatDemo() {
   ChatDemo::Instance().Shutdown();
 }
 
+bool ChatDemo::HandlePriorityKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier) {
+  if (!context) {
+    return true;
+  }
+
+  if (key != Rml::Input::KI_RETURN && key != Rml::Input::KI_NUMPADENTER) {
+    return true;
+  }
+
+  if (key_modifier & Rml::Input::KM_SHIFT) {
+    return true;
+  }
+
+  Rml::Element* focus = context->GetFocusElement();
+  if (!focus || focus->GetId() != "draft-input") {
+    return true;
+  }
+
+  Instance().OnSendMessage();
+  return false;
+}
+
+bool HandleChatPriorityKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier) {
+  return ChatDemo::HandlePriorityKeyDown(context, key, key_modifier);
+}
+
 } // namespace pbr

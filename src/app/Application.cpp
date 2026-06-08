@@ -38,6 +38,9 @@ bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key,
     Backend::RequestExit();
     return false;
   }
+  if (!HandleChatPriorityKeyDown(context, key, key_modifier)) {
+    return false;
+  }
   return true;
 }
 

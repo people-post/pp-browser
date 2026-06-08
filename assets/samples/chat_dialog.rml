@@ -19,7 +19,7 @@
       <p class="muted thinking" data-if="loading">Thinking...</p>
     </div>
     <div class="input-row">
-      <textarea placeholder="Type a message..." rows="2" data-value="draft"></textarea>
+      <textarea id="draft-input" placeholder="Type a message..." rows="2" data-value="draft"></textarea>
       <button data-event-click="send_message()">Send</button>
     </div>
   </div>

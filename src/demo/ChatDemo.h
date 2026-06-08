@@ -6,6 +6,7 @@
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
+#include <RmlUi/Core/Input.h>
 #include <RmlUi/Core/Types.h>
 
 #include <future>
@@ -28,6 +29,9 @@ public:
   bool Setup(Rml::Context* context, const AppConfig& config);
   void Update();
   void Shutdown();
+
+  /// Returns false if the key was consumed (e.g. Enter sends the draft message).
+  static bool HandlePriorityKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier);
 
 private:
   struct ChatMessage {
@@ -65,5 +69,7 @@ private:
 bool SetupChatDemo(Rml::Context* context, const AppConfig& config);
 void UpdateChatDemo();
 void ShutdownChatDemo();
+
+bool HandleChatPriorityKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier);
 
 } // namespace pbr

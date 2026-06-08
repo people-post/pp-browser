@@ -187,17 +187,21 @@ input, textarea, select {
 .input-row {
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: flex-end;
   gap: 8dp;
 }
 
 .input-row textarea {
+  flex: 1;
   margin-bottom: 0;
   min-height: 56dp;
 }
 
 .input-row button {
-  width: 100%;
+  flex-shrink: 0;
+  width: auto;
+  margin-bottom: 0;
 }
 
 .code-block {
