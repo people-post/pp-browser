@@ -12,7 +12,7 @@
 
 **FetchContent (first configure):** FreeType, nlohmann-json, curl, SDL3, and SDL3_image (SDL built with `SDL_DBUS=OFF` to avoid extra system autotools)
 
-RmlUi is **hard-forked** under `thirdparty/rmlui/` (not from vcpkg).
+RmlUi is **hard-forked** under `src/render/` (not from vcpkg).
 
 ## Configure and build
 
@@ -57,11 +57,3 @@ Requires `DISPLAY` (or Wayland session) and X11 dev packages on Linux.
 ```bash
 ctest --test-dir build --output-on-failure
 ```
-
-## Re-import upstream RmlUi
-
-```bash
-./scripts/import-rmlui.sh 6.2
-```
-
-See [RMLUI_UPSTREAM.md](./RMLUI_UPSTREAM.md).

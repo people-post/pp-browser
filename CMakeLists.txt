@@ -13,7 +13,7 @@ endif()
 
 include(dependencies)
 
-# Hard-forked RmlUi (thirdparty/rmlui/)
+# Hard-forked RmlUi (src/render/)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(RMLUI_SAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
@@ -21,7 +21,7 @@ set(RMLUI_LOTTIE_PLUGIN OFF CACHE BOOL "" FORCE)
 set(RMLUI_SVG_PLUGIN OFF CACHE BOOL "" FORCE)
 set(RMLUI_LUA_BINDINGS OFF CACHE BOOL "" FORCE)
 
-add_subdirectory(thirdparty/rmlui EXCLUDE_FROM_ALL)
+add_subdirectory(src/render EXCLUDE_FROM_ALL)
 
 set(PP_BROWSER_BACKEND_SOURCES
   src/render/backends/RmlUi_Platform_SDL.cpp
@@ -32,8 +32,8 @@ set(PP_BROWSER_BACKEND_SOURCES
 add_library(pp_rmlui_backend STATIC ${PP_BROWSER_BACKEND_SOURCES})
 target_compile_definitions(pp_rmlui_backend PUBLIC RMLUI_SDL_VERSION_MAJOR=3)
 target_include_directories(pp_rmlui_backend PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/rmlui/Include
-  ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/rmlui/Backends
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/Include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/Backends
   ${CMAKE_CURRENT_SOURCE_DIR}/src/render/backends
 )
 target_link_libraries(pp_rmlui_backend PUBLIC

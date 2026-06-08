@@ -7,25 +7,24 @@ This document orients coding agents working in this repository.
 pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — windowing (`src/render/backends/`)
-- **Hard-forked RmlUi** — UI layout in `thirdparty/rmlui/`
+- **Hard-forked RmlUi** — UI layout in `src/render/`
 - **Chat + MCP + LLM scaffolding** — `src/demo/`, `src/agent/`, `src/mcp/`
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
 
 ## RmlUi is maintained in-tree
 
-We **own and modify** the vendored copy under [`thirdparty/rmlui/`](thirdparty/rmlui/). It is not a submodule.
+We **own and modify** the vendored copy under [`src/render/`](src/render/). It is not a submodule.
 
 - Edit RmlUi directly when app-level workarounds are insufficient (layout, text selection, new properties, etc.).
 - Document fork-specific changes in [docs/RMLUI_UPSTREAM.md](docs/RMLUI_UPSTREAM.md).
-- Re-sync from upstream with `./scripts/import-rmlui.sh <tag>`, then re-apply pp-browser patches.
 - App-specific SDL/GL glue stays in [`src/render/backends/`](src/render/backends/), not in the fork.
 
 ### Fork features (pp-browser)
 
 | Feature | Location | Usage |
 |---------|----------|--------|
-| Text selection in static content | `thirdparty/rmlui/Source/Core/TextSelectionController.*` | RML attribute `selectable="text"`; Ctrl+C copies selection |
+| Text selection in static content | `src/render/Source/Core/TextSelectionController.*` | RML attribute `selectable="text"`; Ctrl+C copies selection |
 
 ## UI generation constraints
 
