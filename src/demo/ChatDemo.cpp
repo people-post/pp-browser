@@ -66,7 +66,7 @@ std::string MockAssistantRespond(const std::string& query) {
         { "type": "paragraph", "text": "pp-browser renders structured JSON blocks, not HTML or markdown." },
         { "type": "list", "ordered": false, "items": [
           "Type a message and click Send",
-          "Try help, list, or code for sample replies",
+          "Try help, list, code, or button for sample replies",
           "Press Escape to quit"
         ]}
       ]
@@ -91,10 +91,20 @@ std::string MockAssistantRespond(const std::string& query) {
     })";
   }
 
+  if (lower.find("button") != std::string::npos) {
+    return R"({
+      "blocks": [
+        { "type": "paragraph", "text": "Click a suggestion to send it as your next message:" },
+        { "type": "button", "label": "Explain more", "message": "Can you explain that in simpler terms?" },
+        { "type": "button", "label": "Give an example", "message": "Can you give a concrete example?" }
+      ]
+    })";
+  }
+
   return R"({
     "blocks": [
       { "type": "paragraph", "text": "Thanks for your message. This is a mock assistant response." },
-      { "type": "paragraph", "text": "Try typing help, list, or code to see other structured reply formats." }
+      { "type": "paragraph", "text": "Try typing help, list, code, or button to see other structured reply formats." }
     ]
   })";
 }
@@ -121,6 +131,14 @@ void ChatDemo::SendMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /
   Instance().OnSendMessage();
 }
 
+void ChatDemo::SendSuggestionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().SendUserText(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
 void ChatDemo::OnSendMessage() {
   if (chat_.loading) {
     return;
@@ -131,14 +149,24 @@ void ChatDemo::OnSendMessage() {
     return;
   }
 
-  chat_.messages.push_back({Rml::String("user"), UserMessageRml(text)});
   chat_.draft = "";
+  DirtyChat();
+  SendUserText(text);
+}
+
+void ChatDemo::SendUserText(const std::string& text) {
+  const std::string trimmed = Trim(text);
+  if (trimmed.empty() || chat_.loading) {
+    return;
+  }
+
+  chat_.messages.push_back({Rml::String("user"), UserMessageRml(trimmed)});
   chat_.loading = true;
   DirtyChat();
 
   if (!llm_) {
     log().debug << "Using mock assistant response";
-    FinishAssistantReply(MockAssistantRespond(text), false);
+    FinishAssistantReply(MockAssistantRespond(trimmed), false);
     return;
   }
 
@@ -148,8 +176,8 @@ void ChatDemo::OnSendMessage() {
   const std::string system_prompt = PromptBuilder::BuildChatSystemPrompt();
   LlmClient client = *llm_;
 
-  job->future = std::async(std::launch::async, [this, job, client, system_prompt, text]() {
-    auto result = client.Complete(system_prompt, text);
+  job->future = std::async(std::launch::async, [this, job, client, system_prompt, trimmed]() {
+    auto result = client.Complete(system_prompt, trimmed);
     std::lock_guard lock(job->mutex);
     if (!result) {
       log().error << "LLM request failed: " << result.error().message;
@@ -196,6 +224,7 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
         ctor.Bind("loading", &ChatDemo::Instance().chat_.loading);
         ctor.Bind("messages", &ChatDemo::Instance().chat_.messages);
         ctor.BindEventCallback("send_message", &ChatDemo::SendMessageCallback);
+        ctor.BindEventCallback("send_suggestion", &ChatDemo::SendSuggestionCallback);
       })) {
     return false;
   }

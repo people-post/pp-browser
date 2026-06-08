@@ -51,8 +51,10 @@ private:
   ChatDemo();
 
   static void SendMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void SendSuggestionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
+  void SendUserText(const std::string& text);
   void FinishAssistantReply(const std::string& raw_output, bool from_llm);
 
   ChatState chat_;

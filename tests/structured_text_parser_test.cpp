@@ -41,6 +41,25 @@ int main() {
   auto heading_clamp_result = pbr::StructuredTextParser::ParseBlocksJson(heading_clamp);
   assert(!heading_clamp_result.ok);
 
+  const std::string button_block = R"({
+    "blocks": [
+      { "type": "button", "label": "Say \"hi\"", "message": "It's a \\test" }
+    ]
+  })";
+  auto button_result = pbr::StructuredTextParser::ParseBlocksJson(button_block);
+  assert(button_result.ok);
+  assert(button_result.rml.find("class=\"chat-suggestion\"") != std::string::npos);
+  assert(button_result.rml.find("data-event-click=\"send_suggestion('It\\'s a \\\\test')\"") != std::string::npos);
+  assert(button_result.rml.find("&quot;hi&quot;") != std::string::npos);
+
+  const std::string button_missing_message = R"({"blocks":[{"type":"button","label":"Go"}]})";
+  auto button_missing_message_result = pbr::StructuredTextParser::ParseBlocksJson(button_missing_message);
+  assert(!button_missing_message_result.ok);
+
+  const std::string button_empty_message = R"({"blocks":[{"type":"button","label":"Go","message":""}]})";
+  auto button_empty_message_result = pbr::StructuredTextParser::ParseBlocksJson(button_empty_message);
+  assert(!button_empty_message_result.ok);
+
   std::cout << "structured_text_parser_test ok\n";
   return 0;
 }

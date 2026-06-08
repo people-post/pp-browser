@@ -27,7 +27,7 @@ Respond with exactly one fenced ```json block:
 }
 
 Each entry in blocks MUST be an object with a "type" field.
-Use ONLY the four block types below. Any other type will not render.
+Use ONLY the five block types below. Any other type will not render.
 
 1. paragraph
    Fields: type (required), text (required, string)
@@ -49,15 +49,22 @@ Use ONLY the four block types below. Any other type will not render.
    Renders: monospace code block
    Example: { "type": "code", "text": "int x = 1;" }
 
+5. button
+   Fields: type (required), label (required, string), message (required, string)
+   Renders: clickable suggestion chip; clicking sends message as the user's next message
+   Example: { "type": "button", "label": "Explain more", "message": "Can you explain that in simpler terms?" }
+   Use sparingly for 1-3 suggested follow-ups. message is plain text (no markdown).
+
 NOT SUPPORTED
-- Block types other than paragraph, heading, list, code
+- Block types other than paragraph, heading, list, code, button
 - HTML tags, markdown, bold, italic, links, tables, images, blockquotes
 - Formatting inside paragraph text (no **bold**, no `backticks`, no # headings, no bullet characters)
 - Bare strings or other shapes in the blocks array
 - Describing structure in prose instead of emitting blocks (e.g. do not write "use H2" — emit a heading block)
+- Inventing action names or HTML in button blocks
 
 RULES
-- One visual element per block: titles → heading, bullets → list, code → code, body copy → paragraph
+- One visual element per block: titles → heading, bullets → list, code → code, body copy → paragraph, follow-ups → button
 - text and items values are plain UTF-8 only
 - Do not wrap the response in HTML or markdown outside the json fence)";
 }
@@ -84,7 +91,8 @@ std::string PromptBuilder::BuildChatSystemPrompt() {
   "blocks": [
     { "type": "heading", "level": 2, "text": "Overview" },
     { "type": "paragraph", "text": "Here are the supported block types." },
-    { "type": "list", "ordered": false, "items": ["paragraph", "heading", "list", "code"] },
+    { "type": "list", "ordered": false, "items": ["paragraph", "heading", "list", "code", "button"] },
+    { "type": "button", "label": "Tell me more", "message": "Can you give an example of each block type?" },
     { "type": "code", "text": "function hello() {\n  return 42;\n}" }
   ]
 })";

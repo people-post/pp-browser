@@ -210,3 +210,21 @@ input, textarea, select {
   margin-bottom: 8dp;
   white-space: pre-wrap;
 }
+
+.bubble-assistant .chat-suggestion {
+  display: inline-block;
+  width: auto;
+  font-size: 13dp;
+  padding: 6dp 12dp;
+  margin-top: 4dp;
+  margin-right: 8dp;
+  margin-bottom: 4dp;
+  border-radius: 16dp;
+  background-color: #3a3a55;
+  color: #e8e8e8;
+  focus: auto;
+}
+
+.bubble-assistant .chat-suggestion:hover {
+  background-color: #4a4a6a;
+}

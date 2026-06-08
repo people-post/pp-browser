@@ -31,6 +31,18 @@ std::string StructuredTextParser::EscapeText(const std::string& text) {
   return out;
 }
 
+std::string StructuredTextParser::EscapeExpressionString(const std::string& text) {
+  std::string out;
+  out.reserve(text.size());
+  for (char c : text) {
+    if (c == '\\' || c == '\'') {
+      out += '\\';
+    }
+    out += c;
+  }
+  return out;
+}
+
 namespace {
 
 ParseResult Fail(const std::string& message) {
@@ -106,6 +118,28 @@ ParseResult RenderBlock(const nlohmann::json& block) {
     ParseResult result;
     result.ok = true;
     result.rml = "<div class=\"code-block\">" + StructuredTextParser::EscapeText(block["text"].get<std::string>()) + "</div>";
+    return result;
+  }
+
+  if (type == "button") {
+    if (!block.contains("label") || !block["label"].is_string()) {
+      return Fail("button block requires label");
+    }
+    if (!block.contains("message") || !block["message"].is_string()) {
+      return Fail("button block requires message");
+    }
+    const std::string message = block["message"].get<std::string>();
+    if (message.empty()) {
+      return Fail("button message must not be empty");
+    }
+    if (message.find('\n') != std::string::npos || message.find('\r') != std::string::npos) {
+      return Fail("button message must not contain newlines");
+    }
+    ParseResult result;
+    result.ok = true;
+    result.rml = "<button class=\"chat-suggestion\" data-event-click=\"send_suggestion('" +
+                 StructuredTextParser::EscapeExpressionString(message) + "')\">" +
+                 StructuredTextParser::EscapeText(block["label"].get<std::string>()) + "</button>";
     return result;
   }
 

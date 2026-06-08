@@ -57,6 +57,7 @@ For conversational replies (not full UI documents), respond with a single fenced
 | `heading` | `text`, `level` (1–3) | `<h1>`–`<h3>` |
 | `list` | `items` (array), `ordered` (bool) | `<ul>`/`<ol>` + `<li>` |
 | `code` | `text` | `<div class="code-block">` |
+| `button` | `label`, `message` | `<button class="chat-suggestion">` with `data-event-click="send_suggestion(...)"` |
 
 ### Rules
 
