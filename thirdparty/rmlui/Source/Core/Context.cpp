@@ -15,6 +15,7 @@
 #include "EventDispatcher.h"
 #include "PluginRegistry.h"
 #include "ScrollController.h"
+#include "TextSelectionController.h"
 #include "StreamFile.h"
 #include <algorithm>
 #include <clocale>
@@ -100,6 +101,7 @@ Context::Context(const String& name, RenderManager* render_manager, TextInputHan
 	enable_cursor = true;
 
 	scroll_controller = MakeUnique<ScrollController>();
+	text_selection_controller = MakeUnique<TextSelectionController>(this);
 }
 
 Context::~Context()
@@ -222,6 +224,8 @@ bool Context::Render()
 	render_manager->PrepareRender(dimensions);
 
 	root->Render();
+
+	text_selection_controller->Render();
 
 	// Render the cursor proxy so that any attached drag clone will be rendered below the cursor.
 	if (drag_clone)
@@ -522,6 +526,9 @@ void Context::RemoveEventListener(const String& event, EventListener* listener, 
 
 bool Context::ProcessKeyDown(Input::KeyIdentifier key_identifier, int key_modifier_state)
 {
+	if (text_selection_controller->OnKeyDown(key_identifier, key_modifier_state))
+		return true;
+
 	// Generate the parameters for the key event.
 	Dictionary parameters;
 	GenerateKeyEventParameters(parameters, key_identifier);
@@ -597,6 +604,8 @@ bool Context::ProcessMouseMove(int x, int y, int key_modifier_state)
 		}
 	}
 
+	text_selection_controller->OnMouseMove(mouse_position);
+
 	return !IsMouseInteracting();
 }
 
@@ -625,9 +634,10 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 	if (button_index == 0)
 	{
 		Element* new_focus = hover;
+		const bool prevent_focus = text_selection_controller->ShouldPreventFocus(hover);
 
 		// Set the currently hovered element to focus if it isn't already the focus.
-		if (hover)
+		if (hover && !prevent_focus)
 		{
 			new_focus = FindFocusElement(hover);
 			if (new_focus && new_focus != focus)
@@ -635,6 +645,10 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 				if (!new_focus->Focus())
 					return !IsMouseInteracting();
 			}
+		}
+		else if (prevent_focus)
+		{
+			new_focus = nullptr;
 		}
 
 		// Save the just-pressed-on element as the pressed element.
@@ -715,6 +729,9 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 			scroll_controller->ActivateAutoscroll(hover->GetClosestScrollableContainer(), mouse_position);
 	}
 
+	if (button_index == 0)
+		text_selection_controller->OnMouseDown(hover, mouse_position, key_modifier_state);
+
 	return !IsMouseInteracting();
 }
 
@@ -731,13 +748,15 @@ bool Context::ProcessMouseButtonUp(int button_index, int key_modifier_state)
 	// Process primary click.
 	if (button_index == 0)
 	{
+		const bool suppress_click = text_selection_controller->ShouldSuppressClick();
+
 		// The elements in the new hover chain have the 'onmouseup' event called on them.
 		if (hover)
 			hover->DispatchEvent(EventId::Mouseup, parameters);
 
 		// If the active element (the one that was being hovered over when the mouse button was pressed) is still being
 		// hovered over, we click it.
-		if (hover && active && active == FindFocusElement(hover))
+		if (!suppress_click && hover && active && active == FindFocusElement(hover))
 		{
 			active->DispatchEvent(EventId::Click, parameters);
 		}
@@ -788,6 +807,9 @@ bool Context::ProcessMouseButtonUp(int button_index, int key_modifier_state)
 	// If we have autoscrolled while holding the middle mouse button, release the autoscroll mode now.
 	if (scroll_controller->HasAutoscrollMoved())
 		scroll_controller->Reset();
+
+	if (button_index == 0)
+		text_selection_controller->OnMouseUp();
 
 	return result;
 }

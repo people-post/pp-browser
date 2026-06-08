@@ -1,0 +1,60 @@
+#pragma once
+
+#include "../../Include/RmlUi/Core/Geometry.h"
+#include "../../Include/RmlUi/Core/Input.h"
+#include "../../Include/RmlUi/Core/Types.h"
+
+namespace Rml {
+
+class Context;
+class Element;
+class ElementText;
+
+class TextSelectionController {
+public:
+	explicit TextSelectionController(Context* context);
+
+	void OnMouseDown(Element* hover, Vector2i mouse_position, int key_modifier_state);
+	void OnMouseMove(Vector2i mouse_position);
+	void OnMouseUp();
+	bool OnKeyDown(Input::KeyIdentifier key, int key_modifier_state);
+	void Render();
+
+	/// Pointer down on static selectable content should not steal focus from inputs.
+	bool ShouldPreventFocus(Element* hover) const;
+	/// Drag-select should not also dispatch a click on mouse up.
+	bool ShouldSuppressClick() const;
+
+private:
+	struct LineLayout {
+		int begin = 0;
+		int length = 0;
+		Vector2f position;
+		float width = 0.f;
+		float height = 0.f;
+	};
+
+	bool IsSelectable(const Element* element) const;
+	Element* FindSelectableRoot(Element* hover) const;
+	bool IsFormControl(const Element* element) const;
+	bool EnsureContainerAlive();
+	void RefreshTextFromContainer();
+	void ClearSelection();
+	void RebuildLayout();
+	void SetSelectionIndices(int anchor, int focus);
+	int HitTest(Vector2f absolute_mouse) const;
+	String GetSelectedText() const;
+	void BuildSelectionGeometry();
+
+	Context* context;
+	Element* container = nullptr;
+	ElementText* reference_text = nullptr;
+	String flat_text;
+	Vector<LineLayout> lines;
+	int anchor_index = 0;
+	int focus_index = 0;
+	bool dragging = false;
+	Geometry selection_geometry;
+};
+
+} // namespace Rml

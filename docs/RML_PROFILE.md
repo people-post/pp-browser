@@ -18,9 +18,15 @@ AI-generated UI must follow this profile.
 - `data-value`, `data-checked`, `data-for`, `data-if`, `data-visible`, `data-rml`
 - `data-event-click="action_name()"`
 
+## Selectable text (pp-browser fork)
+
+Add `selectable="text"` on an element to enable drag-selection and Ctrl+C copy of its text content (handled by RmlUi `TextSelectionController`). Use `focus: none` on bubbles so the chat input keeps focus.
+
 ## Styling
 
 Use classes from `assets/themes/base.rcss` (`.stack`, `.row`, `.card`, `.muted`, `.error`).
+
+See [RCSS_PROFILE.md](RCSS_PROFILE.md) for the exact list of supported CSS/RCSS properties. AI prompts must not use properties outside that list.
 
 ## Output artifacts
 

@@ -13,6 +13,7 @@ Edit files under `thirdparty/rmlui/` directly in pp-browser commits.
 **pp-browser fork patches (as of import):**
 
 - `CMakeLists.txt` — wrap `add_subdirectory("Samples")` in `if(RMLUI_SAMPLES)` (Samples tree excluded from hard fork)
+- `TextSelectionController` — selectable static text via `selectable="text"` attribute; integrated in `Context`
 
 pp-browser-owned integration code lives outside the fork:
 

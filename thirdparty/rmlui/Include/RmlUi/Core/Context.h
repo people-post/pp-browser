@@ -17,6 +17,7 @@ class DataModel;
 class DataModelConstructor;
 class DataTypeRegister;
 class ScrollController;
+class TextSelectionController;
 class RenderManager;
 class TextInputHandler;
 enum class EventId : uint16_t;
@@ -355,6 +356,7 @@ private:
 
 	// Controller for various scroll behavior modes.
 	UniquePtr<ScrollController> scroll_controller; // [not-null]
+	UniquePtr<TextSelectionController> text_selection_controller; // [not-null]
 
 	// Enables cursor handling.
 	bool enable_cursor;

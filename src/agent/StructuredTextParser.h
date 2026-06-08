@@ -12,6 +12,7 @@ struct ParseResult {
 
 class StructuredTextParser {
 public:
+  static std::string EscapeText(const std::string& text);
   static ParseResult ParseBlocksJson(const std::string& json);
   static ParseResult ParseFromLlmOutput(const std::string& llm_output);
 };

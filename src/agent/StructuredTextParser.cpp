@@ -6,9 +6,7 @@
 
 namespace ppbrowser {
 
-namespace {
-
-std::string EscapeRmlText(const std::string& text) {
+std::string StructuredTextParser::EscapeText(const std::string& text) {
   std::string out;
   out.reserve(text.size());
   for (char c : text) {
@@ -33,11 +31,13 @@ std::string EscapeRmlText(const std::string& text) {
   return out;
 }
 
+namespace {
+
 ParseResult Fail(const std::string& message) {
   ParseResult result;
   result.ok = false;
   result.error = message;
-  result.rml = "<p class=\"error\">" + EscapeRmlText(message) + "</p>";
+  result.rml = "<p class=\"error\">" + StructuredTextParser::EscapeText(message) + "</p>";
   return result;
 }
 
@@ -54,7 +54,7 @@ ParseResult RenderBlock(const nlohmann::json& block) {
     }
     ParseResult result;
     result.ok = true;
-    result.rml = "<p>" + EscapeRmlText(block["text"].get<std::string>()) + "</p>";
+    result.rml = "<p>" + StructuredTextParser::EscapeText(block["text"].get<std::string>()) + "</p>";
     return result;
   }
 
@@ -74,7 +74,7 @@ ParseResult RenderBlock(const nlohmann::json& block) {
     }
     ParseResult result;
     result.ok = true;
-    result.rml = "<h" + std::to_string(level) + ">" + EscapeRmlText(block["text"].get<std::string>()) +
+    result.rml = "<h" + std::to_string(level) + ">" + StructuredTextParser::EscapeText(block["text"].get<std::string>()) +
                  "</h" + std::to_string(level) + ">";
     return result;
   }
@@ -90,7 +90,7 @@ ParseResult RenderBlock(const nlohmann::json& block) {
       if (!item.is_string()) {
         return Fail("list items must be strings");
       }
-      out << "<li>" << EscapeRmlText(item.get<std::string>()) << "</li>";
+      out << "<li>" << StructuredTextParser::EscapeText(item.get<std::string>()) << "</li>";
     }
     out << (ordered ? "</ol>" : "</ul>");
     ParseResult result;
@@ -105,7 +105,7 @@ ParseResult RenderBlock(const nlohmann::json& block) {
     }
     ParseResult result;
     result.ok = true;
-    result.rml = "<div class=\"code-block\">" + EscapeRmlText(block["text"].get<std::string>()) + "</div>";
+    result.rml = "<div class=\"code-block\">" + StructuredTextParser::EscapeText(block["text"].get<std::string>()) + "</div>";
     return result;
   }
 

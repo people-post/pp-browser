@@ -10,7 +10,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
@@ -48,21 +47,9 @@ std::string ToLower(std::string text) {
 }
 
 Rml::String UserMessageRml(const std::string& text) {
-  const nlohmann::json doc = {{"blocks", nlohmann::json::array({{{"type", "paragraph"}, {"text", text}}})}};
-  auto parsed = StructuredTextParser::ParseBlocksJson(doc.dump());
-  if (!parsed.ok) {
-    return Rml::String("<p></p>");
-  }
-  const std::string wrapper = "<div class=\"stack\">";
-  const std::size_t start = parsed.rml.find(wrapper);
-  if (start == std::string::npos) {
-    return Rml::String(parsed.rml.c_str());
-  }
-  std::string inner = parsed.rml.substr(start + wrapper.size());
-  if (inner.size() >= 6 && inner.substr(inner.size() - 6) == "</div>") {
-    inner.resize(inner.size() - 6);
-  }
-  return Rml::String(inner.c_str());
+  return Rml::String(("<div class=\"bubble bubble-user\" selectable=\"text\"><p>" + StructuredTextParser::EscapeText(text) +
+                      "</p></div>")
+                         .c_str());
 }
 
 std::string MockAssistantRespond(const std::string& query) {

@@ -10,18 +10,16 @@
       <p class="muted">Ask anything. Assistant replies use structured text.</p>
     </div>
     <div class="messages">
-      <div data-for="msg : messages" class="message-row">
-        <div class="bubble bubble-user" data-if="msg.role == 'user'">
-          <div data-rml="msg.content_rml"></div>
-        </div>
-        <div class="bubble bubble-assistant" data-if="msg.role == 'assistant'">
-          <div data-rml="msg.content_rml"></div>
+      <div data-for="msg : messages" class="message-group">
+        <div class="message-row message-row-user" data-if="msg.role == 'user'" data-rml="msg.content_rml"></div>
+        <div class="message-row message-row-assistant" data-if="msg.role == 'assistant'">
+          <div class="bubble bubble-assistant" selectable="text" data-rml="msg.content_rml"></div>
         </div>
       </div>
-      <p class="muted" data-if="loading">Thinking...</p>
+      <p class="muted thinking" data-if="loading">Thinking...</p>
     </div>
     <div class="input-row">
-      <textarea placeholder="Type a message..." rows="3" data-value="draft"></textarea>
+      <textarea placeholder="Type a message..." rows="2" data-value="draft"></textarea>
       <button data-event-click="send_message()">Send</button>
     </div>
   </div>
