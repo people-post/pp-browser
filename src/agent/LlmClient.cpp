@@ -18,8 +18,8 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out
 
 LlmClient::LlmClient(LlmConfig config) : config_(std::move(config)) {}
 
-std::string LlmClient::Complete(const std::string& system_prompt, const std::string& user_prompt) {
-  if (config_.api_key.empty()) {
+std::string LlmClient::Complete(const std::string& system_prompt, const std::string& user_prompt) const {
+  if (config_.require_api_key && config_.api_key.empty()) {
     throw std::runtime_error("LLM API key not configured");
   }
 
@@ -40,8 +40,10 @@ std::string LlmClient::Complete(const std::string& system_prompt, const std::str
 
   struct curl_slist* headers = nullptr;
   headers = curl_slist_append(headers, "Content-Type: application/json");
-  const std::string auth = "Authorization: Bearer " + config_.api_key;
-  headers = curl_slist_append(headers, auth.c_str());
+  if (!config_.api_key.empty()) {
+    const std::string auth = "Authorization: Bearer " + config_.api_key;
+    headers = curl_slist_append(headers, auth.c_str());
+  }
 
   const std::string url = config_.base_url + "/chat/completions";
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -49,6 +51,7 @@ std::string LlmClient::Complete(const std::string& system_prompt, const std::str
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
 
   const CURLcode code = curl_easy_perform(curl);
   curl_slist_free_all(headers);
@@ -59,6 +62,12 @@ std::string LlmClient::Complete(const std::string& system_prompt, const std::str
   }
 
   auto json = nlohmann::json::parse(response);
+  if (json.contains("error")) {
+    const auto& err = json["error"];
+    const std::string message = err.contains("message") ? err["message"].get<std::string>() : err.dump();
+    throw std::runtime_error("LLM API error: " + message);
+  }
+
   return json["choices"][0]["message"]["content"].get<std::string>();
 }
 

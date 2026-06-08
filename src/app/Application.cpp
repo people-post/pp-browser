@@ -58,10 +58,13 @@ std::string Application::AssetsPath(const std::string& relative) {
 #endif
 }
 
-bool Application::Initialize(const char* window_title, int width, int height, DemoMode demo) {
+bool Application::Initialize(const char* window_title, int width, int height, DemoMode demo,
+                             const AppConfig& config) {
   if (initialized_) {
     return true;
   }
+
+  demo_ = demo;
 
   if (!Backend::Initialize(window_title, width, height, true)) {
     std::cerr << "Backend::Initialize failed (SDL/OpenGL window could not be created).\n";
@@ -101,7 +104,7 @@ bool Application::Initialize(const char* window_title, int width, int height, De
     }
   } else if (demo == DemoMode::Hello) {
     DocumentLoader::LoadFile(context, AssetsPath("samples/hello.rml"));
-  } else if (!SetupChatDemo(context)) {
+  } else if (!SetupChatDemo(context, config)) {
     Rml::RemoveContext("main");
     Rml::Shutdown();
     Backend::Shutdown();
@@ -123,6 +126,9 @@ void Application::Run() {
   }
 
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
+    if (demo_ == DemoMode::Chat) {
+      UpdateChatDemo();
+    }
     context->Update();
     Backend::BeginFrame();
     context->Render();
@@ -133,6 +139,10 @@ void Application::Run() {
 void Application::Shutdown() {
   if (!initialized_) {
     return;
+  }
+
+  if (demo_ == DemoMode::Chat) {
+    ShutdownChatDemo();
   }
 
   ActionRouter::Instance().Detach();

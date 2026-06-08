@@ -4,12 +4,5 @@
     "model": "gemma4:e4b",
     "require_api_key": false
   },
-  "mcp_servers": [
-    {
-      "name": "mock",
-      "command": "mock",
-      "args": []
-    }
-  ],
   "theme": "assets/themes/base.rcss"
 }

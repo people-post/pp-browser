@@ -19,6 +19,49 @@ Prefer existing classes from base.rcss (.stack, .row, .card, .muted, .error) bef
 Avoid inline-block containers with background; use display:block or flex instead.)";
 }
 
+std::string PromptBuilder::ChatBlocksProfile() {
+  return R"(ALLOWED OUTPUT
+Respond with exactly one fenced ```json block:
+{
+  "blocks": [ ... ]
+}
+
+Each entry in blocks MUST be an object with a "type" field.
+Use ONLY the four block types below. Any other type will not render.
+
+1. paragraph
+   Fields: type (required), text (required, string)
+   Renders: plain paragraph text
+   Example: { "type": "paragraph", "text": "Plain explanation." }
+
+2. heading
+   Fields: type (required), level (required, integer 1-3), text (required, string)
+   Renders: h1 (level 1), h2 (level 2), or h3 (level 3)
+   Example: { "type": "heading", "level": 2, "text": "Section title" }
+
+3. list
+   Fields: type (required), items (required, array of strings), ordered (optional, boolean, default false)
+   Renders: bullet list (ordered=false) or numbered list (ordered=true)
+   Example: { "type": "list", "ordered": false, "items": ["Item A", "Item B"] }
+
+4. code
+   Fields: type (required), text (required, string)
+   Renders: monospace code block
+   Example: { "type": "code", "text": "int x = 1;" }
+
+NOT SUPPORTED
+- Block types other than paragraph, heading, list, code
+- HTML tags, markdown, bold, italic, links, tables, images, blockquotes
+- Formatting inside paragraph text (no **bold**, no `backticks`, no # headings, no bullet characters)
+- Bare strings or other shapes in the blocks array
+- Describing structure in prose instead of emitting blocks (e.g. do not write "use H2" — emit a heading block)
+
+RULES
+- One visual element per block: titles → heading, bullets → list, code → code, body copy → paragraph
+- text and items values are plain UTF-8 only
+- Do not wrap the response in HTML or markdown outside the json fence)";
+}
+
 std::string PromptBuilder::BuildUiGenerationPrompt(const std::string& tools_context,
                                                    const std::string& rml_profile) {
   std::ostringstream out;
@@ -31,17 +74,21 @@ std::string PromptBuilder::BuildUiGenerationPrompt(const std::string& tools_cont
   return out.str();
 }
 
-std::string PromptBuilder::BuildChatSystemPrompt(const std::string& format_spec) {
+std::string PromptBuilder::BuildChatSystemPrompt() {
   std::ostringstream out;
-  out << "You are a helpful assistant in pp-browser, a native UI shell with limited rendering.\n\n";
-  out << "Rendering constraints:\n";
-  out << "- No HTML, markdown, or arbitrary CSS\n";
-  out << "- No script tags, iframes, or inline event handlers\n";
-  out << "- Only basic text layout: paragraphs, headings (h1-h3), lists, and code blocks\n\n";
-  out << "RCSS constraints:\n" << DefaultRcssProfile() << "\n\n";
-  out << "Respond with a single fenced ```json block using this schema:\n\n";
-  out << format_spec << "\n\n";
-  out << "Use only the block types defined above. Keep text plain UTF-8.\n";
+  out << "You are a helpful assistant in pp-browser, a native UI shell.\n";
+  out << "Replies render as structured blocks — not HTML, not markdown.\n\n";
+  out << ChatBlocksProfile() << "\n\n";
+  out << "Example response:\n```json\n";
+  out << R"({
+  "blocks": [
+    { "type": "heading", "level": 2, "text": "Overview" },
+    { "type": "paragraph", "text": "Here are the supported block types." },
+    { "type": "list", "ordered": false, "items": ["paragraph", "heading", "list", "code"] },
+    { "type": "code", "text": "function hello() {\n  return 42;\n}" }
+  ]
+})";
+  out << "\n```\n";
   return out.str();
 }
 

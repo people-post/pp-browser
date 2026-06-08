@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/Config.h"
+
 #include <string>
 
 namespace ppbrowser {
@@ -18,7 +20,8 @@ public:
   Application(const Application&) = delete;
   Application& operator=(const Application&) = delete;
 
-  bool Initialize(const char* window_title, int width, int height, DemoMode demo = DemoMode::Chat);
+  bool Initialize(const char* window_title, int width, int height, DemoMode demo = DemoMode::Chat,
+                  const AppConfig& config = Config::DefaultOllama());
   void Run();
   void Shutdown();
 
@@ -26,6 +29,7 @@ public:
 
 private:
   bool initialized_ = false;
+  DemoMode demo_ = DemoMode::Chat;
 };
 
 } // namespace ppbrowser

@@ -48,6 +48,7 @@ endif()
 add_executable(pp-browser
   src/main.cpp
   src/app/Application.cpp
+  src/app/Config.cpp
 )
 
 target_compile_definitions(pp-browser PRIVATE

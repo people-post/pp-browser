@@ -37,6 +37,10 @@ int main() {
   assert(llm_result.ok);
   assert(llm_result.rml.find("<p>Hi</p>") != std::string::npos);
 
+  const std::string heading_clamp = R"({"blocks":[{"type":"heading","level":6,"text":"Big"}]})";
+  auto heading_clamp_result = ppbrowser::StructuredTextParser::ParseBlocksJson(heading_clamp);
+  assert(!heading_clamp_result.ok);
+
   std::cout << "structured_text_parser_test ok\n";
   return 0;
 }

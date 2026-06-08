@@ -30,6 +30,16 @@ From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
 ./build/pp-browser --demo search
 ```
 
+### Local Ollama
+
+1. Start Ollama and pull a model, e.g. `ollama pull llama3.2`
+2. Copy `config.json.example` to `config.json` and set `llm.model` to your model name
+3. Run `./build/pp-browser`
+
+Ollama exposes an OpenAI-compatible API at `http://localhost:11434/v1`; no API key is required. Without `config.json`, the app defaults to Ollama on localhost with model `llama3.2` (override via `PP_BROWSER_LLM_MODEL`).
+
+For OpenAI or other providers, set `base_url`, `model`, and `api_key_env` in `config.json`.
+
 **If no window appears** (or exit code 1), SDL was likely built without X11. Rebuild SDL with video support:
 
 ```bash
