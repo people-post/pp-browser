@@ -27,3 +27,33 @@ Use classes from `assets/themes/base.rcss` (`.stack`, `.row`, `.card`, `.muted`,
 1. `rml` — document
 2. `rcss` — optional extra rules
 3. `bindings.json` — action → MCP tool mapping
+
+## Structured text (chat responses)
+
+For conversational replies (not full UI documents), respond with a single fenced `json` block:
+
+```json
+{
+  "blocks": [
+    { "type": "paragraph", "text": "Plain explanation." },
+    { "type": "heading", "level": 2, "text": "Section title" },
+    { "type": "list", "ordered": false, "items": ["Item A", "Item B"] },
+    { "type": "code", "text": "snippet" }
+  ]
+}
+```
+
+### Block types
+
+| type | fields | RML output |
+|------|--------|------------|
+| `paragraph` | `text` | `<p>` |
+| `heading` | `text`, `level` (1–3) | `<h1>`–`<h3>` |
+| `list` | `items` (array), `ordered` (bool) | `<ul>`/`<ol>` + `<li>` |
+| `code` | `text` | `<div class="code-block">` |
+
+### Rules
+
+- No HTML, markdown, or arbitrary CSS in responses
+- Text is plain UTF-8; the parser escapes special characters before rendering
+- Only the block types above are supported

@@ -77,6 +77,7 @@ endif()
 # Phase 2+
 target_sources(pp-browser PRIVATE
   src/demo/SearchDemo.cpp
+  src/demo/ChatDemo.cpp
   src/ui/DocumentLoader.cpp
   src/ui/Theme.cpp
   src/ui/DataModelHost.cpp
@@ -86,6 +87,7 @@ target_sources(pp-browser PRIVATE
   src/mcp/SchemaAdapter.cpp
   src/agent/LlmClient.cpp
   src/agent/PromptBuilder.cpp
+  src/agent/StructuredTextParser.cpp
   src/agent/UiGenerator.cpp
   src/agent/RmlValidator.cpp
 )

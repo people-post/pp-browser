@@ -4,6 +4,12 @@
 
 namespace ppbrowser {
 
+enum class DemoMode {
+  Chat,
+  Search,
+  Hello,
+};
+
 class Application {
 public:
   Application();
@@ -12,7 +18,7 @@ public:
   Application(const Application&) = delete;
   Application& operator=(const Application&) = delete;
 
-  bool Initialize(const char* window_title, int width, int height, bool search_demo = false);
+  bool Initialize(const char* window_title, int width, int height, DemoMode demo = DemoMode::Chat);
   void Run();
   void Shutdown();
 

@@ -19,3 +19,9 @@ target_sources(pp_browser_mcp_mock_test PRIVATE
   ${CMAKE_SOURCE_DIR}/src/mcp/SchemaAdapter.cpp
 )
 add_test(NAME mcp_mock_test COMMAND pp_browser_mcp_mock_test)
+
+add_executable(pp_browser_structured_text_parser_test structured_text_parser_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp)
+target_link_libraries(pp_browser_structured_text_parser_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_structured_text_parser_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME structured_text_parser_test COMMAND pp_browser_structured_text_parser_test)

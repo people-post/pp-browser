@@ -72,3 +72,81 @@ input, textarea, select {
 .muted {
   color: #8888a0;
 }
+
+.chat-body {
+  padding: 16dp;
+  height: 100%;
+}
+
+.chat-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 800dp;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.chat-header {
+  margin-bottom: 16dp;
+}
+
+.chat-header h1 {
+  margin-bottom: 4dp;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 16dp;
+  padding-right: 8dp;
+}
+
+.message-row {
+  margin-bottom: 12dp;
+}
+
+.bubble {
+  padding: 12dp 16dp;
+  border-radius: 12dp;
+  max-width: 85%;
+}
+
+.bubble-user {
+  background-color: #4a6cf7;
+  color: #ffffff;
+  margin-left: auto;
+}
+
+.bubble-user p {
+  color: #ffffff;
+  margin-bottom: 0;
+}
+
+.bubble-assistant {
+  background-color: #252538;
+  border: 1dp #3a3a55;
+  margin-right: auto;
+}
+
+.input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8dp;
+}
+
+.input-row textarea {
+  margin-bottom: 0;
+  resize: none;
+}
+
+.code-block {
+  font-family: LatoLatin;
+  font-size: 13dp;
+  background-color: #1a1a2e;
+  padding: 8dp 12dp;
+  border-radius: 6dp;
+  margin-top: 4dp;
+  margin-bottom: 8dp;
+  white-space: pre-wrap;
+}

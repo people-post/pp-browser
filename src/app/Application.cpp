@@ -1,6 +1,7 @@
 #include "app/Application.h"
 
 #include "bindings/ActionRouter.h"
+#include "demo/ChatDemo.h"
 #include "demo/SearchDemo.h"
 #include "ui/DocumentLoader.h"
 #include "ui/Theme.h"
@@ -57,7 +58,7 @@ std::string Application::AssetsPath(const std::string& relative) {
 #endif
 }
 
-bool Application::Initialize(const char* window_title, int width, int height, bool search_demo) {
+bool Application::Initialize(const char* window_title, int width, int height, DemoMode demo) {
   if (initialized_) {
     return true;
   }
@@ -91,15 +92,20 @@ bool Application::Initialize(const char* window_title, int width, int height, bo
   }
 
   ActionRouter::Instance().Attach(context);
-  if (search_demo) {
+  if (demo == DemoMode::Search) {
     if (!SetupSearchDemo(context)) {
       Rml::RemoveContext("main");
       Rml::Shutdown();
       Backend::Shutdown();
       return false;
     }
-  } else {
+  } else if (demo == DemoMode::Hello) {
     DocumentLoader::LoadFile(context, AssetsPath("samples/hello.rml"));
+  } else if (!SetupChatDemo(context)) {
+    Rml::RemoveContext("main");
+    Rml::Shutdown();
+    Backend::Shutdown();
+    return false;
   }
 
   initialized_ = true;
