@@ -4,25 +4,20 @@
 
 - CMake 3.24+
 - C++20 compiler (GCC 13+, Clang 16+, or MSVC 2022)
-- [vcpkg](https://vcpkg.io/) with `VCPKG_ROOT` set
+- OpenSSL development headers (Linux only; `libssl-dev` on Debian/Ubuntu)
 - OpenGL 3.3 drivers
 - Linux: `libx11-dev`, `libxext-dev`, `libxcursor-dev`, `libxinerama-dev`, `libxi-dev`, `libxrandr-dev`, `libxfixes-dev`, `libgl-dev`
 
 ## Dependencies
 
-**vcpkg manifest:** FreeType, nlohmann-json, curl
-
-**FetchContent (first configure):** SDL3 and SDL3_image (built with `SDL_DBUS=OFF` to avoid extra system autotools)
+**FetchContent (first configure):** FreeType, nlohmann-json, curl, SDL3, and SDL3_image (SDL built with `SDL_DBUS=OFF` to avoid extra system autotools)
 
 RmlUi is **hard-forked** under `thirdparty/rmlui/` (not from vcpkg).
 
 ## Configure and build
 
 ```bash
-export VCPKG_ROOT="$HOME/vcpkg"
-cmake -B build -S . \
-  -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-  -DCMAKE_BUILD_TYPE=Release
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
@@ -39,7 +34,7 @@ From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
 
 ```bash
 rm -rf build/_deps/sdl3-build build/_deps/sdl3-src
-cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake -B build -S .
 cmake --build build -j
 ```
 

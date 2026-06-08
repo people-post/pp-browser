@@ -90,8 +90,6 @@ target_sources(pp-browser PRIVATE
   src/agent/RmlValidator.cpp
 )
 
-find_package(nlohmann_json CONFIG REQUIRED)
-find_package(CURL REQUIRED)
 target_link_libraries(pp-browser PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
 
 enable_testing()
