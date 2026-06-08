@@ -3,7 +3,7 @@
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
 
-namespace ppbrowser {
+namespace pbr {
 
 DataModelHost& DataModelHost::Instance() {
   static DataModelHost host;
@@ -42,4 +42,4 @@ void DataModelHost::Clear() {
   models_.clear();
 }
 
-} // namespace ppbrowser
+} // namespace pbr

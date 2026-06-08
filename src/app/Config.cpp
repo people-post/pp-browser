@@ -1,11 +1,13 @@
 #include "app/Config.h"
 
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 
-namespace ppbrowser {
+namespace pbr {
 
 namespace {
 
@@ -16,7 +18,51 @@ std::string ReadEnv(const char* name) {
   return {};
 }
 
+std::string ConfigPath(int argc, char** argv) {
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
+      return argv[i + 1];
+    }
+  }
+
+  if (const char* env = std::getenv("PP_BROWSER_CONFIG")) {
+    return env;
+  }
+
+  if (std::filesystem::exists("config.json")) {
+    return "config.json";
+  }
+
+  return {};
+}
+
 } // namespace
+
+Config::Config() {
+  redirectLogger("Config");
+}
+
+Config& Config::Instance() {
+  static Config config;
+  return config;
+}
+
+AppConfig Config::Load(int argc, char** argv) {
+  auto& logger = Instance().log();
+  const std::string path = ConfigPath(argc, argv);
+  if (path.empty()) {
+    logger.info << "No config.json found; using Ollama defaults (http://localhost:11434/v1). "
+                << "Copy config.json.example to config.json to customize the model.";
+    return DefaultOllama();
+  }
+
+  if (auto config = LoadFromFile(path)) {
+    logger.info << "Loaded config from " << path << " (model: " << config->llm.model << ")";
+    return *config;
+  }
+
+  throw std::runtime_error("Failed to read config: " + path);
+}
 
 AppConfig Config::DefaultOllama() {
   AppConfig config;
@@ -73,4 +119,4 @@ std::optional<AppConfig> Config::LoadFromFile(const std::string& path) {
   return config;
 }
 
-} // namespace ppbrowser
+} // namespace pbr

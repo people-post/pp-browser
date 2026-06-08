@@ -15,8 +15,8 @@ int main() {
     }
   })";
 
-  ppbrowser::BindingsManifest manifest;
-  assert(ppbrowser::BindingsManifest::Parse(json, manifest));
+  pbr::BindingsManifest manifest;
+  assert(pbr::BindingsManifest::Parse(json, manifest));
   const auto* action = manifest.Find("search_users");
   assert(action != nullptr);
   assert(action->tool == "user_search");

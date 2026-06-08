@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace ppbrowser {
+namespace pbr {
 
 std::string PromptBuilder::DefaultRcssProfile() {
   return R"(Supported RCSS properties only (RmlUi):
@@ -92,4 +92,4 @@ std::string PromptBuilder::BuildChatSystemPrompt() {
   return out.str();
 }
 
-} // namespace ppbrowser
+} // namespace pbr

@@ -12,7 +12,7 @@ class Context;
 class DataModelConstructor;
 }
 
-namespace ppbrowser {
+namespace pbr {
 
 using DataModelSetupFn = std::function<void(Rml::DataModelConstructor&)>;
 
@@ -35,4 +35,4 @@ private:
   std::unordered_map<std::string, ModelEntry> models_;
 };
 
-} // namespace ppbrowser
+} // namespace pbr

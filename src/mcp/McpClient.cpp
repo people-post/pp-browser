@@ -10,7 +10,11 @@
 #include <unistd.h>
 #endif
 
-namespace ppbrowser {
+namespace pbr {
+
+McpClient::McpClient() {
+  redirectLogger("McpClient");
+}
 
 McpClient::~McpClient() {
   Stop();
@@ -42,6 +46,7 @@ void McpClient::Stop() {
 bool McpClient::Start(const std::string& command, const std::vector<std::string>& args) {
   Stop();
   if (command == "mock") {
+    log().info << "Starting mock MCP client";
     mock_ = true;
     running_ = true;
     return true;
@@ -50,6 +55,7 @@ bool McpClient::Start(const std::string& command, const std::vector<std::string>
   int stdin_pipe[2]{};
   int stdout_pipe[2]{};
   if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0) {
+    log().error << "Failed to create pipes for MCP process";
     return false;
   }
 
@@ -77,6 +83,7 @@ bool McpClient::Start(const std::string& command, const std::vector<std::string>
   stdin_write_fd_ = stdin_pipe[1];
   stdout_read_fd_ = stdout_pipe[0];
   running_ = true;
+  log().info << "Started MCP process: " << command << " (pid=" << child_pid_ << ")";
   return true;
 #else
   (void)args;
@@ -120,7 +127,9 @@ nlohmann::json McpClient::Request(const std::string& method, const nlohmann::jso
                         {"params", params}};
 
   const std::string payload = req.dump() + "\n";
+  log().debug << "MCP request: " << method;
   if (write(stdin_write_fd_, payload.data(), payload.size()) < 0) {
+    log().error << "MCP write failed for method: " << method;
     throw std::runtime_error("MCP write failed");
   }
 
@@ -133,10 +142,12 @@ nlohmann::json McpClient::Request(const std::string& method, const nlohmann::jso
     line.push_back(ch);
   }
   if (line.empty()) {
+    log().error << "MCP empty response for method: " << method;
     throw std::runtime_error("MCP empty response");
   }
   auto resp = nlohmann::json::parse(line);
   if (resp.contains("error")) {
+    log().error << "MCP error for " << method << ": " << resp["error"].dump();
     throw std::runtime_error(resp["error"].dump());
   }
   return resp.value("result", nlohmann::json::object());
@@ -150,8 +161,10 @@ nlohmann::json McpClient::Request(const std::string& method, const nlohmann::jso
 bool McpClient::Initialize() {
   try {
     Request("initialize", {{"protocolVersion", "2024-11-05"}, {"capabilities", nlohmann::json::object()}});
+    log().info << "MCP initialized";
     return true;
-  } catch (...) {
+  } catch (const std::exception& e) {
+    log().error << "MCP initialize failed: " << e.what();
     return false;
   }
 }
@@ -182,4 +195,4 @@ McpClient& McpClient::MockInstance() {
   return client;
 }
 
-} // namespace ppbrowser
+} // namespace pbr

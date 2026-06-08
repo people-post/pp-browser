@@ -8,7 +8,7 @@
 #include <RmlUi/Core/DataModelHandle.h>
 #include <vector>
 
-namespace ppbrowser {
+namespace pbr {
 
 namespace {
 
@@ -78,4 +78,4 @@ bool SetupSearchDemo(Rml::Context* context) {
   return DocumentLoader::LoadFile(context, Application::AssetsPath("samples/search_demo.rml")) != nullptr;
 }
 
-} // namespace ppbrowser
+} // namespace pbr

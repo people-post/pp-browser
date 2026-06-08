@@ -14,7 +14,7 @@ int main() {
     ]
   })";
 
-  auto result = ppbrowser::StructuredTextParser::ParseBlocksJson(valid);
+  auto result = pbr::StructuredTextParser::ParseBlocksJson(valid);
   assert(result.ok);
   assert(result.rml.find("&lt;world&gt;") != std::string::npos);
   assert(result.rml.find("&amp;") != std::string::npos);
@@ -24,21 +24,21 @@ int main() {
   assert(result.rml.find("code-block") != std::string::npos);
 
   const std::string bad_type = R"({"blocks":[{"type":"table","text":"x"}]})";
-  auto bad_type_result = ppbrowser::StructuredTextParser::ParseBlocksJson(bad_type);
+  auto bad_type_result = pbr::StructuredTextParser::ParseBlocksJson(bad_type);
   assert(!bad_type_result.ok);
   assert(bad_type_result.rml.find("error") != std::string::npos);
 
   const std::string bad_json = "not json";
-  auto bad_json_result = ppbrowser::StructuredTextParser::ParseBlocksJson(bad_json);
+  auto bad_json_result = pbr::StructuredTextParser::ParseBlocksJson(bad_json);
   assert(!bad_json_result.ok);
 
   const std::string llm_output = "Here is the answer:\n```json\n{\"blocks\":[{\"type\":\"paragraph\",\"text\":\"Hi\"}]}\n```";
-  auto llm_result = ppbrowser::StructuredTextParser::ParseFromLlmOutput(llm_output);
+  auto llm_result = pbr::StructuredTextParser::ParseFromLlmOutput(llm_output);
   assert(llm_result.ok);
   assert(llm_result.rml.find("<p>Hi</p>") != std::string::npos);
 
   const std::string heading_clamp = R"({"blocks":[{"type":"heading","level":6,"text":"Big"}]})";
-  auto heading_clamp_result = ppbrowser::StructuredTextParser::ParseBlocksJson(heading_clamp);
+  auto heading_clamp_result = pbr::StructuredTextParser::ParseBlocksJson(heading_clamp);
   assert(!heading_clamp_result.ok);
 
   std::cout << "structured_text_parser_test ok\n";

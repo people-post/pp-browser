@@ -18,10 +18,9 @@
 #endif
 
 #include <filesystem>
-#include <iostream>
 #include <string>
 
-namespace ppbrowser {
+namespace pbr {
 
 namespace {
 
@@ -44,7 +43,9 @@ bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key,
 
 } // namespace
 
-Application::Application() = default;
+Application::Application() {
+  redirectLogger("Application");
+}
 
 Application::~Application() {
   Shutdown();
@@ -66,8 +67,10 @@ bool Application::Initialize(const char* window_title, int width, int height, De
 
   demo_ = demo;
 
+  log().info << "Initializing (demo=" << static_cast<int>(demo) << ", " << width << "x" << height << ")";
+
   if (!Backend::Initialize(window_title, width, height, true)) {
-    std::cerr << "Backend::Initialize failed (SDL/OpenGL window could not be created).\n";
+    log().error << "Backend::Initialize failed (SDL/OpenGL window could not be created)";
     return false;
   }
 
@@ -75,7 +78,7 @@ bool Application::Initialize(const char* window_title, int width, int height, De
   Rml::SetRenderInterface(Backend::GetRenderInterface());
 
   if (!Rml::Initialise()) {
-    std::cerr << "Rml::Initialise failed.\n";
+    log().error << "Rml::Initialise failed";
     Backend::Shutdown();
     return false;
   }
@@ -89,6 +92,7 @@ bool Application::Initialize(const char* window_title, int width, int height, De
 
   auto* context = Rml::CreateContext("main", Rml::Vector2i(width, height));
   if (!context) {
+    log().error << "Rml::CreateContext failed";
     Rml::Shutdown();
     Backend::Shutdown();
     return false;
@@ -97,6 +101,7 @@ bool Application::Initialize(const char* window_title, int width, int height, De
   ActionRouter::Instance().Attach(context);
   if (demo == DemoMode::Search) {
     if (!SetupSearchDemo(context)) {
+      log().error << "SetupSearchDemo failed";
       Rml::RemoveContext("main");
       Rml::Shutdown();
       Backend::Shutdown();
@@ -105,12 +110,14 @@ bool Application::Initialize(const char* window_title, int width, int height, De
   } else if (demo == DemoMode::Hello) {
     DocumentLoader::LoadFile(context, AssetsPath("samples/hello.rml"));
   } else if (!SetupChatDemo(context, config)) {
+    log().error << "SetupChatDemo failed";
     Rml::RemoveContext("main");
     Rml::Shutdown();
     Backend::Shutdown();
     return false;
   }
 
+  log().info << "Initialization complete";
   initialized_ = true;
   return true;
 }
@@ -153,7 +160,8 @@ void Application::Shutdown() {
   Rml::Shutdown();
   Backend::Shutdown();
 
+  log().info << "Shutdown complete";
   initialized_ = false;
 }
 
-} // namespace ppbrowser
+} // namespace pbr

@@ -77,6 +77,8 @@ endif()
 
 # Phase 2+
 target_sources(pp-browser PRIVATE
+  src/common/Module.cpp
+  src/log/Logger.cpp
   src/demo/SearchDemo.cpp
   src/demo/ChatDemo.cpp
   src/ui/DocumentLoader.cpp

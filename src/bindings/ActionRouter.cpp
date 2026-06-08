@@ -3,9 +3,12 @@
 #include "ui/DataModelHost.h"
 
 #include <RmlUi/Core/Context.h>
-#include <iostream>
 
-namespace ppbrowser {
+namespace pbr {
+
+ActionRouter::ActionRouter() {
+  redirectLogger("ActionRouter");
+}
 
 ActionRouter& ActionRouter::Instance() {
   static ActionRouter router;
@@ -42,17 +45,17 @@ void ActionRouter::Invoke(const std::string& action) {
 
   const ActionBinding* binding = manifest_.Find(action);
   if (!binding) {
-    std::cerr << "Unknown action: " << action << '\n';
+    log().warning << "Unknown action: " << action;
     return;
   }
 
   if (binding->risk == "destructive" || binding->risk == "write") {
-    std::cerr << "Action requires confirmation: " << action << '\n';
+    log().warning << "Action requires confirmation: " << action;
     // Phase 3: show confirmation panel; for now log only on write without executor.
   }
 
   if (!tool_executor_) {
-    std::cerr << "No tool executor for action: " << action << '\n';
+    log().warning << "No tool executor for action: " << action;
     return;
   }
 
@@ -63,4 +66,4 @@ void ActionRouter::Invoke(const std::string& action) {
   (void)result;
 }
 
-} // namespace ppbrowser
+} // namespace pbr

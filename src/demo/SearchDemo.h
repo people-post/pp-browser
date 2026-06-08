@@ -4,8 +4,8 @@ namespace Rml {
 class Context;
 }
 
-namespace ppbrowser {
+namespace pbr {
 
 bool SetupSearchDemo(Rml::Context* context);
 
-} // namespace ppbrowser
+} // namespace pbr

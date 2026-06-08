@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace ppbrowser {
+namespace pbr {
 
 struct ValidationResult {
   bool ok = true;
@@ -16,4 +16,4 @@ public:
   static ValidationResult ValidateBindings(const std::string& bindings_json);
 };
 
-} // namespace ppbrowser
+} // namespace pbr

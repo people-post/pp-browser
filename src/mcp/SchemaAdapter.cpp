@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace ppbrowser {
+namespace pbr {
 
 std::string SchemaAdapter::ToolsToPromptContext(const std::vector<McpTool>& tools) {
   std::ostringstream out;
@@ -42,4 +42,4 @@ std::string SchemaAdapter::RiskClass(const McpTool& tool) {
   return "read";
 }
 
-} // namespace ppbrowser
+} // namespace pbr

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bindings/BindingsManifest.h"
+#include "common/Module.h"
 
 #include <RmlUi/Core/Types.h>
 #include <functional>
@@ -11,11 +12,11 @@ namespace Rml {
 class Context;
 }
 
-namespace ppbrowser {
+namespace pbr {
 
 using ToolExecutor = std::function<nlohmann::json(const std::string& tool, const nlohmann::json& params)>;
 
-class ActionRouter {
+class ActionRouter : public Module {
 public:
   static ActionRouter& Instance();
 
@@ -29,7 +30,7 @@ public:
   void Invoke(const std::string& action);
 
 private:
-  ActionRouter() = default;
+  ActionRouter();
 
   Rml::Context* context_ = nullptr;
   BindingsManifest manifest_;
@@ -37,4 +38,4 @@ private:
   std::unordered_map<std::string, std::function<void()>> stubs_;
 };
 
-} // namespace ppbrowser
+} // namespace pbr

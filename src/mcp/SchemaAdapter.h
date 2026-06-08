@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace ppbrowser {
+namespace pbr {
 
 class SchemaAdapter {
 public:
@@ -15,4 +15,4 @@ public:
   static std::string RiskClass(const McpTool& tool);
 };
 
-} // namespace ppbrowser
+} // namespace pbr

@@ -1,10 +1,11 @@
 #pragma once
 
 #include "app/Config.h"
+#include "common/Module.h"
 
 #include <string>
 
-namespace ppbrowser {
+namespace pbr {
 
 enum class DemoMode {
   Chat,
@@ -12,7 +13,7 @@ enum class DemoMode {
   Hello,
 };
 
-class Application {
+class Application : public Module {
 public:
   Application();
   ~Application();
@@ -32,4 +33,4 @@ private:
   DemoMode demo_ = DemoMode::Chat;
 };
 
-} // namespace ppbrowser
+} // namespace pbr

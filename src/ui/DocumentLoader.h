@@ -8,7 +8,7 @@ namespace Rml {
 class Context;
 }
 
-namespace ppbrowser {
+namespace pbr {
 
 class DocumentLoader {
 public:
@@ -18,4 +18,4 @@ public:
   static void CloseActive(Rml::Context* context);
 };
 
-} // namespace ppbrowser
+} // namespace pbr

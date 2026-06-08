@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace ppbrowser {
+namespace pbr {
 
 struct McpTool;
 
@@ -18,4 +18,4 @@ public:
   static std::string BuildChatSystemPrompt();
 };
 
-} // namespace ppbrowser
+} // namespace pbr

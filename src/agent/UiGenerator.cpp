@@ -6,10 +6,12 @@
 #include <regex>
 #include <stdexcept>
 
-namespace ppbrowser {
+namespace pbr {
 
 UiGenerator::UiGenerator(LlmClient& llm, std::string rml_profile)
-    : llm_(llm), rml_profile_(std::move(rml_profile)) {}
+    : llm_(llm), rml_profile_(std::move(rml_profile)) {
+  redirectLogger("UiGenerator");
+}
 
 GeneratedUi UiGenerator::Generate(const std::string& tools_context) {
   const std::string system = PromptBuilder::BuildUiGenerationPrompt(tools_context, rml_profile_);
@@ -18,17 +20,25 @@ GeneratedUi UiGenerator::Generate(const std::string& tools_context) {
 
   GeneratedUi ui;
   if (!ExtractBlocks(raw, ui)) {
+    log().error << "Failed to parse LLM UI blocks";
     throw std::runtime_error("Failed to parse LLM UI blocks");
   }
 
   auto rml_check = RmlValidator::ValidateRml(ui.rml);
   if (!rml_check.ok) {
+    for (const auto& err : rml_check.errors) {
+      log().error << "RML validation failed: " << err;
+    }
     throw std::runtime_error("RML validation failed");
   }
   auto binding_check = RmlValidator::ValidateBindings(ui.bindings_json);
   if (!binding_check.ok) {
+    for (const auto& err : binding_check.errors) {
+      log().error << "Bindings validation failed: " << err;
+    }
     throw std::runtime_error("Bindings validation failed");
   }
+  log().info << "UI generation succeeded";
   return ui;
 }
 
@@ -54,4 +64,4 @@ bool UiGenerator::ExtractBlocks(const std::string& llm_output, GeneratedUi& out)
   return true;
 }
 
-} // namespace ppbrowser
+} // namespace pbr

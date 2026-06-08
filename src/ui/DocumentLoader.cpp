@@ -3,7 +3,7 @@
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/ElementDocument.h>
 
-namespace ppbrowser {
+namespace pbr {
 
 namespace {
 Rml::ElementDocument* g_active = nullptr;
@@ -44,4 +44,4 @@ void DocumentLoader::CloseActive(Rml::Context* context) {
   (void)context;
 }
 
-} // namespace ppbrowser
+} // namespace pbr

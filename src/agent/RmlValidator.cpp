@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace ppbrowser {
+namespace pbr {
 
 namespace {
 
@@ -48,4 +48,4 @@ ValidationResult RmlValidator::ValidateBindings(const std::string& bindings_json
   return result;
 }
 
-} // namespace ppbrowser
+} // namespace pbr

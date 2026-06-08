@@ -2,10 +2,10 @@
 
 #include <filesystem>
 
-namespace ppbrowser {
+namespace pbr {
 
 bool Theme::LoadBase(const std::string& rcss_path) {
   return std::filesystem::exists(rcss_path);
 }
 
-} // namespace ppbrowser
+} // namespace pbr

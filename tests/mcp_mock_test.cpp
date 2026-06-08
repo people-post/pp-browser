@@ -5,7 +5,7 @@
 #include <iostream>
 
 int main() {
-  auto& client = ppbrowser::McpClient::MockInstance();
+  auto& client = pbr::McpClient::MockInstance();
   assert(client.IsRunning());
   assert(client.Initialize());
 
@@ -14,7 +14,7 @@ int main() {
   assert(tools[0].name == "user_search");
 
   auto result = client.CallTool("user_search", {{"query", "ada"}});
-  auto rows = ppbrowser::SchemaAdapter::ToolResultToRows(result);
+  auto rows = pbr::SchemaAdapter::ToolResultToRows(result);
   assert(rows.is_array());
   assert(!rows.empty());
 

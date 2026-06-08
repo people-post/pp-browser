@@ -4,7 +4,7 @@
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 
-namespace ppbrowser {
+namespace pbr {
 
 namespace {
 
@@ -16,7 +16,13 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out
 
 } // namespace
 
-LlmClient::LlmClient(LlmConfig config) : config_(std::move(config)) {}
+LlmClient::LlmClient(LlmConfig config) : config_(std::move(config)) {
+  redirectLogger("LlmClient");
+}
+
+LlmClient::LlmClient(const LlmClient& other) : Module(), config_(other.config_) {
+  redirectLogger("LlmClient");
+}
 
 std::string LlmClient::Complete(const std::string& system_prompt, const std::string& user_prompt) const {
   if (config_.require_api_key && config_.api_key.empty()) {
@@ -46,6 +52,7 @@ std::string LlmClient::Complete(const std::string& system_prompt, const std::str
   }
 
   const std::string url = config_.base_url + "/chat/completions";
+  log().debug << "POST " << url << " model=" << config_.model;
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
@@ -58,6 +65,7 @@ std::string LlmClient::Complete(const std::string& system_prompt, const std::str
   curl_easy_cleanup(curl);
 
   if (code != CURLE_OK) {
+    log().error << "curl failed: " << curl_easy_strerror(code);
     throw std::runtime_error(std::string("curl failed: ") + curl_easy_strerror(code));
   }
 
@@ -65,10 +73,12 @@ std::string LlmClient::Complete(const std::string& system_prompt, const std::str
   if (json.contains("error")) {
     const auto& err = json["error"];
     const std::string message = err.contains("message") ? err["message"].get<std::string>() : err.dump();
+    log().error << "LLM API error: " << message;
     throw std::runtime_error("LLM API error: " + message);
   }
 
+  log().debug << "LLM response received (" << response.size() << " bytes)";
   return json["choices"][0]["message"]["content"].get<std::string>();
 }
 
-} // namespace ppbrowser
+} // namespace pbr

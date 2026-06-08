@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace ppbrowser {
+namespace pbr {
 
 struct ParseResult {
   bool ok = false;
@@ -17,4 +17,4 @@ public:
   static ParseResult ParseFromLlmOutput(const std::string& llm_output);
 };
 
-} // namespace ppbrowser
+} // namespace pbr

@@ -4,7 +4,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace ppbrowser {
+namespace pbr {
 
 struct ActionBinding {
   std::string tool;
@@ -23,4 +23,4 @@ private:
   std::unordered_map<std::string, ActionBinding> actions_;
 };
 
-} // namespace ppbrowser
+} // namespace pbr

@@ -1,10 +1,12 @@
 #pragma once
 
+#include "common/Module.h"
+
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
-namespace ppbrowser {
+namespace pbr {
 
 struct McpTool {
   std::string name;
@@ -12,9 +14,9 @@ struct McpTool {
   nlohmann::json input_schema;
 };
 
-class McpClient {
+class McpClient : public Module {
 public:
-  McpClient() = default;
+  McpClient();
   ~McpClient();
 
   McpClient(const McpClient&) = delete;
@@ -48,4 +50,4 @@ private:
 #endif
 };
 
-} // namespace ppbrowser
+} // namespace pbr

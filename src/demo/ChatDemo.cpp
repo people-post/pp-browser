@@ -20,31 +20,9 @@
 #include <string>
 #include <vector>
 
-namespace ppbrowser {
+namespace pbr {
 
 namespace {
-
-struct ChatMessage {
-  Rml::String role;
-  Rml::String content_rml;
-};
-
-struct ChatState {
-  Rml::String draft;
-  std::vector<ChatMessage> messages;
-  bool loading = false;
-};
-
-struct LlmJob {
-  std::mutex mutex;
-  std::optional<std::string> response;
-  std::optional<std::string> error;
-  std::future<void> future;
-};
-
-ChatState g_chat;
-std::optional<LlmClient> g_llm;
-std::unique_ptr<LlmJob> g_llm_job;
 
 std::string Trim(const std::string& text) {
   const auto start = std::find_if_not(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); });
@@ -127,65 +105,84 @@ void DirtyChat() {
   DataModelHost::Instance().Dirty("chat", "loading");
 }
 
-void FinishAssistantReply(const std::string& raw_output, bool from_llm) {
-  auto parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output)
-                         : StructuredTextParser::ParseBlocksJson(raw_output);
-  if (!parsed.ok) {
-    g_chat.messages.push_back({Rml::String("assistant"), ErrorMessageRml(parsed.error)});
-  } else {
-    g_chat.messages.push_back({Rml::String("assistant"), AssistantMessageRml(parsed.rml)});
-  }
-  g_chat.loading = false;
-  DirtyChat();
+} // namespace
+
+ChatDemo::ChatDemo() {
+  redirectLogger("ChatDemo");
 }
 
-void SendMessage(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& /*args*/) {
-  if (g_chat.loading) {
+ChatDemo& ChatDemo::Instance() {
+  static ChatDemo demo;
+  return demo;
+}
+
+void ChatDemo::SendMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                   const Rml::VariantList& /*args*/) {
+  Instance().OnSendMessage();
+}
+
+void ChatDemo::OnSendMessage() {
+  if (chat_.loading) {
     return;
   }
 
-  const std::string text = Trim(g_chat.draft.c_str());
+  const std::string text = Trim(chat_.draft.c_str());
   if (text.empty()) {
     return;
   }
 
-  g_chat.messages.push_back({Rml::String("user"), UserMessageRml(text)});
-  g_chat.draft = "";
-  g_chat.loading = true;
+  chat_.messages.push_back({Rml::String("user"), UserMessageRml(text)});
+  chat_.draft = "";
+  chat_.loading = true;
   DirtyChat();
 
-  if (!g_llm) {
+  if (!llm_) {
+    log().debug << "Using mock assistant response";
     FinishAssistantReply(MockAssistantRespond(text), false);
     return;
   }
 
-  g_llm_job = std::make_unique<LlmJob>();
-  LlmJob* job = g_llm_job.get();
+  log().info << "Sending message to LLM";
+  llm_job_ = std::make_unique<LlmJob>();
+  ChatDemo::LlmJob* job = llm_job_.get();
   const std::string system_prompt = PromptBuilder::BuildChatSystemPrompt();
-  LlmClient client = *g_llm;
+  LlmClient client = *llm_;
 
-  job->future = std::async(std::launch::async, [job, client, system_prompt, text]() {
+  job->future = std::async(std::launch::async, [this, job, client, system_prompt, text]() {
     try {
       const std::string raw = client.Complete(system_prompt, text);
       std::lock_guard lock(job->mutex);
       job->response = raw;
     } catch (const std::exception& e) {
+      log().error << "LLM request failed: " << e.what();
       std::lock_guard lock(job->mutex);
       job->error = e.what();
     }
   });
 }
 
-} // namespace
+void ChatDemo::FinishAssistantReply(const std::string& raw_output, bool from_llm) {
+  auto parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output)
+                         : StructuredTextParser::ParseBlocksJson(raw_output);
+  if (!parsed.ok) {
+    log().warning << "Failed to parse assistant reply: " << parsed.error;
+    chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(parsed.error)});
+  } else {
+    chat_.messages.push_back({Rml::String("assistant"), AssistantMessageRml(parsed.rml)});
+  }
+  chat_.loading = false;
+  DirtyChat();
+}
 
-bool SetupChatDemo(Rml::Context* context, const AppConfig& config) {
+bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   if (!context) {
     return false;
   }
 
-  g_chat = {};
-  g_llm_job.reset();
-  g_llm.emplace(config.llm);
+  chat_ = {};
+  llm_job_.reset();
+  llm_.emplace(config.llm);
+  log().info << "Chat demo initialized (model: " << config.llm.model << ")";
 
   DataModelHost::Instance().Clear();
 
@@ -195,10 +192,10 @@ bool SetupChatDemo(Rml::Context* context, const AppConfig& config) {
           msg_handle.RegisterMember("content_rml", &ChatMessage::content_rml);
         }
         ctor.RegisterArray<std::vector<ChatMessage>>();
-        ctor.Bind("draft", &g_chat.draft);
-        ctor.Bind("loading", &g_chat.loading);
-        ctor.Bind("messages", &g_chat.messages);
-        ctor.BindEventCallback("send_message", &SendMessage);
+        ctor.Bind("draft", &ChatDemo::Instance().chat_.draft);
+        ctor.Bind("loading", &ChatDemo::Instance().chat_.loading);
+        ctor.Bind("messages", &ChatDemo::Instance().chat_.messages);
+        ctor.BindEventCallback("send_message", &ChatDemo::SendMessageCallback);
       })) {
     return false;
   }
@@ -206,29 +203,30 @@ bool SetupChatDemo(Rml::Context* context, const AppConfig& config) {
   return DocumentLoader::LoadFile(context, Application::AssetsPath("samples/chat_dialog.rml")) != nullptr;
 }
 
-void UpdateChatDemo() {
-  if (!g_llm_job || !g_chat.loading) {
+void ChatDemo::Update() {
+  if (!llm_job_ || !chat_.loading) {
     return;
   }
 
-  if (g_llm_job->future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+  if (llm_job_->future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
     return;
   }
 
-  g_llm_job->future.get();
+  llm_job_->future.get();
 
   std::optional<std::string> response;
   std::optional<std::string> error;
   {
-    std::lock_guard lock(g_llm_job->mutex);
-    response = g_llm_job->response;
-    error = g_llm_job->error;
+    std::lock_guard lock(llm_job_->mutex);
+    response = llm_job_->response;
+    error = llm_job_->error;
   }
-  g_llm_job.reset();
+  llm_job_.reset();
 
   if (error) {
-    g_chat.messages.push_back({Rml::String("assistant"), ErrorMessageRml(*error)});
-    g_chat.loading = false;
+    log().error << "LLM job error: " << *error;
+    chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(*error)});
+    chat_.loading = false;
     DirtyChat();
     return;
   }
@@ -236,13 +234,25 @@ void UpdateChatDemo() {
   FinishAssistantReply(*response, true);
 }
 
-void ShutdownChatDemo() {
-  if (g_llm_job && g_llm_job->future.valid()) {
-    g_llm_job->future.wait();
+void ChatDemo::Shutdown() {
+  if (llm_job_ && llm_job_->future.valid()) {
+    llm_job_->future.wait();
   }
-  g_llm_job.reset();
-  g_llm.reset();
-  g_chat = {};
+  llm_job_.reset();
+  llm_.reset();
+  chat_ = {};
 }
 
-} // namespace ppbrowser
+bool SetupChatDemo(Rml::Context* context, const AppConfig& config) {
+  return ChatDemo::Instance().Setup(context, config);
+}
+
+void UpdateChatDemo() {
+  ChatDemo::Instance().Update();
+}
+
+void ShutdownChatDemo() {
+  ChatDemo::Instance().Shutdown();
+}
+
+} // namespace pbr

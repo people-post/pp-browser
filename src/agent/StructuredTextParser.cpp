@@ -4,7 +4,7 @@
 #include <regex>
 #include <sstream>
 
-namespace ppbrowser {
+namespace pbr {
 
 std::string StructuredTextParser::EscapeText(const std::string& text) {
   std::string out;
@@ -152,4 +152,4 @@ ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_outp
   return ParseBlocksJson(match[1].str());
 }
 
-} // namespace ppbrowser
+} // namespace pbr

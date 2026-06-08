@@ -1,8 +1,10 @@
 #pragma once
 
+#include "common/Module.h"
+
 #include <string>
 
-namespace ppbrowser {
+namespace pbr {
 
 struct LlmConfig {
   std::string api_key;
@@ -11,9 +13,10 @@ struct LlmConfig {
   bool require_api_key = true;
 };
 
-class LlmClient {
+class LlmClient : public Module {
 public:
   explicit LlmClient(LlmConfig config);
+  LlmClient(const LlmClient& other);
 
   std::string Complete(const std::string& system_prompt, const std::string& user_prompt) const;
 
@@ -21,4 +24,4 @@ private:
   LlmConfig config_;
 };
 
-} // namespace ppbrowser
+} // namespace pbr

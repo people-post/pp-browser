@@ -2,10 +2,11 @@
 
 #include "agent/LlmClient.h"
 #include "bindings/BindingsManifest.h"
+#include "common/Module.h"
 
 #include <string>
 
-namespace ppbrowser {
+namespace pbr {
 
 struct GeneratedUi {
   std::string rml;
@@ -13,7 +14,7 @@ struct GeneratedUi {
   std::string bindings_json;
 };
 
-class UiGenerator {
+class UiGenerator : public Module {
 public:
   UiGenerator(LlmClient& llm, std::string rml_profile);
 
@@ -26,4 +27,4 @@ private:
   std::string rml_profile_;
 };
 
-} // namespace ppbrowser
+} // namespace pbr

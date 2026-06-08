@@ -1,6 +1,6 @@
 #include "bindings/BindingsManifest.h"
 
-namespace ppbrowser {
+namespace pbr {
 
 bool BindingsManifest::Parse(const std::string& json_text, BindingsManifest& out) {
   try {
@@ -41,4 +41,4 @@ const ActionBinding* BindingsManifest::Find(const std::string& action) const {
   return &it->second;
 }
 
-} // namespace ppbrowser
+} // namespace pbr
