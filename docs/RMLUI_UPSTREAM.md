@@ -14,6 +14,32 @@ Edit files under `src/render/` directly in pp-browser commits (except `src/rende
 
 - `CMakeLists.txt` — wrap `add_subdirectory("Samples")` in `if(RMLUI_SAMPLES)` (Samples tree excluded from hard fork)
 - `TextSelectionController` — selectable static text via `selectable="text"` attribute; integrated in `Context`
+- `UserAgentStyleSheet` — built-in baseline RCSS merged into every document (block layout for `p`, headings, lists, tables)
+- `ListMarker` — **workaround**: layout-time bullet/number injection (see limitations below)
+
+### User-agent baseline: browser comparison and known gaps
+
+Upstream RmlUi defaults every element to `display: inline` (`StyleSheetSpecification.cpp`) and expects apps to link `rml.rcss` manually. Our fork adds a built-in user-agent sheet merged in `ElementDocument::ProcessHeader` before author RCSS (e.g. `assets/themes/base.rcss`).
+
+| Area | Browsers | Our fork (current) | Improve later |
+|------|----------|-------------------|---------------|
+| Baseline layout | Large per-engine UA stylesheet | Minimal embedded RCSS in `UserAgentStyleSheet.cpp` | Expand coverage; consider upstreaming |
+| Cascade | UA → user → author | UA → author only (no user tier) | Optional user-style tier if needed |
+| Opt-out | Difficult | None (always merged) | `Rml::SetUserAgentStylesEnabled(false)` or similar |
+| List markers | `list-style`, `::marker`, CSS counters | **Workaround** in `ListMarker.cpp` + `InlineLevelBox.cpp` | Implement `list-style` / marker box in layout |
+| List marker scope | Any `li` content structure | Direct text child of `li` only (`<li>text</li>`) | Marker on first line of nested blocks (`<li><p>…`) |
+| Ordered lists | `list-style-type: decimal` etc. | Hard-coded `1. ` prefix | CSS counters / `start` attribute |
+| Form controls | Native widget UA styles | Still styled in app theme (`base.rcss`) | Add input/button/textarea defaults to UA sheet |
+| Replaced elements | `img`, etc. | Not in UA sheet | Add when needed |
+
+**Do not reintroduce app-level layout patches** (e.g. `display: block` on `.bubble-assistant h2`) or parser hacks (bullet characters in `StructuredTextParser`) — fix gaps in the fork instead.
+
+**Workaround marker locations** (search `FORK_WORKAROUND` in `src/render/`):
+
+- `src/render/Source/Core/ListMarker.*` — marker string generation
+- `src/render/Source/Core/Layout/InlineLevelBox.cpp` — prepends marker to first text line of `li`
+
+**Proper fix direction for lists:** add RCSS `list-style-type` (and eventually `::marker` or an equivalent marker box) so markers participate in layout, selection, and RTL like browsers.
 
 pp-browser-owned integration code:
 

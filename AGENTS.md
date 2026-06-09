@@ -25,6 +25,8 @@ We **own and modify** the vendored copy under [`src/render/`](src/render/). It i
 | Feature | Location | Usage |
 |---------|----------|--------|
 | Text selection in static content | `src/render/Source/Core/TextSelectionController.*` | RML attribute `selectable="text"`; Ctrl+C copies selection |
+| User-agent baseline styles | `src/render/Source/Core/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
+| List markers (workaround) | `src/render/Source/Core/ListMarker.*`, `Layout/InlineLevelBox.cpp` | `ul`/`ol` bullets until `list-style` exists — see [RMLUI_UPSTREAM.md](docs/RMLUI_UPSTREAM.md) |
 
 ## UI generation constraints
 

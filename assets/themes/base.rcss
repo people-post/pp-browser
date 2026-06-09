@@ -178,6 +178,12 @@ input, textarea, select {
 .bubble-assistant h2,
 .bubble-assistant h3 {
   margin-top: 0;
+  color: #ffffff;
+}
+
+.bubble-assistant p,
+.bubble-assistant li {
+  color: #c8c8d8;
 }
 
 .thinking {

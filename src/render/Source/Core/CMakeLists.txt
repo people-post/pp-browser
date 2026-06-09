@@ -118,6 +118,8 @@ add_library(rmlui_core
 	GeometryBoxShadow.h
 	IdNameMap.h
 	Log.cpp
+	ListMarker.cpp
+	ListMarker.h
 	LogDefault.cpp
 	LogDefault.h
 	Math.cpp
@@ -214,6 +216,8 @@ add_library(rmlui_core
 	Tween.cpp
 	TypeConverter.cpp
 	URL.cpp
+	UserAgentStyleSheet.cpp
+	UserAgentStyleSheet.h
 	Variant.cpp
 	WidgetScroll.cpp
 	WidgetScroll.h

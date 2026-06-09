@@ -14,6 +14,7 @@
 #include "StreamFile.h"
 #include "StyleSheetFactory.h"
 #include "Template.h"
+#include "UserAgentStyleSheet.h"
 #include "TemplateCache.h"
 #include "XMLParseTools.h"
 #include <limits.h>
@@ -187,9 +188,12 @@ void ElementDocument::ProcessHeader(const DocumentHeader* document_header)
 	// Set the title to the document title.
 	title = document_header->title;
 
-	// If a style-sheet (or sheets) has been specified for this element, then we load them and set the combined sheet
-	// on the element; all of its children will inherit it by default.
+	// Built-in UA sheet (fork); author RCSS overrides. Gaps vs browsers: docs/RMLUI_UPSTREAM.md
 	SharedPtr<StyleSheetContainer> new_style_sheet;
+	if (const StyleSheetContainer* user_agent_sheet = UserAgentStyleSheet::GetStyleSheetContainer())
+		new_style_sheet = user_agent_sheet->CombineStyleSheetContainer(StyleSheetContainer());
+	else
+		new_style_sheet = MakeShared<StyleSheetContainer>();
 
 	// Combine any inline sheets.
 	for (const DocumentHeader::Resource& rcss : header.rcss)
@@ -225,9 +229,7 @@ void ElementDocument::ProcessHeader(const DocumentHeader* document_header)
 		}
 	}
 
-	// If a style sheet is available, set it on the document.
-	if (new_style_sheet)
-		SetStyleSheetContainer(std::move(new_style_sheet));
+	SetStyleSheetContainer(std::move(new_style_sheet));
 
 	// Load scripts.
 	for (const DocumentHeader::Resource& script : header.scripts)
@@ -772,8 +774,8 @@ Element* ElementDocument::FindNextNavigationElement(Element* current_element, Na
 	case Unit::STRING:
 	{
 		const PropertySource* source = property.source.get();
-		const String value = property.Get<String>();
-		if (value[0] != '#')
+		const String& value = property.value.GetReference<String>();
+		if (value.empty() || value[0] != '#')
 		{
 			Log::Message(Log::LT_WARNING,
 				"Invalid navigation value '%s': Expected a keyword or a string with an element id prefixed with '#'. Declared at %s:%d",

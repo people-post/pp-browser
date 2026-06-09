@@ -2,7 +2,9 @@
 #include "../../../Include/RmlUi/Core/ComputedValues.h"
 #include "../../../Include/RmlUi/Core/Core.h"
 #include "../../../Include/RmlUi/Core/ElementText.h"
+#include "../../../Include/RmlUi/Core/ElementUtilities.h"
 #include "../../../Include/RmlUi/Core/FontEngineInterface.h"
+#include "../ListMarker.h"
 #include "LayoutDetails.h"
 #include "LayoutPools.h"
 
@@ -153,6 +155,16 @@ FragmentConstructor InlineLevelBox_Text::CreateFragment(InlineLayoutMode mode, f
 	float line_width = 0.f;
 	bool overflow = !text_element->GenerateLine(line_contents, line_length, line_width, line_begin, available_width, right_spacing_width, first_box,
 		decode_escape_characters, allow_empty);
+
+	// FORK_WORKAROUND: prepend list marker — replace with list-style/::marker when available.
+	if (first_box && line_begin == 0 && !line_contents.empty())
+	{
+		if (String marker = GetListItemMarker(text_element->GetParentNode()); !marker.empty())
+		{
+			line_width += float(ElementUtilities::GetStringWidth(text_element, marker));
+			line_contents.insert(0, marker);
+		}
+	}
 
 	if (overflow && line_contents.empty())
 		// We couldn't fit anything on this line.

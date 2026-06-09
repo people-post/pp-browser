@@ -22,6 +22,7 @@
 #include "PluginRegistry.h"
 #include "RenderManagerAccess.h"
 #include "StyleSheetFactory.h"
+#include "UserAgentStyleSheet.h"
 #include "StyleSheetParser.h"
 #include "TemplateCache.h"
 
@@ -136,6 +137,9 @@ bool Initialise()
 	StyleSheetParser::Initialise();
 	StyleSheetFactory::Initialise();
 
+	if (!UserAgentStyleSheet::Initialise())
+		return false;
+
 	TemplateCache::Initialise();
 
 	Factory::Initialise();
@@ -171,6 +175,7 @@ void Shutdown()
 
 	Factory::Shutdown();
 	TemplateCache::Shutdown();
+	UserAgentStyleSheet::Shutdown();
 	StyleSheetFactory::Shutdown();
 	StyleSheetParser::Shutdown();
 	StyleSheetSpecification::Shutdown();
