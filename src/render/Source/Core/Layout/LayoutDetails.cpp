@@ -250,7 +250,9 @@ float LayoutDetails::GetShrinkToFitWidth(Element* element, Vector2f containing_b
 	UniquePtr<LayoutBox> layout_box = FormattingContext::FormatIndependent(&root, element, &box, FormattingContextType::Block);
 
 	float shrink_to_fit_width = layout_box->GetShrinkToFitWidth();
-	if (containing_block.x >= 0)
+	// Only clamp when the containing block has a definite non-zero width. A zero-width containing block is
+	// usually a transient layout error; clamping to it collapses bubbles to one character per line.
+	if (containing_block.x > 0.f)
 	{
 		const float available_width =
 			Math::Max(0.f, containing_block.x - box.GetSizeAcross(BoxDirection::Horizontal, BoxArea::Margin, BoxArea::Padding));
@@ -429,9 +431,18 @@ void LayoutDetails::BuildBoxWidth(Box& box, const ComputedValues& computed, floa
 
 		if (!shrink_to_fit)
 		{
-			// The width is set to whatever remains of the containing block.
-			content_area.x = containing_block.x - (GetInsetWidth() + box.GetSizeAcross(BoxDirection::Horizontal, BoxArea::Margin, BoxArea::Padding));
-			content_area.x = Math::Max(0.0f, content_area.x);
+			if (containing_block.x >= 0.f)
+			{
+				// The width is set to whatever remains of the containing block.
+				content_area.x = containing_block.x - (GetInsetWidth() + box.GetSizeAcross(BoxDirection::Horizontal, BoxArea::Margin, BoxArea::Padding));
+				content_area.x = Math::Max(0.0f, content_area.x);
+			}
+			else
+			{
+				// Indefinite containing block: size to content instead of collapsing to 0px.
+				content_area.x = GetShrinkToFitWidth(element, containing_block);
+				override_shrink_to_fit_width = content_area.x;
+			}
 		}
 		else if (override_shrink_to_fit_width >= 0)
 		{

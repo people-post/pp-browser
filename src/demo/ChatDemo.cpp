@@ -47,7 +47,7 @@ Rml::String UserMessageRml(const std::string& text) {
 }
 
 Rml::String AssistantMessageRml(const std::string& rml) {
-  return Rml::String(rml.c_str());
+  return Rml::String(("<div class=\"bubble bubble-assistant\" selectable=\"text\">" + rml + "</div>").c_str());
 }
 
 Rml::String ErrorMessageRml(const std::string& message) {

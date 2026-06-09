@@ -90,6 +90,7 @@ input, textarea, select {
   bottom: 16dp;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   max-width: 800dp;
   margin-left: auto;
   margin-right: auto;
@@ -97,6 +98,7 @@ input, textarea, select {
 
 .chat-header {
   flex-shrink: 0;
+  box-sizing: border-box;
   margin-bottom: 12dp;
 }
 
@@ -106,6 +108,8 @@ input, textarea, select {
 
 .messages {
   flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
   overflow-y: auto;
   margin-bottom: 12dp;
   padding-left: 8dp;
@@ -114,17 +118,15 @@ input, textarea, select {
 
 .message-group {
   display: block;
-  width: 100%;
 }
 
 .message-row {
   display: block;
-  width: 100%;
   margin-bottom: 12dp;
 }
 
 .message-row-user {
-  overflow: auto;
+  text-align: right;
 }
 
 .message-row-assistant {
@@ -139,11 +141,8 @@ input, textarea, select {
 }
 
 .bubble-user {
-  display: block;
-  float: right;
-  clear: both;
-  width: 85%;
-  max-width: 85%;
+  display: inline-block;
+  max-width: 680dp;
   background-color: #4a6cf7;
   color: #ffffff;
   focus: none;
@@ -157,16 +156,22 @@ input, textarea, select {
 }
 
 .bubble-assistant {
-  display: block;
-  width: 85%;
-  max-width: 85%;
+  display: inline-block;
+  max-width: 680dp;
   background-color: #252538;
   border: 1dp #3a3a55;
   focus: none;
 }
 
-.bubble-assistant .stack {
-  width: 100%;
+.bubble-assistant ul,
+.bubble-assistant ol {
+  box-sizing: border-box;
+}
+
+.bubble-assistant p,
+.bubble-assistant li,
+.bubble-assistant .code-block {
+  word-break: break-word;
 }
 
 .bubble-assistant p:last-child,
@@ -192,6 +197,7 @@ input, textarea, select {
 
 .input-row {
   flex-shrink: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: row;
   align-items: flex-end;

@@ -87,6 +87,7 @@ pre
 
 ul, ol
 {
+	box-sizing: border-box;
 	margin-top: 1em;
 	margin-bottom: 1em;
 	padding-left: 40dp;

@@ -54,7 +54,8 @@ float ResolveValueOr(Style::LengthPercentageAuto length, float base_value, float
 {
 	if (length.type == Style::LengthPercentageAuto::Length)
 		return length.value;
-	else if (length.type == Style::LengthPercentageAuto::Percentage && base_value >= 0.f)
+	// Percentages against a zero or indefinite containing block are undefined; treat as 'auto' (default_value).
+	else if (length.type == Style::LengthPercentageAuto::Percentage && base_value > 0.f)
 		return length.value * 0.01f * base_value;
 	return default_value;
 }
@@ -63,7 +64,7 @@ float ResolveValueOr(Style::LengthPercentage length, float base_value, float def
 {
 	if (length.type == Style::LengthPercentage::Length)
 		return length.value;
-	else if (length.type == Style::LengthPercentage::Percentage && base_value >= 0.f)
+	else if (length.type == Style::LengthPercentage::Percentage && base_value > 0.f)
 		return length.value * 0.01f * base_value;
 	return default_value;
 }

@@ -16,6 +16,7 @@ Edit files under `src/render/` directly in pp-browser commits (except `src/rende
 - `TextSelectionController` — selectable static text via `selectable="text"` attribute; integrated in `Context`
 - `UserAgentStyleSheet` — built-in baseline RCSS merged into every document (block layout for `p`, headings, lists, tables)
 - `ListMarker` — **workaround**: layout-time bullet/number injection (see limitations below)
+- `ResolveValueOr` / `FlexFormattingContext` / `BuildBoxWidth` / `GetShrinkToFitWidth` — percentage and auto width no longer collapse to 0px when the containing block is indefinite or zero-sized
 
 ### User-agent baseline: browser comparison and known gaps
 

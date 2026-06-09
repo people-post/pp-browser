@@ -53,8 +53,10 @@ UniquePtr<LayoutBox> FlexFormattingContext::Format(ContainerBox* parent_containe
 			element_scroll->GetScrollbarSize(ElementScroll::HORIZONTAL),
 		};
 
-		context.flex_available_content_size = Math::Max(box_content_size - scrollbar_size, Vector2f(0.f));
-		context.flex_content_containing_block = context.flex_available_content_size;
+		const Vector2f raw_available_content_size = box_content_size - scrollbar_size;
+		context.flex_available_content_size = Math::Max(raw_available_content_size, Vector2f(0.f));
+		// Keep indefinite dimensions for percentage resolution; clamping to zero makes width:100% resolve to 0px.
+		context.flex_content_containing_block = raw_available_content_size;
 
 		if (auto_height)
 		{
