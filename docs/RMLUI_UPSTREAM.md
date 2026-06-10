@@ -8,7 +8,7 @@ See `src/render/UPSTREAM.json` for the upstream tag and commit SHA.
 
 ## Patching
 
-Edit files under `src/render/` directly in pp-browser commits (except `src/render/backends/`, which is pp-browser-owned SDL/GL glue).
+Edit files under `src/render/` directly in pp-browser commits (except `src/render/integration/`, which is pp-browser-owned SDL/GL glue).
 
 **pp-browser fork patches (as of import):**
 
@@ -17,7 +17,7 @@ Edit files under `src/render/` directly in pp-browser commits (except `src/rende
 
 pp-browser-owned integration code:
 
-- `src/render/backends/` — SDL3 + OpenGL3 backend copies
+- `src/render/integration/` — SDL3 + OpenGL3 backend copies
 - `src/app/` — application lifecycle
 
 ## License

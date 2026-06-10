@@ -24,9 +24,9 @@ set(RMLUI_LUA_BINDINGS OFF CACHE BOOL "" FORCE)
 add_subdirectory(src/render EXCLUDE_FROM_ALL)
 
 set(PP_BROWSER_BACKEND_SOURCES
-  src/render/backends/RmlUi_Platform_SDL.cpp
-  src/render/backends/RmlUi_Renderer_GL3.cpp
-  src/render/backends/BrowserHost.cpp
+  src/render/integration/RmlUi_Platform_SDL.cpp
+  src/render/integration/RmlUi_Renderer_GL3.cpp
+  src/render/integration/BrowserHost.cpp
 )
 
 add_library(pp_rmlui_backend STATIC ${PP_BROWSER_BACKEND_SOURCES})
@@ -34,7 +34,7 @@ target_compile_definitions(pp_rmlui_backend PUBLIC RMLUI_SDL_VERSION_MAJOR=3)
 target_include_directories(pp_rmlui_backend PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/render/Include
   ${CMAKE_CURRENT_SOURCE_DIR}/src/render/Backends
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/backends
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/integration
 )
 target_link_libraries(pp_rmlui_backend PUBLIC
   RmlUi::Core
