@@ -466,7 +466,7 @@ void ElementSelectableText::ClearSelectionsUnlessContaining(Element* hover)
 	{
 		for (Element* element = hover; element; element = element->GetParentNode())
 		{
-			if (auto* selectable = rmlui_dynamic_cast<ElementSelectableText*>(element))
+			if (rmlui_dynamic_cast<ElementSelectableText*>(element))
 			{
 				if (!IsInteractiveElement(hover))
 					return;
