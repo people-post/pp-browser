@@ -144,29 +144,27 @@ ParseResult RenderBlock(const nlohmann::json& block) {
     return result;
   }
 
-  if (type == "button") {
-    if (!block.contains("label") || !block["label"].is_string()) {
-      return Fail("button block requires label");
-    }
-    if (!block.contains("message") || !block["message"].is_string()) {
-      return Fail("button block requires message");
-    }
-    const std::string message = block["message"].get<std::string>();
-    if (message.empty()) {
-      return Fail("button message must not be empty");
-    }
-    if (message.find('\n') != std::string::npos || message.find('\r') != std::string::npos) {
-      return Fail("button message must not contain newlines");
-    }
-    ParseResult result;
-    result.ok = true;
-    result.rml = "<button class=\"chat-suggestion\" data-event-click=\"send_suggestion('" +
-                 StructuredTextParser::EscapeExpressionString(message) + "')\">" +
-                 StructuredTextParser::EscapeText(block["label"].get<std::string>()) + "</button>";
-    return result;
-  }
-
   return Fail("Unknown block type: " + type);
+}
+
+ParseResult ParseButtonBlock(const nlohmann::json& block) {
+  if (!block.contains("label") || !block["label"].is_string()) {
+    return Fail("button block requires label");
+  }
+  if (!block.contains("message") || !block["message"].is_string()) {
+    return Fail("button block requires message");
+  }
+  const std::string message = block["message"].get<std::string>();
+  if (message.empty()) {
+    return Fail("button message must not be empty");
+  }
+  if (message.find('\n') != std::string::npos || message.find('\r') != std::string::npos) {
+    return Fail("button message must not contain newlines");
+  }
+  ParseResult result;
+  result.ok = true;
+  result.suggestions.push_back({block["label"].get<std::string>(), message});
+  return result;
 }
 
 } // namespace
@@ -187,20 +185,34 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
     return Fail("JSON must contain a blocks array");
   }
 
-  std::ostringstream out;
-  out << "<div class=\"stack\">";
+  std::ostringstream text_stack;
+  bool has_text = false;
+
+  ParseResult result;
+  result.ok = true;
+
   for (const auto& block : doc["blocks"]) {
+    if (block.is_object() && block.contains("type") && block["type"].is_string() &&
+        block["type"].get<std::string>() == "button") {
+      auto button = ParseButtonBlock(block);
+      if (!button.ok) {
+        return button;
+      }
+      result.suggestions.insert(result.suggestions.end(), button.suggestions.begin(), button.suggestions.end());
+      continue;
+    }
+
     auto rendered = RenderBlock(block);
     if (!rendered.ok) {
       return rendered;
     }
-    out << rendered.rml;
+    text_stack << rendered.rml;
+    has_text = true;
   }
-  out << "</div>";
 
-  ParseResult result;
-  result.ok = true;
-  result.rml = out.str();
+  if (has_text) {
+    result.rml = "<div class=\"stack\">" + text_stack.str() + "</div>";
+  }
   return result;
 }
 

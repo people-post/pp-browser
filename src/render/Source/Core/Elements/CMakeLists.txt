@@ -13,6 +13,8 @@ target_sources(rmlui_core PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}/ElementLabel.h"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ElementProgress.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ElementTabSet.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/ElementSelectableText.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/ElementSelectableText.h"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ElementTextSelection.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/ElementTextSelection.h"
 	"${CMAKE_CURRENT_SOURCE_DIR}/InputTypeButton.cpp"

@@ -205,7 +205,33 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	data->system_interface.SetWindow(window);
 	data->render_interface.SetViewport(width, height);
 
+#if SDL_MAJOR_VERSION >= 3
+	{
+		int pixel_w = 0;
+		int pixel_h = 0;
+		SDL_GetWindowSizeInPixels(window, &pixel_w, &pixel_h);
+		data->render_interface.SetViewport(pixel_w, pixel_h);
+	}
+#endif
+
 	return true;
+}
+
+void Backend::SyncContext(Rml::Context* context)
+{
+	if (!data || !context)
+		return;
+
+#if SDL_MAJOR_VERSION >= 3
+	int pixel_w = 0;
+	int pixel_h = 0;
+	SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
+	context->SetDimensions(Rml::Vector2i(pixel_w, pixel_h));
+	context->SetDensityIndependentPixelRatio(SDL_GetWindowDisplayScale(data->window));
+	data->render_interface.SetViewport(pixel_w, pixel_h);
+#else
+	(void)context;
+#endif
 }
 
 void Backend::Shutdown()

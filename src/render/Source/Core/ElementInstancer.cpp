@@ -1,6 +1,7 @@
 #include "../../Include/RmlUi/Core/ElementInstancer.h"
 #include "../../Include/RmlUi/Core/ElementText.h"
 #include "ControlledLifetimeResource.h"
+#include "Elements/ElementSelectableText.h"
 #include "Pool.h"
 #include "XMLParseTools.h"
 
@@ -16,15 +17,22 @@ struct ElementInstancerPools {
 };
 static ControlledLifetimeResource<ElementInstancerPools> element_instancer_pools;
 
-ElementPtr ElementInstancerElement::InstanceElement(Element* /*parent*/, const String& tag, const XMLAttributes& /*attributes*/)
+ElementPtr ElementInstancerElement::InstanceElement(Element* /*parent*/, const String& tag, const XMLAttributes& attributes)
 {
+	auto selectable_it = attributes.find("selectable");
+	if (selectable_it != attributes.end() && selectable_it->second.Get<String>() == "text")
+		return ElementPtr(new ElementSelectableText(tag));
+
 	Element* ptr = element_instancer_pools->pool_element.AllocateAndConstruct(tag);
 	return ElementPtr(ptr);
 }
 
 void ElementInstancerElement::ReleaseElement(Element* element)
 {
-	element_instancer_pools->pool_element.DestroyAndDeallocate(element);
+	if (rmlui_dynamic_cast<ElementSelectableText*>(element))
+		delete element;
+	else
+		element_instancer_pools->pool_element.DestroyAndDeallocate(element);
 }
 
 ElementInstancerElement::~ElementInstancerElement()

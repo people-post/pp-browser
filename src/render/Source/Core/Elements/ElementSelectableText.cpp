@@ -1,18 +1,16 @@
-#include "TextSelectionController.h"
+#include "ElementSelectableText.h"
 
-#include "../../Include/RmlUi/Core/Context.h"
-#include "../../Include/RmlUi/Core/Core.h"
-#include "../../Include/RmlUi/Core/Element.h"
-#include "../../Include/RmlUi/Core/ElementDocument.h"
-#include "../../Include/RmlUi/Core/ElementText.h"
-#include "../../Include/RmlUi/Core/ElementUtilities.h"
-#include "../../Include/RmlUi/Core/FontEngineInterface.h"
-#include "../../Include/RmlUi/Core/Input.h"
-#include "../../Include/RmlUi/Core/MeshUtilities.h"
-#include "../../Include/RmlUi/Core/RenderManager.h"
-#include "../../Include/RmlUi/Core/SystemInterface.h"
-#include "../../Include/RmlUi/Core/StringUtilities.h"
+#include "../../../Include/RmlUi/Core/Context.h"
+#include "../../../Include/RmlUi/Core/Core.h"
+#include "../../../Include/RmlUi/Core/ElementText.h"
+#include "../../../Include/RmlUi/Core/ElementUtilities.h"
+#include "../../../Include/RmlUi/Core/FontEngineInterface.h"
+#include "../../../Include/RmlUi/Core/MeshUtilities.h"
+#include "../../../Include/RmlUi/Core/RenderManager.h"
+#include "../../../Include/RmlUi/Core/SystemInterface.h"
+#include "../../../Include/RmlUi/Core/StringUtilities.h"
 
+#include <algorithm>
 #include <limits>
 
 namespace Rml {
@@ -55,42 +53,47 @@ void GetLineFontMetrics(ElementText* text_element, float& ascent, float& descent
 	descent = float(Math::RoundUpToInteger(metrics.descent));
 }
 
+Vector<ElementSelectableText*>& GetInstances()
+{
+	static Vector<ElementSelectableText*> instances;
+	return instances;
+}
+
 } // namespace
 
-TextSelectionController::TextSelectionController(Context* context) : context(context) {}
+ElementSelectableText* ElementSelectableText::active_dragger = nullptr;
 
-bool TextSelectionController::IsSelectable(const Element* element) const
+ElementSelectableText::ElementSelectableText(const String& tag) : Element(tag)
 {
-	return element && element->GetAttribute<String>("selectable", "") == "text";
+	AddEventListener(EventId::Mousedown, this, true);
+	AddEventListener(EventId::Mouseup, this, true);
+	AddEventListener(EventId::Click, this, true);
+	RegisterInstance();
 }
 
-Element* TextSelectionController::FindSelectableRoot(Element* hover) const
+ElementSelectableText::~ElementSelectableText()
 {
-	for (Element* element = hover; element; element = element->GetParentNode())
-	{
-		if (IsSelectable(element))
-			return element;
-	}
-	return nullptr;
+	if (active_dragger == this)
+		active_dragger = nullptr;
+	UnregisterInstance();
+	RemoveEventListener(EventId::Mousedown, this, true);
+	RemoveEventListener(EventId::Mouseup, this, true);
+	RemoveEventListener(EventId::Click, this, true);
 }
 
-Element* TextSelectionController::FindInteractiveElement(Element* hover) const
+void ElementSelectableText::RegisterInstance()
 {
-	for (Element* current = hover; current; current = current->GetParentNode())
-	{
-		const String& tag = current->GetTagName();
-		if (tag == "input" || tag == "textarea" || tag == "select" || tag == "button" || tag == "a")
-			return current;
-		if (current->HasAttribute("data-event-click"))
-			return current;
-	}
-	return nullptr;
+	GetInstances().push_back(this);
 }
 
-bool TextSelectionController::IsFormControl(const Element* element) const
+void ElementSelectableText::UnregisterInstance()
 {
-	if (!element)
-		return false;
+	auto& instances = GetInstances();
+	instances.erase(std::remove(instances.begin(), instances.end(), this), instances.end());
+}
+
+bool ElementSelectableText::IsInteractiveElement(const Element* element)
+{
 	for (const Element* current = element; current; current = current->GetParentNode())
 	{
 		const String& tag = current->GetTagName();
@@ -102,32 +105,27 @@ bool TextSelectionController::IsFormControl(const Element* element) const
 	return false;
 }
 
-bool TextSelectionController::ShouldPreventFocus(Element* hover) const
+void ElementSelectableText::ClearSelection()
 {
-	return FindSelectableRoot(hover) != nullptr && !IsFormControl(hover);
+	selection_geometry = {};
+	flat_text.clear();
+	segments.clear();
+	lines.clear();
+	reference_text = nullptr;
+	anchor_index = 0;
+	focus_index = 0;
+	dragging = false;
+	suppress_click = false;
+	if (active_dragger == this)
+		active_dragger = nullptr;
 }
 
-bool TextSelectionController::ShouldSuppressClick() const
+bool ElementSelectableText::HasNonEmptySelection() const
 {
-	return dragging && anchor_index != focus_index;
+	return anchor_index != focus_index && !flat_text.empty();
 }
 
-bool TextSelectionController::IsDragging() const
-{
-	return dragging;
-}
-
-bool TextSelectionController::EnsureContainerAlive()
-{
-	if (!container || !container->GetOwnerDocument())
-	{
-		ClearSelection();
-		return false;
-	}
-	return true;
-}
-
-void TextSelectionController::CollectTextFromContainer(Element* element, String& out, ElementText*& first_text)
+void ElementSelectableText::CollectTextFromContainer(Element* element, String& out, ElementText*& first_text)
 {
 	for (int i = 0; i < element->GetNumChildren(); ++i)
 	{
@@ -154,36 +152,20 @@ void TextSelectionController::CollectTextFromContainer(Element* element, String&
 	}
 }
 
-void TextSelectionController::RefreshTextFromContainer()
+void ElementSelectableText::RefreshTextFromContainer()
 {
-	if (!container)
-		return;
-
 	reference_text = nullptr;
 	flat_text.clear();
 	segments.clear();
-	CollectTextFromContainer(container, flat_text, reference_text);
+	CollectTextFromContainer(this, flat_text, reference_text);
 	while (!flat_text.empty() && flat_text.back() == '\n')
 		flat_text.pop_back();
 }
 
-void TextSelectionController::ClearSelection()
-{
-	selection_geometry = {};
-	container = nullptr;
-	reference_text = nullptr;
-	flat_text.clear();
-	segments.clear();
-	lines.clear();
-	anchor_index = 0;
-	focus_index = 0;
-	dragging = false;
-}
-
-void TextSelectionController::RebuildLayout()
+void ElementSelectableText::RebuildLayout()
 {
 	lines.clear();
-	if (!container || flat_text.empty() || !reference_text)
+	if (flat_text.empty() || !reference_text)
 		return;
 
 	for (const TextSegment& segment : segments)
@@ -238,7 +220,7 @@ void TextSelectionController::RebuildLayout()
 	}
 }
 
-int TextSelectionController::HitTest(Vector2f absolute_mouse) const
+int ElementSelectableText::HitTest(Vector2f absolute_mouse) const
 {
 	if (lines.empty())
 		return 0;
@@ -287,7 +269,7 @@ int TextSelectionController::HitTest(Vector2f absolute_mouse) const
 	return best_index;
 }
 
-String TextSelectionController::GetSelectedText() const
+String ElementSelectableText::GetSelectedText() const
 {
 	const int start = Math::Min(anchor_index, focus_index);
 	const int end = Math::Max(anchor_index, focus_index);
@@ -296,20 +278,17 @@ String TextSelectionController::GetSelectedText() const
 	return flat_text.substr(start, end - start);
 }
 
-void TextSelectionController::BuildSelectionGeometry()
+void ElementSelectableText::BuildSelectionGeometry()
 {
-	if (!EnsureContainerAlive())
-		return;
-
 	const int start = Math::Min(anchor_index, focus_index);
 	const int end = Math::Max(anchor_index, focus_index);
-	if (start >= end)
+	if (start >= end || !GetOwnerDocument())
 	{
 		selection_geometry = {};
 		return;
 	}
 
-	RenderManager* render_manager = container->GetRenderManager();
+	RenderManager* render_manager = GetRenderManager();
 	if (!render_manager)
 		return;
 
@@ -345,26 +324,15 @@ void TextSelectionController::BuildSelectionGeometry()
 		selection_geometry = render_manager->MakeGeometry(std::move(mesh));
 }
 
-void TextSelectionController::OnMouseDown(Element* hover, Vector2i mouse_position, int key_modifier_state)
+void ElementSelectableText::BeginSelection(Vector2i mouse_position)
 {
-	(void)key_modifier_state;
-
-	if (IsFormControl(hover))
+	for (ElementSelectableText* other : GetInstances())
 	{
-		ClearSelection();
-		return;
+		if (other != this)
+			other->ClearSelection();
 	}
 
-	Element* selectable = FindSelectableRoot(hover);
-	if (!selectable)
-	{
-		ClearSelection();
-		return;
-	}
-
-	container = selectable;
 	RefreshTextFromContainer();
-
 	if (flat_text.empty() || !reference_text)
 	{
 		ClearSelection();
@@ -376,12 +344,14 @@ void TextSelectionController::OnMouseDown(Element* hover, Vector2i mouse_positio
 	anchor_index = index;
 	focus_index = index;
 	dragging = true;
+	suppress_click = false;
+	active_dragger = this;
 	BuildSelectionGeometry();
 }
 
-void TextSelectionController::OnMouseMove(Vector2i mouse_position)
+void ElementSelectableText::ExtendSelection(Vector2i mouse_position)
 {
-	if (!dragging || !EnsureContainerAlive())
+	if (!dragging || !GetOwnerDocument())
 		return;
 
 	RebuildLayout();
@@ -389,9 +359,9 @@ void TextSelectionController::OnMouseMove(Vector2i mouse_position)
 	BuildSelectionGeometry();
 }
 
-void TextSelectionController::OnMouseUp()
+void ElementSelectableText::EndSelection()
 {
-	if (dragging && EnsureContainerAlive())
+	if (dragging && GetOwnerDocument())
 	{
 		RefreshTextFromContainer();
 		if (flat_text.empty() || !reference_text)
@@ -401,30 +371,97 @@ void TextSelectionController::OnMouseUp()
 		}
 		RebuildLayout();
 		BuildSelectionGeometry();
+		suppress_click = (anchor_index != focus_index);
 	}
 	dragging = false;
+	if (active_dragger == this)
+		active_dragger = nullptr;
 }
 
-bool TextSelectionController::OnKeyDown(Input::KeyIdentifier key, int key_modifier_state)
+void ElementSelectableText::ProcessEvent(Event& event)
+{
+	Element* target = event.GetTargetElement();
+	if (!target || !Contains(target))
+		return;
+
+	if (event == EventId::Mousedown && event.GetPhase() == EventPhase::Capture)
+	{
+		if (IsInteractiveElement(target))
+		{
+			ClearSelection();
+			return;
+		}
+
+		const int mouse_x = static_cast<int>(event.GetParameter("mouse_x", 0.f));
+		const int mouse_y = static_cast<int>(event.GetParameter("mouse_y", 0.f));
+		BeginSelection(Vector2i(mouse_x, mouse_y));
+		return;
+	}
+
+	if (event == EventId::Mouseup && event.GetPhase() == EventPhase::Capture)
+	{
+		EndSelection();
+		return;
+	}
+
+	if (event == EventId::Click && event.GetPhase() == EventPhase::Capture && suppress_click && !IsInteractiveElement(target))
+		event.StopPropagation();
+}
+
+void ElementSelectableText::OnRender()
+{
+	if (selection_geometry)
+		selection_geometry.Render(Vector2f(0.f));
+}
+
+void ElementSelectableText::NotifyGlobalMouseMove(Vector2i mouse_position)
+{
+	if (active_dragger)
+		active_dragger->ExtendSelection(mouse_position);
+}
+
+bool ElementSelectableText::NotifyGlobalKeyDown(Input::KeyIdentifier key, int key_modifier_state)
 {
 	const bool ctrl = (key_modifier_state & Input::KM_CTRL) != 0;
 	if (!ctrl || key != Input::KI_C)
 		return false;
 
-	const String selected = GetSelectedText();
-	if (selected.empty())
-		return false;
-
-	if (SystemInterface* system = GetSystemInterface())
-		system->SetClipboardText(selected);
-	return true;
+	for (ElementSelectableText* instance : GetInstances())
+	{
+		if (!instance->GetOwnerDocument())
+			continue;
+		const String selected = instance->GetSelectedText();
+		if (selected.empty())
+			continue;
+		if (SystemInterface* system = GetSystemInterface())
+			system->SetClipboardText(selected);
+		return true;
+	}
+	return false;
 }
 
-void TextSelectionController::Render()
+bool ElementSelectableText::IsAnyDragging()
 {
-	if (!selection_geometry)
-		return;
-	selection_geometry.Render(Vector2f(0.f));
+	return active_dragger != nullptr;
+}
+
+void ElementSelectableText::ClearSelectionsUnlessContaining(Element* hover)
+{
+	if (hover)
+	{
+		for (Element* element = hover; element; element = element->GetParentNode())
+		{
+			if (auto* selectable = rmlui_dynamic_cast<ElementSelectableText*>(element))
+			{
+				if (!IsInteractiveElement(hover))
+					return;
+				break;
+			}
+		}
+	}
+
+	for (ElementSelectableText* instance : GetInstances())
+		instance->ClearSelection();
 }
 
 } // namespace Rml

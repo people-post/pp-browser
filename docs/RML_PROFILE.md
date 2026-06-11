@@ -20,7 +20,7 @@ AI-generated UI must follow this profile.
 
 ## Selectable text (pp-browser fork)
 
-Add `selectable="text"` on an element to enable drag-selection and Ctrl+C copy of its text content (handled by RmlUi `TextSelectionController`). Use `focus: none` on bubbles so the chat input keeps focus.
+Add `selectable="text"` on a static content container to enable drag-selection and Ctrl+C copy (`ElementSelectableText`). Use `focus: none` on bubbles so the chat input keeps focus. Place interactive controls outside selectable regions.
 
 ## Styling
 
@@ -57,7 +57,7 @@ For conversational replies (not full UI documents), respond with a single fenced
 | `heading` | `text`, `level` (1–3) | `<h1>`–`<h3>` |
 | `list` | `items` (array), `ordered` (bool) | `<ul>`/`<ol>` + `<li>` |
 | `code` | `text` | `<div class="code-block">` |
-| `button` | `label`, `message` | `<button class="chat-suggestion">` with `data-event-click="send_suggestion(...)"` |
+| `button` | `label`, `message` | `<button class="chat-suggestion">` in `suggestion-row` (outside selectable bubble) with `data-event-click="send_suggestion(...)"` |
 
 ### Rules
 

@@ -16,6 +16,10 @@ int main() {
 
   auto result = pbr::StructuredTextParser::ParseBlocksJson(valid);
   assert(result.ok);
+  assert(result.rml.find("assistant-message") == std::string::npos);
+  assert(result.rml.find("selectable=\"text\"") == std::string::npos);
+  assert(result.rml.find("<div class=\"stack\">") != std::string::npos);
+  assert(result.suggestions.empty());
   assert(result.rml.find("&lt;world&gt;") != std::string::npos);
   assert(result.rml.find("&amp;") != std::string::npos);
   assert(result.rml.find("&quot;") != std::string::npos);
@@ -48,9 +52,10 @@ int main() {
   })";
   auto button_result = pbr::StructuredTextParser::ParseBlocksJson(button_block);
   assert(button_result.ok);
-  assert(button_result.rml.find("class=\"chat-suggestion\"") != std::string::npos);
-  assert(button_result.rml.find("data-event-click=\"send_suggestion('It\\'s a \\\\test')\"") != std::string::npos);
-  assert(button_result.rml.find("&quot;hi&quot;") != std::string::npos);
+  assert(button_result.rml.empty());
+  assert(button_result.suggestions.size() == 1);
+  assert(button_result.suggestions[0].label == "Say \"hi\"");
+  assert(button_result.suggestions[0].message == "It's a \\test");
 
   const std::string button_missing_message = R"({"blocks":[{"type":"button","label":"Go"}]})";
   auto button_missing_message_result = pbr::StructuredTextParser::ParseBlocksJson(button_missing_message);
@@ -69,7 +74,11 @@ int main() {
   )";
   auto repaired_result = pbr::StructuredTextParser::ParseBlocksJson(missing_root_brace);
   assert(repaired_result.ok);
-  assert(repaired_result.rml.find("chat-suggestion") != std::string::npos);
+  assert(repaired_result.rml.find("<p>Hi</p>") != std::string::npos);
+  assert(repaired_result.rml.find("selectable=\"text\"") == std::string::npos);
+  assert(repaired_result.suggestions.size() == 1);
+  assert(repaired_result.suggestions[0].label == "More");
+  assert(repaired_result.suggestions[0].message == "Tell me more");
 
   std::cout << "structured_text_parser_test ok\n";
   return 0;

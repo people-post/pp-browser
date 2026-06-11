@@ -30,13 +30,16 @@ public:
   void Update();
   void Shutdown();
 
-  /// Returns false if the key was consumed (e.g. Enter sends the draft message).
-  static bool HandlePriorityKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier);
-
 private:
+  struct ChatSuggestion {
+    Rml::String label;
+    Rml::String message;
+  };
+
   struct ChatMessage {
     Rml::String role;
     Rml::String content_rml;
+    std::vector<ChatSuggestion> suggestions;
   };
 
   struct ChatState {
@@ -52,6 +55,11 @@ private:
     std::future<void> future;
   };
 
+  struct PendingReply {
+    std::string output;
+    bool from_llm = false;
+  };
+
   ChatDemo();
 
   static void SendMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -64,12 +72,11 @@ private:
   ChatState chat_;
   std::optional<LlmClient> llm_;
   std::unique_ptr<LlmJob> llm_job_;
+  std::optional<PendingReply> pending_reply_;
 };
 
 bool SetupChatDemo(Rml::Context* context, const AppConfig& config);
 void UpdateChatDemo();
 void ShutdownChatDemo();
-
-bool HandleChatPriorityKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier);
 
 } // namespace pbr

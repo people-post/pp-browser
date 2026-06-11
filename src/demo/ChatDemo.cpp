@@ -4,6 +4,7 @@
 #include "agent/PromptBuilder.h"
 #include "agent/StructuredTextParser.h"
 #include "app/Application.h"
+#include "app/InputCoordinator.h"
 #include "ui/DataModelHost.h"
 #include "ui/DocumentLoader.h"
 
@@ -46,14 +47,13 @@ Rml::String UserMessageRml(const std::string& text) {
                          .c_str());
 }
 
-Rml::String AssistantMessageRml(const std::string& rml) {
-  return Rml::String(("<div class=\"bubble bubble-assistant\" selectable=\"text\">" + rml + "</div>").c_str());
+Rml::String AssistantBubbleRml(const std::string& rml) {
+  // Parser emits bubble inner content only; suggestion buttons bind via data-for in chat_dialog.rml.
+  return Rml::String(rml.c_str());
 }
 
 Rml::String ErrorMessageRml(const std::string& message) {
-  return Rml::String(("<div class=\"bubble bubble-assistant error\" selectable=\"text\"><p>" +
-                      StructuredTextParser::EscapeText(message) + "</p></div>")
-                         .c_str());
+  return Rml::String(("<p class=\"error\">" + StructuredTextParser::EscapeText(message) + "</p>").c_str());
 }
 
 std::string MockAssistantRespond(const std::string& query) {
@@ -160,13 +160,14 @@ void ChatDemo::SendUserText(const std::string& text) {
     return;
   }
 
-  chat_.messages.push_back({Rml::String("user"), UserMessageRml(trimmed)});
+  chat_.messages.push_back({Rml::String("user"), UserMessageRml(trimmed), {}});
   chat_.loading = true;
   DirtyChat();
 
   if (!llm_) {
     log().debug << "Using mock assistant response";
-    FinishAssistantReply(MockAssistantRespond(trimmed), false);
+    // Defer until Update() so the click event finishes before the message list rebuilds.
+    pending_reply_ = PendingReply{MockAssistantRespond(trimmed), false};
     return;
   }
 
@@ -194,9 +195,14 @@ void ChatDemo::FinishAssistantReply(const std::string& raw_output, bool from_llm
   if (!parsed.ok) {
     log().warning << "Failed to parse assistant reply: " << parsed.error;
     log().warning << "AI response: " << raw_output;
-    chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(parsed.error)});
+    chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(parsed.error), {}});
   } else {
-    chat_.messages.push_back({Rml::String("assistant"), AssistantMessageRml(parsed.rml)});
+    std::vector<ChatSuggestion> suggestions;
+    suggestions.reserve(parsed.suggestions.size());
+    for (const ParsedSuggestion& suggestion : parsed.suggestions) {
+      suggestions.push_back({Rml::String(suggestion.label.c_str()), Rml::String(suggestion.message.c_str())});
+    }
+    chat_.messages.push_back({Rml::String("assistant"), AssistantBubbleRml(parsed.rml), std::move(suggestions)});
   }
   chat_.loading = false;
   DirtyChat();
@@ -208,16 +214,41 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   }
 
   chat_ = {};
+  pending_reply_.reset();
   llm_job_.reset();
   llm_.emplace(config.llm);
   log().info << "Chat demo initialized (model: " << config.llm.model << ")";
 
   DataModelHost::Instance().Clear();
 
+  const auto register_enter_send = [this](Rml::Input::KeyIdentifier key) {
+    InputCoordinator::Instance().Register(KeyBinding{
+        .key = key,
+        .forbidden_modifiers = Rml::Input::KM_SHIFT,
+        .when = [](Rml::Context* ctx) {
+          Rml::Element* focus = ctx ? ctx->GetFocusElement() : nullptr;
+          return focus && focus->GetId() == "draft-input";
+        },
+        .action = [this]() {
+          OnSendMessage();
+          return false;
+        },
+        .priority = 50,
+    });
+  };
+  register_enter_send(Rml::Input::KI_RETURN);
+  register_enter_send(Rml::Input::KI_NUMPADENTER);
+
   if (!DataModelHost::Instance().Register(context, "chat", [](Rml::DataModelConstructor& ctor) {
+        if (auto sug_handle = ctor.RegisterStruct<ChatSuggestion>()) {
+          sug_handle.RegisterMember("label", &ChatSuggestion::label);
+          sug_handle.RegisterMember("message", &ChatSuggestion::message);
+        }
+        ctor.RegisterArray<std::vector<ChatSuggestion>>();
         if (auto msg_handle = ctor.RegisterStruct<ChatMessage>()) {
           msg_handle.RegisterMember("role", &ChatMessage::role);
           msg_handle.RegisterMember("content_rml", &ChatMessage::content_rml);
+          msg_handle.RegisterMember("suggestions", &ChatMessage::suggestions);
         }
         ctor.RegisterArray<std::vector<ChatMessage>>();
         ctor.Bind("draft", &ChatDemo::Instance().chat_.draft);
@@ -233,6 +264,12 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
 }
 
 void ChatDemo::Update() {
+  if (pending_reply_) {
+    PendingReply reply = std::move(*pending_reply_);
+    pending_reply_.reset();
+    FinishAssistantReply(reply.output, reply.from_llm);
+  }
+
   if (!llm_job_ || !chat_.loading) {
     return;
   }
@@ -254,7 +291,7 @@ void ChatDemo::Update() {
 
   if (error) {
     log().error << "LLM job error: " << *error;
-    chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(*error)});
+    chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(*error), {}});
     chat_.loading = false;
     DirtyChat();
     return;
@@ -267,6 +304,7 @@ void ChatDemo::Shutdown() {
   if (llm_job_ && llm_job_->future.valid()) {
     llm_job_->future.wait();
   }
+  pending_reply_.reset();
   llm_job_.reset();
   llm_.reset();
   chat_ = {};
@@ -282,32 +320,6 @@ void UpdateChatDemo() {
 
 void ShutdownChatDemo() {
   ChatDemo::Instance().Shutdown();
-}
-
-bool ChatDemo::HandlePriorityKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier) {
-  if (!context) {
-    return true;
-  }
-
-  if (key != Rml::Input::KI_RETURN && key != Rml::Input::KI_NUMPADENTER) {
-    return true;
-  }
-
-  if (key_modifier & Rml::Input::KM_SHIFT) {
-    return true;
-  }
-
-  Rml::Element* focus = context->GetFocusElement();
-  if (!focus || focus->GetId() != "draft-input") {
-    return true;
-  }
-
-  Instance().OnSendMessage();
-  return false;
-}
-
-bool HandleChatPriorityKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier) {
-  return ChatDemo::HandlePriorityKeyDown(context, key, key_modifier);
 }
 
 } // namespace pbr

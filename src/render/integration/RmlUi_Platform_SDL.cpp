@@ -192,12 +192,16 @@ bool RmlSDL::InputEventHandler(Rml::Context* context, SDL_Window* window, SDL_Ev
 	break;
 	case event_mouse_down:
 	{
+		const float pixel_density = GetPixelDensity(window);
+		context->ProcessMouseMove(int(ev.button.x * pixel_density), int(ev.button.y * pixel_density), GetKeyModifierState());
 		result = context->ProcessMouseButtonDown(ConvertMouseButton(ev.button.button), GetKeyModifierState());
 		SDL_CaptureMouse(rmlsdl_true);
 	}
 	break;
 	case event_mouse_up:
 	{
+		const float pixel_density = GetPixelDensity(window);
+		context->ProcessMouseMove(int(ev.button.x * pixel_density), int(ev.button.y * pixel_density), GetKeyModifierState());
 		SDL_CaptureMouse(rmlsdl_false);
 		result = context->ProcessMouseButtonUp(ConvertMouseButton(ev.button.button), GetKeyModifierState());
 	}

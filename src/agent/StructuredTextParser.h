@@ -1,12 +1,19 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace pbr {
+
+struct ParsedSuggestion {
+  std::string label;
+  std::string message;
+};
 
 struct ParseResult {
   bool ok = false;
   std::string rml;
+  std::vector<ParsedSuggestion> suggestions;
   std::string error;
 };
 

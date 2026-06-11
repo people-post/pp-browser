@@ -14,8 +14,8 @@
 #include "DataModel.h"
 #include "EventDispatcher.h"
 #include "PluginRegistry.h"
+#include "Elements/ElementSelectableText.h"
 #include "ScrollController.h"
-#include "TextSelectionController.h"
 #include "StreamFile.h"
 #include <algorithm>
 #include <clocale>
@@ -33,34 +33,6 @@ static constexpr float SCROLL_INERTIA_DELAY = 0.1f;
 static constexpr float TOUCH_MOVEMENT_DECAY_RATE = 5.0f;
 static constexpr float TOUCH_CLICK_MAX_DISTANCE = DOUBLE_CLICK_MAX_DIST; // [dp]
 
-static bool IsScrollbarRoot(const Element* element)
-{
-	if (!element)
-		return false;
-	const String& tag = element->GetTagName();
-	return tag == "scrollbarvertical" || tag == "scrollbarhorizontal" || tag == "scrollbarcorner";
-}
-
-static bool IsScrollbarElement(const Element* element)
-{
-	for (const Element* current = element; current; current = current->GetParentNode())
-	{
-		if (IsScrollbarRoot(current))
-			return true;
-	}
-	return false;
-}
-
-static Element* FindScrollbarRoot(Element* element)
-{
-	for (Element* current = element; current; current = current->GetParentNode())
-	{
-		if (IsScrollbarRoot(current))
-			return current;
-	}
-	return nullptr;
-}
-
 static String GetEffectiveCursor(Element* hover)
 {
 	for (Element* element = hover; element; element = element->GetParentNode())
@@ -76,22 +48,45 @@ static String GetEffectiveCursor(Element* hover)
 	return {};
 }
 
-/// When scrollbars overlap content, prefer selectable text for selection/focus.
-static Element* ResolveHoverForTextSelection(Context* context, TextSelectionController* text_selection, Vector2f point, Element* hover)
+/// Nearest clickable ancestor (button, form control, data-event-click).
+static Element* FindInteractiveElement(Element* hover)
 {
-	if (!hover || !IsScrollbarElement(hover))
-		return hover;
-
-	Element* scrollbar_root = FindScrollbarRoot(hover);
-	if (!scrollbar_root)
-		return hover;
-
-	Element* content = context->GetElementAtPoint(point, scrollbar_root);
-	if (content && text_selection->ShouldPreventFocus(content))
-		return content;
-
-	return hover;
+	for (Element* current = hover; current; current = current->GetParentNode())
+	{
+		const String& tag = current->GetTagName();
+		if (tag == "input" || tag == "textarea" || tag == "select" || tag == "button" || tag == "a")
+			return current;
+		if (current->HasAttribute("data-event-click"))
+			return current;
+	}
+	return nullptr;
 }
+
+/// Resolve mouseup click target; interactive controls with focus:none skip geometry re-test.
+static Element* ResolveClickTarget(Element* press_target, Vector2f mouse_point)
+{
+	if (!press_target)
+		return nullptr;
+	if (FindInteractiveElement(press_target))
+		return press_target;
+	if (press_target->IsPointWithinElement(mouse_point))
+		return press_target;
+	return nullptr;
+}
+
+#ifdef RMLUI_DEBUG
+static const char* ElementTagOrNull(Element* element)
+{
+	return element ? element->GetTagName().c_str() : "null";
+}
+
+static void LogPointerInteraction(const char* phase, Element* hover, Element* interactive, Element* active, bool suppress_click,
+	bool click_dispatched)
+{
+	Log::Message(Log::LT_DEBUG, "Pointer %s: hover=%s interactive=%s active=%s suppress_click=%d click=%d", phase, ElementTagOrNull(hover),
+		ElementTagOrNull(interactive), ElementTagOrNull(active), suppress_click ? 1 : 0, click_dispatched ? 1 : 0);
+}
+#endif
 
 static void DebugVerifyLocaleSetting()
 {
@@ -161,7 +156,6 @@ Context::Context(const String& name, RenderManager* render_manager, TextInputHan
 	enable_cursor = true;
 
 	scroll_controller = MakeUnique<ScrollController>();
-	text_selection_controller = MakeUnique<TextSelectionController>(this);
 }
 
 Context::~Context()
@@ -271,6 +265,11 @@ bool Context::Update()
 		}
 	}
 
+	// Data-bound views (e.g. chat message list) may add or move elements during Update(); refresh
+	// hover and cursor now that layout reflects the new DOM.
+	if (mouse_active)
+		UpdateHoverChain(mouse_position);
+
 	// Release any documents that were unloaded during the update.
 	ReleaseUnloadedDocuments();
 
@@ -284,8 +283,6 @@ bool Context::Render()
 	render_manager->PrepareRender(dimensions);
 
 	root->Render();
-
-	text_selection_controller->Render();
 
 	// Render the cursor proxy so that any attached drag clone will be rendered below the cursor.
 	if (drag_clone)
@@ -586,7 +583,7 @@ void Context::RemoveEventListener(const String& event, EventListener* listener, 
 
 bool Context::ProcessKeyDown(Input::KeyIdentifier key_identifier, int key_modifier_state)
 {
-	if (text_selection_controller->OnKeyDown(key_identifier, key_modifier_state))
+	if (ElementSelectableText::NotifyGlobalKeyDown(key_identifier, key_modifier_state))
 		return true;
 
 	// Generate the parameters for the key event.
@@ -664,7 +661,7 @@ bool Context::ProcessMouseMove(int x, int y, int key_modifier_state)
 		}
 	}
 
-	text_selection_controller->OnMouseMove(mouse_position);
+	ElementSelectableText::NotifyGlobalMouseMove(mouse_position);
 
 	return !IsMouseInteracting();
 }
@@ -685,6 +682,8 @@ static Element* FindFocusElement(Element* element)
 
 bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 {
+	mouse_active = true;
+
 	// Refresh hover before focus/selection handling so clicks after layout changes hit the right target.
 	UpdateHoverChain(mouse_position, key_modifier_state);
 
@@ -696,27 +695,21 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 
 	if (button_index == 0)
 	{
-		const Vector2f mouse_point(float(mouse_position.x), float(mouse_position.y));
-		Element* selection_hover = ResolveHoverForTextSelection(this, text_selection_controller.get(), mouse_point, hover);
+		ElementSelectableText::ClearSelectionsUnlessContaining(hover);
 
-		// Begin text selection before drag setup so scrollbar drags don't take priority.
-		text_selection_controller->OnMouseDown(selection_hover, mouse_position, key_modifier_state);
-
-		Element* interactive = text_selection_controller->FindInteractiveElement(hover);
-		const bool prevent_focus = text_selection_controller->ShouldPreventFocus(selection_hover);
+		Element* interactive = FindInteractiveElement(hover);
 
 		// Set the currently hovered element to focus if it isn't already the focus.
 		Element* new_focus = nullptr;
-		if (hover && !prevent_focus)
+		if (hover)
 		{
 			new_focus = FindFocusElement(hover);
 			if (new_focus && new_focus != focus && new_focus->GetComputedValues().focus() != Style::Focus::None)
 				new_focus->Focus();
 		}
 
-		// Interactive targets (e.g. buttons with focus:none inside selectable bubbles) must receive clicks
-		// even when they are not the focus element.
-		active = interactive ? interactive : (prevent_focus ? nullptr : new_focus);
+		// Interactive targets (e.g. buttons with focus:none) must receive clicks even when not the focus element.
+		active = interactive ? interactive : new_focus;
 
 		// Call 'onmousedown' on every item in the hover chain, and copy the hover chain to the active chain.
 		if (hover)
@@ -749,9 +742,10 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 
 		last_click_mouse_position = mouse_position;
 
+		active_chain.clear();
 		active_chain.insert(active_chain.end(), hover_chain.begin(), hover_chain.end());
 
-		if (propagate && !text_selection_controller->IsDragging())
+		if (propagate && !ElementSelectableText::IsAnyDragging())
 		{
 			// Traverse down the hierarchy of the newly focused element (if any), and see if we can begin dragging it.
 			drag_started = false;
@@ -769,11 +763,15 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 				break;
 			}
 		}
-		else if (text_selection_controller->IsDragging())
+		else if (ElementSelectableText::IsAnyDragging())
 		{
 			drag_started = false;
 			drag = nullptr;
 		}
+
+#ifdef RMLUI_DEBUG
+		LogPointerInteraction("mousedown", hover, interactive, active, false, false);
+#endif
 	}
 	else
 	{
@@ -814,25 +812,33 @@ bool Context::ProcessMouseButtonUp(int button_index, int key_modifier_state)
 	// Process primary click.
 	if (button_index == 0)
 	{
-		const bool suppress_click = text_selection_controller->ShouldSuppressClick();
+		UpdateHoverChain(mouse_position, key_modifier_state);
 
 		// The elements in the new hover chain have the 'onmouseup' event called on them.
 		if (hover)
 			hover->DispatchEvent(EventId::Mouseup, parameters);
 
-		// If the active element (the one that was being hovered over when the mouse button was pressed) is still being
-		// hovered over, we click it.
-		Element* interactive = text_selection_controller->FindInteractiveElement(hover);
-		const bool click_target_matches =
-			active && (active == FindFocusElement(hover) || (interactive && active == interactive));
-		Element* click_target = (!suppress_click && hover && click_target_matches) ? active : nullptr;
+		// Click the mousedown target. Interactive controls (buttons, data-event-click) must
+		// receive the click even when geometry drifts between mousedown and mouseup (e.g. after
+		// a layout pass in the same frame loop). Non-interactive targets still require geometry.
+		const Vector2f mouse_point(float(mouse_position.x), float(mouse_position.y));
+		Element* press_target = active;
+		Element* click_target = ResolveClickTarget(press_target, mouse_point);
 
 		// Reset before dispatching click. Handlers may rebuild the DOM (e.g. chat message list), destroying
 		// elements still referenced in active_chain; iterating them after dispatch is use-after-free.
 		ResetActiveChain();
 
-		if (click_target && click_target->GetOwnerDocument())
+		const bool click_dispatched = click_target && click_target->GetOwnerDocument();
+		if (click_dispatched)
 			click_target->DispatchEvent(EventId::Click, parameters);
+
+#ifdef RMLUI_DEBUG
+		LogPointerInteraction("mouseup", hover, FindInteractiveElement(hover), press_target, false, click_dispatched);
+#endif
+
+		// Click handlers may rebuild the DOM; refresh hover/cursor for the current mouse position.
+		ProcessMouseMove(mouse_position.x, mouse_position.y, key_modifier_state);
 
 		if (drag)
 		{
@@ -878,9 +884,6 @@ bool Context::ProcessMouseButtonUp(int button_index, int key_modifier_state)
 	// If we have autoscrolled while holding the middle mouse button, release the autoscroll mode now.
 	if (scroll_controller->HasAutoscrollMoved())
 		scroll_controller->Reset();
-
-	if (button_index == 0)
-		text_selection_controller->OnMouseUp();
 
 	return result;
 }
@@ -928,6 +931,8 @@ bool Context::ProcessMouseWheel(Vector2f wheel_delta, int key_modifier_state)
 bool Context::ProcessMouseLeave()
 {
 	mouse_active = false;
+
+	ResetActiveChain();
 
 	// Update the hover chain. Now that 'mouse_active' is disabled this will remove the hover state from all elements.
 	UpdateHoverChain(mouse_position);
@@ -996,11 +1001,7 @@ bool Context::ProcessTouchStart(const Touch& touch, int key_modifier_state)
 	state->scrolling_last_time = GetSystemInterface()->GetElapsedTime();
 
 	Element* touch_element = GetElementAtPoint(touch.position);
-	// Drag-selecting static text should not pan the scroll container underneath.
-	if (touch_element && text_selection_controller->ShouldPreventFocus(touch_element))
-		state->scroll_container = nullptr;
-	else
-		state->scroll_container = touch_element ? touch_element->GetClosestScrollableContainer() : nullptr;
+	state->scroll_container = touch_element ? touch_element->GetClosestScrollableContainer() : nullptr;
 
 	// reset any scrolling when we touch the element
 	if (state->scroll_container && scroll_controller->GetTarget() == state->scroll_container)
@@ -1024,7 +1025,7 @@ bool Context::ProcessTouchMove(const Touch& touch, int key_modifier_state)
 	{
 		const Vector2f delta = touch.position - state->last_position;
 
-		if (drag || text_selection_controller->IsDragging())
+		if (drag || ElementSelectableText::IsAnyDragging())
 		{
 			// Don't scroll and reset scrolling state when dragging any element (scrollbars and others)
 			// or drag-selecting static text inside a scroll container.
@@ -1373,7 +1374,7 @@ void Context::UpdateHoverChain(Vector2i old_mouse_position, int key_modifier_sta
 	GenerateKeyModifierEventParameters(drag_parameters, key_modifier_state);
 
 	// Send out drag events.
-	if (drag && !text_selection_controller->IsDragging())
+	if (drag && !ElementSelectableText::IsAnyDragging())
 	{
 		if (mouse_position != old_mouse_position)
 		{

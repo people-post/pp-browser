@@ -49,6 +49,7 @@ add_executable(pp-browser
   src/main.cpp
   src/app/Application.cpp
   src/app/Config.cpp
+  src/app/InputCoordinator.cpp
 )
 
 target_compile_definitions(pp-browser PRIVATE

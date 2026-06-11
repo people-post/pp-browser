@@ -13,7 +13,8 @@ Edit files under `src/render/` directly in pp-browser commits (except `src/rende
 **pp-browser fork patches (as of import):**
 
 - `CMakeLists.txt` — wrap `add_subdirectory("Samples")` in `if(RMLUI_SAMPLES)` (Samples tree excluded from hard fork)
-- `TextSelectionController` — selectable static text via `selectable="text"` attribute; integrated in `Context`
+- `ElementSelectableText` — selectable static text via `selectable="text"` on `<div>`; capture-phase listeners (not `Context`-integrated)
+- `Context` pointer/click — geometry-based click synthesis on mouseup (`active->IsPointWithinElement`); `FindInteractiveElement` routes clicks for `focus:none` buttons; post-layout hover refresh after data-bound DOM changes; UAF-safe `ResetActiveChain` before click dispatch
 - `UserAgentStyleSheet` — built-in baseline RCSS merged into every document (block layout for `p`, headings, lists, tables)
 - `ListMarker` — **workaround**: layout-time bullet/number injection (see limitations below)
 - `ResolveValueOr` / `FlexFormattingContext` / `BuildBoxWidth` / `GetShrinkToFitWidth` — percentage and auto width no longer collapse to 0px when the containing block is indefinite or zero-sized
@@ -44,8 +45,11 @@ Upstream RmlUi defaults every element to `display: inline` (`StyleSheetSpecifica
 
 pp-browser-owned integration code:
 
-- `src/render/integration/` — SDL3 + OpenGL3 backend copies
-- `src/app/` — application lifecycle
+- `src/render/integration/` — SDL3 + OpenGL3 backend copies (**compiled into the app**)
+- `src/render/Backends/` — upstream sample backends (**reference only**; not linked). Do not dual-edit `RmlUi_Platform_SDL.cpp` here; mirror changes in `integration/` if needed.
+- `src/app/` — application lifecycle and `InputCoordinator`
+
+See [INPUT.md](INPUT.md) for the full input architecture.
 
 ## License
 

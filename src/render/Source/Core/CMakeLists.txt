@@ -171,8 +171,6 @@ add_library(rmlui_core
 	RenderManagerAccess.h
 	ScrollController.cpp
 	ScrollController.h
-	TextSelectionController.cpp
-	TextSelectionController.h
 	Spritesheet.cpp
 	Stream.cpp
 	StreamFile.cpp

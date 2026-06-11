@@ -155,12 +155,21 @@ input, textarea, select {
   word-break: break-word;
 }
 
+.assistant-message {
+  display: block;
+}
+
 .bubble-assistant {
   display: inline-block;
   max-width: 680dp;
   background-color: #252538;
   border: 1dp #3a3a55;
   focus: none;
+}
+
+.suggestion-row {
+  display: block;
+  margin-top: 8dp;
 }
 
 .bubble-assistant ul,
@@ -227,12 +236,12 @@ input, textarea, select {
   white-space: pre-wrap;
 }
 
-.bubble-assistant .chat-suggestion {
+.suggestion-row .chat-suggestion {
   display: inline-block;
   width: auto;
   font-size: 13dp;
   padding: 6dp 12dp;
-  margin-top: 4dp;
+  margin-top: 0;
   margin-right: 8dp;
   margin-bottom: 4dp;
   border-radius: 16dp;
@@ -242,6 +251,6 @@ input, textarea, select {
   focus: none;
 }
 
-.bubble-assistant .chat-suggestion:hover {
+.suggestion-row .chat-suggestion:hover {
   background-color: #4a4a6a;
 }

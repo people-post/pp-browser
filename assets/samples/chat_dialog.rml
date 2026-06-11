@@ -12,7 +12,14 @@
     <div class="messages">
       <div data-for="msg : messages" class="message-group">
         <div class="message-row message-row-user" data-if="msg.role == 'user'" data-rml="msg.content_rml"></div>
-        <div class="message-row message-row-assistant" data-if="msg.role == 'assistant'" data-rml="msg.content_rml"></div>
+        <div class="message-row message-row-assistant" data-if="msg.role == 'assistant'">
+          <div class="assistant-message">
+            <div class="bubble bubble-assistant" selectable="text" data-rml="msg.content_rml"></div>
+            <div class="suggestion-row">
+              <button class="chat-suggestion" data-for="sug : msg.suggestions" data-attr-message="sug.message" data-event-click="send_suggestion(sug.message)">{{sug.label}}</button>
+            </div>
+          </div>
+        </div>
       </div>
       <p class="muted thinking" data-if="loading">Thinking...</p>
     </div>

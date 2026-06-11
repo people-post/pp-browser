@@ -1,5 +1,6 @@
 #include "app/Application.h"
 
+#include "app/InputCoordinator.h"
 #include "bindings/ActionRouter.h"
 #include "demo/ChatDemo.h"
 #include "demo/SearchDemo.h"
@@ -29,19 +30,9 @@ std::string JoinPath(const std::string& base, const std::string& relative) {
   return path.lexically_normal().string();
 }
 
-bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key,
-                    int key_modifier, float /*native_dp_ratio*/, bool priority) {
-  if (!priority) {
-    return true;
-  }
-  if (key == Rml::Input::KI_ESCAPE) {
-    Backend::RequestExit();
-    return false;
-  }
-  if (!HandleChatPriorityKeyDown(context, key, key_modifier)) {
-    return false;
-  }
-  return true;
+bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier,
+                    float /*native_dp_ratio*/, bool priority) {
+  return InputCoordinator::Instance().ProcessKeyDown(context, key, key_modifier, priority);
 }
 
 } // namespace
@@ -100,6 +91,18 @@ bool Application::Initialize(const char* window_title, int width, int height, De
     Backend::Shutdown();
     return false;
   }
+
+  Backend::SyncContext(context);
+
+  InputCoordinator::Instance().Clear();
+  InputCoordinator::Instance().Register(KeyBinding{
+      .key = Rml::Input::KI_ESCAPE,
+      .action = []() {
+        Backend::RequestExit();
+        return false;
+      },
+      .priority = 100,
+  });
 
   ActionRouter::Instance().Attach(context);
   if (demo == DemoMode::Search) {
