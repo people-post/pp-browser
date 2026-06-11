@@ -12,6 +12,8 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 include(dependencies)
+include(Progress)
+pp_configure_status("Configuring in-tree RmlUi (src/render)...")
 
 # Hard-forked RmlUi (src/render/)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
@@ -22,6 +24,7 @@ set(RMLUI_SVG_PLUGIN OFF CACHE BOOL "" FORCE)
 set(RMLUI_LUA_BINDINGS OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(src/render EXCLUDE_FROM_ALL)
+pp_configure_status("RmlUi configured; setting up pp-browser targets...")
 
 set(PP_BROWSER_BACKEND_SOURCES
   src/render/integration/RmlUi_Platform_SDL.cpp
@@ -98,8 +101,10 @@ target_sources(pp-browser PRIVATE
 
 target_link_libraries(pp-browser PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
 
+pp_configure_status("Configuring tests...")
 enable_testing()
 add_subdirectory(tests)
+pp_configure_status("Configure step complete")
 
 install(TARGETS pp-browser RUNTIME DESTINATION bin)
 install(DIRECTORY assets/ DESTINATION share/pp-browser/assets)

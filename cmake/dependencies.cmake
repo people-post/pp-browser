@@ -1,4 +1,5 @@
 include(FetchContent)
+include(Progress)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
@@ -114,6 +115,7 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(SDL3)
+pp_configure_status("SDL3 configured; starting SDL3_image...")
 
 set(SDL3IMAGE_AVIF OFF CACHE BOOL "" FORCE)
 set(SDL3IMAGE_BMP ON CACHE BOOL "" FORCE)
@@ -127,6 +129,7 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(SDL3_image)
+pp_configure_status("SDL3_image configured; finishing dependency setup...")
 
 if(TARGET SDL3::SDL3-static)
   set(PP_BROWSER_SDL3_TARGET SDL3::SDL3-static)
@@ -155,3 +158,5 @@ if(NOT TARGET SDL_image::SDL_image)
   add_library(SDL_image::SDL_image ALIAS SDL_image_alias)
   target_link_libraries(SDL_image_alias INTERFACE ${PP_BROWSER_SDL3_IMAGE_TARGET})
 endif()
+
+pp_configure_status("All FetchContent dependencies ready")
