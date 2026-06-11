@@ -187,9 +187,19 @@ void WidgetScroll::FormatElements(const Vector2f containing_block, float slider_
 		? (parent_box.GetCumulativeEdge(BoxArea::Content, BoxEdge::Top) + parent_box.GetCumulativeEdge(BoxArea::Content, BoxEdge::Bottom))
 		: (parent_box.GetCumulativeEdge(BoxArea::Content, BoxEdge::Left) + parent_box.GetCumulativeEdge(BoxArea::Content, BoxEdge::Right));
 
-	// Set the length of the slider.
+	// Set the length of the slider. Clamp the cross-axis so hit-testing matches the painted thumb.
 	Vector2f content = parent_box.GetSize();
 	content[length_axis] = slider_length;
+	if (orientation == VERTICAL)
+	{
+		if (content.x <= 0.f || content.x > containing_block.x)
+			content.x = 16.f;
+	}
+	else
+	{
+		if (content.y <= 0.f || content.y > containing_block.y)
+			content.y = 16.f;
+	}
 	parent_box.SetContent(content);
 	// And set it on the slider element!
 	parent->SetBox(parent_box);

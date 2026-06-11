@@ -21,6 +21,8 @@ public:
 
 	/// Extends drag-select when the pointer moves outside this element (called from Context).
 	static void NotifyGlobalMouseMove(Vector2i mouse_position);
+	/// Ends drag-select when the pointer is released anywhere (called from Context).
+	static void NotifyGlobalMouseUp();
 	/// Ctrl+C copy when focus is elsewhere (called from Context before focus keydown).
 	static bool NotifyGlobalKeyDown(Input::KeyIdentifier key, int key_modifier_state);
 	/// True while any selectable region is drag-selecting (blocks RmlUi element drag).

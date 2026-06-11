@@ -48,6 +48,50 @@ static String GetEffectiveCursor(Element* hover)
 	return {};
 }
 
+static bool IsScrollbarRoot(const Element* element)
+{
+	if (!element)
+		return false;
+	const String& tag = element->GetTagName();
+	return tag == "scrollbarvertical" || tag == "scrollbarhorizontal" || tag == "scrollbarcorner";
+}
+
+static bool IsScrollbarElement(const Element* element)
+{
+	for (const Element* current = element; current; current = current->GetParentNode())
+	{
+		if (IsScrollbarRoot(current))
+			return true;
+	}
+	return false;
+}
+
+static Element* FindScrollbarRoot(Element* element)
+{
+	for (Element* current = element; current; current = current->GetParentNode())
+	{
+		if (IsScrollbarRoot(current))
+			return current;
+	}
+	return nullptr;
+}
+
+/// When a scrollbar's layout box overlaps content, prefer the content under the pointer.
+static Element* PreferContentOverScrollbar(Context* context, Vector2f point, Element* hover)
+{
+	if (!hover || !IsScrollbarElement(hover))
+		return hover;
+
+	Element* scrollbar_root = FindScrollbarRoot(hover);
+	if (!scrollbar_root)
+		return hover;
+
+	if (Element* content = context->GetElementAtPoint(point, scrollbar_root))
+		return content;
+
+	return hover;
+}
+
 /// Nearest clickable ancestor (button, form control, data-event-click).
 static Element* FindInteractiveElement(Element* hover)
 {
@@ -59,18 +103,6 @@ static Element* FindInteractiveElement(Element* hover)
 		if (current->HasAttribute("data-event-click"))
 			return current;
 	}
-	return nullptr;
-}
-
-/// Resolve mouseup click target; interactive controls with focus:none skip geometry re-test.
-static Element* ResolveClickTarget(Element* press_target, Vector2f mouse_point)
-{
-	if (!press_target)
-		return nullptr;
-	if (FindInteractiveElement(press_target))
-		return press_target;
-	if (press_target->IsPointWithinElement(mouse_point))
-		return press_target;
 	return nullptr;
 }
 
@@ -680,6 +712,32 @@ static Element* FindFocusElement(Element* element)
 	return element;
 }
 
+/// Resolve mouseup click target.
+/// Non-focusable interactive controls (focus:none buttons, data-event-click) activate when press and release
+/// hit the same control. Focusable elements use classic RmlUi hover/focus matching.
+static Element* ResolveClickTarget(Element* press_target, Element* hover, Vector2f mouse_point)
+{
+	if (!press_target)
+		return nullptr;
+
+	Element* hover_interactive = hover ? FindInteractiveElement(hover) : nullptr;
+
+	if (Element* press_interactive = FindInteractiveElement(press_target))
+	{
+		if (hover_interactive == press_interactive)
+			return press_interactive;
+		return nullptr;
+	}
+
+	if (hover && press_target == FindFocusElement(hover))
+		return press_target;
+
+	if (press_target->IsPointWithinElement(mouse_point))
+		return press_target;
+
+	return nullptr;
+}
+
 bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 {
 	mouse_active = true;
@@ -818,12 +876,14 @@ bool Context::ProcessMouseButtonUp(int button_index, int key_modifier_state)
 		if (hover)
 			hover->DispatchEvent(EventId::Mouseup, parameters);
 
+		ElementSelectableText::NotifyGlobalMouseUp();
+
 		// Click the mousedown target. Interactive controls (buttons, data-event-click) must
 		// receive the click even when geometry drifts between mousedown and mouseup (e.g. after
 		// a layout pass in the same frame loop). Non-interactive targets still require geometry.
 		const Vector2f mouse_point(float(mouse_position.x), float(mouse_position.y));
 		Element* press_target = active;
-		Element* click_target = ResolveClickTarget(press_target, mouse_point);
+		Element* click_target = ResolveClickTarget(press_target, hover, mouse_point);
 
 		// Reset before dispatching click. Handlers may rebuild the DOM (e.g. chat message list), destroying
 		// elements still referenced in active_chain; iterating them after dispatch is use-after-free.
@@ -1398,6 +1458,7 @@ void Context::UpdateHoverChain(Vector2i old_mouse_position, int key_modifier_sta
 	}
 
 	hover = mouse_active ? GetElementAtPoint(position) : nullptr;
+	hover = PreferContentOverScrollbar(this, position, hover);
 
 	if (enable_cursor)
 	{
@@ -1545,7 +1606,7 @@ Element* Context::GetElementAtPoint(Vector2f point, const Element* ignore_elemen
 			within_element = clip_region.Contains(Vector2i(point));
 	}
 
-	if (within_element)
+	if (within_element && element->IsVisible())
 		return element;
 
 	return nullptr;

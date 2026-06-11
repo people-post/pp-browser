@@ -420,6 +420,12 @@ void ElementSelectableText::NotifyGlobalMouseMove(Vector2i mouse_position)
 		active_dragger->ExtendSelection(mouse_position);
 }
 
+void ElementSelectableText::NotifyGlobalMouseUp()
+{
+	if (active_dragger)
+		active_dragger->EndSelection();
+}
+
 bool ElementSelectableText::NotifyGlobalKeyDown(Input::KeyIdentifier key, int key_modifier_state)
 {
 	const bool ctrl = (key_modifier_state & Input::KM_CTRL) != 0;

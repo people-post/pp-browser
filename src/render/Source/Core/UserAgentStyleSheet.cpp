@@ -137,6 +137,17 @@ thead, tbody, tfoot
 {
 	display: table-row-group;
 }
+
+/* Scrollbar widgets (ElementScroll). Without explicit sizes the layout box can span the full
+   scroll container while only the thumb is drawn, stealing pointer hits from content. */
+scrollbarvertical
+{
+	width: 16dp;
+}
+scrollbarhorizontal
+{
+	height: 16dp;
+}
 )rcss";
 
 SharedPtr<StyleSheetContainer> user_agent_style_sheet;

@@ -523,8 +523,7 @@ bool DataViewFor::Update(DataModel& model)
 			Element* new_element = element->GetParentNode()->InsertBefore(std::move(new_element_ptr), element);
 			elements.push_back(new_element);
 
-			const String* rml_contents = RMLContents();
-			elements[i]->SetInnerRML(rml_contents ? *rml_contents : "");
+			elements[i]->SetInnerRML(GetTemplateInnerRml());
 
 			RMLUI_ASSERT(i < (int)elements.size());
 		}
@@ -553,22 +552,27 @@ void DataViewFor::Release()
 	delete this;
 }
 
-const String* DataViewFor::RMLContents() const
+String DataViewFor::GetTemplateInnerRml() const
 {
 	if (Element* element = GetElement())
 	{
-		if (Variant* attribute = element->GetAttribute("rmlui-inner-rml"))
+		if (const Variant* attribute = element->GetAttribute("rmlui-inner-rml"))
 		{
 			if (attribute->GetType() == Variant::STRING)
-				return &attribute->GetReference<String>();
+				return attribute->Get<String>();
 		}
-		Log::Message(Log::LT_WARNING, "Missing or invalid RML contents in data-for view on element %s", element->GetAddress().c_str());
+
+		const String inner_rml = element->GetInnerRML();
+		if (!inner_rml.empty())
+			return inner_rml;
+
+		Log::Message(Log::LT_WARNING, "Missing inner RML for data-for on element %s", element->GetAddress().c_str());
 	}
 	else
 	{
 		Log::Message(Log::LT_WARNING, "Invalid element in data-for view");
 	}
-	return nullptr;
+	return {};
 }
 
 DataViewAlias::DataViewAlias(Element* element) : DataView(element, 0) {}

@@ -135,7 +135,8 @@ protected:
 	void Release() override;
 
 private:
-	const String* RMLContents() const;
+	/// Inner markup for cloned children: `rmlui-inner-rml` attribute or serialized template children.
+	String GetTemplateInnerRml() const;
 
 	DataAddress container_address;
 	String iterator_name;
