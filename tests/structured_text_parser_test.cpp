@@ -60,6 +60,17 @@ int main() {
   auto button_empty_message_result = pbr::StructuredTextParser::ParseBlocksJson(button_empty_message);
   assert(!button_empty_message_result.ok);
 
+  // LLMs often omit the final closing brace on the root object.
+  const std::string missing_root_brace = R"({
+    "blocks": [
+      { "type": "paragraph", "text": "Hi" },
+      { "type": "button", "label": "More", "message": "Tell me more" }
+    ]
+  )";
+  auto repaired_result = pbr::StructuredTextParser::ParseBlocksJson(missing_root_brace);
+  assert(repaired_result.ok);
+  assert(repaired_result.rml.find("chat-suggestion") != std::string::npos);
+
   std::cout << "structured_text_parser_test ok\n";
   return 0;
 }

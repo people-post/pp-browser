@@ -66,6 +66,7 @@ NOT SUPPORTED
 RULES
 - One visual element per block: titles → heading, bullets → list, code → code, body copy → paragraph, follow-ups → button
 - text and items values are plain UTF-8 only
+- Emit valid JSON only: every { and [ must be closed; the root object must end with ]}
 - Do not wrap the response in HTML or markdown outside the json fence)";
 }
 

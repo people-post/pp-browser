@@ -74,12 +74,32 @@ Element* TextSelectionController::FindSelectableRoot(Element* hover) const
 	return nullptr;
 }
 
+Element* TextSelectionController::FindInteractiveElement(Element* hover) const
+{
+	for (Element* current = hover; current; current = current->GetParentNode())
+	{
+		const String& tag = current->GetTagName();
+		if (tag == "input" || tag == "textarea" || tag == "select" || tag == "button" || tag == "a")
+			return current;
+		if (current->HasAttribute("data-event-click"))
+			return current;
+	}
+	return nullptr;
+}
+
 bool TextSelectionController::IsFormControl(const Element* element) const
 {
 	if (!element)
 		return false;
-	const String& tag = element->GetTagName();
-	return tag == "input" || tag == "textarea" || tag == "select" || tag == "button";
+	for (const Element* current = element; current; current = current->GetParentNode())
+	{
+		const String& tag = current->GetTagName();
+		if (tag == "input" || tag == "textarea" || tag == "select" || tag == "button" || tag == "a")
+			return true;
+		if (current->HasAttribute("data-event-click"))
+			return true;
+	}
+	return false;
 }
 
 bool TextSelectionController::ShouldPreventFocus(Element* hover) const
@@ -90,6 +110,11 @@ bool TextSelectionController::ShouldPreventFocus(Element* hover) const
 bool TextSelectionController::ShouldSuppressClick() const
 {
 	return dragging && anchor_index != focus_index;
+}
+
+bool TextSelectionController::IsDragging() const
+{
+	return dragging;
 }
 
 bool TextSelectionController::EnsureContainerAlive()
@@ -325,7 +350,10 @@ void TextSelectionController::OnMouseDown(Element* hover, Vector2i mouse_positio
 	(void)key_modifier_state;
 
 	if (IsFormControl(hover))
+	{
+		ClearSelection();
 		return;
+	}
 
 	Element* selectable = FindSelectableRoot(hover);
 	if (!selectable)
@@ -356,6 +384,7 @@ void TextSelectionController::OnMouseMove(Vector2i mouse_position)
 	if (!dragging || !EnsureContainerAlive())
 		return;
 
+	RebuildLayout();
 	focus_index = HitTest(Vector2f(float(mouse_position.x), float(mouse_position.y)));
 	BuildSelectionGeometry();
 }

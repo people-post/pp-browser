@@ -24,6 +24,10 @@ public:
 	bool ShouldPreventFocus(Element* hover) const;
 	/// Drag-select should not also dispatch a click on mouse up.
 	bool ShouldSuppressClick() const;
+	/// True while the user is drag-selecting static text.
+	bool IsDragging() const;
+	/// Nearest clickable ancestor (button, form control, data-event-click).
+	Element* FindInteractiveElement(Element* hover) const;
 
 private:
 	struct TextSegment {

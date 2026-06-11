@@ -238,7 +238,8 @@ input, textarea, select {
   border-radius: 16dp;
   background-color: #3a3a55;
   color: #e8e8e8;
-  focus: auto;
+  cursor: pointer;
+  focus: none;
 }
 
 .bubble-assistant .chat-suggestion:hover {

@@ -1,6 +1,8 @@
 #include "agent/StructuredTextParser.h"
 
 #include <nlohmann/json.hpp>
+#include <algorithm>
+#include <cctype>
 #include <regex>
 #include <sstream>
 
@@ -44,6 +46,27 @@ std::string StructuredTextParser::EscapeExpressionString(const std::string& text
 }
 
 namespace {
+
+std::string TrimAsciiWhitespace(std::string text) {
+  const auto not_space = [](unsigned char c) { return !std::isspace(c); };
+  text.erase(text.begin(), std::find_if(text.begin(), text.end(), not_space));
+  text.erase(std::find_if(text.rbegin(), text.rend(), not_space).base(), text.end());
+  return text;
+}
+
+/// Close unbalanced `{`/`}` — common when models truncate the outer object.
+std::string BalanceJsonBraces(std::string json) {
+  int depth = 0;
+  for (char c : json) {
+    if (c == '{')
+      depth++;
+    else if (c == '}')
+      depth = std::max(0, depth - 1);
+  }
+  while (depth-- > 0)
+    json += '}';
+  return json;
+}
 
 ParseResult Fail(const std::string& message) {
   ParseResult result;
@@ -149,7 +172,13 @@ ParseResult RenderBlock(const nlohmann::json& block) {
 } // namespace
 
 ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
-  nlohmann::json doc = nlohmann::json::parse(json, nullptr, false);
+  const std::string trimmed = TrimAsciiWhitespace(json);
+  nlohmann::json doc = nlohmann::json::parse(trimmed, nullptr, false);
+  if (doc.is_discarded()) {
+    const std::string repaired = BalanceJsonBraces(trimmed);
+    if (repaired != trimmed)
+      doc = nlohmann::json::parse(repaired, nullptr, false);
+  }
   if (doc.is_discarded()) {
     return Fail("Invalid JSON");
   }
@@ -181,7 +210,7 @@ ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_outp
   if (!std::regex_search(llm_output, match, json_re)) {
     return Fail("No ```json block found in LLM output");
   }
-  return ParseBlocksJson(match[1].str());
+  return ParseBlocksJson(TrimAsciiWhitespace(match[1].str()));
 }
 
 } // namespace pbr
