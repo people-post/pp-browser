@@ -54,7 +54,8 @@ private:
 	void RefreshTextFromContainer();
 	void CollectTextFromContainer(Element* element, String& out, ElementText*& first_text);
 	void RebuildLayout();
-	int HitTest(Vector2f absolute_mouse) const;
+	Vector2f GetContentRenderOrigin();
+	int HitTest(Vector2f absolute_mouse);
 	String GetSelectedText() const;
 	void BuildSelectionGeometry();
 	bool HasNonEmptySelection() const;

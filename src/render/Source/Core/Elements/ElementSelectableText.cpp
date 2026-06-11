@@ -162,11 +162,18 @@ void ElementSelectableText::RefreshTextFromContainer()
 		flat_text.pop_back();
 }
 
+Vector2f ElementSelectableText::GetContentRenderOrigin()
+{
+	return GetAbsoluteOffset() - Vector2f(GetScrollLeft(), GetScrollTop());
+}
+
 void ElementSelectableText::RebuildLayout()
 {
 	lines.clear();
 	if (flat_text.empty() || !reference_text)
 		return;
+
+	const Vector2f render_origin = GetContentRenderOrigin();
 
 	for (const TextSegment& segment : segments)
 	{
@@ -178,7 +185,7 @@ void ElementSelectableText::RebuildLayout()
 		float descent = 0.f;
 		GetLineFontMetrics(text_element, ascent, descent);
 
-		const Vector2f text_origin = text_element->GetAbsoluteOffset();
+		const Vector2f text_origin = text_element->GetAbsoluteOffset() - render_origin;
 		int flat_cursor = segment.flat_begin;
 
 		const ElementText::LineList& layout_lines = text_element->GetLines();
@@ -220,10 +227,12 @@ void ElementSelectableText::RebuildLayout()
 	}
 }
 
-int ElementSelectableText::HitTest(Vector2f absolute_mouse) const
+int ElementSelectableText::HitTest(Vector2f absolute_mouse)
 {
 	if (lines.empty())
 		return 0;
+
+	const Vector2f local_mouse = absolute_mouse - GetContentRenderOrigin();
 
 	int best_index = 0;
 	float best_distance = Math::SquareRoot(std::numeric_limits<float>::max());
@@ -235,7 +244,7 @@ int ElementSelectableText::HitTest(Vector2f absolute_mouse) const
 
 		const float top = line.baseline.y - line.ascent;
 		const float bottom = line.baseline.y + line.descent;
-		if (absolute_mouse.y < top || absolute_mouse.y > bottom)
+		if (local_mouse.y < top || local_mouse.y > bottom)
 			continue;
 
 		const char* p_begin = flat_text.data() + line.begin;
@@ -247,16 +256,16 @@ int ElementSelectableText::HitTest(Vector2f absolute_mouse) const
 		{
 			const int offset = (int)it.offset();
 			const float width = float(ElementUtilities::GetStringWidth(line.text_element, StringView(p_begin, p_begin + offset)));
-			const float distance = Math::Absolute(width - (absolute_mouse.x - line.baseline.x));
+			const float distance = Math::Absolute(width - (local_mouse.x - line.baseline.x));
 			if (distance < best_distance)
 			{
 				best_distance = distance;
 				best_index = line.begin + offset;
 			}
-			if (width > absolute_mouse.x - line.baseline.x)
+			if (width > local_mouse.x - line.baseline.x)
 			{
-				const float left_distance = Math::Absolute(width - (absolute_mouse.x - line.baseline.x));
-				const float right_distance = Math::Absolute(prev_width - (absolute_mouse.x - line.baseline.x));
+				const float left_distance = Math::Absolute(width - (local_mouse.x - line.baseline.x));
+				const float right_distance = Math::Absolute(prev_width - (local_mouse.x - line.baseline.x));
 				return line.begin + (left_distance < right_distance ? prev_offset : offset);
 			}
 			prev_offset = offset;
@@ -411,7 +420,7 @@ void ElementSelectableText::ProcessEvent(Event& event)
 void ElementSelectableText::OnRender()
 {
 	if (selection_geometry)
-		selection_geometry.Render(Vector2f(0.f));
+		selection_geometry.Render(GetContentRenderOrigin());
 }
 
 void ElementSelectableText::NotifyGlobalMouseMove(Vector2i mouse_position)
