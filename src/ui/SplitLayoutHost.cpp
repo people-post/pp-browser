@@ -10,6 +10,7 @@
 #include <SDL3/SDL.h>
 
 #include <cmath>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -21,6 +22,38 @@ std::string RatioStyle(float ratio) {
   std::ostringstream out;
   out << "flex-basis: " << static_cast<int>(ratio * 100.0f) << "%;";
   return out.str();
+}
+
+std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index = 0) {
+  if (args.size() <= index) {
+    return std::nullopt;
+  }
+  const Rml::Variant& value = args[index];
+  switch (value.GetType()) {
+  case Rml::Variant::INT:
+    return value.Get<int>();
+  case Rml::Variant::INT64:
+    return static_cast<int>(value.Get<int64_t>());
+  case Rml::Variant::FLOAT:
+    return static_cast<int>(value.Get<float>());
+  case Rml::Variant::DOUBLE:
+    return static_cast<int>(value.Get<double>());
+  default:
+    return std::nullopt;
+  }
+}
+
+float VariantAsFloat(const Rml::Variant& value) {
+  switch (value.GetType()) {
+  case Rml::Variant::INT:
+    return static_cast<float>(value.Get<int>());
+  case Rml::Variant::FLOAT:
+    return value.Get<float>();
+  case Rml::Variant::DOUBLE:
+    return static_cast<float>(value.Get<double>());
+  default:
+    return 0.0f;
+  }
 }
 
 const SplitTree::Node* FindBranch(const SplitTree::Node* node, int gutter_id) {
@@ -67,7 +100,7 @@ std::string SplitLayoutHost::SerializeNode(const SplitTree::Node* node) const {
   if (node->type == SplitTree::Node::Type::Leaf) {
     std::ostringstream out;
     out << "<div class=\"panel-leaf\" id=\"panel-" << node->panel_id << "\">";
-    out << "<div class=\"panel-header\">";
+    out << "<div class=\"panel-header\" data-model=\"shell\">";
     out << "<span class=\"panel-title\">" << PanelKindTitle(node->kind) << "</span>";
     out << "<button class=\"panel-btn\" data-event-click=\"split_panel_h(" << node->panel_id << ")\">|</button>";
     out << "<button class=\"panel-btn\" data-event-click=\"split_panel_v(" << node->panel_id << ")\">-</button>";
@@ -87,7 +120,7 @@ std::string SplitLayoutHost::SerializeNode(const SplitTree::Node* node) const {
   out << "<div class=\"split-pane\" style=\"" << RatioStyle(node->ratio) << "\">" << SerializeNode(node->first.get())
       << "</div>";
   out << "<div class=\"split-gutter " << gutter_class << "\" id=\"gutter-" << node->gutter_id
-      << "\" data-event-mousedown=\"gutter_drag_start(" << node->gutter_id << ")\"></div>";
+      << "\" data-model=\"shell\" data-event-mousedown=\"gutter_drag_start(" << node->gutter_id << ")\"></div>";
   out << "<div class=\"split-pane\" style=\"flex: 1\">" << SerializeNode(node->second.get()) << "</div>";
   out << "</div>";
   return out.str();
@@ -115,29 +148,26 @@ bool SplitLayoutHost::ApplyPanelAction(bool (SplitTree::*action)(int), int panel
 
 void SplitLayoutHost::SplitPanelHCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                         const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::INT) {
-    return;
+  if (const std::optional<int> panel_id = EventArgAsInt(args)) {
+    Instance().ApplyPanelAction(&SplitTree::SplitHorizontal, *panel_id);
   }
-  Instance().ApplyPanelAction(&SplitTree::SplitHorizontal, args[0].Get<int>());
 }
 
 void SplitLayoutHost::SplitPanelVCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                         const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::INT) {
-    return;
+  if (const std::optional<int> panel_id = EventArgAsInt(args)) {
+    Instance().ApplyPanelAction(&SplitTree::SplitVertical, *panel_id);
   }
-  Instance().ApplyPanelAction(&SplitTree::SplitVertical, args[0].Get<int>());
 }
 
 void SplitLayoutHost::ClosePanelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                          const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::INT) {
-    return;
+  if (const std::optional<int> panel_id = EventArgAsInt(args)) {
+    Instance().ApplyPanelAction(&SplitTree::Close, *panel_id);
   }
-  Instance().ApplyPanelAction(&SplitTree::Close, args[0].Get<int>());
 }
 
-void SplitLayoutHost::BeginGutterDrag(int gutter_id, Rml::Element* gutter_element) {
+void SplitLayoutHost::BeginGutterDrag(int gutter_id, Rml::Element* gutter_element, Rml::Event& event) {
   const SplitTree::Node* branch = FindBranch(tree_.Root(), gutter_id);
   if (!branch || !gutter_element) {
     return;
@@ -148,9 +178,20 @@ void SplitLayoutHost::BeginGutterDrag(int gutter_id, Rml::Element* gutter_elemen
     return;
   }
 
-  float mouse_x = 0.0f;
-  float mouse_y = 0.0f;
-  SDL_GetMouseState(&mouse_x, &mouse_y);
+  float start_mouse = 0.0f;
+  const auto& parameters = event.GetParameters();
+  const auto mouse_x_it = parameters.find("mouse_x");
+  const auto mouse_y_it = parameters.find("mouse_y");
+  if (mouse_x_it != parameters.end() && mouse_y_it != parameters.end()) {
+    start_mouse = branch->orientation == SplitOrientation::Horizontal ? VariantAsFloat(mouse_x_it->second)
+                                                                      : VariantAsFloat(mouse_y_it->second);
+  } else {
+    float mouse_x = 0.0f;
+    float mouse_y = 0.0f;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+    const float dp_ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.0f;
+    start_mouse = branch->orientation == SplitOrientation::Horizontal ? mouse_x * dp_ratio : mouse_y * dp_ratio;
+  }
 
   drag_.active = true;
   drag_.gutter_id = gutter_id;
@@ -158,11 +199,10 @@ void SplitLayoutHost::BeginGutterDrag(int gutter_id, Rml::Element* gutter_elemen
   drag_.orientation = branch->orientation;
   if (branch->orientation == SplitOrientation::Horizontal) {
     drag_.branch_size = branch_element->GetClientWidth();
-    drag_.start_mouse = mouse_x;
   } else {
     drag_.branch_size = branch_element->GetClientHeight();
-    drag_.start_mouse = mouse_y;
   }
+  drag_.start_mouse = start_mouse;
   if (drag_.branch_size <= 1.0f) {
     drag_.branch_size = 1.0f;
   }
@@ -170,10 +210,9 @@ void SplitLayoutHost::BeginGutterDrag(int gutter_id, Rml::Element* gutter_elemen
 
 void SplitLayoutHost::GutterDragStartCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
                                               const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::INT) {
-    return;
+  if (const std::optional<int> gutter_id = EventArgAsInt(args)) {
+    Instance().BeginGutterDrag(*gutter_id, ev.GetTargetElement(), ev);
   }
-  Instance().BeginGutterDrag(args[0].Get<int>(), ev.GetTargetElement());
 }
 
 void SplitLayoutHost::EndGutterDrag() {
@@ -196,7 +235,15 @@ void SplitLayoutHost::Update(Rml::Context* context) {
 
   float mouse_x = 0.0f;
   float mouse_y = 0.0f;
-  SDL_GetMouseState(&mouse_x, &mouse_y);
+  const SDL_MouseButtonFlags buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
+  if (!(buttons & SDL_BUTTON_LMASK)) {
+    EndGutterDrag();
+    return;
+  }
+
+  const float dp_ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.0f;
+  mouse_x *= dp_ratio;
+  mouse_y *= dp_ratio;
   const float current_mouse = drag_.orientation == SplitOrientation::Horizontal ? mouse_x : mouse_y;
   const float delta = current_mouse - drag_.start_mouse;
   const float new_ratio = drag_.start_ratio + (delta / drag_.branch_size);

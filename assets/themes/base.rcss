@@ -376,6 +376,7 @@ input, textarea, select {
 .split-gutter {
   flex-shrink: 0;
   background-color: #3a3a55;
+  focus: none;
 }
 
 .split-gutter-v {
@@ -422,6 +423,7 @@ input, textarea, select {
   margin-bottom: 0;
   font-size: 12dp;
   background-color: #3a3a55;
+  focus: none;
 }
 
 .panel-body {

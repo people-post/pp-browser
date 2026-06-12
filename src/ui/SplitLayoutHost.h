@@ -37,7 +37,7 @@ private:
   std::string SerializeNode(const SplitTree::Node* node) const;
   Rml::Element* SplitRoot() const;
   bool ApplyPanelAction(bool (SplitTree::*action)(int), int panel_id);
-  void BeginGutterDrag(int gutter_id, Rml::Element* gutter_element);
+  void BeginGutterDrag(int gutter_id, Rml::Element* gutter_element, Rml::Event& event);
   void EndGutterDrag();
 
   Rml::Context* context_ = nullptr;
