@@ -381,12 +381,12 @@ input, textarea, select {
 
 .split-gutter-v {
   width: 5dp;
-  cursor: ew-resize;
+  cursor: col-resize;
 }
 
 .split-gutter-h {
   height: 5dp;
-  cursor: ns-resize;
+  cursor: row-resize;
 }
 
 .panel-leaf {

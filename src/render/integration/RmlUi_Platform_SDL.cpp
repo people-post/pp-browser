@@ -17,6 +17,8 @@ SystemInterface_SDL::SystemInterface_SDL()
 	cursor_move = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_MOVE);
 	cursor_pointer = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER);
 	cursor_resize = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NWSE_RESIZE);
+	cursor_ew_resize = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
+	cursor_ns_resize = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NS_RESIZE);
 	cursor_cross = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_CROSSHAIR);
 	cursor_text = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
 	cursor_unavailable = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NOT_ALLOWED);
@@ -25,6 +27,8 @@ SystemInterface_SDL::SystemInterface_SDL()
 	cursor_move = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZEALL);
 	cursor_pointer = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
 	cursor_resize = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZENWSE);
+	cursor_ew_resize = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZEWE);
+	cursor_ns_resize = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZENS);
 	cursor_cross = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_CROSSHAIR);
 	cursor_text = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM);
 	cursor_unavailable = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NO);
@@ -43,6 +47,8 @@ SystemInterface_SDL::~SystemInterface_SDL()
 	DestroyCursor(cursor_move);
 	DestroyCursor(cursor_pointer);
 	DestroyCursor(cursor_resize);
+	DestroyCursor(cursor_ew_resize);
+	DestroyCursor(cursor_ns_resize);
 	DestroyCursor(cursor_cross);
 	DestroyCursor(cursor_text);
 	DestroyCursor(cursor_unavailable);
@@ -70,8 +76,12 @@ void SystemInterface_SDL::SetMouseCursor(const Rml::String& cursor_name)
 		cursor = cursor_move;
 	else if (cursor_name == "pointer")
 		cursor = cursor_pointer;
-	else if (cursor_name == "resize")
+	else if (cursor_name == "resize" || cursor_name == "nwse-resize")
 		cursor = cursor_resize;
+	else if (cursor_name == "ew-resize" || cursor_name == "col-resize" || cursor_name == "w-resize" || cursor_name == "e-resize")
+		cursor = cursor_ew_resize;
+	else if (cursor_name == "ns-resize" || cursor_name == "row-resize" || cursor_name == "n-resize" || cursor_name == "s-resize")
+		cursor = cursor_ns_resize;
 	else if (cursor_name == "cross")
 		cursor = cursor_cross;
 	else if (cursor_name == "text")
