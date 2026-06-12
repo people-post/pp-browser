@@ -139,7 +139,7 @@ set(SDLIMAGE_INSTALL OFF CACHE BOOL "" FORCE)
 set(SDLIMAGE_SAMPLES OFF CACHE BOOL "" FORCE)
 set(SDLIMAGE_TESTS OFF CACHE BOOL "" FORCE)
 
-if(NOT EXISTS "${PP_THIRD_PARTY_DIR}/sdl3_image/external/dav1d/CMakeLists.txt")
+if(NOT EXISTS "${PP_THIRD_PARTY_DIR}/sdl3_image/external/libavif/CMakeLists.txt")
   message(FATAL_ERROR
     "Missing SDL3_image external codecs under third_party/sdl3_image/external/.\n"
     "  Run: ./scripts/vendor_import.sh")
