@@ -14,7 +14,7 @@ RmlUi remains a hard fork under [`src/render/`](../src/render/), not in this dir
 | `sdl3/` | [libsdl-org/SDL](https://github.com/libsdl-org/SDL) | `release-3.2.8` | Zlib |
 | `sdl3_image/` | [libsdl-org/SDL_image](https://github.com/libsdl-org/SDL_image) | `release-3.2.4` | Zlib |
 
-`third_party/sdl3_image/external/` contains SDL's pinned codec forks (dav1d, aom, libavif, libpng, etc.) imported from `.gitmodules` by [`scripts/vendor_import.sh`](../scripts/vendor_import.sh). PNG/JPG use the stb backend at build time; vendored codecs are available when enabling extra `SDLIMAGE_*` options.
+`third_party/sdl3_image/external/` contains SDL's pinned codec forks (dav1d, aom, libavif, libpng, etc.) imported from `.gitmodules` by [`scripts/vendor_import.sh`](../scripts/vendor_import.sh). These are committed as **regular source files** (`.git` metadata stripped), not as nested git submodules — a plain `git clone` of pp-browser includes them.
 
 Exact commit SHAs are recorded in [`UPSTREAM.json`](UPSTREAM.json).
 

@@ -22,7 +22,7 @@ import_sdl3_image_externals() {
     exit 1
   fi
 
-  echo "==> sdl3_image external/ submodules"
+  echo "==> sdl3_image external/ codec sources"
   mkdir -p "${image_root}/external"
 
   cd "${image_root}"
@@ -34,14 +34,21 @@ import_sdl3_image_externals() {
 
     local name="${path##*/}"
     local dest="${image_root}/${path}"
+    local clone_tmp="${TMP}/sdl3_image_${name}"
     echo "    ${name} @ ${branch}"
-    rm -rf "${dest}"
+    rm -rf "${clone_tmp}" "${dest}"
     git clone --depth 1 --filter=blob:none --branch "${branch}" --recursive \
-      "${url}" "${dest}"
+      "${url}" "${clone_tmp}"
+    local commit
+    commit="$(git -C "${clone_tmp}" rev-parse HEAD)"
+    mkdir -p "${dest}"
+    rsync -a --delete --exclude='.git' "${clone_tmp}/" "${dest}/"
+    find "${dest}" -name '.git' -exec rm -rf {} + 2>/dev/null || true
+    rm -rf "${clone_tmp}"
     external_entries+=("    \"${name}\": {
       \"repository\": \"${url}\",
       \"branch\": \"${branch}\",
-      \"commit\": \"$(git -C "${dest}" rev-parse HEAD)\"
+      \"commit\": \"${commit}\"
     }")
   done < "${gitmodules}"
   cd "${ROOT}"

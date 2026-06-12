@@ -18,6 +18,8 @@ RmlUi is **hard-forked** under `src/render/` (not from vcpkg).
 
 If `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
 
+Codec sources under `third_party/sdl3_image/external/` are committed as **regular files** (not git submodules). If configure reports missing externals after clone, re-run `./scripts/vendor_import.sh` and ensure those directories contain source files, not empty gitlink placeholders.
+
 ## Configure and build
 
 ```bash
