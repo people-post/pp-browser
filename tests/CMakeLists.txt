@@ -34,3 +34,8 @@ add_executable(pp_browser_rml_mount_test rml_mount_test.cpp
 target_link_libraries(pp_browser_rml_mount_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_rml_mount_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME rml_mount_test COMMAND pp_browser_rml_mount_test)
+
+add_executable(pp_browser_split_tree_test split_tree_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/ui/SplitTree.cpp)
+target_include_directories(pp_browser_split_tree_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME split_tree_test COMMAND pp_browser_split_tree_test)

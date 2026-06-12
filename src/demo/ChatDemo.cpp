@@ -7,6 +7,7 @@
 #include "app/InputCoordinator.h"
 #include "ui/DataModelHost.h"
 #include "ui/DocumentLoader.h"
+#include "ui/SplitLayoutHost.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
@@ -115,6 +116,11 @@ void DirtyChat() {
   DataModelHost::Instance().Dirty("chat", "loading");
 }
 
+void DirtyShell() {
+  DataModelHost::Instance().Dirty("shell", "sessions");
+  DataModelHost::Instance().Dirty("shell", "preview_rml");
+}
+
 } // namespace
 
 ChatDemo::ChatDemo() {
@@ -203,6 +209,8 @@ void ChatDemo::FinishAssistantReply(const std::string& raw_output, bool from_llm
       suggestions.push_back({Rml::String(suggestion.label.c_str()), Rml::String(suggestion.message.c_str())});
     }
     chat_.messages.push_back({Rml::String("assistant"), AssistantBubbleRml(parsed.rml), std::move(suggestions)});
+    shell_.preview_rml = Rml::String(parsed.rml.c_str());
+    DirtyShell();
   }
   chat_.loading = false;
   DirtyChat();
@@ -214,6 +222,11 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   }
 
   chat_ = {};
+  shell_ = {};
+  shell_.sessions = {
+      {Rml::String("New chat"), Rml::String("Ask anything...")},
+      {Rml::String("Help"), Rml::String("Try help, list, code, or button")},
+  };
   pending_reply_.reset();
   llm_job_.reset();
   llm_.emplace(config.llm);
@@ -260,7 +273,31 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
     return false;
   }
 
-  return DocumentLoader::LoadFile(context, Application::AssetsPath("samples/chat_dialog.rml")) != nullptr;
+  if (!DataModelHost::Instance().Register(context, "shell", [](Rml::DataModelConstructor& ctor) {
+        if (auto session_handle = ctor.RegisterStruct<ChatDemo::SessionRow>()) {
+          session_handle.RegisterMember("title", &ChatDemo::SessionRow::title);
+          session_handle.RegisterMember("preview", &ChatDemo::SessionRow::preview);
+        }
+        ctor.RegisterArray<std::vector<ChatDemo::SessionRow>>();
+        ctor.Bind("sessions", &ChatDemo::Instance().shell_.sessions);
+        ctor.Bind("preview_rml", &ChatDemo::Instance().shell_.preview_rml);
+        ctor.BindEventCallback("split_panel_h", &SplitLayoutHost::SplitPanelHCallback);
+        ctor.BindEventCallback("split_panel_v", &SplitLayoutHost::SplitPanelVCallback);
+        ctor.BindEventCallback("close_panel", &SplitLayoutHost::ClosePanelCallback);
+        ctor.BindEventCallback("gutter_drag_start", &SplitLayoutHost::GutterDragStartCallback);
+        ctor.BindEventCallback("gutter_drag_end", &SplitLayoutHost::GutterDragEndCallback);
+      })) {
+    return false;
+  }
+
+  SplitLayoutHost::Instance().Initialize(context);
+
+  if (DocumentLoader::LoadFile(context, Application::AssetsPath("samples/chat_shell.rml")) == nullptr) {
+    return false;
+  }
+
+  SplitLayoutHost::Instance().SyncLayout();
+  return true;
 }
 
 void ChatDemo::Update() {
@@ -308,6 +345,7 @@ void ChatDemo::Shutdown() {
   llm_job_.reset();
   llm_.reset();
   chat_ = {};
+  shell_ = {};
 }
 
 bool SetupChatDemo(Rml::Context* context, const AppConfig& config) {

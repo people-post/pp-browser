@@ -26,6 +26,11 @@ class ChatDemo : public Module {
 public:
   static ChatDemo& Instance();
 
+  struct SessionRow {
+    Rml::String title;
+    Rml::String preview;
+  };
+
   bool Setup(Rml::Context* context, const AppConfig& config);
   void Update();
   void Shutdown();
@@ -46,6 +51,11 @@ private:
     Rml::String draft;
     std::vector<ChatMessage> messages;
     bool loading = false;
+  };
+
+  struct ShellState {
+    std::vector<SessionRow> sessions;
+    Rml::String preview_rml;
   };
 
   struct LlmJob {
@@ -70,6 +80,7 @@ private:
   void FinishAssistantReply(const std::string& raw_output, bool from_llm);
 
   ChatState chat_;
+  ShellState shell_;
   std::optional<LlmClient> llm_;
   std::unique_ptr<LlmJob> llm_job_;
   std::optional<PendingReply> pending_reply_;

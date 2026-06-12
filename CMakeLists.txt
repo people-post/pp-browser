@@ -88,6 +88,9 @@ target_sources(pp-browser PRIVATE
   src/demo/DynamicRmlDemo.cpp
   src/ui/DocumentLoader.cpp
   src/ui/RmlMount.cpp
+  src/ui/SplitTree.cpp
+  src/ui/SplitLayoutHost.cpp
+  src/ui/PanelRegistry.cpp
   src/ui/Theme.cpp
   src/ui/DataModelHost.cpp
   src/bindings/ActionRouter.cpp

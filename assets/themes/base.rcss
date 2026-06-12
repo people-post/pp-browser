@@ -333,3 +333,164 @@ input, textarea, select {
 .dynamic-panel-b .scroll-list {
   background-color: #2a2538;
 }
+
+.chat-shell-body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0;
+}
+
+.split-root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.split-branch {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.split-branch.split-h {
+  flex-direction: row;
+}
+
+.split-branch.split-v {
+  flex-direction: column;
+}
+
+.split-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.split-gutter {
+  flex-shrink: 0;
+  background-color: #3a3a55;
+}
+
+.split-gutter-v {
+  width: 5dp;
+  cursor: ew-resize;
+}
+
+.split-gutter-h {
+  height: 5dp;
+  cursor: ns-resize;
+}
+
+.panel-leaf {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background-color: #1a1a2e;
+}
+
+.panel-header {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6dp;
+  padding: 6dp 8dp;
+  background-color: #252538;
+  border-bottom: 1dp #3a3a55;
+  box-sizing: border-box;
+}
+
+.panel-title {
+  flex: 1;
+  font-size: 13dp;
+  color: #c8c8d8;
+}
+
+.panel-btn {
+  width: auto;
+  min-width: 28dp;
+  padding: 4dp 8dp;
+  margin-bottom: 0;
+  font-size: 12dp;
+  background-color: #3a3a55;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12dp;
+  box-sizing: border-box;
+}
+
+.chat-panel .chat-header h1 {
+  font-size: 22dp;
+}
+
+.chat-panel .messages {
+  flex: 1;
+}
+
+.sidebar-panel {
+  height: 100%;
+  padding: 12dp;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.sidebar-new-chat {
+  width: 100%;
+  margin-bottom: 12dp;
+}
+
+.sidebar-session {
+  padding: 10dp;
+  margin-bottom: 8dp;
+  border-radius: 6dp;
+  background-color: #252538;
+  border: 1dp #3a3a55;
+}
+
+.sidebar-session-preview {
+  margin-bottom: 0;
+  font-size: 12dp;
+}
+
+.preview-panel {
+  height: 100%;
+  padding: 12dp;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.preview-panel h2 {
+  margin-top: 0;
+  font-size: 18dp;
+}
+
+.preview-content {
+  margin-top: 8dp;
+}
+
+.empty-panel {
+  height: 100%;
+  padding: 24dp;
+  box-sizing: border-box;
+  justify-content: center;
+}

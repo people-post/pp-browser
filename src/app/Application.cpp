@@ -3,6 +3,7 @@
 #include "app/InputCoordinator.h"
 #include "bindings/ActionRouter.h"
 #include "demo/ChatDemo.h"
+#include "ui/SplitLayoutHost.h"
 #include "demo/DynamicRmlDemo.h"
 #include "demo/SearchDemo.h"
 #include "ui/DocumentLoader.h"
@@ -150,6 +151,7 @@ void Application::Run() {
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
     if (demo_ == DemoMode::Chat) {
       UpdateChatDemo();
+      SplitLayoutHost::Instance().Update(context);
     }
     context->Update();
     Backend::BeginFrame();
