@@ -125,10 +125,25 @@ add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3"
                  "${CMAKE_BINARY_DIR}/third_party/sdl3" EXCLUDE_FROM_ALL)
 pp_configure_status("SDL3 configured; starting SDL3_image...")
 
-set(SDL3IMAGE_AVIF OFF CACHE BOOL "" FORCE)
-set(SDL3IMAGE_BMP ON CACHE BOOL "" FORCE)
-set(SDL3IMAGE_JPG ON CACHE BOOL "" FORCE)
-set(SDL3IMAGE_PNG ON CACHE BOOL "" FORCE)
+# SDL3_image: stb for PNG/JPG (matches FetchContent on Linux); external/ codecs vendored for MSVC.
+set(SDLIMAGE_BACKEND_STB ON CACHE BOOL "" FORCE)
+set(SDLIMAGE_BACKEND_WIC OFF CACHE BOOL "" FORCE)
+set(SDLIMAGE_AVIF OFF CACHE BOOL "" FORCE)
+set(SDLIMAGE_JXL OFF CACHE BOOL "" FORCE)
+set(SDLIMAGE_TIF OFF CACHE BOOL "" FORCE)
+set(SDLIMAGE_WEBP OFF CACHE BOOL "" FORCE)
+set(SDLIMAGE_BMP ON CACHE BOOL "" FORCE)
+set(SDLIMAGE_JPG ON CACHE BOOL "" FORCE)
+set(SDLIMAGE_PNG ON CACHE BOOL "" FORCE)
+set(SDLIMAGE_INSTALL OFF CACHE BOOL "" FORCE)
+set(SDLIMAGE_SAMPLES OFF CACHE BOOL "" FORCE)
+set(SDLIMAGE_TESTS OFF CACHE BOOL "" FORCE)
+
+if(NOT EXISTS "${PP_THIRD_PARTY_DIR}/sdl3_image/external/dav1d/CMakeLists.txt")
+  message(FATAL_ERROR
+    "Missing SDL3_image external codecs under third_party/sdl3_image/external/.\n"
+    "  Run: ./scripts/vendor_import.sh")
+endif()
 
 add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3_image"
                  "${CMAKE_BINARY_DIR}/third_party/sdl3_image" EXCLUDE_FROM_ALL)
