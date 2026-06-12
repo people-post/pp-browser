@@ -47,3 +47,16 @@ add_executable(pp_browser_llm_client_test llm_client_test.cpp
 target_link_libraries(pp_browser_llm_client_test PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
 target_include_directories(pp_browser_llm_client_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME llm_client_test COMMAND pp_browser_llm_client_test)
+
+add_executable(pp_browser_web_search_test web_search_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/tools/WebSearchTool.cpp
+  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
+  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
+target_link_libraries(pp_browser_web_search_test PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
+target_include_directories(pp_browser_web_search_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME web_search_test COMMAND pp_browser_web_search_test)
+
+add_executable(pp_browser_search_intent_test search_intent_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/SearchIntent.cpp)
+target_include_directories(pp_browser_search_intent_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME search_intent_test COMMAND pp_browser_search_intent_test)

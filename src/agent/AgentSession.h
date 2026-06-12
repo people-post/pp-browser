@@ -1,5 +1,6 @@
 #pragma once
 
+#include "agent/LlmClient.h"
 #include "app/Config.h"
 
 #include <memory>
@@ -44,7 +45,10 @@ private:
 
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);
   static void StartTurn(const std::shared_ptr<Impl>& state);
+  static void RunProactiveSearchAndLlm(const std::shared_ptr<Impl>& state);
   static void RunLlmStep(const std::shared_ptr<Impl>& state);
+  static void DispatchToolCalls(const std::shared_ptr<Impl>& state, const std::vector<ToolCall>& tool_calls,
+                                const std::string& assistant_content);
   static void HandleLlmResponse(const std::shared_ptr<Impl>& state, const struct ChatCompletionResponse& response);
   static void PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event);
   static void PushLoading(const std::shared_ptr<Impl>& state, bool loading);

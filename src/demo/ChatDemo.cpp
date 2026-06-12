@@ -20,6 +20,27 @@ namespace pbr {
 
 namespace {
 
+std::string ToolActivityLabel(const std::string& tool_name, const std::string& status) {
+  if (tool_name == "web_search") {
+    if (status == "running") {
+      return "Searching the web...";
+    }
+    if (status == "done") {
+      return "Search complete";
+    }
+    if (status == "error") {
+      return "Search failed";
+    }
+  }
+  if (status == "running") {
+    return "Running " + tool_name + "...";
+  }
+  if (status == "done") {
+    return "Finished " + tool_name;
+  }
+  return tool_name;
+}
+
 std::string Trim(const std::string& text) {
   const auto start = std::find_if_not(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); });
   const auto end = std::find_if_not(text.rbegin(), text.rend(), [](unsigned char c) { return std::isspace(c); }).base();
@@ -207,13 +228,8 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
     DirtyChat();
     break;
   case AgentEventType::ToolActivity:
-    if (event.status == "running") {
-      chat_.status = Rml::String(("Running " + event.tool_name + "...").c_str());
-      DirtyChat();
-    } else if (event.status == "done" && chat_.status.empty()) {
-      chat_.status = Rml::String(("Finished " + event.tool_name).c_str());
-      DirtyChat();
-    }
+    chat_.status = Rml::String(ToolActivityLabel(event.tool_name, event.status).c_str());
+    DirtyChat();
     break;
   case AgentEventType::AssistantReady:
     FinishAssistantReply(event.text, true);
@@ -238,6 +254,7 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   shell_.sessions = {
       {Rml::String("New chat"), Rml::String("Ask anything...")},
       {Rml::String("Help"), Rml::String("Try help, list, code, or button")},
+      {Rml::String("Search"), Rml::String("Try: What is the latest news about AI?")},
   };
   pending_reply_.reset();
   use_llm_ = !config.llm.base_url.empty();

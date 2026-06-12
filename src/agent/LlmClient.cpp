@@ -75,6 +75,7 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   nlohmann::json body = {{"model", config_.model}, {"messages", messages}};
   if (!request.tools.empty()) {
     body["tools"] = ToolsToJson(request.tools);
+    body["tool_choice"] = "auto";
   }
 
   const std::string payload = body.dump();

@@ -106,6 +106,7 @@ target_sources(pp-browser PRIVATE
   src/agent/UiGenerator.cpp
   src/agent/RmlValidator.cpp
   src/agent/AgentSession.cpp
+  src/agent/SearchIntent.cpp
   src/agent/ToolRegistry.cpp
   src/agent/tools/WebSearchTool.cpp
   src/agent/tools/McpToolAdapter.cpp

@@ -4,5 +4,8 @@
     "model": "gemma4:e4b",
     "require_api_key": false
   },
+  "search": {
+    "provider": "duckduckgo"
+  },
   "theme": "assets/themes/base.rcss"
 }

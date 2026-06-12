@@ -167,6 +167,61 @@ ParseResult ParseButtonBlock(const nlohmann::json& block) {
   return result;
 }
 
+std::optional<std::string> ExtractJsonPayload(const std::string& llm_output) {
+  static const std::regex json_re(R"re(```json\s*([\s\S]*?)```)re", std::regex::icase);
+  std::smatch match;
+  if (std::regex_search(llm_output, match, json_re)) {
+    return TrimAsciiWhitespace(match[1].str());
+  }
+
+  const std::string trimmed = TrimAsciiWhitespace(llm_output);
+  if (!trimmed.empty() && trimmed.front() == '{') {
+    return trimmed;
+  }
+  return std::nullopt;
+}
+
+bool IsDisplayBlockType(const std::string& type) {
+  return type == "paragraph" || type == "heading" || type == "list" || type == "code" || type == "button";
+}
+
+bool IsEmbeddedToolBlock(const nlohmann::json& block) {
+  if (!block.is_object()) {
+    return false;
+  }
+
+  if (block.contains("type") && block["type"].is_string()) {
+    const std::string type = block["type"].get<std::string>();
+    if (IsDisplayBlockType(type)) {
+      return false;
+    }
+    if (type == "tool" || type == "tool_call") {
+      return true;
+    }
+  }
+
+  return block.contains("tool") && block["tool"].is_string();
+}
+
+nlohmann::json ToolArgumentsFromBlock(const nlohmann::json& block) {
+  for (const char* key : {"params", "arguments", "parameters"}) {
+    if (block.contains(key) && block[key].is_object()) {
+      return block[key];
+    }
+  }
+  return nlohmann::json::object();
+}
+
+std::string ToolNameFromBlock(const nlohmann::json& block) {
+  if (block.contains("tool") && block["tool"].is_string()) {
+    return block["tool"].get<std::string>();
+  }
+  if (block.contains("name") && block["name"].is_string()) {
+    return block["name"].get<std::string>();
+  }
+  return {};
+}
+
 } // namespace
 
 ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
@@ -216,13 +271,68 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
   return result;
 }
 
+std::optional<std::vector<EmbeddedToolCall>> StructuredTextParser::ExtractEmbeddedToolCalls(
+    const std::string& llm_output) {
+  const auto payload = ExtractJsonPayload(llm_output);
+  if (!payload) {
+    return std::nullopt;
+  }
+
+  nlohmann::json doc = nlohmann::json::parse(*payload, nullptr, false);
+  if (doc.is_discarded() || !doc.is_object() || !doc.contains("blocks") || !doc["blocks"].is_array()) {
+    return std::nullopt;
+  }
+
+  std::vector<EmbeddedToolCall> tools;
+  bool has_display = false;
+
+  for (const auto& block : doc["blocks"]) {
+    if (!block.is_object()) {
+      continue;
+    }
+    if (block.contains("type") && block["type"].is_string() &&
+        IsDisplayBlockType(block["type"].get<std::string>())) {
+      has_display = true;
+      continue;
+    }
+    if (!IsEmbeddedToolBlock(block)) {
+      continue;
+    }
+
+    const std::string name = ToolNameFromBlock(block);
+    if (name.empty()) {
+      continue;
+    }
+    tools.push_back({name, ToolArgumentsFromBlock(block)});
+  }
+
+  if (tools.empty() || has_display) {
+    return std::nullopt;
+  }
+  return tools;
+}
+
 ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_output) {
+  if (ExtractEmbeddedToolCalls(llm_output)) {
+    return Fail("Response contains tool calls, not display blocks");
+  }
+
   static const std::regex json_re(R"re(```json\s*([\s\S]*?)```)re", std::regex::icase);
   std::smatch match;
-  if (!std::regex_search(llm_output, match, json_re)) {
-    return Fail("No ```json block found in LLM output");
+  if (std::regex_search(llm_output, match, json_re)) {
+    return ParseBlocksJson(TrimAsciiWhitespace(match[1].str()));
   }
-  return ParseBlocksJson(TrimAsciiWhitespace(match[1].str()));
+
+  // Tool-calling models often return raw JSON without fences.
+  const std::string trimmed = TrimAsciiWhitespace(llm_output);
+  if (!trimmed.empty() && trimmed.front() == '{') {
+    auto bare = ParseBlocksJson(trimmed);
+    if (bare.ok) {
+      return bare;
+    }
+  }
+
+  return Fail("No ```json block found in LLM output");
 }
 
 } // namespace pbr

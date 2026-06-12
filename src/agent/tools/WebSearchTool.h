@@ -14,6 +14,11 @@ class WebSearchTool {
 public:
   static ToolDescriptor Make(const SearchConfig& config);
   static Roe<std::string> Search(const SearchConfig& config, const nlohmann::json& arguments);
+
+  // Exposed for unit tests.
+  static nlohmann::json ParseDuckDuckGoInstantAnswerJson(const std::string& json_text);
+  static nlohmann::json ParseDuckDuckGoLiteHtmlResults(const std::string& html);
+  static nlohmann::json ParseDuckDuckGoHtmlPageResults(const std::string& html);
 };
 
 } // namespace pbr

@@ -41,6 +41,36 @@ int main() {
   assert(llm_result.ok);
   assert(llm_result.rml.find("<p>Hi</p>") != std::string::npos);
 
+  const std::string bare_json = R"({
+    "blocks": [
+      { "type": "paragraph", "text": "Bare JSON works" }
+    ]
+  })";
+  auto bare_result = pbr::StructuredTextParser::ParseFromLlmOutput(bare_json);
+  assert(bare_result.ok);
+  assert(bare_result.rml.find("Bare JSON works") != std::string::npos);
+
+  const std::string embedded_tools = R"(```json
+{
+  "blocks": [
+    {
+      "tool": "web_search",
+      "params": {
+        "query": "today's stock market summary"
+      }
+    }
+  ]
+}
+```)";
+  auto embedded = pbr::StructuredTextParser::ExtractEmbeddedToolCalls(embedded_tools);
+  assert(embedded.has_value());
+  assert(embedded->size() == 1);
+  assert(embedded->at(0).name == "web_search");
+  assert(embedded->at(0).arguments["query"] == "today's stock market summary");
+
+  auto embedded_parse = pbr::StructuredTextParser::ParseFromLlmOutput(embedded_tools);
+  assert(!embedded_parse.ok);
+
   const std::string heading_clamp = R"({"blocks":[{"type":"heading","level":6,"text":"Big"}]})";
   auto heading_clamp_result = pbr::StructuredTextParser::ParseBlocksJson(heading_clamp);
   assert(!heading_clamp_result.ok);

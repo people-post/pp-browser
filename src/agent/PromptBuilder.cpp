@@ -89,8 +89,16 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
 
   if (!tools_summary.empty()) {
     out << "AVAILABLE TOOLS\n" << tools_summary << "\n";
-    out << "Use tools when you need current or external information.\n";
-    out << "After tool results are available, produce the final user-visible answer.\n\n";
+    out << "TOOL USE RULES\n";
+    out << "- You MUST call web_search before answering when the user asks about today, latest, current, live, "
+           "or real-time information (news, markets, weather, prices, scores).\n";
+    out << "- Do NOT answer market/news/weather questions from memory or tell the user to check external websites.\n";
+    out << "- Do NOT say \"check Yahoo Finance\", \"visit Bloomberg\", or similar — run web_search instead.\n";
+    out << "- Call web_search when you are unsure and external lookup would help.\n";
+    out << "- Never put tool calls inside blocks JSON. Do not emit { \"tool\": ... } blocks.\n";
+    out << "- Tools are invoked by the runtime via function calling, not via block types.\n";
+    out << "- After tool results arrive, synthesize them into your final structured JSON reply.\n";
+    out << "- Never expose raw tool JSON to the user; summarize in plain blocks.\n\n";
   }
 
   out << ChatBlocksProfile() << "\n\n";
@@ -107,6 +115,20 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
   ]
 })";
   out << "\n```\n";
+  return out.str();
+}
+
+std::string PromptBuilder::BuildProactiveSearchContext(const std::string& query, const std::string& search_results) {
+  std::ostringstream out;
+  out << "PROACTIVE WEB SEARCH (already completed for this turn)\n";
+  out << "Query: " << query << "\n";
+  out << "Results JSON:\n" << search_results << "\n\n";
+  out << "INSTRUCTIONS FOR THIS TURN\n";
+  out << "- The runtime already ran web_search. Use these results for current facts.\n";
+  out << "- Do NOT tell the user to visit Yahoo Finance, MarketWatch, Bloomberg, CNBC, or other sites.\n";
+  out << "- Do NOT explain how to look up data elsewhere.\n";
+  out << "- Summarize the search results in structured blocks. If results are sparse, say what was found "
+         "and note gaps briefly.\n";
   return out.str();
 }
 
