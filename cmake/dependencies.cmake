@@ -1,5 +1,20 @@
-include(FetchContent)
 include(Progress)
+
+set(PP_THIRD_PARTY_DIR "${CMAKE_SOURCE_DIR}/third_party")
+
+function(pp_require_vendored name)
+  if(NOT EXISTS "${PP_THIRD_PARTY_DIR}/${name}/CMakeLists.txt")
+    message(FATAL_ERROR
+      "Missing vendored dependency '${name}' under third_party/.\n"
+      "  Run: ./scripts/vendor_import.sh")
+  endif()
+endfunction()
+
+pp_require_vendored(freetype)
+pp_require_vendored(nlohmann_json)
+pp_require_vendored(curl)
+pp_require_vendored(sdl3)
+pp_require_vendored(sdl3_image)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
@@ -9,13 +24,8 @@ set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
 
-FetchContent_Declare(
-  freetype
-  GIT_REPOSITORY https://github.com/freetype/freetype.git
-  GIT_TAG VER-2-13-3
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(freetype)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/freetype"
+                 "${CMAKE_BINARY_DIR}/third_party/freetype" EXCLUDE_FROM_ALL)
 
 if(NOT TARGET Freetype::Freetype)
   if(TARGET freetype-interface)
@@ -23,7 +33,7 @@ if(NOT TARGET Freetype::Freetype)
   elseif(TARGET freetype)
     add_library(Freetype::Freetype ALIAS freetype)
   else()
-    message(FATAL_ERROR "FreeType target not found after FetchContent")
+    message(FATAL_ERROR "FreeType target not found after add_subdirectory")
   endif()
 endif()
 
@@ -31,13 +41,8 @@ endif()
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 set(JSON_Install OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(
-  json
-  GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG v3.11.3
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(json)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/nlohmann_json"
+                 "${CMAKE_BINARY_DIR}/third_party/nlohmann_json" EXCLUDE_FROM_ALL)
 
 # libcurl (LLM HTTP client)
 set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
@@ -68,13 +73,8 @@ else()
   find_package(OpenSSL REQUIRED)
 endif()
 
-FetchContent_Declare(
-  curl
-  GIT_REPOSITORY https://github.com/curl/curl.git
-  GIT_TAG curl-8_11_1
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(curl)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/curl"
+                 "${CMAKE_BINARY_DIR}/third_party/curl" EXCLUDE_FROM_ALL)
 
 option(PP_BROWSER_HEADLESS "Build SDL3 without desktop video (compile-only, no GUI)" OFF)
 
@@ -107,14 +107,22 @@ set(SDL_DBUS OFF CACHE BOOL "" FORCE)
 set(SDL_IBUS OFF CACHE BOOL "" FORCE)
 set(SDL_WAYLAND OFF CACHE BOOL "" FORCE)
 set(SDL_X11 ON CACHE BOOL "" FORCE)
+set(SDL_AUDIO OFF CACHE BOOL "" FORCE)
+set(SDL_RENDER OFF CACHE BOOL "" FORCE)
+set(SDL_GPU OFF CACHE BOOL "" FORCE)
+set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
+set(SDL_JOYSTICK OFF CACHE BOOL "" FORCE)
+set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
+set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
+set(SDL_HIDAPI OFF CACHE BOOL "" FORCE)
+set(SDL_DIALOG OFF CACHE BOOL "" FORCE)
+set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
+set(SDL_PIPEWIRE OFF CACHE BOOL "" FORCE)
+set(SDL_LIBUDEV OFF CACHE BOOL "" FORCE)
+set(SDL_LIBURING OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(
-  SDL3
-  GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-  GIT_TAG release-3.2.8
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(SDL3)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3"
+                 "${CMAKE_BINARY_DIR}/third_party/sdl3" EXCLUDE_FROM_ALL)
 pp_configure_status("SDL3 configured; starting SDL3_image...")
 
 set(SDL3IMAGE_AVIF OFF CACHE BOOL "" FORCE)
@@ -122,13 +130,8 @@ set(SDL3IMAGE_BMP ON CACHE BOOL "" FORCE)
 set(SDL3IMAGE_JPG ON CACHE BOOL "" FORCE)
 set(SDL3IMAGE_PNG ON CACHE BOOL "" FORCE)
 
-FetchContent_Declare(
-  SDL3_image
-  GIT_REPOSITORY https://github.com/libsdl-org/SDL_image.git
-  GIT_TAG release-3.2.4
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(SDL3_image)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3_image"
+                 "${CMAKE_BINARY_DIR}/third_party/sdl3_image" EXCLUDE_FROM_ALL)
 pp_configure_status("SDL3_image configured; finishing dependency setup...")
 
 if(TARGET SDL3::SDL3-static)
@@ -159,4 +162,4 @@ if(NOT TARGET SDL_image::SDL_image)
   target_link_libraries(SDL_image_alias INTERFACE ${PP_BROWSER_SDL3_IMAGE_TARGET})
 endif()
 
-pp_configure_status("All FetchContent dependencies ready")
+pp_configure_status("All third_party dependencies ready")

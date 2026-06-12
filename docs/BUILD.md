@@ -10,9 +10,13 @@
 
 ## Dependencies
 
-**FetchContent (first configure):** FreeType, nlohmann-json, curl, SDL3, and SDL3_image (SDL built with `SDL_DBUS=OFF` to avoid extra system autotools)
+**Vendored source** under [`third_party/`](../third_party/): FreeType, nlohmann-json, curl, SDL3, and SDL3_image (built via `add_subdirectory`; SDL built with `SDL_DBUS=OFF` and unused subsystems disabled).
+
+**System packages:** OpenSSL on Linux (`libssl-dev`); X11 and OpenGL development headers on Linux for the GUI.
 
 RmlUi is **hard-forked** under `src/render/` (not from vcpkg).
+
+If `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
 
 ## Configure and build
 
@@ -40,10 +44,10 @@ Ollama exposes an OpenAI-compatible API at `http://localhost:11434/v1`; no API k
 
 For OpenAI or other providers, set `base_url`, `model`, and `api_key_env` in `config.json`.
 
-**If no window appears** (or exit code 1), SDL was likely built without X11. Rebuild SDL with video support:
+**If no window appears** (or exit code 1), reconfigure from a clean build directory:
 
 ```bash
-rm -rf build/_deps/sdl3-build build/_deps/sdl3-src
+rm -rf build
 cmake -B build -S .
 cmake --build build -j
 ```

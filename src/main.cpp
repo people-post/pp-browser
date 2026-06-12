@@ -36,9 +36,8 @@ int main(int argc, char** argv) {
   pbr::Application app;
   if (!app.Initialize("pp-browser", 1280, 720, demo, config)) {
     root.error << "pp-browser: failed to initialize. "
-               << "If no window appears, rebuild with X11 support: "
-               << "rm -rf build/_deps/sdl3-build build/_deps/sdl3-src && "
-               << "cmake -B build -S . && cmake --build build. "
+               << "If no window appears, reconfigure from a clean build: "
+               << "rm -rf build && cmake -B build -S . && cmake --build build. "
                << "Ensure DISPLAY is set. On Linux install: libx11-dev and libgl-dev (see docs/BUILD.md).";
     return 1;
   }

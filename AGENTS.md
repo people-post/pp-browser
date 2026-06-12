@@ -8,6 +8,7 @@ pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — windowing (`src/render/backends/`)
 - **Hard-forked RmlUi** — UI layout in `src/render/`
+- **Third-party libs** — FreeType, nlohmann/json, curl, SDL3, SDL3_image in [`third_party/`](third_party/)
 - **Chat + MCP + LLM scaffolding** — `src/demo/`, `src/agent/`, `src/mcp/`
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.

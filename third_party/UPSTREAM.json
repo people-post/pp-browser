@@ -1,0 +1,27 @@
+{
+  "freetype": {
+    "repository": "https://github.com/freetype/freetype.git",
+    "tag": "VER-2-13-3",
+    "commit": "42608f77f20749dd6ddc9e0536788eaad70ea4b5"
+  },
+  "nlohmann_json": {
+    "repository": "https://github.com/nlohmann/json.git",
+    "tag": "v3.11.3",
+    "commit": "9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03"
+  },
+  "curl": {
+    "repository": "https://github.com/curl/curl.git",
+    "tag": "curl-8_11_1",
+    "commit": "75a2079d5c28debb2eaa848ca9430f1fe0d7844c"
+  },
+  "sdl3": {
+    "repository": "https://github.com/libsdl-org/SDL.git",
+    "tag": "release-3.2.8",
+    "commit": "f6864924f76e1a0b4abaefc76ae2ed22b1a8916e"
+  },
+  "sdl3_image": {
+    "repository": "https://github.com/libsdl-org/SDL_image.git",
+    "tag": "release-3.2.4",
+    "commit": "11154afb7855293159588b245b446a4ef09e574f"
+  }
+}
