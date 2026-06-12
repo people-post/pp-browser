@@ -134,8 +134,8 @@ void InjectTheme(Rml::DataModelHandle /*model*/, Rml::Event& ev, const Rml::Vari
         .dynamic-toolbar button { background-color: #3a6a3a; }
       )"
                          : R"(
-        .dynamic-demo-shell { background-color: #1a1a2e; }
-        .dynamic-panel h2 { color: #ffffff; }
+        .dynamic-demo-shell { background-color: #f8f9fb; }
+        .dynamic-panel h2 { color: #111111; }
         .dynamic-toolbar button { background-color: #4a6cf7; }
       )";
 
