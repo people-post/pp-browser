@@ -3,6 +3,7 @@
 #include "app/InputCoordinator.h"
 #include "bindings/ActionRouter.h"
 #include "demo/ChatDemo.h"
+#include "demo/DynamicRmlDemo.h"
 #include "demo/SearchDemo.h"
 #include "ui/DocumentLoader.h"
 #include "ui/Theme.h"
@@ -115,6 +116,14 @@ bool Application::Initialize(const char* window_title, int width, int height, De
     }
   } else if (demo == DemoMode::Hello) {
     DocumentLoader::LoadFile(context, AssetsPath("samples/hello.rml"));
+  } else if (demo == DemoMode::Dynamic) {
+    if (!SetupDynamicRmlDemo(context)) {
+      log().error << "SetupDynamicRmlDemo failed";
+      Rml::RemoveContext("main");
+      Rml::Shutdown();
+      Backend::Shutdown();
+      return false;
+    }
   } else if (!SetupChatDemo(context, config)) {
     log().error << "SetupChatDemo failed";
     Rml::RemoveContext("main");

@@ -85,7 +85,9 @@ target_sources(pp-browser PRIVATE
   src/log/Logger.cpp
   src/demo/SearchDemo.cpp
   src/demo/ChatDemo.cpp
+  src/demo/DynamicRmlDemo.cpp
   src/ui/DocumentLoader.cpp
+  src/ui/RmlMount.cpp
   src/ui/Theme.cpp
   src/ui/DataModelHost.cpp
   src/bindings/ActionRouter.cpp

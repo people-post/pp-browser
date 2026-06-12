@@ -13,6 +13,7 @@ struct ValidationResult {
 class RmlValidator {
 public:
   static ValidationResult ValidateRml(const std::string& rml);
+  static ValidationResult ValidateFragment(const std::string& rml_fragment);
   static ValidationResult ValidateBindings(const std::string& bindings_json);
 };
 

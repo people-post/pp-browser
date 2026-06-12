@@ -15,6 +15,8 @@ int main(int argc, char** argv) {
         demo = pbr::DemoMode::Search;
       } else if (std::strcmp(argv[i + 1], "hello") == 0) {
         demo = pbr::DemoMode::Hello;
+      } else if (std::strcmp(argv[i + 1], "dynamic") == 0) {
+        demo = pbr::DemoMode::Dynamic;
       }
     }
   }

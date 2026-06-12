@@ -11,6 +11,7 @@ enum class DemoMode {
   Chat,
   Search,
   Hello,
+  Dynamic,
 };
 
 class Application : public Module {

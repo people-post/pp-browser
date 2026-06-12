@@ -1,5 +1,7 @@
 #include "ui/DocumentLoader.h"
 
+#include "ui/RmlMount.h"
+
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/ElementDocument.h>
 
@@ -36,8 +38,13 @@ Rml::ElementDocument* DocumentLoader::LoadFromMemory(Rml::Context* context, cons
   return document;
 }
 
+bool DocumentLoader::MountFragment(Rml::Element* container, const std::string& rml, MountOptions opts) {
+  return RmlMount::MountInner(container, rml, opts);
+}
+
 void DocumentLoader::CloseActive(Rml::Context* context) {
   if (g_active) {
+    RmlMount::ClearDocumentStyleState(g_active);
     g_active->Close();
     g_active = nullptr;
   }

@@ -15,14 +15,8 @@ bool ContainsInsensitive(const std::string& haystack, const std::string& needle)
   return it != haystack.end();
 }
 
-} // namespace
-
-ValidationResult RmlValidator::ValidateRml(const std::string& rml) {
+ValidationResult ValidateForbiddenPatterns(const std::string& rml) {
   ValidationResult result;
-  if (rml.find("<rml>") == std::string::npos) {
-    result.ok = false;
-    result.errors.push_back("Missing <rml> root element");
-  }
   if (ContainsInsensitive(rml, "<script")) {
     result.ok = false;
     result.errors.push_back("script elements are forbidden");
@@ -36,6 +30,21 @@ ValidationResult RmlValidator::ValidateRml(const std::string& rml) {
     result.errors.push_back("inline event handlers are forbidden");
   }
   return result;
+}
+
+} // namespace
+
+ValidationResult RmlValidator::ValidateRml(const std::string& rml) {
+  ValidationResult result = ValidateForbiddenPatterns(rml);
+  if (rml.find("<rml>") == std::string::npos) {
+    result.ok = false;
+    result.errors.push_back("Missing <rml> root element");
+  }
+  return result;
+}
+
+ValidationResult RmlValidator::ValidateFragment(const std::string& rml_fragment) {
+  return ValidateForbiddenPatterns(rml_fragment);
 }
 
 ValidationResult RmlValidator::ValidateBindings(const std::string& bindings_json) {

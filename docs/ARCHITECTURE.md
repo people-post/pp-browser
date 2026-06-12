@@ -15,3 +15,13 @@ Application → Backend (SDL_GL3) → RmlUi Context
 ```
 
 Presentation (RML/RCSS) is separate from behavior (C++ action routing and MCP).
+
+## Dynamic RML (`RmlMount`)
+
+Runtime UI updates use [`src/ui/RmlMount.cpp`](../src/ui/RmlMount.cpp):
+
+- `MountInner` — browser-like inner markup mount (`SetInnerRML`) with optional validation, focus, and scroll preservation (`data-mount-id`)
+- `InjectRcss` — merge dynamic RCSS into the active document (re-inject by `source_tag` replaces prior rules)
+- `DocumentLoader::MountFragment` — mount into a live container without closing the active document
+
+Demo: `./pp-browser --demo dynamic`

@@ -1,0 +1,21 @@
+<rml>
+<head>
+  <title>Dynamic RML demo</title>
+  <link type="text/rcss" href="../themes/base.rcss"/>
+</head>
+<body data-model="dynamic" class="dynamic-demo-body">
+  <div class="dynamic-demo-shell stack">
+    <div class="dynamic-demo-header">
+      <h1>Dynamic RML mount</h1>
+      <p class="muted">Swap inner markup at runtime with focus and scroll preservation.</p>
+    </div>
+    <div class="dynamic-toolbar row">
+      <button data-event-click="swap_panel_a()">Panel A</button>
+      <button data-event-click="swap_panel_b()">Panel B</button>
+      <button data-event-click="inject_theme()">Toggle theme</button>
+    </div>
+    <p class="dynamic-status" data-rml="status"></p>
+    <div id="mount-target" class="dynamic-mount-target"></div>
+  </div>
+</body>
+</rml>
