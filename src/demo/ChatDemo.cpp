@@ -1,6 +1,7 @@
 #include "demo/ChatDemo.h"
 
 #include "agent/StructuredTextParser.h"
+#include "agent/conversation/Conversation.h"
 #include "app/Application.h"
 #include "app/InputCoordinator.h"
 #include "ui/DataModelHost.h"
@@ -71,6 +72,13 @@ Rml::String ErrorMessageRml(const std::string& message) {
   return Rml::String(("<p class=\"error\">" + StructuredTextParser::EscapeText(message) + "</p>").c_str());
 }
 
+std::string TruncatePreview(const std::string& text, size_t max_len = 48) {
+  if (text.size() <= max_len) {
+    return text;
+  }
+  return text.substr(0, max_len - 3) + "...";
+}
+
 std::string MockAssistantRespond(const std::string& query) {
   const std::string lower = ToLower(query);
 
@@ -127,7 +135,7 @@ std::string MockAssistantRespond(const std::string& query) {
 void DirtyChat() {
   DataModelHost::Instance().Dirty("chat", "draft");
   DataModelHost::Instance().Dirty("chat", "status");
-  DataModelHost::Instance().Dirty("chat", "messages");
+  DataModelHost::Instance().Dirty("chat", "turns");
   DataModelHost::Instance().Dirty("chat", "loading");
 }
 
@@ -160,6 +168,10 @@ void ChatDemo::SendSuggestionCallback(Rml::DataModelHandle /*model*/, Rml::Event
   Instance().SendUserText(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
+void ChatDemo::NewChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& /*args*/) {
+  Instance().OnNewChat();
+}
+
 void ChatDemo::OnSendMessage() {
   if (chat_.loading) {
     return;
@@ -175,20 +187,73 @@ void ChatDemo::OnSendMessage() {
   SendUserText(text);
 }
 
+void ChatDemo::OnNewChat() {
+  if (agent_) {
+    agent_->StartNewConversation();
+  }
+  chat_.draft = "";
+  chat_.status = "";
+  chat_.loading = false;
+  chat_.turns.clear();
+  shell_.preview_rml = "";
+  shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
+  pending_reply_.reset();
+  DirtyChat();
+  DirtyShell();
+}
+
+void ChatDemo::SyncDisplayFromConversation() {
+  if (!agent_) {
+    return;
+  }
+
+  chat_.turns.clear();
+  for (const TranscriptEntry& entry : agent_->conversation().Entries()) {
+    TranscriptDisplayRow row;
+    row.user_content_rml = UserMessageRml(entry.user_text);
+    if (entry.assistant_rml) {
+      row.assistant_content_rml = AssistantBubbleRml(*entry.assistant_rml);
+      row.has_assistant = true;
+      row.suggestions.reserve(entry.suggestions.size());
+      for (const TranscriptSuggestion& suggestion : entry.suggestions) {
+        row.suggestions.push_back({Rml::String(suggestion.label.c_str()), Rml::String(suggestion.message.c_str())});
+      }
+    } else if (entry.assistant_raw && !entry.assistant_rml) {
+      row.assistant_content_rml = ErrorMessageRml("Assistant reply pending display sync.");
+      row.has_assistant = true;
+    }
+    chat_.turns.push_back(std::move(row));
+  }
+  DirtyChat();
+}
+
+void ChatDemo::UpdateSidebarPreview(const std::string& preview_text) {
+  if (shell_.sessions.empty()) {
+    shell_.sessions.push_back({Rml::String("Chat"), Rml::String("Ask anything...")});
+  }
+  shell_.sessions[0].preview = Rml::String(TruncatePreview(preview_text).c_str());
+  DirtyShell();
+}
+
 void ChatDemo::SendUserText(const std::string& text) {
   const std::string trimmed = Trim(text);
   if (trimmed.empty() || chat_.loading) {
     return;
   }
 
-  chat_.messages.push_back({Rml::String("user"), UserMessageRml(trimmed), {}});
   chat_.loading = true;
   chat_.status = "";
+  UpdateSidebarPreview(trimmed);
   DirtyChat();
 
   if (!use_llm_) {
+    if (!agent_) {
+      return;
+    }
+    TranscriptEntry& entry = agent_->AppendUserMessage(trimmed);
+    SyncDisplayFromConversation();
     log().debug << "Using mock assistant response";
-    pending_reply_ = PendingReply{MockAssistantRespond(trimmed), false};
+    pending_reply_ = PendingReply{.entry_id = entry.id, .output = MockAssistantRespond(trimmed), .from_llm = false};
     return;
   }
 
@@ -196,23 +261,35 @@ void ChatDemo::SendUserText(const std::string& text) {
   agent_->Submit(trimmed);
 }
 
-void ChatDemo::FinishAssistantReply(const std::string& raw_output, bool from_llm) {
+void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm) {
   auto parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output)
                          : StructuredTextParser::ParseBlocksJson(raw_output);
   if (!parsed.ok) {
     log().warning << "Failed to parse assistant reply: " << parsed.error;
     log().warning << "AI response: " << raw_output;
-    chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(parsed.error), {}});
+    if (agent_) {
+      if (!from_llm) {
+        agent_->CompleteAssistantMessage(entry_id, raw_output);
+      }
+      agent_->SetAssistantDisplay(entry_id, parsed.error, {});
+    }
   } else {
-    std::vector<ChatSuggestion> suggestions;
+    std::vector<TranscriptSuggestion> suggestions;
     suggestions.reserve(parsed.suggestions.size());
     for (const ParsedSuggestion& suggestion : parsed.suggestions) {
-      suggestions.push_back({Rml::String(suggestion.label.c_str()), Rml::String(suggestion.message.c_str())});
+      suggestions.push_back({suggestion.label, suggestion.message});
     }
-    chat_.messages.push_back({Rml::String("assistant"), AssistantBubbleRml(parsed.rml), std::move(suggestions)});
+    if (agent_) {
+      if (!from_llm) {
+        agent_->CompleteAssistantMessage(entry_id, raw_output);
+      }
+      agent_->SetAssistantDisplay(entry_id, parsed.rml, std::move(suggestions));
+    }
     shell_.preview_rml = Rml::String(parsed.rml.c_str());
     DirtyShell();
   }
+
+  SyncDisplayFromConversation();
   chat_.loading = false;
   chat_.status = "";
   DirtyChat();
@@ -222,6 +299,9 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
   switch (event.type) {
   case AgentEventType::LoadingChanged:
     chat_.loading = event.loading;
+    if (event.loading) {
+      SyncDisplayFromConversation();
+    }
     if (!event.loading) {
       chat_.status = "";
     }
@@ -232,11 +312,16 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
     DirtyChat();
     break;
   case AgentEventType::AssistantReady:
-    FinishAssistantReply(event.text, true);
+    FinishAssistantReply(event.entry_id, event.text, true);
     break;
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;
-    chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(event.message), {}});
+    if (agent_ && !agent_->conversation().Entries().empty()) {
+      const TranscriptEntry& entry = agent_->conversation().Entries().back();
+      agent_->CompleteAssistantMessage(entry.id, event.message);
+      agent_->SetAssistantDisplay(entry.id, event.message, {});
+      SyncDisplayFromConversation();
+    }
     chat_.loading = false;
     chat_.status = "";
     DirtyChat();
@@ -251,11 +336,7 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
 
   chat_ = {};
   shell_ = {};
-  shell_.sessions = {
-      {Rml::String("New chat"), Rml::String("Ask anything...")},
-      {Rml::String("Help"), Rml::String("Try help, list, code, or button")},
-      {Rml::String("Search"), Rml::String("Try: What is the latest news about AI?")},
-  };
+  shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
   pending_reply_.reset();
   use_llm_ = !config.llm.base_url.empty();
   agent_.emplace();
@@ -288,16 +369,17 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
           sug_handle.RegisterMember("message", &ChatSuggestion::message);
         }
         ctor.RegisterArray<std::vector<ChatSuggestion>>();
-        if (auto msg_handle = ctor.RegisterStruct<ChatMessage>()) {
-          msg_handle.RegisterMember("role", &ChatMessage::role);
-          msg_handle.RegisterMember("content_rml", &ChatMessage::content_rml);
-          msg_handle.RegisterMember("suggestions", &ChatMessage::suggestions);
+        if (auto turn_handle = ctor.RegisterStruct<TranscriptDisplayRow>()) {
+          turn_handle.RegisterMember("user_content_rml", &TranscriptDisplayRow::user_content_rml);
+          turn_handle.RegisterMember("assistant_content_rml", &TranscriptDisplayRow::assistant_content_rml);
+          turn_handle.RegisterMember("has_assistant", &TranscriptDisplayRow::has_assistant);
+          turn_handle.RegisterMember("suggestions", &TranscriptDisplayRow::suggestions);
         }
-        ctor.RegisterArray<std::vector<ChatMessage>>();
+        ctor.RegisterArray<std::vector<TranscriptDisplayRow>>();
         ctor.Bind("draft", &ChatDemo::Instance().chat_.draft);
         ctor.Bind("status", &ChatDemo::Instance().chat_.status);
         ctor.Bind("loading", &ChatDemo::Instance().chat_.loading);
-        ctor.Bind("messages", &ChatDemo::Instance().chat_.messages);
+        ctor.Bind("turns", &ChatDemo::Instance().chat_.turns);
         ctor.BindEventCallback("send_message", &ChatDemo::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatDemo::SendSuggestionCallback);
       })) {
@@ -312,6 +394,7 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
         ctor.RegisterArray<std::vector<ChatDemo::SessionRow>>();
         ctor.Bind("sessions", &ChatDemo::Instance().shell_.sessions);
         ctor.Bind("preview_rml", &ChatDemo::Instance().shell_.preview_rml);
+        ctor.BindEventCallback("new_chat", &ChatDemo::NewChatCallback);
         ctor.BindEventCallback("split_panel_h", &SplitLayoutHost::SplitPanelHCallback);
         ctor.BindEventCallback("split_panel_v", &SplitLayoutHost::SplitPanelVCallback);
         ctor.BindEventCallback("close_panel", &SplitLayoutHost::ClosePanelCallback);
@@ -335,7 +418,7 @@ void ChatDemo::Update() {
   if (pending_reply_) {
     PendingReply reply = std::move(*pending_reply_);
     pending_reply_.reset();
-    FinishAssistantReply(reply.output, reply.from_llm);
+    FinishAssistantReply(reply.entry_id, reply.output, reply.from_llm);
   }
 
   if (!agent_) {

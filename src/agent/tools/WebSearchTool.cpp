@@ -1,11 +1,12 @@
 #include "agent/tools/WebSearchTool.h"
 
-#include "agent/LlmClient.h"
+#include "agent/SearchIntent.h"
 #include "log/Logger.h"
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
+#include <cstring>
 #include <regex>
 #include <sstream>
 
@@ -195,6 +196,86 @@ nlohmann::json ParseDuckDuckGoHtmlResults(const std::string& html) {
   return results;
 }
 
+std::string DecodeBasicHtmlEntities(std::string text) {
+  struct Entity {
+    const char* encoded;
+    const char* decoded;
+  };
+  static const Entity entities[] = {
+      {"&amp;", "&"},  {"&lt;", "<"},   {"&gt;", ">"},   {"&quot;", "\""}, {"&#39;", "'"},
+      {"&apos;", "'"}, {"&#x27;", "'"}, {"&#x2F;", "/"}, {"&nbsp;", " "},
+  };
+  for (const Entity& entity : entities) {
+    size_t pos = 0;
+    const size_t encoded_len = std::strlen(entity.encoded);
+    while ((pos = text.find(entity.encoded, pos)) != std::string::npos) {
+      text.replace(pos, encoded_len, entity.decoded);
+      pos += std::strlen(entity.decoded);
+    }
+  }
+  return text;
+}
+
+std::string ExtractXmlTag(const std::string& xml, const std::string& tag) {
+  const std::string open = "<" + tag + ">";
+  const std::string close = "</" + tag + ">";
+  const size_t start = xml.find(open);
+  if (start == std::string::npos) {
+    return {};
+  }
+  const size_t content_start = start + open.size();
+  const size_t end = xml.find(close, content_start);
+  if (end == std::string::npos) {
+    return {};
+  }
+  return DecodeBasicHtmlEntities(xml.substr(content_start, end - content_start));
+}
+
+nlohmann::json ParseGoogleNewsRssXml(const std::string& xml) {
+  nlohmann::json results = nlohmann::json::array();
+
+  static const std::regex item_re(R"(<item>([\s\S]*?)</item>)");
+  auto begin = std::sregex_iterator(xml.begin(), xml.end(), item_re);
+  const auto end = std::sregex_iterator();
+
+  for (auto it = begin; it != end && results.size() < 8; ++it) {
+    const std::string item_xml = (*it)[1].str();
+    const std::string title = ExtractXmlTag(item_xml, "title");
+    const std::string link = ExtractXmlTag(item_xml, "link");
+    const std::string description = ExtractXmlTag(item_xml, "description");
+    if (title.empty() || title == "Google News") {
+      continue;
+    }
+
+    std::string snippet = description.empty() ? title : description;
+    results.push_back({{"title", title}, {"snippet", snippet}, {"url", link}});
+  }
+
+  return results;
+}
+
+Roe<std::string> SearchGoogleNewsRss(const std::string& query) {
+  const std::string url = query.empty()
+                              ? "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
+                              : "https://news.google.com/rss/search?q=" + UrlEncode(query) + "&hl=en-US&gl=US&ceid=US:en";
+  logging::getLogger("WebSearchTool").info << "web_search (google news rss) query: " << query;
+
+  auto body = HttpGet(url);
+  if (!body) {
+    logging::getLogger("WebSearchTool").warning << "Google News RSS failed: " << body.error().message;
+    return body.error();
+  }
+
+  nlohmann::json results = ParseGoogleNewsRssXml(*body);
+  if (results.empty()) {
+    return Error("Google News RSS returned no items");
+  }
+
+  logging::getLogger("WebSearchTool").info << "web_search (google news rss) returned " << results.size()
+                                           << " result(s)";
+  return nlohmann::json{{"results", results}, {"source", "google_news_rss"}}.dump();
+}
+
 Roe<std::string> SearchDuckDuckGo(const std::string& query) {
   logging::getLogger("WebSearchTool").info << "web_search query: " << query;
 
@@ -297,8 +378,9 @@ ToolDescriptor WebSearchTool::Make(const SearchConfig& config) {
   ToolDescriptor tool;
   tool.definition = ToolDefinition{
       .name = "web_search",
-      .description = "Search the web for up-to-date information. Returns JSON with a results array "
-                     "(title, snippet, url). Use for news, current events, prices, weather, and recent facts.",
+      .description = "Search the web for up-to-date information. Returns numbered result lines "
+                     "(title, snippet, url). Use for news, current events, prices, weather, and recent facts. "
+                     "Call again with a refined query if the first results are incomplete or off-topic.",
       .parameters = {{"type", "object"},
                      {"properties", {{"query", {{"type", "string"}, {"description", "Concise search query"}}}}},
                      {"required", nlohmann::json::array({"query"})}},
@@ -315,10 +397,19 @@ Roe<std::string> WebSearchTool::Search(const SearchConfig& config, const nlohman
     return Error("web_search requires a query");
   }
 
+  const std::string normalized_query = BuildWebSearchQuery(query);
+
   if (config.provider == "tavily") {
-    return SearchTavily(config, query);
+    return SearchTavily(config, normalized_query);
   }
-  return SearchDuckDuckGo(query);
+
+  if (WantsNewsHeadlines(query) || WantsNewsHeadlines(normalized_query)) {
+    if (auto rss = SearchGoogleNewsRss(normalized_query)) {
+      return *rss;
+    }
+  }
+
+  return SearchDuckDuckGo(normalized_query);
 }
 
 nlohmann::json WebSearchTool::ParseDuckDuckGoInstantAnswerJson(const std::string& json_text) {
@@ -335,6 +426,10 @@ nlohmann::json WebSearchTool::ParseDuckDuckGoLiteHtmlResults(const std::string& 
 
 nlohmann::json WebSearchTool::ParseDuckDuckGoHtmlPageResults(const std::string& html) {
   return ParseDuckDuckGoHtmlResults(html);
+}
+
+nlohmann::json WebSearchTool::ParseGoogleNewsRssItems(const std::string& xml) {
+  return ParseGoogleNewsRssXml(xml);
 }
 
 } // namespace pbr

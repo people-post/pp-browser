@@ -19,6 +19,7 @@ public:
   static nlohmann::json ParseDuckDuckGoInstantAnswerJson(const std::string& json_text);
   static nlohmann::json ParseDuckDuckGoLiteHtmlResults(const std::string& html);
   static nlohmann::json ParseDuckDuckGoHtmlPageResults(const std::string& html);
+  static nlohmann::json ParseGoogleNewsRssItems(const std::string& xml);
 };
 
 } // namespace pbr

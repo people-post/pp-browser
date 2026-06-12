@@ -18,6 +18,7 @@ public:
   static std::string BuildChatSystemPrompt();
   static std::string BuildChatAgentSystemPrompt(const std::string& tools_summary);
   static std::string BuildProactiveSearchContext(const std::string& query, const std::string& search_results);
+  static std::string FormatSearchResultsForLlm(const std::string& search_results_json);
 };
 
 } // namespace pbr

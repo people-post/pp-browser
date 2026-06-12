@@ -1,6 +1,7 @@
 #pragma once
 
 #include "agent/LlmClient.h"
+#include "agent/conversation/ConversationTypes.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
@@ -22,6 +23,7 @@ struct SearchConfig {
 
 struct AppConfig {
   LlmConfig llm;
+  ContextBudget context = DefaultContextBudget();
   std::string theme = "assets/themes/base.rcss";
   std::optional<McpConfig> mcp;
   SearchConfig search;

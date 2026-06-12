@@ -148,6 +148,25 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
     }
   }
 
+  if (root.contains("context") && root["context"].is_object()) {
+    const auto& context = root["context"];
+    if (context.contains("max_turn_pairs") && context["max_turn_pairs"].is_number_integer()) {
+      config.context.max_turn_pairs = context["max_turn_pairs"].get<int>();
+    }
+    if (context.contains("max_recent_chars") && context["max_recent_chars"].is_number_integer()) {
+      config.context.max_recent_chars = context["max_recent_chars"].get<int>();
+    }
+    if (context.contains("max_input_tokens") && context["max_input_tokens"].is_number_integer()) {
+      config.context.max_input_tokens = context["max_input_tokens"].get<int>();
+    }
+    if (context.contains("token_estimate_margin") && context["token_estimate_margin"].is_number()) {
+      config.context.token_estimate_margin = context["token_estimate_margin"].get<double>();
+    }
+    if (context.contains("max_summary_chars") && context["max_summary_chars"].is_number_integer()) {
+      config.context.max_summary_chars = context["max_summary_chars"].get<int>();
+    }
+  }
+
   if (root.contains("search") && root["search"].is_object()) {
     const auto& search = root["search"];
     if (search.contains("provider") && search["provider"].is_string()) {

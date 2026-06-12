@@ -107,6 +107,9 @@ target_sources(pp-browser PRIVATE
   src/agent/RmlValidator.cpp
   src/agent/AgentSession.cpp
   src/agent/SearchIntent.cpp
+  src/agent/conversation/Conversation.cpp
+  src/agent/conversation/SlidingWindowContextPolicy.cpp
+  src/agent/conversation/TurnCoordinator.cpp
   src/agent/ToolRegistry.cpp
   src/agent/tools/WebSearchTool.cpp
   src/agent/tools/McpToolAdapter.cpp

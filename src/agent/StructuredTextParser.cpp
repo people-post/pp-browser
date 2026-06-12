@@ -185,6 +185,10 @@ bool IsDisplayBlockType(const std::string& type) {
   return type == "paragraph" || type == "heading" || type == "list" || type == "code" || type == "button";
 }
 
+bool IsKnownToolName(const std::string& name) {
+  return name == "web_search";
+}
+
 bool IsEmbeddedToolBlock(const nlohmann::json& block) {
   if (!block.is_object()) {
     return false;
@@ -195,12 +199,20 @@ bool IsEmbeddedToolBlock(const nlohmann::json& block) {
     if (IsDisplayBlockType(type)) {
       return false;
     }
-    if (type == "tool" || type == "tool_call") {
+    if (type == "tool" || type == "tool_call" || IsKnownToolName(type)) {
       return true;
     }
   }
 
-  return block.contains("tool") && block["tool"].is_string();
+  if (block.contains("tool") && block["tool"].is_string()) {
+    return true;
+  }
+
+  if (block.contains("name") && block["name"].is_string() && IsKnownToolName(block["name"].get<std::string>())) {
+    return true;
+  }
+
+  return false;
 }
 
 nlohmann::json ToolArgumentsFromBlock(const nlohmann::json& block) {
@@ -209,12 +221,21 @@ nlohmann::json ToolArgumentsFromBlock(const nlohmann::json& block) {
       return block[key];
     }
   }
+  if (block.contains("query") && block["query"].is_string()) {
+    return {{"query", block["query"]}};
+  }
   return nlohmann::json::object();
 }
 
 std::string ToolNameFromBlock(const nlohmann::json& block) {
   if (block.contains("tool") && block["tool"].is_string()) {
     return block["tool"].get<std::string>();
+  }
+  if (block.contains("type") && block["type"].is_string()) {
+    const std::string type = block["type"].get<std::string>();
+    if (IsKnownToolName(type)) {
+      return type;
+    }
   }
   if (block.contains("name") && block["name"].is_string()) {
     return block["name"].get<std::string>();

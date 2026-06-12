@@ -28,26 +28,27 @@ public:
     Rml::String preview;
   };
 
-  bool Setup(Rml::Context* context, const AppConfig& config);
-  void Update();
-  void Shutdown();
-
-private:
   struct ChatSuggestion {
     Rml::String label;
     Rml::String message;
   };
 
-  struct ChatMessage {
-    Rml::String role;
-    Rml::String content_rml;
+  struct TranscriptDisplayRow {
+    Rml::String user_content_rml;
+    Rml::String assistant_content_rml;
+    bool has_assistant = false;
     std::vector<ChatSuggestion> suggestions;
   };
 
+  bool Setup(Rml::Context* context, const AppConfig& config);
+  void Update();
+  void Shutdown();
+
+private:
   struct ChatState {
     Rml::String draft;
     Rml::String status;
-    std::vector<ChatMessage> messages;
+    std::vector<TranscriptDisplayRow> turns;
     bool loading = false;
   };
 
@@ -57,6 +58,7 @@ private:
   };
 
   struct PendingReply {
+    std::string entry_id;
     std::string output;
     bool from_llm = false;
   };
@@ -65,10 +67,14 @@ private:
 
   static void SendMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SendSuggestionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void NewChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
+  void OnNewChat();
   void SendUserText(const std::string& text);
-  void FinishAssistantReply(const std::string& raw_output, bool from_llm);
+  void SyncDisplayFromConversation();
+  void UpdateSidebarPreview(const std::string& preview_text);
+  void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm);
   void HandleAgentEvent(const AgentEvent& event);
 
   ChatState chat_;

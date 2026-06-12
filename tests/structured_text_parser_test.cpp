@@ -68,6 +68,38 @@ int main() {
   assert(embedded->at(0).name == "web_search");
   assert(embedded->at(0).arguments["query"] == "today's stock market summary");
 
+  const std::string embedded_parameters = R"(```json
+{
+  "blocks": [
+    {
+      "tool": "web_search",
+      "parameters": {
+        "query": "latest world news"
+      }
+    }
+  ]
+}
+```)";
+  auto embedded_parameters_result = pbr::StructuredTextParser::ExtractEmbeddedToolCalls(embedded_parameters);
+  assert(embedded_parameters_result.has_value());
+  assert(embedded_parameters_result->at(0).name == "web_search");
+  assert(embedded_parameters_result->at(0).arguments["query"] == "latest world news");
+
+  const std::string embedded_type = R"(```json
+{
+  "blocks": [
+    {
+      "type": "web_search",
+      "query": "latest news on artificial intelligence"
+    }
+  ]
+}
+```)";
+  auto embedded_type_result = pbr::StructuredTextParser::ExtractEmbeddedToolCalls(embedded_type);
+  assert(embedded_type_result.has_value());
+  assert(embedded_type_result->at(0).name == "web_search");
+  assert(embedded_type_result->at(0).arguments["query"] == "latest news on artificial intelligence");
+
   auto embedded_parse = pbr::StructuredTextParser::ParseFromLlmOutput(embedded_tools);
   assert(!embedded_parse.ok);
 

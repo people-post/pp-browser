@@ -7,7 +7,7 @@ std::string PanelRegistry::Body(PanelKind kind) {
   case PanelKind::Sidebar:
     return R"frag(
       <div class="sidebar-panel stack" data-model="shell">
-        <button class="sidebar-new-chat">New chat</button>
+        <button class="sidebar-new-chat" data-event-click="new_chat()">New chat</button>
         <div class="sidebar-sessions">
           <div data-for="session : sessions" class="sidebar-session">
             <p data-rml="session.title"></p>
@@ -24,13 +24,13 @@ std::string PanelRegistry::Body(PanelKind kind) {
           <p class="muted">Ask anything. Assistant replies use structured text.</p>
         </div>
         <div class="messages" data-mount-id="messages">
-          <div data-for="msg : messages" class="message-group">
-            <div class="message-row message-row-user" data-if="msg.role == 'user'" data-rml="msg.content_rml"></div>
-            <div class="message-row message-row-assistant" data-if="msg.role == 'assistant'">
+          <div data-for="turn : turns" class="message-group">
+            <div class="message-row message-row-user" data-rml="turn.user_content_rml"></div>
+            <div class="message-row message-row-assistant" data-if="turn.has_assistant">
               <div class="assistant-message">
-                <div class="bubble bubble-assistant" selectable="text" data-rml="msg.content_rml"></div>
+                <div class="bubble bubble-assistant" selectable="text" data-rml="turn.assistant_content_rml"></div>
                 <div class="suggestion-row">
-                  <button class="chat-suggestion" data-for="sug : msg.suggestions" data-attr-message="sug.message" data-event-click="send_suggestion(sug.message)">{{sug.label}}</button>
+                  <button class="chat-suggestion" data-for="sug : turn.suggestions" data-attr-message="sug.message" data-event-click="send_suggestion(sug.message)">{{sug.label}}</button>
                 </div>
               </div>
             </div>

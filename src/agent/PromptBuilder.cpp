@@ -1,5 +1,7 @@
 #include "agent/PromptBuilder.h"
 
+#include <nlohmann/json.hpp>
+
 #include <sstream>
 
 namespace pbr {
@@ -95,9 +97,13 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
     out << "- Do NOT answer market/news/weather questions from memory or tell the user to check external websites.\n";
     out << "- Do NOT say \"check Yahoo Finance\", \"visit Bloomberg\", or similar — run web_search instead.\n";
     out << "- Call web_search when you are unsure and external lookup would help.\n";
+    out << "- You may call web_search multiple times in one turn with different or refined queries when "
+           "results are sparse, off-topic, or missing key facts.\n";
+    out << "- Only emit your final blocks JSON reply when you have enough information and no further "
+           "searches are needed.\n";
     out << "- Never put tool calls inside blocks JSON. Do not emit { \"tool\": ... } blocks.\n";
     out << "- Tools are invoked by the runtime via function calling, not via block types.\n";
-    out << "- After tool results arrive, synthesize them into your final structured JSON reply.\n";
+    out << "- When results contain story titles, quote those headlines directly; do not list news homepages.\n";
     out << "- Never expose raw tool JSON to the user; summarize in plain blocks.\n\n";
   }
 
@@ -118,17 +124,53 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
   return out.str();
 }
 
+std::string PromptBuilder::FormatSearchResultsForLlm(const std::string& search_results_json) {
+  nlohmann::json doc = nlohmann::json::parse(search_results_json, nullptr, false);
+  if (doc.is_discarded() || !doc.contains("results") || !doc["results"].is_array()) {
+    return search_results_json;
+  }
+
+  std::ostringstream out;
+  int index = 1;
+  for (const auto& result : doc["results"]) {
+    if (!result.is_object()) {
+      continue;
+    }
+    const std::string title = result.value("title", "");
+    const std::string snippet = result.value("snippet", "");
+    if (title.empty() && snippet.empty()) {
+      continue;
+    }
+    out << index++ << ". ";
+    if (!title.empty()) {
+      out << title;
+    }
+    if (!snippet.empty() && snippet != title) {
+      out << "\n   " << snippet;
+    }
+    out << '\n';
+  }
+
+  if (index == 1) {
+    return "No usable search results.";
+  }
+  return out.str();
+}
+
 std::string PromptBuilder::BuildProactiveSearchContext(const std::string& query, const std::string& search_results) {
   std::ostringstream out;
   out << "PROACTIVE WEB SEARCH (already completed for this turn)\n";
   out << "Query: " << query << "\n";
-  out << "Results JSON:\n" << search_results << "\n\n";
+  out << "Results:\n" << FormatSearchResultsForLlm(search_results) << "\n";
   out << "INSTRUCTIONS FOR THIS TURN\n";
-  out << "- The runtime already ran web_search. Use these results for current facts.\n";
-  out << "- Do NOT tell the user to visit Yahoo Finance, MarketWatch, Bloomberg, CNBC, or other sites.\n";
-  out << "- Do NOT explain how to look up data elsewhere.\n";
-  out << "- Summarize the search results in structured blocks. If results are sparse, say what was found "
-         "and note gaps briefly.\n";
+  out << "- The runtime already ran an initial web_search. Use these results as your starting point.\n";
+  out << "- If they lack the specific facts you need, call web_search again with a refined query before "
+         "answering.\n";
+  out << "- List specific headlines or facts from search titles/snippets in your blocks reply.\n";
+  out << "- Do NOT list news outlets, brands, or homepages (CNN, FOX, Google News, NPR, etc.) as the answer.\n";
+  out << "- Do NOT tell the user to visit websites, apps, or \"check\" external sources.\n";
+  out << "- Skip results that are only generic site descriptions with no concrete story.\n";
+  out << "- Use a list block with one item per real headline when possible.\n";
   return out.str();
 }
 

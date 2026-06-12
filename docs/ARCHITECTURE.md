@@ -16,6 +16,10 @@ Application → Backend (SDL_GL3) → RmlUi Context
 
 Presentation (RML/RCSS) is separate from behavior (C++ action routing and MCP).
 
+## Chat agent
+
+Multi-turn chat uses a shared [`Conversation`](../src/agent/conversation/Conversation.h) transcript for UI and LLM context. See [AGENT_CONVERSATION.md](AGENT_CONVERSATION.md).
+
 ## Dynamic RML (`RmlMount`)
 
 Runtime UI updates use [`src/ui/RmlMount.cpp`](../src/ui/RmlMount.cpp):

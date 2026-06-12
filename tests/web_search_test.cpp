@@ -41,5 +41,27 @@ int main() {
   Expect(html_results[0]["snippet"] == "First snippet text", "first html snippet");
   Expect(html_results[1]["url"] == "https://example.com/b", "second html url");
 
+  const std::string rss = R"(<?xml version="1.0" encoding="UTF-8"?>
+    <rss><channel>
+      <item>
+        <title>Google News</title>
+        <link>https://news.google.com/</link>
+      </item>
+      <item>
+        <title>Story One - Example News</title>
+        <link>https://example.com/one</link>
+        <description>First story summary.</description>
+      </item>
+      <item>
+        <title>Story Two - Example News</title>
+        <link>https://example.com/two</link>
+      </item>
+    </channel></rss>)";
+
+  auto rss_results = pbr::WebSearchTool::ParseGoogleNewsRssItems(rss);
+  Expect(rss_results.size() == 2, "rss should skip feed title and yield two stories");
+  Expect(rss_results[0]["title"] == "Story One - Example News", "first rss title");
+  Expect(rss_results[0]["snippet"] == "First story summary.", "first rss snippet");
+
   return 0;
 }
