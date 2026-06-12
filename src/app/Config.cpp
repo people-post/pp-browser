@@ -113,6 +113,9 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
   if (llm.contains("require_api_key") && llm["require_api_key"].is_boolean()) {
     config.llm.require_api_key = llm["require_api_key"].get<bool>();
   }
+  if (llm.contains("num_predict") && llm["num_predict"].is_number_integer()) {
+    config.llm.num_predict = llm["num_predict"].get<int>();
+  }
 
   if (root.contains("mcp") && root["mcp"].is_object()) {
     McpConfig mcp;

@@ -53,6 +53,21 @@ int main() {
   Expect(static_cast<bool>(content_result), "content response must parse");
   Expect(content_result->content.has_value(), "content present");
   Expect(content_result->tool_calls.empty(), "no tool calls");
+  Expect(content_result->finish_reason == "stop", "stop finish_reason");
+
+  const std::string truncated_response = R"({
+    "choices": [{
+      "finish_reason": "length",
+      "message": {
+        "role": "assistant",
+        "content": "```json\n{\"blocks\":[{\"type\":\"paragraph\",\"text\":\"truncated"
+      }
+    }]
+  })";
+
+  auto truncated_result = pbr::LlmClient::ParseChatCompletionResponse(truncated_response);
+  Expect(static_cast<bool>(truncated_result), "truncated response must parse");
+  Expect(truncated_result->finish_reason == "length", "length finish_reason");
 
   return 0;
 }

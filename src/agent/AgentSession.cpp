@@ -78,8 +78,11 @@ void AgentSession::PushToolActivity(const std::shared_ptr<Impl>& state, const st
 }
 
 void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,
-                                      const std::string& text) {
-  PushEvent(state, AgentEvent{.type = AgentEventType::AssistantReady, .text = text, .entry_id = entry_id});
+                                      const std::string& text, const std::string& finish_reason) {
+  PushEvent(state, AgentEvent{.type = AgentEventType::AssistantReady,
+                            .text = text,
+                            .entry_id = entry_id,
+                            .finish_reason = finish_reason});
 }
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message) {
@@ -169,7 +172,7 @@ void AgentSession::HandleLlmResponse(const std::shared_ptr<Impl>& state, const C
   }
 
   state->coordinator.CompleteTurn(state->conversation, state->pending_entry_id, *response.content);
-  PushAssistantReady(state, state->pending_entry_id, *response.content);
+  PushAssistantReady(state, state->pending_entry_id, *response.content, response.finish_reason);
   FinishTurn(state);
 }
 

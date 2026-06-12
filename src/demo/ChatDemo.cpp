@@ -261,11 +261,15 @@ void ChatDemo::SendUserText(const std::string& text) {
   agent_->Submit(trimmed);
 }
 
-void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm) {
+void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
+                                    const std::string& finish_reason) {
   auto parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output)
                          : StructuredTextParser::ParseBlocksJson(raw_output);
   if (!parsed.ok) {
     log().warning << "Failed to parse assistant reply: " << parsed.error;
+    if (from_llm && !finish_reason.empty()) {
+      log().warning << "LLM finish_reason: " << finish_reason;
+    }
     log().warning << "AI response: " << raw_output;
     if (agent_) {
       if (!from_llm) {
@@ -312,7 +316,7 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
     DirtyChat();
     break;
   case AgentEventType::AssistantReady:
-    FinishAssistantReply(event.entry_id, event.text, true);
+    FinishAssistantReply(event.entry_id, event.text, true, event.finish_reason);
     break;
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;

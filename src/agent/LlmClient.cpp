@@ -36,6 +36,10 @@ nlohmann::json ToolsToJson(const std::vector<ToolDefinition>& tools) {
   return out;
 }
 
+bool IsOllamaEndpoint(const std::string& base_url) {
+  return base_url.find("11434") != std::string::npos || base_url.find("ollama") != std::string::npos;
+}
+
 } // namespace
 
 LlmClient::LlmClient(LlmConfig config) : config_(std::move(config)) {
@@ -73,6 +77,12 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   }
 
   nlohmann::json body = {{"model", config_.model}, {"messages", messages}};
+  if (config_.num_predict > 0) {
+    body["max_tokens"] = config_.num_predict;
+    if (IsOllamaEndpoint(config_.base_url)) {
+      body["options"] = {{"num_predict", config_.num_predict}};
+    }
+  }
   if (!request.tools.empty()) {
     body["tools"] = ToolsToJson(request.tools);
     body["tool_choice"] = "auto";
@@ -112,7 +122,11 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   }
 
   log().debug << "LLM response received (" << response.size() << " bytes)";
-  return ParseChatCompletionResponse(response);
+  auto parsed = ParseChatCompletionResponse(response);
+  if (parsed && !parsed->finish_reason.empty()) {
+    log().debug << "LLM finish_reason=" << parsed->finish_reason;
+  }
+  return parsed;
 }
 
 Roe<ChatCompletionResponse> LlmClient::ParseChatCompletionResponse(const std::string& response) {

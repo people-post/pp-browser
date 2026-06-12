@@ -74,7 +74,8 @@ private:
   void SendUserText(const std::string& text);
   void SyncDisplayFromConversation();
   void UpdateSidebarPreview(const std::string& preview_text);
-  void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm);
+  void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
+                            const std::string& finish_reason = {});
   void HandleAgentEvent(const AgentEvent& event);
 
   ChatState chat_;

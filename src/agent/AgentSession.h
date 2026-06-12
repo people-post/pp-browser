@@ -27,6 +27,7 @@ struct AgentEvent {
   std::string text;
   std::string message;
   std::string entry_id;
+  std::string finish_reason;
 };
 
 class AgentSession {
@@ -66,7 +67,7 @@ private:
   static void PushToolActivity(const std::shared_ptr<Impl>& state, const std::string& tool_name,
                                const std::string& status);
   static void PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,
-                                 const std::string& text);
+                                 const std::string& text, const std::string& finish_reason);
   static void PushError(const std::shared_ptr<Impl>& state, const std::string& message);
   static void FinishTurn(const std::shared_ptr<Impl>& state);
 
