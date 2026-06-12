@@ -114,6 +114,52 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
     config.llm.require_api_key = llm["require_api_key"].get<bool>();
   }
 
+  if (root.contains("mcp") && root["mcp"].is_object()) {
+    McpConfig mcp;
+    const auto& mcp_json = root["mcp"];
+    if (mcp_json.contains("command") && mcp_json["command"].is_string()) {
+      mcp.command = mcp_json["command"].get<std::string>();
+    }
+    if (mcp_json.contains("args") && mcp_json["args"].is_array()) {
+      for (const auto& arg : mcp_json["args"]) {
+        if (arg.is_string()) {
+          mcp.args.push_back(arg.get<std::string>());
+        }
+      }
+    }
+    config.mcp = std::move(mcp);
+  } else if (root.contains("mcp_servers") && root["mcp_servers"].is_array() && !root["mcp_servers"].empty()) {
+    const auto& first = root["mcp_servers"][0];
+    if (first.is_object()) {
+      McpConfig mcp;
+      if (first.contains("command") && first["command"].is_string()) {
+        mcp.command = first["command"].get<std::string>();
+      }
+      if (first.contains("args") && first["args"].is_array()) {
+        for (const auto& arg : first["args"]) {
+          if (arg.is_string()) {
+            mcp.args.push_back(arg.get<std::string>());
+          }
+        }
+      }
+      if (!mcp.command.empty()) {
+        config.mcp = std::move(mcp);
+      }
+    }
+  }
+
+  if (root.contains("search") && root["search"].is_object()) {
+    const auto& search = root["search"];
+    if (search.contains("provider") && search["provider"].is_string()) {
+      config.search.provider = search["provider"].get<std::string>();
+    }
+    if (search.contains("api_key") && search["api_key"].is_string()) {
+      config.search.api_key = search["api_key"].get<std::string>();
+    } else if (search.contains("api_key_env") && search["api_key_env"].is_string()) {
+      config.search.api_key = ReadEnv(search["api_key_env"].get<std::string>().c_str());
+    }
+  }
+
   return config;
 }
 

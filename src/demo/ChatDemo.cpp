@@ -1,7 +1,5 @@
 #include "demo/ChatDemo.h"
 
-#include "agent/LlmClient.h"
-#include "agent/PromptBuilder.h"
 #include "agent/StructuredTextParser.h"
 #include "app/Application.h"
 #include "app/InputCoordinator.h"
@@ -14,10 +12,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <chrono>
-#include <future>
-#include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -49,7 +43,6 @@ Rml::String UserMessageRml(const std::string& text) {
 }
 
 Rml::String AssistantBubbleRml(const std::string& rml) {
-  // Parser emits bubble inner content only; suggestion buttons bind via data-for in chat_dialog.rml.
   return Rml::String(rml.c_str());
 }
 
@@ -112,6 +105,7 @@ std::string MockAssistantRespond(const std::string& query) {
 
 void DirtyChat() {
   DataModelHost::Instance().Dirty("chat", "draft");
+  DataModelHost::Instance().Dirty("chat", "status");
   DataModelHost::Instance().Dirty("chat", "messages");
   DataModelHost::Instance().Dirty("chat", "loading");
 }
@@ -168,31 +162,17 @@ void ChatDemo::SendUserText(const std::string& text) {
 
   chat_.messages.push_back({Rml::String("user"), UserMessageRml(trimmed), {}});
   chat_.loading = true;
+  chat_.status = "";
   DirtyChat();
 
-  if (!llm_) {
+  if (!use_llm_) {
     log().debug << "Using mock assistant response";
-    // Defer until Update() so the click event finishes before the message list rebuilds.
     pending_reply_ = PendingReply{MockAssistantRespond(trimmed), false};
     return;
   }
 
-  log().info << "Sending message to LLM";
-  llm_job_ = std::make_unique<LlmJob>();
-  ChatDemo::LlmJob* job = llm_job_.get();
-  const std::string system_prompt = PromptBuilder::BuildChatSystemPrompt();
-  LlmClient client = *llm_;
-
-  job->future = std::async(std::launch::async, [this, job, client, system_prompt, trimmed]() {
-    auto result = client.Complete(system_prompt, trimmed);
-    std::lock_guard lock(job->mutex);
-    if (!result) {
-      log().error << "LLM request failed: " << result.error().message;
-      job->error = result.error().message;
-    } else {
-      job->response = result.value();
-    }
-  });
+  log().info << "Submitting message to agent session";
+  agent_->Submit(trimmed);
 }
 
 void ChatDemo::FinishAssistantReply(const std::string& raw_output, bool from_llm) {
@@ -213,7 +193,39 @@ void ChatDemo::FinishAssistantReply(const std::string& raw_output, bool from_llm
     DirtyShell();
   }
   chat_.loading = false;
+  chat_.status = "";
   DirtyChat();
+}
+
+void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
+  switch (event.type) {
+  case AgentEventType::LoadingChanged:
+    chat_.loading = event.loading;
+    if (!event.loading) {
+      chat_.status = "";
+    }
+    DirtyChat();
+    break;
+  case AgentEventType::ToolActivity:
+    if (event.status == "running") {
+      chat_.status = Rml::String(("Running " + event.tool_name + "...").c_str());
+      DirtyChat();
+    } else if (event.status == "done" && chat_.status.empty()) {
+      chat_.status = Rml::String(("Finished " + event.tool_name).c_str());
+      DirtyChat();
+    }
+    break;
+  case AgentEventType::AssistantReady:
+    FinishAssistantReply(event.text, true);
+    break;
+  case AgentEventType::Error:
+    log().error << "Agent session error: " << event.message;
+    chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(event.message), {}});
+    chat_.loading = false;
+    chat_.status = "";
+    DirtyChat();
+    break;
+  }
 }
 
 bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
@@ -228,8 +240,9 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
       {Rml::String("Help"), Rml::String("Try help, list, code, or button")},
   };
   pending_reply_.reset();
-  llm_job_.reset();
-  llm_.emplace(config.llm);
+  use_llm_ = !config.llm.base_url.empty();
+  agent_.emplace();
+  agent_->Configure(config);
   log().info << "Chat demo initialized (model: " << config.llm.model << ")";
 
   DataModelHost::Instance().Clear();
@@ -265,6 +278,7 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
         }
         ctor.RegisterArray<std::vector<ChatMessage>>();
         ctor.Bind("draft", &ChatDemo::Instance().chat_.draft);
+        ctor.Bind("status", &ChatDemo::Instance().chat_.status);
         ctor.Bind("loading", &ChatDemo::Instance().chat_.loading);
         ctor.Bind("messages", &ChatDemo::Instance().chat_.messages);
         ctor.BindEventCallback("send_message", &ChatDemo::SendMessageCallback);
@@ -307,45 +321,26 @@ void ChatDemo::Update() {
     FinishAssistantReply(reply.output, reply.from_llm);
   }
 
-  if (!llm_job_ || !chat_.loading) {
+  if (!agent_) {
     return;
   }
 
-  if (llm_job_->future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
-    return;
+  std::vector<AgentEvent> events;
+  agent_->PollEvents(events);
+  for (const AgentEvent& event : events) {
+    HandleAgentEvent(event);
   }
-
-  llm_job_->future.get();
-
-  std::optional<std::string> response;
-  std::optional<std::string> error;
-  {
-    std::lock_guard lock(llm_job_->mutex);
-    response = llm_job_->response;
-    error = llm_job_->error;
-  }
-  llm_job_.reset();
-
-  if (error) {
-    log().error << "LLM job error: " << *error;
-    chat_.messages.push_back({Rml::String("assistant"), ErrorMessageRml(*error), {}});
-    chat_.loading = false;
-    DirtyChat();
-    return;
-  }
-
-  FinishAssistantReply(*response, true);
 }
 
 void ChatDemo::Shutdown() {
-  if (llm_job_ && llm_job_->future.valid()) {
-    llm_job_->future.wait();
+  if (agent_) {
+    agent_->Cancel();
+    agent_.reset();
   }
   pending_reply_.reset();
-  llm_job_.reset();
-  llm_.reset();
   chat_ = {};
   shell_ = {};
+  use_llm_ = false;
 }
 
 bool SetupChatDemo(Rml::Context* context, const AppConfig& config) {

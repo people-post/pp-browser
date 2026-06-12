@@ -13,6 +13,29 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out
   return total;
 }
 
+nlohmann::json MessageToJson(const ChatMessage& message) {
+  nlohmann::json out = {{"role", message.role}, {"content", message.content}};
+  if (message.tool_call_id) {
+    out["tool_call_id"] = *message.tool_call_id;
+  }
+  if (message.tool_calls) {
+    out["tool_calls"] = *message.tool_calls;
+  }
+  return out;
+}
+
+nlohmann::json ToolsToJson(const std::vector<ToolDefinition>& tools) {
+  nlohmann::json out = nlohmann::json::array();
+  for (const ToolDefinition& tool : tools) {
+    out.push_back({{"type", "function"},
+                   {"function",
+                    {{"name", tool.name},
+                     {"description", tool.description},
+                     {"parameters", tool.parameters.empty() ? nlohmann::json::object() : tool.parameters}}}});
+  }
+  return out;
+}
+
 } // namespace
 
 LlmClient::LlmClient(LlmConfig config) : config_(std::move(config)) {
@@ -24,16 +47,35 @@ LlmClient::LlmClient(const LlmClient& other) : Module(), config_(other.config_) 
 }
 
 Roe<std::string> LlmClient::Complete(const std::string& system_prompt, const std::string& user_prompt) const {
+  ChatCompletionRequest request;
+  request.messages = {
+      {ChatMessage{.role = "system", .content = system_prompt}},
+      {ChatMessage{.role = "user", .content = user_prompt}},
+  };
+  auto result = Complete(request);
+  if (!result) {
+    return result.error();
+  }
+  if (!result->content) {
+    return Error("LLM response missing content");
+  }
+  return *result->content;
+}
+
+Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& request) const {
   if (config_.require_api_key && config_.api_key.empty()) {
     return Error("LLM API key not configured");
   }
 
-  nlohmann::json body = {
-      {"model", config_.model},
-      {"messages",
-       nlohmann::json::array({{{"role", "system"}, {"content", system_prompt}},
-                              {{"role", "user"}, {"content", user_prompt}}})},
-  };
+  nlohmann::json messages = nlohmann::json::array();
+  for (const ChatMessage& message : request.messages) {
+    messages.push_back(MessageToJson(message));
+  }
+
+  nlohmann::json body = {{"model", config_.model}, {"messages", messages}};
+  if (!request.tools.empty()) {
+    body["tools"] = ToolsToJson(request.tools);
+  }
 
   const std::string payload = body.dump();
   std::string response;
@@ -57,7 +99,7 @@ Roe<std::string> LlmClient::Complete(const std::string& system_prompt, const std
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
 
   const CURLcode code = curl_easy_perform(curl);
   curl_slist_free_all(headers);
@@ -68,16 +110,19 @@ Roe<std::string> LlmClient::Complete(const std::string& system_prompt, const std
     return Error(std::string("curl failed: ") + curl_easy_strerror(code));
   }
 
+  log().debug << "LLM response received (" << response.size() << " bytes)";
+  return ParseChatCompletionResponse(response);
+}
+
+Roe<ChatCompletionResponse> LlmClient::ParseChatCompletionResponse(const std::string& response) {
   auto json = nlohmann::json::parse(response, nullptr, false);
   if (json.is_discarded()) {
-    log().error << "Failed to parse LLM response JSON";
     return Error("Failed to parse LLM response JSON");
   }
 
   if (json.contains("error")) {
     const auto& err = json["error"];
     const std::string message = err.contains("message") ? err["message"].get<std::string>() : err.dump();
-    log().error << "LLM API error: " << message;
     return Error("LLM API error: " + message);
   }
 
@@ -85,8 +130,44 @@ Roe<std::string> LlmClient::Complete(const std::string& system_prompt, const std
     return Error("LLM response missing choices");
   }
 
-  log().debug << "LLM response received (" << response.size() << " bytes)";
-  return json["choices"][0]["message"]["content"].get<std::string>();
+  const auto& choice = json["choices"][0];
+  const auto& message = choice.value("message", nlohmann::json::object());
+
+  ChatCompletionResponse out;
+  out.finish_reason = choice.value("finish_reason", "stop");
+
+  if (message.contains("content") && !message["content"].is_null()) {
+    if (message["content"].is_string()) {
+      out.content = message["content"].get<std::string>();
+    } else {
+      out.content = message["content"].dump();
+    }
+  }
+
+  if (message.contains("tool_calls") && message["tool_calls"].is_array()) {
+    for (const auto& call : message["tool_calls"]) {
+      ToolCall tool_call;
+      tool_call.id = call.value("id", "");
+      if (call.contains("function") && call["function"].is_object()) {
+        const auto& fn = call["function"];
+        tool_call.name = fn.value("name", "");
+        const nlohmann::json args_field = fn.value("arguments", nlohmann::json("{}"));
+        if (args_field.is_string()) {
+          tool_call.arguments = nlohmann::json::parse(args_field.get<std::string>(), nullptr, false);
+          if (tool_call.arguments.is_discarded()) {
+            tool_call.arguments = nlohmann::json::object();
+          }
+        } else {
+          tool_call.arguments = args_field;
+        }
+      }
+      if (!tool_call.name.empty()) {
+        out.tool_calls.push_back(std::move(tool_call));
+      }
+    }
+  }
+
+  return out;
 }
 
 } // namespace pbr

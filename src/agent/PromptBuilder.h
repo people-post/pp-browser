@@ -16,6 +16,7 @@ public:
                                              const std::string& rml_profile);
 
   static std::string BuildChatSystemPrompt();
+  static std::string BuildChatAgentSystemPrompt(const std::string& tools_summary);
 };
 
 } // namespace pbr

@@ -82,6 +82,34 @@ std::string PromptBuilder::BuildUiGenerationPrompt(const std::string& tools_cont
   return out.str();
 }
 
+std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_summary) {
+  std::ostringstream out;
+  out << "You are a helpful assistant in pp-browser, a native UI shell.\n";
+  out << "Replies render as structured blocks — not HTML, not markdown.\n\n";
+
+  if (!tools_summary.empty()) {
+    out << "AVAILABLE TOOLS\n" << tools_summary << "\n";
+    out << "Use tools when you need current or external information.\n";
+    out << "After tool results are available, produce the final user-visible answer.\n\n";
+  }
+
+  out << ChatBlocksProfile() << "\n\n";
+  out << "When you are ready to answer the user (no more tools needed), respond with exactly one ```json "
+         "blocks fence.\n";
+  out << "Example response:\n```json\n";
+  out << R"({
+  "blocks": [
+    { "type": "heading", "level": 2, "text": "Overview" },
+    { "type": "paragraph", "text": "Here are the supported block types." },
+    { "type": "list", "ordered": false, "items": ["paragraph", "heading", "list", "code", "button"] },
+    { "type": "button", "label": "Tell me more", "message": "Can you give an example of each block type?" },
+    { "type": "code", "text": "function hello() {\n  return 42;\n}" }
+  ]
+})";
+  out << "\n```\n";
+  return out.str();
+}
+
 std::string PromptBuilder::BuildChatSystemPrompt() {
   std::ostringstream out;
   out << "You are a helpful assistant in pp-browser, a native UI shell.\n";

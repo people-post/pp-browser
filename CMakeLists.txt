@@ -13,6 +13,7 @@ endif()
 
 include(dependencies)
 include(Progress)
+find_package(Threads REQUIRED)
 pp_configure_status("Configuring in-tree RmlUi (src/render)...")
 
 # Hard-forked RmlUi (src/render/)
@@ -83,6 +84,8 @@ endif()
 target_sources(pp-browser PRIVATE
   src/common/Module.cpp
   src/log/Logger.cpp
+  src/platform/SequencedTaskRunner.cpp
+  src/platform/BrowserThread.cpp
   src/demo/SearchDemo.cpp
   src/demo/ChatDemo.cpp
   src/demo/DynamicRmlDemo.cpp
@@ -102,9 +105,13 @@ target_sources(pp-browser PRIVATE
   src/agent/StructuredTextParser.cpp
   src/agent/UiGenerator.cpp
   src/agent/RmlValidator.cpp
+  src/agent/AgentSession.cpp
+  src/agent/ToolRegistry.cpp
+  src/agent/tools/WebSearchTool.cpp
+  src/agent/tools/McpToolAdapter.cpp
 )
 
-target_link_libraries(pp-browser PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
+target_link_libraries(pp-browser PRIVATE nlohmann_json::nlohmann_json CURL::libcurl Threads::Threads)
 
 pp_configure_status("Configuring tests...")
 enable_testing()

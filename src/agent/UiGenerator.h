@@ -5,6 +5,7 @@
 #include "common/Error.h"
 #include "common/Module.h"
 
+#include <functional>
 #include <string>
 
 namespace pbr {
@@ -17,14 +18,15 @@ struct GeneratedUi {
 
 class UiGenerator : public Module {
 public:
-  UiGenerator(LlmClient& llm, std::string rml_profile);
+  UiGenerator(LlmClient llm, std::string rml_profile);
 
-  Roe<GeneratedUi> Generate(const std::string& tools_context);
+  Roe<GeneratedUi> Generate(const std::string& tools_context) const;
+  void GenerateAsync(const std::string& tools_context, std::function<void(Roe<GeneratedUi>)> callback);
 
   static bool ExtractBlocks(const std::string& llm_output, GeneratedUi& out);
 
 private:
-  LlmClient& llm_;
+  LlmClient llm_;
   std::string rml_profile_;
 };
 

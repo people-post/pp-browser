@@ -1,6 +1,6 @@
 #pragma once
 
-#include "agent/LlmClient.h"
+#include "agent/AgentSession.h"
 #include "app/Config.h"
 #include "common/Module.h"
 
@@ -9,9 +9,6 @@
 #include <RmlUi/Core/Input.h>
 #include <RmlUi/Core/Types.h>
 
-#include <future>
-#include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -49,6 +46,7 @@ private:
 
   struct ChatState {
     Rml::String draft;
+    Rml::String status;
     std::vector<ChatMessage> messages;
     bool loading = false;
   };
@@ -56,13 +54,6 @@ private:
   struct ShellState {
     std::vector<SessionRow> sessions;
     Rml::String preview_rml;
-  };
-
-  struct LlmJob {
-    std::mutex mutex;
-    std::optional<std::string> response;
-    std::optional<std::string> error;
-    std::future<void> future;
   };
 
   struct PendingReply {
@@ -78,11 +69,12 @@ private:
   void OnSendMessage();
   void SendUserText(const std::string& text);
   void FinishAssistantReply(const std::string& raw_output, bool from_llm);
+  void HandleAgentEvent(const AgentEvent& event);
 
   ChatState chat_;
   ShellState shell_;
-  std::optional<LlmClient> llm_;
-  std::unique_ptr<LlmJob> llm_job_;
+  std::optional<AgentSession> agent_;
+  bool use_llm_ = false;
   std::optional<PendingReply> pending_reply_;
 };
 

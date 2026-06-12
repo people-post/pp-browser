@@ -3,6 +3,7 @@
 #include "app/InputCoordinator.h"
 #include "bindings/ActionRouter.h"
 #include "demo/ChatDemo.h"
+#include "platform/BrowserThread.h"
 #include "ui/SplitLayoutHost.h"
 #include "demo/DynamicRmlDemo.h"
 #include "demo/SearchDemo.h"
@@ -64,6 +65,8 @@ bool Application::Initialize(const char* window_title, int width, int height, De
   demo_ = demo;
 
   log().info << "Initializing (demo=" << static_cast<int>(demo) << ", " << width << "x" << height << ")";
+
+  BrowserThread::Initialize();
 
   if (!Backend::Initialize(window_title, width, height, true)) {
     log().error << "Backend::Initialize failed (SDL/OpenGL window could not be created)";
@@ -149,6 +152,7 @@ void Application::Run() {
   }
 
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
+    BrowserThread::RunUITasks();
     if (demo_ == DemoMode::Chat) {
       UpdateChatDemo();
       SplitLayoutHost::Instance().Update(context);
@@ -168,6 +172,9 @@ void Application::Shutdown() {
   if (demo_ == DemoMode::Chat) {
     ShutdownChatDemo();
   }
+
+  BrowserThread::RunUITasks();
+  BrowserThread::Shutdown();
 
   ActionRouter::Instance().Detach();
   Rml::RemoveContext("main");

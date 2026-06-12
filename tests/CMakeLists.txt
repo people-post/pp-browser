@@ -39,3 +39,11 @@ add_executable(pp_browser_split_tree_test split_tree_test.cpp
   ${CMAKE_SOURCE_DIR}/src/ui/SplitTree.cpp)
 target_include_directories(pp_browser_split_tree_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME split_tree_test COMMAND pp_browser_split_tree_test)
+
+add_executable(pp_browser_llm_client_test llm_client_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/LlmClient.cpp
+  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
+  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
+target_link_libraries(pp_browser_llm_client_test PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
+target_include_directories(pp_browser_llm_client_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME llm_client_test COMMAND pp_browser_llm_client_test)

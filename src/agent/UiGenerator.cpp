@@ -2,17 +2,18 @@
 
 #include "agent/PromptBuilder.h"
 #include "agent/RmlValidator.h"
+#include "platform/BrowserThread.h"
 
 #include <regex>
 
 namespace pbr {
 
-UiGenerator::UiGenerator(LlmClient& llm, std::string rml_profile)
-    : llm_(llm), rml_profile_(std::move(rml_profile)) {
+UiGenerator::UiGenerator(LlmClient llm, std::string rml_profile)
+    : llm_(std::move(llm)), rml_profile_(std::move(rml_profile)) {
   redirectLogger("UiGenerator");
 }
 
-Roe<GeneratedUi> UiGenerator::Generate(const std::string& tools_context) {
+Roe<GeneratedUi> UiGenerator::Generate(const std::string& tools_context) const {
   const std::string system = PromptBuilder::BuildUiGenerationPrompt(tools_context, rml_profile_);
   const std::string user = "Generate a minimal form UI for the listed tools.";
 
@@ -45,6 +46,18 @@ Roe<GeneratedUi> UiGenerator::Generate(const std::string& tools_context) {
 
   log().info << "UI generation succeeded";
   return ui;
+}
+
+void UiGenerator::GenerateAsync(const std::string& tools_context,
+                                std::function<void(Roe<GeneratedUi>)> callback) {
+  LlmClient client = llm_;
+  const std::string profile = rml_profile_;
+  BrowserThread::PostTaskAndReply<Roe<GeneratedUi>>(
+      [client, profile, tools_context]() {
+        UiGenerator generator(client, profile);
+        return generator.Generate(tools_context);
+      },
+      std::move(callback));
 }
 
 bool UiGenerator::ExtractBlocks(const std::string& llm_output, GeneratedUi& out) {
