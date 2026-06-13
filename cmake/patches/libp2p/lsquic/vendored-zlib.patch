@@ -1,0 +1,30 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -267,11 +267,17 @@ ENDIF()
+ # Find zlib and libevent header files and library files
+ # TODO: libevent is not strictly necessary to build the library.
+ if(NOT HUNTER_ENABLED)
++if (NOT DEFINED ZLIB_INCLUDE_DIR)
+ FIND_PATH(ZLIB_INCLUDE_DIR NAMES zlib.h)
++endif()
+ IF (ZLIB_INCLUDE_DIR)
+     INCLUDE_DIRECTORIES(${ZLIB_INCLUDE_DIR})
++    if (DEFINED ZLIB_BINARY_INCLUDE)
++        INCLUDE_DIRECTORIES(${ZLIB_BINARY_INCLUDE})
++    endif()
+ ELSE()
+     MESSAGE(FATAL_ERROR "zlib.h was not found")
+ ENDIF()
++if(NOT TARGET ZLIB::ZLIB)
+ IF (CMAKE_SYSTEM_NAME STREQUAL Windows)
+     FIND_LIBRARY(ZLIB_LIB zlib)
+ ELSEIF(CMAKE_SYSTEM_NAME STREQUAL Darwin)
+@@ -285,6 +291,10 @@ IF(ZLIB_LIB)
+ ELSE()
+     MESSAGE(STATUS "zlib not found")
+ ENDIF()
++else()
++    MESSAGE(STATUS "Using vendored zlib target ZLIB::ZLIB")
++endif()
+ endif(NOT HUNTER_ENABLED)
