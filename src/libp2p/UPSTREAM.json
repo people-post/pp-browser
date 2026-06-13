@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/libp2p/cpp-libp2p.git",
+  "tag": "master",
+  "commit": "28e4abcea0bf3fb1b04e51febfea38305f101fe7",
+  "imported": "2026-06-13",
+  "notes": "Hard-forked under src/libp2p/; Hunter removed; dependencies vendored in third_party/"
+}

@@ -1,0 +1,49 @@
+/**
+ * Copyright Quadrivium LLC
+ * All Rights Reserved
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#pragma once
+
+#include <functional>
+
+#include <libp2p/common/types.hpp>
+#include <libp2p/outcome/outcome.hpp>
+
+namespace libp2p::basic {
+
+  struct Writer {
+    using WriteCallback = void(outcome::result<size_t> /*written bytes*/);
+    using WriteCallbackFunc = std::function<WriteCallback>;
+
+    virtual ~Writer() = default;
+
+    /**
+     * @brief Write up to {@code} in.size() {@nocode} bytes.
+     * Calls \param cb after only some bytes has been successfully written,
+     * so doesn't guarantee that all will be. Returns immediately.
+     * @param in data to write.
+     * @param bytes number of bytes to write
+     * @param cb callback with result of operation
+     *
+     * @note caller should maintain validity of an input buffer until callback
+     * is executed. It is usually done with either wrapping buffer as shared
+     * pointer, or having buffer as part of some class/struct, and using
+     * enable_shared_from_this()
+     */
+    virtual void writeSome(BytesIn in, WriteCallbackFunc cb) = 0;
+
+    /**
+     * @brief Defers reporting error state to callback to avoid reentrancy
+     * (i.e. callback will not be called before initiator function returns)
+     * @param ec error code
+     * @param cb callback
+     *
+     * @note if (!ec) then this function does nothing
+     */
+    virtual void deferWriteCallback(std::error_code ec,
+                                    WriteCallbackFunc cb) = 0;
+  };
+
+}  // namespace libp2p::basic
