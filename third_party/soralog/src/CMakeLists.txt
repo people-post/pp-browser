@@ -31,17 +31,22 @@ add_library(sink_to_console
     )
 target_link_libraries(sink_to_console
     sink
-    pthread
     )
+if(NOT WIN32)
+  target_link_libraries(sink_to_console pthread)
+endif()
 
 add_library(sink_to_file
     impl/sink_to_file.cpp
     )
 target_link_libraries(sink_to_file
     sink
-    pthread
     )
+if(NOT WIN32)
+  target_link_libraries(sink_to_file pthread)
+endif()
 
+if(NOT WIN32)
 add_library(sink_to_syslog
     impl/sink_to_syslog.cpp
     )
@@ -49,6 +54,7 @@ target_link_libraries(sink_to_syslog
     sink
     pthread
     )
+endif()
 
 add_library(multisink
     impl/multisink.cpp
@@ -73,7 +79,11 @@ target_link_libraries(configurator INTERFACE
     sink_to_nowhere
     sink_to_console
     sink_to_file
-    sink_to_syslog
+    )
+if(NOT WIN32)
+  target_link_libraries(configurator INTERFACE sink_to_syslog)
+endif()
+target_link_libraries(configurator INTERFACE
     multisink
     )
 
@@ -126,7 +136,11 @@ set(INSTALL_TARGETS
     sink_to_nowhere
     sink_to_console
     sink_to_file
-    sink_to_syslog
+    )
+if(NOT WIN32)
+  list(APPEND INSTALL_TARGETS sink_to_syslog)
+endif()
+list(APPEND INSTALL_TARGETS
     multisink
 
     group

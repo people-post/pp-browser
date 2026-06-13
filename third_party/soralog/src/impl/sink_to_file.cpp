@@ -7,7 +7,13 @@
 
 #include <soralog/impl/sink_to_file.hpp>
 
+#ifndef _WIN32
 #include <sysexits.h>
+#else
+#ifndef EX_IOERR
+#define EX_IOERR 74
+#endif
+#endif
 #include <chrono>
 #include <iostream>
 

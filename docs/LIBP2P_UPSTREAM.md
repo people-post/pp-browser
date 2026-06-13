@@ -35,6 +35,7 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 
 - `protobuf/CMakeLists.txt` — Hunter removed
 - `qtils/CMakeLists.txt`, `soralog/CMakeLists.txt` — accept `PACKAGE_MANAGER=vendored`; soralog uses `target_include_directories`
+- `soralog/` — MSVC toolchain support; skip Unix-only `pthread`/`syslog` pieces on Windows; guard `sysexits.h` in `sink_to_file.cpp`
 - `boost/CMakeLists.txt` — pp-browser wrapper using Boost CMake superproject; unified `boost/` include for compiled libs
 - `lsquic/` — skip duplicate `lsquic_conn_ssl.patch` on qdrvm tag; fix double-applied symbols in-tree
 - lsquic — remaining vcpkg-overlay patches applied at import (`cmake/patches/libp2p/lsquic/`)

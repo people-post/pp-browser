@@ -7,7 +7,9 @@
 
 #pragma once
 
+#if defined(__linux__) || defined(__APPLE__)
 #include <pthread.h>
+#endif
 #include <array>
 #include <atomic>
 #include <cstring>

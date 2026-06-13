@@ -18,7 +18,9 @@
 #include <soralog/impl/sink_to_console.hpp>
 #include <soralog/impl/sink_to_file.hpp>
 #include <soralog/impl/sink_to_nowhere.hpp>
+#ifndef _WIN32
 #include <soralog/impl/sink_to_syslog.hpp>
+#endif
 
 namespace soralog {
 
@@ -672,6 +674,11 @@ namespace soralog {
 
   void ConfiguratorFromYAML::Applicator::parseSinkToSyslog(
       const std::string &name, const YAML::Node &sink_node) {
+#ifdef _WIN32
+    (void)sink_node;
+    errors_ << "E: Syslog sink '" << name << "' is not supported on Windows\n";
+    has_error_ = true;
+#else
     bool fail = false;
     Sink::ThreadInfoType thread_info_type = Sink::ThreadInfoType::NONE;
     std::optional<size_t> capacity;
@@ -853,6 +860,7 @@ namespace soralog {
                                    buffer_size,
                                    latency,
                                    at_fault);
+#endif
   }
 
   void ConfiguratorFromYAML::Applicator::parseMultisink(
