@@ -38,6 +38,7 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 - `boost/CMakeLists.txt` — pp-browser wrapper using Boost CMake superproject; unified `boost/` include for compiled libs
 - `lsquic/` — skip duplicate `lsquic_conn_ssl.patch` on qdrvm tag; fix double-applied symbols in-tree
 - lsquic — remaining vcpkg-overlay patches applied at import (`cmake/patches/libp2p/lsquic/`)
+- `soralog/` — `.github/` stripped at import (contains `aux/`, a Windows-reserved path name)
 
 ## Integration status
 

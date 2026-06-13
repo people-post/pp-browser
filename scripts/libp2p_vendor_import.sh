@@ -50,7 +50,12 @@ import_tarball() {
   fi
 
   mkdir -p "${dest}"
-  rsync -a --delete --exclude='.git' "${inner}/" "${dest}/"
+  # Drop upstream CI/hooks; soralog ships .github/aux/ which is invalid on Windows (reserved name).
+  rsync -a --delete \
+    --exclude='.git' \
+    --exclude='.github' \
+    --exclude='.githooks' \
+    "${inner}/" "${dest}/"
   rm -rf "${work}"
 }
 
