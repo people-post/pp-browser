@@ -1,0 +1,23 @@
+# Route curl's FindOpenSSL to in-tree BoringSSL targets (vendored libp2p build).
+if(TARGET ssl AND TARGET crypto)
+  if(NOT TARGET OpenSSL::Crypto)
+    add_library(OpenSSL::Crypto ALIAS crypto)
+  endif()
+  if(NOT TARGET OpenSSL::SSL)
+    add_library(OpenSSL::SSL ALIAS ssl)
+  endif()
+
+  set(OpenSSL_FOUND TRUE)
+  set(OPENSSL_FOUND TRUE)
+  set(OPENSSL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/boringssl/include")
+  set(OPENSSL_SSL_LIBRARY ssl)
+  set(OPENSSL_CRYPTO_LIBRARY crypto)
+  set(OPENSSL_LIBRARIES ssl crypto)
+
+  if(NOT OpenSSL_FIND_QUIETLY)
+    message(STATUS "Found OpenSSL (BoringSSL): ${OPENSSL_INCLUDE_DIR}")
+  endif()
+  return()
+endif()
+
+include(${CMAKE_ROOT}/Modules/FindOpenSSL.cmake)

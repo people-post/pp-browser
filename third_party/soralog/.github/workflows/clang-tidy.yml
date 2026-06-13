@@ -1,0 +1,52 @@
+#
+# Copyright Soramitsu Co., 2021-2023
+# Copyright Quadrivium Co., 2023
+# All Rights Reserved
+# SPDX-License-Identifier: Apache-2.0
+#
+
+name: Clang Tidy
+
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - master
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v1
+      name: checkout
+      with:
+        submodules: true
+        clean: true
+        fetch-depth: 1
+    - name: install
+      run: |
+        set -e
+        sudo apt-get update || true
+        sudo apt-get install -y ninja-build gcovr gcc-13 g++-13 llvm-18 clang-18 clang++-18 clang-tidy-18 clang-format-18
+
+        sudo update-alternatives --install /usr/bin/python       python       /usr/bin/python3               90
+        sudo update-alternatives --install /usr/bin/clang-tidy   clang-tidy   /usr/bin/clang-tidy-18         999 
+        sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-18       999 
+        sudo update-alternatives --install /usr/bin/clang        clang        /usr/lib/llvm-18/bin/clang-18  999
+        sudo update-alternatives --install /usr/bin/clang++      clang++      /usr/bin/clang++-18            999
+        sudo update-alternatives --install /usr/bin/gcc          gcc          /usr/bin/gcc-13                90
+        sudo update-alternatives --install /usr/bin/g++          g++          /usr/bin/g++-13                90
+        sudo update-alternatives --install /usr/bin/gcov         gcov         /usr/bin/gcov-13               90
+
+    - name: run checks
+      run: |
+        #!/bin/bash
+        LLVM_DIR=/usr/lib/llvm-??
+        VER_COUNT=$(ls -d -1 ${LLVM_DIR} | wc -l)
+        test ${VER_COUNT} -eq 0 && echo "no llvm version detected" && exit 1
+        export LLVM_ROOT=$(ls -r -d -1 ${LLVM_DIR} | head -1)
+        export PATH=${LLVM_ROOT}/bin:${LLVM_ROOT}/share/clang:${PATH}
+        cmake . -Bbuild -DBUILD_TESTS=ON
+        .github/aux/clang-tidy.sh build

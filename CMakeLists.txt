@@ -27,6 +27,17 @@ set(RMLUI_LUA_BINDINGS OFF CACHE BOOL "" FORCE)
 add_subdirectory(src/render EXCLUDE_FROM_ALL)
 pp_configure_status("RmlUi configured; setting up pp-browser targets...")
 
+if(PP_BROWSER_ENABLE_LIBP2P_BUILD)
+  pp_configure_status("Configuring in-tree libp2p (src/libp2p)...")
+  set(PACKAGE_MANAGER vendored CACHE STRING "" FORCE)
+  set(TESTING OFF CACHE BOOL "" FORCE)
+  set(EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(CLANG_TIDY OFF CACHE BOOL "" FORCE)
+  set(CLANG_FORMAT OFF CACHE BOOL "" FORCE)
+  add_subdirectory(src/libp2p EXCLUDE_FROM_ALL)
+  pp_configure_status("libp2p configured")
+endif()
+
 set(PP_BROWSER_BACKEND_SOURCES
   src/render/integration/RmlUi_Platform_SDL.cpp
   src/render/integration/RmlUi_Renderer_GL3.cpp

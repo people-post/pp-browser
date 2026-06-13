@@ -8,7 +8,8 @@ pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — windowing (`src/render/backends/`)
 - **Hard-forked RmlUi** — UI layout in `src/render/`
-- **Third-party libs** — FreeType, nlohmann/json, curl, SDL3, SDL3_image in [`third_party/`](third_party/)
+- **Hard-forked libp2p** — P2P networking in `src/libp2p/` (build-only for now; not linked into the app)
+- **Third-party libs** — FreeType, nlohmann/json, curl, SDL3, SDL3_image, and libp2p deps in [`third_party/`](third_party/)
 - **Chat + MCP + LLM scaffolding** — `src/demo/`, `src/agent/`, `src/mcp/`
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
@@ -28,6 +29,15 @@ We **own and modify** the vendored copy under [`src/render/`](src/render/). It i
 | Text selection in static content | `src/render/Source/Core/Elements/ElementSelectableText.*` | RML attribute `selectable="text"`; Ctrl+C copies selection |
 | User-agent baseline styles | `src/render/Source/Core/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
 | List markers (workaround) | `src/render/Source/Core/ListMarker.*`, `Layout/InlineLevelBox.cpp` | `ul`/`ol` bullets until `list-style` exists — see [RMLUI_UPSTREAM.md](docs/RMLUI_UPSTREAM.md) |
+
+## libp2p is maintained in-tree
+
+We **own and modify** the hard fork under [`src/libp2p/`](src/libp2p/). It is not a submodule. Hunter is removed; dependencies are vendored in `third_party/`.
+
+- Edit libp2p directly when protocol or transport changes are needed.
+- Document fork-specific changes in [docs/LIBP2P_UPSTREAM.md](docs/LIBP2P_UPSTREAM.md).
+- App-specific glue will live in [`src/libp2p/integration/`](src/libp2p/integration/) (not in the fork proper).
+- Import/update libp2p deps with `./scripts/libp2p_vendor_import.sh`.
 
 ## UI generation constraints
 

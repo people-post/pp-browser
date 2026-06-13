@@ -4,19 +4,25 @@
 
 - CMake 3.24+
 - C++20 compiler (GCC 13+, Clang 16+, or MSVC 2022)
-- OpenSSL development headers (Linux only; `libssl-dev` on Debian/Ubuntu)
 - OpenGL 3.3 drivers
 - Linux: `libx11-dev`, `libxext-dev`, `libxcursor-dev`, `libxinerama-dev`, `libxi-dev`, `libxrandr-dev`, `libxfixes-dev`, `libgl-dev`
+- Perl (for lsquic code generation, when libp2p build is enabled)
+
+When libp2p is enabled (default), curl uses vendored **BoringSSL** instead of system `libssl-dev`.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../third_party/): FreeType, nlohmann-json, curl, SDL3, and SDL3_image (built via `add_subdirectory`; SDL built with `SDL_DBUS=OFF` and unused subsystems disabled).
+**Vendored source** under [`third_party/`](../third_party/): FreeType, nlohmann-json, curl, SDL3, SDL3_image, and (for libp2p) BoringSSL, Boost, Protobuf, lsquic, and related packages.
 
-**System packages:** OpenSSL on Linux (`libssl-dev`); X11 and OpenGL development headers on Linux for the GUI.
+**System packages:** X11 and OpenGL development headers on Linux for the GUI.
 
-RmlUi is **hard-forked** under `src/render/` (not from vcpkg).
+RmlUi is **hard-forked** under `src/render/`. libp2p is **hard-forked** under `src/libp2p/` (not in `third_party/`).
 
-If `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
+If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
+
+If libp2p dependency trees are missing, run `./scripts/libp2p_vendor_import.sh`.
+
+Disable the libp2p subtree with `-DPP_BROWSER_ENABLE_LIBP2P_BUILD=OFF` (restores system OpenSSL for curl on Linux).
 
 Codec sources under `third_party/sdl3_image/external/` are committed as **regular files** (not git submodules). If configure reports missing externals after clone, re-run `./scripts/vendor_import.sh` and ensure those directories contain source files, not empty gitlink placeholders.
 

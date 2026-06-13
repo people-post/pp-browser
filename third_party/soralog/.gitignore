@@ -1,0 +1,45 @@
+#
+# Copyright Soramitsu Co., 2021-2023
+# Copyright Quadrivium Co., 2023
+# All Rights Reserved
+# SPDX-License-Identifier: Apache-2.0
+#
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# JetBrains artifacts
+/build/
+/build-*/
+/cmake-build-*/
+/.idea/

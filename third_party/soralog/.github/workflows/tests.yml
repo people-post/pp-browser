@@ -1,0 +1,72 @@
+#
+# Copyright Soramitsu Co., 2021-2023
+# Copyright Quadrivium Co., 2023
+# All Rights Reserved
+# SPDX-License-Identifier: Apache-2.0
+#
+
+name: Tests
+
+on:
+  push:
+    branches: [ master ]
+    tags: [ '*' ]
+  pull_request:
+
+env:
+  BUILD_DIR: build
+  CTEST_OUTPUT_ON_FAILURE: 1
+  GITHUB_HUNTER_USERNAME: ${{ secrets.HUNTER_USERNAME }}
+  GITHUB_HUNTER_TOKEN: ${{ secrets.HUNTER_TOKEN }}
+  CACHE_PATHS: |
+    ~/Library/Caches/pip
+    ~/.ccache
+    ~/.hunter
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        options:
+         - name: "Address Sanitizer"
+           sanitizer: ASAN
+         - name: "Leak Sanitizer"
+           sanitizer: LSAN
+         - name: "Thread Sanitizer"
+           sanitizer: TSAN
+         - name: "Undefined Behavior Sanitizer"
+           sanitizer: UBSAN
+    name: "${{ matrix.options.name }}"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v1
+        with:
+          submodules: true
+          clean: true
+          fetch-depth: 1
+
+      - name: install dependencies
+        run: |
+          set -e
+          sudo apt-get update || true
+          sudo apt-get install -y ninja-build
+
+      - name: cmake
+        env:
+          CC: gcc
+          CXX: g++
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # has to be included to access other secrets
+          GITHUB_HUNTER_USERNAME: ${{ secrets.GITHUB_HUNTER_USERNAME }}
+          GITHUB_HUNTER_TOKEN: ${{ secrets.GITHUB_HUNTER_TOKEN }}
+        run: cmake . -Bbuild -DBUILD_TESTS=ON -D${{ matrix.options.sanitizer }}=ON
+
+      - name: build
+        run: cmake --build build -- -j4
+
+      - name: test
+        env:
+          CTEST_OUTPUT_ON_FAILURE: 1
+        run: cmake --build build --target test
+
