@@ -276,6 +276,68 @@ input, textarea, select {
   background-color: #d8dce2;
 }
 
+.chat-form {
+  display: block;
+  margin-top: 12dp;
+  padding: 12dp;
+  border: 1dp #d1d5db;
+  border-radius: 8dp;
+  background-color: #ffffff;
+}
+
+.chat-form label {
+  display: block;
+  margin-bottom: 8dp;
+  color: #333333;
+}
+
+.chat-form input,
+.chat-form textarea,
+.chat-form select {
+  display: block;
+  width: 100%;
+  margin-top: 4dp;
+  margin-bottom: 0;
+  box-sizing: border-box;
+}
+
+.chat-form-submit {
+  display: inline-block;
+  width: auto;
+  margin-top: 8dp;
+  padding: 8dp 16dp;
+  border-radius: 8dp;
+  background-color: #4a6cf7;
+  color: #ffffff;
+  cursor: pointer;
+  focus: none;
+}
+
+.chat-form-submit:hover {
+  background-color: #3f5ee0;
+}
+
+.chat-form-expired {
+  opacity: 0.85;
+}
+
+.chat-form-expired input,
+.chat-form-expired textarea,
+.chat-form-expired select,
+.chat-form-expired .chat-form-submit {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.chat-form-expired .chat-form-submit {
+  display: none;
+}
+
+.chat-form-expired-label {
+  margin-top: 0;
+  margin-bottom: 8dp;
+}
+
 .dynamic-demo-body {
   position: absolute;
   top: 0;

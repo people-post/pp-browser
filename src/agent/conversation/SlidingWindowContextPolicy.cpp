@@ -1,5 +1,7 @@
 #include "agent/conversation/SlidingWindowContextPolicy.h"
 
+#include "agent/conversation/UserMessageFormatter.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -44,7 +46,8 @@ std::vector<HistoryMessage> TakeRecentTurnPairs(const std::vector<TranscriptEntr
   std::vector<HistoryMessage> flattened;
   flattened.reserve(completed.size() * 2);
   for (const TranscriptEntry& entry : completed) {
-    flattened.push_back(HistoryMessage{.entry_id = entry.id, .role = "user", .content = entry.user_text});
+    flattened.push_back(
+        HistoryMessage{.entry_id = entry.id, .role = "user", .content = FormatUserContentForLlm(entry)});
     if (entry.assistant_raw) {
       flattened.push_back(
           HistoryMessage{.entry_id = entry.id, .role = "assistant", .content = *entry.assistant_raw});
@@ -123,7 +126,8 @@ ContextBuildResult SlidingWindowContextPolicy::Build(const std::string& system_p
   }
 
   result.messages.insert(result.messages.begin(), prefix.begin(), prefix.end());
-  result.messages.push_back(ChatMessage{.role = "user", .content = current_turn.user_text});
+  result.messages.push_back(
+      ChatMessage{.role = "user", .content = FormatUserContentForLlm(current_turn)});
 
   const int max_tokens = static_cast<int>(std::floor(budget.max_input_tokens * budget.token_estimate_margin));
   while (EstimateMessagesTokens(result.messages) > max_tokens && recent.size() > 2) {
@@ -135,7 +139,8 @@ ContextBuildResult SlidingWindowContextPolicy::Build(const std::string& system_p
     for (const HistoryMessage& message : recent) {
       result.messages.push_back(ChatMessage{.role = message.role, .content = message.content});
     }
-    result.messages.push_back(ChatMessage{.role = "user", .content = current_turn.user_text});
+    result.messages.push_back(
+        ChatMessage{.role = "user", .content = FormatUserContentForLlm(current_turn)});
   }
 
   provenance.estimated_input_tokens =

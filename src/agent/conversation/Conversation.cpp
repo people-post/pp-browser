@@ -16,7 +16,8 @@ std::string Conversation::MakeEntryId() {
   return "entry_" + std::to_string(next_entry_id_++);
 }
 
-TranscriptEntry& Conversation::AppendUser(const std::string& user_text) {
+TranscriptEntry& Conversation::AppendUser(const std::string& user_text,
+                                          std::optional<std::string> user_payload) {
   std::lock_guard lock(mutex_);
   if (conversation_id_.empty()) {
     conversation_id_ = "conv_" + std::to_string(next_conversation_id_++);
@@ -32,6 +33,7 @@ TranscriptEntry& Conversation::AppendUser(const std::string& user_text) {
       .id = MakeEntryId(),
       .turn_index = turn_index,
       .user_text = user_text,
+      .user_payload = std::move(user_payload),
   });
   return entries_.back();
 }

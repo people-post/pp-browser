@@ -72,9 +72,16 @@ add_executable(pp_browser_sliding_window_context_policy_test sliding_window_cont
   ${CMAKE_SOURCE_DIR}/src/agent/conversation/Conversation.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/conversation/SlidingWindowContextPolicy.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/conversation/TurnCoordinator.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/conversation/UserMessageFormatter.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/LlmClient.cpp
   ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
   ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
 target_link_libraries(pp_browser_sliding_window_context_policy_test PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
 target_include_directories(pp_browser_sliding_window_context_policy_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME sliding_window_context_policy_test COMMAND pp_browser_sliding_window_context_policy_test)
+
+add_executable(pp_browser_chat_form_helper_test chat_form_helper_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/demo/ChatFormHelper.cpp)
+target_link_libraries(pp_browser_chat_form_helper_test PRIVATE nlohmann_json::nlohmann_json RmlUi::Core)
+target_include_directories(pp_browser_chat_form_helper_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME chat_form_helper_test COMMAND pp_browser_chat_form_helper_test)

@@ -15,7 +15,8 @@ public:
 
   const std::string& ConversationId() const { return conversation_id_; }
 
-  TranscriptEntry& AppendUser(const std::string& user_text);
+  TranscriptEntry& AppendUser(const std::string& user_text,
+                              std::optional<std::string> user_payload = std::nullopt);
   bool CompleteTurn(const std::string& entry_id, const std::string& assistant_raw);
   bool SetAssistantDisplay(const std::string& entry_id, const std::string& assistant_rml,
                            std::vector<TranscriptSuggestion> suggestions);

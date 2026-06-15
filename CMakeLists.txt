@@ -99,6 +99,7 @@ target_sources(pp-browser PRIVATE
   src/platform/BrowserThread.cpp
   src/demo/SearchDemo.cpp
   src/demo/ChatDemo.cpp
+  src/demo/ChatFormHelper.cpp
   src/demo/DynamicRmlDemo.cpp
   src/ui/DocumentLoader.cpp
   src/ui/RmlMount.cpp
@@ -121,6 +122,7 @@ target_sources(pp-browser PRIVATE
   src/agent/conversation/Conversation.cpp
   src/agent/conversation/SlidingWindowContextPolicy.cpp
   src/agent/conversation/TurnCoordinator.cpp
+  src/agent/conversation/UserMessageFormatter.cpp
   src/agent/ToolRegistry.cpp
   src/agent/tools/WebSearchTool.cpp
   src/agent/tools/McpToolAdapter.cpp

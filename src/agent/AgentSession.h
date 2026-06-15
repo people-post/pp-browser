@@ -39,7 +39,7 @@ public:
   AgentSession& operator=(const AgentSession&) = delete;
 
   void Configure(const AppConfig& config);
-  void Submit(const std::string& user_text);
+  void Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
   void PollEvents(std::vector<AgentEvent>& out);
   void Cancel();
   void StartNewConversation();
@@ -47,7 +47,8 @@ public:
   bool IsConfigured() const;
   const Conversation& conversation() const;
 
-  TranscriptEntry& AppendUserMessage(const std::string& user_text);
+  TranscriptEntry& AppendUserMessage(const std::string& user_text,
+                                     std::optional<std::string> user_payload = std::nullopt);
   bool CompleteAssistantMessage(const std::string& entry_id, const std::string& assistant_raw);
   bool SetAssistantDisplay(const std::string& entry_id, const std::string& assistant_rml,
                            std::vector<TranscriptSuggestion> suggestions);

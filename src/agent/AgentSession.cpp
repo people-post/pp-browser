@@ -55,6 +55,7 @@ struct AgentSession::Impl {
   TurnCoordinator coordinator;
   std::vector<ChatMessage> turn_scratch;
   std::string pending_user_text;
+  std::optional<std::string> pending_user_payload;
   std::string pending_entry_id;
   int iterations = 0;
   bool configured = false;
@@ -244,7 +245,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
   state->iterations = 0;
   state->turn_scratch.clear();
 
-  TranscriptEntry& entry = state->conversation.AppendUser(state->pending_user_text);
+  TranscriptEntry& entry = state->conversation.AppendUser(state->pending_user_text, state->pending_user_payload);
   state->pending_entry_id = entry.id;
 
   const std::string system_prompt =
@@ -314,8 +315,9 @@ const Conversation& AgentSession::conversation() const {
   return impl_->conversation;
 }
 
-TranscriptEntry& AgentSession::AppendUserMessage(const std::string& user_text) {
-  return impl_->conversation.AppendUser(user_text);
+TranscriptEntry& AgentSession::AppendUserMessage(const std::string& user_text,
+                                                  std::optional<std::string> user_payload) {
+  return impl_->conversation.AppendUser(user_text, std::move(user_payload));
 }
 
 bool AgentSession::CompleteAssistantMessage(const std::string& entry_id, const std::string& assistant_raw) {
@@ -327,13 +329,14 @@ bool AgentSession::SetAssistantDisplay(const std::string& entry_id, const std::s
   return impl_->conversation.SetAssistantDisplay(entry_id, assistant_rml, std::move(suggestions));
 }
 
-void AgentSession::Submit(const std::string& user_text) {
+void AgentSession::Submit(const std::string& user_text, std::optional<std::string> user_payload) {
   if (user_text.empty() || impl_->busy.exchange(true)) {
     return;
   }
 
   impl_->cancelled = false;
   impl_->pending_user_text = user_text;
+  impl_->pending_user_payload = std::move(user_payload);
 
   BrowserThread::PostTask(BrowserThreadId::IO, [impl = impl_]() {
     if (!impl->configured) {
@@ -361,6 +364,7 @@ void AgentSession::StartNewConversation() {
     impl->turn_scratch.clear();
     impl->pending_entry_id.clear();
     impl->pending_user_text.clear();
+    impl->pending_user_payload.reset();
     impl->cancelled = false;
     impl->busy = false;
   });

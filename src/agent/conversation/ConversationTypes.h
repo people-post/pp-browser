@@ -17,6 +17,7 @@ struct TranscriptEntry {
   std::string id;
   int turn_index = 0;
   std::string user_text;
+  std::optional<std::string> user_payload;
   std::optional<std::string> assistant_raw;
   std::optional<std::string> assistant_rml;
   std::vector<TranscriptSuggestion> suggestions;

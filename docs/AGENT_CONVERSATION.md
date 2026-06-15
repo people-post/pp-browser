@@ -25,7 +25,7 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 [`src/agent/conversation/`](../src/agent/conversation/)
 
 - **`TranscriptEntry`** — one user message and optional assistant reply
-  - `user_text`, `assistant_raw` (LLM context)
+  - `user_text`, optional `user_payload` (LLM-only structured JSON fence), `assistant_raw` (LLM context)
   - `assistant_rml`, `suggestions` (UI, filled after parsing)
 - **`Conversation`** — in-memory transcript + optional `ConversationSummary`
 - **`IContextPolicy`** — builds LLM message list from transcript
@@ -38,6 +38,32 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 2. `TurnCoordinator::BeginTurn` → context policy builds messages → `AgentSession::turn_scratch_`
 3. Tool loop extends `turn_scratch_` only
 4. Final assistant text → `CompleteTurn` (stores `assistant_raw`) → UI parses → `SetAssistantDisplay`
+
+## Dual-channel user messages (`user_payload`)
+
+Some UI actions (notably **form submit**) send two representations of the same user turn:
+
+| Channel | Field | Audience |
+|---------|-------|----------|
+| Display | `user_text` | Chat bubbles (human-readable) |
+| Structured | `user_payload` | LLM context only (JSON string) |
+
+`SlidingWindowContextPolicy` formats user messages for the model via `FormatUserContentForLlm()`: when `user_payload` is set, the LLM sees `user_text` plus a fenced ` ```json ` block. The UI continues to render `user_text` only.
+
+`Conversation::AppendUser(text, payload)` and `AgentSession::Submit(text, payload)` accept the optional payload.
+
+## In-chat forms (single active form)
+
+Chat forms are inline RML inside assistant bubbles (see `ChatFormHelper`, `ChatDemo`):
+
+| Rule | Behavior |
+|------|----------|
+| Single active form | Only the latest unsubmitted form on the current assistant turn is editable |
+| Expire on progression | Sending any user message or submitting a form disables older forms |
+| Re-offer | The model may emit a new form in a later assistant reply; that becomes the new active form |
+| Submit | `submit_form(entry_id, form_id)` reads DOM values, sends `user_text` from `data-submit-template`, and `user_payload` as `{"type":"form_submission",...}` |
+
+Mock chat: type `form` (without LLM configured) to exercise the booking form sample.
 
 ## Configuration
 

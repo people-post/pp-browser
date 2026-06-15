@@ -1,6 +1,7 @@
 #include "agent/conversation/Conversation.h"
 #include "agent/conversation/SlidingWindowContextPolicy.h"
 #include "agent/conversation/TurnCoordinator.h"
+#include "agent/conversation/UserMessageFormatter.h"
 
 #include <cassert>
 #include <iostream>
@@ -100,6 +101,36 @@ int main() {
   conversation.StartNewConversation();
   assert(conversation.Entries().empty());
   assert(conversation.CompletedTurnCount() == 0);
+
+  pbr::Conversation payload_conversation;
+  pbr::TranscriptEntry& payload_entry = payload_conversation.AppendUser(
+      "Book for Alice on 2026-06-15",
+      R"({"type":"form_submission","form_id":"booking","values":{"name":"Alice","date":"2026-06-15"}})");
+  payload_conversation.CompleteTurn(payload_entry.id, "Confirmed.");
+  const pbr::ContextBuildResult payload_history =
+      policy.Build("system", payload_conversation, payload_entry, budget);
+  bool saw_payload_fence = false;
+  for (const pbr::ChatMessage& message : payload_history.messages) {
+    if (message.role == "user" && message.content.find("```json") != std::string::npos &&
+        message.content.find("form_submission") != std::string::npos) {
+      saw_payload_fence = true;
+    }
+  }
+  assert(saw_payload_fence);
+
+  pbr::Conversation current_payload_conversation;
+  pbr::TranscriptEntry& current_payload = current_payload_conversation.AppendUser(
+      "Submit booking",
+      R"({"type":"form_submission","form_id":"booking","values":{"name":"Bob"}})");
+  const pbr::ContextBuildResult current_payload_built =
+      policy.Build("system", current_payload_conversation, current_payload, budget);
+  assert(current_payload_built.messages.back().role == "user");
+  assert(current_payload_built.messages.back().content.find("```json") != std::string::npos);
+  assert(current_payload_built.messages.back().content.find("Submit booking") != std::string::npos);
+
+  pbr::TranscriptEntry plain_entry;
+  plain_entry.user_text = "hello";
+  assert(pbr::FormatUserContentForLlm(plain_entry) == "hello");
 
   std::cout << "sliding_window_context_policy_test passed\n";
   return 0;
