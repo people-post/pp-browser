@@ -54,7 +54,6 @@ std::string TrimAsciiWhitespace(std::string text) {
   return text;
 }
 
-/// Close unbalanced `{`/`}` — common when models truncate the outer object.
 std::string BalanceJsonBraces(std::string json) {
   int depth = 0;
   for (char c : json) {
@@ -83,7 +82,389 @@ ParseResult BlockError(const std::string& message) {
   return result;
 }
 
-ParseResult RenderBlock(const nlohmann::json& block) {
+constexpr const char* kFormWidgetRml =
+    "<p class=\"muted chat-form-expired-label\" data-if=\"turn.has_form && turn.form.expired\">Form closed</p>"
+    "<div class=\"chat-form\" data-form-id=\"__FORM_ID__\" data-if=\"turn.has_form && !turn.form.expired\">"
+    "<p class=\"muted\">{{turn.form.title}}</p>"
+    "<div data-for=\"field : turn.form.fields\">"
+    "<label>{{field.label}}"
+    "<input type=\"text\" data-if=\"field.field_type == 'text'\" data-value=\"field.value\" />"
+    "<input type=\"text\" data-if=\"field.field_type == 'date'\" data-value=\"field.value\" "
+    "placeholder=\"YYYY-MM-DD\" />"
+    "<textarea rows=\"2\" data-if=\"field.field_type == 'textarea'\" data-value=\"field.value\"></textarea>"
+    "<select data-if=\"field.field_type == 'select'\" data-value=\"field.value\">"
+    "<option data-for=\"option : field.options\" data-value=\"option.value\">{{option.label}}</option>"
+    "</select>"
+    "<input type=\"checkbox\" data-if=\"field.field_type == 'checkbox'\" data-checked=\"field.checked\" />"
+    "</label>"
+    "</div>"
+    "<button type=\"button\" class=\"chat-form-submit\" "
+    "data-event-click=\"submit_form('__ENTRY__', '__FORM_ID__')\">{{turn.form.submit_label}}</button>"
+    "</div>";
+
+constexpr const char* kCalendarWidgetRml =
+    "<div class=\"chat-calendar\" data-if=\"turn.has_calendar\">"
+    "<div class=\"row calendar-header\">"
+    "<button type=\"button\" class=\"calendar-nav\" data-event-click=\"calendar_prev('__ENTRY__')\">&lt;</button>"
+    "<span>{{turn.calendar.month_label}}</span>"
+    "<button type=\"button\" class=\"calendar-nav\" data-event-click=\"calendar_next('__ENTRY__')\">&gt;</button>"
+    "</div>"
+    "<div class=\"calendar-weekdays row\">"
+    "<span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>"
+    "</div>"
+    "<table class=\"calendar-grid\">"
+    "<tr data-for=\"week : turn.calendar.weeks\">"
+    "<td class=\"calendar-cell\" data-for=\"day : week.days\">"
+    "<button type=\"button\" class=\"calendar-day\" data-if=\"day.available\" "
+    "data-event-click=\"select_calendar_day('__ENTRY__', day.iso_date)\">{{day.label}}</button>"
+    "<span class=\"calendar-day calendar-day-muted\" data-if=\"!day.available\">{{day.label}}</span>"
+    "</td>"
+    "</tr>"
+    "</table>"
+    "</div>";
+
+std::string ReplaceAll(std::string text, const std::string& from, const std::string& to) {
+  size_t pos = 0;
+  while ((pos = text.find(from, pos)) != std::string::npos) {
+    text.replace(pos, from.size(), to);
+    pos += to.size();
+  }
+  return text;
+}
+
+std::optional<std::string> ParseOptionalButtonPayload(const nlohmann::json& block) {
+  if (!block.contains("payload")) {
+    return std::nullopt;
+  }
+  if (!block["payload"].is_string()) {
+    return std::nullopt;
+  }
+  const std::string payload = block["payload"].get<std::string>();
+  if (payload.empty()) {
+    return std::nullopt;
+  }
+  const nlohmann::json doc = nlohmann::json::parse(payload, nullptr, false);
+  if (doc.is_discarded() || !doc.is_object()) {
+    return std::nullopt;
+  }
+  return payload;
+}
+
+ParseResult AppendChatActionButton(ParseResult& parent, const std::string& label, const std::string& message,
+                                   const std::optional<std::string>& payload) {
+  if (message.empty()) {
+    return BlockError("button message must not be empty");
+  }
+
+  const int index = static_cast<int>(parent.chat_actions.size());
+  parent.chat_actions.push_back({label, message, payload});
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = "<button class=\"chat-suggestion\" data-event-click=\"send_chat_action('__ENTRY__', " +
+               std::to_string(index) + ")\">" + StructuredTextParser::EscapeText(label) + "</button>";
+  return result;
+}
+
+ParseResult ParseButtonBlock(const nlohmann::json& block, ParseResult& parent) {
+  if (!block.contains("label") || !block["label"].is_string()) {
+    return BlockError("button block requires label");
+  }
+  if (!block.contains("message") || !block["message"].is_string()) {
+    return BlockError("button block requires message");
+  }
+
+  std::optional<std::string> payload;
+  if (block.contains("payload")) {
+    if (!block["payload"].is_string()) {
+      return BlockError("button payload must be a JSON object string");
+    }
+    payload = ParseOptionalButtonPayload(block);
+    if (!payload) {
+      return BlockError("button payload must be a JSON object string");
+    }
+  }
+
+  return AppendChatActionButton(parent, block["label"].get<std::string>(), block["message"].get<std::string>(),
+                                payload);
+}
+
+ParseResult ParseCardBlock(const nlohmann::json& block) {
+  if (!block.contains("title") || !block["title"].is_string()) {
+    return BlockError("card block requires title");
+  }
+  if (!block.contains("body") || !block["body"].is_string()) {
+    return BlockError("card block requires body");
+  }
+
+  const std::string variant = block.value("variant", "default");
+  std::ostringstream out;
+  out << "<div class=\"chat-card chat-card-" << StructuredTextParser::EscapeText(variant) << "\">";
+  out << "<h3>" << StructuredTextParser::EscapeText(block["title"].get<std::string>()) << "</h3>";
+  if (block.contains("subtitle") && block["subtitle"].is_string()) {
+    out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(block["subtitle"].get<std::string>()) << "</p>";
+  }
+  out << "<p>" << StructuredTextParser::EscapeText(block["body"].get<std::string>()) << "</p>";
+  out << "</div>";
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = out.str();
+  return result;
+}
+
+ParseResult ParseTableBlock(const nlohmann::json& block) {
+  if (!block.contains("headers") || !block["headers"].is_array()) {
+    return BlockError("table block requires headers array");
+  }
+  if (!block.contains("rows") || !block["rows"].is_array()) {
+    return BlockError("table block requires rows array");
+  }
+
+  std::ostringstream out;
+  out << "<table class=\"chat-table\"><thead><tr>";
+  for (const auto& header : block["headers"]) {
+    if (!header.is_string()) {
+      return BlockError("table headers must be strings");
+    }
+    out << "<th>" << StructuredTextParser::EscapeText(header.get<std::string>()) << "</th>";
+  }
+  out << "</tr></thead><tbody>";
+  for (const auto& row : block["rows"]) {
+    if (!row.is_array()) {
+      return BlockError("table rows must be arrays");
+    }
+    out << "<tr>";
+    for (const auto& cell : row) {
+      if (!cell.is_string()) {
+        return BlockError("table cells must be strings");
+      }
+      out << "<td>" << StructuredTextParser::EscapeText(cell.get<std::string>()) << "</td>";
+    }
+    out << "</tr>";
+  }
+  out << "</tbody></table>";
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = out.str();
+  return result;
+}
+
+ParseResult ParseKeyValueBlock(const nlohmann::json& block) {
+  if (!block.contains("items") || !block["items"].is_array()) {
+    return BlockError("key_value block requires items array");
+  }
+
+  std::ostringstream out;
+  out << "<div class=\"chat-key-value\">";
+  for (const auto& item : block["items"]) {
+    if (!item.is_object() || !item.contains("label") || !item.contains("value")) {
+      return BlockError("key_value items require label and value");
+    }
+    if (!item["label"].is_string() || !item["value"].is_string()) {
+      return BlockError("key_value label and value must be strings");
+    }
+    out << "<div class=\"chat-key-value-row\">";
+    out << "<span class=\"chat-key-value-label\">" << StructuredTextParser::EscapeText(item["label"].get<std::string>())
+        << "</span>";
+    out << "<span class=\"chat-key-value-value\">" << StructuredTextParser::EscapeText(item["value"].get<std::string>())
+        << "</span>";
+    out << "</div>";
+  }
+  out << "</div>";
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = out.str();
+  return result;
+}
+
+ParseResult ParseCalloutBlock(const nlohmann::json& block) {
+  if (!block.contains("text") || !block["text"].is_string()) {
+    return BlockError("callout block requires text");
+  }
+  const std::string variant = block.value("variant", "info");
+  ParseResult result;
+  result.ok = true;
+  result.rml = "<div class=\"chat-callout chat-callout-" + StructuredTextParser::EscapeText(variant) + "\"><p>" +
+               StructuredTextParser::EscapeText(block["text"].get<std::string>()) + "</p></div>";
+  return result;
+}
+
+ParseResult ParseQuoteBlock(const nlohmann::json& block) {
+  if (!block.contains("text") || !block["text"].is_string()) {
+    return BlockError("quote block requires text");
+  }
+  std::ostringstream out;
+  out << "<blockquote class=\"chat-quote\"><p>" << StructuredTextParser::EscapeText(block["text"].get<std::string>())
+      << "</p>";
+  if (block.contains("attribution") && block["attribution"].is_string()) {
+    out << "<p class=\"muted\">— " << StructuredTextParser::EscapeText(block["attribution"].get<std::string>()) << "</p>";
+  }
+  out << "</blockquote>";
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = out.str();
+  return result;
+}
+
+ParseResult ParseFormBlock(const nlohmann::json& block) {
+  if (!block.contains("id") || !block["id"].is_string()) {
+    return BlockError("form block requires id");
+  }
+  if (!block.contains("fields") || !block["fields"].is_array()) {
+    return BlockError("form block requires fields array");
+  }
+  if (!block.contains("submit_template") || !block["submit_template"].is_string()) {
+    return BlockError("form block requires submit_template");
+  }
+
+  for (const auto& field : block["fields"]) {
+    if (!field.is_object() || !field.contains("id") || !field["id"].is_string()) {
+      return BlockError("form fields require id");
+    }
+    if (!field.contains("label") || !field["label"].is_string()) {
+      return BlockError("form fields require label");
+    }
+  }
+
+  const std::string form_id = block["id"].get<std::string>();
+  ParseResult result;
+  result.ok = true;
+  result.rml = ReplaceAll(ReplaceAll(kFormWidgetRml, "__FORM_ID__", form_id), "__ENTRY__", "__ENTRY__");
+  result.widget_inits.push_back({WidgetInitKind::Form, block});
+  return result;
+}
+
+ParseResult ParseCalendarBlock(const nlohmann::json& block) {
+  if (block.contains("month")) {
+    if (!block["month"].is_number_integer()) {
+      return BlockError("calendar month must be an integer");
+    }
+  }
+  if (block.contains("year")) {
+    if (!block["year"].is_number_integer()) {
+      return BlockError("calendar year must be an integer");
+    }
+  }
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = kCalendarWidgetRml;
+  result.widget_inits.push_back({WidgetInitKind::Calendar, block});
+  return result;
+}
+
+ParseResult ParseActionListBlock(const nlohmann::json& block, ParseResult& parent) {
+  if (!block.contains("items") || !block["items"].is_array()) {
+    return BlockError("action_list block requires items array");
+  }
+
+  std::ostringstream out;
+  out << "<div class=\"chat-action-list\">";
+  for (const auto& item : block["items"]) {
+    if (!item.is_object() || !item.contains("title") || !item["title"].is_string()) {
+      return BlockError("action_list items require title");
+    }
+    out << "<div class=\"chat-action-list-item\">";
+    out << "<p class=\"chat-action-list-title\">" << StructuredTextParser::EscapeText(item["title"].get<std::string>())
+        << "</p>";
+    if (item.contains("description") && item["description"].is_string()) {
+      out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(item["description"].get<std::string>()) << "</p>";
+    }
+    if (item.contains("actions") && item["actions"].is_array()) {
+      out << "<div class=\"row chat-action-list-actions\">";
+      for (const auto& action : item["actions"]) {
+        if (!action.is_object() || !action.contains("label") || !action.contains("message")) {
+          return BlockError("action_list actions require label and message");
+        }
+        auto button = AppendChatActionButton(parent, action["label"].get<std::string>(),
+                                               action["message"].get<std::string>(),
+                                               action.contains("payload") ? ParseOptionalButtonPayload(action)
+                                                                          : std::nullopt);
+        if (!button.ok) {
+          return button;
+        }
+        out << button.rml;
+      }
+      out << "</div>";
+    }
+    out << "</div>";
+  }
+  out << "</div>";
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = out.str();
+  return result;
+}
+
+ParseResult ParseChoiceBlock(const nlohmann::json& block, ParseResult& parent) {
+  if (!block.contains("prompt") || !block["prompt"].is_string()) {
+    return BlockError("choice block requires prompt");
+  }
+  if (!block.contains("options") || !block["options"].is_array()) {
+    return BlockError("choice block requires options array");
+  }
+
+  std::ostringstream out;
+  out << "<div class=\"chat-choice\"><p>" << StructuredTextParser::EscapeText(block["prompt"].get<std::string>())
+      << "</p><div class=\"row chat-choice-options\">";
+  for (const auto& option : block["options"]) {
+    if (!option.is_object() || !option.contains("label") || !option.contains("message")) {
+      return BlockError("choice options require label and message");
+    }
+    auto button = AppendChatActionButton(parent, option["label"].get<std::string>(), option["message"].get<std::string>(),
+                                         option.contains("payload") ? ParseOptionalButtonPayload(option)
+                                                                    : std::nullopt);
+    if (!button.ok) {
+      return button;
+    }
+    out << button.rml;
+  }
+  out << "</div></div>";
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = out.str();
+  return result;
+}
+
+ParseResult ParsePollBlock(const nlohmann::json& block, ParseResult& parent) {
+  if (!block.contains("question") || !block["question"].is_string()) {
+    return BlockError("poll block requires question");
+  }
+  if (!block.contains("options") || !block["options"].is_array()) {
+    return BlockError("poll block requires options array");
+  }
+
+  std::ostringstream out;
+  out << "<div class=\"chat-poll\"><p class=\"chat-poll-question\">"
+      << StructuredTextParser::EscapeText(block["question"].get<std::string>())
+      << "</p><div class=\"row chat-poll-options\">";
+  for (const auto& option : block["options"]) {
+    if (!option.is_object() || !option.contains("label") || !option.contains("message")) {
+      return BlockError("poll options require label and message");
+    }
+    auto button = AppendChatActionButton(parent, option["label"].get<std::string>(), option["message"].get<std::string>(),
+                                         option.contains("payload") ? ParseOptionalButtonPayload(option)
+                                                                    : std::nullopt);
+    if (!button.ok) {
+      return button;
+    }
+    out << button.rml;
+  }
+  out << "</div></div>";
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = out.str();
+  return result;
+}
+
+ParseResult RenderBlock(const nlohmann::json& block, ParseResult& parent) {
   if (!block.is_object() || !block.contains("type") || !block["type"].is_string()) {
     return BlockError("Block must be an object with a type field");
   }
@@ -151,59 +532,42 @@ ParseResult RenderBlock(const nlohmann::json& block) {
     return result;
   }
 
+  if (type == "button") {
+    return ParseButtonBlock(block, parent);
+  }
+
+  if (type == "card") {
+    return ParseCardBlock(block);
+  }
+  if (type == "table") {
+    return ParseTableBlock(block);
+  }
+  if (type == "key_value") {
+    return ParseKeyValueBlock(block);
+  }
+  if (type == "callout") {
+    return ParseCalloutBlock(block);
+  }
+  if (type == "quote") {
+    return ParseQuoteBlock(block);
+  }
+  if (type == "form") {
+    return ParseFormBlock(block);
+  }
+  if (type == "calendar") {
+    return ParseCalendarBlock(block);
+  }
+  if (type == "action_list") {
+    return ParseActionListBlock(block, parent);
+  }
+  if (type == "choice") {
+    return ParseChoiceBlock(block, parent);
+  }
+  if (type == "poll") {
+    return ParsePollBlock(block, parent);
+  }
+
   return BlockError("Unknown block type: " + type);
-}
-
-std::optional<std::string> ParseOptionalButtonPayload(const nlohmann::json& block) {
-  if (!block.contains("payload")) {
-    return std::nullopt;
-  }
-  if (!block["payload"].is_string()) {
-    return std::nullopt;
-  }
-  const std::string payload = block["payload"].get<std::string>();
-  if (payload.empty()) {
-    return std::nullopt;
-  }
-  const nlohmann::json doc = nlohmann::json::parse(payload, nullptr, false);
-  if (doc.is_discarded() || !doc.is_object()) {
-    return std::nullopt;
-  }
-  return payload;
-}
-
-ParseResult ParseButtonBlock(const nlohmann::json& block, ParseResult& parent) {
-  if (!block.contains("label") || !block["label"].is_string()) {
-    return BlockError("button block requires label");
-  }
-  if (!block.contains("message") || !block["message"].is_string()) {
-    return BlockError("button block requires message");
-  }
-  const std::string message = block["message"].get<std::string>();
-  if (message.empty()) {
-    return BlockError("button message must not be empty");
-  }
-
-  std::optional<std::string> payload;
-  if (block.contains("payload")) {
-    if (!block["payload"].is_string()) {
-      return BlockError("button payload must be a JSON object string");
-    }
-    payload = ParseOptionalButtonPayload(block);
-    if (!payload) {
-      return BlockError("button payload must be a JSON object string");
-    }
-  }
-
-  const std::string label = block["label"].get<std::string>();
-  const int index = static_cast<int>(parent.chat_actions.size());
-  parent.chat_actions.push_back({label, message, payload});
-
-  ParseResult result;
-  result.ok = true;
-  result.rml = "<button class=\"chat-suggestion\" data-event-click=\"send_chat_action('__ENTRY__', " +
-               std::to_string(index) + ")\">" + StructuredTextParser::EscapeText(label) + "</button>";
-  return result;
 }
 
 std::optional<std::string> ExtractJsonPayload(const std::string& llm_output) {
@@ -221,7 +585,9 @@ std::optional<std::string> ExtractJsonPayload(const std::string& llm_output) {
 }
 
 bool IsDisplayBlockType(const std::string& type) {
-  return type == "paragraph" || type == "heading" || type == "list" || type == "code" || type == "button";
+  return type == "paragraph" || type == "heading" || type == "list" || type == "code" || type == "button" ||
+         type == "card" || type == "table" || type == "key_value" || type == "callout" || type == "quote" ||
+         type == "form" || type == "calendar" || type == "action_list" || type == "choice" || type == "poll";
 }
 
 bool IsKnownToolName(const std::string& name) {
@@ -307,24 +673,15 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
   result.ok = true;
 
   for (const auto& block : doc["blocks"]) {
-    if (block.is_object() && block.contains("type") && block["type"].is_string() &&
-        block["type"].get<std::string>() == "button") {
-      auto button = ParseButtonBlock(block, result);
-      if (!button.ok) {
-        result.warnings.push_back(button.error);
-        continue;
-      }
-      text_stack << button.rml;
-      has_text = true;
-      continue;
-    }
-
-    auto rendered = RenderBlock(block);
+    auto rendered = RenderBlock(block, result);
     if (!rendered.ok) {
       result.warnings.push_back(rendered.error);
       continue;
     }
     text_stack << rendered.rml;
+    for (const WidgetInit& init : rendered.widget_inits) {
+      result.widget_inits.push_back(init);
+    }
     has_text = true;
   }
 
@@ -393,7 +750,6 @@ ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_outp
     return ParseBlocksJson(TrimAsciiWhitespace(match[1].str()));
   }
 
-  // Tool-calling models often return raw JSON without fences.
   const std::string trimmed = TrimAsciiWhitespace(llm_output);
   if (!trimmed.empty() && trimmed.front() == '{') {
     auto bare = ParseBlocksJson(trimmed);

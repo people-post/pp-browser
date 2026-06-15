@@ -195,6 +195,57 @@ int main() {
   assert(repaired_result.chat_actions[0].label == "More");
   assert(repaired_result.chat_actions[0].message == "Tell me more");
 
+  const std::string form_block = R"({
+    "blocks": [
+      { "type": "form", "id": "booking", "title": "Book", "submit_label": "Go",
+        "submit_template": "Book {{name}}",
+        "fields": [{ "id": "name", "label": "Name", "field_type": "text" }] }
+    ]
+  })";
+  auto form_result = pbr::StructuredTextParser::ParseBlocksJson(form_block);
+  assert(form_result.ok);
+  assert(form_result.widget_inits.size() == 1);
+  assert(form_result.rml.find("data-value=\"field.value\"") != std::string::npos);
+  assert(form_result.rml.find("submit_form('__ENTRY__', 'booking')") != std::string::npos);
+
+  const std::string calendar_block = R"({
+    "blocks": [
+      { "type": "calendar", "month": 6, "year": 2026, "available_days": ["2026-06-15"] }
+    ]
+  })";
+  auto calendar_result = pbr::StructuredTextParser::ParseBlocksJson(calendar_block);
+  assert(calendar_result.ok);
+  assert(calendar_result.widget_inits.size() == 1);
+  assert(calendar_result.rml.find("calendar_prev('__ENTRY__')") != std::string::npos);
+  assert(calendar_result.rml.find("turn.calendar.weeks") != std::string::npos);
+  assert(calendar_result.rml.find("<table class=\"calendar-grid\">") != std::string::npos);
+
+  const std::string calendar_defaults = R"({"blocks":[{"type":"calendar"}]})";
+  auto calendar_defaults_result = pbr::StructuredTextParser::ParseBlocksJson(calendar_defaults);
+  assert(calendar_defaults_result.ok);
+  assert(calendar_defaults_result.widget_inits.size() == 1);
+
+  const std::string card_block = R"({
+    "blocks": [
+      { "type": "card", "title": "Title", "body": "Body text" }
+    ]
+  })";
+  auto card_result = pbr::StructuredTextParser::ParseBlocksJson(card_block);
+  assert(card_result.ok);
+  assert(card_result.rml.find("chat-card") != std::string::npos);
+
+  const std::string poll_block = R"({
+    "blocks": [
+      { "type": "poll", "question": "Pick one", "options": [
+        { "label": "A", "message": "Choose A" }
+      ]}
+    ]
+  })";
+  auto poll_result = pbr::StructuredTextParser::ParseBlocksJson(poll_block);
+  assert(poll_result.ok);
+  assert(poll_result.chat_actions.size() == 1);
+  assert(poll_result.rml.find("chat-poll") != std::string::npos);
+
   std::cout << "structured_text_parser_test ok\n";
   return 0;
 }

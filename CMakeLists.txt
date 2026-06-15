@@ -100,6 +100,8 @@ target_sources(pp-browser PRIVATE
   src/demo/SearchDemo.cpp
   src/demo/ChatDemo.cpp
   src/demo/ChatFormHelper.cpp
+  src/demo/ChatWidgetStateBuilder.cpp
+  src/demo/CalendarHelper.cpp
   src/demo/DynamicRmlDemo.cpp
   src/ui/DocumentLoader.cpp
   src/ui/RmlMount.cpp

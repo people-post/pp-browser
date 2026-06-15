@@ -81,10 +81,18 @@ target_include_directories(pp_browser_sliding_window_context_policy_test PRIVATE
 add_test(NAME sliding_window_context_policy_test COMMAND pp_browser_sliding_window_context_policy_test)
 
 add_executable(pp_browser_chat_form_helper_test chat_form_helper_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/demo/ChatFormHelper.cpp)
+  ${CMAKE_SOURCE_DIR}/src/demo/ChatFormHelper.cpp
+  ${CMAKE_SOURCE_DIR}/src/demo/ChatWidgetStateBuilder.cpp
+  ${CMAKE_SOURCE_DIR}/src/demo/CalendarHelper.cpp)
 target_link_libraries(pp_browser_chat_form_helper_test PRIVATE nlohmann_json::nlohmann_json RmlUi::Core)
 target_include_directories(pp_browser_chat_form_helper_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME chat_form_helper_test COMMAND pp_browser_chat_form_helper_test)
+
+add_executable(pp_browser_calendar_helper_test calendar_helper_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/demo/CalendarHelper.cpp)
+target_link_libraries(pp_browser_calendar_helper_test PRIVATE RmlUi::Core)
+target_include_directories(pp_browser_calendar_helper_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME calendar_helper_test COMMAND pp_browser_calendar_helper_test)
 
 add_executable(pp_browser_chat_action_dispatcher_test chat_action_dispatcher_test.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp)

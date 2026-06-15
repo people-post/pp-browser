@@ -1,0 +1,35 @@
+# Chat reply templates
+
+Assistant replies use structured JSON blocks parsed by [`StructuredTextParser`](../src/agent/StructuredTextParser.cpp) into inline RML inside selectable bubbles.
+
+## Block categories
+
+| Category | Blocks | Binding |
+|----------|--------|---------|
+| Static | paragraph, heading, list, code, card, table, key_value, callout, quote | Escaped HTML only |
+| Click actions | button, action_list, choice, poll | `send_chat_action(entry, index)` |
+| Reactive widgets | form, calendar | `data-value`, `data-for`, `data-if` on chat model |
+
+## Reactive widgets
+
+Form and calendar blocks emit **stable RML templates** with data bindings under the `turn` alias (inside `data-for="turn : turns"`). C++ widget state lives in `ChatDemo::widgets_by_entry_` and merges into `TranscriptDisplayRow` on sync.
+
+### Form
+
+- Fields bind via `data-value="field.value"` (checkbox uses `data-checked="field.checked"`)
+- Submit calls `submit_form(entry_id, form_id)`; values read from bound state (not DOM scrape)
+- Only the latest unsubmitted form stays editable; older forms set `form.expired = true`
+
+### Calendar
+
+- Month label and day grid bind to `turn.calendar.*`
+- Prev/next call `calendar_prev` / `calendar_next`
+- Day click calls `select_calendar_day(entry_id, iso_date)` and sends `Selected YYYY-MM-DD`
+
+## Mock chat triggers
+
+Type these in mock mode (no LLM): `help`, `list`, `code`, `button`, `form`, `calendar`, `card`, `poll`
+
+## LLM prompt
+
+Full block catalog is in [`PromptBuilder::ChatBlocksProfile()`](../src/agent/PromptBuilder.cpp). See also [`RML_PROFILE.md`](RML_PROFILE.md).

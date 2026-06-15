@@ -1,4 +1,5 @@
 #include "demo/ChatFormHelper.h"
+#include "demo/ChatWidgetStateBuilder.h"
 
 #include <cassert>
 #include <iostream>
@@ -26,9 +27,20 @@ int main() {
   assert(hydrated.find("__ENTRY__") == std::string::npos);
   assert(hydrated.find("entry_42") != std::string::npos);
 
-  std::string expired = pbr::ExpireFormRml(R"(<div class="chat-form"><button class="chat-form-submit"></button></div>)");
-  assert(expired.find("chat-form-expired") != std::string::npos);
-  assert(expired.find("Form closed") != std::string::npos);
+  pbr::FormWidgetState form;
+  form.form_id = "booking";
+  pbr::FormFieldRow name_field;
+  name_field.id = "name";
+  name_field.value = "Alice";
+  form.fields.push_back(name_field);
+  pbr::FormFieldRow date_field;
+  date_field.id = "date";
+  date_field.value = "2026-06-15";
+  form.fields.push_back(date_field);
+
+  const std::map<std::string, std::string> bound_values = pbr::FormValuesMap(form);
+  assert(bound_values.at("name") == "Alice");
+  assert(bound_values.at("date") == "2026-06-15");
 
   std::cout << "chat_form_helper_test passed\n";
   return 0;

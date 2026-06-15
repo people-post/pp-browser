@@ -4,7 +4,9 @@
 #include "agent/conversation/Conversation.h"
 #include "app/Application.h"
 #include "app/InputCoordinator.h"
+#include "demo/CalendarHelper.h"
 #include "demo/ChatFormHelper.h"
+#include "demo/ChatWidgetStateBuilder.h"
 #include "ui/DataModelHost.h"
 #include "ui/DocumentLoader.h"
 #include "ui/SplitLayoutHost.h"
@@ -23,16 +25,6 @@
 namespace pbr {
 
 namespace {
-
-constexpr const char* kMockFormRml =
-    "<div class=\"chat-form\" id=\"form-__ENTRY__-booking\" data-form-id=\"booking\" "
-    "data-submit-template=\"Book for {{name}} on {{date}}\">"
-    "<p class=\"muted\">Booking form (mock)</p>"
-    "<label>Name <input type=\"text\" name=\"name\" /></label>"
-    "<label>Date <input type=\"text\" name=\"date\" /></label>"
-    "<button type=\"button\" class=\"chat-form-submit\" "
-    "data-event-click=\"submit_form('__ENTRY__', 'booking')\">Submit</button>"
-    "</div>";
 
 std::string ToolActivityLabel(const std::string& tool_name, const std::string& status) {
   if (tool_name == "web_search") {
@@ -145,61 +137,92 @@ std::string MockAssistantRespond(const std::string& query) {
   const std::string lower = ToLower(query);
 
   if (lower.find("help") != std::string::npos) {
-    return R"({
+    return R"JSON({
       "blocks": [
         { "type": "heading", "level": 2, "text": "Help" },
-        { "type": "paragraph", "text": "pp-browser renders structured JSON blocks, not HTML or markdown." },
+        { "type": "paragraph", "text": "pp-browser renders structured JSON blocks with reactive widgets." },
         { "type": "list", "ordered": false, "items": [
           "Type a message and click Send",
-          "Try help, list, code, button, or form for sample replies",
+          "Try help, list, code, button, form, calendar, card, or poll",
           "Press Escape to quit"
         ]}
       ]
-    })";
+    })JSON";
   }
 
   if (lower.find("list") != std::string::npos) {
-    return R"({
+    return R"JSON({
       "blocks": [
         { "type": "paragraph", "text": "Here is an ordered list:" },
         { "type": "list", "ordered": true, "items": ["First item", "Second item", "Third item"] }
       ]
-    })";
+    })JSON";
   }
 
   if (lower.find("code") != std::string::npos) {
-    return R"({
+    return R"JSON({
       "blocks": [
         { "type": "paragraph", "text": "Example code block:" },
         { "type": "code", "text": "auto result = StructuredTextParser::ParseBlocksJson(json);\nif (result.ok) { /* render */ }" }
       ]
-    })";
+    })JSON";
   }
 
   if (lower.find("form") != std::string::npos) {
-    return R"({
+    return R"JSON({
       "blocks": [
-        { "type": "paragraph", "text": "Fill out the booking form below and click Submit." }
+        { "type": "paragraph", "text": "Fill out the booking form below and click Submit." },
+        { "type": "form", "id": "booking", "title": "Booking form (mock)", "submit_label": "Submit",
+          "submit_template": "Book for {{name}} on {{date}}",
+          "fields": [
+            { "id": "name", "label": "Name", "field_type": "text" },
+            { "id": "date", "label": "Date", "field_type": "date" }
+          ]
+        }
       ]
-    })";
+    })JSON";
+  }
+
+  if (lower.find("calendar") != std::string::npos) {
+    return MockCalendarReplyJson();
+  }
+
+  if (lower.find("card") != std::string::npos) {
+    return R"JSON({
+      "blocks": [
+        { "type": "card", "title": "Sample card", "subtitle": "Reactive templates", "variant": "highlight",
+          "body": "Static card blocks render inline inside the assistant bubble." }
+      ]
+    })JSON";
+  }
+
+  if (lower.find("poll") != std::string::npos) {
+    return R"JSON({
+      "blocks": [
+        { "type": "poll", "question": "Which topic next?", "options": [
+          { "label": "Calendar", "message": "Show me the calendar widget again." },
+          { "label": "Forms", "message": "Show me the booking form again." }
+        ]}
+      ]
+    })JSON";
   }
 
   if (lower.find("button") != std::string::npos) {
-    return R"({
+    return R"JSON({
       "blocks": [
         { "type": "paragraph", "text": "Click a suggestion to send it as your next message:" },
         { "type": "button", "label": "Explain more", "message": "Can you explain that in simpler terms?" },
         { "type": "button", "label": "Give an example", "message": "Can you give a concrete example?" }
       ]
-    })";
+    })JSON";
   }
 
-  return R"({
+  return R"JSON({
     "blocks": [
       { "type": "paragraph", "text": "Thanks for your message. This is a mock assistant response." },
-      { "type": "paragraph", "text": "Try typing help, list, code, button, or form to see other structured reply formats." }
+      { "type": "paragraph", "text": "Try help, list, code, button, form, calendar, card, or poll." }
     ]
-  })";
+  })JSON";
 }
 
 void DirtyChatChrome() {
@@ -269,6 +292,31 @@ void ChatDemo::SendChatActionCallback(Rml::DataModelHandle /*model*/, Rml::Event
   Instance().SendChatAction(std::string(args[0].Get<Rml::String>().c_str()), *action_index);
 }
 
+void ChatDemo::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                    const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().CalendarPrev(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
+void ChatDemo::CalendarNextCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                    const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().CalendarNext(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
+void ChatDemo::SelectCalendarDayCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                         const Rml::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING || args[1].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().SelectCalendarDay(std::string(args[0].Get<Rml::String>().c_str()),
+                               std::string(args[1].Get<Rml::String>().c_str()));
+}
+
 void ChatDemo::NewChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& /*args*/) {
   Instance().OnNewChat();
 }
@@ -300,6 +348,7 @@ void ChatDemo::OnNewChat() {
   shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
   pending_reply_.reset();
   ClearFormState();
+  widgets_by_entry_.clear();
   DirtyChat();
   DirtyShell();
 }
@@ -311,70 +360,80 @@ bool ChatDemo::IsFormEditable(const std::string& entry_id, const std::string& fo
   return active_form_ && active_form_->entry_id == entry_id && active_form_->form_id == form_id;
 }
 
+TurnWidgetState* ChatDemo::FindWidgetState(const std::string& entry_id) {
+  const auto it = widgets_by_entry_.find(entry_id);
+  return it == widgets_by_entry_.end() ? nullptr : &it->second;
+}
+
+const TurnWidgetState* ChatDemo::FindWidgetState(const std::string& entry_id) const {
+  const auto it = widgets_by_entry_.find(entry_id);
+  return it == widgets_by_entry_.end() ? nullptr : &it->second;
+}
+
+void ChatDemo::MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const {
+  const TurnWidgetState* widgets = FindWidgetState(entry_id);
+  if (!widgets) {
+    return;
+  }
+
+  if (widgets->has_form) {
+    row.has_form = true;
+    row.form = widgets->form;
+    if (!IsFormEditable(entry_id, std::string(widgets->form.form_id.c_str()))) {
+      row.form.expired = true;
+    }
+  }
+
+  if (widgets->has_calendar) {
+    row.has_calendar = true;
+    row.calendar = widgets->calendar;
+  }
+}
+
 std::string ChatDemo::HydrateAssistantRml(const TranscriptEntry& entry) const {
   if (!entry.assistant_rml) {
     return {};
   }
 
   std::string rml = HydrateLegacyChatActions(*entry.assistant_rml, entry.chat_actions);
-  rml = InjectEntryPlaceholders(rml, entry.id);
-
-  const std::optional<std::string> form_id = ExtractFormId(rml);
-  if (!form_id) {
-    return rml;
-  }
-
-  if (!IsFormEditable(entry.id, *form_id)) {
-    return ExpireFormRml(std::move(rml));
-  }
-  return rml;
+  return InjectEntryPlaceholders(rml, entry.id);
 }
 
-void ChatDemo::SnapshotActiveFormDraft() {
-  if (!context_ || !active_form_) {
-    active_form_draft_.clear();
-    return;
+void ChatDemo::InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits) {
+  TurnWidgetState state;
+  ApplyWidgetInits(inits, state);
+  widgets_by_entry_[entry_id] = std::move(state);
+
+  if (const TurnWidgetState* widgets = FindWidgetState(entry_id); widgets && widgets->has_form) {
+    const std::string form_id = std::string(widgets->form.form_id.c_str());
+    if (submitted_forms_.count({entry_id, form_id}) == 0) {
+      active_form_ = ActiveForm{.entry_id = entry_id, .form_id = form_id};
+      ExpireFormsExcept(entry_id, form_id);
+    }
   }
-  const std::string form_element_id =
-      "form-" + active_form_->entry_id + "-" + active_form_->form_id;
-  active_form_draft_ = ReadFormValues(context_, form_element_id);
 }
 
-void ChatDemo::RestoreActiveFormDraft() {
-  if (!context_ || !active_form_ || active_form_draft_.empty()) {
-    restore_form_on_next_update_ = false;
-    return;
+void ChatDemo::ExpireFormsExcept(const std::string& entry_id, const std::string& form_id) {
+  for (auto& [id, widgets] : widgets_by_entry_) {
+    if (!widgets.has_form) {
+      continue;
+    }
+    const std::string widget_form_id = std::string(widgets.form.form_id.c_str());
+    if (id != entry_id || widget_form_id != form_id) {
+      widgets.form.expired = true;
+    }
   }
-  const std::string form_element_id =
-      "form-" + active_form_->entry_id + "-" + active_form_->form_id;
-  RestoreFormValues(context_, form_element_id, active_form_draft_);
-  restore_form_on_next_update_ = false;
-}
-
-void ChatDemo::UpdateActiveFormFromRml(const std::string& entry_id, const std::string& rml) {
-  const std::optional<std::string> form_id = ExtractFormId(rml);
-  if (!form_id) {
-    return;
-  }
-  if (submitted_forms_.count({entry_id, *form_id}) > 0) {
-    return;
-  }
-  active_form_ = ActiveForm{.entry_id = entry_id, .form_id = *form_id};
 }
 
 void ChatDemo::ClearFormState() {
   active_form_.reset();
   submitted_forms_.clear();
-  active_form_draft_.clear();
-  restore_form_on_next_update_ = false;
 }
 
 void ChatDemo::SyncDisplayFromConversation() {
   if (!agent_) {
     return;
   }
-
-  SnapshotActiveFormDraft();
 
   chat_.turns.clear();
   for (const TranscriptEntry& entry : agent_->conversation().Entries()) {
@@ -383,6 +442,7 @@ void ChatDemo::SyncDisplayFromConversation() {
     if (entry.assistant_rml) {
       row.assistant_content_rml = AssistantBubbleRml(HydrateAssistantRml(entry));
       row.has_assistant = true;
+      MergeWidgetStateIntoRow(entry.id, row);
     } else if (entry.assistant_raw && !entry.assistant_rml) {
       row.assistant_content_rml = ErrorMessageRml("Assistant reply pending display sync.");
       row.has_assistant = true;
@@ -390,9 +450,6 @@ void ChatDemo::SyncDisplayFromConversation() {
     chat_.turns.push_back(std::move(row));
   }
 
-  if (!active_form_draft_.empty()) {
-    restore_form_on_next_update_ = true;
-  }
   DirtyChatTurns();
 }
 
@@ -410,9 +467,13 @@ void ChatDemo::SendUserText(const std::string& text, std::optional<std::string> 
     return;
   }
 
+  for (auto& [id, widgets] : widgets_by_entry_) {
+    if (widgets.has_form && !widgets.form.expired) {
+      widgets.form.expired = true;
+    }
+  }
   active_form_.reset();
-  active_form_draft_.clear();
-  restore_form_on_next_update_ = false;
+  DirtyChatTurns();
 
   chat_.loading = true;
   chat_.status = "";
@@ -426,11 +487,7 @@ void ChatDemo::SendUserText(const std::string& text, std::optional<std::string> 
     TranscriptEntry& entry = agent_->AppendUserMessage(trimmed, std::move(user_payload));
     SyncDisplayFromConversation();
     log().debug << "Using mock assistant response";
-    const bool append_mock_form = ToLower(trimmed).find("form") != std::string::npos;
-    pending_reply_ = PendingReply{.entry_id = entry.id,
-                                  .output = MockAssistantRespond(trimmed),
-                                  .from_llm = false,
-                                  .append_mock_form = append_mock_form};
+    pending_reply_ = PendingReply{.entry_id = entry.id, .output = MockAssistantRespond(trimmed), .from_llm = false};
     return;
   }
 
@@ -439,7 +496,7 @@ void ChatDemo::SendUserText(const std::string& text, std::optional<std::string> 
 }
 
 void ChatDemo::SubmitForm(const std::string& entry_id, const std::string& form_id) {
-  if (!context_ || chat_.loading) {
+  if (chat_.loading) {
     return;
   }
   if (!IsFormEditable(entry_id, form_id)) {
@@ -447,22 +504,28 @@ void ChatDemo::SubmitForm(const std::string& entry_id, const std::string& form_i
     return;
   }
 
-  const std::string form_element_id = "form-" + entry_id + "-" + form_id;
-  const std::map<std::string, std::string> values = ReadFormValues(context_, form_element_id);
-  const std::optional<std::string> submit_template = ReadFormSubmitTemplate(context_, form_element_id);
-  if (!submit_template) {
-    log().warning << "Form missing data-submit-template: " << form_element_id;
+  TurnWidgetState* widgets = FindWidgetState(entry_id);
+  if (!widgets || !widgets->has_form) {
+    log().warning << "Form widget state missing: " << entry_id << "/" << form_id;
     return;
   }
 
-  const std::string display_text = ApplySubmitTemplate(*submit_template, values);
+  const std::string bound_form_id = std::string(widgets->form.form_id.c_str());
+  if (bound_form_id != form_id) {
+    log().warning << "Form id mismatch: " << bound_form_id << " vs " << form_id;
+    return;
+  }
+
+  const std::map<std::string, std::string> values = FormValuesMap(widgets->form);
+  const std::string display_text =
+      ApplySubmitTemplate(std::string(widgets->form.submit_template.c_str()), values);
   const std::string payload = BuildFormSubmissionPayload(form_id, values);
 
   submitted_forms_.insert({entry_id, form_id});
+  widgets->form.expired = true;
   active_form_.reset();
-  active_form_draft_.clear();
-  restore_form_on_next_update_ = false;
 
+  SyncDisplayFromConversation();
   SendUserText(display_text, payload);
 }
 
@@ -487,8 +550,54 @@ void ChatDemo::SendChatAction(const std::string& entry_id, int action_index) {
   log().warning << "Chat action entry not found: " << entry_id;
 }
 
+void ChatDemo::CalendarPrev(const std::string& entry_id) {
+  TurnWidgetState* widgets = FindWidgetState(entry_id);
+  if (!widgets || !widgets->has_calendar) {
+    return;
+  }
+  ShiftCalendarMonth(widgets->calendar, -1);
+  SyncDisplayFromConversation();
+}
+
+void ChatDemo::CalendarNext(const std::string& entry_id) {
+  TurnWidgetState* widgets = FindWidgetState(entry_id);
+  if (!widgets || !widgets->has_calendar) {
+    return;
+  }
+  ShiftCalendarMonth(widgets->calendar, 1);
+  SyncDisplayFromConversation();
+}
+
+void ChatDemo::SelectCalendarDay(const std::string& entry_id, const std::string& iso_date) {
+  if (chat_.loading) {
+    return;
+  }
+  const TurnWidgetState* widgets = FindWidgetState(entry_id);
+  if (!widgets || !widgets->has_calendar) {
+    return;
+  }
+
+  bool available = false;
+  for (const CalendarWeekRow& week : widgets->calendar.weeks) {
+    for (const CalendarDayRow& day : week.days) {
+      if (std::string(day.iso_date.c_str()) == iso_date && day.available) {
+        available = true;
+        break;
+      }
+    }
+    if (available) {
+      break;
+    }
+  }
+  if (!available) {
+    return;
+  }
+
+  SendUserText("Selected " + iso_date);
+}
+
 void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
-                                    const std::string& finish_reason, bool append_mock_form) {
+                                    const std::string& finish_reason) {
   auto parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output)
                          : StructuredTextParser::ParseBlocksJson(raw_output);
   if (!parsed.ok) {
@@ -504,12 +613,12 @@ void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::stri
       agent_->SetAssistantDisplay(entry_id, parsed.error, {});
     }
   } else {
-    if (append_mock_form) {
-      parsed.rml += kMockFormRml;
-    }
-
     for (const std::string& warning : parsed.warnings) {
       log().warning << "Skipped block in assistant reply: " << warning;
+    }
+
+    if (!parsed.widget_inits.empty()) {
+      InitializeWidgetState(entry_id, parsed.widget_inits);
     }
 
     std::vector<TranscriptChatAction> chat_actions;
@@ -523,7 +632,6 @@ void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::stri
       }
       agent_->SetAssistantDisplay(entry_id, parsed.rml, std::move(chat_actions));
     }
-    UpdateActiveFormFromRml(entry_id, parsed.rml);
     shell_.preview_rml = Rml::String(parsed.rml.c_str());
     DirtyShell();
   }
@@ -572,6 +680,7 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
 
   context_ = context;
   ClearFormState();
+  widgets_by_entry_.clear();
   chat_ = {};
   shell_ = {};
   shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
@@ -602,12 +711,7 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   register_enter_send(Rml::Input::KI_NUMPADENTER);
 
   if (!DataModelHost::Instance().Register(context, "chat", [](Rml::DataModelConstructor& ctor) {
-        if (auto turn_handle = ctor.RegisterStruct<TranscriptDisplayRow>()) {
-          turn_handle.RegisterMember("user_content_rml", &TranscriptDisplayRow::user_content_rml);
-          turn_handle.RegisterMember("assistant_content_rml", &TranscriptDisplayRow::assistant_content_rml);
-          turn_handle.RegisterMember("has_assistant", &TranscriptDisplayRow::has_assistant);
-        }
-        ctor.RegisterArray<std::vector<TranscriptDisplayRow>>();
+        RegisterChatWidgetDataTypes(ctor);
         ctor.Bind("draft", &ChatDemo::Instance().chat_.draft);
         ctor.Bind("status", &ChatDemo::Instance().chat_.status);
         ctor.Bind("loading", &ChatDemo::Instance().chat_.loading);
@@ -616,6 +720,9 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
         ctor.BindEventCallback("send_suggestion", &ChatDemo::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatDemo::SendChatActionCallback);
         ctor.BindEventCallback("submit_form", &ChatDemo::SubmitFormCallback);
+        ctor.BindEventCallback("calendar_prev", &ChatDemo::CalendarPrevCallback);
+        ctor.BindEventCallback("calendar_next", &ChatDemo::CalendarNextCallback);
+        ctor.BindEventCallback("select_calendar_day", &ChatDemo::SelectCalendarDayCallback);
       })) {
     return false;
   }
@@ -649,14 +756,10 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
 }
 
 void ChatDemo::Update() {
-  if (restore_form_on_next_update_) {
-    RestoreActiveFormDraft();
-  }
-
   if (pending_reply_) {
     PendingReply reply = std::move(*pending_reply_);
     pending_reply_.reset();
-    FinishAssistantReply(reply.entry_id, reply.output, reply.from_llm, {}, reply.append_mock_form);
+    FinishAssistantReply(reply.entry_id, reply.output, reply.from_llm);
   }
 
   if (!agent_) {
@@ -678,6 +781,7 @@ void ChatDemo::Shutdown() {
   pending_reply_.reset();
   context_ = nullptr;
   ClearFormState();
+  widgets_by_entry_.clear();
   chat_ = {};
   shell_ = {};
   use_llm_ = false;

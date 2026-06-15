@@ -1,8 +1,10 @@
 #pragma once
 
 #include "agent/AgentSession.h"
+#include "agent/StructuredTextParser.h"
 #include "app/Config.h"
 #include "common/Module.h"
+#include "demo/ChatWidgetTypes.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
@@ -31,12 +33,6 @@ public:
     Rml::String preview;
   };
 
-  struct TranscriptDisplayRow {
-    Rml::String user_content_rml;
-    Rml::String assistant_content_rml;
-    bool has_assistant = false;
-  };
-
   bool Setup(Rml::Context* context, const AppConfig& config);
   void Update();
   void Shutdown();
@@ -63,7 +59,6 @@ private:
     std::string entry_id;
     std::string output;
     bool from_llm = false;
-    bool append_mock_form = false;
   };
 
   ChatDemo();
@@ -72,6 +67,9 @@ private:
   static void SendSuggestionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SendChatActionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SubmitFormCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CalendarPrevCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CalendarNextCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void SelectCalendarDayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void NewChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
@@ -79,17 +77,22 @@ private:
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
   void SendChatAction(const std::string& entry_id, int action_index);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
+  void CalendarPrev(const std::string& entry_id);
+  void CalendarNext(const std::string& entry_id);
+  void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
   void SyncDisplayFromConversation();
   void UpdateSidebarPreview(const std::string& preview_text);
   void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
-                            const std::string& finish_reason = {}, bool append_mock_form = false);
+                            const std::string& finish_reason = {});
   void HandleAgentEvent(const AgentEvent& event);
 
   std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
   bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;
-  void SnapshotActiveFormDraft();
-  void RestoreActiveFormDraft();
-  void UpdateActiveFormFromRml(const std::string& entry_id, const std::string& rml);
+  void ExpireFormsExcept(const std::string& entry_id, const std::string& form_id);
+  void InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits);
+  void MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const;
+  TurnWidgetState* FindWidgetState(const std::string& entry_id);
+  const TurnWidgetState* FindWidgetState(const std::string& entry_id) const;
   void ClearFormState();
 
   Rml::Context* context_ = nullptr;
@@ -100,8 +103,7 @@ private:
   std::optional<PendingReply> pending_reply_;
   std::optional<ActiveForm> active_form_;
   std::set<std::pair<std::string, std::string>> submitted_forms_;
-  std::map<std::string, std::string> active_form_draft_;
-  bool restore_form_on_next_update_ = false;
+  std::map<std::string, TurnWidgetState> widgets_by_entry_;
 };
 
 bool SetupChatDemo(Rml::Context* context, const AppConfig& config);

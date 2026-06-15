@@ -29,47 +29,38 @@ Respond with exactly one fenced ```json block:
 }
 
 Each entry in blocks MUST be an object with a "type" field.
-Use ONLY the five block types below. Unknown types are skipped; valid blocks still render.
+Use ONLY the block types below. Unknown types are skipped; valid blocks still render.
 
-1. paragraph
-   Fields: type (required), text (required, string)
-   Renders: plain paragraph text
-   Example: { "type": "paragraph", "text": "Plain explanation." }
+Static blocks
+1. paragraph — text (string)
+2. heading — level (1-3), text (string)
+3. list — items (string[]), ordered (bool, optional)
+4. code — text (string)
+5. card — title, body (strings); optional subtitle, variant
+6. table — headers (string[]), rows (string[][])
+7. key_value — items[]: { label, value }
+8. callout — text (string); optional variant (info, warning)
+9. quote — text (string); optional attribution
 
-2. heading
-   Fields: type (required), level (required, integer 1-3), text (required, string)
-   Renders: h1 (level 1), h2 (level 2), or h3 (level 3)
-   Example: { "type": "heading", "level": 2, "text": "Section title" }
+Interactive blocks (click → user message via send_chat_action)
+10. button — label, message; optional payload (JSON object string)
+11. action_list — items[]: { title, description?, actions[]: { label, message, payload? } }
+12. choice — prompt, options[]: { label, message, payload? }
+13. poll — question, options[]: { label, message, payload? }
 
-3. list
-   Fields: type (required), items (required, array of strings), ordered (optional, boolean, default false)
-   Renders: bullet list (ordered=false) or numbered list (ordered=true)
-   Example: { "type": "list", "ordered": false, "items": ["Item A", "Item B"] }
-
-4. code
-   Fields: type (required), text (required, string)
-   Renders: monospace code block
-   Example: { "type": "code", "text": "int x = 1;" }
-
-5. button
-   Fields: type (required), label (required, string), message (required, string), payload (optional, JSON object string for LLM-only structured follow-up)
-   Renders: inline clickable suggestion chip; clicking sends message as the user's next message (and payload when set)
-   Example: { "type": "button", "label": "Explain more", "message": "Can you explain that in simpler terms?" }
-   Optional payload example: { "type": "button", "label": "Pick A", "message": "I choose option A", "payload": "{\"type\":\"choice\",\"value\":\"A\"}" }
-   Use sparingly for suggested follow-ups. message is plain text (no markdown).
+Reactive widgets (bound form fields / calendar inside the bubble)
+14. form — id, submit_template, fields[]: { id, label, field_type (text|textarea|select|checkbox|date), options? }; optional title, submit_label
+15. calendar — optional month (1-12), year (defaults to today); optional min_date, max_date (YYYY-MM-DD), available_days (string[])
 
 NOT SUPPORTED
-- Block types other than paragraph, heading, list, code, button (they are skipped, not rendered)
-- HTML tags, markdown, bold, italic, links, tables, images, blockquotes
-- Formatting inside paragraph text (no **bold**, no `backticks`, no # headings, no bullet characters)
-- Bare strings or other shapes in the blocks array
-- Describing structure in prose instead of emitting blocks (e.g. do not write "use H2" — emit a heading block)
-- Inventing action names or HTML in button blocks
+- HTML tags, markdown, inline formatting in text fields
+- Inventing block types or embedding RML/data-value in JSON
+- Tool calls inside blocks JSON
 
 RULES
-- One visual element per block: titles → heading, bullets → list, code → code, body copy → paragraph, follow-ups → button
-- text and items values are plain UTF-8 only
-- Emit valid JSON only: every { and [ must be closed; the root object must end with ]}
+- One block per visual element; pick the closest template type
+- text/items values are plain UTF-8
+- Emit valid JSON with all braces closed
 - Do not wrap the response in HTML or markdown outside the json fence)";
 }
 

@@ -14,10 +14,18 @@ struct ParsedChatAction {
   std::optional<std::string> payload;
 };
 
+enum class WidgetInitKind { Form, Calendar };
+
+struct WidgetInit {
+  WidgetInitKind kind = WidgetInitKind::Form;
+  nlohmann::json config;
+};
+
 struct ParseResult {
   bool ok = false;
   std::string rml;
   std::vector<ParsedChatAction> chat_actions;
+  std::vector<WidgetInit> widget_inits;
   std::vector<std::string> warnings;
   std::string error;
 };
@@ -34,7 +42,6 @@ public:
   static ParseResult ParseBlocksJson(const std::string& json);
   static ParseResult ParseFromLlmOutput(const std::string& llm_output);
 
-  // Models without native tool calling sometimes embed {"tool":"...", "params":{...}} in blocks.
   static std::optional<std::vector<EmbeddedToolCall>> ExtractEmbeddedToolCalls(const std::string& llm_output);
 };
 
