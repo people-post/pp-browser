@@ -14,6 +14,7 @@
 #include "ElementDefinition.h"
 #include "ElementStyle.h"
 #include "TransformState.h"
+#include "SelectionContentBuilder.h"
 #include <limits>
 
 namespace Rml {
@@ -717,6 +718,94 @@ static bool LastToken(const char* token_begin, const char* string_end, bool coll
 	}
 
 	return last_token;
+}
+
+void ElementText::BuildSelectionContent(SelectionContentBuilder& builder)
+{
+	String content;
+	const LineList& layout_lines = GetLines();
+	if (!layout_lines.empty())
+	{
+		for (const Line& line : layout_lines)
+			content += line.text;
+	}
+	else
+	{
+		content = text;
+	}
+
+	builder.AppendText(this, content);
+}
+
+SelectionEndpoint ElementText::HitTestSelection(Vector2f absolute_position) const
+{
+	SelectionEndpoint endpoint;
+	endpoint.owner = const_cast<ElementText*>(this);
+
+	ElementText* mutable_this = const_cast<ElementText*>(this);
+	const Vector2f origin(mutable_this->GetAbsoluteLeft(), mutable_this->GetAbsoluteTop());
+	const Vector2f local_mouse = absolute_position - origin;
+	String content;
+	const LineList& layout_lines = GetLines();
+	if (!layout_lines.empty())
+	{
+		for (const Line& line : layout_lines)
+			content += line.text;
+	}
+	else
+	{
+		content = text;
+	}
+
+	if (content.empty())
+	{
+		endpoint.index = 0;
+		return endpoint;
+	}
+
+	const char* p_begin = content.c_str();
+	const char* p_end = p_begin + content.size();
+	int prev_offset = 0;
+	float prev_width = 0.f;
+
+	for (auto it = StringIteratorU8(p_begin, p_begin, p_end); it; ++it)
+	{
+		const int offset = (int)it.offset();
+		const float width = float(ElementUtilities::GetStringWidth(mutable_this, StringView(p_begin, p_begin + offset)));
+		if (width > local_mouse.x)
+		{
+			const float left_distance = Math::Absolute(width - local_mouse.x);
+			const float right_distance = Math::Absolute(prev_width - local_mouse.x);
+			endpoint.index = left_distance < right_distance ? prev_offset : offset;
+			return endpoint;
+		}
+		prev_offset = offset;
+		prev_width = width;
+	}
+
+	endpoint.index = (int)content.size();
+	return endpoint;
+}
+
+String ElementText::GetSelectionSlice(int local_start, int local_end) const
+{
+	String content;
+	const LineList& layout_lines = GetLines();
+	if (!layout_lines.empty())
+	{
+		for (const Line& line : layout_lines)
+			content += line.text;
+	}
+	else
+	{
+		content = text;
+	}
+
+	const int start = Math::Min(local_start, local_end);
+	const int end = Math::Max(local_start, local_end);
+	if (start >= end || start >= (int)content.size())
+		return {};
+	return content.substr(start, end - start);
 }
 
 } // namespace Rml

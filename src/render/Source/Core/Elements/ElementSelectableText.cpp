@@ -1,14 +1,14 @@
 #include "ElementSelectableText.h"
 
 #include "../../../Include/RmlUi/Core/Context.h"
-#include "../../../Include/RmlUi/Core/Core.h"
+#include "../../../Include/RmlUi/Core/ElementDocument.h"
 #include "../../../Include/RmlUi/Core/ElementText.h"
 #include "../../../Include/RmlUi/Core/ElementUtilities.h"
 #include "../../../Include/RmlUi/Core/FontEngineInterface.h"
 #include "../../../Include/RmlUi/Core/MeshUtilities.h"
 #include "../../../Include/RmlUi/Core/RenderManager.h"
-#include "../../../Include/RmlUi/Core/SystemInterface.h"
-#include "../../../Include/RmlUi/Core/StringUtilities.h"
+#include "../SelectionContentBuilder.h"
+#include "../SelectionController.h"
 
 #include <algorithm>
 #include <limits>
@@ -16,26 +16,6 @@
 namespace Rml {
 
 namespace {
-
-bool IsBlockTag(const String& tag)
-{
-	return tag == "p" || tag == "div" || tag == "h1" || tag == "h2" || tag == "h3" || tag == "li" || tag == "ul" || tag == "ol" ||
-		tag == "blockquote" || tag == "pre";
-}
-
-void AppendElementText(ElementText* text, String& out)
-{
-	const ElementText::LineList& layout_lines = text->GetLines();
-	if (!layout_lines.empty())
-	{
-		for (const ElementText::Line& line : layout_lines)
-			out += line.text;
-	}
-	else
-	{
-		out += text->GetText();
-	}
-}
 
 void GetLineFontMetrics(ElementText* text_element, float& ascent, float& descent)
 {
@@ -53,113 +33,160 @@ void GetLineFontMetrics(ElementText* text_element, float& ascent, float& descent
 	descent = float(Math::RoundUpToInteger(metrics.descent));
 }
 
-Vector<ElementSelectableText*>& GetInstances()
+SelectionController* GetSelectionController(Element* element)
 {
-	static Vector<ElementSelectableText*> instances;
-	return instances;
+	if (!element)
+		return nullptr;
+	if (ElementDocument* document = element->GetOwnerDocument())
+		if (Context* context = document->GetContext())
+			return context->GetSelectionController();
+	return nullptr;
 }
 
 } // namespace
 
-ElementSelectableText* ElementSelectableText::active_dragger = nullptr;
-
 ElementSelectableText::ElementSelectableText(const String& tag) : Element(tag)
 {
-	AddEventListener(EventId::Mousedown, this, true);
-	AddEventListener(EventId::Mouseup, this, true);
 	AddEventListener(EventId::Click, this, true);
-	RegisterInstance();
 }
 
 ElementSelectableText::~ElementSelectableText()
 {
-	if (active_dragger == this)
-		active_dragger = nullptr;
-	UnregisterInstance();
-	RemoveEventListener(EventId::Mousedown, this, true);
-	RemoveEventListener(EventId::Mouseup, this, true);
 	RemoveEventListener(EventId::Click, this, true);
 }
 
-void ElementSelectableText::RegisterInstance()
+bool ElementSelectableText::IsSelectionRoot() const
 {
-	GetInstances().push_back(this);
-}
-
-void ElementSelectableText::UnregisterInstance()
-{
-	auto& instances = GetInstances();
-	instances.erase(std::remove(instances.begin(), instances.end(), this), instances.end());
-}
-
-bool ElementSelectableText::IsInteractiveElement(const Element* element)
-{
-	for (const Element* current = element; current; current = current->GetParentNode())
+	for (const Element* parent = GetParentNode(); parent; parent = parent->GetParentNode())
 	{
-		const String& tag = current->GetTagName();
-		if (tag == "input" || tag == "textarea" || tag == "select" || tag == "button" || tag == "a")
-			return true;
-		if (current->HasAttribute("data-event-click"))
-			return true;
+		if (rmlui_dynamic_cast<const ElementSelectableText*>(parent))
+			return false;
 	}
-	return false;
+	return true;
 }
 
-void ElementSelectableText::ClearSelection()
+void ElementSelectableText::ClearSelectionHighlight()
 {
 	selection_geometry = {};
-	flat_text.clear();
-	segments.clear();
-	lines.clear();
-	reference_text = nullptr;
-	anchor_index = 0;
-	focus_index = 0;
-	dragging = false;
 	suppress_click = false;
-	if (active_dragger == this)
-		active_dragger = nullptr;
 }
 
-bool ElementSelectableText::HasNonEmptySelection() const
+SelectionDisposition ElementSelectableText::QuerySelection(const SelectionQuery& query)
 {
-	return anchor_index != focus_index && !flat_text.empty();
+	if (query.phase == SelectionQuery::Phase::PointerDown)
+		return SelectionDisposition::Participate;
+	return SelectionDisposition::Default;
 }
 
-void ElementSelectableText::CollectTextFromContainer(Element* element, String& out, ElementText*& first_text)
+void ElementSelectableText::BuildSelectionContent(SelectionContentBuilder& builder)
 {
-	for (int i = 0; i < element->GetNumChildren(); ++i)
+	builder.BeginContainer(this);
+	for (int i = 0; i < GetNumChildren(); ++i)
 	{
-		Element* child = element->GetChild(i);
-		if (auto* text = rmlui_dynamic_cast<ElementText*>(child))
-		{
-			const int begin = (int)out.size();
-			AppendElementText(text, out);
-			if (begin < (int)out.size())
-			{
-				if (!first_text)
-					first_text = text;
-				segments.push_back({text, begin, (int)out.size()});
-			}
-		}
-		else if (child->GetNumChildren() > 0)
-		{
-			if (!out.empty() && out.back() != '\n' && IsBlockTag(child->GetTagName()))
-				out += '\n';
-			CollectTextFromContainer(child, out, first_text);
-			if (IsBlockTag(child->GetTagName()) && (out.empty() || out.back() != '\n'))
-				out += '\n';
-		}
+		if (Element* child = GetChild(i))
+			child->BuildSelectionContent(builder);
 	}
+	builder.EndContainer();
 }
 
-void ElementSelectableText::RefreshTextFromContainer()
+void ElementSelectableText::RefreshSelectionContent()
 {
-	reference_text = nullptr;
-	flat_text.clear();
+	SelectionContentBuilder builder;
+	BuildSelectionContent(builder);
+	flat_text = builder.GetFlatText();
 	segments.clear();
-	CollectTextFromContainer(this, flat_text, reference_text);
+	for (const SelectionContentBuilder::TextSegment& segment : builder.GetSegments())
+		segments.push_back({segment.element, segment.flat_begin, segment.flat_end});
+	reference_text = segments.empty() ? nullptr : segments.front().element;
 	while (!flat_text.empty() && flat_text.back() == '\n')
 		flat_text.pop_back();
+
+	for (TextSegment& segment : segments)
+	{
+		if (segment.flat_end > (int)flat_text.size())
+			segment.flat_end = (int)flat_text.size();
+	}
+
+	RebuildLayout();
+}
+
+SelectionEndpoint ElementSelectableText::HitTestSelection(Vector2f absolute_position) const
+{
+	SelectionEndpoint endpoint;
+	endpoint.owner = const_cast<ElementSelectableText*>(this);
+	endpoint.index = const_cast<ElementSelectableText*>(this)->HitTestLocal(absolute_position);
+	return endpoint;
+}
+
+int ElementSelectableText::HitTestLocal(Vector2f absolute_mouse)
+{
+	if (lines.empty())
+		return 0;
+
+	const Vector2f local_mouse = absolute_mouse - GetContentRenderOrigin();
+
+	int best_index = 0;
+	float best_distance = Math::SquareRoot(std::numeric_limits<float>::max());
+
+	for (const LineLayout& line : lines)
+	{
+		if (!line.text_element)
+			continue;
+
+		const float top = line.baseline.y - line.ascent;
+		const float bottom = line.baseline.y + line.descent;
+		if (local_mouse.y < top || local_mouse.y > bottom)
+			continue;
+
+		const char* p_begin = flat_text.data() + line.begin;
+		const char* p_end = p_begin + line.length;
+		int prev_offset = 0;
+		float prev_width = 0.f;
+
+		for (auto it = StringIteratorU8(p_begin, p_begin, p_end); it; ++it)
+		{
+			const int offset = (int)it.offset();
+			const float width = float(ElementUtilities::GetStringWidth(line.text_element, StringView(p_begin, p_begin + offset)));
+			const float distance = Math::Absolute(width - (local_mouse.x - line.baseline.x));
+			if (distance < best_distance)
+			{
+				best_distance = distance;
+				best_index = line.begin + offset;
+			}
+			if (width > local_mouse.x - line.baseline.x)
+			{
+				const float left_distance = Math::Absolute(width - (local_mouse.x - line.baseline.x));
+				const float right_distance = Math::Absolute(prev_width - (local_mouse.x - line.baseline.x));
+				return line.begin + (left_distance < right_distance ? prev_offset : offset);
+			}
+			prev_offset = offset;
+			prev_width = width;
+		}
+
+		best_index = line.begin + line.length;
+	}
+
+	return best_index;
+}
+
+String ElementSelectableText::GetSelectionSlice(int local_start, int local_end) const
+{
+	const int start = Math::Min(local_start, local_end);
+	const int end = Math::Max(local_start, local_end);
+	if (start >= end || start >= (int)flat_text.size())
+		return {};
+	return flat_text.substr(start, end - start);
+}
+
+void ElementSelectableText::RenderSelectionSlice(int local_start, int local_end)
+{
+	RebuildLayout();
+	BuildSelectionGeometry(local_start, local_end);
+}
+
+void ElementSelectableText::UpdateSelectionHighlight(int local_start, int local_end)
+{
+	RenderSelectionSlice(local_start, local_end);
 }
 
 Vector2f ElementSelectableText::GetContentRenderOrigin()
@@ -227,70 +254,10 @@ void ElementSelectableText::RebuildLayout()
 	}
 }
 
-int ElementSelectableText::HitTest(Vector2f absolute_mouse)
+void ElementSelectableText::BuildSelectionGeometry(int local_start, int local_end)
 {
-	if (lines.empty())
-		return 0;
-
-	const Vector2f local_mouse = absolute_mouse - GetContentRenderOrigin();
-
-	int best_index = 0;
-	float best_distance = Math::SquareRoot(std::numeric_limits<float>::max());
-
-	for (const LineLayout& line : lines)
-	{
-		if (!line.text_element)
-			continue;
-
-		const float top = line.baseline.y - line.ascent;
-		const float bottom = line.baseline.y + line.descent;
-		if (local_mouse.y < top || local_mouse.y > bottom)
-			continue;
-
-		const char* p_begin = flat_text.data() + line.begin;
-		const char* p_end = p_begin + line.length;
-		int prev_offset = 0;
-		float prev_width = 0.f;
-
-		for (auto it = StringIteratorU8(p_begin, p_begin, p_end); it; ++it)
-		{
-			const int offset = (int)it.offset();
-			const float width = float(ElementUtilities::GetStringWidth(line.text_element, StringView(p_begin, p_begin + offset)));
-			const float distance = Math::Absolute(width - (local_mouse.x - line.baseline.x));
-			if (distance < best_distance)
-			{
-				best_distance = distance;
-				best_index = line.begin + offset;
-			}
-			if (width > local_mouse.x - line.baseline.x)
-			{
-				const float left_distance = Math::Absolute(width - (local_mouse.x - line.baseline.x));
-				const float right_distance = Math::Absolute(prev_width - (local_mouse.x - line.baseline.x));
-				return line.begin + (left_distance < right_distance ? prev_offset : offset);
-			}
-			prev_offset = offset;
-			prev_width = width;
-		}
-
-		best_index = line.begin + line.length;
-	}
-
-	return best_index;
-}
-
-String ElementSelectableText::GetSelectedText() const
-{
-	const int start = Math::Min(anchor_index, focus_index);
-	const int end = Math::Max(anchor_index, focus_index);
-	if (start >= end || start >= (int)flat_text.size())
-		return {};
-	return flat_text.substr(start, end - start);
-}
-
-void ElementSelectableText::BuildSelectionGeometry()
-{
-	const int start = Math::Min(anchor_index, focus_index);
-	const int end = Math::Max(anchor_index, focus_index);
+	const int start = Math::Min(local_start, local_end);
+	const int end = Math::Max(local_start, local_end);
 	if (start >= end || !GetOwnerDocument())
 	{
 		selection_geometry = {};
@@ -302,7 +269,7 @@ void ElementSelectableText::BuildSelectionGeometry()
 		return;
 
 	Mesh mesh = selection_geometry.Release(Geometry::ReleaseMode::ClearMesh);
-	const ColourbPremultiplied fill(100, 150, 255, 120);
+	const ColourbPremultiplied fill(173, 214, 255, 255);
 
 	for (const LineLayout& line : lines)
 	{
@@ -333,150 +300,26 @@ void ElementSelectableText::BuildSelectionGeometry()
 		selection_geometry = render_manager->MakeGeometry(std::move(mesh));
 }
 
-void ElementSelectableText::BeginSelection(Vector2i mouse_position)
-{
-	for (ElementSelectableText* other : GetInstances())
-	{
-		if (other != this)
-			other->ClearSelection();
-	}
-
-	RefreshTextFromContainer();
-	if (flat_text.empty() || !reference_text)
-	{
-		ClearSelection();
-		return;
-	}
-
-	RebuildLayout();
-	const int index = HitTest(Vector2f(float(mouse_position.x), float(mouse_position.y)));
-	anchor_index = index;
-	focus_index = index;
-	dragging = true;
-	suppress_click = false;
-	active_dragger = this;
-	BuildSelectionGeometry();
-}
-
-void ElementSelectableText::ExtendSelection(Vector2i mouse_position)
-{
-	if (!dragging || !GetOwnerDocument())
-		return;
-
-	RebuildLayout();
-	focus_index = HitTest(Vector2f(float(mouse_position.x), float(mouse_position.y)));
-	BuildSelectionGeometry();
-}
-
-void ElementSelectableText::EndSelection()
-{
-	if (dragging && GetOwnerDocument())
-	{
-		RefreshTextFromContainer();
-		if (flat_text.empty() || !reference_text)
-		{
-			ClearSelection();
-			return;
-		}
-		RebuildLayout();
-		BuildSelectionGeometry();
-		suppress_click = (anchor_index != focus_index);
-	}
-	dragging = false;
-	if (active_dragger == this)
-		active_dragger = nullptr;
-}
-
 void ElementSelectableText::ProcessEvent(Event& event)
 {
 	Element* target = event.GetTargetElement();
 	if (!target || !Contains(target))
 		return;
 
-	if (event == EventId::Mousedown && event.GetPhase() == EventPhase::Capture)
+	if (event == EventId::Click && event.GetPhase() == EventPhase::Capture)
 	{
-		if (IsInteractiveElement(target))
+		if (SelectionController* controller = GetSelectionController(this))
 		{
-			ClearSelection();
-			return;
+			if (controller->ShouldSuppressClick(target))
+				event.StopPropagation();
 		}
-
-		const int mouse_x = static_cast<int>(event.GetParameter("mouse_x", 0.f));
-		const int mouse_y = static_cast<int>(event.GetParameter("mouse_y", 0.f));
-		BeginSelection(Vector2i(mouse_x, mouse_y));
-		return;
 	}
-
-	if (event == EventId::Mouseup && event.GetPhase() == EventPhase::Capture)
-	{
-		EndSelection();
-		return;
-	}
-
-	if (event == EventId::Click && event.GetPhase() == EventPhase::Capture && suppress_click && !IsInteractiveElement(target))
-		event.StopPropagation();
 }
 
 void ElementSelectableText::OnRender()
 {
 	if (selection_geometry)
 		selection_geometry.Render(GetContentRenderOrigin());
-}
-
-void ElementSelectableText::NotifyGlobalMouseMove(Vector2i mouse_position)
-{
-	if (active_dragger)
-		active_dragger->ExtendSelection(mouse_position);
-}
-
-void ElementSelectableText::NotifyGlobalMouseUp()
-{
-	if (active_dragger)
-		active_dragger->EndSelection();
-}
-
-bool ElementSelectableText::NotifyGlobalKeyDown(Input::KeyIdentifier key, int key_modifier_state)
-{
-	const bool ctrl = (key_modifier_state & Input::KM_CTRL) != 0;
-	if (!ctrl || key != Input::KI_C)
-		return false;
-
-	for (ElementSelectableText* instance : GetInstances())
-	{
-		if (!instance->GetOwnerDocument())
-			continue;
-		const String selected = instance->GetSelectedText();
-		if (selected.empty())
-			continue;
-		if (SystemInterface* system = GetSystemInterface())
-			system->SetClipboardText(selected);
-		return true;
-	}
-	return false;
-}
-
-bool ElementSelectableText::IsAnyDragging()
-{
-	return active_dragger != nullptr;
-}
-
-void ElementSelectableText::ClearSelectionsUnlessContaining(Element* hover)
-{
-	if (hover)
-	{
-		for (Element* element = hover; element; element = element->GetParentNode())
-		{
-			if (rmlui_dynamic_cast<ElementSelectableText*>(element))
-			{
-				if (!IsInteractiveElement(hover))
-					return;
-				break;
-			}
-		}
-	}
-
-	for (ElementSelectableText* instance : GetInstances())
-		instance->ClearSelection();
 }
 
 } // namespace Rml

@@ -3,8 +3,11 @@
 #include "Element.h"
 #include "Geometry.h"
 #include "Header.h"
+#include "SelectionTypes.h"
 
 namespace Rml {
+
+class SelectionContentBuilder;
 
 class RMLUICORE_API ElementText final : public Element {
 public:
@@ -57,6 +60,10 @@ public:
 
 	// Returns the current list of lines.
 	const LineList& GetLines() const { return lines; }
+
+	void BuildSelectionContent(SelectionContentBuilder& builder) override;
+	SelectionEndpoint HitTestSelection(Vector2f absolute_position) const override;
+	String GetSelectionSlice(int local_start, int local_end) const override;
 
 protected:
 	void OnRender() override;

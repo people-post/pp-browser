@@ -15,6 +15,8 @@ add_library(rmlui_core
 	ComputeProperty.cpp
 	ComputeProperty.h
 	Context.cpp
+	SelectionContentBuilder.cpp
+	SelectionController.cpp
 	ContextInstancer.cpp
 	ContextInstancerDefault.cpp
 	ContextInstancerDefault.h
@@ -318,6 +320,7 @@ target_sources(rmlui_core PRIVATE
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/RenderManager.h"
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/ScriptInterface.h"
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/ScrollTypes.h"
+	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/SelectionTypes.h"
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Span.h"
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Spritesheet.h"
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/StableVector.h"

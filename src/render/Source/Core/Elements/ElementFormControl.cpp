@@ -1,5 +1,6 @@
 #include "../../../Include/RmlUi/Core/Elements/ElementFormControl.h"
 #include "../../../Include/RmlUi/Core/ComputedValues.h"
+#include "../SelectionContentBuilder.h"
 
 namespace Rml {
 
@@ -57,6 +58,23 @@ void ElementFormControl::OnAttributeChange(const ElementAttributes& changed_attr
 		else
 			RemoveProperty(PropertyId::Focus);
 	}
+}
+
+SelectionDisposition ElementFormControl::QuerySelection(const SelectionQuery& query)
+{
+	if (query.phase == SelectionQuery::Phase::PointerDown)
+		return SelectionDisposition::Block;
+	return SelectionDisposition::Default;
+}
+
+bool ElementFormControl::BlocksSelectionInteraction() const
+{
+	return true;
+}
+
+void ElementFormControl::BuildSelectionContent(SelectionContentBuilder& builder)
+{
+	builder.AppendGap();
 }
 
 } // namespace Rml

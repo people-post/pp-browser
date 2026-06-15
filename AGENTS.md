@@ -26,7 +26,7 @@ We **own and modify** the vendored copy under [`src/render/`](src/render/). It i
 
 | Feature | Location | Usage |
 |---------|----------|--------|
-| Text selection in static content | `src/render/Source/Core/Elements/ElementSelectableText.*` | RML attribute `selectable="text"`; Ctrl+C copies selection |
+| Text selection in static content | `src/render/Source/Core/Elements/ElementSelectableText.*`, `SelectionController.*` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
 | User-agent baseline styles | `src/render/Source/Core/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
 | List markers (workaround) | `src/render/Source/Core/ListMarker.*`, `Layout/InlineLevelBox.cpp` | `ul`/`ol` bullets until `list-style` exists — see [RMLUI_UPSTREAM.md](docs/RMLUI_UPSTREAM.md) |
 
@@ -62,5 +62,5 @@ Prompt text for LLMs is built in [`src/agent/PromptBuilder.cpp`](src/agent/Promp
 
 - Prefer extending existing patterns (`SearchDemo`, `ChatDemo`, `DataModelHost`) over new frameworks.
 - Avoid unsupported RCSS (see RCSS profile); RmlUi will log parse errors at runtime.
-- For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus.
+- For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus. Suggestion buttons render inline inside assistant bubbles.
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.

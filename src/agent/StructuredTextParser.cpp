@@ -163,7 +163,11 @@ ParseResult ParseButtonBlock(const nlohmann::json& block) {
   }
   ParseResult result;
   result.ok = true;
-  result.suggestions.push_back({block["label"].get<std::string>(), message});
+  const std::string label = block["label"].get<std::string>();
+  result.rml = "<button class=\"chat-suggestion\" data-event-click=\"send_suggestion('" +
+               StructuredTextParser::EscapeExpressionString(message) + "')\">" +
+               StructuredTextParser::EscapeText(label) + "</button>";
+  result.suggestions.push_back({label, message});
   return result;
 }
 
@@ -275,6 +279,8 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
         return button;
       }
       result.suggestions.insert(result.suggestions.end(), button.suggestions.begin(), button.suggestions.end());
+      text_stack << button.rml;
+      has_text = true;
       continue;
     }
 

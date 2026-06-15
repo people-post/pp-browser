@@ -257,6 +257,25 @@ input, textarea, select {
   background-color: #d8dce2;
 }
 
+.bubble-assistant .chat-suggestion {
+  display: inline-block;
+  width: auto;
+  font-size: 13dp;
+  padding: 6dp 12dp;
+  margin-top: 8dp;
+  margin-right: 8dp;
+  margin-bottom: 4dp;
+  border-radius: 16dp;
+  background-color: #e8eaed;
+  color: #1a1a1a;
+  cursor: pointer;
+  focus: none;
+}
+
+.bubble-assistant .chat-suggestion:hover {
+  background-color: #d8dce2;
+}
+
 .dynamic-demo-body {
   position: absolute;
   top: 0;

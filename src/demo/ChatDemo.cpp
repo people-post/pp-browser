@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cctype>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -66,6 +67,30 @@ Rml::String UserMessageRml(const std::string& text) {
 
 Rml::String AssistantBubbleRml(const std::string& rml) {
   return Rml::String(rml.c_str());
+}
+
+std::string InlineSuggestionButtonsRml(const std::vector<TranscriptSuggestion>& suggestions) {
+  std::ostringstream out;
+  for (const TranscriptSuggestion& suggestion : suggestions) {
+    out << "<button class=\"chat-suggestion\" data-event-click=\"send_suggestion('"
+        << StructuredTextParser::EscapeExpressionString(suggestion.message) << "')\">"
+        << StructuredTextParser::EscapeText(suggestion.label) << "</button>";
+  }
+  return out.str();
+}
+
+std::string HydrateLegacySuggestions(const std::string& assistant_rml, const std::vector<TranscriptSuggestion>& suggestions) {
+  if (suggestions.empty() || assistant_rml.find("chat-suggestion") != std::string::npos) {
+    return assistant_rml;
+  }
+
+  const std::string buttons = InlineSuggestionButtonsRml(suggestions);
+  constexpr const char* stack_close = "</div>";
+  if (assistant_rml.size() > 6 && assistant_rml.find("<div class=\"stack\">") == 0 &&
+      assistant_rml.compare(assistant_rml.size() - 6, 6, stack_close) == 0) {
+    return assistant_rml.substr(0, assistant_rml.size() - 6) + buttons + stack_close;
+  }
+  return assistant_rml + buttons;
 }
 
 Rml::String ErrorMessageRml(const std::string& message) {
@@ -212,12 +237,9 @@ void ChatDemo::SyncDisplayFromConversation() {
     TranscriptDisplayRow row;
     row.user_content_rml = UserMessageRml(entry.user_text);
     if (entry.assistant_rml) {
-      row.assistant_content_rml = AssistantBubbleRml(*entry.assistant_rml);
+      row.assistant_content_rml =
+          AssistantBubbleRml(HydrateLegacySuggestions(*entry.assistant_rml, entry.suggestions));
       row.has_assistant = true;
-      row.suggestions.reserve(entry.suggestions.size());
-      for (const TranscriptSuggestion& suggestion : entry.suggestions) {
-        row.suggestions.push_back({Rml::String(suggestion.label.c_str()), Rml::String(suggestion.message.c_str())});
-      }
     } else if (entry.assistant_raw && !entry.assistant_rml) {
       row.assistant_content_rml = ErrorMessageRml("Assistant reply pending display sync.");
       row.has_assistant = true;

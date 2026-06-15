@@ -17,6 +17,7 @@ class DataModel;
 class DataModelConstructor;
 class DataTypeRegister;
 class ScrollController;
+class SelectionController;
 class RenderManager;
 class TextInputHandler;
 enum class EventId : uint16_t;
@@ -119,6 +120,9 @@ public:
 	/// Returns the root element that holds all the documents
 	/// @return The root element.
 	Element* GetRootElement();
+
+	/// Returns the document-wide static text selection controller.
+	SelectionController* GetSelectionController();
 
 	/// Returns the youngest descendent of the given element which is under the given point in screen coordinates.
 	/// @param[in] point The point to test.
@@ -355,6 +359,7 @@ private:
 
 	// Controller for various scroll behavior modes.
 	UniquePtr<ScrollController> scroll_controller; // [not-null]
+	UniquePtr<SelectionController> selection_controller; // [not-null]
 
 	// Enables cursor handling.
 	bool enable_cursor;

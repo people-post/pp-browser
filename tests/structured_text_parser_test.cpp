@@ -114,7 +114,8 @@ int main() {
   })";
   auto button_result = pbr::StructuredTextParser::ParseBlocksJson(button_block);
   assert(button_result.ok);
-  assert(button_result.rml.empty());
+  assert(button_result.rml.find("chat-suggestion") != std::string::npos);
+  assert(button_result.rml.find("send_suggestion(") != std::string::npos);
   assert(button_result.suggestions.size() == 1);
   assert(button_result.suggestions[0].label == "Say \"hi\"");
   assert(button_result.suggestions[0].message == "It's a \\test");
@@ -137,6 +138,7 @@ int main() {
   auto repaired_result = pbr::StructuredTextParser::ParseBlocksJson(missing_root_brace);
   assert(repaired_result.ok);
   assert(repaired_result.rml.find("<p>Hi</p>") != std::string::npos);
+  assert(repaired_result.rml.find("chat-suggestion") != std::string::npos);
   assert(repaired_result.rml.find("selectable=\"text\"") == std::string::npos);
   assert(repaired_result.suggestions.size() == 1);
   assert(repaired_result.suggestions[0].label == "More");

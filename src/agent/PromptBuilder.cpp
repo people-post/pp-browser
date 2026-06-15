@@ -53,7 +53,7 @@ Use ONLY the five block types below. Any other type will not render.
 
 5. button
    Fields: type (required), label (required, string), message (required, string)
-   Renders: clickable suggestion chip; clicking sends message as the user's next message
+   Renders: inline clickable suggestion chip inside assistant content; clicking sends message as the user's next message
    Example: { "type": "button", "label": "Explain more", "message": "Can you explain that in simpler terms?" }
    Use sparingly for 1-3 suggested follow-ups. message is plain text (no markdown).
 

@@ -30,6 +30,7 @@
 #include "PluginRegistry.h"
 #include "Pool.h"
 #include "PropertiesIterator.h"
+#include "SelectionContentBuilder.h"
 #include "StyleSheetNode.h"
 #include "StyleSheetParser.h"
 #include "TransformState.h"
@@ -37,6 +38,7 @@
 #include "XMLParseTools.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace Rml {
 
@@ -1938,6 +1940,90 @@ void Element::OnPseudoClassChange(const String& /*pseudo_class*/, bool /*activat
 void Element::OnChildAdd(Element* /*child*/) {}
 
 void Element::OnChildRemove(Element* /*child*/) {}
+
+namespace {
+
+bool IsBlockTagForSelection(const String& tag)
+{
+	return tag == "p" || tag == "div" || tag == "h1" || tag == "h2" || tag == "h3" || tag == "li" || tag == "ul" || tag == "ol" ||
+		tag == "blockquote" || tag == "pre";
+}
+
+} // namespace
+
+SelectionDisposition Element::QuerySelection(const SelectionQuery& query)
+{
+	if (query.phase == SelectionQuery::Phase::PointerDown && BlocksSelectionInteraction())
+		return SelectionDisposition::Block;
+	return SelectionDisposition::Default;
+}
+
+bool Element::BlocksSelectionInteraction() const
+{
+	if (HasAttribute("data-event-click"))
+		return true;
+
+	const String& tag = GetTagName();
+	return tag == "button" || tag == "a" || tag == "input" || tag == "textarea" || tag == "select";
+}
+
+void Element::BuildSelectionContent(SelectionContentBuilder& builder)
+{
+	if (BlocksSelectionInteraction())
+	{
+		builder.AppendGap();
+		return;
+	}
+
+	for (int i = 0; i < GetNumChildren(); ++i)
+	{
+		Element* child = GetChild(i);
+		if (!child)
+			continue;
+
+		if (!builder.GetFlatText().empty() && builder.GetFlatText().back() != '\n' && IsBlockTagForSelection(child->GetTagName()))
+			builder.AppendBlockSeparator();
+
+		child->BuildSelectionContent(builder);
+
+		if (IsBlockTagForSelection(child->GetTagName()) && (builder.GetFlatText().empty() || builder.GetFlatText().back() != '\n'))
+			builder.AppendBlockSeparator();
+	}
+}
+
+SelectionEndpoint Element::HitTestSelection(Vector2f absolute_position) const
+{
+	SelectionEndpoint best;
+	float best_distance = std::numeric_limits<float>::max();
+
+	for (int i = 0; i < GetNumChildren(); ++i)
+	{
+		Element* child = GetChild(i);
+		if (!child)
+			continue;
+
+		SelectionEndpoint hit = child->HitTestSelection(absolute_position);
+		if (!hit.IsValid())
+			continue;
+
+		const Vector2f offset = child->GetAbsoluteOffset(BoxArea::Border);
+		const float distance = (offset - absolute_position).Magnitude();
+		if (distance < best_distance)
+		{
+			best_distance = distance;
+			best = hit;
+		}
+	}
+
+	return best;
+}
+
+void Element::RenderSelectionSlice(int /*local_start*/, int /*local_end*/) {}
+
+String Element::GetSelectionSlice(int /*local_start*/, int /*local_end*/) const
+{
+	return {};
+}
 
 void Element::DirtyLayout()
 {

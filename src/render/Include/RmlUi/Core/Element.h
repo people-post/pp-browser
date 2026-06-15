@@ -9,6 +9,7 @@
 #include "RenderBox.h"
 #include "ScriptInterface.h"
 #include "ScrollTypes.h"
+#include "SelectionTypes.h"
 #include "StyleTypes.h"
 #include "Transform.h"
 #include "Tween.h"
@@ -31,6 +32,7 @@ class LayoutEngine;
 class ContainerBox;
 class InlineLevelBox;
 class ReplacedBox;
+class SelectionContentBuilder;
 class PropertiesIteratorView;
 class PropertyDictionary;
 class RenderManager;
@@ -321,6 +323,23 @@ public:
 	/// Returns the element's render manager.
 	/// @return The render manager responsible for this element.
 	RenderManager* GetRenderManager() const;
+
+	/** @name Static text selection (pp-browser fork)
+	 */
+	//@{
+	/// How this element participates in a document selection gesture.
+	virtual SelectionDisposition QuerySelection(const SelectionQuery& query);
+	/// Contribute selectable text slices or gaps to the flattened selection map.
+	virtual void BuildSelectionContent(SelectionContentBuilder& builder);
+	/// Map an absolute pointer position to a local selection index for this element.
+	virtual SelectionEndpoint HitTestSelection(Vector2f absolute_position) const;
+	/// Render the highlight geometry for a local index range.
+	virtual void RenderSelectionSlice(int local_start, int local_end);
+	/// Return clipboard text for a local index range.
+	virtual String GetSelectionSlice(int local_start, int local_end) const;
+	/// True if this element blocks selection traversal through its subtree.
+	virtual bool BlocksSelectionInteraction() const;
+	//@}
 
 	/** @name DOM Properties
 	 */

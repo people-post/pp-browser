@@ -4,10 +4,12 @@
 #include "../../../Include/RmlUi/Core/EventListener.h"
 #include "../../../Include/RmlUi/Core/Geometry.h"
 #include "../../../Include/RmlUi/Core/Input.h"
+#include "../../../Include/RmlUi/Core/SelectionTypes.h"
 
 namespace Rml {
 
 class ElementText;
+class SelectionContentBuilder;
 
 /// Static text container with drag-selection and Ctrl+C copy. Created for elements with selectable="text".
 class ElementSelectableText : public Element, public EventListener {
@@ -19,16 +21,18 @@ public:
 
 	void OnRender() override;
 
-	/// Extends drag-select when the pointer moves outside this element (called from Context).
-	static void NotifyGlobalMouseMove(Vector2i mouse_position);
-	/// Ends drag-select when the pointer is released anywhere (called from Context).
-	static void NotifyGlobalMouseUp();
-	/// Ctrl+C copy when focus is elsewhere (called from Context before focus keydown).
-	static bool NotifyGlobalKeyDown(Input::KeyIdentifier key, int key_modifier_state);
-	/// True while any selectable region is drag-selecting (blocks RmlUi element drag).
-	static bool IsAnyDragging();
-	/// Clear persisted selections when the pointer is outside selectable static text.
-	static void ClearSelectionsUnlessContaining(Element* hover);
+	SelectionDisposition QuerySelection(const SelectionQuery& query) override;
+	void BuildSelectionContent(SelectionContentBuilder& builder) override;
+	SelectionEndpoint HitTestSelection(Vector2f absolute_position) const override;
+	void RenderSelectionSlice(int local_start, int local_end) override;
+	String GetSelectionSlice(int local_start, int local_end) const override;
+
+	bool IsSelectionRoot() const;
+	void RefreshSelectionContent();
+	const String& GetFlatText() const { return flat_text; }
+	int HitTestLocal(Vector2f absolute_mouse);
+	void UpdateSelectionHighlight(int local_start, int local_end);
+	void ClearSelectionHighlight();
 
 private:
 	struct TextSegment {
@@ -49,33 +53,16 @@ private:
 
 	void ProcessEvent(Event& event) override;
 
-	static bool IsInteractiveElement(const Element* element);
-	void ClearSelection();
-	void RefreshTextFromContainer();
-	void CollectTextFromContainer(Element* element, String& out, ElementText*& first_text);
 	void RebuildLayout();
 	Vector2f GetContentRenderOrigin();
-	int HitTest(Vector2f absolute_mouse);
-	String GetSelectedText() const;
-	void BuildSelectionGeometry();
-	bool HasNonEmptySelection() const;
-	void BeginSelection(Vector2i mouse_position);
-	void ExtendSelection(Vector2i mouse_position);
-	void EndSelection();
-	void RegisterInstance();
-	void UnregisterInstance();
-
-	static ElementSelectableText* active_dragger;
+	void BuildSelectionGeometry(int local_start, int local_end);
 
 	Vector<TextSegment> segments;
 	Vector<LineLayout> lines;
 	String flat_text;
 	ElementText* reference_text = nullptr;
-	int anchor_index = 0;
-	int focus_index = 0;
-	bool dragging = false;
-	bool suppress_click = false;
 	Geometry selection_geometry;
+	bool suppress_click = false;
 };
 
 } // namespace Rml

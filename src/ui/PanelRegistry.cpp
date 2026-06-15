@@ -29,9 +29,6 @@ std::string PanelRegistry::Body(PanelKind kind) {
             <div class="message-row message-row-assistant" data-if="turn.has_assistant">
               <div class="assistant-message">
                 <div class="bubble bubble-assistant" selectable="text" data-rml="turn.assistant_content_rml"></div>
-                <div class="suggestion-row">
-                  <button class="chat-suggestion" data-for="sug : turn.suggestions" data-attr-message="sug.message" data-event-click="send_suggestion(sug.message)">{{sug.label}}</button>
-                </div>
               </div>
             </div>
           </div>

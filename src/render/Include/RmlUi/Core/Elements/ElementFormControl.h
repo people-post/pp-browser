@@ -44,6 +44,10 @@ public:
 	/// @param[in] disable True to disable the element, false to enable.
 	void SetDisabled(bool disable);
 
+	SelectionDisposition QuerySelection(const SelectionQuery& query) override;
+	bool BlocksSelectionInteraction() const override;
+	void BuildSelectionContent(SelectionContentBuilder& builder) override;
+
 protected:
 	/// Checks for changes to the 'disabled' attribute.
 	/// @param[in] changed_attributes List of changed attributes on the element.

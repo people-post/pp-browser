@@ -20,7 +20,7 @@ AI-generated UI must follow this profile.
 
 ## Selectable text (pp-browser fork)
 
-Add `selectable="text"` on a static content container to enable drag-selection and Ctrl+C copy (`ElementSelectableText`). Use `focus: none` on bubbles so the chat input keeps focus. Place interactive controls outside selectable regions.
+Add `selectable="text"` on a static content container to enable drag-selection and Ctrl+C copy. Use `focus: none` on bubbles so the chat input keeps focus. Interactive controls (e.g. suggestion buttons) may live inside selectable regions; elements opt out via `QuerySelection` / `BlocksSelectionInteraction`. Selection spans multiple `selectable="text"` containers in one drag.
 
 ## Styling
 
@@ -57,7 +57,7 @@ For conversational replies (not full UI documents), respond with a single fenced
 | `heading` | `text`, `level` (1–3) | `<h1>`–`<h3>` |
 | `list` | `items` (array), `ordered` (bool) | `<ul>`/`<ol>` + `<li>` |
 | `code` | `text` | `<div class="code-block">` |
-| `button` | `label`, `message` | `<button class="chat-suggestion">` in `suggestion-row` (outside selectable bubble) with `data-event-click="send_suggestion(...)"` |
+| `button` | `label`, `message` | `<button class="chat-suggestion">` inline in assistant content with `data-event-click="send_suggestion(...)"` |
 
 ### Rules
 
