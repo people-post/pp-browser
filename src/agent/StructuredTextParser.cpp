@@ -76,16 +76,23 @@ ParseResult Fail(const std::string& message) {
   return result;
 }
 
+ParseResult BlockError(const std::string& message) {
+  ParseResult result;
+  result.ok = false;
+  result.error = message;
+  return result;
+}
+
 ParseResult RenderBlock(const nlohmann::json& block) {
   if (!block.is_object() || !block.contains("type") || !block["type"].is_string()) {
-    return Fail("Block must be an object with a type field");
+    return BlockError("Block must be an object with a type field");
   }
 
   const std::string type = block["type"].get<std::string>();
 
   if (type == "paragraph") {
     if (!block.contains("text") || !block["text"].is_string()) {
-      return Fail("paragraph block requires text");
+      return BlockError("paragraph block requires text");
     }
     ParseResult result;
     result.ok = true;
@@ -95,17 +102,17 @@ ParseResult RenderBlock(const nlohmann::json& block) {
 
   if (type == "heading") {
     if (!block.contains("text") || !block["text"].is_string()) {
-      return Fail("heading block requires text");
+      return BlockError("heading block requires text");
     }
     int level = 2;
     if (block.contains("level")) {
       if (!block["level"].is_number_integer()) {
-        return Fail("heading level must be an integer");
+        return BlockError("heading level must be an integer");
       }
       level = block["level"].get<int>();
     }
     if (level < 1 || level > 3) {
-      return Fail("heading level must be 1-3");
+      return BlockError("heading level must be 1-3");
     }
     ParseResult result;
     result.ok = true;
@@ -116,14 +123,14 @@ ParseResult RenderBlock(const nlohmann::json& block) {
 
   if (type == "list") {
     if (!block.contains("items") || !block["items"].is_array()) {
-      return Fail("list block requires items array");
+      return BlockError("list block requires items array");
     }
     const bool ordered = block.value("ordered", false);
     std::ostringstream out;
     out << (ordered ? "<ol>" : "<ul>");
     for (const auto& item : block["items"]) {
       if (!item.is_string()) {
-        return Fail("list items must be strings");
+        return BlockError("list items must be strings");
       }
       out << "<li>" << StructuredTextParser::EscapeText(item.get<std::string>()) << "</li>";
     }
@@ -136,7 +143,7 @@ ParseResult RenderBlock(const nlohmann::json& block) {
 
   if (type == "code") {
     if (!block.contains("text") || !block["text"].is_string()) {
-      return Fail("code block requires text");
+      return BlockError("code block requires text");
     }
     ParseResult result;
     result.ok = true;
@@ -144,30 +151,58 @@ ParseResult RenderBlock(const nlohmann::json& block) {
     return result;
   }
 
-  return Fail("Unknown block type: " + type);
+  return BlockError("Unknown block type: " + type);
 }
 
-ParseResult ParseButtonBlock(const nlohmann::json& block) {
+std::optional<std::string> ParseOptionalButtonPayload(const nlohmann::json& block) {
+  if (!block.contains("payload")) {
+    return std::nullopt;
+  }
+  if (!block["payload"].is_string()) {
+    return std::nullopt;
+  }
+  const std::string payload = block["payload"].get<std::string>();
+  if (payload.empty()) {
+    return std::nullopt;
+  }
+  const nlohmann::json doc = nlohmann::json::parse(payload, nullptr, false);
+  if (doc.is_discarded() || !doc.is_object()) {
+    return std::nullopt;
+  }
+  return payload;
+}
+
+ParseResult ParseButtonBlock(const nlohmann::json& block, ParseResult& parent) {
   if (!block.contains("label") || !block["label"].is_string()) {
-    return Fail("button block requires label");
+    return BlockError("button block requires label");
   }
   if (!block.contains("message") || !block["message"].is_string()) {
-    return Fail("button block requires message");
+    return BlockError("button block requires message");
   }
   const std::string message = block["message"].get<std::string>();
   if (message.empty()) {
-    return Fail("button message must not be empty");
+    return BlockError("button message must not be empty");
   }
-  if (message.find('\n') != std::string::npos || message.find('\r') != std::string::npos) {
-    return Fail("button message must not contain newlines");
+
+  std::optional<std::string> payload;
+  if (block.contains("payload")) {
+    if (!block["payload"].is_string()) {
+      return BlockError("button payload must be a JSON object string");
+    }
+    payload = ParseOptionalButtonPayload(block);
+    if (!payload) {
+      return BlockError("button payload must be a JSON object string");
+    }
   }
+
+  const std::string label = block["label"].get<std::string>();
+  const int index = static_cast<int>(parent.chat_actions.size());
+  parent.chat_actions.push_back({label, message, payload});
+
   ParseResult result;
   result.ok = true;
-  const std::string label = block["label"].get<std::string>();
-  result.rml = "<button class=\"chat-suggestion\" data-event-click=\"send_suggestion('" +
-               StructuredTextParser::EscapeExpressionString(message) + "')\">" +
-               StructuredTextParser::EscapeText(label) + "</button>";
-  result.suggestions.push_back({label, message});
+  result.rml = "<button class=\"chat-suggestion\" data-event-click=\"send_chat_action('__ENTRY__', " +
+               std::to_string(index) + ")\">" + StructuredTextParser::EscapeText(label) + "</button>";
   return result;
 }
 
@@ -274,11 +309,11 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
   for (const auto& block : doc["blocks"]) {
     if (block.is_object() && block.contains("type") && block["type"].is_string() &&
         block["type"].get<std::string>() == "button") {
-      auto button = ParseButtonBlock(block);
+      auto button = ParseButtonBlock(block, result);
       if (!button.ok) {
-        return button;
+        result.warnings.push_back(button.error);
+        continue;
       }
-      result.suggestions.insert(result.suggestions.end(), button.suggestions.begin(), button.suggestions.end());
       text_stack << button.rml;
       has_text = true;
       continue;
@@ -286,13 +321,21 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
 
     auto rendered = RenderBlock(block);
     if (!rendered.ok) {
-      return rendered;
+      result.warnings.push_back(rendered.error);
+      continue;
     }
     text_stack << rendered.rml;
     has_text = true;
   }
 
+  if (!has_text && !result.warnings.empty()) {
+    return Fail("No displayable blocks");
+  }
+
   if (has_text) {
+    if (!result.warnings.empty()) {
+      text_stack << "<p class=\"muted\">Some blocks could not be displayed.</p>";
+    }
     result.rml = "<div class=\"stack\">" + text_stack.str() + "</div>";
   }
   return result;

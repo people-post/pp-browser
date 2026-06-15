@@ -19,7 +19,8 @@ int main() {
   assert(result.rml.find("assistant-message") == std::string::npos);
   assert(result.rml.find("selectable=\"text\"") == std::string::npos);
   assert(result.rml.find("<div class=\"stack\">") != std::string::npos);
-  assert(result.suggestions.empty());
+  assert(result.chat_actions.empty());
+  assert(result.warnings.empty());
   assert(result.rml.find("&lt;world&gt;") != std::string::npos);
   assert(result.rml.find("&amp;") != std::string::npos);
   assert(result.rml.find("&quot;") != std::string::npos);
@@ -31,6 +32,22 @@ int main() {
   auto bad_type_result = pbr::StructuredTextParser::ParseBlocksJson(bad_type);
   assert(!bad_type_result.ok);
   assert(bad_type_result.rml.find("error") != std::string::npos);
+
+  const std::string unknown_only = R"({"blocks":[{"type":"table","text":"x"},{"type":"card","title":"X"}]})";
+  auto unknown_only_result = pbr::StructuredTextParser::ParseBlocksJson(unknown_only);
+  assert(!unknown_only_result.ok);
+
+  const std::string mixed = R"({
+    "blocks": [
+      { "type": "paragraph", "text": "Good" },
+      { "type": "table", "text": "bad" }
+    ]
+  })";
+  auto mixed_result = pbr::StructuredTextParser::ParseBlocksJson(mixed);
+  assert(mixed_result.ok);
+  assert(mixed_result.rml.find("<p>Good</p>") != std::string::npos);
+  assert(mixed_result.warnings.size() == 1);
+  assert(mixed_result.rml.find("Some blocks could not be displayed") != std::string::npos);
 
   const std::string bad_json = "not json";
   auto bad_json_result = pbr::StructuredTextParser::ParseBlocksJson(bad_json);
@@ -115,10 +132,40 @@ int main() {
   auto button_result = pbr::StructuredTextParser::ParseBlocksJson(button_block);
   assert(button_result.ok);
   assert(button_result.rml.find("chat-suggestion") != std::string::npos);
-  assert(button_result.rml.find("send_suggestion(") != std::string::npos);
-  assert(button_result.suggestions.size() == 1);
-  assert(button_result.suggestions[0].label == "Say \"hi\"");
-  assert(button_result.suggestions[0].message == "It's a \\test");
+  assert(button_result.rml.find("send_chat_action('__ENTRY__', 0)") != std::string::npos);
+  assert(button_result.rml.find("send_suggestion(") == std::string::npos);
+  assert(button_result.chat_actions.size() == 1);
+  assert(button_result.chat_actions[0].label == "Say \"hi\"");
+  assert(button_result.chat_actions[0].message == "It's a \\test");
+  assert(!button_result.chat_actions[0].payload.has_value());
+
+  const std::string button_with_payload = R"({
+    "blocks": [
+      {
+        "type": "button",
+        "label": "Pick A",
+        "message": "I choose A",
+        "payload": "{\"type\":\"choice\",\"value\":\"A\"}"
+      }
+    ]
+  })";
+  auto payload_button = pbr::StructuredTextParser::ParseBlocksJson(button_with_payload);
+  assert(payload_button.ok);
+  assert(payload_button.chat_actions.size() == 1);
+  assert(payload_button.chat_actions[0].payload.has_value());
+  assert(payload_button.chat_actions[0].payload->find("choice") != std::string::npos);
+
+  const std::string multi_button = R"({
+    "blocks": [
+      { "type": "button", "label": "One", "message": "First" },
+      { "type": "button", "label": "Two", "message": "Second" }
+    ]
+  })";
+  auto multi_button_result = pbr::StructuredTextParser::ParseBlocksJson(multi_button);
+  assert(multi_button_result.ok);
+  assert(multi_button_result.chat_actions.size() == 2);
+  assert(multi_button_result.rml.find("send_chat_action('__ENTRY__', 0)") != std::string::npos);
+  assert(multi_button_result.rml.find("send_chat_action('__ENTRY__', 1)") != std::string::npos);
 
   const std::string button_missing_message = R"({"blocks":[{"type":"button","label":"Go"}]})";
   auto button_missing_message_result = pbr::StructuredTextParser::ParseBlocksJson(button_missing_message);
@@ -127,6 +174,10 @@ int main() {
   const std::string button_empty_message = R"({"blocks":[{"type":"button","label":"Go","message":""}]})";
   auto button_empty_message_result = pbr::StructuredTextParser::ParseBlocksJson(button_empty_message);
   assert(!button_empty_message_result.ok);
+
+  const std::string button_only_invalid = R"({"blocks":[{"type":"button","label":"Go"}]})";
+  auto button_only_invalid_result = pbr::StructuredTextParser::ParseBlocksJson(button_only_invalid);
+  assert(!button_only_invalid_result.ok);
 
   // LLMs often omit the final closing brace on the root object.
   const std::string missing_root_brace = R"({
@@ -140,9 +191,9 @@ int main() {
   assert(repaired_result.rml.find("<p>Hi</p>") != std::string::npos);
   assert(repaired_result.rml.find("chat-suggestion") != std::string::npos);
   assert(repaired_result.rml.find("selectable=\"text\"") == std::string::npos);
-  assert(repaired_result.suggestions.size() == 1);
-  assert(repaired_result.suggestions[0].label == "More");
-  assert(repaired_result.suggestions[0].message == "Tell me more");
+  assert(repaired_result.chat_actions.size() == 1);
+  assert(repaired_result.chat_actions[0].label == "More");
+  assert(repaired_result.chat_actions[0].message == "Tell me more");
 
   std::cout << "structured_text_parser_test ok\n";
   return 0;

@@ -29,7 +29,7 @@ Respond with exactly one fenced ```json block:
 }
 
 Each entry in blocks MUST be an object with a "type" field.
-Use ONLY the five block types below. Any other type will not render.
+Use ONLY the five block types below. Unknown types are skipped; valid blocks still render.
 
 1. paragraph
    Fields: type (required), text (required, string)
@@ -52,13 +52,14 @@ Use ONLY the five block types below. Any other type will not render.
    Example: { "type": "code", "text": "int x = 1;" }
 
 5. button
-   Fields: type (required), label (required, string), message (required, string)
-   Renders: inline clickable suggestion chip inside assistant content; clicking sends message as the user's next message
+   Fields: type (required), label (required, string), message (required, string), payload (optional, JSON object string for LLM-only structured follow-up)
+   Renders: inline clickable suggestion chip; clicking sends message as the user's next message (and payload when set)
    Example: { "type": "button", "label": "Explain more", "message": "Can you explain that in simpler terms?" }
-   Use sparingly for 1-3 suggested follow-ups. message is plain text (no markdown).
+   Optional payload example: { "type": "button", "label": "Pick A", "message": "I choose option A", "payload": "{\"type\":\"choice\",\"value\":\"A\"}" }
+   Use sparingly for suggested follow-ups. message is plain text (no markdown).
 
 NOT SUPPORTED
-- Block types other than paragraph, heading, list, code, button
+- Block types other than paragraph, heading, list, code, button (they are skipped, not rendered)
 - HTML tags, markdown, bold, italic, links, tables, images, blockquotes
 - Formatting inside paragraph text (no **bold**, no `backticks`, no # headings, no bullet characters)
 - Bare strings or other shapes in the blocks array

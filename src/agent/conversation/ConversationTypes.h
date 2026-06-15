@@ -8,9 +8,10 @@
 
 namespace pbr {
 
-struct TranscriptSuggestion {
+struct TranscriptChatAction {
   std::string label;
   std::string message;
+  std::optional<std::string> payload;
 };
 
 struct TranscriptEntry {
@@ -20,7 +21,7 @@ struct TranscriptEntry {
   std::optional<std::string> user_payload;
   std::optional<std::string> assistant_raw;
   std::optional<std::string> assistant_rml;
-  std::vector<TranscriptSuggestion> suggestions;
+  std::vector<TranscriptChatAction> chat_actions;
 };
 
 struct ConversationSummary {

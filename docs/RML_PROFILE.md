@@ -16,7 +16,7 @@ AI-generated UI must follow this profile.
 
 - `data-model` on `body`
 - `data-value`, `data-checked`, `data-for`, `data-if`, `data-visible`, `data-rml`
-- `data-event-click="action_name()"`
+- `data-event-click="action_name()"` — chat chips use `send_chat_action('__ENTRY__', n)`; legacy turns may use `send_suggestion('message')`
 
 ## Selectable text (pp-browser fork)
 
@@ -57,10 +57,12 @@ For conversational replies (not full UI documents), respond with a single fenced
 | `heading` | `text`, `level` (1–3) | `<h1>`–`<h3>` |
 | `list` | `items` (array), `ordered` (bool) | `<ul>`/`<ol>` + `<li>` |
 | `code` | `text` | `<div class="code-block">` |
-| `button` | `label`, `message` | `<button class="chat-suggestion">` inline in assistant content with `data-event-click="send_suggestion(...)"` |
+| `button` | `label`, `message`, optional `payload` | `<button class="chat-suggestion">` with `data-event-click="send_chat_action('__ENTRY__', n)"` |
+
+Unknown block types are skipped; valid blocks still render. When any block is skipped, a muted footer is shown.
 
 ### Rules
 
 - No HTML, markdown, or arbitrary CSS in responses
 - Text is plain UTF-8; the parser escapes special characters before rendering
-- Only the block types above are supported
+- Prefer the five block types above; unknown types are tolerated but not rendered

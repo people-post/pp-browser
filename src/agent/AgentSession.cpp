@@ -325,8 +325,8 @@ bool AgentSession::CompleteAssistantMessage(const std::string& entry_id, const s
 }
 
 bool AgentSession::SetAssistantDisplay(const std::string& entry_id, const std::string& assistant_rml,
-                                       std::vector<TranscriptSuggestion> suggestions) {
-  return impl_->conversation.SetAssistantDisplay(entry_id, assistant_rml, std::move(suggestions));
+                                       std::vector<TranscriptChatAction> chat_actions) {
+  return impl_->conversation.SetAssistantDisplay(entry_id, assistant_rml, std::move(chat_actions));
 }
 
 void AgentSession::Submit(const std::string& user_text, std::optional<std::string> user_payload) {

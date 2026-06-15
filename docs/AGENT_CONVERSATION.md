@@ -26,7 +26,7 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 
 - **`TranscriptEntry`** — one user message and optional assistant reply
   - `user_text`, optional `user_payload` (LLM-only structured JSON fence), `assistant_raw` (LLM context)
-  - `assistant_rml`, `suggestions` (UI, filled after parsing)
+  - `assistant_rml`, `chat_actions` (click handlers for chips; UI, filled after parsing)
 - **`Conversation`** — in-memory transcript + optional `ConversationSummary`
 - **`IContextPolicy`** — builds LLM message list from transcript
 - **`SlidingWindowContextPolicy`** — v1 policy: recent turn pairs + char/token budgets
@@ -62,6 +62,12 @@ Chat forms are inline RML inside assistant bubbles (see `ChatFormHelper`, `ChatD
 | Expire on progression | Sending any user message or submitting a form disables older forms |
 | Re-offer | The model may emit a new form in a later assistant reply; that becomes the new active form |
 | Submit | `submit_form(entry_id, form_id)` reads DOM values, sends `user_text` from `data-submit-template`, and `user_payload` as `{"type":"form_submission",...}` |
+
+### Chat actions (indexed dispatcher)
+
+Suggestion chips use `send_chat_action(entry_id, index)` instead of embedding message text in RML. The transcript stores `chat_actions[]` on each assistant turn (`label`, `message`, optional `payload`). `__ENTRY__` in parser output is replaced with the real entry id at display hydration.
+
+Legacy inline `send_suggestion('...')` in stored RML still works for older turns.
 
 Mock chat: type `form` (without LLM configured) to exercise the booking form sample.
 

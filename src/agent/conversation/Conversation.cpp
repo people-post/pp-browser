@@ -50,12 +50,12 @@ bool Conversation::CompleteTurn(const std::string& entry_id, const std::string& 
 }
 
 bool Conversation::SetAssistantDisplay(const std::string& entry_id, const std::string& assistant_rml,
-                                       std::vector<TranscriptSuggestion> suggestions) {
+                                       std::vector<TranscriptChatAction> chat_actions) {
   std::lock_guard lock(mutex_);
   for (TranscriptEntry& entry : entries_) {
     if (entry.id == entry_id) {
       entry.assistant_rml = assistant_rml;
-      entry.suggestions = std::move(suggestions);
+      entry.chat_actions = std::move(chat_actions);
       return true;
     }
   }

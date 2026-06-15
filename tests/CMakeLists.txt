@@ -85,3 +85,9 @@ add_executable(pp_browser_chat_form_helper_test chat_form_helper_test.cpp
 target_link_libraries(pp_browser_chat_form_helper_test PRIVATE nlohmann_json::nlohmann_json RmlUi::Core)
 target_include_directories(pp_browser_chat_form_helper_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME chat_form_helper_test COMMAND pp_browser_chat_form_helper_test)
+
+add_executable(pp_browser_chat_action_dispatcher_test chat_action_dispatcher_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp)
+target_link_libraries(pp_browser_chat_action_dispatcher_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_chat_action_dispatcher_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME chat_action_dispatcher_test COMMAND pp_browser_chat_action_dispatcher_test)

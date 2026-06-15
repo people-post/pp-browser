@@ -71,6 +71,31 @@ std::string ToLower(std::string text) {
   return text;
 }
 
+std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index) {
+  if (args.size() <= index) {
+    return std::nullopt;
+  }
+  const Rml::Variant& value = args[index];
+  switch (value.GetType()) {
+  case Rml::Variant::INT:
+    return value.Get<int>();
+  case Rml::Variant::INT64:
+    return static_cast<int>(value.Get<int64_t>());
+  case Rml::Variant::FLOAT:
+    return static_cast<int>(value.Get<float>());
+  case Rml::Variant::DOUBLE:
+    return static_cast<int>(value.Get<double>());
+  case Rml::Variant::STRING:
+    try {
+      return std::stoi(std::string(value.Get<Rml::String>().c_str()));
+    } catch (...) {
+      return std::nullopt;
+    }
+  default:
+    return std::nullopt;
+  }
+}
+
 Rml::String UserMessageRml(const std::string& text) {
   return Rml::String(("<div class=\"bubble bubble-user\" selectable=\"text\"><p>" + StructuredTextParser::EscapeText(text) +
                       "</p></div>")
@@ -81,22 +106,22 @@ Rml::String AssistantBubbleRml(const std::string& rml) {
   return Rml::String(rml.c_str());
 }
 
-std::string InlineSuggestionButtonsRml(const std::vector<TranscriptSuggestion>& suggestions) {
+std::string InlineChatActionButtonsRml(const std::vector<TranscriptChatAction>& chat_actions) {
   std::ostringstream out;
-  for (const TranscriptSuggestion& suggestion : suggestions) {
-    out << "<button class=\"chat-suggestion\" data-event-click=\"send_suggestion('"
-        << StructuredTextParser::EscapeExpressionString(suggestion.message) << "')\">"
-        << StructuredTextParser::EscapeText(suggestion.label) << "</button>";
+  for (size_t i = 0; i < chat_actions.size(); ++i) {
+    out << "<button class=\"chat-suggestion\" data-event-click=\"send_chat_action('__ENTRY__', " << i << ")\">"
+        << StructuredTextParser::EscapeText(chat_actions[i].label) << "</button>";
   }
   return out.str();
 }
 
-std::string HydrateLegacySuggestions(const std::string& assistant_rml, const std::vector<TranscriptSuggestion>& suggestions) {
-  if (suggestions.empty() || assistant_rml.find("chat-suggestion") != std::string::npos) {
+std::string HydrateLegacyChatActions(const std::string& assistant_rml,
+                                   const std::vector<TranscriptChatAction>& chat_actions) {
+  if (chat_actions.empty() || assistant_rml.find("chat-suggestion") != std::string::npos) {
     return assistant_rml;
   }
 
-  const std::string buttons = InlineSuggestionButtonsRml(suggestions);
+  const std::string buttons = InlineChatActionButtonsRml(chat_actions);
   constexpr const char* stack_close = "</div>";
   if (assistant_rml.size() > 6 && assistant_rml.find("<div class=\"stack\">") == 0 &&
       assistant_rml.compare(assistant_rml.size() - 6, 6, stack_close) == 0) {
@@ -230,6 +255,20 @@ void ChatDemo::SubmitFormCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*
                         std::string(args[1].Get<Rml::String>().c_str()));
 }
 
+void ChatDemo::SendChatActionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+
+  const std::optional<int> action_index = EventArgAsInt(args, 1);
+  if (!action_index || *action_index < 0) {
+    return;
+  }
+
+  Instance().SendChatAction(std::string(args[0].Get<Rml::String>().c_str()), *action_index);
+}
+
 void ChatDemo::NewChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& /*args*/) {
   Instance().OnNewChat();
 }
@@ -277,7 +316,7 @@ std::string ChatDemo::HydrateAssistantRml(const TranscriptEntry& entry) const {
     return {};
   }
 
-  std::string rml = HydrateLegacySuggestions(*entry.assistant_rml, entry.suggestions);
+  std::string rml = HydrateLegacyChatActions(*entry.assistant_rml, entry.chat_actions);
   rml = InjectEntryPlaceholders(rml, entry.id);
 
   const std::optional<std::string> form_id = ExtractFormId(rml);
@@ -427,6 +466,27 @@ void ChatDemo::SubmitForm(const std::string& entry_id, const std::string& form_i
   SendUserText(display_text, payload);
 }
 
+void ChatDemo::SendChatAction(const std::string& entry_id, int action_index) {
+  if (!agent_ || chat_.loading || action_index < 0) {
+    return;
+  }
+
+  for (const TranscriptEntry& entry : agent_->conversation().Entries()) {
+    if (entry.id != entry_id) {
+      continue;
+    }
+    if (action_index >= static_cast<int>(entry.chat_actions.size())) {
+      log().warning << "Chat action index out of range: " << entry_id << "/" << action_index;
+      return;
+    }
+    const TranscriptChatAction& action = entry.chat_actions[static_cast<size_t>(action_index)];
+    SendUserText(action.message, action.payload);
+    return;
+  }
+
+  log().warning << "Chat action entry not found: " << entry_id;
+}
+
 void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
                                     const std::string& finish_reason, bool append_mock_form) {
   auto parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output)
@@ -448,16 +508,20 @@ void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::stri
       parsed.rml += kMockFormRml;
     }
 
-    std::vector<TranscriptSuggestion> suggestions;
-    suggestions.reserve(parsed.suggestions.size());
-    for (const ParsedSuggestion& suggestion : parsed.suggestions) {
-      suggestions.push_back({suggestion.label, suggestion.message});
+    for (const std::string& warning : parsed.warnings) {
+      log().warning << "Skipped block in assistant reply: " << warning;
+    }
+
+    std::vector<TranscriptChatAction> chat_actions;
+    chat_actions.reserve(parsed.chat_actions.size());
+    for (const ParsedChatAction& action : parsed.chat_actions) {
+      chat_actions.push_back({action.label, action.message, action.payload});
     }
     if (agent_) {
       if (!from_llm) {
         agent_->CompleteAssistantMessage(entry_id, raw_output);
       }
-      agent_->SetAssistantDisplay(entry_id, parsed.rml, std::move(suggestions));
+      agent_->SetAssistantDisplay(entry_id, parsed.rml, std::move(chat_actions));
     }
     UpdateActiveFormFromRml(entry_id, parsed.rml);
     shell_.preview_rml = Rml::String(parsed.rml.c_str());
@@ -538,16 +602,10 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   register_enter_send(Rml::Input::KI_NUMPADENTER);
 
   if (!DataModelHost::Instance().Register(context, "chat", [](Rml::DataModelConstructor& ctor) {
-        if (auto sug_handle = ctor.RegisterStruct<ChatSuggestion>()) {
-          sug_handle.RegisterMember("label", &ChatSuggestion::label);
-          sug_handle.RegisterMember("message", &ChatSuggestion::message);
-        }
-        ctor.RegisterArray<std::vector<ChatSuggestion>>();
         if (auto turn_handle = ctor.RegisterStruct<TranscriptDisplayRow>()) {
           turn_handle.RegisterMember("user_content_rml", &TranscriptDisplayRow::user_content_rml);
           turn_handle.RegisterMember("assistant_content_rml", &TranscriptDisplayRow::assistant_content_rml);
           turn_handle.RegisterMember("has_assistant", &TranscriptDisplayRow::has_assistant);
-          turn_handle.RegisterMember("suggestions", &TranscriptDisplayRow::suggestions);
         }
         ctor.RegisterArray<std::vector<TranscriptDisplayRow>>();
         ctor.Bind("draft", &ChatDemo::Instance().chat_.draft);
@@ -556,6 +614,7 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
         ctor.Bind("turns", &ChatDemo::Instance().chat_.turns);
         ctor.BindEventCallback("send_message", &ChatDemo::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatDemo::SendSuggestionCallback);
+        ctor.BindEventCallback("send_chat_action", &ChatDemo::SendChatActionCallback);
         ctor.BindEventCallback("submit_form", &ChatDemo::SubmitFormCallback);
       })) {
     return false;

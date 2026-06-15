@@ -8,15 +8,17 @@
 
 namespace pbr {
 
-struct ParsedSuggestion {
+struct ParsedChatAction {
   std::string label;
   std::string message;
+  std::optional<std::string> payload;
 };
 
 struct ParseResult {
   bool ok = false;
   std::string rml;
-  std::vector<ParsedSuggestion> suggestions;
+  std::vector<ParsedChatAction> chat_actions;
+  std::vector<std::string> warnings;
   std::string error;
 };
 

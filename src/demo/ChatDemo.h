@@ -31,16 +31,10 @@ public:
     Rml::String preview;
   };
 
-  struct ChatSuggestion {
-    Rml::String label;
-    Rml::String message;
-  };
-
   struct TranscriptDisplayRow {
     Rml::String user_content_rml;
     Rml::String assistant_content_rml;
     bool has_assistant = false;
-    std::vector<ChatSuggestion> suggestions;
   };
 
   bool Setup(Rml::Context* context, const AppConfig& config);
@@ -76,12 +70,14 @@ private:
 
   static void SendMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SendSuggestionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void SendChatActionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SubmitFormCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void NewChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
   void OnNewChat();
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
+  void SendChatAction(const std::string& entry_id, int action_index);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
   void SyncDisplayFromConversation();
   void UpdateSidebarPreview(const std::string& preview_text);
