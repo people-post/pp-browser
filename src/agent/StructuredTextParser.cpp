@@ -136,18 +136,22 @@ std::optional<std::string> ParseOptionalButtonPayload(const nlohmann::json& bloc
   if (!block.contains("payload")) {
     return std::nullopt;
   }
-  if (!block["payload"].is_string()) {
+  const nlohmann::json& payload = block["payload"];
+  if (payload.is_object()) {
+    return payload.dump();
+  }
+  if (!payload.is_string()) {
     return std::nullopt;
   }
-  const std::string payload = block["payload"].get<std::string>();
-  if (payload.empty()) {
+  const std::string payload_str = payload.get<std::string>();
+  if (payload_str.empty()) {
     return std::nullopt;
   }
-  const nlohmann::json doc = nlohmann::json::parse(payload, nullptr, false);
+  const nlohmann::json doc = nlohmann::json::parse(payload_str, nullptr, false);
   if (doc.is_discarded() || !doc.is_object()) {
     return std::nullopt;
   }
-  return payload;
+  return payload_str;
 }
 
 ParseResult AppendChatActionButton(ParseResult& parent, const std::string& label, const std::string& message,
@@ -176,12 +180,9 @@ ParseResult ParseButtonBlock(const nlohmann::json& block, ParseResult& parent) {
 
   std::optional<std::string> payload;
   if (block.contains("payload")) {
-    if (!block["payload"].is_string()) {
-      return BlockError("button payload must be a JSON object string");
-    }
     payload = ParseOptionalButtonPayload(block);
     if (!payload) {
-      return BlockError("button payload must be a JSON object string");
+      return BlockError("button payload must be a JSON object or object string");
     }
   }
 
@@ -354,6 +355,84 @@ ParseResult ParseCalendarBlock(const nlohmann::json& block) {
   result.ok = true;
   result.rml = kCalendarWidgetRml;
   result.widget_inits.push_back({WidgetInitKind::Calendar, block});
+  return result;
+}
+
+ParseResult ParseLongListActionButton(ParseResult& parent, const nlohmann::json& action) {
+  if (!action.is_object() || !action.contains("label") || !action.contains("message")) {
+    return BlockError("long_list actions require label and message");
+  }
+  if (!action["label"].is_string() || !action["message"].is_string()) {
+    return BlockError("long_list action label and message must be strings");
+  }
+  if (action.contains("payload")) {
+    const auto payload = ParseOptionalButtonPayload(action);
+    if (!payload) {
+      return BlockError("long_list action payload must be a JSON object or object string");
+    }
+    return AppendChatActionButton(parent, action["label"].get<std::string>(), action["message"].get<std::string>(),
+                                  payload);
+  }
+  return AppendChatActionButton(parent, action["label"].get<std::string>(), action["message"].get<std::string>(),
+                                std::nullopt);
+}
+
+ParseResult ParseLongListBlock(const nlohmann::json& block, ParseResult& parent) {
+  if (!block.contains("items") || !block["items"].is_array()) {
+    return BlockError("long_list block requires items array");
+  }
+
+  std::ostringstream out;
+  out << "<div class=\"chat-long-list\">";
+  if (block.contains("title") && block["title"].is_string()) {
+    out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(block["title"].get<std::string>()) << "</p>";
+  }
+  out << "<div class=\"chat-long-list-scroll\">";
+  for (const auto& item : block["items"]) {
+    if (!item.is_object() || !item.contains("title") || !item["title"].is_string()) {
+      return BlockError("long_list items require title");
+    }
+    out << "<div class=\"chat-long-list-item\">";
+    out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(item["title"].get<std::string>())
+        << "</p>";
+    if (item.contains("subtitle") && item["subtitle"].is_string()) {
+      out << "<p class=\"muted chat-long-list-subtitle\">"
+          << StructuredTextParser::EscapeText(item["subtitle"].get<std::string>()) << "</p>";
+    }
+    if (item.contains("meta") && item["meta"].is_string()) {
+      out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(item["meta"].get<std::string>())
+          << "</p>";
+    }
+    if (item.contains("actions") && item["actions"].is_array()) {
+      out << "<div class=\"row chat-long-list-actions\">";
+      for (const auto& action : item["actions"]) {
+        auto button = ParseLongListActionButton(parent, action);
+        if (!button.ok) {
+          return button;
+        }
+        out << button.rml;
+      }
+      out << "</div>";
+    }
+    out << "</div>";
+  }
+  out << "</div>";
+  if (block.contains("footer_actions") && block["footer_actions"].is_array()) {
+    out << "<div class=\"row chat-long-list-footer\">";
+    for (const auto& action : block["footer_actions"]) {
+      auto button = ParseLongListActionButton(parent, action);
+      if (!button.ok) {
+        return button;
+      }
+      out << button.rml;
+    }
+    out << "</div>";
+  }
+  out << "</div>";
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = out.str();
   return result;
 }
 
@@ -560,6 +639,9 @@ ParseResult RenderBlock(const nlohmann::json& block, ParseResult& parent) {
   if (type == "action_list") {
     return ParseActionListBlock(block, parent);
   }
+  if (type == "long_list") {
+    return ParseLongListBlock(block, parent);
+  }
   if (type == "choice") {
     return ParseChoiceBlock(block, parent);
   }
@@ -587,7 +669,8 @@ std::optional<std::string> ExtractJsonPayload(const std::string& llm_output) {
 bool IsDisplayBlockType(const std::string& type) {
   return type == "paragraph" || type == "heading" || type == "list" || type == "code" || type == "button" ||
          type == "card" || type == "table" || type == "key_value" || type == "callout" || type == "quote" ||
-         type == "form" || type == "calendar" || type == "action_list" || type == "choice" || type == "poll";
+         type == "form" || type == "calendar" || type == "action_list" || type == "long_list" || type == "choice" ||
+         type == "poll";
 }
 
 bool IsKnownToolName(const std::string& name) {

@@ -66,6 +66,7 @@ For conversational replies (not full UI documents), respond with a single fenced
 | `form` | `id`, `fields[]`, `submit_template`, optional `title`, `submit_label` | reactive `data-value` form widget |
 | `calendar` | optional `month`, `year` (default: today); optional `min_date`, `max_date`, `available_days[]` | reactive calendar table with month nav |
 | `action_list` | `items[]` with nested `actions[]` | list + suggestion buttons |
+| `long_list` | `items[]`: `title`, optional `id`, `subtitle`, `meta`, `actions[]`; optional `title`, `footer_actions[]` | scrollable list + row/footer suggestion buttons |
 | `choice` | `prompt`, `options[]` | prompt + suggestion buttons |
 | `poll` | `question`, `options[]` | poll + suggestion buttons |
 

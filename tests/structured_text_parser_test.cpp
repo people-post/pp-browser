@@ -246,6 +246,50 @@ int main() {
   assert(poll_result.chat_actions.size() == 1);
   assert(poll_result.rml.find("chat-poll") != std::string::npos);
 
+  const std::string long_list_block = R"({
+    "blocks": [
+      {
+        "type": "long_list",
+        "title": "Articles from Brief",
+        "items": [
+          {
+            "id": "art-001",
+            "title": "Market outlook <Q2>",
+            "subtitle": "Cross-asset view & \"rates\"",
+            "meta": "2025-06-10",
+            "actions": [
+              { "label": "Summarize", "message": "Summarize art-001" },
+              {
+                "label": "Open",
+                "message": "Open art-001",
+                "payload": { "type": "article", "id": "art-001" }
+              }
+            ]
+          }
+        ],
+        "footer_actions": [
+          {
+            "label": "More",
+            "message": "Load more",
+            "payload": { "tool": "blog_articles", "before_id": "art-001", "size": 10 }
+          }
+        ]
+      }
+    ]
+  })";
+  auto long_list_result = pbr::StructuredTextParser::ParseBlocksJson(long_list_block);
+  assert(long_list_result.ok);
+  assert(long_list_result.rml.find("chat-long-list-scroll") != std::string::npos);
+  assert(long_list_result.rml.find("chat-long-list-title") != std::string::npos);
+  assert(long_list_result.rml.find("&lt;Q2&gt;") != std::string::npos);
+  assert(long_list_result.rml.find("&amp;") != std::string::npos);
+  assert(long_list_result.rml.find("chat-long-list-footer") != std::string::npos);
+  assert(long_list_result.chat_actions.size() == 3);
+
+  const std::string long_list_missing_items = R"({"blocks":[{"type":"long_list","title":"X"}]})";
+  auto long_list_missing_items_result = pbr::StructuredTextParser::ParseBlocksJson(long_list_missing_items);
+  assert(!long_list_missing_items_result.ok);
+
   std::cout << "structured_text_parser_test ok\n";
   return 0;
 }

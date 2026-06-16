@@ -7,8 +7,18 @@ Assistant replies use structured JSON blocks parsed by [`StructuredTextParser`](
 | Category | Blocks | Binding |
 |----------|--------|---------|
 | Static | paragraph, heading, list, code, card, table, key_value, callout, quote | Escaped HTML only |
-| Click actions | button, action_list, choice, poll | `send_chat_action(entry, index)` |
+| Click actions | button, action_list, choice, poll, long_list | `send_chat_action(entry, index)` |
 | Reactive widgets | form, calendar | `data-value`, `data-for`, `data-if` on chat model |
+
+## Long list (LLM + MCP)
+
+`long_list` is a **presentation** block for scrollable feeds. The LLM discovers sources via MCP tool schemas, calls tools through function calling, maps the response into normalized `items[]`, then emits the block in its final reply.
+
+- **Row fields:** `title` (required), optional `id`, `subtitle`, `meta`
+- **Row actions:** `items[].actions[]` with `label`, `message`, optional `payload`
+- **Pagination:** `footer_actions[]` (e.g. "More" with `payload` containing `before_id`) → user message → LLM fetches next page via MCP → new `long_list` reply
+
+Reference example: `blog_articles` MCP tool → map `{ articles: [...] }` into rows.
 
 ## Reactive widgets
 

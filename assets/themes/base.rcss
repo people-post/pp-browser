@@ -401,10 +401,52 @@ input, textarea, select {
 }
 
 .chat-action-list,
+.chat-long-list,
 .chat-choice,
 .chat-poll {
   display: block;
   margin-top: 12dp;
+}
+
+.chat-long-list-scroll {
+  max-height: 240dp;
+  overflow-y: auto;
+  padding: 8dp;
+  margin-top: 8dp;
+  background-color: #ffffff;
+  border-radius: 6dp;
+  border: 1dp #e5e7eb;
+  box-sizing: border-box;
+}
+
+.chat-long-list-item {
+  display: block;
+  margin-bottom: 12dp;
+  padding-bottom: 10dp;
+  border-bottom: 1dp #e5e7eb;
+}
+
+.chat-long-list-item:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.chat-long-list-title {
+  margin-bottom: 4dp;
+}
+
+.chat-long-list-subtitle,
+.chat-long-list-meta {
+  margin-bottom: 4dp;
+  font-size: 13dp;
+}
+
+.chat-long-list-actions,
+.chat-long-list-footer {
+  gap: 8dp;
+  flex-wrap: wrap;
+  margin-top: 6dp;
 }
 
 .chat-action-list-item {

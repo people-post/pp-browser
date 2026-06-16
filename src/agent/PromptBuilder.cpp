@@ -43,14 +43,22 @@ Static blocks
 9. quote — text (string); optional attribution
 
 Interactive blocks (click → user message via send_chat_action)
-10. button — label, message; optional payload (JSON object string)
+10. button — label, message; optional payload (JSON object or object string)
 11. action_list — items[]: { title, description?, actions[]: { label, message, payload? } }
 12. choice — prompt, options[]: { label, message, payload? }
 13. poll — question, options[]: { label, message, payload? }
+14. long_list — title?, items[]: { title, id?, subtitle?, meta?, actions[]? }; optional footer_actions[]: { label, message, payload? }
 
 Reactive widgets (bound form fields / calendar inside the bubble)
-14. form — id, submit_template, fields[]: { id, label, field_type (text|textarea|select|checkbox|date), options? }; optional title, submit_label
-15. calendar — optional month (1-12), year (defaults to today); optional min_date, max_date (YYYY-MM-DD), available_days (string[])
+15. form — id, submit_template, fields[]: { id, label, field_type (text|textarea|select|checkbox|date), options? }; optional title, submit_label
+16. calendar — optional month (1-12), year (defaults to today); optional min_date, max_date (YYYY-MM-DD), available_days (string[])
+
+LONG LIST + MCP WORKFLOW
+- For feeds and directories (articles, records, search hits), call MCP tools first via function calling — do not invent rows.
+- Read each tool inputSchema to choose fetch params; read tool result JSON to map rows into long_list items.
+- Map tool fields into item title, subtitle (short excerpt), and meta (date/tag/source as plain text).
+- Put per-row buttons in items[].actions; use footer_actions for pagination hints (e.g. payload with before_id).
+- Emit long_list only in the final blocks reply after tool calls complete. Never put tool calls inside blocks JSON.
 
 NOT SUPPORTED
 - HTML tags, markdown, inline formatting in text fields
@@ -95,6 +103,8 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
            "searches are needed.\n";
     out << "- Never put tool calls inside blocks JSON. Do not emit { \"tool\": ... } blocks.\n";
     out << "- Tools are invoked by the runtime via function calling, not via block types.\n";
+    out << "- For list or directory requests, prefer MCP tools when available; map tool results into a long_list block.\n";
+    out << "- Example: brief.global articles via blog_articles → long_list items with title, subtitle excerpt, meta date.\n";
     out << "- When results contain story titles, quote those headlines directly; do not list news homepages.\n";
     out << "- Never expose raw tool JSON to the user; summarize in plain blocks.\n\n";
   }
