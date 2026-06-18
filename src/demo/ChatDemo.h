@@ -48,6 +48,7 @@ private:
     Rml::String status;
     std::vector<TranscriptDisplayRow> turns;
     bool loading = false;
+    bool has_turns = false;
   };
 
   struct ShellState {

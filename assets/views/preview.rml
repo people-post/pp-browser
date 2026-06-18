@@ -1,0 +1,6 @@
+<div class="preview-panel stack" data-model="shell">
+  <h2>Preview</h2>
+  <p class="muted">Latest assistant reply</p>
+  <div class="preview-content" data-if="preview_rml != ''" data-rml="preview_rml"></div>
+  <p class="muted" data-if="preview_rml == ''">No assistant reply yet.</p>
+</div>

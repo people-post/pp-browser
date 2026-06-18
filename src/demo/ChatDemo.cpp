@@ -9,7 +9,9 @@
 #include "demo/ChatWidgetStateBuilder.h"
 #include "ui/DataModelHost.h"
 #include "ui/DocumentLoader.h"
-#include "ui/SplitLayoutHost.h"
+#include "ui/ShellHost.h"
+#include "ui/ShellFeedback.h"
+#include "ui/ShellTypes.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
@@ -229,6 +231,7 @@ void DirtyChatChrome() {
   DataModelHost::Instance().Dirty("chat", "draft");
   DataModelHost::Instance().Dirty("chat", "status");
   DataModelHost::Instance().Dirty("chat", "loading");
+  DataModelHost::Instance().Dirty("chat", "has_turns");
 }
 
 void DirtyChatTurns() {
@@ -337,20 +340,35 @@ void ChatDemo::OnSendMessage() {
 }
 
 void ChatDemo::OnNewChat() {
-  if (agent_) {
-    agent_->StartNewConversation();
-  }
-  chat_.draft = "";
-  chat_.status = "";
-  chat_.loading = false;
-  chat_.turns.clear();
-  shell_.preview_rml = "";
-  shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
-  pending_reply_.reset();
-  ClearFormState();
-  widgets_by_entry_.clear();
-  DirtyChat();
-  DirtyShell();
+  auto perform_reset = [this]() {
+    if (agent_) {
+      agent_->StartNewConversation();
+    }
+    chat_.draft = "";
+    chat_.status = "";
+    chat_.loading = false;
+    chat_.turns.clear();
+    chat_.has_turns = false;
+    shell_.preview_rml = "";
+    shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
+    pending_reply_.reset();
+    ShellHost::Instance().SetAuxiliaryAvailable(false);
+    ShellHost::Instance().CloseAuxiliary();
+    ClearFormState();
+    widgets_by_entry_.clear();
+    SyncDisplayFromConversation();
+    DirtyChat();
+    DirtyShell();
+  };
+
+  ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "New chat", "Clear the current conversation?",
+                             [perform_reset](bool ok) {
+                               if (ok) {
+                                 perform_reset();
+                               }
+                             });
+  ShellHost::Instance().RequestSyncLayout();
+  ShellHost::Instance().DirtyWindow();
 }
 
 bool ChatDemo::IsFormEditable(const std::string& entry_id, const std::string& form_id) const {
@@ -450,6 +468,7 @@ void ChatDemo::SyncDisplayFromConversation() {
     chat_.turns.push_back(std::move(row));
   }
 
+  chat_.has_turns = !chat_.turns.empty();
   DirtyChatTurns();
 }
 
@@ -633,12 +652,14 @@ void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::stri
       agent_->SetAssistantDisplay(entry_id, parsed.rml, std::move(chat_actions));
     }
     shell_.preview_rml = Rml::String(parsed.rml.c_str());
+    ShellHost::Instance().SetAuxiliaryAvailable(true);
     DirtyShell();
   }
 
   SyncDisplayFromConversation();
   chat_.loading = false;
   chat_.status = "";
+  ShellHost::Instance().SetActivityVisible(false);
   DirtyChatChrome();
 }
 
@@ -648,11 +669,15 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
     chat_.loading = event.loading;
     if (!event.loading) {
       chat_.status = "";
+      ShellHost::Instance().SetActivityVisible(false);
+    } else {
+      ShellHost::Instance().SetActivityVisible(true);
     }
     DirtyChatChrome();
     break;
   case AgentEventType::ToolActivity:
     chat_.status = Rml::String(ToolActivityLabel(event.tool_name, event.status).c_str());
+    ShellHost::Instance().SetActivityVisible(true);
     DirtyChatChrome();
     break;
   case AgentEventType::AssistantReady:
@@ -660,6 +685,8 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
     break;
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;
+    ShellFeedback::ShowBanner(ShellHost::Instance().State(), event.message);
+    ShellHost::Instance().DirtyWindow();
     if (agent_ && !agent_->conversation().Entries().empty()) {
       const TranscriptEntry& entry = agent_->conversation().Entries().back();
       agent_->CompleteAssistantMessage(entry.id, event.message);
@@ -668,6 +695,7 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
     }
     chat_.loading = false;
     chat_.status = "";
+    ShellHost::Instance().SetActivityVisible(false);
     DirtyChatChrome();
     break;
   }
@@ -715,6 +743,7 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
         ctor.Bind("draft", &ChatDemo::Instance().chat_.draft);
         ctor.Bind("status", &ChatDemo::Instance().chat_.status);
         ctor.Bind("loading", &ChatDemo::Instance().chat_.loading);
+        ctor.Bind("has_turns", &ChatDemo::Instance().chat_.has_turns);
         ctor.Bind("turns", &ChatDemo::Instance().chat_.turns);
         ctor.BindEventCallback("send_message", &ChatDemo::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatDemo::SendSuggestionCallback);
@@ -736,22 +765,39 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
         ctor.Bind("sessions", &ChatDemo::Instance().shell_.sessions);
         ctor.Bind("preview_rml", &ChatDemo::Instance().shell_.preview_rml);
         ctor.BindEventCallback("new_chat", &ChatDemo::NewChatCallback);
-        ctor.BindEventCallback("split_panel_h", &SplitLayoutHost::SplitPanelHCallback);
-        ctor.BindEventCallback("split_panel_v", &SplitLayoutHost::SplitPanelVCallback);
-        ctor.BindEventCallback("close_panel", &SplitLayoutHost::ClosePanelCallback);
-        ctor.BindEventCallback("gutter_drag_start", &SplitLayoutHost::GutterDragStartCallback);
-        ctor.BindEventCallback("gutter_drag_end", &SplitLayoutHost::GutterDragEndCallback);
       })) {
     return false;
   }
 
-  SplitLayoutHost::Instance().Initialize(context);
-
-  if (DocumentLoader::LoadFile(context, Application::AssetsPath("samples/chat_shell.rml")) == nullptr) {
+  if (!ShellHost::RegisterWindowModel(context)) {
     return false;
   }
 
-  SplitLayoutHost::Instance().SyncLayout();
+  InputCoordinator::Instance().Register(KeyBinding{
+      .key = Rml::Input::KI_ESCAPE,
+      .action = []() { return !ShellHost::Instance().HandleDismiss(); },
+      .priority = 110,
+  });
+
+  ShellHost::Instance().Initialize(context);
+  ShellHost::Instance().RegisterPane(
+      {.key = "sidebar", .rml_path = "views/sidebar.rml", .role = PaneRole::Secondary, .toolbar_label = "Sessions"});
+  ShellHost::Instance().RegisterPane({.key = "chat", .rml_path = "views/chat.rml", .role = PaneRole::Primary});
+  ShellHost::Instance().RegisterPane(
+      {.key = "preview", .rml_path = "views/preview.rml", .role = PaneRole::Auxiliary, .toolbar_label = "Preview"});
+
+  if (DocumentLoader::LoadFile(context, Application::AssetsPath("samples/window_shell.rml")) == nullptr) {
+    return false;
+  }
+
+  ShellHost::Instance().Update(context);
+  ShellHost::Instance().SyncLayout();
+
+  if (!use_llm_) {
+    ShellFeedback::ShowBanner(ShellHost::Instance().State(), "Using mock replies — LLM is not configured.");
+    ShellHost::Instance().DirtyWindow();
+  }
+
   return true;
 }
 

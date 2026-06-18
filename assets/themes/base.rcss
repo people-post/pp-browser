@@ -617,16 +617,22 @@ button.calendar-day:hover {
   background-color: #f3f4f6;
 }
 
-.chat-shell-body {
+.shell-body {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
   padding: 0;
+  margin: 0;
 }
 
-.split-root {
+.shell-chrome {
+  position: relative;
+  z-index: 100;
+}
+
+.shell-root {
   position: absolute;
   top: 0;
   left: 0;
@@ -634,92 +640,299 @@ button.calendar-day:hover {
   bottom: 0;
 }
 
-.split-branch {
+.shell-banner {
   display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  padding: 8dp 12dp;
+  background-color: #fef3c7;
+  border-bottom: 1dp #fcd34d;
+  color: #92400e;
+}
+
+.shell-banner-text {
+  flex: 1;
+  margin-bottom: 0;
+  color: #92400e;
+}
+
+.shell-banner-dismiss {
+  width: auto;
+  min-width: 32dp;
+  padding: 4dp 10dp;
+  margin-bottom: 0;
+  background-color: #fde68a;
+  color: #92400e;
+}
+
+.shell-toast-stack {
+  position: absolute;
+  top: 8dp;
+  right: 12dp;
+  z-index: 110;
+}
+
+.shell-toast {
+  padding: 10dp 14dp;
+  margin-bottom: 8dp;
+  border-radius: 8dp;
+  background-color: #1f2937;
+  color: #ffffff;
+  box-shadow: 0 2dp 8dp #00000033;
+}
+
+.shell-toast p {
+  margin-bottom: 0;
+  color: #ffffff;
+}
+
+.shell-activity-strip {
+  height: 3dp;
+  background-color: #4a6cf7;
+  opacity: 0.85;
+}
+
+.shell-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.shell-pane-row {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   height: 100%;
   box-sizing: border-box;
 }
 
-.split-branch.split-h {
-  flex-direction: row;
-}
-
-.split-branch.split-v {
+.shell-pane {
+  display: flex;
   flex-direction: column;
-}
-
-.split-pane {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   box-sizing: border-box;
-}
-
-.split-gutter {
-  flex-shrink: 0;
-  background-color: #e5e7eb;
-  focus: none;
-}
-
-.split-gutter-v {
-  width: 5dp;
-  cursor: col-resize;
-}
-
-.split-gutter-h {
-  height: 5dp;
-  cursor: row-resize;
-}
-
-.panel-leaf {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
   background-color: #f8f9fb;
 }
 
-.panel-header {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 6dp;
-  padding: 6dp 8dp;
-  background-color: #ffffff;
-  border-bottom: 1dp #e5e7eb;
-  box-sizing: border-box;
+.shell-pane-secondary {
+  flex: 0 0 240dp;
+  border-right: 1dp #e5e7eb;
 }
 
-.panel-title {
+.shell-pane-primary {
   flex: 1;
-  font-size: 13dp;
-  color: #374151;
 }
 
-.panel-btn {
-  width: auto;
-  min-width: 28dp;
-  padding: 4dp 8dp;
-  margin-bottom: 0;
-  font-size: 12dp;
-  background-color: #e8eaed;
-  color: #1a1a1a;
-  border: 0;
-  focus: none;
+.shell-pane-auxiliary {
+  flex: 0 0 320dp;
+  border-left: 1dp #e5e7eb;
 }
 
-.panel-btn:hover {
-  background-color: #d8dce2;
+.shell-pane-primary-compact {
+  padding-bottom: 52dp;
 }
 
-.panel-body {
+.shell-pane-body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.shell-drawer-scrim,
+.shell-sheet-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #00000066;
+  z-index: 20;
+  focus: none;
+}
+
+.shell-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 280dp;
+  max-width: 85%;
+  background-color: #f8f9fb;
+  z-index: 21;
+  box-shadow: 2dp 0 12dp #00000033;
+}
+
+.shell-sheet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 52dp;
+  width: 320dp;
+  max-width: 90%;
+  background-color: #f8f9fb;
+  z-index: 21;
+  box-shadow: -2dp 0 12dp #00000033;
+}
+
+.shell-toolbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48dp;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 0 8dp;
+  background-color: #ffffff;
+  border-top: 1dp #e5e7eb;
+  z-index: 15;
   box-sizing: border-box;
+}
+
+.shell-toolbar-flex {
+  flex: 1;
+}
+
+.shell-toolbar-title {
+  font-size: 14dp;
+  color: #374151;
+  text-align: center;
+}
+
+.shell-toolbar-btn {
+  width: auto;
+  min-width: 72dp;
+  padding: 6dp 12dp;
+  margin-bottom: 0;
+  font-size: 13dp;
+  background-color: #e8eaed;
+  color: #1a1a1a;
+}
+
+.shell-toolbar-btn-preview {
+  background-color: #4a6cf7;
+  color: #ffffff;
+}
+
+.shell-transient-chrome {
+  flex-shrink: 0;
+  padding: 8dp 12dp;
+  background-color: #ffffff;
+  border-bottom: 1dp #e5e7eb;
+}
+
+.shell-back-btn {
+  width: auto;
+  padding: 6dp 12dp;
+  margin-bottom: 0;
+  background-color: #e8eaed;
+  color: #1a1a1a;
+}
+
+.shell-layer-transient {
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  background-color: #f8f9fb;
+}
+
+.shell-layer-overlay,
+.shell-layer-dialog {
+  z-index: 50;
+}
+
+.shell-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #00000066;
+  focus: none;
+}
+
+.shell-frame {
+  position: absolute;
+  top: 24dp;
+  left: 24dp;
+  right: 24dp;
+  bottom: 24dp;
+  padding: 16dp;
+  background-color: #ffffff;
+  border-radius: 8dp;
+  box-sizing: border-box;
+}
+
+.shell-close-btn {
+  position: absolute;
+  top: 8dp;
+  right: 8dp;
+  width: auto;
+  min-width: 32dp;
+  padding: 4dp 10dp;
+  margin-bottom: 0;
+  background-color: #e8eaed;
+  color: #1a1a1a;
+}
+
+.shell-overlay-body {
+  margin-top: 32dp;
+  height: 100%;
+  overflow: auto;
+}
+
+.shell-dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 360dp;
+  max-width: 90%;
+  margin-left: -180dp;
+  margin-top: -120dp;
+  padding: 20dp;
+  background-color: #ffffff;
+  border-radius: 8dp;
+  box-sizing: border-box;
+  z-index: 51;
+}
+
+.shell-dialog-title {
+  margin-top: 0;
+  font-size: 18dp;
+}
+
+.shell-dialog-message {
+  color: #374151;
+}
+
+.shell-dialog-actions {
+  justify-content: flex-end;
+  gap: 8dp;
+  margin-top: 16dp;
+}
+
+.shell-dialog-cancel {
+  background-color: #e8eaed;
+  color: #1a1a1a;
+}
+
+.chat-empty {
+  padding: 24dp;
+  margin-bottom: 16dp;
+  border-radius: 8dp;
+  background-color: #ffffff;
+  border: 1dp #e5e7eb;
+}
+
+.chat-empty h2 {
+  margin-top: 0;
+  font-size: 20dp;
 }
 
 .chat-panel {

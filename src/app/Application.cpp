@@ -4,7 +4,7 @@
 #include "bindings/ActionRouter.h"
 #include "demo/ChatDemo.h"
 #include "platform/BrowserThread.h"
-#include "ui/SplitLayoutHost.h"
+#include "ui/ShellHost.h"
 #include "demo/DynamicRmlDemo.h"
 #include "demo/SearchDemo.h"
 #include "ui/DocumentLoader.h"
@@ -155,7 +155,7 @@ void Application::Run() {
     BrowserThread::RunUITasks();
     if (demo_ == DemoMode::Chat) {
       UpdateChatDemo();
-      SplitLayoutHost::Instance().Update(context);
+      ShellHost::Instance().Update(context);
     }
     context->Update();
     Backend::BeginFrame();

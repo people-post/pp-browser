@@ -52,7 +52,8 @@ Prompt text for LLMs is built in [`src/agent/PromptBuilder.cpp`](src/agent/Promp
 
 | Task | Where to look |
 |------|----------------|
-| Default chat UI | `assets/samples/chat_dialog.rml`, `src/demo/ChatDemo.cpp` |
+| Default chat UI | `assets/samples/window_shell.rml`, `assets/views/chat.rml`, `src/demo/ChatDemo.cpp` |
+| Window shell / layout | `src/ui/ShellHost.*`, [docs/WINDOW_SHELL.md](docs/WINDOW_SHELL.md) |
 | Theme / layout | `assets/themes/base.rcss` |
 | Wire new demo | `src/app/Application.cpp`, `src/main.cpp` (`--demo`) |
 | Structured AI replies | `src/agent/StructuredTextParser.cpp` |

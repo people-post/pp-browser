@@ -1,0 +1,21 @@
+<rml>
+<head>
+  <title>pp-browser</title>
+  <link type="text/rcss" href="../themes/base.rcss"/>
+</head>
+<body data-model="window" class="shell-body">
+  <div id="shell-chrome" class="shell-chrome">
+    <div class="shell-banner" data-if="banner_message != ''">
+      <p class="shell-banner-text" data-rml="banner_message"></p>
+      <button class="shell-banner-dismiss" data-event-click="dismiss_banner()">×</button>
+    </div>
+    <div class="shell-toast-stack">
+      <div data-for="toast : toasts" class="shell-toast">
+        <p data-rml="toast.message"></p>
+      </div>
+    </div>
+    <div class="shell-activity-strip" data-if="activity_visible"></div>
+  </div>
+  <div id="shell-root" class="shell-root"></div>
+</body>
+</rml>

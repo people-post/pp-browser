@@ -30,3 +30,14 @@ Runtime UI updates use [`src/ui/RmlMount.cpp`](../src/ui/RmlMount.cpp):
 - `DocumentLoader::MountFragment` — mount into a live container without closing the active document
 
 Demo: `./pp-browser --demo dynamic`
+
+## Window Shell
+
+Chat and future full-window demos use the role-based shell in [`src/ui/ShellHost.*`](../src/ui/ShellHost.cpp):
+
+- **ShellLayout** — Compact/Expanded modes (768dp breakpoint)
+- **ShellHost** — Primary/Secondary/Auxiliary panes, overlays, Safari-style compact toolbar
+- **ShellInterruption** — Escape dismiss ordering
+- **ShellFeedback** — Banner, toast, alert/confirm dialog
+
+See [WINDOW_SHELL.md](WINDOW_SHELL.md).

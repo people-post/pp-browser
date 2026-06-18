@@ -1,0 +1,10 @@
+<div class="sidebar-panel stack" data-model="shell">
+  <button class="sidebar-new-chat" data-event-click="new_chat()">New chat</button>
+  <div class="sidebar-sessions">
+    <div data-for="session : sessions" class="sidebar-session">
+      <p data-rml="session.title"></p>
+      <p class="muted sidebar-session-preview" data-rml="session.preview"></p>
+    </div>
+    <p class="muted" data-if="sessions.size == 0">No conversations yet.</p>
+  </div>
+</div>

@@ -1,9 +1,0 @@
-<rml>
-<head>
-  <title>Chat</title>
-  <link type="text/rcss" href="../themes/base.rcss"/>
-</head>
-<body data-model="shell" class="chat-shell-body" data-event-mouseup="gutter_drag_end()">
-  <div id="split-root" class="split-root"></div>
-</body>
-</rml>

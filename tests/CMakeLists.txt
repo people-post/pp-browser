@@ -35,10 +35,13 @@ target_link_libraries(pp_browser_rml_mount_test PRIVATE nlohmann_json::nlohmann_
 target_include_directories(pp_browser_rml_mount_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME rml_mount_test COMMAND pp_browser_rml_mount_test)
 
-add_executable(pp_browser_split_tree_test split_tree_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/ui/SplitTree.cpp)
-target_include_directories(pp_browser_split_tree_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-add_test(NAME split_tree_test COMMAND pp_browser_split_tree_test)
+add_executable(pp_browser_shell_host_test shell_host_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/ui/ShellLayout.cpp
+  ${CMAKE_SOURCE_DIR}/src/ui/ShellInterruption.cpp
+  ${CMAKE_SOURCE_DIR}/src/ui/ShellFeedback.cpp)
+target_include_directories(pp_browser_shell_host_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pp_browser_shell_host_test PRIVATE RmlUi::Core)
+add_test(NAME shell_host_test COMMAND pp_browser_shell_host_test)
 
 add_executable(pp_browser_llm_client_test llm_client_test.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/LlmClient.cpp
