@@ -531,7 +531,7 @@ void ShellHost::Update(Rml::Context* context) {
   ApplyLayoutModeFromContext(context);
   if (previous != state_.layout_mode) {
     OnLayoutModeChanged();
-    RequestSyncLayout();
+    SyncLayout();
     return;
   }
   DirtyWindow();

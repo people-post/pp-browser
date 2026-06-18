@@ -733,8 +733,20 @@ button.calendar-day:hover {
   border-left: 1dp #e5e7eb;
 }
 
+.shell-layer-compact {
+  display: flex;
+  flex-direction: column;
+}
+
 .shell-pane-primary-compact {
+  flex: 1;
+  min-height: 0;
   padding-bottom: 52dp;
+}
+
+.shell-drawer .shell-pane,
+.shell-sheet .shell-pane {
+  height: 100%;
 }
 
 .shell-pane-body {
