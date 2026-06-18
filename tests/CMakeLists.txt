@@ -12,13 +12,14 @@ target_include_directories(pp_browser_rml_validator_test PRIVATE ${CMAKE_SOURCE_
 add_test(NAME rml_validator_test COMMAND pp_browser_rml_validator_test)
 
 add_executable(pp_browser_mcp_mock_test mcp_mock_test.cpp)
-target_link_libraries(pp_browser_mcp_mock_test PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_mcp_mock_test PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
 target_include_directories(pp_browser_mcp_mock_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_sources(pp_browser_mcp_mock_test PRIVATE
   ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
   ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp
   ${CMAKE_SOURCE_DIR}/src/mcp/McpClient.cpp
   ${CMAKE_SOURCE_DIR}/src/mcp/SchemaAdapter.cpp
+  ${CMAKE_SOURCE_DIR}/src/net/HttpClient.cpp
 )
 add_test(NAME mcp_mock_test COMMAND pp_browser_mcp_mock_test)
 

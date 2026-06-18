@@ -117,11 +117,13 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
     config.llm.num_predict = llm["num_predict"].get<int>();
   }
 
-  if (root.contains("mcp") && root["mcp"].is_object()) {
+  auto load_mcp = [](const nlohmann::json& mcp_json) -> McpConfig {
     McpConfig mcp;
-    const auto& mcp_json = root["mcp"];
     if (mcp_json.contains("command") && mcp_json["command"].is_string()) {
       mcp.command = mcp_json["command"].get<std::string>();
+    }
+    if (mcp_json.contains("url") && mcp_json["url"].is_string()) {
+      mcp.url = mcp_json["url"].get<std::string>();
     }
     if (mcp_json.contains("args") && mcp_json["args"].is_array()) {
       for (const auto& arg : mcp_json["args"]) {
@@ -130,22 +132,19 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
         }
       }
     }
-    config.mcp = std::move(mcp);
+    return mcp;
+  };
+
+  if (root.contains("mcp") && root["mcp"].is_object()) {
+    McpConfig mcp = load_mcp(root["mcp"]);
+    if (mcp.IsConfigured()) {
+      config.mcp = std::move(mcp);
+    }
   } else if (root.contains("mcp_servers") && root["mcp_servers"].is_array() && !root["mcp_servers"].empty()) {
     const auto& first = root["mcp_servers"][0];
     if (first.is_object()) {
-      McpConfig mcp;
-      if (first.contains("command") && first["command"].is_string()) {
-        mcp.command = first["command"].get<std::string>();
-      }
-      if (first.contains("args") && first["args"].is_array()) {
-        for (const auto& arg : first["args"]) {
-          if (arg.is_string()) {
-            mcp.args.push_back(arg.get<std::string>());
-          }
-        }
-      }
-      if (!mcp.command.empty()) {
+      McpConfig mcp = load_mcp(first);
+      if (mcp.IsConfigured()) {
         config.mcp = std::move(mcp);
       }
     }

@@ -1,5 +1,7 @@
 #include "mcp/McpClient.h"
 
+#include "net/HttpClient.h"
+
 #include <sstream>
 
 #ifndef _WIN32
@@ -40,6 +42,8 @@ void McpClient::Stop() {
 #endif
   running_ = false;
   mock_ = false;
+  http_ = false;
+  http_url_.clear();
 }
 
 bool McpClient::Start(const std::string& command, const std::vector<std::string>& args) {
@@ -93,6 +97,19 @@ bool McpClient::Start(const std::string& command, const std::vector<std::string>
 #endif
 }
 
+bool McpClient::StartHttp(const std::string& url) {
+  Stop();
+  if (url.empty()) {
+    log().error << "HTTP MCP URL is empty";
+    return false;
+  }
+  http_url_ = url;
+  http_ = true;
+  running_ = true;
+  log().info << "Connected to HTTP MCP: " << url;
+  return true;
+}
+
 Roe<nlohmann::json> McpClient::Request(const std::string& method, const nlohmann::json& params) {
   if (mock_) {
     if (method == "initialize") {
@@ -117,6 +134,38 @@ Roe<nlohmann::json> McpClient::Request(const std::string& method, const nlohmann
       }
     }
     return nlohmann::json::object();
+  }
+
+  if (http_) {
+    nlohmann::json req = {{"jsonrpc", "2.0"},
+                          {"id", request_id_++},
+                          {"method", method},
+                          {"params", params}};
+
+    log().debug << "HTTP MCP request: " << method;
+    auto response = HttpClient::Post(http_url_, req.dump(), {{"Content-Type", "application/json"}});
+    if (!response) {
+      log().error << "HTTP MCP request failed for " << method << ": " << response.error().message;
+      return response.error();
+    }
+    if (response->status_code < 200 || response->status_code >= 300) {
+      log().error << "HTTP MCP status " << response->status_code << " for " << method;
+      return Error("HTTP MCP status " + std::to_string(response->status_code));
+    }
+    if (response->body.empty()) {
+      return nlohmann::json::object();
+    }
+
+    auto resp = nlohmann::json::parse(response->body, nullptr, false);
+    if (resp.is_discarded()) {
+      log().error << "HTTP MCP response parse failed for method: " << method;
+      return Error("MCP response parse failed");
+    }
+    if (resp.contains("error")) {
+      log().error << "MCP error for " << method << ": " << resp["error"].dump();
+      return Error(resp["error"].dump());
+    }
+    return resp.value("result", nlohmann::json::object());
   }
 
 #ifndef _WIN32

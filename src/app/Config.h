@@ -14,6 +14,9 @@ namespace pbr {
 struct McpConfig {
   std::string command;
   std::vector<std::string> args;
+  std::string url;
+
+  bool IsConfigured() const { return !command.empty() || !url.empty(); }
 };
 
 struct ServiceEndpointConfig {

@@ -24,6 +24,7 @@ public:
   McpClient& operator=(const McpClient&) = delete;
 
   bool Start(const std::string& command, const std::vector<std::string>& args = {});
+  bool StartHttp(const std::string& url);
   void Stop();
   bool IsRunning() const { return running_; }
 
@@ -38,6 +39,8 @@ private:
 
   bool running_ = false;
   bool mock_ = false;
+  bool http_ = false;
+  std::string http_url_;
   int request_id_ = 1;
 
 #if defined(_WIN32)

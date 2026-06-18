@@ -497,8 +497,10 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   state->llm = std::make_unique<LlmClient>(state->config.llm);
 
   state->mcp = std::make_unique<McpClient>();
-  if (state->config.mcp && !state->config.mcp->command.empty()) {
-    if (state->config.mcp->command == "mock") {
+  if (state->config.mcp && state->config.mcp->IsConfigured()) {
+    if (!state->config.mcp->url.empty()) {
+      state->mcp->StartHttp(state->config.mcp->url);
+    } else if (state->config.mcp->command == "mock") {
       state->mcp->Start("mock");
     } else {
       state->mcp->Start(state->config.mcp->command, state->config.mcp->args);

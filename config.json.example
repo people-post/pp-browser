@@ -5,8 +5,7 @@
     "require_api_key": false
   },
   "mcp": {
-    "command": "mock",
-    "args": []
+    "url": "https://www.brief.global/mcp"
   },
   "search": {
     "provider": "duckduckgo"

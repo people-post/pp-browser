@@ -4,6 +4,9 @@
     "model": "gemma4:e4b",
     "require_api_key": false
   },
+  "mcp": {
+    "url": "https://www.brief.global/mcp"
+  },
   "search": {
     "provider": "duckduckgo"
   },
