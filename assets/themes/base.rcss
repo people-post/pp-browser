@@ -97,13 +97,28 @@ input, textarea, select {
 }
 
 .chat-header {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12dp;
   flex-shrink: 0;
   box-sizing: border-box;
   margin-bottom: 12dp;
 }
 
+.chat-header-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .chat-header h1 {
   margin-bottom: 4dp;
+}
+
+.chat-preview-btn {
+  flex-shrink: 0;
+  margin-top: 2dp;
 }
 
 .messages {

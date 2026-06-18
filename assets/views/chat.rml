@@ -1,7 +1,12 @@
 <div class="chat-panel stack" data-model="chat">
   <div class="chat-header">
-    <h1>pp-browser</h1>
-    <p class="muted">Ask anything. Assistant replies use structured text.</p>
+    <div class="chat-header-main">
+      <h1>pp-browser</h1>
+      <p class="muted">Ask anything. Assistant replies use structured text.</p>
+    </div>
+    <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
+            data-if="auxiliary_available && layout_mode == 'expanded'"
+            data-event-click="toggle_auxiliary()">Preview</button>
   </div>
   <div class="messages" data-mount-id="messages">
     <div class="chat-empty stack" data-if="!has_turns && !loading">

@@ -133,10 +133,18 @@ void ShellHost::RegisterPane(const PaneSpec& spec) {
 void ShellHost::SetAuxiliaryAvailable(bool available) {
   const bool was_available = state_.auxiliary_available;
   state_.auxiliary_available = available;
+  if (!available) {
+    state_.auxiliary_open = false;
+  }
   DirtyWindow();
   if (available && !was_available) {
-    ShellFeedback::ShowToast(state_, "Preview ready — tap Preview to open.", ToastDuration::Short, elapsed_ms_);
-    DirtyWindow();
+    if (state_.layout_mode == LayoutMode::Expanded) {
+      state_.auxiliary_open = true;
+      RequestSyncLayout();
+    } else {
+      ShellFeedback::ShowToast(state_, "Preview ready — tap Preview to open.", ToastDuration::Short, elapsed_ms_);
+      DirtyWindow();
+    }
   }
 }
 
@@ -565,6 +573,9 @@ void ShellHost::SyncLayout() {
   last_synced_mode_ = mode;
   MountPaneBodies();
   DirtyWindow();
+  if (state_.auxiliary_open) {
+    DataModelHost::Instance().Dirty("shell", "preview_rml");
+  }
 }
 
 void ShellHost::Update(Rml::Context* context) {
