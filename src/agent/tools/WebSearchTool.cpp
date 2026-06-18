@@ -1,11 +1,12 @@
 #include "agent/tools/WebSearchTool.h"
 
-#include "agent/SearchIntent.h"
 #include "log/Logger.h"
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <regex>
 #include <sstream>
@@ -36,6 +37,96 @@ std::string UrlEncode(const std::string& value) {
 
 std::vector<std::string> DefaultHeaders() {
   return {"User-Agent: pp-browser/0.1 (web search tool)"};
+}
+
+std::string Trim(const std::string& text) {
+  const auto start = std::find_if_not(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); });
+  const auto end = std::find_if_not(text.rbegin(), text.rend(), [](unsigned char c) { return std::isspace(c); }).base();
+  if (start >= end) {
+    return {};
+  }
+  return std::string(start, end);
+}
+
+std::string Lower(std::string text) {
+  for (char& c : text) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return text;
+}
+
+bool Contains(const std::string& haystack, const std::string& needle) {
+  return haystack.find(needle) != std::string::npos;
+}
+
+bool WantsNewsHeadlines(const std::string& user_message) {
+  const std::string text = Lower(user_message);
+  if (text.empty()) {
+    return false;
+  }
+  if (Contains(text, "headline")) {
+    return true;
+  }
+  if (Contains(text, "news") &&
+      (Contains(text, "today") || Contains(text, "latest") || Contains(text, "breaking") ||
+       Contains(text, "current") || Contains(text, "top stories"))) {
+    return true;
+  }
+  return Contains(text, "news about") || Contains(text, "latest news");
+}
+
+std::string StripLeadingPhrases(std::string text) {
+  static const char* prefixes[] = {
+      "please ", "can you ", "could you ", "would you ", "show me ", "tell me ", "give me ",
+      "what are ", "what is ", "what's ", "whats ", "find me ", "search for ", "look up ",
+      "get me ", "i want ", "i need ", "some ", "the ", "a ",
+  };
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (const char* prefix : prefixes) {
+      if (text.rfind(prefix, 0) == 0) {
+        text.erase(0, std::strlen(prefix));
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  while (!text.empty() && (text.back() == '?' || text.back() == '.' || text.back() == '!')) {
+    text.pop_back();
+  }
+  return Trim(text);
+}
+
+std::string NormalizeWebSearchQuery(const std::string& user_message) {
+  const std::string trimmed = Trim(user_message);
+  if (trimmed.empty()) {
+    return trimmed;
+  }
+
+  if (WantsNewsHeadlines(trimmed)) {
+    const std::string text_lower = Lower(trimmed);
+    const std::string key = "about ";
+    const size_t pos = text_lower.find(key);
+    if (pos != std::string::npos) {
+      std::string topic = Trim(text_lower.substr(pos + key.size()));
+      if (!topic.empty()) {
+        return topic + " news";
+      }
+    }
+    return "breaking news";
+  }
+
+  std::string normalized = StripLeadingPhrases(Lower(trimmed));
+  if (normalized.empty()) {
+    return trimmed;
+  }
+  if (normalized.size() > 120) {
+    normalized.resize(120);
+  }
+  return normalized;
 }
 
 Roe<std::string> HttpGet(const std::string& url, const std::vector<std::string>& extra_headers = {}) {
@@ -397,7 +488,7 @@ Roe<std::string> WebSearchTool::Search(const SearchConfig& config, const nlohman
     return Error("web_search requires a query");
   }
 
-  const std::string normalized_query = BuildWebSearchQuery(query);
+  const std::string normalized_query = NormalizeWebSearchQuery(query);
 
   if (config.provider == "tavily") {
     return SearchTavily(config, normalized_query);

@@ -1,0 +1,8 @@
+```json
+{
+  "response_goal": "general",
+  "tools": [],
+  "render_mode": "blocks",
+  "synthesis_hints": "Reply conversationally."
+}
+```

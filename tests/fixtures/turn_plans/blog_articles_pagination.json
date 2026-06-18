@@ -1,0 +1,6 @@
+{
+  "response_goal": "display_feed",
+  "tools": [{ "name": "blog_articles", "arguments": { "before_id": "art-001", "size": 10 } }],
+  "render_mode": "blocks",
+  "synthesis_hints": "Emit long_list from feed results."
+}

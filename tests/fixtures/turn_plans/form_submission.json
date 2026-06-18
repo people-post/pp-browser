@@ -1,0 +1,5 @@
+{
+  "type": "form_submission",
+  "form_id": "booking",
+  "values": { "name": "Alice", "date": "2026-06-15" }
+}

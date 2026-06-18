@@ -1,0 +1,8 @@
+```json
+{
+  "response_goal": "headlines",
+  "tools": [{ "name": "web_search", "arguments": { "query": "latest news today" } }],
+  "render_mode": "blocks",
+  "synthesis_hints": "List real headlines from search results."
+}
+```

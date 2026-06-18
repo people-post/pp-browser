@@ -1,0 +1,6 @@
+{
+  "response_goal": "summarize",
+  "tools": [],
+  "render_mode": "blocks",
+  "synthesis_hints": "Summarize the referenced article."
+}

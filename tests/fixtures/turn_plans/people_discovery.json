@@ -1,0 +1,8 @@
+```json
+{
+  "response_goal": "people_discovery",
+  "tools": [{ "name": "search_people", "arguments": { "query": "Alice" } }],
+  "render_mode": "people_list",
+  "synthesis_hints": "Render directory hits as a long_list."
+}
+```

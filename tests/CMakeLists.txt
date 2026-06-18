@@ -56,28 +56,56 @@ add_test(NAME llm_client_test COMMAND pp_browser_llm_client_test)
 
 add_executable(pp_browser_web_search_test web_search_test.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/tools/WebSearchTool.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/SearchIntent.cpp
   ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
   ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
 target_link_libraries(pp_browser_web_search_test PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
 target_include_directories(pp_browser_web_search_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME web_search_test COMMAND pp_browser_web_search_test)
 
-add_executable(pp_browser_search_intent_test search_intent_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/SearchIntent.cpp)
-target_include_directories(pp_browser_search_intent_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-add_test(NAME search_intent_test COMMAND pp_browser_search_intent_test)
+add_executable(pp_browser_turn_plan_test turn_plan_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp)
+target_link_libraries(pp_browser_turn_plan_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_turn_plan_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME turn_plan_test COMMAND pp_browser_turn_plan_test)
 
-add_executable(pp_browser_turn_response_intent_test turn_response_intent_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/TurnResponseIntent.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/SearchIntent.cpp)
-target_include_directories(pp_browser_turn_response_intent_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-add_test(NAME turn_response_intent_test COMMAND pp_browser_turn_response_intent_test)
+add_executable(pp_browser_payload_turn_plan_test payload_turn_plan_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/PayloadTurnPlanBuilder.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp)
+target_link_libraries(pp_browser_payload_turn_plan_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_payload_turn_plan_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME payload_turn_plan_test COMMAND pp_browser_payload_turn_plan_test)
+
+add_executable(pp_browser_turn_planner_test turn_planner_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp)
+target_link_libraries(pp_browser_turn_planner_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_turn_planner_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME turn_planner_test COMMAND pp_browser_turn_planner_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+add_executable(pp_browser_turn_executor_test turn_executor_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnExecutor.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/ToolRegistry.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/ToolResultFormatter.cpp
+  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
+  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/PromptBuilder.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/MessagingJson.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp)
+target_link_libraries(pp_browser_turn_executor_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_turn_executor_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME turn_executor_test COMMAND pp_browser_turn_executor_test)
+
+add_executable(pp_browser_output_repair_test output_repair_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/PromptBuilder.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp)
+target_link_libraries(pp_browser_output_repair_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_output_repair_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME output_repair_test COMMAND pp_browser_output_repair_test)
 
 add_executable(pp_browser_prompt_builder_test prompt_builder_test.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/PromptBuilder.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/TurnResponseIntent.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/SearchIntent.cpp)
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp)
 target_link_libraries(pp_browser_prompt_builder_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_prompt_builder_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME prompt_builder_test COMMAND pp_browser_prompt_builder_test)

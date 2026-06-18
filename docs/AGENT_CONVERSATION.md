@@ -34,10 +34,42 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 
 ## Turn flow
 
-1. User sends → `Conversation::AppendUser`
-2. `TurnCoordinator::BeginTurn` → context policy builds messages → `AgentSession::turn_scratch_`
-3. Tool loop extends `turn_scratch_` only
-4. Final assistant text → `CompleteTurn` (stores `assistant_raw`) → UI parses → `SetAssistantDisplay`
+1. User sends → transcript append (conversation or thread store)
+2. Context policy builds messages → `AgentSession::turn_scratch`
+3. **Plan** — `PayloadTurnPlanBuilder` for known UI payloads, else `TurnPlanner` (LLM)
+4. **Execute** — `TurnExecutor` runs planned tools into `turn_scratch`
+5. **Synthesize** — synthesis LLM produces blocks JSON (skipped when `render_mode: people_list`)
+6. **Validate** — `StructuredTextParser`; one output repair retry on parse failure
+7. Final assistant text → transcript / thread store → UI parses → `SetAssistantDisplay`
+
+Natural-language turns add one planner LLM call. Structured UI actions (form submit, article chips, pagination) skip the planner via the payload fast path.
+
+## Turn planning
+
+Each agent turn produces a [`TurnPlan`](../src/agent/TurnPlan.h):
+
+| Field | Purpose |
+|-------|---------|
+| `source` | `payload` (deterministic) or `planner` (LLM) |
+| `response_goal` | `display_feed`, `summarize`, `answer_question`, `headlines`, `people_discovery`, `general` |
+| `tools` | Ordered tool calls the runtime executes before synthesis |
+| `render_mode` | `blocks` (default) or `people_list` (deterministic long_list, skips synthesis) |
+| `synthesis_hints` | Per-turn guidance for the synthesizer |
+
+**Payload fast path** — [`PayloadTurnPlanBuilder`](../src/agent/PayloadTurnPlanBuilder.cpp) maps known `user_payload` shapes (article actions, `blog_articles` pagination, form submissions, chip tool payloads) without an LLM call.
+
+**NL path** — [`TurnPlanner`](../src/agent/TurnPlanner.cpp) emits a JSON plan; one repair retry on invalid output.
+
+[`AgentSession`](../src/agent/AgentSession.cpp) runs plan → execute → synthesize → validate. The synthesis LLM may request additional tools (refinement loop) when planned results are insufficient. Per-turn metrics are logged via [`TurnTrace`](../src/agent/TurnTrace.h).
+
+| Goal | Typical source | Expected reply shape |
+|------|----------------|----------------------|
+| `display_feed` | Article list / pagination payloads | `long_list` + short intro |
+| `summarize` | Article action payloads | Heading + concise paragraph/card |
+| `answer_question` | Planner (NL) | Answer paragraph first; sources as support |
+| `headlines` | Planner (NL) | `list` of real headlines |
+| `people_discovery` | Planner or people chip payloads | `long_list` with Message/Add chips |
+| `general` | Fallback | Blocks that best serve the ask |
 
 ## Dual-channel user messages (`user_payload`)
 
@@ -51,22 +83,6 @@ Some UI actions (notably **form submit**) send two representations of the same u
 `SlidingWindowContextPolicy` formats user messages for the model via `FormatUserContentForLlm()`: when `user_payload` is set, the LLM sees `user_text` plus a hint that `user_text` is primary and a fenced ` ```json ` block for the structured payload. The UI continues to render `user_text` only.
 
 `Conversation::AppendUser(text, payload)` and `AgentSession::Submit(text, payload)` accept the optional payload.
-
-## Turn response intent
-
-Each agent turn infers a **response goal** from the user's message (and optional `user_payload`) via [`TurnResponseIntent`](../src/agent/TurnResponseIntent.cpp). Goals include:
-
-| Goal | Typical trigger | Expected reply shape |
-|------|-----------------|----------------------|
-| `display_feed` | Article list requests, pagination payloads | `long_list` + short intro |
-| `summarize` | "Summarize …", article action payloads | Heading + concise paragraph/card |
-| `answer_question` | "Why …", "Explain …", compare/impact asks | Answer paragraph first; sources as support |
-| `headlines` | News headline requests | `list` of real headlines |
-| `general` | Everything else | Blocks that best serve the ask |
-
-[`AgentSession`](../src/agent/AgentSession.cpp) injects a per-turn policy message (`PromptBuilder::BuildTurnResponsePolicy`) after the main system prompt. After tool calls complete, a synthesis reminder is appended to the last tool message so fetched articles or search results serve the user's request instead of replacing it.
-
-Proactive web search context is appended to the **current user message** (not the system prompt) and varies by goal — e.g. explanatory questions get "answer first" instructions rather than "list headlines only."
 
 ## In-chat forms (single active form)
 

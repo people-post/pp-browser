@@ -136,15 +136,20 @@ endif()
   src/agent/StructuredTextParser.cpp
   src/agent/UiGenerator.cpp
   src/agent/RmlValidator.cpp
+  src/agent/TurnPlan.cpp
+  src/agent/TurnTrace.cpp
+  src/agent/PayloadTurnPlanBuilder.cpp
+  src/agent/TurnPlanner.cpp
+  src/agent/TurnExecutor.cpp
+  src/agent/ToolResultFormatter.cpp
   src/agent/AgentSession.cpp
-  src/agent/SearchIntent.cpp
-  src/agent/TurnResponseIntent.cpp
   src/agent/conversation/Conversation.cpp
   src/agent/conversation/SlidingWindowContextPolicy.cpp
   src/agent/conversation/TurnCoordinator.cpp
   src/agent/conversation/UserMessageFormatter.cpp
   src/agent/conversation/ThreadContextPolicy.cpp
   src/agent/ToolRegistry.cpp
+  src/agent/ToolRegistryBuild.cpp
   src/agent/tools/WebSearchTool.cpp
   src/agent/tools/McpToolAdapter.cpp
   src/agent/tools/MessagingTools.cpp

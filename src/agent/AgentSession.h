@@ -1,6 +1,8 @@
 #pragma once
 
 #include "agent/LlmClient.h"
+#include "agent/TurnPlan.h"
+#include "agent/TurnTrace.h"
 #include "agent/conversation/ConversationTypes.h"
 #include "app/Config.h"
 #include "common/Error.h"
@@ -67,15 +69,25 @@ private:
 
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);
   static void StartTurn(const std::shared_ptr<Impl>& state);
-  static void StartThreadTurn(const std::shared_ptr<Impl>& state);
-  static void StartScopedAssistTurn(const std::shared_ptr<Impl>& state);
+  static void RunTurnPipeline(const std::shared_ptr<Impl>& state);
+  static Roe<TurnPlan> ResolveTurnPlan(const std::shared_ptr<Impl>& state);
+  static void ContinueAfterExecution(const std::shared_ptr<Impl>& state);
+  static void RunSynthesisStep(const std::shared_ptr<Impl>& state);
+  static void DispatchRefinementToolCalls(const std::shared_ptr<Impl>& state, const std::vector<ToolCall>& tool_calls,
+                                          const std::string& assistant_content);
+  static void HandleSynthesisResponse(const std::shared_ptr<Impl>& state, const ChatCompletionResponse& response);
+  static void ValidateAndFinishAssistant(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
+                                         const std::string& finish_reason, bool allow_repair);
+  static void RunOutputRepair(const std::shared_ptr<Impl>& state, const std::string& raw_output,
+                              const std::string& parse_error);
+  static void FinishAssistantOutput(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
+                                  const std::string& finish_reason);
   static void PersistAssistantToThread(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
                                        std::string* out_message_id = nullptr);
-  static void RunProactiveSearchAndLlm(const std::shared_ptr<Impl>& state);
-  static void RunLlmStep(const std::shared_ptr<Impl>& state);
-  static void DispatchToolCalls(const std::shared_ptr<Impl>& state, const std::vector<ToolCall>& tool_calls,
-                                const std::string& assistant_content);
-  static void HandleLlmResponse(const std::shared_ptr<Impl>& state, const ChatCompletionResponse& response);
+  static void InjectSynthesisPolicy(const std::shared_ptr<Impl>& state);
+  static void PopulateTurnTraceFromPlan(const std::shared_ptr<Impl>& state);
+  static std::vector<std::string> AllowedToolNames(const std::shared_ptr<Impl>& state);
+
   static void PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event);
   static void PushLoading(const std::shared_ptr<Impl>& state, bool loading);
   static void PushToolActivity(const std::shared_ptr<Impl>& state, const std::string& tool_name,
@@ -84,11 +96,6 @@ private:
                                  const std::string& text, const std::string& finish_reason);
   static void PushError(const std::shared_ptr<Impl>& state, const std::string& message);
   static void FinishTurn(const std::shared_ptr<Impl>& state);
-  static bool TryFinishPeopleDiscoveryTurn(const std::shared_ptr<Impl>& state, const std::vector<ToolCall>& tool_calls,
-                                           const std::vector<Roe<std::string>>& tool_results);
-  static bool FinishPeopleDiscoveryFromIntent(const std::shared_ptr<Impl>& state);
-  static void RunProactivePeopleDiscovery(const std::shared_ptr<Impl>& state);
-  static void InjectTurnResponsePolicy(const std::shared_ptr<Impl>& state);
 
   std::shared_ptr<Impl> impl_;
 };

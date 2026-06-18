@@ -1,6 +1,6 @@
 #pragma once
 
-#include "agent/TurnResponseIntent.h"
+#include "agent/TurnPlan.h"
 
 #include <string>
 #include <vector>
@@ -19,10 +19,14 @@ public:
 
   static std::string BuildChatSystemPrompt();
   static std::string BuildChatAgentSystemPrompt(const std::string& tools_summary);
-  static std::string BuildTurnResponsePolicy(const TurnResponseIntent& intent);
-  static std::string BuildPostToolSynthesisReminder(const TurnResponseIntent& intent);
-  static std::string BuildProactiveSearchContext(const std::string& query, const std::string& search_results,
-                                                 const TurnResponseIntent& intent);
+  static std::string BuildPlannerPrompt();
+  static std::string BuildPlannerRepairPrompt(const std::string& error_message);
+  static std::string BuildSynthesisPrompt(const TurnPlan& plan);
+  static std::string BuildSynthesisRefinementReminder(const TurnPlan& plan);
+  static std::string BuildOutputRepairPrompt(const TurnPlan& plan, const std::string& raw_output,
+                                             const std::string& parse_error);
+  static std::string BuildScopedAssistSystemPrompt(const std::string& tools_summary);
+
   static std::string FormatSearchResultsForLlm(const std::string& search_results_json);
   static std::string FormatMcpArticleResultsForLlm(const std::string& raw_result);
   static bool IsMcpArticleFeedTool(const std::string& tool_name);

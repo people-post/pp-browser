@@ -1,11 +1,12 @@
 #include "agent/AgentSession.h"
 
-#include "agent/LlmClient.h"
+#include "agent/PayloadTurnPlanBuilder.h"
 #include "agent/PromptBuilder.h"
-#include "agent/SearchIntent.h"
 #include "agent/StructuredTextParser.h"
 #include "agent/ToolRegistry.h"
-#include "agent/TurnResponseIntent.h"
+#include "agent/ToolResultFormatter.h"
+#include "agent/TurnExecutor.h"
+#include "agent/TurnPlanner.h"
 #include "agent/conversation/Conversation.h"
 #include "agent/conversation/ThreadContextPolicy.h"
 #include "agent/conversation/TurnCoordinator.h"
@@ -13,12 +14,11 @@
 #include "mcp/McpClient.h"
 #include "messaging/IdUtil.h"
 #include "messaging/IThreadStore.h"
-#include "messaging/MessagingJson.h"
-#include "messaging/PeopleDiscoveryBlocks.h"
 #include "messaging/ThreadTypes.h"
 #include "platform/BrowserThread.h"
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <nlohmann/json.hpp>
 
@@ -30,58 +30,6 @@ namespace {
 
 constexpr int kMaxIterations = 8;
 
-std::string FormatToolResultForLlm(const std::string& tool_name, const std::string& raw_result) {
-  if (tool_name == "web_search") {
-    return PromptBuilder::FormatSearchResultsForLlm(raw_result);
-  }
-  if (tool_name == "search_people" || tool_name == "list_contacts") {
-    if (const std::string blocks = TryPeopleDiscoveryBlocksFromToolJson(raw_result); !blocks.empty()) {
-      return "People discovery results (render with long_list; do not expose this JSON verbatim):\n" + blocks;
-    }
-  }
-  if (PromptBuilder::IsMcpArticleFeedTool(tool_name)) {
-    return PromptBuilder::FormatMcpArticleResultsForLlm(raw_result);
-  }
-  return raw_result;
-}
-
-void AppendToLastUserMessage(std::vector<ChatMessage>& messages, const std::string& suffix) {
-  for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
-    if (it->role == "user") {
-      it->content += "\n\n" + suffix;
-      return;
-    }
-  }
-}
-
-void AppendPostToolSynthesisReminder(std::vector<ChatMessage>& messages, const TurnResponseIntent& intent) {
-  if (messages.empty() || messages.back().role != "tool") {
-    return;
-  }
-  messages.back().content += "\n\n" + PromptBuilder::BuildPostToolSynthesisReminder(intent);
-}
-
-bool IsPeopleDiscoveryTool(const std::string& name) {
-  return name == "search_people" || name == "list_contacts";
-}
-
-void ParsePeopleToolJson(const std::string& raw, std::vector<DirectoryHit>& hits, std::vector<Contact>& contacts) {
-  const nlohmann::json doc = nlohmann::json::parse(raw, nullptr, false);
-  if (doc.is_discarded() || !doc.is_array()) {
-    return;
-  }
-  for (const auto& item : doc) {
-    if (!item.is_object()) {
-      continue;
-    }
-    if (item.contains("hit_id")) {
-      hits.push_back(DirectoryHitFromJson(item));
-    } else if (item.contains("id") && item.contains("display_name")) {
-      contacts.push_back(ContactFromJson(item));
-    }
-  }
-}
-
 nlohmann::json ToolCallsToJson(const std::vector<ToolCall>& tool_calls) {
   nlohmann::json out = nlohmann::json::array();
   for (const ToolCall& call : tool_calls) {
@@ -90,6 +38,13 @@ nlohmann::json ToolCallsToJson(const std::vector<ToolCall>& tool_calls) {
                    {"function", {{"name", call.name}, {"arguments", call.arguments.dump()}}}});
   }
   return out;
+}
+
+void AppendSynthesisReminder(std::vector<ChatMessage>& messages, const TurnPlan& plan) {
+  if (messages.empty() || messages.back().role != "tool") {
+    return;
+  }
+  messages.back().content += "\n\n" + PromptBuilder::BuildSynthesisRefinementReminder(plan);
 }
 
 } // namespace
@@ -108,13 +63,17 @@ struct AgentSession::Impl {
   Conversation conversation;
   TurnCoordinator coordinator;
   std::vector<ChatMessage> turn_scratch;
-  TurnResponseIntent turn_intent;
+  TurnPlan turn_plan;
+  TurnTrace turn_trace;
+  std::optional<std::string> people_list_blocks;
   std::string pending_user_text;
   std::optional<std::string> pending_user_payload;
   std::string pending_entry_id;
   int iterations = 0;
   bool configured = false;
   bool submit_when_ready = false;
+  std::chrono::steady_clock::time_point planner_started{};
+  std::chrono::steady_clock::time_point synthesis_started{};
 
   IThreadStore* thread_store = nullptr;
   std::string pending_thread_id;
@@ -152,249 +111,41 @@ void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::stri
 }
 
 void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
+  state->turn_trace.Log();
   state->busy = false;
   state->iterations = 0;
   state->turn_scratch.clear();
+  state->people_list_blocks.reset();
   state->pending_entry_id.clear();
   state->pending_thread_id.clear();
   state->turn_mode = AgentTurnMode::Conversation;
   PushLoading(state, false);
 }
 
-bool AgentSession::TryFinishPeopleDiscoveryTurn(const std::shared_ptr<Impl>& state,
-                                                const std::vector<ToolCall>& tool_calls,
-                                                const std::vector<Roe<std::string>>& tool_results) {
-  if (state->turn_mode == AgentTurnMode::ScopedAssist || tool_calls.empty() ||
-      tool_results.size() != tool_calls.size()) {
-    return false;
+std::vector<std::string> AgentSession::AllowedToolNames(const std::shared_ptr<Impl>& state) {
+  std::vector<std::string> names;
+  names.reserve(state->tools.Tools().size());
+  for (const ToolDescriptor& tool : state->tools.Tools()) {
+    names.push_back(tool.definition.name);
   }
-
-  std::vector<DirectoryHit> hits;
-  std::vector<Contact> contacts;
-  for (size_t i = 0; i < tool_calls.size(); ++i) {
-    if (!IsPeopleDiscoveryTool(tool_calls[i].name)) {
-      return false;
-    }
-    if (!tool_results[i]) {
-      return false;
-    }
-    ParsePeopleToolJson(*tool_results[i], hits, contacts);
-  }
-
-  const std::string blocks_json = BuildPeopleDiscoveryBlocksJson(hits, contacts);
-  std::string assistant_message_id;
-  PersistAssistantToThread(state, blocks_json, &assistant_message_id);
-  PushAssistantReady(state, assistant_message_id, blocks_json, "stop");
-  FinishTurn(state);
-  return true;
+  return names;
 }
 
-bool AgentSession::FinishPeopleDiscoveryFromIntent(const std::shared_ptr<Impl>& state) {
-  const bool contacts_list = ShouldProactiveContactsList(state->pending_user_text);
-  const std::string tool_name = contacts_list ? "list_contacts" : "search_people";
-  const std::string query = BuildPeopleSearchQuery(state->pending_user_text);
-  const nlohmann::json args = {{"query", query}};
-
-  PushToolActivity(state, tool_name, "running");
-  auto result = state->tools.Execute(tool_name, args);
-  PushToolActivity(state, tool_name, result ? "done" : "error");
-  if (!result) {
-    PushError(state, result.error().message);
-    FinishTurn(state);
-    return false;
+void AgentSession::PopulateTurnTraceFromPlan(const std::shared_ptr<Impl>& state) {
+  state->turn_trace.plan_source = state->turn_plan.source;
+  state->turn_trace.response_goal = state->turn_plan.response_goal;
+  state->turn_trace.render_mode = state->turn_plan.render_mode;
+  state->turn_trace.tools_planned.clear();
+  for (const PlannedToolCall& call : state->turn_plan.tools) {
+    state->turn_trace.tools_planned.push_back(call.name);
   }
-
-  std::vector<DirectoryHit> hits;
-  std::vector<Contact> contacts;
-  ParsePeopleToolJson(*result, hits, contacts);
-
-  const std::string blocks_json = BuildPeopleDiscoveryBlocksJson(hits, contacts);
-  std::string assistant_message_id;
-  PersistAssistantToThread(state, blocks_json, &assistant_message_id);
-  PushAssistantReady(state, assistant_message_id, blocks_json, "stop");
-  FinishTurn(state);
-  logging::getLogger("AgentSession").info << "People discovery completed for: " << state->pending_user_text;
-  return true;
 }
 
-void AgentSession::RunProactivePeopleDiscovery(const std::shared_ptr<Impl>& state) {
-  (void)FinishPeopleDiscoveryFromIntent(state);
-}
-
-void AgentSession::InjectTurnResponsePolicy(const std::shared_ptr<Impl>& state) {
-  state->turn_intent = InferTurnResponseIntent(state->pending_user_text, state->pending_user_payload);
-  const std::string policy = PromptBuilder::BuildTurnResponsePolicy(state->turn_intent);
-  if (state->turn_scratch.empty()) {
-    state->turn_scratch.push_back(ChatMessage{.role = "system", .content = policy});
-    return;
-  }
-
+void AgentSession::InjectSynthesisPolicy(const std::shared_ptr<Impl>& state) {
+  const std::string policy = PromptBuilder::BuildSynthesisPrompt(state->turn_plan);
   const auto insert_at = state->turn_scratch.front().role == "system" ? state->turn_scratch.begin() + 1
                                                                       : state->turn_scratch.begin();
   state->turn_scratch.insert(insert_at, ChatMessage{.role = "system", .content = policy});
-}
-
-void AgentSession::DispatchToolCalls(const std::shared_ptr<Impl>& state, const std::vector<ToolCall>& tool_calls,
-                                     const std::string& assistant_content) {
-  ChatMessage assistant_message;
-  assistant_message.role = "assistant";
-  assistant_message.content = assistant_content;
-  assistant_message.tool_calls = ToolCallsToJson(tool_calls);
-  state->turn_scratch.push_back(std::move(assistant_message));
-
-  BrowserThread::PostTask(BrowserThreadId::IO, [state, tool_calls]() {
-    if (state->cancelled) {
-      AgentSession::FinishTurn(state);
-      return;
-    }
-
-    std::vector<Roe<std::string>> tool_results;
-    tool_results.reserve(tool_calls.size());
-
-    for (const ToolCall& call : tool_calls) {
-      AgentSession::PushToolActivity(state, call.name, "running");
-      auto result = state->tools.Execute(call.name, call.arguments);
-      AgentSession::PushToolActivity(state, call.name, result ? "done" : "error");
-      tool_results.push_back(result);
-
-      ChatMessage tool_message;
-      tool_message.role = "tool";
-      tool_message.tool_call_id = call.id;
-      if (result) {
-        tool_message.content = FormatToolResultForLlm(call.name, *result);
-      } else {
-        tool_message.content = "Tool error: " + result.error().message;
-      }
-      state->turn_scratch.push_back(std::move(tool_message));
-    }
-
-    if (AgentSession::TryFinishPeopleDiscoveryTurn(state, tool_calls, tool_results)) {
-      return;
-    }
-
-    AppendPostToolSynthesisReminder(state->turn_scratch, state->turn_intent);
-
-    ++state->iterations;
-    if (state->iterations >= kMaxIterations) {
-      AgentSession::PushError(state, "Agent iteration limit reached");
-      AgentSession::FinishTurn(state);
-      return;
-    }
-
-    AgentSession::RunLlmStep(state);
-  });
-}
-
-void AgentSession::HandleLlmResponse(const std::shared_ptr<Impl>& state, const ChatCompletionResponse& response) {
-  if (state->cancelled) {
-    FinishTurn(state);
-    return;
-  }
-
-  if (!response.tool_calls.empty()) {
-    DispatchToolCalls(state, response.tool_calls, response.content.value_or(""));
-    return;
-  }
-
-  if (response.content) {
-    if (auto embedded = StructuredTextParser::ExtractEmbeddedToolCalls(*response.content)) {
-      std::vector<ToolCall> tool_calls;
-      tool_calls.reserve(embedded->size());
-      for (size_t i = 0; i < embedded->size(); ++i) {
-        tool_calls.push_back(ToolCall{
-            .id = "embedded_" + std::to_string(i + 1),
-            .name = (*embedded)[i].name,
-            .arguments = (*embedded)[i].arguments,
-        });
-      }
-      DispatchToolCalls(state, tool_calls, *response.content);
-      return;
-    }
-  }
-
-  if (!response.content || response.content->empty()) {
-    PushError(state, "LLM response missing content");
-    FinishTurn(state);
-    return;
-  }
-
-  if (state->turn_mode != AgentTurnMode::Conversation) {
-    const ParseResult parsed = StructuredTextParser::ParseFromLlmOutput(*response.content);
-    if (!parsed.ok && ShouldProactivePeopleDiscovery(state->pending_user_text)) {
-      if (FinishPeopleDiscoveryFromIntent(state)) {
-        return;
-      }
-    }
-
-    std::string assistant_message_id;
-    PersistAssistantToThread(state, *response.content, &assistant_message_id);
-    PushAssistantReady(state, assistant_message_id, *response.content, response.finish_reason);
-    FinishTurn(state);
-    return;
-  }
-
-  state->coordinator.CompleteTurn(state->conversation, state->pending_entry_id, *response.content);
-  PushAssistantReady(state, state->pending_entry_id, *response.content, response.finish_reason);
-  FinishTurn(state);
-}
-
-void AgentSession::RunLlmStep(const std::shared_ptr<Impl>& state) {
-  if (state->cancelled || !state->llm) {
-    FinishTurn(state);
-    return;
-  }
-
-  ChatCompletionRequest request;
-  request.messages = state->turn_scratch;
-  request.tools = state->tools.Definitions();
-
-  auto result = state->llm->Complete(request);
-  if (!result) {
-    PushError(state, result.error().message);
-    FinishTurn(state);
-    return;
-  }
-
-  HandleLlmResponse(state, *result);
-}
-
-void AgentSession::RunProactiveSearchAndLlm(const std::shared_ptr<Impl>& state) {
-  PushToolActivity(state, "web_search", "running");
-
-  const std::string search_query = BuildWebSearchQuery(state->pending_user_text);
-  nlohmann::json args = {{"query", search_query}};
-  auto search_result = state->tools.Execute("web_search", args);
-
-  if (search_result) {
-    PushToolActivity(state, "web_search", "done");
-    AppendToLastUserMessage(state->turn_scratch,
-                            PromptBuilder::BuildProactiveSearchContext(search_query, *search_result, state->turn_intent));
-
-    ChatMessage assistant_message;
-    assistant_message.role = "assistant";
-    assistant_message.content = "";
-    assistant_message.tool_calls = ToolCallsToJson({ToolCall{
-        .id = "proactive_1",
-        .name = "web_search",
-        .arguments = args,
-    }});
-    state->turn_scratch.push_back(std::move(assistant_message));
-
-    ChatMessage tool_message;
-    tool_message.role = "tool";
-    tool_message.tool_call_id = "proactive_1";
-    tool_message.content = FormatToolResultForLlm("web_search", *search_result);
-    state->turn_scratch.push_back(std::move(tool_message));
-
-    logging::getLogger("AgentSession").info << "Proactive web_search completed for: " << state->pending_user_text;
-  } else {
-    PushToolActivity(state, "web_search", "error");
-    logging::getLogger("AgentSession").warning
-        << "Proactive web_search failed: " << search_result.error().message;
-  }
-
-  ++state->iterations;
-  RunLlmStep(state);
 }
 
 void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
@@ -417,91 +168,243 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
   }
 }
 
-void AgentSession::StartThreadTurn(const std::shared_ptr<Impl>& state) {
-  if (state->cancelled || !state->llm || !state->thread_store) {
+void AgentSession::FinishAssistantOutput(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
+                                         const std::string& finish_reason) {
+  if (state->turn_mode == AgentTurnMode::Conversation) {
+    state->coordinator.CompleteTurn(state->conversation, state->pending_entry_id, assistant_raw);
+    PushAssistantReady(state, state->pending_entry_id, assistant_raw, finish_reason);
     FinishTurn(state);
     return;
   }
 
-  state->iterations = 0;
-  state->turn_scratch.clear();
-
-  ThreadMessage user_message;
-  user_message.id = GenerateUuid();
-  user_message.thread_id = state->pending_thread_id;
-  user_message.sender_contact_id = kLocalSelfContactId;
-  user_message.text = state->pending_user_text;
-  user_message.timestamp = NowUnixMs();
-  user_message.delivery = MessageDelivery::Local;
-  if (auto appended = state->thread_store->AppendMessage(user_message)) {
-    state->pending_entry_id = appended->id;
-  } else {
-    state->pending_entry_id = user_message.id;
-  }
-
-  auto messages = state->thread_store->GetMessages(state->pending_thread_id);
-  if (!messages) {
-    PushError(state, messages.error().message);
-    FinishTurn(state);
-    return;
-  }
-
-  ThreadContextPolicy policy(state->config.context);
-  const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt());
-  const ContextBuildResult built =
-      policy.Build(*messages, system_prompt, state->pending_user_text, state->pending_user_payload);
-  state->turn_scratch = built.messages;
-  AgentSession::InjectTurnResponsePolicy(state);
-
-  PushLoading(state, true);
-
-  if (ShouldProactivePeopleDiscovery(state->pending_user_text)) {
-    RunProactivePeopleDiscovery(state);
-    return;
-  }
-
-  if (ShouldProactiveWebSearch(state->pending_user_text)) {
-    RunProactiveSearchAndLlm(state);
-    return;
-  }
-
-  RunLlmStep(state);
+  std::string assistant_message_id;
+  PersistAssistantToThread(state, assistant_raw, &assistant_message_id);
+  PushAssistantReady(state, assistant_message_id, assistant_raw, finish_reason);
+  FinishTurn(state);
 }
 
-void AgentSession::StartScopedAssistTurn(const std::shared_ptr<Impl>& state) {
-  if (state->cancelled || !state->llm || !state->thread_store) {
+void AgentSession::ValidateAndFinishAssistant(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
+                                              const std::string& finish_reason, const bool allow_repair) {
+  const ParseResult parsed = StructuredTextParser::ParseFromLlmOutput(assistant_raw);
+  state->turn_trace.parse_ok = parsed.ok;
+
+  if (!parsed.ok && allow_repair && !state->turn_trace.output_repair_used) {
+    RunOutputRepair(state, assistant_raw, parsed.error);
+    return;
+  }
+
+  if (!parsed.ok) {
+    logging::getLogger("AgentSession").warning << "Assistant output parse failed: " << parsed.error;
+  }
+
+  FinishAssistantOutput(state, assistant_raw, finish_reason);
+}
+
+void AgentSession::RunOutputRepair(const std::shared_ptr<Impl>& state, const std::string& raw_output,
+                                   const std::string& parse_error) {
+  if (!state->llm) {
+    FinishAssistantOutput(state, raw_output, "stop");
+    return;
+  }
+
+  state->turn_trace.output_repair_used = true;
+  const std::string repair_prompt =
+      PromptBuilder::BuildOutputRepairPrompt(state->turn_plan, raw_output, parse_error);
+
+  ChatCompletionRequest request;
+  request.messages = state->turn_scratch;
+  request.messages.push_back(ChatMessage{.role = "user", .content = repair_prompt});
+
+  auto result = state->llm->Complete(request);
+  if (!result || !result->content || result->content->empty()) {
+    FinishAssistantOutput(state, raw_output, "stop");
+    return;
+  }
+
+  ValidateAndFinishAssistant(state, *result->content, result->finish_reason.empty() ? "stop" : result->finish_reason,
+                             false);
+}
+
+void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& state,
+                                               const std::vector<ToolCall>& tool_calls,
+                                               const std::string& assistant_content) {
+  state->turn_trace.refinement_used = true;
+
+  ChatMessage assistant_message;
+  assistant_message.role = "assistant";
+  assistant_message.content = assistant_content;
+  assistant_message.tool_calls = ToolCallsToJson(tool_calls);
+  state->turn_scratch.push_back(std::move(assistant_message));
+
+  BrowserThread::PostTask(BrowserThreadId::IO, [state, tool_calls]() {
+    if (state->cancelled) {
+      AgentSession::FinishTurn(state);
+      return;
+    }
+
+    for (const ToolCall& call : tool_calls) {
+      AgentSession::PushToolActivity(state, call.name, "running");
+      auto result = state->tools.Execute(call.name, call.arguments);
+      AgentSession::PushToolActivity(state, call.name, result ? "done" : "error");
+      state->turn_trace.tools_executed.push_back(call.name);
+
+      ChatMessage tool_message;
+      tool_message.role = "tool";
+      tool_message.tool_call_id = call.id;
+      if (result) {
+        tool_message.content = FormatToolResultForLlm(call.name, *result);
+      } else {
+        tool_message.content = "Tool error: " + result.error().message;
+      }
+      state->turn_scratch.push_back(std::move(tool_message));
+    }
+
+    AppendSynthesisReminder(state->turn_scratch, state->turn_plan);
+
+    ++state->iterations;
+    if (state->iterations >= kMaxIterations) {
+      AgentSession::PushError(state, "Agent iteration limit reached");
+      AgentSession::FinishTurn(state);
+      return;
+    }
+
+    AgentSession::RunSynthesisStep(state);
+  });
+}
+
+void AgentSession::HandleSynthesisResponse(const std::shared_ptr<Impl>& state,
+                                           const ChatCompletionResponse& response) {
+  if (state->cancelled) {
     FinishTurn(state);
     return;
   }
 
-  state->iterations = 0;
-  state->turn_scratch.clear();
-  state->pending_entry_id = GenerateUuid();
+  state->turn_trace.synthesis_ms = ElapsedMs(state->synthesis_started);
 
-  auto messages = state->thread_store->GetMessages(state->pending_thread_id);
-  if (!messages) {
-    PushError(state, messages.error().message);
+  if (!response.tool_calls.empty()) {
+    DispatchRefinementToolCalls(state, response.tool_calls, response.content.value_or(""));
+    return;
+  }
+
+  if (response.content) {
+    if (auto embedded = StructuredTextParser::ExtractEmbeddedToolCalls(*response.content)) {
+      logging::getLogger("AgentSession").warning << "Synthesis returned embedded tool blocks; extracting";
+      std::vector<ToolCall> tool_calls;
+      tool_calls.reserve(embedded->size());
+      for (size_t i = 0; i < embedded->size(); ++i) {
+        tool_calls.push_back(ToolCall{
+            .id = "embedded_" + std::to_string(i + 1),
+            .name = (*embedded)[i].name,
+            .arguments = (*embedded)[i].arguments,
+        });
+      }
+      DispatchRefinementToolCalls(state, tool_calls, *response.content);
+      return;
+    }
+  }
+
+  if (!response.content || response.content->empty()) {
+    PushError(state, "LLM response missing content");
     FinishTurn(state);
     return;
   }
 
-  ThreadContextPolicy policy(state->config.context);
-  state->turn_scratch = policy.BuildAssistContext(*messages, state->pending_user_text);
+  ValidateAndFinishAssistant(state, *response.content, response.finish_reason, true);
+}
 
-  PushLoading(state, true);
-  RunLlmStep(state);
+void AgentSession::RunSynthesisStep(const std::shared_ptr<Impl>& state) {
+  if (state->cancelled || !state->llm) {
+    FinishTurn(state);
+    return;
+  }
+
+  state->synthesis_started = std::chrono::steady_clock::now();
+
+  ChatCompletionRequest request;
+  request.messages = state->turn_scratch;
+  request.tools = state->tools.Definitions();
+
+  auto result = state->llm->Complete(request);
+  if (!result) {
+    PushError(state, result.error().message);
+    FinishTurn(state);
+    return;
+  }
+
+  HandleSynthesisResponse(state, *result);
+}
+
+void AgentSession::ContinueAfterExecution(const std::shared_ptr<Impl>& state) {
+  if (state->people_list_blocks) {
+    ValidateAndFinishAssistant(state, *state->people_list_blocks, "stop", false);
+    return;
+  }
+
+  InjectSynthesisPolicy(state);
+  RunSynthesisStep(state);
+}
+
+Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) {
+  if (state->pending_user_payload && !state->pending_user_payload->empty()) {
+    if (auto payload_plan = TryBuildPlanFromPayload(state->pending_user_text, *state->pending_user_payload)) {
+      auto validated = ValidateTurnPlan(*payload_plan, AllowedToolNames(state));
+      if (validated) {
+        return validated;
+      }
+    }
+  }
+
+  if (!state->llm) {
+    return Error("LLM not configured");
+  }
+
+  state->planner_started = std::chrono::steady_clock::now();
+  auto plan = TurnPlanner::Plan(*state->llm, state->turn_scratch, state->tools.SummaryForPrompt(),
+                                AllowedToolNames(state), state->pending_user_text);
+  if (plan) {
+    state->turn_trace.planner_ms = ElapsedMs(state->planner_started);
+  }
+  return plan;
+}
+
+void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
+  state->turn_trace = TurnTrace{};
+  state->turn_trace.turn_id = GenerateUuid();
+  state->turn_trace.entry_id = state->pending_entry_id;
+  state->turn_trace.thread_id = state->pending_thread_id;
+
+  auto plan = ResolveTurnPlan(state);
+  if (!plan) {
+    PushError(state, plan.error().message);
+    FinishTurn(state);
+    return;
+  }
+
+  state->turn_plan = *plan;
+  if (state->turn_plan.user_request.empty()) {
+    state->turn_plan.user_request = state->pending_user_text;
+  }
+  PopulateTurnTraceFromPlan(state);
+
+  const auto on_activity = [state](const std::string& tool_name, const std::string& status) {
+    AgentSession::PushToolActivity(state, tool_name, status);
+  };
+
+  TurnExecutionResult execution = TurnExecutor::Execute(state->turn_plan, state->tools, on_activity);
+  if (!execution.ok) {
+    PushError(state, execution.error);
+    FinishTurn(state);
+    return;
+  }
+
+  state->turn_trace.tools_executed = execution.tools_executed;
+  state->turn_scratch.insert(state->turn_scratch.end(), execution.scratch_append.begin(), execution.scratch_append.end());
+  state->people_list_blocks = execution.people_list_blocks;
+
+  ContinueAfterExecution(state);
 }
 
 void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
-  if (state->turn_mode == AgentTurnMode::Thread) {
-    StartThreadTurn(state);
-    return;
-  }
-  if (state->turn_mode == AgentTurnMode::ScopedAssist) {
-    StartScopedAssistTurn(state);
-    return;
-  }
-
   if (state->cancelled || !state->llm) {
     FinishTurn(state);
     return;
@@ -509,26 +412,79 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
   state->iterations = 0;
   state->turn_scratch.clear();
+  state->people_list_blocks.reset();
+  PushLoading(state, true);
+
+  if (state->turn_mode == AgentTurnMode::Thread) {
+    if (!state->thread_store) {
+      PushError(state, "Thread store not configured");
+      FinishTurn(state);
+      return;
+    }
+
+    ThreadMessage user_message;
+    user_message.id = GenerateUuid();
+    user_message.thread_id = state->pending_thread_id;
+    user_message.sender_contact_id = kLocalSelfContactId;
+    user_message.text = state->pending_user_text;
+    user_message.timestamp = NowUnixMs();
+    user_message.delivery = MessageDelivery::Local;
+    if (auto appended = state->thread_store->AppendMessage(user_message)) {
+      state->pending_entry_id = appended->id;
+    } else {
+      state->pending_entry_id = user_message.id;
+    }
+
+    auto messages = state->thread_store->GetMessages(state->pending_thread_id);
+    if (!messages) {
+      PushError(state, messages.error().message);
+      FinishTurn(state);
+      return;
+    }
+
+    ThreadContextPolicy policy(state->config.context);
+    const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt());
+    const ContextBuildResult built =
+        policy.Build(*messages, system_prompt, state->pending_user_text, state->pending_user_payload);
+    state->turn_scratch = built.messages;
+    RunTurnPipeline(state);
+    return;
+  }
+
+  if (state->turn_mode == AgentTurnMode::ScopedAssist) {
+    if (!state->thread_store) {
+      PushError(state, "Thread store not configured");
+      FinishTurn(state);
+      return;
+    }
+
+    state->pending_entry_id = GenerateUuid();
+
+    auto messages = state->thread_store->GetMessages(state->pending_thread_id);
+    if (!messages) {
+      PushError(state, messages.error().message);
+      FinishTurn(state);
+      return;
+    }
+
+    ThreadContextPolicy policy(state->config.context);
+    state->turn_scratch = policy.BuildAssistContext(*messages, state->pending_user_text);
+    if (!state->turn_scratch.empty() && state->turn_scratch.front().role == "system") {
+      state->turn_scratch.front().content =
+          PromptBuilder::BuildScopedAssistSystemPrompt(state->tools.SummaryForPrompt());
+    }
+    RunTurnPipeline(state);
+    return;
+  }
 
   TranscriptEntry& entry = state->conversation.AppendUser(state->pending_user_text, state->pending_user_payload);
   state->pending_entry_id = entry.id;
 
-  const std::string system_prompt =
-      PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt());
+  const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt());
   const TurnSnapshot snapshot =
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
   state->turn_scratch = snapshot.messages;
-  AgentSession::InjectTurnResponsePolicy(state);
-
-  PushLoading(state, true);
-
-  if (ShouldProactiveWebSearch(state->pending_user_text)) {
-    logging::getLogger("AgentSession").info << "Proactive web_search triggered for: " << state->pending_user_text;
-    RunProactiveSearchAndLlm(state);
-    return;
-  }
-
-  RunLlmStep(state);
+  RunTurnPipeline(state);
 }
 
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
