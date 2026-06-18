@@ -1,0 +1,7 @@
+<div class="prompt-composer" data-model="chat">
+  <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2" data-value="draft"></textarea>
+  <div class="prompt-composer-footer">
+    <div class="prompt-composer-leading"></div>
+    <button class="prompt-send-btn" data-event-click="send_message()">Send</button>
+  </div>
+</div>

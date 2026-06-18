@@ -56,13 +56,14 @@ private:
 
   Rml::Element* ShellRoot() const;
   std::string SerializeShellRoot() const;
-  std::string SerializePaneSlot(const std::string& key, const char* extra_class) const;
+  std::string SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false) const;
   std::string SerializeExpandedBase() const;
   std::string SerializeCompactBase() const;
   std::string SerializeOverlays() const;
   std::string SerializeDialog() const;
   std::string SerializeTransientLayer() const;
   void MountPaneBodies();
+  void MountComposer();
   void ApplyLayoutModeFromContext(Rml::Context* context);
   void OnLayoutModeChanged();
   int AllocatePaneId();

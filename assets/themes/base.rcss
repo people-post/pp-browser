@@ -205,25 +205,46 @@ input, textarea, select {
   margin-bottom: 0;
 }
 
-.input-row {
+.prompt-composer {
   flex-shrink: 0;
   box-sizing: border-box;
+  margin: 0 12dp 12dp 12dp;
+  padding: 12dp;
+  background-color: #ffffff;
+  border-radius: 12dp;
+  border: 1dp #e5e7eb;
+  box-shadow: 0 2dp 8dp #00000014;
+}
+
+.prompt-composer-input {
+  width: 100%;
+  min-height: 40dp;
+  margin-bottom: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+}
+
+.prompt-composer-footer {
   display: flex;
   flex-direction: row;
-  align-items: flex-end;
+  align-items: center;
+  margin-top: 8dp;
   gap: 8dp;
 }
 
-.input-row textarea {
+.prompt-composer-leading {
   flex: 1;
-  margin-bottom: 0;
-  min-height: 56dp;
+  min-width: 0;
 }
 
-.input-row button {
+.prompt-send-btn {
   flex-shrink: 0;
   width: auto;
+  min-width: 64dp;
   margin-bottom: 0;
+  padding: 6dp 16dp;
+  font-size: 13dp;
 }
 
 .code-block {
@@ -741,7 +762,26 @@ button.calendar-day:hover {
 .shell-pane-primary-compact {
   flex: 1;
   min-height: 0;
-  padding-bottom: 52dp;
+}
+
+.shell-pane-composer {
+  flex-shrink: 0;
+}
+
+.shell-bottom-chrome {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: #f8f9fb;
+  z-index: 15;
+}
+
+.shell-composer-mount {
+  flex-shrink: 0;
+}
+
+.shell-composer-mount .prompt-composer {
+  margin-bottom: 8dp;
 }
 
 .shell-drawer .shell-pane,
@@ -783,7 +823,7 @@ button.calendar-day:hover {
   position: absolute;
   top: 0;
   right: 0;
-  bottom: 52dp;
+  bottom: 0;
   width: 320dp;
   max-width: 90%;
   background-color: #f8f9fb;
@@ -791,11 +831,12 @@ button.calendar-day:hover {
   box-shadow: -2dp 0 12dp #00000033;
 }
 
+.shell-sheet-compact {
+  bottom: 132dp;
+}
+
 .shell-toolbar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex-shrink: 0;
   height: 48dp;
   display: flex;
   flex-direction: row;
@@ -803,7 +844,6 @@ button.calendar-day:hover {
   padding: 0 8dp;
   background-color: #ffffff;
   border-top: 1dp #e5e7eb;
-  z-index: 15;
   box-sizing: border-box;
 }
 

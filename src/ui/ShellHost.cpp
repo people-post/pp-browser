@@ -316,7 +316,7 @@ void ShellHost::OnLayoutModeChanged() {
   }
 }
 
-std::string ShellHost::SerializePaneSlot(const std::string& key, const char* extra_class) const {
+std::string ShellHost::SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot) const {
   std::ostringstream out;
   out << "<div class=\"shell-pane shell-pane-" << key;
   if (extra_class && extra_class[0] != '\0') {
@@ -324,6 +324,9 @@ std::string ShellHost::SerializePaneSlot(const std::string& key, const char* ext
   }
   out << "\" id=\"pane-" << key << "\">";
   out << "<div class=\"shell-pane-body\" id=\"pane-body-" << key << "\"></div>";
+  if (with_composer_slot) {
+    out << "<div class=\"shell-pane-composer\" id=\"pane-composer-" << key << "\"></div>";
+  }
   out << "</div>";
   return out.str();
 }
@@ -339,7 +342,7 @@ std::string ShellHost::SerializeExpandedBase() const {
   }
   for (const PaneState& pane : state_.panes) {
     if (pane.spec.role == PaneRole::Primary) {
-      out << SerializePaneSlot(pane.spec.key, "shell-pane-primary");
+      out << SerializePaneSlot(pane.spec.key, "shell-pane-primary", pane.spec.provides_composer);
     }
   }
   if (state_.auxiliary_open) {
@@ -376,7 +379,7 @@ std::string ShellHost::SerializeCompactBase() const {
 
   if (state_.auxiliary_open) {
     out << "<div class=\"shell-sheet-scrim\" data-event-click=\"toggle_auxiliary()\"></div>";
-    out << "<div class=\"shell-sheet shell-sheet-auxiliary\">";
+    out << "<div class=\"shell-sheet shell-sheet-auxiliary shell-sheet-compact\">";
     for (const PaneState& pane : state_.panes) {
       if (pane.spec.role == PaneRole::Auxiliary) {
         out << SerializePaneSlot(pane.spec.key, nullptr);
@@ -386,6 +389,12 @@ std::string ShellHost::SerializeCompactBase() const {
   }
 
   if (!state_.transient_active) {
+    const bool has_composer = std::any_of(state_.panes.begin(), state_.panes.end(),
+                                          [](const PaneState& pane) { return pane.spec.provides_composer; });
+    out << "<div class=\"shell-bottom-chrome\">";
+    if (has_composer) {
+      out << "<div class=\"shell-composer-mount\" id=\"shell-composer-mount\"></div>";
+    }
     out << "<div class=\"shell-toolbar\">";
     for (const PaneState& pane : state_.panes) {
       if (pane.spec.role == PaneRole::Secondary && !pane.spec.toolbar_label.empty()) {
@@ -399,7 +408,7 @@ std::string ShellHost::SerializeCompactBase() const {
     out << "<div class=\"shell-toolbar-flex\"></div>";
     out << "<button class=\"shell-toolbar-btn shell-toolbar-btn-preview\" data-if=\"auxiliary_available\" "
            "data-event-click=\"toggle_auxiliary()\">Preview</button>";
-    out << "</div>";
+    out << "</div></div>";
   }
 
   out << "</div>";
@@ -469,6 +478,44 @@ std::string ShellHost::SerializeShellRoot() const {
   return out.str();
 }
 
+void ShellHost::MountComposer() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  const PaneState* composer_pane = nullptr;
+  for (const PaneState& pane : state_.panes) {
+    if (pane.spec.provides_composer) {
+      composer_pane = &pane;
+      break;
+    }
+  }
+  if (!composer_pane) {
+    return;
+  }
+
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  const std::string body = ViewCatalog::LoadBody("composer");
+  if (body.empty()) {
+    return;
+  }
+
+  if (state_.layout_mode == LayoutMode::Expanded) {
+    Rml::Element* target = doc->GetElementById(("pane-composer-" + composer_pane->spec.key).c_str());
+    if (target) {
+      RmlMount::MountInner(target, body);
+    }
+    return;
+  }
+
+  if (state_.transient_active) {
+    return;
+  }
+  Rml::Element* target = doc->GetElementById("shell-composer-mount");
+  if (target) {
+    RmlMount::MountInner(target, body);
+  }
+}
+
 void ShellHost::MountPaneBodies() {
   auto mount_key = [this](const std::string& key) {
     if (!context_ || context_->GetNumDocuments() == 0) {
@@ -505,6 +552,7 @@ void ShellHost::MountPaneBodies() {
       RmlMount::MountInner(target, body);
     }
   }
+  MountComposer();
 }
 
 void ShellHost::SyncLayout() {
@@ -531,7 +579,9 @@ void ShellHost::Update(Rml::Context* context) {
   ApplyLayoutModeFromContext(context);
   if (previous != state_.layout_mode) {
     OnLayoutModeChanged();
+    SaveFocus();
     SyncLayout();
+    RestoreFocus();
     return;
   }
   DirtyWindow();

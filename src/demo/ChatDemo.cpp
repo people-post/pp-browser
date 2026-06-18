@@ -782,7 +782,10 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   ShellHost::Instance().Initialize(context);
   ShellHost::Instance().RegisterPane(
       {.key = "sidebar", .rml_path = "views/sidebar.rml", .role = PaneRole::Secondary, .toolbar_label = "Sessions"});
-  ShellHost::Instance().RegisterPane({.key = "chat", .rml_path = "views/chat.rml", .role = PaneRole::Primary});
+  ShellHost::Instance().RegisterPane({.key = "chat",
+                                       .rml_path = "views/chat.rml",
+                                       .role = PaneRole::Primary,
+                                       .provides_composer = true});
   ShellHost::Instance().RegisterPane(
       {.key = "preview", .rml_path = "views/preview.rml", .role = PaneRole::Auxiliary, .toolbar_label = "Preview"});
 

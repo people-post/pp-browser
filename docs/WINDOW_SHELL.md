@@ -51,6 +51,19 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 
 Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`.
 
+## Composer chrome
+
+Primary panes may set `provides_composer = true` on `PaneSpec`. The shell mounts `assets/views/composer.rml` into a dedicated slot instead of embedding the prompt inside pane scroll content.
+
+| Layout | Mount target | Structure |
+|--------|--------------|-----------|
+| Expanded | `#pane-composer-{key}` | Below `#pane-body-{key}` in the primary column |
+| Compact | `#shell-composer-mount` | Inside `shell-bottom-chrome`, above the nav toolbar |
+
+Compact bottom chrome (`shell-bottom-chrome`) stacks the prompt card and the Sessions / Preview toolbar row. Both are hidden during transient views.
+
+The composer uses the pane's data model (`data-model="chat"` in Chat demo) for `draft` binding and `send_message()`.
+
 ## C++ usage
 
 ```cpp
@@ -58,6 +71,7 @@ ShellHost::Instance().RegisterPane({
     .key = "chat",
     .rml_path = "views/chat.rml",
     .role = PaneRole::Primary,
+    .provides_composer = true,
 });
 ShellHost::Instance().SyncLayout();
 

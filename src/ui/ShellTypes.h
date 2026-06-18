@@ -40,6 +40,7 @@ struct PaneSpec {
   std::string rml_path;
   PaneRole role = PaneRole::Primary;
   Rml::String toolbar_label;
+  bool provides_composer = false;
 };
 
 struct PaneState {

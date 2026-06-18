@@ -21,9 +21,12 @@
       <p class="muted thinking" data-if="loading && status == ''">Thinking...</p>
       <p class="muted thinking" data-if="loading && status != ''">{{status}}</p>
     </div>
-    <div class="input-row">
-      <textarea id="draft-input" placeholder="Type a message..." rows="2" data-value="draft"></textarea>
-      <button data-event-click="send_message()">Send</button>
+    <div class="prompt-composer">
+      <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2" data-value="draft"></textarea>
+      <div class="prompt-composer-footer">
+        <div class="prompt-composer-leading"></div>
+        <button class="prompt-send-btn" data-event-click="send_message()">Send</button>
+      </div>
     </div>
   </div>
 </body>
