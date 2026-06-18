@@ -182,6 +182,22 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
     }
   }
 
+  if (root.contains("data_dir") && root["data_dir"].is_string()) {
+    config.data_dir = root["data_dir"].get<std::string>();
+  }
+
+  auto load_endpoint = [&](const char* key, ServiceEndpointConfig& endpoint) {
+    if (root.contains(key) && root[key].is_object()) {
+      const auto& obj = root[key];
+      if (obj.contains("base_url") && obj["base_url"].is_string()) {
+        endpoint.base_url = obj["base_url"].get<std::string>();
+      }
+    }
+  };
+  load_endpoint("relay", config.relay);
+  load_endpoint("directory", config.directory);
+  load_endpoint("registration", config.registration);
+
   return config;
 }
 

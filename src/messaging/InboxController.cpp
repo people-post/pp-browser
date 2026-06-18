@@ -1,0 +1,233 @@
+#include "messaging/InboxController.h"
+
+#include "agent/StructuredTextParser.h"
+#include "demo/ChatFormHelper.h"
+#include "messaging/IdUtil.h"
+#include "messaging/MessagingJson.h"
+
+namespace pbr {
+
+InboxController::InboxController(IThreadStore& store, ContactsStore& contacts)
+    : store_(store), contacts_(contacts) {
+  redirectLogger("InboxController");
+}
+
+Roe<void> InboxController::EnsureAiHomeThread() {
+  if (!ai_home_thread_id_.empty()) {
+    if (auto thread = store_.GetThread(ai_home_thread_id_)) {
+      if (*thread) {
+        return {};
+      }
+    }
+  }
+
+  auto threads = store_.ListThreads();
+  if (!threads) {
+    return threads.error();
+  }
+
+  for (const Thread& thread : *threads) {
+    if (thread.kind == ThreadKind::Ai) {
+      ai_home_thread_id_ = thread.id;
+      if (active_thread_id_.empty()) {
+        active_thread_id_ = thread.id;
+      }
+      return {};
+    }
+  }
+
+  Thread thread;
+  thread.id = GenerateUuid();
+  thread.kind = ThreadKind::Ai;
+  thread.title = "pp-browser";
+  thread.preview = "Ask anything...";
+  thread.updated_at = NowUnixMs();
+  auto saved = store_.UpsertThread(thread);
+  if (!saved) {
+    return saved.error();
+  }
+
+  ai_home_thread_id_ = saved->id;
+  if (active_thread_id_.empty()) {
+    active_thread_id_ = saved->id;
+  }
+  return {};
+}
+
+Roe<std::vector<Thread>> InboxController::ListThreads() {
+  auto ensure = EnsureAiHomeThread();
+  if (!ensure) {
+    return ensure.error();
+  }
+  return store_.ListThreads();
+}
+
+Roe<Thread> InboxController::GetActiveThread() const {
+  if (active_thread_id_.empty()) {
+    return Error("No active thread");
+  }
+  auto thread = store_.GetThread(active_thread_id_);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Active thread not found");
+  }
+  return **thread;
+}
+
+Roe<Thread> InboxController::OpenThread(const std::string& thread_id) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+
+  active_thread_id_ = thread_id;
+  MarkThreadRead(thread_id);
+  if (on_thread_changed_) {
+    on_thread_changed_();
+  }
+  return **thread;
+}
+
+Roe<Thread> InboxController::CreateAiHomeThread() {
+  auto ensure = EnsureAiHomeThread();
+  if (!ensure) {
+    return ensure.error();
+  }
+  auto thread = store_.GetThread(ai_home_thread_id_);
+  if (!thread || !*thread) {
+    return Error("Failed to load AI home thread");
+  }
+  return OpenThread(ai_home_thread_id_);
+}
+
+Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact_id) {
+  auto threads = store_.ListThreads();
+  if (!threads) {
+    return threads.error();
+  }
+
+  for (const Thread& thread : *threads) {
+    if (thread.kind == ThreadKind::Direct && thread.participant_contact_ids.size() == 1 &&
+        thread.participant_contact_ids[0] == contact_id) {
+      return OpenThread(thread.id);
+    }
+  }
+  return CreateDirectThread(contact_id);
+}
+
+Roe<Thread> InboxController::CreateDirectThread(const std::string& contact_id) {
+  auto contact = contacts_.Get(contact_id);
+  if (!contact) {
+    return contact.error();
+  }
+  if (!*contact) {
+    return Error("Contact not found");
+  }
+
+  Thread thread;
+  thread.id = GenerateUuid();
+  thread.kind = ThreadKind::Direct;
+  thread.title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+  thread.participant_contact_ids = {contact_id};
+  thread.preview = "";
+  thread.updated_at = NowUnixMs();
+
+  auto saved = store_.UpsertThread(thread);
+  if (!saved) {
+    return saved.error();
+  }
+  return OpenThread(saved->id);
+}
+
+void InboxController::MarkThreadRead(const std::string& thread_id) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread) {
+    return;
+  }
+  Thread updated = **thread;
+  updated.unread_count = 0;
+  (void)store_.UpsertThread(updated);
+}
+
+Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std::string& preview) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  Thread updated = **thread;
+  updated.preview = preview;
+  updated.updated_at = NowUnixMs();
+  if (store_.UpsertThread(updated)) {
+    return {};
+  }
+  return Error("Failed to update thread preview");
+}
+
+void InboxController::SetOnThreadChanged(ThreadChangedCallback callback) {
+  on_thread_changed_ = std::move(callback);
+}
+
+std::string InboxController::ResolveSenderLabel(const std::string& sender_contact_id) const {
+  if (sender_contact_id == kLocalSelfContactId) {
+    return "You";
+  }
+  if (sender_contact_id == kAiAssistantContactId) {
+    return "AI";
+  }
+  if (auto contact = contacts_.Get(sender_contact_id)) {
+    if (*contact) {
+      return (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+    }
+  }
+  return sender_contact_id;
+}
+
+std::string InboxController::ResolveRowClass(const std::string& sender_contact_id) const {
+  if (sender_contact_id == kLocalSelfContactId) {
+    return "message-row-user";
+  }
+  if (sender_contact_id == kAiAssistantContactId) {
+    return "message-row-ai";
+  }
+  return "message-row-peer";
+}
+
+std::string InboxController::BuildMessageRml(const ThreadMessage& message) const {
+  if (message.content_rml) {
+    if (message.content_rml->find("__ENTRY__") != std::string::npos) {
+      return InjectEntryPlaceholders(*message.content_rml, message.id);
+    }
+    return *message.content_rml;
+  }
+  const std::string bubble_class = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
+  return "<div class=\"bubble " + bubble_class + "\" selectable=\"text\"><p>" +
+         StructuredTextParser::EscapeText(message.text) + "</p></div>";
+}
+
+std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(const std::string& thread_id) const {
+  std::vector<MessageDisplayRow> rows;
+  auto messages = store_.GetMessages(thread_id);
+  if (!messages) {
+    return rows;
+  }
+
+  for (const ThreadMessage& message : *messages) {
+    MessageDisplayRow row;
+    row.sender_label = ResolveSenderLabel(message.sender_contact_id).c_str();
+    row.content_rml = BuildMessageRml(message).c_str();
+    row.row_class = ResolveRowClass(message.sender_contact_id).c_str();
+    row.has_content = true;
+    rows.push_back(std::move(row));
+  }
+  return rows;
+}
+
+} // namespace pbr

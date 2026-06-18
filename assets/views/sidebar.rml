@@ -1,9 +1,14 @@
 <div class="sidebar-panel stack" data-model="shell">
   <button class="sidebar-new-chat" data-event-click="new_chat()">New chat</button>
   <div class="sidebar-sessions">
-    <div data-for="session : sessions" class="sidebar-session">
-      <p data-rml="session.title"></p>
+    <div data-for="session : sessions" class="sidebar-session" data-class="session.active ? 'sidebar-session-active' : ''"
+         data-event-click="select_thread(session.id)">
+      <div class="sidebar-session-row">
+        <p data-rml="session.title"></p>
+        <span class="sidebar-unread" data-if="session.unread_count > 0" data-rml="session.unread_count"></span>
+      </div>
       <p class="muted sidebar-session-preview" data-rml="session.preview"></p>
+      <span class="sidebar-kind-badge" data-rml="session.kind"></span>
     </div>
     <p class="muted" data-if="sessions.size == 0">No conversations yet.</p>
   </div>

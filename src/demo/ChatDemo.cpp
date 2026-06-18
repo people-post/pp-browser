@@ -7,6 +7,10 @@
 #include "demo/CalendarHelper.h"
 #include "demo/ChatFormHelper.h"
 #include "demo/ChatWidgetStateBuilder.h"
+#include "messaging/IdUtil.h"
+#include "messaging/MessagingHub.h"
+#include "messaging/MessagingJson.h"
+#include "messaging/ThreadTypes.h"
 #include "ui/DataModelHost.h"
 #include "ui/DocumentLoader.h"
 #include "ui/ShellHost.h"
@@ -138,6 +142,30 @@ std::string TruncatePreview(const std::string& text, size_t max_len = 48) {
 std::string MockAssistantRespond(const std::string& query) {
   const std::string lower = ToLower(query);
 
+  if (lower.find("find someone") != std::string::npos || lower.find("search people") != std::string::npos) {
+    return R"JSON({
+      "blocks": [
+        { "type": "paragraph", "text": "Here are people on the network (mock directory):" },
+        { "type": "long_list", "title": "Search results", "items": [
+          { "title": "Alice Example", "subtitle": "@alice", "meta": "relay:alice123",
+            "actions": [
+              { "label": "Message", "message": "Start chat with Alice", "payload": "{\"type\":\"start_conversation\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":true}]}}" },
+              { "label": "Add contact", "message": "Add Alice", "payload": "{\"type\":\"add_contact\",\"directory_hit\":{\"hit_id\":\"hit_alice\",\"display_name\":\"Alice Example\",\"nickname\":\"alice\",\"ids\":[{\"kind\":\"relay_user\",\"value\":\"relay:alice123\",\"primary\":true}]}}" }
+            ]
+          }
+        ]}
+      ]
+    })JSON";
+  }
+
+  if (lower.find("contacts") != std::string::npos || lower.find("conversations") != std::string::npos) {
+    return R"JSON({
+      "blocks": [
+        { "type": "paragraph", "text": "Ask me to find someone on the network, or open a person thread from the sidebar." }
+      ]
+    })JSON";
+  }
+
   if (lower.find("help") != std::string::npos) {
     return R"JSON({
       "blocks": [
@@ -236,11 +264,19 @@ void DirtyChatChrome() {
 
 void DirtyChatTurns() {
   DataModelHost::Instance().Dirty("chat", "turns");
+  DataModelHost::Instance().Dirty("chat", "messages");
+}
+
+void DirtyChatHeader() {
+  DataModelHost::Instance().Dirty("chat", "thread_title");
+  DataModelHost::Instance().Dirty("chat", "thread_subtitle");
+  DataModelHost::Instance().Dirty("chat", "draft_placeholder");
 }
 
 void DirtyChat() {
   DirtyChatChrome();
   DirtyChatTurns();
+  DirtyChatHeader();
 }
 
 void DirtyShell() {
@@ -324,6 +360,106 @@ void ChatDemo::NewChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*
   Instance().OnNewChat();
 }
 
+void ChatDemo::SelectThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().OnSelectThread(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
+void ChatDemo::OnSelectThread(const std::string& thread_id) {
+  if (!messaging_ready_) {
+    return;
+  }
+  if (auto thread = MessagingHub::Instance().Inbox().OpenThread(thread_id)) {
+    RefreshFromMessaging();
+    (void)thread;
+  }
+}
+
+void ChatDemo::RefreshFromMessaging() {
+  SyncShellSessions();
+  SyncDisplayFromThread();
+  UpdateThreadChrome();
+  DirtyChat();
+  DirtyShell();
+}
+
+void ChatDemo::SyncShellSessions() {
+  if (!messaging_ready_) {
+    return;
+  }
+  shell_.sessions.clear();
+  auto threads = MessagingHub::Instance().Inbox().ListThreads();
+  if (!threads) {
+    return;
+  }
+  const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  for (const Thread& thread : *threads) {
+    SessionRow row;
+    row.id = thread.id.c_str();
+    row.title = thread.title.c_str();
+    row.preview = thread.preview.c_str();
+    row.unread_count = thread.unread_count;
+    row.active = thread.id == active_id;
+    switch (thread.kind) {
+    case ThreadKind::Ai:
+      row.kind = "ai";
+      break;
+    case ThreadKind::Direct:
+      row.kind = "direct";
+      break;
+    case ThreadKind::Group:
+      row.kind = "group";
+      break;
+    }
+    shell_.sessions.push_back(std::move(row));
+  }
+}
+
+void ChatDemo::UpdateThreadChrome() {
+  if (!messaging_ready_) {
+    return;
+  }
+  if (auto thread = MessagingHub::Instance().Inbox().GetActiveThread()) {
+    chat_.thread_title = thread->title.c_str();
+    if (thread->kind == ThreadKind::Ai) {
+      chat_.thread_subtitle = "AI home — ask to find people or open conversations";
+      chat_.draft_placeholder = "Ask anything…";
+    } else if (thread->kind == ThreadKind::Direct) {
+      chat_.thread_subtitle = "Direct message";
+      chat_.draft_placeholder = "Message… or @ai ask assistant";
+    } else {
+      chat_.thread_subtitle = "Group chat";
+      chat_.draft_placeholder = "Message the group… or @ai ask assistant";
+    }
+  }
+}
+
+void ChatDemo::SyncDisplayFromThread() {
+  if (!messaging_ready_) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  chat_.messages = MessagingHub::Instance().Inbox().BuildDisplayRows(thread_id);
+  chat_.has_turns = !chat_.messages.empty();
+  chat_.use_messages_layout = true;
+}
+
+void ChatDemo::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
+  if (payload && !payload->empty()) {
+    if (auto result = MessagingHub::Instance().Actions().Dispatch(*payload)) {
+      if (*result) {
+        SendUserText(message, *result);
+        return;
+      }
+      RefreshFromMessaging();
+      return;
+    }
+  }
+  SendUserText(message, payload);
+}
+
 void ChatDemo::OnSendMessage() {
   if (chat_.loading) {
     return;
@@ -341,24 +477,19 @@ void ChatDemo::OnSendMessage() {
 
 void ChatDemo::OnNewChat() {
   auto perform_reset = [this]() {
-    if (agent_) {
-      agent_->StartNewConversation();
+    if (!messaging_ready_) {
+      return;
     }
+    (void)MessagingHub::Instance().Inbox().CreateAiHomeThread();
     chat_.draft = "";
     chat_.status = "";
     chat_.loading = false;
-    chat_.turns.clear();
-    chat_.has_turns = false;
-    shell_.preview_rml = "";
-    shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
     pending_reply_.reset();
     ShellHost::Instance().SetAuxiliaryAvailable(false);
     ShellHost::Instance().CloseAuxiliary();
     ClearFormState();
     widgets_by_entry_.clear();
-    SyncDisplayFromConversation();
-    DirtyChat();
-    DirtyShell();
+    RefreshFromMessaging();
   };
 
   ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "New chat", "Clear the current conversation?",
@@ -448,35 +579,13 @@ void ChatDemo::ClearFormState() {
   submitted_forms_.clear();
 }
 
-void ChatDemo::SyncDisplayFromConversation() {
-  if (!agent_) {
+void ChatDemo::UpdateSidebarPreview(const std::string& preview_text) {
+  if (!messaging_ready_) {
     return;
   }
-
-  chat_.turns.clear();
-  for (const TranscriptEntry& entry : agent_->conversation().Entries()) {
-    TranscriptDisplayRow row;
-    row.user_content_rml = UserMessageRml(entry.user_text);
-    if (entry.assistant_rml) {
-      row.assistant_content_rml = AssistantBubbleRml(HydrateAssistantRml(entry));
-      row.has_assistant = true;
-      MergeWidgetStateIntoRow(entry.id, row);
-    } else if (entry.assistant_raw && !entry.assistant_rml) {
-      row.assistant_content_rml = ErrorMessageRml("Assistant reply pending display sync.");
-      row.has_assistant = true;
-    }
-    chat_.turns.push_back(std::move(row));
-  }
-
-  chat_.has_turns = !chat_.turns.empty();
-  DirtyChatTurns();
-}
-
-void ChatDemo::UpdateSidebarPreview(const std::string& preview_text) {
-  if (shell_.sessions.empty()) {
-    shell_.sessions.push_back({Rml::String("Chat"), Rml::String("Ask anything...")});
-  }
-  shell_.sessions[0].preview = Rml::String(TruncatePreview(preview_text).c_str());
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  (void)MessagingHub::Instance().Inbox().UpdatePreview(thread_id, preview_text);
+  SyncShellSessions();
   DirtyShell();
 }
 
@@ -494,19 +603,44 @@ void ChatDemo::SendUserText(const std::string& text, std::optional<std::string> 
   active_form_.reset();
   DirtyChatTurns();
 
-  chat_.loading = true;
-  chat_.status = "";
+  const bool use_mock_reply = !use_llm_;
+  bool expect_agent_work = use_mock_reply;
+  if (!expect_agent_work && messaging_ready_ && MessagingHub::Instance().HasRouter()) {
+    expect_agent_work = MessagingHub::Instance().Router().ExpectsAgentWork(
+        MessagingHub::Instance().Inbox().ActiveThreadId(), trimmed, user_payload);
+  } else if (!expect_agent_work) {
+    expect_agent_work = true;
+  }
+
+  if (expect_agent_work) {
+    chat_.loading = true;
+    chat_.status = "";
+  }
   UpdateSidebarPreview(trimmed);
   DirtyChatChrome();
 
   if (!use_llm_) {
-    if (!agent_) {
-      return;
-    }
-    TranscriptEntry& entry = agent_->AppendUserMessage(trimmed, std::move(user_payload));
-    SyncDisplayFromConversation();
+    const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+    ThreadMessage user_message;
+    user_message.id = GenerateUuid();
+    user_message.thread_id = thread_id;
+    user_message.sender_contact_id = kLocalSelfContactId;
+    user_message.text = trimmed;
+    user_message.timestamp = NowUnixMs();
+    (void)MessagingHub::Instance().Store().AppendMessage(user_message);
+    SyncDisplayFromThread();
+    DirtyChatTurns();
     log().debug << "Using mock assistant response";
-    pending_reply_ = PendingReply{.entry_id = entry.id, .output = MockAssistantRespond(trimmed), .from_llm = false};
+    pending_reply_ = PendingReply{.entry_id = user_message.id, .thread_id = thread_id,
+                                  .output = MockAssistantRespond(trimmed), .from_llm = false};
+    return;
+  }
+
+  if (messaging_ready_ && MessagingHub::Instance().HasRouter()) {
+    log().info << "Routing message via MessageRouter";
+    (void)MessagingHub::Instance().Router().Route(MessagingHub::Instance().Inbox().ActiveThreadId(), trimmed,
+                                                  std::move(user_payload));
+    SyncDisplayFromThread();
     return;
   }
 
@@ -544,25 +678,30 @@ void ChatDemo::SubmitForm(const std::string& entry_id, const std::string& form_i
   widgets->form.expired = true;
   active_form_.reset();
 
-  SyncDisplayFromConversation();
+  SyncDisplayFromThread();
   SendUserText(display_text, payload);
 }
 
 void ChatDemo::SendChatAction(const std::string& entry_id, int action_index) {
-  if (!agent_ || chat_.loading || action_index < 0) {
+  if (chat_.loading || action_index < 0 || !messaging_ready_) {
     return;
   }
 
-  for (const TranscriptEntry& entry : agent_->conversation().Entries()) {
-    if (entry.id != entry_id) {
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  auto messages = MessagingHub::Instance().Store().GetMessages(thread_id);
+  if (!messages) {
+    return;
+  }
+
+  for (const ThreadMessage& message : *messages) {
+    if (message.id != entry_id) {
       continue;
     }
-    if (action_index >= static_cast<int>(entry.chat_actions.size())) {
-      log().warning << "Chat action index out of range: " << entry_id << "/" << action_index;
+    if (action_index >= static_cast<int>(message.chat_actions.size())) {
       return;
     }
-    const TranscriptChatAction& action = entry.chat_actions[static_cast<size_t>(action_index)];
-    SendUserText(action.message, action.payload);
+    const TranscriptChatAction& action = message.chat_actions[static_cast<size_t>(action_index)];
+    HandleLocalAction(action.message, action.payload);
     return;
   }
 
@@ -575,7 +714,7 @@ void ChatDemo::CalendarPrev(const std::string& entry_id) {
     return;
   }
   ShiftCalendarMonth(widgets->calendar, -1);
-  SyncDisplayFromConversation();
+  SyncDisplayFromThread();
 }
 
 void ChatDemo::CalendarNext(const std::string& entry_id) {
@@ -584,7 +723,7 @@ void ChatDemo::CalendarNext(const std::string& entry_id) {
     return;
   }
   ShiftCalendarMonth(widgets->calendar, 1);
-  SyncDisplayFromConversation();
+  SyncDisplayFromThread();
 }
 
 void ChatDemo::SelectCalendarDay(const std::string& entry_id, const std::string& iso_date) {
@@ -616,7 +755,7 @@ void ChatDemo::SelectCalendarDay(const std::string& entry_id, const std::string&
 }
 
 void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
-                                    const std::string& finish_reason) {
+                                    const std::string& finish_reason, const std::string& thread_id) {
   auto parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output)
                          : StructuredTextParser::ParseBlocksJson(raw_output);
   if (!parsed.ok) {
@@ -624,12 +763,19 @@ void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::stri
     if (from_llm && !finish_reason.empty()) {
       log().warning << "LLM finish_reason: " << finish_reason;
     }
-    log().warning << "AI response: " << raw_output;
-    if (agent_) {
-      if (!from_llm) {
-        agent_->CompleteAssistantMessage(entry_id, raw_output);
+    if (messaging_ready_) {
+      const std::string active_thread = thread_id.empty() ? MessagingHub::Instance().Inbox().ActiveThreadId() : thread_id;
+      auto messages = MessagingHub::Instance().Store().GetMessages(active_thread);
+      if (messages) {
+        for (ThreadMessage& message : *messages) {
+          if (message.id == entry_id) {
+            message.content_rml = "<div class=\"bubble bubble-assistant\" selectable=\"text\"><p class=\"error\">" +
+                                  StructuredTextParser::EscapeText(parsed.error) + "</p></div>";
+            (void)MessagingHub::Instance().Store().UpdateMessage(message);
+            break;
+          }
+        }
       }
-      agent_->SetAssistantDisplay(entry_id, parsed.error, {});
     }
   } else {
     for (const std::string& warning : parsed.warnings) {
@@ -645,22 +791,52 @@ void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::stri
     for (const ParsedChatAction& action : parsed.chat_actions) {
       chat_actions.push_back({action.label, action.message, action.payload});
     }
-    if (agent_) {
-      if (!from_llm) {
-        agent_->CompleteAssistantMessage(entry_id, raw_output);
+
+    std::string hydrated = InjectEntryPlaceholders(parsed.rml, entry_id);
+    hydrated = HydrateLegacyChatActions(hydrated, chat_actions);
+
+    if (messaging_ready_) {
+      const std::string active_thread = thread_id.empty() ? MessagingHub::Instance().Inbox().ActiveThreadId() : thread_id;
+      auto messages = MessagingHub::Instance().Store().GetMessages(active_thread);
+      bool updated = false;
+      if (messages) {
+        for (ThreadMessage& message : *messages) {
+          if (message.id == entry_id) {
+            message.content_rml = "<div class=\"bubble bubble-assistant\" selectable=\"text\">" + hydrated + "</div>";
+            message.chat_actions = chat_actions;
+            (void)MessagingHub::Instance().Store().UpdateMessage(message);
+            updated = true;
+            break;
+          }
+        }
       }
-      agent_->SetAssistantDisplay(entry_id, parsed.rml, std::move(chat_actions));
+      if (!updated) {
+        ThreadMessage ai_message;
+        ai_message.id = GenerateUuid();
+        ai_message.thread_id = active_thread;
+        ai_message.sender_contact_id = kAiAssistantContactId;
+        ai_message.text = raw_output;
+        ai_message.content_rml =
+            "<div class=\"bubble bubble-assistant\" selectable=\"text\">" + hydrated + "</div>";
+        ai_message.chat_actions = chat_actions;
+        ai_message.timestamp = NowUnixMs();
+        (void)MessagingHub::Instance().Store().AppendMessage(ai_message);
+      }
+      (void)MessagingHub::Instance().Inbox().UpdatePreview(active_thread, parsed.rml);
     }
-    shell_.preview_rml = Rml::String(parsed.rml.c_str());
+
+    shell_.preview_rml = Rml::String(hydrated.c_str());
     ShellHost::Instance().SetAuxiliaryAvailable(true);
     DirtyShell();
   }
 
-  SyncDisplayFromConversation();
+  SyncDisplayFromThread();
+  SyncShellSessions();
   chat_.loading = false;
   chat_.status = "";
   ShellHost::Instance().SetActivityVisible(false);
-  DirtyChatChrome();
+  DirtyChat();
+  DirtyShell();
 }
 
 void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
@@ -672,6 +848,10 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
       ShellHost::Instance().SetActivityVisible(false);
     } else {
       ShellHost::Instance().SetActivityVisible(true);
+      if (messaging_ready_) {
+        SyncDisplayFromThread();
+        DirtyChatTurns();
+      }
     }
     DirtyChatChrome();
     break;
@@ -681,7 +861,8 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
     DirtyChatChrome();
     break;
   case AgentEventType::AssistantReady:
-    FinishAssistantReply(event.entry_id, event.text, true, event.finish_reason);
+    FinishAssistantReply(event.entry_id, event.text, !StructuredTextParser::IsBlocksJsonDocument(event.text),
+                       event.finish_reason, event.thread_id);
     break;
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;
@@ -691,7 +872,8 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
       const TranscriptEntry& entry = agent_->conversation().Entries().back();
       agent_->CompleteAssistantMessage(entry.id, event.message);
       agent_->SetAssistantDisplay(entry.id, event.message, {});
-      SyncDisplayFromConversation();
+      SyncDisplayFromThread();
+      DirtyChatTurns();
     }
     chat_.loading = false;
     chat_.status = "";
@@ -715,6 +897,28 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   pending_reply_.reset();
   use_llm_ = !config.llm.base_url.empty();
   agent_.emplace();
+
+  if (auto init = MessagingHub::Instance().Initialize(config)) {
+    messaging_ready_ = true;
+    agent_->SetThreadStore(&MessagingHub::Instance().Store());
+    MessagingHub::Instance().BindAgent(*agent_);
+    MessagingHub::Instance().P2p().SetOnMessagesChanged([this]() { RefreshFromMessaging(); });
+    MessagingHub::Instance().P2p().SetOnDeliveryNotice([this](const std::string& message) {
+      ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
+      ShellHost::Instance().DirtyWindow();
+    });
+    MessagingHub::Instance().Inbox().SetOnThreadChanged([this]() { RefreshFromMessaging(); });
+    MessagingHub::Instance().Router().SetOnLocalAction(
+        [this](const std::string& message, const std::optional<std::string>& payload) {
+          HandleLocalAction(message, payload);
+        });
+    MessagingHub::Instance().Actions().SetOnActionMessage([this](const std::string& message) {
+      ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
+      ShellHost::Instance().DirtyWindow();
+    });
+    RefreshFromMessaging();
+  }
+
   agent_->Configure(config);
   log().info << "Chat demo initialized (model: " << config.llm.model << ")";
 
@@ -741,10 +945,15 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   if (!DataModelHost::Instance().Register(context, "chat", [](Rml::DataModelConstructor& ctor) {
         RegisterChatWidgetDataTypes(ctor);
         ctor.Bind("draft", &ChatDemo::Instance().chat_.draft);
+        ctor.Bind("draft_placeholder", &ChatDemo::Instance().chat_.draft_placeholder);
         ctor.Bind("status", &ChatDemo::Instance().chat_.status);
         ctor.Bind("loading", &ChatDemo::Instance().chat_.loading);
         ctor.Bind("has_turns", &ChatDemo::Instance().chat_.has_turns);
         ctor.Bind("turns", &ChatDemo::Instance().chat_.turns);
+        ctor.Bind("messages", &ChatDemo::Instance().chat_.messages);
+        ctor.Bind("use_messages_layout", &ChatDemo::Instance().chat_.use_messages_layout);
+        ctor.Bind("thread_title", &ChatDemo::Instance().chat_.thread_title);
+        ctor.Bind("thread_subtitle", &ChatDemo::Instance().chat_.thread_subtitle);
         ctor.BindEventCallback("send_message", &ChatDemo::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatDemo::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatDemo::SendChatActionCallback);
@@ -758,13 +967,19 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
 
   if (!DataModelHost::Instance().Register(context, "shell", [](Rml::DataModelConstructor& ctor) {
         if (auto session_handle = ctor.RegisterStruct<ChatDemo::SessionRow>()) {
+          session_handle.RegisterMember("id", &ChatDemo::SessionRow::id);
           session_handle.RegisterMember("title", &ChatDemo::SessionRow::title);
           session_handle.RegisterMember("preview", &ChatDemo::SessionRow::preview);
+          session_handle.RegisterMember("kind", &ChatDemo::SessionRow::kind);
+          session_handle.RegisterMember("unread_count", &ChatDemo::SessionRow::unread_count);
+          session_handle.RegisterMember("active", &ChatDemo::SessionRow::active);
         }
         ctor.RegisterArray<std::vector<ChatDemo::SessionRow>>();
         ctor.Bind("sessions", &ChatDemo::Instance().shell_.sessions);
         ctor.Bind("preview_rml", &ChatDemo::Instance().shell_.preview_rml);
         ctor.BindEventCallback("new_chat", &ChatDemo::NewChatCallback);
+        ctor.BindEventCallback("select_thread", &ChatDemo::SelectThreadCallback);
+        ctor.BindEventCallback("send_chat_action", &ChatDemo::SendChatActionCallback);
       })) {
     return false;
   }
@@ -808,7 +1023,11 @@ void ChatDemo::Update() {
   if (pending_reply_) {
     PendingReply reply = std::move(*pending_reply_);
     pending_reply_.reset();
-    FinishAssistantReply(reply.entry_id, reply.output, reply.from_llm);
+    FinishAssistantReply(reply.entry_id, reply.output, reply.from_llm, {}, reply.thread_id);
+  }
+
+  if (messaging_ready_) {
+    MessagingHub::Instance().P2p().PollAndMerge();
   }
 
   if (!agent_) {
@@ -826,6 +1045,10 @@ void ChatDemo::Shutdown() {
   if (agent_) {
     agent_->Cancel();
     agent_.reset();
+  }
+  if (messaging_ready_) {
+    MessagingHub::Instance().Shutdown();
+    messaging_ready_ = false;
   }
   pending_reply_.reset();
   context_ = nullptr;

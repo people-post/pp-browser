@@ -57,6 +57,7 @@ Prompt text for LLMs is built in [`src/agent/PromptBuilder.cpp`](src/agent/Promp
 | Theme / layout | `assets/themes/base.rcss` |
 | Wire new demo | `src/app/Application.cpp`, `src/main.cpp` (`--demo`) |
 | Structured AI replies | `src/agent/StructuredTextParser.cpp` |
+| P2P messaging | `src/messaging/`, [docs/P2P_MESSAGING.md](docs/P2P_MESSAGING.md) |
 | Build | [docs/BUILD.md](docs/BUILD.md) |
 
 ## Conventions

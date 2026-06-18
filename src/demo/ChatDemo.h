@@ -28,10 +28,7 @@ class ChatDemo : public Module {
 public:
   static ChatDemo& Instance();
 
-  struct SessionRow {
-    Rml::String title;
-    Rml::String preview;
-  };
+  using SessionRow = SessionDisplayRow;
 
   bool Setup(Rml::Context* context, const AppConfig& config);
   void Update();
@@ -45,8 +42,13 @@ private:
 
   struct ChatState {
     Rml::String draft;
+    Rml::String draft_placeholder;
     Rml::String status;
+    Rml::String thread_title;
+    Rml::String thread_subtitle;
     std::vector<TranscriptDisplayRow> turns;
+    std::vector<MessageDisplayRow> messages;
+    bool use_messages_layout = true;
     bool loading = false;
     bool has_turns = false;
   };
@@ -58,6 +60,7 @@ private:
 
   struct PendingReply {
     std::string entry_id;
+    std::string thread_id;
     std::string output;
     bool from_llm = false;
   };
@@ -72,20 +75,26 @@ private:
   static void CalendarNextCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectCalendarDayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void NewChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void SelectThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
   void OnNewChat();
+  void OnSelectThread(const std::string& thread_id);
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
   void SendChatAction(const std::string& entry_id, int action_index);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
   void CalendarPrev(const std::string& entry_id);
   void CalendarNext(const std::string& entry_id);
   void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
-  void SyncDisplayFromConversation();
+  void SyncDisplayFromThread();
+  void SyncShellSessions();
+  void UpdateThreadChrome();
   void UpdateSidebarPreview(const std::string& preview_text);
   void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
-                            const std::string& finish_reason = {});
+                            const std::string& finish_reason = {}, const std::string& thread_id = {});
   void HandleAgentEvent(const AgentEvent& event);
+  void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload);
+  void RefreshFromMessaging();
 
   std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
   bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;
@@ -101,6 +110,7 @@ private:
   ShellState shell_;
   std::optional<AgentSession> agent_;
   bool use_llm_ = false;
+  bool messaging_ready_ = false;
   std::optional<PendingReply> pending_reply_;
   std::optional<ActiveForm> active_form_;
   std::set<std::pair<std::string, std::string>> submitted_forms_;

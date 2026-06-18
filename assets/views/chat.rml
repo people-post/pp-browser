@@ -1,8 +1,8 @@
 <div class="chat-panel stack" data-model="chat">
   <div class="chat-header">
     <div class="chat-header-main">
-      <h1>pp-browser</h1>
-      <p class="muted">Ask anything. Assistant replies use structured text.</p>
+      <h1 data-rml="thread_title"></h1>
+      <p class="muted" data-rml="thread_subtitle"></p>
     </div>
     <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
             data-if="auxiliary_available && layout_mode == 'expanded'"
@@ -11,14 +11,25 @@
   <div class="messages" data-mount-id="messages">
     <div class="chat-empty stack" data-if="!has_turns && !loading">
       <h2>Welcome</h2>
-      <p class="muted">Try asking about help, lists, forms, or calendars.</p>
+      <p class="muted">Ask the assistant to find people, show contacts, or open a conversation.</p>
+      <button class="chat-suggestion" data-event-click="send_suggestion('Find someone on the network')">Find someone</button>
+      <button class="chat-suggestion" data-event-click="send_suggestion('Show my contacts')">Show my contacts</button>
+      <button class="chat-suggestion" data-event-click="send_suggestion('What conversations do I have?')">My conversations</button>
       <button class="chat-suggestion" data-event-click="send_suggestion('help')">Show help</button>
     </div>
-    <div data-for="turn : turns" class="message-group">
-      <div class="message-row message-row-user" data-rml="turn.user_content_rml"></div>
-      <div class="message-row message-row-assistant" data-if="turn.has_assistant">
-        <div class="assistant-message">
-          <div class="bubble bubble-assistant" selectable="text" data-rml="turn.assistant_content_rml"></div>
+    <div data-if="use_messages_layout">
+      <div data-for="row : messages" data-class="row.row_class">
+        <p class="sender-label muted" data-if="row.sender_label != ''" data-rml="row.sender_label"></p>
+        <div selectable="text" data-model="chat" data-rml="row.content_rml"></div>
+      </div>
+    </div>
+    <div data-if="!use_messages_layout">
+      <div data-for="turn : turns" class="message-group">
+        <div class="message-row message-row-user" data-rml="turn.user_content_rml"></div>
+        <div class="message-row message-row-assistant" data-if="turn.has_assistant">
+          <div class="assistant-message">
+            <div class="bubble bubble-assistant" selectable="text" data-rml="turn.assistant_content_rml"></div>
+          </div>
         </div>
       </div>
     </div>

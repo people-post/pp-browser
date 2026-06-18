@@ -16,6 +16,10 @@ struct McpConfig {
   std::vector<std::string> args;
 };
 
+struct ServiceEndpointConfig {
+  std::string base_url;
+};
+
 struct SearchConfig {
   std::string provider = "duckduckgo";
   std::string api_key;
@@ -25,6 +29,10 @@ struct AppConfig {
   LlmConfig llm;
   ContextBudget context = DefaultContextBudget();
   std::string theme = "assets/themes/base.rcss";
+  std::string data_dir;
+  ServiceEndpointConfig relay;
+  ServiceEndpointConfig directory;
+  ServiceEndpointConfig registration;
   std::optional<McpConfig> mcp;
   SearchConfig search;
 };

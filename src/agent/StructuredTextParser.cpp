@@ -1,5 +1,7 @@
 #include "agent/StructuredTextParser.h"
 
+#include "messaging/PeopleDiscoveryBlocks.h"
+
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cctype>
@@ -822,6 +824,15 @@ std::optional<std::vector<EmbeddedToolCall>> StructuredTextParser::ExtractEmbedd
   return tools;
 }
 
+bool StructuredTextParser::IsBlocksJsonDocument(const std::string& text) {
+  const std::string trimmed = TrimAsciiWhitespace(text);
+  if (trimmed.empty() || trimmed.front() != '{') {
+    return false;
+  }
+  const nlohmann::json doc = nlohmann::json::parse(trimmed, nullptr, false);
+  return !doc.is_discarded() && doc.is_object() && doc.contains("blocks") && doc["blocks"].is_array();
+}
+
 ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_output) {
   if (ExtractEmbeddedToolCalls(llm_output)) {
     return Fail("Response contains tool calls, not display blocks");
@@ -839,6 +850,10 @@ ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_outp
     if (bare.ok) {
       return bare;
     }
+  }
+
+  if (const std::string blocks = TryPeopleDiscoveryBlocksFromToolJson(trimmed); !blocks.empty()) {
+    return ParseBlocksJson(blocks);
   }
 
   return Fail("No ```json block found in LLM output");

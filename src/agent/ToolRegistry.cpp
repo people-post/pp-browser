@@ -1,9 +1,11 @@
 #include "agent/ToolRegistry.h"
 
 #include "agent/tools/McpToolAdapter.h"
+#include "agent/tools/MessagingTools.h"
 #include "agent/tools/WebSearchTool.h"
 #include "log/Logger.h"
 #include "mcp/McpClient.h"
+#include "messaging/MessagingHub.h"
 
 #include <sstream>
 
@@ -53,6 +55,7 @@ Roe<std::string> ToolRegistry::Execute(const std::string& name, const nlohmann::
 ToolRegistry ToolRegistry::BuildFromConfig(const AppConfig& config, McpClient* mcp_client) {
   ToolRegistry registry;
   registry.Register(WebSearchTool::Make(config.search));
+  RegisterMessagingTools(registry, MessagingHub::Instance());
 
   if (mcp_client && mcp_client->IsRunning()) {
     McpToolAdapter::RegisterTools(registry, *mcp_client);

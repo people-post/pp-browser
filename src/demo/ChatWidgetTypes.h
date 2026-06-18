@@ -62,6 +62,26 @@ struct TranscriptDisplayRow {
   CalendarWidgetState calendar;
 };
 
+struct MessageDisplayRow {
+  Rml::String sender_label;
+  Rml::String content_rml;
+  Rml::String row_class;
+  bool has_content = true;
+  bool has_form = false;
+  FormWidgetState form;
+  bool has_calendar = false;
+  CalendarWidgetState calendar;
+};
+
+struct SessionDisplayRow {
+  Rml::String id;
+  Rml::String title;
+  Rml::String preview;
+  Rml::String kind;
+  int unread_count = 0;
+  bool active = false;
+};
+
 struct TurnWidgetState {
   bool has_form = false;
   FormWidgetState form;

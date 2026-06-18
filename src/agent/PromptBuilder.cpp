@@ -106,7 +106,11 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
     out << "- For list or directory requests, prefer MCP tools when available; map tool results into a long_list block.\n";
     out << "- Example: brief.global articles via blog_articles → long_list items with title, subtitle excerpt, meta date.\n";
     out << "- When results contain story titles, quote those headlines directly; do not list news homepages.\n";
-    out << "- Never expose raw tool JSON to the user; summarize in plain blocks.\n\n";
+    out << "- Never expose raw tool JSON to the user; summarize in plain blocks.\n";
+    out << "- For people discovery use search_people or list_contacts, then emit long_list with Message/Add chips.\n";
+    out << "- Never invent contact or relay IDs; use tool results only.\n";
+    out << "- Use list_conversations and open_conversation to navigate the inbox when asked.\n";
+    out << "- For registration, use register_user when the user wants to join the network.\n\n";
   }
 
   out << ChatBlocksProfile() << "\n\n";

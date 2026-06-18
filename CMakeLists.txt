@@ -92,11 +92,26 @@ if(PPBROWSER_ENABLE_DEBUGGER)
 endif()
 
 # Phase 2+
-target_sources(pp-browser PRIVATE
+  target_sources(pp-browser PRIVATE
   src/common/Module.cpp
   src/log/Logger.cpp
   src/platform/SequencedTaskRunner.cpp
   src/platform/BrowserThread.cpp
+  src/messaging/IdUtil.cpp
+  src/messaging/MessagingJson.cpp
+  src/messaging/PeopleDiscoveryBlocks.cpp
+  src/messaging/JsonThreadStore.cpp
+  src/messaging/InboxController.cpp
+  src/messaging/P2pMessagingService.cpp
+  src/messaging/MessageRouter.cpp
+  src/messaging/ContactActionDispatcher.cpp
+  src/messaging/MessagingHub.cpp
+  src/messaging/AtAiParser.cpp
+  src/contacts/ContactsStore.cpp
+  src/identity/Ed25519Signer.cpp
+  src/identity/IdentityStore.cpp
+  src/net/HttpClient.cpp
+  src/net/ServiceClientsImpl.cpp
   src/demo/SearchDemo.cpp
   src/demo/ChatDemo.cpp
   src/demo/ChatFormHelper.cpp
@@ -127,12 +142,17 @@ target_sources(pp-browser PRIVATE
   src/agent/conversation/SlidingWindowContextPolicy.cpp
   src/agent/conversation/TurnCoordinator.cpp
   src/agent/conversation/UserMessageFormatter.cpp
+  src/agent/conversation/ThreadContextPolicy.cpp
   src/agent/ToolRegistry.cpp
   src/agent/tools/WebSearchTool.cpp
   src/agent/tools/McpToolAdapter.cpp
+  src/agent/tools/MessagingTools.cpp
 )
 
 target_link_libraries(pp-browser PRIVATE nlohmann_json::nlohmann_json CURL::libcurl Threads::Threads)
+if(TARGET OpenSSL::Crypto)
+  target_link_libraries(pp-browser PRIVATE OpenSSL::Crypto)
+endif()
 
 pp_configure_status("Configuring tests...")
 enable_testing()

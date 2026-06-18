@@ -19,5 +19,13 @@ int main() {
   assert(pbr::BuildWebSearchQuery("What is the latest news about AI?") == "ai news");
   assert(pbr::BuildWebSearchQuery("current bitcoin price") == "current bitcoin price");
 
+  assert(pbr::ShouldProactivePeopleDiscovery("Find someone on the network"));
+  assert(pbr::ShouldProactivePeopleDiscovery("search people named alice"));
+  assert(pbr::ShouldProactiveContactsList("Show my contacts"));
+  assert(!pbr::ShouldProactivePeopleDiscovery("explain binary search"));
+
+  assert(pbr::BuildPeopleSearchQuery("Find someone on the network").empty());
+  assert(pbr::BuildPeopleSearchQuery("search people alice") == "alice");
+
   return 0;
 }

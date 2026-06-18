@@ -23,7 +23,9 @@ target_sources(pp_browser_mcp_mock_test PRIVATE
 add_test(NAME mcp_mock_test COMMAND pp_browser_mcp_mock_test)
 
 add_executable(pp_browser_structured_text_parser_test structured_text_parser_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp)
+  ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/MessagingJson.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp)
 target_link_libraries(pp_browser_structured_text_parser_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_structured_text_parser_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME structured_text_parser_test COMMAND pp_browser_structured_text_parser_test)
@@ -98,7 +100,25 @@ target_include_directories(pp_browser_calendar_helper_test PRIVATE ${CMAKE_SOURC
 add_test(NAME calendar_helper_test COMMAND pp_browser_calendar_helper_test)
 
 add_executable(pp_browser_chat_action_dispatcher_test chat_action_dispatcher_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp)
+  ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/MessagingJson.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp)
 target_link_libraries(pp_browser_chat_action_dispatcher_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_chat_action_dispatcher_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME chat_action_dispatcher_test COMMAND pp_browser_chat_action_dispatcher_test)
+
+add_executable(pp_browser_messaging_foundation_test messaging_foundation_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/AtAiParser.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/MessagingJson.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/JsonThreadStore.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/IdUtil.cpp
+  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
+  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp
+  ${CMAKE_SOURCE_DIR}/src/identity/Ed25519Signer.cpp)
+target_link_libraries(pp_browser_messaging_foundation_test PRIVATE nlohmann_json::nlohmann_json)
+if(TARGET OpenSSL::Crypto)
+  target_link_libraries(pp_browser_messaging_foundation_test PRIVATE OpenSSL::Crypto)
+endif()
+target_include_directories(pp_browser_messaging_foundation_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME messaging_foundation_test COMMAND pp_browser_messaging_foundation_test)

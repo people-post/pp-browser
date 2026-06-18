@@ -41,6 +41,7 @@ public:
   static std::string EscapeExpressionString(const std::string& text);
   static ParseResult ParseBlocksJson(const std::string& json);
   static ParseResult ParseFromLlmOutput(const std::string& llm_output);
+  static bool IsBlocksJsonDocument(const std::string& text);
 
   static std::optional<std::vector<EmbeddedToolCall>> ExtractEmbeddedToolCalls(const std::string& llm_output);
 };
