@@ -15,7 +15,7 @@ struct LlmConfig {
   std::string base_url = "https://api.openai.com/v1";
   std::string model = "gpt-4o-mini";
   bool require_api_key = true;
-  int num_predict = 4096;
+  int num_predict = 8192;
 };
 
 struct ChatMessage {
