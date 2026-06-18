@@ -138,6 +138,7 @@ endif()
   src/agent/RmlValidator.cpp
   src/agent/AgentSession.cpp
   src/agent/SearchIntent.cpp
+  src/agent/TurnResponseIntent.cpp
   src/agent/conversation/Conversation.cpp
   src/agent/conversation/SlidingWindowContextPolicy.cpp
   src/agent/conversation/TurnCoordinator.cpp

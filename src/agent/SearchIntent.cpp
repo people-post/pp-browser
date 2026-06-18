@@ -80,7 +80,25 @@ std::string ExtractNewsTopic(const std::string& text_lower) {
 
 } // namespace
 
+bool WantsArticleFeedRequest(const std::string& user_message) {
+  const std::string text = Lower(user_message);
+  if (text.empty()) {
+    return false;
+  }
+
+  if (ContainsAny(text, {"brief.global", "brief global", "from brief", "articles from brief", "news from brief",
+                           "latest from brief"})) {
+    return true;
+  }
+
+  return ContainsAny(text, {"show me articles", "show articles", "list articles", "fetch articles", "get articles",
+                            "articles from", "article feed", "blog articles", "more articles", "load more"});
+}
+
 bool WantsNewsHeadlines(const std::string& user_message) {
+  if (WantsArticleFeedRequest(user_message)) {
+    return false;
+  }
   const std::string text = Lower(user_message);
   if (text.empty()) {
     return false;
@@ -101,6 +119,10 @@ bool WantsNewsHeadlines(const std::string& user_message) {
 bool ShouldProactiveWebSearch(const std::string& user_message) {
   const std::string text = Lower(user_message);
   if (text.empty()) {
+    return false;
+  }
+
+  if (WantsArticleFeedRequest(user_message)) {
     return false;
   }
 

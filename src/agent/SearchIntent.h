@@ -16,6 +16,9 @@ bool ShouldProactivePeopleDiscovery(const std::string& user_message);
 // Convert conversational user text into a directory search query (may be empty = browse all).
 std::string BuildPeopleSearchQuery(const std::string& user_message);
 
+// True when the user wants an MCP article feed (e.g. brief.global blog_articles), not web_search headlines.
+bool WantsArticleFeedRequest(const std::string& user_message);
+
 // True when the user wants news headlines rather than a generic web lookup.
 bool WantsNewsHeadlines(const std::string& user_message);
 

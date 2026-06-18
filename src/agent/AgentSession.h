@@ -88,6 +88,7 @@ private:
                                            const std::vector<Roe<std::string>>& tool_results);
   static bool FinishPeopleDiscoveryFromIntent(const std::shared_ptr<Impl>& state);
   static void RunProactivePeopleDiscovery(const std::shared_ptr<Impl>& state);
+  static void InjectTurnResponsePolicy(const std::shared_ptr<Impl>& state);
 
   std::shared_ptr<Impl> impl_;
 };

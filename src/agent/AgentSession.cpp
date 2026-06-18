@@ -5,6 +5,7 @@
 #include "agent/SearchIntent.h"
 #include "agent/StructuredTextParser.h"
 #include "agent/ToolRegistry.h"
+#include "agent/TurnResponseIntent.h"
 #include "agent/conversation/Conversation.h"
 #include "agent/conversation/ThreadContextPolicy.h"
 #include "agent/conversation/TurnCoordinator.h"
@@ -38,7 +39,26 @@ std::string FormatToolResultForLlm(const std::string& tool_name, const std::stri
       return "People discovery results (render with long_list; do not expose this JSON verbatim):\n" + blocks;
     }
   }
+  if (PromptBuilder::IsMcpArticleFeedTool(tool_name)) {
+    return PromptBuilder::FormatMcpArticleResultsForLlm(raw_result);
+  }
   return raw_result;
+}
+
+void AppendToLastUserMessage(std::vector<ChatMessage>& messages, const std::string& suffix) {
+  for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
+    if (it->role == "user") {
+      it->content += "\n\n" + suffix;
+      return;
+    }
+  }
+}
+
+void AppendPostToolSynthesisReminder(std::vector<ChatMessage>& messages, const TurnResponseIntent& intent) {
+  if (messages.empty() || messages.back().role != "tool") {
+    return;
+  }
+  messages.back().content += "\n\n" + PromptBuilder::BuildPostToolSynthesisReminder(intent);
 }
 
 bool IsPeopleDiscoveryTool(const std::string& name) {
@@ -88,6 +108,7 @@ struct AgentSession::Impl {
   Conversation conversation;
   TurnCoordinator coordinator;
   std::vector<ChatMessage> turn_scratch;
+  TurnResponseIntent turn_intent;
   std::string pending_user_text;
   std::optional<std::string> pending_user_payload;
   std::string pending_entry_id;
@@ -200,6 +221,19 @@ void AgentSession::RunProactivePeopleDiscovery(const std::shared_ptr<Impl>& stat
   (void)FinishPeopleDiscoveryFromIntent(state);
 }
 
+void AgentSession::InjectTurnResponsePolicy(const std::shared_ptr<Impl>& state) {
+  state->turn_intent = InferTurnResponseIntent(state->pending_user_text, state->pending_user_payload);
+  const std::string policy = PromptBuilder::BuildTurnResponsePolicy(state->turn_intent);
+  if (state->turn_scratch.empty()) {
+    state->turn_scratch.push_back(ChatMessage{.role = "system", .content = policy});
+    return;
+  }
+
+  const auto insert_at = state->turn_scratch.front().role == "system" ? state->turn_scratch.begin() + 1
+                                                                      : state->turn_scratch.begin();
+  state->turn_scratch.insert(insert_at, ChatMessage{.role = "system", .content = policy});
+}
+
 void AgentSession::DispatchToolCalls(const std::shared_ptr<Impl>& state, const std::vector<ToolCall>& tool_calls,
                                      const std::string& assistant_content) {
   ChatMessage assistant_message;
@@ -237,6 +271,8 @@ void AgentSession::DispatchToolCalls(const std::shared_ptr<Impl>& state, const s
     if (AgentSession::TryFinishPeopleDiscoveryTurn(state, tool_calls, tool_results)) {
       return;
     }
+
+    AppendPostToolSynthesisReminder(state->turn_scratch, state->turn_intent);
 
     ++state->iterations;
     if (state->iterations >= kMaxIterations) {
@@ -331,8 +367,8 @@ void AgentSession::RunProactiveSearchAndLlm(const std::shared_ptr<Impl>& state) 
 
   if (search_result) {
     PushToolActivity(state, "web_search", "done");
-    state->turn_scratch[0].content +=
-        "\n\n" + PromptBuilder::BuildProactiveSearchContext(search_query, *search_result);
+    AppendToLastUserMessage(state->turn_scratch,
+                            PromptBuilder::BuildProactiveSearchContext(search_query, *search_result, state->turn_intent));
 
     ChatMessage assistant_message;
     assistant_message.role = "assistant";
@@ -415,6 +451,7 @@ void AgentSession::StartThreadTurn(const std::shared_ptr<Impl>& state) {
   const ContextBuildResult built =
       policy.Build(*messages, system_prompt, state->pending_user_text, state->pending_user_payload);
   state->turn_scratch = built.messages;
+  AgentSession::InjectTurnResponsePolicy(state);
 
   PushLoading(state, true);
 
@@ -481,6 +518,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
   const TurnSnapshot snapshot =
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
   state->turn_scratch = snapshot.messages;
+  AgentSession::InjectTurnResponsePolicy(state);
 
   PushLoading(state, true);
 

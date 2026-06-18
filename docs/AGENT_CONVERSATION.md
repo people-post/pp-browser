@@ -48,9 +48,25 @@ Some UI actions (notably **form submit**) send two representations of the same u
 | Display | `user_text` | Chat bubbles (human-readable) |
 | Structured | `user_payload` | LLM context only (JSON string) |
 
-`SlidingWindowContextPolicy` formats user messages for the model via `FormatUserContentForLlm()`: when `user_payload` is set, the LLM sees `user_text` plus a fenced ` ```json ` block. The UI continues to render `user_text` only.
+`SlidingWindowContextPolicy` formats user messages for the model via `FormatUserContentForLlm()`: when `user_payload` is set, the LLM sees `user_text` plus a hint that `user_text` is primary and a fenced ` ```json ` block for the structured payload. The UI continues to render `user_text` only.
 
 `Conversation::AppendUser(text, payload)` and `AgentSession::Submit(text, payload)` accept the optional payload.
+
+## Turn response intent
+
+Each agent turn infers a **response goal** from the user's message (and optional `user_payload`) via [`TurnResponseIntent`](../src/agent/TurnResponseIntent.cpp). Goals include:
+
+| Goal | Typical trigger | Expected reply shape |
+|------|-----------------|----------------------|
+| `display_feed` | Article list requests, pagination payloads | `long_list` + short intro |
+| `summarize` | "Summarize …", article action payloads | Heading + concise paragraph/card |
+| `answer_question` | "Why …", "Explain …", compare/impact asks | Answer paragraph first; sources as support |
+| `headlines` | News headline requests | `list` of real headlines |
+| `general` | Everything else | Blocks that best serve the ask |
+
+[`AgentSession`](../src/agent/AgentSession.cpp) injects a per-turn policy message (`PromptBuilder::BuildTurnResponsePolicy`) after the main system prompt. After tool calls complete, a synthesis reminder is appended to the last tool message so fetched articles or search results serve the user's request instead of replacing it.
+
+Proactive web search context is appended to the **current user message** (not the system prompt) and varies by goal — e.g. explanatory questions get "answer first" instructions rather than "list headlines only."
 
 ## In-chat forms (single active form)
 

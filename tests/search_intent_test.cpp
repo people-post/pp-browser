@@ -10,6 +10,9 @@ int main() {
   assert(pbr::ShouldProactiveWebSearch("Show me some today's headlines"));
   assert(!pbr::ShouldProactiveWebSearch("explain how binary search works"));
   assert(!pbr::ShouldProactiveWebSearch("help"));
+  assert(!pbr::ShouldProactiveWebSearch("Show me latest news from brief.global"));
+  assert(pbr::WantsArticleFeedRequest("Show me latest news from brief.global"));
+  assert(!pbr::WantsNewsHeadlines("Show me latest news from brief.global"));
 
   assert(pbr::WantsNewsHeadlines("Show me some today's headlines"));
   assert(pbr::WantsNewsHeadlines("What is the latest news about AI?"));

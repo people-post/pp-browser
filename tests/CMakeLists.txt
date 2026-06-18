@@ -68,8 +68,16 @@ add_executable(pp_browser_search_intent_test search_intent_test.cpp
 target_include_directories(pp_browser_search_intent_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME search_intent_test COMMAND pp_browser_search_intent_test)
 
+add_executable(pp_browser_turn_response_intent_test turn_response_intent_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnResponseIntent.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/SearchIntent.cpp)
+target_include_directories(pp_browser_turn_response_intent_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME turn_response_intent_test COMMAND pp_browser_turn_response_intent_test)
+
 add_executable(pp_browser_prompt_builder_test prompt_builder_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/PromptBuilder.cpp)
+  ${CMAKE_SOURCE_DIR}/src/agent/PromptBuilder.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnResponseIntent.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/SearchIntent.cpp)
 target_link_libraries(pp_browser_prompt_builder_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_prompt_builder_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME prompt_builder_test COMMAND pp_browser_prompt_builder_test)

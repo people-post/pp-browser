@@ -57,7 +57,9 @@ ContextBuildResult ThreadContextPolicy::Build(const std::vector<ThreadMessage>& 
 
   std::string user_content = current_user_text;
   if (current_user_payload && !current_user_payload->empty()) {
-    user_content += "\n\n```json\n" + *current_user_payload + "\n```";
+    user_content +=
+        "\n\nStructured action context (supports the user message above; user_text is primary):\n```json\n" +
+        *current_user_payload + "\n```";
   }
   result.messages.push_back(ChatMessage{.role = "user", .content = user_content});
 
