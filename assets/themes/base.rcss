@@ -255,11 +255,19 @@ input, textarea, select {
 
 .prompt-send-btn {
   flex-shrink: 0;
-  width: auto;
-  min-width: 64dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
   margin-bottom: 0;
-  padding: 6dp 16dp;
-  font-size: 13dp;
+  padding: 0;
+  border-radius: 18dp;
+}
+
+.prompt-send-btn svg {
+  flex-shrink: 0;
 }
 
 .code-block {

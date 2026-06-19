@@ -15,6 +15,7 @@ pp_require_vendored(nlohmann_json)
 pp_require_vendored(curl)
 pp_require_vendored(sdl3)
 pp_require_vendored(sdl3_image)
+pp_require_vendored(lunasvg)
 
 # libp2p deps (BoringSSL must be available before curl TLS on Linux)
 include(libp2p_dependencies)
@@ -46,6 +47,13 @@ set(JSON_Install OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${PP_THIRD_PARTY_DIR}/nlohmann_json"
                  "${CMAKE_BINARY_DIR}/third_party/nlohmann_json" EXCLUDE_FROM_ALL)
+
+# LunaSVG (RmlUi SVG plugin)
+set(LUNASVG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(PLUTOVG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+add_subdirectory("${PP_THIRD_PARTY_DIR}/lunasvg"
+                 "${CMAKE_BINARY_DIR}/third_party/lunasvg" EXCLUDE_FROM_ALL)
 
 # libcurl (LLM HTTP client)
 set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)

@@ -12,6 +12,7 @@ declare -A REPOS=(
   [curl]="https://github.com/curl/curl.git|curl-8_11_1"
   [sdl3]="https://github.com/libsdl-org/SDL.git|release-3.2.8"
   [sdl3_image]="https://github.com/libsdl-org/SDL_image.git|release-3.2.4"
+  [lunasvg]="https://github.com/sammycage/lunasvg.git|v3.5.0"
 )
 
 import_sdl3_image_externals() {
@@ -61,13 +62,17 @@ mkdir -p "${TMP}"
 json_entries=()
 external_entries=()
 
-for name in freetype nlohmann_json curl sdl3 sdl3_image; do
+for name in freetype nlohmann_json curl sdl3 sdl3_image lunasvg; do
   IFS='|' read -r url tag <<< "${REPOS[$name]}"
   dest="${THIRD_PARTY}/${name}"
   clone_dir="${TMP}/${name}"
 
   echo "==> ${name} @ ${tag}"
-  git clone --depth 1 --branch "${tag}" "${url}" "${clone_dir}"
+  if [[ "${name}" == "lunasvg" ]]; then
+    git clone --depth 1 --branch "${tag}" --recursive "${url}" "${clone_dir}"
+  else
+    git clone --depth 1 --branch "${tag}" "${url}" "${clone_dir}"
+  fi
   commit="$(git -C "${clone_dir}" rev-parse HEAD)"
 
   rm -rf "${dest}"

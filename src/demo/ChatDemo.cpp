@@ -172,7 +172,7 @@ std::string MockAssistantRespond(const std::string& query) {
         { "type": "heading", "level": 2, "text": "Help" },
         { "type": "paragraph", "text": "pp-browser renders structured JSON blocks with reactive widgets." },
         { "type": "list", "ordered": false, "items": [
-          "Type a message and click Send",
+          "Type a message and press Enter to send",
           "Try help, list, code, button, form, calendar, card, or poll",
           "Press Escape to quit"
         ]}
