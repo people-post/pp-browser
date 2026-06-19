@@ -32,8 +32,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DPP_BROWSER_VERSION="${{ steps.version.outputs.project_version }}" \
             -DPP_BROWSER_RELEASE_VERSION="${{ steps.version.outputs.release_version }}" \
-            -DPP_BROWSER_PACKAGED_BUILD=ON \
-            -DPP_BROWSER_ENABLE_LIBP2P_BUILD=OFF
+            -DPP_BROWSER_PACKAGED_BUILD=ON
 
       - name: Build
         run: cmake --build build --config Release -j 2
@@ -79,8 +78,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DPP_BROWSER_VERSION="${{ steps.version.outputs.project_version }}" \
             -DPP_BROWSER_RELEASE_VERSION="${{ steps.version.outputs.release_version }}" \
-            -DPP_BROWSER_PACKAGED_BUILD=ON \
-            -DPP_BROWSER_ENABLE_LIBP2P_BUILD=OFF
+            -DPP_BROWSER_PACKAGED_BUILD=ON
 
       - name: Build
         run: cmake --build build --config Release -j 2

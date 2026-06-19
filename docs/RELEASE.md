@@ -33,7 +33,6 @@ git push origin v0.1.0
 Release builds use:
 
 - `-DPP_BROWSER_PACKAGED_BUILD=ON` — runtime asset paths relative to the installed executable / bundle
-- `-DPP_BROWSER_ENABLE_LIBP2P_BUILD=OFF` — libp2p is not linked into the app yet; skipping it speeds CI
 
 ## Artifacts
 
@@ -64,8 +63,7 @@ On macOS or Windows:
 ```bash
 cmake -B build -S . \
   -DCMAKE_BUILD_TYPE=Release \
-  -DPP_BROWSER_PACKAGED_BUILD=ON \
-  -DPP_BROWSER_ENABLE_LIBP2P_BUILD=OFF
+  -DPP_BROWSER_PACKAGED_BUILD=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 cmake --install build --prefix install

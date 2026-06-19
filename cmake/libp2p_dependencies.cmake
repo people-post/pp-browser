@@ -1,12 +1,7 @@
 # Vendored libp2p dependencies for pp-browser (replaces Hunter).
-# Included from cmake/dependencies.cmake when PP_BROWSER_ENABLE_LIBP2P_BUILD is ON.
+# Included from cmake/dependencies.cmake.
 
 include(Progress)
-
-option(PP_BROWSER_ENABLE_LIBP2P_BUILD "Build in-tree libp2p (src/libp2p)" ON)
-if(NOT PP_BROWSER_ENABLE_LIBP2P_BUILD)
-  return()
-endif()
 
 set(PP_LIBP2P_THIRD_PARTY "${PP_THIRD_PARTY_DIR}")
 
@@ -32,6 +27,29 @@ function(pp_libp2p_alias target alias)
   endif()
 endfunction()
 
+function(pp_browser_add_vendored_boringssl)
+  if(TARGET OpenSSL::Crypto)
+    return()
+  endif()
+
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+  pp_libp2p_add_vendored(boringssl)
+  if(NOT TARGET OpenSSL::Crypto)
+    if(TARGET crypto)
+      add_library(OpenSSL::Crypto ALIAS crypto)
+    else()
+      message(FATAL_ERROR "BoringSSL crypto target not found")
+    endif()
+  endif()
+  if(NOT TARGET OpenSSL::SSL)
+    if(TARGET ssl)
+      add_library(OpenSSL::SSL ALIAS ssl)
+    else()
+      message(FATAL_ERROR "BoringSSL ssl target not found")
+    endif()
+  endif()
+endfunction()
+
 pp_configure_status("Configuring libp2p third_party dependencies...")
 
 set(PACKAGE_MANAGER vendored CACHE STRING "Dependency manager for qdrvm libs" FORCE)
@@ -52,22 +70,7 @@ if(NOT TARGET ZLIB::ZLIB)
 endif()
 
 # --- BoringSSL (before curl on Linux and before lsquic) ---
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(boringssl)
-if(NOT TARGET OpenSSL::Crypto)
-  if(TARGET crypto)
-    add_library(OpenSSL::Crypto ALIAS crypto)
-  else()
-    message(FATAL_ERROR "BoringSSL crypto target not found")
-  endif()
-endif()
-if(NOT TARGET OpenSSL::SSL)
-  if(TARGET ssl)
-    add_library(OpenSSL::SSL ALIAS ssl)
-  else()
-    message(FATAL_ERROR "BoringSSL ssl target not found")
-  endif()
-endif()
+pp_browser_add_vendored_boringssl()
 
 # --- Boost ---
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
