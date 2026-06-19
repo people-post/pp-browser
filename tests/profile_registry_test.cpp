@@ -1,4 +1,5 @@
 #include "app/ProfileRegistry.h"
+#include "app/SchemaVersion.h"
 
 #include <cassert>
 #include <filesystem>
@@ -13,6 +14,12 @@ int main() {
   assert(registry);
   assert(registry->ActiveProfileId() == "default");
   assert(std::filesystem::exists(registry->ActiveProfileDataDir()));
+  {
+    const auto manifest = pbr::SchemaVersion::EnsureProfileManifest(registry->ActiveProfileDataDir());
+    assert(manifest);
+    assert(std::filesystem::exists(
+        std::filesystem::path(registry->ActiveProfileDataDir()) / "manifest.json"));
+  }
 
   std::filesystem::remove_all(data_dir);
 

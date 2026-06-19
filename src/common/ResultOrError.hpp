@@ -222,6 +222,7 @@ public:
   ResultOrError(ResultOrError&& other) noexcept : hasValue_(other.hasValue_) {
     if (!hasValue_) {
       new (&storage_) E(std::move(*reinterpret_cast<E*>(&other.storage_)));
+      other.hasValue_ = true;
     }
   }
 
