@@ -25,9 +25,10 @@ int main() {
   assert(restored.id == "t1");
   assert(restored.kind == ThreadKind::Direct);
 
-  const std::string data_dir = "/tmp/pp_browser_messaging_test";
+  const std::filesystem::path data_dir =
+      std::filesystem::temp_directory_path() / "pp_browser_messaging_test";
   std::filesystem::remove_all(data_dir);
-  JsonThreadStore store(data_dir);
+  JsonThreadStore store(data_dir.string());
   (void)store.UpsertThread(thread);
 
   ThreadMessage message;
