@@ -238,5 +238,6 @@ add_executable(pp_browser_platform_defaults_test platform_defaults_test.cpp
   ${CMAKE_SOURCE_DIR}/src/platform/EnvCredentialStore.cpp
   ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
   ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
+target_link_libraries(pp_browser_platform_defaults_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_platform_defaults_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(platform_defaults_test pp_browser_platform_defaults_test)
