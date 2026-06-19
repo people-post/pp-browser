@@ -95,7 +95,7 @@ std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index) {
 }
 
 Rml::String UserMessageRml(const std::string& text) {
-  return Rml::String(("<div class=\"bubble bubble-user\" selectable=\"text\"><p>" + StructuredTextParser::EscapeText(text) +
+  return Rml::String(("<div class=\"bubble bubble-user\" selectable=\"text\"><p class=\"bubble-text\">" + StructuredTextParser::EscapeText(text) +
                       "</p></div>")
                          .c_str());
 }

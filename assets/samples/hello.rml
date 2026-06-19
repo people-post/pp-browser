@@ -4,11 +4,11 @@
   <link type="text/rcss" href="../themes/base.rcss"/>
 </head>
 <body>
-  <h1>pp-browser</h1>
-  <p>SDL3 + hard-forked RmlUi is running.</p>
+  <h1 class="heading-1">pp-browser</h1>
+  <p class="text">SDL3 + hard-forked RmlUi is running.</p>
   <div class="card stack">
-    <p class="muted">Press Escape to quit.</p>
-    <button>Styled button</button>
+    <p class="text muted">Press Escape to quit.</p>
+    <button class="btn btn-primary">Styled button</button>
   </div>
 </body>
 </rml>

@@ -463,8 +463,8 @@ std::string ShellHost::SerializeDialog() const {
     out << "<div class=\"shell-scrim\" data-event-click=\"dialog_ok()\"></div>";
   }
   out << "<div class=\"shell-dialog\">";
-  out << "<h2 class=\"shell-dialog-title\" data-rml=\"dialog_title\"></h2>";
-  out << "<p class=\"shell-dialog-message\" data-rml=\"dialog_message\"></p>";
+  out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"dialog_title\"></h2>";
+  out << "<p class=\"text shell-dialog-message\" data-rml=\"dialog_message\"></p>";
   out << "<div class=\"shell-dialog-actions row\">";
   out << "<button class=\"shell-dialog-cancel\" data-if=\"dialog_show_cancel\" "
          "data-event-click=\"dialog_cancel()\">Cancel</button>";

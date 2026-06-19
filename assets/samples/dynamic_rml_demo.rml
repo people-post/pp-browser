@@ -6,15 +6,15 @@
 <body data-model="dynamic" class="dynamic-demo-body">
   <div class="dynamic-demo-shell stack">
     <div class="dynamic-demo-header">
-      <h1>Dynamic RML mount</h1>
-      <p class="muted">Swap inner markup at runtime with focus and scroll preservation.</p>
+      <h1 class="heading-1">Dynamic RML mount</h1>
+      <p class="text muted">Swap inner markup at runtime with focus and scroll preservation.</p>
     </div>
     <div class="dynamic-toolbar row">
-      <button data-event-click="swap_panel_a()">Panel A</button>
-      <button data-event-click="swap_panel_b()">Panel B</button>
-      <button data-event-click="inject_theme()">Toggle theme</button>
+      <button class="btn btn-primary" data-event-click="swap_panel_a()">Panel A</button>
+      <button class="btn btn-primary" data-event-click="swap_panel_b()">Panel B</button>
+      <button class="btn btn-primary" data-event-click="inject_theme()">Toggle theme</button>
     </div>
-    <p class="dynamic-status" data-rml="status"></p>
+    <p class="text dynamic-status" data-rml="status"></p>
     <div id="mount-target" class="dynamic-mount-target"></div>
   </div>
 </body>

@@ -65,7 +65,7 @@ std::string PromptBuilder::DefaultRcssProfile() {
 - Units: dp, px, %, em
 
 Not supported: resize, CSS grid, background-image/gradients, border-style, @media, pseudo-elements, fit-content, vw/vh/rem.
-Prefer existing classes from base.rcss (.stack, .row, .card, .muted, .error) before adding rules.
+Prefer existing classes from base.rcss (.stack, .row, .card, .text, .heading-1, .heading-2, .btn, .btn-primary, .field, .muted, .error) before adding rules.
 Avoid inline-block containers with background; use display:block or flex instead.)";
 }
 

@@ -208,7 +208,9 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
     return *message.content_rml;
   }
   const std::string bubble_class = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
-  return "<div class=\"bubble " + bubble_class + "\" selectable=\"text\"><p>" +
+  const std::string paragraph =
+      message.sender_contact_id == kLocalSelfContactId ? "<p class=\"bubble-text\">" : "<p>";
+  return "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + paragraph +
          StructuredTextParser::EscapeText(message.text) + "</p></div>";
 }
 

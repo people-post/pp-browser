@@ -6,18 +6,64 @@ body {
   padding: 24dp;
 }
 
-h1 {
-  font-size: 28dp;
-  margin-bottom: 12dp;
-  color: #111111;
-}
-
-p {
+.text {
+  display: block;
+  margin-top: 0;
   margin-bottom: 8dp;
   color: #333333;
 }
 
-button, input, textarea, select {
+.heading-1 {
+  display: block;
+  font-size: 28dp;
+  margin-top: 0;
+  margin-bottom: 12dp;
+  color: #111111;
+}
+
+.heading-2 {
+  display: block;
+  font-size: 20dp;
+  margin-top: 0;
+  margin-bottom: 8dp;
+  color: #111111;
+}
+
+.heading-3 {
+  display: block;
+  font-size: 16dp;
+  margin-top: 0;
+  margin-bottom: 8dp;
+  color: #111111;
+}
+
+.btn {
+  font-family: LatoLatin;
+  font-size: 14dp;
+  padding: 8dp 12dp;
+  border-radius: 6dp;
+  border: 0;
+  cursor: pointer;
+  margin-bottom: 0;
+  width: auto;
+  display: inline-block;
+}
+
+.btn-primary {
+  background-color: #4a6cf7;
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background-color: #5a7cff;
+}
+
+.btn-secondary {
+  background-color: #e8eaed;
+  color: #1a1a1a;
+}
+
+.field {
   font-family: LatoLatin;
   font-size: 14dp;
   padding: 8dp 12dp;
@@ -25,22 +71,10 @@ button, input, textarea, select {
   background-color: #ffffff;
   color: #1a1a1a;
   border: 1dp #d1d5db;
-}
-
-button {
-  cursor: pointer;
-  background-color: #4a6cf7;
-  border: 0;
-  color: #ffffff;
-}
-
-button:hover {
-  background-color: #5a7cff;
-}
-
-input, textarea, select {
   width: 100%;
   margin-bottom: 8dp;
+  box-sizing: border-box;
+  display: block;
 }
 
 .stack {
@@ -66,6 +100,9 @@ input, textarea, select {
 }
 
 .error {
+  display: block;
+  margin-top: 0;
+  margin-bottom: 8dp;
   color: #dc2626;
 }
 
@@ -112,7 +149,8 @@ input, textarea, select {
   min-width: 0;
 }
 
-.chat-header h1 {
+.chat-header-title {
+  font-size: 22dp;
   margin-bottom: 4dp;
 }
 
@@ -164,7 +202,8 @@ input, textarea, select {
   focus: none;
 }
 
-.bubble-user p {
+.bubble-text {
+  margin-top: 0;
   margin-bottom: 0;
   color: #ffffff;
   white-space: pre-wrap;
@@ -217,6 +256,8 @@ input, textarea, select {
 }
 
 .thinking {
+  display: block;
+  margin-top: 0;
   margin-bottom: 0;
 }
 
@@ -263,7 +304,16 @@ input, textarea, select {
   min-width: 36dp;
   margin-bottom: 0;
   padding: 0;
+  border: 0;
   border-radius: 18dp;
+  font-family: LatoLatin;
+  background-color: #4a6cf7;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.prompt-send-btn:hover {
+  background-color: #5a7cff;
 }
 
 .prompt-send-btn svg {
@@ -282,14 +332,15 @@ input, textarea, select {
   white-space: pre-wrap;
 }
 
-.suggestion-row .chat-suggestion {
+.chat-suggestion {
   display: inline-block;
   width: auto;
+  font-family: LatoLatin;
   font-size: 13dp;
   padding: 6dp 12dp;
-  margin-top: 0;
   margin-right: 8dp;
   margin-bottom: 4dp;
+  border: 0;
   border-radius: 16dp;
   background-color: #e8eaed;
   color: #1a1a1a;
@@ -297,27 +348,16 @@ input, textarea, select {
   focus: none;
 }
 
-.suggestion-row .chat-suggestion:hover {
+.chat-suggestion:hover {
   background-color: #d8dce2;
+}
+
+.suggestion-row .chat-suggestion {
+  margin-top: 0;
 }
 
 .bubble-assistant .chat-suggestion {
-  display: inline-block;
-  width: auto;
-  font-size: 13dp;
-  padding: 6dp 12dp;
   margin-top: 8dp;
-  margin-right: 8dp;
-  margin-bottom: 4dp;
-  border-radius: 16dp;
-  background-color: #e8eaed;
-  color: #1a1a1a;
-  cursor: pointer;
-  focus: none;
-}
-
-.bubble-assistant .chat-suggestion:hover {
-  background-color: #d8dce2;
 }
 
 .chat-form {
@@ -329,20 +369,25 @@ input, textarea, select {
   background-color: #ffffff;
 }
 
-.chat-form label {
+.chat-form-label {
   display: block;
   margin-bottom: 8dp;
   color: #333333;
 }
 
-.chat-form input,
-.chat-form textarea,
-.chat-form select {
+.chat-form-field {
   display: block;
   width: 100%;
   margin-top: 4dp;
   margin-bottom: 0;
   box-sizing: border-box;
+  font-family: LatoLatin;
+  font-size: 14dp;
+  padding: 8dp 12dp;
+  border-radius: 6dp;
+  background-color: #ffffff;
+  color: #1a1a1a;
+  border: 1dp #d1d5db;
 }
 
 .chat-form-submit {
@@ -351,6 +396,9 @@ input, textarea, select {
   margin-top: 8dp;
   padding: 8dp 16dp;
   border-radius: 8dp;
+  border: 0;
+  font-family: LatoLatin;
+  font-size: 14dp;
   background-color: #4a6cf7;
   color: #ffffff;
   cursor: pointer;
@@ -365,9 +413,7 @@ input, textarea, select {
   opacity: 0.85;
 }
 
-.chat-form-expired input,
-.chat-form-expired textarea,
-.chat-form-expired select,
+.chat-form-expired .chat-form-field,
 .chat-form-expired .chat-form-submit {
   pointer-events: none;
   opacity: 0.6;
@@ -523,7 +569,10 @@ input, textarea, select {
 .calendar-nav {
   display: inline-block;
   padding: 6dp 12dp;
+  border: 0;
   border-radius: 6dp;
+  font-family: LatoLatin;
+  font-size: 14dp;
   background-color: #4a6cf7;
   color: #ffffff;
   cursor: pointer;
@@ -563,24 +612,32 @@ input, textarea, select {
   min-height: 28dp;
   padding: 4dp 0;
   border-radius: 6dp;
+  border: 0;
   text-align: center;
   box-sizing: border-box;
-  focus: none;
-}
-
-.calendar-day-muted {
-  color: #888888;
-  cursor: default;
-}
-
-button.calendar-day {
+  font-family: LatoLatin;
+  font-size: 14dp;
   background-color: #4a6cf7;
   color: #ffffff;
   cursor: pointer;
+  focus: none;
 }
 
-button.calendar-day:hover {
+.calendar-day:hover {
   background-color: #3f5ee0;
+}
+
+.calendar-day-muted {
+  display: inline-block;
+  width: 100%;
+  min-height: 28dp;
+  padding: 4dp 0;
+  border-radius: 6dp;
+  text-align: center;
+  box-sizing: border-box;
+  background-color: transparent;
+  color: #888888;
+  cursor: default;
 }
 
 .dynamic-demo-body {
@@ -616,8 +673,7 @@ button.calendar-day:hover {
   margin-bottom: 12dp;
 }
 
-.dynamic-toolbar button {
-  width: auto;
+.dynamic-toolbar .btn {
   margin-bottom: 0;
 }
 
@@ -641,7 +697,7 @@ button.calendar-day:hover {
   flex-direction: column;
 }
 
-.dynamic-panel h2 {
+.dynamic-panel-title {
   margin-top: 0;
 }
 
@@ -697,6 +753,8 @@ button.calendar-day:hover {
 
 .shell-banner-text {
   flex: 1;
+  display: block;
+  margin-top: 0;
   margin-bottom: 0;
   color: #92400e;
 }
@@ -706,6 +764,11 @@ button.calendar-day:hover {
   min-width: 32dp;
   padding: 4dp 10dp;
   margin-bottom: 0;
+  border: 0;
+  font-family: LatoLatin;
+  font-size: 14dp;
+  border-radius: 6dp;
+  cursor: pointer;
   background-color: #fde68a;
   color: #92400e;
 }
@@ -726,7 +789,9 @@ button.calendar-day:hover {
   box-shadow: 0 2dp 8dp #00000033;
 }
 
-.shell-toast p {
+.shell-toast-text {
+  display: block;
+  margin-top: 0;
   margin-bottom: 0;
   color: #ffffff;
 }
@@ -885,7 +950,11 @@ button.calendar-day:hover {
   min-width: 72dp;
   padding: 6dp 12dp;
   margin-bottom: 0;
+  border: 0;
+  font-family: LatoLatin;
   font-size: 13dp;
+  border-radius: 6dp;
+  cursor: pointer;
   background-color: #e8eaed;
   color: #1a1a1a;
 }
@@ -906,6 +975,11 @@ button.calendar-day:hover {
   width: auto;
   padding: 6dp 12dp;
   margin-bottom: 0;
+  border: 0;
+  font-family: LatoLatin;
+  font-size: 14dp;
+  border-radius: 6dp;
+  cursor: pointer;
   background-color: #e8eaed;
   color: #1a1a1a;
 }
@@ -952,6 +1026,11 @@ button.calendar-day:hover {
   min-width: 32dp;
   padding: 4dp 10dp;
   margin-bottom: 0;
+  border: 0;
+  font-family: LatoLatin;
+  font-size: 14dp;
+  border-radius: 6dp;
+  cursor: pointer;
   background-color: #e8eaed;
   color: #1a1a1a;
 }
@@ -983,6 +1062,9 @@ button.calendar-day:hover {
 }
 
 .shell-dialog-message {
+  display: block;
+  margin-top: 0;
+  margin-bottom: 8dp;
   color: #374151;
 }
 
@@ -993,8 +1075,29 @@ button.calendar-day:hover {
 }
 
 .shell-dialog-cancel {
+  border: 0;
+  font-family: LatoLatin;
+  font-size: 14dp;
+  padding: 8dp 12dp;
+  border-radius: 6dp;
+  cursor: pointer;
   background-color: #e8eaed;
   color: #1a1a1a;
+}
+
+.shell-dialog-ok {
+  border: 0;
+  font-family: LatoLatin;
+  font-size: 14dp;
+  padding: 8dp 12dp;
+  border-radius: 6dp;
+  cursor: pointer;
+  background-color: #4a6cf7;
+  color: #ffffff;
+}
+
+.shell-dialog-ok:hover {
+  background-color: #5a7cff;
 }
 
 .chat-empty {
@@ -1005,7 +1108,7 @@ button.calendar-day:hover {
   border: 1dp #e5e7eb;
 }
 
-.chat-empty h2 {
+.chat-empty-title {
   margin-top: 0;
   font-size: 20dp;
 }
@@ -1018,7 +1121,7 @@ button.calendar-day:hover {
   box-sizing: border-box;
 }
 
-.chat-panel .chat-header h1 {
+.chat-panel .chat-header-title {
   font-size: 22dp;
 }
 
@@ -1036,6 +1139,18 @@ button.calendar-day:hover {
 .sidebar-new-chat {
   width: 100%;
   margin-bottom: 12dp;
+  border: 0;
+  font-family: LatoLatin;
+  font-size: 14dp;
+  padding: 8dp 12dp;
+  border-radius: 6dp;
+  cursor: pointer;
+  background-color: #4a6cf7;
+  color: #ffffff;
+}
+
+.sidebar-new-chat:hover {
+  background-color: #5a7cff;
 }
 
 .sidebar-session {
@@ -1056,6 +1171,13 @@ button.calendar-day:hover {
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
+}
+
+.sidebar-session-title {
+  display: block;
+  margin-top: 0;
+  margin-bottom: 0;
+  color: #333333;
 }
 
 .sidebar-unread {
@@ -1090,7 +1212,9 @@ button.calendar-day:hover {
 }
 
 .sender-label {
+  display: block;
   font-size: 11dp;
+  margin-top: 0;
   margin-bottom: 4dp;
 }
 
@@ -1100,6 +1224,8 @@ button.calendar-day:hover {
 }
 
 .sidebar-session-preview {
+  display: block;
+  margin-top: 0;
   margin-bottom: 0;
   font-size: 12dp;
 }
@@ -1111,7 +1237,7 @@ button.calendar-day:hover {
   overflow-y: auto;
 }
 
-.preview-panel h2 {
+.preview-title {
   margin-top: 0;
   font-size: 18dp;
 }

@@ -82,4 +82,6 @@ Use `dp`, `px`, `%`, or `em`. Prefer `dp` for layout (matches `base.rcss`).
 
 ## Existing utility classes
 
-`.stack`, `.row`, `.card`, `.muted`, `.error`, `.gap-sm`, `.code-block`, chat classes in `base.rcss`
+`.stack`, `.row`, `.card`, `.text`, `.heading-1`, `.heading-2`, `.heading-3`, `.btn`, `.btn-primary`, `.btn-secondary`, `.field`, `.muted`, `.error`, `.gap-sm`, `.code-block`, chat classes in `base.rcss`
+
+Author stylesheets should use these classes instead of bare `h1`, `p`, `button`, `input`, etc. The user-agent stylesheet provides baseline layout for semantic elements; only `.bubble-assistant` scopes rich-text overrides for AI-generated markup.

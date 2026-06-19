@@ -24,7 +24,7 @@ Add `selectable="text"` on a static content container to enable drag-selection a
 
 ## Styling
 
-Use classes from `assets/themes/base.rcss` (`.stack`, `.row`, `.card`, `.muted`, `.error`).
+Use classes from `assets/themes/base.rcss` (`.stack`, `.row`, `.card`, `.text`, `.heading-1`, `.heading-2`, `.btn`, `.btn-primary`, `.field`, `.muted`, `.error`).
 
 See [RCSS_PROFILE.md](RCSS_PROFILE.md) for the exact list of supported CSS/RCSS properties. AI prompts must not use properties outside that list.
 

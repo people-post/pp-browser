@@ -6,8 +6,8 @@
 <body data-model="chat" class="chat-body">
   <div class="chat-shell">
     <div class="chat-header">
-      <h1>pp-browser</h1>
-      <p class="muted">Ask anything. Assistant replies use structured text.</p>
+      <h1 class="heading-1 chat-header-title">pp-browser</h1>
+      <p class="text muted">Ask anything. Assistant replies use structured text.</p>
     </div>
     <div class="messages">
       <div data-for="msg : messages" class="message-group">
@@ -18,8 +18,8 @@
           </div>
         </div>
       </div>
-      <p class="muted thinking" data-if="loading && status == ''">Thinking...</p>
-      <p class="muted thinking" data-if="loading && status != ''">{{status}}</p>
+      <p class="text muted thinking" data-if="loading && status == ''">Thinking...</p>
+      <p class="text muted thinking" data-if="loading && status != ''">{{status}}</p>
     </div>
     <div class="prompt-composer">
       <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2" data-value="draft"></textarea>

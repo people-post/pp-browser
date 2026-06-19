@@ -1,8 +1,8 @@
 <div class="chat-panel stack" data-model="chat">
   <div class="chat-header">
     <div class="chat-header-main">
-      <h1 data-rml="thread_title"></h1>
-      <p class="muted" data-rml="thread_subtitle"></p>
+      <h1 class="heading-1 chat-header-title" data-rml="thread_title"></h1>
+      <p class="text muted" data-rml="thread_subtitle"></p>
     </div>
     <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
             data-if="auxiliary_available && layout_mode == 'expanded'"
@@ -10,8 +10,8 @@
   </div>
   <div class="messages" data-mount-id="messages">
     <div class="chat-empty stack" data-if="!has_turns && !loading">
-      <h2>Welcome</h2>
-      <p class="muted">Ask the assistant to find people, show contacts, or open a conversation.</p>
+      <h2 class="heading-2 chat-empty-title">Welcome</h2>
+      <p class="text muted">Ask the assistant to find people, show contacts, or open a conversation.</p>
       <button class="chat-suggestion" data-event-click="send_suggestion('Find someone on the network')">Find someone</button>
       <button class="chat-suggestion" data-event-click="send_suggestion('Show my contacts')">Show my contacts</button>
       <button class="chat-suggestion" data-event-click="send_suggestion('What conversations do I have?')">My conversations</button>
@@ -33,7 +33,7 @@
         </div>
       </div>
     </div>
-    <p class="muted thinking" data-if="loading && status == ''">Thinking...</p>
-    <p class="muted thinking" data-if="loading && status != ''" data-rml="status"></p>
+    <p class="text muted thinking" data-if="loading && status == ''">Thinking...</p>
+    <p class="text muted thinking" data-if="loading && status != ''" data-rml="status"></p>
   </div>
 </div>

@@ -38,24 +38,24 @@ Rml::ElementDocument* ActiveDocument(Rml::Context* context) {
 const char* PanelFragmentA() {
   return R"frag(
     <div class="stack dynamic-panel">
-      <h2>Panel A</h2>
-      <p class="muted">Mounted via RmlMount::MountInner</p>
-      <textarea id="draft-input" placeholder="Type here, then swap panels..." rows="3" data-value="draft"></textarea>
+      <h2 class="heading-2 dynamic-panel-title">Panel A</h2>
+      <p class="text muted">Mounted via RmlMount::MountInner</p>
+      <textarea class="field" id="draft-input" placeholder="Type here, then swap panels..." rows="3" data-value="draft"></textarea>
       <div class="scroll-list" data-mount-id="list">
-        <p>Scroll item 1</p>
-        <p>Scroll item 2</p>
-        <p>Scroll item 3</p>
-        <p>Scroll item 4</p>
-        <p>Scroll item 5</p>
-        <p>Scroll item 6</p>
-        <p>Scroll item 7</p>
-        <p>Scroll item 8</p>
-        <p>Scroll item 9</p>
-        <p>Scroll item 10</p>
-        <p>Scroll item 11</p>
-        <p>Scroll item 12</p>
+        <p class="text">Scroll item 1</p>
+        <p class="text">Scroll item 2</p>
+        <p class="text">Scroll item 3</p>
+        <p class="text">Scroll item 4</p>
+        <p class="text">Scroll item 5</p>
+        <p class="text">Scroll item 6</p>
+        <p class="text">Scroll item 7</p>
+        <p class="text">Scroll item 8</p>
+        <p class="text">Scroll item 9</p>
+        <p class="text">Scroll item 10</p>
+        <p class="text">Scroll item 11</p>
+        <p class="text">Scroll item 12</p>
       </div>
-      <button data-event-click="panel_action('A clicked')">Test injected binding</button>
+      <button class="btn btn-primary" data-event-click="panel_action('A clicked')">Test injected binding</button>
     </div>
   )frag";
 }
@@ -63,24 +63,24 @@ const char* PanelFragmentA() {
 const char* PanelFragmentB() {
   return R"frag(
     <div class="stack dynamic-panel dynamic-panel-b">
-      <h2>Panel B</h2>
-      <p class="muted">Different markup, same data model bindings</p>
-      <textarea id="draft-input" placeholder="Focus should return here after swap..." rows="3" data-value="draft"></textarea>
+      <h2 class="heading-2 dynamic-panel-title">Panel B</h2>
+      <p class="text muted">Different markup, same data model bindings</p>
+      <textarea class="field" id="draft-input" placeholder="Focus should return here after swap..." rows="3" data-value="draft"></textarea>
       <div class="scroll-list" data-mount-id="list">
-        <p>B scroll row 1</p>
-        <p>B scroll row 2</p>
-        <p>B scroll row 3</p>
-        <p>B scroll row 4</p>
-        <p>B scroll row 5</p>
-        <p>B scroll row 6</p>
-        <p>B scroll row 7</p>
-        <p>B scroll row 8</p>
-        <p>B scroll row 9</p>
-        <p>B scroll row 10</p>
-        <p>B scroll row 11</p>
-        <p>B scroll row 12</p>
+        <p class="text">B scroll row 1</p>
+        <p class="text">B scroll row 2</p>
+        <p class="text">B scroll row 3</p>
+        <p class="text">B scroll row 4</p>
+        <p class="text">B scroll row 5</p>
+        <p class="text">B scroll row 6</p>
+        <p class="text">B scroll row 7</p>
+        <p class="text">B scroll row 8</p>
+        <p class="text">B scroll row 9</p>
+        <p class="text">B scroll row 10</p>
+        <p class="text">B scroll row 11</p>
+        <p class="text">B scroll row 12</p>
       </div>
-      <button data-event-click="panel_action('B clicked')">Test injected binding</button>
+      <button class="btn btn-primary" data-event-click="panel_action('B clicked')">Test injected binding</button>
     </div>
   )frag";
 }
