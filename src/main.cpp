@@ -2,6 +2,8 @@
 #include "app/Bootstrap.h"
 #include "log/Logger.h"
 
+#include <SDL3/SDL_main.h>
+
 #include <cstring>
 
 int main(int argc, char** argv) {
