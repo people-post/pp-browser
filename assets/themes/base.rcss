@@ -208,7 +208,7 @@ selection {
 }
 
 .bubble {
-  padding: 12dp 16dp;
+  padding: 10dp 14dp;
   border-radius: 12dp;
   text-align: left;
   box-sizing: border-box;
