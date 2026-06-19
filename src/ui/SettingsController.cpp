@@ -108,7 +108,7 @@ void SettingsController::OnSaveSettings() {
   config.theme = state_.theme.c_str();
 
   const std::string config_path = bootstrap_.config_path.empty() ? AppPaths::ConfigFilePath() : bootstrap_.config_path;
-  if (auto saved = Config::SaveToFile(config_path, config)) {
+  if (auto saved = Config::SaveToFile(config_path, config); !saved) {
     state_.status = saved.error().message.c_str();
     DataModelHost::Instance().Dirty("settings", "status");
     return;
@@ -118,7 +118,7 @@ void SettingsController::OnSaveSettings() {
 
   ProfilePreferences profile_prefs = bootstrap_.profile_prefs;
   profile_prefs.theme = state_.theme.c_str();
-  if (auto saved = UserPreferences::SaveProfile(bootstrap_.profile_data_dir, profile_prefs)) {
+  if (auto saved = UserPreferences::SaveProfile(bootstrap_.profile_data_dir, profile_prefs); !saved) {
     state_.status = saved.error().message.c_str();
     DataModelHost::Instance().Dirty("settings", "status");
     return;
