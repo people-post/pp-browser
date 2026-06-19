@@ -15,6 +15,8 @@ Edit files under `src/render/` directly in pp-browser commits (except `src/rende
 - `CMakeLists.txt` — wrap `add_subdirectory("Samples")` in `if(RMLUI_SAMPLES)` (Samples tree excluded from hard fork)
 - `ElementSelectableText` — selectable static text via `selectable="text"` on containers; participates in document `SelectionController`
 - `SelectionController` / `SelectionTypes` — participation-based static text selection (`Element::QuerySelection`, `BuildSelectionContent`, cross-container drag/copy)
+- `SelectionHighlight` — shared selection background geometry and RCSS color resolution for static (`ElementText::RenderSelectionSlice`) and editor (`WidgetTextInput`) paths
+- `ElementSelectableText` / `WidgetTextInput` — hidden `selection` style-probe child; theme via descendant `selection { background-color; color; }` in author RCSS
 - `DataViewFor` — clone inner markup from template children when `rmlui-inner-rml` is absent (fixes empty `data-for` buttons with `{{expr}}` text)
 - `UserAgentStyleSheet` / `WidgetScroll` — scrollbar cross-axis sizing so layout boxes match painted thumbs (fixes full-width invisible hit targets)
 - `Context` — `PreferContentOverScrollbar` when scroll widgets overlap content at the pointer

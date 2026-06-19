@@ -54,6 +54,15 @@ Use `dp`, `px`, `%`, or `em`. Prefer `dp` for layout (matches `base.rcss`).
 - `background`, `background-color`
 - `opacity`
 
+### Text selection styling
+
+Browsers use `::selection`; RmlUi does not. Instead, style the hidden `selection` child via descendant selectors (see `assets/themes/base.rcss`):
+
+- `selection { background-color: ...; color: ...; }` — default highlight
+- `.bubble-user selection { ... }` — per-context overrides on `selectable="text"` containers and `input`/`textarea` parents
+
+Applies to static bubble text and focused form fields.
+
 ### Other
 
 - `cursor`, `clip`, `box-shadow`

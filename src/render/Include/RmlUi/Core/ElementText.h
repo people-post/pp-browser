@@ -63,7 +63,10 @@ public:
 
 	void BuildSelectionContent(SelectionContentBuilder& builder) override;
 	SelectionEndpoint HitTestSelection(Vector2f absolute_position) const override;
+	void RenderSelectionSlice(int local_start, int local_end) override;
 	String GetSelectionSlice(int local_start, int local_end) const override;
+
+	void ClearSelectionHighlight();
 
 protected:
 	void OnRender() override;
@@ -112,6 +115,10 @@ private:
 
 	bool font_effects_dirty;
 	FontEffectsHandle font_effects_handle;
+
+	Geometry selection_geometry;
+	int selection_local_start = -1;
+	int selection_local_end = -1;
 };
 
 } // namespace Rml

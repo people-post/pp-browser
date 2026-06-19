@@ -17,6 +17,7 @@ add_library(rmlui_core
 	Context.cpp
 	SelectionContentBuilder.cpp
 	SelectionController.cpp
+	SelectionHighlight.cpp
 	ContextInstancer.cpp
 	ContextInstancerDefault.cpp
 	ContextInstancerDefault.h

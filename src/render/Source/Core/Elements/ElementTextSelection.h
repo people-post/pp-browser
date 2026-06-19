@@ -4,11 +4,14 @@
 
 namespace Rml {
 
-class WidgetTextInput;
+class SelectionStyleClient {
+public:
+	virtual ~SelectionStyleClient() = default;
+	virtual void OnSelectionStyleChanged() = 0;
+};
 
 /**
-    A stub element used by the WidgetTextInput to query the RCSS-specified text colour and
-    background colour for selected text.
+    A stub element used to query the RCSS-specified text colour and background colour for selected text.
  */
 
 class ElementTextSelection : public Element {
@@ -18,16 +21,13 @@ public:
 	ElementTextSelection(const String& tag);
 	virtual ~ElementTextSelection();
 
-	/// Set the widget that this selection element was created for. This is the widget that will be
-	/// notified when this element's properties are altered.
-	void SetWidget(WidgetTextInput* widget);
+	void SetClient(SelectionStyleClient* client);
 
 protected:
-	/// Processes 'color' and 'background-color' property changes.
 	void OnPropertyChange(const PropertyIdSet& changed_properties) override;
 
 private:
-	WidgetTextInput* widget;
+	SelectionStyleClient* client;
 };
 
 } // namespace Rml

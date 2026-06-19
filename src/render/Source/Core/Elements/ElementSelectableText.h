@@ -2,9 +2,9 @@
 
 #include "../../../Include/RmlUi/Core/Element.h"
 #include "../../../Include/RmlUi/Core/EventListener.h"
-#include "../../../Include/RmlUi/Core/Geometry.h"
 #include "../../../Include/RmlUi/Core/Input.h"
 #include "../../../Include/RmlUi/Core/SelectionTypes.h"
+#include "ElementTextSelection.h"
 
 namespace Rml {
 
@@ -12,19 +12,16 @@ class ElementText;
 class SelectionContentBuilder;
 
 /// Static text container with drag-selection and Ctrl+C copy. Created for elements with selectable="text".
-class ElementSelectableText : public Element, public EventListener {
+class ElementSelectableText : public Element, public EventListener, public SelectionStyleClient {
 public:
 	RMLUI_RTTI_DefineWithParent(ElementSelectableText, Element)
 
 	explicit ElementSelectableText(const String& tag);
 	~ElementSelectableText() override;
 
-	void OnRender() override;
-
 	SelectionDisposition QuerySelection(const SelectionQuery& query) override;
 	void BuildSelectionContent(SelectionContentBuilder& builder) override;
 	SelectionEndpoint HitTestSelection(Vector2f absolute_position) const override;
-	void RenderSelectionSlice(int local_start, int local_end) override;
 	String GetSelectionSlice(int local_start, int local_end) const override;
 
 	bool IsSelectionRoot() const;
@@ -33,6 +30,8 @@ public:
 	int HitTestLocal(Vector2f absolute_mouse);
 	void UpdateSelectionHighlight(int local_start, int local_end);
 	void ClearSelectionHighlight();
+
+	void OnSelectionStyleChanged() override;
 
 private:
 	struct TextSegment {
@@ -55,13 +54,15 @@ private:
 
 	void RebuildLayout();
 	Vector2f GetContentRenderOrigin();
-	void BuildSelectionGeometry(int local_start, int local_end);
+	void RebuildActiveSelectionHighlight();
 
 	Vector<TextSegment> segments;
 	Vector<LineLayout> lines;
 	String flat_text;
 	ElementText* reference_text = nullptr;
-	Geometry selection_geometry;
+	ElementTextSelection* selection_style_element = nullptr;
+	int active_selection_start = 0;
+	int active_selection_end = 0;
 	bool suppress_click = false;
 };
 

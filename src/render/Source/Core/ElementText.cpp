@@ -15,6 +15,8 @@
 #include "ElementStyle.h"
 #include "TransformState.h"
 #include "SelectionContentBuilder.h"
+#include "SelectionHighlight.h"
+#include "Elements/ElementSelectableText.h"
 #include <limits>
 
 namespace Rml {
@@ -202,6 +204,9 @@ void ElementText::OnRender()
 
 	if (render)
 	{
+		if (selection_geometry)
+			selection_geometry.Render(translation);
+
 		for (size_t i = 0; i < geometry.size(); ++i)
 			geometry[i].geometry.Render(translation, geometry[i].texture);
 	}
@@ -806,6 +811,45 @@ String ElementText::GetSelectionSlice(int local_start, int local_end) const
 	if (start >= end || start >= (int)content.size())
 		return {};
 	return content.substr(start, end - start);
+}
+
+void ElementText::ClearSelectionHighlight()
+{
+	selection_geometry = {};
+	selection_local_start = -1;
+	selection_local_end = -1;
+}
+
+void ElementText::RenderSelectionSlice(int local_start, int local_end)
+{
+	const int start = Math::Min(local_start, local_end);
+	const int end = Math::Max(local_start, local_end);
+	if (start >= end)
+	{
+		ClearSelectionHighlight();
+		return;
+	}
+
+	selection_local_start = start;
+	selection_local_end = end;
+
+	Element* style_root = this;
+	for (Element* element = GetParentNode(); element; element = element->GetParentNode())
+	{
+		if (rmlui_dynamic_cast<ElementSelectableText*>(element))
+		{
+			style_root = element;
+			break;
+		}
+	}
+
+	ColourbPremultiplied fill;
+	ResolveSelectionBackground(style_root, fill, nullptr, SelectionColorFallback::StaticDefault);
+
+	if (RenderManager* render_manager = GetRenderManager())
+		BuildTextSelectionGeometry(this, start, end, fill, selection_geometry, *render_manager);
+	else
+		selection_geometry = {};
 }
 
 } // namespace Rml

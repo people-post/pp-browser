@@ -1,32 +1,29 @@
 #include "ElementTextSelection.h"
 #include "../../../Include/RmlUi/Core/PropertyIdSet.h"
-#include "WidgetTextInput.h"
 
 namespace Rml {
 
 ElementTextSelection::ElementTextSelection(const String& tag) : Element(tag)
 {
-	widget = nullptr;
+	client = nullptr;
 }
 
 ElementTextSelection::~ElementTextSelection() {}
 
-void ElementTextSelection::SetWidget(WidgetTextInput* _widget)
+void ElementTextSelection::SetClient(SelectionStyleClient* _client)
 {
-	widget = _widget;
+	client = _client;
 }
 
 void ElementTextSelection::OnPropertyChange(const PropertyIdSet& changed_properties)
 {
 	Element::OnPropertyChange(changed_properties);
 
-	if (widget == nullptr)
+	if (client == nullptr)
 		return;
 
 	if (changed_properties.Contains(PropertyId::Color) || changed_properties.Contains(PropertyId::BackgroundColor))
-	{
-		widget->UpdateSelectionColours();
-	}
+		client->OnSelectionStyleChanged();
 }
 
 } // namespace Rml

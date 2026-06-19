@@ -4,9 +4,8 @@
 #include "../../../Include/RmlUi/Core/ElementDocument.h"
 #include "../../../Include/RmlUi/Core/ElementText.h"
 #include "../../../Include/RmlUi/Core/ElementUtilities.h"
+#include "../../../Include/RmlUi/Core/Factory.h"
 #include "../../../Include/RmlUi/Core/FontEngineInterface.h"
-#include "../../../Include/RmlUi/Core/MeshUtilities.h"
-#include "../../../Include/RmlUi/Core/RenderManager.h"
 #include "../SelectionContentBuilder.h"
 #include "../SelectionController.h"
 
@@ -48,6 +47,14 @@ SelectionController* GetSelectionController(Element* element)
 ElementSelectableText::ElementSelectableText(const String& tag) : Element(tag)
 {
 	AddEventListener(EventId::Click, this, true);
+
+	ElementPtr unique_selection = Factory::InstanceElement(this, "#selection", "selection", XMLAttributes());
+	if (ElementTextSelection* text_selection_element = rmlui_dynamic_cast<ElementTextSelection*>(unique_selection.get()))
+	{
+		selection_style_element = text_selection_element;
+		text_selection_element->SetClient(this);
+		AppendChild(std::move(unique_selection), false);
+	}
 }
 
 ElementSelectableText::~ElementSelectableText()
@@ -67,8 +74,15 @@ bool ElementSelectableText::IsSelectionRoot() const
 
 void ElementSelectableText::ClearSelectionHighlight()
 {
-	selection_geometry = {};
+	active_selection_start = 0;
+	active_selection_end = 0;
 	suppress_click = false;
+
+	for (const TextSegment& segment : segments)
+	{
+		if (segment.element)
+			segment.element->ClearSelectionHighlight();
+	}
 }
 
 SelectionDisposition ElementSelectableText::QuerySelection(const SelectionQuery& query)
@@ -83,8 +97,10 @@ void ElementSelectableText::BuildSelectionContent(SelectionContentBuilder& build
 	builder.BeginContainer(this);
 	for (int i = 0; i < GetNumChildren(); ++i)
 	{
-		if (Element* child = GetChild(i))
-			child->BuildSelectionContent(builder);
+		Element* child = GetChild(i);
+		if (!child || child == selection_style_element)
+			continue;
+		child->BuildSelectionContent(builder);
 	}
 	builder.EndContainer();
 }
@@ -178,15 +194,42 @@ String ElementSelectableText::GetSelectionSlice(int local_start, int local_end) 
 	return flat_text.substr(start, end - start);
 }
 
-void ElementSelectableText::RenderSelectionSlice(int local_start, int local_end)
-{
-	RebuildLayout();
-	BuildSelectionGeometry(local_start, local_end);
-}
-
 void ElementSelectableText::UpdateSelectionHighlight(int local_start, int local_end)
 {
-	RenderSelectionSlice(local_start, local_end);
+	active_selection_start = Math::Min(local_start, local_end);
+	active_selection_end = Math::Max(local_start, local_end);
+
+	for (const TextSegment& segment : segments)
+	{
+		if (segment.element)
+			segment.element->ClearSelectionHighlight();
+	}
+
+	if (active_selection_start >= active_selection_end)
+		return;
+
+	for (const TextSegment& segment : segments)
+	{
+		if (!segment.element)
+			continue;
+
+		const int slice_start =
+			Math::Clamp(active_selection_start, segment.flat_begin, segment.flat_end) - segment.flat_begin;
+		const int slice_end = Math::Clamp(active_selection_end, segment.flat_begin, segment.flat_end) - segment.flat_begin;
+		if (slice_start < slice_end)
+			segment.element->RenderSelectionSlice(slice_start, slice_end);
+	}
+}
+
+void ElementSelectableText::OnSelectionStyleChanged()
+{
+	RebuildActiveSelectionHighlight();
+}
+
+void ElementSelectableText::RebuildActiveSelectionHighlight()
+{
+	if (active_selection_start < active_selection_end)
+		UpdateSelectionHighlight(active_selection_start, active_selection_end);
 }
 
 Vector2f ElementSelectableText::GetContentRenderOrigin()
@@ -254,52 +297,6 @@ void ElementSelectableText::RebuildLayout()
 	}
 }
 
-void ElementSelectableText::BuildSelectionGeometry(int local_start, int local_end)
-{
-	const int start = Math::Min(local_start, local_end);
-	const int end = Math::Max(local_start, local_end);
-	if (start >= end || !GetOwnerDocument())
-	{
-		selection_geometry = {};
-		return;
-	}
-
-	RenderManager* render_manager = GetRenderManager();
-	if (!render_manager)
-		return;
-
-	Mesh mesh = selection_geometry.Release(Geometry::ReleaseMode::ClearMesh);
-	const ColourbPremultiplied fill(173, 214, 255, 255);
-
-	for (const LineLayout& line : lines)
-	{
-		if (!line.text_element)
-			continue;
-
-		const int line_start = line.begin;
-		const int line_end = line.begin + line.length;
-		const int sel_start = Math::Clamp(start, line_start, line_end);
-		const int sel_end = Math::Clamp(end, line_start, line_end);
-		if (sel_start >= sel_end)
-			continue;
-
-		const char* p_begin = flat_text.data() + line.begin;
-		const float pre_width = float(
-			ElementUtilities::GetStringWidth(line.text_element, StringView(p_begin, p_begin + (sel_start - line.begin))));
-		const float sel_width = float(ElementUtilities::GetStringWidth(line.text_element,
-			StringView(p_begin + (sel_start - line.begin), p_begin + (sel_end - line.begin))));
-
-		const Vector2f position = line.baseline + Vector2f(pre_width, -line.ascent);
-		const Vector2f size(sel_width, line.ascent + line.descent);
-		MeshUtilities::GenerateQuad(mesh, position, size, fill);
-	}
-
-	if (mesh.indices.empty())
-		selection_geometry = {};
-	else
-		selection_geometry = render_manager->MakeGeometry(std::move(mesh));
-}
-
 void ElementSelectableText::ProcessEvent(Event& event)
 {
 	Element* target = event.GetTargetElement();
@@ -314,12 +311,6 @@ void ElementSelectableText::ProcessEvent(Event& event)
 				event.StopPropagation();
 		}
 	}
-}
-
-void ElementSelectableText::OnRender()
-{
-	if (selection_geometry)
-		selection_geometry.Render(GetContentRenderOrigin());
 }
 
 } // namespace Rml

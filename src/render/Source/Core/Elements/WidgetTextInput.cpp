@@ -16,6 +16,7 @@
 #include "../../../Include/RmlUi/Core/TextInputContext.h"
 #include "../../../Include/RmlUi/Core/TextInputHandler.h"
 #include "../Clock.h"
+#include "../SelectionHighlight.h"
 #include "ElementTextSelection.h"
 #include <algorithm>
 #include <limits.h>
@@ -193,7 +194,7 @@ WidgetTextInput::WidgetTextInput(ElementFormControl* _parent)
 	if (ElementTextSelection* text_selection_element = rmlui_dynamic_cast<ElementTextSelection*>(unique_selection.get()))
 	{
 		selection_element = text_selection_element;
-		text_selection_element->SetWidget(this);
+		text_selection_element->SetClient(this);
 		parent->AppendChild(std::move(unique_selection), false);
 	}
 
@@ -378,35 +379,17 @@ void WidgetTextInput::GetCompositionRange(int& range_start, int& range_end) cons
 	range_end = ime_composition_end_index;
 }
 
+void WidgetTextInput::OnSelectionStyleChanged()
+{
+	UpdateSelectionColours();
+	FormatText();
+}
+
 void WidgetTextInput::UpdateSelectionColours()
 {
-	// Determine what the colour of the selected text is. If our 'selection' element has the 'color'
-	// attribute set, then use that. Otherwise, use the inverse of our own text colour.
-	Colourb colour;
-	const Property* colour_property = selection_element->GetLocalProperty(PropertyId::Color);
-	if (colour_property)
-		colour = colour_property->Get<Colourb>();
-	else
-	{
-		colour = parent->GetComputedValues().color();
-		colour.red = 255 - colour.red;
-		colour.green = 255 - colour.green;
-		colour.blue = 255 - colour.blue;
-	}
-
-	// Set the computed text colour on the element holding the selected text.
-	selected_text_element->SetProperty(PropertyId::Color, Property(colour, Unit::COLOUR));
-
-	// If the 'background-color' property has been set on the 'selection' element, use that as the
-	// background colour for the selected text. Otherwise, use the inverse of the selected text
-	// colour.
-	colour_property = selection_element->GetLocalProperty(PropertyId::BackgroundColor);
-	if (colour_property)
-		colour = colour_property->Get<Colourb>();
-	else
-		colour = Colourb(255 - colour.red, 255 - colour.green, 255 - colour.blue, colour.alpha);
-
-	selection_colour = colour.ToPremultiplied();
+	Colourb selected_text_color;
+	ResolveSelectionBackground(parent, selection_colour, &selected_text_color, SelectionColorFallback::EditorInverse);
+	selected_text_element->SetProperty(PropertyId::Color, Property(selected_text_color, Unit::COLOUR));
 
 	// Color may have changed, so we update the cursor geometry.
 	GenerateCursor();
@@ -1316,7 +1299,7 @@ Vector2f WidgetTextInput::FormatText(float height_constraint)
 			const Vector2f selection_size = {float(selection_width + (selection_contains_endline ? endline_font_width : 0)), line_height};
 			const Vector2f aligned_position = line_position + Vector2f{GetAlignmentSpecificTextOffset(line), 0};
 
-			MeshUtilities::GenerateQuad(selection_composition_mesh, aligned_position - Vector2f(0, top_to_baseline), selection_size,
+			AppendSelectionQuad(selection_composition_mesh, aligned_position - Vector2f(0, top_to_baseline), selection_size,
 				selection_colour);
 			selected_text_element->AddLine(aligned_position, String(selection));
 

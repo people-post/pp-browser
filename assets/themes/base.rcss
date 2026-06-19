@@ -6,6 +6,26 @@ body {
   padding: 24dp;
 }
 
+selection {
+  background-color: #b4d5fe;
+}
+
+.bubble-user selection {
+  background-color: #ffffff55;
+}
+
+.bubble-assistant selection {
+  background-color: #b4d5fe;
+}
+
+.prompt-composer-input selection {
+  background-color: #b4d5fe;
+}
+
+.chat-form-field selection {
+  background-color: #b4d5fe;
+}
+
 .text {
   display: block;
   margin-top: 0;

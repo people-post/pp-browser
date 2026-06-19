@@ -3,6 +3,7 @@
 #include "../../../Include/RmlUi/Core/EventListener.h"
 #include "../../../Include/RmlUi/Core/Geometry.h"
 #include "../../../Include/RmlUi/Core/Vertex.h"
+#include "ElementTextSelection.h"
 #include <float.h>
 
 namespace Rml {
@@ -16,10 +17,12 @@ class WidgetTextInputContext;
     An abstract widget for editing and navigating around a text field.
  */
 
-class WidgetTextInput : public EventListener {
+class WidgetTextInput : public EventListener, public SelectionStyleClient {
 public:
 	WidgetTextInput(ElementFormControl* parent);
 	virtual ~WidgetTextInput();
+
+	void OnSelectionStyleChanged() override;
 
 	/// Sets the value of the text field.
 	/// @param[in] value The new value to set on the text field.

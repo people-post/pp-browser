@@ -17,7 +17,10 @@ SDL events
 | Platform | `src/render/integration/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
 | RmlUi core | `src/render/Source/Core/Context.cpp` | Standard focus/hover/click; retained fork bugfixes (UAF-safe click, geometry click for `focus:none` controls) |
 | Fork selection | `SelectionController`, `ElementSelectableText` | Document-wide drag-select and Ctrl+C via element participation hooks |
+| Editor widgets | `WidgetTextInput` | Focused `input`/`textarea` selection, cursor, IME, cut/paste |
 | Application | `src/app/InputCoordinator.*` | Shortcuts not declared in RML (Escape quit, Enter-to-send) |
+
+**Selection interaction** is split: read-only bubbles use `SelectionController` (drag without stealing focus from the composer); editors use `WidgetTextInput` when focused. **Selection rendering** is shared: `SelectionHighlight` resolves colors from RCSS `selection` rules and builds highlight quads; static text paints per `ElementText`, editors paint during `FormatElement`.
 
 `src/render/Backends/` is an upstream reference copy. The running app compiles only `src/render/integration/`. Edit integration files for runtime behavior; do not dual-edit Platform SDL in `Backends/`.
 
