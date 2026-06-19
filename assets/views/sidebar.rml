@@ -6,7 +6,7 @@
     </button>
   </div>
   <div class="sidebar-sessions">
-    <div data-for="session : sessions" class="sidebar-session" data-class="session.active ? 'sidebar-session-active' : ''">
+    <div data-for="session : sessions" class="sidebar-session" data-class-sidebar-session-active="session.active">
       <div class="sidebar-session-body" data-event-click="select_thread(session.id)">
         <p class="sidebar-session-title" data-rml="session.title"></p>
         <span class="sidebar-unread" data-if="session.unread_count > 0" data-rml="session.unread_count"></span>

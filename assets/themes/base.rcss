@@ -1219,8 +1219,8 @@ selection {
 }
 
 .sidebar-session-active {
-  border-left: 3dp #3b82f6;
   background-color: #f8fafc;
+  box-shadow: inset 3dp 0 0 #3b82f6;
 }
 
 .sidebar-session-body {
