@@ -29,6 +29,18 @@ std::string Lower(std::string text) {
   return text;
 }
 
+std::string JsonStringOrDefault(const nlohmann::json& json, const char* key,
+                                const std::string& default_value = {}) {
+  if (!json.contains(key)) {
+    return default_value;
+  }
+  const auto& value = json[key];
+  if (value.is_string()) {
+    return value.get<std::string>();
+  }
+  return default_value;
+}
+
 bool IsMcpArticleFeedToolName(const std::string& tool_name) {
   if (tool_name == "blog_articles") {
     return true;
@@ -67,7 +79,7 @@ std::optional<TurnPlan> TryBuildPlanFromPayload(const std::string& user_text, co
     plan.user_request = payload;
   }
 
-  const std::string type = doc.value("type", "");
+  const std::string type = JsonStringOrDefault(doc, "type");
   if (type == "article") {
     plan.response_goal = ResponseGoal::Summarize;
     plan.render_mode = RenderMode::Blocks;
@@ -84,7 +96,7 @@ std::optional<TurnPlan> TryBuildPlanFromPayload(const std::string& user_text, co
     return plan;
   }
 
-  const std::string tool = doc.value("tool", "");
+  const std::string tool = JsonStringOrDefault(doc, "tool");
   if (!tool.empty()) {
     PlannedToolCall call;
     call.name = tool;

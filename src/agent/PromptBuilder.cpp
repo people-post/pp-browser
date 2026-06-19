@@ -185,6 +185,7 @@ std::string PromptBuilder::BuildPlannerPrompt() {
   out << "- Use web_search for live/news/market/weather/time-sensitive questions.\n";
   out << "- Use blog_articles (or MCP feed tools) for article feed requests; not web_search.\n";
   out << "- Use search_people or list_contacts for people discovery; set render_mode to people_list.\n";
+  out << "- Use list_conversations when the user asks about their inbox or existing chats.\n";
   out << "- Use an empty tools array for pure conversation with no external lookup.\n";
   out << "- At most 4 tools. Provide concrete query arguments.\n";
   out << "- synthesis_hints should steer reply shape, not repeat the user message.\n";

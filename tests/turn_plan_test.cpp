@@ -35,5 +35,17 @@ int main() {
   assert(from_llm);
   assert(from_llm->tools.size() == 1);
 
+  const std::string null_hints = R"({
+    "response_goal": "general",
+    "tools": [{ "name": "list_conversations", "arguments": {} }],
+    "render_mode": "blocks",
+    "synthesis_hints": null
+  })";
+  auto null_plan = pbr::ParseTurnPlanJson(nlohmann::json::parse(null_hints), pbr::TurnPlanSource::Planner);
+  assert(null_plan);
+  assert(null_plan->tools.size() == 1);
+  assert(null_plan->tools[0].name == "list_conversations");
+  assert(null_plan->synthesis_hints.empty());
+
   return 0;
 }

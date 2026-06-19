@@ -18,6 +18,18 @@ std::string Trim(const std::string& text) {
   return std::string(start, end);
 }
 
+std::string JsonStringOrDefault(const nlohmann::json& json, const char* key,
+                                const std::string& default_value = {}) {
+  if (!json.contains(key)) {
+    return default_value;
+  }
+  const auto& value = json[key];
+  if (value.is_string()) {
+    return value.get<std::string>();
+  }
+  return default_value;
+}
+
 std::optional<nlohmann::json> ExtractJsonObject(const std::string& text) {
   const std::string fence = "```json";
   const size_t start = text.find(fence);
@@ -117,10 +129,10 @@ Roe<TurnPlan> ParseTurnPlanJson(const nlohmann::json& doc, const TurnPlanSource 
 
   TurnPlan plan;
   plan.source = source;
-  plan.response_goal = ParseResponseGoal(doc.value("response_goal", "general"));
-  plan.render_mode = ParseRenderMode(doc.value("render_mode", "blocks"));
-  plan.synthesis_hints = doc.value("synthesis_hints", "");
-  plan.user_request = doc.value("user_request", "");
+  plan.response_goal = ParseResponseGoal(JsonStringOrDefault(doc, "response_goal", "general"));
+  plan.render_mode = ParseRenderMode(JsonStringOrDefault(doc, "render_mode", "blocks"));
+  plan.synthesis_hints = JsonStringOrDefault(doc, "synthesis_hints");
+  plan.user_request = JsonStringOrDefault(doc, "user_request");
 
   if (doc.contains("tools") && doc["tools"].is_array()) {
     for (const auto& item : doc["tools"]) {
@@ -128,7 +140,7 @@ Roe<TurnPlan> ParseTurnPlanJson(const nlohmann::json& doc, const TurnPlanSource 
         return Error("Each planned tool must be an object");
       }
       PlannedToolCall call;
-      call.name = item.value("name", "");
+      call.name = JsonStringOrDefault(item, "name");
       if (call.name.empty()) {
         return Error("Planned tool missing name");
       }

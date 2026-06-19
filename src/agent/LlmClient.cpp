@@ -7,6 +7,19 @@ namespace pbr {
 
 namespace {
 
+std::string JsonStringOrDefault(const nlohmann::json& json, const char* key,
+                                const std::string& default_value = {}) {
+  if (!json.contains(key)) {
+    return default_value;
+  }
+  const auto& value = json[key];
+  if (value.is_string()) {
+    return value.get<std::string>();
+  }
+  return default_value;
+}
+
+
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out) {
   const size_t total = size * nmemb;
   out->append(static_cast<char*>(contents), total);
@@ -162,10 +175,10 @@ Roe<ChatCompletionResponse> LlmClient::ParseChatCompletionResponse(const std::st
   if (message.contains("tool_calls") && message["tool_calls"].is_array()) {
     for (const auto& call : message["tool_calls"]) {
       ToolCall tool_call;
-      tool_call.id = call.value("id", "");
+      tool_call.id = JsonStringOrDefault(call, "id");
       if (call.contains("function") && call["function"].is_object()) {
         const auto& fn = call["function"];
-        tool_call.name = fn.value("name", "");
+        tool_call.name = JsonStringOrDefault(fn, "name");
         const nlohmann::json args_field = fn.value("arguments", nlohmann::json("{}"));
         if (args_field.is_string()) {
           tool_call.arguments = nlohmann::json::parse(args_field.get<std::string>(), nullptr, false);
