@@ -23,8 +23,12 @@ public:
 
   Roe<Thread> OpenThread(const std::string& thread_id);
   Roe<Thread> CreateAiHomeThread();
+  Roe<Thread> CreateNewAiThread();
   Roe<Thread> CreateDirectThread(const std::string& contact_id);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id);
+
+  bool IsAiHomeThread(const std::string& thread_id) const;
+  Roe<void> CloseThread(const std::string& thread_id);
 
   void MarkThreadRead(const std::string& thread_id);
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);

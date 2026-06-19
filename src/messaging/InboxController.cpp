@@ -105,6 +105,70 @@ Roe<Thread> InboxController::CreateAiHomeThread() {
   return OpenThread(ai_home_thread_id_);
 }
 
+Roe<Thread> InboxController::CreateNewAiThread() {
+  auto ensure = EnsureAiHomeThread();
+  if (!ensure) {
+    return ensure.error();
+  }
+
+  Thread thread;
+  thread.id = GenerateUuid();
+  thread.kind = ThreadKind::Ai;
+  thread.title = "New chat";
+  thread.preview = "";
+  thread.updated_at = NowUnixMs();
+
+  auto saved = store_.UpsertThread(thread);
+  if (!saved) {
+    return saved.error();
+  }
+  return OpenThread(saved->id);
+}
+
+bool InboxController::IsAiHomeThread(const std::string& thread_id) const {
+  return !ai_home_thread_id_.empty() && thread_id == ai_home_thread_id_;
+}
+
+Roe<void> InboxController::CloseThread(const std::string& thread_id) {
+  if (IsAiHomeThread(thread_id)) {
+    return Error("Cannot close AI home thread");
+  }
+
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+
+  const bool was_active = active_thread_id_ == thread_id;
+  auto deleted = store_.DeleteThread(thread_id);
+  if (!deleted || !*deleted) {
+    return Error("Failed to delete thread");
+  }
+
+  if (was_active) {
+    if (!ai_home_thread_id_.empty()) {
+      if (auto opened = OpenThread(ai_home_thread_id_)) {
+        return {};
+      }
+    }
+    auto threads = store_.ListThreads();
+    if (!threads || threads->empty()) {
+      active_thread_id_.clear();
+      if (on_thread_changed_) {
+        on_thread_changed_();
+      }
+      return {};
+    }
+    (void)OpenThread(threads->front().id);
+  } else if (on_thread_changed_) {
+    on_thread_changed_();
+  }
+  return {};
+}
+
 Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact_id) {
   auto threads = store_.ListThreads();
   if (!threads) {

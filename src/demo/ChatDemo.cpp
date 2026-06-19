@@ -367,6 +367,13 @@ void ChatDemo::SelectThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& 
   Instance().OnSelectThread(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
+void ChatDemo::CloseThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().OnCloseThread(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
 void ChatDemo::OnSelectThread(const std::string& thread_id) {
   if (!messaging_ready_) {
     return;
@@ -375,6 +382,34 @@ void ChatDemo::OnSelectThread(const std::string& thread_id) {
     RefreshFromMessaging();
     (void)thread;
   }
+}
+
+void ChatDemo::OnCloseThread(const std::string& thread_id) {
+  if (!messaging_ready_) {
+    return;
+  }
+
+  ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "Delete conversation",
+                             "Delete this conversation? This cannot be undone.",
+                             [this, thread_id](bool ok) {
+                               if (!ok) {
+                                 return;
+                               }
+                               if (!MessagingHub::Instance().Inbox().CloseThread(thread_id)) {
+                                 return;
+                               }
+                               chat_.draft = "";
+                               chat_.status = "";
+                               chat_.loading = false;
+                               pending_reply_.reset();
+                               ClearFormState();
+                               widgets_by_entry_.clear();
+                               RefreshFromMessaging();
+                               ShellHost::Instance().RequestSyncLayout();
+                               ShellHost::Instance().DirtyWindow();
+                             });
+  ShellHost::Instance().RequestSyncLayout();
+  ShellHost::Instance().DirtyWindow();
 }
 
 void ChatDemo::RefreshFromMessaging() {
@@ -394,14 +429,20 @@ void ChatDemo::SyncShellSessions() {
   if (!threads) {
     return;
   }
+  std::vector<Thread> sorted_threads = *threads;
+  std::sort(sorted_threads.begin(), sorted_threads.end(),
+            [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
+
   const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  for (const Thread& thread : *threads) {
+  auto& inbox = MessagingHub::Instance().Inbox();
+  for (const Thread& thread : sorted_threads) {
     SessionRow row;
     row.id = thread.id.c_str();
     row.title = thread.title.c_str();
     row.preview = thread.preview.c_str();
     row.unread_count = thread.unread_count;
     row.active = thread.id == active_id;
+    row.closable = !inbox.IsAiHomeThread(thread.id);
     switch (thread.kind) {
     case ThreadKind::Ai:
       row.kind = "ai";
@@ -476,28 +517,20 @@ void ChatDemo::OnSendMessage() {
 }
 
 void ChatDemo::OnNewChat() {
-  auto perform_reset = [this]() {
-    if (!messaging_ready_) {
-      return;
-    }
-    (void)MessagingHub::Instance().Inbox().CreateAiHomeThread();
-    chat_.draft = "";
-    chat_.status = "";
-    chat_.loading = false;
-    pending_reply_.reset();
-    ShellHost::Instance().SetAuxiliaryAvailable(false);
-    ShellHost::Instance().CloseAuxiliary();
-    ClearFormState();
-    widgets_by_entry_.clear();
-    RefreshFromMessaging();
-  };
+  if (!messaging_ready_) {
+    return;
+  }
 
-  ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "New chat", "Clear the current conversation?",
-                             [perform_reset](bool ok) {
-                               if (ok) {
-                                 perform_reset();
-                               }
-                             });
+  (void)MessagingHub::Instance().Inbox().CreateNewAiThread();
+  chat_.draft = "";
+  chat_.status = "";
+  chat_.loading = false;
+  pending_reply_.reset();
+  ShellHost::Instance().SetAuxiliaryAvailable(false);
+  ShellHost::Instance().CloseAuxiliary();
+  ClearFormState();
+  widgets_by_entry_.clear();
+  RefreshFromMessaging();
   ShellHost::Instance().RequestSyncLayout();
   ShellHost::Instance().DirtyWindow();
 }
@@ -973,12 +1006,14 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
           session_handle.RegisterMember("kind", &ChatDemo::SessionRow::kind);
           session_handle.RegisterMember("unread_count", &ChatDemo::SessionRow::unread_count);
           session_handle.RegisterMember("active", &ChatDemo::SessionRow::active);
+          session_handle.RegisterMember("closable", &ChatDemo::SessionRow::closable);
         }
         ctor.RegisterArray<std::vector<ChatDemo::SessionRow>>();
         ctor.Bind("sessions", &ChatDemo::Instance().shell_.sessions);
         ctor.Bind("preview_rml", &ChatDemo::Instance().shell_.preview_rml);
         ctor.BindEventCallback("new_chat", &ChatDemo::NewChatCallback);
         ctor.BindEventCallback("select_thread", &ChatDemo::SelectThreadCallback);
+        ctor.BindEventCallback("close_thread", &ChatDemo::CloseThreadCallback);
         ctor.BindEventCallback("send_chat_action", &ChatDemo::SendChatActionCallback);
       })) {
     return false;

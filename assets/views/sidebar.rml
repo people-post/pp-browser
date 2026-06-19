@@ -1,14 +1,19 @@
-<div class="sidebar-panel stack" data-model="shell">
-  <button class="sidebar-new-chat" data-event-click="new_chat()">New chat</button>
+<div class="sidebar-panel" data-model="shell">
+  <div class="sidebar-header row">
+    <p class="sidebar-header-title">Sessions</p>
+    <button class="sidebar-new-chat" type="button" data-event-click="new_chat()">
+      <svg src="../icons/plus.svg" width="18" height="18" crop-to-content="true"></svg>
+    </button>
+  </div>
   <div class="sidebar-sessions">
-    <div data-for="session : sessions" class="sidebar-session" data-class="session.active ? 'sidebar-session-active' : ''"
-         data-event-click="select_thread(session.id)">
-      <div class="sidebar-session-row">
+    <div data-for="session : sessions" class="sidebar-session" data-class="session.active ? 'sidebar-session-active' : ''">
+      <div class="sidebar-session-body" data-event-click="select_thread(session.id)">
         <p class="sidebar-session-title" data-rml="session.title"></p>
         <span class="sidebar-unread" data-if="session.unread_count > 0" data-rml="session.unread_count"></span>
       </div>
-      <p class="text muted sidebar-session-preview" data-rml="session.preview"></p>
-      <span class="sidebar-kind-badge" data-rml="session.kind"></span>
+      <button class="sidebar-session-close" type="button" data-if="session.closable" data-event-click="close_thread(session.id)">
+        <svg src="../icons/close.svg" width="14" height="14" crop-to-content="true"></svg>
+      </button>
     </div>
     <p class="text muted" data-if="sessions.size == 0">No conversations yet.</p>
   </div>

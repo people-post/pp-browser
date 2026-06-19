@@ -80,6 +80,7 @@ struct SessionDisplayRow {
   Rml::String kind;
   int unread_count = 0;
   bool active = false;
+  bool closable = false;
 };
 
 struct TurnWidgetState {

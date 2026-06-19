@@ -23,6 +23,7 @@ public:
   Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) override;
   Roe<bool> UpdateMessage(const ThreadMessage& message) override;
   Roe<bool> HasMessageId(const std::string& message_id) const override;
+  Roe<bool> DeleteThread(const std::string& thread_id) override;
   void Flush() override;
 
 private:

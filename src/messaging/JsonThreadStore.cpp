@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 #include <nlohmann/json.hpp>
 
 namespace pbr {
@@ -234,6 +235,40 @@ Roe<bool> JsonThreadStore::HasMessageId(const std::string& message_id) const {
     return load.error();
   }
   return message_ids_.find(message_id) != message_ids_.end();
+}
+
+Roe<bool> JsonThreadStore::DeleteThread(const std::string& thread_id) {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+
+  auto thread_it = std::find_if(threads_.begin(), threads_.end(),
+                                [&](const Thread& thread) { return thread.id == thread_id; });
+  if (thread_it == threads_.end()) {
+    return false;
+  }
+
+  const auto message_it = messages_.find(thread_id);
+  if (message_it != messages_.end()) {
+    for (const ThreadMessage& message : message_it->second) {
+      message_ids_.erase(message.id);
+    }
+    messages_.erase(message_it);
+  }
+
+  threads_.erase(thread_it);
+
+  std::error_code ec;
+  std::filesystem::remove(ThreadPath(thread_id), ec);
+
+  dirty_ = true;
+  if (auto save = SaveIndex()) {
+    dirty_ = false;
+    return true;
+  }
+  return Error("Failed to save thread index after delete");
 }
 
 } // namespace pbr

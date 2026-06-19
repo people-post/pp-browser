@@ -1150,20 +1150,42 @@ selection {
 }
 
 .sidebar-panel {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   padding: 12dp;
   box-sizing: border-box;
-  overflow-y: auto;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  flex-shrink: 0;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8dp;
+}
+
+.sidebar-header-title {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 14dp;
+  font-weight: bold;
+  color: #374151;
 }
 
 .sidebar-new-chat {
-  width: 100%;
-  margin-bottom: 12dp;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  margin-bottom: 0;
+  padding: 0;
   border: 0;
+  border-radius: 18dp;
   font-family: LatoLatin;
-  font-size: 14dp;
-  padding: 8dp 12dp;
-  border-radius: 6dp;
   cursor: pointer;
   background-color: #4a6cf7;
   color: #ffffff;
@@ -1173,34 +1195,59 @@ selection {
   background-color: #5a7cff;
 }
 
+.sidebar-new-chat svg {
+  flex-shrink: 0;
+}
+
+.sidebar-sessions {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .sidebar-session {
-  padding: 10dp;
-  margin-bottom: 8dp;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 36dp;
+  margin-bottom: 4dp;
+  padding: 0 4dp 0 8dp;
   border-radius: 6dp;
   background-color: #ffffff;
   border: 1dp #e5e7eb;
+  box-sizing: border-box;
 }
 
 .sidebar-session-active {
-  border-color: #3b82f6;
-  background-color: #eff6ff;
+  border-left: 3dp #3b82f6;
+  background-color: #f8fafc;
 }
 
-.sidebar-session-row {
+.sidebar-session-body {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: row;
-  justify-content: space-between;
   align-items: center;
+  gap: 6dp;
+  cursor: pointer;
 }
 
 .sidebar-session-title {
+  flex: 1;
+  min-width: 0;
   display: block;
   margin-top: 0;
   margin-bottom: 0;
+  font-size: 13dp;
   color: #333333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-unread {
+  flex-shrink: 0;
   min-width: 20dp;
   padding: 2dp 6dp;
   border-radius: 10dp;
@@ -1210,10 +1257,28 @@ selection {
   text-align: center;
 }
 
-.sidebar-kind-badge {
-  font-size: 10dp;
-  color: #6b7280;
-  text-transform: uppercase;
+.sidebar-session-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28dp;
+  height: 28dp;
+  min-width: 28dp;
+  margin-bottom: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6dp;
+  cursor: pointer;
+  background-color: transparent;
+}
+
+.sidebar-session-close svg {
+  flex-shrink: 0;
+}
+
+.sidebar-session-close:hover {
+  background-color: #f3f4f6;
 }
 
 .message-row-peer {
@@ -1241,13 +1306,6 @@ selection {
 .bubble-peer {
   background-color: #f3f4f6;
   border: 1dp #e5e7eb;
-}
-
-.sidebar-session-preview {
-  display: block;
-  margin-top: 0;
-  margin-bottom: 0;
-  font-size: 12dp;
 }
 
 .preview-panel {

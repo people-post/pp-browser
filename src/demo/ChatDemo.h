@@ -76,10 +76,12 @@ private:
   static void SelectCalendarDayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void NewChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CloseThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
   void OnNewChat();
   void OnSelectThread(const std::string& thread_id);
+  void OnCloseThread(const std::string& thread_id);
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
   void SendChatAction(const std::string& entry_id, int action_index);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);

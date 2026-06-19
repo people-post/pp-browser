@@ -20,6 +20,7 @@ public:
   virtual Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) = 0;
   virtual Roe<bool> UpdateMessage(const ThreadMessage& message) = 0;
   virtual Roe<bool> HasMessageId(const std::string& message_id) const = 0;
+  virtual Roe<bool> DeleteThread(const std::string& thread_id) = 0;
   virtual void Flush() = 0;
 };
 
