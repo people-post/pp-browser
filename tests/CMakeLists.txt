@@ -183,3 +183,60 @@ if(TARGET OpenSSL::Crypto)
 endif()
 target_include_directories(pp_browser_messaging_foundation_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(messaging_foundation_test pp_browser_messaging_foundation_test)
+
+set(PP_BROWSER_CONFIG_TEST_SOURCES
+  ${CMAKE_SOURCE_DIR}/src/app/Config.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/AppPaths.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/ProfileRegistry.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/SchemaVersion.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/UserPreferences.cpp
+  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
+  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/Platform.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/IPathProvider.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/DesktopPathProvider.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/IAssetLocator.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/DesktopAssetLocator.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/PlatformDefaults.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/ICredentialStore.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/EnvCredentialStore.cpp
+)
+
+add_executable(pp_browser_desktop_path_provider_test desktop_path_provider_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/IPathProvider.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/DesktopPathProvider.cpp)
+target_include_directories(pp_browser_desktop_path_provider_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_test(desktop_path_provider_test pp_browser_desktop_path_provider_test)
+
+add_executable(pp_browser_config_merge_test config_merge_test.cpp ${PP_BROWSER_CONFIG_TEST_SOURCES})
+target_compile_definitions(pp_browser_config_merge_test PRIVATE PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
+target_link_libraries(pp_browser_config_merge_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_config_merge_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_test(config_merge_test pp_browser_config_merge_test)
+
+add_executable(pp_browser_profile_registry_test profile_registry_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/ProfileRegistry.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/SchemaVersion.cpp
+  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
+  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
+target_link_libraries(pp_browser_profile_registry_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_profile_registry_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_test(profile_registry_test pp_browser_profile_registry_test)
+
+add_executable(pp_browser_schema_version_test schema_version_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/SchemaVersion.cpp
+  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
+  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
+target_link_libraries(pp_browser_schema_version_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_schema_version_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_test(schema_version_test pp_browser_schema_version_test)
+
+add_executable(pp_browser_platform_defaults_test platform_defaults_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/Platform.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/PlatformDefaults.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/ICredentialStore.cpp
+  ${CMAKE_SOURCE_DIR}/src/platform/EnvCredentialStore.cpp
+  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
+  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
+target_include_directories(pp_browser_platform_defaults_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_test(platform_defaults_test pp_browser_platform_defaults_test)

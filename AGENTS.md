@@ -60,6 +60,8 @@ Prompt text for LLMs is built in [`src/agent/PromptBuilder.cpp`](src/agent/Promp
 | Structured AI replies | `src/agent/StructuredTextParser.cpp` |
 | Turn planning pipeline | `src/agent/TurnPlan.*`, `PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | P2P messaging | `src/messaging/`, [docs/P2P_MESSAGING.md](docs/P2P_MESSAGING.md) |
+| Config / data / profiles | `src/app/Bootstrap.*`, `src/platform/`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
+| In-app settings | `src/ui/SettingsController.*`, `assets/views/settings.rml` |
 | Build | [docs/BUILD.md](docs/BUILD.md) |
 
 ## Conventions

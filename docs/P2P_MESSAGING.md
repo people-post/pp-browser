@@ -27,15 +27,17 @@ Special IDs: `local:self`, `ai:assistant`.
 
 ## Persistence
 
+Profile-scoped layout (see [CONFIGURATION.md](CONFIGURATION.md)):
+
 ```
-{data_dir}/
+{data_dir}/profiles/{profile_id}/
   identity.json
   contacts.json
   threads/index.json
   threads/{thread_id}.json
 ```
 
-Configure via `config.json`:
+Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux) or in-app **Settings**:
 
 ```json
 {

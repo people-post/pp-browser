@@ -2,43 +2,21 @@
 
 #include "agent/AgentSession.h"
 
-#include <cstdlib>
 #include <filesystem>
 
 namespace pbr {
-
-namespace {
-
-std::string ResolveDataDir(const AppConfig& config) {
-  if (!config.data_dir.empty()) {
-    if (config.data_dir.front() == '~') {
-      const char* home = std::getenv("HOME");
-      if (home) {
-        return std::string(home) + config.data_dir.substr(1);
-      }
-    }
-    return config.data_dir;
-  }
-  const char* home = std::getenv("HOME");
-  if (home) {
-    return std::string(home) + "/.local/share/pp-browser";
-  }
-  return "./pp-browser-data";
-}
-
-} // namespace
 
 MessagingHub& MessagingHub::Instance() {
   static MessagingHub hub;
   return hub;
 }
 
-Roe<void> MessagingHub::Initialize(const AppConfig& config) {
+Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
   if (initialized_) {
     return {};
   }
 
-  data_dir_ = ResolveDataDir(config);
+  data_dir_ = profile_data_dir;
   std::error_code ec;
   std::filesystem::create_directories(data_dir_, ec);
 
@@ -74,6 +52,11 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config) {
 
   initialized_ = true;
   return {};
+}
+
+Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string& profile_data_dir) {
+  Shutdown();
+  return Initialize(config, profile_data_dir);
 }
 
 void MessagingHub::BindAgent(AgentSession& agent) {

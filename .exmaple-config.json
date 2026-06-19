@@ -1,0 +1,14 @@
+{
+    "llm": {
+        "base_url": "http://localhost:11434/v1",
+        "model": "qwen3.5:9b",
+        "require_api_key": false
+    },
+    "mcp": {
+        "url": "https://www.brief.global/mcp"
+    },
+    "search": {
+        "provider": "duckduckgo"
+    },
+    "theme": "assets/themes/base.rcss"
+}

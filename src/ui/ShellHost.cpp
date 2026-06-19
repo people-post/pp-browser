@@ -431,7 +431,9 @@ std::string ShellHost::SerializeTransientLayer() const {
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-transient\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome\">";
-  out << "<button class=\"shell-back-btn\" data-event-click=\"transient_back()\">Back</button>";
+  out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
+         "<svg src=\"../icons/back.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>"
+         "</button>";
   out << "</div>";
   out << SerializePaneSlot(top.spec.key, "shell-pane-transient");
   out << "</div>";

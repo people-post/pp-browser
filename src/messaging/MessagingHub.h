@@ -21,8 +21,10 @@ class MessagingHub {
 public:
   static MessagingHub& Instance();
 
-  Roe<void> Initialize(const AppConfig& config);
+  Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir);
+  Roe<void> Reinitialize(const AppConfig& config, const std::string& profile_data_dir);
   void Shutdown();
+  bool IsInitialized() const { return initialized_; }
 
   InboxController& Inbox();
   P2pMessagingService& P2p();

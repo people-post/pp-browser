@@ -45,12 +45,12 @@ From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
 ### Local Ollama
 
 1. Start Ollama and pull a model, e.g. `ollama pull llama3.2`
-2. Copy `config.json.example` to `config.json` and set `llm.model` to your model name
-3. Run `./build/pp-browser`
+2. Run `./build/pp-browser` — defaults to Ollama on localhost with model `llama3.2` (override via `PP_BROWSER_LLM_MODEL`)
+3. Optional: open **Settings** in the app, or use `pp-browser --config config.json.example` for a custom model
 
-Ollama exposes an OpenAI-compatible API at `http://localhost:11434/v1`; no API key is required. Without `config.json`, the app defaults to Ollama on localhost with model `llama3.2` (override via `PP_BROWSER_LLM_MODEL`).
+For OpenAI or other providers, set `base_url`, `model`, and `api_key_env` in the user config dir or via Settings.
 
-For OpenAI or other providers, set `base_url`, `model`, and `api_key_env` in `config.json`.
+Config and data paths: [CONFIGURATION.md](CONFIGURATION.md). During development, delete `~/.local/share/pp-browser` if the on-disk layout changes (no legacy migration).
 
 **If no window appears** (or exit code 1), reconfigure from a clean build directory:
 

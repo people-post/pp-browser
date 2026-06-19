@@ -30,8 +30,9 @@ struct SearchConfig {
 
 struct AppConfig {
   LlmConfig llm;
+  std::string llm_api_key_env;
   ContextBudget context = DefaultContextBudget();
-  std::string theme = "assets/themes/base.rcss";
+  std::string theme = "themes/base.rcss";
   std::string data_dir;
   ServiceEndpointConfig relay;
   ServiceEndpointConfig directory;
@@ -44,9 +45,16 @@ class Config : public Module {
 public:
   static Config& Instance();
 
+  static constexpr int kConfigVersion = 1;
+
   static Roe<AppConfig> Load(int argc, char** argv);
   static Roe<AppConfig> LoadFromFile(const std::string& path);
-  static AppConfig DefaultOllama();
+  static AppConfig DefaultAppConfig();
+  static Roe<void> SaveToFile(const std::string& path, const AppConfig& config);
+  static std::string DiscoverConfigPath(int argc, char** argv);
+
+  // Backward-compatible alias used by Application.h default arg.
+  static AppConfig DefaultOllama() { return DefaultAppConfig(); }
 
 private:
   Config();

@@ -66,3 +66,6 @@ vcpkg_installed/
 *.dwo
 
 .cache/
+
+# Local user config (use --config or user config dir)
+config.json

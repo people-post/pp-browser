@@ -70,8 +70,21 @@ endif()
 add_executable(pp-browser
   src/main.cpp
   src/app/Application.cpp
+  src/app/AppPaths.cpp
+  src/app/Bootstrap.cpp
   src/app/Config.cpp
+  src/app/ProfileRegistry.cpp
+  src/app/SchemaVersion.cpp
+  src/app/UserPreferences.cpp
   src/app/InputCoordinator.cpp
+  src/platform/Platform.cpp
+  src/platform/IPathProvider.cpp
+  src/platform/DesktopPathProvider.cpp
+  src/platform/IAssetLocator.cpp
+  src/platform/DesktopAssetLocator.cpp
+  src/platform/PlatformDefaults.cpp
+  src/platform/ICredentialStore.cpp
+  src/platform/EnvCredentialStore.cpp
 )
 
 target_compile_definitions(pp-browser PRIVATE
@@ -132,6 +145,7 @@ endif()
   src/ui/ShellFeedback.cpp
   src/ui/ViewCatalog.cpp
   src/ui/ShellHost.cpp
+  src/ui/SettingsController.cpp
   src/ui/Theme.cpp
   src/ui/DataModelHost.cpp
   src/bindings/ActionRouter.cpp

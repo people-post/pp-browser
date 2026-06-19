@@ -3,7 +3,7 @@
 #include "agent/AgentSession.h"
 #include "agent/StructuredTextParser.h"
 #include "agent/TurnPlan.h"
-#include "app/Config.h"
+#include "app/Bootstrap.h"
 #include "common/Module.h"
 #include "demo/ChatWidgetTypes.h"
 #include "ui/WorkingSetTypes.h"
@@ -32,9 +32,10 @@ public:
 
   using SessionRow = SessionDisplayRow;
 
-  bool Setup(Rml::Context* context, const AppConfig& config);
+  bool Setup(Rml::Context* context, const BootstrapResult& bootstrap);
   void Update();
   void Shutdown();
+  void ApplyConfig(const AppConfig& config);
 
 private:
   struct ActiveForm {
@@ -127,6 +128,7 @@ private:
   Rml::Context* context_ = nullptr;
   ChatState chat_;
   ShellState shell_;
+  BootstrapResult bootstrap_{};
   std::optional<AgentSession> agent_;
   bool use_llm_ = false;
   bool messaging_ready_ = false;
@@ -139,7 +141,7 @@ private:
   std::string active_working_set_entry_id_;
 };
 
-bool SetupChatDemo(Rml::Context* context, const AppConfig& config);
+bool SetupChatDemo(Rml::Context* context, const BootstrapResult& bootstrap);
 void UpdateChatDemo();
 void ShutdownChatDemo();
 

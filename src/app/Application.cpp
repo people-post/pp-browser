@@ -4,6 +4,7 @@
 #include "bindings/ActionRouter.h"
 #include "demo/ChatDemo.h"
 #include "platform/BrowserThread.h"
+#include "platform/IAssetLocator.h"
 #include "ui/ShellHost.h"
 #include "demo/DynamicRmlDemo.h"
 #include "demo/SearchDemo.h"
@@ -21,17 +22,9 @@
 #include <RmlUi/Debugger.h>
 #endif
 
-#include <filesystem>
-#include <string>
-
 namespace pbr {
 
 namespace {
-
-std::string JoinPath(const std::string& base, const std::string& relative) {
-  std::filesystem::path path = std::filesystem::path(base) / relative;
-  return path.lexically_normal().string();
-}
 
 bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier,
                     float /*native_dp_ratio*/, bool priority) {
@@ -49,20 +42,19 @@ Application::~Application() {
 }
 
 std::string Application::AssetsPath(const std::string& relative) {
-#ifdef PP_BROWSER_ASSETS_DIR
-  return JoinPath(PP_BROWSER_ASSETS_DIR, relative);
-#else
-  return JoinPath("assets", relative);
-#endif
+  return IAssetLocator::Instance().Resolve(relative);
 }
 
-bool Application::Initialize(const char* window_title, int width, int height, DemoMode demo,
-                             const AppConfig& config) {
+bool Application::Initialize(const char* window_title, DemoMode demo, const BootstrapResult& bootstrap) {
   if (initialized_) {
     return true;
   }
 
   demo_ = demo;
+  bootstrap_ = bootstrap;
+
+  const int width = bootstrap.machine_prefs.window.width;
+  const int height = bootstrap.machine_prefs.window.height;
 
   log().info << "Initializing (demo=" << static_cast<int>(demo) << ", " << width << "x" << height << ")";
 
@@ -86,7 +78,8 @@ bool Application::Initialize(const char* window_title, int width, int height, De
   Rml::Debugger::Initialise(Rml::CreateContext("debugger", Rml::Vector2i(0, 0)));
 #endif
 
-  Theme::LoadBase(AssetsPath("themes/base.rcss"));
+  const std::string theme_path = AssetsPath(bootstrap.profile_prefs.theme);
+  Theme::LoadBase(theme_path);
   Rml::LoadFontFace(AssetsPath("fonts/LatoLatin-Regular.ttf"));
 
   auto* context = Rml::CreateContext("main", Rml::Vector2i(width, height));
@@ -128,7 +121,7 @@ bool Application::Initialize(const char* window_title, int width, int height, De
       Backend::Shutdown();
       return false;
     }
-  } else if (!SetupChatDemo(context, config)) {
+  } else if (!SetupChatDemo(context, bootstrap)) {
     log().error << "SetupChatDemo failed";
     Rml::RemoveContext("main");
     Rml::Shutdown();

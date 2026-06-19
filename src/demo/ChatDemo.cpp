@@ -16,7 +16,8 @@
 #include "ui/DocumentLoader.h"
 #include "ui/ShellHost.h"
 #include "ui/ShellFeedback.h"
-#include "ui/ShellTypes.h"
+#include "app/Config.h"
+#include "ui/SettingsController.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
@@ -1074,12 +1075,14 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
   }
 }
 
-bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
+bool ChatDemo::Setup(Rml::Context* context, const BootstrapResult& bootstrap) {
   if (!context) {
     return false;
   }
 
   context_ = context;
+  bootstrap_ = bootstrap;
+  const AppConfig& config = bootstrap.config;
   ClearFormState();
   widgets_by_entry_.clear();
   chat_ = {};
@@ -1089,7 +1092,7 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   use_llm_ = !config.llm.base_url.empty();
   agent_.emplace();
 
-  if (auto init = MessagingHub::Instance().Initialize(config)) {
+  if (MessagingHub::Instance().IsInitialized()) {
     messaging_ready_ = true;
     agent_->SetThreadStore(&MessagingHub::Instance().Store());
     MessagingHub::Instance().BindAgent(*agent_);
@@ -1190,11 +1193,17 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
         ctor.BindEventCallback("calendar_next", &ChatDemo::CalendarNextCallback);
         ctor.BindEventCallback("select_calendar_day", &ChatDemo::SelectCalendarDayCallback);
         ctor.BindEventCallback("open_working_set", &ChatDemo::OpenWorkingSetCallback);
+        ctor.BindEventCallback("open_settings", &SettingsController::OpenSettingsCallback);
       })) {
     return false;
   }
 
   if (!ShellHost::RegisterWindowModel(context)) {
+    return false;
+  }
+
+  SettingsController::Instance().BindBootstrap(bootstrap_);
+  if (!SettingsController::Instance().RegisterModel(context)) {
     return false;
   }
 
@@ -1227,6 +1236,14 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
   }
 
   return true;
+}
+
+void ChatDemo::ApplyConfig(const AppConfig& config) {
+  bootstrap_.config = config;
+  use_llm_ = !config.llm.base_url.empty();
+  if (agent_) {
+    agent_->Configure(config);
+  }
 }
 
 void ChatDemo::Update() {
@@ -1269,8 +1286,8 @@ void ChatDemo::Shutdown() {
   use_llm_ = false;
 }
 
-bool SetupChatDemo(Rml::Context* context, const AppConfig& config) {
-  return ChatDemo::Instance().Setup(context, config);
+bool SetupChatDemo(Rml::Context* context, const BootstrapResult& bootstrap) {
+  return ChatDemo::Instance().Setup(context, bootstrap);
 }
 
 void UpdateChatDemo() {

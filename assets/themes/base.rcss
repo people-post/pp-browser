@@ -992,16 +992,23 @@ selection {
 }
 
 .shell-back-btn {
-  width: auto;
-  padding: 6dp 12dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  min-width: 32dp;
+  padding: 0;
   margin-bottom: 0;
   border: 0;
-  font-family: LatoLatin;
-  font-size: 14dp;
   border-radius: 6dp;
   cursor: pointer;
   background-color: #e8eaed;
   color: #1a1a1a;
+}
+
+.shell-back-btn svg {
+  flex-shrink: 0;
 }
 
 .shell-layer-transient {
@@ -1373,4 +1380,64 @@ selection {
   padding: 24dp;
   box-sizing: border-box;
   justify-content: center;
+}
+
+/* Settings panel */
+.settings-panel {
+  padding: 24dp;
+  box-sizing: border-box;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.settings-section {
+  margin-top: 16dp;
+  gap: 8dp;
+}
+
+.settings-section-title {
+  font-size: 14dp;
+  font-weight: bold;
+  color: #374151;
+  margin-bottom: 4dp;
+}
+
+.settings-field {
+  display: block;
+}
+
+.settings-label {
+  display: block;
+  font-size: 12dp;
+  color: #6b7280;
+  margin-bottom: 4dp;
+}
+
+.settings-path {
+  font-size: 12dp;
+  word-break: break-all;
+}
+
+.settings-actions {
+  margin-top: 24dp;
+  gap: 12dp;
+  justify-content: flex-end;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12dp 16dp;
+  border-top: 1dp #e5e7eb;
+}
+
+.sidebar-settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 8dp;
+  width: 100%;
+  text-align: left;
+}
+
+.sidebar-settings-btn svg {
+  flex-shrink: 0;
 }
