@@ -224,9 +224,7 @@ target_include_directories(pp_browser_profile_registry_test PRIVATE ${CMAKE_SOUR
 pp_browser_add_test(profile_registry_test pp_browser_profile_registry_test)
 
 add_executable(pp_browser_schema_version_test schema_version_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/app/SchemaVersion.cpp
-  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
-  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
+  ${CMAKE_SOURCE_DIR}/src/app/SchemaVersion.cpp)
 target_link_libraries(pp_browser_schema_version_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_schema_version_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(schema_version_test pp_browser_schema_version_test)

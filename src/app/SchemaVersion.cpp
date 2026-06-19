@@ -54,14 +54,15 @@ Roe<void> SchemaVersion::RunForwardMigrators(const std::string& path, nlohmann::
 }
 
 Roe<void> SchemaVersion::EnsureProfileManifest(const std::string& profile_data_dir) {
-  const std::string path = (std::filesystem::path(profile_data_dir) / "manifest.json").string();
+  const std::filesystem::path manifest_path =
+      std::filesystem::path(profile_data_dir) / "manifest.json";
   std::error_code ec;
   std::filesystem::create_directories(profile_data_dir, ec);
 
-  if (!std::filesystem::exists(path)) {
+  if (!std::filesystem::exists(manifest_path)) {
     const nlohmann::json root = {{"schema_version", kCurrentSchemaVersion}};
     const std::string payload = root.dump(2);
-    std::ofstream out(path, std::ios::trunc);
+    std::ofstream out(manifest_path, std::ios::trunc);
     if (!out) {
       return Error("Failed to write profile manifest");
     }
@@ -73,7 +74,7 @@ Roe<void> SchemaVersion::EnsureProfileManifest(const std::string& profile_data_d
     return {};
   }
 
-  std::ifstream in(path);
+  std::ifstream in(manifest_path);
   if (!in) {
     return Error("Failed to open profile manifest");
   }
@@ -87,7 +88,8 @@ Roe<void> SchemaVersion::EnsureProfileManifest(const std::string& profile_data_d
     return validated.error();
   }
 
-  if (auto migrated = RunForwardMigrators(path, root, kCurrentSchemaVersion); !migrated) {
+  if (auto migrated = RunForwardMigrators(manifest_path.string(), root, kCurrentSchemaVersion);
+      !migrated) {
     return migrated.error();
   }
 
