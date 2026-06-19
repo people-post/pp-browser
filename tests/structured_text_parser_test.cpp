@@ -205,8 +205,13 @@ int main() {
   auto form_result = pbr::StructuredTextParser::ParseBlocksJson(form_block);
   assert(form_result.ok);
   assert(form_result.widget_inits.size() == 1);
-  assert(form_result.rml.find("data-value=\"field.value\"") != std::string::npos);
-  assert(form_result.rml.find("submit_form('__ENTRY__', 'booking')") != std::string::npos);
+  assert(form_result.working_set_candidates.size() == 1);
+  assert(form_result.rml.find("chat-working-set-chip") != std::string::npos);
+  assert(form_result.rml.find("open_working_set('__ENTRY__', 0)") != std::string::npos);
+  assert(form_result.rml.find("data-value=\"field.value\"") == std::string::npos);
+  assert(form_result.working_set_candidates[0].artifact_rml.find("working-set-form") != std::string::npos);
+  assert(form_result.working_set_candidates[0].artifact_rml.find("submit_form('__ENTRY__', 'booking')") !=
+         std::string::npos);
 
   const std::string calendar_block = R"({
     "blocks": [
@@ -216,9 +221,13 @@ int main() {
   auto calendar_result = pbr::StructuredTextParser::ParseBlocksJson(calendar_block);
   assert(calendar_result.ok);
   assert(calendar_result.widget_inits.size() == 1);
-  assert(calendar_result.rml.find("calendar_prev('__ENTRY__')") != std::string::npos);
-  assert(calendar_result.rml.find("turn.calendar.weeks") != std::string::npos);
-  assert(calendar_result.rml.find("<table class=\"calendar-grid\">") != std::string::npos);
+  assert(calendar_result.working_set_candidates.size() == 1);
+  assert(calendar_result.rml.find("chat-working-set-chip") != std::string::npos);
+  assert(calendar_result.working_set_candidates[0].artifact_rml.find("working-set-calendar") != std::string::npos);
+  assert(calendar_result.working_set_candidates[0].artifact_rml.find("calendar_prev('__ENTRY__')") != std::string::npos);
+  assert(calendar_result.working_set_candidates[0].artifact_rml.find("working_set.calendar.weeks") != std::string::npos);
+  assert(calendar_result.working_set_candidates[0].artifact_rml.find("<table class=\"calendar-grid\">") !=
+         std::string::npos);
 
   const std::string calendar_defaults = R"({"blocks":[{"type":"calendar"}]})";
   auto calendar_defaults_result = pbr::StructuredTextParser::ParseBlocksJson(calendar_defaults);
@@ -277,14 +286,22 @@ int main() {
       }
     ]
   })";
-  auto long_list_result = pbr::StructuredTextParser::ParseBlocksJson(long_list_block);
+  auto long_list_result = pbr::StructuredTextParser::ParseBlocksJson(long_list_block, pbr::ResponseGoal::PeopleDiscovery);
   assert(long_list_result.ok);
-  assert(long_list_result.rml.find("chat-long-list-scroll") != std::string::npos);
-  assert(long_list_result.rml.find("chat-long-list-title") != std::string::npos);
-  assert(long_list_result.rml.find("&lt;Q2&gt;") != std::string::npos);
-  assert(long_list_result.rml.find("&amp;") != std::string::npos);
-  assert(long_list_result.rml.find("chat-long-list-footer") != std::string::npos);
+  assert(long_list_result.working_set_candidates.size() == 1);
+  assert(long_list_result.rml.find("chat-working-set-chip") != std::string::npos);
+  assert(long_list_result.rml.find("chat-long-list-scroll") == std::string::npos);
+  assert(long_list_result.working_set_candidates[0].artifact_rml.find("working-set-long-list") != std::string::npos);
+  assert(long_list_result.working_set_candidates[0].artifact_rml.find("chat-long-list-title") != std::string::npos);
+  assert(long_list_result.working_set_candidates[0].artifact_rml.find("&lt;Q2&gt;") != std::string::npos);
+  assert(long_list_result.working_set_candidates[0].artifact_rml.find("&amp;") != std::string::npos);
+  assert(long_list_result.working_set_candidates[0].artifact_rml.find("chat-long-list-footer") != std::string::npos);
   assert(long_list_result.chat_actions.size() == 3);
+
+  const std::string paragraph_only = R"({"blocks":[{"type":"paragraph","text":"Hello"}]})";
+  auto paragraph_only_result = pbr::StructuredTextParser::ParseBlocksJson(paragraph_only);
+  assert(paragraph_only_result.ok);
+  assert(paragraph_only_result.working_set_candidates.empty());
 
   const std::string long_list_missing_items = R"({"blocks":[{"type":"long_list","title":"X"}]})";
   auto long_list_missing_items_result = pbr::StructuredTextParser::ParseBlocksJson(long_list_missing_items);

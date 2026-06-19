@@ -32,11 +32,23 @@ pp_browser_add_test(mcp_mock_test pp_browser_mcp_mock_test)
 
 add_executable(pp_browser_structured_text_parser_test structured_text_parser_test.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/WorkingSetPolicy.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/MessagingJson.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp)
 target_link_libraries(pp_browser_structured_text_parser_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_structured_text_parser_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(structured_text_parser_test pp_browser_structured_text_parser_test)
+
+add_executable(pp_browser_working_set_policy_test working_set_policy_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/WorkingSetPolicy.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/MessagingJson.cpp
+  ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp)
+target_link_libraries(pp_browser_working_set_policy_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_working_set_policy_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_test(working_set_policy_test pp_browser_working_set_policy_test)
 
 add_executable(pp_browser_rml_mount_test rml_mount_test.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/RmlValidator.cpp
@@ -97,6 +109,8 @@ add_executable(pp_browser_turn_executor_test turn_executor_test.cpp
   ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/PromptBuilder.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/WorkingSetPolicy.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/MessagingJson.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp)
 target_link_libraries(pp_browser_turn_executor_test PRIVATE nlohmann_json::nlohmann_json)
@@ -146,6 +160,8 @@ pp_browser_add_test(calendar_helper_test pp_browser_calendar_helper_test)
 
 add_executable(pp_browser_chat_action_dispatcher_test chat_action_dispatcher_test.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/WorkingSetPolicy.cpp
+  ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/MessagingJson.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp)
 target_link_libraries(pp_browser_chat_action_dispatcher_test PRIVATE nlohmann_json::nlohmann_json)

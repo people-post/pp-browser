@@ -141,6 +141,7 @@ endif()
   src/agent/LlmClient.cpp
   src/agent/PromptBuilder.cpp
   src/agent/StructuredTextParser.cpp
+  src/agent/WorkingSetPolicy.cpp
   src/agent/UiGenerator.cpp
   src/agent/RmlValidator.cpp
   src/agent/TurnPlan.cpp

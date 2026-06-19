@@ -101,6 +101,11 @@ Reactive widgets (bound form fields / calendar inside the bubble)
 15. form — id, submit_template, fields[]: { id, label, field_type (text|textarea|select|checkbox|date), options? }; optional title, submit_label
 16. calendar — optional month (1-12), year (defaults to today); optional min_date, max_date (YYYY-MM-DD), available_days (string[])
 
+WORKING SET PANEL
+- Feeds (long_list), forms, calendars, and large tables render as a compact summary chip in chat; full content opens in the side panel automatically.
+- Keep a short framing paragraph in chat; put browsable rows and form fields in long_list / form / calendar blocks.
+- Do not duplicate long lists inline in chat when a long_list block is present.
+
 LONG LIST + MCP WORKFLOW
 - For feeds and directories (articles, records, search hits), call MCP tools first via function calling — do not invent rows.
 - Read each tool inputSchema to choose fetch params; read tool result JSON to map rows into long_list items.

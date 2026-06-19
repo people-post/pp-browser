@@ -574,7 +574,11 @@ void ShellHost::SyncLayout() {
   MountPaneBodies();
   DirtyWindow();
   if (state_.auxiliary_open) {
-    DataModelHost::Instance().Dirty("shell", "preview_rml");
+    DataModelHost::Instance().Dirty("shell", "working_set_active");
+    DataModelHost::Instance().Dirty("shell", "working_set_title");
+    DataModelHost::Instance().Dirty("shell", "working_set_subtitle");
+    DataModelHost::Instance().Dirty("shell", "working_set_rml");
+    DataModelHost::Instance().Dirty("shell", "working_set");
   }
 }
 

@@ -6,7 +6,7 @@
     </div>
     <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
             data-if="auxiliary_available && layout_mode == 'expanded'"
-            data-event-click="toggle_auxiliary()">Preview</button>
+            data-event-click="toggle_auxiliary()">Details</button>
   </div>
   <div class="messages" data-mount-id="messages">
     <div class="chat-empty stack" data-if="!has_turns && !loading">

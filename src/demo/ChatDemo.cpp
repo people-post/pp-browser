@@ -1,6 +1,7 @@
 #include "demo/ChatDemo.h"
 
 #include "agent/StructuredTextParser.h"
+#include "agent/WorkingSetPolicy.h"
 #include "agent/conversation/Conversation.h"
 #include "app/Application.h"
 #include "app/InputCoordinator.h"
@@ -19,6 +20,8 @@
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
+
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -281,7 +284,11 @@ void DirtyChat() {
 
 void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "sessions");
-  DataModelHost::Instance().Dirty("shell", "preview_rml");
+  DataModelHost::Instance().Dirty("shell", "working_set_active");
+  DataModelHost::Instance().Dirty("shell", "working_set_title");
+  DataModelHost::Instance().Dirty("shell", "working_set_subtitle");
+  DataModelHost::Instance().Dirty("shell", "working_set_rml");
+  DataModelHost::Instance().Dirty("shell", "working_set");
 }
 
 } // namespace
@@ -293,6 +300,142 @@ ChatDemo::ChatDemo() {
 ChatDemo& ChatDemo::Instance() {
   static ChatDemo demo;
   return demo;
+}
+
+void ChatDemo::OpenWorkingSetCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  const std::optional<int> block_index = EventArgAsInt(args, 1);
+  if (!block_index || *block_index < 0) {
+    return;
+  }
+  Instance().OpenWorkingSet(std::string(args[0].Get<Rml::String>().c_str()), *block_index);
+}
+
+void ChatDemo::DirtyWorkingSet() {
+  DataModelHost::Instance().Dirty("shell", "working_set_active");
+  DataModelHost::Instance().Dirty("shell", "working_set_title");
+  DataModelHost::Instance().Dirty("shell", "working_set_subtitle");
+  DataModelHost::Instance().Dirty("shell", "working_set_rml");
+  DataModelHost::Instance().Dirty("shell", "working_set");
+}
+
+std::vector<WorkingSetCandidate> ChatDemo::HydrateWorkingSetCandidates(
+    const std::vector<WorkingSetCandidate>& candidates, const std::string& entry_id) const {
+  std::vector<WorkingSetCandidate> hydrated;
+  hydrated.reserve(candidates.size());
+  for (WorkingSetCandidate candidate : candidates) {
+    candidate.artifact_rml = InjectEntryPlaceholders(candidate.artifact_rml, entry_id);
+    candidate.teaser_rml = InjectEntryPlaceholders(candidate.teaser_rml, entry_id);
+    hydrated.push_back(std::move(candidate));
+  }
+  return hydrated;
+}
+
+void ChatDemo::SyncWorkingSetWidgetBindings(const std::string& entry_id) {
+  shell_.working_set = {};
+  if (const TurnWidgetState* widgets = FindWidgetState(entry_id)) {
+    shell_.working_set = *widgets;
+  }
+  DirtyWorkingSet();
+}
+
+void ChatDemo::ClearWorkingSet() {
+  shell_.working_set_active = false;
+  shell_.working_set_title = "";
+  shell_.working_set_subtitle = "";
+  shell_.working_set_rml = "";
+  shell_.working_set = {};
+  active_working_set_affinity_ = WorkingSetAffinity::None;
+  active_working_set_entry_id_.clear();
+  ShellHost::Instance().SetAuxiliaryAvailable(false);
+  ShellHost::Instance().CloseAuxiliary();
+  DirtyWorkingSet();
+}
+
+void ChatDemo::OpenWorkingSet(const std::string& entry_id, const int block_index) {
+  const auto entry_it = working_set_by_entry_.find(entry_id);
+  if (entry_it == working_set_by_entry_.end()) {
+    return;
+  }
+
+  const WorkingSetCandidate* selected = nullptr;
+  for (const WorkingSetCandidate& candidate : entry_it->second) {
+    if (candidate.block_index == block_index) {
+      selected = &candidate;
+      break;
+    }
+  }
+  if (!selected) {
+    return;
+  }
+
+  shell_.working_set_active = true;
+  shell_.working_set_title = Rml::String(selected->title.c_str());
+  shell_.working_set_subtitle = Rml::String(selected->subtitle.c_str());
+  shell_.working_set_rml = Rml::String(selected->artifact_rml.c_str());
+  active_working_set_affinity_ = selected->affinity;
+  active_working_set_entry_id_ = entry_id;
+  SyncWorkingSetWidgetBindings(entry_id);
+
+  ShellHost::Instance().SetAuxiliaryAvailable(true);
+  ShellHost::Instance().OpenAuxiliary();
+  DirtyWorkingSet();
+}
+
+void ChatDemo::ApplyWorkingSetFromParse(const std::string& entry_id,
+                                        const std::vector<WorkingSetCandidate>& candidates) {
+  if (candidates.empty()) {
+    ClearWorkingSet();
+    return;
+  }
+
+  const std::vector<WorkingSetCandidate> hydrated = HydrateWorkingSetCandidates(candidates, entry_id);
+  working_set_by_entry_[entry_id] = hydrated;
+
+  const WorkingSetCandidate* primary = nullptr;
+  for (const WorkingSetCandidate& candidate : hydrated) {
+    if (candidate.auto_open) {
+      primary = &candidate;
+      break;
+    }
+  }
+  if (!primary) {
+    ClearWorkingSet();
+    return;
+  }
+
+  const bool same_task = shell_.working_set_active && active_working_set_entry_id_ == entry_id &&
+                         active_working_set_affinity_ == primary->affinity &&
+                         active_working_set_affinity_ != WorkingSetAffinity::None;
+
+  shell_.working_set_active = true;
+  shell_.working_set_title = Rml::String(primary->title.c_str());
+  shell_.working_set_subtitle = Rml::String(primary->subtitle.c_str());
+  shell_.working_set_rml = Rml::String(primary->artifact_rml.c_str());
+  active_working_set_affinity_ = primary->affinity;
+  active_working_set_entry_id_ = entry_id;
+  SyncWorkingSetWidgetBindings(entry_id);
+
+  ShellHost::Instance().SetAuxiliaryAvailable(true);
+  if (!same_task || !ShellHost::Instance().State().auxiliary_open) {
+    ShellHost::Instance().OpenAuxiliary();
+  }
+  DirtyWorkingSet();
+}
+
+bool ChatDemo::ShouldCloseWorkingSetForAction(const std::optional<std::string>& payload) const {
+  if (!payload || payload->empty()) {
+    return false;
+  }
+  const nlohmann::json doc = nlohmann::json::parse(*payload, nullptr, false);
+  if (doc.is_discarded() || !doc.is_object()) {
+    return false;
+  }
+  const std::string type = doc.value("type", "");
+  return type == "start_conversation" || type == "add_contact";
 }
 
 void ChatDemo::SendMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -379,6 +522,8 @@ void ChatDemo::OnSelectThread(const std::string& thread_id) {
     return;
   }
   if (auto thread = MessagingHub::Instance().Inbox().OpenThread(thread_id)) {
+    ClearWorkingSet();
+    working_set_by_entry_.clear();
     RefreshFromMessaging();
     (void)thread;
   }
@@ -526,8 +671,8 @@ void ChatDemo::OnNewChat() {
   chat_.status = "";
   chat_.loading = false;
   pending_reply_.reset();
-  ShellHost::Instance().SetAuxiliaryAvailable(false);
-  ShellHost::Instance().CloseAuxiliary();
+  ClearWorkingSet();
+  working_set_by_entry_.clear();
   ClearFormState();
   widgets_by_entry_.clear();
   RefreshFromMessaging();
@@ -710,6 +855,7 @@ void ChatDemo::SubmitForm(const std::string& entry_id, const std::string& form_i
   submitted_forms_.insert({entry_id, form_id});
   widgets->form.expired = true;
   active_form_.reset();
+  ClearWorkingSet();
 
   SyncDisplayFromThread();
   SendUserText(display_text, payload);
@@ -734,6 +880,9 @@ void ChatDemo::SendChatAction(const std::string& entry_id, int action_index) {
       return;
     }
     const TranscriptChatAction& action = message.chat_actions[static_cast<size_t>(action_index)];
+    if (ShouldCloseWorkingSetForAction(action.payload)) {
+      ClearWorkingSet();
+    }
     HandleLocalAction(action.message, action.payload);
     return;
   }
@@ -747,6 +896,9 @@ void ChatDemo::CalendarPrev(const std::string& entry_id) {
     return;
   }
   ShiftCalendarMonth(widgets->calendar, -1);
+  if (active_working_set_entry_id_ == entry_id) {
+    SyncWorkingSetWidgetBindings(entry_id);
+  }
   SyncDisplayFromThread();
 }
 
@@ -756,6 +908,9 @@ void ChatDemo::CalendarNext(const std::string& entry_id) {
     return;
   }
   ShiftCalendarMonth(widgets->calendar, 1);
+  if (active_working_set_entry_id_ == entry_id) {
+    SyncWorkingSetWidgetBindings(entry_id);
+  }
   SyncDisplayFromThread();
 }
 
@@ -787,10 +942,15 @@ void ChatDemo::SelectCalendarDay(const std::string& entry_id, const std::string&
   SendUserText("Selected " + iso_date);
 }
 
-void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
-                                    const std::string& finish_reason, const std::string& thread_id) {
-  auto parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output)
-                         : StructuredTextParser::ParseBlocksJson(raw_output);
+void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, const bool from_llm,
+                                    const std::string& finish_reason, const std::string& thread_id,
+                                    ResponseGoal response_goal, RenderMode render_mode) {
+  if (!from_llm) {
+    response_goal = InferResponseGoalFromBlocksJson(raw_output);
+  }
+
+  auto parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output, response_goal, render_mode)
+                         : StructuredTextParser::ParseBlocksJson(raw_output, response_goal, render_mode);
   if (!parsed.ok) {
     log().warning << "Failed to parse assistant reply: " << parsed.error;
     if (from_llm && !finish_reason.empty()) {
@@ -858,9 +1018,7 @@ void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::stri
       (void)MessagingHub::Instance().Inbox().UpdatePreview(active_thread, parsed.rml);
     }
 
-    shell_.preview_rml = Rml::String(hydrated.c_str());
-    ShellHost::Instance().SetAuxiliaryAvailable(true);
-    DirtyShell();
+    ApplyWorkingSetFromParse(entry_id, parsed.working_set_candidates);
   }
 
   SyncDisplayFromThread();
@@ -895,7 +1053,7 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
     break;
   case AgentEventType::AssistantReady:
     FinishAssistantReply(event.entry_id, event.text, !StructuredTextParser::IsBlocksJsonDocument(event.text),
-                       event.finish_reason, event.thread_id);
+                       event.finish_reason, event.thread_id, event.response_goal, event.render_mode);
     break;
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;
@@ -994,11 +1152,19 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
         ctor.BindEventCallback("calendar_prev", &ChatDemo::CalendarPrevCallback);
         ctor.BindEventCallback("calendar_next", &ChatDemo::CalendarNextCallback);
         ctor.BindEventCallback("select_calendar_day", &ChatDemo::SelectCalendarDayCallback);
+        ctor.BindEventCallback("open_working_set", &ChatDemo::OpenWorkingSetCallback);
       })) {
     return false;
   }
 
   if (!DataModelHost::Instance().Register(context, "shell", [](Rml::DataModelConstructor& ctor) {
+        RegisterChatWidgetDataTypes(ctor);
+        if (auto working_set_handle = ctor.RegisterStruct<TurnWidgetState>()) {
+          working_set_handle.RegisterMember("has_form", &TurnWidgetState::has_form);
+          working_set_handle.RegisterMember("form", &TurnWidgetState::form);
+          working_set_handle.RegisterMember("has_calendar", &TurnWidgetState::has_calendar);
+          working_set_handle.RegisterMember("calendar", &TurnWidgetState::calendar);
+        }
         if (auto session_handle = ctor.RegisterStruct<ChatDemo::SessionRow>()) {
           session_handle.RegisterMember("id", &ChatDemo::SessionRow::id);
           session_handle.RegisterMember("title", &ChatDemo::SessionRow::title);
@@ -1010,11 +1176,20 @@ bool ChatDemo::Setup(Rml::Context* context, const AppConfig& config) {
         }
         ctor.RegisterArray<std::vector<ChatDemo::SessionRow>>();
         ctor.Bind("sessions", &ChatDemo::Instance().shell_.sessions);
-        ctor.Bind("preview_rml", &ChatDemo::Instance().shell_.preview_rml);
+        ctor.Bind("working_set_active", &ChatDemo::Instance().shell_.working_set_active);
+        ctor.Bind("working_set_title", &ChatDemo::Instance().shell_.working_set_title);
+        ctor.Bind("working_set_subtitle", &ChatDemo::Instance().shell_.working_set_subtitle);
+        ctor.Bind("working_set_rml", &ChatDemo::Instance().shell_.working_set_rml);
+        ctor.Bind("working_set", &ChatDemo::Instance().shell_.working_set);
         ctor.BindEventCallback("new_chat", &ChatDemo::NewChatCallback);
         ctor.BindEventCallback("select_thread", &ChatDemo::SelectThreadCallback);
         ctor.BindEventCallback("close_thread", &ChatDemo::CloseThreadCallback);
         ctor.BindEventCallback("send_chat_action", &ChatDemo::SendChatActionCallback);
+        ctor.BindEventCallback("submit_form", &ChatDemo::SubmitFormCallback);
+        ctor.BindEventCallback("calendar_prev", &ChatDemo::CalendarPrevCallback);
+        ctor.BindEventCallback("calendar_next", &ChatDemo::CalendarNextCallback);
+        ctor.BindEventCallback("select_calendar_day", &ChatDemo::SelectCalendarDayCallback);
+        ctor.BindEventCallback("open_working_set", &ChatDemo::OpenWorkingSetCallback);
       })) {
     return false;
   }

@@ -103,7 +103,9 @@ void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const 
                               .entry_id = entry_id,
                               .thread_id = state->pending_thread_id,
                               .finish_reason = finish_reason,
-                              .scoped_assist = state->turn_mode == AgentTurnMode::ScopedAssist});
+                              .scoped_assist = state->turn_mode == AgentTurnMode::ScopedAssist,
+                              .response_goal = state->turn_plan.response_goal,
+                              .render_mode = state->turn_plan.render_mode});
 }
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message) {

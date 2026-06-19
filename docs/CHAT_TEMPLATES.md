@@ -8,7 +8,15 @@ Assistant replies use structured JSON blocks parsed by [`StructuredTextParser`](
 |----------|--------|---------|
 | Static | paragraph, heading, list, code, card, table, key_value, callout, quote | Escaped HTML only |
 | Click actions | button, action_list, choice, poll, long_list | `send_chat_action(entry, index)` |
-| Reactive widgets | form, calendar | `data-value`, `data-for`, `data-if` on chat model |
+| Reactive widgets | form, calendar | `data-value`, `data-for`, `data-if` on chat or working set model |
+
+## Working set panel
+
+Panel-eligible blocks (`long_list`, `form`, `calendar`, large `table`, etc.) render as a **compact chip in chat** and open in the **auxiliary working set panel** (see [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md)).
+
+- Chat keeps narrative blocks (paragraph, heading) and teaser chips (`open_working_set(entry, block_index)`).
+- The panel shows the full artifact (uncapped list, expanded form, calendar grid).
+- Forms and calendars in the panel bind to `working_set.*` on the shell data model.
 
 ## Long list (LLM + MCP)
 
@@ -22,7 +30,7 @@ Reference example: `blog_articles` MCP tool → map `{ articles: [...] }` into r
 
 ## Reactive widgets
 
-Form and calendar blocks emit **stable RML templates** with data bindings under the `turn` alias (inside `data-for="turn : turns"`). C++ widget state lives in `ChatDemo::widgets_by_entry_` and merges into `TranscriptDisplayRow` on sync.
+Form and calendar blocks emit **stable RML templates** with data bindings. In the messages layout, chat teasers point to the working set panel where forms bind under `working_set.*` on the shell model. C++ widget state lives in `ChatDemo::widgets_by_entry_`.
 
 ### Form
 

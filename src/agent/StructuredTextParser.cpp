@@ -1,5 +1,6 @@
 #include "agent/StructuredTextParser.h"
 
+#include "agent/WorkingSetPolicy.h"
 #include "messaging/PeopleDiscoveryBlocks.h"
 
 #include <nlohmann/json.hpp>
@@ -102,6 +103,47 @@ constexpr const char* kFormWidgetRml =
     "</div>"
     "<button type=\"button\" class=\"chat-form-submit\" "
     "data-event-click=\"submit_form('__ENTRY__', '__FORM_ID__')\">{{turn.form.submit_label}}</button>"
+    "</div>";
+
+constexpr const char* kFormPanelWidgetRml =
+    "<p class=\"muted chat-form-expired-label\" data-if=\"working_set.has_form && working_set.form.expired\">Form closed</p>"
+    "<div class=\"working-set-form chat-form\" data-form-id=\"__FORM_ID__\" data-if=\"working_set.has_form && !working_set.form.expired\">"
+    "<p class=\"muted\">{{working_set.form.title}}</p>"
+    "<div data-for=\"field : working_set.form.fields\">"
+    "<label class=\"chat-form-label\">{{field.label}}"
+    "<input class=\"chat-form-field\" type=\"text\" data-if=\"field.field_type == 'text'\" data-value=\"field.value\" />"
+    "<input class=\"chat-form-field\" type=\"text\" data-if=\"field.field_type == 'date'\" data-value=\"field.value\" "
+    "placeholder=\"YYYY-MM-DD\" />"
+    "<textarea class=\"chat-form-field\" rows=\"2\" data-if=\"field.field_type == 'textarea'\" data-value=\"field.value\"></textarea>"
+    "<select class=\"chat-form-field\" data-if=\"field.field_type == 'select'\" data-value=\"field.value\">"
+    "<option data-for=\"option : field.options\" data-value=\"option.value\">{{option.label}}</option>"
+    "</select>"
+    "<input type=\"checkbox\" data-if=\"field.field_type == 'checkbox'\" data-checked=\"field.checked\" />"
+    "</label>"
+    "</div>"
+    "<button type=\"button\" class=\"chat-form-submit\" "
+    "data-event-click=\"submit_form('__ENTRY__', '__FORM_ID__')\">{{working_set.form.submit_label}}</button>"
+    "</div>";
+
+constexpr const char* kCalendarPanelWidgetRml =
+    "<div class=\"working-set-calendar chat-calendar\" data-if=\"working_set.has_calendar\">"
+    "<div class=\"row calendar-header\">"
+    "<button type=\"button\" class=\"calendar-nav\" data-event-click=\"calendar_prev('__ENTRY__')\">&lt;</button>"
+    "<span>{{working_set.calendar.month_label}}</span>"
+    "<button type=\"button\" class=\"calendar-nav\" data-event-click=\"calendar_next('__ENTRY__')\">&gt;</button>"
+    "</div>"
+    "<div class=\"calendar-weekdays row\">"
+    "<span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>"
+    "</div>"
+    "<table class=\"calendar-grid\">"
+    "<tr data-for=\"week : working_set.calendar.weeks\">"
+    "<td class=\"calendar-cell\" data-for=\"day : week.days\">"
+    "<button type=\"button\" class=\"calendar-day\" data-if=\"day.available\" "
+    "data-event-click=\"select_calendar_day('__ENTRY__', day.iso_date)\">{{day.label}}</button>"
+    "<span class=\"calendar-day calendar-day-muted\" data-if=\"!day.available\">{{day.label}}</span>"
+    "</td>"
+    "</tr>"
+    "</table>"
     "</div>";
 
 constexpr const char* kCalendarWidgetRml =
@@ -438,6 +480,91 @@ ParseResult ParseLongListBlock(const nlohmann::json& block, ParseResult& parent)
   return result;
 }
 
+ParseResult ParseLongListArtifact(const nlohmann::json& block, ParseResult& parent) {
+  if (!block.contains("items") || !block["items"].is_array()) {
+    return BlockError("long_list block requires items array");
+  }
+
+  std::ostringstream out;
+  out << "<div class=\"working-set-long-list\">";
+  if (block.contains("title") && block["title"].is_string()) {
+    out << "<p class=\"muted\">" << StructuredTextParser::EscapeText(block["title"].get<std::string>()) << "</p>";
+  }
+  out << "<div class=\"working-set-long-list-body\">";
+  for (const auto& item : block["items"]) {
+    if (!item.is_object() || !item.contains("title") || !item["title"].is_string()) {
+      return BlockError("long_list items require title");
+    }
+    out << "<div class=\"chat-long-list-item\">";
+    out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(item["title"].get<std::string>())
+        << "</p>";
+    if (item.contains("subtitle") && item["subtitle"].is_string()) {
+      out << "<p class=\"muted chat-long-list-subtitle\">"
+          << StructuredTextParser::EscapeText(item["subtitle"].get<std::string>()) << "</p>";
+    }
+    if (item.contains("meta") && item["meta"].is_string()) {
+      out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(item["meta"].get<std::string>())
+          << "</p>";
+    }
+    if (item.contains("actions") && item["actions"].is_array()) {
+      out << "<div class=\"row chat-long-list-actions\">";
+      for (const auto& action : item["actions"]) {
+        auto button = ParseLongListActionButton(parent, action);
+        if (!button.ok) {
+          return button;
+        }
+        out << button.rml;
+      }
+      out << "</div>";
+    }
+    out << "</div>";
+  }
+  out << "</div>";
+  if (block.contains("footer_actions") && block["footer_actions"].is_array()) {
+    out << "<div class=\"row chat-long-list-footer\">";
+    for (const auto& action : block["footer_actions"]) {
+      auto button = ParseLongListActionButton(parent, action);
+      if (!button.ok) {
+        return button;
+      }
+      out << button.rml;
+    }
+    out << "</div>";
+  }
+  out << "</div>";
+
+  ParseResult result;
+  result.ok = true;
+  result.rml = out.str();
+  return result;
+}
+
+std::string BuildArtifactRml(const nlohmann::json& block, const WorkingSetKind kind, const std::string& inline_rml,
+                             ParseResult& parent) {
+  switch (kind) {
+  case WorkingSetKind::LongList: {
+    const auto artifact = ParseLongListArtifact(block, parent);
+    return artifact.ok ? artifact.rml : inline_rml;
+  }
+  case WorkingSetKind::Form: {
+    const std::string form_id = block["id"].get<std::string>();
+    return ReplaceAll(ReplaceAll(kFormPanelWidgetRml, "__FORM_ID__", form_id), "__ENTRY__", "__ENTRY__");
+  }
+  case WorkingSetKind::Calendar:
+    return kCalendarPanelWidgetRml;
+  case WorkingSetKind::Table:
+    return ReplaceAll(inline_rml, "chat-table", "working-set-table chat-table");
+  case WorkingSetKind::Code:
+    return ReplaceAll(inline_rml, "code-block", "working-set-code code-block");
+  case WorkingSetKind::KeyValue:
+    return ReplaceAll(inline_rml, "chat-key-value", "working-set-key-value chat-key-value");
+  case WorkingSetKind::Card:
+    return ReplaceAll(inline_rml, "chat-card", "working-set-card chat-card");
+  default:
+    return inline_rml;
+  }
+}
+
 ParseResult ParseActionListBlock(const nlohmann::json& block, ParseResult& parent) {
   if (!block.contains("items") || !block["items"].is_array()) {
     return BlockError("action_list block requires items array");
@@ -735,7 +862,8 @@ std::string ToolNameFromBlock(const nlohmann::json& block) {
 
 } // namespace
 
-ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
+ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json, const ResponseGoal goal,
+                                                  const RenderMode render_mode) {
   const std::string trimmed = TrimAsciiWhitespace(json);
   nlohmann::json doc = nlohmann::json::parse(trimmed, nullptr, false);
   if (doc.is_discarded()) {
@@ -757,17 +885,37 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
   ParseResult result;
   result.ok = true;
 
+  int block_index = 0;
   for (const auto& block : doc["blocks"]) {
     auto rendered = RenderBlock(block, result);
     if (!rendered.ok) {
       result.warnings.push_back(rendered.error);
+      ++block_index;
       continue;
     }
-    text_stack << rendered.rml;
+
+    const BlockEligibility eligibility = EvaluateBlock(block, goal);
+    if (eligibility.eligible) {
+      WorkingSetCandidate candidate;
+      candidate.block_index = block_index;
+      candidate.kind = eligibility.kind;
+      candidate.affinity = eligibility.affinity;
+      candidate.auto_open = eligibility.auto_open;
+      candidate.title = eligibility.title;
+      candidate.subtitle = eligibility.subtitle;
+      candidate.artifact_rml = BuildArtifactRml(block, eligibility.kind, rendered.rml, result);
+      candidate.teaser_rml = BuildWorkingSetTeaser(block_index, eligibility.teaser_label);
+      text_stack << candidate.teaser_rml;
+      result.working_set_candidates.push_back(std::move(candidate));
+    } else {
+      text_stack << rendered.rml;
+    }
+
     for (const WidgetInit& init : rendered.widget_inits) {
       result.widget_inits.push_back(init);
     }
     has_text = true;
+    ++block_index;
   }
 
   if (!has_text && !result.warnings.empty()) {
@@ -780,6 +928,8 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json) {
     }
     result.rml = "<div class=\"stack\">" + text_stack.str() + "</div>";
   }
+
+  (void)render_mode;
   return result;
 }
 
@@ -833,7 +983,8 @@ bool StructuredTextParser::IsBlocksJsonDocument(const std::string& text) {
   return !doc.is_discarded() && doc.is_object() && doc.contains("blocks") && doc["blocks"].is_array();
 }
 
-ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_output) {
+ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_output, const ResponseGoal goal,
+                                                     const RenderMode render_mode) {
   if (ExtractEmbeddedToolCalls(llm_output)) {
     return Fail("Response contains tool calls, not display blocks");
   }
@@ -841,19 +992,19 @@ ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_outp
   static const std::regex json_re(R"re(```json\s*([\s\S]*?)```)re", std::regex::icase);
   std::smatch match;
   if (std::regex_search(llm_output, match, json_re)) {
-    return ParseBlocksJson(TrimAsciiWhitespace(match[1].str()));
+    return ParseBlocksJson(TrimAsciiWhitespace(match[1].str()), goal, render_mode);
   }
 
   const std::string trimmed = TrimAsciiWhitespace(llm_output);
   if (!trimmed.empty() && trimmed.front() == '{') {
-    auto bare = ParseBlocksJson(trimmed);
+    auto bare = ParseBlocksJson(trimmed, goal, render_mode);
     if (bare.ok) {
       return bare;
     }
   }
 
   if (const std::string blocks = TryPeopleDiscoveryBlocksFromToolJson(trimmed); !blocks.empty()) {
-    return ParseBlocksJson(blocks);
+    return ParseBlocksJson(blocks, ResponseGoal::PeopleDiscovery, render_mode);
   }
 
   return Fail("No ```json block found in LLM output");

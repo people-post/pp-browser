@@ -2,9 +2,11 @@
 
 #include "agent/AgentSession.h"
 #include "agent/StructuredTextParser.h"
+#include "agent/TurnPlan.h"
 #include "app/Config.h"
 #include "common/Module.h"
 #include "demo/ChatWidgetTypes.h"
+#include "ui/WorkingSetTypes.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
@@ -55,7 +57,11 @@ private:
 
   struct ShellState {
     std::vector<SessionRow> sessions;
-    Rml::String preview_rml;
+    bool working_set_active = false;
+    Rml::String working_set_title;
+    Rml::String working_set_subtitle;
+    Rml::String working_set_rml;
+    TurnWidgetState working_set;
   };
 
   struct PendingReply {
@@ -77,6 +83,7 @@ private:
   static void NewChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CloseThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OpenWorkingSetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
   void OnNewChat();
@@ -93,7 +100,9 @@ private:
   void UpdateThreadChrome();
   void UpdateSidebarPreview(const std::string& preview_text);
   void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
-                            const std::string& finish_reason = {}, const std::string& thread_id = {});
+                            const std::string& finish_reason = {}, const std::string& thread_id = {},
+                            ResponseGoal response_goal = ResponseGoal::General,
+                            RenderMode render_mode = RenderMode::Blocks);
   void HandleAgentEvent(const AgentEvent& event);
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload);
   void RefreshFromMessaging();
@@ -106,6 +115,14 @@ private:
   TurnWidgetState* FindWidgetState(const std::string& entry_id);
   const TurnWidgetState* FindWidgetState(const std::string& entry_id) const;
   void ClearFormState();
+  void ClearWorkingSet();
+  void ApplyWorkingSetFromParse(const std::string& entry_id, const std::vector<WorkingSetCandidate>& candidates);
+  void OpenWorkingSet(const std::string& entry_id, int block_index);
+  void SyncWorkingSetWidgetBindings(const std::string& entry_id);
+  void DirtyWorkingSet();
+  std::vector<WorkingSetCandidate> HydrateWorkingSetCandidates(const std::vector<WorkingSetCandidate>& candidates,
+                                                                const std::string& entry_id) const;
+  bool ShouldCloseWorkingSetForAction(const std::optional<std::string>& payload) const;
 
   Rml::Context* context_ = nullptr;
   ChatState chat_;
@@ -117,6 +134,9 @@ private:
   std::optional<ActiveForm> active_form_;
   std::set<std::pair<std::string, std::string>> submitted_forms_;
   std::map<std::string, TurnWidgetState> widgets_by_entry_;
+  std::map<std::string, std::vector<WorkingSetCandidate>> working_set_by_entry_;
+  WorkingSetAffinity active_working_set_affinity_ = WorkingSetAffinity::None;
+  std::string active_working_set_entry_id_;
 };
 
 bool SetupChatDemo(Rml::Context* context, const AppConfig& config);

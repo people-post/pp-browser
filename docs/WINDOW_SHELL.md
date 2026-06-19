@@ -19,7 +19,9 @@ Shared state lives in `ShellState` (`ShellTypes.h`). Demos call shell APIs; they
 |------|---------|----------|---------|
 | Primary | Chat | Center column | Full screen |
 | Secondary | Sessions | Left column | Drawer (toolbar) |
-| Auxiliary | Preview | Right column when open | Sheet (toolbar) |
+| Auxiliary | Working set (Preview) | Right column when open | Sheet (toolbar) |
+
+The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
 | Transient | Settings drill-down | Over primary | Over primary |
 
 Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).

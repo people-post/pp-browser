@@ -1,6 +1,10 @@
-<div class="preview-panel stack" data-model="shell">
-  <h2 class="heading-2 preview-title">Preview</h2>
-  <p class="text muted">Latest assistant reply</p>
-  <div class="preview-content" data-if="preview_rml != ''" data-rml="preview_rml"></div>
-  <p class="text muted" data-if="preview_rml == ''">No assistant reply yet.</p>
+<div class="working-set-panel stack" data-model="shell">
+  <div class="working-set-header">
+    <h2 class="heading-2 working-set-title" data-rml="working_set_title"></h2>
+    <p class="text muted" data-if="working_set_subtitle != ''" data-rml="working_set_subtitle"></p>
+  </div>
+  <div class="working-set-body" data-if="working_set_active" data-rml="working_set_rml"></div>
+  <p class="text muted empty-panel" data-if="!working_set_active">
+    Results, forms, and lists appear here when the assistant produces them.
+  </p>
 </div>

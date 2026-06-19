@@ -34,6 +34,8 @@ struct AgentEvent {
   std::string thread_id;
   std::string finish_reason;
   bool scoped_assist = false;
+  ResponseGoal response_goal = ResponseGoal::General;
+  RenderMode render_mode = RenderMode::Blocks;
 };
 
 class AgentSession {
