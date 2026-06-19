@@ -19,16 +19,19 @@ jobs:
         id: version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Packaging pp-browser ${VERSION} for macOS"
+          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          PROJECT_VERSION="${RELEASE_VERSION%%-*}"
+          echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Packaging pp-browser ${RELEASE_VERSION} for macOS"
 
       - name: Configure
         shell: bash
         run: |
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=Release \
-            -DPP_BROWSER_VERSION="${{ steps.version.outputs.version }}" \
+            -DPP_BROWSER_VERSION="${{ steps.version.outputs.project_version }}" \
+            -DPP_BROWSER_RELEASE_VERSION="${{ steps.version.outputs.release_version }}" \
             -DPP_BROWSER_PACKAGED_BUILD=ON \
             -DPP_BROWSER_ENABLE_LIBP2P_BUILD=OFF
 
@@ -62,9 +65,11 @@ jobs:
         id: version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Packaging pp-browser ${VERSION} for Windows"
+          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          PROJECT_VERSION="${RELEASE_VERSION%%-*}"
+          echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "project_version=${PROJECT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Packaging pp-browser ${RELEASE_VERSION} for Windows"
 
       - name: Configure
         shell: bash
@@ -72,7 +77,8 @@ jobs:
           cmake -B build -S . \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DPP_BROWSER_VERSION="${{ steps.version.outputs.version }}" \
+            -DPP_BROWSER_VERSION="${{ steps.version.outputs.project_version }}" \
+            -DPP_BROWSER_RELEASE_VERSION="${{ steps.version.outputs.release_version }}" \
             -DPP_BROWSER_PACKAGED_BUILD=ON \
             -DPP_BROWSER_ENABLE_LIBP2P_BUILD=OFF
 
