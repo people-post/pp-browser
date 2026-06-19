@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
-project(pp-browser VERSION 0.1.0 LANGUAGES CXX C)
+if(WIN32)
+  # Boost (libp2p deps) and other vendored libs enable MASM; required for Ninja + MSVC.
+  project(pp-browser VERSION 0.1.0 LANGUAGES CXX C ASM_MASM)
+else()
+  project(pp-browser VERSION 0.1.0 LANGUAGES CXX C)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
