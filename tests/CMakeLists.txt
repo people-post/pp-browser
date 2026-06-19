@@ -50,7 +50,7 @@ add_executable(pp_browser_shell_host_test shell_host_test.cpp
   ${CMAKE_SOURCE_DIR}/src/ui/ShellInterruption.cpp
   ${CMAKE_SOURCE_DIR}/src/ui/ShellFeedback.cpp)
 target_include_directories(pp_browser_shell_host_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(pp_browser_shell_host_test PRIVATE RmlUi::Core)
+pp_browser_link_rmlui_core(pp_browser_shell_host_test)
 pp_browser_add_test(shell_host_test pp_browser_shell_host_test)
 
 add_executable(pp_browser_llm_client_test llm_client_test.cpp
@@ -133,13 +133,14 @@ add_executable(pp_browser_chat_form_helper_test chat_form_helper_test.cpp
   ${CMAKE_SOURCE_DIR}/src/demo/ChatFormHelper.cpp
   ${CMAKE_SOURCE_DIR}/src/demo/ChatWidgetStateBuilder.cpp
   ${CMAKE_SOURCE_DIR}/src/demo/CalendarHelper.cpp)
-target_link_libraries(pp_browser_chat_form_helper_test PRIVATE nlohmann_json::nlohmann_json RmlUi::Core)
+target_link_libraries(pp_browser_chat_form_helper_test PRIVATE nlohmann_json::nlohmann_json)
+pp_browser_link_rmlui_core(pp_browser_chat_form_helper_test)
 target_include_directories(pp_browser_chat_form_helper_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(chat_form_helper_test pp_browser_chat_form_helper_test)
 
 add_executable(pp_browser_calendar_helper_test calendar_helper_test.cpp
   ${CMAKE_SOURCE_DIR}/src/demo/CalendarHelper.cpp)
-target_link_libraries(pp_browser_calendar_helper_test PRIVATE RmlUi::Core)
+pp_browser_link_rmlui_core(pp_browser_calendar_helper_test)
 target_include_directories(pp_browser_calendar_helper_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(calendar_helper_test pp_browser_calendar_helper_test)
 

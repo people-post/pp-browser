@@ -56,6 +56,8 @@ target_link_libraries(pp_rmlui_backend PUBLIC
   ${PP_BROWSER_SDL3_TARGET}
   ${PP_BROWSER_SDL3_IMAGE_TARGET}
 )
+include(LinkRmlUi)
+pp_browser_link_rmlui_svg_deps(pp_rmlui_backend)
 if(UNIX AND NOT APPLE)
   target_link_libraries(pp_rmlui_backend PUBLIC ${CMAKE_DL_LIBS})
 endif()
@@ -161,6 +163,7 @@ if(TARGET OpenSSL::Crypto)
 endif()
 
 pp_configure_status("Configuring tests...")
+include(LinkRmlUi)
 enable_testing()
 add_subdirectory(tests)
 pp_configure_status("Configure step complete")
