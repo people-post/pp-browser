@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.24)
+
+set(PP_BROWSER_VERSION "0.1.0" CACHE STRING "Application version")
+
 if(WIN32)
   # libp2p deps (Boost MASM, BoringSSL NASM) require these for Ninja + MSVC.
-  project(pp-browser VERSION 0.1.0 LANGUAGES CXX C ASM_MASM ASM_NASM)
+  project(pp-browser VERSION ${PP_BROWSER_VERSION} LANGUAGES CXX C ASM_MASM ASM_NASM)
 else()
-  project(pp-browser VERSION 0.1.0 LANGUAGES CXX C)
+  project(pp-browser VERSION ${PP_BROWSER_VERSION} LANGUAGES CXX C)
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -80,6 +83,7 @@ add_executable(pp-browser
   src/platform/Platform.cpp
   src/platform/IPathProvider.cpp
   src/platform/DesktopPathProvider.cpp
+  src/platform/ExecutablePath.cpp
   src/platform/IAssetLocator.cpp
   src/platform/DesktopAssetLocator.cpp
   src/platform/PlatformDefaults.cpp
@@ -87,10 +91,30 @@ add_executable(pp-browser
   src/platform/EnvCredentialStore.cpp
 )
 
-target_compile_definitions(pp-browser PRIVATE
-  RMLUI_STATIC_LIB
-  PP_BROWSER_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
-)
+option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)
+
+set(_pp_browser_compile_defs RMLUI_STATIC_LIB)
+if(PP_BROWSER_PACKAGED_BUILD)
+  list(APPEND _pp_browser_compile_defs PP_BROWSER_PACKAGED_BUILD=1)
+else()
+  list(APPEND _pp_browser_compile_defs PP_BROWSER_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+endif()
+
+target_compile_definitions(pp-browser PRIVATE ${_pp_browser_compile_defs})
+
+if(WIN32)
+  set_target_properties(pp-browser PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
+if(APPLE AND PP_BROWSER_PACKAGED_BUILD)
+  set_target_properties(pp-browser PROPERTIES
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_GUI_IDENTIFIER "dev.pp-browser.app"
+    MACOSX_BUNDLE_BUNDLE_NAME "pp-browser"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+  )
+endif()
 
 target_include_directories(pp-browser PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -188,5 +212,17 @@ enable_testing()
 add_subdirectory(tests)
 pp_configure_status("Configure step complete")
 
-install(TARGETS pp-browser RUNTIME DESTINATION bin)
-install(DIRECTORY assets/ DESTINATION share/pp-browser/assets)
+if(APPLE AND PP_BROWSER_PACKAGED_BUILD)
+  install(TARGETS pp-browser BUNDLE DESTINATION .)
+  install(DIRECTORY assets/ DESTINATION pp-browser.app/Contents/Resources/assets)
+elseif(WIN32 AND PP_BROWSER_PACKAGED_BUILD)
+  install(TARGETS pp-browser RUNTIME DESTINATION .)
+  install(DIRECTORY assets/ DESTINATION assets)
+else()
+  install(TARGETS pp-browser RUNTIME DESTINATION bin)
+  install(DIRECTORY assets/ DESTINATION share/pp-browser/assets)
+endif()
+
+if(PP_BROWSER_PACKAGED_BUILD AND (APPLE OR WIN32))
+  include(CPackOptions)
+endif()

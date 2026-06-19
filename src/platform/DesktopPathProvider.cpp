@@ -1,5 +1,7 @@
 #include "platform/DesktopPathProvider.h"
 
+#include "platform/ExecutablePath.h"
+
 #include <cstdlib>
 #include <filesystem>
 
@@ -117,10 +119,24 @@ std::string DesktopPathProvider::CacheDir(const std::string& data_dir) const {
 }
 
 std::string DesktopPathProvider::BundleAssetsDir() const {
+#if defined(PP_BROWSER_PACKAGED_BUILD)
+  const auto exe = ExecutablePath();
+  if (exe.empty()) {
+    return "assets";
+  }
+#if defined(__APPLE__)
+  return (exe.parent_path().parent_path() / "Resources" / "assets").lexically_normal().string();
+#elif defined(_WIN32)
+  return (exe.parent_path() / "assets").lexically_normal().string();
+#else
+  return (exe.parent_path().parent_path() / "share" / "pp-browser" / "assets").lexically_normal().string();
+#endif
+#else
 #ifdef PP_BROWSER_ASSETS_DIR
   return PP_BROWSER_ASSETS_DIR;
 #else
   return "assets";
+#endif
 #endif
 }
 

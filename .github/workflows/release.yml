@@ -1,0 +1,125 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse version from tag
+        id: version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Packaging pp-browser ${VERSION} for macOS"
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPP_BROWSER_VERSION="${{ steps.version.outputs.version }}" \
+            -DPP_BROWSER_PACKAGED_BUILD=ON \
+            -DPP_BROWSER_ENABLE_LIBP2P_BUILD=OFF
+
+      - name: Build
+        run: cmake --build build --config Release -j 2
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Install
+        run: cmake --install build --prefix install
+
+      - name: Package
+        run: cpack --config build/CPackConfig.cmake
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: build/*.dmg
+
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Parse version from tag
+        id: version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Packaging pp-browser ${VERSION} for Windows"
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -B build -S . \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPP_BROWSER_VERSION="${{ steps.version.outputs.version }}" \
+            -DPP_BROWSER_PACKAGED_BUILD=ON \
+            -DPP_BROWSER_ENABLE_LIBP2P_BUILD=OFF
+
+      - name: Build
+        run: cmake --build build --config Release -j 2
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Install
+        run: cmake --install build --prefix install
+
+      - name: Package
+        run: cpack --config build/CPackConfig.cmake
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: build/*.exe
+
+  release:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-installer
+          path: dist/macos
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/windows
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: pp-browser ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            dist/macos/*
+            dist/windows/*
