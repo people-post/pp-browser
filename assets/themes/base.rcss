@@ -1018,6 +1018,11 @@ selection {
   background-color: #f8f9fb;
 }
 
+.shell-layer-transient .shell-pane-transient {
+  flex: 1;
+  min-height: 0;
+}
+
 .shell-layer-overlay,
 .shell-layer-dialog {
   z-index: 50;
