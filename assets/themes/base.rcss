@@ -465,7 +465,6 @@ selection {
 .chat-table {
   width: 100%;
   margin-top: 12dp;
-  border-collapse: collapse;
 }
 
 .chat-table th,
@@ -616,11 +615,10 @@ selection {
 
 .calendar-grid {
   width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
 }
 
 .calendar-cell {
+  width: 14%;
   text-align: center;
   padding: 2dp;
   vertical-align: middle;

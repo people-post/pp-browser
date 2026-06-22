@@ -46,7 +46,17 @@ jobs:
 
       - name: Smoke run (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a timeout 3 ./build/pp-browser || test $? -eq 124
+        run: |
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1280x720x24 &
+          xvfb_pid=$!
+          sleep 1
+          set +e
+          timeout 3 ./build/pp-browser
+          code=$?
+          kill "$xvfb_pid" 2>/dev/null || true
+          wait "$xvfb_pid" 2>/dev/null || true
+          test "$code" -eq 124
 
   android:
     runs-on: ubuntu-latest

@@ -80,6 +80,7 @@ Applies to static bubble text and focused form fields.
 - `@media`, `@keyframes`, pseudo-elements (`::before`), complex selectors
 - Vendor prefixes (`-webkit-`, etc.)
 - `fit-content`, `max-content`, `min-content`
+- `border-collapse`, `border-spacing`, `table-layout`
 - `vw`, `vh`, `rem` (use `dp`, `px`, `%`, `em`)
 
 ## Layout guidance for AI-generated UI
