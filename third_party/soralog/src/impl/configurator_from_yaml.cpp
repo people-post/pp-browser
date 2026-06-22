@@ -73,7 +73,7 @@ namespace soralog {
           if constexpr (std::is_same_v<T, std::filesystem::path>) {
             // Load YAML from a file
             try {
-              node = YAML::LoadFile(arg);
+              node = YAML::LoadFile(arg.string());
             } catch (const std::exception &exception) {
               errors_ << "E: Can't parse file "
                       << std::filesystem::weakly_canonical(arg) << ": "
