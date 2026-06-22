@@ -457,10 +457,10 @@ namespace libp2p::security::tls_details {
     }
 
     // 3. Verify
-    OUTCOME_TRY(verifyExtensionSignature(peer_certificate,
-                                         peer_pubkey_res.value(),
-                                         bin_fields.signature,
-                                         peer_id_res.value()));
+    OUTCOME_TRY((verifyExtensionSignature(peer_certificate,
+                                          peer_pubkey_res.value(),
+                                          bin_fields.signature,
+                                          peer_id_res.value())));
 
     return PubkeyAndPeerId{std::move(peer_pubkey_res.value()),
                            std::move(peer_id_res.value())};

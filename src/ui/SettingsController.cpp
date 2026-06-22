@@ -18,6 +18,8 @@ namespace pbr {
 
 namespace {
 
+constexpr const char* kOllamaBaseUrl = "http://localhost:11434/v1";
+
 std::string DetectPreset(const AppConfig& config) {
   if (config.llm.base_url.find("11434") != std::string::npos) {
     return "ollama";
@@ -26,6 +28,23 @@ std::string DetectPreset(const AppConfig& config) {
     return "cloud";
   }
   return "custom";
+}
+
+std::string CloudBaseUrl() { return PlatformDefaults::For(Platform::Detect()).llm.base_url; }
+
+void ApplyPresetToConfig(AppConfig& config, const std::string& preset, const std::string& custom_base_url) {
+  if (preset == "ollama") {
+    config.llm.base_url = kOllamaBaseUrl;
+    config.llm.require_api_key = false;
+    config.llm.api_key.clear();
+    config.llm_api_key_env.clear();
+  } else if (preset == "cloud") {
+    config.llm.base_url = CloudBaseUrl();
+    config.llm.require_api_key = true;
+  } else {
+    config.llm.base_url = custom_base_url;
+    config.llm.require_api_key = true;
+  }
 }
 
 } // namespace
@@ -80,6 +99,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("status", &controller.state_.status);
     ctor.BindEventCallback("save_settings", &SettingsController::SaveSettingsCallback);
     ctor.BindEventCallback("reset_to_defaults", &SettingsController::ResetDefaultsCallback);
+    ctor.BindEventCallback("apply_llm_preset", &SettingsController::ApplyLlmPresetCallback);
     ctor.BindEventCallback("open_settings", &SettingsController::OpenSettingsCallback);
   });
 }
@@ -106,23 +126,29 @@ void SettingsController::OpenSettings() {
   DirtyAll();
 }
 
+void SettingsController::OnApplyLlmPreset(const std::string& preset) {
+  state_.llm_preset = preset.c_str();
+
+  if (preset == "ollama") {
+    state_.llm_base_url = kOllamaBaseUrl;
+    state_.llm_api_key = "";
+    state_.llm_api_key_env = "";
+  } else if (preset == "cloud") {
+    state_.llm_base_url = CloudBaseUrl().c_str();
+  }
+
+  auto& host = DataModelHost::Instance();
+  host.Dirty("settings", "llm_preset");
+  host.Dirty("settings", "llm_base_url");
+  host.Dirty("settings", "llm_api_key");
+  host.Dirty("settings", "llm_api_key_env");
+}
+
 void SettingsController::OnSaveSettings() {
   AppConfig config = bootstrap_.config;
   const std::string preset = state_.llm_preset.c_str();
 
-  if (preset == "ollama") {
-    config.llm.base_url = "http://localhost:11434/v1";
-    config.llm.require_api_key = false;
-    config.llm.api_key.clear();
-    config.llm_api_key_env.clear();
-  } else if (preset == "cloud") {
-    const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
-    config.llm.base_url = defaults.llm.base_url;
-    config.llm.require_api_key = true;
-  } else {
-    config.llm.base_url = state_.llm_base_url.c_str();
-    config.llm.require_api_key = true;
-  }
+  ApplyPresetToConfig(config, preset, state_.llm_base_url.c_str());
 
   config.llm.model = state_.llm_model.c_str();
 
@@ -164,8 +190,17 @@ void SettingsController::OnSaveSettings() {
 
   ChatDemo::Instance().ApplyConfig(config);
 
+  state_.llm_base_url = config.llm.base_url.c_str();
+  if (preset == "ollama") {
+    state_.llm_api_key = "";
+    state_.llm_api_key_env = "";
+  }
+
   state_.status = "Settings saved";
   DataModelHost::Instance().Dirty("settings", "status");
+  DataModelHost::Instance().Dirty("settings", "llm_base_url");
+  DataModelHost::Instance().Dirty("settings", "llm_api_key");
+  DataModelHost::Instance().Dirty("settings", "llm_api_key_env");
   ShellFeedback::ShowToast(ShellHost::Instance().State(), "Settings saved");
   ShellHost::Instance().DirtyWindow();
 }
@@ -187,6 +222,14 @@ void SettingsController::SaveSettingsCallback(Rml::DataModelHandle /*model*/, Rm
 void SettingsController::ResetDefaultsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                 const Rml::VariantList& /*args*/) {
   Instance().OnResetDefaults();
+}
+
+void SettingsController::ApplyLlmPresetCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                                const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  const std::string preset =
+      ev.GetParameter<Rml::String>("value", controller.state_.llm_preset).c_str();
+  controller.OnApplyLlmPreset(preset);
 }
 
 void SettingsController::OpenSettingsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

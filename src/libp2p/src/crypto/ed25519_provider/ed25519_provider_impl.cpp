@@ -56,8 +56,8 @@ namespace libp2p::crypto::ed25519 {
       const PrivateKey &private_key) const {
     OUTCOME_TRY(
         evp_pkey,
-        NewEvpPkeyFromBytes(
-            EVP_PKEY_ED25519, private_key, EVP_PKEY_new_raw_private_key));
+        (NewEvpPkeyFromBytes(
+            EVP_PKEY_ED25519, private_key, EVP_PKEY_new_raw_private_key)));
     PublicKey public_key{0};
     size_t pub_len{public_key.size()};
     if (1
@@ -73,8 +73,8 @@ namespace libp2p::crypto::ed25519 {
       BytesIn message, const PrivateKey &private_key) const {
     OUTCOME_TRY(
         evp_pkey,
-        NewEvpPkeyFromBytes(
-            EVP_PKEY_ED25519, private_key, EVP_PKEY_new_raw_private_key));
+        (NewEvpPkeyFromBytes(
+            EVP_PKEY_ED25519, private_key, EVP_PKEY_new_raw_private_key)));
     constexpr auto FAILED{CryptoProviderError::SIGNATURE_GENERATION_FAILED};
 
     std::shared_ptr<EVP_MD_CTX> mctx{EVP_MD_CTX_new(), EVP_MD_CTX_free};
@@ -106,8 +106,8 @@ namespace libp2p::crypto::ed25519 {
       const Signature &signature,
       const PublicKey &public_key) const {
     OUTCOME_TRY(evp_pkey,
-                NewEvpPkeyFromBytes(
-                    EVP_PKEY_ED25519, public_key, EVP_PKEY_new_raw_public_key));
+                (NewEvpPkeyFromBytes(
+                    EVP_PKEY_ED25519, public_key, EVP_PKEY_new_raw_public_key)));
     constexpr auto FAILED{CryptoProviderError::SIGNATURE_VERIFICATION_FAILED};
 
     std::shared_ptr<EVP_MD_CTX> mctx{EVP_MD_CTX_new(), EVP_MD_CTX_free};

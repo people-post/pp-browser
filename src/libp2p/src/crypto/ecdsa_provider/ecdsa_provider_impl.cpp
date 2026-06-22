@@ -26,15 +26,15 @@ namespace libp2p::crypto::ecdsa {
       return KeyGeneratorError::KEY_GENERATION_FAILED;
     }
     OUTCOME_TRY(private_key,
-                convertEcKeyToBytes<PrivateKey>(ec_key, i2d_ECPrivateKey));
+                (convertEcKeyToBytes<PrivateKey>(ec_key, i2d_ECPrivateKey)));
     OUTCOME_TRY(public_key,
-                convertEcKeyToBytes<PublicKey>(ec_key, i2d_EC_PUBKEY));
+                (convertEcKeyToBytes<PublicKey>(ec_key, i2d_EC_PUBKEY)));
     return KeyPair{private_key, public_key};
   }
 
   outcome::result<PublicKey> EcdsaProviderImpl::derive(
       const PrivateKey &key) const {
-    OUTCOME_TRY(ec_key, convertBytesToEcKey(key, d2i_ECPrivateKey));
+    OUTCOME_TRY(ec_key, (convertBytesToEcKey(key, d2i_ECPrivateKey)));
     const BIGNUM *private_num = EC_KEY_get0_private_key(ec_key.get());
     EC_POINT *ec_point = EC_POINT_new(EC_KEY_get0_group(ec_key.get()));
     FinalAction free_ec_point([ec_point]() { EC_POINT_free(ec_point); });
@@ -51,7 +51,7 @@ namespace libp2p::crypto::ecdsa {
       return KeyGeneratorError::KEY_GENERATION_FAILED;
     }
     OUTCOME_TRY(public_key,
-                convertEcKeyToBytes<PublicKey>(ec_key, i2d_EC_PUBKEY));
+                (convertEcKeyToBytes<PublicKey>(ec_key, i2d_EC_PUBKEY)));
     return public_key;
   }
 
@@ -63,8 +63,8 @@ namespace libp2p::crypto::ecdsa {
 
   outcome::result<Signature> EcdsaProviderImpl::signPrehashed(
       const PrehashedMessage &message, const PrivateKey &key) const {
-    OUTCOME_TRY(ec_key, convertBytesToEcKey(key, d2i_ECPrivateKey));
-    OUTCOME_TRY(signature, GenerateEcSignature(message, ec_key));
+    OUTCOME_TRY(ec_key, (convertBytesToEcKey(key, d2i_ECPrivateKey)));
+    OUTCOME_TRY(signature, (GenerateEcSignature(message, ec_key)));
     return std::move(signature);
   }
 
@@ -79,9 +79,9 @@ namespace libp2p::crypto::ecdsa {
       const PrehashedMessage &message,
       const Signature &signature,
       const PublicKey &public_key) const {
-    OUTCOME_TRY(ec_key, convertBytesToEcKey(public_key, d2i_EC_PUBKEY));
+    OUTCOME_TRY(ec_key, (convertBytesToEcKey(public_key, d2i_EC_PUBKEY)));
     OUTCOME_TRY(signature_status,
-                VerifyEcSignature(message, signature, ec_key));
+                (VerifyEcSignature(message, signature, ec_key)));
     return signature_status;
   }
 

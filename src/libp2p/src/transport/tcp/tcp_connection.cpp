@@ -203,14 +203,14 @@ namespace libp2p::transport {
         auto endpoint(socket_.local_endpoint(ec));
         if (!ec) {
           BOOST_OUTCOME_TRY(local_multiaddress_,
-                            detail::makeAddress(endpoint, layers_));
+                            (detail::makeAddress(endpoint, layers_)));
         }
       }
       if (!remote_multiaddress_) {
         auto endpoint(socket_.remote_endpoint(ec));
         if (!ec) {
           BOOST_OUTCOME_TRY(remote_multiaddress_,
-                            detail::makeAddress(endpoint, layers_));
+                            (detail::makeAddress(endpoint, layers_)));
         }
       }
     } else {

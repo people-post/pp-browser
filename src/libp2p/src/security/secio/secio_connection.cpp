@@ -101,12 +101,12 @@ namespace libp2p::connection {
     if (cipher_type_ == CT::AES128) {
       OUTCOME_TRY(
           local_128,
-          initAesSecret<crypto::common::Aes128Secret>(
-              local_stretched_key_.cipher_key, local_stretched_key_.iv));
+          (initAesSecret<crypto::common::Aes128Secret>(
+              local_stretched_key_.cipher_key, local_stretched_key_.iv)));
       OUTCOME_TRY(
           remote_128,
-          initAesSecret<crypto::common::Aes128Secret>(
-              remote_stretched_key_.cipher_key, remote_stretched_key_.iv));
+          (initAesSecret<crypto::common::Aes128Secret>(
+              remote_stretched_key_.cipher_key, remote_stretched_key_.iv)));
       local_encryptor_ = std::make_unique<crypto::aes::AesCtrImpl>(
           local_128, AesCtrMode::ENCRYPT);
       remote_decryptor_ = std::make_unique<crypto::aes::AesCtrImpl>(
@@ -114,12 +114,12 @@ namespace libp2p::connection {
     } else if (cipher_type_ == CT::AES256) {
       OUTCOME_TRY(
           local_256,
-          initAesSecret<crypto::common::Aes256Secret>(
-              local_stretched_key_.cipher_key, local_stretched_key_.iv));
+          (initAesSecret<crypto::common::Aes256Secret>(
+              local_stretched_key_.cipher_key, local_stretched_key_.iv)));
       OUTCOME_TRY(
           remote_256,
-          initAesSecret<crypto::common::Aes256Secret>(
-              remote_stretched_key_.cipher_key, remote_stretched_key_.iv));
+          (initAesSecret<crypto::common::Aes256Secret>(
+              remote_stretched_key_.cipher_key, remote_stretched_key_.iv)));
       local_encryptor_ = std::make_unique<crypto::aes::AesCtrImpl>(
           local_256, AesCtrMode::ENCRYPT);
       remote_decryptor_ = std::make_unique<crypto::aes::AesCtrImpl>(

@@ -170,12 +170,11 @@ namespace libp2p::multi::detail {
     }
 
     for (size_t i = 0, j = 0; i < string.size(); i += 8, j += 5) {
-      OUTCOME_TRY(
-          n,
-          decode_sequence(
-              std::span(&string[i], std::min<size_t>(string.size() - i, 8)),
-              std::span(&result[j], 5),
-              mode));
+      OUTCOME_TRY(n,
+                  (decode_sequence(
+                      std::span(&string[i], std::min<size_t>(string.size() - i, 8)),
+                      std::span(&result[j], 5),
+                      mode)));
       if (n < 5) {
         result.erase(result.end() - (5 - n), result.end());
       }

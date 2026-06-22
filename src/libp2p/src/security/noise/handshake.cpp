@@ -107,7 +107,7 @@ namespace libp2p::security::noise {
     std::copy(pubkey.begin(), pubkey.end(), std::back_inserter(to_sign));
 
     OUTCOME_TRY(signed_payload,
-                crypto_provider_->sign(to_sign, local_key_.privateKey));
+                (crypto_provider_->sign(to_sign, local_key_.privateKey)));
     security::noise::HandshakeMessage payload{
         .identity_key = local_key_.publicKey,
         .identity_sig = std::move(signed_payload),
@@ -117,7 +117,7 @@ namespace libp2p::security::noise {
 
   void Handshake::sendHandshakeMessage(BytesIn payload, CbOutcomeVoid cb) {
     IO_OUTCOME_TRY(
-        write_result, handshake_state_->writeMessage({}, payload), cb);
+        write_result, (handshake_state_->writeMessage({}, payload)), cb);
     auto write_cb = [self{shared_from_this()},
                      cb{std::move(cb)},
                      wr{write_result}](outcome::result<void> result) {
@@ -134,7 +134,7 @@ namespace libp2p::security::noise {
       basic::MessageReadWriter::ReadCallbackFunc cb) {
     auto read_cb = [self{shared_from_this()}, cb{std::move(cb)}](auto result) {
       IO_OUTCOME_TRY(buffer, result, cb);
-      IO_OUTCOME_TRY(rr, self->handshake_state_->readMessage({}, *buffer), cb);
+      IO_OUTCOME_TRY(rr, (self->handshake_state_->readMessage({}, *buffer)), cb);
       if (rr.cs1 and rr.cs2) {
         self->setCipherStates(rr.cs1, rr.cs2);
       }
@@ -169,8 +169,8 @@ namespace libp2p::security::noise {
               std::back_inserter(to_verify));
     OUTCOME_TRY(
         signature_correct,
-        crypto_provider_->verify(
-            to_verify, handy_payload.identity_sig, handy_payload.identity_key));
+        (crypto_provider_->verify(
+            to_verify, handy_payload.identity_sig, handy_payload.identity_key)));
     if (not signature_correct) {
       SL_TRACE(log_, "Remote peer's payload signature verification failed");
       return std::errc::owner_dead;

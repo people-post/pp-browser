@@ -40,7 +40,7 @@ namespace libp2p::peer {
       hash = std::vector<uint8_t>{shash.begin(), shash.end()};
     }
 
-    OUTCOME_TRY(multihash, Multihash::create(algo, hash));
+    OUTCOME_TRY(multihash, (Multihash::create(algo, hash)));
     return PeerId{std::move(multihash)};
   }
 

@@ -88,7 +88,7 @@ namespace libp2p::transport::detail {
   static outcome::result<TcpOrUdp> readTcpOrUdp(ProtoAddrVec::iterator &it,
                                                 ProtoAddrVec::iterator end) {
     TcpOrUdp addr;
-    BOOST_OUTCOME_TRY(addr.ip, readIpOrDns(it, end));
+    BOOST_OUTCOME_TRY(addr.ip, (readIpOrDns(it, end)));
     if (it == end) {
       return std::errc::protocol_not_supported;
     }
@@ -115,7 +115,7 @@ namespace libp2p::transport::detail {
       const Multiaddress &ma) {
     auto v = ma.getProtocolsWithValues();
     auto it = v.begin();
-    OUTCOME_TRY(addr, readTcpOrUdp(it, v.end()));
+    OUTCOME_TRY(addr, (readTcpOrUdp(it, v.end())));
     if (addr.udp) {
       return std::errc::protocol_not_supported;
     }
@@ -127,7 +127,7 @@ namespace libp2p::transport::detail {
   inline outcome::result<TcpOrUdp> asQuic(const Multiaddress &ma) {
     auto v = ma.getProtocolsWithValues();
     auto it = v.begin();
-    OUTCOME_TRY(addr, readTcpOrUdp(it, v.end()));
+    OUTCOME_TRY(addr, (readTcpOrUdp(it, v.end())));
     if (not addr.udp) {
       return std::errc::protocol_not_supported;
     }

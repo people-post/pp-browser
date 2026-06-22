@@ -122,7 +122,7 @@ namespace libp2p::multi::converters {
         if (word.empty()) {
           return ConversionError::EMPTY_ADDRESS;
         }
-        OUTCOME_TRY(bytes, addressToBytes(*protx, word));
+        OUTCOME_TRY(bytes, (addressToBytes(*protx, word)));
         for (auto byte : bytes) {
           processed.emplace_back(byte);
         }

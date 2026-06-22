@@ -218,7 +218,7 @@ namespace libp2p::crypto {
     priv_key.insert(
         priv_key.end(), private_key.data.begin(), private_key.data.end());
 
-    OUTCOME_TRY(signature, rsa_provider_->sign(message, priv_key));
+    OUTCOME_TRY(signature, (rsa_provider_->sign(message, priv_key)));
     return {signature.begin(), signature.end()};
   }
 
@@ -226,7 +226,7 @@ namespace libp2p::crypto {
       BytesIn message, const PrivateKey &private_key) const {
     ed25519::PrivateKey priv_key;
     std::copy_n(private_key.data.begin(), priv_key.size(), priv_key.begin());
-    OUTCOME_TRY(signature, ed25519_provider_->sign(message, priv_key));
+    OUTCOME_TRY(signature, (ed25519_provider_->sign(message, priv_key)));
     return {signature.begin(), signature.end()};
   }
 
@@ -234,7 +234,7 @@ namespace libp2p::crypto {
       BytesIn message, const PrivateKey &private_key) const {
     secp256k1::PrivateKey priv_key;
     std::copy_n(private_key.data.begin(), priv_key.size(), priv_key.begin());
-    OUTCOME_TRY(signature, secp256k1_provider_->sign(message, priv_key));
+    OUTCOME_TRY(signature, (secp256k1_provider_->sign(message, priv_key)));
     return {signature.begin(), signature.end()};
   }
 
@@ -242,7 +242,7 @@ namespace libp2p::crypto {
       BytesIn message, const PrivateKey &private_key) const {
     ecdsa::PrivateKey priv_key;
     std::copy_n(private_key.data.begin(), priv_key.size(), priv_key.begin());
-    OUTCOME_TRY(signature, ecdsa_provider_->sign(message, priv_key));
+    OUTCOME_TRY(signature, (ecdsa_provider_->sign(message, priv_key)));
     return {signature.begin(), signature.end()};
   }
 
@@ -565,20 +565,20 @@ namespace libp2p::crypto {
     Buffer result;
     result.reserve(output_size);
 
-    OUTCOME_TRY(a, hmac_provider_->calculateDigest(hash_type, secret, seed));
+    OUTCOME_TRY(a, (hmac_provider_->calculateDigest(hash_type, secret, seed)));
     while (result.size() < output_size) {
       Buffer input;
       input.reserve(a.size() + seed.size());
       input.insert(input.end(), a.begin(), a.end());
       input.insert(input.end(), seed.begin(), seed.end());
 
-      OUTCOME_TRY(b, hmac_provider_->calculateDigest(hash_type, secret, input));
+      OUTCOME_TRY(b, (hmac_provider_->calculateDigest(hash_type, secret, input)));
       size_t todo = b.size();
       if (result.size() + todo > output_size) {
         todo = output_size - result.size();
       }
       std::copy_n(b.begin(), todo, std::back_inserter(result));
-      OUTCOME_TRY(c, hmac_provider_->calculateDigest(hash_type, secret, a));
+      OUTCOME_TRY(c, (hmac_provider_->calculateDigest(hash_type, secret, a)));
       a = std::move(c);
     }
 

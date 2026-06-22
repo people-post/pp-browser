@@ -7,7 +7,7 @@
     <p class="settings-section-title">LLM</p>
     <label class="settings-field">
       <span class="settings-label">Preset</span>
-      <select class="field" data-value="llm_preset">
+      <select class="field" data-value="llm_preset" data-event-change="apply_llm_preset()">
         <option value="cloud">Cloud (OpenAI-compatible)</option>
         <option value="ollama">Ollama (localhost)</option>
         <option value="custom">Custom</option>

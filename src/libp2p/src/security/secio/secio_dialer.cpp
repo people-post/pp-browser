@@ -109,10 +109,10 @@ namespace libp2p::security::secio {
 
   outcome::result<Dialer::Algorithm> Dialer::determineCommonAlgorithm(
       const ProposeMessage &local, const ProposeMessage &remote) {
-    OUTCOME_TRY(local_peer_is_preferred, determineRoles(local, remote));
+    OUTCOME_TRY(local_peer_is_preferred, (determineRoles(local, remote)));
     local_peer_is_preferred_ = local_peer_is_preferred;
     OUTCOME_TRY(chosen_algorithm,
-                findCommonAlgo(local, remote, local_peer_is_preferred));
+                (findCommonAlgo(local, remote, local_peer_is_preferred)));
     chosen_algorithm_ = chosen_algorithm;
     return chosen_algorithm;
   }

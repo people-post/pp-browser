@@ -96,8 +96,8 @@ namespace libp2p::transport::lsquic {
         }
         auto cert = SSL_get_peer_certificate(lsquic_conn_ssl(conn));
         OUTCOME_TRY(info,
-                    security::tls_details::verifyPeerAndExtractIdentity(
-                        cert, *self->key_codec_));
+                    (security::tls_details::verifyPeerAndExtractIdentity(
+                        cert, *self->key_codec_)));
         if (op and info.peer_id != op->peer) {
           return security::TlsError::TLS_UNEXPECTED_PEER_ID;
         }

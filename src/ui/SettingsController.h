@@ -43,9 +43,11 @@ private:
 
   static void SaveSettingsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ResetDefaultsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ApplyLlmPresetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSaveSettings();
   void OnResetDefaults();
+  void OnApplyLlmPreset(const std::string& preset);
   void DirtyAll();
 
   BootstrapResult bootstrap_{};

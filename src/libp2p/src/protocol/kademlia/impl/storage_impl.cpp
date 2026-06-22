@@ -37,7 +37,7 @@ namespace libp2p::protocol::kademlia {
   StorageImpl::~StorageImpl() = default;
 
   outcome::result<void> StorageImpl::putValue(Key key, Value value) {
-    OUTCOME_TRY(backend_->putValue(key, value));
+    OUTCOME_TRY((backend_->putValue(key, value)));
 
     auto now = scheduler_->now();
     auto expire_time = now + config_.storageRecordTTL;
