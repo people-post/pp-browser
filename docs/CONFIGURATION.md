@@ -55,17 +55,18 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 
 Open **Settings** from the sidebar footer. Saves to user config dir and profile preferences. LLM changes hot-reload via `AgentSession::Configure`.
 
-## Mobile readiness (not shipped)
+Enter an **API key** directly in Settings (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
 
-Platform seams live under `src/platform/`:
+## Platform layer
 
-- `IPathProvider` / `DesktopPathProvider` — swap for sandbox paths on Android/iOS
-- `IAssetLocator` / `DesktopAssetLocator` — bundle assets on mobile
-- `PlatformDefaults` — desktop Ollama vs future cloud LLM defaults
-- `ICredentialStore` / `EnvCredentialStore` — future keychain/keystore
-- `machine.json` `safe_area` stub for notch/home-indicator padding
+Shared abstractions under `src/platform/`:
 
-Future `PlatformNavigation::OnSystemBack()` should map to `ShellHost::HandleDismiss()` (desktop keeps Escape).
+- `IPathProvider` / `IAssetLocator` — desktop paths vs APK/bundle assets
+- `AssetIO` / `SdlAssetFileInterface` — unified bundle reads for UI and RmlUi
+- `PlatformDefaults` — cloud LLM on all platforms
+- `PlatformNavigation` — Escape and Android back → `ShellHost::HandleDismiss()`
+- `AppLifecycle` — background IO pause, agent cancel, P2P poll guard
+- `ICredentialStore` / `EnvCredentialStore` — env-backed keys; Keystore deferred
 
 See [PLATFORMS.md](PLATFORMS.md).
 
@@ -74,7 +75,7 @@ See [PLATFORMS.md](PLATFORMS.md).
 | Variable | Purpose |
 |----------|---------|
 | `PP_BROWSER_CONFIG` | Explicit config file path |
-| `PP_BROWSER_LLM_MODEL` | Default Ollama model when no config file |
+| `PP_BROWSER_LLM_MODEL` | Default cloud model when no config file |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |
 
-API keys can use `api_key_env` in config; resolved via `ICredentialStore` (env-backed on desktop).
+API keys can be set inline in Settings/config (`llm.api_key`) or via `api_key_env` resolved through `ICredentialStore`.

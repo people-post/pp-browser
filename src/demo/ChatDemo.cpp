@@ -1,4 +1,5 @@
 #include "demo/ChatDemo.h"
+#include "platform/AppLifecycle.h"
 
 #include "agent/StructuredTextParser.h"
 #include "agent/WorkingSetPolicy.h"
@@ -1207,12 +1208,6 @@ bool ChatDemo::Setup(Rml::Context* context, const BootstrapResult& bootstrap) {
     return false;
   }
 
-  InputCoordinator::Instance().Register(KeyBinding{
-      .key = Rml::Input::KI_ESCAPE,
-      .action = []() { return !ShellHost::Instance().HandleDismiss(); },
-      .priority = 110,
-  });
-
   ShellHost::Instance().Initialize(context);
   ShellHost::Instance().RegisterPane(
       {.key = "sidebar", .rml_path = "views/sidebar.rml", .role = PaneRole::Secondary, .toolbar_label = "Sessions"});
@@ -1233,6 +1228,10 @@ bool ChatDemo::Setup(Rml::Context* context, const BootstrapResult& bootstrap) {
   if (!use_llm_) {
     ShellFeedback::ShowBanner(ShellHost::Instance().State(), "Using mock replies — LLM is not configured.");
     ShellHost::Instance().DirtyWindow();
+  } else if (bootstrap_.config.llm.require_api_key && bootstrap_.config.llm.api_key.empty()) {
+    ShellFeedback::ShowBanner(ShellHost::Instance().State(),
+                              "Add your API key in Settings to enable the assistant.");
+    ShellHost::Instance().DirtyWindow();
   }
 
   return true;
@@ -1246,6 +1245,12 @@ void ChatDemo::ApplyConfig(const AppConfig& config) {
   }
 }
 
+void ChatDemo::OnApplicationPause() {
+  if (agent_) {
+    agent_->Cancel();
+  }
+}
+
 void ChatDemo::Update() {
   if (pending_reply_) {
     PendingReply reply = std::move(*pending_reply_);
@@ -1253,7 +1258,7 @@ void ChatDemo::Update() {
     FinishAssistantReply(reply.entry_id, reply.output, reply.from_llm, {}, reply.thread_id);
   }
 
-  if (messaging_ready_) {
+  if (messaging_ready_ && AppLifecycle::IsForeground()) {
     MessagingHub::Instance().P2p().PollAndMerge();
   }
 

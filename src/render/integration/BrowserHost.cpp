@@ -9,6 +9,7 @@
 
 #if SDL_MAJOR_VERSION >= 3
 	#include <SDL3_image/SDL_image.h>
+	#include <SDL3/SDL.h>
 #else
 	#include <SDL_image.h>
 #endif
@@ -109,6 +110,9 @@ struct BackendData {
 	bool running = true;
 };
 static Rml::UniquePtr<BackendData> data;
+#if SDL_MAJOR_VERSION >= 3
+static PreProcessEventCallback g_pre_process_event = nullptr;
+#endif
 
 bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize)
 {
@@ -234,6 +238,18 @@ void Backend::SyncContext(Rml::Context* context)
 #endif
 }
 
+#if SDL_MAJOR_VERSION >= 3
+void Backend::SetPreProcessEventHandler(PreProcessEventCallback callback)
+{
+	g_pre_process_event = callback;
+}
+
+SDL_Window* Backend::GetWindow()
+{
+	return data ? data->window : nullptr;
+}
+#endif
+
 void Backend::Shutdown()
 {
 	RMLUI_ASSERT(data);
@@ -321,6 +337,12 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 	while (has_event)
 	{
 		bool propagate_event = true;
+#if SDL_MAJOR_VERSION >= 3
+		if (g_pre_process_event && g_pre_process_event(context, ev, propagate_event)) {
+			has_event = SDL_PollEvent(&ev);
+			continue;
+		}
+#endif
 		switch (ev.type)
 		{
 		case event_quit:
@@ -332,6 +354,13 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 		case event_key_down:
 		{
 			propagate_event = false;
+#if SDL_MAJOR_VERSION >= 3
+			if (GetKey(ev) == SDLK_ESCAPE || GetKey(ev) == SDLK_AC_BACK) {
+				if (g_pre_process_event && g_pre_process_event(context, ev, propagate_event)) {
+					break;
+				}
+			}
+#endif
 			const Rml::Input::KeyIdentifier key = RmlSDL::ConvertKey(GetKey(ev));
 			const int key_modifier = RmlSDL::GetKeyModifierState();
 			const float native_dp_ratio = GetDisplayScale();
@@ -348,14 +377,28 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 		}
 		break;
 
+#if SDL_MAJOR_VERSION >= 3
+		case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+		case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+			SyncContext(context);
+			propagate_event = false;
+			break;
+		case SDL_EVENT_WILL_ENTER_BACKGROUND:
+		case SDL_EVENT_DID_ENTER_FOREGROUND:
+		case SDL_EVENT_LOW_MEMORY:
+			if (g_pre_process_event) {
+				g_pre_process_event(context, ev, propagate_event);
+			}
+			propagate_event = false;
+			break;
+#endif
+
 			RMLSDL_WINDOW_EVENTS_BEGIN
 
 		case event_window_size_changed:
-		{
-			Rml::Vector2i dimensions = {ev.window.data1, ev.window.data2};
-			data->render_interface.SetViewport(dimensions.x, dimensions.y);
-		}
-		break;
+			SyncContext(context);
+			propagate_event = false;
+			break;
 
 			RMLSDL_WINDOW_EVENTS_END
 

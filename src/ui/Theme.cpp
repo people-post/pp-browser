@@ -1,11 +1,11 @@
 #include "ui/Theme.h"
 
-#include <filesystem>
+#include "platform/AssetIO.h"
 
 namespace pbr {
 
 bool Theme::LoadBase(const std::string& rcss_path) {
-  return std::filesystem::exists(rcss_path);
+  return AssetIO::Exists(rcss_path);
 }
 
 } // namespace pbr

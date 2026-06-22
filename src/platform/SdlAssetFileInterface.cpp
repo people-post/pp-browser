@@ -1,8 +1,14 @@
-#include "platform/AndroidFileInterface.h"
+#include "platform/SdlAssetFileInterface.h"
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
 
 #include <SDL3/SDL.h>
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
+#if defined(__ANDROID__) || TARGET_OS_IPHONE
 
 namespace pbr {
 
@@ -23,28 +29,29 @@ SDL_IOWhence SeekOrigin(int origin) {
 
 } // namespace
 
-Rml::FileHandle AndroidFileInterface::Open(const Rml::String& path) {
+Rml::FileHandle SdlAssetFileInterface::Open(const Rml::String& path) {
   SDL_IOStream* stream = SDL_IOFromFile(path.c_str(), "rb");
   return reinterpret_cast<Rml::FileHandle>(stream);
 }
 
-void AndroidFileInterface::Close(Rml::FileHandle file) {
+void SdlAssetFileInterface::Close(Rml::FileHandle file) {
   SDL_CloseIO(reinterpret_cast<SDL_IOStream*>(file));
 }
 
-size_t AndroidFileInterface::Read(void* buffer, size_t size, Rml::FileHandle file) {
+size_t SdlAssetFileInterface::Read(void* buffer, size_t size, Rml::FileHandle file) {
   return SDL_ReadIO(reinterpret_cast<SDL_IOStream*>(file), buffer, size);
 }
 
-bool AndroidFileInterface::Seek(Rml::FileHandle file, long offset, int origin) {
+bool SdlAssetFileInterface::Seek(Rml::FileHandle file, long offset, int origin) {
   return SDL_SeekIO(reinterpret_cast<SDL_IOStream*>(file), static_cast<Sint64>(offset), SeekOrigin(origin)) >= 0;
 }
 
-size_t AndroidFileInterface::Tell(Rml::FileHandle file) {
+size_t SdlAssetFileInterface::Tell(Rml::FileHandle file) {
   const Sint64 position = SDL_TellIO(reinterpret_cast<SDL_IOStream*>(file));
   return position >= 0 ? static_cast<size_t>(position) : 0;
 }
 
 } // namespace pbr
 
+#endif
 #endif

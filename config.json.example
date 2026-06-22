@@ -1,7 +1,12 @@
 {
   "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4o-mini",
+    "require_api_key": true
+  },
+  "_llm_ollama_dev_example": {
     "base_url": "http://localhost:11434/v1",
-    "model": "gemma4:e4b",
+    "model": "llama3.2",
     "require_api_key": false
   },
   "_llm_xai_example": {
@@ -16,5 +21,5 @@
   "search": {
     "provider": "duckduckgo"
   },
-  "theme": "assets/themes/base.rcss"
+  "theme": "themes/base.rcss"
 }

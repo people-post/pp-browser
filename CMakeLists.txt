@@ -87,6 +87,13 @@ set(PP_BROWSER_APP_SOURCES
   src/app/UserPreferences.cpp
   src/app/InputCoordinator.cpp
   src/platform/Platform.cpp
+  src/platform/PlatformEarlyInit.cpp
+  src/platform/PlatformServices.cpp
+  src/platform/AssetIO.cpp
+  src/platform/AppLifecycle.cpp
+  src/platform/PlatformNavigation.cpp
+  src/platform/SdlAppEvents.cpp
+  src/platform/PlatformLogSink.cpp
   src/platform/IPathProvider.cpp
   src/platform/DesktopPathProvider.cpp
   src/platform/AndroidPathProvider.cpp
@@ -96,7 +103,7 @@ set(PP_BROWSER_APP_SOURCES
   src/platform/DesktopAssetLocator.cpp
   src/platform/AndroidAssetLocator.cpp
   src/platform/IosAssetLocator.cpp
-  src/platform/AndroidFileInterface.cpp
+  src/platform/SdlAssetFileInterface.cpp
   src/platform/PlatformDefaults.cpp
   src/platform/ICredentialStore.cpp
   src/platform/EnvCredentialStore.cpp

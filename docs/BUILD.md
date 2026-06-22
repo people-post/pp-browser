@@ -40,13 +40,18 @@ From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
 ./build/pp-browser --demo search
 ```
 
-### Local Ollama
+### Cloud LLM (default)
+
+First launch uses cloud defaults (`https://api.openai.com/v1`, model `gpt-4o-mini`). Open **Settings**, enter your API key, and save.
+
+Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exists.
+
+### Local Ollama (optional dev)
 
 1. Start Ollama and pull a model, e.g. `ollama pull llama3.2`
-2. Run `./build/pp-browser` — defaults to Ollama on localhost with model `llama3.2` (override via `PP_BROWSER_LLM_MODEL`)
-3. Optional: open **Settings** in the app, or use `pp-browser --config config.json.example` for a custom model
+2. Open **Settings** → preset **Ollama (localhost)** → save, or use a config with `http://localhost:11434/v1` (see `_llm_ollama_dev_example` in `config.json.example`)
 
-For OpenAI or other providers, set `base_url`, `model`, and `api_key_env` in the user config dir or via Settings.
+For other providers, set `base_url`, `model`, and API key in Settings or config JSON.
 
 Config and data paths: [CONFIGURATION.md](CONFIGURATION.md). During development, delete `~/.local/share/pp-browser` if the on-disk layout changes (no legacy migration).
 
@@ -95,6 +100,6 @@ export ANDROID_NDK_HOME=/path/to/android/ndk
 
 The first clean NDK build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../assets/) are packaged into the APK automatically.
 
-Launch **pp-browser** on the device/emulator. LLM and P2P calls may fail without cloud config — the milestone is compile, install, and chat shell UI render.
+Launch **pp-browser** on the device/emulator. On first launch, open **Settings** and enter a cloud API key. Use `adb logcat -s pp-browser` for native logs.
 
-See [PLATFORMS.md](PLATFORMS.md) for mobile path/asset behavior and iOS reservation notes.
+See [PLATFORMS.md](PLATFORMS.md) for mobile lifecycle, navigation, and asset I/O.

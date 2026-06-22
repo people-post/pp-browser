@@ -887,6 +887,11 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json, const
 
   int block_index = 0;
   for (const auto& block : doc["blocks"]) {
+    const BlockEligibility eligibility = EvaluateBlock(block, goal);
+    const bool undo_inline_long_list_actions =
+        eligibility.eligible && eligibility.kind == WorkingSetKind::LongList;
+    const size_t chat_actions_before = undo_inline_long_list_actions ? result.chat_actions.size() : 0;
+
     auto rendered = RenderBlock(block, result);
     if (!rendered.ok) {
       result.warnings.push_back(rendered.error);
@@ -894,7 +899,10 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json, const
       continue;
     }
 
-    const BlockEligibility eligibility = EvaluateBlock(block, goal);
+    if (undo_inline_long_list_actions) {
+      result.chat_actions.resize(chat_actions_before);
+    }
+
     if (eligibility.eligible) {
       WorkingSetCandidate candidate;
       candidate.block_index = block_index;

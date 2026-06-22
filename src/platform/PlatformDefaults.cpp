@@ -1,7 +1,5 @@
 #include "platform/PlatformDefaults.h"
 
-#include "platform/ICredentialStore.h"
-
 #include <cstdlib>
 
 namespace pbr {
@@ -15,14 +13,14 @@ std::string ReadEnv(const char* name) {
   return {};
 }
 
-AppConfig DesktopDefaults() {
+AppConfig CloudDefaults() {
   AppConfig config;
-  config.llm.base_url = "http://localhost:11434/v1";
+  config.llm.base_url = "https://api.openai.com/v1";
   config.llm.model = ReadEnv("PP_BROWSER_LLM_MODEL");
   if (config.llm.model.empty()) {
-    config.llm.model = "llama3.2";
+    config.llm.model = "gpt-4o-mini";
   }
-  config.llm.require_api_key = false;
+  config.llm.require_api_key = true;
   config.theme = "themes/base.rcss";
   config.search.provider = "duckduckgo";
   return config;
@@ -30,16 +28,8 @@ AppConfig DesktopDefaults() {
 
 } // namespace
 
-AppConfig PlatformDefaults::For(PlatformKind kind) {
-  switch (kind) {
-  case PlatformKind::Desktop:
-    return DesktopDefaults();
-  case PlatformKind::Android:
-  case PlatformKind::IOS:
-    // Documented future defaults; desktop build does not ship mobile yet.
-    return DesktopDefaults();
-  }
-  return DesktopDefaults();
+AppConfig PlatformDefaults::For(PlatformKind /*kind*/) {
+  return CloudDefaults();
 }
 
 } // namespace pbr

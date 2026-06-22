@@ -1,24 +1,13 @@
 #include "ui/ViewCatalog.h"
 
 #include "app/Application.h"
+#include "platform/AssetIO.h"
 
-#include <fstream>
-#include <sstream>
 #include <unordered_map>
 
 namespace pbr {
 
 namespace {
-
-std::string ReadFile(const std::string& path) {
-  std::ifstream in(path);
-  if (!in) {
-    return {};
-  }
-  std::ostringstream out;
-  out << in.rdbuf();
-  return out.str();
-}
 
 const std::unordered_map<std::string, std::string>& KnownKeys() {
   static const std::unordered_map<std::string, std::string> keys = {
@@ -46,7 +35,11 @@ std::string ViewCatalog::ResolvePath(const std::string& key_or_path) {
 }
 
 std::string ViewCatalog::LoadFile(const std::string& absolute_path) {
-  return ReadFile(absolute_path);
+  std::string contents;
+  if (!AssetIO::ReadText(absolute_path, contents)) {
+    return {};
+  }
+  return contents;
 }
 
 std::string ViewCatalog::LoadBody(const std::string& key_or_path) {

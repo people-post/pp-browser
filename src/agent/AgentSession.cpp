@@ -1,4 +1,5 @@
 #include "agent/AgentSession.h"
+#include "platform/Platform.h"
 
 #include "agent/PayloadTurnPlanBuilder.h"
 #include "agent/PromptBuilder.h"
@@ -498,10 +499,15 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
       state->mcp->StartHttp(state->config.mcp->url);
     } else if (state->config.mcp->command == "mock") {
       state->mcp->Start("mock");
-    } else {
+    } else if (Platform::SupportsSubprocessMcp()) {
       state->mcp->Start(state->config.mcp->command, state->config.mcp->args);
+    } else {
+      logging::getLogger("AgentSession").warning
+          << "Skipping MCP stdio spawn on mobile; use mcp.url in config";
     }
-    state->mcp->Initialize();
+    if (state->mcp->IsRunning()) {
+      state->mcp->Initialize();
+    }
   }
 
   state->tools = ToolRegistry::BuildFromConfig(state->config, state->mcp.get());

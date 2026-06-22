@@ -36,6 +36,7 @@ public:
   void Update();
   void Shutdown();
   void ApplyConfig(const AppConfig& config);
+  void OnApplicationPause();
 
 private:
   struct ActiveForm {

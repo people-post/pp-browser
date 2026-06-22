@@ -4,7 +4,8 @@
 #include "app/Config.h"
 #include "app/UserPreferences.h"
 #include "demo/ChatDemo.h"
-#include "platform/IAssetLocator.h"
+#include "platform/PlatformDefaults.h"
+#include "platform/Platform.h"
 #include "ui/DataModelHost.h"
 #include "ui/ShellFeedback.h"
 #include "ui/ShellHost.h"
@@ -14,6 +15,20 @@
 #include <RmlUi/Core/Event.h>
 
 namespace pbr {
+
+namespace {
+
+std::string DetectPreset(const AppConfig& config) {
+  if (config.llm.base_url.find("11434") != std::string::npos) {
+    return "ollama";
+  }
+  if (config.llm.base_url == "https://api.openai.com/v1") {
+    return "cloud";
+  }
+  return "custom";
+}
+
+} // namespace
 
 SettingsController::SettingsController() {
   redirectLogger("SettingsController");
@@ -31,9 +46,10 @@ void SettingsController::BindBootstrap(BootstrapResult bootstrap) {
 
 void SettingsController::LoadFromBootstrap() {
   const AppConfig& config = bootstrap_.config;
-  state_.llm_preset = config.llm.base_url.find("11434") != std::string::npos ? "ollama" : "custom";
+  state_.llm_preset = DetectPreset(config).c_str();
   state_.llm_base_url = config.llm.base_url.c_str();
   state_.llm_model = config.llm.model.c_str();
+  state_.llm_api_key = config.llm.api_key.c_str();
   state_.llm_api_key_env = config.llm_api_key_env.c_str();
   state_.theme = bootstrap_.profile_prefs.theme.c_str();
   state_.profile_label = bootstrap_.profile_registry.ActiveProfileId().c_str();
@@ -54,6 +70,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("llm_preset", &controller.state_.llm_preset);
     ctor.Bind("llm_base_url", &controller.state_.llm_base_url);
     ctor.Bind("llm_model", &controller.state_.llm_model);
+    ctor.Bind("llm_api_key", &controller.state_.llm_api_key);
     ctor.Bind("llm_api_key_env", &controller.state_.llm_api_key_env);
     ctor.Bind("theme", &controller.state_.theme);
     ctor.Bind("profile_label", &controller.state_.profile_label);
@@ -72,6 +89,7 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "llm_preset");
   host.Dirty("settings", "llm_base_url");
   host.Dirty("settings", "llm_model");
+  host.Dirty("settings", "llm_api_key");
   host.Dirty("settings", "llm_api_key_env");
   host.Dirty("settings", "theme");
   host.Dirty("settings", "profile_label");
@@ -90,20 +108,39 @@ void SettingsController::OpenSettings() {
 
 void SettingsController::OnSaveSettings() {
   AppConfig config = bootstrap_.config;
+  const std::string preset = state_.llm_preset.c_str();
 
-  if (state_.llm_preset == "ollama") {
+  if (preset == "ollama") {
     config.llm.base_url = "http://localhost:11434/v1";
     config.llm.require_api_key = false;
     config.llm.api_key.clear();
+    config.llm_api_key_env.clear();
+  } else if (preset == "cloud") {
+    const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
+    config.llm.base_url = defaults.llm.base_url;
+    config.llm.require_api_key = true;
   } else {
     config.llm.base_url = state_.llm_base_url.c_str();
-    config.llm.require_api_key = !state_.llm_api_key_env.empty();
-    if (!state_.llm_api_key_env.empty()) {
-      config.llm.api_key.clear();
+    config.llm.require_api_key = true;
+  }
+
+  config.llm.model = state_.llm_model.c_str();
+
+  const std::string inline_key = state_.llm_api_key.c_str();
+  if (!inline_key.empty()) {
+    config.llm.api_key = inline_key;
+    config.llm_api_key_env.clear();
+  } else {
+    config.llm.api_key.clear();
+    config.llm_api_key_env = state_.llm_api_key_env.c_str();
+    if (!config.llm_api_key_env.empty()) {
+      config.llm.require_api_key = true;
     }
   }
-  config.llm.model = state_.llm_model.c_str();
-  config.llm_api_key_env = state_.llm_api_key_env.c_str();
+
+  if (preset == "ollama") {
+    config.llm.require_api_key = false;
+  }
 
   config.theme = state_.theme.c_str();
 

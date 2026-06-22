@@ -4,9 +4,9 @@
 
 namespace pbr {
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
 
-class AndroidFileInterface : public Rml::FileInterface {
+class SdlAssetFileInterface : public Rml::FileInterface {
 public:
   Rml::FileHandle Open(const Rml::String& path) override;
   void Close(Rml::FileHandle file) override;

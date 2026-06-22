@@ -21,6 +21,9 @@ public:
 
   static void PostTask(BrowserThreadId id, std::function<void()> task);
 
+  static void PauseIO();
+  static void ResumeIO();
+
   template <typename Result>
   static void PostTaskAndReply(std::function<Result()> work, std::function<void(Result)> reply) {
     PostTask(BrowserThreadId::IO, [work = std::move(work), reply = std::move(reply)]() mutable {

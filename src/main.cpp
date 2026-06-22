@@ -2,14 +2,11 @@
 #include "app/Bootstrap.h"
 #include "libp2p/integration/Libp2pHost.h"
 #include "log/Logger.h"
+#include "platform/Platform.h"
 
 #include <SDL3/SDL_main.h>
 
 #include <cstring>
-
-#if defined(__ANDROID__)
-#include <SDL3/SDL.h>
-#endif
 
 namespace {
 
@@ -49,12 +46,10 @@ int main(int argc, char** argv) {
     root.info << "libp2p linked";
   }
 
-#if defined(__ANDROID__)
-  if (!SDL_Init(SDL_INIT_EVENTS)) {
-    root.error << "SDL_Init failed before bootstrap: " << SDL_GetError();
+  if (!pbr::Platform::EarlyInit()) {
+    root.error << "Platform early init failed";
     return 1;
   }
-#endif
 
   if (!profile_override.empty()) {
     root.warning << "Using profile override '" << profile_override

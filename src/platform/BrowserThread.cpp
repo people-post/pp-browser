@@ -44,4 +44,16 @@ void BrowserThread::PostTask(const BrowserThreadId id, std::function<void()> tas
   Get(id).PostTask(std::move(task));
 }
 
+void BrowserThread::PauseIO() {
+  if (io_runner_) {
+    io_runner_->Pause();
+  }
+}
+
+void BrowserThread::ResumeIO() {
+  if (io_runner_) {
+    io_runner_->Resume();
+  }
+}
+
 } // namespace pbr

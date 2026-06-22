@@ -20,6 +20,8 @@ public:
   void PostTask(std::function<void()> task);
   void RunPendingTasks();
   void Stop();
+  void Pause();
+  void Resume();
 
   bool IsRunningOnThisThread() const;
 
@@ -34,6 +36,7 @@ private:
   std::condition_variable cv_;
   std::deque<std::function<void()>> tasks_;
   bool stopped_ = false;
+  bool paused_ = false;
   std::thread::id thread_id_;
 };
 

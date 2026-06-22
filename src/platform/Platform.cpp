@@ -17,4 +17,17 @@ PlatformKind Platform::Detect() {
 #endif
 }
 
+bool Platform::IsMobile() {
+  const PlatformKind kind = Detect();
+  return kind == PlatformKind::Android || kind == PlatformKind::IOS;
+}
+
+bool Platform::UsesPackagedAssets() {
+  return Detect() != PlatformKind::Desktop;
+}
+
+bool Platform::SupportsSubprocessMcp() {
+  return !IsMobile();
+}
+
 } // namespace pbr

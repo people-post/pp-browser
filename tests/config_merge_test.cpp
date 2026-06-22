@@ -15,12 +15,12 @@ int main() {
   auto config = pbr::Config::LoadFromFile(path);
   assert(config);
   assert(config->llm.model == "custom-model");
-  assert(config->llm.base_url == "http://localhost:11434/v1");
-  assert(!config->llm.require_api_key);
+  assert(config->llm.base_url == "https://api.openai.com/v1");
+  assert(config->llm.require_api_key);
 
   const pbr::AppConfig defaults = pbr::Config::DefaultAppConfig();
-  assert(defaults.llm.base_url == "http://localhost:11434/v1");
-  assert(!defaults.llm.require_api_key);
+  assert(defaults.llm.base_url == "https://api.openai.com/v1");
+  assert(defaults.llm.require_api_key);
   assert(defaults.theme == "themes/base.rcss");
 
   std::filesystem::remove(path);

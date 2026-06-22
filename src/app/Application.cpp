@@ -3,10 +3,11 @@
 #include "app/InputCoordinator.h"
 #include "bindings/ActionRouter.h"
 #include "demo/ChatDemo.h"
-#include "platform/AndroidFileInterface.h"
 #include "platform/BrowserThread.h"
 #include "platform/IAssetLocator.h"
 #include "platform/Platform.h"
+#include "platform/PlatformServices.h"
+#include "platform/SdlAppEvents.h"
 #include "ui/ShellHost.h"
 #include "demo/DynamicRmlDemo.h"
 #include "demo/SearchDemo.h"
@@ -39,10 +40,6 @@ bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int ke
                     float /*native_dp_ratio*/, bool priority) {
   return InputCoordinator::Instance().ProcessKeyDown(context, key, key_modifier, priority);
 }
-
-#if defined(__ANDROID__)
-AndroidFileInterface g_android_file_interface;
-#endif
 
 void ResolveMobileWindowSize(int& width, int& height) {
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
@@ -88,7 +85,7 @@ bool Application::Initialize(const char* window_title, DemoMode demo, const Boot
 
   int window_width = width;
   int window_height = height;
-  if (Platform::Detect() != PlatformKind::Desktop) {
+  if (Platform::IsMobile()) {
     ResolveMobileWindowSize(window_width, window_height);
   }
 
@@ -104,9 +101,9 @@ bool Application::Initialize(const char* window_title, DemoMode demo, const Boot
   Rml::SetSystemInterface(Backend::GetSystemInterface());
   Rml::SetRenderInterface(Backend::GetRenderInterface());
 
-#if defined(__ANDROID__)
-  Rml::SetFileInterface(&g_android_file_interface);
-#endif
+  if (Rml::FileInterface* packaged_files = PlatformServices::PackagedFileInterface()) {
+    Rml::SetFileInterface(packaged_files);
+  }
 
   if (!Rml::Initialise()) {
     log().error << "Rml::Initialise failed";
@@ -132,15 +129,7 @@ bool Application::Initialize(const char* window_title, DemoMode demo, const Boot
 
   Backend::SyncContext(context);
 
-  InputCoordinator::Instance().Clear();
-  InputCoordinator::Instance().Register(KeyBinding{
-      .key = Rml::Input::KI_ESCAPE,
-      .action = []() {
-        Backend::RequestExit();
-        return false;
-      },
-      .priority = 100,
-  });
+  SdlAppEvents::Install();
 
   ActionRouter::Instance().Attach(context);
   if (demo == DemoMode::Search) {

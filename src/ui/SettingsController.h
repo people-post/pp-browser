@@ -26,9 +26,10 @@ public:
 
 private:
   struct SettingsState {
-    Rml::String llm_preset = "ollama";
+    Rml::String llm_preset = "cloud";
     Rml::String llm_base_url;
     Rml::String llm_model;
+    Rml::String llm_api_key;
     Rml::String llm_api_key_env;
     Rml::String theme;
     Rml::String profile_label;

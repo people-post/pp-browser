@@ -95,7 +95,11 @@ void MergeEndpoint(const nlohmann::json& root, const char* key, ServiceEndpointC
 
 void MergeJsonIntoConfig(const nlohmann::json& root, AppConfig& config) {
   if (root.contains("theme") && root["theme"].is_string()) {
-    config.theme = root["theme"].get<std::string>();
+    std::string theme = root["theme"].get<std::string>();
+    if (theme.rfind("assets/", 0) == 0) {
+      theme = theme.substr(7);
+    }
+    config.theme = theme;
   }
   if (root.contains("llm") && root["llm"].is_object()) {
     MergeLlm(root["llm"], config);

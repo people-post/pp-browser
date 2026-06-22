@@ -8,6 +8,7 @@
     <label class="settings-field">
       <span class="settings-label">Preset</span>
       <select class="field" data-value="llm_preset">
+        <option value="cloud">Cloud (OpenAI-compatible)</option>
         <option value="ollama">Ollama (localhost)</option>
         <option value="custom">Custom</option>
       </select>
@@ -21,7 +22,11 @@
       <input class="field" type="text" data-value="llm_model"/>
     </label>
     <label class="settings-field">
-      <span class="settings-label">API key env var</span>
+      <span class="settings-label">API key</span>
+      <input class="field" type="password" data-value="llm_api_key" placeholder="Required for cloud providers"/>
+    </label>
+    <label class="settings-field">
+      <span class="settings-label">API key env var (advanced)</span>
       <input class="field" type="text" data-value="llm_api_key_env" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
     </label>
   </div>

@@ -26,7 +26,7 @@ void SequencedTaskRunner::PostTask(std::function<void()> task) {
 
   if (!uses_dedicated_thread_) {
     std::lock_guard lock(mutex_);
-    if (stopped_) {
+    if (stopped_ || paused_) {
       return;
     }
     EnqueueLocked(std::move(task));
@@ -35,7 +35,7 @@ void SequencedTaskRunner::PostTask(std::function<void()> task) {
 
   {
     std::lock_guard lock(mutex_);
-    if (stopped_) {
+    if (stopped_ || paused_) {
       return;
     }
     EnqueueLocked(std::move(task));
@@ -52,11 +52,26 @@ void SequencedTaskRunner::RunPendingTasks() {
     std::function<void()> task;
     {
       std::lock_guard lock(mutex_);
-      if (!DequeueOne(&task)) {
+      if (paused_ || !DequeueOne(&task)) {
         break;
       }
     }
     task();
+  }
+}
+
+void SequencedTaskRunner::Pause() {
+  std::lock_guard lock(mutex_);
+  paused_ = true;
+}
+
+void SequencedTaskRunner::Resume() {
+  {
+    std::lock_guard lock(mutex_);
+    paused_ = false;
+  }
+  if (uses_dedicated_thread_) {
+    cv_.notify_all();
   }
 }
 
@@ -87,11 +102,11 @@ void SequencedTaskRunner::IOThreadMain() {
     std::function<void()> task;
     {
       std::unique_lock lock(mutex_);
-      cv_.wait(lock, [this]() { return stopped_ || !tasks_.empty(); });
+      cv_.wait(lock, [this]() { return stopped_ || (!paused_ && !tasks_.empty()); });
       if (stopped_ && tasks_.empty()) {
         break;
       }
-      if (!DequeueOne(&task)) {
+      if (paused_ || !DequeueOne(&task)) {
         continue;
       }
     }
