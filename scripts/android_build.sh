@@ -19,6 +19,7 @@ Usage: $(basename "$0") <command>
 Commands:
   apk       Build debug APK (assembleDebug)
   install   Build and install debug APK on a connected device/emulator
+            Set ANDROID_SERIAL to target one device when several are connected.
   configure Optional: run a standalone CMake configure for Android (sanity check)
 
 Requires:
@@ -41,7 +42,12 @@ case "${cmd}" in
     require_env ANDROID_SDK_ROOT
     require_env ANDROID_NDK_HOME
     cd "${ANDROID_DIR}"
-    ./gradlew installDebug
+    if [[ -n "${ANDROID_SERIAL:-}" ]]; then
+      ./gradlew installDebug -Pandroid.injected.invoked.from.ide=true \
+        -Pandroid.injected.device.serial="${ANDROID_SERIAL}"
+    else
+      ./gradlew installDebug
+    fi
     ;;
   configure)
     require_env ANDROID_NDK_HOME

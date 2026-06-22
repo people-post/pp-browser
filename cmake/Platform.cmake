@@ -26,6 +26,13 @@ endif()
 
 if(PP_BROWSER_IS_ANDROID)
   set(PP_BROWSER_APP_TARGET main)
+  # Boost GDB pretty-printer inline asm uses @progbits (GNU syntax) which breaks
+  # armeabi-v7a / clang; not needed on device.
+  add_compile_definitions(
+    BOOST_ALL_NO_EMBEDDED_GDB_SCRIPTS
+    BOOST_OUTCOME_DISABLE_INLINE_GDB_PRETTY_PRINTERS
+    BOOST_OUTCOME_SYSTEM_ERROR2_DISABLE_INLINE_GDB_PRETTY_PRINTERS
+  )
 else()
   set(PP_BROWSER_APP_TARGET pp-browser)
 endif()
