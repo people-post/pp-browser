@@ -72,7 +72,19 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 
 Open **Settings** from the sidebar footer. Saves machine config to `config.json` and theme to profile `preferences.json`. LLM changes hot-reload via `SessionStore` config listeners → `AgentSession::Configure`.
 
-Enter an **API key** directly in Settings (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
+While Settings is open, [`SettingsController`](../src/ui/SettingsController.cpp) keeps a **draft buffer** (`draft_`) separate from the live `SessionStore` snapshot. Edits update the draft via `data-value` bindings and explicit `data-event-change` handlers (model, base URL, theme, API key env). **Save** applies the draft through [`ApplySettingsDraft`](../src/app/SettingsLogic.cpp) (including LLM preset defaults) and persists via `SessionStore`. Closing Settings without saving discards the draft.
+
+Enter an **API key** directly in Settings (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
+
+### Verify settings persistence (manual)
+
+```bash
+pp-browser --config /tmp/pp-test-config.json
+# Settings → change LLM model → Save → back → reopen Settings
+jq .llm.model /tmp/pp-test-config.json
+```
+
+The on-disk model should match what you saved.
 
 ## Platform layer
 

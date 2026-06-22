@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/Bootstrap.h"
+#include "app/SettingsLogic.h"
 #include "common/Module.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
@@ -19,42 +20,48 @@ public:
 
   bool RegisterModel(Rml::Context* context);
   void OpenSettings();
-  void LoadFromSession();
 
   static void OpenSettingsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
 private:
-  struct SettingsState {
+  struct SettingsUiDraft {
     Rml::String llm_preset = "cloud";
     Rml::String llm_base_url;
     Rml::String llm_model;
     Rml::String llm_api_key;
     Rml::String llm_api_key_env;
     Rml::String theme;
+  };
+
+  struct SettingsDisplay {
     Rml::String profile_label;
     Rml::String config_dir;
     Rml::String data_dir;
     Rml::String profile_dir;
-    Rml::String status;
   };
 
   SettingsController();
 
   static void SaveSettingsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ResetDefaultsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ApplyLlmPresetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void DraftLlmModelChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void DraftLlmBaseUrlChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void DraftThemeChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void DraftLlmApiKeyEnvChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void DraftLlmPresetChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
+  void LoadDraftFromSession();
+  void OnSettingsMounted();
   void OnSaveSettings();
   void OnResetDefaults();
-  void OnApplyLlmPreset(const std::string& preset);
   void DirtyAll();
-  void SchedulePostMountRefresh();
+  SettingsDraft ToLogicDraft() const;
 
-  AppConfig BuildConfigFromDraft() const;
-
-  SettingsState state_;
-  bool suppress_preset_apply_ = false;
+  SettingsUiDraft draft_;
+  SettingsDisplay display_;
+  Rml::String status_;
   Rml::Context* context_ = nullptr;
+  bool suppress_preset_change_ = false;
 };
 
 } // namespace pbr

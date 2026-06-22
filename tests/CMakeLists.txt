@@ -223,6 +223,11 @@ target_link_libraries(pp_browser_config_merge_test PRIVATE nlohmann_json::nlohma
 target_include_directories(pp_browser_config_merge_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(config_merge_test pp_browser_config_merge_test)
 
+add_executable(pp_browser_session_store_test session_store_test.cpp ${PP_BROWSER_CONFIG_TEST_SOURCES})
+target_link_libraries(pp_browser_session_store_test PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_session_store_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_test(session_store_test pp_browser_session_store_test)
+
 add_executable(pp_browser_profile_registry_test profile_registry_test.cpp
   ${CMAKE_SOURCE_DIR}/src/app/ProfileRegistry.cpp
   ${CMAKE_SOURCE_DIR}/src/app/SchemaVersion.cpp

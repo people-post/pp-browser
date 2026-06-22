@@ -7,19 +7,20 @@
     <p class="settings-section-title">LLM</p>
     <label class="settings-field">
       <span class="settings-label">Preset</span>
-      <select class="field" data-value="llm_preset" data-event-change="apply_llm_preset()">
+      <select class="field" data-attr-value="llm_preset" data-event-change="draft_llm_preset_changed()">
         <option value="cloud">Cloud (OpenAI-compatible)</option>
         <option value="ollama">Ollama (localhost)</option>
         <option value="custom">Custom</option>
       </select>
     </label>
+    <p class="text muted">Preset defaults apply when you save.</p>
     <label class="settings-field">
       <span class="settings-label">Base URL</span>
-      <input class="field" type="text" data-value="llm_base_url"/>
+      <input class="field" type="text" data-value="llm_base_url" data-event-change="draft_llm_base_url_changed()"/>
     </label>
     <label class="settings-field">
       <span class="settings-label">Model</span>
-      <input class="field" type="text" data-value="llm_model"/>
+      <input class="field" type="text" data-value="llm_model" data-event-change="draft_llm_model_changed()"/>
     </label>
     <label class="settings-field">
       <span class="settings-label">API key</span>
@@ -27,7 +28,7 @@
     </label>
     <label class="settings-field">
       <span class="settings-label">API key env var (advanced)</span>
-      <input class="field" type="text" data-value="llm_api_key_env" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
+      <input class="field" type="text" data-value="llm_api_key_env" data-event-change="draft_llm_api_key_env_changed()" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
     </label>
   </div>
 
@@ -35,7 +36,7 @@
     <p class="settings-section-title">Appearance</p>
     <label class="settings-field">
       <span class="settings-label">Theme</span>
-      <input class="field" type="text" data-value="theme"/>
+      <input class="field" type="text" data-value="theme" data-event-change="draft_theme_changed()"/>
     </label>
   </div>
 

@@ -6,6 +6,9 @@
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/Types.h>
 
+#include <functional>
+#include <string>
+
 namespace Rml {
 class Context;
 class Element;
@@ -39,6 +42,8 @@ public:
 
   void DirtyWindow();
   void SetActivityVisible(bool visible);
+  void SetOnBeforeTransientMount(std::function<void(const std::string& key)> callback);
+  void SetOnTransientMounted(std::function<void(const std::string& key)> callback);
 
   static void ToggleSecondaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -83,6 +88,8 @@ private:
   Rml::String saved_focus_id_;
   bool sync_pending_ = false;
   bool restore_focus_after_sync_ = false;
+  std::function<void(const std::string&)> on_before_transient_mount_;
+  std::function<void(const std::string&)> on_transient_mounted_;
 };
 
 } // namespace pbr

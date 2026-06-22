@@ -263,6 +263,14 @@ void ShellHost::SetActivityVisible(bool visible) {
   DirtyWindow();
 }
 
+void ShellHost::SetOnBeforeTransientMount(std::function<void(const std::string& key)> callback) {
+  on_before_transient_mount_ = std::move(callback);
+}
+
+void ShellHost::SetOnTransientMounted(std::function<void(const std::string& key)> callback) {
+  on_transient_mounted_ = std::move(callback);
+}
+
 void ShellHost::SaveFocus() {
   saved_focus_id_.clear();
   if (!context_) {
@@ -546,7 +554,14 @@ void ShellHost::MountPaneBodies() {
     mount_key(pane.spec.key);
   }
   if (!state_.transient_stack.empty()) {
-    mount_key(state_.transient_stack.back().spec.key);
+    const std::string& transient_key = state_.transient_stack.back().spec.key;
+    if (on_before_transient_mount_) {
+      on_before_transient_mount_(transient_key);
+    }
+    mount_key(transient_key);
+    if (on_transient_mounted_) {
+      on_transient_mounted_(transient_key);
+    }
   }
   for (const OverlayEntry& overlay : state_.overlay_stack) {
     if (!context_ || context_->GetNumDocuments() == 0) {

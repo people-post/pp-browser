@@ -64,6 +64,16 @@ int main() {
   assert(built.llm_api_key_env == "OPENAI_API_KEY");
   assert(built.llm.preset == "custom");
 
+  pbr::AppConfig with_key = defaults;
+  with_key.llm.api_key = "saved-key";
+  pbr::SettingsDraft model_only;
+  model_only.llm_preset = "cloud";
+  model_only.llm_base_url = with_key.llm.base_url;
+  model_only.llm_model = "new-model";
+  const pbr::AppConfig model_only_saved = pbr::ApplySettingsDraft(with_key, model_only);
+  assert(model_only_saved.llm.model == "new-model");
+  assert(model_only_saved.llm.api_key == "saved-key");
+
   std::cout << "config_merge_test ok\n";
   return 0;
 }
