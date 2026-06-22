@@ -75,11 +75,10 @@ namespace soralog {
      * @brief Resets the text style to default using an ANSI escape sequence.
      */
     void put_reset_style(char *&ptr) {
-      const auto &style = reset_color;
-      auto size = std::end(style) - std::begin(style);
-      std::memcpy(ptr, std::begin(style), size);
+      const auto size = reset_color.size();
+      std::memcpy(ptr, reset_color.data(), size);
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      ptr = ptr + size;
+      ptr += size;
     }
 
     /**
