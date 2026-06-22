@@ -170,7 +170,7 @@ namespace libp2p::multi::detail {
   }
 
   std::string encodeBase58(BytesIn bytes) {
-    return encodeImpl(bytes.begin().base(), bytes.end().base());
+    return encodeImpl(bytes.data(), bytes.data() + bytes.size());
   }
 
   outcome::result<Bytes> decodeBase58(std::string_view string) {
