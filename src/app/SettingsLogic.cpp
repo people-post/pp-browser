@@ -13,14 +13,15 @@ AppConfig ApplySettingsDraft(const AppConfig& base, const SettingsDraft& draft) 
   if (!draft.llm_api_key.empty()) {
     config.llm.api_key = draft.llm_api_key;
     config.llm_api_key_env.clear();
-  } else {
+  } else if (!draft.llm_api_key_env.empty()) {
     config.llm_api_key_env = draft.llm_api_key_env;
-    if (!config.llm_api_key_env.empty()) {
-      config.llm.api_key.clear();
-      config.llm.require_api_key = true;
-    }
+    config.llm.api_key.clear();
+  } else if (ResolvePreset(config) != "cloud") {
+    config.llm.api_key.clear();
+    config.llm_api_key_env.clear();
   }
 
+  ResolveLlmAuthRequirements(config);
   return config;
 }
 

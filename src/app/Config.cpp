@@ -2,6 +2,7 @@
 
 #include "app/AppPaths.h"
 #include "app/ConfigJson.h"
+#include "app/LlmPreset.h"
 #include "platform/Platform.h"
 #include "platform/PlatformDefaults.h"
 
@@ -84,6 +85,7 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
 
   AppConfig config = MergeConfig(DefaultAppConfig(), root);
   ResolveConfigCredentials(config);
+  ResolveLlmAuthRequirements(config);
   return config;
 }
 

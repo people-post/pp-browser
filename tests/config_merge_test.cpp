@@ -63,6 +63,16 @@ int main() {
   assert(built.llm.base_url == "https://proxy.example/v1");
   assert(built.llm_api_key_env == "OPENAI_API_KEY");
   assert(built.llm.preset == "custom");
+  assert(built.llm.require_api_key);
+
+  pbr::SettingsDraft ollama_draft;
+  ollama_draft.llm_preset = "custom";
+  ollama_draft.llm_base_url = "http://192.168.1.10:11434/v1";
+  ollama_draft.llm_model = "llama3.2";
+  const pbr::AppConfig ollama_built = pbr::ApplySettingsDraft(defaults, ollama_draft);
+  assert(ollama_built.llm.base_url == "http://192.168.1.10:11434/v1");
+  assert(!ollama_built.llm.require_api_key);
+  assert(ollama_built.llm.api_key.empty());
 
   pbr::AppConfig with_key = defaults;
   with_key.llm.api_key = "saved-key";

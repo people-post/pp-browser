@@ -63,7 +63,17 @@ void ApplyPreset(AppConfig& config, const std::string& preset_id, const std::str
   }
 
   config.llm.base_url = custom_base_url;
-  config.llm.require_api_key = true;
+}
+
+void ResolveLlmAuthRequirements(AppConfig& config) {
+  if (!config.llm.api_key.empty() || !config.llm_api_key_env.empty()) {
+    config.llm.require_api_key = true;
+    return;
+  }
+
+  if (ResolvePreset(config) != "cloud") {
+    config.llm.require_api_key = false;
+  }
 }
 
 } // namespace pbr

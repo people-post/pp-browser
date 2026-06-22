@@ -24,7 +24,7 @@
     </label>
     <label class="settings-field">
       <span class="settings-label">API key</span>
-      <input class="field" type="password" data-value="llm_api_key" placeholder="Required for cloud providers"/>
+      <input class="field" type="password" data-value="llm_api_key" placeholder="Optional for local / Ollama endpoints"/>
     </label>
     <label class="settings-field">
       <span class="settings-label">API key env var (advanced)</span>
