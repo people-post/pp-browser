@@ -30,6 +30,36 @@
 
 namespace soralog {
 
+  namespace {
+
+    // Named type required: MSVC rejects member functions on unnamed local structs.
+    struct EventMessageOutputIterator {
+      using iterator_category = std::random_access_iterator_tag;
+      using value_type = char;
+      using reference = value_type &;
+      using pointer = value_type *;
+      using difference_type = ptrdiff_t;
+
+      value_type *pos;
+
+      value_type &operator*() const {
+        return *pos;
+      }
+      constexpr auto &operator++() {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        ++pos;
+        return *this;
+      }
+      constexpr auto operator++(int) {
+        auto origin = *this;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        ++pos;
+        return origin;
+      }
+    };
+
+  }  // namespace
+
   /**
    * @class Event
    * @brief Represents a single log event.
@@ -86,30 +116,7 @@ namespace soralog {
           break;
       }
 
-      struct {
-        using iterator_category = std::random_access_iterator_tag;
-        using value_type = char;
-        using reference = value_type &;
-        using pointer = value_type *;
-        using difference_type = ptrdiff_t;
-
-        value_type *pos;
-
-        value_type &operator*() const {
-          return *pos;
-        }
-        constexpr auto &operator++() {
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-          ++pos;
-          return *this;
-        }
-        constexpr auto operator++(int) {
-          auto origin = *this;
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-          ++pos;
-          return origin;
-        }
-      } it{message_data_};
+      EventMessageOutputIterator it{message_data_};
 
       try {
         using OutputIt = decltype(it);
