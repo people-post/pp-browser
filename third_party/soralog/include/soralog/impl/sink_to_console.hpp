@@ -122,7 +122,7 @@ namespace soralog {
         std::chrono::steady_clock::time_point();
 
     /// Flag to prevent concurrent flushing operations.
-    std::atomic_flag flush_in_progress_ = false;
+    std::atomic_flag flush_in_progress_{};
   };
 
 }  // namespace soralog

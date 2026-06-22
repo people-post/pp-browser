@@ -24,6 +24,16 @@
  */
 
 // Base macro that logs a message if the specified log level is enabled.
+#if defined(_MSC_VER)
+#define _SL_LOG_IF_LEVEL(LOG, LVL, FMT, ...)                 \
+  do {                                                       \
+    auto &&_sl_log_log = (LOG);                              \
+    soralog::Level _sl_log_level = (LVL);                    \
+    if (_sl_log_log->level() >= _sl_log_level) {             \
+      _sl_log_log->log(_sl_log_level, (FMT), ##__VA_ARGS__); \
+    }                                                        \
+  } while (0)
+#else
 #define _SL_LOG_IF_LEVEL(LOG, LVL, FMT, ...)                 \
   ({                                                         \
     auto &&_sl_log_log = (LOG);                              \
@@ -32,6 +42,7 @@
       _sl_log_log->log(_sl_log_level, (FMT), ##__VA_ARGS__); \
     }                                                        \
   })
+#endif
 
 // Standard logging macro.
 #define _SL_LOG(LOG, LVL, FMT, ...) \

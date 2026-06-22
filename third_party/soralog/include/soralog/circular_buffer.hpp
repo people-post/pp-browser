@@ -68,7 +68,7 @@ namespace soralog {
       }
 
       // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes)
-      std::atomic_flag busy{false};  ///< Flag indicating if the node is in use.
+      std::atomic_flag busy{};  ///< Flag indicating if the node is in use.
 
      private:
       // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,hicpp-avoid-c-arrays,modernize-avoid-c-arrays)
@@ -292,7 +292,7 @@ namespace soralog {
     std::atomic_size_t size_ = 0;            ///< Current number of elements.
     std::atomic_size_t push_index_ = 0;      ///< Index for adding elements.
     std::atomic_size_t pop_index_ = 0;       ///< Index for removing elements.
-    mutable std::atomic_flag busy_ = false;  ///< Lock flag.
+    mutable std::atomic_flag busy_{};  ///< Lock flag.
   };
 
 }  // namespace soralog

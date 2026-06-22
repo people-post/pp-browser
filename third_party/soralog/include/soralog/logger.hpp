@@ -13,6 +13,12 @@
 #include <soralog/level.hpp>
 #include <soralog/sink.hpp>
 
+#if defined(__clang__) || defined(__GNUC__)
+#define SORALOG_NO_SANITIZE_THREAD __attribute__((no_sanitize("thread")))
+#else
+#define SORALOG_NO_SANITIZE_THREAD
+#endif
+
 namespace soralog {
 
   class LoggingSystem;
@@ -51,7 +57,7 @@ namespace soralog {
      * @param args Formatting arguments.
      */
     template <typename Format, typename... Args>
-    void __attribute__((no_sanitize("thread"))) push(Level level,
+    void SORALOG_NO_SANITIZE_THREAD push(Level level,
                                                      const Format &format,
                                                      const Args &...args) {
       if (level_ >= level) {
