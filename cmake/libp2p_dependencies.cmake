@@ -63,6 +63,11 @@ set(PACKAGE_MANAGER vendored CACHE STRING "Dependency manager for qdrvm libs" FO
 # --- zlib (before protobuf / lsquic) ---
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 pp_libp2p_add_vendored(zlib)
+if(TARGET zlib)
+  target_include_directories(zlib PUBLIC
+    "$<BUILD_INTERFACE:${PP_LIBP2P_THIRD_PARTY}/zlib>"
+    "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/third_party/zlib>")
+endif()
 if(NOT TARGET ZLIB::ZLIB)
   if(TARGET ZLIB::zlib)
     add_library(ZLIB::ZLIB ALIAS ZLIB::zlib)
