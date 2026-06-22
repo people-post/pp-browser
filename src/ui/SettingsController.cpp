@@ -1,11 +1,10 @@
 #include "ui/SettingsController.h"
 
 #include "app/AppPaths.h"
-#include "app/Config.h"
-#include "app/UserPreferences.h"
-#include "demo/ChatDemo.h"
-#include "platform/PlatformDefaults.h"
-#include "platform/Platform.h"
+#include "app/LlmPreset.h"
+#include "app/SettingsLogic.h"
+#include "app/SessionStore.h"
+#include "platform/BrowserThread.h"
 #include "ui/DataModelHost.h"
 #include "ui/ShellFeedback.h"
 #include "ui/ShellHost.h"
@@ -16,39 +15,6 @@
 
 namespace pbr {
 
-namespace {
-
-constexpr const char* kOllamaBaseUrl = "http://localhost:11434/v1";
-
-std::string DetectPreset(const AppConfig& config) {
-  if (config.llm.base_url.find("11434") != std::string::npos) {
-    return "ollama";
-  }
-  if (config.llm.base_url == "https://api.openai.com/v1") {
-    return "cloud";
-  }
-  return "custom";
-}
-
-std::string CloudBaseUrl() { return PlatformDefaults::For(Platform::Detect()).llm.base_url; }
-
-void ApplyPresetToConfig(AppConfig& config, const std::string& preset, const std::string& custom_base_url) {
-  if (preset == "ollama") {
-    config.llm.base_url = kOllamaBaseUrl;
-    config.llm.require_api_key = false;
-    config.llm.api_key.clear();
-    config.llm_api_key_env.clear();
-  } else if (preset == "cloud") {
-    config.llm.base_url = CloudBaseUrl();
-    config.llm.require_api_key = true;
-  } else {
-    config.llm.base_url = custom_base_url;
-    config.llm.require_api_key = true;
-  }
-}
-
-} // namespace
-
 SettingsController::SettingsController() {
   redirectLogger("SettingsController");
 }
@@ -58,23 +24,21 @@ SettingsController& SettingsController::Instance() {
   return controller;
 }
 
-void SettingsController::BindBootstrap(BootstrapResult bootstrap) {
-  bootstrap_ = std::move(bootstrap);
-  LoadFromBootstrap();
-}
+void SettingsController::LoadFromSession() {
+  const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
+  const AppConfig& config = bootstrap.config;
 
-void SettingsController::LoadFromBootstrap() {
-  const AppConfig& config = bootstrap_.config;
-  state_.llm_preset = DetectPreset(config).c_str();
-  state_.llm_base_url = config.llm.base_url.c_str();
-  state_.llm_model = config.llm.model.c_str();
-  state_.llm_api_key = config.llm.api_key.c_str();
-  state_.llm_api_key_env = config.llm_api_key_env.c_str();
-  state_.theme = bootstrap_.profile_prefs.theme.c_str();
-  state_.profile_label = bootstrap_.profile_registry.ActiveProfileId().c_str();
-  state_.config_dir = AppPaths::ConfigDir().c_str();
-  state_.data_dir = bootstrap_.data_dir.c_str();
-  state_.profile_dir = bootstrap_.profile_data_dir.c_str();
+  suppress_preset_apply_ = true;
+  state_.llm_preset = ResolvePreset(config);
+  state_.llm_base_url = config.llm.base_url;
+  state_.llm_model = config.llm.model;
+  state_.llm_api_key = config.llm.api_key;
+  state_.llm_api_key_env = config.llm_api_key_env;
+  state_.theme = bootstrap.profile_prefs.theme;
+  state_.profile_label = bootstrap.profile_registry.ActiveProfileId();
+  state_.config_dir = AppPaths::ConfigDir();
+  state_.data_dir = bootstrap.data_dir;
+  state_.profile_dir = bootstrap.profile_data_dir;
   state_.status = "";
 }
 
@@ -119,22 +83,34 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "status");
 }
 
+void SettingsController::SchedulePostMountRefresh() {
+  BrowserThread::PostTask(BrowserThreadId::UI, []() {
+    auto& controller = SettingsController::Instance();
+    controller.suppress_preset_apply_ = false;
+    controller.DirtyAll();
+  });
+}
+
 void SettingsController::OpenSettings() {
-  LoadFromBootstrap();
+  LoadFromSession();
   ShellHost::Instance().PushTransient({.key = "settings", .rml_path = "views/settings.rml", .toolbar_label = "Settings"});
   ShellHost::Instance().DirtyWindow();
-  DirtyAll();
+  SchedulePostMountRefresh();
 }
 
 void SettingsController::OnApplyLlmPreset(const std::string& preset) {
-  state_.llm_preset = preset.c_str();
+  if (suppress_preset_apply_) {
+    return;
+  }
 
+  state_.llm_preset = preset;
+
+  AppConfig scratch = SessionStore::Instance().Snapshot().config;
+  ApplyPreset(scratch, preset, state_.llm_base_url.c_str());
+  state_.llm_base_url = scratch.llm.base_url;
   if (preset == "ollama") {
-    state_.llm_base_url = kOllamaBaseUrl;
     state_.llm_api_key = "";
     state_.llm_api_key_env = "";
-  } else if (preset == "cloud") {
-    state_.llm_base_url = CloudBaseUrl().c_str();
   }
 
   auto& host = DataModelHost::Instance();
@@ -144,53 +120,36 @@ void SettingsController::OnApplyLlmPreset(const std::string& preset) {
   host.Dirty("settings", "llm_api_key_env");
 }
 
+AppConfig SettingsController::BuildConfigFromDraft() const {
+  SettingsDraft draft;
+  draft.llm_preset = state_.llm_preset.c_str();
+  draft.llm_base_url = state_.llm_base_url.c_str();
+  draft.llm_model = state_.llm_model.c_str();
+  draft.llm_api_key = state_.llm_api_key.c_str();
+  draft.llm_api_key_env = state_.llm_api_key_env.c_str();
+  return ApplySettingsDraft(SessionStore::Instance().Snapshot().config, draft);
+}
+
 void SettingsController::OnSaveSettings() {
-  AppConfig config = bootstrap_.config;
+  const AppConfig config = BuildConfigFromDraft();
   const std::string preset = state_.llm_preset.c_str();
 
-  ApplyPresetToConfig(config, preset, state_.llm_base_url.c_str());
-
-  config.llm.model = state_.llm_model.c_str();
-
-  const std::string inline_key = state_.llm_api_key.c_str();
-  if (!inline_key.empty()) {
-    config.llm.api_key = inline_key;
-    config.llm_api_key_env.clear();
-  } else {
-    config.llm.api_key.clear();
-    config.llm_api_key_env = state_.llm_api_key_env.c_str();
-    if (!config.llm_api_key_env.empty()) {
-      config.llm.require_api_key = true;
-    }
-  }
-
-  if (preset == "ollama") {
-    config.llm.require_api_key = false;
-  }
-
-  config.theme = state_.theme.c_str();
-
-  const std::string config_path = bootstrap_.config_path.empty() ? AppPaths::ConfigFilePath() : bootstrap_.config_path;
-  if (auto saved = Config::SaveToFile(config_path, config); !saved) {
-    state_.status = saved.error().message.c_str();
+  if (auto saved = SessionStore::Instance().SaveConfig(config); !saved) {
+    state_.status = saved.error().message;
     DataModelHost::Instance().Dirty("settings", "status");
     return;
   }
 
-  bootstrap_.config = config;
-
-  ProfilePreferences profile_prefs = bootstrap_.profile_prefs;
+  ProfilePreferences profile_prefs = SessionStore::Instance().Snapshot().profile_prefs;
   profile_prefs.theme = state_.theme.c_str();
-  if (auto saved = UserPreferences::SaveProfile(bootstrap_.profile_data_dir, profile_prefs); !saved) {
-    state_.status = saved.error().message.c_str();
+  if (auto saved = SessionStore::Instance().SaveProfilePrefs(profile_prefs); !saved) {
+    state_.status = saved.error().message;
     DataModelHost::Instance().Dirty("settings", "status");
     return;
   }
-  bootstrap_.profile_prefs = profile_prefs;
 
-  ChatDemo::Instance().ApplyConfig(config);
-
-  state_.llm_base_url = config.llm.base_url.c_str();
+  const AppConfig& persisted = SessionStore::Instance().Snapshot().config;
+  state_.llm_base_url = persisted.llm.base_url;
   if (preset == "ollama") {
     state_.llm_api_key = "";
     state_.llm_api_key_env = "";
@@ -206,12 +165,13 @@ void SettingsController::OnSaveSettings() {
 }
 
 void SettingsController::OnResetDefaults() {
-  bootstrap_.config = Config::DefaultAppConfig();
-  bootstrap_.profile_prefs = UserPreferences::DefaultProfile();
-  LoadFromBootstrap();
+  SessionStore::Instance().Mutable().config = SessionStore::Instance().DefaultConfig();
+  SessionStore::Instance().Mutable().profile_prefs = SessionStore::Instance().DefaultProfilePrefs();
+  LoadFromSession();
   DirtyAll();
   state_.status = "Defaults loaded (save to persist)";
   DataModelHost::Instance().Dirty("settings", "status");
+  SchedulePostMountRefresh();
 }
 
 void SettingsController::SaveSettingsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

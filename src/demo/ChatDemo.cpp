@@ -18,6 +18,7 @@
 #include "ui/ShellHost.h"
 #include "ui/ShellFeedback.h"
 #include "app/Config.h"
+#include "app/SessionStore.h"
 #include "ui/SettingsController.h"
 
 #include <RmlUi/Core/Context.h>
@@ -1076,14 +1077,13 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
   }
 }
 
-bool ChatDemo::Setup(Rml::Context* context, const BootstrapResult& bootstrap) {
+bool ChatDemo::Setup(Rml::Context* context) {
   if (!context) {
     return false;
   }
 
   context_ = context;
-  bootstrap_ = bootstrap;
-  const AppConfig& config = bootstrap.config;
+  const AppConfig& config = SessionStore::Instance().Snapshot().config;
   ClearFormState();
   widgets_by_entry_.clear();
   chat_ = {};
@@ -1203,10 +1203,11 @@ bool ChatDemo::Setup(Rml::Context* context, const BootstrapResult& bootstrap) {
     return false;
   }
 
-  SettingsController::Instance().BindBootstrap(bootstrap_);
   if (!SettingsController::Instance().RegisterModel(context)) {
     return false;
   }
+
+  SessionStore::Instance().AddConfigListener([this](const AppConfig& updated) { ApplyRuntimeConfig(updated); });
 
   ShellHost::Instance().Initialize(context);
   ShellHost::Instance().RegisterPane(
@@ -1228,7 +1229,7 @@ bool ChatDemo::Setup(Rml::Context* context, const BootstrapResult& bootstrap) {
   if (!use_llm_) {
     ShellFeedback::ShowBanner(ShellHost::Instance().State(), "Using mock replies — LLM is not configured.");
     ShellHost::Instance().DirtyWindow();
-  } else if (bootstrap_.config.llm.require_api_key && bootstrap_.config.llm.api_key.empty()) {
+  } else if (config.llm.require_api_key && config.llm.api_key.empty()) {
     ShellFeedback::ShowBanner(ShellHost::Instance().State(),
                               "Add your API key in Settings to enable the assistant.");
     ShellHost::Instance().DirtyWindow();
@@ -1237,8 +1238,7 @@ bool ChatDemo::Setup(Rml::Context* context, const BootstrapResult& bootstrap) {
   return true;
 }
 
-void ChatDemo::ApplyConfig(const AppConfig& config) {
-  bootstrap_.config = config;
+void ChatDemo::ApplyRuntimeConfig(const AppConfig& config) {
   use_llm_ = !config.llm.base_url.empty();
   if (agent_) {
     agent_->Configure(config);
@@ -1291,8 +1291,8 @@ void ChatDemo::Shutdown() {
   use_llm_ = false;
 }
 
-bool SetupChatDemo(Rml::Context* context, const BootstrapResult& bootstrap) {
-  return ChatDemo::Instance().Setup(context, bootstrap);
+bool SetupChatDemo(Rml::Context* context) {
+  return ChatDemo::Instance().Setup(context);
 }
 
 void UpdateChatDemo() {

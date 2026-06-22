@@ -82,6 +82,10 @@ set(PP_BROWSER_APP_SOURCES
   src/app/AppPaths.cpp
   src/app/Bootstrap.cpp
   src/app/Config.cpp
+  src/app/ConfigJson.cpp
+  src/app/LlmPreset.cpp
+  src/app/SettingsLogic.cpp
+  src/app/SessionStore.cpp
   src/app/ProfileRegistry.cpp
   src/app/SchemaVersion.cpp
   src/app/UserPreferences.cpp

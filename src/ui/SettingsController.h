@@ -17,10 +17,9 @@ class SettingsController : public Module {
 public:
   static SettingsController& Instance();
 
-  void BindBootstrap(BootstrapResult bootstrap);
   bool RegisterModel(Rml::Context* context);
   void OpenSettings();
-  void LoadFromBootstrap();
+  void LoadFromSession();
 
   static void OpenSettingsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
@@ -49,9 +48,12 @@ private:
   void OnResetDefaults();
   void OnApplyLlmPreset(const std::string& preset);
   void DirtyAll();
+  void SchedulePostMountRefresh();
 
-  BootstrapResult bootstrap_{};
+  AppConfig BuildConfigFromDraft() const;
+
   SettingsState state_;
+  bool suppress_preset_apply_ = false;
   Rml::Context* context_ = nullptr;
 };
 

@@ -1,5 +1,6 @@
 #include "app/Application.h"
 #include "app/Bootstrap.h"
+#include "app/SessionStore.h"
 #include "libp2p/integration/Libp2pHost.h"
 #include "log/Logger.h"
 #include "platform/Platform.h"
@@ -67,8 +68,10 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  pbr::SessionStore::Instance().Initialize(std::move(bootstrap_result.value()));
+
   pbr::Application app;
-  if (!app.Initialize("pp-browser", demo, bootstrap_result.value())) {
+  if (!app.Initialize("pp-browser", demo)) {
     root.error << "pp-browser: failed to initialize.";
 #if defined(__ANDROID__)
     root.error << " Check logcat for SDL/OpenGL errors.";

@@ -191,6 +191,10 @@ pp_browser_add_test(messaging_foundation_test pp_browser_messaging_foundation_te
 
 set(PP_BROWSER_CONFIG_TEST_SOURCES
   ${CMAKE_SOURCE_DIR}/src/app/Config.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/ConfigJson.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/LlmPreset.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/SettingsLogic.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/SessionStore.cpp
   ${CMAKE_SOURCE_DIR}/src/app/AppPaths.cpp
   ${CMAKE_SOURCE_DIR}/src/app/ProfileRegistry.cpp
   ${CMAKE_SOURCE_DIR}/src/app/SchemaVersion.cpp

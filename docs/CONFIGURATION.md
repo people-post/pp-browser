@@ -43,7 +43,24 @@ Phase 1 ships a single `default` profile. Use `--profile NAME` for dev isolation
 
 There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config config.json.example`.
 
-Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid).
+Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/app/ConfigJson.*` (nlohmann `to_json` / `from_json` with deep merge).
+
+## Runtime session state
+
+After bootstrap, a single [`SessionStore`](../src/app/SessionStore.h) owns the live `BootstrapResult` (config, profile prefs, paths). Settings and demos read/write through it; saves reload from disk before notifying listeners.
+
+| Listener | Trigger |
+|----------|---------|
+| Config | `SessionStore::SaveConfig` → `ChatDemo` / `AgentSession::Configure` |
+| Theme | `SessionStore::SaveProfilePrefs` → `Theme::LoadBase` |
+
+## LLM presets
+
+`config.json` may include `llm.preset`: `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/app/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
+
+## Theme
+
+**Canonical UI theme:** `profiles/{id}/preferences.json` → `theme`. Machine `config.json` may still carry a `theme` field for compatibility, but Settings writes profile preferences only.
 
 ## Schema versioning
 
@@ -53,7 +70,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 
 ## In-app settings
 
-Open **Settings** from the sidebar footer. Saves to user config dir and profile preferences. LLM changes hot-reload via `AgentSession::Configure`.
+Open **Settings** from the sidebar footer. Saves machine config to `config.json` and theme to profile `preferences.json`. LLM changes hot-reload via `SessionStore` config listeners → `AgentSession::Configure`.
 
 Enter an **API key** directly in Settings (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
 

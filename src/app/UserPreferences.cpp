@@ -1,5 +1,6 @@
 #include "app/UserPreferences.h"
 
+#include "app/ConfigJson.h"
 #include "app/SchemaVersion.h"
 
 #include <filesystem>
@@ -16,74 +17,6 @@ std::string MachinePath(const std::string& data_dir) {
 
 std::string ProfilePrefsPath(const std::string& profile_data_dir) {
   return (std::filesystem::path(profile_data_dir) / "preferences.json").string();
-}
-
-MachinePreferences ParseMachine(const nlohmann::json& root) {
-  MachinePreferences prefs;
-  if (root.contains("schema_version") && root["schema_version"].is_number_integer()) {
-    prefs.schema_version = root["schema_version"].get<int>();
-  }
-  if (root.contains("active_profile_id") && root["active_profile_id"].is_string()) {
-    prefs.active_profile_id = root["active_profile_id"].get<std::string>();
-  }
-  if (root.contains("window") && root["window"].is_object()) {
-    const auto& window = root["window"];
-    if (window.contains("width") && window["width"].is_number_integer()) {
-      prefs.window.width = window["width"].get<int>();
-    }
-    if (window.contains("height") && window["height"].is_number_integer()) {
-      prefs.window.height = window["height"].get<int>();
-    }
-  }
-  if (root.contains("safe_area") && root["safe_area"].is_object()) {
-    const auto& safe = root["safe_area"];
-    if (safe.contains("top") && safe["top"].is_number_integer()) {
-      prefs.safe_area.top = safe["top"].get<int>();
-    }
-    if (safe.contains("bottom") && safe["bottom"].is_number_integer()) {
-      prefs.safe_area.bottom = safe["bottom"].get<int>();
-    }
-    if (safe.contains("left") && safe["left"].is_number_integer()) {
-      prefs.safe_area.left = safe["left"].get<int>();
-    }
-    if (safe.contains("right") && safe["right"].is_number_integer()) {
-      prefs.safe_area.right = safe["right"].get<int>();
-    }
-  }
-  if (root.contains("display") && root["display"].is_object()) {
-    const auto& display = root["display"];
-    if (display.contains("fullscreen") && display["fullscreen"].is_boolean()) {
-      prefs.display.fullscreen = display["fullscreen"].get<bool>();
-    }
-  }
-  return prefs;
-}
-
-nlohmann::json MachineToJson(const MachinePreferences& prefs) {
-  return {{"schema_version", MachinePreferences::kSchemaVersion},
-          {"active_profile_id", prefs.active_profile_id},
-          {"window", {{"width", prefs.window.width}, {"height", prefs.window.height}}},
-          {"safe_area",
-           {{"top", prefs.safe_area.top},
-            {"bottom", prefs.safe_area.bottom},
-            {"left", prefs.safe_area.left},
-            {"right", prefs.safe_area.right}}},
-          {"display", {{"fullscreen", prefs.display.fullscreen}}}};
-}
-
-ProfilePreferences ParseProfile(const nlohmann::json& root) {
-  ProfilePreferences prefs;
-  if (root.contains("schema_version") && root["schema_version"].is_number_integer()) {
-    prefs.schema_version = root["schema_version"].get<int>();
-  }
-  if (root.contains("theme") && root["theme"].is_string()) {
-    prefs.theme = root["theme"].get<std::string>();
-  }
-  return prefs;
-}
-
-nlohmann::json ProfileToJson(const ProfilePreferences& prefs) {
-  return {{"schema_version", ProfilePreferences::kSchemaVersion}, {"theme", prefs.theme}};
 }
 
 } // namespace
@@ -120,7 +53,7 @@ Roe<MachinePreferences> UserPreferences::LoadMachine(const std::string& data_dir
     return checked.error();
   }
 
-  return ParseMachine(root);
+  return root.get<MachinePreferences>();
 }
 
 Roe<void> UserPreferences::SaveMachine(const std::string& data_dir, const MachinePreferences& prefs) {
@@ -132,7 +65,7 @@ Roe<void> UserPreferences::SaveMachine(const std::string& data_dir, const Machin
   if (!out) {
     return Error("Failed to write machine preferences: " + path);
   }
-  out << MachineToJson(prefs).dump(2);
+  out << MachinePrefsToJson(prefs).dump(2);
   return {};
 }
 
@@ -160,7 +93,7 @@ Roe<ProfilePreferences> UserPreferences::LoadProfile(const std::string& profile_
     return checked.error();
   }
 
-  return ParseProfile(root);
+  return root.get<ProfilePreferences>();
 }
 
 Roe<void> UserPreferences::SaveProfile(const std::string& profile_data_dir, const ProfilePreferences& prefs) {
@@ -172,7 +105,7 @@ Roe<void> UserPreferences::SaveProfile(const std::string& profile_data_dir, cons
   if (!out) {
     return Error("Failed to write profile preferences: " + path);
   }
-  out << ProfileToJson(prefs).dump(2);
+  out << ProfilePrefsToJson(prefs).dump(2);
   return {};
 }
 

@@ -1,6 +1,7 @@
 #include "app/Application.h"
 
 #include "app/InputCoordinator.h"
+#include "app/SessionStore.h"
 #include "bindings/ActionRouter.h"
 #include "demo/ChatDemo.h"
 #include "platform/BrowserThread.h"
@@ -72,13 +73,18 @@ std::string Application::AssetsPath(const std::string& relative) {
   return IAssetLocator::Instance().Resolve(relative);
 }
 
-bool Application::Initialize(const char* window_title, DemoMode demo, const BootstrapResult& bootstrap) {
+bool Application::Initialize(const char* window_title, DemoMode demo) {
   if (initialized_) {
     return true;
   }
 
+  if (!SessionStore::Instance().IsInitialized()) {
+    log().error << "SessionStore not initialized";
+    return false;
+  }
+
+  const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
   demo_ = demo;
-  bootstrap_ = bootstrap;
 
   const int width = bootstrap.machine_prefs.window.width;
   const int height = bootstrap.machine_prefs.window.height;
@@ -129,6 +135,15 @@ bool Application::Initialize(const char* window_title, DemoMode demo, const Boot
 
   Backend::SyncContext(context);
 
+  SessionStore::Instance().AddThemeListener([this](const std::string& theme) {
+    Theme::LoadBase(AssetsPath(theme));
+    if (auto* ctx = Rml::GetContext("main")) {
+      if (ctx->GetNumDocuments() > 0) {
+        ctx->GetDocument(0)->UpdateDocument();
+      }
+    }
+  });
+
   SdlAppEvents::Install();
 
   ActionRouter::Instance().Attach(context);
@@ -150,7 +165,7 @@ bool Application::Initialize(const char* window_title, DemoMode demo, const Boot
       Backend::Shutdown();
       return false;
     }
-  } else if (!SetupChatDemo(context, bootstrap)) {
+  } else if (!SetupChatDemo(context)) {
     log().error << "SetupChatDemo failed";
     Rml::RemoveContext("main");
     Rml::Shutdown();

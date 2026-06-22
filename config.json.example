@@ -1,15 +1,19 @@
 {
+  "config_version": 1,
   "llm": {
+    "preset": "cloud",
     "base_url": "https://api.openai.com/v1",
     "model": "gpt-4o-mini",
     "require_api_key": true
   },
   "_llm_ollama_dev_example": {
+    "preset": "ollama",
     "base_url": "http://localhost:11434/v1",
     "model": "llama3.2",
     "require_api_key": false
   },
   "_llm_xai_example": {
+    "preset": "custom",
     "base_url": "https://api.x.ai/v1",
     "model": "grok-4.20-non-reasoning",
     "api_key_env": "XAI_API_KEY",
@@ -20,6 +24,5 @@
   },
   "search": {
     "provider": "duckduckgo"
-  },
-  "theme": "themes/base.rcss"
+  }
 }

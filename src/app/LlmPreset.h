@@ -1,0 +1,13 @@
+#pragma once
+
+#include "app/Config.h"
+
+#include <string>
+
+namespace pbr {
+
+std::string ResolvePreset(const AppConfig& config);
+
+void ApplyPreset(AppConfig& config, const std::string& preset_id, const std::string& custom_base_url);
+
+} // namespace pbr
