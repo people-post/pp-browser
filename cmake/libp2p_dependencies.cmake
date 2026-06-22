@@ -58,6 +58,11 @@ endfunction()
 
 pp_configure_status("Configuring libp2p third_party dependencies...")
 
+# Silence cmake_minimum_required deprecation warnings from older vendored deps on CMake 3.29+.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.29")
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+endif()
+
 set(PACKAGE_MANAGER vendored CACHE STRING "Dependency manager for qdrvm libs" FORCE)
 
 # --- zlib (before protobuf / lsquic) ---
@@ -96,7 +101,6 @@ pp_libp2p_add_vendored(fmt)
 pp_libp2p_alias(fmt fmt::fmt)
 
 # --- yaml-cpp ---
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_INSTALL OFF CACHE BOOL "" FORCE)
@@ -104,7 +108,6 @@ pp_libp2p_add_vendored(yaml-cpp)
 pp_libp2p_alias(yaml-cpp yaml-cpp::yaml-cpp)
 
 # --- c-ares ---
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(CARES_STATIC ON CACHE BOOL "" FORCE)
 set(CARES_SHARED OFF CACHE BOOL "" FORCE)
 set(CARES_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -131,7 +134,6 @@ pp_libp2p_add_vendored(libsecp256k1)
 pp_libp2p_alias(secp256k1 libsecp256k1::secp256k1)
 
 # --- protobuf ---
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
   include(HostProtoc)
   pp_browser_ensure_host_protoc()
@@ -178,7 +180,6 @@ endif()
 # --- Boost.DI ---
 set(BOOST_DI_OPT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(BOOST_DI_OPT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 pp_libp2p_add_vendored(boost_di)
 if(NOT TARGET Boost::Boost.DI)
   if(TARGET Boost.DI)

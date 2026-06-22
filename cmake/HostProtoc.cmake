@@ -16,7 +16,6 @@ function(pp_browser_ensure_host_protoc)
         -S "${CMAKE_SOURCE_DIR}/third_party/protobuf/cmake"
         -B "${_host_build}"
         -DCMAKE_BUILD_TYPE=Release
-        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         -Dprotobuf_BUILD_TESTS=OFF
         -Dprotobuf_INSTALL=OFF
         -Dprotobuf_WITH_ZLIB=OFF
