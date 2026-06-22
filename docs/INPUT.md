@@ -15,7 +15,7 @@ SDL events
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
 | Platform | `src/render/integration/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
-| RmlUi core | `src/render/Source/Core/Context.cpp` | Standard focus/hover/click; retained fork bugfixes (UAF-safe click, geometry click for `focus:none` controls) |
+| RmlUi core | `src/render/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; browser-style press/release routing via `ClickRouting::ResolveClickTarget`; UAF-safe click dispatch |
 | Fork selection | `SelectionController`, `ElementSelectableText` | Document-wide drag-select and Ctrl+C via element participation hooks |
 | Editor widgets | `WidgetTextInput` | Focused `input`/`textarea` selection, cursor, IME, cut/paste |
 | Application | `src/app/InputCoordinator.*` | Shortcuts not declared in RML (Escape quit, Enter-to-send) |
@@ -36,9 +36,12 @@ Returning `false` from a binding or callback means the event is consumed.
 ## Event flow (pointer)
 
 1. SDL mouse events → `InputEventHandler` → `Context::ProcessMouse*`.
-2. `ProcessMouseButtonDown` refreshes hover, updates focus, starts selection via `SelectionController::OnPointerDown`, dispatches `mousedown`.
+2. `ProcessMouseButtonDown` refreshes hover, stores the deepest hit as `active` (press target), updates focus, starts selection via `SelectionController::OnPointerDown`, dispatches `mousedown`.
 3. `ProcessMouseMove` calls `SelectionController::OnPointerMove` while dragging.
-4. `ProcessMouseButtonUp` calls `SelectionController::OnPointerUp`, then dispatches `click` to `active` (with geometry check for non-interactive targets).
+4. `ProcessMouseButtonUp` calls `SelectionController::OnPointerUp`, then resolves and dispatches `click` via `ClickRouting::ResolveClickTarget(active, hover, …)`:
+   - **Tier 1:** press and release on the same element or ancestor/descendant chain → click goes to the release hover (e.g. `<option>` inside `<select>`).
+   - **Tier 2:** same interactive ancestor (`button`, `data-event-click`, form control) and pointer still inside → click goes to that control (layout drift, sibling children under a chip).
+   - **Tier 3:** non-interactive press with focus or geometry fallback.
 
 ## Authoring rules (chat UI)
 

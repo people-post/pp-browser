@@ -11,6 +11,7 @@
 #include "../../Include/RmlUi/Core/RenderManager.h"
 #include "../../Include/RmlUi/Core/StreamMemory.h"
 #include "../../Include/RmlUi/Core/SystemInterface.h"
+#include "ClickRouting.h"
 #include "DataModel.h"
 #include "EventDispatcher.h"
 #include "PluginRegistry.h"
@@ -91,20 +92,6 @@ static Element* PreferContentOverScrollbar(Context* context, Vector2f point, Ele
 		return content;
 
 	return hover;
-}
-
-/// Nearest clickable ancestor (button, form control, data-event-click).
-static Element* FindInteractiveElement(Element* hover)
-{
-	for (Element* current = hover; current; current = current->GetParentNode())
-	{
-		const String& tag = current->GetTagName();
-		if (tag == "input" || tag == "textarea" || tag == "select" || tag == "button" || tag == "a")
-			return current;
-		if (current->HasAttribute("data-event-click"))
-			return current;
-	}
-	return nullptr;
 }
 
 #ifdef RMLUI_DEBUG
@@ -719,32 +706,6 @@ static Element* FindFocusElement(Element* element)
 	return element;
 }
 
-/// Resolve mouseup click target.
-/// Non-focusable interactive controls (focus:none buttons, data-event-click) activate when press and release
-/// hit the same control. Focusable elements use classic RmlUi hover/focus matching.
-static Element* ResolveClickTarget(Element* press_target, Element* hover, Vector2f mouse_point)
-{
-	if (!press_target)
-		return nullptr;
-
-	Element* hover_interactive = hover ? FindInteractiveElement(hover) : nullptr;
-
-	if (Element* press_interactive = FindInteractiveElement(press_target))
-	{
-		if (hover_interactive == press_interactive)
-			return press_interactive;
-		return nullptr;
-	}
-
-	if (hover && press_target == FindFocusElement(hover))
-		return press_target;
-
-	if (press_target->IsPointWithinElement(mouse_point))
-		return press_target;
-
-	return nullptr;
-}
-
 bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 {
 	mouse_active = true;
@@ -762,7 +723,7 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 	{
 		selection_controller->ClearUnlessHover(hover);
 
-		Element* interactive = FindInteractiveElement(hover);
+		Element* interactive = ClickRouting::FindInteractiveElement(hover);
 
 		// Set the currently hovered element to focus if it isn't already the focus.
 		Element* new_focus = nullptr;
@@ -773,8 +734,8 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 				new_focus->Focus();
 		}
 
-		// Interactive targets (e.g. buttons with focus:none) must receive clicks even when not the focus element.
-		active = interactive ? interactive : new_focus;
+		// Deepest element under the pointer at press time (browser-style press target).
+		active = hover;
 
 		if (hover)
 			selection_controller->OnPointerDown(hover, mouse_position);
@@ -792,7 +753,8 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 
 			double click_time = GetSystemInterface()->GetElapsedTime();
 
-			if (active == last_click_element && float(click_time - last_click_time) < DOUBLE_CLICK_TIME &&
+			Element* click_identity = interactive ? interactive : active;
+			if (click_identity == last_click_element && float(click_time - last_click_time) < DOUBLE_CLICK_TIME &&
 				mouse_distance_squared < max_mouse_distance * max_mouse_distance)
 			{
 				if (hover)
@@ -803,7 +765,7 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 			}
 			else
 			{
-				last_click_element = active;
+				last_click_element = click_identity;
 				last_click_time = click_time;
 			}
 		}
@@ -888,12 +850,11 @@ bool Context::ProcessMouseButtonUp(int button_index, int key_modifier_state)
 
 		selection_controller->OnPointerUp();
 
-		// Click the mousedown target. Interactive controls (buttons, data-event-click) must
-		// receive the click even when geometry drifts between mousedown and mouseup (e.g. after
-		// a layout pass in the same frame loop). Non-interactive targets still require geometry.
+		// Click the deepest compatible press/release target. Interactive controls (buttons, data-event-click)
+		// still activate via ClickRouting when geometry drifts between mousedown and mouseup.
 		const Vector2f mouse_point(float(mouse_position.x), float(mouse_position.y));
-		Element* press_target = active;
-		Element* click_target = ResolveClickTarget(press_target, hover, mouse_point);
+		Element* press_hover = active;
+		Element* click_target = ClickRouting::ResolveClickTarget(press_hover, hover, mouse_point, FindFocusElement);
 
 		// Reset before dispatching click. Handlers may rebuild the DOM (e.g. chat message list), destroying
 		// elements still referenced in active_chain; iterating them after dispatch is use-after-free.
@@ -904,7 +865,7 @@ bool Context::ProcessMouseButtonUp(int button_index, int key_modifier_state)
 			click_target->DispatchEvent(EventId::Click, parameters);
 
 #ifdef RMLUI_DEBUG
-		LogPointerInteraction("mouseup", hover, FindInteractiveElement(hover), press_target, false, click_dispatched);
+		LogPointerInteraction("mouseup", hover, ClickRouting::FindInteractiveElement(hover), press_hover, false, click_dispatched);
 #endif
 
 		// Click handlers may rebuild the DOM; refresh hover/cursor for the current mouse position.

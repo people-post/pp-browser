@@ -97,6 +97,28 @@ selection {
   display: block;
 }
 
+/* RmlUi <select> internals: selectvalue, selectarrow, selectbox (see WidgetDropDown). */
+select:focus {
+  position: relative;
+  z-index: 10;
+}
+
+select selectbox {
+  background-color: #ffffff;
+  border: 1dp #d1d5db;
+  border-radius: 6dp;
+  padding: 4dp 0;
+  box-sizing: border-box;
+}
+
+select selectbox option {
+  padding: 8dp 12dp;
+}
+
+select selectbox option:hover {
+  background-color: #f3f4f6;
+}
+
 .stack {
   display: block;
 }

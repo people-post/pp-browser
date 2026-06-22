@@ -10,6 +10,8 @@ add_library(rmlui_core
 	CallbackTexture.cpp
 	Clock.cpp
 	Clock.h
+	ClickRouting.cpp
+	ClickRouting.h
 	CompiledFilterShader.cpp
 	ComputedValues.cpp
 	ComputeProperty.cpp
