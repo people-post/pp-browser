@@ -4,14 +4,37 @@
 #include "app/Config.h"
 #include "app/SchemaVersion.h"
 #include "messaging/MessagingHub.h"
+#include "platform/AndroidAssetLocator.h"
+#include "platform/AndroidPathProvider.h"
 #include "platform/IAssetLocator.h"
 #include "platform/IPathProvider.h"
+#include "platform/IosAssetLocator.h"
+#include "platform/IosPathProvider.h"
 #include "platform/Platform.h"
 
 namespace pbr {
 
+namespace {
+
+void RegisterPlatformServices() {
+  const PlatformKind kind = Platform::Detect();
+  if (kind == PlatformKind::Android) {
+    static AndroidPathProvider paths;
+    static AndroidAssetLocator assets;
+    IPathProvider::SetInstance(&paths);
+    IAssetLocator::SetInstance(&assets);
+  } else if (kind == PlatformKind::IOS) {
+    static IosPathProvider paths;
+    static IosAssetLocator assets;
+    IPathProvider::SetInstance(&paths);
+    IAssetLocator::SetInstance(&assets);
+  }
+}
+
+} // namespace
+
 Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options) {
-  (void)Platform::Detect();
+  RegisterPlatformServices();
 
   auto config = Config::Load(options.argc, options.argv);
   if (!config) {

@@ -37,8 +37,13 @@ set(BOOST_INCLUDE_LIBRARIES
 
 include(BoostRoot)
 
+# Headers for predef/winapi live in the unified boost/ tree (libs/predef/include is absent).
+if(TARGET boost_predef)
+  target_include_directories(boost_predef INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+
 # Compiled Boost libs include headers from the unified boost/ tree at the superproject root.
-foreach(_boost_compiled_target boost_filesystem boost_random boost_program_options)
+foreach(_boost_compiled_target boost_filesystem boost_random boost_program_options boost_atomic)
   if(TARGET ${_boost_compiled_target})
     target_include_directories(${_boost_compiled_target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
   endif()

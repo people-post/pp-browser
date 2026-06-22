@@ -1,28 +1,43 @@
 # Platforms
 
-## Phase 1: Desktop
+## Desktop
 
 pp-browser ships as a desktop SDL3 + OpenGL3 application. Path resolution uses XDG on Linux, Application Support on macOS, and AppData on Windows.
 
-## Future: Android / iOS
+## Android (milestone 1)
 
-The following hooks are in place; mobile builds are **not** part of Phase 1.
+Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libmain.so`. The chat shell UI uses the existing OpenGL ES 3.2 path in the RmlUi backend.
 
-| Component | Desktop today | Mobile later |
-|-----------|---------------|--------------|
-| `Platform::Detect()` | Always `Desktop` | SDL platform hint → `Android` / `IOS` |
-| `IPathProvider` | `DesktopPathProvider` | Sandbox-internal storage |
-| `IAssetLocator` | Source/bundle path via `PP_BROWSER_ASSETS_DIR` | APK/iOS bundle resources |
-| `PlatformDefaults` | Ollama localhost | Cloud LLM + API key required |
-| `ICredentialStore` | `EnvCredentialStore` | Keychain / Keystore |
-| `MessagingHub` | Foreground poll loop | Relay + push; background suspend |
-| Navigation | Escape dismiss stack | System back → `ShellHost::HandleDismiss()` |
+| Component | Desktop | Android |
+|-----------|---------|---------|
+| `Platform::Detect()` | `Desktop` | `Android` |
+| `IPathProvider` | `DesktopPathProvider` | `AndroidPathProvider` (internal storage) |
+| `IAssetLocator` | `PP_BROWSER_ASSETS_DIR` / bundle | APK assets via `AndroidAssetLocator` + `AndroidFileInterface` |
+| `PlatformDefaults` | Ollama localhost | Same as desktop for now (cloud defaults deferred) |
+| `ICredentialStore` | `EnvCredentialStore` | `EnvCredentialStore` (Keystore deferred) |
+| libp2p | Built and linked (`p2p::p2p`) | Built and linked (same vendor tree) |
+| `MessagingHub` | Foreground poll loop | Same; background suspend deferred |
 
 Profile-scoped data layout (`profiles/{id}/`) is unchanged on mobile.
 
-## Build notes (future)
+Build: [BUILD.md](BUILD.md#android-local).
 
-- OpenGL ES or Metal renderer backend
-- CMake Android NDK / Xcode project wiring
-- Disable or defer in-tree libp2p on mobile targets
-- MCP via HTTP URL only (no subprocess on iOS)
+## iOS (reserved)
+
+iOS is not shipped yet. Shared abstractions exist for a future Xcode target:
+
+| Component | Status |
+|-----------|--------|
+| `PlatformKind::IOS` | Defined |
+| `IosPathProvider` / `IosAssetLocator` | Stubs compiled; wired when iOS ships |
+| CMake | `-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator -DCMAKE_OSX_ARCHITECTURES=arm64` |
+| Renderer | GLES via SDL (same pattern as Android); Metal is a later fork change |
+| libp2p | Built and linked on all platforms (same as desktop/Android) |
+| MCP | HTTP URL only (no subprocess on iOS) |
+
+## Deferred (mobile milestone 2)
+
+- System back → `ShellHost::HandleDismiss()`
+- Cloud LLM + API key defaults; Android Keystore / iOS Keychain
+- libp2p background suspend and relay fallback
+- MCP stdio spawn guard on mobile

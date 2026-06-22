@@ -23,6 +23,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+include(Platform)
 include(dependencies)
 include(Progress)
 find_package(Threads REQUIRED)
@@ -71,8 +72,11 @@ pp_browser_link_rmlui_svg_deps(pp_rmlui_backend)
 if(UNIX AND NOT APPLE)
   target_link_libraries(pp_rmlui_backend PUBLIC ${CMAKE_DL_LIBS})
 endif()
+if(ANDROID)
+  target_link_libraries(pp_rmlui_backend PUBLIC log GLESv3 EGL)
+endif()
 
-add_executable(pp-browser
+set(PP_BROWSER_APP_SOURCES
   src/main.cpp
   src/app/Application.cpp
   src/app/AppPaths.cpp
@@ -85,60 +89,18 @@ add_executable(pp-browser
   src/platform/Platform.cpp
   src/platform/IPathProvider.cpp
   src/platform/DesktopPathProvider.cpp
+  src/platform/AndroidPathProvider.cpp
+  src/platform/IosPathProvider.cpp
   src/platform/ExecutablePath.cpp
   src/platform/IAssetLocator.cpp
   src/platform/DesktopAssetLocator.cpp
+  src/platform/AndroidAssetLocator.cpp
+  src/platform/IosAssetLocator.cpp
+  src/platform/AndroidFileInterface.cpp
   src/platform/PlatformDefaults.cpp
   src/platform/ICredentialStore.cpp
   src/platform/EnvCredentialStore.cpp
-)
-
-option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)
-
-set(_pp_browser_compile_defs RMLUI_STATIC_LIB)
-if(PP_BROWSER_PACKAGED_BUILD)
-  list(APPEND _pp_browser_compile_defs PP_BROWSER_PACKAGED_BUILD=1)
-else()
-  list(APPEND _pp_browser_compile_defs PP_BROWSER_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
-endif()
-
-target_compile_definitions(pp-browser PRIVATE ${_pp_browser_compile_defs})
-
-if(WIN32)
-  set_target_properties(pp-browser PROPERTIES WIN32_EXECUTABLE TRUE)
-endif()
-
-if(APPLE AND PP_BROWSER_PACKAGED_BUILD)
-  set_target_properties(pp-browser PROPERTIES
-    MACOSX_BUNDLE TRUE
-    MACOSX_BUNDLE_GUI_IDENTIFIER "dev.pp-browser.app"
-    MACOSX_BUNDLE_BUNDLE_NAME "pp-browser"
-    MACOSX_BUNDLE_BUNDLE_VERSION "${PP_BROWSER_RELEASE_VERSION}"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PP_BROWSER_RELEASE_VERSION}"
-  )
-endif()
-
-target_include_directories(pp-browser PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-
-target_link_libraries(pp-browser PRIVATE
-  pp_rmlui_backend
-  RmlUi::Core
-)
-
-option(PPBROWSER_ENABLE_DEBUGGER "Link RmlUi debugger" ON)
-option(PPBROWSER_LOCAL_LLM "Enable local LLM backend (not implemented)" OFF)
-if(PPBROWSER_LOCAL_LLM)
-  message(STATUS "PPBROWSER_LOCAL_LLM requested; implementation deferred")
-endif()
-if(PPBROWSER_ENABLE_DEBUGGER)
-  target_link_libraries(pp-browser PRIVATE RmlUi::Debugger)
-  target_compile_definitions(pp-browser PRIVATE PPBROWSER_ENABLE_DEBUGGER=1)
-endif()
-
-# Phase 2+
-  target_sources(pp-browser PRIVATE
+  src/libp2p/integration/Libp2pHost.cpp
   src/common/Module.cpp
   src/log/Logger.cpp
   src/platform/SequencedTaskRunner.cpp
@@ -203,28 +165,91 @@ endif()
   src/agent/tools/MessagingTools.cpp
 )
 
-target_link_libraries(pp-browser PRIVATE nlohmann_json::nlohmann_json CURL::libcurl Threads::Threads)
-if(TARGET OpenSSL::Crypto)
-  target_link_libraries(pp-browser PRIVATE OpenSSL::Crypto)
-endif()
-
-pp_configure_status("Configuring tests...")
-include(LinkRmlUi)
-enable_testing()
-add_subdirectory(tests)
-pp_configure_status("Configure step complete")
-
-if(APPLE AND PP_BROWSER_PACKAGED_BUILD)
-  install(TARGETS pp-browser BUNDLE DESTINATION .)
-  install(DIRECTORY assets/ DESTINATION pp-browser.app/Contents/Resources/assets)
-elseif(WIN32 AND PP_BROWSER_PACKAGED_BUILD)
-  install(TARGETS pp-browser RUNTIME DESTINATION .)
-  install(DIRECTORY assets/ DESTINATION assets)
+if(ANDROID)
+  add_library(${PP_BROWSER_APP_TARGET} SHARED ${PP_BROWSER_APP_SOURCES})
+  set_target_properties(${PP_BROWSER_APP_TARGET} PROPERTIES OUTPUT_NAME main)
 else()
-  install(TARGETS pp-browser RUNTIME DESTINATION bin)
-  install(DIRECTORY assets/ DESTINATION share/pp-browser/assets)
+  add_executable(${PP_BROWSER_APP_TARGET} ${PP_BROWSER_APP_SOURCES})
 endif()
 
-if(PP_BROWSER_PACKAGED_BUILD AND (APPLE OR WIN32))
-  include(CPackOptions)
+option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtime asset paths)" OFF)
+
+set(_pp_browser_compile_defs RMLUI_STATIC_LIB)
+if(PP_BROWSER_PACKAGED_BUILD OR PP_BROWSER_IS_MOBILE)
+  list(APPEND _pp_browser_compile_defs PP_BROWSER_PACKAGED_BUILD=1)
+elseif(NOT PP_BROWSER_IS_MOBILE)
+  list(APPEND _pp_browser_compile_defs PP_BROWSER_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+endif()
+
+target_compile_definitions(${PP_BROWSER_APP_TARGET} PRIVATE ${_pp_browser_compile_defs})
+
+if(WIN32)
+  set_target_properties(${PP_BROWSER_APP_TARGET} PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
+if(APPLE AND PP_BROWSER_PACKAGED_BUILD AND NOT PP_BROWSER_IS_IOS)
+  set_target_properties(${PP_BROWSER_APP_TARGET} PROPERTIES
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_GUI_IDENTIFIER "dev.pp-browser.app"
+    MACOSX_BUNDLE_BUNDLE_NAME "pp-browser"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PP_BROWSER_RELEASE_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PP_BROWSER_RELEASE_VERSION}"
+  )
+endif()
+
+target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/libp2p/include
+)
+
+target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
+  pp_rmlui_backend
+  RmlUi::Core
+  p2p
+  nlohmann_json::nlohmann_json
+  CURL::libcurl
+  Threads::Threads
+)
+if(TARGET OpenSSL::Crypto)
+  target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE OpenSSL::Crypto)
+endif()
+
+option(PPBROWSER_ENABLE_DEBUGGER "Link RmlUi debugger" ${PPBROWSER_ENABLE_DEBUGGER_DEFAULT})
+option(PPBROWSER_LOCAL_LLM "Enable local LLM backend (not implemented)" OFF)
+if(PPBROWSER_LOCAL_LLM)
+  message(STATUS "PPBROWSER_LOCAL_LLM requested; implementation deferred")
+endif()
+if(PPBROWSER_ENABLE_DEBUGGER)
+  target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE RmlUi::Debugger)
+  target_compile_definitions(${PP_BROWSER_APP_TARGET} PRIVATE PPBROWSER_ENABLE_DEBUGGER=1)
+endif()
+
+if(NOT PP_BROWSER_IS_MOBILE)
+  pp_configure_status("Configuring tests...")
+  include(LinkRmlUi)
+  enable_testing()
+  add_subdirectory(tests)
+  pp_configure_status("Configure step complete")
+
+  if(APPLE AND PP_BROWSER_PACKAGED_BUILD)
+    install(TARGETS ${PP_BROWSER_APP_TARGET} BUNDLE DESTINATION .)
+    install(DIRECTORY assets/ DESTINATION pp-browser.app/Contents/Resources/assets)
+  elseif(WIN32 AND PP_BROWSER_PACKAGED_BUILD)
+    install(TARGETS ${PP_BROWSER_APP_TARGET} RUNTIME DESTINATION .)
+    install(DIRECTORY assets/ DESTINATION assets)
+  else()
+    install(TARGETS ${PP_BROWSER_APP_TARGET} RUNTIME DESTINATION bin)
+    install(DIRECTORY assets/ DESTINATION share/pp-browser/assets)
+  endif()
+
+  if(PP_BROWSER_PACKAGED_BUILD AND (APPLE OR WIN32))
+    include(CPackOptions)
+  endif()
+else()
+  pp_configure_status("Mobile target: skipping host tests and desktop install rules")
+endif()
+
+# Alias for scripts/docs that refer to pp-browser on all platforms.
+if(ANDROID AND NOT TARGET pp-browser)
+  add_library(pp-browser ALIAS main)
 endif()

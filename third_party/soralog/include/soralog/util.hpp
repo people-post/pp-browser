@@ -39,7 +39,7 @@ namespace soralog::util {
     std::array<char, 16> buff{};
     memcpy(buff.data(), name.data(), std::min<size_t>(name.size(), 15));
 
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__ANDROID__)
     pthread_setname_np(pthread_self(), buff.data());
 #elif defined(__APPLE__)
     pthread_setname_np(buff.data());
@@ -60,7 +60,7 @@ namespace soralog::util {
   inline void getThreadName(std::array<char, 16> &name) {
     static thread_local std::array<char, 16> thr_name{};
     static thread_local bool initialized = [&] {
-#if defined(__linux__) or defined(__APPLE__)
+#if (defined(__linux__) && !defined(__ANDROID__)) or defined(__APPLE__)
       pthread_getname_np(pthread_self(), thr_name.data(), thr_name.size());
 #else
 #warning \

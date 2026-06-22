@@ -139,11 +139,11 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 #elif defined(__ANDROID__)
-    // GLES 3.2 on Android
+    // GLES 3.0 — widely supported (emulators often lack ES 3.2).
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 #else
     // GL 3.3 Core
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
@@ -239,6 +239,7 @@ void Backend::Shutdown()
 	RMLUI_ASSERT(data);
 
 #if SDL_MAJOR_VERSION >= 3
+	SDL_GL_MakeCurrent(data->window, nullptr);
 	SDL_GL_DestroyContext(data->glcontext);
 #else
 	SDL_GL_DeleteContext(data->glcontext);

@@ -1,10 +1,21 @@
 #include "app/Application.h"
 #include "app/Bootstrap.h"
+#include "libp2p/integration/Libp2pHost.h"
 #include "log/Logger.h"
 
 #include <SDL3/SDL_main.h>
 
 #include <cstring>
+
+#if defined(__ANDROID__)
+#include <SDL3/SDL.h>
+#endif
+
+namespace {
+
+pbr::Libp2pHost g_libp2p_host;
+
+} // namespace
 
 int main(int argc, char** argv) {
   bool debug_mode = false;
@@ -34,6 +45,17 @@ int main(int argc, char** argv) {
                            : pbr::logging::Level::WARNING);
   root.info << "Logging level set to " << (debug_mode ? "DEBUG" : "WARNING");
 
+  if (g_libp2p_host.IsAvailable()) {
+    root.info << "libp2p linked";
+  }
+
+#if defined(__ANDROID__)
+  if (!SDL_Init(SDL_INIT_EVENTS)) {
+    root.error << "SDL_Init failed before bootstrap: " << SDL_GetError();
+    return 1;
+  }
+#endif
+
   if (!profile_override.empty()) {
     root.warning << "Using profile override '" << profile_override
                  << "' (multi-profile UI is not shipped yet)";
@@ -52,10 +74,14 @@ int main(int argc, char** argv) {
 
   pbr::Application app;
   if (!app.Initialize("pp-browser", demo, bootstrap_result.value())) {
-    root.error << "pp-browser: failed to initialize. "
-               << "If no window appears, reconfigure from a clean build: "
+    root.error << "pp-browser: failed to initialize.";
+#if defined(__ANDROID__)
+    root.error << " Check logcat for SDL/OpenGL errors.";
+#else
+    root.error << " If no window appears, reconfigure from a clean build: "
                << "rm -rf build && cmake -B build -S . && cmake --build build. "
                << "Ensure DISPLAY is set. On Linux install: libx11-dev and libgl-dev (see docs/BUILD.md).";
+#endif
     return 1;
   }
   app.Run();

@@ -67,3 +67,34 @@ Requires `DISPLAY` (or Wayland session) and X11 dev packages on Linux.
 ```bash
 ctest --test-dir build --output-on-failure
 ```
+
+## Android (local)
+
+Build a debug APK with the Gradle project under [`android/`](../android/). The native library is built from the repo root [`CMakeLists.txt`](../CMakeLists.txt) via NDK and produces `libmain.so` (SDL convention).
+
+### Prerequisites
+
+- Android SDK (API 35) and NDK r26+
+- JDK 17+
+- Perl (lsquic codegen — same as desktop)
+- Optional: Android emulator (API 34+, x86_64 image recommended on Linux hosts)
+
+Set environment variables:
+
+```bash
+export ANDROID_SDK_ROOT=/path/to/android/sdk
+export ANDROID_NDK_HOME=/path/to/android/ndk
+```
+
+### Build and install
+
+```bash
+./scripts/android_build.sh apk       # assembleDebug
+./scripts/android_build.sh install   # installDebug (requires adb device/emulator)
+```
+
+The first clean NDK build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../assets/) are packaged into the APK automatically.
+
+Launch **pp-browser** on the device/emulator. LLM and P2P calls may fail without cloud config — the milestone is compile, install, and chat shell UI render.
+
+See [PLATFORMS.md](PLATFORMS.md) for mobile path/asset behavior and iOS reservation notes.

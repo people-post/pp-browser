@@ -3,8 +3,10 @@
 #include "app/InputCoordinator.h"
 #include "bindings/ActionRouter.h"
 #include "demo/ChatDemo.h"
+#include "platform/AndroidFileInterface.h"
 #include "platform/BrowserThread.h"
 #include "platform/IAssetLocator.h"
+#include "platform/Platform.h"
 #include "ui/ShellHost.h"
 #include "demo/DynamicRmlDemo.h"
 #include "demo/SearchDemo.h"
@@ -18,6 +20,13 @@
 
 #include "RmlUi_Backend.h"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+#include <SDL3/SDL.h>
+#endif
+
 #ifdef PPBROWSER_ENABLE_DEBUGGER
 #include <RmlUi/Debugger.h>
 #endif
@@ -29,6 +38,27 @@ namespace {
 bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier,
                     float /*native_dp_ratio*/, bool priority) {
   return InputCoordinator::Instance().ProcessKeyDown(context, key, key_modifier, priority);
+}
+
+#if defined(__ANDROID__)
+AndroidFileInterface g_android_file_interface;
+#endif
+
+void ResolveMobileWindowSize(int& width, int& height) {
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+  if (!SDL_WasInit(SDL_INIT_VIDEO)) {
+    SDL_InitSubSystem(SDL_INIT_VIDEO);
+  }
+  const SDL_DisplayID display = SDL_GetPrimaryDisplay();
+  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display);
+  if (mode && mode->w > 0 && mode->h > 0) {
+    width = mode->w;
+    height = mode->h;
+  }
+#else
+  (void)width;
+  (void)height;
+#endif
 }
 
 } // namespace
@@ -56,17 +86,27 @@ bool Application::Initialize(const char* window_title, DemoMode demo, const Boot
   const int width = bootstrap.machine_prefs.window.width;
   const int height = bootstrap.machine_prefs.window.height;
 
-  log().info << "Initializing (demo=" << static_cast<int>(demo) << ", " << width << "x" << height << ")";
+  int window_width = width;
+  int window_height = height;
+  if (Platform::Detect() != PlatformKind::Desktop) {
+    ResolveMobileWindowSize(window_width, window_height);
+  }
+
+  log().info << "Initializing (demo=" << static_cast<int>(demo) << ", " << window_width << "x" << window_height << ")";
 
   BrowserThread::Initialize();
 
-  if (!Backend::Initialize(window_title, width, height, true)) {
+  if (!Backend::Initialize(window_title, window_width, window_height, true)) {
     log().error << "Backend::Initialize failed (SDL/OpenGL window could not be created)";
     return false;
   }
 
   Rml::SetSystemInterface(Backend::GetSystemInterface());
   Rml::SetRenderInterface(Backend::GetRenderInterface());
+
+#if defined(__ANDROID__)
+  Rml::SetFileInterface(&g_android_file_interface);
+#endif
 
   if (!Rml::Initialise()) {
     log().error << "Rml::Initialise failed";
@@ -82,7 +122,7 @@ bool Application::Initialize(const char* window_title, DemoMode demo, const Boot
   Theme::LoadBase(theme_path);
   Rml::LoadFontFace(AssetsPath("fonts/LatoLatin-Regular.ttf"));
 
-  auto* context = Rml::CreateContext("main", Rml::Vector2i(width, height));
+  auto* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
   if (!context) {
     log().error << "Rml::CreateContext failed";
     Rml::Shutdown();

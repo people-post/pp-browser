@@ -21,8 +21,8 @@
 	#define RMLUI_SHADER_HEADER_VERSION "#version 300 es\nprecision highp float;\n"
 	#include <GLES3/gl3.h>
 #elif defined __ANDROID__
-	#define RMLUI_SHADER_HEADER_VERSION "#version 320 es\nprecision highp float;\n"
-	#include <GLES3/gl32.h>
+	#define RMLUI_SHADER_HEADER_VERSION "#version 300 es\nprecision highp float;\n"
+	#include <GLES3/gl3.h>
 #elif defined RMLUI_GL3_CUSTOM_LOADER
 	#define RMLUI_SHADER_HEADER_VERSION "#version 330\n"
 	#include RMLUI_GL3_CUSTOM_LOADER
