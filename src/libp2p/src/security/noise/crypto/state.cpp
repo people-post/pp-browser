@@ -173,8 +173,15 @@ namespace libp2p::security::noise {
     }
     auto hkdf_res = std::move(hkdf_res_res).value();
     chaining_key_ = hkdf_res.one;  // ck
-    OUTCOME_TRY(mixHash(hkdf_res.two));
-    OUTCOME_TRY(hash_key, bytesToKey32(hkdf_res.three));
+    auto mix_hash_res = mixHash(hkdf_res.two);
+    if (!mix_hash_res) {
+      return mix_hash_res.as_failure();
+    }
+    auto hash_key_res = bytesToKey32(hkdf_res.three);
+    if (!hash_key_res) {
+      return hash_key_res.as_failure();
+    }
+    auto hash_key = std::move(hash_key_res).value();
     key_ = hash_key;
     cipher_ = cipher_suite_->cipher(key_);
     nonce_ = 0;
@@ -186,7 +193,10 @@ namespace libp2p::security::noise {
                                                         BytesIn plaintext) {
     if (not has_key_) {
       Bytes result(precompiled_out.size() + plaintext.size());
-      OUTCOME_TRY(mixHash(plaintext));
+      auto mix_hash_res = mixHash(plaintext);
+      if (!mix_hash_res) {
+        return mix_hash_res.as_failure();
+      }
       std::copy_n(
           precompiled_out.begin(), precompiled_out.size(), result.begin());
       std::copy_n(plaintext.begin(),
@@ -208,7 +218,10 @@ namespace libp2p::security::noise {
     }
     Bytes seed(ct_size - po_size);
     std::copy_n(ciphertext.begin() + po_size, seed.size(), seed.begin());
-    OUTCOME_TRY(mixHash(seed));
+    auto mix_hash_res = mixHash(seed);
+    if (!mix_hash_res) {
+      return mix_hash_res.as_failure();
+    }
     return std::move(ciphertext);
   }
 
@@ -216,7 +229,10 @@ namespace libp2p::security::noise {
                                                         BytesIn ciphertext) {
     if (not has_key_) {
       Bytes result(precompiled_out.size() + ciphertext.size());
-      OUTCOME_TRY(mixHash(ciphertext));
+      auto mix_hash_res = mixHash(ciphertext);
+      if (!mix_hash_res) {
+        return mix_hash_res.as_failure();
+      }
       std::copy_n(
           precompiled_out.begin(), precompiled_out.size(), result.begin());
       std::copy_n(ciphertext.begin(),
@@ -229,7 +245,10 @@ namespace libp2p::security::noise {
       return plaintext_res.error();
     }
     auto plaintext = std::move(plaintext_res).value();
-    OUTCOME_TRY(mixHash(ciphertext));
+    auto mix_hash_res = mixHash(ciphertext);
+    if (!mix_hash_res) {
+      return mix_hash_res.as_failure();
+    }
     return std::move(plaintext);
   }
 
@@ -240,8 +259,16 @@ namespace libp2p::security::noise {
       return hkdf_res_res.error();
     }
     auto hkdf_res = std::move(hkdf_res_res).value();
-    OUTCOME_TRY(hash_key1, bytesToKey32(hkdf_res.one));
-    OUTCOME_TRY(hash_key2, bytesToKey32(hkdf_res.two));
+    auto hash_key1_res = bytesToKey32(hkdf_res.one);
+    if (!hash_key1_res) {
+      return hash_key1_res.as_failure();
+    }
+    auto hash_key1 = std::move(hash_key1_res).value();
+    auto hash_key2_res = bytesToKey32(hkdf_res.two);
+    if (!hash_key2_res) {
+      return hash_key2_res.as_failure();
+    }
+    auto hash_key2 = std::move(hash_key2_res).value();
     auto first_state = std::make_shared<CipherState>(cipher_suite_, hash_key1);
     auto second_state = std::make_shared<CipherState>(cipher_suite_, hash_key2);
     first_state->cipher_ = cipher_suite_->cipher(first_state->key_);
@@ -359,32 +386,65 @@ namespace libp2p::security::noise {
     auto handshake_name_str = ss.str();
     Bytes handshake_name_bytes(handshake_name_str.begin(),
                                handshake_name_str.end());
-    OUTCOME_TRY(symmetric_state_->initializeSymmetric(handshake_name_bytes));
+    auto init_symmetric_res =
+        symmetric_state_->initializeSymmetric(handshake_name_bytes);
+    if (!init_symmetric_res) {
+      return init_symmetric_res.as_failure();
+    }
     Bytes prologue;
     if (config.prologue_) {
       prologue = std::move(config.prologue_.value());
     }
-    OUTCOME_TRY(symmetric_state_->mixHash(prologue));
+    auto mix_hash_prologue_res = symmetric_state_->mixHash(prologue);
+    if (!mix_hash_prologue_res) {
+      return mix_hash_prologue_res.as_failure();
+    }
     for (const auto &m : config.pattern_.initiatorPreMessages) {
       if (is_initiator_ and MessagePattern::S == m) {
-        OUTCOME_TRY(symmetric_state_->mixHash(local_static_kp_.pub));
+        auto mix_hash_res = symmetric_state_->mixHash(local_static_kp_.pub);
+        if (!mix_hash_res) {
+          return mix_hash_res.as_failure();
+        }
       } else if (is_initiator_ and MessagePattern::E == m) {
-        OUTCOME_TRY(symmetric_state_->mixHash(local_ephemeral_kp_.pub));
+        auto mix_hash_res = symmetric_state_->mixHash(local_ephemeral_kp_.pub);
+        if (!mix_hash_res) {
+          return mix_hash_res.as_failure();
+        }
       } else if (not is_initiator_ and MessagePattern::S == m) {
-        OUTCOME_TRY(symmetric_state_->mixHash(remote_static_pubkey_));
+        auto mix_hash_res = symmetric_state_->mixHash(remote_static_pubkey_);
+        if (!mix_hash_res) {
+          return mix_hash_res.as_failure();
+        }
       } else if (not is_initiator_ and MessagePattern::E == m) {
-        OUTCOME_TRY(symmetric_state_->mixHash(remote_ephemeral_pubkey_));
+        auto mix_hash_res =
+            symmetric_state_->mixHash(remote_ephemeral_pubkey_);
+        if (!mix_hash_res) {
+          return mix_hash_res.as_failure();
+        }
       }
     }
     for (const auto &m : config.pattern_.responderPreMessages) {
       if (not is_initiator_ and MessagePattern::S == m) {
-        OUTCOME_TRY(symmetric_state_->mixHash(local_static_kp_.pub));
+        auto mix_hash_res = symmetric_state_->mixHash(local_static_kp_.pub);
+        if (!mix_hash_res) {
+          return mix_hash_res.as_failure();
+        }
       } else if (not is_initiator_ and MessagePattern::E == m) {
-        OUTCOME_TRY(symmetric_state_->mixHash(local_ephemeral_kp_.pub));
+        auto mix_hash_res = symmetric_state_->mixHash(local_ephemeral_kp_.pub);
+        if (!mix_hash_res) {
+          return mix_hash_res.as_failure();
+        }
       } else if (is_initiator_ and MessagePattern::S == m) {
-        OUTCOME_TRY(symmetric_state_->mixHash(remote_static_pubkey_));
+        auto mix_hash_res = symmetric_state_->mixHash(remote_static_pubkey_);
+        if (!mix_hash_res) {
+          return mix_hash_res.as_failure();
+        }
       } else if (is_initiator_ and MessagePattern::E == m) {
-        OUTCOME_TRY(symmetric_state_->mixHash(remote_ephemeral_pubkey_));
+        auto mix_hash_res =
+            symmetric_state_->mixHash(remote_ephemeral_pubkey_);
+        if (!mix_hash_res) {
+          return mix_hash_res.as_failure();
+        }
       }
     }
     is_initialized_ = true;
@@ -393,7 +453,10 @@ namespace libp2p::security::noise {
 
   outcome::result<HandshakeState::MessagingResult> HandshakeState::writeMessage(
       BytesIn precompiled_out, BytesIn payload) {
-    OUTCOME_TRY(isInitialized());
+    auto is_initialized_res = isInitialized();
+    if (!is_initialized_res) {
+      return is_initialized_res.as_failure();
+    }
     if (not should_write_) {
       return Error::UNEXPECTED_WRITE_CALL;
     }
@@ -429,7 +492,9 @@ namespace libp2p::security::noise {
           err = writeMessagePSK();
           break;
       }
-      OUTCOME_TRY(err);
+      if (!err) {
+        return err.as_failure();
+      }
     }
     should_write_ = false;
     ++message_idx_;
@@ -441,7 +506,11 @@ namespace libp2p::security::noise {
     HandshakeState::MessagingResult result;
     result.data.swap(output);
     if (message_idx_ >= static_cast<int64_t>(message_patterns_.size())) {
-      OUTCOME_TRY(cs_pair, symmetric_state_->split());
+      auto cs_pair_res = symmetric_state_->split();
+      if (!cs_pair_res) {
+        return cs_pair_res.as_failure();
+      }
+      auto cs_pair = std::move(cs_pair_res).value();
       result.cs1 = cs_pair.first;
       result.cs2 = cs_pair.second;
     }
@@ -449,14 +518,24 @@ namespace libp2p::security::noise {
   }
 
   outcome::result<void> HandshakeState::writeMessageE(Bytes &out) {
-    OUTCOME_TRY(ephemeral_kp, symmetric_state_->cipherSuite()->generate());
+    auto ephemeral_kp_res = symmetric_state_->cipherSuite()->generate();
+    if (!ephemeral_kp_res) {
+      return ephemeral_kp_res.as_failure();
+    }
+    auto ephemeral_kp = std::move(ephemeral_kp_res).value();
     local_ephemeral_kp_ = std::move(ephemeral_kp);
     out.insert(out.end(),
                local_ephemeral_kp_.pub.begin(),
                local_ephemeral_kp_.pub.end());
-    OUTCOME_TRY(symmetric_state_->mixHash(local_ephemeral_kp_.pub));
+    auto mix_hash_res = symmetric_state_->mixHash(local_ephemeral_kp_.pub);
+    if (!mix_hash_res) {
+      return mix_hash_res.as_failure();
+    }
     if (not preshared_key_.empty()) {
-      OUTCOME_TRY(symmetric_state_->mixKey(local_ephemeral_kp_.pub));
+      auto mix_key_res = symmetric_state_->mixKey(local_ephemeral_kp_.pub);
+      if (!mix_key_res) {
+        return mix_key_res.as_failure();
+      }
     }
     return outcome::success();
   }
@@ -547,7 +626,10 @@ namespace libp2p::security::noise {
 
   outcome::result<HandshakeState::MessagingResult> HandshakeState::readMessage(
       BytesIn precompiled_out, BytesIn message) {
-    OUTCOME_TRY(isInitialized());
+    auto is_initialized_res = isInitialized();
+    if (!is_initialized_res) {
+      return is_initialized_res.as_failure();
+    }
     if (should_write_) {
       return Error::UNEXPECTED_READ_CALL;
     }
@@ -581,7 +663,9 @@ namespace libp2p::security::noise {
           err = readMessagePSK();
           break;
       }
-      OUTCOME_TRY(err);
+      if (!err) {
+        return err.as_failure();
+      }
     }
     auto decrypted = symmetric_state_->decryptAndHash(precompiled_out, msg);
     if (decrypted.has_error()) {
@@ -593,7 +677,11 @@ namespace libp2p::security::noise {
     HandshakeState::MessagingResult result;
     result.data.swap(decrypted.value());
     if (message_idx_ >= static_cast<int64_t>(message_patterns_.size())) {
-      OUTCOME_TRY(cs_pair, symmetric_state_->split());
+      auto cs_pair_res = symmetric_state_->split();
+      if (!cs_pair_res) {
+        return cs_pair_res.as_failure();
+      }
+      auto cs_pair = std::move(cs_pair_res).value();
       result.cs1 = cs_pair.first;
       result.cs2 = cs_pair.second;
     }
@@ -607,9 +695,15 @@ namespace libp2p::security::noise {
     }
     remote_ephemeral_pubkey_ =
         Bytes{message.begin(), message.begin() + expected};
-    OUTCOME_TRY(symmetric_state_->mixHash(remote_ephemeral_pubkey_));
+    auto mix_hash_res = symmetric_state_->mixHash(remote_ephemeral_pubkey_);
+    if (!mix_hash_res) {
+      return mix_hash_res.as_failure();
+    }
     if (not preshared_key_.empty()) {
-      OUTCOME_TRY(symmetric_state_->mixKey(remote_ephemeral_pubkey_));
+      auto mix_key_res = symmetric_state_->mixKey(remote_ephemeral_pubkey_);
+      if (!mix_key_res) {
+        return mix_key_res.as_failure();
+      }
     }
     Bytes(message.begin() + expected, message.end()).swap(message);
     return outcome::success();
@@ -708,27 +802,42 @@ namespace libp2p::security::noise {
   }
 
   outcome::result<Bytes> HandshakeState::channelBinding() const {
-    OUTCOME_TRY(isInitialized());
+    auto is_initialized_res = isInitialized();
+    if (!is_initialized_res) {
+      return is_initialized_res.as_failure();
+    }
     return symmetric_state_->hash();
   }
 
   outcome::result<Bytes> HandshakeState::remotePeerStaticPubkey() const {
-    OUTCOME_TRY(isInitialized());
+    auto is_initialized_res = isInitialized();
+    if (!is_initialized_res) {
+      return is_initialized_res.as_failure();
+    }
     return remote_static_pubkey_;
   }
 
   outcome::result<Bytes> HandshakeState::remotePeerEphemeralPubkey() const {
-    OUTCOME_TRY(isInitialized());
+    auto is_initialized_res = isInitialized();
+    if (!is_initialized_res) {
+      return is_initialized_res.as_failure();
+    }
     return remote_ephemeral_pubkey_;
   }
 
   outcome::result<DHKey> HandshakeState::localPeerEphemeralKey() const {
-    OUTCOME_TRY(isInitialized());
+    auto is_initialized_res = isInitialized();
+    if (!is_initialized_res) {
+      return is_initialized_res.as_failure();
+    }
     return local_ephemeral_kp_;
   }
 
   outcome::result<int> HandshakeState::messageIndex() const {
-    OUTCOME_TRY(isInitialized());
+    auto is_initialized_res = isInitialized();
+    if (!is_initialized_res) {
+      return is_initialized_res.as_failure();
+    }
     return message_idx_;
   }
 

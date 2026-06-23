@@ -42,7 +42,10 @@ namespace libp2p::crypto {
     outcome::result<libp2p::Bytes> digest() const {
       outcome::result<libp2p::Bytes> result{outcome::success()};
       result.value().resize(digestSize());
-      OUTCOME_TRY(digestOut(result.value()));
+      auto digest_out_res = digestOut(result.value());
+      if (!digest_out_res) {
+        return digest_out_res.as_failure();
+      }
       return result;
     }
   };

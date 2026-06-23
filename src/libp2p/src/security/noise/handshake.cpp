@@ -152,8 +152,16 @@ namespace libp2p::security::noise {
 
   outcome::result<void> Handshake::handleRemoteHandshakePayload(
       BytesIn payload) {
-    OUTCOME_TRY(remote_payload, noise_marshaller_->unmarshal(payload));
-    OUTCOME_TRY(remote_id, peer::PeerId::fromPublicKey(remote_payload.second));
+    auto remote_payload_res = noise_marshaller_->unmarshal(payload);
+    if (!remote_payload_res) {
+      return remote_payload_res.as_failure();
+    }
+    auto remote_payload = std::move(remote_payload_res).value();
+    auto remote_id_res = peer::PeerId::fromPublicKey(remote_payload.second);
+    if (!remote_id_res) {
+      return remote_id_res.as_failure();
+    }
+    auto remote_id = std::move(remote_id_res).value();
     auto &&handy_payload = remote_payload.first;
     if (initiator_ and remote_peer_id_ != remote_id) {
       SL_DEBUG(log_,
@@ -168,7 +176,11 @@ namespace libp2p::security::noise {
     std::copy(kPayloadPrefix.begin(),
               kPayloadPrefix.end(),
               std::back_inserter(to_verify));
-    OUTCOME_TRY(remote_static, handshake_state_->remotePeerStaticPubkey());
+    auto remote_static_res = handshake_state_->remotePeerStaticPubkey();
+    if (!remote_static_res) {
+      return remote_static_res.as_failure();
+    }
+    auto remote_static = std::move(remote_static_res).value();
     std::copy(remote_static.begin(),
               remote_static.end(),
               std::back_inserter(to_verify));
@@ -189,11 +201,22 @@ namespace libp2p::security::noise {
 
   outcome::result<void> Handshake::runHandshake() {
     auto cipher_suite = defaultCipherSuite();
-    OUTCOME_TRY(keypair, cipher_suite->generate());
+    auto keypair_res = cipher_suite->generate();
+    if (!keypair_res) {
+      return keypair_res.as_failure();
+    }
+    auto keypair = std::move(keypair_res).value();
     HandshakeStateConfig config(
         defaultCipherSuite(), handshakeXX, initiator_, keypair);
-    OUTCOME_TRY(handshake_state_->init(std::move(config)));
-    OUTCOME_TRY(payload, generateHandshakePayload(keypair));
+    auto init_res = handshake_state_->init(std::move(config));
+    if (!init_res) {
+      return init_res.as_failure();
+    }
+    auto payload_res = generateHandshakePayload(keypair);
+    if (!payload_res) {
+      return payload_res.as_failure();
+    }
+    auto payload = std::move(payload_res).value();
     const size_t dh25519_len = 32;
     const size_t poly1305_tag_size = 16;
     const size_t length_prefix_size = 2;

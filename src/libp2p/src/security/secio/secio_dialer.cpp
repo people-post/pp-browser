@@ -155,11 +155,18 @@ namespace libp2p::security::secio {
       return Error::INTERNAL_FAILURE;
     }
 
-    OUTCOME_TRY(remote_propose,
-                propose_marshaller->unmarshal(*remote_peer_proposal_bytes_));
+    auto remote_propose_res =
+        propose_marshaller->unmarshal(*remote_peer_proposal_bytes_);
+    if (!remote_propose_res) {
+      return remote_propose_res.as_failure();
+    }
+    auto remote_propose = std::move(remote_propose_res).value();
     crypto::ProtobufKey proto_public_key{remote_propose.pubkey};
-    OUTCOME_TRY(public_key,
-                key_marshaller->unmarshalPublicKey(proto_public_key));
+    auto public_key_res = key_marshaller->unmarshalPublicKey(proto_public_key);
+    if (!public_key_res) {
+      return public_key_res.as_failure();
+    }
+    auto public_key = std::move(public_key_res).value();
 
     return std::move(public_key);  // looks like it is legal to move here due to
                                    // outcome::result initialization in between
@@ -170,9 +177,12 @@ namespace libp2p::security::secio {
     if (not ekey_pair_) {
       return Error::INTERNAL_FAILURE;
     }
-    OUTCOME_TRY(shared_secret,
-                ekey_pair_.get().shared_secret_generator(
-                    std::move(remote_ephemeral_public_key)));
+    auto shared_secret_res = ekey_pair_.get().shared_secret_generator(
+        std::move(remote_ephemeral_public_key));
+    if (!shared_secret_res) {
+      return shared_secret_res.as_failure();
+    }
+    auto shared_secret = std::move(shared_secret_res).value();
     return std::move(shared_secret);
   }
 

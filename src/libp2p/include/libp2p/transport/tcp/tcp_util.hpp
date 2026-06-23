@@ -88,7 +88,11 @@ namespace libp2p::transport::detail {
   static outcome::result<TcpOrUdp> readTcpOrUdp(ProtoAddrVec::iterator &it,
                                                 ProtoAddrVec::iterator end) {
     TcpOrUdp addr;
-    BOOST_OUTCOME_TRY(addr.ip, (readIpOrDns(it, end)));
+    auto addr_ip_res = readIpOrDns(it, end);
+    if (!addr_ip_res) {
+      return addr_ip_res.as_failure();
+    }
+    addr.ip = std::move(addr_ip_res).value();
     if (it == end) {
       return std::errc::protocol_not_supported;
     }
@@ -115,7 +119,11 @@ namespace libp2p::transport::detail {
       const Multiaddress &ma) {
     auto v = ma.getProtocolsWithValues();
     auto it = v.begin();
-    OUTCOME_TRY(addr, (readTcpOrUdp(it, v.end())));
+    auto addr_res = readTcpOrUdp(it, v.end());
+    if (!addr_res) {
+      return addr_res.as_failure();
+    }
+    auto addr = std::move(addr_res).value();
     if (addr.udp) {
       return std::errc::protocol_not_supported;
     }
@@ -127,7 +135,11 @@ namespace libp2p::transport::detail {
   inline outcome::result<TcpOrUdp> asQuic(const Multiaddress &ma) {
     auto v = ma.getProtocolsWithValues();
     auto it = v.begin();
-    OUTCOME_TRY(addr, (readTcpOrUdp(it, v.end())));
+    auto addr_res = readTcpOrUdp(it, v.end());
+    if (!addr_res) {
+      return addr_res.as_failure();
+    }
+    auto addr = std::move(addr_res).value();
     if (not addr.udp) {
       return std::errc::protocol_not_supported;
     }
@@ -173,7 +185,11 @@ namespace libp2p::transport::detail {
     constexpr auto udp = std::is_same_v<T, boost::asio::ip::udp::endpoint>;
     static_assert(tcp or udp);
     auto ip = endpoint.address();
-    OUTCOME_TRY(ip_str, boost_outcome::to_string(ip));
+    auto ip_str_res = boost_outcome::to_string(ip);
+    if (!ip_str_res) {
+      return ip_str_res.as_failure();
+    }
+    auto ip_str = std::move(ip_str_res).value();
     return fmt::format("/{}/{}/{}/{}",
                        ip.is_v4() ? "ip4" : "ip6",
                        ip_str,
@@ -184,7 +200,11 @@ namespace libp2p::transport::detail {
   inline outcome::result<Multiaddress> makeAddress(
       const boost::asio::ip::tcp::endpoint &endpoint,
       const ProtoAddrVec &layers) {
-    OUTCOME_TRY(s, toMultiaddr(endpoint));
+    auto s_res = toMultiaddr(endpoint);
+    if (!s_res) {
+      return s_res.as_failure();
+    }
+    auto s = std::move(s_res).value();
     if (not layers.empty()) {
       auto &protocol = layers.at(0).first.code;
       if (protocol == P::WS) {
@@ -198,7 +218,11 @@ namespace libp2p::transport::detail {
 
   inline outcome::result<Multiaddress> makeQuicAddr(
       const boost::asio::ip::udp::endpoint &endpoint) {
-    OUTCOME_TRY(s, toMultiaddr(endpoint));
+    auto s_res = toMultiaddr(endpoint);
+    if (!s_res) {
+      return s_res.as_failure();
+    }
+    auto s = std::move(s_res).value();
     s += "/quic-v1";
     return Multiaddress::create(s);
   }

@@ -146,12 +146,20 @@ namespace libp2p::connection {
   }
 
   outcome::result<peer::PeerId> SecioConnection::localPeer() const {
-    OUTCOME_TRY(proto_local_key, key_marshaller_->marshal(local_));
+    auto proto_local_key_res = key_marshaller_->marshal(local_);
+    if (!proto_local_key_res) {
+      return proto_local_key_res.as_failure();
+    }
+    auto proto_local_key = std::move(proto_local_key_res).value();
     return peer::PeerId::fromPublicKey(proto_local_key);
   }
 
   outcome::result<peer::PeerId> SecioConnection::remotePeer() const {
-    OUTCOME_TRY(proto_remote_key, key_marshaller_->marshal(remote_));
+    auto proto_remote_key_res = key_marshaller_->marshal(remote_);
+    if (!proto_remote_key_res) {
+      return proto_remote_key_res.as_failure();
+    }
+    auto proto_remote_key = std::move(proto_remote_key_res).value();
     return peer::PeerId::fromPublicKey(proto_remote_key);
   }
 

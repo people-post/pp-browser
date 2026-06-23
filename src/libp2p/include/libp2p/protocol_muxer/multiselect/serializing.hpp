@@ -54,7 +54,10 @@ namespace libp2p::protocol_muxer::multiselect::detail {
   inline outcome::result<MsgBuf> createMessage(const String &protocol) {
     MsgBuf ret;
     ret.reserve(protocol.size() + 1 + kMaxVarintSize);
-    OUTCOME_TRY((appendProtocol(ret, protocol)));
+    auto append_protocol_res = appendProtocol(ret, protocol);
+    if (!append_protocol_res) {
+      return append_protocol_res.as_failure();
+    }
     return ret;
   }
 
@@ -65,7 +68,10 @@ namespace libp2p::protocol_muxer::multiselect::detail {
                                                   bool append_final_new_line) {
     try {
       for (const auto &p : protocols) {
-        OUTCOME_TRY((appendProtocol(buffer, p)));
+        auto append_protocol_res = appendProtocol(buffer, p);
+        if (!append_protocol_res) {
+          return append_protocol_res.as_failure();
+        }
       }
 
       if (append_final_new_line) {
@@ -88,12 +94,20 @@ namespace libp2p::protocol_muxer::multiselect::detail {
 
     if (nested) {
       TmpMsgBuf tmp_buf;
-      OUTCOME_TRY((appendProtocolList(tmp_buf, protocols, true)));
+      auto append_protocol_list_res =
+          appendProtocolList(tmp_buf, protocols, true);
+      if (!append_protocol_list_res) {
+        return append_protocol_list_res.as_failure();
+      }
       ret_buf.reserve(tmp_buf.size() + kMaxVarintSize);
       appendVarint(ret_buf, tmp_buf.size());
       ret_buf.insert(ret_buf.end(), tmp_buf.begin(), tmp_buf.end());
     } else {
-      OUTCOME_TRY((appendProtocolList(ret_buf, protocols, false)));
+      auto append_protocol_list_res =
+          appendProtocolList(ret_buf, protocols, false);
+      if (!append_protocol_list_res) {
+        return append_protocol_list_res.as_failure();
+      }
     }
 
     return ret_buf;

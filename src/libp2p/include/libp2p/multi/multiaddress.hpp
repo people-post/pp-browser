@@ -165,7 +165,11 @@ namespace libp2p::multi {
     outcome::result<T> getFirstValueForProtocol(
         Protocol::Code protocol,
         std::function<T(const std::string &)> caster) const {
-      OUTCOME_TRY(val, getFirstValueForProtocol(protocol));
+      auto val_res = getFirstValueForProtocol(protocol);
+      if (!val_res) {
+        return val_res.as_failure();
+      }
+      auto val = std::move(val_res).value();
 
       try {
         return caster(val);

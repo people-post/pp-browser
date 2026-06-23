@@ -38,7 +38,11 @@ namespace libp2p::security::plaintext {
       const ExchangeMessage &msg) const {
     plaintext::protobuf::Exchange exchange_msg;
 
-    OUTCOME_TRY(proto_pubkey_bytes, marshaller_->marshal(msg.pubkey));
+    auto proto_pubkey_bytes_res = marshaller_->marshal(msg.pubkey);
+    if (!proto_pubkey_bytes_res) {
+      return proto_pubkey_bytes_res.as_failure();
+    }
+    auto proto_pubkey_bytes = std::move(proto_pubkey_bytes_res).value();
     if (!exchange_msg.mutable_pubkey()->ParseFromArray(
             proto_pubkey_bytes.key.data(), proto_pubkey_bytes.key.size())) {
       return Error::PUBLIC_KEY_SERIALIZING_ERROR;
@@ -60,11 +64,19 @@ namespace libp2p::security::plaintext {
       return Error::PUBLIC_KEY_SERIALIZING_ERROR;
     }
     crypto::ProtobufKey proto_pubkey{pubkey_message_bytes};
-    OUTCOME_TRY(pubkey, marshaller_->unmarshalPublicKey(proto_pubkey));
+    auto pubkey_res = marshaller_->unmarshalPublicKey(proto_pubkey);
+    if (!pubkey_res) {
+      return pubkey_res.as_failure();
+    }
+    auto pubkey = std::move(pubkey_res).value();
 
     std::vector<uint8_t> peer_id_bytes(proto_msg.id().begin(),
                                        proto_msg.id().end());
-    OUTCOME_TRY(peer_id, peer::PeerId::fromBytes(peer_id_bytes));
+    auto peer_id_res = peer::PeerId::fromBytes(peer_id_bytes);
+    if (!peer_id_res) {
+      return peer_id_res.as_failure();
+    }
+    auto peer_id = std::move(peer_id_res).value();
 
     return {ExchangeMessage{.pubkey = pubkey, .peer_id = peer_id},
             proto_pubkey};
@@ -72,7 +84,11 @@ namespace libp2p::security::plaintext {
 
   outcome::result<std::vector<uint8_t>> ExchangeMessageMarshallerImpl::marshal(
       const ExchangeMessage &msg) const {
-    OUTCOME_TRY(exchange_msg, handyToProto(msg));
+    auto exchange_msg_res = handyToProto(msg);
+    if (!exchange_msg_res) {
+      return exchange_msg_res.as_failure();
+    }
+    auto exchange_msg = std::move(exchange_msg_res).value();
 
     std::vector<uint8_t> out_msg(exchange_msg.ByteSizeLong());
     if (!exchange_msg.SerializeToArray(out_msg.data(), out_msg.size())) {

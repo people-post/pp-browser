@@ -87,7 +87,11 @@ namespace libp2p::crypto {
 
   outcome::result<KeyPair> CryptoProviderImpl::generateRsa(
       common::RSAKeyType rsa_bitness) const {
-    OUTCOME_TRY(rsa, rsa_provider_->generate(rsa_bitness));
+    auto rsa_res = rsa_provider_->generate(rsa_bitness);
+    if (!rsa_res) {
+      return rsa_res.as_failure();
+    }
+    auto rsa = std::move(rsa_res).value();
 
     auto &&pub = rsa.public_key;
     auto &&priv = rsa.private_key;
@@ -98,7 +102,11 @@ namespace libp2p::crypto {
   }
 
   outcome::result<KeyPair> CryptoProviderImpl::generateEd25519() const {
-    OUTCOME_TRY(ed, ed25519_provider_->generate());
+    auto ed_res = ed25519_provider_->generate();
+    if (!ed_res) {
+      return ed_res.as_failure();
+    }
+    auto ed = std::move(ed_res).value();
 
     auto &&pub = ed.public_key;
     auto &&priv = ed.private_key;
@@ -109,7 +117,11 @@ namespace libp2p::crypto {
   }
 
   outcome::result<KeyPair> CryptoProviderImpl::generateSecp256k1() const {
-    OUTCOME_TRY(secp, secp256k1_provider_->generate());
+    auto secp_res = secp256k1_provider_->generate();
+    if (!secp_res) {
+      return secp_res.as_failure();
+    }
+    auto secp = std::move(secp_res).value();
 
     auto &&pub = secp.public_key;
     auto &&priv = secp.private_key;
@@ -120,7 +132,11 @@ namespace libp2p::crypto {
   }
 
   outcome::result<KeyPair> CryptoProviderImpl::generateEcdsa() const {
-    OUTCOME_TRY(ecdsa, ecdsa_provider_->generate());
+    auto ecdsa_res = ecdsa_provider_->generate();
+    if (!ecdsa_res) {
+      return ecdsa_res.as_failure();
+    }
+    auto ecdsa = std::move(ecdsa_res).value();
 
     auto &&pub = ecdsa.public_key;
     auto &&priv = ecdsa.private_key;
@@ -157,7 +173,11 @@ namespace libp2p::crypto {
       const PrivateKey &key) const {
     rsa::PrivateKey private_key;
     private_key.insert(private_key.end(), key.data.begin(), key.data.end());
-    OUTCOME_TRY(rsa_pub, rsa_provider_->derive(private_key));
+    auto rsa_pub_res = rsa_provider_->derive(private_key);
+    if (!rsa_pub_res) {
+      return rsa_pub_res.as_failure();
+    }
+    auto rsa_pub = std::move(rsa_pub_res).value();
     return PublicKey{{key.type, {rsa_pub.begin(), rsa_pub.end()}}};
   }
 
@@ -165,7 +185,11 @@ namespace libp2p::crypto {
       const PrivateKey &key) const {
     ed25519::PrivateKey private_key;
     std::copy_n(key.data.begin(), private_key.size(), private_key.begin());
-    OUTCOME_TRY(ed_pub, ed25519_provider_->derive(private_key));
+    auto ed_pub_res = ed25519_provider_->derive(private_key);
+    if (!ed_pub_res) {
+      return ed_pub_res.as_failure();
+    }
+    auto ed_pub = std::move(ed_pub_res).value();
 
     return PublicKey{{key.type, {ed_pub.begin(), ed_pub.end()}}};
   }
@@ -174,7 +198,11 @@ namespace libp2p::crypto {
       const PrivateKey &key) const {
     secp256k1::PrivateKey private_key;
     std::copy_n(key.data.begin(), private_key.size(), private_key.begin());
-    OUTCOME_TRY(secp_pub, secp256k1_provider_->derive(private_key));
+    auto secp_pub_res = secp256k1_provider_->derive(private_key);
+    if (!secp_pub_res) {
+      return secp_pub_res.as_failure();
+    }
+    auto secp_pub = std::move(secp_pub_res).value();
 
     return PublicKey{{key.type, {secp_pub.begin(), secp_pub.end()}}};
   }
@@ -183,7 +211,11 @@ namespace libp2p::crypto {
       const PrivateKey &key) const {
     ecdsa::PrivateKey private_key;
     std::copy_n(key.data.begin(), private_key.size(), private_key.begin());
-    OUTCOME_TRY(ecdsa_pub, ecdsa_provider_->derive(private_key));
+    auto ecdsa_pub_res = ecdsa_provider_->derive(private_key);
+    if (!ecdsa_pub_res) {
+      return ecdsa_pub_res.as_failure();
+    }
+    auto ecdsa_pub = std::move(ecdsa_pub_res).value();
 
     return PublicKey{{key.type, {ecdsa_pub.begin(), ecdsa_pub.end()}}};
   }
