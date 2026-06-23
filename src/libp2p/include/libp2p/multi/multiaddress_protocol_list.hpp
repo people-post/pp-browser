@@ -10,7 +10,13 @@
 #include <functional>
 #include <map>
 #include <string_view>
+
+#ifdef _WIN32
+#include <BaseTsd.h>
+using ssize_t = SSIZE_T;
+#else
 #include <unistd.h>
+#endif
 
 namespace libp2p::multi {
 
