@@ -171,7 +171,7 @@ namespace libp2p::multi::detail {
 
     for (size_t i = 0, j = 0; i < string.size(); i += 8, j += 5) {
       const size_t remaining = string.size() - i;
-      const size_t block_size = remaining < 8 ? remaining : 8;
+      const size_t block_size = std::min(remaining, size_t{8});
       OUTCOME_TRY(n,
                   (decode_sequence(
                       std::span(&string[i], block_size),
