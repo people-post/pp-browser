@@ -25,16 +25,29 @@ namespace libp2p::crypto::ecdsa {
     if (EC_KEY_generate_key(ec_key.get()) != 1) {
       return KeyGeneratorError::KEY_GENERATION_FAILED;
     }
-    OUTCOME_TRY(private_key,
-                (convertEcKeyToBytes<PrivateKey>(ec_key, i2d_ECPrivateKey)));
-    OUTCOME_TRY(public_key,
-                (convertEcKeyToBytes<PublicKey>(ec_key, i2d_EC_PUBKEY)));
+    auto private_key_res =
+        convertEcKeyToBytes<PrivateKey>(ec_key, i2d_ECPrivateKey);
+    if (!private_key_res) {
+      return private_key_res.error();
+    }
+    auto private_key = std::move(private_key_res).value();
+
+    auto public_key_res =
+        convertEcKeyToBytes<PublicKey>(ec_key, i2d_EC_PUBKEY);
+    if (!public_key_res) {
+      return public_key_res.error();
+    }
+    auto public_key = std::move(public_key_res).value();
     return KeyPair{private_key, public_key};
   }
 
   outcome::result<PublicKey> EcdsaProviderImpl::derive(
       const PrivateKey &key) const {
-    OUTCOME_TRY(ec_key, (convertBytesToEcKey(key, d2i_ECPrivateKey)));
+    auto ec_key_res = convertBytesToEcKey(key, d2i_ECPrivateKey);
+    if (!ec_key_res) {
+      return ec_key_res.error();
+    }
+    auto ec_key = std::move(ec_key_res).value();
     const BIGNUM *private_num = EC_KEY_get0_private_key(ec_key.get());
     EC_POINT *ec_point = EC_POINT_new(EC_KEY_get0_group(ec_key.get()));
     FinalAction free_ec_point([ec_point]() { EC_POINT_free(ec_point); });
@@ -50,8 +63,11 @@ namespace libp2p::crypto::ecdsa {
     if (EC_KEY_set_public_key(ec_key.get(), ec_point) != 1) {
       return KeyGeneratorError::KEY_GENERATION_FAILED;
     }
-    OUTCOME_TRY(public_key,
-                (convertEcKeyToBytes<PublicKey>(ec_key, i2d_EC_PUBKEY)));
+    auto public_key_res = convertEcKeyToBytes<PublicKey>(ec_key, i2d_EC_PUBKEY);
+    if (!public_key_res) {
+      return public_key_res.error();
+    }
+    auto public_key = std::move(public_key_res).value();
     return public_key;
   }
 
@@ -63,8 +79,17 @@ namespace libp2p::crypto::ecdsa {
 
   outcome::result<Signature> EcdsaProviderImpl::signPrehashed(
       const PrehashedMessage &message, const PrivateKey &key) const {
-    OUTCOME_TRY(ec_key, (convertBytesToEcKey(key, d2i_ECPrivateKey)));
-    OUTCOME_TRY(signature, (GenerateEcSignature(message, ec_key)));
+    auto ec_key_res = convertBytesToEcKey(key, d2i_ECPrivateKey);
+    if (!ec_key_res) {
+      return ec_key_res.error();
+    }
+    auto ec_key = std::move(ec_key_res).value();
+
+    auto signature_res = GenerateEcSignature(message, ec_key);
+    if (!signature_res) {
+      return signature_res.error();
+    }
+    auto signature = std::move(signature_res).value();
     return std::move(signature);
   }
 
@@ -79,9 +104,17 @@ namespace libp2p::crypto::ecdsa {
       const PrehashedMessage &message,
       const Signature &signature,
       const PublicKey &public_key) const {
-    OUTCOME_TRY(ec_key, (convertBytesToEcKey(public_key, d2i_EC_PUBKEY)));
-    OUTCOME_TRY(signature_status,
-                (VerifyEcSignature(message, signature, ec_key)));
+    auto ec_key_res = convertBytesToEcKey(public_key, d2i_EC_PUBKEY);
+    if (!ec_key_res) {
+      return ec_key_res.error();
+    }
+    auto ec_key = std::move(ec_key_res).value();
+
+    auto signature_status_res = VerifyEcSignature(message, signature, ec_key);
+    if (!signature_status_res) {
+      return signature_status_res.error();
+    }
+    auto signature_status = std::move(signature_status_res).value();
     return signature_status;
   }
 

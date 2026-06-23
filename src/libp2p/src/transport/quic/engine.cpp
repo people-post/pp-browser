@@ -95,9 +95,12 @@ namespace libp2p::transport::lsquic {
           return QuicError::HANDSHAKE_FAILED;
         }
         auto cert = SSL_get_peer_certificate(lsquic_conn_ssl(conn));
-        OUTCOME_TRY(info,
-                    (security::tls_details::verifyPeerAndExtractIdentity(
-                        cert, *self->key_codec_)));
+        auto info_res = security::tls_details::verifyPeerAndExtractIdentity(
+            cert, *self->key_codec_);
+        if (!info_res) {
+          return info_res.error();
+        }
+        auto info = std::move(info_res).value();
         if (op and info.peer_id != op->peer) {
           return security::TlsError::TLS_UNEXPECTED_PEER_ID;
         }

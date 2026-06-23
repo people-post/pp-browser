@@ -192,8 +192,11 @@ namespace libp2p::protocol::gossip {
   outcome::result<void> GossipCore::signMessage(TopicMessage &msg) const {
     const auto &keypair = idmgr_->getKeyPair();
     OUTCOME_TRY(signable, MessageBuilder::signableMessage(msg));
-    OUTCOME_TRY(signature,
-                (crypto_provider_->sign(signable, keypair.privateKey)));
+    auto signature_res = crypto_provider_->sign(signable, keypair.privateKey);
+    if (!signature_res) {
+      return signature_res.error();
+    }
+    auto signature = std::move(signature_res).value();
     msg.signature = std::move(signature);
     if (idmgr_->getId().toMultihash().getType() != multi::HashType::identity) {
       OUTCOME_TRY(key, key_marshaller_->marshal(keypair.publicKey));

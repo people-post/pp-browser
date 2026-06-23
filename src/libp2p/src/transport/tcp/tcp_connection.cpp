@@ -202,15 +202,15 @@ namespace libp2p::transport {
       if (!local_multiaddress_) {
         auto endpoint(socket_.local_endpoint(ec));
         if (!ec) {
-          BOOST_OUTCOME_TRY(local_multiaddress_,
-                            (detail::makeAddress(endpoint, layers_)));
+          auto local_multiaddress_res = detail::makeAddress(endpoint, layers_);
+          BOOST_OUTCOME_TRY(local_multiaddress_, local_multiaddress_res);
         }
       }
       if (!remote_multiaddress_) {
         auto endpoint(socket_.remote_endpoint(ec));
         if (!ec) {
-          BOOST_OUTCOME_TRY(remote_multiaddress_,
-                            (detail::makeAddress(endpoint, layers_)));
+          auto remote_multiaddress_res = detail::makeAddress(endpoint, layers_);
+          BOOST_OUTCOME_TRY(remote_multiaddress_, remote_multiaddress_res);
         }
       }
     } else {

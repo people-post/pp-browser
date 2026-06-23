@@ -106,8 +106,12 @@ namespace libp2p::security::noise {
     std::copy(prefix.begin(), prefix.end(), std::back_inserter(to_sign));
     std::copy(pubkey.begin(), pubkey.end(), std::back_inserter(to_sign));
 
-    OUTCOME_TRY(signed_payload,
-                (crypto_provider_->sign(to_sign, local_key_.privateKey)));
+    auto signed_payload_res =
+        crypto_provider_->sign(to_sign, local_key_.privateKey);
+    if (!signed_payload_res) {
+      return signed_payload_res.error();
+    }
+    auto signed_payload = std::move(signed_payload_res).value();
     security::noise::HandshakeMessage payload{
         .identity_key = local_key_.publicKey,
         .identity_sig = std::move(signed_payload),
@@ -116,8 +120,8 @@ namespace libp2p::security::noise {
   }
 
   void Handshake::sendHandshakeMessage(BytesIn payload, CbOutcomeVoid cb) {
-    IO_OUTCOME_TRY(
-        write_result, (handshake_state_->writeMessage({}, payload)), cb);
+    auto write_result_res = handshake_state_->writeMessage({}, payload);
+    IO_OUTCOME_TRY(write_result, write_result_res, cb);
     auto write_cb = [self{shared_from_this()},
                      cb{std::move(cb)},
                      wr{write_result}](outcome::result<void> result) {
@@ -134,7 +138,8 @@ namespace libp2p::security::noise {
       basic::MessageReadWriter::ReadCallbackFunc cb) {
     auto read_cb = [self{shared_from_this()}, cb{std::move(cb)}](auto result) {
       IO_OUTCOME_TRY(buffer, result, cb);
-      IO_OUTCOME_TRY(rr, (self->handshake_state_->readMessage({}, *buffer)), cb);
+      auto rr_res = self->handshake_state_->readMessage({}, *buffer);
+      IO_OUTCOME_TRY(rr, rr_res, cb);
       if (rr.cs1 and rr.cs2) {
         self->setCipherStates(rr.cs1, rr.cs2);
       }
@@ -167,10 +172,12 @@ namespace libp2p::security::noise {
     std::copy(remote_static.begin(),
               remote_static.end(),
               std::back_inserter(to_verify));
-    OUTCOME_TRY(
-        signature_correct,
-        (crypto_provider_->verify(
-            to_verify, handy_payload.identity_sig, handy_payload.identity_key)));
+    auto signature_correct_res = crypto_provider_->verify(
+        to_verify, handy_payload.identity_sig, handy_payload.identity_key);
+    if (!signature_correct_res) {
+      return signature_correct_res.error();
+    }
+    auto signature_correct = std::move(signature_correct_res).value();
     if (not signature_correct) {
       SL_TRACE(log_, "Remote peer's payload signature verification failed");
       return std::errc::owner_dead;

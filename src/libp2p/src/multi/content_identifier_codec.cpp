@@ -130,9 +130,12 @@ namespace libp2p::multi {
       }
       auto multicodec_length = UVarint::calculateSize(
           bytes.subspan(static_cast<ptrdiff_t>(version_length)));
-      OUTCOME_TRY(hash,
-                  (Multihash::createFromBytes(
-                      bytes.subspan(version_length + multicodec_length))));
+      auto hash_res = Multihash::createFromBytes(
+          bytes.subspan(version_length + multicodec_length));
+      if (!hash_res) {
+        return hash_res.error();
+      }
+      auto hash = std::move(hash_res).value();
       return ContentIdentifier(
           ContentIdentifier::Version::V1,
           MulticodecType::Code(multicodec_opt.value().toUInt64()),

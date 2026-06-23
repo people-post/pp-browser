@@ -175,11 +175,13 @@ namespace libp2p::multi::detail {
          i += kEncodedBlockSize, j += kDecodedBlockSize) {
       const size_t remaining = string.size() - i;
       const size_t block_size = std::min(remaining, kEncodedBlockSize);
-      OUTCOME_TRY(n,
-                  (decode_sequence(
-                      std::span(&string[i], block_size),
-                      std::span(&result[j], kDecodedBlockSize),
-                      mode)));
+      auto decode_res = decode_sequence(std::span(&string[i], block_size),
+                                        std::span(&result[j], kDecodedBlockSize),
+                                        mode);
+      if (!decode_res) {
+        return decode_res.error();
+      }
+      const int n = decode_res.value();
       if (static_cast<size_t>(n) < kDecodedBlockSize) {
         result.erase(result.end() - (kDecodedBlockSize - static_cast<size_t>(n)),
                      result.end());

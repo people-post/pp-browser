@@ -158,21 +158,16 @@ namespace libp2p::security {
       SecurityAdaptor::SecConnCallbackFunc cb) const {
     const auto &&self{this};
     SECIO_OUTCOME_TRY(curve, dialer->chosenCurve(), conn, cb)
-    SECIO_OUTCOME_TRY(ephemeral_key,
-                      (crypto_provider_->generateEphemeralKeyPair(curve)),
-                      conn,
-                      cb)
+    auto ephemeral_key_res = crypto_provider_->generateEphemeralKeyPair(curve);
+    SECIO_OUTCOME_TRY(ephemeral_key, ephemeral_key_res, conn, cb)
     dialer->storeEphemeralKeypair(ephemeral_key);
+    auto local_corpus_res =
+        dialer->getCorpus(true, ephemeral_key.ephemeral_public_key);
+    SECIO_OUTCOME_TRY(local_corpus, local_corpus_res, conn, cb)
+    auto local_corpus_signature_res =
+        crypto_provider_->sign(local_corpus, idmgr_->getKeyPair().privateKey);
     SECIO_OUTCOME_TRY(
-        local_corpus,
-        (dialer->getCorpus(true, ephemeral_key.ephemeral_public_key)),
-        conn,
-        cb)
-    SECIO_OUTCOME_TRY(
-        local_corpus_signature,
-        (crypto_provider_->sign(local_corpus, idmgr_->getKeyPair().privateKey)),
-        conn,
-        cb)
+        local_corpus_signature, local_corpus_signature_res, conn, cb)
     secio::ExchangeMessage local_exchange{
         .epubkey = ephemeral_key.ephemeral_public_key,
         .signature = std::move(local_corpus_signature)};
@@ -198,22 +193,17 @@ namespace libp2p::security {
           auto remote_exchange{
               self->exchange_marshaller_->protoToHandy(remote_proto_exchange)};
           SL_TRACE(self->log_, "remote exchange message received");
-          SECIO_OUTCOME_TRY(remote_corpus,
-                            (dialer->getCorpus(false, remote_exchange.epubkey)),
-                            conn,
-                            cb)
+          auto remote_corpus_res =
+              dialer->getCorpus(false, remote_exchange.epubkey);
+          SECIO_OUTCOME_TRY(remote_corpus, remote_corpus_res, conn, cb)
 
-          SECIO_OUTCOME_TRY(remote_key,
-                            (dialer->remotePublicKey(self->key_marshaller_,
-                                                     self->propose_marshaller_)),
-                            conn,
-                            cb)
-          SECIO_OUTCOME_TRY(
-              verify_res,
-              (self->crypto_provider_->verify(
-                  remote_corpus, remote_exchange.signature, remote_key)),
-              conn,
-              cb)
+          auto remote_key_res =
+              dialer->remotePublicKey(self->key_marshaller_,
+                                      self->propose_marshaller_);
+          SECIO_OUTCOME_TRY(remote_key, remote_key_res, conn, cb)
+          auto verify_res_res = self->crypto_provider_->verify(
+              remote_corpus, remote_exchange.signature, remote_key);
+          SECIO_OUTCOME_TRY(verify_res, verify_res_res, conn, cb)
           if (!verify_res) {
             const auto error{Error::REMOTE_PEER_SIGNATURE_IS_INVALID};
             self->closeConnection(conn, error);
@@ -228,18 +218,15 @@ namespace libp2p::security {
               cb)
           SECIO_OUTCOME_TRY(chosen_cipher, dialer->chosenCipher(), conn, cb)
           SECIO_OUTCOME_TRY(chosen_hash, dialer->chosenHash(), conn, cb)
-          SECIO_OUTCOME_TRY(stretched_keys,
-                            (self->crypto_provider_->stretchKey(
-                                chosen_cipher, chosen_hash, shared_secret)),
-                            conn,
-                            cb)
+          auto stretched_keys_res = self->crypto_provider_->stretchKey(
+              chosen_cipher, chosen_hash, shared_secret);
+          SECIO_OUTCOME_TRY(stretched_keys, stretched_keys_res, conn, cb)
           dialer->storeStretchedKeys(std::move(stretched_keys));
 
-          SECIO_OUTCOME_TRY(remote_pubkey,
-                            (dialer->remotePublicKey(self->key_marshaller_,
-                                                     self->propose_marshaller_)),
-                            conn,
-                            cb)
+          auto remote_pubkey_res =
+              dialer->remotePublicKey(self->key_marshaller_,
+                                      self->propose_marshaller_);
+          SECIO_OUTCOME_TRY(remote_pubkey, remote_pubkey_res, conn, cb)
           SECIO_OUTCOME_TRY(
               local_stretched_key, dialer->localStretchedKey(), conn, cb)
           SECIO_OUTCOME_TRY(

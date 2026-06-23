@@ -16,7 +16,11 @@ namespace libp2p::security::noise {
                                                    BytesIn plaintext,
                                                    BytesIn aad) {
     auto n = ccp_->uint64toNonce(nonce);
-    OUTCOME_TRY(enc, (ccp_->encrypt(n, plaintext, aad)));
+    auto enc_res = ccp_->encrypt(n, plaintext, aad);
+    if (!enc_res) {
+      return enc_res.error();
+    }
+    auto enc = std::move(enc_res).value();
     auto res = spanToVec(precompiled_out);
     res.reserve(res.size() + enc.size());
     res.insert(res.end(), enc.begin(), enc.end());
@@ -28,7 +32,11 @@ namespace libp2p::security::noise {
                                                    BytesIn ciphertext,
                                                    BytesIn aad) {
     auto n = ccp_->uint64toNonce(nonce);
-    OUTCOME_TRY(dec, (ccp_->decrypt(n, ciphertext, aad)));
+    auto dec_res = ccp_->decrypt(n, ciphertext, aad);
+    if (!dec_res) {
+      return dec_res.error();
+    }
+    auto dec = std::move(dec_res).value();
     auto res = spanToVec(precompiled_out);
     res.reserve(res.size() + dec.size());
     res.insert(res.end(), dec.begin(), dec.end());

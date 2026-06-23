@@ -99,8 +99,17 @@ namespace libp2p::crypto::rsa {
       return KeyGeneratorError::KEY_GENERATION_FAILED;
     }
 
-    OUTCOME_TRY(private_bytes, (encodeKeyDer(rsa, i2d_RSAPrivateKey)));
-    OUTCOME_TRY(public_bytes, (encodeKeyDer(rsa, i2d_RSA_PUBKEY)));
+    auto private_bytes_res = encodeKeyDer(rsa, i2d_RSAPrivateKey);
+    if (!private_bytes_res) {
+      return private_bytes_res.error();
+    }
+    auto private_bytes = std::move(private_bytes_res).value();
+
+    auto public_bytes_res = encodeKeyDer(rsa, i2d_RSA_PUBKEY);
+    if (!public_bytes_res) {
+      return public_bytes_res.error();
+    }
+    auto public_bytes = std::move(public_bytes_res).value();
 
     return KeyPair{.private_key = private_bytes, .public_key = public_bytes};
   }
@@ -115,7 +124,11 @@ namespace libp2p::crypto::rsa {
     }
     FinalAction cleanup_rsa([rsa]() { RSA_free(rsa); });
 
-    OUTCOME_TRY(public_bytes, (encodeKeyDer(rsa, i2d_RSA_PUBKEY)));
+    auto public_bytes_res = encodeKeyDer(rsa, i2d_RSA_PUBKEY);
+    if (!public_bytes_res) {
+      return public_bytes_res.error();
+    }
+    auto public_bytes = std::move(public_bytes_res).value();
 
     return std::move(public_bytes);
   }

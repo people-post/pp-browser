@@ -80,9 +80,12 @@ namespace libp2p::security::noise {
     Key32 zeroed;
     memset(zeroed.data(), 0u, zeroed.size());
     Bytes empty;
-    OUTCOME_TRY(out_res,
-                (cipher_->encrypt(
-                    {}, std::numeric_limits<uint64_t>::max(), zeroed, empty)));
+    auto out_res_res =
+        cipher_->encrypt({}, std::numeric_limits<uint64_t>::max(), zeroed, empty);
+    if (!out_res_res) {
+      return out_res_res.error();
+    }
+    auto out_res = std::move(out_res_res).value();
     std::copy_n(out_res.begin(), key_.size(), key_.begin());
     cipher_ = cipher_suite_->cipher(key_);
     return outcome::success();
@@ -119,9 +122,12 @@ namespace libp2p::security::noise {
   outcome::result<void> SymmetricState::mixKey(BytesIn dh_output) {
     nonce_ = 0;
     has_key_ = true;
-    OUTCOME_TRY(
-        hkdf_res,
-        (hkdf(cipher_suite_->hash()->hashType(), 2, chaining_key_, dh_output)));
+    auto hkdf_res_res =
+        hkdf(cipher_suite_->hash()->hashType(), 2, chaining_key_, dh_output);
+    if (!hkdf_res_res) {
+      return hkdf_res_res.error();
+    }
+    auto hkdf_res = std::move(hkdf_res_res).value();
     chaining_key_ = std::move(hkdf_res.one);
     OUTCOME_TRY(hash_key, bytesToKey32(hkdf_res.two));
     key_ = hash_key;
@@ -139,9 +145,12 @@ namespace libp2p::security::noise {
   }
 
   outcome::result<void> SymmetricState::mixKeyAndHash(BytesIn data) {
-    OUTCOME_TRY(
-        hkdf_res,
-        (hkdf(cipher_suite_->hash()->hashType(), 3, chaining_key_, data)));
+    auto hkdf_res_res =
+        hkdf(cipher_suite_->hash()->hashType(), 3, chaining_key_, data);
+    if (!hkdf_res_res) {
+      return hkdf_res_res.error();
+    }
+    auto hkdf_res = std::move(hkdf_res_res).value();
     chaining_key_ = hkdf_res.one;  // ck
     OUTCOME_TRY(mixHash(hkdf_res.two));
     OUTCOME_TRY(hash_key, bytesToKey32(hkdf_res.three));
@@ -164,7 +173,11 @@ namespace libp2p::security::noise {
                   result.begin() + precompiled_out.size());
       return result;
     }
-    OUTCOME_TRY(ciphertext, (encrypt(precompiled_out, plaintext, hash_)));
+    auto ciphertext_res = encrypt(precompiled_out, plaintext, hash_);
+    if (!ciphertext_res) {
+      return ciphertext_res.error();
+    }
+    auto ciphertext = std::move(ciphertext_res).value();
     auto ct_size = ciphertext.size();
     auto po_size = precompiled_out.size();
     if (po_size > ct_size) {
@@ -190,14 +203,22 @@ namespace libp2p::security::noise {
                   result.begin() + precompiled_out.size());
       return result;
     }
-    OUTCOME_TRY(plaintext, (decrypt(precompiled_out, ciphertext, hash_)));
+    auto plaintext_res = decrypt(precompiled_out, ciphertext, hash_);
+    if (!plaintext_res) {
+      return plaintext_res.error();
+    }
+    auto plaintext = std::move(plaintext_res).value();
     OUTCOME_TRY(mixHash(ciphertext));
     return std::move(plaintext);
   }
 
   outcome::result<SymmetricState::CSPair> SymmetricState::split() {
-    OUTCOME_TRY(hkdf_res,
-                (hkdf(cipher_suite_->hash()->hashType(), 2, chaining_key_, {})));
+    auto hkdf_res_res =
+        hkdf(cipher_suite_->hash()->hashType(), 2, chaining_key_, {});
+    if (!hkdf_res_res) {
+      return hkdf_res_res.error();
+    }
+    auto hkdf_res = std::move(hkdf_res_res).value();
     OUTCOME_TRY(hash_key1, bytesToKey32(hkdf_res.one));
     OUTCOME_TRY(hash_key2, bytesToKey32(hkdf_res.two));
     auto first_state = std::make_shared<CipherState>(cipher_suite_, hash_key1);
@@ -391,7 +412,11 @@ namespace libp2p::security::noise {
     }
     should_write_ = false;
     ++message_idx_;
-    OUTCOME_TRY(output, (symmetric_state_->encryptAndHash(out, payload)));
+    auto output_res = symmetric_state_->encryptAndHash(out, payload);
+    if (!output_res) {
+      return output_res.error();
+    }
+    auto output = std::move(output_res).value();
     HandshakeState::MessagingResult result;
     result.data.swap(output);
     if (message_idx_ >= static_cast<int64_t>(message_patterns_.size())) {
@@ -419,30 +444,44 @@ namespace libp2p::security::noise {
     if (local_static_kp_.pub.empty()) {
       return Error::NO_PUBLIC_KEY;
     }
-    OUTCOME_TRY(output,
-                (symmetric_state_->encryptAndHash(out, local_static_kp_.pub)));
+    auto output_res = symmetric_state_->encryptAndHash(out, local_static_kp_.pub);
+    if (!output_res) {
+      return output_res.error();
+    }
+    auto output = std::move(output_res).value();
     out.swap(output);
     return outcome::success();
   }
 
   outcome::result<void> HandshakeState::writeMessageDHEE() {
-    OUTCOME_TRY(key,
-                (symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                                     remote_ephemeral_pubkey_)));
+    auto key_res =
+        symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
+                                            remote_ephemeral_pubkey_);
+    if (!key_res) {
+      return key_res.error();
+    }
+    auto key = std::move(key_res).value();
     return symmetric_state_->mixKey(key);
   }
 
   outcome::result<void> HandshakeState::writeMessageDHES() {
     Bytes key_bytes;
     if (is_initiator_) {
-      OUTCOME_TRY(key,
-                  (symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                                       remote_static_pubkey_)));
+      auto key_res =
+          symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
+                                              remote_static_pubkey_);
+      if (!key_res) {
+        return key_res.error();
+      }
+      auto key = std::move(key_res).value();
       key_bytes = std::move(key);
     } else {
-      OUTCOME_TRY(key,
-                  (symmetric_state_->cipherSuite()->dh(
-                      local_static_kp_.priv, remote_ephemeral_pubkey_)));
+      auto key_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
+                                                         remote_ephemeral_pubkey_);
+      if (!key_res) {
+        return key_res.error();
+      }
+      auto key = std::move(key_res).value();
       key_bytes = std::move(key);
     }
     return symmetric_state_->mixKey(key_bytes);
@@ -451,23 +490,33 @@ namespace libp2p::security::noise {
   outcome::result<void> HandshakeState::writeMessageDHSE() {
     Bytes key_bytes;
     if (is_initiator_) {
-      OUTCOME_TRY(key,
-                  (symmetric_state_->cipherSuite()->dh(
-                      local_static_kp_.priv, remote_ephemeral_pubkey_)));
+      auto key_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
+                                                         remote_ephemeral_pubkey_);
+      if (!key_res) {
+        return key_res.error();
+      }
+      auto key = std::move(key_res).value();
       key_bytes = std::move(key);
     } else {
-      OUTCOME_TRY(key,
-                  (symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                                       remote_static_pubkey_)));
+      auto key_res =
+          symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
+                                              remote_static_pubkey_);
+      if (!key_res) {
+        return key_res.error();
+      }
+      auto key = std::move(key_res).value();
       key_bytes = std::move(key);
     }
     return symmetric_state_->mixKey(key_bytes);
   }
 
   outcome::result<void> HandshakeState::writeMessageDHSS() {
-    OUTCOME_TRY(key,
-                (symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
-                                                     remote_static_pubkey_)));
+    auto key_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
+                                                       remote_static_pubkey_);
+    if (!key_res) {
+      return key_res.error();
+    }
+    auto key = std::move(key_res).value();
     return symmetric_state_->mixKey(key);
   }
 
@@ -568,23 +617,33 @@ namespace libp2p::security::noise {
   }
 
   outcome::result<void> HandshakeState::readMessageDHEE() {
-    OUTCOME_TRY(dh,
-                (symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                                     remote_ephemeral_pubkey_)));
+    auto dh_res = symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
+                                                      remote_ephemeral_pubkey_);
+    if (!dh_res) {
+      return dh_res.error();
+    }
+    auto dh = std::move(dh_res).value();
     return symmetric_state_->mixKey(dh);
   }
 
   outcome::result<void> HandshakeState::readMessageDHES() {
     Bytes data;
     if (is_initiator_) {
-      OUTCOME_TRY(dh,
-                  (symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                                       remote_static_pubkey_)));
+      auto dh_res =
+          symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
+                                              remote_static_pubkey_);
+      if (!dh_res) {
+        return dh_res.error();
+      }
+      auto dh = std::move(dh_res).value();
       data.swap(dh);
     } else {
-      OUTCOME_TRY(dh,
-                  (symmetric_state_->cipherSuite()->dh(
-                      local_static_kp_.priv, remote_ephemeral_pubkey_)));
+      auto dh_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
+                                                        remote_ephemeral_pubkey_);
+      if (!dh_res) {
+        return dh_res.error();
+      }
+      auto dh = std::move(dh_res).value();
       data.swap(dh);
     }
     return symmetric_state_->mixKey(data);
@@ -593,23 +652,33 @@ namespace libp2p::security::noise {
   outcome::result<void> HandshakeState::readMessageDHSE() {
     Bytes data;
     if (is_initiator_) {
-      OUTCOME_TRY(dh,
-                  (symmetric_state_->cipherSuite()->dh(
-                      local_static_kp_.priv, remote_ephemeral_pubkey_)));
+      auto dh_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
+                                                        remote_ephemeral_pubkey_);
+      if (!dh_res) {
+        return dh_res.error();
+      }
+      auto dh = std::move(dh_res).value();
       data.swap(dh);
     } else {
-      OUTCOME_TRY(dh,
-                  (symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
-                                                       remote_static_pubkey_)));
+      auto dh_res =
+          symmetric_state_->cipherSuite()->dh(local_ephemeral_kp_.priv,
+                                              remote_static_pubkey_);
+      if (!dh_res) {
+        return dh_res.error();
+      }
+      auto dh = std::move(dh_res).value();
       data.swap(dh);
     }
     return symmetric_state_->mixKey(data);
   }
 
   outcome::result<void> HandshakeState::readMessageDHSS() {
-    OUTCOME_TRY(dh,
-                (symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
-                                                     remote_static_pubkey_)));
+    auto dh_res = symmetric_state_->cipherSuite()->dh(local_static_kp_.priv,
+                                                      remote_static_pubkey_);
+    if (!dh_res) {
+      return dh_res.error();
+    }
+    auto dh = std::move(dh_res).value();
     return symmetric_state_->mixKey(dh);
   }
 

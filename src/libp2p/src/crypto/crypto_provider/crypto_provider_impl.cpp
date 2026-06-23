@@ -218,7 +218,11 @@ namespace libp2p::crypto {
     priv_key.insert(
         priv_key.end(), private_key.data.begin(), private_key.data.end());
 
-    OUTCOME_TRY(signature, (rsa_provider_->sign(message, priv_key)));
+    auto signature_res = rsa_provider_->sign(message, priv_key);
+    if (!signature_res) {
+      return signature_res.error();
+    }
+    auto signature = std::move(signature_res).value();
     return {signature.begin(), signature.end()};
   }
 
@@ -226,7 +230,11 @@ namespace libp2p::crypto {
       BytesIn message, const PrivateKey &private_key) const {
     ed25519::PrivateKey priv_key;
     std::copy_n(private_key.data.begin(), priv_key.size(), priv_key.begin());
-    OUTCOME_TRY(signature, (ed25519_provider_->sign(message, priv_key)));
+    auto signature_res = ed25519_provider_->sign(message, priv_key);
+    if (!signature_res) {
+      return signature_res.error();
+    }
+    auto signature = std::move(signature_res).value();
     return {signature.begin(), signature.end()};
   }
 
@@ -234,7 +242,11 @@ namespace libp2p::crypto {
       BytesIn message, const PrivateKey &private_key) const {
     secp256k1::PrivateKey priv_key;
     std::copy_n(private_key.data.begin(), priv_key.size(), priv_key.begin());
-    OUTCOME_TRY(signature, (secp256k1_provider_->sign(message, priv_key)));
+    auto signature_res = secp256k1_provider_->sign(message, priv_key);
+    if (!signature_res) {
+      return signature_res.error();
+    }
+    auto signature = std::move(signature_res).value();
     return {signature.begin(), signature.end()};
   }
 
@@ -242,7 +254,11 @@ namespace libp2p::crypto {
       BytesIn message, const PrivateKey &private_key) const {
     ecdsa::PrivateKey priv_key;
     std::copy_n(private_key.data.begin(), priv_key.size(), priv_key.begin());
-    OUTCOME_TRY(signature, (ecdsa_provider_->sign(message, priv_key)));
+    auto signature_res = ecdsa_provider_->sign(message, priv_key);
+    if (!signature_res) {
+      return signature_res.error();
+    }
+    auto signature = std::move(signature_res).value();
     return {signature.begin(), signature.end()};
   }
 
@@ -565,21 +581,32 @@ namespace libp2p::crypto {
     Buffer result;
     result.reserve(output_size);
 
-    OUTCOME_TRY(a, (hmac_provider_->calculateDigest(hash_type, secret, seed)));
+    auto a_res = hmac_provider_->calculateDigest(hash_type, secret, seed);
+    if (!a_res) {
+      return a_res.error();
+    }
+    auto a = std::move(a_res).value();
     while (result.size() < output_size) {
       Buffer input;
       input.reserve(a.size() + seed.size());
       input.insert(input.end(), a.begin(), a.end());
       input.insert(input.end(), seed.begin(), seed.end());
 
-      OUTCOME_TRY(b, (hmac_provider_->calculateDigest(hash_type, secret, input)));
+      auto b_res = hmac_provider_->calculateDigest(hash_type, secret, input);
+      if (!b_res) {
+        return b_res.error();
+      }
+      auto b = std::move(b_res).value();
       size_t todo = b.size();
       if (result.size() + todo > output_size) {
         todo = output_size - result.size();
       }
       std::copy_n(b.begin(), todo, std::back_inserter(result));
-      OUTCOME_TRY(c, (hmac_provider_->calculateDigest(hash_type, secret, a)));
-      a = std::move(c);
+      auto c_res = hmac_provider_->calculateDigest(hash_type, secret, a);
+      if (!c_res) {
+        return c_res.error();
+      }
+      a = std::move(c_res).value();
     }
 
     auto iter = result.begin();

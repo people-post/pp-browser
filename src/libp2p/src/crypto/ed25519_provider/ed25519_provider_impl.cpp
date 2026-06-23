@@ -54,10 +54,12 @@ namespace libp2p::crypto::ed25519 {
 
   outcome::result<PublicKey> Ed25519ProviderImpl::derive(
       const PrivateKey &private_key) const {
-    OUTCOME_TRY(
-        evp_pkey,
-        (NewEvpPkeyFromBytes(
-            EVP_PKEY_ED25519, private_key, EVP_PKEY_new_raw_private_key)));
+    auto evp_pkey_res = NewEvpPkeyFromBytes(
+        EVP_PKEY_ED25519, private_key, EVP_PKEY_new_raw_private_key);
+    if (!evp_pkey_res) {
+      return evp_pkey_res.error();
+    }
+    auto evp_pkey = std::move(evp_pkey_res).value();
     PublicKey public_key{0};
     size_t pub_len{public_key.size()};
     if (1
@@ -71,10 +73,12 @@ namespace libp2p::crypto::ed25519 {
 
   outcome::result<Signature> Ed25519ProviderImpl::sign(
       BytesIn message, const PrivateKey &private_key) const {
-    OUTCOME_TRY(
-        evp_pkey,
-        (NewEvpPkeyFromBytes(
-            EVP_PKEY_ED25519, private_key, EVP_PKEY_new_raw_private_key)));
+    auto evp_pkey_res = NewEvpPkeyFromBytes(
+        EVP_PKEY_ED25519, private_key, EVP_PKEY_new_raw_private_key);
+    if (!evp_pkey_res) {
+      return evp_pkey_res.error();
+    }
+    auto evp_pkey = std::move(evp_pkey_res).value();
     constexpr auto FAILED{CryptoProviderError::SIGNATURE_GENERATION_FAILED};
 
     std::shared_ptr<EVP_MD_CTX> mctx{EVP_MD_CTX_new(), EVP_MD_CTX_free};
@@ -105,9 +109,12 @@ namespace libp2p::crypto::ed25519 {
       BytesIn message,
       const Signature &signature,
       const PublicKey &public_key) const {
-    OUTCOME_TRY(evp_pkey,
-                (NewEvpPkeyFromBytes(
-                    EVP_PKEY_ED25519, public_key, EVP_PKEY_new_raw_public_key)));
+    auto evp_pkey_res = NewEvpPkeyFromBytes(
+        EVP_PKEY_ED25519, public_key, EVP_PKEY_new_raw_public_key);
+    if (!evp_pkey_res) {
+      return evp_pkey_res.error();
+    }
+    auto evp_pkey = std::move(evp_pkey_res).value();
     constexpr auto FAILED{CryptoProviderError::SIGNATURE_VERIFICATION_FAILED};
 
     std::shared_ptr<EVP_MD_CTX> mctx{EVP_MD_CTX_new(), EVP_MD_CTX_free};
