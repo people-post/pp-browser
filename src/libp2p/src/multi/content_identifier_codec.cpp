@@ -111,7 +111,11 @@ namespace libp2p::multi {
   outcome::result<ContentIdentifier> ContentIdentifierCodec::decode(
       BytesIn bytes) {
     if (bytes.size() == 34 and bytes[0] == 0x12 and bytes[1] == 0x20) {
-      OUTCOME_TRY(hash, Multihash::createFromBytes(bytes));
+      auto hash_res = Multihash::createFromBytes(bytes);
+      if (!hash_res) {
+        return std::move(hash_res).as_failure();
+      }
+      auto hash = std::move(hash_res).value();
       return ContentIdentifier(ContentIdentifier::Version::V0,
                                MulticodecType::Code::DAG_PB,
                                std::move(hash));
@@ -150,7 +154,11 @@ namespace libp2p::multi {
   outcome::result<std::string> ContentIdentifierCodec::toString(
       const ContentIdentifier &cid) {
     std::string result;
-    OUTCOME_TRY(cid_bytes, encode(cid));
+    auto cid_bytes_res = encode(cid);
+    if (!cid_bytes_res) {
+      return std::move(cid_bytes_res).as_failure();
+    }
+    auto cid_bytes = std::move(cid_bytes_res).value();
     switch (cid.version) {
       case ContentIdentifier::Version::V0:
         result = detail::encodeBase58(cid_bytes);
@@ -168,7 +176,11 @@ namespace libp2p::multi {
   outcome::result<std::string> ContentIdentifierCodec::toStringOfBase(
       const ContentIdentifier &cid, MultibaseCodec::Encoding base) {
     std::string result;
-    OUTCOME_TRY(cid_bytes, encode(cid));
+    auto cid_bytes_res = encode(cid);
+    if (!cid_bytes_res) {
+      return std::move(cid_bytes_res).as_failure();
+    }
+    auto cid_bytes = std::move(cid_bytes_res).value();
     switch (cid.version) {
       case ContentIdentifier::Version::V0:
         if (base != MultibaseCodec::Encoding::BASE58) {
@@ -192,11 +204,19 @@ namespace libp2p::multi {
     }
 
     if (str.size() == 46 && str.substr(0, 2) == "Qm") {
-      OUTCOME_TRY(hash, detail::decodeBase58(str));
+      auto hash_res = detail::decodeBase58(str);
+      if (!hash_res) {
+        return std::move(hash_res).as_failure();
+      }
+      auto hash = std::move(hash_res).value();
       return decode(hash);
     }
 
-    OUTCOME_TRY(bytes, MultibaseCodecImpl().decode(str));
+    auto bytes_res = MultibaseCodecImpl().decode(str);
+    if (!bytes_res) {
+      return std::move(bytes_res).as_failure();
+    }
+    auto bytes = std::move(bytes_res).value();
 
     return decode(bytes);
   }

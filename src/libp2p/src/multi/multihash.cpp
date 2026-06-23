@@ -86,7 +86,11 @@ namespace libp2p::multi {
   }
 
   outcome::result<Multihash> Multihash::createFromHex(std::string_view hex) {
-    OUTCOME_TRY(buf, qtils::unhex(hex));
+    auto buf_res = qtils::unhex(hex);
+    if (!buf_res) {
+      return std::move(buf_res).as_failure();
+    }
+    auto buf = std::move(buf_res).value();
     return Multihash::createFromBytes(buf);
   }
 

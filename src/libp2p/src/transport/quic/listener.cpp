@@ -25,11 +25,19 @@ namespace libp2p::transport {
         handler_{std::move(handler)} {}
 
   outcome::result<void> QuicListener::listen(const Multiaddress &address) {
-    OUTCOME_TRY(info, detail::asQuic(address));
+    auto info_res = detail::asQuic(address);
+    if (!info_res) {
+      return std::move(info_res).as_failure();
+    }
+    auto info = std::move(info_res).value();
     if (server_) {
       return std::errc::already_connected;
     }
-    OUTCOME_TRY(endpoint, info.asUdp());
+    auto endpoint_res = info.asUdp();
+    if (!endpoint_res) {
+      return std::move(endpoint_res).as_failure();
+    }
+    auto endpoint = std::move(endpoint_res).value();
     boost::asio::ip::udp::socket socket{*io_context_, endpoint.protocol()};
     boost::system::error_code ec;
     socket.bind(endpoint, ec);

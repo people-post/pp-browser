@@ -202,12 +202,19 @@ namespace libp2p::multi::converters {
       return var->toUInt64();
     };
     auto read_uvar = [&]() -> outcome::result<BytesIn> {
-      OUTCOME_TRY(n, uvar());
-      return read(n);
+      auto n_res = uvar();
+      if (not n_res) {
+        return std::move(n_res).as_failure();
+      }
+      return read(n_res.value());
     };
     std::string results;
     while (not bytes.empty()) {
-      OUTCOME_TRY(protocol_num, uvar());
+      auto protocol_num_res = uvar();
+      if (not protocol_num_res) {
+        return std::move(protocol_num_res).as_failure();
+      }
+      auto protocol_num = protocol_num_res.value();
       const Protocol *protocol =
           ProtocolList::get(static_cast<Protocol::Code>(protocol_num));
       if (protocol == nullptr) {
@@ -220,7 +227,11 @@ namespace libp2p::multi::converters {
       }
       switch (protocol->code) {
         case Protocol::Code::P2P: {
-          OUTCOME_TRY(data, read_uvar());
+          auto data_res = read_uvar();
+          if (not data_res) {
+            return std::move(data_res).as_failure();
+          }
+          auto data = data_res.value();
           results += "/";
           results += detail::encodeBase58(data);
           break;
@@ -230,9 +241,13 @@ namespace libp2p::multi::converters {
         case Protocol::Code::DNS4:
         case Protocol::Code::DNS6:
         case Protocol::Code::DNS_ADDR: {
-          OUTCOME_TRY(data, read_uvar());
+          auto data_res = read_uvar();
+          if (not data_res) {
+            return std::move(data_res).as_failure();
+          }
+          auto data = data_res.value();
           auto name = qtils::byte2str(data);
-          const auto *i =
+          const auto i =
               std::find_if_not(name.begin(), name.end(), [](auto c) {
                 return std::isalnum(c) || c == '-' || c == '.';
               });
@@ -246,7 +261,11 @@ namespace libp2p::multi::converters {
 
         case Protocol::Code::X_PARITY_WS:
         case Protocol::Code::X_PARITY_WSS: {
-          OUTCOME_TRY(data, read_uvar());
+          auto data_res = read_uvar();
+          if (not data_res) {
+            return std::move(data_res).as_failure();
+          }
+          auto data = data_res.value();
           results += "/";
           percentEncode(results, qtils::byte2str(data));
           break;
@@ -254,7 +273,11 @@ namespace libp2p::multi::converters {
 
         case Protocol::Code::IP4: {
           std::array<uint8_t, 4> arr{};
-          OUTCOME_TRY(data, read(arr.size()));
+          auto data_res = read(arr.size());
+          if (not data_res) {
+            return std::move(data_res).as_failure();
+          }
+          auto data = data_res.value();
           std::copy(data.begin(), data.end(), arr.begin());
           results += "/";
           results += boost::asio::ip::make_address_v4(arr).to_string();
@@ -263,7 +286,11 @@ namespace libp2p::multi::converters {
 
         case Protocol::Code::IP6: {
           std::array<uint8_t, 16> arr{};
-          OUTCOME_TRY(data, read(arr.size()));
+          auto data_res = read(arr.size());
+          if (not data_res) {
+            return std::move(data_res).as_failure();
+          }
+          auto data = data_res.value();
           std::copy(data.begin(), data.end(), arr.begin());
           results += "/";
           results += boost::asio::ip::make_address_v6(arr).to_string();
@@ -272,7 +299,11 @@ namespace libp2p::multi::converters {
 
         case Protocol::Code::TCP:
         case Protocol::Code::UDP: {
-          OUTCOME_TRY(data, read(sizeof(uint16_t)));
+          auto data_res = read(sizeof(uint16_t));
+          if (not data_res) {
+            return std::move(data_res).as_failure();
+          }
+          auto data = data_res.value();
           results += "/";
           results += std::to_string(boost::endian::load_big_u16(data.data()));
           break;

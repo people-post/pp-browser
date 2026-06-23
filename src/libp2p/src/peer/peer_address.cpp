@@ -38,11 +38,24 @@ namespace libp2p::peer {
       : id_{std::move(id)}, address_{std::move(address)} {}
 
   PeerAddress::FactoryResult PeerAddress::create(std::string_view address) {
-    OUTCOME_TRY(multiaddress, Multiaddress::create(address));
+    auto multiaddress_res = Multiaddress::create(address);
+    if (!multiaddress_res) {
+      return std::move(multiaddress_res).as_failure();
+    }
+    auto multiaddress = std::move(multiaddress_res).value();
 
-    OUTCOME_TRY(id_b58_str,
-                multiaddress.getFirstValueForProtocol(Protocol::Code::P2P));
-    OUTCOME_TRY(id, PeerId::fromBase58(id_b58_str));
+    auto id_b58_str_res =
+        multiaddress.getFirstValueForProtocol(Protocol::Code::P2P);
+    if (!id_b58_str_res) {
+      return std::move(id_b58_str_res).as_failure();
+    }
+    auto id_b58_str = std::move(id_b58_str_res).value();
+
+    auto id_res = PeerId::fromBase58(id_b58_str);
+    if (!id_res) {
+      return std::move(id_res).as_failure();
+    }
+    auto id = std::move(id_res).value();
 
     multiaddress.decapsulate(Protocol::Code::P2P, id_b58_str);
 

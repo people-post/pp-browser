@@ -22,12 +22,20 @@ namespace libp2p::transport {
 
   outcome::result<void> TcpListener::listen(
       const multi::Multiaddress &address) {
-    OUTCOME_TRY(info, detail::asTcp(address));
+    auto info_res = detail::asTcp(address);
+    if (!info_res) {
+      return std::move(info_res).as_failure();
+    }
+    auto info = std::move(info_res).value();
     if (acceptor_.is_open()) {
       return std::errc::already_connected;
     }
     layers_ = info.second;
-    OUTCOME_TRY(endpoint, info.first.asTcp());
+    auto endpoint_res = info.first.asTcp();
+    if (!endpoint_res) {
+      return std::move(endpoint_res).as_failure();
+    }
+    auto endpoint = std::move(endpoint_res).value();
 
     // TODO(@warchant): replace with parser PRE-129
     using namespace boost::asio;  // NOLINT

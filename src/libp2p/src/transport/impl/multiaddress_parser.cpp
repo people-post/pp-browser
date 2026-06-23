@@ -66,9 +66,17 @@ namespace libp2p::transport {
       case 0:
       case 1: {
         auto it = pvs.begin();
-        OUTCOME_TRY(addr, parseIp(it->second));
+        auto addr_res = parseIp(it->second);
+        if (!addr_res) {
+          return std::move(addr_res).as_failure();
+        }
+        auto addr = std::move(addr_res).value();
         it++;
-        OUTCOME_TRY(port, parseTcp(it->second));
+        auto port_res = parseTcp(it->second);
+        if (!port_res) {
+          return std::move(port_res).as_failure();
+        }
+        auto port = std::move(port_res).value();
         if (entry_idx == 0) {  // ipv4
           return ParseResult{*entry, std::make_pair(addr.to_v4(), port)};
         }
