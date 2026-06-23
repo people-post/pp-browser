@@ -76,9 +76,15 @@ namespace libp2p::crypto {
 
   outcome::result<libp2p::common::Hash256> sha256(BytesIn input) {
     Sha256 sha;
-    OUTCOME_TRY(sha.write(input));
+    auto write_res = sha.write(input);
+    if (not write_res) {
+      return std::move(write_res).as_failure();
+    }
     outcome::result<libp2p::common::Hash256> result{outcome::success()};
-    OUTCOME_TRY(sha.digestOut(result.value()));
+    auto digest_res = sha.digestOut(result.value());
+    if (not digest_res) {
+      return std::move(digest_res).as_failure();
+    }
     return result;
   }
 }  // namespace libp2p::crypto

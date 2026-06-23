@@ -62,7 +62,11 @@ namespace libp2p::crypto::marshaller {
   outcome::result<ProtobufKey> KeyMarshallerImpl::marshal(
       const PublicKey &key) const {
     protobuf::PublicKey protobuf_key;
-    OUTCOME_TRY(type, marshalKeyType(key.type));
+    auto type_res = marshalKeyType(key.type);
+    if (not type_res) {
+      return std::move(type_res).as_failure();
+    }
+    auto type = std::move(type_res).value();
     protobuf_key.set_type(type);
     protobuf_key.set_data(key.data.data(), key.data.size());
 
@@ -73,7 +77,11 @@ namespace libp2p::crypto::marshaller {
   outcome::result<ProtobufKey> KeyMarshallerImpl::marshal(
       const PrivateKey &key) const {
     protobuf::PrivateKey protobuf_key;
-    OUTCOME_TRY(type, marshalKeyType(key.type));
+    auto type_res = marshalKeyType(key.type);
+    if (not type_res) {
+      return std::move(type_res).as_failure();
+    }
+    auto type = std::move(type_res).value();
     protobuf_key.set_type(type);
     protobuf_key.set_data(key.data.data(), key.data.size());
 
@@ -89,11 +97,18 @@ namespace libp2p::crypto::marshaller {
       return CryptoProviderError::FAILED_UNMARSHAL_DATA;
     }
 
-    OUTCOME_TRY(type, unmarshalKeyType(protobuf_key.type()));
+    auto type_res = unmarshalKeyType(protobuf_key.type());
+    if (not type_res) {
+      return std::move(type_res).as_failure();
+    }
+    auto type = std::move(type_res).value();
     auto key = PublicKey{
         {type, {protobuf_key.data().begin(), protobuf_key.data().end()}}};
 
-    OUTCOME_TRY(key_validator_->validate(key));
+    auto validate_res = key_validator_->validate(key);
+    if (not validate_res) {
+      return std::move(validate_res).as_failure();
+    }
 
     return key;
   }
@@ -106,11 +121,18 @@ namespace libp2p::crypto::marshaller {
       return CryptoProviderError::FAILED_UNMARSHAL_DATA;
     }
 
-    OUTCOME_TRY(type, unmarshalKeyType(protobuf_key.type()));
+    auto type_res = unmarshalKeyType(protobuf_key.type());
+    if (not type_res) {
+      return std::move(type_res).as_failure();
+    }
+    auto type = std::move(type_res).value();
     auto key = PrivateKey{
         {type, {protobuf_key.data().begin(), protobuf_key.data().end()}}};
 
-    OUTCOME_TRY(key_validator_->validate(key));
+    auto validate_res = key_validator_->validate(key);
+    if (not validate_res) {
+      return std::move(validate_res).as_failure();
+    }
 
     return key;
   }

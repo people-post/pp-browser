@@ -14,7 +14,10 @@ namespace libp2p::crypto::hmac {
   outcome::result<Bytes> HmacProviderImpl::calculateDigest(
       HashType hash_type, const Bytes &key, BytesIn message) const {
     HmacProviderCtrImpl hmac{hash_type, key};
-    OUTCOME_TRY(hmac.write(message));
+    auto write_res = hmac.write(message);
+    if (not write_res) {
+      return std::move(write_res).as_failure();
+    }
     return hmac.digest();
   }
 

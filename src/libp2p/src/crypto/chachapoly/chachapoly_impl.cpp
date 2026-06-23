@@ -40,7 +40,10 @@ namespace libp2p::crypto::chachapoly {
                                                        BytesIn plaintext,
                                                        BytesIn aad) {
     bssl::ScopedEVP_AEAD_CTX ctx;
-    OUTCOME_TRY(init(ctx.get(), true));
+    auto init_res = init(ctx.get(), true);
+    if (not init_res) {
+      return std::move(init_res).as_failure();
+    }
     Bytes result;
     // just reserving the space, possibly without actual memory allocation:
     // ciphertext length equals to plaintext length
@@ -68,7 +71,10 @@ namespace libp2p::crypto::chachapoly {
                                                        BytesIn ciphertext,
                                                        BytesIn aad) {
     bssl::ScopedEVP_AEAD_CTX ctx;
-    OUTCOME_TRY(init(ctx.get(), false));
+    auto init_res = init(ctx.get(), false);
+    if (not init_res) {
+      return std::move(init_res).as_failure();
+    }
     Bytes result;
     // plain text should take less bytes than cipher text,
     // at least it would not contain tag-length bytes (16).

@@ -31,7 +31,11 @@ namespace libp2p::security::noise {
       const HandshakeMessage &msg) const {
     protobuf::NoiseHandshakePayload proto_msg;
 
-    OUTCOME_TRY(proto_pubkey_bytes, marshaller_->marshal(msg.identity_key));
+    auto proto_pubkey_bytes_res = marshaller_->marshal(msg.identity_key);
+    if (not proto_pubkey_bytes_res) {
+      return std::move(proto_pubkey_bytes_res).as_failure();
+    }
+    auto proto_pubkey_bytes = std::move(proto_pubkey_bytes_res).value();
     proto_msg.set_identity_key(proto_pubkey_bytes.key.data(),
                                proto_pubkey_bytes.key.size());
     proto_msg.set_identity_sig(msg.identity_sig.data(),
@@ -46,7 +50,11 @@ namespace libp2p::security::noise {
     Bytes key_bytes{proto_msg.identity_key().begin(),
                     proto_msg.identity_key().end()};
     crypto::ProtobufKey proto_key{std::move(key_bytes)};
-    OUTCOME_TRY(pubkey, marshaller_->unmarshalPublicKey(proto_key));
+    auto pubkey_res = marshaller_->unmarshalPublicKey(proto_key);
+    if (not pubkey_res) {
+      return std::move(pubkey_res).as_failure();
+    }
+    auto pubkey = std::move(pubkey_res).value();
 
     return std::make_pair(
         HandshakeMessage{
@@ -59,7 +67,11 @@ namespace libp2p::security::noise {
 
   outcome::result<Bytes> HandshakeMessageMarshallerImpl::marshal(
       const HandshakeMessage &msg) const {
-    OUTCOME_TRY(proto_msg, handyToProto(msg));
+    auto proto_msg_res = handyToProto(msg);
+    if (not proto_msg_res) {
+      return std::move(proto_msg_res).as_failure();
+    }
+    auto proto_msg = std::move(proto_msg_res).value();
     Bytes out_msg(proto_msg.ByteSizeLong());
     if (not proto_msg.SerializeToArray(out_msg.data(),
                                        static_cast<int>(out_msg.size()))) {

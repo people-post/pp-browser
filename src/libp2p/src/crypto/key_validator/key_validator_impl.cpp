@@ -80,10 +80,20 @@ namespace libp2p::crypto::validator {
       return outcome::success();  // consider unspecified key valid
     }
 
-    OUTCOME_TRY(validate(keys.privateKey));
-    OUTCOME_TRY(validate(keys.publicKey));
+    auto private_validate_res = validate(keys.privateKey);
+    if (not private_validate_res) {
+      return std::move(private_validate_res).as_failure();
+    }
+    auto public_validate_res = validate(keys.publicKey);
+    if (not public_validate_res) {
+      return std::move(public_validate_res).as_failure();
+    }
 
-    OUTCOME_TRY(public_key, crypto_provider_->derivePublicKey(keys.privateKey));
+    auto public_key_res = crypto_provider_->derivePublicKey(keys.privateKey);
+    if (not public_key_res) {
+      return std::move(public_key_res).as_failure();
+    }
+    auto public_key = std::move(public_key_res).value();
     if (public_key != keys.publicKey) {
       return KeyValidatorError::KEYS_DONT_MATCH;
     }
