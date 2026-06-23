@@ -1,6 +1,6 @@
 #include "messaging/ContactActionDispatcher.h"
 
-#include "messaging/IdUtil.h"
+#include "common/Utilities.h"
 #include "messaging/MessagingJson.h"
 
 #include <nlohmann/json.hpp>
@@ -94,7 +94,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!identity) {
       return identity.error();
     }
-    const int64_t timestamp = NowUnixMs();
+    const int64_t timestamp = util::NowUnixMs();
     nlohmann::json body = {{"public_key", identity->public_key_b64},
                            {"nickname", identity->nickname},
                            {"timestamp", timestamp}};

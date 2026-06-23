@@ -1,7 +1,6 @@
 #include "identity/IdentityStore.h"
 
 #include "identity/Ed25519Signer.h"
-#include "messaging/IdUtil.h"
 
 #include <filesystem>
 #include <fstream>

@@ -9,7 +9,7 @@
 #include "demo/CalendarHelper.h"
 #include "demo/ChatFormHelper.h"
 #include "demo/ChatWidgetStateBuilder.h"
-#include "messaging/IdUtil.h"
+#include "common/Utilities.h"
 #include "messaging/MessagingHub.h"
 #include "messaging/MessagingJson.h"
 #include "messaging/ThreadTypes.h"
@@ -803,11 +803,11 @@ void ChatDemo::SendUserText(const std::string& text, std::optional<std::string> 
   if (!use_llm_) {
     const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
     ThreadMessage user_message;
-    user_message.id = GenerateUuid();
+    user_message.id = util::GenerateUuid();
     user_message.thread_id = thread_id;
     user_message.sender_contact_id = kLocalSelfContactId;
     user_message.text = trimmed;
-    user_message.timestamp = NowUnixMs();
+    user_message.timestamp = util::NowUnixMs();
     (void)MessagingHub::Instance().Store().AppendMessage(user_message);
     SyncDisplayFromThread();
     DirtyChatTurns();
@@ -1008,14 +1008,14 @@ void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::stri
       }
       if (!updated) {
         ThreadMessage ai_message;
-        ai_message.id = GenerateUuid();
+        ai_message.id = util::GenerateUuid();
         ai_message.thread_id = active_thread;
         ai_message.sender_contact_id = kAiAssistantContactId;
         ai_message.text = raw_output;
         ai_message.content_rml =
             "<div class=\"bubble bubble-assistant\" selectable=\"text\">" + hydrated + "</div>";
         ai_message.chat_actions = chat_actions;
-        ai_message.timestamp = NowUnixMs();
+        ai_message.timestamp = util::NowUnixMs();
         (void)MessagingHub::Instance().Store().AppendMessage(ai_message);
       }
       (void)MessagingHub::Instance().Inbox().UpdatePreview(active_thread, parsed.rml);

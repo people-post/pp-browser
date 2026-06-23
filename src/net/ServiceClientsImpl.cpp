@@ -1,6 +1,6 @@
 #include "net/ServiceClientsImpl.h"
 
-#include "messaging/IdUtil.h"
+#include "common/Utilities.h"
 #include "messaging/MessagingJson.h"
 #include "net/HttpClient.h"
 
@@ -40,10 +40,10 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
 
   RelayEnvelope reply;
   reply.thread_id = envelope.thread_id;
-  reply.message_id = GenerateUuid();
+  reply.message_id = util::GenerateUuid();
   reply.sender_relay_id = "relay:mock-peer";
   reply.body.text = "Mock reply to: " + envelope.body.text;
-  reply.timestamp = NowUnixMs();
+  reply.timestamp = util::NowUnixMs();
   delivered_.push_back(std::move(reply));
   return {};
 }

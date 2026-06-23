@@ -77,6 +77,7 @@ if(ANDROID)
 endif()
 
 add_subdirectory(src/common)
+add_subdirectory(src/identity)
 
 set(PP_BROWSER_APP_SOURCES
   src/main.cpp
@@ -116,7 +117,6 @@ set(PP_BROWSER_APP_SOURCES
   src/libp2p/integration/Libp2pHost.cpp
   src/platform/SequencedTaskRunner.cpp
   src/platform/BrowserThread.cpp
-  src/messaging/IdUtil.cpp
   src/messaging/MessagingJson.cpp
   src/messaging/PeopleDiscoveryBlocks.cpp
   src/messaging/JsonThreadStore.cpp
@@ -127,8 +127,6 @@ set(PP_BROWSER_APP_SOURCES
   src/messaging/MessagingHub.cpp
   src/messaging/AtAiParser.cpp
   src/contacts/ContactsStore.cpp
-  src/identity/Ed25519Signer.cpp
-  src/identity/IdentityStore.cpp
   src/net/HttpClient.cpp
   src/net/ServiceClientsImpl.cpp
   src/demo/SearchDemo.cpp
@@ -216,6 +214,7 @@ target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
 target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_rmlui_backend
   pp_common
+  pp_identity
   RmlUi::Core
   p2p
   nlohmann_json::nlohmann_json

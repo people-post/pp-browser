@@ -1,6 +1,6 @@
 #include "agent/tools/MessagingTools.h"
 
-#include "messaging/IdUtil.h"
+#include "common/Utilities.h"
 #include "messaging/MessagingJson.h"
 
 #include <nlohmann/json.hpp>
@@ -140,7 +140,7 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
                          identity = hub.Identity().Get();
                        }
 
-                       const int64_t timestamp = NowUnixMs();
+                       const int64_t timestamp = util::NowUnixMs();
                        nlohmann::json body = {{"public_key", identity->public_key_b64},
                                               {"nickname", identity->nickname},
                                               {"timestamp", timestamp}};
@@ -176,7 +176,7 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
          if (nickname.empty()) {
            return Error("nickname required");
          }
-         const int64_t timestamp = NowUnixMs();
+         const int64_t timestamp = util::NowUnixMs();
          nlohmann::json body = {{"nickname", nickname}, {"timestamp", timestamp}};
          auto signature = hub.Identity().SignPayload(body.dump());
          if (!signature) {

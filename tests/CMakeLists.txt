@@ -168,12 +168,8 @@ add_executable(pp_browser_messaging_foundation_test messaging_foundation_test.cp
   ${CMAKE_SOURCE_DIR}/src/messaging/MessagingJson.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/JsonThreadStore.cpp
-  ${CMAKE_SOURCE_DIR}/src/messaging/IdUtil.cpp
-  ${CMAKE_SOURCE_DIR}/src/identity/Ed25519Signer.cpp)
-target_link_libraries(pp_browser_messaging_foundation_test PRIVATE pp_common nlohmann_json::nlohmann_json)
-if(TARGET OpenSSL::Crypto)
-  target_link_libraries(pp_browser_messaging_foundation_test PRIVATE OpenSSL::Crypto)
-endif()
+)
+target_link_libraries(pp_browser_messaging_foundation_test PRIVATE pp_common pp_identity nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_messaging_foundation_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(messaging_foundation_test pp_browser_messaging_foundation_test)
 

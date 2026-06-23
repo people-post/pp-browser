@@ -1,6 +1,6 @@
 #include "contacts/ContactsStore.h"
 
-#include "messaging/IdUtil.h"
+#include "common/Utilities.h"
 #include "messaging/MessagingJson.h"
 
 #include <algorithm>
@@ -160,7 +160,7 @@ Roe<std::vector<Contact>> ContactsStore::SearchLocal(const std::string& query) c
 
 Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
   Contact contact;
-  contact.id = GenerateUuid();
+  contact.id = util::GenerateUuid();
   contact.display_name = hit.display_name.empty() ? hit.nickname : hit.display_name;
   contact.server_nickname = hit.nickname;
   contact.ids = hit.ids;

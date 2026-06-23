@@ -1,11 +1,13 @@
 #pragma once
 
+#include <cstdint>
 #include "common/Error.h"
 #include "common/Module.h"
 #include "identity/IdentityTypes.h"
 
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace pbr {
 

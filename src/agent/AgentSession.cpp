@@ -13,7 +13,7 @@
 #include "agent/conversation/TurnCoordinator.h"
 #include "common/Logger.h"
 #include "mcp/McpClient.h"
-#include "messaging/IdUtil.h"
+#include "common/Utilities.h"
 #include "messaging/IThreadStore.h"
 #include "messaging/ThreadTypes.h"
 #include "platform/BrowserThread.h"
@@ -158,11 +158,11 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
   }
 
   ThreadMessage message;
-  message.id = GenerateUuid();
+  message.id = util::GenerateUuid();
   message.thread_id = state->pending_thread_id;
   message.sender_contact_id = kAiAssistantContactId;
   message.text = assistant_raw;
-  message.timestamp = NowUnixMs();
+  message.timestamp = util::NowUnixMs();
   message.delivery = MessageDelivery::Local;
   message.relay_visible = state->turn_mode != AgentTurnMode::ScopedAssist;
   (void)state->thread_store->AppendMessage(message);
@@ -372,7 +372,7 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
 
 void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
   state->turn_trace = TurnTrace{};
-  state->turn_trace.turn_id = GenerateUuid();
+  state->turn_trace.turn_id = util::GenerateUuid();
   state->turn_trace.entry_id = state->pending_entry_id;
   state->turn_trace.thread_id = state->pending_thread_id;
 
@@ -426,11 +426,11 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     }
 
     ThreadMessage user_message;
-    user_message.id = GenerateUuid();
+    user_message.id = util::GenerateUuid();
     user_message.thread_id = state->pending_thread_id;
     user_message.sender_contact_id = kLocalSelfContactId;
     user_message.text = state->pending_user_text;
-    user_message.timestamp = NowUnixMs();
+    user_message.timestamp = util::NowUnixMs();
     user_message.delivery = MessageDelivery::Local;
     if (auto appended = state->thread_store->AppendMessage(user_message)) {
       state->pending_entry_id = appended->id;
@@ -461,7 +461,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       return;
     }
 
-    state->pending_entry_id = GenerateUuid();
+    state->pending_entry_id = util::GenerateUuid();
 
     auto messages = state->thread_store->GetMessages(state->pending_thread_id);
     if (!messages) {

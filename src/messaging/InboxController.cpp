@@ -2,7 +2,7 @@
 
 #include "agent/StructuredTextParser.h"
 #include "demo/ChatFormHelper.h"
-#include "messaging/IdUtil.h"
+#include "common/Utilities.h"
 #include "messaging/MessagingJson.h"
 
 namespace pbr {
@@ -37,11 +37,11 @@ Roe<void> InboxController::EnsureAiHomeThread() {
   }
 
   Thread thread;
-  thread.id = GenerateUuid();
+  thread.id = util::GenerateUuid();
   thread.kind = ThreadKind::Ai;
   thread.title = "pp-browser";
   thread.preview = "Ask anything...";
-  thread.updated_at = NowUnixMs();
+  thread.updated_at = util::NowUnixMs();
   auto saved = store_.UpsertThread(thread);
   if (!saved) {
     return saved.error();
@@ -112,11 +112,11 @@ Roe<Thread> InboxController::CreateNewAiThread() {
   }
 
   Thread thread;
-  thread.id = GenerateUuid();
+  thread.id = util::GenerateUuid();
   thread.kind = ThreadKind::Ai;
   thread.title = "New chat";
   thread.preview = "";
-  thread.updated_at = NowUnixMs();
+  thread.updated_at = util::NowUnixMs();
 
   auto saved = store_.UpsertThread(thread);
   if (!saved) {
@@ -194,12 +194,12 @@ Roe<Thread> InboxController::CreateDirectThread(const std::string& contact_id) {
   }
 
   Thread thread;
-  thread.id = GenerateUuid();
+  thread.id = util::GenerateUuid();
   thread.kind = ThreadKind::Direct;
   thread.title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
   thread.participant_contact_ids = {contact_id};
   thread.preview = "";
-  thread.updated_at = NowUnixMs();
+  thread.updated_at = util::NowUnixMs();
 
   auto saved = store_.UpsertThread(thread);
   if (!saved) {
@@ -228,7 +228,7 @@ Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std
   }
   Thread updated = **thread;
   updated.preview = preview;
-  updated.updated_at = NowUnixMs();
+  updated.updated_at = util::NowUnixMs();
   if (store_.UpsertThread(updated)) {
     return {};
   }

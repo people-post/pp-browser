@@ -1,11 +1,11 @@
-#include "messaging/IdUtil.h"
+#include "common/Utilities.h"
 
 #include <chrono>
+#include <iomanip>
 #include <random>
 #include <sstream>
-#include <iomanip>
 
-namespace pbr {
+namespace pbr::util {
 
 std::string GenerateUuid() {
   static thread_local std::mt19937_64 rng{std::random_device{}()};
@@ -23,4 +23,4 @@ int64_t NowUnixMs() {
       .count();
 }
 
-} // namespace pbr
+} // namespace pbr::util

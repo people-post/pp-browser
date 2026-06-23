@@ -2,7 +2,7 @@
 
 #include "messaging/AtAiParser.h"
 #include "messaging/IThreadStore.h"
-#include "messaging/IdUtil.h"
+#include "common/Utilities.h"
 #include "messaging/MessagingHub.h"
 #include "messaging/ThreadTypes.h"
 

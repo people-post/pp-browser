@@ -1,7 +1,7 @@
 #include "contacts/ContactTypes.h"
 #include "messaging/P2pMessagingService.h"
 
-#include "messaging/IdUtil.h"
+#include "common/Utilities.h"
 #include "messaging/MessagingJson.h"
 #include "platform/BrowserThread.h"
 
@@ -101,11 +101,11 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   }
 
   ThreadMessage message;
-  message.id = GenerateUuid();
+  message.id = util::GenerateUuid();
   message.thread_id = thread_id;
   message.sender_contact_id = kLocalSelfContactId;
   message.text = text;
-  message.timestamp = NowUnixMs();
+  message.timestamp = util::NowUnixMs();
   message.delivery = MessageDelivery::Pending;
   message.relay_visible = true;
 
@@ -221,7 +221,7 @@ void P2pMessagingService::PollAndMerge() {
             Thread updated = **thread;
             updated.unread_count += 1;
             updated.preview = envelope.body.text;
-            updated.updated_at = NowUnixMs();
+            updated.updated_at = util::NowUnixMs();
             (void)store_.UpsertThread(updated);
           }
         } else {
