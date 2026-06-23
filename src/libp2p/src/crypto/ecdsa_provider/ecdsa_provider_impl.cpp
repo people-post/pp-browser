@@ -73,7 +73,11 @@ namespace libp2p::crypto::ecdsa {
 
   outcome::result<Signature> EcdsaProviderImpl::sign(
       BytesIn message, const PrivateKey &key) const {
-    OUTCOME_TRY(digest, sha256(message));
+    auto digest_res = sha256(message);
+    if (!digest_res) {
+      return digest_res.error();
+    }
+    auto digest = std::move(digest_res).value();
     return signPrehashed(digest, key);
   }
 
@@ -96,7 +100,11 @@ namespace libp2p::crypto::ecdsa {
   outcome::result<bool> EcdsaProviderImpl::verify(BytesIn message,
                                                   const Signature &signature,
                                                   const PublicKey &key) const {
-    OUTCOME_TRY(digest, sha256(message));
+    auto digest_res = sha256(message);
+    if (!digest_res) {
+      return digest_res.error();
+    }
+    auto digest = std::move(digest_res).value();
     return verifyPrehashed(digest, signature, key);
   }
 

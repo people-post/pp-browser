@@ -203,8 +203,16 @@ namespace libp2p::security::secio {
     std::copy(
         remote.rand.begin(), remote.rand.end(), std::back_inserter(corpus2));
 
-    OUTCOME_TRY(oh1, crypto::sha256(corpus1));
-    OUTCOME_TRY(oh2, crypto::sha256(corpus2));
+    auto oh1_res = crypto::sha256(corpus1);
+    if (!oh1_res) {
+      return oh1_res.error();
+    }
+    auto oh1 = std::move(oh1_res).value();
+    auto oh2_res = crypto::sha256(corpus2);
+    if (!oh2_res) {
+      return oh2_res.error();
+    }
+    auto oh2 = std::move(oh2_res).value();
 
     if (oh1 == oh2) {
       return Error::PEER_COMMUNICATING_ITSELF;

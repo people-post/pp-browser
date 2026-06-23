@@ -148,8 +148,16 @@ namespace libp2p::crypto::rsa {
 
   outcome::result<Signature> RsaProviderImpl::sign(
       BytesIn message, const PrivateKey &private_key) const {
-    OUTCOME_TRY(rsa, rsaFromPrivateKey(private_key));
-    OUTCOME_TRY(digest, sha256(message));
+    auto rsa_res = rsaFromPrivateKey(private_key);
+    if (!rsa_res) {
+      return rsa_res.error();
+    }
+    auto rsa = std::move(rsa_res).value();
+    auto digest_res = sha256(message);
+    if (!digest_res) {
+      return digest_res.error();
+    }
+    auto digest = std::move(digest_res).value();
     Signature signature(RSA_size(rsa.get()));
     unsigned int signature_size = 0;
     if (1
@@ -169,7 +177,11 @@ namespace libp2p::crypto::rsa {
       BytesIn message,
       const Signature &signature,
       const PublicKey &public_key) const {
-    OUTCOME_TRY(x509_key, RsaProviderImpl::getPublicKeyFromBytes(public_key));
+    auto x509_key_res = RsaProviderImpl::getPublicKeyFromBytes(public_key);
+    if (!x509_key_res) {
+      return x509_key_res.error();
+    }
+    auto x509_key = std::move(x509_key_res).value();
 
     EVP_PKEY *key = X509_PUBKEY_get(x509_key.get());
     if (!key) {
@@ -183,7 +195,11 @@ namespace libp2p::crypto::rsa {
       return CryptoProviderError::SIGNATURE_VERIFICATION_FAILED;
     }
 
-    OUTCOME_TRY(digest, sha256(message));
+    auto digest_res = sha256(message);
+    if (!digest_res) {
+      return digest_res.error();
+    }
+    auto digest = std::move(digest_res).value();
     int result = RSA_verify(NID_sha256,
                             digest.data(),
                             digest.size(),

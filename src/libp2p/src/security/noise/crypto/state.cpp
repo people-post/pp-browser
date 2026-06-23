@@ -111,8 +111,15 @@ namespace libp2p::security::noise {
       hash_.resize(hasher->digestSize());
       std::copy_n(handshake_name.begin(), handshake_name.size(), hash_.begin());
     } else {
-      OUTCOME_TRY(hasher->write(handshake_name));
-      OUTCOME_TRY(hash_res, hasher->digest());
+      auto hasher_write_res = hasher->write(handshake_name);
+      if (!hasher_write_res) {
+        return hasher_write_res.error();
+      }
+      auto hash_res_res = hasher->digest();
+      if (!hash_res_res) {
+        return hash_res_res.error();
+      }
+      auto hash_res = std::move(hash_res_res).value();
       hash_ = std::move(hash_res);
     }
     chaining_key_ = hash_;
@@ -129,7 +136,11 @@ namespace libp2p::security::noise {
     }
     auto hkdf_res = std::move(hkdf_res_res).value();
     chaining_key_ = std::move(hkdf_res.one);
-    OUTCOME_TRY(hash_key, bytesToKey32(hkdf_res.two));
+    auto hash_key_res = bytesToKey32(hkdf_res.two);
+    if (!hash_key_res) {
+      return hash_key_res.error();
+    }
+    auto hash_key = std::move(hash_key_res).value();
     key_ = hash_key;
     cipher_ = cipher_suite_->cipher(key_);
     return outcome::success();
@@ -137,9 +148,19 @@ namespace libp2p::security::noise {
 
   outcome::result<void> SymmetricState::mixHash(BytesIn data) {
     auto hasher = cipher_suite_->hash();
-    OUTCOME_TRY(hasher->write(hash_));
-    OUTCOME_TRY(hasher->write(data));
-    OUTCOME_TRY(hash_res, hasher->digest());
+    auto hasher_write_hash_res = hasher->write(hash_);
+    if (!hasher_write_hash_res) {
+      return hasher_write_hash_res.error();
+    }
+    auto hasher_write_data_res = hasher->write(data);
+    if (!hasher_write_data_res) {
+      return hasher_write_data_res.error();
+    }
+    auto hash_res_res = hasher->digest();
+    if (!hash_res_res) {
+      return hash_res_res.error();
+    }
+    auto hash_res = std::move(hash_res_res).value();
     hash_ = hash_res;
     return outcome::success();
   }

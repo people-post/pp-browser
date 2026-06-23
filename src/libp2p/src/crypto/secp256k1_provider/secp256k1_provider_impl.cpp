@@ -24,7 +24,11 @@ namespace libp2p::crypto::secp256k1 {
     do {
       random_->fillRandomly(private_key);
     } while (secp256k1_ec_seckey_verify(ctx_.get(), private_key.data()) == 0);
-    OUTCOME_TRY(public_key, derive(private_key));
+    auto public_key_res = derive(private_key);
+    if (!public_key_res) {
+      return public_key_res.error();
+    }
+    auto public_key = std::move(public_key_res).value();
     return KeyPair{private_key, public_key};
   }
 
@@ -49,7 +53,11 @@ namespace libp2p::crypto::secp256k1 {
 
   outcome::result<Signature> Secp256k1ProviderImpl::sign(
       BytesIn message, const PrivateKey &key) const {
-    OUTCOME_TRY(digest, sha256(message));
+    auto digest_res = sha256(message);
+    if (!digest_res) {
+      return digest_res.error();
+    }
+    auto digest = std::move(digest_res).value();
     secp256k1_ecdsa_signature ffi_sig;
     if (secp256k1_ecdsa_sign(ctx_.get(),
                              &ffi_sig,
@@ -76,7 +84,11 @@ namespace libp2p::crypto::secp256k1 {
 
   outcome::result<bool> Secp256k1ProviderImpl::verify(
       BytesIn message, const Signature &signature, const PublicKey &key) const {
-    OUTCOME_TRY(digest, sha256(message));
+    auto digest_res = sha256(message);
+    if (!digest_res) {
+      return digest_res.error();
+    }
+    auto digest = std::move(digest_res).value();
     secp256k1_pubkey ffi_pub;
     if (secp256k1_ec_pubkey_parse(ctx_.get(), &ffi_pub, key.data(), key.size())
         == 0) {

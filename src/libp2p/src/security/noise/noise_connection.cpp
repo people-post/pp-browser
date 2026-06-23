@@ -109,12 +109,20 @@ namespace libp2p::connection {
   }
 
   outcome::result<libp2p::peer::PeerId> NoiseConnection::localPeer() const {
-    OUTCOME_TRY(proto_local_key, key_marshaller_->marshal(local_));
+    auto proto_local_key_res = key_marshaller_->marshal(local_);
+    if (!proto_local_key_res) {
+      return proto_local_key_res.error();
+    }
+    auto proto_local_key = std::move(proto_local_key_res).value();
     return peer::PeerId::fromPublicKey(proto_local_key);
   }
 
   outcome::result<libp2p::peer::PeerId> NoiseConnection::remotePeer() const {
-    OUTCOME_TRY(proto_remote_key, key_marshaller_->marshal(remote_));
+    auto proto_remote_key_res = key_marshaller_->marshal(remote_);
+    if (!proto_remote_key_res) {
+      return proto_remote_key_res.error();
+    }
+    auto proto_remote_key = std::move(proto_remote_key_res).value();
     return peer::PeerId::fromPublicKey(proto_remote_key);
   }
 
