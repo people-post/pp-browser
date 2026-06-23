@@ -83,7 +83,10 @@ namespace libp2p::network {
     if (not address.hasProtocol(kDnsaddr)) {
       return Error::INVALID_DNSADDR;
     }
-    OUTCOME_TRY(hostname, address.getFirstValueForProtocol(kDnsaddr));
-    return "_dnsaddr." + hostname;
+    auto hostname_res = address.getFirstValueForProtocol(kDnsaddr);
+    if (not hostname_res) {
+      return std::move(hostname_res).as_failure();
+    }
+    return "_dnsaddr." + std::move(hostname_res).value();
   }
 }  // namespace libp2p::network

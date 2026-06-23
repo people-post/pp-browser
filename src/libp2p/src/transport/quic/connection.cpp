@@ -98,8 +98,11 @@ namespace libp2p::transport {
     if (not conn_ctx_) {
       return QuicError::CONN_CLOSED;
     }
-    OUTCOME_TRY(stream, conn_ctx_->engine->newStream(conn_ctx_));
-    return stream;
+    auto stream_res = conn_ctx_->engine->newStream(conn_ctx_);
+    if (not stream_res) {
+      return std::move(stream_res).as_failure();
+    }
+    return std::move(stream_res).value();
   }
 
   void QuicConnection::onStream(NewStreamHandlerFunc cb) {

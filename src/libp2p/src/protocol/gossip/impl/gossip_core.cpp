@@ -76,12 +76,20 @@ namespace libp2p::protocol::gossip {
 
   outcome::result<void> GossipCore::addBootstrapPeer(
       const std::string &address) {
-    OUTCOME_TRY(ma, libp2p::multi::Multiaddress::create(address));
+    auto ma_res = libp2p::multi::Multiaddress::create(address);
+    if (not ma_res) {
+      return std::move(ma_res).as_failure();
+    }
+    auto ma = std::move(ma_res).value();
     auto peer_id_str = ma.getPeerId();
     if (!peer_id_str) {
       return multi::Multiaddress::Error::INVALID_INPUT;
     }
-    OUTCOME_TRY(peer_id, peer::PeerId::fromBase58(*peer_id_str));
+    auto peer_id_res = peer::PeerId::fromBase58(*peer_id_str);
+    if (not peer_id_res) {
+      return std::move(peer_id_res).as_failure();
+    }
+    auto peer_id = std::move(peer_id_res).value();
     addBootstrapPeer(peer_id, {std::move(ma)});
     return outcome::success();
   }
@@ -191,7 +199,11 @@ namespace libp2p::protocol::gossip {
 
   outcome::result<void> GossipCore::signMessage(TopicMessage &msg) const {
     const auto &keypair = idmgr_->getKeyPair();
-    OUTCOME_TRY(signable, MessageBuilder::signableMessage(msg));
+    auto signable_res = MessageBuilder::signableMessage(msg);
+    if (not signable_res) {
+      return std::move(signable_res).as_failure();
+    }
+    auto signable = std::move(signable_res).value();
     auto signature_res = crypto_provider_->sign(signable, keypair.privateKey);
     if (!signature_res) {
       return signature_res.error();
@@ -199,7 +211,11 @@ namespace libp2p::protocol::gossip {
     auto signature = std::move(signature_res).value();
     msg.signature = std::move(signature);
     if (idmgr_->getId().toMultihash().getType() != multi::HashType::identity) {
-      OUTCOME_TRY(key, key_marshaller_->marshal(keypair.publicKey));
+      auto key_res = key_marshaller_->marshal(keypair.publicKey);
+      if (not key_res) {
+        return std::move(key_res).as_failure();
+      }
+      auto key = std::move(key_res).value();
       msg.key = std::move(key.key);
     }
     return outcome::success();

@@ -434,7 +434,11 @@ namespace libp2p::security::tls_details {
       X509 *peer_certificate,
       const crypto::marshaller::KeyMarshaller &key_marshaller) {
     // 1. Extract fields from cert extension
-    OUTCOME_TRY(bin_fields, extractExtensionFields(peer_certificate));
+    auto bin_fields_res = extractExtensionFields(peer_certificate);
+    if (!bin_fields_res) {
+      return std::move(bin_fields_res).as_failure();
+    }
+    auto bin_fields = std::move(bin_fields_res).value();
 
     // 2. Try to extract peer id and pubkey from protobuf format
     crypto::ProtobufKey pub_key_bytes(std::move(bin_fields.pkey));
@@ -457,10 +461,13 @@ namespace libp2p::security::tls_details {
     }
 
     // 3. Verify
-    OUTCOME_TRY((verifyExtensionSignature(peer_certificate,
-                                          peer_pubkey_res.value(),
-                                          bin_fields.signature,
-                                          peer_id_res.value())));
+    auto verify_ext_res = verifyExtensionSignature(peer_certificate,
+                                                   peer_pubkey_res.value(),
+                                                   bin_fields.signature,
+                                                   peer_id_res.value());
+    if (!verify_ext_res) {
+      return std::move(verify_ext_res).as_failure();
+    }
 
     return PubkeyAndPeerId{std::move(peer_pubkey_res.value()),
                            std::move(peer_id_res.value())};

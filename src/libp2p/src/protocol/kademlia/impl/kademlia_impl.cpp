@@ -133,7 +133,10 @@ namespace libp2p::protocol::kademlia {
   outcome::result<void> KademliaImpl::putValue(Key key, Value value) {
     log_.debug("CALL: PutValue ({})", multi::detail::encodeBase58(key));
 
-    OUTCOME_TRY((storage_->putValue(key, value)));
+    auto put_res = storage_->putValue(key, value);
+    if (not put_res) {
+      return std::move(put_res).as_failure();
+    }
 
     // `FindPeerExecutor` holds itself using `shared_from_this`
     return createFindPeerExecutor(

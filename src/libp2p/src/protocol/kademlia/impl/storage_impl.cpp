@@ -37,7 +37,10 @@ namespace libp2p::protocol::kademlia {
   StorageImpl::~StorageImpl() = default;
 
   outcome::result<void> StorageImpl::putValue(Key key, Value value) {
-    OUTCOME_TRY((backend_->putValue(key, value)));
+    auto put_res = backend_->putValue(key, value);
+    if (not put_res) {
+      return std::move(put_res).as_failure();
+    }
 
     auto now = scheduler_->now();
     auto expire_time = now + config_.storageRecordTTL;
@@ -62,7 +65,11 @@ namespace libp2p::protocol::kademlia {
     if (it == idx.end()) {
       return Error::VALUE_NOT_FOUND;
     }
-    OUTCOME_TRY(value, backend_->getValue(key));
+    auto value_res = backend_->getValue(key);
+    if (not value_res) {
+      return std::move(value_res).as_failure();
+    }
+    auto value = std::move(value_res).value();
     return {value, it->expire_time};
   }
 
