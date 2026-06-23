@@ -58,8 +58,8 @@ FMT_FUNC void format_error_code(detail::buffer<char>& out, int error_code,
   error_code_size += detail::to_unsigned(detail::count_digits(abs_value));
   auto it = buffer_appender<char>(out);
   if (message.size() <= inline_buffer_size - error_code_size)
-    format_to(it, FMT_STRING("{}{}"), message, SEP);
-  format_to(it, FMT_STRING("{}{}"), ERROR_STR, error_code);
+    format_to(it, "{}{}", message, SEP);
+  format_to(it, "{}{}", ERROR_STR, error_code);
   FMT_ASSERT(out.size() <= inline_buffer_size, "");
 }
 
@@ -77,7 +77,7 @@ inline void fwrite_fully(const void* ptr, size_t size, size_t count,
                          FILE* stream) {
   size_t written = std::fwrite(ptr, size, count, stream);
   if (written < count)
-    FMT_THROW(system_error(errno, FMT_STRING("cannot write to file")));
+    FMT_THROW(system_error(errno, "cannot write to file"));
 }
 
 #ifndef FMT_STATIC_THOUSANDS_SEPARATOR
@@ -1373,14 +1373,14 @@ template <> struct formatter<detail::bigint> {
     for (auto i = n.bigits_.size(); i > 0; --i) {
       auto value = n.bigits_[i - 1u];
       if (first) {
-        out = format_to(out, FMT_STRING("{:x}"), value);
+        out = format_to(out, "{:x}", value);
         first = false;
         continue;
       }
-      out = format_to(out, FMT_STRING("{:08x}"), value);
+      out = format_to(out, "{:08x}", value);
     }
     if (n.exp_ > 0)
-      out = format_to(out, FMT_STRING("p{}"),
+      out = format_to(out, "p{}",
                       n.exp_ * detail::bigint::bigit_bits);
     return out;
   }
