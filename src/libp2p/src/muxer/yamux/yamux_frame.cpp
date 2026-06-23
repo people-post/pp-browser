@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <arpa/inet.h>
+#endif
 #include <cstring>
 #include <libp2p/common/byteutil.hpp>
 #include <libp2p/muxer/yamux/yamux_frame.hpp>
