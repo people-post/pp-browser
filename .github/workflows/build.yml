@@ -8,6 +8,8 @@ on:
 
 jobs:
   build:
+    env:
+      CCACHE_DIR: ~/.cache/ccache
     strategy:
       fail-fast: false
       matrix:
@@ -34,11 +36,15 @@ jobs:
             brew install ccache
           fi
 
+      - name: Ensure ccache directory exists
+        if: runner.os != 'Windows'
+        run: mkdir -p "$CCACHE_DIR"
+
       - name: Restore ccache
         if: runner.os != 'Windows'
         uses: actions/cache@v4
         with:
-          path: ~/.ccache
+          path: ${{ env.CCACHE_DIR }}
           key: ${{ runner.os }}-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
           restore-keys: |
             ${{ runner.os }}-ccache-v1-
