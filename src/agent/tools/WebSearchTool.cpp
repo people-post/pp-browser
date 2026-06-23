@@ -1,6 +1,6 @@
 #include "agent/tools/WebSearchTool.h"
 
-#include "log/Logger.h"
+#include "common/Logger.h"
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>

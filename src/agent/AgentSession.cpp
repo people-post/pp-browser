@@ -11,7 +11,7 @@
 #include "agent/conversation/Conversation.h"
 #include "agent/conversation/ThreadContextPolicy.h"
 #include "agent/conversation/TurnCoordinator.h"
-#include "log/Logger.h"
+#include "common/Logger.h"
 #include "mcp/McpClient.h"
 #include "messaging/IdUtil.h"
 #include "messaging/IThreadStore.h"

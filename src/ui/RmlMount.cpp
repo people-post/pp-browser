@@ -1,7 +1,7 @@
 #include "ui/RmlMount.h"
 
 #include "agent/RmlValidator.h"
-#include "log/Logger.h"
+#include "common/Logger.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>

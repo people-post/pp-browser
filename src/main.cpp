@@ -2,7 +2,7 @@
 #include "app/Bootstrap.h"
 #include "app/SessionStore.h"
 #include "libp2p/integration/Libp2pHost.h"
-#include "log/Logger.h"
+#include "common/Logger.h"
 #include "platform/Platform.h"
 
 #include <SDL3/SDL_main.h>

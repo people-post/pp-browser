@@ -1,6 +1,6 @@
 #include "platform/PlatformLogSink.h"
 
-#include "log/Logger.h"
+#include "common/Logger.h"
 
 #include <iostream>
 

@@ -1,6 +1,6 @@
 #include "agent/ToolRegistry.h"
 
-#include "log/Logger.h"
+#include "common/Logger.h"
 
 #include <sstream>
 

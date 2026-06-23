@@ -19,11 +19,9 @@ target_include_directories(pp_browser_rml_validator_test PRIVATE ${CMAKE_SOURCE_
 pp_browser_add_test(rml_validator_test pp_browser_rml_validator_test)
 
 add_executable(pp_browser_mcp_mock_test mcp_mock_test.cpp)
-target_link_libraries(pp_browser_mcp_mock_test PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
+target_link_libraries(pp_browser_mcp_mock_test PRIVATE pp_common nlohmann_json::nlohmann_json CURL::libcurl)
 target_include_directories(pp_browser_mcp_mock_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_sources(pp_browser_mcp_mock_test PRIVATE
-  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
-  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp
   ${CMAKE_SOURCE_DIR}/src/mcp/McpClient.cpp
   ${CMAKE_SOURCE_DIR}/src/mcp/SchemaAdapter.cpp
   ${CMAKE_SOURCE_DIR}/src/net/HttpClient.cpp
@@ -66,18 +64,14 @@ pp_browser_link_rmlui_core(pp_browser_shell_host_test)
 pp_browser_add_test(shell_host_test pp_browser_shell_host_test)
 
 add_executable(pp_browser_llm_client_test llm_client_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/LlmClient.cpp
-  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
-  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
-target_link_libraries(pp_browser_llm_client_test PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
+  ${CMAKE_SOURCE_DIR}/src/agent/LlmClient.cpp)
+target_link_libraries(pp_browser_llm_client_test PRIVATE pp_common nlohmann_json::nlohmann_json CURL::libcurl)
 target_include_directories(pp_browser_llm_client_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(llm_client_test pp_browser_llm_client_test)
 
 add_executable(pp_browser_web_search_test web_search_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/tools/WebSearchTool.cpp
-  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
-  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
-target_link_libraries(pp_browser_web_search_test PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
+  ${CMAKE_SOURCE_DIR}/src/agent/tools/WebSearchTool.cpp)
+target_link_libraries(pp_browser_web_search_test PRIVATE pp_common nlohmann_json::nlohmann_json CURL::libcurl)
 target_include_directories(pp_browser_web_search_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(web_search_test pp_browser_web_search_test)
 
@@ -105,15 +99,13 @@ add_executable(pp_browser_turn_executor_test turn_executor_test.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/ToolRegistry.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/ToolResultFormatter.cpp
-  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
-  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/PromptBuilder.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/StructuredTextParser.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/WorkingSetPolicy.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/TurnPlan.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/MessagingJson.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp)
-target_link_libraries(pp_browser_turn_executor_test PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_turn_executor_test PRIVATE pp_common nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_turn_executor_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(turn_executor_test pp_browser_turn_executor_test)
 
@@ -136,10 +128,8 @@ add_executable(pp_browser_sliding_window_context_policy_test sliding_window_cont
   ${CMAKE_SOURCE_DIR}/src/agent/conversation/SlidingWindowContextPolicy.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/conversation/TurnCoordinator.cpp
   ${CMAKE_SOURCE_DIR}/src/agent/conversation/UserMessageFormatter.cpp
-  ${CMAKE_SOURCE_DIR}/src/agent/LlmClient.cpp
-  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
-  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
-target_link_libraries(pp_browser_sliding_window_context_policy_test PRIVATE nlohmann_json::nlohmann_json CURL::libcurl)
+  ${CMAKE_SOURCE_DIR}/src/agent/LlmClient.cpp)
+target_link_libraries(pp_browser_sliding_window_context_policy_test PRIVATE pp_common nlohmann_json::nlohmann_json CURL::libcurl)
 target_include_directories(pp_browser_sliding_window_context_policy_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(sliding_window_context_policy_test pp_browser_sliding_window_context_policy_test)
 
@@ -179,10 +169,8 @@ add_executable(pp_browser_messaging_foundation_test messaging_foundation_test.cp
   ${CMAKE_SOURCE_DIR}/src/messaging/PeopleDiscoveryBlocks.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/JsonThreadStore.cpp
   ${CMAKE_SOURCE_DIR}/src/messaging/IdUtil.cpp
-  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
-  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp
   ${CMAKE_SOURCE_DIR}/src/identity/Ed25519Signer.cpp)
-target_link_libraries(pp_browser_messaging_foundation_test PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_messaging_foundation_test PRIVATE pp_common nlohmann_json::nlohmann_json)
 if(TARGET OpenSSL::Crypto)
   target_link_libraries(pp_browser_messaging_foundation_test PRIVATE OpenSSL::Crypto)
 endif()
@@ -199,8 +187,6 @@ set(PP_BROWSER_CONFIG_TEST_SOURCES
   ${CMAKE_SOURCE_DIR}/src/app/ProfileRegistry.cpp
   ${CMAKE_SOURCE_DIR}/src/app/SchemaVersion.cpp
   ${CMAKE_SOURCE_DIR}/src/app/UserPreferences.cpp
-  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
-  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp
   ${CMAKE_SOURCE_DIR}/src/platform/Platform.cpp
   ${CMAKE_SOURCE_DIR}/src/platform/IPathProvider.cpp
   ${CMAKE_SOURCE_DIR}/src/platform/DesktopPathProvider.cpp
@@ -219,21 +205,19 @@ pp_browser_add_test(desktop_path_provider_test pp_browser_desktop_path_provider_
 
 add_executable(pp_browser_config_merge_test config_merge_test.cpp ${PP_BROWSER_CONFIG_TEST_SOURCES})
 target_compile_definitions(pp_browser_config_merge_test PRIVATE PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
-target_link_libraries(pp_browser_config_merge_test PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_config_merge_test PRIVATE pp_common nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_config_merge_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(config_merge_test pp_browser_config_merge_test)
 
 add_executable(pp_browser_session_store_test session_store_test.cpp ${PP_BROWSER_CONFIG_TEST_SOURCES})
-target_link_libraries(pp_browser_session_store_test PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_session_store_test PRIVATE pp_common nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_session_store_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(session_store_test pp_browser_session_store_test)
 
 add_executable(pp_browser_profile_registry_test profile_registry_test.cpp
   ${CMAKE_SOURCE_DIR}/src/app/ProfileRegistry.cpp
-  ${CMAKE_SOURCE_DIR}/src/app/SchemaVersion.cpp
-  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
-  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
-target_link_libraries(pp_browser_profile_registry_test PRIVATE nlohmann_json::nlohmann_json)
+  ${CMAKE_SOURCE_DIR}/src/app/SchemaVersion.cpp)
+target_link_libraries(pp_browser_profile_registry_test PRIVATE pp_common nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_profile_registry_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(profile_registry_test pp_browser_profile_registry_test)
 
@@ -247,9 +231,7 @@ add_executable(pp_browser_platform_defaults_test platform_defaults_test.cpp
   ${CMAKE_SOURCE_DIR}/src/platform/Platform.cpp
   ${CMAKE_SOURCE_DIR}/src/platform/PlatformDefaults.cpp
   ${CMAKE_SOURCE_DIR}/src/platform/ICredentialStore.cpp
-  ${CMAKE_SOURCE_DIR}/src/platform/EnvCredentialStore.cpp
-  ${CMAKE_SOURCE_DIR}/src/common/Module.cpp
-  ${CMAKE_SOURCE_DIR}/src/log/Logger.cpp)
-target_link_libraries(pp_browser_platform_defaults_test PRIVATE nlohmann_json::nlohmann_json)
+  ${CMAKE_SOURCE_DIR}/src/platform/EnvCredentialStore.cpp)
+target_link_libraries(pp_browser_platform_defaults_test PRIVATE pp_common nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_platform_defaults_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(platform_defaults_test pp_browser_platform_defaults_test)

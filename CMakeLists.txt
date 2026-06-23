@@ -76,6 +76,8 @@ if(ANDROID)
   target_link_libraries(pp_rmlui_backend PUBLIC log GLESv3 EGL)
 endif()
 
+add_subdirectory(src/common)
+
 set(PP_BROWSER_APP_SOURCES
   src/main.cpp
   src/app/Application.cpp
@@ -112,8 +114,6 @@ set(PP_BROWSER_APP_SOURCES
   src/platform/ICredentialStore.cpp
   src/platform/EnvCredentialStore.cpp
   src/libp2p/integration/Libp2pHost.cpp
-  src/common/Module.cpp
-  src/log/Logger.cpp
   src/platform/SequencedTaskRunner.cpp
   src/platform/BrowserThread.cpp
   src/messaging/IdUtil.cpp
@@ -215,6 +215,7 @@ target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
 
 target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
   pp_rmlui_backend
+  pp_common
   RmlUi::Core
   p2p
   nlohmann_json::nlohmann_json
