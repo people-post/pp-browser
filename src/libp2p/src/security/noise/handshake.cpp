@@ -25,21 +25,6 @@
     IF_ERROR_CB_RETURN(result);                            \
   })
 
-#ifndef UNIQUE_NAME
-#define UNIQUE_NAME(base) base##__LINE__
-#endif  // UNIQUE_NAME
-
-#define IO_OUTCOME_TRY_NAME(var, val, res, cb) \
-  auto && (var) = (res);                       \
-  if ((var).has_error()) {                     \
-    cb((var).error());                         \
-    return;                                    \
-  }                                            \
-  auto && (val) = (var).value();
-
-#define IO_OUTCOME_TRY(name, res, cb) \
-  IO_OUTCOME_TRY_NAME(UNIQUE_NAME(name), name, res, cb)
-
 namespace libp2p::security::noise {
 
   namespace {
@@ -121,7 +106,11 @@ namespace libp2p::security::noise {
 
   void Handshake::sendHandshakeMessage(BytesIn payload, CbOutcomeVoid cb) {
     auto write_result_res = handshake_state_->writeMessage({}, payload);
-    IO_OUTCOME_TRY(write_result, write_result_res, cb);
+    if (write_result_res.has_error()) {
+      cb(write_result_res.error());
+      return;
+    }
+    auto write_result = std::move(write_result_res).value();
     auto write_cb = [self{shared_from_this()},
                      cb{std::move(cb)},
                      wr{write_result}](outcome::result<void> result) {
@@ -137,9 +126,17 @@ namespace libp2p::security::noise {
   void Handshake::readHandshakeMessage(
       basic::MessageReadWriter::ReadCallbackFunc cb) {
     auto read_cb = [self{shared_from_this()}, cb{std::move(cb)}](auto result) {
-      IO_OUTCOME_TRY(buffer, result, cb);
+      if (result.has_error()) {
+        cb(result.error());
+        return;
+      }
+      auto buffer = std::move(result).value();
       auto rr_res = self->handshake_state_->readMessage({}, *buffer);
-      IO_OUTCOME_TRY(rr, rr_res, cb);
+      if (rr_res.has_error()) {
+        cb(rr_res.error());
+        return;
+      }
+      auto rr = std::move(rr_res).value();
       if (rr.cs1 and rr.cs2) {
         self->setCipherStates(rr.cs1, rr.cs2);
       }
@@ -238,7 +235,11 @@ namespace libp2p::security::noise {
             //
             SL_TRACE(self->log_, "outgoing connection. stage 1");
             self->readHandshakeMessage([self, payload](auto result) {
-              IO_OUTCOME_TRY(bytes_read, result, self->hscb);
+              if (result.has_error()) {
+                self->hscb(result.error());
+                return;
+              }
+              auto bytes_read = std::move(result).value();
               auto handle_result =
                   self->handleRemoteHandshakePayload(*bytes_read);
               if (handle_result.has_error()) {
@@ -263,7 +264,11 @@ namespace libp2p::security::noise {
       SL_TRACE(log_, "incoming connection. stage 0");
       readHandshakeMessage(
           [self{shared_from_this()}, payload{std::move(payload)}](auto result) {
-            IO_OUTCOME_TRY(plaintext, result, self->hscb);
+            if (result.has_error()) {
+              self->hscb(result.error());
+              return;
+            }
+            auto plaintext = std::move(result).value();
             unused(plaintext);
             /*
              * Seems that plaintext has to be ignored here. Probably we have to
@@ -282,7 +287,11 @@ namespace libp2p::security::noise {
                   //
                   SL_TRACE(self->log_, "incoming connection. stage 2");
                   self->readHandshakeMessage([self](auto result) {
-                    IO_OUTCOME_TRY(plaintext, result, self->hscb);
+                    if (result.has_error()) {
+                      self->hscb(result.error());
+                      return;
+                    }
+                    auto plaintext = std::move(result).value();
                     // may be need to check that plaintext is non empty
                     auto handle_result =
                         self->handleRemoteHandshakePayload(*plaintext);

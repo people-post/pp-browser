@@ -18,28 +18,6 @@
 #pragma GCC diagnostic ignored "-Wparentheses"
 #endif
 
-#ifndef UNIQUE_NAME
-#define UNIQUE_NAME(base) base##__LINE__
-#endif  // UNIQUE_NAME
-
-#define PLAINTEXT_OUTCOME_TRY_VOID_I(var, res, conn, cb) \
-  auto && (var) = (res);                                 \
-  if ((var).has_error()) {                               \
-    closeConnection((conn), (var).error());              \
-    cb((var).error());                                   \
-    return;                                              \
-  }
-
-#define PLAINTEXT_OUTCOME_TRY_NAME_I(var, val, res, conn, cb) \
-  PLAINTEXT_OUTCOME_TRY_VOID_I(var, res, conn, cb)            \
-  auto && (val) = (var).value();
-
-#define PLAINTEXT_OUTCOME_TRY(name, res, conn, cb) \
-  PLAINTEXT_OUTCOME_TRY_NAME_I(UNIQUE_NAME(name), name, res, conn, cb)
-
-#define PLAINTEXT_OUTCOME_VOID_TRY(res, conn, cb) \
-  PLAINTEXT_OUTCOME_TRY_VOID_I(UNIQUE_NAME(void_var), res, conn, cb)
-
 OUTCOME_CPP_DEFINE_CATEGORY(libp2p::security, Plaintext::Error, e) {
   using E = libp2p::security::Plaintext::Error;
   switch (e) {
@@ -101,9 +79,13 @@ namespace libp2p::security {
         .pubkey = idmgr_->getKeyPair().publicKey, .peer_id = idmgr_->getId()};
 
     // TODO(107): Reentrancy
-
-    PLAINTEXT_OUTCOME_TRY(
-        proto_exchange_msg, marshaller_->handyToProto(exchange_msg), conn, cb)
+    auto proto_exchange_msg_res = marshaller_->handyToProto(exchange_msg);
+    if (proto_exchange_msg_res.has_error()) {
+      closeConnection(conn, proto_exchange_msg_res.error());
+      cb(proto_exchange_msg_res.error());
+      return;
+    }
+    auto proto_exchange_msg = std::move(proto_exchange_msg_res).value();
 
     rw->write<plaintext::protobuf::Exchange>(
         proto_exchange_msg,
@@ -149,9 +131,18 @@ namespace libp2p::security {
      * The method does redundant unmarshalling of message bytes to proto
      * exchange message. This could be a subject of further improvement.
      */
-    PLAINTEXT_OUTCOME_VOID_TRY(read_call_res, conn, cb);
-    PLAINTEXT_OUTCOME_TRY(
-        in_exchange_msg, marshaller_->unmarshal(*read_bytes), conn, cb);
+    if (read_call_res.has_error()) {
+      closeConnection(conn, read_call_res.error());
+      cb(read_call_res.error());
+      return;
+    }
+    auto in_exchange_msg_res = marshaller_->unmarshal(*read_bytes);
+    if (in_exchange_msg_res.has_error()) {
+      closeConnection(conn, in_exchange_msg_res.error());
+      cb(in_exchange_msg_res.error());
+      return;
+    }
+    auto in_exchange_msg = std::move(in_exchange_msg_res).value();
     auto &msg = in_exchange_msg.first;
     auto received_pid = msg.peer_id;
     auto pkey = msg.pubkey;
