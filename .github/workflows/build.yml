@@ -8,8 +8,6 @@ on:
 
 jobs:
   build:
-    env:
-      CCACHE_DIR: ~/.cache/ccache
     strategy:
       fail-fast: false
       matrix:
@@ -38,7 +36,9 @@ jobs:
 
       - name: Ensure ccache directory exists
         if: runner.os != 'Windows'
-        run: mkdir -p "$CCACHE_DIR"
+        run: |
+          mkdir -p "$HOME/.cache/ccache"
+          echo "CCACHE_DIR=$HOME/.cache/ccache" >> "$GITHUB_ENV"
 
       - name: Restore ccache
         if: runner.os != 'Windows'
