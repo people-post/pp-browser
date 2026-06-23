@@ -51,8 +51,8 @@ namespace libp2p::basic {
   void MessageReadWriterBigEndian::write(BytesIn buffer, CbOutcomeVoid cb) {
     if (buffer.empty()) {
       // TODO(107): Reentrancy
-      return cb(outcome::result<void>{outcome::failure(
-          std::make_error_code(MessageReadWriterError::BUFFER_IS_EMPTY))});
+      cb(std::make_error_code(std::errc::invalid_argument));
+      return;
     }
 
     std::vector<uint8_t> raw_buf;
