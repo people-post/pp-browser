@@ -49,7 +49,9 @@ namespace libp2p::basic {
          BytesOut{*varint_buf}.subspan(current_length, 1),
          [c = conn, cb = std::move(cb), current_length, varint_buf](
              outcome::result<void> result) mutable {
-           IF_ERROR_CB_RETURN(result);
+           if (!result.has_value()) {
+             return cb(result.error());
+           }
 
            auto varint_opt = multi::UVarint::create(
                BytesIn{*varint_buf}.first(current_length + 1));

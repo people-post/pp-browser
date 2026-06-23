@@ -9,7 +9,6 @@
 #include <boost/assert.hpp>
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
-#include <libp2p/common/outcome_macro.hpp>
 #include <libp2p/crypto/random_generator/boost_generator.hpp>
 
 namespace libp2p::protocol {
@@ -42,7 +41,9 @@ namespace libp2p::protocol {
                   write_buf_,
                   [self = shared_from_this(),
                    cb{std::move(cb)}](outcome::result<void> result) mutable {
-                    IF_ERROR_CB_RETURN(result);
+                    if (result.has_error()) {
+                      return cb(result.error());
+                    }
                     self->read(cb);
                   });
   }

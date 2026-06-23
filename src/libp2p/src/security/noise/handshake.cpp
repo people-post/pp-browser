@@ -9,7 +9,6 @@
 #include <libp2p/security/noise/handshake.hpp>
 
 #include <libp2p/common/byteutil.hpp>
-#include <libp2p/common/outcome_macro.hpp>
 #include <libp2p/peer/peer_id.hpp>
 #include <libp2p/security/noise/crypto/cipher_suite.hpp>
 #include <libp2p/security/noise/crypto/noise_ccp1305.hpp>
@@ -18,12 +17,6 @@
 #include <libp2p/security/noise/crypto/state.hpp>
 #include <libp2p/security/noise/handshake_message.hpp>
 #include <libp2p/security/noise/noise_connection.hpp>
-
-#define IF_ERROR_HSCB_RETURN(result)                       \
-  ({                                                       \
-    auto cb = [&](std::error_code ec) { self->hscb(ec); }; \
-    IF_ERROR_CB_RETURN(result);                            \
-  })
 
 namespace libp2p::security::noise {
 
@@ -114,7 +107,9 @@ namespace libp2p::security::noise {
     auto write_cb = [self{shared_from_this()},
                      cb{std::move(cb)},
                      wr{write_result}](outcome::result<void> result) {
-      IF_ERROR_CB_RETURN(result);
+      if (result.has_error()) {
+        return cb(result.error());
+      }
       if (wr.cs1 and wr.cs2) {
         self->setCipherStates(wr.cs1, wr.cs2);
       }
@@ -229,7 +224,10 @@ namespace libp2p::security::noise {
           {},
           [self{shared_from_this()},
            payload{std::move(payload)}](outcome::result<void> result) {
-            IF_ERROR_HSCB_RETURN(result);
+            if (result.has_error()) {
+              self->hscb(result.error());
+              return;
+            }
             //
             // Outgoing connection. Stage 1
             //
@@ -252,7 +250,10 @@ namespace libp2p::security::noise {
               self->sendHandshakeMessage(payload,
                                          [self, to_write(payload.size())](
                                              outcome::result<void> result) {
-                                           IF_ERROR_HSCB_RETURN(result);
+                                           if (result.has_error()) {
+                                             self->hscb(result.error());
+                                             return;
+                                           }
                                            self->hscb(true);
                                          });
             });
@@ -281,7 +282,10 @@ namespace libp2p::security::noise {
             self->sendHandshakeMessage(
                 payload,
                 [self, to_write(payload.size())](outcome::result<void> result) {
-                  IF_ERROR_HSCB_RETURN(result);
+                  if (result.has_error()) {
+                    self->hscb(result.error());
+                    return;
+                  }
                   //
                   // Incoming connection. Stage 2
                   //

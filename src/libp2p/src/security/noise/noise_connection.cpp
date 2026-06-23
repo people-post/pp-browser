@@ -6,7 +6,6 @@
 
 #include <libp2p/security/noise/noise_connection.hpp>
 
-#include <libp2p/common/outcome_macro.hpp>
 #include <libp2p/crypto/x25519_provider/x25519_provider_impl.hpp>
 #include <libp2p/security/noise/crypto/interfaces.hpp>
 
@@ -57,9 +56,16 @@ namespace libp2p::connection {
     framer_->read(
         [self{shared_from_this()}, out, cb{std::move(cb)}](
             outcome::result<std::shared_ptr<Bytes>> data_result) mutable {
-          auto data = IF_ERROR_CB_RETURN(data_result);
-          auto decrypted =
-              IF_ERROR_CB_RETURN(self->decoder_cs_->decrypt({}, *data, {}));
+          if (data_result.has_error()) {
+            return cb(data_result.error());
+          }
+          auto data = std::move(data_result).value();
+
+          auto decrypted_result = self->decoder_cs_->decrypt({}, *data, {});
+          if (decrypted_result.has_error()) {
+            return cb(decrypted_result.error());
+          }
+          auto decrypted = std::move(decrypted_result).value();
           self->frame_buffer_->assign(decrypted.begin(), decrypted.end());
           self->readSome(out, std::move(cb));
         });
@@ -74,12 +80,18 @@ namespace libp2p::connection {
     if (in.size() > security::noise::kMaxPlainText) {
       in = in.first(security::noise::kMaxPlainText);
     }
-    auto encrypted = IF_ERROR_CB_RETURN(encoder_cs_->encrypt({}, in, {}));
+    auto encrypted_result = encoder_cs_->encrypt({}, in, {});
+    if (encrypted_result.has_error()) {
+      return cb(encrypted_result.error());
+    }
+    auto encrypted = std::move(encrypted_result).value();
     // `InsecureReadWriter::write` doesn't leak `BytesIn` reference
     framer_->write(
         encrypted,
         [in, cb{std::move(cb)}](outcome::result<void> result) mutable {
-          IF_ERROR_CB_RETURN(result);
+          if (result.has_error()) {
+            return cb(result.error());
+          }
           cb(in.size());
         });
   }

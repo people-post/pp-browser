@@ -14,7 +14,6 @@
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/common/byteutil.hpp>
-#include <libp2p/common/outcome_macro.hpp>
 
 namespace libp2p::basic {
   MessageReadWriterBigEndian::MessageReadWriterBigEndian(
@@ -30,7 +29,9 @@ namespace libp2p::basic {
                  *buffer,
                  [self{shared_from_this()}, buffer, cb{std::move(cb)}](
                      outcome::result<void> result) {
-                   IF_ERROR_CB_RETURN(result);
+                   if (result.has_error()) {
+                     return cb(result.error());
+                   }
                    uint32_t msg_len = ntohl(  // NOLINT
                        common::convert<uint32_t>(buffer->data()));
                    buffer->resize(msg_len);
@@ -39,7 +40,9 @@ namespace libp2p::basic {
                        self->conn_,
                        *buffer,
                        [self, buffer, cb](outcome::result<void> result) {
-                         IF_ERROR_CB_RETURN(result);
+                         if (result.has_error()) {
+                           return cb(result.error());
+                         }
                          cb(buffer);
                        });
                  });
@@ -48,7 +51,8 @@ namespace libp2p::basic {
   void MessageReadWriterBigEndian::write(BytesIn buffer, CbOutcomeVoid cb) {
     if (buffer.empty()) {
       // TODO(107): Reentrancy
-      return cb(MessageReadWriterError::BUFFER_IS_EMPTY);
+      return cb(outcome::result<void>{outcome::failure(
+          std::make_error_code(MessageReadWriterError::BUFFER_IS_EMPTY))});
     }
 
     std::vector<uint8_t> raw_buf;
@@ -59,7 +63,9 @@ namespace libp2p::basic {
                   raw_buf,
                   [self{shared_from_this()},
                    cb{std::move(cb)}](outcome::result<void> result) {
-                    IF_ERROR_CB_RETURN(result);
+                    if (result.has_error()) {
+                      return cb(result.error());
+                    }
                     cb(outcome::success());
                   });
   }

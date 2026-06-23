@@ -11,7 +11,6 @@
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/common/byteutil.hpp>
-#include <libp2p/common/outcome_macro.hpp>
 #include <libp2p/security/noise/crypto/state.hpp>
 
 namespace libp2p::security::noise {
@@ -24,11 +23,15 @@ namespace libp2p::security::noise {
     buffer_->reserve(kMaxMsgLen);  // ensure buffer capacity
     auto read_cb = [cb{std::move(cb)}, self{shared_from_this()}](
                        outcome::result<void> result) mutable {
-      IF_ERROR_CB_RETURN(result);
+      if (result.has_error()) {
+        return cb(result.error());
+      }
       uint16_t frame_len{
           ntohs(common::convert<uint16_t>(self->buffer_->data()))};  // NOLINT
       auto read_cb = [cb = std::move(cb), self](outcome::result<void> result) {
-        IF_ERROR_CB_RETURN(result);
+        if (result.has_error()) {
+          return cb(result.error());
+        }
         cb(self->buffer_);
       };
       self->buffer_->resize(frame_len);
@@ -49,7 +52,9 @@ namespace libp2p::security::noise {
     auto write_cb = [self{shared_from_this()}, buffer, cb{std::move(cb)}](
                         outcome::result<void> result) {
       std::ignore = buffer;
-      IF_ERROR_CB_RETURN(result);
+      if (result.has_error()) {
+        return cb(result.error());
+      }
       cb(outcome::success());
     };
     libp2p::write(connection_, outbuf_, std::move(write_cb));

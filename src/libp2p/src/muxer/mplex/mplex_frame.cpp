@@ -8,7 +8,6 @@
 
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/varint_reader.hpp>
-#include <libp2p/common/outcome_macro.hpp>
 #include <libp2p/multi/uvarint.hpp>
 #include <libp2p/muxer/mplex/mplexed_connection.hpp>
 
@@ -106,7 +105,9 @@ namespace libp2p::connection {
                              *data,
                              [id_flag, data, cb{std::move(cb)}](
                                  outcome::result<void> result) mutable {
-                               IF_ERROR_CB_RETURN(result);
+                               if (result.has_error()) {
+                                 return cb(result.error());
+                               }
                                cb(createFrame(id_flag, std::move(*data)));
                              });
               });

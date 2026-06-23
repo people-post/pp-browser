@@ -12,7 +12,6 @@
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/common/byteutil.hpp>
-#include <libp2p/common/outcome_macro.hpp>
 #include <libp2p/crypto/aes_ctr/aes_ctr_impl.hpp>
 #include <libp2p/crypto/error.hpp>
 #include <libp2p/crypto/hmac_provider.hpp>
@@ -217,7 +216,9 @@ namespace libp2p::connection {
 
     readNextMessage([self{shared_from_this()}, out, cb{std::move(cb)}](
                         outcome::result<void> result) {
-      IF_ERROR_CB_RETURN(result);
+      if (result.has_error()) {
+        return cb(result.error());
+      }
       self->readSome(out, std::move(cb));
     });
   }
@@ -229,7 +230,9 @@ namespace libp2p::connection {
         *read_buffer_,
         [self{shared_from_this()}, buffer = read_buffer_, cb{std::move(cb)}](
             outcome::result<void> result) mutable {
-          IF_ERROR_CB_RETURN(result);
+          if (result.has_error()) {
+            return cb(result.error());
+          }
           uint32_t frame_len{
               ntohl(common::convert<uint32_t>(buffer->data()))};  // NOLINT
           if (frame_len > kMaxFrameSize) {
@@ -246,22 +249,35 @@ namespace libp2p::connection {
               *buffer,
               [self, buffer, frame_len, cb{std::move(cb)}](
                   outcome::result<void> result) mutable {
-                IF_ERROR_CB_RETURN(result);
+                if (result.has_error()) {
+                  return cb(result.error());
+                }
                 SL_TRACE(self->log_, "Received frame with len {}", frame_len);
-                auto mac_size = IF_ERROR_CB_RETURN(self->macSize());
+                auto mac_size_result = self->macSize();
+                if (mac_size_result.has_error()) {
+                  return cb(mac_size_result.error());
+                }
+                auto mac_size = std::move(mac_size_result).value();
                 const auto data_size{frame_len - mac_size};
                 auto data_span{std::span(buffer->data(), data_size)};
                 auto mac_span{std::span(*buffer).subspan(data_size, mac_size)};
-                auto remote_mac =
-                    IF_ERROR_CB_RETURN(self->macRemote(data_span));
+                auto remote_mac_result = self->macRemote(data_span);
+                if (remote_mac_result.has_error()) {
+                  return cb(remote_mac_result.error());
+                }
+                auto remote_mac = std::move(remote_mac_result).value();
                 if (BytesIn(remote_mac) != BytesIn(mac_span)) {
                   self->log_->error(
                       "Signature does not validate for the received frame");
                   cb(Error::INVALID_MAC);
                   return;
                 }
-                auto decrypted_bytes = IF_ERROR_CB_RETURN(
-                    (*self->remote_decryptor_)->crypt(data_span));
+                auto decrypted_result =
+                    (*self->remote_decryptor_)->crypt(data_span);
+                if (decrypted_result.has_error()) {
+                  return cb(decrypted_result.error());
+                }
+                auto decrypted_bytes = std::move(decrypted_result).value();
                 size_t decrypted_bytes_len{decrypted_bytes.size()};
                 for (auto &&e : decrypted_bytes) {
                   self->user_data_buffer_.emplace(std::forward<decltype(e)>(e));
@@ -282,7 +298,11 @@ namespace libp2p::connection {
     if (!isInitialized()) {
       cb(Error::CONN_NOT_INITIALIZED);
     }
-    auto mac_size = IF_ERROR_CB_RETURN(macSize());
+    auto mac_size_result = macSize();
+    if (mac_size_result.has_error()) {
+      return cb(mac_size_result.error());
+    }
+    auto mac_size = std::move(mac_size_result).value();
     size_t frame_len{in.size() + mac_size};
     write_buffer_->resize(0);
     auto &frame_buffer = *write_buffer_;
@@ -290,8 +310,17 @@ namespace libp2p::connection {
     frame_buffer.reserve(len_field_size + frame_len);
 
     common::putUint32BE(frame_buffer, frame_len);
-    auto encrypted_data = IF_ERROR_CB_RETURN((*local_encryptor_)->crypt(in));
-    auto mac_data = IF_ERROR_CB_RETURN(macLocal(encrypted_data));
+    auto encrypted_result = (*local_encryptor_)->crypt(in);
+    if (encrypted_result.has_error()) {
+      return cb(encrypted_result.error());
+    }
+    auto encrypted_data = std::move(encrypted_result).value();
+
+    auto mac_result = macLocal(encrypted_data);
+    if (mac_result.has_error()) {
+      return cb(mac_result.error());
+    }
+    auto mac_data = std::move(mac_result).value();
     frame_buffer.insert(frame_buffer.end(),
                         std::make_move_iterator(encrypted_data.begin()),
                         std::make_move_iterator(encrypted_data.end()));
@@ -302,7 +331,9 @@ namespace libp2p::connection {
           frame_buffer,
           [buffer{write_buffer_}, in, cb{std::move(cb)}](
               outcome::result<void> result) {
-            IF_ERROR_CB_RETURN(result);
+            if (result.has_error()) {
+              return cb(result.error());
+            }
             cb(in.size());
           });
   }

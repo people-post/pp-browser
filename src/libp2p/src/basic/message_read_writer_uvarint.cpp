@@ -14,7 +14,6 @@
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/varint_reader.hpp>
 #include <libp2p/basic/write.hpp>
-#include <libp2p/common/outcome_macro.hpp>
 #include <libp2p/multi/uvarint.hpp>
 
 namespace libp2p::basic {
@@ -40,7 +39,9 @@ namespace libp2p::basic {
                          *buffer,
                          [self, buffer, cb = std::move(cb)](
                              outcome::result<void> result) mutable {
-                           IF_ERROR_CB_RETURN(result);
+                           if (result.has_error()) {
+                             return cb(result.error());
+                           }
                            cb(std::move(buffer));
                          });
           } else {
@@ -64,7 +65,9 @@ namespace libp2p::basic {
                   [cb = std::move(cb),
                    varint_size = varint_len.size(),
                    msg_bytes](outcome::result<void> result) {
-                    IF_ERROR_CB_RETURN(result);
+                    if (result.has_error()) {
+                      return cb(result.error());
+                    }
                     cb(outcome::success());
                   });
   }
