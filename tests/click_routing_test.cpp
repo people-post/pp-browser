@@ -7,6 +7,7 @@
 #include <RmlUi/Core/Types.h>
 
 #include <cassert>
+#include <cstdlib>
 #include <iostream>
 #include <unordered_map>
 
@@ -15,9 +16,32 @@ namespace {
 Rml::SystemInterface g_system_interface;
 std::unordered_map<Rml::Element*, bool> g_contains_point;
 
+[[noreturn]] void Fail(const char* message)
+{
+	std::cerr << "click_routing_test failed: " << message << "\n";
+	std::exit(1);
+}
+
+void Require(bool condition, const char* message)
+{
+	if (!condition)
+		Fail(message);
+}
+
+Rml::ElementPtr MakeElement(const char* tag)
+{
+	Rml::ElementPtr element = Rml::Factory::InstanceElement(nullptr, "*", tag, Rml::XMLAttributes());
+	Require(static_cast<bool>(element), "Factory::InstanceElement returned null");
+	return element;
+}
+
 Rml::Element* AppendChild(Rml::Element& parent, const char* tag)
 {
-	return parent.AppendChild(Rml::Factory::InstanceElement(&parent, "*", tag, Rml::XMLAttributes()), false);
+	Rml::ElementPtr child = Rml::Factory::InstanceElement(&parent, "*", tag, Rml::XMLAttributes());
+	Require(static_cast<bool>(child), "Factory::InstanceElement child returned null");
+	Rml::Element* inserted = parent.AppendChild(std::move(child), false);
+	Require(inserted != nullptr, "AppendChild returned null");
+	return inserted;
 }
 
 bool MockPointWithin(Rml::Element* element, Rml::Vector2f /*point*/, void* /*context*/)
@@ -42,7 +66,8 @@ Rml::Element* Resolve(Rml::Element* press_hover, Rml::Element* release_hover, Rm
 
 void TestTreeHelpers()
 {
-	Rml::ElementPtr root_ptr = Rml::Factory::InstanceElement(nullptr, "*", "div", Rml::XMLAttributes());
+	g_contains_point.clear();
+	Rml::ElementPtr root_ptr = MakeElement("div");
 	Rml::Element& root = *root_ptr;
 	Rml::Element* child = AppendChild(root, "span");
 	Rml::Element* grandchild = AppendChild(*child, "option");
@@ -61,14 +86,15 @@ void TestTreeHelpers()
 
 void TestFindInteractiveElement()
 {
-	Rml::ElementPtr div_ptr = Rml::Factory::InstanceElement(nullptr, "*", "div", Rml::XMLAttributes());
+	g_contains_point.clear();
+	Rml::ElementPtr div_ptr = MakeElement("div");
 	Rml::Element& div = *div_ptr;
 	Rml::Element* button = AppendChild(div, "button");
 	Rml::Element* text = AppendChild(*button, "span");
 
 	assert(Rml::ClickRouting::FindInteractiveElement(text) == button);
 
-	Rml::ElementPtr scrim_ptr = Rml::Factory::InstanceElement(nullptr, "*", "div", Rml::XMLAttributes());
+	Rml::ElementPtr scrim_ptr = MakeElement("div");
 	Rml::Element& scrim = *scrim_ptr;
 	scrim.SetAttribute("data-event-click", "close()");
 	assert(Rml::ClickRouting::FindInteractiveElement(&scrim) == &scrim);
@@ -76,7 +102,8 @@ void TestFindInteractiveElement()
 
 void TestResolveClickTargetTier1Option()
 {
-	Rml::ElementPtr select_ptr = Rml::Factory::InstanceElement(nullptr, "*", "select", Rml::XMLAttributes());
+	g_contains_point.clear();
+	Rml::ElementPtr select_ptr = MakeElement("select");
 	Rml::Element& select = *select_ptr;
 	Rml::Element* selectbox = AppendChild(select, "selectbox");
 	Rml::Element* option = AppendChild(*selectbox, "option");
@@ -88,7 +115,8 @@ void TestResolveClickTargetTier1Option()
 
 void TestResolveClickTargetTier1ButtonChild()
 {
-	Rml::ElementPtr button_ptr = Rml::Factory::InstanceElement(nullptr, "*", "button", Rml::XMLAttributes());
+	g_contains_point.clear();
+	Rml::ElementPtr button_ptr = MakeElement("button");
 	Rml::Element& button = *button_ptr;
 	Rml::Element* label = AppendChild(button, "span");
 
@@ -99,7 +127,8 @@ void TestResolveClickTargetTier1ButtonChild()
 
 void TestResolveClickTargetTier2SiblingChildren()
 {
-	Rml::ElementPtr button_ptr = Rml::Factory::InstanceElement(nullptr, "*", "button", Rml::XMLAttributes());
+	g_contains_point.clear();
+	Rml::ElementPtr button_ptr = MakeElement("button");
 	Rml::Element& button = *button_ptr;
 	Rml::Element* press = AppendChild(button, "span");
 	Rml::Element* release = AppendChild(button, "span");
@@ -115,8 +144,9 @@ void TestResolveClickTargetTier2SiblingChildren()
 
 void TestResolveClickTargetUnrelated()
 {
-	Rml::ElementPtr press_ptr = Rml::Factory::InstanceElement(nullptr, "*", "div", Rml::XMLAttributes());
-	Rml::ElementPtr release_ptr = Rml::Factory::InstanceElement(nullptr, "*", "div", Rml::XMLAttributes());
+	g_contains_point.clear();
+	Rml::ElementPtr press_ptr = MakeElement("div");
+	Rml::ElementPtr release_ptr = MakeElement("div");
 	Rml::Element& press = *press_ptr;
 	Rml::Element& release = *release_ptr;
 	SetContains(&press, true);
@@ -128,7 +158,8 @@ void TestResolveClickTargetUnrelated()
 
 void TestResolveClickTargetTier3Geometry()
 {
-	Rml::ElementPtr press_ptr = Rml::Factory::InstanceElement(nullptr, "*", "div", Rml::XMLAttributes());
+	g_contains_point.clear();
+	Rml::ElementPtr press_ptr = MakeElement("div");
 	Rml::Element& press = *press_ptr;
 	SetContains(&press, true);
 
@@ -139,8 +170,9 @@ void TestResolveClickTargetTier3Geometry()
 
 void TestResolveClickTargetTier3Focus()
 {
-	Rml::ElementPtr press_ptr = Rml::Factory::InstanceElement(nullptr, "*", "div", Rml::XMLAttributes());
-	Rml::ElementPtr release_ptr = Rml::Factory::InstanceElement(nullptr, "*", "span", Rml::XMLAttributes());
+	g_contains_point.clear();
+	Rml::ElementPtr press_ptr = MakeElement("div");
+	Rml::ElementPtr release_ptr = MakeElement("span");
 	Rml::Element& press = *press_ptr;
 	Rml::Element& release = *release_ptr;
 	g_focus_result = &press;
@@ -157,7 +189,8 @@ void TestResolveClickTargetTier3Focus()
 int main()
 {
 	Rml::SetSystemInterface(&g_system_interface);
-	assert(Rml::Initialise());
+	if (!Rml::Initialise())
+		Fail("Rml::Initialise returned false");
 
 	TestTreeHelpers();
 	TestFindInteractiveElement();
