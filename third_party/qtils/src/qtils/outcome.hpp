@@ -38,10 +38,11 @@ namespace qtils {
 // MSVC's non-conformant preprocessor passes __VA_ARGS__ as a single token
 // when used in a nested macro call, causing _OUTCOME_OVERLOAD to receive
 // the wrong argument count and select the _void overload instead of _out.
-// Wrapping the overload selector in IDENTITY forces a rescan so __VA_ARGS__
-// is properly split into individual arguments on MSVC.
+// Wrapping the overload selector in _OUTCOME_EXPAND forces a rescan so
+// __VA_ARGS__ is properly split into individual arguments on MSVC.
+#define _OUTCOME_EXPAND(x) x
 #define OUTCOME_TRY(...) \
-  IDENTITY(_OUTCOME_OVERLOAD(__VA_ARGS__, out, void))(QTILS_OUTCOME_UNIQUE_NAME, __VA_ARGS__)
+  _OUTCOME_EXPAND(_OUTCOME_OVERLOAD(__VA_ARGS__, out, void))(QTILS_OUTCOME_UNIQUE_NAME, __VA_ARGS__)
 
 namespace outcome {
   template <class R>
