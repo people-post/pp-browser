@@ -25,16 +25,44 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev libxrender-dev libxss-dev libgl-dev libssl-dev xvfb
+          sudo apt-get install -y ccache libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev libxrender-dev libxss-dev libgl-dev libssl-dev xvfb
+
+      - name: Install macOS deps
+        if: runner.os == 'macOS'
+        run: |
+          if ! command -v ccache >/dev/null 2>&1; then
+            brew install ccache
+          fi
+
+      - name: Restore ccache
+        if: runner.os != 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-v1-
+
+      - name: ccache stats (pre-build)
+        if: runner.os != 'Windows'
+        run: |
+          ccache --zero-stats || true
+          ccache --show-stats || true
 
       - name: Configure
         shell: bash
         run: |
           generator=()
+          cmake_args=()
           if [ "${{ runner.os }}" = "Windows" ]; then
             generator=(-G Ninja)
+          else
+            cmake_args=(
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            )
           fi
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release "${generator[@]}"
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release "${generator[@]}" "${cmake_args[@]}"
 
       - name: Build
         shell: bash
@@ -58,6 +86,10 @@ jobs:
           wait "$xvfb_pid" 2>/dev/null || true
           test "$code" -eq 124
 
+      - name: ccache stats (post-build)
+        if: runner.os != 'Windows'
+        run: ccache --show-stats || true
+
   android:
     runs-on: ubuntu-latest
 
@@ -68,6 +100,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: gradle
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3

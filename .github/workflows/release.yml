@@ -18,6 +18,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install macOS deps
+        run: |
+          if ! command -v ccache >/dev/null 2>&1; then
+            brew install ccache
+          fi
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: macOS-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml') }}
+          restore-keys: |
+            macOS-ccache-v1-
+
+      - name: ccache stats (pre-build)
+        run: |
+          ccache --zero-stats || true
+          ccache --show-stats || true
+
       - name: Parse version from tag
         id: version
         shell: bash
@@ -33,6 +52,8 @@ jobs:
         run: |
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}" \
             -DPP_BROWSER_VERSION="${{ steps.version.outputs.project_version }}" \
             -DPP_BROWSER_RELEASE_VERSION="${{ steps.version.outputs.release_version }}" \
@@ -89,6 +110,9 @@ jobs:
           name: macos-installer
           path: build/*.dmg
           if-no-files-found: error
+
+      - name: ccache stats (post-build)
+        run: ccache --show-stats || true
 
   windows:
     runs-on: windows-latest
