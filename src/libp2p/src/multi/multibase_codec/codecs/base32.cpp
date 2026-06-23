@@ -162,23 +162,27 @@ namespace libp2p::multi::detail {
 
   outcome::result<Bytes> decodeBase32(std::string_view string,
                                       Base32Mode mode) {
+    constexpr size_t kEncodedBlockSize = 8;
+    constexpr size_t kDecodedBlockSize = 5;
     Bytes result;
-    if (string.size() % 8 == 0) {
-      result = Bytes(string.size() / 8 * 5);
+    if (string.size() % kEncodedBlockSize == 0) {
+      result = Bytes(string.size() / kEncodedBlockSize * kDecodedBlockSize);
     } else {
-      result = Bytes((string.size() / 8 + 1) * 5);
+      result = Bytes((string.size() / kEncodedBlockSize + 1) * kDecodedBlockSize);
     }
 
-    for (size_t i = 0, j = 0; i < string.size(); i += 8, j += 5) {
+    for (size_t i = 0, j = 0; i < string.size();
+         i += kEncodedBlockSize, j += kDecodedBlockSize) {
       const size_t remaining = string.size() - i;
-      const size_t block_size = std::min(remaining, size_t{8});
+      const size_t block_size = std::min(remaining, kEncodedBlockSize);
       OUTCOME_TRY(n,
                   (decode_sequence(
                       std::span(&string[i], block_size),
-                      std::span(&result[j], 5),
+                      std::span(&result[j], kDecodedBlockSize),
                       mode)));
-      if (n < 5) {
-        result.erase(result.end() - (5 - n), result.end());
+      if (static_cast<size_t>(n) < kDecodedBlockSize) {
+        result.erase(result.end() - (kDecodedBlockSize - static_cast<size_t>(n)),
+                     result.end());
       }
     }
     return result;
