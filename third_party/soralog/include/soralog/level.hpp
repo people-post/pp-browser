@@ -11,6 +11,16 @@
 #include <cstddef>
 #include <cstdint>
 
+#if defined(_WIN32)
+// wingdi.h (via windows.h) defines ERROR; breaks enum members below.
+#ifdef ERROR
+#undef ERROR
+#endif
+#ifdef DEBUG
+#undef DEBUG
+#endif
+#endif
+
 namespace soralog {
 
   /**
