@@ -7,6 +7,8 @@
 #include "Traits.h"
 #include "Types.h"
 
+#include <functional>
+
 namespace Rml {
 
 class Stream;
@@ -123,6 +125,10 @@ public:
 
 	/// Returns the document-wide static text selection controller.
 	SelectionController* GetSelectionController();
+
+	using TouchLongPressCallback = std::function<void(Vector2i position, Element* target)>;
+	/// Invoked when a touch long-press is recognized (static text or text editor).
+	void SetTouchLongPressCallback(TouchLongPressCallback callback);
 
 	/// Returns the youngest descendent of the given element which is under the given point in screen coordinates.
 	/// @param[in] point The point to test.
@@ -336,6 +342,8 @@ private:
 	Element* last_click_element;
 	// The time the last click occurred.
 	double last_click_time;
+	// Consecutive click count on last_click_element (1, 2, or 3).
+	int last_click_count = 0;
 	// Mouse position during the last mouse_down event.
 	Vector2i last_click_mouse_position;
 
@@ -347,15 +355,21 @@ private:
 	struct TouchState {
 		bool scrolling_right = false;
 		bool scrolling_down = false;
+		bool touch_scrolling = false;
+		bool selection_armed = false;
+		bool long_press_fired = false;
 		Vector2f start_position;
 		Vector2f inertia_position;
 		Vector2f last_position;
 		Element* scroll_container = nullptr;
+		Element* touch_target = nullptr;
 		double scrolling_last_time = 0;
 		double scrolling_start_time_x = 0;
 		double scrolling_start_time_y = 0;
+		double touch_start_time = 0;
 	};
 	SmallUnorderedMap<TouchId, TouchState> touch_states;
+	TouchLongPressCallback touch_long_press_callback;
 
 	// Controller for various scroll behavior modes.
 	UniquePtr<ScrollController> scroll_controller; // [not-null]
@@ -432,6 +446,8 @@ private:
 
 	// Helper method to lookup TouchState by touch id.
 	TouchState* LookupTouch(TouchId identifier);
+	void UpdateTouchGestures();
+	bool AnyTouchSelectionArmed() const;
 	/// Process single touch movement for this context.
 	/// @param[in] touch Touch data: identifier and coordinates.
 	/// @return True if touch point is not interacting with any elements in the context, otherwise false.

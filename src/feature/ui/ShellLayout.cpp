@@ -58,7 +58,7 @@ PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
     return vis;
   }
 
-  vis.compact_nav_page = !state.compact_chat_open;
+  vis.compact_nav_page = !state.compact_chat_open || state.nav_tab == NavTab::Sessions;
   vis.compact_chat_overlay = state.compact_chat_open;
   vis.auxiliary_sheet = state.auxiliary_open;
   return vis;

@@ -212,6 +212,7 @@ select selectbox option {
   padding: 0;
   border: 0;
   background-color: transparent;
+  cursor: text;
 }
 
 .prompt-composer-footer {
@@ -1534,4 +1535,50 @@ select selectbox option {
 
 .contacts-row--active {
   background-color: rgba(59, 130, 246, 0.12);
+}
+
+.shell-nav-page--under-overlay {
+  opacity: 1;
+}
+
+.context-menu-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+}
+
+.context-menu-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.context-menu-panel {
+  position: absolute;
+  min-width: 160dp;
+  padding: 4dp;
+  border-radius: 8dp;
+  background-color: #ffffff;
+  box-shadow: 0 4dp 16dp rgba(0, 0, 0, 0.18);
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 10dp 12dp;
+  border: 0;
+  border-radius: 6dp;
+  background-color: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-menu-item:hover {
+  background-color: rgba(0, 0, 0, 0.06);
 }

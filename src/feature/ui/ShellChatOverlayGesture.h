@@ -24,6 +24,7 @@ public:
 
 private:
   bool ShouldIgnoreTarget(Rml::Element* target) const;
+  bool ShouldStartSwipe(Rml::Element* target, int x) const;
   void BeginDrag(int x);
   void UpdateDrag(int x, Rml::Event& event);
   void EndDrag();

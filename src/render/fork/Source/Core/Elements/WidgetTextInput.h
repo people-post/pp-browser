@@ -155,6 +155,8 @@ private:
 	void MoveCursorToCharacterBoundaries(bool forward);
 	// Expands the cursor, selecting the current word or nearby whitespace.
 	void ExpandSelection();
+	// Expands the selection to the current paragraph (blank-line delimited).
+	void ExpandSelectionToParagraph();
 
 	/// Returns the relative indices from the current absolute index.
 	void GetRelativeCursorIndices(int& out_cursor_line_index, int& out_cursor_character_index) const;
@@ -221,6 +223,9 @@ private:
 
 	/// Returns the used line height.
 	float GetLineHeight() const;
+	float GetTopToBaseline() const;
+	/// Scroll vertically while drag-selecting when the pointer nears the top/bottom edge.
+	void ScrollForPointerDrag(float local_y);
 	/// Returns the width available for the text contents without overflowing, that is, the content area subtracted by any scrollbar.
 	float GetAvailableWidth() const;
 	/// Returns the height available for the text contents without overflowing, that is, the content area subtracted by any scrollbar.

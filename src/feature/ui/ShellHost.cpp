@@ -2,6 +2,7 @@
 
 #include "base/platform/BrowserThread.h"
 #include "base/platform/PlatformNavigation.h"
+#include "base/ui/ContextMenuHost.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
@@ -290,6 +291,9 @@ void ShellHost::CloseLayer(int layer_id) {
 }
 
 bool ShellHost::HandleDismiss() {
+  if (ContextMenuHost::Instance().HandleDismiss()) {
+    return true;
+  }
   if (state_.dialog.active) {
     if (state_.dialog.show_cancel) {
       ShellFeedback::DialogCancel(state_);
@@ -483,6 +487,10 @@ std::string ShellHost::SerializeCompactBase() const {
       out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
       out << "<div class=\"shell-composer-mount\" id=\"shell-composer-mount\"></div>";
     }
+    out << "</div>";
+  } else if (state_.nav_tab == NavTab::Sessions) {
+    out << "<div class=\"shell-nav-page shell-nav-page--under-overlay\">";
+    out << "<div class=\"shell-pane-body\" id=\"pane-body-sidebar\"></div>";
     out << "</div>";
   }
 
@@ -706,6 +714,9 @@ void ShellHost::MountPaneBodies() {
       }
     }
   } else if (state_.compact_chat_open) {
+    if (state_.nav_tab == NavTab::Sessions) {
+      mount_key("sidebar");
+    }
     mount_key("chat");
     MountComposer();
     AttachChatOverlayGesture();

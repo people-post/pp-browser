@@ -22,6 +22,16 @@ public:
 	void ClearUnlessHover(Element* hover);
 	bool IsDragging() const { return dragging; }
 
+	bool CanSelectStaticText(Element* target) const;
+	bool BlocksTarget(Element* target) const { return TargetBlocksSelection(target); }
+	void SelectWordAt(Vector2i position);
+	void SelectAll();
+	void FinalizeSelection();
+	String GetSelectedText();
+	String GetSelectedText() const;
+	bool HasSelection() const;
+	void OnTouchTap(Vector2i position, Element* hover);
+
 	void UpdateSelectionGeometry();
 	void ClearSelection();
 

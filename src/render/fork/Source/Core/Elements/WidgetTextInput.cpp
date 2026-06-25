@@ -39,6 +39,14 @@ static CharacterClass GetCharacterClass(char c)
 	return CharacterClass::Whitespace;
 }
 
+static bool IsEventForWidget(const Event& event, Element* parent)
+{
+	Element* target = event.GetTargetElement();
+	if (target == parent)
+		return true;
+	return target && target->GetParentNode() == parent;
+}
+
 // Clamps the value to the given maximum number of unicode code points. Returns true if the value was changed.
 static bool ClampValue(String& value, int max_length)
 {
@@ -613,7 +621,7 @@ void WidgetTextInput::ProcessEvent(Event& event)
 	break;
 	case EventId::Focus:
 	{
-		if (event.GetTargetElement() == parent)
+		if (IsEventForWidget(event, parent))
 		{
 			parent->SetPseudoClass("focus-visible", true);
 			if (UpdateSelection(false))
@@ -633,7 +641,7 @@ void WidgetTextInput::ProcessEvent(Event& event)
 	break;
 	case EventId::Blur:
 	{
-		if (event.GetTargetElement() == parent)
+		if (IsEventForWidget(event, parent))
 		{
 			if (TextInputHandler* handler = GetTextInputHandler())
 				handler->OnDeactivate(text_input_context.get());
@@ -653,10 +661,16 @@ void WidgetTextInput::ProcessEvent(Event& event)
 		//-fallthrough
 	case EventId::Mousedown:
 	{
-		if (event.GetTargetElement() == parent)
+		if (IsEventForWidget(event, parent))
 		{
 			Vector2f mouse_position = Vector2f(event.GetParameter<float>("mouse_x", 0), event.GetParameter<float>("mouse_y", 0));
 			mouse_position -= text_element->GetAbsoluteOffset();
+			mouse_position.y += parent->GetScrollTop();
+
+			if (event == EventId::Drag || event == EventId::Mousedown)
+				ScrollForPointerDrag(mouse_position.y);
+
+			const int click_count = event.GetParameter<int>("click_count", 1);
 
 			const int cursor_line_index = CalculateLineIndex(mouse_position.y);
 			const int cursor_character_index = CalculateCharacterIndex(cursor_line_index, mouse_position.x);
@@ -665,6 +679,14 @@ void WidgetTextInput::ProcessEvent(Event& event)
 
 			MoveCursorToCharacterBoundaries(false);
 			UpdateCursorPosition(true);
+
+			if (event == EventId::Mousedown && click_count >= 3)
+			{
+				ExpandSelectionToParagraph();
+				ShowCursor(true, true);
+				cancel_next_drag = true;
+				break;
+			}
 
 			if (UpdateSelection(event == EventId::Drag || event.GetParameter<int>("shift_key", 0) > 0))
 				FormatText();
@@ -677,7 +699,7 @@ void WidgetTextInput::ProcessEvent(Event& event)
 	break;
 	case EventId::Dblclick:
 	{
-		if (event.GetTargetElement() == parent)
+		if (IsEventForWidget(event, parent))
 		{
 			ExpandSelection();
 			cancel_next_drag = true;
@@ -955,6 +977,68 @@ void WidgetTextInput::ExpandSelection()
 	UpdateCursorPosition(true);
 }
 
+void WidgetTextInput::ExpandSelectionToParagraph()
+{
+	const String& value = GetValue();
+	const char* const p_begin = value.data();
+	const char* const p_end = p_begin + value.size();
+	const char* const p_index = p_begin + absolute_cursor_index;
+
+	const char* p_left = p_begin;
+	for (const char* p = p_index; p > p_begin;)
+	{
+		--p;
+		if (p + 1 < p_end && p[0] == '\n' && p[1] == '\n')
+		{
+			p_left = p + 2;
+			break;
+		}
+	}
+
+	const char* p_right = p_end;
+	for (const char* p = p_index; p < p_end; ++p)
+	{
+		if (p + 1 < p_end && p[0] == '\n' && p[1] == '\n')
+		{
+			p_right = p;
+			break;
+		}
+	}
+
+	cursor_wrap_down = true;
+	absolute_cursor_index -= int(p_index - p_left);
+	MoveCursorToCharacterBoundaries(false);
+	bool selection_changed = UpdateSelection(false);
+
+	absolute_cursor_index += int(p_right - p_left);
+	MoveCursorToCharacterBoundaries(true);
+	selection_changed |= UpdateSelection(true);
+
+	if (selection_changed)
+		FormatText();
+
+	UpdateCursorPosition(true);
+}
+
+void WidgetTextInput::ScrollForPointerDrag(float content_y)
+{
+	const float available_height = GetAvailableHeight();
+	if (available_height <= 0.f)
+		return;
+
+	float edge_margin = 12.f;
+	if (Context* context = parent->GetContext())
+		edge_margin *= context->GetDensityIndependentPixelRatio();
+
+	const float scroll_top = parent->GetScrollTop();
+	const float max_scroll = Math::Max(0.f, parent->GetScrollHeight() - available_height);
+
+	if (content_y < scroll_top + edge_margin)
+		parent->SetScrollTop(Math::Max(0.f, scroll_top - edge_margin));
+	else if (content_y > scroll_top + available_height - edge_margin)
+		parent->SetScrollTop(Math::Min(max_scroll, scroll_top + edge_margin));
+}
+
 const String& WidgetTextInput::GetValue() const
 {
 	return text_element->GetText();
@@ -1018,7 +1102,11 @@ void WidgetTextInput::SetCursorFromRelativeIndices(int cursor_line_index, int cu
 
 int WidgetTextInput::CalculateLineIndex(float position) const
 {
-	int line_index = int(position / GetLineHeight());
+	const float top_to_baseline = GetTopToBaseline();
+	const float line_height = GetLineHeight();
+	int line_index = 0;
+	if (position > top_to_baseline - line_height * 0.5f)
+		line_index = int((position - top_to_baseline + line_height * 0.5f) / line_height);
 	return Math::Clamp(line_index, 0, (int)(lines.size() - 1));
 }
 
@@ -1548,6 +1636,18 @@ void WidgetTextInput::SetKeyboardActive(bool active)
 float WidgetTextInput::GetLineHeight() const
 {
 	return Math::Round(parent->GetLineHeight());
+}
+
+float WidgetTextInput::GetTopToBaseline() const
+{
+	const FontFaceHandle font_handle = parent->GetFontFaceHandle();
+	if (!font_handle)
+		return 0.f;
+
+	const FontMetrics& font_metrics = GetFontEngineInterface()->GetFontMetrics(font_handle);
+	const float line_height = GetLineHeight();
+	const float half_leading = 0.5f * (line_height - (font_metrics.ascent + font_metrics.descent));
+	return font_metrics.ascent + half_leading;
 }
 
 float WidgetTextInput::GetAvailableWidth() const

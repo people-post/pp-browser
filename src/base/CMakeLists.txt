@@ -62,6 +62,7 @@ set(PP_BROWSER_BASE_SOURCES
   ui/Theme.cpp
   ui/ViewCatalog.cpp
   ui/InputCoordinator.cpp
+  ui/ContextMenuHost.cpp
   ${CMAKE_SOURCE_DIR}/src/libp2p/integration/host/Libp2pHost.cpp
 )
 

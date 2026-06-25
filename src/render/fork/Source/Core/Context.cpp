@@ -34,6 +34,29 @@ static constexpr float UNIT_SCROLL_LENGTH = 80.f;   // [dp]
 static constexpr float SCROLL_INERTIA_DELAY = 0.1f;
 static constexpr float TOUCH_MOVEMENT_DECAY_RATE = 5.0f;
 static constexpr float TOUCH_CLICK_MAX_DISTANCE = DOUBLE_CLICK_MAX_DIST; // [dp]
+static constexpr float TOUCH_SCROLL_SLOP = 10.f;                         // [dp]
+static constexpr double TOUCH_LONG_PRESS_TIME = 0.5;                   // [s]
+
+static bool IsContextMenuTarget(Element* element)
+{
+	for (Element* current = element; current; current = current->GetParentNode())
+	{
+		if (current->GetId() == "context-menu-layer")
+			return true;
+	}
+	return false;
+}
+
+static bool IsTextEditorTarget(Element* element)
+{
+	for (Element* current = element; current; current = current->GetParentNode())
+	{
+		const String& tag = current->GetTagName();
+		if (tag == "textarea" || tag == "input" || tag == "select")
+			return true;
+	}
+	return false;
+}
 
 static String GetEffectiveCursor(Element* hover)
 {
@@ -46,6 +69,8 @@ static String GetEffectiveCursor(Element* hover)
 		const String& tag = element->GetTagName();
 		if (tag == "button" || tag == "a")
 			return "pointer";
+		if (tag == "textarea" || tag == "input")
+			return "text";
 	}
 	return {};
 }
@@ -171,6 +196,7 @@ Context::Context(const String& name, RenderManager* render_manager, TextInputHan
 	drag_hover = nullptr;
 	last_click_element = nullptr;
 	last_click_time = 0;
+	last_click_count = 0;
 
 	mouse_active = false;
 	enable_cursor = true;
@@ -260,6 +286,8 @@ bool Context::Update()
 
 	if (scroll_controller->Update(mouse_position, density_independent_pixel_ratio))
 		RequestNextUpdate(0);
+
+	UpdateTouchGestures();
 
 	// Update the hover chain to detect any new or moved elements under the mouse.
 	if (mouse_active)
@@ -548,6 +576,66 @@ SelectionController* Context::GetSelectionController()
 	return selection_controller.get();
 }
 
+void Context::SetTouchLongPressCallback(TouchLongPressCallback callback)
+{
+	touch_long_press_callback = std::move(callback);
+}
+
+bool Context::AnyTouchSelectionArmed() const
+{
+	for (const auto& entry : touch_states)
+	{
+		if (entry.second.selection_armed)
+			return true;
+	}
+	return false;
+}
+
+void Context::UpdateTouchGestures()
+{
+	if (touch_states.empty())
+		return;
+
+	const double current_time = GetSystemInterface()->GetElapsedTime();
+	const float slop = TOUCH_SCROLL_SLOP * density_independent_pixel_ratio;
+
+	for (auto& entry : touch_states)
+	{
+		TouchState& state = entry.second;
+		if (state.long_press_fired || state.selection_armed || state.touch_scrolling)
+			continue;
+
+		if (current_time - state.touch_start_time < TOUCH_LONG_PRESS_TIME)
+			continue;
+
+		const Vector2f delta = state.last_position - state.start_position;
+		if (delta.SquaredMagnitude() > slop * slop)
+			continue;
+
+		state.long_press_fired = true;
+		Element* target = state.touch_target ? state.touch_target : hover;
+		if (!target)
+			continue;
+
+		const Vector2i position(static_cast<int>(state.start_position.x), static_cast<int>(state.start_position.y));
+		if (IsTextEditorTarget(target))
+		{
+			if (touch_long_press_callback)
+				touch_long_press_callback(position, target);
+			continue;
+		}
+
+		if (selection_controller->CanSelectStaticText(target))
+		{
+			selection_controller->SelectWordAt(position);
+			state.selection_armed = true;
+		}
+
+		if (touch_long_press_callback)
+			touch_long_press_callback(position, target);
+	}
+}
+
 void Context::PullDocumentToFront(ElementDocument* document)
 {
 	if (document != root->GetLastChild())
@@ -687,7 +775,8 @@ bool Context::ProcessMouseMove(int x, int y, int key_modifier_state)
 		}
 	}
 
-	selection_controller->OnPointerMove(mouse_position);
+	if (touch_states.empty() || AnyTouchSelectionArmed())
+		selection_controller->OnPointerMove(mouse_position);
 
 	return !IsMouseInteracting();
 }
@@ -721,7 +810,8 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 
 	if (button_index == 0)
 	{
-		selection_controller->ClearUnlessHover(hover);
+		if (!IsContextMenuTarget(hover))
+			selection_controller->ClearUnlessHover(hover);
 
 		Element* interactive = ClickRouting::FindInteractiveElement(hover);
 
@@ -737,37 +827,56 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 		// Deepest element under the pointer at press time (browser-style press target).
 		active = hover;
 
-		if (hover)
+		if (hover && IsTextEditorTarget(hover))
+		{
+			selection_controller->ClearSelection();
+			selection_controller->OnPointerUp();
+		}
+
+		const bool touch_pointer = !touch_states.empty();
+		const bool defer_static_selection = touch_pointer && hover && selection_controller->CanSelectStaticText(hover);
+
+		float mouse_distance_squared = float((mouse_position - last_click_mouse_position).SquaredMagnitude());
+		float max_mouse_distance = DOUBLE_CLICK_MAX_DIST * density_independent_pixel_ratio;
+		double click_time = GetSystemInterface()->GetElapsedTime();
+		Element* click_identity = interactive ? interactive : active;
+
+		int click_count = 1;
+		if (click_identity && click_identity == last_click_element && float(click_time - last_click_time) < DOUBLE_CLICK_TIME &&
+			mouse_distance_squared < max_mouse_distance * max_mouse_distance)
+		{
+			click_count = last_click_count + 1;
+		}
+		parameters["click_count"] = click_count;
+
+		if (hover && !defer_static_selection)
 			selection_controller->OnPointerDown(hover, mouse_position);
 
 		// Call 'onmousedown' on every item in the hover chain, and copy the hover chain to the active chain.
 		if (hover)
 			propagate = hover->DispatchEvent(EventId::Mousedown, parameters);
 
-		if (propagate)
+		if (propagate && click_count == 2 && hover)
+			propagate = hover->DispatchEvent(EventId::Dblclick, parameters);
+
+		if (touch_pointer && hover && click_count == 2 && selection_controller->CanSelectStaticText(hover))
 		{
-			// Check for a double-click on an element; if one has occured, we send the 'dblclick' event to the hover
-			// element. If not, we'll start a timer to catch the next one.
-			float mouse_distance_squared = float((mouse_position - last_click_mouse_position).SquaredMagnitude());
-			float max_mouse_distance = DOUBLE_CLICK_MAX_DIST * density_independent_pixel_ratio;
+			selection_controller->SelectWordAt(mouse_position);
+			for (auto& entry : touch_states)
+				entry.second.selection_armed = true;
+		}
 
-			double click_time = GetSystemInterface()->GetElapsedTime();
-
-			Element* click_identity = interactive ? interactive : active;
-			if (click_identity == last_click_element && float(click_time - last_click_time) < DOUBLE_CLICK_TIME &&
-				mouse_distance_squared < max_mouse_distance * max_mouse_distance)
-			{
-				if (hover)
-					propagate = hover->DispatchEvent(EventId::Dblclick, parameters);
-
-				last_click_element = nullptr;
-				last_click_time = 0;
-			}
-			else
-			{
-				last_click_element = click_identity;
-				last_click_time = click_time;
-			}
+		if (click_count >= 3)
+		{
+			last_click_element = nullptr;
+			last_click_time = 0;
+			last_click_count = 0;
+		}
+		else
+		{
+			last_click_element = click_identity;
+			last_click_time = click_time;
+			last_click_count = click_count;
 		}
 
 		last_click_mouse_position = mouse_position;
@@ -1030,8 +1139,13 @@ bool Context::ProcessTouchStart(const Touch& touch, int key_modifier_state)
 	state->scrolling_start_time_x = 0;
 	state->scrolling_start_time_y = 0;
 	state->scrolling_last_time = GetSystemInterface()->GetElapsedTime();
+	state->touch_scrolling = false;
+	state->selection_armed = false;
+	state->long_press_fired = false;
+	state->touch_start_time = state->scrolling_last_time;
 
 	Element* touch_element = GetElementAtPoint(touch.position);
+	state->touch_target = touch_element;
 	state->scroll_container = touch_element ? touch_element->GetClosestScrollableContainer() : nullptr;
 
 	// reset any scrolling when we touch the element
@@ -1052,11 +1166,17 @@ bool Context::ProcessTouchMove(const Touch& touch, int key_modifier_state)
 
 	state->scrolling_last_time = GetSystemInterface()->GetElapsedTime();
 
+	const float scroll_slop = TOUCH_SCROLL_SLOP * density_independent_pixel_ratio;
+	const Vector2f delta_from_start = touch.position - state->start_position;
+	if (!state->selection_armed && (Math::Absolute(delta_from_start.y) > scroll_slop &&
+			Math::Absolute(delta_from_start.y) >= Math::Absolute(delta_from_start.x)))
+		state->touch_scrolling = true;
+
 	if (state->scroll_container)
 	{
 		const Vector2f delta = touch.position - state->last_position;
 
-		if (drag || selection_controller->IsDragging())
+		if (drag || (selection_controller->IsDragging() && state->selection_armed))
 		{
 			// Don't scroll and reset scrolling state when dragging any element (scrollbars and others)
 			// or drag-selecting static text inside a scroll container.
@@ -1102,7 +1222,6 @@ bool Context::ProcessTouchMove(const Touch& touch, int key_modifier_state)
 			}
 
 			const float touch_max_distance = TOUCH_CLICK_MAX_DISTANCE * density_independent_pixel_ratio;
-			const Vector2f delta_from_start = touch.position - state->start_position;
 			if (delta_from_start.SquaredMagnitude() >= touch_max_distance * touch_max_distance)
 				ResetActiveChain();
 		}
@@ -1118,6 +1237,9 @@ bool Context::ProcessTouchEnd(const Touch& touch, int key_modifier_state)
 	TouchState* state = LookupTouch(touch.identifier);
 	if (!state)
 		return true;
+
+	if (!state->selection_armed && !state->long_press_fired && !state->touch_scrolling)
+		selection_controller->OnTouchTap(Vector2i(static_cast<int>(touch.position.x), static_cast<int>(touch.position.y)), hover);
 
 	if (state->scroll_container)
 	{

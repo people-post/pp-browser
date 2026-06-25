@@ -38,6 +38,7 @@ Edit files under `src/render/fork/` directly in pp-browser commits (except `src/
 - `UserAgentStyleSheet` / `WidgetScroll` — scrollbar cross-axis sizing so layout boxes match painted thumbs (fixes full-width invisible hit targets)
 - `Context` — `PreferContentOverScrollbar` when scroll widgets overlap content at the pointer
 - `ClickRouting` / `Context` pointer/click — browser-style click synthesis: `active` stores deepest press hover; `ClickRouting::ResolveClickTarget` dispatches to the release hover when press/release share a DOM branch (tier 1), promotes to the shared interactive ancestor on layout drift (tier 2, `focus:none` chips), with focus/geometry fallbacks (tier 3); post-layout hover refresh after data-bound DOM changes; UAF-safe `ResetActiveChain` before click dispatch
+- `Context` / `SelectionController` touch — iOS-aligned static text gestures: defer selection on touch down, word select on long-press/double-tap, scroll-first vertical drag; `SetTouchLongPressCallback` for app context menu; `cursor: text` UA for `input`/`textarea`
 - `WidgetDropDown` — set `:checked` on parent `<select>` while the list is open (matches RmlUi style-guide selectors)
 - `UserAgentStyleSheet` — built-in baseline RCSS merged into every document (block layout for `p`, headings, lists, tables)
 - `ListMarker` — **workaround**: layout-time bullet/number injection (see limitations below)
@@ -55,7 +56,7 @@ Upstream RmlUi defaults every element to `display: inline` (`StyleSheetSpecifica
 | List markers | `list-style`, `::marker`, CSS counters | **Workaround** in `ListMarker.cpp` + `InlineLevelBox.cpp` | Implement `list-style` / marker box in layout |
 | List marker scope | Any `li` content structure | Direct text child of `li` only (`<li>text</li>`) | Marker on first line of nested blocks (`<li><p>…`) |
 | Ordered lists | `list-style-type: decimal` etc. | Hard-coded `1. ` prefix | CSS counters / `start` attribute |
-| Form controls | Native widget UA styles | Still styled in app theme (`base.rcss`) | Add input/button/textarea defaults to UA sheet |
+| Form controls | Native widget UA styles | `cursor: text` on `textarea`/`input` in UA sheet; tag fallback in `GetEffectiveCursor` | Add more input/button/textarea defaults to UA sheet |
 | Replaced elements | `img`, etc. | Not in UA sheet | Add when needed |
 
 **Do not reintroduce app-level layout patches** (e.g. `display: block` on `.bubble-assistant h2`) or parser hacks (bullet characters in `StructuredTextParser`) — fix gaps in the fork instead.

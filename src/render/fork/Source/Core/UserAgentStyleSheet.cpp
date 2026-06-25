@@ -148,6 +148,12 @@ scrollbarhorizontal
 {
 	height: 16dp;
 }
+
+textarea,
+input
+{
+	cursor: text;
+}
 )rcss";
 
 SharedPtr<StyleSheetContainer> user_agent_style_sheet;

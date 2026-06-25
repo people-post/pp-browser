@@ -1,6 +1,7 @@
 #include "app/Application.h"
 
 #include "base/ui/InputCoordinator.h"
+#include "base/ui/ContextMenuHost.h"
 #include "base/data/SessionStore.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatDemo.h"
@@ -155,6 +156,8 @@ bool Application::Initialize(const char* window_title, DemoMode demo) {
   });
 
   SdlAppEvents::Install();
+
+  ContextMenuHost::Instance().Install(context);
 
   ActionRouter::Instance().Attach(context);
   if (demo == DemoMode::Search) {

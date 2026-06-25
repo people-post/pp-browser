@@ -1,5 +1,6 @@
 #include "feature/ui/ShellChatOverlayGesture.h"
 
+#include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/ID.h>
@@ -11,6 +12,7 @@ namespace pbr {
 namespace {
 
 constexpr float kDismissThresholdRatio = 0.30f;
+constexpr float kEdgeSwipeWidthDp = 20.f;
 
 int EventMouseX(const Rml::Event& event) {
   return event.GetParameter<int>("mouse_x", 0);
@@ -60,6 +62,22 @@ bool ShellChatOverlayGesture::ShouldIgnoreTarget(Rml::Element* target) const {
     }
     const Rml::String& id = node->GetId();
     if (id == "draft-input") {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ShellChatOverlayGesture::ShouldStartSwipe(Rml::Element* target, int x) const {
+  if (!context_) {
+    return false;
+  }
+  const float edge_px = kEdgeSwipeWidthDp * context_->GetDensityIndependentPixelRatio();
+  if (x <= edge_px) {
+    return true;
+  }
+  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+    if (node->IsClassSet("shell-chat-overlay-chrome") || node->IsClassSet("shell-back-btn")) {
       return true;
     }
   }
@@ -130,6 +148,9 @@ void ShellChatOverlayGesture::ProcessEvent(Rml::Event& event) {
   switch (event.GetId()) {
   case Rml::EventId::Mousedown:
     if (ShouldIgnoreTarget(event.GetTargetElement())) {
+      return;
+    }
+    if (!ShouldStartSwipe(event.GetTargetElement(), EventMouseX(event))) {
       return;
     }
     BeginDrag(EventMouseX(event));

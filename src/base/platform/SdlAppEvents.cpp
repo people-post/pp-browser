@@ -2,6 +2,7 @@
 
 #include "base/platform/AppLifecycle.h"
 #include "base/platform/PlatformNavigation.h"
+#include "base/ui/ContextMenuHost.h"
 #include "base/ui/Theme.h"
 
 #include "RmlUi_Backend.h"
@@ -44,6 +45,17 @@ bool SdlAppEvents::PreProcess(Rml::Context* context, SDL_Event& event, bool& pro
   case SDL_EVENT_LOW_MEMORY:
     AppLifecycle::OnLowMemory();
     return true;
+  case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    if (event.button.button == SDL_BUTTON_RIGHT && context) {
+      const float scale = context->GetDensityIndependentPixelRatio();
+      const int x = static_cast<int>(event.button.x * scale);
+      const int y = static_cast<int>(event.button.y * scale);
+      if (ContextMenuHost::Instance().OnContextPointer(context, x, y)) {
+        propagate_event = false;
+        return true;
+      }
+    }
+    break;
   default:
     break;
   }

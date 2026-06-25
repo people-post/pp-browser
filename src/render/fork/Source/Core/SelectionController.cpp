@@ -13,6 +13,19 @@ namespace Rml {
 
 namespace {
 
+enum class WordCharacterClass { Word, Punctuation, Newline, Whitespace, Undefined };
+
+WordCharacterClass GetWordCharacterClass(char c)
+{
+	if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || ((unsigned char)c >= 128))
+		return WordCharacterClass::Word;
+	if ((c >= '!' && c <= '/') || (c >= ':' && c <= '@') || (c >= '[' && c <= '`') || (c >= '{' && c <= '~'))
+		return WordCharacterClass::Punctuation;
+	if (c == '\n')
+		return WordCharacterClass::Newline;
+	return WordCharacterClass::Whitespace;
+}
+
 void CollectRootsInOrder(Element* element, Vector<ElementSelectableText*>& ordered)
 {
 	if (!element)
@@ -140,6 +153,116 @@ bool SelectionController::IsInsideSelectionRoots(Element* element) const
 		}
 	}
 	return false;
+}
+
+bool SelectionController::CanSelectStaticText(Element* target) const
+{
+	if (!target || TargetBlocksSelection(target))
+		return false;
+	return FindSelectableContainer(target) != nullptr;
+}
+
+void SelectionController::SelectWordAt(Vector2i position)
+{
+	RebuildGlobalMap();
+	if (global_text.empty())
+		return;
+
+	const int index = HitTestGlobal(Vector2f(float(position.x), float(position.y)));
+	if (index < 0 || index >= (int)global_text.size())
+		return;
+
+	WordCharacterClass expanding_class = WordCharacterClass::Undefined;
+	auto character_is_boundary = [&](int offset) {
+		if (offset < 0 || offset >= (int)global_text.size())
+			return true;
+		const WordCharacterClass character_class = GetWordCharacterClass(global_text[offset]);
+		if (expanding_class == WordCharacterClass::Undefined)
+		{
+			expanding_class = character_class;
+			return false;
+		}
+		return character_class != expanding_class;
+	};
+
+	int left = index;
+	while (left > 0 && !character_is_boundary(left - 1))
+		--left;
+
+	expanding_class = WordCharacterClass::Undefined;
+	int right = index;
+	while (right < (int)global_text.size() && !character_is_boundary(right))
+		++right;
+
+	if (left >= right)
+	{
+		left = Math::Clamp(index, 0, (int)global_text.size() - 1);
+		right = Math::Min(left + 1, (int)global_text.size());
+	}
+
+	anchor_index = left;
+	focus_index = right;
+	dragging = true;
+	UpdateSelectionGeometry();
+}
+
+void SelectionController::SelectAll()
+{
+	RebuildGlobalMap();
+	if (global_text.empty())
+		return;
+
+	anchor_index = 0;
+	focus_index = (int)global_text.size();
+	dragging = false;
+	UpdateSelectionGeometry();
+}
+
+void SelectionController::FinalizeSelection()
+{
+	if (!dragging)
+		return;
+
+	RebuildGlobalMap();
+	UpdateSelectionGeometry();
+	dragging = false;
+}
+
+String SelectionController::GetSelectedText()
+{
+	RebuildGlobalMap();
+	const int start = Math::Min(anchor_index, focus_index);
+	const int end = Math::Max(anchor_index, focus_index);
+	if (start >= end || start >= (int)global_text.size())
+		return {};
+	return global_text.substr(start, end - start);
+}
+
+String SelectionController::GetSelectedText() const
+{
+	const int start = Math::Min(anchor_index, focus_index);
+	const int end = Math::Max(anchor_index, focus_index);
+	if (start >= end || start >= (int)global_text.size())
+		return {};
+	return global_text.substr(start, end - start);
+}
+
+bool SelectionController::HasSelection() const
+{
+	const int start = Math::Min(anchor_index, focus_index);
+	const int end = Math::Max(anchor_index, focus_index);
+	return start < end;
+}
+
+void SelectionController::OnTouchTap(Vector2i /*position*/, Element* hover)
+{
+	if (!hover || TargetBlocksSelection(hover))
+		return;
+
+	if (!IsInsideSelectionRoots(hover) || !HasSelection())
+		return;
+
+	ClearSelection();
 }
 
 void SelectionController::OnPointerDown(Element* target, Vector2i position)
