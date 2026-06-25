@@ -766,7 +766,7 @@ select selectbox option {
 .shell-chat-overlay-chrome {
   flex-shrink: 0;
   align-items: center;
-  padding: 8dp 12dp;
+  padding: 4dp 4dp;
 }
 
 .shell-chat-overlay .shell-pane-body {
@@ -908,7 +908,7 @@ select selectbox option {
 
 .shell-transient-chrome {
   flex-shrink: 0;
-  padding: 8dp 12dp;
+  padding: 4dp 4dp;
 }
 
 .shell-back-btn {
@@ -927,6 +927,8 @@ select selectbox option {
 
 .shell-back-btn svg {
   flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
 }
 
 .shell-layer-transient {
