@@ -3741,7 +3741,8 @@ init_http (struct ietf_full_conn *conn)
         conn->ifc_qeh.qeh_exp_rec = lsquic_qpack_exp_new();
         if (conn->ifc_qeh.qeh_exp_rec)
         {
-            conn->ifc_qeh.qeh_exp_rec->qer_flags |= QER_SERVER & conn->ifc_flags;
+            if (conn->ifc_flags & IFC_SERVER)
+                conn->ifc_qeh.qeh_exp_rec->qer_flags |= QER_SERVER;
             conn->ifc_qeh.qeh_exp_rec->qer_flags |= QER_ENCODER;
         }
     }
