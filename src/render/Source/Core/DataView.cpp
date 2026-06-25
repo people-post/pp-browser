@@ -8,10 +8,7 @@ DataView::~DataView() {}
 
 Element* DataView::GetElement() const
 {
-	Element* result = attached_element.get();
-	if (!result)
-		Log::Message(Log::LT_WARNING, "Could not retrieve element in view, was it destroyed?");
-	return result;
+	return attached_element.get();
 }
 
 int DataView::GetSortOrder() const
@@ -49,13 +46,20 @@ void DataViews::OnElementRemove(Element* element)
 	for (auto it = views.begin(); it != views.end();)
 	{
 		auto& view = *it;
-		if (view && view->GetElement() == element)
+		if (!view || !view->IsValid())
+		{
+			views_to_remove.push_back(std::move(view));
+			it = views.erase(it);
+		}
+		else if (view->GetElement() == element)
 		{
 			views_to_remove.push_back(std::move(view));
 			it = views.erase(it);
 		}
 		else
+		{
 			++it;
+		}
 	}
 }
 

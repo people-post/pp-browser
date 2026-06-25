@@ -18,6 +18,7 @@ Edit files under `src/render/` directly in pp-browser commits (except `src/rende
 - `SelectionHighlight` — shared selection background geometry and RCSS color resolution for static (`ElementText::RenderSelectionSlice`) and editor (`WidgetTextInput`) paths
 - `ElementSelectableText` / `WidgetTextInput` — hidden `selection` style-probe child; theme via descendant `selection { background-color; color; }` in author RCSS
 - `DataViewFor` — clone inner markup from template children when `rmlui-inner-rml` is absent (fixes empty `data-for` buttons with `{{expr}}` text)
+- `DataView` / `DataViews` — evict stale views in `OnElementRemove` via `IsValid()` (avoids warning spam during pane remounts); `GetElement()` returns null silently like `DataController`
 - `UserAgentStyleSheet` / `WidgetScroll` — scrollbar cross-axis sizing so layout boxes match painted thumbs (fixes full-width invisible hit targets)
 - `Context` — `PreferContentOverScrollbar` when scroll widgets overlap content at the pointer
 - `ClickRouting` / `Context` pointer/click — browser-style click synthesis: `active` stores deepest press hover; `ClickRouting::ResolveClickTarget` dispatches to the release hover when press/release share a DOM branch (tier 1), promotes to the shared interactive ancestor on layout drift (tier 2, `focus:none` chips), with focus/geometry fallbacks (tier 3); post-layout hover refresh after data-bound DOM changes; UAF-safe `ResetActiveChain` before click dispatch
