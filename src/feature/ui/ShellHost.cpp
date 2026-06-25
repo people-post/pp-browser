@@ -1,6 +1,7 @@
 #include "feature/ui/ShellHost.h"
 
 #include "base/platform/BrowserThread.h"
+#include "base/platform/PlatformNavigation.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
@@ -94,6 +95,7 @@ void ShellHost::Initialize(Rml::Context* context) {
   saved_focus_id_.clear();
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
+  PlatformNavigation::SetDismissHandler([] { return Instance().HandleDismiss(); });
 }
 
 Rml::Element* ShellHost::ShellRoot() const {

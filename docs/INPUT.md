@@ -9,7 +9,7 @@ SDL events
   → integration/RmlSDL::InputEventHandler     (translate only)
   → Rml::Context::Process*                    (focus, hover, click, keyboard)
   → SelectionController (selectable="text")   (static text selection)
-  → app/InputCoordinator                      (global keyboard shortcuts)
+  → base/ui/InputCoordinator                     (global keyboard shortcuts)
 ```
 
 | Layer | Location | Responsibility |
@@ -18,7 +18,7 @@ SDL events
 | RmlUi core | `src/render/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; browser-style press/release routing via `ClickRouting::ResolveClickTarget`; UAF-safe click dispatch |
 | Fork selection | `SelectionController`, `ElementSelectableText` | Document-wide drag-select and Ctrl+C via element participation hooks |
 | Editor widgets | `WidgetTextInput` | Focused `input`/`textarea` selection, cursor, IME, cut/paste |
-| Application | `src/app/InputCoordinator.*` | Shortcuts not declared in RML (Escape quit, Enter-to-send) |
+| Base UI | `src/base/ui/InputCoordinator.*` | Shortcuts not declared in RML (Escape quit, Enter-to-send) |
 
 **Selection interaction** is split: read-only bubbles use `SelectionController` (drag without stealing focus from the composer); editors use `WidgetTextInput` when focused. **Selection rendering** is shared: `SelectionHighlight` resolves colors from RCSS `selection` rules and builds highlight quads; static text paints per `ElementText`, editors paint during `FormatElement`.
 

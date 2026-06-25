@@ -1,6 +1,6 @@
 #include "app/Application.h"
 
-#include "app/InputCoordinator.h"
+#include "base/ui/InputCoordinator.h"
 #include "base/data/SessionStore.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatDemo.h"

@@ -42,4 +42,15 @@ const ActionBinding* BindingsManifest::Find(const std::string& action) const {
   return &it->second;
 }
 
+ValidationResult BindingsManifest::Validate(const std::string& bindings_json) {
+  ValidationResult result;
+  BindingsManifest manifest;
+  auto parse_result = Parse(bindings_json, manifest);
+  if (!parse_result) {
+    result.ok = false;
+    result.errors.push_back(parse_result.error().message);
+  }
+  return result;
+}
+
 } // namespace pbr

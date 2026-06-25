@@ -55,6 +55,7 @@ set(PP_BROWSER_BASE_SOURCES
   ai/mcp/SchemaAdapter.cpp
   ui/Theme.cpp
   ui/ViewCatalog.cpp
+  ui/InputCoordinator.cpp
   ${CMAKE_SOURCE_DIR}/src/libp2p/integration/Libp2pHost.cpp
 )
 

@@ -1,6 +1,6 @@
 #include "feature/search/SearchDemo.h"
 
-#include "app/Application.h"
+#include "base/platform/IAssetLocator.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DocumentLoader.h"
 
@@ -75,7 +75,7 @@ bool SetupSearchDemo(Rml::Context* context) {
     return false;
   }
 
-  return DocumentLoader::LoadFile(context, Application::AssetsPath("samples/search_demo.rml")) != nullptr;
+  return DocumentLoader::LoadFile(context, IAssetLocator::Instance().Resolve("samples/search_demo.rml")) != nullptr;
 }
 
 } // namespace pbr

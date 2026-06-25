@@ -22,6 +22,7 @@ int main() {
   assert(action != nullptr);
   assert(action->tool == "user_search");
   assert(action->result_bind == "results");
+  assert(pbr::BindingsManifest::Validate(json).ok);
   std::cout << "bindings_test ok\n";
   return 0;
 }

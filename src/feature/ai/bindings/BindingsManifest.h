@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/ai/RmlValidator.h"
 #include "common/Error.h"
 
 #include <nlohmann/json.hpp>
@@ -18,6 +19,7 @@ struct ActionBinding {
 class BindingsManifest {
 public:
   static Roe<void> Parse(const std::string& json_text, BindingsManifest& out);
+  static ValidationResult Validate(const std::string& bindings_json);
 
   const ActionBinding* Find(const std::string& action) const;
 

@@ -1,14 +1,16 @@
 #include "base/platform/AppLifecycle.h"
 
-#include "feature/chat/ChatDemo.h"
 #include "common/Logger.h"
 #include "base/platform/BrowserThread.h"
+
+#include <vector>
 
 namespace pbr {
 
 namespace {
 
 AppLifecycleState g_state = AppLifecycleState::Foreground;
+std::vector<std::function<void()>> g_background_listeners;
 
 } // namespace
 
@@ -26,7 +28,9 @@ void AppLifecycle::OnWillEnterBackground() {
   }
   g_state = AppLifecycleState::Background;
   BrowserThread::PauseIO();
-  ChatDemo::Instance().OnApplicationPause();
+  for (const auto& listener : g_background_listeners) {
+    listener();
+  }
   logging::getLogger("AppLifecycle").info << "Entering background";
 }
 
@@ -41,6 +45,16 @@ void AppLifecycle::OnDidEnterForeground() {
 
 void AppLifecycle::OnLowMemory() {
   logging::getLogger("AppLifecycle").warning << "Low memory warning";
+}
+
+void AppLifecycle::AddBackgroundListener(std::function<void()> listener) {
+  if (listener) {
+    g_background_listeners.push_back(std::move(listener));
+  }
+}
+
+void AppLifecycle::ClearBackgroundListeners() {
+  g_background_listeners.clear();
 }
 
 } // namespace pbr

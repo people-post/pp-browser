@@ -1,7 +1,5 @@
 #include "base/ai/RmlValidator.h"
 
-#include "feature/ai/bindings/BindingsManifest.h"
-
 #include <algorithm>
 #include <cctype>
 
@@ -45,17 +43,6 @@ ValidationResult RmlValidator::ValidateRml(const std::string& rml) {
 
 ValidationResult RmlValidator::ValidateFragment(const std::string& rml_fragment) {
   return ValidateForbiddenPatterns(rml_fragment);
-}
-
-ValidationResult RmlValidator::ValidateBindings(const std::string& bindings_json) {
-  ValidationResult result;
-  BindingsManifest manifest;
-  auto parse_result = BindingsManifest::Parse(bindings_json, manifest);
-  if (!parse_result) {
-    result.ok = false;
-    result.errors.push_back(parse_result.error().message);
-  }
-  return result;
 }
 
 } // namespace pbr

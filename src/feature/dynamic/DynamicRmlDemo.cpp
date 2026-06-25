@@ -1,6 +1,6 @@
 #include "feature/dynamic/DynamicRmlDemo.h"
 
-#include "app/Application.h"
+#include "base/platform/IAssetLocator.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DocumentLoader.h"
 #include "feature/ui/RmlMount.h"
@@ -171,7 +171,7 @@ bool SetupDynamicRmlDemo(Rml::Context* context) {
     return false;
   }
 
-  if (DocumentLoader::LoadFile(context, Application::AssetsPath("samples/dynamic_rml_demo.rml")) == nullptr) {
+  if (DocumentLoader::LoadFile(context, IAssetLocator::Instance().Resolve("samples/dynamic_rml_demo.rml")) == nullptr) {
     return false;
   }
 

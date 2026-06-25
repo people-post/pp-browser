@@ -9,7 +9,7 @@
 | Common | [`src/common/`](../src/common/) | App-independent utilities (logger, `ResultOrError`, `SequencedTaskRunner`) |
 | Base | [`src/base/`](../src/base/) | pp-browser primitives: platform, data, people, messaging/ai/ui building blocks |
 | Feature | [`src/feature/`](../src/feature/) | Composed capabilities: chat, agent session, shell, messaging hub |
-| App | [`src/app/`](../src/app/) | Composition root: `main`, `Application`, `Bootstrap`, `InputCoordinator` |
+| App | [`src/app/`](../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
 
 **Fork sidecars** (not layers): [`src/render/`](../src/render/), [`src/libp2p/`](../src/libp2p/)
 
@@ -31,7 +31,7 @@ No upward `#include` across layers. Forks are used at the base/feature boundary 
 | `base/people/` | Identity and contacts stores |
 | `base/messaging/` | Thread types, JSON store, parsers |
 | `base/ai/` | LLM client, turn types, parsers, conversation, MCP client |
-| `base/ui/` | Theme, view catalog, shell/working-set types |
+| `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |
 
 ## Feature subfolders
 

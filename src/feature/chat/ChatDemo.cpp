@@ -4,8 +4,8 @@
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/WorkingSetPolicy.h"
 #include "base/ai/conversation/Conversation.h"
-#include "app/Application.h"
-#include "app/InputCoordinator.h"
+#include "base/platform/IAssetLocator.h"
+#include "base/ui/InputCoordinator.h"
 #include "feature/chat/CalendarHelper.h"
 #include "feature/chat/ChatFormHelper.h"
 #include "feature/chat/ChatWidgetStateBuilder.h"
@@ -1083,6 +1083,7 @@ bool ChatDemo::Setup(Rml::Context* context) {
   }
 
   context_ = context;
+  AppLifecycle::AddBackgroundListener([this]() { OnApplicationPause(); });
   const AppConfig& config = SessionStore::Instance().Snapshot().config;
   ClearFormState();
   widgets_by_entry_.clear();
@@ -1219,7 +1220,7 @@ bool ChatDemo::Setup(Rml::Context* context) {
   ShellHost::Instance().RegisterPane(
       {.key = "preview", .rml_path = "views/preview.rml", .role = PaneRole::Auxiliary, .toolbar_label = "Preview"});
 
-  if (DocumentLoader::LoadFile(context, Application::AssetsPath("samples/window_shell.rml")) == nullptr) {
+  if (DocumentLoader::LoadFile(context, IAssetLocator::Instance().Resolve("samples/window_shell.rml")) == nullptr) {
     return false;
   }
 
@@ -1274,6 +1275,7 @@ void ChatDemo::Update() {
 }
 
 void ChatDemo::Shutdown() {
+  AppLifecycle::ClearBackgroundListeners();
   if (agent_) {
     agent_->Cancel();
     agent_.reset();

@@ -12,8 +12,7 @@ target_include_directories(pp_browser_bindings_test PRIVATE ${CMAKE_SOURCE_DIR}/
 pp_browser_add_test(bindings_test pp_browser_bindings_test)
 
 add_executable(pp_browser_rml_validator_test rml_validator_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp
-  ${CMAKE_SOURCE_DIR}/src/feature/ai/bindings/BindingsManifest.cpp)
+  ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp)
 target_link_libraries(pp_browser_rml_validator_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_rml_validator_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(rml_validator_test pp_browser_rml_validator_test)
@@ -34,8 +33,7 @@ target_include_directories(pp_browser_working_set_policy_test PRIVATE ${CMAKE_SO
 pp_browser_add_test(working_set_policy_test pp_browser_working_set_policy_test)
 
 add_executable(pp_browser_rml_mount_test rml_mount_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp
-  ${CMAKE_SOURCE_DIR}/src/feature/ai/bindings/BindingsManifest.cpp)
+  ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp)
 target_link_libraries(pp_browser_rml_mount_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_rml_mount_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(rml_mount_test pp_browser_rml_mount_test)

@@ -1,7 +1,6 @@
 #include "base/platform/PlatformNavigation.h"
 
 #include "base/platform/Platform.h"
-#include "feature/ui/ShellHost.h"
 
 #include "RmlUi_Backend.h"
 
@@ -9,8 +8,22 @@
 
 namespace pbr {
 
+namespace {
+
+std::function<bool()> g_dismiss_handler;
+
+bool TryDismiss() {
+  return g_dismiss_handler && g_dismiss_handler();
+}
+
+} // namespace
+
+void PlatformNavigation::SetDismissHandler(std::function<bool()> handler) {
+  g_dismiss_handler = std::move(handler);
+}
+
 bool PlatformNavigation::OnDismissKey() {
-  if (ShellHost::Instance().HandleDismiss()) {
+  if (TryDismiss()) {
     return true;
   }
   Backend::RequestExit();
@@ -18,7 +31,7 @@ bool PlatformNavigation::OnDismissKey() {
 }
 
 bool PlatformNavigation::OnSystemBack() {
-  if (ShellHost::Instance().HandleDismiss()) {
+  if (TryDismiss()) {
     return true;
   }
   if (Platform::IsMobile()) {

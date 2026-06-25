@@ -3,6 +3,7 @@
 #include "base/ai/PromptBuilder.h"
 #include "base/ai/RmlValidator.h"
 #include "base/platform/BrowserThread.h"
+#include "feature/ai/bindings/BindingsManifest.h"
 
 #include <regex>
 
@@ -36,7 +37,7 @@ Roe<GeneratedUi> UiGenerator::Generate(const std::string& tools_context) const {
     return Error("RML validation failed");
   }
 
-  auto binding_check = RmlValidator::ValidateBindings(ui.bindings_json);
+  auto binding_check = BindingsManifest::Validate(ui.bindings_json);
   if (!binding_check.ok) {
     for (const auto& err : binding_check.errors) {
       log().error << "Bindings validation failed: " << err;

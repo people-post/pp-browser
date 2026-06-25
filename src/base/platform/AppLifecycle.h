@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 namespace pbr {
 
 enum class AppLifecycleState { Foreground, Background };
@@ -12,6 +14,9 @@ public:
   static void OnWillEnterBackground();
   static void OnDidEnterForeground();
   static void OnLowMemory();
+
+  static void AddBackgroundListener(std::function<void()> listener);
+  static void ClearBackgroundListeners();
 };
 
 } // namespace pbr

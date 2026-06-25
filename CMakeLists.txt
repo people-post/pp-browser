@@ -83,7 +83,6 @@ set(PP_BROWSER_APP_SOURCES
   src/app/main.cpp
   src/app/Application.cpp
   src/app/Bootstrap.cpp
-  src/app/InputCoordinator.cpp
 )
 
 add_subdirectory(src/feature)
