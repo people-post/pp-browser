@@ -36,6 +36,8 @@ public:
   void Update();
   void Shutdown();
   void OnApplicationPause();
+  void FinalizeThreadDisplay();
+  void OnSessionsTabActivated();
 
 private:
   struct ActiveForm {

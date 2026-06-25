@@ -96,6 +96,8 @@ struct ShellState {
   bool auxiliary_available = false;
   bool transient_active = false;
 
+  Rml::String primary_pane_key;
+
   Rml::String banner_message;
   std::vector<ToastEntry> toasts;
   DialogState dialog;

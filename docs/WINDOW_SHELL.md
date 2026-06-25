@@ -15,13 +15,29 @@ Shared state lives in `ShellState` (`ShellTypes.h`). Demos call shell APIs; they
 
 ## Pane roles
 
-| Role | Example | Expanded | Compact |
-|------|---------|----------|---------|
-| Nav rail | Sessions / Settings tabs | Left column | Bottom bar |
-| Secondary | Sessions list or Settings | Column beside nav rail | Full page above nav rail |
-| Primary | Chat | Center column | Full-screen overlay on session select |
-| Auxiliary | Working set (Preview) | Right column when open | Sheet |
-| Transient | Drill-down (future) | Over primary | Over primary |
+Each nav-rail tab is an independent **tab context**. Layout left-to-right:
+
+```
+Nav rail → Secondary (index/list) → Primary (drill-down) → Auxiliary → Transient
+```
+
+| Role | Position | Purpose | Expanded | Compact |
+|------|----------|---------|----------|---------|
+| Nav rail | Left / bottom | Tab switcher | Left column | Bottom bar |
+| Secondary | First content column | Tab index / list (sessions, contacts, settings) | Beside nav rail | Full page above nav rail |
+| Primary | Next column right | Tab drill-down content (chat, contact detail) | Center column when set | Full-screen overlay on session select |
+| Auxiliary | Next column right | Further content in this tab (working set) | Right column when open | Sheet |
+| Transient | Overlay | Deeper drill-down in this tab | Over primary | Over primary |
+
+**Tab switch** (`SelectNavTab`) calls `ClearTabContext()`: primary pane cleared, auxiliary closed, transient stack cleared, compact overlay closed. Controllers mount tab-specific content into secondary and primary via `SetPrimaryPane(key)`.
+
+Primary is **tab-scoped drill-down content**, not always chat. Examples:
+
+| Tab | Secondary | Primary (when selected) |
+|-----|-----------|-------------------------|
+| Sessions | Session list | Chat + composer |
+| Contacts | Contact list | Contact detail |
+| Settings | Settings form | (empty) |
 
 The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
 
@@ -44,7 +60,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 
 | Callback | Action |
 |----------|--------|
-| `select_nav_tab(tab)` | Switch nav rail tab (`sessions` or `settings`) |
+| `select_nav_tab(tab)` | Switch nav rail tab (`sessions`, `contacts`, or `settings`); clears tab context |
 | `compact_chat_back()` | Close compact chat overlay |
 | `toggle_auxiliary()` | Open/close preview sheet/panel |
 | `open_auxiliary()` | Open preview when available |
@@ -76,6 +92,7 @@ ShellHost::Instance().RegisterPane({
     .provides_composer = true,
 });
 ShellHost::Instance().SelectNavTab(NavTab::Settings);
+ShellHost::Instance().SetPrimaryPane("chat");
 ShellHost::Instance().OpenCompactChat();
 ShellHost::Instance().SyncLayout();
 

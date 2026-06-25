@@ -176,14 +176,33 @@ void ShellHost::CloseAuxiliary() {
   RequestSyncLayout();
 }
 
+void ShellHost::ClearTabContext() {
+  state_.primary_pane_key.clear();
+  state_.auxiliary_open = false;
+  state_.transient_stack.clear();
+  state_.transient_active = false;
+  state_.compact_chat_open = false;
+  compact_chat_dismiss_at_ms_ = -1.f;
+  DetachChatOverlayGesture();
+}
+
+void ShellHost::SetPrimaryPane(const std::string& key) {
+  state_.primary_pane_key = key.c_str();
+  RequestSyncLayout();
+  DirtyWindow();
+}
+
+void ShellHost::ClearPrimaryPane() {
+  SetPrimaryPane("");
+}
+
 void ShellHost::SelectNavTab(NavTab tab) {
   const bool tab_changed = state_.nav_tab != tab;
+  if (tab_changed) {
+    ClearTabContext();
+  }
   state_.nav_tab = tab;
   ShellLayout::SyncNavTabString(state_);
-  if (state_.layout_mode == LayoutMode::Compact) {
-    state_.compact_chat_open = false;
-    compact_chat_dismiss_at_ms_ = -1.f;
-  }
   if (tab_changed && on_nav_tab_changed_) {
     on_nav_tab_changed_(tab);
   }
@@ -375,11 +394,18 @@ void ShellHost::ApplyLayoutModeFromContext(Rml::Context* context) {
   ShellLayout::SyncLayoutModeString(state_);
 }
 
+void ShellHost::SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback) {
+  on_layout_mode_changed_ = std::move(callback);
+}
+
 void ShellHost::OnLayoutModeChanged() {
   if (state_.layout_mode == LayoutMode::Expanded) {
     state_.compact_chat_open = false;
     compact_chat_dismiss_at_ms_ = -1.f;
     DetachChatOverlayGesture();
+  }
+  if (on_layout_mode_changed_) {
+    on_layout_mode_changed_(state_.layout_mode);
   }
 }
 
@@ -411,9 +437,9 @@ std::string ShellHost::SerializeExpandedBase() const {
   out << "<div class=\"shell-pane shell-pane-secondary\" id=\"shell-nav-content-mount\">";
   out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
   out << "</div>";
-  for (const PaneState& pane : state_.panes) {
-    if (pane.spec.role == PaneRole::Primary) {
-      out << SerializePaneSlot(pane.spec.key, "shell-pane-primary", pane.spec.provides_composer);
+  if (!state_.primary_pane_key.empty()) {
+    if (const PaneState* pane = FindPane(state_.primary_pane_key.c_str())) {
+      out << SerializePaneSlot(pane->spec.key, "shell-pane-primary", pane->spec.provides_composer);
     }
   }
   if (state_.auxiliary_open) {
@@ -570,13 +596,14 @@ void ShellHost::MountComposer() {
     return;
   }
   const PaneState* composer_pane = nullptr;
-  for (const PaneState& pane : state_.panes) {
-    if (pane.spec.provides_composer) {
-      composer_pane = &pane;
-      break;
+  if (state_.layout_mode == LayoutMode::Expanded) {
+    if (!state_.primary_pane_key.empty()) {
+      composer_pane = FindPane(state_.primary_pane_key.c_str());
     }
+  } else {
+    composer_pane = FindPane("chat");
   }
-  if (!composer_pane) {
+  if (!composer_pane || !composer_pane->spec.provides_composer) {
     return;
   }
 
@@ -641,8 +668,14 @@ void ShellHost::MountPaneBodies() {
   MountNavContent();
 
   if (state_.layout_mode == LayoutMode::Expanded) {
-    mount_key("chat");
-    MountComposer();
+    if (!state_.primary_pane_key.empty()) {
+      mount_key(state_.primary_pane_key.c_str());
+      if (const PaneState* pane = FindPane(state_.primary_pane_key.c_str())) {
+        if (pane->spec.provides_composer) {
+          MountComposer();
+        }
+      }
+    }
   } else if (state_.compact_chat_open) {
     mount_key("chat");
     MountComposer();

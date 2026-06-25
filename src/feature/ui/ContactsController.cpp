@@ -3,8 +3,11 @@
 #include "base/messaging/MessagingJson.h"
 #include "base/people/ContactTypes.h"
 #include "feature/messaging/MessagingHub.h"
+#include "feature/chat/ChatDemo.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/ShellHost.h"
+
+#include "base/ui/ShellTypes.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
@@ -85,6 +88,7 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
     }
     ctor.RegisterArray<std::vector<ContactListRow>>();
     ctor.Bind("contacts", &controller.contacts_);
+    ctor.Bind("compact_layout", &controller.compact_layout_);
     ctor.Bind("show_detail", &controller.show_detail_);
     ctor.Bind("selected", &controller.selected_);
     ctor.BindEventCallback("select_contact", &ContactsController::SelectContactCallback);
@@ -96,8 +100,28 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
 void ContactsController::DirtyAll() {
   auto& host = DataModelHost::Instance();
   host.Dirty("contacts", "contacts");
+  host.Dirty("contacts", "compact_layout");
   host.Dirty("contacts", "show_detail");
   host.Dirty("contacts", "selected");
+}
+
+void ContactsController::SyncLayoutMode() {
+  const bool compact = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  if (compact_layout_ == compact) {
+    return;
+  }
+
+  compact_layout_ = compact;
+  if (!compact) {
+    show_detail_ = false;
+    if (!selected_.id.empty()) {
+      ShellHost::Instance().SetPrimaryPane("contact_detail");
+    }
+  } else if (!selected_.id.empty()) {
+    show_detail_ = true;
+    ShellHost::Instance().ClearPrimaryPane();
+  }
+  DirtyAll();
 }
 
 void ContactsController::SyncFromStore() {
@@ -127,6 +151,7 @@ void ContactsController::SyncFromStore() {
 void ContactsController::OnNavTabActivated() {
   show_detail_ = false;
   selected_ = {};
+  compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
   SyncFromStore();
   DirtyAll();
   if (context_) {
@@ -163,7 +188,14 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
   }
 
   selected_ = ToContactDetail(**contact);
-  show_detail_ = true;
+  compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  if (compact_layout_) {
+    show_detail_ = true;
+    ShellHost::Instance().ClearPrimaryPane();
+  } else {
+    show_detail_ = false;
+    ShellHost::Instance().SetPrimaryPane("contact_detail");
+  }
   DirtyAll();
 }
 
@@ -184,9 +216,8 @@ void ContactsController::OnStartChat() {
   }
 
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-  if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
-    ShellHost::Instance().OpenCompactChat();
-  }
+  ShellHost::Instance().SetPrimaryPane("chat");
+  ChatDemo::Instance().FinalizeThreadDisplay();
 }
 
 } // namespace pbr

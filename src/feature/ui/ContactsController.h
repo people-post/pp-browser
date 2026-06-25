@@ -34,6 +34,7 @@ public:
 
   bool RegisterModel(Rml::Context* context);
   void OnNavTabActivated();
+  void SyncLayoutMode();
 
 private:
   ContactsController();
@@ -49,6 +50,7 @@ private:
   void DirtyAll();
 
   std::vector<ContactListRow> contacts_;
+  bool compact_layout_ = false;
   bool show_detail_ = false;
   ContactDetail selected_;
   Rml::Context* context_ = nullptr;

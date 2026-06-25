@@ -18,6 +18,7 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"composer", "views/composer.rml"},
       {"nav_rail", "views/nav_rail.rml"},
       {"contacts", "views/contacts.rml"},
+      {"contact_detail", "views/contact_detail.rml"},
       {"settings", "views/settings.rml"},
   };
   return keys;

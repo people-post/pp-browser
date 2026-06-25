@@ -1,0 +1,16 @@
+<div class="contact-detail-panel stack" data-model="contacts">
+  <div class="contacts-detail-header row">
+    <p class="contacts-header-title">Contact</p>
+  </div>
+
+  <div class="contacts-detail-body stack">
+    <h2 class="heading-2" data-rml="selected.display_name"></h2>
+    <p class="text muted" data-if="selected.nickname != ''">Nickname: <span data-rml="selected.nickname"></span></p>
+    <p class="text muted" data-if="selected.relay_id != ''">Relay ID: <span data-rml="selected.relay_id"></span></p>
+    <p class="text muted" data-if="selected.trust != ''">Trust: <span data-rml="selected.trust"></span></p>
+  </div>
+
+  <div class="contacts-actions">
+    <button class="btn btn-primary" type="button" data-event-click="start_chat()">Start chat</button>
+  </div>
+</div>

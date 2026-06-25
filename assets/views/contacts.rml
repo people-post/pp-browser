@@ -1,10 +1,13 @@
 <div class="contacts-panel" data-model="contacts">
-  <div data-if="!show_detail" class="contacts-list-view">
+  <div class="contacts-list-view" data-if="!compact_layout || !show_detail">
     <div class="contacts-header row">
       <p class="contacts-header-title">Contacts</p>
     </div>
     <div class="contacts-list">
-      <div data-for="contact : contacts" class="contacts-row" data-event-click="select_contact(contact.id)">
+      <div data-for="contact : contacts"
+           class="contacts-row"
+           data-class-contacts-row--active="contact.id == selected.id && selected.id != ''"
+           data-event-click="select_contact(contact.id)">
         <p class="contacts-row-title" data-rml="contact.title"></p>
         <p class="contacts-row-subtitle text muted" data-if="contact.subtitle != ''" data-rml="contact.subtitle"></p>
       </div>
@@ -12,7 +15,7 @@
     </div>
   </div>
 
-  <div data-if="show_detail" class="contacts-detail-view stack">
+  <div data-if="compact_layout && show_detail" class="contacts-detail-view stack">
     <div class="contacts-detail-header row">
       <button class="contacts-back-btn" type="button" data-event-click="back_to_list()">
         <svg src="../icons/back.svg" width="18" height="18"></svg>

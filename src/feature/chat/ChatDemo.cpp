@@ -522,17 +522,27 @@ void ChatDemo::CloseThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /
   Instance().OnCloseThread(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
+void ChatDemo::FinalizeThreadDisplay() {
+  ClearWorkingSet();
+  working_set_by_entry_.clear();
+  RefreshFromMessaging();
+  if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
+    ShellHost::Instance().OpenCompactChat();
+  }
+}
+
+void ChatDemo::OnSessionsTabActivated() {
+  ClearWorkingSet();
+  working_set_by_entry_.clear();
+}
+
 void ChatDemo::OnSelectThread(const std::string& thread_id) {
   if (!messaging_ready_) {
     return;
   }
   if (MessagingHub::Instance().Inbox().OpenThread(thread_id)) {
-    ClearWorkingSet();
-    working_set_by_entry_.clear();
-    RefreshFromMessaging();
-  }
-  if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
-    ShellHost::Instance().OpenCompactChat();
+    ShellHost::Instance().SetPrimaryPane("chat");
+    FinalizeThreadDisplay();
   }
 }
 
@@ -650,6 +660,10 @@ void ChatDemo::HandleLocalAction(const std::string& message, const std::optional
         return;
       }
       RefreshFromMessaging();
+      ShellHost::Instance().SetPrimaryPane("chat");
+      if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
+        ShellHost::Instance().OpenCompactChat();
+      }
       return;
     }
   }
@@ -1223,11 +1237,19 @@ bool ChatDemo::Setup(Rml::Context* context) {
 
   ShellHost::Instance().Initialize(context);
   ShellHost::Instance().SetOnNavTabChanged([](NavTab tab) {
+    if (tab == NavTab::Sessions) {
+      ChatDemo::Instance().OnSessionsTabActivated();
+    }
     if (tab == NavTab::Settings) {
       SettingsController::Instance().OnNavTabActivated();
     }
     if (tab == NavTab::Contacts) {
       ContactsController::Instance().OnNavTabActivated();
+    }
+  });
+  ShellHost::Instance().SetOnLayoutModeChanged([](LayoutMode /*mode*/) {
+    if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
+      ContactsController::Instance().SyncLayoutMode();
     }
   });
   ShellHost::Instance().RegisterPane(
@@ -1240,6 +1262,8 @@ bool ChatDemo::Setup(Rml::Context* context) {
                                        .rml_path = "views/chat.rml",
                                        .role = PaneRole::Primary,
                                        .provides_composer = true});
+  ShellHost::Instance().RegisterPane(
+      {.key = "contact_detail", .rml_path = "views/contact_detail.rml", .role = PaneRole::Primary});
   ShellHost::Instance().RegisterPane(
       {.key = "preview", .rml_path = "views/preview.rml", .role = PaneRole::Auxiliary, .toolbar_label = "Preview"});
 

@@ -17,6 +17,20 @@ int main() {
   assert(ShellLayout::NavContentKey(NavTab::Contacts) == std::string("contacts"));
   assert(ShellLayout::NavContentKey(NavTab::Settings) == std::string("settings"));
 
+  ShellState cleared_tab{};
+  cleared_tab.primary_pane_key = "chat";
+  cleared_tab.auxiliary_open = true;
+  cleared_tab.transient_active = true;
+  cleared_tab.compact_chat_open = true;
+  cleared_tab.primary_pane_key.clear();
+  cleared_tab.auxiliary_open = false;
+  cleared_tab.transient_active = false;
+  cleared_tab.compact_chat_open = false;
+  assert(cleared_tab.primary_pane_key.empty());
+  assert(!cleared_tab.auxiliary_open);
+  assert(!cleared_tab.transient_active);
+  assert(!cleared_tab.compact_chat_open);
+
   ShellState expanded{};
   expanded.layout_mode = LayoutMode::Expanded;
   expanded.auxiliary_open = true;

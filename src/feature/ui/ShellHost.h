@@ -35,6 +35,9 @@ public:
   void CloseAuxiliary();
   void ToggleAuxiliary();
   void SelectNavTab(NavTab tab);
+  void ClearTabContext();
+  void SetPrimaryPane(const std::string& key);
+  void ClearPrimaryPane();
   void OpenCompactChat();
   void CloseCompactChat();
   void PushTransient(const PaneSpec& spec);
@@ -48,6 +51,7 @@ public:
   void SetOnBeforeTransientMount(std::function<void(const std::string& key)> callback);
   void SetOnTransientMounted(std::function<void(const std::string& key)> callback);
   void SetOnNavTabChanged(std::function<void(NavTab tab)> callback);
+  void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
 
   static void ToggleAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -104,6 +108,7 @@ private:
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(NavTab)> on_nav_tab_changed_;
+  std::function<void(LayoutMode)> on_layout_mode_changed_;
 };
 
 } // namespace pbr
