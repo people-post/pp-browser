@@ -31,6 +31,25 @@ cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
+### Compiler cache (optional)
+
+Speed up rebuilds with **ccache** on Linux/macOS or **sccache** on Windows (MSVC):
+
+```bash
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DPP_BROWSER_COMPILER_CACHE=ON
+cmake --build build -j
+```
+
+Install the tool first:
+
+- **Linux:** `sudo apt install ccache` (or your distro equivalent)
+- **macOS:** `brew install ccache`
+- **Windows (MSVC):** `winget install Mozilla.sccache` or `scoop install sccache`
+
+On Windows, Debug and RelWithDebInfo builds use embedded debug info (`/Z7`) so sccache can cache MSVC compiles. Release builds are unaffected.
+
+CI uses ccache (Linux/macOS) and sccache (Windows) automatically via `-DPP_BROWSER_COMPILER_CACHE=ON`.
+
 ## Run
 
 From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):

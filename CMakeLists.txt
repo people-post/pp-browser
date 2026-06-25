@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.24)
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(CompilerCache)
+pp_browser_configure_compiler_cache()
+
 set(PP_BROWSER_VERSION "0.1.0" CACHE STRING "Numeric application version for CMake project()")
 set(PP_BROWSER_RELEASE_VERSION "" CACHE STRING "Full release version (e.g. 0.1.0-rc1); defaults to PP_BROWSER_VERSION")
 if(PP_BROWSER_RELEASE_VERSION STREQUAL "")
@@ -17,7 +21,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+pp_browser_finalize_compiler_cache()
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)

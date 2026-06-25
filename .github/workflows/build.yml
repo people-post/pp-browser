@@ -34,6 +34,14 @@ jobs:
             brew install ccache
           fi
 
+      - name: Setup sccache
+        if: runner.os == 'Windows'
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache
+        if: runner.os == 'Windows'
+        run: echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+
       - name: Ensure ccache directory exists
         if: runner.os != 'Windows'
         run: |
@@ -55,20 +63,20 @@ jobs:
           ccache --zero-stats || true
           ccache --show-stats || true
 
+      - name: sccache stats (pre-build)
+        if: runner.os == 'Windows'
+        run: sccache --zero-stats || true
+
       - name: Configure
         shell: bash
         run: |
           generator=()
-          cmake_args=()
           if [ "${{ runner.os }}" = "Windows" ]; then
             generator=(-G Ninja)
-          else
-            cmake_args=(
-              -DCMAKE_C_COMPILER_LAUNCHER=ccache
-              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-            )
           fi
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release "${generator[@]}" "${cmake_args[@]}"
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release \
+            -DPP_BROWSER_COMPILER_CACHE=ON \
+            "${generator[@]}"
 
       - name: Build
         shell: bash
@@ -95,6 +103,10 @@ jobs:
       - name: ccache stats (post-build)
         if: runner.os != 'Windows'
         run: ccache --show-stats || true
+
+      - name: sccache stats (post-build)
+        if: runner.os == 'Windows'
+        run: sccache --show-stats || true
 
   android:
     runs-on: ubuntu-latest
