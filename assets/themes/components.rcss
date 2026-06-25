@@ -690,6 +690,7 @@ select selectbox option {
   height: 100%;
   align-items: center;
   justify-content: flex-start;
+  gap: 4dp;
   padding: 8dp 4dp;
   box-sizing: border-box;
 }
@@ -697,16 +698,18 @@ select selectbox option {
 .shell-nav-rail--compact .shell-nav-rail-inner {
   flex-direction: row;
   justify-content: flex-start;
+  gap: 0;
   height: 48dp;
 }
 
 .shell-nav-spacer {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   width: 100%;
   min-height: 0;
 }
 
 .shell-nav-rail--compact .shell-nav-spacer {
+  flex: 1 1 auto;
   width: auto;
   height: auto;
 }
