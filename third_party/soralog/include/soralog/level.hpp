@@ -12,12 +12,15 @@
 #include <cstdint>
 
 #if defined(_WIN32)
-// wingdi.h (via windows.h) defines ERROR; breaks enum members below.
+// windows.h / wingdi.h / winnt.h define macros that collide with enum members.
 #ifdef ERROR
 #undef ERROR
 #endif
 #ifdef DEBUG
 #undef DEBUG
+#endif
+#ifdef IGNORE
+#undef IGNORE
 #endif
 #endif
 
