@@ -4,7 +4,7 @@ pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — windowing and GPU presentation
 - **Hard-forked RmlUi** — RML/RCSS layout and widgets (`src/render/fork/`)
-- **Hard-forked libp2p** — C++ libp2p stack (`src/libp2p/`)
+- **Hard-forked libp2p** — C++ libp2p stack (`src/libp2p/fork/`)
 - **ActionRouter** — maps UI events to MCP tool calls via bindings manifest
 - **UiGenerator** — LLM produces RML/RCSS/bindings from MCP tool schemas
 

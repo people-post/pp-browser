@@ -16,7 +16,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 **System packages:** X11 and OpenGL development headers on Linux for the GUI.
 
-RmlUi is **hard-forked** under `src/render/fork/`. libp2p is **hard-forked** under `src/libp2p/` (not in `third_party/`).
+RmlUi is **hard-forked** under `src/render/fork/`. libp2p is **hard-forked** under `src/libp2p/fork/` (not in `third_party/`).
 
 If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
 
@@ -29,6 +29,25 @@ Codec sources under `third_party/sdl3_image/external/` are committed as **regula
 ```bash
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
+```
+
+### libp2p tests and coverage
+
+By default, desktop builds enable in-tree libp2p unit tests (`PP_BROWSER_LIBP2P_TESTING=ON`). Examples are opt-in.
+
+```bash
+# Default: pp-browser + libp2p unit tests
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build
+
+# libp2p examples
+cmake -B build -S . -DPP_BROWSER_LIBP2P_EXAMPLES=ON
+cmake --build build -j
+
+# libp2p coverage (requires gcovr)
+cmake -B build -S . -DPP_BROWSER_LIBP2P_COVERAGE=ON -DPP_BROWSER_LIBP2P_TESTING=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target ctest_coverage_html
 ```
 
 ### Compiler cache (optional)

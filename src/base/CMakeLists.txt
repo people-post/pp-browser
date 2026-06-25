@@ -62,7 +62,7 @@ set(PP_BROWSER_BASE_SOURCES
   ui/Theme.cpp
   ui/ViewCatalog.cpp
   ui/InputCoordinator.cpp
-  ${CMAKE_SOURCE_DIR}/src/libp2p/integration/Libp2pHost.cpp
+  ${CMAKE_SOURCE_DIR}/src/libp2p/integration/host/Libp2pHost.cpp
 )
 
 add_library(pp_base STATIC ${PP_BROWSER_BASE_SOURCES})

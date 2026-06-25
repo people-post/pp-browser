@@ -39,6 +39,21 @@ integration/host → integration/platform + integration/renderer → fork/Includ
 
 Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src/feature/ui/`.
 
+## libp2p subtree (`src/libp2p/`)
+
+| Path | Role |
+|------|------|
+| `libp2p/fork/` | Upstream-shaped cpp-libp2p hard fork (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
+| `libp2p/fork/example/` | Sample programs (`PP_BROWSER_LIBP2P_EXAMPLES`) |
+| `libp2p/fork/test/` | Unit tests (`PP_BROWSER_LIBP2P_TESTING` / coverage) |
+| `libp2p/integration/host/` | `Libp2pHost` bootstrap glue |
+
+Dependency rule:
+
+```
+integration/host → fork/include (public API only)
+```
+
 ## Base subfolders
 
 | Path | Contents |

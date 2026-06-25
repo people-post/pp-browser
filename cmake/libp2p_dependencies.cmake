@@ -218,4 +218,25 @@ if(NOT TARGET lsquic::lsquic)
   endif()
 endif()
 
+function(pp_libp2p_add_vendored_googletest)
+  if(TARGET GTest::gmock_main)
+    return()
+  endif()
+  pp_libp2p_require_vendored(googletest)
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  set(gmock_force_shared_crt ON CACHE BOOL "" FORCE)
+  set(BUILD_GMOCK ON CACHE BOOL "" FORCE)
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  set(gtest_build_tests OFF CACHE BOOL "" FORCE)
+  set(gtest_build_samples OFF CACHE BOOL "" FORCE)
+  add_subdirectory(
+    "${PP_LIBP2P_THIRD_PARTY}/googletest"
+    "${CMAKE_BINARY_DIR}/third_party/googletest"
+    EXCLUDE_FROM_ALL)
+endfunction()
+
+if(PP_BROWSER_LIBP2P_TESTING OR PP_BROWSER_LIBP2P_COVERAGE)
+  pp_libp2p_add_vendored_googletest()
+endif()
+
 pp_configure_status("libp2p third_party dependencies ready")

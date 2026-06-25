@@ -23,6 +23,7 @@ declare -A LIBP2P_REPOS=(
   [tsl_hat_trie]="https://github.com/masterjedy/hat-trie/archive/4fdfc75e75276185eed4b748ea09671601101b8e.tar.gz|tarball"
   [boost_di]="https://github.com/qdrvm/boost-di/archive/d5de6c9840c7fc2e44bf37134b4a14b88151ecc4.zip|tarball"
   [zlib]="https://github.com/qdrvm/zlib/archive/refs/tags/v1.3.0-p1.tar.gz|tarball"
+  [googletest]="https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz|tarball"
 )
 
 import_tarball() {

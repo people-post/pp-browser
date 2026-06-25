@@ -8,7 +8,7 @@ pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — windowing (`src/render/integration/`)
 - **Hard-forked RmlUi** — UI layout in `src/render/fork/`
-- **Hard-forked libp2p** — P2P networking in `src/libp2p/`
+- **Hard-forked libp2p** — P2P networking in `src/libp2p/fork/`
 - **Third-party libs** — FreeType, nlohmann/json, curl, SDL3, SDL3_image, and libp2p deps in [`third_party/`](third_party/)
 - **Four-layer source tree** — `src/common/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/SRC_LAYOUT.md](docs/SRC_LAYOUT.md)
 
@@ -32,11 +32,11 @@ We **own and modify** the vendored copy under [`src/render/fork/`](src/render/fo
 
 ## libp2p is maintained in-tree
 
-We **own and modify** the hard fork under [`src/libp2p/`](src/libp2p/). It is not a submodule. Hunter is removed; dependencies are vendored in `third_party/`.
+We **own and modify** the hard fork under [`src/libp2p/fork/`](src/libp2p/fork/). It is not a submodule. Hunter is removed; dependencies are vendored in `third_party/`.
 
 - Edit libp2p directly when protocol or transport changes are needed.
 - Document fork-specific changes in [docs/LIBP2P_UPSTREAM.md](docs/LIBP2P_UPSTREAM.md).
-- App-specific glue will live in [`src/libp2p/integration/`](src/libp2p/integration/) (not in the fork proper).
+- App-specific glue lives in [`src/libp2p/integration/host/`](src/libp2p/integration/host/) (not in the fork proper).
 - Import/update libp2p deps with `./scripts/libp2p_vendor_import.sh`.
 
 ## UI generation constraints

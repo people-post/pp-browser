@@ -33,6 +33,16 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 include(Platform)
+
+if(PP_BROWSER_IS_MOBILE)
+  set(PP_BROWSER_LIBP2P_TESTING_DEFAULT OFF)
+else()
+  set(PP_BROWSER_LIBP2P_TESTING_DEFAULT ON)
+endif()
+option(PP_BROWSER_LIBP2P_TESTING "Build in-tree libp2p unit tests" ${PP_BROWSER_LIBP2P_TESTING_DEFAULT})
+option(PP_BROWSER_LIBP2P_EXAMPLES "Build in-tree libp2p examples" OFF)
+option(PP_BROWSER_LIBP2P_COVERAGE "Enable libp2p gcovr coverage targets" OFF)
+
 include(dependencies)
 include(Progress)
 find_package(Threads REQUIRED)
@@ -51,11 +61,22 @@ pp_configure_status("RmlUi configured; setting up pp-browser targets...")
 
 pp_configure_status("Configuring in-tree libp2p (src/libp2p)...")
 set(PACKAGE_MANAGER vendored CACHE STRING "" FORCE)
-set(TESTING OFF CACHE BOOL "" FORCE)
-set(EXAMPLES OFF CACHE BOOL "" FORCE)
+if(PP_BROWSER_IS_MOBILE)
+  set(TESTING OFF CACHE BOOL "" FORCE)
+  set(EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(COVERAGE OFF CACHE BOOL "" FORCE)
+else()
+  set(TESTING ${PP_BROWSER_LIBP2P_TESTING} CACHE BOOL "Build libp2p tests" FORCE)
+  set(EXAMPLES ${PP_BROWSER_LIBP2P_EXAMPLES} CACHE BOOL "Build libp2p examples" FORCE)
+  set(COVERAGE ${PP_BROWSER_LIBP2P_COVERAGE} CACHE BOOL "libp2p coverage" FORCE)
+endif()
 set(CLANG_TIDY OFF CACHE BOOL "" FORCE)
 set(CLANG_FORMAT OFF CACHE BOOL "" FORCE)
-add_subdirectory(src/libp2p EXCLUDE_FROM_ALL)
+if(PP_BROWSER_LIBP2P_TESTING OR PP_BROWSER_LIBP2P_COVERAGE)
+  add_subdirectory(src/libp2p)
+else()
+  add_subdirectory(src/libp2p EXCLUDE_FROM_ALL)
+endif()
 pp_configure_status("libp2p configured")
 
 set(PP_BROWSER_BACKEND_SOURCES
@@ -131,7 +152,7 @@ endif()
 
 target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/libp2p/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/libp2p/fork/include
 )
 
 target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE

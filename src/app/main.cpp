@@ -1,7 +1,7 @@
 #include "app/Application.h"
 #include "app/Bootstrap.h"
 #include "base/data/SessionStore.h"
-#include "libp2p/integration/Libp2pHost.h"
+#include "libp2p/integration/host/Libp2pHost.h"
 #include "common/Logger.h"
 #include "base/platform/Platform.h"
 

@@ -45,7 +45,7 @@ set(PP_BROWSER_FEATURE_SOURCES
 add_library(pp_feature STATIC ${PP_BROWSER_FEATURE_SOURCES})
 target_include_directories(pp_feature PUBLIC
   ${CMAKE_SOURCE_DIR}/src
-  ${CMAKE_SOURCE_DIR}/src/libp2p/include
+  ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include
 )
 target_link_libraries(pp_feature PUBLIC
   pp_base
