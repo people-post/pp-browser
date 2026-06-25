@@ -1,5 +1,10 @@
 <div class="shell-nav-rail-inner" data-model="window">
   <button class="shell-nav-tab" type="button"
+          data-class-shell-nav-tab--active="nav_tab == 'home'"
+          data-event-click="select_nav_tab('home')">
+    <svg src="../icons/sparkle.svg" width="22" height="22" crop-to-content="true"></svg>
+  </button>
+  <button class="shell-nav-tab" type="button"
           data-class-shell-nav-tab--active="nav_tab == 'sessions'"
           data-event-click="select_nav_tab('sessions')">
     <svg src="../icons/sessions.svg" width="22" height="22" crop-to-content="true"></svg>

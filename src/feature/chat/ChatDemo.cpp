@@ -526,9 +526,23 @@ void ChatDemo::FinalizeThreadDisplay() {
   ClearWorkingSet();
   working_set_by_entry_.clear();
   RefreshFromMessaging();
-  if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
+  if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact &&
+      ShellHost::Instance().State().nav_tab == NavTab::Sessions) {
     ShellHost::Instance().OpenCompactChat();
   }
+}
+
+void ChatDemo::OnHomeTabActivated() {
+  if (!messaging_ready_) {
+    return;
+  }
+  (void)MessagingHub::Instance().Inbox().CreateAiHomeThread();
+  ClearWorkingSet();
+  working_set_by_entry_.clear();
+  ShellHost::Instance().SetPrimaryPane("chat");
+  RefreshFromMessaging();
+  ShellHost::Instance().RequestSyncLayout();
+  ShellHost::Instance().DirtyWindow();
 }
 
 void ChatDemo::OnSessionsTabActivated() {
@@ -598,6 +612,9 @@ void ChatDemo::SyncShellSessions() {
   const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
   auto& inbox = MessagingHub::Instance().Inbox();
   for (const Thread& thread : sorted_threads) {
+    if (inbox.IsAiHomeThread(thread.id)) {
+      continue;
+    }
     SessionRow row;
     row.id = thread.id.c_str();
     row.title = thread.title.c_str();
@@ -660,8 +677,16 @@ void ChatDemo::HandleLocalAction(const std::string& message, const std::optional
         return;
       }
       RefreshFromMessaging();
+      const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+      auto& inbox = MessagingHub::Instance().Inbox();
+      if (inbox.IsAiHomeThread(active_id)) {
+        ShellHost::Instance().SelectNavTab(NavTab::Home);
+      } else {
+        ShellHost::Instance().SelectNavTab(NavTab::Sessions);
+      }
       ShellHost::Instance().SetPrimaryPane("chat");
-      if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
+      if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact &&
+          ShellHost::Instance().State().nav_tab == NavTab::Sessions) {
         ShellHost::Instance().OpenCompactChat();
       }
       return;
@@ -1237,6 +1262,9 @@ bool ChatDemo::Setup(Rml::Context* context) {
 
   ShellHost::Instance().Initialize(context);
   ShellHost::Instance().SetOnNavTabChanged([](NavTab tab) {
+    if (tab == NavTab::Home) {
+      ChatDemo::Instance().OnHomeTabActivated();
+    }
     if (tab == NavTab::Sessions) {
       ChatDemo::Instance().OnSessionsTabActivated();
     }
@@ -1247,9 +1275,12 @@ bool ChatDemo::Setup(Rml::Context* context) {
       ContactsController::Instance().OnNavTabActivated();
     }
   });
-  ShellHost::Instance().SetOnLayoutModeChanged([](LayoutMode /*mode*/) {
+  ShellHost::Instance().SetOnLayoutModeChanged([](LayoutMode mode) {
     if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
       ContactsController::Instance().SyncLayoutMode();
+    }
+    if (mode == LayoutMode::Compact && ShellHost::Instance().State().nav_tab == NavTab::Home) {
+      ChatDemo::Instance().OnHomeTabActivated();
     }
   });
   ShellHost::Instance().RegisterPane(
@@ -1273,6 +1304,10 @@ bool ChatDemo::Setup(Rml::Context* context) {
 
   ShellHost::Instance().Update(context);
   ShellHost::Instance().SyncLayout();
+
+  if (messaging_ready_) {
+    OnHomeTabActivated();
+  }
 
   if (!use_llm_) {
     ShellFeedback::ShowBanner(ShellHost::Instance().State(), "Using mock replies — LLM is not configured.");

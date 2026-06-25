@@ -12,7 +12,7 @@ enum class PaneRole { Primary, Secondary, Auxiliary, Transient };
 
 enum class LayoutMode { Compact, Expanded };
 
-enum class NavTab { Sessions, Contacts, Settings };
+enum class NavTab { Home, Sessions, Contacts, Settings };
 
 enum class OverlayKind { Generic, Alert, Confirm, Custom };
 
@@ -85,8 +85,8 @@ struct PaneVisibility {
 struct ShellState {
   LayoutMode layout_mode = LayoutMode::Expanded;
   Rml::String layout_mode_str = "expanded";
-  NavTab nav_tab = NavTab::Sessions;
-  Rml::String nav_tab_str = "sessions";
+  NavTab nav_tab = NavTab::Home;
+  Rml::String nav_tab_str = "home";
   std::vector<PaneState> panes;
   std::vector<PaneState> transient_stack;
   std::vector<OverlayEntry> overlay_stack;

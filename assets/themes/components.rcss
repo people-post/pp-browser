@@ -745,6 +745,16 @@ select selectbox option {
   height: 100%;
 }
 
+.shell-nav-page--home .shell-pane-body {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.shell-nav-page--home .shell-composer-mount {
+  flex-shrink: 0;
+}
+
 .shell-chat-overlay {
   position: absolute;
   top: 0;

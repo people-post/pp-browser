@@ -76,7 +76,7 @@ private:
   std::string SerializeOverlays() const;
   std::string SerializeDialog() const;
   std::string SerializeTransientLayer() const;
-  std::string NavContentKey() const;
+  const char* NavContentKey() const;
   void MountPaneBodies();
   void MountNavRail();
   void MountNavContent();

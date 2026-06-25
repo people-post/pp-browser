@@ -49,7 +49,10 @@ NavTab NavTabFromString(const Rml::String& value) {
   if (value == "contacts") {
     return NavTab::Contacts;
   }
-  return NavTab::Sessions;
+  if (value == "sessions") {
+    return NavTab::Sessions;
+  }
+  return NavTab::Home;
 }
 
 } // namespace
@@ -409,7 +412,7 @@ void ShellHost::OnLayoutModeChanged() {
   }
 }
 
-std::string ShellHost::NavContentKey() const {
+const char* ShellHost::NavContentKey() const {
   return ShellLayout::NavContentKey(state_.nav_tab);
 }
 
@@ -429,16 +432,22 @@ std::string ShellHost::SerializePaneSlot(const std::string& key, const char* ext
 }
 
 std::string ShellHost::SerializeExpandedBase() const {
-  const std::string nav_content = NavContentKey();
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-base\" data-model=\"window\">";
   out << "<div class=\"shell-pane-row\">";
   out << "<div class=\"shell-nav-rail\" id=\"shell-nav-rail-mount\"></div>";
-  out << "<div class=\"shell-pane shell-pane-secondary\" id=\"shell-nav-content-mount\">";
-  out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
-  out << "</div>";
-  if (!state_.primary_pane_key.empty()) {
-    if (const PaneState* pane = FindPane(state_.primary_pane_key.c_str())) {
+  if (ShellLayout::TabHasSecondary(state_.nav_tab)) {
+    const char* nav_content = ShellLayout::NavContentKey(state_.nav_tab);
+    out << "<div class=\"shell-pane shell-pane-secondary\" id=\"shell-nav-content-mount\">";
+    out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
+    out << "</div>";
+  }
+  Rml::String primary_key = state_.primary_pane_key;
+  if (primary_key.empty() && state_.nav_tab == NavTab::Home) {
+    primary_key = "chat";
+  }
+  if (!primary_key.empty()) {
+    if (const PaneState* pane = FindPane(primary_key.c_str())) {
       out << SerializePaneSlot(pane->spec.key, "shell-pane-primary", pane->spec.provides_composer);
     }
   }
@@ -454,13 +463,22 @@ std::string ShellHost::SerializeExpandedBase() const {
 }
 
 std::string ShellHost::SerializeCompactBase() const {
-  const std::string nav_content = NavContentKey();
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-base shell-layer-compact\" data-model=\"window\">";
 
   if (!state_.compact_chat_open) {
-    out << "<div class=\"shell-nav-page\">";
-    out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
+    const bool home_inline = state_.nav_tab == NavTab::Home;
+    out << "<div class=\"shell-nav-page";
+    if (home_inline) {
+      out << " shell-nav-page--home";
+    }
+    out << "\">";
+    if (const char* nav_content = NavContentKey()) {
+      out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
+    } else if (home_inline) {
+      out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
+      out << "<div class=\"shell-composer-mount\" id=\"shell-composer-mount\"></div>";
+    }
     out << "</div>";
   }
 
@@ -580,8 +598,11 @@ void ShellHost::MountNavContent() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  const std::string key = NavContentKey();
-  Rml::Element* target = context_->GetDocument(0)->GetElementById(("pane-body-" + key).c_str());
+  const char* key = NavContentKey();
+  if (!key) {
+    return;
+  }
+  Rml::Element* target = context_->GetDocument(0)->GetElementById(("pane-body-" + std::string(key)).c_str());
   if (!target) {
     return;
   }
@@ -621,7 +642,7 @@ void ShellHost::MountComposer() {
     return;
   }
 
-  if (!state_.compact_chat_open) {
+  if (!state_.compact_chat_open && state_.nav_tab != NavTab::Home) {
     return;
   }
   Rml::Element* target = doc->GetElementById("shell-composer-mount");
@@ -668,9 +689,13 @@ void ShellHost::MountPaneBodies() {
   MountNavContent();
 
   if (state_.layout_mode == LayoutMode::Expanded) {
-    if (!state_.primary_pane_key.empty()) {
-      mount_key(state_.primary_pane_key.c_str());
-      if (const PaneState* pane = FindPane(state_.primary_pane_key.c_str())) {
+    Rml::String primary_key = state_.primary_pane_key;
+    if (primary_key.empty() && state_.nav_tab == NavTab::Home) {
+      primary_key = "chat";
+    }
+    if (!primary_key.empty()) {
+      mount_key(primary_key.c_str());
+      if (const PaneState* pane = FindPane(primary_key.c_str())) {
         if (pane->spec.provides_composer) {
           MountComposer();
         }
@@ -680,6 +705,9 @@ void ShellHost::MountPaneBodies() {
     mount_key("chat");
     MountComposer();
     AttachChatOverlayGesture();
+  } else if (state_.nav_tab == NavTab::Home) {
+    mount_key("chat");
+    MountComposer();
   }
 
   if (state_.auxiliary_open) {

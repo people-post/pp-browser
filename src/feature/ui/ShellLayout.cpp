@@ -17,7 +17,10 @@ const char* ShellLayout::NavTabString(NavTab tab) {
   if (tab == NavTab::Contacts) {
     return "contacts";
   }
-  return "sessions";
+  if (tab == NavTab::Sessions) {
+    return "sessions";
+  }
+  return "home";
 }
 
 void ShellLayout::SyncLayoutModeString(ShellState& state) {
@@ -29,6 +32,9 @@ void ShellLayout::SyncNavTabString(ShellState& state) {
 }
 
 const char* ShellLayout::NavContentKey(NavTab tab) {
+  if (tab == NavTab::Home) {
+    return nullptr;
+  }
   if (tab == NavTab::Settings) {
     return "settings";
   }
@@ -36,6 +42,10 @@ const char* ShellLayout::NavContentKey(NavTab tab) {
     return "contacts";
   }
   return "sidebar";
+}
+
+bool ShellLayout::TabHasSecondary(NavTab tab) {
+  return NavContentKey(tab) != nullptr;
 }
 
 PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {

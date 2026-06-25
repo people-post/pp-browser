@@ -13,6 +13,10 @@ int main() {
   assert(ShellLayout::FromWidth(767.f) == LayoutMode::Compact);
   assert(ShellLayout::FromWidth(768.f) == LayoutMode::Expanded);
   assert(ShellLayout::FromWidth(1280.f) == LayoutMode::Expanded);
+  assert(ShellLayout::NavTabString(NavTab::Home) == std::string("home"));
+  assert(ShellLayout::NavContentKey(NavTab::Home) == nullptr);
+  assert(!ShellLayout::TabHasSecondary(NavTab::Home));
+  assert(ShellLayout::TabHasSecondary(NavTab::Sessions));
   assert(ShellLayout::NavContentKey(NavTab::Sessions) == std::string("sidebar"));
   assert(ShellLayout::NavContentKey(NavTab::Contacts) == std::string("contacts"));
   assert(ShellLayout::NavContentKey(NavTab::Settings) == std::string("settings"));

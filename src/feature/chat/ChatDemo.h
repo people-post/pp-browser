@@ -37,6 +37,7 @@ public:
   void Shutdown();
   void OnApplicationPause();
   void FinalizeThreadDisplay();
+  void OnHomeTabActivated();
   void OnSessionsTabActivated();
 
 private:

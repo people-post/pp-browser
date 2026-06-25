@@ -12,6 +12,7 @@ struct ShellLayout {
   static void SyncNavTabString(ShellState& state);
   static PaneVisibility WhichPanesVisible(const ShellState& state);
   static const char* NavContentKey(NavTab tab);
+  static bool TabHasSecondary(NavTab tab);
 };
 
 } // namespace pbr

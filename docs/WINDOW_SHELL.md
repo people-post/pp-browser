@@ -24,8 +24,8 @@ Nav rail → Secondary (index/list) → Primary (drill-down) → Auxiliary → T
 | Role | Position | Purpose | Expanded | Compact |
 |------|----------|---------|----------|---------|
 | Nav rail | Left / bottom | Tab switcher | Left column | Bottom bar |
-| Secondary | First content column | Tab index / list (sessions, contacts, settings) | Beside nav rail | Full page above nav rail |
-| Primary | Next column right | Tab drill-down content (chat, contact detail) | Center column when set | Full-screen overlay on session select |
+| Secondary | First content column | Tab index / list (sessions, contacts, settings) | Beside nav rail (Home tab omits this) | Full page above nav rail |
+| Primary | Next column right | Tab drill-down content (chat, contact detail) | Center column when set; Home tab always shows chat | Home: inline chat in nav page; Sessions: overlay on thread select |
 | Auxiliary | Next column right | Further content in this tab (working set) | Right column when open | Sheet |
 | Transient | Overlay | Deeper drill-down in this tab | Over primary | Over primary |
 
@@ -35,6 +35,7 @@ Primary is **tab-scoped drill-down content**, not always chat. Examples:
 
 | Tab | Secondary | Primary (when selected) |
 |-----|-----------|-------------------------|
+| Home (default) | (none) | AI home chat + composer |
 | Sessions | Session list | Chat + composer |
 | Contacts | Contact list | Contact detail |
 | Settings | Settings form | (empty) |
@@ -60,7 +61,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 
 | Callback | Action |
 |----------|--------|
-| `select_nav_tab(tab)` | Switch nav rail tab (`sessions`, `contacts`, or `settings`); clears tab context |
+| `select_nav_tab(tab)` | Switch nav rail tab (`home`, `sessions`, `contacts`, or `settings`); clears tab context |
 | `compact_chat_back()` | Close compact chat overlay |
 | `toggle_auxiliary()` | Open/close preview sheet/panel |
 | `open_auxiliary()` | Open preview when available |
@@ -78,9 +79,9 @@ Primary panes may set `provides_composer = true` on `PaneSpec`. The shell mounts
 | Layout | Mount target | Structure |
 |--------|--------------|-----------|
 | Expanded | `#pane-composer-{key}` | Below `#pane-body-{key}` in the primary column |
-| Compact | `#shell-composer-mount` | Inside the compact chat overlay |
+| Compact | `#shell-composer-mount` | Home tab: below chat in nav page; Sessions overlay: inside overlay |
 
-On compact, the composer appears only when a chat overlay is open (after selecting a session). Sessions and Settings pages do not show the composer.
+On compact, the composer appears on the Home tab (inline) or inside the Sessions chat overlay after selecting a thread. Settings and other list pages do not show the composer.
 
 ## C++ usage
 
@@ -91,9 +92,8 @@ ShellHost::Instance().RegisterPane({
     .role = PaneRole::Primary,
     .provides_composer = true,
 });
-ShellHost::Instance().SelectNavTab(NavTab::Settings);
+ShellHost::Instance().SelectNavTab(NavTab::Home);
 ShellHost::Instance().SetPrimaryPane("chat");
-ShellHost::Instance().OpenCompactChat();
 ShellHost::Instance().SyncLayout();
 
 ShellFeedback::ShowBanner(ShellHost::Instance().State(), "Offline");
