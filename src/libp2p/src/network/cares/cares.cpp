@@ -6,7 +6,12 @@
 
 #include <libp2p/network/cares/cares.hpp>
 
-#include <arpa/nameser.h>
+#include "ares_config.h"
+#ifdef HAVE_ARPA_NAMESER_H
+#  include <arpa/nameser.h>
+#else
+#  include "nameser.h"
+#endif
 #include <cstring>
 #include <stdexcept>
 #include <thread>
