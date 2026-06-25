@@ -37,6 +37,7 @@ public:
   void OpenSettings();
   void OnNavTabActivated();
   void OnNavTabDeactivated();
+  void OnShellLayoutSynced();
   void SyncLayoutMode();
   void Tick();
 
@@ -69,7 +70,7 @@ private:
   void InitSections();
   void ReloadFromDisk();
   void SyncBindingsFromSession();
-  void OnSettingsMounted();
+  void FinishPaneResync();
   void OnSelectSection(const std::string& section_id);
   void OnBackToList();
   void OnResetSection(const std::string& section_id);

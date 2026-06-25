@@ -140,13 +140,36 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "status");
 }
 
-void SettingsController::OnSettingsMounted() {
-  suppress_auto_save_ = true;
+void SettingsController::FinishPaneResync() {
+  SyncBindingsFromSession();
   DirtyAll();
   if (context_) {
     context_->Update();
   }
-  suppress_auto_save_ = false;
+  // Select widgets can emit a spurious change on the frame after remount.
+  BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+    if (ShellHost::Instance().State().nav_tab != NavTab::Settings) {
+      suppress_auto_save_ = false;
+      return;
+    }
+    SyncBindingsFromSession();
+    DirtyAll();
+    if (context_) {
+      context_->Update();
+    }
+    suppress_auto_save_ = false;
+  });
+}
+
+void SettingsController::OnShellLayoutSynced() {
+  if (!suppress_auto_save_) {
+    return;
+  }
+  if (ShellHost::Instance().State().nav_tab != NavTab::Settings) {
+    suppress_auto_save_ = false;
+    return;
+  }
+  FinishPaneResync();
 }
 
 void SettingsController::OnNavTabActivated() {
@@ -158,7 +181,7 @@ void SettingsController::OnNavTabActivated() {
   selected_title_.clear();
   compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
   ReloadFromDisk();
-  OnSettingsMounted();
+  suppress_auto_save_ = true;
 }
 
 void SettingsController::OnNavTabDeactivated() {
@@ -194,6 +217,7 @@ void SettingsController::OpenSettings() {
   ShellHost::Instance().SelectNavTab(NavTab::Settings);
   if (already_settings) {
     OnNavTabActivated();
+    FinishPaneResync();
   }
 }
 
@@ -308,12 +332,9 @@ void SettingsController::CompleteSectionSelection(bool expanded) {
   if (expanded) {
     ShellHost::Instance().SetPrimaryPane("settings_detail");
     BrowserThread::RunUITasks();
+  } else {
+    FinishPaneResync();
   }
-  DirtyAll();
-  if (context_) {
-    context_->Update();
-  }
-  suppress_auto_save_ = false;
   log().info << "CompleteSectionSelection id=" << selected_id_.c_str()
              << " expanded=" << expanded;
 }
@@ -398,7 +419,13 @@ void SettingsController::OnLlmPresetChangedCallback(Rml::DataModelHandle /*model
   if (controller.suppress_auto_save_) {
     return;
   }
-  controller.draft_.llm_preset = EventValue(ev);
+  const Rml::String value = EventValue(ev);
+  if (!value.empty()) {
+    controller.draft_.llm_preset = value;
+  }
+  if (controller.draft_.llm_preset.c_str() == ResolvePreset(SessionStore::Instance().Snapshot().config)) {
+    return;
+  }
   controller.FlushBlock(SettingsBlock::Llm);
 }
 
@@ -408,7 +435,14 @@ void SettingsController::OnAppearanceChangedCallback(Rml::DataModelHandle /*mode
   if (controller.suppress_auto_save_) {
     return;
   }
-  controller.draft_.appearance = EventValue(ev);
+  const Rml::String value = EventValue(ev);
+  if (!value.empty()) {
+    controller.draft_.appearance = value;
+  }
+  if (controller.draft_.appearance.c_str() ==
+      SessionStore::Instance().Snapshot().profile_prefs.appearance) {
+    return;
+  }
   controller.FlushBlock(SettingsBlock::Appearance);
 }
 

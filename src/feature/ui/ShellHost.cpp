@@ -401,6 +401,10 @@ void ShellHost::SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> call
   on_layout_mode_changed_ = std::move(callback);
 }
 
+void ShellHost::SetOnLayoutSynced(std::function<void()> callback) {
+  on_layout_synced_ = std::move(callback);
+}
+
 void ShellHost::OnLayoutModeChanged() {
   if (state_.layout_mode == LayoutMode::Expanded) {
     state_.compact_chat_open = false;
@@ -756,6 +760,10 @@ void ShellHost::SyncLayout() {
     DataModelHost::Instance().Dirty("shell", "working_set_subtitle");
     DataModelHost::Instance().Dirty("shell", "working_set_rml");
     DataModelHost::Instance().Dirty("shell", "working_set");
+  }
+
+  if (on_layout_synced_) {
+    on_layout_synced_();
   }
 }
 

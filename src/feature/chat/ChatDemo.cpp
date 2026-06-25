@@ -1291,6 +1291,9 @@ bool ChatDemo::Setup(Rml::Context* context) {
       ChatDemo::Instance().OnHomeTabActivated();
     }
   });
+  ShellHost::Instance().SetOnLayoutSynced([]() {
+    SettingsController::Instance().OnShellLayoutSynced();
+  });
   ShellHost::Instance().RegisterPane(
       {.key = "sidebar", .rml_path = "views/sidebar.rml", .role = PaneRole::Secondary});
   ShellHost::Instance().RegisterPane(

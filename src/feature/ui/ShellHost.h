@@ -52,6 +52,7 @@ public:
   void SetOnTransientMounted(std::function<void(const std::string& key)> callback);
   void SetOnNavTabChanged(std::function<void(NavTab tab)> callback);
   void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
+  void SetOnLayoutSynced(std::function<void()> callback);
 
   static void ToggleAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -109,6 +110,7 @@ private:
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(NavTab)> on_nav_tab_changed_;
   std::function<void(LayoutMode)> on_layout_mode_changed_;
+  std::function<void()> on_layout_synced_;
 };
 
 } // namespace pbr

@@ -26,7 +26,7 @@
       <div class="settings-section stack" data-if="selected_id == 'llm'">
         <label class="settings-field">
           <span class="settings-label">Preset</span>
-          <select class="field" data-attr-value="llm_preset" data-event-change="on_llm_preset_changed()">
+          <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
             <option value="cloud">Cloud (OpenAI-compatible)</option>
             <option value="ollama">Ollama (localhost)</option>
             <option value="custom">Custom</option>
@@ -57,7 +57,7 @@
       <div class="settings-section stack" data-if="selected_id == 'appearance'">
         <label class="settings-field">
           <span class="settings-label">Theme</span>
-          <select class="field" data-attr-value="appearance" data-event-change="on_appearance_changed()">
+          <select class="field" data-value="appearance" data-event-change="on_appearance_changed()">
             <option value="system">System</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option>
