@@ -14,6 +14,7 @@ int main() {
   assert(ShellLayout::FromWidth(768.f) == LayoutMode::Expanded);
   assert(ShellLayout::FromWidth(1280.f) == LayoutMode::Expanded);
   assert(ShellLayout::NavContentKey(NavTab::Sessions) == std::string("sidebar"));
+  assert(ShellLayout::NavContentKey(NavTab::Contacts) == std::string("contacts"));
   assert(ShellLayout::NavContentKey(NavTab::Settings) == std::string("settings"));
 
   ShellState expanded{};

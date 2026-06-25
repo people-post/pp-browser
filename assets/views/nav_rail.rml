@@ -4,6 +4,11 @@
           data-event-click="select_nav_tab('sessions')">
     <svg src="../icons/sessions.svg" width="22" height="22" crop-to-content="true"></svg>
   </button>
+  <button class="shell-nav-tab" type="button"
+          data-class-shell-nav-tab--active="nav_tab == 'contacts'"
+          data-event-click="select_nav_tab('contacts')">
+    <svg src="../icons/contacts.svg" width="22" height="22" crop-to-content="true"></svg>
+  </button>
   <div class="shell-nav-spacer"></div>
   <button class="shell-nav-tab" type="button"
           data-class-shell-nav-tab--active="nav_tab == 'settings'"

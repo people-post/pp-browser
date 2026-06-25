@@ -1,0 +1,34 @@
+<div class="contacts-panel" data-model="contacts">
+  <div data-if="!show_detail" class="contacts-list-view">
+    <div class="contacts-header row">
+      <p class="contacts-header-title">Contacts</p>
+    </div>
+    <div class="contacts-list">
+      <div data-for="contact : contacts" class="contacts-row" data-event-click="select_contact(contact.id)">
+        <p class="contacts-row-title" data-rml="contact.title"></p>
+        <p class="contacts-row-subtitle text muted" data-if="contact.subtitle != ''" data-rml="contact.subtitle"></p>
+      </div>
+      <p class="text muted" data-if="contacts.size == 0">No contacts yet. Ask the assistant to find people.</p>
+    </div>
+  </div>
+
+  <div data-if="show_detail" class="contacts-detail-view stack">
+    <div class="contacts-detail-header row">
+      <button class="contacts-back-btn" type="button" data-event-click="back_to_list()">
+        <svg src="../icons/back.svg" width="18" height="18"></svg>
+      </button>
+      <p class="contacts-header-title">Contact</p>
+    </div>
+
+    <div class="contacts-detail-body stack">
+      <h2 class="heading-2" data-rml="selected.display_name"></h2>
+      <p class="text muted" data-if="selected.nickname != ''">Nickname: <span data-rml="selected.nickname"></span></p>
+      <p class="text muted" data-if="selected.relay_id != ''">Relay ID: <span data-rml="selected.relay_id"></span></p>
+      <p class="text muted" data-if="selected.trust != ''">Trust: <span data-rml="selected.trust"></span></p>
+    </div>
+
+    <div class="contacts-actions">
+      <button class="btn btn-primary" type="button" data-event-click="start_chat()">Start chat</button>
+    </div>
+  </div>
+</div>

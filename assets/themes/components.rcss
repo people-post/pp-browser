@@ -1312,3 +1312,103 @@ select selectbox option {
 .sidebar-settings-btn svg {
   flex-shrink: 0;
 }
+
+/* Contacts panel */
+.contacts-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12dp;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.contacts-list-view,
+.contacts-detail-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.contacts-header,
+.contacts-detail-header {
+  flex-shrink: 0;
+  align-items: center;
+  margin-bottom: 8dp;
+}
+
+.contacts-header-title {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 14dp;
+  font-weight: bold;
+}
+
+.contacts-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.contacts-row {
+  display: flex;
+  flex-direction: column;
+  min-height: 44dp;
+  margin-bottom: 4dp;
+  padding: 8dp;
+  border-radius: 6dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.contacts-row-title {
+  margin-top: 0;
+  margin-bottom: 2dp;
+  font-size: 13dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contacts-row-subtitle {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 11dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contacts-back-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  margin-right: 4dp;
+  margin-bottom: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6dp;
+  cursor: pointer;
+  background-color: transparent;
+}
+
+.contacts-back-btn svg {
+  flex-shrink: 0;
+}
+
+.contacts-detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  gap: 8dp;
+}
+
+.contacts-actions {
+  flex-shrink: 0;
+  margin-top: 16dp;
+}

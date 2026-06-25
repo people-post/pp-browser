@@ -25,6 +25,7 @@ set(PP_BROWSER_FEATURE_SOURCES
   ui/RmlMount.cpp
   ui/DataModelHost.cpp
   ui/SettingsController.cpp
+  ui/ContactsController.cpp
   chat/ChatDemo.cpp
   chat/ChatFormHelper.cpp
   chat/ChatWidgetStateBuilder.cpp

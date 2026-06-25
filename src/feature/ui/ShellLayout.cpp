@@ -11,7 +11,13 @@ const char* ShellLayout::LayoutModeString(LayoutMode mode) {
 }
 
 const char* ShellLayout::NavTabString(NavTab tab) {
-  return tab == NavTab::Settings ? "settings" : "sessions";
+  if (tab == NavTab::Settings) {
+    return "settings";
+  }
+  if (tab == NavTab::Contacts) {
+    return "contacts";
+  }
+  return "sessions";
 }
 
 void ShellLayout::SyncLayoutModeString(ShellState& state) {
@@ -23,7 +29,13 @@ void ShellLayout::SyncNavTabString(ShellState& state) {
 }
 
 const char* ShellLayout::NavContentKey(NavTab tab) {
-  return tab == NavTab::Settings ? "settings" : "sidebar";
+  if (tab == NavTab::Settings) {
+    return "settings";
+  }
+  if (tab == NavTab::Contacts) {
+    return "contacts";
+  }
+  return "sidebar";
 }
 
 PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {

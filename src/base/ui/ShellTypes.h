@@ -12,7 +12,7 @@ enum class PaneRole { Primary, Secondary, Auxiliary, Transient };
 
 enum class LayoutMode { Compact, Expanded };
 
-enum class NavTab { Sessions, Settings };
+enum class NavTab { Sessions, Contacts, Settings };
 
 enum class OverlayKind { Generic, Alert, Confirm, Custom };
 

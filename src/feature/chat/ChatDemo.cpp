@@ -20,6 +20,7 @@
 #include "base/data/Config.h"
 #include "base/data/SessionStore.h"
 #include "feature/ui/SettingsController.h"
+#include "feature/ui/ContactsController.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
@@ -1214,6 +1215,10 @@ bool ChatDemo::Setup(Rml::Context* context) {
     return false;
   }
 
+  if (!ContactsController::Instance().RegisterModel(context)) {
+    return false;
+  }
+
   SessionStore::Instance().AddConfigListener([this](const AppConfig& updated) { ApplyRuntimeConfig(updated); });
 
   ShellHost::Instance().Initialize(context);
@@ -1221,9 +1226,14 @@ bool ChatDemo::Setup(Rml::Context* context) {
     if (tab == NavTab::Settings) {
       SettingsController::Instance().OnNavTabActivated();
     }
+    if (tab == NavTab::Contacts) {
+      ContactsController::Instance().OnNavTabActivated();
+    }
   });
   ShellHost::Instance().RegisterPane(
       {.key = "sidebar", .rml_path = "views/sidebar.rml", .role = PaneRole::Secondary});
+  ShellHost::Instance().RegisterPane(
+      {.key = "contacts", .rml_path = "views/contacts.rml", .role = PaneRole::Secondary});
   ShellHost::Instance().RegisterPane(
       {.key = "settings", .rml_path = "views/settings.rml", .role = PaneRole::Secondary});
   ShellHost::Instance().RegisterPane({.key = "chat",

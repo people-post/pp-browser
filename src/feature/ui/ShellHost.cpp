@@ -43,7 +43,13 @@ std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index = 0)
 }
 
 NavTab NavTabFromString(const Rml::String& value) {
-  return value == "settings" ? NavTab::Settings : NavTab::Sessions;
+  if (value == "settings") {
+    return NavTab::Settings;
+  }
+  if (value == "contacts") {
+    return NavTab::Contacts;
+  }
+  return NavTab::Sessions;
 }
 
 } // namespace
