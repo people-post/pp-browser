@@ -1,10 +1,42 @@
 #include "feature/settings/SettingsLogic.h"
 
 #include "base/data/LlmPreset.h"
+#include "feature/settings/SettingsUiState.h"
+
+#include <sstream>
 
 namespace pbr {
 
-AppConfig ApplySettingsDraft(const AppConfig& base, const SettingsDraft& draft) {
+namespace {
+
+std::vector<std::string> SplitArgs(const std::string& text) {
+  std::vector<std::string> args;
+  std::istringstream stream(text);
+  std::string token;
+  while (stream >> token) {
+    args.push_back(token);
+  }
+  return args;
+}
+
+} // namespace
+
+std::vector<std::string> ParseArgsText(const std::string& args_text) {
+  return SplitArgs(args_text);
+}
+
+std::string JoinArgsText(const std::vector<std::string>& args) {
+  std::ostringstream out;
+  for (size_t i = 0; i < args.size(); ++i) {
+    if (i > 0) {
+      out << ' ';
+    }
+    out << args[i];
+  }
+  return out.str();
+}
+
+AppConfig ApplyLlmSettingsDraft(const AppConfig& base, const SettingsDraft& draft) {
   AppConfig config = base;
 
   ApplyPreset(config, draft.llm_preset, draft.llm_base_url);
@@ -22,6 +54,38 @@ AppConfig ApplySettingsDraft(const AppConfig& base, const SettingsDraft& draft) 
   }
 
   ResolveLlmAuthRequirements(config);
+  return config;
+}
+
+AppConfig ApplyIntegrationsSettingsDraft(const AppConfig& base, const SettingsUiState& state) {
+  AppConfig config = base;
+  config.promoted_mcp.url = state.promoted_mcp_url;
+  config.promoted_mcp.command.clear();
+  config.promoted_mcp.args.clear();
+  config.search.provider = state.search_provider.empty() ? config.search.provider : state.search_provider;
+
+  config.mcp_servers.clear();
+  int auto_id = 1;
+  for (const McpServerUiState& row : state.mcp_servers) {
+    if (row.url.empty() && row.command.empty()) {
+      continue;
+    }
+    McpConfig entry;
+    entry.id = row.id.empty() ? ("custom-" + std::to_string(auto_id++)) : row.id;
+    entry.url = row.url;
+    entry.command = row.command;
+    entry.args = ParseArgsText(row.args_text);
+    entry.enabled = row.enabled;
+    config.mcp_servers.push_back(std::move(entry));
+  }
+  return config;
+}
+
+AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState& state) {
+  AppConfig config = base;
+  config.relay.base_url = state.relay_base_url;
+  config.directory.base_url = state.directory_base_url;
+  config.registration.base_url = state.registration_base_url;
   return config;
 }
 

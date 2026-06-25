@@ -49,7 +49,7 @@ bool LlmSettingsSection::IsPersisted(const SettingsUiState& state, const Bootstr
 }
 
 Roe<void> LlmSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
-  const AppConfig config = ApplySettingsDraft(store.Snapshot().config, ToSettingsDraft(state));
+  const AppConfig config = ApplyLlmSettingsDraft(store.Snapshot().config, ToSettingsDraft(state));
   if (auto saved = store.SaveConfig(config); !saved) {
     return saved.error();
   }

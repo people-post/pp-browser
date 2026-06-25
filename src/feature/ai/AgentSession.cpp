@@ -13,10 +13,13 @@
 #include "base/ai/conversation/TurnCoordinator.h"
 #include "common/Logger.h"
 #include "base/ai/mcp/McpClient.h"
+#include "base/ai/mcp/McpRuntime.h"
+#include "base/data/SessionStore.h"
 #include "common/Utilities.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/platform/BrowserThread.h"
+#include "feature/messaging/MessagingHub.h"
 
 #include <atomic>
 #include <chrono>
@@ -59,7 +62,7 @@ struct AgentSession::Impl {
 
   AppConfig config;
   std::unique_ptr<LlmClient> llm;
-  std::unique_ptr<McpClient> mcp;
+  McpRuntime mcp;
   ToolRegistry tools;
   Conversation conversation;
   TurnCoordinator coordinator;
@@ -491,32 +494,34 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 }
 
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
+  BrowserThread::PauseIO();
+
   state->llm = std::make_unique<LlmClient>(state->config.llm);
 
-  state->mcp = std::make_unique<McpClient>();
-  if (state->config.mcp && state->config.mcp->IsConfigured()) {
-    if (!state->config.mcp->url.empty()) {
-      state->mcp->StartHttp(state->config.mcp->url);
-    } else if (state->config.mcp->command == "mock") {
-      state->mcp->Start("mock");
-    } else if (Platform::SupportsSubprocessMcp()) {
-      state->mcp->Start(state->config.mcp->command, state->config.mcp->args);
-    } else {
-      logging::getLogger("AgentSession").warning
-          << "Skipping MCP stdio spawn on mobile; use mcp.url in config";
-    }
-    if (state->mcp->IsRunning()) {
-      state->mcp->Initialize();
-    }
+  const AppConfig defaults = SessionStore::Instance().DefaultConfig();
+  state->mcp.Start(state->config, defaults);
+
+  std::vector<std::string> custom_prefixes;
+  custom_prefixes.reserve(state->config.mcp_servers.size());
+  for (const McpConfig& entry : state->config.mcp_servers) {
+    custom_prefixes.push_back(entry.id);
   }
 
-  state->tools = ToolRegistry::BuildFromConfig(state->config, state->mcp.get());
+  state->tools = ToolRegistry::BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
+                                               custom_prefixes);
   state->configured = true;
 
   logging::getLogger("AgentSession").info << "Agent configured with " << state->tools.Tools().size() << " tool(s)";
   for (const ToolDescriptor& tool : state->tools.Tools()) {
     logging::getLogger("AgentSession").info << "  - " << tool.definition.name;
   }
+
+  if (MessagingHub::Instance().IsInitialized()) {
+    const auto& bootstrap = SessionStore::Instance().Snapshot();
+    (void)MessagingHub::Instance().Reinitialize(state->config, bootstrap.profile_data_dir, state->mcp.PromotedPtr());
+  }
+
+  BrowserThread::ResumeIO();
 
   if (state->submit_when_ready && !state->pending_user_text.empty()) {
     state->submit_when_ready = false;
@@ -537,6 +542,10 @@ void AgentSession::Configure(const AppConfig& config) {
   impl_->configured = false;
 
   BrowserThread::PostTask(BrowserThreadId::IO, [impl = impl_]() { ConfigureOnIO(impl); });
+}
+
+McpClient* AgentSession::PromotedMcp() {
+  return impl_->mcp.PromotedPtr();
 }
 
 bool AgentSession::IsConfigured() const {

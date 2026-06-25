@@ -23,6 +23,7 @@ AppConfig CloudDefaults() {
   config.llm.require_api_key = true;
   config.theme = "themes/base.rcss";
   config.search.provider = "duckduckgo";
+  config.promoted_mcp.url = "https://www.brief.global/mcp";
   return config;
 }
 

@@ -35,6 +35,75 @@
       </div>
     </div>
 
+    <div class="settings-section stack" data-if="selected_id == 'integrations'">
+      <label class="settings-field">
+        <span class="settings-label">Promoted MCP URL</span>
+        <input class="field" type="text" data-value="promoted_mcp_url" data-event-change="on_integrations_field_changed()" placeholder="Blank uses platform default"/>
+      </label>
+      <label class="settings-field">
+        <span class="settings-label">Search provider</span>
+        <input class="field" type="text" data-value="search_provider" data-event-change="on_integrations_field_changed()"/>
+      </label>
+      <p class="text muted">Custom MCP servers (stdio on desktop; URL on mobile).</p>
+      <div data-for="server, server_index : mcp_servers" class="settings-subsection stack">
+        <label class="settings-field">
+          <span class="settings-label">ID</span>
+          <input class="field" type="text" data-value="server.id" data-event-change="on_integrations_field_changed()"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">URL</span>
+          <input class="field" type="text" data-value="server.url" data-event-change="on_integrations_field_changed()"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">Command</span>
+          <input class="field" type="text" data-value="server.command" data-event-change="on_integrations_field_changed()"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">Args</span>
+          <input class="field" type="text" data-value="server.args_text" data-event-change="on_integrations_field_changed()" placeholder="space-separated"/>
+        </label>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button" data-event-click="remove_mcp_server(server_index)">Remove</button>
+        </div>
+      </div>
+      <div class="settings-actions row">
+        <button class="btn btn-secondary" type="button" data-event-click="add_mcp_server()">Add MCP server</button>
+        <button class="btn btn-secondary" type="button" data-event-click="reset_section('integrations')">Reset to defaults</button>
+      </div>
+    </div>
+
+    <div class="settings-section stack" data-if="selected_id == 'network'">
+      <p class="text muted">Leave blank to use promoted MCP infra tools; mocks apply when promoted MCP is unavailable.</p>
+      <label class="settings-field">
+        <span class="settings-label">Relay base URL</span>
+        <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>
+      </label>
+      <label class="settings-field">
+        <span class="settings-label">Directory base URL</span>
+        <input class="field" type="text" data-value="directory_base_url" data-event-change="on_network_field_changed()"/>
+      </label>
+      <label class="settings-field">
+        <span class="settings-label">Registration base URL</span>
+        <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
+      </label>
+      <div class="settings-actions row">
+        <button class="btn btn-secondary" type="button" data-event-click="reset_section('network')">Reset to defaults</button>
+      </div>
+    </div>
+
+    <div class="settings-section stack" data-if="selected_id == 'profile'">
+      <label class="settings-field">
+        <span class="settings-label">Nickname</span>
+        <input class="field" type="text" data-value="profile_nickname" data-event-change="on_profile_field_changed()"/>
+      </label>
+      <p class="text muted">Relay ID: <span data-rml="profile_relay_id"></span></p>
+      <p class="text muted settings-path">Public key: <span data-rml="profile_public_key"></span></p>
+      <p class="text muted">Registered: <span data-rml="profile_registered"></span></p>
+      <div class="settings-actions row">
+        <button class="btn btn-secondary" type="button" data-event-click="register_profile()">Register on network</button>
+      </div>
+    </div>
+
     <div class="settings-section stack" data-if="selected_id == 'appearance'">
       <label class="settings-field">
         <span class="settings-label">Theme</span>

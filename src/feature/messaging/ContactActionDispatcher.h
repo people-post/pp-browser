@@ -15,16 +15,17 @@ namespace pbr {
 class ContactActionDispatcher : public Module {
 public:
   ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts, IdentityStore& identity,
-                          IRegistrationClient& registration);
+                          IRegistrationClient* registration);
 
   Roe<std::optional<std::string>> Dispatch(const std::string& payload_json);
+  void SetRegistrationClient(IRegistrationClient* registration);
   void SetOnActionMessage(std::function<void(const std::string& message)> callback);
 
 private:
   InboxController& inbox_;
   ContactsStore& contacts_;
   IdentityStore& identity_;
-  IRegistrationClient& registration_;
+  IRegistrationClient* registration_ = nullptr;
   std::function<void(const std::string&)> on_action_message_;
 };
 

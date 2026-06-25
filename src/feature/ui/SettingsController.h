@@ -31,6 +31,14 @@ public:
     Rml::String subtitle;
   };
 
+  struct McpServerRow {
+    Rml::String id;
+    Rml::String url;
+    Rml::String command;
+    Rml::String args_text;
+    bool enabled = true;
+  };
+
   static SettingsController& Instance();
 
   bool RegisterModel(Rml::Context* context);
@@ -48,6 +56,16 @@ private:
     Rml::String llm_model;
     Rml::String llm_api_key;
     Rml::String llm_api_key_env;
+    Rml::String promoted_mcp_url;
+    Rml::String search_provider = "duckduckgo";
+    std::vector<McpServerRow> mcp_servers;
+    Rml::String relay_base_url;
+    Rml::String directory_base_url;
+    Rml::String registration_base_url;
+    Rml::String profile_nickname;
+    Rml::String profile_relay_id;
+    Rml::String profile_public_key;
+    Rml::String profile_registered = "no";
     Rml::String appearance = "system";
     Rml::String profile_label;
     Rml::String config_dir;
@@ -63,6 +81,12 @@ private:
   static void OnLlmFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnLlmPresetChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnAppearanceChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnIntegrationsFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnNetworkFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnProfileFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnAddMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnRemoveMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void InitSections();
   SettingsSectionHandler* FindHandler(const std::string& section_id);
@@ -82,6 +106,9 @@ private:
   void MaybeShowSaveToast(const std::string& section_id);
   void DirtyAll();
   void CompleteSectionSelection(bool expanded);
+  void OnRegisterProfile();
+  void OnAddMcpServer();
+  void OnRemoveMcpServer(int index);
 
   std::vector<std::unique_ptr<SettingsSectionHandler>> section_handlers_;
   std::unordered_map<std::string, SettingsSectionHandler*> section_handlers_by_id_;

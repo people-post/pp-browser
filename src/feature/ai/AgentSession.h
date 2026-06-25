@@ -4,10 +4,12 @@
 #include "base/ai/TurnPlan.h"
 #include "base/ai/TurnTrace.h"
 #include "base/ai/conversation/ConversationTypes.h"
+#include "base/ai/mcp/McpClient.h"
 #include "base/data/Config.h"
 #include "common/Error.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -47,6 +49,7 @@ public:
   AgentSession& operator=(const AgentSession&) = delete;
 
   void Configure(const AppConfig& config);
+  McpClient* PromotedMcp();
   void SetThreadStore(IThreadStore* store);
   void Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
   void SubmitToThread(const std::string& thread_id, const std::string& user_text,
@@ -83,7 +86,7 @@ private:
   static void RunOutputRepair(const std::shared_ptr<Impl>& state, const std::string& raw_output,
                               const std::string& parse_error);
   static void FinishAssistantOutput(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
-                                  const std::string& finish_reason);
+                                    const std::string& finish_reason);
   static void PersistAssistantToThread(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
                                        std::string* out_message_id = nullptr);
   static void InjectSynthesisPolicy(const std::shared_ptr<Impl>& state);

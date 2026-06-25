@@ -1,6 +1,11 @@
 #include "feature/messaging/MessagingHub.h"
 
 #include "feature/ai/AgentSession.h"
+#include "base/net/McpDirectoryClient.h"
+#include "base/net/McpInfraBridge.h"
+#include "base/net/McpRegistrationClient.h"
+#include "base/net/McpRelayClient.h"
+#include "base/net/ServiceClientsImpl.h"
 
 #include <filesystem>
 
@@ -11,11 +16,79 @@ MessagingHub& MessagingHub::Instance() {
   return hub;
 }
 
-Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
+void MessagingHub::UpdateServiceClients(const AppConfig& config, McpClient* promoted_mcp) {
+  if (!config.relay.base_url.empty()) {
+    if (!http_relay_ || http_relay_url_ != config.relay.base_url) {
+      http_relay_url_ = config.relay.base_url;
+      http_relay_ = std::make_unique<HttpRelayClient>(http_relay_url_);
+    }
+    relay_ = http_relay_.get();
+  } else if (PromotedMcpInfraAvailable(promoted_mcp)) {
+    if (!mcp_relay_) {
+      mcp_relay_ = std::make_unique<McpRelayClient>(promoted_mcp);
+    } else {
+      mcp_relay_->SetClient(promoted_mcp);
+    }
+    relay_ = mcp_relay_.get();
+  } else {
+    if (!mock_relay_) {
+      mock_relay_ = std::make_unique<MockRelayClient>();
+    }
+    relay_ = mock_relay_.get();
+  }
+
+  if (!config.directory.base_url.empty()) {
+    if (!http_directory_ || http_directory_url_ != config.directory.base_url) {
+      http_directory_url_ = config.directory.base_url;
+      http_directory_ = std::make_unique<HttpDirectoryClient>(http_directory_url_);
+    }
+    directory_ = http_directory_.get();
+  } else if (PromotedMcpInfraAvailable(promoted_mcp)) {
+    if (!mcp_directory_) {
+      mcp_directory_ = std::make_unique<McpDirectoryClient>(promoted_mcp);
+    } else {
+      mcp_directory_->SetClient(promoted_mcp);
+    }
+    directory_ = mcp_directory_.get();
+  } else {
+    if (!mock_directory_) {
+      mock_directory_ = std::make_unique<MockDirectoryClient>();
+    }
+    directory_ = mock_directory_.get();
+  }
+
+  if (!config.registration.base_url.empty()) {
+    if (!http_registration_ || http_registration_url_ != config.registration.base_url) {
+      http_registration_url_ = config.registration.base_url;
+      http_registration_ = std::make_unique<HttpRegistrationClient>(http_registration_url_);
+    }
+    registration_ = http_registration_.get();
+  } else if (PromotedMcpInfraAvailable(promoted_mcp)) {
+    if (!mcp_registration_) {
+      mcp_registration_ = std::make_unique<McpRegistrationClient>(promoted_mcp);
+    } else {
+      mcp_registration_->SetClient(promoted_mcp);
+    }
+    registration_ = mcp_registration_.get();
+  } else {
+    if (!mock_registration_) {
+      mock_registration_ = std::make_unique<MockRegistrationClient>();
+    }
+    registration_ = mock_registration_.get();
+  }
+}
+
+void MessagingHub::InstallServiceClients(const AppConfig& config, McpClient* promoted_mcp) {
+  UpdateServiceClients(config, promoted_mcp);
+}
+
+Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir,
+                                   McpClient* promoted_mcp) {
   if (initialized_) {
     return {};
   }
 
+  config_ = config;
   data_dir_ = profile_data_dir;
   std::error_code ec;
   std::filesystem::create_directories(data_dir_, ec);
@@ -31,35 +104,34 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_);
   (void)inbox_->CreateAiHomeThread();
 
-  mock_relay_ = std::make_unique<MockRelayClient>();
-  http_relay_ = std::make_unique<HttpRelayClient>(config.relay.base_url);
-  relay_ = config.relay.base_url.empty() ? static_cast<IRelayClient*>(mock_relay_.get())
-                                          : static_cast<IRelayClient*>(http_relay_.get());
+  InstallServiceClients(config, promoted_mcp);
 
-  mock_directory_ = std::make_unique<MockDirectoryClient>();
-  http_directory_ = std::make_unique<HttpDirectoryClient>(config.directory.base_url);
-  directory_ = config.directory.base_url.empty() ? static_cast<IDirectoryClient*>(mock_directory_.get())
-                                                 : static_cast<IDirectoryClient*>(http_directory_.get());
-
-  mock_registration_ = std::make_unique<MockRegistrationClient>();
-  http_registration_ = std::make_unique<HttpRegistrationClient>(config.registration.base_url);
-  registration_ = config.registration.base_url.empty()
-                      ? static_cast<IRegistrationClient*>(mock_registration_.get())
-                      : static_cast<IRegistrationClient*>(http_registration_.get());
-
-  p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, *relay_, *inbox_);
-  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *registration_);
+  p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_);
+  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_);
 
   initialized_ = true;
   return {};
 }
 
-Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string& profile_data_dir) {
-  Shutdown();
-  return Initialize(config, profile_data_dir);
+Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string& profile_data_dir,
+                                     McpClient* promoted_mcp) {
+  if (!initialized_) {
+    return Initialize(config, profile_data_dir, promoted_mcp);
+  }
+
+  config_ = config;
+  UpdateServiceClients(config, promoted_mcp);
+  if (p2p_) {
+    p2p_->SetRelayClient(relay_);
+  }
+  if (actions_) {
+    actions_->SetRegistrationClient(registration_);
+  }
+  return {};
 }
 
 void MessagingHub::BindAgent(AgentSession& agent) {
+  agent_ = &agent;
   router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, agent);
 }
 
@@ -68,18 +140,28 @@ void MessagingHub::Shutdown() {
     return;
   }
   router_.reset();
+  agent_ = nullptr;
   store_->Flush();
   contacts_->Flush();
   identity_->Flush();
   actions_.reset();
   p2p_.reset();
   inbox_.reset();
-  mock_relay_.reset();
   http_relay_.reset();
-  mock_directory_.reset();
   http_directory_.reset();
-  mock_registration_.reset();
   http_registration_.reset();
+  mcp_relay_.reset();
+  mcp_directory_.reset();
+  mcp_registration_.reset();
+  mock_relay_.reset();
+  mock_directory_.reset();
+  mock_registration_.reset();
+  relay_ = nullptr;
+  directory_ = nullptr;
+  registration_ = nullptr;
+  http_relay_url_.clear();
+  http_directory_url_.clear();
+  http_registration_url_.clear();
   identity_.reset();
   contacts_.reset();
   store_.reset();

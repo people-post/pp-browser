@@ -3,16 +3,32 @@
 
 #include "common/Utilities.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/net/McpRelayClient.h"
 #include "base/platform/BrowserThread.h"
 
+#include <atomic>
 #include <mutex>
 
 namespace pbr {
 
+namespace {
+
+constexpr uint64_t kMcpRelayPollIntervalMs = 5000;
+
+} // namespace
+
 P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                                         IRelayClient& relay, InboxController& inbox)
+                                         IRelayClient* relay, InboxController& inbox)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox) {
   redirectLogger("P2pMessagingService");
+  mcp_throttled_poll_ = dynamic_cast<McpRelayClient*>(relay_) != nullptr;
+}
+
+void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
+  relay_ = relay;
+  relay_cursor_.clear();
+  mcp_throttled_poll_ = dynamic_cast<McpRelayClient*>(relay_) != nullptr;
+  poll_pending_ = false;
 }
 
 std::optional<std::string> P2pMessagingService::ResolvePeerRelayId(const Thread& thread) const {
@@ -136,7 +152,11 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   }
 
   BrowserThread::PostTask(BrowserThreadId::IO, [this, envelope, message_id = message.id]() mutable {
-    const auto result = relay_.Send(envelope);
+    if (!relay_) {
+      ApplySendResult(envelope.thread_id, message_id, false, "Relay client not configured");
+      return;
+    }
+    const auto result = relay_->Send(envelope);
     if (!result) {
       EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .attempt_count = 1});
       ApplySendResult(envelope.thread_id, message_id, false, result.error().message);
@@ -162,9 +182,15 @@ void P2pMessagingService::RetryFailedOutbound() {
   }
 
   BrowserThread::PostTask(BrowserThreadId::IO, [this, pending = std::move(pending)]() mutable {
+    if (!relay_) {
+      std::lock_guard lock(retry_mutex_);
+      retry_queue_.insert(retry_queue_.end(), std::make_move_iterator(pending.begin()),
+                          std::make_move_iterator(pending.end()));
+      return;
+    }
     std::vector<PendingRelaySend> still_pending;
     for (PendingRelaySend& item : pending) {
-      const auto result = relay_.Send(item.envelope);
+      const auto result = relay_->Send(item.envelope);
       if (result) {
         ApplySendResult(item.envelope.thread_id, item.message_id, true);
         continue;
@@ -186,8 +212,30 @@ void P2pMessagingService::RetryFailedOutbound() {
 
 void P2pMessagingService::PollAndMerge() {
   RetryFailedOutbound();
+
+  if (mcp_throttled_poll_) {
+    const uint64_t now = util::NowUnixMs();
+    if (now - last_relay_poll_ms_ < kMcpRelayPollIntervalMs) {
+      return;
+    }
+    last_relay_poll_ms_ = now;
+  }
+
+  bool expected = false;
+  if (!poll_pending_.compare_exchange_strong(expected, true)) {
+    return;
+  }
+
   BrowserThread::PostTask(BrowserThreadId::IO, [this]() {
-    auto poll = relay_.PollInbox(relay_cursor_);
+    struct PollGuard {
+      std::atomic<bool>& pending;
+      ~PollGuard() { pending = false; }
+    } guard{poll_pending_};
+
+    if (!relay_) {
+      return;
+    }
+    auto poll = relay_->PollInbox(relay_cursor_);
     if (!poll) {
       return;
     }

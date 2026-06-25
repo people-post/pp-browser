@@ -14,6 +14,13 @@
 
 namespace pbr {
 
+McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults) {
+  if (config.promoted_mcp.IsConfigured()) {
+    return config.promoted_mcp;
+  }
+  return defaults.promoted_mcp;
+}
+
 Config::Config() {
   redirectLogger("Config");
 }

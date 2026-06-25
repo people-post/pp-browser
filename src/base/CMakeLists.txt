@@ -22,6 +22,11 @@ set(PP_BROWSER_BASE_SOURCES
   platform/SdlAppEvents.cpp
   platform/SdlAssetFileInterface.cpp
   net/HttpClient.cpp
+  net/McpDirectoryClient.cpp
+  net/McpInfraBridge.cpp
+  net/McpRegistrationClient.cpp
+  net/McpRelayClient.cpp
+  net/ServiceClientFactory.cpp
   net/ServiceClientsImpl.cpp
   data/AppPaths.cpp
   data/Config.cpp
@@ -52,6 +57,7 @@ set(PP_BROWSER_BASE_SOURCES
   ai/conversation/TurnCoordinator.cpp
   ai/conversation/UserMessageFormatter.cpp
   ai/mcp/McpClient.cpp
+  ai/mcp/McpRuntime.cpp
   ai/mcp/SchemaAdapter.cpp
   ui/Theme.cpp
   ui/ViewCatalog.cpp

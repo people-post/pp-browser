@@ -74,9 +74,37 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 
 ## In-app settings
 
-Open **Settings** from the nav rail (gear icon). The settings tab uses a **category list → detail** layout: LLM, Appearance, and Storage sections.
+Open **Settings** from the nav rail (gear icon). The settings tab uses a **category list → detail** layout:
 
-On tab entry, [`SettingsController`](../src/feature/ui/SettingsController.cpp) reloads from disk via `SessionStore::ReloadFromDisk()` so the UI matches persisted files. Changes **auto-save per block** (LLM → `config.json`, Appearance → `preferences.json`): select fields save immediately; text fields debounce ~500ms. Pending changes flush before switching sections or leaving the tab. Each block flush reads all bound fields in that section, applies through [`ApplySettingsDraft`](../src/feature/settings/SettingsLogic.cpp) where needed, writes to disk, and reloads from disk into `SessionStore`. LLM changes hot-reload via config listeners → `AgentSession::Configure`; appearance changes apply via appearance listeners → `Theme::ApplyAppearance`.
+| Section | Persists to | Scope |
+|---------|-------------|-------|
+| LLM | `config.json` | machine |
+| Integrations | `config.json` | machine |
+| Network | `config.json` | machine |
+| Profile | `identity.json` | profile |
+| Appearance | `preferences.json` | profile |
+| Storage | read-only paths | — |
+
+On tab entry, [`SettingsController`](../src/feature/ui/SettingsController.cpp) reloads from disk via `SessionStore::ReloadFromDisk()` so the UI matches persisted files. Changes **auto-save per block**: select fields save immediately; text fields debounce ~500ms. Pending changes flush before switching sections or leaving the tab. Config sections apply through [`SettingsLogic`](../src/feature/settings/SettingsLogic.cpp), write to disk, and reload into `SessionStore`. Config changes hot-reload via listeners → `AgentSession::Configure` and `MessagingHub::Reinitialize`; appearance changes apply via appearance listeners → `Theme::ApplyAppearance`.
+
+### Machine config keys (`config.json`)
+
+```json
+{
+  "promoted_mcp": { "url": "https://www.brief.global/mcp" },
+  "mcp_servers": [
+    { "id": "my-tooling", "url": "https://example.com/mcp", "enabled": true }
+  ],
+  "search": { "provider": "duckduckgo" },
+  "relay": { "base_url": "" },
+  "directory": { "base_url": "" },
+  "registration": { "base_url": "" }
+}
+```
+
+- **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../src/base/platform/PlatformDefaults.cpp).
+- **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
+- **`relay` / `directory` / `registration`** — separate HTTP endpoints. Empty `base_url` falls back to promoted MCP infra tools, then in-process mocks. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md).
 
 Enter an **API key** directly in Settings (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
 

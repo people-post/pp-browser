@@ -31,7 +31,9 @@ public:
 
   Roe<std::string> Execute(const std::string& name, const nlohmann::json& arguments) const;
 
-  static ToolRegistry BuildFromConfig(const AppConfig& config, McpClient* mcp_client);
+  static ToolRegistry BuildFromConfig(const AppConfig& config, McpClient* promoted_mcp,
+                                      const std::vector<McpClient*>& custom_mcps = {},
+                                      const std::vector<std::string>& custom_prefixes = {});
 
 private:
   std::vector<ToolDescriptor> tools_;

@@ -114,17 +114,23 @@ void from_json(const nlohmann::json& j, SearchConfig& config) {
 }
 
 void to_json(nlohmann::json& j, const ServiceEndpointConfig& endpoint) {
-  j = nlohmann::json{{"base_url", endpoint.base_url}};
+  j = nlohmann::json{{"base_url", endpoint.base_url}, {"transport", endpoint.transport}};
 }
 
 void from_json(const nlohmann::json& j, ServiceEndpointConfig& endpoint) {
   if (j.contains("base_url") && j["base_url"].is_string()) {
     endpoint.base_url = j["base_url"].get<std::string>();
   }
+  if (j.contains("transport") && j["transport"].is_string()) {
+    endpoint.transport = j["transport"].get<std::string>();
+  }
 }
 
 void to_json(nlohmann::json& j, const McpConfig& config) {
   j = nlohmann::json::object();
+  if (!config.id.empty()) {
+    j["id"] = config.id;
+  }
   if (!config.url.empty()) {
     j["url"] = config.url;
   }
@@ -132,9 +138,15 @@ void to_json(nlohmann::json& j, const McpConfig& config) {
     j["command"] = config.command;
     j["args"] = config.args;
   }
+  if (!config.enabled) {
+    j["enabled"] = false;
+  }
 }
 
 void from_json(const nlohmann::json& j, McpConfig& config) {
+  if (j.contains("id") && j["id"].is_string()) {
+    config.id = j["id"].get<std::string>();
+  }
   if (j.contains("command") && j["command"].is_string()) {
     config.command = j["command"].get<std::string>();
   }
@@ -148,6 +160,9 @@ void from_json(const nlohmann::json& j, McpConfig& config) {
         config.args.push_back(arg.get<std::string>());
       }
     }
+  }
+  if (j.contains("enabled") && j["enabled"].is_boolean()) {
+    config.enabled = j["enabled"].get<bool>();
   }
 }
 
@@ -166,8 +181,11 @@ void to_json(nlohmann::json& j, const AppConfig& config) {
   if (!config.data_dir.empty()) {
     j["data_dir"] = config.data_dir;
   }
-  if (config.mcp && config.mcp->IsConfigured()) {
-    j["mcp"] = *config.mcp;
+  if (config.promoted_mcp.IsConfigured()) {
+    j["promoted_mcp"] = config.promoted_mcp;
+  }
+  if (!config.mcp_servers.empty()) {
+    j["mcp_servers"] = config.mcp_servers;
   }
 }
 
@@ -186,16 +204,21 @@ void from_json(const nlohmann::json& j, AppConfig& config) {
       config.llm_api_key_env.clear();
     }
   }
-  if (j.contains("mcp") && j["mcp"].is_object()) {
-    McpConfig mcp = ParseMcpJson(j["mcp"]);
-    if (mcp.IsConfigured()) {
-      config.mcp = std::move(mcp);
-    }
-  } else if (j.contains("mcp_servers") && j["mcp_servers"].is_array() && !j["mcp_servers"].empty() &&
-             j["mcp_servers"][0].is_object()) {
-    McpConfig mcp = ParseMcpJson(j["mcp_servers"][0]);
-    if (mcp.IsConfigured()) {
-      config.mcp = std::move(mcp);
+  if (j.contains("promoted_mcp") && j["promoted_mcp"].is_object()) {
+    config.promoted_mcp = ParseMcpJson(j["promoted_mcp"]);
+  } else if (j.contains("mcp") && j["mcp"].is_object()) {
+    config.promoted_mcp = ParseMcpJson(j["mcp"]);
+  }
+  if (j.contains("mcp_servers") && j["mcp_servers"].is_array()) {
+    config.mcp_servers.clear();
+    for (const auto& item : j["mcp_servers"]) {
+      if (!item.is_object()) {
+        continue;
+      }
+      McpConfig mcp = ParseMcpJson(item);
+      if (mcp.IsConfigured()) {
+        config.mcp_servers.push_back(std::move(mcp));
+      }
     }
   }
   if (j.contains("context") && j["context"].is_object()) {

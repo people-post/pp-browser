@@ -1,0 +1,140 @@
+#include "feature/settings/ProfileSettingsSection.h"
+
+#include "base/data/SessionStore.h"
+#include "common/Utilities.h"
+#include "feature/messaging/MessagingHub.h"
+
+#include <nlohmann/json.hpp>
+
+namespace pbr {
+
+const char* ProfileSettingsSection::Id() const {
+  return "profile";
+}
+
+SettingsSectionListItem ProfileSettingsSection::ListItem() const {
+  return {.id = Id(), .title = "Profile", .subtitle = "Identity and network registration"};
+}
+
+SettingsFlushMode ProfileSettingsSection::FlushMode() const {
+  return SettingsFlushMode::Debounced;
+}
+
+void ProfileSettingsSection::SyncFromSession(const BootstrapResult& /*bootstrap*/, SettingsUiState& state) {
+  if (!MessagingHub::Instance().IsInitialized()) {
+    return;
+  }
+  auto identity = MessagingHub::Instance().Identity().Get();
+  if (!identity) {
+    return;
+  }
+  state.profile_nickname = identity->nickname;
+  state.profile_relay_id = identity->relay_user_id;
+  state.profile_public_key = identity->public_key_b64;
+  state.profile_registered = identity->registered ? "yes" : "no";
+}
+
+bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& /*bootstrap*/) const {
+  if (!MessagingHub::Instance().IsInitialized()) {
+    return true;
+  }
+  auto identity = MessagingHub::Instance().Identity().Get();
+  if (!identity) {
+    return true;
+  }
+  return state.profile_nickname == identity->nickname;
+}
+
+Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& /*store*/) {
+  if (!MessagingHub::Instance().IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+
+  auto identity = MessagingHub::Instance().Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+
+  if (state.profile_nickname == identity->nickname) {
+    return {};
+  }
+
+  LocalIdentity updated = *identity;
+  updated.nickname = state.profile_nickname;
+  if (auto saved = MessagingHub::Instance().Identity().Update(updated); !saved) {
+    return saved.error();
+  }
+
+  if (identity->registered) {
+    const int64_t timestamp = util::NowUnixMs();
+    nlohmann::json body = {{"nickname", state.profile_nickname}, {"timestamp", timestamp}};
+    auto signature = MessagingHub::Instance().Identity().SignPayload(body.dump());
+    if (!signature) {
+      return signature.error();
+    }
+    auto result = MessagingHub::Instance().Registration().UpdateNickname(state.profile_nickname, *signature, timestamp);
+    if (!result) {
+      return result.error();
+    }
+  }
+
+  SyncFromSession(SessionStore::Instance().Snapshot(), state);
+  return {};
+}
+
+void ProfileSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& /*store*/) {
+  SyncFromSession(SessionStore::Instance().Snapshot(), state);
+}
+
+Roe<void> ProfileSettingsSection::RegisterIdentity(SettingsUiState& state) {
+  if (!MessagingHub::Instance().IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+
+  auto identity = MessagingHub::Instance().Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+
+  if (!state.profile_nickname.empty()) {
+    LocalIdentity updated = *identity;
+    updated.nickname = state.profile_nickname;
+    if (auto saved = MessagingHub::Instance().Identity().Update(updated); !saved) {
+      return saved.error();
+    }
+    identity = MessagingHub::Instance().Identity().Get();
+    if (!identity) {
+      return identity.error();
+    }
+  }
+
+  const int64_t timestamp = util::NowUnixMs();
+  nlohmann::json body = {{"public_key", identity->public_key_b64},
+                         {"nickname", identity->nickname},
+                         {"timestamp", timestamp}};
+  auto signature = MessagingHub::Instance().Identity().SignPayload(body.dump());
+  if (!signature) {
+    return signature.error();
+  }
+
+  auto result = MessagingHub::Instance().Registration().Register(identity->public_key_b64, identity->nickname,
+                                                                 *signature, timestamp);
+  if (!result) {
+    return result.error();
+  }
+
+  LocalIdentity updated = *identity;
+  updated.registered = result->success;
+  if (!result->relay_user_id.empty()) {
+    updated.relay_user_id = result->relay_user_id;
+  }
+  if (auto saved = MessagingHub::Instance().Identity().Update(updated); !saved) {
+    return saved.error();
+  }
+
+  ProfileSettingsSection section;
+  section.SyncFromSession(SessionStore::Instance().Snapshot(), state);
+  return {};
+}
+
+} // namespace pbr

@@ -1,6 +1,16 @@
 # P2P messaging
 
-Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local JSON as source of truth; HTTP relay/directory/registration as transport (mocked when `base_url` is empty).
+Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local JSON as source of truth; HTTP relay/directory/registration transport with promoted-MCP and mock fallbacks.
+
+## Service resolution
+
+[`CreateServiceClients`](../src/base/net/ServiceClientFactory.cpp) picks an implementation per endpoint:
+
+1. `base_url` set → HTTP client (`HttpRelayClient`, etc.)
+2. else promoted MCP running → MCP bridge (`McpRelayClient`, etc.)
+3. else in-process mock (dev default)
+
+Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md) for the MCP infra tool contract.
 
 ## Data model
 
@@ -48,7 +58,7 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
 }
 ```
 
-Empty `base_url` uses in-process mocks.
+Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is running; otherwise in-process mocks.
 
 ## Relay envelope
 

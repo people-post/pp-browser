@@ -5,22 +5,24 @@
 #include "common/Error.h"
 #include "common/Module.h"
 
-#include <optional>
 #include <string>
 #include <vector>
 
 namespace pbr {
 
 struct McpConfig {
+  std::string id;
   std::string command;
   std::vector<std::string> args;
   std::string url;
+  bool enabled = true;
 
   bool IsConfigured() const { return !command.empty() || !url.empty(); }
 };
 
 struct ServiceEndpointConfig {
   std::string base_url;
+  std::string transport = "http";
 };
 
 struct SearchConfig {
@@ -37,9 +39,12 @@ struct AppConfig {
   ServiceEndpointConfig relay;
   ServiceEndpointConfig directory;
   ServiceEndpointConfig registration;
-  std::optional<McpConfig> mcp;
+  McpConfig promoted_mcp;
+  std::vector<McpConfig> mcp_servers;
   SearchConfig search;
 };
+
+McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults);
 
 class Config : public Module {
 public:

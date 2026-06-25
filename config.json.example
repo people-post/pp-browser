@@ -19,7 +19,7 @@
     "api_key_env": "XAI_API_KEY",
     "require_api_key": true
   },
-  "mcp": {
+  "promoted_mcp": {
     "url": "https://www.brief.global/mcp"
   },
   "search": {

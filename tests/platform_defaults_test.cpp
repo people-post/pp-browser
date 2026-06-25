@@ -10,6 +10,7 @@ int main() {
   assert(config.llm.require_api_key);
   assert(config.llm.model == "gpt-4o-mini");
   assert(config.search.provider == "duckduckgo");
+  assert(config.promoted_mcp.url == "https://www.brief.global/mcp");
   assert(config.theme == "themes/base.rcss");
 
   std::cout << "platform_defaults_test ok\n";

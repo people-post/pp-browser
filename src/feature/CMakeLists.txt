@@ -34,6 +34,9 @@ set(PP_BROWSER_FEATURE_SOURCES
   dynamic/DynamicRmlDemo.cpp
   settings/SettingsLogic.cpp
   settings/LlmSettingsSection.cpp
+  settings/IntegrationsSettingsSection.cpp
+  settings/NetworkSettingsSection.cpp
+  settings/ProfileSettingsSection.cpp
   settings/AppearanceSettingsSection.cpp
   settings/StorageSettingsSection.cpp
   settings/SettingsSections.cpp

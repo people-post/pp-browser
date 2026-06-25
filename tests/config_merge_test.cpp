@@ -58,7 +58,7 @@ int main() {
   draft.llm_base_url = "https://proxy.example/v1";
   draft.llm_model = "my-model";
   draft.llm_api_key_env = "OPENAI_API_KEY";
-  const pbr::AppConfig built = pbr::ApplySettingsDraft(defaults, draft);
+  const pbr::AppConfig built = pbr::ApplyLlmSettingsDraft(defaults, draft);
   assert(built.llm.model == "my-model");
   assert(built.llm.base_url == "https://proxy.example/v1");
   assert(built.llm_api_key_env == "OPENAI_API_KEY");
@@ -69,7 +69,7 @@ int main() {
   ollama_draft.llm_preset = "custom";
   ollama_draft.llm_base_url = "http://192.168.1.10:11434/v1";
   ollama_draft.llm_model = "llama3.2";
-  const pbr::AppConfig ollama_built = pbr::ApplySettingsDraft(defaults, ollama_draft);
+  const pbr::AppConfig ollama_built = pbr::ApplyLlmSettingsDraft(defaults, ollama_draft);
   assert(ollama_built.llm.base_url == "http://192.168.1.10:11434/v1");
   assert(!ollama_built.llm.require_api_key);
   assert(ollama_built.llm.api_key.empty());
@@ -80,7 +80,7 @@ int main() {
   model_only.llm_preset = "cloud";
   model_only.llm_base_url = with_key.llm.base_url;
   model_only.llm_model = "new-model";
-  const pbr::AppConfig model_only_saved = pbr::ApplySettingsDraft(with_key, model_only);
+  const pbr::AppConfig model_only_saved = pbr::ApplyLlmSettingsDraft(with_key, model_only);
   assert(model_only_saved.llm.model == "new-model");
   assert(model_only_saved.llm.api_key == "saved-key");
 

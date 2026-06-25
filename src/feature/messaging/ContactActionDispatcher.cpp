@@ -8,9 +8,13 @@
 namespace pbr {
 
 ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts,
-                                                 IdentityStore& identity, IRegistrationClient& registration)
+                                                 IdentityStore& identity, IRegistrationClient* registration)
     : inbox_(inbox), contacts_(contacts), identity_(identity), registration_(registration) {
   redirectLogger("ContactActionDispatcher");
+}
+
+void ContactActionDispatcher::SetRegistrationClient(IRegistrationClient* registration) {
+  registration_ = registration;
 }
 
 void ContactActionDispatcher::SetOnActionMessage(std::function<void(const std::string& message)> callback) {
@@ -102,7 +106,10 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!signature) {
       return signature.error();
     }
-    auto result = registration_.Register(identity->public_key_b64, identity->nickname, *signature, timestamp);
+    if (!registration_) {
+      return Error("Registration client not configured");
+    }
+    auto result = registration_->Register(identity->public_key_b64, identity->nickname, *signature, timestamp);
     if (!result) {
       return result.error();
     }

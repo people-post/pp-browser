@@ -2,6 +2,7 @@
 
 #include "base/data/SessionStore.h"
 #include "base/platform/BrowserThread.h"
+#include "feature/settings/ProfileSettingsSection.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
@@ -62,7 +63,26 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.llm_model = bindings_.llm_model.c_str();
   ui_state_.llm_api_key = bindings_.llm_api_key.c_str();
   ui_state_.llm_api_key_env = bindings_.llm_api_key_env.c_str();
+  ui_state_.promoted_mcp_url = bindings_.promoted_mcp_url.c_str();
+  ui_state_.search_provider = bindings_.search_provider.c_str();
+  ui_state_.relay_base_url = bindings_.relay_base_url.c_str();
+  ui_state_.directory_base_url = bindings_.directory_base_url.c_str();
+  ui_state_.registration_base_url = bindings_.registration_base_url.c_str();
+  ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
+  ui_state_.profile_relay_id = bindings_.profile_relay_id.c_str();
+  ui_state_.profile_public_key = bindings_.profile_public_key.c_str();
+  ui_state_.profile_registered = bindings_.profile_registered.c_str();
   ui_state_.appearance = bindings_.appearance.c_str();
+
+  ui_state_.mcp_servers.clear();
+  ui_state_.mcp_servers.reserve(bindings_.mcp_servers.size());
+  for (const McpServerRow& row : bindings_.mcp_servers) {
+    ui_state_.mcp_servers.push_back({.id = row.id.c_str(),
+                                     .url = row.url.c_str(),
+                                     .command = row.command.c_str(),
+                                     .args_text = row.args_text.c_str(),
+                                     .enabled = row.enabled});
+  }
 }
 
 void SettingsController::PushUiStateToBindings() {
@@ -71,11 +91,30 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.llm_model = ui_state_.llm_model.c_str();
   bindings_.llm_api_key = ui_state_.llm_api_key.c_str();
   bindings_.llm_api_key_env = ui_state_.llm_api_key_env.c_str();
+  bindings_.promoted_mcp_url = ui_state_.promoted_mcp_url.c_str();
+  bindings_.search_provider = ui_state_.search_provider.c_str();
+  bindings_.relay_base_url = ui_state_.relay_base_url.c_str();
+  bindings_.directory_base_url = ui_state_.directory_base_url.c_str();
+  bindings_.registration_base_url = ui_state_.registration_base_url.c_str();
+  bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
+  bindings_.profile_relay_id = ui_state_.profile_relay_id.c_str();
+  bindings_.profile_public_key = ui_state_.profile_public_key.c_str();
+  bindings_.profile_registered = ui_state_.profile_registered.c_str();
   bindings_.appearance = ui_state_.appearance.c_str();
   bindings_.profile_label = ui_state_.profile_label.c_str();
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
   bindings_.profile_dir = ui_state_.profile_dir.c_str();
+
+  bindings_.mcp_servers.clear();
+  bindings_.mcp_servers.reserve(ui_state_.mcp_servers.size());
+  for (const McpServerUiState& row : ui_state_.mcp_servers) {
+    bindings_.mcp_servers.push_back({.id = row.id.c_str(),
+                                      .url = row.url.c_str(),
+                                      .command = row.command.c_str(),
+                                      .args_text = row.args_text.c_str(),
+                                      .enabled = row.enabled});
+  }
 }
 
 void SettingsController::SyncBindingsFromSession() {
@@ -109,7 +148,15 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
       section_handle.RegisterMember("title", &SectionListRow::title);
       section_handle.RegisterMember("subtitle", &SectionListRow::subtitle);
     }
+    if (auto mcp_handle = ctor.RegisterStruct<McpServerRow>()) {
+      mcp_handle.RegisterMember("id", &McpServerRow::id);
+      mcp_handle.RegisterMember("url", &McpServerRow::url);
+      mcp_handle.RegisterMember("command", &McpServerRow::command);
+      mcp_handle.RegisterMember("args_text", &McpServerRow::args_text);
+      mcp_handle.RegisterMember("enabled", &McpServerRow::enabled);
+    }
     ctor.RegisterArray<std::vector<SectionListRow>>();
+    ctor.RegisterArray<std::vector<McpServerRow>>();
     ctor.Bind("sections", &controller.sections_);
     ctor.Bind("selected_id", &controller.selected_id_);
     ctor.Bind("selected_title", &controller.selected_title_);
@@ -120,6 +167,16 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("llm_model", &controller.bindings_.llm_model);
     ctor.Bind("llm_api_key", &controller.bindings_.llm_api_key);
     ctor.Bind("llm_api_key_env", &controller.bindings_.llm_api_key_env);
+    ctor.Bind("promoted_mcp_url", &controller.bindings_.promoted_mcp_url);
+    ctor.Bind("search_provider", &controller.bindings_.search_provider);
+    ctor.Bind("mcp_servers", &controller.bindings_.mcp_servers);
+    ctor.Bind("relay_base_url", &controller.bindings_.relay_base_url);
+    ctor.Bind("directory_base_url", &controller.bindings_.directory_base_url);
+    ctor.Bind("registration_base_url", &controller.bindings_.registration_base_url);
+    ctor.Bind("profile_nickname", &controller.bindings_.profile_nickname);
+    ctor.Bind("profile_relay_id", &controller.bindings_.profile_relay_id);
+    ctor.Bind("profile_public_key", &controller.bindings_.profile_public_key);
+    ctor.Bind("profile_registered", &controller.bindings_.profile_registered);
     ctor.Bind("appearance", &controller.bindings_.appearance);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
@@ -132,6 +189,12 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_llm_field_changed", &SettingsController::OnLlmFieldChangedCallback);
     ctor.BindEventCallback("on_llm_preset_changed", &SettingsController::OnLlmPresetChangedCallback);
     ctor.BindEventCallback("on_appearance_changed", &SettingsController::OnAppearanceChangedCallback);
+    ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
+    ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
+    ctor.BindEventCallback("on_profile_field_changed", &SettingsController::OnProfileFieldChangedCallback);
+    ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
+    ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
+    ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
   });
 }
 
@@ -147,6 +210,16 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "llm_model");
   host.Dirty("settings", "llm_api_key");
   host.Dirty("settings", "llm_api_key_env");
+  host.Dirty("settings", "promoted_mcp_url");
+  host.Dirty("settings", "search_provider");
+  host.Dirty("settings", "mcp_servers");
+  host.Dirty("settings", "relay_base_url");
+  host.Dirty("settings", "directory_base_url");
+  host.Dirty("settings", "registration_base_url");
+  host.Dirty("settings", "profile_nickname");
+  host.Dirty("settings", "profile_relay_id");
+  host.Dirty("settings", "profile_public_key");
+  host.Dirty("settings", "profile_registered");
   host.Dirty("settings", "appearance");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
@@ -487,6 +560,73 @@ void SettingsController::OnAppearanceChangedCallback(Rml::DataModelHandle /*mode
   }
 
   controller.MarkSectionDirty("appearance");
+}
+
+void SettingsController::OnIntegrationsFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                            const Rml::VariantList& /*args*/) {
+  Instance().MarkSectionDirty("integrations");
+}
+
+void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                       const Rml::VariantList& /*args*/) {
+  Instance().MarkSectionDirty("network");
+}
+
+void SettingsController::OnProfileFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                       const Rml::VariantList& /*args*/) {
+  Instance().MarkSectionDirty("profile");
+}
+
+void SettingsController::OnRegisterProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                   const Rml::VariantList& /*args*/) {
+  Instance().OnRegisterProfile();
+}
+
+void SettingsController::OnAddMcpServerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                              const Rml::VariantList& /*args*/) {
+  Instance().OnAddMcpServer();
+}
+
+void SettingsController::OnRemoveMcpServerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                   const Rml::VariantList& args) {
+  if (args.empty()) {
+    return;
+  }
+  Instance().OnRemoveMcpServer(static_cast<int>(args[0].Get<int>(0)));
+}
+
+void SettingsController::OnRegisterProfile() {
+  PullBindingsToUiState();
+  if (auto registered = ProfileSettingsSection::RegisterIdentity(ui_state_); !registered) {
+    status_ = registered.error().message;
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+  status_ = "";
+  PushUiStateToBindings();
+  DirtyAll();
+  MaybeShowSaveToast("profile");
+}
+
+void SettingsController::OnAddMcpServer() {
+  bindings_.mcp_servers.push_back({});
+  ui_state_.mcp_servers.push_back({});
+  DataModelHost::Instance().Dirty("settings", "mcp_servers");
+  MarkSectionDirty("integrations");
+}
+
+void SettingsController::OnRemoveMcpServer(const int index) {
+  if (index < 0 || index >= static_cast<int>(bindings_.mcp_servers.size())) {
+    return;
+  }
+  bindings_.mcp_servers.erase(bindings_.mcp_servers.begin() + index);
+  PullBindingsToUiState();
+  if (index < static_cast<int>(ui_state_.mcp_servers.size())) {
+    ui_state_.mcp_servers.erase(ui_state_.mcp_servers.begin() + index);
+  }
+  PushUiStateToBindings();
+  DataModelHost::Instance().Dirty("settings", "mcp_servers");
+  MarkSectionDirty("integrations");
 }
 
 } // namespace pbr
