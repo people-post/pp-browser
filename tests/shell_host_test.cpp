@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <string>
 
 int main() {
   using namespace pbr;
@@ -12,6 +13,8 @@ int main() {
   assert(ShellLayout::FromWidth(767.f) == LayoutMode::Compact);
   assert(ShellLayout::FromWidth(768.f) == LayoutMode::Expanded);
   assert(ShellLayout::FromWidth(1280.f) == LayoutMode::Expanded);
+  assert(ShellLayout::NavContentKey(NavTab::Sessions) == std::string("sidebar"));
+  assert(ShellLayout::NavContentKey(NavTab::Settings) == std::string("settings"));
 
   ShellState expanded{};
   expanded.layout_mode = LayoutMode::Expanded;
@@ -20,19 +23,27 @@ int main() {
   assert(expanded_vis.primary);
   assert(expanded_vis.secondary);
   assert(expanded_vis.auxiliary);
-  assert(!expanded_vis.secondary_drawer);
+  assert(!expanded_vis.compact_nav_page);
+  assert(!expanded_vis.compact_chat_overlay);
   assert(!expanded_vis.auxiliary_sheet);
 
   ShellState compact{};
   compact.layout_mode = LayoutMode::Compact;
-  compact.secondary_drawer_open = true;
+  compact.compact_chat_open = true;
   compact.auxiliary_open = true;
   const PaneVisibility compact_vis = ShellLayout::WhichPanesVisible(compact);
   assert(compact_vis.primary);
   assert(!compact_vis.secondary);
   assert(!compact_vis.auxiliary);
-  assert(compact_vis.secondary_drawer);
+  assert(!compact_vis.compact_nav_page);
+  assert(compact_vis.compact_chat_overlay);
   assert(compact_vis.auxiliary_sheet);
+
+  ShellState compact_nav{};
+  compact_nav.layout_mode = LayoutMode::Compact;
+  const PaneVisibility compact_nav_vis = ShellLayout::WhichPanesVisible(compact_nav);
+  assert(compact_nav_vis.compact_nav_page);
+  assert(!compact_nav_vis.compact_chat_overlay);
 
   ShellState dialog_state{};
   dialog_state.dialog.active = true;
@@ -50,14 +61,14 @@ int main() {
   transient_state.transient_active = true;
   assert(ShellInterruption::Top(transient_state) == InterruptionKind::Transient);
 
-  ShellState drawer_state{};
-  drawer_state.layout_mode = LayoutMode::Compact;
-  drawer_state.secondary_drawer_open = true;
-  assert(ShellInterruption::Top(drawer_state) == InterruptionKind::SecondaryDrawer);
+  ShellState chat_overlay_state{};
+  chat_overlay_state.layout_mode = LayoutMode::Compact;
+  chat_overlay_state.compact_chat_open = true;
+  assert(ShellInterruption::Top(chat_overlay_state) == InterruptionKind::CompactChatOverlay);
 
-  ShellState dismiss_drawer = drawer_state;
-  assert(ShellInterruption::DismissTop(dismiss_drawer));
-  assert(!dismiss_drawer.secondary_drawer_open);
+  ShellState dismiss_chat = chat_overlay_state;
+  assert(ShellInterruption::DismissTop(dismiss_chat));
+  assert(!dismiss_chat.compact_chat_open);
 
   ShellState dismiss_transient = transient_state;
   assert(ShellInterruption::DismissTop(dismiss_transient));

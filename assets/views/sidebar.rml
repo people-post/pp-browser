@@ -17,10 +17,4 @@
     </div>
     <p class="text muted" data-if="sessions.size == 0">No conversations yet.</p>
   </div>
-  <div class="sidebar-footer">
-    <button class="btn btn-ghost sidebar-settings-btn" type="button" data-event-click="open_settings()">
-      <svg src="../icons/settings.svg" width="18" height="18" crop-to-content="true"></svg>
-      <span>Settings</span>
-    </button>
-  </div>
 </div>

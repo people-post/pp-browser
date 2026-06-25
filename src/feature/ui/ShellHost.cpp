@@ -42,6 +42,10 @@ std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index = 0)
   }
 }
 
+NavTab NavTabFromString(const Rml::String& value) {
+  return value == "settings" ? NavTab::Settings : NavTab::Sessions;
+}
+
 } // namespace
 
 ShellHost& ShellHost::Instance() {
@@ -59,11 +63,11 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.RegisterArray<std::vector<ToastEntry>>();
 
     ctor.Bind("layout_mode", &host.state_.layout_mode_str);
-    ctor.Bind("secondary_drawer_open", &host.state_.secondary_drawer_open);
+    ctor.Bind("nav_tab", &host.state_.nav_tab_str);
+    ctor.Bind("compact_chat_open", &host.state_.compact_chat_open);
     ctor.Bind("auxiliary_open", &host.state_.auxiliary_open);
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
-    ctor.Bind("toolbar_title", &host.state_.toolbar_title);
     ctor.Bind("banner_message", &host.state_.banner_message);
     ctor.Bind("toasts", &host.state_.toasts);
     ctor.Bind("dialog_active", &host.state_.dialog.active);
@@ -72,9 +76,10 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("dialog_show_cancel", &host.state_.dialog.show_cancel);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
 
-    ctor.BindEventCallback("toggle_secondary", &ShellHost::ToggleSecondaryCallback);
     ctor.BindEventCallback("toggle_auxiliary", &ShellHost::ToggleAuxiliaryCallback);
     ctor.BindEventCallback("open_auxiliary", &ShellHost::OpenAuxiliaryCallback);
+    ctor.BindEventCallback("select_nav_tab", &ShellHost::SelectNavTabCallback);
+    ctor.BindEventCallback("compact_chat_back", &ShellHost::CompactChatBackCallback);
     ctor.BindEventCallback("transient_back", &ShellHost::PopTransientCallback);
     ctor.BindEventCallback("close_layer", &ShellHost::CloseLayerCallback);
     ctor.BindEventCallback("dismiss_banner", &ShellHost::DismissBannerCallback);
@@ -88,10 +93,12 @@ void ShellHost::Initialize(Rml::Context* context) {
   state_ = {};
   state_.layout_mode = LayoutMode::Expanded;
   ShellLayout::SyncLayoutModeString(state_);
+  ShellLayout::SyncNavTabString(state_);
   last_synced_mode_ = LayoutMode::Expanded;
   next_pane_id_ = 1;
   next_overlay_id_ = 1;
   elapsed_ms_ = 0.f;
+  compact_chat_dismiss_at_ms_ = -1.f;
   saved_focus_id_.clear();
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
@@ -163,13 +170,42 @@ void ShellHost::CloseAuxiliary() {
   RequestSyncLayout();
 }
 
-void ShellHost::ToggleSecondary() {
+void ShellHost::SelectNavTab(NavTab tab) {
+  const bool tab_changed = state_.nav_tab != tab;
+  state_.nav_tab = tab;
+  ShellLayout::SyncNavTabString(state_);
   if (state_.layout_mode == LayoutMode::Compact) {
-    state_.secondary_drawer_open = !state_.secondary_drawer_open;
-    RequestSyncLayout();
+    state_.compact_chat_open = false;
+    compact_chat_dismiss_at_ms_ = -1.f;
+  }
+  if (tab_changed && on_nav_tab_changed_) {
+    on_nav_tab_changed_(tab);
+  }
+  RequestSyncLayout();
+  DirtyWindow();
+}
+
+void ShellHost::OpenCompactChat() {
+  if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
-  DirtyWindow();
+  state_.compact_chat_open = true;
+  compact_chat_dismiss_at_ms_ = -1.f;
+  RequestSyncLayout();
+}
+
+void ShellHost::CloseCompactChat() {
+  if (!state_.compact_chat_open) {
+    return;
+  }
+  state_.compact_chat_open = false;
+  compact_chat_dismiss_at_ms_ = -1.f;
+  DetachChatOverlayGesture();
+  RequestSyncLayout();
+}
+
+void ShellHost::ScheduleCompactChatDismiss() {
+  compact_chat_dismiss_at_ms_ = elapsed_ms_ + 220.f;
 }
 
 void ShellHost::ToggleAuxiliary() {
@@ -239,6 +275,7 @@ bool ShellHost::HandleDismiss() {
   if (!ShellInterruption::DismissTop(state_)) {
     return false;
   }
+  DetachChatOverlayGesture();
   RequestSyncLayout();
   DirtyWindow();
   return true;
@@ -246,11 +283,11 @@ bool ShellHost::HandleDismiss() {
 
 void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "layout_mode");
-  DataModelHost::Instance().Dirty("window", "secondary_drawer_open");
+  DataModelHost::Instance().Dirty("window", "nav_tab");
+  DataModelHost::Instance().Dirty("window", "compact_chat_open");
   DataModelHost::Instance().Dirty("window", "auxiliary_open");
   DataModelHost::Instance().Dirty("window", "auxiliary_available");
   DataModelHost::Instance().Dirty("window", "transient_active");
-  DataModelHost::Instance().Dirty("window", "toolbar_title");
   DataModelHost::Instance().Dirty("window", "banner_message");
   DataModelHost::Instance().Dirty("window", "toasts");
   DataModelHost::Instance().Dirty("window", "dialog_active");
@@ -271,6 +308,10 @@ void ShellHost::SetOnBeforeTransientMount(std::function<void(const std::string& 
 
 void ShellHost::SetOnTransientMounted(std::function<void(const std::string& key)> callback) {
   on_transient_mounted_ = std::move(callback);
+}
+
+void ShellHost::SetOnNavTabChanged(std::function<void(NavTab tab)> callback) {
+  on_nav_tab_changed_ = std::move(callback);
 }
 
 void ShellHost::SaveFocus() {
@@ -330,8 +371,14 @@ void ShellHost::ApplyLayoutModeFromContext(Rml::Context* context) {
 
 void ShellHost::OnLayoutModeChanged() {
   if (state_.layout_mode == LayoutMode::Expanded) {
-    state_.secondary_drawer_open = false;
+    state_.compact_chat_open = false;
+    compact_chat_dismiss_at_ms_ = -1.f;
+    DetachChatOverlayGesture();
   }
+}
+
+std::string ShellHost::NavContentKey() const {
+  return ShellLayout::NavContentKey(state_.nav_tab);
 }
 
 std::string ShellHost::SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot) const {
@@ -350,14 +397,14 @@ std::string ShellHost::SerializePaneSlot(const std::string& key, const char* ext
 }
 
 std::string ShellHost::SerializeExpandedBase() const {
+  const std::string nav_content = NavContentKey();
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-base\" data-model=\"window\">";
   out << "<div class=\"shell-pane-row\">";
-  for (const PaneState& pane : state_.panes) {
-    if (pane.spec.role == PaneRole::Secondary) {
-      out << SerializePaneSlot(pane.spec.key, "shell-pane-secondary");
-    }
-  }
+  out << "<div class=\"shell-nav-rail\" id=\"shell-nav-rail-mount\"></div>";
+  out << "<div class=\"shell-pane shell-pane-secondary\" id=\"shell-nav-content-mount\">";
+  out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
+  out << "</div>";
   for (const PaneState& pane : state_.panes) {
     if (pane.spec.role == PaneRole::Primary) {
       out << SerializePaneSlot(pane.spec.key, "shell-pane-primary", pane.spec.provides_composer);
@@ -375,23 +422,25 @@ std::string ShellHost::SerializeExpandedBase() const {
 }
 
 std::string ShellHost::SerializeCompactBase() const {
+  const std::string nav_content = NavContentKey();
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-base shell-layer-compact\" data-model=\"window\">";
 
-  for (const PaneState& pane : state_.panes) {
-    if (pane.spec.role == PaneRole::Primary) {
-      out << SerializePaneSlot(pane.spec.key, "shell-pane-primary shell-pane-primary-compact");
-    }
+  if (!state_.compact_chat_open) {
+    out << "<div class=\"shell-nav-page\">";
+    out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
+    out << "</div>";
   }
 
-  if (state_.secondary_drawer_open) {
-    out << "<div class=\"shell-drawer-scrim\" data-event-click=\"toggle_secondary()\"></div>";
-    out << "<div class=\"shell-drawer shell-drawer-secondary\">";
-    for (const PaneState& pane : state_.panes) {
-      if (pane.spec.role == PaneRole::Secondary) {
-        out << SerializePaneSlot(pane.spec.key, nullptr);
-      }
-    }
+  if (state_.compact_chat_open) {
+    out << "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">";
+    out << "<div class=\"shell-chat-overlay-chrome row\">";
+    out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
+    out << "<svg src=\"../icons/back.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+    out << "</button>";
+    out << "</div>";
+    out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
+    out << "<div class=\"shell-composer-mount\" id=\"shell-composer-mount\"></div>";
     out << "</div>";
   }
 
@@ -406,27 +455,10 @@ std::string ShellHost::SerializeCompactBase() const {
     out << "</div>";
   }
 
-  if (!state_.transient_active) {
-    const bool has_composer = std::any_of(state_.panes.begin(), state_.panes.end(),
-                                          [](const PaneState& pane) { return pane.spec.provides_composer; });
+  if (!state_.compact_chat_open) {
     out << "<div class=\"shell-bottom-chrome\">";
-    if (has_composer) {
-      out << "<div class=\"shell-composer-mount\" id=\"shell-composer-mount\"></div>";
-    }
-    out << "<div class=\"shell-toolbar\">";
-    for (const PaneState& pane : state_.panes) {
-      if (pane.spec.role == PaneRole::Secondary && !pane.spec.toolbar_label.empty()) {
-        out << "<button class=\"shell-toolbar-btn\" data-event-click=\"toggle_secondary()\">"
-            << pane.spec.toolbar_label.c_str() << "</button>";
-        break;
-      }
-    }
-    out << "<div class=\"shell-toolbar-flex\"></div>";
-    out << "<span class=\"shell-toolbar-title\" data-rml=\"toolbar_title\"></span>";
-    out << "<div class=\"shell-toolbar-flex\"></div>";
-    out << "<button class=\"shell-toolbar-btn shell-toolbar-btn-preview\" data-if=\"auxiliary_available\" "
-           "data-event-click=\"toggle_auxiliary()\">Preview</button>";
-    out << "</div></div>";
+    out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
+    out << "</div>";
   }
 
   out << "</div>";
@@ -498,6 +530,35 @@ std::string ShellHost::SerializeShellRoot() const {
   return out.str();
 }
 
+void ShellHost::MountNavRail() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::Element* target = context_->GetDocument(0)->GetElementById("shell-nav-rail-mount");
+  if (!target) {
+    return;
+  }
+  const std::string body = ViewCatalog::LoadBody("nav_rail");
+  if (!body.empty()) {
+    RmlMount::MountInner(target, body);
+  }
+}
+
+void ShellHost::MountNavContent() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  const std::string key = NavContentKey();
+  Rml::Element* target = context_->GetDocument(0)->GetElementById(("pane-body-" + key).c_str());
+  if (!target) {
+    return;
+  }
+  const std::string body = ViewCatalog::LoadBody(key);
+  if (!body.empty()) {
+    RmlMount::MountInner(target, body);
+  }
+}
+
 void ShellHost::MountComposer() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
@@ -527,13 +588,30 @@ void ShellHost::MountComposer() {
     return;
   }
 
-  if (state_.transient_active) {
+  if (!state_.compact_chat_open) {
     return;
   }
   Rml::Element* target = doc->GetElementById("shell-composer-mount");
   if (target) {
     RmlMount::MountInner(target, body);
   }
+}
+
+void ShellHost::AttachChatOverlayGesture() {
+  if (!context_ || context_->GetNumDocuments() == 0 || state_.layout_mode != LayoutMode::Compact ||
+      !state_.compact_chat_open) {
+    DetachChatOverlayGesture();
+    return;
+  }
+  Rml::Element* overlay = context_->GetDocument(0)->GetElementById("shell-chat-overlay");
+  if (!overlay) {
+    return;
+  }
+  chat_overlay_gesture_.Attach(overlay, context_, state_.shell_width_dp, [this]() { ScheduleCompactChatDismiss(); });
+}
+
+void ShellHost::DetachChatOverlayGesture() {
+  chat_overlay_gesture_.Detach();
 }
 
 void ShellHost::MountPaneBodies() {
@@ -552,9 +630,23 @@ void ShellHost::MountPaneBodies() {
     }
   };
 
-  for (const PaneState& pane : state_.panes) {
-    mount_key(pane.spec.key);
+  DetachChatOverlayGesture();
+  MountNavRail();
+  MountNavContent();
+
+  if (state_.layout_mode == LayoutMode::Expanded) {
+    mount_key("chat");
+    MountComposer();
+  } else if (state_.compact_chat_open) {
+    mount_key("chat");
+    MountComposer();
+    AttachChatOverlayGesture();
   }
+
+  if (state_.auxiliary_open) {
+    mount_key("preview");
+  }
+
   if (!state_.transient_stack.empty()) {
     const std::string& transient_key = state_.transient_stack.back().spec.key;
     if (on_before_transient_mount_) {
@@ -579,7 +671,6 @@ void ShellHost::MountPaneBodies() {
       RmlMount::MountInner(target, body);
     }
   }
-  MountComposer();
 }
 
 void ShellHost::SyncLayout() {
@@ -609,6 +700,11 @@ void ShellHost::Update(Rml::Context* context) {
     DirtyWindow();
   }
 
+  if (compact_chat_dismiss_at_ms_ >= 0.f && elapsed_ms_ >= compact_chat_dismiss_at_ms_) {
+    compact_chat_dismiss_at_ms_ = -1.f;
+    CloseCompactChat();
+  }
+
   const LayoutMode previous = state_.layout_mode;
   ApplyLayoutModeFromContext(context);
   if (previous != state_.layout_mode) {
@@ -621,11 +717,6 @@ void ShellHost::Update(Rml::Context* context) {
   DirtyWindow();
 }
 
-void ShellHost::ToggleSecondaryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                        const Rml::VariantList& /*args*/) {
-  Instance().ToggleSecondary();
-}
-
 void ShellHost::ToggleAuxiliaryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
   Instance().ToggleAuxiliary();
@@ -634,6 +725,19 @@ void ShellHost::ToggleAuxiliaryCallback(Rml::DataModelHandle /*model*/, Rml::Eve
 void ShellHost::OpenAuxiliaryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
   Instance().OpenAuxiliary();
+}
+
+void ShellHost::SelectNavTabCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                     const Rml::VariantList& args) {
+  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+    return;
+  }
+  Instance().SelectNavTab(NavTabFromString(args[0].Get<Rml::String>()));
+}
+
+void ShellHost::CompactChatBackCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                        const Rml::VariantList& /*args*/) {
+  Instance().CloseCompactChat();
 }
 
 void ShellHost::PopTransientCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

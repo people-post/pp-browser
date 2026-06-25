@@ -9,7 +9,7 @@
       <p class="text muted" data-rml="thread_subtitle"></p>
     </div>
     <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
-            data-if="auxiliary_available && layout_mode == 'expanded'"
+            data-if="auxiliary_available && (layout_mode == 'expanded' || compact_chat_open)"
             data-event-click="toggle_auxiliary()">Details</button>
   </div>
   <div class="messages" data-mount-id="messages">

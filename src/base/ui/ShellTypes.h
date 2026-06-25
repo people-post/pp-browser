@@ -12,11 +12,13 @@ enum class PaneRole { Primary, Secondary, Auxiliary, Transient };
 
 enum class LayoutMode { Compact, Expanded };
 
+enum class NavTab { Sessions, Settings };
+
 enum class OverlayKind { Generic, Alert, Confirm, Custom };
 
 enum class InterruptionKind {
   None,
-  SecondaryDrawer,
+  CompactChatOverlay,
   AuxiliarySheet,
   Transient,
   OverlayLayer,
@@ -27,6 +29,7 @@ enum class ToastDuration { Short, Long };
 
 struct ShellConfig {
   float compact_breakpoint_dp = 768.f;
+  float nav_rail_width_dp = 56.f;
   float secondary_width_dp = 240.f;
   float auxiliary_width_dp = 320.f;
   float toolbar_height_dp = 48.f;
@@ -74,22 +77,24 @@ struct PaneVisibility {
   bool secondary = false;
   bool primary = true;
   bool auxiliary = false;
-  bool secondary_drawer = false;
+  bool compact_nav_page = false;
+  bool compact_chat_overlay = false;
   bool auxiliary_sheet = false;
 };
 
 struct ShellState {
   LayoutMode layout_mode = LayoutMode::Expanded;
   Rml::String layout_mode_str = "expanded";
+  NavTab nav_tab = NavTab::Sessions;
+  Rml::String nav_tab_str = "sessions";
   std::vector<PaneState> panes;
   std::vector<PaneState> transient_stack;
   std::vector<OverlayEntry> overlay_stack;
 
-  bool secondary_drawer_open = false;
+  bool compact_chat_open = false;
   bool auxiliary_open = false;
   bool auxiliary_available = false;
   bool transient_active = false;
-  Rml::String toolbar_title = "Chat";
 
   Rml::String banner_message;
   std::vector<ToastEntry> toasts;

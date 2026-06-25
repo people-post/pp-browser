@@ -10,8 +10,20 @@ const char* ShellLayout::LayoutModeString(LayoutMode mode) {
   return mode == LayoutMode::Compact ? "compact" : "expanded";
 }
 
+const char* ShellLayout::NavTabString(NavTab tab) {
+  return tab == NavTab::Settings ? "settings" : "sessions";
+}
+
 void ShellLayout::SyncLayoutModeString(ShellState& state) {
   state.layout_mode_str = LayoutModeString(state.layout_mode);
+}
+
+void ShellLayout::SyncNavTabString(ShellState& state) {
+  state.nav_tab_str = NavTabString(state.nav_tab);
+}
+
+const char* ShellLayout::NavContentKey(NavTab tab) {
+  return tab == NavTab::Settings ? "settings" : "sidebar";
 }
 
 PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
@@ -24,7 +36,8 @@ PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
     return vis;
   }
 
-  vis.secondary_drawer = state.secondary_drawer_open;
+  vis.compact_nav_page = !state.compact_chat_open;
+  vis.compact_chat_overlay = state.compact_chat_open;
   vis.auxiliary_sheet = state.auxiliary_open;
   return vis;
 }

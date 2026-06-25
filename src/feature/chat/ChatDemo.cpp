@@ -525,11 +525,13 @@ void ChatDemo::OnSelectThread(const std::string& thread_id) {
   if (!messaging_ready_) {
     return;
   }
-  if (auto thread = MessagingHub::Instance().Inbox().OpenThread(thread_id)) {
+  if (MessagingHub::Instance().Inbox().OpenThread(thread_id)) {
     ClearWorkingSet();
     working_set_by_entry_.clear();
     RefreshFromMessaging();
-    (void)thread;
+  }
+  if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
+    ShellHost::Instance().OpenCompactChat();
   }
 }
 
@@ -1200,7 +1202,6 @@ bool ChatDemo::Setup(Rml::Context* context) {
         ctor.BindEventCallback("calendar_next", &ChatDemo::CalendarNextCallback);
         ctor.BindEventCallback("select_calendar_day", &ChatDemo::SelectCalendarDayCallback);
         ctor.BindEventCallback("open_working_set", &ChatDemo::OpenWorkingSetCallback);
-        ctor.BindEventCallback("open_settings", &SettingsController::OpenSettingsCallback);
       })) {
     return false;
   }
@@ -1216,8 +1217,15 @@ bool ChatDemo::Setup(Rml::Context* context) {
   SessionStore::Instance().AddConfigListener([this](const AppConfig& updated) { ApplyRuntimeConfig(updated); });
 
   ShellHost::Instance().Initialize(context);
+  ShellHost::Instance().SetOnNavTabChanged([](NavTab tab) {
+    if (tab == NavTab::Settings) {
+      SettingsController::Instance().OnNavTabActivated();
+    }
+  });
   ShellHost::Instance().RegisterPane(
-      {.key = "sidebar", .rml_path = "views/sidebar.rml", .role = PaneRole::Secondary, .toolbar_label = "Sessions"});
+      {.key = "sidebar", .rml_path = "views/sidebar.rml", .role = PaneRole::Secondary});
+  ShellHost::Instance().RegisterPane(
+      {.key = "settings", .rml_path = "views/settings.rml", .role = PaneRole::Secondary});
   ShellHost::Instance().RegisterPane({.key = "chat",
                                        .rml_path = "views/chat.rml",
                                        .role = PaneRole::Primary,

@@ -17,6 +17,7 @@ set(PP_BROWSER_FEATURE_SOURCES
   ai/bindings/ActionRouter.cpp
   ai/bindings/BindingsManifest.cpp
   ui/ShellHost.cpp
+  ui/ShellChatOverlayGesture.cpp
   ui/ShellLayout.cpp
   ui/ShellFeedback.cpp
   ui/ShellInterruption.cpp

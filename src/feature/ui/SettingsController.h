@@ -20,8 +20,7 @@ public:
 
   bool RegisterModel(Rml::Context* context);
   void OpenSettings();
-
-  static void OpenSettingsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  void OnNavTabActivated();
 
 private:
   struct SettingsUiDraft {

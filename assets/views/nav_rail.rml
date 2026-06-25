@@ -1,0 +1,13 @@
+<div class="shell-nav-rail-inner" data-model="window">
+  <button class="shell-nav-tab" type="button"
+          data-class-shell-nav-tab--active="nav_tab == 'sessions'"
+          data-event-click="select_nav_tab('sessions')">
+    <svg src="../icons/sessions.svg" width="22" height="22" crop-to-content="true"></svg>
+  </button>
+  <div class="shell-nav-spacer"></div>
+  <button class="shell-nav-tab" type="button"
+          data-class-shell-nav-tab--active="nav_tab == 'settings'"
+          data-event-click="select_nav_tab('settings')">
+    <svg src="../icons/settings.svg" width="22" height="22" crop-to-content="true"></svg>
+  </button>
+</div>

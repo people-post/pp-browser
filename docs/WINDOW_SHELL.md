@@ -17,12 +17,13 @@ Shared state lives in `ShellState` (`ShellTypes.h`). Demos call shell APIs; they
 
 | Role | Example | Expanded | Compact |
 |------|---------|----------|---------|
-| Primary | Chat | Center column | Full screen |
-| Secondary | Sessions | Left column | Drawer (toolbar) |
-| Auxiliary | Working set (Preview) | Right column when open | Sheet (toolbar) |
+| Nav rail | Sessions / Settings tabs | Left column | Bottom bar |
+| Secondary | Sessions list or Settings | Column beside nav rail | Full page above nav rail |
+| Primary | Chat | Center column | Full-screen overlay on session select |
+| Auxiliary | Working set (Preview) | Right column when open | Sheet |
+| Transient | Drill-down (future) | Over primary | Over primary |
 
 The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
-| Transient | Settings drill-down | Over primary | Over primary |
 
 Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).
 
@@ -32,7 +33,7 @@ Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).
 2. Overlay layer (`push_layer`)
 3. Transient stack
 4. Auxiliary sheet (compact)
-5. Secondary drawer (compact)
+5. Compact chat overlay (compact)
 6. Base panes
 
 Escape (priority 110) calls `ShellHost::HandleDismiss()` before app quit (priority 100). Toasts and banners are informational and not in the dismiss stack.
@@ -43,7 +44,8 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 
 | Callback | Action |
 |----------|--------|
-| `toggle_secondary()` | Open/close sessions drawer (compact) |
+| `select_nav_tab(tab)` | Switch nav rail tab (`sessions` or `settings`) |
+| `compact_chat_back()` | Close compact chat overlay |
 | `toggle_auxiliary()` | Open/close preview sheet/panel |
 | `open_auxiliary()` | Open preview when available |
 | `transient_back()` | Pop transient stack |
@@ -51,7 +53,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `dismiss_banner()` | Hide banner |
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
 
-Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`.
+Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`. The nav rail mounts from `assets/views/nav_rail.rml`.
 
 ## Composer chrome
 
@@ -60,11 +62,9 @@ Primary panes may set `provides_composer = true` on `PaneSpec`. The shell mounts
 | Layout | Mount target | Structure |
 |--------|--------------|-----------|
 | Expanded | `#pane-composer-{key}` | Below `#pane-body-{key}` in the primary column |
-| Compact | `#shell-composer-mount` | Inside `shell-bottom-chrome`, above the nav toolbar |
+| Compact | `#shell-composer-mount` | Inside the compact chat overlay |
 
-Compact bottom chrome (`shell-bottom-chrome`) stacks the prompt card and the Sessions / Preview toolbar row. Both are hidden during transient views.
-
-The composer uses the pane's data model (`data-model="chat"` in Chat demo) for `draft` binding and `send_message()`.
+On compact, the composer appears only when a chat overlay is open (after selecting a session). Sessions and Settings pages do not show the composer.
 
 ## C++ usage
 
@@ -75,6 +75,8 @@ ShellHost::Instance().RegisterPane({
     .role = PaneRole::Primary,
     .provides_composer = true,
 });
+ShellHost::Instance().SelectNavTab(NavTab::Settings);
+ShellHost::Instance().OpenCompactChat();
 ShellHost::Instance().SyncLayout();
 
 ShellFeedback::ShowBanner(ShellHost::Instance().State(), "Offline");

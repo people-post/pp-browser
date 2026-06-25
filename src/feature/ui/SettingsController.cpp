@@ -74,7 +74,6 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("draft_appearance_changed", &SettingsController::DraftAppearanceChangedCallback);
     ctor.BindEventCallback("draft_llm_api_key_env_changed", &SettingsController::DraftLlmApiKeyEnvChangedCallback);
     ctor.BindEventCallback("draft_llm_preset_changed", &SettingsController::DraftLlmPresetChangedCallback);
-    ctor.BindEventCallback("open_settings", &SettingsController::OpenSettingsCallback);
   });
 }
 
@@ -101,20 +100,17 @@ void SettingsController::OnSettingsMounted() {
   suppress_preset_change_ = false;
 }
 
-void SettingsController::OpenSettings() {
+void SettingsController::OnNavTabActivated() {
   LoadDraftFromSession();
-  ShellHost::Instance().SetOnBeforeTransientMount([](const std::string& key) {
-    if (key == "settings") {
-      SettingsController::Instance().suppress_preset_change_ = true;
-    }
-  });
-  ShellHost::Instance().SetOnTransientMounted([](const std::string& key) {
-    if (key == "settings") {
-      SettingsController::Instance().OnSettingsMounted();
-    }
-  });
-  ShellHost::Instance().PushTransient({.key = "settings", .rml_path = "views/settings.rml", .toolbar_label = "Settings"});
-  ShellHost::Instance().DirtyWindow();
+  OnSettingsMounted();
+}
+
+void SettingsController::OpenSettings() {
+  const bool already_settings = ShellHost::Instance().State().nav_tab == NavTab::Settings;
+  ShellHost::Instance().SelectNavTab(NavTab::Settings);
+  if (already_settings) {
+    OnNavTabActivated();
+  }
 }
 
 SettingsDraft SettingsController::ToLogicDraft() const {
@@ -209,11 +205,6 @@ void SettingsController::DraftLlmPresetChangedCallback(Rml::DataModelHandle /*mo
     return;
   }
   controller.draft_.llm_preset = EventValue(ev);
-}
-
-void SettingsController::OpenSettingsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                              const Rml::VariantList& /*args*/) {
-  Instance().OpenSettings();
 }
 
 } // namespace pbr

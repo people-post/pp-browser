@@ -15,8 +15,8 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
   if (state.layout_mode == LayoutMode::Compact && state.auxiliary_open) {
     return InterruptionKind::AuxiliarySheet;
   }
-  if (state.layout_mode == LayoutMode::Compact && state.secondary_drawer_open) {
-    return InterruptionKind::SecondaryDrawer;
+  if (state.layout_mode == LayoutMode::Compact && state.compact_chat_open) {
+    return InterruptionKind::CompactChatOverlay;
   }
   return InterruptionKind::None;
 }
@@ -37,8 +37,8 @@ bool ShellInterruption::DismissTop(ShellState& state) {
   case InterruptionKind::AuxiliarySheet:
     state.auxiliary_open = false;
     return true;
-  case InterruptionKind::SecondaryDrawer:
-    state.secondary_drawer_open = false;
+  case InterruptionKind::CompactChatOverlay:
+    state.compact_chat_open = false;
     return true;
   case InterruptionKind::None:
     return false;

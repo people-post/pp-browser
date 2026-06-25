@@ -285,6 +285,39 @@ select selectbox option:hover {
   border-right: 1dp #374151;
 }
 
+.shell-nav-rail {
+  background-color: #0f172a;
+  border-right: 1dp #374151;
+}
+
+.shell-nav-rail--compact {
+  border-right: 0;
+  border-top: 1dp #374151;
+}
+
+.shell-nav-tab {
+  background-color: transparent;
+  color: #9ca3af;
+}
+
+.shell-nav-tab:hover {
+  background-color: #1f2937;
+}
+
+.shell-nav-tab--active {
+  background-color: #374151;
+  color: #f9fafb;
+}
+
+.shell-chat-overlay {
+  background-color: #111827;
+}
+
+.shell-chat-overlay-chrome {
+  background-color: #1f2937;
+  border-bottom: 1dp #374151;
+}
+
 .shell-pane-auxiliary {
   border-left: 1dp #374151;
 }
