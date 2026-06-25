@@ -12,7 +12,8 @@
 #include <cstdint>
 
 #if defined(_WIN32)
-// windows.h / wingdi.h / winnt.h define macros that collide with enum members.
+// windows.h / wingdi.h / winnt.h define macros that collide with enum members
+// and with std::min / std::max (unless NOMINMAX is set).
 #ifdef ERROR
 #undef ERROR
 #endif
@@ -21,6 +22,12 @@
 #endif
 #ifdef IGNORE
 #undef IGNORE
+#endif
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
 #endif
 #endif
 

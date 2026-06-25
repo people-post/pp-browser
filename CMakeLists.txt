@@ -21,6 +21,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(MSVC)
+  # Prevent windows.h min/max macros from breaking std::min/std::max (soralog, etc.).
+  add_compile_definitions(NOMINMAX)
+endif()
+
 pp_browser_finalize_compiler_cache()
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
