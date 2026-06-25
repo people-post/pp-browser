@@ -1,6 +1,6 @@
-#include "platform/DesktopAssetLocator.h"
+#include "base/platform/DesktopAssetLocator.h"
 
-#include "platform/IPathProvider.h"
+#include "base/platform/IPathProvider.h"
 
 #include <filesystem>
 

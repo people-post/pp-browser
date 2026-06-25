@@ -1,12 +1,12 @@
 #pragma once
 
-#include "agent/AgentSession.h"
-#include "agent/StructuredTextParser.h"
-#include "agent/TurnPlan.h"
-#include "app/Config.h"
+#include "feature/ai/AgentSession.h"
+#include "base/ai/StructuredTextParser.h"
+#include "base/ai/TurnPlan.h"
+#include "base/data/Config.h"
 #include "common/Module.h"
-#include "demo/ChatWidgetTypes.h"
-#include "ui/WorkingSetTypes.h"
+#include "feature/chat/ChatWidgetTypes.h"
+#include "base/ui/WorkingSetTypes.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>

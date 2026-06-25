@@ -1,7 +1,7 @@
 #pragma once
 
-#include "agent/StructuredTextParser.h"
-#include "demo/ChatWidgetTypes.h"
+#include "base/ai/StructuredTextParser.h"
+#include "feature/chat/ChatWidgetTypes.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 

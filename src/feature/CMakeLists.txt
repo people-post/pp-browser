@@ -1,0 +1,50 @@
+set(PP_BROWSER_FEATURE_SOURCES
+  messaging/MessagingHub.cpp
+  messaging/InboxController.cpp
+  messaging/MessageRouter.cpp
+  messaging/P2pMessagingService.cpp
+  messaging/ContactActionDispatcher.cpp
+  ai/AgentSession.cpp
+  ai/TurnPlanner.cpp
+  ai/TurnExecutor.cpp
+  ai/PayloadTurnPlanBuilder.cpp
+  ai/ToolRegistry.cpp
+  ai/ToolRegistryBuild.cpp
+  ai/UiGenerator.cpp
+  ai/tools/WebSearchTool.cpp
+  ai/tools/McpToolAdapter.cpp
+  ai/tools/MessagingTools.cpp
+  ai/bindings/ActionRouter.cpp
+  ai/bindings/BindingsManifest.cpp
+  ui/ShellHost.cpp
+  ui/ShellLayout.cpp
+  ui/ShellFeedback.cpp
+  ui/ShellInterruption.cpp
+  ui/DocumentLoader.cpp
+  ui/RmlMount.cpp
+  ui/DataModelHost.cpp
+  ui/SettingsController.cpp
+  chat/ChatDemo.cpp
+  chat/ChatFormHelper.cpp
+  chat/ChatWidgetStateBuilder.cpp
+  chat/CalendarHelper.cpp
+  search/SearchDemo.cpp
+  dynamic/DynamicRmlDemo.cpp
+  settings/SettingsLogic.cpp
+)
+
+add_library(pp_feature STATIC ${PP_BROWSER_FEATURE_SOURCES})
+target_include_directories(pp_feature PUBLIC
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/src/libp2p/include
+)
+target_link_libraries(pp_feature PUBLIC
+  pp_base
+  pp_common
+  pp_rmlui_backend
+  RmlUi::Core
+  p2p
+  nlohmann_json::nlohmann_json
+  CURL::libcurl
+  Threads::Threads
+)

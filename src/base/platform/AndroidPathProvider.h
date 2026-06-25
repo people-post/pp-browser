@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform/IPathProvider.h"
+#include "base/platform/IPathProvider.h"
 
 namespace pbr {
 

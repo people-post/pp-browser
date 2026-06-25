@@ -1,6 +1,6 @@
 #pragma once
 
-#include "agent/conversation/ConversationTypes.h"
+#include "base/ai/conversation/ConversationTypes.h"
 
 #include <cstdint>
 #include <optional>

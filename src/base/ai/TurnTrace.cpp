@@ -1,4 +1,4 @@
-#include "agent/TurnTrace.h"
+#include "base/ai/TurnTrace.h"
 
 #include "common/Logger.h"
 

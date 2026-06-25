@@ -1,10 +1,10 @@
-#include "app/Config.h"
+#include "base/data/Config.h"
 
-#include "app/AppPaths.h"
-#include "app/ConfigJson.h"
-#include "app/LlmPreset.h"
-#include "platform/Platform.h"
-#include "platform/PlatformDefaults.h"
+#include "base/data/AppPaths.h"
+#include "base/data/ConfigJson.h"
+#include "base/data/LlmPreset.h"
+#include "base/platform/Platform.h"
+#include "base/platform/PlatformDefaults.h"
 
 #include <cstdlib>
 #include <cstring>

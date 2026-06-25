@@ -1,6 +1,6 @@
-#include "mcp/McpClient.h"
+#include "base/ai/mcp/McpClient.h"
 
-#include "net/HttpClient.h"
+#include "base/net/HttpClient.h"
 
 #include <sstream>
 

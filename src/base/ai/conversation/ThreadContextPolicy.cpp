@@ -1,6 +1,6 @@
-#include "agent/conversation/ThreadContextPolicy.h"
+#include "base/ai/conversation/ThreadContextPolicy.h"
 
-#include "agent/conversation/UserMessageFormatter.h"
+#include "base/ai/conversation/UserMessageFormatter.h"
 
 #include <sstream>
 

@@ -1,11 +1,11 @@
-#include "ui/SettingsController.h"
+#include "feature/ui/SettingsController.h"
 
-#include "app/AppPaths.h"
-#include "app/LlmPreset.h"
-#include "app/SessionStore.h"
-#include "ui/DataModelHost.h"
-#include "ui/ShellFeedback.h"
-#include "ui/ShellHost.h"
+#include "base/data/AppPaths.h"
+#include "base/data/LlmPreset.h"
+#include "base/data/SessionStore.h"
+#include "feature/ui/DataModelHost.h"
+#include "feature/ui/ShellFeedback.h"
+#include "feature/ui/ShellHost.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>

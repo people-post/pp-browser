@@ -1,4 +1,4 @@
-#include "platform/EnvCredentialStore.h"
+#include "base/platform/EnvCredentialStore.h"
 
 #include <cstdlib>
 

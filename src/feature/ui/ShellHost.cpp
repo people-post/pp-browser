@@ -1,12 +1,12 @@
-#include "ui/ShellHost.h"
+#include "feature/ui/ShellHost.h"
 
-#include "platform/BrowserThread.h"
-#include "ui/DataModelHost.h"
-#include "ui/RmlMount.h"
-#include "ui/ShellFeedback.h"
-#include "ui/ShellInterruption.h"
-#include "ui/ShellLayout.h"
-#include "ui/ViewCatalog.h"
+#include "base/platform/BrowserThread.h"
+#include "feature/ui/DataModelHost.h"
+#include "feature/ui/RmlMount.h"
+#include "feature/ui/ShellFeedback.h"
+#include "feature/ui/ShellInterruption.h"
+#include "feature/ui/ShellLayout.h"
+#include "base/ui/ViewCatalog.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>

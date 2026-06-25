@@ -1,7 +1,7 @@
 #pragma once
 
-#include "app/Config.h"
-#include "platform/Platform.h"
+#include "base/data/Config.h"
+#include "base/platform/Platform.h"
 
 namespace pbr {
 

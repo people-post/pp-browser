@@ -1,7 +1,7 @@
 #pragma once
 
-#include "app/Config.h"
-#include "app/UserPreferences.h"
+#include "base/data/Config.h"
+#include "base/data/UserPreferences.h"
 
 #include <nlohmann/json_fwd.hpp>
 #include <string>

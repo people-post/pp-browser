@@ -1,7 +1,7 @@
 #pragma once
 
-#include "app/Bootstrap.h"
-#include "app/SettingsLogic.h"
+#include "base/data/BootstrapTypes.h"
+#include "feature/settings/SettingsLogic.h"
 #include "common/Module.h"
 
 #include <RmlUi/Core/DataModelHandle.h>

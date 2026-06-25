@@ -1,7 +1,7 @@
-#include "agent/tools/MessagingTools.h"
+#include "feature/ai/tools/MessagingTools.h"
 
 #include "common/Utilities.h"
-#include "messaging/MessagingJson.h"
+#include "base/messaging/MessagingJson.h"
 
 #include <nlohmann/json.hpp>
 

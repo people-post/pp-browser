@@ -1,6 +1,6 @@
-#include "agent/RmlValidator.h"
+#include "base/ai/RmlValidator.h"
 
-#include "bindings/BindingsManifest.h"
+#include "feature/ai/bindings/BindingsManifest.h"
 
 #include <algorithm>
 #include <cctype>

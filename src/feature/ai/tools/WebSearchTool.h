@@ -1,7 +1,7 @@
 #pragma once
 
-#include "agent/ToolRegistry.h"
-#include "app/Config.h"
+#include "feature/ai/ToolRegistry.h"
+#include "base/data/Config.h"
 #include "common/Error.h"
 
 #include <nlohmann/json.hpp>

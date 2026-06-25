@@ -1,8 +1,8 @@
 #pragma once
 
 #include "common/Module.h"
-#include "contacts/ContactTypes.h"
-#include "messaging/IThreadStore.h"
+#include "base/people/ContactTypes.h"
+#include "base/messaging/IThreadStore.h"
 
 #include <mutex>
 #include <optional>

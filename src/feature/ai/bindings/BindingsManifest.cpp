@@ -1,4 +1,4 @@
-#include "bindings/BindingsManifest.h"
+#include "feature/ai/bindings/BindingsManifest.h"
 
 namespace pbr {
 

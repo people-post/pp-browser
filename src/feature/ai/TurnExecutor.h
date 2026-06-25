@@ -1,11 +1,11 @@
 #pragma once
 
-#include "agent/LlmClient.h"
-#include "agent/TurnPlan.h"
-#include "agent/ToolRegistry.h"
+#include "base/ai/LlmClient.h"
+#include "base/ai/TurnPlan.h"
+#include "feature/ai/ToolRegistry.h"
 #include "common/Error.h"
-#include "contacts/ContactTypes.h"
-#include "messaging/ThreadTypes.h"
+#include "base/people/ContactTypes.h"
+#include "base/messaging/ThreadTypes.h"
 
 #include <functional>
 #include <string>

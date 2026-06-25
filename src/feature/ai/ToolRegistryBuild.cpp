@@ -1,10 +1,10 @@
-#include "agent/ToolRegistry.h"
+#include "feature/ai/ToolRegistry.h"
 
-#include "agent/tools/McpToolAdapter.h"
-#include "agent/tools/MessagingTools.h"
-#include "agent/tools/WebSearchTool.h"
-#include "mcp/McpClient.h"
-#include "messaging/MessagingHub.h"
+#include "feature/ai/tools/McpToolAdapter.h"
+#include "feature/ai/tools/MessagingTools.h"
+#include "feature/ai/tools/WebSearchTool.h"
+#include "base/ai/mcp/McpClient.h"
+#include "feature/messaging/MessagingHub.h"
 
 namespace pbr {
 

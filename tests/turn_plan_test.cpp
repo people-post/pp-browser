@@ -1,4 +1,4 @@
-#include "agent/TurnPlan.h"
+#include "base/ai/TurnPlan.h"
 
 #include <nlohmann/json.hpp>
 

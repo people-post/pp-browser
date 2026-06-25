@@ -1,6 +1,6 @@
-#include "agent/conversation/TurnCoordinator.h"
+#include "base/ai/conversation/TurnCoordinator.h"
 
-#include "agent/conversation/SlidingWindowContextPolicy.h"
+#include "base/ai/conversation/SlidingWindowContextPolicy.h"
 
 namespace pbr {
 

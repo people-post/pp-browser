@@ -1,4 +1,4 @@
-#include "agent/LlmClient.h"
+#include "base/ai/LlmClient.h"
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>

@@ -1,6 +1,6 @@
 # Chat reply templates
 
-Assistant replies use structured JSON blocks parsed by [`StructuredTextParser`](../src/agent/StructuredTextParser.cpp) into inline RML inside selectable bubbles.
+Assistant replies use structured JSON blocks parsed by [`StructuredTextParser`](../src/base/ai/StructuredTextParser.cpp) into inline RML inside selectable bubbles.
 
 ## Block categories
 
@@ -50,4 +50,4 @@ Type these in mock mode (no LLM): `help`, `list`, `code`, `button`, `form`, `cal
 
 ## LLM prompt
 
-Full block catalog is in [`PromptBuilder::ChatBlocksProfile()`](../src/agent/PromptBuilder.cpp). See also [`RML_PROFILE.md`](RML_PROFILE.md).
+Full block catalog is in [`PromptBuilder::ChatBlocksProfile()`](../src/base/ai/PromptBuilder.cpp). See also [`RML_PROFILE.md`](RML_PROFILE.md).

@@ -1,6 +1,6 @@
-#include "messaging/MessagingHub.h"
+#include "feature/messaging/MessagingHub.h"
 
-#include "agent/AgentSession.h"
+#include "feature/ai/AgentSession.h"
 
 #include <filesystem>
 

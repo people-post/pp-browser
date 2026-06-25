@@ -1,6 +1,6 @@
-#include "ui/RmlMount.h"
+#include "feature/ui/RmlMount.h"
 
-#include "agent/RmlValidator.h"
+#include "base/ai/RmlValidator.h"
 #include "common/Logger.h"
 
 #include <RmlUi/Core/Context.h>

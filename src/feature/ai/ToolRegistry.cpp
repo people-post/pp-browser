@@ -1,4 +1,4 @@
-#include "agent/ToolRegistry.h"
+#include "feature/ai/ToolRegistry.h"
 
 #include "common/Logger.h"
 

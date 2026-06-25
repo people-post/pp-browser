@@ -1,7 +1,7 @@
 #pragma once
 
-#include "agent/TurnPlan.h"
-#include "ui/WorkingSetTypes.h"
+#include "base/ai/TurnPlan.h"
+#include "base/ui/WorkingSetTypes.h"
 
 #include <nlohmann/json.hpp>
 

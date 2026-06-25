@@ -1,7 +1,7 @@
 #pragma once
 
-#include "agent/conversation/Conversation.h"
-#include "agent/conversation/ConversationTypes.h"
+#include "base/ai/conversation/Conversation.h"
+#include "base/ai/conversation/ConversationTypes.h"
 
 #include <string>
 

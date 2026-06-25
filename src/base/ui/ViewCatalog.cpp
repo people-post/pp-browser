@@ -1,7 +1,7 @@
-#include "ui/ViewCatalog.h"
+#include "base/ui/ViewCatalog.h"
 
-#include "app/Application.h"
-#include "platform/AssetIO.h"
+#include "base/platform/AssetIO.h"
+#include "base/platform/IAssetLocator.h"
 
 #include <unordered_map>
 
@@ -44,7 +44,7 @@ std::string ViewCatalog::LoadFile(const std::string& absolute_path) {
 
 std::string ViewCatalog::LoadBody(const std::string& key_or_path) {
   const std::string relative = ResolvePath(key_or_path);
-  return LoadFile(Application::AssetsPath(relative));
+  return LoadFile(IAssetLocator::Instance().Resolve(relative));
 }
 
 } // namespace pbr

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "common/Error.h"
-#include "contacts/ContactTypes.h"
-#include "messaging/ThreadTypes.h"
+#include "base/people/ContactTypes.h"
+#include "base/messaging/ThreadTypes.h"
 
 #include <string>
 #include <vector>

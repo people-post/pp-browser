@@ -1,6 +1,6 @@
-#include "ui/Theme.h"
+#include "base/ui/Theme.h"
 
-#include "platform/AssetIO.h"
+#include "base/platform/AssetIO.h"
 
 namespace pbr {
 

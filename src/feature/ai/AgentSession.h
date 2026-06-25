@@ -1,10 +1,10 @@
 #pragma once
 
-#include "agent/LlmClient.h"
-#include "agent/TurnPlan.h"
-#include "agent/TurnTrace.h"
-#include "agent/conversation/ConversationTypes.h"
-#include "app/Config.h"
+#include "base/ai/LlmClient.h"
+#include "base/ai/TurnPlan.h"
+#include "base/ai/TurnTrace.h"
+#include "base/ai/conversation/ConversationTypes.h"
+#include "base/data/Config.h"
 #include "common/Error.h"
 
 #include <memory>

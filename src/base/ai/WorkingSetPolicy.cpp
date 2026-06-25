@@ -1,6 +1,6 @@
-#include "agent/WorkingSetPolicy.h"
+#include "base/ai/WorkingSetPolicy.h"
 
-#include "agent/StructuredTextParser.h"
+#include "base/ai/StructuredTextParser.h"
 
 #include <algorithm>
 #include <cctype>

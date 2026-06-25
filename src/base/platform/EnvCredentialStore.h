@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform/ICredentialStore.h"
+#include "base/platform/ICredentialStore.h"
 
 namespace pbr {
 

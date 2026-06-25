@@ -1,7 +1,7 @@
-#include "agent/StructuredTextParser.h"
+#include "base/ai/StructuredTextParser.h"
 
-#include "agent/WorkingSetPolicy.h"
-#include "messaging/PeopleDiscoveryBlocks.h"
+#include "base/ai/WorkingSetPolicy.h"
+#include "base/messaging/PeopleDiscoveryBlocks.h"
 
 #include <nlohmann/json.hpp>
 #include <algorithm>

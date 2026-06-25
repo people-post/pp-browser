@@ -1,7 +1,7 @@
 #pragma once
 
-#include "agent/ToolRegistry.h"
-#include "messaging/MessagingHub.h"
+#include "feature/ai/ToolRegistry.h"
+#include "feature/messaging/MessagingHub.h"
 
 namespace pbr {
 

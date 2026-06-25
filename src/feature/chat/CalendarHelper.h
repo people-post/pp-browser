@@ -1,6 +1,6 @@
 #pragma once
 
-#include "demo/ChatWidgetTypes.h"
+#include "feature/chat/ChatWidgetTypes.h"
 
 #include <string>
 #include <vector>

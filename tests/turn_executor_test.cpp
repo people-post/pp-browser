@@ -1,5 +1,5 @@
-#include "agent/TurnExecutor.h"
-#include "agent/TurnPlan.h"
+#include "feature/ai/TurnExecutor.h"
+#include "base/ai/TurnPlan.h"
 
 #include <cassert>
 #include <string>

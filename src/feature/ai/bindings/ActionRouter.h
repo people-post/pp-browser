@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bindings/BindingsManifest.h"
+#include "feature/ai/bindings/BindingsManifest.h"
 #include "common/Module.h"
 
 #include <RmlUi/Core/Types.h>

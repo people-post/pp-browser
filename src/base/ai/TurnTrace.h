@@ -1,6 +1,6 @@
 #pragma once
 
-#include "agent/TurnPlan.h"
+#include "base/ai/TurnPlan.h"
 
 #include <chrono>
 #include <string>

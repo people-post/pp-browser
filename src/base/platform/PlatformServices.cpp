@@ -1,13 +1,13 @@
-#include "platform/PlatformServices.h"
+#include "base/platform/PlatformServices.h"
 
-#include "platform/AndroidAssetLocator.h"
-#include "platform/AndroidPathProvider.h"
-#include "platform/IAssetLocator.h"
-#include "platform/IPathProvider.h"
-#include "platform/IosAssetLocator.h"
-#include "platform/IosPathProvider.h"
-#include "platform/Platform.h"
-#include "platform/SdlAssetFileInterface.h"
+#include "base/platform/AndroidAssetLocator.h"
+#include "base/platform/AndroidPathProvider.h"
+#include "base/platform/IAssetLocator.h"
+#include "base/platform/IPathProvider.h"
+#include "base/platform/IosAssetLocator.h"
+#include "base/platform/IosPathProvider.h"
+#include "base/platform/Platform.h"
+#include "base/platform/SdlAssetFileInterface.h"
 
 namespace pbr {
 

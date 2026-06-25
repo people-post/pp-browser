@@ -43,11 +43,11 @@ Phase 1 ships a single `default` profile. Use `--profile NAME` for dev isolation
 
 There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config config.json.example`.
 
-Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/app/ConfigJson.*` (nlohmann `to_json` / `from_json` with deep merge).
+Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/base/data/ConfigJson.*` (nlohmann `to_json` / `from_json` with deep merge).
 
 ## Runtime session state
 
-After bootstrap, a single [`SessionStore`](../src/app/SessionStore.h) owns the live `BootstrapResult` (config, profile prefs, paths). Settings and demos read/write through it; saves reload from disk before notifying listeners.
+After bootstrap, a single [`SessionStore`](../src/base/data/SessionStore.h) owns the live `BootstrapResult` (config, profile prefs, paths). Settings and demos read/write through it; saves reload from disk before notifying listeners.
 
 | Listener | Trigger |
 |----------|---------|
@@ -56,7 +56,7 @@ After bootstrap, a single [`SessionStore`](../src/app/SessionStore.h) owns the l
 
 ## LLM presets
 
-`config.json` may include `llm.preset`: `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/app/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
+`config.json` may include `llm.preset`: `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/base/data/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
 
 ## Theme
 
@@ -72,7 +72,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 
 Open **Settings** from the sidebar footer. Saves machine config to `config.json` and theme to profile `preferences.json`. LLM changes hot-reload via `SessionStore` config listeners → `AgentSession::Configure`.
 
-While Settings is open, [`SettingsController`](../src/ui/SettingsController.cpp) keeps a **draft buffer** (`draft_`) separate from the live `SessionStore` snapshot. Edits update the draft via `data-value` bindings and explicit `data-event-change` handlers (model, base URL, theme, API key env). **Save** applies the draft through [`ApplySettingsDraft`](../src/app/SettingsLogic.cpp) (including LLM preset defaults) and persists via `SessionStore`. Closing Settings without saving discards the draft.
+While Settings is open, [`SettingsController`](../src/feature/ui/SettingsController.cpp) keeps a **draft buffer** (`draft_`) separate from the live `SessionStore` snapshot. Edits update the draft via `data-value` bindings and explicit `data-event-change` handlers (model, base URL, theme, API key env). **Save** applies the draft through [`ApplySettingsDraft`](../src/feature/settings/SettingsLogic.cpp) (including LLM preset defaults) and persists via `SessionStore`. Closing Settings without saving discards the draft.
 
 Enter an **API key** directly in Settings (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
 
@@ -88,7 +88,7 @@ The on-disk model should match what you saved.
 
 ## Platform layer
 
-Shared abstractions under `src/platform/`:
+Shared abstractions under `src/base/platform/`:
 
 - `IPathProvider` / `IAssetLocator` — desktop paths vs APK/bundle assets
 - `AssetIO` / `SdlAssetFileInterface` — unified bundle reads for UI and RmlUi

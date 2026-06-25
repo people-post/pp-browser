@@ -1,6 +1,6 @@
-#include "app/AppPaths.h"
+#include "base/data/AppPaths.h"
 
-#include "platform/IPathProvider.h"
+#include "base/platform/IPathProvider.h"
 
 #include <filesystem>
 

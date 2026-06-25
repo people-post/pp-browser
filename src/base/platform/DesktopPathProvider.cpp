@@ -1,6 +1,6 @@
-#include "platform/DesktopPathProvider.h"
+#include "base/platform/DesktopPathProvider.h"
 
-#include "platform/ExecutablePath.h"
+#include "base/platform/ExecutablePath.h"
 
 #include <cstdlib>
 #include <filesystem>

@@ -1,7 +1,7 @@
-#include "messaging/ContactActionDispatcher.h"
+#include "feature/messaging/ContactActionDispatcher.h"
 
 #include "common/Utilities.h"
-#include "messaging/MessagingJson.h"
+#include "base/messaging/MessagingJson.h"
 
 #include <nlohmann/json.hpp>
 

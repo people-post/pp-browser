@@ -1,7 +1,7 @@
-#include "platform/PlatformNavigation.h"
+#include "base/platform/PlatformNavigation.h"
 
-#include "platform/Platform.h"
-#include "ui/ShellHost.h"
+#include "base/platform/Platform.h"
+#include "feature/ui/ShellHost.h"
 
 #include "RmlUi_Backend.h"
 

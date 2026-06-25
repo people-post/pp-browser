@@ -1,7 +1,7 @@
-#include "platform/SdlAppEvents.h"
+#include "base/platform/SdlAppEvents.h"
 
-#include "platform/AppLifecycle.h"
-#include "platform/PlatformNavigation.h"
+#include "base/platform/AppLifecycle.h"
+#include "base/platform/PlatformNavigation.h"
 
 #include "RmlUi_Backend.h"
 

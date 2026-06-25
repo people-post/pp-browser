@@ -1,8 +1,8 @@
-#include "demo/SearchDemo.h"
+#include "feature/search/SearchDemo.h"
 
 #include "app/Application.h"
-#include "ui/DataModelHost.h"
-#include "ui/DocumentLoader.h"
+#include "feature/ui/DataModelHost.h"
+#include "feature/ui/DocumentLoader.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>

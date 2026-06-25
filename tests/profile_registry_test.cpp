@@ -1,5 +1,5 @@
-#include "app/ProfileRegistry.h"
-#include "app/SchemaVersion.h"
+#include "base/data/ProfileRegistry.h"
+#include "base/data/SchemaVersion.h"
 
 #include <cassert>
 #include <filesystem>

@@ -1,7 +1,7 @@
-#include "app/UserPreferences.h"
+#include "base/data/UserPreferences.h"
 
-#include "app/ConfigJson.h"
-#include "app/SchemaVersion.h"
+#include "base/data/ConfigJson.h"
+#include "base/data/SchemaVersion.h"
 
 #include <filesystem>
 #include <fstream>

@@ -1,6 +1,6 @@
-#include "app/SettingsLogic.h"
+#include "feature/settings/SettingsLogic.h"
 
-#include "app/LlmPreset.h"
+#include "base/data/LlmPreset.h"
 
 namespace pbr {
 

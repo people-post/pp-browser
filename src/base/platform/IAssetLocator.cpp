@@ -1,6 +1,6 @@
-#include "platform/IAssetLocator.h"
+#include "base/platform/IAssetLocator.h"
 
-#include "platform/DesktopAssetLocator.h"
+#include "base/platform/DesktopAssetLocator.h"
 
 namespace pbr {
 

@@ -1,6 +1,6 @@
-#include "ui/DocumentLoader.h"
+#include "feature/ui/DocumentLoader.h"
 
-#include "ui/RmlMount.h"
+#include "feature/ui/RmlMount.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/ElementDocument.h>

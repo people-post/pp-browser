@@ -1,4 +1,4 @@
-#include "mcp/SchemaAdapter.h"
+#include "base/ai/mcp/SchemaAdapter.h"
 
 #include <sstream>
 

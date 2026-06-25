@@ -1,5 +1,5 @@
-#include "agent/PromptBuilder.h"
-#include "agent/TurnPlan.h"
+#include "base/ai/PromptBuilder.h"
+#include "base/ai/TurnPlan.h"
 
 #include <cassert>
 #include <string>

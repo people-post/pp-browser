@@ -1,5 +1,5 @@
-#include "demo/ChatFormHelper.h"
-#include "demo/ChatWidgetStateBuilder.h"
+#include "feature/chat/ChatFormHelper.h"
+#include "feature/chat/ChatWidgetStateBuilder.h"
 
 #include <cassert>
 #include <iostream>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform/IAssetLocator.h"
+#include "base/platform/IAssetLocator.h"
 
 namespace pbr {
 

@@ -1,7 +1,7 @@
-#include "agent/conversation/Conversation.h"
-#include "agent/conversation/SlidingWindowContextPolicy.h"
-#include "agent/conversation/TurnCoordinator.h"
-#include "agent/conversation/UserMessageFormatter.h"
+#include "base/ai/conversation/Conversation.h"
+#include "base/ai/conversation/SlidingWindowContextPolicy.h"
+#include "base/ai/conversation/TurnCoordinator.h"
+#include "base/ai/conversation/UserMessageFormatter.h"
 
 #include <cassert>
 #include <iostream>

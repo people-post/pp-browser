@@ -1,6 +1,6 @@
-#include "identity/IdentityStore.h"
+#include "base/people/IdentityStore.h"
 
-#include "identity/Ed25519Signer.h"
+#include "base/people/Ed25519Signer.h"
 
 #include <filesystem>
 #include <fstream>

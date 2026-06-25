@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/Bootstrap.h"
+#include "base/data/BootstrapTypes.h"
 #include "common/Error.h"
 
 #include <functional>

@@ -1,7 +1,7 @@
-#include "ui/ShellFeedback.h"
-#include "ui/ShellInterruption.h"
-#include "ui/ShellLayout.h"
-#include "ui/ShellTypes.h"
+#include "feature/ui/ShellFeedback.h"
+#include "feature/ui/ShellInterruption.h"
+#include "feature/ui/ShellLayout.h"
+#include "base/ui/ShellTypes.h"
 
 #include <cassert>
 #include <iostream>

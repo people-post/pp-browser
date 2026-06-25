@@ -1,6 +1,6 @@
-#include "app/ConfigJson.h"
+#include "base/data/ConfigJson.h"
 
-#include "platform/ICredentialStore.h"
+#include "base/platform/ICredentialStore.h"
 
 #include <nlohmann/json.hpp>
 

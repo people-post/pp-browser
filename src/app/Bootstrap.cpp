@@ -1,12 +1,12 @@
 #include "app/Bootstrap.h"
 
-#include "app/AppPaths.h"
-#include "app/Config.h"
-#include "app/SchemaVersion.h"
-#include "messaging/MessagingHub.h"
-#include "platform/PlatformServices.h"
+#include "base/data/AppPaths.h"
+#include "base/data/Config.h"
+#include "base/data/SchemaVersion.h"
+#include "feature/messaging/MessagingHub.h"
+#include "base/platform/PlatformServices.h"
 
-#include "platform/PlatformLogSink.h"
+#include "base/platform/PlatformLogSink.h"
 
 namespace pbr {
 

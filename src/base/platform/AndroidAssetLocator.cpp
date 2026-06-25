@@ -1,4 +1,4 @@
-#include "platform/AndroidAssetLocator.h"
+#include "base/platform/AndroidAssetLocator.h"
 
 namespace pbr {
 

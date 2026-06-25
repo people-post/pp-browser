@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
-#include "messaging/ThreadTypes.h"
+#include "base/messaging/ThreadTypes.h"
 
 #include <optional>
 #include <string>

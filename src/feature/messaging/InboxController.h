@@ -1,10 +1,10 @@
 #pragma once
 
 #include "common/Module.h"
-#include "contacts/ContactsStore.h"
-#include "demo/ChatWidgetTypes.h"
-#include "messaging/IThreadStore.h"
-#include "messaging/ThreadTypes.h"
+#include "base/people/ContactsStore.h"
+#include "feature/chat/ChatWidgetTypes.h"
+#include "base/messaging/IThreadStore.h"
+#include "base/messaging/ThreadTypes.h"
 
 #include <functional>
 #include <optional>

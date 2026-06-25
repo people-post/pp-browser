@@ -1,7 +1,7 @@
 #pragma once
 
-#include "contacts/ContactTypes.h"
-#include "messaging/ThreadTypes.h"
+#include "base/people/ContactTypes.h"
+#include "base/messaging/ThreadTypes.h"
 
 #include <nlohmann/json_fwd.hpp>
 #include <string>

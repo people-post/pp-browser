@@ -1,9 +1,9 @@
 #include "app/Application.h"
 #include "app/Bootstrap.h"
-#include "app/SessionStore.h"
+#include "base/data/SessionStore.h"
 #include "libp2p/integration/Libp2pHost.h"
 #include "common/Logger.h"
-#include "platform/Platform.h"
+#include "base/platform/Platform.h"
 
 #include <SDL3/SDL_main.h>
 

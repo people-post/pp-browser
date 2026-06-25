@@ -1,6 +1,6 @@
-#include "app/ProfileRegistry.h"
+#include "base/data/ProfileRegistry.h"
 
-#include "app/SchemaVersion.h"
+#include "base/data/SchemaVersion.h"
 
 #include <filesystem>
 #include <fstream>

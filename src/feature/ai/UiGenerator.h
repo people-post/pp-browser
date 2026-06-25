@@ -1,7 +1,7 @@
 #pragma once
 
-#include "agent/LlmClient.h"
-#include "bindings/BindingsManifest.h"
+#include "base/ai/LlmClient.h"
+#include "feature/ai/bindings/BindingsManifest.h"
 #include "common/Error.h"
 #include "common/Module.h"
 

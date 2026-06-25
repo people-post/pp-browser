@@ -1,11 +1,11 @@
 #pragma once
 
 #include "common/Module.h"
-#include "contacts/ContactsStore.h"
-#include "identity/IdentityStore.h"
-#include "messaging/IThreadStore.h"
-#include "messaging/InboxController.h"
-#include "net/ServiceClients.h"
+#include "base/people/ContactsStore.h"
+#include "base/people/IdentityStore.h"
+#include "base/messaging/IThreadStore.h"
+#include "feature/messaging/InboxController.h"
+#include "base/net/ServiceClients.h"
 
 #include <functional>
 #include <mutex>

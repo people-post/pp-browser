@@ -1,8 +1,8 @@
-#include "agent/TurnExecutor.h"
+#include "feature/ai/TurnExecutor.h"
 
-#include "agent/ToolResultFormatter.h"
-#include "messaging/MessagingJson.h"
-#include "messaging/PeopleDiscoveryBlocks.h"
+#include "base/ai/ToolResultFormatter.h"
+#include "base/messaging/MessagingJson.h"
+#include "base/messaging/PeopleDiscoveryBlocks.h"
 
 #include <nlohmann/json.hpp>
 

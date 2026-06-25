@@ -22,7 +22,7 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 
 ## Core types
 
-[`src/agent/conversation/`](../src/agent/conversation/)
+[`src/base/ai/conversation/`](../src/base/ai/conversation/)
 
 - **`TranscriptEntry`** — one user message and optional assistant reply
   - `user_text`, optional `user_payload` (LLM-only structured JSON fence), `assistant_raw` (LLM context)
@@ -46,7 +46,7 @@ Natural-language turns add one planner LLM call. Structured UI actions (form sub
 
 ## Turn planning
 
-Each agent turn produces a [`TurnPlan`](../src/agent/TurnPlan.h):
+Each agent turn produces a [`TurnPlan`](../src/base/ai/TurnPlan.h):
 
 | Field | Purpose |
 |-------|---------|
@@ -56,11 +56,11 @@ Each agent turn produces a [`TurnPlan`](../src/agent/TurnPlan.h):
 | `render_mode` | `blocks` (default) or `people_list` (deterministic long_list, skips synthesis) |
 | `synthesis_hints` | Per-turn guidance for the synthesizer |
 
-**Payload fast path** — [`PayloadTurnPlanBuilder`](../src/agent/PayloadTurnPlanBuilder.cpp) maps known `user_payload` shapes (article actions, `blog_articles` pagination, form submissions, chip tool payloads) without an LLM call.
+**Payload fast path** — [`PayloadTurnPlanBuilder`](../src/feature/ai/PayloadTurnPlanBuilder.cpp) maps known `user_payload` shapes (article actions, `blog_articles` pagination, form submissions, chip tool payloads) without an LLM call.
 
-**NL path** — [`TurnPlanner`](../src/agent/TurnPlanner.cpp) emits a JSON plan; one repair retry on invalid output.
+**NL path** — [`TurnPlanner`](../src/base/ai/TurnPlanner.cpp) emits a JSON plan; one repair retry on invalid output.
 
-[`AgentSession`](../src/agent/AgentSession.cpp) runs plan → execute → synthesize → validate. The synthesis LLM may request additional tools (refinement loop) when planned results are insufficient. Per-turn metrics are logged via [`TurnTrace`](../src/agent/TurnTrace.h).
+[`AgentSession`](../src/feature/ai/AgentSession.cpp) runs plan → execute → synthesize → validate. The synthesis LLM may request additional tools (refinement loop) when planned results are insufficient. Per-turn metrics are logged via [`TurnTrace`](../src/base/ai/TurnTrace.h).
 
 | Goal | Typical source | Expected reply shape |
 |------|----------------|----------------------|

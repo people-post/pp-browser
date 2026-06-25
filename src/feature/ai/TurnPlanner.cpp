@@ -1,6 +1,6 @@
-#include "agent/TurnPlanner.h"
+#include "feature/ai/TurnPlanner.h"
 
-#include "agent/PromptBuilder.h"
+#include "base/ai/PromptBuilder.h"
 
 namespace pbr {
 

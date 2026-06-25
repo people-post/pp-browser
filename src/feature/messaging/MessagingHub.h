@@ -1,14 +1,14 @@
 #pragma once
 
-#include "app/Config.h"
-#include "contacts/ContactsStore.h"
-#include "identity/IdentityStore.h"
-#include "messaging/ContactActionDispatcher.h"
-#include "messaging/InboxController.h"
-#include "messaging/JsonThreadStore.h"
-#include "messaging/MessageRouter.h"
-#include "messaging/P2pMessagingService.h"
-#include "net/ServiceClientsImpl.h"
+#include "base/data/Config.h"
+#include "base/people/ContactsStore.h"
+#include "base/people/IdentityStore.h"
+#include "feature/messaging/ContactActionDispatcher.h"
+#include "feature/messaging/InboxController.h"
+#include "base/messaging/JsonThreadStore.h"
+#include "feature/messaging/MessageRouter.h"
+#include "feature/messaging/P2pMessagingService.h"
+#include "base/net/ServiceClientsImpl.h"
 
 #include <memory>
 #include <string>

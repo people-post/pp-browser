@@ -1,6 +1,6 @@
-#include "messaging/PeopleDiscoveryBlocks.h"
+#include "base/messaging/PeopleDiscoveryBlocks.h"
 
-#include "messaging/MessagingJson.h"
+#include "base/messaging/MessagingJson.h"
 
 #include <nlohmann/json.hpp>
 

@@ -83,12 +83,12 @@ Composer: `Message… or @ai ask assistant`
 
 | Path | Role |
 |------|------|
-| `src/messaging/MessagingHub.*` | Wiring, lifecycle |
-| `src/messaging/InboxController.*` | Active thread, display rows |
-| `src/messaging/P2pMessagingService.*` | Send, poll, dedup |
-| `src/messaging/MessageRouter.*` | Composer routing |
-| `src/messaging/ContactActionDispatcher.*` | Chip payloads |
-| `src/agent/tools/MessagingTools.*` | Agent tool definitions |
+| `src/feature/messaging/MessagingHub.*` | Wiring, lifecycle |
+| `src/feature/messaging/InboxController.*` | Active thread, display rows |
+| `src/feature/messaging/P2pMessagingService.*` | Send, poll, dedup |
+| `src/feature/messaging/MessageRouter.*` | Composer routing |
+| `src/feature/messaging/ContactActionDispatcher.*` | Chip payloads |
+| `src/feature/ai/tools/MessagingTools.*` | Agent tool definitions |
 
 ## Group chat (future)
 

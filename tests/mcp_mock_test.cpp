@@ -1,5 +1,5 @@
-#include "mcp/McpClient.h"
-#include "mcp/SchemaAdapter.h"
+#include "base/ai/mcp/McpClient.h"
+#include "base/ai/mcp/SchemaAdapter.h"
 
 #include <cassert>
 #include <iostream>

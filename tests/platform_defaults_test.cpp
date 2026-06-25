@@ -1,5 +1,5 @@
-#include "platform/Platform.h"
-#include "platform/PlatformDefaults.h"
+#include "base/platform/Platform.h"
+#include "base/platform/PlatformDefaults.h"
 
 #include <cassert>
 #include <iostream>

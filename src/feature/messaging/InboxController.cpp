@@ -1,9 +1,9 @@
-#include "messaging/InboxController.h"
+#include "feature/messaging/InboxController.h"
 
-#include "agent/StructuredTextParser.h"
-#include "demo/ChatFormHelper.h"
+#include "base/ai/StructuredTextParser.h"
+#include "feature/chat/ChatFormHelper.h"
 #include "common/Utilities.h"
-#include "messaging/MessagingJson.h"
+#include "base/messaging/MessagingJson.h"
 
 namespace pbr {
 

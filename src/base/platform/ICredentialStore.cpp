@@ -1,6 +1,6 @@
-#include "platform/ICredentialStore.h"
+#include "base/platform/ICredentialStore.h"
 
-#include "platform/EnvCredentialStore.h"
+#include "base/platform/EnvCredentialStore.h"
 
 namespace pbr {
 

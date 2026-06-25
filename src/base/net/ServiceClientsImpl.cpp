@@ -1,8 +1,8 @@
-#include "net/ServiceClientsImpl.h"
+#include "base/net/ServiceClientsImpl.h"
 
 #include "common/Utilities.h"
-#include "messaging/MessagingJson.h"
-#include "net/HttpClient.h"
+#include "base/messaging/MessagingJson.h"
+#include "base/net/HttpClient.h"
 
 #include <nlohmann/json.hpp>
 

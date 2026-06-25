@@ -1,9 +1,9 @@
 #pragma once
 
-#include "agent/AgentSession.h"
+#include "feature/ai/AgentSession.h"
 #include "common/Module.h"
-#include "messaging/InboxController.h"
-#include "messaging/P2pMessagingService.h"
+#include "feature/messaging/InboxController.h"
+#include "feature/messaging/P2pMessagingService.h"
 
 #include <functional>
 #include <optional>

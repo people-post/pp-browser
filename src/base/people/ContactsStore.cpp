@@ -1,7 +1,7 @@
-#include "contacts/ContactsStore.h"
+#include "base/people/ContactsStore.h"
 
 #include "common/Utilities.h"
-#include "messaging/MessagingJson.h"
+#include "base/messaging/MessagingJson.h"
 
 #include <algorithm>
 #include <cctype>

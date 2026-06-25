@@ -1,8 +1,8 @@
-#include "messaging/AtAiParser.h"
-#include "messaging/MessagingJson.h"
-#include "messaging/PeopleDiscoveryBlocks.h"
-#include "messaging/JsonThreadStore.h"
-#include "identity/Ed25519Signer.h"
+#include "base/messaging/AtAiParser.h"
+#include "base/messaging/MessagingJson.h"
+#include "base/messaging/PeopleDiscoveryBlocks.h"
+#include "base/messaging/JsonThreadStore.h"
+#include "base/people/Ed25519Signer.h"
 
 #include <cassert>
 #include <filesystem>

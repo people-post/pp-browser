@@ -1,10 +1,10 @@
-#include "messaging/MessageRouter.h"
+#include "feature/messaging/MessageRouter.h"
 
-#include "messaging/AtAiParser.h"
-#include "messaging/IThreadStore.h"
+#include "base/messaging/AtAiParser.h"
+#include "base/messaging/IThreadStore.h"
 #include "common/Utilities.h"
-#include "messaging/MessagingHub.h"
-#include "messaging/ThreadTypes.h"
+#include "feature/messaging/MessagingHub.h"
+#include "base/messaging/ThreadTypes.h"
 
 namespace pbr {
 

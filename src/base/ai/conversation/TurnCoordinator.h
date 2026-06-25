@@ -1,8 +1,8 @@
 #pragma once
 
-#include "agent/conversation/Conversation.h"
-#include "agent/conversation/ConversationTypes.h"
-#include "agent/conversation/IContextPolicy.h"
+#include "base/ai/conversation/Conversation.h"
+#include "base/ai/conversation/ConversationTypes.h"
+#include "base/ai/conversation/IContextPolicy.h"
 
 #include <memory>
 #include <string>

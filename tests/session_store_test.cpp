@@ -1,5 +1,5 @@
-#include "app/Config.h"
-#include "app/SessionStore.h"
+#include "base/data/Config.h"
+#include "base/data/SessionStore.h"
 
 #include <cassert>
 #include <filesystem>

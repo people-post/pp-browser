@@ -1,8 +1,8 @@
-#include "agent/UiGenerator.h"
+#include "feature/ai/UiGenerator.h"
 
-#include "agent/PromptBuilder.h"
-#include "agent/RmlValidator.h"
-#include "platform/BrowserThread.h"
+#include "base/ai/PromptBuilder.h"
+#include "base/ai/RmlValidator.h"
+#include "base/platform/BrowserThread.h"
 
 #include <regex>
 

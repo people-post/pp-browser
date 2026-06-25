@@ -1,4 +1,4 @@
-#include "agent/conversation/Conversation.h"
+#include "base/ai/conversation/Conversation.h"
 
 #include <algorithm>
 

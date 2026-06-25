@@ -1,4 +1,4 @@
-#include "platform/IosAssetLocator.h"
+#include "base/platform/IosAssetLocator.h"
 
 namespace pbr {
 

@@ -8,9 +8,9 @@ pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — windowing (`src/render/backends/`)
 - **Hard-forked RmlUi** — UI layout in `src/render/`
-- **Hard-forked libp2p** — P2P networking in `src/libp2p/` (build-only for now; not linked into the app)
+- **Hard-forked libp2p** — P2P networking in `src/libp2p/`
 - **Third-party libs** — FreeType, nlohmann/json, curl, SDL3, SDL3_image, and libp2p deps in [`third_party/`](third_party/)
-- **Chat + MCP + LLM scaffolding** — `src/demo/`, `src/agent/`, `src/mcp/`
+- **Four-layer source tree** — `src/common/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/SRC_LAYOUT.md](docs/SRC_LAYOUT.md)
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
 
@@ -46,23 +46,24 @@ AI-generated UI and chat output must follow:
 - [docs/RML_PROFILE.md](docs/RML_PROFILE.md) — allowed RML elements, structured JSON chat blocks
 - [docs/RCSS_PROFILE.md](docs/RCSS_PROFILE.md) — supported RCSS properties
 
-Prompt text for LLMs is built in [`src/agent/PromptBuilder.cpp`](src/agent/PromptBuilder.cpp).
+Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/PromptBuilder.cpp).
 
 ## Common tasks
 
 | Task | Where to look |
 |------|----------------|
-| Default chat UI | `assets/samples/window_shell.rml`, `assets/views/chat.rml`, `src/demo/ChatDemo.cpp` |
-| Window shell / layout | `src/ui/ShellHost.*`, [docs/WINDOW_SHELL.md](docs/WINDOW_SHELL.md) |
-| Working set panel (planned) | [docs/WORKING_SET_PANEL.md](docs/WORKING_SET_PANEL.md) — auxiliary pane design; implement per checklist |
+| Default chat UI | `assets/samples/window_shell.rml`, `assets/views/chat.rml`, `src/feature/chat/ChatDemo.cpp` |
+| Window shell / layout | `src/feature/ui/ShellHost.*`, [docs/WINDOW_SHELL.md](docs/WINDOW_SHELL.md) |
+| Working set panel | [docs/WORKING_SET_PANEL.md](docs/WORKING_SET_PANEL.md) — auxiliary pane design |
 | Theme / layout | `assets/themes/base.rcss` |
-| Wire new demo | `src/app/Application.cpp`, `src/main.cpp` (`--demo`) |
-| Structured AI replies | `src/agent/StructuredTextParser.cpp` |
-| Turn planning pipeline | `src/agent/TurnPlan.*`, `PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
-| P2P messaging | `src/messaging/`, [docs/P2P_MESSAGING.md](docs/P2P_MESSAGING.md) |
-| Config / data / profiles | `src/app/Bootstrap.*`, `src/platform/`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
-| In-app settings | `src/ui/SettingsController.*`, `assets/views/settings.rml` |
+| Wire new demo | `src/app/Application.cpp`, `src/app/main.cpp` (`--demo`) |
+| Structured AI replies | `src/base/ai/StructuredTextParser.cpp` |
+| Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
+| P2P messaging | `src/feature/messaging/`, [docs/P2P_MESSAGING.md](docs/P2P_MESSAGING.md) |
+| Config / data / profiles | `src/app/Bootstrap.*`, `src/base/data/`, `src/base/platform/`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
+| In-app settings | `src/feature/ui/SettingsController.*`, `assets/views/settings.rml` |
 | Build | [docs/BUILD.md](docs/BUILD.md) |
+| Source layers | [docs/SRC_LAYOUT.md](docs/SRC_LAYOUT.md) |
 
 ## Conventions
 
@@ -70,3 +71,4 @@ Prompt text for LLMs is built in [`src/agent/PromptBuilder.cpp`](src/agent/Promp
 - Avoid unsupported RCSS (see RCSS profile); RmlUi will log parse errors at runtime.
 - For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus. Suggestion buttons render inline inside assistant bubbles.
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.
+- Respect layer dependencies: `app → feature → base → common` (see [SRC_LAYOUT.md](docs/SRC_LAYOUT.md)).

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "agent/LlmClient.h"
+#include "base/ai/LlmClient.h"
 
 #include <optional>
 #include <string>

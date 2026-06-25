@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
-#include "mcp/McpClient.h"
+#include "base/ai/mcp/McpClient.h"
 
 #include <nlohmann/json.hpp>
 #include <string>

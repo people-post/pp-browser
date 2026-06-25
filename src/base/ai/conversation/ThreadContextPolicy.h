@@ -1,8 +1,8 @@
 #pragma once
 
-#include "agent/conversation/ConversationTypes.h"
-#include "agent/LlmClient.h"
-#include "messaging/ThreadTypes.h"
+#include "base/ai/conversation/ConversationTypes.h"
+#include "base/ai/LlmClient.h"
+#include "base/messaging/ThreadTypes.h"
 
 #include <string>
 #include <vector>

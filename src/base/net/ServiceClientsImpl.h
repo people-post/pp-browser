@@ -1,7 +1,7 @@
 #pragma once
 
-#include "contacts/ContactTypes.h"
-#include "net/ServiceClients.h"
+#include "base/people/ContactTypes.h"
+#include "base/net/ServiceClients.h"
 
 #include <mutex>
 #include <string>

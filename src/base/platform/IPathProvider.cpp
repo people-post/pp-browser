@@ -1,6 +1,6 @@
-#include "platform/IPathProvider.h"
+#include "base/platform/IPathProvider.h"
 
-#include "platform/DesktopPathProvider.h"
+#include "base/platform/DesktopPathProvider.h"
 
 namespace pbr {
 

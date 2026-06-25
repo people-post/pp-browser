@@ -1,4 +1,4 @@
-#include "identity/Ed25519Signer.h"
+#include "base/people/Ed25519Signer.h"
 
 #include <openssl/evp.h>
 #include <openssl/rand.h>

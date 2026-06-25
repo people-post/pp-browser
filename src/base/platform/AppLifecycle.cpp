@@ -1,8 +1,8 @@
-#include "platform/AppLifecycle.h"
+#include "base/platform/AppLifecycle.h"
 
-#include "demo/ChatDemo.h"
+#include "feature/chat/ChatDemo.h"
 #include "common/Logger.h"
-#include "platform/BrowserThread.h"
+#include "base/platform/BrowserThread.h"
 
 namespace pbr {
 

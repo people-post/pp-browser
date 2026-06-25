@@ -1,4 +1,4 @@
-#include "agent/StructuredTextParser.h"
+#include "base/ai/StructuredTextParser.h"
 
 #include <cassert>
 #include <iostream>

@@ -1,6 +1,6 @@
-#include "agent/tools/McpToolAdapter.h"
+#include "feature/ai/tools/McpToolAdapter.h"
 
-#include "agent/LlmClient.h"
+#include "base/ai/LlmClient.h"
 
 namespace pbr {
 

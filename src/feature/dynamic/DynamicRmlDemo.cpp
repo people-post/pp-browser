@@ -1,9 +1,9 @@
-#include "demo/DynamicRmlDemo.h"
+#include "feature/dynamic/DynamicRmlDemo.h"
 
 #include "app/Application.h"
-#include "ui/DataModelHost.h"
-#include "ui/DocumentLoader.h"
-#include "ui/RmlMount.h"
+#include "feature/ui/DataModelHost.h"
+#include "feature/ui/DocumentLoader.h"
+#include "feature/ui/RmlMount.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>

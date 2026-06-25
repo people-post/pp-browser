@@ -1,6 +1,6 @@
-#include "demo/ChatWidgetStateBuilder.h"
+#include "feature/chat/ChatWidgetStateBuilder.h"
 
-#include "demo/CalendarHelper.h"
+#include "feature/chat/CalendarHelper.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 

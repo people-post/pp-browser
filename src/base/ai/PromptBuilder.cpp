@@ -1,4 +1,4 @@
-#include "agent/PromptBuilder.h"
+#include "base/ai/PromptBuilder.h"
 
 #include <nlohmann/json.hpp>
 

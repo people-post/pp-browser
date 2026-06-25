@@ -1,7 +1,7 @@
-#include "app/SessionStore.h"
+#include "base/data/SessionStore.h"
 
-#include "app/Config.h"
-#include "app/UserPreferences.h"
+#include "base/data/Config.h"
+#include "base/data/UserPreferences.h"
 
 namespace pbr {
 

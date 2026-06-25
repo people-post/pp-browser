@@ -77,102 +77,16 @@ if(ANDROID)
 endif()
 
 add_subdirectory(src/common)
-add_subdirectory(src/identity)
+add_subdirectory(src/base)
 
 set(PP_BROWSER_APP_SOURCES
-  src/main.cpp
+  src/app/main.cpp
   src/app/Application.cpp
-  src/app/AppPaths.cpp
   src/app/Bootstrap.cpp
-  src/app/Config.cpp
-  src/app/ConfigJson.cpp
-  src/app/LlmPreset.cpp
-  src/app/SettingsLogic.cpp
-  src/app/SessionStore.cpp
-  src/app/ProfileRegistry.cpp
-  src/app/SchemaVersion.cpp
-  src/app/UserPreferences.cpp
   src/app/InputCoordinator.cpp
-  src/platform/Platform.cpp
-  src/platform/PlatformEarlyInit.cpp
-  src/platform/PlatformServices.cpp
-  src/platform/AssetIO.cpp
-  src/platform/AppLifecycle.cpp
-  src/platform/PlatformNavigation.cpp
-  src/platform/SdlAppEvents.cpp
-  src/platform/PlatformLogSink.cpp
-  src/platform/IPathProvider.cpp
-  src/platform/DesktopPathProvider.cpp
-  src/platform/AndroidPathProvider.cpp
-  src/platform/IosPathProvider.cpp
-  src/platform/ExecutablePath.cpp
-  src/platform/IAssetLocator.cpp
-  src/platform/DesktopAssetLocator.cpp
-  src/platform/AndroidAssetLocator.cpp
-  src/platform/IosAssetLocator.cpp
-  src/platform/SdlAssetFileInterface.cpp
-  src/platform/PlatformDefaults.cpp
-  src/platform/ICredentialStore.cpp
-  src/platform/EnvCredentialStore.cpp
-  src/libp2p/integration/Libp2pHost.cpp
-  src/platform/SequencedTaskRunner.cpp
-  src/platform/BrowserThread.cpp
-  src/messaging/MessagingJson.cpp
-  src/messaging/PeopleDiscoveryBlocks.cpp
-  src/messaging/JsonThreadStore.cpp
-  src/messaging/InboxController.cpp
-  src/messaging/P2pMessagingService.cpp
-  src/messaging/MessageRouter.cpp
-  src/messaging/ContactActionDispatcher.cpp
-  src/messaging/MessagingHub.cpp
-  src/messaging/AtAiParser.cpp
-  src/contacts/ContactsStore.cpp
-  src/net/HttpClient.cpp
-  src/net/ServiceClientsImpl.cpp
-  src/demo/SearchDemo.cpp
-  src/demo/ChatDemo.cpp
-  src/demo/ChatFormHelper.cpp
-  src/demo/ChatWidgetStateBuilder.cpp
-  src/demo/CalendarHelper.cpp
-  src/demo/DynamicRmlDemo.cpp
-  src/ui/DocumentLoader.cpp
-  src/ui/RmlMount.cpp
-  src/ui/ShellLayout.cpp
-  src/ui/ShellInterruption.cpp
-  src/ui/ShellFeedback.cpp
-  src/ui/ViewCatalog.cpp
-  src/ui/ShellHost.cpp
-  src/ui/SettingsController.cpp
-  src/ui/Theme.cpp
-  src/ui/DataModelHost.cpp
-  src/bindings/ActionRouter.cpp
-  src/bindings/BindingsManifest.cpp
-  src/mcp/McpClient.cpp
-  src/mcp/SchemaAdapter.cpp
-  src/agent/LlmClient.cpp
-  src/agent/PromptBuilder.cpp
-  src/agent/StructuredTextParser.cpp
-  src/agent/WorkingSetPolicy.cpp
-  src/agent/UiGenerator.cpp
-  src/agent/RmlValidator.cpp
-  src/agent/TurnPlan.cpp
-  src/agent/TurnTrace.cpp
-  src/agent/PayloadTurnPlanBuilder.cpp
-  src/agent/TurnPlanner.cpp
-  src/agent/TurnExecutor.cpp
-  src/agent/ToolResultFormatter.cpp
-  src/agent/AgentSession.cpp
-  src/agent/conversation/Conversation.cpp
-  src/agent/conversation/SlidingWindowContextPolicy.cpp
-  src/agent/conversation/TurnCoordinator.cpp
-  src/agent/conversation/UserMessageFormatter.cpp
-  src/agent/conversation/ThreadContextPolicy.cpp
-  src/agent/ToolRegistry.cpp
-  src/agent/ToolRegistryBuild.cpp
-  src/agent/tools/WebSearchTool.cpp
-  src/agent/tools/McpToolAdapter.cpp
-  src/agent/tools/MessagingTools.cpp
 )
+
+add_subdirectory(src/feature)
 
 if(ANDROID)
   add_library(${PP_BROWSER_APP_TARGET} SHARED ${PP_BROWSER_APP_SOURCES})
@@ -212,9 +126,10 @@ target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
 )
 
 target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
-  pp_rmlui_backend
+  pp_feature
+  pp_base
   pp_common
-  pp_identity
+  pp_rmlui_backend
   RmlUi::Core
   p2p
   nlohmann_json::nlohmann_json

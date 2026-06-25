@@ -1,6 +1,6 @@
-#include "platform/AssetIO.h"
+#include "base/platform/AssetIO.h"
 
-#include "platform/Platform.h"
+#include "base/platform/Platform.h"
 
 #include <fstream>
 #include <sstream>

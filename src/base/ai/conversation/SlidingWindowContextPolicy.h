@@ -1,6 +1,6 @@
 #pragma once
 
-#include "agent/conversation/IContextPolicy.h"
+#include "base/ai/conversation/IContextPolicy.h"
 
 namespace pbr {
 

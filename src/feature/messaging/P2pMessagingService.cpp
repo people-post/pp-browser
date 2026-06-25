@@ -1,9 +1,9 @@
-#include "contacts/ContactTypes.h"
-#include "messaging/P2pMessagingService.h"
+#include "base/people/ContactTypes.h"
+#include "feature/messaging/P2pMessagingService.h"
 
 #include "common/Utilities.h"
-#include "messaging/MessagingJson.h"
-#include "platform/BrowserThread.h"
+#include "base/messaging/MessagingJson.h"
+#include "base/platform/BrowserThread.h"
 
 #include <mutex>
 

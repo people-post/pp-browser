@@ -1,6 +1,6 @@
-#include "bindings/ActionRouter.h"
+#include "feature/ai/bindings/ActionRouter.h"
 
-#include "ui/DataModelHost.h"
+#include "feature/ui/DataModelHost.h"
 
 #include <RmlUi/Core/Context.h>
 

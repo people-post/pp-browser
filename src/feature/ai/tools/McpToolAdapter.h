@@ -1,7 +1,7 @@
 #pragma once
 
-#include "agent/ToolRegistry.h"
-#include "mcp/McpClient.h"
+#include "feature/ai/ToolRegistry.h"
+#include "base/ai/mcp/McpClient.h"
 
 namespace pbr {
 

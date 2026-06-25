@@ -1,4 +1,4 @@
-#include "agent/LlmClient.h"
+#include "base/ai/LlmClient.h"
 
 #include <stdexcept>
 #include <string>

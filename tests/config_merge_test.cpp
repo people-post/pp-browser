@@ -1,6 +1,6 @@
-#include "app/Config.h"
-#include "app/LlmPreset.h"
-#include "app/SettingsLogic.h"
+#include "base/data/Config.h"
+#include "base/data/LlmPreset.h"
+#include "feature/settings/SettingsLogic.h"
 
 #include <cassert>
 #include <filesystem>
