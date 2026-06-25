@@ -4,7 +4,7 @@ pp-browser uses [RmlUi RCSS](https://mikke89.github.io/RmlUiDoc/pages/rcss.html)
 
 ## Units
 
-Use `dp`, `px`, `%`, or `em`. Prefer `dp` for layout (matches `base.rcss`).
+Use `dp`, `px`, `%`, or `em`. Prefer `dp` for layout (matches the theme sheets).
 
 ## Supported properties
 
@@ -56,7 +56,7 @@ Use `dp`, `px`, `%`, or `em`. Prefer `dp` for layout (matches `base.rcss`).
 
 ### Text selection styling
 
-Browsers use `::selection`; RmlUi does not. Instead, style the hidden `selection` child via descendant selectors (see `assets/themes/base.rcss`):
+Browsers use `::selection`; RmlUi does not. Instead, style the hidden `selection` child via descendant selectors (see `assets/themes/colors-light.rcss` / `colors-dark.rcss`):
 
 - `selection { background-color: ...; color: ...; }` — default highlight
 - `.bubble-user selection { ... }` — per-context overrides on `selectable="text"` containers and `input`/`textarea` parents
@@ -77,7 +77,7 @@ Applies to static bubble text and focused form fields.
 - CSS Grid (`grid-*`)
 - `background-image`, gradients, `url(...)`
 - `border-style` (RmlUi borders are width + color only)
-- `@media`, `@keyframes`, pseudo-elements (`::before`), complex selectors
+- `@media` (app theme sheets only — not for AI-generated RCSS), `@keyframes`, pseudo-elements (`::before`), complex selectors
 - Vendor prefixes (`-webkit-`, etc.)
 - `fit-content`, `max-content`, `min-content`
 - `border-collapse`, `border-spacing`, `table-layout`
@@ -87,11 +87,26 @@ Applies to static bubble text and focused form fields.
 
 - Prefer block layout and flexbox; avoid `inline-block` for sized containers with backgrounds
 - Put text and background on the same element, or use `display: block` wrappers
-- Use existing utility classes from `assets/themes/base.rcss` before adding new rules
+- Use existing utility classes from the design system before adding new rules
+- Do not emit raw `#hex` colors in AI-generated RCSS; see [UI_DESIGN_SYSTEM.md](UI_DESIGN_SYSTEM.md)
 - Do not rely on `text-align` for block sizing; use flex `justify-content` or `float`
 
-## Existing utility classes
+## Design system classes
 
-`.stack`, `.row`, `.card`, `.text`, `.heading-1`, `.heading-2`, `.heading-3`, `.btn`, `.btn-primary`, `.btn-secondary`, `.field`, `.muted`, `.error`, `.gap-sm`, `.code-block`, chat classes in `base.rcss`
+See [UI_DESIGN_SYSTEM.md](UI_DESIGN_SYSTEM.md) for the full token table and surface inventory.
+
+### Layout and typography
+
+`.stack`, `.row`, `.gap-sm`, `.text`, `.text-xs`, `.heading-1`, `.heading-2`, `.heading-3`, `.muted`, `.error`
+
+### Controls
+
+`.btn`, `.btn-primary`, `.btn-secondary`, `.field`, `.card`
+
+### Chat and shell
+
+`.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-card`, `.chat-card-highlight`, `.chat-working-set-chip`, `.shell-toolbar-btn`, `.sidebar-session`
+
+Theme colors are applied via `@media (theme: light|dark)` in app stylesheets only — not in AI output.
 
 Author stylesheets should use these classes instead of bare `h1`, `p`, `button`, `input`, etc. The user-agent stylesheet provides baseline layout for semantic elements; only `.bubble-assistant` scopes rich-text overrides for AI-generated markup.

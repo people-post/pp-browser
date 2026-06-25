@@ -1,7 +1,10 @@
 <rml>
 <head>
   <title>pp-browser</title>
-  <link type="text/rcss" href="../themes/base.rcss"/>
+  <link type="text/rcss" href="../themes/foundation.rcss"/>
+  <link type="text/rcss" href="../themes/components.rcss"/>
+  <link type="text/rcss" href="../themes/colors-light.rcss"/>
+  <link type="text/rcss" href="../themes/colors-dark.rcss"/>
 </head>
 <body data-model="window" class="shell-body">
   <div id="shell-chrome" class="shell-chrome">

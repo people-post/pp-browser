@@ -37,6 +37,16 @@ Roe<GeneratedUi> UiGenerator::Generate(const std::string& tools_context) const {
     return Error("RML validation failed");
   }
 
+  if (!ui.rcss.empty()) {
+    auto rcss_check = RmlValidator::ValidateRcss(ui.rcss);
+    if (!rcss_check.ok) {
+      for (const auto& err : rcss_check.errors) {
+        log().error << "RCSS validation failed: " << err;
+      }
+      return Error("RCSS validation failed");
+    }
+  }
+
   auto binding_check = BindingsManifest::Validate(ui.bindings_json);
   if (!binding_check.ok) {
     for (const auto& err : binding_check.errors) {

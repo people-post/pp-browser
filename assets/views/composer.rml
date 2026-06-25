@@ -1,4 +1,5 @@
-<div class="prompt-composer" data-model="chat">
+<div class="prompt-composer" data-model="chat"
+     data-class-prompt-composer--e2e="thread_encrypted">
   <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2" data-value="draft" data-attr-placeholder="draft_placeholder"></textarea>
   <div class="prompt-composer-footer">
     <div class="prompt-composer-leading"></div>

@@ -294,7 +294,9 @@ void from_json(const nlohmann::json& j, MachinePreferences& prefs) {
 }
 
 void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
-  j = nlohmann::json{{"schema_version", prefs.schema_version}, {"theme", prefs.theme}};
+  j = nlohmann::json{{"schema_version", prefs.schema_version},
+                     {"theme", prefs.theme},
+                     {"appearance", prefs.appearance}};
 }
 
 void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
@@ -303,6 +305,9 @@ void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
   }
   if (j.contains("theme") && j["theme"].is_string()) {
     prefs.theme = NormalizeThemePath(j["theme"].get<std::string>());
+  }
+  if (j.contains("appearance") && j["appearance"].is_string()) {
+    prefs.appearance = j["appearance"].get<std::string>();
   }
 }
 

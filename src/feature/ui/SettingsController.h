@@ -30,7 +30,7 @@ private:
     Rml::String llm_model;
     Rml::String llm_api_key;
     Rml::String llm_api_key_env;
-    Rml::String theme;
+    Rml::String appearance = "system";
   };
 
   struct SettingsDisplay {
@@ -46,7 +46,7 @@ private:
   static void ResetDefaultsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void DraftLlmModelChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void DraftLlmBaseUrlChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DraftThemeChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void DraftAppearanceChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void DraftLlmApiKeyEnvChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void DraftLlmPresetChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 

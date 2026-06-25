@@ -33,10 +33,11 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 1;
+  static constexpr int kSchemaVersion = 2;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
+  std::string appearance = "system";
 };
 
 class UserPreferences {

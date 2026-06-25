@@ -49,6 +49,7 @@ private:
     Rml::String status;
     Rml::String thread_title;
     Rml::String thread_subtitle;
+    bool thread_encrypted = false;
     std::vector<TranscriptDisplayRow> turns;
     std::vector<MessageDisplayRow> messages;
     bool use_messages_layout = true;

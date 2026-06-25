@@ -135,6 +135,16 @@ bool Application::Initialize(const char* window_title, DemoMode demo) {
 
   Backend::SyncContext(context);
 
+  const AppearanceMode appearance =
+      Theme::ParseAppearance(bootstrap.profile_prefs.appearance);
+  Theme::ApplyAppearance(context, appearance);
+
+  SessionStore::Instance().AddAppearanceListener([this](const std::string& appearance) {
+    if (auto* ctx = Rml::GetContext("main")) {
+      Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance));
+    }
+  });
+
   SessionStore::Instance().AddThemeListener([this](const std::string& theme) {
     Theme::LoadBase(AssetsPath(theme));
     if (auto* ctx = Rml::GetContext("main")) {

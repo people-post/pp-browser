@@ -53,6 +53,7 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
   }
   bootstrap_.profile_prefs = prefs;
   NotifyThemeListeners(prefs.theme);
+  NotifyAppearanceListeners(prefs.appearance);
   return {};
 }
 
@@ -87,6 +88,18 @@ void SessionStore::NotifyConfigListeners(const AppConfig& config) {
 void SessionStore::NotifyThemeListeners(const std::string& theme) {
   for (const auto& listener : theme_listeners_) {
     listener(theme);
+  }
+}
+
+void SessionStore::AddAppearanceListener(std::function<void(const std::string& appearance)> listener) {
+  if (listener) {
+    appearance_listeners_.push_back(std::move(listener));
+  }
+}
+
+void SessionStore::NotifyAppearanceListeners(const std::string& appearance) {
+  for (const auto& listener : appearance_listeners_) {
+    listener(appearance);
   }
 }
 

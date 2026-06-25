@@ -39,7 +39,7 @@ void SettingsController::LoadDraftFromSession() {
   draft_.llm_model = config.llm.model;
   draft_.llm_api_key = config.llm.api_key;
   draft_.llm_api_key_env = config.llm_api_key_env;
-  draft_.theme = bootstrap.profile_prefs.theme;
+  draft_.appearance = bootstrap.profile_prefs.appearance;
 
   display_.profile_label = bootstrap.profile_registry.ActiveProfileId();
   display_.config_dir = AppPaths::ConfigDir();
@@ -61,7 +61,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("llm_model", &controller.draft_.llm_model);
     ctor.Bind("llm_api_key", &controller.draft_.llm_api_key);
     ctor.Bind("llm_api_key_env", &controller.draft_.llm_api_key_env);
-    ctor.Bind("theme", &controller.draft_.theme);
+    ctor.Bind("appearance", &controller.draft_.appearance);
     ctor.Bind("profile_label", &controller.display_.profile_label);
     ctor.Bind("config_dir", &controller.display_.config_dir);
     ctor.Bind("data_dir", &controller.display_.data_dir);
@@ -71,7 +71,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("reset_to_defaults", &SettingsController::ResetDefaultsCallback);
     ctor.BindEventCallback("draft_llm_model_changed", &SettingsController::DraftLlmModelChangedCallback);
     ctor.BindEventCallback("draft_llm_base_url_changed", &SettingsController::DraftLlmBaseUrlChangedCallback);
-    ctor.BindEventCallback("draft_theme_changed", &SettingsController::DraftThemeChangedCallback);
+    ctor.BindEventCallback("draft_appearance_changed", &SettingsController::DraftAppearanceChangedCallback);
     ctor.BindEventCallback("draft_llm_api_key_env_changed", &SettingsController::DraftLlmApiKeyEnvChangedCallback);
     ctor.BindEventCallback("draft_llm_preset_changed", &SettingsController::DraftLlmPresetChangedCallback);
     ctor.BindEventCallback("open_settings", &SettingsController::OpenSettingsCallback);
@@ -85,7 +85,7 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "llm_model");
   host.Dirty("settings", "llm_api_key");
   host.Dirty("settings", "llm_api_key_env");
-  host.Dirty("settings", "theme");
+  host.Dirty("settings", "appearance");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
@@ -142,7 +142,7 @@ void SettingsController::OnSaveSettings() {
   }
 
   ProfilePreferences profile_prefs = SessionStore::Instance().Snapshot().profile_prefs;
-  profile_prefs.theme = draft_.theme.c_str();
+  profile_prefs.appearance = draft_.appearance.c_str();
   if (auto saved = SessionStore::Instance().SaveProfilePrefs(profile_prefs); !saved) {
     status_ = saved.error().message;
     DataModelHost::Instance().Dirty("settings", "status");
@@ -165,7 +165,7 @@ void SettingsController::OnResetDefaults() {
   draft_.llm_model = defaults.llm.model;
   draft_.llm_api_key = defaults.llm.api_key;
   draft_.llm_api_key_env = defaults.llm_api_key_env;
-  draft_.theme = default_prefs.theme;
+  draft_.appearance = default_prefs.appearance;
 
   DirtyAll();
   status_ = "Defaults loaded (save to persist)";
@@ -192,9 +192,9 @@ void SettingsController::DraftLlmBaseUrlChangedCallback(Rml::DataModelHandle /*m
   Instance().draft_.llm_base_url = EventValue(ev);
 }
 
-void SettingsController::DraftThemeChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                   const Rml::VariantList& /*args*/) {
-  Instance().draft_.theme = EventValue(ev);
+void SettingsController::DraftAppearanceChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                                        const Rml::VariantList& /*args*/) {
+  Instance().draft_.appearance = EventValue(ev);
 }
 
 void SettingsController::DraftLlmApiKeyEnvChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,

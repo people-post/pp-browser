@@ -276,6 +276,7 @@ void DirtyChatTurns() {
 void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "thread_title");
   DataModelHost::Instance().Dirty("chat", "thread_subtitle");
+  DataModelHost::Instance().Dirty("chat", "thread_encrypted");
   DataModelHost::Instance().Dirty("chat", "draft_placeholder");
 }
 
@@ -612,14 +613,17 @@ void ChatDemo::UpdateThreadChrome() {
   }
   if (auto thread = MessagingHub::Instance().Inbox().GetActiveThread()) {
     chat_.thread_title = thread->title.c_str();
+    chat_.thread_encrypted = thread->encrypted;
     if (thread->kind == ThreadKind::Ai) {
       chat_.thread_subtitle = "AI home — ask to find people or open conversations";
       chat_.draft_placeholder = "Ask anything…";
     } else if (thread->kind == ThreadKind::Direct) {
-      chat_.thread_subtitle = "Direct message";
+      chat_.thread_subtitle =
+          thread->encrypted ? "End-to-end encrypted" : "Direct message";
       chat_.draft_placeholder = "Message… or @ai ask assistant";
     } else {
-      chat_.thread_subtitle = "Group chat";
+      chat_.thread_subtitle =
+          thread->encrypted ? "End-to-end encrypted" : "Group chat";
       chat_.draft_placeholder = "Message the group… or @ai ask assistant";
     }
   }
@@ -1150,6 +1154,7 @@ bool ChatDemo::Setup(Rml::Context* context) {
         ctor.Bind("use_messages_layout", &ChatDemo::Instance().chat_.use_messages_layout);
         ctor.Bind("thread_title", &ChatDemo::Instance().chat_.thread_title);
         ctor.Bind("thread_subtitle", &ChatDemo::Instance().chat_.thread_subtitle);
+        ctor.Bind("thread_encrypted", &ChatDemo::Instance().chat_.thread_encrypted);
         ctor.BindEventCallback("send_message", &ChatDemo::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatDemo::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatDemo::SendChatActionCallback);

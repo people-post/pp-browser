@@ -24,6 +24,7 @@ struct Thread {
   int64_t updated_at = 0;
   int unread_count = 0;
   std::string preview;
+  bool encrypted = false;
 };
 
 struct ThreadMessage {

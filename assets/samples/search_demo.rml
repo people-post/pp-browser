@@ -1,7 +1,10 @@
 <rml>
 <head>
   <title>Search demo</title>
-  <link type="text/rcss" href="../themes/base.rcss"/>
+  <link type="text/rcss" href="../themes/foundation.rcss"/>
+  <link type="text/rcss" href="../themes/components.rcss"/>
+  <link type="text/rcss" href="../themes/colors-light.rcss"/>
+  <link type="text/rcss" href="../themes/colors-dark.rcss"/>
 </head>
 <body data-model="main">
   <h1 class="heading-1">User search</h1>

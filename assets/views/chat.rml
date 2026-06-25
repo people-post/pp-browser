@@ -1,6 +1,10 @@
-<div class="chat-panel stack" data-model="chat">
+<div class="chat-panel stack" data-model="chat"
+     data-class-chat-shell--e2e="thread_encrypted">
   <div class="chat-header">
     <div class="chat-header-main">
+      <div class="chat-header-secure-row" data-if="thread_encrypted">
+        <span class="text-xs chat-secure-badge">Encrypted</span>
+      </div>
       <h1 class="heading-1 chat-header-title" data-rml="thread_title"></h1>
       <p class="text muted" data-rml="thread_subtitle"></p>
     </div>

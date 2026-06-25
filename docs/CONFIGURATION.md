@@ -58,9 +58,13 @@ After bootstrap, a single [`SessionStore`](../src/base/data/SessionStore.h) owns
 
 `config.json` may include `llm.preset`: `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/base/data/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
 
-## Theme
+## Theme and appearance
 
-**Canonical UI theme:** `profiles/{id}/preferences.json` → `theme`. Machine `config.json` may still carry a `theme` field for compatibility, but Settings writes profile preferences only.
+**Appearance (light/dark):** `profiles/{id}/preferences.json` → `appearance` (`system`, `light`, or `dark`). System follows `SDL_GetSystemTheme` and live-updates on `SDL_EVENT_SYSTEM_THEME_CHANGED`.
+
+**Stylesheet entry:** RML documents link `foundation.rcss`, `components.rcss`, `colors-light.rcss`, and `colors-dark.rcss`. The legacy `theme` path field remains for compatibility.
+
+See [UI_DESIGN_SYSTEM.md](UI_DESIGN_SYSTEM.md) for tokens and component classes.
 
 ## Schema versioning
 

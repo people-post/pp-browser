@@ -36,8 +36,13 @@
     <p class="settings-section-title">Appearance</p>
     <label class="settings-field">
       <span class="settings-label">Theme</span>
-      <input class="field" type="text" data-value="theme" data-event-change="draft_theme_changed()"/>
+      <select class="field" data-attr-value="appearance" data-event-change="draft_appearance_changed()">
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
     </label>
+    <p class="text muted">Follows your OS light/dark setting when set to System.</p>
   </div>
 
   <div class="settings-section stack">

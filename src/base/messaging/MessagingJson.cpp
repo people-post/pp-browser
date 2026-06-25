@@ -97,7 +97,8 @@ nlohmann::json ThreadToJson(const Thread& thread) {
           {"participant_contact_ids", thread.participant_contact_ids},
           {"updated_at", thread.updated_at},
           {"unread_count", thread.unread_count},
-          {"preview", thread.preview}};
+          {"preview", thread.preview},
+          {"encrypted", thread.encrypted}};
 }
 
 Thread ThreadFromJson(const nlohmann::json& json) {
@@ -126,6 +127,9 @@ Thread ThreadFromJson(const nlohmann::json& json) {
   }
   if (json.contains("preview") && json["preview"].is_string()) {
     thread.preview = json["preview"].get<std::string>();
+  }
+  if (json.contains("encrypted") && json["encrypted"].is_boolean()) {
+    thread.encrypted = json["encrypted"].get<bool>();
   }
   return thread;
 }

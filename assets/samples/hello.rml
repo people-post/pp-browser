@@ -1,7 +1,10 @@
 <rml>
 <head>
   <title>Hello</title>
-  <link type="text/rcss" href="../themes/base.rcss"/>
+  <link type="text/rcss" href="../themes/foundation.rcss"/>
+  <link type="text/rcss" href="../themes/components.rcss"/>
+  <link type="text/rcss" href="../themes/colors-light.rcss"/>
+  <link type="text/rcss" href="../themes/colors-dark.rcss"/>
 </head>
 <body>
   <h1 class="heading-1">pp-browser</h1>
