@@ -25,6 +25,8 @@ public:
   Roe<void> SaveConfig(const AppConfig& config);
   Roe<void> SaveProfilePrefs(const ProfilePreferences& prefs);
   Roe<void> ReloadConfig();
+  Roe<void> ReloadProfilePrefs();
+  Roe<void> ReloadFromDisk();
 
   void AddConfigListener(std::function<void(const AppConfig&)> listener);
   void AddThemeListener(std::function<void(const std::string& theme)> listener);

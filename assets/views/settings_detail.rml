@@ -1,0 +1,62 @@
+<div class="settings-detail-panel stack" data-model="settings">
+  <div class="settings-detail-header row">
+    <p class="settings-header-title" data-rml="selected_title"></p>
+  </div>
+
+  <div class="settings-detail-body stack">
+    <div class="settings-section stack" data-if="selected_id == 'llm'">
+      <label class="settings-field">
+        <span class="settings-label">Preset</span>
+        <select class="field" data-attr-value="llm_preset" data-event-change="on_llm_preset_changed()">
+          <option value="cloud">Cloud (OpenAI-compatible)</option>
+          <option value="ollama">Ollama (localhost)</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      <p class="text muted">Preset defaults apply when saved. Leave API key blank to keep the existing key.</p>
+      <label class="settings-field">
+        <span class="settings-label">Base URL</span>
+        <input class="field" type="text" data-value="llm_base_url" data-event-change="on_llm_field_changed()"/>
+      </label>
+      <label class="settings-field">
+        <span class="settings-label">Model</span>
+        <input class="field" type="text" data-value="llm_model" data-event-change="on_llm_field_changed()"/>
+      </label>
+      <label class="settings-field">
+        <span class="settings-label">API key</span>
+        <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="Optional for local / Ollama endpoints"/>
+      </label>
+      <label class="settings-field">
+        <span class="settings-label">API key env var (advanced)</span>
+        <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
+      </label>
+      <div class="settings-actions row">
+        <button class="btn btn-secondary" type="button" data-event-click="reset_section('llm')">Reset to defaults</button>
+      </div>
+    </div>
+
+    <div class="settings-section stack" data-if="selected_id == 'appearance'">
+      <label class="settings-field">
+        <span class="settings-label">Theme</span>
+        <select class="field" data-attr-value="appearance" data-event-change="on_appearance_changed()">
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+      <p class="text muted">Follows your OS light/dark setting when set to System.</p>
+      <div class="settings-actions row">
+        <button class="btn btn-secondary" type="button" data-event-click="reset_section('appearance')">Reset to defaults</button>
+      </div>
+    </div>
+
+    <div class="settings-section stack" data-if="selected_id == 'storage'">
+      <p class="text muted">Profile: <span data-rml="profile_label"></span></p>
+      <p class="text muted settings-path">Config: <span data-rml="config_dir"></span></p>
+      <p class="text muted settings-path">Data: <span data-rml="data_dir"></span></p>
+      <p class="text muted settings-path">Profile data: <span data-rml="profile_dir"></span></p>
+    </div>
+
+    <p class="text muted" data-if="status != ''" data-rml="status"></p>
+  </div>
+</div>

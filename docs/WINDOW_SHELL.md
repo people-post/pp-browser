@@ -38,7 +38,7 @@ Primary is **tab-scoped drill-down content**, not always chat. Examples:
 | Home (default) | (none) | AI home chat + composer |
 | Sessions | Session list | Chat + composer |
 | Contacts | Contact list | Contact detail |
-| Settings | Settings form | (empty) |
+| Settings | Category list | Section detail |
 
 The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
 

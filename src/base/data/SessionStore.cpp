@@ -51,9 +51,22 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
   if (auto saved = UserPreferences::SaveProfile(bootstrap_.profile_data_dir, prefs); !saved) {
     return saved.error();
   }
-  bootstrap_.profile_prefs = prefs;
-  NotifyThemeListeners(prefs.theme);
-  NotifyAppearanceListeners(prefs.appearance);
+
+  auto reloaded = UserPreferences::LoadProfile(bootstrap_.profile_data_dir);
+  if (!reloaded) {
+    return reloaded.error();
+  }
+
+  const std::string previous_theme = bootstrap_.profile_prefs.theme;
+  const std::string previous_appearance = bootstrap_.profile_prefs.appearance;
+  bootstrap_.profile_prefs = std::move(*reloaded);
+
+  if (bootstrap_.profile_prefs.theme != previous_theme) {
+    NotifyThemeListeners(bootstrap_.profile_prefs.theme);
+  }
+  if (bootstrap_.profile_prefs.appearance != previous_appearance) {
+    NotifyAppearanceListeners(bootstrap_.profile_prefs.appearance);
+  }
   return {};
 }
 
@@ -64,6 +77,35 @@ Roe<void> SessionStore::ReloadConfig() {
   }
   bootstrap_.config = std::move(*reloaded);
   NotifyConfigListeners(bootstrap_.config);
+  return {};
+}
+
+Roe<void> SessionStore::ReloadProfilePrefs() {
+  auto reloaded = UserPreferences::LoadProfile(bootstrap_.profile_data_dir);
+  if (!reloaded) {
+    return reloaded.error();
+  }
+
+  const std::string previous_theme = bootstrap_.profile_prefs.theme;
+  const std::string previous_appearance = bootstrap_.profile_prefs.appearance;
+  bootstrap_.profile_prefs = std::move(*reloaded);
+
+  if (bootstrap_.profile_prefs.theme != previous_theme) {
+    NotifyThemeListeners(bootstrap_.profile_prefs.theme);
+  }
+  if (bootstrap_.profile_prefs.appearance != previous_appearance) {
+    NotifyAppearanceListeners(bootstrap_.profile_prefs.appearance);
+  }
+  return {};
+}
+
+Roe<void> SessionStore::ReloadFromDisk() {
+  if (auto reloaded = ReloadConfig(); !reloaded) {
+    return reloaded.error();
+  }
+  if (auto reloaded = ReloadProfilePrefs(); !reloaded) {
+    return reloaded.error();
+  }
   return {};
 }
 

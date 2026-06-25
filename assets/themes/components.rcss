@@ -1268,10 +1268,110 @@ select selectbox option {
 
 /* Settings panel */
 .settings-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12dp;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.settings-list-view,
+.settings-detail-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.settings-header,
+.settings-detail-header {
+  flex-shrink: 0;
+  align-items: center;
+  margin-bottom: 8dp;
+}
+
+.settings-header-title {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 14dp;
+  font-weight: bold;
+}
+
+.settings-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.settings-row {
+  display: flex;
+  flex-direction: column;
+  min-height: 44dp;
+  margin-bottom: 4dp;
+  padding: 8dp;
+  border-radius: 6dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.settings-row-title {
+  margin-top: 0;
+  margin-bottom: 2dp;
+  font-size: 13dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-row-subtitle {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 11dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-row--active {
+  background-color: rgba(59, 130, 246, 0.12);
+}
+
+.settings-back-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  margin-right: 4dp;
+  margin-bottom: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6dp;
+  cursor: pointer;
+  background-color: transparent;
+}
+
+.settings-back-btn svg {
+  flex-shrink: 0;
+}
+
+.settings-detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  gap: 8dp;
+}
+
+.settings-detail-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   padding: 24dp;
   box-sizing: border-box;
-  height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .settings-section {

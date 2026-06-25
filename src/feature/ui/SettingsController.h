@@ -8,6 +8,10 @@
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/Types.h>
 
+#include <cstdint>
+#include <optional>
+#include <vector>
+
 namespace Rml {
 class Context;
 }
@@ -16,11 +20,25 @@ namespace pbr {
 
 class SettingsController : public Module {
 public:
+  enum class SettingsBlock {
+    Llm,
+    Appearance,
+  };
+
+  struct SectionListRow {
+    Rml::String id;
+    Rml::String title;
+    Rml::String subtitle;
+  };
+
   static SettingsController& Instance();
 
   bool RegisterModel(Rml::Context* context);
   void OpenSettings();
   void OnNavTabActivated();
+  void OnNavTabDeactivated();
+  void SyncLayoutMode();
+  void Tick();
 
 private:
   struct SettingsUiDraft {
@@ -41,26 +59,42 @@ private:
 
   SettingsController();
 
-  static void SaveSettingsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ResetDefaultsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DraftLlmModelChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DraftLlmBaseUrlChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DraftAppearanceChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DraftLlmApiKeyEnvChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DraftLlmPresetChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void SelectSectionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void BackToListCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ResetSectionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnLlmFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnLlmPresetChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnAppearanceChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
-  void LoadDraftFromSession();
+  void InitSections();
+  void ReloadFromDisk();
+  void SyncBindingsFromSession();
   void OnSettingsMounted();
-  void OnSaveSettings();
-  void OnResetDefaults();
+  void OnSelectSection(const std::string& section_id);
+  void OnBackToList();
+  void OnResetSection(const std::string& section_id);
+  void ScheduleBlockFlush(SettingsBlock block);
+  void FlushPending();
+  bool FlushBlock(SettingsBlock block);
+  void MaybeShowSaveToast(SettingsBlock block);
   void DirtyAll();
+  void CompleteSectionSelection(bool expanded);
   SettingsDraft ToLogicDraft() const;
 
+  std::vector<SectionListRow> sections_;
+  Rml::String selected_id_;
+  Rml::String selected_title_;
+  bool compact_layout_ = false;
+  bool show_detail_ = false;
   SettingsUiDraft draft_;
   SettingsDisplay display_;
   Rml::String status_;
   Rml::Context* context_ = nullptr;
-  bool suppress_preset_change_ = false;
+  bool suppress_auto_save_ = false;
+  std::optional<SettingsBlock> pending_flush_block_;
+  uint64_t pending_flush_at_ms_ = 0;
+  std::optional<SettingsBlock> last_toast_block_;
+  uint64_t last_toast_at_ms_ = 0;
 };
 
 } // namespace pbr

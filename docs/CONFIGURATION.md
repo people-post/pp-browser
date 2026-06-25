@@ -74,9 +74,9 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 
 ## In-app settings
 
-Open **Settings** from the sidebar footer. Saves machine config to `config.json` and theme to profile `preferences.json`. LLM changes hot-reload via `SessionStore` config listeners → `AgentSession::Configure`.
+Open **Settings** from the nav rail (gear icon). The settings tab uses a **category list → detail** layout: LLM, Appearance, and Storage sections.
 
-While Settings is open, [`SettingsController`](../src/feature/ui/SettingsController.cpp) keeps a **draft buffer** (`draft_`) separate from the live `SessionStore` snapshot. Edits update the draft via `data-value` bindings and explicit `data-event-change` handlers (model, base URL, theme, API key env). **Save** applies the draft through [`ApplySettingsDraft`](../src/feature/settings/SettingsLogic.cpp) (including LLM preset defaults) and persists via `SessionStore`. Closing Settings without saving discards the draft.
+On tab entry, [`SettingsController`](../src/feature/ui/SettingsController.cpp) reloads from disk via `SessionStore::ReloadFromDisk()` so the UI matches persisted files. Changes **auto-save per block** (LLM → `config.json`, Appearance → `preferences.json`): select fields save immediately; text fields debounce ~500ms. Pending changes flush before switching sections or leaving the tab. Each block flush reads all bound fields in that section, applies through [`ApplySettingsDraft`](../src/feature/settings/SettingsLogic.cpp) where needed, writes to disk, and reloads from disk into `SessionStore`. LLM changes hot-reload via config listeners → `AgentSession::Configure`; appearance changes apply via appearance listeners → `Theme::ApplyAppearance`.
 
 Enter an **API key** directly in Settings (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
 
@@ -84,11 +84,11 @@ Enter an **API key** directly in Settings (saved to `config.json`) or use **API 
 
 ```bash
 pp-browser --config /tmp/pp-test-config.json
-# Settings → change LLM model → Save → back → reopen Settings
+# Settings → LLM → change model → wait briefly → back → reopen Settings
 jq .llm.model /tmp/pp-test-config.json
 ```
 
-The on-disk model should match what you saved.
+The on-disk model should match what you set.
 
 ## Platform layer
 

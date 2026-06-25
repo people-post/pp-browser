@@ -1,62 +1,82 @@
 <div class="settings-panel stack" data-model="settings">
-  <div class="settings-header row">
-    <h2 class="heading-2">Settings</h2>
+  <div class="settings-list-view" data-if="!compact_layout || !show_detail">
+    <div class="settings-header row">
+      <h2 class="heading-2">Settings</h2>
+    </div>
+    <div class="settings-list">
+      <div data-for="section : sections"
+           class="settings-row"
+           data-class-settings-row--active="section.id == selected_id && selected_id != ''"
+           data-event-click="select_section(section.id)">
+        <p class="settings-row-title" data-rml="section.title"></p>
+        <p class="settings-row-subtitle text muted" data-if="section.subtitle != ''" data-rml="section.subtitle"></p>
+      </div>
+    </div>
   </div>
 
-  <div class="settings-section stack">
-    <p class="settings-section-title">LLM</p>
-    <label class="settings-field">
-      <span class="settings-label">Preset</span>
-      <select class="field" data-attr-value="llm_preset" data-event-change="draft_llm_preset_changed()">
-        <option value="cloud">Cloud (OpenAI-compatible)</option>
-        <option value="ollama">Ollama (localhost)</option>
-        <option value="custom">Custom</option>
-      </select>
-    </label>
-    <p class="text muted">Preset defaults apply when you save.</p>
-    <label class="settings-field">
-      <span class="settings-label">Base URL</span>
-      <input class="field" type="text" data-value="llm_base_url" data-event-change="draft_llm_base_url_changed()"/>
-    </label>
-    <label class="settings-field">
-      <span class="settings-label">Model</span>
-      <input class="field" type="text" data-value="llm_model" data-event-change="draft_llm_model_changed()"/>
-    </label>
-    <label class="settings-field">
-      <span class="settings-label">API key</span>
-      <input class="field" type="password" data-value="llm_api_key" placeholder="Optional for local / Ollama endpoints"/>
-    </label>
-    <label class="settings-field">
-      <span class="settings-label">API key env var (advanced)</span>
-      <input class="field" type="text" data-value="llm_api_key_env" data-event-change="draft_llm_api_key_env_changed()" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
-    </label>
-  </div>
+  <div data-if="compact_layout && show_detail" class="settings-detail-view stack">
+    <div class="settings-detail-header row">
+      <button class="settings-back-btn" type="button" data-event-click="back_to_list()">
+        <svg src="../icons/back.svg" width="18" height="18"></svg>
+      </button>
+      <p class="settings-header-title" data-rml="selected_title"></p>
+    </div>
 
-  <div class="settings-section stack">
-    <p class="settings-section-title">Appearance</p>
-    <label class="settings-field">
-      <span class="settings-label">Theme</span>
-      <select class="field" data-attr-value="appearance" data-event-change="draft_appearance_changed()">
-        <option value="system">System</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </select>
-    </label>
-    <p class="text muted">Follows your OS light/dark setting when set to System.</p>
-  </div>
+    <div class="settings-detail-body stack">
+      <div class="settings-section stack" data-if="selected_id == 'llm'">
+        <label class="settings-field">
+          <span class="settings-label">Preset</span>
+          <select class="field" data-attr-value="llm_preset" data-event-change="on_llm_preset_changed()">
+            <option value="cloud">Cloud (OpenAI-compatible)</option>
+            <option value="ollama">Ollama (localhost)</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <p class="text muted">Preset defaults apply when saved. Leave API key blank to keep the existing key.</p>
+        <label class="settings-field">
+          <span class="settings-label">Base URL</span>
+          <input class="field" type="text" data-value="llm_base_url" data-event-change="on_llm_field_changed()"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">Model</span>
+          <input class="field" type="text" data-value="llm_model" data-event-change="on_llm_field_changed()"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">API key</span>
+          <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="Optional for local / Ollama endpoints"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">API key env var (advanced)</span>
+          <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
+        </label>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button" data-event-click="reset_section('llm')">Reset to defaults</button>
+        </div>
+      </div>
 
-  <div class="settings-section stack">
-    <p class="settings-section-title">Storage</p>
-    <p class="text muted">Profile: <span data-rml="profile_label"></span></p>
-    <p class="text muted settings-path">Config: <span data-rml="config_dir"></span></p>
-    <p class="text muted settings-path">Data: <span data-rml="data_dir"></span></p>
-    <p class="text muted settings-path">Profile data: <span data-rml="profile_dir"></span></p>
-  </div>
+      <div class="settings-section stack" data-if="selected_id == 'appearance'">
+        <label class="settings-field">
+          <span class="settings-label">Theme</span>
+          <select class="field" data-attr-value="appearance" data-event-change="on_appearance_changed()">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+        <p class="text muted">Follows your OS light/dark setting when set to System.</p>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button" data-event-click="reset_section('appearance')">Reset to defaults</button>
+        </div>
+      </div>
 
-  <p class="text muted" data-if="status != ''" data-rml="status"></p>
+      <div class="settings-section stack" data-if="selected_id == 'storage'">
+        <p class="text muted">Profile: <span data-rml="profile_label"></span></p>
+        <p class="text muted settings-path">Config: <span data-rml="config_dir"></span></p>
+        <p class="text muted settings-path">Data: <span data-rml="data_dir"></span></p>
+        <p class="text muted settings-path">Profile data: <span data-rml="profile_dir"></span></p>
+      </div>
 
-  <div class="settings-actions row">
-    <button class="btn btn-secondary" type="button" data-event-click="reset_to_defaults()">Reset to defaults</button>
-    <button class="btn btn-primary" type="button" data-event-click="save_settings()">Save</button>
+      <p class="text muted" data-if="status != ''" data-rml="status"></p>
+    </div>
   </div>
 </div>

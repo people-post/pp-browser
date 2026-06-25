@@ -1262,6 +1262,10 @@ bool ChatDemo::Setup(Rml::Context* context) {
 
   ShellHost::Instance().Initialize(context);
   ShellHost::Instance().SetOnNavTabChanged([](NavTab tab) {
+    static NavTab previous_tab = NavTab::Home;
+    if (previous_tab == NavTab::Settings && tab != NavTab::Settings) {
+      SettingsController::Instance().OnNavTabDeactivated();
+    }
     if (tab == NavTab::Home) {
       ChatDemo::Instance().OnHomeTabActivated();
     }
@@ -1274,10 +1278,14 @@ bool ChatDemo::Setup(Rml::Context* context) {
     if (tab == NavTab::Contacts) {
       ContactsController::Instance().OnNavTabActivated();
     }
+    previous_tab = tab;
   });
   ShellHost::Instance().SetOnLayoutModeChanged([](LayoutMode mode) {
     if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
       ContactsController::Instance().SyncLayoutMode();
+    }
+    if (ShellHost::Instance().State().nav_tab == NavTab::Settings) {
+      SettingsController::Instance().SyncLayoutMode();
     }
     if (mode == LayoutMode::Compact && ShellHost::Instance().State().nav_tab == NavTab::Home) {
       ChatDemo::Instance().OnHomeTabActivated();
@@ -1295,6 +1303,8 @@ bool ChatDemo::Setup(Rml::Context* context) {
                                        .provides_composer = true});
   ShellHost::Instance().RegisterPane(
       {.key = "contact_detail", .rml_path = "views/contact_detail.rml", .role = PaneRole::Primary});
+  ShellHost::Instance().RegisterPane(
+      {.key = "settings_detail", .rml_path = "views/settings_detail.rml", .role = PaneRole::Primary});
   ShellHost::Instance().RegisterPane(
       {.key = "preview", .rml_path = "views/preview.rml", .role = PaneRole::Auxiliary, .toolbar_label = "Preview"});
 
@@ -1380,6 +1390,9 @@ bool SetupChatDemo(Rml::Context* context) {
 }
 
 void UpdateChatDemo() {
+  if (ShellHost::Instance().State().nav_tab == NavTab::Settings) {
+    SettingsController::Instance().Tick();
+  }
   ChatDemo::Instance().Update();
 }
 
