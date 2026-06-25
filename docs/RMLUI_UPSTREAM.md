@@ -1,14 +1,30 @@
 # RmlUi hard fork
 
-pp-browser vendors RmlUi under `src/render/` as a **hard fork** (committed source, no git submodule).
+pp-browser vendors RmlUi under `src/render/fork/` as a **hard fork** (committed source, no git submodule).
+
+## Layout
+
+| Path | Role |
+|------|------|
+| `src/render/fork/` | Upstream-shaped RmlUi (`Include/`, `Source/`, `CMake/`) |
+| `src/render/fork/reference/backends/` | Upstream sample backends (**reference only**; not linked) |
+| `src/render/integration/platform/` | SDL platform adapter (compiled into `pp_rmlui_backend`) |
+| `src/render/integration/renderer/` | OpenGL3 render interface |
+| `src/render/integration/host/` | `BrowserHost` bootstrap |
+
+Dependency rule inside the render subtree:
+
+```
+integration/host → integration/platform + integration/renderer → fork/Include (public API)
+```
 
 ## Provenance
 
-See `src/render/UPSTREAM.json` for the upstream tag and commit SHA.
+See `src/render/fork/UPSTREAM.json` for the upstream tag and commit SHA.
 
 ## Patching
 
-Edit files under `src/render/` directly in pp-browser commits (except `src/render/integration/`, which is pp-browser-owned SDL/GL glue).
+Edit files under `src/render/fork/` directly in pp-browser commits (except `src/render/integration/`, which is pp-browser-owned SDL/GL glue).
 
 **pp-browser fork patches (as of import):**
 
@@ -46,19 +62,19 @@ Upstream RmlUi defaults every element to `display: inline` (`StyleSheetSpecifica
 
 **Workaround marker locations** (search `FORK_WORKAROUND` in `src/render/`):
 
-- `src/render/Source/Core/ListMarker.*` — marker string generation
-- `src/render/Source/Core/Layout/InlineLevelBox.cpp` — prepends marker to first text line of `li`
+- `src/render/fork/Source/Core/ListMarker.*` — marker string generation
+- `src/render/fork/Source/Core/Layout/InlineLevelBox.cpp` — prepends marker to first text line of `li`
 
 **Proper fix direction for lists:** add RCSS `list-style-type` (and eventually `::marker` or an equivalent marker box) so markers participate in layout, selection, and RTL like browsers.
 
 pp-browser-owned integration code:
 
-- `src/render/integration/` — SDL3 + OpenGL3 backend copies (**compiled into the app**)
-- `src/render/Backends/` — upstream sample backends (**reference only**; not linked). Do not dual-edit `RmlUi_Platform_SDL.cpp` here; mirror changes in `integration/` if needed.
+- `src/render/integration/` — SDL3 + OpenGL3 backend (**compiled into the app** via `pp_rmlui_backend`)
+- `src/render/fork/reference/backends/` — upstream sample backends (**reference only**; not linked). Do not dual-edit `RmlUi_Platform_SDL.cpp` here; mirror changes in `integration/platform/` if needed.
 - `src/app/` — application lifecycle and `InputCoordinator`
 
 See [INPUT.md](INPUT.md) for the full input architecture.
 
 ## License
 
-RmlUi is MIT licensed. See `src/render/LICENSE.txt`.
+RmlUi is MIT licensed. See `src/render/fork/LICENSE.txt`.

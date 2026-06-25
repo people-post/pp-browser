@@ -132,7 +132,7 @@ endif()
 if(RMLUI_SHELL)
 	include("CMake/BackendAutoSelection.cmake")
 	include("CMake/DependenciesForBackends.cmake")
-	add_subdirectory("Backends")
+	add_subdirectory("reference/backends")
 endif()
 
 if(RMLUI_SAMPLES)

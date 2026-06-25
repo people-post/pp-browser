@@ -21,6 +21,24 @@ app → feature → base → common
 
 No upward `#include` across layers. Forks are used at the base/feature boundary (`pp_rmlui_backend`, `libp2p/integration/`).
 
+## Render subtree (`src/render/`)
+
+| Path | Role |
+|------|------|
+| `render/fork/` | Upstream-shaped RmlUi hard fork (`Include/`, `Source/`, `CMake/`) |
+| `render/fork/reference/backends/` | Upstream sample backends (reference only; not linked) |
+| `render/integration/platform/` | SDL platform adapter |
+| `render/integration/renderer/` | OpenGL3 render interface |
+| `render/integration/host/` | `BrowserHost` bootstrap |
+
+Dependency rule:
+
+```
+integration/host → integration/platform + integration/renderer → fork/Include (public API only)
+```
+
+Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src/feature/ui/`.
+
 ## Base subfolders
 
 | Path | Contents |

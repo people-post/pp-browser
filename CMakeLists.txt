@@ -59,17 +59,18 @@ add_subdirectory(src/libp2p EXCLUDE_FROM_ALL)
 pp_configure_status("libp2p configured")
 
 set(PP_BROWSER_BACKEND_SOURCES
-  src/render/integration/RmlUi_Platform_SDL.cpp
-  src/render/integration/RmlUi_Renderer_GL3.cpp
-  src/render/integration/BrowserHost.cpp
+  src/render/integration/platform/RmlUi_Platform_SDL.cpp
+  src/render/integration/renderer/RmlUi_Renderer_GL3.cpp
+  src/render/integration/host/BrowserHost.cpp
 )
 
 add_library(pp_rmlui_backend STATIC ${PP_BROWSER_BACKEND_SOURCES})
 target_compile_definitions(pp_rmlui_backend PUBLIC RMLUI_SDL_VERSION_MAJOR=3)
 target_include_directories(pp_rmlui_backend PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/Include
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/Backends
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/integration
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/fork/Include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/integration/platform
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/integration/renderer
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/render/integration/host
 )
 target_link_libraries(pp_rmlui_backend PUBLIC
   RmlUi::Core

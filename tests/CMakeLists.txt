@@ -126,7 +126,7 @@ pp_browser_add_test(calendar_helper_test pp_browser_calendar_helper_test)
 
 add_executable(pp_browser_click_routing_test click_routing_test.cpp)
 pp_browser_link_rmlui_core(pp_browser_click_routing_test)
-target_include_directories(pp_browser_click_routing_test PRIVATE ${CMAKE_SOURCE_DIR}/src/render/Source/Core)
+target_include_directories(pp_browser_click_routing_test PRIVATE ${CMAKE_SOURCE_DIR}/src/render/fork/Source/Core)
 pp_browser_add_test(click_routing_test pp_browser_click_routing_test)
 
 add_executable(pp_browser_chat_action_dispatcher_test chat_action_dispatcher_test.cpp)

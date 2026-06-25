@@ -6,8 +6,8 @@ This document orients coding agents working in this repository.
 
 pp-browser is a native AI-oriented UI shell:
 
-- **SDL3 + OpenGL3** — windowing (`src/render/backends/`)
-- **Hard-forked RmlUi** — UI layout in `src/render/`
+- **SDL3 + OpenGL3** — windowing (`src/render/integration/`)
+- **Hard-forked RmlUi** — UI layout in `src/render/fork/`
 - **Hard-forked libp2p** — P2P networking in `src/libp2p/`
 - **Third-party libs** — FreeType, nlohmann/json, curl, SDL3, SDL3_image, and libp2p deps in [`third_party/`](third_party/)
 - **Four-layer source tree** — `src/common/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/SRC_LAYOUT.md](docs/SRC_LAYOUT.md)
@@ -16,19 +16,19 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
 
 ## RmlUi is maintained in-tree
 
-We **own and modify** the vendored copy under [`src/render/`](src/render/). It is not a submodule.
+We **own and modify** the vendored copy under [`src/render/fork/`](src/render/fork/). It is not a submodule.
 
 - Edit RmlUi directly when app-level workarounds are insufficient (layout, text selection, new properties, etc.).
 - Document fork-specific changes in [docs/RMLUI_UPSTREAM.md](docs/RMLUI_UPSTREAM.md).
-- App-specific SDL/GL glue stays in [`src/render/backends/`](src/render/backends/), not in the fork.
+- App-specific SDL/GL glue stays in [`src/render/integration/`](src/render/integration/), not in the fork.
 
 ### Fork features (pp-browser)
 
 | Feature | Location | Usage |
 |---------|----------|--------|
-| Text selection in static content | `src/render/Source/Core/Elements/ElementSelectableText.*`, `SelectionController.*` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
-| User-agent baseline styles | `src/render/Source/Core/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
-| List markers (workaround) | `src/render/Source/Core/ListMarker.*`, `Layout/InlineLevelBox.cpp` | `ul`/`ol` bullets until `list-style` exists — see [RMLUI_UPSTREAM.md](docs/RMLUI_UPSTREAM.md) |
+| Text selection in static content | `src/render/fork/Source/Core/Elements/ElementSelectableText.*`, `SelectionController.*` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
+| User-agent baseline styles | `src/render/fork/Source/Core/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
+| List markers (workaround) | `src/render/fork/Source/Core/ListMarker.*`, `Layout/InlineLevelBox.cpp` | `ul`/`ol` bullets until `list-style` exists — see [RMLUI_UPSTREAM.md](docs/RMLUI_UPSTREAM.md) |
 
 ## libp2p is maintained in-tree
 

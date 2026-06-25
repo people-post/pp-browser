@@ -5,7 +5,7 @@ AI-native browser shell built with **SDL3** and a **hard-forked [RmlUi](https://
 ## Features
 
 - Cross-platform native window (Linux, Windows, macOS)
-- Vendored RmlUi source under `src/render/`
+- Vendored RmlUi source under `src/render/fork/`
 - MCP-oriented action routing and LLM UI generation scaffolding
 - Interactive search demo: `./build/pp-browser --demo search`
 
@@ -15,6 +15,6 @@ See [docs/BUILD.md](docs/BUILD.md).
 
 ## Third-party notice
 
-RmlUi is vendored at `src/render/` (MIT). Provenance: `src/render/UPSTREAM.json`.
+RmlUi is vendored at `src/render/fork/` (MIT). Provenance: `src/render/fork/UPSTREAM.json`.
 
 Lato font in `assets/fonts/` is from RmlUi samples (SIL Open Font License).

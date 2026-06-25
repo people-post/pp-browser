@@ -6,7 +6,7 @@ pp-browser routes user input through four layers. Each layer has a single respon
 
 ```
 SDL events
-  → integration/RmlSDL::InputEventHandler     (translate only)
+  → integration/platform/RmlSDL::InputEventHandler  (translate only)
   → Rml::Context::Process*                    (focus, hover, click, keyboard)
   → SelectionController (selectable="text")   (static text selection)
   → base/ui/InputCoordinator                     (global keyboard shortcuts)
@@ -14,15 +14,15 @@ SDL events
 
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
-| Platform | `src/render/integration/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
-| RmlUi core | `src/render/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; browser-style press/release routing via `ClickRouting::ResolveClickTarget`; UAF-safe click dispatch |
+| Platform | `src/render/integration/platform/` | SDL → `Context::Process*`; HiDPI; mouse position sync before button events |
+| RmlUi core | `src/render/fork/Source/Core/Context.cpp`, `ClickRouting.cpp` | Focus/hover/click; browser-style press/release routing via `ClickRouting::ResolveClickTarget`; UAF-safe click dispatch |
 | Fork selection | `SelectionController`, `ElementSelectableText` | Document-wide drag-select and Ctrl+C via element participation hooks |
 | Editor widgets | `WidgetTextInput` | Focused `input`/`textarea` selection, cursor, IME, cut/paste |
 | Base UI | `src/base/ui/InputCoordinator.*` | Shortcuts not declared in RML (Escape quit, Enter-to-send) |
 
 **Selection interaction** is split: read-only bubbles use `SelectionController` (drag without stealing focus from the composer); editors use `WidgetTextInput` when focused. **Selection rendering** is shared: `SelectionHighlight` resolves colors from RCSS `selection` rules and builds highlight quads; static text paints per `ElementText`, editors paint during `FormatElement`.
 
-`src/render/Backends/` is an upstream reference copy. The running app compiles only `src/render/integration/`. Edit integration files for runtime behavior; do not dual-edit Platform SDL in `Backends/`.
+`src/render/fork/reference/backends/` is an upstream reference copy. The running app compiles only `src/render/integration/`. Edit integration files for runtime behavior; do not dual-edit Platform SDL in `reference/backends/`.
 
 ## Event flow (keyboard)
 

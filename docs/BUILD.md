@@ -16,7 +16,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 **System packages:** X11 and OpenGL development headers on Linux for the GUI.
 
-RmlUi is **hard-forked** under `src/render/`. libp2p is **hard-forked** under `src/libp2p/` (not in `third_party/`).
+RmlUi is **hard-forked** under `src/render/fork/`. libp2p is **hard-forked** under `src/libp2p/` (not in `third_party/`).
 
 If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
 

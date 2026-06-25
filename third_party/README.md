@@ -2,7 +2,7 @@
 
 Vendored upstream libraries built via `add_subdirectory` from [`cmake/dependencies.cmake`](../cmake/dependencies.cmake).
 
-RmlUi remains a hard fork under [`src/render/`](../src/render/), not in this directory.
+RmlUi remains a hard fork under [`src/render/fork/`](../src/render/fork/), not in this directory.
 
 libp2p itself is a hard fork under [`src/libp2p/`](../src/libp2p/), not here. This directory holds **libp2p's external dependencies**.
 
