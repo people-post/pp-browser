@@ -32,7 +32,7 @@ include/generated/*
 peers.list
 cmake-build*
 
-deps
+/deps
 .gtm
 /.gtm/
 
