@@ -1,6 +1,6 @@
 # Releasing pp-browser
 
-Tag-triggered CI builds unsigned macOS and Windows installers and publishes them to [GitHub Releases](https://github.com/people-post/pp-browser/releases).
+Tag-triggered CI builds unsigned macOS and Windows installers, an Android release APK, and publishes them to [GitHub Releases](https://github.com/people-post/pp-browser/releases).
 
 ## Tag convention
 
@@ -28,7 +28,8 @@ git push origin v0.1.0
 4. GitHub Actions workflow [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs automatically:
    - **macOS**: builds `pp-browser.app`, packages a `.dmg`
    - **Windows**: builds the app, packages an NSIS `.exe` installer
-5. When both jobs succeed, a GitHub Release is created with both artifacts attached.
+   - **Android**: builds a release APK (`assembleRelease`) with native code compiled in Release mode
+5. When all jobs succeed, a GitHub Release is created with the artifacts attached.
 
 Release builds use:
 
@@ -40,6 +41,7 @@ Release builds use:
 |----------|------|----------|
 | macOS (Apple Silicon) | `pp-browser-<version>-macos.dmg` | Drag-and-drop install of `pp-browser.app` |
 | Windows x64 | `pp-browser-<version>-windows-x64.exe` | NSIS installer (exe + `assets/` under install dir) |
+| Android | `pp-browser-<version>-android.apk` | Universal APK (`armeabi-v7a`, `arm64-v8a`, `x86_64`); signed with the debug keystore until a release keystore is configured |
 
 ## Installing unsigned builds
 

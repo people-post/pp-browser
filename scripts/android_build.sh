@@ -12,15 +12,31 @@ require_env() {
   fi
 }
 
+gradle_version_args() {
+  local args=()
+  if [[ -n "${PP_BROWSER_VERSION:-}" ]]; then
+    args+=("-PppBrowserVersion=${PP_BROWSER_VERSION}")
+  fi
+  if [[ -n "${PP_BROWSER_RELEASE_VERSION:-}" ]]; then
+    args+=("-PppBrowserReleaseVersion=${PP_BROWSER_RELEASE_VERSION}")
+  fi
+  printf '%s\n' "${args[@]}"
+}
+
 usage() {
   cat <<EOF
 Usage: $(basename "$0") <command>
 
 Commands:
-  apk       Build debug APK (assembleDebug)
-  install   Build and install debug APK on a connected device/emulator
-            Set ANDROID_SERIAL to target one device when several are connected.
-  configure Optional: run a standalone CMake configure for Android (sanity check)
+  apk            Build debug APK (assembleDebug)
+  apk-release    Build release APK (assembleRelease)
+  install        Build and install debug APK on a connected device/emulator
+                   Set ANDROID_SERIAL to target one device when several are connected.
+  configure      Optional: run a standalone CMake configure for Android (sanity check)
+
+Optional environment variables:
+  PP_BROWSER_VERSION          Numeric version passed to CMake (e.g. 0.1.0)
+  PP_BROWSER_RELEASE_VERSION  Full release version (e.g. 0.1.0-rc1)
 
 Requires:
   ANDROID_SDK_ROOT (or ANDROID_HOME)
@@ -36,7 +52,15 @@ case "${cmd}" in
     require_env ANDROID_SDK_ROOT
     require_env ANDROID_NDK_HOME
     cd "${ANDROID_DIR}"
-    ./gradlew assembleDebug
+    mapfile -t version_args < <(gradle_version_args)
+    ./gradlew assembleDebug "${version_args[@]}"
+    ;;
+  apk-release)
+    require_env ANDROID_SDK_ROOT
+    require_env ANDROID_NDK_HOME
+    cd "${ANDROID_DIR}"
+    mapfile -t version_args < <(gradle_version_args)
+    ./gradlew assembleRelease "${version_args[@]}"
     ;;
   install)
     require_env ANDROID_SDK_ROOT

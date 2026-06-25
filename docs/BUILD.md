@@ -132,8 +132,17 @@ export ANDROID_NDK_HOME=/path/to/android/ndk
 ### Build and install
 
 ```bash
-./scripts/android_build.sh apk       # assembleDebug
-./scripts/android_build.sh install   # installDebug (requires adb device/emulator)
+./scripts/android_build.sh apk          # assembleDebug
+./scripts/android_build.sh apk-release  # assembleRelease (unsigned; debug keystore)
+./scripts/android_build.sh install      # installDebug (requires adb device/emulator)
+```
+
+For tagged releases, pass version metadata to CMake:
+
+```bash
+export PP_BROWSER_VERSION=0.1.0
+export PP_BROWSER_RELEASE_VERSION=0.1.0-rc1
+./scripts/android_build.sh apk-release
 ```
 
 The first clean NDK build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../assets/) are packaged into the APK automatically.

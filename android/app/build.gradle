@@ -3,6 +3,8 @@ plugins {
 }
 
 def buildWithCMake = true
+def ppBrowserVersion = project.findProperty('ppBrowserVersion') ?: '0.1.0'
+def ppBrowserReleaseVersion = project.findProperty('ppBrowserReleaseVersion') ?: ppBrowserVersion
 
 android {
     namespace "dev.pp_browser.app"
@@ -13,12 +15,14 @@ android {
         minSdkVersion 24
         targetSdkVersion 35
         versionCode 1
-        versionName "0.1.0"
+        versionName ppBrowserReleaseVersion
         externalNativeBuild {
             cmake {
                 arguments "-DANDROID_PLATFORM=android-24",
                           "-DANDROID_STL=c++_static",
-                          "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+                          "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                          "-DPP_BROWSER_VERSION=${ppBrowserVersion}",
+                          "-DPP_BROWSER_RELEASE_VERSION=${ppBrowserReleaseVersion}"
                 abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
             }
         }
@@ -28,6 +32,8 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Unsigned CI/local release APKs until a release keystore is configured.
+            signingConfig signingConfigs.debug
         }
     }
 
