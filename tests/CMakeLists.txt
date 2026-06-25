@@ -143,6 +143,13 @@ set(PP_BROWSER_CONFIG_TEST_SOURCES
   ${CMAKE_SOURCE_DIR}/src/feature/settings/SettingsLogic.cpp
 )
 
+set(PP_BROWSER_SETTINGS_SECTION_TEST_SOURCES
+  ${PP_BROWSER_CONFIG_TEST_SOURCES}
+  ${CMAKE_SOURCE_DIR}/src/feature/settings/LlmSettingsSection.cpp
+  ${CMAKE_SOURCE_DIR}/src/feature/settings/AppearanceSettingsSection.cpp
+  ${CMAKE_SOURCE_DIR}/src/feature/settings/StorageSettingsSection.cpp
+)
+
 add_executable(pp_browser_desktop_path_provider_test desktop_path_provider_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/IPathProvider.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/DesktopPathProvider.cpp)
@@ -154,6 +161,15 @@ target_compile_definitions(pp_browser_config_merge_test PRIVATE PP_BROWSER_ASSET
 target_link_libraries(pp_browser_config_merge_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_config_merge_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(config_merge_test pp_browser_config_merge_test)
+
+add_executable(pp_browser_settings_sections_test settings_sections_test.cpp
+  ${PP_BROWSER_SETTINGS_SECTION_TEST_SOURCES}
+  ${CMAKE_SOURCE_DIR}/src/base/data/AppPaths.cpp
+  ${CMAKE_SOURCE_DIR}/src/base/platform/IPathProvider.cpp
+  ${CMAKE_SOURCE_DIR}/src/base/platform/DesktopPathProvider.cpp)
+target_link_libraries(pp_browser_settings_sections_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_settings_sections_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_test(settings_sections_test pp_browser_settings_sections_test)
 
 add_executable(pp_browser_session_store_test session_store_test.cpp ${PP_BROWSER_CONFIG_TEST_SOURCES})
 target_link_libraries(pp_browser_session_store_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json)

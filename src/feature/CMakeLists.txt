@@ -33,6 +33,10 @@ set(PP_BROWSER_FEATURE_SOURCES
   search/SearchDemo.cpp
   dynamic/DynamicRmlDemo.cpp
   settings/SettingsLogic.cpp
+  settings/LlmSettingsSection.cpp
+  settings/AppearanceSettingsSection.cpp
+  settings/StorageSettingsSection.cpp
+  settings/SettingsSections.cpp
 )
 
 add_library(pp_feature STATIC ${PP_BROWSER_FEATURE_SOURCES})

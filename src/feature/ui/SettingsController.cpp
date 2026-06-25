@@ -1,7 +1,5 @@
 #include "feature/ui/SettingsController.h"
 
-#include "base/data/AppPaths.h"
-#include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
 #include "base/platform/BrowserThread.h"
 #include "feature/ui/DataModelHost.h"
@@ -24,20 +22,14 @@ Rml::String EventValue(Rml::Event& ev) {
   return ev.GetParameter<Rml::String>("value", Rml::String());
 }
 
-const char* BlockName(SettingsController::SettingsBlock block) {
-  switch (block) {
-  case SettingsController::SettingsBlock::Llm:
-    return "llm";
-  case SettingsController::SettingsBlock::Appearance:
-    return "appearance";
-  }
-  return "unknown";
-}
-
 } // namespace
 
 SettingsController::SettingsController() {
   redirectLogger("SettingsController");
+  section_handlers_ = CreateSettingsSections();
+  for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
+    section_handlers_by_id_[handler->Id()] = handler.get();
+  }
   InitSections();
 }
 
@@ -46,29 +38,52 @@ SettingsController& SettingsController::Instance() {
   return controller;
 }
 
+SettingsSectionHandler* SettingsController::FindHandler(const std::string& section_id) {
+  const auto it = section_handlers_by_id_.find(section_id);
+  return it == section_handlers_by_id_.end() ? nullptr : it->second;
+}
+
+const SettingsSectionHandler* SettingsController::FindHandler(const std::string& section_id) const {
+  const auto it = section_handlers_by_id_.find(section_id);
+  return it == section_handlers_by_id_.end() ? nullptr : it->second;
+}
+
 void SettingsController::InitSections() {
-  sections_ = {
-      {.id = "llm", .title = "LLM", .subtitle = "Model, endpoint, API key"},
-      {.id = "appearance", .title = "Appearance", .subtitle = "Light, dark, or system theme"},
-      {.id = "storage", .title = "Storage", .subtitle = "Profile and data paths"},
-  };
+  sections_.clear();
+  for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
+    const SettingsSectionListItem item = handler->ListItem();
+    sections_.push_back({.id = item.id.c_str(), .title = item.title.c_str(), .subtitle = item.subtitle.c_str()});
+  }
+}
+
+void SettingsController::PullBindingsToUiState() {
+  ui_state_.llm_preset = bindings_.llm_preset.c_str();
+  ui_state_.llm_base_url = bindings_.llm_base_url.c_str();
+  ui_state_.llm_model = bindings_.llm_model.c_str();
+  ui_state_.llm_api_key = bindings_.llm_api_key.c_str();
+  ui_state_.llm_api_key_env = bindings_.llm_api_key_env.c_str();
+  ui_state_.appearance = bindings_.appearance.c_str();
+}
+
+void SettingsController::PushUiStateToBindings() {
+  bindings_.llm_preset = ui_state_.llm_preset.c_str();
+  bindings_.llm_base_url = ui_state_.llm_base_url.c_str();
+  bindings_.llm_model = ui_state_.llm_model.c_str();
+  bindings_.llm_api_key = ui_state_.llm_api_key.c_str();
+  bindings_.llm_api_key_env = ui_state_.llm_api_key_env.c_str();
+  bindings_.appearance = ui_state_.appearance.c_str();
+  bindings_.profile_label = ui_state_.profile_label.c_str();
+  bindings_.config_dir = ui_state_.config_dir.c_str();
+  bindings_.data_dir = ui_state_.data_dir.c_str();
+  bindings_.profile_dir = ui_state_.profile_dir.c_str();
 }
 
 void SettingsController::SyncBindingsFromSession() {
   const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
-  const AppConfig& config = bootstrap.config;
-
-  draft_.llm_preset = ResolvePreset(config);
-  draft_.llm_base_url = config.llm.base_url;
-  draft_.llm_model = config.llm.model;
-  draft_.llm_api_key = config.llm.api_key;
-  draft_.llm_api_key_env = config.llm_api_key_env;
-  draft_.appearance = bootstrap.profile_prefs.appearance;
-
-  display_.profile_label = bootstrap.profile_registry.ActiveProfileId();
-  display_.config_dir = AppPaths::ConfigDir();
-  display_.data_dir = bootstrap.data_dir;
-  display_.profile_dir = bootstrap.profile_data_dir;
+  for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
+    handler->SyncFromSession(bootstrap, ui_state_);
+  }
+  PushUiStateToBindings();
 }
 
 void SettingsController::ReloadFromDisk() {
@@ -100,16 +115,16 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("selected_title", &controller.selected_title_);
     ctor.Bind("compact_layout", &controller.compact_layout_);
     ctor.Bind("show_detail", &controller.show_detail_);
-    ctor.Bind("llm_preset", &controller.draft_.llm_preset);
-    ctor.Bind("llm_base_url", &controller.draft_.llm_base_url);
-    ctor.Bind("llm_model", &controller.draft_.llm_model);
-    ctor.Bind("llm_api_key", &controller.draft_.llm_api_key);
-    ctor.Bind("llm_api_key_env", &controller.draft_.llm_api_key_env);
-    ctor.Bind("appearance", &controller.draft_.appearance);
-    ctor.Bind("profile_label", &controller.display_.profile_label);
-    ctor.Bind("config_dir", &controller.display_.config_dir);
-    ctor.Bind("data_dir", &controller.display_.data_dir);
-    ctor.Bind("profile_dir", &controller.display_.profile_dir);
+    ctor.Bind("llm_preset", &controller.bindings_.llm_preset);
+    ctor.Bind("llm_base_url", &controller.bindings_.llm_base_url);
+    ctor.Bind("llm_model", &controller.bindings_.llm_model);
+    ctor.Bind("llm_api_key", &controller.bindings_.llm_api_key);
+    ctor.Bind("llm_api_key_env", &controller.bindings_.llm_api_key_env);
+    ctor.Bind("appearance", &controller.bindings_.appearance);
+    ctor.Bind("profile_label", &controller.bindings_.profile_label);
+    ctor.Bind("config_dir", &controller.bindings_.config_dir);
+    ctor.Bind("data_dir", &controller.bindings_.data_dir);
+    ctor.Bind("profile_dir", &controller.bindings_.profile_dir);
     ctor.Bind("status", &controller.status_);
     ctor.BindEventCallback("select_section", &SettingsController::SelectSectionCallback);
     ctor.BindEventCallback("back_to_list", &SettingsController::BackToListCallback);
@@ -174,8 +189,8 @@ void SettingsController::OnShellLayoutSynced() {
 
 void SettingsController::OnNavTabActivated() {
   log().info << "OnNavTabActivated";
-  pending_flush_block_.reset();
-  pending_flush_at_ms_ = 0;
+  dirty_sections_.clear();
+  debounce_deadline_ms_ = 0;
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
@@ -221,110 +236,123 @@ void SettingsController::OpenSettings() {
   }
 }
 
-SettingsDraft SettingsController::ToLogicDraft() const {
-  SettingsDraft draft;
-  draft.llm_preset = draft_.llm_preset.c_str();
-  draft.llm_base_url = draft_.llm_base_url.c_str();
-  draft.llm_model = draft_.llm_model.c_str();
-  draft.llm_api_key = draft_.llm_api_key.c_str();
-  draft.llm_api_key_env = draft_.llm_api_key_env.c_str();
-  return draft;
-}
-
-void SettingsController::ScheduleBlockFlush(SettingsBlock block) {
+void SettingsController::MarkSectionDirty(const std::string& section_id) {
   if (suppress_auto_save_) {
-    log().info << "ScheduleBlockFlush(" << BlockName(block) << ") suppressed during UI transition";
+    log().info << "MarkSectionDirty(" << section_id << ") suppressed during UI transition";
     return;
   }
-  pending_flush_block_ = block;
-  pending_flush_at_ms_ = SDL_GetTicks() + kDebounceMs;
+
+  SettingsSectionHandler* handler = FindHandler(section_id);
+  if (!handler || !handler->IsWritable()) {
+    return;
+  }
+
+  dirty_sections_.insert(section_id);
+  if (handler->FlushMode() == SettingsFlushMode::Debounced) {
+    debounce_deadline_ms_ = SDL_GetTicks() + kDebounceMs;
+    return;
+  }
+
+  FlushSection(section_id);
 }
 
 void SettingsController::FlushPending() {
-  if (!pending_flush_block_) {
+  FlushAllDirty();
+}
+
+void SettingsController::FlushAllDirty() {
+  if (dirty_sections_.empty()) {
+    debounce_deadline_ms_ = 0;
     return;
   }
-  const SettingsBlock block = *pending_flush_block_;
-  pending_flush_block_.reset();
-  pending_flush_at_ms_ = 0;
-  FlushBlock(block);
+
+  for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
+    if (dirty_sections_.count(handler->Id()) == 0) {
+      continue;
+    }
+    if (!FlushSection(handler->Id())) {
+      return;
+    }
+  }
 }
 
 void SettingsController::Tick() {
-  if (!pending_flush_block_ || pending_flush_at_ms_ == 0) {
+  if (debounce_deadline_ms_ == 0 || dirty_sections_.empty()) {
     return;
   }
-  if (SDL_GetTicks() >= pending_flush_at_ms_) {
-    FlushPending();
+  if (SDL_GetTicks() >= debounce_deadline_ms_) {
+    debounce_deadline_ms_ = 0;
+    for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
+      if (handler->FlushMode() != SettingsFlushMode::Debounced) {
+        continue;
+      }
+      if (dirty_sections_.count(handler->Id()) == 0) {
+        continue;
+      }
+      if (!FlushSection(handler->Id())) {
+        return;
+      }
+    }
   }
 }
 
-bool SettingsController::FlushBlock(SettingsBlock block) {
+bool SettingsController::FlushSection(const std::string& section_id) {
   if (suppress_auto_save_) {
-    log().info << "FlushBlock(" << BlockName(block) << ") suppressed during UI transition";
+    log().info << "FlushSection(" << section_id << ") suppressed during UI transition";
     return true;
   }
 
-  pending_flush_block_.reset();
-  pending_flush_at_ms_ = 0;
-
-  log().info << "FlushBlock(" << BlockName(block) << ")";
-
-  if (block == SettingsBlock::Llm) {
-    const AppConfig config =
-        ApplySettingsDraft(SessionStore::Instance().Snapshot().config, ToLogicDraft());
-
-    if (auto saved = SessionStore::Instance().SaveConfig(config); !saved) {
-      status_ = saved.error().message;
-      DataModelHost::Instance().Dirty("settings", "status");
-      return false;
+  SettingsSectionHandler* handler = FindHandler(section_id);
+  if (!handler || !handler->IsWritable()) {
+    dirty_sections_.erase(section_id);
+    if (dirty_sections_.empty()) {
+      debounce_deadline_ms_ = 0;
     }
-  } else if (block == SettingsBlock::Appearance) {
-    ProfilePreferences profile_prefs = SessionStore::Instance().Snapshot().profile_prefs;
-    profile_prefs.appearance = draft_.appearance.c_str();
-    if (auto saved = SessionStore::Instance().SaveProfilePrefs(profile_prefs); !saved) {
-      status_ = saved.error().message;
-      DataModelHost::Instance().Dirty("settings", "status");
-      return false;
-    }
+    return true;
   }
 
-  SyncBindingsFromSession();
+  log().info << "FlushSection(" << section_id << ")";
+
+  PullBindingsToUiState();
+  if (auto flushed = handler->Flush(ui_state_, SessionStore::Instance()); !flushed) {
+    status_ = flushed.error().message;
+    DataModelHost::Instance().Dirty("settings", "status");
+    return false;
+  }
+
+  dirty_sections_.erase(section_id);
+  if (dirty_sections_.empty()) {
+    debounce_deadline_ms_ = 0;
+  }
+
   status_ = "";
+  PushUiStateToBindings();
   DirtyAll();
-  MaybeShowSaveToast(block);
+  MaybeShowSaveToast(section_id);
   ShellHost::Instance().DirtyWindow();
   return true;
 }
 
-void SettingsController::MaybeShowSaveToast(SettingsBlock block) {
+void SettingsController::MaybeShowSaveToast(const std::string& section_id) {
   const uint64_t now = SDL_GetTicks();
-  if (last_toast_block_ == block && now - last_toast_at_ms_ < kToastSuppressMs) {
+  if (last_toast_section_ == section_id && now - last_toast_at_ms_ < kToastSuppressMs) {
     return;
   }
-  last_toast_block_ = block;
+  last_toast_section_ = section_id;
   last_toast_at_ms_ = now;
   ShellFeedback::ShowToast(ShellHost::Instance().State(), "Settings saved");
 }
 
 void SettingsController::OnResetSection(const std::string& section_id) {
-  if (section_id == "llm") {
-    const AppConfig defaults = SessionStore::Instance().DefaultConfig();
-    draft_.llm_preset = ResolvePreset(defaults);
-    draft_.llm_base_url = defaults.llm.base_url;
-    draft_.llm_model = defaults.llm.model;
-    draft_.llm_api_key = defaults.llm.api_key;
-    draft_.llm_api_key_env = defaults.llm_api_key_env;
-    DirtyAll();
-    FlushBlock(SettingsBlock::Llm);
+  SettingsSectionHandler* handler = FindHandler(section_id);
+  if (!handler || !handler->IsWritable()) {
     return;
   }
 
-  if (section_id == "appearance") {
-    draft_.appearance = SessionStore::Instance().DefaultProfilePrefs().appearance;
-    DirtyAll();
-    FlushBlock(SettingsBlock::Appearance);
-  }
+  handler->ResetToDefaults(ui_state_, SessionStore::Instance());
+  PushUiStateToBindings();
+  DirtyAll();
+  FlushSection(section_id);
 }
 
 void SettingsController::CompleteSectionSelection(bool expanded) {
@@ -410,7 +438,7 @@ void SettingsController::ResetSectionCallback(Rml::DataModelHandle /*model*/, Rm
 
 void SettingsController::OnLlmFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                    const Rml::VariantList& /*args*/) {
-  Instance().ScheduleBlockFlush(SettingsBlock::Llm);
+  Instance().MarkSectionDirty("llm");
 }
 
 void SettingsController::OnLlmPresetChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
@@ -419,14 +447,22 @@ void SettingsController::OnLlmPresetChangedCallback(Rml::DataModelHandle /*model
   if (controller.suppress_auto_save_) {
     return;
   }
+
   const Rml::String value = EventValue(ev);
   if (!value.empty()) {
-    controller.draft_.llm_preset = value;
+    controller.bindings_.llm_preset = value;
   }
-  if (controller.draft_.llm_preset.c_str() == ResolvePreset(SessionStore::Instance().Snapshot().config)) {
+
+  controller.PullBindingsToUiState();
+  const SettingsSectionHandler* handler = controller.FindHandler("llm");
+  if (!handler) {
     return;
   }
-  controller.FlushBlock(SettingsBlock::Llm);
+  if (handler->IsPersisted(controller.ui_state_, SessionStore::Instance().Snapshot())) {
+    return;
+  }
+
+  controller.FlushSection("llm");
 }
 
 void SettingsController::OnAppearanceChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
@@ -435,15 +471,22 @@ void SettingsController::OnAppearanceChangedCallback(Rml::DataModelHandle /*mode
   if (controller.suppress_auto_save_) {
     return;
   }
+
   const Rml::String value = EventValue(ev);
   if (!value.empty()) {
-    controller.draft_.appearance = value;
+    controller.bindings_.appearance = value;
   }
-  if (controller.draft_.appearance.c_str() ==
-      SessionStore::Instance().Snapshot().profile_prefs.appearance) {
+
+  controller.PullBindingsToUiState();
+  const SettingsSectionHandler* handler = controller.FindHandler("appearance");
+  if (!handler) {
     return;
   }
-  controller.FlushBlock(SettingsBlock::Appearance);
+  if (handler->IsPersisted(controller.ui_state_, SessionStore::Instance().Snapshot())) {
+    return;
+  }
+
+  controller.MarkSectionDirty("appearance");
 }
 
 } // namespace pbr
