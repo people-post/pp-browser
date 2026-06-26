@@ -4,6 +4,7 @@
 #include "Input.h"
 #include "ScriptInterface.h"
 #include "ScrollTypes.h"
+#include "TextLoupe.h"
 #include "Traits.h"
 #include "Types.h"
 
@@ -129,6 +130,15 @@ public:
 	using TouchLongPressCallback = std::function<void(Vector2i position, Element* target)>;
 	/// Invoked when a touch long-press is recognized (static text or text editor).
 	void SetTouchLongPressCallback(TouchLongPressCallback callback);
+
+	/// Registers a callback to capture and draw the touch text magnifier during Context::Render().
+	void SetTextLoupeRenderCallback(TextLoupeRenderCallback callback);
+	/// Returns the merged text loupe state for the current frame.
+	TextLoupeState GetTextLoupeState() const;
+	/// True while at least one touch contact is active.
+	bool HasActiveTouch() const;
+	/// Called by text inputs during touch-driven selection drags.
+	void SetTextLoupeFromWidget(bool active, Vector2f anchor);
 
 	/// Returns the youngest descendent of the given element which is under the given point in screen coordinates.
 	/// @param[in] point The point to test.
@@ -370,6 +380,14 @@ private:
 	};
 	SmallUnorderedMap<TouchId, TouchState> touch_states;
 	TouchLongPressCallback touch_long_press_callback;
+
+	TextLoupeState text_loupe_static_state;
+	bool text_loupe_widget_active = false;
+	Vector2f text_loupe_widget_anchor;
+	TextLoupeRenderCallback text_loupe_render_callback;
+
+	void RefreshTextLoupeState(Vector2f anchor);
+	void ClearTextLoupeState();
 
 	// Controller for various scroll behavior modes.
 	UniquePtr<ScrollController> scroll_controller; // [not-null]

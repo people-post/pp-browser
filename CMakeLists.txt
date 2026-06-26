@@ -82,6 +82,7 @@ pp_configure_status("libp2p configured")
 set(PP_BROWSER_BACKEND_SOURCES
   src/render/integration/platform/RmlUi_Platform_SDL.cpp
   src/render/integration/renderer/RmlUi_Renderer_GL3.cpp
+  src/render/integration/renderer/TextLoupeRenderer.cpp
   src/render/integration/host/BrowserHost.cpp
   src/render/integration/host/TouchSimOverlay.cpp
 )

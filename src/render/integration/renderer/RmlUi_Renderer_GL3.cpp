@@ -1746,6 +1746,37 @@ void RenderInterface_GL3::ReleaseShader(Rml::CompiledShaderHandle shader_handle)
 	delete reinterpret_cast<CompiledShader*>(shader_handle);
 }
 
+void RenderInterface_GL3::BindTopLayerFramebuffer()
+{
+	glBindFramebuffer(GL_FRAMEBUFFER, render_layers.GetTopLayer().framebuffer);
+	glViewport(0, 0, viewport_width, viewport_height);
+}
+
+void RenderInterface_GL3::BlitTopLayerRegion(Rml::Rectanglei src_region_top_left, unsigned int dest_framebuffer, int dest_width,
+	int dest_height)
+{
+	if (!src_region_top_left.Valid() || dest_width <= 0 || dest_height <= 0)
+		return;
+
+	Rml::Rectanglei clamped = src_region_top_left;
+	clamped.p0.x = Rml::Math::Clamp(clamped.p0.x, 0, viewport_width);
+	clamped.p0.y = Rml::Math::Clamp(clamped.p0.y, 0, viewport_height);
+	clamped.p1.x = Rml::Math::Clamp(clamped.p1.x, 0, viewport_width);
+	clamped.p1.y = Rml::Math::Clamp(clamped.p1.y, 0, viewport_height);
+	if (!clamped.Valid())
+		return;
+
+	const Rml::Rectanglei src_flipped = VerticallyFlipped(clamped, viewport_height);
+	const Gfx::FramebufferData& source = render_layers.GetTopLayer();
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, source.framebuffer);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dest_framebuffer);
+	glBlitFramebuffer(src_flipped.Left(), src_flipped.Top(), src_flipped.Right(), src_flipped.Bottom(), 0, 0, dest_width, dest_height,
+		GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+	Gfx::CheckGLError("BlitTopLayerRegion");
+}
+
 void RenderInterface_GL3::BlitLayerToPostprocessPrimary(Rml::LayerHandle layer_handle)
 {
 	const Gfx::FramebufferData& source = render_layers.GetLayer(layer_handle);

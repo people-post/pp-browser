@@ -333,6 +333,10 @@ bool Context::Render()
 
 	root->Render();
 
+	const TextLoupeState text_loupe_state = GetTextLoupeState();
+	if (text_loupe_state.active && text_loupe_render_callback)
+		text_loupe_render_callback(TextLoupePhase::Capture, text_loupe_state, *render_manager);
+
 	selection_controller->RenderSelectionHandles();
 
 	// Render the cursor proxy so that any attached drag clone will be rendered below the cursor.
@@ -343,6 +347,9 @@ bool Context::Render()
 			Vector2f((float)Math::Clamp(mouse_position.x, 0, dimensions.x), (float)Math::Clamp(mouse_position.y, 0, dimensions.y)), nullptr);
 		cursor_proxy->Render();
 	}
+
+	if (text_loupe_state.active && text_loupe_render_callback)
+		text_loupe_render_callback(TextLoupePhase::Draw, text_loupe_state, *render_manager);
 
 	render_manager->ResetState();
 
@@ -581,6 +588,53 @@ SelectionController* Context::GetSelectionController()
 void Context::SetTouchLongPressCallback(TouchLongPressCallback callback)
 {
 	touch_long_press_callback = std::move(callback);
+}
+
+void Context::SetTextLoupeRenderCallback(TextLoupeRenderCallback callback)
+{
+	text_loupe_render_callback = std::move(callback);
+}
+
+TextLoupeState Context::GetTextLoupeState() const
+{
+	TextLoupeState state;
+	state.active = text_loupe_static_state.active || text_loupe_widget_active;
+	if (text_loupe_widget_active)
+		state.anchor = text_loupe_widget_anchor;
+	else
+		state.anchor = text_loupe_static_state.anchor;
+	return state;
+}
+
+bool Context::HasActiveTouch() const
+{
+	return !touch_states.empty();
+}
+
+void Context::SetTextLoupeFromWidget(bool active, Vector2f anchor)
+{
+	text_loupe_widget_active = active;
+	if (active)
+		text_loupe_widget_anchor = anchor;
+}
+
+void Context::RefreshTextLoupeState(Vector2f anchor)
+{
+	text_loupe_static_state.active = false;
+	if (touch_states.empty())
+		return;
+
+	if (selection_controller->IsDragging() || selection_controller->IsHandleDragging())
+	{
+		text_loupe_static_state.active = true;
+		text_loupe_static_state.anchor = anchor;
+	}
+}
+
+void Context::ClearTextLoupeState()
+{
+	text_loupe_static_state = {};
+	text_loupe_widget_active = false;
 }
 
 bool Context::AnyTouchSelectionArmed() const
@@ -1262,6 +1316,8 @@ bool Context::ProcessTouchMove(const Touch& touch, int key_modifier_state)
 
 	state->last_position = touch.position;
 
+	RefreshTextLoupeState(touch.position);
+
 	return ProcessMouseMove(static_cast<int>(touch.position.x), static_cast<int>(touch.position.y), key_modifier_state);
 }
 
@@ -1297,6 +1353,8 @@ bool Context::ProcessTouchEnd(const Touch& touch, int key_modifier_state)
 
 	touch_states.erase(touch.identifier);
 
+	ClearTextLoupeState();
+
 	ProcessMouseMove(static_cast<int>(touch.position.x), static_cast<int>(touch.position.y), key_modifier_state);
 
 	// always assume touch press/release events are handled as left mouse button
@@ -1310,6 +1368,8 @@ bool Context::ProcessTouchCancel(const Touch& touch)
 		return false;
 
 	touch_states.erase(touch.identifier);
+
+	ClearTextLoupeState();
 
 	return ProcessMouseButtonUp(0, 0);
 }

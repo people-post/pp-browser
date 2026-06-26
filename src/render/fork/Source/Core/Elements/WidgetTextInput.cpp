@@ -697,7 +697,8 @@ void WidgetTextInput::ProcessEvent(Event& event)
 		}
 		if (IsEventForWidget(event, parent) && handle_drag != SelectionHandleSide::None)
 		{
-			Vector2f mouse_position = Vector2f(event.GetParameter<float>("mouse_x", 0), event.GetParameter<float>("mouse_y", 0));
+			Vector2f absolute_mouse_position = Vector2f(event.GetParameter<float>("mouse_x", 0), event.GetParameter<float>("mouse_y", 0));
+			Vector2f mouse_position = absolute_mouse_position;
 			mouse_position -= text_element->GetAbsoluteOffset();
 			mouse_position.y += parent->GetScrollTop();
 
@@ -710,6 +711,7 @@ void WidgetTextInput::ProcessEvent(Event& event)
 				FormatText();
 
 			ShowCursor(false);
+			UpdateTextLoupe(absolute_mouse_position);
 			event.StopPropagation();
 			break;
 		}
@@ -718,17 +720,19 @@ void WidgetTextInput::ProcessEvent(Event& event)
 	{
 		if (IsEventForWidget(event, parent))
 		{
-			Vector2f mouse_position = Vector2f(event.GetParameter<float>("mouse_x", 0), event.GetParameter<float>("mouse_y", 0));
+			Vector2f absolute_mouse_position = Vector2f(event.GetParameter<float>("mouse_x", 0), event.GetParameter<float>("mouse_y", 0));
+			Vector2f mouse_position = absolute_mouse_position;
 
 			if (selection_length > 0)
 			{
-				const SelectionHandleSide handle = HitTestSelectionHandle(mouse_position);
+				const SelectionHandleSide handle = HitTestSelectionHandle(absolute_mouse_position);
 				if (handle != SelectionHandleSide::None)
 				{
 					handle_drag = handle;
 					pointer_selecting = false;
 					selection_anchor_index = (handle == SelectionHandleSide::Start) ? selection_begin_index + selection_length :
 																						 selection_begin_index;
+					UpdateTextLoupe(absolute_mouse_position);
 					event.StopPropagation();
 					break;
 				}
@@ -765,6 +769,9 @@ void WidgetTextInput::ProcessEvent(Event& event)
 			const bool move_to_cursor = (event == EventId::Drag);
 			ShowCursor(true, move_to_cursor);
 			cancel_next_drag = false;
+
+			if (event == EventId::Drag)
+				UpdateTextLoupe(absolute_mouse_position);
 		}
 	}
 	break;
@@ -781,7 +788,10 @@ void WidgetTextInput::ProcessEvent(Event& event)
 	case EventId::Mouseup:
 	{
 		if (IsEventForWidget(event, parent))
+		{
+			ClearTextLoupeIfTouch();
 			EndHandleDrag();
+		}
 	}
 	break;
 
@@ -1824,10 +1834,28 @@ void WidgetTextInput::UpdateSelectionHandleGeometry()
 		handle_end_geometry = render_manager->MakeGeometry(std::move(end_mesh));
 }
 
+void WidgetTextInput::UpdateTextLoupe(Vector2f absolute_position)
+{
+	Context* context = parent->GetContext();
+	if (!context || !context->HasActiveTouch())
+		return;
+
+	if (pointer_selecting || handle_drag != SelectionHandleSide::None)
+		context->SetTextLoupeFromWidget(true, absolute_position);
+}
+
+void WidgetTextInput::ClearTextLoupeIfTouch()
+{
+	Context* context = parent->GetContext();
+	if (context && context->HasActiveTouch())
+		context->SetTextLoupeFromWidget(false, {});
+}
+
 void WidgetTextInput::EndHandleDrag()
 {
 	handle_drag = SelectionHandleSide::None;
 	pointer_selecting = false;
+	ClearTextLoupeIfTouch();
 	UpdateSelectionHandleGeometry();
 }
 

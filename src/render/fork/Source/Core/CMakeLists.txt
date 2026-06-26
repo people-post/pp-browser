@@ -324,6 +324,7 @@ target_sources(rmlui_core PRIVATE
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/ScriptInterface.h"
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/ScrollTypes.h"
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/SelectionTypes.h"
+	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/TextLoupe.h"
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Span.h"
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/Spritesheet.h"
 	"${PROJECT_SOURCE_DIR}/Include/RmlUi/Core/StableVector.h"

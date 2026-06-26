@@ -76,6 +76,11 @@ public:
 	const Rml::Matrix4f& GetTransform() const;
 	void ResetProgram();
 
+	int GetViewportWidth() const { return viewport_width; }
+	int GetViewportHeight() const { return viewport_height; }
+	void BlitTopLayerRegion(Rml::Rectanglei src_region_top_left, unsigned int dest_framebuffer, int dest_width, int dest_height);
+	void BindTopLayerFramebuffer();
+
 private:
 	void UseProgram(ProgramId program_id);
 	int GetUniformLocation(UniformId uniform_id) const;

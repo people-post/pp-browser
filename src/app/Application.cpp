@@ -20,8 +20,11 @@
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Input.h>
+#include <RmlUi/Core/TextLoupe.h>
 
 #include "RmlUi_Backend.h"
+#include "RmlUi_Renderer_GL3.h"
+#include "TextLoupeRenderer.h"
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
@@ -133,6 +136,11 @@ bool Application::Initialize(const char* window_title, DemoMode demo) {
     Backend::Shutdown();
     return false;
   }
+
+  context->SetTextLoupeRenderCallback([context](Rml::TextLoupePhase phase, const Rml::TextLoupeState& state, Rml::RenderManager&) {
+    TextLoupeRenderer::Render(phase, state, static_cast<RenderInterface_GL3&>(*Backend::GetRenderInterface()),
+      context->GetDensityIndependentPixelRatio());
+  });
 
   Backend::SyncContext(context);
 

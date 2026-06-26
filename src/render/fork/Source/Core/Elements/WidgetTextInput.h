@@ -238,6 +238,8 @@ private:
 	float GetTopToBaseline() const;
 	/// Scroll vertically while drag-selecting when the pointer nears the top/bottom edge.
 	void ScrollForPointerDrag(float local_y);
+	void UpdateTextLoupe(Vector2f absolute_position);
+	void ClearTextLoupeIfTouch();
 	/// Returns the width available for the text contents without overflowing, that is, the content area subtracted by any scrollbar.
 	float GetAvailableWidth() const;
 	/// Returns the height available for the text contents without overflowing, that is, the content area subtracted by any scrollbar.
