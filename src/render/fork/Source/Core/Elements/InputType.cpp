@@ -21,6 +21,8 @@ void InputType::OnUpdate() {}
 
 void InputType::OnRender() {}
 
+void InputType::OnRenderOverlays() {}
+
 void InputType::OnResize() {}
 
 void InputType::OnLayout() {}

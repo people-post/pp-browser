@@ -152,6 +152,29 @@ void BuildSelectionHandleGeometry(Vector2f head_center, float dp_ratio, ColourbP
 	}
 }
 
+void RenderSelectionHandleDebugMarker(RenderManager& render_manager, Vector2f absolute_center, float dp_ratio)
+{
+#if defined(RMLUI_DEBUG_SELECTION_HANDLES)
+	const float r = 14.f * dp_ratio;
+	Mesh mesh;
+	const ColourbPremultiplied fill = Colourb(255, 0, 255, 255).ToPremultiplied();
+	MeshUtilities::GenerateQuad(mesh, absolute_center - Vector2f(r, r), Vector2f(2.f * r, 2.f * r), fill);
+	MeshUtilities::GenerateQuad(mesh, absolute_center + Vector2f(-r, -2.f * dp_ratio), Vector2f(2.f * r, 4.f * dp_ratio),
+		Colourb(255, 255, 0, 255).ToPremultiplied());
+	render_manager.MakeGeometry(std::move(mesh)).Render({});
+#else
+	(void)render_manager;
+	(void)absolute_center;
+	(void)dp_ratio;
+#endif
+}
+
+void RenderSelectionHandleGeometry(const Geometry& geometry, Vector2f translation)
+{
+	if (geometry)
+		geometry.Render(translation.Round());
+}
+
 bool BuildTextSelectionGeometry(ElementText* text_element, int local_start, int local_end, ColourbPremultiplied fill,
 	Geometry& out_geometry, RenderManager& render_manager)
 {

@@ -608,7 +608,7 @@ public:
 
 protected:
 	void Update(float dp_ratio, Vector2f vp_dimensions);
-	void Render();
+	virtual void Render();
 
 	/// Updates definition, computed values, and runs OnPropertyChange on this element.
 	void UpdateProperties(float dp_ratio, Vector2f vp_dimensions);

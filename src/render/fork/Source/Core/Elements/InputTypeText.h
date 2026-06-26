@@ -23,6 +23,9 @@ public:
 	/// Called every render from the host element.
 	void OnRender() override;
 
+	/// Called after child elements render.
+	void OnRenderOverlays() override;
+
 	/// Called when the parent element's size changes.
 	void OnResize() override;
 

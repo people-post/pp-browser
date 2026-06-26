@@ -386,6 +386,11 @@ set_target_properties(rmlui_core PROPERTIES
 generate_rmlui_version_string()
 target_compile_definitions(rmlui_core PRIVATE "RMLUI_VERSION=\"${RMLUI_VERSION_SHORT}\"")
 
+option(RMLUI_DEBUG_SELECTION_HANDLES "Draw magenta/yellow debug markers at selection handle anchors" OFF)
+if(RMLUI_DEBUG_SELECTION_HANDLES)
+	target_compile_definitions(rmlui_core PRIVATE RMLUI_DEBUG_SELECTION_HANDLES)
+endif()
+
 add_subdirectory("Elements")
 add_subdirectory("Layout")
 

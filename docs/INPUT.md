@@ -71,13 +71,19 @@ On touch devices (`SDL_HINT_TOUCH_MOUSE_EVENTS=0`), finger events map to `Contex
 
 When a non-empty text range is selected, iOS-style **lollipop handles** appear at the visual start and end of the range (static chat bubbles and composer textarea).
 
-- **Static bubbles:** `SelectionController` renders handles via `ElementSelectableText::OnRender` after highlight geometry is updated.
-- **Composer:** `WidgetTextInput` renders handles when `selection_length > 0` and the user is not mid drag-select.
+- **Static bubbles:** `SelectionController` renders handles via `ElementSelectableText` after child text (overlay pass).
+- **Composer:** `WidgetTextInput` renders handles in `OnRenderOverlays` after the internal text elements.
 - **Drag start handle** moves only the range start; **drag end handle** moves only the range end.
 - **Touch:** handle hits are tested before scroll slop and before content selection; handle drag sets `selection_armed` and blocks scroll.
 - **Desktop:** same handle hit-test runs in `ProcessMouseButtonDown` before `OnPointerDown`.
 
 Handles are hidden during active content drag-select; they appear after release (or immediately after long-press / double-tap word select once dragging ends).
+
+Static handles render in `Context::Render` after the document tree, with clip masks disabled so rounded bubble corners do not stencil them away.
+
+### Debug markers (optional)
+
+Pass `-DRMLUI_DEBUG_SELECTION_HANDLES=ON` at configure time to draw **magenta squares with yellow crossbars** at the computed start/end anchor positions (useful if handle rendering regresses). Default is off.
 
 ## Simulated touch (desktop dev)
 

@@ -3,6 +3,7 @@
 #include "../../Include/RmlUi/Core/Context.h"
 #include "../../Include/RmlUi/Core/Core.h"
 #include "../../Include/RmlUi/Core/ElementDocument.h"
+#include "../../Include/RmlUi/Core/RenderManager.h"
 #include "../../Include/RmlUi/Core/SystemInterface.h"
 #include "SelectionHighlight.h"
 #include "Elements/ElementSelectableText.h"
@@ -225,8 +226,8 @@ void SelectionController::FinalizeSelection()
 		return;
 
 	RebuildGlobalMap();
-	UpdateSelectionGeometry();
 	dragging = false;
+	UpdateSelectionGeometry();
 }
 
 String SelectionController::GetSelectedText()
@@ -302,8 +303,8 @@ void SelectionController::OnPointerUp()
 		return;
 
 	RebuildGlobalMap();
-	UpdateSelectionGeometry();
 	dragging = false;
+	UpdateSelectionGeometry();
 }
 
 bool SelectionController::OnKeyDown(Input::KeyIdentifier key, int key_modifier_state)
@@ -361,6 +362,8 @@ void SelectionController::ClearUnlessHover(Element* hover)
 
 void SelectionController::UpdateSelectionGeometry()
 {
+	RebuildGlobalMap();
+
 	const int start = Math::Min(anchor_index, focus_index);
 	const int end = Math::Max(anchor_index, focus_index);
 
@@ -383,9 +386,6 @@ void SelectionController::UpdateSelectionGeometry()
 		if (local_start < local_end)
 			block.root->UpdateSelectionHighlight(local_start, local_end);
 	}
-
-	if (!ShouldShowHandles())
-		return;
 
 	for (const RootBlock& block : blocks)
 	{
@@ -505,6 +505,41 @@ void SelectionController::EndHandleDrag()
 	dragging = false;
 	RebuildGlobalMap();
 	UpdateSelectionGeometry();
+}
+
+void SelectionController::RenderSelectionHandles()
+{
+	if (!context || !HasSelection())
+		return;
+
+	RebuildGlobalMap();
+
+	RenderManager& render_manager = context->GetRenderManager();
+	const RenderState saved_state = render_manager.GetState();
+	const float dp_ratio = context->GetDensityIndependentPixelRatio();
+
+	render_manager.SetTransform(nullptr);
+	render_manager.DisableClipMask();
+	render_manager.SetScissorRegion(Rectanglei::FromSize(render_manager.GetViewport()));
+
+	const int start = Math::Min(anchor_index, focus_index);
+	const int end = Math::Max(anchor_index, focus_index);
+
+#if defined(RMLUI_DEBUG_SELECTION_HANDLES)
+	RenderSelectionHandleDebugMarker(render_manager, GetGlobalIndexPosition(start), dp_ratio);
+	RenderSelectionHandleDebugMarker(render_manager, GetGlobalIndexPosition(end), dp_ratio);
+#endif
+
+	if (ShouldShowHandles())
+	{
+		for (ElementSelectableText* root : roots)
+		{
+			if (root)
+				root->RenderSelectionHandlesAbsolute();
+		}
+	}
+
+	render_manager.SetState(saved_state);
 }
 
 } // namespace Rml

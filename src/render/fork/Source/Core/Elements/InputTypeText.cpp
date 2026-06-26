@@ -28,6 +28,11 @@ void InputTypeText::OnRender()
 	widget->OnRender();
 }
 
+void InputTypeText::OnRenderOverlays()
+{
+	widget->OnRenderOverlays();
+}
+
 void InputTypeText::OnResize()
 {
 	widget->OnResize();

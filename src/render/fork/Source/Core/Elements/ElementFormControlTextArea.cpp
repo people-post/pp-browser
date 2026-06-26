@@ -106,6 +106,12 @@ void ElementFormControlTextArea::OnUpdate()
 	widget->OnUpdate();
 }
 
+void ElementFormControlTextArea::Render()
+{
+	Element::Render();
+	widget->OnRenderOverlays();
+}
+
 void ElementFormControlTextArea::OnRender()
 {
 	widget->OnRender();

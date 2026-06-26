@@ -140,9 +140,8 @@ void ElementSelectableText::UpdateSelectionHandles(int local_start_index, int lo
 	if (show_start)
 	{
 		const Vector2f absolute = GetAbsolutePositionForFlatIndex(local_start_index);
-		const Vector2f local = absolute - GetContentRenderOrigin();
 		Mesh mesh = handle_start_geometry.Release(Geometry::ReleaseMode::ClearMesh);
-		BuildSelectionHandleGeometry(local, dp_ratio, fill, mesh);
+		BuildSelectionHandleGeometry(absolute, dp_ratio, fill, mesh);
 		if (!mesh.indices.empty())
 			handle_start_geometry = render_manager->MakeGeometry(std::move(mesh));
 	}
@@ -154,9 +153,8 @@ void ElementSelectableText::UpdateSelectionHandles(int local_start_index, int lo
 	if (show_end)
 	{
 		const Vector2f absolute = GetAbsolutePositionForFlatIndex(local_end_index);
-		const Vector2f local = absolute - GetContentRenderOrigin();
 		Mesh mesh = handle_end_geometry.Release(Geometry::ReleaseMode::ClearMesh);
-		BuildSelectionHandleGeometry(local, dp_ratio, fill, mesh);
+		BuildSelectionHandleGeometry(absolute, dp_ratio, fill, mesh);
 		if (!mesh.indices.empty())
 			handle_end_geometry = render_manager->MakeGeometry(std::move(mesh));
 	}
@@ -166,11 +164,10 @@ void ElementSelectableText::UpdateSelectionHandles(int local_start_index, int lo
 	}
 }
 
-void ElementSelectableText::OnRender()
+void ElementSelectableText::RenderSelectionHandlesAbsolute()
 {
-	const Vector2f translation = GetContentRenderOrigin();
-	handle_start_geometry.Render(translation);
-	handle_end_geometry.Render(translation);
+	RenderSelectionHandleGeometry(handle_start_geometry, {});
+	RenderSelectionHandleGeometry(handle_end_geometry, {});
 }
 
 SelectionDisposition ElementSelectableText::QuerySelection(const SelectionQuery& query)

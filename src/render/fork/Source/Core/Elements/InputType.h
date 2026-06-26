@@ -30,6 +30,9 @@ public:
 	/// Called every render from the host element.
 	virtual void OnRender();
 
+	/// Called after child elements render (e.g. selection handles above text).
+	virtual void OnRenderOverlays();
+
 	/// Called every time the host element's size changes.
 	virtual void OnResize();
 

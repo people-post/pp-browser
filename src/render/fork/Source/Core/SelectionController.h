@@ -41,8 +41,10 @@ public:
 	void EndHandleDrag();
 
 	void UpdateSelectionGeometry();
+	void RenderSelectionHandles();
 	void ClearSelection();
 
+	bool ShouldShowHandles() const;
 	bool ShouldSuppressClick(Element* target) const;
 
 private:
@@ -66,7 +68,6 @@ private:
 	void RebuildGlobalMap();
 	int HitTestGlobal(Vector2f absolute_mouse) const;
 	Vector2f GetGlobalIndexPosition(int global_index);
-	bool ShouldShowHandles() const;
 	ElementSelectableText* FindSelectableContainer(Element* target) const;
 	bool TargetBlocksSelection(Element* target) const;
 	bool IsInsideSelectionRoots(Element* element) const;

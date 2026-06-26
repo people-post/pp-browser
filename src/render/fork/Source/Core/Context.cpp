@@ -333,6 +333,8 @@ bool Context::Render()
 
 	root->Render();
 
+	selection_controller->RenderSelectionHandles();
+
 	// Render the cursor proxy so that any attached drag clone will be rendered below the cursor.
 	if (drag_clone)
 	{

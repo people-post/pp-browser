@@ -53,6 +53,8 @@ public:
 	void SetCompositionRange(int range_start, int range_end);
 
 protected:
+	void Render() override;
+
 	/// Updates the element's underlying type.
 	void OnUpdate() override;
 	/// Renders the element's underlying type.

@@ -81,6 +81,8 @@ public:
 	bool GetIntrinsicDimensions(Vector2f& dimensions, float& ratio) override;
 
 protected:
+	void Render() override;
+
 	/// Updates the control's widget.
 	void OnUpdate() override;
 	/// Renders the control's widget.

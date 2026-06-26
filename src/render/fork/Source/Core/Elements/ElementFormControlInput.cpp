@@ -65,6 +65,13 @@ void ElementFormControlInput::OnUpdate()
 	type->OnUpdate();
 }
 
+void ElementFormControlInput::Render()
+{
+	Element::Render();
+	if (type)
+		type->OnRenderOverlays();
+}
+
 void ElementFormControlInput::OnRender()
 {
 	RMLUI_ASSERT(type);

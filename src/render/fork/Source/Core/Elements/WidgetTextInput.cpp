@@ -16,6 +16,7 @@
 #include "../../../Include/RmlUi/Core/TextInputContext.h"
 #include "../../../Include/RmlUi/Core/TextInputHandler.h"
 #include "../Clock.h"
+#include "../../../Include/RmlUi/Core/RenderManager.h"
 #include "../SelectionHighlight.h"
 #include "ElementTextSelection.h"
 #include <algorithm>
@@ -443,17 +444,46 @@ void WidgetTextInput::OnRender()
 	Vector2f text_translation = parent->GetAbsoluteOffset() - Vector2f(parent->GetScrollLeft(), parent->GetScrollTop());
 	selection_composition_geometry.Render(text_translation);
 
-	const bool show_handles = selection_length > 0 && (handle_drag != SelectionHandleSide::None || !pointer_selecting);
-	if (show_handles)
-	{
-		handle_start_geometry.Render(text_translation);
-		handle_end_geometry.Render(text_translation);
-	}
-
 	if (cursor_visible && selection_length <= 0 && !parent->IsDisabled())
 	{
 		cursor_geometry.Render(text_translation + cursor_position);
 	}
+}
+
+void WidgetTextInput::OnRenderOverlays()
+{
+	RenderSelectionHandlesAbsolute();
+}
+
+void WidgetTextInput::RenderSelectionHandlesAbsolute()
+{
+	const bool show_handles = selection_length > 0 && (handle_drag != SelectionHandleSide::None || !pointer_selecting);
+	if (!show_handles)
+		return;
+
+	Context* context = parent->GetContext();
+	if (!context)
+		return;
+
+	RenderManager& render_manager = context->GetRenderManager();
+	const RenderState saved_state = render_manager.GetState();
+	const float dp_ratio = context->GetDensityIndependentPixelRatio();
+
+	render_manager.SetTransform(nullptr);
+	render_manager.DisableClipMask();
+	render_manager.SetScissorRegion(Rectanglei::FromSize(render_manager.GetViewport()));
+
+#if defined(RMLUI_DEBUG_SELECTION_HANDLES)
+	const Vector2f start_pos = GetAbsolutePositionForByteIndex(selection_begin_index);
+	const Vector2f end_pos = GetAbsolutePositionForByteIndex(selection_begin_index + selection_length);
+	RenderSelectionHandleDebugMarker(render_manager, start_pos, dp_ratio);
+	RenderSelectionHandleDebugMarker(render_manager, end_pos, dp_ratio);
+#endif
+
+	RenderSelectionHandleGeometry(handle_start_geometry, {});
+	RenderSelectionHandleGeometry(handle_end_geometry, {});
+
+	render_manager.SetState(saved_state);
 }
 
 void WidgetTextInput::OnLayout()
@@ -1769,8 +1799,7 @@ void WidgetTextInput::UpdateSelectionHandleGeometry()
 	if (!render_manager)
 		return;
 
-	const bool show_handles = selection_length > 0 && (handle_drag != SelectionHandleSide::None || !pointer_selecting);
-	if (!show_handles)
+	if (selection_length <= 0)
 	{
 		ClearSelectionHandleGeometry();
 		return;
@@ -1781,17 +1810,16 @@ void WidgetTextInput::UpdateSelectionHandleGeometry()
 	if (fill.alpha == 0)
 		fill = Colourb(50, 120, 255, 255).ToPremultiplied();
 
-	Vector2f text_translation = parent->GetAbsoluteOffset() - Vector2f(parent->GetScrollLeft(), parent->GetScrollTop());
-	const Vector2f start_local = GetAbsolutePositionForByteIndex(selection_begin_index) - text_translation;
-	const Vector2f end_local = GetAbsolutePositionForByteIndex(selection_begin_index + selection_length) - text_translation;
+	const Vector2f start_abs = GetAbsolutePositionForByteIndex(selection_begin_index);
+	const Vector2f end_abs = GetAbsolutePositionForByteIndex(selection_begin_index + selection_length);
 
 	Mesh start_mesh = handle_start_geometry.Release(Geometry::ReleaseMode::ClearMesh);
-	BuildSelectionHandleGeometry(start_local, dp_ratio, fill, start_mesh);
+	BuildSelectionHandleGeometry(start_abs, dp_ratio, fill, start_mesh);
 	if (!start_mesh.indices.empty())
 		handle_start_geometry = render_manager->MakeGeometry(std::move(start_mesh));
 
 	Mesh end_mesh = handle_end_geometry.Release(Geometry::ReleaseMode::ClearMesh);
-	BuildSelectionHandleGeometry(end_local, dp_ratio, fill, end_mesh);
+	BuildSelectionHandleGeometry(end_abs, dp_ratio, fill, end_mesh);
 	if (!end_mesh.indices.empty())
 		handle_end_geometry = render_manager->MakeGeometry(std::move(end_mesh));
 }

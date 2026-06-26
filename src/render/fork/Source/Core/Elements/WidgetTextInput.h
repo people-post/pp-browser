@@ -77,6 +77,9 @@ public:
 	void OnUpdate();
 	/// Renders the cursor, if it is visible.
 	void OnRender();
+	/// Renders selection handles on top of text (called after child elements).
+	void OnRenderOverlays();
+	void RenderSelectionHandlesAbsolute();
 	/// End an active selection-handle drag.
 	void EndHandleDrag();
 	/// Formats the widget's internal content.

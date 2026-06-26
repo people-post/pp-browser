@@ -33,9 +33,8 @@ public:
 	void ClearSelectionHighlight();
 	void UpdateSelectionHandles(int local_start_index, int local_end_index, bool show_start, bool show_end);
 	void ClearSelectionHandles();
+	void RenderSelectionHandlesAbsolute();
 	Vector2f GetAbsolutePositionForFlatIndex(int flat_index);
-
-	void OnRender() override;
 
 	void OnSelectionStyleChanged() override;
 
