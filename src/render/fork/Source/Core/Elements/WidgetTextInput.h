@@ -66,10 +66,19 @@ public:
 	/// Force text formatting on the next layout update.
 	void ForceFormattingOnNextLayout();
 
+	enum class SelectionHandleSide { None, Start, End };
+
+	SelectionHandleSide HitTestSelectionHandle(Vector2f absolute_position) const;
+	Vector2f GetAbsolutePositionForByteIndex(int byte_index) const;
+	void UpdateSelectionHandleGeometry();
+	void ClearSelectionHandleGeometry();
+
 	/// Updates the cursor, if necessary.
 	void OnUpdate();
 	/// Renders the cursor, if it is visible.
 	void OnRender();
+	/// End an active selection-handle drag.
+	void EndHandleDrag();
 	/// Formats the widget's internal content.
 	void OnLayout();
 	/// Called when the parent element's size changes.
@@ -254,6 +263,8 @@ private:
 	bool ideal_cursor_position_to_the_right_of_cursor;
 	bool cancel_next_drag;
 	bool force_formatting_on_next_layout;
+	SelectionHandleSide handle_drag = SelectionHandleSide::None;
+	bool pointer_selecting = false;
 
 	// Selection. The start and end indices of the selection are in absolute coordinates.
 	Element* selection_element;
@@ -265,6 +276,8 @@ private:
 	ColourbPremultiplied selection_colour;
 	// The selection background.
 	Geometry selection_composition_geometry;
+	Geometry handle_start_geometry;
+	Geometry handle_end_geometry;
 
 	// IME composition range. The start and end indices are in absolute coordinates.
 	int ime_composition_begin_index;

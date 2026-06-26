@@ -83,10 +83,14 @@ set(PP_BROWSER_BACKEND_SOURCES
   src/render/integration/platform/RmlUi_Platform_SDL.cpp
   src/render/integration/renderer/RmlUi_Renderer_GL3.cpp
   src/render/integration/host/BrowserHost.cpp
+  src/render/integration/host/TouchSimOverlay.cpp
 )
 
 add_library(pp_rmlui_backend STATIC ${PP_BROWSER_BACKEND_SOURCES})
 target_compile_definitions(pp_rmlui_backend PUBLIC RMLUI_SDL_VERSION_MAJOR=3)
+if(RMLUI_BACKEND_SIMULATE_TOUCH)
+  target_compile_definitions(pp_rmlui_backend PUBLIC RMLUI_BACKEND_SIMULATE_TOUCH)
+endif()
 target_include_directories(pp_rmlui_backend PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src/render/fork/Include
   ${CMAKE_CURRENT_SOURCE_DIR}/src/render/integration/platform

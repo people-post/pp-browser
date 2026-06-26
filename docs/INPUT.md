@@ -67,6 +67,30 @@ On touch devices (`SDL_HINT_TOUCH_MOUSE_EVENTS=0`), finger events map to `Contex
 
 - Swipe-back starts only from the left edge (~20dp) or overlay chrome, not from bubble content.
 
+## Selection handles
+
+When a non-empty text range is selected, iOS-style **lollipop handles** appear at the visual start and end of the range (static chat bubbles and composer textarea).
+
+- **Static bubbles:** `SelectionController` renders handles via `ElementSelectableText::OnRender` after highlight geometry is updated.
+- **Composer:** `WidgetTextInput` renders handles when `selection_length > 0` and the user is not mid drag-select.
+- **Drag start handle** moves only the range start; **drag end handle** moves only the range end.
+- **Touch:** handle hits are tested before scroll slop and before content selection; handle drag sets `selection_armed` and blocks scroll.
+- **Desktop:** same handle hit-test runs in `ProcessMouseButtonDown` before `OnPointerDown`.
+
+Handles are hidden during active content drag-select; they appear after release (or immediately after long-press / double-tap word select once dragging ends).
+
+## Simulated touch (desktop dev)
+
+Build with `-DRMLUI_BACKEND_SIMULATE_TOUCH=ON` to route mouse input through the touch path (`SDL_HINT_MOUSE_TOUCH_EVENTS`) and draw a semi-transparent red contact dot instead of the OS cursor.
+
+```bash
+cmake -B build -S . -DRMLUI_BACKEND_SIMULATE_TOUCH=ON
+cmake --build build -j
+./build/pp-browser
+```
+
+Implementation: [`TouchSimOverlay`](src/render/integration/host/TouchSimOverlay.cpp) in `pp_rmlui_backend` (compiled only when the CMake option is set). Each frame it polls `SDL_GetMouseState`, maps window coordinates to pixel space the same way as synthetic finger events (`x / window_w * pixel_w`), and draws the dot at the current pointer position while the window has mouse focus — not only during press. The overlay sets its own GL viewport from live `SDL_GetWindowSizeInPixels` so it stays aligned after window resize. Real mobile builds are unchanged.
+
 ## Context menu
 
 - Desktop: right-click → `SdlAppEvents` → `ContextMenuHost::OnContextPointer`.

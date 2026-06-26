@@ -3,6 +3,7 @@
 #include "../../Include/RmlUi/Core/ElementText.h"
 #include "../../Include/RmlUi/Core/ElementUtilities.h"
 #include "../../Include/RmlUi/Core/FontEngineInterface.h"
+#include "../../Include/RmlUi/Core/Math.h"
 #include "../../Include/RmlUi/Core/MeshUtilities.h"
 #include "../../Include/RmlUi/Core/Property.h"
 #include "../../Include/RmlUi/Core/RenderManager.h"
@@ -118,6 +119,37 @@ void ResolveSelectionBackground(Element* style_root, ColourbPremultiplied& fill,
 void AppendSelectionQuad(Mesh& mesh, Vector2f position, Vector2f size, ColourbPremultiplied fill)
 {
 	MeshUtilities::GenerateQuad(mesh, position, size, fill);
+}
+
+void BuildSelectionHandleGeometry(Vector2f head_center, float dp_ratio, ColourbPremultiplied fill, Mesh& mesh)
+{
+	const float head_radius = 6.f * dp_ratio;
+	const float stem_width = 2.5f * dp_ratio;
+	const float stem_length = 8.f * dp_ratio;
+
+	const Vector2f stem_origin(head_center.x - stem_width * 0.5f, head_center.y);
+	MeshUtilities::GenerateQuad(mesh, stem_origin, Vector2f(stem_width, stem_length), fill);
+
+	constexpr int segments = 16;
+	const int base_index = int(mesh.vertices.size());
+	mesh.vertices.resize(base_index + segments + 1);
+	mesh.vertices[base_index].position = head_center;
+	mesh.vertices[base_index].colour = fill;
+
+	for (int i = 0; i < segments; ++i)
+	{
+		const float angle = float(i) / float(segments) * Math::RMLUI_PI * 2.f;
+		Vertex& vertex = mesh.vertices[base_index + 1 + i];
+		vertex.position = head_center + Vector2f(Math::Cos(angle) * head_radius, Math::Sin(angle) * head_radius);
+		vertex.colour = fill;
+	}
+
+	for (int i = 0; i < segments; ++i)
+	{
+		mesh.indices.push_back(base_index);
+		mesh.indices.push_back(base_index + 1 + i);
+		mesh.indices.push_back(base_index + 1 + ((i + 1) % segments));
+	}
 }
 
 bool BuildTextSelectionGeometry(ElementText* text_element, int local_start, int local_end, ColourbPremultiplied fill,

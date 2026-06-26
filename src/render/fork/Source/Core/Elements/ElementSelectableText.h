@@ -2,6 +2,7 @@
 
 #include "../../../Include/RmlUi/Core/Element.h"
 #include "../../../Include/RmlUi/Core/EventListener.h"
+#include "../../../Include/RmlUi/Core/Geometry.h"
 #include "../../../Include/RmlUi/Core/Input.h"
 #include "../../../Include/RmlUi/Core/SelectionTypes.h"
 #include "ElementTextSelection.h"
@@ -30,6 +31,11 @@ public:
 	int HitTestLocal(Vector2f absolute_mouse);
 	void UpdateSelectionHighlight(int local_start, int local_end);
 	void ClearSelectionHighlight();
+	void UpdateSelectionHandles(int local_start_index, int local_end_index, bool show_start, bool show_end);
+	void ClearSelectionHandles();
+	Vector2f GetAbsolutePositionForFlatIndex(int flat_index);
+
+	void OnRender() override;
 
 	void OnSelectionStyleChanged() override;
 
@@ -64,6 +70,8 @@ private:
 	int active_selection_start = 0;
 	int active_selection_end = 0;
 	bool suppress_click = false;
+	Geometry handle_start_geometry;
+	Geometry handle_end_geometry;
 };
 
 } // namespace Rml

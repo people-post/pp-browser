@@ -31,7 +31,10 @@ Edit files under `src/render/fork/` directly in pp-browser commits (except `src/
 - `CMakeLists.txt` — wrap `add_subdirectory("Samples")` in `if(RMLUI_SAMPLES)` (Samples tree excluded from hard fork)
 - `ElementSelectableText` — selectable static text via `selectable="text"` on containers; participates in document `SelectionController`
 - `SelectionController` / `SelectionTypes` — participation-based static text selection (`Element::QuerySelection`, `BuildSelectionContent`, cross-container drag/copy)
-- `SelectionHighlight` — shared selection background geometry and RCSS color resolution for static (`ElementText::RenderSelectionSlice`) and editor (`WidgetTextInput`) paths
+- `SelectionHighlight` — shared selection background geometry and RCSS color resolution for static (`ElementText::RenderSelectionSlice`) and editor (`WidgetTextInput`) paths; lollipop **selection handle** geometry (`BuildSelectionHandleGeometry`)
+- `ElementSelectableText` — `GetAbsolutePositionForFlatIndex`, handle rendering in `OnRender`
+- `SelectionController` — draggable selection handles (`HitTestHandle`, `BeginHandleDrag`, `UpdateHandleDrag`) for static text
+- `WidgetTextInput` — composer selection handles with the same visual and drag semantics
 - `ElementSelectableText` / `WidgetTextInput` — hidden `selection` style-probe child; theme via descendant `selection { background-color; color; }` in author RCSS
 - `DataViewFor` — clone inner markup from template children when `rmlui-inner-rml` is absent (fixes empty `data-for` buttons with `{{expr}}` text)
 - `DataView` / `DataViews` — evict stale views in `OnElementRemove` via `IsValid()` (avoids warning spam during pane remounts); `GetElement()` returns null silently like `DataController`

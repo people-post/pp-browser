@@ -31,4 +31,7 @@ bool BuildTextSelectionGeometry(ElementText* text_element, int local_start, int 
 /// Append a single selection background quad to an existing mesh.
 void AppendSelectionQuad(Mesh& mesh, Vector2f position, Vector2f size, ColourbPremultiplied fill);
 
+/// Build lollipop handle geometry (circle head + stem) centered on @p head_center.
+void BuildSelectionHandleGeometry(Vector2f head_center, float dp_ratio, ColourbPremultiplied fill, Mesh& mesh);
+
 } // namespace Rml

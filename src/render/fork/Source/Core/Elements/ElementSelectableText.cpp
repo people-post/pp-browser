@@ -6,8 +6,10 @@
 #include "../../../Include/RmlUi/Core/ElementUtilities.h"
 #include "../../../Include/RmlUi/Core/Factory.h"
 #include "../../../Include/RmlUi/Core/FontEngineInterface.h"
+#include "../../../Include/RmlUi/Core/RenderManager.h"
 #include "../SelectionContentBuilder.h"
 #include "../SelectionController.h"
+#include "../SelectionHighlight.h"
 
 #include <algorithm>
 #include <limits>
@@ -77,12 +79,98 @@ void ElementSelectableText::ClearSelectionHighlight()
 	active_selection_start = 0;
 	active_selection_end = 0;
 	suppress_click = false;
+	ClearSelectionHandles();
 
 	for (const TextSegment& segment : segments)
 	{
 		if (segment.element)
 			segment.element->ClearSelectionHighlight();
 	}
+}
+
+void ElementSelectableText::ClearSelectionHandles()
+{
+	handle_start_geometry = {};
+	handle_end_geometry = {};
+}
+
+Vector2f ElementSelectableText::GetAbsolutePositionForFlatIndex(int flat_index)
+{
+	if (lines.empty())
+		return GetContentRenderOrigin();
+
+	flat_index = Math::Clamp(flat_index, 0, (int)flat_text.size());
+
+	for (const LineLayout& line : lines)
+	{
+		const int line_end = line.begin + line.length;
+		if (flat_index < line.begin || flat_index > line_end)
+			continue;
+
+		const int line_local = Math::Min(flat_index - line.begin, line.length);
+		float width = 0.f;
+		if (line.text_element && line.length > 0)
+		{
+			const char* p_begin = flat_text.data() + line.begin;
+			width = float(ElementUtilities::GetStringWidth(line.text_element, StringView(p_begin, p_begin + line_local)));
+		}
+
+		return GetContentRenderOrigin() + line.baseline + Vector2f(width, 0.f);
+	}
+
+	const LineLayout& last = lines.back();
+	return GetContentRenderOrigin() + last.baseline + Vector2f(last.width, 0.f);
+}
+
+void ElementSelectableText::UpdateSelectionHandles(int local_start_index, int local_end_index, bool show_start, bool show_end)
+{
+	RenderManager* render_manager = GetRenderManager();
+	if (!render_manager)
+		return;
+
+	const float dp_ratio = GetContext() ? GetContext()->GetDensityIndependentPixelRatio() : 1.f;
+	ColourbPremultiplied fill = Colourb(50, 120, 255, 255).ToPremultiplied();
+	if (selection_style_element)
+	{
+		ColourbPremultiplied resolved;
+		ResolveSelectionBackground(selection_style_element, resolved, nullptr, SelectionColorFallback::StaticDefault);
+		fill = resolved;
+	}
+
+	if (show_start)
+	{
+		const Vector2f absolute = GetAbsolutePositionForFlatIndex(local_start_index);
+		const Vector2f local = absolute - GetContentRenderOrigin();
+		Mesh mesh = handle_start_geometry.Release(Geometry::ReleaseMode::ClearMesh);
+		BuildSelectionHandleGeometry(local, dp_ratio, fill, mesh);
+		if (!mesh.indices.empty())
+			handle_start_geometry = render_manager->MakeGeometry(std::move(mesh));
+	}
+	else
+	{
+		handle_start_geometry = {};
+	}
+
+	if (show_end)
+	{
+		const Vector2f absolute = GetAbsolutePositionForFlatIndex(local_end_index);
+		const Vector2f local = absolute - GetContentRenderOrigin();
+		Mesh mesh = handle_end_geometry.Release(Geometry::ReleaseMode::ClearMesh);
+		BuildSelectionHandleGeometry(local, dp_ratio, fill, mesh);
+		if (!mesh.indices.empty())
+			handle_end_geometry = render_manager->MakeGeometry(std::move(mesh));
+	}
+	else
+	{
+		handle_end_geometry = {};
+	}
+}
+
+void ElementSelectableText::OnRender()
+{
+	const Vector2f translation = GetContentRenderOrigin();
+	handle_start_geometry.Render(translation);
+	handle_end_geometry.Render(translation);
 }
 
 SelectionDisposition ElementSelectableText::QuerySelection(const SelectionQuery& query)

@@ -443,6 +443,13 @@ void WidgetTextInput::OnRender()
 	Vector2f text_translation = parent->GetAbsoluteOffset() - Vector2f(parent->GetScrollLeft(), parent->GetScrollTop());
 	selection_composition_geometry.Render(text_translation);
 
+	const bool show_handles = selection_length > 0 && (handle_drag != SelectionHandleSide::None || !pointer_selecting);
+	if (show_handles)
+	{
+		handle_start_geometry.Render(text_translation);
+		handle_end_geometry.Render(text_translation);
+	}
+
 	if (cursor_visible && selection_length <= 0 && !parent->IsDisabled())
 	{
 		cursor_geometry.Render(text_translation + cursor_position);
@@ -658,12 +665,46 @@ void WidgetTextInput::ProcessEvent(Event& event)
 			// specially by selecting whole words at a time, which is not yet implemented.
 			break;
 		}
+		if (IsEventForWidget(event, parent) && handle_drag != SelectionHandleSide::None)
+		{
+			Vector2f mouse_position = Vector2f(event.GetParameter<float>("mouse_x", 0), event.GetParameter<float>("mouse_y", 0));
+			mouse_position -= text_element->GetAbsoluteOffset();
+			mouse_position.y += parent->GetScrollTop();
+
+			const int cursor_line_index = CalculateLineIndex(mouse_position.y);
+			const int cursor_character_index = CalculateCharacterIndex(cursor_line_index, mouse_position.x);
+			SetCursorFromRelativeIndices(cursor_line_index, cursor_character_index);
+			MoveCursorToCharacterBoundaries(false);
+
+			if (UpdateSelection(true))
+				FormatText();
+
+			ShowCursor(false);
+			event.StopPropagation();
+			break;
+		}
 		//-fallthrough
 	case EventId::Mousedown:
 	{
 		if (IsEventForWidget(event, parent))
 		{
 			Vector2f mouse_position = Vector2f(event.GetParameter<float>("mouse_x", 0), event.GetParameter<float>("mouse_y", 0));
+
+			if (selection_length > 0)
+			{
+				const SelectionHandleSide handle = HitTestSelectionHandle(mouse_position);
+				if (handle != SelectionHandleSide::None)
+				{
+					handle_drag = handle;
+					pointer_selecting = false;
+					selection_anchor_index = (handle == SelectionHandleSide::Start) ? selection_begin_index + selection_length :
+																						 selection_begin_index;
+					event.StopPropagation();
+					break;
+				}
+			}
+
+			pointer_selecting = true;
 			mouse_position -= text_element->GetAbsoluteOffset();
 			mouse_position.y += parent->GetScrollTop();
 
@@ -702,8 +743,15 @@ void WidgetTextInput::ProcessEvent(Event& event)
 		if (IsEventForWidget(event, parent))
 		{
 			ExpandSelection();
+			pointer_selecting = false;
 			cancel_next_drag = true;
 		}
+	}
+	break;
+	case EventId::Mouseup:
+	{
+		if (IsEventForWidget(event, parent))
+			EndHandleDrag();
 	}
 	break;
 
@@ -1455,6 +1503,8 @@ Vector2f WidgetTextInput::FormatText(float height_constraint)
 		parent->SetProperty(PropertyId::Clip, Property(ink_overflow ? Style::Clip::Type::Always : Style::Clip::Type::Auto));
 	}
 
+	UpdateSelectionHandleGeometry();
+
 	return content_area;
 }
 
@@ -1658,6 +1708,99 @@ float WidgetTextInput::GetAvailableWidth() const
 float WidgetTextInput::GetAvailableHeight() const
 {
 	return parent->GetClientHeight() - parent->GetBox().GetFrameSize(BoxArea::Padding).y;
+}
+
+Vector2f WidgetTextInput::GetAbsolutePositionForByteIndex(int byte_index) const
+{
+	if (lines.empty() || text_element->GetFontFaceHandle() == 0)
+	{
+		Vector2f text_translation = parent->GetAbsoluteOffset() - Vector2f(parent->GetScrollLeft(), parent->GetScrollTop());
+		return text_translation;
+	}
+
+	byte_index = Math::Clamp(byte_index, 0, (int)GetValue().size());
+
+	for (size_t i = 0; i < lines.size(); ++i)
+	{
+		const Line& line = lines[i];
+		if (byte_index < line.value_offset || byte_index > line.value_offset + line.size)
+			continue;
+
+		const int character_index = byte_index - line.value_offset;
+		const float string_width =
+			float(ElementUtilities::GetStringWidth(text_element, StringView(GetValue(), line.value_offset, character_index)));
+		const float alignment_offset = GetAlignmentSpecificTextOffset(line);
+
+		Vector2f text_translation = parent->GetAbsoluteOffset() - Vector2f(parent->GetScrollLeft(), parent->GetScrollTop());
+		return text_translation + Vector2f(string_width + alignment_offset, float(i) * GetLineHeight());
+	}
+
+	Vector2f text_translation = parent->GetAbsoluteOffset() - Vector2f(parent->GetScrollLeft(), parent->GetScrollTop());
+	return text_translation + Vector2f(0.f, float(lines.size() - 1) * GetLineHeight());
+}
+
+WidgetTextInput::SelectionHandleSide WidgetTextInput::HitTestSelectionHandle(Vector2f absolute_position) const
+{
+	if (selection_length <= 0)
+		return SelectionHandleSide::None;
+
+	const float dp_ratio = parent->GetContext() ? parent->GetContext()->GetDensityIndependentPixelRatio() : 1.f;
+	const float hit_radius = 28.f * dp_ratio;
+
+	const Vector2f start_pos = GetAbsolutePositionForByteIndex(selection_begin_index);
+	const Vector2f end_pos = GetAbsolutePositionForByteIndex(selection_begin_index + selection_length);
+
+	if ((absolute_position - start_pos).Magnitude() <= hit_radius)
+		return SelectionHandleSide::Start;
+	if ((absolute_position - end_pos).Magnitude() <= hit_radius)
+		return SelectionHandleSide::End;
+	return SelectionHandleSide::None;
+}
+
+void WidgetTextInput::ClearSelectionHandleGeometry()
+{
+	handle_start_geometry = {};
+	handle_end_geometry = {};
+}
+
+void WidgetTextInput::UpdateSelectionHandleGeometry()
+{
+	RenderManager* render_manager = parent->GetRenderManager();
+	if (!render_manager)
+		return;
+
+	const bool show_handles = selection_length > 0 && (handle_drag != SelectionHandleSide::None || !pointer_selecting);
+	if (!show_handles)
+	{
+		ClearSelectionHandleGeometry();
+		return;
+	}
+
+	const float dp_ratio = parent->GetContext() ? parent->GetContext()->GetDensityIndependentPixelRatio() : 1.f;
+	ColourbPremultiplied fill = selection_colour;
+	if (fill.alpha == 0)
+		fill = Colourb(50, 120, 255, 255).ToPremultiplied();
+
+	Vector2f text_translation = parent->GetAbsoluteOffset() - Vector2f(parent->GetScrollLeft(), parent->GetScrollTop());
+	const Vector2f start_local = GetAbsolutePositionForByteIndex(selection_begin_index) - text_translation;
+	const Vector2f end_local = GetAbsolutePositionForByteIndex(selection_begin_index + selection_length) - text_translation;
+
+	Mesh start_mesh = handle_start_geometry.Release(Geometry::ReleaseMode::ClearMesh);
+	BuildSelectionHandleGeometry(start_local, dp_ratio, fill, start_mesh);
+	if (!start_mesh.indices.empty())
+		handle_start_geometry = render_manager->MakeGeometry(std::move(start_mesh));
+
+	Mesh end_mesh = handle_end_geometry.Release(Geometry::ReleaseMode::ClearMesh);
+	BuildSelectionHandleGeometry(end_local, dp_ratio, fill, end_mesh);
+	if (!end_mesh.indices.empty())
+		handle_end_geometry = render_manager->MakeGeometry(std::move(end_mesh));
+}
+
+void WidgetTextInput::EndHandleDrag()
+{
+	handle_drag = SelectionHandleSide::None;
+	pointer_selecting = false;
+	UpdateSelectionHandleGeometry();
 }
 
 } // namespace Rml

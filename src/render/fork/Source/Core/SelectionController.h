@@ -11,6 +11,8 @@ class Context;
 class Element;
 class ElementSelectableText;
 
+enum class SelectionHandleSide { None, Start, End };
+
 class SelectionController {
 public:
 	explicit SelectionController(Context* context);
@@ -21,6 +23,7 @@ public:
 	bool OnKeyDown(Input::KeyIdentifier key, int key_modifier_state);
 	void ClearUnlessHover(Element* hover);
 	bool IsDragging() const { return dragging; }
+	bool IsHandleDragging() const { return handle_drag != SelectionHandleSide::None; }
 
 	bool CanSelectStaticText(Element* target) const;
 	bool BlocksTarget(Element* target) const { return TargetBlocksSelection(target); }
@@ -31,6 +34,11 @@ public:
 	String GetSelectedText() const;
 	bool HasSelection() const;
 	void OnTouchTap(Vector2i position, Element* hover);
+
+	SelectionHandleSide HitTestHandle(Vector2i position);
+	bool BeginHandleDrag(SelectionHandleSide side);
+	void UpdateHandleDrag(Vector2i position);
+	void EndHandleDrag();
 
 	void UpdateSelectionGeometry();
 	void ClearSelection();
@@ -51,10 +59,14 @@ private:
 	int anchor_index = 0;
 	int focus_index = 0;
 	bool dragging = false;
+	SelectionHandleSide handle_drag = SelectionHandleSide::None;
+	int handle_drag_fixed_index = 0;
 
 	void DiscoverRoots();
 	void RebuildGlobalMap();
 	int HitTestGlobal(Vector2f absolute_mouse) const;
+	Vector2f GetGlobalIndexPosition(int global_index);
+	bool ShouldShowHandles() const;
 	ElementSelectableText* FindSelectableContainer(Element* target) const;
 	bool TargetBlocksSelection(Element* target) const;
 	bool IsInsideSelectionRoots(Element* element) const;

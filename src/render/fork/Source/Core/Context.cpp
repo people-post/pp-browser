@@ -776,7 +776,12 @@ bool Context::ProcessMouseMove(int x, int y, int key_modifier_state)
 	}
 
 	if (touch_states.empty() || AnyTouchSelectionArmed())
-		selection_controller->OnPointerMove(mouse_position);
+	{
+		if (selection_controller->IsHandleDragging())
+			selection_controller->UpdateHandleDrag(mouse_position);
+		else
+			selection_controller->OnPointerMove(mouse_position);
+	}
 
 	return !IsMouseInteracting();
 }
@@ -810,6 +815,19 @@ bool Context::ProcessMouseButtonDown(int button_index, int key_modifier_state)
 
 	if (button_index == 0)
 	{
+		if (selection_controller->HasSelection())
+		{
+			const SelectionHandleSide handle = selection_controller->HitTestHandle(mouse_position);
+			if (handle != SelectionHandleSide::None)
+			{
+				selection_controller->BeginHandleDrag(handle);
+				active = hover;
+				active_chain.clear();
+				active_chain.insert(active_chain.end(), hover_chain.begin(), hover_chain.end());
+				return !IsMouseInteracting();
+			}
+		}
+
 		if (!IsContextMenuTarget(hover))
 			selection_controller->ClearUnlessHover(hover);
 
@@ -957,6 +975,7 @@ bool Context::ProcessMouseButtonUp(int button_index, int key_modifier_state)
 		if (hover)
 			hover->DispatchEvent(EventId::Mouseup, parameters);
 
+		selection_controller->EndHandleDrag();
 		selection_controller->OnPointerUp();
 
 		// Click the deepest compatible press/release target. Interactive controls (buttons, data-event-click)
@@ -1154,6 +1173,18 @@ bool Context::ProcessTouchStart(const Touch& touch, int key_modifier_state)
 
 	ProcessMouseMove(static_cast<int>(touch.position.x), static_cast<int>(touch.position.y), key_modifier_state);
 
+	if (selection_controller->HasSelection())
+	{
+		const Vector2i touch_position(static_cast<int>(touch.position.x), static_cast<int>(touch.position.y));
+		const SelectionHandleSide handle = selection_controller->HitTestHandle(touch_position);
+		if (handle != SelectionHandleSide::None)
+		{
+			selection_controller->BeginHandleDrag(handle);
+			state->selection_armed = true;
+			return true;
+		}
+	}
+
 	// always assume touch press/release events are handled as left mouse button
 	return ProcessMouseButtonDown(0, key_modifier_state);
 }
@@ -1176,7 +1207,7 @@ bool Context::ProcessTouchMove(const Touch& touch, int key_modifier_state)
 	{
 		const Vector2f delta = touch.position - state->last_position;
 
-		if (drag || (selection_controller->IsDragging() && state->selection_armed))
+		if (drag || (selection_controller->IsDragging() && state->selection_armed) || selection_controller->IsHandleDragging())
 		{
 			// Don't scroll and reset scrolling state when dragging any element (scrollbars and others)
 			// or drag-selecting static text inside a scroll container.

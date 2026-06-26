@@ -78,6 +78,17 @@ From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
 ./build/pp-browser --demo search
 ```
 
+### Simulated touch (optional dev)
+
+To exercise the mobile touch path on desktop (finger events from mouse, red contact dot overlay):
+
+```bash
+cmake -B build -S . -DRMLUI_BACKEND_SIMULATE_TOUCH=ON
+cmake --build build -j
+```
+
+See [INPUT.md](INPUT.md) for behavior details.
+
 ### Cloud LLM (default)
 
 First launch uses cloud defaults (`https://api.openai.com/v1`, model `gpt-4o-mini`). Open **Settings**, enter your API key, and save.

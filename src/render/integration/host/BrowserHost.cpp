@@ -1,6 +1,7 @@
 #include "RmlUi_Backend.h"
 #include "RmlUi_Platform_SDL.h"
 #include "RmlUi_Renderer_GL3.h"
+#include "TouchSimOverlay.h"
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/FileInterface.h>
@@ -218,6 +219,8 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	}
 #endif
 
+	TouchSimOverlay::Initialize(window);
+
 	return true;
 }
 
@@ -253,6 +256,8 @@ SDL_Window* Backend::GetWindow()
 void Backend::Shutdown()
 {
 	RMLUI_ASSERT(data);
+
+	TouchSimOverlay::Shutdown();
 
 #if SDL_MAJOR_VERSION >= 3
 	SDL_GL_MakeCurrent(data->window, nullptr);
@@ -434,6 +439,16 @@ void Backend::PresentFrame()
 	RMLUI_ASSERT(data);
 
 	data->render_interface.EndFrame();
+
+#if SDL_MAJOR_VERSION >= 3
+	{
+		int pixel_w = 0;
+		int pixel_h = 0;
+		SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
+		TouchSimOverlay::Draw(data->window, pixel_w, pixel_h);
+	}
+#endif
+
 	SDL_GL_SwapWindow(data->window);
 
 	// Optional, used to mark frames during performance profiling.

@@ -4,6 +4,7 @@
 #include "../../Include/RmlUi/Core/Core.h"
 #include "../../Include/RmlUi/Core/ElementDocument.h"
 #include "../../Include/RmlUi/Core/SystemInterface.h"
+#include "SelectionHighlight.h"
 #include "Elements/ElementSelectableText.h"
 
 #include <algorithm>
@@ -333,8 +334,12 @@ void SelectionController::ClearSelection()
 	anchor_index = 0;
 	focus_index = 0;
 	dragging = false;
+	handle_drag = SelectionHandleSide::None;
 	for (ElementSelectableText* root : roots)
+	{
 		root->ClearSelectionHighlight();
+		root->ClearSelectionHandles();
+	}
 }
 
 void SelectionController::ClearUnlessHover(Element* hover)
@@ -360,7 +365,10 @@ void SelectionController::UpdateSelectionGeometry()
 	const int end = Math::Max(anchor_index, focus_index);
 
 	for (ElementSelectableText* root : roots)
+	{
 		root->ClearSelectionHighlight();
+		root->ClearSelectionHandles();
+	}
 
 	if (start >= end)
 		return;
@@ -375,6 +383,24 @@ void SelectionController::UpdateSelectionGeometry()
 		if (local_start < local_end)
 			block.root->UpdateSelectionHighlight(local_start, local_end);
 	}
+
+	if (!ShouldShowHandles())
+		return;
+
+	for (const RootBlock& block : blocks)
+	{
+		if (!block.root)
+			continue;
+
+		const bool show_start = (start >= block.global_begin && start <= block.global_end);
+		const bool show_end = (end >= block.global_begin && end <= block.global_end);
+		if (!show_start && !show_end)
+			continue;
+
+		const int local_start_index = show_start ? start - block.global_begin : 0;
+		const int local_end_index = show_end ? end - block.global_begin : 0;
+		block.root->UpdateSelectionHandles(local_start_index, local_end_index, show_start, show_end);
+	}
 }
 
 bool SelectionController::ShouldSuppressClick(Element* target) const
@@ -385,6 +411,100 @@ bool SelectionController::ShouldSuppressClick(Element* target) const
 	const int start = Math::Min(anchor_index, focus_index);
 	const int end = Math::Max(anchor_index, focus_index);
 	return start < end;
+}
+
+bool SelectionController::ShouldShowHandles() const
+{
+	if (!HasSelection())
+		return false;
+	if (handle_drag != SelectionHandleSide::None)
+		return true;
+	return !dragging;
+}
+
+Vector2f SelectionController::GetGlobalIndexPosition(int global_index)
+{
+	for (const RootBlock& block : blocks)
+	{
+		if (!block.root)
+			continue;
+		if (global_index >= block.global_begin && global_index <= block.global_end)
+			return block.root->GetAbsolutePositionForFlatIndex(global_index - block.global_begin);
+	}
+	return {};
+}
+
+SelectionHandleSide SelectionController::HitTestHandle(Vector2i position)
+{
+	if (!ShouldShowHandles())
+		return SelectionHandleSide::None;
+
+	RebuildGlobalMap();
+	if (global_text.empty() || !context)
+		return SelectionHandleSide::None;
+
+	const int start = Math::Min(anchor_index, focus_index);
+	const int end = Math::Max(anchor_index, focus_index);
+	if (start >= end)
+		return SelectionHandleSide::None;
+
+	const float hit_radius = 28.f * context->GetDensityIndependentPixelRatio();
+	const Vector2f point(float(position.x), float(position.y));
+	const Vector2f start_pos = GetGlobalIndexPosition(start);
+	const Vector2f end_pos = GetGlobalIndexPosition(end);
+
+	if ((point - start_pos).Magnitude() <= hit_radius)
+		return SelectionHandleSide::Start;
+	if ((point - end_pos).Magnitude() <= hit_radius)
+		return SelectionHandleSide::End;
+	return SelectionHandleSide::None;
+}
+
+bool SelectionController::BeginHandleDrag(SelectionHandleSide side)
+{
+	if (side == SelectionHandleSide::None)
+		return false;
+
+	RebuildGlobalMap();
+	const int start = Math::Min(anchor_index, focus_index);
+	const int end = Math::Max(anchor_index, focus_index);
+	if (start >= end)
+		return false;
+
+	handle_drag = side;
+	handle_drag_fixed_index = (side == SelectionHandleSide::Start) ? end : start;
+	dragging = false;
+	return true;
+}
+
+void SelectionController::UpdateHandleDrag(Vector2i position)
+{
+	if (handle_drag == SelectionHandleSide::None)
+		return;
+
+	RebuildGlobalMap();
+	const int new_index = HitTestGlobal(Vector2f(float(position.x), float(position.y)));
+
+	if (handle_drag == SelectionHandleSide::Start)
+	{
+		anchor_index = new_index;
+		focus_index = handle_drag_fixed_index;
+	}
+	else
+	{
+		anchor_index = handle_drag_fixed_index;
+		focus_index = new_index;
+	}
+
+	UpdateSelectionGeometry();
+}
+
+void SelectionController::EndHandleDrag()
+{
+	handle_drag = SelectionHandleSide::None;
+	dragging = false;
+	RebuildGlobalMap();
+	UpdateSelectionGeometry();
 }
 
 } // namespace Rml
