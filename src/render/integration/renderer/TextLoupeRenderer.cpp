@@ -10,6 +10,7 @@
 	#include "RmlUi_Include_GL3.h"
 #endif
 
+#include <RmlUi/Core/Log.h>
 #include <RmlUi/Core/Math.h>
 #include <RmlUi/Core/MeshUtilities.h>
 #include <RmlUi/Core/RenderManager.h>
@@ -147,6 +148,16 @@ void EnsureCaptureTarget(int texture_size)
 	glGenFramebuffers(1, &g_state.capture_framebuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, g_state.capture_framebuffer);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_state.capture_texture, 0);
+#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__)
+	{
+		const GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
+		glDrawBuffers(1, &draw_buffer);
+	}
+#endif
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	{
+		Rml::Log::Message(Rml::Log::LT_ERROR, "TextLoupe capture framebuffer is incomplete.");
+	}
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 

@@ -1767,12 +1767,30 @@ void RenderInterface_GL3::BlitTopLayerRegion(Rml::Rectanglei src_region_top_left
 		return;
 
 	const Rml::Rectanglei src_flipped = VerticallyFlipped(clamped, viewport_height);
+
+	// Scissor restricts glBlitFramebuffer source/dest; UI clipping is usually still active here.
+	const Rml::Rectanglei saved_scissor = scissor_state;
+	EnableScissorRegion(false);
+
+#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__)
+	// GLES drivers often fail subregion blits from multisampled renderbuffers; resolve first.
+	BlitLayerToPostprocessPrimary(render_layers.GetTopLayerHandle());
+	const Gfx::FramebufferData& source = render_layers.GetPostprocessPrimary();
+#else
 	const Gfx::FramebufferData& source = render_layers.GetTopLayer();
+#endif
 
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, source.framebuffer);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dest_framebuffer);
 	glBlitFramebuffer(src_flipped.Left(), src_flipped.Top(), src_flipped.Right(), src_flipped.Bottom(), 0, 0, dest_width, dest_height,
 		GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, render_layers.GetTopLayer().framebuffer);
+
+	if (saved_scissor.Valid())
+		SetScissor(saved_scissor);
+	else
+		EnableScissorRegion(false);
 
 	Gfx::CheckGLError("BlitTopLayerRegion");
 }
