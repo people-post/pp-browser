@@ -54,7 +54,7 @@ namespace libp2p::basic {
     struct CancelCb {
       CancelCb(Callback &&cb) : cb{std::move(cb)} {}
 
-      std::atomic_flag cancelled = false;
+      std::atomic_flag cancelled{};
       std::optional<Callbacks::iterator> it;
       Callback cb;
     };
