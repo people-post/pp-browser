@@ -1,7 +1,14 @@
 #include "TextLoupeRenderer.h"
 
 #include "RmlUi_Renderer_GL3.h"
-#include "RmlUi_Include_GL3.h"
+
+#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__)
+	#define LOUPE_SHADER_HEADER "#version 300 es\nprecision highp float;\n"
+	#include <GLES3/gl3.h>
+#else
+	#define LOUPE_SHADER_HEADER "#version 330 core\n"
+	#include "RmlUi_Include_GL3.h"
+#endif
 
 #include <RmlUi/Core/Math.h>
 #include <RmlUi/Core/MeshUtilities.h>
@@ -40,8 +47,7 @@ struct LoupeGpuState {
 
 LoupeGpuState g_state;
 
-const char* kVertexShader = R"(
-#version 330 core
+const char* kVertexShader = LOUPE_SHADER_HEADER R"(
 layout(location = 0) in vec2 in_position;
 uniform mat4 u_projection;
 out vec2 v_screen_pos;
@@ -51,8 +57,7 @@ void main() {
 }
 )";
 
-const char* kLoupeFragmentShader = R"(
-#version 330 core
+const char* kLoupeFragmentShader = LOUPE_SHADER_HEADER R"(
 uniform vec2 u_center;
 uniform float u_radius;
 uniform sampler2D u_capture_texture;
@@ -79,8 +84,7 @@ void main() {
 }
 )";
 
-const char* kShadowFragmentShader = R"(
-#version 330 core
+const char* kShadowFragmentShader = LOUPE_SHADER_HEADER R"(
 uniform vec2 u_center;
 uniform float u_radius;
 uniform vec4 u_color;
