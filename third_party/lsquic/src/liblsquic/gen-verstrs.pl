@@ -12,6 +12,7 @@ open OUT, ">$outfile"
     or die "cannot open $outfile for writing: $!";
 
 while (<HEADER>) {
+    s/\r$//;    # Git on Windows may check out headers with CRLF line endings
     if (/^enum lsquic_version$/ .. /^}/) {
         if (/^\s*(LSQVER_0*(\d+)),\s*$/ && $1 ne 'LSQVER_098') {
             if ($2 < 50) {
@@ -51,7 +52,10 @@ print OUT <<C_CODE;
 
 struct lsquic_engine;
 
-static const char *const versions_to_string[ 1 << N_LSQVER ] = {
+static const struct {
+    unsigned    versions;
+    const char *str;
+} versions_to_string[] = {
 C_CODE
 
 $max_mask = (1 << @versions) - 1;
@@ -63,11 +67,11 @@ for ($mask = 0; $mask <= $max_mask; ++$mask) {
             push @indexes, $i;
         }
     }
-    print OUT "    [",
+    print OUT "    {",
         join('|', map "(1<<$_)", @enums[@indexes]) || 0,
-        "] = \"",
+        ", \"",
         join(',', @versions[@indexes]),
-        "\",\n";
+        "\"},\n";
 }
 
 $enums = join '|', map "(1<<$_)", sort @enums;
@@ -79,9 +83,14 @@ print OUT <<"C_CODE";
 const char *
 lsquic_get_alt_svc_versions (unsigned versions)
 {
+    unsigned i;
+
     /* Limit to versions in versions_to_string: */
     versions &= ($enums);
-    return versions_to_string[ versions ];
+    for (i = 0; i < sizeof(versions_to_string) / sizeof(versions_to_string[0]); ++i)
+        if (versions == versions_to_string[i].versions)
+            return versions_to_string[i].str;
+    return NULL;
 }
 
 C_CODE

@@ -1222,6 +1222,10 @@ lshpack_enc_iter_next (struct lshpack_enc *enc, void **iter,
 
 
 /* Dynamic table entry: */
+#if LSHPACK_DEC_CALC_HASH
+#define DTEF_NAME_HASH      LSXPACK_NAME_HASH
+#define DTEF_NAMEVAL_HASH   LSXPACK_NAMEVAL_HASH
+#endif
 struct dec_table_entry
 {
     unsigned    dte_name_len;
@@ -1229,10 +1233,7 @@ struct dec_table_entry
 #if LSHPACK_DEC_CALC_HASH
     uint32_t    dte_name_hash;
     uint32_t    dte_nameval_hash;
-    enum {
-        DTEF_NAME_HASH      = LSXPACK_NAME_HASH,
-        DTEF_NAMEVAL_HASH   = LSXPACK_NAMEVAL_HASH,
-    }           dte_flags:8;
+    uint8_t     dte_flags;
 #endif
     uint8_t     dte_name_idx;
     char        dte_buf[];     /* Contains both name and value */

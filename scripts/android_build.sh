@@ -12,15 +12,16 @@ require_env() {
   fi
 }
 
-gradle_version_args() {
-  local args=()
+run_gradlew() {
+  local task="$1"
+  local -a version_args=()
   if [[ -n "${PP_BROWSER_VERSION:-}" ]]; then
-    args+=("-PppBrowserVersion=${PP_BROWSER_VERSION}")
+    version_args+=("-PppBrowserVersion=${PP_BROWSER_VERSION}")
   fi
   if [[ -n "${PP_BROWSER_RELEASE_VERSION:-}" ]]; then
-    args+=("-PppBrowserReleaseVersion=${PP_BROWSER_RELEASE_VERSION}")
+    version_args+=("-PppBrowserReleaseVersion=${PP_BROWSER_RELEASE_VERSION}")
   fi
-  printf '%s\n' "${args[@]}"
+  ./gradlew "$task" "${version_args[@]}"
 }
 
 usage() {
@@ -52,15 +53,13 @@ case "${cmd}" in
     require_env ANDROID_SDK_ROOT
     require_env ANDROID_NDK_HOME
     cd "${ANDROID_DIR}"
-    mapfile -t version_args < <(gradle_version_args)
-    ./gradlew assembleDebug "${version_args[@]}"
+    run_gradlew assembleDebug
     ;;
   apk-release)
     require_env ANDROID_SDK_ROOT
     require_env ANDROID_NDK_HOME
     cd "${ANDROID_DIR}"
-    mapfile -t version_args < <(gradle_version_args)
-    ./gradlew assembleRelease "${version_args[@]}"
+    run_gradlew assembleRelease
     ;;
   install)
     require_env ANDROID_SDK_ROOT
