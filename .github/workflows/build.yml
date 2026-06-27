@@ -27,6 +27,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ccache libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev libxrender-dev libxss-dev libgl-dev libssl-dev xvfb
 
+      - name: Install Windows deps
+        if: runner.os == 'Windows'
+        run: |
+          choco install nasm --no-progress -y
+          echo "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Install macOS deps
         if: runner.os == 'macOS'
         run: |
