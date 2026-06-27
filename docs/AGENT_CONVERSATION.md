@@ -86,7 +86,7 @@ Some UI actions (notably **form submit**) send two representations of the same u
 
 ## In-chat forms (single active form)
 
-Chat forms are inline RML inside assistant bubbles (see `ChatFormHelper`, `ChatDemo`):
+Chat forms are inline RML inside assistant bubbles (see `ChatFormHelper`, `ChatController`):
 
 | Rule | Behavior |
 |------|----------|

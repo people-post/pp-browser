@@ -4,7 +4,7 @@
 #include "base/ui/ContextMenuHost.h"
 #include "base/data/SessionStore.h"
 #include "feature/ai/bindings/ActionRouter.h"
-#include "feature/chat/ChatDemo.h"
+#include "feature/chat/ChatController.h"
 #include "base/platform/BrowserThread.h"
 #include "base/platform/IAssetLocator.h"
 #include "base/platform/Platform.h"
@@ -164,8 +164,8 @@ bool Application::Initialize(const char* window_title) {
   ContextMenuHost::Instance().Install(context);
 
   ActionRouter::Instance().Attach(context);
-  if (!SetupChatDemo(context)) {
-    log().error << "SetupChatDemo failed";
+  if (!SetupChatController(context)) {
+    log().error << "SetupChatController failed";
     Rml::RemoveContext("main");
     Rml::Shutdown();
     Backend::Shutdown();
@@ -189,7 +189,7 @@ void Application::Run() {
 
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
     BrowserThread::RunUITasks();
-    UpdateChatDemo();
+    UpdateChatController();
     ShellHost::Instance().Update(context);
     context->Update();
     Backend::BeginFrame();
@@ -203,7 +203,7 @@ void Application::Shutdown() {
     return;
   }
 
-  ShutdownChatDemo();
+  ShutdownChatController();
 
   BrowserThread::RunUITasks();
   BrowserThread::Shutdown();

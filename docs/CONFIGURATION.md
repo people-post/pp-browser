@@ -51,7 +51,7 @@ After bootstrap, a single [`SessionStore`](../src/base/data/SessionStore.h) owns
 
 | Listener | Trigger |
 |----------|---------|
-| Config | `SessionStore::SaveConfig` → `ChatDemo` / `AgentSession::Configure` |
+| Config | `SessionStore::SaveConfig` → `ChatController` / `AgentSession::Configure` |
 | Theme | `SessionStore::SaveProfilePrefs` → `Theme::LoadBase` |
 
 ## LLM presets

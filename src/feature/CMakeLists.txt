@@ -26,7 +26,7 @@ set(PP_BROWSER_FEATURE_SOURCES
   ui/DataModelHost.cpp
   ui/SettingsController.cpp
   ui/ContactsController.cpp
-  chat/ChatDemo.cpp
+  chat/ChatController.cpp
   chat/ChatFormHelper.cpp
   chat/ChatWidgetStateBuilder.cpp
   chat/CalendarHelper.cpp

@@ -1,4 +1,4 @@
-#include "feature/chat/ChatDemo.h"
+#include "feature/chat/ChatController.h"
 #include "base/platform/AppLifecycle.h"
 
 #include "base/ai/StructuredTextParser.h"
@@ -298,16 +298,16 @@ void DirtyShell() {
 
 } // namespace
 
-ChatDemo::ChatDemo() {
-  redirectLogger("ChatDemo");
+ChatController::ChatController() {
+  redirectLogger("ChatController");
 }
 
-ChatDemo& ChatDemo::Instance() {
-  static ChatDemo demo;
-  return demo;
+ChatController& ChatController::Instance() {
+  static ChatController controller;
+  return controller;
 }
 
-void ChatDemo::OpenWorkingSetCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+void ChatController::OpenWorkingSetCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& args) {
   if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING) {
     return;
@@ -319,7 +319,7 @@ void ChatDemo::OpenWorkingSetCallback(Rml::DataModelHandle /*model*/, Rml::Event
   Instance().OpenWorkingSet(std::string(args[0].Get<Rml::String>().c_str()), *block_index);
 }
 
-void ChatDemo::DirtyWorkingSet() {
+void ChatController::DirtyWorkingSet() {
   DataModelHost::Instance().Dirty("shell", "working_set_active");
   DataModelHost::Instance().Dirty("shell", "working_set_title");
   DataModelHost::Instance().Dirty("shell", "working_set_subtitle");
@@ -327,7 +327,7 @@ void ChatDemo::DirtyWorkingSet() {
   DataModelHost::Instance().Dirty("shell", "working_set");
 }
 
-std::vector<WorkingSetCandidate> ChatDemo::HydrateWorkingSetCandidates(
+std::vector<WorkingSetCandidate> ChatController::HydrateWorkingSetCandidates(
     const std::vector<WorkingSetCandidate>& candidates, const std::string& entry_id) const {
   std::vector<WorkingSetCandidate> hydrated;
   hydrated.reserve(candidates.size());
@@ -339,7 +339,7 @@ std::vector<WorkingSetCandidate> ChatDemo::HydrateWorkingSetCandidates(
   return hydrated;
 }
 
-void ChatDemo::SyncWorkingSetWidgetBindings(const std::string& entry_id) {
+void ChatController::SyncWorkingSetWidgetBindings(const std::string& entry_id) {
   shell_.working_set = {};
   if (const TurnWidgetState* widgets = FindWidgetState(entry_id)) {
     shell_.working_set = *widgets;
@@ -347,7 +347,7 @@ void ChatDemo::SyncWorkingSetWidgetBindings(const std::string& entry_id) {
   DirtyWorkingSet();
 }
 
-void ChatDemo::ClearWorkingSet() {
+void ChatController::ClearWorkingSet() {
   shell_.working_set_active = false;
   shell_.working_set_title = "";
   shell_.working_set_subtitle = "";
@@ -360,7 +360,7 @@ void ChatDemo::ClearWorkingSet() {
   DirtyWorkingSet();
 }
 
-void ChatDemo::OpenWorkingSet(const std::string& entry_id, const int block_index) {
+void ChatController::OpenWorkingSet(const std::string& entry_id, const int block_index) {
   const auto entry_it = working_set_by_entry_.find(entry_id);
   if (entry_it == working_set_by_entry_.end()) {
     return;
@@ -390,7 +390,7 @@ void ChatDemo::OpenWorkingSet(const std::string& entry_id, const int block_index
   DirtyWorkingSet();
 }
 
-void ChatDemo::ApplyWorkingSetFromParse(const std::string& entry_id,
+void ChatController::ApplyWorkingSetFromParse(const std::string& entry_id,
                                         const std::vector<WorkingSetCandidate>& candidates) {
   if (candidates.empty()) {
     ClearWorkingSet();
@@ -431,7 +431,7 @@ void ChatDemo::ApplyWorkingSetFromParse(const std::string& entry_id,
   DirtyWorkingSet();
 }
 
-bool ChatDemo::ShouldCloseWorkingSetForAction(const std::optional<std::string>& payload) const {
+bool ChatController::ShouldCloseWorkingSetForAction(const std::optional<std::string>& payload) const {
   if (!payload || payload->empty()) {
     return false;
   }
@@ -443,12 +443,12 @@ bool ChatDemo::ShouldCloseWorkingSetForAction(const std::optional<std::string>& 
   return type == "start_conversation" || type == "add_contact";
 }
 
-void ChatDemo::SendMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+void ChatController::SendMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
   Instance().OnSendMessage();
 }
 
-void ChatDemo::SendSuggestionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+void ChatController::SendSuggestionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& args) {
   if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
     return;
@@ -456,7 +456,7 @@ void ChatDemo::SendSuggestionCallback(Rml::DataModelHandle /*model*/, Rml::Event
   Instance().SendUserText(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
-void ChatDemo::SubmitFormCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+void ChatController::SubmitFormCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                   const Rml::VariantList& args) {
   if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING || args[1].GetType() != Rml::Variant::STRING) {
     return;
@@ -465,7 +465,7 @@ void ChatDemo::SubmitFormCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*
                         std::string(args[1].Get<Rml::String>().c_str()));
 }
 
-void ChatDemo::SendChatActionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+void ChatController::SendChatActionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& args) {
   if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING) {
     return;
@@ -479,7 +479,7 @@ void ChatDemo::SendChatActionCallback(Rml::DataModelHandle /*model*/, Rml::Event
   Instance().SendChatAction(std::string(args[0].Get<Rml::String>().c_str()), *action_index);
 }
 
-void ChatDemo::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+void ChatController::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& args) {
   if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
     return;
@@ -487,7 +487,7 @@ void ChatDemo::CalendarPrevCallback(Rml::DataModelHandle /*model*/, Rml::Event& 
   Instance().CalendarPrev(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
-void ChatDemo::CalendarNextCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+void ChatController::CalendarNextCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                     const Rml::VariantList& args) {
   if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
     return;
@@ -495,7 +495,7 @@ void ChatDemo::CalendarNextCallback(Rml::DataModelHandle /*model*/, Rml::Event& 
   Instance().CalendarNext(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
-void ChatDemo::SelectCalendarDayCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+void ChatController::SelectCalendarDayCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                          const Rml::VariantList& args) {
   if (args.size() < 2 || args[0].GetType() != Rml::Variant::STRING || args[1].GetType() != Rml::Variant::STRING) {
     return;
@@ -504,25 +504,25 @@ void ChatDemo::SelectCalendarDayCallback(Rml::DataModelHandle /*model*/, Rml::Ev
                                std::string(args[1].Get<Rml::String>().c_str()));
 }
 
-void ChatDemo::NewChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& /*args*/) {
+void ChatController::NewChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& /*args*/) {
   Instance().OnNewChat();
 }
 
-void ChatDemo::SelectThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
+void ChatController::SelectThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
   if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
     return;
   }
   Instance().OnSelectThread(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
-void ChatDemo::CloseThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
+void ChatController::CloseThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
   if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
     return;
   }
   Instance().OnCloseThread(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
-void ChatDemo::FinalizeThreadDisplay() {
+void ChatController::FinalizeThreadDisplay() {
   ClearWorkingSet();
   working_set_by_entry_.clear();
   RefreshFromMessaging();
@@ -532,7 +532,7 @@ void ChatDemo::FinalizeThreadDisplay() {
   }
 }
 
-void ChatDemo::OnHomeTabActivated() {
+void ChatController::OnHomeTabActivated() {
   if (!messaging_ready_) {
     return;
   }
@@ -545,12 +545,12 @@ void ChatDemo::OnHomeTabActivated() {
   ShellHost::Instance().DirtyWindow();
 }
 
-void ChatDemo::OnSessionsTabActivated() {
+void ChatController::OnSessionsTabActivated() {
   ClearWorkingSet();
   working_set_by_entry_.clear();
 }
 
-void ChatDemo::OnSelectThread(const std::string& thread_id) {
+void ChatController::OnSelectThread(const std::string& thread_id) {
   if (!messaging_ready_) {
     return;
   }
@@ -560,7 +560,7 @@ void ChatDemo::OnSelectThread(const std::string& thread_id) {
   }
 }
 
-void ChatDemo::OnCloseThread(const std::string& thread_id) {
+void ChatController::OnCloseThread(const std::string& thread_id) {
   if (!messaging_ready_) {
     return;
   }
@@ -588,7 +588,7 @@ void ChatDemo::OnCloseThread(const std::string& thread_id) {
   ShellHost::Instance().DirtyWindow();
 }
 
-void ChatDemo::RefreshFromMessaging() {
+void ChatController::RefreshFromMessaging() {
   SyncShellSessions();
   SyncDisplayFromThread();
   UpdateThreadChrome();
@@ -596,7 +596,7 @@ void ChatDemo::RefreshFromMessaging() {
   DirtyShell();
 }
 
-void ChatDemo::SyncShellSessions() {
+void ChatController::SyncShellSessions() {
   if (!messaging_ready_) {
     return;
   }
@@ -637,7 +637,7 @@ void ChatDemo::SyncShellSessions() {
   }
 }
 
-void ChatDemo::UpdateThreadChrome() {
+void ChatController::UpdateThreadChrome() {
   if (!messaging_ready_) {
     return;
   }
@@ -659,7 +659,7 @@ void ChatDemo::UpdateThreadChrome() {
   }
 }
 
-void ChatDemo::SyncDisplayFromThread() {
+void ChatController::SyncDisplayFromThread() {
   if (!messaging_ready_) {
     return;
   }
@@ -669,7 +669,7 @@ void ChatDemo::SyncDisplayFromThread() {
   chat_.use_messages_layout = true;
 }
 
-void ChatDemo::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
+void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
   if (payload && !payload->empty()) {
     if (auto result = MessagingHub::Instance().Actions().Dispatch(*payload)) {
       if (*result) {
@@ -695,7 +695,7 @@ void ChatDemo::HandleLocalAction(const std::string& message, const std::optional
   SendUserText(message, payload);
 }
 
-void ChatDemo::OnSendMessage() {
+void ChatController::OnSendMessage() {
   if (chat_.loading) {
     return;
   }
@@ -710,7 +710,7 @@ void ChatDemo::OnSendMessage() {
   SendUserText(text);
 }
 
-void ChatDemo::OnNewChat() {
+void ChatController::OnNewChat() {
   if (!messaging_ready_) {
     return;
   }
@@ -729,24 +729,24 @@ void ChatDemo::OnNewChat() {
   ShellHost::Instance().DirtyWindow();
 }
 
-bool ChatDemo::IsFormEditable(const std::string& entry_id, const std::string& form_id) const {
+bool ChatController::IsFormEditable(const std::string& entry_id, const std::string& form_id) const {
   if (submitted_forms_.count({entry_id, form_id}) > 0) {
     return false;
   }
   return active_form_ && active_form_->entry_id == entry_id && active_form_->form_id == form_id;
 }
 
-TurnWidgetState* ChatDemo::FindWidgetState(const std::string& entry_id) {
+TurnWidgetState* ChatController::FindWidgetState(const std::string& entry_id) {
   const auto it = widgets_by_entry_.find(entry_id);
   return it == widgets_by_entry_.end() ? nullptr : &it->second;
 }
 
-const TurnWidgetState* ChatDemo::FindWidgetState(const std::string& entry_id) const {
+const TurnWidgetState* ChatController::FindWidgetState(const std::string& entry_id) const {
   const auto it = widgets_by_entry_.find(entry_id);
   return it == widgets_by_entry_.end() ? nullptr : &it->second;
 }
 
-void ChatDemo::MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const {
+void ChatController::MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const {
   const TurnWidgetState* widgets = FindWidgetState(entry_id);
   if (!widgets) {
     return;
@@ -766,7 +766,7 @@ void ChatDemo::MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDi
   }
 }
 
-std::string ChatDemo::HydrateAssistantRml(const TranscriptEntry& entry) const {
+std::string ChatController::HydrateAssistantRml(const TranscriptEntry& entry) const {
   if (!entry.assistant_rml) {
     return {};
   }
@@ -775,7 +775,7 @@ std::string ChatDemo::HydrateAssistantRml(const TranscriptEntry& entry) const {
   return InjectEntryPlaceholders(rml, entry.id);
 }
 
-void ChatDemo::InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits) {
+void ChatController::InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits) {
   TurnWidgetState state;
   ApplyWidgetInits(inits, state);
   widgets_by_entry_[entry_id] = std::move(state);
@@ -789,7 +789,7 @@ void ChatDemo::InitializeWidgetState(const std::string& entry_id, const std::vec
   }
 }
 
-void ChatDemo::ExpireFormsExcept(const std::string& entry_id, const std::string& form_id) {
+void ChatController::ExpireFormsExcept(const std::string& entry_id, const std::string& form_id) {
   for (auto& [id, widgets] : widgets_by_entry_) {
     if (!widgets.has_form) {
       continue;
@@ -801,12 +801,12 @@ void ChatDemo::ExpireFormsExcept(const std::string& entry_id, const std::string&
   }
 }
 
-void ChatDemo::ClearFormState() {
+void ChatController::ClearFormState() {
   active_form_.reset();
   submitted_forms_.clear();
 }
 
-void ChatDemo::UpdateSidebarPreview(const std::string& preview_text) {
+void ChatController::UpdateSidebarPreview(const std::string& preview_text) {
   if (!messaging_ready_) {
     return;
   }
@@ -816,7 +816,7 @@ void ChatDemo::UpdateSidebarPreview(const std::string& preview_text) {
   DirtyShell();
 }
 
-void ChatDemo::SendUserText(const std::string& text, std::optional<std::string> user_payload) {
+void ChatController::SendUserText(const std::string& text, std::optional<std::string> user_payload) {
   const std::string trimmed = Trim(text);
   if (trimmed.empty() || chat_.loading) {
     return;
@@ -875,7 +875,7 @@ void ChatDemo::SendUserText(const std::string& text, std::optional<std::string> 
   agent_->Submit(trimmed, std::move(user_payload));
 }
 
-void ChatDemo::SubmitForm(const std::string& entry_id, const std::string& form_id) {
+void ChatController::SubmitForm(const std::string& entry_id, const std::string& form_id) {
   if (chat_.loading) {
     return;
   }
@@ -910,7 +910,7 @@ void ChatDemo::SubmitForm(const std::string& entry_id, const std::string& form_i
   SendUserText(display_text, payload);
 }
 
-void ChatDemo::SendChatAction(const std::string& entry_id, int action_index) {
+void ChatController::SendChatAction(const std::string& entry_id, int action_index) {
   if (chat_.loading || action_index < 0 || !messaging_ready_) {
     return;
   }
@@ -939,7 +939,7 @@ void ChatDemo::SendChatAction(const std::string& entry_id, int action_index) {
   log().warning << "Chat action entry not found: " << entry_id;
 }
 
-void ChatDemo::CalendarPrev(const std::string& entry_id) {
+void ChatController::CalendarPrev(const std::string& entry_id) {
   TurnWidgetState* widgets = FindWidgetState(entry_id);
   if (!widgets || !widgets->has_calendar) {
     return;
@@ -951,7 +951,7 @@ void ChatDemo::CalendarPrev(const std::string& entry_id) {
   SyncDisplayFromThread();
 }
 
-void ChatDemo::CalendarNext(const std::string& entry_id) {
+void ChatController::CalendarNext(const std::string& entry_id) {
   TurnWidgetState* widgets = FindWidgetState(entry_id);
   if (!widgets || !widgets->has_calendar) {
     return;
@@ -963,7 +963,7 @@ void ChatDemo::CalendarNext(const std::string& entry_id) {
   SyncDisplayFromThread();
 }
 
-void ChatDemo::SelectCalendarDay(const std::string& entry_id, const std::string& iso_date) {
+void ChatController::SelectCalendarDay(const std::string& entry_id, const std::string& iso_date) {
   if (chat_.loading) {
     return;
   }
@@ -991,7 +991,7 @@ void ChatDemo::SelectCalendarDay(const std::string& entry_id, const std::string&
   SendUserText("Selected " + iso_date);
 }
 
-void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, const bool from_llm,
+void ChatController::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, const bool from_llm,
                                     const std::string& finish_reason, const std::string& thread_id,
                                     ResponseGoal response_goal, RenderMode render_mode) {
   if (!from_llm) {
@@ -1079,7 +1079,7 @@ void ChatDemo::FinishAssistantReply(const std::string& entry_id, const std::stri
   DirtyShell();
 }
 
-void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
+void ChatController::HandleAgentEvent(const AgentEvent& event) {
   switch (event.type) {
   case AgentEventType::LoadingChanged:
     chat_.loading = event.loading;
@@ -1123,7 +1123,7 @@ void ChatDemo::HandleAgentEvent(const AgentEvent& event) {
   }
 }
 
-bool ChatDemo::Setup(Rml::Context* context) {
+bool ChatController::Setup(Rml::Context* context) {
   if (!context) {
     return false;
   }
@@ -1162,7 +1162,7 @@ bool ChatDemo::Setup(Rml::Context* context) {
   }
 
   agent_->Configure(config);
-  log().info << "Chat demo initialized (model: " << config.llm.model << ")";
+  log().info << "Chat initialized (model: " << config.llm.model << ")";
 
   DataModelHost::Instance().Clear();
 
@@ -1186,25 +1186,25 @@ bool ChatDemo::Setup(Rml::Context* context) {
 
   if (!DataModelHost::Instance().Register(context, "chat", [](Rml::DataModelConstructor& ctor) {
         RegisterChatWidgetDataTypes(ctor);
-        ctor.Bind("draft", &ChatDemo::Instance().chat_.draft);
-        ctor.Bind("draft_placeholder", &ChatDemo::Instance().chat_.draft_placeholder);
-        ctor.Bind("status", &ChatDemo::Instance().chat_.status);
-        ctor.Bind("loading", &ChatDemo::Instance().chat_.loading);
-        ctor.Bind("has_turns", &ChatDemo::Instance().chat_.has_turns);
-        ctor.Bind("turns", &ChatDemo::Instance().chat_.turns);
-        ctor.Bind("messages", &ChatDemo::Instance().chat_.messages);
-        ctor.Bind("use_messages_layout", &ChatDemo::Instance().chat_.use_messages_layout);
-        ctor.Bind("thread_title", &ChatDemo::Instance().chat_.thread_title);
-        ctor.Bind("thread_subtitle", &ChatDemo::Instance().chat_.thread_subtitle);
-        ctor.Bind("thread_encrypted", &ChatDemo::Instance().chat_.thread_encrypted);
-        ctor.BindEventCallback("send_message", &ChatDemo::SendMessageCallback);
-        ctor.BindEventCallback("send_suggestion", &ChatDemo::SendSuggestionCallback);
-        ctor.BindEventCallback("send_chat_action", &ChatDemo::SendChatActionCallback);
-        ctor.BindEventCallback("submit_form", &ChatDemo::SubmitFormCallback);
-        ctor.BindEventCallback("calendar_prev", &ChatDemo::CalendarPrevCallback);
-        ctor.BindEventCallback("calendar_next", &ChatDemo::CalendarNextCallback);
-        ctor.BindEventCallback("select_calendar_day", &ChatDemo::SelectCalendarDayCallback);
-        ctor.BindEventCallback("open_working_set", &ChatDemo::OpenWorkingSetCallback);
+        ctor.Bind("draft", &ChatController::Instance().chat_.draft);
+        ctor.Bind("draft_placeholder", &ChatController::Instance().chat_.draft_placeholder);
+        ctor.Bind("status", &ChatController::Instance().chat_.status);
+        ctor.Bind("loading", &ChatController::Instance().chat_.loading);
+        ctor.Bind("has_turns", &ChatController::Instance().chat_.has_turns);
+        ctor.Bind("turns", &ChatController::Instance().chat_.turns);
+        ctor.Bind("messages", &ChatController::Instance().chat_.messages);
+        ctor.Bind("use_messages_layout", &ChatController::Instance().chat_.use_messages_layout);
+        ctor.Bind("thread_title", &ChatController::Instance().chat_.thread_title);
+        ctor.Bind("thread_subtitle", &ChatController::Instance().chat_.thread_subtitle);
+        ctor.Bind("thread_encrypted", &ChatController::Instance().chat_.thread_encrypted);
+        ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
+        ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
+        ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
+        ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
+        ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
+        ctor.BindEventCallback("calendar_next", &ChatController::CalendarNextCallback);
+        ctor.BindEventCallback("select_calendar_day", &ChatController::SelectCalendarDayCallback);
+        ctor.BindEventCallback("open_working_set", &ChatController::OpenWorkingSetCallback);
       })) {
     return false;
   }
@@ -1217,31 +1217,31 @@ bool ChatDemo::Setup(Rml::Context* context) {
           working_set_handle.RegisterMember("has_calendar", &TurnWidgetState::has_calendar);
           working_set_handle.RegisterMember("calendar", &TurnWidgetState::calendar);
         }
-        if (auto session_handle = ctor.RegisterStruct<ChatDemo::SessionRow>()) {
-          session_handle.RegisterMember("id", &ChatDemo::SessionRow::id);
-          session_handle.RegisterMember("title", &ChatDemo::SessionRow::title);
-          session_handle.RegisterMember("preview", &ChatDemo::SessionRow::preview);
-          session_handle.RegisterMember("kind", &ChatDemo::SessionRow::kind);
-          session_handle.RegisterMember("unread_count", &ChatDemo::SessionRow::unread_count);
-          session_handle.RegisterMember("active", &ChatDemo::SessionRow::active);
-          session_handle.RegisterMember("closable", &ChatDemo::SessionRow::closable);
+        if (auto session_handle = ctor.RegisterStruct<ChatController::SessionRow>()) {
+          session_handle.RegisterMember("id", &ChatController::SessionRow::id);
+          session_handle.RegisterMember("title", &ChatController::SessionRow::title);
+          session_handle.RegisterMember("preview", &ChatController::SessionRow::preview);
+          session_handle.RegisterMember("kind", &ChatController::SessionRow::kind);
+          session_handle.RegisterMember("unread_count", &ChatController::SessionRow::unread_count);
+          session_handle.RegisterMember("active", &ChatController::SessionRow::active);
+          session_handle.RegisterMember("closable", &ChatController::SessionRow::closable);
         }
-        ctor.RegisterArray<std::vector<ChatDemo::SessionRow>>();
-        ctor.Bind("sessions", &ChatDemo::Instance().shell_.sessions);
-        ctor.Bind("working_set_active", &ChatDemo::Instance().shell_.working_set_active);
-        ctor.Bind("working_set_title", &ChatDemo::Instance().shell_.working_set_title);
-        ctor.Bind("working_set_subtitle", &ChatDemo::Instance().shell_.working_set_subtitle);
-        ctor.Bind("working_set_rml", &ChatDemo::Instance().shell_.working_set_rml);
-        ctor.Bind("working_set", &ChatDemo::Instance().shell_.working_set);
-        ctor.BindEventCallback("new_chat", &ChatDemo::NewChatCallback);
-        ctor.BindEventCallback("select_thread", &ChatDemo::SelectThreadCallback);
-        ctor.BindEventCallback("close_thread", &ChatDemo::CloseThreadCallback);
-        ctor.BindEventCallback("send_chat_action", &ChatDemo::SendChatActionCallback);
-        ctor.BindEventCallback("submit_form", &ChatDemo::SubmitFormCallback);
-        ctor.BindEventCallback("calendar_prev", &ChatDemo::CalendarPrevCallback);
-        ctor.BindEventCallback("calendar_next", &ChatDemo::CalendarNextCallback);
-        ctor.BindEventCallback("select_calendar_day", &ChatDemo::SelectCalendarDayCallback);
-        ctor.BindEventCallback("open_working_set", &ChatDemo::OpenWorkingSetCallback);
+        ctor.RegisterArray<std::vector<ChatController::SessionRow>>();
+        ctor.Bind("sessions", &ChatController::Instance().shell_.sessions);
+        ctor.Bind("working_set_active", &ChatController::Instance().shell_.working_set_active);
+        ctor.Bind("working_set_title", &ChatController::Instance().shell_.working_set_title);
+        ctor.Bind("working_set_subtitle", &ChatController::Instance().shell_.working_set_subtitle);
+        ctor.Bind("working_set_rml", &ChatController::Instance().shell_.working_set_rml);
+        ctor.Bind("working_set", &ChatController::Instance().shell_.working_set);
+        ctor.BindEventCallback("new_chat", &ChatController::NewChatCallback);
+        ctor.BindEventCallback("select_thread", &ChatController::SelectThreadCallback);
+        ctor.BindEventCallback("close_thread", &ChatController::CloseThreadCallback);
+        ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
+        ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
+        ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
+        ctor.BindEventCallback("calendar_next", &ChatController::CalendarNextCallback);
+        ctor.BindEventCallback("select_calendar_day", &ChatController::SelectCalendarDayCallback);
+        ctor.BindEventCallback("open_working_set", &ChatController::OpenWorkingSetCallback);
       })) {
     return false;
   }
@@ -1267,10 +1267,10 @@ bool ChatDemo::Setup(Rml::Context* context) {
       SettingsController::Instance().OnNavTabDeactivated();
     }
     if (tab == NavTab::Home) {
-      ChatDemo::Instance().OnHomeTabActivated();
+      ChatController::Instance().OnHomeTabActivated();
     }
     if (tab == NavTab::Sessions) {
-      ChatDemo::Instance().OnSessionsTabActivated();
+      ChatController::Instance().OnSessionsTabActivated();
     }
     if (tab == NavTab::Settings) {
       SettingsController::Instance().OnNavTabActivated();
@@ -1288,7 +1288,7 @@ bool ChatDemo::Setup(Rml::Context* context) {
       SettingsController::Instance().SyncLayoutMode();
     }
     if (mode == LayoutMode::Compact && ShellHost::Instance().State().nav_tab == NavTab::Home) {
-      ChatDemo::Instance().OnHomeTabActivated();
+      ChatController::Instance().OnHomeTabActivated();
     }
   });
   ShellHost::Instance().SetOnLayoutSynced([]() {
@@ -1334,20 +1334,20 @@ bool ChatDemo::Setup(Rml::Context* context) {
   return true;
 }
 
-void ChatDemo::ApplyRuntimeConfig(const AppConfig& config) {
+void ChatController::ApplyRuntimeConfig(const AppConfig& config) {
   use_llm_ = !config.llm.base_url.empty();
   if (agent_) {
     agent_->Configure(config);
   }
 }
 
-void ChatDemo::OnApplicationPause() {
+void ChatController::OnApplicationPause() {
   if (agent_) {
     agent_->Cancel();
   }
 }
 
-void ChatDemo::Update() {
+void ChatController::Update() {
   if (pending_reply_) {
     PendingReply reply = std::move(*pending_reply_);
     pending_reply_.reset();
@@ -1369,7 +1369,7 @@ void ChatDemo::Update() {
   }
 }
 
-void ChatDemo::Shutdown() {
+void ChatController::Shutdown() {
   AppLifecycle::ClearBackgroundListeners();
   if (agent_) {
     agent_->Cancel();
@@ -1388,19 +1388,19 @@ void ChatDemo::Shutdown() {
   use_llm_ = false;
 }
 
-bool SetupChatDemo(Rml::Context* context) {
-  return ChatDemo::Instance().Setup(context);
+bool SetupChatController(Rml::Context* context) {
+  return ChatController::Instance().Setup(context);
 }
 
-void UpdateChatDemo() {
+void UpdateChatController() {
   if (ShellHost::Instance().State().nav_tab == NavTab::Settings) {
     SettingsController::Instance().Tick();
   }
-  ChatDemo::Instance().Update();
+  ChatController::Instance().Update();
 }
 
-void ShutdownChatDemo() {
-  ChatDemo::Instance().Shutdown();
+void ShutdownChatController() {
+  ChatController::Instance().Shutdown();
 }
 
 } // namespace pbr

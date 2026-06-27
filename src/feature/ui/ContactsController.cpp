@@ -3,7 +3,7 @@
 #include "base/messaging/MessagingJson.h"
 #include "base/people/ContactTypes.h"
 #include "feature/messaging/MessagingHub.h"
-#include "feature/chat/ChatDemo.h"
+#include "feature/chat/ChatController.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/ShellHost.h"
 
@@ -217,7 +217,7 @@ void ContactsController::OnStartChat() {
 
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
   ShellHost::Instance().SetPrimaryPane("chat");
-  ChatDemo::Instance().FinalizeThreadDisplay();
+  ChatController::Instance().FinalizeThreadDisplay();
 }
 
 } // namespace pbr

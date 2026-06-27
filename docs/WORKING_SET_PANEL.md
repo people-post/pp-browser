@@ -6,7 +6,7 @@ This document is the authoritative design plan for the auxiliary working set pan
 
 ## Why
 
-Today, every successful assistant reply copies the full hydrated RML into the auxiliary pane and auto-opens it ([`ChatDemo::FinishAssistantReply`](../src/feature/chat/ChatDemo.cpp)). That treats the panel as a duplicate of chat rather than a place to **work** on AI output (browse lists, fill forms, scan tables).
+Today, every successful assistant reply copies the full hydrated RML into the auxiliary pane and auto-opens it ([`ChatController::FinishAssistantReply`](../src/feature/chat/ChatController.cpp)). That treats the panel as a duplicate of chat rather than a place to **work** on AI output (browse lists, fill forms, scan tables).
 
 **Design principle:** Chat explains; panel lets you work. Never mirror narrative paragraphs in the panel.
 
@@ -49,7 +49,7 @@ Related docs: [WINDOW_SHELL.md](WINDOW_SHELL.md), [CHAT_TEMPLATES.md](CHAT_TEMPL
 - [x] Add `WorkingSetTypes` and extend `ParseResult` + `AgentEvent` with `response_goal`
 - [x] Implement `WorkingSetPolicy`: ResponseGoal-first routing + block heuristics + affinity
 - [x] Dual render in `StructuredTextParser`: artifact RML for panel, teasers for chat
-- [x] `WorkingSetController` in `ChatDemo`: apply, open, sticky update, clear, lifecycle hooks
+- [x] `WorkingSetController` in `ChatController`: apply, open, sticky update, clear, lifecycle hooks
 - [x] Update `preview.rml` + `base.rcss` for working set panel and chat chips
 - [x] Wire form/calendar panel bindings; update `PromptBuilder`, docs, tests
 
@@ -97,7 +97,7 @@ Extend [`ParseResult`](../src/base/ai/StructuredTextParser.h):
 std::vector<WorkingSetCandidate> working_set_candidates;
 ```
 
-Replace `shell_.preview_rml` in [`ChatDemo::ShellState`](../src/feature/chat/ChatDemo.h) with `WorkingSetState working_set` (bind `working_set.body_rml` as `preview_rml` temporarily if needed to minimize RML churn).
+Replace `shell_.preview_rml` in [`ChatController::ShellState`](../src/feature/chat/ChatController.h) with `WorkingSetState working_set` (bind `working_set.body_rml` as `preview_rml` temporarily if needed to minimize RML churn).
 
 ### 2. Two-layer routing: ResponseGoal first, block heuristics second
 
@@ -134,7 +134,7 @@ std::optional<WorkingSetCandidate> BuildCandidate(
     ResponseGoal goal, /* rendered artifact + teaser */);
 ```
 
-Wire `ResponseGoal` into chat: extend [`AgentEvent`](../src/feature/ai/AgentSession.h) with `response_goal` and `render_mode`; populate in [`AgentSession::PushAssistantReady`](../src/feature/ai/AgentSession.cpp) from `state->turn_plan`. Pass through [`HandleAgentEvent`](../src/feature/chat/ChatDemo.cpp) → `FinishAssistantReply`.
+Wire `ResponseGoal` into chat: extend [`AgentEvent`](../src/feature/ai/AgentSession.h) with `response_goal` and `render_mode`; populate in [`AgentSession::PushAssistantReady`](../src/feature/ai/AgentSession.cpp) from `state->turn_plan`. Pass through [`HandleAgentEvent`](../src/feature/chat/ChatController.cpp) → `FinishAssistantReply`.
 
 Mock path: infer goal from mock JSON content (e.g. `long_list` → `PeopleDiscovery`) or default `General`.
 
@@ -160,7 +160,7 @@ Teaser chip (entry placeholder injected later):
 
 Register `open_working_set(entry_id, block_index)` on `chat` and `shell` data models.
 
-### 4. WorkingSetController in ChatDemo
+### 4. WorkingSetController in ChatController
 
 New methods replacing ad-hoc preview logic:
 
@@ -179,13 +179,13 @@ Populated at parse time in `FinishAssistantReply`.
 
 ### 5. Sticky task lifecycle
 
-Add `WorkingSetAffinity active_affinity_` and optional `active_task_key_` (e.g. `"feed:blog_articles"`) to `ChatDemo`.
+Add `WorkingSetAffinity active_affinity_` and optional `active_task_key_` (e.g. `"feed:blog_articles"`) to `ChatController`.
 
 | Event | Behavior |
 |-------|----------|
 | New reply, same affinity (e.g. pagination → `DisplayFeed` long_list) | **Update in place** — panel content swaps, stays open |
 | New reply, different affinity | **Replace** working set with new primary candidate |
-| Form submitted ([`SubmitForm`](../src/feature/chat/ChatDemo.cpp)) | **Close** working set (task complete) |
+| Form submitted ([`SubmitForm`](../src/feature/chat/ChatController.cpp)) | **Close** working set (task complete) |
 | Row action completed (`send_chat_action` with start_conversation etc.) | Close or collapse to chat status line |
 | New chat / thread switch | **Clear** working set (fixes current stale-preview bug) |
 | User dismisses panel (Escape / toggle) | Close visually; `auxiliary_available` stays true so user can reopen via chip |
@@ -262,7 +262,7 @@ Update [`PromptBuilder::ChatBlocksProfile()`](../src/base/ai/PromptBuilder.cpp):
 | `src/base/ai/WorkingSetPolicy.h/.cpp` (new) | Goal + block routing |
 | `src/base/ai/StructuredTextParser.h/.cpp` | Candidates, dual render, teasers |
 | `src/feature/ai/AgentSession.h/.cpp` | Pass `response_goal` / `render_mode` in `AgentEvent` |
-| `src/feature/chat/ChatDemo.h/.cpp` | WorkingSetController, sticky lifecycle, callbacks |
+| `src/feature/chat/ChatController.h/.cpp` | WorkingSetController, sticky lifecycle, callbacks |
 | `assets/views/preview.rml` | Dynamic working set chrome |
 | `assets/themes/base.rcss` | Panel + chip styles |
 | `src/base/ai/PromptBuilder.cpp` | Side panel guidance for LLM |

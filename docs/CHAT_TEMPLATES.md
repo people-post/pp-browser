@@ -30,7 +30,7 @@ Reference example: `blog_articles` MCP tool → map `{ articles: [...] }` into r
 
 ## Reactive widgets
 
-Form and calendar blocks emit **stable RML templates** with data bindings. In the messages layout, chat teasers point to the working set panel where forms bind under `working_set.*` on the shell model. C++ widget state lives in `ChatDemo::widgets_by_entry_`.
+Form and calendar blocks emit **stable RML templates** with data bindings. In the messages layout, chat teasers point to the working set panel where forms bind under `working_set.*` on the shell model. C++ widget state lives in `ChatController::widgets_by_entry_`.
 
 ### Form
 

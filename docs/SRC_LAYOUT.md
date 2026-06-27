@@ -105,6 +105,6 @@ Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
 ```cpp
 #include "common/Logger.h"
 #include "base/data/Config.h"
-#include "feature/chat/ChatDemo.h"
+#include "feature/chat/ChatController.h"
 #include "app/Application.h"
 ```

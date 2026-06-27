@@ -26,9 +26,9 @@ class Context;
 
 namespace pbr {
 
-class ChatDemo : public Module {
+class ChatController : public Module {
 public:
-  static ChatDemo& Instance();
+  static ChatController& Instance();
 
   using SessionRow = SessionDisplayRow;
 
@@ -76,7 +76,7 @@ private:
     bool from_llm = false;
   };
 
-  ChatDemo();
+  ChatController();
 
   static void SendMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SendSuggestionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -146,8 +146,8 @@ private:
   std::string active_working_set_entry_id_;
 };
 
-bool SetupChatDemo(Rml::Context* context);
-void UpdateChatDemo();
-void ShutdownChatDemo();
+bool SetupChatController(Rml::Context* context);
+void UpdateChatController();
+void ShutdownChatController();
 
 } // namespace pbr
