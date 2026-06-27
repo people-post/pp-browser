@@ -27,9 +27,9 @@ TEST(ServiceClientFactoryTest, BuildsHttpMockAndMcpClients) {
 
   auto& promoted = pbr::McpClient::MockInstance();
   auto mcp_clients = pbr::CreateServiceClients(mock_config, &promoted);
-  const auto mcp_hits = mcp_clients.directory->SearchPeople("alice");
+  auto mcp_hits = mcp_clients.directory->SearchPeople("alice");
   ASSERT_TRUE(static_cast<bool>(mcp_hits));
-  ASSERT_FALSE(mcp_hits->empty());
+  ASSERT_FALSE((*mcp_hits).empty());
   EXPECT_EQ((*mcp_hits)[0].nickname, "alice");
 
   const auto mcp_send = mcp_clients.relay->Send(envelope);
