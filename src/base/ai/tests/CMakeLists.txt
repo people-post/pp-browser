@@ -40,3 +40,24 @@ target_link_libraries(pp_browser_working_set_policy_test PRIVATE
   pp_base
   nlohmann_json::nlohmann_json)
 pp_browser_add_gtest(pp_browser_working_set_policy_test)
+
+add_executable(pp_browser_structured_text_parser_test structured_text_parser_test.cpp)
+target_include_directories(pp_browser_structured_text_parser_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pp_browser_structured_text_parser_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_base
+  nlohmann_json::nlohmann_json)
+pp_browser_add_gtest(pp_browser_structured_text_parser_test)
+
+add_executable(pp_browser_llm_client_test llm_client_test.cpp)
+target_include_directories(pp_browser_llm_client_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pp_browser_llm_client_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_base
+  pp_common
+  nlohmann_json::nlohmann_json
+  CURL::libcurl)
+pp_browser_add_gtest(pp_browser_llm_client_test)
+

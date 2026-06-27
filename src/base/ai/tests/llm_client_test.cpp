@@ -1,19 +1,10 @@
 #include "base/ai/LlmClient.h"
 
-#include <stdexcept>
+#include <gtest/gtest.h>
+
 #include <string>
 
-namespace {
-
-void Expect(bool condition, const char* message) {
-  if (!condition) {
-    throw std::runtime_error(message);
-  }
-}
-
-} // namespace
-
-int main() {
+TEST(LlmClientTest, ParsesToolCallsAndContentResponses) {
   const std::string tool_response = R"({
     "choices": [{
       "finish_reason": "tool_calls",
@@ -33,11 +24,11 @@ int main() {
   })";
 
   auto tool_result = pbr::LlmClient::ParseChatCompletionResponse(tool_response);
-  Expect(static_cast<bool>(tool_result), "tool response must parse");
-  Expect(tool_result->finish_reason == "tool_calls", "finish_reason");
-  Expect(tool_result->tool_calls.size() == 1, "one tool call");
-  Expect(tool_result->tool_calls[0].name == "web_search", "tool name");
-  Expect(tool_result->tool_calls[0].arguments["query"] == "latest news", "tool args");
+  ASSERT_TRUE(static_cast<bool>(tool_result));
+  EXPECT_EQ(tool_result->finish_reason, "tool_calls");
+  ASSERT_EQ(tool_result->tool_calls.size(), 1u);
+  EXPECT_EQ(tool_result->tool_calls[0].name, "web_search");
+  EXPECT_EQ(tool_result->tool_calls[0].arguments["query"], "latest news");
 
   const std::string content_response = R"({
     "choices": [{
@@ -50,11 +41,13 @@ int main() {
   })";
 
   auto content_result = pbr::LlmClient::ParseChatCompletionResponse(content_response);
-  Expect(static_cast<bool>(content_result), "content response must parse");
-  Expect(content_result->content.has_value(), "content present");
-  Expect(content_result->tool_calls.empty(), "no tool calls");
-  Expect(content_result->finish_reason == "stop", "stop finish_reason");
+  ASSERT_TRUE(static_cast<bool>(content_result));
+  EXPECT_TRUE(content_result->content.has_value());
+  EXPECT_TRUE(content_result->tool_calls.empty());
+  EXPECT_EQ(content_result->finish_reason, "stop");
+}
 
+TEST(LlmClientTest, ParsesTruncatedResponses) {
   const std::string truncated_response = R"({
     "choices": [{
       "finish_reason": "length",
@@ -66,8 +59,6 @@ int main() {
   })";
 
   auto truncated_result = pbr::LlmClient::ParseChatCompletionResponse(truncated_response);
-  Expect(static_cast<bool>(truncated_result), "truncated response must parse");
-  Expect(truncated_result->finish_reason == "length", "length finish_reason");
-
-  return 0;
+  ASSERT_TRUE(static_cast<bool>(truncated_result));
+  EXPECT_EQ(truncated_result->finish_reason, "length");
 }

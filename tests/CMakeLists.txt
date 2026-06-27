@@ -4,24 +4,20 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/src/feature/ai/tests
   ${CMAKE_BINARY_DIR}/tests/feature_ai_tests)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/ai/tests
   ${CMAKE_BINARY_DIR}/tests/base_ai_tests)
+add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/ai/conversation/tests
+  ${CMAKE_BINARY_DIR}/tests/base_ai_conversation_tests)
+add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/ai/mcp/tests
+  ${CMAKE_BINARY_DIR}/tests/base_ai_mcp_tests)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/data/tests
   ${CMAKE_BINARY_DIR}/tests/base_data_tests)
+add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/net/tests
+  ${CMAKE_BINARY_DIR}/tests/base_net_tests)
 
 add_executable(pp_browser_rml_validator_test rml_validator_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp)
 target_link_libraries(pp_browser_rml_validator_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_rml_validator_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(rml_validator_test pp_browser_rml_validator_test)
-
-add_executable(pp_browser_mcp_mock_test mcp_mock_test.cpp)
-target_link_libraries(pp_browser_mcp_mock_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json CURL::libcurl)
-target_include_directories(pp_browser_mcp_mock_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(mcp_mock_test pp_browser_mcp_mock_test)
-
-add_executable(pp_browser_structured_text_parser_test structured_text_parser_test.cpp)
-target_link_libraries(pp_browser_structured_text_parser_test PRIVATE pp_base nlohmann_json::nlohmann_json)
-target_include_directories(pp_browser_structured_text_parser_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(structured_text_parser_test pp_browser_structured_text_parser_test)
 
 add_executable(pp_browser_rml_mount_test rml_mount_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp)
@@ -36,17 +32,6 @@ add_executable(pp_browser_shell_host_test shell_host_test.cpp
 target_include_directories(pp_browser_shell_host_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_link_rmlui_core(pp_browser_shell_host_test)
 pp_browser_add_test(shell_host_test pp_browser_shell_host_test)
-
-add_executable(pp_browser_llm_client_test llm_client_test.cpp)
-target_link_libraries(pp_browser_llm_client_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json CURL::libcurl)
-target_include_directories(pp_browser_llm_client_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(llm_client_test pp_browser_llm_client_test)
-
-add_executable(pp_browser_web_search_test web_search_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/feature/ai/tools/WebSearchTool.cpp)
-target_link_libraries(pp_browser_web_search_test PRIVATE pp_common nlohmann_json::nlohmann_json CURL::libcurl)
-target_include_directories(pp_browser_web_search_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(web_search_test pp_browser_web_search_test)
 
 add_executable(pp_browser_turn_planner_test turn_planner_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/ai/TurnPlan.cpp)
@@ -67,11 +52,6 @@ add_executable(pp_browser_turn_executor_test turn_executor_test.cpp
 target_link_libraries(pp_browser_turn_executor_test PRIVATE pp_common nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_turn_executor_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(turn_executor_test pp_browser_turn_executor_test)
-
-add_executable(pp_browser_sliding_window_context_policy_test sliding_window_context_policy_test.cpp)
-target_link_libraries(pp_browser_sliding_window_context_policy_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json CURL::libcurl)
-target_include_directories(pp_browser_sliding_window_context_policy_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(sliding_window_context_policy_test pp_browser_sliding_window_context_policy_test)
 
 add_executable(pp_browser_chat_form_helper_test chat_form_helper_test.cpp
   ${CMAKE_SOURCE_DIR}/src/feature/chat/ChatFormHelper.cpp
@@ -158,12 +138,3 @@ target_link_libraries(pp_browser_platform_defaults_test PRIVATE pp_common nlohma
 target_include_directories(pp_browser_platform_defaults_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(platform_defaults_test pp_browser_platform_defaults_test)
 
-add_executable(pp_browser_service_client_factory_test service_client_factory_test.cpp)
-target_link_libraries(pp_browser_service_client_factory_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json CURL::libcurl)
-target_include_directories(pp_browser_service_client_factory_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(service_client_factory_test pp_browser_service_client_factory_test)
-
-add_executable(pp_browser_mcp_infra_bridge_test mcp_infra_bridge_test.cpp)
-target_link_libraries(pp_browser_mcp_infra_bridge_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json CURL::libcurl)
-target_include_directories(pp_browser_mcp_infra_bridge_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(mcp_infra_bridge_test pp_browser_mcp_infra_bridge_test)

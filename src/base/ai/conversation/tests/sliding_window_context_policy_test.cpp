@@ -3,8 +3,9 @@
 #include "base/ai/conversation/TurnCoordinator.h"
 #include "base/ai/conversation/UserMessageFormatter.h"
 
+#include <gtest/gtest.h>
+
 #include <cassert>
-#include <iostream>
 #include <string>
 
 namespace {
@@ -34,7 +35,7 @@ void AssertUserAssistantPair(const pbr::ContextBuildResult& built, const std::st
 
 } // namespace
 
-int main() {
+TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
   pbr::Conversation conversation;
   pbr::SlidingWindowContextPolicy policy;
   const pbr::ContextBudget budget{.max_turn_pairs = 2, .max_recent_chars = 1000, .max_input_tokens = 8000};
@@ -132,6 +133,4 @@ int main() {
   plain_entry.user_text = "hello";
   assert(pbr::FormatUserContentForLlm(plain_entry) == "hello");
 
-  std::cout << "sliding_window_context_policy_test passed\n";
-  return 0;
 }

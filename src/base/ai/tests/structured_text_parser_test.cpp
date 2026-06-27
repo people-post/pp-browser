@@ -1,10 +1,11 @@
 #include "base/ai/StructuredTextParser.h"
 
+#include <gtest/gtest.h>
+
 #include <cassert>
-#include <iostream>
 #include <string>
 
-int main() {
+TEST(StructuredTextParserTest, ComprehensiveParsingScenarios) {
   const std::string valid = R"({
     "blocks": [
       { "type": "paragraph", "text": "Hello <world> & \"quotes\"" },
@@ -307,6 +308,4 @@ int main() {
   auto long_list_missing_items_result = pbr::StructuredTextParser::ParseBlocksJson(long_list_missing_items);
   assert(!long_list_missing_items_result.ok);
 
-  std::cout << "structured_text_parser_test ok\n";
-  return 0;
 }

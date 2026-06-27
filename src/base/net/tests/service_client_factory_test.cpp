@@ -1,17 +1,16 @@
 #include "base/ai/mcp/McpClient.h"
 #include "base/net/ServiceClientFactory.h"
 
-#include <cassert>
-#include <iostream>
+#include <gtest/gtest.h>
 
-int main() {
+TEST(ServiceClientFactoryTest, BuildsHttpMockAndMcpClients) {
   pbr::AppConfig config;
   config.relay.base_url = "https://relay.example";
 
   auto clients = pbr::CreateServiceClients(config, nullptr);
-  assert(clients.relay);
-  assert(clients.directory);
-  assert(clients.registration);
+  ASSERT_TRUE(static_cast<bool>(clients.relay));
+  ASSERT_TRUE(static_cast<bool>(clients.directory));
+  ASSERT_TRUE(static_cast<bool>(clients.registration));
 
   pbr::RelayEnvelope envelope;
   envelope.thread_id = "thread-1";
@@ -19,23 +18,20 @@ int main() {
   envelope.sender_relay_id = "relay:self";
   envelope.body.text = "hello";
   const auto http_send = clients.relay->Send(envelope);
-  assert(!http_send);
+  EXPECT_FALSE(static_cast<bool>(http_send));
 
   pbr::AppConfig mock_config;
   auto mock_clients = pbr::CreateServiceClients(mock_config, nullptr);
   const auto mock_send = mock_clients.relay->Send(envelope);
-  assert(mock_send);
+  EXPECT_TRUE(static_cast<bool>(mock_send));
 
   auto& promoted = pbr::McpClient::MockInstance();
   auto mcp_clients = pbr::CreateServiceClients(mock_config, &promoted);
   const auto mcp_hits = mcp_clients.directory->SearchPeople("alice");
-  assert(mcp_hits);
-  assert(!mcp_hits->empty());
-  assert((*mcp_hits)[0].nickname == "alice");
+  ASSERT_TRUE(static_cast<bool>(mcp_hits));
+  ASSERT_FALSE(mcp_hits->empty());
+  EXPECT_EQ((*mcp_hits)[0].nickname, "alice");
 
   const auto mcp_send = mcp_clients.relay->Send(envelope);
-  assert(mcp_send);
-
-  std::cout << "service_client_factory_test ok\n";
-  return 0;
+  EXPECT_TRUE(static_cast<bool>(mcp_send));
 }
