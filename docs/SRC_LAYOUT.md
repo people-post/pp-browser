@@ -87,6 +87,12 @@ integration/host → fork/include (public API only)
 | `pp_feature` | feature |
 | `pp-browser` | app executable |
 
+## Test placement
+
+- Keep integration and environment-heavy tests in [`tests/`](../tests/).
+- Prefer colocated unit tests under module paths such as `src/base/.../tests/` and `src/feature/.../tests/`.
+- Register module-local tests through CMake so they are discovered by CTest in regular desktop builds.
+
 ## Litmus tests
 
 - **Common:** reusable in another project; no pp-browser domain types.
