@@ -7,6 +7,7 @@
 #include <libp2p/muxer/yamux/yamux_reading_state.hpp>
 
 #include <cassert>
+#include <tuple>
 
 #include <libp2p/log/logger.hpp>
 
@@ -23,7 +24,8 @@ namespace libp2p::connection {
     }
 
     inline std::tuple<BytesOut, BytesOut> split(BytesOut span, size_t n) {
-      return {span.subspan(0, ssize_t(n)), span.subspan(ssize_t(n))};
+      return std::tuple<BytesOut, BytesOut>{span.subspan(0, n),
+                                            span.subspan(n)};
     }
 
   }  // namespace
