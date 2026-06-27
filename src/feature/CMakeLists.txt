@@ -30,8 +30,6 @@ set(PP_BROWSER_FEATURE_SOURCES
   chat/ChatFormHelper.cpp
   chat/ChatWidgetStateBuilder.cpp
   chat/CalendarHelper.cpp
-  search/SearchDemo.cpp
-  dynamic/DynamicRmlDemo.cpp
   settings/SettingsLogic.cpp
   settings/LlmSettingsSection.cpp
   settings/IntegrationsSettingsSection.cpp

@@ -75,7 +75,6 @@ From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
 
 ```bash
 ./build/pp-browser
-./build/pp-browser --demo search
 ```
 
 ### Simulated touch (optional dev)

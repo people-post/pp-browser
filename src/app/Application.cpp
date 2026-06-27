@@ -11,9 +11,6 @@
 #include "base/platform/PlatformServices.h"
 #include "base/platform/SdlAppEvents.h"
 #include "feature/ui/ShellHost.h"
-#include "feature/dynamic/DynamicRmlDemo.h"
-#include "feature/search/SearchDemo.h"
-#include "feature/ui/DocumentLoader.h"
 #include "base/ui/Theme.h"
 
 #include <RmlUi/Core/Context.h>
@@ -77,7 +74,7 @@ std::string Application::AssetsPath(const std::string& relative) {
   return IAssetLocator::Instance().Resolve(relative);
 }
 
-bool Application::Initialize(const char* window_title, DemoMode demo) {
+bool Application::Initialize(const char* window_title) {
   if (initialized_) {
     return true;
   }
@@ -88,7 +85,6 @@ bool Application::Initialize(const char* window_title, DemoMode demo) {
   }
 
   const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
-  demo_ = demo;
 
   const int width = bootstrap.machine_prefs.window.width;
   const int height = bootstrap.machine_prefs.window.height;
@@ -99,7 +95,7 @@ bool Application::Initialize(const char* window_title, DemoMode demo) {
     ResolveMobileWindowSize(window_width, window_height);
   }
 
-  log().info << "Initializing (demo=" << static_cast<int>(demo) << ", " << window_width << "x" << window_height << ")";
+  log().info << "Initializing (" << window_width << "x" << window_height << ")";
 
   BrowserThread::Initialize();
 
@@ -168,25 +164,7 @@ bool Application::Initialize(const char* window_title, DemoMode demo) {
   ContextMenuHost::Instance().Install(context);
 
   ActionRouter::Instance().Attach(context);
-  if (demo == DemoMode::Search) {
-    if (!SetupSearchDemo(context)) {
-      log().error << "SetupSearchDemo failed";
-      Rml::RemoveContext("main");
-      Rml::Shutdown();
-      Backend::Shutdown();
-      return false;
-    }
-  } else if (demo == DemoMode::Hello) {
-    DocumentLoader::LoadFile(context, AssetsPath("samples/hello.rml"));
-  } else if (demo == DemoMode::Dynamic) {
-    if (!SetupDynamicRmlDemo(context)) {
-      log().error << "SetupDynamicRmlDemo failed";
-      Rml::RemoveContext("main");
-      Rml::Shutdown();
-      Backend::Shutdown();
-      return false;
-    }
-  } else if (!SetupChatDemo(context)) {
+  if (!SetupChatDemo(context)) {
     log().error << "SetupChatDemo failed";
     Rml::RemoveContext("main");
     Rml::Shutdown();
@@ -211,10 +189,8 @@ void Application::Run() {
 
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
     BrowserThread::RunUITasks();
-    if (demo_ == DemoMode::Chat) {
-      UpdateChatDemo();
-      ShellHost::Instance().Update(context);
-    }
+    UpdateChatDemo();
+    ShellHost::Instance().Update(context);
     context->Update();
     Backend::BeginFrame();
     context->Render();
@@ -227,9 +203,7 @@ void Application::Shutdown() {
     return;
   }
 
-  if (demo_ == DemoMode::Chat) {
-    ShutdownChatDemo();
-  }
+  ShutdownChatDemo();
 
   BrowserThread::RunUITasks();
   BrowserThread::Shutdown();

@@ -56,7 +56,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Window shell / layout | `src/feature/ui/ShellHost.*`, [docs/WINDOW_SHELL.md](docs/WINDOW_SHELL.md) |
 | Working set panel | [docs/WORKING_SET_PANEL.md](docs/WORKING_SET_PANEL.md) — auxiliary pane design |
 | Theme / layout | `assets/themes/base.rcss` |
-| Wire new demo | `src/app/Application.cpp`, `src/app/main.cpp` (`--demo`) |
+| App entry / chat bootstrap | `src/app/Application.cpp`, `src/app/main.cpp`, `src/feature/chat/ChatDemo.cpp` |
 | Structured AI replies | `src/base/ai/StructuredTextParser.cpp` |
 | Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | P2P messaging | `src/feature/messaging/`, [docs/P2P_MESSAGING.md](docs/P2P_MESSAGING.md) |
@@ -67,7 +67,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 
 ## Conventions
 
-- Prefer extending existing patterns (`SearchDemo`, `ChatDemo`, `DataModelHost`) over new frameworks.
+- Prefer extending existing patterns (`ChatDemo`, `DataModelHost`) over new frameworks.
 - Avoid unsupported RCSS (see RCSS profile); RmlUi will log parse errors at runtime.
 - For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus. Suggestion buttons render inline inside assistant bubbles.
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.

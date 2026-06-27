@@ -1,6 +1,6 @@
 # Window Shell
 
-The Window Shell replaces the old split-panel layout with a role-based, responsive container for all demos (Chat is the primary consumer).
+The Window Shell replaces the old split-panel layout with a role-based, responsive container for the chat UI.
 
 ## Subsystems
 

@@ -7,7 +7,6 @@ AI-native browser shell built with **SDL3** and a **hard-forked [RmlUi](https://
 - Cross-platform native window (Linux, Windows, macOS)
 - Vendored RmlUi source under `src/render/fork/`
 - MCP-oriented action routing and LLM UI generation scaffolding
-- Interactive search demo: `./build/pp-browser --demo search`
 
 ## Build
 

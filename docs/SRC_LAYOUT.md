@@ -73,9 +73,7 @@ integration/host → fork/include (public API only)
 | `feature/messaging/` | MessagingHub, router, inbox, P2P service |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
 | `feature/ui/` | ShellHost, DocumentLoader, RmlMount, SettingsController |
-| `feature/chat/` | Chat demo and helpers |
-| `feature/search/` | Search demo |
-| `feature/dynamic/` | Dynamic RML demo |
+| `feature/chat/` | Chat UI and helpers |
 | `feature/settings/` | Settings apply logic |
 
 ## CMake targets

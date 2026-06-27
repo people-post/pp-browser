@@ -17,21 +17,11 @@ pbr::Libp2pHost g_libp2p_host;
 
 int main(int argc, char** argv) {
   bool debug_mode = false;
-  pbr::DemoMode demo = pbr::DemoMode::Chat;
   std::string profile_override;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--debug") == 0) {
       debug_mode = true;
-    } else if (std::strcmp(argv[i], "--demo") == 0 && i + 1 < argc) {
-      if (std::strcmp(argv[i + 1], "search") == 0) {
-        demo = pbr::DemoMode::Search;
-      } else if (std::strcmp(argv[i + 1], "hello") == 0) {
-        demo = pbr::DemoMode::Hello;
-      } else if (std::strcmp(argv[i + 1], "dynamic") == 0) {
-        demo = pbr::DemoMode::Dynamic;
-      }
-      ++i;
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
       profile_override = argv[i + 1];
       ++i;
@@ -71,7 +61,7 @@ int main(int argc, char** argv) {
   pbr::SessionStore::Instance().Initialize(std::move(bootstrap_result.value()));
 
   pbr::Application app;
-  if (!app.Initialize("pp-browser", demo)) {
+  if (!app.Initialize("pp-browser")) {
     root.error << "pp-browser: failed to initialize.";
 #if defined(__ANDROID__)
     root.error << " Check logcat for SDL/OpenGL errors.";

@@ -126,4 +126,4 @@ See [RML_PROFILE.md](RML_PROFILE.md) for allowed elements.
 ## ActionRouter vs InputCoordinator
 
 - **ActionRouter** (`src/feature/ai/bindings/`) — RML `data-event-click` and MCP tool routing.
-- **InputCoordinator** — keyboard shortcuts registered from C++ (demos, global quit).
+- **InputCoordinator** — keyboard shortcuts registered from C++ (global quit, etc.).

@@ -47,7 +47,7 @@ Layering: `PlatformDefaults` → user config file → field-level merge (partial
 
 ## Runtime session state
 
-After bootstrap, a single [`SessionStore`](../src/base/data/SessionStore.h) owns the live `BootstrapResult` (config, profile prefs, paths). Settings and demos read/write through it; saves reload from disk before notifying listeners.
+After bootstrap, a single [`SessionStore`](../src/base/data/SessionStore.h) owns the live `BootstrapResult` (config, profile prefs, paths). Settings and chat read/write through it; saves reload from disk before notifying listeners.
 
 | Listener | Trigger |
 |----------|---------|

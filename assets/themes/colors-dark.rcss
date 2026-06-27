@@ -231,23 +231,6 @@ select selectbox option:hover {
   color: #6b7280;
 }
 
-.dynamic-demo-shell {
-  background-color: #111827;
-}
-
-.dynamic-status {
-  color: #4ade80;
-}
-
-.scroll-list {
-  background-color: #1f2937;
-  border: 1dp #374151;
-}
-
-.dynamic-panel-b .scroll-list {
-  background-color: #374151;
-}
-
 .shell-banner {
   background-color: #422006;
   border-bottom: 1dp #854d0e;

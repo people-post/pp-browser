@@ -8,13 +8,6 @@
 
 namespace pbr {
 
-enum class DemoMode {
-  Chat,
-  Search,
-  Hello,
-  Dynamic,
-};
-
 class Application : public Module {
 public:
   Application();
@@ -23,7 +16,7 @@ public:
   Application(const Application&) = delete;
   Application& operator=(const Application&) = delete;
 
-  bool Initialize(const char* window_title, DemoMode demo);
+  bool Initialize(const char* window_title);
   void Run();
   void Shutdown();
 
@@ -31,7 +24,6 @@ public:
 
 private:
   bool initialized_ = false;
-  DemoMode demo_ = DemoMode::Chat;
 };
 
 } // namespace pbr

@@ -31,11 +31,9 @@ Runtime UI updates use [`src/feature/ui/RmlMount.cpp`](../src/feature/ui/RmlMoun
 - `InjectRcss` — merge dynamic RCSS into the active document (re-inject by `source_tag` replaces prior rules)
 - `DocumentLoader::MountFragment` — mount into a live container without closing the active document
 
-Demo: `./pp-browser --demo dynamic`
-
 ## Window Shell
 
-Chat and future full-window demos use the role-based shell in [`src/feature/ui/ShellHost.*`](../src/feature/ui/ShellHost.cpp):
+Chat uses the role-based shell in [`src/feature/ui/ShellHost.*`](../src/feature/ui/ShellHost.cpp):
 
 - **ShellLayout** — Compact/Expanded modes (768dp breakpoint)
 - **ShellHost** — Primary/Secondary/Auxiliary panes, overlays, Safari-style compact toolbar
