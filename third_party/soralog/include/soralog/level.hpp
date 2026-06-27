@@ -49,6 +49,10 @@ namespace soralog {
     IGNORE,    ///< No logging (for specific messages)
   };
 
+  // Named constants for use in macros: Windows headers may define ERROR/DEBUG.
+  inline constexpr Level kLevelError = Level::ERROR;
+  inline constexpr Level kLevelDebug = Level::DEBUG;
+
   namespace detail {
     /**
      * @brief Mapping of log levels to their string representations.

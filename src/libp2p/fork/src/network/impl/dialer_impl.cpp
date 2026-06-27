@@ -8,8 +8,9 @@
 #include <iostream>
 
 #include <libp2p/connection/stream.hpp>
-#include <libp2p/log/logger.hpp>
 #include <libp2p/network/impl/dialer_impl.hpp>
+
+#include <libp2p/log/logger.hpp>
 
 namespace libp2p::network {
 

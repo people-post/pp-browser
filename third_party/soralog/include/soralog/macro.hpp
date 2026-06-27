@@ -84,7 +84,7 @@
 
 #ifndef WITHOUT_DEBUG_LOG_LEVEL
 #define SL_DEBUG(LOG, FMT, ...) \
-  _SL_LOG((LOG), soralog::Level::DEBUG, (FMT), ##__VA_ARGS__)
+  _SL_LOG((LOG), soralog::kLevelDebug, (FMT), ##__VA_ARGS__)
 #else
 #define SL_DEBUG(LOG, FMT, ...)
 #endif
@@ -99,7 +99,7 @@
   _SL_LOG((LOG), soralog::Level::WARN, (FMT), ##__VA_ARGS__)
 
 #define SL_ERROR(LOG, FMT, ...) \
-  _SL_LOG((LOG), soralog::Level::ERROR, (FMT), ##__VA_ARGS__)
+  _SL_LOG((LOG), soralog::kLevelError, (FMT), ##__VA_ARGS__)
 
 #define SL_CRITICAL(LOG, FMT, ...) \
   _SL_LOG((LOG), soralog::Level::CRITICAL, (FMT), ##__VA_ARGS__)
@@ -117,7 +117,7 @@
 
 #ifndef WITHOUT_DEBUG_LOG_LEVEL
 #define SL_DEBUG_DF(LOG, FMT, ...) \
-  _SL_LOG_DF((LOG), soralog::Level::DEBUG, (FMT), ##__VA_ARGS__)
+  _SL_LOG_DF((LOG), soralog::kLevelDebug, (FMT), ##__VA_ARGS__)
 #else
 #define SL_DEBUG_DF(LOG, FMT, ...)
 #endif
@@ -132,7 +132,7 @@
   _SL_LOG_DF((LOG), soralog::Level::WARN, (FMT), ##__VA_ARGS__)
 
 #define SL_ERROR_DF(LOG, FMT, ...) \
-  _SL_LOG_DF((LOG), soralog::Level::ERROR, (FMT), ##__VA_ARGS__)
+  _SL_LOG_DF((LOG), soralog::kLevelError, (FMT), ##__VA_ARGS__)
 
 #define SL_CRITICAL_DF(LOG, FMT, ...) \
   _SL_LOG_DF((LOG), soralog::Level::CRITICAL, (FMT), ##__VA_ARGS__)
