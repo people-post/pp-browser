@@ -24,6 +24,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(MSVC)
   # Prevent windows.h min/max macros from breaking std::min/std::max (soralog, etc.).
   add_compile_definitions(NOMINMAX)
+  # Target Windows 7+; avoids Boost/winapi defaulting _WIN32_WINNT at compile time.
+  add_compile_definitions(_WIN32_WINNT=0x0601)
 endif()
 
 pp_browser_finalize_compiler_cache()
