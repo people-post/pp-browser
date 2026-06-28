@@ -208,9 +208,12 @@ namespace libp2p::transport::lsquic {
                                  std::move(cb));
       };
       int r = 0;
+#ifdef _WIN32
+      std::vector<WSABUF> iov{};
+#endif
       for (auto &spec : std::span{out_spec, n_packets_out}) {
 #ifdef _WIN32
-        std::vector<WSABUF> iov{};
+        iov.clear();
         iov.reserve(spec.iovlen);
         for (size_t i = 0; i < spec.iovlen; ++i) {
           WSABUF entry{};
@@ -225,8 +228,7 @@ namespace libp2p::transport::lsquic {
             static_cast<DWORD>(iov.size()),
             nullptr,
             0,
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-            reinterpret_cast<sockaddr *>(const_cast<sockaddr *>(spec.dest_sa)),
+            spec.dest_sa,
             spec.dest_sa->sa_family == AF_INET ? sizeof(sockaddr_in)
                                                : sizeof(sockaddr_in6),
             nullptr,
