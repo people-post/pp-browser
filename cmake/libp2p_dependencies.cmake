@@ -206,6 +206,11 @@ if(TARGET lsquic)
   target_include_directories(lsquic PUBLIC
     "$<BUILD_INTERFACE:${PP_LIBP2P_THIRD_PARTY}/lsquic/include>"
   )
+  if(WIN32)
+    target_include_directories(lsquic PUBLIC
+      "$<BUILD_INTERFACE:${PP_LIBP2P_THIRD_PARTY}/lsquic/wincompat>"
+    )
+  endif()
   if(NOT HUNTER_ENABLED)
     target_link_libraries(lsquic PUBLIC OpenSSL::SSL OpenSSL::Crypto ZLIB::ZLIB)
   endif()
