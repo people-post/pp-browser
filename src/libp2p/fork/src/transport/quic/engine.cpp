@@ -5,6 +5,7 @@
  */
 
 #include <boost/asio/ssl/context.hpp>
+#include <vector>
 #include <libp2p/common/asio_buffer.hpp>
 #include <libp2p/common/asio_cb.hpp>
 #include <libp2p/muxer/muxed_connection_config.hpp>
@@ -192,8 +193,51 @@ namespace libp2p::transport::lsquic {
                              unsigned n_packets_out) {
       auto *self = static_cast<Engine *>(void_self);
       // https://github.com/cbodley/nexus/blob/d1d8486f713fd089917331239d755932c7c8ed8e/src/socket.cc#L218
+      auto schedule_send_unsent = [self]() {
+        auto cb = [weak_self{self->weak_from_this()}](boost::system::error_code ec) {
+          auto self = weak_self.lock();
+          if (not self) {
+            return;
+          }
+          if (ec) {
+            return;
+          }
+          lsquic_engine_send_unsent_packets(self->engine_);
+        };
+        self->socket_.async_wait(boost::asio::socket_base::wait_write,
+                                 std::move(cb));
+      };
       int r = 0;
       for (auto &spec : std::span{out_spec, n_packets_out}) {
+#ifdef _WIN32
+        std::vector<WSABUF> iov{};
+        iov.reserve(spec.iovlen);
+        for (size_t i = 0; i < spec.iovlen; ++i) {
+          WSABUF entry{};
+          entry.len = static_cast<ULONG>(spec.iov[i].iov_len);
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+          entry.buf = reinterpret_cast<char *>(spec.iov[i].iov_base);
+          iov.emplace_back(entry);
+        }
+        auto n = WSASendTo(
+            self->socket_.native_handle(),
+            iov.data(),
+            static_cast<DWORD>(iov.size()),
+            nullptr,
+            0,
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+            reinterpret_cast<sockaddr *>(const_cast<sockaddr *>(spec.dest_sa)),
+            spec.dest_sa->sa_family == AF_INET ? sizeof(sockaddr_in)
+                                               : sizeof(sockaddr_in6),
+            nullptr,
+            nullptr);
+        if (n == SOCKET_ERROR) {
+          if (WSAGetLastError() == WSAEWOULDBLOCK) {
+            schedule_send_unsent();
+          }
+          break;
+        }
+#else
         msghdr msg{};
         msg.msg_iov = spec.iov;
         msg.msg_iovlen = spec.iovlen;
@@ -205,22 +249,11 @@ namespace libp2p::transport::lsquic {
         auto n = sendmsg(self->socket_.native_handle(), &msg, 0);
         if (n == -1) {
           if (errno == EAGAIN or errno == EWOULDBLOCK) {
-            auto cb = [weak_self{self->weak_from_this()}](
-                          boost::system::error_code ec) {
-              auto self = weak_self.lock();
-              if (not self) {
-                return;
-              }
-              if (ec) {
-                return;
-              }
-              lsquic_engine_send_unsent_packets(self->engine_);
-            };
-            self->socket_.async_wait(boost::asio::socket_base::wait_write,
-                                     std::move(cb));
+            schedule_send_unsent();
           }
           break;
         }
+#endif
         ++r;
       }
       return r;
