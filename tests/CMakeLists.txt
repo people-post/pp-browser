@@ -15,17 +15,23 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/net/tests
 
 add_executable(pp_browser_rml_mount_test rml_mount_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp)
-target_link_libraries(pp_browser_rml_mount_test PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_rml_mount_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_rml_mount_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(rml_mount_test pp_browser_rml_mount_test)
+pp_browser_add_gtest(pp_browser_rml_mount_test)
 
 add_executable(pp_browser_shell_host_test shell_host_test.cpp
   ${CMAKE_SOURCE_DIR}/src/feature/ui/ShellLayout.cpp
   ${CMAKE_SOURCE_DIR}/src/feature/ui/ShellInterruption.cpp
   ${CMAKE_SOURCE_DIR}/src/feature/ui/ShellFeedback.cpp)
+target_link_libraries(pp_browser_shell_host_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main)
 target_include_directories(pp_browser_shell_host_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_link_rmlui_core(pp_browser_shell_host_test)
-pp_browser_add_test(shell_host_test pp_browser_shell_host_test)
+pp_browser_add_gtest(pp_browser_shell_host_test)
 
 add_executable(pp_browser_turn_planner_test turn_planner_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/ai/TurnPlan.cpp)
@@ -59,9 +65,14 @@ target_include_directories(pp_browser_chat_action_dispatcher_test PRIVATE ${CMAK
 pp_browser_add_test(chat_action_dispatcher_test pp_browser_chat_action_dispatcher_test)
 
 add_executable(pp_browser_messaging_foundation_test messaging_foundation_test.cpp)
-target_link_libraries(pp_browser_messaging_foundation_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_messaging_foundation_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_base
+  pp_common
+  nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_messaging_foundation_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(messaging_foundation_test pp_browser_messaging_foundation_test)
+pp_browser_add_gtest(pp_browser_messaging_foundation_test)
 
 set(PP_BROWSER_CONFIG_TEST_SOURCES
   ${CMAKE_SOURCE_DIR}/src/feature/settings/SettingsLogic.cpp
@@ -84,25 +95,39 @@ pp_browser_add_test(desktop_path_provider_test pp_browser_desktop_path_provider_
 
 add_executable(pp_browser_config_merge_test config_merge_test.cpp ${PP_BROWSER_CONFIG_TEST_SOURCES})
 target_compile_definitions(pp_browser_config_merge_test PRIVATE PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
-target_link_libraries(pp_browser_config_merge_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_config_merge_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_base
+  pp_common
+  nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_config_merge_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(config_merge_test pp_browser_config_merge_test)
+pp_browser_add_gtest(pp_browser_config_merge_test)
 
 add_executable(pp_browser_settings_sections_test settings_sections_test.cpp
   ${PP_BROWSER_SETTINGS_SECTION_TEST_SOURCES}
   ${CMAKE_SOURCE_DIR}/src/base/data/AppPaths.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/IPathProvider.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/DesktopPathProvider.cpp)
-target_link_libraries(pp_browser_settings_sections_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_settings_sections_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_base
+  pp_common
+  nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_settings_sections_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(settings_sections_test pp_browser_settings_sections_test)
+pp_browser_add_gtest(pp_browser_settings_sections_test)
 
 add_executable(pp_browser_platform_defaults_test platform_defaults_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/Platform.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/PlatformDefaults.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/ICredentialStore.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/EnvCredentialStore.cpp)
-target_link_libraries(pp_browser_platform_defaults_test PRIVATE pp_common nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_platform_defaults_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_common
+  nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_platform_defaults_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(platform_defaults_test pp_browser_platform_defaults_test)
+pp_browser_add_gtest(pp_browser_platform_defaults_test)
 
