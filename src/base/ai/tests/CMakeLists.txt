@@ -61,3 +61,12 @@ target_link_libraries(pp_browser_llm_client_test PRIVATE
   CURL::libcurl)
 pp_browser_add_gtest(pp_browser_llm_client_test)
 
+add_executable(pp_browser_rml_validator_test rml_validator_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp)
+target_link_libraries(pp_browser_rml_validator_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_rml_validator_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_gtest(pp_browser_rml_validator_test)
+

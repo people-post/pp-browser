@@ -13,12 +13,6 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/data/tests
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/net/tests
   ${CMAKE_BINARY_DIR}/tests/base_net_tests)
 
-add_executable(pp_browser_rml_validator_test rml_validator_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp)
-target_link_libraries(pp_browser_rml_validator_test PRIVATE nlohmann_json::nlohmann_json)
-target_include_directories(pp_browser_rml_validator_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(rml_validator_test pp_browser_rml_validator_test)
-
 add_executable(pp_browser_rml_mount_test rml_mount_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp)
 target_link_libraries(pp_browser_rml_mount_test PRIVATE nlohmann_json::nlohmann_json)
@@ -38,20 +32,6 @@ add_executable(pp_browser_turn_planner_test turn_planner_test.cpp
 target_link_libraries(pp_browser_turn_planner_test PRIVATE nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_turn_planner_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(turn_planner_test pp_browser_turn_planner_test ${CMAKE_SOURCE_DIR})
-
-add_executable(pp_browser_turn_executor_test turn_executor_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/feature/ai/TurnExecutor.cpp
-  ${CMAKE_SOURCE_DIR}/src/feature/ai/ToolRegistry.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/ai/TurnPlan.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/ai/ToolResultFormatter.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/ai/PromptBuilder.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/ai/StructuredTextParser.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/ai/WorkingSetPolicy.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/messaging/MessagingJson.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/messaging/PeopleDiscoveryBlocks.cpp)
-target_link_libraries(pp_browser_turn_executor_test PRIVATE pp_common nlohmann_json::nlohmann_json)
-target_include_directories(pp_browser_turn_executor_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(turn_executor_test pp_browser_turn_executor_test)
 
 add_executable(pp_browser_chat_form_helper_test chat_form_helper_test.cpp
   ${CMAKE_SOURCE_DIR}/src/feature/chat/ChatFormHelper.cpp
@@ -116,18 +96,6 @@ add_executable(pp_browser_settings_sections_test settings_sections_test.cpp
 target_link_libraries(pp_browser_settings_sections_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_settings_sections_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_test(settings_sections_test pp_browser_settings_sections_test)
-
-add_executable(pp_browser_session_store_test session_store_test.cpp ${PP_BROWSER_CONFIG_TEST_SOURCES})
-target_link_libraries(pp_browser_session_store_test PRIVATE pp_base pp_common nlohmann_json::nlohmann_json)
-target_include_directories(pp_browser_session_store_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(session_store_test pp_browser_session_store_test)
-
-add_executable(pp_browser_profile_registry_test profile_registry_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/data/ProfileRegistry.cpp
-  ${CMAKE_SOURCE_DIR}/src/base/data/SchemaVersion.cpp)
-target_link_libraries(pp_browser_profile_registry_test PRIVATE pp_common nlohmann_json::nlohmann_json)
-target_include_directories(pp_browser_profile_registry_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(profile_registry_test pp_browser_profile_registry_test)
 
 add_executable(pp_browser_platform_defaults_test platform_defaults_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/Platform.cpp
