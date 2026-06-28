@@ -6,7 +6,7 @@
 
 ## One-line goal
 
-One durable, query-friendly conversation model for AI and person-to-person chat, with explicit clear/forget semantics, separate public vs encrypted channels per contact, stable message IDs, and visible transport provenance in private mode.
+One durable, query-friendly conversation model for AI and person-to-person chat, with explicit clear/forget semantics, separate public vs encrypted channels per contact, stable message IDs, sender sequence for gap detection in private chat, three `@ai` modes in direct threads (local / shared reply / shared full), and visible transport provenance in private mode.
 
 ## Documents in this folder
 
@@ -26,6 +26,8 @@ One durable, query-friendly conversation model for AI and person-to-person chat,
 | v2b | Public vs E2E channel split | Not started |
 | v3 | Durable AI memory + clear/forget UX | Not started |
 | v4 | Annotations + transport badges | Not started |
+| v6 | Sender seq + gap detection + windowed sync | Not started |
+| v6b | `@ai` three modes (local / shared reply / full) | Not started |
 | v5 | Optional SQLite backend | Deferred |
 
 Update this table when a phase completes.
@@ -36,3 +38,4 @@ Update this table when a phase completes.
 - [ ] Should “clear history” on P2P warn that peer/relay may retain copies?
 - [ ] Relay protocol version for `annotation` envelope fields?
 - [ ] When to promote `ConversationSummary` to disk vs keep in thread JSON?
+- [ ] Relay API for tail/gap backfill when peer is offline (O005)?

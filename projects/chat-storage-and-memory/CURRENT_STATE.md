@@ -2,6 +2,8 @@
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
+**Planned but not implemented:** sender seq, windowed sync, gap repair, three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D012 in [DECISIONS.md](DECISIONS.md).
+
 ## Persistence
 
 | Area | Status | Location |
@@ -32,7 +34,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 ### `ThreadMessage`
 
 - Has UUID `id`, `delivery`, `relay_visible`.
-- No `kind`, `transport`, `target_message_id`, or `user_payload`.
+- No `kind`, `transport`, `target_message_id`, `user_payload`, `sender_seq`, or `session_epoch`.
 - AI thread turns store `text` + optional `content_rml` + `chat_actions`.
 
 ### `TranscriptEntry` / `Conversation` — `src/base/ai/conversation/`
@@ -48,9 +50,13 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 | HTTP relay send + poll dedup | Implemented | `src/feature/messaging/P2pMessagingService.*` |
 | Local write before send | Implemented | `SendUserMessage` appends then relays |
 | `HasMessageId` global dedup | Implemented | `JsonThreadStore` + poll merge |
-| `@ai` scoped assist | Implemented | `MessageRouter` → `SubmitScopedAssist` |
+| `@ai` scoped assist | Implemented (local only) | `MessageRouter` → `SubmitScopedAssist`; single `@ai` pattern, always local |
+| `@ai+` / `@ai++` shared modes | Not implemented | Design: D012, phase v6b |
 | Direct P2P transport | Not implemented | All outbound via `IRelayClient` |
 | libp2p messaging glue | Stub | `src/libp2p/integration/host/` |
+| `sender_seq` / gap detection | Not implemented | Design: D008–D011, phase v6 |
+| Windowed sync (tail / scroll / gap repair) | Not implemented | Design: D009 |
+| Per-peer sync state / `history_floor_seq` | Not implemented | Set on clear history (D010) |
 
 ### `FindOrCreateDirectThread`
 
@@ -102,3 +108,5 @@ Legacy path: `agent_->Submit()` uses `Conversation` only — no disk.
 5. No annotation / meta-message schema.
 6. No transport provenance field or UI.
 7. `Thread.encrypted` unused in creation paths.
+8. No `sender_seq`, session epoch, or gap-repair sync (relay poll + UUID dedup only).
+9. `@ai` has one local-only mode today — no `@ai+` / `@ai++` shared-to-peer paths (D012).

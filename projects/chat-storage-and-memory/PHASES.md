@@ -136,6 +136,105 @@ Existing foundation this project builds on.
 
 ---
 
+## Phase v6 — Sender seq, gap detection, and windowed sync
+
+**Goal:** Private/direct chat detects missing peer messages and syncs reliably without full-history pull.
+
+**Depends on:** v2b (channel split), v4 (`transport`, envelope extensions); peer backfill requires direct/libp2p transport (stub today).
+
+### Schema and persistence
+
+- [ ] Add `sender_seq`, `session_epoch` to `ThreadMessage` and relay envelope
+- [ ] Persist `next_outgoing_seq`, `session_epoch` on chat target `(contact_id, channel)`
+- [ ] Per-thread sync state: `contiguous_peer_seq`, `loaded_min/max_seq`, `history_floor_seq`, `sync_state`
+- [ ] Assign `(message_id, sender_seq)` at first local persist; increment seq only when `relay_visible=true`
+- [ ] Failed send retry: same `message_id` + `sender_seq` (D010)
+
+### Send / receive
+
+- [ ] Sign envelope including `sender_seq` and `session_epoch`
+- [ ] Ingest: UUID dedup, then seq watermark / gap detection
+- [ ] Distinguish bootstrap (high seq on empty store) vs contiguous gap (D009)
+- [ ] On clear history: set `history_floor_seq`; do not reset outgoing seq (D010)
+
+### Sync modes
+
+- [ ] **Tail sync** on thread open / reconnect / new device (default N=50)
+- [ ] **Gap repair** — auto-request missing range from peer (direct) with relay fallback
+- [ ] **History backfill** — scroll-to-top triggers page fetch (25 messages)
+- [ ] Reorder buffer (short window) before declaring gap
+
+### Integrity and UX
+
+- [ ] Conflicting `(sender, session_epoch, sender_seq)` + different `message_id` → `sync_state=compromised` (D011)
+- [ ] Key rotation + new secure chat flow; bump `session_epoch`, reset seq for new epoch only
+- [ ] Gap banner in chat UI; scroll hint when older history exists
+- [ ] Unit tests: seq assignment, retry idempotency, gap detect, bootstrap vs gap, clear-history floor
+
+### Docs
+
+- [ ] Extend [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md) relay envelope when implemented
+- [ ] Update this file + README progress snapshot
+
+**Exit criteria:** Simulated gap in tail triggers auto-repair; new device loads tail only; clear history then live send continues seq; conflict triggers compromise UX.
+
+---
+
+## Phase v6b — `@ai` three modes (local, shared reply, shared full)
+
+**Goal:** Direct-thread AI assist with explicit local vs shared-to-peer modes; shared modes use trigger user’s sync seq (D012).
+
+**Depends on:** v6 (`sender_seq`, send pipeline); v4 (`transport` badges) for shared-row UX.
+
+### Parser and routing
+
+- [ ] Extend `AtAiParseResult` with `AtAiMode`: `Local`, `SharedReply`, `SharedFull`
+- [ ] Parse `@ai`, `@ai+`, `@ai++` (and optional long-form aliases)
+- [ ] `MessageRouter` branches per mode; pass mode into `SubmitScopedAssist`
+
+### Local mode (`@ai`)
+
+- [ ] Persist AI row: `relay_visible=false`, `sender_contact_id=ai:assistant`, no `sender_seq`, `ai_invoke_mode=local`
+- [ ] Matches today’s behavior; no relay
+
+### Shared reply (`@ai+`)
+
+- [ ] On AI complete: persist + send one row — `generation=ai_on_behalf`, `relay_visible=true`, +1 sync seq
+- [ ] Prompt not relayed (optional local-only note, not required)
+- [ ] Wire as trigger user’s stream; local UI assistant bubble + shared badge
+
+### Shared full (`@ai++`)
+
+- [ ] Persist + send prompt row first — stripped text, `generation=user`, seq N
+- [ ] On AI complete: persist + send reply — `generation=ai_on_behalf`, seq N+1
+- [ ] Independent retry per row (same id+seq on failure)
+
+### Agent session
+
+- [ ] `AgentTurnMode` or flag for scoped assist mode (local / shared_reply / shared_full)
+- [ ] `PersistAssistantToThread` sets `relay_visible`, `generation`, `seq_owner` per D012
+- [ ] Shared paths invoke `P2pMessagingService` send after persist
+
+### UX
+
+- [ ] Composer placeholder / hints for three modes
+- [ ] Confirm dialog: `@ai+` vs `@ai++` copy; E2E transport badge on shared rows
+
+### Tests
+
+- [ ] Parser: `@ai`, `@ai+`, `@ai++`, aliases
+- [ ] Local: no seq, not relayed
+- [ ] Shared reply: one seq, one envelope
+- [ ] Shared full: two seq, two envelopes, stripped prompt body
+
+### Docs
+
+- [ ] Update [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md) `@ai` section when implemented
+
+**Exit criteria:** Three modes routable in direct threads; shared modes relay with correct seq count; local mode unchanged for peer.
+
+---
+
 ## Phase v5 — Optional SQLite backend (deferred)
 
 **Goal:** Scale and query without changing feature code.
@@ -153,6 +252,8 @@ Existing foundation this project builds on.
 - [ ] Add `JsonThreadStore` unit tests (load, append, delete, clear, dedup)
 - [ ] Agent tool docs if `list_conversations` must expose channel
 - [ ] Fuzz/dedup test: duplicate relay `message_id` ignored
+- [ ] Sender seq tests: gap repair, bootstrap tail, clear-history floor, compromise detection (v6)
+- [ ] `@ai` mode tests: local no-seq, shared reply +1, shared full +2 (v6b)
 
 ---
 
@@ -161,3 +262,5 @@ Existing foundation this project builds on.
 | Date | Change |
 |------|--------|
 | 2026-06-27 | Project doc created from planning discussion |
+| 2026-06-27 | D008–D011: sender seq, windowed sync, seq lifecycle, session compromise; phase v6 |
+| 2026-06-27 | D012: three `@ai` modes; phase v6b; sync seq only when `relay_visible` |

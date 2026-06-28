@@ -16,4 +16,4 @@ When a project is fully delivered and stable, fold enduring facts into `docs/` a
 
 | Project | Status | Summary |
 |---------|--------|---------|
-| [chat-storage-and-memory](chat-storage-and-memory/) | Planning / early v2 | Transcript persistence, clear-chat semantics, AI memory, P2P channel split, message IDs, relay vs direct |
+| [chat-storage-and-memory](chat-storage-and-memory/) | Planning / early v2 | Transcript persistence, clear-chat semantics, AI memory, P2P channel split, message IDs, sender seq / gap sync, `@ai` three modes, relay vs direct |
