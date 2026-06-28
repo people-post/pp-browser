@@ -10,6 +10,12 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+// winsock2.h pulls in wincrypt.h which defines these as integer constants,
+// conflicting with BoringSSL's typedefs in openssl/base.h.
+#undef X509_NAME
+#undef X509_EXTENSIONS
+#undef PKCS7_ISSUER_AND_SERIAL
+#undef PKCS7_SIGNER_INFO
 #else
 #include <arpa/inet.h>
 #endif
