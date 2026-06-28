@@ -1,7 +1,10 @@
 /* Copyright (c) 2017 - 2022 LiteSpeed Technologies Inc.  See LICENSE. */
 #pragma once
-#include <Windows.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <winsock2.h>
+#include <Windows.h>
 typedef SSIZE_T ssize_t;
 struct iovec {
   void  *iov_base;    /* Starting address */
