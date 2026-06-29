@@ -89,23 +89,31 @@ void Peer::startClient(const peer::PeerInfo &pinfo,
               counter = std::move(counter)](
                  StreamAndProtocolOrError rstream) mutable {
                // get stream
-               ASSERT_OUTCOME_SUCCESS(stream, rstream);
-               // make client session
-               auto client = std::make_shared<protocol::ClientTestSession>(
-                   stream.stream, ping_times);
-               // handle session
-               client->handle(
-                   [server_id = std::move(server_id),
-                    client,
-                    counter = std::move(counter)](
-                       outcome::result<std::vector<uint8_t>> res) mutable {
-                     // count message exchange
-                     counter->tick();
-                     // ensure message returned
-                     ASSERT_OUTCOME_SUCCESS(vec, res);
-                     // ensure message is correct
-                     ASSERT_EQ(vec.size(), client->bufferSize());  // NOLINT
-                   });
+               if (rstream) {
+                 auto stream = std::move(rstream.value());
+                 // make client session
+                 auto client = std::make_shared<protocol::ClientTestSession>(
+                     stream.stream, ping_times);
+                 // handle session
+                 client->handle(
+                     [server_id = std::move(server_id),
+                      client,
+                      counter = std::move(counter)](
+                         outcome::result<std::vector<uint8_t>> res) mutable {
+                       // count message exchange
+                       counter->tick();
+                       // ensure message returned
+                       if (res) {
+                         auto vec = std::move(res.value());
+                         // ensure message is correct
+                         ASSERT_EQ(vec.size(), client->bufferSize());  // NOLINT
+                       } else {
+                         FAIL() << "Failed to get message result";
+                       }
+                     });
+               } else {
+                 FAIL() << "Failed to create stream";
+               }
              });
        });
 }
