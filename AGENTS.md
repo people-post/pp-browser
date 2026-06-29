@@ -61,6 +61,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | P2P messaging | `src/feature/messaging/`, [docs/P2P_MESSAGING.md](docs/P2P_MESSAGING.md) |
 | Chat storage / memory (in progress) | [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) — design, phases, decisions |
+| E2E message crypto (planning) | [projects/e2e-message-crypto/](projects/e2e-message-crypto/) — PSK, libsodium, AEAD; design before `base/crypto` impl |
 | Config / data / profiles | `src/app/Bootstrap.*`, `src/base/data/`, `src/base/platform/`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
 | In-app settings | `src/feature/ui/SettingsController.*`, `assets/views/settings.rml` |
 | Build | [docs/BUILD.md](docs/BUILD.md) |

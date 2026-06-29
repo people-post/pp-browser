@@ -88,16 +88,16 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D010 — Seq lifecycle on chat target
 
 **Date:** 2026-06-27  
-**Decision:** `next_outgoing_seq` and `session_epoch` are keyed to **chat target `(contact_id, channel)`**, surviving thread delete/recreate and **clear visible history** (seq is not reset on clear). On clear, receiver sets `history_floor_seq[peer]` and does not auto-backfill older seq unless the user scrolls up. Failed sends retry with the **same `message_id` and `sender_seq`**. New device bootstrap uses tail sync only (same as open/reconnect). `uint64` overflow is accepted as out of scope.  
-**Rationale:** Seq represents the long-lived conversation with a contact, not a local transcript snapshot; idempotent retries must not bump seq; clear history is a local display choice, not a protocol reset.  
-**Alternatives:** Reset seq on clear; assign seq only after successful relay; thread-scoped counters.
+**Decision:** `next_outgoing_seq` and `session_epoch` are keyed to **chat target `(contact_id, channel)`**, surviving thread delete/recreate and **clear visible history** (seq is not reset on clear). On clear, receiver sets `history_floor_seq[peer][epoch]` to the max contiguous seq at clear time; relay-visible seq at or below the floor in the same epoch is **compromised** (D013), not silently ignored. Failed sends retry with the **same `message_id` and `sender_seq`**. New device / full reset requires **epoch bump** (D014). `uint64` overflow is accepted as out of scope.  
+**Rationale:** Seq represents the long-lived conversation with a contact, not a local transcript snapshot; idempotent retries must not bump seq; clear history is a local display choice, not a protocol reset; floor violations catch replay and sender reset without epoch bump.  
+**Alternatives:** Reset seq on clear; assign seq only after successful relay; thread-scoped counters; silently ignore below-floor messages.
 
 ---
 
 ## D011 — Session compromise on conflicting seq
 
 **Date:** 2026-06-27  
-**Decision:** If the same `(sender, session_epoch, sender_seq)` is received with a **different `message_id`**, treat as **session integrity failure**: halt ingest, notify both parties, rotate E2E keys, bump `session_epoch`, and start a new secure conversation (seq resets **only** for the new epoch). Same `(message_id, sender_seq)` duplicates are benign (UUID dedup). Envelope signature must bind `sender_seq` and `session_epoch`.  
+**Decision:** If the same `(sender, session_epoch, sender_seq)` is received with a **different `message_id`**, treat as **session integrity failure** (one case of D013): halt ingest, notify both parties, rotate E2E keys, bump `session_epoch`, and start a new secure conversation (seq resets **only** for the new epoch). Same `(message_id, sender_seq)` duplicates are benign (UUID dedup). Envelope signature must bind `sender_seq` and `session_epoch`.  
 **Rationale:** Under encryption, conflicting seq implies replay, split-brain, or attack; silent merge would break trust in private chat.  
 **Alternatives:** Last-write-wins; ignore conflict; log only.
 
@@ -109,6 +109,24 @@ Record significant choices here so future sessions (human or agent) do not re-li
 **Decision:** Direct-thread `@ai` has three explicit modes: **(1) Local** — `@ai …`, private assist, not relayed, no sync seq; **(2) Shared reply** — `@ai+ …` (alias `@ai share …`), relay AI output only, +1 sync seq on trigger user’s stream; **(3) Shared full** — `@ai++ …` (alias `@ai share all …`), relay stripped prompt then AI reply, +2 sync seq. Default is local. Shared rows use **`generation=ai_on_behalf`** for the AI reply; wire identity and **`sender_seq`** belong to the **trigger user** (`seq_owner_contact_id=local:self`, envelope `sender_contact_id=local:self`) so peer gap detection stays on the user’s stream. Local `@ai` must not consume sync seq (avoids false gaps when private assists sit between relayed messages).  
 **Rationale:** Users need private in-thread AI help without exposing it; when they choose to share, AI “speaks on behalf of” the triggerer with contiguous seq on the wire; prompt-only vs prompt+reply are distinct privacy/product choices.  
 **Alternatives:** Single `@ai` always local; always relay AI replies; one seq stream including local assists (rejected — false peer gaps).
+
+---
+
+## D013 — Strict normal-or-compromised ingest (private chat)
+
+**Date:** 2026-06-29  
+**Decision:** In direct/E2E threads, the receiver accepts only messages matching a defined set of **normal** cases: benign duplicate, epoch advance, contiguous tail (`sender_seq == contiguous + 1` and above floor), tail bootstrap on empty per-epoch store, and authorized history backfill in `(floor, loaded_min)`. **`sender_seq ≤ history_floor_seq[peer][epoch]` in the same epoch is compromised** (replay, stale traffic, or sender violated within-epoch contract) — not silently ignored. **`sender_seq < contiguous_peer_seq`** without benign duplicate, **epoch decrease**, invalid signature, and **gap repair failure** are also compromised. **`sender_seq > contiguous + 1`** above floor is **gap** (repair allowed); repair exhaustion → compromised. Sync watermarks are keyed by **`(peer, session_epoch)`**.  
+**Rationale:** Private chat requires a fail-closed integrity model; ambiguous ingest must not merge silently; the sender within-epoch contract (DESIGN.md § Within-epoch sender contract) makes “normal” unambiguous.  
+**Alternatives:** Silently ignore below-floor messages; treat all gaps as compromised without repair; global seq watermarks across epochs.
+
+---
+
+## D014 — Peer reset requires `session_epoch` bump
+
+**Date:** 2026-06-29  
+**Decision:** Full peer reset (new device without backup, wiped chat-target sidecar, explicit “start over”) **must bump `session_epoch`** and reset `next_outgoing_seq = 1` for the new epoch only. The receiver treats a higher unseen epoch as a **fresh stream** (`sender_seq = 1` is normal bootstrap). Optional first relay-visible row: `kind=system`, `control_type=epoch_start` (consumes seq 1). **Sending `sender_seq = 1` without epoch bump in an established epoch** (where `contiguous_peer_seq > 0`) **is compromised**. Restored backup with same chat-target sidecar continues the existing epoch — not a reset.  
+**Rationale:** Seq restart must be explicit and scoped; epoch is the namespace boundary; avoids ambiguous “fresh” traffic in an old epoch.  
+**Alternatives:** Ad-hoc first-message flag without epoch; allow seq rewind on reinstall; reset seq on clear history.
 
 ---
 

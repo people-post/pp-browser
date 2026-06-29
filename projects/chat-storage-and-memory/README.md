@@ -2,11 +2,12 @@
 
 **Status:** Planning — v2 not started (as of 2026-06-27)  
 **Owner:** Hongwei + agents  
-**Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)
+**Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
+**Related project:** [e2e-message-crypto](../e2e-message-crypto/) (symmetric E2E body crypto; depends on v2b + v6 for wire-up)
 
 ## One-line goal
 
-One durable, query-friendly conversation model for AI and person-to-person chat, with explicit clear/forget semantics, separate public vs encrypted channels per contact, stable message IDs, sender sequence for gap detection in private chat, three `@ai` modes in direct threads (local / shared reply / shared full), and visible transport provenance in private mode.
+One durable, query-friendly conversation model for AI and person-to-person chat, with explicit clear/forget semantics, separate public vs encrypted channels per contact, stable message IDs, sender sequence with **strict normal-or-compromised ingest** in private chat (D013), epoch-scoped peer reset (D014), three `@ai` modes in direct threads (local / shared reply / shared full), and visible transport provenance in private mode.
 
 ## Documents in this folder
 
@@ -39,3 +40,4 @@ Update this table when a phase completes.
 - [ ] Relay protocol version for `annotation` envelope fields?
 - [ ] When to promote `ConversationSummary` to disk vs keep in thread JSON?
 - [ ] Relay API for tail/gap backfill when peer is offline (O005)?
+- [ ] E2E ciphertext field name and sign-payload canonicalization — coordinate with [e2e-message-crypto](../e2e-message-crypto/DECISIONS.md) O001

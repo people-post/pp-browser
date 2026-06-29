@@ -8,7 +8,8 @@
 4. **Channel isolation** — public (relay) and E2E conversations with the same contact are different threads with different memory boundaries.
 5. **Stable IDs everywhere** — messages, threads, and annotation targets use UUIDs for dedup, sync, and reactions.
 6. **Sender sequence for completeness** — peer-visible direct messages carry a per-sender monotonic `sender_seq` (in addition to UUID) so receivers detect gaps in the live tail; UUID remains the only message identity. Only **`relay_visible`** content consumes sync seq (see `@ai` modes below).
-7. **Storage abstraction** — `IThreadStore` stays the seam; JSON default now, SQLite optional later.
+7. **Strict normal-or-compromised ingest (private chat)** — in direct/E2E threads, the receiver accepts only messages that match a small set of **normal** cases (D013). Everything else → `sync_state=compromised` (halt ingest, notify, key rotation / new epoch). The sender has an explicit **within-epoch contract**; violations are not silently merged.
+8. **Storage abstraction** — `IThreadStore` stays the seam; JSON default now, SQLite optional later.
 
 ## Three layers (transcript vs context vs memory)
 
@@ -41,7 +42,7 @@ Tool-call scratch (`turn_scratch`) remains **ephemeral per turn only** — never
 | `participant_contact_ids` | string[] | One peer for direct |
 | `title`, `preview`, `updated_at`, `unread_count` | — | Sidebar metadata |
 | `encrypted` | bool | Derived from `channel == e2e` (keep for UI binding) |
-| `session_epoch` | uint32 | **New.** Bumped on E2E key rotation / “new secure chat”; scopes `sender_seq` streams |
+| `session_epoch` | uint32 | **New.** Bumped on E2E key rotation, compromise recovery, device reset, or “new secure chat”; scopes `sender_seq` streams |
 
 **Thread identity for direct:** `(contact_id, channel)` — never one thread for both modes.
 
@@ -51,18 +52,20 @@ Outbound sequence counters and session epochs are keyed to **chat target** `(con
 
 | Field | Scope | Notes |
 |-------|-------|-------|
-| `next_outgoing_seq` | chat target | Monotonic uint64; assigned at first local persist before send |
-| `session_epoch` | chat target / thread | Increment on compromise recovery or explicit new secure chat |
+| `next_outgoing_seq` | chat target | Monotonic uint64 per epoch; assigned at first local persist before send |
+| `session_epoch` | chat target / thread | Increment on compromise recovery, full device reset, or explicit new secure chat; **only** way to restart seq from 1 (D014) |
 
 Persist in thread metadata or a small sidecar keyed by `(contact_id, channel)`.
 
-### Per-peer sync state (per thread)
+### Per-peer sync state (per thread, scoped by `session_epoch`)
+
+Sync watermarks are keyed by **`(peer, session_epoch)`**. A new epoch starts a fresh stream; old-epoch state is retained for history display but not used for gap logic on the new epoch.
 
 | Field | Notes |
 |-------|-------|
-| `contiguous_peer_seq[peer]` | Highest seq received with no holes in the active tail |
-| `loaded_min_seq[peer]`, `loaded_max_seq[peer]` | Oldest/newest peer seq present in local transcript |
-| `history_floor_seq[peer]` | Set on **clear visible history** — seq at or below this are intentionally not loaded |
+| `contiguous_peer_seq[peer][epoch]` | Highest seq received with no holes in the active tail for this epoch |
+| `loaded_min_seq[peer][epoch]`, `loaded_max_seq[peer][epoch]` | Oldest/newest peer seq present in local transcript for this epoch |
+| `history_floor_seq[peer][epoch]` | Set on **clear visible history** — relay-visible seq at or below this in the same epoch is a **protocol violation** (D013) |
 | `sync_state` | `ok` \| `gap` \| `compromised` |
 
 ### ThreadMessage
@@ -83,6 +86,7 @@ Persist in thread metadata or a small sidecar keyed by `(contact_id, channel)`.
 | `transport` | enum | **New.** `local`, `relay`, `direct` — how message arrived/sent |
 | `target_message_id` | optional UUID | **New.** For annotations (like, edit, receipt) |
 | `annotation_type` | optional string | **New.** e.g. `like`, `edit`, `read_receipt` |
+| `control_type` | optional string | **New.** For `kind=system` relay-visible rows, e.g. `epoch_start` (D014) |
 | `sender_seq` | optional uint64 | **New.** Sync seq on `relay_visible` content only; per-sender per chat target |
 | `session_epoch` | optional uint32 | **New.** Must match envelope; scopes seq after key rotation |
 | `generation` | optional enum | **New.** `user` \| `ai_on_behalf` — who produced the text; shared AI rows are `ai_on_behalf` |
@@ -91,7 +95,9 @@ Persist in thread metadata or a small sidecar keyed by `(contact_id, channel)`.
 
 **Sync seq rule:** `sender_seq` is assigned and incremented only when `relay_visible=true`. Local-only rows never consume sync seq — avoids false peer gap detection when the user had private `@ai` assists between relayed messages.
 
-**Not sequenced (no sync seq):** local `@ai`, annotations, and local system rows.
+**Not sequenced (no sync seq):** local `@ai`, annotations, and local-only system rows.
+
+**Session control (relay-visible, sequenced):** optional `kind=system` with `control_type=epoch_start` as the first relay-visible row of a new `session_epoch` (consumes `sender_seq=1`); user content continues at seq 2+. Signed like any other relay-visible row (D014).
 
 **LLM context** includes only `kind == content` (plus selected `system`), never raw annotations. Shared `@ai` rows in the transcript participate like normal user/assistant content.
 
@@ -208,33 +214,83 @@ Three **separate** sync modes — do not conflate lazy history with live gap rep
 | **Gap repair** | Hole in contiguous tail (`seq N` + `seq N+2+`) | Automatic backfill from peer (direct) or relay fallback; **not** gated on scroll |
 | **History backfill** | User scrolls to top of loaded transcript | Page older messages (`sender_seq < loaded_min_seq`); page size **25** |
 
+### Within-epoch sender contract
+
+For a fixed chat target `(contact_id, channel, session_epoch)`, the **sender** must obey:
+
+| Rule | Behavior |
+|------|----------|
+| S1 | Assign `sender_seq` only when `relay_visible=true`; strictly monotonic 1, 2, 3, … within the epoch |
+| S2 | `next_outgoing_seq` never decreases within an epoch |
+| S3 | **Clear visible history** (local UI) does **not** reset seq |
+| S4 | Failed send retries the **same** `(message_id, sender_seq)` |
+| S5 | Local-only rows (`@ai`, annotations, local system) do **not** consume seq |
+| S6 | The **only** way to emit `sender_seq = 1` again is a **new `session_epoch`** (D014) |
+| S7 | Never emit relay-visible content with `sender_seq < next_outgoing_seq` (no reuse, no rewind) |
+
+Receiver treats sender violations as compromised ingest (D013), not best-effort merge.
+
 ### Bootstrap vs gap
 
-- **Bootstrap / tail ingest:** empty or new-device store may receive high `sender_seq` without backfilling all prior seq — not a gap alarm.
-- **Contiguous gap:** only when local state already has seq **N** and receives **N+2+** within the active tail window.
+- **Bootstrap / tail ingest:** empty per-epoch transcript (or new `session_epoch`) may receive high `sender_seq` without backfilling all prior seq — not a gap alarm (D009).
+- **New epoch:** `session_epoch` increases → reset per-epoch watermarks for that peer; `sender_seq = 1` is normal bootstrap, not compromised.
+- **Contiguous gap:** local state for this epoch already has seq **N** and receives **N+2+** above `history_floor_seq` → `sync_state=gap`, attempt repair (not yet compromised).
 
 E2E tail sync is **peer-first** (direct/libp2p); relay tail is fallback when the peer is offline or transport fell back.
 
-### Gap repair flow
+### Ingest classification (normal · gap · compromised)
 
-1. Ingest: dedup by `message_id` (existing).
-2. If `(sender, sender_seq, session_epoch)` already seen with a **different** `message_id` → **session compromised** (see below).
-3. If `sender_seq == contiguous_peer_seq + 1` → advance watermark.
-4. If `sender_seq > contiguous_peer_seq + 1` in tail window → set `sync_state=gap`, request missing range from peer/relay with backoff.
+After UUID dedup and signature verification:
+
+**Normal (accept):**
+
+1. **Benign duplicate** — same `(message_id, sender_seq, session_epoch)` → ignore.
+2. **Epoch advance** — `session_epoch` increases → reset per-epoch watermarks; accept as fresh stream (see § Peer reset).
+3. **Contiguous tail** — `sender_seq == contiguous_peer_seq + 1` and `sender_seq > history_floor_seq[peer][epoch]`.
+4. **Tail bootstrap** — per-epoch transcript empty; ingest tail batch without requiring seq 1..N first.
+5. **Authorized backfill** — `sender_seq` in `(history_floor_seq, loaded_min_seq)` only when user/system initiated history backfill for that range.
+
+**Gap (repair allowed; not compromised until repair fails):**
+
+- `sender_seq > contiguous_peer_seq + 1` and `sender_seq > history_floor_seq[peer][epoch]` → request missing range; on success, reclassify as normal.
+- If repair returns floor violations, seq conflicts, or impossible ranges → **compromised**.
+
+**Compromised (halt ingest immediately):**
+
+| Condition | Why |
+|-----------|-----|
+| `session_epoch` **decreases** | Illegal rollback |
+| Same `(peer, epoch, sender_seq)` + **different** `message_id` | Seq conflict (D011) |
+| `sender_seq ≤ history_floor_seq[peer][epoch]` | Replay, stale traffic, or sender reset without epoch bump |
+| `sender_seq < contiguous_peer_seq` and not benign duplicate | Rewind within epoch |
+| `sender_seq = 1` in an **established** epoch where `contiguous_peer_seq > 0` | Sender reset without epoch bump |
+| Invalid signature / wrong thread / envelope epoch mismatch | Wire invalid |
+| Gap repair exhausted or returns violating messages | Repair failed |
+
+On compromised: halt ingest, notify both parties, rotate keys, bump `session_epoch`, start new secure conversation (seq resets **only** for the new epoch).
 
 ### Clear history and seq
 
-- **Sender:** `next_outgoing_seq` on chat target is unchanged.
-- **Receiver:** wipe messages; set `history_floor_seq[peer]`; do not auto-backfill seq below floor unless the user scrolls up or taps “Load earlier messages.”
-- Live messages after clear still extend `contiguous_peer_seq` forward normally.
+| Party | Behavior |
+|-------|----------|
+| **Sender** | `next_outgoing_seq` and `session_epoch` on chat target unchanged; next live send uses next seq as usual (e.g. 101) |
+| **Receiver** | Wipe messages; set `history_floor_seq[peer][epoch]` to max contiguous seq seen at clear time; do not auto-backfill seq at or below floor unless user scrolls up |
+| **Live traffic after clear** | Accept peer messages with `sender_seq > floor`; any `sender_seq ≤ floor` in same epoch → **compromised** (D013) |
 
-### Session integrity failure
+The sender does not need a signal that the peer cleared locally; honest senders continue forward. Replays and protocol violators are caught by the floor rule.
 
-When the same `(sender, session_epoch, sender_seq)` arrives with a **different** `message_id`:
+### Peer reset / new device (fresh stream)
 
-1. Halt ingest for that thread/session.
-2. Notify both parties: integrity problem — start a new secure conversation.
-3. Rotate keys, bump `session_epoch`, new thread (or epoch-scoped thread); **reset seq counters only for the new epoch**.
+When a peer wipes local state, installs on a new device without backup, or explicitly starts over:
+
+1. **Bump `session_epoch`** on the chat target (mandatory — D014).
+2. Reset `next_outgoing_seq = 1` for the new epoch only.
+3. Optionally send `kind=system`, `control_type=epoch_start` as the first relay-visible row (`sender_seq=1`); user content continues at seq 2+.
+4. **Receiver** on unseen higher epoch: fresh per-epoch watermarks; `sender_seq=1` is normal bootstrap.
+
+**Restored backup** (same identity + chat-target sidecar): not a reset — continue same epoch and seq.
+
+Sending `sender_seq=1` without bumping epoch in an established epoch is always **compromised**.
 
 Benign duplicate delivery (same `message_id` + same `sender_seq`) is ignored via UUID dedup.
 
@@ -278,6 +334,7 @@ Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`, `HasMessageId`.
 - [ ] Message IDs stable; relay dedup works; annotations reference targets by ID.
 - [ ] E2E thread shows relay vs direct per message when transport is known.
 - [ ] Direct threads assign `sender_seq` on send; receiver detects tail gaps and auto-repairs.
-- [ ] Clear history preserves seq counters; scroll-up loads older pages on demand.
+- [ ] Clear history preserves seq counters and epoch; `sender_seq ≤ history_floor` in same epoch triggers compromised UX.
+- [ ] Peer reset bumps `session_epoch`; `sender_seq=1` on new epoch accepted; same-epoch rewind triggers compromised UX.
 - [ ] Duplicate `(sender, session_epoch, sender_seq)` with conflicting `message_id` triggers key rotation UX.
 - [ ] `@ai` local vs `@ai+` / `@ai++` shared modes behave per routing table; shared rows use trigger user’s sync seq.
