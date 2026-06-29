@@ -46,7 +46,7 @@
 // called with an error.
 #define _ASSERT_OUTCOME_SUCCESS_3(_result_, _variable_, _expression_) \
   _ASSERT_OUTCOME_SUCCESS_TRY(_result_, _expression_)                  \
-  auto &&_variable_ = std::move(_result_.value());
+  auto _variable_ = std::move(_result_.value());
 
 #define _ASSERT_OUTCOME_SUCCESS_2(_variable_, _expression_) \
   _ASSERT_OUTCOME_SUCCESS_3(                                \
