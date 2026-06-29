@@ -177,7 +177,7 @@ Existing foundation this project builds on.
 - [ ] Within-epoch sender contract; receive pipeline (D022, D033); ingest D013/D018
 - [ ] Inbound Ed25519 verify; strip remote `content_rml` (D030)
 - [ ] Poll backoff min 2 s foreground (D032); cap poll batch (D029)
-- [ ] Clear history → `history_floor_seq` in `sync_state`
+- [ ] Clear history → `history_floor_seq` in `sync_state`; below-floor silent discard (D037)
 - [ ] Peer reset / compromise recovery (D014, DESIGN § Compromise recovery)
 
 ### Sync modes
@@ -272,3 +272,4 @@ Existing foundation this project builds on.
 | 2026-06-29 | D028: SQLite per thread + profile.db from v2a; drop JSON message stage; v5 absorbed |
 | 2026-06-29 | D035: drop `index.json`; sidebar catalog in `profile.db` `threads`; lazy visible-row verify |
 | 2026-06-29 | D036: rename `registry.db` → `profile.db` |
+| 2026-06-29 | D037: clear history floor = sync exclusion + silent discard; amend D010/D013 |

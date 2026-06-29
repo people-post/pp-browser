@@ -73,7 +73,7 @@ Sync watermarks are keyed by **`(peer, session_epoch)`**. A new epoch starts a f
 |-------|-------|
 | `contiguous_peer_seq[peer][epoch]` | Highest seq received with no holes in the active tail for this epoch |
 | `loaded_min_seq[peer][epoch]`, `loaded_max_seq[peer][epoch]` | Oldest/newest peer seq present in local transcript for this epoch |
-| `history_floor_seq[peer][epoch]` | Set on **clear visible history** — relay-visible seq at or below this in the same epoch is a **protocol violation** (D013) |
+| `history_floor_seq[peer][epoch]` | Set on **clear visible history** — seq at or below this in the same epoch is **excluded from sync** (D037): silent discard, not compromised |
 | `sync_state` | `ok` \| `gap` \| `compromised` |
 
 ### ThreadMessage
@@ -271,7 +271,7 @@ CREATE INDEX idx_outbox_thread ON outbox(thread_id);
 
 **Scope:** `profile.db` holds the **sidebar list cache** (`threads`) and **durable outbox index** (`outbox`). It does **not** store message-id dedup state (D034).
 
-**Per-thread dedup:** `HasMessageId(thread_id, message_id)` → `SELECT 1 FROM messages WHERE id = ?` on that thread's `thread.db` (`messages.id` is PRIMARY KEY). Relay poll, send retry, and multi-path delivery duplicates are always scoped to one `thread_id` on the envelope.
+**Per-thread dedup:** `HasMessageId(thread_id, message_id)` → `SELECT 1 FROM messages WHERE id = ?` on that thread's `thread.db` (`messages.id` is PRIMARY KEY). Relay poll, send retry, and multi-path delivery duplicates are always scoped to one `thread_id` on the envelope. **Clear history** deletes transcript rows (dedup surface wiped); below-floor traffic is excluded by seq (D037), not by a separate message-id tombstone.
 
 Startup durable outbox scan → `SELECT * FROM outbox` (D017), not full table scan of every `thread.db`. Purge `outbox` rows on `DeleteThread`.
 
@@ -424,7 +424,7 @@ Three **separate** sync modes — do not conflate lazy history with live gap rep
 |------|---------|----------|
 | **Tail sync** | Open thread, reconnect, new device | Fetch latest **N** peer-visible messages per sender (default **50**) |
 | **Gap repair** | Hole in contiguous tail (`seq N` + `seq N+2+`) | Automatic backfill from peer (direct) or relay fallback; **not** gated on scroll |
-| **History backfill** | User scrolls to top of loaded transcript | Page older messages (`sender_seq < loaded_min_seq`); page size **25** |
+| **History backfill** | User scrolls to top of loaded transcript | Page older messages with `sender_seq` in `(history_floor_seq, loaded_min_seq)`; page size **25** (D037) |
 
 ### Within-epoch sender contract
 
@@ -465,13 +465,15 @@ Authoritative backfill when peer is offline or for gap/history sync. Authenticat
 | `limit` | no | Default **50**, max **100** |
 | `order` | no | `asc` (default) or `desc` |
 
-**Sync mode usage:**
+**Sync mode usage** (when `history_floor_seq` is set, use `min_sender_seq = floor + 1` on all modes):
 
 | Mode | Typical request |
 |------|-----------------|
-| Tail sync | `order=desc`, `limit=50`, no min/max |
-| Gap repair | `min_sender_seq=N+1`, `max_sender_seq=M`, `order=asc` |
-| History backfill | `max_sender_seq=loaded_min-1`, `limit=25`, `order=desc` |
+| Tail sync | `min_sender_seq=floor+1`, `order=desc`, `limit=50` |
+| Gap repair | `min_sender_seq=max(N+1, floor+1)`, `max_sender_seq=M`, `order=asc` |
+| History backfill | `min_sender_seq=floor+1`, `max_sender_seq=loaded_min-1`, `limit=25`, `order=desc` |
+
+Discard any below-floor rows in relay responses without compromising (D037).
 
 **Response 200:**
 
@@ -524,27 +526,28 @@ Ordered steps — do not reorder in implementation (D022, D033):
 4. **Decrypt AEAD** (`e2e` only) — canonical AAD must match envelope fields; failure → reject (no persist).
 5. **Plaintext size** — decrypted UTF-8 JSON ≤ `kMaxE2ePlaintextBytes`; public `body.content` ≤ `kMaxChatPayloadJsonBytes`.
 6. **Parse & validate `ChatPayload`** — schema version + `content_type`; **strip ignore wire `content_rml`** (D030).
-7. **D013 ingest classifier** — normal · gap · compromised; reorder buffer before gap declaration.
-8. **Persist** — append `ThreadMessage`, update watermarks, set `transport` from ingress path.
+7. **History floor (D037)** — if `sender_seq ≤ history_floor_seq[peer][epoch]`, silent discard (stop; no persist, no unread, not compromised).
+8. **D013 ingest classifier** — normal · gap · compromised; reorder buffer before gap declaration.
+9. **Persist** — append `ThreadMessage`, update watermarks, set `transport` from ingress path.
 
 Validate `thread_id` and `message_id` as UUID before filesystem / DB use.
 
 ### Ingest classification (normal · gap · compromised)
 
-After steps 0–3 above (size OK, signature verified; decrypt if E2E):
+After steps 0–6 above (size OK, signature verified, decrypt if E2E; below-floor already discarded in step 7):
 
 **Normal (accept):**
 
 1. **Benign duplicate** — same `(message_id, sender_seq, session_epoch)` → ignore.
 2. **Epoch advance** — `session_epoch` increases → reset per-epoch watermarks; accept as fresh stream (see § Peer reset).
 3. **Contiguous tail** — `sender_seq == contiguous_peer_seq + 1` and `sender_seq > history_floor_seq[peer][epoch]`.
-4. **Tail bootstrap** — per-epoch transcript empty; ingest tail batch without requiring seq 1..N first.
-5. **Authorized backfill** — `sender_seq` in `(history_floor_seq, loaded_min_seq)` only when user/system initiated history backfill for that range.
+4. **Tail bootstrap** — per-epoch transcript empty; ingest tail batch without requiring seq 1..N first (only seq **> floor** when floor is set).
+5. **Authorized backfill** — `sender_seq` in `(history_floor_seq, loaded_min_seq)` only when user/system initiated history backfill for that range. After clear, this range is empty until new messages above floor exist locally.
 
 **Gap (repair allowed; not compromised until repair fails):**
 
 - `sender_seq > contiguous_peer_seq + 1` and `sender_seq > history_floor_seq[peer][epoch]` → request missing range; on success, reclassify as normal.
-- If repair returns floor violations, seq conflicts, or impossible ranges → **compromised**.
+- If repair returns seq conflicts or impossible ranges → **compromised**. Below-floor rows in a response are silently discarded (D037), not a compromise trigger.
 
 **Compromised (halt ingest immediately):**
 
@@ -552,7 +555,6 @@ After steps 0–3 above (size OK, signature verified; decrypt if E2E):
 |-----------|-----|
 | `session_epoch` **decreases** | Illegal rollback |
 | Same `(peer, epoch, sender_seq)` + **different** `message_id` | Seq conflict (D011) |
-| `sender_seq ≤ history_floor_seq[peer][epoch]` | Replay, stale traffic, or sender reset without epoch bump |
 | `sender_seq < contiguous_peer_seq` and not benign duplicate | Rewind within epoch |
 | `sender_seq = 1` in an **established** epoch where `contiguous_peer_seq > 0` | Sender reset without epoch bump |
 | Invalid signature / wrong thread / envelope epoch mismatch | Wire invalid |
@@ -586,15 +588,16 @@ Compromised side                          Innocent peer
 - **Old epoch keys:** retain locally for decrypting historical ciphertext only; do not ingest new traffic on old epoch after compromise.
 - **Both sides compromised:** each user runs the flow independently; coordinated PSK exchange is manual (E001).
 
-### Clear history and seq
+### Clear history and seq (D037)
 
 | Party | Behavior |
 |-------|----------|
 | **Sender** | `next_outgoing_seq` and `session_epoch` on chat target unchanged; next live send uses next seq as usual (e.g. 101) |
-| **Receiver** | Wipe messages; set `history_floor_seq[peer][epoch]` to max contiguous seq seen at clear time; do not auto-backfill seq at or below floor unless user scrolls up |
-| **Live traffic after clear** | Accept peer messages with `sender_seq > floor`; any `sender_seq ≤ floor` in same epoch → **compromised** (D013) |
+| **Receiver** | `DELETE FROM messages`; set `history_floor_seq[peer][epoch]` to max contiguous seq seen at clear time; reset `loaded_min`/`loaded_max`/`contiguous_peer_seq` watermarks for display (or derive from empty transcript) |
+| **Below floor** | `sender_seq ≤ floor` in same epoch → **silent discard** on all paths (poll, direct, tail, gap, scroll). No persist, backfill, show, or unread bump. **No scroll resurrection** of cleared history. |
+| **Above floor** | Normal D013 ingest — tail, gap repair, authorized history backfill in `(floor, loaded_min)` only |
 
-The sender does not need a signal that the peer cleared locally; honest senders continue forward. Replays and protocol violators are caught by the floor rule.
+The sender does not need a signal that the peer cleared locally; honest senders continue forward. Per-thread dedup (D034) is wiped with the transcript; seq floor — not a message-id registry — defines the sync boundary after clear. Full restart requires **epoch bump** (D014), not clear.
 
 ### Peer reset / new device (fresh stream)
 
@@ -700,7 +703,7 @@ Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`. Change `HasMessageId` to 
 - [ ] Clear history choice sheet implements D024 levels.
 - [ ] `ChatPayload` types render: text, annotation, contact_card, crypto_tx (D026).
 - [ ] Pending `relay_visible` messages survive restart and retry with same `(message_id, sender_seq)` (D017).
-- [ ] Clear history preserves seq counters and epoch; `sender_seq ≤ history_floor` in same epoch triggers compromised UX.
+- [ ] Clear history preserves seq counters and epoch; `sender_seq ≤ history_floor` → silent discard, not compromised (D037).
 - [ ] Peer reset bumps `session_epoch`; `sender_seq=1` on new epoch accepted; same-epoch rewind triggers compromised UX.
 - [ ] Duplicate `(sender, session_epoch, sender_seq)` with conflicting `message_id` triggers key rotation UX (`e2e`) or integrity UX (`public_relay`).
 - [ ] `@ai` local vs `@ai+` / `@ai++` shared modes behave per routing table; shared rows use trigger user’s sync seq.

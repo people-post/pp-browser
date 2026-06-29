@@ -82,7 +82,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D009 — Three sync modes (tail, gap repair, scroll backfill)
 
 **Date:** 2026-06-27  
-**Decision:** P2P history sync uses three distinct modes: **(1) tail sync** — on open, reconnect, or new device, fetch latest N (default 50) messages per peer; **(2) gap repair** — automatic backfill when a hole appears in the contiguous tail (have seq N, receive N+2+), not gated on scroll; **(3) history backfill** — when user scrolls to the top of loaded transcript, page older messages (25 per page) via `sender_seq < loaded_min_seq`. Bootstrap/tail ingest on an empty store does **not** treat a high incoming seq as a gap.  
+**Updated:** 2026-06-29 — history backfill range `(floor, loaded_min)` when floor set (D037).  
+**Decision:** P2P history sync uses three distinct modes: **(1) tail sync** — on open, reconnect, or new device, fetch latest N (default 50) messages per peer; **(2) gap repair** — automatic backfill when a hole appears in the contiguous tail (have seq N, receive N+2+), not gated on scroll; **(3) history backfill** — when user scrolls to the top of loaded transcript, page older messages in `(history_floor_seq, loaded_min_seq)` (25 per page) via relay; after clear, range is empty until new messages exist above floor (D037). Bootstrap/tail ingest on an empty store does **not** treat a high incoming seq as a gap.  
 **Rationale:** Lazy history saves bandwidth; live gap repair keeps private chat trustworthy; conflating the two causes false alarms or missed holes.  
 **Alternatives:** Full history sync on every open; poll cursor only (no per-thread gap detection).
 
@@ -91,9 +92,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D010 — Seq lifecycle on chat target
 
 **Date:** 2026-06-27  
-**Decision:** `next_outgoing_seq` and `session_epoch` are keyed to **chat target `(contact_id, channel)`**, surviving thread delete/recreate and **clear visible history** (seq is not reset on clear). On clear, receiver sets `history_floor_seq[peer][epoch]` to the max contiguous seq at clear time; relay-visible seq at or below the floor in the same epoch is **compromised** (D013), not silently ignored. Failed sends retry with the **same `message_id` and `sender_seq`**. New device / full reset requires **epoch bump** (D014). `uint64` overflow is accepted as out of scope.  
-**Rationale:** Seq represents the long-lived conversation with a contact, not a local transcript snapshot; idempotent retries must not bump seq; clear history is a local display choice, not a protocol reset; floor violations catch replay and sender reset without epoch bump.  
-**Alternatives:** Reset seq on clear; assign seq only after successful relay; thread-scoped counters; silently ignore below-floor messages.
+**Updated:** 2026-06-29 — below-floor ingest after clear is sync exclusion + silent discard (D037), not compromised.  
+**Decision:** `next_outgoing_seq` and `session_epoch` are keyed to **chat target `(contact_id, channel)`**, surviving thread delete/recreate and **clear visible history** (seq is not reset on clear). On clear, receiver sets `history_floor_seq[peer][epoch]` to the max contiguous seq at clear time; relay-visible seq at or below the floor in the same epoch is **excluded from sync** (D037) — silent discard, not compromised. Failed sends retry with the **same `message_id` and `sender_seq`**. New device / full reset requires **epoch bump** (D014). `uint64` overflow is accepted as out of scope.  
+**Rationale:** Seq represents the long-lived conversation with a contact, not a local transcript snapshot; idempotent retries must not bump seq; clear history is a local display choice, not a protocol reset; floor marks a one-way local cutoff without protocol reset.  
+**Alternatives:** Reset seq on clear; assign seq only after successful relay; thread-scoped counters; below-floor → compromised (superseded by D037).
 
 ---
 
@@ -118,10 +120,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D013 — Strict normal-or-compromised ingest (direct chat)
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — scope extended to all direct threads (D018).  
-**Decision:** In **all direct threads** (`public_relay` and `e2e`), the receiver accepts only messages matching a defined set of **normal** cases: benign duplicate, epoch advance, contiguous tail (`sender_seq == contiguous + 1` and above floor), tail bootstrap on empty per-epoch store, and authorized history backfill in `(floor, loaded_min)`. **`sender_seq ≤ history_floor_seq[peer][epoch]` in the same epoch is compromised** (replay, stale traffic, or sender violated within-epoch contract) — not silently ignored. **`sender_seq < contiguous_peer_seq`** without benign duplicate, **epoch decrease**, invalid signature, and **gap repair failure** are also compromised. **`sender_seq > contiguous + 1`** above floor is **gap** (repair allowed); repair exhaustion → compromised. Sync watermarks are keyed by **`(peer, session_epoch)`**. **E2E** compromised → PSK rotation + epoch bump; **public_relay** → integrity UX without PSK (delete thread / support).  
-**Rationale:** Private and public direct chat both need fail-closed integrity; only recovery UX differs.  
-**Alternatives:** E2E-only strict ingest; silently ignore below-floor messages; treat all gaps as compromised without repair; global seq watermarks across epochs.
+**Updated:** 2026-06-29 — scope extended to all direct threads (D018); below-floor after clear → silent discard (D037), not compromised.  
+**Decision:** In **all direct threads** (`public_relay` and `e2e`), the receiver accepts only messages matching a defined set of **normal** cases: benign duplicate, epoch advance, contiguous tail (`sender_seq == contiguous + 1` and above floor), tail bootstrap on empty per-epoch store, and authorized history backfill in `(floor, loaded_min)`. **`sender_seq ≤ history_floor_seq[peer][epoch]` in the same epoch is handled by D037** (sync exclusion — silent discard before D013 classification; not compromised). **`sender_seq < contiguous_peer_seq`** without benign duplicate, **epoch decrease**, invalid signature, and **gap repair failure** are compromised. **`sender_seq > contiguous + 1`** above floor is **gap** (repair allowed); repair exhaustion → compromised. Sync watermarks are keyed by **`(peer, session_epoch)`**. **E2E** compromised → PSK rotation + epoch bump; **public_relay** → integrity UX without PSK (delete thread / support).  
+**Rationale:** Private and public direct chat both need fail-closed integrity; only recovery UX differs. Clear-history floor is a local sync boundary, not an attack signal.  
+**Alternatives:** E2E-only strict ingest; below-floor → compromised (rejected — poll redelivery after clear); treat all gaps as compromised without repair; global seq watermarks across epochs.
 
 ---
 
@@ -201,7 +203,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D022 — Receive pipeline step order
 
 **Date:** 2026-06-29  
-**Decision:** Ingest order is fixed: per-thread UUID dedup (envelope `thread_id` + `message_id`, D034) → signature verify → thread/epoch check → AEAD decrypt (e2e) → D013 classifier (with reorder buffer) → persist. See DESIGN.md § Receive pipeline. **Superseded in detail by D033** (envelope size before parse, plaintext size after decrypt).  
+**Updated:** 2026-06-29 — history floor silent discard before classifier (D037); superseded in detail by D033.  
+**Decision:** Ingest order is fixed: per-thread UUID dedup (envelope `thread_id` + `message_id`, D034) → signature verify → thread/epoch check → AEAD decrypt (e2e) → parse `ChatPayload` → **history floor check (D037)** → D013 classifier (with reorder buffer) → persist. See DESIGN.md § Receive pipeline. **Superseded in detail by D033** (envelope size before parse, plaintext size after decrypt).  
 **Rationale:** Do not persist or advance watermarks before cryptographic and structural validation.  
 **Alternatives:** Decrypt before signature; classify before decrypt.
 
@@ -333,8 +336,8 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 ## D033 — Ingest pipeline: size check before parse
 
 **Date:** 2026-06-29  
-**Updated:** extends D022.  
-**Decision:** Inbound order: **(0) envelope byte size** → per-thread UUID dedup (D034) → signature verify → thread/epoch → decrypt (e2e) → **plaintext size** → JSON parse `ChatPayload` with schema validate → D013 classifier → persist. Reject oversize before `nlohmann::parse` on untrusted input.  
+**Updated:** extends D022; history floor silent discard (D037) before classifier.  
+**Decision:** Inbound order: **(0) envelope byte size** → per-thread UUID dedup (D034) → signature verify → thread/epoch → decrypt (e2e) → **plaintext size** → JSON parse `ChatPayload` with schema validate → **history floor (D037)** → D013 classifier → persist. Reject oversize before `nlohmann::parse` on untrusted input.  
 **Rationale:** JSON bombs and huge ciphertext must fail closed without full parse.  
 **Alternatives:** Parse then check (rejected).
 
@@ -383,6 +386,15 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 **Decision:** Profile-level SQLite file is **`threads/profile.db`** (not `registry.db`). Holds **`threads`** catalog + **`outbox`** index (D035, D017). Name reflects scope: profile-scoped metadata, not only an outbox registry.  
 **Rationale:** After D035 the file holds sidebar catalog and outbox; `registry.db` was misleading. `profile.db` pairs naturally with per-profile `identity.json` / `contacts.json` layout.  
 **Alternatives:** Keep `registry.db` name; move file to `{profile_id}/profile.db` outside `threads/` (deferred — path stays under `threads/` for v2a).
+
+---
+
+## D037 — Clear history floor: sync exclusion + silent discard
+
+**Date:** 2026-06-29  
+**Decision:** After **clear visible history** (D024), receiver **`DELETE FROM messages`** (transcript and per-thread dedup surface wiped — D034) and sets **`history_floor_seq[peer][epoch]`** to the max contiguous peer seq at clear time. For the same epoch, any inbound or relay-fetched message with **`sender_seq ≤ history_floor_seq`** is a **sync exclusion zone**, not an integrity failure: **silent discard** — do not persist, backfill, show, or bump unread; do **not** enter `sync_state=compromised`. Applies to **all paths**: poll, direct, tail sync, gap-repair responses, history backfill. Only **`sender_seq > floor`** is eligible for normal D013 ingest. **No scroll resurrection** of cleared history in the same epoch — user cannot re-sync seq at or below floor; authorized history backfill range remains `(floor, loaded_min)` and is empty until new messages exist above floor. Clients must clamp relay fetch when floor is set: use **`min_sender_seq = floor + 1`** on tail, gap, and history requests; discard any below-floor rows in responses without compromising. **No post-clear message-id tombstone** in `profile.db` — dedup stays transcript-scoped (`messages.id`); below-floor traffic is dropped by seq before dedup matters. Full conversation restart (new device, explicit start-over) uses **epoch bump** (D014), not clear.  
+**Rationale:** Clear is a one-way local cutoff, not a protocol reset; honest senders continue at seq N+1; relay poll redelivery of pre-clear messages must not trigger compromise UX; floor remembers seq progress without retaining transcript rows or a separate registry.  
+**Alternatives:** Below-floor → compromised (original D013 wording); soft-clear tombstone rows with content hydration on scroll; permanent message-id registry after clear.
 
 ---
 

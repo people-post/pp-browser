@@ -2,7 +2,7 @@
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** `SqliteThreadStore` (D028), sidebar catalog in `profile.db` (D035), per-thread dedup (D034), sender seq, windowed sync, strict ingest (D013–D014, D018), durable outbox (D017), resource bounds (D029–D033), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D036 in [DECISIONS.md](DECISIONS.md).
+**Planned but not implemented:** `SqliteThreadStore` (D028), sidebar catalog in `profile.db` (D035), per-thread dedup (D034), sender seq, windowed sync, strict ingest (D013–D014, D018), clear floor (D037), durable outbox (D017), resource bounds (D029–D033), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D037 in [DECISIONS.md](DECISIONS.md).
 
 ## Persistence
 
@@ -71,7 +71,7 @@ No `index.json` in target layout (replaces legacy index + flat JSON).
 | libp2p messaging glue | Stub | `src/libp2p/integration/host/` |
 | `sender_seq` / gap detection | Not implemented | Design: D008–D011, phase v6 |
 | Windowed sync (tail / scroll / gap repair) | Not implemented | Design: D009 |
-| Per-peer sync state / `history_floor_seq` | Not implemented | Per `(peer, epoch)`; floor violation → compromised (D013) |
+| Per-peer sync state / `history_floor_seq` | Not implemented | Per `(peer, epoch)`; below floor → silent discard (D037) |
 
 ### `FindOrCreateDirectThread`
 
