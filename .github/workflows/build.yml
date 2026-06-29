@@ -155,7 +155,7 @@ jobs:
             ~/.gradle/wrapper
             android/.gradle
             android/build
-          key: ${{ runner.os }}-android-gradle-v1-${{ hashFiles('android/build.gradle*', 'android/settings.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties[...]
+          key: ${{ runner.os }}-android-gradle-v1-${{ hashFiles('android/build.gradle*', 'android/settings.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-android-gradle-v1-
 
