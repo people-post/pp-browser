@@ -391,9 +391,17 @@ namespace libp2p::transport::lsquic {
     // https://github.com/cbodley/nexus/blob/d1d8486f713fd089917331239d755932c7c8ed8e/src/socket.cc#L293
     while (true) {
       socklen_t len = socket_local_.size();
+#ifdef _WIN32
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+      auto *recv_buf = reinterpret_cast<char *>(reading_.buf.data());
+      const auto recv_len = static_cast<int>(reading_.buf.size());
+#else
+      auto *recv_buf = reading_.buf.data();
+      const auto recv_len = reading_.buf.size();
+#endif
       auto n = recvfrom(socket_.native_handle(),
-                        reading_.buf.data(),
-                        reading_.buf.size(),
+                        recv_buf,
+                        recv_len,
                         0,
                         reading_.remote.data(),
                         &len);
