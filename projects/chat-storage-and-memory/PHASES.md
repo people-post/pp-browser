@@ -2,7 +2,7 @@
 
 **[DESIGN.md](DESIGN.md) is the authoritative specification** (complete system with `[v1]` / `[post-v1]` tags). **This file orders work only** — checklists, exit criteria, and traceability. Rationale: [DECISIONS.md](DECISIONS.md).
 
-Before each phase, read [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints).
+Before each phase, read [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints) and [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).
 
 Check boxes when work is **merged and verified**. Add sub-items freely; keep phase boundaries stable unless DECISIONS records a change.
 
@@ -64,8 +64,10 @@ Existing foundation this project builds on.
 
 #### `SqliteThreadStore` — AI path (D028)
 
-- [ ] Layout: `threads/profile.db` (`threads` + `outbox` schema only), `threads/{id}/thread.db` — no `index.json` (D035)
-- [ ] `thread.db`: `messages` (+ **`display_order`**, **`chat_actions`**), `memory`, `sync_state` tables; **`idx_messages_display`** (D054)
+- [ ] Layout: `threads/profile.db` (`threads` + `outbox` schema only), `threads/{id}/thread.db`, `{id}/blobs/` placeholder dir optional (D075) — no `index.json` (D035)
+- [ ] `thread.db`: `messages` (+ **`chat_payload_json`** D078, **`display_order`**, **`chat_actions`**), `memory`, `sync_state` tables; **`idx_messages_display`** (D054)
+- [ ] **`ChatPayloadCodec::EncodeToRow`** — canonical `chat_payload_json` + denormalized columns atomically (D078)
+- [ ] **`Migrate(from→to)`** skeleton + `user_version=1` initial schema (D069); legacy JSON wipe only on first v2a run (D016)
 - [ ] Lazy-open `thread.db`; WAL + writer mutex per DB; **dual-DB recipe** — lock `profile.db` then `thread.db`, write `thread.db` txn first (D044, D057)
 - [ ] `AppendMessage` / `UpdateMessage`: assign **`display_order`** (D054); maintain `threads.updated_at` / `unread_count` in `profile.db`
 - [ ] `ListThreads`: catalog + visible-row verify; preview via `ORDER BY display_order DESC LIMIT 1` (D035, D054)
@@ -100,16 +102,17 @@ Existing foundation this project builds on.
 
 **Goal:** `chat_targets`, outbox, per-thread dedup, `FindOrCreateDirectThread` (`public_relay` default until v2b E2E UI). **Final relay wire shape** (D063) — no second cutover at v4.
 
-#### Wire + C++ types (D063, D066)
+#### Wire + C++ types (D063, D066, D072)
 
-- [ ] **`RelayEnvelope`:** remove `thread_id`; add `sender_contact_id`, `route`; **`body.content`** minimal ChatPayload (`text` only)
-- [ ] Send/post and poll ingest use new envelope; **reject** legacy `thread_id` and flat `body.text` at parse
+- [ ] **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route`; **`body.content`** minimal ChatPayload (`text` only)
+- [ ] **`ChatHistoryRequest` / `ChatHistoryResponse`** — shared structs per [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) (D072)
+- [ ] Send/post and poll ingest use new envelope; **reject** legacy `thread_id`, flat `body.text`, unknown **`envelope_version`**
 - [ ] **Grep gate:** no `envelope.thread_id` in `src/feature/` or `tests/` (legacy rejection tests excepted)
-- [ ] Minimal ChatPayload codec: serialize/parse `schema_version`, `content_type=text`, `text`, `payload={}`
+- [ ] Minimal ChatPayload codec: serialize/parse `schema_version`, `content_type=text`, `text`, `payload={}`; unknown envelope keys ignored (D073)
 
 #### Storage + routing
 
-- [ ] `profile.db`: **`chat_targets`**, **`outbox`** populated (D047, D056)
+- [ ] `profile.db`: **`chat_targets`**, **`outbox`** populated; **`threads.group_id`** nullable column (D076)
 - [ ] **`FindOrCreateDirectThread(ChatTargetKey)`** — **outbound only**; inbound lookup existing target (D062)
 - [ ] **Startup reconciliation** — outbox ↔ messages (D047)
 - [ ] `HasMessageId(thread_id, message_id)`; update `P2pMessagingService` poll path (D034)
@@ -166,7 +169,7 @@ Existing foundation this project builds on.
 
 ### Memory storage
 
-- [ ] `memory` table in `thread.db` (D028)
+- [ ] **`ConversationSummary`** JSON schema + `memory` key namespace (D070)
 - [ ] `IThreadStore::GetThreadMemory` / `SetThreadMemory`
 - [ ] Wire `SlidingWindowContextPolicy` to inject summary when present
 
@@ -253,7 +256,7 @@ Existing foundation this project builds on.
 - [ ] **`FetchChatTargetMessages`** — unified backfill; peer-direct (D060) then relay D027 (D058)
 - [ ] **Tail sync** — desc limit 50
 - [ ] **Gap repair** — automatic via D058
-- [ ] **Authoritative empty gap close** — success + zero messages closes hole **only when D067 guard passes**; `empty_closed_seqs[]` + late fill on retry (D061/D067)
+- [ ] **Authoritative empty gap close** — success + zero messages closes hole **only when D067 guard passes**; `empty_closed_seqs[]` / `empty_closed_ranges[]` + late fill (D061/D067/D071)
 - [ ] **Compromised thread (D068)** — outbox frozen; no gap/tail sync; epoch bump cancels old-epoch pending; coordinator updates `sessions.json` under `profile.db` mutex
 - [ ] **User-initiated sync** — thread menu **Sync with peer**; gap banner **Retry sync** (D059)
 - [ ] Gap repair assigns **`display_order`** between seq neighbors (D054 Rule 2)
@@ -275,7 +278,7 @@ Existing foundation this project builds on.
 
 ### Docs
 
-- [ ] Extend [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md): envelope limits (D029), verify pipeline, relay auth (D027)
+- [ ] Extend [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md): envelope limits (D029), verify pipeline, relay auth (D027), [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md)
 - [ ] Document single-active-device (D015, E2E only)
 
 **Exit criteria:** E2E gap auto-repair; **user-initiated sync** via relay (direct when libp2p up); outbox survives restart; public channel unaffected; no relaxed ingest path.
@@ -405,4 +408,5 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 | 2026-06-29 | DESIGN: single grand spec with `[v1]`/`[post-v1]` tags; PHASES traceability + named post-v1 phases |
 | 2026-06-30 | D063–D066: wire cutover v2a-p2p, clear AI memory retained copy, display_order UI defer, C++ type gates; D057/D054 amended |
 | 2026-06-30 | D058–D062: unified `FetchChatTargetMessages`, user-initiated sync, libp2p peer history, empty gap close, inbound find-only; D009/D052/D041/D022 amended |
+| 2026-06-29 | D069–D078: schema evolution (migrate vs wipe), `chat_payload_json` canonical body, `envelope_version`, WIRE_SCHEMAS, memory JSON schema, empty-closed-seq cap, blobs/group placeholders, unknown-field policy, display_order complexity budget |
 | 2026-06-30 | D067–D068: empty gap close guard + late fill; compromised outbox/sync freeze; epoch bump pending cancel; receive pipeline linearized |

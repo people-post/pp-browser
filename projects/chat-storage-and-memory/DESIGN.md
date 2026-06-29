@@ -51,6 +51,12 @@ When building **`[v1]`** phases, satisfy these so **`[post-v1]`** features plug 
 | **Set `transport` at send/receive** | `[post-v1]` badge UI reads column |
 | **Participant check on all inbound direct** | D027 auth model |
 | **Do not hardcode “AI never relays” in store layer** | Shared `@ai` sets `relay_visible=true` on specific rows only |
+| **`chat_payload_json` is canonical body** (D069) | Denormalized `content_type` / `payload` / `text` / `control_type` written only via `ChatPayloadCodec` |
+| **`envelope_version` on every relay envelope** (D072) | Independent wire evolution from `ChatPayload.schema_version` and SQLite `user_version` |
+| **Cap `empty_closed_seqs` / use ranges** (D071) | Bounded `sync_state.state_json`; coalesce before append |
+| **Production disk: migrate, don’t wipe** (D069) | D016 wipe is dev/pre-users only; shippable layouts use incremental `user_version` migrations |
+| **Shared history request/response types** (D072) | One struct for relay GET and libp2p D060 — see [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) |
+| **Ignore unknown envelope keys** (D073) | Forward-compatible wire extensions without dual-parser |
 
 ## Principles
 
@@ -70,7 +76,7 @@ When building **`[v1]`** phases, satisfy these so **`[post-v1]`** features plug 
 | Assumption | Implication |
 |------------|-------------|
 | **Single active sender per identity** (D015) | One client per profile may send on an **E2E** chat target at a time. Two devices with the same identity and PSK without coordination will emit conflicting `sender_seq` → compromised (D011). Document in UX; multi-device seq coordination is out of scope for v1. Public relay is unaffected. |
-| **No legacy migration** (D016) | Legacy flat `threads/{id}.json`, pre-D028 layouts, and **legacy relay envelopes with `thread_id`** are not upgraded — wipe `{data_dir}/profiles/{id}/threads/` on schema bump (acceptable — no production users yet). |
+| **No legacy migration** (D016) | Legacy flat `threads/{id}.json`, pre-D028 layouts, and **legacy relay envelopes with `thread_id`** are not upgraded — **dev/pre-user builds** may wipe `{data_dir}/profiles/{id}/threads/` on bump. **Shippable layouts** use incremental SQLite migration (D069), not wipe. |
 | **No encryption at rest** (D048) | `thread.db` and `profile.db` are plaintext SQLite on disk. E2E body confidentiality is on the wire only; local disk is trusted. SQLCipher / OS keychain for transcript encryption is out of scope for v1. |
 | **Timestamps are display-only for ingest** | `timestamp` is not authoritative for ordering or replay on either channel; E2E uses `sender_seq`; public relay uses arrival order + UUID tie-break. No clock-skew rejection in v1. |
 | **User-initiated direct shells** (D062) | Direct `chat_targets` rows are created by outbound user actions (**Message**, **Secure message**, first compose send) — not by inbound delivery. A peer's first message is **rejected** until the recipient opens that conversation channel locally. Product copy should set this expectation. |
@@ -160,8 +166,9 @@ C++ struct in `src/base/messaging/ThreadTypes.h` must stay aligned with store co
 |-------|------|-------------|-------|
 | `id` | UUID | v2a | Client-generated; dedup on ingest |
 | `thread_id` | UUID | v2a | |
-| `content_type` | enum | **v4** wire+store | `text`, `system` **`[v1]`**; rich types **`[post-v1]`** — store column from v2a schema; C++ field v4 |
-| `payload` | JSON object | **v4** | Type-specific structured body (wire + disk) |
+| `chat_payload_json` | JSON object | **v2a** | Canonical **`ChatPayload`** UTF-8 JSON (D069); wire-aligned |
+| `content_type` | enum | **v4** wire+store | Denormalized from `chat_payload_json`; `text`, `system` **`[v1]`** |
+| `payload` | JSON object | **v4** | Denormalized `ChatPayload.payload` |
 | `text` | optional string | v2a | Display snippet / search / plain fallback; AI raw for `text` turns |
 | `content_rml` | optional string | v2a | Rendered blocks (AI assistant) |
 | `user_payload` | optional string | v2a | LLM-only structured JSON (AI turns) |
@@ -187,6 +194,7 @@ Target struct in `ThreadTypes.h`. **v2a-p2p** removes legacy fields.
 | Field | Phase | Notes |
 |-------|-------|-------|
 | ~~`thread_id`~~ | **removed v2a-p2p** | Reject on ingest (D016) |
+| `envelope_version` | **v2a-p2p** | **1** in v1; signed (D072) |
 | `message_id` | v2a-p2p | |
 | `sender_relay_id` | v2a-p2p | |
 | `sender_contact_id` | **v2a-p2p** | Inbound routing peer (D021) |
@@ -282,8 +290,35 @@ One schema for disk, relay plaintext (`public_relay`), and AEAD plaintext (`e2e`
 
 | Artifact | Location | Notes |
 |----------|----------|-------|
-| `ConversationSummary` | `thread.db` → `memory` table | Text + version + optional **`compacted_through_display_order`** (D040); from `ICompactionService` |
-| Future fact rows | Same table (kv) | **`[future]`** |
+| `ConversationSummary` | `thread.db` → `memory` table | Key **`summary`**; JSON shape below (D070) |
+| Future fact rows | Same table (kv) | Key prefix **`fact:`** — **`[future]`** |
+
+**`memory` key namespace (D070):**
+
+| Key pattern | Maturity | Value schema |
+|-------------|----------|--------------|
+| `summary` | **`[v1]`** (v3) | `ConversationSummary` JSON |
+| `fact:{uuid}` | **`[future]`** | TBD — structured fact row |
+
+**`ConversationSummary` value** (stored at key `summary`):
+
+```json
+{
+  "schema_version": 1,
+  "version": 3,
+  "text": "User prefers dark mode. Discussed project timeline…",
+  "compacted_through_display_order": 142,
+  "updated_at": 1719662400
+}
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `schema_version` | integer | yes | **1** — bump on breaking summary shape change |
+| `version` | integer | yes | Monotonic per thread; increments on successful compaction (D040) |
+| `text` | string | yes | Summary prose; max **`kMaxSummaryBytes`** (8 KiB, D040) |
+| `compacted_through_display_order` | integer | no | Eligibility cursor — avoids full-thread scan (D040) |
+| `updated_at` | integer (unix ms) | yes | Last successful write |
 
 ## On-disk layout (target — D025, D028, D035, D036)
 
@@ -295,9 +330,12 @@ Profile-scoped storage:
     profile.db                     # threads catalog + outbox + chat_targets (D017, D035, D047)
     {thread_id}/
       thread.db                     # messages, memory, sync_state — authoritative transcript
+      blobs/                        # [future] content-addressed attachments (D075); empty in v1
 ```
 
 No `sync/chat_targets.json` — chat-target counters live in `profile.db` (D047).
+
+**`blobs/` (D075):** Reserved for **`[future]`** large/binary payloads referenced from `ChatPayload` (media, files). Content-addressed by hash under `{thread_id}/blobs/{hash}`; not used in v1. Create directory lazily on first blob write.
 
 **Thread exists** iff `{thread_id}/thread.db` is present. `profile.db` `threads` row is a list cache; repaired lazily on sidebar list (D035).
 
@@ -317,11 +355,12 @@ CREATE TABLE messages (
   id TEXT PRIMARY KEY,
   display_order INTEGER NOT NULL,    -- UI transcript sort + pagination (D054)
   sender_contact_id TEXT NOT NULL,
-  content_type TEXT NOT NULL,
-  payload TEXT NOT NULL,             -- JSON object (ChatPayload.payload; system control_type lives here)
-  text TEXT,
-  content_rml TEXT,
-  user_payload TEXT,
+  chat_payload_json TEXT NOT NULL,   -- canonical ChatPayload UTF-8 JSON (D069); wire-aligned
+  content_type TEXT NOT NULL,        -- denormalized cache — write only via ChatPayloadCodec
+  payload TEXT NOT NULL,             -- denormalized ChatPayload.payload object JSON
+  text TEXT,                         -- denormalized ChatPayload.text
+  content_rml TEXT,                  -- local-only assistant RML (never from wire, D030)
+  user_payload TEXT,                 -- local-only LLM structured JSON (AI turns)
   chat_actions TEXT NOT NULL DEFAULT '[]',  -- JSON array (TranscriptChatAction)
   timestamp INTEGER NOT NULL,
   relay_visible INTEGER NOT NULL,
@@ -329,11 +368,11 @@ CREATE TABLE messages (
   transport TEXT,
   sender_seq INTEGER,
   session_epoch INTEGER,
-  target_message_id TEXT,
+  target_message_id TEXT,            -- denormalized from annotation payload when present
   generation TEXT,
   seq_owner_contact_id TEXT,
   ai_invoke_mode TEXT,
-  control_type TEXT                  -- denormalized from payload for system rows; optional
+  control_type TEXT                  -- denormalized from system payload; optional
 );
 CREATE INDEX idx_messages_display ON messages(display_order DESC);
 CREATE INDEX idx_messages_seq ON messages(session_epoch, sender_contact_id, sender_seq)
@@ -349,13 +388,23 @@ CREATE TABLE sync_state (
   peer_contact_id TEXT NOT NULL,
   session_epoch INTEGER NOT NULL,
   state_json TEXT NOT NULL,          -- watermarks, sync_state, user_resolution,
-                                     -- empty_closed_seqs[] (D067),
+                                     -- empty_closed_seqs[] / empty_closed_ranges[] (D067, D071),
                                      -- integrity_incidents[] (D038, D049)
   PRIMARY KEY (peer_contact_id, session_epoch)
 );
 ```
 
-`PRAGMA user_version` on each `thread.db` and `profile.db` for schema bumps (D016: wipe on mismatch).
+**`sync_state.state_json` — closed-seq tracking (D071):**
+
+| Key | Type | Notes |
+|-----|------|-------|
+| `empty_closed_seqs` | uint64[] | Singleton closed seqs; max **`kMaxEmptyClosedSeqs`** (128) before coalesce |
+| `empty_closed_ranges` | `{min,max}[]` | Inclusive ranges after coalescing adjacent closed seqs |
+| *(other keys)* | — | Watermarks, `user_resolution`, `integrity_incidents[]`, etc. |
+
+On append to `empty_closed_seqs`: **coalesce consecutive values into `empty_closed_ranges`** first. **Late fill** (D067) checks membership in either structure. **`[post-v1]` group:** 1:1 uses `peer_contact_id` as scope id; groups will generalize to `(scope_kind, scope_id, session_epoch)` (D076).
+
+`PRAGMA user_version` on each `thread.db` and `profile.db` — see § Schema evolution (D069).
 
 ### `profile.db` schema (v1)
 
@@ -364,6 +413,7 @@ CREATE TABLE threads (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,                -- ai | direct | group
   channel TEXT NOT NULL DEFAULT '',  -- public_relay | e2e; empty for ai/group v1
+  group_id TEXT,                     -- [post-v1] when kind=group; NULL in v1 (D076)
   direct_peer_contact_id TEXT,       -- direct only; indexed lookup (D055)
   title TEXT NOT NULL,
   participant_contact_ids TEXT NOT NULL,  -- JSON array
@@ -440,10 +490,29 @@ No separate JSON sidecar for seq state — durable counters in SQLite + crypto s
 | `ClearMessages` | Compute `history_floor_seq` from **max peer `sender_seq` in transcript** (`loaded_max_seq`, D037) **before** `DELETE FROM messages`; purge **`profile.db` `outbox`** rows for pending/failed sends; `UPDATE threads` set `preview=''`, `unread_count=0`; wipe messages + reset display watermarks; keep `memory`/`sync_state` tables |
 | `FindOrCreateDirectThread` | Lookup **`chat_targets`** by `ChatTargetKey`; catalog via `threads.direct_peer_contact_id` + `channel` (D055) |
 
-### Schema versioning (breaking)
+### Schema evolution (D069)
 
-- **`user_version`** on SQLite files; **no in-place migration** from legacy flat JSON, `index.json`, or pre-D035 layouts (D016).
-- Dev builds: delete `threads/` on bump.
+Disk layout and wire format evolve on **separate version axes** — see [WIRE_SCHEMAS.md § Versioning matrix](WIRE_SCHEMAS.md#versioning-matrix).
+
+| Axis | Mechanism | Production policy |
+|------|-----------|-------------------|
+| **`thread.db` / `profile.db`** | `PRAGMA user_version` | **Incremental SQL migrations** per version step (`1→2`, `2→3`, …) |
+| **Legacy JSON / pre-v1 SQLite** | — | **No upgrade path** — one-time wipe when adopting v2a (D016) |
+| **`RelayEnvelope`** | `envelope_version` | New version + signing spec; reject unknown versions on ingest |
+| **`ChatPayload`** | `schema_version` | Parser branches; unknown `content_type` rejected on relay ingest |
+| **E2E AAD** | `aad_version` | [e2e-message-crypto](../e2e-message-crypto/DESIGN.md) |
+
+**Shippable `user_version=1`** is the first layout that **must** survive app upgrades without data loss. Implement **`SqliteThreadStore::Migrate(from, to)`** (or equivalent) before public release.
+
+**Migration rules:**
+
+1. Each bump runs a **single forward migration** inside a transaction; bump `user_version` only after success.
+2. Migrations must be **idempotent-safe** where practical (e.g. `CREATE TABLE IF NOT EXISTS` for new artifacts).
+3. **`profile.db` and `thread.db` versions are independent** — a profile open migrates `profile.db` once, then each opened `thread.db` lazily.
+4. **Breaking wire cutover (D016)** ≠ breaking disk layout — do not wipe user transcripts on disk version bump.
+5. **Dev builds** may offer “reset local data” on unsupported `user_version`; production shows blocking error + export hint.
+
+**Canonical message body on disk (D069):** `messages.chat_payload_json` holds the full **`ChatPayload`** object (same JSON as wire plaintext / E2E decrypt output). Columns `content_type`, `payload`, `text`, `control_type`, and `target_message_id` are **denormalized caches** populated **only** by `ChatPayloadCodec::EncodeToRow` on write — never updated independently. Local-only columns (`content_rml`, `user_payload`, `chat_actions`) sit outside `ChatPayload`.
 
 ## Clear / forget semantics (user-facing — D024)
 
@@ -551,7 +620,7 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 | Phase | Envelope | Body | Notes |
 |-------|----------|------|-------|
 | **Baseline (today)** | includes `thread_id` | flat `text` / `content_rml` | Removed at v2a-p2p — wipe data (D016) |
-| **v2a-p2p** | `sender_contact_id`, `route`, no `thread_id` | **`body.content`** minimal ChatPayload `text` | Single cutover; update `RelayEnvelope` C++ (D066) |
+| **v2a-p2p** | **`envelope_version`**, `sender_contact_id`, `route`, no `thread_id` | **`body.content`** minimal ChatPayload `text` | Single cutover; update `RelayEnvelope` C++ (D066, D072) |
 | **v4** | unchanged | same shape | Add validator: `system`, reject unknown types, D030, D029 limits |
 | **v6** | + `sender_seq`, `session_epoch` (E2E) | E2E: encrypted ChatPayload | AAD + signature bind seq fields |
 
@@ -559,6 +628,7 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 
 ```json
 {
+  "envelope_version": 1,
   "message_id": "uuid",
   "sender_relay_id": "relay:…",
   "sender_contact_id": "contact:alice",
@@ -583,6 +653,7 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 
 ```json
 {
+  "envelope_version": 1,
   "message_id": "uuid",
   "sender_relay_id": "relay:…",
   "sender_contact_id": "contact:alice",
@@ -595,15 +666,21 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 }
 ```
 
+**Unknown-field policy (D073):** ingest **ignores** unknown top-level envelope keys (after required fields parse). **`ChatPayload`:** ignore unknown keys inside `payload` for known types; **reject** unknown `content_type` on relay ingest. Full rules: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).
+
+**Normative JSON shapes:** [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) — `RelayEnvelope`, `ChatPayload`, `ChatHistoryRequest`, `ChatHistoryResponse`. C++ codecs and relay/libp2p glue share one struct pair for history fetch (D072).
+
 **`[post-v1]` group** — `route`: `{ "kind": "group", "group_id": "group:…" }` (no `ChatTargetKey`).
 
 | Field | Required | Notes |
 |-------|----------|-------|
+| `envelope_version` | yes | **1** in v1; included in signature canonical bytes (D072) |
 | `message_id` | yes | UUID dedup (D034) |
 | `sender_contact_id` | yes | Inbound routing peer for direct (D021) |
 | `route.kind` | yes | `direct` **`[v1]`**; `group` **`[post-v1]`** |
 | `route.channel` | yes when `kind=direct` | `public_relay` \| `e2e` |
 | `sender_seq`, `session_epoch` | E2E only | Omitted on public (D045) |
+| `sender_instance_id` | **`[future]`** | Multi-device extension (D074); omit in v1 |
 
 `payload_b64` decodes to `[payload_version:1][nonce:24][ciphertext+tag]`; AEAD plaintext is UTF-8 `ChatPayload` JSON (E010).
 
@@ -892,13 +969,15 @@ Local-only rows always use Rule 1.
 
 Per-thread **`max_display_order`** may be cached in `thread.db` metadata or derived from `MAX(display_order)` on append.
 
+**Complexity budget (D077):** Rule 2 integer insert/renumber is the **v1 display-order model** — expect ongoing edge-case maintenance (D065). **`[future]` escape hatches** (not scheduled): string **lexicographic order keys** (fractional indexing) or a separate **`ui_order`** graph keyed by `message_id` to decouple gap-repair ingest from mass renumber.
+
 ### Receive pipeline
 
 Ordered steps — **single linear sequence**; do not reorder in implementation (D022, D033, D056). **`public_relay`** runs steps 0–9 and 12 (skip 10–11). **`e2e`** runs all steps.
 
 0. **Envelope size** — reject if serialized JSON > `kMaxRelayEnvelopeJsonBytes` (D029).
-1. **Reject legacy shape** — if `thread_id` present → hard reject (D016).
-2. **Verify Ed25519 signature** on outer envelope (classical; see e2e-message-crypto).
+1. **Reject legacy shape** — if `thread_id` present → hard reject (D016). Require **`envelope_version=1`**; reject unknown envelope versions (D072).
+2. **Verify Ed25519 signature** on outer envelope (classical; see e2e-message-crypto). Canonical bytes include **`envelope_version`** (D072).
 3. **Parse `route`** — `kind=direct` requires `channel`; unknown `kind` → reject.
 4. **Resolve local thread (direct)** — `ChatTargetKey { envelope.sender_contact_id, envelope.route.channel }` → lookup **`chat_targets`** → `local_thread_id`. **Inbound only (D062):** if no row or missing shell → **hard reject** (do not create). Outbound user send uses **`FindOrCreateDirectThread`**. **`[post-v1]` group:** `route.group_id` → group thread lookup.
 5. **Per-thread UUID dedup** — `HasMessageId(local_thread_id, envelope.message_id)`; benign duplicate → stop (D034).
@@ -1064,6 +1143,7 @@ Canonical limits in [DECISIONS.md](DECISIONS.md) D029. Summary:
 | Outbox | `profile.db`-backed; max 500 pending retry items; **12** attempts per message (D041) |
 | Gap repair | Max **5** rounds, **500** seq span per fetch (D041) |
 | Integrity incidents | Max **10** per `(peer, epoch)` ring buffer (D049) |
+| Empty closed seqs | Max **128** singleton entries; coalesce to `empty_closed_ranges[]` (D071) |
 | Compaction | Trigger at **20** turns; summary ≤ **8 KiB** (D040) |
 
 **Local assistant `content_rml`** is trusted-local only (AI parser output), max 256 KiB on disk.

@@ -29,11 +29,12 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 {data_dir}/profiles/{profile_id}/threads/{thread_id}.json   # flat JSON — replaced in v2a
 ```
 
-**Target (D028, D035):**
+**Target (D028, D035, D069, D075):**
 
 ```
-threads/profile.db          # threads catalog + outbox + chat_targets (ChatTargetKey, local_thread_id)
-threads/{thread_id}/thread.db   # messages.display_order, chat_actions, …
+threads/profile.db          # threads catalog (+ group_id) + outbox + chat_targets
+threads/{thread_id}/thread.db   # messages.chat_payload_json, display_order, …
+threads/{thread_id}/blobs/      # [future] attachments (D075)
 ```
 
 No `index.json` in target layout (replaces legacy index + flat JSON).

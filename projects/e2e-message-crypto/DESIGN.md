@@ -148,10 +148,11 @@ Libsodium API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `n
 
 ## Relay envelope integration (phase c2 — D056)
 
-Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** See [chat-storage DESIGN § Relay envelope](../chat-storage-and-memory/DESIGN.md#relay--direct-envelope-d056).
+Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** **`envelope_version: 1`** required (chat-storage D072). Normative shapes: [WIRE_SCHEMAS.md](../chat-storage-and-memory/WIRE_SCHEMAS.md). See [chat-storage DESIGN § Relay envelope](../chat-storage-and-memory/DESIGN.md#relay--direct-envelope-d056).
 
 ```json
 {
+  "envelope_version": 1,
   "message_id": "uuid",
   "sender_relay_id": "relay:…",
   "sender_contact_id": "contact:alice",
@@ -166,10 +167,10 @@ Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** See [chat-storage 
 
 | Channel | `body` shape | Signature covers |
 |---------|--------------|------------------|
-| `public_relay` | `{ "content": { …ChatPayload… } }` | `message_id`, `sender_contact_id`, `route`, `timestamp`, body |
+| `public_relay` | `{ "content": { …ChatPayload… } }` | **`envelope_version`**, `message_id`, `sender_contact_id`, `route`, `timestamp`, body |
 | `e2e` | `{ "e2e": { "payload_b64": "…" } }` | + `sender_seq`, `session_epoch` |
 
-**Reject** envelopes containing `thread_id` (legacy — D016).
+**Reject** envelopes containing `thread_id` (legacy — D016). Reject unknown **`envelope_version`** (D072).
 
 **Send pipeline (e2e):**
 

@@ -4,7 +4,7 @@
 **Owner:** Hongwei + agents  
 **Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
 **Related project:** [e2e-message-crypto](../e2e-message-crypto/) (symmetric E2E body crypto; depends on v2b + v6 for wire-up)  
-**Recent:** D067 (empty gap close guard + late fill), D068 (compromised outbox freeze + epoch pending cancel) — see [DECISIONS.md](DECISIONS.md)
+**Recent:** D069–D078 (schema evolution, wire schemas, canonical body, group/blobs placeholders) — see [DECISIONS.md](DECISIONS.md)
 
 ## One-line goal
 
@@ -17,6 +17,7 @@ One durable conversation model for AI and P2P chat: SQLite per thread, `profile.
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | **Complete system specification** — all behavior with `[v1]` / `[post-v1]` maturity tags |
+| [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) | **Normative JSON wire shapes** — envelope, ChatPayload, history fetch (D072) |
 | [PHASES.md](PHASES.md) | **Implementation order** — checklists, exit criteria, traceability (no duplicate specs) |
 | [DECISIONS.md](DECISIONS.md) | Recorded decisions (ADR-style rationale) |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |

@@ -152,9 +152,9 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D016 — No legacy migration
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — includes legacy relay envelopes with `thread_id` (D056).  
-**Decision:** **No in-place upgrade** from pre-v2b/v6 on-disk thread JSON or **legacy relay wire** (envelopes with `thread_id`, old AAD with `thread_id`). Schema / protocol bumps may require deleting `{data_dir}/profiles/{id}/threads/` (acceptable — no production users yet). **Single parser** for wire + AAD — no dual-version support.  
-**Rationale:** Avoid migration and compatibility code while the model is still evolving; devs wipe local data on breaking bumps.  
+**Updated:** 2026-06-29 — production disk uses migrate (D069); dev wipe for legacy only.  
+**Decision:** **No in-place upgrade** from pre-v2b/v6 on-disk thread JSON or **legacy relay wire** (envelopes with `thread_id`, old AAD with `thread_id`). **Dev/pre-user:** may delete `{data_dir}/profiles/{id}/threads/` on cutover. **Shippable SQLite (`user_version=1`+):** incremental migration (D069), not wipe. **Single parser** for wire + AAD — no dual-version support.  
+**Rationale:** Avoid migration code for obsolete layouts; production users must not lose transcripts on disk version bump.  
 **Alternatives:** Backfill `sender_seq` on old messages; accept legacy envelopes alongside new (rejected).
 
 ---
@@ -302,6 +302,7 @@ Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature
 | `kMaxRetryQueueItems` | **500** | In-memory + `profile.db` outbox rescan cap |
 | `kMaxOpenThreadDbs` | **16** | LRU of open `thread.db` handles |
 | `kMaxDisplayPageMessages` | **100** | Default UI transcript window |
+| `kMaxEmptyClosedSeqs` | **128** | Singleton entries in `empty_closed_seqs[]` before coalesce to ranges (D071) |
 
 No hard cap on messages per thread or threads per profile in v1 — monitor via dev logging; revisit if needed.  
 **Rationale:** Prevents OOM, relay abuse, and accidental paste bombs; aligns with SQLite row sizes.  
@@ -727,8 +728,8 @@ No hard max file size in v1.
 
 | Phase | C++ / wire requirement |
 |-------|------------------------|
-| **v2a-core** | `ThreadMessage.display_order` (`int64_t`); `GetMessagesPage` / `AppendMessage` assign and read it. Other v4/v6 columns may remain store-only until wired. |
-| **v2a-p2p** | **`RelayEnvelope`:** remove `thread_id`; add `sender_contact_id`, `route` (`kind`, `channel`); **`body.content`** as minimal `ChatPayload` (D063). **Grep gate:** no `envelope.thread_id` / `body.text` top-level relay body in `src/feature/` or `tests/` (except legacy rejection tests). |
+| **v2a-core** | `ThreadMessage.display_order` (`int64_t`); **`chat_payload_json`** or equivalent store field (D078); `GetMessagesPage` / `AppendMessage` assign and read it. Other v4/v6 columns may remain store-only until wired. |
+| **v2a-p2p** | **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route` (`kind`, `channel`); **`body.content`** as minimal `ChatPayload` (D063, D072). **Grep gate:** no `envelope.thread_id` / `body.text` top-level relay body in `src/feature/` or `tests/` (except legacy rejection tests). |
 | **v4** | `ThreadMessage.content_type`, `payload`; full ChatPayload codec + validator. |
 | **v6** | `sender_seq`, `session_epoch` on `ThreadMessage` + envelope. |
 
@@ -744,7 +745,7 @@ No hard max file size in v1.
 
 **Guard — do not empty-close** gap range `[min, max]` when **any** local `relay_visible` row exists for that `(peer_contact_id, session_epoch)` with `sender_seq > max`. Keep `sync_state=gap`; rely on live delivery of the missing seq or transport exhaustion (D041). Example: have peer seq **4** and **6**, gap at **5** — empty fetch for **5** must **not** close; sender may still retry **5** from outbox.
 
-**Empty-close when guard passes:** tail gaps and holes with no higher seq held — advance `contiguous_peer_seq`; append each closed seq to **`empty_closed_seqs[]`** in `sync_state.state_json`.
+**Empty-close when guard passes:** tail gaps and holes with no higher seq held — advance `contiguous_peer_seq`; append each closed seq to **`empty_closed_seqs[]`** or coalesce into **`empty_closed_ranges[]`** (D071).
 
 **Late fill:** Inbound at seq `S` where `S ∈ empty_closed_seqs[]`, no existing row at `(peer, epoch, S)`, and unseen `message_id` → **normal accept** (D013), not rewind compromise. Remove `S` from `empty_closed_seqs[]` on persist. Covers tail empty-close followed by sender retry (D017).
 
@@ -766,6 +767,96 @@ No hard max file size in v1.
 
 **Rationale:** Prevents livelock (retry send while paused); stale-epoch envelopes must not auto-resend after rotation; avoids cross-store race on epoch bump.  
 **Alternatives:** Allow manual retry while compromised (rejected — ambiguous trust state); auto-resend pending after epoch bump (rejected).
+
+---
+
+## D069 — Schema evolution: migrate in production, wipe dev-only
+
+**Date:** 2026-06-29  
+**Decision:** **`PRAGMA user_version`** on `thread.db` and `profile.db` uses **incremental forward migrations** for shippable layouts (`user_version=1`+). **D016 wipe** applies only to **legacy JSON**, pre-v1 SQLite, and **dev/pre-user** builds — not to production disk bumps. **Breaking wire cutover** (`envelope_version`, D016 relay wipe) is independent of disk migration. Implement `Migrate(from→to)` before public release.  
+**Rationale:** Review finding — wipe-on-bump is acceptable pre-launch but becomes unacceptable maintenance debt once users exist.  
+**Alternatives:** Permanent wipe on every schema bump (rejected for production); no `user_version` (rejected).
+
+---
+
+## D070 — `memory` table key namespace + `ConversationSummary` JSON schema
+
+**Date:** 2026-06-29  
+**Decision:** `thread.db` **`memory`** table uses namespaced keys: **`summary`** → `ConversationSummary` JSON (`schema_version`, `version`, `text`, optional `compacted_through_display_order`, `updated_at`); **`fact:{uuid}`** reserved **`[future]`**. Summary `schema_version` bumps independently of SQLite `user_version`.  
+**Rationale:** KV table needs documented value shapes before v3 compaction; avoids ad-hoc JSON per implementer.  
+**Alternatives:** Opaque JSON only (rejected); separate `summaries` table (deferred).
+
+---
+
+## D071 — Cap empty closed seq metadata in `sync_state`
+
+**Date:** 2026-06-29  
+**Decision:** Track authoritative empty gap closes (D061/D067) with **`empty_closed_seqs[]`** (singletons) and **`empty_closed_ranges[]`** (`{min,max}` inclusive). **`kMaxEmptyClosedSeqs = 128`** — before append, **coalesce consecutive** closed seqs into ranges. **Late fill** checks both structures.  
+**Rationale:** Unbounded `empty_closed_seqs[]` grows with abandoned pre-send seq assignments (D010/D017).  
+**Alternatives:** Unlimited array (rejected); normalized `closed_seq` SQL table (deferred).
+
+---
+
+## D072 — `envelope_version` + shared history wire types
+
+**Date:** 2026-06-29  
+**Decision:** Every **`RelayEnvelope`** includes **`envelope_version: 1`** in v2a-p2p+; value is included in **Ed25519 canonical signing bytes**. Bump independently of `ChatPayload.schema_version` and SQLite `user_version`. **`ChatHistoryRequest` / `ChatHistoryResponse`** are **one C++ struct pair** shared by relay `GET /v1/chat-targets/messages` (D027) and libp2p `/pp-browser/chat-history/1.0.0` (D060). Normative JSON: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).  
+**Rationale:** Outer wire evolution without dual-parser; prevent relay/libp2p request shape drift.  
+**Alternatives:** Implicit optional fields only (rejected); separate HTTP vs libp2p structs (rejected).
+
+---
+
+## D073 — Unknown-field policy on wire JSON
+
+**Date:** 2026-06-29  
+**Decision:** **`RelayEnvelope`:** ignore unknown **top-level** keys after required fields parse. **`ChatPayload`:** ignore unknown keys inside **`payload`** for known `content_type`; **reject** unknown `content_type` on **relay ingest**. **`ChatHistoryRequest/Response`:** reject unknown top-level keys. Unknown envelope keys are **not** signed unless a future signing spec adds them via `envelope_version` bump.  
+**Rationale:** Forward-compatible wire extensions without breaking older clients; strict API for negotiated history fetch.  
+**Alternatives:** Reject all unknown keys everywhere (rejected — too brittle for envelope); ignore all unknown everywhere (rejected for history API).
+
+---
+
+## D074 — Multi-device extension point (`sender_instance_id`)
+
+**Date:** 2026-06-29  
+**Decision:** **`[future]`** optional envelope field **`sender_instance_id`** (UUID per client install). **Omit in v1**; v1 assumes single active sender (D015). When multi-device ships, instance id participates in signing canonical bytes under a new **`envelope_version`**. Do not repurpose `sender_relay_id`.  
+**Rationale:** D015 is a product constraint, not a permanent protocol limit — reserve field now to avoid another D016 cutover.  
+**Alternatives:** Device sub-seq in `sender_seq` (deferred); no reserved field (rejected).
+
+---
+
+## D075 — `{thread_id}/blobs/` attachment placeholder
+
+**Date:** 2026-06-29  
+**Decision:** Per-thread directory layout reserves **`{thread_id}/blobs/`** for **`[future]`** content-addressed attachments (`blobs/{hash}`). Empty/unused in v1. `ChatPayload` rich types reference blobs by hash when implemented.  
+**Rationale:** Media/file payloads need layout reservation before post-v1 rich types ship.  
+**Alternatives:** Profile-wide blob store (deferred); inline BLOB in SQLite (rejected for large media).
+
+---
+
+## D076 — Group chat placeholders in catalog + sync scope
+
+**Date:** 2026-06-29  
+**Decision:** `profile.db` **`threads.group_id`** column (nullable, unused v1) for **`kind=group`** **`[post-v1]`**. Wire uses `route.kind=group` + `group_id` (D056). **`sync_state`** v1 PK `(peer_contact_id, session_epoch)` is the **1:1 specialization**; groups will use `(scope_kind, scope_id, session_epoch)` or equivalent — document before group ingest ships.  
+**Rationale:** Avoid second catalog migration when groups arrive; 1:1 assumptions must not block group schema.  
+**Alternatives:** Add `group_id` only when groups ship (acceptable but higher migration cost); reuse `ChatTargetKey` for groups (rejected — D056).
+
+---
+
+## D077 — `display_order` gap renumber as v1 complexity budget
+
+**Date:** 2026-06-29  
+**Decision:** **v1** keeps D054 **Rule 2** integer insert/renumber + D065 UI defer rules as the display-order model. Document as **ongoing complexity budget**, not eternal architecture. **`[future]`** alternatives: lexicographic order keys (fractional indexing) or separate **`ui_order`** graph by `message_id` — not scheduled.  
+**Rationale:** Rule 2 works for v1 but is high edge-case surface; recording escape hatches avoids painting into a corner.  
+**Alternatives:** Switch to order keys in v2a (rejected — scope); disable gap-repair renumber (rejected — breaks transcript interleaving).
+
+---
+
+## D078 — Canonical on-disk body: `chat_payload_json` + single encoder
+
+**Date:** 2026-06-29  
+**Decision:** `messages.chat_payload_json` stores the full **`ChatPayload`** JSON (wire-aligned). Columns `content_type`, `payload`, `text`, `control_type`, `target_message_id` are **denormalized caches** written **only** via **`ChatPayloadCodec::EncodeToRow`** — never updated independently on the hot path. Local-only: `content_rml`, `user_payload`, `chat_actions`.  
+**Rationale:** One canonical body simplifies migrations and matches E2E/plaintext wire; denormalized columns keep indexed queries without parsing JSON every read.  
+**Alternatives:** Split columns only with no canonical JSON (rejected — drift risk); JSON-only row with no denorm (rejected — query/index cost).
 
 ---
 
