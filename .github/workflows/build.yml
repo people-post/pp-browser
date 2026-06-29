@@ -40,13 +40,14 @@ jobs:
             brew install ccache
           fi
 
+      - name: Enable sccache
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+
       - name: Setup sccache
         if: runner.os == 'Windows'
         uses: mozilla-actions/sccache-action@v0.0.10
-
-      - name: Enable sccache
-        if: runner.os == 'Windows'
-        run: echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
 
       - name: Ensure ccache directory exists
         if: runner.os != 'Windows'
@@ -107,11 +108,11 @@ jobs:
           test "$code" -eq 124
 
       - name: ccache stats (post-build)
-        if: runner.os != 'Windows'
+        if: always() && runner.os != 'Windows'
         run: ccache --show-stats || true
 
       - name: sccache stats (post-build)
-        if: runner.os == 'Windows'
+        if: always() && runner.os == 'Windows'
         run: sccache --show-stats || true
 
   android:
