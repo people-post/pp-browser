@@ -136,7 +136,7 @@ Sync watermarks are keyed by **`(peer, session_epoch)`**. A new epoch starts a f
 |-------|-------|
 | `contiguous_peer_seq[peer][epoch]` | Highest seq received with no holes in the active tail for this epoch |
 | `loaded_min_seq[peer][epoch]`, `loaded_max_seq[peer][epoch]` | Oldest/newest peer seq present in local transcript for this epoch |
-| `history_floor_seq[peer][epoch]` | Set on **clear visible history** — seq at or below this in the same epoch is **excluded from sync** (D037): silent discard, not compromised |
+| `history_floor_seq[peer][epoch]` | Set on **clear visible history** — max peer `sender_seq` that was in the transcript (`loaded_max_seq` before delete, D037); seq at or below floor in the same epoch is **excluded from sync**: silent discard, not compromised |
 | `sync_state` | `ok` \| `gap` \| `compromised` — E2E only; `compromised` means paused pending user resolution (D038) |
 | `user_resolution` | `null` \| `rotate_psk` \| `reset_thread` \| `pause_only` |
 | `integrity_incidents[]` | `{ kind, detected_at, detail }` — ring buffer, max **`kMaxIntegrityIncidents`** (10, D049) per `(peer, epoch)` |
@@ -401,7 +401,7 @@ No separate JSON sidecar — all durable state in SQLite + crypto session store.
 | Profile open | Once per profile: `readdir` — orphan `thread.db` without catalog row → insert stub `threads` row |
 | Orphan catalog row | No `thread.db` on visible verify → delete `threads` + `outbox` rows |
 | `AppendMessage` | `thread.db` txn first; then `UPDATE threads` (`updated_at`, `unread_count`); preview refresh deferred to verify (active thread may update eagerly) |
-| `ClearMessages` | Read `sync_state` / compute `history_floor_seq` **before** `DELETE FROM messages` (D037); then wipe messages + reset display watermarks; keep `memory`/`sync_state` tables |
+| `ClearMessages` | Compute `history_floor_seq` from **max peer `sender_seq` in transcript** (`loaded_max_seq`, D037) **before** `DELETE FROM messages`; purge **`profile.db` `outbox`** rows for pending/failed sends; `UPDATE threads` set `preview=''`, `unread_count=0`; wipe messages + reset display watermarks; keep `memory`/`sync_state` tables |
 | `FindOrCreateDirectThread` | Lookup **`chat_targets`** by `ChatTargetKey`; catalog via `threads.direct_peer_contact_id` + `channel` (D055) |
 
 ### Schema versioning (breaking)
@@ -411,12 +411,12 @@ No separate JSON sidecar — all durable state in SQLite + crypto session store.
 
 ## Clear / forget semantics (user-facing — D024)
 
-**Clear history** opens a **choice sheet** with two actions (labels illustrative):
+**Clear history** opens a **choice sheet** with two actions (labels illustrative). Choosing **Clear messages** opens a **confirmation dialog** before any data is deleted (D057).
 
-| Action | Transcript | LLM window | `memory` table | Thread shell | P2P `history_floor_seq` |
-|--------|------------|------------|---------------|--------------|-------------------------|
-| **Clear messages** | wipe | empty | keep by default; optional checkbox **Also forget what AI learned** wipes `memory` | keep | set per peer/epoch (E2E only) |
-| **Delete conversation** | gone | gone | gone | remove catalog + dir; **direct:** keep `chat_targets` (seq/epoch) (D056) | n/a |
+| Action | Transcript | LLM window | `memory` table | Thread shell | Outbox / pending sends | Sidebar | P2P `history_floor_seq` |
+|--------|------------|------------|---------------|--------------|------------------------|---------|-------------------------|
+| **Clear messages** | wipe | empty | keep by default; optional checkbox **Also forget what AI learned** wipes `memory` | keep | **cancelled** — delete `profile.db` `outbox` rows; pending/failed `relay_visible` rows removed with transcript (D017) | `preview=''`, `unread_count=0` | E2E: max peer `sender_seq` in deleted transcript per `(peer, epoch)` (D037) |
+| **Delete conversation** | gone | gone | gone | remove catalog + dir; **direct:** keep `chat_targets` (seq/epoch) (D056) | all outbox rows for thread removed | row removed | n/a |
 
 **Forget what AI learned** (separate menu item): transcript unchanged; wipe `memory` table only.
 
@@ -425,6 +425,43 @@ No separate JSON sidecar — all durable state in SQLite + crypto session store.
 | **New chat** (AI) | new empty thread dir | empty | n/a |
 
 P2P clear copy notes peer and relay may retain copies. Clear visible levels do **not** reset outgoing seq or `session_epoch` (D010).
+
+### Clear messages — confirmation dialog (D057)
+
+Shown **after** the user picks **Clear messages** on the choice sheet (and after any **Also forget what AI learned** checkbox state is set). **Confirm** runs `ClearMessages`; **Cancel** returns without changes.
+
+Build the summary from a **pre-clear scan** of `thread.db` (and `profile.db` `outbox` for this `thread_id`) so counts are accurate.
+
+**Title (illustrative):** `Clear message history?`
+
+**Body sections** — include every section that applies; omit empty sections:
+
+1. **Messages on this device**
+   - Total message rows to delete (all senders: you, peer, AI assistant, system).
+   - **E2E direct:** note that this includes messages **filled in by gap repair** (seq ranges that were not contiguous at receive time) — they are cleared like any other visible row.
+   - **Local-only rows:** count of `@ai` assistant replies and other `relay_visible=false` rows (peer never saw these).
+
+2. **Unsent and failed outbound** (if any `delivery=pending` or `delivery=failed` with `relay_visible=true`)
+   - Count and short preview of each (truncated text).
+   - **E2E:** state that assigned **`sender_seq` is not reused** — those sends are cancelled; your next successful send uses the next seq as usual (D010).
+   - **Public relay:** state that cancelled sends will **not** be retried automatically; peer will not receive them.
+
+3. **AI memory** (when forget-AI checkbox checked)
+   - State that the durable **conversation summary** in the `memory` table will be deleted; the AI will not retain compacted context from earlier turns. Transcript is already covered in §1.
+
+4. **What stays**
+   - Thread remains in the sidebar (title unchanged).
+   - **Direct:** `chat_targets` seq/epoch unchanged; new messages still work.
+   - **E2E:** `history_floor_seq` updated so **tail sync, gap repair, and poll** will not bring back cleared seq (including repaired gaps) in this epoch (D037).
+
+5. **What this does not do**
+   - Does **not** delete messages on the peer's device or on the relay.
+   - Does **not** reset `session_epoch` or outgoing seq counters — for a full cryptographic restart, use **Start new secure chat** (E2E, v6).
+   - Does **not** remove the thread — use **Delete conversation** for that.
+
+**Footer actions:** `Cancel` · `Clear messages` (destructive emphasis).
+
+**Delete conversation** may use a shorter confirmation (whole thread + memory removed); no need to repeat the full inventory unless product prefers parity.
 
 ## Routing and modes
 
@@ -675,7 +712,7 @@ During gap repair or multi-path delivery (direct + relay), E2E messages may arri
 
 `timestamp` is metadata only — not used for transcript pagination or sort (D054).
 
-Gap repair may insert rows with `display_order` between existing neighbors; scroll position should anchor on `message_id` / `display_order`, not raw array index.
+**Scroll stability (gap repair):** UI scroll anchor is always **`message_id`**, never array index or stale `display_order` after renumber. `ChatController` re-resolves anchor after `GetMessagesPage` refresh. If Rule 2 renumbers tail `display_order` values, visible rows may reorder only when the user is not pinned to a repaired gap batch (implement: defer UI refresh until scroll anchor reconciled, or renumber only rows not in the loaded window).
 
 ### Display order assignment (D054)
 
@@ -691,7 +728,7 @@ display_order = max(display_order in thread) + 1
 
 1. Find prev/next neighbor on that sender’s stream (same epoch) via `GetMessagesBySeqRange`.
 2. Assign `display_order` values strictly between `prev.display_order` and `next.display_order`.
-3. If integer gap is too small for the batch, **renumber** tail rows’ `display_order` in the same `thread.db` txn.
+3. If integer gap is too small for the batch, **renumber** tail rows’ `display_order` in the same `thread.db` txn — prefer one contiguous renumber pass per repair batch (not per row) to limit scroll churn (see § Display ordering scroll stability).
 
 Local-only rows always use Rule 1.
 
@@ -821,7 +858,7 @@ Return to strict via new secure chat, delete thread, or explicit reset.
 | Party | Behavior |
 |-------|----------|
 | **Sender** | `next_outgoing_seq` and `session_epoch` on chat target unchanged; next live send uses next seq as usual (e.g. 101) |
-| **Receiver** | **Before** `DELETE FROM messages`: set `history_floor_seq[peer][epoch]` to max contiguous peer seq at clear time; then delete messages; reset `loaded_min`/`loaded_max`/`contiguous_peer_seq` watermarks (empty transcript) |
+| **Receiver** | **Before** `DELETE FROM messages`: set `history_floor_seq[peer][epoch]` to **`loaded_max_seq[peer][epoch]`** (max peer `sender_seq` present in the transcript — includes gap-repaired rows, not contiguous alone); purge `profile.db` `outbox` for this thread; `UPDATE threads` set `preview=''`, `unread_count=0`; then delete messages; reset `loaded_min`/`loaded_max`/`contiguous_peer_seq` watermarks (empty transcript) |
 | **Below floor** | `sender_seq ≤ floor` in same epoch → **silent discard** on all paths (poll, direct, tail, gap). No persist, backfill, show, or unread bump. |
 | **Above floor** | Normal D013 ingest — tail, gap repair; **`[post-v1]`** authorized history backfill in `(floor, loaded_min)` |
 
@@ -906,13 +943,30 @@ Send path: reject compose text and serialized payload over D029 limits before `A
 
 Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`. Change `HasMessageId` to **`HasMessageId(thread_id, message_id)`** — per-thread `messages.id` lookup (D034); drop profile-global dedup from `JsonThreadStore` cutover.
 
-`GetMessages(thread_id)` — **tests and export only**; feature code uses `GetMessagesPage` (UI) or `GetMessagesForContext` (agent).
+`GetMessages(thread_id)` — **tests and export only**; feature code uses `GetMessagesPage` (UI) or `GetMessagesForContext` (agent). **v2a cutover:** grep gate — no `GetMessages` / profile-global `HasMessageId` in `src/feature/` (D057).
 
 ### SQLite operations (D044)
 
 - WAL mode; one writer mutex per `thread.db` and `profile.db`.
 - **Lock order** when both files are touched: acquire **`profile.db` mutex first**, then `thread.db` (same order in epoch bump, `AppendMessage` catalog update, delete). Never hold `thread.db` while waiting on `profile.db`.
-- `ClearMessages` → read/sync floor in `sync_state` **first** (D037) → `DELETE FROM messages` → `wal_checkpoint(PASSIVE)`.
+- **Dual-DB write recipe** (`AppendMessage`, `ClearMessages`, `DeleteThread` when both DBs touched):
+
+```
+lock(profile_mutex)
+lock(thread_mutex)
+  BEGIN thread.db
+    write messages (+ display_order, sync_state on clear)
+  COMMIT thread.db
+  BEGIN profile.db
+    UPDATE threads / INSERT|DELETE outbox / chat_targets as needed
+  COMMIT profile.db
+unlock(thread_mutex)
+unlock(profile_mutex)
+```
+
+Write **authority** remains `thread.db` first inside the critical section. Crash between commits: message without catalog row → D035 list verify; orphan outbox row → startup reconciliation (D047).
+
+- `ClearMessages` → compute floor + purge outbox + catalog preview/unread (D037, D024) → `DELETE FROM messages` → `wal_checkpoint(PASSIVE)`.
 - `AppendMessage` / outbox insert: set `outbox.updated_at` for startup ordering (D041).
 - No auto-VACUUM in v1.
 
@@ -936,7 +990,7 @@ Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`. Change `HasMessageId` to 
 - **Gap banner** `[v1]` (E2E) — `sync_state=gap`; tap to retry.
 - **Integrity banner** `[v1]` (E2E) — `sync_state=compromised`; choice sheet per § Integrity recovery.
 - **`@ai`** `[v1]` local; `[post-v1]` shared modes — § `@ai` in direct threads.
-- **Clear history (D024)** `[v1]` — clear messages (+ optional forget-AI checkbox) / delete conversation.
+- **Clear history (D024, D057)** `[v1]` — choice sheet → **confirmation dialog** with pre-clear inventory (messages, gap-repaired rows, pending/failed sends, optional forget-AI) → clear or cancel.
 - **Forget AI memory** `[v1]` — separate action (`memory` table only).
 
 ## Non-goals

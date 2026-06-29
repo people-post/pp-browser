@@ -93,7 +93,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-27  
 **Updated:** 2026-06-29 — below-floor ingest after clear is sync exclusion + silent discard (D037), not compromised.  
-**Decision:** `next_outgoing_seq` and `session_epoch` are keyed to **chat target `(contact_id, channel)`**, surviving thread delete/recreate and **clear visible history** (seq is not reset on clear). On clear, receiver sets `history_floor_seq[peer][epoch]` to the max contiguous seq at clear time; relay-visible seq at or below the floor in the same epoch is **excluded from sync** (D037) — silent discard, not compromised. Failed sends retry with the **same `message_id` and `sender_seq`**. New device / full reset requires **epoch bump** (D014). `uint64` overflow is accepted as out of scope.  
+**Decision:** `next_outgoing_seq` and `session_epoch` are keyed to **chat target `(contact_id, channel)`**, surviving thread delete/recreate and **clear visible history** (seq is not reset on clear). On clear, receiver sets `history_floor_seq[peer][epoch]` to **`loaded_max_seq`** (max peer `sender_seq` in the deleted transcript — includes gap-repaired rows, D037); relay-visible seq at or below the floor in the same epoch is **excluded from sync** — silent discard, not compromised. Failed sends retry with the **same `message_id` and `sender_seq`** until clear cancels them (D024). New device / full reset requires **epoch bump** (D014). `uint64` overflow is accepted as out of scope.  
 **Rationale:** Seq represents the long-lived conversation with a contact, not a local transcript snapshot; idempotent retries must not bump seq; clear history is a local display choice, not a protocol reset; floor marks a one-way local cutoff without protocol reset.  
 **Alternatives:** Reset seq on clear; assign seq only after successful relay; thread-scoped counters; below-floor → compromised (superseded by D037).
 
@@ -232,10 +232,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D024 — Clear history as two-action choice sheet
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — two actions + optional forget-AI checkbox.  
-**Decision:** **Clear messages** (optional *Also forget what AI learned* checkbox) · **Delete conversation**. Separate **Forget what AI learned** menu item. P2P disclosure on clear.  
-**Rationale:** Simpler UX; same D003 semantics.  
-**Alternatives:** Three-level sheet (original D024).
+**Updated:** 2026-06-30 — confirmation dialog (D057); outbox purge; catalog reset.  
+**Decision:** **Clear messages** (optional *Also forget what AI learned* checkbox) · **Delete conversation**. Separate **Forget what AI learned** menu item. **Clear messages** requires a **second-step confirmation dialog** with a pre-clear inventory (D057) before `ClearMessages` runs. **Clear messages** also: deletes pending/failed `relay_visible` rows; purges `profile.db` `outbox` for the thread; sets `preview=''`, `unread_count=0`. P2P disclosure in confirmation copy.  
+**Rationale:** Simpler UX; same D003 semantics; users must understand cancelled sends and gap-repaired rows; avoid silent outbox loss.  
+**Alternatives:** Three-level sheet (original D024); clear without confirmation (rejected).
 
 ---
 
@@ -370,14 +370,14 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 **List / repair (`ListThreads`):**
 
 1. `SELECT` from `profile.db` `threads` ordered by `updated_at` (one profile DB read).
-2. For **visible rows only** (current sidebar viewport / page slice — not all threads): if `{thread_id}/thread.db` is missing → delete `threads` + `outbox` rows for that id; else run `SELECT text, timestamp FROM messages ORDER BY timestamp DESC LIMIT 1` and update cached preview/`updated_at` if mismatched.
+2. For **visible rows only** (current sidebar viewport / page slice — not all threads): if `{thread_id}/thread.db` is missing → delete `threads` + `outbox` rows for that id; else run `SELECT text, timestamp FROM messages ORDER BY display_order DESC LIMIT 1` and update cached preview/`updated_at` if mismatched (D054).
 3. `FindOrCreateDirectThread(ChatTargetKey)` looks up **`chat_targets`**; catalog via **`threads.direct_peer_contact_id`** + `channel` (D055).
 
 **Profile open (once):** `readdir` `threads/*/` — directories with `thread.db` but no `threads` row → insert stub catalog row (repairs crash-after-DB-create).
 
 **Delete thread:** single `profile.db` transaction — `DELETE FROM threads` + `DELETE FROM outbox WHERE thread_id=?` — then remove `{thread_id}/` directory.
 
-**Clear messages:** keep `threads` row; visible verify shows empty preview when transcript is wiped.
+**Clear messages:** keep `threads` row; set `preview=''`, `unread_count=0`; purge `outbox`; visible verify shows empty preview when transcript is wiped (D024).
 
 **Rationale:** Avoids JSON dual-write and crash corruption; keeps fast sidebar sort in one SQLite file; lazy verify limits cost to ~viewport-sized `thread.db` opens per list refresh, not N threads. Correctness over eager full scan.  
 **Alternatives:** Keep `index.json` (rejected); no catalog — scan every `thread.db` on list (rejected); eager full truth-check on every `ListThreads` (rejected); preview always duplicated on every append without verify (rejected).
@@ -396,9 +396,10 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 ## D037 — Clear history floor: sync exclusion + silent discard
 
 **Date:** 2026-06-29  
-**Decision:** After **clear visible history** (D024), receiver **`DELETE FROM messages`** (transcript and per-thread dedup surface wiped — D034) and sets **`history_floor_seq[peer][epoch]`** to the max contiguous peer seq at clear time. For the same epoch, any inbound or relay-fetched message with **`sender_seq ≤ history_floor_seq`** is a **sync exclusion zone**, not an integrity failure: **silent discard** — do not persist, backfill, show, or bump unread; do **not** enter `sync_state=compromised`. Applies to **all paths**: poll, direct, tail sync, gap-repair responses. Only **`sender_seq > floor`** is eligible for normal D013 ingest. **No scroll resurrection** of cleared history in the same epoch — user cannot re-sync seq at or below floor. Clients must clamp relay fetch when floor is set: use **`min_sender_seq = floor + 1`** on tail and gap requests; discard any below-floor rows in responses without compromising. **No post-clear message-id tombstone** in `profile.db` — dedup stays transcript-scoped (`messages.id`); below-floor traffic is dropped by seq before dedup matters. Full conversation restart (new device, explicit start-over) uses **epoch bump** (D014), not clear.  
-**Rationale:** Clear is a one-way local cutoff, not a protocol reset; honest senders continue at seq N+1; relay poll redelivery of pre-clear messages must not trigger compromise UX; floor remembers seq progress without retaining transcript rows or a separate registry.  
-**Alternatives:** Below-floor → compromised (original D013 wording); soft-clear tombstone rows with content hydration on scroll; permanent message-id registry after clear.
+**Updated:** 2026-06-30 — floor = `loaded_max_seq` (not contiguous-only); outbox purge on clear.  
+**Decision:** After **clear visible history** (D024), receiver sets **`history_floor_seq[peer][epoch]`** to **`loaded_max_seq[peer][epoch]`** immediately before delete — the maximum peer `sender_seq` present in the transcript, **including gap-repaired rows** (not `contiguous_peer_seq` alone). Then **`DELETE FROM messages`** (transcript and per-thread dedup surface wiped — D034), purge **`profile.db` `outbox`** for the thread, and reset `loaded_min`/`loaded_max`/`contiguous_peer_seq`. For the same epoch, any inbound or relay-fetched message with **`sender_seq ≤ history_floor_seq`** is a **sync exclusion zone**, not an integrity failure: **silent discard** — do not persist, backfill, show, or bump unread; do **not** enter `sync_state=compromised`. Applies to **all paths**: poll, direct, tail sync, gap-repair responses. Only **`sender_seq > floor`** is eligible for normal D013 ingest. **No resurrection** of cleared seq via tail sync in the same epoch. Clients must clamp relay fetch when floor is set: use **`min_sender_seq = floor + 1`**. **No post-clear message-id tombstone** in `profile.db`. Full conversation restart uses **epoch bump** (D014), not clear.  
+**Rationale:** Contiguous-only floor allowed tail sync to repopulate gap-repaired messages after clear; max-seen floor matches “clear what I saw”; outbox purge aligns with deleted pending rows.  
+**Alternatives:** Floor = contiguous only (rejected — tail sync resurrection bug); below-floor → compromised (original D013 wording).
 
 ---
 
@@ -589,8 +590,9 @@ No hard max file size in v1.
 ## D054 — `display_order` for UI sort and pagination
 
 **Date:** 2026-06-29  
-**Decision:** Every `messages` row has **`display_order INTEGER NOT NULL`**, assigned in **`AppendMessage`** per DESIGN § Display order assignment. **UI sort** and **`GetMessagesPage(before_display_order)`** use this column only. **`sender_seq`** remains for E2E sync/ingest only (D045). Default append: `max+1`; gap repair: insert between seq neighbors (renumber tail if needed).  
-**Rationale:** Unifies AI, public, E2E, and local `@ai` transcript ordering; avoids channel-specific pagination cursors.  
+**Updated:** 2026-06-30 — scroll anchor on `message_id`; D035 preview uses `display_order`.  
+**Decision:** Every `messages` row has **`display_order INTEGER NOT NULL`**, assigned in **`AppendMessage`** per DESIGN § Display order assignment. **UI sort** and **`GetMessagesPage(before_display_order)`** use this column only. **`sender_seq`** remains for E2E sync/ingest only (D045). Default append: `max+1`; gap repair: insert between seq neighbors (renumber tail in one batch if needed). **Scroll anchor:** `message_id` only — not array index (D057). **Sidebar preview verify** (D035): `ORDER BY display_order DESC LIMIT 1`.  
+**Rationale:** Unifies AI, public, E2E, and local `@ai` transcript ordering; avoids channel-specific pagination cursors; preview matches transcript sort.  
 **Alternatives:** `before_timestamp` pagination; runtime merge in `BuildDisplayRows` (rejected).
 
 ---
@@ -610,6 +612,24 @@ No hard max file size in v1.
 **Decision:** **`thread_id`** (stored as **`chat_targets.local_thread_id`**) is **local only** — never sent on relay envelope or included in E2E AAD. **Direct P2P wire routing:** `ChatTargetKey { contact_id: envelope.sender_contact_id, channel: envelope.route.channel }` → `FindOrCreateDirectThread` → persist to that device's `local_thread_id`. Envelope includes **`route`**: `{ "kind": "direct", "channel": "…" }` (**`[post-v1]`** group: `{ "kind": "group", "group_id": "…" }`). **Reject** envelopes containing `thread_id` (D016). **Single** wire + AAD layout — no legacy dual-parser. Relay backfill: **`GET /v1/chat-targets/messages?peer_contact_id=&channel=`** (D027).  
 **Rationale:** Each device owns storage layout; logical conversation is `ChatTargetKey`; group-ready `route` object; one clean protocol cut with D016 wipe.  
 **Alternatives:** Shared wire `thread_id` (D053 — superseded); flat `channel` field without `route` (rejected — poor group extensibility).
+
+---
+
+## D057 — v2a implementation guardrails + clear confirmation
+
+**Date:** 2026-06-30  
+**Decision:** Before v2a merge, adopt these implementation rules:
+
+| Area | Rule |
+|------|------|
+| **Phase split** | **v2a-core** (SQLite + AI threads + `GetMessagesPage` + clear UX) then **v2a-p2p** (`chat_targets`, outbox, per-thread dedup, `FindOrCreateDirectThread` default `public_relay`) — see [PHASES.md](PHASES.md) |
+| **Dual-DB writes** | Lock `profile.db` then `thread.db`; write `thread.db` txn first inside critical section — [DESIGN § SQLite operations](DESIGN.md#sqlite-operations-d044) |
+| **`IThreadStore` cutover** | Extend API in one pass; grep gate: no `GetMessages` / profile-global `HasMessageId` in `src/feature/` |
+| **`ThreadContextPolicy`** | v3: filter `content_type=text` (+ selected `system`); compaction counts text turns only (D039, D040) |
+| **Clear confirmation** | Two-step UX: choice sheet → **inventory confirmation dialog** (D024, DESIGN § Clear messages — confirmation dialog) |
+
+**Rationale:** Review findings before implementation; reduce v2a blast radius; prevent tail-sync resurrection and silent outbox loss.  
+**Alternatives:** Monolithic v2a PR (rejected); clear without detailed confirmation (rejected).
 
 ---
 

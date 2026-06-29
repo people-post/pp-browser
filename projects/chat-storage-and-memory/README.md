@@ -26,7 +26,7 @@ See [PHASES.md](PHASES.md) for full checklists. Summary:
 
 | Phase | Focus |
 |-------|--------|
-| v2a | SqliteThreadStore, reconciliation, `GetMessagesPage`, `ChatTargetKey` routing, clear history |
+| v2a | SqliteThreadStore, reconciliation, `GetMessagesPage`, `ChatTargetKey` routing, clear history + **confirmation dialog** (D057) |
 | v2b | Public vs E2E split, channel badge sidebar |
 | v3 | AI memory + compaction |
 | v4 | ChatPayload text/system, transport column |
@@ -39,7 +39,7 @@ See [PHASES.md](PHASES.md) for full checklists. Summary:
 | Phase | Name | Status |
 |-------|------|--------|
 | — | Baseline (JSON `JsonThreadStore`, router, sliding context) | Done (pre-project) |
-| v2a | **SqliteThreadStore** + unified transcript | Not started |
+| v2a | **SqliteThreadStore** + unified transcript (D057: **v2a-core** then **v2a-p2p**) | Not started |
 | v2b | Public vs E2E channel split + badges | Not started |
 | v3 | Durable AI memory + clear/forget UX | Not started |
 | v4 | ChatPayload text/system + transport column | Not started |

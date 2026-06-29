@@ -44,48 +44,64 @@ Existing foundation this project builds on.
 
 **Goal:** Replace `JsonThreadStore` with **`SqliteThreadStore`** (D028); one durable path for all AI chat; clear-history API; no silent loss on restart.
 
-**Design refs:** [On-disk layout](DESIGN.md#on-disk-layout-target--d025-d028-d035-d036), [Startup reconciliation](DESIGN.md#startup-reconciliation-d047), [Implementer constraints](DESIGN.md#implementer-constraints).
+**Design refs:** [On-disk layout](DESIGN.md#on-disk-layout-target--d025-d028-d035-d036), [Startup reconciliation](DESIGN.md#startup-reconciliation-d047), [Implementer constraints](DESIGN.md#implementer-constraints), [SQLite operations](DESIGN.md#sqlite-operations-d044), [Clear confirmation](DESIGN.md#clear-messages--confirmation-dialog-d057).
 
-### Vendor SQLite (`pp_base`)
+**Sub-phases (D057):** Land **v2a-core** first (vertical slice: AI threads), then **v2a-p2p** (direct messaging plumbing). Do not merge v2a-p2p until v2a-core exit criteria pass.
+
+### v2a-core — SQLite + AI transcript
+
+**Goal:** Prove persistence and UI windowing on AI threads before P2P cutover.
+
+#### Vendor SQLite (`pp_base`)
 
 - [ ] Add SQLite to build (amalgamation or system lib) — **not** libp2p fork SQLite
 - [ ] Document in [BUILD.md](../../docs/BUILD.md) / `third_party` if vendored
 
-### `SqliteThreadStore` (D028, D047)
+#### `SqliteThreadStore` — AI path (D028)
 
-- [ ] Layout: `threads/profile.db` (`threads` + `outbox` + **`chat_targets`**), `threads/{id}/thread.db` — no `index.json` (D035)
-- [ ] `profile.db`: `threads`, `outbox`, **`chat_targets`** (`ChatTargetKey` PK, **`local_thread_id`**, D056, D047)
-- [ ] `thread.db`: `messages` (+ **`display_order`**, **`chat_actions`**), `memory`, `sync_state`; **`idx_messages_display`** (D054)
-- [ ] Lazy-open `thread.db` per thread; WAL mode + writer mutex per DB; **lock order** `profile.db` → `thread.db` (D044)
-- [ ] `AppendMessage` / `UpdateMessage`: assign **`display_order`** (D054); `thread.db` txn first; maintain `profile.db` `outbox` (+ `updated_at`) + `threads.updated_at` / `unread_count` (D035)
-- [ ] **`FindOrCreateDirectThread(ChatTargetKey)`**; inbound route via `sender_contact_id` + `route.channel` (D056)
-- [ ] **Startup reconciliation** — outbox ↔ messages repair (D047)
-- [ ] `ListThreads`: catalog query + visible-row verify/repair against `thread.db` (D035)
+- [ ] Layout: `threads/profile.db` (`threads` + `outbox` schema only), `threads/{id}/thread.db` — no `index.json` (D035)
+- [ ] `thread.db`: `messages` (+ **`display_order`**, **`chat_actions`**), `memory`, `sync_state` tables; **`idx_messages_display`** (D054)
+- [ ] Lazy-open `thread.db`; WAL + writer mutex per DB; **dual-DB recipe** — lock `profile.db` then `thread.db`, write `thread.db` txn first (D044, D057)
+- [ ] `AppendMessage` / `UpdateMessage`: assign **`display_order`** (D054); maintain `threads.updated_at` / `unread_count` in `profile.db`
+- [ ] `ListThreads`: catalog + visible-row verify; preview via `ORDER BY display_order DESC LIMIT 1` (D035, D054)
 - [ ] Profile open: `readdir` repair — stub `threads` row for orphan `thread.db` dirs (D035)
-- [ ] `HasMessageId(thread_id, message_id)` via `thread.db` `messages.id` PK (D034)
-- [ ] Change `IThreadStore::HasMessageId` signature; update `P2pMessagingService` poll path
-- [ ] `ClearMessages(thread_id)` — floor in `sync_state` **before** delete (D037); `DELETE FROM messages`; WAL checkpoint PASSIVE (D044); keep memory/sync tables
-- [ ] `DeleteThread` — direct: keep **`chat_targets`**; remove catalog + outbox + dir (D056)
-- [ ] Wipe legacy `threads/index.json` and flat `threads/{id}.json` on first run (D016 — no migration)
-- [ ] Wire app bootstrap to `SqliteThreadStore` instead of `JsonThreadStore`
-- [ ] Unit tests: … **ChatTargetKey** ingest routing, **reject wire `thread_id`** (D056)
-- [ ] `MessagingLimits` constants (D029); reject oversize on append
 - [ ] `GetMessagesPage(thread_id, before_display_order, limit)` (D031, D054)
-- [ ] LRU cap on open `thread.db` handles (D029)
+- [ ] `GetMessagesForContext` — tail slice; wire `AgentSession` (D039); no full-thread `GetMessages` in feature code (D057 grep gate)
+- [ ] `ClearMessages` — floor stub for non-E2E; purge outbox; `preview=''`, `unread_count=0` (D024, D037); WAL checkpoint (D044)
+- [ ] `DeleteThread` — AI: full remove
+- [ ] Wipe legacy JSON on first run (D016)
+- [ ] Wire bootstrap to `SqliteThreadStore`
+- [ ] `MessagingLimits` on append (D029); LRU open `thread.db` handles (D029)
 
-### Agent / chat integration
+#### Agent / chat integration (core)
 
-- [ ] Remove or gate legacy `agent_->Submit()` path — always `SubmitToThread` for AI threads
-- [ ] On open AI thread: load display via `GetMessagesPage` + `BuildDisplayRows` (D031)
-- [ ] `GetMessagesForContext` on `IThreadStore`; wire `AgentSession` / `ThreadContextPolicy` (D039) — tail slice only until v3 summary
+- [ ] Remove or gate legacy `agent_->Submit()` — always `SubmitToThread` for AI threads
 - [ ] `StartNewConversation()` deprecated or mapped to new thread creation only
-- [ ] Persist assistant `content_rml` + `chat_actions` on thread messages
+- [ ] On open AI thread: `GetMessagesPage` + `BuildDisplayRows` (D031)
+- [ ] Persist assistant `content_rml` + `chat_actions`
+- [ ] Extend `IThreadStore` API in one pass; migrate all `src/feature/` call sites (D057)
 
-### UX
+#### UX (core)
 
-- [ ] Thread menu: **Clear history** → two-action sheet + forget-AI checkbox (D024)
-- [ ] **Close conversation** = delete thread directory + `profile.db` cleanup
-- [ ] Composer maxlength aligned with `kMaxComposeTextBytes` (D029)
+- [ ] Thread menu: **Clear history** → choice sheet → **confirmation dialog** with pre-clear inventory (D024, D057)
+- [ ] Forget-AI checkbox on choice sheet; reflected in confirmation when checked
+- [ ] Composer maxlength (`kMaxComposeTextBytes`, D029)
+
+**v2a-core exit criteria:** AI thread survives restart; clear-messages shows confirmation then empties UI; sidebar preview/unread reset; `GetMessagesPage` works; no `GetMessages` in feature code.
+
+---
+
+### v2a-p2p — Direct messaging storage
+
+**Goal:** `chat_targets`, outbox, per-thread dedup, `FindOrCreateDirectThread` (`public_relay` default until v2b E2E UI).
+
+- [ ] `profile.db`: **`chat_targets`**, **`outbox`** populated (D047, D056)
+- [ ] **`FindOrCreateDirectThread(ChatTargetKey)`**; inbound route via `sender_contact_id` + `route.channel` (D056)
+- [ ] **Startup reconciliation** — outbox ↔ messages (D047)
+- [ ] `HasMessageId(thread_id, message_id)`; update `P2pMessagingService` poll path (D034)
+- [ ] `DeleteThread` — direct: keep **`chat_targets`** (D056)
+- [ ] Unit tests: ChatTargetKey routing, reject wire `thread_id`, outbox reconciliation, clear cancels pending sends
+- [ ] **Close conversation** = delete thread + `profile.db` cleanup
 
 ### Docs
 
@@ -93,7 +109,7 @@ Existing foundation this project builds on.
 - [ ] Update [CONFIGURATION.md](../../docs/CONFIGURATION.md) on-disk layout
 - [ ] Update this file + README progress snapshot
 
-**Exit criteria:** New AI thread survives restart via SQLite; clear-messages empties UI but keeps sidebar entry; per-thread `HasMessageId` rejects duplicate append; outbox reconciliation passes tests.
+**Exit criteria:** v2a-core criteria + per-thread `HasMessageId`; outbox reconciliation passes; clear cancels pending outbox rows.
 
 ---
 
@@ -145,6 +161,7 @@ Existing foundation this project builds on.
 - [ ] `ICompactionService` — when text turn count since last summary > **`kCompactionTurnThreshold` (20)**
 - [ ] Async job after turn completes; `kMaxSummaryBytes` (8 KiB) on persist
 - [ ] `GetMessagesForContext` injects summary + tail (`kCompactionMinTurnsKept` = 6)
+- [ ] **`ThreadContextPolicy`:** filter to `content_type=text` (+ selected `system`); compaction eligibility ignores non-text rows (D039, D057)
 
 ### UX
 
@@ -213,7 +230,7 @@ Existing foundation this project builds on.
 - [ ] Inbound Ed25519 verify; strip remote `content_rml` (D030)
 - [ ] Poll backoff min 2 s foreground (D032); cap poll batch (D029)
 - [ ] Outbox retry **`kMaxOutboxRetryAttempts`**; gap repair **`kMaxGapRepairRounds`** / **`kMaxGapRepairSeqSpan`** (D041)
-- [ ] Clear history → `history_floor_seq` in `sync_state`; below-floor silent discard (D037)
+- [ ] Clear history → `history_floor_seq = loaded_max_seq` (not contiguous-only); below-floor silent discard (D037)
 - [ ] Peer reset / integrity recovery — **no continue-anyway** (D014, D038, D046)
 - [ ] **Epoch bump transaction** with e2e crypto sessions (D047)
 
@@ -228,7 +245,7 @@ Existing foundation this project builds on.
 ### Integrity and UX
 
 - [ ] E2E gap / compromised banners; choice sheet: rotate PSK or pause only (D046)
-- [ ] Unit tests: seq, outbox, floor, epoch, reorder, reconciliation
+- [ ] Unit tests: seq, outbox, floor (`loaded_max_seq`), epoch, reorder, reconciliation, clear-after-gap-repair no resurrection
 
 ### Docs
 
@@ -357,3 +374,4 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 | 2026-06-29 | D039–D044: agent context tail read, compaction bounds, retry/repair caps, annotation cap, orphan UX, SQLite ops |
 | 2026-06-29 | D056: local `thread_id`; wire `ChatTargetKey` + `route`; no `thread_id` on envelope/AAD; supersedes D053 |
 | 2026-06-29 | DESIGN: single grand spec with `[v1]`/`[post-v1]` tags; PHASES traceability + named post-v1 phases |
+| 2026-06-30 | D037: floor = `loaded_max_seq`; D024/D057: clear confirmation + outbox purge; D035/D054: preview by `display_order`; D057: v2a-core/p2p split, dual-DB recipe, API grep gate |
