@@ -3,7 +3,8 @@
 **Status:** Planning — v2 not started (as of 2026-06-29)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
-**Related project:** [e2e-message-crypto](../e2e-message-crypto/) (symmetric E2E body crypto; depends on v2b + v6 for wire-up)
+**Related project:** [e2e-message-crypto](../e2e-message-crypto/) (symmetric E2E body crypto; depends on v2b + v6 for wire-up)  
+**Recent:** D067 (empty gap close guard + late fill), D068 (compromised outbox freeze + epoch pending cancel) — see [DECISIONS.md](DECISIONS.md)
 
 ## One-line goal
 
@@ -43,7 +44,7 @@ See [PHASES.md](PHASES.md) for full checklists. Summary:
 | v2b | Public vs E2E channel split + badges | Not started |
 | v3 | Durable AI memory + clear/forget UX | Not started |
 | v4 | ChatPayload text/system + transport column | Not started |
-| v6 | E2E sender seq + tail/gap/**user** sync | Not started |
+| v6 | E2E sender seq + tail/gap/**user** sync + D067/D068 integrity | Not started |
 
 ## Open questions
 

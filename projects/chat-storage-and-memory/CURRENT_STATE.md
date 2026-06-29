@@ -2,7 +2,7 @@
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D056 in [DECISIONS.md](DECISIONS.md).
+**Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D068 in [DECISIONS.md](DECISIONS.md).
 
 ## Persistence
 
@@ -141,5 +141,6 @@ No `index.json` in target layout (replaces legacy index + flat JSON).
 16. `@ai` local-only in v1 — shared modes deferred (D012).
 17. No unified E2E backfill / user sync / peer-direct history (D058–D060) — planned v6.
 18. `ThreadMessage` lacks `display_order` in C++ (D066) — planned v2a-core; legacy `RelayEnvelope` has `thread_id` — v2a-p2p cutover (D063).
+19. Empty gap close guard + late fill (D067) and compromised outbox freeze (D068) — spec only, v6.
 
 **Non-chat safety gaps** (LLM HTTP, profile JSON stores): see [platform-safety-limits](../platform-safety-limits/).

@@ -41,8 +41,9 @@ When building **`[v1]`** phases, satisfy these so **`[post-v1]`** features plug 
 | **Implement `GetMessagesBySeqRange` in v6** | Store query for tail/gap/responder serve (D060) |
 | **Implement `FetchChatTargetMessages` in v6** (D058) | Feature-layer: tail, gap, manual sync, scroll backfill share one fetch + ingest path |
 | **Peer-direct history protocol** (D060) | libp2p `/pp-browser/chat-history/1.0.0`; relay D027 fallback |
-| **Authoritative empty gap close** (D061) | Never-published seq after successful empty fetch — not compromised |
+| **Authoritative empty gap close** (D061, D067) | Never-published seq after successful empty fetch — not compromised; guard when higher seq already held; late fill after tail close |
 | **Inbound find-only** (D062) | Create direct shell on outbound user action only |
+| **Compromised thread freeze** (D068) | Outbox retry disabled; gap sync paused; epoch bump cancels old-epoch pending |
 | **Wire cutover in v2a-p2p** (D063) | Final envelope + minimal ChatPayload; v4 validates — no second wire break |
 | **C++ type gates** (D066) | `display_order` in v2a-core; `RelayEnvelope` without `thread_id` in v2a-p2p |
 | **Gap repair UI defer** (D065) | Renumber inside loaded window → defer refresh until anchor reconciled |
@@ -72,6 +73,7 @@ When building **`[v1]`** phases, satisfy these so **`[post-v1]`** features plug 
 | **No legacy migration** (D016) | Legacy flat `threads/{id}.json`, pre-D028 layouts, and **legacy relay envelopes with `thread_id`** are not upgraded — wipe `{data_dir}/profiles/{id}/threads/` on schema bump (acceptable — no production users yet). |
 | **No encryption at rest** (D048) | `thread.db` and `profile.db` are plaintext SQLite on disk. E2E body confidentiality is on the wire only; local disk is trusted. SQLCipher / OS keychain for transcript encryption is out of scope for v1. |
 | **Timestamps are display-only for ingest** | `timestamp` is not authoritative for ordering or replay on either channel; E2E uses `sender_seq`; public relay uses arrival order + UUID tie-break. No clock-skew rejection in v1. |
+| **User-initiated direct shells** (D062) | Direct `chat_targets` rows are created by outbound user actions (**Message**, **Secure message**, first compose send) — not by inbound delivery. A peer's first message is **rejected** until the recipient opens that conversation channel locally. Product copy should set this expectation. |
 
 ## Three layers (transcript vs context vs memory)
 
@@ -145,8 +147,9 @@ Sync watermarks are keyed by **`(peer, session_epoch)`**. A new epoch starts a f
 | `contiguous_peer_seq[peer][epoch]` | Highest seq received with no holes in the active tail for this epoch |
 | `loaded_min_seq[peer][epoch]`, `loaded_max_seq[peer][epoch]` | Oldest/newest peer seq present in local transcript for this epoch |
 | `history_floor_seq[peer][epoch]` | Set on **clear visible history** — max peer `sender_seq` that was in the transcript (`loaded_max_seq` before delete, D037); seq at or below floor in the same epoch is **excluded from sync**: silent discard, not compromised |
-| `sync_state` | `ok` \| `gap` \| `compromised` — E2E only; `compromised` means paused pending user resolution (D038) |
-| `user_resolution` | `null` \| `rotate_psk` \| `reset_thread` \| `pause_only` |
+| `sync_state` | `ok` \| `gap` \| `compromised` — E2E only; `compromised` means paused pending user resolution (D038). Internal sub-state **`awaiting_new_psk`** during OOB key exchange after user picks rotate — not a separate `user_resolution` value. |
+| `user_resolution` | **`[v1]`:** `null` \| `rotate_psk` \| `pause_only` (D038). **`[post-v1]`:** adds `continue_anyway` (D046). |
+| `empty_closed_seqs[]` | uint64[] in `state_json` — seq values authoritatively empty-closed (D061/D067); removed on late-fill persist |
 | `integrity_incidents[]` | `{ kind, detected_at, detail }` — ring buffer, max **`kMaxIntegrityIncidents`** (10, D049) per `(peer, epoch)` |
 
 ### ThreadMessage
@@ -346,6 +349,7 @@ CREATE TABLE sync_state (
   peer_contact_id TEXT NOT NULL,
   session_epoch INTEGER NOT NULL,
   state_json TEXT NOT NULL,          -- watermarks, sync_state, user_resolution,
+                                     -- empty_closed_seqs[] (D067),
                                      -- integrity_incidents[] (D038, D049)
   PRIMARY KEY (peer_contact_id, session_epoch)
 );
@@ -411,16 +415,17 @@ Run once per profile open after `ListPendingOutbox`:
 
 Optional dev-only: `PRAGMA integrity_check` on `profile.db` and open `thread.db` files; on failure offer delete-thread recovery.
 
-### Epoch bump transaction (D014, cross-project)
+### Epoch bump transaction (D014, D068, cross-project)
 
-Single coordinated flow when user starts new secure chat or peer reset requires epoch bump:
+Single **feature-layer coordinator** flow when user starts new secure chat or peer reset requires epoch bump. Serialize **`profile.db` writer mutex** and **`sessions.json`** update — do not update crypto sessions independently of `chat_targets` (cross-store race avoidance).
 
-1. Increment `chat_targets.session_epoch`; reset `next_outgoing_seq = 1` in **`profile.db`** (same txn).
-2. Update e2e **`sessions.json`** `session_epoch` + re-derive session key ([e2e-message-crypto](../e2e-message-crypto/DESIGN.md)).
-3. Update cached `threads.session_epoch` in `profile.db` `threads` row (E2E direct).
-4. Reset per-peer `sync_state` watermarks for the new epoch in `thread.db`.
+1. **Cancel old-epoch outbound (D068):** In `thread.db`, remove or mark cancelled all `relay_visible` rows with `delivery=pending|failed` for the **previous** `session_epoch` on this chat target; purge matching **`profile.db` `outbox`** rows in the same dual-DB recipe (D044). User re-composes in the new epoch — do not auto-resend stale envelopes.
+2. Increment `chat_targets.session_epoch`; reset `next_outgoing_seq = 1` in **`profile.db`** (same txn as step 1 catalog/outbox writes).
+3. Update e2e **`sessions.json`** `session_epoch` + re-derive session key ([e2e-message-crypto](../e2e-message-crypto/DESIGN.md)) while holding the coordinator (before releasing `profile.db` mutex).
+4. Update cached `threads.session_epoch` in `profile.db` `threads` row (E2E direct).
+5. Reset per-peer `sync_state` watermarks for the new epoch in `thread.db`; clear `sync_state=compromised` / `user_resolution` when rotation completes.
 
-No separate JSON sidecar — all durable state in SQLite + crypto session store.
+No separate JSON sidecar for seq state — durable counters in SQLite + crypto session store.
 
 ### Catalog consistency (D035)
 
@@ -632,6 +637,7 @@ local_thread_id = FindOrCreateDirectThread(key).id;
 | In-memory queue | May batch IO; must not be the sole copy of pending state |
 | Registry | On append `relay_visible` pending: insert `outbox`; on relayed: delete row |
 | Retry policy | Exponential backoff; max **`kMaxOutboxRetryAttempts`** (D041) per message; user-visible notice on persistent failure; manual retry resets counter |
+| **While compromised** (D068) | **No** auto-retry and **no** manual **Retry send** — outbox frozen until user rotates keys or deletes thread |
 | Relay dedup | Server must accept duplicate `message_id` on retry (idempotent ingest) |
 
 ## P2P sync (E2E only — D045)
@@ -701,7 +707,7 @@ Ingest: authorized backfill only — seq in `(history_floor_seq, loaded_min_seq)
 **Copy:**
 
 - Sync fixes **missing messages from your peer** (receive-side / older history).
-- **Unsent / failed** messages on this device need **Retry send** (or clear) — peer sync does not upload your pending outbox.
+- **Unsent / failed** messages on this device need **Retry send** (or clear) — peer sync does not upload your pending outbox. **Exception:** while `sync_state=compromised`, outbox retry is disabled (D068) — use **Start new secure chat** or **Delete conversation**.
 
 **Clear history (D037):** User sync must **not** resurrect seq ≤ `history_floor_seq` in the same epoch.
 
@@ -768,7 +774,8 @@ Receiver treats E2E sender violations as soft compromised ingest (D013) — paus
 
 - **Bootstrap / tail ingest:** empty per-epoch transcript (or new `session_epoch`) may receive high `sender_seq` without backfilling all prior seq — not a gap alarm (D009).
 - **New epoch:** `session_epoch` increases → reset per-epoch watermarks for that peer; `sender_seq = 1` is normal bootstrap, not compromised.
-- **Contiguous gap:** local state for this epoch already has seq **N** and receives **N+2+** above `history_floor_seq` → `sync_state=gap`, attempt repair via D058 (not yet compromised). Repair requests clamp to **`kMaxGapRepairSeqSpan`** (D041). **Authoritative empty success** for the gap range → close hole per D061 (not a failed round). **Transport failures** increment toward **`kMaxGapRepairRounds`** → soft compromised (D038).
+- **Contiguous gap:** local state for this epoch already has seq **N** and receives **N+2+** above `history_floor_seq` → `sync_state=gap`, attempt repair via D058 (not yet compromised). Repair requests clamp to **`kMaxGapRepairSeqSpan`** (D041). **Authoritative empty success** for the gap range → close hole per D061 **only when D067 guard passes** (not a failed round). **Transport failures** increment toward **`kMaxGapRepairRounds`** → soft compromised (D038).
+- **While `sync_state=compromised` (D068):** do **not** run auto gap repair, tail sync, or **Sync with peer** — integrity choice sheet only.
 
 E2E backfill is **peer-first** (D060); **relay** (D027) when peer offline or direct unavailable.
 
@@ -887,7 +894,7 @@ Per-thread **`max_display_order`** may be cached in `thread.db` metadata or deri
 
 ### Receive pipeline
 
-Ordered steps — do not reorder in implementation (D022, D033, D056):
+Ordered steps — **single linear sequence**; do not reorder in implementation (D022, D033, D056). **`public_relay`** runs steps 0–9 and 12 (skip 10–11). **`e2e`** runs all steps.
 
 0. **Envelope size** — reject if serialized JSON > `kMaxRelayEnvelopeJsonBytes` (D029).
 1. **Reject legacy shape** — if `thread_id` present → hard reject (D016).
@@ -896,24 +903,22 @@ Ordered steps — do not reorder in implementation (D022, D033, D056):
 4. **Resolve local thread (direct)** — `ChatTargetKey { envelope.sender_contact_id, envelope.route.channel }` → lookup **`chat_targets`** → `local_thread_id`. **Inbound only (D062):** if no row or missing shell → **hard reject** (do not create). Outbound user send uses **`FindOrCreateDirectThread`**. **`[post-v1]` group:** `route.group_id` → group thread lookup.
 5. **Per-thread UUID dedup** — `HasMessageId(local_thread_id, envelope.message_id)`; benign duplicate → stop (D034).
 6. **Participant check** — `sender_contact_id` must match direct peer for resolved thread (or `local:self` for reflected outbound echo).
-7. **Channel branch:**
-   - **`public_relay`:** parse `ChatPayload` (steps 8–9) → persist. No seq classifier.
-   - **`e2e`:** epoch check → AEAD decrypt → parse → history floor (D037) → **D013 classifier** (step 11) → persist.
-8. **Plaintext size** — decrypted UTF-8 JSON ≤ `kMaxE2ePlaintextBytes`; public `body.content` ≤ `kMaxChatPayloadJsonBytes`.
+7. **Decrypt (E2E only)** — epoch check → AEAD decrypt; failure → hard reject. **`public_relay`:** skip to step 8 with `body.content` plaintext.
+8. **Plaintext size** — decrypted UTF-8 JSON ≤ `kMaxE2ePlaintextBytes`; public `body.content` ≤ `kMaxChatPayloadJsonBytes`. Reject before `nlohmann::parse` (D033).
 9. **Parse & validate `ChatPayload`** — **`[v1]`** types `text`, `system`; strip wire `content_rml` (D030).
-10. **History floor (E2E, D037)** — if `sender_seq ≤ history_floor_seq[peer][epoch]`, silent discard.
-11. **D013 ingest classifier (E2E only)** — normal · gap · soft compromised · hard reject; `ReplayWindow` before gap declaration.
+10. **History floor (E2E only, D037)** — if `sender_seq ≤ history_floor_seq[peer][epoch]`, silent discard, stop.
+11. **D013 ingest classifier (E2E only)** — normal · gap · soft compromised · hard reject; `ReplayWindow` before gap declaration (D020). Skip when `sync_state=compromised` except to record incidents — do not persist new rows until resolved (D068).
 12. **Persist** — assign `display_order` (D054); append to **`local_thread_id`**; update watermarks (E2E); set `transport`.
 
 Validate `message_id` as UUID before DB use. Validate `local_thread_id` as UUID before filesystem use.
 
 ### Public relay ingest (D045)
 
-After signature verify and participant check: accept if UUID dedup passes and `ChatPayload` validates. Assign `display_order` at persist (D054). No `sync_state`, gap repair, or compromise UX on public channel.
+After steps 0–9 (signature, participant, dedup, payload validate): accept and persist. Assign `display_order` at persist in **poll/arrival order** within the batch (D054) — not peer send order. No `sync_state`, gap repair, or compromise UX on public channel.
 
 ### Ingest classification (E2E only — normal · gap · soft compromised · hard reject)
 
-After crypto/size checks; below-floor already discarded in step 7. **`[v1]`:** always strict — no relaxed override (D046). **`[post-v1]`:** optional relaxed ingest — see § Integrity recovery.
+After crypto/size checks; below-floor already discarded in step 10. **`[v1]`:** always strict — no relaxed override (D046). **`[post-v1]`:** optional relaxed ingest — see § Integrity recovery.
 
 **Normal (accept):**
 
@@ -921,11 +926,12 @@ After crypto/size checks; below-floor already discarded in step 7. **`[v1]`:** a
 2. **Epoch advance** — `session_epoch` increases → reset per-epoch watermarks; accept as fresh stream (see § Peer reset).
 3. **Contiguous tail** — `sender_seq == contiguous_peer_seq + 1` and `sender_seq > history_floor_seq[peer][epoch]`.
 4. **Tail bootstrap** — per-epoch transcript empty; ingest tail batch without requiring seq 1..N first (only seq **> floor** when floor is set).
+5. **Late fill (D067)** — `sender_seq` is in `empty_closed_seqs[]` for this `(peer, epoch)`, no row at that seq yet, and `message_id` not seen → accept; remove seq from `empty_closed_seqs` on persist.
 
 **Gap (repair allowed; not compromised until repair fails or conflict):**
 
 - `sender_seq > contiguous_peer_seq + 1` and `sender_seq > history_floor_seq[peer][epoch]` → request missing range via D058; on success, reclassify as normal.
-- **`FetchChatTargetMessages` returns success with zero messages** for the requested gap range → **authoritative empty close** (D061): advance `contiguous_peer_seq` across the range; not compromised (sender never published those seq).
+- **`FetchChatTargetMessages` returns success with zero messages** for the requested gap range → **authoritative empty close** (D061) **only if D067 guard passes:** no local `relay_visible` row with `sender_seq > gap_max` for that peer/epoch. On close: advance `contiguous_peer_seq` across the range; append closed seq values to `empty_closed_seqs[]`. **If guard fails** (higher seq already held — e.g. peer received **6** while **5** still in sender's outbox): keep `sync_state=gap`; wait for live delivery of missing seq or transport exhaustion — do **not** empty-close.
 - If repair returns **conflicting** seq (`message_id` mismatch) or impossible ranges → **soft compromised** (D038 choice sheet). Below-floor rows in a response are silently discarded (D037), not a compromise trigger.
 - **Transport / 5xx failures** count toward **`kMaxGapRepairRounds`** (D041); empty authoritative success does **not**.
 
@@ -934,7 +940,7 @@ After crypto/size checks; below-floor already discarded in step 7. **`[v1]`:** a
 | Condition | Why |
 |-----------|-----|
 | Same `(peer, epoch, sender_seq)` + **different** `message_id` | Seq conflict (D011) |
-| `sender_seq < contiguous_peer_seq` and not benign duplicate | Rewind within epoch |
+| `sender_seq < contiguous_peer_seq` and not benign duplicate and not **late fill** (D067) | Rewind within epoch |
 | `sender_seq = 1` in an **established** epoch where `contiguous_peer_seq > 0` | Sender reset without epoch bump |
 | Gap repair exhausted (**transport** failures only, D041) or returns violating messages | Repair failed |
 
@@ -967,7 +973,7 @@ No **continue anyway** in v1 (D046).
 
 **E2E new secure chat flow** (`rotate_psk`):
 
-Local state machine: `ok` → `gap` → `compromised` → `awaiting_new_psk` → `ok`.
+Local state machine: `ok` → `gap` → `compromised` → (`awaiting_new_psk` internal UI/coordinator sub-state) → `ok`.
 
 ```
 Initiating side                               Innocent peer
@@ -981,6 +987,19 @@ Initiating side                               Innocent peer
 - Innocent peer accepts **strictly higher** `session_epoch` (D014) **after** both sides complete OOB PSK exchange and local `sessions.json` update — cannot decrypt new epoch traffic until PSK is installed.
 - **No `epoch_start` system row** — first user message may use `sender_seq=1`.
 - Old epoch keys: decrypt historical ciphertext only; no new ingest on old epoch after rotation.
+
+#### Compromised thread behavior (D068)
+
+While `sync_state=compromised` (including after **Pause only**):
+
+| Subsystem | Behavior |
+|-----------|----------|
+| **Inbound ingest** | Paused — do not persist new peer rows (except incident metadata). |
+| **Outbound / outbox** | **Frozen** — no background retry, no manual **Retry send**; show why next to pending/failed rows. |
+| **Gap repair / tail sync / Sync with peer** | **Disabled** — integrity choice sheet is the only recovery path besides delete thread. |
+| **User resolution** | **`rotate_psk`** → epoch bump transaction (cancels old-epoch pending per § Epoch bump). **`pause_only`** → remain frozen until rotate or delete. |
+
+Copy must not tell users to **Retry send** while compromised — point to **Start new secure chat** or **Delete conversation**.
 
 #### `[post-v1]` relaxed ingest / continue anyway (D046 extension)
 
@@ -1140,7 +1159,7 @@ Write **authority** remains `thread.db` first inside the critical section. Crash
 - **Sidebar list (D035)** `[v1]` — `ListThreads` + visible-row verify/repair.
 - **Gap banner** `[v1]` (E2E) — `sync_state=gap`; **Retry sync** (D059) then tap-to-repair.
 - **Sync with peer** `[v1]` (E2E) — thread menu; **`FetchChatTargetMessages`** (D059).
-- **Integrity banner** `[v1]` (E2E) — `sync_state=compromised`; choice sheet per § Integrity recovery.
+- **Integrity banner** `[v1]` (E2E) — `sync_state=compromised`; choice sheet per § Integrity recovery; outbox retry disabled (D068).
 - **`@ai`** `[v1]` local; `[post-v1]` shared modes — § `@ai` in direct threads.
 - **Clear history (D024, D057)** `[v1]` — choice sheet → **confirmation dialog** with pre-clear inventory (messages, gap-repaired rows, pending/failed sends, optional forget-AI) → clear or cancel.
 - **Forget AI memory** `[v1]` — separate action (`memory` table only).
@@ -1166,7 +1185,8 @@ Not planned (distinct from **`[post-v1]`** items above, which *are* specified):
 - [ ] Same contact: separate public and E2E threads; channel badge in sidebar.
 - [ ] Message IDs stable; relay dedup on both channels.
 - [ ] **E2E:** `sender_seq`, tail + gap sync, **user-initiated sync** (D059), integrity UX (rotate or pause only).
-- [ ] **`FetchChatTargetMessages`** peer-first + relay fallback (D058/D060); authoritative empty gap close (D061).
+- [ ] **`FetchChatTargetMessages`** peer-first + relay fallback (D058/D060); authoritative empty gap close with D067 guard + late fill.
+- [ ] Compromised thread freezes outbox and sync (D068); epoch bump cancels old-epoch pending.
 - [ ] **Public:** UUID dedup; `display_order` UI sort; no seq classifier; wire has no `thread_id` (D056).
 - [ ] `ChatTargetKey` ingest routing + `display_order` pagination (D054, D056).
 - [ ] Durable outbox + `chat_targets` in `profile.db` + reconciliation (D047).

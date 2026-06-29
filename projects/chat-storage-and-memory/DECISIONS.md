@@ -103,8 +103,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-27  
 **Updated:** 2026-06-29 — recovery UX per D038; no continue-anyway (D046).  
-**Decision:** If the same `(sender, session_epoch, sender_seq)` is received with a **different `message_id`**, treat as **session integrity failure** (E2E only, D045): **pause ingest and outbound**, record an integrity incident, show a choice sheet (D038, D046). **Recommended** recovery: rotate E2E keys + bump `session_epoch`. User may **not** choose continue-anyway in v1 (D046). Same `(message_id, sender_seq)` duplicates are benign (UUID dedup). Envelope signature must bind `sender_seq` and `session_epoch`.  
-**Rationale:** Under encryption, conflicting seq implies replay, split-brain, or attack; silent merge by default would break trust. Informed user override is allowed when risks are disclosed.  
+**Decision:** If the same `(sender, session_epoch, sender_seq)` is received with a **different `message_id`**, treat as **session integrity failure** (E2E only, D045): **pause ingest and outbound**, record an integrity incident, show a choice sheet (D038, D046). **Recommended** recovery: rotate E2E keys + bump `session_epoch`. User may **not** choose continue-anyway in v1 (D046). Same `(message_id, sender_seq)` duplicates are benign (UUID dedup). Envelope signature must bind `sender_seq` and `session_epoch`. **Late fill** after authoritative empty close (D067) is **not** a rewind.  
+**Rationale:** Under encryption, conflicting seq implies replay, split-brain, or attack; silent merge by default would break trust. Informed user override is deferred to **`[post-v1]`** (D046).  
 **Alternatives:** Last-write-wins without disclosure (rejected); ignore conflict silently (rejected); log only (rejected).
 
 ---
@@ -341,7 +341,7 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — aligns with D022/D056 receive order.  
-**Decision:** Inbound order per D022: envelope size → reject legacy `thread_id` → signature → `route` → resolve `ChatTargetKey` → dedup → participant check → decrypt (e2e) → **plaintext size** → parse `ChatPayload` → history floor (D037) → D013 → persist. Reject oversize before `nlohmann::parse` on untrusted input.  
+**Decision:** Inbound order per D022/D033: envelope size → reject legacy `thread_id` → signature → `route` → resolve `ChatTargetKey` → dedup → participant check → decrypt (e2e) → **plaintext size** → parse `ChatPayload` → history floor (D037) → D013 → persist. **Single linear step list** in [DESIGN § Receive pipeline](DESIGN.md#receive-pipeline) — no nested channel-branch duplicates. Reject oversize before `nlohmann::parse` on untrusted input.  
 **Rationale:** JSON bombs and huge ciphertext must fail closed without full parse.  
 **Alternatives:** Parse then check (rejected).
 
@@ -407,7 +407,7 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — superseded relaxed ingest (D046); E2E-only scope (D045).  
-**Decision:** On E2E soft integrity failure: **pause ingest/outbound**, append incident (ring buffer D049), show choice sheet with disclosure. User picks **`rotate_psk`** (start new secure chat) or **`pause_only`**. **No `continue_anyway`**, no `ingest_policy=relaxed`, no `trust_degraded` in v1. Persist in `sync_state.state_json`:
+**Decision:** On E2E soft integrity failure: **pause ingest/outbound**, append incident (ring buffer D049), show choice sheet with disclosure. User picks **`rotate_psk`** (start new secure chat) or **`pause_only`**. **No `continue_anyway`**, no `ingest_policy=relaxed`, no `trust_degraded` in v1. While compromised: **outbox frozen**, gap/tail sync disabled (D068). Persist in `sync_state.state_json`:
 
 | Field | Values |
 |-------|--------|
@@ -650,7 +650,7 @@ No hard max file size in v1.
 ## D059 — User-initiated sync from peer (`[v1]` v6)
 
 **Date:** 2026-06-30  
-**Decision:** E2E direct threads expose **user-initiated sync** in v6 (thread menu **Sync with peer**; gap banner **Retry sync**). Invokes **`FetchChatTargetMessages`** (D058): tail refresh + repair known gaps + optional older range `(history_floor_seq, loaded_min_seq)` when `loaded_min_seq > floor + 1`. **Failed outbound** rows (`delivery=pending`/`failed`) are **not** fixed by peer sync — user **retries send** or clears (D017/D024). Copy must distinguish “sync missing messages from peer” vs “retry unsent message.” v6 ships with **relay fallback** when direct is unavailable; peer-direct (D060) preferred when libp2p is up. Scroll-to-top fetch remains **`[post-v1]`** (D052) — uses the same primitive.  
+**Decision:** E2E direct threads expose **user-initiated sync** in v6 (thread menu **Sync with peer**; gap banner **Retry sync**). Invokes **`FetchChatTargetMessages`** (D058): tail refresh + repair known gaps + optional older range `(history_floor_seq, loaded_min_seq)` when `loaded_min_seq > floor + 1`. **Failed outbound** rows (`delivery=pending`/`failed`) are **not** fixed by peer sync — user **retries send** or clears (D017/D024), **except while compromised** (D068). Copy must distinguish “sync missing messages from peer” vs “retry unsent message.” v6 ships with **relay fallback** when direct is unavailable; peer-direct (D060) preferred when libp2p is up. Scroll-to-top fetch remains **`[post-v1]`** (D052) — uses the same primitive.  
 **Rationale:** Users expect direct P2P to resolve receive-side holes and older history; local-first outbox covers send-side failures separately.  
 **Alternatives:** Scroll-only manual backfill (rejected); block composer until send succeeds (rejected).
 
@@ -668,8 +668,9 @@ No hard max file size in v1.
 ## D061 — Authoritative empty gap close (never-published seq)
 
 **Date:** 2026-06-30  
-**Decision:** After **`FetchChatTargetMessages`** (D058) returns **200 / success with zero envelopes** for a requested **single-seq** or **contiguous gap range** (authenticated peer or relay, party to chat target), treat missing seq as **never published** — **advance `contiguous_peer_seq`** across the empty range **without** soft compromised (D038). **Does not apply** when: transport error (retry repair round), response contains **conflicting** `(sender_seq, message_id)` vs local (D011), or `session_epoch` mismatch. Still exhaust **`kMaxGapRepairRounds`** only on **transport/5xx** failures, not authoritative empty success. Send may fail locally while peer never saw that seq (D017); peer empty fetch closes the hole so later live traffic does not pause the innocent receiver.  
-**Rationale:** Seq is assigned pre-network (D010); abandoned outbound must not compromise the peer; empty authoritative fetch distinguishes skip from attack.  
+**Updated:** 2026-06-30 — D067 guard + late fill; amends empty-close preconditions.  
+**Decision:** After **`FetchChatTargetMessages`** (D058) returns **200 / success with zero envelopes** for a requested **single-seq** or **contiguous gap range** `[min, max]` (authenticated peer or relay, party to chat target), treat missing seq as **never published** — **advance `contiguous_peer_seq`** across the empty range **without** soft compromised (D038) — **only when D067 guard passes** (no local `relay_visible` row with `sender_seq > max` for that peer/epoch). On close: append closed seq values to **`empty_closed_seqs[]`** in `sync_state.state_json`. **Does not apply** when: transport error (retry repair round), response contains **conflicting** `(sender_seq, message_id)` vs local (D011), `session_epoch` mismatch, or **D067 guard fails** (higher seq already held — keep `sync_state=gap`, wait for live delivery). Still exhaust **`kMaxGapRepairRounds`** only on **transport/5xx** failures, not authoritative empty success. Send may fail locally while peer never saw that seq (D017); tail-only empty close + **late fill** (D067) covers abandoned outbound without false rewind on retry.  
+**Rationale:** Seq is assigned pre-network (D010); abandoned outbound must not compromise the peer; empty authoritative fetch distinguishes skip from attack; guard prevents closing a hole while a higher seq proves lower may still be in sender's outbox.  
 **Alternatives:** Block new sends until prior succeeds (rejected); always compromised after N empty rounds (rejected).
 
 ---
@@ -677,7 +678,8 @@ No hard max file size in v1.
 ## D062 — Inbound direct routing: find-only (no auto-create)
 
 **Date:** 2026-06-30  
-**Decision:** **Inbound** relay/direct delivery: resolve **`ChatTargetKey` → existing `local_thread_id`** via `chat_targets` only. If no row or shell missing → **reject** (hard reject / drop) **before** persist — **do not** `FindOrCreateDirectThread` on ingest. **Outbound** user actions (Message, Secure message, first send) create shell + catalog. Participant check (D027) runs **before** any side effect; ingest never creates orphan `thread.db` / sidebar rows from unsolicited traffic.  
+**Updated:** 2026-06-30 — product assumption documented in DESIGN § Assumptions.  
+**Decision:** **Inbound** relay/direct delivery: resolve **`ChatTargetKey` → existing `local_thread_id`** via `chat_targets` only. If no row or shell missing → **reject** (hard reject / drop) **before** persist — **do not** `FindOrCreateDirectThread` on ingest. **Outbound** user actions (Message, Secure message, first send) create shell + catalog. Participant check (D027) runs **before** any side effect; ingest never creates orphan `thread.db` / sidebar rows from unsolicited traffic. **Product:** a peer's first message is dropped until the recipient opens that channel locally — document in UX.  
 **Rationale:** Prevents signed-but-unwanted traffic from allocating storage; creation stays user-initiated.  
 **Alternatives:** Create-on-ingest then delete on failed participant check (rejected).
 
@@ -732,6 +734,38 @@ No hard max file size in v1.
 
 **Rationale:** Prevents half-migrated types during cutover; grep gates match D057 store gates.  
 **Alternatives:** Big-bang type change at v4 (rejected — P2P routing needs envelope shape in v2a-p2p).
+
+---
+
+## D067 — Empty gap close guard + late fill (D061 amendment)
+
+**Date:** 2026-06-30  
+**Decision:** Amends D061 to avoid false compromise when durable outbox (D017) allows higher `sender_seq` on the wire before a lower seq is relayed.
+
+**Guard — do not empty-close** gap range `[min, max]` when **any** local `relay_visible` row exists for that `(peer_contact_id, session_epoch)` with `sender_seq > max`. Keep `sync_state=gap`; rely on live delivery of the missing seq or transport exhaustion (D041). Example: have peer seq **4** and **6**, gap at **5** — empty fetch for **5** must **not** close; sender may still retry **5** from outbox.
+
+**Empty-close when guard passes:** tail gaps and holes with no higher seq held — advance `contiguous_peer_seq`; append each closed seq to **`empty_closed_seqs[]`** in `sync_state.state_json`.
+
+**Late fill:** Inbound at seq `S` where `S ∈ empty_closed_seqs[]`, no existing row at `(peer, epoch, S)`, and unseen `message_id` → **normal accept** (D013), not rewind compromise. Remove `S` from `empty_closed_seqs[]` on persist. Covers tail empty-close followed by sender retry (D017).
+
+**Rationale:** D061 + monotonic pre-send seq assignment (D010) conflict without guard; late fill covers legitimate retry after tail-only empty close.  
+**Alternatives:** Serialize relay-visible sends — block seq N+1 while N is pending (rejected — stalls UX); empty-close always (rejected — false rewind).
+
+---
+
+## D068 — Compromised thread: outbox freeze, sync pause, epoch pending cancel
+
+**Date:** 2026-06-30  
+**Decision:** While `sync_state=compromised` (including **`pause_only`** resolution):
+
+- **No** background outbox retry and **no** manual **Retry send** (D017/D059 copy must not contradict).
+- **No** auto gap repair, tail sync, or **Sync with peer** — integrity choice sheet only.
+- **`rotate_psk` / epoch bump (D014):** before incrementing epoch, **cancel** all `relay_visible` `pending`/`failed` rows for the **old** `session_epoch` on that chat target; purge matching **`profile.db` `outbox`** rows (D068). User re-composes in the new epoch.
+
+**Epoch bump coordinator:** single feature-layer flow holds **`profile.db` mutex** while updating `chat_targets`, `outbox`, and **`sessions.json`** (cross-project) — see DESIGN § Epoch bump transaction.
+
+**Rationale:** Prevents livelock (retry send while paused); stale-epoch envelopes must not auto-resend after rotation; avoids cross-store race on epoch bump.  
+**Alternatives:** Allow manual retry while compromised (rejected — ambiguous trust state); auto-resend pending after epoch bump (rejected).
 
 ---
 

@@ -253,7 +253,8 @@ Existing foundation this project builds on.
 - [ ] **`FetchChatTargetMessages`** — unified backfill; peer-direct (D060) then relay D027 (D058)
 - [ ] **Tail sync** — desc limit 50
 - [ ] **Gap repair** — automatic via D058
-- [ ] **Authoritative empty gap close** — success + zero messages closes hole (D061); transport failures count toward D041 rounds
+- [ ] **Authoritative empty gap close** — success + zero messages closes hole **only when D067 guard passes**; `empty_closed_seqs[]` + late fill on retry (D061/D067)
+- [ ] **Compromised thread (D068)** — outbox frozen; no gap/tail sync; epoch bump cancels old-epoch pending; coordinator updates `sessions.json` under `profile.db` mutex
 - [ ] **User-initiated sync** — thread menu **Sync with peer**; gap banner **Retry sync** (D059)
 - [ ] Gap repair assigns **`display_order`** between seq neighbors (D054 Rule 2)
 - [ ] **Gap repair UI defer** — D065: skip refresh above window; defer + anchor when renumber touches loaded page
@@ -270,7 +271,7 @@ Existing foundation this project builds on.
 
 - [ ] E2E gap / compromised banners; choice sheet: rotate PSK or pause only (D046)
 - [ ] **Sync with peer** + **Retry sync** copy: peer sync ≠ retry unsent (D059)
-- [ ] Unit tests: seq, outbox, floor (`loaded_max_seq`), epoch, reorder, reconciliation, clear-after-gap-repair no resurrection, **empty gap close (D061)**, **inbound find-only (D062)**
+- [ ] Unit tests: seq, outbox, floor (`loaded_max_seq`), epoch, reorder, reconciliation, clear-after-gap-repair no resurrection, **empty gap close guard + late fill (D067)**, **inbound find-only (D062)**, **compromised outbox freeze (D068)**, **pending cancel on epoch bump (D068)**
 
 ### Docs
 
@@ -378,8 +379,8 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 - [ ] `GetMessagesForContext` / compaction tests (D039–D040)
 - [ ] Outbox/gap repair limit tests (D041)
 - [ ] Relay fetch 403 for non-party chat target (D027)
-- [ ] **`FetchChatTargetMessages`**: peer-direct then relay; empty gap close (D058–D061)
-- [ ] User-initiated sync + inbound find-only tests (D059, D062)
+- [ ] **`FetchChatTargetMessages`**: peer-direct then relay; empty gap close with D067 guard + late fill (D058–D061/D067)
+- [ ] User-initiated sync + inbound find-only + compromised freeze tests (D059, D062, D068)
 
 ---
 
@@ -404,3 +405,4 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 | 2026-06-29 | DESIGN: single grand spec with `[v1]`/`[post-v1]` tags; PHASES traceability + named post-v1 phases |
 | 2026-06-30 | D063–D066: wire cutover v2a-p2p, clear AI memory retained copy, display_order UI defer, C++ type gates; D057/D054 amended |
 | 2026-06-30 | D058–D062: unified `FetchChatTargetMessages`, user-initiated sync, libp2p peer history, empty gap close, inbound find-only; D009/D052/D041/D022 amended |
+| 2026-06-30 | D067–D068: empty gap close guard + late fill; compromised outbox/sync freeze; epoch bump pending cancel; receive pipeline linearized |

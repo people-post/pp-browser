@@ -241,7 +241,7 @@ Aligned with [chat-storage D011/D038/D046](../chat-storage-and-memory/DECISIONS.
 1. Ingest detects **soft** integrity failure (seq conflict, rewind, repair failure, etc.) or **hard** wire/crypto failure.
 2. **Soft:** pause ingest/outbound; UI shows choice sheet (D038) with disclosure. **Recommended:** manual new PSK exchange on **both peers**, then `session_epoch++` (innocent peer cannot decrypt until PSK is installed locally).
 3. **Hard** (invalid signature, decrypt failure, epoch decrease): no override in v1; pause until delete thread or key rotation.
-4. On **rotate_psk** path: `session_epoch++` via epoch bump transaction ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md)); update `sessions.json` + `chat_targets`.
+4. On **rotate_psk** path: `session_epoch++` via epoch bump transaction ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md#epoch-bump-transaction-d014-d068-cross-project), D068) — coordinator cancels old-epoch pending outbox, then updates `sessions.json` + `chat_targets` under `profile.db` mutex.
 5. **No `epoch_start` system message** ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md)) — first user message may use `sender_seq=1` in the new epoch.
 6. HKDF uses new epoch; old epoch keys retained for decrypting historical messages locally.
 
