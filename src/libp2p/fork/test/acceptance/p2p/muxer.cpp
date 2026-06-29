@@ -91,10 +91,13 @@ struct UpgraderSemiMock : public Upgrader {
   }
 
   void upgradeToMuxed(SecSPtr conn, OnMuxedCallbackFunc cb) override {
-    mux->muxConnection(std::move(conn), [cb = std::move(cb)](auto &&conn_res) {
-      ASSERT_OUTCOME_SUCCESS(conn, conn_res);
-      cb(std::move(conn));
-    });
+    mux->muxConnection(
+        std::move(conn),
+        [cb = std::move(cb)](
+            outcome::result<std::shared_ptr<CapableConnection>> conn_res) {
+          ASSERT_OUTCOME_SUCCESS(muxed_conn, conn_res);
+          cb(std::move(muxed_conn));
+        });
   }
 
   std::shared_ptr<SecurityAdaptor> security;
@@ -136,16 +139,16 @@ struct Server : public std::enable_shared_from_this<Server> {
         this->println(fmt::format("readSome error: {}", rread.error()));
       }
 
-      ASSERT_OUTCOME_SUCCESS(read, rread);
+      ASSERT_OUTCOME_SUCCESS(bytes_read, rread);
 
-      this->println("readSome ", read, " bytes");
-      if (read == 0) {
+      this->println("readSome ", bytes_read, " bytes");
+      if (bytes_read == 0) {
         return;
       }
       this->streamReads++;
 
       // 01-echo back read data
-      buf->resize(read);
+      buf->resize(bytes_read);
       libp2p::write(
           stream, *buf, [buf, stream, this](outcome::result<void> rwrite) {
             ASSERT_OUTCOME_SUCCESS(rwrite);

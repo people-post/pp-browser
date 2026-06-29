@@ -34,7 +34,7 @@
 // the enclosing function/lambda) when the outcome holds an error.  Written
 // without GNU statement-expression extensions so it compiles on MSVC as well.
 #define _ASSERT_OUTCOME_SUCCESS_TRY(_result_, _expression_)               \
-  [[maybe_unused]] auto &&_result_ = (_expression_);                      \
+  [[maybe_unused]] auto _result_ = (_expression_);                        \
   if (_result_.has_error()) {                                             \
     GTEST_FATAL_FAILURE_("Outcome of: " #_expression_)                    \
         << "  Actual:   Error '" << _result_.error().message() << "'\n"  \
