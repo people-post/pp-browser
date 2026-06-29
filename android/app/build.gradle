@@ -5,6 +5,7 @@ plugins {
 def buildWithCMake = true
 def ppBrowserVersion = project.findProperty('ppBrowserVersion') ?: '0.1.0'
 def ppBrowserReleaseVersion = project.findProperty('ppBrowserReleaseVersion') ?: ppBrowserVersion
+def ppBrowserCompilerCache = (project.findProperty('ppBrowserCompilerCache') ?: 'OFF').toString().toUpperCase()
 
 android {
     namespace "dev.pp_browser.app"
@@ -22,7 +23,8 @@ android {
                           "-DANDROID_STL=c++_static",
                           "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
                           "-DPP_BROWSER_VERSION=${ppBrowserVersion}",
-                          "-DPP_BROWSER_RELEASE_VERSION=${ppBrowserReleaseVersion}"
+                          "-DPP_BROWSER_RELEASE_VERSION=${ppBrowserReleaseVersion}",
+                          "-DPP_BROWSER_COMPILER_CACHE=${ppBrowserCompilerCache}"
                 abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
             }
         }
