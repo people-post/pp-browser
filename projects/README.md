@@ -5,8 +5,8 @@ Work-in-progress design and implementation tracking for pp-browser. Unlike [`doc
 ## How to use (humans and agents)
 
 1. Open the project folder for the feature you are working on.
-2. Read **DESIGN.md** (target) and **CURRENT_STATE.md** (today) before coding.
-3. Pick tasks from **PHASES.md**; mark items done in the same PR that implements them.
+2. Read **DESIGN.md** (complete spec) and **CURRENT_STATE.md** (today) before coding.
+3. Pick tasks from **PHASES.md** (ordering only); mark items done in the same PR that implements them.
 4. Log non-obvious choices in **DECISIONS.md** (date + rationale).
 5. When a phase ships, update the status line in the project **README.md**.
 

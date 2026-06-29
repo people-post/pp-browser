@@ -7,7 +7,7 @@
 
 ## One-line goal
 
-One durable conversation model for AI and P2P chat: SQLite per thread (`thread.db`) + `threads/profile.db` (`threads` catalog + outbox index, D035, D036), `ChatPayload`, grouped sidebar, multi-level clear sheet, strict seq ingest, **resource bounds (D029–D033)**, agent context tail read (D039), compaction (D040), and relay seq backfill API.
+One durable conversation model for AI and P2P chat: SQLite per thread, `profile.db` catalog/outbox/chat_targets, ChatPayload v1, channel badges, E2E-only seq sync — with richer types, scroll backfill, shared `@ai`, and transport badges phased after v1.
 
 **Related:** [platform-safety-limits](../platform-safety-limits/) (LLM HTTP, profile stores — outside chat wire).
 
@@ -15,10 +15,24 @@ One durable conversation model for AI and P2P chat: SQLite per thread (`thread.d
 
 | File | Purpose |
 |------|---------|
-| [DESIGN.md](DESIGN.md) | Target architecture and desired end state |
-| [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today (with pointers) |
-| [PHASES.md](PHASES.md) | Phased roadmap and progress checklists |
-| [DECISIONS.md](DECISIONS.md) | Recorded decisions (ADR-style) |
+| [DESIGN.md](DESIGN.md) | **Complete system specification** — all behavior with `[v1]` / `[post-v1]` maturity tags |
+| [PHASES.md](PHASES.md) | **Implementation order** — checklists, exit criteria, traceability (no duplicate specs) |
+| [DECISIONS.md](DECISIONS.md) | Recorded decisions (ADR-style rationale) |
+| [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |
+
+## v1 implementation order
+
+See [PHASES.md](PHASES.md) for full checklists. Summary:
+
+| Phase | Focus |
+|-------|--------|
+| v2a | SqliteThreadStore, reconciliation, GetMessagesPage, clear history |
+| v2b | Public vs E2E split, channel badge sidebar |
+| v3 | AI memory + compaction |
+| v4 | ChatPayload text/system, transport column |
+| v6 | E2E seq, tail sync, gap repair, integrity UX |
+
+`[post-v1]` work (post-v4, post-v6b–e) is specified inline in DESIGN and scheduled in PHASES.
 
 ## Progress snapshot
 
@@ -26,11 +40,10 @@ One durable conversation model for AI and P2P chat: SQLite per thread (`thread.d
 |-------|------|--------|
 | — | Baseline (JSON `JsonThreadStore`, router, sliding context) | Done (pre-project) |
 | v2a | **SqliteThreadStore** + unified transcript | Not started |
-| v2b | Public vs E2E channel split + sidebar groups | Not started |
-| v3 | Durable AI memory (`memory` table) + clear/forget UX | Not started |
-| v4 | ChatPayload types + transport badges | Not started |
-| v6 | Sender seq + gap detection + relay fetch API | Not started |
-| v6b | `@ai` three modes (local / shared reply / full) | Not started |
+| v2b | Public vs E2E channel split + badges | Not started |
+| v3 | Durable AI memory + clear/forget UX | Not started |
+| v4 | ChatPayload text/system + transport column | Not started |
+| v6 | E2E sender seq + tail/gap sync | Not started |
 
 ## Open questions
 

@@ -168,14 +168,14 @@ Outer envelope stays JSON + Ed25519 signature (classical). Extensions from [chat
 3. Build canonical AAD from envelope + message fields.
 4. `MessageCipher::Encrypt(utf8(payload_json), session_key, aad)` → blob → base64 → `body.e2e.payload_b64`.
 5. Sign outer envelope with Ed25519 identity key.
-6. Relay; on receive, verify signature → decrypt → parse JSON → ingest per D013.
+6. Relay; on receive, verify signature → decrypt → parse JSON → **E2E D013 ingest** (public relay skips seq classifier per D045).
 
 ## Replay protection
 
 Two layers:
 
 1. **Cryptographic:** `sender_seq` in AAD — reusing ciphertext from another message fails decrypt or ingest.
-2. **Protocol:** `ReplayWindow` in `base/crypto` + full ingest state machine in feature layer (chat-storage D013).
+2. **Protocol:** `ReplayWindow` in `base/crypto` is a **helper only** — holds out-of-order slots during gap repair. The feature-layer **D013 classifier** ([chat-storage D013/D020](../chat-storage-and-memory/DECISIONS.md)) is **authoritative** for accept/reject/compromise; `ReplayWindow` does not persist or override policy.
 
 `ReplayWindow` (per `chat_target`, `sender_contact_id`, `session_epoch`):
 
@@ -203,9 +203,9 @@ Two layers:
 }
 ```
 
-### Future: chat-target sidecar (chat-storage)
+### Chat-target seq state (chat-storage D047)
 
-`next_outgoing_seq` may live in thread metadata or sidecar keyed by `(contact_id, channel)` — owned by chat-storage project; crypto module only reads `session_epoch` for derivation.
+`next_outgoing_seq` and authoritative `session_epoch` for outbound traffic live in **`profile.db` → `chat_targets`** — not a JSON sidecar. Crypto **`sessions.json`** holds `session_epoch` for HKDF; **epoch bump** must update both in one coordinated transaction ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md)). Crypto module reads `session_epoch` for derivation; chat-storage owns seq counters.
 
 ## `base/crypto` module (target)
 

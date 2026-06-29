@@ -2,7 +2,7 @@
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** `SqliteThreadStore` (D028), sidebar catalog in `profile.db` (D035), per-thread dedup (D034), sender seq, windowed sync, strict ingest + user-choice recovery (D013–D014, D018, D038), clear floor (D037), durable outbox (D017), resource bounds (D029–D033), agent context tail read (D039), compaction bounds (D040), retry/repair caps (D041), annotation limits (D042–D043), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D044 in [DECISIONS.md](DECISIONS.md).
+**Planned but not implemented:** see [DESIGN.md](DESIGN.md) (`[v1]` scope + inline `[post-v1]` specs) and D008–D052 in [DECISIONS.md](DECISIONS.md).
 
 ## Persistence
 
@@ -32,9 +32,8 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 **Target (D028, D035):**
 
 ```
-threads/profile.db          # threads catalog + outbox
+threads/profile.db          # threads catalog + outbox + chat_targets (D047)
 threads/{thread_id}/thread.db
-sync/chat_targets.json   # v6
 ```
 
 No `index.json` in target layout (replaces legacy index + flat JSON).
@@ -68,7 +67,7 @@ No `index.json` in target layout (replaces legacy index + flat JSON).
 | Inbound signature verify | **Not implemented** | `Ed25519Signer::Verify` unused on poll |
 | Relay poll every UI frame | **Implemented (gap)** | `ChatController::Update` → `PollAndMerge` (D032) |
 | `@ai` scoped assist | Implemented (local only) | `MessageRouter` → `SubmitScopedAssist` |
-| `@ai+` / `@ai++` shared modes | Not implemented | Design: D012, phase v6b |
+| `@ai+` / `@ai++` shared modes | **Deferred** (D012) | Design: local `@ai` only for v1 |
 | Direct P2P transport | Not implemented | All outbound via `IRelayClient` |
 | libp2p messaging glue | Stub | `src/libp2p/integration/host/` |
 | `sender_seq` / gap detection | Not implemented | Design: D008–D011, phase v6 |
@@ -138,6 +137,6 @@ No `index.json` in target layout (replaces legacy index + flat JSON).
 13. Inbound relay messages not signature-verified; remote `content_rml` trusted (D030).
 14. JsonThreadStore eager load + full-file rewrite on append.
 15. Schema bumps require wipe (D016); v2a replaces JSON with SQLite (D028).
-16. `@ai` has one local-only mode — no `@ai+` / `@ai++` (D012).
+16. `@ai` local-only in v1 — shared modes deferred (D012).
 
 **Non-chat safety gaps** (LLM HTTP, profile JSON stores): see [platform-safety-limits](../platform-safety-limits/).
