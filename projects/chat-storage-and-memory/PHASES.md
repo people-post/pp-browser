@@ -16,10 +16,10 @@ Check boxes when work is **merged and verified**. Add sub-items freely; keep pha
 | v2b | [Thread / channel](DESIGN.md#thread), [UI sidebar](DESIGN.md#sidebar-v1) | `[v1]` public vs E2E split |
 | v3 | [Durable memory](DESIGN.md#durable-memory-per-thread), [Three layers](DESIGN.md#three-layers-transcript-vs-context-vs-memory) | `[v1]` compaction + forget |
 | v4 | [ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026), [Transport provenance](DESIGN.md#transport-provenance-d051), [Receive pipeline](DESIGN.md#receive-pipeline) | `[v1]` text/system + transport column |
-| v6 | [P2P sync](DESIGN.md#p2p-sync-e2e-only--d045), [Integrity recovery](DESIGN.md#integrity-recovery-d038), [Durable outbox](DESIGN.md#durable-outbox-d017) | `[v1]` E2E tail + gap |
+| v6 | [P2P sync](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity recovery](DESIGN.md#integrity-recovery-d038), [Durable outbox](DESIGN.md#durable-outbox-d017) | `[v1]` E2E tail + gap + user sync |
 | post-v4 | [ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026) (`[post-v1]` rows) | Rich payload types |
 | post-v6b | [`@ai` modes](DESIGN.md#ai-in-direct-threads-d012) | Shared `@ai+` / `@ai++` |
-| post-v6c | [P2P sync — history backfill](DESIGN.md#p2p-sync-e2e-only--d045) | Scroll relay backfill |
+| post-v6c | [P2P sync — scroll backfill](DESIGN.md#p2p-sync-e2e-only--d045) | Scroll trigger on D058 |
 | post-v6d | [Transport provenance](DESIGN.md#transport-provenance-d051) | Per-message badge UI |
 | post-v6e | [Relaxed ingest](DESIGN.md#post-v1-relaxed-ingest--continue-anyway-d046-extension) | Continue anyway (optional) |
 
@@ -96,7 +96,7 @@ Existing foundation this project builds on.
 **Goal:** `chat_targets`, outbox, per-thread dedup, `FindOrCreateDirectThread` (`public_relay` default until v2b E2E UI).
 
 - [ ] `profile.db`: **`chat_targets`**, **`outbox`** populated (D047, D056)
-- [ ] **`FindOrCreateDirectThread(ChatTargetKey)`**; inbound route via `sender_contact_id` + `route.channel` (D056)
+- [ ] **`FindOrCreateDirectThread(ChatTargetKey)`** — **outbound only**; inbound lookup existing target (D062)
 - [ ] **Startup reconciliation** — outbox ↔ messages (D047)
 - [ ] `HasMessageId(thread_id, message_id)`; update `P2pMessagingService` poll path (D034)
 - [ ] `DeleteThread` — direct: keep **`chat_targets`** (D056)
@@ -205,13 +205,13 @@ Existing foundation this project builds on.
 
 ---
 
-## Phase v6 — E2E sender seq, tail sync, and gap repair
+## Phase v6 — E2E sender seq, tail sync, gap repair, and user sync
 
-**Goal:** **E2E direct** chat detects missing peer messages and syncs reliably. Public relay unchanged (D045).
+**Goal:** **E2E direct** chat detects missing peer messages and syncs reliably. Public relay unchanged (D045). Send failure keeps local copy (D017); peer sync fills **receive-side** gaps (D058–D059).
 
-**Depends on:** v2b, v4; relay `GET /v1/chat-targets/messages` (D027, D056) with **chat-target authorization**.
+**Depends on:** v2b, v4; relay `GET /v1/chat-targets/messages` (D027, D056) with **chat-target authorization**; libp2p history protocol (D060) when direct transport available.
 
-**Design refs:** [P2P sync `[v1]` modes](DESIGN.md#p2p-sync-e2e-only--d045), [Integrity `[v1]`](DESIGN.md#v1-recovery), [Epoch bump](DESIGN.md#epoch-bump-transaction-d014-cross-project), [Durable outbox](DESIGN.md#durable-outbox-d017).
+**Design refs:** [P2P sync `[v1]` modes](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [User-initiated sync](DESIGN.md#user-initiated-sync-ux-d059), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity `[v1]`](DESIGN.md#v1-recovery), [Epoch bump](DESIGN.md#epoch-bump-transaction-d014-cross-project), [Durable outbox](DESIGN.md#durable-outbox-d017).
 
 ### Schema and persistence
 
@@ -225,7 +225,7 @@ Existing foundation this project builds on.
 
 - [ ] Sign envelope including E2E seq fields
 - [ ] Durable outbox: `ListPendingOutbox()` + reconciliation on startup (D017, D047)
-- [ ] **E2E:** receive pipeline D013/D033; **`ReplayWindow` helper**, classifier authoritative (D020)
+- [ ] **E2E:** receive pipeline D013/D033; inbound **find-only** (D062); **`ReplayWindow` helper**, classifier authoritative (D020)
 - [ ] **Public:** UUID dedup + participant check only (D045)
 - [ ] Inbound Ed25519 verify; strip remote `content_rml` (D030)
 - [ ] Poll backoff min 2 s foreground (D032); cap poll batch (D029)
@@ -234,25 +234,47 @@ Existing foundation this project builds on.
 - [ ] Peer reset / integrity recovery — **no continue-anyway** (D014, D038, D046)
 - [ ] **Epoch bump transaction** with e2e crypto sessions (D047)
 
-### Sync modes (E2E only — D052)
+### Sync modes (E2E only — D052, D058, D059)
 
+- [ ] **`FetchChatTargetMessages`** — unified backfill; peer-direct (D060) then relay D027 (D058)
 - [ ] **Tail sync** — desc limit 50
-- [ ] **Gap repair** — peer direct; relay D027 when offline
+- [ ] **Gap repair** — automatic via D058
+- [ ] **Authoritative empty gap close** — success + zero messages closes hole (D061); transport failures count toward D041 rounds
+- [ ] **User-initiated sync** — thread menu **Sync with peer**; gap banner **Retry sync** (D059)
 - [ ] Gap repair assigns **`display_order`** between seq neighbors (D054 Rule 2)
 - [ ] Reorder buffer / `ReplayWindow` k=32 (D020)
 - [ ] Persist **`loaded_min_seq` / `loaded_max_seq`** watermarks (prerequisite for post-v6c)
 
+### libp2p peer-direct (D060)
+
+- [ ] Protocol **`/pp-browser/chat-history/1.0.0`** — request/response mirrors D027
+- [ ] Responder serves `GetMessagesBySeqRange` from local `thread.db`
+- [ ] Requester ingests envelopes; `transport=direct` on persist
+
 ### Integrity and UX
 
 - [ ] E2E gap / compromised banners; choice sheet: rotate PSK or pause only (D046)
-- [ ] Unit tests: seq, outbox, floor (`loaded_max_seq`), epoch, reorder, reconciliation, clear-after-gap-repair no resurrection
+- [ ] **Sync with peer** + **Retry sync** copy: peer sync ≠ retry unsent (D059)
+- [ ] Unit tests: seq, outbox, floor (`loaded_max_seq`), epoch, reorder, reconciliation, clear-after-gap-repair no resurrection, **empty gap close (D061)**, **inbound find-only (D062)**
 
 ### Docs
 
 - [ ] Extend [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md): envelope limits (D029), verify pipeline, relay auth (D027)
 - [ ] Document single-active-device (D015, E2E only)
 
-**Exit criteria:** E2E gap auto-repair; outbox survives restart; public channel unaffected; no relaxed ingest path.
+**Exit criteria:** E2E gap auto-repair; **user-initiated sync** via relay (direct when libp2p up); outbox survives restart; public channel unaffected; no relaxed ingest path.
+
+---
+
+## Phase post-v6c — Scroll-triggered history backfill (D052)
+
+**Goal:** Add **scroll-to-top** as a trigger for the existing **`FetchChatTargetMessages`** primitive (D058) — [DESIGN § P2P sync](DESIGN.md#p2p-sync-e2e-only--d045).
+
+**Depends on:** v6 watermarks, D058/D060/D027.
+
+- [ ] Scroll to top invokes D058 older-range fetch — page `(history_floor_seq, loaded_min_seq)`
+- [ ] Same ingest + floor rules as user-initiated sync (D059)
+- [ ] Scroll hint UX when older history may exist
 
 ---
 
@@ -279,18 +301,6 @@ Existing foundation this project builds on.
 - [ ] `generation`, `seq_owner_contact_id`; trigger user owns `sender_seq`
 - [ ] Shared reply (+1 seq) and shared full (+2 seq) flows
 - [ ] Confirm UX before first shared send
-
----
-
-## Phase post-v6c — Scroll-driven history backfill (D052)
-
-**Goal:** Third E2E sync mode — [DESIGN § P2P sync — history backfill](DESIGN.md#p2p-sync-e2e-only--d045).
-
-**Depends on:** v6 watermarks, `GetMessagesBySeqRange`, D027 participant auth.
-
-- [ ] Relay fetch when user scrolls to top — page `(history_floor_seq, loaded_min_seq)`
-- [ ] Authorized backfill ingest; below-floor silent discard
-- [ ] Scroll hint UX when older relay history may exist
 
 ---
 
@@ -325,6 +335,7 @@ Existing foundation this project builds on.
 |-------------------|-----------|------|
 | v2b channel split | c2 | `P2pMessagingService` encrypt/decrypt on `channel=e2e` |
 | v6 envelope + seq | c2–c3 | AAD binds `sender_seq`; `ChatPayload` plaintext (E010) |
+| v6 peer history (D060) | libp2p integration | `/pp-browser/chat-history/1.0.0` responder + requester |
 | D038 integrity UX | c3 | PSK rotation + epoch bump transaction (D047) |
 
 Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b + v6 foundations.
@@ -352,6 +363,8 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 - [ ] `GetMessagesForContext` / compaction tests (D039–D040)
 - [ ] Outbox/gap repair limit tests (D041)
 - [ ] Relay fetch 403 for non-party chat target (D027)
+- [ ] **`FetchChatTargetMessages`**: peer-direct then relay; empty gap close (D058–D061)
+- [ ] User-initiated sync + inbound find-only tests (D059, D062)
 
 ---
 
@@ -374,4 +387,4 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 | 2026-06-29 | D039–D044: agent context tail read, compaction bounds, retry/repair caps, annotation cap, orphan UX, SQLite ops |
 | 2026-06-29 | D056: local `thread_id`; wire `ChatTargetKey` + `route`; no `thread_id` on envelope/AAD; supersedes D053 |
 | 2026-06-29 | DESIGN: single grand spec with `[v1]`/`[post-v1]` tags; PHASES traceability + named post-v1 phases |
-| 2026-06-30 | D037: floor = `loaded_max_seq`; D024/D057: clear confirmation + outbox purge; D035/D054: preview by `display_order`; D057: v2a-core/p2p split, dual-DB recipe, API grep gate |
+| 2026-06-30 | D058–D062: unified `FetchChatTargetMessages`, user-initiated sync, libp2p peer history, empty gap close, inbound find-only; D009/D052/D041/D022 amended |

@@ -79,11 +79,11 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D009 — Two sync modes for E2E (tail + gap repair)
+## D009 — E2E sync modes (tail + gap + manual; scroll deferred)
 
 **Date:** 2026-06-27  
-**Updated:** 2026-06-29 — history backfill deferred (D052); floor rules unchanged (D037).  
-**Decision:** **E2E** P2P history sync uses two active modes: **(1) tail sync** — on open, reconnect, or new device, fetch latest N (default 50) messages per peer; **(2) gap repair** — automatic backfill when a hole appears in the contiguous tail (have seq N, receive N+2+), not gated on scroll. **Scroll-driven history backfill** is **deferred** (D052) — v1 scroll-up uses local `GetMessagesPage` only. Bootstrap/tail ingest on an empty store does **not** treat a high incoming seq as a gap. **Public relay** uses poll + local pages only — no seq sync modes (D045).  
+**Updated:** 2026-06-30 — unified backfill (D058); user-initiated sync in v6 (D059); scroll backfill still deferred (D052).  
+**Decision:** **E2E** P2P history sync uses **`FetchChatTargetMessages`** (D058): **(1) tail sync** — on open, reconnect, or new device, fetch latest N (default 50) messages per peer; **(2) gap repair** — automatic backfill when a hole appears in the contiguous tail (have seq N, receive N+2+), not gated on scroll; **(3) user-initiated sync** — thread menu / retry banner (D059). **Scroll-driven history backfill** is **deferred** (D052) — v1 scroll-up uses local `GetMessagesPage` only. Bootstrap/tail ingest on an empty store does **not** treat a high incoming seq as a gap. **Public relay** uses poll + local pages only — no seq sync modes (D045).  
 **Rationale:** Tail + gap covers live private-chat reliability; scroll backfill is lower pre-launch value.  
 **Alternatives:** Three modes in v1 (original D009); poll cursor only.
 
@@ -213,9 +213,9 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — resolve `ChatTargetKey` before dedup (D056); reject legacy `thread_id`.  
-**Decision:** Ingest order: envelope size → **reject `thread_id` if present** → signature verify → parse `route` → **resolve local thread via `ChatTargetKey`** → per-thread UUID dedup → participant check → decrypt (e2e) → parse `ChatPayload` → history floor (D037) → D013 classifier → persist. See DESIGN.md § Receive pipeline. **Superseded in detail by D033** (plaintext size after decrypt).  
-**Rationale:** Dedup and persist require local `thread_id`; wire carries no thread id.  
-**Alternatives:** Dedup before routing using envelope `thread_id` (superseded).
+**Decision:** Ingest order: envelope size → **reject `thread_id` if present** → signature verify → parse `route` → **resolve existing local thread via `ChatTargetKey`** (D062 — no create on inbound) → per-thread UUID dedup → participant check → decrypt (e2e) → parse `ChatPayload` → history floor (D037) → D013 classifier → persist. See DESIGN.md § Receive pipeline. **Superseded in detail by D033** (plaintext size after decrypt).  
+**Rationale:** Dedup and persist require local `thread_id`; wire carries no thread id; inbound find-only prevents orphan shells (D062).  
+**Alternatives:** Dedup before routing using envelope `thread_id` (superseded); create-on-ingest (rejected — D062).
 
 ---
 
@@ -464,9 +464,9 @@ Hard failures: pause + **Pause only** until delete thread or key rotation.
 | `kMaxGapRepairRounds` | **5** | Consecutive repair cycles per `(peer, epoch)` gap before soft compromised (D038) |
 | `kMaxGapRepairSeqSpan` | **500** | Max `max_sender_seq - min_sender_seq + 1` per single repair fetch |
 
-After **`kMaxOutboxRetryAttempts`**: set `delivery=failed`, keep row, show persistent send-failure affordance; user may retry manually (resets attempt counter). After **`kMaxGapRepairRounds`**: pause + integrity choice sheet (D038). If startup `ListPendingOutbox` returns more than **`kMaxRetryQueueItems`** (D029), process first 500 in **`outbox.updated_at ASC`** order and log warning — do not drop rows.  
-**Rationale:** “Cap attempts” and “repair exhaustion” in DESIGN were qualitative; implementers need constants.  
-**Alternatives:** Unlimited retries; immediate compromised on first repair miss.
+After **`kMaxOutboxRetryAttempts`**: set `delivery=failed`, keep row, show persistent send-failure affordance; user may retry manually (resets attempt counter). After **`kMaxGapRepairRounds`** of **transport failures** (not authoritative empty success per D061): pause + integrity choice sheet (D038). If startup `ListPendingOutbox` returns more than **`kMaxRetryQueueItems`** (D029), process first 500 in **`outbox.updated_at ASC`** order and log warning — do not drop rows.  
+**Rationale:** “Cap attempts” and “repair exhaustion” in DESIGN were qualitative; implementers need constants; D061 empty close does not consume repair rounds toward compromise.  
+**Alternatives:** Unlimited retries; immediate compromised on first repair miss; empty fetch counts as failed round (rejected — D061).
 
 ---
 
@@ -572,9 +572,10 @@ No hard max file size in v1.
 ## D052 — Defer scroll-driven history backfill
 
 **Date:** 2026-06-29  
-**Decision:** **No relay fetch when user scrolls to top** in v1. Scroll-up uses **`GetMessagesPage`** on local transcript only. E2E active sync: **tail + gap repair** only (amends D009). **`[post-v1]`** history backfill: [DESIGN.md § P2P sync](DESIGN.md#p2p-sync-e2e-only--d045).  
-**Rationale:** Large subsystem; tail+gap covers live reliability.  
-**Alternatives:** Three sync modes in v1 (original D009).
+**Updated:** 2026-06-30 — user-initiated sync in v6 via D059 (same D058 primitive); scroll trigger remains post-v1.  
+**Decision:** **No fetch when user scrolls to top** in v1. Scroll-up uses **`GetMessagesPage`** on local transcript only. E2E v6 sync: **tail + gap repair + user-initiated sync** (D009, D059) via **`FetchChatTargetMessages`** (D058). **`[post-v1]`** scroll-triggered history backfill: [DESIGN.md § P2P sync](DESIGN.md#p2p-sync-e2e-only--d045).  
+**Rationale:** Scroll UX is extra surface; manual sync covers explicit “get history from peer” in v6.  
+**Alternatives:** Three sync modes in v1 including scroll (original D009).
 
 ---
 
@@ -630,6 +631,51 @@ No hard max file size in v1.
 
 **Rationale:** Review findings before implementation; reduce v2a blast radius; prevent tail-sync resurrection and silent outbox loss.  
 **Alternatives:** Monolithic v2a PR (rejected); clear without detailed confirmation (rejected).
+
+---
+
+## D058 — Unified E2E backfill (`FetchChatTargetMessages`)
+
+**Date:** 2026-06-30  
+**Decision:** All **E2E** seq-scoped history fetch — tail sync, gap repair, user-initiated sync (D059), and scroll history backfill (D052) — share one feature-layer primitive **`FetchChatTargetMessages`**. Parameters: `ChatTargetKey`, `session_epoch`, optional `min_sender_seq` / `max_sender_seq`, `limit`, `order`. **Transport order:** **(1) libp2p peer-direct** (D060) when connected → **(2) relay** `GET /v1/chat-targets/messages` (D027). Ingest responses through the normal receive pipeline (D013, D037 floor). Respect `kMaxGapRepairSeqSpan` and `kMaxPollBatchMessages` (D029/D041).  
+**Rationale:** One code path for “get missing peer messages”; direct preferred when both peers are online; relay remains fallback and for offline peers.  
+**Alternatives:** Separate relay-only and direct-only implementations per sync mode (rejected).
+
+---
+
+## D059 — User-initiated sync from peer (`[v1]` v6)
+
+**Date:** 2026-06-30  
+**Decision:** E2E direct threads expose **user-initiated sync** in v6 (thread menu **Sync with peer**; gap banner **Retry sync**). Invokes **`FetchChatTargetMessages`** (D058): tail refresh + repair known gaps + optional older range `(history_floor_seq, loaded_min_seq)` when `loaded_min_seq > floor + 1`. **Failed outbound** rows (`delivery=pending`/`failed`) are **not** fixed by peer sync — user **retries send** or clears (D017/D024). Copy must distinguish “sync missing messages from peer” vs “retry unsent message.” v6 ships with **relay fallback** when direct is unavailable; peer-direct (D060) preferred when libp2p is up. Scroll-to-top fetch remains **`[post-v1]`** (D052) — uses the same primitive.  
+**Rationale:** Users expect direct P2P to resolve receive-side holes and older history; local-first outbox covers send-side failures separately.  
+**Alternatives:** Scroll-only manual backfill (rejected); block composer until send succeeds (rejected).
+
+---
+
+## D060 — Peer-direct history protocol (libp2p)
+
+**Date:** 2026-06-30  
+**Decision:** libp2p app protocol **`/pp-browser/chat-history/1.0.0`** mirrors D027 semantics. **Request:** signed JSON — `requester_contact_id`, `peer_contact_id`, `channel`, `session_epoch`, optional `min_sender_seq` / `max_sender_seq`, `limit` (default 50, max 100), `order` (`asc`|`desc`). **Response:** `{ messages: RelayEnvelope[], has_more, cursor }` — same envelope shape as relay (no `thread_id`, D056). **Responder:** participant of `ChatTargetKey`; serve from local `GetMessagesBySeqRange` on **`local_thread_id`**; cap batch (D029). **Requester:** verify each envelope signature; ingest via receive pipeline. Reject non-participant requests. Wire spec: [DESIGN § Peer-direct history fetch](DESIGN.md#peer-direct-history-fetch-d060).  
+**Rationale:** Peer-first backfill without a relay hop when both sides are online; reuses wire + ingest paths.  
+**Alternatives:** Custom binary sync format (rejected); relay-only backfill (rejected — contradicts peer-first goal).
+
+---
+
+## D061 — Authoritative empty gap close (never-published seq)
+
+**Date:** 2026-06-30  
+**Decision:** After **`FetchChatTargetMessages`** (D058) returns **200 / success with zero envelopes** for a requested **single-seq** or **contiguous gap range** (authenticated peer or relay, party to chat target), treat missing seq as **never published** — **advance `contiguous_peer_seq`** across the empty range **without** soft compromised (D038). **Does not apply** when: transport error (retry repair round), response contains **conflicting** `(sender_seq, message_id)` vs local (D011), or `session_epoch` mismatch. Still exhaust **`kMaxGapRepairRounds`** only on **transport/5xx** failures, not authoritative empty success. Send may fail locally while peer never saw that seq (D017); peer empty fetch closes the hole so later live traffic does not pause the innocent receiver.  
+**Rationale:** Seq is assigned pre-network (D010); abandoned outbound must not compromise the peer; empty authoritative fetch distinguishes skip from attack.  
+**Alternatives:** Block new sends until prior succeeds (rejected); always compromised after N empty rounds (rejected).
+
+---
+
+## D062 — Inbound direct routing: find-only (no auto-create)
+
+**Date:** 2026-06-30  
+**Decision:** **Inbound** relay/direct delivery: resolve **`ChatTargetKey` → existing `local_thread_id`** via `chat_targets` only. If no row or shell missing → **reject** (hard reject / drop) **before** persist — **do not** `FindOrCreateDirectThread` on ingest. **Outbound** user actions (Message, Secure message, first send) create shell + catalog. Participant check (D027) runs **before** any side effect; ingest never creates orphan `thread.db` / sidebar rows from unsolicited traffic.  
+**Rationale:** Prevents signed-but-unwanted traffic from allocating storage; creation stays user-initiated.  
+**Alternatives:** Create-on-ingest then delete on failed participant check (rejected).
 
 ---
 

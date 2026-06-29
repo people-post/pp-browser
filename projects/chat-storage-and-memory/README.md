@@ -7,7 +7,7 @@
 
 ## One-line goal
 
-One durable conversation model for AI and P2P chat: SQLite per thread, `profile.db` catalog/outbox/`chat_targets` (`ChatTargetKey`, D056), local `thread_id` only, `display_order` paging (D054), ChatPayload v1, channel badges, E2E-only seq sync — with richer types, scroll backfill, shared `@ai`, and transport badges phased after v1.
+One durable conversation model for AI and P2P chat: SQLite per thread, `profile.db` catalog/outbox/`chat_targets` (`ChatTargetKey`, D056), local `thread_id` only, `display_order` paging (D054), ChatPayload v1, channel badges, E2E seq sync with **peer-first backfill** (D058–D060) and **user-initiated sync** (D059) — richer types, scroll backfill, shared `@ai`, and transport badges phased after v1.
 
 **Related:** [platform-safety-limits](../platform-safety-limits/) (LLM HTTP, profile stores — outside chat wire).
 
@@ -30,7 +30,7 @@ See [PHASES.md](PHASES.md) for full checklists. Summary:
 | v2b | Public vs E2E split, channel badge sidebar |
 | v3 | AI memory + compaction |
 | v4 | ChatPayload text/system, transport column |
-| v6 | E2E seq, tail sync, gap repair, integrity UX |
+| v6 | E2E seq, tail sync, gap repair, **user sync**, integrity UX |
 
 `[post-v1]` work (post-v4, post-v6b–e) is specified inline in DESIGN and scheduled in PHASES.
 
@@ -43,7 +43,7 @@ See [PHASES.md](PHASES.md) for full checklists. Summary:
 | v2b | Public vs E2E channel split + badges | Not started |
 | v3 | Durable AI memory + clear/forget UX | Not started |
 | v4 | ChatPayload text/system + transport column | Not started |
-| v6 | E2E sender seq + tail/gap sync | Not started |
+| v6 | E2E sender seq + tail/gap/**user** sync | Not started |
 
 ## Open questions
 

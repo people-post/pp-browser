@@ -85,9 +85,21 @@ Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is r
 }
 ```
 
-Inbound routing: `ChatTargetKey { sender_contact_id, route.channel }` → local thread. Legacy envelopes with `thread_id` are rejected.
+Inbound routing: `ChatTargetKey { sender_contact_id, route.channel }` → existing local thread (**inbound find-only**, D062). Legacy envelopes with `thread_id` are rejected.
 
-Local store is written **before** send. Server rejections do not delete history.
+Local store is written **before** send. Server rejections do not delete history. **Unsent/failed** rows stay local — user **retries send**; **peer sync** (`FetchChatTargetMessages`, D058) fetches **missing messages from the peer**, not your pending outbox.
+
+## E2E history sync (v6 — D058–D060)
+
+| Mode | Trigger |
+|------|---------|
+| Tail sync | Open E2E thread, reconnect |
+| Gap repair | Automatic on seq hole |
+| User sync | Thread menu **Sync with peer** (D059) |
+
+**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `GET /v1/chat-targets/messages` fallback. Full spec: [chat-storage DESIGN § P2P sync](../projects/chat-storage-and-memory/DESIGN.md#p2p-sync-e2e-only--d045).
+
+Scroll-to-top backfill is **`[post-v1]`** (D052); uses the same fetch primitive.
 
 ## AI-centric UX
 
