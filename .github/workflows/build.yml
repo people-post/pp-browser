@@ -130,6 +130,58 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Ensure Android cache directories exist
+        run: |
+          mkdir -p "$HOME/.cache/ccache"
+          mkdir -p "$HOME/.gradle/caches"
+          mkdir -p "$HOME/.gradle/wrapper"
+          mkdir -p "$GITHUB_WORKSPACE/android/.gradle"
+          mkdir -p "$GITHUB_WORKSPACE/android/build"
+          mkdir -p "$ANDROID_SDK_ROOT/platforms"
+          mkdir -p "$ANDROID_SDK_ROOT/ndk"
+          chmod -R u+rwX "$HOME/.cache/ccache" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle" "$GITHUB_WORKSPACE/android/build" "$ANDROID_SDK_ROOT/platforms" "$ANDROID_SDK_ROOT/ndk"
+          echo "CCACHE_DIR=$HOME/.cache/ccache" >> "$GITHUB_ENV"
+
+      - name: Restore Android Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+            android/build
+          key: ${{ runner.os }}-android-gradle-v1-${{ hashFiles('android/build.gradle*', 'android/settings.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties', 'android/**/*.gradle*', 'android/**/gradle.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-android-gradle-v1-
+
+      - name: Restore Android SDK cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_SDK_ROOT }}/platforms
+            ${{ env.ANDROID_SDK_ROOT }}/ndk
+          key: ${{ runner.os }}-android-sdk-v1-ndk26.1.10909125-${{ hashFiles('android/build.gradle*', 'android/app/build.gradle*', '.github/workflows/build.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-android-sdk-v1-ndk26.1.10909125-
+
+      - name: Restore Android ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-android-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-android-ccache-v1-
+
+      - name: ccache stats (pre-build)
+        run: |
+          ccache --zero-stats || true
+          ccache --show-stats || true
+
       - name: Install NDK
         run: sdkmanager "ndk;26.1.10909125"
 
@@ -137,7 +189,12 @@ jobs:
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/26.1.10909125
+          ORG_GRADLE_PROJECT_ppBrowserCompilerCache: "ON"
         run: ./scripts/android_build.sh apk
+
+      - name: ccache stats (post-build)
+        if: always()
+        run: ccache --show-stats || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
