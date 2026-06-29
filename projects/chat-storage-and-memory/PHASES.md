@@ -31,16 +31,17 @@ Existing foundation this project builds on.
 ### `SqliteThreadStore` (D028)
 
 - [ ] Layout: `threads/index.json`, `threads/registry.db`, `threads/{id}/thread.db`
-- [ ] `registry.db`: `message_ids`, `outbox` tables
+- [ ] `registry.db`: `outbox` table only (D034)
 - [ ] `thread.db`: `messages`, `memory`, `sync_state` tables (sync table schema ready; watermarks used in v6)
 - [ ] Lazy-open `thread.db` per thread; WAL mode per connection
-- [ ] `AppendMessage` / `UpdateMessage` maintain registry dedup + outbox rows
-- [ ] `HasMessageId` via `registry.db` only
+- [ ] `AppendMessage` / `UpdateMessage` maintain registry outbox rows
+- [ ] `HasMessageId(thread_id, message_id)` via `thread.db` `messages.id` PK (D034)
+- [ ] Change `IThreadStore::HasMessageId` signature; update `P2pMessagingService` poll path
 - [ ] `ClearMessages(thread_id)` — `DELETE FROM messages`; keep memory/sync tables
 - [ ] `DeleteThread` — remove dir + registry rows + index entry
 - [ ] Wipe legacy flat `threads/{id}.json` on first run (D016 — no migration)
 - [ ] Wire app bootstrap to `SqliteThreadStore` instead of `JsonThreadStore`
-- [ ] Unit tests: append, update delivery, dedup, clear, delete, registry outbox, lazy open
+- [ ] Unit tests: append, update delivery, per-thread dedup, clear, delete, registry outbox, lazy open
 - [ ] `MessagingLimits` constants (D029); reject oversize on append
 - [ ] `GetMessagesPage` for UI window (D031)
 - [ ] LRU cap on open `thread.db` handles (D029)
@@ -64,7 +65,7 @@ Existing foundation this project builds on.
 - [ ] Update [CONFIGURATION.md](../../docs/CONFIGURATION.md) on-disk layout
 - [ ] Update this file + README progress snapshot
 
-**Exit criteria:** New AI thread survives restart via SQLite; clear-messages level empties UI but keeps sidebar entry; `HasMessageId` works across threads via registry.
+**Exit criteria:** New AI thread survives restart via SQLite; clear-messages level empties UI but keeps sidebar entry; per-thread `HasMessageId` rejects duplicate append in the same thread.
 
 ---
 
@@ -147,7 +148,7 @@ Existing foundation this project builds on.
 ### Protocol
 
 - [ ] Relayed annotations/cards use same envelope as text
-- [ ] Dedup by `message_id` via registry
+- [ ] Dedup by `message_id` per thread (`thread.db` PK, D034)
 
 **Exit criteria:** Reaction survives restart; contact card renders; E2E shows relay badge on fallback.
 
@@ -238,7 +239,7 @@ Existing foundation this project builds on.
 
 **Goal:** Agent/search across all threads without loading every transcript.
 
-- [ ] Optional FTS5 virtual table or dedicated search index in `registry.db`
+- [ ] Optional FTS5 virtual table in a thread or profile search DB (not `registry.db`)
 - [ ] Internal API only until UI needs it
 
 **Trigger:** search feature request or agent tool needs full-text recall.
@@ -250,7 +251,7 @@ Existing foundation this project builds on.
 - [ ] `SqliteThreadStore` unit tests (registry, per-thread db, clear, delete, outbox, **size reject**)
 - [ ] Ingest tests: oversize envelope, remote content_rml stripped (D029–D030)
 - [ ] Agent tool docs if `list_conversations` must expose channel
-- [ ] Fuzz/dedup: duplicate relay `message_id` ignored via registry
+- [ ] Fuzz/dedup: duplicate relay `message_id` ignored via per-thread store check
 - [ ] Sender seq tests (v6); `@ai` mode tests (v6b)
 
 ---
@@ -265,5 +266,6 @@ Existing foundation this project builds on.
 | 2026-06-29 | D013–D014: strict normal-or-compromised ingest, peer reset = epoch bump; DESIGN P2P sync rewrite |
 | 2026-06-29 | D015–D022: single active device, no migration, durable outbox, public ingest, display order, reorder window, sender_contact_id, receive pipeline |
 | 2026-06-29 | D023–D027: sidebar groups, clear choice sheet, ChatPayload, relay API |
+| 2026-06-29 | D034: per-thread message_id dedup; registry.db outbox-only |
 | 2026-06-29 | D028: SQLite per thread + registry.db from v2a; drop JSON message stage; v5 absorbed |
 | 2026-06-29 | D029–D033: resource bounds, no remote RML, windowed UI, poll backoff, size-before-parse |

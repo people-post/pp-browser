@@ -155,8 +155,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D017 — Durable outbox from thread store
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — `registry.db` for dedup + outbox index (D028).  
-**Decision:** Pending/failed `relay_visible` messages are the **durable outbox** — persisted in `thread.db` `messages` table before send. **`registry.db` `outbox` table** indexes pending/failed rows for O(1) startup scan (D028). In-memory retry queue is a performance layer only. Retries reuse same `(message_id, sender_seq)`. Relay idempotent on `message_id`.  
+**Updated:** 2026-06-29 — `registry.db` outbox index only (D028, D034).  
+**Decision:** Pending/failed `relay_visible` messages are the **durable outbox** — persisted in `thread.db` `messages` table before send. **`registry.db` `outbox` table** indexes pending/failed rows for O(1) startup scan (D028). In-memory retry queue is a performance layer only. Retries reuse same `(message_id, sender_seq)`. Relay idempotent on `message_id`. Message-id dedup is **per-thread** in `thread.db` (D034), not in the registry.  
 **Rationale:** Restart must not drop unsent messages; registry avoids opening every `thread.db` on startup.  
 **Alternatives:** Full scan all thread DBs on startup; separate outbox file only.
 
@@ -201,7 +201,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D022 — Receive pipeline step order
 
 **Date:** 2026-06-29  
-**Decision:** Ingest order is fixed: UUID dedup → signature verify → thread/epoch check → AEAD decrypt (e2e) → D013 classifier (with reorder buffer) → persist. See DESIGN.md § Receive pipeline. **Superseded in detail by D033** (envelope size before parse, plaintext size after decrypt).  
+**Decision:** Ingest order is fixed: per-thread UUID dedup (envelope `thread_id` + `message_id`, D034) → signature verify → thread/epoch check → AEAD decrypt (e2e) → D013 classifier (with reorder buffer) → persist. See DESIGN.md § Receive pipeline. **Superseded in detail by D033** (envelope size before parse, plaintext size after decrypt).  
 **Rationale:** Do not persist or advance watermarks before cryptographic and structural validation.  
 **Alternatives:** Decrypt before signature; classify before decrypt.
 
@@ -237,7 +237,7 @@ P2P levels include disclosure that peer/relay may retain copies. **Forget AI mem
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — `thread.db` replaces JSON files (D028).  
-**Decision:** On-disk layout uses **one directory per thread** under `threads/{thread_id}/` containing **`thread.db`** (messages, memory, sync_state tables). Profile-level **`threads/registry.db`** for global `message_id` dedup and durable outbox index (D028). `threads/index.json` holds sidebar metadata only. Delete thread = remove directory + registry rows + index entry. **No migration** from legacy flat JSON (D016).  
+**Decision:** On-disk layout uses **one directory per thread** under `threads/{thread_id}/` containing **`thread.db`** (messages, memory, sync_state tables). Profile-level **`threads/registry.db`** for durable outbox index only (D028, D034). `threads/index.json` holds sidebar metadata only. Delete thread = remove directory + registry outbox rows + index entry. **No migration** from legacy flat JSON (D016).  
 **Rationale:** Directory delete semantics preserved; SQLite gives append, seq-range queries, and row-level delivery updates.  
 **Alternatives:** `messages.json` + `memory.json` sidecars (rejected — skip intermediate JSON stage).
 
@@ -270,11 +270,11 @@ P2P levels include disclosure that peer/relay may retain copies. **Forget AI mem
 **Decision:** Phase **v2a** ships **`SqliteThreadStore`** (not an intermediate JSON-per-dir stage). Layout:
 
 - `threads/index.json` — sidebar metadata (kind, channel, title, preview, unread)
-- `threads/registry.db` — global `message_ids` dedup table; `outbox` index (`thread_id`, `message_id`, `delivery`) for D017 startup scan
-- `threads/{thread_id}/thread.db` — `messages`, `memory`, `sync_state` tables
+- `threads/registry.db` — `outbox` index (`thread_id`, `message_id`, `delivery`) for D017 startup scan
+- `threads/{thread_id}/thread.db` — `messages`, `memory`, `sync_state` tables; **`messages.id`** is the per-thread dedup key (D034)
 
 Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature seam; `JsonThreadStore` deprecated after cutover. **No JSON message files** in target layout. Wipe legacy `threads/*.json` on upgrade (D016).  
-**Rationale:** v6 seq sync, durable outbox, and `ChatPayload` append path need indexed storage; per-thread DB preserves delete/clear isolation; registry avoids scanning every `thread.db` for `HasMessageId` and pending sends.  
+**Rationale:** v6 seq sync, durable outbox, and `ChatPayload` append path need indexed storage; per-thread DB preserves delete/clear isolation; registry avoids scanning every `thread.db` for pending sends on startup. Per-thread dedup uses the existing `messages` PK — no separate global index.  
 **Alternatives:** JSON dirs in v2a then SQLite at v6; single monolithic `threads.db`; JSON `memory.json` sidecar (merged into `thread.db`).
 
 ---
@@ -334,9 +334,18 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 
 **Date:** 2026-06-29  
 **Updated:** extends D022.  
-**Decision:** Inbound order: **(0) envelope byte size** → UUID dedup → signature verify → thread/epoch → decrypt (e2e) → **plaintext size** → JSON parse `ChatPayload` with schema validate → D013 classifier → persist. Reject oversize before `nlohmann::parse` on untrusted input.  
+**Decision:** Inbound order: **(0) envelope byte size** → per-thread UUID dedup (D034) → signature verify → thread/epoch → decrypt (e2e) → **plaintext size** → JSON parse `ChatPayload` with schema validate → D013 classifier → persist. Reject oversize before `nlohmann::parse` on untrusted input.  
 **Rationale:** JSON bombs and huge ciphertext must fail closed without full parse.  
 **Alternatives:** Parse then check (rejected).
+
+---
+
+## D034 — Per-thread `message_id` dedup (not in `registry.db`)
+
+**Date:** 2026-06-29  
+**Decision:** Ingest idempotency and relay redelivery dedup are **per-thread**: `HasMessageId(thread_id, message_id)` queries `thread.db` `messages.id` (PRIMARY KEY). **`registry.db` holds only the `outbox` table** (D017/D028) — no `message_ids` table.  
+**Rationale:** Operational duplicates (poll overlap, idempotent send retry, relay + direct redelivery) always carry the same `thread_id` on the envelope; a per-thread PK lookup is O(1) and opens only one lazy `thread.db`. A profile-global dedup index duplicated `messages.id`, grew with every message forever, and complicated clear-history semantics. Registry stays small and startup-focused.  
+**Alternatives:** Global `message_ids` in `registry.db` (rejected); profile-wide scan of all `thread.db` on each dedup check (rejected).
 
 ---
 

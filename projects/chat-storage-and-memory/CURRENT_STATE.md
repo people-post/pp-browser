@@ -2,14 +2,14 @@
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** `SqliteThreadStore` (D028), sender seq, windowed sync, strict ingest (D013–D014, D018), durable outbox (D017), resource bounds (D029–D033), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D033 in [DECISIONS.md](DECISIONS.md).
+**Planned but not implemented:** `SqliteThreadStore` (D028), per-thread dedup (D034), sender seq, windowed sync, strict ingest (D013–D014, D018), durable outbox (D017), resource bounds (D029–D033), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D034 in [DECISIONS.md](DECISIONS.md).
 
 ## Persistence
 
 | Area | Status | Location |
 |------|--------|----------|
 | Thread index + per-thread JSON | Implemented (legacy) | `src/base/messaging/JsonThreadStore.*` |
-| **SqliteThreadStore** (target v2a) | Not implemented | D028 — `thread.db` + `registry.db` |
+| **SqliteThreadStore** (target v2a) | Not implemented | D028 — `thread.db` + `registry.db` (outbox only, D034) |
 | Profile-scoped paths | Implemented | [CONFIGURATION.md](../../docs/CONFIGURATION.md) — `{data_dir}/profiles/{id}/threads/` |
 | `IThreadStore` interface | Implemented | `src/base/messaging/IThreadStore.h` |
 | SQLite in pp_base | Not implemented | libp2p fork has SQLite; app must vendor separately (D028) |
@@ -31,7 +31,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 
 ```
 threads/index.json
-threads/registry.db
+threads/registry.db          # outbox index only (D034)
 threads/{thread_id}/thread.db
 sync/chat_targets.json   # v6
 ```
@@ -61,7 +61,7 @@ sync/chat_targets.json   # v6
 |---------|--------|----------|
 | HTTP relay send + poll dedup | Implemented | `src/feature/messaging/P2pMessagingService.*` |
 | Local write before send | Implemented | `SendUserMessage` appends then relays |
-| `HasMessageId` global dedup | Implemented | `JsonThreadStore` + poll merge |
+| `HasMessageId` dedup | Implemented (legacy: profile-global) | `JsonThreadStore` in-memory set; target: per-thread `thread.db` PK (D034) |
 | Inbound signature verify | **Not implemented** | `Ed25519Signer::Verify` unused on poll |
 | Relay poll every UI frame | **Implemented (gap)** | `ChatController::Update` → `PollAndMerge` (D032) |
 | `@ai` scoped assist | Implemented (local only) | `MessageRouter` → `SubmitScopedAssist` |

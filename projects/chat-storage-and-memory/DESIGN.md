@@ -10,7 +10,7 @@
 6. **Sender sequence for completeness** — peer-visible direct messages carry a per-sender monotonic `sender_seq` (in addition to UUID) so receivers detect gaps in the live tail; UUID remains the only message identity. Only **`relay_visible`** content consumes sync seq (see `@ai` modes below).
 7. **Strict normal-or-compromised ingest (direct chat)** — in **all direct threads** (`public_relay` and `e2e`), the receiver accepts only messages that match a small set of **normal** cases (D013). Everything else → `sync_state=compromised` (halt ingest, notify; E2E → key rotation / new epoch; public → re-sync UX without PSK rotation). The sender has an explicit **within-epoch contract**; violations are not silently merged.
 8. **Durable outbox** — `relay_visible` rows with `delivery=pending` or `failed` survive app restart; retries reuse the same `(message_id, sender_seq)` (D017).
-9. **Storage abstraction** — `IThreadStore` stays the seam; **`SqliteThreadStore`** per-thread `thread.db` + profile `registry.db` from v2a (D028). No intermediate JSON message storage.
+9. **Storage abstraction** — `IThreadStore` stays the seam; **`SqliteThreadStore`** per-thread `thread.db` + profile `registry.db` (outbox index only, D028, D034) from v2a. No intermediate JSON message storage.
 
 ## Assumptions (v1)
 
@@ -193,7 +193,7 @@ Profile-scoped storage:
 {data_dir}/profiles/{profile_id}/
   threads/
     index.json                      # sidebar metadata only (id, kind, channel, title, preview, …)
-    registry.db                     # global message_id dedup + outbox index (D017, D028)
+    registry.db                     # durable outbox index only (D017, D028, D034)
     {thread_id}/
       thread.db                     # messages, memory, sync_state tables
   sync/
@@ -247,12 +247,6 @@ CREATE TABLE sync_state (
 ### `registry.db` schema (v1)
 
 ```sql
-CREATE TABLE message_ids (
-  message_id TEXT PRIMARY KEY,
-  thread_id TEXT NOT NULL
-);
-CREATE INDEX idx_message_ids_thread ON message_ids(thread_id);
-
 CREATE TABLE outbox (
   message_id TEXT PRIMARY KEY,
   thread_id TEXT NOT NULL,
@@ -261,7 +255,11 @@ CREATE TABLE outbox (
 CREATE INDEX idx_outbox_thread ON outbox(thread_id);
 ```
 
-`HasMessageId` → `registry.message_ids`. Startup durable outbox scan → `SELECT * FROM outbox` (D017), not full table scan of every thread. Purge registry rows on `DeleteThread`.
+**Scope:** `registry.db` indexes the durable outbox only (D034). It does **not** store message-id dedup state.
+
+**Per-thread dedup:** `HasMessageId(thread_id, message_id)` → `SELECT 1 FROM messages WHERE id = ?` on that thread's `thread.db` (`messages.id` is PRIMARY KEY). Relay poll, send retry, and multi-path delivery duplicates are always scoped to one `thread_id` on the envelope.
+
+Startup durable outbox scan → `SELECT * FROM outbox` (D017), not full table scan of every thread. Purge `outbox` rows on `DeleteThread`.
 
 ### Schema versioning (breaking)
 
@@ -387,7 +385,7 @@ UUID dedup unchanged. Add fields for ordering, session scope, and signed integri
 |--------|----------|
 | On startup | `registry.db` `outbox` table + optional per-thread verify (D028) |
 | In-memory queue | May batch IO; must not be the sole copy of pending state |
-| Registry | On append `relay_visible` pending: insert `outbox`; on relayed: delete; update `message_ids` |
+| Registry | On append `relay_visible` pending: insert `outbox`; on relayed: delete row |
 | Retry policy | Exponential backoff; cap attempts per message; user-visible notice on persistent failure |
 | Relay dedup | Server must accept duplicate `message_id` on retry (idempotent ingest) |
 
@@ -493,7 +491,7 @@ Gap repair may reorder visually when missing rows arrive; scroll position should
 Ordered steps — do not reorder in implementation (D022, D033):
 
 0. **Envelope size** — reject if serialized JSON > `kMaxRelayEnvelopeJsonBytes` (D029).
-1. **UUID dedup** — benign duplicate → stop.
+1. **Per-thread UUID dedup** — `HasMessageId(envelope.thread_id, envelope.message_id)`; benign duplicate → stop (D034).
 2. **Verify Ed25519 signature** on outer envelope (classical; see e2e-message-crypto).
 3. **Thread / channel / epoch** — reject wrong `thread_id` or epoch mismatch before decrypt.
 4. **Decrypt AEAD** (`e2e` only) — canonical AAD must match envelope fields; failure → reject (no persist).
@@ -626,6 +624,9 @@ virtual Roe<std::vector<ThreadMessage>> GetMessagesBySeqRange(
 // D017 — startup outbox without scanning all thread.db files
 virtual Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const = 0;
 
+// D034 — per-thread ingest dedup (replaces profile-global HasMessageId(message_id))
+virtual Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const = 0;
+
 // D031 — UI transcript window (newest-first or oldest-first via parameter)
 virtual Roe<std::vector<ThreadMessage>> GetMessagesPage(
     const std::string& thread_id,
@@ -635,7 +636,7 @@ virtual Roe<std::vector<ThreadMessage>> GetMessagesPage(
 
 Send path: reject compose text and serialized payload over D029 limits before `AppendMessage`.
 
-Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`, `HasMessageId` (registry-backed).
+Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`. Change `HasMessageId` to **`HasMessageId(thread_id, message_id)`** — per-thread `messages.id` lookup (D034); drop profile-global dedup from `JsonThreadStore` cutover.
 
 ## UI (target)
 
@@ -654,7 +655,7 @@ Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`, `HasMessageId` (registry-
 - Full cross-device history mirror (tail + scroll backfill only; see P2P sync above)
 - **Multi-device concurrent send** on one identity (D015 — single active device v1)
 - **Legacy on-disk migration** from pre-D028 JSON layouts (D016)
-- Full-text search UI (defer; SQLite FTS across `registry` + thread DBs later)
+- Full-text search UI (defer; SQLite FTS across thread DBs later)
 - Group E2E
 - Retraction / “unsend” on relay (future protocol work)
 

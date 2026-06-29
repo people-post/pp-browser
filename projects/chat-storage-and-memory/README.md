@@ -7,7 +7,7 @@
 
 ## One-line goal
 
-One durable conversation model for AI and P2P chat: SQLite per thread (`thread.db`) + `registry.db`, `ChatPayload`, grouped sidebar, multi-level clear sheet, strict seq ingest, **resource bounds (D029–D033)**, and relay seq backfill API.
+One durable conversation model for AI and P2P chat: SQLite per thread (`thread.db`) + profile `registry.db` (outbox index), `ChatPayload`, grouped sidebar, multi-level clear sheet, strict seq ingest, **resource bounds (D029–D033)**, and relay seq backfill API.
 
 **Related:** [platform-safety-limits](../platform-safety-limits/) (LLM HTTP, profile stores — outside chat wire).
 
