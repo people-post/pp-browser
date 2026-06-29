@@ -30,18 +30,20 @@ Existing foundation this project builds on.
 
 ### `SqliteThreadStore` (D028)
 
-- [ ] Layout: `threads/index.json`, `threads/registry.db`, `threads/{id}/thread.db`
-- [ ] `registry.db`: `outbox` table only (D034)
+- [ ] Layout: `threads/profile.db` (`threads` + `outbox`), `threads/{id}/thread.db` — no `index.json` (D035)
+- [ ] `profile.db`: `threads` catalog + `outbox` table (D034, D035)
 - [ ] `thread.db`: `messages`, `memory`, `sync_state` tables (sync table schema ready; watermarks used in v6)
 - [ ] Lazy-open `thread.db` per thread; WAL mode per connection
-- [ ] `AppendMessage` / `UpdateMessage` maintain registry outbox rows
+- [ ] `AppendMessage` / `UpdateMessage`: `thread.db` first; maintain `profile.db` `outbox` + `threads.updated_at` / `unread_count` (D035)
+- [ ] `ListThreads`: catalog query + visible-row verify/repair against `thread.db` (D035)
+- [ ] Profile open: `readdir` repair — stub `threads` row for orphan `thread.db` dirs (D035)
 - [ ] `HasMessageId(thread_id, message_id)` via `thread.db` `messages.id` PK (D034)
 - [ ] Change `IThreadStore::HasMessageId` signature; update `P2pMessagingService` poll path
 - [ ] `ClearMessages(thread_id)` — `DELETE FROM messages`; keep memory/sync tables
-- [ ] `DeleteThread` — remove dir + registry rows + index entry
-- [ ] Wipe legacy flat `threads/{id}.json` on first run (D016 — no migration)
+- [ ] `DeleteThread` — `profile.db` txn (`threads` + `outbox`) then remove dir (D035)
+- [ ] Wipe legacy `threads/index.json` and flat `threads/{id}.json` on first run (D016 — no migration)
 - [ ] Wire app bootstrap to `SqliteThreadStore` instead of `JsonThreadStore`
-- [ ] Unit tests: append, update delivery, per-thread dedup, clear, delete, registry outbox, lazy open
+- [ ] Unit tests: append, update delivery, per-thread dedup, clear, delete, `profile.db` catalog + outbox, lazy open, visible-row repair (D035)
 - [ ] `MessagingLimits` constants (D029); reject oversize on append
 - [ ] `GetMessagesPage` for UI window (D031)
 - [ ] LRU cap on open `thread.db` handles (D029)
@@ -56,7 +58,7 @@ Existing foundation this project builds on.
 ### UX
 
 - [ ] Thread menu: **Clear history** → choice sheet (D024)
-- [ ] **Close conversation** = delete thread directory + registry cleanup
+- [ ] **Close conversation** = delete thread directory + `profile.db` cleanup
 - [ ] Composer maxlength aligned with `kMaxComposeTextBytes` (D029)
 
 ### Docs
@@ -76,7 +78,7 @@ Existing foundation this project builds on.
 ### Model
 
 - [ ] Add `ThreadChannel` enum (`public_relay`, `e2e`)
-- [ ] `channel` on `Thread` + index.json; `encrypted = (channel == e2e)`
+- [ ] `channel` on `Thread` + `profile.db` `threads`; `encrypted = (channel == e2e)`
 - [ ] `FindOrCreateDirectThread(contact_id, channel)` — replace single-key lookup
 - [ ] Wipe any remaining legacy JSON thread files (D016)
 
@@ -171,7 +173,7 @@ Existing foundation this project builds on.
 ### Send / receive
 
 - [ ] Sign envelope including `sender_seq`, `session_epoch`, `sender_contact_id`
-- [ ] Durable outbox: `ListPendingOutbox()` from `registry.db` on startup (D017, D028)
+- [ ] Durable outbox: `ListPendingOutbox()` from `profile.db` on startup (D017, D028)
 - [ ] Within-epoch sender contract; receive pipeline (D022, D033); ingest D013/D018
 - [ ] Inbound Ed25519 verify; strip remote `content_rml` (D030)
 - [ ] Poll backoff min 2 s foreground (D032); cap poll batch (D029)
@@ -194,7 +196,7 @@ Existing foundation this project builds on.
 - [ ] Extend [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md): envelope limits (D029), verify pipeline
 - [ ] Document single-active-device (D015)
 
-**Exit criteria:** Gap auto-repair on direct path; outbox survives restart via registry; seq/floor/epoch tests pass.
+**Exit criteria:** Gap auto-repair on direct path; outbox survives restart via `profile.db`; seq/floor/epoch tests pass.
 
 ---
 
@@ -239,7 +241,7 @@ Existing foundation this project builds on.
 
 **Goal:** Agent/search across all threads without loading every transcript.
 
-- [ ] Optional FTS5 virtual table in a thread or profile search DB (not `registry.db`)
+- [ ] Optional FTS5 virtual table in a thread or profile search DB (not `profile.db`)
 - [ ] Internal API only until UI needs it
 
 **Trigger:** search feature request or agent tool needs full-text recall.
@@ -248,7 +250,7 @@ Existing foundation this project builds on.
 
 ## Cross-cutting tasks
 
-- [ ] `SqliteThreadStore` unit tests (registry, per-thread db, clear, delete, outbox, **size reject**)
+- [ ] `SqliteThreadStore` unit tests (`profile.db`, per-thread db, clear, delete, outbox, **size reject**)
 - [ ] Ingest tests: oversize envelope, remote content_rml stripped (D029–D030)
 - [ ] Agent tool docs if `list_conversations` must expose channel
 - [ ] Fuzz/dedup: duplicate relay `message_id` ignored via per-thread store check
@@ -266,6 +268,7 @@ Existing foundation this project builds on.
 | 2026-06-29 | D013–D014: strict normal-or-compromised ingest, peer reset = epoch bump; DESIGN P2P sync rewrite |
 | 2026-06-29 | D015–D022: single active device, no migration, durable outbox, public ingest, display order, reorder window, sender_contact_id, receive pipeline |
 | 2026-06-29 | D023–D027: sidebar groups, clear choice sheet, ChatPayload, relay API |
-| 2026-06-29 | D034: per-thread message_id dedup; registry.db outbox-only |
-| 2026-06-29 | D028: SQLite per thread + registry.db from v2a; drop JSON message stage; v5 absorbed |
-| 2026-06-29 | D029–D033: resource bounds, no remote RML, windowed UI, poll backoff, size-before-parse |
+| 2026-06-29 | D034: per-thread message_id dedup; profile.db outbox-only |
+| 2026-06-29 | D028: SQLite per thread + profile.db from v2a; drop JSON message stage; v5 absorbed |
+| 2026-06-29 | D035: drop `index.json`; sidebar catalog in `profile.db` `threads`; lazy visible-row verify |
+| 2026-06-29 | D036: rename `registry.db` → `profile.db` |

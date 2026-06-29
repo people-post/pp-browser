@@ -10,7 +10,7 @@
 6. **Sender sequence for completeness** — peer-visible direct messages carry a per-sender monotonic `sender_seq` (in addition to UUID) so receivers detect gaps in the live tail; UUID remains the only message identity. Only **`relay_visible`** content consumes sync seq (see `@ai` modes below).
 7. **Strict normal-or-compromised ingest (direct chat)** — in **all direct threads** (`public_relay` and `e2e`), the receiver accepts only messages that match a small set of **normal** cases (D013). Everything else → `sync_state=compromised` (halt ingest, notify; E2E → key rotation / new epoch; public → re-sync UX without PSK rotation). The sender has an explicit **within-epoch contract**; violations are not silently merged.
 8. **Durable outbox** — `relay_visible` rows with `delivery=pending` or `failed` survive app restart; retries reuse the same `(message_id, sender_seq)` (D017).
-9. **Storage abstraction** — `IThreadStore` stays the seam; **`SqliteThreadStore`** per-thread `thread.db` + profile `registry.db` (outbox index only, D028, D034) from v2a. No intermediate JSON message storage.
+9. **Storage abstraction** — `IThreadStore` stays the seam; **`SqliteThreadStore`** per-thread `thread.db` + `threads/profile.db` (`threads` catalog + `outbox` index, D028, D035, D036) from v2a. No `index.json` or other JSON thread files.
 
 ## Assumptions (v1)
 
@@ -48,7 +48,7 @@ Tool-call scratch (`turn_scratch`) remains **ephemeral per turn only** — never
 | `kind` | `ai` \| `direct` \| `group` | Unchanged |
 | `channel` | `public_relay` \| `e2e` | **New.** Replaces overloading `encrypted` alone |
 | `participant_contact_ids` | string[] | One peer for direct |
-| `title`, `preview`, `updated_at`, `unread_count` | — | Sidebar metadata |
+| `title`, `preview`, `updated_at`, `unread_count` | — | Sidebar metadata; cached in `profile.db` `threads` (D035); preview/`updated_at` derived from `thread.db` on visible-row verify |
 | `encrypted` | bool | Derived from `channel == e2e` (keep for UI binding) |
 | `session_epoch` | uint32 | **New.** Bumped on E2E key rotation, compromise recovery, device reset, or “new secure chat”; scopes `sender_seq` streams |
 
@@ -185,22 +185,23 @@ One schema for disk, relay plaintext (`public_relay`), and AEAD plaintext (`e2e`
 | `ConversationSummary` | `thread.db` → `memory` table | Text + version; from `ICompactionService` |
 | Future fact rows | Same table (kv) | Deferred |
 
-## On-disk layout (target — D025, D028)
+## On-disk layout (target — D025, D028, D035, D036)
 
 Profile-scoped storage:
 
 ```
 {data_dir}/profiles/{profile_id}/
   threads/
-    index.json                      # sidebar metadata only (id, kind, channel, title, preview, …)
-    registry.db                     # durable outbox index only (D017, D028, D034)
+    profile.db                     # threads catalog (sidebar cache) + outbox index (D017, D035)
     {thread_id}/
-      thread.db                     # messages, memory, sync_state tables
+      thread.db                     # messages, memory, sync_state — authoritative transcript
   sync/
     chat_targets.json               # next_outgoing_seq, session_epoch per (contact_id, channel)
 ```
 
-Delete thread = remove `{thread_id}/` directory + purge `registry.db` rows for that thread + remove `index.json` entry.
+**Thread exists** iff `{thread_id}/thread.db` is present. `profile.db` `threads` row is a list cache; repaired lazily on sidebar list (D035).
+
+Delete thread = `profile.db` transaction (`DELETE` from `threads` + `outbox` for `thread_id`) then remove `{thread_id}/` directory.
 
 ### `thread.db` schema (v1)
 
@@ -242,11 +243,24 @@ CREATE TABLE sync_state (
 );
 ```
 
-`PRAGMA user_version` on each `thread.db` and `registry.db` for schema bumps (D016: wipe on mismatch).
+`PRAGMA user_version` on each `thread.db` and `profile.db` for schema bumps (D016: wipe on mismatch).
 
-### `registry.db` schema (v1)
+### `profile.db` schema (v1)
 
 ```sql
+CREATE TABLE threads (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,                -- ai | direct | group
+  channel TEXT NOT NULL DEFAULT '',  -- public_relay | e2e; empty for ai/group v1
+  title TEXT NOT NULL,
+  participant_contact_ids TEXT NOT NULL,  -- JSON array
+  preview TEXT,
+  updated_at INTEGER NOT NULL,
+  unread_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_threads_updated ON threads(updated_at DESC);
+CREATE INDEX idx_threads_direct ON threads(kind, channel);
+
 CREATE TABLE outbox (
   message_id TEXT PRIMARY KEY,
   thread_id TEXT NOT NULL,
@@ -255,16 +269,29 @@ CREATE TABLE outbox (
 CREATE INDEX idx_outbox_thread ON outbox(thread_id);
 ```
 
-**Scope:** `registry.db` indexes the durable outbox only (D034). It does **not** store message-id dedup state.
+**Scope:** `profile.db` holds the **sidebar list cache** (`threads`) and **durable outbox index** (`outbox`). It does **not** store message-id dedup state (D034).
 
 **Per-thread dedup:** `HasMessageId(thread_id, message_id)` → `SELECT 1 FROM messages WHERE id = ?` on that thread's `thread.db` (`messages.id` is PRIMARY KEY). Relay poll, send retry, and multi-path delivery duplicates are always scoped to one `thread_id` on the envelope.
 
-Startup durable outbox scan → `SELECT * FROM outbox` (D017), not full table scan of every thread. Purge `outbox` rows on `DeleteThread`.
+Startup durable outbox scan → `SELECT * FROM outbox` (D017), not full table scan of every `thread.db`. Purge `outbox` rows on `DeleteThread`.
+
+### Catalog consistency (D035)
+
+| Concern | Rule |
+|---------|------|
+| Authority | `thread.db` exists → thread is real; messages table is source for preview text and last activity time when verifying |
+| List cache | `profile.db` `threads` — fast sort/filter; may be stale until verify |
+| `ListThreads` | Read catalog; **verify visible slice only** (open `thread.db`, check existence, refresh preview/`updated_at` if needed) |
+| Profile open | Once per profile: `readdir` — orphan `thread.db` without catalog row → insert stub `threads` row |
+| Orphan catalog row | No `thread.db` on visible verify → delete `threads` + `outbox` rows |
+| `AppendMessage` | `thread.db` txn first; then `UPDATE threads` (`updated_at`, `unread_count`); preview refresh deferred to verify (active thread may update eagerly) |
+| `ClearMessages` | Keep `threads` row; verify shows empty preview |
+| `FindOrCreateDirectThread` | Query `profile.db` `threads` by `(contact_id, channel)` — not directory scan |
 
 ### Schema versioning (breaking)
 
-- **`user_version`** on SQLite files; **no in-place migration** from legacy flat JSON or pre-D028 layouts (D016).
-- Dev builds: delete `threads/` on bump. `index.json` may be regenerated from DB metadata later; v2a keeps index as source for sidebar list.
+- **`user_version`** on SQLite files; **no in-place migration** from legacy flat JSON, `index.json`, or pre-D035 layouts (D016).
+- Dev builds: delete `threads/` on bump.
 
 ## Clear / forget semantics (user-facing — D024)
 
@@ -274,7 +301,7 @@ Startup durable outbox scan → `SELECT * FROM outbox` (D017), not full table sc
 |-------|------------|------------|---------------|--------------|-------------------------|
 | **Clear messages** | wipe | empty | keep | keep | set per peer/epoch |
 | **Clear messages & AI memory** | wipe | empty | wipe | keep | set per peer/epoch |
-| **Delete conversation** | gone | gone | gone | delete index + dir | n/a |
+| **Delete conversation** | gone | gone | gone | delete catalog row + dir | n/a |
 
 **Forget what AI learned** (separate menu item): transcript unchanged; wipe `memory` table only.
 
@@ -383,7 +410,7 @@ UUID dedup unchanged. Add fields for ordering, session scope, and signed integri
 
 | Source | Behavior |
 |--------|----------|
-| On startup | `registry.db` `outbox` table + optional per-thread verify (D028) |
+| On startup | `profile.db` `outbox` table + optional per-thread verify (D028) |
 | In-memory queue | May batch IO; must not be the sole copy of pending state |
 | Registry | On append `relay_visible` pending: insert `outbox`; on relayed: delete row |
 | Retry policy | Exponential backoff; cap attempts per message; user-visible notice on persistent failure |
@@ -603,7 +630,7 @@ Non-chat limits (LLM HTTP responses, `contacts.json`, `identity.json`) live in [
 
 ## Store interface (target)
 
-`SqliteThreadStore` implements `IThreadStore`; lazy-open `thread.db` per active thread.
+`SqliteThreadStore` implements `IThreadStore`; lazy-open `thread.db` per active thread. Sidebar list reads `profile.db` `threads`; visible-row verify opens only the viewport slice of `thread.db` files (D035).
 
 Extend `IThreadStore`:
 
@@ -644,6 +671,7 @@ Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`. Change `HasMessageId` to 
 - **E2E vs public shell** — `.chat-shell--e2e` / `.chat-shell--public` ([UI_DESIGN_SYSTEM.md](../../docs/UI_DESIGN_SYSTEM.md)).
 - **Message row** — transport badge (E2E); delivery state; type-specific templates for `contact_card`, `crypto_tx`, `annotation`.
 - **Windowed transcript (D031)** — render loaded page only; scroll-up fetches older messages; composer `maxlength` hint matching `kMaxComposeTextBytes`.
+- **Sidebar list (D035)** — `ListThreads` returns catalog rows; verify/repair **visible rows only** when the sessions pane is shown or scrolled; pass viewport bounds from UI when virtualized.
 - **Gap banner** — when `sync_state=gap`; tap to retry sync.
 - **Scroll hint** — when `loaded_min_seq > 1`.
 - **`@ai` modes** — composer hints; confirm for `@ai+` / `@ai++`.

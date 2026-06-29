@@ -2,14 +2,14 @@
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** `SqliteThreadStore` (D028), per-thread dedup (D034), sender seq, windowed sync, strict ingest (D013–D014, D018), durable outbox (D017), resource bounds (D029–D033), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D034 in [DECISIONS.md](DECISIONS.md).
+**Planned but not implemented:** `SqliteThreadStore` (D028), sidebar catalog in `profile.db` (D035), per-thread dedup (D034), sender seq, windowed sync, strict ingest (D013–D014, D018), durable outbox (D017), resource bounds (D029–D033), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D036 in [DECISIONS.md](DECISIONS.md).
 
 ## Persistence
 
 | Area | Status | Location |
 |------|--------|----------|
 | Thread index + per-thread JSON | Implemented (legacy) | `src/base/messaging/JsonThreadStore.*` |
-| **SqliteThreadStore** (target v2a) | Not implemented | D028 — `thread.db` + `registry.db` (outbox only, D034) |
+| **SqliteThreadStore** (target v2a) | Not implemented | D028 — `thread.db` + `profile.db` (`threads` catalog + `outbox`, D035) |
 | Profile-scoped paths | Implemented | [CONFIGURATION.md](../../docs/CONFIGURATION.md) — `{data_dir}/profiles/{id}/threads/` |
 | `IThreadStore` interface | Implemented | `src/base/messaging/IThreadStore.h` |
 | SQLite in pp_base | Not implemented | libp2p fork has SQLite; app must vendor separately (D028) |
@@ -27,14 +27,15 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 {data_dir}/profiles/{profile_id}/threads/{thread_id}.json   # flat JSON — replaced in v2a
 ```
 
-**Target (D028):**
+**Target (D028, D035):**
 
 ```
-threads/index.json
-threads/registry.db          # outbox index only (D034)
+threads/profile.db          # threads catalog + outbox
 threads/{thread_id}/thread.db
 sync/chat_targets.json   # v6
 ```
+
+No `index.json` in target layout (replaces legacy index + flat JSON).
 
 ## Data model (today)
 

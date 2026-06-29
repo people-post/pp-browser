@@ -14,13 +14,13 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D002 — Thread index + per-thread directory (superseded on-disk detail by D025)
+## D002 — Thread index + per-thread directory (superseded on-disk detail by D025, D035)
 
 **Date:** 2026-06-27  
-**Updated:** 2026-06-29 — per-thread directory layout (D025).  
-**Decision:** Retain `threads/index.json` for sidebar metadata. Each thread owns a **directory** `{thread_id}/` with separate files for messages, memory, and sync state — not a single flat `{thread_id}.json`.  
-**Rationale:** Sidecar memory, atomic writes per artifact, room for attachments later; index stays small for fast sidebar load.  
-**Alternatives:** Single file per thread (original D002); monolithic database.
+**Updated:** 2026-06-29 — per-thread directory layout (D025); sidebar catalog moved to `profile.db` `threads` table (D035).  
+**Decision:** ~~Retain `threads/index.json` for sidebar metadata~~ → **`profile.db` `threads` table** (list cache; D035). Each thread owns a **directory** `{thread_id}/` with **`thread.db`** — not a single flat `{thread_id}.json`.  
+**Rationale:** Sidecar memory, atomic writes per artifact, room for attachments later; profile-level SQLite catalog replaces JSON dual-write.  
+**Alternatives:** Single file per thread (original D002); monolithic database; keep `index.json` (rejected — D035).
 
 ---
 
@@ -155,9 +155,9 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D017 — Durable outbox from thread store
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — `registry.db` outbox index only (D028, D034).  
-**Decision:** Pending/failed `relay_visible` messages are the **durable outbox** — persisted in `thread.db` `messages` table before send. **`registry.db` `outbox` table** indexes pending/failed rows for O(1) startup scan (D028). In-memory retry queue is a performance layer only. Retries reuse same `(message_id, sender_seq)`. Relay idempotent on `message_id`. Message-id dedup is **per-thread** in `thread.db` (D034), not in the registry.  
-**Rationale:** Restart must not drop unsent messages; registry avoids opening every `thread.db` on startup.  
+**Updated:** 2026-06-29 — `profile.db` holds `threads` catalog + `outbox` (D035).  
+**Decision:** Pending/failed `relay_visible` messages are the **durable outbox** — persisted in `thread.db` `messages` table before send. **`profile.db` `outbox` table** indexes pending/failed rows for O(1) startup scan (D028). In-memory retry queue is a performance layer only. Retries reuse same `(message_id, sender_seq)`. Relay idempotent on `message_id`. Message-id dedup is **per-thread** in `thread.db` (D034), not in `profile.db`. Sidebar catalog is separate (`threads` table, D035).  
+**Rationale:** Restart must not drop unsent messages; `profile.db` avoids opening every `thread.db` on startup.  
 **Alternatives:** Full scan all thread DBs on startup; separate outbox file only.
 
 ---
@@ -233,13 +233,13 @@ P2P levels include disclosure that peer/relay may retain copies. **Forget AI mem
 
 ---
 
-## D025 — Per-thread directory (superseded file layout by D028)
+## D025 — Per-thread directory (superseded file layout by D028, D035)
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — `thread.db` replaces JSON files (D028).  
-**Decision:** On-disk layout uses **one directory per thread** under `threads/{thread_id}/` containing **`thread.db`** (messages, memory, sync_state tables). Profile-level **`threads/registry.db`** for durable outbox index only (D028, D034). `threads/index.json` holds sidebar metadata only. Delete thread = remove directory + registry outbox rows + index entry. **No migration** from legacy flat JSON (D016).  
-**Rationale:** Directory delete semantics preserved; SQLite gives append, seq-range queries, and row-level delivery updates.  
-**Alternatives:** `messages.json` + `memory.json` sidecars (rejected — skip intermediate JSON stage).
+**Updated:** 2026-06-29 — `thread.db` replaces JSON files (D028); sidebar catalog in `profile.db` (D035).  
+**Decision:** On-disk layout uses **one directory per thread** under `threads/{thread_id}/` containing **`thread.db`** (messages, memory, sync_state tables). Profile-level **`threads/profile.db`** holds **`threads`** catalog (sidebar list cache) + **`outbox`** index (D017, D034). **No `index.json`.** Delete thread = `profile.db` transaction (`threads` + `outbox` rows) then remove `{thread_id}/` directory. **No migration** from legacy flat JSON or `index.json` (D016).  
+**Rationale:** Directory delete semantics preserved; SQLite gives append, seq-range queries, and row-level delivery updates; single profile DB for list + outbox.  
+**Alternatives:** `messages.json` + `memory.json` sidecars (rejected — skip intermediate JSON stage); `index.json` sidebar (rejected — D035).
 
 ---
 
@@ -264,18 +264,18 @@ P2P levels include disclosure that peer/relay may retain copies. **Forget AI mem
 
 ---
 
-## D028 — SQLite per thread + `registry.db` from v2a
+## D028 — SQLite per thread + `profile.db` from v2a
 
 **Date:** 2026-06-29  
+**Updated:** 2026-06-29 — sidebar catalog in `profile.db` `threads` table (D035); no `index.json`.  
 **Decision:** Phase **v2a** ships **`SqliteThreadStore`** (not an intermediate JSON-per-dir stage). Layout:
 
-- `threads/index.json` — sidebar metadata (kind, channel, title, preview, unread)
-- `threads/registry.db` — `outbox` index (`thread_id`, `message_id`, `delivery`) for D017 startup scan
+- `threads/profile.db` — **`threads`** catalog (sidebar list cache; D035) + **`outbox`** index for D017 startup scan
 - `threads/{thread_id}/thread.db` — `messages`, `memory`, `sync_state` tables; **`messages.id`** is the per-thread dedup key (D034)
 
-Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature seam; `JsonThreadStore` deprecated after cutover. **No JSON message files** in target layout. Wipe legacy `threads/*.json` on upgrade (D016).  
-**Rationale:** v6 seq sync, durable outbox, and `ChatPayload` append path need indexed storage; per-thread DB preserves delete/clear isolation; registry avoids scanning every `thread.db` for pending sends on startup. Per-thread dedup uses the existing `messages` PK — no separate global index.  
-**Alternatives:** JSON dirs in v2a then SQLite at v6; single monolithic `threads.db`; JSON `memory.json` sidecar (merged into `thread.db`).
+Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature seam; `JsonThreadStore` deprecated after cutover. **No JSON thread files** in target layout. Wipe legacy `threads/index.json` and `threads/*.json` on upgrade (D016).  
+**Rationale:** v6 seq sync, durable outbox, and `ChatPayload` append path need indexed storage; per-thread DB preserves delete/clear isolation; `profile.db` avoids scanning every `thread.db` for pending sends on startup and for sidebar sort. Per-thread dedup uses the existing `messages` PK — no separate global `message_ids` table.  
+**Alternatives:** JSON dirs in v2a then SQLite at v6; single monolithic `threads.db`; JSON `memory.json` sidecar (merged into `thread.db`); keep `index.json` (rejected — D035).
 
 ---
 
@@ -293,7 +293,7 @@ Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature
 | `kMaxContentRmlBytes` | **256 KiB** | **Local-only** assistant RML on disk (not accepted from wire) |
 | `kMaxChatActionsPerMessage` | **32** | `chat_actions` array |
 | `kMaxPollBatchMessages` | **100** | Per inbox poll or relay fetch response |
-| `kMaxRetryQueueItems` | **500** | In-memory + registry outbox rescan cap |
+| `kMaxRetryQueueItems` | **500** | In-memory + `profile.db` outbox rescan cap |
 | `kMaxOpenThreadDbs` | **16** | LRU of open `thread.db` handles |
 | `kMaxDisplayPageMessages` | **100** | Default UI transcript window |
 
@@ -340,12 +340,49 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 
 ---
 
-## D034 — Per-thread `message_id` dedup (not in `registry.db`)
+## D034 — Per-thread `message_id` dedup (no `message_ids` in `profile.db`)
 
 **Date:** 2026-06-29  
-**Decision:** Ingest idempotency and relay redelivery dedup are **per-thread**: `HasMessageId(thread_id, message_id)` queries `thread.db` `messages.id` (PRIMARY KEY). **`registry.db` holds only the `outbox` table** (D017/D028) — no `message_ids` table.  
-**Rationale:** Operational duplicates (poll overlap, idempotent send retry, relay + direct redelivery) always carry the same `thread_id` on the envelope; a per-thread PK lookup is O(1) and opens only one lazy `thread.db`. A profile-global dedup index duplicated `messages.id`, grew with every message forever, and complicated clear-history semantics. Registry stays small and startup-focused.  
-**Alternatives:** Global `message_ids` in `registry.db` (rejected); profile-wide scan of all `thread.db` on each dedup check (rejected).
+**Updated:** 2026-06-29 — `profile.db` also holds `threads` catalog (D035); still no `message_ids` table.  
+**Decision:** Ingest idempotency and relay redelivery dedup are **per-thread**: `HasMessageId(thread_id, message_id)` queries `thread.db` `messages.id` (PRIMARY KEY). **`profile.db` holds `threads` + `outbox` tables** — **no `message_ids` table** (dedup is not profile-global).  
+**Rationale:** Operational duplicates always carry the same `thread_id` on the envelope; a per-thread PK lookup is O(1) and opens only one lazy `thread.db`. A profile-global dedup index duplicated `messages.id`, grew with every message forever, and complicated clear-history semantics. `threads` rows are O(thread count), not O(message count).  
+**Alternatives:** Global `message_ids` in `profile.db` (rejected); profile-wide scan of all `thread.db` on each dedup check (rejected).
+
+---
+
+## D035 — Sidebar catalog in `profile.db`; lazy truth-check on list
+
+**Date:** 2026-06-29  
+**Decision:** Drop **`threads/index.json`**. Sidebar list metadata lives in **`profile.db` → `threads` table** (kind, channel, title, participant_contact_ids, cached preview, updated_at, unread_count). **`thread.db` is authoritative** for thread existence and message-derived fields; the `profile.db` catalog row is a **denormalized list cache**, not a second source of truth.
+
+**Write path (balanced):**
+
+- `AppendMessage` / `UpdateMessage`: persist in `thread.db` first; then `UPDATE threads SET updated_at=?, unread_count=?` in `profile.db` (sort/unread stay fresh).
+- **Preview** is not required on every append — refresh from `thread.db` when the row is **verified on list** (see below). Optionally update preview synchronously for the **active** thread only.
+
+**List / repair (`ListThreads`):**
+
+1. `SELECT` from `profile.db` `threads` ordered by `updated_at` (one profile DB read).
+2. For **visible rows only** (current sidebar viewport / page slice — not all threads): if `{thread_id}/thread.db` is missing → delete `threads` + `outbox` rows for that id; else run `SELECT text, timestamp FROM messages ORDER BY timestamp DESC LIMIT 1` and update cached preview/`updated_at` if mismatched.
+3. `FindOrCreateDirectThread` queries `profile.db` `threads` (indexed by kind/channel/participants) — not a directory scan.
+
+**Profile open (once):** `readdir` `threads/*/` — directories with `thread.db` but no `threads` row → insert stub catalog row (repairs crash-after-DB-create).
+
+**Delete thread:** single `profile.db` transaction — `DELETE FROM threads` + `DELETE FROM outbox WHERE thread_id=?` — then remove `{thread_id}/` directory.
+
+**Clear messages:** keep `threads` row; visible verify shows empty preview when transcript is wiped.
+
+**Rationale:** Avoids JSON dual-write and crash corruption; keeps fast sidebar sort in one SQLite file; lazy verify limits cost to ~viewport-sized `thread.db` opens per list refresh, not N threads. Correctness over eager full scan.  
+**Alternatives:** Keep `index.json` (rejected); no catalog — scan every `thread.db` on list (rejected); eager full truth-check on every `ListThreads` (rejected); preview always duplicated on every append without verify (rejected).
+
+---
+
+## D036 — Rename `registry.db` → `profile.db`
+
+**Date:** 2026-06-29  
+**Decision:** Profile-level SQLite file is **`threads/profile.db`** (not `registry.db`). Holds **`threads`** catalog + **`outbox`** index (D035, D017). Name reflects scope: profile-scoped metadata, not only an outbox registry.  
+**Rationale:** After D035 the file holds sidebar catalog and outbox; `registry.db` was misleading. `profile.db` pairs naturally with per-profile `identity.json` / `contacts.json` layout.  
+**Alternatives:** Keep `registry.db` name; move file to `{profile_id}/profile.db` outside `threads/` (deferred — path stays under `threads/` for v2a).
 
 ---
 

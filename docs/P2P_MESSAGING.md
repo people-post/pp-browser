@@ -37,7 +37,7 @@ Special IDs: `local:self`, `ai:assistant`.
 
 ## Persistence
 
-Profile-scoped layout (see [CONFIGURATION.md](CONFIGURATION.md)):
+Profile-scoped layout (see [CONFIGURATION.md](CONFIGURATION.md)). **Legacy (today):**
 
 ```
 {data_dir}/profiles/{profile_id}/
@@ -46,6 +46,8 @@ Profile-scoped layout (see [CONFIGURATION.md](CONFIGURATION.md)):
   threads/index.json
   threads/{thread_id}.json
 ```
+
+**Target (v2a+):** see [chat-storage-and-memory DESIGN.md](../projects/chat-storage-and-memory/DESIGN.md) — `profile.db` (`threads` + `outbox`) + per-thread `thread.db`; no `index.json`.
 
 Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux) or in-app **Settings**:
 
