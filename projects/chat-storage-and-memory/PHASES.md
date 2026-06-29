@@ -54,22 +54,23 @@ Existing foundation this project builds on.
 ### `SqliteThreadStore` (D028, D047)
 
 - [ ] Layout: `threads/profile.db` (`threads` + `outbox` + **`chat_targets`**), `threads/{id}/thread.db` — no `index.json` (D035)
-- [ ] `profile.db`: `threads` catalog + `outbox` + **`chat_targets`** (D047)
-- [ ] `thread.db`: `messages`, `memory`, `sync_state` tables; **`idx_messages_timestamp`** (D031)
-- [ ] Lazy-open `thread.db` per thread; WAL mode + writer mutex per DB (D044)
-- [ ] `AppendMessage` / `UpdateMessage`: `thread.db` first; maintain `profile.db` `outbox` + `threads.updated_at` / `unread_count` (D035)
+- [ ] `profile.db`: `threads`, `outbox`, **`chat_targets`** (`ChatTargetKey` PK, **`local_thread_id`**, D056, D047)
+- [ ] `thread.db`: `messages` (+ **`display_order`**, **`chat_actions`**), `memory`, `sync_state`; **`idx_messages_display`** (D054)
+- [ ] Lazy-open `thread.db` per thread; WAL mode + writer mutex per DB; **lock order** `profile.db` → `thread.db` (D044)
+- [ ] `AppendMessage` / `UpdateMessage`: assign **`display_order`** (D054); `thread.db` txn first; maintain `profile.db` `outbox` (+ `updated_at`) + `threads.updated_at` / `unread_count` (D035)
+- [ ] **`FindOrCreateDirectThread(ChatTargetKey)`**; inbound route via `sender_contact_id` + `route.channel` (D056)
 - [ ] **Startup reconciliation** — outbox ↔ messages repair (D047)
 - [ ] `ListThreads`: catalog query + visible-row verify/repair against `thread.db` (D035)
 - [ ] Profile open: `readdir` repair — stub `threads` row for orphan `thread.db` dirs (D035)
 - [ ] `HasMessageId(thread_id, message_id)` via `thread.db` `messages.id` PK (D034)
 - [ ] Change `IThreadStore::HasMessageId` signature; update `P2pMessagingService` poll path
-- [ ] `ClearMessages(thread_id)` — `DELETE FROM messages`; WAL checkpoint PASSIVE (D044); keep memory/sync tables
-- [ ] `DeleteThread` — `profile.db` txn (`threads` + `outbox`) then remove dir (D035)
+- [ ] `ClearMessages(thread_id)` — floor in `sync_state` **before** delete (D037); `DELETE FROM messages`; WAL checkpoint PASSIVE (D044); keep memory/sync tables
+- [ ] `DeleteThread` — direct: keep **`chat_targets`**; remove catalog + outbox + dir (D056)
 - [ ] Wipe legacy `threads/index.json` and flat `threads/{id}.json` on first run (D016 — no migration)
 - [ ] Wire app bootstrap to `SqliteThreadStore` instead of `JsonThreadStore`
-- [ ] Unit tests: append, update delivery, per-thread dedup, clear, delete, catalog + outbox + **reconciliation**, lazy open, visible-row repair (D035)
+- [ ] Unit tests: … **ChatTargetKey** ingest routing, **reject wire `thread_id`** (D056)
 - [ ] `MessagingLimits` constants (D029); reject oversize on append
-- [ ] `GetMessagesPage` for UI window (D031)
+- [ ] `GetMessagesPage(thread_id, before_display_order, limit)` (D031, D054)
 - [ ] LRU cap on open `thread.db` handles (D029)
 
 ### Agent / chat integration
@@ -106,7 +107,7 @@ Existing foundation this project builds on.
 
 - [ ] Add `ThreadChannel` enum (`public_relay`, `e2e`)
 - [ ] `channel` on `Thread` + `profile.db` `threads`; `encrypted = (channel == e2e)`
-- [ ] `FindOrCreateDirectThread(contact_id, channel)` — replace single-key lookup
+- [ ] `FindOrCreateDirectThread(ChatTargetKey)` — replace single-key lookup (D056)
 - [ ] Wipe any remaining legacy JSON thread files (D016)
 
 ### Creation flows
@@ -191,7 +192,7 @@ Existing foundation this project builds on.
 
 **Goal:** **E2E direct** chat detects missing peer messages and syncs reliably. Public relay unchanged (D045).
 
-**Depends on:** v2b, v4; relay `GET /v1/threads/{id}/messages` (D027) with **participant authorization**.
+**Depends on:** v2b, v4; relay `GET /v1/chat-targets/messages` (D027, D056) with **chat-target authorization**.
 
 **Design refs:** [P2P sync `[v1]` modes](DESIGN.md#p2p-sync-e2e-only--d045), [Integrity `[v1]`](DESIGN.md#v1-recovery), [Epoch bump](DESIGN.md#epoch-bump-transaction-d014-cross-project), [Durable outbox](DESIGN.md#durable-outbox-d017).
 
@@ -220,7 +221,8 @@ Existing foundation this project builds on.
 
 - [ ] **Tail sync** — desc limit 50
 - [ ] **Gap repair** — peer direct; relay D027 when offline
-- [ ] Reorder buffer / `ReplayWindow` k=32 (D020); display sort D019
+- [ ] Gap repair assigns **`display_order`** between seq neighbors (D054 Rule 2)
+- [ ] Reorder buffer / `ReplayWindow` k=32 (D020)
 - [ ] Persist **`loaded_min_seq` / `loaded_max_seq`** watermarks (prerequisite for post-v6c)
 
 ### Integrity and UX
@@ -332,7 +334,7 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 - [ ] Fuzz/dedup: duplicate relay `message_id` ignored via per-thread store check
 - [ ] `GetMessagesForContext` / compaction tests (D039–D040)
 - [ ] Outbox/gap repair limit tests (D041)
-- [ ] Relay fetch 403 for non-participant (D027)
+- [ ] Relay fetch 403 for non-party chat target (D027)
 
 ---
 
@@ -353,5 +355,5 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 | 2026-06-29 | D038: user-choice integrity recovery; pause + choice sheet; relaxed ingest; hard vs soft failures |
 | 2026-06-29 | D037: clear history floor = sync exclusion + silent discard; amend D010/D013 |
 | 2026-06-29 | D039–D044: agent context tail read, compaction bounds, retry/repair caps, annotation cap, orphan UX, SQLite ops |
-| 2026-06-29 | D045–D052: lean v1 — E2E-only seq, no continue-anyway, chat_targets in profile.db, text-only ChatPayload, deferred backfill/v6b/transport badge |
+| 2026-06-29 | D056: local `thread_id`; wire `ChatTargetKey` + `route`; no `thread_id` on envelope/AAD; supersedes D053 |
 | 2026-06-29 | DESIGN: single grand spec with `[v1]`/`[post-v1]` tags; PHASES traceability + named post-v1 phases |

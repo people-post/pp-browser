@@ -149,12 +149,13 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D016 — No legacy thread migration
+## D016 — No legacy migration
 
 **Date:** 2026-06-29  
-**Decision:** **No in-place upgrade** from pre-v2b/v6 on-disk thread JSON. Schema version bumps may require deleting `{data_dir}/profiles/{id}/threads/` (and chat-target sidecar when added). Acceptable because there are no production users yet.  
-**Rationale:** Avoid migration code while the model is still evolving; devs wipe local data on breaking bumps.  
-**Alternatives:** Backfill `sender_seq` on old messages; dual-read old/new schemas indefinitely.
+**Updated:** 2026-06-29 — includes legacy relay envelopes with `thread_id` (D056).  
+**Decision:** **No in-place upgrade** from pre-v2b/v6 on-disk thread JSON or **legacy relay wire** (envelopes with `thread_id`, old AAD with `thread_id`). Schema / protocol bumps may require deleting `{data_dir}/profiles/{id}/threads/` (acceptable — no production users yet). **Single parser** for wire + AAD — no dual-version support.  
+**Rationale:** Avoid migration and compatibility code while the model is still evolving; devs wipe local data on breaking bumps.  
+**Alternatives:** Backfill `sender_seq` on old messages; accept legacy envelopes alongside new (rejected).
 
 ---
 
@@ -181,10 +182,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D019 — Transcript display ordering
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — public relay uses timestamp (D045).  
-**Decision:** **E2E** `relay_visible`: sort by `(session_epoch, sender_contact_id, sender_seq)`. **Public relay** `relay_visible`: sort by `timestamp`, tie-break `message_id`. Local-only rows by `timestamp`.  
-**Rationale:** Seq for E2E integrity; timestamp sufficient for public v1.  
-**Alternatives:** Seq sort on both channels.
+**Updated:** 2026-06-29 — UI sort via `display_order` (D054); seq/timestamp roles split.  
+**Decision:** **UI / pagination:** `display_order ASC` on every message (D054). **`BuildDisplayRows`** and **`GetMessagesPage`** use `display_order` only. **E2E sync:** `(session_epoch, sender_contact_id, sender_seq)` for ingest and `GetMessagesBySeqRange` — not UI sort. **Public relay:** UUID dedup at ingest; `display_order` at persist. `timestamp` is metadata, not transcript sort.  
+**Rationale:** Per-sender seq sort does not interleave 1:1 turns; timestamp pagination breaks E2E; one column unifies AI, public, E2E, and local `@ai` rows.  
+**Alternatives:** Sort UI by `(sender, seq)` (rejected); `before_timestamp` pagination (rejected — D054).
 
 ---
 
@@ -198,22 +199,23 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D021 — `sender_contact_id` required on relay envelope
+## D021 — `sender_contact_id` and `route` on relay envelope
 
 **Date:** 2026-06-29  
-**Decision:** Relay envelope includes explicit **`sender_contact_id`** (contact id, not relay id). Ingest must not infer sender from `thread.participant_contact_ids[0]`.  
-**Rationale:** Required for E2E AAD, group chat later, and correct per-sender seq streams.  
-**Alternatives:** Infer from thread metadata; use `sender_relay_id` only.
+**Updated:** 2026-06-29 — `route` object; no `thread_id` (D056).  
+**Decision:** Relay envelope includes **`sender_contact_id`** and **`route`** (`kind` + `channel` for direct). **No `thread_id`** on wire. Inbound direct routing: `ChatTargetKey { sender_contact_id, route.channel }` → local `local_thread_id`. Do not infer sender from local thread metadata.  
+**Rationale:** Local thread ids differ per device; shared routing key is the chat target. `route` extensible to `group_id` later.  
+**Alternatives:** Shared wire `thread_id` (D053 — superseded); infer sender from participants[0] (rejected).
 
 ---
 
 ## D022 — Receive pipeline step order
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — history floor silent discard before classifier (D037); superseded in detail by D033.  
-**Decision:** Ingest order is fixed: per-thread UUID dedup (envelope `thread_id` + `message_id`, D034) → signature verify → thread/epoch check → AEAD decrypt (e2e) → parse `ChatPayload` → **history floor check (D037)** → D013 classifier (with reorder buffer) → persist. See DESIGN.md § Receive pipeline. **Superseded in detail by D033** (envelope size before parse, plaintext size after decrypt).  
-**Rationale:** Do not persist or advance watermarks before cryptographic and structural validation.  
-**Alternatives:** Decrypt before signature; classify before decrypt.
+**Updated:** 2026-06-29 — resolve `ChatTargetKey` before dedup (D056); reject legacy `thread_id`.  
+**Decision:** Ingest order: envelope size → **reject `thread_id` if present** → signature verify → parse `route` → **resolve local thread via `ChatTargetKey`** → per-thread UUID dedup → participant check → decrypt (e2e) → parse `ChatPayload` → history floor (D037) → D013 classifier → persist. See DESIGN.md § Receive pipeline. **Superseded in detail by D033** (plaintext size after decrypt).  
+**Rationale:** Dedup and persist require local `thread_id`; wire carries no thread id.  
+**Alternatives:** Dedup before routing using envelope `thread_id` (superseded).
 
 ---
 
@@ -257,13 +259,13 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D027 — Relay thread messages API (seq backfill, E2E)
+## D027 — Relay chat-target messages API (seq backfill, E2E)
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — participant-only authorization required.  
-**Decision:** Relay exposes seq-scoped message fetch for **E2E tail sync and gap repair**. **Authorization:** caller must be a **thread participant**; else **403**. Client ingest rejects non-participant `sender_contact_id`. Send idempotent on `message_id`.  
-**Rationale:** Gap repair when peer offline; prevent cross-thread snooping via guessed `thread_id`.  
-**Alternatives:** Open fetch by thread_id + auth token only.
+**Updated:** 2026-06-29 — `GET /v1/chat-targets/messages`; no `thread_id` (D056).  
+**Decision:** Relay exposes seq-scoped fetch by **`ChatTargetKey`** (`peer_contact_id` + `channel` query params). **Authorization:** caller must be a party to that chat target; else **403**. Relay indexes by recipient inbox + sender + channel, not client `thread_id`. Send idempotent on `message_id`. **Reject** POST bodies with `thread_id`.  
+**Rationale:** Peers use different local thread ids; backfill keys must match wire routing.  
+**Alternatives:** `GET /v1/threads/{thread_id}/messages` (superseded).
 
 ---
 
@@ -273,8 +275,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 **Updated:** 2026-06-29 — sidebar catalog in `profile.db` `threads` table (D035); no `index.json`.  
 **Decision:** Phase **v2a** ships **`SqliteThreadStore`** (not an intermediate JSON-per-dir stage). Layout:
 
-- `threads/profile.db` — **`threads`** catalog (D035) + **`outbox`** (D017) + **`chat_targets`** (D047)
-- `threads/{thread_id}/thread.db` — `messages`, `memory`, `sync_state` tables; **`messages.id`** is the per-thread dedup key (D034)
+- `threads/profile.db` — **`threads`** catalog (D035) + **`outbox`** (D017) + **`chat_targets`** (`ChatTargetKey` PK, `local_thread_id`, seq, epoch — D047, D056)
+- `threads/{thread_id}/thread.db` — `messages` (+ `display_order`, D054), `memory`, `sync_state`; **`messages.id`** is the per-thread dedup key (D034)
 
 Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature seam; `JsonThreadStore` deprecated after cutover. **No JSON thread files** in target layout. Wipe legacy `threads/index.json` and `threads/*.json` on upgrade (D016).  
 **Rationale:** v6 seq sync, durable outbox, and `ChatPayload` append path need indexed storage; per-thread DB preserves delete/clear isolation; `profile.db` avoids scanning every `thread.db` for pending sends on startup and for sidebar sort. Per-thread dedup uses the existing `messages` PK — no separate global `message_ids` table.  
@@ -319,10 +321,10 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 ## D031 — Windowed transcript UI + `GetMessagesPage`
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — agent hot path uses `GetMessagesForContext` (D039).  
-**Decision:** UI loads **pages** of messages, not full thread history. `IThreadStore::GetMessagesPage(thread_id, before_timestamp \| before_rowid, limit)` default **100**; scroll-up requests older pages. `BuildDisplayRows` operates on the loaded window only. **Agent turns** use `GetMessagesForContext` (D039), not full-thread `GetMessages`. Retain `GetMessages` for tests, export, and dev tools only.  
-**Rationale:** Avoid O(n) memory and RML build per frame on long threads.  
-**Alternatives:** Virtualized list with full load; always load last 50 only with no scroll-up.
+**Updated:** 2026-06-29 — `before_display_order` cursor (D054).  
+**Decision:** UI loads **pages** of messages, not full thread history. `IThreadStore::GetMessagesPage(thread_id, before_display_order, limit)` default **100**; `before_display_order` null = newest page; scroll-up passes oldest loaded row’s `display_order` (D054). `BuildDisplayRows` operates on the loaded window sorted by `display_order`. **Agent turns** use `GetMessagesForContext` (D039), not full-thread `GetMessages`. Retain `GetMessages` for tests, export, and dev tools only.  
+**Rationale:** Avoid O(n) memory and RML build per frame on long threads; unified cursor for all channel types.  
+**Alternatives:** Virtualized list with full load; `before_timestamp` cursor (rejected — D054).
 
 ---
 
@@ -338,8 +340,8 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 ## D033 — Ingest pipeline: size check before parse
 
 **Date:** 2026-06-29  
-**Updated:** extends D022; history floor silent discard (D037) before classifier.  
-**Decision:** Inbound order: **(0) envelope byte size** → per-thread UUID dedup (D034) → signature verify → thread/epoch → decrypt (e2e) → **plaintext size** → JSON parse `ChatPayload` with schema validate → **history floor (D037)** → D013 classifier → persist. Reject oversize before `nlohmann::parse` on untrusted input.  
+**Updated:** 2026-06-29 — aligns with D022/D056 receive order.  
+**Decision:** Inbound order per D022: envelope size → reject legacy `thread_id` → signature → `route` → resolve `ChatTargetKey` → dedup → participant check → decrypt (e2e) → **plaintext size** → parse `ChatPayload` → history floor (D037) → D013 → persist. Reject oversize before `nlohmann::parse` on untrusted input.  
 **Rationale:** JSON bombs and huge ciphertext must fail closed without full parse.  
 **Alternatives:** Parse then check (rejected).
 
@@ -349,9 +351,9 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — `profile.db` also holds `threads` catalog (D035); still no `message_ids` table.  
-**Decision:** Ingest idempotency and relay redelivery dedup are **per-thread**: `HasMessageId(thread_id, message_id)` queries `thread.db` `messages.id` (PRIMARY KEY). **`profile.db` holds `threads` + `outbox` tables** — **no `message_ids` table** (dedup is not profile-global).  
-**Rationale:** Operational duplicates always carry the same `thread_id` on the envelope; a per-thread PK lookup is O(1) and opens only one lazy `thread.db`. A profile-global dedup index duplicated `messages.id`, grew with every message forever, and complicated clear-history semantics. `threads` rows are O(thread count), not O(message count).  
-**Alternatives:** Global `message_ids` in `profile.db` (rejected); profile-wide scan of all `thread.db` on each dedup check (rejected).
+**Decision:** Ingest idempotency and relay redelivery dedup are **per local thread**: resolve **`ChatTargetKey` → `local_thread_id`**, then `HasMessageId(local_thread_id, message_id)` on `thread.db` `messages.id` PK. **`profile.db` holds `threads` + `outbox`** — no `message_ids` table.  
+**Rationale:** Wire has no `thread_id`; routing must happen before per-thread dedup. O(threads) catalog, not O(messages).  
+**Alternatives:** Global `message_ids` in `profile.db` (rejected); dedup using envelope `thread_id` (superseded).
 
 ---
 
@@ -369,7 +371,7 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 
 1. `SELECT` from `profile.db` `threads` ordered by `updated_at` (one profile DB read).
 2. For **visible rows only** (current sidebar viewport / page slice — not all threads): if `{thread_id}/thread.db` is missing → delete `threads` + `outbox` rows for that id; else run `SELECT text, timestamp FROM messages ORDER BY timestamp DESC LIMIT 1` and update cached preview/`updated_at` if mismatched.
-3. `FindOrCreateDirectThread` queries `profile.db` `threads` (indexed by kind/channel/participants) — not a directory scan.
+3. `FindOrCreateDirectThread(ChatTargetKey)` looks up **`chat_targets`**; catalog via **`threads.direct_peer_contact_id`** + `channel` (D055).
 
 **Profile open (once):** `readdir` `threads/*/` — directories with `thread.db` but no `threads` row → insert stub catalog row (repairs crash-after-DB-create).
 
@@ -424,7 +426,7 @@ Hard failures: pause + **Pause only** until delete thread or key rotation.
 **Decision:** `AgentSession` and `ThreadContextPolicy` must **not** call full-thread `GetMessages` on the hot path. Add `IThreadStore::GetMessagesForContext(thread_id, ContextBudget)`:
 
 1. Load **`GetThreadMemory`** summary when present (v3 `memory` table).
-2. Fetch a **tail slice** of `content_type=text` (+ selected `system`) rows newest-first until `max_turn_pairs` / `max_recent_chars` from `ContextBudget` is satisfied — use indexed `timestamp` / `rowid` limit, not full transcript scan.
+2. Fetch a **tail slice** by `display_order DESC` of `content_type=text` (+ selected `system`) until `max_turn_pairs` / `max_recent_chars` from `ContextBudget` is satisfied — indexed limit, not full transcript scan.
 3. Return messages in chronological order for `ThreadContextPolicy::Build`.
 
 `GetMessages` remains for unit tests, export, and migration; mark deprecated in `IThreadStore` comments for feature code.  
@@ -444,7 +446,7 @@ Hard failures: pause + **Pause only** until delete thread or key rotation.
 | `kMaxSummaryBytes` | **8 KiB** | Persisted `ConversationSummary.text` on disk |
 | `kCompactionMinTurnsKept` | **6** | Tail turns always kept verbatim in context after summary |
 
-**Trigger:** **async after turn completes** — enqueue compaction job; do not block composer send or LLM response delivery. On failure, log and retry next eligible turn; never delete transcript rows. Summary `version` increments on successful write. Wire `max_summary_chars` in `ContextBudget` to **`kMaxSummaryBytes`** at runtime (chars ≈ bytes for UTF-8 summary text).  
+**Trigger:** **async after turn completes** — enqueue compaction job; do not block composer send or LLM response delivery. On failure, log and retry next eligible turn; never delete transcript rows. Summary `version` increments on successful write; persist **`compacted_through_display_order`** in `memory` summary JSON so eligibility does not require full-thread scan. Wire `max_summary_chars` in `ContextBudget` to **`kMaxSummaryBytes`** at runtime (chars ≈ bytes for UTF-8 summary text).  
 **Rationale:** v3 needs explicit bounds so memory table and LLM injection do not grow without limit; async avoids UI stalls.  
 **Alternatives:** Inline compaction blocking the turn (rejected); no summary size cap (rejected); compact on char count only (deferred).
 
@@ -461,7 +463,7 @@ Hard failures: pause + **Pause only** until delete thread or key rotation.
 | `kMaxGapRepairRounds` | **5** | Consecutive repair cycles per `(peer, epoch)` gap before soft compromised (D038) |
 | `kMaxGapRepairSeqSpan` | **500** | Max `max_sender_seq - min_sender_seq + 1` per single repair fetch |
 
-After **`kMaxOutboxRetryAttempts`**: set `delivery=failed`, keep row, show persistent send-failure affordance; user may retry manually (resets attempt counter). After **`kMaxGapRepairRounds`**: pause + integrity choice sheet (D038). If startup `ListPendingOutbox` returns more than **`kMaxRetryQueueItems`** (D029), process first 500 in `updated_at` order and log warning — do not drop rows.  
+After **`kMaxOutboxRetryAttempts`**: set `delivery=failed`, keep row, show persistent send-failure affordance; user may retry manually (resets attempt counter). After **`kMaxGapRepairRounds`**: pause + integrity choice sheet (D038). If startup `ListPendingOutbox` returns more than **`kMaxRetryQueueItems`** (D029), process first 500 in **`outbox.updated_at ASC`** order and log warning — do not drop rows.  
 **Rationale:** “Cap attempts” and “repair exhaustion” in DESIGN were qualitative; implementers need constants.  
 **Alternatives:** Unlimited retries; immediate compromised on first repair miss.
 
@@ -492,6 +494,7 @@ After **`kMaxOutboxRetryAttempts`**: set `delivery=failed`, keep row, show persi
 
 - **`PRAGMA journal_mode=WAL`** per connection.
 - **Single writer mutex** per `thread.db` and one for `profile.db` — all `AppendMessage` / `ClearMessages` / catalog updates serialize; concurrent readers allowed on WAL.
+- **Lock order** when both DBs are touched: **`profile.db` first**, then `thread.db`; never hold `thread.db` while acquiring `profile.db`.
 - After **`ClearMessages`** bulk delete: run **`PRAGMA wal_checkpoint(PASSIVE)`** on that `thread.db` (best-effort; do not block UI).
 - **No automatic `VACUUM`** in v1; monitor `thread.db` file size via dev logging. Revisit if clear/delete leaves large sparse files.
 
@@ -522,9 +525,10 @@ No hard max file size in v1.
 ## D047 — `chat_targets` table in `profile.db`
 
 **Date:** 2026-06-29  
-**Decision:** **`next_outgoing_seq` and `session_epoch`** live in **`profile.db` → `chat_targets`** keyed by `(contact_id, channel)` — not `sync/chat_targets.json`. Updated under same writer mutex as `outbox`. Startup **reconciliation** repairs outbox ↔ message drift (DESIGN § Startup reconciliation). Epoch bump updates `chat_targets`, crypto `sessions.json`, and cached `threads.session_epoch` in one flow.  
-**Rationale:** JSON sidecar reintroduces crash corruption; SQLite matches D028 durability model.  
-**Alternatives:** JSON sidecar (original layout).
+**Updated:** 2026-06-29 — `local_thread_id`; `ChatTargetKey` (D056).  
+**Decision:** **`chat_targets`** PK = **`(contact_id, channel)`** (`ChatTargetKey`). Columns: **`local_thread_id`** (current on-disk shell; **not on wire**), **`next_outgoing_seq`**, **`session_epoch`**. Updated under same writer mutex as `outbox`. **Delete direct conversation** removes shell but **keeps** `chat_targets` (seq/epoch). Shell recreate may allocate **new** `local_thread_id`.  
+**Rationale:** Seq/epoch are per logical chat target; local storage ids are device-private.  
+**Alternatives:** Wire-stable `thread_id` (D053 — superseded).
 
 ---
 
@@ -570,6 +574,42 @@ No hard max file size in v1.
 **Decision:** **No relay fetch when user scrolls to top** in v1. Scroll-up uses **`GetMessagesPage`** on local transcript only. E2E active sync: **tail + gap repair** only (amends D009). **`[post-v1]`** history backfill: [DESIGN.md § P2P sync](DESIGN.md#p2p-sync-e2e-only--d045).  
 **Rationale:** Large subsystem; tail+gap covers live reliability.  
 **Alternatives:** Three sync modes in v1 (original D009).
+
+---
+
+## D053 — Stable `thread_id` per direct chat target (superseded by D056)
+
+**Date:** 2026-06-29  
+**Superseded:** 2026-06-29 — D056 (local `thread_id`; wire uses `ChatTargetKey`).  
+**Decision:** ~~Wire-shared stable `thread_id`~~ — do not implement.  
+**Rationale:** Superseded — peers keep private local ids; routing via `sender_contact_id` + `route.channel`.
+
+---
+
+## D054 — `display_order` for UI sort and pagination
+
+**Date:** 2026-06-29  
+**Decision:** Every `messages` row has **`display_order INTEGER NOT NULL`**, assigned in **`AppendMessage`** per DESIGN § Display order assignment. **UI sort** and **`GetMessagesPage(before_display_order)`** use this column only. **`sender_seq`** remains for E2E sync/ingest only (D045). Default append: `max+1`; gap repair: insert between seq neighbors (renumber tail if needed).  
+**Rationale:** Unifies AI, public, E2E, and local `@ai` transcript ordering; avoids channel-specific pagination cursors.  
+**Alternatives:** `before_timestamp` pagination; runtime merge in `BuildDisplayRows` (rejected).
+
+---
+
+## D055 — `direct_peer_contact_id` catalog denorm
+
+**Date:** 2026-06-29  
+**Decision:** `profile.db` **`threads.direct_peer_contact_id`** stores the peer for **`kind=direct`** (= `ChatTargetKey.contact_id`). Index **`(kind, channel, direct_peer_contact_id)`**. **`FindOrCreateDirectThread`** uses **`chat_targets`** PK (D056); denorm supports catalog repair.  
+**Rationale:** Fast catalog lookup; canonical key remains `ChatTargetKey`.  
+**Alternatives:** JSON1 expression index only (deferred).
+
+---
+
+## D056 — Local `thread_id`; wire routes via `ChatTargetKey`
+
+**Date:** 2026-06-29  
+**Decision:** **`thread_id`** (stored as **`chat_targets.local_thread_id`**) is **local only** — never sent on relay envelope or included in E2E AAD. **Direct P2P wire routing:** `ChatTargetKey { contact_id: envelope.sender_contact_id, channel: envelope.route.channel }` → `FindOrCreateDirectThread` → persist to that device's `local_thread_id`. Envelope includes **`route`**: `{ "kind": "direct", "channel": "…" }` (**`[post-v1]`** group: `{ "kind": "group", "group_id": "…" }`). **Reject** envelopes containing `thread_id` (D016). **Single** wire + AAD layout — no legacy dual-parser. Relay backfill: **`GET /v1/chat-targets/messages?peer_contact_id=&channel=`** (D027).  
+**Rationale:** Each device owns storage layout; logical conversation is `ChatTargetKey`; group-ready `route` object; one clean protocol cut with D016 wipe.  
+**Alternatives:** Shared wire `thread_id` (D053 — superseded); flat `channel` field without `route` (rejected — poor group extensibility).
 
 ---
 

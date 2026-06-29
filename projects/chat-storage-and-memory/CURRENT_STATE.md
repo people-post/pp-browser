@@ -2,7 +2,7 @@
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** see [DESIGN.md](DESIGN.md) (`[v1]` scope + inline `[post-v1]` specs) and D008–D052 in [DECISIONS.md](DECISIONS.md).
+**Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D056 in [DECISIONS.md](DECISIONS.md).
 
 ## Persistence
 
@@ -32,8 +32,8 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 **Target (D028, D035):**
 
 ```
-threads/profile.db          # threads catalog + outbox + chat_targets (D047)
-threads/{thread_id}/thread.db
+threads/profile.db          # threads catalog + outbox + chat_targets (ChatTargetKey, local_thread_id)
+threads/{thread_id}/thread.db   # messages.display_order, chat_actions, …
 ```
 
 No `index.json` in target layout (replaces legacy index + flat JSON).
@@ -78,6 +78,7 @@ No `index.json` in target layout (replaces legacy index + flat JSON).
 
 - Keys on `contact_id` only — **one direct thread per contact**.
 - Does not consider public vs E2E — gap vs target design.
+- Target (D056): wire routes by `sender_contact_id` + `route.channel` → `ChatTargetKey`; local `thread_id` not on envelope.
 
 ### JsonThreadStore performance gaps (legacy)
 

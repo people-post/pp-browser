@@ -31,12 +31,13 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## E004 — Canonical AAD binds context and `sender_seq`
+## E004 — Canonical AAD binds `ChatTargetKey` context and `sender_seq`
 
 **Date:** 2026-06-29  
-**Decision:** AEAD associated data includes: protocol version, `thread_id`, `message_id`, `sender_contact_id`, `sender_seq` (u64 BE), `session_epoch` (u32 BE), `timestamp` (i64 BE) — byte layout fixed in DESIGN.md. `sender_seq` prevents cut-and-paste across messages within an epoch.  
-**Rationale:** Aligns with [chat-storage D008–D011](../chat-storage-and-memory/DECISIONS.md); ciphertext cannot be replayed with altered ordering without detection.  
-**Alternatives:** Encrypt only `text` with nonce; rely on outer Ed25519 for seq binding only.
+**Updated:** 2026-06-29 — `peer_contact_id` + `channel`; no `thread_id` (D056).  
+**Decision:** AEAD associated data (`aad_version = 1` only): `channel`, `peer_contact_id`, `message_id`, `sender_contact_id`, `sender_seq` (u64 BE), `session_epoch` (u32 BE), `timestamp` (i64 BE) — layout in DESIGN.md. Sender sets `peer_contact_id` to the other party in the `ChatTargetKey`. **No `thread_id` in AAD.** No dual AAD version support (D016).  
+**Rationale:** Aligns with [chat-storage D056](../chat-storage-and-memory/DECISIONS.md); local thread ids are device-private.  
+**Alternatives:** Bind `thread_id` in AAD (superseded); encrypt only `text` with nonce.
 
 ---
 
@@ -54,7 +55,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 **Date:** 2026-06-29  
 **Decision:** PSK sessions and HKDF context use **`ChatTargetKey` = `(contact_id, channel)`** with `channel` ∈ `{public_relay, e2e}`. Only **`e2e`** channels use message-body encryption. `session_epoch` scopes keys and seq per [chat-storage D014](../chat-storage-and-memory/DECISIONS.md).  
 **Rationale:** Same identity boundary as thread model D004; public relay stays signed plaintext.  
-**Alternatives:** Per-`thread_id` keys only; one PSK for all contacts.
+**Alternatives:** Per-`local_thread_id` keys only; one PSK for all contacts.
 
 ---
 

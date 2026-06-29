@@ -7,7 +7,7 @@
 
 ## One-line goal
 
-One durable conversation model for AI and P2P chat: SQLite per thread, `profile.db` catalog/outbox/chat_targets, ChatPayload v1, channel badges, E2E-only seq sync — with richer types, scroll backfill, shared `@ai`, and transport badges phased after v1.
+One durable conversation model for AI and P2P chat: SQLite per thread, `profile.db` catalog/outbox/`chat_targets` (`ChatTargetKey`, D056), local `thread_id` only, `display_order` paging (D054), ChatPayload v1, channel badges, E2E-only seq sync — with richer types, scroll backfill, shared `@ai`, and transport badges phased after v1.
 
 **Related:** [platform-safety-limits](../platform-safety-limits/) (LLM HTTP, profile stores — outside chat wire).
 
@@ -26,7 +26,7 @@ See [PHASES.md](PHASES.md) for full checklists. Summary:
 
 | Phase | Focus |
 |-------|--------|
-| v2a | SqliteThreadStore, reconciliation, GetMessagesPage, clear history |
+| v2a | SqliteThreadStore, reconciliation, `GetMessagesPage`, `ChatTargetKey` routing, clear history |
 | v2b | Public vs E2E split, channel badge sidebar |
 | v3 | AI memory + compaction |
 | v4 | ChatPayload text/system, transport column |

@@ -18,7 +18,7 @@ Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IR
 
 | Field | Description |
 |-------|-------------|
-| `id` | UUID; used in relay envelope |
+| `id` | UUID; **local only** — not on wire (D056) |
 | `kind` | `ai`, `direct`, `group` |
 | `participant_contact_ids` | One peer for direct; N for group (future) |
 | `unread_count` | Sidebar badge |
@@ -62,18 +62,30 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
 
 Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is running; otherwise in-process mocks.
 
-## Relay envelope
+## Relay envelope (target — D056)
+
+**No `thread_id` on the wire.** Full spec: [chat-storage DESIGN § Relay envelope](../projects/chat-storage-and-memory/DESIGN.md#relay--direct-envelope-d056).
 
 ```json
 {
-  "thread_id": "uuid",
   "message_id": "uuid",
   "sender_relay_id": "relay:…",
-  "body": { "text": "…" },
+  "sender_contact_id": "contact:…",
+  "route": { "kind": "direct", "channel": "public_relay" },
+  "body": {
+    "content": {
+      "schema_version": 1,
+      "content_type": "text",
+      "text": "Hello",
+      "payload": {}
+    }
+  },
   "timestamp": 1234567890,
   "signature": "…"
 }
 ```
+
+Inbound routing: `ChatTargetKey { sender_contact_id, route.channel }` → local thread. Legacy envelopes with `thread_id` are rejected.
 
 Local store is written **before** send. Server rejections do not delete history.
 

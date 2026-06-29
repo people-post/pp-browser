@@ -73,24 +73,34 @@ session_key = HKDF-SHA256(
 - **`channel`:** `e2e` only uses derived keys for body encryption; `public_relay` has no PSK session.
 - **`session_epoch`:** uint32, bumped on key rotation / compromise recovery ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md)). New epoch → new `session_key`; seq resets to 1 for that epoch.
 
-### Chat target identity
+### Chat target identity (D056)
 
-Matches chat-storage thread identity boundary:
+Canonical **`ChatTargetKey`** — matches [chat-storage DESIGN § ChatTargetKey](../chat-storage-and-memory/DESIGN.md#chattargetkey-direct-p2p--d056):
 
-| Key | Fields |
-|-----|--------|
-| `ChatTargetKey` | `contact_id`, `channel` (`e2e` \| `public_relay`) |
-| Store map key (string) | `contact:{id}|channel:{channel}` |
+| Field | Notes |
+|-------|-------|
+| `contact_id` | Peer contact id (other party in 1:1) |
+| `channel` | `e2e` \| `public_relay` |
+
+| Use | Key |
+|-----|-----|
+| C++ type | `ChatTargetKey{ contact_id, channel }` |
+| `sessions.json` map key | `contact:{id}|channel:{channel}` |
+| `chat_targets` PK | `(contact_id, channel)` |
+| Wire routing (inbound) | `{ sender_contact_id, route.channel }` → receiver's `ChatTargetKey` |
+
+**`thread_id` / `local_thread_id` is never in AAD or relay envelope.**
 
 ## AEAD: associated data (canonical layout)
 
-Fixed byte order (big-endian integers). **Any change bumps protocol version.**
+Fixed byte order (big-endian integers). **`aad_version = 1`** is the only AAD layout (D016 — no dual-version parser).
 
 | Offset | Size | Field |
 |--------|------|-------|
 | 0 | 1 | `aad_version` = `1` |
-| 1 | 2 | `thread_id_len` (u16 BE) |
-| 3 | var | `thread_id` UTF-8 |
+| 1 | 1 | `channel` enum: `0` = `public_relay`, `1` = `e2e` |
+| | 2 | `peer_contact_id_len` (u16 BE) |
+| | var | `peer_contact_id` UTF-8 — other party in 1:1 (`ChatTargetKey.contact_id` from **sender's** view) |
 | | 2 | `message_id_len` (u16 BE) |
 | | var | `message_id` UTF-8 |
 | | 2 | `sender_contact_id_len` (u16 BE) |
@@ -101,7 +111,9 @@ Fixed byte order (big-endian integers). **Any change bumps protocol version.**
 
 **Rules:**
 
-- `sender_seq` must match the outer signed envelope and local `ThreadMessage` for `relay_visible` rows.
+- **Sender** builds AAD with `peer_contact_id` = recipient peer, `sender_contact_id` = self.
+- **Receiver** verifies AAD `peer_contact_id` matches local self contact id and `sender_contact_id` matches envelope sender before accept.
+- `sender_seq` must match outer signed envelope and local `ThreadMessage` for `relay_visible` rows.
 - Decrypt with wrong AAD → MUST fail (no silent ignore).
 - Local-only rows (`relay_visible=false`) are not encrypted for relay.
 
@@ -134,23 +146,19 @@ Binary layout placed inside relay body (base64-encoded for JSON):
 
 Libsodium API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = nonce, `ad` = canonical AAD, `k` = `session_key` (32 bytes).
 
-## Relay envelope integration (target — phase c2)
+## Relay envelope integration (phase c2 — D056)
 
-Outer envelope stays JSON + Ed25519 signature (classical). Extensions from [chat-storage DESIGN](../chat-storage-and-memory/DESIGN.md):
+Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** See [chat-storage DESIGN § Relay envelope](../chat-storage-and-memory/DESIGN.md#relay--direct-envelope-d056).
 
 ```json
 {
-  "thread_id": "uuid",
   "message_id": "uuid",
   "sender_relay_id": "relay:…",
-  "sender_contact_id": "contact:…",
+  "sender_contact_id": "contact:alice",
+  "route": { "kind": "direct", "channel": "e2e" },
   "sender_seq": 42,
   "session_epoch": 1,
-  "body": {
-    "e2e": {
-      "payload_b64": "…"
-    }
-  },
+  "body": { "e2e": { "payload_b64": "…" } },
   "timestamp": 1234567890,
   "signature": "…"
 }
@@ -158,17 +166,19 @@ Outer envelope stays JSON + Ed25519 signature (classical). Extensions from [chat
 
 | Channel | `body` shape | Signature covers |
 |---------|--------------|------------------|
-| `public_relay` | `{ "content": { …ChatPayload… } }` | message_id, thread_id, timestamp, sender_contact_id, … |
+| `public_relay` | `{ "content": { …ChatPayload… } }` | `message_id`, `sender_contact_id`, `route`, `timestamp`, body |
 | `e2e` | `{ "e2e": { "payload_b64": "…" } }` | + `sender_seq`, `session_epoch` |
+
+**Reject** envelopes containing `thread_id` (legacy — D016).
 
 **Send pipeline (e2e):**
 
 1. Build `ChatPayload` JSON from `ThreadMessage`.
 2. Assign `(message_id, sender_seq)` at first local persist (chat-storage D010).
-3. Build canonical AAD from envelope + message fields.
+3. Build canonical AAD: `peer_contact_id` = peer from `ChatTargetKey`, `channel`, ids, seq, epoch, timestamp.
 4. `MessageCipher::Encrypt(utf8(payload_json), session_key, aad)` → blob → base64 → `body.e2e.payload_b64`.
-5. Sign outer envelope with Ed25519 identity key.
-6. Relay; on receive, verify signature → decrypt → parse JSON → **E2E D013 ingest** (public relay skips seq classifier per D045).
+5. Sign outer envelope (no `thread_id`).
+6. Relay; on receive, verify signature → resolve `ChatTargetKey` → decrypt → **E2E D013 ingest**.
 
 ## Replay protection
 
@@ -205,7 +215,7 @@ Two layers:
 
 ### Chat-target seq state (chat-storage D047)
 
-`next_outgoing_seq` and authoritative `session_epoch` for outbound traffic live in **`profile.db` → `chat_targets`** — not a JSON sidecar. Crypto **`sessions.json`** holds `session_epoch` for HKDF; **epoch bump** must update both in one coordinated transaction ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md)). Crypto module reads `session_epoch` for derivation; chat-storage owns seq counters.
+`next_outgoing_seq` and authoritative `session_epoch` live in **`profile.db` → `chat_targets`** keyed by **`ChatTargetKey`**. **`local_thread_id`** is the current on-disk shell only (D056) — not on wire or in AAD. Crypto **`sessions.json`** holds `session_epoch` for HKDF; **epoch bump** updates `sessions.json` + `chat_targets` in one transaction ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md)).
 
 ## `base/crypto` module (target)
 
@@ -226,14 +236,16 @@ All public APIs return `Roe<T>` from `common/Error.h`.
 
 ## Key rotation and compromise
 
-Aligned with [chat-storage D011/D038](../chat-storage-and-memory/DECISIONS.md):
+Aligned with [chat-storage D011/D038/D046](../chat-storage-and-memory/DECISIONS.md) (**v1:** rotate PSK or pause only — no continue-anyway):
 
 1. Ingest detects **soft** integrity failure (seq conflict, rewind, repair failure, etc.) or **hard** wire/crypto failure.
-2. **Soft:** pause ingest/outbound; UI shows choice sheet (D038) with disclosure. **Recommended:** manual new PSK exchange + `session_epoch++`. **Optional:** continue with current keys → `ingest_policy=relaxed`, `trust_degraded=true` (user accepts degraded E2E trust).
-3. **Hard** (invalid signature, decrypt failure, epoch decrease): no continue-anyway; pause until delete thread or key rotation.
-4. On **rotate_psk** path: `session_epoch++` on both peers; `BumpEpoch()` in store.
-5. Optional `epoch_start` system message (chat-storage) as first sequenced row in new epoch.
+2. **Soft:** pause ingest/outbound; UI shows choice sheet (D038) with disclosure. **Recommended:** manual new PSK exchange on **both peers**, then `session_epoch++` (innocent peer cannot decrypt until PSK is installed locally).
+3. **Hard** (invalid signature, decrypt failure, epoch decrease): no override in v1; pause until delete thread or key rotation.
+4. On **rotate_psk** path: `session_epoch++` via epoch bump transaction ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md)); update `sessions.json` + `chat_targets`.
+5. **No `epoch_start` system message** ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md)) — first user message may use `sender_seq=1` in the new epoch.
 6. HKDF uses new epoch; old epoch keys retained for decrypting historical messages locally.
+
+**`[post-v1]`** optional relaxed ingest (`ingest_policy=relaxed`, `continue_anyway`) — see [chat-storage DESIGN § Relaxed ingest](../chat-storage-and-memory/DESIGN.md#post-v1-relaxed-ingest--continue-anyway-d046-extension); not in v1 (D046).
 
 ## Post-quantum migration (phase c4 — deferred)
 
@@ -251,7 +263,7 @@ Do **not** use X25519 or ECDH alone for automated key agreement after c4 without
 
 | chat-storage phase | Dependency for E2E |
 |--------------------|-------------------|
-| v2b — channel split | Required before c2 (e2e thread + `FindOrCreateDirectThread(contact, e2e)`) |
+| v2b — channel split | Required before c2 (`ChatTargetKey` + `FindOrCreateDirectThread`) |
 | v6 — `sender_seq`, `session_epoch` on envelope | Required before c2 |
 | v6 — strict ingest D013 | Required for production E2E trust |
 | v2b — “Secure message” UI | Requires c3 key import |
