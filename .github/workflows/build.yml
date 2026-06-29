@@ -144,7 +144,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/android/build"
           mkdir -p "$ANDROID_SDK_ROOT/platforms"
           mkdir -p "$ANDROID_SDK_ROOT/ndk"
-          chmod -R u+rwX "$HOME/.cache/ccache" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle" "$GITHUB_WORKSPACE/android/build" "$ANDROID_SDK_ROOT/platforms"
+          chmod -R u+rwX "$HOME/.cache/ccache" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle" "$GITHUB_WORKSPACE/android/build"
           echo "CCACHE_DIR=$HOME/.cache/ccache" >> "$GITHUB_ENV"
 
       - name: Restore Android Gradle cache
@@ -155,7 +155,7 @@ jobs:
             ~/.gradle/wrapper
             android/.gradle
             android/build
-          key: ${{ runner.os }}-android-gradle-v1-${{ hashFiles('android/build.gradle*', 'android/settings.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-android-gradle-v1-${{ hashFiles('android/build.gradle*', 'android/settings.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties[...]
           restore-keys: |
             ${{ runner.os }}-android-gradle-v1-
 
