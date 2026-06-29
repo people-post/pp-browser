@@ -7,7 +7,9 @@
 
 ## One-line goal
 
-One durable conversation model for AI and P2P chat: per-thread directories, `ChatPayload` message types, grouped sidebar (AI / Public / Private), multi-level clear sheet, strict seq ingest, durable outbox, and relay seq backfill API.
+One durable conversation model for AI and P2P chat: SQLite per thread (`thread.db`) + `registry.db`, `ChatPayload`, grouped sidebar, multi-level clear sheet, strict seq ingest, **resource bounds (D029–D033)**, and relay seq backfill API.
+
+**Related:** [platform-safety-limits](../platform-safety-limits/) (LLM HTTP, profile stores — outside chat wire).
 
 ## Documents in this folder
 
@@ -22,14 +24,13 @@ One durable conversation model for AI and P2P chat: per-thread directories, `Cha
 
 | Phase | Name | Status |
 |-------|------|--------|
-| — | Baseline (JSON threads, router, sliding context) | Done (pre-project) |
-| v2a | Persistence polish + unified transcript | Not started |
+| — | Baseline (JSON `JsonThreadStore`, router, sliding context) | Done (pre-project) |
+| v2a | **SqliteThreadStore** + unified transcript | Not started |
 | v2b | Public vs E2E channel split + sidebar groups | Not started |
-| v3 | Durable AI memory + clear/forget UX | Not started |
+| v3 | Durable AI memory (`memory` table) + clear/forget UX | Not started |
 | v4 | ChatPayload types + transport badges | Not started |
 | v6 | Sender seq + gap detection + relay fetch API | Not started |
 | v6b | `@ai` three modes (local / shared reply / full) | Not started |
-| v5 | Optional SQLite backend | Deferred |
 
 ## Open questions
 

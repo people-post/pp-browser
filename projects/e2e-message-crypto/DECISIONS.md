@@ -80,7 +80,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E010 — AEAD plaintext is JSON `ChatPayload`
 
 **Date:** 2026-06-29  
-**Decision:** Bytes encrypted inside the E2E blob are **UTF-8 JSON** of the same `ChatPayload` object used on the public channel (`schema_version`, `content_type`, `text`, `payload`) — see [chat-storage D026](../chat-storage-and-memory/DECISIONS.md). Not raw `text` only.  
+**Decision:** Bytes encrypted inside the E2E blob are **UTF-8 JSON** of the same `ChatPayload` object used on the public channel (`schema_version`, `content_type`, `text`, `payload`) — see [chat-storage D026](../chat-storage-and-memory/DECISIONS.md). Not raw `text` only. Max decrypted size **`kMaxE2ePlaintextBytes` (128 KiB)** per [chat-storage D029](../chat-storage-and-memory/DECISIONS.md); reject before JSON parse after decrypt.  
 **Rationale:** Contact cards, annotations, and crypto txs work identically on E2E and public; one codec path.  
 **Alternatives:** UTF-8 `text` only; separate binary framing per type.
 

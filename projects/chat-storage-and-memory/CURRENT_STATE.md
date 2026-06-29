@@ -1,30 +1,40 @@
-# Current state — as of 2026-06-27
+# Current state — as of 2026-06-29
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** sender seq, windowed sync, gap repair, strict ingest (D013–D014, D018), durable outbox (D017), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D022 in [DECISIONS.md](DECISIONS.md).
+**Planned but not implemented:** `SqliteThreadStore` (D028), sender seq, windowed sync, strict ingest (D013–D014, D018), durable outbox (D017), resource bounds (D029–D033), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D033 in [DECISIONS.md](DECISIONS.md).
 
 ## Persistence
 
 | Area | Status | Location |
 |------|--------|----------|
-| Thread index + per-thread JSON | Implemented | `src/base/messaging/JsonThreadStore.*` |
+| Thread index + per-thread JSON | Implemented (legacy) | `src/base/messaging/JsonThreadStore.*` |
+| **SqliteThreadStore** (target v2a) | Not implemented | D028 — `thread.db` + `registry.db` |
 | Profile-scoped paths | Implemented | [CONFIGURATION.md](../../docs/CONFIGURATION.md) — `{data_dir}/profiles/{id}/threads/` |
 | `IThreadStore` interface | Implemented | `src/base/messaging/IThreadStore.h` |
-| SQLite chat store | Not implemented | libp2p fork has optional SQLite; unrelated to app chat |
+| SQLite in pp_base | Not implemented | libp2p fork has SQLite; app must vendor separately (D028) |
 | AI home / new AI thread persistence | Partial | Threads created in store; see gaps below |
 | Durable `ConversationSummary` on disk | Not implemented | In-memory only on `Conversation` |
 | Clear history (truncate messages) | Not implemented | Only full `DeleteThread` |
 | Forget memory API | Not implemented | Roadmap in [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md) |
+| Message / envelope size limits | **Not implemented** | No cap on compose, send, or ingest (D029) |
+| Windowed transcript load | **Not implemented** | Full thread loaded every refresh (D031) |
 
-### On-disk layout (today)
+### On-disk layout (today — legacy)
 
 ```
 {data_dir}/profiles/{profile_id}/threads/index.json
-{data_dir}/profiles/{profile_id}/threads/{thread_id}.json   # { "messages": [...] }  — legacy flat file
+{data_dir}/profiles/{profile_id}/threads/{thread_id}.json   # flat JSON — replaced in v2a
 ```
 
-**Target (D025):** `threads/{thread_id}/messages.json`, `memory.json`, `sync.json` per thread directory.
+**Target (D028):**
+
+```
+threads/index.json
+threads/registry.db
+threads/{thread_id}/thread.db
+sync/chat_targets.json   # v6
+```
 
 ## Data model (today)
 
@@ -36,8 +46,8 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 ### `ThreadMessage`
 
 - Has UUID `id`, `delivery`, `relay_visible`.
-- No `kind`, `transport`, `target_message_id`, `user_payload`, `sender_seq`, or `session_epoch`.
-- AI thread turns store `text` + optional `content_rml` + `chat_actions`.
+- No `content_type`, `payload`, `sender_seq`, or `session_epoch`.
+- `content_rml` may be set from **unverified** relay poll — rendered without escape for peers (D030 gap).
 
 ### `TranscriptEntry` / `Conversation` — `src/base/ai/conversation/`
 
@@ -52,7 +62,9 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 | HTTP relay send + poll dedup | Implemented | `src/feature/messaging/P2pMessagingService.*` |
 | Local write before send | Implemented | `SendUserMessage` appends then relays |
 | `HasMessageId` global dedup | Implemented | `JsonThreadStore` + poll merge |
-| `@ai` scoped assist | Implemented (local only) | `MessageRouter` → `SubmitScopedAssist`; single `@ai` pattern, always local |
+| Inbound signature verify | **Not implemented** | `Ed25519Signer::Verify` unused on poll |
+| Relay poll every UI frame | **Implemented (gap)** | `ChatController::Update` → `PollAndMerge` (D032) |
+| `@ai` scoped assist | Implemented (local only) | `MessageRouter` → `SubmitScopedAssist` |
 | `@ai+` / `@ai++` shared modes | Not implemented | Design: D012, phase v6b |
 | Direct P2P transport | Not implemented | All outbound via `IRelayClient` |
 | libp2p messaging glue | Stub | `src/libp2p/integration/host/` |
@@ -64,6 +76,12 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 
 - Keys on `contact_id` only — **one direct thread per contact**.
 - Does not consider public vs E2E — gap vs target design.
+
+### JsonThreadStore performance gaps (legacy)
+
+- `EnsureLoaded()` reads **all threads** into RAM on first access.
+- `AppendMessage` rewrites entire thread JSON file per message.
+- No atomic write (crash can corrupt file).
 
 ## AI conversation pipeline
 
@@ -78,9 +96,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 
 ### AI home / new chat gap
 
-`ChatController::OnNewChat()` calls `CreateNewAiThread()` (empty thread in store) but agent turns may still use in-memory `Conversation` when routing differs. Messaging-ready path uses `MessageRouter` → `SubmitToThread` for AI threads — **verify** all code paths persist to the active thread file.
-
-Legacy path: `agent_->Submit()` uses `Conversation` only — no disk.
+`ChatController::OnNewChat()` calls `CreateNewAiThread()` but agent turns may still use in-memory `Conversation` when routing differs.
 
 ## UI (today)
 
@@ -92,6 +108,7 @@ Legacy path: `agent_->Submit()` uses `Conversation` only — no disk.
 | E2E vs public chrome | Partial | `thread_encrypted` binding; no threads use `encrypted=true` |
 | Delivery / transport badges on messages | Not implemented | `BuildDisplayRows` has no delivery/transport fields |
 | Clear history / forget memory menus | Not implemented | — |
+| Composer maxlength | **Not set** | `assets/views/composer.rml` |
 
 ## Tests
 
@@ -107,10 +124,14 @@ Legacy path: `agent_->Submit()` uses `Conversation` only — no disk.
 2. No clear-history vs delete-thread distinction.
 3. No durable AI memory layer on disk.
 4. One direct thread per contact — no channel split.
-5. No annotation / meta-message schema.
+5. No `ChatPayload` / annotation schema.
 6. No transport provenance field or UI.
 7. `Thread.encrypted` unused in creation paths.
-8. No `sender_seq`, session epoch, strict ingest (D013–D014, D018), durable outbox (D017), or gap-repair sync (relay poll + UUID dedup only).
-9. No single-device assumption documented in app; multi-device same identity would seq-conflict per D015.
-10. Schema bumps will require wiping local threads (D016) — no migration path planned.
-9. `@ai` has one local-only mode today — no `@ai+` / `@ai++` shared-to-peer paths (D012).
+8. No `sender_seq`, session epoch, strict ingest, durable outbox, or gap-repair sync.
+9. No resource bounds on message size, poll rate, or UI window (D029–D033).
+10. Inbound relay messages not signature-verified; remote `content_rml` trusted (D030).
+11. JsonThreadStore eager load + full-file rewrite on append.
+12. Schema bumps require wipe (D016); v2a replaces JSON with SQLite (D028).
+13. `@ai` has one local-only mode — no `@ai+` / `@ai++` (D012).
+
+**Non-chat safety gaps** (LLM HTTP, profile JSON stores): see [platform-safety-limits](../platform-safety-limits/).

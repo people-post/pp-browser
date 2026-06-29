@@ -120,6 +120,8 @@ UTF-8 JSON serialization of **`ChatPayload`** ([chat-storage D026](../chat-stora
 
 All `content_type` values (`text`, `annotation`, `contact_card`, `crypto_tx`, `system`) may appear inside E2E ciphertext. `content_rml` for AI rows remains app-local on `ThreadMessage` until a future payload extension.
 
+**Size:** Decrypted plaintext must be ≤ **`kMaxE2ePlaintextBytes` (128 KiB)** ([chat-storage D029](../chat-storage-and-memory/DECISIONS.md)). Check byte length after decrypt, before `nlohmann::json::parse`.
+
 ## Encrypted payload blob
 
 Binary layout placed inside relay body (base64-encoded for JSON):

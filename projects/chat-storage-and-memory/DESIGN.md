@@ -10,14 +10,14 @@
 6. **Sender sequence for completeness** — peer-visible direct messages carry a per-sender monotonic `sender_seq` (in addition to UUID) so receivers detect gaps in the live tail; UUID remains the only message identity. Only **`relay_visible`** content consumes sync seq (see `@ai` modes below).
 7. **Strict normal-or-compromised ingest (direct chat)** — in **all direct threads** (`public_relay` and `e2e`), the receiver accepts only messages that match a small set of **normal** cases (D013). Everything else → `sync_state=compromised` (halt ingest, notify; E2E → key rotation / new epoch; public → re-sync UX without PSK rotation). The sender has an explicit **within-epoch contract**; violations are not silently merged.
 8. **Durable outbox** — `relay_visible` rows with `delivery=pending` or `failed` survive app restart; retries reuse the same `(message_id, sender_seq)` (D017).
-9. **Storage abstraction** — `IThreadStore` stays the seam; JSON default now, SQLite optional later.
+9. **Storage abstraction** — `IThreadStore` stays the seam; **`SqliteThreadStore`** per-thread `thread.db` + profile `registry.db` from v2a (D028). No intermediate JSON message storage.
 
 ## Assumptions (v1)
 
 | Assumption | Implication |
 |------------|-------------|
 | **Single active sender per identity** (D015) | One client per profile may send on a chat target at a time. Two devices with the same identity and PSK without coordination will emit conflicting `sender_seq` → compromised (D011). Document in UX; multi-device seq coordination is out of scope for v1. |
-| **No legacy thread migration** (D016) | Pre-v6 on-disk threads are not upgraded. Schema bumps may require wiping `{data_dir}/profiles/{id}/threads/` (acceptable — no production users yet). |
+| **No legacy thread migration** (D016) | Legacy flat `threads/{id}.json` is not upgraded. Schema bumps may require wiping `{data_dir}/profiles/{id}/threads/` (acceptable — no production users yet). |
 
 ## Three layers (transcript vs context vs memory)
 
@@ -182,44 +182,103 @@ One schema for disk, relay plaintext (`public_relay`), and AEAD plaintext (`e2e`
 
 | Artifact | Location | Notes |
 |----------|----------|-------|
-| `ConversationSummary` | `threads/{thread_id}/memory.json` | Text + version; from `ICompactionService` |
-| Future fact rows | Same file | Deferred |
+| `ConversationSummary` | `thread.db` → `memory` table | Text + version; from `ICompactionService` |
+| Future fact rows | Same table (kv) | Deferred |
 
-## On-disk layout (target — D025)
+## On-disk layout (target — D025, D028)
 
-Profile-scoped JSON default:
+Profile-scoped storage:
 
 ```
 {data_dir}/profiles/{profile_id}/
   threads/
     index.json                      # sidebar metadata only (id, kind, channel, title, preview, …)
+    registry.db                     # global message_id dedup + outbox index (D017, D028)
     {thread_id}/
-      messages.json                 # { schema_version, messages: [...] }
-      memory.json                   # ConversationSummary + future facts
-      sync.json                     # per-thread sync watermarks (v6)
+      thread.db                     # messages, memory, sync_state tables
   sync/
     chat_targets.json               # next_outgoing_seq, session_epoch per (contact_id, channel)
 ```
 
-Delete thread = remove `{thread_id}/` directory + index entry. Optional v5: `threads.db` replaces directory tree via `IThreadStore`.
+Delete thread = remove `{thread_id}/` directory + purge `registry.db` rows for that thread + remove `index.json` entry.
+
+### `thread.db` schema (v1)
+
+```sql
+CREATE TABLE messages (
+  id TEXT PRIMARY KEY,
+  sender_contact_id TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  payload TEXT NOT NULL,             -- JSON object (ChatPayload.payload + extended fields)
+  text TEXT,
+  content_rml TEXT,
+  user_payload TEXT,
+  timestamp INTEGER NOT NULL,
+  relay_visible INTEGER NOT NULL,
+  delivery TEXT NOT NULL,
+  transport TEXT,
+  sender_seq INTEGER,
+  session_epoch INTEGER,
+  target_message_id TEXT,
+  generation TEXT,
+  seq_owner_contact_id TEXT,
+  ai_invoke_mode TEXT,
+  control_type TEXT
+);
+CREATE INDEX idx_messages_seq ON messages(session_epoch, sender_contact_id, sender_seq)
+  WHERE relay_visible = 1;
+CREATE INDEX idx_messages_delivery ON messages(delivery) WHERE relay_visible = 1;
+
+CREATE TABLE memory (
+  key TEXT PRIMARY KEY,              -- e.g. "summary"
+  value TEXT NOT NULL                -- JSON
+);
+
+CREATE TABLE sync_state (
+  peer_contact_id TEXT NOT NULL,
+  session_epoch INTEGER NOT NULL,
+  state_json TEXT NOT NULL,          -- watermarks, sync_state, floors
+  PRIMARY KEY (peer_contact_id, session_epoch)
+);
+```
+
+`PRAGMA user_version` on each `thread.db` and `registry.db` for schema bumps (D016: wipe on mismatch).
+
+### `registry.db` schema (v1)
+
+```sql
+CREATE TABLE message_ids (
+  message_id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL
+);
+CREATE INDEX idx_message_ids_thread ON message_ids(thread_id);
+
+CREATE TABLE outbox (
+  message_id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  delivery TEXT NOT NULL             -- pending | failed
+);
+CREATE INDEX idx_outbox_thread ON outbox(thread_id);
+```
+
+`HasMessageId` → `registry.message_ids`. Startup durable outbox scan → `SELECT * FROM outbox` (D017), not full table scan of every thread. Purge registry rows on `DeleteThread`.
 
 ### Schema versioning (breaking)
 
-- Thread and message JSON carry `schema_version`. **No in-place migration** from pre-v6 layouts (D016).
-- When v2b/v6 land, bump version and document “delete profile threads dir or reinstall” for dev builds.
-- `JsonThreadStore` writes atomically: temp file + rename (v2a) to avoid crash-corrupt transcripts.
+- **`user_version`** on SQLite files; **no in-place migration** from legacy flat JSON or pre-D028 layouts (D016).
+- Dev builds: delete `threads/` on bump. `index.json` may be regenerated from DB metadata later; v2a keeps index as source for sidebar list.
 
 ## Clear / forget semantics (user-facing — D024)
 
 **Clear history** opens a **choice sheet** with three levels (labels illustrative):
 
-| Level | Transcript | LLM window | `memory.json` | Thread shell | P2P `history_floor_seq` |
+| Level | Transcript | LLM window | `memory` table | Thread shell | P2P `history_floor_seq` |
 |-------|------------|------------|---------------|--------------|-------------------------|
 | **Clear messages** | wipe | empty | keep | keep | set per peer/epoch |
 | **Clear messages & AI memory** | wipe | empty | wipe | keep | set per peer/epoch |
 | **Delete conversation** | gone | gone | gone | delete index + dir | n/a |
 
-**Forget what AI learned** (separate menu item): transcript unchanged; wipe `memory.json` only.
+**Forget what AI learned** (separate menu item): transcript unchanged; wipe `memory` table only.
 
 | Other action | Transcript | Memory | Notes |
 |--------------|------------|--------|-------|
@@ -326,8 +385,9 @@ UUID dedup unchanged. Add fields for ordering, session scope, and signed integri
 
 | Source | Behavior |
 |--------|----------|
-| On startup | Scan all threads for `relay_visible` rows with `delivery ∈ {pending, failed}`; re-enqueue send |
+| On startup | `registry.db` `outbox` table + optional per-thread verify (D028) |
 | In-memory queue | May batch IO; must not be the sole copy of pending state |
+| Registry | On append `relay_visible` pending: insert `outbox`; on relayed: delete; update `message_ids` |
 | Retry policy | Exponential backoff; cap attempts per message; user-visible notice on persistent failure |
 | Relay dedup | Server must accept duplicate `message_id` on retry (idempotent ingest) |
 
@@ -405,8 +465,8 @@ Authoritative backfill when peer is offline or for gap/history sync. Authenticat
 ```
 
 - Each element is a full signed `RelayEnvelope` (client verifies signature, runs D013 ingest).
-- **`POST /v1/messages`** (or existing send): idempotent on `message_id` — duplicate POST returns 200 with same id (D017).
-- Inbox **poll** may remain for notifications; clients must not rely on poll alone for seq-complete history.
+- **`POST /v1/messages`** (or existing send): idempotent on `message_id` — duplicate POST returns 200 with same id (D017). Reject body > `kMaxRelayEnvelopeJsonBytes` (D029).
+- Inbox **poll** may remain for notifications; clients must not rely on poll alone for seq-complete history. Max **100** messages per poll response (D029/D032).
 
 MCP bridge: expose equivalent `relay_fetch_thread_messages` tool with same parameters for promoted-MCP path.
 
@@ -430,18 +490,23 @@ Gap repair may reorder visually when missing rows arrive; scroll position should
 
 ### Receive pipeline (direct / E2E)
 
-Ordered steps — do not reorder in implementation:
+Ordered steps — do not reorder in implementation (D022, D033):
 
+0. **Envelope size** — reject if serialized JSON > `kMaxRelayEnvelopeJsonBytes` (D029).
 1. **UUID dedup** — benign duplicate → stop.
 2. **Verify Ed25519 signature** on outer envelope (classical; see e2e-message-crypto).
 3. **Thread / channel / epoch** — reject wrong `thread_id` or epoch mismatch before decrypt.
 4. **Decrypt AEAD** (`e2e` only) — canonical AAD must match envelope fields; failure → reject (no persist).
-5. **D013 ingest classifier** — normal · gap · compromised; reorder buffer before gap declaration.
-6. **Persist** — append `ThreadMessage`, update watermarks, set `transport` from ingress path.
+5. **Plaintext size** — decrypted UTF-8 JSON ≤ `kMaxE2ePlaintextBytes`; public `body.content` ≤ `kMaxChatPayloadJsonBytes`.
+6. **Parse & validate `ChatPayload`** — schema version + `content_type`; **strip ignore wire `content_rml`** (D030).
+7. **D013 ingest classifier** — normal · gap · compromised; reorder buffer before gap declaration.
+8. **Persist** — append `ThreadMessage`, update watermarks, set `transport` from ingress path.
+
+Validate `thread_id` and `message_id` as UUID before filesystem / DB use.
 
 ### Ingest classification (normal · gap · compromised)
 
-After steps 1–3 above (signature verified; decrypt if E2E):
+After steps 0–3 above (size OK, signature verified; decrypt if E2E):
 
 **Normal (accept):**
 
@@ -521,7 +586,26 @@ Sending `sender_seq=1` without bumping epoch in an established epoch is always *
 
 Benign duplicate delivery (same `message_id` + same `sender_seq`) is ignored via UUID dedup.
 
+## Resource & trust bounds (D029–D033)
+
+Canonical limits in [DECISIONS.md](DECISIONS.md) D029. Summary:
+
+| Area | Policy |
+|------|--------|
+| Compose / send | Reject empty and > 64 KiB `text`; validate `ChatPayload` before send |
+| Wire | Max 256 KiB envelope JSON; **no remote `content_rml`** (D030) |
+| Storage | Size checks on insert; LRU of open `thread.db` (max 16) |
+| UI | `GetMessagesPage` default 100 rows (D031) |
+| Poll | Min **2 s** interval while foreground (D032); max 100 messages per batch |
+| Outbox | Registry-backed; max 500 pending retry items |
+
+**Local assistant `content_rml`** is trusted-local only (AI parser output), max 256 KiB on disk.
+
+Non-chat limits (LLM HTTP responses, `contacts.json`, `identity.json`) live in [platform-safety-limits](../platform-safety-limits/).
+
 ## Store interface (target)
+
+`SqliteThreadStore` implements `IThreadStore`; lazy-open `thread.db` per active thread.
 
 Extend `IThreadStore`:
 
@@ -531,27 +615,46 @@ virtual Roe<void> ClearMessages(const std::string& thread_id) = 0;
 virtual Roe<void> SetThreadMemory(const std::string& thread_id, ConversationSummary summary) = 0;
 virtual Roe<std::optional<ConversationSummary>> GetThreadMemory(const std::string& thread_id) const = 0;
 virtual Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel) = 0;
+
+// v6 — seq-range reads (natural SQLite index use; avoid loading full transcript)
+virtual Roe<std::vector<ThreadMessage>> GetMessagesBySeqRange(
+    const std::string& thread_id, uint32_t session_epoch,
+    const std::string& sender_contact_id,
+    std::optional<uint64_t> min_seq, std::optional<uint64_t> max_seq,
+    size_t limit, bool ascending) const = 0;
+
+// D017 — startup outbox without scanning all thread.db files
+virtual Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const = 0;
+
+// D031 — UI transcript window (newest-first or oldest-first via parameter)
+virtual Roe<std::vector<ThreadMessage>> GetMessagesPage(
+    const std::string& thread_id,
+    std::optional<int64_t> before_timestamp,
+    size_t limit = 100) const = 0;
 ```
 
-Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`, `HasMessageId`.
+Send path: reject compose text and serialized payload over D029 limits before `AppendMessage`.
+
+Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`, `HasMessageId` (registry-backed).
 
 ## UI (target)
 
 - **Sidebar groups (D023)** — collapsible sections: **AI**, **Public** (`public_relay` direct), **Private** (`e2e` direct). Same contact may appear in Public and Private.
 - **E2E vs public shell** — `.chat-shell--e2e` / `.chat-shell--public` ([UI_DESIGN_SYSTEM.md](../../docs/UI_DESIGN_SYSTEM.md)).
 - **Message row** — transport badge (E2E); delivery state; type-specific templates for `contact_card`, `crypto_tx`, `annotation`.
+- **Windowed transcript (D031)** — render loaded page only; scroll-up fetches older messages; composer `maxlength` hint matching `kMaxComposeTextBytes`.
 - **Gap banner** — when `sync_state=gap`; tap to retry sync.
 - **Scroll hint** — when `loaded_min_seq > 1`.
 - **`@ai` modes** — composer hints; confirm for `@ai+` / `@ai++`.
 - **Clear history (D024)** — choice sheet: clear messages / clear messages & memory / delete conversation.
-- **Forget AI memory** — separate action (memory sidecar only).
+- **Forget AI memory** — separate action (`memory` table only).
 
 ## Non-goals (for now)
 
 - Full cross-device history mirror (tail + scroll backfill only; see P2P sync above)
 - **Multi-device concurrent send** on one identity (D015 — single active device v1)
-- **Legacy on-disk migration** from pre-v6 thread JSON (D016)
-- Full-text search UI (SQLite enables later)
+- **Legacy on-disk migration** from pre-D028 JSON layouts (D016)
+- Full-text search UI (defer; SQLite FTS across `registry` + thread DBs later)
 - Group E2E
 - Retraction / “unsend” on relay (future protocol work)
 
@@ -573,3 +676,4 @@ Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`, `HasMessageId`.
 - [ ] Duplicate `(sender, session_epoch, sender_seq)` with conflicting `message_id` triggers key rotation UX (`e2e`) or integrity UX (`public_relay`).
 - [ ] `@ai` local vs `@ai+` / `@ai++` shared modes behave per routing table; shared rows use trigger user’s sync seq.
 - [ ] Transcript display order follows D019; reorder buffer (D020) prevents false gaps during benign reorder.
+- [ ] D029 limits enforced on send/ingest; D030 no remote `content_rml`; D031 windowed UI; D032 poll backoff.

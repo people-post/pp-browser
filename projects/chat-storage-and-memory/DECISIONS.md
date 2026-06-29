@@ -4,12 +4,13 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D001 — JSON per-thread files for v2 (not SQLite)
+## D001 — Storage backend (superseded by D028)
 
 **Date:** 2026-06-27  
-**Decision:** Keep `JsonThreadStore` as the default persistence backend through v2–v4. Introduce SQLite only as an optional `IThreadStore` implementation (v5) when query or volume demands it.  
-**Rationale:** Matches current layout and docs; simple delete/clear semantics; `IThreadStore` already abstracts storage; avoids migration cost while model is still evolving.  
-**Alternatives:** SQLite from v2; single monolithic JSON file for all threads.
+**Updated:** 2026-06-29 — SQLite per thread from v2a (D028); no intermediate JSON message files.  
+**Decision:** ~~JSON through v2–v4, SQLite optional v5~~ → **`SqliteThreadStore` from phase v2a** (D028). `JsonThreadStore` remains baseline code only until replaced; not extended for new layouts.  
+**Rationale:** Per-thread directory maps to `thread.db`; seq-range queries and durable outbox need indexes; D016 allows wipe without JSON migration path.  
+**Alternatives:** JSON dirs then SQLite at v6 (rejected); single profile-wide `threads.db`.
 
 ---
 
@@ -154,9 +155,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D017 — Durable outbox from thread store
 
 **Date:** 2026-06-29  
-**Decision:** Pending/failed `relay_visible` messages are the **durable outbox** — persisted in `IThreadStore` before send. On startup, rescan and re-enqueue; in-memory retry queue is a performance layer only. Retries always reuse the same `(message_id, sender_seq)`. Relay must treat duplicate `message_id` as idempotent.  
-**Rationale:** Restart must not drop unsent messages; local-first reliability.  
-**Alternatives:** Separate outbox file; seq assigned only after successful relay (rejected in D010).
+**Updated:** 2026-06-29 — `registry.db` for dedup + outbox index (D028).  
+**Decision:** Pending/failed `relay_visible` messages are the **durable outbox** — persisted in `thread.db` `messages` table before send. **`registry.db` `outbox` table** indexes pending/failed rows for O(1) startup scan (D028). In-memory retry queue is a performance layer only. Retries reuse same `(message_id, sender_seq)`. Relay idempotent on `message_id`.  
+**Rationale:** Restart must not drop unsent messages; registry avoids opening every `thread.db` on startup.  
+**Alternatives:** Full scan all thread DBs on startup; separate outbox file only.
 
 ---
 
@@ -199,7 +201,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D022 — Receive pipeline step order
 
 **Date:** 2026-06-29  
-**Decision:** Ingest order is fixed: UUID dedup → signature verify → thread/epoch check → AEAD decrypt (e2e) → D013 classifier (with reorder buffer) → persist. See DESIGN.md § Receive pipeline.  
+**Decision:** Ingest order is fixed: UUID dedup → signature verify → thread/epoch check → AEAD decrypt (e2e) → D013 classifier (with reorder buffer) → persist. See DESIGN.md § Receive pipeline. **Superseded in detail by D033** (envelope size before parse, plaintext size after decrypt).  
 **Rationale:** Do not persist or advance watermarks before cryptographic and structural validation.  
 **Alternatives:** Decrypt before signature; classify before decrypt.
 
@@ -231,18 +233,13 @@ P2P levels include disclosure that peer/relay may retain copies. **Forget AI mem
 
 ---
 
-## D025 — Per-thread directory + `memory.json` sidecar
+## D025 — Per-thread directory (superseded file layout by D028)
 
 **Date:** 2026-06-29  
-**Decision:** On-disk layout uses **one directory per thread** under `threads/{thread_id}/`:
-
-- `messages.json` — transcript (`messages[]`, `schema_version`)
-- `memory.json` — `ConversationSummary` + future fact rows (D003 layer 3)
-- `sync.json` — per-thread sync watermarks (v6; optional until v6)
-
-`threads/index.json` holds sidebar metadata only. Delete thread = remove directory + index entry. **No migration** from flat `{thread_id}.json` (D016).  
-**Rationale:** Sidecar memory independent of transcript; atomic per-file writes; extensible for attachments.  
-**Alternatives:** Summary inline in `messages.json`; single file per thread.
+**Updated:** 2026-06-29 — `thread.db` replaces JSON files (D028).  
+**Decision:** On-disk layout uses **one directory per thread** under `threads/{thread_id}/` containing **`thread.db`** (messages, memory, sync_state tables). Profile-level **`threads/registry.db`** for global `message_id` dedup and durable outbox index (D028). `threads/index.json` holds sidebar metadata only. Delete thread = remove directory + registry rows + index entry. **No migration** from legacy flat JSON (D016).  
+**Rationale:** Directory delete semantics preserved; SQLite gives append, seq-range queries, and row-level delivery updates.  
+**Alternatives:** `messages.json` + `memory.json` sidecars (rejected — skip intermediate JSON stage).
 
 ---
 
@@ -267,12 +264,89 @@ P2P levels include disclosure that peer/relay may retain copies. **Forget AI mem
 
 ---
 
+## D028 — SQLite per thread + `registry.db` from v2a
+
+**Date:** 2026-06-29  
+**Decision:** Phase **v2a** ships **`SqliteThreadStore`** (not an intermediate JSON-per-dir stage). Layout:
+
+- `threads/index.json` — sidebar metadata (kind, channel, title, preview, unread)
+- `threads/registry.db` — global `message_ids` dedup table; `outbox` index (`thread_id`, `message_id`, `delivery`) for D017 startup scan
+- `threads/{thread_id}/thread.db` — `messages`, `memory`, `sync_state` tables
+
+Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature seam; `JsonThreadStore` deprecated after cutover. **No JSON message files** in target layout. Wipe legacy `threads/*.json` on upgrade (D016).  
+**Rationale:** v6 seq sync, durable outbox, and `ChatPayload` append path need indexed storage; per-thread DB preserves delete/clear isolation; registry avoids scanning every `thread.db` for `HasMessageId` and pending sends.  
+**Alternatives:** JSON dirs in v2a then SQLite at v6; single monolithic `threads.db`; JSON `memory.json` sidecar (merged into `thread.db`).
+
+---
+
+## D029 — Chat resource bounds (size & volume)
+
+**Date:** 2026-06-29  
+**Decision:** Enforce explicit caps on chat wire, storage, and relay traffic. Constants in `MessagingLimits.h` (name TBD); reject at compose, send, and ingest.
+
+| Limit | Value | Applies to |
+|-------|-------|------------|
+| `kMaxComposeTextBytes` | **64 KiB** | User composer `text` |
+| `kMaxChatPayloadJsonBytes` | **64 KiB** | Serialized `ChatPayload` on `public_relay` |
+| `kMaxE2ePlaintextBytes` | **128 KiB** | AEAD plaintext JSON (E010); checked before/after decrypt |
+| `kMaxRelayEnvelopeJsonBytes` | **256 KiB** | Full signed POST body |
+| `kMaxContentRmlBytes` | **256 KiB** | **Local-only** assistant RML on disk (not accepted from wire) |
+| `kMaxChatActionsPerMessage` | **32** | `chat_actions` array |
+| `kMaxPollBatchMessages` | **100** | Per inbox poll or relay fetch response |
+| `kMaxRetryQueueItems` | **500** | In-memory + registry outbox rescan cap |
+| `kMaxOpenThreadDbs` | **16** | LRU of open `thread.db` handles |
+| `kMaxDisplayPageMessages` | **100** | Default UI transcript window |
+
+No hard cap on messages per thread or threads per profile in v1 — monitor via dev logging; revisit if needed.  
+**Rationale:** Prevents OOM, relay abuse, and accidental paste bombs; aligns with SQLite row sizes.  
+**Alternatives:** No limits; 4 KiB SMS-style cap; single 1 MiB blob for everything.
+
+---
+
+## D030 — Untrusted remote content: no wire `content_rml`
+
+**Date:** 2026-06-29  
+**Decision:** **P2P / relay ingest must not persist or render `content_rml` from envelopes.** Peers send **`ChatPayload` only** (`text`, cards, annotations, etc.). RML is generated **locally** for AI assistant rows and untrusted peer text is escaped to plain bubbles. Strip or ignore `body.content_rml` on poll if present.  
+**Rationale:** Remote RML is equivalent to arbitrary markup injection; today `BuildMessageRml` renders peer `content_rml` without escaping.  
+**Alternatives:** Sanitize remote RML subset; allow signed rich content later.
+
+---
+
+## D031 — Windowed transcript UI + `GetMessagesPage`
+
+**Date:** 2026-06-29  
+**Decision:** UI loads **pages** of messages, not full thread history. `IThreadStore::GetMessagesPage(thread_id, before_timestamp \| before_rowid, limit)` default **100**; scroll-up requests older pages. `BuildDisplayRows` operates on the loaded window only. Full-thread `GetMessages` retained for agent context policies that already trim — migrate to page API where possible.  
+**Rationale:** Avoid O(n) memory and RML build per frame on long threads.  
+**Alternatives:** Virtualized list with full load; always load last 50 only with no scroll-up.
+
+---
+
+## D032 — Relay poll backoff and batch limits
+
+**Date:** 2026-06-29  
+**Decision:** Do **not** call `PollAndMerge` every UI frame. **Foreground:** poll at most once per **2 s** (configurable); **background:** pause or **30 s**. Reject inbox responses with more than **`kMaxPollBatchMessages`** (D029) without processing. Align HTTP relay contract (D027) with `kMaxRelayEnvelopeJsonBytes`.  
+**Rationale:** Today `ChatController::Update` polls every tick; wastes IO and merges unbounded batches.  
+**Alternatives:** Push-only from relay; 5 s MCP throttle only.
+
+---
+
+## D033 — Ingest pipeline: size check before parse
+
+**Date:** 2026-06-29  
+**Updated:** extends D022.  
+**Decision:** Inbound order: **(0) envelope byte size** → UUID dedup → signature verify → thread/epoch → decrypt (e2e) → **plaintext size** → JSON parse `ChatPayload` with schema validate → D013 classifier → persist. Reject oversize before `nlohmann::parse` on untrusted input.  
+**Rationale:** JSON bombs and huge ciphertext must fail closed without full parse.  
+**Alternatives:** Parse then check (rejected).
+
+---
+
 ## Open decisions (not yet resolved)
 
 | ID | Question | Options |
 |----|----------|---------|
 | — | *(none in this project — all O001–O005 resolved D023–D027)* | |
 
-**Cross-project (e2e-message-crypto):** PSK entry UX (E-O003), automated key agreement (E-O004), group E2E (E-O005).
+**Cross-project (e2e-message-crypto):** PSK entry UX (E-O003), automated key agreement (E-O004), group E2E (E-O005).  
+**Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — not chat wire scope.
 
 When resolved, move rows to numbered decisions above.
