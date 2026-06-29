@@ -180,13 +180,13 @@ One schema for disk, relay plaintext (`public_relay`), and AEAD plaintext (`e2e`
 }
 ```
 
-`BuildDisplayRows` merges `annotation` rows onto `target_message_id` for rendering; other types render as standalone rows with type-specific templates.
+`BuildDisplayRows` merges `annotation` rows onto `target_message_id` for rendering; other types render as standalone rows with type-specific templates. Orphan targets (missing row) render standalone with badge (D043). Max **`kMaxAnnotationsPerTarget`** (32) annotation rows per target (D042).
 
 ### Durable memory (per thread)
 
 | Artifact | Location | Notes |
 |----------|----------|-------|
-| `ConversationSummary` | `thread.db` → `memory` table | Text + version; from `ICompactionService` |
+| `ConversationSummary` | `thread.db` → `memory` table | Text + version; from `ICompactionService` (D040) |
 | Future fact rows | Same table (kv) | Deferred |
 
 ## On-disk layout (target — D025, D028, D035, D036)
@@ -418,7 +418,7 @@ UUID dedup unchanged. Add fields for ordering, session scope, and signed integri
 | On startup | `profile.db` `outbox` table + optional per-thread verify (D028) |
 | In-memory queue | May batch IO; must not be the sole copy of pending state |
 | Registry | On append `relay_visible` pending: insert `outbox`; on relayed: delete row |
-| Retry policy | Exponential backoff; cap attempts per message; user-visible notice on persistent failure |
+| Retry policy | Exponential backoff; max **`kMaxOutboxRetryAttempts`** (D041) per message; user-visible notice on persistent failure; manual retry resets counter |
 | Relay dedup | Server must accept duplicate `message_id` on retry (idempotent ingest) |
 
 ## P2P sync (direct / E2E)
@@ -451,7 +451,7 @@ Receiver treats sender violations as soft compromised ingest (D013) by default �
 
 - **Bootstrap / tail ingest:** empty per-epoch transcript (or new `session_epoch`) may receive high `sender_seq` without backfilling all prior seq — not a gap alarm (D009).
 - **New epoch:** `session_epoch` increases → reset per-epoch watermarks for that peer; `sender_seq = 1` is normal bootstrap, not compromised.
-- **Contiguous gap:** local state for this epoch already has seq **N** and receives **N+2+** above `history_floor_seq` → `sync_state=gap`, attempt repair (not yet compromised).
+- **Contiguous gap:** local state for this epoch already has seq **N** and receives **N+2+** above `history_floor_seq` → `sync_state=gap`, attempt repair (not yet compromised). Repair requests clamp to **`kMaxGapRepairSeqSpan`** (D041); after **`kMaxGapRepairRounds`** failed cycles → soft compromised (D038).
 
 E2E tail sync is **peer-first** (direct/libp2p); relay tail is fallback when the peer is offline or transport fell back.
 
@@ -660,12 +660,18 @@ Canonical limits in [DECISIONS.md](DECISIONS.md) D029. Summary:
 |------|--------|
 | Compose / send | Reject empty and > 64 KiB `text`; validate `ChatPayload` before send |
 | Wire | Max 256 KiB envelope JSON; **no remote `content_rml`** (D030) |
-| Storage | Size checks on insert; LRU of open `thread.db` (max 16) |
+| Storage | Size checks on insert; LRU of open `thread.db` (max 16); `user_payload` ≤ 64 KiB (D029) |
 | UI | `GetMessagesPage` default 100 rows (D031) |
+| Agent context | `GetMessagesForContext` tail + summary — no full-thread load (D039) |
 | Poll | Min **2 s** interval while foreground (D032); max 100 messages per batch |
-| Outbox | Registry-backed; max 500 pending retry items |
+| Outbox | `profile.db`-backed; max 500 pending retry items; **12** attempts per message (D041) |
+| Gap repair | Max **5** rounds, **500** seq span per fetch (D041) |
+| Annotations | Max **32** per `target_message_id` (D042) |
+| Compaction | Trigger at **20** turns; summary ≤ **8 KiB** (D040) |
 
 **Local assistant `content_rml`** is trusted-local only (AI parser output), max 256 KiB on disk.
+
+**SQLite:** WAL + per-DB writer mutex; passive checkpoint after clear (D044).
 
 Non-chat limits (LLM HTTP responses, `contacts.json`, `identity.json`) live in [platform-safety-limits](../platform-safety-limits/).
 
@@ -700,17 +706,29 @@ virtual Roe<std::vector<ThreadMessage>> GetMessagesPage(
     const std::string& thread_id,
     std::optional<int64_t> before_timestamp,
     size_t limit = 100) const = 0;
+
+// D039 — agent / LLM context (tail + optional summary; no full-thread scan)
+virtual Roe<std::vector<ThreadMessage>> GetMessagesForContext(
+    const std::string& thread_id, const ContextBudget& budget) const = 0;
 ```
 
 Send path: reject compose text and serialized payload over D029 limits before `AppendMessage`.
 
 Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`. Change `HasMessageId` to **`HasMessageId(thread_id, message_id)`** — per-thread `messages.id` lookup (D034); drop profile-global dedup from `JsonThreadStore` cutover.
 
+`GetMessages(thread_id)` — **tests and export only**; feature code uses `GetMessagesPage` (UI) or `GetMessagesForContext` (agent).
+
+### SQLite operations (D044)
+
+- WAL mode; one writer mutex per `thread.db` and `profile.db`.
+- `ClearMessages` → `DELETE FROM messages` then `wal_checkpoint(PASSIVE)`.
+- No auto-VACUUM in v1.
+
 ## UI (target)
 
 - **Sidebar groups (D023)** — collapsible sections: **AI**, **Public** (`public_relay` direct), **Private** (`e2e` direct). Same contact may appear in Public and Private.
 - **E2E vs public shell** — `.chat-shell--e2e` / `.chat-shell--public` ([UI_DESIGN_SYSTEM.md](../../docs/UI_DESIGN_SYSTEM.md)).
-- **Message row** — transport badge (E2E); delivery state; type-specific templates for `contact_card`, `crypto_tx`, `annotation`.
+- **Message row** — transport badge (E2E); delivery state; type-specific templates for `contact_card`, `crypto_tx`, `annotation`; orphan annotation badge (D043).
 - **Windowed transcript (D031)** — render loaded page only; scroll-up fetches older messages; composer `maxlength` hint matching `kMaxComposeTextBytes`.
 - **Sidebar list (D035)** — `ListThreads` returns catalog rows; verify/repair **visible rows only** when the sessions pane is shown or scrolled; pass viewport bounds from UI when virtualized.
 - **Gap banner** — when `sync_state=gap`; tap to retry sync.
@@ -724,6 +742,7 @@ Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`. Change `HasMessageId` to 
 
 - Full cross-device history mirror (tail + scroll backfill only; see P2P sync above)
 - **Multi-device concurrent send** on one identity (D015 — single active device v1)
+- **Group direct seq / ingest** — D008–D013, D037–D038 apply to **1:1 direct threads** only in v1; `kind=group` deferred
 - **Legacy on-disk migration** from pre-D028 JSON layouts (D016)
 - Full-text search UI (defer; SQLite FTS across thread DBs later)
 - Group E2E
@@ -750,3 +769,6 @@ Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`. Change `HasMessageId` to 
 - [ ] `@ai` local vs `@ai+` / `@ai++` shared modes behave per routing table; shared rows use trigger user’s sync seq.
 - [ ] Transcript display order follows D019; reorder buffer (D020) prevents false gaps during benign reorder.
 - [ ] D029 limits enforced on send/ingest; D030 no remote `content_rml`; D031 windowed UI; D032 poll backoff.
+- [ ] `GetMessagesForContext` used on agent hot path; no full-thread load per turn (D039).
+- [ ] Compaction at 20 turns; summary ≤ 8 KiB; async after turn (D040).
+- [ ] Outbox/gap repair limits per D041; annotation cap and orphan UX per D042–D043.

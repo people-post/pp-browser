@@ -7,7 +7,7 @@
 
 ## One-line goal
 
-One durable conversation model for AI and P2P chat: SQLite per thread (`thread.db`) + `threads/profile.db` (`threads` catalog + outbox index, D035, D036), `ChatPayload`, grouped sidebar, multi-level clear sheet, strict seq ingest, **resource bounds (D029–D033)**, and relay seq backfill API.
+One durable conversation model for AI and P2P chat: SQLite per thread (`thread.db`) + `threads/profile.db` (`threads` catalog + outbox index, D035, D036), `ChatPayload`, grouped sidebar, multi-level clear sheet, strict seq ingest, **resource bounds (D029–D033)**, agent context tail read (D039), compaction (D040), and relay seq backfill API.
 
 **Related:** [platform-safety-limits](../platform-safety-limits/) (LLM HTTP, profile stores — outside chat wire).
 
@@ -36,4 +36,4 @@ One durable conversation model for AI and P2P chat: SQLite per thread (`thread.d
 
 **None in this project** — O001–O005 resolved as D023–D027.
 
-**Cross-project (e2e-message-crypto):** PSK entry UX (E-O003), automated key agreement (E-O004), group E2E (E-O005).
+**Cross-project (e2e-message-crypto):** PSK entry UX (E-O003), automated key agreement (E-O004), group E2E (E-O005). Wire-up after chat-storage **v2b + v6** — see [PHASES.md](PHASES.md) § Cross-project.

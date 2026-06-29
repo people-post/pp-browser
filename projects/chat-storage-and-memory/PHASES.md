@@ -33,13 +33,13 @@ Existing foundation this project builds on.
 - [ ] Layout: `threads/profile.db` (`threads` + `outbox`), `threads/{id}/thread.db` — no `index.json` (D035)
 - [ ] `profile.db`: `threads` catalog + `outbox` table (D034, D035)
 - [ ] `thread.db`: `messages`, `memory`, `sync_state` tables (sync table schema ready; watermarks used in v6)
-- [ ] Lazy-open `thread.db` per thread; WAL mode per connection
+- [ ] Lazy-open `thread.db` per thread; WAL mode + writer mutex per DB (D044)
 - [ ] `AppendMessage` / `UpdateMessage`: `thread.db` first; maintain `profile.db` `outbox` + `threads.updated_at` / `unread_count` (D035)
 - [ ] `ListThreads`: catalog query + visible-row verify/repair against `thread.db` (D035)
 - [ ] Profile open: `readdir` repair — stub `threads` row for orphan `thread.db` dirs (D035)
 - [ ] `HasMessageId(thread_id, message_id)` via `thread.db` `messages.id` PK (D034)
 - [ ] Change `IThreadStore::HasMessageId` signature; update `P2pMessagingService` poll path
-- [ ] `ClearMessages(thread_id)` — `DELETE FROM messages`; keep memory/sync tables
+- [ ] `ClearMessages(thread_id)` — `DELETE FROM messages`; WAL checkpoint PASSIVE (D044); keep memory/sync tables
 - [ ] `DeleteThread` — `profile.db` txn (`threads` + `outbox`) then remove dir (D035)
 - [ ] Wipe legacy `threads/index.json` and flat `threads/{id}.json` on first run (D016 — no migration)
 - [ ] Wire app bootstrap to `SqliteThreadStore` instead of `JsonThreadStore`
@@ -52,6 +52,7 @@ Existing foundation this project builds on.
 
 - [ ] Remove or gate legacy `agent_->Submit()` path — always `SubmitToThread` for AI threads
 - [ ] On open AI thread: load display via `GetMessagesPage` + `BuildDisplayRows` (D031)
+- [ ] `GetMessagesForContext` on `IThreadStore`; wire `AgentSession` / `ThreadContextPolicy` (D039) — tail slice only until v3 summary
 - [ ] `StartNewConversation()` deprecated or mapped to new thread creation only
 - [ ] Persist assistant `content_rml` + `chat_actions` on thread messages
 
@@ -110,10 +111,11 @@ Existing foundation this project builds on.
 - [ ] `IThreadStore::GetThreadMemory` / `SetThreadMemory`
 - [ ] Wire `SlidingWindowContextPolicy` to inject summary when present
 
-### Compaction (minimal v3)
+### Compaction (minimal v3 — D040)
 
-- [ ] `ICompactionService` — generate summary when turn count exceeds threshold
-- [ ] Background or on-turn trigger; version increment on summary
+- [ ] `ICompactionService` — when text turn count since last summary > **`kCompactionTurnThreshold` (20)**
+- [ ] Async job after turn completes; `kMaxSummaryBytes` (8 KiB) on persist
+- [ ] `GetMessagesForContext` injects summary + tail (`kCompactionMinTurnsKept` = 6)
 
 ### UX
 
@@ -144,7 +146,7 @@ Existing foundation this project builds on.
 ### LLM / display
 
 - [ ] `ThreadContextPolicy` filters to `content_type=text` (+ selected `system`)
-- [ ] `BuildDisplayRows`: merge `annotation` onto `target_message_id`; card templates
+- [ ] `BuildDisplayRows`: merge `annotation` onto `target_message_id`; card templates; orphan badge (D043); enforce **`kMaxAnnotationsPerTarget`** (D042)
 - [ ] E2E: per-message transport badge
 
 ### Protocol
@@ -177,6 +179,7 @@ Existing foundation this project builds on.
 - [ ] Within-epoch sender contract; receive pipeline (D022, D033); ingest D013/D018
 - [ ] Inbound Ed25519 verify; strip remote `content_rml` (D030)
 - [ ] Poll backoff min 2 s foreground (D032); cap poll batch (D029)
+- [ ] Outbox retry **`kMaxOutboxRetryAttempts`**; gap repair **`kMaxGapRepairRounds`** / **`kMaxGapRepairSeqSpan`** (D041)
 - [ ] Clear history → `history_floor_seq` in `sync_state`; below-floor silent discard (D037)
 - [ ] Peer reset / integrity recovery (D014, D038, DESIGN § Integrity recovery)
 
@@ -237,6 +240,20 @@ Existing foundation this project builds on.
 
 ---
 
+## Cross-project — E2E crypto wire-up
+
+**Not a chat-storage phase** — tracked in [e2e-message-crypto](../e2e-message-crypto/PHASES.md).
+
+| Chat-storage gate | E2E phase | Work |
+|-------------------|-----------|------|
+| v2b channel split | c2 | `P2pMessagingService` encrypt/decrypt on `channel=e2e` |
+| v6 envelope + seq | c2–c3 | AAD binds `sender_seq`; `ChatPayload` plaintext (E010) |
+| D038 integrity UX | c3 | PSK rotation path on recommended recovery |
+
+Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b + v6 foundations.
+
+---
+
 ## Deferred — cross-thread FTS search
 
 **Goal:** Agent/search across all threads without loading every transcript.
@@ -254,7 +271,9 @@ Existing foundation this project builds on.
 - [ ] Ingest tests: oversize envelope, remote content_rml stripped (D029–D030)
 - [ ] Agent tool docs if `list_conversations` must expose channel
 - [ ] Fuzz/dedup: duplicate relay `message_id` ignored via per-thread store check
-- [ ] Sender seq tests (v6); `@ai` mode tests (v6b)
+- [ ] Annotation cap + orphan ingest tests (D042–D043)
+- [ ] `GetMessagesForContext` / compaction tests (D039–D040)
+- [ ] Outbox/gap repair limit tests (D041)
 
 ---
 
@@ -274,3 +293,4 @@ Existing foundation this project builds on.
 | 2026-06-29 | D036: rename `registry.db` → `profile.db` |
 | 2026-06-29 | D038: user-choice integrity recovery; pause + choice sheet; relaxed ingest; hard vs soft failures |
 | 2026-06-29 | D037: clear history floor = sync exclusion + silent discard; amend D010/D013 |
+| 2026-06-29 | D039–D044: agent context tail read, compaction bounds, retry/repair caps, annotation cap, orphan UX, SQLite ops |

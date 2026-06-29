@@ -2,7 +2,7 @@
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** `SqliteThreadStore` (D028), sidebar catalog in `profile.db` (D035), per-thread dedup (D034), sender seq, windowed sync, strict ingest + user-choice recovery (D013–D014, D018, D038), clear floor (D037), durable outbox (D017), resource bounds (D029–D033), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D038 in [DECISIONS.md](DECISIONS.md).
+**Planned but not implemented:** `SqliteThreadStore` (D028), sidebar catalog in `profile.db` (D035), per-thread dedup (D034), sender seq, windowed sync, strict ingest + user-choice recovery (D013–D014, D018, D038), clear floor (D037), durable outbox (D017), resource bounds (D029–D033), agent context tail read (D039), compaction bounds (D040), retry/repair caps (D041), annotation limits (D042–D043), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D044 in [DECISIONS.md](DECISIONS.md).
 
 ## Persistence
 
@@ -19,6 +19,8 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 | Forget memory API | Not implemented | Roadmap in [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md) |
 | Message / envelope size limits | **Not implemented** | No cap on compose, send, or ingest (D029) |
 | Windowed transcript load | **Not implemented** | Full thread loaded every refresh (D031) |
+| Agent context full-thread load | **Not implemented** | `AgentSession` calls `GetMessages` each turn (D039) |
+| Compaction / summary on disk | **Not implemented** | No `ICompactionService` (D040) |
 
 ### On-disk layout (today — legacy)
 
@@ -130,9 +132,12 @@ No `index.json` in target layout (replaces legacy index + flat JSON).
 7. `Thread.encrypted` unused in creation paths.
 8. No `sender_seq`, session epoch, strict ingest, durable outbox, or gap-repair sync.
 9. No resource bounds on message size, poll rate, or UI window (D029–D033).
-10. Inbound relay messages not signature-verified; remote `content_rml` trusted (D030).
-11. JsonThreadStore eager load + full-file rewrite on append.
-12. Schema bumps require wipe (D016); v2a replaces JSON with SQLite (D028).
-13. `@ai` has one local-only mode — no `@ai+` / `@ai++` (D012).
+10. No agent tail context API; full `GetMessages` per turn (D039).
+11. No compaction service or summary size cap (D040).
+12. No outbox/gap repair numeric limits (D041); annotation cap (D042).
+13. Inbound relay messages not signature-verified; remote `content_rml` trusted (D030).
+14. JsonThreadStore eager load + full-file rewrite on append.
+15. Schema bumps require wipe (D016); v2a replaces JSON with SQLite (D028).
+16. `@ai` has one local-only mode — no `@ai+` / `@ai++` (D012).
 
 **Non-chat safety gaps** (LLM HTTP, profile JSON stores): see [platform-safety-limits](../platform-safety-limits/).

@@ -140,7 +140,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D015 — Single active sender per identity (v1)
 
 **Date:** 2026-06-29  
-**Decision:** v1 assumes **one active sending client per profile identity** per chat target. Running the same identity on two devices without coordination is unsupported — conflicting `sender_seq` triggers compromised ingest (D011). Document in settings/help; no device-scoped sub-seq or relay seq lease in v1.  
+**Updated:** 2026-06-29 — recovery UX per D038.  
+**Decision:** v1 assumes **one active sending client per profile identity** per chat target. Running the same identity on two devices without coordination is unsupported — conflicting `sender_seq` triggers a **soft integrity failure** (D011): pause + choice sheet (D038), not silent merge. Document in settings/help; no device-scoped sub-seq or relay seq lease in v1.  
 **Rationale:** Per-chat-target seq is simple and sufficient pre-launch; multi-device coordination is a large protocol surface.  
 **Alternatives:** Device-scoped seq in envelope; central seq lease via relay; per-device PSK.
 
@@ -296,6 +297,7 @@ Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature
 | `kMaxE2ePlaintextBytes` | **128 KiB** | AEAD plaintext JSON (E010); checked before/after decrypt |
 | `kMaxRelayEnvelopeJsonBytes` | **256 KiB** | Full signed POST body |
 | `kMaxContentRmlBytes` | **256 KiB** | **Local-only** assistant RML on disk (not accepted from wire) |
+| `kMaxUserPayloadBytes` | **64 KiB** | Persisted `user_payload` on AI thread rows (aligns with platform-safety-limits) |
 | `kMaxChatActionsPerMessage` | **32** | `chat_actions` array |
 | `kMaxPollBatchMessages` | **100** | Per inbox poll or relay fetch response |
 | `kMaxRetryQueueItems` | **500** | In-memory + `profile.db` outbox rescan cap |
@@ -320,7 +322,8 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 ## D031 — Windowed transcript UI + `GetMessagesPage`
 
 **Date:** 2026-06-29  
-**Decision:** UI loads **pages** of messages, not full thread history. `IThreadStore::GetMessagesPage(thread_id, before_timestamp \| before_rowid, limit)` default **100**; scroll-up requests older pages. `BuildDisplayRows` operates on the loaded window only. Full-thread `GetMessages` retained for agent context policies that already trim — migrate to page API where possible.  
+**Updated:** 2026-06-29 — agent hot path uses `GetMessagesForContext` (D039).  
+**Decision:** UI loads **pages** of messages, not full thread history. `IThreadStore::GetMessagesPage(thread_id, before_timestamp \| before_rowid, limit)` default **100**; scroll-up requests older pages. `BuildDisplayRows` operates on the loaded window only. **Agent turns** use `GetMessagesForContext` (D039), not full-thread `GetMessages`. Retain `GetMessages` for tests, export, and dev tools only.  
 **Rationale:** Avoid O(n) memory and RML build per frame on long threads.  
 **Alternatives:** Virtualized list with full load; always load last 50 only with no scroll-up.
 
@@ -433,6 +436,89 @@ Default remains **pause + recommend safe path**; never auto-continue or silently
 
 **Rationale:** Respect user autonomy after necessary information; keep strict detection and auditable incidents; tier hard crypto failures from ambiguous seq state (split-brain, two devices, peer reset mishandled).  
 **Alternatives:** Mandatory halt with single recovery path only (superseded for soft failures); silent ignore without disclosure (rejected); global relaxed ingest by default (rejected).
+
+---
+
+## D039 — Agent context: tail read + memory summary (no full-thread load)
+
+**Date:** 2026-06-29  
+**Decision:** `AgentSession` and `ThreadContextPolicy` must **not** call full-thread `GetMessages` on the hot path. Add `IThreadStore::GetMessagesForContext(thread_id, ContextBudget)`:
+
+1. Load **`GetThreadMemory`** summary when present (v3 `memory` table).
+2. Fetch a **tail slice** of `content_type=text` (+ selected `system`) rows newest-first until `max_turn_pairs` / `max_recent_chars` from `ContextBudget` is satisfied — use indexed `timestamp` / `rowid` limit, not full transcript scan.
+3. Return messages in chronological order for `ThreadContextPolicy::Build`.
+
+`GetMessages` remains for unit tests, export, and migration; mark deprecated in `IThreadStore` comments for feature code.  
+**Rationale:** D031 windowing fixes UI only; loading 10k rows per LLM turn is O(n) IO despite in-memory trim. Summary + tail matches the three-layer model (transcript vs context vs memory).  
+**Alternatives:** Keep full `GetMessages` + trim in policy (rejected); always load exactly `max_turn_pairs * 2` rows without summary injection.
+
+---
+
+## D040 — AI compaction triggers and summary bounds (v3)
+
+**Date:** 2026-06-29  
+**Decision:** `ICompactionService` runs when a thread’s **text turn count** (user + assistant `content_type=text` rows) exceeds **`kCompactionTurnThreshold = 20`** since the last summary version. Constants in `MessagingLimits.h` (or shared with `ContextBudget`):
+
+| Constant | Value | Notes |
+|----------|-------|-------|
+| `kCompactionTurnThreshold` | **20** | Turns since last summary before compaction eligible |
+| `kMaxSummaryBytes` | **8 KiB** | Persisted `ConversationSummary.text` on disk |
+| `kCompactionMinTurnsKept` | **6** | Tail turns always kept verbatim in context after summary |
+
+**Trigger:** **async after turn completes** — enqueue compaction job; do not block composer send or LLM response delivery. On failure, log and retry next eligible turn; never delete transcript rows. Summary `version` increments on successful write. Wire `max_summary_chars` in `ContextBudget` to **`kMaxSummaryBytes`** at runtime (chars ≈ bytes for UTF-8 summary text).  
+**Rationale:** v3 needs explicit bounds so memory table and LLM injection do not grow without limit; async avoids UI stalls.  
+**Alternatives:** Inline compaction blocking the turn (rejected); no summary size cap (rejected); compact on char count only (deferred).
+
+---
+
+## D041 — Outbox retry and gap repair numeric limits
+
+**Date:** 2026-06-29  
+**Decision:** Add explicit P2P retry/repair caps in `MessagingLimits.h`:
+
+| Constant | Value | Applies to |
+|----------|-------|------------|
+| `kMaxOutboxRetryAttempts` | **12** | Per `message_id` durable outbox resend attempts (exponential backoff) |
+| `kMaxGapRepairRounds` | **5** | Consecutive repair cycles per `(peer, epoch)` gap before soft compromised (D038) |
+| `kMaxGapRepairSeqSpan` | **500** | Max `max_sender_seq - min_sender_seq + 1` per single repair fetch |
+
+After **`kMaxOutboxRetryAttempts`**: set `delivery=failed`, keep row, show persistent send-failure affordance; user may retry manually (resets attempt counter). After **`kMaxGapRepairRounds`**: pause + integrity choice sheet (D038). If startup `ListPendingOutbox` returns more than **`kMaxRetryQueueItems`** (D029), process first 500 in `updated_at` order and log warning — do not drop rows.  
+**Rationale:** “Cap attempts” and “repair exhaustion” in DESIGN were qualitative; implementers need constants.  
+**Alternatives:** Unlimited retries; immediate compromised on first repair miss.
+
+---
+
+## D042 — Annotation volume cap per target message
+
+**Date:** 2026-06-29  
+**Decision:** Cap **`kMaxAnnotationsPerTarget = 32`** — max annotation rows (`content_type=annotation`) referencing the same `target_message_id` in one thread. Reject compose/send locally; reject ingest above cap (count existing rows for target before persist). Applies to reactions, edits, and future annotation types — append-only rows (D026), each state change keeps its own `message_id`.  
+**Rationale:** Prevents reaction/annotation spam and unbounded `BuildDisplayRows` merge work; complements `kMaxChatActionsPerMessage` on assistant rows.  
+**Alternatives:** Per-sender rate limit only (deferred); unlimited annotations (rejected); mutate target row in place (rejected — D026).
+
+---
+
+## D043 — Orphan annotations (missing target)
+
+**Date:** 2026-06-29  
+**Decision:** When `target_message_id` is absent from the thread transcript (never received, cleared, or deleted): **accept and persist** the annotation row; **do not** fail ingest or compromise. UI renders as a **standalone row** with orphaned badge (e.g. “Reply to earlier message”) — not inline on a missing bubble. `BuildDisplayRows` skips merge onto missing targets. LLM context excludes orphan annotations (same as other annotations).  
+**Rationale:** Clear history (D037) and partial sync leave valid annotation envelopes; failing closed would alarm users; hiding would lose audit trail.  
+**Alternatives:** Reject ingest when target missing (rejected); silently drop annotation (rejected).
+
+---
+
+## D044 — SQLite operational policy (`thread.db` / `profile.db`)
+
+**Date:** 2026-06-29  
+**Decision:** `SqliteThreadStore` uses:
+
+- **`PRAGMA journal_mode=WAL`** per connection.
+- **Single writer mutex** per `thread.db` and one for `profile.db` — all `AppendMessage` / `ClearMessages` / catalog updates serialize; concurrent readers allowed on WAL.
+- After **`ClearMessages`** bulk delete: run **`PRAGMA wal_checkpoint(PASSIVE)`** on that `thread.db` (best-effort; do not block UI).
+- **No automatic `VACUUM`** in v1; monitor `thread.db` file size via dev logging. Revisit if clear/delete leaves large sparse files.
+
+No hard max file size in v1.  
+**Rationale:** WAL + mutex matches lazy-open multi-threaded UI + background poll; checkpoint reduces WAL growth after large clears.  
+**Alternatives:** DELETE journal mode (rejected); auto-VACUUM on every clear (too slow).
 
 ---
 
