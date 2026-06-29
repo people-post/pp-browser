@@ -85,7 +85,9 @@ Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is r
 }
 ```
 
-Inbound routing: `ChatTargetKey { sender_contact_id, route.channel }` → existing local thread (**inbound find-only**, D062). Legacy envelopes with `thread_id` are rejected.
+Inbound routing: `ChatTargetKey { sender_contact_id, route.channel }` → existing local thread (**inbound find-only**, D062). Legacy envelopes with `thread_id` or flat `body.text` (no `body.content`) are rejected.
+
+**Wire cutover (D063):** v2a-p2p ships final envelope + minimal ChatPayload in `body.content`. v4 adds validation only — no second wire break. See [DESIGN § Wire cutover phasing](../projects/chat-storage-and-memory/DESIGN.md#wire-cutover-phasing-d063).
 
 Local store is written **before** send. Server rejections do not delete history. **Unsent/failed** rows stay local — user **retries send**; **peer sync** (`FetchChatTargetMessages`, D058) fetches **missing messages from the peer**, not your pending outbox.
 

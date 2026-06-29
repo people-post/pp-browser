@@ -252,10 +252,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D026 — Unified `ChatPayload` message format
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — v1 types text + system only (D050).  
-**Decision:** One wire/disk payload shape. **v1 validator accepts `text` and `system` only**; reject unknown `content_type` on inbound relay. **`[post-v1]`** rich types — [DESIGN.md § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).  
-**Rationale:** One parser path; defer UI/protocol surface until needed.  
-**Alternatives:** All types in v1 (original D026).
+**Updated:** 2026-06-30 — minimal `text` payload in v2a-p2p wire (D063); v4 validator hardening.  
+**Decision:** One wire/disk payload shape in **`body.content`**. **v2a-p2p** ships minimal **`text`** ChatPayload on wire (D063). **v4** validator accepts **`text`** and **`system`**; reject unknown `content_type` on inbound relay. **`[post-v1]`** rich types — [DESIGN.md § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).  
+**Rationale:** One parser path; wire lands with routing cutover; v4 deepens validation without second break.  
+**Alternatives:** All types in v1 (original D026); flat `body.text` until v4 (rejected — D063).
 
 ---
 
@@ -591,8 +591,8 @@ No hard max file size in v1.
 ## D054 — `display_order` for UI sort and pagination
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-30 — scroll anchor on `message_id`; D035 preview uses `display_order`.  
-**Decision:** Every `messages` row has **`display_order INTEGER NOT NULL`**, assigned in **`AppendMessage`** per DESIGN § Display order assignment. **UI sort** and **`GetMessagesPage(before_display_order)`** use this column only. **`sender_seq`** remains for E2E sync/ingest only (D045). Default append: `max+1`; gap repair: insert between seq neighbors (renumber tail in one batch if needed). **Scroll anchor:** `message_id` only — not array index (D057). **Sidebar preview verify** (D035): `ORDER BY display_order DESC LIMIT 1`.  
+**Updated:** 2026-06-30 — UI defer rules (D065); scroll anchor `message_id` (D057).  
+**Decision:** Every `messages` row has **`display_order INTEGER NOT NULL`**, assigned in **`AppendMessage`** per DESIGN § Display order assignment. **UI sort** and **`GetMessagesPage(before_display_order)`** use this column only. **`sender_seq`** remains for E2E sync/ingest only (D045). Default append: `max+1`; gap repair: insert between seq neighbors (renumber tail in one batch if needed). **Scroll anchor:** `message_id` only — not array index (D057). **Gap repair UI:** defer refresh per D065. **Sidebar preview verify** (D035): `ORDER BY display_order DESC LIMIT 1`.  
 **Rationale:** Unifies AI, public, E2E, and local `@ai` transcript ordering; avoids channel-specific pagination cursors; preview matches transcript sort.  
 **Alternatives:** `before_timestamp` pagination; runtime merge in `BuildDisplayRows` (rejected).
 
@@ -619,6 +619,7 @@ No hard max file size in v1.
 ## D057 — v2a implementation guardrails + clear confirmation
 
 **Date:** 2026-06-30  
+**Updated:** 2026-06-30 — wire cutover (D063), memory retained copy (D064), type gates (D066).  
 **Decision:** Before v2a merge, adopt these implementation rules:
 
 | Area | Rule |
@@ -626,8 +627,11 @@ No hard max file size in v1.
 | **Phase split** | **v2a-core** (SQLite + AI threads + `GetMessagesPage` + clear UX) then **v2a-p2p** (`chat_targets`, outbox, per-thread dedup, `FindOrCreateDirectThread` default `public_relay`) — see [PHASES.md](PHASES.md) |
 | **Dual-DB writes** | Lock `profile.db` then `thread.db`; write `thread.db` txn first inside critical section — [DESIGN § SQLite operations](DESIGN.md#sqlite-operations-d044) |
 | **`IThreadStore` cutover** | Extend API in one pass; grep gate: no `GetMessages` / profile-global `HasMessageId` in `src/feature/` |
+| **`ThreadMessage` (v2a-core)** | Add **`display_order`** to C++ type; wire through store + UI paging (D066) |
+| **`RelayEnvelope` (v2a-p2p)** | Final shape D056 + minimal ChatPayload body (D063); grep gate: no `envelope.thread_id` in `src/feature/` or `tests/` |
 | **`ThreadContextPolicy`** | v3: filter `content_type=text` (+ selected `system`); compaction counts text turns only (D039, D040) |
-| **Clear confirmation** | Two-step UX: choice sheet → **inventory confirmation dialog** (D024, DESIGN § Clear messages — confirmation dialog) |
+| **Clear confirmation** | Two-step UX: choice sheet → **inventory confirmation dialog** (D024); **AI memory retained** section when forget unchecked (D064) |
+| **Gap repair UI** | Defer display refresh per D065 when renumber affects loaded window |
 
 **Rationale:** Review findings before implementation; reduce v2a blast radius; prevent tail-sync resurrection and silent outbox loss.  
 **Alternatives:** Monolithic v2a PR (rejected); clear without detailed confirmation (rejected).
@@ -676,6 +680,58 @@ No hard max file size in v1.
 **Decision:** **Inbound** relay/direct delivery: resolve **`ChatTargetKey` → existing `local_thread_id`** via `chat_targets` only. If no row or shell missing → **reject** (hard reject / drop) **before** persist — **do not** `FindOrCreateDirectThread` on ingest. **Outbound** user actions (Message, Secure message, first send) create shell + catalog. Participant check (D027) runs **before** any side effect; ingest never creates orphan `thread.db` / sidebar rows from unsolicited traffic.  
 **Rationale:** Prevents signed-but-unwanted traffic from allocating storage; creation stays user-initiated.  
 **Alternatives:** Create-on-ingest then delete on failed participant check (rejected).
+
+---
+
+## D063 — Wire cutover in v2a-p2p (envelope final; minimal ChatPayload)
+
+**Date:** 2026-06-30  
+**Decision:** **v2a-p2p** ships the **final relay envelope shape** (D056): `sender_contact_id`, `route`, **no `thread_id`**; reject legacy envelopes (D016). **Body** uses **`body.content` minimal ChatPayload** — `schema_version=1`, `content_type=text`, `text`, `payload={}` — from v2a-p2p, not the legacy `RelayMessageBody { text, content_rml }`. **Phase v4** adds validator hardening (`system` type, unknown-type reject, D030 strip remote `content_rml`, size checks) — **not a second wire break**. Single parser for send/receive; no dual-version support.  
+**Rationale:** D016 forbids two relay breaking changes; routing cutover and payload shape land together once; v4 deepens validation on the same wire.  
+**Alternatives:** Legacy flat body until v4 (rejected — two cutovers); keep `thread_id` through v4 (rejected — D056).
+
+---
+
+## D064 — Clear confirmation: disclose retained AI memory
+
+**Date:** 2026-06-30  
+**Decision:** When user clears messages **without** **Also forget what AI learned**, the confirmation dialog (D057) **must** include an **AI memory retained** section: durable **`memory` table / conversation summary** stays; the AI may still use compacted context from cleared turns in future replies; use **Forget what AI learned** or the checkbox to wipe memory. When checkbox **is** checked, §3 **AI memory** (delete) applies instead — do not show retained section.  
+**Rationale:** D003 allows independent transcript vs memory clear; default keep-memory is surprising without explicit copy.  
+**Alternatives:** Always wipe memory on clear (rejected — D003); silent retain (rejected).
+
+---
+
+## D065 — `display_order` renumber: UI refresh defer rules
+
+**Date:** 2026-06-30  
+**Decision:** E2E gap repair **Rule 2** (D054) renumber must follow **scroll-stability rules** before `ChatController` refreshes display rows:
+
+| Case | Rule |
+|------|------|
+| **Repair inserts entirely above** the loaded `GetMessagesPage` window | Update watermarks + DB only; **no UI list refresh** (no scroll jump). |
+| **Repair touches rows inside** the loaded window (insert between neighbors or tail renumber) | **Defer** `BuildDisplayRows` until scroll anchor **`message_id`** is re-resolved; then refresh once. |
+| **User pinned to anchor message** | After refresh, scroll position must still show the same **`message_id`** — never array index. |
+| **Batch renumber** | One contiguous tail renumber pass per repair batch (D054); compute affected `message_id` set before commit to decide defer vs skip refresh. |
+
+**Rationale:** Integer `display_order` insert/renumber during gap repair must not jump the transcript while the user is reading.  
+**Alternatives:** Always refresh immediately (rejected); disable gap repair renumber (rejected).
+
+---
+
+## D066 — C++ type migration gates (`ThreadMessage`, `RelayEnvelope`)
+
+**Date:** 2026-06-30  
+**Decision:** Extend **`ThreadTypes.h`** in step with store phases — do not lag SQLite schema.
+
+| Phase | C++ / wire requirement |
+|-------|------------------------|
+| **v2a-core** | `ThreadMessage.display_order` (`int64_t`); `GetMessagesPage` / `AppendMessage` assign and read it. Other v4/v6 columns may remain store-only until wired. |
+| **v2a-p2p** | **`RelayEnvelope`:** remove `thread_id`; add `sender_contact_id`, `route` (`kind`, `channel`); **`body.content`** as minimal `ChatPayload` (D063). **Grep gate:** no `envelope.thread_id` / `body.text` top-level relay body in `src/feature/` or `tests/` (except legacy rejection tests). |
+| **v4** | `ThreadMessage.content_type`, `payload`; full ChatPayload codec + validator. |
+| **v6** | `sender_seq`, `session_epoch` on `ThreadMessage` + envelope. |
+
+**Rationale:** Prevents half-migrated types during cutover; grep gates match D057 store gates.  
+**Alternatives:** Big-bang type change at v4 (rejected — P2P routing needs envelope shape in v2a-p2p).
 
 ---
 

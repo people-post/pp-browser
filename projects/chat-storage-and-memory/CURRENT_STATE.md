@@ -140,5 +140,6 @@ No `index.json` in target layout (replaces legacy index + flat JSON).
 15. Schema bumps require wipe (D016); v2a replaces JSON with SQLite (D028).
 16. `@ai` local-only in v1 — shared modes deferred (D012).
 17. No unified E2E backfill / user sync / peer-direct history (D058–D060) — planned v6.
+18. `ThreadMessage` lacks `display_order` in C++ (D066) — planned v2a-core; legacy `RelayEnvelope` has `thread_id` — v2a-p2p cutover (D063).
 
 **Non-chat safety gaps** (LLM HTTP, profile JSON stores): see [platform-safety-limits](../platform-safety-limits/).

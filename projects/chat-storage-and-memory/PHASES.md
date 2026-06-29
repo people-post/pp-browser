@@ -15,7 +15,7 @@ Check boxes when work is **merged and verified**. Add sub-items freely; keep pha
 | v2a | [Data model](DESIGN.md#data-model-target), [On-disk layout](DESIGN.md#on-disk-layout-target--d025-d028-d035-d036), [Store interface](DESIGN.md#store-interface-target), [Clear / forget](DESIGN.md#clear--forget-semantics-user-facing--d024), [Resource bounds](DESIGN.md#resource--trust-bounds-d029d033) | `[v1]` SQLite + transcript |
 | v2b | [Thread / channel](DESIGN.md#thread), [UI sidebar](DESIGN.md#sidebar-v1) | `[v1]` public vs E2E split |
 | v3 | [Durable memory](DESIGN.md#durable-memory-per-thread), [Three layers](DESIGN.md#three-layers-transcript-vs-context-vs-memory) | `[v1]` compaction + forget |
-| v4 | [ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026), [Transport provenance](DESIGN.md#transport-provenance-d051), [Receive pipeline](DESIGN.md#receive-pipeline) | `[v1]` text/system + transport column |
+| v4 | ChatPayload **validation** + transport column (wire unchanged since v2a-p2p, D063) | `[v1]` text/system + transport column |
 | v6 | [P2P sync](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity recovery](DESIGN.md#integrity-recovery-d038), [Durable outbox](DESIGN.md#durable-outbox-d017) | `[v1]` E2E tail + gap + user sync |
 | post-v4 | [ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026) (`[post-v1]` rows) | Rich payload types |
 | post-v6b | [`@ai` modes](DESIGN.md#ai-in-direct-threads-d012) | Shared `@ai+` / `@ai++` |
@@ -57,6 +57,11 @@ Existing foundation this project builds on.
 - [ ] Add SQLite to build (amalgamation or system lib) — **not** libp2p fork SQLite
 - [ ] Document in [BUILD.md](../../docs/BUILD.md) / `third_party` if vendored
 
+#### `ThreadMessage` + store types (D066)
+
+- [ ] Add **`display_order`** (`int64_t`) to `ThreadMessage` in `ThreadTypes.h`; serde + `AppendMessage` / `GetMessagesPage`
+- [ ] SQLite schema includes all future columns (nullable unused); C++ wires **`display_order`** first
+
 #### `SqliteThreadStore` — AI path (D028)
 
 - [ ] Layout: `threads/profile.db` (`threads` + `outbox` schema only), `threads/{id}/thread.db` — no `index.json` (D035)
@@ -84,7 +89,7 @@ Existing foundation this project builds on.
 #### UX (core)
 
 - [ ] Thread menu: **Clear history** → choice sheet → **confirmation dialog** with pre-clear inventory (D024, D057)
-- [ ] Forget-AI checkbox on choice sheet; reflected in confirmation when checked
+- [ ] Forget-AI checkbox on choice sheet; **AI memory retained** section when unchecked (D064)
 - [ ] Composer maxlength (`kMaxComposeTextBytes`, D029)
 
 **v2a-core exit criteria:** AI thread survives restart; clear-messages shows confirmation then empties UI; sidebar preview/unread reset; `GetMessagesPage` works; no `GetMessages` in feature code.
@@ -93,14 +98,23 @@ Existing foundation this project builds on.
 
 ### v2a-p2p — Direct messaging storage
 
-**Goal:** `chat_targets`, outbox, per-thread dedup, `FindOrCreateDirectThread` (`public_relay` default until v2b E2E UI).
+**Goal:** `chat_targets`, outbox, per-thread dedup, `FindOrCreateDirectThread` (`public_relay` default until v2b E2E UI). **Final relay wire shape** (D063) — no second cutover at v4.
+
+#### Wire + C++ types (D063, D066)
+
+- [ ] **`RelayEnvelope`:** remove `thread_id`; add `sender_contact_id`, `route`; **`body.content`** minimal ChatPayload (`text` only)
+- [ ] Send/post and poll ingest use new envelope; **reject** legacy `thread_id` and flat `body.text` at parse
+- [ ] **Grep gate:** no `envelope.thread_id` in `src/feature/` or `tests/` (legacy rejection tests excepted)
+- [ ] Minimal ChatPayload codec: serialize/parse `schema_version`, `content_type=text`, `text`, `payload={}`
+
+#### Storage + routing
 
 - [ ] `profile.db`: **`chat_targets`**, **`outbox`** populated (D047, D056)
 - [ ] **`FindOrCreateDirectThread(ChatTargetKey)`** — **outbound only**; inbound lookup existing target (D062)
 - [ ] **Startup reconciliation** — outbox ↔ messages (D047)
 - [ ] `HasMessageId(thread_id, message_id)`; update `P2pMessagingService` poll path (D034)
 - [ ] `DeleteThread` — direct: keep **`chat_targets`** (D056)
-- [ ] Unit tests: ChatTargetKey routing, reject wire `thread_id`, outbox reconciliation, clear cancels pending sends
+- [ ] Unit tests: ChatTargetKey routing, reject wire `thread_id`, minimal ChatPayload roundtrip, outbox reconciliation, clear cancels pending sends
 - [ ] **Close conversation** = delete thread + `profile.db` cleanup
 
 ### Docs
@@ -109,7 +123,7 @@ Existing foundation this project builds on.
 - [ ] Update [CONFIGURATION.md](../../docs/CONFIGURATION.md) on-disk layout
 - [ ] Update this file + README progress snapshot
 
-**Exit criteria:** v2a-core criteria + per-thread `HasMessageId`; outbox reconciliation passes; clear cancels pending outbox rows.
+**Exit criteria:** v2a-core criteria + per-thread `HasMessageId`; outbox reconciliation passes; clear cancels pending outbox rows; **new relay envelope** on send/receive (D063).
 
 ---
 
@@ -177,16 +191,16 @@ Existing foundation this project builds on.
 
 ---
 
-## Phase v4 — ChatPayload (text + system) and transport column
+## Phase v4 — ChatPayload validation hardening + transport column
 
-**Goal:** Unified message format (D026, D050); strip remote `content_rml`; persist `transport` (badge UI in post-v6d).
+**Goal:** Full **ChatPayload validator** (D026, D050) on the **same wire shape** shipped in v2a-p2p (D063) — no envelope break. Strip remote `content_rml`; persist `transport` (badge UI in post-v6d).
 
-**Design refs:** [ChatPayload `[v1]`](DESIGN.md#chatpayload-unified-message-body--d026), [Transport `[v1]`](DESIGN.md#transport-provenance-d051), [Public relay ingest](DESIGN.md#public-relay-ingest-d045).
+**Design refs:** [ChatPayload `[v1]`](DESIGN.md#chatpayload-unified-message-body--d026), [Wire cutover phasing](DESIGN.md#wire-cutover-phasing-d063), [Transport `[v1]`](DESIGN.md#transport-provenance-d051), [Public relay ingest](DESIGN.md#public-relay-ingest-d045).
 
 ### Message schema
 
-- [ ] `content_type` + `payload` columns on `messages` table; `ChatPayload` JSON codec + **validator** (D029, D050)
-- [ ] v1 types: **`text`**, **`system`** only; reject unknown types on ingest
+- [ ] `content_type` + `payload` on **`ThreadMessage`** C++ + store read/write; **`system`** type support
+- [ ] ChatPayload JSON codec **validator** hardening (D029, D050) — unknown types rejected on ingest
 - [ ] Reject oversize payload on send; strip wire `content_rml` on ingest (D030)
 - [ ] Relay `body.content` for public; envelope signing covers structured body
 - [ ] `transport` column; set in send/receive paths (no per-message badge UI yet, D051)
@@ -242,6 +256,7 @@ Existing foundation this project builds on.
 - [ ] **Authoritative empty gap close** — success + zero messages closes hole (D061); transport failures count toward D041 rounds
 - [ ] **User-initiated sync** — thread menu **Sync with peer**; gap banner **Retry sync** (D059)
 - [ ] Gap repair assigns **`display_order`** between seq neighbors (D054 Rule 2)
+- [ ] **Gap repair UI defer** — D065: skip refresh above window; defer + anchor when renumber touches loaded page
 - [ ] Reorder buffer / `ReplayWindow` k=32 (D020)
 - [ ] Persist **`loaded_min_seq` / `loaded_max_seq`** watermarks (prerequisite for post-v6c)
 
@@ -387,4 +402,5 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 | 2026-06-29 | D039–D044: agent context tail read, compaction bounds, retry/repair caps, annotation cap, orphan UX, SQLite ops |
 | 2026-06-29 | D056: local `thread_id`; wire `ChatTargetKey` + `route`; no `thread_id` on envelope/AAD; supersedes D053 |
 | 2026-06-29 | DESIGN: single grand spec with `[v1]`/`[post-v1]` tags; PHASES traceability + named post-v1 phases |
+| 2026-06-30 | D063–D066: wire cutover v2a-p2p, clear AI memory retained copy, display_order UI defer, C++ type gates; D057/D054 amended |
 | 2026-06-30 | D058–D062: unified `FetchChatTargetMessages`, user-initiated sync, libp2p peer history, empty gap close, inbound find-only; D009/D052/D041/D022 amended |

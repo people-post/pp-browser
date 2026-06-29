@@ -43,6 +43,9 @@ When building **`[v1]`** phases, satisfy these so **`[post-v1]`** features plug 
 | **Peer-direct history protocol** (D060) | libp2p `/pp-browser/chat-history/1.0.0`; relay D027 fallback |
 | **Authoritative empty gap close** (D061) | Never-published seq after successful empty fetch — not compromised |
 | **Inbound find-only** (D062) | Create direct shell on outbound user action only |
+| **Wire cutover in v2a-p2p** (D063) | Final envelope + minimal ChatPayload; v4 validates — no second wire break |
+| **C++ type gates** (D066) | `display_order` in v2a-core; `RelayEnvelope` without `thread_id` in v2a-p2p |
+| **Gap repair UI defer** (D065) | Renumber inside loaded window → defer refresh until anchor reconciled |
 | **`sync_state.state_json` extensible** | `[post-v1]` relaxed ingest adds keys without DB bump |
 | **Set `transport` at send/receive** | `[post-v1]` badge UI reads column |
 | **Participant check on all inbound direct** | D027 auth model |
@@ -148,29 +151,48 @@ Sync watermarks are keyed by **`(peer, session_epoch)`**. A new epoch starts a f
 
 ### ThreadMessage
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | UUID | Client-generated; dedup on ingest |
-| `thread_id` | UUID | |
-| `content_type` | enum | `text`, `system` **`[v1]`**; `annotation`, `contact_card`, `crypto_tx` **`[post-v1]`** |
-| `payload` | JSON object | Type-specific structured body (wire + disk) |
-| `text` | optional string | Display snippet / search / plain fallback; AI raw for `text` turns |
-| `content_rml` | optional string | Rendered blocks (AI assistant) |
-| `user_payload` | optional string | LLM-only structured JSON (AI turns) |
-| `chat_actions` | array | Indexed chips |
-| `target_message_id` | optional UUID | For `annotation` (and edits referencing prior message) |
-| `sender_contact_id` | string | `local:self`, `ai:assistant`, or contact id |
-| `display_order` | int64 | Monotonic UI sort key; assigned at persist (D054). **Not** on wire. |
-| `timestamp` | int64 | Metadata / display hint; **not** transcript sort key (D054) |
-| `relay_visible` | bool | `true` when sent to peer; see `@ai` modes |
-| `delivery` | enum | local, pending, relayed, failed |
-| `transport` | enum | local, relay, direct |
-| `control_type` | optional string | For `content_type=system`; reserved for future control rows |
-| `sender_seq` | optional uint64 | E2E + `relay_visible=true` only (D045) |
-| `session_epoch` | optional uint32 | Must match envelope |
-| `generation` | optional enum | `user` \| `ai_on_behalf` — **`[post-v1]`** shared `@ai` |
-| `seq_owner_contact_id` | optional string | Trigger user for `ai_on_behalf` — **`[post-v1]`** |
-| `ai_invoke_mode` | optional enum | `local` **`[v1]`**; `shared_reply`, `shared_full` **`[post-v1]`** |
+C++ struct in `src/base/messaging/ThreadTypes.h` must stay aligned with store columns (D066).
+
+| Field | Type | C++ / phase | Notes |
+|-------|------|-------------|-------|
+| `id` | UUID | v2a | Client-generated; dedup on ingest |
+| `thread_id` | UUID | v2a | |
+| `content_type` | enum | **v4** wire+store | `text`, `system` **`[v1]`**; rich types **`[post-v1]`** — store column from v2a schema; C++ field v4 |
+| `payload` | JSON object | **v4** | Type-specific structured body (wire + disk) |
+| `text` | optional string | v2a | Display snippet / search / plain fallback; AI raw for `text` turns |
+| `content_rml` | optional string | v2a | Rendered blocks (AI assistant) |
+| `user_payload` | optional string | v2a | LLM-only structured JSON (AI turns) |
+| `chat_actions` | array | v2a | Indexed chips |
+| `target_message_id` | optional UUID | schema v2a | For `annotation` **`[post-v1]`** |
+| `sender_contact_id` | string | v2a | `local:self`, `ai:assistant`, or contact id |
+| `display_order` | int64 | **v2a-core** (D066) | Monotonic UI sort key; assigned at persist (D054). **Not** on wire. |
+| `timestamp` | int64 | v2a | Metadata / display hint; **not** transcript sort key (D054) |
+| `relay_visible` | bool | v2a | `true` when sent to peer; see `@ai` modes |
+| `delivery` | enum | v2a-p2p | local, pending, relayed, failed |
+| `transport` | enum | **v4** | local, relay, direct |
+| `control_type` | optional string | v4 | For `content_type=system` |
+| `sender_seq` | optional uint64 | **v6** | E2E + `relay_visible=true` only (D045) |
+| `session_epoch` | optional uint32 | **v6** | Must match envelope |
+| `generation` | optional enum | **`[post-v1]`** | `user` \| `ai_on_behalf` — shared `@ai` |
+| `seq_owner_contact_id` | optional string | **`[post-v1]`** | Trigger user for `ai_on_behalf` |
+| `ai_invoke_mode` | optional enum | v2a local | `local` **`[v1]`**; shared modes **`[post-v1]`** |
+
+### RelayEnvelope (C++ — D066)
+
+Target struct in `ThreadTypes.h`. **v2a-p2p** removes legacy fields.
+
+| Field | Phase | Notes |
+|-------|-------|-------|
+| ~~`thread_id`~~ | **removed v2a-p2p** | Reject on ingest (D016) |
+| `message_id` | v2a-p2p | |
+| `sender_relay_id` | v2a-p2p | |
+| `sender_contact_id` | **v2a-p2p** | Inbound routing peer (D021) |
+| `route` | **v2a-p2p** | `{ kind, channel }` (D056) |
+| `body.content` | **v2a-p2p** | Minimal **ChatPayload** JSON (D063) — not flat `body.text` |
+| `sender_seq`, `session_epoch` | **v6** | E2E only |
+| `timestamp`, `signature` | v2a-p2p | |
+
+**Legacy (baseline code today):** flat `RelayMessageBody { text, content_rml }` + `thread_id` — deleted at v2a-p2p cutover, not migrated (D016).
 
 **Sync seq rule (E2E only):** `sender_seq` assigned only when `channel=e2e` and `relay_visible=true`. Public relay omits `sender_seq` on the wire. Local-only rows never consume sync seq.
 
@@ -182,7 +204,11 @@ Sync watermarks are keyed by **`(peer, session_epoch)`**. A new epoch starts a f
 
 One schema for disk, relay plaintext (`public_relay`), and AEAD plaintext (`e2e` — E010). Envelope `body.content` holds this object; E2E encrypts its UTF-8 JSON serialization.
 
+**Wire phasing (D063):** **v2a-p2p** ships **`body.content`** with minimal **`text`** ChatPayload (see below). **v4** adds full validator (`system`, unknown-type reject, D030, size caps) — **same wire shape**, no second parser.
+
 **`[v1]` validator** accepts `text` and `system` on inbound relay; rejects unknown types. **`[post-v1]`** enables additional rows in the table below. Enum and columns exist from first schema — do not remove unused types.
+
+**Minimal payload (v2a-p2p send/receive — D063):**
 
 ```json
 {
@@ -451,13 +477,15 @@ Build the summary from a **pre-clear scan** of `thread.db` (and `profile.db` `ou
    - **E2E:** state that assigned **`sender_seq` is not reused** — those sends are cancelled; your next successful send uses the next seq as usual (D010).
    - **Public relay:** state that cancelled sends will **not** be retried automatically; peer will not receive them.
 
-3. **AI memory** (when forget-AI checkbox checked)
-   - State that the durable **conversation summary** in the `memory` table will be deleted; the AI will not retain compacted context from earlier turns. Transcript is already covered in §1.
+3. **AI memory** — **one of:**
+   - **When forget-AI checkbox checked:** state that the durable **conversation summary** in the `memory` table will be deleted; the AI will not retain compacted context from earlier turns. Transcript is already covered in §1.
+   - **When forget-AI checkbox unchecked (D064):** **AI memory retained** — the visible transcript will be cleared but the **conversation summary** in the `memory` table **remains**; the AI may still use compacted context from earlier turns in future replies. To wipe memory too, check **Also forget what AI learned** or use **Forget what AI learned** separately.
 
 4. **What stays**
    - Thread remains in the sidebar (title unchanged).
    - **Direct:** `chat_targets` seq/epoch unchanged; new messages still work.
-   - **E2E:** `history_floor_seq` updated so **tail sync, gap repair, and poll** will not bring back cleared seq (including repaired gaps) in this epoch (D037).
+   - **E2E:** `history_floor_seq` updated so **tail sync, gap repair, poll, and user sync** will not bring back cleared seq (including repaired gaps) in this epoch (D037).
+   - **AI (when forget unchecked):** `memory` table unchanged (see §3).
 
 5. **What this does not do**
    - Does **not** delete messages on the peer's device or on the relay.
@@ -509,11 +537,20 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 
 **`[post-v1]`:** Per-message indicator in E2E threads — **Direct** (libp2p), **Relay** (fallback), **Local** (`@ai`, system, unsent). Read `transport` column; do not infer from thread type alone.
 
-## Relay / direct envelope (D056)
+## Relay / direct envelope (D056, D063)
 
-**No `thread_id` on the wire** — each peer keeps a local `thread_id` / `local_thread_id` only. Direct P2P routing uses **`sender_contact_id`** + **`route`** (D056). Legacy envelopes that include `thread_id` are **rejected** (D016 — no dual-parser).
+**No `thread_id` on the wire** — each peer keeps a local `thread_id` / `local_thread_id` only. Direct P2P routing uses **`sender_contact_id`** + **`route`** (D056). Legacy envelopes that include `thread_id` or flat `body.text` without `body.content` are **rejected** (D016 — no dual-parser).
 
-**Direct 1:1 (v1):**
+### Wire cutover phasing (D063)
+
+| Phase | Envelope | Body | Notes |
+|-------|----------|------|-------|
+| **Baseline (today)** | includes `thread_id` | flat `text` / `content_rml` | Removed at v2a-p2p — wipe data (D016) |
+| **v2a-p2p** | `sender_contact_id`, `route`, no `thread_id` | **`body.content`** minimal ChatPayload `text` | Single cutover; update `RelayEnvelope` C++ (D066) |
+| **v4** | unchanged | same shape | Add validator: `system`, reject unknown types, D030, D029 limits |
+| **v6** | + `sender_seq`, `session_epoch` (E2E) | E2E: encrypted ChatPayload | AAD + signature bind seq fields |
+
+**Direct 1:1 (v2a-p2p+):**
 
 ```json
 {
@@ -812,7 +849,19 @@ During gap repair or multi-path delivery (direct + relay), E2E messages may arri
 
 `timestamp` is metadata only — not used for transcript pagination or sort (D054).
 
-**Scroll stability (gap repair):** UI scroll anchor is always **`message_id`**, never array index or stale `display_order` after renumber. `ChatController` re-resolves anchor after `GetMessagesPage` refresh. If Rule 2 renumbers tail `display_order` values, visible rows may reorder only when the user is not pinned to a repaired gap batch (implement: defer UI refresh until scroll anchor reconciled, or renumber only rows not in the loaded window).
+### Scroll stability and gap-repair refresh (D065)
+
+UI scroll anchor is always **`message_id`**, never array index or stale `display_order` after renumber.
+
+**Before committing** a gap-repair batch (D054 Rule 2), compute the set of **`message_id`** values whose `display_order` will change and compare to the loaded **`GetMessagesPage`** window:
+
+| Situation | UI behavior |
+|-----------|-------------|
+| All repaired/renumbered rows are **above** `min(loaded display_order)` | Persist only; **skip** display refresh — user sees no jump. |
+| Any affected row is **inside** the loaded window | Set **`defer_display_refresh`**; after txn commit, re-resolve anchor `message_id`, call `GetMessagesPage`, **`BuildDisplayRows`**, restore scroll to anchor. |
+| Live append while user is scrolled up | Default Rule 1 append at tail — no refresh required unless active window includes tail. |
+
+`ChatController` owns anchor state. Do not re-sort the in-memory row vector by array index after repair — always re-fetch page by store cursor.
 
 ### Display order assignment (D054)
 
@@ -828,7 +877,7 @@ display_order = max(display_order in thread) + 1
 
 1. Find prev/next neighbor on that sender’s stream (same epoch) via `GetMessagesBySeqRange`.
 2. Assign `display_order` values strictly between `prev.display_order` and `next.display_order`.
-3. If integer gap is too small for the batch, **renumber** tail rows’ `display_order` in the same `thread.db` txn — prefer one contiguous renumber pass per repair batch (not per row) to limit scroll churn (see § Display ordering scroll stability).
+3. If integer gap is too small for the batch, **renumber** tail rows’ `display_order` in the same `thread.db` txn — prefer one contiguous renumber pass per repair batch (not per row) to limit scroll churn (see § Scroll stability and gap-repair refresh, D065).
 
 Local-only rows always use Rule 1.
 
