@@ -178,7 +178,7 @@ Existing foundation this project builds on.
 - [ ] Inbound Ed25519 verify; strip remote `content_rml` (D030)
 - [ ] Poll backoff min 2 s foreground (D032); cap poll batch (D029)
 - [ ] Clear history → `history_floor_seq` in `sync_state`; below-floor silent discard (D037)
-- [ ] Peer reset / compromise recovery (D014, DESIGN § Compromise recovery)
+- [ ] Peer reset / integrity recovery (D014, D038, DESIGN § Integrity recovery)
 
 ### Sync modes
 
@@ -189,7 +189,7 @@ Existing foundation this project builds on.
 
 ### Integrity and UX
 
-- [ ] Compromised / gap banners; unit tests for seq, outbox, floor, epoch, reorder
+- [ ] Compromised / gap / integrity banners; relaxed ingest (D038); unit tests for seq, outbox, floor, epoch, reorder, user_resolution
 
 ### Docs
 
@@ -272,4 +272,5 @@ Existing foundation this project builds on.
 | 2026-06-29 | D028: SQLite per thread + profile.db from v2a; drop JSON message stage; v5 absorbed |
 | 2026-06-29 | D035: drop `index.json`; sidebar catalog in `profile.db` `threads`; lazy visible-row verify |
 | 2026-06-29 | D036: rename `registry.db` → `profile.db` |
+| 2026-06-29 | D038: user-choice integrity recovery; pause + choice sheet; relaxed ingest; hard vs soft failures |
 | 2026-06-29 | D037: clear history floor = sync exclusion + silent discard; amend D010/D013 |

@@ -102,9 +102,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D011 — Session compromise on conflicting seq
 
 **Date:** 2026-06-27  
-**Decision:** If the same `(sender, session_epoch, sender_seq)` is received with a **different `message_id`**, treat as **session integrity failure** (one case of D013): halt ingest, notify both parties, rotate E2E keys, bump `session_epoch`, and start a new secure conversation (seq resets **only** for the new epoch). Same `(message_id, sender_seq)` duplicates are benign (UUID dedup). Envelope signature must bind `sender_seq` and `session_epoch`.  
-**Rationale:** Under encryption, conflicting seq implies replay, split-brain, or attack; silent merge would break trust in private chat.  
-**Alternatives:** Last-write-wins; ignore conflict; log only.
+**Updated:** 2026-06-29 — default pause + user choice sheet (D038); recommended recovery unchanged.  
+**Decision:** If the same `(sender, session_epoch, sender_seq)` is received with a **different `message_id`**, treat as **session integrity failure** (one case of D013): **pause ingest and outbound** on the chat target, record an integrity incident, and show a choice sheet (D038). **Recommended** recovery: rotate E2E keys + bump `session_epoch` and start a new secure conversation (seq resets **only** for the new epoch). Same `(message_id, sender_seq)` duplicates are benign (UUID dedup). Envelope signature must bind `sender_seq` and `session_epoch`. User may choose **continue anyway** under relaxed ingest (D038) after disclosure — local policy only; peer may still be strict.  
+**Rationale:** Under encryption, conflicting seq implies replay, split-brain, or attack; silent merge by default would break trust. Informed user override is allowed when risks are disclosed.  
+**Alternatives:** Last-write-wins without disclosure (rejected); ignore conflict silently (rejected); log only (rejected).
 
 ---
 
@@ -120,10 +121,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D013 — Strict normal-or-compromised ingest (direct chat)
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — scope extended to all direct threads (D018); below-floor after clear → silent discard (D037), not compromised.  
-**Decision:** In **all direct threads** (`public_relay` and `e2e`), the receiver accepts only messages matching a defined set of **normal** cases: benign duplicate, epoch advance, contiguous tail (`sender_seq == contiguous + 1` and above floor), tail bootstrap on empty per-epoch store, and authorized history backfill in `(floor, loaded_min)`. **`sender_seq ≤ history_floor_seq[peer][epoch]` in the same epoch is handled by D037** (sync exclusion — silent discard before D013 classification; not compromised). **`sender_seq < contiguous_peer_seq`** without benign duplicate, **epoch decrease**, invalid signature, and **gap repair failure** are compromised. **`sender_seq > contiguous + 1`** above floor is **gap** (repair allowed); repair exhaustion → compromised. Sync watermarks are keyed by **`(peer, session_epoch)`**. **E2E** compromised → PSK rotation + epoch bump; **public_relay** → integrity UX without PSK (delete thread / support).  
-**Rationale:** Private and public direct chat both need fail-closed integrity; only recovery UX differs. Clear-history floor is a local sync boundary, not an attack signal.  
-**Alternatives:** E2E-only strict ingest; below-floor → compromised (rejected — poll redelivery after clear); treat all gaps as compromised without repair; global seq watermarks across epochs.
+**Updated:** 2026-06-29 — scope extended to all direct threads (D018); below-floor after clear → silent discard (D037), not compromised; user-choice recovery (D038).  
+**Decision:** In **all direct threads** (`public_relay` and `e2e`), the receiver accepts only messages matching a defined set of **normal** cases when **`ingest_policy=strict`** (default): benign duplicate, epoch advance, contiguous tail (`sender_seq == contiguous + 1` and above floor), tail bootstrap on empty per-epoch store, and authorized history backfill in `(floor, loaded_min)`. **`sender_seq ≤ history_floor_seq[peer][epoch]` in the same epoch is handled by D037** (sync exclusion — silent discard before D013 classification; not compromised). **Soft integrity failures** — `sender_seq < contiguous_peer_seq` without benign duplicate, same seq + different `message_id`, `sender_seq = 1` in established epoch, **gap repair failure** — pause ingest/outbound, set `sync_state=compromised`, record incident; user resolves via D038 (recommended safe path or **continue anyway** → `ingest_policy=relaxed`). **Hard wire failures** — invalid signature, decrypt failure, wrong thread, envelope epoch mismatch, **`session_epoch` decrease** — reject permanently; **no continue-anyway** (D038). **`sender_seq > contiguous + 1`** above floor is **gap** (repair allowed); repair exhaustion → soft compromised. Sync watermarks keyed by **`(peer, session_epoch)`**.  
+**Rationale:** Detection stays strict; response is informed user choice. Clear-history floor is a local sync boundary, not an attack signal. Hard crypto/wire failures cannot be safely overridden.  
+**Alternatives:** E2E-only strict ingest; below-floor → compromised (rejected); treat all gaps as compromised without repair; global seq watermarks across epochs; mandatory recovery with no user override (superseded by D038).
 
 ---
 
@@ -167,9 +168,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D018 — Strict ingest on public and E2E direct threads
 
 **Date:** 2026-06-29  
-**Decision:** D013 ingest classifier applies to **`public_relay` and `e2e` direct threads**. Recovery differs: E2E uses PSK rotation + epoch bump; public uses integrity banner and thread reset without crypto rotation.  
-**Rationale:** Gap detection and seq integrity matter for all person-to-person chat, not only encrypted bodies.  
-**Alternatives:** Relaxed ingest on public channel (timestamp + UUID only).
+**Updated:** 2026-06-29 — recovery options per D038.  
+**Decision:** D013 ingest classifier applies to **`public_relay` and `e2e` direct threads**. Recovery options differ by channel (D038): **E2E** — recommended **Start new secure chat** (PSK rotation + epoch bump); optional **Continue with current keys** (relaxed ingest, `trust_degraded`). **Public** — recommended **Delete thread / start fresh**; optional **Continue anyway** (relaxed ingest, `trust_degraded`). Hard wire failures offer **Pause only** (no override).  
+**Rationale:** Gap detection and seq integrity matter for all person-to-person chat; channel-specific recommended actions reflect crypto vs transcript-only risk.  
+**Alternatives:** Relaxed ingest on public channel by default (timestamp + UUID only); mandatory recovery with no user override (superseded by D038).
 
 ---
 
@@ -395,6 +397,42 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 **Decision:** After **clear visible history** (D024), receiver **`DELETE FROM messages`** (transcript and per-thread dedup surface wiped — D034) and sets **`history_floor_seq[peer][epoch]`** to the max contiguous peer seq at clear time. For the same epoch, any inbound or relay-fetched message with **`sender_seq ≤ history_floor_seq`** is a **sync exclusion zone**, not an integrity failure: **silent discard** — do not persist, backfill, show, or bump unread; do **not** enter `sync_state=compromised`. Applies to **all paths**: poll, direct, tail sync, gap-repair responses, history backfill. Only **`sender_seq > floor`** is eligible for normal D013 ingest. **No scroll resurrection** of cleared history in the same epoch — user cannot re-sync seq at or below floor; authorized history backfill range remains `(floor, loaded_min)` and is empty until new messages exist above floor. Clients must clamp relay fetch when floor is set: use **`min_sender_seq = floor + 1`** on tail, gap, and history requests; discard any below-floor rows in responses without compromising. **No post-clear message-id tombstone** in `profile.db` — dedup stays transcript-scoped (`messages.id`); below-floor traffic is dropped by seq before dedup matters. Full conversation restart (new device, explicit start-over) uses **epoch bump** (D014), not clear.  
 **Rationale:** Clear is a one-way local cutoff, not a protocol reset; honest senders continue at seq N+1; relay poll redelivery of pre-clear messages must not trigger compromise UX; floor remembers seq progress without retaining transcript rows or a separate registry.  
 **Alternatives:** Below-floor → compromised (original D013 wording); soft-clear tombstone rows with content hydration on scroll; permanent message-id registry after clear.
+
+---
+
+## D038 — User-choice integrity recovery (informed override)
+
+**Date:** 2026-06-29  
+**Decision:** Separate **detection** (D013 classifier) from **response policy**. On soft integrity failure, default behavior is **pause ingest and outbound** on the affected chat target, set `sync_state=compromised`, append an **integrity incident** to `sync_state`, and show a **choice sheet** with required disclosure (what was detected, likely causes, risks, recommended action). User picks one resolution; persist in `sync_state.state_json`:
+
+| Field | Values | Notes |
+|-------|--------|-------|
+| `ingest_policy` | `strict` (default) \| `relaxed` | Classifier mode after user choice |
+| `user_resolution` | `null` \| `rotate_psk` \| `reset_thread` \| `continue_anyway` \| `pause_only` | Last explicit choice |
+| `user_acknowledged_at` | unix ms | When user confirmed a non-default choice |
+| `trust_degraded` | bool | True after `continue_anyway`; show persistent banner/badge |
+| `integrity_incidents[]` | `{ kind, detected_at, detail }` | Audit log; never silently dropped |
+
+**Choice sheet by channel (soft failures only):**
+
+| Channel | Recommended | Optional (secondary / destructive styling) |
+|---------|-------------|---------------------------------------------|
+| `e2e` | **Start new secure chat** → `rotate_psk`, `awaiting_new_psk`, epoch bump (D014) | **Continue with current keys** → `continue_anyway`, `ingest_policy=relaxed`, `trust_degraded=true` |
+| `public_relay` | **Delete thread / start fresh** → `reset_thread` | **Continue anyway** → `continue_anyway`, `ingest_policy=relaxed`, `trust_degraded=true` |
+| Both | **Pause only** → remain paused until another choice | — |
+
+**Hard failures (no continue-anyway):** invalid signature, AEAD decrypt failure, envelope epoch mismatch, wrong `thread_id`, `session_epoch` decrease. Pause ingest/outbound, show incident + **Pause only** until user deletes thread, rotates keys, or contacts support — no relaxed ingest for these.
+
+**Relaxed ingest rules** (when `ingest_policy=relaxed` and `user_resolution=continue_anyway`):
+
+- **Seq conflict** (same seq, different `message_id`): keep first-seen row; discard or tombstone the conflicting inbound row; do not re-trigger pause for the same `(peer, epoch, sender_seq)` unless a third distinct `message_id` appears.
+- **Rewind / non-contiguous seq:** accept inbound rows; advance `contiguous_peer_seq` only when seq strictly increases above current contiguous; gaps remain flagged in UI but do not pause.
+- **Outbound:** re-enable sends; peer may still classify local traffic as compromised under strict policy — local override is not protocol agreement.
+
+Default remains **pause + recommend safe path**; never auto-continue or silently merge. Disclosure copy must state that **continue anyway** is local policy and E2E confidentiality/integrity may be compromised.
+
+**Rationale:** Respect user autonomy after necessary information; keep strict detection and auditable incidents; tier hard crypto failures from ambiguous seq state (split-brain, two devices, peer reset mishandled).  
+**Alternatives:** Mandatory halt with single recovery path only (superseded for soft failures); silent ignore without disclosure (rejected); global relaxed ingest by default (rejected).
 
 ---
 

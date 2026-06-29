@@ -2,7 +2,7 @@
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** `SqliteThreadStore` (D028), sidebar catalog in `profile.db` (D035), per-thread dedup (D034), sender seq, windowed sync, strict ingest (D013–D014, D018), clear floor (D037), durable outbox (D017), resource bounds (D029–D033), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D037 in [DECISIONS.md](DECISIONS.md).
+**Planned but not implemented:** `SqliteThreadStore` (D028), sidebar catalog in `profile.db` (D035), per-thread dedup (D034), sender seq, windowed sync, strict ingest + user-choice recovery (D013–D014, D018, D038), clear floor (D037), durable outbox (D017), resource bounds (D029–D033), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D038 in [DECISIONS.md](DECISIONS.md).
 
 ## Persistence
 

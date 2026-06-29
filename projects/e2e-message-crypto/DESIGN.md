@@ -226,13 +226,14 @@ All public APIs return `Roe<T>` from `common/Error.h`.
 
 ## Key rotation and compromise
 
-Aligned with [chat-storage D011](../chat-storage-and-memory/DECISIONS.md):
+Aligned with [chat-storage D011/D038](../chat-storage-and-memory/DECISIONS.md):
 
-1. Ingest detects compromise (seq conflict, floor violation, etc.).
-2. UI notifies user; **manual** new PSK exchange (or confirm both sides rotate).
-3. `session_epoch++` on both peers; `BumpEpoch()` in store.
-4. Optional `epoch_start` system message (chat-storage) as first sequenced row in new epoch.
-5. HKDF uses new epoch; old epoch keys retained for decrypting historical messages locally.
+1. Ingest detects **soft** integrity failure (seq conflict, rewind, repair failure, etc.) or **hard** wire/crypto failure.
+2. **Soft:** pause ingest/outbound; UI shows choice sheet (D038) with disclosure. **Recommended:** manual new PSK exchange + `session_epoch++`. **Optional:** continue with current keys → `ingest_policy=relaxed`, `trust_degraded=true` (user accepts degraded E2E trust).
+3. **Hard** (invalid signature, decrypt failure, epoch decrease): no continue-anyway; pause until delete thread or key rotation.
+4. On **rotate_psk** path: `session_epoch++` on both peers; `BumpEpoch()` in store.
+5. Optional `epoch_start` system message (chat-storage) as first sequenced row in new epoch.
+6. HKDF uses new epoch; old epoch keys retained for decrypting historical messages locally.
 
 ## Post-quantum migration (phase c4 — deferred)
 

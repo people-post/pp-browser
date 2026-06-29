@@ -109,7 +109,7 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 - [ ] Settings or contact flow: import/generate PSK
 - [ ] Display fingerprint; compare/confirm UI
 - [ ] Key rotation flow: bump `session_epoch`, notify peer (system row or in-app)
-- [ ] Compromise path hooks chat-storage D011/D013 UX
+- [ ] Compromise path hooks chat-storage D011/D038 UX (choice sheet + optional continue with current keys)
 - [ ] Optional: QR encode/decode for PSK
 
 **Exit criteria:** User can start e2e thread, verify fingerprint, send/receive, rotate after simulated epoch bump.

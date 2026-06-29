@@ -8,7 +8,7 @@
 4. **Channel isolation** — public (relay) and E2E conversations with the same contact are different threads with different memory boundaries.
 5. **Stable IDs everywhere** — messages, threads, and annotation targets use UUIDs for dedup, sync, and reactions.
 6. **Sender sequence for completeness** — peer-visible direct messages carry a per-sender monotonic `sender_seq` (in addition to UUID) so receivers detect gaps in the live tail; UUID remains the only message identity. Only **`relay_visible`** content consumes sync seq (see `@ai` modes below).
-7. **Strict normal-or-compromised ingest (direct chat)** — in **all direct threads** (`public_relay` and `e2e`), the receiver accepts only messages that match a small set of **normal** cases (D013). Everything else → `sync_state=compromised` (halt ingest, notify; E2E → key rotation / new epoch; public → re-sync UX without PSK rotation). The sender has an explicit **within-epoch contract**; violations are not silently merged.
+7. **Strict normal-or-compromised ingest (direct chat)** — in **all direct threads** (`public_relay` and `e2e`), the receiver classifies inbound traffic with D013: **normal**, **gap**, **soft compromised** (seq integrity), or **hard reject** (wire/crypto). Soft failures **pause** ingest and outbound by default and show a **user choice sheet** (D038); recommended recovery differs by channel (E2E → new PSK + epoch; public → delete thread). User may **continue anyway** under relaxed ingest after disclosure. Hard failures cannot be overridden. Violations are never silently merged under default strict policy.
 8. **Durable outbox** — `relay_visible` rows with `delivery=pending` or `failed` survive app restart; retries reuse the same `(message_id, sender_seq)` (D017).
 9. **Storage abstraction** — `IThreadStore` stays the seam; **`SqliteThreadStore`** per-thread `thread.db` + `threads/profile.db` (`threads` catalog + `outbox` index, D028, D035, D036) from v2a. No `index.json` or other JSON thread files.
 
@@ -74,7 +74,11 @@ Sync watermarks are keyed by **`(peer, session_epoch)`**. A new epoch starts a f
 | `contiguous_peer_seq[peer][epoch]` | Highest seq received with no holes in the active tail for this epoch |
 | `loaded_min_seq[peer][epoch]`, `loaded_max_seq[peer][epoch]` | Oldest/newest peer seq present in local transcript for this epoch |
 | `history_floor_seq[peer][epoch]` | Set on **clear visible history** — seq at or below this in the same epoch is **excluded from sync** (D037): silent discard, not compromised |
-| `sync_state` | `ok` \| `gap` \| `compromised` |
+| `sync_state` | `ok` \| `gap` \| `compromised` — `compromised` means paused pending user resolution (D038) |
+| `ingest_policy` | `strict` (default) \| `relaxed` — classifier mode after user chooses continue anyway (D038) |
+| `user_resolution` | `null` \| `rotate_psk` \| `reset_thread` \| `continue_anyway` \| `pause_only` |
+| `trust_degraded` | bool — persistent after `continue_anyway`; show integrity badge in thread chrome |
+| `integrity_incidents[]` | `{ kind, detected_at, detail }` — append-only audit log per `(peer, epoch)` |
 
 ### ThreadMessage
 
@@ -238,7 +242,8 @@ CREATE TABLE memory (
 CREATE TABLE sync_state (
   peer_contact_id TEXT NOT NULL,
   session_epoch INTEGER NOT NULL,
-  state_json TEXT NOT NULL,          -- watermarks, sync_state, floors
+  state_json TEXT NOT NULL,          -- watermarks, sync_state, ingest_policy, trust_degraded,
+                                     -- user_resolution, integrity_incidents[] (D038)
   PRIMARY KEY (peer_contact_id, session_epoch)
 );
 ```
@@ -440,7 +445,7 @@ For a fixed chat target `(contact_id, channel, session_epoch)`, the **sender** m
 | S6 | The **only** way to emit `sender_seq = 1` again is a **new `session_epoch`** (D014) |
 | S7 | Never emit relay-visible content with `sender_seq < next_outgoing_seq` (no reuse, no rewind) |
 
-Receiver treats sender violations as compromised ingest (D013), not best-effort merge.
+Receiver treats sender violations as soft compromised ingest (D013) by default — pause + user choice (D038), not silent best-effort merge.
 
 ### Bootstrap vs gap
 
@@ -527,14 +532,14 @@ Ordered steps — do not reorder in implementation (D022, D033):
 5. **Plaintext size** — decrypted UTF-8 JSON ≤ `kMaxE2ePlaintextBytes`; public `body.content` ≤ `kMaxChatPayloadJsonBytes`.
 6. **Parse & validate `ChatPayload`** — schema version + `content_type`; **strip ignore wire `content_rml`** (D030).
 7. **History floor (D037)** — if `sender_seq ≤ history_floor_seq[peer][epoch]`, silent discard (stop; no persist, no unread, not compromised).
-8. **D013 ingest classifier** — normal · gap · compromised; reorder buffer before gap declaration.
+8. **D013 ingest classifier** — normal · gap · soft compromised · hard reject; reorder buffer before gap declaration. Uses `ingest_policy` (D038).
 9. **Persist** — append `ThreadMessage`, update watermarks, set `transport` from ingress path.
 
 Validate `thread_id` and `message_id` as UUID before filesystem / DB use.
 
-### Ingest classification (normal · gap · compromised)
+### Ingest classification (normal · gap · soft compromised · hard reject)
 
-After steps 0–6 above (size OK, signature verified, decrypt if E2E; below-floor already discarded in step 7):
+After steps 0–6 above (size OK; below-floor already discarded in step 7). Classifier runs in **`ingest_policy=strict`** unless user chose **continue anyway** (D038 → `relaxed`; see § Relaxed ingest).
 
 **Normal (accept):**
 
@@ -547,46 +552,79 @@ After steps 0–6 above (size OK, signature verified, decrypt if E2E; below-floo
 **Gap (repair allowed; not compromised until repair fails):**
 
 - `sender_seq > contiguous_peer_seq + 1` and `sender_seq > history_floor_seq[peer][epoch]` → request missing range; on success, reclassify as normal.
-- If repair returns seq conflicts or impossible ranges → **compromised**. Below-floor rows in a response are silently discarded (D037), not a compromise trigger.
+- If repair returns seq conflicts or impossible ranges → **soft compromised** (D038 choice sheet). Below-floor rows in a response are silently discarded (D037), not a compromise trigger.
 
-**Compromised (halt ingest immediately):**
+**Soft compromised (pause + user choice — D038):**
+
+| Condition | Why |
+|-----------|-----|
+| Same `(peer, epoch, sender_seq)` + **different** `message_id` | Seq conflict (D011) |
+| `sender_seq < contiguous_peer_seq` and not benign duplicate | Rewind within epoch |
+| `sender_seq = 1` in an **established** epoch where `contiguous_peer_seq > 0` | Sender reset without epoch bump |
+| Gap repair exhausted or returns violating messages | Repair failed |
+
+On soft compromised: **pause ingest and outbound**, set `sync_state=compromised`, append **integrity incident**, show choice sheet. Do not persist the triggering inbound row until user resolves (except record incident metadata). Recovery: see § Integrity recovery.
+
+**Hard reject (no continue-anyway — D038):**
 
 | Condition | Why |
 |-----------|-----|
 | `session_epoch` **decreases** | Illegal rollback |
-| Same `(peer, epoch, sender_seq)` + **different** `message_id` | Seq conflict (D011) |
-| `sender_seq < contiguous_peer_seq` and not benign duplicate | Rewind within epoch |
-| `sender_seq = 1` in an **established** epoch where `contiguous_peer_seq > 0` | Sender reset without epoch bump |
-| Invalid signature / wrong thread / envelope epoch mismatch | Wire invalid |
-| Gap repair exhausted or returns violating messages | Repair failed |
+| Invalid signature / AEAD decrypt failure / wrong thread / envelope epoch mismatch | Wire or crypto invalid |
 
-On compromised: halt ingest, block further sends on the affected chat target, notify user. Recovery: see § Compromise recovery.
+Reject message permanently (steps 2–4/6 already failed). Pause ingest/outbound if not already paused; show incident with **Pause only** — user must delete thread, rotate keys, or contact support. No relaxed ingest.
 
-**Channel-specific recovery:**
+### Integrity recovery (D038)
 
-| Channel | Compromised UX |
-|---------|----------------|
-| `e2e` | Halt ingest; manual new PSK + `session_epoch` bump (D011, D014); optional `epoch_start` system row |
-| `public_relay` | Halt ingest; “conversation integrity problem” — user may delete thread and start fresh or contact support; no PSK rotation |
+**Detection ≠ policy.** Classifier stays strict by default; user picks response after disclosure.
 
-### Compromise recovery (`e2e`)
+**Default on soft compromised:** pause → choice sheet with:
 
-Local state machine per chat target: `ok` → `gap` → `compromised` → `awaiting_new_psk` → `ok`.
+1. **What we detected** (e.g. seq conflict at 42)
+2. **Likely causes** (two devices, peer reset without epoch bump, relay oddity)
+3. **Risk** (missing/reordered/duplicate messages; E2E: confidentiality/integrity may be broken)
+4. **Recommended action** (primary button)
+5. **Optional continue** (secondary/destructive styling)
+
+**Channel-specific options:**
+
+| Channel | Recommended | Optional |
+|---------|-------------|----------|
+| `e2e` | **Start new secure chat** — `user_resolution=rotate_psk`, `awaiting_new_psk`, manual PSK OOB, `session_epoch++`, optional `epoch_start` | **Continue with current keys** — `continue_anyway`, `ingest_policy=relaxed`, `trust_degraded=true` |
+| `public_relay` | **Delete thread / start fresh** — `user_resolution=reset_thread` | **Continue anyway** — same relaxed flags |
+| Both | **Pause only** — remain paused until another choice | — |
+
+**E2E new secure chat flow** (`rotate_psk`):
+
+Local state machine: `ok` → `gap` → `compromised` → `awaiting_new_psk` → `ok`.
 
 ```
-Compromised side                          Innocent peer
+Initiating side (recommended path)          Innocent peer
      |                                         |
-     | 1. Halt ingest + outbound on target     | 1. Halt ingest on target
-     | 2. Show "Start new secure chat"         | 2. Banner: peer session reset
-     | 3. User exchanges new PSK OOB           | 3. Accept higher session_epoch
-     | 4. session_epoch++ locally              |    when epoch_start or first
-     | 5. Send epoch_start (seq=1)             |    sequenced message arrives
-     | 6. Resume at seq=2+                     | 4. Fresh watermarks for new epoch
+     | 1. User confirms new secure chat        | 1. May see peer pause banner
+     | 2. Exchange new PSK OOB                 | 2. Accept higher session_epoch
+     | 3. session_epoch++ locally              |    on epoch_start or first seq msg
+     | 4. Send epoch_start (seq=1) optional    | 3. Fresh watermarks for new epoch
+     | 5. Resume at seq=2+                     |
 ```
 
-- **Who bumps first:** compromised side initiates after user confirms; innocent peer accepts **strictly higher** `session_epoch` as bootstrap (D014).
-- **Old epoch keys:** retain locally for decrypting historical ciphertext only; do not ingest new traffic on old epoch after compromise.
-- **Both sides compromised:** each user runs the flow independently; coordinated PSK exchange is manual (E001).
+- **Who bumps first:** initiating side after user confirms; innocent peer accepts **strictly higher** `session_epoch` (D014).
+- **Old epoch keys:** retain for decrypting historical ciphertext only; do not ingest new traffic on old epoch after rotation.
+- **Both sides compromised:** each user chooses independently; coordinated PSK exchange is manual (E001).
+
+**Continue anyway** (`ingest_policy=relaxed`): see § Relaxed ingest. Show persistent **`trust_degraded`** badge until user rotates/resets or starts new epoch. Local override is not protocol agreement — peer may still be strict.
+
+### Relaxed ingest (`ingest_policy=relaxed`, D038)
+
+Active only when `user_resolution=continue_anyway` and `trust_degraded=true`.
+
+| Situation | Rule |
+|-----------|------|
+| Seq conflict | Keep first-seen `(peer, epoch, sender_seq)`; discard conflicting inbound; no re-pause unless a third distinct `message_id` at same seq |
+| Rewind / non-contiguous | Accept inbound; advance `contiguous_peer_seq` only on strict increase above current; gaps shown in UI, no auto-pause |
+| Outbound | Re-enable sends on chat target |
+
+User can return to strict policy only via **Start new secure chat**, **Delete thread**, or explicit reset — not silently.
 
 ### Clear history and seq (D037)
 
@@ -610,7 +648,7 @@ When a peer wipes local state, installs on a new device without backup, or expli
 
 **Restored backup** (same identity + chat-target sidecar): not a reset — continue same epoch and seq.
 
-Sending `sender_seq=1` without bumping epoch in an established epoch is always **compromised**.
+Sending `sender_seq=1` without bumping epoch in an established epoch is **soft compromised** (D038 choice sheet; recommended path is epoch bump).
 
 Benign duplicate delivery (same `message_id` + same `sender_seq`) is ignored via UUID dedup.
 
@@ -676,6 +714,7 @@ Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`. Change `HasMessageId` to 
 - **Windowed transcript (D031)** — render loaded page only; scroll-up fetches older messages; composer `maxlength` hint matching `kMaxComposeTextBytes`.
 - **Sidebar list (D035)** — `ListThreads` returns catalog rows; verify/repair **visible rows only** when the sessions pane is shown or scrolled; pass viewport bounds from UI when virtualized.
 - **Gap banner** — when `sync_state=gap`; tap to retry sync.
+- **Integrity banner (D038)** — when `sync_state=compromised` or `trust_degraded`; choice sheet with disclosure + channel-specific options (recommended vs continue anyway).
 - **Scroll hint** — when `loaded_min_seq > 1`.
 - **`@ai` modes** — composer hints; confirm for `@ai+` / `@ai++`.
 - **Clear history (D024)** — choice sheet: clear messages / clear messages & memory / delete conversation.
@@ -704,8 +743,10 @@ Keep `DeleteThread`, `AppendMessage`, `UpdateMessage`. Change `HasMessageId` to 
 - [ ] `ChatPayload` types render: text, annotation, contact_card, crypto_tx (D026).
 - [ ] Pending `relay_visible` messages survive restart and retry with same `(message_id, sender_seq)` (D017).
 - [ ] Clear history preserves seq counters and epoch; `sender_seq ≤ history_floor` → silent discard, not compromised (D037).
-- [ ] Peer reset bumps `session_epoch`; `sender_seq=1` on new epoch accepted; same-epoch rewind triggers compromised UX.
-- [ ] Duplicate `(sender, session_epoch, sender_seq)` with conflicting `message_id` triggers key rotation UX (`e2e`) or integrity UX (`public_relay`).
+- [ ] Peer reset bumps `session_epoch`; `sender_seq=1` on new epoch accepted; same-epoch rewind triggers integrity choice sheet (D038).
+- [ ] Soft integrity failure pauses ingest/outbound; choice sheet offers recommended + continue anyway; hard wire failures have no override (D038).
+- [ ] `continue_anyway` sets `ingest_policy=relaxed`, `trust_degraded`; relaxed rules per D038; incidents logged in `sync_state`.
+- [ ] Duplicate `(sender, session_epoch, sender_seq)` with conflicting `message_id` triggers integrity UX with recommended rotation (`e2e`) or thread reset (`public_relay`).
 - [ ] `@ai` local vs `@ai+` / `@ai++` shared modes behave per routing table; shared rows use trigger user’s sync seq.
 - [ ] Transcript display order follows D019; reorder buffer (D020) prevents false gaps during benign reorder.
 - [ ] D029 limits enforced on send/ingest; D030 no remote `content_rml`; D031 windowed UI; D032 poll backoff.
