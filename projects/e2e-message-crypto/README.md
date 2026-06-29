@@ -3,11 +3,11 @@
 **Status:** Planning — design in progress (as of 2026-06-29)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
-**Related project:** [chat-storage-and-memory](../chat-storage-and-memory/) (channel split, `sender_seq`, `session_epoch`, ingest rules)
+**Related project:** [chat-storage-and-memory](../chat-storage-and-memory/) (channel split, `ChatPayload`, `sender_seq`, ingest rules)
 
 ## One-line goal
 
-High-assurance **symmetric E2E** for direct chat: manual 256-bit PSK, HKDF-derived session keys, XChaCha20-Poly1305 AEAD with canonical AAD, replay binding via `sender_seq` — implemented in `base/crypto` (libsodium) and wired into messaging only after design and [chat-storage-and-memory](../chat-storage-and-memory/) channel/sync prerequisites are solid.
+High-assurance **symmetric E2E** for direct chat: manual 256-bit PSK, HKDF session keys, XChaCha20-Poly1305 AEAD, `body.e2e.payload_b64` wire format, JSON `ChatPayload` plaintext (E010).
 
 ## Documents in this folder
 
@@ -28,12 +28,12 @@ High-assurance **symmetric E2E** for direct chat: manual 256-bit PSK, HKDF-deriv
 | c3 | Key distribution UX (import, fingerprint, rotation) | Not started |
 | c4 | Post-quantum migration (hybrid KEM / signatures) | Deferred |
 
-Update this table when a phase completes.
-
 ## Open questions
 
-- [ ] PSK at rest: file JSON vs OS keychain first?
-- [ ] Relay field name for ciphertext (`body.ciphertext_b64` vs nested `body.e2e`)?
-- [ ] Plaintext inside AEAD: raw UTF-8 `text` only v1, or JSON wrapper for `content_rml` from day one?
-- [ ] Group E2E: defer indefinitely vs shared group PSK?
-- [ ] When to add optional automated key setup (hybrid X25519 + ML-KEM) alongside manual PSK?
+| ID | Topic |
+|----|-------|
+| **E-O003** | PSK entry UX v1 (paste base64 vs fingerprint confirm vs QR) |
+| **E-O004** | Automated key agreement timing (manual only vs hybrid KEM in c4) |
+| **E-O005** | Group E2E strategy (deferred vs shared PSK vs MLS) |
+
+**Resolved:** ciphertext field → `body.e2e.payload_b64` (E009); AEAD plaintext → JSON `ChatPayload` (E010).

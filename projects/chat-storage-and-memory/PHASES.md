@@ -25,9 +25,10 @@ Existing foundation this project builds on.
 
 ### Store API and JSON schema
 
+- [ ] Migrate `JsonThreadStore` to per-thread directory layout (D025): `{thread_id}/messages.json`, `memory.json` placeholder
 - [ ] Add `ClearMessages(thread_id)` to `IThreadStore` + `JsonThreadStore`
-- [ ] Bump thread/message JSON `schema_version` if fields added; document in CONFIGURATION or project DECISIONS
-- [ ] Optional: persist `user_payload` on `ThreadMessage` for AI form submits in threads
+- [ ] Bump `schema_version`; wipe old flat `{thread_id}.json` on upgrade (D016 — no migration)
+- [ ] Atomic JSON writes (temp + rename) per file in thread dir
 - [ ] Unit tests for `ClearMessages`, append-after-clear, index unchanged
 
 ### Agent / chat integration
@@ -39,16 +40,16 @@ Existing foundation this project builds on.
 
 ### UX
 
-- [ ] Thread menu: **Clear history** (truncate messages, keep thread id/title)
-- [ ] Keep **Close conversation** = existing delete
-- [ ] Confirm dialog copy for clear vs delete
+- [ ] Thread menu: **Clear history** → choice sheet (D024): clear messages / clear messages & memory / delete conversation
+- [ ] **Forget AI memory** as separate action (when v3 lands)
+- [ ] Keep **Close conversation** = delete thread directory
 
 ### Docs
 
 - [ ] Update [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md) v2 persistence section when v2a ships
 - [ ] Update this file + README progress snapshot
 
-**Exit criteria:** New AI thread survives app restart with full transcript; clear history empties UI but keeps sidebar entry.
+**Exit criteria:** New AI thread survives restart; clear-messages level empties UI but keeps sidebar entry.
 
 ---
 
@@ -61,7 +62,7 @@ Existing foundation this project builds on.
 - [ ] Add `ThreadChannel` enum (`public_relay`, `e2e`) — name TBD in implementation
 - [ ] JSON field on `Thread`; `encrypted = (channel == e2e)` for existing UI binding
 - [ ] `FindOrCreateDirectThread(contact_id, channel)` — replace single-key lookup
-- [ ] Migration: existing direct threads default to `public_relay`
+- [ ] Wipe pre-v2b flat thread files on upgrade (D016)
 
 ### Creation flows
 
@@ -70,14 +71,14 @@ Existing foundation this project builds on.
 
 ### UI
 
-- [ ] Sidebar shows channel distinction (two rows or badge — resolve open question in README)
-- [ ] E2E shell styling activates when `encrypted=true`
+- [ ] Sidebar **grouped sections** (D023): AI, Public, Private — collapsible headers
+- [ ] E2E shell styling when `channel=e2e`
 
 ### Memory boundary
 
 - [ ] Document: AI context and future memory never cross channels (enforce in thread-scoped store keys)
 
-**Exit criteria:** Two thread files can exist for one contact; opening each shows separate histories.
+**Exit criteria:** Two thread dirs can exist for one contact (public + private); sidebar shows correct group.
 
 ---
 
@@ -87,7 +88,7 @@ Existing foundation this project builds on.
 
 ### Memory storage
 
-- [ ] Persist `ConversationSummary` per thread (JSON sidecar or top-level in thread file)
+- [ ] `threads/{thread_id}/memory.json` sidecar (D025)
 - [ ] `IThreadStore::GetThreadMemory` / `SetThreadMemory`
 - [ ] Wire `SlidingWindowContextPolicy` / thread policy to inject summary when present
 
@@ -98,9 +99,9 @@ Existing foundation this project builds on.
 
 ### UX
 
-- [ ] **Forget what AI learned** — clears summary/facts, keeps messages
-- [ ] **Clear visible history** — optional checkbox “Also forget AI memory”
-- [ ] Copy explaining local-only vs peer retention for P2P threads
+- [ ] **Forget what AI learned** — wipes `memory.json`, keeps `messages.json`
+- [ ] Clear history choice sheet level “clear messages & memory” (D024)
+- [ ] P2P disclosure copy on clear levels
 
 ### Docs
 
@@ -110,29 +111,30 @@ Existing foundation this project builds on.
 
 ---
 
-## Phase v4 — Annotations and transport provenance
+## Phase v4 — ChatPayload types and transport provenance
 
-**Goal:** Stable IDs for reactions; E2E users see relay vs direct.
+**Goal:** Unified message format (D026); reactions and rich cards; E2E transport badges.
 
 ### Message schema
 
-- [ ] `MessageKind`: content | annotation | system
-- [ ] `target_message_id`, `annotation_type` for likes/edits/receipts
+- [ ] `content_type` + `payload` on `ThreadMessage`; `ChatPayload` JSON codec
+- [ ] Types v1: `text`, `annotation`, `contact_card`, `crypto_tx`, `system`
+- [ ] Relay `body.content` for public; envelope signing covers structured body
 - [ ] `MessageTransport`: local | relay | direct
 - [ ] Set `transport` in send/receive paths
 
 ### LLM / display
 
-- [ ] `ThreadContextPolicy` filters non-content messages
-- [ ] `BuildDisplayRows` merges annotations onto targets (or inline system rows)
-- [ ] E2E: per-message transport badge (RCSS + data model fields)
+- [ ] `ThreadContextPolicy` filters to `content_type=text` (+ selected `system`)
+- [ ] `BuildDisplayRows`: merge `annotation` onto `target_message_id`; card templates for contact/crypto
+- [ ] E2E: per-message transport badge (RCSS + data model)
 
-### Protocol (if syncing annotations)
+### Protocol
 
-- [ ] Relay envelope extension for annotation messages (or local-only v1)
-- [ ] Dedup still by `message_id`
+- [ ] Relayed annotations/cards use same envelope as text (`relay_visible` + seq when sent to peer)
+- [ ] Dedup by `message_id`
 
-**Exit criteria:** Like on message survives restart; E2E thread shows relay badge on fallback sends.
+**Exit criteria:** Reaction survives restart; contact card renders; E2E shows relay badge on fallback.
 
 ---
 
@@ -140,45 +142,52 @@ Existing foundation this project builds on.
 
 **Goal:** Private/direct chat detects missing peer messages and syncs reliably without full-history pull.
 
-**Depends on:** v2b (channel split), v4 (`transport`, envelope extensions); peer backfill requires direct/libp2p transport (stub today).
+**Depends on:** v2b, v4; relay `GET /v1/threads/{id}/messages` (D027) for offline gap repair.
 
 ### Schema and persistence
 
-- [ ] Add `sender_seq`, `session_epoch` to `ThreadMessage` and relay envelope
-- [ ] Persist `next_outgoing_seq`, `session_epoch` on chat target `(contact_id, channel)`
+- [ ] `threads/{thread_id}/sync.json` for per-thread watermarks
+
+- [ ] Add `sender_seq`, `session_epoch`, `sender_contact_id` to `ThreadMessage` and relay envelope (D021)
+- [ ] Persist `next_outgoing_seq`, `session_epoch` on chat target `(contact_id, channel)` sidecar
 - [ ] Per-thread sync state: `contiguous_peer_seq`, `loaded_min/max_seq`, `history_floor_seq` **per `(peer, session_epoch)`**, `sync_state`
-- [ ] Assign `(message_id, sender_seq)` at first local persist; increment seq only when `relay_visible=true`
-- [ ] Failed send retry: same `message_id` + `sender_seq` (D010)
+- [ ] Assign `(message_id, sender_seq)` at first local persist; increment seq only when `relay_visible=true`; serialize per chat target
+- [ ] Breaking schema bump — devs wipe threads dir (D016); no legacy backfill
 
 ### Send / receive
 
-- [ ] Sign envelope including `sender_seq` and `session_epoch`
+- [ ] Sign envelope including `sender_seq`, `session_epoch`, `sender_contact_id`
+- [ ] Durable outbox: startup rescan of pending/failed `relay_visible` rows (D017)
 - [ ] Implement within-epoch sender contract (DESIGN.md § Within-epoch sender contract)
-- [ ] Ingest classifier: normal · gap · compromised (D013)
+- [ ] Receive pipeline: dedup → verify → decrypt (e2e) → D013 classifier → persist (D022)
+- [ ] Ingest classifier on **public and e2e** direct threads (D018)
 - [ ] Distinguish bootstrap (high seq / new epoch) vs contiguous gap (D009)
 - [ ] On clear history: set `history_floor_seq[peer][epoch]`; floor violation → compromised (D013)
 - [ ] Peer reset: bump `session_epoch`, optional `epoch_start` control row (D014)
+- [ ] Compromise recovery UX + state machine (DESIGN.md § Compromise recovery)
 
 ### Sync modes
 
 - [ ] **Tail sync** on thread open / reconnect / new device (default N=50)
-- [ ] **Gap repair** — auto-request missing range from peer (direct) with relay fallback
+- [ ] **Gap repair** — peer direct; relay `GET …/messages` (D027) when peer offline
 - [ ] **History backfill** — scroll-to-top triggers page fetch (25 messages)
-- [ ] Reorder buffer (short window) before declaring gap
+- [ ] Reorder buffer `kReorderWindow=32` before declaring gap (D020)
+- [ ] Display sort per D019 in `BuildDisplayRows`
 
 ### Integrity and UX
 
 - [ ] Full compromised triggers per D013 (seq conflict D011, floor violation, epoch decrease, rewind, repair failure)
 - [ ] Key rotation + new secure chat flow; bump `session_epoch`, reset seq for new epoch only (D014)
 - [ ] Gap banner in chat UI; scroll hint when older history exists
-- [ ] Unit tests: seq assignment, retry idempotency, gap detect, bootstrap vs gap, clear-history floor → compromised, epoch bump fresh stream, same-epoch seq=1 rewind → compromised
+- [ ] Unit tests: seq assignment, retry idempotency, durable outbox survive restart, gap detect, bootstrap vs gap, clear-history floor → compromised, epoch bump fresh stream, same-epoch seq=1 rewind → compromised, reorder buffer (D020)
 
 ### Docs
 
-- [ ] Extend [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md) relay envelope when implemented
+- [ ] Extend [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md): envelope, ChatPayload, relay fetch API (D027)
+- [ ] Document single-active-device assumption (D015) in P2P_MESSAGING or CONFIGURATION
 - [ ] Update this file + README progress snapshot
 
-**Exit criteria:** Simulated gap in tail triggers auto-repair; new epoch accepts seq=1 bootstrap; clear history then `sender_seq ≤ floor` triggers compromised; same-epoch rewind triggers compromised; conflict triggers compromise UX.
+**Exit criteria:** Simulated gap in tail triggers auto-repair on direct path; pending messages survive restart; new epoch accepts seq=1 bootstrap; clear history then `sender_seq ≤ floor` triggers compromised; same-epoch rewind triggers compromised; conflict triggers compromise UX.
 
 ---
 
@@ -254,7 +263,7 @@ Existing foundation this project builds on.
 - [ ] Add `JsonThreadStore` unit tests (load, append, delete, clear, dedup)
 - [ ] Agent tool docs if `list_conversations` must expose channel
 - [ ] Fuzz/dedup test: duplicate relay `message_id` ignored
-- [ ] Sender seq tests: gap repair, bootstrap tail, clear-history floor → compromised, epoch bump, same-epoch rewind (v6)
+- [ ] Sender seq tests: gap repair, bootstrap tail, clear-history floor → compromised, epoch bump, same-epoch rewind, durable outbox (v6)
 - [ ] `@ai` mode tests: local no-seq, shared reply +1, shared full +2 (v6b)
 
 ---
@@ -267,3 +276,5 @@ Existing foundation this project builds on.
 | 2026-06-27 | D008–D011: sender seq, windowed sync, seq lifecycle, session compromise; phase v6 |
 | 2026-06-27 | D012: three `@ai` modes; phase v6b; sync seq only when `relay_visible` |
 | 2026-06-29 | D013–D014: strict normal-or-compromised ingest, peer reset = epoch bump; DESIGN P2P sync rewrite |
+| 2026-06-29 | D015–D022: single active device, no migration, durable outbox, public ingest, display order, reorder window, sender_contact_id, receive pipeline |
+| 2026-06-29 | D023–D027: sidebar groups, clear choice sheet, per-thread dir, ChatPayload, relay API; E009/E010 wire format |

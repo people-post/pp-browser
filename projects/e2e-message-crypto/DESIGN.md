@@ -105,11 +105,20 @@ Fixed byte order (big-endian integers). **Any change bumps protocol version.**
 - Decrypt with wrong AAD → MUST fail (no silent ignore).
 - Local-only rows (`relay_visible=false`) are not encrypted for relay.
 
-## AEAD: plaintext (inside ciphertext)
+## AEAD: plaintext (inside ciphertext — E010)
 
-**v1 (tentative — see O002):** UTF-8 user message `text` only.
+UTF-8 JSON serialization of **`ChatPayload`** ([chat-storage D026](../chat-storage-and-memory/DECISIONS.md)):
 
-**Future:** JSON wrapper `{"text":"…","content_rml":"…"}` for shared `@ai` rows with RML.
+```json
+{
+  "schema_version": 1,
+  "content_type": "text",
+  "text": "Hello",
+  "payload": {}
+}
+```
+
+All `content_type` values (`text`, `annotation`, `contact_card`, `crypto_tx`, `system`) may appear inside E2E ciphertext. `content_rml` for AI rows remains app-local on `ThreadMessage` until a future payload extension.
 
 ## Encrypted payload blob
 
@@ -136,7 +145,9 @@ Outer envelope stays JSON + Ed25519 signature (classical). Extensions from [chat
   "sender_seq": 42,
   "session_epoch": 1,
   "body": {
-    "ciphertext_b64": "…"
+    "e2e": {
+      "payload_b64": "…"
+    }
   },
   "timestamp": 1234567890,
   "signature": "…"
@@ -145,18 +156,17 @@ Outer envelope stays JSON + Ed25519 signature (classical). Extensions from [chat
 
 | Channel | `body` shape | Signature covers |
 |---------|--------------|------------------|
-| `public_relay` | `{ "text": "…" }` (today) | message_id, thread_id, timestamp, … |
-| `e2e` | `{ "ciphertext_b64": "…" }` | + `sender_seq`, `session_epoch` |
-
-Signature payload is canonical JSON **without** the `signature` field, stable key ordering TBD at implementation (document in c2).
+| `public_relay` | `{ "content": { …ChatPayload… } }` | message_id, thread_id, timestamp, sender_contact_id, … |
+| `e2e` | `{ "e2e": { "payload_b64": "…" } }` | + `sender_seq`, `session_epoch` |
 
 **Send pipeline (e2e):**
 
-1. Assign `(message_id, sender_seq)` at first local persist (chat-storage D010).
-2. Build canonical AAD from envelope + message fields.
-3. `MessageCipher::Encrypt(plaintext, session_key, aad)` → blob → base64 → `body.ciphertext_b64`.
-4. Sign outer envelope with Ed25519 identity key.
-5. Relay; on receive, verify signature → decrypt → ingest per D013.
+1. Build `ChatPayload` JSON from `ThreadMessage`.
+2. Assign `(message_id, sender_seq)` at first local persist (chat-storage D010).
+3. Build canonical AAD from envelope + message fields.
+4. `MessageCipher::Encrypt(utf8(payload_json), session_key, aad)` → blob → base64 → `body.e2e.payload_b64`.
+5. Sign outer envelope with Ed25519 identity key.
+6. Relay; on receive, verify signature → decrypt → parse JSON → ingest per D013.
 
 ## Replay protection
 

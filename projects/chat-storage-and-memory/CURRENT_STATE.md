@@ -2,7 +2,7 @@
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
-**Planned but not implemented:** sender seq, windowed sync, gap repair, strict ingest (D013–D014), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D014 in [DECISIONS.md](DECISIONS.md).
+**Planned but not implemented:** sender seq, windowed sync, gap repair, strict ingest (D013–D014, D018), durable outbox (D017), three `@ai` modes — see [DESIGN.md](DESIGN.md) and D008–D022 in [DECISIONS.md](DECISIONS.md).
 
 ## Persistence
 
@@ -21,8 +21,10 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 
 ```
 {data_dir}/profiles/{profile_id}/threads/index.json
-{data_dir}/profiles/{profile_id}/threads/{thread_id}.json   # { "messages": [...] }
+{data_dir}/profiles/{profile_id}/threads/{thread_id}.json   # { "messages": [...] }  — legacy flat file
 ```
+
+**Target (D025):** `threads/{thread_id}/messages.json`, `memory.json`, `sync.json` per thread directory.
 
 ## Data model (today)
 
@@ -108,5 +110,7 @@ Legacy path: `agent_->Submit()` uses `Conversation` only — no disk.
 5. No annotation / meta-message schema.
 6. No transport provenance field or UI.
 7. `Thread.encrypted` unused in creation paths.
-8. No `sender_seq`, session epoch, strict ingest (D013–D014), or gap-repair sync (relay poll + UUID dedup only).
+8. No `sender_seq`, session epoch, strict ingest (D013–D014, D018), durable outbox (D017), or gap-repair sync (relay poll + UUID dedup only).
+9. No single-device assumption documented in app; multi-device same identity would seq-conflict per D015.
+10. Schema bumps will require wiping local threads (D016) — no migration path planned.
 9. `@ai` has one local-only mode today — no `@ai+` / `@ai++` shared-to-peer paths (D012).

@@ -13,12 +13,13 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D002 — One file per thread + index
+## D002 — Thread index + per-thread directory (superseded on-disk detail by D025)
 
 **Date:** 2026-06-27  
-**Decision:** Retain `threads/index.json` for sidebar metadata and `threads/{thread_id}.json` for message arrays.  
-**Rationale:** Already implemented; clear thread = delete one file; index stays small for fast sidebar load.  
-**Alternatives:** Single database or single JSON blob for all conversations.
+**Updated:** 2026-06-29 — per-thread directory layout (D025).  
+**Decision:** Retain `threads/index.json` for sidebar metadata. Each thread owns a **directory** `{thread_id}/` with separate files for messages, memory, and sync state — not a single flat `{thread_id}.json`.  
+**Rationale:** Sidecar memory, atomic writes per artifact, room for attachments later; index stays small for fast sidebar load.  
+**Alternatives:** Single file per thread (original D002); monolithic database.
 
 ---
 
@@ -40,12 +41,13 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D005 — UUID message IDs + annotation rows
+## D005 — UUID message IDs + payload rows (see D026)
 
 **Date:** 2026-06-27  
-**Decision:** Every message has a stable UUID. Reactions and decorations are separate messages with `kind=annotation` and `target_message_id`, not mutations of the target row.  
-**Rationale:** Relay dedup already uses `message_id`; append-only simplifies sync and audit; LLM context excludes annotations by kind.  
-**Alternatives:** Embedded likes array on message JSON; positional indices as IDs.
+**Updated:** 2026-06-29 — unified `ChatPayload` (D026).  
+**Decision:** Every message has a stable UUID. Reactions, cards, and txs are **separate messages** with their own id and `content_type` — not mutations of the target row. Annotations reference `target_message_id` in `payload`.  
+**Rationale:** Relay dedup uses `message_id`; append-only simplifies sync; LLM excludes non-text types by default.  
+**Alternatives:** Embedded likes array; positional indices as IDs.
 
 ---
 
@@ -112,12 +114,13 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D013 — Strict normal-or-compromised ingest (private chat)
+## D013 — Strict normal-or-compromised ingest (direct chat)
 
 **Date:** 2026-06-29  
-**Decision:** In direct/E2E threads, the receiver accepts only messages matching a defined set of **normal** cases: benign duplicate, epoch advance, contiguous tail (`sender_seq == contiguous + 1` and above floor), tail bootstrap on empty per-epoch store, and authorized history backfill in `(floor, loaded_min)`. **`sender_seq ≤ history_floor_seq[peer][epoch]` in the same epoch is compromised** (replay, stale traffic, or sender violated within-epoch contract) — not silently ignored. **`sender_seq < contiguous_peer_seq`** without benign duplicate, **epoch decrease**, invalid signature, and **gap repair failure** are also compromised. **`sender_seq > contiguous + 1`** above floor is **gap** (repair allowed); repair exhaustion → compromised. Sync watermarks are keyed by **`(peer, session_epoch)`**.  
-**Rationale:** Private chat requires a fail-closed integrity model; ambiguous ingest must not merge silently; the sender within-epoch contract (DESIGN.md § Within-epoch sender contract) makes “normal” unambiguous.  
-**Alternatives:** Silently ignore below-floor messages; treat all gaps as compromised without repair; global seq watermarks across epochs.
+**Updated:** 2026-06-29 — scope extended to all direct threads (D018).  
+**Decision:** In **all direct threads** (`public_relay` and `e2e`), the receiver accepts only messages matching a defined set of **normal** cases: benign duplicate, epoch advance, contiguous tail (`sender_seq == contiguous + 1` and above floor), tail bootstrap on empty per-epoch store, and authorized history backfill in `(floor, loaded_min)`. **`sender_seq ≤ history_floor_seq[peer][epoch]` in the same epoch is compromised** (replay, stale traffic, or sender violated within-epoch contract) — not silently ignored. **`sender_seq < contiguous_peer_seq`** without benign duplicate, **epoch decrease**, invalid signature, and **gap repair failure** are also compromised. **`sender_seq > contiguous + 1`** above floor is **gap** (repair allowed); repair exhaustion → compromised. Sync watermarks are keyed by **`(peer, session_epoch)`**. **E2E** compromised → PSK rotation + epoch bump; **public_relay** → integrity UX without PSK (delete thread / support).  
+**Rationale:** Private and public direct chat both need fail-closed integrity; only recovery UX differs.  
+**Alternatives:** E2E-only strict ingest; silently ignore below-floor messages; treat all gaps as compromised without repair; global seq watermarks across epochs.
 
 ---
 
@@ -130,14 +133,146 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
+## D015 — Single active sender per identity (v1)
+
+**Date:** 2026-06-29  
+**Decision:** v1 assumes **one active sending client per profile identity** per chat target. Running the same identity on two devices without coordination is unsupported — conflicting `sender_seq` triggers compromised ingest (D011). Document in settings/help; no device-scoped sub-seq or relay seq lease in v1.  
+**Rationale:** Per-chat-target seq is simple and sufficient pre-launch; multi-device coordination is a large protocol surface.  
+**Alternatives:** Device-scoped seq in envelope; central seq lease via relay; per-device PSK.
+
+---
+
+## D016 — No legacy thread migration
+
+**Date:** 2026-06-29  
+**Decision:** **No in-place upgrade** from pre-v2b/v6 on-disk thread JSON. Schema version bumps may require deleting `{data_dir}/profiles/{id}/threads/` (and chat-target sidecar when added). Acceptable because there are no production users yet.  
+**Rationale:** Avoid migration code while the model is still evolving; devs wipe local data on breaking bumps.  
+**Alternatives:** Backfill `sender_seq` on old messages; dual-read old/new schemas indefinitely.
+
+---
+
+## D017 — Durable outbox from thread store
+
+**Date:** 2026-06-29  
+**Decision:** Pending/failed `relay_visible` messages are the **durable outbox** — persisted in `IThreadStore` before send. On startup, rescan and re-enqueue; in-memory retry queue is a performance layer only. Retries always reuse the same `(message_id, sender_seq)`. Relay must treat duplicate `message_id` as idempotent.  
+**Rationale:** Restart must not drop unsent messages; local-first reliability.  
+**Alternatives:** Separate outbox file; seq assigned only after successful relay (rejected in D010).
+
+---
+
+## D018 — Strict ingest on public and E2E direct threads
+
+**Date:** 2026-06-29  
+**Decision:** D013 ingest classifier applies to **`public_relay` and `e2e` direct threads**. Recovery differs: E2E uses PSK rotation + epoch bump; public uses integrity banner and thread reset without crypto rotation.  
+**Rationale:** Gap detection and seq integrity matter for all person-to-person chat, not only encrypted bodies.  
+**Alternatives:** Relaxed ingest on public channel (timestamp + UUID only).
+
+---
+
+## D019 — Transcript display ordering
+
+**Date:** 2026-06-29  
+**Decision:** UI sorts `relay_visible` messages by `(session_epoch, sender_contact_id, sender_seq)`; local-only rows by `timestamp` among themselves; tie-break `timestamp` then `message_id`.  
+**Rationale:** Sync integrity uses seq; timestamps may skew across devices; consistent scroll behavior during gap repair.  
+**Alternatives:** Timestamp-primary sort; insertion order only.
+
+---
+
+## D020 — Reorder window before gap declaration
+
+**Date:** 2026-06-29  
+**Decision:** Hold out-of-order inbound messages in a reorder buffer of **`kReorderWindow = 32`** seq slots above `contiguous_peer_seq` before setting `sync_state=gap`.  
+**Rationale:** Benign reorder during multi-path delivery or parallel repair should not alarm users.  
+**Alternatives:** Zero buffer (immediate gap); larger window (more memory).
+
+---
+
+## D021 — `sender_contact_id` required on relay envelope
+
+**Date:** 2026-06-29  
+**Decision:** Relay envelope includes explicit **`sender_contact_id`** (contact id, not relay id). Ingest must not infer sender from `thread.participant_contact_ids[0]`.  
+**Rationale:** Required for E2E AAD, group chat later, and correct per-sender seq streams.  
+**Alternatives:** Infer from thread metadata; use `sender_relay_id` only.
+
+---
+
+## D022 — Receive pipeline step order
+
+**Date:** 2026-06-29  
+**Decision:** Ingest order is fixed: UUID dedup → signature verify → thread/epoch check → AEAD decrypt (e2e) → D013 classifier (with reorder buffer) → persist. See DESIGN.md § Receive pipeline.  
+**Rationale:** Do not persist or advance watermarks before cryptographic and structural validation.  
+**Alternatives:** Decrypt before signature; classify before decrypt.
+
+---
+
+## D023 — Sidebar grouped by channel category
+
+**Date:** 2026-06-29  
+**Decision:** Sidebar lists conversations in **named groups**: **AI** (`kind=ai`), **Public** (direct + `channel=public_relay`), **Private** (direct + `channel=e2e`). Same contact may appear once per group when both channels exist. Collapsible section headers; empty groups hidden or show placeholder.  
+**Rationale:** Channel split (D004) needs visible separation; grouped lists scale better than interleaved rows.  
+**Alternatives:** Two rows per contact without grouping; single list with badges only; nested contact → channels.
+
+---
+
+## D024 — Clear history as multi-level choice sheet
+
+**Date:** 2026-06-29  
+**Decision:** **Clear history** opens a **choice sheet** (not a single confirm). User picks one level per action:
+
+| Level | Label (illustrative) | Transcript | AI memory | Thread shell | P2P floor |
+|-------|----------------------|------------|-----------|--------------|-----------|
+| `clear_visible` | Clear messages | wipe | keep | keep | set `history_floor_seq` |
+| `clear_visible_and_memory` | Clear messages & AI memory | wipe | wipe | keep | set floor |
+| `delete_conversation` | Delete conversation | gone | gone | delete | n/a |
+
+P2P levels include disclosure that peer/relay may retain copies. **Forget AI memory** alone remains a separate menu action (memory only, transcript unchanged).  
+**Rationale:** One “clear” button with explicit levels avoids wrong defaults (O002) and maps to D003 semantics.  
+**Alternatives:** Separate menu items only; single clear with checkbox; default wipe memory.
+
+---
+
+## D025 — Per-thread directory + `memory.json` sidecar
+
+**Date:** 2026-06-29  
+**Decision:** On-disk layout uses **one directory per thread** under `threads/{thread_id}/`:
+
+- `messages.json` — transcript (`messages[]`, `schema_version`)
+- `memory.json` — `ConversationSummary` + future fact rows (D003 layer 3)
+- `sync.json` — per-thread sync watermarks (v6; optional until v6)
+
+`threads/index.json` holds sidebar metadata only. Delete thread = remove directory + index entry. **No migration** from flat `{thread_id}.json` (D016).  
+**Rationale:** Sidecar memory independent of transcript; atomic per-file writes; extensible for attachments.  
+**Alternatives:** Summary inline in `messages.json`; single file per thread.
+
+---
+
+## D026 — Unified `ChatPayload` message format
+
+**Date:** 2026-06-29  
+**Decision:** All chat items (text, annotations, contact cards, crypto transactions, system controls) share one **wire and disk payload** shape. `ThreadMessage` carries `content_type` + JSON `payload` (+ optional `text` snippet for preview/search). Annotations are **first-class messages** with the same envelope and row model — UI adds special rendering (badge, inline on target, card chrome). See DESIGN.md § ChatPayload.
+
+**Sync seq:** `relay_visible` payloads use normal seq rules (D008). Local-only reactions may use `relay_visible=false` without seq. LLM context includes `content_type=text` and selected `system` rows only.
+
+**Rationale:** One parser, one relay schema, extensible to contact cards and on-chain txs without new envelope versions per type.  
+**Alternatives:** Separate `kind=annotation` only; embedded mutations on target rows; type-specific envelope versions.
+
+---
+
+## D027 — Relay thread messages API (seq backfill)
+
+**Date:** 2026-06-29  
+**Decision:** Relay exposes **per-thread, seq-scoped message fetch** for tail sync, gap repair, and history backfill. Proposed shape in DESIGN.md § Relay API (D027). Inbox poll may remain for push/hints; **authoritative backfill** uses the thread endpoint. Send remains idempotent on `message_id`.  
+**Rationale:** Gap repair when peer is offline requires relay indexed by `(thread_id, sender_contact_id, session_epoch, sender_seq)`.  
+**Alternatives:** Inbox-wide seq index only; peer-only repair forever.
+
+---
+
 ## Open decisions (not yet resolved)
 
 | ID | Question | Options |
 |----|----------|---------|
-| O001 | Sidebar UX for two channels per contact | Two session rows; one row + mode toggle; nested under contact |
-| O002 | Default for “clear history” re memory | Keep memory (default) vs always wipe memory |
-| O003 | Summary storage shape | Top-level key in `{thread_id}.json` vs `{thread_id}.memory.json` sidecar |
-| O004 | Annotation sync v1 | Local-only annotations vs relay envelope v2 |
-| O005 | Relay tail/gap API shape | Per-thread `fetch_since_seq` vs inbox-wide index; depends on relay server work |
+| — | *(none in this project — all O001–O005 resolved D023–D027)* | |
+
+**Cross-project (e2e-message-crypto):** PSK entry UX (E-O003), automated key agreement (E-O004), group E2E (E-O005).
 
 When resolved, move rows to numbered decisions above.

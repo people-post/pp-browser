@@ -58,12 +58,31 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## E007 — Encrypted wire blob is versioned binary + base64 in JSON relay
+## E007 — Encrypted wire blob: nested `body.e2e` + base64 (E009)
 
 **Date:** 2026-06-29  
-**Decision:** On the wire, encrypted body is **`[version:1][nonce:24][ciphertext+tag]`** encoded as base64 in the relay JSON field (name TBD — see open questions). Outer envelope fields (`thread_id`, `message_id`, `sender_seq`, `session_epoch`, `timestamp`) remain in signed JSON; inner plaintext is UTF-8 message text for v1.  
-**Rationale:** Compact, unambiguous parsing; JSON relay unchanged except body field.  
-**Alternatives:** NaCl-style ASCII armor only; encrypt entire envelope JSON.
+**Updated:** 2026-06-29 — nested object (E009).  
+**Decision:** E2E relay `body` shape is **`{ "e2e": { "payload_b64": "…" } }`**. `payload_b64` decodes to **`[version:1][nonce:24][ciphertext+tag]`**. Outer envelope fields remain signed JSON. Public channel uses **`{ "content": { …ChatPayload… } }`** plaintext (D026).  
+**Rationale:** Extensible nested shape; separates public structured content from E2E blob.  
+**Alternatives:** Flat `body.ciphertext_b64`; encrypt entire envelope JSON.
+
+---
+
+## E009 — Nested `body.e2e` object for ciphertext
+
+**Date:** 2026-06-29  
+**Decision:** Ciphertext field is **`body.e2e.payload_b64`**, not a top-level `body` string. Public relay uses sibling **`body.content`** for `ChatPayload` JSON.  
+**Rationale:** Room for future `body.e2e.key_id` or algorithm hints without breaking public messages.  
+**Alternatives:** `body.ciphertext_b64`; `body.e2e.ciphertext`.
+
+---
+
+## E010 — AEAD plaintext is JSON `ChatPayload`
+
+**Date:** 2026-06-29  
+**Decision:** Bytes encrypted inside the E2E blob are **UTF-8 JSON** of the same `ChatPayload` object used on the public channel (`schema_version`, `content_type`, `text`, `payload`) — see [chat-storage D026](../chat-storage-and-memory/DECISIONS.md). Not raw `text` only.  
+**Rationale:** Contact cards, annotations, and crypto txs work identically on E2E and public; one codec path.  
+**Alternatives:** UTF-8 `text` only; separate binary framing per type.
 
 ---
 
@@ -80,8 +99,6 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 | ID | Question | Options |
 |----|----------|---------|
-| O001 | Ciphertext JSON field name | `body.ciphertext_b64`; `body.e2e.payload_b64`; nested object |
-| O002 | AEAD plaintext v1 | UTF-8 `text` only; JSON `{"text","content_rml?"}` |
 | O003 | PSK entry UX v1 | Paste base64; paste fingerprint + confirm; QR (later) |
 | O004 | Automated key agreement | Manual PSK only forever; optional hybrid KEM in c4 |
 | O005 | Group E2E | Out of scope; shared group PSK; MLS (far future) |

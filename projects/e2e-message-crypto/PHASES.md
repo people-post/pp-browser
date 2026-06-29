@@ -20,8 +20,8 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 
 ### Design closure (required before c1)
 
-- [ ] Resolve **O001** — ciphertext JSON field name
-- [ ] Resolve **O002** — AEAD plaintext v1 shape
+- [x] Resolve **O001** — `body.e2e.payload_b64` (E009)
+- [x] Resolve **O002** — JSON `ChatPayload` plaintext (E010)
 - [ ] Resolve **O003** — minimum PSK import UX for c3 (can defer UI detail if paste-base64 accepted for c3)
 - [ ] Document canonical **Ed25519 sign payload** field list for e2e envelopes (coordinate with chat-storage v6)
 - [ ] Add **frozen test vectors** (hex) to DESIGN.md § Test vectors
@@ -79,10 +79,10 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 
 ### Envelope and types
 
-- [ ] Encrypted body field on `RelayMessageBody` (name per O001)
+- [ ] `RelayMessageBody`: `body.e2e.payload_b64` + `body.content` (ChatPayload) per E009/E010
 - [ ] `P2pMessagingService`: branch on `channel == e2e`
-- [ ] Encrypt: build AAD → `MessageCipher` → set `ciphertext_b64`
-- [ ] Decrypt on poll before append to store
+- [ ] Encrypt: serialize `ChatPayload` JSON → AAD → `MessageCipher` → `body.e2e.payload_b64`
+- [ ] Decrypt on poll → parse JSON → `ThreadMessage`
 - [ ] Sign envelope including `sender_seq`, `session_epoch` (coordinate chat-storage)
 - [ ] Inbound Ed25519 verify before decrypt (classical)
 

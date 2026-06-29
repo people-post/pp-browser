@@ -65,6 +65,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 - [x] Threat model and PQ posture documented
 - [x] HKDF labels and AAD byte layout specified
 - [x] Encrypted payload blob layout specified
-- [ ] Resolve open questions O001–O005 in [DECISIONS.md](DECISIONS.md)
+- [x] Resolve O001/O002 — E009/E010 in [DECISIONS.md](DECISIONS.md)
+- [ ] Resolve O003–O005 (PSK UX, automated KEM, group E2E)
 - [ ] Frozen test vectors (hex) appended to DESIGN.md
 - [ ] Promote stable spec to `docs/MESSAGE_ENCRYPTION.md` when d0 exits
