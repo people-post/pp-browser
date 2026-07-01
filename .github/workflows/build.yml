@@ -146,6 +146,9 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/android/build"
           chmod -R u+rwX "$HOME/.cache/ccache" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle" "$GITHUB_WORKSPACE/android/build"
           echo "CCACHE_DIR=$HOME/.cache/ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          echo "CCACHE_NOHASHDIR=true" >> "$GITHUB_ENV"
+          echo "CCACHE_COMPILERCHECK=string:android-ndk-r27.0.12077973" >> "$GITHUB_ENV"
 
       - name: Restore Android Gradle cache
         uses: actions/cache@v4
