@@ -18,4 +18,4 @@ When a project is fully delivered and stable, fold enduring facts into `docs/` a
 |---------|--------|---------|
 | [chat-storage-and-memory](chat-storage-and-memory/) | Planning / early v2 | SQLite per thread, ChatPayload, seq sync, **resource bounds D029–D033** |
 | [platform-safety-limits](platform-safety-limits/) | Planning | LLM HTTP, profile JSON, MCP, parser output — non-chat limits |
-| [e2e-message-crypto](e2e-message-crypto/) | Planning / design (d0) | Manual PSK E2E: libsodium, XChaCha20-Poly1305, HKDF, AAD + replay binding; PQ posture; `base/crypto` groundwork before messaging wire-up |
+| [e2e-message-crypto](e2e-message-crypto/) | d0 complete → c1 next | Manual PSK E2E: libsodium, XChaCha20-Poly1305, HKDF; spec in [docs/MESSAGE_ENCRYPTION.md](../docs/MESSAGE_ENCRYPTION.md) |

@@ -67,5 +67,9 @@ vcpkg_installed/
 
 .cache/
 
+# Python venvs (e.g. e2e test-vector generators)
+.venv/
+__pycache__/
+
 # Local user config (use --config or user config dir)
 config.json

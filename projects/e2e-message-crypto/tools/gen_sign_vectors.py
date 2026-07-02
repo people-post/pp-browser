@@ -2,6 +2,7 @@
 """Generate frozen E014 Ed25519 signing test vectors for DESIGN.md.
 
 Canonical sender_contact_id fixture: relay:alice123 (D082 / E017).
+E2E blob uses the real AEAD fixture from gen_aead_vectors.py.
 """
 
 import base64
@@ -10,6 +11,8 @@ import struct
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+from gen_aead_vectors import NONCE, SESSION_KEY, build_aad, encrypt
 
 DOMAIN = b"pp-browser:relay-envelope-sign-v1\x00"
 
@@ -53,7 +56,17 @@ def main() -> None:
         "relay:alice123",
     )
 
-    e2e_blob = bytes([0x01]) + bytes(range(24)) + bytes([0xAA, 0xBB] * 16)
+    e2e_aad = build_aad(
+        1,
+        "relay:bob456",
+        "660e8400-e29b-41d4-a716-446655440001",
+        "relay:alice123",
+        42,
+        1,
+        1719662400456,
+    )
+    e2e_ciphertext = encrypt(SESSION_KEY, NONCE, canonical_payload, e2e_aad)
+    e2e_blob = bytes([0x01]) + NONCE + e2e_ciphertext
     e2e_body_hash = blake2b_256(bytes([0x02]) + e2e_blob)
     e2e_sign = build_sign_bytes(
         e2e_body_hash,

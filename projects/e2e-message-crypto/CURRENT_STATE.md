@@ -1,4 +1,4 @@
-# Current state — as of 2026-06-29
+# Current state — as of 2026-07-02
 
 Inventory of what exists in the codebase today for message encryption. Update when landing phase work.
 
@@ -13,7 +13,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | `IPskSessionStore` | **Not implemented** | — |
 | `MessageCipher` / AEAD | **Not implemented** | — |
 | Unit tests + frozen vectors | **Not implemented** | — |
-| `docs/MESSAGE_ENCRYPTION.md` | **Not implemented** | Spec lives in [DESIGN.md](DESIGN.md) until promoted |
+| `docs/MESSAGE_ENCRYPTION.md` | **Promoted** | Stable spec — [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) |
 
 ## Related messaging (today)
 
@@ -76,5 +76,5 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 - [x] PSK store in `profile.db` `chat_targets` — E008/D084
 - [x] Rich OOB PSK bundle (multi-hop rotation) — E020/D086
 - [x] Passive epoch advance / envelope epoch decrypt — E019/D085
-- [ ] AEAD / blob codec frozen test vectors — at c1 implementation
-- [ ] Promote stable spec to `docs/MESSAGE_ENCRYPTION.md` when d0 exits
+- [x] AEAD / blob codec frozen test vectors in DESIGN.md § Test vectors ([`tools/gen_aead_vectors.py`](tools/gen_aead_vectors.py))
+- [x] Promote stable spec to `docs/MESSAGE_ENCRYPTION.md`

@@ -27,10 +27,10 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 - [x] Document canonical **Ed25519 sign payload** field list for e2e envelopes (coordinate with chat-storage v6) — E014
 - [x] Add **Ed25519 frozen test vectors** (hex) to DESIGN.md § Test vectors
 - [x] Add **HKDF** frozen test vector to DESIGN.md § Test vectors (E015)
-- [ ] Add AEAD / blob codec symmetric test vectors at c1
-- [ ] Promote to [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) (stable reference copy)
+- [x] Add AEAD / blob codec frozen test vectors ([`tools/gen_aead_vectors.py`](tools/gen_aead_vectors.py))
+- [x] Promote to [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) (stable reference copy)
 
-**Exit criteria:** All open decisions for c1 resolved; test vectors written; human sign-off to start implementation.
+**Exit criteria:** All open decisions for c1 resolved; **all** frozen test vectors (incl. AEAD/codec) in DESIGN.md; `docs/MESSAGE_ENCRYPTION.md` promoted; human sign-off to start implementation.
 
 ---
 

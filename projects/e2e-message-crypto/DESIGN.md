@@ -1,5 +1,7 @@
 # Design — desired end state
 
+**Stable reference:** [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) — normative wire/crypto spec for agents and implementers. This file adds planning context, module map, and phase dependencies.
+
 ## Principles
 
 1. **Symmetric E2E for message bodies** — Relay and network observers see ciphertext on the `e2e` channel; confidentiality does not depend on relay trust.
@@ -443,9 +445,9 @@ Do **not** use X25519 or ECDH alone for automated key agreement after c4 without
 
 E2E crypto **c1** can proceed in parallel (no messaging types changed).
 
-## Test vectors (required before c1 exit)
+## Test vectors (required before d0 sign-off; asserted in c1 unit tests)
 
-Frozen vectors in unit tests and this design. Regenerate Ed25519 fixtures with [`tools/gen_sign_vectors.py`](tools/gen_sign_vectors.py).
+Frozen vectors in unit tests, [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md), and this design. Regenerate Ed25519 fixtures with [`tools/gen_sign_vectors.py`](tools/gen_sign_vectors.py); AEAD/codec fixtures with [`tools/gen_aead_vectors.py`](tools/gen_aead_vectors.py).
 
 ### Shared test keypair (TEST ONLY)
 
@@ -493,14 +495,14 @@ Do **not** use this keypair outside tests.
 | `timestamp` | `1719662400456` (Unix ms) |
 | `sender_seq` | `42` |
 | `session_epoch` | `1` |
-| `body.e2e.payload_b64` | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF6q7qruqu6q7qruqu6q7qruqu6q7qruqu6q7qruqu6q7` |
-| E2E blob (decoded, hex) | `01000102030405060708090a0b0c0d0e0f1011121314151617aabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabb` |
+| `body.e2e.payload_b64` | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWFyHtOqqqWWg/pqrknkBhKHaF+SXAyEkn1r2loSMVWmnO1HgQ7B/uYrcLE5SZn7v/8/ZvnGJsuW+StHBZWIFUKGrC5cggZHoHelCS/RLpokmfv/AOd1cv` |
+| E2E blob (decoded, hex) | `01000102030405060708090a0b0c0d0e0f101112131415161721ed3aaaaa59683fa6aae49e4061287685f925c0c84927d6bda5a123155a69ced47810ec1fee62b70b1394999fbbfff3f66f9c626cb96f92b47059588154286ac2e5c820647a077a5092fd12e9a2499fbff00e77572f` |
 | `body_hash` input | `0x02` \|\| decoded blob bytes |
-| **`body_hash` (hex)** | `d32b5a0addb1b6980d44f511e4c6f6e09a7d32a3375e4f66a7de709afc4daeaf` |
-| **`sign_bytes` (hex, 143 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001d32b5a0addb1b6980d44f511e4c6f6e09a7d32a3375e4f66a7de709afc4daeaf002436363065383430302d653239622d343164342d613731362d343436363535343430303031000e72656c61793a616c696365313233` |
-| **`signature` (base64)** | `teBg5BIfz/0qp4XslKHZRC2jIpD5N/JrWVVVFknLDLaJ8xVGcJ2JG/p8gd/qunjWNaNqcu5QI4Y0jnd+yU57BA==` |
+| **`body_hash` (hex)** | `845179587525a14c1dd5a19099fbff4a47d06f7c458967ab4969fedaa748bbbe` |
+| **`sign_bytes` (hex, 143 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001845179587525a14c1dd5a19099fbff4a47d06f7c458967ab4969fedaa748bbbe002436363065383430302d653239622d343164342d613731362d343436363535343430303031000e72656c61793a616c696365313233` |
+| **`signature` (base64)** | `5+RuBH37ArdNTcd5U+dMy7xu2nJxRM3ruNMU75vBVi3aN1ftgmO2fXsb94NT5IaQaYW6wfxRWU4IVvPRxtDhDg==` |
 
-E2E blob layout for this fixture: `[payload_version=0x01][nonce=0x00..0x17][ciphertext+tag=0xAABB×16]` (57 bytes total). Content is arbitrary test material — not a valid AEAD ciphertext.
+E2E blob is the AEAD vector below (111 bytes): valid XChaCha20-Poly1305 ciphertext for the canonical `ChatPayload` JSON.
 
 ### Symmetric crypto — HKDF (E015)
 
@@ -515,13 +517,37 @@ E2E blob layout for this fixture: `[payload_version=0x01][nonce=0x00..0x17][ciph
 
 Both peers with the same `master_psk` for a `ChatTargetKey` must derive this key — identity strings are not in HKDF `info`.
 
-### Symmetric crypto — AEAD / codec (c1 — TBD at implementation)
+### Symmetric crypto — AEAD / codec
 
-Fill when `base/crypto` lands:
+Regenerate with [`tools/gen_aead_vectors.py`](tools/gen_aead_vectors.py). Uses libsodium `crypto_aead_xchacha20poly1305_ietf_*`.
 
-- One AEAD tuple: `session_key`, `nonce`, `aad` (hex), `plaintext`, `ciphertext` (hex)
-- One full blob round-trip: binary → base64 → binary
-- Cross-peer round-trip: Alice encrypt → Bob decrypt (shared `master_psk`, AAD built from envelope fields)
+#### Vector — Alice encrypt → Bob decrypt
+
+Envelope fields align with Ed25519 vector 2 above. Alice (`relay:alice123`) sends to Bob (`relay:bob456`).
+
+| Input | Value |
+|-------|-------|
+| `session_key` (hex) | `f7dab69eb0c862df230bc383c1dea363637a6caf2d46d7b57d1b45b5526a7358` (from HKDF vector) |
+| `nonce` (hex, 24 bytes) | `000102030405060708090a0b0c0d0e0f1011121314151617` |
+| `peer_contact_id` (Alice AAD) | `relay:bob456` |
+| `sender_contact_id` | `relay:alice123` |
+| `message_id` | `660e8400-e29b-41d4-a716-446655440001` |
+| `sender_seq` | `42` |
+| `session_epoch` | `1` |
+| `timestamp` | `1719662400456` (Unix ms) |
+| `channel` | `e2e` → `1` |
+| **`aad` (hex, 90 bytes)** | `0101000c72656c61793a626f62343536002436363065383430302d653239622d343164342d613731362d343436363535343430303031000e72656c61793a616c696365313233000000000000002a000000010000019063ddd3c8` |
+| `plaintext` (UTF-8) | `{"schema_version":1,"content_type":"text","text":"Hello","payload":{}}` |
+| **`ciphertext+tag` (hex, 86 bytes)** | `21ed3aaaaa59683fa6aae49e4061287685f925c0c84927d6bda5a123155a69ced47810ec1fee62b70b1394999fbbfff3f66f9c626cb96f92b47059588154286ac2e5c820647a077a5092fd12e9a2499fbff00e77572f` |
+
+**Blob round-trip** (`EncryptedPayload` codec):
+
+| Field | Value |
+|-------|-------|
+| **`blob` (hex, 111 bytes)** | `01000102030405060708090a0b0c0d0e0f101112131415161721ed3aaaaa59683fa6aae49e4061287685f925c0c84927d6bda5a123155a69ced47810ec1fee62b70b1394999fbbfff3f66f9c626cb96f92b47059588154286ac2e5c820647a077a5092fd12e9a2499fbff00e77572f` |
+| **`payload_b64`** | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWFyHtOqqqWWg/pqrknkBhKHaF+SXAyEkn1r2loSMVWmnO1HgQ7B/uYrcLE5SZn7v/8/ZvnGJsuW+StHBZWIFUKGrC5cggZHoHelCS/RLpokmfv/AOd1cv` |
+
+**Cross-peer:** Bob decrypts with the same `aad` bytes after verifying `peer_contact_id == relay:bob456` (local self) and `sender_contact_id == envelope.sender_contact_id`. Both peers derive `session_key` from the shared HKDF `master_psk` fixture.
 
 ## Explicit non-goals
 

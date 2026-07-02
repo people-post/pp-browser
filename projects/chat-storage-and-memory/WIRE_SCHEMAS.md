@@ -3,7 +3,7 @@
 **Status:** Planning — v2a-p2p+  
 **Authority:** Field behavior and validation rules live in [DESIGN.md](DESIGN.md); this file is the **canonical JSON shape reference** for implementers, relay API, and libp2p history (D072). C++ codecs in `base/messaging` must match these types.
 
-**Related:** [e2e-message-crypto/DESIGN.md](../e2e-message-crypto/DESIGN.md) (AAD layout, ciphertext), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md).
+**Related:** [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) (normative AAD, ciphertext, signing), [e2e-message-crypto/DESIGN.md](../e2e-message-crypto/DESIGN.md) (planning), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md).
 
 **Identity (D079, D082):** Wire **`sender_contact_id`** carries the sender's **communicating identity value** (e.g. `relay:abc123`) — not local `Contact.id`. **`Contact.id`** is address-book only. v1 relay: **`peer_identity_kind` = `relay_user`**, **`peer_identity_value` = `relay:` + opaque id** (relay-assigned, URL-safe; see [DECISIONS D082](DECISIONS.md#d082--relay-user-communicating-identity-string-format)).
 
