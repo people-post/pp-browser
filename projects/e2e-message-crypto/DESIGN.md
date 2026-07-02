@@ -60,18 +60,20 @@
 - **Distribution:** Out-of-band — in-person QR, copy-paste over an already-trusted channel, etc.
 - **Verification:** Both parties display `fingerprint = BLAKE2b-256(master_psk)` as grouped hex (e.g. `a1b2-c3d4-…`); must match before sending E2E content.
 
-### Session key derivation
+### Session key derivation (E015)
 
 ```
 session_key = HKDF-SHA256(
   ikm   = master_psk,
   salt  = "pp-browser-msg-v1",
-  info  = "identity:{kind}:{value}|channel:{channel}|epoch:{session_epoch}"
+  info  = "channel:{channel}|epoch:{session_epoch}"
 )
 ```
 
 - **`channel`:** `e2e` only uses derived keys for body encryption; `public_relay` has no PSK session.
 - **`session_epoch`:** uint32, bumped on key rotation / compromise recovery ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md)). New epoch → new `session_key`; seq resets to 1 for that epoch.
+- **Pair scoping:** `master_psk` is unique per **`ChatTargetKey`** (one OOB secret per peer identity + channel). HKDF `info` intentionally omits identity strings so **both peers derive the same `session_key`** from the shared `master_psk` + `(channel, epoch)` — see [E015](DECISIONS.md#e015--hkdf-info-channel--epoch-only-option-a).
+- **`sessions.json` map key** (`identity:{kind}:{value}|channel:{channel}`) is storage/index only — not part of HKDF `info`.
 
 ### Chat target identity (D056, D079)
 
@@ -115,7 +117,10 @@ Fixed byte order (big-endian integers). **`aad_version = 1`** is the only AAD la
 **Rules:**
 
 - **Sender** builds AAD with `peer_contact_id` = recipient's **communicating identity value**, `sender_contact_id` = sender's **communicating identity value** (fixed for the thread — D079).
-- **Receiver** verifies AAD `peer_contact_id` matches **this thread's bound `peer_identity_value` for self** (the recipient identity the sender addressed) and `sender_contact_id` matches envelope `sender_contact_id` and thread's peer identity before accept.
+- **Receiver** verifies before decrypt:
+  - `peer_contact_id` = **local self** communicating identity value (this profile's outbound identity for the thread transport — e.g. own `relay_user` id);
+  - `sender_contact_id` = `envelope.sender_contact_id` = thread **`ChatTargetKey.peer_identity_value`**;
+  - `channel`, `message_id`, `sender_seq`, `session_epoch`, `timestamp` = corresponding **envelope** fields (after signature verify).
 - `sender_seq` must match outer signed envelope and local `ThreadMessage` for `relay_visible` rows.
 - Decrypt with wrong AAD → MUST fail (no silent ignore).
 - Local-only rows (`relay_visible=false`) are not encrypted for relay. **`local:self`** is never in AAD.
@@ -414,13 +419,26 @@ Do **not** use this keypair outside tests.
 
 E2E blob layout for this fixture: `[payload_version=0x01][nonce=0x00..0x17][ciphertext+tag=0xAABB×16]` (57 bytes total). Content is arbitrary test material — not a valid AEAD ciphertext.
 
-### Symmetric crypto (c1 — TBD at implementation)
+### Symmetric crypto — HKDF (E015)
+
+| Input | Value |
+|-------|-------|
+| `master_psk` (hex, 32 bytes) | `000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f` |
+| `salt` | `pp-browser-msg-v1` |
+| `channel` | `e2e` |
+| `session_epoch` | `1` |
+| HKDF `info` | `channel:e2e\|epoch:1` |
+| **`session_key` (hex)** | `f7dab69eb0c862df230bc383c1dea363637a6caf2d46d7b57d1b45b5526a7358` |
+
+Both peers with the same `master_psk` for a `ChatTargetKey` must derive this key — identity strings are not in HKDF `info`.
+
+### Symmetric crypto — AEAD / codec (c1 — TBD at implementation)
 
 Fill when `base/crypto` lands:
 
-- `master_psk`, `contact_id`, `channel`, `session_epoch` → expected `session_key` (hex)
 - One AEAD tuple: `session_key`, `nonce`, `aad` (hex), `plaintext`, `ciphertext` (hex)
 - One full blob round-trip: binary → base64 → binary
+- Cross-peer round-trip: Alice encrypt → Bob decrypt (shared `master_psk`, AAD built from envelope fields)
 
 ## Explicit non-goals
 

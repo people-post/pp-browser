@@ -142,7 +142,7 @@ A **Contact** represents a person or entity (human or non-human later). **`Conta
 
 ### ChatTargetKey (direct P2P — D056, D079)
 
-Canonical name for **`(peer_identity_kind, peer_identity_value, channel)`** — the **communicating identity** plus channel. Used in C++ (`ChatTargetKey`), `chat_targets` PK, HKDF info, ingest routing, and relay backfill.
+Canonical name for **`(peer_identity_kind, peer_identity_value, channel)`** — the **communicating identity** plus channel. Used in C++ (`ChatTargetKey`), `chat_targets` PK, PSK session storage (`sessions.json` map key), ingest routing, and relay backfill. HKDF `info` uses **`channel` + `epoch` only** (E015) — identity scopes the `master_psk`, not the KDF label.
 
 | Field | Type | Notes |
 |-------|------|-------|

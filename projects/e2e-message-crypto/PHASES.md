@@ -25,7 +25,8 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 - [x] Resolve **O003** — paste base64 (E011)
 - [x] Document canonical **Ed25519 sign payload** field list for e2e envelopes (coordinate with chat-storage v6) — E014
 - [x] Add **Ed25519 frozen test vectors** (hex) to DESIGN.md § Test vectors
-- [ ] Add symmetric crypto test vectors (HKDF, AEAD) at c1
+- [x] Add **HKDF** frozen test vector to DESIGN.md § Test vectors (E015)
+- [ ] Add AEAD / blob codec symmetric test vectors at c1
 - [ ] Promote to [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) (stable reference copy)
 
 **Exit criteria:** All open decisions for c1 resolved; test vectors written; human sign-off to start implementation.

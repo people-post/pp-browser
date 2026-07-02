@@ -64,11 +64,12 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 
 - [x] Project folder + README, DESIGN, DECISIONS, PHASES, CURRENT_STATE
 - [x] Threat model and PQ posture documented
-- [x] HKDF labels and AAD byte layout specified
+- [x] HKDF labels and AAD byte layout specified (E015: `channel` + `epoch` only)
 - [x] Encrypted payload blob layout specified
 - [x] Resolve O001/O002 — E009/E010 in [DECISIONS.md](DECISIONS.md)
 - [x] Resolve O003/O005 — E011/E012 in [DECISIONS.md](DECISIONS.md)
 - [x] Resolve O004 — E013 in [DECISIONS.md](DECISIONS.md)
 - [x] Ed25519 signing frozen test vectors (hex) in DESIGN.md § Test vectors
-- [ ] Symmetric crypto frozen test vectors (HKDF, AEAD, blob codec) — at c1 implementation
+- [x] HKDF frozen test vector in DESIGN.md § Test vectors (E015)
+- [ ] AEAD / blob codec frozen test vectors — at c1 implementation
 - [ ] Promote stable spec to `docs/MESSAGE_ENCRYPTION.md` when d0 exits

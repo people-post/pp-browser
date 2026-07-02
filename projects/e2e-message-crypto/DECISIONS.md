@@ -53,10 +53,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E006 — Chat target key matches chat-storage identity + channel (D079)
 
 **Date:** 2026-06-29  
-**Updated:** 2026-07-02 — `(peer_identity_kind, peer_identity_value, channel)` (D079).  
-**Decision:** PSK sessions and HKDF context use **`ChatTargetKey` = `(peer_identity_kind, peer_identity_value, channel)`** with `channel` ∈ `{public_relay, e2e}`. Only **`e2e`** channels use message-body encryption. `session_epoch` scopes keys and seq per [chat-storage D014](../chat-storage-and-memory/DECISIONS.md).  
-**Rationale:** Same identity boundary as thread model D004/D079; public relay stays signed plaintext.  
-**Alternatives:** Per-`local_thread_id` keys only; one PSK for all contacts.
+**Updated:** 2026-07-02 — `(peer_identity_kind, peer_identity_value, channel)` (D079); HKDF `info` per E015.  
+**Decision:** PSK sessions are keyed by **`ChatTargetKey` = `(peer_identity_kind, peer_identity_value, channel)`** with `channel` ∈ `{public_relay, e2e}`. Only **`e2e`** channels use message-body encryption. `session_epoch` scopes keys and seq per [chat-storage D014](../chat-storage-and-memory/DECISIONS.md). HKDF `info` uses **`channel` + `epoch` only** (E015) — not identity strings.  
+**Rationale:** Same identity boundary as thread model D004/D079; public relay stays signed plaintext; pair scoping is the per-target `master_psk`.  
+**Alternatives:** Per-`local_thread_id` keys only; one PSK for all contacts; identity in HKDF `info` (rejected — asymmetric derivation per peer view).
 
 ---
 
@@ -139,3 +139,18 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Rationale:** JSON `dump()` signing is non-canonical and today's code incorrectly includes `thread_id`. Binary layout matches `CanonicalAad` style; BLAKE2b aligns with PSK fingerprints (E002); body hash binds public semantics (D078 JSON) and E2E ciphertext bytes separately.  
 **Alternatives:** Sign canonical JSON of outer envelope (rejected — key order/whitespace footguns); SHA-256 body hash (acceptable but splits hash primitive from libsodium story); hash base64 string for E2E (rejected — binds encoding not ciphertext).
+
+---
+
+## E015 — HKDF `info`: channel + epoch only (Option A)
+
+**Date:** 2026-07-02  
+**Decision:** Session key derivation uses:
+
+```
+info = "channel:{channel}|epoch:{session_epoch}"
+```
+
+with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **Do not** include `peer_identity_kind`, `peer_identity_value`, or local `Contact.id` in HKDF `info`.  
+**Rationale:** `master_psk` is already unique per **`ChatTargetKey`** (one OOB secret per peer identity + channel). Including the peer identity in `info` would differ per device (`alice→bob` vs `bob→alice`) and produce **different session keys** for the same conversation. Channel + epoch provide epoch rotation without breaking cross-peer symmetry.  
+**Alternatives:** Sorted canonical pair of both parties' identities in `info` (acceptable but redundant with per-target PSK); identity in `info` (rejected — interoperability bug).
