@@ -2,6 +2,7 @@
 
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
+#include "base/messaging/SyncStateCodec.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
@@ -524,6 +525,61 @@ Roe<Thread> JsonThreadStore::FindOrCreateDirectThread(const DirectChatTarget& ta
 Roe<uint64_t> JsonThreadStore::AllocateSenderSeq(const std::string& /*thread_id*/) {
   static uint64_t next_seq = 1;
   return next_seq++;
+}
+
+Roe<uint32_t> JsonThreadStore::GetChatTargetSessionEpoch(const std::string& /*thread_id*/) const {
+  return 1u;
+}
+
+Roe<std::vector<ThreadMessage>> JsonThreadStore::GetMessagesBySeqRange(const std::string& thread_id,
+                                                                       const SeqRangeQuery& query) const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  const auto it = messages_.find(thread_id);
+  if (it == messages_.end()) {
+    return std::vector<ThreadMessage>{};
+  }
+
+  std::vector<ThreadMessage> matched;
+  for (const ThreadMessage& message : it->second) {
+    if (!message.relay_visible || !message.sender_seq || !message.session_epoch) {
+      continue;
+    }
+    if (*message.session_epoch != query.session_epoch) {
+      continue;
+    }
+    if (message.sender_contact_id != query.seq_owner_contact_id) {
+      continue;
+    }
+    if (query.min_sender_seq && *message.sender_seq < *query.min_sender_seq) {
+      continue;
+    }
+    if (query.max_sender_seq && *message.sender_seq > *query.max_sender_seq) {
+      continue;
+    }
+    matched.push_back(message);
+  }
+
+  std::sort(matched.begin(), matched.end(), [query](const ThreadMessage& a, const ThreadMessage& b) {
+    return query.ascending ? *a.sender_seq < *b.sender_seq : *a.sender_seq > *b.sender_seq;
+  });
+  if (matched.size() > query.limit) {
+    matched.resize(query.limit);
+  }
+  return matched;
+}
+
+Roe<PeerSyncState> JsonThreadStore::GetPeerSyncState(const std::string& /*thread_id*/,
+                                                     uint32_t /*session_epoch*/) const {
+  return DefaultPeerSyncState();
+}
+
+Roe<void> JsonThreadStore::SetPeerSyncState(const std::string& /*thread_id*/, uint32_t /*session_epoch*/,
+                                            const PeerSyncState& /*state*/) {
+  return {};
 }
 
 Roe<void> JsonThreadStore::ReconcileOutbox() {

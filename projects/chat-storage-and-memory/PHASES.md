@@ -334,11 +334,11 @@ Existing foundation this project builds on.
 
 ### v6-schema — Schema and persistence
 
-- [ ] `sender_seq`, `session_epoch` on **E2E** messages + envelope (D021, D045)
-- [ ] `sync_state` table populated per `(peer, session_epoch)` — E2E threads only
-- [ ] **`chat_targets` in `profile.db`** (D047) — seq/epoch + PSK columns (D084); not JSON sidecar
-- [ ] `GetMessagesBySeqRange` on `IThreadStore` for tail/gap
-- [ ] Assign `(message_id, sender_seq)` at first local persist on E2E send; serialize per chat target
+- [x] `sender_seq`, `session_epoch` on **E2E** messages + envelope (D021, D045)
+- [x] `sync_state` table populated per `(peer, session_epoch)` — E2E threads only
+- [x] **`chat_targets` in `profile.db`** (D047) — seq/epoch + PSK columns (D084); not JSON sidecar
+- [x] `GetMessagesBySeqRange` on `IThreadStore` for tail/gap
+- [x] Assign `(message_id, sender_seq)` at first local persist on E2E send; serialize per chat target
 
 ### v6-pipeline — Send / receive
 

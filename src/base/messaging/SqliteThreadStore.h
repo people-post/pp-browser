@@ -45,6 +45,12 @@ public:
   Roe<Thread> FindOrCreateDirectThread(const DirectChatTarget& target, const std::string& participant_contact_id,
                                        const std::string& title) override;
   Roe<uint64_t> AllocateSenderSeq(const std::string& thread_id) override;
+  Roe<uint32_t> GetChatTargetSessionEpoch(const std::string& thread_id) const override;
+  Roe<std::vector<ThreadMessage>> GetMessagesBySeqRange(const std::string& thread_id,
+                                                        const SeqRangeQuery& query) const override;
+  Roe<PeerSyncState> GetPeerSyncState(const std::string& thread_id, uint32_t session_epoch) const override;
+  Roe<void> SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
+                             const PeerSyncState& state) override;
   Roe<void> ReconcileOutbox() override;
   Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const override;
   void Flush() override;
@@ -77,6 +83,9 @@ private:
   Roe<void> UpsertOutboxRow(const std::string& message_id, const std::string& thread_id) const;
   Roe<void> RemoveOutboxRow(const std::string& message_id) const;
   Thread ReadThreadRow(sqlite3_stmt* stmt) const;
+  Roe<DirectChatTarget> DirectTargetForThread(const Thread& thread) const;
+  Roe<void> EnsurePeerSyncState(const std::string& thread_id, const DirectChatTarget& target,
+                                uint32_t session_epoch) const;
 
   std::string data_dir_;
   mutable std::mutex profile_mutex_;

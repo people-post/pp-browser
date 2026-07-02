@@ -4,6 +4,7 @@
 #include "base/messaging/ConversationSummaryCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
+#include "base/messaging/SyncStateCodec.h"
 
 #include "common/Utilities.h"
 
@@ -378,6 +379,12 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(sqlite3_stmt* stmt) const {
   if (sqlite3_column_type(stmt, 13) != SQLITE_NULL) {
     message.transport = MessageTransportFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13)));
   }
+  if (sqlite3_column_type(stmt, 14) != SQLITE_NULL) {
+    message.sender_seq = static_cast<uint64_t>(sqlite3_column_int64(stmt, 14));
+  }
+  if (sqlite3_column_type(stmt, 15) != SQLITE_NULL) {
+    message.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 15));
+  }
   (void)ChatPayloadCodec::ApplyRowToMessage(chat_payload, message);
   return message;
 }
@@ -621,11 +628,12 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesPage(const std::st
   }
   const char* sql = before_display_order.has_value()
                         ? "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-                          "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery, transport "
-                          "FROM messages WHERE display_order < ? ORDER BY display_order DESC LIMIT ?;"
+                          "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery, transport, "
+                          "sender_seq, session_epoch FROM messages "
+                          "WHERE display_order < ? ORDER BY display_order DESC LIMIT ?;"
                         : "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-                          "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery, transport "
-                          "FROM messages ORDER BY display_order DESC LIMIT ?;";
+                          "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery, transport, "
+                          "sender_seq, session_epoch FROM messages ORDER BY display_order DESC LIMIT ?;";
   auto page = QueryMessages(thread_id, sql, before_display_order, limit);
   if (!page) {
     return page.error();
@@ -657,8 +665,8 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesForContext(const s
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, content_rml, "
-      "user_payload, chat_actions, timestamp, relay_visible, delivery, transport FROM messages "
-      "WHERE content_type IN ('text', 'system') AND display_order > ? ORDER BY display_order DESC;";
+      "user_payload, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch "
+      "FROM messages WHERE content_type IN ('text', 'system') AND display_order > ? ORDER BY display_order DESC;";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare context query");
   }
@@ -799,8 +807,8 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetContextEligibleMessagesAft
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, content_rml, "
-      "user_payload, chat_actions, timestamp, relay_visible, delivery, transport FROM messages "
-      "WHERE content_type IN ('text', 'system') AND display_order > ? ORDER BY display_order ASC;";
+      "user_payload, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch "
+      "FROM messages WHERE content_type IN ('text', 'system') AND display_order > ? ORDER BY display_order ASC;";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare compaction query");
   }
@@ -852,8 +860,8 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO messages (id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-      "content_rml, chat_actions, timestamp, relay_visible, delivery, transport) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+      "content_rml, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare append");
   }
@@ -877,6 +885,16 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
     sqlite3_bind_text(stmt, 13, MessageTransportToString(*stored.transport).c_str(), -1, SQLITE_TRANSIENT);
   } else {
     sqlite3_bind_null(stmt, 13);
+  }
+  if (stored.sender_seq) {
+    sqlite3_bind_int64(stmt, 14, static_cast<sqlite3_int64>(*stored.sender_seq));
+  } else {
+    sqlite3_bind_null(stmt, 14);
+  }
+  if (stored.session_epoch) {
+    sqlite3_bind_int(stmt, 15, static_cast<int>(*stored.session_epoch));
+  } else {
+    sqlite3_bind_null(stmt, 15);
   }
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
@@ -911,7 +929,8 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "UPDATE messages SET sender_contact_id = ?, chat_payload = ?, content_type = ?, payload = ?, text = ?, "
-      "content_rml = ?, chat_actions = ?, timestamp = ?, relay_visible = ?, delivery = ?, transport = ? WHERE id = ?;";
+      "content_rml = ?, chat_actions = ?, timestamp = ?, relay_visible = ?, delivery = ?, transport = ?, "
+      "sender_seq = ?, session_epoch = ? WHERE id = ?;";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return false;
   }
@@ -934,7 +953,17 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   } else {
     sqlite3_bind_null(stmt, 11);
   }
-  sqlite3_bind_text(stmt, 12, message.id.c_str(), -1, SQLITE_TRANSIENT);
+  if (message.sender_seq) {
+    sqlite3_bind_int64(stmt, 12, static_cast<sqlite3_int64>(*message.sender_seq));
+  } else {
+    sqlite3_bind_null(stmt, 12);
+  }
+  if (message.session_epoch) {
+    sqlite3_bind_int(stmt, 13, static_cast<int>(*message.session_epoch));
+  } else {
+    sqlite3_bind_null(stmt, 13);
+  }
+  sqlite3_bind_text(stmt, 14, message.id.c_str(), -1, SQLITE_TRANSIENT);
   const bool updated = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(*thread_db) > 0;
   sqlite3_finalize(stmt);
   if (updated && message.delivery != MessageDelivery::Pending) {
@@ -1137,6 +1166,11 @@ Roe<Thread> SqliteThreadStore::FindOrCreateDirectThread(const DirectChatTarget& 
       return existing.error();
     }
     if (*existing) {
+      if (ThreadChannelIsE2e(target.channel)) {
+        if (auto epoch = GetChatTargetSessionEpoch((*existing)->id)) {
+          (void)EnsurePeerSyncState((*existing)->id, target, *epoch);
+        }
+      }
       return **existing;
     }
   }
@@ -1159,6 +1193,13 @@ Roe<Thread> SqliteThreadStore::FindOrCreateDirectThread(const DirectChatTarget& 
 
   if (auto target_row = UpsertChatTarget(target, participant_contact_id, saved->id); !target_row) {
     return target_row.error();
+  }
+  if (ThreadChannelIsE2e(target.channel)) {
+    if (auto epoch = GetChatTargetSessionEpoch(saved->id)) {
+      if (auto sync = EnsurePeerSyncState(saved->id, target, *epoch); !sync) {
+        return sync.error();
+      }
+    }
   }
   return *saved;
 }
@@ -1193,6 +1234,209 @@ Roe<uint64_t> SqliteThreadStore::AllocateSenderSeq(const std::string& thread_id)
   }
   sqlite3_finalize(stmt);
   return seq;
+}
+
+Roe<uint32_t> SqliteThreadStore::GetChatTargetSessionEpoch(const std::string& thread_id) const {
+  if (auto init = EnsureInitialized(); !init) {
+    return init.error();
+  }
+  std::lock_guard lock(profile_mutex_);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(profile_db_, "SELECT session_epoch FROM chat_targets WHERE local_thread_id = ? LIMIT 1;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare session epoch lookup");
+  }
+  sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
+    sqlite3_finalize(stmt);
+    return Error("No chat target for thread");
+  }
+  const uint32_t epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 0));
+  sqlite3_finalize(stmt);
+  return epoch;
+}
+
+Roe<DirectChatTarget> SqliteThreadStore::DirectTargetForThread(const Thread& thread) const {
+  if (thread.kind != ThreadKind::Direct) {
+    return Error("Not a direct thread");
+  }
+  if (thread.peer_identity_kind.empty() || thread.peer_identity_value.empty()) {
+    return Error("Direct thread missing peer identity");
+  }
+  DirectChatTarget target;
+  target.peer_identity_kind = thread.peer_identity_kind;
+  target.peer_identity_value = thread.peer_identity_value;
+  target.channel = thread.channel;
+  return target;
+}
+
+Roe<void> SqliteThreadStore::EnsurePeerSyncState(const std::string& thread_id, const DirectChatTarget& target,
+                                                 const uint32_t session_epoch) const {
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*thread_db,
+                         "SELECT 1 FROM sync_state WHERE peer_identity_kind = ? AND peer_identity_value = ? AND "
+                         "session_epoch = ? LIMIT 1;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare sync_state lookup");
+  }
+  sqlite3_bind_text(stmt, 1, target.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, target.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 3, static_cast<int>(session_epoch));
+  const bool exists = sqlite3_step(stmt) == SQLITE_ROW;
+  sqlite3_finalize(stmt);
+  if (exists) {
+    return {};
+  }
+
+  const std::string state_json = PeerSyncStateToJson(DefaultPeerSyncState());
+  if (sqlite3_prepare_v2(*thread_db,
+                         "INSERT INTO sync_state (peer_identity_kind, peer_identity_value, session_epoch, state_json) "
+                         "VALUES (?, ?, ?, ?);",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare sync_state insert");
+  }
+  sqlite3_bind_text(stmt, 1, target.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, target.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 3, static_cast<int>(session_epoch));
+  sqlite3_bind_text(stmt, 4, state_json.c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return Error("Failed to insert sync_state");
+  }
+  sqlite3_finalize(stmt);
+  return {};
+}
+
+Roe<PeerSyncState> SqliteThreadStore::GetPeerSyncState(const std::string& thread_id,
+                                                       const uint32_t session_epoch) const {
+  auto thread = GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  auto target = DirectTargetForThread(**thread);
+  if (!target) {
+    return target.error();
+  }
+
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*thread_db,
+                         "SELECT state_json FROM sync_state WHERE peer_identity_kind = ? AND peer_identity_value = ? "
+                         "AND session_epoch = ? LIMIT 1;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare sync_state read");
+  }
+  sqlite3_bind_text(stmt, 1, target->peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, target->peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 3, static_cast<int>(session_epoch));
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
+    sqlite3_finalize(stmt);
+    return Error("sync_state not found");
+  }
+  const std::string json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+  sqlite3_finalize(stmt);
+  return PeerSyncStateFromJson(json);
+}
+
+Roe<void> SqliteThreadStore::SetPeerSyncState(const std::string& thread_id, const uint32_t session_epoch,
+                                              const PeerSyncState& state) {
+  auto thread = GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  auto target = DirectTargetForThread(**thread);
+  if (!target) {
+    return target.error();
+  }
+
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  const std::string state_json = PeerSyncStateToJson(state);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*thread_db,
+                         "INSERT INTO sync_state (peer_identity_kind, peer_identity_value, session_epoch, state_json) "
+                         "VALUES (?, ?, ?, ?) "
+                         "ON CONFLICT(peer_identity_kind, peer_identity_value, session_epoch) DO UPDATE SET "
+                         "state_json=excluded.state_json;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare sync_state upsert");
+  }
+  sqlite3_bind_text(stmt, 1, target->peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, target->peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 3, static_cast<int>(session_epoch));
+  sqlite3_bind_text(stmt, 4, state_json.c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return Error("Failed to upsert sync_state");
+  }
+  sqlite3_finalize(stmt);
+  return {};
+}
+
+Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesBySeqRange(const std::string& thread_id,
+                                                                         const SeqRangeQuery& query) const {
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+
+  const char* order_clause = query.ascending ? "ASC" : "DESC";
+  std::string sql =
+      "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, content_rml, "
+      "user_payload, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch "
+      "FROM messages WHERE relay_visible = 1 AND session_epoch = ? AND sender_contact_id = ? AND sender_seq IS NOT NULL";
+  if (query.min_sender_seq) {
+    sql += " AND sender_seq >= ?";
+  }
+  if (query.max_sender_seq) {
+    sql += " AND sender_seq <= ?";
+  }
+  sql += " ORDER BY sender_seq ";
+  sql += order_clause;
+  sql += " LIMIT ?;";
+
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*thread_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare seq range query");
+  }
+  int bind_index = 1;
+  sqlite3_bind_int(stmt, bind_index++, static_cast<int>(query.session_epoch));
+  sqlite3_bind_text(stmt, bind_index++, query.seq_owner_contact_id.c_str(), -1, SQLITE_TRANSIENT);
+  if (query.min_sender_seq) {
+    sqlite3_bind_int64(stmt, bind_index++, static_cast<sqlite3_int64>(*query.min_sender_seq));
+  }
+  if (query.max_sender_seq) {
+    sqlite3_bind_int64(stmt, bind_index++, static_cast<sqlite3_int64>(*query.max_sender_seq));
+  }
+  sqlite3_bind_int64(stmt, bind_index, static_cast<sqlite3_int64>(query.limit));
+
+  std::vector<ThreadMessage> messages;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    auto message = ReadMessageRow(stmt);
+    if (!message) {
+      sqlite3_finalize(stmt);
+      return message.error();
+    }
+    message->thread_id = thread_id;
+    messages.push_back(std::move(*message));
+  }
+  sqlite3_finalize(stmt);
+  return messages;
 }
 
 Roe<void> SqliteThreadStore::ReconcileOutbox() {

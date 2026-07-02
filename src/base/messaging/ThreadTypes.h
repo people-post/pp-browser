@@ -68,6 +68,8 @@ struct ThreadMessage {
   MessageDelivery delivery = MessageDelivery::Local;
   bool relay_visible = true;
   std::optional<MessageTransport> transport;
+  std::optional<uint64_t> sender_seq;
+  std::optional<uint32_t> session_epoch;
 };
 
 struct RelayRoute {

@@ -3,14 +3,15 @@
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
 **Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D068 in [DECISIONS.md](DECISIONS.md).  
-**Agent batch:** Waves **1–2** merged; **Wave 3** landed (v3 core + v3 UX + v4). Next: **v6** — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
+**Agent batch:** Waves **1–2** merged; **Wave 3** landed; **Wave 4 v6-schema** landed. Next: **v6-pipeline** — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
 
 ## Next agent — start here
 
 | Priority | Work | Blocked by |
 |----------|------|------------|
-| **Wave 4** | **v6** — `sender_seq` on messages, sync pipeline, history fetch, gap repair | — |
-| **Wave 5–6** | [e2e c2](../e2e-message-crypto/PHASES.md#phase-c2--messaging-integration) — AEAD on wire, `EnvelopeSigner` (E014) | v6 envelope + ingest pipeline |
+| **Wave 4b** | **v6-pipeline** — receive classifier, ReplayWindow, history floor on clear, EnvelopeSigner hook | v6-schema (done) |
+| **Wave 4c** | **v6-sync** — `FetchChatTargetMessages`, tail/gap repair | v6-pipeline |
+| **Wave 5–6** | [e2e c2](../e2e-message-crypto/PHASES.md#phase-c2--messaging-integration) — AEAD on wire | v6 envelope + ingest pipeline |
 | **UX gaps (v2a-core)** | Composer `maxlength` (`kMaxComposeTextBytes`) | — |
 
 **Key paths (wave 2):**
@@ -76,7 +77,9 @@ Legacy `index.json` + `{thread_id}.json` are **wiped on first SqliteThreadStore 
 
 - Has **`display_order`**, `ChatContentType`, ChatPayload BLOB via **`ChatPayloadCodec`**
 - **`transport`** column persisted (`local` / `relay` / `direct`) — set on send/receive paths (D051)
-- No `sender_seq` / `session_epoch` on rows yet (v6)
+- **`sender_seq` / `session_epoch`** on E2E relay-visible rows (v6-schema); envelope uses `chat_targets.session_epoch`
+- **`sync_state`** initialized per `(peer, session_epoch)` on E2E direct thread create; `GetPeerSyncState` / `SetPeerSyncState`
+- **`GetMessagesBySeqRange`** for tail/gap queries (v6-schema)
 
 ### `RelayEnvelope` (v1 wire — D063/D090)
 
@@ -107,7 +110,7 @@ Legacy `index.json` + `{thread_id}.json` are **wiped on first SqliteThreadStore 
 | Relay poll every UI frame | Still runs each frame | `ChatController::Update` → `PollAndMerge` (D032) |
 | `@ai` scoped assist | Implemented | `MessageRouter` |
 | libp2p messaging glue | Stub | `src/libp2p/integration/host/` |
-| Gap detection / sync | Not implemented | v6 |
+| Gap detection / sync | Not implemented | v6-pipeline / v6-sync |
 
 ## UI (today)
 
@@ -125,7 +128,7 @@ Legacy `index.json` + `{thread_id}.json` are **wiped on first SqliteThreadStore 
 
 | Area | Location | Notes |
 |------|----------|-------|
-| SqliteThreadStore + ChatPayload | `src/base/messaging/tests/` | `sqlite_thread_store_test`, **`p2p_relay_wire_test`**, **`chat_payload_validator_test`** |
+| SqliteThreadStore + ChatPayload | `src/base/messaging/tests/` | `sqlite_thread_store_test`, `p2p_relay_wire_test`, `chat_payload_validator_test`, **`v6_schema_test`** |
 | Messaging foundation | `tests/messaging_foundation_test.cpp` | **v1 envelope** + legacy reject |
 | Mock relay | `ServiceClientsImpl.cpp` | v1 envelope + mock reply via `SetNextReplySenderId` |
 | JsonThreadStore | In-memory only | Used by foundation test |
@@ -134,9 +137,9 @@ Run: `./build/tests/base_messaging_tests/pp_browser_p2p_relay_wire_test` (and si
 
 ## Known gaps (summary)
 
-1. **Wave 4 (v6)** — `sender_seq`, sync_state, history fetch, gap repair, integrity UX — **blocks e2e c2**.
-2. **c2** — real AEAD in `payload_b64`; E014 `EnvelopeSigner`; inbound verify.
-3. Composer maxlength wiring (`kMaxComposeTextBytes`).
+1. **Wave 4b (v6-pipeline)** — receive classifier, ReplayWindow, history floor on clear, inbound verify hook.
+2. **Wave 4c (v6-sync)** — `FetchChatTargetMessages`, tail/gap repair, integrity UX.
+3. **c2** — real AEAD in `payload_b64`; E014 `EnvelopeSigner`; inbound verify.
 5. Canonical sign bytes (interim JSON signing on outbound).
 6. Inbound relay: no Ed25519 verify; no `PeerSigningKeyStore`.
 7. Poll rate / UI windowing polish (D032/D031).

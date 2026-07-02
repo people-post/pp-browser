@@ -155,6 +155,17 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   message.relay_visible = true;
   message.transport = MessageTransport::Relay;
 
+  auto sender_seq = store_.AllocateSenderSeq(thread_id);
+  if (!sender_seq) {
+    return sender_seq.error();
+  }
+  auto session_epoch = store_.GetChatTargetSessionEpoch(thread_id);
+  if (!session_epoch) {
+    return session_epoch.error();
+  }
+  message.sender_seq = *sender_seq;
+  message.session_epoch = *session_epoch;
+
   auto appended = store_.AppendMessage(message);
   if (!appended) {
     return appended.error();
@@ -176,13 +187,6 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     return payload_b64.error();
   }
 
-  auto sender_seq = store_.AllocateSenderSeq(thread_id);
-  if (!sender_seq) {
-    appended->delivery = MessageDelivery::Failed;
-    (void)store_.UpdateMessage(*appended);
-    return sender_seq.error();
-  }
-
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = message.id;
@@ -191,8 +195,8 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   envelope.route.kind = "direct";
   envelope.route.channel = (*thread)->channel;
   envelope.body.e2e.payload_b64 = *payload_b64;
-  envelope.sender_seq = *sender_seq;
-  envelope.session_epoch = 1;
+  envelope.sender_seq = *message.sender_seq;
+  envelope.session_epoch = *message.session_epoch;
   envelope.timestamp = message.timestamp;
 
   nlohmann::json sign_json = RelayEnvelopeToJson(envelope);
@@ -332,6 +336,8 @@ void P2pMessagingService::PollAndMerge() {
       message.delivery = MessageDelivery::Relayed;
       message.relay_visible = true;
       message.transport = MessageTransport::Relay;
+      message.sender_seq = envelope.sender_seq;
+      message.session_epoch = envelope.session_epoch;
 
       if (store_.AppendMessage(message)) {
         changed = true;

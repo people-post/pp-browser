@@ -3,6 +3,7 @@
 #include "common/Error.h"
 #include "base/ai/conversation/ConversationTypes.h"
 #include "base/messaging/ThreadTypes.h"
+#include "base/messaging/SyncStateTypes.h"
 
 #include <optional>
 #include <string>
@@ -55,6 +56,12 @@ public:
                                                const std::string& participant_contact_id,
                                                const std::string& title) = 0;
   virtual Roe<uint64_t> AllocateSenderSeq(const std::string& thread_id) = 0;
+  virtual Roe<uint32_t> GetChatTargetSessionEpoch(const std::string& thread_id) const = 0;
+  virtual Roe<std::vector<ThreadMessage>> GetMessagesBySeqRange(const std::string& thread_id,
+                                                                const SeqRangeQuery& query) const = 0;
+  virtual Roe<PeerSyncState> GetPeerSyncState(const std::string& thread_id, uint32_t session_epoch) const = 0;
+  virtual Roe<void> SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
+                                     const PeerSyncState& state) = 0;
   virtual Roe<void> ReconcileOutbox() = 0;
 
   /** D017 — durable outbox index; empty until v2a-p2p populates rows. */
