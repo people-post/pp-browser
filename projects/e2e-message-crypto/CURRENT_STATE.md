@@ -58,6 +58,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 4. Ed25519 signing without inbound verify on relay poll.
 5. Messaging schema lacks `channel`, `sender_seq`, `session_epoch` (chat-storage tracks).
 6. PQ: only classical Ed25519 for envelopes; no hybrid plan in code (documented in DESIGN).
+7. **Identity model:** baseline code keys threads on local `Contact.id`; target uses identity-keyed `ChatTargetKey` (chat-storage D079) with wire `sender_contact_id` = communicating identity value.
 
 ## Design completion checklist (phase d0)
 
@@ -68,6 +69,6 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 - [x] Resolve O001/O002 — E009/E010 in [DECISIONS.md](DECISIONS.md)
 - [x] Resolve O003/O005 — E011/E012 in [DECISIONS.md](DECISIONS.md)
 - [x] Resolve O004 — E013 in [DECISIONS.md](DECISIONS.md)
-- [x] Canonical Ed25519 signing bytes specified (E014 — binary layout, body hash, `EnvelopeSigner`)
-- [ ] Frozen test vectors (hex) appended to DESIGN.md
+- [x] Ed25519 signing frozen test vectors (hex) in DESIGN.md § Test vectors
+- [ ] Symmetric crypto frozen test vectors (HKDF, AEAD, blob codec) — at c1 implementation
 - [ ] Promote stable spec to `docs/MESSAGE_ENCRYPTION.md` when d0 exits

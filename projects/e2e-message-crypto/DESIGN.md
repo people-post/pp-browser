@@ -66,28 +66,31 @@
 session_key = HKDF-SHA256(
   ikm   = master_psk,
   salt  = "pp-browser-msg-v1",
-  info  = "contact:{contact_id}|channel:{channel}|epoch:{session_epoch}"
+  info  = "identity:{kind}:{value}|channel:{channel}|epoch:{session_epoch}"
 )
 ```
 
 - **`channel`:** `e2e` only uses derived keys for body encryption; `public_relay` has no PSK session.
 - **`session_epoch`:** uint32, bumped on key rotation / compromise recovery ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md)). New epoch → new `session_key`; seq resets to 1 for that epoch.
 
-### Chat target identity (D056)
+### Chat target identity (D056, D079)
 
-Canonical **`ChatTargetKey`** — matches [chat-storage DESIGN § ChatTargetKey](../chat-storage-and-memory/DESIGN.md#chattargetkey-direct-p2p--d056):
+Canonical **`ChatTargetKey`** — matches [chat-storage DESIGN § ChatTargetKey](../chat-storage-and-memory/DESIGN.md#chattargetkey-direct-p2p--d056-d079) and [D079](../chat-storage-and-memory/DECISIONS.md#d079--local-contact-vs-communicating-identity-identity-keyed-chattargetkey):
 
 | Field | Notes |
 |-------|-------|
-| `contact_id` | Peer contact id (other party in 1:1) |
+| `peer_identity_kind` | `relay_user`, `peer_id`, … — v1 relay uses `relay_user` |
+| `peer_identity_value` | Routable id string, e.g. `relay:user:abc` |
 | `channel` | `e2e` \| `public_relay` |
 
 | Use | Key |
 |-----|-----|
-| C++ type | `ChatTargetKey{ contact_id, channel }` |
-| `sessions.json` map key | `contact:{id}|channel:{channel}` |
-| `chat_targets` PK | `(contact_id, channel)` |
-| Wire routing (inbound) | `{ sender_contact_id, route.channel }` → receiver's `ChatTargetKey` |
+| C++ type | `ChatTargetKey{ peer_identity_kind, peer_identity_value, channel }` |
+| `sessions.json` map key | `identity:{kind}:{value}|channel:{channel}` |
+| `chat_targets` PK | `(peer_identity_kind, peer_identity_value, channel)` |
+| Wire routing (inbound) | `{ sender_contact_id: identity value, route.channel }` + inferred kind → receiver's `ChatTargetKey` |
+
+**`Contact.id`** (local address book) and **`local:self`** (local transcript sentinel) are **never** in AAD or relay envelope. Wire **`sender_contact_id`** = sender's **communicating identity value** (D079).
 
 **`thread_id` / `local_thread_id` is never in AAD or relay envelope.**
 
@@ -100,22 +103,22 @@ Fixed byte order (big-endian integers). **`aad_version = 1`** is the only AAD la
 | 0 | 1 | `aad_version` = `1` |
 | 1 | 1 | `channel` enum: `0` = `public_relay`, `1` = `e2e` |
 | | 2 | `peer_contact_id_len` (u16 BE) |
-| | var | `peer_contact_id` UTF-8 — other party in 1:1 (`ChatTargetKey.contact_id` from **sender's** view) |
+| | var | `peer_contact_id` UTF-8 — recipient's **communicating identity value** (`ChatTargetKey.peer_identity_value` from **sender's** view; AAD field name is historical) |
 | | 2 | `message_id_len` (u16 BE) |
 | | var | `message_id` UTF-8 |
 | | 2 | `sender_contact_id_len` (u16 BE) |
-| | var | `sender_contact_id` UTF-8 |
+| | var | `sender_contact_id` UTF-8 — sender's **communicating identity value** (same as envelope `sender_contact_id`, D079) |
 | | 8 | `sender_seq` (u64 BE) |
 | | 4 | `session_epoch` (u32 BE) |
 | | 8 | `timestamp` (i64 BE) |
 
 **Rules:**
 
-- **Sender** builds AAD with `peer_contact_id` = recipient peer, `sender_contact_id` = self.
-- **Receiver** verifies AAD `peer_contact_id` matches local self contact id and `sender_contact_id` matches envelope sender before accept.
+- **Sender** builds AAD with `peer_contact_id` = recipient's **communicating identity value**, `sender_contact_id` = sender's **communicating identity value** (fixed for the thread — D079).
+- **Receiver** verifies AAD `peer_contact_id` matches **this thread's bound `peer_identity_value` for self** (the recipient identity the sender addressed) and `sender_contact_id` matches envelope `sender_contact_id` and thread's peer identity before accept.
 - `sender_seq` must match outer signed envelope and local `ThreadMessage` for `relay_visible` rows.
 - Decrypt with wrong AAD → MUST fail (no silent ignore).
-- Local-only rows (`relay_visible=false`) are not encrypted for relay.
+- Local-only rows (`relay_visible=false`) are not encrypted for relay. **`local:self`** is never in AAD.
 
 ## AEAD: plaintext (inside ciphertext — E010)
 
@@ -155,7 +158,7 @@ Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** **`envelope_versio
   "envelope_version": 1,
   "message_id": "uuid",
   "sender_relay_id": "relay:…",
-  "sender_contact_id": "contact:alice",
+  "sender_contact_id": "relay:user:alice",
   "route": { "kind": "direct", "channel": "e2e" },
   "sender_seq": 42,
   "session_epoch": 1,
@@ -184,7 +187,7 @@ Decision **E014**. **Do not** sign `nlohmann::json::dump()` of the envelope. Bui
 |-------|---------------|------------|
 | `envelope_version` | yes (u8) | Must be **1** in v1 |
 | `message_id` | yes (length-prefixed UTF-8) | UUID string |
-| `sender_contact_id` | yes (length-prefixed UTF-8) | Inbound routing peer |
+| `sender_contact_id` | yes (length-prefixed UTF-8) | Sender communicating identity **value** (D079) |
 | `route.kind` | yes (`route_kind` u8 enum) | `0` = direct, `1` = group (future) |
 | `route.channel` | yes (`channel` u8 enum) | When direct: `0` = public_relay, `1` = e2e |
 | `timestamp` | yes (i64 BE) | Unix **milliseconds** |
@@ -257,7 +260,7 @@ Shared by relay send, relay poll verify, and c1/c2 test vectors. Lives in **`src
 
 1. Build `ChatPayload` JSON from `ThreadMessage`.
 2. Assign `(message_id, sender_seq)` at first local persist (chat-storage D010).
-3. Build canonical AAD: `peer_contact_id` = peer from `ChatTargetKey`, `channel`, ids, seq, epoch, timestamp.
+3. Build canonical AAD: `peer_contact_id` = recipient identity value from `ChatTargetKey`, `sender_contact_id` = local outbound identity for this thread, plus channel, ids, seq, epoch, timestamp.
 4. `MessageCipher::Encrypt(utf8(payload_json), session_key, aad)` → blob → base64 → `body.e2e.payload_b64`.
 5. `EnvelopeSigner::BuildSignBytes` → `IdentityStore::SignPayload` (no `thread_id`).
 6. Relay; on receive, verify signature → resolve `ChatTargetKey` → decrypt → **E2E D013 ingest**.
@@ -286,7 +289,7 @@ Two layers:
 {
   "schema_version": 1,
   "sessions": {
-    "contact:c1|channel:e2e": {
+    "identity:relay_user:relay:c1|channel:e2e": {
       "master_psk_b64": "…",
       "session_epoch": 1,
       "fingerprint": "a1b2-c3d4-e5f6-…"
@@ -354,12 +357,70 @@ E2E crypto **c1** can proceed in parallel (no messaging types changed).
 
 ## Test vectors (required before c1 exit)
 
-Frozen vectors in unit tests and this design (fill at implementation):
+Frozen vectors in unit tests and this design. Regenerate Ed25519 fixtures with [`tools/gen_sign_vectors.py`](tools/gen_sign_vectors.py).
+
+### Shared test keypair (TEST ONLY)
+
+| Field | Value |
+|-------|-------|
+| Ed25519 private key (32 bytes, hex) | `000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f` |
+| Ed25519 public key (32 bytes, hex) | `03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8` |
+| Ed25519 public key (base64) | `A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=` |
+
+Do **not** use this keypair outside tests.
+
+### Ed25519 envelope signing (E014)
+
+**Canonical `ChatPayload` JSON** (v1 test fixture — minified UTF-8, keys in order: `schema_version`, `content_type`, `text`, `payload`):
+
+```json
+{"schema_version":1,"content_type":"text","text":"Hello","payload":{}}
+```
+
+#### Vector 1 — `public_relay`
+
+| Input | Value |
+|-------|-------|
+| `message_id` | `550e8400-e29b-41d4-a716-446655440000` |
+| `sender_contact_id` | `relay:user:alice` |
+| `route.kind` | `direct` → `route_kind = 0` |
+| `route.channel` | `public_relay` → `channel = 0` |
+| `timestamp` | `1719662400123` (Unix ms) |
+| `sender_seq` | `0` (wire omits; signing uses zero) |
+| `session_epoch` | `0` (wire omits; signing uses zero) |
+| `body.content` | canonical JSON above |
+| `body_hash` input | `0x01` \|\| canonical JSON bytes |
+| **`body_hash` (hex)** | `db8f17cda6b57a0feff3b6aa09ca17e7ca15b32309cc85d555531c804e2c7f10` |
+| **`sign_bytes` (hex, 146 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100000000019063ddd27b000000000000000000000000db8f17cda6b57a0feff3b6aa09ca17e7ca15b32309cc85d555531c804e2c7f10002435353065383430302d653239622d343164342d613731362d343436363535343430303030001072656c61793a757365723a616c696365` |
+| **`signature` (base64)** | `cAtYF/Zs/O663qTNQztUujP/ldJpcNOnV5LR8bAXvFAnuj+DX/9aD/THN1F3sUn5hnHE+W90xxipN/xRpyxlDg==` |
+
+#### Vector 2 — `e2e`
+
+| Input | Value |
+|-------|-------|
+| `message_id` | `660e8400-e29b-41d4-a716-446655440001` |
+| `sender_contact_id` | `relay:user:alice` |
+| `route.kind` | `direct` → `route_kind = 0` |
+| `route.channel` | `e2e` → `channel = 1` |
+| `timestamp` | `1719662400456` (Unix ms) |
+| `sender_seq` | `42` |
+| `session_epoch` | `1` |
+| `body.e2e.payload_b64` | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF6q7qruqu6q7qruqu6q7qruqu6q7qruqu6q7qruqu6q7` |
+| E2E blob (decoded, hex) | `01000102030405060708090a0b0c0d0e0f1011121314151617aabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabb` |
+| `body_hash` input | `0x02` \|\| decoded blob bytes |
+| **`body_hash` (hex)** | `d32b5a0addb1b6980d44f511e4c6f6e09a7d32a3375e4f66a7de709afc4daeaf` |
+| **`sign_bytes` (hex, 146 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001d32b5a0addb1b6980d44f511e4c6f6e09a7d32a3375e4f66a7de709afc4daeaf002436363065383430302d653239622d343164342d613731362d343436363535343430303031001072656c61793a757365723a616c696365` |
+| **`signature` (base64)** | `nwtJJnnidjH0TpCi2I8X4BhVc0Fzc4NkZZNa0JUb0S53WHxLsD8ClU3I60IGVGHfgZxQEhQSVqXgcXjrBwOrAw==` |
+
+E2E blob layout for this fixture: `[payload_version=0x01][nonce=0x00..0x17][ciphertext+tag=0xAABB×16]` (57 bytes total). Content is arbitrary test material — not a valid AEAD ciphertext.
+
+### Symmetric crypto (c1 — TBD at implementation)
+
+Fill when `base/crypto` lands:
 
 - `master_psk`, `contact_id`, `channel`, `session_epoch` → expected `session_key` (hex)
 - One AEAD tuple: `session_key`, `nonce`, `aad` (hex), `plaintext`, `ciphertext` (hex)
 - One full blob round-trip: binary → base64 → binary
-- **Ed25519 signing (E014):** one **public_relay** and one **e2e** envelope → `body_hash` (hex), full `BuildSignBytes` output (hex), test keypair → signature (base64)
 
 ## Explicit non-goals
 

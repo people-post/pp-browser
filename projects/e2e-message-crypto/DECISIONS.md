@@ -34,9 +34,9 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E004 — Canonical AAD binds `ChatTargetKey` context and `sender_seq`
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — `peer_contact_id` + `channel`; no `thread_id` (D056).  
-**Decision:** AEAD associated data (`aad_version = 1` only): `channel`, `peer_contact_id`, `message_id`, `sender_contact_id`, `sender_seq` (u64 BE), `session_epoch` (u32 BE), `timestamp` (i64 BE) — layout in DESIGN.md. Sender sets `peer_contact_id` to the other party in the `ChatTargetKey`. **No `thread_id` in AAD.** No dual AAD version support (D016).  
-**Rationale:** Aligns with [chat-storage D056](../chat-storage-and-memory/DECISIONS.md); local thread ids are device-private.  
+**Updated:** 2026-07-02 — communicating identity values in AAD (D079).  
+**Decision:** AEAD associated data (`aad_version = 1` only): `channel`, `peer_contact_id`, `message_id`, `sender_contact_id`, `sender_seq` (u64 BE), `session_epoch` (u32 BE), `timestamp` (i64 BE) — layout in DESIGN.md. AAD string fields carry **communicating identity values** (D079) — not local `Contact.id`, not `local:self`. Sender sets `peer_contact_id` to recipient's identity value from `ChatTargetKey`. **No `thread_id` in AAD.** No dual AAD version support (D016).  
+**Rationale:** Aligns with [chat-storage D079](../chat-storage-and-memory/DECISIONS.md#d079--local-contact-vs-communicating-identity-identity-keyed-chattargetkey); local thread and address-book ids are device-private.  
 **Alternatives:** Bind `thread_id` in AAD (superseded); encrypt only `text` with nonce.
 
 ---
@@ -50,11 +50,12 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## E006 — Chat target key matches chat-storage `(contact_id, channel)`
+## E006 — Chat target key matches chat-storage identity + channel (D079)
 
 **Date:** 2026-06-29  
-**Decision:** PSK sessions and HKDF context use **`ChatTargetKey` = `(contact_id, channel)`** with `channel` ∈ `{public_relay, e2e}`. Only **`e2e`** channels use message-body encryption. `session_epoch` scopes keys and seq per [chat-storage D014](../chat-storage-and-memory/DECISIONS.md).  
-**Rationale:** Same identity boundary as thread model D004; public relay stays signed plaintext.  
+**Updated:** 2026-07-02 — `(peer_identity_kind, peer_identity_value, channel)` (D079).  
+**Decision:** PSK sessions and HKDF context use **`ChatTargetKey` = `(peer_identity_kind, peer_identity_value, channel)`** with `channel` ∈ `{public_relay, e2e}`. Only **`e2e`** channels use message-body encryption. `session_epoch` scopes keys and seq per [chat-storage D014](../chat-storage-and-memory/DECISIONS.md).  
+**Rationale:** Same identity boundary as thread model D004/D079; public relay stays signed plaintext.  
 **Alternatives:** Per-`local_thread_id` keys only; one PSK for all contacts.
 
 ---

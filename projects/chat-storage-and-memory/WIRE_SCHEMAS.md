@@ -5,6 +5,8 @@
 
 **Related:** [e2e-message-crypto/DESIGN.md](../e2e-message-crypto/DESIGN.md) (AAD layout, ciphertext), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md).
 
+**Identity (D079):** Wire **`sender_contact_id`** carries the sender's **communicating identity value** (e.g. `relay:user:abc`) — not local `Contact.id`. **`Contact.id`** is address-book only.
+
 ---
 
 ## Unknown-field policy (D073)
@@ -27,7 +29,7 @@ Signed outer wrapper. **No `thread_id`.** See [DESIGN § Relay envelope](DESIGN.
   "envelope_version": 1,
   "message_id": "550e8400-e29b-41d4-a716-446655440000",
   "sender_relay_id": "relay:user:abc",
-  "sender_contact_id": "contact:alice",
+  "sender_contact_id": "relay:user:alice",
   "route": {
     "kind": "direct",
     "channel": "public_relay"
@@ -60,7 +62,7 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | `envelope_version` | integer | yes | **1** in v1. Signed (D072). Bump independently of `ChatPayload.schema_version`. |
 | `message_id` | string (UUID) | yes | Dedup key (D034) |
 | `sender_relay_id` | string | yes | Relay registration id |
-| `sender_contact_id` | string | yes | Inbound routing peer (D021) |
+| `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — e.g. `relay:…` |
 | `route` | object | yes | See `Route` below |
 | `body` | object | yes | `content` (public) or `e2e` (encrypted) |
 | `sender_seq` | integer (u64) | E2E only | Omitted on public (D045) |
@@ -108,8 +110,10 @@ Single request shape for **`FetchChatTargetMessages`** (D058). HTTP: query param
 
 ```json
 {
-  "requester_contact_id": "contact:local",
-  "peer_contact_id": "contact:peer",
+  "requester_identity_kind": "relay_user",
+  "requester_identity_value": "relay:local",
+  "peer_identity_kind": "relay_user",
+  "peer_identity_value": "relay:peer",
   "channel": "e2e",
   "session_epoch": 1,
   "min_sender_seq": 10,
@@ -121,8 +125,10 @@ Single request shape for **`FetchChatTargetMessages`** (D058). HTTP: query param
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `requester_contact_id` | string | yes | Authenticated caller |
-| `peer_contact_id` | string | yes | Other party (`ChatTargetKey.contact_id`) |
+| `requester_identity_kind` | string | yes | Authenticated caller identity kind |
+| `requester_identity_value` | string | yes | Authenticated caller identity value |
+| `peer_identity_kind` | string | yes | Other party identity kind |
+| `peer_identity_value` | string | yes | Other party (`ChatTargetKey.peer_identity_value`) |
 | `channel` | string | yes | `public_relay` \| `e2e` |
 | `session_epoch` | integer | E2E | Required when `channel=e2e` |
 | `min_sender_seq` | integer | no | Inclusive lower bound |
@@ -136,7 +142,8 @@ Single request shape for **`FetchChatTargetMessages`** (D058). HTTP: query param
 
 ```json
 {
-  "peer_contact_id": "contact:peer",
+  "peer_identity_kind": "relay_user",
+  "peer_identity_value": "relay:peer",
   "channel": "e2e",
   "session_epoch": 1,
   "messages": [],
@@ -150,7 +157,8 @@ Single request shape for **`FetchChatTargetMessages`** (D058). HTTP: query param
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `peer_contact_id` | string | yes | Stream owner |
+| `peer_identity_kind` | string | yes | Stream owner identity kind |
+| `peer_identity_value` | string | yes | Stream owner identity value |
 | `channel` | string | yes | |
 | `session_epoch` | integer | E2E | When `channel=e2e` |
 | `messages` | `RelayEnvelope[]` | yes | No `thread_id` on elements |

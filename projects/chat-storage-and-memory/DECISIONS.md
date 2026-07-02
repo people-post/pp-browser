@@ -33,12 +33,13 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D004 — Separate threads for public vs E2E per contact
+## D004 — Separate threads per communicating identity and channel
 
 **Date:** 2026-06-27  
-**Decision:** Thread identity for direct chats is `(contact_id, channel)`, not contact alone. Two thread records (and files) for the same person when both modes exist.  
-**Rationale:** Different crypto, transport, privacy UI, and AI memory boundaries; avoids mode-switch bugs in one transcript.  
-**Alternatives:** One thread with per-message encryption flags; single thread with “mode switch” rewriting history.
+**Updated:** 2026-07-02 — identity-keyed threads (D079).  
+**Decision:** Thread identity for direct chats is **`ChatTargetKey` = `(peer_identity_kind, peer_identity_value, channel)`**, not local `Contact.id` alone. Two thread records (and files) for the same **communicating identity** when both public and E2E exist. Same local **Contact** with two messaging identities → two unrelated threads.  
+**Rationale:** Different crypto, transport, privacy UI, and AI memory boundaries; avoids mode-switch and identity-mix bugs.  
+**Alternatives:** One thread with per-message encryption flags; single thread with “mode switch” rewriting history; one thread per Contact regardless of identity (rejected — D079).
 
 ---
 
@@ -202,8 +203,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D021 — `sender_contact_id` and `route` on relay envelope
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — `route` object; no `thread_id` (D056).  
-**Decision:** Relay envelope includes **`sender_contact_id`** and **`route`** (`kind` + `channel` for direct). **No `thread_id`** on wire. Inbound direct routing: `ChatTargetKey { sender_contact_id, route.channel }` → local `local_thread_id`. Do not infer sender from local thread metadata.  
+**Updated:** 2026-07-02 — `sender_contact_id` = communicating identity **value** (D079); inbound policy split (D080).  
+**Decision:** Relay envelope includes **`sender_contact_id`** and **`route`** (`kind` + `channel` for direct). **No `thread_id`** on wire. **`sender_contact_id`** is the sender's **communicating identity value** (e.g. `relay:…`) — not local `Contact.id` (D079). Inbound direct routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: envelope.sender_contact_id, channel }` → local `local_thread_id` when a row exists (D080). Do not infer sender from local thread metadata.  
 **Rationale:** Local thread ids differ per device; shared routing key is the chat target. `route` extensible to `group_id` later.  
 **Alternatives:** Shared wire `thread_id` (D053 — superseded); infer sender from participants[0] (rejected).
 
@@ -262,8 +263,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D027 — Relay chat-target messages API (seq backfill, E2E)
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — `GET /v1/chat-targets/messages`; no `thread_id` (D056).  
-**Decision:** Relay exposes seq-scoped fetch by **`ChatTargetKey`** (`peer_contact_id` + `channel` query params). **Authorization:** caller must be a party to that chat target; else **403**. Relay indexes by recipient inbox + sender + channel, not client `thread_id`. Send idempotent on `message_id`. **Reject** POST bodies with `thread_id`.  
+**Updated:** 2026-07-02 — identity query params (D079).  
+**Decision:** Relay exposes seq-scoped fetch by **`ChatTargetKey`** (`peer_identity_kind` + `peer_identity_value` + `channel` query params). **Authorization:** caller must be a party to that chat target; else **403**. Relay indexes by recipient inbox + sender identity + channel, not client `thread_id`. Send idempotent on `message_id`. **Reject** POST bodies with `thread_id`.  
 **Rationale:** Peers use different local thread ids; backfill keys must match wire routing.  
 **Alternatives:** `GET /v1/threads/{thread_id}/messages` (superseded).
 
@@ -372,7 +373,7 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 
 1. `SELECT` from `profile.db` `threads` ordered by `updated_at` (one profile DB read).
 2. For **visible rows only** (current sidebar viewport / page slice — not all threads): if `{thread_id}/thread.db` is missing → delete `threads` + `outbox` rows for that id; else run `SELECT text, timestamp FROM messages ORDER BY display_order DESC LIMIT 1` and update cached preview/`updated_at` if mismatched (D054).
-3. `FindOrCreateDirectThread(ChatTargetKey)` looks up **`chat_targets`**; catalog via **`threads.direct_peer_contact_id`** + `channel` (D055).
+3. `FindOrCreateDirectThread(ChatTargetKey, participant_contact_id)` looks up **`chat_targets`**; catalog via **`threads.peer_identity_*`** + `channel` (D055, D079).
 
 **Profile open (once):** `readdir` `threads/*/` — directories with `thread.db` but no `threads` row → insert stub catalog row (repairs crash-after-DB-create).
 
@@ -527,9 +528,9 @@ No hard max file size in v1.
 ## D047 — `chat_targets` table in `profile.db`
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — `local_thread_id`; `ChatTargetKey` (D056).  
-**Decision:** **`chat_targets`** PK = **`(contact_id, channel)`** (`ChatTargetKey`). Columns: **`local_thread_id`** (current on-disk shell; **not on wire**), **`next_outgoing_seq`**, **`session_epoch`**. Updated under same writer mutex as `outbox`. **Delete direct conversation** removes shell but **keeps** `chat_targets` (seq/epoch). Shell recreate may allocate **new** `local_thread_id`.  
-**Rationale:** Seq/epoch are per logical chat target; local storage ids are device-private.  
+**Updated:** 2026-07-02 — PK `(peer_identity_kind, peer_identity_value, channel)` (D079).  
+**Decision:** **`chat_targets`** PK = **`ChatTargetKey`** **`(peer_identity_kind, peer_identity_value, channel)`**. Columns: **`local_thread_id`** (current on-disk shell; **not on wire**), optional **`participant_contact_id`** (local Contact.id for catalog), **`next_outgoing_seq`**, **`session_epoch`**. Updated under same writer mutex as `outbox`. **Delete direct conversation** removes shell but **keeps** `chat_targets` (seq/epoch). Shell recreate may allocate **new** `local_thread_id`.  
+**Rationale:** Seq/epoch are per logical chat target (communicating identity + channel); local storage ids are device-private.  
 **Alternatives:** Wire-stable `thread_id` (D053 — superseded).
 
 ---
@@ -599,10 +600,11 @@ No hard max file size in v1.
 
 ---
 
-## D055 — `direct_peer_contact_id` catalog denorm
+## D055 — Peer identity catalog denorm (superseded field name by D079)
 
 **Date:** 2026-06-29  
-**Decision:** `profile.db` **`threads.direct_peer_contact_id`** stores the peer for **`kind=direct`** (= `ChatTargetKey.contact_id`). Index **`(kind, channel, direct_peer_contact_id)`**. **`FindOrCreateDirectThread`** uses **`chat_targets`** PK (D056); denorm supports catalog repair.  
+**Updated:** 2026-07-02 — D079: `peer_identity_kind` + `peer_identity_value` replace `direct_peer_contact_id`.  
+**Decision:** `profile.db` **`threads`** stores **`peer_identity_kind`** + **`peer_identity_value`** for **`kind=direct`** (= `ChatTargetKey` identity fields). Index **`(kind, channel, peer_identity_kind, peer_identity_value)`**. **`participant_contact_ids`** holds local **Contact.id**. **`FindOrCreateDirectThread`** uses **`chat_targets`** PK (D056/D079); denorm supports catalog repair.  
 **Rationale:** Fast catalog lookup; canonical key remains `ChatTargetKey`.  
 **Alternatives:** JSON1 expression index only (deferred).
 
@@ -611,7 +613,8 @@ No hard max file size in v1.
 ## D056 — Local `thread_id`; wire routes via `ChatTargetKey`
 
 **Date:** 2026-06-29  
-**Decision:** **`thread_id`** (stored as **`chat_targets.local_thread_id`**) is **local only** — never sent on relay envelope or included in E2E AAD. **Direct P2P wire routing:** `ChatTargetKey { contact_id: envelope.sender_contact_id, channel: envelope.route.channel }` → `FindOrCreateDirectThread` → persist to that device's `local_thread_id`. Envelope includes **`route`**: `{ "kind": "direct", "channel": "…" }` (**`[post-v1]`** group: `{ "kind": "group", "group_id": "…" }`). **Reject** envelopes containing `thread_id` (D016). **Single** wire + AAD layout — no legacy dual-parser. Relay backfill: **`GET /v1/chat-targets/messages?peer_contact_id=&channel=`** (D027).  
+**Updated:** 2026-07-02 — identity-keyed `ChatTargetKey` (D079); inbound channel split (D080).  
+**Decision:** **`thread_id`** (stored as **`chat_targets.local_thread_id`**) is **local only** — never sent on relay envelope or included in E2E AAD. **Direct P2P wire routing:** resolve **`ChatTargetKey`** from **`envelope.sender_contact_id`** (communicating identity **value**, D079) + **`envelope.route.channel`** + inferred **`peer_identity_kind`** (v1: `relay_user` for relay path). **Outbound:** `FindOrCreateDirectThread` → persist to `local_thread_id`. **Inbound:** see D080 (E2E find-only; public ephemeral). Envelope includes **`route`**: `{ "kind": "direct", "channel": "…" }` (**`[post-v1]`** group: `{ "kind": "group", "group_id": "…" }`). **Reject** envelopes containing `thread_id` (D016). **Single** wire + AAD layout — no legacy dual-parser. Relay backfill: **`GET /v1/chat-targets/messages?peer_identity_kind=&peer_identity_value=&channel=`** (D027; query param names TBD — same semantics).  
 **Rationale:** Each device owns storage layout; logical conversation is `ChatTargetKey`; group-ready `route` object; one clean protocol cut with D016 wipe.  
 **Alternatives:** Shared wire `thread_id` (D053 — superseded); flat `channel` field without `route` (rejected — poor group extensibility).
 
@@ -660,7 +663,7 @@ No hard max file size in v1.
 ## D060 — Peer-direct history protocol (libp2p)
 
 **Date:** 2026-06-30  
-**Decision:** libp2p app protocol **`/pp-browser/chat-history/1.0.0`** mirrors D027 semantics. **Request:** signed JSON — `requester_contact_id`, `peer_contact_id`, `channel`, `session_epoch`, optional `min_sender_seq` / `max_sender_seq`, `limit` (default 50, max 100), `order` (`asc`|`desc`). **Response:** `{ messages: RelayEnvelope[], has_more, cursor }` — same envelope shape as relay (no `thread_id`, D056). **Responder:** participant of `ChatTargetKey`; serve from local `GetMessagesBySeqRange` on **`local_thread_id`**; cap batch (D029). **Requester:** verify each envelope signature; ingest via receive pipeline. Reject non-participant requests. Wire spec: [DESIGN § Peer-direct history fetch](DESIGN.md#peer-direct-history-fetch-d060).  
+**Decision:** libp2p app protocol **`/pp-browser/chat-history/1.0.0`** mirrors D027 semantics. **Request:** signed JSON — `requester_identity_kind`, `requester_identity_value`, `peer_identity_kind`, `peer_identity_value`, `channel`, `session_epoch`, optional `min_sender_seq` / `max_sender_seq`, `limit` (default 50, max 100), `order` (`asc`|`desc`). **Response:** `{ messages: RelayEnvelope[], has_more, cursor }` — same envelope shape as relay (no `thread_id`, D056). **Responder:** participant of `ChatTargetKey`; serve from local `GetMessagesBySeqRange` on **`local_thread_id`**; cap batch (D029). **Requester:** verify each envelope signature; ingest via receive pipeline. Reject non-participant requests. Wire spec: [DESIGN § Peer-direct history fetch](DESIGN.md#peer-direct-history-fetch-d060).  
 **Rationale:** Peer-first backfill without a relay hop when both sides are online; reuses wire + ingest paths.  
 **Alternatives:** Custom binary sync format (rejected); relay-only backfill (rejected — contradicts peer-first goal).
 
@@ -679,8 +682,15 @@ No hard max file size in v1.
 ## D062 — Inbound direct routing: find-only (no auto-create)
 
 **Date:** 2026-06-30  
-**Updated:** 2026-06-30 — product assumption documented in DESIGN § Assumptions.  
-**Decision:** **Inbound** relay/direct delivery: resolve **`ChatTargetKey` → existing `local_thread_id`** via `chat_targets` only. If no row or shell missing → **reject** (hard reject / drop) **before** persist — **do not** `FindOrCreateDirectThread` on ingest. **Outbound** user actions (Message, Secure message, first send) create shell + catalog. Participant check (D027) runs **before** any side effect; ingest never creates orphan `thread.db` / sidebar rows from unsolicited traffic. **Product:** a peer's first message is dropped until the recipient opens that channel locally — document in UX.  
+**Updated:** 2026-07-02 — channel-specific policy (D080).  
+**Decision:** **Inbound** relay/direct delivery: resolve **`ChatTargetKey` → existing `local_thread_id`** via `chat_targets` when persisting. **Do not** `FindOrCreateDirectThread` on ingest. **Outbound** user actions (Message, Secure message, first send) create shell + catalog. Participant check (D027) before persist side effects.
+
+| Channel | No `chat_targets` row | Missing shell |
+|---------|----------------------|---------------|
+| **`e2e`** | Hard reject (cannot decrypt without PSK anyway) | Hard reject |
+| **`public_relay`** | Ephemeral UI only — **no persist** (D080) | Hard reject if row exists |
+
+**Product:** E2E first message requires recipient to open secure chat + keys locally. Public first message may appear as notification without storage until recipient opens the conversation.  
 **Rationale:** Prevents signed-but-unwanted traffic from allocating storage; creation stays user-initiated.  
 **Alternatives:** Create-on-ingest then delete on failed participant check (rejected).
 
@@ -743,7 +753,7 @@ No hard max file size in v1.
 **Date:** 2026-06-30  
 **Decision:** Amends D061 to avoid false compromise when durable outbox (D017) allows higher `sender_seq` on the wire before a lower seq is relayed.
 
-**Guard — do not empty-close** gap range `[min, max]` when **any** local `relay_visible` row exists for that `(peer_contact_id, session_epoch)` with `sender_seq > max`. Keep `sync_state=gap`; rely on live delivery of the missing seq or transport exhaustion (D041). Example: have peer seq **4** and **6**, gap at **5** — empty fetch for **5** must **not** close; sender may still retry **5** from outbox.
+**Guard — do not empty-close** gap range `[min, max]` when **any** local `relay_visible` row exists for that `(peer_identity_kind, peer_identity_value, session_epoch)` with `sender_seq > max`. Keep `sync_state=gap`; rely on live delivery of the missing seq or transport exhaustion (D041). Example: have peer seq **4** and **6**, gap at **5** — empty fetch for **5** must **not** close; sender may still retry **5** from outbox.
 
 **Empty-close when guard passes:** tail gaps and holes with no higher seq held — advance `contiguous_peer_seq`; append each closed seq to **`empty_closed_seqs[]`** or coalesce into **`empty_closed_ranges[]`** (D071).
 
@@ -836,7 +846,7 @@ No hard max file size in v1.
 ## D076 — Group chat placeholders in catalog + sync scope
 
 **Date:** 2026-06-29  
-**Decision:** `profile.db` **`threads.group_id`** column (nullable, unused v1) for **`kind=group`** **`[post-v1]`**. Wire uses `route.kind=group` + `group_id` (D056). **`sync_state`** v1 PK `(peer_contact_id, session_epoch)` is the **1:1 specialization**; groups will use `(scope_kind, scope_id, session_epoch)` or equivalent — document before group ingest ships.  
+**Decision:** `profile.db` **`threads.group_id`** column (nullable, unused v1) for **`kind=group`** **`[post-v1]`**. Wire uses `route.kind=group` + `group_id` (D056). **`sync_state`** v1 PK `(peer_identity_kind, peer_identity_value, session_epoch)` is the **1:1 specialization**; groups will use `(scope_kind, scope_id, session_epoch)` or equivalent — document before group ingest ships.  
 **Rationale:** Avoid second catalog migration when groups arrive; 1:1 assumptions must not block group schema.  
 **Alternatives:** Add `group_id` only when groups ship (acceptable but higher migration cost); reuse `ChatTargetKey` for groups (rejected — D056).
 
@@ -857,6 +867,42 @@ No hard max file size in v1.
 **Decision:** `messages.chat_payload_json` stores the full **`ChatPayload`** JSON (wire-aligned). Columns `content_type`, `payload`, `text`, `control_type`, `target_message_id` are **denormalized caches** written **only** via **`ChatPayloadCodec::EncodeToRow`** — never updated independently on the hot path. Local-only: `content_rml`, `user_payload`, `chat_actions`.  
 **Rationale:** One canonical body simplifies migrations and matches E2E/plaintext wire; denormalized columns keep indexed queries without parsing JSON every read.  
 **Alternatives:** Split columns only with no canonical JSON (rejected — drift risk); JSON-only row with no denorm (rejected — query/index cost).
+
+---
+
+## D079 — Local contact vs communicating identity; identity-keyed `ChatTargetKey`
+
+**Date:** 2026-07-02  
+**Supersedes in detail:** D055 (`direct_peer_contact_id` denorm), D056 (`ChatTargetKey.contact_id` semantics).  
+**Decision:**
+
+1. **`Contact.id`** (address book) is **local only** — never on wire, never in AAD, never in `ChatTargetKey`. A **Contact** represents a person or entity and may hold multiple **`ContactId`** entries (`relay_user`, `peer_id`, `blockchain`, `custom`) — see `ContactTypes.h`. Some identities are used for messaging; others are metadata only.
+2. **`ChatTargetKey`** (direct P2P) = **`(peer_identity_kind, peer_identity_value, channel)`** — the **communicating identity** bound when the thread is created, plus channel. **Not** local `Contact.id`. Same human with two messaging identities (e.g. two `relay_user` ids, or relay vs libp2p `peer_id`) → **separate threads** and separate PSK/seq state. Identity is **fixed for the life of the thread** — do not switch mid-thread; open a new thread for a new identity.
+3. **Wire `sender_contact_id`** (envelope + AAD + signing bytes) carries the sender's **communicating identity `value`** (e.g. `relay:user:abc`, libp2p peer id string) — **not** local `Contact.id`, **not** `local:self`. **`local:self`** remains a **local transcript sentinel** only (`ThreadMessage.sender_contact_id` on outbound rows).
+4. **Outbound identity** for a thread is implied by transport + thread binding — user does **not** pick among their identities per send within the same thread. Relay threads use the profile's primary **`relay_user`** identity; future libp2p-direct threads use the bound **`peer_id`**.
+5. **`threads.participant_contact_ids`** stores the local **Contact.id** (UI grouping, contact card). **`chat_targets`** and catalog denorm store **`peer_identity_kind`** + **`peer_identity_value`**. **`[post-v1]`** optional local merge: relate multiple identities to one Contact without merging threads.
+6. **HKDF / `sessions.json` map key:** `identity:{kind}:{value}|channel:{channel}` (see [e2e-message-crypto DESIGN](../e2e-message-crypto/DESIGN.md)).
+
+**Rationale:** Separates address-book identity from routable messaging endpoints; fixes AAD self-check ambiguity; matches existing `ContactId` vector model; supports identity rotation as new thread + epoch without conflating local contacts.  
+**Alternatives:** Wire-stable id per Contact (rejected — conflates local book with routing); rename wire field to `sender_identity` in v1 (deferred — keep JSON key `sender_contact_id`, document semantics).
+
+---
+
+## D080 — Inbound routing: E2E find-only; public ephemeral without persist
+
+**Date:** 2026-07-02  
+**Amends:** D062 (channel-specific inbound policy).  
+**Decision:**
+
+| Channel | No matching `chat_targets` row | Behavior |
+|---------|-------------------------------|----------|
+| **`e2e`** | yes | **Hard reject** before decrypt/persist (D062). User must open **Secure message** with that peer identity and install PSK first. |
+| **`public_relay`** | yes | **Ephemeral display only** — verify signature + parse payload; show notification or transient inbox preview; **do not** `AppendMessage` to `thread.db` or create `chat_targets` / sidebar shell. Persist only after user opens **Message** (or equivalent) for that `(peer_identity, channel)` via outbound `FindOrCreateDirectThread`. |
+
+**E2E** with matching row but missing PSK / decrypt failure: hard reject (unchanged). **Public** with matching row: normal persist path (D045). Participant check (D027) applies on both channels when a row exists; for ephemeral public, verify `sender_contact_id` is a known messaging identity on a Contact (or directory hit) before showing UI.
+
+**Rationale:** E2E requires keys by definition; public first contact should not be silently dropped (D062 product pain) but also must not allocate storage from unsolicited traffic.  
+**Alternatives:** D062 strict on both channels (rejected for public UX); public create-on-ingest (rejected — unwanted sidebar rows).
 
 ---
 

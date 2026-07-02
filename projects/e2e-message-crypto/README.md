@@ -3,7 +3,7 @@
 **Status:** Planning — design in progress (as of 2026-06-29)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
-**Related project:** [chat-storage-and-memory](../chat-storage-and-memory/) (channel split, `ChatPayload`, `sender_seq`, ingest rules)
+**Related project:** [chat-storage-and-memory](../chat-storage-and-memory/) (channel split, `ChatPayload`, `sender_seq`, ingest rules, identity-keyed `ChatTargetKey` D079)
 
 ## One-line goal
 

@@ -28,7 +28,7 @@ Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IR
 
 | Field | Description |
 |-------|-------------|
-| `sender_contact_id` | `local:self`, `ai:assistant`, or contact id |
+| `sender_contact_id` | **Local rows:** `local:self`, `ai:assistant`. **Wire / peer rows:** communicating identity value (D079), e.g. `relay:…` |
 | `content_rml` | Rendered assistant blocks (optional) |
 | `relay_visible` | `false` for `@ai` assist (never relayed) |
 | `delivery` | `local`, `pending`, `relayed`, `failed` |
@@ -70,7 +70,7 @@ Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is r
 {
   "message_id": "uuid",
   "sender_relay_id": "relay:…",
-  "sender_contact_id": "contact:…",
+  "sender_contact_id": "relay:…",
   "route": { "kind": "direct", "channel": "public_relay" },
   "body": {
     "content": {
@@ -85,7 +85,7 @@ Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is r
 }
 ```
 
-Inbound routing: `ChatTargetKey { sender_contact_id, route.channel }` → existing local thread (**inbound find-only**, D062). Legacy envelopes with `thread_id` or flat `body.text` (no `body.content`) are rejected.
+Inbound routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: sender_contact_id, channel }` → existing local thread when row exists (**E2E inbound find-only**, D062; **public ephemeral** without row, D080). Legacy envelopes with `thread_id` or flat `body.text` (no `body.content`) are rejected.
 
 **Wire cutover (D063):** v2a-p2p ships final envelope + minimal ChatPayload in `body.content`. v4 adds validation only — no second wire break. See [DESIGN § Wire cutover phasing](../projects/chat-storage-and-memory/DESIGN.md#wire-cutover-phasing-d063).
 
