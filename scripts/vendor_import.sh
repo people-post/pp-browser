@@ -6,6 +6,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 THIRD_PARTY="${ROOT}/third_party"
 TMP="${ROOT}/.vendor_import_tmp"
 
+# SQLite amalgamation (not a git repo).
+SQLITE_AMALGAMATION_VERSION="3530300"
+SQLITE_AMALGAMATION_YEAR="2026"
+
 declare -A REPOS=(
   [freetype]="https://github.com/freetype/freetype.git|VER-2-13-3"
   [nlohmann_json]="https://github.com/nlohmann/json.git|v3.11.3"
@@ -13,7 +17,10 @@ declare -A REPOS=(
   [sdl3]="https://github.com/libsdl-org/SDL.git|release-3.2.8"
   [sdl3_image]="https://github.com/libsdl-org/SDL_image.git|release-3.2.4"
   [lunasvg]="https://github.com/sammycage/lunasvg.git|v3.5.0"
+  [libsodium]="https://github.com/jedisct1/libsodium.git|1.0.20-RELEASE"
 )
+
+DEFAULT_ORDER=(freetype nlohmann_json curl sdl3 sdl3_image lunasvg libsodium sqlite)
 
 import_sdl3_image_externals() {
   local image_root="${THIRD_PARTY}/sdl3_image"
@@ -55,19 +62,99 @@ import_sdl3_image_externals() {
   cd "${ROOT}"
 }
 
+import_sqlite_amalgamation() {
+  local dest="${THIRD_PARTY}/sqlite"
+  local url="https://www.sqlite.org/${SQLITE_AMALGAMATION_YEAR}/sqlite-amalgamation-${SQLITE_AMALGAMATION_VERSION}.zip"
+  local archive="${TMP}/sqlite-amalgamation.zip"
+  local extract="${TMP}/sqlite-extract"
+
+  echo "==> sqlite amalgamation ${SQLITE_AMALGAMATION_VERSION}"
+  mkdir -p "${dest}"
+  if [[ -f "${dest}/CMakeLists.txt" ]]; then
+    cp "${dest}/CMakeLists.txt" "${TMP}/sqlite_CMakeLists.txt"
+  fi
+
+  rm -rf "${extract}" "${archive}"
+  curl -fsSL "${url}" -o "${archive}"
+  unzip -q "${archive}" -d "${extract}"
+  local inner="${extract}/sqlite-amalgamation-${SQLITE_AMALGAMATION_VERSION}"
+  if [[ ! -d "${inner}" ]]; then
+    echo "error: unexpected sqlite amalgamation layout" >&2
+    exit 1
+  fi
+
+  rm -f "${dest}/sqlite3.c" "${dest}/sqlite3.h" "${dest}/sqlite3ext.h" "${dest}/shell.c"
+  cp "${inner}/sqlite3.c" "${inner}/sqlite3.h" "${inner}/sqlite3ext.h" "${dest}/"
+
+  if [[ -f "${TMP}/sqlite_CMakeLists.txt" ]]; then
+    cp "${TMP}/sqlite_CMakeLists.txt" "${dest}/CMakeLists.txt"
+  fi
+
+  python3 - "${PATCH_JSON}" <<PY
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["sqlite"] = {
+    "source": "${url}",
+    "amalgamation_version": "${SQLITE_AMALGAMATION_VERSION}",
+}
+path.write_text(json.dumps(data))
+PY
+}
+
+preserve_pp_cmake() {
+  local name="$1"
+  local dest="${THIRD_PARTY}/${name}"
+  local backup="${TMP}/${name}_CMakeLists.txt"
+  if [[ -f "${dest}/CMakeLists.txt" ]]; then
+    cp "${dest}/CMakeLists.txt" "${backup}"
+  else
+    rm -f "${backup}"
+  fi
+}
+
+restore_pp_cmake() {
+  local name="$1"
+  local dest="${THIRD_PARTY}/${name}"
+  local backup="${TMP}/${name}_CMakeLists.txt"
+  if [[ -f "${backup}" ]]; then
+    cp "${backup}" "${dest}/CMakeLists.txt"
+  fi
+}
+
 mkdir -p "${THIRD_PARTY}"
 rm -rf "${TMP}"
 mkdir -p "${TMP}"
 
-json_entries=()
+PATCH_JSON="${TMP}/upstream_patch.json"
+echo "{}" > "${PATCH_JSON}"
 external_entries=()
 
-for name in freetype nlohmann_json curl sdl3 sdl3_image lunasvg; do
+if [[ $# -gt 0 ]]; then
+  ORDER=("$@")
+else
+  ORDER=("${DEFAULT_ORDER[@]}")
+fi
+
+for name in "${ORDER[@]}"; do
+  if [[ "${name}" == "sqlite" ]]; then
+    import_sqlite_amalgamation
+    continue
+  fi
+
+  if [[ -z "${REPOS[$name]+x}" ]]; then
+    echo "error: unknown vendored dependency '${name}'" >&2
+    exit 1
+  fi
+
   IFS='|' read -r url tag <<< "${REPOS[$name]}"
   dest="${THIRD_PARTY}/${name}"
   clone_dir="${TMP}/${name}"
 
   echo "==> ${name} @ ${tag}"
+  preserve_pp_cmake "${name}"
+
   if [[ "${name}" == "lunasvg" ]]; then
     git clone --depth 1 --branch "${tag}" --recursive "${url}" "${clone_dir}"
   else
@@ -78,39 +165,69 @@ for name in freetype nlohmann_json curl sdl3 sdl3_image lunasvg; do
   rm -rf "${dest}"
   mkdir -p "${dest}"
   rsync -a --delete --exclude='.git' "${clone_dir}/" "${dest}/"
+  restore_pp_cmake "${name}"
 
-  json_entries+=("  \"${name}\": {
-    \"repository\": \"${url}\",
-    \"tag\": \"${tag}\",
-    \"commit\": \"${commit}\"
-  }")
+  if [[ "${name}" == "libsodium" ]]; then
+    python3 "${ROOT}/scripts/generate_libsodium_cmake.py" "${dest}"
+  fi
+
+  python3 - "${PATCH_JSON}" "${name}" "${url}" "${tag}" "${commit}" <<'PY'
+import json, sys
+from pathlib import Path
+path, name, url, tag, commit = sys.argv[1:6]
+data = json.loads(Path(path).read_text())
+data[name] = {"repository": url, "tag": tag, "commit": commit}
+Path(path).write_text(json.dumps(data))
+PY
 
   if [[ "${name}" == "sdl3_image" ]]; then
     import_sdl3_image_externals
   fi
 done
 
+UPSTREAM="${THIRD_PARTY}/UPSTREAM.json"
+python3 - "${UPSTREAM}" "${PATCH_JSON}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+upstream_path = Path(sys.argv[1])
+patch_path = Path(sys.argv[2])
+
+data = {}
+if upstream_path.exists():
+    data = json.loads(upstream_path.read_text())
+
+patch = json.loads(patch_path.read_text())
+data.update(patch)
+
+upstream_path.write_text(json.dumps(data, indent=2) + "\n")
+print(f"Updated {upstream_path}")
+PY
+
+if [[ ${#external_entries[@]} -gt 0 ]]; then
+  export UPSTREAM
+  export EXTERNAL_BLOB="${external_entries[*]}"
+  python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+path = Path(os.environ["UPSTREAM"])
+data = json.loads(path.read_text())
+externals = data.setdefault("sdl3_image_externals", {})
+for chunk in os.environ.get("EXTERNAL_BLOB", "").split("    \""):
+    chunk = chunk.strip()
+    if not chunk:
+        continue
+    name = chunk.split("\"", 1)[0]
+    body = "{" + chunk[name.__len__() + 1 :]
+    _, _, rest = body.partition(":")
+    externals[name] = json.loads(rest.strip().rstrip(","))
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+fi
+
 rm -rf "${TMP}"
 
-UPSTREAM="${THIRD_PARTY}/UPSTREAM.json"
-{
-  echo "{"
-  for i in "${!json_entries[@]}"; do
-    if [[ $i -gt 0 ]]; then echo ","; fi
-    echo -n "${json_entries[$i]}"
-  done
-  if [[ ${#external_entries[@]} -gt 0 ]]; then
-    echo ","
-    echo "  \"sdl3_image_externals\": {"
-    for i in "${!external_entries[@]}"; do
-      if [[ $i -gt 0 ]]; then echo ","; fi
-      echo -n "${external_entries[$i]}"
-    done
-    echo
-    echo "  }"
-  fi
-  echo "}"
-} > "${UPSTREAM}"
-
-echo "Wrote ${UPSTREAM}"
 echo "Done. Review changes and commit third_party/."
