@@ -193,7 +193,15 @@ Regenerate: [`chatpayload_codec.py`](../e2e-message-crypto/tools/chatpayload_cod
 
 ## `ChatHistoryRequest` (shared — relay GET + libp2p D060)
 
-Single request shape for **`FetchChatTargetMessages`** (D058). HTTP: query params; libp2p: UTF-8 JSON body on stream.
+Single request shape for **`FetchChatTargetMessages`** (D058). **libp2p (D060):** UTF-8 JSON body on stream. **HTTP relay (D027):** `GET /v1/chat-targets/messages` with **the same field names as query parameters** (snake_case, values URL-encoded). Omit optional fields when unset.
+
+Example HTTP request:
+
+```
+GET /v1/chat-targets/messages?requester_identity_kind=relay_user&requester_identity_value=relay%3Alocal&peer_identity_kind=relay_user&peer_identity_value=relay%3Apeer&channel=e2e&session_epoch=1&min_sender_seq=10&max_sender_seq=42&limit=50&order=asc
+```
+
+JSON body form (libp2p / documentation):
 
 ```json
 {

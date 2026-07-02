@@ -150,8 +150,11 @@ Existing foundation this project builds on.
 
 #### Vendor SQLite (`pp_base`)
 
-- [ ] Add SQLite to build (amalgamation or system lib) — **not** libp2p fork SQLite
-- [ ] Document in [BUILD.md](../../docs/BUILD.md) / `third_party` if vendored
+**Note:** `third_party/sqlite` and `cmake/dependencies.cmake` already vendored — v2a-core completes **link to `pp_base`** and `SqliteThreadStore`.
+
+- [x] SQLite in `third_party/` (amalgamation) — **not** libp2p fork SQLite
+- [ ] Link `pp_base` to SQLite in [src/base/CMakeLists.txt](../../src/base/CMakeLists.txt)
+- [ ] Document in [BUILD.md](../../docs/BUILD.md) if not already noted
 
 #### `ThreadMessage` + store types (D066)
 
@@ -328,7 +331,7 @@ Existing foundation this project builds on.
 
 **Design refs:** [P2P sync `[v1]` modes](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [User-initiated sync](DESIGN.md#user-initiated-sync-ux-d059), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity `[v1]`](DESIGN.md#v1-recovery), [Epoch bump](DESIGN.md#epoch-bump-transaction-d014-cross-project), [Durable outbox](DESIGN.md#durable-outbox-d017).
 
-### Schema and persistence
+### v6-schema — Schema and persistence
 
 - [ ] `sender_seq`, `session_epoch` on **E2E** messages + envelope (D021, D045)
 - [ ] `sync_state` table populated per `(peer, session_epoch)` — E2E threads only
@@ -336,7 +339,7 @@ Existing foundation this project builds on.
 - [ ] `GetMessagesBySeqRange` on `IThreadStore` for tail/gap
 - [ ] Assign `(message_id, sender_seq)` at first local persist on E2E send; serialize per chat target
 
-### Send / receive
+### v6-pipeline — Send / receive
 
 - [ ] Sign envelope via `EnvelopeSigner` (E014) including E2E seq fields
 - [ ] Durable outbox: `ListPendingOutbox()` + reconciliation on startup (D017, D047)
@@ -349,7 +352,7 @@ Existing foundation this project builds on.
 - [ ] Peer reset / integrity recovery — **no continue-anyway** (D014, D038, D046)
 - [ ] **Epoch bump transaction** with e2e crypto sessions (D047); **passive epoch adopt** on first ingest when peer bumps first (D085); **rich OOB bundle** export/import (D086/E020)
 
-### Sync modes (E2E only — D052, D058, D059)
+### v6-sync — Sync modes (E2E only — D052, D058, D059)
 
 - [ ] **`FetchChatTargetMessages`** — unified backfill; peer-direct (D060) then relay D027 (D058)
 - [ ] **Tail sync** — desc limit 50
@@ -362,13 +365,13 @@ Existing foundation this project builds on.
 - [ ] Reorder buffer / `ReplayWindow` k=32 (D020)
 - [ ] Persist **`loaded_min_seq` / `loaded_max_seq`** watermarks (prerequisite for post-v6c)
 
-### libp2p peer-direct (D060)
+### v6-libp2p — libp2p peer-direct (D060)
 
 - [ ] Protocol **`/pp-browser/chat-history/1.0.0`** — request/response mirrors D027
 - [ ] Responder serves `GetMessagesBySeqRange` from local `thread.db`
 - [ ] Requester ingests envelopes; `transport=direct` on persist
 
-### Integrity and UX
+### v6-integrity — Integrity and UX
 
 - [ ] E2E gap / compromised banners; choice sheet: rotate PSK or pause only (D046)
 - [ ] **Sync with peer** + **Retry sync** copy: peer sync ≠ retry unsent (D059)
@@ -513,3 +516,4 @@ Ship SQLite storage + private-tier envelope plumbing without c2; E2E body crypto
 | 2026-07-02 | D089/D090 doc alignment: receive pipeline auto-create (D080), remove stale public-relay ingest; phasing split v2b shells vs functional `e2e_public`; relaxed ingest merged into public tier milestone; `payload_version` naming |
 | 2026-06-30 | D067–D068: empty gap close guard + late fill; compromised outbox/sync freeze; epoch bump pending cancel; receive pipeline linearized |
 | 2026-07-02 | Agent batch delivery order — parallel waves, v6 sub-packages, rollout gates to skip; traceability **Agent wave** column |
+| 2026-07-02 | Pre-implementation doc hygiene — CURRENT_STATE accuracy, D027 query params, `MessagingLimits.h` path, v6 sub-headings |

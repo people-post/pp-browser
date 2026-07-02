@@ -264,7 +264,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — identity query params (D079).  
-**Decision:** Relay exposes seq-scoped fetch by **`ChatTargetKey`** (`peer_identity_kind` + `peer_identity_value` + `channel` query params). **Authorization:** caller must be a party to that chat target; else **403**. Relay indexes by recipient inbox + sender identity + channel, not client `thread_id`. Send idempotent on `message_id`. **Reject** POST bodies with `thread_id`.  
+**Decision:** Relay exposes seq-scoped fetch by **`ChatTargetKey`**. HTTP: **`GET /v1/chat-targets/messages`** with query params matching **`ChatHistoryRequest`** field names in [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) (`requester_identity_kind`, `requester_identity_value`, `peer_identity_kind`, `peer_identity_value`, `channel`, `session_epoch`, optional `min_sender_seq`, `max_sender_seq`, `limit`, `order`). **Authorization:** caller must be a party to that chat target; else **403**. Relay indexes by recipient inbox + sender identity + channel, not client `thread_id`. Send idempotent on `message_id`. **Reject** POST bodies with `thread_id`.  
 **Rationale:** Peers use different local thread ids; backfill keys must match wire routing.  
 **Alternatives:** `GET /v1/threads/{thread_id}/messages` (superseded).
 
@@ -288,7 +288,7 @@ Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature
 ## D029 — Chat resource bounds (size & volume)
 
 **Date:** 2026-06-29  
-**Decision:** Enforce explicit caps on chat wire, storage, and relay traffic. Constants in `MessagingLimits.h` (name TBD); reject at compose, send, and ingest.
+**Decision:** Enforce explicit caps on chat wire, storage, and relay traffic. Constants in **`src/base/messaging/MessagingLimits.h`** (`namespace pbr`, `inline constexpr`); reject at compose, send, and ingest.
 
 | Limit | Value | Applies to |
 |-------|-------|------------|
@@ -443,7 +443,7 @@ Hard failures: pause + **Pause only** until delete thread or key rotation.
 ## D040 — AI compaction triggers and summary bounds (v3)
 
 **Date:** 2026-06-29  
-**Decision:** `ICompactionService` runs when a thread’s **text turn count** (user + assistant `content_type=text` rows) exceeds **`kCompactionTurnThreshold = 20`** since the last summary version. Constants in `MessagingLimits.h` (or shared with `ContextBudget`):
+**Decision:** `ICompactionService` runs when a thread’s **text turn count** (user + assistant `content_type=text` rows) exceeds **`kCompactionTurnThreshold = 20`** since the last summary version. Constants in `src/base/messaging/MessagingLimits.h` (or shared with `ContextBudget`):
 
 | Constant | Value | Notes |
 |----------|-------|-------|
@@ -460,7 +460,7 @@ Hard failures: pause + **Pause only** until delete thread or key rotation.
 ## D041 — Outbox retry and gap repair numeric limits
 
 **Date:** 2026-06-29  
-**Decision:** Add explicit P2P retry/repair caps in `MessagingLimits.h`:
+**Decision:** Add explicit P2P retry/repair caps in `src/base/messaging/MessagingLimits.h`:
 
 | Constant | Value | Applies to |
 |----------|-------|------------|
@@ -618,7 +618,7 @@ No hard max file size in v1.
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — identity-keyed `ChatTargetKey` (D079); inbound channel split (D080).  
-**Decision:** **`thread_id`** (stored as **`chat_targets.local_thread_id`**) is **local only** — never sent on relay envelope or included in E2E AAD. **Direct P2P wire routing:** resolve **`ChatTargetKey`** from **`envelope.sender_contact_id`** (communicating identity **value**, D079) + **`envelope.route.channel`** + inferred **`peer_identity_kind`** (v1: `relay_user` for relay path). **Outbound:** `FindOrCreateDirectThread` → persist to `local_thread_id`. **Inbound:** see D080 (`e2e` find-only; `e2e_public` auto-create after decrypt). Envelope includes **`route`**: `{ "kind": "direct", "channel": "…" }` (**`[post-v1]`** group: `{ "kind": "group", "group_id": "…" }`). **Reject** envelopes containing `thread_id` (D016). **Single** wire + AAD layout — no legacy dual-parser. Relay backfill: **`GET /v1/chat-targets/messages?peer_identity_kind=&peer_identity_value=&channel=`** (D027; query param names TBD — same semantics).  
+**Decision:** **`thread_id`** (stored as **`chat_targets.local_thread_id`**) is **local only** — never sent on relay envelope or included in E2E AAD. **Direct P2P wire routing:** resolve **`ChatTargetKey`** from **`envelope.sender_contact_id`** (communicating identity **value**, D079) + **`envelope.route.channel`** + inferred **`peer_identity_kind`** (v1: `relay_user` for relay path). **Outbound:** `FindOrCreateDirectThread` → persist to `local_thread_id`. **Inbound:** see D080 (`e2e` find-only; `e2e_public` auto-create after decrypt). Envelope includes **`route`**: `{ "kind": "direct", "channel": "…" }` (**`[post-v1]`** group: `{ "kind": "group", "group_id": "…" }`). **Reject** envelopes containing `thread_id` (D016). **Single** wire + AAD layout — no legacy dual-parser. Relay backfill: **`GET /v1/chat-targets/messages`** per D027 / [WIRE_SCHEMAS § ChatHistoryRequest](WIRE_SCHEMAS.md#chathistoryrequest-shared--relay-get--libp2p-d060).  
 **Rationale:** Each device owns storage layout; logical conversation is `ChatTargetKey`; group-ready `route` object; one clean protocol cut with D016 wipe.  
 **Alternatives:** Shared wire `thread_id` (D053 — superseded); flat `channel` field without `route` (rejected — poor group extensibility).
 

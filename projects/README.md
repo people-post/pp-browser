@@ -17,6 +17,6 @@ When a project is fully delivered and stable, fold enduring facts into `docs/` a
 
 | Project | Status | Summary |
 |---------|--------|---------|
-| [chat-storage-and-memory](chat-storage-and-memory/) | Planning / early v2 | SQLite per thread, ChatPayload, seq sync, **resource bounds D029–D033** |
+| [chat-storage-and-memory](chat-storage-and-memory/) | Ready — wave 1 (`v2a-core`) | SQLite per thread, ChatPayload, seq sync, **resource bounds D029–D033** |
 | [platform-safety-limits](platform-safety-limits/) | Planning | LLM HTTP, profile JSON, MCP, parser output — non-chat limits |
-| [e2e-message-crypto](e2e-message-crypto/) | d0 complete → c1 next | Manual PSK E2E: libsodium, XChaCha20-Poly1305, HKDF; spec in [docs/MESSAGE_ENCRYPTION.md](../docs/MESSAGE_ENCRYPTION.md) |
+| [e2e-message-crypto](e2e-message-crypto/) | Ready — wave 1 (`c1` ∥ v2a-core) | Manual PSK E2E: libsodium, XChaCha20-Poly1305, HKDF; spec in [docs/MESSAGE_ENCRYPTION.md](../docs/MESSAGE_ENCRYPTION.md) |

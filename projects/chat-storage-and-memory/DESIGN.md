@@ -1258,7 +1258,7 @@ Sending `sender_seq=1` without bumping epoch in an established epoch is **soft c
 
 ## Resource & trust bounds (D029–D033)
 
-Canonical limits in [DECISIONS.md](DECISIONS.md) D029. Summary:
+Canonical limits in [DECISIONS.md](DECISIONS.md) D029 (`src/base/messaging/MessagingLimits.h`). Summary:
 
 | Area | Policy |
 |------|--------|

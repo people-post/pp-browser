@@ -2,17 +2,25 @@
 
 Inventory of what exists in the codebase today for message encryption. Update when landing phase work.
 
-**Planned:** full E2E stack in [DESIGN.md](DESIGN.md) — see [PHASES.md](PHASES.md).
+**Planned:** full E2E stack in [DESIGN.md](DESIGN.md) — see [PHASES.md](PHASES.md).  
+**Implementation:** ready — wave 1 (`c1`) per [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order), parallel with chat `v2a-core`.
+
+## Release scope (v1 batch)
+
+| In scope | Out of scope (unless expanded) |
+|----------|--------------------------------|
+| d0 (complete), c1, c2, c3 — **private `e2e` tier** | c3+ (`e2e_public` auto-key), c4 PQ |
+| | Group E2E (E022 / O008) |
 
 ## E2E crypto module
 
 | Area | Status | Location |
 |------|--------|----------|
 | `base/crypto/` module | **Not implemented** | — |
-| libsodium vendored | **Not implemented** | — |
+| libsodium vendored | **Yes** — not linked to `pp_base` yet | `third_party/libsodium/`, `cmake/dependencies.cmake`; c1 task = link + module |
 | `IPskSessionStore` | **Not implemented** | — |
 | `MessageCipher` / AEAD | **Not implemented** | — |
-| Unit tests + frozen vectors | **Not implemented** | — |
+| Unit tests + frozen vectors | **Not implemented** | Spec + vectors in [DESIGN.md](DESIGN.md), [MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) |
 | `docs/MESSAGE_ENCRYPTION.md` | **Promoted** | Stable spec — [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) |
 
 ## Related messaging (today)
@@ -24,7 +32,8 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | Inbound verify | **Not implemented** | `Ed25519Signer::Verify` only in tests |
 | `Thread.encrypted` | Schema only; never `true` | `ThreadTypes.h` |
 | `channel` / e2e thread split | **Not implemented** | [chat-storage CURRENT_STATE](../chat-storage-and-memory/CURRENT_STATE.md) |
-| `sender_seq` / `session_epoch` | **Not implemented** | Design in chat-storage |
+| `sender_seq` / `session_epoch` | **Not implemented** | Design in chat-storage v6 |
+| Target wire body | **`body.e2e.payload_b64`** only (D090) | [WIRE_SCHEMAS](../chat-storage-and-memory/WIRE_SCHEMAS.md) — baseline code not cut over |
 
 ## Identity and keys (today)
 
@@ -37,28 +46,29 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 
 ## Third-party crypto libraries
 
-| Library | Vendored | Used for |
-|---------|----------|----------|
-| BoringSSL | Yes (libp2p deps) | curl TLS, libp2p, `Ed25519Signer` |
-| libsodium | **No** | Planned for E2E symmetric (E002) |
-| liboqs / PQ | **No** | Deferred (phase c4) |
+| Library | Vendored | Linked to `pp_base` | Used for |
+|---------|----------|---------------------|----------|
+| BoringSSL | Yes (libp2p deps) | Yes | curl TLS, libp2p, `Ed25519Signer` |
+| libsodium | Yes (`third_party/libsodium`) | **No** (c1) | E2E symmetric AEAD/HKDF (E002) |
+| liboqs / PQ | No | — | Deferred (phase c4) |
 
 ## Tests
 
 | Area | Location |
 |------|----------|
 | Ed25519 round-trip | `tests/messaging_foundation_test.cpp` |
-| E2E crypto | None |
+| E2E crypto (frozen vectors) | Planned: `src/base/crypto/tests/` (c1) |
 
 ## Known gaps (summary)
 
 1. No symmetric E2E — relay sees all direct message text.
-2. No libsodium — no application AEAD layer.
+2. No `base/crypto` module — application AEAD layer not wired.
 3. No PSK storage or fingerprint UX.
 4. Ed25519 signing without inbound verify on relay poll (no peer key store yet — E016).
 5. Messaging schema lacks `channel`, `sender_seq`, `session_epoch` (chat-storage tracks).
 6. PQ: only classical Ed25519 for envelopes; no hybrid plan in code (documented in DESIGN).
 7. **Identity model:** baseline code keys threads on local `Contact.id`; target uses identity-keyed `ChatTargetKey` (chat-storage D079) with wire `sender_contact_id` = communicating identity value (`relay:<opaque_id>` per D082/E017).
+8. **c1 must not include** `ThreadTypes` / `P2pMessagingService` — keep `base/crypto` isolated until c2.
 
 ## Design completion checklist (phase d0)
 

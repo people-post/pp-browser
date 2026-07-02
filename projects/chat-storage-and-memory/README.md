@@ -1,6 +1,6 @@
 # Chat storage, memory, and messaging channels
 
-**Status:** Planning — v2 not started (as of 2026-06-29)  
+**Status:** Ready for implementation — wave 1 (`v2a-core`) as of 2026-07-02  
 **Owner:** Hongwei + agents  
 **Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
 **Related project:** [e2e-message-crypto](../e2e-message-crypto/) (symmetric E2E body crypto; depends on v2b + v6 for wire-up)  
@@ -11,6 +11,10 @@
 One durable conversation model for AI and P2P chat: SQLite per thread, `profile.db` catalog/outbox/`chat_targets` (identity-keyed `ChatTargetKey`, D056/D079), local `thread_id` only, `display_order` paging (D054), ChatPayload v1, **three chat tiers** (private / public / group direct — D089), channel badges, E2E seq sync with **peer-first backfill** (D058–D060) and **user-initiated sync** (D059) — richer types, scroll backfill, shared `@ai`, and transport badges phased after v1.
 
 **Related:** [platform-safety-limits](../platform-safety-limits/) (LLM HTTP, profile stores — outside chat wire).
+
+## Release scope (v1 batch)
+
+Before the first customer release, agents implement **chat v2a–v6** plus [e2e c1–c3](../e2e-message-crypto/PHASES.md) (private `e2e` tier). Exclude unless explicitly expanded: post-v4/6b/c/d, `e2e_public` auto-key (c3+), group E2E (O008), PQ (c4). See [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
 
 ## Documents in this folder
 

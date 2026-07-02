@@ -122,9 +122,11 @@ d0 (complete)
 
 ### Vendor libsodium
 
-- [ ] Add `libsodium` to [scripts/vendor_import.sh](../../scripts/vendor_import.sh) (e.g. `jedisct1/libsodium` tag `1.0.20`)
-- [ ] [third_party/UPSTREAM.json](../../third_party/UPSTREAM.json) + [third_party/README.md](../../third_party/README.md)
-- [ ] [cmake/dependencies.cmake](../../cmake/dependencies.cmake) — `add_subdirectory`, disable tests/benchmarks
+**Note:** `third_party/libsodium` and `cmake/dependencies.cmake` already vendored — c1 completes **link to `pp_base`** and module code.
+
+- [x] Add `libsodium` to [scripts/vendor_import.sh](../../scripts/vendor_import.sh) (e.g. `jedisct1/libsodium` tag `1.0.20`)
+- [x] [third_party/UPSTREAM.json](../../third_party/UPSTREAM.json) + [third_party/README.md](../../third_party/README.md)
+- [x] [cmake/dependencies.cmake](../../cmake/dependencies.cmake) — `add_subdirectory`, disable tests/benchmarks
 - [ ] Link `pp_base` to `sodium` in [src/base/CMakeLists.txt](../../src/base/CMakeLists.txt)
 
 ### Module `src/base/crypto/`
@@ -248,3 +250,4 @@ d0 (complete)
 | Date | Change |
 |------|--------|
 | 2026-07-02 | Agent batch delivery order — waves, reading list, cross-project critical path; traceability table |
+| 2026-07-02 | Pre-implementation doc hygiene — CURRENT_STATE (libsodium vendored), release scope, P2P_MESSAGING alignment |

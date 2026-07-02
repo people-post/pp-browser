@@ -1,6 +1,6 @@
 # E2E message encryption
 
-**Status:** Design baseline complete (d0) — ready for c1 implementation  
+**Status:** Ready for implementation — wave 1 (`c1` ∥ chat `v2a-core`) as of 2026-07-02  
 **Owner:** Hongwei + agents  
 **Stable refs:** [MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
 **Related project:** [chat-storage-and-memory](../chat-storage-and-memory/) (three tiers D089, `ChatPayload`, `sender_seq`, ingest rules, identity-keyed `ChatTargetKey` D079)
@@ -8,6 +8,10 @@
 ## One-line goal
 
 High-assurance **symmetric E2E** for all P2P tiers: manual PSK (private), automated keys (public), pairwise sender-keys (group); HKDF session keys, XChaCha20-Poly1305 AEAD, `body.e2e.payload_b64` wire format, binary `ChatPayload` plaintext (E010/D087). See [E021](DECISIONS.md#e021--three-chat-tiers-both-direct-tiers-e2e-d089).
+
+## Release scope (v1 batch)
+
+**c1–c3** (private `e2e` tier) with chat v2b + v6. Exclude unless expanded: c3+ public auto-key, c4 PQ, group (E022). Coordinated via [chat-storage agent waves](../chat-storage-and-memory/PHASES.md#agent-batch-delivery-order).
 
 ## Documents in this folder
 

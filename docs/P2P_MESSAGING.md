@@ -1,6 +1,8 @@
 # P2P messaging
 
-Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local JSON as source of truth; HTTP relay/directory/registration transport with promoted-MCP and mock fallbacks.
+Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local persistence as source of truth; HTTP relay/directory/registration transport with promoted-MCP and mock fallbacks.
+
+**Normative wire shapes:** [chat-storage WIRE_SCHEMAS.md](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md). **E2E crypto:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md).
 
 ## Service resolution
 
@@ -11,6 +13,8 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 3. else in-process mock (dev default)
 
 Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md) for the MCP infra tool contract.
+
+**Baseline gap:** `IRelayClient` today exposes only `Send` and `PollInbox`. History fetch (`FetchChatTargetMessages` / `GET /v1/chat-targets/messages`) is planned in chat-storage **v6** — see [WIRE_SCHEMAS § ChatHistoryRequest](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#chathistoryrequest-shared--relay-get--libp2p-d060).
 
 ## Data model
 
@@ -24,12 +28,14 @@ Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IR
 | `unread_count` | Sidebar badge |
 | `preview` | Last message snippet |
 
+**Target (v2b+):** `channel` (`e2e` \| `e2e_public`) on direct threads — see [DESIGN § Three chat tiers](../projects/chat-storage-and-memory/DESIGN.md#three-chat-tiers-d089).
+
 ### ThreadMessage
 
 | Field | Description |
 |-------|-------------|
 | `sender_contact_id` | **Local rows:** `local:self`, `ai:assistant`. **Wire / peer rows:** communicating identity value (D079, D082), e.g. `relay:abc123` |
-| `content_rml` | Rendered assistant blocks (optional) |
+| `content_rml` | Rendered assistant blocks (optional; **local AI only** — never from wire, D030) |
 | `relay_visible` | `false` for `@ai` assist (never relayed) |
 | `delivery` | `local`, `pending`, `relayed`, `failed` |
 
@@ -47,7 +53,7 @@ Profile-scoped layout (see [CONFIGURATION.md](CONFIGURATION.md)). **Legacy (toda
   threads/{thread_id}.json
 ```
 
-**Target (v2a+):** see [chat-storage-and-memory DESIGN.md](../projects/chat-storage-and-memory/DESIGN.md) — `profile.db` (`threads` + `outbox`) + per-thread `thread.db`; no `index.json`.
+**Target (v2a+):** see [chat-storage-and-memory DESIGN.md](../projects/chat-storage-and-memory/DESIGN.md) — `profile.db` (`threads` + `outbox` + `chat_targets`) + per-thread `thread.db`; no `index.json`.
 
 Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux) or in-app **Settings**:
 
@@ -62,34 +68,43 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
 
 Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is running; otherwise in-process mocks.
 
-## Relay envelope (target — D056)
+## Relay envelope (target — D056, D090)
 
-**No `thread_id` on the wire.** Full spec: [chat-storage DESIGN § Relay envelope](../projects/chat-storage-and-memory/DESIGN.md#relay--direct-envelope-d056).
+**No `thread_id` on the wire.** All direct tiers use **`body.e2e.payload_b64`** (AEAD ciphertext). Reject `public_relay`, `body.content_b64`, flat `body.text`, and legacy `thread_id`.
+
+Full spec: [WIRE_SCHEMAS § RelayEnvelope](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#relayenvelope-v1--envelope_version-1).
 
 ```json
 {
-  "message_id": "uuid",
+  "envelope_version": 1,
+  "message_id": "550e8400-e29b-41d4-a716-446655440000",
   "sender_relay_id": "relay:alice123",
   "sender_contact_id": "relay:alice123",
-  "route": { "kind": "direct", "channel": "public_relay" },
-  "body": {
-    "content": {
-      "schema_version": 1,
-      "content_type": "text",
-      "text": "Hello",
-      "payload": {}
-    }
+  "route": {
+    "kind": "direct",
+    "channel": "e2e"
   },
-  "timestamp": 1234567890,
-  "signature": "…"
+  "sender_seq": 42,
+  "session_epoch": 1,
+  "body": {
+    "e2e": { "payload_b64": "…" }
+  },
+  "timestamp": 1719662400123,
+  "signature": "base64-ed25519"
 }
 ```
 
-Inbound routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: sender_contact_id, channel }` → existing local thread when row exists (**E2E inbound find-only**, D062; **public ephemeral** without row, D080). Legacy envelopes with `thread_id` or flat `body.text` (no `body.content_b64`) are rejected.
+**Private direct:** `"channel": "e2e"`. **Public direct:** `"channel": "e2e_public"` (same body shape).
 
-**Signature verify (E014, E016):** Inbound messages are verified with **`EnvelopeSigner::Verify`** using the sender's **`signing_public_key_b64`** from **`PeerSigningKeyStore`** (directory at add-contact; lazy `GET /v1/users/{relay_user_id}` on cache miss). See [e2e DECISIONS E016](../projects/e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).
+**AEAD plaintext** is binary **ChatPayload** (D087/D090) — not JSON `body.content`. See [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md).
 
-**Wire cutover (D063):** v2a-p2p ships final envelope + minimal binary ChatPayload in `body.content_b64` (D087). v4 adds validation only — no second wire break. See [DESIGN § Wire cutover phasing](../projects/chat-storage-and-memory/DESIGN.md#wire-cutover-phasing-d063).
+Inbound routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: sender_contact_id, channel }` → local thread lookup (**private `e2e`:** find-only, D062; **`e2e_public`:** auto-create after decrypt, D080).
+
+**Signature verify (E014, E016):** Inbound messages are verified with **`EnvelopeSigner::Verify`** using the sender's Ed25519 public key from **`PeerSigningKeyStore`** (directory at add-contact; lazy `GET /v1/users/{relay_user_id}` on cache miss). See [e2e DECISIONS E016](../projects/e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).
+
+**Wire cutover (D063):** v2a-p2p ships this final envelope shape. v4 adds ChatPayload **validation** only — no second wire break. See [DESIGN § Wire cutover phasing](../projects/chat-storage-and-memory/DESIGN.md#wire-cutover-phasing-d063).
+
+**Baseline code** still uses legacy `RelayEnvelope` with `thread_id` and `body.text` — replaced in v2a-p2p.
 
 Local store is written **before** send. Server rejections do not delete history. **Unsent/failed** rows stay local — user **retries send**; **peer sync** (`FetchChatTargetMessages`, D058) fetches **missing messages from the peer**, not your pending outbox.
 
@@ -101,7 +116,7 @@ Local store is written **before** send. Server rejections do not delete history.
 | Gap repair | Automatic on seq hole |
 | User sync | Thread menu **Sync with peer** (D059) |
 
-**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `GET /v1/chat-targets/messages` fallback. Full spec: [chat-storage DESIGN § P2P sync](../projects/chat-storage-and-memory/DESIGN.md#p2p-sync-e2e-only--d045).
+**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `GET /v1/chat-targets/messages` fallback. Query params match [ChatHistoryRequest](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#chathistoryrequest-shared--relay-get--libp2p-d060) field names (D027). Full spec: [chat-storage DESIGN § P2P sync](../projects/chat-storage-and-memory/DESIGN.md#p2p-sync-e2e-only--d045).
 
 Scroll-to-top backfill is **`[post-v1]`** (D052); uses the same fetch primitive.
 
@@ -132,4 +147,4 @@ Composer: `Message… or @ai ask assistant`
 
 ## Group chat (future)
 
-`ThreadKind::Group` and `participant_contact_ids[]` are reserved. Adding groups does not require a new message schema.
+`ThreadKind::Group` and `participant_contact_ids[]` are reserved. Wire shape open (O008). Adding groups does not require a new local message schema.
