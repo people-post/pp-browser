@@ -18,13 +18,13 @@ One durable conversation model for AI and P2P chat: SQLite per thread, `profile.
 |------|---------|
 | [DESIGN.md](DESIGN.md) | **Complete system specification** — all behavior with `[v1]` / `[post-v1]` maturity tags |
 | [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) | **Normative wire shapes** — envelope JSON, binary ChatPayload (D087), history fetch (D072) |
-| [PHASES.md](PHASES.md) | **Implementation order** — checklists, exit criteria, traceability (no duplicate specs) |
+| [PHASES.md](PHASES.md) | **Implementation order** — checklists, exit criteria, traceability; **[agent batch waves](PHASES.md#agent-batch-delivery-order)** for pre-release delivery |
 | [DECISIONS.md](DECISIONS.md) | Recorded decisions (ADR-style rationale) |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |
 
 ## v1 implementation order
 
-See [PHASES.md](PHASES.md) for full checklists. Summary:
+See [PHASES.md](PHASES.md) for full checklists. For **agent batch delivery** (all phases before one release), use [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order). Rollout summary:
 
 | Phase | Focus |
 |-------|--------|

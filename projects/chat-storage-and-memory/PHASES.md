@@ -2,6 +2,13 @@
 
 **[DESIGN.md](DESIGN.md) is the authoritative specification** (complete system with `[v1]` / `[post-v1]` tags). **This file orders work only** — checklists, exit criteria, and traceability. Rationale: [DECISIONS.md](DECISIONS.md).
 
+This file has **two orderings**:
+
+| Ordering | Use when |
+|----------|----------|
+| **Phase sections below** (v2a → v2b → …) | Incremental rollout, traceability, exit criteria |
+| **[Agent batch delivery](#agent-batch-delivery-order)** | Agents finish all `[v1]` work before a single release — parallel waves, merged gates |
+
 Before each phase, read [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints) and [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).
 
 Check boxes when work is **merged and verified**. Add sub-items freely; keep phase boundaries stable unless DECISIONS records a change.
@@ -10,18 +17,107 @@ Check boxes when work is **merged and verified**. Add sub-items freely; keep pha
 
 ## Traceability
 
-| Phase | Primary DESIGN sections | Maturity shipped |
-|-------|-------------------------|------------------|
-| v2a | [Data model](DESIGN.md#data-model-target), [On-disk layout](DESIGN.md#on-disk-layout-target--d025-d028-d035-d036), [Store interface](DESIGN.md#store-interface-target), [Clear / forget](DESIGN.md#clear--forget-semantics-user-facing--d024), [Resource bounds](DESIGN.md#resource--trust-bounds-d029d033) | `[v1]` SQLite + transcript |
-| v2b | [Thread / tier](DESIGN.md#three-chat-tiers-d089), [UI sidebar](DESIGN.md#sidebar-v1) | `[v1]` tier **data model** (shells + badges); functional `e2e_public` gated until c3 |
-| v3 | [Durable memory](DESIGN.md#durable-memory-per-thread), [Three layers](DESIGN.md#three-layers-transcript-vs-context-vs-memory) | `[v1]` compaction + forget |
-| v4 | ChatPayload **validation** + transport column (wire unchanged since v2a-p2p, D063) | `[v1]` text/system + transport column |
-| v6 | [P2P sync](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity recovery](DESIGN.md#integrity-recovery-d038), [Durable outbox](DESIGN.md#durable-outbox-d017) | `[v1]` E2E tail + gap + user sync |
-| post-v4 | [ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026) (`[post-v1]` rows) | Rich payload types |
-| post-v6b | [`@ai` modes](DESIGN.md#ai-in-direct-threads-d012) | Shared `@ai+` / `@ai++` |
-| post-v6c | [P2P sync — scroll backfill](DESIGN.md#p2p-sync-e2e-only--d045) | Scroll trigger on D058 |
-| post-v6d | [Transport provenance](DESIGN.md#transport-provenance-d051) | Per-message badge UI |
-| post-v6e | *(merged into public tier milestone)* | Relaxed ingest ships with `e2e_public` / group per D046 — see e2e **c3+** |
+| Phase | Agent wave | Primary DESIGN sections | Maturity shipped |
+|-------|------------|-------------------------|------------------|
+| v2a | 1–2 | [Data model](DESIGN.md#data-model-target), [On-disk layout](DESIGN.md#on-disk-layout-target--d025-d028-d035-d036), [Store interface](DESIGN.md#store-interface-target), [Clear / forget](DESIGN.md#clear--forget-semantics-user-facing--d024), [Resource bounds](DESIGN.md#resource--trust-bounds-d029d033) | `[v1]` SQLite + transcript |
+| v2b | 2 | [Thread / tier](DESIGN.md#three-chat-tiers-d089), [UI sidebar](DESIGN.md#sidebar-v1) | `[v1]` tier **data model** (shells + badges); functional `e2e_public` gated until c3 |
+| v3 | 3 | [Durable memory](DESIGN.md#durable-memory-per-thread), [Three layers](DESIGN.md#three-layers-transcript-vs-context-vs-memory) | `[v1]` compaction + forget |
+| v4 | 3 | ChatPayload **validation** + transport column (wire unchanged since v2a-p2p, D063) | `[v1]` text/system + transport column |
+| v6 | 4 | [P2P sync](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity recovery](DESIGN.md#integrity-recovery-d038), [Durable outbox](DESIGN.md#durable-outbox-d017) | `[v1]` E2E tail + gap + user sync |
+| post-v4 | 6 | [ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026) (`[post-v1]` rows) | Rich payload types |
+| post-v6b | 6 | [`@ai` modes](DESIGN.md#ai-in-direct-threads-d012) | Shared `@ai+` / `@ai++` |
+| post-v6c | 6 | [P2P sync — scroll backfill](DESIGN.md#p2p-sync-e2e-only--d045) | Scroll trigger on D058 |
+| post-v6d | 6 | [Transport provenance](DESIGN.md#transport-provenance-d051) | Per-message badge UI |
+| post-v6e | 7 | *(merged into public tier milestone)* | Relaxed ingest ships with `e2e_public` / group per D046 — see e2e **c3+** |
+
+**Cross-project:** [e2e-message-crypto](../e2e-message-crypto/PHASES.md) — c1 in wave 1 (parallel); c2–c3 in waves 5–6 after v6.
+
+---
+
+## Agent batch delivery order
+
+For **batch delivery** (agents complete work before one release), use this section. Phase checklists below are unchanged — waves tell you **what to run in parallel** and **which rollout gates to skip**.
+
+### Scope buckets
+
+| Bucket | Phases | Notes |
+|--------|--------|-------|
+| **v1 private E2E release** | v2a–v6 + [e2e c1–c3](../e2e-message-crypto/PHASES.md) | Default batch target |
+| **v1 + post-v1 polish** | + post-v4, post-v6b/c/d | Additive; low rework if v1 constraints followed |
+| **Full three-tier product** | + `e2e_public` auto-key (e2e c3+), group (E022/O008) | O008 still open; not in v1 checklists |
+| **PQ** | e2e c4 | Deferred — exclude unless scope expands |
+
+### Work waves
+
+```
+Wave 1 (parallel)
+  Agent A: v2a-core
+  Agent B: e2e c1                    ← see e2e PHASES § Agent batch
+
+Wave 2
+  v2a-p2p + v2b data model (merge)   ← one branch; skip e2e_public “coming soon” gate
+
+Wave 3 (parallel)
+  Agent A: v3
+  Agent B: v4
+
+Wave 4 — split v6 (sequential sub-packages; tests with each)
+  v6-schema → v6-pipeline → v6-sync → v6-libp2p → v6-integrity
+
+Wave 5–6 (e2e, after v6)
+  c2 → c3
+
+Wave 7 (optional post-v1)
+  post-v6c, post-v6d, post-v4, post-v6b, e2e_public functional + post-v6e
+```
+
+| Wave | Chat-storage work | Parallel / blocked by |
+|------|-------------------|------------------------|
+| **1** | **v2a-core** — SQLite, full schema (nullable future cols), AI transcript, `GetMessagesPage`, `GetMessagesForContext`, clear-history UX | **Parallel:** [e2e c1](../e2e-message-crypto/PHASES.md#phase-c1--basecrypto-groundwork) |
+| **2** | **v2a-p2p + v2b** — final `RelayEnvelope`, `chat_targets`, outbox, `ChatTargetKey` routing, `ThreadChannel`, minimal `ChatPayloadCodec`, tier badges | After v2a-core checkpoint |
+| **3** | **v3** *or* **v4** (independent) | After wave 2; run both in parallel |
+| **4a** | **v6-schema** — `sender_seq`, `session_epoch`, `sync_state`, `chat_targets` PSK columns, `GetMessagesBySeqRange` | v2b + v4 |
+| **4b** | **v6-pipeline** — outbox, receive classifier, `ReplayWindow`, inbound find-only (D062), floor semantics | 4a |
+| **4c** | **v6-sync** — `FetchChatTargetMessages`, tail/gap, empty-gap guard (D067), user sync (D059) | 4b |
+| **4d** | **v6-libp2p** — `/pp-browser/chat-history/1.0.0` (relay-only stub OK first) | 4c |
+| **4e** | **v6-integrity** — compromised freeze (D068), epoch bump txn, passive adopt (D085), banners | 4b + c1 `ReplayWindow` |
+| **5–6** | *(e2e)* c2 → c3 | After v6 exit; see [e2e PHASES](../e2e-message-crypto/PHASES.md#agent-batch-delivery-order) |
+| **7** | post-v6c, post-v6d, post-v4, post-v6b; `e2e_public` + post-v6e with e2e c3+ | After v1 + c3 |
+
+**Wave checkpoints** (grep/tests — same as phase exit criteria):
+
+- **Wave 1:** AI thread survives restart; no `GetMessages` in `src/feature/` (D057); e2e c1 vector tests green
+- **Wave 2:** New relay envelope on send/receive (D063); per-thread `HasMessageId`; outbox reconciliation
+- **Wave 3:** Summary in LLM context (v3); remote `content_rml` stripped (v4)
+- **Wave 4:** Private `e2e` gap repair + user sync; integrity UX; cross-cutting tests in [§ Cross-cutting tasks](#cross-cutting-tasks)
+- **Wave 5–6:** Two devices exchange ciphertext via relay; PSK verify + rotation (c3)
+
+### Rollout gates to skip in batch mode
+
+| Gate (incremental rollout) | Batch-mode alternative |
+|----------------------------|-------------------------|
+| v2a-core **must merge before** v2a-p2p | Keep as **validation checkpoint**, not a release gate — one agent may do both in one branch |
+| `e2e_public` compose disabled until c3 (v2b) | Omit public contact action until c3+, or wire with test PSK — do not build “coming soon” UX |
+| Per-phase doc updates | Batch doc updates per **wave** |
+| v3 before v4 ordering | **Parallel** after wave 2 |
+
+### Agent session reading list
+
+Give each agent **only** the slice it needs:
+
+1. [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints) — always
+2. [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) — wire, codec, history fetch
+3. [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) — when touching crypto or coordinating with e2e
+4. Relevant **phase checklist** section(s) in this file
+5. [CURRENT_STATE.md](CURRENT_STATE.md) — update in the same PR
+
+### Anti-patterns (cause rework)
+
+- `GetMessages` in `src/feature/` (D057)
+- Legacy `envelope.thread_id` coexisting with v2a-p2p shape (D063)
+- v6 sync before `GetMessagesBySeqRange` exists
+- Partial `thread.db` schema — create **all** columns at v2a (DESIGN implementer constraints)
+- Crypto wire-up (c2) before `sender_seq` / `session_epoch` on envelope (AAD + E014 sign bytes)
 
 ---
 
@@ -46,7 +142,7 @@ Existing foundation this project builds on.
 
 **Design refs:** [On-disk layout](DESIGN.md#on-disk-layout-target--d025-d028-d035-d036), [Startup reconciliation](DESIGN.md#startup-reconciliation-d047), [Implementer constraints](DESIGN.md#implementer-constraints), [SQLite operations](DESIGN.md#sqlite-operations-d044), [Clear confirmation](DESIGN.md#clear-messages--confirmation-dialog-d057).
 
-**Sub-phases (D057):** Land **v2a-core** first (vertical slice: AI threads), then **v2a-p2p** (direct messaging plumbing). Do not merge v2a-p2p until v2a-core exit criteria pass.
+**Sub-phases (D057):** Land **v2a-core** first (vertical slice: AI threads), then **v2a-p2p** (direct messaging plumbing). Do not merge v2a-p2p until v2a-core exit criteria pass. **Agent batch:** wave 1 = v2a-core; wave 2 merges v2a-p2p with [v2b](#phase-v2b--private-vs-public-e2e-tier-split-d089) — rollout merge gate optional.
 
 ### v2a-core — SQLite + AI transcript
 
@@ -223,6 +319,8 @@ Existing foundation this project builds on.
 ---
 
 ## Phase v6 — Private direct seq, tail sync, gap repair, and user sync
+
+**Agent batch:** Split into sub-packages **v6-schema → v6-pipeline → v6-sync → v6-libp2p → v6-integrity** — see [§ Agent batch delivery](#agent-batch-delivery-order) wave 4. Land tests with each sub-package.
 
 **Goal:** **Private direct (`e2e`)** chat detects missing peer messages and syncs reliably. **`e2e_public`** uses same sync machinery when that tier ships (relaxed ingest — D046). Send failure keeps local copy (D017); peer sync fills **receive-side** gaps (D058–D059).
 
@@ -414,3 +512,4 @@ Ship SQLite storage + private-tier envelope plumbing without c2; E2E body crypto
 | 2026-06-29 | D069–D078: schema evolution (migrate vs wipe), `chat_payload` canonical body, `envelope_version`, WIRE_SCHEMAS, memory JSON schema, empty-closed-seq cap, blobs/group placeholders, unknown-field policy, display_order complexity budget |
 | 2026-07-02 | D089/D090 doc alignment: receive pipeline auto-create (D080), remove stale public-relay ingest; phasing split v2b shells vs functional `e2e_public`; relaxed ingest merged into public tier milestone; `payload_version` naming |
 | 2026-06-30 | D067–D068: empty gap close guard + late fill; compromised outbox/sync freeze; epoch bump pending cancel; receive pipeline linearized |
+| 2026-07-02 | Agent batch delivery order — parallel waves, v6 sub-packages, rollout gates to skip; traceability **Agent wave** column |

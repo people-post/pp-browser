@@ -15,7 +15,7 @@ High-assurance **symmetric E2E** for all P2P tiers: manual PSK (private), automa
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Target crypto architecture, wire format, threat model, post-quantum posture |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today (no E2E crypto yet) |
-| [PHASES.md](PHASES.md) | Design-first roadmap and progress checklists |
+| [PHASES.md](PHASES.md) | Design-first roadmap, progress checklists, **[agent batch waves](PHASES.md#agent-batch-delivery-order)** |
 | [DECISIONS.md](DECISIONS.md) | Recorded decisions (ADR-style) |
 
 ## Progress snapshot

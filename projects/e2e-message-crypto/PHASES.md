@@ -2,6 +2,85 @@
 
 Check boxes when the work is **merged and verified**. **Design must be solid before c1** — resolve open questions in [DECISIONS.md](DECISIONS.md) and complete d0 exit criteria in [CURRENT_STATE.md](CURRENT_STATE.md).
 
+This file has **two orderings**:
+
+| Ordering | Use when |
+|----------|----------|
+| **Phase sections below** (d0 → c1 → c2 → …) | Traceability, exit criteria, dependencies |
+| **[Agent batch delivery](#agent-batch-delivery-order)** | Agents finish all `[v1]` work before a single release — parallel with [chat-storage waves](../chat-storage-and-memory/PHASES.md#agent-batch-delivery-order) |
+
+---
+
+## Traceability
+
+| Phase | Agent wave | Depends on | Maturity |
+|-------|------------|------------|----------|
+| d0 | — (done) | — | Design baseline |
+| c1 | 1 | d0 | `base/crypto`, frozen vectors, no messaging types |
+| c2 | 5 | c1; chat [v2b](../chat-storage-and-memory/PHASES.md) + [v6](../chat-storage-and-memory/PHASES.md) | Private `e2e` encrypt/decrypt on relay |
+| c3 | 6 | c2; chat v2b “Secure message” | PSK UX, rotation, verify gate |
+| c3+ | 7 | c3 | `e2e_public` auto-key (E013/E024) |
+| c4 | — (deferred) | c3+ | Post-quantum hybrid |
+
+---
+
+## Agent batch delivery order
+
+For **batch delivery** (agents complete work before one release), coordinate with [chat-storage agent waves](../chat-storage-and-memory/PHASES.md#agent-batch-delivery-order). Phase checklists below are unchanged.
+
+### Critical path (cannot parallelize)
+
+```
+d0 (complete)
+  → c1  ∥  chat v2a-core          ← wave 1
+  → chat v2a-p2p + v2b            ← wave 2
+  → chat v3 ∥ v4                  ← wave 3
+  → chat v6 (split sub-packages)  ← wave 4 — blocks c2
+  → c2 → c3                       ← waves 5–6
+```
+
+**c2 is blocked by chat v6** (`sender_seq`, `session_epoch` on envelope for AAD + E014). **c1 is not** — start c1 in wave 1 alongside chat v2a-core.
+
+### E2E waves (this project)
+
+| Wave | Phase | Work | Checkpoint |
+|------|-------|------|------------|
+| **1** | **c1** | Vendor libsodium; `src/base/crypto/*`; `SqlitePskSessionStore` skeleton; **all** frozen vector tests | No `#include` of `ThreadTypes` / `P2pMessagingService` in `base/crypto` |
+| **5** | **c2** | `P2pMessagingService` encrypt/decrypt; `EnvelopeSigner`; `PeerSigningKeyStore`; inbound verify before decrypt | Two devices, shared PSK, relay sees ciphertext only |
+| **6** | **c3** | Generate/export/import PSK; fingerprint gate; rotation bundle (D086); compromise hooks to chat D038 | User verify + send/receive + simulated epoch bump |
+| **7** | **c3+** | Public tier auto-key (E013/E024) + chat `e2e_public` functional | Out of v1 batch unless scope expands |
+
+### Agent session reading list
+
+1. [DESIGN.md](DESIGN.md) — module map, test vectors
+2. [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) — normative wire/crypto (agents implement against this)
+3. [chat-storage WIRE_SCHEMAS.md](../chat-storage-and-memory/WIRE_SCHEMAS.md) — `RelayEnvelope`, binary ChatPayload (c2+)
+4. [chat-storage DESIGN § Implementer constraints](../chat-storage-and-memory/DESIGN.md#implementer-constraints) — when touching envelope or store columns
+5. Relevant **phase checklist** below + [CURRENT_STATE.md](CURRENT_STATE.md) (update in same PR)
+
+### Rollout gates to skip in batch mode
+
+| Gate | Batch-mode alternative |
+|------|-------------------------|
+| c1 before any chat work | c1 only needs d0 — **parallel** with v2a-core |
+| c2 after full v6 UX | c2 needs v6 **envelope + ingest pipeline**, not every v6 UX banner |
+| Per-phase doc churn | Batch [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md) / [AGENTS.md](../../AGENTS.md) updates at end of c1 or c3 |
+
+### Anti-patterns (cause rework)
+
+- Messaging includes from `base/crypto` before c2
+- Encrypt/decrypt before chat v6 adds `sender_seq` / `session_epoch` to envelope types
+- Signing JSON `dump()` instead of E014 canonical bytes
+- Skipping frozen vector tests in c1 (“fix in c2”)
+
+### Scope: what “all phases” means
+
+| Include in v1 batch | Defer |
+|---------------------|-------|
+| d0, c1, c2, c3 | c4 (PQ) |
+| Private `e2e` only | c3+ `e2e_public` auto-key unless explicitly in scope |
+| | Group E2E (E022), identity encryption at rest |
+
 ---
 
 ## Phase d0 — Design baseline
@@ -149,12 +228,23 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 
 ## Suggested implementation order (cross-project)
 
+See **[Agent batch delivery](#agent-batch-delivery-order)** and [chat-storage agent waves](../chat-storage-and-memory/PHASES.md#agent-batch-delivery-order) for parallel work. Dependency spine:
+
 ```
-d0 (this project, design)
-  → c1 (base/crypto)
-  → chat-storage v2b (tier split)  ─┐
-  → chat-storage v6 (seq + envelope)  ─┼→ c2 (wire-up, private e2e)
-  → c3 (private tier UX)              ─┘
-  → c3+ / c4 (e2e_public auto-key, then PQ)
+d0 (complete)
+  → c1 ∥ chat v2a-core
+  → chat v2a-p2p + v2b
+  → chat v3 ∥ v4
+  → chat v6 (schema → pipeline → sync → libp2p → integrity)
+  → c2 → c3
+  → c3+ / c4 (e2e_public auto-key, then PQ) — post-v1 unless in scope
   → group E2E (E022, post-v1)
 ```
+
+---
+
+## Changelog
+
+| Date | Change |
+|------|--------|
+| 2026-07-02 | Agent batch delivery order — waves, reading list, cross-project critical path; traceability table |
