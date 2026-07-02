@@ -644,7 +644,7 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
       "payload": {}
     }
   },
-  "timestamp": 1234567890,
+  "timestamp": 1719662400123,
   "signature": "…"
 }
 ```
@@ -661,7 +661,7 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
   "sender_seq": 42,
   "session_epoch": 1,
   "body": { "e2e": { "payload_b64": "…" } },
-  "timestamp": 1234567890,
+  "timestamp": 1719662400123,
   "signature": "…"
 }
 ```
@@ -695,7 +695,7 @@ local_thread_id = FindOrCreateDirectThread(key).id;
 ```
 
 - **`sender_contact_id`** required on the wire (D021). Do not infer sender from local thread metadata.
-- **Signature** covers canonical bytes of: `message_id`, `sender_contact_id`, `route`, `timestamp`, body hash, and (E2E) `sender_seq`, `session_epoch` — **not** `thread_id` (see [e2e-message-crypto](../e2e-message-crypto/DESIGN.md)).
+- **Signature** covers **canonical binary sign bytes** (E014): `envelope_version`, `message_id`, `sender_contact_id`, `route`, `timestamp`, `body_hash` (BLAKE2b-256), `sender_seq`, `session_epoch` — **not** `thread_id` or `sender_relay_id`. Full layout: [e2e-message-crypto DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes). On `public_relay`, wire omits seq/epoch but signing uses **zero** values.
 
 ### Send pipeline
 

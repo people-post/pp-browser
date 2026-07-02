@@ -30,10 +30,6 @@ High-assurance **symmetric E2E** for direct chat: manual 256-bit PSK, HKDF sessi
 
 ## Open questions
 
-| ID | Topic |
-|----|-------|
-| **E-O003** | PSK entry UX v1 (paste base64 vs fingerprint confirm vs QR) |
-| **E-O004** | Automated key agreement timing (manual only vs hybrid KEM in c4) |
-| **E-O005** | Group E2E strategy (deferred vs shared PSK vs MLS) |
+_None — all d0 questions resolved (see [DECISIONS.md](DECISIONS.md))._
 
-**Resolved:** ciphertext field → `body.e2e.payload_b64` (E009); AEAD plaintext → JSON `ChatPayload` (E010).
+**Resolved:** ciphertext field → `body.e2e.payload_b64` (E009); AEAD plaintext → JSON `ChatPayload` (E010); PSK entry UX → paste base64 (E011); group E2E → out of scope (E012); automated key agreement → optional hybrid KEM in c4 (E013); Ed25519 sign bytes → fixed binary layout + BLAKE2b body hash (E014).

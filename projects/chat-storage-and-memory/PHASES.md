@@ -240,7 +240,7 @@ Existing foundation this project builds on.
 
 ### Send / receive
 
-- [ ] Sign envelope including E2E seq fields
+- [ ] Sign envelope via `EnvelopeSigner` (E014) including E2E seq fields
 - [ ] Durable outbox: `ListPendingOutbox()` + reconciliation on startup (D017, D047)
 - [ ] **E2E:** receive pipeline D013/D033; inbound **find-only** (D062); **`ReplayWindow` helper**, classifier authoritative (D020)
 - [ ] **Public:** UUID dedup + participant check only (D045)

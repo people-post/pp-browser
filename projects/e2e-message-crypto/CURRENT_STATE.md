@@ -66,6 +66,8 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 - [x] HKDF labels and AAD byte layout specified
 - [x] Encrypted payload blob layout specified
 - [x] Resolve O001/O002 — E009/E010 in [DECISIONS.md](DECISIONS.md)
-- [ ] Resolve O003–O005 (PSK UX, automated KEM, group E2E)
+- [x] Resolve O003/O005 — E011/E012 in [DECISIONS.md](DECISIONS.md)
+- [x] Resolve O004 — E013 in [DECISIONS.md](DECISIONS.md)
+- [x] Canonical Ed25519 signing bytes specified (E014 — binary layout, body hash, `EnvelopeSigner`)
 - [ ] Frozen test vectors (hex) appended to DESIGN.md
 - [ ] Promote stable spec to `docs/MESSAGE_ENCRYPTION.md` when d0 exits

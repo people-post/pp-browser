@@ -96,12 +96,45 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## Open decisions (not yet resolved)
+## E011 — PSK entry UX v1: paste base64
 
-| ID | Question | Options |
-|----|----------|---------|
-| O003 | PSK entry UX v1 | Paste base64; paste fingerprint + confirm; QR (later) |
-| O004 | Automated key agreement | Manual PSK only forever; optional hybrid KEM in c4 |
-| O005 | Group E2E | Out of scope; shared group PSK; MLS (far future) |
+**Date:** 2026-07-02  
+**Decision:** Phase **c3** PSK import uses **paste base64** — user pastes a 32-byte key encoded as standard base64 (44 chars, optional `=` padding). App decodes, stores in `JsonPskSessionStore`, and displays **BLAKE2b fingerprint** for out-of-band verification with the peer.  
+**Rationale:** Minimal UI for c3; matches `sessions.json` storage format; fingerprint display still satisfies DESIGN.md verification step without a separate "confirm fingerprint first" import flow.  
+**Alternatives:** Paste fingerprint + confirm (no raw key paste); QR scan (deferred UX).
 
-When resolved, move rows to numbered decisions above.
+---
+
+## E012 — Group E2E out of scope
+
+**Date:** 2026-07-02  
+**Decision:** **Group / multi-party E2E** is **out of scope** for all current phases (c1–c4). Direct `(contact_id, channel=e2e)` only. No shared group PSK, no MLS, no sender-keys scheme in this project unless a future decision reopens scope.  
+**Rationale:** v1 targets 1:1 chat aligned with `ChatTargetKey`; group crypto is a separate product and protocol surface.  
+**Alternatives:** Shared group PSK (weak membership model); MLS (large protocol + UX lift).
+
+---
+
+## E013 — Optional hybrid KEM for automated PSK setup in c4
+
+**Date:** 2026-07-02  
+**Decision:** Phase **c4** adds **optional automated key agreement** via hybrid **X25519 + ML-KEM-768**; shared secret feeds HKDF as `master_psk` input (same salt/info labels as manual PSK). **Manual OOB paste** (E011) remains supported — users choose either path per contact. Classical-only KEM (X25519 or ECDH alone) is **not** permitted.  
+**Rationale:** Improves UX for new E2E contacts without weakening PQ posture on agreement; on-wire AEAD format (E007/E010) unchanged; aligns c4 PQ library work with relay signature upgrade (E005).  
+**Alternatives:** Manual PSK only forever (simpler, no liboqs dependency).
+
+---
+
+## E014 — Canonical Ed25519 relay envelope signing bytes
+
+**Date:** 2026-07-02  
+**Decision:** Relay **`RelayEnvelope`** signatures use **fixed binary signing bytes** (not JSON). Layout in [DESIGN.md § Ed25519 signing](DESIGN.md#ed25519-canonical-signing-bytes). Summary:
+
+- **Domain prefix:** `"pp-browser:relay-envelope-sign-v1\0"` (UTF-8 + NUL), then **`sign_version = 1`** byte, then fields below.
+- **Signed fields:** `envelope_version`, `route_kind`, `channel`, `timestamp` (Unix **milliseconds**, i64 BE), `sender_seq` (u64 BE), `session_epoch` (u32 BE), **`body_hash`** (BLAKE2b-256, 32 bytes), `message_id`, `sender_contact_id` (length-prefixed UTF-8 strings, u16 BE length).
+- **E2E seq/epoch on public:** wire omits `sender_seq`/`session_epoch` on `public_relay` (D045); signing uses **`0`** for both.
+- **Body hash:** `BLAKE2b-256(body_kind || payload_bytes)` — `body_kind=0x01` + canonical **`ChatPayload`** UTF-8 JSON for `public_relay`; `body_kind=0x02` + **decoded** `body.e2e.payload_b64` bytes for `e2e`. Same hash function; branch-specific payload extraction.
+- **Not signed:** `thread_id`, `sender_relay_id`, `signature`, unknown top-level keys (D073).
+- **Signature wire encoding:** standard **base64** (RFC 4648, padded) only in v1 — matches `Ed25519Signer`.
+- **Implementation:** shared **`EnvelopeSigner`** in `src/base/messaging/`; c1 test vectors and c2 wiring must use it.
+
+**Rationale:** JSON `dump()` signing is non-canonical and today's code incorrectly includes `thread_id`. Binary layout matches `CanonicalAad` style; BLAKE2b aligns with PSK fingerprints (E002); body hash binds public semantics (D078 JSON) and E2E ciphertext bytes separately.  
+**Alternatives:** Sign canonical JSON of outer envelope (rejected — key order/whitespace footguns); SHA-256 body hash (acceptable but splits hash primitive from libsodium story); hash base64 string for E2E (rejected — binds encoding not ciphertext).

@@ -14,7 +14,7 @@
 | **`RelayEnvelope`** | **Ignore** unknown top-level keys on ingest after required fields parse. Required keys must be present. Do not fail on forward-compatible extensions. |
 | **`ChatPayload`** | **Ignore** unknown keys inside `payload` for known `content_type`. **Reject** unknown `content_type` on **relay ingest** (D030/D050). Local dev rows may use future types. |
 | **`ChatHistoryRequest` / `ChatHistoryResponse`** | **Reject** unknown top-level keys (server/client negotiated API). |
-| **Signature input** | Only documented canonical fields participate in signed bytes — unknown envelope keys are **not** signed unless a future `envelope_version` spec says otherwise. |
+| **Signature input** | Only documented canonical fields participate in signed bytes — unknown envelope keys are **not** signed unless a future `envelope_version` spec says otherwise. **Normative byte layout:** [e2e-message-crypto DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) (E014). |
 
 ---
 
@@ -35,12 +35,25 @@ Signed outer wrapper. **No `thread_id`.** See [DESIGN § Relay envelope](DESIGN.
   "body": {
     "content": { }
   },
-  "timestamp": 1719662400,
-  "signature": "base64-or-hex-ed25519"
+  "timestamp": 1719662400123,
+  "signature": "base64-ed25519"
 }
 ```
 
 **E2E direct** adds `sender_seq`, `session_epoch`; `route.channel` = `e2e`; `body` uses `{ "e2e": { "payload_b64": "…" } }` instead of `body.content`.
+
+### Ed25519 canonical signing (E014)
+
+Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `dump()` of the envelope.
+
+| Topic | v1 rule |
+|-------|---------|
+| Sign bytes | Fixed binary: domain prefix + `sign_version` + fields — full layout in [e2e DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) |
+| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `route` (as enums), `timestamp`, `body_hash`, `sender_seq`, `session_epoch` |
+| Public channel seq/epoch | Wire **omits** `sender_seq`/`session_epoch`; signing uses **`0`** for both |
+| `body_hash` | BLAKE2b-256(`body_kind` \|\| payload): `0x01` + canonical `ChatPayload` JSON for public; `0x02` + decoded E2E blob bytes |
+| Not signed | `thread_id`, `sender_relay_id`, `signature`, unknown keys |
+| `signature` encoding | Standard **base64** (RFC 4648, padded) only in v1 |
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
@@ -52,8 +65,8 @@ Signed outer wrapper. **No `thread_id`.** See [DESIGN § Relay envelope](DESIGN.
 | `body` | object | yes | `content` (public) or `e2e` (encrypted) |
 | `sender_seq` | integer (u64) | E2E only | Omitted on public (D045) |
 | `session_epoch` | integer (u32) | E2E only | |
-| `timestamp` | integer (i64) | yes | Display metadata; not sort authority (D054) |
-| `signature` | string | yes | Ed25519 over canonical bytes |
+| `timestamp` | integer (i64) | yes | Unix **milliseconds**; display metadata; not sort authority (D054). Included in sign bytes (E014). |
+| `signature` | string | yes | Ed25519 over [canonical sign bytes](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes); **base64** (RFC 4648, padded) in v1 |
 | `sender_instance_id` | string (UUID) | **`[future]`** | Multi-device extension (D074); omit in v1 |
 
 ### `Route`

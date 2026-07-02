@@ -800,7 +800,7 @@ No hard max file size in v1.
 ## D072 — `envelope_version` + shared history wire types
 
 **Date:** 2026-06-29  
-**Decision:** Every **`RelayEnvelope`** includes **`envelope_version: 1`** in v2a-p2p+; value is included in **Ed25519 canonical signing bytes**. Bump independently of `ChatPayload.schema_version` and SQLite `user_version`. **`ChatHistoryRequest` / `ChatHistoryResponse`** are **one C++ struct pair** shared by relay `GET /v1/chat-targets/messages` (D027) and libp2p `/pp-browser/chat-history/1.0.0` (D060). Normative JSON: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).  
+**Decision:** Every **`RelayEnvelope`** includes **`envelope_version: 1`** in v2a-p2p+; value is included in **Ed25519 canonical signing bytes**. Canonical **byte layout**, body hash, and `EnvelopeSigner` API: [e2e-message-crypto E014](../e2e-message-crypto/DECISIONS.md#e014--canonical-ed25519-relay-envelope-signing-bytes) / [DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes). Bump independently of `ChatPayload.schema_version` and SQLite `user_version`. **`ChatHistoryRequest` / `ChatHistoryResponse`** are **one C++ struct pair** shared by relay `GET /v1/chat-targets/messages` (D027) and libp2p `/pp-browser/chat-history/1.0.0` (D060). Normative JSON: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).  
 **Rationale:** Outer wire evolution without dual-parser; prevent relay/libp2p request shape drift.  
 **Alternatives:** Implicit optional fields only (rejected); separate HTTP vs libp2p structs (rejected).
 

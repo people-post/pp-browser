@@ -22,8 +22,8 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 
 - [x] Resolve **O001** — `body.e2e.payload_b64` (E009)
 - [x] Resolve **O002** — JSON `ChatPayload` plaintext (E010)
-- [ ] Resolve **O003** — minimum PSK import UX for c3 (can defer UI detail if paste-base64 accepted for c3)
-- [ ] Document canonical **Ed25519 sign payload** field list for e2e envelopes (coordinate with chat-storage v6)
+- [x] Resolve **O003** — paste base64 (E011)
+- [x] Document canonical **Ed25519 sign payload** field list for e2e envelopes (coordinate with chat-storage v6) — E014
 - [ ] Add **frozen test vectors** (hex) to DESIGN.md § Test vectors
 - [ ] Promote to [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) (stable reference copy)
 
@@ -83,7 +83,7 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 - [ ] `P2pMessagingService`: branch on `channel == e2e`
 - [ ] Encrypt: serialize `ChatPayload` JSON → AAD → `MessageCipher` → `body.e2e.payload_b64`
 - [ ] Decrypt on poll → parse JSON → `ThreadMessage`
-- [ ] Sign envelope including `sender_seq`, `session_epoch` (coordinate chat-storage)
+- [ ] `EnvelopeSigner` — build/verify canonical sign bytes per E014 (coordinate `ChatPayloadCodec` for body hash)
 - [ ] Inbound Ed25519 verify before decrypt (classical)
 
 ### Ingest
@@ -121,7 +121,7 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 **Goal:** Hybrid classical + PQ for automated keying and/or signatures where EC is used.
 
 - [ ] Evaluate liboqs vs OpenSSL OQS provider vs BoringSSL PQ APIs
-- [ ] Optional: hybrid KEM (X25519 + ML-KEM-768) for optional automated PSK setup
+- [ ] Hybrid KEM (X25519 + ML-KEM-768) for optional automated PSK setup (E013)
 - [ ] Hybrid or PQ signatures for relay envelope (ML-DSA)
 - [ ] Migration: dual-verify during transition window
 
@@ -133,7 +133,7 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 
 - Chaos-based encryption
 - Replacing BoringSSL with libsodium globally
-- Group E2E / MLS (see O005)
+- Group E2E / MLS (E012 — out of scope)
 - libp2p direct transport crypto rewrite
 - Encrypting `identity.json` at rest (separate project)
 

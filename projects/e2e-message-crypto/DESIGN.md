@@ -160,17 +160,98 @@ Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** **`envelope_versio
   "sender_seq": 42,
   "session_epoch": 1,
   "body": { "e2e": { "payload_b64": "…" } },
-  "timestamp": 1234567890,
+  "timestamp": 1719662400123,
   "signature": "…"
 }
 ```
 
-| Channel | `body` shape | Signature covers |
-|---------|--------------|------------------|
-| `public_relay` | `{ "content": { …ChatPayload… } }` | **`envelope_version`**, `message_id`, `sender_contact_id`, `route`, `timestamp`, body |
-| `e2e` | `{ "e2e": { "payload_b64": "…" } }` | + `sender_seq`, `session_epoch` |
+| Channel | `body` shape | Signed (via canonical bytes — E014) |
+|---------|--------------|-------------------------------------|
+| `public_relay` | `{ "content": { …ChatPayload… } }` | `envelope_version`, `message_id`, `sender_contact_id`, `route`, `timestamp`, `body_hash`; `sender_seq=0`, `session_epoch=0` |
+| `e2e` | `{ "e2e": { "payload_b64": "…" } }` | Same + `sender_seq`, `session_epoch` from envelope |
+
+**Not signed:** `thread_id`, `sender_relay_id`, `signature`, unknown top-level keys (D073).
 
 **Reject** envelopes containing `thread_id` (legacy — D016). Reject unknown **`envelope_version`** (D072).
+
+## Ed25519: canonical signing bytes
+
+Decision **E014**. **Do not** sign `nlohmann::json::dump()` of the envelope. Build fixed binary bytes, then `Ed25519Signer::Sign(sign_bytes, private_key)`.
+
+### Signed field set
+
+| Field | In sign bytes | Wire notes |
+|-------|---------------|------------|
+| `envelope_version` | yes (u8) | Must be **1** in v1 |
+| `message_id` | yes (length-prefixed UTF-8) | UUID string |
+| `sender_contact_id` | yes (length-prefixed UTF-8) | Inbound routing peer |
+| `route.kind` | yes (`route_kind` u8 enum) | `0` = direct, `1` = group (future) |
+| `route.channel` | yes (`channel` u8 enum) | When direct: `0` = public_relay, `1` = e2e |
+| `timestamp` | yes (i64 BE) | Unix **milliseconds** |
+| `body_hash` | yes (32 bytes) | BLAKE2b-256 — see below |
+| `sender_seq` | yes (u64 BE) | **`0`** when `channel=public_relay` (wire omits field — D045) |
+| `session_epoch` | yes (u32 BE) | **`0`** when `channel=public_relay` |
+| `sender_relay_id` | **no** | Relay registration id only |
+| `thread_id` | **no** | Legacy; reject on ingest |
+| `signature` | **no** | |
+
+Bump **`sign_version`** (first byte after domain prefix) to change hash algorithm or byte layout without necessarily changing relay JSON. Bump **`envelope_version`** when the signed **field set** changes (D072).
+
+### Byte layout (`sign_version = 1`, `envelope_version = 1`)
+
+Big-endian integers. Length-prefixed UTF-8 strings use **u16 BE** length (max 65535; UUIDs and contact ids fit).
+
+**Sign bytes** = domain prefix || fixed header || length-prefixed strings.
+
+**Domain prefix** (34 bytes): UTF-8 `"pp-browser:relay-envelope-sign-v1"` + NUL (`0x00`).
+
+| Offset (from start of sign bytes) | Size | Field |
+|-----------------------------------|------|-------|
+| 0 | 34 | domain prefix |
+| 34 | 1 | `sign_version` = **`1`** |
+| 35 | 1 | `envelope_version` = **`1`** |
+| 36 | 1 | `route_kind`: **`0`** = direct, **`1`** = group |
+| 37 | 1 | `channel`: **`0`** = public_relay, **`1`** = e2e when `route_kind=direct`; **`0xFF`** reserved when `route_kind=group` (future) |
+| 38 | 8 | `timestamp` (i64 BE, Unix ms) |
+| 46 | 8 | `sender_seq` (u64 BE) |
+| 54 | 4 | `session_epoch` (u32 BE) |
+| 58 | 32 | `body_hash` (BLAKE2b-256 output) |
+| 90 | 2 | `message_id_len` (u16 BE) |
+| 92 | var | `message_id` (UTF-8) |
+| | 2 | `sender_contact_id_len` (u16 BE) |
+| | var | `sender_contact_id` (UTF-8) |
+
+**`[post-v1]` group route:** under a new `envelope_version`, append length-prefixed `group_id` UTF-8 after `sender_contact_id` when `route_kind=group`.
+
+### Body hash (`body_hash`)
+
+```
+body_hash = BLAKE2b-256( body_kind || payload_bytes )
+```
+
+| `channel` | `body_kind` | `payload_bytes` |
+|-----------|-------------|-------------------|
+| `public_relay` | `0x01` | Canonical UTF-8 JSON of **`body.content`** (`ChatPayload`) — same rules as `ChatPayloadCodec` / `chat_payload_json` (D069/D078) |
+| `e2e` | `0x02` | Raw bytes from **base64 decode** of `body.e2e.payload_b64` (`[payload_version:1][nonce:24][ciphertext+tag]`) |
+
+Use libsodium **`crypto_generichash`** with 32-byte output. The 1-byte `body_kind` prefix domain-separates public JSON from E2E binary inside the hash input.
+
+### Signature on the wire
+
+- Algorithm: **Ed25519** (OpenSSL EVP / existing `Ed25519Signer`).
+- **`signature` field:** standard **base64** (RFC 4648, padded) over the 64-byte raw signature — v1 only; no hex.
+
+### `EnvelopeSigner` (target — `base/messaging`)
+
+Shared by relay send, relay poll verify, and c1/c2 test vectors. Lives in **`src/base/messaging/`** (not `base/crypto` — no AEAD dependency).
+
+| API | Role |
+|-----|------|
+| `EnvelopeSigner::BuildSignBytes(envelope)` | Full binary signing input |
+| `EnvelopeSigner::BodyHash(channel, body)` | BLAKE2b step |
+| `EnvelopeSigner::Verify(envelope, public_key_b64)` | Rebuild bytes + `Ed25519Signer::Verify` |
+
+`IdentityStore::SignPayload` becomes a thin wrapper: sign `BuildSignBytes` output.
 
 **Send pipeline (e2e):**
 
@@ -178,7 +259,7 @@ Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** **`envelope_versio
 2. Assign `(message_id, sender_seq)` at first local persist (chat-storage D010).
 3. Build canonical AAD: `peer_contact_id` = peer from `ChatTargetKey`, `channel`, ids, seq, epoch, timestamp.
 4. `MessageCipher::Encrypt(utf8(payload_json), session_key, aad)` → blob → base64 → `body.e2e.payload_b64`.
-5. Sign outer envelope (no `thread_id`).
+5. `EnvelopeSigner::BuildSignBytes` → `IdentityStore::SignPayload` (no `thread_id`).
 6. Relay; on receive, verify signature → resolve `ChatTargetKey` → decrypt → **E2E D013 ingest**.
 
 ## Replay protection
@@ -273,11 +354,12 @@ E2E crypto **c1** can proceed in parallel (no messaging types changed).
 
 ## Test vectors (required before c1 exit)
 
-Frozen vector in unit tests and this design (fill at implementation):
+Frozen vectors in unit tests and this design (fill at implementation):
 
 - `master_psk`, `contact_id`, `channel`, `session_epoch` → expected `session_key` (hex)
 - One AEAD tuple: `session_key`, `nonce`, `aad` (hex), `plaintext`, `ciphertext` (hex)
 - One full blob round-trip: binary → base64 → binary
+- **Ed25519 signing (E014):** one **public_relay** and one **e2e** envelope → `body_hash` (hex), full `BuildSignBytes` output (hex), test keypair → signature (base64)
 
 ## Explicit non-goals
 
