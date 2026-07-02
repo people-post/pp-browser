@@ -22,7 +22,7 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 
 - [x] Resolve **O001** — `body.e2e.payload_b64` (E009)
 - [x] Resolve **O002** — JSON `ChatPayload` plaintext (E010)
-- [x] Resolve **O003** — paste base64 (E011)
+- [x] Resolve **O003** — paste base64 (E011); rotation bundle (E020/D086)
 - [x] Resolve **O006** — peer signing keys (E016)
 - [x] Document canonical **Ed25519 sign payload** field list for e2e envelopes (coordinate with chat-storage v6) — E014
 - [x] Add **Ed25519 frozen test vectors** (hex) to DESIGN.md § Test vectors
@@ -110,10 +110,11 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 
 **Depends on:** c2; chat-storage “Secure message” thread creation (v2b).
 
-- [ ] Settings or contact flow: import/generate PSK
+- [ ] Settings or contact flow: import/generate PSK (raw base64 E011; bundle E020 on rotation)
 - [ ] Display fingerprint; compare/confirm UI
 - [ ] Add-contact: display signing-key fingerprint (E016); **`[post-v1]`** explicit confirm
-- [ ] Key rotation flow: `rotate_psk` → append `retired_psks[]`, bump `session_epoch` (E018); epoch-only bump (D014) without retired entry
+- [ ] Key rotation flow: `rotate_psk` → export **`pp-browser-psk-bundle-v1`** (E020/D086); append `retired_psks[]`, bump `session_epoch` (E018); epoch-only bump (D014) without retired entry
+- [ ] Bundle import: merge retired tail, cap at **`kMaxRetiredPskEpochs` (8)**; truncate disclosure when export omits older epochs
 - [ ] Compromise path hooks chat-storage D011/D038 UX (choice sheet + E018 disclosure copy)
 - [ ] Optional: QR encode/decode for PSK
 

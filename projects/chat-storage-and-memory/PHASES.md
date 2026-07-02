@@ -249,7 +249,7 @@ Existing foundation this project builds on.
 - [ ] Outbox retry **`kMaxOutboxRetryAttempts`**; gap repair **`kMaxGapRepairRounds`** / **`kMaxGapRepairSeqSpan`** (D041)
 - [ ] Clear history → `history_floor_seq = loaded_max_seq` (not contiguous-only); below-floor silent discard (D037)
 - [ ] Peer reset / integrity recovery — **no continue-anyway** (D014, D038, D046)
-- [ ] **Epoch bump transaction** with e2e crypto sessions (D047)
+- [ ] **Epoch bump transaction** with e2e crypto sessions (D047); **passive epoch adopt** on first ingest when peer bumps first (D085); **rich OOB bundle** export/import (D086/E020)
 
 ### Sync modes (E2E only — D052, D058, D059)
 
@@ -274,7 +274,7 @@ Existing foundation this project builds on.
 
 - [ ] E2E gap / compromised banners; choice sheet: rotate PSK or pause only (D046)
 - [ ] **Sync with peer** + **Retry sync** copy: peer sync ≠ retry unsent (D059)
-- [ ] Unit tests: seq, outbox, floor (`loaded_max_seq`), epoch, reorder, reconciliation, clear-after-gap-repair no resurrection, **empty gap close guard + late fill (D067)**, **inbound find-only (D062)**, **compromised outbox freeze (D068)**, **pending cancel on epoch bump (D068)**
+- [ ] Unit tests: seq, outbox, floor (`loaded_max_seq`), epoch, reorder, reconciliation, clear-after-gap-repair no resurrection, **empty gap close guard + late fill (D067)**, **inbound find-only (D062)**, **compromised outbox freeze (D068)**, **pending cancel on epoch bump (D068)**, **passive epoch adopt txn (D085)**, **PSK bundle merge + ledger cap (D086/E020)**
 
 ### Docs
 

@@ -58,7 +58,7 @@
 ### Master PSK
 
 - **Size:** 32 bytes (256 bits) from CSPRNG.
-- **Distribution:** Out-of-band — in-person QR, copy-paste over an already-trusted channel, etc.
+- **Distribution:** Out-of-band — in-person QR, copy-paste over an already-trusted channel, etc. **Initial setup:** raw base64 PSK (E011). **`rotate_psk`:** **`pp-browser-psk-bundle-v1`** JSON with active key + up to **`kMaxRetiredPskEpochs` (8)** retired epochs (E020/D086).
 - **Verification:** Both parties display `fingerprint = BLAKE2b-256(master_psk)` as grouped hex (e.g. `a1b2-c3d4-…`); must match before sending E2E content.
 
 ### Session key derivation (E015)
@@ -313,11 +313,11 @@ Shared by relay send, relay poll verify, and c1/c2 test vectors. Lives in **`src
 **Send pipeline (e2e):**
 
 1. Build `ChatPayload` JSON from `ThreadMessage`.
-2. Assign `(message_id, sender_seq)` at first local persist (chat-storage D010).
+2. Assign `(message_id, sender_seq)` at first local persist (chat-storage D010); stamp envelope with **`chat_targets.session_epoch`** (authoritative outbound epoch).
 3. Build canonical AAD: `peer_contact_id` = recipient identity value from `ChatTargetKey`, `sender_contact_id` = local outbound identity for this thread, plus channel, ids, seq, epoch, timestamp.
 4. `MessageCipher::Encrypt(utf8(payload_json), session_key, aad)` → blob → base64 → `body.e2e.payload_b64`.
 5. `EnvelopeSigner::BuildSignBytes` → `IdentityStore::SignPayload` (no `thread_id`).
-6. Relay; on receive, verify signature → resolve `ChatTargetKey` → decrypt → **E2E D013 ingest**.
+6. Relay; on receive, verify signature → resolve `ChatTargetKey` → decrypt with **`envelope.session_epoch`** (E019) → **E2E D013 ingest**.
 
 ## Replay protection
 
@@ -341,7 +341,7 @@ PSK material is **not** a separate JSON file. It lives on **`profile.db` → `ch
 |--------|------|-------|
 | `master_psk_b64` | TEXT NULL | RFC 4648 base64, 32-byte key; `NULL` until PSK installed (`e2e` only) |
 | `psk_fingerprint` | TEXT NULL | BLAKE2b-256 display string (E011); `NULL` when no PSK |
-| `retired_psks_json` | TEXT NULL | JSON array of `{ epoch, master_psk_b64, retired_at }` after **`rotate_psk`** (E018); `NULL` or `[]` otherwise |
+| `retired_psks_json` | TEXT NULL | JSON array of `{ epoch, master_psk_b64, retired_at }` after **`rotate_psk`** (E018); max **`kMaxRetiredPskEpochs` (8)** entries (D086/E020); `NULL` or `[]` otherwise |
 
 Example `retired_psks_json` value:
 
@@ -352,9 +352,34 @@ Example `retired_psks_json` value:
 ]
 ```
 
-**Decrypt lookup (E018):** `ResolveMasterPskForEpoch(epoch)` → `master_psk_b64` when `epoch == chat_targets.session_epoch`, else parse `retired_psks_json` for matching `epoch`, else error (hard reject on ingest).
+**Decrypt lookup (E018, E019/D085):** `ResolveMasterPskForEpoch(envelope.session_epoch)` — pass the **envelope epoch**, not `chat_targets.session_epoch`. Returns `master_psk_b64` when `envelope.session_epoch == chat_targets.session_epoch`, else parse `retired_psks_json` for matching `epoch`, else error (hard reject on ingest). HKDF `info` uses the same envelope epoch (E015).
 
 **Log/test string key (not on disk):** `identity:{kind}:{value}|channel:{channel}` — human-readable `ChatTargetKey` label only.
+
+### Rich OOB PSK bundle (E020/D086)
+
+Used for **`rotate_psk`** export/import and multi-hop catch-up (O006). Not on the relay wire.
+
+```json
+{
+  "format": "pp-browser-psk-bundle-v1",
+  "channel": "e2e",
+  "active_epoch": 3,
+  "master_psk_b64": "…",
+  "retired_epochs": [
+    { "epoch": 1, "master_psk_b64": "…" },
+    { "epoch": 2, "master_psk_b64": "…" }
+  ]
+}
+```
+
+| Operation | Behavior |
+|-----------|----------|
+| **Export** (initiator) | After local `rotate_psk`: `active_epoch`, new `master_psk_b64`, + up to **8** retired epochs — most recent tail before active |
+| **Import** (innocent peer) | Validate (≤ **`kMaxPskBundleBytes` 4 KiB**); merge retired into `retired_psks_json`; set active PSK + `session_epoch`; reset seq; cancel old-epoch pending (D086) |
+| **Initial setup** | Raw base64 (E011) ≡ bundle with `active_epoch: 1`, empty `retired_epochs[]` |
+
+If peer rotated more than **8** times before import, epochs outside the retired tail may not decrypt from relay backfill — disclose on import.
 
 ### Chat-target seq state (chat-storage D047)
 
@@ -372,7 +397,7 @@ Example `retired_psks_json` value:
 | `MessageCipher.h/.cpp` | AEAD encrypt/decrypt |
 | `EncryptedPayload.h/.cpp` | Blob codec + base64 |
 | `ReplayWindow.h/.cpp` | Seq acceptance helper |
-| `IPskSessionStore.h` | Session CRUD + `ResolveMasterPskForEpoch(epoch)` (E018) — interface in `base/crypto` |
+| `IPskSessionStore.h` | Session CRUD + `ResolveMasterPskForEpoch(epoch)` (E018) + **`ImportPskBundle` / `ExportPskBundle`** (E020) — interface in `base/crypto` |
 | `SqlitePskSessionStore.h/.cpp` | v1 impl in `feature/messaging/` — reads/writes `chat_targets` PSK columns (E008/D084) |
 
 **Related (not in `base/crypto`):** **`PeerSigningKeyStore`** in `base/people/` — Ed25519 verify key cache per communicating identity (E016); uses same BLAKE2b fingerprint helper as PSK.
@@ -384,12 +409,14 @@ All public APIs return `Roe<T>` from `common/Error.h`.
 Aligned with [chat-storage D011/D038/D046](../chat-storage-and-memory/DECISIONS.md) (**v1:** rotate PSK or pause only — no continue-anyway):
 
 1. Ingest detects **soft** integrity failure (seq conflict, rewind, repair failure, etc.) or **hard** wire/crypto failure.
-2. **Soft:** pause ingest/outbound; UI shows choice sheet (D038) with disclosure. **Recommended:** manual new PSK exchange on **both peers**, then `session_epoch++` (innocent peer cannot decrypt until PSK is installed locally).
+2. **Soft:** pause ingest/outbound; UI shows choice sheet (D038) with disclosure. **Recommended:** manual new PSK exchange on **both peers**, then `session_epoch++` — export/import **`pp-browser-psk-bundle-v1`** (E020/D086); innocent peer installs bundle before new-epoch decrypt.
 3. **Hard** (invalid signature, decrypt failure, epoch decrease): no override in v1; pause until delete thread or key rotation.
 4. On **`rotate_psk`** path: `session_epoch++` via epoch bump transaction ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md#epoch-bump-transaction-d014-d068-cross-project), D068) — coordinator **appends retired PSK** to `chat_targets.retired_psks_json` (E018), cancels old-epoch pending outbox, then updates PSK + epoch in **`profile.db`** under writer mutex.
 5. **No `epoch_start` system message** ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md)) — first user message may use `sender_seq=1` in the new epoch.
-6. HKDF uses new epoch for send; **decrypt** resolves `master_psk` by envelope `session_epoch` from `chat_targets` — active PSK or `retired_psks_json` (E018). Epoch-only bump (D014, same PSK) needs no retired entry. Local messages already persisted as plaintext (D048) stay readable without decrypt.
+6. HKDF uses **`chat_targets.session_epoch`** for **outbound** send; **inbound decrypt** uses **`envelope.session_epoch`** for HKDF and `ResolveMasterPskForEpoch` (E019/D085). After passive adopt, both match. Epoch-only bump (D014, same PSK) needs no retired entry. Local messages already persisted as plaintext (D048) stay readable without decrypt.
 7. **No new ingest on old epoch after rotation** ([chat-storage DESIGN § Integrity recovery](../chat-storage-and-memory/DESIGN.md#integrity-recovery-d038)) — retired keys are for historical relay ciphertext (backfill, in-flight during bump), not live old-epoch traffic.
+8. **Passive adopt (D085):** when peer bumps first with **epoch-only** (D014), innocent device updates `chat_targets` on first successful ingest. **`rotate_psk`:** innocent peer installs **rich OOB bundle** (E020/D086) before decrypt; bundle sets `session_epoch` + retired ledger at import.
+9. **Multi-hop rotation (O006/D086):** bundle retired tail (max 8 epochs) covers skipped intermediate keys; relay ciphertext outside the tail is not guaranteed decryptable.
 
 **`[post-v1]`** optional relaxed ingest (`ingest_policy=relaxed`, `continue_anyway`) — see [chat-storage DESIGN § Relaxed ingest](../chat-storage-and-memory/DESIGN.md#post-v1-relaxed-ingest--continue-anyway-d046-extension); not in v1 (D046).
 

@@ -74,5 +74,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 - [x] HKDF frozen test vector in DESIGN.md § Test vectors (E015)
 - [x] Retired PSK ledger on `rotate_psk` — E018 in [DECISIONS.md](DECISIONS.md)
 - [x] PSK store in `profile.db` `chat_targets` — E008/D084
+- [x] Rich OOB PSK bundle (multi-hop rotation) — E020/D086
+- [x] Passive epoch advance / envelope epoch decrypt — E019/D085
 - [ ] AEAD / blob codec frozen test vectors — at c1 implementation
 - [ ] Promote stable spec to `docs/MESSAGE_ENCRYPTION.md` when d0 exits

@@ -134,7 +134,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — no `epoch_start` row; epoch bump transaction (D047).  
-**Decision:** Full peer reset **must bump `session_epoch`** via epoch bump transaction. Reset `next_outgoing_seq = 1`. **No `epoch_start` system message.** Restored backup with same `profile.db` + crypto sessions continues existing epoch.  
+**Decision:** Full peer reset **must bump `session_epoch`** via epoch bump transaction. Reset `next_outgoing_seq = 1`. **No `epoch_start` system message.** Restored backup with same `profile.db` + crypto sessions continues existing epoch. **Innocent peer** adopts the higher epoch on **first successful ingest** (passive adopt — D085), not only when locally initiating a bump.  
 **Rationale:** Seq restart must be explicit and scoped; epoch is the namespace boundary; avoids ambiguous “fresh” traffic in an old epoch.  
 **Alternatives:** Ad-hoc first-message flag without epoch; allow seq rewind on reinstall; reset seq on clear history.
 
@@ -304,6 +304,8 @@ Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature
 | `kMaxOpenThreadDbs` | **16** | LRU of open `thread.db` handles |
 | `kMaxDisplayPageMessages` | **100** | Default UI transcript window |
 | `kMaxEmptyClosedSeqs` | **128** | Singleton entries in `empty_closed_seqs[]` before coalesce to ranges (D071) |
+| `kMaxRetiredPskEpochs` | **8** | Max retired `(epoch, master_psk)` entries in OOB bundle export and `retired_psks_json` on disk (D086/E020) |
+| `kMaxPskBundleBytes` | **4 KiB** | Serialized `pp-browser-psk-bundle-v1` JSON for OOB paste (E020) |
 
 No hard cap on messages per thread or threads per profile in v1 — monitor via dev logging; revisit if needed.  
 **Rationale:** Prevents OOM, relay abuse, and accidental paste bombs; aligns with SQLite row sizes.  
@@ -957,9 +959,9 @@ where `<opaque_id>` is **relay-assigned** at registration, **URL-safe** (`[A-Za-
 **Cross-project:** [e2e-message-crypto E018](../e2e-message-crypto/DECISIONS.md#e018--retired-psk-ledger-for-historical-decrypt-after-rotate_psk), [E008/D084](../e2e-message-crypto/DECISIONS.md#e008--psk-store-v1-in-profiledb-chat_targets-at-rest-encryption-deferred).  
 **Decision:** Epoch bump coordinator **`rotate_psk`** path must append the previous `(session_epoch, master_psk_b64)` to **`chat_targets.retired_psks_json`** before replacing the active PSK and incrementing epoch (E018/D084). **Epoch-only** bump ([D014](#d014--peer-reset-requires-session_epoch-bump), same `master_psk`) does **not** append a retired entry. All PSK + seq updates in one **`profile.db` transaction**.
 
-**Decrypt:** feature layer resolves `master_psk` by envelope `session_epoch` via `IPskSessionStore::ResolveMasterPskForEpoch` — active PSK or retired ledger — then HKDF (E015). Messages already in `thread.db` as plaintext (`chat_payload_json`, D048/D069) remain readable without decrypt.
+**Decrypt:** feature layer resolves `master_psk` by **`envelope.session_epoch`** (E019/D085) via `IPskSessionStore::ResolveMasterPskForEpoch` — active PSK or retired ledger — then HKDF (E015). Never use lagging `chat_targets.session_epoch` for inbound decrypt. Messages already in `thread.db` as plaintext (`chat_payload_json`, D048/D069) remain readable without decrypt.
 
-**Pruning:** optional — drop retired entry for epoch `E` when no local transcript rows for `E`, user cleared/abandoned that epoch sync surface, and no pending old-epoch sync work (E018).
+**Pruning:** optional — drop retired entry for epoch `E` when no local transcript rows for `E`, user cleared/abandoned that epoch sync surface, and no pending old-epoch sync work (E018). Hard cap: **`kMaxRetiredPskEpochs` (8)** — prune lowest epochs when ledger exceeds cap (D086/E020).
 
 **c3 UX (D038 choice sheet):** disclose that saved-on-device history stays readable; pre-rotation relay ciphertext remains decryptable on this device via retained retired PSKs; new traffic requires new PSK; other devices need new PSK for the new epoch.
 
@@ -987,13 +989,112 @@ where `<opaque_id>` is **relay-assigned** at registration, **URL-safe** (`[A-Za-
 
 ---
 
+## D085 — Passive epoch advance (peer bumps first)
+
+**Date:** 2026-07-02  
+**Cross-project:** [e2e-message-crypto E019](../e2e-message-crypto/DECISIONS.md#e019--decrypt-and-hkdf-use-envelope-session_epoch).  
+**Decision:** When the **peer** bumps `session_epoch` first (device reset, **Start new secure chat**, or epoch-only restart), the **innocent** device adopts the new epoch on **first successful E2E ingest** — not via a separate background job. This mirrors the local epoch bump coordinator's durable effects on `chat_targets`, but is **ingest-triggered**.
+
+### Decrypt / HKDF (inbound)
+
+- **`MessageCipher::Decrypt`** and **`SessionKeyDeriver`** MUST use **`envelope.session_epoch`** for HKDF `info` (E015) and for **`IPskSessionStore::ResolveMasterPskForEpoch`** — **never** `chat_targets.session_epoch` (which may lag).
+- Outbound encrypt/sign continues to use **`chat_targets.session_epoch`** after adopt; until adopt completes, outbound MUST NOT emit relay-visible E2E envelopes (mutex + `sync_state` / compromised gates already pause sends when appropriate).
+
+### Classifier rule 2 (D013)
+
+**Epoch advance** — `envelope.session_epoch > chat_targets.session_epoch` (strictly higher; equal epoch is not advance) — reset per-epoch **`sync_state`** watermarks for the **envelope epoch** and accept as a fresh stream **after** decrypt succeeds. **`session_epoch` decrease** remains hard reject.
+
+### Passive adopt transaction (first successful ingest)
+
+When classifier rule 2 applies and the message passes decrypt + D013 (steps 7–11), **step 12 persist** MUST run a **single dual-DB transaction** (D044) that includes the inbound row **and** chat-target epoch adoption **before** any subsequent outbound seq assignment:
+
+| Store | Updates (same txn as message append) |
+|-------|--------------------------------------|
+| **`profile.db` → `chat_targets`** | `session_epoch = envelope.session_epoch`; `next_outgoing_seq = 1` |
+| **`profile.db` → `chat_targets`** (**`rotate_psk`**) | If bundle not yet imported: append `{ epoch: <local before adopt>, master_psk_b64: <previous active>, retired_at }` before setting `session_epoch` (D083). **Preferred path:** innocent peer imports **E020 bundle** at OOB — ledger + `session_epoch` set at import (D086); passive adopt on first ingest only completes watermarks if needed. |
+| **`profile.db` → `chat_targets`** (**epoch-only**, D014) | No `retired_psks_json` entry — same `master_psk` covers all epochs via HKDF. |
+| **`profile.db` → `threads`** | Denormalized `session_epoch` cache on the direct E2E row (D047). |
+| **`thread.db`** | Cancel `relay_visible` `pending`/`failed` rows for **previous** local `session_epoch`; purge matching **`profile.db` `outbox`** rows (D068 — same as local bump). |
+| **`thread.db` → `sync_state`** | Initialize fresh watermarks for **`envelope.session_epoch`**; clear `compromised` / `user_resolution` when adoption completes a **`rotate_psk`** recovery. |
+
+**No `profiles/{id}/crypto/sessions.json`** — durable epoch/seq/PSK state is **`chat_targets` only** (D084).
+
+### `rotate_psk` vs epoch-only (innocent peer)
+
+| Initiator path | Innocent peer prerequisite | Adopt trigger |
+|----------------|------------------------------|-----------------|
+| **Epoch-only** (D014, same PSK) | None — decrypt via `ResolveMasterPskForEpoch(envelope.session_epoch)` + unchanged `master_psk` | First successful ingest at higher epoch |
+| **`rotate_psk`** | **Rich OOB bundle installed** (E020/D086) — `master_psk_b64`, merged `retired_psks_json`, and `session_epoch = active_epoch` before decrypt | First successful ingest after bundle install; adopt txn completes seq/outbox/sync if install was partial |
+
+If a **`rotate_psk`** epoch-`N` message arrives before local bundle install → AEAD decrypt fails → **hard reject** (step 7). Cannot decrypt epoch-`N` while still assigning outbound seq against epoch `N-1`. Multi-hop rotation (peer bumped more than once before ingest) is covered by **rich OOB bundle** (D086/E020).
+
+### Contrast with local epoch bump coordinator
+
+| | **Local coordinator** (D014, D068, D083) | **Passive adopt** (D085) |
+|---|------------------------------------------|--------------------------|
+| Trigger | User **Start new secure chat** / recovery | Peer message at higher `session_epoch` |
+| PSK | User supplies new key (`rotate_psk`) or keeps same (epoch-only) | Epoch-only: unchanged; `rotate_psk`: OOB install **before** ingest |
+| `chat_targets` | Same column updates | Same column updates |
+| Old-epoch pending | Cancel (D068) | Cancel (D068) — peer has moved on |
+
+**Rationale:** Without ingest-triggered adoption, a device could decrypt peer epoch-2 traffic (HKDF with envelope epoch) while `next_outgoing_seq` and outbound envelope `session_epoch` still reflect epoch 1 — breaking seq namespace alignment and risking cross-epoch sends. Colocating adopt with first successful persist keeps decrypt, classifier, outbound assignment, and durable counters consistent.  
+**Alternatives:** Lazy adopt on first **outbound** send (rejected — inbound-only window leaves seq/epoch split); background adopt without persist txn (rejected — race with outbox).
+
+---
+
+## D086 — Rich OOB PSK bundle with bounded retired epochs (O006)
+
+**Date:** 2026-07-02  
+**Cross-project:** [e2e-message-crypto E020](../e2e-message-crypto/DECISIONS.md#e020--rich-oob-psk-bundle-v1).  
+**Decision:** Resolve **O006** (multi-hop `rotate_psk` before innocent peer ingests) with **rich OOB**: rotation export includes the **active** `(epoch, master_psk)` plus up to **`kMaxRetiredPskEpochs` (8)** retired `(epoch, master_psk)` pairs — the **most recent tail** immediately before `active_epoch`. Innocent peer **installs the bundle** (paste / QR) **before** epoch-`N` traffic can decrypt.
+
+### OOB bundle install (innocent peer — `rotate_psk`)
+
+Single **`profile.db` transaction** under writer mutex:
+
+1. Validate bundle (`pp-browser-psk-bundle-v1`, E020); reject if serialized size > **`kMaxPskBundleBytes`** (4 KiB).
+2. **Merge** `retired_epochs[]` into `chat_targets.retired_psks_json` by `epoch` (skip duplicates; keep existing entries not in bundle).
+3. Set `master_psk_b64`, `psk_fingerprint`, **`session_epoch = active_epoch`**.
+4. Reset **`next_outgoing_seq = 1`**.
+5. Cancel old-epoch `relay_visible` pending/failed in `thread.db` + matching **`outbox`** rows (D068).
+6. Update `threads.session_epoch` denorm; init **`sync_state`** watermarks for `active_epoch`.
+
+After install, first ingest at `active_epoch` uses normal D013 (classifier rule 2 does not fire when epochs match). **Passive adopt (D085)** still runs when `envelope.session_epoch > chat_targets.session_epoch` (epoch-only peer bump without bundle).
+
+### Initiator export (after local `rotate_psk`)
+
+Export **`pp-browser-psk-bundle-v1`** with:
+
+- `active_epoch`, `master_psk_b64` (new active key)
+- `retired_epochs[]` = up to **`kMaxRetiredPskEpochs`** entries from local ledger with epochs in **`(active_epoch - K .. active_epoch - 1]`** (most recent tail). Include the epoch just retired if not already in ledger.
+
+If peer's last known epoch is older than the tail window, **disclose** that relay ciphertext from skipped intermediate epochs may be **permanently undecryptable** on this device.
+
+### Ledger cap on disk
+
+`retired_psks_json` MUST NOT exceed **`kMaxRetiredPskEpochs`** entries after merge or local `rotate_psk` append — **prune lowest epoch numbers** first (E018 hygiene aligned with bundle cap).
+
+### Scope
+
+| Case | Mechanism |
+|------|-----------|
+| **Initial PSK** (epoch 1, no prior rotation) | Raw base64 paste (E011) or bundle with empty `retired_epochs[]` |
+| **Single-hop `rotate_psk`** | Bundle with one retired epoch — full backfill within window |
+| **Multi-hop `rotate_psk`** before ingest | Bundle retired tail — all epochs in window decryptable; older relay ciphertext outside window not guaranteed |
+| **Epoch-only bump** (D014) | Unchanged — same `master_psk`; no bundle required; HKDF re-derives per epoch |
+
+**Rationale:** Retired ledger alone cannot cover peer-initiated multi-hop rotation unless OOB carries the skipped keys; a bounded tail keeps paste/QR size predictable (`~1 KiB` at K=8) while fixing the common 1→2→3 offline gap.  
+**Alternatives rejected:** O006-A round-trip gate only (does not fix zero-message double-rotate); O006-C defer; unbounded retired history (storage + OOB size).
+
+---
+
 ## Open decisions (not yet resolved)
 
 | ID | Question | Options |
 |----|----------|---------|
-| — | *(none in this project — all O001–O005 resolved D023–D027)* | |
+| — | *(none in this project — O006 resolved D086)* | |
 
-**Cross-project (e2e-message-crypto):** peer signing keys — E016 / D081; relay identity format — E017 / D082; retired PSK ledger on `rotate_psk` — E018 / D083; PSK in `profile.db` `chat_targets` — E008 / D084. Remaining e2e work is implementation (c1–c3).  
+**Cross-project (e2e-message-crypto):** peer signing keys — E016 / D081; relay identity format — E017 / D082; retired PSK ledger on `rotate_psk` — E018 / D083; PSK in `profile.db` `chat_targets` — E008 / D084; passive epoch advance — E019 / D085; rich OOB bundle — E020 / D086. Remaining e2e work is implementation (c1–c3).  
 **Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — not chat wire scope.
 
 When resolved, move rows to numbered decisions above.

@@ -503,7 +503,9 @@ Optional dev-only: `PRAGMA integrity_check` on `profile.db` and open `thread.db`
 
 ### Epoch bump transaction (D014, D068, cross-project)
 
-Single **feature-layer coordinator** flow when user starts new secure chat or peer reset requires epoch bump. Hold **`profile.db` writer mutex** for all `chat_targets` updates (seq, epoch, PSK — D084) — no separate crypto sidecar.
+Single **feature-layer coordinator** flow when user starts new secure chat or peer reset requires **local-initiated** epoch bump. Hold **`profile.db` writer mutex** for all `chat_targets` updates (seq, epoch, PSK — D084) — no separate crypto sidecar.
+
+**Passive adopt (D085):** when the **peer** bumps first, the innocent device performs the **same durable `chat_targets` / outbox / `sync_state` effects** on **first successful ingest** at `envelope.session_epoch > local` — inside step 12 persist, not via this coordinator. See § Passive epoch advance.
 
 1. **Cancel old-epoch outbound (D068):** In `thread.db`, remove or mark cancelled all `relay_visible` rows with `delivery=pending|failed` for the **previous** `session_epoch` on this chat target; purge matching **`profile.db` `outbox`** rows in the same dual-DB recipe (D044). User re-composes in the new epoch — do not auto-resend stale envelopes.
 2. **`profile.db` transaction** (same txn as step 1 catalog/outbox writes where applicable):
@@ -1027,12 +1029,12 @@ Ordered steps — **single linear sequence**; do not reorder in implementation (
 4. **Resolve local thread (direct)** — build **`ChatTargetKey`** from `envelope.sender_contact_id` (value) + inferred **`peer_identity_kind`** (v1: `relay_user`) + `envelope.route.channel` → lookup **`chat_targets`** → `local_thread_id`. **Inbound (D062, D080):** if no row — **E2E hard reject**; **public** → **ephemeral UI only**, stop before persist (steps 5–12). If row exists but shell missing → hard reject. Outbound user send uses **`FindOrCreateDirectThread`**. **`[post-v1]` group:** `route.group_id` → group thread lookup.
 5. **Per-thread UUID dedup** — `HasMessageId(local_thread_id, envelope.message_id)`; benign duplicate → stop (D034).
 6. **Participant check** — `envelope.sender_contact_id` must equal thread's **`peer_identity_value`** (and kind matches). Outbound reflected echo may use `local:self` in local rows only — not on wire.
-7. **Decrypt (E2E only)** — epoch check → AEAD decrypt; failure → hard reject. **`public_relay`:** skip to step 8 with `body.content` plaintext.
+7. **Decrypt (E2E only)** — resolve `master_psk` via **`IPskSessionStore::ResolveMasterPskForEpoch(envelope.session_epoch)`** (E018/D085 — **never** `chat_targets.session_epoch`, which may lag on passive adopt); derive session key with HKDF `info` using **`envelope.session_epoch`** (E015); AEAD decrypt + verify AAD binds the same epoch. Failure → hard reject. **`public_relay`:** skip to step 8 with `body.content` plaintext.
 8. **Plaintext size** — decrypted UTF-8 JSON ≤ `kMaxE2ePlaintextBytes`; public `body.content` ≤ `kMaxChatPayloadJsonBytes`. Reject before `nlohmann::parse` (D033).
 9. **Parse & validate `ChatPayload`** — **`[v1]`** types `text`, `system`; strip wire `content_rml` (D030).
 10. **History floor (E2E only, D037)** — if `sender_seq ≤ history_floor_seq[peer][epoch]`, silent discard, stop.
 11. **D013 ingest classifier (E2E only)** — normal · gap · soft compromised · hard reject; `ReplayWindow` before gap declaration (D020). Skip when `sync_state=compromised` except to record incidents — do not persist new rows until resolved (D068).
-12. **Persist** — assign `display_order` (D054); append to **`local_thread_id`**; update watermarks (E2E); set `transport`.
+12. **Persist** — assign `display_order` (D054); append to **`local_thread_id`**; update watermarks (E2E); set `transport`. **Passive epoch adopt (D085):** when `envelope.session_epoch > chat_targets.session_epoch` and steps 7–11 succeeded, the same dual-DB transaction MUST also update `chat_targets.session_epoch`, reset `next_outgoing_seq = 1`, cancel old-epoch pending/outbox (D068), refresh `threads.session_epoch` denorm, and init `sync_state` for the envelope epoch — see § Passive epoch advance.
 
 Validate `message_id` as UUID before DB use. Validate `local_thread_id` as UUID before filesystem use.
 
@@ -1047,7 +1049,7 @@ After crypto/size checks; below-floor already discarded in step 10. **`[v1]`:** 
 **Normal (accept):**
 
 1. **Benign duplicate** — same `(message_id, sender_seq, session_epoch)` → ignore.
-2. **Epoch advance** — `session_epoch` increases → reset per-epoch watermarks; accept as fresh stream (see § Peer reset).
+2. **Epoch advance** — `envelope.session_epoch > chat_targets.session_epoch` → reset per-epoch watermarks for the **envelope epoch**; accept as fresh stream; **passive adopt** updates `chat_targets` in step 12 (D085). See § Passive epoch advance and § Peer reset.
 3. **Contiguous tail** — `sender_seq == contiguous_peer_seq + 1` and `sender_seq > history_floor_seq[peer][epoch]`.
 4. **Tail bootstrap** — per-epoch transcript empty; ingest tail batch without requiring seq 1..N first (only seq **> floor** when floor is set).
 5. **Late fill (D067)** — `sender_seq` is in `empty_closed_seqs[]` for this `(peer, epoch)`, no row at that seq yet, and `message_id` not seen → accept; remove seq from `empty_closed_seqs` on persist.
@@ -1074,8 +1076,9 @@ On soft compromised: **pause ingest and outbound**, set `sync_state=compromised`
 
 | Condition | Why |
 |-----------|-----|
-| `session_epoch` **decreases** | Illegal rollback |
-| Invalid signature / AEAD decrypt failure / wrong thread / envelope epoch mismatch | Wire or crypto invalid |
+| `envelope.session_epoch < chat_targets.session_epoch` | Illegal rollback (epoch decrease) |
+| Invalid signature / AEAD decrypt failure / wrong thread | Wire or crypto invalid |
+| **`rotate_psk`** traffic before local new PSK installed | Decrypt cannot succeed (D085) |
 | `sender_contact_id` not a participant | Authorization |
 
 Reject message permanently. Pause ingest/outbound if not already paused; show incident with **Pause only** or recommended recovery.
@@ -1105,12 +1108,16 @@ Local state machine: `ok` → `gap` → `compromised` → (`awaiting_new_psk` in
 Initiating side                               Innocent peer
      |                                              |
      | 1. User confirms new secure chat             | 1. May see peer pause banner
-     | 2. Exchange new PSK OOB                      | 2. Accept higher session_epoch
-     | 3. Epoch bump transaction (§ above)          |    on first message in new epoch
-     | 4. Resume at seq 1+                          | 3. Fresh watermarks for new epoch
+     | 2. Export PSK bundle OOB (E020)           | 2. Import bundle; active_epoch + retired tail
+     | 3. Epoch bump transaction (§ above)          |    (D086 — sets session_epoch at import)
+     | 4. Resume at seq 1+                          | 3. First ingest at active_epoch (normal D013)
+     |                                              | 4. Fresh watermarks for new epoch
 ```
 
-- Innocent peer accepts **strictly higher** `session_epoch` (D014) **after** both sides complete OOB PSK exchange and local **`chat_targets`** PSK update — cannot decrypt new epoch traffic until PSK is installed.
+- Innocent peer accepts **strictly higher** `session_epoch` (D014, D085) on **first successful ingest** after decrypt when **epoch-only** — **passive adopt** txn in step 12 updates `chat_targets` + `threads` denorm together with the message row.
+- **`rotate_psk`:** innocent peer **imports rich OOB bundle** (E020/D086) **before** epoch-`N` traffic can decrypt — bundle sets `master_psk_b64`, merges `retired_psks_json`, `session_epoch = active_epoch`, resets `next_outgoing_seq`, cancels old-epoch pending. First ingest at `active_epoch` uses normal D013 (epochs already aligned).
+- **Epoch-only (D014):** same `master_psk`; passive adopt on first ingest — no OOB bundle; HKDF uses `envelope.session_epoch` directly.
+- **Multi-hop `rotate_psk` (O006):** bundle carries up to **`kMaxRetiredPskEpochs` (8)** retired keys — relay ciphertext outside the tail may not decrypt on this device (disclose on import).
 - **No `epoch_start` system row** — first user message may use `sender_seq=1`.
 - **Historical decrypt (E018/D083):** `retired_psks_json` holds previous `master_psk` per epoch after `rotate_psk`; epoch-only bump re-derives from current PSK. Retired keys decrypt historical relay ciphertext only — **no new ingest on old epoch** after rotation.
 
@@ -1167,13 +1174,37 @@ When a peer wipes local state, installs on a new device without backup, or expli
 1. **Bump `session_epoch`** via epoch bump transaction (D014).
 2. Reset `next_outgoing_seq = 1` for the new epoch.
 3. **No `epoch_start` system message** — first relay-visible user content may use `sender_seq=1`.
-4. **Receiver** on unseen higher epoch: fresh per-epoch watermarks; `sender_seq=1` is normal bootstrap.
+4. **Receiver** on unseen higher epoch: fresh per-epoch watermarks; `sender_seq=1` is normal bootstrap; **passive adopt** (D085) aligns local `chat_targets.session_epoch` and `next_outgoing_seq` on first successful ingest.
 
 **Restored backup** (same `profile.db` + crypto sessions): not a reset — continue same epoch and seq.
 
-Sending `sender_seq=1` without bumping epoch in an established epoch is **soft compromised** (D038 choice sheet; recommended path is epoch bump).
+### Passive epoch advance (D085)
 
-Benign duplicate delivery (same `message_id` + same `sender_seq`) is ignored via UUID dedup.
+When the **peer** bumps `session_epoch` first, the innocent device must not remain on a stale local epoch while decrypting and classifying inbound traffic at the peer's epoch. **Decrypt and HKDF always use `envelope.session_epoch`** (E019); **`chat_targets.session_epoch` is the outbound authoritative counter** and may lag until adopt.
+
+**Trigger:** first E2E ingest where `envelope.session_epoch > chat_targets.session_epoch`, decrypt succeeds (step 7), and D013 accepts (classifier rule 2).
+
+**Same dual-DB transaction as step 12 persist** (atomic with the inbound message row):
+
+| Action | Epoch-only (D014) | `rotate_psk` |
+|--------|-------------------|--------------|
+| `chat_targets.session_epoch` | `= envelope.session_epoch` | `= envelope.session_epoch` |
+| `next_outgoing_seq` | `= 1` | `= 1` |
+| `retired_psks_json` | no change | merged from **E020 bundle** at OOB import (D086); passive ingest append only if bundle omitted |
+| `master_psk_b64` | unchanged | set from bundle `master_psk_b64` at import |
+| Old-epoch pending / outbox | cancel (D068) | cancel (D068) |
+| `threads.session_epoch` denorm | update | update |
+| `sync_state` | fresh watermarks for envelope epoch | fresh watermarks; clear compromise if recovering |
+
+**Outbound after adopt:** next send reads updated `chat_targets.session_epoch` and assigns `sender_seq` from `next_outgoing_seq = 1` in the adopted epoch — no window where decrypt used epoch 2 but outbound still stamps epoch 1.
+
+**`rotate_psk` before OOB:** AEAD decrypt fails at step 7 → hard reject; user must import **PSK bundle** (E020) or raw key for initial setup (E011).
+
+**Rich OOB bundle (D086/E020):** see [e2e-message-crypto DESIGN § Rich OOB PSK bundle](../e2e-message-crypto/DESIGN.md#rich-oob-psk-bundle-e020d086). Import sets `session_epoch` immediately; passive adopt (epoch jump) applies only for **epoch-only** peer bumps without bundle.
+
+**No `sessions.json` sidecar** — all durable epoch/seq/PSK state lives in **`profile.db` → `chat_targets`** (D084).
+
+Sending `sender_seq=1` without bumping epoch in an established epoch is **soft compromised** (D038 choice sheet; recommended path is epoch bump).
 
 ## Resource & trust bounds (D029–D033)
 
@@ -1191,6 +1222,8 @@ Canonical limits in [DECISIONS.md](DECISIONS.md) D029. Summary:
 | Gap repair | Max **5** rounds, **500** seq span per fetch (D041) |
 | Integrity incidents | Max **10** per `(peer, epoch)` ring buffer (D049) |
 | Empty closed seqs | Max **128** singleton entries; coalesce to `empty_closed_ranges[]` (D071) |
+| Retired PSK ledger | Max **8** epochs in `retired_psks_json` and OOB bundle tail (D086/E020) |
+| PSK bundle OOB | Max **4 KiB** serialized JSON (E020) |
 | Compaction | Trigger at **20** turns; summary ≤ **8 KiB** (D040) |
 
 **Local assistant `content_rml`** is trusted-local only (AI parser output), max 256 KiB on disk.

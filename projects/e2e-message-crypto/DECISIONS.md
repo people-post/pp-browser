@@ -101,9 +101,15 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E011 — PSK entry UX v1: paste base64
 
 **Date:** 2026-07-02  
-**Decision:** Phase **c3** PSK import uses **paste base64** — user pastes a 32-byte key encoded as standard base64 (44 chars, optional `=` padding). App decodes, stores via **`IPskSessionStore`** into **`chat_targets.master_psk_b64`** (+ `psk_fingerprint`), and displays **BLAKE2b fingerprint** for out-of-band verification with the peer.  
-**Rationale:** Minimal UI for c3; matches `chat_targets` column encoding; fingerprint display still satisfies DESIGN.md verification step without a separate "confirm fingerprint first" import flow.  
-**Alternatives:** Paste fingerprint + confirm (no raw key paste); QR scan (deferred UX).
+**Updated:** 2026-07-02 — initial setup; rotation uses E020 bundle.  
+**Decision:** Phase **c3** PSK import accepts:
+
+1. **Initial setup (epoch 1):** paste **raw base64** — 32-byte key, standard base64 (44 chars, optional `=` padding). App decodes, stores via **`IPskSessionStore`** into **`chat_targets.master_psk_b64`** (+ `psk_fingerprint`), `session_epoch = 1` (or leaves epoch unchanged when reinstalling same target).
+2. **`rotate_psk` / multi-hop catch-up:** paste **`pp-browser-psk-bundle-v1`** JSON ([E020](#e020--rich-oob-psk-bundle-v1)) — active key + bounded retired tail (D086).
+
+Display **BLAKE2b fingerprint** of the **active** `master_psk` for out-of-band verification with the peer.  
+**Rationale:** Minimal UI for first contact; rich bundle fixes O006 without a second wire protocol.  
+**Alternatives:** Paste fingerprint + confirm (no raw key paste); QR scan (deferred UX — bundle-friendly).
 
 ---
 
@@ -205,7 +211,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **Do not** i
 | **`rotate_psk`** (new `master_psk` + `session_epoch++`) | Append `{ "epoch": <old>, "master_psk_b64": "…", "retired_at": <unix_ms> }` |
 | **Epoch-only** ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md#d014--peer-reset-requires-session_epoch-bump) — same `master_psk`, `session_epoch++`) | **No** entry — re-derive any past epoch from current `master_psk` |
 
-**Pruning (v1):** Drop a retired entry for epoch `E` when **all** hold: (1) no local `messages` rows with `session_epoch = E` for that chat target, (2) user ran **Clear messages** for that epoch surface or explicitly abandons old-epoch sync, (3) no active old-epoch gap/sync work. Pruning is optional hygiene — correctness does not require immediate purge.
+**Pruning (v1):** Drop a retired entry for epoch `E` when **all** hold: (1) no local `messages` rows with `session_epoch = E` for that chat target, (2) user ran **Clear messages** for that epoch surface or explicitly abandons old-epoch sync, (3) no active old-epoch gap/sync work. Pruning is optional hygiene — correctness does not require immediate purge. **Hard cap:** ledger MUST NOT exceed **`kMaxRetiredPskEpochs` (8)** — prune **lowest** epoch entries first (D086/E020).
 
 **UX disclosure (c3):** On **Start new secure chat**, choice sheet states: messages **already saved on this device** stay readable (plaintext per D048); relay ciphertext from **before** rotation remains decryptable on this device via retained retired PSKs; **new** traffic uses the new PSK and epoch only; other devices need the new PSK for the new epoch.
 
@@ -213,3 +219,57 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **Do not** i
 
 **Rationale:** DESIGN § Key rotation promises old-epoch decrypt locally; a single `master_psk_b64` per target breaks that on PSK rotation. Retired ledger is minimal, one entry per rotation event, and matches the threat model (local disk already holds plaintext transcripts). Epoch-only bumps need no ledger because HKDF re-derives from the unchanged `master_psk`.  
 **Alternatives:** Store derived `session_key` per epoch instead of retired `master_psk` (acceptable optimization, deferred); re-encrypt-at-rotation (wrong layer for plaintext storage).
+
+---
+
+## E019 — Decrypt and HKDF use `envelope.session_epoch`
+
+**Date:** 2026-07-02  
+**Cross-project:** [chat-storage D085](../chat-storage-and-memory/DECISIONS.md#d085--passive-epoch-advance-peer-bumps-first).  
+**Decision:** On **inbound** E2E decrypt, **`SessionKeyDeriver`** and **`MessageCipher::Decrypt`** MUST use **`envelope.session_epoch`** for:
+
+1. **`IPskSessionStore::ResolveMasterPskForEpoch(envelope.session_epoch)`** — active `master_psk_b64` when `envelope.session_epoch == chat_targets.session_epoch`, else `retired_psks_json` lookup (E018); **never** pass `chat_targets.session_epoch` when it lags the envelope on passive adopt.
+2. **HKDF `info`** — `"pp-browser-msg-v1" + channel + envelope.session_epoch` (E015).
+
+**Outbound encrypt** uses **`chat_targets.session_epoch`** (authoritative send counter). After **passive adopt** (D085), step 12 persist updates `chat_targets.session_epoch` in the same transaction as the inbound row so the next outbound send matches the adopted epoch.
+
+**Rationale:** Using the cached local epoch for HKDF while the envelope carries a higher epoch would either fail decrypt (wrong key) or, if mis-implemented, create a split-brain where inbound decrypt succeeds at epoch N while `next_outgoing_seq` still advances in epoch N−1.  
+**Alternatives:** Decrypt with `max(envelope, local)` without persisting adopt (rejected — leaves outbound stale); lazy adopt on first outbound send (rejected — D085).
+
+---
+
+## E020 — Rich OOB PSK bundle v1
+
+**Date:** 2026-07-02  
+**Cross-project:** [chat-storage D086](../chat-storage-and-memory/DECISIONS.md#d086--rich-oob-psk-bundle-with-bounded-retired-epochs-o006), [D029 `kMaxRetiredPskEpochs`](../chat-storage-and-memory/DECISIONS.md#d029--chat-resource-bounds-size--volume).  
+**Decision:** **`rotate_psk`** OOB export/import uses JSON format **`pp-browser-psk-bundle-v1`**:
+
+```json
+{
+  "format": "pp-browser-psk-bundle-v1",
+  "channel": "e2e",
+  "active_epoch": 3,
+  "master_psk_b64": "<32-byte key, RFC 4648 base64>",
+  "retired_epochs": [
+    { "epoch": 1, "master_psk_b64": "…" },
+    { "epoch": 2, "master_psk_b64": "…" }
+  ]
+}
+```
+
+| Field | Rules |
+|-------|-------|
+| `format` | Must be `pp-browser-psk-bundle-v1` |
+| `channel` | Must be `e2e` |
+| `active_epoch` | uint32 ≥ 1 |
+| `master_psk_b64` | Decodes to 32 bytes — key for **`active_epoch`** (live send/recv) |
+| `retired_epochs` | Optional array; max **`kMaxRetiredPskEpochs` (8)** entries; each `epoch` < `active_epoch`; strictly increasing epochs; no duplicates |
+
+**Export (initiator after `rotate_psk`):** include `active_epoch` + new `master_psk_b64` + retired tail — up to **8** most recent epochs in `(active_epoch - K .. active_epoch - 1]` from local `retired_psks_json` plus the epoch just retired. Serialized bundle ≤ **`kMaxPskBundleBytes` (4 KiB)**.
+
+**Import (innocent peer):** validate → merge `retired_epochs` into `chat_targets.retired_psks_json` (dedupe by epoch) → set active PSK + **`session_epoch = active_epoch`** → reset `next_outgoing_seq = 1` → cancel old-epoch pending/outbox (D068/D086) — one **`profile.db` txn**. Show active fingerprint (E011). If export was truncated (peer rotated more than K times offline), disclose that relay ciphertext **outside the retired tail** may not decrypt on this device.
+
+**Initial contact:** raw base64 (E011) equivalent to bundle with `active_epoch: 1`, empty `retired_epochs[]`.
+
+**Rationale:** Resolves O006 — innocent peer learns skipped intermediate PSKs without a wire ack; bounded tail matches paste/QR constraints and on-disk ledger cap.  
+**Alternatives:** Unbounded chain (rejected — OOB size); round-trip rotation gate only (rejected — O006-A); single-key paste on rotation (rejected — multi-hop gap).

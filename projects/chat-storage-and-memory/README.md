@@ -4,7 +4,7 @@
 **Owner:** Hongwei + agents  
 **Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
 **Related project:** [e2e-message-crypto](../e2e-message-crypto/) (symmetric E2E body crypto; depends on v2b + v6 for wire-up)  
-**Recent:** D079–D084 (contact vs communicating identity; public ephemeral inbound; peer signing key lookup E016; relay identity format; retired PSK ledger E018; PSK in `profile.db` D084) — see [DECISIONS.md](DECISIONS.md)
+**Recent:** D079–D086 (contact vs communicating identity; public ephemeral inbound; peer signing key lookup E016; relay identity format; retired PSK ledger E018; PSK in `profile.db` D084; passive epoch adopt D085; rich OOB bundle D086/E020) — see [DECISIONS.md](DECISIONS.md)
 
 ## One-line goal
 
