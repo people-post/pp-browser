@@ -40,7 +40,7 @@ Not protected in v1: traffic metadata, classical Ed25519 break, local disk theft
 ### Master PSK
 
 - 32 bytes from CSPRNG; fingerprint = BLAKE2b-256(PSK) as grouped hex.
-- Initial setup: paste raw base64 PSK. Rotation: `pp-browser-psk-bundle-v1` JSON (see project DESIGN).
+- Initial setup (E011): either peer generates; export raw base64 + fingerprint OOB; peer imports; both confirm fingerprint before first send (`psk_verified_at` on `chat_targets`). Rotation: export/import `pp-browser-psk-bundle-v1` JSON (see project DESIGN).
 
 ### Session key (HKDF — E015)
 

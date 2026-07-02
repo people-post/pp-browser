@@ -531,7 +531,7 @@ No hard max file size in v1.
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — PK `(peer_identity_kind, peer_identity_value, channel)` (D079); PSK columns (D084/E008).  
-**Decision:** **`chat_targets`** PK = **`ChatTargetKey`** **`(peer_identity_kind, peer_identity_value, channel)`**. Columns: **`local_thread_id`** (current on-disk shell; **not on wire**), optional **`participant_contact_id`** (local Contact.id for catalog), **`next_outgoing_seq`**, **`session_epoch`**, and for **`channel=e2e`** — **`master_psk_b64`**, **`psk_fingerprint`**, **`retired_psks_json`** (D084). Updated under same writer mutex as `outbox`. **Delete direct conversation** removes shell but **keeps** `chat_targets` (seq/epoch/PSK). Shell recreate may allocate **new** `local_thread_id`.  
+**Decision:** **`chat_targets`** PK = **`ChatTargetKey`** **`(peer_identity_kind, peer_identity_value, channel)`**. Columns: **`local_thread_id`** (current on-disk shell; **not on wire**), optional **`participant_contact_id`** (local Contact.id for catalog), **`next_outgoing_seq`**, **`session_epoch`**, and for **`channel=e2e`** — **`master_psk_b64`**, **`psk_fingerprint`**, **`psk_verified_at`** (E011 send gate), **`retired_psks_json`** (D084). Updated under same writer mutex as `outbox`. **Delete direct conversation** removes shell but **keeps** `chat_targets` (seq/epoch/PSK). Shell recreate may allocate **new** `local_thread_id`.  
 **Rationale:** Seq/epoch/PSK are per logical chat target (communicating identity + channel); local storage ids are device-private; single-row txn on epoch bump.  
 **Alternatives:** Wire-stable `thread_id` (D053 — superseded); `sessions.json` sidecar (rejected — D084).
 
@@ -981,6 +981,7 @@ where `<opaque_id>` is **relay-assigned** at registration, **URL-safe** (`[A-Za-
 |--------|------|-------|
 | `master_psk_b64` | TEXT NULL | 32-byte key, RFC 4648 base64; `NULL` until user installs PSK |
 | `psk_fingerprint` | TEXT NULL | BLAKE2b display (E011) |
+| `psk_verified_at` | INTEGER NULL | Unix ms when user confirmed OOB fingerprint match (E011); `NULL` until verified; cleared on PSK replace/import/rotation |
 | `retired_psks_json` | TEXT NULL | JSON array `[{ epoch, master_psk_b64, retired_at }]` — E018 |
 
 **`IPskSessionStore`** (`base/crypto`) + **`SqlitePskSessionStore`** (`feature/messaging/`) read/write these columns under the **`profile.db` writer mutex**. Epoch bump (D068) updates PSK + `session_epoch` + `next_outgoing_seq` in the **same transaction** — no cross-file sync.
@@ -1079,7 +1080,7 @@ If peer's last known epoch is older than the tail window, **disclose** that rela
 
 | Case | Mechanism |
 |------|-----------|
-| **Initial PSK** (epoch 1, no prior rotation) | Raw base64 paste (E011) or bundle with empty `retired_epochs[]` |
+| **Initial PSK** (epoch 1, no prior rotation) | Generate + export raw base64 on one peer; import on other (E011); or bundle with empty `retired_epochs[]` |
 | **Single-hop `rotate_psk`** | Bundle with one retired epoch — full backfill within window |
 | **Multi-hop `rotate_psk`** before ingest | Bundle retired tail — all epochs in window decryptable; older relay ciphertext outside window not guaranteed |
 | **Epoch-only bump** (D014) | Unchanged — same `master_psk`; no bundle required; HKDF re-derives per epoch |

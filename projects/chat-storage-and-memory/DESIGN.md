@@ -167,6 +167,7 @@ Seq counters and session epochs are keyed to **`ChatTargetKey`**, not `thread_id
 | `session_epoch` | chat target | Increment on compromise recovery, full device reset, or explicit new secure chat (D014) |
 | `master_psk_b64` | chat target | E2E only (`channel=e2e`); `NULL` until PSK installed (D084) |
 | `psk_fingerprint` | chat target | E2E only; BLAKE2b display (E011) |
+| `psk_verified_at` | chat target | E2E only; unix ms when user confirmed OOB fingerprint (E011); send gate |
 | `retired_psks_json` | chat target | E2E only; retired `(epoch, master_psk)` entries after `rotate_psk` (E018) |
 
 Persist in **`profile.db` → `chat_targets`** (D047), updated under the same writer mutex as `outbox`.
@@ -473,6 +474,7 @@ CREATE TABLE chat_targets (
   next_outgoing_seq INTEGER NOT NULL DEFAULT 1,
   master_psk_b64 TEXT,               -- e2e only; NULL until PSK installed (D084)
   psk_fingerprint TEXT,            -- e2e only; BLAKE2b display (E011)
+  psk_verified_at INTEGER,           -- e2e only; unix ms; NULL until OOB confirm (E011)
   retired_psks_json TEXT,            -- e2e only; JSON array [{epoch, master_psk_b64, retired_at}] (E018)
   PRIMARY KEY (peer_identity_kind, peer_identity_value, channel)
 );

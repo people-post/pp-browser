@@ -32,7 +32,7 @@ High-assurance **symmetric E2E** for direct chat: manual 256-bit PSK, HKDF sessi
 
 _All planning questions (O001–O006) resolved — see [DECISIONS.md](DECISIONS.md)._
 
-**Resolved:** ciphertext field → `body.e2e.payload_b64` (E009); AEAD plaintext → binary `ChatPayload` (E010/D087); PSK entry UX → paste base64 (E011); rich OOB bundle on rotation (E020/D086); group E2E → out of scope (E012); automated key agreement → optional hybrid KEM in c4 (E013); Ed25519 sign bytes → fixed binary layout + BLAKE2b body hash (E014); HKDF `info` → `channel` + `epoch` only (E015); peer signing keys → relay directory + `PeerSigningKeyStore` + OOB fingerprint at add (E016); relay-user identity value → `relay:<opaque_id>` (E017 / D082); retired PSK ledger on `rotate_psk` (E018 / D083); PSK store in `profile.db` `chat_targets` (E008 / D084); passive epoch advance (E019 / D085).
+**Resolved:** ciphertext field → `body.e2e.payload_b64` (E009); AEAD plaintext → binary `ChatPayload` (E010/D087); PSK establishment UX → generate, export, import, verify (E011); rich OOB bundle on rotation (E020/D086); group E2E → out of scope (E012); automated key agreement → optional hybrid KEM in c4 (E013); Ed25519 sign bytes → fixed binary layout + BLAKE2b body hash (E014); HKDF `info` → `channel` + `epoch` only (E015); peer signing keys → relay directory + `PeerSigningKeyStore` + OOB fingerprint at add (E016); relay-user identity value → `relay:<opaque_id>` (E017 / D082); retired PSK ledger on `rotate_psk` (E018 / D083); PSK store in `profile.db` `chat_targets` (E008 / D084); passive epoch advance (E019 / D085).
 
 ## d0 exit
 

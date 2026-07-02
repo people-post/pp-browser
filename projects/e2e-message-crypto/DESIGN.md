@@ -60,8 +60,23 @@
 ### Master PSK
 
 - **Size:** 32 bytes (256 bits) from CSPRNG.
-- **Distribution:** Out-of-band — in-person QR, copy-paste over an already-trusted channel, etc. **Initial setup:** raw base64 PSK (E011). **`rotate_psk`:** **`pp-browser-psk-bundle-v1`** JSON with active key + up to **`kMaxRetiredPskEpochs` (8)** retired epochs (E020/D086).
-- **Verification:** Both parties display `fingerprint = BLAKE2b-256(master_psk)` as grouped hex (e.g. `a1b2-c3d4-…`); must match before sending E2E content.
+- **Distribution:** Out-of-band — copy-paste over an already-trusted channel, in-person, etc. **Initial setup (E011):** either peer generates; generating side **exports** raw base64 + fingerprint; peer **imports** paste. **`rotate_psk`:** initiator **exports** **`pp-browser-psk-bundle-v1`** JSON; innocent peer **imports** — active key + up to **`kMaxRetiredPskEpochs` (8)** retired epochs (E020/D086).
+- **Verification:** Both parties display `fingerprint = BLAKE2b-256(master_psk)` as grouped hex (e.g. `a1b2-c3d4-…`); compare OOB, then user explicitly confirms before first E2E send. Persist **`psk_verified_at`** on `chat_targets`; clear on PSK replace/import/rotation.
+
+**Initial establishment flow (epoch 1):**
+
+```
+Alice (starts Secure message)          Bob
+  | Generate 32 bytes (CSPRNG)           |
+  | Show base64 + fingerprint + Copy     |
+  | Share OOB (Signal, in-person, …)     |
+  |                                      | Import (paste base64)
+  |                                      | Same fingerprint shown
+  | Both confirm fingerprint OOB         |
+  | Either may send first E2E message    |
+```
+
+No wire-protocol initiator — only UX default (Secure-message starter offers Generate first). Both peers MUST hold the same bytes before relying on E2E (E015).
 
 ### Session key derivation (E015)
 
@@ -76,7 +91,7 @@ session_key = HKDF-SHA256(
 - **`channel`:** `e2e` only uses derived keys for body encryption; `public_relay` has no PSK session.
 - **`session_epoch`:** uint32, bumped on key rotation / compromise recovery ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md)). New epoch → new `session_key`; seq resets to 1 for that epoch.
 - **Pair scoping:** `master_psk` is unique per **`ChatTargetKey`** (one OOB secret per peer identity + channel). HKDF `info` intentionally omits identity strings so **both peers derive the same `session_key`** from the shared `master_psk` + `(channel, epoch)` — see [E015](DECISIONS.md#e015--hkdf-info-channel--epoch-only-option-a).
-- **On-disk:** `master_psk_b64`, `psk_fingerprint`, and `retired_psks_json` live on **`profile.db` → `chat_targets`** (E008/D084) — same PK as seq/epoch.
+- **On-disk:** `master_psk_b64`, `psk_fingerprint`, `psk_verified_at` (E011), and `retired_psks_json` live on **`profile.db` → `chat_targets`** (E008/D084) — same PK as seq/epoch.
 
 ### Chat target identity (D056, D079)
 
@@ -334,6 +349,7 @@ PSK material is **not** a separate JSON file. It lives on **`profile.db` → `ch
 |--------|------|-------|
 | `master_psk_b64` | TEXT NULL | RFC 4648 base64, 32-byte key; `NULL` until PSK installed (`e2e` only) |
 | `psk_fingerprint` | TEXT NULL | BLAKE2b-256 display string (E011); `NULL` when no PSK |
+| `psk_verified_at` | INTEGER NULL | Unix ms when user confirmed OOB fingerprint match (E011); `NULL` until verified; cleared on PSK replace/import/rotation |
 | `retired_psks_json` | TEXT NULL | JSON array of `{ epoch, master_psk_b64, retired_at }` after **`rotate_psk`** (E018); max **`kMaxRetiredPskEpochs` (8)** entries (D086/E020); `NULL` or `[]` otherwise |
 
 Example `retired_psks_json` value:
@@ -370,7 +386,7 @@ Used for **`rotate_psk`** export/import and multi-hop catch-up (O006). Not on th
 |-----------|----------|
 | **Export** (initiator) | After local `rotate_psk`: `active_epoch`, new `master_psk_b64`, + up to **8** retired epochs — most recent tail before active |
 | **Import** (innocent peer) | Validate (≤ **`kMaxPskBundleBytes` 4 KiB**); merge retired into `retired_psks_json`; set active PSK + `session_epoch`; reset seq; cancel old-epoch pending (D086) |
-| **Initial setup** | Raw base64 (E011) ≡ bundle with `active_epoch: 1`, empty `retired_epochs[]` |
+| **Initial setup** | Generate + export raw base64 (E011) on one peer; import on other ≡ bundle with `active_epoch: 1`, empty `retired_epochs[]` |
 
 If peer rotated more than **8** times before import, epochs outside the retired tail may not decrypt from relay backfill — disclose on import.
 
@@ -390,7 +406,7 @@ If peer rotated more than **8** times before import, epochs outside the retired 
 | `MessageCipher.h/.cpp` | AEAD encrypt/decrypt |
 | `EncryptedPayload.h/.cpp` | Blob codec + base64 |
 | `ReplayWindow.h/.cpp` | Seq acceptance helper |
-| `IPskSessionStore.h` | Session CRUD + `ResolveMasterPskForEpoch(epoch)` (E018) + **`ImportPskBundle` / `ExportPskBundle`** (E020) — interface in `base/crypto` |
+| `IPskSessionStore.h` | Session CRUD + **`GenerateMasterPsk()`** (E011) + `ResolveMasterPskForEpoch(epoch)` (E018) + **`ImportPskBundle` / `ExportPskBundle`** (E020) + **`MarkPskVerified()`** / **`IsPskVerified()`** (E011) — interface in `base/crypto` |
 | `SqlitePskSessionStore.h/.cpp` | v1 impl in `feature/messaging/` — reads/writes `chat_targets` PSK columns (E008/D084) |
 
 **Related (not in `base/crypto`):** **`PeerSigningKeyStore`** in `base/people/` — Ed25519 verify key cache per communicating identity (E016); uses same BLAKE2b fingerprint helper as PSK.

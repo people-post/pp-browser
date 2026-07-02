@@ -93,24 +93,26 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — superseded `sessions.json`; columns on `chat_targets` (D084).  
-**Decision:** PSK material lives in **`profile.db` → `chat_targets`** alongside `session_epoch` and `next_outgoing_seq` — keyed by **`ChatTargetKey`** PK (D047/D084). Columns: `master_psk_b64`, `psk_fingerprint`, `retired_psks_json` (`e2e` channel only; `NULL` on `public_relay`). **`IPskSessionStore`** in `base/crypto` is the seam; v1 default impl **`SqlitePskSessionStore`** in `feature/messaging/` reads/writes those columns under the **`profile.db` writer mutex** (same txn as epoch bump). No `profiles/{id}/crypto/sessions.json`. At-rest risk class matches today's `encrypted_private_key_b64` misnomer in `IdentityStore`; OS keychain backend is follow-up, not c1 blocker.  
+**Decision:** PSK material lives in **`profile.db` → `chat_targets`** alongside `session_epoch` and `next_outgoing_seq` — keyed by **`ChatTargetKey`** PK (D047/D084). Columns: `master_psk_b64`, `psk_fingerprint`, `psk_verified_at` (E011), `retired_psks_json` (`e2e` channel only; `NULL` on `public_relay`). **`IPskSessionStore`** in `base/crypto` is the seam; v1 default impl **`SqlitePskSessionStore`** in `feature/messaging/` reads/writes those columns under the **`profile.db` writer mutex** (same txn as epoch bump). No `profiles/{id}/crypto/sessions.json`. At-rest risk class matches today's `encrypted_private_key_b64` misnomer in `IdentityStore`; OS keychain backend is follow-up, not c1 blocker.  
 **Rationale:** Crypto session is per chat target, not per thread shell; colocating PSK with seq/epoch avoids cross-file races on epoch bump and survives delete/recreate of `local_thread_id`.  
 **Alternatives:** `sessions.json` sidecar (rejected — dual-store sync); PSK in `thread.db` (rejected — shell is ephemeral); block c1 on keychain integration.
 
 ---
 
-## E011 — PSK entry UX v1: paste base64
+## E011 — PSK establishment UX v1: generate, export, import, verify
 
 **Date:** 2026-07-02  
-**Updated:** 2026-07-02 — initial setup; rotation uses E020 bundle.  
-**Decision:** Phase **c3** PSK import accepts:
+**Updated:** 2026-07-02 — bilateral epoch-1 flow (generation + export + send gate); rotation uses E020 bundle.  
+**Decision:** Phase **c3** PSK establishment:
 
-1. **Initial setup (epoch 1):** paste **raw base64** — 32-byte key, standard base64 (44 chars, optional `=` padding). App decodes, stores via **`IPskSessionStore`** into **`chat_targets.master_psk_b64`** (+ `psk_fingerprint`), `session_epoch = 1` (or leaves epoch unchanged when reinstalling same target).
-2. **`rotate_psk` / multi-hop catch-up:** paste **`pp-browser-psk-bundle-v1`** JSON ([E020](#e020--rich-oob-psk-bundle-v1)) — active key + bounded retired tail (D086).
+1. **Generate (either peer):** 32 bytes from CSPRNG (`randombytes_buf`). **Either peer may generate** — cryptographically equivalent; both peers MUST hold identical bytes (E015). **UX default:** device starting **Secure message** offers **Generate new key**; peer uses **Import**. Import-only path when peer already generated elsewhere.
+2. **Export (epoch 1):** show **raw RFC 4648 base64** (44 chars, optional `=` padding) + **Copy** + BLAKE2b fingerprint of active `master_psk` — same encoding as import. QR deferred.
+3. **Import:** paste raw base64 → decode → store via **`IPskSessionStore`** into **`chat_targets.master_psk_b64`** (+ `psk_fingerprint`), `session_epoch = 1` (or leave epoch unchanged when reinstalling same target). Clear **`psk_verified_at`** on import.
+4. **`rotate_psk` / multi-hop catch-up:** initiator **exports**; innocent peer **imports** **`pp-browser-psk-bundle-v1`** JSON ([E020](#e020--rich-oob-psk-bundle-v1)) — active key + bounded retired tail (D086). Clear **`psk_verified_at`** on bundle import; show active fingerprint.
+5. **Verify before first send:** user MUST compare fingerprint OOB with peer, then explicitly confirm (**"I've verified this fingerprint with my contact"**). E2E compose/send disabled until PSK installed **and** confirmed. Persist **`psk_verified_at`** (unix ms) on **`chat_targets`**; clear on PSK replace, import, or **`rotate_psk`**. Fingerprint display alone is insufficient (contrast E016 signing keys — directory-backed, display-only in v1).
 
-Display **BLAKE2b fingerprint** of the **active** `master_psk` for out-of-band verification with the peer.  
-**Rationale:** Minimal UI for first contact; rich bundle fixes O006 without a second wire protocol.  
-**Alternatives:** Paste fingerprint + confirm (no raw key paste); QR scan (deferred UX — bundle-friendly).
+**Rationale:** Symmetric shared PSK; minimal OOB surface (raw base64 matches E020 initial-contact equivalence); explicit confirm closes TOFU gap where PSK has no directory source of truth.  
+**Alternatives:** Initiator-only generation (rejected — unnecessary constraint); JSON bundle for epoch 1 (rejected — heavier than needed); send without verify step (rejected — no trust anchor beyond OOB); paste fingerprint + confirm without raw key paste (rejected); QR scan (deferred UX — bundle-friendly).
 
 ---
 
@@ -126,7 +128,7 @@ Display **BLAKE2b fingerprint** of the **active** `master_psk` for out-of-band v
 ## E013 — Optional hybrid KEM for automated PSK setup in c4
 
 **Date:** 2026-07-02  
-**Decision:** Phase **c4** adds **optional automated key agreement** via hybrid **X25519 + ML-KEM-768**; shared secret feeds HKDF as `master_psk` input (same salt/info labels as manual PSK). **Manual OOB paste** (E011) remains supported — users choose either path per contact. Classical-only KEM (X25519 or ECDH alone) is **not** permitted.  
+**Decision:** Phase **c4** adds **optional automated key agreement** via hybrid **X25519 + ML-KEM-768**; shared secret feeds HKDF as `master_psk` input (same salt/info labels as manual PSK). **Manual OOB establishment** (E011) remains supported — users choose either path per contact. Classical-only KEM (X25519 or ECDH alone) is **not** permitted.  
 **Rationale:** Improves UX for new E2E contacts without weakening PQ posture on agreement; on-wire AEAD format (E007/E010) unchanged; aligns c4 PQ library work with relay signature upgrade (E005).  
 **Alternatives:** Manual PSK only forever (simpler, no liboqs dependency).
 
