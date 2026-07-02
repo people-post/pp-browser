@@ -45,7 +45,7 @@
 // value into _variable_.  On error _TRY returns early so .value() is never
 // called with an error.
 #define _ASSERT_OUTCOME_SUCCESS_3(_result_, _variable_, _expression_) \
-  _ASSERT_OUTCOME_SUCCESS_TRY(_result_, _expression_)                  \
+  _ASSERT_OUTCOME_SUCCESS_TRY(_result_, _expression_);                 \
   auto _variable_ = std::move(_result_.value());
 
 #define _ASSERT_OUTCOME_SUCCESS_2(_variable_, _expression_) \
@@ -158,10 +158,10 @@
  * ASSERT_OUTCOME_SUCCESS(some_function());
  * @endcode
  */
-#define ASSERT_OUTCOME_SUCCESS(...) \
-  _GET_MACRO_OF_2(__VA_ARGS__,      \
-      _ASSERT_OUTCOME_SUCCESS_2,    \
-      _ASSERT_OUTCOME_SUCCESS_1)(__VA_ARGS__)
+#define ASSERT_OUTCOME_SUCCESS(...)                                    \
+  _OUTCOME_EXPAND(_GET_MACRO_OF_2(__VA_ARGS__,                         \
+      _ASSERT_OUTCOME_SUCCESS_2,                                       \
+      _ASSERT_OUTCOME_SUCCESS_1)(__VA_ARGS__))
 
 /**
  * @brief Checks that an expression resulted in an error.
@@ -182,10 +182,10 @@
  * ASSERT_OUTCOME_ERROR(some_function(), expected_error);
  * @endcode
  */
-#define ASSERT_OUTCOME_ERROR(...) \
-  _GET_MACRO_OF_2(__VA_ARGS__,    \
-      _ASSERT_OUTCOME_ERROR_2,    \
-      _ASSERT_OUTCOME_ERROR_1)(__VA_ARGS__)
+#define ASSERT_OUTCOME_ERROR(...)                                      \
+  _OUTCOME_EXPAND(_GET_MACRO_OF_2(__VA_ARGS__,                         \
+      _ASSERT_OUTCOME_ERROR_2,                                         \
+      _ASSERT_OUTCOME_ERROR_1)(__VA_ARGS__))
 
 /**
  * @brief Checks the success of an expression without terminating the test.
@@ -206,10 +206,10 @@
  * EXPECT_OUTCOME_SUCCESS(some_function());
  * @endcode
  */
-#define EXPECT_OUTCOME_SUCCESS(...) \
-  _GET_MACRO_OF_2(__VA_ARGS__,      \
-      _EXPECT_OUTCOME_SUCCESS_2,    \
-      _EXPECT_OUTCOME_SUCCESS_1)(__VA_ARGS__)
+#define EXPECT_OUTCOME_SUCCESS(...)                                  \
+  _OUTCOME_EXPAND(_GET_MACRO_OF_2(__VA_ARGS__,                         \
+      _EXPECT_OUTCOME_SUCCESS_2,                                       \
+      _EXPECT_OUTCOME_SUCCESS_1)(__VA_ARGS__))
 
 /**
  * @brief Checks that an expression resulted in an error without terminating the
@@ -233,11 +233,11 @@
  * EXPECT_OUTCOME_ERROR(result, some_function(), expected_error);
  * @endcode
  */
-#define EXPECT_OUTCOME_ERROR(...) \
-  _GET_MACRO_OF_3(__VA_ARGS__,    \
-      _EXPECT_OUTCOME_ERROR_3,    \
-      _EXPECT_OUTCOME_ERROR_2,    \
-      _EXPECT_OUTCOME_ERROR_1)(__VA_ARGS__)
+#define EXPECT_OUTCOME_ERROR(...)                                    \
+  _OUTCOME_EXPAND(_GET_MACRO_OF_3(__VA_ARGS__,                         \
+      _EXPECT_OUTCOME_ERROR_3,                                         \
+      _EXPECT_OUTCOME_ERROR_2,                                         \
+      _EXPECT_OUTCOME_ERROR_1)(__VA_ARGS__))
 
 // ------ Obsolete ------
 // TODO(xDimon): remove it at release
