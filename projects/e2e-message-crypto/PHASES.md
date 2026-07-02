@@ -76,13 +76,13 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 
 ## Phase c2 — Messaging integration
 
-**Goal:** E2E channel encrypts body on send, decrypts on poll; public relay unchanged.
+**Goal:** E2E direct tiers encrypt body on send, decrypt on poll (D090).
 
 **Depends on:** c1; [chat-storage v2b](../chat-storage-and-memory/PHASES.md) (channel split); [chat-storage v6](../chat-storage-and-memory/PHASES.md) (`sender_seq`, `session_epoch` on envelope).
 
 ### Envelope and types
 
-- [ ] `RelayMessageBody`: `body.e2e.payload_b64` + `body.content_b64` (binary ChatPayload) per E009/E010/D087
+- [ ] `RelayMessageBody`: `body.e2e.payload_b64` only per E009/E010/D090
 - [ ] `P2pMessagingService`: branch on `channel == e2e`
 - [ ] Encrypt: `ChatPayloadCodec::Encode` → AAD → `MessageCipher` → `body.e2e.payload_b64`
 - [ ] Decrypt on poll → `ChatPayloadCodec::Decode` → `ThreadMessage`
@@ -137,11 +137,12 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 
 ---
 
-## Explicitly out of scope (all phases unless new decision)
+## Explicitly out of scope (c1–c3 unless noted)
 
 - Chaos-based encryption
 - Replacing BoringSSL with libsodium globally
-- Group E2E / MLS (E012 — out of scope)
+- **Group E2E** — `[post-v1]` pairwise sender-keys (E022)
+- **Public tier auto-key** — after c3 (E021/E013)
 - libp2p direct transport crypto rewrite
 - Encrypting `identity.json` at rest (separate project)
 
@@ -150,8 +151,9 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 ```
 d0 (this project, design)
   → c1 (base/crypto)
-  → chat-storage v2b (channel split)  ─┐
-  → chat-storage v6 (seq + envelope)  ─┼→ c2 (wire-up)
-  → c3 (UX)                             ─┘
-  → c4 (PQ, later)
+  → chat-storage v2b (tier split)  ─┐
+  → chat-storage v6 (seq + envelope)  ─┼→ c2 (wire-up, private e2e)
+  → c3 (private tier UX)              ─┘
+  → c3+ / c4 (e2e_public auto-key, then PQ)
+  → group E2E (E022, post-v1)
 ```

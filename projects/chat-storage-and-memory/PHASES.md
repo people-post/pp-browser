@@ -13,7 +13,7 @@ Check boxes when work is **merged and verified**. Add sub-items freely; keep pha
 | Phase | Primary DESIGN sections | Maturity shipped |
 |-------|-------------------------|------------------|
 | v2a | [Data model](DESIGN.md#data-model-target), [On-disk layout](DESIGN.md#on-disk-layout-target--d025-d028-d035-d036), [Store interface](DESIGN.md#store-interface-target), [Clear / forget](DESIGN.md#clear--forget-semantics-user-facing--d024), [Resource bounds](DESIGN.md#resource--trust-bounds-d029d033) | `[v1]` SQLite + transcript |
-| v2b | [Thread / channel](DESIGN.md#thread), [UI sidebar](DESIGN.md#sidebar-v1) | `[v1]` public vs E2E split |
+| v2b | [Thread / tier](DESIGN.md#three-chat-tiers-d089), [UI sidebar](DESIGN.md#sidebar-v1) | `[v1]` private vs public E2E tier split |
 | v3 | [Durable memory](DESIGN.md#durable-memory-per-thread), [Three layers](DESIGN.md#three-layers-transcript-vs-context-vs-memory) | `[v1]` compaction + forget |
 | v4 | ChatPayload **validation** + transport column (wire unchanged since v2a-p2p, D063) | `[v1]` text/system + transport column |
 | v6 | [P2P sync](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity recovery](DESIGN.md#integrity-recovery-d038), [Durable outbox](DESIGN.md#durable-outbox-d017) | `[v1]` E2E tail + gap + user sync |
@@ -21,7 +21,7 @@ Check boxes when work is **merged and verified**. Add sub-items freely; keep pha
 | post-v6b | [`@ai` modes](DESIGN.md#ai-in-direct-threads-d012) | Shared `@ai+` / `@ai++` |
 | post-v6c | [P2P sync — scroll backfill](DESIGN.md#p2p-sync-e2e-only--d045) | Scroll trigger on D058 |
 | post-v6d | [Transport provenance](DESIGN.md#transport-provenance-d051) | Per-message badge UI |
-| post-v6e | [Relaxed ingest](DESIGN.md#post-v1-relaxed-ingest--continue-anyway-d046-extension) | Continue anyway (optional) |
+| post-v6e | [Relaxed ingest](DESIGN.md#relaxed-ingest--continue-anyway--public-direct-and-group-d046) | Public direct + group tier defaults |
 
 ---
 
@@ -100,11 +100,11 @@ Existing foundation this project builds on.
 
 ### v2a-p2p — Direct messaging storage
 
-**Goal:** `chat_targets`, outbox, per-thread dedup, `FindOrCreateDirectThread` (`public_relay` default until v2b E2E UI). **Final relay wire shape** (D063) — no second cutover at v4.
+**Goal:** `chat_targets`, outbox, per-thread dedup, `FindOrCreateDirectThread`. **Final E2E relay wire shape** (D063/D090) — no second cutover at v4.
 
 #### Wire + C++ types (D063, D066, D072)
 
-- [ ] **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route`; **`body.content_b64`** minimal binary ChatPayload (`text` only — D087)
+- [ ] **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route`; **`body.e2e.payload_b64`** (D090)
 - [ ] **`ChatHistoryRequest` / `ChatHistoryResponse`** — shared structs per [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) (D072)
 - [ ] Send/post and poll ingest use new envelope; **reject** legacy `thread_id`, flat `body.text`, unknown **`envelope_version`**
 - [ ] **Grep gate:** no `envelope.thread_id` in `src/feature/` or `tests/` (legacy rejection tests excepted)
@@ -130,34 +130,34 @@ Existing foundation this project builds on.
 
 ---
 
-## Phase v2b — Public vs E2E channel split
+## Phase v2b — Private vs public E2E tier split (D089)
 
-**Goal:** Same contact can have two isolated direct threads.
+**Goal:** Same contact can have two isolated **E2E** direct threads — private (strict) and public (UX-first target).
 
-**Design refs:** [Thread / channel](DESIGN.md#thread), [Sidebar `[v1]`](DESIGN.md#sidebar-v1), [Chat target](DESIGN.md#chat-target-long-lived-direct-p2p).
+**Design refs:** [Three chat tiers](DESIGN.md#three-chat-tiers-d089), [Thread](DESIGN.md#thread), [Sidebar `[v1]`](DESIGN.md#sidebar-v1), [Chat target](DESIGN.md#chat-target-long-lived-direct-p2p).
 
 ### Model
 
-- [ ] Add `ThreadChannel` enum (`public_relay`, `e2e`)
-- [ ] `channel` on `Thread` + `profile.db` `threads`; `encrypted = (channel == e2e)`
+- [ ] Add `ThreadChannel` enum (`e2e`, `e2e_public`)
+- [ ] `channel` on `Thread` + `profile.db` `threads`; `encrypted = (channel ∈ { e2e, e2e_public })`
 - [ ] `FindOrCreateDirectThread(ChatTargetKey)` — replace single-key lookup (D056)
 - [ ] Wipe any remaining legacy JSON thread files (D016)
 
 ### Creation flows
 
-- [ ] Contact action “Message” specifies channel (or default public until E2E exists)
-- [ ] Future: “Secure message” creates `e2e` thread when crypto ready
+- [ ] Contact action **Message** → `e2e_public`; **Secure message** → `e2e`
+- [ ] **Secure message** → `e2e` (private direct)
 
 ### UI
 
-- [ ] Sidebar **flat list** with **Public / Private channel badge** per direct row (D023) — no collapsible groups
-- [ ] E2E shell styling when `channel=e2e`
+- [ ] Sidebar **flat list** with **Public / Private** tier badge per direct row (D023)
+- [ ] E2E shell styling for both tiers (`.chat-shell--e2e` / tier variant)
 
 ### Memory boundary
 
-- [ ] AI context and memory never cross channels (per `thread_id` / `thread.db`)
+- [ ] AI context and memory never cross tiers (per `thread_id` / `thread.db`)
 
-**Exit criteria:** Two thread dirs + DBs for one contact; sidebar shows channel badge on each row.
+**Exit criteria:** Two thread dirs + DBs for one contact (private + public tiers); sidebar shows tier badge on each row.
 
 ---
 
@@ -198,14 +198,14 @@ Existing foundation this project builds on.
 
 **Goal:** Full **ChatPayload validator** (D026, D050) on the **same wire shape** shipped in v2a-p2p (D063) — no envelope break. Strip remote `content_rml`; persist `transport` (badge UI in post-v6d).
 
-**Design refs:** [ChatPayload `[v1]`](DESIGN.md#chatpayload-unified-message-body--d026), [Wire cutover phasing](DESIGN.md#wire-cutover-phasing-d063), [Transport `[v1]`](DESIGN.md#transport-provenance-d051), [Public relay ingest](DESIGN.md#public-relay-ingest-d045).
+**Design refs:** [ChatPayload `[v1]`](DESIGN.md#chatpayload-unified-message-body--d026), [Wire cutover phasing](DESIGN.md#wire-cutover-phasing-d063), [Transport `[v1]`](DESIGN.md#transport-provenance-d051), [Three chat tiers](DESIGN.md#three-chat-tiers-d089).
 
 ### Message schema
 
 - [ ] `content_type` + `payload` on **`ThreadMessage`** C++ + store read/write; **`system`** type support
 - [ ] ChatPayload binary codec **validator** hardening (D029, D050) — unknown types rejected on ingest
 - [ ] Reject oversize payload on send; strip wire `content_rml` on ingest (D030)
-- [ ] Relay `body.content_b64` for public; envelope signing covers binary body (E014/D087)
+- [ ] Direct wire: **`body.e2e.payload_b64` only**; reject `public_relay` / `content_b64` (D090)
 - [ ] `transport` column; set in send/receive paths (no per-message badge UI yet, D051)
 
 ### LLM / display
@@ -218,13 +218,13 @@ Existing foundation this project builds on.
 - [ ] Dedup by `message_id` per thread (`thread.db` PK, D034)
 - [ ] Ingest: **participant check** on `sender_contact_id` (D027)
 
-**Exit criteria:** Structured text payload survives restart; remote `content_rml` stripped; public ingest uses UUID dedup.
+**Exit criteria:** Structured text payload survives restart; remote `content_rml` stripped; ingest branches on tier (D089).
 
 ---
 
-## Phase v6 — E2E sender seq, tail sync, gap repair, and user sync
+## Phase v6 — Private direct seq, tail sync, gap repair, and user sync
 
-**Goal:** **E2E direct** chat detects missing peer messages and syncs reliably. Public relay unchanged (D045). Send failure keeps local copy (D017); peer sync fills **receive-side** gaps (D058–D059).
+**Goal:** **Private direct (`e2e`)** chat detects missing peer messages and syncs reliably. **`e2e_public`** uses same sync machinery when that tier ships (relaxed ingest — D046). Send failure keeps local copy (D017); peer sync fills **receive-side** gaps (D058–D059).
 
 **Depends on:** v2b, v4; relay `GET /v1/chat-targets/messages` (D027, D056) with **chat-target authorization**; libp2p history protocol (D060) when direct transport available.
 

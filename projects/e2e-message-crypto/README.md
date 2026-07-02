@@ -3,11 +3,11 @@
 **Status:** Design baseline complete (d0) — ready for c1 implementation  
 **Owner:** Hongwei + agents  
 **Stable refs:** [MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
-**Related project:** [chat-storage-and-memory](../chat-storage-and-memory/) (channel split, `ChatPayload`, `sender_seq`, ingest rules, identity-keyed `ChatTargetKey` D079)
+**Related project:** [chat-storage-and-memory](../chat-storage-and-memory/) (three tiers D089, `ChatPayload`, `sender_seq`, ingest rules, identity-keyed `ChatTargetKey` D079)
 
 ## One-line goal
 
-High-assurance **symmetric E2E** for direct chat: manual 256-bit PSK, HKDF session keys, XChaCha20-Poly1305 AEAD, `body.e2e.payload_b64` wire format, binary `ChatPayload` plaintext (E010/D087).
+High-assurance **symmetric E2E** for all P2P tiers: manual PSK (private), automated keys (public), pairwise sender-keys (group); HKDF session keys, XChaCha20-Poly1305 AEAD, `body.e2e.payload_b64` wire format, binary `ChatPayload` plaintext (E010/D087). See [E021](DECISIONS.md#e021--three-chat-tiers-both-direct-tiers-e2e-d089).
 
 ## Documents in this folder
 
@@ -25,14 +25,15 @@ High-assurance **symmetric E2E** for direct chat: manual 256-bit PSK, HKDF sessi
 | d0 | Design baseline (this folder) | **Complete** |
 | c1 | `base/crypto` groundwork (libsodium, no messaging wiring) | Not started |
 | c2 | Messaging integration (encrypt body, decrypt on poll) | Not started |
-| c3 | Key distribution UX (import, fingerprint, rotation) | Not started |
+| c3 | Key distribution UX — **private tier** (import, fingerprint, rotation) | Not started |
+| c3+ | **Public tier** auto-key (`e2e_public`) | Not scheduled |
 | c4 | Post-quantum migration (hybrid KEM / signatures) | Deferred |
 
 ## Design decisions
 
 _All planning questions (O001–O006) resolved — see [DECISIONS.md](DECISIONS.md)._
 
-**Resolved:** ciphertext field → `body.e2e.payload_b64` (E009); AEAD plaintext → binary `ChatPayload` (E010/D087); PSK establishment UX → generate, export, import, verify (E011); rich OOB bundle on rotation (E020/D086); group E2E → out of scope (E012); automated key agreement → optional hybrid KEM in c4 (E013); Ed25519 sign bytes → fixed binary layout + BLAKE2b body hash (E014); HKDF `info` → `channel` + `epoch` only (E015); peer signing keys → relay directory + `PeerSigningKeyStore` + OOB fingerprint at add (E016); relay-user identity value → `relay:<opaque_id>` (E017 / D082); retired PSK ledger on `rotate_psk` (E018 / D083); PSK store in `profile.db` `chat_targets` (E008 / D084); passive epoch advance (E019 / D085).
+**Resolved:** three tiers E021/D089/D090; E023 no `public_relay`; ciphertext field → `body.e2e.payload_b64` (E009); AEAD plaintext → binary `ChatPayload` (E010/D087); private PSK UX → generate, export, import, verify (E011); public auto-key → E013/O007; group pairwise → E022; rich OOB bundle on rotation (E020/D086); Ed25519 sign bytes → fixed binary layout + BLAKE2b body hash (E014); HKDF `info` → `channel` + `epoch` only (E015); peer signing keys → relay directory + `PeerSigningKeyStore` + OOB fingerprint at add (E016); relay-user identity value → `relay:<opaque_id>` (E017 / D082); retired PSK ledger on `rotate_psk` (E018 / D083); PSK store in `profile.db` `chat_targets` (E008 / D084); passive epoch advance (E019 / D085).
 
 ## d0 exit
 

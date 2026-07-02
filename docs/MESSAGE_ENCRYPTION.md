@@ -1,6 +1,6 @@
 # Message encryption (E2E)
 
-Normative spec for symmetric end-to-end encryption of direct chat message bodies on the `e2e` channel. Planning, phases, and ADRs live in [projects/e2e-message-crypto/](../projects/e2e-message-crypto/).
+Normative spec for symmetric end-to-end encryption of P2P chat message bodies. **Three tiers** (private direct, public direct, group) — all product P2P uses ciphertext on the wire ([D089](../projects/chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021), [E021](../projects/e2e-message-crypto/DECISIONS.md#e021--three-chat-tiers-both-direct-tiers-e2e-d089)). Planning, phases, and ADRs live in [projects/e2e-message-crypto/](../projects/e2e-message-crypto/).
 
 **Related:** [P2P_MESSAGING.md](P2P_MESSAGING.md), [chat-storage WIRE_SCHEMAS.md](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md), [CONFIGURATION.md](CONFIGURATION.md).
 
@@ -8,11 +8,14 @@ Normative spec for symmetric end-to-end encryption of direct chat message bodies
 
 ## Overview
 
-- **256-bit pre-shared key (PSK)** per `ChatTargetKey`, distributed out-of-band with fingerprint verification.
+- **256-bit pre-shared key (PSK)** per `ChatTargetKey` on direct tiers (`e2e`, `e2e_public`).
+- **Private direct (`e2e`):** PSK distributed out-of-band with mandatory fingerprint verification (E011).
+- **Public direct (`e2e_public`):** automated key setup (E013 — post c3).
 - **HKDF-SHA256** derives per-epoch session keys from the PSK.
 - **XChaCha20-Poly1305** (libsodium AEAD) encrypts the message body with canonical associated data (AAD).
 - **Ed25519** signs the outer relay envelope (classical; PQ hybrid planned separately).
-- Relay sees ciphertext on `e2e`; plaintext **binary `ChatPayload`** (D087) is inside the AEAD layer only.
+- Relay sees ciphertext on both direct tiers; plaintext **binary `ChatPayload`** (D087) is inside the AEAD layer only.
+- **No `public_relay`** — reject plaintext direct wire ([D090](../projects/chat-storage-and-memory/DECISIONS.md#d090--no-public_relay--plaintext-direct-wire), [E023](../projects/e2e-message-crypto/DECISIONS.md#e023--no-public_relay-wire-value-d090)).
 
 ## Threat model (v1)
 
@@ -52,7 +55,7 @@ session_key = HKDF-SHA256(
 )
 ```
 
-- `channel`: `e2e` for body encryption; `public_relay` has no PSK session.
+- `channel`: `e2e` (private) or `e2e_public` (public) — both encrypted (D090).
 - `session_epoch`: uint32; bumped on rotation. Both peers derive the same key from shared PSK + `(channel, epoch)` — identity strings are **not** in HKDF `info`.
 - PSK columns live on `profile.db` → `chat_targets` (same row as seq/epoch).
 
@@ -70,7 +73,7 @@ session_key = HKDF-SHA256(
 | Offset | Size | Field |
 |--------|------|-------|
 | 0 | 1 | `aad_version` = `1` |
-| 1 | 1 | `channel`: `0` = public_relay, `1` = e2e |
+| 1 | 1 | `channel`: `0` = `e2e`, `1` = `e2e_public` (E023) |
 | | var | `peer_contact_id` — **LenUtf8** |
 | | var | `message_id` — **LenUtf8** |
 | | var | `sender_contact_id` — **LenUtf8** |
@@ -84,14 +87,13 @@ session_key = HKDF-SHA256(
 
 ## AEAD plaintext (E010)
 
-Binary **`ChatPayload` v1** — same bytes as public **`body.content_b64`** after base64 decode. Layout: [WIRE_SCHEMAS § ChatPayload](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088).
+Binary **`ChatPayload` v1** — AEAD plaintext. Layout: [WIRE_SCHEMAS § ChatPayload](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088).
 
 **Vector A fixture** (`text="Hello"`, plain default):
 
 | Field | Value |
 |-------|-------|
 | **`bytes` (hex)** | `0100000000000000000548656c6c6f` |
-| **`content_b64`** | `AQAAAAAAAAAABUhlbGxv` |
 
 Max decrypted size: **128 KiB** (`kMaxE2ePlaintextBytes`). Check length before `ChatPayloadCodec::Decode`; reject trailing bytes.
 
@@ -124,12 +126,9 @@ API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = non
 }
 ```
 
-| Channel | `body` shape |
-|---------|--------------|
-| `public_relay` | `{ "content_b64": "…" }` |
-| `e2e` | `{ "e2e": { "payload_b64": "…" } }` |
+| `e2e` / `e2e_public` | `{ "e2e": { "payload_b64": "…" } }` |
 
-Reject envelopes with `thread_id` or unknown `envelope_version`.
+Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or unknown `envelope_version`.
 
 ## Ed25519 canonical signing bytes (E014)
 
@@ -142,13 +141,10 @@ Then: `sign_version=1`, `envelope_version=1`, `route_kind`, `channel`, `timestam
 **Body hash:**
 
 ```
-body_hash = BLAKE2b-256( body_kind || payload_bytes )
+body_hash = BLAKE2b-256( 0x02 || decoded_e2e_blob_bytes )
 ```
 
-| Channel | `body_kind` | `payload_bytes` |
-|---------|-------------|-----------------|
-| `public_relay` | `0x01` | Raw bytes from base64 decode of `body.content_b64` |
-| `e2e` | `0x02` | Raw bytes from base64 decode of `body.e2e.payload_b64` |
+Only **`body_kind = 0x02`** (E2E ciphertext blob) — no plaintext path (D090).
 
 `signature` on wire: base64 over 64-byte Ed25519 signature.
 
@@ -187,20 +183,11 @@ Regenerate: `projects/e2e-message-crypto/tools/gen_sign_vectors.py`, `gen_aead_v
 | Public key (hex) | `03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8` |
 | Public key (base64) | `A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=` |
 
-### Ed25519 — `public_relay`
+Regenerate after E023 channel enum change: `projects/e2e-message-crypto/tools/gen_sign_vectors.py`, `gen_aead_vectors.py`, `chatpayload_codec.py`.
 
-Binary payload Vector A: `0100000000000000000548656c6c6f` (`content_b64`: `AQAAAAAAAAAABUhlbGxv`)
+### Ed25519 — `e2e` (private direct)
 
-| Field | Value |
-|-------|-------|
-| `message_id` | `550e8400-e29b-41d4-a716-446655440000` |
-| `sender_contact_id` | `relay:alice123` |
-| `timestamp` | `1719662400123` |
-| **`body_hash` (hex)** | `c3883ac60f3d527e364ecca8dd28144886dc12f00fbef22502ef0f24ce2f1c74` |
-| **`sign_bytes` (hex)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100000000019063ddd27b000000000000000000000000c3883ac60f3d527e364ecca8dd28144886dc12f00fbef22502ef0f24ce2f1c74000000000000002435353065383430302d653239622d343164342d613731362d343436363535343430303030000000000000000e72656c61793a616c696365313233` |
-| **`signature` (base64)** | `Gc6/4LugFNm7SKtGGicoUnUp9bWqJa6f71jYGSp+yUYn2UjdbkXwYpAz7fcSwrrwVSdrnxU98SveSAijpWsFDQ==` |
-
-### Ed25519 — `e2e`
+**Note:** E023 sets `e2e` → `channel = 0` in sign/AAD bytes. Regenerate fixtures before c1 tests lock.
 
 | Field | Value |
 |-------|-------|

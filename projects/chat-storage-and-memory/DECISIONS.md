@@ -36,8 +36,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## D004 — Separate threads per communicating identity and channel
 
 **Date:** 2026-06-27  
-**Updated:** 2026-07-02 — identity-keyed threads (D079).  
-**Decision:** Thread identity for direct chats is **`ChatTargetKey` = `(peer_identity_kind, peer_identity_value, channel)`**, not local `Contact.id` alone. Two thread records (and files) for the same **communicating identity** when both public and E2E exist. Same local **Contact** with two messaging identities → two unrelated threads.  
+**Updated:** 2026-07-02 — identity-keyed threads (D079); three tiers — both direct tiers E2E (D089).  
+**Decision:** Thread identity for direct chats is **`ChatTargetKey` = `(peer_identity_kind, peer_identity_value, channel)`**, not local `Contact.id` alone. Two thread records (and files) for the same **communicating identity** when both **`e2e_public`** and **`e2e`** exist (D089). Same local **Contact** with two messaging identities → two unrelated threads.  
 **Rationale:** Different crypto, transport, privacy UI, and AI memory boundaries; avoids mode-switch and identity-mix bugs.  
 **Alternatives:** One thread with per-message encryption flags; single thread with “mode switch” rewriting history; one thread per Contact regardless of identity (rejected — D079).
 
@@ -120,11 +120,11 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D013 — Strict ingest (E2E direct only)
+## D013 — Strict ingest (private direct only)
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — scope **E2E only** (D045); public relay UUID+timestamp; no relaxed ingest (D046).  
-**Decision:** In **`e2e` direct threads**, the receiver uses D013: normal, gap, soft compromised, hard reject. Below-floor → D037 silent discard. Soft failures → pause + choice sheet (D038, D046). **`public_relay`** direct: signature verify + participant check + UUID dedup — **no seq classifier**. Sync watermarks keyed by **`(peer, session_epoch)`** on E2E only.  
+**Updated:** 2026-07-02 — three tiers (D089); strict scope is **`e2e` private direct** only; **`e2e_public`** uses relaxed ingest (D046).  
+**Decision:** In **`e2e` (private direct) threads**, the receiver uses D013: normal, gap, soft compromised, hard reject. Below-floor → D037 silent discard. Soft failures → pause + choice sheet (D038, D046). **`e2e_public`** direct: same seq machinery as private but **relaxed policy defaults** (D046). Sync watermarks keyed by **`(peer, session_epoch)`** on both E2E direct tiers.  
 **Rationale:** Seq integrity where crypto matters; UUID dedup sufficient for public relay v1.  
 **Alternatives:** Strict ingest on both channels (original D013/D018).
 
@@ -170,13 +170,13 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## D018 — Ingest scope by channel (supersedes “strict on public”)
+## D018 — Ingest scope by tier (supersedes “strict on public”)
 
 **Date:** 2026-06-29  
-**Updated:** 2026-06-29 — public relay UUID+timestamp (D045); E2E keeps D013.  
-**Decision:** **E2E** direct: full D013 + D038 (recommended recovery only, D046). **Public relay** direct: UUID dedup, participant validation, signature verify — no seq sync or compromise UX.  
-**Rationale:** Channel-appropriate integrity cost.  
-**Alternatives:** Strict ingest on both (original D018).
+**Updated:** 2026-07-02 — three tiers (D089).  
+**Decision:** **`e2e` (private direct):** full D013 + D038 (strict only, D046). **`e2e_public`:** seq + sync with relaxed ingest default (D046). **`group`:** relaxed ingest when shipped (E022). Reject unknown direct channels (D090).  
+**Rationale:** Tier-appropriate integrity cost.  
+**Alternatives:** Strict ingest on all E2E tiers (rejected for public/group — D089).
 
 ---
 
@@ -254,7 +254,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-30 — minimal `text` payload in v2a-p2p wire (D063); v4 validator hardening.  
-**Decision:** One wire/disk payload shape in **`body.content_b64`** (binary ChatPayload — D087). **v2a-p2p** ships minimal **`text`** ChatPayload on wire (D063). **v4** validator accepts **`text`** and **`system`**; reject unknown `content_type` on inbound relay. **`[post-v1]`** rich types — [DESIGN.md § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).  
+**Decision:** One wire/disk payload shape: binary **ChatPayload** inside E2E AEAD plaintext (D087/D090). **v2a-p2p** ships **`body.e2e.payload_b64`** on direct wire (D063). **v4** validator accepts **`text`** and **`system`**; reject unknown `content_type` on inbound relay. **`[post-v1]`** rich types — [DESIGN.md § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).  
 **Rationale:** One parser path; wire lands with routing cutover; v4 deepens validation without second break.  
 **Alternatives:** All types in v1 (original D026); flat `body.text` until v4 (rejected — D063).
 
@@ -293,7 +293,7 @@ Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature
 | Limit | Value | Applies to |
 |-------|-------|------------|
 | `kMaxComposeTextBytes` | **64 KiB** | User composer `text` |
-| `kMaxChatPayloadBytes` | **64 KiB** | Serialized binary `ChatPayload` on `public_relay` (D087) |
+| `kMaxChatPayloadBytes` | **64 KiB** | Serialized binary `ChatPayload` inside E2E plaintext (D087) |
 | `kMaxE2ePlaintextBytes` | **128 KiB** | AEAD plaintext binary (E010); checked before/after decrypt |
 | `kMaxRelayEnvelopeJsonBytes` | **256 KiB** | Full signed POST body |
 | `kMaxContentRmlBytes` | **256 KiB** | **Local-only** assistant RML on disk (not accepted from wire) |
@@ -509,21 +509,23 @@ No hard max file size in v1.
 
 ---
 
-## D045 — E2E-only `sender_seq` and strict ingest
+## D045 — E2E direct `sender_seq`; strict ingest on private tier only
 
 **Date:** 2026-06-29  
-**Decision:** **`sender_seq` / `session_epoch` on the wire apply to `e2e` direct threads only.** Public relay uses UUID dedup + timestamp display order; no seq assignment, gap repair, or D013 classifier on public channel.  
-**Rationale:** Seq integrity buys most for encrypted private delivery; public content is relay-visible.  
-**Alternatives:** Seq on both channels (original D008/D018).
+**Updated:** 2026-07-02 — three tiers (D089); seq on both **`e2e`** and **`e2e_public`**; D013 strict on **`e2e`** only.  
+**Decision:** **`sender_seq` / `session_epoch` on the wire apply to both E2E direct tiers** (`e2e`, `e2e_public`). **Strict D013** applies to **`e2e` (private)** only. **`e2e_public`** uses the same sync/backfill path (D058) but relaxed ingest on soft failures (D046). Reject `public_relay` (D090).  
+**Rationale:** Seq integrity matters for all encrypted direct chat; strict pause-on-conflict is reserved for the security-first tier.  
+**Alternatives:** Seq on private tier only (original D045 — superseded); plaintext public channel (rejected — D089).
 
 ---
 
-## D046 — No relaxed ingest / continue-anyway in v1
+## D046 — Relaxed ingest tier-default for public direct; strict-only in v1 private
 
 **Date:** 2026-06-29  
-**Decision:** Supersedes relaxed-ingest portions of D038. On E2E soft compromised, user picks **Start new secure chat** or **Pause only** — no `continue_anyway`, no `ingest_policy=relaxed`, no `trust_degraded`.  
-**Rationale:** Avoids dual classifier and ambiguous cross-peer policy.  
-**Alternatives:** Informed continue-anyway (original D038).
+**Updated:** 2026-07-02 — three tiers (D089); relaxed ingest is **default for `e2e_public` and group**; **`e2e` private** keeps strict-only in `[v1]`.  
+**Decision:** On soft integrity failure in **`e2e` (private direct) `[v1]`**, user picks **Start new secure chat** or **Pause only** — no `continue_anyway`. **`e2e_public`** and **`group`** use **`ingest_policy=relaxed`** by default with **`continue_anyway`** / LWW rules per [DESIGN § Relaxed ingest](DESIGN.md#post-v1-relaxed-ingest--continue-anyway-d046-extension) — implementation lands with **`e2e_public`** (post–private-tier v1). Hard crypto failures (bad sig, decrypt fail) remain non-overridable on all tiers.  
+**Rationale:** Security-first tier must not silently merge conflicting seq; UX-first tiers accept tradeoffs and auto-recover where possible.  
+**Alternatives:** Global strict for all E2E (original D046 — rejected for public/group tiers).
 
 ---
 
@@ -531,7 +533,7 @@ No hard max file size in v1.
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — PK `(peer_identity_kind, peer_identity_value, channel)` (D079); PSK columns (D084/E008).  
-**Decision:** **`chat_targets`** PK = **`ChatTargetKey`** **`(peer_identity_kind, peer_identity_value, channel)`**. Columns: **`local_thread_id`** (current on-disk shell; **not on wire**), optional **`participant_contact_id`** (local Contact.id for catalog), **`next_outgoing_seq`**, **`session_epoch`**, and for **`channel=e2e`** — **`master_psk_b64`**, **`psk_fingerprint`**, **`psk_verified_at`** (E011 send gate), **`retired_psks_json`** (D084). Updated under same writer mutex as `outbox`. **Delete direct conversation** removes shell but **keeps** `chat_targets` (seq/epoch/PSK). Shell recreate may allocate **new** `local_thread_id`.  
+**Decision:** **`chat_targets`** PK = **`ChatTargetKey`** **`(peer_identity_kind, peer_identity_value, channel)`**. Columns: **`local_thread_id`** (current on-disk shell; **not on wire**), optional **`participant_contact_id`** (local Contact.id for catalog), **`next_outgoing_seq`**, **`session_epoch`**, and for **`channel` ∈ { `e2e`, `e2e_public` }** — **`master_psk_b64`**, **`psk_fingerprint`**, **`psk_verified_at`** (E011 send gate on **`e2e`**; optional/deferred on **`e2e_public`** — D089), **`retired_psks_json`** (D084). Updated under same writer mutex as `outbox`. **Delete direct conversation** removes shell but **keeps** `chat_targets` (seq/epoch/PSK). Shell recreate may allocate **new** `local_thread_id`.  
 **Rationale:** Seq/epoch/PSK are per logical chat target (communicating identity + channel); local storage ids are device-private; single-row txn on epoch bump.  
 **Alternatives:** Wire-stable `thread_id` (D053 — superseded); `sessions.json` sidecar (rejected — D084).
 
@@ -630,7 +632,7 @@ No hard max file size in v1.
 
 | Area | Rule |
 |------|------|
-| **Phase split** | **v2a-core** (SQLite + AI threads + `GetMessagesPage` + clear UX) then **v2a-p2p** (`chat_targets`, outbox, per-thread dedup, `FindOrCreateDirectThread` default `public_relay`) — see [PHASES.md](PHASES.md) |
+| **Phase split** | **v2a-core** (SQLite + AI threads + `GetMessagesPage` + clear UX) then **v2a-p2p** (`chat_targets`, outbox, per-thread dedup, E2E envelope shape — D063/D090) — see [PHASES.md](PHASES.md) |
 | **Dual-DB writes** | Lock `profile.db` then `thread.db`; write `thread.db` txn first inside critical section — [DESIGN § SQLite operations](DESIGN.md#sqlite-operations-d044) |
 | **`IThreadStore` cutover** | Extend API in one pass; grep gate: no `GetMessages` / profile-global `HasMessageId` in `src/feature/` |
 | **`ThreadMessage` (v2a-core)** | Add **`display_order`** to C++ type; wire through store + UI paging (D066) |
@@ -689,19 +691,20 @@ No hard max file size in v1.
 
 | Channel | No `chat_targets` row | Missing shell |
 |---------|----------------------|---------------|
-| **`e2e`** | Hard reject (cannot decrypt without PSK anyway) | Hard reject |
-| **`public_relay`** | Ephemeral UI only — **no persist** (D080) | Hard reject if row exists |
+| **`e2e` (private)** | Hard reject (cannot decrypt without PSK anyway) | Hard reject |
+| **`e2e_public`** | Auto-create after successful decrypt (D080) | Hard reject if row exists |
 
-**Product:** E2E first message requires recipient to open secure chat + keys locally. Public first message may appear as notification without storage until recipient opens the conversation.  
+**Product:** Private first message requires recipient to open secure chat + keys locally. Public tier auto-creates shell on first inbound decrypt.  
 **Rationale:** Prevents signed-but-unwanted traffic from allocating storage; creation stays user-initiated.  
 **Alternatives:** Create-on-ingest then delete on failed participant check (rejected).
 
 ---
 
-## D063 — Wire cutover in v2a-p2p (envelope final; minimal ChatPayload)
+## D063 — Wire cutover in v2a-p2p (envelope final; E2E body)
 
 **Date:** 2026-06-30  
-**Decision:** **v2a-p2p** ships the **final relay envelope shape** (D056): `sender_contact_id`, `route`, **no `thread_id`**; reject legacy envelopes (D016). **Body** uses **`body.content_b64`** minimal binary **`text`** ChatPayload (D087) — from v2a-p2p, not the legacy `RelayMessageBody { text, content_rml }`. **Phase v4** adds validator hardening (`system` type, unknown-type reject, D030 strip remote `content_rml`, size caps) — **not a second wire break**. Single parser for send/receive; no dual-version support.  
+**Updated:** 2026-07-02 — no plaintext direct wire (D090).  
+**Decision:** **v2a-p2p** ships the **final relay envelope shape** (D056): `sender_contact_id`, `route`, **no `thread_id`**; reject legacy envelopes (D016). **Direct body** uses **`body.e2e.payload_b64`** only (D090) — not legacy `RelayMessageBody { text, content_rml }` or **`body.content_b64`**. **Phase v4** adds validator hardening (`system` type, unknown-type reject, D030, size caps) — **not a second wire break**. Single parser for send/receive; no dual-version support. Direct P2P send/receive on wire requires E2E crypto (c2) + seq fields (v6).  
 **Rationale:** D016 forbids two relay breaking changes; routing cutover and payload shape land together once; v4 deepens validation on the same wire.  
 **Alternatives:** Legacy flat body until v4 (rejected — two cutovers); keep `thread_id` through v4 (rejected — D056).
 
@@ -741,7 +744,7 @@ No hard max file size in v1.
 | Phase | C++ / wire requirement |
 |-------|------------------------|
 | **v2a-core** | `ThreadMessage.display_order` (`int64_t`); **`chat_payload`** BLOB or equivalent store field (D078/D087); `GetMessagesPage` / `AppendMessage` assign and read it. Other v4/v6 columns may remain store-only until wired. |
-| **v2a-p2p** | **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route` (`kind`, `channel`); **`body.content_b64`** as minimal binary `ChatPayload` (D063, D072, D087). **Grep gate:** no `envelope.thread_id` / `body.text` top-level relay body in `src/feature/` or `tests/` (except legacy rejection tests). |
+| **v2a-p2p** | **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route`; **`body.e2e.payload_b64`** (D063/D090). **Grep gate:** reject `public_relay`, `body.content_b64`, `envelope.thread_id`, `body.text` in `src/feature/` (legacy rejection tests excepted). |
 | **v4** | `ThreadMessage.content_type`, `payload`; full ChatPayload codec + validator. |
 | **v6** | `sender_seq`, `session_epoch` on `ThreadMessage` + envelope. |
 
@@ -848,9 +851,10 @@ No hard max file size in v1.
 ## D076 — Group chat placeholders in catalog + sync scope
 
 **Date:** 2026-06-29  
-**Decision:** `profile.db` **`threads.group_id`** column (nullable, unused v1) for **`kind=group`** **`[post-v1]`**. Wire uses `route.kind=group` + `group_id` (D056). **`sync_state`** v1 PK `(peer_identity_kind, peer_identity_value, session_epoch)` is the **1:1 specialization**; groups will use `(scope_kind, scope_id, session_epoch)` or equivalent — document before group ingest ships.  
-**Rationale:** Avoid second catalog migration when groups arrive; 1:1 assumptions must not block group schema.  
-**Alternatives:** Add `group_id` only when groups ship (acceptable but higher migration cost); reuse `ChatTargetKey` for groups (rejected — D056).
+**Updated:** 2026-07-02 — group tier UX-first E2E with pairwise keys (D089, E022).  
+**Decision:** `profile.db` **`threads.group_id`** column (nullable, unused v1) for **`kind=group`** **`[post-v1]`**. Wire uses `route.kind=group` + `group_id` (D056). **`sync_state`** v1 PK `(peer_identity_kind, peer_identity_value, session_epoch)` is the **1:1 specialization**; groups use `(scope_kind, scope_id, session_epoch)` with **`scope_id = group_id`**. Group crypto: **pairwise sender-keys**, not a single group PSK (E022). Ingest policy matches **`e2e_public`** (relaxed default — D046).  
+**Rationale:** Avoid second catalog migration when groups arrive; pairwise keys align with UX-first tier without a weak shared group secret.  
+**Alternatives:** Add `group_id` only when groups ship (acceptable but higher migration cost); single group PSK (rejected — E022); reuse `ChatTargetKey` for groups (rejected — D056).
 
 ---
 
@@ -891,21 +895,22 @@ No hard max file size in v1.
 
 ---
 
-## D080 — Inbound routing: E2E find-only; public ephemeral without persist
+## D080 — Inbound routing: private find-only; public auto-create
 
 **Date:** 2026-07-02  
+**Updated:** 2026-07-02 — three tiers (D089); no `public_relay` (D090).  
 **Amends:** D062 (channel-specific inbound policy).  
 **Decision:**
 
 | Channel | No matching `chat_targets` row | Behavior |
 |---------|-------------------------------|----------|
-| **`e2e`** | yes | **Hard reject** before decrypt/persist (D062). User must open **Secure message** with that peer identity and install PSK first. |
-| **`public_relay`** | yes | **Ephemeral display only** — verify signature + parse payload; show notification or transient inbox preview; **do not** `AppendMessage` to `thread.db` or create `chat_targets` / sidebar shell. Persist only after user opens **Message** (or equivalent) for that `(peer_identity, channel)` via outbound `FindOrCreateDirectThread`. |
+| **`e2e` (private)** | yes | **Hard reject** before decrypt/persist (D062). User must open **Secure message** with that peer identity and install PSK first. |
+| **`e2e_public`** | yes | **Auto-create** shell + keys after successful decrypt (D089). |
 
-**E2E** with matching row but missing PSK / decrypt failure: hard reject (unchanged). **Public** with matching row: normal persist path (D045). Participant check (D027) applies on both channels when a row exists; for ephemeral public, verify `sender_contact_id` is a known messaging identity on a Contact (or directory hit) before showing UI.
+**Private E2E** with matching row but missing PSK / decrypt failure: hard reject. **`e2e_public`** with matching row: normal persist. Reject `public_relay` (D090). Participant check (D027) applies when a row exists.
 
-**Rationale:** E2E requires keys by definition; public first contact should not be silently dropped (D062 product pain) but also must not allocate storage from unsolicited traffic.  
-**Alternatives:** D062 strict on both channels (rejected for public UX); public create-on-ingest (rejected — unwanted sidebar rows).
+**Rationale:** Private tier requires explicit key setup; public tier must not drop first contact.  
+**Alternatives:** D062 strict on all channels (rejected for public UX).
 
 ---
 
@@ -975,7 +980,7 @@ where `<opaque_id>` is **relay-assigned** at registration, **URL-safe** (`[A-Za-
 
 **Date:** 2026-07-02  
 **Cross-project:** [e2e-message-crypto E008](../e2e-message-crypto/DECISIONS.md#e008--psk-store-v1-in-profiledb-chat_targets-at-rest-encryption-deferred).  
-**Decision:** E2E PSK material is stored on **`profile.db` → `chat_targets`**, not in `profiles/{id}/crypto/sessions.json` or per-thread `thread.db`. Columns ( **`e2e` channel only** — `NULL` on `public_relay`):
+**Decision:** E2E PSK material is stored on **`profile.db` → `chat_targets`**, not in `profiles/{id}/crypto/sessions.json` or per-thread `thread.db`. Columns ( **`e2e` and `e2e_public` channels** ):
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -1098,10 +1103,10 @@ If peer's last known epoch is older than the tail window, **disclose** that rela
 
 | Path | Encoding |
 |------|----------|
-| Public relay wire | **`body.content_b64`** — RFC 4648 base64 over binary bytes |
-| E014 public `body_hash` | `body_kind=0x01` \|\| decoded **`content_b64`** bytes |
-| E010 AEAD plaintext | Same binary bytes as public (before encrypt) |
-| Disk (`messages.chat_payload`) | Raw BLOB — same bytes as wire decode / E2E decrypt output |
+| E2E wire | **`body.e2e.payload_b64`** — ciphertext blob; plaintext inside AEAD |
+| E014 `body_hash` | `body_kind=0x02` \|\| decoded E2E blob bytes (D090) |
+| E010 AEAD plaintext | Binary `ChatPayload` v1 |
+| Disk (`messages.chat_payload`) | Raw BLOB — same bytes as E2E decrypt output |
 
 **Layout (v1):** `payload_version`, `content_type`, `text` (**LenUtf8**), inline **type tail** (no opaque `typed_payload` blob). **`schema_version`** byte removed — use **`payload_version`** only.
 
@@ -1135,13 +1140,68 @@ If peer's last known epoch is older than the tail window, **disclose** that rela
 
 ---
 
+## D089 — Three chat tiers; both direct tiers E2E (E021)
+
+**Date:** 2026-07-02  
+**Cross-project:** [e2e-message-crypto E021](../e2e-message-crypto/DECISIONS.md#e021--three-chat-tiers-both-direct-tiers-e2e-d089), [E022](../e2e-message-crypto/DECISIONS.md#e022--group-e2e-pairwise-sender-keys), [E023](../e2e-message-crypto/DECISIONS.md#e023--no-public_relay-wire-value-d090).  
+**Amends:** D004, D013, D018, D045, D046, D062, D080, D076, D063; **no `public_relay`** (D090).  
+**Decision:** Product P2P chat has **three tiers**. **All three** use symmetric E2E body encryption on the wire (relay sees ciphertext). They differ by **priority** and **policy defaults**, not by whether bodies are encrypted.
+
+| Tier | `Thread.kind` | Wire `route.channel` (direct) | UI label | Priority |
+|------|---------------|----------------------------------|----------|----------|
+| **Private direct** | `direct` | `e2e` | Private | Security first; maximize UX only where security is not compromised |
+| **Public direct** | `direct` | `e2e_public` | Public | UX first; accept security tradeoffs when they conflict with fluency |
+| **Group** | `group` | *(none — `route.kind=group`)* | Group | UX first; **pairwise sender-keys** preferred over a single group PSK (E022) |
+
+**Direct `ChatTargetKey`:** `(peer_identity_kind, peer_identity_value, channel)` where `channel` ∈ `{ e2e, e2e_public }`. Same communicating identity may have **two unrelated direct threads** (separate PSK, seq, memory) — extends D004.
+
+**Policy profiles** (see [DESIGN § Three chat tiers](DESIGN.md#three-chat-tiers-d089)):
+
+| Dimension | Private (`e2e`) | Public (`e2e_public`) | Group |
+|-----------|-----------------|------------------------|-------|
+| Key establishment | Manual OOB PSK + mandatory fingerprint (E011) | Auto init (directory / in-band / hybrid KEM — E013, E021) | Auto pairwise keys on join (E022) |
+| Ingest on seq conflict | Strict D013; pause + rotate or pause only (D038) | Relaxed default: `continue_anyway` / LWW (D046 rules) | Same as public direct |
+| Multi-device | Unsupported v1 → compromise (D015) | Target: supported (D074 extension) | Target: supported |
+| Inbound shell | Find-only; reject without row (D062) | Auto-create thread + keys on first message | Auto on invite/join |
+| Key rotation | User-driven; recommend on compromise | Automatic; **prefer epoch-only** and less frequent `rotate_psk` to preserve history recovery | Pair-key rotation on membership change |
+| Retired PSK ledger | Cap 8 epochs (D086) | Higher cap or longer retention (product tuning) | Per-pair ledgers |
+
+**Wire (direct):** **`e2e`** and **`e2e_public` only** — see [D090](#d090--no-public_relay--plaintext-direct-wire). **Message** → `e2e_public`; **Secure message** → `e2e`.
+
+**Phasing:** `[v1]` ships **private direct** (`e2e` strict) per v6 plan. **Public direct** (`e2e_public`) when auto-key lands (c3+). **Group** `[post-v1]` (E022).
+
+**Rationale:** Users expect “public” chat to be convenient, not relay-readable plaintext; security-sensitive users still get a strict tier.  
+**Alternatives:** Plaintext `public_relay` (rejected — D090); single direct tier with security slider (rejected).
+
+---
+
+## D090 — No `public_relay` / plaintext direct wire
+
+**Date:** 2026-07-02  
+**Amends:** D063, D089, E021; supersedes all **`public_relay`** / **`body.content_b64`** direct paths.  
+**Decision:**
+
+| Rule | Behavior |
+|------|----------|
+| **Direct `route.channel`** | **`e2e`** \| **`e2e_public` only** — reject `public_relay` and unknown values on ingest |
+| **Direct `body`** | **`{ "e2e": { "payload_b64": "…" } }` only** — no `body.content_b64` on direct envelopes |
+| **`sender_seq` / `session_epoch`** | Required on wire for both direct tiers (D045) |
+| **Receive pipeline** | All direct messages run decrypt (steps 7–11) — no plaintext bypass branch |
+| **Legacy data** | Pre-cutover envelopes / dev data — **reject** or wipe per D016; no dual-parser |
+
+**Rationale:** Greenfield protocol (D016); three-tier model has no plaintext direct tier; one envelope shape simplifies implementer constraints.  
+**Alternatives:** Bootstrap shim until `e2e_public` (rejected — user chose no legacy support).
+
+---
+
 ## Open decisions (not yet resolved)
 
 | ID | Question | Options |
 |----|----------|---------|
-| — | *(none in this project — O006 resolved D086)* | |
+| O007 | Auto key init trust anchor for **`e2e_public`** | Directory signing key + sealed PSK; hybrid KEM (E013); relay-assisted distribution |
+| O008 | Group pairwise wire shape | N ciphertexts per message; sender-keys tree; encrypted fan-out via relay |
 
-**Cross-project (e2e-message-crypto):** peer signing keys — E016 / D081; relay identity format — E017 / D082; retired PSK ledger on `rotate_psk` — E018 / D083; PSK in `profile.db` `chat_targets` — E008 / D084; passive epoch advance — E019 / D085; rich OOB bundle — E020 / D086. Remaining e2e work is implementation (c1–c3).  
+**Cross-project (e2e-message-crypto):** D090/E023 (no legacy wire); three tiers E021/E022; peer signing keys E016/D081; relay identity format E017/D082; retired PSK ledger E018/D083; PSK in `profile.db` `chat_targets` E008/D084; passive epoch advance E019/D085; rich OOB bundle E020/D086.  
 **Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — not chat wire scope.
 
 When resolved, move rows to numbered decisions above.

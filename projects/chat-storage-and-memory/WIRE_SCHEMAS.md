@@ -7,6 +7,8 @@
 
 **C++ reference:** [`src/common/Serialize.hpp`](../../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`, `OutputArchive` / `InputArchive`); [`src/common/BinaryPack.hpp`](../../src/common/BinaryPack.hpp) (`binaryPack` / `binaryUnpack`).
 
+**Three tiers (D089/D090):** Direct chat uses **`e2e`** and **`e2e_public` only** — both E2E via **`body.e2e.payload_b64`**. Reject **`public_relay`** and **`body.content_b64`**.
+
 **Identity (D079, D082):** Wire **`sender_contact_id`** carries the sender's **communicating identity value** (e.g. `relay:abc123`) — not local `Contact.id`. **`Contact.id`** is address-book only. v1 relay: **`peer_identity_kind` = `relay_user`**, **`peer_identity_value` = `relay:` + opaque id** (relay-assigned, URL-safe; see [DECISIONS D082](DECISIONS.md#d082--relay-user-communicating-identity-string-format)).
 
 ---
@@ -59,17 +61,19 @@ Signed outer wrapper. **No `thread_id`.** See [DESIGN § Relay envelope](DESIGN.
   "sender_contact_id": "relay:alice123",
   "route": {
     "kind": "direct",
-    "channel": "public_relay"
+    "channel": "e2e"
   },
+  "sender_seq": 42,
+  "session_epoch": 1,
   "body": {
-    "content_b64": "AQAAAAAAAAAABUhlbGxv"
+    "e2e": { "payload_b64": "…" }
   },
   "timestamp": 1719662400123,
   "signature": "base64-ed25519"
 }
 ```
 
-**E2E direct** adds `sender_seq`, `session_epoch`; `route.channel` = `e2e`; `body` uses `{ "e2e": { "payload_b64": "…" } }` instead of `body.content_b64`.
+**Public direct:** same shape with `"channel": "e2e_public"`.
 
 ### Ed25519 canonical signing (E014)
 
@@ -79,8 +83,8 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 |-------|---------|
 | Sign bytes | Fixed binary: domain prefix + `sign_version` + fields — full layout in [e2e DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) |
 | Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `route` (as enums), `timestamp`, `body_hash`, `sender_seq`, `session_epoch` |
-| Public channel seq/epoch | Wire **omits** `sender_seq`/`session_epoch`; signing uses **`0`** for both |
-| `body_hash` | BLAKE2b-256(`body_kind` \|\| payload): `0x01` + decoded **`body.content_b64`** bytes for public; `0x02` + decoded E2E blob bytes |
+| Direct channel enum | `0` = `e2e`, `1` = `e2e_public` (D090) |
+| `body_hash` | BLAKE2b-256(`0x02` \|\| decoded E2E blob bytes) only — no `0x01` public path |
 | Not signed | `thread_id`, `sender_relay_id`, `signature`, unknown keys |
 | `signature` encoding | Standard **base64** (RFC 4648, padded) only in v1 |
 
@@ -91,9 +95,9 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | `sender_relay_id` | string | yes | Relay registration id; **v1:** same string as `sender_contact_id` (D082) |
 | `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — e.g. `relay:abc123` (D082) |
 | `route` | object | yes | See `Route` below |
-| `body` | object | yes | `content_b64` (public) or `e2e` (encrypted) |
-| `sender_seq` | integer (u64) | E2E only | Omitted on public (D045) |
-| `session_epoch` | integer (u32) | E2E only | |
+| `body` | object | yes | **`body.e2e.payload_b64` only** on direct (D090) |
+| `sender_seq` | integer (u64) | yes on direct | Both tiers (D045) |
+| `session_epoch` | integer (u32) | yes on direct | |
 | `timestamp` | integer (i64) | yes | Unix **milliseconds**; display metadata; not sort authority (D054). Included in sign bytes (E014). |
 | `signature` | string | yes | Ed25519 over [canonical sign bytes](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes); **base64** (RFC 4648, padded) in v1 |
 | `sender_instance_id` | string (UUID) | **`[future]`** | Multi-device extension (D074); omit in v1 |
@@ -102,14 +106,14 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 
 | `kind` | Fields | Maturity |
 |--------|--------|----------|
-| `direct` | `channel`: `public_relay` \| `e2e` | **`[v1]`** |
+| `direct` | `channel`: `e2e` \| `e2e_public` | **`[v1]`** private; **`[post-v1]`** public |
 | `group` | `group_id`: string | **`[post-v1]`** |
 
 ---
 
 ## `ChatPayload` (v1 — binary, D087/D088)
 
-Unified body for disk, relay public channel, and E2E AEAD plaintext (D026, E010). Stored canonically in `messages.chat_payload` BLOB (D069/D078). On the wire, public channel carries RFC 4648 base64 in **`body.content_b64`**.
+Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in `messages.chat_payload` BLOB (D069/D078).
 
 **Encoder:** **`ChatPayloadCodec::Encode`** / **`Decode`** in `base/messaging` using **`WireLenUtf8`** and **`OutputArchive`**.
 
@@ -130,7 +134,7 @@ Unified body for disk, relay public channel, and E2E AEAD plaintext (D026, E010)
 | `contact_card` | `3` | **`[post-v1]`** |
 | `crypto_tx` | `4` | **`[post-v1]`** |
 
-**Rules:** reject unknown `content_type` on relay ingest (D050). Max serialized size: **`kMaxChatPayloadBytes`** (64 KiB) on public; **`kMaxE2ePlaintextBytes`** (128 KiB) after E2E decrypt (D029). Bump **`payload_version`** for breaking layout changes.
+**Rules:** reject unknown `content_type` on relay ingest (D050). Max serialized size: **`kMaxE2ePlaintextBytes`** (128 KiB) after decrypt (D029). Bump **`payload_version`** for breaking layout changes.
 
 ### Type tails (inline, v1)
 
@@ -161,8 +165,7 @@ Regenerate: [`chatpayload_codec.py`](../e2e-message-crypto/tools/chatpayload_cod
 |-------|-------|
 | Logical | `content_type=text`, `text="Hello"` |
 | **`bytes` (hex)** | `0100000000000000000548656c6c6f` |
-| **`content_b64`** | `AQAAAAAAAAAABUhlbGxv` |
-| **`body_hash` (hex)** | `c3883ac60f3d527e364ecca8dd28144886dc12f00fbef22502ef0f24ce2f1c74` |
+| **`body_hash` (E2E blob, hex)** | `b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e` *(example — hash of `0x02` ‖ E2E blob)* |
 
 #### Vector B — non-ASCII text, plain default
 
@@ -170,8 +173,6 @@ Regenerate: [`chatpayload_codec.py`](../e2e-message-crypto/tools/chatpayload_cod
 |-------|-------|
 | Logical | `content_type=text`, `text="Café ☕"` |
 | **`bytes` (hex)** | `01000000000000000009436166c3a920e29895` |
-| **`content_b64`** | `AQAAAAAAAAAACUNhZsOpIOKYlQ==` |
-| **`body_hash` (hex)** | `e02629e02b6a8328d2d69bdfc1f0fcd12646f1013684939e687d610692517eba` |
 
 #### Vector C — system with LenUtf8 tail
 
@@ -208,8 +209,8 @@ Single request shape for **`FetchChatTargetMessages`** (D058). HTTP: query param
 | `requester_identity_value` | string | yes | Authenticated caller identity value |
 | `peer_identity_kind` | string | yes | Other party identity kind |
 | `peer_identity_value` | string | yes | Other party (`ChatTargetKey.peer_identity_value`) |
-| `channel` | string | yes | `public_relay` \| `e2e` |
-| `session_epoch` | integer | E2E | Required when `channel=e2e` |
+| `channel` | string | yes | `e2e` \| `e2e_public` |
+| `session_epoch` | integer | yes | Required for both direct tiers |
 | `min_sender_seq` | integer | no | Inclusive lower bound |
 | `max_sender_seq` | integer | no | Inclusive upper bound |
 | `limit` | integer | no | Default **50**, max **100** (D029) |
@@ -239,7 +240,7 @@ Single request shape for **`FetchChatTargetMessages`** (D058). HTTP: query param
 | `peer_identity_kind` | string | yes | Stream owner identity kind |
 | `peer_identity_value` | string | yes | Stream owner identity value |
 | `channel` | string | yes | |
-| `session_epoch` | integer | E2E | When `channel=e2e` |
+| `session_epoch` | integer | yes | Both direct tiers |
 | `messages` | `RelayEnvelope[]` | yes | No `thread_id` on elements |
 | `has_more` | boolean | yes | |
 | `cursor` | object | yes | Pagination hints for caller |

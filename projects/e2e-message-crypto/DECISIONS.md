@@ -4,10 +4,11 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## E001 — Symmetric E2E with manual 256-bit PSK (not chaos, not raw XOR)
+## E001 — Symmetric E2E with 256-bit PSK (not chaos, not raw XOR)
 
 **Date:** 2026-06-29  
-**Decision:** E2E message bodies use a **256-bit pre-shared key** distributed out-of-band; per-message keys derived via **HKDF-SHA256**; payload encrypted with **XChaCha20-Poly1305** (AEAD).  
+**Updated:** 2026-07-02 — all product P2P tiers E2E (E021); manual OOB distribution is **private direct** only.  
+**Decision:** E2E message bodies use a **256-bit pre-shared key**; per-message keys derived via **HKDF-SHA256**; payload encrypted with **XChaCha20-Poly1305** (AEAD). **Private direct:** PSK distributed out-of-band (E011). **Public direct / group:** automated or pairwise keying (E013/E022).  
 **Rationale:** Audited primitives, libsodium-friendly API, 256-bit symmetric margin is acceptable post-quantum (Grover); manual PSK avoids classical public-key agreement for v1.  
 **Alternatives:** Chaos-based ciphers; AES-GCM without strict nonce discipline; ECDH-only key agreement without PQ hybrid.
 
@@ -45,7 +46,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Decision:** Treat **E2E confidentiality** (PSK + XChaCha20-Poly1305) as **post-quantum adequate** with 256-bit keys. Treat **Ed25519** envelope/identity signatures as **classical** — plan hybrid PQ upgrade (ML-DSA / ML-KEM) in phase **c4**, not a blocker for c1–c3.  
-**Rationale:** Shor breaks EC signatures/key agreement, not 256-bit symmetric keys; manual PSK OOB does not create harvest-now-decrypt-later on agreement keys. Relay plaintext channel is unchanged by PQ anyway.  
+**Rationale:** Shor breaks EC signatures/key agreement, not 256-bit symmetric keys; manual PSK OOB does not create harvest-now-decrypt-later on agreement keys. All product P2P tiers use E2E bodies on the wire (D089/E021).  
 **Alternatives:** Delay all E2E until PQ libraries integrated; replace Ed25519 immediately in c1.
 
 ---
@@ -53,10 +54,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E006 — Chat target key matches chat-storage identity + channel (D079)
 
 **Date:** 2026-06-29  
-**Updated:** 2026-07-02 — `(peer_identity_kind, peer_identity_value, channel)` (D079); HKDF `info` per E015.  
-**Decision:** PSK sessions are keyed by **`ChatTargetKey` = `(peer_identity_kind, peer_identity_value, channel)`** with `channel` ∈ `{public_relay, e2e}`. Only **`e2e`** channels use message-body encryption. `session_epoch` scopes keys and seq per [chat-storage D014](../chat-storage-and-memory/DECISIONS.md). HKDF `info` uses **`channel` + `epoch` only** (E015) — not identity strings.  
-**Rationale:** Same identity boundary as thread model D004/D079; public relay stays signed plaintext; pair scoping is the per-target `master_psk`.  
-**Alternatives:** Per-`local_thread_id` keys only; one PSK for all contacts; identity in HKDF `info` (rejected — asymmetric derivation per peer view).
+**Updated:** 2026-07-02 — three tiers (D089/E021); both direct E2E channels encrypt.  
+**Decision:** PSK sessions are keyed by **`ChatTargetKey` = `(peer_identity_kind, peer_identity_value, channel)`** with direct `channel` ∈ **`{ e2e, e2e_public }` only** (D090). Both use message-body encryption; HKDF `info` includes the wire `channel` string (E015). `session_epoch` scopes keys and seq per [chat-storage D014](../chat-storage-and-memory/DECISIONS.md).  
+**Rationale:** Same identity boundary as thread model D004/D079; separate PSK per tier even for the same peer.  
+**Alternatives:** Per-`local_thread_id` keys only; one PSK for all contacts; plaintext public direct (rejected — E021).
 
 ---
 
@@ -64,7 +65,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — nested object (E009).  
-**Decision:** E2E relay `body` shape is **`{ "e2e": { "payload_b64": "…" } }`**. `payload_b64` decodes to **`[version:1][nonce:24][ciphertext+tag]`**. Outer envelope fields remain signed JSON. Public channel uses **`{ "content_b64": "…" }`** over binary `ChatPayload` (D087).  
+**Decision:** E2E relay `body` shape is **`{ "e2e": { "payload_b64": "…" } }`** only on direct (D090). `payload_b64` decodes to **`[version:1][nonce:24][ciphertext+tag]`**.  
 **Rationale:** Extensible nested shape; separates public structured content from E2E blob.  
 **Alternatives:** Flat `body.ciphertext_b64`; encrypt entire envelope JSON.
 
@@ -73,7 +74,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E009 — Nested `body.e2e` object for ciphertext
 
 **Date:** 2026-06-29  
-**Decision:** Ciphertext field is **`body.e2e.payload_b64`**, not a top-level `body` string. Public relay uses sibling **`body.content_b64`** for binary `ChatPayload` (D087).  
+**Decision:** Ciphertext field is **`body.e2e.payload_b64`**, not a top-level `body` string. Both direct tiers use this shape (D090).  
 **Rationale:** Room for future `body.e2e.key_id` or algorithm hints without breaking public messages.  
 **Alternatives:** `body.ciphertext_b64`; `body.e2e.ciphertext`.
 
@@ -83,7 +84,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — binary layout (D087); supersedes JSON plaintext.  
-**Decision:** Bytes encrypted inside the E2E blob are **binary `ChatPayload` v1** — the same bytes as public **`body.content_b64`** after base64 decode — see [chat-storage D087](../chat-storage-and-memory/DECISIONS.md#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext) / [WIRE_SCHEMAS](../chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087). Not raw `text` only. Max decrypted size **`kMaxE2ePlaintextBytes` (128 KiB)** per [chat-storage D029](../chat-storage-and-memory/DECISIONS.md); reject before `ChatPayloadCodec::Decode` after decrypt.  
+**Decision:** Bytes encrypted inside the E2E blob are **binary `ChatPayload` v1** — see [chat-storage D087](../chat-storage-and-memory/DECISIONS.md#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext) / [WIRE_SCHEMAS](../chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088). Not raw `text` only. Max decrypted size **`kMaxE2ePlaintextBytes` (128 KiB)** per [chat-storage D029](../chat-storage-and-memory/DECISIONS.md); reject before `ChatPayloadCodec::Decode` after decrypt.  
 **Rationale:** Contact cards, annotations, and crypto txs work identically on E2E and public; one codec path; no JSON canonicalization drift between sign and encrypt.  
 **Alternatives:** UTF-8 `text` only; JSON `ChatPayload` (rejected — D087).
 
@@ -93,17 +94,17 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — superseded `sessions.json`; columns on `chat_targets` (D084).  
-**Decision:** PSK material lives in **`profile.db` → `chat_targets`** alongside `session_epoch` and `next_outgoing_seq` — keyed by **`ChatTargetKey`** PK (D047/D084). Columns: `master_psk_b64`, `psk_fingerprint`, `psk_verified_at` (E011), `retired_psks_json` (`e2e` channel only; `NULL` on `public_relay`). **`IPskSessionStore`** in `base/crypto` is the seam; v1 default impl **`SqlitePskSessionStore`** in `feature/messaging/` reads/writes those columns under the **`profile.db` writer mutex** (same txn as epoch bump). No `profiles/{id}/crypto/sessions.json`. At-rest risk class matches today's `encrypted_private_key_b64` misnomer in `IdentityStore`; OS keychain backend is follow-up, not c1 blocker.  
+**Decision:** PSK material lives in **`profile.db` → `chat_targets`** for **`e2e`** and **`e2e_public`** channels (D090).  
 **Rationale:** Crypto session is per chat target, not per thread shell; colocating PSK with seq/epoch avoids cross-file races on epoch bump and survives delete/recreate of `local_thread_id`.  
 **Alternatives:** `sessions.json` sidecar (rejected — dual-store sync); PSK in `thread.db` (rejected — shell is ephemeral); block c1 on keychain integration.
 
 ---
 
-## E011 — PSK establishment UX v1: generate, export, import, verify
+## E011 — PSK establishment UX: private manual; public automated (E021)
 
 **Date:** 2026-07-02  
-**Updated:** 2026-07-02 — bilateral epoch-1 flow (generation + export + send gate); rotation uses E020 bundle.  
-**Decision:** Phase **c3** PSK establishment:
+**Updated:** 2026-07-02 — three tiers (E021); manual flow is **private direct (`e2e`)** only.  
+**Decision:** Phase **c3** PSK establishment for **private direct (`e2e`)**:
 
 1. **Generate (either peer):** 32 bytes from CSPRNG (`randombytes_buf`). **Either peer may generate** — cryptographically equivalent; both peers MUST hold identical bytes (E015). **UX default:** device starting **Secure message** offers **Generate new key**; peer uses **Import**. Import-only path when peer already generated elsewhere.
 2. **Export (epoch 1):** show **raw RFC 4648 base64** (44 chars, optional `=` padding) + **Copy** + BLAKE2b fingerprint of active `master_psk` — same encoding as import. QR deferred.
@@ -111,26 +112,27 @@ Record significant choices here so future sessions (human or agent) do not re-li
 4. **`rotate_psk` / multi-hop catch-up:** initiator **exports**; innocent peer **imports** **`pp-browser-psk-bundle-v1`** JSON ([E020](#e020--rich-oob-psk-bundle-v1)) — active key + bounded retired tail (D086). Clear **`psk_verified_at`** on bundle import; show active fingerprint.
 5. **Verify before first send:** user MUST compare fingerprint OOB with peer, then explicitly confirm (**"I've verified this fingerprint with my contact"**). E2E compose/send disabled until PSK installed **and** confirmed. Persist **`psk_verified_at`** (unix ms) on **`chat_targets`**; clear on PSK replace, import, or **`rotate_psk`**. Fingerprint display alone is insufficient (contrast E016 signing keys — directory-backed, display-only in v1).
 
-**Rationale:** Symmetric shared PSK; minimal OOB surface (raw base64 matches E020 initial-contact equivalence); explicit confirm closes TOFU gap where PSK has no directory source of truth.  
-**Alternatives:** Initiator-only generation (rejected — unnecessary constraint); JSON bundle for epoch 1 (rejected — heavier than needed); send without verify step (rejected — no trust anchor beyond OOB); paste fingerprint + confirm without raw key paste (rejected); QR scan (deferred UX — bundle-friendly).
+**Rationale:** Symmetric shared PSK; minimal OOB surface for private tier; explicit confirm closes TOFU gap where PSK has no directory source of truth. **`e2e_public`** uses automated establishment (E021/E013 — O007).  
+**Alternatives:** Initiator-only generation (rejected — unnecessary constraint); JSON bundle for epoch 1 (rejected — heavier than needed); send without verify step on private tier (rejected); same manual flow for public tier (rejected — E021).
 
 ---
 
-## E012 — Group E2E out of scope
+## E012 — Group E2E: pairwise sender-keys (supersedes out-of-scope)
 
 **Date:** 2026-07-02  
-**Decision:** **Group / multi-party E2E** is **out of scope** for all current phases (c1–c4). Direct `(contact_id, channel=e2e)` only. No shared group PSK, no MLS, no sender-keys scheme in this project unless a future decision reopens scope.  
-**Rationale:** v1 targets 1:1 chat aligned with `ChatTargetKey`; group crypto is a separate product and protocol surface.  
-**Alternatives:** Shared group PSK (weak membership model); MLS (large protocol + UX lift).
+**Updated:** 2026-07-02 — reopened for UX-first group tier with pairwise keys (E022, D089).  
+**Decision:** **Group E2E** is **`[post-v1]`** — not in c1–c3. When implemented: **pairwise sender-keys** (encrypt per member using pair-wise secrets), **not** a single shared group PSK and **not** MLS in the first slice. Ingest policy matches **`e2e_public`** (relaxed default — D046). Wire details: O008.  
+**Rationale:** Single group PSK is weak on membership change; MLS is heavy UX; pairwise model reuses 1:1 crypto machinery and matches user preference for pair keys.  
+**Alternatives:** Shared group PSK (rejected); MLS (deferred); group out of scope entirely (superseded — E022).
 
 ---
 
-## E013 — Optional hybrid KEM for automated PSK setup in c4
+## E013 — Hybrid KEM for automated PSK setup (`e2e_public`, c4)
 
 **Date:** 2026-07-02  
-**Decision:** Phase **c4** adds **optional automated key agreement** via hybrid **X25519 + ML-KEM-768**; shared secret feeds HKDF as `master_psk` input (same salt/info labels as manual PSK). **Manual OOB establishment** (E011) remains supported — users choose either path per contact. Classical-only KEM (X25519 or ECDH alone) is **not** permitted.  
-**Rationale:** Improves UX for new E2E contacts without weakening PQ posture on agreement; on-wire AEAD format (E007/E010) unchanged; aligns c4 PQ library work with relay signature upgrade (E005).  
-**Alternatives:** Manual PSK only forever (simpler, no liboqs dependency).
+**Decision:** Phase **c4** adds **optional automated key agreement** via hybrid **X25519 + ML-KEM-768** for **`e2e_public`** (and optionally group pair-key bootstrap). Shared secret feeds HKDF as `master_psk` input (same salt/info labels as manual PSK). **Manual OOB** (E011) remains required for **`e2e` (private direct)**. Classical-only KEM (X25519 or ECDH alone) is **not** permitted.  
+**Rationale:** Public direct tier targets fluency — auto key init without weakening PQ posture on agreement. Private tier keeps manual OOB.  
+**Alternatives:** Manual PSK only forever (rejected for `e2e_public` — E021); directory-sealed PSK without KEM (O007 option).
 
 ---
 
@@ -141,8 +143,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 - **Domain prefix:** `"pp-browser:relay-envelope-sign-v1\0"` (UTF-8 + NUL), then **`sign_version = 1`** byte, then fields below.
 - **Signed fields:** `envelope_version`, `route_kind`, `channel`, `timestamp` (Unix **milliseconds**, i64 BE), `sender_seq` (u64 BE), `session_epoch` (u32 BE), **`body_hash`** (BLAKE2b-256, 32 bytes), `message_id`, `sender_contact_id` (length-prefixed UTF-8 strings, u16 BE length).
-- **E2E seq/epoch on public:** wire omits `sender_seq`/`session_epoch` on `public_relay` (D045); signing uses **`0`** for both.
-- **Body hash:** `BLAKE2b-256(body_kind || payload_bytes)` — `body_kind=0x01` + **decoded** **`body.content_b64`** bytes for `public_relay`; `body_kind=0x02` + **decoded** `body.e2e.payload_b64` bytes for `e2e`. Same hash function; branch-specific payload extraction.
+- **Direct channel enum (sign bytes):** `0` = `e2e`, `1` = `e2e_public` (D090). Reject `public_relay`.
+- **Body hash:** `BLAKE2b-256(0x02 ‖ decoded E2E blob bytes)` only — no `0x01` plaintext path.
 - **Not signed:** `thread_id`, `sender_relay_id`, `signature`, unknown top-level keys (D073).
 - **Signature wire encoding:** standard **base64** (RFC 4648, padded) only in v1 — matches `Ed25519Signer`.
 - **Implementation:** shared **`EnvelopeSigner`** in `src/base/messaging/`; c1 test vectors and c2 wiring must use it.
@@ -161,7 +163,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 info = "channel:{channel}|epoch:{session_epoch}"
 ```
 
-with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **Do not** include `peer_identity_kind`, `peer_identity_value`, or local `Contact.id` in HKDF `info`.  
+with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`** is the wire string **`e2e`** or **`e2e_public`** (E021). **Do not** include `peer_identity_kind`, `peer_identity_value`, or local `Contact.id` in HKDF `info`.  
 **Rationale:** `master_psk` is already unique per **`ChatTargetKey`** (one OOB secret per peer identity + channel). Including the peer identity in `info` would differ per device (`alice→bob` vs `bob→alice`) and produce **different session keys** for the same conversation. Channel + epoch provide epoch rotation without breaking cross-peer symmetry.  
 **Alternatives:** Sorted canonical pair of both parties' identities in `info` (acceptable but redundant with per-target PSK); identity in `info` (rejected — interoperability bug).
 
@@ -263,7 +265,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **Do not** i
 | Field | Rules |
 |-------|-------|
 | `format` | Must be `pp-browser-psk-bundle-v1` |
-| `channel` | Must be `e2e` |
+| `channel` | Must be `e2e` or `e2e_public` |
 | `active_epoch` | uint32 ≥ 1 |
 | `master_psk_b64` | Decodes to 32 bytes — key for **`active_epoch`** (live send/recv) |
 | `retired_epochs` | Optional array; max **`kMaxRetiredPskEpochs` (8)** entries; each `epoch` < `active_epoch`; strictly increasing epochs; no duplicates |
@@ -276,3 +278,47 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **Do not** i
 
 **Rationale:** Resolves O006 — innocent peer learns skipped intermediate PSKs without a wire ack; bounded tail matches paste/QR constraints and on-disk ledger cap.  
 **Alternatives:** Unbounded chain (rejected — OOB size); round-trip rotation gate only (rejected — O006-A); single-key paste on rotation (rejected — multi-hop gap).
+
+---
+
+## E021 — Three chat tiers; both direct tiers E2E (D089)
+
+**Date:** 2026-07-02  
+**Cross-project:** [chat-storage D089](../chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021).  
+**Decision:** Product P2P chat has **three E2E tiers**:
+
+| Tier | Wire `channel` (direct) | Key establishment | Priority |
+|------|-------------------------|-------------------|----------|
+| **Private direct** | `e2e` | Manual OOB PSK + mandatory fingerprint (E011) | Security first |
+| **Public direct** | `e2e_public` | Automated — directory / in-band / hybrid KEM (E013, O007) | UX first |
+| **Group** | `route.kind=group` | Pairwise sender-keys (E022) | UX first |
+
+**Both direct tiers** encrypt bodies with the same AEAD stack (E001/E010). **No `public_relay`** (D090/E023).
+
+**Engineering posture:** UX-first tiers accept policy tradeoffs (relaxed ingest D046, auto rotation tuned for history recovery, multi-device target) while still using AEAD, signed envelopes, pinned signing keys (E016), and seq in AAD.
+
+**Phasing:** c1–c3 target **private direct (`e2e`)** only. **`e2e_public`** after c3 + auto-key path. **Group** `[post-v1]` (E022).
+
+**Rationale:** “Public” chat must not mean relay-readable plaintext; users still get a strict tier for high-assurance contacts.  
+**Alternatives:** Plaintext direct wire (rejected — D090); single tier with security slider (rejected).
+
+---
+
+## E022 — Group E2E: pairwise sender-keys
+
+**Date:** 2026-07-02  
+**Cross-project:** [chat-storage D076/D089](../chat-storage-and-memory/DECISIONS.md#d076--group-chat-placeholders-in-catalog--sync-scope).  
+**Decision:** Group message bodies are E2E encrypted using **pairwise sender-keys** — the sender encrypts for each member using pair-wise secrets (reuse 1:1 crypto machinery where possible), **not** a single shared group PSK. MLS is deferred. Membership changes rotate affected pair keys. Ingest policy: relaxed default (D046). Exact fan-out wire shape: **O008**.
+
+**Rationale:** User preference for pair keys over group-wide secret; avoids weak membership model of shared PSK; reuses `ChatTargetKey`-style pair scoping.  
+**Alternatives:** Single group PSK (rejected); MLS (deferred); plaintext group relay (rejected — E021).
+
+---
+
+## E023 — No `public_relay` wire value (D090)
+
+**Date:** 2026-07-02  
+**Cross-project:** [chat-storage D090](../chat-storage-and-memory/DECISIONS.md#d090--no-public_relay--plaintext-direct-wire).  
+**Decision:** **`public_relay`**, **`body.content_b64`**, and **`body_kind=0x01`** body hashing are **removed** from the protocol. Direct envelopes: **`e2e`** \| **`e2e_public`**, **`body.e2e.payload_b64`**, **`body_kind=0x02`** only. AAD/sign channel enum: **`0`** = `e2e`, **`1`** = `e2e_public`. Regenerate frozen Ed25519/AEAD test vectors after enum change.  
+**Rationale:** Greenfield cutover (D016); no transitional plaintext path.  
+**Alternatives:** Bootstrap shim (rejected).

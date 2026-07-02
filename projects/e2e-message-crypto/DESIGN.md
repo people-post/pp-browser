@@ -4,13 +4,25 @@
 
 ## Principles
 
-1. **Symmetric E2E for message bodies** — Relay and network observers see ciphertext on the `e2e` channel; confidentiality does not depend on relay trust.
-2. **Manual key distribution v1** — 256-bit PSK exchanged out-of-band with fingerprint verification; no automated ECDH in c1–c3.
+1. **Symmetric E2E for all P2P message bodies** — Relay and network observers see ciphertext on **both direct tiers** (`e2e`, `e2e_public`) and on **group** messages (E021). Confidentiality does not depend on relay trust.
+2. **Tier-appropriate key distribution** — **Private direct (`e2e`):** manual 256-bit PSK OOB with fingerprint verification (E011). **Public direct (`e2e_public`):** automated setup (E013, O007). **Group:** pairwise sender-keys (E022). No automated ECDH in c1–c3.
 3. **Authenticated encryption only** — XChaCha20-Poly1305 with canonical AAD; never encrypt-then-MAC separately, never raw XOR.
-4. **Align with chat-storage sync model** — `sender_seq`, `session_epoch`, and strict ingest ([D008–D014](../chat-storage-and-memory/DECISIONS.md)) bind to crypto AAD and key rotation.
+4. **Align with chat-storage sync model** — `sender_seq`, `session_epoch`, and tier-specific ingest ([D008–D014](../chat-storage-and-memory/DECISIONS.md), [D089](../chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021)) bind to crypto AAD and key rotation.
 5. **Classical + PQ layered threat model** — Symmetric layer is PQ-adequate; Ed25519 relay signatures are classical with a planned hybrid upgrade path.
 6. **Storage abstraction** — `IPskSessionStore` seam; v1 backing store is `profile.db` `chat_targets` (E008/D084); keychain backend later.
 7. **Implement in `base`**, wire in `feature` — Crypto module has no RmlUi or `P2pMessagingService` dependencies.
+
+## Three chat tiers (E021 / D089)
+
+Full tier policy matrix: [chat-storage DESIGN § Three chat tiers](../chat-storage-and-memory/DESIGN.md#three-chat-tiers-d089).
+
+| Tier | Channel / route | Crypto phases |
+|------|-----------------|---------------|
+| Private direct | `e2e` | c1–c3 (manual PSK, strict ingest) |
+| Public direct | `e2e_public` | After c3 + auto-key (E013/O007) |
+| Group | `route.kind=group` | `[post-v1]` pairwise sender-keys (E022) |
+
+Legacy **`public_relay`** is **not supported** (D090/E023).
 
 ## Threat model
 
@@ -25,7 +37,7 @@
 | Future CRQC harvest-now-decrypt-later on **symmetric** E2E | 256-bit PSK + XChaCha20 | — (if PSK established OOB as random 256 bits) |
 | Local disk theft | — | PSK in JSON store until keychain (E008) |
 
-**Out of scope v1:** Group MLS, forward secrecy without manual rotation, hiding message existence from relay.
+**Out of scope c1–c3:** Group E2E (E022 — `[post-v1]`); forward secrecy without rotation policy; hiding message existence from relay.
 
 ## Crypto stack
 
@@ -60,8 +72,9 @@
 ### Master PSK
 
 - **Size:** 32 bytes (256 bits) from CSPRNG.
-- **Distribution:** Out-of-band — copy-paste over an already-trusted channel, in-person, etc. **Initial setup (E011):** either peer generates; generating side **exports** raw base64 + fingerprint; peer **imports** paste. **`rotate_psk`:** initiator **exports** **`pp-browser-psk-bundle-v1`** JSON; innocent peer **imports** — active key + up to **`kMaxRetiredPskEpochs` (8)** retired epochs (E020/D086).
-- **Verification:** Both parties display `fingerprint = BLAKE2b-256(master_psk)` as grouped hex (e.g. `a1b2-c3d4-…`); compare OOB, then user explicitly confirms before first E2E send. Persist **`psk_verified_at`** on `chat_targets`; clear on PSK replace/import/rotation.
+- **Private direct (`e2e`):** Out-of-band distribution — copy-paste, in-person, etc. **Initial setup (E011):** either peer generates; generating side **exports** raw base64 + fingerprint; peer **imports** paste. **`rotate_psk`:** initiator **exports** **`pp-browser-psk-bundle-v1`** JSON; innocent peer **imports** — active key + up to **`kMaxRetiredPskEpochs` (8)** retired epochs (E020/D086).
+- **Public direct (`e2e_public`):** Automated establishment (E013/O007) — no mandatory OOB fingerprint before first send; optional verify deferred.
+- **Verification (private tier):** Both parties display `fingerprint = BLAKE2b-256(master_psk)` as grouped hex; compare OOB, then user explicitly confirms before first **`e2e`** send. Persist **`psk_verified_at`** on `chat_targets`; clear on PSK replace/import/rotation.
 
 **Initial establishment flow (epoch 1):**
 
@@ -88,7 +101,7 @@ session_key = HKDF-SHA256(
 )
 ```
 
-- **`channel`:** `e2e` only uses derived keys for body encryption; `public_relay` has no PSK session.
+- **`channel`:** `e2e` (private direct) or `e2e_public` (public direct) — both use derived keys for body encryption (D090).
 - **`session_epoch`:** uint32, bumped on key rotation / compromise recovery ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md)). New epoch → new `session_key`; seq resets to 1 for that epoch.
 - **Pair scoping:** `master_psk` is unique per **`ChatTargetKey`** (one OOB secret per peer identity + channel). HKDF `info` intentionally omits identity strings so **both peers derive the same `session_key`** from the shared `master_psk` + `(channel, epoch)` — see [E015](DECISIONS.md#e015--hkdf-info-channel--epoch-only-option-a).
 - **On-disk:** `master_psk_b64`, `psk_fingerprint`, `psk_verified_at` (E011), and `retired_psks_json` live on **`profile.db` → `chat_targets`** (E008/D084) — same PK as seq/epoch.
@@ -101,7 +114,7 @@ Canonical **`ChatTargetKey`** — matches [chat-storage DESIGN § ChatTargetKey]
 |-------|-------|
 | `peer_identity_kind` | `relay_user`, `peer_id`, … — v1 relay uses `relay_user` |
 | `peer_identity_value` | Routable id string, e.g. `relay:abc123` (D082 / [E017](DECISIONS.md#e017--relay-user-identity-value-format)) |
-| `channel` | `e2e` \| `public_relay` |
+| `channel` | `e2e` \| `e2e_public` |
 
 | Use | Key |
 |-----|-----|
@@ -163,7 +176,7 @@ Fixed byte order (big-endian integers). **`aad_version = 1`** is the only AAD la
 | Offset | Size | Field |
 |--------|------|-------|
 | 0 | 1 | `aad_version` = `1` |
-| 1 | 1 | `channel` enum: `0` = `public_relay`, `1` = `e2e` |
+| 1 | 1 | `channel` enum: `0` = `e2e`, `1` = `e2e_public` (E023) |
 | | var | `peer_contact_id` — **LenUtf8** |
 | | var | `message_id` — **LenUtf8** |
 | | var | `sender_contact_id` — **LenUtf8** |
@@ -184,14 +197,13 @@ Fixed byte order (big-endian integers). **`aad_version = 1`** is the only AAD la
 
 ## AEAD: plaintext (inside ciphertext — E010)
 
-Binary **`ChatPayload` v1** ([chat-storage D087](../chat-storage-and-memory/DECISIONS.md#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext), [WIRE_SCHEMAS](../chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087)) — **same bytes** as public **`body.content_b64`** after base64 decode.
+Binary **`ChatPayload` v1** ([chat-storage D087](../chat-storage-and-memory/DECISIONS.md#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext), [WIRE_SCHEMAS](../chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087)) — AEAD plaintext for all direct tiers.
 
 **Vector A fixture** (`text="Hello"`, plain default):
 
 | Field | Value |
 |-------|-------|
 | **`bytes` (hex)** | `0100000000000000000548656c6c6f` |
-| **`content_b64`** | `AQAAAAAAAAAABUhlbGxv` |
 
 All `content_type` values (`text`, `annotation`, `contact_card`, `crypto_tx`, `system`) may appear inside E2E ciphertext. `content_rml` for AI rows remains app-local on `ThreadMessage` until a future payload extension.
 
@@ -230,8 +242,7 @@ Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** **`envelope_versio
 
 | Channel | `body` shape | Signed (via canonical bytes — E014) |
 |---------|--------------|-------------------------------------|
-| `public_relay` | `{ "content_b64": "…" }` | `envelope_version`, `message_id`, `sender_contact_id`, `route`, `timestamp`, `body_hash`; `sender_seq=0`, `session_epoch=0` |
-| `e2e` | `{ "e2e": { "payload_b64": "…" } }` | Same + `sender_seq`, `session_epoch` from envelope |
+| `e2e` / `e2e_public` | `{ "e2e": { "payload_b64": "…" } }` | Full fields incl. `sender_seq`, `session_epoch` |
 
 **Not signed:** `thread_id`, `sender_relay_id`, `signature`, unknown top-level keys (D073).
 
@@ -249,11 +260,11 @@ Decision **E014**. **Do not** sign `nlohmann::json::dump()` of the envelope. Bui
 | `message_id` | yes (length-prefixed UTF-8) | UUID string |
 | `sender_contact_id` | yes (length-prefixed UTF-8) | Sender communicating identity **value** (D079) |
 | `route.kind` | yes (`route_kind` u8 enum) | `0` = direct, `1` = group (future) |
-| `route.channel` | yes (`channel` u8 enum) | When direct: `0` = public_relay, `1` = e2e |
+| `route.channel` | yes (`channel` u8 enum) | When direct: `0` = `e2e`, `1` = `e2e_public` (E023) |
 | `timestamp` | yes (i64 BE) | Unix **milliseconds** |
 | `body_hash` | yes (32 bytes) | BLAKE2b-256 — see below |
-| `sender_seq` | yes (u64 BE) | **`0`** when `channel=public_relay` (wire omits field — D045) |
-| `session_epoch` | yes (u32 BE) | **`0`** when `channel=public_relay` |
+| `sender_seq` | yes (u64 BE) | Required on direct wire |
+| `session_epoch` | yes (u32 BE) | Required on direct wire |
 | `sender_relay_id` | **no** | Relay registration id only |
 | `thread_id` | **no** | Legacy; reject on ingest |
 | `signature` | **no** | |
@@ -272,7 +283,7 @@ Big-endian integers. String fields use **LenUtf8** (D088). **Sign bytes** = doma
 | 34 | 1 | `sign_version` = **`1`** |
 | 35 | 1 | `envelope_version` = **`1`** |
 | 36 | 1 | `route_kind`: **`0`** = direct, **`1`** = group |
-| 37 | 1 | `channel`: **`0`** = public_relay, **`1`** = e2e when `route_kind=direct`; **`0xFF`** reserved when `route_kind=group` (future) |
+| 37 | 1 | `channel`: **`0`** = `e2e`, **`1`** = `e2e_public` when `route_kind=direct`; **`0xFF`** reserved when `route_kind=group` (future) |
 | 38 | 8 | `timestamp` (i64 BE, Unix ms) |
 | 46 | 8 | `sender_seq` (u64 BE) |
 | 54 | 4 | `session_epoch` (u32 BE) |
@@ -285,15 +296,14 @@ Big-endian integers. String fields use **LenUtf8** (D088). **Sign bytes** = doma
 ### Body hash (`body_hash`)
 
 ```
-body_hash = BLAKE2b-256( body_kind || payload_bytes )
+body_hash = BLAKE2b-256( 0x02 || decoded_e2e_blob_bytes )
 ```
 
-| `channel` | `body_kind` | `payload_bytes` |
-|-----------|-------------|-------------------|
-| `public_relay` | `0x01` | Raw bytes from **base64 decode** of **`body.content_b64`** (`ChatPayload` binary — D087) — same bytes as `messages.chat_payload` / E2E plaintext |
-| `e2e` | `0x02` | Raw bytes from **base64 decode** of `body.e2e.payload_b64` (`[payload_version:1][nonce:24][ciphertext+tag]`) |
+| Channel | `body_kind` | `payload_bytes` |
+|---------|-------------|-----------------|
+| `e2e` / `e2e_public` | `0x02` | Raw bytes from **base64 decode** of `body.e2e.payload_b64` |
 
-Use libsodium **`crypto_generichash`** with 32-byte output. The 1-byte `body_kind` prefix domain-separates public body bytes from E2E ciphertext blob inside the hash input.
+Use libsodium **`crypto_generichash`** with 32-byte output. Only **`body_kind = 0x02`** — no plaintext path (D090/E023).
 
 ### Signature on the wire
 
@@ -473,33 +483,17 @@ Do **not** use this keypair outside tests.
 | Field | Value |
 |-------|-------|
 | **`bytes` (hex)** | `0100000000000000000548656c6c6f` |
-| **`content_b64`** | `AQAAAAAAAAAABUhlbGxv` |
 
-#### Vector 1 — `public_relay`
+#### Vector 1 — `e2e` (private direct)
 
-| Input | Value |
-|-------|-------|
-| `message_id` | `550e8400-e29b-41d4-a716-446655440000` |
-| `sender_contact_id` | `relay:alice123` |
-| `route.kind` | `direct` → `route_kind = 0` |
-| `route.channel` | `public_relay` → `channel = 0` |
-| `timestamp` | `1719662400123` (Unix ms) |
-| `sender_seq` | `0` (wire omits; signing uses zero) |
-| `session_epoch` | `0` (wire omits; signing uses zero) |
-| `body.content_b64` | `AQAAAAAAAAAABUhlbGxv` |
-| `body_hash` input | `0x01` \|\| decoded binary bytes |
-| **`body_hash` (hex)** | `c3883ac60f3d527e364ecca8dd28144886dc12f00fbef22502ef0f24ce2f1c74` |
-| **`sign_bytes` (hex, 159 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100000000019063ddd27b000000000000000000000000c3883ac60f3d527e364ecca8dd28144886dc12f00fbef22502ef0f24ce2f1c74000000000000002435353065383430302d653239622d343164342d613731362d343436363535343430303030000000000000000e72656c61793a616c696365313233` |
-| **`signature` (base64)** | `Gc6/4LugFNm7SKtGGicoUnUp9bWqJa6f71jYGSp+yUYn2UjdbkXwYpAz7fcSwrrwVSdrnxU98SveSAijpWsFDQ==` |
-
-#### Vector 2 — `e2e`
+**Note:** After E023, `e2e` → `channel = 0` in sign bytes (was `1` in pre-D090 fixtures). Regenerate with [`tools/gen_sign_vectors.py`](tools/gen_sign_vectors.py).
 
 | Input | Value |
 |-------|-------|
 | `message_id` | `660e8400-e29b-41d4-a716-446655440001` |
 | `sender_contact_id` | `relay:alice123` |
 | `route.kind` | `direct` → `route_kind = 0` |
-| `route.channel` | `e2e` → `channel = 1` |
+| `route.channel` | `e2e` → `channel = 0` |
 | `timestamp` | `1719662400456` (Unix ms) |
 | `sender_seq` | `42` |
 | `session_epoch` | `1` |
