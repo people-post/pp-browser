@@ -7,7 +7,7 @@
 3. **Authenticated encryption only** — XChaCha20-Poly1305 with canonical AAD; never encrypt-then-MAC separately, never raw XOR.
 4. **Align with chat-storage sync model** — `sender_seq`, `session_epoch`, and strict ingest ([D008–D014](../chat-storage-and-memory/DECISIONS.md)) bind to crypto AAD and key rotation.
 5. **Classical + PQ layered threat model** — Symmetric layer is PQ-adequate; Ed25519 relay signatures are classical with a planned hybrid upgrade path.
-6. **Storage abstraction** — `IPskSessionStore` seam; JSON default; keychain backend later.
+6. **Storage abstraction** — `IPskSessionStore` seam; v1 backing store is `profile.db` `chat_targets` (E008/D084); keychain backend later.
 7. **Implement in `base`**, wire in `feature` — Crypto module has no RmlUi or `P2pMessagingService` dependencies.
 
 ## Threat model
@@ -74,7 +74,7 @@ session_key = HKDF-SHA256(
 - **`channel`:** `e2e` only uses derived keys for body encryption; `public_relay` has no PSK session.
 - **`session_epoch`:** uint32, bumped on key rotation / compromise recovery ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md)). New epoch → new `session_key`; seq resets to 1 for that epoch.
 - **Pair scoping:** `master_psk` is unique per **`ChatTargetKey`** (one OOB secret per peer identity + channel). HKDF `info` intentionally omits identity strings so **both peers derive the same `session_key`** from the shared `master_psk` + `(channel, epoch)` — see [E015](DECISIONS.md#e015--hkdf-info-channel--epoch-only-option-a).
-- **`sessions.json` map key** (`identity:{kind}:{value}|channel:{channel}`) is storage/index only — not part of HKDF `info`.
+- **On-disk:** `master_psk_b64`, `psk_fingerprint`, and `retired_psks_json` live on **`profile.db` → `chat_targets`** (E008/D084) — same PK as seq/epoch.
 
 ### Chat target identity (D056, D079)
 
@@ -89,8 +89,7 @@ Canonical **`ChatTargetKey`** — matches [chat-storage DESIGN § ChatTargetKey]
 | Use | Key |
 |-----|-----|
 | C++ type | `ChatTargetKey{ peer_identity_kind, peer_identity_value, channel }` |
-| `sessions.json` map key | `identity:{kind}:{value}|channel:{channel}` |
-| `chat_targets` PK | `(peer_identity_kind, peer_identity_value, channel)` |
+| `chat_targets` PK / PSK store key | `(peer_identity_kind, peer_identity_value, channel)` |
 | Wire routing (inbound) | `{ sender_contact_id: identity value, route.channel }` + inferred kind → receiver's `ChatTargetKey` |
 
 **`Contact.id`** (local address book) and **`local:self`** (local transcript sentinel) are **never** in AAD or relay envelope. Wire **`sender_contact_id`** = sender's **communicating identity value** (D079).
@@ -334,28 +333,32 @@ Two layers:
 
 ## On-disk layout
 
-### PSK session store (v1)
+### PSK session store (v1 — E008/D084)
 
-```
-{data_dir}/profiles/{profile_id}/crypto/sessions.json
-```
+PSK material is **not** a separate JSON file. It lives on **`profile.db` → `chat_targets`** in the same row as `session_epoch` and `next_outgoing_seq` — see [chat-storage DESIGN § `profile.db` schema](../chat-storage-and-memory/DESIGN.md#profiledb-schema-v1).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `master_psk_b64` | TEXT NULL | RFC 4648 base64, 32-byte key; `NULL` until PSK installed (`e2e` only) |
+| `psk_fingerprint` | TEXT NULL | BLAKE2b-256 display string (E011); `NULL` when no PSK |
+| `retired_psks_json` | TEXT NULL | JSON array of `{ epoch, master_psk_b64, retired_at }` after **`rotate_psk`** (E018); `NULL` or `[]` otherwise |
+
+Example `retired_psks_json` value:
 
 ```json
-{
-  "schema_version": 1,
-  "sessions": {
-    "identity:relay_user:relay:c1|channel:e2e": {
-      "master_psk_b64": "…",
-      "session_epoch": 1,
-      "fingerprint": "a1b2-c3d4-e5f6-…"
-    }
-  }
-}
+[
+  { "epoch": 1, "master_psk_b64": "…", "retired_at": 1719900000000 },
+  { "epoch": 2, "master_psk_b64": "…", "retired_at": 1719980000000 }
+]
 ```
+
+**Decrypt lookup (E018):** `ResolveMasterPskForEpoch(epoch)` → `master_psk_b64` when `epoch == chat_targets.session_epoch`, else parse `retired_psks_json` for matching `epoch`, else error (hard reject on ingest).
+
+**Log/test string key (not on disk):** `identity:{kind}:{value}|channel:{channel}` — human-readable `ChatTargetKey` label only.
 
 ### Chat-target seq state (chat-storage D047)
 
-`next_outgoing_seq` and authoritative `session_epoch` live in **`profile.db` → `chat_targets`** keyed by **`ChatTargetKey`**. **`local_thread_id`** is the current on-disk shell only (D056) — not on wire or in AAD. Crypto **`sessions.json`** holds `session_epoch` for HKDF; **epoch bump** updates `sessions.json` + `chat_targets` in one transaction ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md)).
+`next_outgoing_seq`, authoritative `session_epoch`, and **PSK columns** (`master_psk_b64`, `psk_fingerprint`, `retired_psks_json`) live in **`profile.db` → `chat_targets`** keyed by **`ChatTargetKey`** (D047/D084). **`local_thread_id`** is the current on-disk shell only (D056) — not on wire or in AAD. Epoch bump updates all `chat_targets` fields in one **`profile.db` transaction** ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md)).
 
 ## `base/crypto` module (target)
 
@@ -369,8 +372,8 @@ Two layers:
 | `MessageCipher.h/.cpp` | AEAD encrypt/decrypt |
 | `EncryptedPayload.h/.cpp` | Blob codec + base64 |
 | `ReplayWindow.h/.cpp` | Seq acceptance helper |
-| `IPskSessionStore.h` | Session CRUD interface |
-| `JsonPskSessionStore.h/.cpp` | JSON persistence |
+| `IPskSessionStore.h` | Session CRUD + `ResolveMasterPskForEpoch(epoch)` (E018) — interface in `base/crypto` |
+| `SqlitePskSessionStore.h/.cpp` | v1 impl in `feature/messaging/` — reads/writes `chat_targets` PSK columns (E008/D084) |
 
 **Related (not in `base/crypto`):** **`PeerSigningKeyStore`** in `base/people/` — Ed25519 verify key cache per communicating identity (E016); uses same BLAKE2b fingerprint helper as PSK.
 
@@ -383,9 +386,10 @@ Aligned with [chat-storage D011/D038/D046](../chat-storage-and-memory/DECISIONS.
 1. Ingest detects **soft** integrity failure (seq conflict, rewind, repair failure, etc.) or **hard** wire/crypto failure.
 2. **Soft:** pause ingest/outbound; UI shows choice sheet (D038) with disclosure. **Recommended:** manual new PSK exchange on **both peers**, then `session_epoch++` (innocent peer cannot decrypt until PSK is installed locally).
 3. **Hard** (invalid signature, decrypt failure, epoch decrease): no override in v1; pause until delete thread or key rotation.
-4. On **rotate_psk** path: `session_epoch++` via epoch bump transaction ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md#epoch-bump-transaction-d014-d068-cross-project), D068) — coordinator cancels old-epoch pending outbox, then updates `sessions.json` + `chat_targets` under `profile.db` mutex.
+4. On **`rotate_psk`** path: `session_epoch++` via epoch bump transaction ([chat-storage DESIGN § Epoch bump](../chat-storage-and-memory/DESIGN.md#epoch-bump-transaction-d014-d068-cross-project), D068) — coordinator **appends retired PSK** to `chat_targets.retired_psks_json` (E018), cancels old-epoch pending outbox, then updates PSK + epoch in **`profile.db`** under writer mutex.
 5. **No `epoch_start` system message** ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md)) — first user message may use `sender_seq=1` in the new epoch.
-6. HKDF uses new epoch; old epoch keys retained for decrypting historical messages locally.
+6. HKDF uses new epoch for send; **decrypt** resolves `master_psk` by envelope `session_epoch` from `chat_targets` — active PSK or `retired_psks_json` (E018). Epoch-only bump (D014, same PSK) needs no retired entry. Local messages already persisted as plaintext (D048) stay readable without decrypt.
+7. **No new ingest on old epoch after rotation** ([chat-storage DESIGN § Integrity recovery](../chat-storage-and-memory/DESIGN.md#integrity-recovery-d038)) — retired keys are for historical relay ciphertext (backfill, in-flight during bump), not live old-epoch traffic.
 
 **`[post-v1]`** optional relaxed ingest (`ingest_policy=relaxed`, `continue_anyway`) — see [chat-storage DESIGN § Relaxed ingest](../chat-storage-and-memory/DESIGN.md#post-v1-relaxed-ingest--continue-anyway-d046-extension); not in v1 (D046).
 

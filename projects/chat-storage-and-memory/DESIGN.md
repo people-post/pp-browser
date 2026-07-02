@@ -144,7 +144,7 @@ A **Contact** represents a person or entity (human or non-human later). **`Conta
 
 ### ChatTargetKey (direct P2P — D056, D079)
 
-Canonical name for **`(peer_identity_kind, peer_identity_value, channel)`** — the **communicating identity** plus channel. Used in C++ (`ChatTargetKey`), `chat_targets` PK, PSK session storage (`sessions.json` map key), ingest routing, and relay backfill. HKDF `info` uses **`channel` + `epoch` only** (E015) — identity scopes the `master_psk`, not the KDF label.
+Canonical name for **`(peer_identity_kind, peer_identity_value, channel)`** — the **communicating identity** plus channel. Used in C++ (`ChatTargetKey`), `chat_targets` PK (seq, epoch, **PSK** — D084), ingest routing, and relay backfill. HKDF `info` uses **`channel` + `epoch` only** (E015) — identity scopes the `master_psk`, not the KDF label.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -152,7 +152,7 @@ Canonical name for **`(peer_identity_kind, peer_identity_value, channel)`** — 
 | `peer_identity_value` | string | Routable id, e.g. `relay:abc123`, libp2p peer id (D082) |
 | `channel` | `public_relay` \| `e2e` | Channel with that identity |
 
-**Store map key (string):** `identity:{kind}:{value}|channel:{channel}` — `sessions.json`, logs, tests.
+**Log/test string key:** `identity:{kind}:{value}|channel:{channel}` — human-readable label; not a separate on-disk store.
 
 **`[post-v1]` group:** use separate **`group_id`** on wire (`route.kind = "group"`); not a `ChatTargetKey`.
 
@@ -165,6 +165,9 @@ Seq counters and session epochs are keyed to **`ChatTargetKey`**, not `thread_id
 | `local_thread_id` | chat target | Current on-disk shell UUID; **local only**, not on wire; may change on delete/recreate |
 | `next_outgoing_seq` | chat target | Monotonic uint64 per epoch; assigned at first local persist before send |
 | `session_epoch` | chat target | Increment on compromise recovery, full device reset, or explicit new secure chat (D014) |
+| `master_psk_b64` | chat target | E2E only (`channel=e2e`); `NULL` until PSK installed (D084) |
+| `psk_fingerprint` | chat target | E2E only; BLAKE2b display (E011) |
+| `retired_psks_json` | chat target | E2E only; retired `(epoch, master_psk)` entries after `rotate_psk` (E018) |
 
 Persist in **`profile.db` → `chat_targets`** (D047), updated under the same writer mutex as `outbox`.
 
@@ -470,12 +473,15 @@ CREATE TABLE chat_targets (
   local_thread_id TEXT NOT NULL,     -- current on-disk shell; local only (D056)
   session_epoch INTEGER NOT NULL DEFAULT 1,
   next_outgoing_seq INTEGER NOT NULL DEFAULT 1,
+  master_psk_b64 TEXT,               -- e2e only; NULL until PSK installed (D084)
+  psk_fingerprint TEXT,            -- e2e only; BLAKE2b display (E011)
+  retired_psks_json TEXT,            -- e2e only; JSON array [{epoch, master_psk_b64, retired_at}] (E018)
   PRIMARY KEY (peer_identity_kind, peer_identity_value, channel)
 );
 CREATE UNIQUE INDEX idx_chat_targets_local_thread ON chat_targets(local_thread_id);
 ```
 
-**Scope:** `profile.db` holds the **sidebar list cache** (`threads`), **durable outbox index** (`outbox`), and **chat-target seq state** (`chat_targets`, D047). It does **not** store message-id dedup state (D034).
+**Scope:** `profile.db` holds the **sidebar list cache** (`threads`), **durable outbox index** (`outbox`), and **chat-target state** (`chat_targets` — seq, epoch, **PSK**, D047/D084). It does **not** store message-id dedup state (D034).
 
 **Per-thread dedup:** After resolving inbound **`ChatTargetKey` → `local_thread_id`** (D056), `HasMessageId(local_thread_id, message_id)` → `SELECT 1 FROM messages WHERE id = ?`. Outbox retries use stored `local_thread_id`. **Clear history** wipes dedup surface with transcript rows.
 
@@ -497,15 +503,17 @@ Optional dev-only: `PRAGMA integrity_check` on `profile.db` and open `thread.db`
 
 ### Epoch bump transaction (D014, D068, cross-project)
 
-Single **feature-layer coordinator** flow when user starts new secure chat or peer reset requires epoch bump. Serialize **`profile.db` writer mutex** and **`sessions.json`** update — do not update crypto sessions independently of `chat_targets` (cross-store race avoidance).
+Single **feature-layer coordinator** flow when user starts new secure chat or peer reset requires epoch bump. Hold **`profile.db` writer mutex** for all `chat_targets` updates (seq, epoch, PSK — D084) — no separate crypto sidecar.
 
 1. **Cancel old-epoch outbound (D068):** In `thread.db`, remove or mark cancelled all `relay_visible` rows with `delivery=pending|failed` for the **previous** `session_epoch` on this chat target; purge matching **`profile.db` `outbox`** rows in the same dual-DB recipe (D044). User re-composes in the new epoch — do not auto-resend stale envelopes.
-2. Increment `chat_targets.session_epoch`; reset `next_outgoing_seq = 1` in **`profile.db`** (same txn as step 1 catalog/outbox writes).
-3. Update e2e **`sessions.json`** `session_epoch` + re-derive session key ([e2e-message-crypto](../e2e-message-crypto/DESIGN.md)) while holding the coordinator (before releasing `profile.db` mutex).
-4. Update cached `threads.session_epoch` in `profile.db` `threads` row (E2E direct).
-5. Reset per-peer `sync_state` watermarks for the new epoch in `thread.db`; clear `sync_state=compromised` / `user_resolution` when rotation completes.
+2. **`profile.db` transaction** (same txn as step 1 catalog/outbox writes where applicable):
+   - Increment `chat_targets.session_epoch`; reset `next_outgoing_seq = 1`.
+   - **`rotate_psk`:** append `{ epoch: <old>, master_psk_b64: <previous>, retired_at }` to `retired_psks_json`, then set new `master_psk_b64` + `psk_fingerprint` (E018/D083/D084).
+   - **Epoch-only (D014, same PSK):** increment `session_epoch` only — no `retired_psks_json` entry.
+   - Update cached `threads.session_epoch` in `threads` row (E2E direct).
+3. Reset per-peer `sync_state` watermarks for the new epoch in `thread.db`; clear `sync_state=compromised` / `user_resolution` when rotation completes.
 
-No separate JSON sidecar for seq state — durable counters in SQLite + crypto session store.
+No separate JSON sidecar for seq or PSK state — durable counters and keys in `profile.db` `chat_targets`.
 
 ### Catalog consistency (D035)
 
@@ -1082,10 +1090,12 @@ On soft compromised: pause → choice sheet (what, causes, risk) → user **must
 
 | Option | Action |
 |--------|--------|
-| **Start new secure chat** | `rotate_psk`, epoch bump transaction |
+| **Start new secure chat** | `rotate_psk`, epoch bump transaction (retired PSK ledger — E018/D083) |
 | **Pause only** | remain paused |
 
 No **continue anyway** in v1 (D046).
+
+**Disclosure (Start new secure chat):** Messages already saved on this device stay readable. Encrypted copies on the relay from before rotation can still be unlocked on this device; new messages use the new key. Other devices need the new key for the new epoch.
 
 **E2E new secure chat flow** (`rotate_psk`):
 
@@ -1100,9 +1110,9 @@ Initiating side                               Innocent peer
      | 4. Resume at seq 1+                          | 3. Fresh watermarks for new epoch
 ```
 
-- Innocent peer accepts **strictly higher** `session_epoch` (D014) **after** both sides complete OOB PSK exchange and local `sessions.json` update — cannot decrypt new epoch traffic until PSK is installed.
+- Innocent peer accepts **strictly higher** `session_epoch` (D014) **after** both sides complete OOB PSK exchange and local **`chat_targets`** PSK update — cannot decrypt new epoch traffic until PSK is installed.
 - **No `epoch_start` system row** — first user message may use `sender_seq=1`.
-- Old epoch keys: decrypt historical ciphertext only; no new ingest on old epoch after rotation.
+- **Historical decrypt (E018/D083):** `retired_psks_json` holds previous `master_psk` per epoch after `rotate_psk`; epoch-only bump re-derives from current PSK. Retired keys decrypt historical relay ciphertext only — **no new ingest on old epoch** after rotation.
 
 #### Compromised thread behavior (D068)
 

@@ -72,5 +72,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 - [x] Resolve peer signing key binding — E016 in [DECISIONS.md](DECISIONS.md)
 - [x] Ed25519 signing frozen test vectors (hex) in DESIGN.md § Test vectors
 - [x] HKDF frozen test vector in DESIGN.md § Test vectors (E015)
+- [x] Retired PSK ledger on `rotate_psk` — E018 in [DECISIONS.md](DECISIONS.md)
+- [x] PSK store in `profile.db` `chat_targets` — E008/D084
 - [ ] AEAD / blob codec frozen test vectors — at c1 implementation
 - [ ] Promote stable spec to `docs/MESSAGE_ENCRYPTION.md` when d0 exits

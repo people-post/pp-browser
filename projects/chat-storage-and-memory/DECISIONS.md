@@ -409,7 +409,7 @@ No hard cap on messages per thread or threads per profile in v1 — monitor via 
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — superseded relaxed ingest (D046); E2E-only scope (D045).  
-**Decision:** On E2E soft integrity failure: **pause ingest/outbound**, append incident (ring buffer D049), show choice sheet with disclosure. User picks **`rotate_psk`** (start new secure chat) or **`pause_only`**. **No `continue_anyway`**, no `ingest_policy=relaxed`, no `trust_degraded` in v1. While compromised: **outbox frozen**, gap/tail sync disabled (D068). Persist in `sync_state.state_json`:
+**Decision:** On E2E soft integrity failure: **pause ingest/outbound**, append incident (ring buffer D049), show choice sheet with disclosure. User picks **`rotate_psk`** (start new secure chat) or **`pause_only`**. **No `continue_anyway`**, no `ingest_policy=relaxed`, no `trust_degraded` in v1. While compromised: **outbox frozen**, gap/tail sync disabled (D068). **`rotate_psk`** choice sheet includes E018/D083 disclosure (saved history, relay ciphertext, new epoch). Persist in `sync_state.state_json`:
 
 | Field | Values |
 |-------|--------|
@@ -528,10 +528,10 @@ No hard max file size in v1.
 ## D047 — `chat_targets` table in `profile.db`
 
 **Date:** 2026-06-29  
-**Updated:** 2026-07-02 — PK `(peer_identity_kind, peer_identity_value, channel)` (D079).  
-**Decision:** **`chat_targets`** PK = **`ChatTargetKey`** **`(peer_identity_kind, peer_identity_value, channel)`**. Columns: **`local_thread_id`** (current on-disk shell; **not on wire**), optional **`participant_contact_id`** (local Contact.id for catalog), **`next_outgoing_seq`**, **`session_epoch`**. Updated under same writer mutex as `outbox`. **Delete direct conversation** removes shell but **keeps** `chat_targets` (seq/epoch). Shell recreate may allocate **new** `local_thread_id`.  
-**Rationale:** Seq/epoch are per logical chat target (communicating identity + channel); local storage ids are device-private.  
-**Alternatives:** Wire-stable `thread_id` (D053 — superseded).
+**Updated:** 2026-07-02 — PK `(peer_identity_kind, peer_identity_value, channel)` (D079); PSK columns (D084/E008).  
+**Decision:** **`chat_targets`** PK = **`ChatTargetKey`** **`(peer_identity_kind, peer_identity_value, channel)`**. Columns: **`local_thread_id`** (current on-disk shell; **not on wire**), optional **`participant_contact_id`** (local Contact.id for catalog), **`next_outgoing_seq`**, **`session_epoch`**, and for **`channel=e2e`** — **`master_psk_b64`**, **`psk_fingerprint`**, **`retired_psks_json`** (D084). Updated under same writer mutex as `outbox`. **Delete direct conversation** removes shell but **keeps** `chat_targets` (seq/epoch/PSK). Shell recreate may allocate **new** `local_thread_id`.  
+**Rationale:** Seq/epoch/PSK are per logical chat target (communicating identity + channel); local storage ids are device-private; single-row txn on epoch bump.  
+**Alternatives:** Wire-stable `thread_id` (D053 — superseded); `sessions.json` sidecar (rejected — D084).
 
 ---
 
@@ -773,7 +773,7 @@ No hard max file size in v1.
 - **No** auto gap repair, tail sync, or **Sync with peer** — integrity choice sheet only.
 - **`rotate_psk` / epoch bump (D014):** before incrementing epoch, **cancel** all `relay_visible` `pending`/`failed` rows for the **old** `session_epoch` on that chat target; purge matching **`profile.db` `outbox`** rows (D068). User re-composes in the new epoch.
 
-**Epoch bump coordinator:** single feature-layer flow holds **`profile.db` mutex** while updating `chat_targets`, `outbox`, and **`sessions.json`** (cross-project) — see DESIGN § Epoch bump transaction.
+**Epoch bump coordinator:** single feature-layer flow holds **`profile.db` mutex** while updating `chat_targets` (seq, epoch, PSK — D084) and `outbox` — see DESIGN § Epoch bump transaction. On **`rotate_psk`**, append retired PSK to `retired_psks_json` before replacing active key (E018/D083).
 
 **Rationale:** Prevents livelock (retry send while paused); stale-epoch envelopes must not auto-resend after rotation; avoids cross-store race on epoch bump.  
 **Alternatives:** Allow manual retry while compromised (rejected — ambiguous trust state); auto-resend pending after epoch bump (rejected).
@@ -881,7 +881,7 @@ No hard max file size in v1.
 3. **Wire `sender_contact_id`** (envelope + AAD + signing bytes) carries the sender's **communicating identity `value`** (e.g. `relay:abc123`, libp2p peer id string — see D082) — **not** local `Contact.id`, **not** `local:self`. **`local:self`** remains a **local transcript sentinel** only (`ThreadMessage.sender_contact_id` on outbound rows).
 4. **Outbound identity** for a thread is implied by transport + thread binding — user does **not** pick among their identities per send within the same thread. Relay threads use the profile's primary **`relay_user`** identity; future libp2p-direct threads use the bound **`peer_id`**.
 5. **`threads.participant_contact_ids`** stores the local **Contact.id** (UI grouping, contact card). **`chat_targets`** and catalog denorm store **`peer_identity_kind`** + **`peer_identity_value`**. **`[post-v1]`** optional local merge: relate multiple identities to one Contact without merging threads.
-6. **`sessions.json` map key:** `identity:{kind}:{value}|channel:{channel}` (see [e2e-message-crypto DESIGN](../e2e-message-crypto/DESIGN.md)). **HKDF `info`** uses `channel` + `epoch` only (E015) — not identity strings; pair scoping is the per-target `master_psk`.
+6. **PSK + seq/epoch** on **`chat_targets`** PK `(peer_identity_kind, peer_identity_value, channel)` — see [e2e-message-crypto E008/D084](../e2e-message-crypto/DECISIONS.md#e008--psk-store-v1-in-profiledb-chat_targets-at-rest-encryption-deferred). **HKDF `info`** uses `channel` + `epoch` only (E015) — not identity strings; pair scoping is the per-target `master_psk`.
 
 **Rationale:** Separates address-book identity from routable messaging endpoints; fixes AAD self-check ambiguity; matches existing `ContactId` vector model; supports identity rotation as new thread + epoch without conflating local contacts.  
 **Alternatives:** Wire-stable id per Contact (rejected — conflates local book with routing); rename wire field to `sender_identity` in v1 (deferred — keep JSON key `sender_contact_id`, document semantics).
@@ -951,13 +951,49 @@ where `<opaque_id>` is **relay-assigned** at registration, **URL-safe** (`[A-Za-
 
 ---
 
+## D083 — Retired PSK ledger on `rotate_psk` (E018)
+
+**Date:** 2026-07-02  
+**Cross-project:** [e2e-message-crypto E018](../e2e-message-crypto/DECISIONS.md#e018--retired-psk-ledger-for-historical-decrypt-after-rotate_psk), [E008/D084](../e2e-message-crypto/DECISIONS.md#e008--psk-store-v1-in-profiledb-chat_targets-at-rest-encryption-deferred).  
+**Decision:** Epoch bump coordinator **`rotate_psk`** path must append the previous `(session_epoch, master_psk_b64)` to **`chat_targets.retired_psks_json`** before replacing the active PSK and incrementing epoch (E018/D084). **Epoch-only** bump ([D014](#d014--peer-reset-requires-session_epoch-bump), same `master_psk`) does **not** append a retired entry. All PSK + seq updates in one **`profile.db` transaction**.
+
+**Decrypt:** feature layer resolves `master_psk` by envelope `session_epoch` via `IPskSessionStore::ResolveMasterPskForEpoch` — active PSK or retired ledger — then HKDF (E015). Messages already in `thread.db` as plaintext (`chat_payload_json`, D048/D069) remain readable without decrypt.
+
+**Pruning:** optional — drop retired entry for epoch `E` when no local transcript rows for `E`, user cleared/abandoned that epoch sync surface, and no pending old-epoch sync work (E018).
+
+**c3 UX (D038 choice sheet):** disclose that saved-on-device history stays readable; pre-rotation relay ciphertext remains decryptable on this device via retained retired PSKs; new traffic requires new PSK; other devices need new PSK for the new epoch.
+
+**Rationale:** Single `master_psk_b64` per target breaks historical decrypt after PSK rotation; chat-storage DESIGN already assumes old-epoch decrypt for backfill. Ledger is minimal vs re-encrypt-at-rotation (local bodies are plaintext).  
+**Alternatives:** Accept permanent loss of pre-rotation relay ciphertext (rejected — contradicts DESIGN § Integrity recovery); re-encrypt local history at rotation (rejected — wrong layer, heavy).
+
+---
+
+## D084 — PSK columns on `chat_targets` in `profile.db` (E008)
+
+**Date:** 2026-07-02  
+**Cross-project:** [e2e-message-crypto E008](../e2e-message-crypto/DECISIONS.md#e008--psk-store-v1-in-profiledb-chat_targets-at-rest-encryption-deferred).  
+**Decision:** E2E PSK material is stored on **`profile.db` → `chat_targets`**, not in `profiles/{id}/crypto/sessions.json` or per-thread `thread.db`. Columns ( **`e2e` channel only** — `NULL` on `public_relay`):
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `master_psk_b64` | TEXT NULL | 32-byte key, RFC 4648 base64; `NULL` until user installs PSK |
+| `psk_fingerprint` | TEXT NULL | BLAKE2b display (E011) |
+| `retired_psks_json` | TEXT NULL | JSON array `[{ epoch, master_psk_b64, retired_at }]` — E018 |
+
+**`IPskSessionStore`** (`base/crypto`) + **`SqlitePskSessionStore`** (`feature/messaging/`) read/write these columns under the **`profile.db` writer mutex**. Epoch bump (D068) updates PSK + `session_epoch` + `next_outgoing_seq` in the **same transaction** — no cross-file sync.
+
+**Rationale:** Chat-target-scoped secrets colocated with seq/epoch; survives thread shell delete/recreate; inbound decrypt resolves `ChatTargetKey` before `local_thread_id`.  
+**Alternatives:** `sessions.json` sidecar (rejected); PSK in `thread.db` (rejected — ephemeral shell).
+
+---
+
 ## Open decisions (not yet resolved)
 
 | ID | Question | Options |
 |----|----------|---------|
 | — | *(none in this project — all O001–O005 resolved D023–D027)* | |
 
-**Cross-project (e2e-message-crypto):** peer signing keys resolved — E016 / D081; relay identity format — E017 / D082. Remaining e2e work is implementation (c1–c3).  
+**Cross-project (e2e-message-crypto):** peer signing keys — E016 / D081; relay identity format — E017 / D082; retired PSK ledger on `rotate_psk` — E018 / D083; PSK in `profile.db` `chat_targets` — E008 / D084. Remaining e2e work is implementation (c1–c3).  
 **Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — not chat wire scope.
 
 When resolved, move rows to numbered decisions above.

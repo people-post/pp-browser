@@ -88,20 +88,21 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## E008 — PSK store v1 is profile-scoped JSON; at-rest encryption deferred
+## E008 — PSK store v1 in `profile.db` `chat_targets`; at-rest encryption deferred
 
 **Date:** 2026-06-29  
-**Decision:** `JsonPskSessionStore` at `{data_dir}/profiles/{id}/crypto/sessions.json` with base64 PSK — same risk class as today's `encrypted_private_key_b64` misnomer in `IdentityStore`. Document limitation; OS keychain backend is a follow-up, not c1 blocker.  
-**Rationale:** Ship correct crypto on the wire first; local secret storage hardening is orthogonal seam (`IPskSessionStore`).  
-**Alternatives:** Block c1 on keychain integration.
+**Updated:** 2026-07-02 — superseded `sessions.json`; columns on `chat_targets` (D084).  
+**Decision:** PSK material lives in **`profile.db` → `chat_targets`** alongside `session_epoch` and `next_outgoing_seq` — keyed by **`ChatTargetKey`** PK (D047/D084). Columns: `master_psk_b64`, `psk_fingerprint`, `retired_psks_json` (`e2e` channel only; `NULL` on `public_relay`). **`IPskSessionStore`** in `base/crypto` is the seam; v1 default impl **`SqlitePskSessionStore`** in `feature/messaging/` reads/writes those columns under the **`profile.db` writer mutex** (same txn as epoch bump). No `profiles/{id}/crypto/sessions.json`. At-rest risk class matches today's `encrypted_private_key_b64` misnomer in `IdentityStore`; OS keychain backend is follow-up, not c1 blocker.  
+**Rationale:** Crypto session is per chat target, not per thread shell; colocating PSK with seq/epoch avoids cross-file races on epoch bump and survives delete/recreate of `local_thread_id`.  
+**Alternatives:** `sessions.json` sidecar (rejected — dual-store sync); PSK in `thread.db` (rejected — shell is ephemeral); block c1 on keychain integration.
 
 ---
 
 ## E011 — PSK entry UX v1: paste base64
 
 **Date:** 2026-07-02  
-**Decision:** Phase **c3** PSK import uses **paste base64** — user pastes a 32-byte key encoded as standard base64 (44 chars, optional `=` padding). App decodes, stores in `JsonPskSessionStore`, and displays **BLAKE2b fingerprint** for out-of-band verification with the peer.  
-**Rationale:** Minimal UI for c3; matches `sessions.json` storage format; fingerprint display still satisfies DESIGN.md verification step without a separate "confirm fingerprint first" import flow.  
+**Decision:** Phase **c3** PSK import uses **paste base64** — user pastes a 32-byte key encoded as standard base64 (44 chars, optional `=` padding). App decodes, stores via **`IPskSessionStore`** into **`chat_targets.master_psk_b64`** (+ `psk_fingerprint`), and displays **BLAKE2b fingerprint** for out-of-band verification with the peer.  
+**Rationale:** Minimal UI for c3; matches `chat_targets` column encoding; fingerprint display still satisfies DESIGN.md verification step without a separate "confirm fingerprint first" import flow.  
 **Alternatives:** Paste fingerprint + confirm (no raw key paste); QR scan (deferred UX).
 
 ---
@@ -190,3 +191,25 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **Do not** i
 
 **Rationale:** Exact UTF-8 byte match across peers is required for AAD and signature verify; one canonical format avoids silent interoperability failure.  
 **Alternatives:** See D082.
+
+---
+
+## E018 — Retired PSK ledger for historical decrypt after `rotate_psk`
+
+**Date:** 2026-07-02  
+**Cross-project:** [chat-storage D083](../chat-storage-and-memory/DECISIONS.md#d083--retired-psk-ledger-on-rotate_psk-e018), [D084](../chat-storage-and-memory/DECISIONS.md#d084--psk-columns-on-chat_targets-in-profiledb-e008).  
+**Decision:** When **`rotate_psk`** replaces `master_psk` and bumps `session_epoch`, append the **previous** `(epoch, master_psk_b64)` to **`chat_targets.retired_psks_json`** **before** writing the new active PSK (same `profile.db` txn — E008/D084). Decrypt resolves `master_psk` by `envelope.session_epoch`: active PSK when `epoch == session_epoch`, else lookup retired array for a matching `epoch`, then HKDF (E015).
+
+| Bump kind | `retired_psks_json` |
+|-----------|---------------------|
+| **`rotate_psk`** (new `master_psk` + `session_epoch++`) | Append `{ "epoch": <old>, "master_psk_b64": "…", "retired_at": <unix_ms> }` |
+| **Epoch-only** ([chat-storage D014](../chat-storage-and-memory/DECISIONS.md#d014--peer-reset-requires-session_epoch-bump) — same `master_psk`, `session_epoch++`) | **No** entry — re-derive any past epoch from current `master_psk` |
+
+**Pruning (v1):** Drop a retired entry for epoch `E` when **all** hold: (1) no local `messages` rows with `session_epoch = E` for that chat target, (2) user ran **Clear messages** for that epoch surface or explicitly abandons old-epoch sync, (3) no active old-epoch gap/sync work. Pruning is optional hygiene — correctness does not require immediate purge.
+
+**UX disclosure (c3):** On **Start new secure chat**, choice sheet states: messages **already saved on this device** stay readable (plaintext per D048); relay ciphertext from **before** rotation remains decryptable on this device via retained retired PSKs; **new** traffic uses the new PSK and epoch only; other devices need the new PSK for the new epoch.
+
+**Rejected for v1:** Permanent loss of pre-rotation relay ciphertext without amending DESIGN; full re-encrypt of local history at rotation (local bodies are plaintext — D048/D069; heavy relay backfill does not replace a small ledger); unbounded key history without pruning policy.
+
+**Rationale:** DESIGN § Key rotation promises old-epoch decrypt locally; a single `master_psk_b64` per target breaks that on PSK rotation. Retired ledger is minimal, one entry per rotation event, and matches the threat model (local disk already holds plaintext transcripts). Epoch-only bumps need no ledger because HKDF re-derives from the unchanged `master_psk`.  
+**Alternatives:** Store derived `session_key` per epoch instead of retired `master_psk` (acceptable optimization, deferred); re-encrypt-at-rotation (wrong layer for plaintext storage).

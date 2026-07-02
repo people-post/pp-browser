@@ -56,7 +56,7 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 - [ ] `MessageCipher` — XChaCha20-Poly1305 AEAD
 - [ ] `EncryptedPayload` — blob codec + base64
 - [ ] `ReplayWindow` — seq acceptance helper
-- [ ] `IPskSessionStore` + `JsonPskSessionStore` — `profiles/{id}/crypto/sessions.json`
+- [ ] `IPskSessionStore` (`base/crypto`) + `SqlitePskSessionStore` (`feature/messaging/`) — `chat_targets` PSK columns in `profile.db` (E008/D084, E018)
 
 ### Tests
 
@@ -64,7 +64,7 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 - [ ] HKDF determinism matches DESIGN test vector
 - [ ] AEAD round-trip, tamper fail, wrong AAD fail
 - [ ] Codec round-trip; ReplayWindow accept/reject
-- [ ] PskSessionStore load/save round-trip
+- [ ] PskSessionStore load/save round-trip; retired PSK lookup by epoch (E018)
 
 ### Docs / agent guide
 
@@ -113,8 +113,8 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 - [ ] Settings or contact flow: import/generate PSK
 - [ ] Display fingerprint; compare/confirm UI
 - [ ] Add-contact: display signing-key fingerprint (E016); **`[post-v1]`** explicit confirm
-- [ ] Key rotation flow: bump `session_epoch`, notify peer (system row or in-app)
-- [ ] Compromise path hooks chat-storage D011/D038 UX (choice sheet + optional continue with current keys)
+- [ ] Key rotation flow: `rotate_psk` → append `retired_psks[]`, bump `session_epoch` (E018); epoch-only bump (D014) without retired entry
+- [ ] Compromise path hooks chat-storage D011/D038 UX (choice sheet + E018 disclosure copy)
 - [ ] Optional: QR encode/decode for PSK
 
 **Exit criteria:** User can start e2e thread, verify fingerprint, send/receive, rotate after simulated epoch bump.

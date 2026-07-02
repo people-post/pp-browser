@@ -234,7 +234,7 @@ Existing foundation this project builds on.
 
 - [ ] `sender_seq`, `session_epoch` on **E2E** messages + envelope (D021, D045)
 - [ ] `sync_state` table populated per `(peer, session_epoch)` — E2E threads only
-- [ ] **`chat_targets` in `profile.db`** (D047) — not JSON sidecar
+- [ ] **`chat_targets` in `profile.db`** (D047) — seq/epoch + PSK columns (D084); not JSON sidecar
 - [ ] `GetMessagesBySeqRange` on `IThreadStore` for tail/gap
 - [ ] Assign `(message_id, sender_seq)` at first local persist on E2E send; serialize per chat target
 
@@ -257,7 +257,7 @@ Existing foundation this project builds on.
 - [ ] **Tail sync** — desc limit 50
 - [ ] **Gap repair** — automatic via D058
 - [ ] **Authoritative empty gap close** — success + zero messages closes hole **only when D067 guard passes**; `empty_closed_seqs[]` / `empty_closed_ranges[]` + late fill (D061/D067/D071)
-- [ ] **Compromised thread (D068)** — outbox frozen; no gap/tail sync; epoch bump cancels old-epoch pending; coordinator updates `sessions.json` under `profile.db` mutex
+- [ ] **Compromised thread (D068)** — outbox frozen; no gap/tail sync; epoch bump cancels old-epoch pending; coordinator updates `chat_targets` PSK + epoch in one `profile.db` txn (D084)
 - [ ] **User-initiated sync** — thread menu **Sync with peer**; gap banner **Retry sync** (D059)
 - [ ] Gap repair assigns **`display_order`** between seq neighbors (D054 Rule 2)
 - [ ] **Gap repair UI defer** — D065: skip refresh above window; defer + anchor when renumber touches loaded page
