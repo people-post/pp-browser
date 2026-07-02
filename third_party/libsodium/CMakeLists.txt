@@ -163,8 +163,6 @@ add_library(${PROJECT_NAME}
   src/libsodium/crypto_stream/salsa20/xmm6int/u8.h
   src/libsodium/crypto_stream/xsalsa20/stream_xsalsa20.c
   src/libsodium/crypto_verify/verify.c
-  src/libsodium/include/Makefile.am
-  src/libsodium/include/Makefile.in
   src/libsodium/include/sodium.h
   src/libsodium/include/sodium/core.h
   src/libsodium/include/sodium/crypto_aead_aegis128l.h

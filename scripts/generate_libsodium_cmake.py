@@ -211,10 +211,11 @@ def main() -> int:
         if (root / path).is_file():
             sources.append(path)
 
+    skip_names = {"version.h.in", "version.h", "Makefile.am", "Makefile.in"}
     public_headers = sorted(
         str(p.relative_to(root))
         for p in (root / "src/libsodium/include").rglob("*")
-        if p.is_file() and p.name != "version.h.in" and p.name != "version.h"
+        if p.is_file() and p.name not in skip_names
     )
 
     all_sources = sorted(set(sources + HEADER_SOURCES + public_headers))
