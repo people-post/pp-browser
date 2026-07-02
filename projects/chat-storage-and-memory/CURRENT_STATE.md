@@ -65,7 +65,7 @@ No `index.json` in target layout (replaces legacy index + flat JSON).
 | HTTP relay send + poll dedup | Implemented | `src/feature/messaging/P2pMessagingService.*` |
 | Local write before send | Implemented | `SendUserMessage` appends then relays |
 | `HasMessageId` dedup | Implemented (legacy: profile-global) | `JsonThreadStore` in-memory set; target: per-thread `thread.db` PK (D034) |
-| Inbound signature verify | **Not implemented** | `Ed25519Signer::Verify` unused on poll |
+| Inbound signature verify | **Not implemented** (spec: [E016](../e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add), D081) | `Ed25519Signer::Verify` unused on poll; no `PeerSigningKeyStore` |
 | Relay poll every UI frame | **Implemented (gap)** | `ChatController::Update` → `PollAndMerge` (D032) |
 | `@ai` scoped assist | Implemented (local only) | `MessageRouter` → `SubmitScopedAssist` |
 | `@ai+` / `@ai++` shared modes | **Deferred** (D012) | Design: local `@ai` only for v1 |
@@ -136,7 +136,7 @@ No `index.json` in target layout (replaces legacy index + flat JSON).
 10. No agent tail context API; full `GetMessages` per turn (D039).
 11. No compaction service or summary size cap (D040).
 12. No outbox/gap repair numeric limits (D041); annotation cap (D042).
-13. Inbound relay messages not signature-verified; remote `content_rml` trusted (D030).
+13. Inbound relay messages not signature-verified; no `PeerSigningKeyStore` (E016/D081); remote `content_rml` trusted (D030).
 14. JsonThreadStore eager load + full-file rewrite on append.
 15. Schema bumps require wipe (D016); v2a replaces JSON with SQLite (D028).
 16. `@ai` local-only in v1 — shared modes deferred (D012).

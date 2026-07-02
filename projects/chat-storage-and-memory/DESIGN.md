@@ -122,6 +122,8 @@ A **Contact** represents a person or entity (human or non-human later). **`Conta
 
 **Wire field note:** JSON key **`sender_contact_id`** is historical naming — it carries the sender's **communicating identity value** (e.g. `relay:user:abc`), not local `Contact.id`.
 
+**Signing keys (E016, D081):** Ed25519 envelope verify uses **`PeerSigningKeyStore`** keyed by **`(peer_identity_kind, peer_identity_value)`** — not `Contact.id`, not on wire. Directory supplies **`signing_public_key_b64`** at add-contact; lazy relay lookup for D080 ephemeral public. See [e2e DESIGN § Peer signing keys](../e2e-message-crypto/DESIGN.md#peer-signing-keys-e016).
+
 ## Data model (target)
 
 ### Thread
@@ -1012,7 +1014,7 @@ Ordered steps — **single linear sequence**; do not reorder in implementation (
 
 0. **Envelope size** — reject if serialized JSON > `kMaxRelayEnvelopeJsonBytes` (D029).
 1. **Reject legacy shape** — if `thread_id` present → hard reject (D016). Require **`envelope_version=1`**; reject unknown envelope versions (D072).
-2. **Verify Ed25519 signature** on outer envelope (classical; see e2e-message-crypto). Canonical bytes include **`envelope_version`** (D072).
+2. **Verify Ed25519 signature** on outer envelope (classical; E014). Resolve **`signing_public_key_b64`** from **`PeerSigningKeyStore`** by `(peer_identity_kind, envelope.sender_contact_id)`; on miss, lazy **`GET /v1/users/{relay_user_id}`** (E016, D081). **Fail closed** if key missing or verify fails.
 3. **Parse `route`** — `kind=direct` requires `channel`; unknown `kind` → reject.
 4. **Resolve local thread (direct)** — build **`ChatTargetKey`** from `envelope.sender_contact_id` (value) + inferred **`peer_identity_kind`** (v1: `relay_user`) + `envelope.route.channel` → lookup **`chat_targets`** → `local_thread_id`. **Inbound (D062, D080):** if no row — **E2E hard reject**; **public** → **ephemeral UI only**, stop before persist (steps 5–12). If row exists but shell missing → hard reject. Outbound user send uses **`FindOrCreateDirectThread`**. **`[post-v1]` group:** `route.group_id` → group thread lookup.
 5. **Per-thread UUID dedup** — `HasMessageId(local_thread_id, envelope.message_id)`; benign duplicate → stop (D034).

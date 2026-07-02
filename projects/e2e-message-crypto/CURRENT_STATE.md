@@ -33,7 +33,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | Local Ed25519 keypair | Implemented | `IdentityStore`, `Ed25519Signer` |
 | Private key at rest | Base64 in JSON (not encrypted) | `identity.json` — field `encrypted_private_key_b64` |
 | Per-contact PSK | **Not implemented** | — |
-| Peer public keys for verify | **Not implemented** | Contacts have relay IDs, not signing keys |
+| Peer public keys for verify | **Not implemented** (spec: [E016](DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add)) | `PeerSigningKeyStore` planned; contacts/directory hits lack `signing_public_key_b64` today |
 
 ## Third-party crypto libraries
 
@@ -55,7 +55,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 1. No symmetric E2E — relay sees all direct message text.
 2. No libsodium — no application AEAD layer.
 3. No PSK storage or fingerprint UX.
-4. Ed25519 signing without inbound verify on relay poll.
+4. Ed25519 signing without inbound verify on relay poll (no peer key store yet — E016).
 5. Messaging schema lacks `channel`, `sender_seq`, `session_epoch` (chat-storage tracks).
 6. PQ: only classical Ed25519 for envelopes; no hybrid plan in code (documented in DESIGN).
 7. **Identity model:** baseline code keys threads on local `Contact.id`; target uses identity-keyed `ChatTargetKey` (chat-storage D079) with wire `sender_contact_id` = communicating identity value.
@@ -69,6 +69,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 - [x] Resolve O001/O002 — E009/E010 in [DECISIONS.md](DECISIONS.md)
 - [x] Resolve O003/O005 — E011/E012 in [DECISIONS.md](DECISIONS.md)
 - [x] Resolve O004 — E013 in [DECISIONS.md](DECISIONS.md)
+- [x] Resolve peer signing key binding — E016 in [DECISIONS.md](DECISIONS.md)
 - [x] Ed25519 signing frozen test vectors (hex) in DESIGN.md § Test vectors
 - [x] HKDF frozen test vector in DESIGN.md § Test vectors (E015)
 - [ ] AEAD / blob codec frozen test vectors — at c1 implementation

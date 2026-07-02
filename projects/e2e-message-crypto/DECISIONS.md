@@ -154,3 +154,24 @@ info = "channel:{channel}|epoch:{session_epoch}"
 with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **Do not** include `peer_identity_kind`, `peer_identity_value`, or local `Contact.id` in HKDF `info`.  
 **Rationale:** `master_psk` is already unique per **`ChatTargetKey`** (one OOB secret per peer identity + channel). Including the peer identity in `info` would differ per device (`alice→bob` vs `bob→alice`) and produce **different session keys** for the same conversation. Channel + epoch provide epoch rotation without breaking cross-peer symmetry.  
 **Alternatives:** Sorted canonical pair of both parties' identities in `info` (acceptable but redundant with per-target PSK); identity in `info` (rejected — interoperability bug).
+
+---
+
+## E016 — Peer signing keys: relay directory source, local cache, OOB fingerprint at add
+
+**Date:** 2026-07-02  
+**Decision:** Inbound **`EnvelopeSigner::Verify`** (receive pipeline step 2) resolves the sender's **Ed25519 public key** from a local **`PeerSigningKeyStore`** keyed by **`(peer_identity_kind, peer_identity_value)`** — the same communicating-identity boundary as `ChatTargetKey` (D079). **PSK** (E001) and **signing keys** are independent trust anchors.
+
+| Layer | v1 policy |
+|-------|-----------|
+| **Source of truth (relay)** | Directory exposes **`signing_public_key_b64`** (32-byte Ed25519, RFC 4648 base64) per **`relay_user`** id — on search hits and via **`GET /v1/users/{relay_user_id}`** lazy lookup. Relay already receives `public_key` at registration. |
+| **Persist at add-contact** | **`AddFromDirectoryHit`** (and manual add flows) write the key into **`PeerSigningKeyStore`** when directory supplies it. **`DirectoryHit`** gains optional **`signing_public_key_b64`** on the primary `relay_user` hit. |
+| **OOB verification** | On add, display **BLAKE2b-256 fingerprint** of the decoded public key (same grouped-hex style as PSK — E011). **`[v1]`** display-only; **`[post-v1]`** optional explicit fingerprint-confirm step before trust. |
+| **Lazy fetch** | If ingest needs a key not cached (e.g. ephemeral public preview — D080): **`GET /v1/users/{relay_user_id}`**, cache in store, then verify. **Fail closed** if lookup fails. |
+| **Rotation** | Relay updates directory mapping when user re-registers with a new key. Client may refresh on verify failure. **New `relay_user` id** → new communicating identity → **new thread** (D079); same identity + new key → update store, no new thread. |
+| **Rejected** | Embed key or fingerprint in **`sender_relay_id`** / **`sender_contact_id`**; **`ContactIdKind::SigningKey`** mixed into `ids[]`; TOFU pin on first message without directory or OOB; infer full public key from `relay:` + base64 prefix (today's local `substr(0,12)` bootstrap is **not** reversible). |
+
+**On-disk (v1):** `{data_dir}/profiles/{profile_id}/crypto/signing_keys.json` — map key `identity:{kind}:{value}` → `{ "signing_public_key_b64": "…", "fingerprint": "…" }`.
+
+**Rationale:** `sender_contact_id` on the wire is a **routing identity**, not a public key (E014, D079). Production ingest cannot verify without an explicit binding. Relay directory is the natural registry; local cache avoids per-message HTTP; OOB fingerprint matches PSK UX; lazy fetch supports D080 ephemeral public without pre-added contacts.  
+**Alternatives considered:** Directory-only verify with no local cache (rejected — offline, hot-path latency); paste-only keys with no directory (rejected — poor UX for search-driven add); encode key in relay id (rejected — wrong layer, rotation pain).

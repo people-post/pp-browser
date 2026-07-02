@@ -16,6 +16,7 @@
 |----------------------|-------------------|---------------------|
 | Relay reads message body on `e2e` | AEAD ciphertext | Metadata: timestamps, sizes, traffic patterns |
 | Relay forges E2E ciphertext without PSK | AEAD + seq in AAD | — |
+| Relay forges envelope (wrong sender) | Ed25519 verify + pinned peer signing key (E016) | — |
 | Network replay of captured E2E blob | `sender_seq` in AAD + ingest rules (chat-storage D013) | — |
 | Classical break of Ed25519 identity | — | Relay envelope signatures (upgrade in c4) |
 | Future CRQC breaks EC signatures | — | Ed25519 verify on relay; plan ML-DSA hybrid |
@@ -95,6 +96,49 @@ Canonical **`ChatTargetKey`** — matches [chat-storage DESIGN § ChatTargetKey]
 **`Contact.id`** (local address book) and **`local:self`** (local transcript sentinel) are **never** in AAD or relay envelope. Wire **`sender_contact_id`** = sender's **communicating identity value** (D079).
 
 **`thread_id` / `local_thread_id` is never in AAD or relay envelope.**
+
+### Peer signing keys (E016)
+
+Envelope signatures (E014) bind envelope fields and body hash; they do **not** carry the sender's public key. **`EnvelopeSigner::Verify(envelope, public_key_b64)`** needs a local lookup:
+
+```
+(sender_contact_id, peer_identity_kind) → signing_public_key_b64
+```
+
+| Concept | Scope | Example |
+|---------|-------|---------|
+| **Communicating identity** | Wire routing (D079) | `relay_user` + `relay:abc…` |
+| **Signing public key** | Ed25519 verify only | 32-byte key, base64 in store |
+| **PSK** | E2E body AEAD only (E001) | Independent of signing key |
+
+**Trust establishment (v1):**
+
+1. **Directory** returns `signing_public_key_b64` on people search hits (relay already stores key at registration).
+2. **Add contact** → persist in **`PeerSigningKeyStore`**; show BLAKE2b fingerprint for OOB compare with peer (same display rules as PSK — E011).
+3. **Manual add** → user may paste `signing_public_key_b64` when directory is unavailable.
+4. **Lazy fetch** — `GET /v1/users/{relay_user_id}` when a message arrives from an unknown `sender_contact_id` (D080 ephemeral public); cache then verify. Missing key → **hard reject** (same as invalid signature).
+
+**Storage:** `profiles/{profile_id}/crypto/signing_keys.json` — map key `identity:{kind}:{value}` → `{ signing_public_key_b64, fingerprint }`. Not in AAD, not on wire, not in `Contact.id`.
+
+**Directory wire (relay — v1 additions):**
+
+Search hit (optional field on each hit):
+
+```json
+{
+  "hit_id": "…",
+  "display_name": "Alice",
+  "nickname": "alice",
+  "signing_public_key_b64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+  "ids": [{ "kind": "relay_user", "value": "relay:abc123", "primary": true }]
+}
+```
+
+Lazy lookup: `GET /v1/users/{relay_user_id}` → `{ "relay_user_id": "…", "signing_public_key_b64": "…", "nickname": "…" }`.
+
+**Do not** derive verify keys from `sender_relay_id` (unsigned metadata) or from a truncated base64 prefix of the key. **Do not** mix signing keys into `Contact.ids[]`.
+
+**Rotation:** Same communicating identity + new signing key → update store entry. New `relay_user` id → new `ChatTargetKey` / thread (D079); historical messages verify with keys pinned per identity.
 
 ## AEAD: associated data (canonical layout)
 
@@ -261,6 +305,12 @@ Shared by relay send, relay poll verify, and c1/c2 test vectors. Lives in **`src
 
 `IdentityStore::SignPayload` becomes a thin wrapper: sign `BuildSignBytes` output.
 
+**Verify key lookup (receive — step 2, E016):**
+
+1. Read `envelope.sender_contact_id` + inferred `peer_identity_kind` (v1: `relay_user`).
+2. `PeerSigningKeyStore::Get(kind, value)` → `signing_public_key_b64`; on miss, `GET /v1/users/{value}` (relay), cache, retry once.
+3. `EnvelopeSigner::Verify(envelope, signing_public_key_b64)` — failure → hard reject (D022); do not decrypt.
+
 **Send pipeline (e2e):**
 
 1. Build `ChatPayload` JSON from `ThreadMessage`.
@@ -321,6 +371,8 @@ Two layers:
 | `ReplayWindow.h/.cpp` | Seq acceptance helper |
 | `IPskSessionStore.h` | Session CRUD interface |
 | `JsonPskSessionStore.h/.cpp` | JSON persistence |
+
+**Related (not in `base/crypto`):** **`PeerSigningKeyStore`** in `base/people/` — Ed25519 verify key cache per communicating identity (E016); uses same BLAKE2b fingerprint helper as PSK.
 
 All public APIs return `Roe<T>` from `common/Error.h`.
 

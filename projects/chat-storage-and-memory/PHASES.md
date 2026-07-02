@@ -244,7 +244,7 @@ Existing foundation this project builds on.
 - [ ] Durable outbox: `ListPendingOutbox()` + reconciliation on startup (D017, D047)
 - [ ] **E2E:** receive pipeline D013/D033; inbound **find-only** (D062); **`ReplayWindow` helper**, classifier authoritative (D020)
 - [ ] **Public:** UUID dedup + participant check only (D045)
-- [ ] Inbound Ed25519 verify; strip remote `content_rml` (D030)
+- [ ] Inbound Ed25519 verify + **`PeerSigningKeyStore`** lookup (E016, D081); strip remote `content_rml` (D030)
 - [ ] Poll backoff min 2 s foreground (D032); cap poll batch (D029)
 - [ ] Outbox retry **`kMaxOutboxRetryAttempts`**; gap repair **`kMaxGapRepairRounds`** / **`kMaxGapRepairSeqSpan`** (D041)
 - [ ] Clear history → `history_floor_seq = loaded_max_seq` (not contiguous-only); below-floor silent discard (D037)
@@ -354,6 +354,7 @@ Existing foundation this project builds on.
 |-------------------|-----------|------|
 | v2b channel split | c2 | `P2pMessagingService` encrypt/decrypt on `channel=e2e` |
 | v6 envelope + seq | c2–c3 | AAD binds `sender_seq`; `ChatPayload` plaintext (E010) |
+| v6 receive pipeline | c2 | `PeerSigningKeyStore` + inbound verify (E016, D081) |
 | v6 peer history (D060) | libp2p integration | `/pp-browser/chat-history/1.0.0` responder + requester |
 | D038 integrity UX | c3 | PSK rotation + epoch bump transaction (D047) |
 

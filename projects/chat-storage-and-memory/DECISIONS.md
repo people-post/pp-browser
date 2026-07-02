@@ -906,13 +906,23 @@ No hard max file size in v1.
 
 ---
 
+## D081 — Peer signing key lookup before envelope verify (E016)
+
+**Date:** 2026-07-02  
+**Cross-project:** [e2e-message-crypto E016](../e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).  
+**Decision:** Receive pipeline **step 2** (D022) resolves **`signing_public_key_b64`** for **`envelope.sender_contact_id`** (+ inferred **`peer_identity_kind`**, v1: `relay_user`) via **`PeerSigningKeyStore`**. On cache miss, **lazy fetch** from relay **`GET /v1/users/{relay_user_id}`**, persist, then **`EnvelopeSigner::Verify`**. **Fail closed** if key is missing or verify fails — do not decrypt (E2E) or parse untrusted body. Keys are populated at **add-contact** from directory hits (`signing_public_key_b64` field) and optional manual paste; OOB fingerprint display at add (E016). **PSK** and signing keys are independent. **Do not** encode signing material in `sender_relay_id` or `sender_contact_id`.  
+**Rationale:** Wire `sender_contact_id` is a communicating identity (D079), not an Ed25519 key; c2 production ingest requires an explicit identity→key binding. Directory is the relay-side registry; local cache matches D080 ephemeral-public lazy trust without per-message directory calls.  
+**Alternatives:** Directory fetch on every message (rejected — latency, offline); TOFU first message (rejected — weak trust); key embedded in relay id (rejected — E016).
+
+---
+
 ## Open decisions (not yet resolved)
 
 | ID | Question | Options |
 |----|----------|---------|
 | — | *(none in this project — all O001–O005 resolved D023–D027)* | |
 
-**Cross-project (e2e-message-crypto):** PSK entry UX (E-O003), automated key agreement (E-O004), group E2E (E-O005).  
+**Cross-project (e2e-message-crypto):** peer signing keys resolved — E016 / D081. Remaining e2e work is implementation (c1–c3).  
 **Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — not chat wire scope.
 
 When resolved, move rows to numbered decisions above.

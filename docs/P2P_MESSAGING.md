@@ -87,6 +87,8 @@ Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is r
 
 Inbound routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: sender_contact_id, channel }` → existing local thread when row exists (**E2E inbound find-only**, D062; **public ephemeral** without row, D080). Legacy envelopes with `thread_id` or flat `body.text` (no `body.content`) are rejected.
 
+**Signature verify (E014, E016):** Inbound messages are verified with **`EnvelopeSigner::Verify`** using the sender's **`signing_public_key_b64`** from **`PeerSigningKeyStore`** (directory at add-contact; lazy `GET /v1/users/{relay_user_id}` on cache miss). See [e2e DECISIONS E016](../projects/e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).
+
 **Wire cutover (D063):** v2a-p2p ships final envelope + minimal ChatPayload in `body.content`. v4 adds validation only — no second wire break. See [DESIGN § Wire cutover phasing](../projects/chat-storage-and-memory/DESIGN.md#wire-cutover-phasing-d063).
 
 Local store is written **before** send. Server rejections do not delete history. **Unsent/failed** rows stay local — user **retries send**; **peer sync** (`FetchChatTargetMessages`, D058) fetches **missing messages from the peer**, not your pending outbox.
