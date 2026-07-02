@@ -12,7 +12,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../third_party/): FreeType, nlohmann-json, curl, SDL3, SDL3_image, and (for libp2p) BoringSSL, Boost, Protobuf, lsquic, and related packages.
+**Vendored source** under [`third_party/`](../third_party/): FreeType, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), libsodium, and (for libp2p) BoringSSL, Boost, Protobuf, lsquic, and related packages.
 
 **System packages:** X11 and OpenGL development headers on Linux for the GUI.
 

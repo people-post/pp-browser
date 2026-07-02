@@ -16,6 +16,8 @@ pp_require_vendored(curl)
 pp_require_vendored(sdl3)
 pp_require_vendored(sdl3_image)
 pp_require_vendored(lunasvg)
+pp_require_vendored(sqlite)
+pp_require_vendored(libsodium)
 
 # libp2p deps (BoringSSL must be available before curl TLS on Linux)
 include(libp2p_dependencies)
@@ -47,6 +49,15 @@ set(JSON_Install OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${PP_THIRD_PARTY_DIR}/nlohmann_json"
                  "${CMAKE_BINARY_DIR}/third_party/nlohmann_json" EXCLUDE_FROM_ALL)
+
+# SQLite amalgamation (chat-storage SqliteThreadStore — pp_base, not libp2p fork)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/sqlite"
+                 "${CMAKE_BINARY_DIR}/third_party/sqlite" EXCLUDE_FROM_ALL)
+
+# libsodium (e2e-message-crypto symmetric layer — base/crypto)
+set(SODIUM_MINIMAL OFF CACHE BOOL "" FORCE)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/libsodium"
+                 "${CMAKE_BINARY_DIR}/third_party/libsodium" EXCLUDE_FROM_ALL)
 
 # LunaSVG (RmlUi SVG plugin)
 set(LUNASVG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

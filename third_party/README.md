@@ -15,6 +15,8 @@ libp2p itself is a hard fork under [`src/libp2p/fork/`](../src/libp2p/fork/), no
 | `curl/` | [curl/curl](https://github.com/curl/curl) | `curl-8_11_1` | curl license |
 | `sdl3/` | [libsdl-org/SDL](https://github.com/libsdl-org/SDL) | `release-3.2.8` | Zlib |
 | `sdl3_image/` | [libsdl-org/SDL_image](https://github.com/libsdl-org/SDL_image) | `release-3.2.4` | Zlib |
+| `sqlite/` | [SQLite amalgamation](https://www.sqlite.org/download.html) | `3.53.3` (`3530300`) | Public domain |
+| `libsodium/` | [jedisct1/libsodium](https://github.com/jedisct1/libsodium) | `1.0.20-RELEASE` | ISC |
 
 ### libp2p dependencies (when enabled)
 

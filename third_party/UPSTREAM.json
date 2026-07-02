@@ -75,5 +75,14 @@
       "branch": "v3.6.1-SDL",
       "commit": "6c10f41103364903f991ecf94239933cad725ab8"
     }
+  },
+  "sqlite": {
+    "source": "https://www.sqlite.org/2026/sqlite-amalgamation-3530300.zip",
+    "amalgamation_version": "3530300"
+  },
+  "libsodium": {
+    "repository": "https://github.com/jedisct1/libsodium.git",
+    "tag": "1.0.20-RELEASE",
+    "commit": "9511c982fb1d046470a8b42aa36556cdb7da15de"
   }
 }
