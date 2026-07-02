@@ -5,6 +5,7 @@
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/ContactActionDispatcher.h"
 #include "feature/messaging/InboxController.h"
+#include "base/messaging/PeerSigningKeyStore.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
@@ -56,6 +57,7 @@ private:
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
+  PeerSigningKeyStore signing_key_store_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<MockRelayClient> mock_relay_;
   std::unique_ptr<MockDirectoryClient> mock_directory_;

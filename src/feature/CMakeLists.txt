@@ -3,6 +3,8 @@ set(PP_BROWSER_FEATURE_SOURCES
   messaging/InboxController.cpp
   messaging/MessageRouter.cpp
   messaging/P2pMessagingService.cpp
+  messaging/RelayReceivePipeline.cpp
+  messaging/ChatSyncService.cpp
   messaging/SqlitePskSessionStore.cpp
   messaging/ContactActionDispatcher.cpp
   ai/AgentSession.cpp

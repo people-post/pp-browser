@@ -342,23 +342,23 @@ Existing foundation this project builds on.
 
 ### v6-pipeline — Send / receive
 
-- [ ] Sign envelope via `EnvelopeSigner` (E014) including E2E seq fields
-- [ ] Durable outbox: `ListPendingOutbox()` + reconciliation on startup (D017, D047)
-- [ ] **Private (`e2e`):** receive pipeline D013/D033; inbound **find-only** (D062/D080); **`ReplayWindow` helper**, classifier authoritative (D020)
+- [x] Sign envelope via `EnvelopeSigner` (E014) including E2E seq fields
+- [x] Durable outbox: `ListPendingOutbox()` + reconciliation on startup (D017, D047)
+- [x] **Private (`e2e`):** receive pipeline D013/D033; inbound **find-only** (D062/D080); **`ReplayWindow` helper**, classifier authoritative (D020)
 - [ ] **`e2e_public`:** out of scope for v6 — same pipeline when public tier ships (D089); includes auto-create (D080) + relaxed ingest (D046)
-- [ ] Inbound Ed25519 verify + **`PeerSigningKeyStore`** lookup (E016, D081); strip remote `content_rml` (D030)
-- [ ] Poll backoff min 2 s foreground (D032); cap poll batch (D029)
+- [x] Inbound Ed25519 verify + **`PeerSigningKeyStore`** lookup (E016, D081); strip remote `content_rml` (D030)
+- [x] Poll backoff min 2 s foreground (D032); cap poll batch (D029)
 - [ ] Outbox retry **`kMaxOutboxRetryAttempts`**; gap repair **`kMaxGapRepairRounds`** / **`kMaxGapRepairSeqSpan`** (D041)
-- [ ] Clear history → `history_floor_seq = loaded_max_seq` (not contiguous-only); below-floor silent discard (D037)
+- [x] Clear history → `history_floor_seq = loaded_max_seq` (not contiguous-only); below-floor silent discard (D037)
 - [ ] Peer reset / integrity recovery — **no continue-anyway** (D014, D038, D046)
 - [ ] **Epoch bump transaction** with e2e crypto sessions (D047); **passive epoch adopt** on first ingest when peer bumps first (D085); **rich OOB bundle** export/import (D086/E020)
 
 ### v6-sync — Sync modes (E2E only — D052, D058, D059)
 
-- [ ] **`FetchChatTargetMessages`** — unified backfill; peer-direct (D060) then relay D027 (D058)
-- [ ] **Tail sync** — desc limit 50
-- [ ] **Gap repair** — automatic via D058
-- [ ] **Authoritative empty gap close** — success + zero messages closes hole **only when D067 guard passes**; `empty_closed_seqs[]` / `empty_closed_ranges[]` + late fill (D061/D067/D071)
+- [x] **`FetchChatTargetMessages`** — unified backfill; peer-direct (D060) then relay D027 (D058) — relay-only for now
+- [x] **Tail sync** — desc limit 50
+- [x] **Gap repair** — automatic via D058
+- [x] **Authoritative empty gap close** — success + zero messages closes hole **only when D067 guard passes**; `empty_closed_seqs[]` / `empty_closed_ranges[]` + late fill (D061/D067/D071)
 - [ ] **Compromised thread (D068)** — outbox frozen; no gap/tail sync; epoch bump cancels old-epoch pending; coordinator updates `chat_targets` PSK + epoch in one `profile.db` txn (D084)
 - [ ] **User-initiated sync** — thread menu **Sync with peer**; gap banner **Retry sync** (D059)
 - [ ] Gap repair assigns **`display_order`** between seq neighbors (D054 Rule 2)

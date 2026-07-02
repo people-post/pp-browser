@@ -141,4 +141,13 @@ Roe<std::string> IdentityStore::SignPayload(const std::string& canonical_json) c
   return Ed25519Signer::Sign(canonical_json, private_key_);
 }
 
+Roe<std::string> IdentityStore::SignBytes(const std::vector<uint8_t>& sign_bytes) const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  return Ed25519Signer::Sign(std::string(sign_bytes.begin(), sign_bytes.end()), private_key_);
+}
+
 } // namespace pbr

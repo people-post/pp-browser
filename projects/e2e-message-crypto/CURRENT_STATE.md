@@ -29,8 +29,8 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 |------|--------|----------|
 | Relay body wire shape | **`body.e2e.payload_b64`** (D090) | `ThreadTypes.h`, `ParseRelayEnvelope` |
 | Payload bytes on wire (pre-c2) | **Plaintext ChatPayload** (base64) | `RelayWirePayload.*` — encrypt in c2 |
-| Outbound signing | Ed25519 sign envelope JSON (interim) | `P2pMessagingService.cpp` — E014 canonical bytes in c2 |
-| Inbound verify | **Not implemented** | c2 + `PeerSigningKeyStore` |
+| Outbound signing | **E014 canonical bytes** via `EnvelopeSigner` | `P2pMessagingService.cpp` |
+| Inbound verify | **Implemented** (requires `PeerSigningKeyStore` entry) | `RelayReceivePipeline` step 2 |
 | `Thread.encrypted` + `ThreadChannel` | **Set on direct threads** | chat-storage v2b |
 | `sender_seq` / `session_epoch` on envelope | **On wire struct**; seq allocated on send | chat v6 adds message-row + sync semantics |
 | Tier split (`e2e` / `e2e_public`) | **Implemented** | [chat-storage CURRENT_STATE](../chat-storage-and-memory/CURRENT_STATE.md) |
@@ -42,7 +42,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | Local Ed25519 keypair | Implemented | `IdentityStore`, `Ed25519Signer` |
 | Private key at rest | Base64 in JSON (not encrypted) | `identity.json` |
 | Per-contact PSK persistence | **Skeleton** — `chat_targets.master_psk_b64` etc. | `SqlitePskSessionStore` — UX in c3 |
-| Peer public keys for verify | **Not implemented** | E016 — c2 |
+| Peer public keys for verify | **Skeleton** — `PeerSigningKeyStore` + mock relay test keys | E016 — directory lazy fetch in c2 |
 
 ## Third-party crypto libraries
 
@@ -62,7 +62,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 
 ## Known gaps (summary)
 
-1. **c2** — wire `MessageCipher` into `P2pMessagingService`; `EnvelopeSigner` (E014); inbound verify.
+1. **c2** — wire `MessageCipher` into send/receive; directory-backed `PeerSigningKeyStore`; decrypt on ingest.
 2. **c3** — PSK export/import, fingerprint gate, rotation UX; enable **`e2e_public`** send.
 3. No end-to-end manual test with two profiles + relay (planned c2/c3).
 4. PSK session store lacks dedicated unit tests (c1 skeleton).

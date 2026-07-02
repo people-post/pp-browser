@@ -39,6 +39,9 @@ set(PP_BROWSER_BASE_SOURCES
   people/ContactsStore.cpp
   people/Ed25519Signer.cpp
   people/IdentityStore.cpp
+  messaging/EnvelopeSigner.cpp
+  messaging/E2eIngestClassifier.cpp
+  messaging/PeerSigningKeyStore.cpp
   messaging/AtAiParser.cpp
   messaging/ChatPayloadCodec.cpp
   messaging/ChatPayloadValidator.cpp

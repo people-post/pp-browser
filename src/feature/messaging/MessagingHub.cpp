@@ -1,6 +1,7 @@
 #include "feature/messaging/MessagingHub.h"
 
 #include "feature/ai/AgentSession.h"
+#include "base/crypto/CryptoUtil.h"
 #include "base/net/McpDirectoryClient.h"
 #include "base/net/McpInfraBridge.h"
 #include "base/net/McpRegistrationClient.h"
@@ -33,6 +34,11 @@ void MessagingHub::UpdateServiceClients(const AppConfig& config, McpClient* prom
   } else {
     if (!mock_relay_) {
       mock_relay_ = std::make_unique<MockRelayClient>();
+      const auto test_private_key = HexToBytes(
+          "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+      if (test_private_key) {
+        mock_relay_->SetReplySigningPrivateKey(*test_private_key);
+      }
     }
     relay_ = mock_relay_.get();
   }
@@ -108,7 +114,8 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
 
   InstallServiceClients(config, promoted_mcp);
 
-  p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_);
+  p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
+                                                signing_key_store_);
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_);
 
   initialized_ = true;

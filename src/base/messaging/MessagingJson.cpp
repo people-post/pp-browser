@@ -1,6 +1,7 @@
 #include "base/messaging/MessagingJson.h"
 
 #include <nlohmann/json.hpp>
+#include <sstream>
 
 namespace pbr {
 
@@ -410,6 +411,31 @@ Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const nlohmann::json& json) {
     request.order = json["order"].get<std::string>();
   }
   return request;
+}
+
+std::string ChatHistoryRequestToQueryString(const ChatHistoryRequest& request) {
+  const nlohmann::json json = ChatHistoryRequestToJson(request);
+  std::ostringstream out;
+  bool first = true;
+  auto append = [&](const char* key, const std::string& value) {
+    out << (first ? '?' : '&') << key << '=' << value;
+    first = false;
+  };
+  append("requester_identity_kind", json["requester_identity_kind"].get<std::string>());
+  append("requester_identity_value", json["requester_identity_value"].get<std::string>());
+  append("peer_identity_kind", json["peer_identity_kind"].get<std::string>());
+  append("peer_identity_value", json["peer_identity_value"].get<std::string>());
+  append("channel", json["channel"].get<std::string>());
+  append("session_epoch", std::to_string(json["session_epoch"].get<uint32_t>()));
+  append("limit", std::to_string(json["limit"].get<size_t>()));
+  append("order", json["order"].get<std::string>());
+  if (json.contains("min_sender_seq")) {
+    append("min_sender_seq", std::to_string(json["min_sender_seq"].get<uint64_t>()));
+  }
+  if (json.contains("max_sender_seq")) {
+    append("max_sender_seq", std::to_string(json["max_sender_seq"].get<uint64_t>()));
+  }
+  return out.str();
 }
 
 nlohmann::json ChatHistoryResponseToJson(const ChatHistoryResponse& response) {

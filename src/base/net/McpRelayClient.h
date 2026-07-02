@@ -14,6 +14,7 @@ public:
   void SetClient(McpClient* client);
   Roe<void> Send(const RelayEnvelope& envelope) override;
   Roe<RelayPollResult> PollInbox(const std::string& cursor) override;
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;
 
 private:
   McpClient* client_ = nullptr;

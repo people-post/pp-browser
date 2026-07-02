@@ -566,6 +566,7 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
     return;
   }
   if (MessagingHub::Instance().Inbox().OpenThread(thread_id)) {
+    MessagingHub::Instance().P2p().MaybeTailSync(thread_id);
     ShellHost::Instance().SetPrimaryPane("chat");
     FinalizeThreadDisplay();
   }

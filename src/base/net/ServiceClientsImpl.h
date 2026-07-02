@@ -17,9 +17,17 @@ public:
 class MockRelayClient : public IRelayClient {
 public:
   void SetNextReplySenderId(std::string sender_id) { next_reply_sender_id_ = std::move(sender_id); }
+  void SetReplySigningPrivateKey(std::vector<uint8_t> private_key) {
+    reply_signing_private_key_ = std::move(private_key);
+  }
+  void AddDeliveredEnvelope(RelayEnvelope envelope) {
+    std::lock_guard lock(mutex_);
+    delivered_.push_back(std::move(envelope));
+  }
 
   Roe<void> Send(const RelayEnvelope& envelope) override;
   Roe<RelayPollResult> PollInbox(const std::string& cursor) override;
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;
 
 private:
   std::mutex mutex_;
@@ -27,6 +35,7 @@ private:
   std::vector<RelayEnvelope> delivered_;
   size_t poll_index_ = 0;
   std::string next_reply_sender_id_;
+  std::vector<uint8_t> reply_signing_private_key_;
 };
 
 class MockRegistrationClient : public IRegistrationClient {
@@ -42,6 +51,7 @@ public:
   explicit HttpRelayClient(std::string base_url);
   Roe<void> Send(const RelayEnvelope& envelope) override;
   Roe<RelayPollResult> PollInbox(const std::string& cursor) override;
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;
 
 private:
   std::string base_url_;

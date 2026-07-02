@@ -992,10 +992,49 @@ Roe<void> SqliteThreadStore::ClearMessages(const std::string& thread_id, const C
     return init.error();
   }
 
-  std::lock_guard profile_lock(profile_mutex_);
+  auto thread = GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+
   auto thread_db = OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
+  }
+
+  if ((*thread)->kind == ThreadKind::Direct && ThreadChannelIsE2e((*thread)->channel)) {
+    auto session_epoch = GetChatTargetSessionEpoch(thread_id);
+    if (session_epoch) {
+      uint64_t loaded_max_seq = 0;
+      sqlite3_stmt* max_stmt = nullptr;
+      if (sqlite3_prepare_v2(*thread_db,
+                             "SELECT MAX(sender_seq) FROM messages WHERE sender_contact_id != ? AND sender_seq IS "
+                             "NOT NULL AND session_epoch = ?;",
+                             -1, &max_stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(max_stmt, 1, kLocalSelfContactId, -1, SQLITE_STATIC);
+        sqlite3_bind_int(max_stmt, 2, static_cast<int>(*session_epoch));
+        if (sqlite3_step(max_stmt) == SQLITE_ROW && sqlite3_column_type(max_stmt, 0) != SQLITE_NULL) {
+          loaded_max_seq = static_cast<uint64_t>(sqlite3_column_int64(max_stmt, 0));
+        }
+        sqlite3_finalize(max_stmt);
+      }
+
+      auto sync_state = GetPeerSyncState(thread_id, *session_epoch);
+      if (sync_state) {
+        PeerSyncState updated = *sync_state;
+        updated.history_floor_seq = loaded_max_seq;
+        updated.contiguous_peer_seq = 0;
+        updated.loaded_min_seq = 0;
+        updated.loaded_max_seq = 0;
+        updated.phase = PeerSyncPhase::Ok;
+        updated.empty_closed_seqs.clear();
+        updated.empty_closed_ranges.clear();
+        (void)SetPeerSyncState(thread_id, *session_epoch, updated);
+      }
+    }
   }
 
   if (sqlite3_exec(*thread_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
@@ -1015,17 +1054,20 @@ Roe<void> SqliteThreadStore::ClearMessages(const std::string& thread_id, const C
     return Error("Failed to commit clear");
   }
 
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_, "DELETE FROM outbox WHERE thread_id = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
-    sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-  }
-  if (sqlite3_prepare_v2(profile_db_, "UPDATE threads SET preview = '', unread_count = 0 WHERE id = ?;", -1, &stmt,
-                         nullptr) == SQLITE_OK) {
-    sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
+  {
+    std::lock_guard profile_lock(profile_mutex_);
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(profile_db_, "DELETE FROM outbox WHERE thread_id = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
+      sqlite3_step(stmt);
+      sqlite3_finalize(stmt);
+    }
+    if (sqlite3_prepare_v2(profile_db_, "UPDATE threads SET preview = '', unread_count = 0 WHERE id = ?;", -1, &stmt,
+                           nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
+      sqlite3_step(stmt);
+      sqlite3_finalize(stmt);
+    }
   }
   (void)ExecSql(*thread_db, "PRAGMA wal_checkpoint(PASSIVE);");
   return {};

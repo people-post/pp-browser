@@ -7,6 +7,13 @@ namespace pbr {
 inline constexpr size_t kMaxComposeTextBytes = 64 * 1024;
 inline constexpr size_t kMaxE2ePlaintextBytes = 128 * 1024;
 inline constexpr size_t kMaxRelayEnvelopeBytes = 256 * 1024;
+inline constexpr size_t kMaxRelayEnvelopeJsonBytes = 256 * 1024;
+inline constexpr size_t kMaxPollBatchMessages = 100;
+inline constexpr uint64_t kForegroundRelayPollIntervalMs = 2000;
+inline constexpr int kMaxOutboxRetryAttempts = 5;
+inline constexpr int kMaxGapRepairRounds = 5;
+inline constexpr uint64_t kMaxGapRepairSeqSpan = 500;
+inline constexpr size_t kDefaultTailSyncLimit = 50;
 inline constexpr size_t kDefaultMessagesPageSize = 100;
 inline constexpr size_t kMaxOpenThreadDbs = 16;
 

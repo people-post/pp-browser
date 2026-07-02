@@ -19,6 +19,7 @@ public:
   virtual ~IRelayClient() = default;
   virtual Roe<void> Send(const RelayEnvelope& envelope) = 0;
   virtual Roe<RelayPollResult> PollInbox(const std::string& cursor) = 0;
+  virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
 
 class IDirectoryClient {

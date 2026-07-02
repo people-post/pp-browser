@@ -33,6 +33,8 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json);
 
 nlohmann::json ChatHistoryRequestToJson(const ChatHistoryRequest& request);
 Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const nlohmann::json& json);
+/** HTTP query string for GET /v1/chat-targets/messages (D027). */
+std::string ChatHistoryRequestToQueryString(const ChatHistoryRequest& request);
 nlohmann::json ChatHistoryResponseToJson(const ChatHistoryResponse& response);
 Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json);
 

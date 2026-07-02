@@ -2,7 +2,9 @@
 #include "feature/messaging/P2pMessagingService.h"
 
 #include "common/Utilities.h"
+#include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/MessagingLimits.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/net/McpRelayClient.h"
 #include "base/net/ServiceClientsImpl.h"
@@ -17,7 +19,7 @@ namespace pbr {
 
 namespace {
 
-constexpr uint64_t kMcpRelayPollIntervalMs = 5000;
+constexpr const char* kMockPeerSigningPublicKeyB64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
 
 DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   DirectChatTarget target;
@@ -27,21 +29,36 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   return target;
 }
 
-bool IsEnvelopeFromPeer(const Thread& thread, const RelayEnvelope& envelope) {
-  if (!thread.peer_identity_value.empty()) {
-    return envelope.sender_contact_id == thread.peer_identity_value ||
-           envelope.sender_relay_id == thread.peer_identity_value;
-  }
-  return false;
-}
-
 } // namespace
 
 P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                                         IRelayClient* relay, InboxController& inbox)
-    : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox) {
+                                         IRelayClient* relay, InboxController& inbox,
+                                         PeerSigningKeyStore& signing_key_store)
+    : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
+      signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_store_) {
   redirectLogger("P2pMessagingService");
+  receive_pipeline_ = std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_);
+  chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_);
+  chat_sync_->SetOnMessagesChanged([this]() {
+    if (on_messages_changed_) {
+      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+    }
+  });
   mcp_throttled_poll_ = dynamic_cast<McpRelayClient*>(relay_) != nullptr;
+}
+
+void P2pMessagingService::RegisterPeerSigningKey(const std::string& peer_identity_kind,
+                                               const std::string& peer_identity_value,
+                                               const std::string& signing_public_key_b64, const std::string& source) {
+  PeerSigningKeyRecord record;
+  record.signing_public_key_b64 = signing_public_key_b64;
+  record.source = source;
+  signing_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
+}
+
+void P2pMessagingService::RegisterMockPeerKeyForReply(const std::string& peer_identity_value) {
+  RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), peer_identity_value,
+                         kMockPeerSigningPublicKeyB64, "mock_relay");
 }
 
 void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
@@ -49,6 +66,14 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
   relay_cursor_.clear();
   mcp_throttled_poll_ = dynamic_cast<McpRelayClient*>(relay_) != nullptr;
   poll_pending_ = false;
+  if (chat_sync_) {
+    chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_);
+    chat_sync_->SetOnMessagesChanged([this]() {
+      if (on_messages_changed_) {
+        BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+      }
+    });
+  }
 }
 
 std::optional<std::string> P2pMessagingService::ResolvePeerRelayId(const Thread& thread) const {
@@ -104,6 +129,29 @@ void P2pMessagingService::NotifyDeliveryIssue(const Thread& thread, const std::s
       on_delivery_notice_(notice);
     }
   });
+}
+
+void P2pMessagingService::MaybeTailSync(const std::string& thread_id) {
+  if (!chat_sync_) {
+    return;
+  }
+  BrowserThread::PostTask(BrowserThreadId::IO, [this, thread_id]() { (void)chat_sync_->TailSync(thread_id); });
+}
+
+void P2pMessagingService::MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope) {
+  if (!chat_sync_ || !envelope.session_epoch) {
+    return;
+  }
+  auto sync_state = store_.GetPeerSyncState(thread_id, envelope.session_epoch);
+  if (!sync_state || sync_state->phase == PeerSyncPhase::Compromised) {
+    return;
+  }
+  if (envelope.sender_seq <= sync_state->contiguous_peer_seq + 1) {
+    return;
+  }
+  const uint64_t gap_min = sync_state->contiguous_peer_seq + 1;
+  const uint64_t gap_max = envelope.sender_seq - 1;
+  (void)chat_sync_->RepairGap(thread_id, gap_min, gap_max);
 }
 
 void P2pMessagingService::ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
@@ -199,15 +247,20 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   envelope.session_epoch = *message.session_epoch;
   envelope.timestamp = message.timestamp;
 
-  nlohmann::json sign_json = RelayEnvelopeToJson(envelope);
-  sign_json.erase("signature");
-  auto signature = identity_.SignPayload(sign_json.dump());
+  auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
+  if (!sign_bytes) {
+    appended->delivery = MessageDelivery::Failed;
+    (void)store_.UpdateMessage(*appended);
+    return sign_bytes.error();
+  }
+  auto signature = identity_.SignBytes(*sign_bytes);
   if (signature) {
     envelope.signature = *signature;
   }
 
   if (auto* mock_relay = dynamic_cast<MockRelayClient*>(relay_)) {
     mock_relay->SetNextReplySenderId((*thread)->peer_identity_value);
+    RegisterMockPeerKeyForReply((*thread)->peer_identity_value);
   }
 
   BrowserThread::PostTask(BrowserThreadId::IO, [this, thread_id, envelope, message_id = message.id]() mutable {
@@ -255,7 +308,7 @@ void P2pMessagingService::RetryFailedOutbound() {
         ApplySendResult(item.thread_id, item.message_id, true);
         continue;
       }
-      if (item.attempt_count < 5) {
+      if (item.attempt_count < kMaxOutboxRetryAttempts) {
         item.attempt_count += 1;
         still_pending.push_back(std::move(item));
         continue;
@@ -273,13 +326,12 @@ void P2pMessagingService::RetryFailedOutbound() {
 void P2pMessagingService::PollAndMerge() {
   RetryFailedOutbound();
 
-  if (mcp_throttled_poll_) {
-    const uint64_t now = util::NowUnixMs();
-    if (now - last_relay_poll_ms_ < kMcpRelayPollIntervalMs) {
-      return;
-    }
-    last_relay_poll_ms_ = now;
+  const uint64_t now = util::NowUnixMs();
+  const uint64_t poll_interval = mcp_throttled_poll_ ? 5000 : kForegroundRelayPollIntervalMs;
+  if (now - last_relay_poll_ms_ < poll_interval) {
+    return;
   }
+  last_relay_poll_ms_ = now;
 
   bool expected = false;
   if (!poll_pending_.compare_exchange_strong(expected, true)) {
@@ -300,56 +352,41 @@ void P2pMessagingService::PollAndMerge() {
       return;
     }
     relay_cursor_ = poll->next_cursor;
+    if (poll->messages.size() > kMaxPollBatchMessages) {
+      return;
+    }
 
     bool changed = false;
     for (const RelayEnvelope& envelope : poll->messages) {
+      const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope);
+      if (outcome.decision == IngestDecision::AcceptGap) {
+        const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
+        auto thread = store_.FindDirectThread(inbound_target);
+        if (thread && *thread) {
+          MaybeRepairGap((*thread)->id, envelope);
+        }
+      }
+      if (!outcome.persisted) {
+        continue;
+      }
+      changed = true;
       const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
       auto thread = store_.FindDirectThread(inbound_target);
       if (!thread || !*thread) {
         continue;
       }
       const std::string& resolved_thread_id = (*thread)->id;
-      if (store_.HasMessageId(resolved_thread_id, envelope.message_id)) {
-        continue;
-      }
-      if (!IsEnvelopeFromPeer(**thread, envelope)) {
-        continue;
-      }
-
-      auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
-      if (!decoded) {
-        continue;
-      }
-      if (decoded->content_type != ChatContentType::Text) {
-        continue;
-      }
-
-      ThreadMessage message = *decoded;
-      message.id = envelope.message_id;
-      message.thread_id = resolved_thread_id;
-      if (!(*thread)->participant_contact_ids.empty()) {
-        message.sender_contact_id = (*thread)->participant_contact_ids.front();
-      } else {
-        message.sender_contact_id = envelope.sender_contact_id;
-      }
-      message.timestamp = envelope.timestamp;
-      message.delivery = MessageDelivery::Relayed;
-      message.relay_visible = true;
-      message.transport = MessageTransport::Relay;
-      message.sender_seq = envelope.sender_seq;
-      message.session_epoch = envelope.session_epoch;
-
-      if (store_.AppendMessage(message)) {
-        changed = true;
-        if (inbox_.ActiveThreadId() != resolved_thread_id) {
-          Thread updated = **thread;
-          updated.unread_count += 1;
-          updated.preview = message.text;
-          updated.updated_at = util::NowUnixMs();
-          (void)store_.UpsertThread(updated);
-        } else {
-          (void)inbox_.UpdatePreview(resolved_thread_id, message.text);
+      if (inbox_.ActiveThreadId() != resolved_thread_id) {
+        Thread updated = **thread;
+        updated.unread_count += 1;
+        auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
+        if (decoded) {
+          updated.preview = decoded->text;
         }
+        updated.updated_at = util::NowUnixMs();
+        (void)store_.UpsertThread(updated);
+      } else if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64); decoded) {
+        (void)inbox_.UpdatePreview(resolved_thread_id, decoded->text);
       }
     }
 

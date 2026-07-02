@@ -54,4 +54,15 @@ Roe<RelayPollResult> McpRelayClient::PollInbox(const std::string& cursor) {
   return poll;
 }
 
+Roe<ChatHistoryResponse> McpRelayClient::FetchChatHistory(const ChatHistoryRequest& request) {
+  if (!client_) {
+    return Error("MCP client not available");
+  }
+  auto result = CallMcpToolJson(*client_, "relay_fetch_chat_history", ChatHistoryRequestToJson(request));
+  if (!result) {
+    return result.error();
+  }
+  return ChatHistoryResponseFromJson(*result);
+}
+
 } // namespace pbr

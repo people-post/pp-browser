@@ -8,6 +8,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <vector>
 
 namespace pbr {
 
@@ -19,6 +20,7 @@ public:
   Roe<LocalIdentity> Get() const;
   Roe<LocalIdentity> Update(const LocalIdentity& identity);
   Roe<std::string> SignPayload(const std::string& canonical_json) const;
+  Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;
   void Flush();
 
 private:
