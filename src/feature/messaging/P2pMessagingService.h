@@ -31,6 +31,7 @@ private:
   struct PendingRelaySend {
     RelayEnvelope envelope;
     std::string message_id;
+    std::string thread_id;
     int attempt_count = 0;
   };
 

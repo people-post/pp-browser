@@ -16,6 +16,8 @@ public:
 
 class MockRelayClient : public IRelayClient {
 public:
+  void SetNextReplySenderId(std::string sender_id) { next_reply_sender_id_ = std::move(sender_id); }
+
   Roe<void> Send(const RelayEnvelope& envelope) override;
   Roe<RelayPollResult> PollInbox(const std::string& cursor) override;
 
@@ -24,6 +26,7 @@ private:
   std::vector<RelayEnvelope> pending_;
   std::vector<RelayEnvelope> delivered_;
   size_t poll_index_ = 0;
+  std::string next_reply_sender_id_;
 };
 
 class MockRegistrationClient : public IRegistrationClient {

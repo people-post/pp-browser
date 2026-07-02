@@ -30,8 +30,9 @@
       <p class="text muted" data-if="selected.trust != ''">Trust: <span data-rml="selected.trust"></span></p>
     </div>
 
-    <div class="contacts-actions">
-      <button class="btn btn-primary" type="button" data-event-click="start_chat()">Start chat</button>
+    <div class="contacts-actions stack">
+      <button class="btn btn-primary" type="button" data-event-click="secure_message()">Secure message</button>
+      <button class="btn btn-secondary" type="button" data-event-click="start_chat()">Message (public tier)</button>
     </div>
   </div>
 </div>

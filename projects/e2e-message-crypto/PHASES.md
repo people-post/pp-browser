@@ -127,30 +127,30 @@ d0 (complete)
 - [x] Add `libsodium` to [scripts/vendor_import.sh](../../scripts/vendor_import.sh) (e.g. `jedisct1/libsodium` tag `1.0.20`)
 - [x] [third_party/UPSTREAM.json](../../third_party/UPSTREAM.json) + [third_party/README.md](../../third_party/README.md)
 - [x] [cmake/dependencies.cmake](../../cmake/dependencies.cmake) — `add_subdirectory`, disable tests/benchmarks
-- [ ] Link `pp_base` to `sodium` in [src/base/CMakeLists.txt](../../src/base/CMakeLists.txt)
+- [x] Link `pp_base` to `sodium` in [src/base/CMakeLists.txt](../../src/base/CMakeLists.txt)
 
 ### Module `src/base/crypto/`
 
-- [ ] `CryptoTypes.h`, `CryptoConstants.h`
-- [ ] `PskFingerprint` — BLAKE2b-256 + display format
-- [ ] `SessionKeyDeriver` — HKDF-SHA256 per DESIGN
-- [ ] `CanonicalAad` — build/parse per byte layout
-- [ ] `MessageCipher` — XChaCha20-Poly1305 AEAD
-- [ ] `EncryptedPayload` — blob codec + base64
-- [ ] `ReplayWindow` — seq acceptance helper
-- [ ] `IPskSessionStore` (`base/crypto`) + `SqlitePskSessionStore` (`feature/messaging/`) — `chat_targets` PSK columns in `profile.db` (E008/D084, E018)
+- [x] `CryptoTypes.h`, `CryptoConstants.h`
+- [x] `PskFingerprint` — BLAKE2b-256 + display format
+- [x] `SessionKeyDeriver` — HKDF-SHA256 per DESIGN
+- [x] `CanonicalAad` — build/parse per byte layout
+- [x] `MessageCipher` — XChaCha20-Poly1305 AEAD
+- [x] `EncryptedPayload` — blob codec + base64
+- [x] `ReplayWindow` — seq acceptance helper
+- [x] `IPskSessionStore` (`base/crypto`) + `SqlitePskSessionStore` (`feature/messaging/`) — `chat_targets` PSK columns in `profile.db` (E008/D084, E018)
 
 ### Tests
 
-- [ ] [src/base/crypto/tests/](../../src/base/crypto/tests/) — GTest registered from [tests/CMakeLists.txt](../../tests/CMakeLists.txt)
-- [ ] HKDF determinism matches DESIGN test vector
-- [ ] AEAD round-trip, tamper fail, wrong AAD fail
-- [ ] Codec round-trip; ReplayWindow accept/reject
+- [x] [src/base/crypto/tests/](../../src/base/crypto/tests/) — GTest registered from [tests/CMakeLists.txt](../../tests/CMakeLists.txt)
+- [x] HKDF determinism matches DESIGN test vector
+- [x] AEAD round-trip, tamper fail, wrong AAD fail
+- [x] Codec round-trip; ReplayWindow accept/reject
 - [ ] PskSessionStore load/save round-trip; retired PSK lookup by epoch (E018)
 
 ### Docs / agent guide
 
-- [ ] [AGENTS.md](../../AGENTS.md) — row for `base/crypto` + `docs/MESSAGE_ENCRYPTION.md`
+- [x] [AGENTS.md](../../AGENTS.md) — row for `base/crypto` + `docs/MESSAGE_ENCRYPTION.md`
 
 **Exit criteria:** All c1 tests green; module usable from tests/examples without messaging includes.
 
@@ -164,8 +164,8 @@ d0 (complete)
 
 ### Envelope and types
 
-- [ ] `RelayMessageBody`: `body.e2e.payload_b64` only per E009/E010/D090
-- [ ] `P2pMessagingService`: branch on `channel == e2e`
+- [x] Wire shape: `body.e2e.payload_b64` only (chat v2a-p2p — plaintext bytes until c2)
+- [ ] `P2pMessagingService`: **encrypt/decrypt** on `channel == e2e` (replace `RelayWirePayload` plaintext path)
 - [ ] Encrypt: `ChatPayloadCodec::Encode` → AAD → `MessageCipher` → `body.e2e.payload_b64`
 - [ ] Decrypt on poll → `ChatPayloadCodec::Decode` → `ThreadMessage`
 - [ ] `EnvelopeSigner` — build/verify canonical sign bytes per E014 (coordinate `ChatPayloadCodec` for body hash)

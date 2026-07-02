@@ -2,6 +2,7 @@
 
 #include "common/Utilities.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/RelayWirePayload.h"
 #include "base/net/HttpClient.h"
 
 #include <nlohmann/json.hpp>
@@ -38,13 +39,24 @@ Roe<void> MockRelayClient::Send(const RelayEnvelope& envelope) {
   std::lock_guard lock(mutex_);
   pending_.push_back(envelope);
 
+  auto reply_text = RelayWirePayload::EncodePlaintextText("Mock reply");
+  if (!reply_text) {
+    return reply_text.error();
+  }
+
   RelayEnvelope reply;
-  reply.thread_id = envelope.thread_id;
+  reply.envelope_version = kRelayEnvelopeVersion;
   reply.message_id = util::GenerateUuid();
-  reply.sender_relay_id = "relay:mock-peer";
-  reply.body.text = "Mock reply to: " + envelope.body.text;
+  reply.sender_relay_id = next_reply_sender_id_.empty() ? "relay:mock-peer" : next_reply_sender_id_;
+  reply.sender_contact_id = reply.sender_relay_id;
+  reply.route.kind = "direct";
+  reply.route.channel = envelope.route.channel;
+  reply.body.e2e.payload_b64 = *reply_text;
+  reply.sender_seq = envelope.sender_seq + 1;
+  reply.session_epoch = envelope.session_epoch;
   reply.timestamp = util::NowUnixMs();
   delivered_.push_back(std::move(reply));
+  next_reply_sender_id_.clear();
   return {};
 }
 
@@ -120,7 +132,10 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& cursor) {
   }
   if (root.contains("messages") && root["messages"].is_array()) {
     for (const auto& item : root["messages"]) {
-      result.messages.push_back(RelayEnvelopeFromJson(item));
+      auto envelope = ParseRelayEnvelope(item);
+      if (envelope) {
+        result.messages.push_back(*envelope);
+      }
     }
   }
   return result;

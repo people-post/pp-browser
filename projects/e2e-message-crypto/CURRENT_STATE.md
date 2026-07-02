@@ -3,7 +3,7 @@
 Inventory of what exists in the codebase today for message encryption. Update when landing phase work.
 
 **Planned:** full E2E stack in [DESIGN.md](DESIGN.md) — see [PHASES.md](PHASES.md).  
-**Implementation:** ready — wave 1 (`c1`) per [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order), parallel with chat `v2a-core`.
+**Agent batch:** Wave **1** (**c1**) is **done**. Next: **c2** after chat **v6** ingest pipeline — see [chat-storage CURRENT_STATE § Next agent](../chat-storage-and-memory/CURRENT_STATE.md#next-agent--start-here).
 
 ## Release scope (v1 batch)
 
@@ -16,40 +16,40 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 
 | Area | Status | Location |
 |------|--------|----------|
-| `base/crypto/` module | **Not implemented** | — |
-| libsodium vendored | **Yes** — not linked to `pp_base` yet | `third_party/libsodium/`, `cmake/dependencies.cmake`; c1 task = link + module |
-| `IPskSessionStore` | **Not implemented** | — |
-| `MessageCipher` / AEAD | **Not implemented** | — |
-| Unit tests + frozen vectors | **Not implemented** | Spec + vectors in [DESIGN.md](DESIGN.md), [MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) |
-| `docs/MESSAGE_ENCRYPTION.md` | **Promoted** | Stable spec — [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) |
+| `base/crypto/` module | **Implemented** | `src/base/crypto/*` |
+| libsodium vendored + linked | **Yes** | `third_party/libsodium/`, `src/base/CMakeLists.txt` |
+| `IPskSessionStore` | **Interface + skeleton store** | `IPskSessionStore.h`, `SqlitePskSessionStore.*` (reads/writes `chat_targets` PSK columns) |
+| `MessageCipher` / AEAD | **Implemented** | `MessageCipher.*`, `EncryptedPayload.*` |
+| Unit tests + frozen vectors | **7/7 pass** | `src/base/crypto/tests/crypto_vectors_test.cpp` |
+| `docs/MESSAGE_ENCRYPTION.md` | **Promoted** | Stable spec |
 
 ## Related messaging (today)
 
 | Area | Status | Location |
 |------|--------|----------|
-| Relay body | Plaintext `text` | `RelayMessageBody` in `src/base/messaging/ThreadTypes.h` |
-| Outbound signing | Ed25519 sign envelope JSON | `P2pMessagingService.cpp`, `Ed25519Signer.cpp` |
-| Inbound verify | **Not implemented** | `Ed25519Signer::Verify` only in tests |
-| `Thread.encrypted` | Schema only; never `true` | `ThreadTypes.h` |
-| `channel` / e2e thread split | **Not implemented** | [chat-storage CURRENT_STATE](../chat-storage-and-memory/CURRENT_STATE.md) |
-| `sender_seq` / `session_epoch` | **Not implemented** | Design in chat-storage v6 |
-| Target wire body | **`body.e2e.payload_b64`** only (D090) | [WIRE_SCHEMAS](../chat-storage-and-memory/WIRE_SCHEMAS.md) — baseline code not cut over |
+| Relay body wire shape | **`body.e2e.payload_b64`** (D090) | `ThreadTypes.h`, `ParseRelayEnvelope` |
+| Payload bytes on wire (pre-c2) | **Plaintext ChatPayload** (base64) | `RelayWirePayload.*` — encrypt in c2 |
+| Outbound signing | Ed25519 sign envelope JSON (interim) | `P2pMessagingService.cpp` — E014 canonical bytes in c2 |
+| Inbound verify | **Not implemented** | c2 + `PeerSigningKeyStore` |
+| `Thread.encrypted` + `ThreadChannel` | **Set on direct threads** | chat-storage v2b |
+| `sender_seq` / `session_epoch` on envelope | **On wire struct**; seq allocated on send | chat v6 adds message-row + sync semantics |
+| Tier split (`e2e` / `e2e_public`) | **Implemented** | [chat-storage CURRENT_STATE](../chat-storage-and-memory/CURRENT_STATE.md) |
 
 ## Identity and keys (today)
 
 | Area | Status | Location |
 |------|--------|----------|
 | Local Ed25519 keypair | Implemented | `IdentityStore`, `Ed25519Signer` |
-| Private key at rest | Base64 in JSON (not encrypted) | `identity.json` — field `encrypted_private_key_b64` |
-| Per-contact PSK | **Not implemented** | — |
-| Peer public keys for verify | **Not implemented** (spec: [E016](DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add)) | `PeerSigningKeyStore` planned; contacts/directory hits lack `signing_public_key_b64` today |
+| Private key at rest | Base64 in JSON (not encrypted) | `identity.json` |
+| Per-contact PSK persistence | **Skeleton** — `chat_targets.master_psk_b64` etc. | `SqlitePskSessionStore` — UX in c3 |
+| Peer public keys for verify | **Not implemented** | E016 — c2 |
 
 ## Third-party crypto libraries
 
 | Library | Vendored | Linked to `pp_base` | Used for |
 |---------|----------|---------------------|----------|
 | BoringSSL | Yes (libp2p deps) | Yes | curl TLS, libp2p, `Ed25519Signer` |
-| libsodium | Yes (`third_party/libsodium`) | **No** (c1) | E2E symmetric AEAD/HKDF (E002) |
+| libsodium | Yes | **Yes** | E2E symmetric AEAD/HKDF (E002) |
 | liboqs / PQ | No | — | Deferred (phase c4) |
 
 ## Tests
@@ -57,18 +57,16 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | Area | Location |
 |------|----------|
 | Ed25519 round-trip | `tests/messaging_foundation_test.cpp` |
-| E2E crypto (frozen vectors) | Planned: `src/base/crypto/tests/` (c1) |
+| E2E crypto (frozen vectors) | `src/base/crypto/tests/crypto_vectors_test.cpp` — **7 tests** |
+| PSK store round-trip | **Not yet** — skeleton only |
 
 ## Known gaps (summary)
 
-1. No symmetric E2E — relay sees all direct message text.
-2. No `base/crypto` module — application AEAD layer not wired.
-3. No PSK storage or fingerprint UX.
-4. Ed25519 signing without inbound verify on relay poll (no peer key store yet — E016).
-5. Messaging schema lacks `channel`, `sender_seq`, `session_epoch` (chat-storage tracks).
-6. PQ: only classical Ed25519 for envelopes; no hybrid plan in code (documented in DESIGN).
-7. **Identity model:** baseline code keys threads on local `Contact.id`; target uses identity-keyed `ChatTargetKey` (chat-storage D079) with wire `sender_contact_id` = communicating identity value (`relay:<opaque_id>` per D082/E017).
-8. **c1 must not include** `ThreadTypes` / `P2pMessagingService` — keep `base/crypto` isolated until c2.
+1. **c2** — wire `MessageCipher` into `P2pMessagingService`; `EnvelopeSigner` (E014); inbound verify.
+2. **c3** — PSK export/import, fingerprint gate, rotation UX; enable **`e2e_public`** send.
+3. No end-to-end manual test with two profiles + relay (planned c2/c3).
+4. PSK session store lacks dedicated unit tests (c1 skeleton).
+5. **c1 rule still applies for new crypto code:** no `#include` of `ThreadTypes` / `P2pMessagingService` inside `base/crypto` (integration in c2 via feature layer).
 
 ## Design completion checklist (phase d0)
 
@@ -89,3 +87,9 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 - [x] Passive epoch advance / envelope epoch decrypt — E019/D085
 - [x] AEAD / blob codec frozen test vectors in DESIGN.md § Test vectors ([`tools/gen_aead_vectors.py`](tools/gen_aead_vectors.py))
 - [x] Promote stable spec to `docs/MESSAGE_ENCRYPTION.md`
+
+## Phase c1 exit criteria
+
+- [x] All c1 vector tests green (`pp_browser_crypto_vectors_test`)
+- [x] Module usable without messaging includes in `base/crypto`
+- [ ] PSK store round-trip tests (optional stretch — skeleton landed)

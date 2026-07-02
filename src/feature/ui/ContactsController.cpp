@@ -1,5 +1,6 @@
 #include "feature/ui/ContactsController.h"
 
+#include "base/messaging/ThreadTypes.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/people/ContactTypes.h"
 #include "feature/messaging/MessagingHub.h"
@@ -94,6 +95,7 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("select_contact", &ContactsController::SelectContactCallback);
     ctor.BindEventCallback("back_to_list", &ContactsController::BackToListCallback);
     ctor.BindEventCallback("start_chat", &ContactsController::StartChatCallback);
+    ctor.BindEventCallback("secure_message", &ContactsController::SecureMessageCallback);
   });
 }
 
@@ -205,13 +207,33 @@ void ContactsController::OnBackToList() {
   DirtyAll();
 }
 
+void ContactsController::SecureMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                               const Rml::VariantList& /*args*/) {
+  ContactsController::Instance().OnSecureMessage();
+}
+
 void ContactsController::OnStartChat() {
   if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
     return;
   }
 
   const std::string contact_id = selected_.id.c_str();
-  if (!MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id)) {
+  if (!MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic)) {
+    return;
+  }
+
+  ShellHost::Instance().SelectNavTab(NavTab::Sessions);
+  ShellHost::Instance().SetPrimaryPane("chat");
+  ChatController::Instance().FinalizeThreadDisplay();
+}
+
+void ContactsController::OnSecureMessage() {
+  if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
+    return;
+  }
+
+  const std::string contact_id = selected_.id.c_str();
+  if (!MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e)) {
     return;
   }
 

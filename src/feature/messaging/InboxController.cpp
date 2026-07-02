@@ -1,5 +1,6 @@
 #include "feature/messaging/InboxController.h"
 
+#include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/MessagingLimits.h"
 
 #include "base/ai/StructuredTextParser.h"
@@ -172,21 +173,10 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
 }
 
 Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact_id) {
-  auto threads = store_.ListThreads();
-  if (!threads) {
-    return threads.error();
-  }
-
-  for (const Thread& thread : *threads) {
-    if (thread.kind == ThreadKind::Direct && thread.participant_contact_ids.size() == 1 &&
-        thread.participant_contact_ids[0] == contact_id) {
-      return OpenThread(thread.id);
-    }
-  }
-  return CreateDirectThread(contact_id);
+  return FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
 }
 
-Roe<Thread> InboxController::CreateDirectThread(const std::string& contact_id) {
+Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel) {
   auto contact = contacts_.Get(contact_id);
   if (!contact) {
     return contact.error();
@@ -195,15 +185,47 @@ Roe<Thread> InboxController::CreateDirectThread(const std::string& contact_id) {
     return Error("Contact not found");
   }
 
+  const DirectChatTarget target = DirectChatTargetFromContact(**contact, channel);
+  if (target.peer_identity_value.empty()) {
+    return Error("Contact has no relay identity");
+  }
+
+  const std::string title =
+      (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+  auto thread = store_.FindOrCreateDirectThread(target, contact_id, title);
+  if (!thread) {
+    return thread.error();
+  }
+  return OpenThread(thread->id);
+}
+
+Roe<Thread> InboxController::CreateDirectThread(const std::string& contact_id, ThreadChannel channel) {
+  auto contact = contacts_.Get(contact_id);
+  if (!contact) {
+    return contact.error();
+  }
+  if (!*contact) {
+    return Error("Contact not found");
+  }
+
+  const DirectChatTarget target = DirectChatTargetFromContact(**contact, channel);
+  if (target.peer_identity_value.empty()) {
+    return Error("Contact has no relay identity");
+  }
+
   Thread thread;
   thread.id = util::GenerateUuid();
   thread.kind = ThreadKind::Direct;
+  thread.channel = channel;
+  thread.peer_identity_kind = target.peer_identity_kind;
+  thread.peer_identity_value = target.peer_identity_value;
   thread.title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
   thread.participant_contact_ids = {contact_id};
   thread.preview = "";
   thread.updated_at = util::NowUnixMs();
+  thread.encrypted = ThreadChannelIsE2e(channel);
 
-  auto saved = store_.UpsertThread(thread);
+  auto saved = store_.FindOrCreateDirectThread(target, contact_id, thread.title);
   if (!saved) {
     return saved.error();
   }

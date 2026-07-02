@@ -101,6 +101,8 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     (void)identity;
   }
 
+  (void)store_->ReconcileOutbox();
+
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_);
   (void)inbox_->CreateAiHomeThread();
 

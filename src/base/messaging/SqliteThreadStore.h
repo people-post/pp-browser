@@ -34,6 +34,11 @@ public:
   Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const override;
   Roe<void> ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) override;
   Roe<bool> DeleteThread(const std::string& thread_id) override;
+  Roe<std::optional<Thread>> FindDirectThread(const DirectChatTarget& target) const override;
+  Roe<Thread> FindOrCreateDirectThread(const DirectChatTarget& target, const std::string& participant_contact_id,
+                                       const std::string& title) override;
+  Roe<uint64_t> AllocateSenderSeq(const std::string& thread_id) override;
+  Roe<void> ReconcileOutbox() override;
   Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const override;
   void Flush() override;
 
@@ -59,6 +64,12 @@ private:
   Roe<void> EnsureThreadDirectory(const std::string& thread_id) const;
   Roe<std::vector<ThreadMessage>> QueryMessages(const std::string& thread_id, const char* sql,
                                                 std::optional<int64_t> before_display_order, size_t limit) const;
+  Roe<void> UpsertChatTarget(const DirectChatTarget& target, const std::string& participant_contact_id,
+                             const std::string& local_thread_id) const;
+  Roe<void> ClearChatTargetThreadLink(const std::string& thread_id) const;
+  Roe<void> UpsertOutboxRow(const std::string& message_id, const std::string& thread_id) const;
+  Roe<void> RemoveOutboxRow(const std::string& message_id) const;
+  Thread ReadThreadRow(sqlite3_stmt* stmt) const;
 
   std::string data_dir_;
   mutable std::mutex profile_mutex_;

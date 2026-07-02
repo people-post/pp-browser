@@ -2,6 +2,7 @@
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/PeopleDiscoveryBlocks.h"
 #include "base/messaging/JsonThreadStore.h"
+#include "base/messaging/RelayWirePayload.h"
 #include "base/people/Ed25519Signer.h"
 
 #include <filesystem>
@@ -17,12 +18,15 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   Thread thread;
   thread.id = "t1";
   thread.kind = ThreadKind::Direct;
+  thread.channel = ThreadChannel::E2e;
   thread.title = "Alice";
   thread.participant_contact_ids = {"c1"};
+  thread.encrypted = true;
   const nlohmann::json thread_json = ThreadToJson(thread);
   const Thread restored = ThreadFromJson(thread_json);
   EXPECT_EQ(restored.id, "t1");
   EXPECT_EQ(restored.kind, ThreadKind::Direct);
+  EXPECT_EQ(restored.channel, ThreadChannel::E2e);
 
   const std::filesystem::path data_dir =
       std::filesystem::temp_directory_path() / "pp_browser_messaging_test";
@@ -38,13 +42,24 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   (void)store.AppendMessage(message);
   EXPECT_TRUE(store.HasMessageId("t1", "m1"));
 
+  auto payload_b64 = RelayWirePayload::EncodePlaintextText("hi");
+  ASSERT_TRUE(static_cast<bool>(payload_b64));
+
   RelayEnvelope envelope;
-  envelope.thread_id = "t1";
+  envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = "m1";
   envelope.sender_relay_id = "relay:x";
-  envelope.body.text = "hi";
-  const RelayEnvelope roundtrip = RelayEnvelopeFromJson(RelayEnvelopeToJson(envelope));
-  EXPECT_EQ(roundtrip.message_id, "m1");
+  envelope.sender_contact_id = "relay:x";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2e;
+  envelope.body.e2e.payload_b64 = *payload_b64;
+  envelope.timestamp = 1;
+  const auto roundtrip = ParseRelayEnvelope(RelayEnvelopeToJson(envelope));
+  ASSERT_TRUE(static_cast<bool>(roundtrip));
+  EXPECT_EQ(roundtrip.value().message_id, "m1");
+
+  const nlohmann::json legacy = {{"thread_id", "t1"}, {"message_id", "m2"}, {"body", {{"text", "nope"}}}};
+  EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(legacy)));
 
   auto keys = Ed25519Signer::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(keys));

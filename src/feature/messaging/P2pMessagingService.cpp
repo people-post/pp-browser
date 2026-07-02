@@ -3,17 +3,29 @@
 
 #include "common/Utilities.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/RelayWirePayload.h"
 #include "base/net/McpRelayClient.h"
+#include "base/net/ServiceClientsImpl.h"
 #include "base/platform/BrowserThread.h"
 
 #include <atomic>
 #include <mutex>
+
+#include <nlohmann/json.hpp>
 
 namespace pbr {
 
 namespace {
 
 constexpr uint64_t kMcpRelayPollIntervalMs = 5000;
+
+DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
+  DirectChatTarget target;
+  target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  target.peer_identity_value = envelope.sender_contact_id;
+  target.channel = envelope.route.channel;
+  return target;
+}
 
 } // namespace
 
@@ -32,6 +44,9 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
 }
 
 std::optional<std::string> P2pMessagingService::ResolvePeerRelayId(const Thread& thread) const {
+  if (!thread.peer_identity_value.empty()) {
+    return thread.peer_identity_value;
+  }
   if (thread.participant_contact_ids.empty()) {
     return std::nullopt;
   }
@@ -115,6 +130,12 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   if (!*thread || (*thread)->kind != ThreadKind::Direct) {
     return Error("Not a direct thread");
   }
+  if ((*thread)->channel == ThreadChannel::E2ePublic) {
+    return Error("Public tier messaging is not enabled yet");
+  }
+  if ((*thread)->peer_identity_value.empty()) {
+    return Error("Direct thread missing peer identity");
+  }
 
   ThreadMessage message;
   message.id = util::GenerateUuid();
@@ -139,30 +160,56 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     return appended.error();
   }
 
+  auto payload_b64 = RelayWirePayload::EncodePlaintextText(text);
+  if (!payload_b64) {
+    appended->delivery = MessageDelivery::Failed;
+    (void)store_.UpdateMessage(*appended);
+    return payload_b64.error();
+  }
+
+  auto sender_seq = store_.AllocateSenderSeq(thread_id);
+  if (!sender_seq) {
+    appended->delivery = MessageDelivery::Failed;
+    (void)store_.UpdateMessage(*appended);
+    return sender_seq.error();
+  }
+
   RelayEnvelope envelope;
-  envelope.thread_id = thread_id;
+  envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = message.id;
   envelope.sender_relay_id = identity->relay_user_id;
-  envelope.body.text = text;
+  envelope.sender_contact_id = identity->relay_user_id;
+  envelope.route.kind = "direct";
+  envelope.route.channel = (*thread)->channel;
+  envelope.body.e2e.payload_b64 = *payload_b64;
+  envelope.sender_seq = *sender_seq;
+  envelope.session_epoch = 1;
   envelope.timestamp = message.timestamp;
 
-  auto signature = identity_.SignPayload(RelayEnvelopeToJson(envelope).dump());
+  nlohmann::json sign_json = RelayEnvelopeToJson(envelope);
+  sign_json.erase("signature");
+  auto signature = identity_.SignPayload(sign_json.dump());
   if (signature) {
     envelope.signature = *signature;
   }
 
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, envelope, message_id = message.id]() mutable {
+  if (auto* mock_relay = dynamic_cast<MockRelayClient*>(relay_)) {
+    mock_relay->SetNextReplySenderId((*thread)->peer_identity_value);
+  }
+
+  BrowserThread::PostTask(BrowserThreadId::IO, [this, thread_id, envelope, message_id = message.id]() mutable {
     if (!relay_) {
-      ApplySendResult(envelope.thread_id, message_id, false, "Relay client not configured");
+      ApplySendResult(thread_id, message_id, false, "Relay client not configured");
       return;
     }
     const auto result = relay_->Send(envelope);
     if (!result) {
-      EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .attempt_count = 1});
-      ApplySendResult(envelope.thread_id, message_id, false, result.error().message);
+      EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .thread_id = thread_id,
+                                    .attempt_count = 1});
+      ApplySendResult(thread_id, message_id, false, result.error().message);
       return;
     }
-    ApplySendResult(envelope.thread_id, message_id, true);
+    ApplySendResult(thread_id, message_id, true);
   });
 
   if (on_messages_changed_) {
@@ -192,7 +239,7 @@ void P2pMessagingService::RetryFailedOutbound() {
     for (PendingRelaySend& item : pending) {
       const auto result = relay_->Send(item.envelope);
       if (result) {
-        ApplySendResult(item.envelope.thread_id, item.message_id, true);
+        ApplySendResult(item.thread_id, item.message_id, true);
         continue;
       }
       if (item.attempt_count < 5) {
@@ -200,7 +247,7 @@ void P2pMessagingService::RetryFailedOutbound() {
         still_pending.push_back(std::move(item));
         continue;
       }
-      ApplySendResult(item.envelope.thread_id, item.message_id, false, result.error().message);
+      ApplySendResult(item.thread_id, item.message_id, false, result.error().message);
     }
     if (!still_pending.empty()) {
       std::lock_guard lock(retry_mutex_);
@@ -243,37 +290,43 @@ void P2pMessagingService::PollAndMerge() {
 
     bool changed = false;
     for (const RelayEnvelope& envelope : poll->messages) {
-      if (store_.HasMessageId(envelope.thread_id, envelope.message_id)) {
+      const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
+      auto thread = store_.FindDirectThread(inbound_target);
+      if (!thread || !*thread) {
+        continue;
+      }
+      const std::string& resolved_thread_id = (*thread)->id;
+      if (store_.HasMessageId(resolved_thread_id, envelope.message_id)) {
+        continue;
+      }
+
+      auto decoded_text = RelayWirePayload::DecodePlaintextText(envelope.body.e2e.payload_b64);
+      if (!decoded_text) {
         continue;
       }
 
       ThreadMessage message;
       message.id = envelope.message_id;
-      message.thread_id = envelope.thread_id;
-      message.sender_contact_id = envelope.sender_relay_id;
-      message.text = envelope.body.text;
-      message.content_rml = envelope.body.content_rml;
+      message.thread_id = resolved_thread_id;
+      message.sender_contact_id = envelope.sender_contact_id;
+      if (!(*thread)->participant_contact_ids.empty()) {
+        message.sender_contact_id = (*thread)->participant_contact_ids.front();
+      }
+      message.text = *decoded_text;
       message.timestamp = envelope.timestamp;
       message.delivery = MessageDelivery::Relayed;
       message.relay_visible = true;
 
-      auto thread = store_.GetThread(envelope.thread_id);
-      if (thread && *thread && !(*thread)->participant_contact_ids.empty()) {
-        message.sender_contact_id = (*thread)->participant_contact_ids.front();
-      }
-
       if (store_.AppendMessage(message)) {
         changed = true;
-        if (inbox_.ActiveThreadId() != envelope.thread_id) {
-          if (thread && *thread) {
-            Thread updated = **thread;
-            updated.unread_count += 1;
-            updated.preview = envelope.body.text;
-            updated.updated_at = util::NowUnixMs();
-            (void)store_.UpsertThread(updated);
-          }
+        if (inbox_.ActiveThreadId() != resolved_thread_id) {
+          Thread updated = **thread;
+          updated.unread_count += 1;
+          updated.preview = *decoded_text;
+          updated.updated_at = util::NowUnixMs();
+          (void)store_.UpsertThread(updated);
         } else {
-          (void)inbox_.UpdatePreview(envelope.thread_id, envelope.body.text);
+          (void)inbox_.UpdatePreview(resolved_thread_id, *decoded_text);
         }
       }
     }

@@ -31,6 +31,7 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
 
   if (type == "start_conversation") {
     std::string contact_id;
+    ThreadChannel channel = ThreadChannel::E2ePublic;
     if (payload.contains("contact_id") && payload["contact_id"].is_string()) {
       contact_id = payload["contact_id"].get<std::string>();
     } else if (payload.contains("directory_hit") && payload["directory_hit"].is_object()) {
@@ -43,12 +44,26 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     } else {
       return Error("Missing contact_id or directory_hit");
     }
-    auto thread = inbox_.FindOrCreateDirectThread(contact_id);
+    auto thread = inbox_.FindOrCreateDirectThread(contact_id, channel);
     if (!thread) {
       return thread.error();
     }
     if (on_action_message_) {
       on_action_message_("Opened conversation with " + thread->title);
+    }
+    return Roe<std::optional<std::string>>(std::optional<std::string>{});
+  }
+
+  if (type == "secure_message") {
+    if (!payload.contains("contact_id") || !payload["contact_id"].is_string()) {
+      return Error("Missing contact_id");
+    }
+    auto thread = inbox_.FindOrCreateDirectThread(payload["contact_id"].get<std::string>(), ThreadChannel::E2e);
+    if (!thread) {
+      return thread.error();
+    }
+    if (on_action_message_) {
+      on_action_message_("Opened secure conversation with " + thread->title);
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }

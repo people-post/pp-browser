@@ -42,11 +42,13 @@ private:
   static void SelectContactCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void BackToListCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void StartChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void SecureMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void SyncFromStore();
   void OnSelectContact(const std::string& contact_id);
   void OnBackToList();
   void OnStartChat();
+  void OnSecureMessage();
   void DirtyAll();
 
   std::vector<ContactListRow> contacts_;

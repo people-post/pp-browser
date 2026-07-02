@@ -78,6 +78,7 @@ struct SessionDisplayRow {
   Rml::String title;
   Rml::String preview;
   Rml::String kind;
+  Rml::String tier_badge;
   int unread_count = 0;
   bool active = false;
   bool closable = false;

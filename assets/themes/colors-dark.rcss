@@ -475,6 +475,10 @@ select selectbox option:hover {
   border-color: #0f766e;
 }
 
+.prompt-composer--disabled {
+  opacity: 0.55;
+}
+
 .chat-secure-badge {
   color: #2dd4bf;
 }

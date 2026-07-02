@@ -1,9 +1,12 @@
 <div class="prompt-composer" data-model="chat"
-     data-class-prompt-composer--e2e="thread_encrypted">
-  <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2" data-value="draft" data-attr-placeholder="draft_placeholder"></textarea>
+     data-class-prompt-composer--e2e="thread_encrypted"
+     data-class-prompt-composer--disabled="compose_disabled">
+  <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2"
+            data-value="draft" data-attr-placeholder="draft_placeholder"
+            data-attr-disabled="compose_disabled"></textarea>
   <div class="prompt-composer-footer">
     <div class="prompt-composer-leading"></div>
-    <button class="prompt-send-btn" type="button" data-event-click="send_message()">
+    <button class="prompt-send-btn" type="button" data-event-click="send_message()" data-attr-disabled="compose_disabled">
       <svg src="../icons/send.svg" width="18" height="18" crop-to-content="true"></svg>
     </button>
   </div>

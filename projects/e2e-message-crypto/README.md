@@ -1,6 +1,6 @@
 # E2E message encryption
 
-**Status:** Ready for implementation — wave 1 (`c1` ∥ chat `v2a-core`) as of 2026-07-02  
+**Status:** Wave 1 (**c1**) complete (2026-07-02) — **c2 blocked on chat v6**  
 **Owner:** Hongwei + agents  
 **Stable refs:** [MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
 **Related project:** [chat-storage-and-memory](../chat-storage-and-memory/) (three tiers D089, `ChatPayload`, `sender_seq`, ingest rules, identity-keyed `ChatTargetKey` D079)
@@ -18,7 +18,7 @@ High-assurance **symmetric E2E** for all P2P tiers: manual PSK (private), automa
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Target crypto architecture, wire format, threat model, post-quantum posture |
-| [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today (no E2E crypto yet) |
+| [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |
 | [PHASES.md](PHASES.md) | Design-first roadmap, progress checklists, **[agent batch waves](PHASES.md#agent-batch-delivery-order)** |
 | [DECISIONS.md](DECISIONS.md) | Recorded decisions (ADR-style) |
 
@@ -27,8 +27,8 @@ High-assurance **symmetric E2E** for all P2P tiers: manual PSK (private), automa
 | Phase | Name | Status |
 |-------|------|--------|
 | d0 | Design baseline (this folder) | **Complete** |
-| c1 | `base/crypto` groundwork (libsodium, no messaging wiring) | Not started |
-| c2 | Messaging integration (encrypt body, decrypt on poll) | Not started |
+| c1 | `base/crypto` groundwork (libsodium, no messaging wiring) | **Done** (PSK store tests optional) |
+| c2 | Messaging integration (AEAD on wire, verify) | Not started — after chat **v6** |
 | c3 | Key distribution UX — **private tier** (import, fingerprint, rotation) | Not started |
 | c3+ | **Public tier** auto-key (`e2e_public`) | Not scheduled |
 | c4 | Post-quantum migration (hybrid KEM / signatures) | Deferred |

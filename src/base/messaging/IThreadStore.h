@@ -37,6 +37,15 @@ public:
   virtual Roe<void> ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) = 0;
   virtual Roe<bool> DeleteThread(const std::string& thread_id) = 0;
 
+  /** Lookup direct thread by chat target (D062). */
+  virtual Roe<std::optional<Thread>> FindDirectThread(const DirectChatTarget& target) const = 0;
+  /** Outbound-only create when no mapping exists (D062). */
+  virtual Roe<Thread> FindOrCreateDirectThread(const DirectChatTarget& target,
+                                               const std::string& participant_contact_id,
+                                               const std::string& title) = 0;
+  virtual Roe<uint64_t> AllocateSenderSeq(const std::string& thread_id) = 0;
+  virtual Roe<void> ReconcileOutbox() = 0;
+
   /** D017 — durable outbox index; empty until v2a-p2p populates rows. */
   virtual Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const = 0;
 

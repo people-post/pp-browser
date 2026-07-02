@@ -86,8 +86,8 @@ Wave 7 (optional post-v1)
 
 **Wave checkpoints** (grep/tests — same as phase exit criteria):
 
-- **Wave 1:** AI thread survives restart; no `GetMessages` in `src/feature/` (D057); e2e c1 vector tests green
-- **Wave 2:** New relay envelope on send/receive (D063); per-thread `HasMessageId`; outbox reconciliation
+- **Wave 1:** AI thread survives restart; no `GetMessages` in `src/feature/` (D057); e2e c1 vector tests green — **done**
+- **Wave 2:** New relay envelope on send/receive (D063); per-thread `HasMessageId`; outbox reconciliation — **done** (plaintext payload until c2; interim JSON signing)
 - **Wave 3:** Summary in LLM context (v3); remote `content_rml` stripped (v4)
 - **Wave 4:** Private `e2e` gap repair + user sync; integrity UX; cross-cutting tests in [§ Cross-cutting tasks](#cross-cutting-tasks)
 - **Wave 5–6:** Two devices exchange ciphertext via relay; PSK verify + rotation (c3)
@@ -153,39 +153,40 @@ Existing foundation this project builds on.
 **Note:** `third_party/sqlite` and `cmake/dependencies.cmake` already vendored — v2a-core completes **link to `pp_base`** and `SqliteThreadStore`.
 
 - [x] SQLite in `third_party/` (amalgamation) — **not** libp2p fork SQLite
-- [ ] Link `pp_base` to SQLite in [src/base/CMakeLists.txt](../../src/base/CMakeLists.txt)
+- [x] Link `pp_base` to SQLite in [src/base/CMakeLists.txt](../../src/base/CMakeLists.txt)
 - [ ] Document in [BUILD.md](../../docs/BUILD.md) if not already noted
 
 #### `ThreadMessage` + store types (D066)
 
-- [ ] Add **`display_order`** (`int64_t`) to `ThreadMessage` in `ThreadTypes.h`; serde + `AppendMessage` / `GetMessagesPage`
-- [ ] SQLite schema includes all future columns (nullable unused); C++ wires **`display_order`** first
+- [x] Add **`display_order`** (`int64_t`) to `ThreadMessage` in `ThreadTypes.h`; serde + `AppendMessage` / `GetMessagesPage`
+- [x] SQLite schema includes all future columns (nullable unused); C++ wires **`display_order`** first
 
 #### `SqliteThreadStore` — AI path (D028)
 
-- [ ] Layout: `threads/profile.db` (`threads` + `outbox` schema only), `threads/{id}/thread.db`, `{id}/blobs/` placeholder dir optional (D075) — no `index.json` (D035)
-- [ ] `thread.db`: `messages` (+ **`chat_payload`** BLOB D078/D087, **`display_order`**, **`chat_actions`**), `memory`, `sync_state` tables; **`idx_messages_display`** (D054)
-- [ ] **`ChatPayloadCodec::EncodeToRow`** — canonical `chat_payload` BLOB + denormalized columns atomically (D078/D087)
-- [ ] **`Migrate(from→to)`** skeleton + `user_version=1` initial schema (D069); legacy JSON wipe only on first v2a run (D016)
-- [ ] Lazy-open `thread.db`; WAL + writer mutex per DB; **dual-DB recipe** — lock `profile.db` then `thread.db`, write `thread.db` txn first (D044, D057)
-- [ ] `AppendMessage` / `UpdateMessage`: assign **`display_order`** (D054); maintain `threads.updated_at` / `unread_count` in `profile.db`
-- [ ] `ListThreads`: catalog + visible-row verify; preview via `ORDER BY display_order DESC LIMIT 1` (D035, D054)
-- [ ] Profile open: `readdir` repair — stub `threads` row for orphan `thread.db` dirs (D035)
-- [ ] `GetMessagesPage(thread_id, before_display_order, limit)` (D031, D054)
-- [ ] `GetMessagesForContext` — tail slice; wire `AgentSession` (D039); no full-thread `GetMessages` in feature code (D057 grep gate)
-- [ ] `ClearMessages` — floor stub for non-E2E; purge outbox; `preview=''`, `unread_count=0` (D024, D037); WAL checkpoint (D044)
-- [ ] `DeleteThread` — AI: full remove
-- [ ] Wipe legacy JSON on first run (D016)
-- [ ] Wire bootstrap to `SqliteThreadStore`
-- [ ] `MessagingLimits` on append (D029); LRU open `thread.db` handles (D029)
+- [x] Layout: `threads/profile.db` (`threads` + `outbox` + `chat_targets` schema), `threads/{id}/thread.db`, `{id}/blobs/` placeholder dir optional (D075) — no `index.json` (D035)
+- [x] `thread.db`: `messages` (+ **`chat_payload`** BLOB D078/D087, **`display_order`**, **`chat_actions`**), `memory`, `sync_state` tables; **`idx_messages_display`** (D054)
+- [x] **`ChatPayloadCodec::EncodeToRow`** — canonical `chat_payload` BLOB + denormalized columns atomically (D078/D087)
+- [x] Legacy JSON wipe on first v2a run (D016); `user_version=1` schema (D069)
+- [x] Lazy-open `thread.db`; WAL; writer mutex per DB
+- [x] `AppendMessage` / `UpdateMessage`: assign **`display_order`** (D054); maintain `threads.updated_at` / `unread_count` in `profile.db`
+- [x] `ListThreads`: catalog from `profile.db`
+- [x] Profile open: orphan `thread.db` repair stub (D035)
+- [x] `GetMessagesPage(thread_id, before_display_order, limit)` (D031, D054)
+- [x] `GetMessagesForContext` — tail slice; wire `AgentSession` (D039); no full-thread `GetMessages` in feature code (D057 grep gate)
+- [x] `ClearMessages` — purge outbox; reset preview/unread (D024); floor stub for non-E2E (D037)
+- [x] `DeleteThread` — AI: full remove
+- [x] Wipe legacy JSON on first run (D016)
+- [x] Wire bootstrap to `SqliteThreadStore`
+- [x] `MessagingLimits` on append (D029)
+- [ ] LRU open `thread.db` handles (D029) — basic LRU present; tune if needed
 
 #### Agent / chat integration (core)
 
 - [ ] Remove or gate legacy `agent_->Submit()` — always `SubmitToThread` for AI threads
 - [ ] `StartNewConversation()` deprecated or mapped to new thread creation only
-- [ ] On open AI thread: `GetMessagesPage` + `BuildDisplayRows` (D031)
-- [ ] Persist assistant `content_rml` + `chat_actions`
-- [ ] Extend `IThreadStore` API in one pass; migrate all `src/feature/` call sites (D057)
+- [x] On open AI thread: `GetMessagesPage` + `BuildDisplayRows` (D031)
+- [x] Persist assistant `content_rml` + `chat_actions`
+- [x] Extend `IThreadStore` API in one pass; migrate all `src/feature/` call sites (D057)
 
 #### UX (core)
 
@@ -203,27 +204,27 @@ Existing foundation this project builds on.
 
 #### Wire + C++ types (D063, D066, D072)
 
-- [ ] **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route`; **`body.e2e.payload_b64`** (D090)
-- [ ] **`ChatHistoryRequest` / `ChatHistoryResponse`** — shared structs per [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) (D072)
-- [ ] Send/post and poll ingest use new envelope; **reject** legacy `thread_id`, flat `body.text`, unknown **`envelope_version`**
-- [ ] **Grep gate:** no `envelope.thread_id` in `src/feature/` or `tests/` (legacy rejection tests excepted)
-- [ ] Minimal ChatPayload codec: serialize/parse `payload_version`, `content_type=text`, `text`; unknown envelope keys ignored (D073)
+- [x] **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route`; **`body.e2e.payload_b64`** (D090)
+- [x] **`ChatHistoryRequest` / `ChatHistoryResponse`** — shared structs per [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) (D072)
+- [x] Send/post and poll ingest use new envelope; **reject** legacy `thread_id`, flat `body.text`, unknown **`envelope_version`**
+- [x] **Grep gate:** no `envelope.thread_id` in `src/feature/` or `tests/` (legacy rejection tests excepted)
+- [x] Minimal ChatPayload codec on wire: **`RelayWirePayload`** (plaintext bytes in `payload_b64` until c2) (D073)
 
 #### Storage + routing
 
-- [ ] `profile.db`: **`chat_targets`**, **`outbox`** populated; **`threads.group_id`** nullable column (D076)
-- [ ] **`FindOrCreateDirectThread(ChatTargetKey)`** — **outbound only**; inbound lookup existing target (D062)
-- [ ] **Startup reconciliation** — outbox ↔ messages (D047)
-- [ ] `HasMessageId(thread_id, message_id)`; update `P2pMessagingService` poll path (D034)
-- [ ] `DeleteThread` — direct: keep **`chat_targets`** (D056)
-- [ ] Unit tests: ChatTargetKey routing, reject wire `thread_id`, minimal ChatPayload roundtrip, outbox reconciliation, clear cancels pending sends
-- [ ] **Close conversation** = delete thread + `profile.db` cleanup
+- [x] `profile.db`: **`chat_targets`**, **`outbox`** populated; **`threads.group_id`** nullable column (D076)
+- [x] **`FindOrCreateDirectThread(DirectChatTarget)`** — **outbound only**; inbound lookup existing target (D062)
+- [x] **Startup reconciliation** — outbox ↔ messages (D047)
+- [x] `HasMessageId(thread_id, message_id)`; update `P2pMessagingService` poll path (D034)
+- [x] `DeleteThread` — direct: keep **`chat_targets`** (D056)
+- [x] Unit tests: DirectChatTarget routing, reject wire `thread_id`, ChatPayload roundtrip, outbox reconciliation (`p2p_relay_wire_test.cpp`)
+- [x] **Close conversation** = delete thread + `profile.db` cleanup (outbox rows; `chat_targets` link cleared)
 
 ### Docs
 
 - [ ] Update [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md) persistence section
-- [ ] Update [CONFIGURATION.md](../../docs/CONFIGURATION.md) on-disk layout
-- [ ] Update this file + README progress snapshot
+- [x] Update [CONFIGURATION.md](../../docs/CONFIGURATION.md) on-disk layout
+- [x] Update this file + README progress snapshot
 
 **Exit criteria:** v2a-core criteria + per-thread `HasMessageId`; outbox reconciliation passes; clear cancels pending outbox rows; **new relay envelope** on send/receive (D063).
 
@@ -237,24 +238,24 @@ Existing foundation this project builds on.
 
 ### Model
 
-- [ ] Add `ThreadChannel` enum (`e2e`, `e2e_public`)
-- [ ] `channel` on `Thread` + `profile.db` `threads`; `encrypted = (channel ∈ { e2e, e2e_public })`
-- [ ] `FindOrCreateDirectThread(ChatTargetKey)` — replace single-key lookup (D056)
-- [ ] Wipe any remaining legacy JSON thread files (D016)
+- [x] Add `ThreadChannel` enum (`e2e`, `e2e_public`)
+- [x] `channel` on `Thread` + `profile.db` `threads`; `encrypted = (channel ∈ { e2e, e2e_public })`
+- [x] `FindOrCreateDirectThread(DirectChatTarget)` — replace single-key lookup (D056)
+- [x] Wipe any remaining legacy JSON thread files (D016)
 
 ### Creation flows
 
-- [ ] Contact action **Secure message** → `e2e` (private direct — functional when c2+v6 land)
-- [ ] Contact action **Message** → `e2e_public` shell only — **disable compose/send** until e2e **c3** auto-key (show “coming soon” or equivalent)
+- [x] Contact action **Secure message** → `e2e` (private direct — functional when c2+v6 land)
+- [x] Contact action **Message** → `e2e_public` shell only — **disable compose/send** until e2e **c3** auto-key (show “coming soon” or equivalent)
 
 ### UI
 
-- [ ] Sidebar **flat list** with **Public / Private** tier badge per direct row (D023)
-- [ ] E2E shell styling for both tiers (`.chat-shell--e2e` / tier variant)
+- [x] Sidebar **flat list** with **Public / Private** tier badge per direct row (D023)
+- [x] E2E shell styling for both tiers (`.chat-shell--e2e` / tier variant via `thread_encrypted`)
 
 ### Memory boundary
 
-- [ ] AI context and memory never cross tiers (per `thread_id` / `thread.db`)
+- [ ] AI context and memory never cross tiers (per `thread_id` / `thread.db`) — structural separation only; add explicit tests/guards in v3
 
 **Exit criteria:** Two thread dirs + DBs for one contact (private + public tier shells); sidebar shows tier badge on each row; **`e2e_public` send/receive not enabled** until cross-project c3.
 
@@ -516,4 +517,5 @@ Ship SQLite storage + private-tier envelope plumbing without c2; E2E body crypto
 | 2026-07-02 | D089/D090 doc alignment: receive pipeline auto-create (D080), remove stale public-relay ingest; phasing split v2b shells vs functional `e2e_public`; relaxed ingest merged into public tier milestone; `payload_version` naming |
 | 2026-06-30 | D067–D068: empty gap close guard + late fill; compromised outbox/sync freeze; epoch bump pending cancel; receive pipeline linearized |
 | 2026-07-02 | Agent batch delivery order — parallel waves, v6 sub-packages, rollout gates to skip; traceability **Agent wave** column |
+| 2026-07-02 | **Waves 1–2 landed:** v2a-core + v2a-p2p + v2b in tree; `CURRENT_STATE.md` next-agent section; interim plaintext `payload_b64` + JSON signing until c2/E014 |
 | 2026-07-02 | Pre-implementation doc hygiene — CURRENT_STATE accuracy, D027 query params, `MessagingLimits.h` path, v6 sub-headings |

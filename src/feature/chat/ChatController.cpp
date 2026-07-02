@@ -278,6 +278,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "thread_title");
   DataModelHost::Instance().Dirty("chat", "thread_subtitle");
   DataModelHost::Instance().Dirty("chat", "thread_encrypted");
+  DataModelHost::Instance().Dirty("chat", "compose_disabled");
   DataModelHost::Instance().Dirty("chat", "draft_placeholder");
 }
 
@@ -625,12 +626,21 @@ void ChatController::SyncShellSessions() {
     switch (thread.kind) {
     case ThreadKind::Ai:
       row.kind = "ai";
+      row.tier_badge = "";
       break;
     case ThreadKind::Direct:
       row.kind = "direct";
+      if (thread.channel == ThreadChannel::E2e) {
+        row.tier_badge = "Private";
+      } else if (thread.channel == ThreadChannel::E2ePublic) {
+        row.tier_badge = "Public";
+      } else {
+        row.tier_badge = "";
+      }
       break;
     case ThreadKind::Group:
       row.kind = "group";
+      row.tier_badge = "";
       break;
     }
     shell_.sessions.push_back(std::move(row));
@@ -644,13 +654,21 @@ void ChatController::UpdateThreadChrome() {
   if (auto thread = MessagingHub::Instance().Inbox().GetActiveThread()) {
     chat_.thread_title = thread->title.c_str();
     chat_.thread_encrypted = thread->encrypted;
+    chat_.compose_disabled = thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2ePublic;
     if (thread->kind == ThreadKind::Ai) {
       chat_.thread_subtitle = "AI home — ask to find people or open conversations";
       chat_.draft_placeholder = "Ask anything…";
     } else if (thread->kind == ThreadKind::Direct) {
-      chat_.thread_subtitle =
-          thread->encrypted ? "End-to-end encrypted" : "Direct message";
-      chat_.draft_placeholder = "Message… or @ai ask assistant";
+      if (thread->channel == ThreadChannel::E2ePublic) {
+        chat_.thread_subtitle = "Public E2E tier — messaging coming soon";
+        chat_.draft_placeholder = "Messaging not available yet";
+      } else if (thread->channel == ThreadChannel::E2e) {
+        chat_.thread_subtitle = "End-to-end encrypted (private tier)";
+        chat_.draft_placeholder = "Secure message… or @ai ask assistant";
+      } else {
+        chat_.thread_subtitle = "Direct message";
+        chat_.draft_placeholder = "Message… or @ai ask assistant";
+      }
     } else {
       chat_.thread_subtitle =
           thread->encrypted ? "End-to-end encrypted" : "Group chat";
@@ -696,7 +714,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
 }
 
 void ChatController::OnSendMessage() {
-  if (chat_.loading) {
+  if (chat_.loading || chat_.compose_disabled) {
     return;
   }
 
@@ -1197,6 +1215,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("thread_title", &ChatController::Instance().chat_.thread_title);
         ctor.Bind("thread_subtitle", &ChatController::Instance().chat_.thread_subtitle);
         ctor.Bind("thread_encrypted", &ChatController::Instance().chat_.thread_encrypted);
+        ctor.Bind("compose_disabled", &ChatController::Instance().chat_.compose_disabled);
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
@@ -1222,6 +1241,7 @@ bool ChatController::Setup(Rml::Context* context) {
           session_handle.RegisterMember("title", &ChatController::SessionRow::title);
           session_handle.RegisterMember("preview", &ChatController::SessionRow::preview);
           session_handle.RegisterMember("kind", &ChatController::SessionRow::kind);
+          session_handle.RegisterMember("tier_badge", &ChatController::SessionRow::tier_badge);
           session_handle.RegisterMember("unread_count", &ChatController::SessionRow::unread_count);
           session_handle.RegisterMember("active", &ChatController::SessionRow::active);
           session_handle.RegisterMember("closable", &ChatController::SessionRow::closable);

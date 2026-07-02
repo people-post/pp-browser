@@ -45,7 +45,10 @@ Roe<RelayPollResult> McpRelayClient::PollInbox(const std::string& cursor) {
   }
   if (result->contains("messages") && (*result)["messages"].is_array()) {
     for (const auto& item : (*result)["messages"]) {
-      poll.messages.push_back(RelayEnvelopeFromJson(item));
+      auto envelope = ParseRelayEnvelope(item);
+      if (envelope) {
+        poll.messages.push_back(*envelope);
+      }
     }
   }
   return poll;

@@ -12,6 +12,9 @@ namespace pbr {
 std::string ThreadKindToString(ThreadKind kind);
 ThreadKind ThreadKindFromString(const std::string& value);
 
+std::string ThreadChannelToString(ThreadChannel channel);
+ThreadChannel ThreadChannelFromString(const std::string& value);
+
 std::string MessageDeliveryToString(MessageDelivery delivery);
 MessageDelivery MessageDeliveryFromString(const std::string& value);
 
@@ -22,7 +25,13 @@ nlohmann::json ThreadMessageToJson(const ThreadMessage& message);
 ThreadMessage ThreadMessageFromJson(const nlohmann::json& json);
 
 nlohmann::json RelayEnvelopeToJson(const RelayEnvelope& envelope);
-RelayEnvelope RelayEnvelopeFromJson(const nlohmann::json& json);
+/** Strict ingest — rejects legacy thread_id / flat body.text (D063). */
+Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json);
+
+nlohmann::json ChatHistoryRequestToJson(const ChatHistoryRequest& request);
+Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const nlohmann::json& json);
+nlohmann::json ChatHistoryResponseToJson(const ChatHistoryResponse& response);
+Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json);
 
 std::string ContactIdKindToString(ContactIdKind kind);
 ContactIdKind ContactIdKindFromString(const std::string& value);

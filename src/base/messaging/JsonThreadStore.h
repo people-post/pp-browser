@@ -30,6 +30,11 @@ public:
   Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const override;
   Roe<void> ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) override;
   Roe<bool> DeleteThread(const std::string& thread_id) override;
+  Roe<std::optional<Thread>> FindDirectThread(const DirectChatTarget& target) const override;
+  Roe<Thread> FindOrCreateDirectThread(const DirectChatTarget& target, const std::string& participant_contact_id,
+                                       const std::string& title) override;
+  Roe<uint64_t> AllocateSenderSeq(const std::string& thread_id) override;
+  Roe<void> ReconcileOutbox() override;
   Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const override;
   void Flush() override;
 

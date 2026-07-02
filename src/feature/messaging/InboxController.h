@@ -24,8 +24,9 @@ public:
   Roe<Thread> OpenThread(const std::string& thread_id);
   Roe<Thread> CreateAiHomeThread();
   Roe<Thread> CreateNewAiThread();
-  Roe<Thread> CreateDirectThread(const std::string& contact_id);
+  Roe<Thread> CreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id);
+  Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
 
   bool IsAiHomeThread(const std::string& thread_id) const;
   Roe<void> CloseThread(const std::string& thread_id);

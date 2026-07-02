@@ -1,6 +1,6 @@
 # Wire schemas — normative wire reference
 
-**Status:** Planning — v2a-p2p+  
+**Status:** Implemented (v2a-p2p+) — see [projects/chat-storage-and-memory/CURRENT_STATE.md](../projects/chat-storage-and-memory/CURRENT_STATE.md)  
 **Authority:** Field behavior and validation rules live in [DESIGN.md](DESIGN.md); this file is the **canonical wire reference** for implementers, relay API, and libp2p history (D072). C++ codecs in `base/messaging` must match these types.
 
 **Related:** [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) (normative AAD, ciphertext, signing), [e2e-message-crypto/DESIGN.md](../e2e-message-crypto/DESIGN.md) (planning), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md).

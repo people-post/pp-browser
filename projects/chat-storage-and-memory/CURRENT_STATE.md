@@ -3,11 +3,33 @@
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
 **Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D068 in [DECISIONS.md](DECISIONS.md).  
-**Implementation:** ready — wave 1 per [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order) (`v2a-core` ∥ e2e `c1`).
+**Agent batch:** Waves **1** (v2a-core) and **2** (v2a-p2p + v2b) are **merged in tree**. Next work: **Wave 3** (v3 ∥ v4) — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
+
+## Next agent — start here
+
+| Priority | Work | Blocked by |
+|----------|------|------------|
+| **Wave 3** | **v3** — durable AI memory, compaction, forget semantics | — |
+| **Wave 3** | **v4** — ChatPayload validator hardening, `transport` column, strip remote `content_rml` on ingest | — (wire unchanged since wave 2) |
+| **Wave 4** | **v6** — `sender_seq` on messages, sync pipeline, history fetch, gap repair | v4 recommended first for ingest rules |
+| **Wave 5–6** | [e2e c2](../e2e-message-crypto/PHASES.md#phase-c2--messaging-integration) — AEAD on wire, `EnvelopeSigner` (E014) | v6 envelope + ingest pipeline |
+| **UX gaps (v2a-core)** | Clear-history confirmation sheet; composer `maxlength` (`kMaxComposeTextBytes`) | — |
+
+**Key paths (wave 2):**
+
+- Types / wire: `src/base/messaging/ThreadTypes.h`, `MessagingJson.cpp` (`ParseRelayEnvelope`), `RelayWirePayload.*`, `DirectChatTarget.*`
+- Store: `SqliteThreadStore.*` — `chat_targets`, `outbox`, `FindOrCreateDirectThread`, `ReconcileOutbox`, `AllocateSenderSeq`
+- Feature: `P2pMessagingService.cpp`, `InboxController.cpp`, `ContactActionDispatcher.cpp`, `ContactsController.cpp`, `ChatController.cpp` (tier badges, `compose_disabled`)
+- Tests: `src/base/messaging/tests/p2p_relay_wire_test.cpp`, `sqlite_thread_store_test.cpp`, `tests/messaging_foundation_test.cpp`
+
+**Interim behaviors (do not “fix” without reading DECISIONS):**
+
+- Relay body uses **`body.e2e.payload_b64`** but payload is **plaintext ChatPayload bytes** (base64) until e2e **c2** encrypts.
+- Outbound signing still uses **JSON dump minus `signature`** — not E014 canonical bytes yet (`EnvelopeSigner` = c2).
+- **`e2e_public`** threads exist and show tier badge; **compose/send disabled** until c3 auto-key.
+- Inbound poll: **find-only** via `chat_targets` (no auto-create thread on unknown sender — D062).
 
 ## Release scope (v1 batch)
-
-Agents should implement **this scope** before the first customer release unless explicitly expanded:
 
 | In scope | Out of scope (unless expanded) |
 |----------|--------------------------------|
@@ -19,156 +41,107 @@ Agents should implement **this scope** before the first customer release unless 
 
 | Area | Status | Location |
 |------|--------|----------|
-| Thread index + per-thread JSON | Implemented (legacy) | `src/base/messaging/JsonThreadStore.*` |
-| **SqliteThreadStore** (target v2a) | Not implemented | D028 — `thread.db` + `profile.db` (`threads` catalog + `outbox` + `chat_targets`, D035) |
-| Profile-scoped paths | Implemented | [CONFIGURATION.md](../../docs/CONFIGURATION.md) — `{data_dir}/profiles/{id}/threads/` |
-| `IThreadStore` interface | Implemented | `src/base/messaging/IThreadStore.h` |
-| SQLite vendored | **Yes** — not linked to `pp_base` yet | `third_party/sqlite/`, `cmake/dependencies.cmake`; v2a task = link + `SqliteThreadStore` (D028) |
-| `MessagingLimits.h` | Not implemented | D029 — `src/base/messaging/MessagingLimits.h` |
-| AI home / new AI thread persistence | Partial | Threads created in store; see gaps below |
-| Durable `ConversationSummary` on disk | Not implemented | In-memory only on `Conversation` |
-| Clear history (truncate messages) | Not implemented | Only full `DeleteThread` |
-| Forget memory API | Not implemented | Roadmap in [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md) |
-| Message / envelope size limits | **Not implemented** | No cap on compose, send, or ingest (D029) |
-| Windowed transcript load | **Not implemented** | Full thread loaded every refresh (D031) |
-| Agent context full-thread load | **Not implemented** | `AgentSession` calls `GetMessages` each turn (D039) |
-| Compaction / summary on disk | Not implemented | No `ICompactionService` (D040) |
+| **SqliteThreadStore** (v2a) | **Implemented** | `src/base/messaging/SqliteThreadStore.*` |
+| Legacy `JsonThreadStore` | Retained for tests | `src/base/messaging/JsonThreadStore.*` |
+| Profile-scoped paths | Implemented | `{data_dir}/profiles/{id}/threads/` — [CONFIGURATION.md](../../docs/CONFIGURATION.md) |
+| `IThreadStore` interface | Extended (routing, outbox) | `src/base/messaging/IThreadStore.h` |
+| SQLite + libsodium on `pp_base` | **Linked** | `src/base/CMakeLists.txt` |
+| `MessagingLimits.h` | **Implemented** | `src/base/messaging/MessagingLimits.h` — append cap enforced |
+| `MessagingHub` bootstrap | **SqliteThreadStore** + outbox reconcile on init | `MessagingHub.cpp` |
+| Durable `ConversationSummary` on disk | Not implemented | v3 |
+| Clear history UX | **API only** (`ClearMessages`) — no confirmation sheet | v2a-core gap |
+| Forget memory API | Not implemented | v3 |
+| Windowed transcript load | **Partial** — `GetMessagesPage` in store + inbox; UI still loads default page size | v2a-core mostly done |
+| Agent context | **`GetMessagesForContext`** wired | `AgentSession` — no full-thread `GetMessages` in feature code (D057) |
+| Compaction / summary on disk | Not implemented | v3 |
 
-### On-disk layout (today — legacy)
-
-```
-{data_dir}/profiles/{profile_id}/threads/index.json
-{data_dir}/profiles/{profile_id}/threads/{thread_id}.json   # flat JSON — replaced in v2a
-```
-
-**Target (D028, D035, D069, D075):**
+### On-disk layout (today — SQLite)
 
 ```
-threads/profile.db          # threads catalog (+ group_id) + outbox + chat_targets
-threads/{thread_id}/thread.db   # messages.chat_payload BLOB, display_order, …
-threads/{thread_id}/blobs/      # [future] attachments (D075)
+{data_dir}/profiles/{profile_id}/threads/profile.db     # threads catalog, outbox, chat_targets
+{data_dir}/profiles/{profile_id}/threads/{thread_id}/thread.db
+{data_dir}/profiles/{profile_id}/threads/{thread_id}/blobs/   # placeholder dir
 ```
 
-No `index.json` in target layout (replaces legacy index + flat JSON).
+Legacy `index.json` + `{thread_id}.json` are **wiped on first SqliteThreadStore open** (D016).
 
 ## Data model (today)
 
 ### `Thread` — `src/base/messaging/ThreadTypes.h`
 
-- Has `encrypted` bool — **never set to `true` anywhere** (schema + UI binding only).
-- No `channel` field.
+- **`ThreadChannel`**: `None`, `E2e`, `E2ePublic` on `Thread` + `profile.db` `threads.channel`
+- **`encrypted`** set when `channel ∈ { e2e, e2e_public }`
+- **`peer_identity_kind` / `peer_identity_value`** on direct threads (communicating identity for routing)
+- **`DirectChatTarget`** — lookup key for `chat_targets` (kind + value + channel)
 
 ### `ThreadMessage`
 
-- Has UUID `id`, `delivery`, `relay_visible`.
-- No `content_type`, `payload`, `sender_seq`, or `session_epoch`.
-- `content_rml` may be set from **unverified** relay poll — rendered without escape for peers (D030 gap).
+- Has **`display_order`**, `ChatContentType`, ChatPayload BLOB via **`ChatPayloadCodec`**
+- No `sender_seq` / `session_epoch` on rows yet (v6)
 
-### `RelayEnvelope` (baseline — legacy wire)
+### `RelayEnvelope` (v1 wire — D063/D090)
 
-- Has `thread_id` on envelope — **removed in target** (D056/D063).
-- `RelayMessageBody` uses flat `body.text` — target is `body.e2e.payload_b64` only (D090).
-- See `src/base/messaging/ThreadTypes.h`, `tests/messaging_foundation_test.cpp`, `MockRelayClient` in `ServiceClientsImpl.cpp`.
+- **`envelope_version`**, `sender_contact_id`, `route.channel`, **`body.e2e.payload_b64`**
+- **No `thread_id`** — `ParseRelayEnvelope` rejects legacy shapes
+- **`ChatHistoryRequest` / `ChatHistoryResponse`** C++ structs + JSON serde (D072); **no HTTP/libp2p fetch yet** (v6)
 
-### `TranscriptEntry` / `Conversation` — `src/base/ai/conversation/`
+### `TranscriptEntry` / `Conversation`
 
-- In-memory turn-pair model for legacy AI path.
-- `StartNewConversation()` clears memory only — **not wired to thread store**.
-- Used when `ChatController` falls back to `agent_->Submit()` without messaging router.
+- In-memory turn-pair model still used on some AI fallback paths
+- `StartNewConversation()` not fully deprecated
 
 ## Messaging and routing
 
 | Feature | Status | Location |
 |---------|--------|----------|
-| HTTP relay send + poll dedup | Implemented | `src/feature/messaging/P2pMessagingService.*` |
-| Local write before send | Implemented | `SendUserMessage` appends then relays |
-| `HasMessageId` dedup | Implemented (legacy: profile-global) | `JsonThreadStore` in-memory set; target: per-thread `thread.db` PK (D034) |
-| Inbound signature verify | **Not implemented** (spec: [E016](../e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add), D081) | `Ed25519Signer::Verify` unused on poll; no `PeerSigningKeyStore` |
-| `IRelayClient` history fetch | **Not implemented** | v6 — `FetchChatTargetMessages` / `GET /v1/chat-targets/messages` (D027/D058); interface today: `Send` + `PollInbox` only (`ServiceClients.h`) |
-| Relay poll every UI frame | **Implemented (gap)** | `ChatController::Update` → `PollAndMerge` (D032) |
-| `@ai` scoped assist | Implemented (local only) | `MessageRouter` → `SubmitScopedAssist` |
-| `@ai+` / `@ai++` shared modes | **Deferred** (D012) | Design: local `@ai` only for v1 |
-| Direct P2P transport | Not implemented | All outbound via `IRelayClient` |
+| Relay send + poll (v1 envelope) | **Implemented** | `P2pMessagingService.*` |
+| Plaintext payload in `payload_b64` (pre-c2) | **Implemented** | `RelayWirePayload.*` |
+| Local write before send + outbox row | **Implemented** | `AppendMessage` + `UpsertOutboxRow` |
+| **`HasMessageId(thread_id, …)`** per thread | **Implemented** | `SqliteThreadStore`, poll path |
+| **`FindOrCreateDirectThread(DirectChatTarget)`** | **Outbound create** | `InboxController`, `SqliteThreadStore` |
+| Inbound poll routing | **Find-only** via `chat_targets` | `P2pMessagingService::PollAndMerge` |
+| Startup **outbox reconciliation** | **Implemented** | `ReconcileOutbox` on hub init |
+| **`AllocateSenderSeq`** | **Implemented** | `chat_targets.next_outgoing_seq` |
+| **`DeleteThread` direct** | Removes thread files; **keeps `chat_targets` row** (clears `local_thread_id`) | D056 |
+| Inbound signature verify | **Not implemented** | E016 / c2 |
+| `IRelayClient` history fetch | **Not implemented** | v6 — `FetchChatTargetMessages` |
+| Relay poll every UI frame | Still runs each frame | `ChatController::Update` → `PollAndMerge` (D032) |
+| `@ai` scoped assist | Implemented | `MessageRouter` |
 | libp2p messaging glue | Stub | `src/libp2p/integration/host/` |
-| `sender_seq` / gap detection | Not implemented | Design: D008–D011, phase v6 |
-| Windowed sync (tail / scroll / gap repair) | Not implemented | Design: D009 |
-| Per-peer sync state / `history_floor_seq` | Not implemented | Per `(peer, epoch)`; below floor → silent discard (D037) |
-
-### `FindOrCreateDirectThread`
-
-- Keys on local **`Contact.id`** only — **one direct thread per contact** (baseline code).
-- Does not consider public vs E2E or communicating identity — gap vs target design.
-- Target (D056, D079, D082): wire routes by `sender_contact_id` (identity **value**, e.g. `relay:abc123`) + `route.channel` → `ChatTargetKey`; local `thread_id` and `Contact.id` not on envelope.
-
-### JsonThreadStore performance gaps (legacy)
-
-- `EnsureLoaded()` reads **all threads** into RAM on first access.
-- `AppendMessage` rewrites entire thread JSON file per message.
-- No atomic write (crash can corrupt file).
-
-## AI conversation pipeline
-
-| Feature | Status | Location |
-|---------|--------|----------|
-| Sliding window context | Implemented | `SlidingWindowContextPolicy`, `ThreadContextPolicy` |
-| Thread-mode agent turns | Implemented | `AgentSession::SubmitToThread` |
-| Scoped assist context | Implemented | `ThreadContextPolicy::BuildAssistContext` |
-| Payload fast path / turn plan | Implemented | [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md) |
-| `SubmitToThread` persists user + assistant to store | Implemented | `AgentSession::StartTurn`, `PersistAssistantToThread` |
-| Unified transcript for AI home | **Gap** | See below |
-
-### AI home / new chat gap
-
-`ChatController::OnNewChat()` calls `CreateNewAiThread()` but agent turns may still use in-memory `Conversation` when routing differs.
+| Gap detection / sync | Not implemented | v6 |
 
 ## UI (today)
 
 | Feature | Status | Location |
 |---------|--------|----------|
-| Sidebar sessions from thread index | Implemented | `ChatController::SyncShellSessions` |
-| Close thread (= delete) | Implemented | `InboxController::CloseThread` |
-| New chat (= new AI thread) | Implemented | `OnNewChat` → `CreateNewAiThread` |
-| E2E vs public chrome | Partial | `thread_encrypted` binding; no threads use `encrypted=true` |
-| Delivery / transport badges on messages | Not implemented | `BuildDisplayRows` has no delivery/transport fields |
+| Sidebar sessions + **Private/Public tier badge** | **Implemented** | `sidebar.rml`, `ChatController::SyncShellSessions` |
+| Contacts: **Secure message** (`e2e`) vs **Message** (`e2e_public`) | **Implemented** | `contacts.rml`, `ContactsController` |
+| **`e2e_public` compose disabled** | **Implemented** | `compose_disabled` in `composer.rml` |
+| E2E chrome (`.prompt-composer--e2e`) | Partial | `thread_encrypted` binding |
 | Clear history / forget memory menus | Not implemented | — |
-| Composer maxlength | **Not set** | `assets/views/composer.rml` |
+| Composer maxlength | **Not wired** | `kMaxComposeTextBytes` exists; `composer.rml` has no maxlength |
+| Delivery / transport badges on messages | Not implemented | v4 / post-v6d |
 
 ## Tests
 
 | Area | Location | Notes |
 |------|----------|-------|
-| Sliding window / conversation | `src/base/ai/conversation/tests/` | |
-| Messaging foundation | `tests/messaging_foundation_test.cpp` | Uses **legacy** `RelayEnvelope` — update in v2a-p2p |
-| JsonThreadStore | No dedicated unit tests | v2a adds `SqliteThreadStore` tests |
+| SqliteThreadStore + ChatPayload | `src/base/messaging/tests/` | `sqlite_thread_store_test`, **`p2p_relay_wire_test`** (3 tests) |
+| Messaging foundation | `tests/messaging_foundation_test.cpp` | **v1 envelope** + legacy reject |
+| Mock relay | `ServiceClientsImpl.cpp` | v1 envelope + mock reply via `SetNextReplySenderId` |
+| JsonThreadStore | In-memory only | Used by foundation test |
 
-### Manual E2E test plan (c2/c3)
-
-1. Two profiles (two `data_dir` trees) or two app instances.
-2. Exchange PSK via export/import (c3) or dev fixture.
-3. Send via mock relay or HTTP relay; verify relay sees `body.e2e.payload_b64` only (c2).
-4. Restart both sides; verify outbox + transcript (v6/c2).
+Run: `./build/tests/base_messaging_tests/pp_browser_p2p_relay_wire_test` (and siblings).
 
 ## Known gaps (summary)
 
-1. Dual transcript models (`Conversation` vs `ThreadMessage`) — converge on store.
-2. No clear-history vs delete-thread distinction.
-3. No durable AI memory layer on disk.
-4. One direct thread per contact — no channel split.
-5. No `ChatPayload` / annotation schema in C++ yet.
-6. No transport provenance field or UI.
-7. `Thread.encrypted` unused in creation paths.
-8. No `sender_seq`, session epoch, strict ingest, durable outbox, or gap-repair sync.
-9. No resource bounds on message size, poll rate, or UI window (D029–D033).
-10. No agent tail context API; full `GetMessages` per turn (D039).
-11. No compaction service or summary size cap (D040).
-12. No outbox/gap repair numeric limits (D041); annotation cap (D042).
-13. Inbound relay messages not signature-verified; no `PeerSigningKeyStore` (E016/D081); remote `content_rml` trusted (D030).
-14. JsonThreadStore eager load + full-file rewrite on append.
-15. Schema bumps require wipe (D016); v2a replaces JSON with SQLite (D028).
-16. `@ai` local-only in v1 — shared modes deferred (D012).
-17. No unified E2E backfill / user sync / peer-direct history (D058–D060) — planned v6.
-18. `ThreadMessage` lacks `display_order` in C++ (D066) — planned v2a-core; legacy `RelayEnvelope` has `thread_id` — v2a-p2p cutover (D063).
-19. Empty gap close guard + late fill (D067) and compromised outbox freeze (D068) — spec only, v6.
-20. **Legacy wire in mocks/tests** — `MockRelayClient`, `messaging_foundation_test` use pre-D063 shape; replace in v2a-p2p.
+1. **Wave 3+** — durable AI memory, compaction, ChatPayload validator / transport column (v3/v4).
+2. **Wave 4 (v6)** — `sender_seq`, sync_state, history fetch, gap repair, integrity UX — **blocks e2e c2**.
+3. **c2** — real AEAD in `payload_b64`; E014 `EnvelopeSigner`; inbound verify.
+4. Clear-history **confirmation UX**; composer maxlength wiring.
+5. Canonical sign bytes (interim JSON signing on outbound).
+6. Inbound relay: no Ed25519 verify; no `PeerSigningKeyStore`.
+7. Poll rate / UI windowing polish (D032/D031).
+8. Memory boundary across tiers — **structural** (separate `thread.db` per tier) but no explicit guard tests.
 
-**Non-chat safety gaps** (LLM HTTP, profile JSON stores): see [platform-safety-limits](../platform-safety-limits/).
+**Non-chat safety gaps:** [platform-safety-limits](../platform-safety-limits/).

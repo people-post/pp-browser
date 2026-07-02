@@ -41,6 +41,8 @@ set(PP_BROWSER_BASE_SOURCES
   people/IdentityStore.cpp
   messaging/AtAiParser.cpp
   messaging/ChatPayloadCodec.cpp
+  messaging/DirectChatTarget.cpp
+  messaging/RelayWirePayload.cpp
   messaging/JsonThreadStore.cpp
   messaging/MessagingJson.cpp
   messaging/PeopleDiscoveryBlocks.cpp

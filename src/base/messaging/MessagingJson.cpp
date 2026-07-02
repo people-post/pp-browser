@@ -63,6 +63,28 @@ ThreadKind ThreadKindFromString(const std::string& value) {
   return ThreadKind::Ai;
 }
 
+std::string ThreadChannelToString(const ThreadChannel channel) {
+  switch (channel) {
+  case ThreadChannel::E2e:
+    return "e2e";
+  case ThreadChannel::E2ePublic:
+    return "e2e_public";
+  case ThreadChannel::None:
+    return "";
+  }
+  return "";
+}
+
+ThreadChannel ThreadChannelFromString(const std::string& value) {
+  if (value == "e2e_public") {
+    return ThreadChannel::E2ePublic;
+  }
+  if (value == "e2e") {
+    return ThreadChannel::E2e;
+  }
+  return ThreadChannel::None;
+}
+
 std::string MessageDeliveryToString(const MessageDelivery delivery) {
   switch (delivery) {
   case MessageDelivery::Local:
@@ -91,14 +113,24 @@ MessageDelivery MessageDeliveryFromString(const std::string& value) {
 }
 
 nlohmann::json ThreadToJson(const Thread& thread) {
-  return {{"id", thread.id},
-          {"kind", ThreadKindToString(thread.kind)},
-          {"title", thread.title},
-          {"participant_contact_ids", thread.participant_contact_ids},
-          {"updated_at", thread.updated_at},
-          {"unread_count", thread.unread_count},
-          {"preview", thread.preview},
-          {"encrypted", thread.encrypted}};
+  nlohmann::json json = {{"id", thread.id},
+                         {"kind", ThreadKindToString(thread.kind)},
+                         {"title", thread.title},
+                         {"participant_contact_ids", thread.participant_contact_ids},
+                         {"updated_at", thread.updated_at},
+                         {"unread_count", thread.unread_count},
+                         {"preview", thread.preview},
+                         {"encrypted", thread.encrypted}};
+  if (thread.channel != ThreadChannel::None) {
+    json["channel"] = ThreadChannelToString(thread.channel);
+  }
+  if (!thread.peer_identity_kind.empty()) {
+    json["peer_identity_kind"] = thread.peer_identity_kind;
+  }
+  if (!thread.peer_identity_value.empty()) {
+    json["peer_identity_value"] = thread.peer_identity_value;
+  }
+  return json;
 }
 
 Thread ThreadFromJson(const nlohmann::json& json) {
@@ -109,6 +141,9 @@ Thread ThreadFromJson(const nlohmann::json& json) {
   if (json.contains("kind") && json["kind"].is_string()) {
     thread.kind = ThreadKindFromString(json["kind"].get<std::string>());
   }
+  if (json.contains("channel") && json["channel"].is_string()) {
+    thread.channel = ThreadChannelFromString(json["channel"].get<std::string>());
+  }
   if (json.contains("title") && json["title"].is_string()) {
     thread.title = json["title"].get<std::string>();
   }
@@ -118,6 +153,12 @@ Thread ThreadFromJson(const nlohmann::json& json) {
         thread.participant_contact_ids.push_back(id.get<std::string>());
       }
     }
+  }
+  if (json.contains("peer_identity_kind") && json["peer_identity_kind"].is_string()) {
+    thread.peer_identity_kind = json["peer_identity_kind"].get<std::string>();
+  }
+  if (json.contains("peer_identity_value") && json["peer_identity_value"].is_string()) {
+    thread.peer_identity_value = json["peer_identity_value"].get<std::string>();
   }
   if (json.contains("updated_at") && json["updated_at"].is_number_integer()) {
     thread.updated_at = json["updated_at"].get<int64_t>();
@@ -130,6 +171,8 @@ Thread ThreadFromJson(const nlohmann::json& json) {
   }
   if (json.contains("encrypted") && json["encrypted"].is_boolean()) {
     thread.encrypted = json["encrypted"].get<bool>();
+  } else if (ThreadChannelIsE2e(thread.channel)) {
+    thread.encrypted = true;
   }
   return thread;
 }
@@ -186,28 +229,95 @@ ThreadMessage ThreadMessageFromJson(const nlohmann::json& json) {
 }
 
 nlohmann::json RelayEnvelopeToJson(const RelayEnvelope& envelope) {
-  nlohmann::json body = {{"text", envelope.body.text}};
-  if (envelope.body.content_rml) {
-    body["content_rml"] = *envelope.body.content_rml;
+  nlohmann::json body = {{"e2e", {{"payload_b64", envelope.body.e2e.payload_b64}}}};
+  if (envelope.body.e2e.key_init_b64) {
+    body["e2e"]["key_init_b64"] = *envelope.body.e2e.key_init_b64;
   }
-  return {{"thread_id", envelope.thread_id},
+  nlohmann::json route = {{"kind", envelope.route.kind}, {"channel", ThreadChannelToString(envelope.route.channel)}};
+  if (envelope.route.group_id) {
+    route["group_id"] = *envelope.route.group_id;
+  }
+  return {{"envelope_version", envelope.envelope_version},
           {"message_id", envelope.message_id},
           {"sender_relay_id", envelope.sender_relay_id},
+          {"sender_contact_id", envelope.sender_contact_id},
+          {"route", std::move(route)},
           {"body", std::move(body)},
+          {"sender_seq", envelope.sender_seq},
+          {"session_epoch", envelope.session_epoch},
           {"timestamp", envelope.timestamp},
           {"signature", envelope.signature}};
 }
 
-RelayEnvelope RelayEnvelopeFromJson(const nlohmann::json& json) {
+Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json) {
+  if (json.contains("thread_id")) {
+    return Error("Legacy relay envelope thread_id is not supported");
+  }
+  if (!json.contains("envelope_version") || !json["envelope_version"].is_number_integer()) {
+    return Error("Missing envelope_version");
+  }
+  const int version = json["envelope_version"].get<int>();
+  if (version != kRelayEnvelopeVersion) {
+    return Error("Unsupported envelope_version");
+  }
+  if (!json.contains("message_id") || !json["message_id"].is_string()) {
+    return Error("Missing message_id");
+  }
+  if (!json.contains("sender_relay_id") || !json["sender_relay_id"].is_string()) {
+    return Error("Missing sender_relay_id");
+  }
+  if (!json.contains("sender_contact_id") || !json["sender_contact_id"].is_string()) {
+    return Error("Missing sender_contact_id");
+  }
+  if (!json.contains("route") || !json["route"].is_object()) {
+    return Error("Missing route");
+  }
+  if (!json.contains("body") || !json["body"].is_object()) {
+    return Error("Missing body");
+  }
+  const auto& body = json["body"];
+  if (body.contains("text")) {
+    return Error("Legacy relay body.text is not supported");
+  }
+  if (!body.contains("e2e") || !body["e2e"].is_object()) {
+    return Error("Missing body.e2e");
+  }
+  const auto& e2e = body["e2e"];
+  if (!e2e.contains("payload_b64") || !e2e["payload_b64"].is_string()) {
+    return Error("Missing body.e2e.payload_b64");
+  }
+
   RelayEnvelope envelope;
-  if (json.contains("thread_id") && json["thread_id"].is_string()) {
-    envelope.thread_id = json["thread_id"].get<std::string>();
+  envelope.envelope_version = version;
+  envelope.message_id = json["message_id"].get<std::string>();
+  envelope.sender_relay_id = json["sender_relay_id"].get<std::string>();
+  envelope.sender_contact_id = json["sender_contact_id"].get<std::string>();
+  envelope.body.e2e.payload_b64 = e2e["payload_b64"].get<std::string>();
+  if (e2e.contains("key_init_b64") && e2e["key_init_b64"].is_string()) {
+    envelope.body.e2e.key_init_b64 = e2e["key_init_b64"].get<std::string>();
   }
-  if (json.contains("message_id") && json["message_id"].is_string()) {
-    envelope.message_id = json["message_id"].get<std::string>();
+
+  const auto& route = json["route"];
+  if (route.contains("kind") && route["kind"].is_string()) {
+    envelope.route.kind = route["kind"].get<std::string>();
   }
-  if (json.contains("sender_relay_id") && json["sender_relay_id"].is_string()) {
-    envelope.sender_relay_id = json["sender_relay_id"].get<std::string>();
+  if (route.contains("channel") && route["channel"].is_string()) {
+    envelope.route.channel = ThreadChannelFromString(route["channel"].get<std::string>());
+    if (envelope.route.channel == ThreadChannel::None) {
+      return Error("Invalid route.channel");
+    }
+  } else {
+    return Error("Missing route.channel");
+  }
+  if (route.contains("group_id") && route["group_id"].is_string()) {
+    envelope.route.group_id = route["group_id"].get<std::string>();
+  }
+
+  if (json.contains("sender_seq") && json["sender_seq"].is_number_unsigned()) {
+    envelope.sender_seq = json["sender_seq"].get<uint64_t>();
+  }
+  if (json.contains("session_epoch") && json["session_epoch"].is_number_unsigned()) {
+    envelope.session_epoch = json["session_epoch"].get<uint32_t>();
   }
   if (json.contains("timestamp") && json["timestamp"].is_number_integer()) {
     envelope.timestamp = json["timestamp"].get<int64_t>();
@@ -215,16 +325,111 @@ RelayEnvelope RelayEnvelopeFromJson(const nlohmann::json& json) {
   if (json.contains("signature") && json["signature"].is_string()) {
     envelope.signature = json["signature"].get<std::string>();
   }
-  if (json.contains("body") && json["body"].is_object()) {
-    const auto& body = json["body"];
-    if (body.contains("text") && body["text"].is_string()) {
-      envelope.body.text = body["text"].get<std::string>();
-    }
-    if (body.contains("content_rml") && body["content_rml"].is_string()) {
-      envelope.body.content_rml = body["content_rml"].get<std::string>();
+  return envelope;
+}
+
+nlohmann::json ChatHistoryRequestToJson(const ChatHistoryRequest& request) {
+  nlohmann::json json = {{"requester_identity_kind", request.requester_identity_kind},
+                         {"requester_identity_value", request.requester_identity_value},
+                         {"peer_identity_kind", request.peer_identity_kind},
+                         {"peer_identity_value", request.peer_identity_value},
+                         {"channel", ThreadChannelToString(request.channel)},
+                         {"session_epoch", request.session_epoch},
+                         {"limit", request.limit},
+                         {"order", request.order}};
+  if (request.min_sender_seq) {
+    json["min_sender_seq"] = *request.min_sender_seq;
+  }
+  if (request.max_sender_seq) {
+    json["max_sender_seq"] = *request.max_sender_seq;
+  }
+  return json;
+}
+
+Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const nlohmann::json& json) {
+  ChatHistoryRequest request;
+  if (!json.contains("requester_identity_kind") || !json.contains("requester_identity_value") ||
+      !json.contains("peer_identity_kind") || !json.contains("peer_identity_value") ||
+      !json.contains("channel") || !json.contains("session_epoch")) {
+    return Error("Incomplete ChatHistoryRequest");
+  }
+  request.requester_identity_kind = json["requester_identity_kind"].get<std::string>();
+  request.requester_identity_value = json["requester_identity_value"].get<std::string>();
+  request.peer_identity_kind = json["peer_identity_kind"].get<std::string>();
+  request.peer_identity_value = json["peer_identity_value"].get<std::string>();
+  request.channel = ThreadChannelFromString(json["channel"].get<std::string>());
+  request.session_epoch = json["session_epoch"].get<uint32_t>();
+  if (json.contains("min_sender_seq") && json["min_sender_seq"].is_number_unsigned()) {
+    request.min_sender_seq = json["min_sender_seq"].get<uint64_t>();
+  }
+  if (json.contains("max_sender_seq") && json["max_sender_seq"].is_number_unsigned()) {
+    request.max_sender_seq = json["max_sender_seq"].get<uint64_t>();
+  }
+  if (json.contains("limit") && json["limit"].is_number_unsigned()) {
+    request.limit = json["limit"].get<size_t>();
+  }
+  if (json.contains("order") && json["order"].is_string()) {
+    request.order = json["order"].get<std::string>();
+  }
+  return request;
+}
+
+nlohmann::json ChatHistoryResponseToJson(const ChatHistoryResponse& response) {
+  nlohmann::json messages = nlohmann::json::array();
+  for (const RelayEnvelope& envelope : response.messages) {
+    messages.push_back(RelayEnvelopeToJson(envelope));
+  }
+  nlohmann::json cursor = nlohmann::json::object();
+  if (response.cursor.next_min_sender_seq) {
+    cursor["next_min_sender_seq"] = *response.cursor.next_min_sender_seq;
+  } else {
+    cursor["next_min_sender_seq"] = nullptr;
+  }
+  if (response.cursor.next_max_sender_seq) {
+    cursor["next_max_sender_seq"] = *response.cursor.next_max_sender_seq;
+  } else {
+    cursor["next_max_sender_seq"] = nullptr;
+  }
+  return {{"peer_identity_kind", response.peer_identity_kind},
+          {"peer_identity_value", response.peer_identity_value},
+          {"channel", ThreadChannelToString(response.channel)},
+          {"session_epoch", response.session_epoch},
+          {"messages", std::move(messages)},
+          {"has_more", response.has_more},
+          {"cursor", std::move(cursor)}};
+}
+
+Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json) {
+  ChatHistoryResponse response;
+  if (!json.contains("peer_identity_kind") || !json.contains("peer_identity_value") ||
+      !json.contains("channel") || !json.contains("session_epoch") || !json.contains("messages") ||
+      !json.contains("has_more")) {
+    return Error("Incomplete ChatHistoryResponse");
+  }
+  response.peer_identity_kind = json["peer_identity_kind"].get<std::string>();
+  response.peer_identity_value = json["peer_identity_value"].get<std::string>();
+  response.channel = ThreadChannelFromString(json["channel"].get<std::string>());
+  response.session_epoch = json["session_epoch"].get<uint32_t>();
+  response.has_more = json["has_more"].get<bool>();
+  if (json["messages"].is_array()) {
+    for (const auto& item : json["messages"]) {
+      auto envelope = ParseRelayEnvelope(item);
+      if (!envelope) {
+        return envelope.error();
+      }
+      response.messages.push_back(*envelope);
     }
   }
-  return envelope;
+  if (json.contains("cursor") && json["cursor"].is_object()) {
+    const auto& cursor = json["cursor"];
+    if (cursor.contains("next_min_sender_seq") && cursor["next_min_sender_seq"].is_number_unsigned()) {
+      response.cursor.next_min_sender_seq = cursor["next_min_sender_seq"].get<uint64_t>();
+    }
+    if (cursor.contains("next_max_sender_seq") && cursor["next_max_sender_seq"].is_number_unsigned()) {
+      response.cursor.next_max_sender_seq = cursor["next_max_sender_seq"].get<uint64_t>();
+    }
+  }
+  return response;
 }
 
 std::string ContactIdKindToString(const ContactIdKind kind) {

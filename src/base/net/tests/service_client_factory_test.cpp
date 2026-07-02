@@ -1,4 +1,6 @@
 #include "base/ai/mcp/McpClient.h"
+#include "base/messaging/MessagingJson.h"
+#include "base/messaging/RelayWirePayload.h"
 #include "base/net/ServiceClientFactory.h"
 
 #include <gtest/gtest.h>
@@ -12,11 +14,18 @@ TEST(ServiceClientFactoryTest, BuildsHttpMockAndMcpClients) {
   ASSERT_TRUE(static_cast<bool>(clients.directory));
   ASSERT_TRUE(static_cast<bool>(clients.registration));
 
+  auto payload_b64 = pbr::RelayWirePayload::EncodePlaintextText("hello");
+  ASSERT_TRUE(static_cast<bool>(payload_b64));
+
   pbr::RelayEnvelope envelope;
-  envelope.thread_id = "thread-1";
+  envelope.envelope_version = pbr::kRelayEnvelopeVersion;
   envelope.message_id = "msg-1";
   envelope.sender_relay_id = "relay:self";
-  envelope.body.text = "hello";
+  envelope.sender_contact_id = "relay:self";
+  envelope.route.kind = "direct";
+  envelope.route.channel = pbr::ThreadChannel::E2e;
+  envelope.body.e2e.payload_b64 = *payload_b64;
+  envelope.timestamp = 1;
   const auto http_send = clients.relay->Send(envelope);
   EXPECT_FALSE(static_cast<bool>(http_send));
 

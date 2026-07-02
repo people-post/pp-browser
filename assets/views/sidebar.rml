@@ -9,6 +9,7 @@
     <div data-for="session : sessions" class="sidebar-session" data-class-sidebar-session-active="session.active">
       <div class="sidebar-session-body" data-event-click="select_thread(session.id)">
         <p class="sidebar-session-title" data-rml="session.title"></p>
+        <span class="sidebar-tier-badge" data-if="session.tier_badge != ''" data-rml="session.tier_badge"></span>
         <span class="sidebar-unread" data-if="session.unread_count > 0" data-rml="session.unread_count"></span>
       </div>
       <button class="sidebar-session-close" type="button" data-if="session.closable" data-event-click="close_thread(session.id)">

@@ -12,22 +12,45 @@ namespace pbr {
 inline constexpr const char* kLocalSelfContactId = "local:self";
 inline constexpr const char* kAiAssistantContactId = "ai:assistant";
 
+inline constexpr int kRelayEnvelopeVersion = 1;
+
 enum class ThreadKind { Ai, Direct, Group };
 
 enum class MessageDelivery { Local, Pending, Relayed, Failed };
 
 enum class ChatContentType { Text, System };
 
+/** Direct P2P tier (D089). None for AI / non-E2E threads. */
+enum class ThreadChannel { None, E2e, E2ePublic };
+
+struct DirectChatTarget {
+  std::string peer_identity_kind;
+  std::string peer_identity_value;
+  ThreadChannel channel = ThreadChannel::E2e;
+
+  bool operator==(const DirectChatTarget& other) const {
+    return peer_identity_kind == other.peer_identity_kind &&
+           peer_identity_value == other.peer_identity_value && channel == other.channel;
+  }
+};
+
 struct Thread {
   std::string id;
   ThreadKind kind = ThreadKind::Ai;
+  ThreadChannel channel = ThreadChannel::None;
   std::string title;
   std::vector<std::string> participant_contact_ids;
+  std::string peer_identity_kind;
+  std::string peer_identity_value;
   int64_t updated_at = 0;
   int unread_count = 0;
   std::string preview;
   bool encrypted = false;
 };
+
+inline bool ThreadChannelIsE2e(const ThreadChannel channel) {
+  return channel == ThreadChannel::E2e || channel == ThreadChannel::E2ePublic;
+}
 
 struct ThreadMessage {
   std::string id;
@@ -43,18 +66,60 @@ struct ThreadMessage {
   bool relay_visible = true;
 };
 
+struct RelayRoute {
+  std::string kind = "direct";
+  ThreadChannel channel = ThreadChannel::E2e;
+  std::optional<std::string> group_id;
+};
+
+struct RelayE2eBody {
+  std::string payload_b64;
+  std::optional<std::string> key_init_b64;
+};
+
 struct RelayMessageBody {
-  std::string text;
-  std::optional<std::string> content_rml;
+  RelayE2eBody e2e;
 };
 
 struct RelayEnvelope {
-  std::string thread_id;
+  int envelope_version = kRelayEnvelopeVersion;
   std::string message_id;
   std::string sender_relay_id;
+  std::string sender_contact_id;
+  RelayRoute route;
   RelayMessageBody body;
+  uint64_t sender_seq = 0;
+  uint32_t session_epoch = 1;
   int64_t timestamp = 0;
   std::string signature;
+};
+
+struct ChatHistoryCursor {
+  std::optional<uint64_t> next_min_sender_seq;
+  std::optional<uint64_t> next_max_sender_seq;
+};
+
+struct ChatHistoryRequest {
+  std::string requester_identity_kind;
+  std::string requester_identity_value;
+  std::string peer_identity_kind;
+  std::string peer_identity_value;
+  ThreadChannel channel = ThreadChannel::E2e;
+  uint32_t session_epoch = 1;
+  std::optional<uint64_t> min_sender_seq;
+  std::optional<uint64_t> max_sender_seq;
+  size_t limit = 50;
+  std::string order = "asc";
+};
+
+struct ChatHistoryResponse {
+  std::string peer_identity_kind;
+  std::string peer_identity_value;
+  ThreadChannel channel = ThreadChannel::E2e;
+  uint32_t session_epoch = 1;
+  std::vector<RelayEnvelope> messages;
+  bool has_more = false;
+  ChatHistoryCursor cursor;
 };
 
 } // namespace pbr

@@ -1,6 +1,6 @@
 # Chat storage, memory, and messaging channels
 
-**Status:** Ready for implementation — wave 1 (`v2a-core`) as of 2026-07-02  
+**Status:** Waves 1–2 landed in tree (2026-07-02) — **Wave 3 next** (v3 ∥ v4)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
 **Related project:** [e2e-message-crypto](../e2e-message-crypto/) (symmetric E2E body crypto; depends on v2b + v6 for wire-up)  
@@ -45,11 +45,12 @@ See [PHASES.md](PHASES.md) for full checklists. For **agent batch delivery** (al
 | Phase | Name | Status |
 |-------|------|--------|
 | — | Baseline (JSON `JsonThreadStore`, router, sliding context) | Done (pre-project) |
-| v2a | **SqliteThreadStore** + unified transcript (D057: **v2a-core** then **v2a-p2p**) | Not started |
-| v2b | **Tier data model** — private + public shells, badges; **`e2e` functional in v6** | Not started |
-| v3 | Durable AI memory + clear/forget UX | Not started |
-| v4 | ChatPayload text/system + transport column | Not started |
-| v6 | E2E sender seq + tail/gap/**user** sync + D067/D068 integrity | Not started |
+| v2a-core | SQLite, `GetMessagesPage`, ChatPayload BLOB, feature off `GetMessages` | **Done** (UX gaps: clear confirm, maxlength) |
+| v2a-p2p | v1 `RelayEnvelope`, `chat_targets`, outbox, reconcile | **Done** (signing interim JSON; plaintext `payload_b64` until c2) |
+| v2b | Tier shells, badges, `e2e_public` gated compose | **Done** |
+| v3 | Durable AI memory + clear/forget UX | Not started — **Wave 3** |
+| v4 | ChatPayload text/system validation + transport column | Not started — **Wave 3** |
+| v6 | E2E sender seq + tail/gap/user sync + integrity | Not started — **Wave 4** |
 
 ## Open questions
 

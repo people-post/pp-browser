@@ -30,8 +30,14 @@ Override data root with `data_dir` in config (supports `~` expansion).
   preferences.json
   identity.json
   contacts.json
-  threads/...
+  threads/
+    profile.db              # thread catalog, outbox, chat_targets (SQLite)
+    {thread_id}/
+      thread.db             # messages, memory, sync_state
+      blobs/                # attachment placeholder
 ```
+
+Legacy flat `threads/index.json` and `{thread_id}.json` are removed on first run after the SQLite migration (development wipe — see [chat-storage D016](projects/chat-storage-and-memory/DECISIONS.md)).
 
 Phase 1 ships a single `default` profile. Use `--profile NAME` for dev isolation (no account-switcher UI yet).
 

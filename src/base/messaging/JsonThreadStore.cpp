@@ -1,6 +1,7 @@
 #include "base/messaging/JsonThreadStore.h"
 
 #include "base/messaging/MessagingJson.h"
+#include "common/Utilities.h"
 
 #include <filesystem>
 #include <fstream>
@@ -346,6 +347,54 @@ Roe<bool> JsonThreadStore::DeleteThread(const std::string& thread_id) {
     return true;
   }
   return Error("Failed to save thread index after delete");
+}
+
+Roe<std::optional<Thread>> JsonThreadStore::FindDirectThread(const DirectChatTarget& target) const {
+  std::lock_guard lock(mutex_);
+  if (auto load = EnsureLoaded(); !load) {
+    return load.error();
+  }
+  for (const Thread& thread : threads_) {
+    if (thread.kind == ThreadKind::Direct && thread.channel == target.channel &&
+        thread.peer_identity_kind == target.peer_identity_kind &&
+        thread.peer_identity_value == target.peer_identity_value) {
+      return Roe<std::optional<Thread>>(thread);
+    }
+  }
+  return Roe<std::optional<Thread>>(std::optional<Thread>{});
+}
+
+Roe<Thread> JsonThreadStore::FindOrCreateDirectThread(const DirectChatTarget& target,
+                                                      const std::string& participant_contact_id,
+                                                      const std::string& title) {
+  if (auto existing = FindDirectThread(target)) {
+    if (!existing) {
+      return existing.error();
+    }
+    if (*existing) {
+      return **existing;
+    }
+  }
+  Thread thread;
+  thread.id = util::GenerateUuid();
+  thread.kind = ThreadKind::Direct;
+  thread.channel = target.channel;
+  thread.peer_identity_kind = target.peer_identity_kind;
+  thread.peer_identity_value = target.peer_identity_value;
+  thread.participant_contact_ids = {participant_contact_id};
+  thread.title = title;
+  thread.encrypted = ThreadChannelIsE2e(target.channel);
+  thread.updated_at = util::NowUnixMs();
+  return UpsertThread(thread);
+}
+
+Roe<uint64_t> JsonThreadStore::AllocateSenderSeq(const std::string& /*thread_id*/) {
+  static uint64_t next_seq = 1;
+  return next_seq++;
+}
+
+Roe<void> JsonThreadStore::ReconcileOutbox() {
+  return {};
 }
 
 } // namespace pbr

@@ -1088,6 +1088,15 @@ select selectbox option {
   text-overflow: ellipsis;
 }
 
+.sidebar-tier-badge {
+  flex-shrink: 0;
+  margin-left: 4dp;
+  padding: 1dp 6dp;
+  border-radius: 4dp;
+  font-size: 10dp;
+  opacity: 0.85;
+}
+
 .sidebar-unread {
   flex-shrink: 0;
   min-width: 20dp;
