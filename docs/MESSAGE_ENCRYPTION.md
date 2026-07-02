@@ -10,7 +10,7 @@ Normative spec for symmetric end-to-end encryption of P2P chat message bodies. *
 
 - **256-bit pre-shared key (PSK)** per `ChatTargetKey` on direct tiers (`e2e`, `e2e_public`).
 - **Private direct (`e2e`):** PSK distributed out-of-band with mandatory fingerprint verification (E011).
-- **Public direct (`e2e_public`):** automated key setup (E013 — post c3).
+- **Public direct (`e2e_public`):** hybrid KEM auto-key (E013/E024 — post c3+); signing via `IPeerSigningKeyResolver` (relay v1, on-chain attestation `[post-v1]`).
 - **HKDF-SHA256** derives per-epoch session keys from the PSK.
 - **XChaCha20-Poly1305** (libsodium AEAD) encrypts the message body with canonical associated data (AAD).
 - **Ed25519** signs the outer relay envelope (classical; PQ hybrid planned separately).
@@ -44,6 +44,7 @@ Not protected in v1: traffic metadata, classical Ed25519 break, local disk theft
 
 - 32 bytes from CSPRNG; fingerprint = BLAKE2b-256(PSK) as grouped hex.
 - Initial setup (E011): either peer generates; export raw base64 + fingerprint OOB; peer imports; both confirm fingerprint before first send (`psk_verified_at` on `chat_targets`). Rotation: export/import `pp-browser-psk-bundle-v1` JSON (see project DESIGN).
+- **Public direct (`e2e_public`):** hybrid KEM (E013) → `master_psk` via HKDF `info = "auto-key-v1|channel:e2e_public"` (E024). Optional `body.e2e.key_init_b64` on first messages. Relay must not learn `master_psk`.
 
 ### Session key (HKDF — E015)
 

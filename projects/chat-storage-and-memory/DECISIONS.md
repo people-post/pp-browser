@@ -883,7 +883,7 @@ No hard max file size in v1.
 **Supersedes in detail:** D055 (`direct_peer_contact_id` denorm), D056 (`ChatTargetKey.contact_id` semantics).  
 **Decision:**
 
-1. **`Contact.id`** (address book) is **local only** — never on wire, never in AAD, never in `ChatTargetKey`. A **Contact** represents a person or entity and may hold multiple **`ContactId`** entries (`relay_user`, `peer_id`, `blockchain`, `custom`) — see `ContactTypes.h`. Some identities are used for messaging; others are metadata only.
+1. **`Contact.id`** (address book) is **local only** — never on wire, never in AAD, never in `ChatTargetKey`. A **Contact** represents a person or entity and may hold multiple **`ContactId`** entries (`relay_user`, `peer_id`, `blockchain`, `custom`) — see `ContactTypes.h`. **`blockchain`** values use **CAIP-10** ([D091](#d091--blockchain-contact-id-caip-10-e024)). Some identities are used for messaging; others are metadata only.
 2. **`ChatTargetKey`** (direct P2P) = **`(peer_identity_kind, peer_identity_value, channel)`** — the **communicating identity** bound when the thread is created, plus channel. **Not** local `Contact.id`. Same human with two messaging identities (e.g. two `relay_user` ids, or relay vs libp2p `peer_id`) → **separate threads** and separate PSK/seq state. Identity is **fixed for the life of the thread** — do not switch mid-thread; open a new thread for a new identity.
 3. **Wire `sender_contact_id`** (envelope + AAD + signing bytes) carries the sender's **communicating identity `value`** (e.g. `relay:abc123`, libp2p peer id string — see D082) — **not** local `Contact.id`, **not** `local:self`. **`local:self`** remains a **local transcript sentinel** only (`ThreadMessage.sender_contact_id` on outbound rows).
 4. **Outbound identity** for a thread is implied by transport + thread binding — user does **not** pick among their identities per send within the same thread. Relay threads use the profile's primary **`relay_user`** identity; future libp2p-direct threads use the bound **`peer_id`**.
@@ -917,8 +917,9 @@ No hard max file size in v1.
 ## D081 — Peer signing key lookup before envelope verify (E016)
 
 **Date:** 2026-07-02  
-**Cross-project:** [e2e-message-crypto E016](../e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).  
-**Decision:** Receive pipeline **step 2** (D022) resolves **`signing_public_key_b64`** for **`envelope.sender_contact_id`** (+ inferred **`peer_identity_kind`**, v1: `relay_user`) via **`PeerSigningKeyStore`**. On cache miss, **lazy fetch** from relay **`GET /v1/users/{relay_user_id}`**, persist, then **`EnvelopeSigner::Verify`**. **Fail closed** if key is missing or verify fails — do not decrypt (E2E) or parse untrusted body. Keys are populated at **add-contact** from directory hits (`signing_public_key_b64` field) and optional manual paste; OOB fingerprint display at add (E016). **PSK** and signing keys are independent. **Do not** encode signing material in `sender_relay_id` or `sender_contact_id`.  
+**Updated:** 2026-07-02 — lookup via **`IPeerSigningKeyResolver`** (E024); relay is v1 backend.  
+**Cross-project:** [e2e-message-crypto E016](../e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add), [E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007).  
+**Decision:** Receive pipeline **step 2** (D022) resolves **`signing_public_key_b64`** for **`envelope.sender_contact_id`** (+ inferred **`peer_identity_kind`**, v1: `relay_user`) via **`IPeerSigningKeyResolver`** → **`PeerSigningKeyStore`**. v1 backend: **`RelayDirectoryResolver`** — directory hits + lazy **`GET /v1/users/{relay_user_id}`**, persist with provenance, then **`EnvelopeSigner::Verify`**. **Fail closed** if key is missing or verify fails — do not decrypt (E2E) or parse untrusted body. Keys are populated at **add-contact** from directory hits (`signing_public_key_b64` field) and optional manual paste; OOB fingerprint display at add (E016). **PSK** and signing keys are independent. **Do not** encode signing material in `sender_relay_id` or `sender_contact_id`.  
 **Rationale:** Wire `sender_contact_id` is a communicating identity (D079), not an Ed25519 key; c2 production ingest requires an explicit identity→key binding. Directory is the relay-side registry; lazy fetch on cache miss supports D080 first inbound auto-create without per-message directory calls.  
 **Alternatives:** Directory fetch on every message (rejected — latency, offline); TOFU first message (rejected — weak trust); key embedded in relay id (rejected — E016).
 
@@ -1159,7 +1160,7 @@ If peer's last known epoch is older than the tail window, **disclose** that rela
 
 | Dimension | Private (`e2e`) | Public (`e2e_public`) | Group |
 |-----------|-----------------|------------------------|-------|
-| Key establishment | Manual OOB PSK + mandatory fingerprint (E011) | Auto init (directory / in-band / hybrid KEM — E013, E021) | Auto pairwise keys on join (E022) |
+| Key establishment | Manual OOB PSK + mandatory fingerprint (E011) | Hybrid KEM PSK + signing resolver (E013/E024) | Auto pairwise keys on join (E022) |
 | Ingest on seq conflict | Strict D013; pause + rotate or pause only (D038) | Relaxed default: `continue_anyway` / LWW (D046 rules) | Same as public direct |
 | Multi-device | Unsupported v1 → compromise (D015) | Target: supported (D074 extension) | Target: supported |
 | Inbound shell | Find-only; reject without row (D062) | Auto-create thread + keys on first message | Auto on invite/join |
@@ -1194,14 +1195,49 @@ If peer's last known epoch is older than the tail window, **disclose** that rela
 
 ---
 
+## D091 — Blockchain contact id (CAIP-10, E024)
+
+**Date:** 2026-07-02  
+**Cross-project:** [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007).  
+**Decision:** When **`ContactIdKind::Blockchain`** (D079, `ContactTypes.h`), the **`value`** string MUST be a [CAIP-10](https://github.com/ChainAgnostic/CAIPs/blob/master/CAIPs/caip-10.md) account id:
+
+```
+eip155:{chain_id}:{address}
+```
+
+| Part | Rule |
+|------|------|
+| Namespace | **`eip155`** for EVM chains (CAIP-2 `eip155` + CAIP-10 account) |
+| `chain_id` | Decimal string per CAIP-2 (e.g. `1` = Ethereum mainnet, `8453` = Base) |
+| `address` | Lowercase hex with **`0x`** prefix (EIP-55 checksum **not** required on wire/storage) |
+
+**Examples:** `eip155:1:0xabc123…`, `eip155:8453:0xdef456…`
+
+**Scope v1:**
+
+| Use | Allowed |
+|-----|---------|
+| **`Contact.ids[]`** metadata, people search, UI | yes |
+| On-chain attestation linking relay identity ↔ signing key ↔ CAIP-10 | **`[post-v1]`** (E024 Anchor 1) |
+| **`ChatTargetKey.peer_identity_value`** / wire **`sender_contact_id`** | **no** — remains `relay:…` (D082) until deliberate protocol bump |
+| PSK / hybrid KEM | **no** — blockchain attests signing keys only; PSK stays peer KEM (E024) |
+
+Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future decision — do not overload `eip155:` with non-EVM semantics.
+
+**Rationale:** CAIP-10 is the standard hook for on-chain identity search/verify without migrating messaging wire identity prematurely.  
+**Alternatives:** Raw `0x` address only (rejected — ambiguous chain); ENS/DID strings in `Blockchain` kind (deferred — resolver layer); blockchain as wire identity in v1 (rejected — E024).
+
+---
+
 ## Open decisions (not yet resolved)
 
 | ID | Question | Options |
 |----|----------|---------|
-| O007 | Auto key init trust anchor for **`e2e_public`** | Directory signing key + sealed PSK; hybrid KEM (E013); relay-assisted distribution |
 | O008 | Group pairwise wire shape | N ciphertexts per message; sender-keys tree; encrypted fan-out via relay |
 
-**Cross-project (e2e-message-crypto):** D090/E023 (no legacy wire); three tiers E021/E022; peer signing keys E016/D081; relay identity format E017/D082; retired PSK ledger E018/D083; PSK in `profile.db` `chat_targets` E008/D084; passive epoch advance E019/D085; rich OOB bundle E020/D086.  
+**Resolved:** **O007** → [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) (hybrid KEM PSK + `IPeerSigningKeyResolver`; CAIP-10 for blockchain contact ids — D091).
+
+**Cross-project (e2e-message-crypto):** D090/E023 (no legacy wire); three tiers E021/E022; peer signing keys E016/D081; relay identity format E017/D082; retired PSK ledger E018/D083; PSK in `profile.db` `chat_targets` E008/D084; passive epoch advance E019/D085; rich OOB bundle E020/D086; auto-key O007/E024.  
 **Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — not chat wire scope.
 
 When resolved, move rows to numbered decisions above.

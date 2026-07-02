@@ -49,6 +49,6 @@ See [PHASES.md](PHASES.md) for full checklists. Summary:
 
 ## Open questions
 
-**In this project:** O007–O008 (auto key init for `e2e_public`; group pairwise wire shape) — see [DECISIONS.md](DECISIONS.md#open-decisions-not-yet-resolved).
+**In this project:** O008 (group pairwise wire shape) — see [DECISIONS.md](DECISIONS.md#open-decisions-not-yet-resolved). **O007 resolved** — [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) + [D091](DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).
 
 **Cross-project (e2e-message-crypto):** three tiers E021/E022; peer signing keys E016/D081; PSK UX and wire-up after chat-storage **v2b + v6** — see [PHASES.md](PHASES.md) § Cross-project.

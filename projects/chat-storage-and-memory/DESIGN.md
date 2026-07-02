@@ -92,7 +92,7 @@ Product P2P chat has **three tiers**. **All three** encrypt message bodies E2E o
 
 | Dimension | Private (`e2e`) | Public (`e2e_public`) | Group (`kind=group`) |
 |-----------|-----------------|------------------------|----------------------|
-| **Key establishment** | Manual OOB PSK + mandatory fingerprint (E011) | Auto init — directory / in-band / hybrid KEM (E013, O007) | Auto pairwise keys on join (E022, O008) |
+| **Key establishment** | Manual OOB PSK + mandatory fingerprint (E011) | Hybrid KEM PSK + signing resolver (E013/E024) | Auto pairwise keys on join (E022, O008) |
 | **Send gate** | Block until `psk_verified_at` | Send when auto key ready; fingerprint optional | Send when membership keys ready |
 | **Key rotation** | User-driven; recommend on compromise | Automatic; prefer **epoch-only** bumps; less frequent `rotate_psk` to ease history recovery | Rotate affected pair keys on membership change |
 | **Retired PSK ledger** | Cap 8 epochs (D086) | Higher cap / longer retention (product tuning) | Per-pair ledgers |
@@ -117,7 +117,7 @@ Product P2P chat has **three tiers**. **All three** encrypt message bodies E2E o
 |------|----------|-------|
 | **Private direct** | `[v1]` | v6 plan — strict D013, manual PSK, integrity UX, full send/receive |
 | **Public direct — data model** | `[v1]` (v2b) | `ChatTargetKey` + `channel=e2e_public`, sidebar badge, separate `thread.db` — **send/receive gated** until auto-key (c3+) |
-| **Public direct — functional** | `[post-v1]` | Auto-key (E013/O007), encrypted bodies, relaxed ingest default (D046) — ships **with** public tier, not a separate optional phase |
+| **Public direct — functional** | `[post-v1]` | Auto-key (E013/E024), encrypted bodies, relaxed ingest default (D046) — ships **with** public tier, not a separate optional phase |
 | **Group** | `[post-v1]` | Membership + pairwise crypto (E022) before ingest ships |
 
 **v2b rule:** **Message** may create an `e2e_public` shell for routing/UI, but **compose/send and inbound persist stay disabled** until e2e-message-crypto **c3** delivers auto-key for `e2e_public`. **Secure message** (`e2e`) is the only functional direct tier in `[v1]`.
@@ -162,7 +162,7 @@ Address book and wire routing use **different id spaces**:
 | **`ChatTargetKey`** | Long-lived P2P conversation | `(relay_user, "relay:bob456", e2e)` | **Implied** by `sender_contact_id` + `route` |
 | **`local:self`** | Local transcript sentinel | Outbound row UI | **No** |
 
-A **Contact** represents a person or entity (human or non-human later). **`Contact.ids[]`** may include `relay_user`, `peer_id`, `blockchain`, and `custom` entries — only some are **messaging identities**. v1 relay path uses **`ContactIdKind::RelayUser`** values on the wire.
+A **Contact** represents a person or entity (human or non-human later). **`Contact.ids[]`** may include `relay_user`, `peer_id`, `blockchain`, and `custom` entries — only some are **messaging identities**. **`blockchain`** values use **CAIP-10** ([D091](DECISIONS.md#d091--blockchain-contact-id-caip-10-e024)). v1 relay path uses **`ContactIdKind::RelayUser`** values on the wire.
 
 **Thread binding rules:**
 
@@ -173,7 +173,7 @@ A **Contact** represents a person or entity (human or non-human later). **`Conta
 
 **Wire field note:** JSON key **`sender_contact_id`** is historical naming — it carries the sender's **communicating identity value** (e.g. `relay:abc123`), not local `Contact.id`. Format: [D082](DECISIONS.md#d082--relay-user-communicating-identity-string-format).
 
-**Signing keys (E016, D081):** Ed25519 envelope verify uses **`PeerSigningKeyStore`** keyed by **`(peer_identity_kind, peer_identity_value)`** — not `Contact.id`, not on wire. Directory supplies **`signing_public_key_b64`** at add-contact; lazy relay lookup on cache miss (including first inbound on `e2e_public` auto-create). See [e2e DESIGN § Peer signing keys](../e2e-message-crypto/DESIGN.md#peer-signing-keys-e016).
+**Signing keys (E016, D081, E024):** Ed25519 envelope verify uses **`IPeerSigningKeyResolver`** → **`PeerSigningKeyStore`** keyed by **`(peer_identity_kind, peer_identity_value)`** — not `Contact.id`, not on wire. v1 backend: relay directory (`signing_public_key_b64` on hits + lazy fetch). **`[post-v1]`:** on-chain attestation (CAIP-10 linked — D091) chain-preferred. See [e2e DESIGN § Peer signing keys](../e2e-message-crypto/DESIGN.md#peer-signing-keys-e016) and [E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007).
 
 ## Data model (target)
 
@@ -1052,7 +1052,7 @@ Ordered steps — **single linear sequence**; do not reorder in implementation (
 
 0. **Envelope size** — reject if serialized JSON > `kMaxRelayEnvelopeJsonBytes` (D029).
 1. **Reject legacy shape** — if `thread_id` present → hard reject (D016). Require **`envelope_version=1`**; reject unknown envelope versions (D072).
-2. **Verify Ed25519 signature** on outer envelope (classical; E014). Resolve **`signing_public_key_b64`** from **`PeerSigningKeyStore`** by `(peer_identity_kind, envelope.sender_contact_id)`; on miss, lazy **`GET /v1/users/{relay_user_id}`** (E016, D081). **Fail closed** if key missing or verify fails.
+2. **Verify Ed25519 signature** on outer envelope (classical; E014). Resolve key via **`IPeerSigningKeyResolver`** (E024) → **`PeerSigningKeyStore`** by `(peer_identity_kind, envelope.sender_contact_id)`; v1: relay directory + lazy **`GET /v1/users/{relay_user_id}`** (E016, D081). **Fail closed** if key missing or verify fails.
 3. **Parse `route`** — `kind=direct` requires `channel`; unknown `kind` → reject.
 4. **Resolve local thread (direct)** — build **`ChatTargetKey`** from `envelope.sender_contact_id` (value) + inferred **`peer_identity_kind`** (v1: `relay_user`) + `envelope.route.channel` → lookup **`chat_targets`**. **Inbound (D062, D080):**
    - **`e2e` (private):** no row → **hard reject** (stop). Row exists but shell missing → hard reject.
@@ -1061,7 +1061,7 @@ Ordered steps — **single linear sequence**; do not reorder in implementation (
    - **`[post-v1]` group:** `route.group_id` → group thread lookup.
 5. **Per-thread UUID dedup** — when `local_thread_id` is known: `HasMessageId(local_thread_id, envelope.message_id)`; benign duplicate → stop (D034). Skip when `pending_auto_create` (no shell yet).
 6. **Participant check** — when a **`chat_targets`** row exists: `envelope.sender_contact_id` must equal the row's **`peer_identity_value`** (and kind matches). When **`pending_auto_create`** (`e2e_public` only): require valid Ed25519 verify (step 2) and **`PeerSigningKeyStore`** entry for sender (directory or prior add-contact); reject unknown senders — see § Inbound auto-create. Outbound reflected echo may use `local:self` in local rows only — not on wire.
-7. **Decrypt** — resolve `master_psk` via **`IPskSessionStore::ResolveMasterPskForEpoch(envelope.session_epoch)`** (E018/D085 — **never** `chat_targets.session_epoch`, which may lag on passive adopt); for **`pending_auto_create`**, run auto-key init (E013/O007) to obtain or derive PSK before decrypt. Derive session key with HKDF `info` using **`envelope.session_epoch`** (E015); AEAD decrypt + verify AAD binds the same epoch. Failure → hard reject.
+7. **Decrypt** — resolve `master_psk` via **`IPskSessionStore::ResolveMasterPskForEpoch(envelope.session_epoch)`** (E018/D085 — **never** `chat_targets.session_epoch`, which may lag on passive adopt); for **`pending_auto_create`**, run **`AutoKeyEstablishment::DeriveMasterPsk(envelope)`** (hybrid KEM + optional `body.e2e.key_init_b64` — E024/E013) before decrypt. Derive session key with HKDF `info` using **`envelope.session_epoch`** (E015); AEAD decrypt + verify AAD binds the same epoch. Failure → hard reject.
 8. **Plaintext size** — decrypted binary ≤ `kMaxE2ePlaintextBytes`. Reject before `ChatPayloadCodec::Decode` (D033).
 9. **Parse & validate `ChatPayload`** — **`[v1]`** types `text`, `system`; strip wire `content_rml` (D030).
 10. **History floor (E2E only, D037)** — when `local_thread_id` exists: if `sender_seq ≤ history_floor_seq[peer][epoch]`, silent discard, stop. Skip when `pending_auto_create` (empty transcript).
@@ -1079,14 +1079,14 @@ First inbound on **`channel=e2e_public`** when no **`chat_targets`** row exists.
 | Check | Rule |
 |-------|------|
 | Envelope signature | Must pass step 2 (Ed25519) |
-| Signing key | **`PeerSigningKeyStore`** must resolve key for `(peer_identity_kind, envelope.sender_contact_id)` — from add-contact directory hit or lazy relay fetch (D081) |
-| Blocklist | **`[future]`** — reject if sender is blocked; v1: accept any verified sender (product may tighten via O007) |
+| Signing key | **`IPeerSigningKeyResolver`** must resolve key for `(peer_identity_kind, envelope.sender_contact_id)` — relay directory or prior add-contact (D081/E024) |
+| Blocklist | **`[future]`** — reject if sender is blocked (`TrustLevel::Blocked`); v1: accept any cryptographically verified sender |
 | Spam / unknown sender | Show first-message UX (preview optional); user may delete thread after auto-create |
 
 **Ordering (single txn at step 12):**
 
 1. **`FindOrCreateDirectThread(ChatTargetKey, participant_contact_id?)`** — `participant_contact_id` linked when sender matches a local **Contact.ids[]** entry; else NULL catalog link until user adds contact.
-2. Insert **`chat_targets`** with auto-key PSK columns (E013/D084), `session_epoch` from envelope, `next_outgoing_seq = 1`.
+2. Insert **`chat_targets`** with auto-key PSK columns (E024/E013/D084), `session_epoch` from envelope, `next_outgoing_seq = 1`.
 3. Init **`sync_state`** for `(peer, envelope.session_epoch)` with bootstrap watermarks.
 4. Append message row; apply D013 classification used in step 11 (bootstrap/tail normal).
 

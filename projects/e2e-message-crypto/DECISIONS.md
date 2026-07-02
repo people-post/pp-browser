@@ -74,9 +74,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E009 — Nested `body.e2e` object for ciphertext
 
 **Date:** 2026-06-29  
-**Decision:** Ciphertext field is **`body.e2e.payload_b64`**, not a top-level `body` string. Both direct tiers use this shape (D090).  
-**Rationale:** Room for future `body.e2e.key_id` or algorithm hints without breaking public messages.  
-**Alternatives:** `body.ciphertext_b64`; `body.e2e.ciphertext`.
+**Updated:** 2026-07-02 — optional **`key_init_b64`** for `e2e_public` auto-key (E024).  
+**Decision:** Ciphertext field is **`body.e2e.payload_b64`**, not a top-level `body` string. Both direct tiers use this shape (D090). Optional **`body.e2e.key_init_b64`** on **`e2e_public`** carries hybrid KEM encapsulation when the recipient may lack `master_psk` (E024) — relay may forward; not included in E014 `body_hash`.  
+**Rationale:** Room for `key_id` / KEM hints without breaking public messages; separates ciphertext from key-establishment blob.  
+**Alternatives:** `body.ciphertext_b64`; `body.e2e.ciphertext`; top-level `key_init` (rejected — keep E2E fields nested).
 
 ---
 
@@ -112,7 +113,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 4. **`rotate_psk` / multi-hop catch-up:** initiator **exports**; innocent peer **imports** **`pp-browser-psk-bundle-v1`** JSON ([E020](#e020--rich-oob-psk-bundle-v1)) — active key + bounded retired tail (D086). Clear **`psk_verified_at`** on bundle import; show active fingerprint.
 5. **Verify before first send:** user MUST compare fingerprint OOB with peer, then explicitly confirm (**"I've verified this fingerprint with my contact"**). E2E compose/send disabled until PSK installed **and** confirmed. Persist **`psk_verified_at`** (unix ms) on **`chat_targets`**; clear on PSK replace, import, or **`rotate_psk`**. Fingerprint display alone is insufficient (contrast E016 signing keys — directory-backed, display-only in v1).
 
-**Rationale:** Symmetric shared PSK; minimal OOB surface for private tier; explicit confirm closes TOFU gap where PSK has no directory source of truth. **`e2e_public`** uses automated establishment (E021/E013 — O007).  
+**Rationale:** Symmetric shared PSK; minimal OOB surface for private tier; explicit confirm closes TOFU gap where PSK has no directory source of truth. **`e2e_public`** uses automated establishment (E021/E013/E024).  
 **Alternatives:** Initiator-only generation (rejected — unnecessary constraint); JSON bundle for epoch 1 (rejected — heavier than needed); send without verify step on private tier (rejected); same manual flow for public tier (rejected — E021).
 
 ---
@@ -130,9 +131,10 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E013 — Hybrid KEM for automated PSK setup (`e2e_public`, c4)
 
 **Date:** 2026-07-02  
-**Decision:** Phase **c4** adds **optional automated key agreement** via hybrid **X25519 + ML-KEM-768** for **`e2e_public`** (and optionally group pair-key bootstrap). Shared secret feeds HKDF as `master_psk` input (same salt/info labels as manual PSK). **Manual OOB** (E011) remains required for **`e2e` (private direct)**. Classical-only KEM (X25519 or ECDH alone) is **not** permitted.  
+**Updated:** 2026-07-02 — O007 resolved in [E024](#e024--auto-key-trust-anchor-for-e2e_public-o007); KEM is the **only** PSK establishment path for `e2e_public`.  
+**Decision:** Phase **c4** (library) / **c3+** (public tier feature) adds **automated key agreement** via hybrid **X25519 + ML-KEM-768** for **`e2e_public`** (and optionally group pair-key bootstrap). Shared secret feeds HKDF as `master_psk` input — see [E024 § PSK derivation](DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007). **Manual OOB** (E011) remains required for **`e2e` (private direct)**. Classical-only KEM (X25519 or ECDH alone) is **not** permitted.  
 **Rationale:** Public direct tier targets fluency — auto key init without weakening PQ posture on agreement. Private tier keeps manual OOB.  
-**Alternatives:** Manual PSK only forever (rejected for `e2e_public` — E021); directory-sealed PSK without KEM (O007 option).
+**Alternatives:** Manual PSK only forever (rejected for `e2e_public` — E021); directory-sealed PSK without KEM (rejected — E024/O007).
 
 ---
 
@@ -172,7 +174,8 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 ## E016 — Peer signing keys: relay directory source, local cache, OOB fingerprint at add
 
 **Date:** 2026-07-02  
-**Decision:** Inbound **`EnvelopeSigner::Verify`** (receive pipeline step 2) resolves the sender's **Ed25519 public key** from a local **`PeerSigningKeyStore`** keyed by **`(peer_identity_kind, peer_identity_value)`** — the same communicating-identity boundary as `ChatTargetKey` (D079). **PSK** (E001) and **signing keys** are independent trust anchors.
+**Updated:** 2026-07-02 — lookup via **`IPeerSigningKeyResolver`** (E024); relay directory is v1 backend, not hardcoded in ingest.  
+**Decision:** Inbound **`EnvelopeSigner::Verify`** (receive pipeline step 2) resolves the sender's **Ed25519 public key** via **`IPeerSigningKeyResolver`** → local **`PeerSigningKeyStore`** keyed by **`(peer_identity_kind, peer_identity_value)`** — the same communicating-identity boundary as `ChatTargetKey` (D079). **PSK** (E001) and **signing keys** are independent trust anchors — see [E024](DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007).
 
 | Layer | v1 policy |
 |-------|-----------|
@@ -290,7 +293,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 | Tier | Wire `channel` (direct) | Key establishment | Priority |
 |------|-------------------------|-------------------|----------|
 | **Private direct** | `e2e` | Manual OOB PSK + mandatory fingerprint (E011) | Security first |
-| **Public direct** | `e2e_public` | Automated — directory / in-band / hybrid KEM (E013, O007) | UX first |
+| **Public direct** | `e2e_public` | Hybrid KEM PSK (E013/E024) + signing resolver (E016) | UX first |
 | **Group** | `route.kind=group` | Pairwise sender-keys (E022) | UX first |
 
 **Both direct tiers** encrypt bodies with the same AEAD stack (E001/E010). **No `public_relay`** (D090/E023).
@@ -322,3 +325,67 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 **Decision:** **`public_relay`**, **`body.content_b64`**, and **`body_kind=0x01`** body hashing are **removed** from the protocol. Direct envelopes: **`e2e`** \| **`e2e_public`**, **`body.e2e.payload_b64`**, **`body_kind=0x02`** only. AAD/sign channel enum: **`0`** = `e2e`, **`1`** = `e2e_public`. Regenerate frozen Ed25519/AEAD test vectors after enum change.  
 **Rationale:** Greenfield cutover (D016); no transitional plaintext path.  
 **Alternatives:** Bootstrap shim (rejected).
+
+---
+
+## E024 — Auto-key trust anchor for `e2e_public` (O007)
+
+**Date:** 2026-07-02  
+**Cross-project:** [chat-storage D080](../chat-storage-and-memory/DECISIONS.md#d080--inbound-routing-private-find-only-public-auto-create), [D081](../chat-storage-and-memory/DECISIONS.md#d081--peer-signing-key-lookup-before-envelope-verify-e016), [D091](../chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).  
+**Decision:** Resolve **O007**. **`e2e_public`** auto-key uses **two independent trust anchors**. Neither anchor may be the relay **learning or choosing `master_psk`**.
+
+### Anchor 1 — Signing (who sent the envelope)
+
+| Rule | Detail |
+|------|--------|
+| **API** | **`IPeerSigningKeyResolver::Resolve(kind, identity_value)`** → `{ signing_public_key_b64, fingerprint, source, source_ref?, trusted_at? }` |
+| **Cache** | **`PeerSigningKeyStore`** — same key as E016; persist resolver results with **provenance** (`source`: `relay_directory`, `manual_paste`, `on_chain`, …; `source_ref`: tx hash / registry id when applicable) |
+| **v1 backends** | **`RelayDirectoryResolver`** — directory search hit + lazy **`GET /v1/users/{relay_user_id}`** (E016/D081); **`ManualPasteResolver`** — user paste at add-contact |
+| **`[post-v1]` backend** | **`OnChainAttestationResolver`** — verify on-chain identity attestation (CAIP-10 linked — D091) binding `(peer_identity_kind, peer_identity_value)` → `signing_public_key_b64` |
+| **v1 ingest policy** | **Relay directory** — fail closed if key missing or verify fails (D081) |
+| **`[post-v1]` ingest policy** | **Chain-preferred** — when a valid on-chain attestation exists for the communicating identity, it **confirms or overrides** the relay key; relay-only binding accepted when no chain attestation is present |
+| **Rejected** | Relay as sole long-term trust with no upgrade path; TOFU pin on first message without directory; key embedded in `sender_contact_id` (E016) |
+
+Receive pipeline step 2 calls the resolver — **do not** hardcode relay HTTP in the ingest path.
+
+### Anchor 2 — PSK (message confidentiality)
+
+| Rule | Detail |
+|------|--------|
+| **Mechanism** | **Peer hybrid KEM only** (E013): **X25519 + ML-KEM-768** between the two peers |
+| **PSK derivation** | `master_psk = HKDF-SHA256(ikm = kem_shared_secret, salt = "pp-browser-msg-v1", info = "auto-key-v1|channel:e2e_public")` — 32-byte output |
+| **Session keys** | Unchanged (E015): `info = "channel:e2e_public|epoch:{session_epoch}"` from `master_psk` |
+| **KEM public keys** | Each profile publishes hybrid KEM public keys via relay directory (new optional fields on registration / `GET /v1/users`) — relay stores **public** keys only |
+| **Wire carry** | Optional **`body.e2e.key_init_b64`** on `e2e_public` envelopes when the recipient may not yet hold `master_psk` (first message / auto-create path). Relay may store and forward this blob; it MUST NOT decrypt or replace it |
+| **Receive step 7** | **`AutoKeyEstablishment::DeriveMasterPsk(envelope)`** — decapsulate `key_init_b64` when local `master_psk` missing; else **`IPskSessionStore::ResolveMasterPskForEpoch`** (E018) |
+| **Rejected** | Directory-sealed PSK; relay-generated or relay-held shared secret; relay-assisted PSK distribution where relay learns `master_psk`; classical-only KEM (E013) |
+
+### Inbound auto-create participant gate (D080)
+
+Unchanged from D080 — independent of PSK anchor:
+
+| Check | Rule |
+|-------|------|
+| Envelope signature | Must pass step 2 |
+| Signing key | Resolver must return a key for `(peer_identity_kind, envelope.sender_contact_id)` |
+| Blocklist | **`[future]`** — `TrustLevel::Blocked` on linked Contact (not part of O007) |
+| v1 default | Accept any **cryptographically verified** sender with resolvable signing key |
+
+Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no mandatory OOB PSK fingerprint before first send.
+
+### Blockchain hookup (attestation layer — not wire identity v1)
+
+- **`ContactIdKind::Blockchain`** values use **CAIP-10** ([D091](../chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024)) — e.g. `eip155:1:0x…`
+- On-chain attestation (future) links **CAIP-10 account** ↔ **communicating identity** (`relay:…`) ↔ **Ed25519 signing key** — strengthens Anchor 1 only
+- **`ChatTargetKey` / wire `sender_contact_id`** remain **`relay_user`** until a deliberate protocol bump; blockchain does **not** replace hybrid KEM for PSK
+
+### Phasing
+
+| Work | Phase |
+|------|-------|
+| `IPeerSigningKeyResolver` + relay backend + ingest step 2 | **c2** |
+| Private `e2e` manual PSK (E011) | **c3** |
+| `e2e_public` auto-key + `key_init_b64` + KEM libs | **c3+** (feature); KEM library integration may track **c4** (E013) |
+
+**Rationale:** Splitting anchors lets blockchain verify **identity ↔ signing key** without making the relay a PSK broker. Hybrid KEM keeps confidentiality even against a curious relay. CAIP-10 prepares search/attestation without forcing a wire identity migration.  
+**Alternatives rejected:** Relay-sealed PSK (relay learns secret); relay as combined identity+PSK anchor; manual OOB for public tier (E021); blockchain address on wire in v1 (premature).

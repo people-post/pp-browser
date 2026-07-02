@@ -31,9 +31,9 @@ High-assurance **symmetric E2E** for all P2P tiers: manual PSK (private), automa
 
 ## Design decisions
 
-_All planning questions (O001–O006) resolved — see [DECISIONS.md](DECISIONS.md)._
+_All planning questions (O001–O007) resolved — see [DECISIONS.md](DECISIONS.md)._
 
-**Resolved:** three tiers E021/D089/D090; E023 no `public_relay`; ciphertext field → `body.e2e.payload_b64` (E009); AEAD plaintext → binary `ChatPayload` (E010/D087); private PSK UX → generate, export, import, verify (E011); public auto-key → E013/O007; group pairwise → E022; rich OOB bundle on rotation (E020/D086); Ed25519 sign bytes → fixed binary layout + BLAKE2b body hash (E014); HKDF `info` → `channel` + `epoch` only (E015); peer signing keys → relay directory + `PeerSigningKeyStore` + OOB fingerprint at add (E016); relay-user identity value → `relay:<opaque_id>` (E017 / D082); retired PSK ledger on `rotate_psk` (E018 / D083); PSK store in `profile.db` `chat_targets` (E008 / D084); passive epoch advance (E019 / D085).
+**Resolved:** three tiers E021/D089/D090; E023 no `public_relay`; ciphertext field → `body.e2e.payload_b64` (E009); AEAD plaintext → binary `ChatPayload` (E010/D087); private PSK UX → generate, export, import, verify (E011); public auto-key → hybrid KEM + signing resolver (E013/E024, O007); CAIP-10 blockchain contact ids (D091); group pairwise → E022; rich OOB bundle on rotation (E020/D086); Ed25519 sign bytes → fixed binary layout + BLAKE2b body hash (E014); HKDF `info` → `channel` + `epoch` only (E015); peer signing keys → `IPeerSigningKeyResolver` + `PeerSigningKeyStore` (E016/E024); relay-user identity value → `relay:<opaque_id>` (E017 / D082); retired PSK ledger on `rotate_psk` (E018 / D083); PSK store in `profile.db` `chat_targets` (E008 / D084); passive epoch advance (E019 / D085).
 
 ## d0 exit
 

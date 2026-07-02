@@ -24,6 +24,7 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 - [x] Resolve **O002** — binary `ChatPayload` plaintext (E010/D087)
 - [x] Resolve **O003** — PSK establishment UX (E011); rotation bundle (E020/D086)
 - [x] Resolve **O006** — peer signing keys (E016)
+- [x] Resolve **O007** — `e2e_public` auto-key trust anchor (E024); CAIP-10 blockchain ids (D091)
 - [x] Document canonical **Ed25519 sign payload** field list for e2e envelopes (coordinate with chat-storage v6) — E014
 - [x] Add **Ed25519 frozen test vectors** (hex) to DESIGN.md § Test vectors
 - [x] Add **HKDF** frozen test vector to DESIGN.md § Test vectors (E015)
@@ -87,8 +88,8 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 - [ ] Encrypt: `ChatPayloadCodec::Encode` → AAD → `MessageCipher` → `body.e2e.payload_b64`
 - [ ] Decrypt on poll → `ChatPayloadCodec::Decode` → `ThreadMessage`
 - [ ] `EnvelopeSigner` — build/verify canonical sign bytes per E014 (coordinate `ChatPayloadCodec` for body hash)
-- [ ] `PeerSigningKeyStore` + directory `signing_public_key_b64` on hits (E016); lazy `GET /v1/users/{relay_user_id}`
-- [ ] Inbound Ed25519 verify before decrypt — resolve key from store (E016, D081)
+- [ ] `IPeerSigningKeyResolver` + `RelayDirectoryResolver` + `PeerSigningKeyStore` with provenance (E016/E024); lazy `GET /v1/users/{relay_user_id}`
+- [ ] Inbound Ed25519 verify before decrypt — resolve key via resolver (E016/E024, D081)
 
 ### Ingest
 
@@ -142,7 +143,7 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 - Chaos-based encryption
 - Replacing BoringSSL with libsodium globally
 - **Group E2E** — `[post-v1]` pairwise sender-keys (E022)
-- **Public tier auto-key** — after c3 (E021/E013)
+- **Public tier auto-key** — after c3 (E021/E013/E024)
 - libp2p direct transport crypto rewrite
 - Encrypting `identity.json` at rest (separate project)
 

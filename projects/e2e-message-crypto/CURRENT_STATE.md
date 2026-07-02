@@ -69,6 +69,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 - [x] Resolve O001/O002 — E009/E010 in [DECISIONS.md](DECISIONS.md)
 - [x] Resolve O003/O005 — E011/E012 in [DECISIONS.md](DECISIONS.md)
 - [x] Resolve O004 — E013 in [DECISIONS.md](DECISIONS.md)
+- [x] Resolve O007 — E024 (auto-key trust anchor) + D091 (CAIP-10) in [DECISIONS.md](DECISIONS.md)
 - [x] Resolve peer signing key binding — E016 in [DECISIONS.md](DECISIONS.md)
 - [x] Ed25519 signing frozen test vectors (hex) in DESIGN.md § Test vectors
 - [x] HKDF frozen test vector in DESIGN.md § Test vectors (E015)

@@ -95,7 +95,7 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | `sender_relay_id` | string | yes | Relay registration id; **v1:** same string as `sender_contact_id` (D082) |
 | `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — e.g. `relay:abc123` (D082) |
 | `route` | object | yes | See `Route` below |
-| `body` | object | yes | **`body.e2e.payload_b64` only** on direct (D090) |
+| `body` | object | yes | **`body.e2e`** — see below (D090) |
 | `sender_seq` | integer (u64) | yes on direct | Both tiers (D045) |
 | `session_epoch` | integer (u32) | yes on direct | |
 | `timestamp` | integer (i64) | yes | Unix **milliseconds**; display metadata; not sort authority (D054). Included in sign bytes (E014). |
@@ -108,6 +108,13 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 |--------|--------|----------|
 | `direct` | `channel`: `e2e` \| `e2e_public` | **`[v1]`** private; **`[post-v1]`** public |
 | `group` | `group_id`: string | **`[post-v1]`** |
+
+### `body.e2e` (direct tiers — D090, E024)
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
+| `key_init_b64` | string | no | **`e2e_public` only** — hybrid KEM encapsulation for recipient to derive `master_psk` when local PSK missing (E024). Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK. |
 
 ---
 

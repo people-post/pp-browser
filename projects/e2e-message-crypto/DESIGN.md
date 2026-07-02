@@ -5,7 +5,7 @@
 ## Principles
 
 1. **Symmetric E2E for all P2P message bodies** — Relay and network observers see ciphertext on **both direct tiers** (`e2e`, `e2e_public`) and on **group** messages (E021). Confidentiality does not depend on relay trust.
-2. **Tier-appropriate key distribution** — **Private direct (`e2e`):** manual 256-bit PSK OOB with fingerprint verification (E011). **Public direct (`e2e_public`):** automated setup (E013, O007). **Group:** pairwise sender-keys (E022). No automated ECDH in c1–c3.
+2. **Tier-appropriate key distribution** — **Private direct (`e2e`):** manual 256-bit PSK OOB with fingerprint verification (E011). **Public direct (`e2e_public`):** hybrid KEM PSK + signing-key resolver (E013/E024). **Group:** pairwise sender-keys (E022). No automated ECDH in c1–c3.
 3. **Authenticated encryption only** — XChaCha20-Poly1305 with canonical AAD; never encrypt-then-MAC separately, never raw XOR.
 4. **Align with chat-storage sync model** — `sender_seq`, `session_epoch`, and tier-specific ingest ([D008–D014](../chat-storage-and-memory/DECISIONS.md), [D089](../chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021)) bind to crypto AAD and key rotation.
 5. **Classical + PQ layered threat model** — Symmetric layer is PQ-adequate; Ed25519 relay signatures are classical with a planned hybrid upgrade path.
@@ -19,7 +19,7 @@ Full tier policy matrix: [chat-storage DESIGN § Three chat tiers](../chat-stora
 | Tier | Channel / route | Crypto phases |
 |------|-----------------|---------------|
 | Private direct | `e2e` | c1–c3 (manual PSK, strict ingest) |
-| Public direct | `e2e_public` | After c3 + auto-key (E013/O007) |
+| Public direct | `e2e_public` | After c3 + auto-key (E013/E024) |
 | Group | `route.kind=group` | `[post-v1]` pairwise sender-keys (E022) |
 
 Legacy **`public_relay`** is **not supported** (D090/E023).
@@ -73,7 +73,7 @@ Legacy **`public_relay`** is **not supported** (D090/E023).
 
 - **Size:** 32 bytes (256 bits) from CSPRNG.
 - **Private direct (`e2e`):** Out-of-band distribution — copy-paste, in-person, etc. **Initial setup (E011):** either peer generates; generating side **exports** raw base64 + fingerprint; peer **imports** paste. **`rotate_psk`:** initiator **exports** **`pp-browser-psk-bundle-v1`** JSON; innocent peer **imports** — active key + up to **`kMaxRetiredPskEpochs` (8)** retired epochs (E020/D086).
-- **Public direct (`e2e_public`):** Automated establishment (E013/O007) — no mandatory OOB fingerprint before first send; optional verify deferred.
+- **Public direct (`e2e_public`):** Hybrid KEM establishment (E013/E024) — peer agreement for `master_psk`; signing trust via **`IPeerSigningKeyResolver`** (relay v1, on-chain attestation `[post-v1]`). No mandatory OOB PSK fingerprint before first send; optional verify deferred.
 - **Verification (private tier):** Both parties display `fingerprint = BLAKE2b-256(master_psk)` as grouped hex; compare OOB, then user explicitly confirms before first **`e2e`** send. Persist **`psk_verified_at`** on `chat_targets`; clear on PSK replace/import/rotation.
 
 **Initial establishment flow (epoch 1):**
@@ -90,6 +90,45 @@ Alice (starts Secure message)          Bob
 ```
 
 No wire-protocol initiator — only UX default (Secure-message starter offers Generate first). Both peers MUST hold the same bytes before relying on E2E (E015).
+
+### Public direct auto-key (`e2e_public` — E024 / O007)
+
+**Two independent anchors** — see [E024](DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007):
+
+| Anchor | Mechanism | v1 | `[post-v1]` |
+|--------|-----------|-----|-------------|
+| **Signing** (who sent) | **`IPeerSigningKeyResolver`** → **`PeerSigningKeyStore`** | Relay directory + lazy fetch (E016) | On-chain attestation (CAIP-10 linked — D091), **chain-preferred** |
+| **PSK** (body secrecy) | Hybrid **X25519 + ML-KEM-768** (E013) | Peer KEM only | Same — relay never learns `master_psk` |
+
+**PSK derivation from KEM:**
+
+```
+master_psk = HKDF-SHA256(
+  ikm   = kem_shared_secret,
+  salt  = "pp-browser-msg-v1",
+  info  = "auto-key-v1|channel:e2e_public"
+)
+```
+
+Then session keys use E015 (`channel:e2e_public|epoch:…`) from `master_psk` as today.
+
+**First-message / auto-create path (D080):**
+
+1. Initiator publishes hybrid KEM public keys (directory optional fields).
+2. Initiator runs hybrid KEM toward recipient keys → `master_psk` → encrypts `body.e2e.payload_b64`.
+3. When recipient may lack PSK, envelope includes optional **`body.e2e.key_init_b64`** — KEM encapsulation the receiver decapsulates at receive step 7.
+4. Relay may store/forward `key_init_b64`; it MUST NOT generate, seal, or learn `master_psk`.
+
+**Rejected:** directory-sealed PSK; relay as PSK broker; blockchain address as wire identity in v1.
+
+**Module map (target):**
+
+| Type | Location |
+|------|----------|
+| `IPeerSigningKeyResolver` | `src/base/messaging/` |
+| `PeerSigningKeyStore` | `src/base/messaging/` or `src/base/people/` |
+| `AutoKeyEstablishment` | `src/base/crypto/` |
+| Ingest wiring | `src/feature/messaging/` receive pipeline step 2 + 7 |
 
 ### Session key derivation (E015)
 
@@ -142,10 +181,12 @@ Envelope signatures (E014) bind envelope fields and body hash; they do **not** c
 
 **Trust establishment (v1):**
 
-1. **Directory** returns `signing_public_key_b64` on people search hits (relay already stores key at registration).
-2. **Add contact** → persist in **`PeerSigningKeyStore`**; show BLAKE2b fingerprint for OOB compare with peer (same display rules as PSK — E011).
-3. **Manual add** → user may paste `signing_public_key_b64` when directory is unavailable.
-4. **Lazy fetch** — `GET /v1/users/{relay_user_id}` when a message arrives from an unknown `sender_contact_id` (D080 ephemeral public); cache then verify. Missing key → **hard reject** (same as invalid signature).
+1. **`IPeerSigningKeyResolver`** (E024) — composable backends; results cached in **`PeerSigningKeyStore`** with provenance (`source`, `source_ref`, `trusted_at`).
+2. **Directory** returns `signing_public_key_b64` on people search hits (relay already stores key at registration).
+3. **Add contact** → persist via resolver; show BLAKE2b fingerprint for OOB compare with peer (same display rules as PSK — E011).
+4. **Manual add** → user may paste `signing_public_key_b64` when directory is unavailable.
+5. **Lazy fetch** — `RelayDirectoryResolver` calls `GET /v1/users/{relay_user_id}` when a message arrives from an unknown `sender_contact_id` (D080 ephemeral public); cache then verify. Missing key → **hard reject** (same as invalid signature).
+6. **`[post-v1]`** — **`OnChainAttestationResolver`** confirms/overrides relay binding using CAIP-10-linked on-chain attestation (D091); **chain-preferred** when attestation exists.
 
 **Storage:** `profiles/{profile_id}/crypto/signing_keys.json` — map key `identity:{kind}:{value}` → `{ signing_public_key_b64, fingerprint }`. Not in AAD, not on wire, not in `Contact.id`.
 
@@ -322,10 +363,10 @@ Shared by relay send, relay poll verify, and c1/c2 test vectors. Lives in **`src
 
 `IdentityStore::SignPayload` becomes a thin wrapper: sign `BuildSignBytes` output.
 
-**Verify key lookup (receive — step 2, E016):**
+**Verify key lookup (receive — step 2, E016/E024):**
 
 1. Read `envelope.sender_contact_id` + inferred `peer_identity_kind` (v1: `relay_user`).
-2. `PeerSigningKeyStore::Get(kind, value)` → `signing_public_key_b64`; on miss, `GET /v1/users/{value}` (relay), cache, retry once.
+2. `IPeerSigningKeyResolver::Resolve(kind, value)` → cache in **`PeerSigningKeyStore`** on success; **fail closed** if unresolved.
 3. `EnvelopeSigner::Verify(envelope, signing_public_key_b64)` — failure → hard reject (D022); do not decrypt.
 
 **Send pipeline (e2e):**
