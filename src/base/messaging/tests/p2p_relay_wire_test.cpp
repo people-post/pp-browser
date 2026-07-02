@@ -102,4 +102,10 @@ TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
   outbox = store.ListPendingOutbox();
   ASSERT_TRUE(static_cast<bool>(outbox));
   EXPECT_TRUE(outbox->empty());
+
+  auto deleted = store.DeleteThread(created->id);
+  ASSERT_TRUE(static_cast<bool>(deleted));
+  auto gone = store.GetThread(created->id);
+  ASSERT_TRUE(static_cast<bool>(gone));
+  EXPECT_FALSE(gone->has_value());
 }

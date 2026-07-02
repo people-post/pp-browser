@@ -1036,7 +1036,7 @@ Roe<bool> SqliteThreadStore::DeleteThread(const std::string& thread_id) {
     return init.error();
   }
   std::lock_guard profile_lock(profile_mutex_);
-  (void)ClearChatTargetThreadLink(thread_id);
+  ClearChatTargetThreadLinkUnlocked(thread_id);
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(profile_db_, "DELETE FROM threads WHERE id = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
     sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
@@ -1085,15 +1085,19 @@ Roe<void> SqliteThreadStore::UpsertChatTarget(const DirectChatTarget& target,
 
 Roe<void> SqliteThreadStore::ClearChatTargetThreadLink(const std::string& thread_id) const {
   std::lock_guard lock(profile_mutex_);
+  ClearChatTargetThreadLinkUnlocked(thread_id);
+  return {};
+}
+
+void SqliteThreadStore::ClearChatTargetThreadLinkUnlocked(const std::string& thread_id) const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(profile_db_, "UPDATE chat_targets SET local_thread_id = '' WHERE local_thread_id = ?;", -1,
                          &stmt, nullptr) != SQLITE_OK) {
-    return Error("Failed to prepare chat_targets clear");
+    return;
   }
   sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_step(stmt);
   sqlite3_finalize(stmt);
-  return {};
 }
 
 Roe<void> SqliteThreadStore::UpsertOutboxRow(const std::string& message_id, const std::string& thread_id) const {

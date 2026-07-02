@@ -80,6 +80,7 @@ private:
   Roe<void> UpsertChatTarget(const DirectChatTarget& target, const std::string& participant_contact_id,
                              const std::string& local_thread_id) const;
   Roe<void> ClearChatTargetThreadLink(const std::string& thread_id) const;
+  void ClearChatTargetThreadLinkUnlocked(const std::string& thread_id) const;
   Roe<void> UpsertOutboxRow(const std::string& message_id, const std::string& thread_id) const;
   Roe<void> RemoveOutboxRow(const std::string& message_id) const;
   Thread ReadThreadRow(sqlite3_stmt* stmt) const;
