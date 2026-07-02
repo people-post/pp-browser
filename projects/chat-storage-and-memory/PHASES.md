@@ -13,7 +13,7 @@ Check boxes when work is **merged and verified**. Add sub-items freely; keep pha
 | Phase | Primary DESIGN sections | Maturity shipped |
 |-------|-------------------------|------------------|
 | v2a | [Data model](DESIGN.md#data-model-target), [On-disk layout](DESIGN.md#on-disk-layout-target--d025-d028-d035-d036), [Store interface](DESIGN.md#store-interface-target), [Clear / forget](DESIGN.md#clear--forget-semantics-user-facing--d024), [Resource bounds](DESIGN.md#resource--trust-bounds-d029d033) | `[v1]` SQLite + transcript |
-| v2b | [Thread / tier](DESIGN.md#three-chat-tiers-d089), [UI sidebar](DESIGN.md#sidebar-v1) | `[v1]` private vs public E2E tier split |
+| v2b | [Thread / tier](DESIGN.md#three-chat-tiers-d089), [UI sidebar](DESIGN.md#sidebar-v1) | `[v1]` tier **data model** (shells + badges); functional `e2e_public` gated until c3 |
 | v3 | [Durable memory](DESIGN.md#durable-memory-per-thread), [Three layers](DESIGN.md#three-layers-transcript-vs-context-vs-memory) | `[v1]` compaction + forget |
 | v4 | ChatPayload **validation** + transport column (wire unchanged since v2a-p2p, D063) | `[v1]` text/system + transport column |
 | v6 | [P2P sync](DESIGN.md#p2p-sync-e2e-only--d045), [FetchChatTargetMessages](DESIGN.md#unified-backfill--fetchchattargetmessages-d058), [Peer-direct fetch](DESIGN.md#peer-direct-history-fetch-d060), [Integrity recovery](DESIGN.md#integrity-recovery-d038), [Durable outbox](DESIGN.md#durable-outbox-d017) | `[v1]` E2E tail + gap + user sync |
@@ -21,7 +21,7 @@ Check boxes when work is **merged and verified**. Add sub-items freely; keep pha
 | post-v6b | [`@ai` modes](DESIGN.md#ai-in-direct-threads-d012) | Shared `@ai+` / `@ai++` |
 | post-v6c | [P2P sync — scroll backfill](DESIGN.md#p2p-sync-e2e-only--d045) | Scroll trigger on D058 |
 | post-v6d | [Transport provenance](DESIGN.md#transport-provenance-d051) | Per-message badge UI |
-| post-v6e | [Relaxed ingest](DESIGN.md#relaxed-ingest--continue-anyway--public-direct-and-group-d046) | Public direct + group tier defaults |
+| post-v6e | *(merged into public tier milestone)* | Relaxed ingest ships with `e2e_public` / group per D046 — see e2e **c3+** |
 
 ---
 
@@ -108,7 +108,7 @@ Existing foundation this project builds on.
 - [ ] **`ChatHistoryRequest` / `ChatHistoryResponse`** — shared structs per [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) (D072)
 - [ ] Send/post and poll ingest use new envelope; **reject** legacy `thread_id`, flat `body.text`, unknown **`envelope_version`**
 - [ ] **Grep gate:** no `envelope.thread_id` in `src/feature/` or `tests/` (legacy rejection tests excepted)
-- [ ] Minimal ChatPayload codec: serialize/parse `schema_version`, `content_type=text`, `text`, `payload={}`; unknown envelope keys ignored (D073)
+- [ ] Minimal ChatPayload codec: serialize/parse `payload_version`, `content_type=text`, `text`; unknown envelope keys ignored (D073)
 
 #### Storage + routing
 
@@ -132,7 +132,7 @@ Existing foundation this project builds on.
 
 ## Phase v2b — Private vs public E2E tier split (D089)
 
-**Goal:** Same contact can have two isolated **E2E** direct threads — private (strict) and public (UX-first target).
+**Goal:** Same contact can have two isolated **E2E** direct thread **shells** — private (strict, functional in v6) and public (UX-first target, **gated** until auto-key c3+).
 
 **Design refs:** [Three chat tiers](DESIGN.md#three-chat-tiers-d089), [Thread](DESIGN.md#thread), [Sidebar `[v1]`](DESIGN.md#sidebar-v1), [Chat target](DESIGN.md#chat-target-long-lived-direct-p2p).
 
@@ -145,8 +145,8 @@ Existing foundation this project builds on.
 
 ### Creation flows
 
-- [ ] Contact action **Message** → `e2e_public`; **Secure message** → `e2e`
-- [ ] **Secure message** → `e2e` (private direct)
+- [ ] Contact action **Secure message** → `e2e` (private direct — functional when c2+v6 land)
+- [ ] Contact action **Message** → `e2e_public` shell only — **disable compose/send** until e2e **c3** auto-key (show “coming soon” or equivalent)
 
 ### UI
 
@@ -157,7 +157,7 @@ Existing foundation this project builds on.
 
 - [ ] AI context and memory never cross tiers (per `thread_id` / `thread.db`)
 
-**Exit criteria:** Two thread dirs + DBs for one contact (private + public tiers); sidebar shows tier badge on each row.
+**Exit criteria:** Two thread dirs + DBs for one contact (private + public tier shells); sidebar shows tier badge on each row; **`e2e_public` send/receive not enabled** until cross-project c3.
 
 ---
 
@@ -242,8 +242,8 @@ Existing foundation this project builds on.
 
 - [ ] Sign envelope via `EnvelopeSigner` (E014) including E2E seq fields
 - [ ] Durable outbox: `ListPendingOutbox()` + reconciliation on startup (D017, D047)
-- [ ] **E2E:** receive pipeline D013/D033; inbound **find-only** (D062); **`ReplayWindow` helper**, classifier authoritative (D020)
-- [ ] **Public:** UUID dedup + participant check only (D045)
+- [ ] **Private (`e2e`):** receive pipeline D013/D033; inbound **find-only** (D062/D080); **`ReplayWindow` helper**, classifier authoritative (D020)
+- [ ] **`e2e_public`:** out of scope for v6 — same pipeline when public tier ships (D089); includes auto-create (D080) + relaxed ingest (D046)
 - [ ] Inbound Ed25519 verify + **`PeerSigningKeyStore`** lookup (E016, D081); strip remote `content_rml` (D030)
 - [ ] Poll backoff min 2 s foreground (D032); cap poll batch (D029)
 - [ ] Outbox retry **`kMaxOutboxRetryAttempts`**; gap repair **`kMaxGapRepairRounds`** / **`kMaxGapRepairSeqSpan`** (D041)
@@ -281,7 +281,7 @@ Existing foundation this project builds on.
 - [ ] Extend [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md): envelope limits (D029), verify pipeline, relay auth (D027), [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md)
 - [ ] Document single-active-device (D015, E2E only)
 
-**Exit criteria:** E2E gap auto-repair; **user-initiated sync** via relay (direct when libp2p up); outbox survives restart; public channel unaffected; no relaxed ingest path.
+**Exit criteria:** **Private (`e2e`)** gap auto-repair; **user-initiated sync** via relay (direct when libp2p up); outbox survives restart; strict integrity UX only (no relaxed ingest); `e2e_public` shells unaffected (not message-functional until c3).
 
 ---
 
@@ -334,15 +334,17 @@ Existing foundation this project builds on.
 
 ---
 
-## Phase post-v6e — Relaxed ingest / continue anyway (optional)
+## Phase post-v6e — Relaxed ingest (merged — see public tier)
 
-**Goal:** [DESIGN § Relaxed ingest](DESIGN.md#post-v1-relaxed-ingest--continue-anyway-d046-extension) if product enables informed override.
+**Status:** **Merged into `e2e_public` / group tier milestone** (D046). Relaxed ingest is the **default** policy when those tiers ship — not a separate optional phase after private v6.
 
-**Depends on:** v6 integrity UX; explicit product decision (D046).
+**When enabling public direct (e2e c3+):**
 
 - [ ] `ingest_policy=relaxed`, `user_resolution=continue_anyway`, `trust_degraded` in `sync_state.state_json`
 - [ ] Choice sheet secondary action after disclosure
 - [ ] Hard crypto failures still have no override
+
+**Design ref:** [DESIGN § Relaxed ingest](DESIGN.md#relaxed-ingest--continue-anyway--public-direct-and-group-d046)
 
 ---
 
@@ -358,7 +360,7 @@ Existing foundation this project builds on.
 | v6 peer history (D060) | libp2p integration | `/pp-browser/chat-history/1.0.0` responder + requester |
 | D038 integrity UX | c3 | PSK rotation + epoch bump transaction (D047) |
 
-Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b + v6 foundations.
+Ship SQLite storage + private-tier envelope plumbing without c2; E2E body crypto for **`e2e`** lands after v2b + v6 foundations; **`e2e_public`** auto-key + relaxed ingest at e2e **c3+**.
 
 ---
 
@@ -410,5 +412,5 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 | 2026-06-30 | D063–D066: wire cutover v2a-p2p, clear AI memory retained copy, display_order UI defer, C++ type gates; D057/D054 amended |
 | 2026-06-30 | D058–D062: unified `FetchChatTargetMessages`, user-initiated sync, libp2p peer history, empty gap close, inbound find-only; D009/D052/D041/D022 amended |
 | 2026-06-29 | D069–D078: schema evolution (migrate vs wipe), `chat_payload` canonical body, `envelope_version`, WIRE_SCHEMAS, memory JSON schema, empty-closed-seq cap, blobs/group placeholders, unknown-field policy, display_order complexity budget |
-| 2026-07-02 | D088: pp Binary Wire Profile (LenUtf8/LenBytes u64); flattened ChatPayload tail; AAD/E014 strings unified |
+| 2026-07-02 | D089/D090 doc alignment: receive pipeline auto-create (D080), remove stale public-relay ingest; phasing split v2b shells vs functional `e2e_public`; relaxed ingest merged into public tier milestone; `payload_version` naming |
 | 2026-06-30 | D067–D068: empty gap close guard + late fill; compromised outbox/sync freeze; epoch bump pending cancel; receive pipeline linearized |

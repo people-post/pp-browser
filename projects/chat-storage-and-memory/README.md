@@ -29,7 +29,7 @@ See [PHASES.md](PHASES.md) for full checklists. Summary:
 | Phase | Focus |
 |-------|--------|
 | v2a | SqliteThreadStore, reconciliation, `GetMessagesPage`, `ChatTargetKey` routing, clear history + **confirmation dialog** (D057) |
-| v2b | Private vs public E2E tier split, channel badge sidebar |
+| v2b | Private vs public tier **shells** + badges (`e2e_public` gated until c3) |
 | v3 | AI memory + compaction |
 | v4 | ChatPayload text/system, transport column |
 | v6 | E2E seq, tail sync, gap repair, **user sync**, integrity UX |
@@ -42,7 +42,7 @@ See [PHASES.md](PHASES.md) for full checklists. Summary:
 |-------|------|--------|
 | — | Baseline (JSON `JsonThreadStore`, router, sliding context) | Done (pre-project) |
 | v2a | **SqliteThreadStore** + unified transcript (D057: **v2a-core** then **v2a-p2p**) | Not started |
-| v2b | **Private vs public E2E tier** split + badges | Not started |
+| v2b | **Tier data model** — private + public shells, badges; **`e2e` functional in v6** | Not started |
 | v3 | Durable AI memory + clear/forget UX | Not started |
 | v4 | ChatPayload text/system + transport column | Not started |
 | v6 | E2E sender seq + tail/gap/**user** sync + D067/D068 integrity | Not started |

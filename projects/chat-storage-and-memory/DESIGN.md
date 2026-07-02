@@ -22,7 +22,7 @@ Do not duplicate behavior specs in PHASES — phases link here. DECISIONS record
 | Integrity recovery | private: rotate PSK or pause | public/group: relaxed ingest default (D046) |
 | Sidebar | flat list + channel badge | optional grouped sections |
 | Transport | persist `transport` column | per-message badge UI |
-| Ingest | Private strict D013; public relaxed (D046) | (unchanged model) |
+| Ingest | Private strict D013 only (`e2e`) | `e2e_public` / group: relaxed default (D046) when those tiers ship |
 
 ## Implementer constraints
 
@@ -53,7 +53,7 @@ When building **`[v1]`** phases, satisfy these so **`[post-v1]`** features plug 
 | **Participant check on all inbound direct** | D027 auth model |
 | **Do not hardcode “AI never relays” in store layer** | Shared `@ai` sets `relay_visible=true` on specific rows only |
 | **`chat_payload` BLOB is canonical body** (D069/D087) | Denormalized `content_type` / `payload` / `text` / `control_type` written only via `ChatPayloadCodec` |
-| **`envelope_version` on every relay envelope** (D072) | Independent wire evolution from `ChatPayload.schema_version` and SQLite `user_version` |
+| **`envelope_version` on every relay envelope** (D072) | Independent wire evolution from `ChatPayload.payload_version` and SQLite `user_version` |
 | **Cap `empty_closed_seqs` / use ranges** (D071) | Bounded `sync_state.state_json`; coalesce before append |
 | **Production disk: migrate, don’t wipe** (D069) | D016 wipe is dev/pre-users only; shippable layouts use incremental `user_version` migrations |
 | **Shared history request/response types** (D072) | One struct for relay GET and libp2p D060 — see [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) |
@@ -115,9 +115,12 @@ Product P2P chat has **three tiers**. **All three** encrypt message bodies E2E o
 
 | Tier | Maturity | Notes |
 |------|----------|-------|
-| **Private direct** | `[v1]` | Current v6 plan — strict D013, manual PSK, integrity UX |
-| **Public direct** | `[post-v1]` | Auto-key (E013/O007); same wire shape as private |
+| **Private direct** | `[v1]` | v6 plan — strict D013, manual PSK, integrity UX, full send/receive |
+| **Public direct — data model** | `[v1]` (v2b) | `ChatTargetKey` + `channel=e2e_public`, sidebar badge, separate `thread.db` — **send/receive gated** until auto-key (c3+) |
+| **Public direct — functional** | `[post-v1]` | Auto-key (E013/O007), encrypted bodies, relaxed ingest default (D046) — ships **with** public tier, not a separate optional phase |
 | **Group** | `[post-v1]` | Membership + pairwise crypto (E022) before ingest ships |
+
+**v2b rule:** **Message** may create an `e2e_public` shell for routing/UI, but **compose/send and inbound persist stay disabled** until e2e-message-crypto **c3** delivers auto-key for `e2e_public`. **Secure message** (`e2e`) is the only functional direct tier in `[v1]`.
 
 ## Assumptions (v1)
 
@@ -170,7 +173,7 @@ A **Contact** represents a person or entity (human or non-human later). **`Conta
 
 **Wire field note:** JSON key **`sender_contact_id`** is historical naming — it carries the sender's **communicating identity value** (e.g. `relay:abc123`), not local `Contact.id`. Format: [D082](DECISIONS.md#d082--relay-user-communicating-identity-string-format).
 
-**Signing keys (E016, D081):** Ed25519 envelope verify uses **`PeerSigningKeyStore`** keyed by **`(peer_identity_kind, peer_identity_value)`** — not `Contact.id`, not on wire. Directory supplies **`signing_public_key_b64`** at add-contact; lazy relay lookup for D080 ephemeral public. See [e2e DESIGN § Peer signing keys](../e2e-message-crypto/DESIGN.md#peer-signing-keys-e016).
+**Signing keys (E016, D081):** Ed25519 envelope verify uses **`PeerSigningKeyStore`** keyed by **`(peer_identity_kind, peer_identity_value)`** — not `Contact.id`, not on wire. Directory supplies **`signing_public_key_b64`** at add-contact; lazy relay lookup on cache miss (including first inbound on `e2e_public` auto-create). See [e2e DESIGN § Peer signing keys](../e2e-message-crypto/DESIGN.md#peer-signing-keys-e016).
 
 ## Data model (target)
 
@@ -314,7 +317,7 @@ One schema for disk and wire: **binary `ChatPayload`** (D087) inside AEAD plaint
 | `contact_card` | **`[post-v1]`** | `contact_id`, `display_name`; optional `relay_user_id`, `avatar_url` | Contact card chrome |
 | `crypto_tx` | **`[post-v1]`** | `chain_id`, `asset`, `amount`, `direction`; optional `tx_hash`, `status`, `to_address` | Transaction card |
 
-**`[post-v1]` logical examples** (future binary sub-layouts TBD):
+**`[post-v1]` logical examples** (documentation JSON — on-wire binary uses `payload_version` per D087, not `schema_version`):
 
 ```json
 {
@@ -520,10 +523,10 @@ CREATE TABLE chat_targets (
   local_thread_id TEXT NOT NULL,     -- current on-disk shell; local only (D056)
   session_epoch INTEGER NOT NULL DEFAULT 1,
   next_outgoing_seq INTEGER NOT NULL DEFAULT 1,
-  master_psk_b64 TEXT,               -- e2e only; NULL until PSK installed (D084)
-  psk_fingerprint TEXT,            -- e2e only; BLAKE2b display (E011)
-  psk_verified_at INTEGER,           -- e2e only; unix ms; NULL until OOB confirm (E011)
-  retired_psks_json TEXT,            -- e2e only; JSON array [{epoch, master_psk_b64, retired_at}] (E018)
+  master_psk_b64 TEXT,               -- e2e + e2e_public; NULL until PSK installed (D084)
+  psk_fingerprint TEXT,            -- e2e + e2e_public; BLAKE2b display (E011)
+  psk_verified_at INTEGER,           -- e2e: send gate; e2e_public: optional (D089); unix ms
+  retired_psks_json TEXT,            -- e2e + e2e_public; JSON [{epoch, master_psk_b64, retired_at}] (E018)
   PRIMARY KEY (peer_identity_kind, peer_identity_value, channel)
 );
 CREATE UNIQUE INDEX idx_chat_targets_local_thread ON chat_targets(local_thread_id);
@@ -587,7 +590,7 @@ Disk layout and wire format evolve on **separate version axes** — see [WIRE_SC
 | **`thread.db` / `profile.db`** | `PRAGMA user_version` | **Incremental SQL migrations** per version step (`1→2`, `2→3`, …) |
 | **Legacy JSON / pre-v1 SQLite** | — | **No upgrade path** — one-time wipe when adopting v2a (D016) |
 | **`RelayEnvelope`** | `envelope_version` | New version + signing spec; reject unknown versions on ingest |
-| **`ChatPayload`** | `schema_version` | Parser branches; unknown `content_type` rejected on relay ingest |
+| **`ChatPayload`** | `payload_version` | Parser branches; unknown `content_type` rejected on relay ingest |
 | **E2E AAD** | `aad_version` | [e2e-message-crypto](../e2e-message-crypto/DESIGN.md) |
 
 **Shippable `user_version=1`** is the first layout that **must** survive app upgrades without data loss. Implement **`SqliteThreadStore::Migrate(from, to)`** (or equivalent) before public release.
@@ -637,7 +640,7 @@ Build the summary from a **pre-clear scan** of `thread.db` (and `profile.db` `ou
 2. **Unsent and failed outbound** (if any `delivery=pending` or `delivery=failed` with `relay_visible=true`)
    - Count and short preview of each (truncated text).
    - **E2E:** state that assigned **`sender_seq` is not reused** — those sends are cancelled; your next successful send uses the next seq as usual (D010).
-   - **Public relay:** state that cancelled sends will **not** be retried automatically; peer will not receive them.
+   - **Public direct (`e2e_public`):** state that cancelled sends will **not** be retried automatically; peer will not receive them.
 
 3. **AI memory** — **one of:**
    - **When forget-AI checkbox checked:** state that the durable **conversation summary** in the `memory` table will be deleted; the AI will not retain compacted context from earlier turns. Transcript is already covered in §1.
@@ -999,9 +1002,9 @@ During gap repair or multi-path delivery (direct + relay), E2E messages may arri
 
 | Channel | Ordering authority |
 |---------|-------------------|
-| **E2E** `relay_visible` | `(session_epoch, sender_contact_id, sender_seq)` — gap detection, `GetMessagesBySeqRange` |
-| **Public relay** ingest | UUID dedup; `display_order` assigned at persist (D054) |
+| **E2E direct** (`e2e`, `e2e_public`) `relay_visible` | `(session_epoch, sender_contact_id, sender_seq)` — gap detection, `GetMessagesBySeqRange`; UI still sorts by `display_order` (D054) |
 | **Local-only** (`relay_visible=false`) | `display_order` at persist — interleaves with relay rows in UI |
+| **AI threads** | `display_order` at persist only |
 
 `timestamp` is metadata only — not used for transcript pagination or sort (D054).
 
@@ -1051,23 +1054,45 @@ Ordered steps — **single linear sequence**; do not reorder in implementation (
 1. **Reject legacy shape** — if `thread_id` present → hard reject (D016). Require **`envelope_version=1`**; reject unknown envelope versions (D072).
 2. **Verify Ed25519 signature** on outer envelope (classical; E014). Resolve **`signing_public_key_b64`** from **`PeerSigningKeyStore`** by `(peer_identity_kind, envelope.sender_contact_id)`; on miss, lazy **`GET /v1/users/{relay_user_id}`** (E016, D081). **Fail closed** if key missing or verify fails.
 3. **Parse `route`** — `kind=direct` requires `channel`; unknown `kind` → reject.
-4. **Resolve local thread (direct)** — build **`ChatTargetKey`** from `envelope.sender_contact_id` (value) + inferred **`peer_identity_kind`** (v1: `relay_user`) + `envelope.route.channel` → lookup **`chat_targets`** → `local_thread_id`. **Inbound (D062, D080):** if no row — **E2E hard reject**; **public** → **ephemeral UI only**, stop before persist (steps 5–12). If row exists but shell missing → hard reject. Outbound user send uses **`FindOrCreateDirectThread`**. **`[post-v1]` group:** `route.group_id` → group thread lookup.
-5. **Per-thread UUID dedup** — `HasMessageId(local_thread_id, envelope.message_id)`; benign duplicate → stop (D034).
-6. **Participant check** — `envelope.sender_contact_id` must equal thread's **`peer_identity_value`** (and kind matches). Outbound reflected echo may use `local:self` in local rows only — not on wire.
-7. **Decrypt** — resolve `master_psk` via **`IPskSessionStore::ResolveMasterPskForEpoch(envelope.session_epoch)`** (E018/D085 — **never** `chat_targets.session_epoch`, which may lag on passive adopt); derive session key with HKDF `info` using **`envelope.session_epoch`** (E015); AEAD decrypt + verify AAD binds the same epoch. Failure → hard reject.
+4. **Resolve local thread (direct)** — build **`ChatTargetKey`** from `envelope.sender_contact_id` (value) + inferred **`peer_identity_kind`** (v1: `relay_user`) + `envelope.route.channel` → lookup **`chat_targets`**. **Inbound (D062, D080):**
+   - **`e2e` (private):** no row → **hard reject** (stop). Row exists but shell missing → hard reject.
+   - **`e2e_public` (public):** no row → set **`pending_auto_create=true`**, continue (decrypt + auto-create at step 12 — § Inbound auto-create). Row exists but shell missing → hard reject.
+   - **Outbound** user send uses **`FindOrCreateDirectThread`** (never on private inbound).
+   - **`[post-v1]` group:** `route.group_id` → group thread lookup.
+5. **Per-thread UUID dedup** — when `local_thread_id` is known: `HasMessageId(local_thread_id, envelope.message_id)`; benign duplicate → stop (D034). Skip when `pending_auto_create` (no shell yet).
+6. **Participant check** — when a **`chat_targets`** row exists: `envelope.sender_contact_id` must equal the row's **`peer_identity_value`** (and kind matches). When **`pending_auto_create`** (`e2e_public` only): require valid Ed25519 verify (step 2) and **`PeerSigningKeyStore`** entry for sender (directory or prior add-contact); reject unknown senders — see § Inbound auto-create. Outbound reflected echo may use `local:self` in local rows only — not on wire.
+7. **Decrypt** — resolve `master_psk` via **`IPskSessionStore::ResolveMasterPskForEpoch(envelope.session_epoch)`** (E018/D085 — **never** `chat_targets.session_epoch`, which may lag on passive adopt); for **`pending_auto_create`**, run auto-key init (E013/O007) to obtain or derive PSK before decrypt. Derive session key with HKDF `info` using **`envelope.session_epoch`** (E015); AEAD decrypt + verify AAD binds the same epoch. Failure → hard reject.
 8. **Plaintext size** — decrypted binary ≤ `kMaxE2ePlaintextBytes`. Reject before `ChatPayloadCodec::Decode` (D033).
 9. **Parse & validate `ChatPayload`** — **`[v1]`** types `text`, `system`; strip wire `content_rml` (D030).
-10. **History floor (E2E only, D037)** — if `sender_seq ≤ history_floor_seq[peer][epoch]`, silent discard, stop.
-11. **D013 ingest classifier (E2E only)** — normal · gap · soft compromised · hard reject; `ReplayWindow` before gap declaration (D020). Skip when `sync_state=compromised` except to record incidents — do not persist new rows until resolved (D068).
-12. **Persist** — assign `display_order` (D054); append to **`local_thread_id`**; update watermarks (E2E); set `transport`. **Passive epoch adopt (D085):** when `envelope.session_epoch > chat_targets.session_epoch` and steps 7–11 succeeded, the same dual-DB transaction MUST also update `chat_targets.session_epoch`, reset `next_outgoing_seq = 1`, cancel old-epoch pending/outbox (D068), refresh `threads.session_epoch` denorm, and init `sync_state` for the envelope epoch — see § Passive epoch advance.
+10. **History floor (E2E only, D037)** — when `local_thread_id` exists: if `sender_seq ≤ history_floor_seq[peer][epoch]`, silent discard, stop. Skip when `pending_auto_create` (empty transcript).
+11. **D013 ingest classifier (E2E direct tiers)** — normal · gap · soft compromised · hard reject; `ReplayWindow` before gap declaration (D020). **`e2e`:** strict only. **`e2e_public`:** relaxed default when tier is active (D046). When `pending_auto_create`, use **bootstrap / tail** rules only (empty per-epoch transcript). Skip when `sync_state=compromised` except to record incidents — do not persist new rows until resolved (D068).
+12. **Persist** — when **`pending_auto_create`**: **`FindOrCreateDirectThread(ChatTargetKey)`** in the same dual-DB txn as first message row; init `sync_state` watermarks for the envelope epoch. Assign `display_order` (D054); append to **`local_thread_id`**; update watermarks; set `transport`. **Passive epoch adopt (D085):** when `envelope.session_epoch > chat_targets.session_epoch` and steps 7–11 succeeded, the same dual-DB transaction MUST also update `chat_targets.session_epoch`, reset `next_outgoing_seq = 1`, cancel old-epoch pending/outbox (D068), refresh `threads.session_epoch` denorm, and init `sync_state` for the envelope epoch — see § Passive epoch advance.
 
 Validate `message_id` as UUID before DB use. Validate `local_thread_id` as UUID before filesystem use.
 
-### Public relay ingest (D045, D080)
+### Inbound auto-create (`e2e_public` only — D080)
 
-After steps 0–9 when a **`chat_targets`** row exists: accept and persist. When **no row** (D080): show ephemeral notification/preview only — **do not** reach step 12. Assign `display_order` at persist in **poll/arrival order** within the batch (D054) — not peer send order. No `sync_state`, gap repair, or compromise UX on public channel.
+First inbound on **`channel=e2e_public`** when no **`chat_targets`** row exists. **Do not** stop at step 4 — the full decrypt path runs first; shell allocation happens at step 12.
 
-### Ingest classification (E2E only — normal · gap · soft compromised · hard reject)
+**Participant gate (before persist):**
+
+| Check | Rule |
+|-------|------|
+| Envelope signature | Must pass step 2 (Ed25519) |
+| Signing key | **`PeerSigningKeyStore`** must resolve key for `(peer_identity_kind, envelope.sender_contact_id)` — from add-contact directory hit or lazy relay fetch (D081) |
+| Blocklist | **`[future]`** — reject if sender is blocked; v1: accept any verified sender (product may tighten via O007) |
+| Spam / unknown sender | Show first-message UX (preview optional); user may delete thread after auto-create |
+
+**Ordering (single txn at step 12):**
+
+1. **`FindOrCreateDirectThread(ChatTargetKey, participant_contact_id?)`** — `participant_contact_id` linked when sender matches a local **Contact.ids[]** entry; else NULL catalog link until user adds contact.
+2. Insert **`chat_targets`** with auto-key PSK columns (E013/D084), `session_epoch` from envelope, `next_outgoing_seq = 1`.
+3. Init **`sync_state`** for `(peer, envelope.session_epoch)` with bootstrap watermarks.
+4. Append message row; apply D013 classification used in step 11 (bootstrap/tail normal).
+
+**Not allowed on auto-create path:** ephemeral-only preview without persist (supersedes pre-D090 behavior). **`e2e` (private)** never auto-creates — hard reject at step 4 when no row.
+
+### Ingest classification (E2E direct tiers — normal · gap · soft compromised · hard reject)
 
 After crypto/size checks; below-floor already discarded in step 10. **`e2e` (private) `[v1]`:** always strict — no relaxed override (D046). **`e2e_public`** and **`group`:** relaxed ingest default (D046). See § Integrity recovery.
 
@@ -1161,7 +1186,7 @@ Copy must not tell users to **Retry send** while compromised — point to **Star
 
 #### Relaxed ingest / continue anyway — public direct and group (D046)
 
-**Default for `e2e_public` and `group`** (implementation with those tiers). Extends `sync_state.state_json`:
+**Default for `e2e_public` and `group`** when those tiers ship (with auto-key for public direct — not optional). Extends `sync_state.state_json`:
 
 | Field | Values |
 |-------|--------|
@@ -1369,7 +1394,7 @@ Not planned (distinct from **`[post-v1]`** items above, which *are* specified):
 
 - [ ] All AI sidebar threads persist via `IThreadStore` (no orphan `Conversation`-only path).
 - [ ] Clear history / forget memory / delete conversation per D024.
-- [ ] Same local Contact may have separate **private** and **public direct** threads per **communicating identity**; tier badge in sidebar (D004, D079, D089).
+- [ ] Same local Contact may have separate **private** and **public direct** thread shells per **communicating identity**; tier badge in sidebar (D004, D079, D089). **Functional `e2e_public` messaging** (auto-key, relaxed ingest) is **`[post-v1]`** — see § Three chat tiers phasing.
 - [ ] Message IDs stable; relay dedup on all tiers.
 - [ ] **Private direct (`e2e`):** `sender_seq`, tail + gap sync, **user-initiated sync** (D059), strict integrity UX (rotate or pause only).
 - [ ] **`FetchChatTargetMessages`** peer-first + relay fallback (D058/D060); authoritative empty gap close with D067 guard + late fill.
