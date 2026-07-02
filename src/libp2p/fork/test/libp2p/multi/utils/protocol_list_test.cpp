@@ -44,8 +44,8 @@ TEST(ProtocolList, getByCode) {
  * returned
  */
 TEST(ProtocolList, getProtocols) {
+  static_assert(ProtocolList::getProtocols().size() == ProtocolList::kProtocolsNum);
   auto &protocols = ProtocolList::getProtocols();
-  static_assert(protocols.size() == ProtocolList::kProtocolsNum);
   auto it = std::ranges::find_if(protocols, [](auto &p) {
     return p.name == "ip4";
   });
