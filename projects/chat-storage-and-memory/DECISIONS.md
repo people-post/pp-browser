@@ -1231,6 +1231,8 @@ Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future d
 
 ## Open decisions (not yet resolved)
 
+**Human checklist:** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) — scope, relay, libp2p, platform limits (prioritized).
+
 | ID | Question | Options |
 |----|----------|---------|
 | O008 | Group pairwise wire shape | N ciphertexts per message; sender-keys tree; encrypted fan-out via relay |

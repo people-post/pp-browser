@@ -25,6 +25,7 @@ Before the first customer release, agents implement **chat v2a–v6** plus [e2e 
 | [PHASES.md](PHASES.md) | **Implementation order** — checklists, exit criteria, traceability; **[agent batch waves](PHASES.md#agent-batch-delivery-order)** for pre-release delivery |
 | [DECISIONS.md](DECISIONS.md) | Recorded decisions (ADR-style rationale) |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |
+| [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) | **Human checklist** — scope, relay, libp2p, cross-project open items |
 
 ## v1 implementation order
 
@@ -53,6 +54,8 @@ See [PHASES.md](PHASES.md) for full checklists. For **agent batch delivery** (al
 | v6 | E2E sender seq + tail/gap/user sync + integrity | Not started — **Wave 4** |
 
 ## Open questions
+
+**Human checklist (scope, relay, libp2p, platform limits):** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md)
 
 **In this project:** O008 (group pairwise wire shape) — see [DECISIONS.md](DECISIONS.md#open-decisions-not-yet-resolved). **O007 resolved** — [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) + [D091](DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).
 
