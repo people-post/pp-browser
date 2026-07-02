@@ -22,6 +22,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
+  # Keep vendored static libs and pp-browser on the MSVC default (/MD) CRT.
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    CACHE STRING "MSVC runtime library" FORCE)
+
   # Prevent windows.h min/max macros from breaking std::min/std::max (soralog, etc.).
   add_compile_definitions(NOMINMAX)
   # Target Windows 7+; avoids Boost/winapi defaulting _WIN32_WINNT at compile time.
