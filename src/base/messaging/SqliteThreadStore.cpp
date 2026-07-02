@@ -375,6 +375,9 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(sqlite3_stmt* stmt) const {
   message.timestamp = sqlite3_column_int64(stmt, 10);
   message.relay_visible = sqlite3_column_int(stmt, 11) != 0;
   message.delivery = MessageDeliveryFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12)));
+  if (sqlite3_column_type(stmt, 13) != SQLITE_NULL) {
+    message.transport = MessageTransportFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13)));
+  }
   (void)ChatPayloadCodec::ApplyRowToMessage(chat_payload, message);
   return message;
 }
@@ -618,11 +621,11 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesPage(const std::st
   }
   const char* sql = before_display_order.has_value()
                         ? "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-                          "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery FROM messages "
-                          "WHERE display_order < ? ORDER BY display_order DESC LIMIT ?;"
+                          "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery, transport "
+                          "FROM messages WHERE display_order < ? ORDER BY display_order DESC LIMIT ?;"
                         : "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-                          "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery FROM messages "
-                          "ORDER BY display_order DESC LIMIT ?;";
+                          "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery, transport "
+                          "FROM messages ORDER BY display_order DESC LIMIT ?;";
   auto page = QueryMessages(thread_id, sql, before_display_order, limit);
   if (!page) {
     return page.error();
@@ -654,7 +657,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesForContext(const s
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, content_rml, "
-      "user_payload, chat_actions, timestamp, relay_visible, delivery FROM messages "
+      "user_payload, chat_actions, timestamp, relay_visible, delivery, transport FROM messages "
       "WHERE content_type IN ('text', 'system') AND display_order > ? ORDER BY display_order DESC;";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare context query");
@@ -796,7 +799,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetContextEligibleMessagesAft
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, content_rml, "
-      "user_payload, chat_actions, timestamp, relay_visible, delivery FROM messages "
+      "user_payload, chat_actions, timestamp, relay_visible, delivery, transport FROM messages "
       "WHERE content_type IN ('text', 'system') AND display_order > ? ORDER BY display_order ASC;";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare compaction query");
@@ -849,8 +852,8 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO messages (id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-      "content_rml, chat_actions, timestamp, relay_visible, delivery) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+      "content_rml, chat_actions, timestamp, relay_visible, delivery, transport) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare append");
   }
@@ -870,6 +873,11 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
   sqlite3_bind_int64(stmt, 10, stored.timestamp);
   sqlite3_bind_int(stmt, 11, stored.relay_visible ? 1 : 0);
   sqlite3_bind_text(stmt, 12, MessageDeliveryToString(stored.delivery).c_str(), -1, SQLITE_TRANSIENT);
+  if (stored.transport) {
+    sqlite3_bind_text(stmt, 13, MessageTransportToString(*stored.transport).c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 13);
+  }
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     return Error("Failed to append message");
@@ -903,7 +911,7 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "UPDATE messages SET sender_contact_id = ?, chat_payload = ?, content_type = ?, payload = ?, text = ?, "
-      "content_rml = ?, chat_actions = ?, timestamp = ?, relay_visible = ?, delivery = ? WHERE id = ?;";
+      "content_rml = ?, chat_actions = ?, timestamp = ?, relay_visible = ?, delivery = ?, transport = ? WHERE id = ?;";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return false;
   }
@@ -921,7 +929,12 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   sqlite3_bind_int64(stmt, 8, message.timestamp);
   sqlite3_bind_int(stmt, 9, message.relay_visible ? 1 : 0);
   sqlite3_bind_text(stmt, 10, MessageDeliveryToString(message.delivery).c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 11, message.id.c_str(), -1, SQLITE_TRANSIENT);
+  if (message.transport) {
+    sqlite3_bind_text(stmt, 11, MessageTransportToString(*message.transport).c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 11);
+  }
+  sqlite3_bind_text(stmt, 12, message.id.c_str(), -1, SQLITE_TRANSIENT);
   const bool updated = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(*thread_db) > 0;
   sqlite3_finalize(stmt);
   if (updated && message.delivery != MessageDelivery::Pending) {

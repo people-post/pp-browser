@@ -84,6 +84,9 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("dialog_title", &host.state_.dialog.title);
     ctor.Bind("dialog_message", &host.state_.dialog.message);
     ctor.Bind("dialog_show_cancel", &host.state_.dialog.show_cancel);
+    ctor.Bind("dialog_show_checkbox", &host.state_.dialog.show_checkbox);
+    ctor.Bind("dialog_checkbox_label", &host.state_.dialog.checkbox_label);
+    ctor.Bind("dialog_checkbox_checked", &host.state_.dialog.checkbox_checked);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
 
     ctor.BindEventCallback("toggle_auxiliary", &ShellHost::ToggleAuxiliaryCallback);
@@ -95,6 +98,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("dismiss_banner", &ShellHost::DismissBannerCallback);
     ctor.BindEventCallback("dialog_ok", &ShellHost::DialogOkCallback);
     ctor.BindEventCallback("dialog_cancel", &ShellHost::DialogCancelCallback);
+    ctor.BindEventCallback("dialog_toggle_checkbox", &ShellHost::DialogToggleCheckboxCallback);
   });
 }
 
@@ -326,6 +330,9 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "dialog_title");
   DataModelHost::Instance().Dirty("window", "dialog_message");
   DataModelHost::Instance().Dirty("window", "dialog_show_cancel");
+  DataModelHost::Instance().Dirty("window", "dialog_show_checkbox");
+  DataModelHost::Instance().Dirty("window", "dialog_checkbox_label");
+  DataModelHost::Instance().Dirty("window", "dialog_checkbox_checked");
   DataModelHost::Instance().Dirty("window", "activity_visible");
 }
 
@@ -571,6 +578,11 @@ std::string ShellHost::SerializeDialog() const {
   out << "<div class=\"shell-dialog\">";
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"dialog_title\"></h2>";
   out << "<p class=\"text shell-dialog-message\" data-rml=\"dialog_message\"></p>";
+  out << "<label class=\"shell-dialog-checkbox row\" data-if=\"dialog_show_checkbox\">";
+  out << "<input type=\"checkbox\" data-value=\"dialog_checkbox_checked\" "
+         "data-event-change=\"dialog_toggle_checkbox()\"/>";
+  out << "<span data-rml=\"dialog_checkbox_label\"></span>";
+  out << "</label>";
   out << "<div class=\"shell-dialog-actions row\">";
   out << "<button class=\"shell-dialog-cancel\" data-if=\"dialog_show_cancel\" "
          "data-event-click=\"dialog_cancel()\">Cancel</button>";
@@ -856,6 +868,13 @@ void ShellHost::DialogCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event&
   ShellHost& host = Instance();
   ShellFeedback::DialogCancel(host.state_);
   host.RequestSyncLayout();
+  host.DirtyWindow();
+}
+
+void ShellHost::DialogToggleCheckboxCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                             const Rml::VariantList& /*args*/) {
+  ShellHost& host = Instance();
+  host.state_.dialog.checkbox_checked = !host.state_.dialog.checkbox_checked;
   host.DirtyWindow();
 }
 

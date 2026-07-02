@@ -18,6 +18,9 @@ ThreadChannel ThreadChannelFromString(const std::string& value);
 std::string MessageDeliveryToString(MessageDelivery delivery);
 MessageDelivery MessageDeliveryFromString(const std::string& value);
 
+std::string MessageTransportToString(MessageTransport transport);
+MessageTransport MessageTransportFromString(const std::string& value);
+
 nlohmann::json ThreadToJson(const Thread& thread);
 Thread ThreadFromJson(const nlohmann::json& json);
 

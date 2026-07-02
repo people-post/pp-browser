@@ -955,6 +955,13 @@ select selectbox option {
   margin-bottom: 8dp;
 }
 
+.shell-dialog-checkbox {
+  align-items: center;
+  gap: 8dp;
+  margin-top: 8dp;
+  font-size: 14dp;
+}
+
 .shell-dialog-actions {
   justify-content: flex-end;
   gap: 8dp;

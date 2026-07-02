@@ -70,7 +70,10 @@ struct DialogState {
   Rml::String title;
   Rml::String message;
   bool show_cancel = false;
-  std::function<void(bool)> on_result;
+  bool show_checkbox = false;
+  Rml::String checkbox_label;
+  bool checkbox_checked = false;
+  std::function<void(bool confirmed, bool checkbox_checked)> on_result;
 };
 
 struct PaneVisibility {

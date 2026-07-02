@@ -18,6 +18,9 @@ enum class ThreadKind { Ai, Direct, Group };
 
 enum class MessageDelivery { Local, Pending, Relayed, Failed };
 
+/** How a message reached this device (D051). */
+enum class MessageTransport { Local, Relay, Direct };
+
 enum class ChatContentType { Text, System };
 
 /** Direct P2P tier (D089). None for AI / non-E2E threads. */
@@ -64,6 +67,7 @@ struct ThreadMessage {
   int64_t timestamp = 0;
   MessageDelivery delivery = MessageDelivery::Local;
   bool relay_visible = true;
+  std::optional<MessageTransport> transport;
 };
 
 struct RelayRoute {

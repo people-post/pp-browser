@@ -170,6 +170,7 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
   message.timestamp = util::NowUnixMs();
   message.delivery = MessageDelivery::Local;
   message.relay_visible = state->turn_mode != AgentTurnMode::ScopedAssist;
+  message.transport = MessageTransport::Local;
   (void)state->thread_store->AppendMessage(message);
   if (out_message_id) {
     *out_message_id = message.id;
@@ -441,6 +442,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     user_message.text = state->pending_user_text;
     user_message.timestamp = util::NowUnixMs();
     user_message.delivery = MessageDelivery::Local;
+    user_message.transport = MessageTransport::Local;
     if (auto appended = state->thread_store->AppendMessage(user_message)) {
       state->pending_entry_id = appended->id;
     } else {

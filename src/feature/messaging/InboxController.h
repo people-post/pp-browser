@@ -30,6 +30,8 @@ public:
 
   bool IsAiHomeThread(const std::string& thread_id) const;
   Roe<void> CloseThread(const std::string& thread_id);
+  Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
+  Roe<void> ForgetThreadMemory(const std::string& thread_id);
 
   void MarkThreadRead(const std::string& thread_id);
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);

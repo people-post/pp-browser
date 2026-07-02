@@ -172,6 +172,58 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   return {};
 }
 
+Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
+  if (IsAiHomeThread(thread_id)) {
+    return Error("Cannot clear AI home thread history");
+  }
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+
+  if (auto cleared = store_.ClearMessages(thread_id, ClearMessagesOptions{.forget_memory = forget_memory}); !cleared) {
+    return cleared.error();
+  }
+
+  Thread updated = **thread;
+  updated.preview = "";
+  updated.unread_count = 0;
+  updated.updated_at = util::NowUnixMs();
+  if (!store_.UpsertThread(updated)) {
+    return Error("Failed to update thread after clear");
+  }
+
+  if (on_thread_changed_) {
+    on_thread_changed_();
+  }
+  return {};
+}
+
+Roe<void> InboxController::ForgetThreadMemory(const std::string& thread_id) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  if ((*thread)->kind != ThreadKind::Ai) {
+    return Error("Forget memory is only available for AI threads");
+  }
+
+  if (auto cleared = store_.ClearThreadMemory(thread_id); !cleared) {
+    return cleared.error();
+  }
+
+  if (on_thread_changed_) {
+    on_thread_changed_();
+  }
+  return {};
+}
+
 Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact_id) {
   return FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
 }
@@ -310,6 +362,9 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(const std::stri
   }
 
   for (const ThreadMessage& message : *messages) {
+    if (message.content_type != ChatContentType::Text) {
+      continue;
+    }
     MessageDisplayRow row;
     row.sender_label = ResolveSenderLabel(message.sender_contact_id).c_str();
     row.content_rml = BuildMessageRml(message).c_str();

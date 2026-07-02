@@ -14,6 +14,9 @@ struct ShellFeedback {
                         std::function<void()> on_ok = {});
   static void ShowConfirm(ShellState& state, const std::string& title, const std::string& message,
                           std::function<void(bool)> on_result);
+  static void ShowConfirmWithCheckbox(ShellState& state, const std::string& title, const std::string& message,
+                                      const std::string& checkbox_label, bool checkbox_default,
+                                      std::function<void(bool confirmed, bool checkbox_checked)> on_result);
   static void DialogOk(ShellState& state);
   static void DialogCancel(ShellState& state);
 };

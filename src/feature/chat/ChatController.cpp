@@ -523,6 +523,16 @@ void ChatController::CloseThreadCallback(Rml::DataModelHandle /*model*/, Rml::Ev
   Instance().OnCloseThread(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
+void ChatController::ClearHistoryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                          const Rml::VariantList& /*args*/) {
+  Instance().OnClearHistory();
+}
+
+void ChatController::ForgetMemoryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                          const Rml::VariantList& /*args*/) {
+  Instance().OnForgetMemory();
+}
+
 void ChatController::FinalizeThreadDisplay() {
   ClearWorkingSet();
   working_set_by_entry_.clear();
@@ -585,6 +595,96 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                                ShellHost::Instance().RequestSyncLayout();
                                ShellHost::Instance().DirtyWindow();
                              });
+  ShellHost::Instance().RequestSyncLayout();
+  ShellHost::Instance().DirtyWindow();
+}
+
+void ChatController::OnClearHistory() {
+  if (!messaging_ready_) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty() || MessagingHub::Instance().Inbox().IsAiHomeThread(thread_id)) {
+    return;
+  }
+
+  auto thread = MessagingHub::Instance().Inbox().GetActiveThread();
+  const bool is_ai = thread && thread->kind == ThreadKind::Ai;
+  std::string message =
+      "Remove all messages on this device? The thread stays in your sidebar. "
+      "Messages on the peer's device or relay are not affected.";
+  if (is_ai) {
+    message += " AI memory is kept unless you check the box below.";
+  } else if (thread && thread->kind == ThreadKind::Direct && thread->encrypted) {
+    message += " Unsent outbound messages are cancelled; assigned sender_seq values are not reused.";
+  }
+
+  if (is_ai) {
+    ShellFeedback::ShowConfirmWithCheckbox(
+        ShellHost::Instance().State(), "Clear message history?", message, "Also forget what AI learned", false,
+        [this, thread_id](bool ok, bool forget_memory) {
+          if (!ok) {
+            return;
+          }
+          if (!MessagingHub::Instance().Inbox().ClearThreadHistory(thread_id, forget_memory)) {
+            return;
+          }
+          chat_.draft = "";
+          chat_.status = "";
+          chat_.loading = false;
+          pending_reply_.reset();
+          ClearFormState();
+          widgets_by_entry_.clear();
+          RefreshFromMessaging();
+          ShellHost::Instance().RequestSyncLayout();
+          ShellHost::Instance().DirtyWindow();
+        });
+  } else {
+    ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "Clear message history?", message,
+                               [this, thread_id](bool ok) {
+                                 if (!ok) {
+                                   return;
+                                 }
+                                 if (!MessagingHub::Instance().Inbox().ClearThreadHistory(thread_id, false)) {
+                                   return;
+                                 }
+                                 chat_.draft = "";
+                                 chat_.status = "";
+                                 chat_.loading = false;
+                                 pending_reply_.reset();
+                                 ClearFormState();
+                                 widgets_by_entry_.clear();
+                                 RefreshFromMessaging();
+                                 ShellHost::Instance().RequestSyncLayout();
+                                 ShellHost::Instance().DirtyWindow();
+                               });
+  }
+  ShellHost::Instance().RequestSyncLayout();
+  ShellHost::Instance().DirtyWindow();
+}
+
+void ChatController::OnForgetMemory() {
+  if (!messaging_ready_) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  ShellFeedback::ShowConfirm(
+      ShellHost::Instance().State(), "Forget what AI learned?",
+      "Delete the durable conversation summary? Your message transcript stays on this device.",
+      [this, thread_id](bool ok) {
+        if (!ok) {
+          return;
+        }
+        if (!MessagingHub::Instance().Inbox().ForgetThreadMemory(thread_id)) {
+          return;
+        }
+        ShellHost::Instance().RequestSyncLayout();
+        ShellHost::Instance().DirtyWindow();
+      });
   ShellHost::Instance().RequestSyncLayout();
   ShellHost::Instance().DirtyWindow();
 }
@@ -655,6 +755,9 @@ void ChatController::UpdateThreadChrome() {
     chat_.thread_title = thread->title.c_str();
     chat_.thread_encrypted = thread->encrypted;
     chat_.compose_disabled = thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2ePublic;
+    const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+    chat_.show_thread_actions = !MessagingHub::Instance().Inbox().IsAiHomeThread(active_id);
+    chat_.show_forget_memory = thread->kind == ThreadKind::Ai;
     if (thread->kind == ThreadKind::Ai) {
       chat_.thread_subtitle = "AI home — ask to find people or open conversations";
       chat_.draft_placeholder = "Ask anything…";
@@ -872,6 +975,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     user_message.sender_contact_id = kLocalSelfContactId;
     user_message.text = trimmed;
     user_message.timestamp = util::NowUnixMs();
+    user_message.transport = MessageTransport::Local;
     (void)MessagingHub::Instance().Store().AppendMessage(user_message);
     SyncDisplayFromThread();
     DirtyChatTurns();
@@ -1080,6 +1184,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
             "<div class=\"bubble bubble-assistant\" selectable=\"text\">" + hydrated + "</div>";
         ai_message.chat_actions = chat_actions;
         ai_message.timestamp = util::NowUnixMs();
+        ai_message.transport = MessageTransport::Local;
         (void)MessagingHub::Instance().Store().AppendMessage(ai_message);
       }
       (void)MessagingHub::Instance().Inbox().UpdatePreview(active_thread, parsed.rml);
@@ -1216,6 +1321,8 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("thread_subtitle", &ChatController::Instance().chat_.thread_subtitle);
         ctor.Bind("thread_encrypted", &ChatController::Instance().chat_.thread_encrypted);
         ctor.Bind("compose_disabled", &ChatController::Instance().chat_.compose_disabled);
+        ctor.Bind("show_thread_actions", &ChatController::Instance().chat_.show_thread_actions);
+        ctor.Bind("show_forget_memory", &ChatController::Instance().chat_.show_forget_memory);
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
@@ -1224,6 +1331,8 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("calendar_next", &ChatController::CalendarNextCallback);
         ctor.BindEventCallback("select_calendar_day", &ChatController::SelectCalendarDayCallback);
         ctor.BindEventCallback("open_working_set", &ChatController::OpenWorkingSetCallback);
+        ctor.BindEventCallback("clear_history", &ChatController::ClearHistoryCallback);
+        ctor.BindEventCallback("forget_memory", &ChatController::ForgetMemoryCallback);
       })) {
     return false;
   }

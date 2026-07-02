@@ -112,6 +112,28 @@ MessageDelivery MessageDeliveryFromString(const std::string& value) {
   return MessageDelivery::Local;
 }
 
+std::string MessageTransportToString(const MessageTransport transport) {
+  switch (transport) {
+  case MessageTransport::Relay:
+    return "relay";
+  case MessageTransport::Direct:
+    return "direct";
+  case MessageTransport::Local:
+    return "local";
+  }
+  return "local";
+}
+
+MessageTransport MessageTransportFromString(const std::string& value) {
+  if (value == "relay") {
+    return MessageTransport::Relay;
+  }
+  if (value == "direct") {
+    return MessageTransport::Direct;
+  }
+  return MessageTransport::Local;
+}
+
 nlohmann::json ThreadToJson(const Thread& thread) {
   nlohmann::json json = {{"id", thread.id},
                          {"kind", ThreadKindToString(thread.kind)},
@@ -279,10 +301,22 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json) {
   if (body.contains("text")) {
     return Error("Legacy relay body.text is not supported");
   }
+  if (body.contains("content_b64")) {
+    return Error("Legacy relay body.content_b64 is not supported");
+  }
+  if (body.contains("content_rml")) {
+    return Error("Remote content_rml is not supported on wire");
+  }
+  if (body.contains("public_relay")) {
+    return Error("public_relay body is not supported");
+  }
   if (!body.contains("e2e") || !body["e2e"].is_object()) {
     return Error("Missing body.e2e");
   }
   const auto& e2e = body["e2e"];
+  if (e2e.contains("content_rml")) {
+    return Error("Remote content_rml is not supported on wire");
+  }
   if (!e2e.contains("payload_b64") || !e2e["payload_b64"].is_string()) {
     return Error("Missing body.e2e.payload_b64");
   }
@@ -302,7 +336,11 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json) {
     envelope.route.kind = route["kind"].get<std::string>();
   }
   if (route.contains("channel") && route["channel"].is_string()) {
-    envelope.route.channel = ThreadChannelFromString(route["channel"].get<std::string>());
+    const std::string channel_value = route["channel"].get<std::string>();
+    if (channel_value == "public_relay") {
+      return Error("public_relay channel is not supported");
+    }
+    envelope.route.channel = ThreadChannelFromString(channel_value);
     if (envelope.route.channel == ThreadChannel::None) {
       return Error("Invalid route.channel");
     }

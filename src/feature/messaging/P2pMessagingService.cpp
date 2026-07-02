@@ -27,6 +27,14 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   return target;
 }
 
+bool IsEnvelopeFromPeer(const Thread& thread, const RelayEnvelope& envelope) {
+  if (!thread.peer_identity_value.empty()) {
+    return envelope.sender_contact_id == thread.peer_identity_value ||
+           envelope.sender_relay_id == thread.peer_identity_value;
+  }
+  return false;
+}
+
 } // namespace
 
 P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
@@ -145,6 +153,7 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   message.timestamp = util::NowUnixMs();
   message.delivery = MessageDelivery::Pending;
   message.relay_visible = true;
+  message.transport = MessageTransport::Relay;
 
   auto appended = store_.AppendMessage(message);
   if (!appended) {
@@ -299,34 +308,41 @@ void P2pMessagingService::PollAndMerge() {
       if (store_.HasMessageId(resolved_thread_id, envelope.message_id)) {
         continue;
       }
-
-      auto decoded_text = RelayWirePayload::DecodePlaintextText(envelope.body.e2e.payload_b64);
-      if (!decoded_text) {
+      if (!IsEnvelopeFromPeer(**thread, envelope)) {
         continue;
       }
 
-      ThreadMessage message;
+      auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
+      if (!decoded) {
+        continue;
+      }
+      if (decoded->content_type != ChatContentType::Text) {
+        continue;
+      }
+
+      ThreadMessage message = *decoded;
       message.id = envelope.message_id;
       message.thread_id = resolved_thread_id;
-      message.sender_contact_id = envelope.sender_contact_id;
       if (!(*thread)->participant_contact_ids.empty()) {
         message.sender_contact_id = (*thread)->participant_contact_ids.front();
+      } else {
+        message.sender_contact_id = envelope.sender_contact_id;
       }
-      message.text = *decoded_text;
       message.timestamp = envelope.timestamp;
       message.delivery = MessageDelivery::Relayed;
       message.relay_visible = true;
+      message.transport = MessageTransport::Relay;
 
       if (store_.AppendMessage(message)) {
         changed = true;
         if (inbox_.ActiveThreadId() != resolved_thread_id) {
           Thread updated = **thread;
           updated.unread_count += 1;
-          updated.preview = *decoded_text;
+          updated.preview = message.text;
           updated.updated_at = util::NowUnixMs();
           (void)store_.UpsertThread(updated);
         } else {
-          (void)inbox_.UpdatePreview(resolved_thread_id, *decoded_text);
+          (void)inbox_.UpdatePreview(resolved_thread_id, message.text);
         }
       }
     }

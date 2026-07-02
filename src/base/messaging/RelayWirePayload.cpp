@@ -2,10 +2,14 @@
 
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/ChatPayloadCodec.h"
+#include "base/messaging/ChatPayloadValidator.h"
 
 namespace pbr {
 
 Roe<std::string> RelayWirePayload::EncodePlaintextText(const std::string& text) {
+  if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
+    return valid.error();
+  }
   auto bytes = ChatPayloadCodec::EncodeText(text);
   if (!bytes) {
     return bytes.error();
@@ -13,19 +17,23 @@ Roe<std::string> RelayWirePayload::EncodePlaintextText(const std::string& text) 
   return Base64Encode(*bytes);
 }
 
-Roe<std::string> RelayWirePayload::DecodePlaintextText(const std::string& payload_b64) {
+Roe<ThreadMessage> RelayWirePayload::DecodeInboundPayload(const std::string& payload_b64) {
   auto bytes = Base64Decode(payload_b64);
   if (!bytes) {
     return bytes.error();
   }
-  auto fields = ChatPayloadCodec::DecodeToMessageFields(*bytes);
-  if (!fields) {
-    return fields.error();
+  return ChatPayloadValidator::DecodeValidated(*bytes);
+}
+
+Roe<std::string> RelayWirePayload::DecodePlaintextText(const std::string& payload_b64) {
+  auto message = DecodeInboundPayload(payload_b64);
+  if (!message) {
+    return message.error();
   }
-  if (fields->content_type != ChatContentType::Text) {
+  if (message->content_type != ChatContentType::Text) {
     return Error("Unsupported relay payload content type");
   }
-  return fields->text;
+  return message->text;
 }
 
 } // namespace pbr

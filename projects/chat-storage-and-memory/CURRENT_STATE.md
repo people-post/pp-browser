@@ -3,17 +3,15 @@
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
 **Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D068 in [DECISIONS.md](DECISIONS.md).  
-**Agent batch:** Waves **1–2** merged; **Wave 3 v3 core** landed (memory + compaction). Next: **v4** ∥ remaining v3 UX — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
+**Agent batch:** Waves **1–2** merged; **Wave 3** landed (v3 core + v3 UX + v4). Next: **v6** — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
 
 ## Next agent — start here
 
 | Priority | Work | Blocked by |
 |----------|------|------------|
-| **Wave 3** | **v4** — ChatPayload validator, `transport` column, strip remote `content_rml` | — |
-| **Wave 3** | **v3 UX** — forget-memory menu, clear-history checkbox | — |
-| **Wave 4** | **v6** — `sender_seq` on messages, sync pipeline, history fetch, gap repair | v4 recommended first for ingest rules |
+| **Wave 4** | **v6** — `sender_seq` on messages, sync pipeline, history fetch, gap repair | — |
 | **Wave 5–6** | [e2e c2](../e2e-message-crypto/PHASES.md#phase-c2--messaging-integration) — AEAD on wire, `EnvelopeSigner` (E014) | v6 envelope + ingest pipeline |
-| **UX gaps (v2a-core)** | Clear-history confirmation sheet; composer `maxlength` (`kMaxComposeTextBytes`) | — |
+| **UX gaps (v2a-core)** | Composer `maxlength` (`kMaxComposeTextBytes`) | — |
 
 **Key paths (wave 2):**
 
@@ -49,8 +47,8 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 | `MessagingLimits.h` | **Implemented** | `src/base/messaging/MessagingLimits.h` — append cap enforced |
 | `MessagingHub` bootstrap | **SqliteThreadStore** + outbox reconcile on init | `MessagingHub.cpp` |
 | Durable `ConversationSummary` on disk | **Implemented** (v3) | `IThreadStore::GetThreadMemory` / `SetThreadMemory`, `ConversationSummaryCodec`, `thread.db` `memory` key `summary` |
-| Clear history UX | **API only** (`ClearMessages`) — no confirmation sheet | v2a-core gap |
-| Forget memory API | **Implemented** (`ClearMessagesOptions.forget_memory`) | v3 — UI checkbox deferred |
+| Clear history UX | **Implemented** — chat header + confirm dialog; optional forget-AI checkbox on AI threads | v3 UX |
+| Forget memory API | **Implemented** (`ClearMessagesOptions.forget_memory` + **Forget AI memory** menu) | v3 UX |
 | Windowed transcript load | **Partial** — `GetMessagesPage` in store + inbox; UI still loads default page size | v2a-core mostly done |
 | Agent context | **`GetMessagesForContext`** + **summary injection** via `ThreadContextPolicy` | `AgentSession` loads `GetThreadMemory` |
 | Compaction / summary on disk | **Implemented** (async) | `ThreadCompactionService` — triggers after AI thread turns |
@@ -77,6 +75,7 @@ Legacy `index.json` + `{thread_id}.json` are **wiped on first SqliteThreadStore 
 ### `ThreadMessage`
 
 - Has **`display_order`**, `ChatContentType`, ChatPayload BLOB via **`ChatPayloadCodec`**
+- **`transport`** column persisted (`local` / `relay` / `direct`) — set on send/receive paths (D051)
 - No `sender_seq` / `session_epoch` on rows yet (v6)
 
 ### `RelayEnvelope` (v1 wire — D063/D090)
@@ -118,7 +117,7 @@ Legacy `index.json` + `{thread_id}.json` are **wiped on first SqliteThreadStore 
 | Contacts: **Secure message** (`e2e`) vs **Message** (`e2e_public`) | **Implemented** | `contacts.rml`, `ContactsController` |
 | **`e2e_public` compose disabled** | **Implemented** | `compose_disabled` in `composer.rml` |
 | E2E chrome (`.prompt-composer--e2e`) | Partial | `thread_encrypted` binding |
-| Clear history / forget memory menus | Not implemented | — |
+| Clear history / forget memory menus | **Implemented** | `chat.rml`, `ChatController`, `InboxController` |
 | Composer maxlength | **Not wired** | `kMaxComposeTextBytes` exists; `composer.rml` has no maxlength |
 | Delivery / transport badges on messages | Not implemented | v4 / post-v6d |
 
@@ -126,7 +125,7 @@ Legacy `index.json` + `{thread_id}.json` are **wiped on first SqliteThreadStore 
 
 | Area | Location | Notes |
 |------|----------|-------|
-| SqliteThreadStore + ChatPayload | `src/base/messaging/tests/` | `sqlite_thread_store_test`, **`p2p_relay_wire_test`** (3 tests) |
+| SqliteThreadStore + ChatPayload | `src/base/messaging/tests/` | `sqlite_thread_store_test`, **`p2p_relay_wire_test`**, **`chat_payload_validator_test`** |
 | Messaging foundation | `tests/messaging_foundation_test.cpp` | **v1 envelope** + legacy reject |
 | Mock relay | `ServiceClientsImpl.cpp` | v1 envelope + mock reply via `SetNextReplySenderId` |
 | JsonThreadStore | In-memory only | Used by foundation test |
@@ -135,10 +134,9 @@ Run: `./build/tests/base_messaging_tests/pp_browser_p2p_relay_wire_test` (and si
 
 ## Known gaps (summary)
 
-1. **Wave 3** — v3 UX (forget/clear sheets); v4 ChatPayload validator / transport column.
-2. **Wave 4 (v6)** — `sender_seq`, sync_state, history fetch, gap repair, integrity UX — **blocks e2e c2**.
-3. **c2** — real AEAD in `payload_b64`; E014 `EnvelopeSigner`; inbound verify.
-4. Clear-history **confirmation UX**; composer maxlength wiring.
+1. **Wave 4 (v6)** — `sender_seq`, sync_state, history fetch, gap repair, integrity UX — **blocks e2e c2**.
+2. **c2** — real AEAD in `payload_b64`; E014 `EnvelopeSigner`; inbound verify.
+3. Composer maxlength wiring (`kMaxComposeTextBytes`).
 5. Canonical sign bytes (interim JSON signing on outbound).
 6. Inbound relay: no Ed25519 verify; no `PeerSigningKeyStore`.
 7. Poll rate / UI windowing polish (D032/D031).

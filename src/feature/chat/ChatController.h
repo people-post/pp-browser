@@ -54,6 +54,8 @@ private:
     Rml::String thread_subtitle;
     bool thread_encrypted = false;
     bool compose_disabled = false;
+    bool show_thread_actions = false;
+    bool show_forget_memory = false;
     std::vector<TranscriptDisplayRow> turns;
     std::vector<MessageDisplayRow> messages;
     bool use_messages_layout = true;
@@ -89,12 +91,16 @@ private:
   static void NewChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CloseThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ClearHistoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ForgetMemoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenWorkingSetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
   void OnNewChat();
   void OnSelectThread(const std::string& thread_id);
   void OnCloseThread(const std::string& thread_id);
+  void OnClearHistory();
+  void OnForgetMemory();
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
   void SendChatAction(const std::string& entry_id, int action_index);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
