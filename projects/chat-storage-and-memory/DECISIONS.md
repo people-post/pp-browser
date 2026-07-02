@@ -204,7 +204,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — `sender_contact_id` = communicating identity **value** (D079); inbound policy split (D080).  
-**Decision:** Relay envelope includes **`sender_contact_id`** and **`route`** (`kind` + `channel` for direct). **No `thread_id`** on wire. **`sender_contact_id`** is the sender's **communicating identity value** (e.g. `relay:…`) — not local `Contact.id` (D079). Inbound direct routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: envelope.sender_contact_id, channel }` → local `local_thread_id` when a row exists (D080). Do not infer sender from local thread metadata.  
+**Decision:** Relay envelope includes **`sender_contact_id`** and **`route`** (`kind` + `channel` for direct). **No `thread_id`** on wire. **`sender_contact_id`** is the sender's **communicating identity value** (e.g. `relay:abc123`, D079/D082) — not local `Contact.id` (D079). Inbound direct routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: envelope.sender_contact_id, channel }` → local `local_thread_id` when a row exists (D080). Do not infer sender from local thread metadata.  
 **Rationale:** Local thread ids differ per device; shared routing key is the chat target. `route` extensible to `group_id` later.  
 **Alternatives:** Shared wire `thread_id` (D053 — superseded); infer sender from participants[0] (rejected).
 
@@ -878,7 +878,7 @@ No hard max file size in v1.
 
 1. **`Contact.id`** (address book) is **local only** — never on wire, never in AAD, never in `ChatTargetKey`. A **Contact** represents a person or entity and may hold multiple **`ContactId`** entries (`relay_user`, `peer_id`, `blockchain`, `custom`) — see `ContactTypes.h`. Some identities are used for messaging; others are metadata only.
 2. **`ChatTargetKey`** (direct P2P) = **`(peer_identity_kind, peer_identity_value, channel)`** — the **communicating identity** bound when the thread is created, plus channel. **Not** local `Contact.id`. Same human with two messaging identities (e.g. two `relay_user` ids, or relay vs libp2p `peer_id`) → **separate threads** and separate PSK/seq state. Identity is **fixed for the life of the thread** — do not switch mid-thread; open a new thread for a new identity.
-3. **Wire `sender_contact_id`** (envelope + AAD + signing bytes) carries the sender's **communicating identity `value`** (e.g. `relay:user:abc`, libp2p peer id string) — **not** local `Contact.id`, **not** `local:self`. **`local:self`** remains a **local transcript sentinel** only (`ThreadMessage.sender_contact_id` on outbound rows).
+3. **Wire `sender_contact_id`** (envelope + AAD + signing bytes) carries the sender's **communicating identity `value`** (e.g. `relay:abc123`, libp2p peer id string — see D082) — **not** local `Contact.id`, **not** `local:self`. **`local:self`** remains a **local transcript sentinel** only (`ThreadMessage.sender_contact_id` on outbound rows).
 4. **Outbound identity** for a thread is implied by transport + thread binding — user does **not** pick among their identities per send within the same thread. Relay threads use the profile's primary **`relay_user`** identity; future libp2p-direct threads use the bound **`peer_id`**.
 5. **`threads.participant_contact_ids`** stores the local **Contact.id** (UI grouping, contact card). **`chat_targets`** and catalog denorm store **`peer_identity_kind`** + **`peer_identity_value`**. **`[post-v1]`** optional local merge: relate multiple identities to one Contact without merging threads.
 6. **`sessions.json` map key:** `identity:{kind}:{value}|channel:{channel}` (see [e2e-message-crypto DESIGN](../e2e-message-crypto/DESIGN.md)). **HKDF `info`** uses `channel` + `epoch` only (E015) — not identity strings; pair scoping is the per-target `master_psk`.
@@ -916,13 +916,48 @@ No hard max file size in v1.
 
 ---
 
+## D082 — Relay-user communicating identity string format
+
+**Date:** 2026-07-02  
+**Cross-project:** [e2e-message-crypto E017](../e2e-message-crypto/DECISIONS.md#e017--relay-user-identity-value-format).  
+**Decision:** For **`peer_identity_kind = relay_user`**, the communicating identity **value** is:
+
+```
+relay:<opaque_id>
+```
+
+where `<opaque_id>` is **relay-assigned** at registration, **URL-safe** (`[A-Za-z0-9_-]{4,64}`), **immutable** for the life of the account, and **not** derived from the Ed25519 public key.
+
+| Field / store | v1 rule |
+|---------------|---------|
+| `peer_identity_value` / `ContactId.value` | `relay:<opaque_id>` |
+| `sender_contact_id` (wire, AAD, sign bytes) | Same string |
+| `sender_relay_id` (wire) | **Same string** in v1 |
+| `identity.json` `relay_user_id` | Relay-assigned after `register_user`; never synthesized from pubkey on wire |
+| Directory / lazy lookup | `GET /v1/users/{relay_user_id}` uses the full value including `relay:` prefix |
+
+**Byte rules (crypto binding):** UTF-8, exact bytes, case-sensitive, no trimming or Unicode normalization.
+
+**Rejected formats:**
+
+- `relay:user:<id>` — redundant with `peer_identity_kind`; was draft doc nomenclature only.
+- `relay:` + truncated `public_key_b64` — not reversible (E016); local bootstrap placeholder only until registration.
+- Bare `<opaque_id>` without `relay:` prefix — breaks existing relay API field naming and directory samples.
+
+**Test fixture id:** `relay:alice123` — used in E014 frozen vectors, WIRE_SCHEMAS examples, and mocks.
+
+**Rationale:** One canonical string bound in AAD, signing, and directory lookup; kind enum carries transport/type; relay remains source of truth for assignment.  
+**Alternatives:** URI-style `relay:user:` segment (rejected — longer on wire, no relay adoption); bare opaque id (rejected — API churn).
+
+---
+
 ## Open decisions (not yet resolved)
 
 | ID | Question | Options |
 |----|----------|---------|
 | — | *(none in this project — all O001–O005 resolved D023–D027)* | |
 
-**Cross-project (e2e-message-crypto):** peer signing keys resolved — E016 / D081. Remaining e2e work is implementation (c1–c3).  
+**Cross-project (e2e-message-crypto):** peer signing keys resolved — E016 / D081; relay identity format — E017 / D082. Remaining e2e work is implementation (c1–c3).  
 **Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — not chat wire scope.
 
 When resolved, move rows to numbered decisions above.

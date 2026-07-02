@@ -79,7 +79,7 @@ No `index.json` in target layout (replaces legacy index + flat JSON).
 
 - Keys on local **`Contact.id`** only — **one direct thread per contact** (baseline code).
 - Does not consider public vs E2E or communicating identity — gap vs target design.
-- Target (D056, D079): wire routes by `sender_contact_id` (identity **value**) + `route.channel` → `ChatTargetKey`; local `thread_id` and `Contact.id` not on envelope.
+- Target (D056, D079, D082): wire routes by `sender_contact_id` (identity **value**, e.g. `relay:abc123`) + `route.channel` → `ChatTargetKey`; local `thread_id` and `Contact.id` not on envelope.
 
 ### JsonThreadStore performance gaps (legacy)
 

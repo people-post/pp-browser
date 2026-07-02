@@ -107,8 +107,8 @@ Address book and wire routing use **different id spaces**:
 | Concept | Scope | Example | On wire? |
 |---------|-------|---------|----------|
 | **`Contact.id`** | Local address book | UUID in `contacts.json` | **No** |
-| **`ContactId`** | Identity handle on a contact | `{ kind: relay_user, value: "relay:abc" }` | **Value** only, when used for messaging |
-| **`ChatTargetKey`** | Long-lived P2P conversation | `(relay_user, "relay:bob", e2e)` | **Implied** by `sender_contact_id` + `route` |
+| **`ContactId`** | Identity handle on a contact | `{ kind: relay_user, value: "relay:abc123" }` | **Value** only, when used for messaging |
+| **`ChatTargetKey`** | Long-lived P2P conversation | `(relay_user, "relay:bob456", e2e)` | **Implied** by `sender_contact_id` + `route` |
 | **`local:self`** | Local transcript sentinel | Outbound row UI | **No** |
 
 A **Contact** represents a person or entity (human or non-human later). **`Contact.ids[]`** may include `relay_user`, `peer_id`, `blockchain`, and `custom` entries — only some are **messaging identities**. v1 relay path uses **`ContactIdKind::RelayUser`** values on the wire.
@@ -120,7 +120,7 @@ A **Contact** represents a person or entity (human or non-human later). **`Conta
 - Identity rotation (new `relay_user` id) → **new thread**; old thread remains historical. Key rotation **within** the same identity → same thread, **`session_epoch++`** (D014).
 - **`threads.participant_contact_ids`** = local **Contact.id** (UI). **`chat_targets`** PK = communicating identity + channel.
 
-**Wire field note:** JSON key **`sender_contact_id`** is historical naming — it carries the sender's **communicating identity value** (e.g. `relay:user:abc`), not local `Contact.id`.
+**Wire field note:** JSON key **`sender_contact_id`** is historical naming — it carries the sender's **communicating identity value** (e.g. `relay:abc123`), not local `Contact.id`. Format: [D082](DECISIONS.md#d082--relay-user-communicating-identity-string-format).
 
 **Signing keys (E016, D081):** Ed25519 envelope verify uses **`PeerSigningKeyStore`** keyed by **`(peer_identity_kind, peer_identity_value)`** — not `Contact.id`, not on wire. Directory supplies **`signing_public_key_b64`** at add-contact; lazy relay lookup for D080 ephemeral public. See [e2e DESIGN § Peer signing keys](../e2e-message-crypto/DESIGN.md#peer-signing-keys-e016).
 
@@ -149,7 +149,7 @@ Canonical name for **`(peer_identity_kind, peer_identity_value, channel)`** — 
 | Field | Type | Notes |
 |-------|------|-------|
 | `peer_identity_kind` | string / enum | `relay_user`, `peer_id`, … — v1 relay uses `relay_user` |
-| `peer_identity_value` | string | Routable id, e.g. `relay:user:abc`, libp2p peer id |
+| `peer_identity_value` | string | Routable id, e.g. `relay:abc123`, libp2p peer id (D082) |
 | `channel` | `public_relay` \| `e2e` | Channel with that identity |
 
 **Store map key (string):** `identity:{kind}:{value}|channel:{channel}` — `sessions.json`, logs, tests.
@@ -223,7 +223,7 @@ Target struct in `ThreadTypes.h`. **v2a-p2p** removes legacy fields.
 | `envelope_version` | **v2a-p2p** | **1** in v1; signed (D072) |
 | `message_id` | v2a-p2p | |
 | `sender_relay_id` | v2a-p2p | |
-| `sender_contact_id` | **v2a-p2p** | Sender **communicating identity value** on wire (D079) — e.g. `relay:…` |
+| `sender_contact_id` | **v2a-p2p** | Sender **communicating identity value** on wire (D079, D082) — e.g. `relay:abc123` |
 | `route` | **v2a-p2p** | `{ kind, channel }` (D056) |
 | `body.content` | **v2a-p2p** | Minimal **ChatPayload** JSON (D063) — not flat `body.text` |
 | `sender_seq`, `session_epoch` | **v6** | E2E only |
@@ -287,7 +287,7 @@ One schema for disk, relay plaintext (`public_relay`), and AEAD plaintext (`e2e`
   "payload": {
     "contact_id": "contact:abc",
     "display_name": "Alice",
-    "relay_user_id": "relay:user:xyz"
+    "relay_user_id": "relay:abc123"
   }
 }
 ```
@@ -660,8 +660,8 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 {
   "envelope_version": 1,
   "message_id": "uuid",
-  "sender_relay_id": "relay:…",
-  "sender_contact_id": "relay:user:alice",
+  "sender_relay_id": "relay:alice123",
+  "sender_contact_id": "relay:alice123",
   "route": {
     "kind": "direct",
     "channel": "public_relay"
@@ -685,8 +685,8 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 {
   "envelope_version": 1,
   "message_id": "uuid",
-  "sender_relay_id": "relay:…",
-  "sender_contact_id": "relay:user:alice",
+  "sender_relay_id": "relay:alice123",
+  "sender_contact_id": "relay:alice123",
   "route": { "kind": "direct", "channel": "e2e" },
   "sender_seq": 42,
   "session_epoch": 1,
@@ -706,7 +706,7 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 |-------|----------|-------|
 | `envelope_version` | yes | **1** in v1; included in signature canonical bytes (D072) |
 | `message_id` | yes | UUID dedup (D034) |
-| `sender_contact_id` | yes | Sender **communicating identity value** (D079) — e.g. `relay:…` |
+| `sender_contact_id` | yes | Sender **communicating identity value** (D079, D082) — e.g. `relay:abc123` |
 | `route.kind` | yes | `direct` **`[v1]`**; `group` **`[post-v1]`** |
 | `route.channel` | yes when `kind=direct` | `public_relay` \| `e2e` |
 | `sender_seq`, `session_epoch` | E2E only | Omitted on public (D045) |

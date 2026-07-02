@@ -83,7 +83,7 @@ Canonical **`ChatTargetKey`** — matches [chat-storage DESIGN § ChatTargetKey]
 | Field | Notes |
 |-------|-------|
 | `peer_identity_kind` | `relay_user`, `peer_id`, … — v1 relay uses `relay_user` |
-| `peer_identity_value` | Routable id string, e.g. `relay:user:abc` |
+| `peer_identity_value` | Routable id string, e.g. `relay:abc123` (D082 / [E017](DECISIONS.md#e017--relay-user-identity-value-format)) |
 | `channel` | `e2e` \| `public_relay` |
 
 | Use | Key |
@@ -206,8 +206,8 @@ Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** **`envelope_versio
 {
   "envelope_version": 1,
   "message_id": "uuid",
-  "sender_relay_id": "relay:…",
-  "sender_contact_id": "relay:user:alice",
+  "sender_relay_id": "relay:alice123",
+  "sender_contact_id": "relay:alice123",
   "route": { "kind": "direct", "channel": "e2e" },
   "sender_seq": 42,
   "session_epoch": 1,
@@ -439,7 +439,7 @@ Do **not** use this keypair outside tests.
 | Input | Value |
 |-------|-------|
 | `message_id` | `550e8400-e29b-41d4-a716-446655440000` |
-| `sender_contact_id` | `relay:user:alice` |
+| `sender_contact_id` | `relay:alice123` |
 | `route.kind` | `direct` → `route_kind = 0` |
 | `route.channel` | `public_relay` → `channel = 0` |
 | `timestamp` | `1719662400123` (Unix ms) |
@@ -448,15 +448,15 @@ Do **not** use this keypair outside tests.
 | `body.content` | canonical JSON above |
 | `body_hash` input | `0x01` \|\| canonical JSON bytes |
 | **`body_hash` (hex)** | `db8f17cda6b57a0feff3b6aa09ca17e7ca15b32309cc85d555531c804e2c7f10` |
-| **`sign_bytes` (hex, 146 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100000000019063ddd27b000000000000000000000000db8f17cda6b57a0feff3b6aa09ca17e7ca15b32309cc85d555531c804e2c7f10002435353065383430302d653239622d343164342d613731362d343436363535343430303030001072656c61793a757365723a616c696365` |
-| **`signature` (base64)** | `cAtYF/Zs/O663qTNQztUujP/ldJpcNOnV5LR8bAXvFAnuj+DX/9aD/THN1F3sUn5hnHE+W90xxipN/xRpyxlDg==` |
+| **`sign_bytes` (hex, 143 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100000000019063ddd27b000000000000000000000000db8f17cda6b57a0feff3b6aa09ca17e7ca15b32309cc85d555531c804e2c7f10002435353065383430302d653239622d343164342d613731362d343436363535343430303030000e72656c61793a616c696365313233` |
+| **`signature` (base64)** | `sgoePjY8ExAV+yVono5XyO6UUosHP0ka4Ham8f/2sKlUQwJvzbq1VFX+DWJlDVGZArw1MyPzQp44/H5+2zwGCA==` |
 
 #### Vector 2 — `e2e`
 
 | Input | Value |
 |-------|-------|
 | `message_id` | `660e8400-e29b-41d4-a716-446655440001` |
-| `sender_contact_id` | `relay:user:alice` |
+| `sender_contact_id` | `relay:alice123` |
 | `route.kind` | `direct` → `route_kind = 0` |
 | `route.channel` | `e2e` → `channel = 1` |
 | `timestamp` | `1719662400456` (Unix ms) |
@@ -466,8 +466,8 @@ Do **not** use this keypair outside tests.
 | E2E blob (decoded, hex) | `01000102030405060708090a0b0c0d0e0f1011121314151617aabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabbaabb` |
 | `body_hash` input | `0x02` \|\| decoded blob bytes |
 | **`body_hash` (hex)** | `d32b5a0addb1b6980d44f511e4c6f6e09a7d32a3375e4f66a7de709afc4daeaf` |
-| **`sign_bytes` (hex, 146 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001d32b5a0addb1b6980d44f511e4c6f6e09a7d32a3375e4f66a7de709afc4daeaf002436363065383430302d653239622d343164342d613731362d343436363535343430303031001072656c61793a757365723a616c696365` |
-| **`signature` (base64)** | `nwtJJnnidjH0TpCi2I8X4BhVc0Fzc4NkZZNa0JUb0S53WHxLsD8ClU3I60IGVGHfgZxQEhQSVqXgcXjrBwOrAw==` |
+| **`sign_bytes` (hex, 143 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001d32b5a0addb1b6980d44f511e4c6f6e09a7d32a3375e4f66a7de709afc4daeaf002436363065383430302d653239622d343164342d613731362d343436363535343430303031000e72656c61793a616c696365313233` |
+| **`signature` (base64)** | `teBg5BIfz/0qp4XslKHZRC2jIpD5N/JrWVVVFknLDLaJ8xVGcJ2JG/p8gd/qunjWNaNqcu5QI4Y0jnd+yU57BA==` |
 
 E2E blob layout for this fixture: `[payload_version=0x01][nonce=0x00..0x17][ciphertext+tag=0xAABB×16]` (57 bytes total). Content is arbitrary test material — not a valid AEAD ciphertext.
 

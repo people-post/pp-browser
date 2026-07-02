@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Generate frozen E014 Ed25519 signing test vectors for DESIGN.md."""
+"""Generate frozen E014 Ed25519 signing test vectors for DESIGN.md.
+
+Canonical sender_contact_id fixture: relay:alice123 (D082 / E017).
+"""
 
 import base64
 import hashlib
@@ -47,7 +50,7 @@ def main() -> None:
         0,
         0,
         "550e8400-e29b-41d4-a716-446655440000",
-        "relay:user:alice",
+        "relay:alice123",
     )
 
     e2e_blob = bytes([0x01]) + bytes(range(24)) + bytes([0xAA, 0xBB] * 16)
@@ -59,7 +62,7 @@ def main() -> None:
         1,
         1,
         "660e8400-e29b-41d4-a716-446655440001",
-        "relay:user:alice",
+        "relay:alice123",
     )
 
     # TEST ONLY — deterministic 32-byte Ed25519 private key (do not use in production).

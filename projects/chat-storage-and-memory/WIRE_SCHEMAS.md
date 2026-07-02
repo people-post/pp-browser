@@ -5,7 +5,7 @@
 
 **Related:** [e2e-message-crypto/DESIGN.md](../e2e-message-crypto/DESIGN.md) (AAD layout, ciphertext), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md).
 
-**Identity (D079):** Wire **`sender_contact_id`** carries the sender's **communicating identity value** (e.g. `relay:user:abc`) — not local `Contact.id`. **`Contact.id`** is address-book only.
+**Identity (D079, D082):** Wire **`sender_contact_id`** carries the sender's **communicating identity value** (e.g. `relay:abc123`) — not local `Contact.id`. **`Contact.id`** is address-book only. v1 relay: **`peer_identity_kind` = `relay_user`**, **`peer_identity_value` = `relay:` + opaque id** (relay-assigned, URL-safe; see [DECISIONS D082](DECISIONS.md#d082--relay-user-communicating-identity-string-format)).
 
 ---
 
@@ -28,8 +28,8 @@ Signed outer wrapper. **No `thread_id`.** See [DESIGN § Relay envelope](DESIGN.
 {
   "envelope_version": 1,
   "message_id": "550e8400-e29b-41d4-a716-446655440000",
-  "sender_relay_id": "relay:user:abc",
-  "sender_contact_id": "relay:user:alice",
+  "sender_relay_id": "relay:alice123",
+  "sender_contact_id": "relay:alice123",
   "route": {
     "kind": "direct",
     "channel": "public_relay"
@@ -61,8 +61,8 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 |-------|------|----------|-------|
 | `envelope_version` | integer | yes | **1** in v1. Signed (D072). Bump independently of `ChatPayload.schema_version`. |
 | `message_id` | string (UUID) | yes | Dedup key (D034) |
-| `sender_relay_id` | string | yes | Relay registration id |
-| `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — e.g. `relay:…` |
+| `sender_relay_id` | string | yes | Relay registration id; **v1:** same string as `sender_contact_id` (D082) |
+| `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — e.g. `relay:abc123` (D082) |
 | `route` | object | yes | See `Route` below |
 | `body` | object | yes | `content` (public) or `e2e` (encrypted) |
 | `sender_seq` | integer (u64) | E2E only | Omitted on public (D045) |

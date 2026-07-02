@@ -28,7 +28,7 @@ Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IR
 
 | Field | Description |
 |-------|-------------|
-| `sender_contact_id` | **Local rows:** `local:self`, `ai:assistant`. **Wire / peer rows:** communicating identity value (D079), e.g. `relay:…` |
+| `sender_contact_id` | **Local rows:** `local:self`, `ai:assistant`. **Wire / peer rows:** communicating identity value (D079, D082), e.g. `relay:abc123` |
 | `content_rml` | Rendered assistant blocks (optional) |
 | `relay_visible` | `false` for `@ai` assist (never relayed) |
 | `delivery` | `local`, `pending`, `relayed`, `failed` |
@@ -69,8 +69,8 @@ Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is r
 ```json
 {
   "message_id": "uuid",
-  "sender_relay_id": "relay:…",
-  "sender_contact_id": "relay:…",
+  "sender_relay_id": "relay:alice123",
+  "sender_contact_id": "relay:alice123",
   "route": { "kind": "direct", "channel": "public_relay" },
   "body": {
     "content": {

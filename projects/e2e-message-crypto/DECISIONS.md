@@ -175,3 +175,18 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **Do not** i
 
 **Rationale:** `sender_contact_id` on the wire is a **routing identity**, not a public key (E014, D079). Production ingest cannot verify without an explicit binding. Relay directory is the natural registry; local cache avoids per-message HTTP; OOB fingerprint matches PSK UX; lazy fetch supports D080 ephemeral public without pre-added contacts.  
 **Alternatives considered:** Directory-only verify with no local cache (rejected — offline, hot-path latency); paste-only keys with no directory (rejected — poor UX for search-driven add); encode key in relay id (rejected — wrong layer, rotation pain).
+
+---
+
+## E017 — Relay-user identity value format
+
+**Date:** 2026-07-02  
+**Cross-project:** [chat-storage D082](../chat-storage-and-memory/DECISIONS.md#d082--relay-user-communicating-identity-string-format).  
+**Decision:** When **`peer_identity_kind = relay_user`**, the identity **value** string is **`relay:<opaque_id>`** — relay-assigned, URL-safe, not derived from the signing public key. Same string in envelope **`sender_contact_id`**, AAD, signing bytes, directory hits, and **`identity.json`** after registration. **v1:** **`sender_relay_id`** matches **`sender_contact_id`**.
+
+**Frozen test fixture:** `relay:alice123` (E014 vectors in DESIGN.md).
+
+**Rejected:** `relay:user:<id>` (draft nomenclature); pubkey-prefix bootstrap on wire (E016).
+
+**Rationale:** Exact UTF-8 byte match across peers is required for AAD and signature verify; one canonical format avoids silent interoperability failure.  
+**Alternatives:** See D082.

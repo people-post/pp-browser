@@ -58,7 +58,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 4. Ed25519 signing without inbound verify on relay poll (no peer key store yet — E016).
 5. Messaging schema lacks `channel`, `sender_seq`, `session_epoch` (chat-storage tracks).
 6. PQ: only classical Ed25519 for envelopes; no hybrid plan in code (documented in DESIGN).
-7. **Identity model:** baseline code keys threads on local `Contact.id`; target uses identity-keyed `ChatTargetKey` (chat-storage D079) with wire `sender_contact_id` = communicating identity value.
+7. **Identity model:** baseline code keys threads on local `Contact.id`; target uses identity-keyed `ChatTargetKey` (chat-storage D079) with wire `sender_contact_id` = communicating identity value (`relay:<opaque_id>` per D082/E017).
 
 ## Design completion checklist (phase d0)
 
