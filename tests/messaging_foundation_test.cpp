@@ -36,7 +36,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   message.sender_contact_id = kLocalSelfContactId;
   message.text = "hello";
   (void)store.AppendMessage(message);
-  EXPECT_TRUE(store.HasMessageId("m1"));
+  EXPECT_TRUE(store.HasMessageId("t1", "m1"));
 
   RelayEnvelope envelope;
   envelope.thread_id = "t1";

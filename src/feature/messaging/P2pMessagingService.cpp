@@ -85,7 +85,7 @@ void P2pMessagingService::NotifyDeliveryIssue(const Thread& thread, const std::s
 
 void P2pMessagingService::ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
                                           const std::string& error_message) {
-  auto messages = store_.GetMessages(thread_id);
+  auto messages = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!messages) {
     return;
   }
@@ -243,7 +243,7 @@ void P2pMessagingService::PollAndMerge() {
 
     bool changed = false;
     for (const RelayEnvelope& envelope : poll->messages) {
-      if (store_.HasMessageId(envelope.message_id)) {
+      if (store_.HasMessageId(envelope.thread_id, envelope.message_id)) {
         continue;
       }
 

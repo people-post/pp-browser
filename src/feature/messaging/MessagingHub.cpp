@@ -93,7 +93,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   std::error_code ec;
   std::filesystem::create_directories(data_dir_, ec);
 
-  store_ = std::make_unique<JsonThreadStore>(data_dir_);
+  store_ = std::make_unique<SqliteThreadStore>(data_dir_);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
   identity_ = std::make_unique<IdentityStore>(data_dir_);
 

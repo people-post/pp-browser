@@ -1,5 +1,7 @@
 #include "feature/messaging/InboxController.h"
 
+#include "base/messaging/MessagingLimits.h"
+
 #include "base/ai/StructuredTextParser.h"
 #include "feature/chat/ChatFormHelper.h"
 #include "common/Utilities.h"
@@ -280,7 +282,7 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
 
 std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(const std::string& thread_id) const {
   std::vector<MessageDisplayRow> rows;
-  auto messages = store_.GetMessages(thread_id);
+  auto messages = store_.GetMessagesPage(thread_id, std::nullopt, kDefaultMessagesPageSize);
   if (!messages) {
     return rows;
   }

@@ -5,7 +5,7 @@
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/ContactActionDispatcher.h"
 #include "feature/messaging/InboxController.h"
-#include "base/messaging/JsonThreadStore.h"
+#include "base/messaging/SqliteThreadStore.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "base/net/McpDirectoryClient.h"
@@ -53,7 +53,7 @@ private:
   std::string data_dir_;
   AppConfig config_;
   AgentSession* agent_ = nullptr;
-  std::unique_ptr<JsonThreadStore> store_;
+  std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<InboxController> inbox_;

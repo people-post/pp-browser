@@ -441,7 +441,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       state->pending_entry_id = user_message.id;
     }
 
-    auto messages = state->thread_store->GetMessages(state->pending_thread_id);
+    auto messages = state->thread_store->GetMessagesForContext(state->pending_thread_id, state->config.context);
     if (!messages) {
       PushError(state, messages.error().message);
       FinishTurn(state);
@@ -466,7 +466,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
     state->pending_entry_id = util::GenerateUuid();
 
-    auto messages = state->thread_store->GetMessages(state->pending_thread_id);
+    auto messages = state->thread_store->GetMessagesForContext(state->pending_thread_id, state->config.context);
     if (!messages) {
       PushError(state, messages.error().message);
       FinishTurn(state);

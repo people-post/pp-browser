@@ -19,6 +19,11 @@ configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/src/libsodium/include/sodium/version.h.in
   ${CMAKE_CURRENT_BINARY_DIR}/generated/sodium/version.h
 )
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/libsodium/include/sodium/export.h
+  ${CMAKE_CURRENT_BINARY_DIR}/generated/sodium/export.h
+  COPYONLY
+)
 
 add_library(${PROJECT_NAME}
   src/libsodium/crypto_aead/aegis128l/aead_aegis128l.c
@@ -151,6 +156,7 @@ add_library(${PROJECT_NAME}
   src/libsodium/crypto_stream/salsa20/ref/salsa20_ref.h
   src/libsodium/crypto_stream/salsa20/stream_salsa20.c
   src/libsodium/crypto_stream/salsa20/stream_salsa20.h
+  src/libsodium/crypto_stream/salsa20/ref/salsa20_ref.c
   src/libsodium/crypto_stream/salsa20/xmm6/salsa20_xmm6.c
   src/libsodium/crypto_stream/salsa20/xmm6/salsa20_xmm6.h
   src/libsodium/crypto_stream/salsa20/xmm6int/salsa20_xmm6int-avx2.c
@@ -240,6 +246,7 @@ add_library(${PROJECT_NAME}
   src/libsodium/include/sodium/runtime.h
   src/libsodium/include/sodium/utils.h
   src/libsodium/randombytes/randombytes.c
+  src/libsodium/randombytes/sysrandom/randombytes_sysrandom.c
   src/libsodium/sodium/codecs.c
   src/libsodium/sodium/core.c
   src/libsodium/sodium/runtime.c

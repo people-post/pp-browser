@@ -138,6 +138,7 @@ nlohmann::json ThreadMessageToJson(const ThreadMessage& message) {
   nlohmann::json json = {{"id", message.id},
                          {"thread_id", message.thread_id},
                          {"sender_contact_id", message.sender_contact_id},
+                         {"display_order", message.display_order},
                          {"text", message.text},
                          {"timestamp", message.timestamp},
                          {"delivery", MessageDeliveryToString(message.delivery)},
@@ -159,6 +160,9 @@ ThreadMessage ThreadMessageFromJson(const nlohmann::json& json) {
   }
   if (json.contains("sender_contact_id") && json["sender_contact_id"].is_string()) {
     message.sender_contact_id = json["sender_contact_id"].get<std::string>();
+  }
+  if (json.contains("display_order") && json["display_order"].is_number_integer()) {
+    message.display_order = json["display_order"].get<int64_t>();
   }
   if (json.contains("text") && json["text"].is_string()) {
     message.text = json["text"].get<std::string>();

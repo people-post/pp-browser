@@ -8,6 +8,10 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/ai/conversation/tests
   ${CMAKE_BINARY_DIR}/tests/base_ai_conversation_tests)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/ai/mcp/tests
   ${CMAKE_BINARY_DIR}/tests/base_ai_mcp_tests)
+add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/messaging/tests
+  ${CMAKE_BINARY_DIR}/tests/base_messaging_tests)
+add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/crypto/tests
+  ${CMAKE_BINARY_DIR}/tests/base_crypto_tests)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/data/tests
   ${CMAKE_BINARY_DIR}/tests/base_data_tests)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/net/tests

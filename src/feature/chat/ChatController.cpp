@@ -916,7 +916,7 @@ void ChatController::SendChatAction(const std::string& entry_id, int action_inde
   }
 
   const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  auto messages = MessagingHub::Instance().Store().GetMessages(thread_id);
+  auto messages = MessagingHub::Instance().Store().GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!messages) {
     return;
   }
@@ -1007,7 +1007,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
     }
     if (messaging_ready_) {
       const std::string active_thread = thread_id.empty() ? MessagingHub::Instance().Inbox().ActiveThreadId() : thread_id;
-      auto messages = MessagingHub::Instance().Store().GetMessages(active_thread);
+      auto messages = MessagingHub::Instance().Store().GetMessagesPage(active_thread, std::nullopt, 10000);
       if (messages) {
         for (ThreadMessage& message : *messages) {
           if (message.id == entry_id) {
@@ -1039,7 +1039,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
 
     if (messaging_ready_) {
       const std::string active_thread = thread_id.empty() ? MessagingHub::Instance().Inbox().ActiveThreadId() : thread_id;
-      auto messages = MessagingHub::Instance().Store().GetMessages(active_thread);
+      auto messages = MessagingHub::Instance().Store().GetMessagesPage(active_thread, std::nullopt, 10000);
       bool updated = false;
       if (messages) {
         for (ThreadMessage& message : *messages) {

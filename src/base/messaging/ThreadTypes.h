@@ -16,6 +16,8 @@ enum class ThreadKind { Ai, Direct, Group };
 
 enum class MessageDelivery { Local, Pending, Relayed, Failed };
 
+enum class ChatContentType { Text, System };
+
 struct Thread {
   std::string id;
   ThreadKind kind = ThreadKind::Ai;
@@ -31,6 +33,8 @@ struct ThreadMessage {
   std::string id;
   std::string thread_id;
   std::string sender_contact_id;
+  int64_t display_order = 0;
+  ChatContentType content_type = ChatContentType::Text;
   std::string text;
   std::optional<std::string> content_rml;
   std::vector<TranscriptChatAction> chat_actions;

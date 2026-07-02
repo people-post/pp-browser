@@ -39,7 +39,6 @@ Roe<void> JsonThreadStore::EnsureLoaded() const {
 
   threads_.clear();
   messages_.clear();
-  message_ids_.clear();
 
   std::ifstream index_in(IndexPath());
   if (index_in) {
@@ -66,7 +65,6 @@ Roe<void> JsonThreadStore::EnsureLoaded() const {
     for (const auto& item : root["messages"]) {
       ThreadMessage message = ThreadMessageFromJson(item);
       list.push_back(message);
-      message_ids_[message.id] = true;
     }
   }
 
@@ -194,13 +192,86 @@ Roe<ThreadMessage> JsonThreadStore::AppendMessage(const ThreadMessage& message) 
     return load.error();
   }
 
-  messages_[message.thread_id].push_back(message);
-  message_ids_[message.id] = true;
+  ThreadMessage stored = message;
+  if (stored.display_order <= 0) {
+    stored.display_order = NextDisplayOrder(message.thread_id);
+  }
+  messages_[message.thread_id].push_back(stored);
   dirty_ = true;
   if (auto save = SaveMessages(message.thread_id)) {
-    return message;
+    return stored;
   }
   return Error("Failed to append message");
+}
+
+int64_t JsonThreadStore::NextDisplayOrder(const std::string& thread_id) const {
+  const auto it = messages_.find(thread_id);
+  if (it == messages_.end() || it->second.empty()) {
+    return 1;
+  }
+  int64_t max_order = 0;
+  for (const ThreadMessage& message : it->second) {
+    max_order = std::max(max_order, message.display_order);
+  }
+  return max_order + 1;
+}
+
+Roe<std::vector<ThreadMessage>> JsonThreadStore::GetMessagesPage(const std::string& thread_id,
+                                                                 std::optional<int64_t> before_display_order,
+                                                                 size_t limit) const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  const auto it = messages_.find(thread_id);
+  if (it == messages_.end()) {
+    return std::vector<ThreadMessage>{};
+  }
+  std::vector<ThreadMessage> sorted = it->second;
+  std::sort(sorted.begin(), sorted.end(),
+            [](const ThreadMessage& a, const ThreadMessage& b) { return a.display_order < b.display_order; });
+  std::vector<ThreadMessage> page;
+  for (auto rit = sorted.rbegin(); rit != sorted.rend() && page.size() < limit; ++rit) {
+    if (before_display_order.has_value() && rit->display_order >= *before_display_order) {
+      continue;
+    }
+    page.push_back(*rit);
+  }
+  std::reverse(page.begin(), page.end());
+  return page;
+}
+
+Roe<std::vector<ThreadMessage>> JsonThreadStore::GetMessagesForContext(const std::string& thread_id,
+                                                                       const ContextBudget& budget) const {
+  return GetMessagesPage(thread_id, std::nullopt, static_cast<size_t>(budget.max_turn_pairs * 2));
+}
+
+Roe<void> JsonThreadStore::ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) {
+  (void)options;
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  messages_[thread_id].clear();
+  dirty_ = true;
+  if (SaveMessages(thread_id)) {
+    for (Thread& thread : threads_) {
+      if (thread.id == thread_id) {
+        thread.preview.clear();
+        thread.unread_count = 0;
+        break;
+      }
+    }
+    (void)SaveIndex();
+    return {};
+  }
+  return Error("Failed to clear messages");
+}
+
+Roe<std::vector<std::pair<std::string, std::string>>> JsonThreadStore::ListPendingOutbox() const {
+  return std::vector<std::pair<std::string, std::string>>{};
 }
 
 Roe<bool> JsonThreadStore::UpdateMessage(const ThreadMessage& message) {
@@ -228,13 +299,22 @@ Roe<bool> JsonThreadStore::UpdateMessage(const ThreadMessage& message) {
   return false;
 }
 
-Roe<bool> JsonThreadStore::HasMessageId(const std::string& message_id) const {
+Roe<bool> JsonThreadStore::HasMessageId(const std::string& thread_id, const std::string& message_id) const {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();
   if (!load) {
     return load.error();
   }
-  return message_ids_.find(message_id) != message_ids_.end();
+  const auto it = messages_.find(thread_id);
+  if (it == messages_.end()) {
+    return false;
+  }
+  for (const ThreadMessage& message : it->second) {
+    if (message.id == message_id) {
+      return true;
+    }
+  }
+  return false;
 }
 
 Roe<bool> JsonThreadStore::DeleteThread(const std::string& thread_id) {
@@ -252,9 +332,6 @@ Roe<bool> JsonThreadStore::DeleteThread(const std::string& thread_id) {
 
   const auto message_it = messages_.find(thread_id);
   if (message_it != messages_.end()) {
-    for (const ThreadMessage& message : message_it->second) {
-      message_ids_.erase(message.id);
-    }
     messages_.erase(message_it);
   }
 

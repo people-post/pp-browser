@@ -40,9 +40,18 @@ set(PP_BROWSER_BASE_SOURCES
   people/Ed25519Signer.cpp
   people/IdentityStore.cpp
   messaging/AtAiParser.cpp
+  messaging/ChatPayloadCodec.cpp
   messaging/JsonThreadStore.cpp
   messaging/MessagingJson.cpp
   messaging/PeopleDiscoveryBlocks.cpp
+  messaging/SqliteThreadStore.cpp
+  crypto/CryptoUtil.cpp
+  crypto/PskFingerprint.cpp
+  crypto/SessionKeyDeriver.cpp
+  crypto/CanonicalAad.cpp
+  crypto/MessageCipher.cpp
+  crypto/EncryptedPayload.cpp
+  crypto/ReplayWindow.cpp
   ai/LlmClient.cpp
   ai/PromptBuilder.cpp
   ai/RmlValidator.cpp
@@ -75,6 +84,8 @@ target_link_libraries(pp_base PUBLIC
   ${PP_BROWSER_SDL3_TARGET}
   nlohmann_json::nlohmann_json
   CURL::libcurl
+  SQLite::SQLite3
+  sodium
 )
 if(TARGET OpenSSL::Crypto)
   target_link_libraries(pp_base PUBLIC OpenSSL::Crypto)
