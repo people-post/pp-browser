@@ -10,4 +10,9 @@ inline constexpr size_t kMaxRelayEnvelopeBytes = 256 * 1024;
 inline constexpr size_t kDefaultMessagesPageSize = 100;
 inline constexpr size_t kMaxOpenThreadDbs = 16;
 
+/** D040 — AI compaction (v3). */
+inline constexpr int kCompactionTurnThreshold = 20;
+inline constexpr size_t kMaxSummaryBytes = 8 * 1024;
+inline constexpr int kCompactionMinTurnsKept = 6;
+
 } // namespace pbr

@@ -88,7 +88,7 @@ Wave 7 (optional post-v1)
 
 - **Wave 1:** AI thread survives restart; no `GetMessages` in `src/feature/` (D057); e2e c1 vector tests green — **done**
 - **Wave 2:** New relay envelope on send/receive (D063); per-thread `HasMessageId`; outbox reconciliation — **done** (plaintext payload until c2; interim JSON signing)
-- **Wave 3:** Summary in LLM context (v3); remote `content_rml` stripped (v4)
+- **Wave 3:** Summary in LLM context (v3 core); remote `content_rml` stripped (v4)
 - **Wave 4:** Private `e2e` gap repair + user sync; integrity UX; cross-cutting tests in [§ Cross-cutting tasks](#cross-cutting-tasks)
 - **Wave 5–6:** Two devices exchange ciphertext via relay; PSK verify + rotation (c3)
 
@@ -269,20 +269,20 @@ Existing foundation this project builds on.
 
 ### Memory storage
 
-- [ ] **`ConversationSummary`** JSON schema + `memory` key namespace (D070)
-- [ ] `IThreadStore::GetThreadMemory` / `SetThreadMemory`
-- [ ] Wire `SlidingWindowContextPolicy` to inject summary when present
+- [x] **`ConversationSummary`** JSON schema + `memory` key namespace (D070)
+- [x] `IThreadStore::GetThreadMemory` / `SetThreadMemory` / `ClearThreadMemory`
+- [x] Wire `ThreadContextPolicy` to inject summary when present (D039)
 
 ### Compaction (minimal v3 — D040)
 
-- [ ] `ICompactionService` — when text turn count since last summary > **`kCompactionTurnThreshold` (20)**
-- [ ] Async job after turn completes; `kMaxSummaryBytes` (8 KiB) on persist
-- [ ] `GetMessagesForContext` injects summary + tail (`kCompactionMinTurnsKept` = 6)
-- [ ] **`ThreadContextPolicy`:** filter to `content_type=text` (+ selected `system`); compaction eligibility ignores non-text rows (D039, D057)
+- [x] `ThreadCompactionService` — when text turn count since last summary > **`kCompactionTurnThreshold` (20)**
+- [x] Async job after turn completes; `kMaxSummaryBytes` (8 KiB) on persist
+- [x] `GetMessagesForContext` respects compaction cursor + tail (`kCompactionMinTurnsKept` = 6)
+- [x] **`ThreadContextPolicy`:** filter to `content_type=text` (+ selected `system`) via store query (D039, D057)
 
 ### UX
 
-- [ ] **Forget what AI learned** — `DELETE FROM memory` (or summary key), keeps `messages`
+- [ ] **Forget what AI learned** — `DELETE FROM memory` (or summary key), keeps `messages` — store API done; menu deferred
 - [ ] Clear history: optional **Also forget what AI learned** checkbox (D024)
 - [ ] P2P disclosure copy on clear levels
 

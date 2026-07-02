@@ -9,6 +9,7 @@
 #include "feature/ai/TurnExecutor.h"
 #include "feature/ai/TurnPlanner.h"
 #include "base/ai/conversation/Conversation.h"
+#include "base/ai/conversation/ThreadCompactionService.h"
 #include "base/ai/conversation/ThreadContextPolicy.h"
 #include "base/ai/conversation/TurnCoordinator.h"
 #include "common/Logger.h"
@@ -80,6 +81,7 @@ struct AgentSession::Impl {
   std::chrono::steady_clock::time_point synthesis_started{};
 
   IThreadStore* thread_store = nullptr;
+  std::unique_ptr<ThreadCompactionService> compaction;
   std::string pending_thread_id;
   AgentTurnMode turn_mode = AgentTurnMode::Conversation;
 };
@@ -184,8 +186,12 @@ void AgentSession::FinishAssistantOutput(const std::shared_ptr<Impl>& state, con
   }
 
   std::string assistant_message_id;
+  const std::string thread_id = state->pending_thread_id;
   PersistAssistantToThread(state, assistant_raw, &assistant_message_id);
   PushAssistantReady(state, assistant_message_id, assistant_raw, finish_reason);
+  if (state->turn_mode == AgentTurnMode::Thread && state->compaction && !thread_id.empty()) {
+    state->compaction->MaybeCompactAsync(thread_id);
+  }
   FinishTurn(state);
 }
 
@@ -448,10 +454,15 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       return;
     }
 
+    std::optional<ConversationSummary> summary;
+    if (auto memory = state->thread_store->GetThreadMemory(state->pending_thread_id)) {
+      summary = *memory;
+    }
+
     ThreadContextPolicy policy(state->config.context);
     const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt());
-    const ContextBuildResult built =
-        policy.Build(*messages, system_prompt, state->pending_user_text, state->pending_user_payload);
+    const ContextBuildResult built = policy.Build(*messages, system_prompt, state->pending_user_text,
+                                                  state->pending_user_payload, summary);
     state->turn_scratch = built.messages;
     RunTurnPipeline(state);
     return;
@@ -473,8 +484,13 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       return;
     }
 
+    std::optional<ConversationSummary> summary;
+    if (auto memory = state->thread_store->GetThreadMemory(state->pending_thread_id)) {
+      summary = *memory;
+    }
+
     ThreadContextPolicy policy(state->config.context);
-    state->turn_scratch = policy.BuildAssistContext(*messages, state->pending_user_text);
+    state->turn_scratch = policy.BuildAssistContext(*messages, state->pending_user_text, summary);
     if (!state->turn_scratch.empty() && state->turn_scratch.front().role == "system") {
       state->turn_scratch.front().content =
           PromptBuilder::BuildScopedAssistSystemPrompt(state->tools.SummaryForPrompt());
@@ -491,6 +507,14 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
   state->turn_scratch = snapshot.messages;
   RunTurnPipeline(state);
+}
+
+void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) {
+  if (state->thread_store && state->llm) {
+    state->compaction = std::make_unique<ThreadCompactionService>(*state->thread_store, state->llm.get());
+  } else {
+    state->compaction.reset();
+  }
 }
 
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
@@ -510,6 +534,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   state->tools = ToolRegistry::BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
                                                custom_prefixes);
   state->configured = true;
+  RefreshCompactionService(state);
 
   logging::getLogger("AgentSession").info << "Agent configured with " << state->tools.Tools().size() << " tool(s)";
   for (const ToolDescriptor& tool : state->tools.Tools()) {
@@ -572,6 +597,7 @@ bool AgentSession::SetAssistantDisplay(const std::string& entry_id, const std::s
 
 void AgentSession::SetThreadStore(IThreadStore* store) {
   impl_->thread_store = store;
+  RefreshCompactionService(impl_);
 }
 
 void AgentSession::Submit(const std::string& user_text, std::optional<std::string> user_payload) {

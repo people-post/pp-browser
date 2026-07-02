@@ -117,6 +117,16 @@ jobs:
 
   android:
     runs-on: ubuntu-24.04
+    env:
+      # Set before setup-java / Gradle daemon so native builds inherit ccache config.
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: true
+      CCACHE_COMPILERCHECK: string:android-ndk-r27.0.12077973
+      CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
+      CCACHE_MAXSIZE: 10G
+      ORG_GRADLE_PROJECT_ppBrowserCompilerCache: ON
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
 
     steps:
       - uses: actions/checkout@v4
@@ -139,16 +149,13 @@ jobs:
 
       - name: Ensure Android cache directories exist
         run: |
-          mkdir -p "$HOME/.cache/ccache"
+          mkdir -p "$CCACHE_DIR"
           mkdir -p "$HOME/.gradle/caches"
           mkdir -p "$HOME/.gradle/wrapper"
           mkdir -p "$GITHUB_WORKSPACE/android/.gradle"
           mkdir -p "$GITHUB_WORKSPACE/android/build"
-          chmod -R u+rwX "$HOME/.cache/ccache" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle" "$GITHUB_WORKSPACE/android/build"
-          echo "CCACHE_DIR=$HOME/.cache/ccache" >> "$GITHUB_ENV"
-          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
-          echo "CCACHE_NOHASHDIR=true" >> "$GITHUB_ENV"
-          echo "CCACHE_COMPILERCHECK=string:android-ndk-r27.0.12077973" >> "$GITHUB_ENV"
+          mkdir -p "$GITHUB_WORKSPACE/android/app/.cxx"
+          chmod -R u+rwX "$CCACHE_DIR" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle" "$GITHUB_WORKSPACE/android/build" "$GITHUB_WORKSPACE/android/app/.cxx"
 
       - name: Restore Android Gradle cache
         uses: actions/cache@v4
@@ -158,28 +165,32 @@ jobs:
             ~/.gradle/wrapper
             android/.gradle
             android/build
-          key: ${{ runner.os }}-android-gradle-v1-${{ hashFiles('android/build.gradle*', 'android/settings.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+            android/app/.cxx
+          key: ${{ runner.os }}-android-gradle-v2-${{ hashFiles('android/build.gradle*', 'android/settings.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
+            ${{ runner.os }}-android-gradle-v2-
             ${{ runner.os }}-android-gradle-v1-
 
       - name: Restore Android ccache
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-android-ccache-v2-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
+          key: ${{ runner.os }}-android-ccache-v3-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
           restore-keys: |
+            ${{ runner.os }}-android-ccache-v3-
             ${{ runner.os }}-android-ccache-v2-
 
       - name: ccache stats (pre-build)
         run: |
-          ccache --zero-stats || true
+          echo "=== restored ccache (before zero-stats) ==="
           ccache --show-stats || true
+          ccache --print-config 2>/dev/null || true
+          ccache --zero-stats || true
 
       - name: Build debug APK
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973
-          ORG_GRADLE_PROJECT_ppBrowserCompilerCache: "ON"
         run: ./scripts/android_build.sh apk
 
       - name: ccache stats (post-build)

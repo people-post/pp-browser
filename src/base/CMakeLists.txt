@@ -41,6 +41,7 @@ set(PP_BROWSER_BASE_SOURCES
   people/IdentityStore.cpp
   messaging/AtAiParser.cpp
   messaging/ChatPayloadCodec.cpp
+  messaging/ConversationSummaryCodec.cpp
   messaging/DirectChatTarget.cpp
   messaging/RelayWirePayload.cpp
   messaging/JsonThreadStore.cpp
@@ -64,6 +65,7 @@ set(PP_BROWSER_BASE_SOURCES
   ai/WorkingSetPolicy.cpp
   ai/conversation/Conversation.cpp
   ai/conversation/SlidingWindowContextPolicy.cpp
+  ai/conversation/ThreadCompactionService.cpp
   ai/conversation/ThreadContextPolicy.cpp
   ai/conversation/TurnCoordinator.cpp
   ai/conversation/UserMessageFormatter.cpp

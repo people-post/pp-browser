@@ -31,6 +31,17 @@ public:
   virtual Roe<std::vector<ThreadMessage>> GetMessagesForContext(const std::string& thread_id,
                                                                 const ContextBudget& budget) const = 0;
 
+  /** Durable agent memory (v3) — thread.db memory key `summary` (D070). */
+  virtual Roe<std::optional<ConversationSummary>> GetThreadMemory(const std::string& thread_id) const = 0;
+  virtual Roe<void> SetThreadMemory(const std::string& thread_id, const ConversationSummary& summary) = 0;
+  virtual Roe<void> ClearThreadMemory(const std::string& thread_id) = 0;
+  /** Text/system rows with display_order strictly greater than cursor (D040 eligibility). */
+  virtual Roe<int64_t> CountContextEligibleMessagesAfter(const std::string& thread_id,
+                                                         int64_t after_display_order) const = 0;
+  /** Chronological text/system rows after cursor for compaction input. */
+  virtual Roe<std::vector<ThreadMessage>> GetContextEligibleMessagesAfter(const std::string& thread_id,
+                                                                          int64_t after_display_order) const = 0;
+
   virtual Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) = 0;
   virtual Roe<bool> UpdateMessage(const ThreadMessage& message) = 0;
   virtual Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const = 0;

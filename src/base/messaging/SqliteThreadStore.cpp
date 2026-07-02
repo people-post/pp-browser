@@ -1,6 +1,7 @@
 #include "base/messaging/SqliteThreadStore.h"
 
 #include "base/messaging/ChatPayloadCodec.h"
+#include "base/messaging/ConversationSummaryCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 
@@ -640,39 +641,180 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesForContext(const s
   if (!thread_db) {
     return thread_db.error();
   }
+
+  int64_t compaction_cursor = 0;
+  if (auto memory = GetThreadMemory(thread_id)) {
+    if (memory->has_value() && memory->value().compacted_through_display_order.has_value()) {
+      compaction_cursor = *memory->value().compacted_through_display_order;
+    }
+  } else {
+    return memory.error();
+  }
+
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, content_rml, "
       "user_payload, chat_actions, timestamp, relay_visible, delivery FROM messages "
-      "WHERE content_type IN ('text', 'system') ORDER BY display_order DESC;";
+      "WHERE content_type IN ('text', 'system') AND display_order > ? ORDER BY display_order DESC;";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare context query");
   }
+  sqlite3_bind_int64(stmt, 1, compaction_cursor);
 
-  std::vector<ThreadMessage> selected;
-  int char_budget = budget.max_recent_chars;
-  int turn_pairs = 0;
+  std::vector<ThreadMessage> fetched;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
-    if (turn_pairs >= budget.max_turn_pairs * 2) {
-      break;
-    }
     auto message = ReadMessageRow(stmt);
     if (!message) {
       sqlite3_finalize(stmt);
       return message.error();
     }
     message->thread_id = thread_id;
-    const int line_size = static_cast<int>(message->text.size() + message->sender_contact_id.size() + 2);
-    if (char_budget - line_size < 0) {
+    fetched.push_back(std::move(*message));
+  }
+  sqlite3_finalize(stmt);
+
+  const size_t min_keep = static_cast<size_t>(kCompactionMinTurnsKept * 2);
+  std::vector<ThreadMessage> selected;
+  int char_budget = budget.max_recent_chars;
+  for (size_t i = 0; i < fetched.size(); ++i) {
+    const ThreadMessage& message = fetched[i];
+    const bool below_min = selected.size() < min_keep;
+    if (!below_min && static_cast<int>(selected.size()) >= budget.max_turn_pairs * 2) {
+      break;
+    }
+    const int line_size = static_cast<int>(message.text.size() + message.sender_contact_id.size() + 2);
+    if (!below_min && char_budget - line_size < 0) {
       break;
     }
     char_budget -= line_size;
-    ++turn_pairs;
-    selected.push_back(std::move(*message));
+    selected.push_back(message);
   }
-  sqlite3_finalize(stmt);
   std::reverse(selected.begin(), selected.end());
   return selected;
+}
+
+Roe<std::optional<ConversationSummary>> SqliteThreadStore::GetThreadMemory(const std::string& thread_id) const {
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*thread_db, "SELECT value FROM memory WHERE key = ? LIMIT 1;", -1, &stmt, nullptr) !=
+      SQLITE_OK) {
+    return Error("Failed to prepare memory read");
+  }
+  sqlite3_bind_text(stmt, 1, ConversationSummaryCodec::kSummaryKey, -1, SQLITE_STATIC);
+  std::optional<ConversationSummary> summary;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    const char* value = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    if (value) {
+      auto decoded = ConversationSummaryCodec::Decode(value);
+      if (!decoded) {
+        sqlite3_finalize(stmt);
+        return decoded.error();
+      }
+      summary = std::move(*decoded);
+    }
+  }
+  sqlite3_finalize(stmt);
+  return summary;
+}
+
+Roe<void> SqliteThreadStore::SetThreadMemory(const std::string& thread_id, const ConversationSummary& summary) {
+  if (auto init = EnsureInitialized(); !init) {
+    return init.error();
+  }
+  auto encoded = ConversationSummaryCodec::Encode(summary);
+  if (!encoded) {
+    return encoded.error();
+  }
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "INSERT INTO memory (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+  if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare memory write");
+  }
+  sqlite3_bind_text(stmt, 1, ConversationSummaryCodec::kSummaryKey, -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, encoded->c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return Error("Failed to write memory");
+  }
+  sqlite3_finalize(stmt);
+  return {};
+}
+
+Roe<void> SqliteThreadStore::ClearThreadMemory(const std::string& thread_id) {
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*thread_db, "DELETE FROM memory WHERE key = ?;", -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare memory clear");
+  }
+  sqlite3_bind_text(stmt, 1, ConversationSummaryCodec::kSummaryKey, -1, SQLITE_STATIC);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return Error("Failed to clear memory");
+  }
+  sqlite3_finalize(stmt);
+  return {};
+}
+
+Roe<int64_t> SqliteThreadStore::CountContextEligibleMessagesAfter(const std::string& thread_id,
+                                                                  const int64_t after_display_order) const {
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT COUNT(*) FROM messages WHERE content_type IN ('text', 'system') AND display_order > ?;";
+  if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare compaction count");
+  }
+  sqlite3_bind_int64(stmt, 1, after_display_order);
+  int64_t count = 0;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    count = sqlite3_column_int64(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+  return count;
+}
+
+Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetContextEligibleMessagesAfter(
+    const std::string& thread_id, const int64_t after_display_order) const {
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const char* sql =
+      "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, content_rml, "
+      "user_payload, chat_actions, timestamp, relay_visible, delivery FROM messages "
+      "WHERE content_type IN ('text', 'system') AND display_order > ? ORDER BY display_order ASC;";
+  if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare compaction query");
+  }
+  sqlite3_bind_int64(stmt, 1, after_display_order);
+
+  std::vector<ThreadMessage> messages;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    auto message = ReadMessageRow(stmt);
+    if (!message) {
+      sqlite3_finalize(stmt);
+      return message.error();
+    }
+    message->thread_id = thread_id;
+    messages.push_back(std::move(*message));
+  }
+  sqlite3_finalize(stmt);
+  return messages;
 }
 
 Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message) {

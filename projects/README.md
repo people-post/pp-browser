@@ -17,6 +17,6 @@ When a project is fully delivered and stable, fold enduring facts into `docs/` a
 
 | Project | Status | Summary |
 |---------|--------|---------|
-| [chat-storage-and-memory](chat-storage-and-memory/) | **Waves 1–2 done** — Wave 3 next (v3 ∥ v4) | SQLite, v1 relay envelope, tier shells, outbox — see [CURRENT_STATE § Next agent](chat-storage-and-memory/CURRENT_STATE.md#next-agent--start-here) |
+| [chat-storage-and-memory](chat-storage-and-memory/) | **Waves 1–2 + v3 core done** — v4 next | SQLite, v1 relay, tier shells, memory/compaction — see [CURRENT_STATE § Next agent](chat-storage-and-memory/CURRENT_STATE.md#next-agent--start-here) |
 | [platform-safety-limits](platform-safety-limits/) | Planning | LLM HTTP, profile JSON, MCP, parser output — non-chat limits |
 | [e2e-message-crypto](e2e-message-crypto/) | **c1 done** — c2 after chat v6 | `base/crypto` + vectors; AEAD on wire in c2 — [CURRENT_STATE](e2e-message-crypto/CURRENT_STATE.md) |

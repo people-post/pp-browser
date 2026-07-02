@@ -101,6 +101,7 @@ private:
                                  const std::string& text, const std::string& finish_reason);
   static void PushError(const std::shared_ptr<Impl>& state, const std::string& message);
   static void FinishTurn(const std::shared_ptr<Impl>& state);
+  static void RefreshCompactionService(const std::shared_ptr<Impl>& state);
 
   std::shared_ptr<Impl> impl_;
 };

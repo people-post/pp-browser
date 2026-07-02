@@ -6,6 +6,20 @@ def buildWithCMake = true
 def ppBrowserVersion = project.findProperty('ppBrowserVersion') ?: '0.1.0'
 def ppBrowserReleaseVersion = project.findProperty('ppBrowserReleaseVersion') ?: ppBrowserVersion
 def ppBrowserCompilerCache = (project.findProperty('ppBrowserCompilerCache') ?: 'OFF').toString().toUpperCase()
+def ppBrowserCmakeArgs = [
+    "-DANDROID_PLATFORM=android-24",
+    "-DANDROID_STL=c++_static",
+    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+    "-DPP_BROWSER_VERSION=${ppBrowserVersion}",
+    "-DPP_BROWSER_RELEASE_VERSION=${ppBrowserReleaseVersion}",
+    "-DPP_BROWSER_COMPILER_CACHE=${ppBrowserCompilerCache}",
+]
+if (ppBrowserCompilerCache == 'ON') {
+    ppBrowserCmakeArgs += [
+        "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
+        "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
+    ]
+}
 
 android {
     namespace "dev.pp_browser.app"
@@ -21,12 +35,7 @@ android {
         versionName ppBrowserReleaseVersion
         externalNativeBuild {
             cmake {
-                arguments "-DANDROID_PLATFORM=android-24",
-                          "-DANDROID_STL=c++_static",
-                          "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
-                          "-DPP_BROWSER_VERSION=${ppBrowserVersion}",
-                          "-DPP_BROWSER_RELEASE_VERSION=${ppBrowserReleaseVersion}",
-                          "-DPP_BROWSER_COMPILER_CACHE=${ppBrowserCompilerCache}"
+                arguments ppBrowserCmakeArgs
                 abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
             }
         }

@@ -3,14 +3,14 @@
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
 **Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D068 in [DECISIONS.md](DECISIONS.md).  
-**Agent batch:** Waves **1** (v2a-core) and **2** (v2a-p2p + v2b) are **merged in tree**. Next work: **Wave 3** (v3 ∥ v4) — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
+**Agent batch:** Waves **1–2** merged; **Wave 3 v3 core** landed (memory + compaction). Next: **v4** ∥ remaining v3 UX — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
 
 ## Next agent — start here
 
 | Priority | Work | Blocked by |
 |----------|------|------------|
-| **Wave 3** | **v3** — durable AI memory, compaction, forget semantics | — |
-| **Wave 3** | **v4** — ChatPayload validator hardening, `transport` column, strip remote `content_rml` on ingest | — (wire unchanged since wave 2) |
+| **Wave 3** | **v4** — ChatPayload validator, `transport` column, strip remote `content_rml` | — |
+| **Wave 3** | **v3 UX** — forget-memory menu, clear-history checkbox | — |
 | **Wave 4** | **v6** — `sender_seq` on messages, sync pipeline, history fetch, gap repair | v4 recommended first for ingest rules |
 | **Wave 5–6** | [e2e c2](../e2e-message-crypto/PHASES.md#phase-c2--messaging-integration) — AEAD on wire, `EnvelopeSigner` (E014) | v6 envelope + ingest pipeline |
 | **UX gaps (v2a-core)** | Clear-history confirmation sheet; composer `maxlength` (`kMaxComposeTextBytes`) | — |
@@ -48,12 +48,12 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 | SQLite + libsodium on `pp_base` | **Linked** | `src/base/CMakeLists.txt` |
 | `MessagingLimits.h` | **Implemented** | `src/base/messaging/MessagingLimits.h` — append cap enforced |
 | `MessagingHub` bootstrap | **SqliteThreadStore** + outbox reconcile on init | `MessagingHub.cpp` |
-| Durable `ConversationSummary` on disk | Not implemented | v3 |
+| Durable `ConversationSummary` on disk | **Implemented** (v3) | `IThreadStore::GetThreadMemory` / `SetThreadMemory`, `ConversationSummaryCodec`, `thread.db` `memory` key `summary` |
 | Clear history UX | **API only** (`ClearMessages`) — no confirmation sheet | v2a-core gap |
-| Forget memory API | Not implemented | v3 |
+| Forget memory API | **Implemented** (`ClearMessagesOptions.forget_memory`) | v3 — UI checkbox deferred |
 | Windowed transcript load | **Partial** — `GetMessagesPage` in store + inbox; UI still loads default page size | v2a-core mostly done |
-| Agent context | **`GetMessagesForContext`** wired | `AgentSession` — no full-thread `GetMessages` in feature code (D057) |
-| Compaction / summary on disk | Not implemented | v3 |
+| Agent context | **`GetMessagesForContext`** + **summary injection** via `ThreadContextPolicy` | `AgentSession` loads `GetThreadMemory` |
+| Compaction / summary on disk | **Implemented** (async) | `ThreadCompactionService` — triggers after AI thread turns |
 
 ### On-disk layout (today — SQLite)
 
@@ -135,7 +135,7 @@ Run: `./build/tests/base_messaging_tests/pp_browser_p2p_relay_wire_test` (and si
 
 ## Known gaps (summary)
 
-1. **Wave 3+** — durable AI memory, compaction, ChatPayload validator / transport column (v3/v4).
+1. **Wave 3** — v3 UX (forget/clear sheets); v4 ChatPayload validator / transport column.
 2. **Wave 4 (v6)** — `sender_seq`, sync_state, history fetch, gap repair, integrity UX — **blocks e2e c2**.
 3. **c2** — real AEAD in `payload_b64`; E014 `EnvelopeSigner`; inbound verify.
 4. Clear-history **confirmation UX**; composer maxlength wiring.

@@ -21,15 +21,33 @@ int EstimateTokens(const std::string& text) {
   return static_cast<int>(text.size() / 4) + 1;
 }
 
+std::string TrimTextToCharBudget(const std::string& text, const int max_chars) {
+  if (static_cast<int>(text.size()) <= max_chars) {
+    return text;
+  }
+  if (max_chars <= 3) {
+    return text.substr(0, static_cast<size_t>(max_chars));
+  }
+  return text.substr(0, static_cast<size_t>(max_chars - 3)) + "...";
+}
+
 } // namespace
 
 ThreadContextPolicy::ThreadContextPolicy(ContextBudget budget) : budget_(budget) {}
 
 ContextBuildResult ThreadContextPolicy::Build(const std::vector<ThreadMessage>& messages,
                                               const std::string& system_prompt, const std::string& current_user_text,
-                                              const std::optional<std::string>& current_user_payload) const {
+                                              const std::optional<std::string>& current_user_payload,
+                                              const std::optional<ConversationSummary>& summary) const {
   ContextBuildResult result;
   result.messages.push_back(ChatMessage{.role = "system", .content = system_prompt});
+
+  if (summary && !summary->text.empty()) {
+    const std::string trimmed = TrimTextToCharBudget(summary->text, budget_.max_summary_chars);
+    result.messages.push_back(
+        ChatMessage{.role = "system", .content = "Conversation summary:\n" + trimmed});
+    result.provenance.summary_included = true;
+  }
 
   int char_budget = budget_.max_recent_chars;
   std::vector<std::string> lines;
@@ -70,7 +88,8 @@ ContextBuildResult ThreadContextPolicy::Build(const std::vector<ThreadMessage>& 
 }
 
 std::vector<ChatMessage> ThreadContextPolicy::BuildAssistContext(const std::vector<ThreadMessage>& messages,
-                                                                 const std::string& prompt) const {
+                                                                 const std::string& prompt,
+                                                                 const std::optional<ConversationSummary>& summary) const {
   std::ostringstream transcript;
   int char_budget = budget_.max_recent_chars;
   for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
@@ -86,6 +105,10 @@ std::vector<ChatMessage> ThreadContextPolicy::BuildAssistContext(const std::vect
   out.push_back(ChatMessage{.role = "system",
                             .content = "You are assisting in a person-to-person chat. Use the transcript for "
                                        "context. Reply concisely."});
+  if (summary && !summary->text.empty()) {
+    const std::string trimmed = TrimTextToCharBudget(summary->text, budget_.max_summary_chars);
+    out.push_back(ChatMessage{.role = "system", .content = "Conversation summary:\n" + trimmed});
+  }
   if (!transcript.str().empty()) {
     out.push_back(ChatMessage{.role = "user", .content = "Transcript:\n" + transcript.str()});
   }

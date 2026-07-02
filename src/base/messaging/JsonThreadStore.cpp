@@ -1,6 +1,7 @@
 #include "base/messaging/JsonThreadStore.h"
 
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/MessagingLimits.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
@@ -245,17 +246,149 @@ Roe<std::vector<ThreadMessage>> JsonThreadStore::GetMessagesPage(const std::stri
 
 Roe<std::vector<ThreadMessage>> JsonThreadStore::GetMessagesForContext(const std::string& thread_id,
                                                                        const ContextBudget& budget) const {
-  return GetMessagesPage(thread_id, std::nullopt, static_cast<size_t>(budget.max_turn_pairs * 2));
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+
+  int64_t compaction_cursor = 0;
+  if (const auto memory_it = memory_.find(thread_id); memory_it != memory_.end()) {
+    if (memory_it->second.compacted_through_display_order.has_value()) {
+      compaction_cursor = *memory_it->second.compacted_through_display_order;
+    }
+  }
+
+  const auto it = messages_.find(thread_id);
+  if (it == messages_.end()) {
+    return std::vector<ThreadMessage>{};
+  }
+
+  std::vector<ThreadMessage> eligible;
+  for (const ThreadMessage& message : it->second) {
+    if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System) {
+      continue;
+    }
+    if (message.display_order <= compaction_cursor) {
+      continue;
+    }
+    eligible.push_back(message);
+  }
+  std::sort(eligible.begin(), eligible.end(),
+            [](const ThreadMessage& a, const ThreadMessage& b) { return a.display_order > b.display_order; });
+
+  const size_t min_keep = static_cast<size_t>(kCompactionMinTurnsKept * 2);
+  std::vector<ThreadMessage> selected;
+  int char_budget = budget.max_recent_chars;
+  for (size_t i = 0; i < eligible.size(); ++i) {
+    const ThreadMessage& message = eligible[i];
+    const bool below_min = selected.size() < min_keep;
+    if (!below_min && static_cast<int>(selected.size()) >= budget.max_turn_pairs * 2) {
+      break;
+    }
+    const int line_size = static_cast<int>(message.text.size() + message.sender_contact_id.size() + 2);
+    if (!below_min && char_budget - line_size < 0) {
+      break;
+    }
+    char_budget -= line_size;
+    selected.push_back(message);
+  }
+  std::reverse(selected.begin(), selected.end());
+  return selected;
+}
+
+Roe<std::optional<ConversationSummary>> JsonThreadStore::GetThreadMemory(const std::string& thread_id) const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  const auto it = memory_.find(thread_id);
+  if (it == memory_.end()) {
+    return std::optional<ConversationSummary>{};
+  }
+  return std::optional<ConversationSummary>{it->second};
+}
+
+Roe<void> JsonThreadStore::SetThreadMemory(const std::string& thread_id, const ConversationSummary& summary) {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  memory_[thread_id] = summary;
+  return {};
+}
+
+Roe<void> JsonThreadStore::ClearThreadMemory(const std::string& thread_id) {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  memory_.erase(thread_id);
+  return {};
+}
+
+Roe<int64_t> JsonThreadStore::CountContextEligibleMessagesAfter(const std::string& thread_id,
+                                                                const int64_t after_display_order) const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  const auto it = messages_.find(thread_id);
+  if (it == messages_.end()) {
+    return int64_t{0};
+  }
+  int64_t count = 0;
+  for (const ThreadMessage& message : it->second) {
+    if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System) {
+      continue;
+    }
+    if (message.display_order > after_display_order) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+Roe<std::vector<ThreadMessage>> JsonThreadStore::GetContextEligibleMessagesAfter(
+    const std::string& thread_id, const int64_t after_display_order) const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  const auto it = messages_.find(thread_id);
+  if (it == messages_.end()) {
+    return std::vector<ThreadMessage>{};
+  }
+  std::vector<ThreadMessage> eligible;
+  for (const ThreadMessage& message : it->second) {
+    if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System) {
+      continue;
+    }
+    if (message.display_order <= after_display_order) {
+      continue;
+    }
+    eligible.push_back(message);
+  }
+  std::sort(eligible.begin(), eligible.end(),
+            [](const ThreadMessage& a, const ThreadMessage& b) { return a.display_order < b.display_order; });
+  return eligible;
 }
 
 Roe<void> JsonThreadStore::ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) {
-  (void)options;
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();
   if (!load) {
     return load.error();
   }
   messages_[thread_id].clear();
+  if (options.forget_memory) {
+    memory_.erase(thread_id);
+  }
   dirty_ = true;
   if (SaveMessages(thread_id)) {
     for (Thread& thread : threads_) {

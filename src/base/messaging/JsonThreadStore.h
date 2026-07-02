@@ -25,6 +25,13 @@ public:
                                                   size_t limit) const override;
   Roe<std::vector<ThreadMessage>> GetMessagesForContext(const std::string& thread_id,
                                                         const ContextBudget& budget) const override;
+  Roe<std::optional<ConversationSummary>> GetThreadMemory(const std::string& thread_id) const override;
+  Roe<void> SetThreadMemory(const std::string& thread_id, const ConversationSummary& summary) override;
+  Roe<void> ClearThreadMemory(const std::string& thread_id) override;
+  Roe<int64_t> CountContextEligibleMessagesAfter(const std::string& thread_id,
+                                                 int64_t after_display_order) const override;
+  Roe<std::vector<ThreadMessage>> GetContextEligibleMessagesAfter(const std::string& thread_id,
+                                                                  int64_t after_display_order) const override;
   Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) override;
   Roe<bool> UpdateMessage(const ThreadMessage& message) override;
   Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const override;
@@ -51,6 +58,7 @@ private:
   mutable bool loaded_ = false;
   mutable std::vector<Thread> threads_;
   mutable std::unordered_map<std::string, std::vector<ThreadMessage>> messages_;
+  mutable std::unordered_map<std::string, ConversationSummary> memory_;
   mutable bool dirty_ = false;
 };
 
