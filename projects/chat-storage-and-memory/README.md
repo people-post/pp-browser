@@ -17,7 +17,7 @@ One durable conversation model for AI and P2P chat: SQLite per thread, `profile.
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | **Complete system specification** — all behavior with `[v1]` / `[post-v1]` maturity tags |
-| [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) | **Normative JSON wire shapes** — envelope, ChatPayload, history fetch (D072) |
+| [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) | **Normative wire shapes** — envelope JSON, binary ChatPayload (D087), history fetch (D072) |
 | [PHASES.md](PHASES.md) | **Implementation order** — checklists, exit criteria, traceability (no duplicate specs) |
 | [DECISIONS.md](DECISIONS.md) | Recorded decisions (ADR-style rationale) |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |

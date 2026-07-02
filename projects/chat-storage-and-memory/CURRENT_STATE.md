@@ -33,7 +33,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 
 ```
 threads/profile.db          # threads catalog (+ group_id) + outbox + chat_targets
-threads/{thread_id}/thread.db   # messages.chat_payload_json, display_order, …
+threads/{thread_id}/thread.db   # messages.chat_payload BLOB, display_order, …
 threads/{thread_id}/blobs/      # [future] attachments (D075)
 ```
 

@@ -65,8 +65,8 @@ Existing foundation this project builds on.
 #### `SqliteThreadStore` — AI path (D028)
 
 - [ ] Layout: `threads/profile.db` (`threads` + `outbox` schema only), `threads/{id}/thread.db`, `{id}/blobs/` placeholder dir optional (D075) — no `index.json` (D035)
-- [ ] `thread.db`: `messages` (+ **`chat_payload_json`** D078, **`display_order`**, **`chat_actions`**), `memory`, `sync_state` tables; **`idx_messages_display`** (D054)
-- [ ] **`ChatPayloadCodec::EncodeToRow`** — canonical `chat_payload_json` + denormalized columns atomically (D078)
+- [ ] `thread.db`: `messages` (+ **`chat_payload`** BLOB D078/D087, **`display_order`**, **`chat_actions`**), `memory`, `sync_state` tables; **`idx_messages_display`** (D054)
+- [ ] **`ChatPayloadCodec::EncodeToRow`** — canonical `chat_payload` BLOB + denormalized columns atomically (D078/D087)
 - [ ] **`Migrate(from→to)`** skeleton + `user_version=1` initial schema (D069); legacy JSON wipe only on first v2a run (D016)
 - [ ] Lazy-open `thread.db`; WAL + writer mutex per DB; **dual-DB recipe** — lock `profile.db` then `thread.db`, write `thread.db` txn first (D044, D057)
 - [ ] `AppendMessage` / `UpdateMessage`: assign **`display_order`** (D054); maintain `threads.updated_at` / `unread_count` in `profile.db`
@@ -104,7 +104,7 @@ Existing foundation this project builds on.
 
 #### Wire + C++ types (D063, D066, D072)
 
-- [ ] **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route`; **`body.content`** minimal ChatPayload (`text` only)
+- [ ] **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route`; **`body.content_b64`** minimal binary ChatPayload (`text` only — D087)
 - [ ] **`ChatHistoryRequest` / `ChatHistoryResponse`** — shared structs per [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) (D072)
 - [ ] Send/post and poll ingest use new envelope; **reject** legacy `thread_id`, flat `body.text`, unknown **`envelope_version`**
 - [ ] **Grep gate:** no `envelope.thread_id` in `src/feature/` or `tests/` (legacy rejection tests excepted)
@@ -203,9 +203,9 @@ Existing foundation this project builds on.
 ### Message schema
 
 - [ ] `content_type` + `payload` on **`ThreadMessage`** C++ + store read/write; **`system`** type support
-- [ ] ChatPayload JSON codec **validator** hardening (D029, D050) — unknown types rejected on ingest
+- [ ] ChatPayload binary codec **validator** hardening (D029, D050) — unknown types rejected on ingest
 - [ ] Reject oversize payload on send; strip wire `content_rml` on ingest (D030)
-- [ ] Relay `body.content` for public; envelope signing covers structured body
+- [ ] Relay `body.content_b64` for public; envelope signing covers binary body (E014/D087)
 - [ ] `transport` column; set in send/receive paths (no per-message badge UI yet, D051)
 
 ### LLM / display
@@ -409,5 +409,6 @@ Ship public relay + SQLite storage without c2; E2E body crypto lands after v2b +
 | 2026-06-29 | DESIGN: single grand spec with `[v1]`/`[post-v1]` tags; PHASES traceability + named post-v1 phases |
 | 2026-06-30 | D063–D066: wire cutover v2a-p2p, clear AI memory retained copy, display_order UI defer, C++ type gates; D057/D054 amended |
 | 2026-06-30 | D058–D062: unified `FetchChatTargetMessages`, user-initiated sync, libp2p peer history, empty gap close, inbound find-only; D009/D052/D041/D022 amended |
-| 2026-06-29 | D069–D078: schema evolution (migrate vs wipe), `chat_payload_json` canonical body, `envelope_version`, WIRE_SCHEMAS, memory JSON schema, empty-closed-seq cap, blobs/group placeholders, unknown-field policy, display_order complexity budget |
+| 2026-06-29 | D069–D078: schema evolution (migrate vs wipe), `chat_payload` canonical body, `envelope_version`, WIRE_SCHEMAS, memory JSON schema, empty-closed-seq cap, blobs/group placeholders, unknown-field policy, display_order complexity budget |
+| 2026-07-02 | D088: pp Binary Wire Profile (LenUtf8/LenBytes u64); flattened ChatPayload tail; AAD/E014 strings unified |
 | 2026-06-30 | D067–D068: empty gap close guard + late fill; compromised outbox/sync freeze; epoch bump pending cancel; receive pipeline linearized |

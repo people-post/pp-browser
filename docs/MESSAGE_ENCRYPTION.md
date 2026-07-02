@@ -4,13 +4,15 @@ Normative spec for symmetric end-to-end encryption of direct chat message bodies
 
 **Related:** [P2P_MESSAGING.md](P2P_MESSAGING.md), [chat-storage WIRE_SCHEMAS.md](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md), [CONFIGURATION.md](CONFIGURATION.md).
 
+**C++ wire profile:** [Serialize.hpp](../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`); [Binary Wire Profile (D088)](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
+
 ## Overview
 
 - **256-bit pre-shared key (PSK)** per `ChatTargetKey`, distributed out-of-band with fingerprint verification.
 - **HKDF-SHA256** derives per-epoch session keys from the PSK.
 - **XChaCha20-Poly1305** (libsodium AEAD) encrypts the message body with canonical associated data (AAD).
 - **Ed25519** signs the outer relay envelope (classical; PQ hybrid planned separately).
-- Relay sees ciphertext on `e2e`; plaintext `ChatPayload` JSON is inside the AEAD layer only.
+- Relay sees ciphertext on `e2e`; plaintext **binary `ChatPayload`** (D087) is inside the AEAD layer only.
 
 ## Threat model (v1)
 
@@ -63,18 +65,15 @@ session_key = HKDF-SHA256(
 
 ## AEAD associated data (AAD)
 
-`aad_version = 1` only. Big-endian integers.
+`aad_version = 1` only. Big-endian integers. Identity and id strings use **LenUtf8** (D088).
 
 | Offset | Size | Field |
 |--------|------|-------|
 | 0 | 1 | `aad_version` = `1` |
 | 1 | 1 | `channel`: `0` = public_relay, `1` = e2e |
-| | 2 | `peer_contact_id_len` (u16 BE) |
-| | var | `peer_contact_id` UTF-8 |
-| | 2 | `message_id_len` (u16 BE) |
-| | var | `message_id` UTF-8 |
-| | 2 | `sender_contact_id_len` (u16 BE) |
-| | var | `sender_contact_id` UTF-8 |
+| | var | `peer_contact_id` — **LenUtf8** |
+| | var | `message_id` — **LenUtf8** |
+| | var | `sender_contact_id` — **LenUtf8** |
 | | 8 | `sender_seq` (u64 BE) |
 | | 4 | `session_epoch` (u32 BE) |
 | | 8 | `timestamp` (i64 BE) |
@@ -85,13 +84,16 @@ session_key = HKDF-SHA256(
 
 ## AEAD plaintext (E010)
 
-UTF-8 JSON **`ChatPayload`** (minified for signing/hashing where applicable):
+Binary **`ChatPayload` v1** — same bytes as public **`body.content_b64`** after base64 decode. Layout: [WIRE_SCHEMAS § ChatPayload](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088).
 
-```json
-{"schema_version":1,"content_type":"text","text":"Hello","payload":{}}
-```
+**Vector A fixture** (`text="Hello"`, plain default):
 
-Max decrypted size: **128 KiB** (`kMaxE2ePlaintextBytes`). Check length before JSON parse.
+| Field | Value |
+|-------|-------|
+| **`bytes` (hex)** | `0100000000000000000548656c6c6f` |
+| **`content_b64`** | `AQAAAAAAAAAABUhlbGxv` |
+
+Max decrypted size: **128 KiB** (`kMaxE2ePlaintextBytes`). Check length before `ChatPayloadCodec::Decode`; reject trailing bytes.
 
 ## Encrypted payload blob
 
@@ -124,18 +126,18 @@ API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = non
 
 | Channel | `body` shape |
 |---------|--------------|
-| `public_relay` | `{ "content": { …ChatPayload… } }` |
+| `public_relay` | `{ "content_b64": "…" }` |
 | `e2e` | `{ "e2e": { "payload_b64": "…" } }` |
 
 Reject envelopes with `thread_id` or unknown `envelope_version`.
 
 ## Ed25519 canonical signing bytes (E014)
 
-Do **not** sign JSON dump. Build fixed binary bytes, then Ed25519-sign.
+Do **not** sign JSON dump. Build fixed binary bytes, then Ed25519-sign. String fields use **LenUtf8** (D088).
 
 **Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v1"` + NUL.
 
-Then: `sign_version=1`, `envelope_version=1`, `route_kind`, `channel`, `timestamp` (i64 BE), `sender_seq` (u64 BE), `session_epoch` (u32 BE), `body_hash` (32 bytes BLAKE2b-256), length-prefixed `message_id`, length-prefixed `sender_contact_id`.
+Then: `sign_version=1`, `envelope_version=1`, `route_kind`, `channel`, `timestamp` (i64 BE), `sender_seq` (u64 BE), `session_epoch` (u32 BE), `body_hash` (32 bytes BLAKE2b-256), `message_id` LenUtf8, `sender_contact_id` LenUtf8.
 
 **Body hash:**
 
@@ -145,7 +147,7 @@ body_hash = BLAKE2b-256( body_kind || payload_bytes )
 
 | Channel | `body_kind` | `payload_bytes` |
 |---------|-------------|-----------------|
-| `public_relay` | `0x01` | Canonical UTF-8 JSON of `body.content` |
+| `public_relay` | `0x01` | Raw bytes from base64 decode of `body.content_b64` |
 | `e2e` | `0x02` | Raw bytes from base64 decode of `body.e2e.payload_b64` |
 
 `signature` on wire: base64 over 64-byte Ed25519 signature.
@@ -154,9 +156,9 @@ Peer verify keys: relay directory + `PeerSigningKeyStore` (E016). Inbound verify
 
 ## Send / receive pipeline (e2e)
 
-1. Build `ChatPayload` JSON → canonical AAD from envelope fields → `MessageCipher::Encrypt` → blob → base64 → `body.e2e.payload_b64`.
+1. Build binary `ChatPayload` → canonical AAD from envelope fields → `MessageCipher::Encrypt` → blob → base64 → `body.e2e.payload_b64`.
 2. `EnvelopeSigner::BuildSignBytes` → sign.
-3. Receive: verify signature → resolve PSK for `envelope.session_epoch` → decrypt with AAD from envelope → parse JSON → ingest.
+3. Receive: verify signature → resolve PSK for `envelope.session_epoch` → decrypt with AAD from envelope → `ChatPayloadCodec::Decode` → ingest.
 
 Outbound HKDF uses `chat_targets.session_epoch`; inbound uses `envelope.session_epoch` (E019).
 
@@ -175,7 +177,7 @@ Implementation: [projects/e2e-message-crypto/PHASES.md](../projects/e2e-message-
 
 ## Frozen test vectors
 
-Regenerate: `projects/e2e-message-crypto/tools/gen_sign_vectors.py`, `gen_aead_vectors.py`.
+Regenerate: `projects/e2e-message-crypto/tools/gen_sign_vectors.py`, `gen_aead_vectors.py`, `chatpayload_codec.py`.
 
 ### Shared Ed25519 test keypair (TEST ONLY)
 
@@ -187,16 +189,16 @@ Regenerate: `projects/e2e-message-crypto/tools/gen_sign_vectors.py`, `gen_aead_v
 
 ### Ed25519 — `public_relay`
 
-Canonical payload: `{"schema_version":1,"content_type":"text","text":"Hello","payload":{}}`
+Binary payload Vector A: `0100000000000000000548656c6c6f` (`content_b64`: `AQAAAAAAAAAABUhlbGxv`)
 
 | Field | Value |
 |-------|-------|
 | `message_id` | `550e8400-e29b-41d4-a716-446655440000` |
 | `sender_contact_id` | `relay:alice123` |
 | `timestamp` | `1719662400123` |
-| **`body_hash` (hex)** | `db8f17cda6b57a0feff3b6aa09ca17e7ca15b32309cc85d555531c804e2c7f10` |
-| **`sign_bytes` (hex)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100000000019063ddd27b000000000000000000000000db8f17cda6b57a0feff3b6aa09ca17e7ca15b32309cc85d555531c804e2c7f10002435353065383430302d653239622d343164342d613731362d343436363535343430303030000e72656c61793a616c696365313233` |
-| **`signature` (base64)** | `sgoePjY8ExAV+yVono5XyO6UUosHP0ka4Ham8f/2sKlUQwJvzbq1VFX+DWJlDVGZArw1MyPzQp44/H5+2zwGCA==` |
+| **`body_hash` (hex)** | `c3883ac60f3d527e364ecca8dd28144886dc12f00fbef22502ef0f24ce2f1c74` |
+| **`sign_bytes` (hex)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100000000019063ddd27b000000000000000000000000c3883ac60f3d527e364ecca8dd28144886dc12f00fbef22502ef0f24ce2f1c74000000000000002435353065383430302d653239622d343164342d613731362d343436363535343430303030000000000000000e72656c61793a616c696365313233` |
+| **`signature` (base64)** | `Gc6/4LugFNm7SKtGGicoUnUp9bWqJa6f71jYGSp+yUYn2UjdbkXwYpAz7fcSwrrwVSdrnxU98SveSAijpWsFDQ==` |
 
 ### Ed25519 — `e2e`
 
@@ -207,10 +209,10 @@ Canonical payload: `{"schema_version":1,"content_type":"text","text":"Hello","pa
 | `timestamp` | `1719662400456` |
 | `sender_seq` | `42` |
 | `session_epoch` | `1` |
-| **`payload_b64`** | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWFyHtOqqqWWg/pqrknkBhKHaF+SXAyEkn1r2loSMVWmnO1HgQ7B/uYrcLE5SZn7v/8/ZvnGJsuW+StHBZWIFUKGrC5cggZHoHelCS/RLpokmfv/AOd1cv` |
-| **`body_hash` (hex)** | `845179587525a14c1dd5a19099fbff4a47d06f7c458967ab4969fedaa748bbbe` |
-| **`sign_bytes` (hex)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001845179587525a14c1dd5a19099fbff4a47d06f7c458967ab4969fedaa748bbbe002436363065383430302d653239622d343164342d613731362d343436363535343430303031000e72656c61793a616c696365313233` |
-| **`signature` (base64)** | `5+RuBH37ArdNTcd5U+dMy7xu2nJxRM3ruNMU75vBVi3aN1ftgmO2fXsb94NT5IaQaYW6wfxRWU4IVvPRxtDhDg==` |
+| **`payload_b64`** | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF1vPScnCPAVe+dnJiV9kKBztMM3qj/Hi+RhfLy6wlhU=` |
+| **`body_hash` (hex)** | `b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e` |
+| **`sign_bytes` (hex)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e000000000000002436363065383430302d653239622d343164342d613731362d343436363535343430303031000000000000000e72656c61793a616c696365313233` |
+| **`signature` (base64)** | `QeHtXYUc4uQJ+1qCSYtRpabAI/kk7Mik04kqQVOKk+O7WWO64VPnnNUUeaTmEX3BSOconoKo1ZwFVNO+JoGACA==` |
 
 ### HKDF (E015)
 
@@ -229,10 +231,17 @@ Alice (`relay:alice123`) → Bob (`relay:bob456`). Envelope fields match Ed25519
 |-------|-------|
 | `session_key` (hex) | `f7dab69eb0c862df230bc383c1dea363637a6caf2d46d7b57d1b45b5526a7358` |
 | `nonce` (hex) | `000102030405060708090a0b0c0d0e0f1011121314151617` |
-| **`aad` (hex)** | `0101000c72656c61793a626f62343536002436363065383430302d653239622d343164342d613731362d343436363535343430303031000e72656c61793a616c696365313233000000000000002a000000010000019063ddd3c8` |
-| `plaintext` | `{"schema_version":1,"content_type":"text","text":"Hello","payload":{}}` |
-| **`ciphertext+tag` (hex)** | `21ed3aaaaa59683fa6aae49e4061287685f925c0c84927d6bda5a123155a69ced47810ec1fee62b70b1394999fbbfff3f66f9c626cb96f92b47059588154286ac2e5c820647a077a5092fd12e9a2499fbff00e77572f` |
-| **`blob` (hex)** | `01000102030405060708090a0b0c0d0e0f101112131415161721ed3aaaaa59683fa6aae49e4061287685f925c0c84927d6bda5a123155a69ced47810ec1fee62b70b1394999fbbfff3f66f9c626cb96f92b47059588154286ac2e5c820647a077a5092fd12e9a2499fbff00e77572f` |
-| **`payload_b64`** | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWFyHtOqqqWWg/pqrknkBhKHaF+SXAyEkn1r2loSMVWmnO1HgQ7B/uYrcLE5SZn7v/8/ZvnGJsuW+StHBZWIFUKGrC5cggZHoHelCS/RLpokmfv/AOd1cv` |
+| **`aad` (hex)** | `0101000000000000000c72656c61793a626f62343536000000000000002436363065383430302d653239622d343164342d613731362d343436363535343430303031000000000000000e72656c61793a616c696365313233000000000000002a000000010000019063ddd3c8` |
+| `plaintext` (hex) | `0100000000000000000548656c6c6f` |
+| **`ciphertext+tag` (hex)** | `5bcf49c9c23c055ef9d9c9895f64281ced30cdea8ff1e2f9185f2f2eb09615` |
+| **`blob` (hex)** | `01000102030405060708090a0b0c0d0e0f10111213141516175bcf49c9c23c055ef9d9c9895f64281ced30cdea8ff1e2f9185f2f2eb09615` |
+| **`payload_b64`** | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF1vPScnCPAVe+dnJiV9kKBztMM3qj/Hi+RhfLy6wlhU=` |
 
 Bob decrypts with the same AAD bytes after field semantic checks.
+
+### ChatPayload — Vectors B and C (body_hash only)
+
+| Vector | Logical | **`bytes` (hex)** | **`body_hash` (hex)** |
+|--------|---------|-------------------|------------------------|
+| B | `text="Café ☕"` | `01000000000000000009436166c3a920e29895` | `e02629e02b6a8328d2d69bdfc1f0fcd12646f1013684939e687d610692517eba` |
+| C | `system` + LenUtf8 tail | `0101000000000000000b50656572206a6f696e656401000000000000000d6d656d6265725f6a6f696e65640000000000000005616c696365` | `b5bd1016b9ae31b1269638fe3fb86f44e1f74dfedc03bf3041812f885757453f` |

@@ -13,9 +13,8 @@ from nacl.bindings import (
     crypto_aead_xchacha20poly1305_ietf_encrypt,
 )
 
-CANONICAL_PAYLOAD = (
-    b'{"schema_version":1,"content_type":"text","text":"Hello","payload":{}}'
-)
+from chatpayload_codec import VECTOR_A
+from wire_codec import len_utf8
 
 # HKDF vector (E015) — session_key for channel=e2e, session_epoch=1
 SESSION_KEY = bytes.fromhex(
@@ -24,6 +23,8 @@ SESSION_KEY = bytes.fromhex(
 
 # Fixed nonce for reproducible fixture (TEST ONLY — production uses randombytes_buf)
 NONCE = bytes(range(24))
+
+CANONICAL_PAYLOAD = VECTOR_A
 
 
 def build_aad(
@@ -36,10 +37,9 @@ def build_aad(
     timestamp: int,
 ) -> bytes:
     out = bytearray([1, channel])
-    for value in (peer_contact_id, message_id, sender_contact_id):
-        encoded = value.encode("utf-8")
-        out += struct.pack(">H", len(encoded))
-        out += encoded
+    out += len_utf8(peer_contact_id)
+    out += len_utf8(message_id)
+    out += len_utf8(sender_contact_id)
     out += struct.pack(">Q", sender_seq)
     out += struct.pack(">I", session_epoch)
     out += struct.pack(">q", timestamp)
@@ -58,15 +58,19 @@ def decrypt(session_key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes) -> 
     )
 
 
+def e2e_blob_from_plaintext(plaintext: bytes, aad: bytes) -> bytes:
+    ciphertext = encrypt(SESSION_KEY, NONCE, plaintext, aad)
+    return bytes([1]) + NONCE + ciphertext
+
+
 def main() -> None:
-    # Align envelope fields with Ed25519 vector 2 (DESIGN.md)
     message_id = "660e8400-e29b-41d4-a716-446655440001"
     sender_contact_id = "relay:alice123"
     peer_contact_id = "relay:bob456"
     sender_seq = 42
     session_epoch = 1
     timestamp = 1719662400456
-    channel = 1  # e2e
+    channel = 1
 
     aad_alice = build_aad(
         channel,
@@ -79,10 +83,9 @@ def main() -> None:
     )
 
     ciphertext = encrypt(SESSION_KEY, NONCE, CANONICAL_PAYLOAD, aad_alice)
-    blob = bytes([1]) + NONCE + ciphertext
+    blob = e2e_blob_from_plaintext(CANONICAL_PAYLOAD, aad_alice)
     blob_b64 = base64.b64encode(blob).decode()
 
-    # Bob decrypts with the same AAD bytes (receiver checks field semantics first)
     aad_bob = build_aad(
         channel,
         peer_contact_id,
@@ -95,11 +98,10 @@ def main() -> None:
     assert aad_alice == aad_bob
     recovered = decrypt(SESSION_KEY, NONCE, ciphertext, aad_bob)
     assert recovered == CANONICAL_PAYLOAD
-
-    # Round-trip base64 codec
     assert base64.b64decode(blob_b64) == blob
 
-    print("plaintext_utf8:", CANONICAL_PAYLOAD.decode())
+    print("plaintext_hex:", CANONICAL_PAYLOAD.hex())
+    print("content_b64:", base64.b64encode(CANONICAL_PAYLOAD).decode())
     print("session_key_hex:", SESSION_KEY.hex())
     print("nonce_hex:", NONCE.hex())
     print("aad_hex:", aad_alice.hex())

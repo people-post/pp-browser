@@ -149,12 +149,9 @@ Fixed byte order (big-endian integers). **`aad_version = 1`** is the only AAD la
 |--------|------|-------|
 | 0 | 1 | `aad_version` = `1` |
 | 1 | 1 | `channel` enum: `0` = `public_relay`, `1` = `e2e` |
-| | 2 | `peer_contact_id_len` (u16 BE) |
-| | var | `peer_contact_id` UTF-8 — recipient's **communicating identity value** (`ChatTargetKey.peer_identity_value` from **sender's** view; AAD field name is historical) |
-| | 2 | `message_id_len` (u16 BE) |
-| | var | `message_id` UTF-8 |
-| | 2 | `sender_contact_id_len` (u16 BE) |
-| | var | `sender_contact_id` UTF-8 — sender's **communicating identity value** (same as envelope `sender_contact_id`, D079) |
+| | var | `peer_contact_id` — **LenUtf8** |
+| | var | `message_id` — **LenUtf8** |
+| | var | `sender_contact_id` — **LenUtf8** |
 | | 8 | `sender_seq` (u64 BE) |
 | | 4 | `session_epoch` (u32 BE) |
 | | 8 | `timestamp` (i64 BE) |
@@ -172,20 +169,18 @@ Fixed byte order (big-endian integers). **`aad_version = 1`** is the only AAD la
 
 ## AEAD: plaintext (inside ciphertext — E010)
 
-UTF-8 JSON serialization of **`ChatPayload`** ([chat-storage D026](../chat-storage-and-memory/DECISIONS.md)):
+Binary **`ChatPayload` v1** ([chat-storage D087](../chat-storage-and-memory/DECISIONS.md#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext), [WIRE_SCHEMAS](../chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087)) — **same bytes** as public **`body.content_b64`** after base64 decode.
 
-```json
-{
-  "schema_version": 1,
-  "content_type": "text",
-  "text": "Hello",
-  "payload": {}
-}
-```
+**Vector A fixture** (`text="Hello"`, plain default):
+
+| Field | Value |
+|-------|-------|
+| **`bytes` (hex)** | `0100000000000000000548656c6c6f` |
+| **`content_b64`** | `AQAAAAAAAAAABUhlbGxv` |
 
 All `content_type` values (`text`, `annotation`, `contact_card`, `crypto_tx`, `system`) may appear inside E2E ciphertext. `content_rml` for AI rows remains app-local on `ThreadMessage` until a future payload extension.
 
-**Size:** Decrypted plaintext must be ≤ **`kMaxE2ePlaintextBytes` (128 KiB)** ([chat-storage D029](../chat-storage-and-memory/DECISIONS.md)). Check byte length after decrypt, before `nlohmann::json::parse`.
+**Size:** Decrypted plaintext must be ≤ **`kMaxE2ePlaintextBytes` (128 KiB)** ([chat-storage D029](../chat-storage-and-memory/DECISIONS.md)). Check byte length after decrypt, before `ChatPayloadCodec::Decode`.
 
 ## Encrypted payload blob
 
@@ -220,7 +215,7 @@ Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** **`envelope_versio
 
 | Channel | `body` shape | Signed (via canonical bytes — E014) |
 |---------|--------------|-------------------------------------|
-| `public_relay` | `{ "content": { …ChatPayload… } }` | `envelope_version`, `message_id`, `sender_contact_id`, `route`, `timestamp`, `body_hash`; `sender_seq=0`, `session_epoch=0` |
+| `public_relay` | `{ "content_b64": "…" }` | `envelope_version`, `message_id`, `sender_contact_id`, `route`, `timestamp`, `body_hash`; `sender_seq=0`, `session_epoch=0` |
 | `e2e` | `{ "e2e": { "payload_b64": "…" } }` | Same + `sender_seq`, `session_epoch` from envelope |
 
 **Not signed:** `thread_id`, `sender_relay_id`, `signature`, unknown top-level keys (D073).
@@ -252,9 +247,7 @@ Bump **`sign_version`** (first byte after domain prefix) to change hash algorith
 
 ### Byte layout (`sign_version = 1`, `envelope_version = 1`)
 
-Big-endian integers. Length-prefixed UTF-8 strings use **u16 BE** length (max 65535; UUIDs and contact ids fit).
-
-**Sign bytes** = domain prefix || fixed header || length-prefixed strings.
+Big-endian integers. String fields use **LenUtf8** (D088). **Sign bytes** = domain prefix || fixed header || LenUtf8 strings.
 
 **Domain prefix** (34 bytes): UTF-8 `"pp-browser:relay-envelope-sign-v1"` + NUL (`0x00`).
 
@@ -269,12 +262,10 @@ Big-endian integers. Length-prefixed UTF-8 strings use **u16 BE** length (max 65
 | 46 | 8 | `sender_seq` (u64 BE) |
 | 54 | 4 | `session_epoch` (u32 BE) |
 | 58 | 32 | `body_hash` (BLAKE2b-256 output) |
-| 90 | 2 | `message_id_len` (u16 BE) |
-| 92 | var | `message_id` (UTF-8) |
-| | 2 | `sender_contact_id_len` (u16 BE) |
-| | var | `sender_contact_id` (UTF-8) |
+| 90 | var | `message_id` — **LenUtf8** |
+| | var | `sender_contact_id` — **LenUtf8** |
 
-**`[post-v1]` group route:** under a new `envelope_version`, append length-prefixed `group_id` UTF-8 after `sender_contact_id` when `route_kind=group`.
+**`[post-v1]` group route:** under a new `envelope_version`, append **`group_id` LenUtf8** after `sender_contact_id` when `route_kind=group`.
 
 ### Body hash (`body_hash`)
 
@@ -284,10 +275,10 @@ body_hash = BLAKE2b-256( body_kind || payload_bytes )
 
 | `channel` | `body_kind` | `payload_bytes` |
 |-----------|-------------|-------------------|
-| `public_relay` | `0x01` | Canonical UTF-8 JSON of **`body.content`** (`ChatPayload`) — same rules as `ChatPayloadCodec` / `chat_payload_json` (D069/D078) |
+| `public_relay` | `0x01` | Raw bytes from **base64 decode** of **`body.content_b64`** (`ChatPayload` binary — D087) — same bytes as `messages.chat_payload` / E2E plaintext |
 | `e2e` | `0x02` | Raw bytes from **base64 decode** of `body.e2e.payload_b64` (`[payload_version:1][nonce:24][ciphertext+tag]`) |
 
-Use libsodium **`crypto_generichash`** with 32-byte output. The 1-byte `body_kind` prefix domain-separates public JSON from E2E binary inside the hash input.
+Use libsodium **`crypto_generichash`** with 32-byte output. The 1-byte `body_kind` prefix domain-separates public body bytes from E2E ciphertext blob inside the hash input.
 
 ### Signature on the wire
 
@@ -314,10 +305,10 @@ Shared by relay send, relay poll verify, and c1/c2 test vectors. Lives in **`src
 
 **Send pipeline (e2e):**
 
-1. Build `ChatPayload` JSON from `ThreadMessage`.
+1. Build binary `ChatPayload` from `ThreadMessage` → `ChatPayloadCodec::Encode`.
 2. Assign `(message_id, sender_seq)` at first local persist (chat-storage D010); stamp envelope with **`chat_targets.session_epoch`** (authoritative outbound epoch).
 3. Build canonical AAD: `peer_contact_id` = recipient identity value from `ChatTargetKey`, `sender_contact_id` = local outbound identity for this thread, plus channel, ids, seq, epoch, timestamp.
-4. `MessageCipher::Encrypt(utf8(payload_json), session_key, aad)` → blob → base64 → `body.e2e.payload_b64`.
+4. `MessageCipher::Encrypt(chatpayload_bytes, session_key, aad)` → blob → base64 → `body.e2e.payload_b64`.
 5. `EnvelopeSigner::BuildSignBytes` → `IdentityStore::SignPayload` (no `thread_id`).
 6. Relay; on receive, verify signature → resolve `ChatTargetKey` → decrypt with **`envelope.session_epoch`** (E019) → **E2E D013 ingest**.
 
@@ -447,7 +438,7 @@ E2E crypto **c1** can proceed in parallel (no messaging types changed).
 
 ## Test vectors (required before d0 sign-off; asserted in c1 unit tests)
 
-Frozen vectors in unit tests, [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md), and this design. Regenerate Ed25519 fixtures with [`tools/gen_sign_vectors.py`](tools/gen_sign_vectors.py); AEAD/codec fixtures with [`tools/gen_aead_vectors.py`](tools/gen_aead_vectors.py).
+Frozen vectors in unit tests, [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md), and this design. Regenerate Ed25519 fixtures with [`tools/gen_sign_vectors.py`](tools/gen_sign_vectors.py); AEAD/codec fixtures with [`tools/gen_aead_vectors.py`](tools/gen_aead_vectors.py); binary payload bytes with [`tools/chatpayload_codec.py`](tools/chatpayload_codec.py).
 
 ### Shared test keypair (TEST ONLY)
 
@@ -461,11 +452,12 @@ Do **not** use this keypair outside tests.
 
 ### Ed25519 envelope signing (E014)
 
-**Canonical `ChatPayload` JSON** (v1 test fixture — minified UTF-8, keys in order: `schema_version`, `content_type`, `text`, `payload`):
+**Binary `ChatPayload` v1 — Vector A** (see [WIRE_SCHEMAS § ChatPayload](../chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088)):
 
-```json
-{"schema_version":1,"content_type":"text","text":"Hello","payload":{}}
-```
+| Field | Value |
+|-------|-------|
+| **`bytes` (hex)** | `0100000000000000000548656c6c6f` |
+| **`content_b64`** | `AQAAAAAAAAAABUhlbGxv` |
 
 #### Vector 1 — `public_relay`
 
@@ -478,11 +470,11 @@ Do **not** use this keypair outside tests.
 | `timestamp` | `1719662400123` (Unix ms) |
 | `sender_seq` | `0` (wire omits; signing uses zero) |
 | `session_epoch` | `0` (wire omits; signing uses zero) |
-| `body.content` | canonical JSON above |
-| `body_hash` input | `0x01` \|\| canonical JSON bytes |
-| **`body_hash` (hex)** | `db8f17cda6b57a0feff3b6aa09ca17e7ca15b32309cc85d555531c804e2c7f10` |
-| **`sign_bytes` (hex, 143 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100000000019063ddd27b000000000000000000000000db8f17cda6b57a0feff3b6aa09ca17e7ca15b32309cc85d555531c804e2c7f10002435353065383430302d653239622d343164342d613731362d343436363535343430303030000e72656c61793a616c696365313233` |
-| **`signature` (base64)** | `sgoePjY8ExAV+yVono5XyO6UUosHP0ka4Ham8f/2sKlUQwJvzbq1VFX+DWJlDVGZArw1MyPzQp44/H5+2zwGCA==` |
+| `body.content_b64` | `AQAAAAAAAAAABUhlbGxv` |
+| `body_hash` input | `0x01` \|\| decoded binary bytes |
+| **`body_hash` (hex)** | `c3883ac60f3d527e364ecca8dd28144886dc12f00fbef22502ef0f24ce2f1c74` |
+| **`sign_bytes` (hex, 159 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100000000019063ddd27b000000000000000000000000c3883ac60f3d527e364ecca8dd28144886dc12f00fbef22502ef0f24ce2f1c74000000000000002435353065383430302d653239622d343164342d613731362d343436363535343430303030000000000000000e72656c61793a616c696365313233` |
+| **`signature` (base64)** | `Gc6/4LugFNm7SKtGGicoUnUp9bWqJa6f71jYGSp+yUYn2UjdbkXwYpAz7fcSwrrwVSdrnxU98SveSAijpWsFDQ==` |
 
 #### Vector 2 — `e2e`
 
@@ -495,14 +487,14 @@ Do **not** use this keypair outside tests.
 | `timestamp` | `1719662400456` (Unix ms) |
 | `sender_seq` | `42` |
 | `session_epoch` | `1` |
-| `body.e2e.payload_b64` | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWFyHtOqqqWWg/pqrknkBhKHaF+SXAyEkn1r2loSMVWmnO1HgQ7B/uYrcLE5SZn7v/8/ZvnGJsuW+StHBZWIFUKGrC5cggZHoHelCS/RLpokmfv/AOd1cv` |
-| E2E blob (decoded, hex) | `01000102030405060708090a0b0c0d0e0f101112131415161721ed3aaaaa59683fa6aae49e4061287685f925c0c84927d6bda5a123155a69ced47810ec1fee62b70b1394999fbbfff3f66f9c626cb96f92b47059588154286ac2e5c820647a077a5092fd12e9a2499fbff00e77572f` |
+| `body.e2e.payload_b64` | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF1vPScnCPAVe+dnJiV9kKBztMM3qj/Hi+RhfLy6wlhU=` |
+| E2E blob (decoded, hex) | `01000102030405060708090a0b0c0d0e0f10111213141516175bcf49c9c23c055ef9d9c9895f64281ced30cdea8ff1e2f9185f2f2eb09615` |
 | `body_hash` input | `0x02` \|\| decoded blob bytes |
-| **`body_hash` (hex)** | `845179587525a14c1dd5a19099fbff4a47d06f7c458967ab4969fedaa748bbbe` |
-| **`sign_bytes` (hex, 143 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001845179587525a14c1dd5a19099fbff4a47d06f7c458967ab4969fedaa748bbbe002436363065383430302d653239622d343164342d613731362d343436363535343430303031000e72656c61793a616c696365313233` |
-| **`signature` (base64)** | `5+RuBH37ArdNTcd5U+dMy7xu2nJxRM3ruNMU75vBVi3aN1ftgmO2fXsb94NT5IaQaYW6wfxRWU4IVvPRxtDhDg==` |
+| **`body_hash` (hex)** | `b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e` |
+| **`sign_bytes` (hex, 159 bytes)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e000000000000002436363065383430302d653239622d343164342d613731362d343436363535343430303031000000000000000e72656c61793a616c696365313233` |
+| **`signature` (base64)** | `QeHtXYUc4uQJ+1qCSYtRpabAI/kk7Mik04kqQVOKk+O7WWO64VPnnNUUeaTmEX3BSOconoKo1ZwFVNO+JoGACA==` |
 
-E2E blob is the AEAD vector below (111 bytes): valid XChaCha20-Poly1305 ciphertext for the canonical `ChatPayload` JSON.
+E2E blob is the AEAD vector below (56 bytes): valid XChaCha20-Poly1305 ciphertext for binary `ChatPayload` Vector A.
 
 ### Symmetric crypto — HKDF (E015)
 
@@ -536,16 +528,16 @@ Envelope fields align with Ed25519 vector 2 above. Alice (`relay:alice123`) send
 | `session_epoch` | `1` |
 | `timestamp` | `1719662400456` (Unix ms) |
 | `channel` | `e2e` → `1` |
-| **`aad` (hex, 90 bytes)** | `0101000c72656c61793a626f62343536002436363065383430302d653239622d343164342d613731362d343436363535343430303031000e72656c61793a616c696365313233000000000000002a000000010000019063ddd3c8` |
-| `plaintext` (UTF-8) | `{"schema_version":1,"content_type":"text","text":"Hello","payload":{}}` |
-| **`ciphertext+tag` (hex, 86 bytes)** | `21ed3aaaaa59683fa6aae49e4061287685f925c0c84927d6bda5a123155a69ced47810ec1fee62b70b1394999fbbfff3f66f9c626cb96f92b47059588154286ac2e5c820647a077a5092fd12e9a2499fbff00e77572f` |
+| **`aad` (hex, 108 bytes)** | `0101000000000000000c72656c61793a626f62343536000000000000002436363065383430302d653239622d343164342d613731362d343436363535343430303031000000000000000e72656c61793a616c696365313233000000000000002a000000010000019063ddd3c8` |
+| `plaintext` (hex) | `0100000000000000000548656c6c6f` |
+| **`ciphertext+tag` (hex, 31 bytes)** | `5bcf49c9c23c055ef9d9c9895f64281ced30cdea8ff1e2f9185f2f2eb09615` |
 
 **Blob round-trip** (`EncryptedPayload` codec):
 
 | Field | Value |
 |-------|-------|
-| **`blob` (hex, 111 bytes)** | `01000102030405060708090a0b0c0d0e0f101112131415161721ed3aaaaa59683fa6aae49e4061287685f925c0c84927d6bda5a123155a69ced47810ec1fee62b70b1394999fbbfff3f66f9c626cb96f92b47059588154286ac2e5c820647a077a5092fd12e9a2499fbff00e77572f` |
-| **`payload_b64`** | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWFyHtOqqqWWg/pqrknkBhKHaF+SXAyEkn1r2loSMVWmnO1HgQ7B/uYrcLE5SZn7v/8/ZvnGJsuW+StHBZWIFUKGrC5cggZHoHelCS/RLpokmfv/AOd1cv` |
+| **`blob` (hex, 56 bytes)** | `01000102030405060708090a0b0c0d0e0f10111213141516175bcf49c9c23c055ef9d9c9895f64281ced30cdea8ff1e2f9185f2f2eb09615` |
+| **`payload_b64`** | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF1vPScnCPAVe+dnJiV9kKBztMM3qj/Hi+RhfLy6wlhU=` |
 
 **Cross-peer:** Bob decrypts with the same `aad` bytes after verifying `peer_contact_id == relay:bob456` (local self) and `sender_contact_id == envelope.sender_contact_id`. Both peers derive `session_key` from the shared HKDF `master_psk` fixture.
 

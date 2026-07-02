@@ -1,11 +1,38 @@
-# Wire schemas — normative JSON shapes
+# Wire schemas — normative wire reference
 
 **Status:** Planning — v2a-p2p+  
-**Authority:** Field behavior and validation rules live in [DESIGN.md](DESIGN.md); this file is the **canonical JSON shape reference** for implementers, relay API, and libp2p history (D072). C++ codecs in `base/messaging` must match these types.
+**Authority:** Field behavior and validation rules live in [DESIGN.md](DESIGN.md); this file is the **canonical wire reference** for implementers, relay API, and libp2p history (D072). C++ codecs in `base/messaging` must match these types.
 
 **Related:** [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) (normative AAD, ciphertext, signing), [e2e-message-crypto/DESIGN.md](../e2e-message-crypto/DESIGN.md) (planning), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md).
 
+**C++ reference:** [`src/common/Serialize.hpp`](../../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`, `OutputArchive` / `InputArchive`); [`src/common/BinaryPack.hpp`](../../src/common/BinaryPack.hpp) (`binaryPack` / `binaryUnpack`).
+
 **Identity (D079, D082):** Wire **`sender_contact_id`** carries the sender's **communicating identity value** (e.g. `relay:abc123`) — not local `Contact.id`. **`Contact.id`** is address-book only. v1 relay: **`peer_identity_kind` = `relay_user`**, **`peer_identity_value` = `relay:` + opaque id** (relay-assigned, URL-safe; see [DECISIONS D082](DECISIONS.md#d082--relay-user-communicating-identity-string-format)).
+
+---
+
+## pp Binary Wire Profile (D088)
+
+All in-tree **binary** wire formats (ChatPayload, AAD, E014 string fields, E2E blob tail) use this profile. **Do not** use bare `nlohmann::json::dump()` or ad hoc length widths on wire paths.
+
+| Type | Encoding |
+|------|----------|
+| **LenUtf8** | `u64` BE byte count + UTF-8 bytes (no NUL). C++: **`WireLenUtf8`**. |
+| **LenBytes** | `u64` BE byte count + opaque bytes. C++: **`WireLenBytes`**. |
+| **Fixed integer** | Fixed-width **big-endian** (`u8`, `u16`, `u32`, `u64`, `i64`). |
+| **Fixed raw** | `N` bytes with **no** length prefix (e.g. 32-byte hash, 24-byte nonce). |
+| **Forbidden on wire** | `map`, `set`, `float`, pointers, JSON inside signed/hashed bytes |
+
+**Decode rules:**
+
+1. Reject unknown **`version`** bytes at format start (per-type policy below).
+2. Enforce **application max size** before allocation ([D029](DECISIONS.md#d029--chat-resource-bounds-size--volume) — not the archive's internal 64 MiB ceiling).
+3. **Exact consume:** decoded byte length MUST match input; **reject trailing bytes**.
+
+**Encode rules (canonical):**
+
+- Field order matches struct `serialize()` order in spec tables.
+- ChatPayload **`text`** with default plain format: **omit** `sub_version` / `format` tail (Vectors A/B).
 
 ---
 
@@ -14,7 +41,7 @@
 | Layer | Rule |
 |-------|------|
 | **`RelayEnvelope`** | **Ignore** unknown top-level keys on ingest after required fields parse. Required keys must be present. Do not fail on forward-compatible extensions. |
-| **`ChatPayload`** | **Ignore** unknown keys inside `payload` for known `content_type`. **Reject** unknown `content_type` on **relay ingest** (D030/D050). Local dev rows may use future types. |
+| **`ChatPayload` (binary)** | **Reject** unknown `content_type` on **relay ingest** (D030/D050). **Reject** unknown tail fields for known types in v1. |
 | **`ChatHistoryRequest` / `ChatHistoryResponse`** | **Reject** unknown top-level keys (server/client negotiated API). |
 | **Signature input** | Only documented canonical fields participate in signed bytes — unknown envelope keys are **not** signed unless a future `envelope_version` spec says otherwise. **Normative byte layout:** [e2e-message-crypto DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) (E014). |
 
@@ -35,36 +62,36 @@ Signed outer wrapper. **No `thread_id`.** See [DESIGN § Relay envelope](DESIGN.
     "channel": "public_relay"
   },
   "body": {
-    "content": { }
+    "content_b64": "AQAAAAAAAAAABUhlbGxv"
   },
   "timestamp": 1719662400123,
   "signature": "base64-ed25519"
 }
 ```
 
-**E2E direct** adds `sender_seq`, `session_epoch`; `route.channel` = `e2e`; `body` uses `{ "e2e": { "payload_b64": "…" } }` instead of `body.content`.
+**E2E direct** adds `sender_seq`, `session_epoch`; `route.channel` = `e2e`; `body` uses `{ "e2e": { "payload_b64": "…" } }` instead of `body.content_b64`.
 
 ### Ed25519 canonical signing (E014)
 
-Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `dump()` of the envelope.
+Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `dump()` of the envelope. String fields in sign bytes use **LenUtf8** (D088).
 
 | Topic | v1 rule |
 |-------|---------|
 | Sign bytes | Fixed binary: domain prefix + `sign_version` + fields — full layout in [e2e DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) |
 | Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `route` (as enums), `timestamp`, `body_hash`, `sender_seq`, `session_epoch` |
 | Public channel seq/epoch | Wire **omits** `sender_seq`/`session_epoch`; signing uses **`0`** for both |
-| `body_hash` | BLAKE2b-256(`body_kind` \|\| payload): `0x01` + canonical `ChatPayload` JSON for public; `0x02` + decoded E2E blob bytes |
+| `body_hash` | BLAKE2b-256(`body_kind` \|\| payload): `0x01` + decoded **`body.content_b64`** bytes for public; `0x02` + decoded E2E blob bytes |
 | Not signed | `thread_id`, `sender_relay_id`, `signature`, unknown keys |
 | `signature` encoding | Standard **base64** (RFC 4648, padded) only in v1 |
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `envelope_version` | integer | yes | **1** in v1. Signed (D072). Bump independently of `ChatPayload.schema_version`. |
+| `envelope_version` | integer | yes | **1** in v1. Signed (D072). Bump independently of `ChatPayload.payload_version`. |
 | `message_id` | string (UUID) | yes | Dedup key (D034) |
 | `sender_relay_id` | string | yes | Relay registration id; **v1:** same string as `sender_contact_id` (D082) |
 | `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — e.g. `relay:abc123` (D082) |
 | `route` | object | yes | See `Route` below |
-| `body` | object | yes | `content` (public) or `e2e` (encrypted) |
+| `body` | object | yes | `content_b64` (public) or `e2e` (encrypted) |
 | `sender_seq` | integer (u64) | E2E only | Omitted on public (D045) |
 | `session_epoch` | integer (u32) | E2E only | |
 | `timestamp` | integer (i64) | yes | Unix **milliseconds**; display metadata; not sort authority (D054). Included in sign bytes (E014). |
@@ -80,27 +107,79 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 
 ---
 
-## `ChatPayload` (v1 — `schema_version: 1`)
+## `ChatPayload` (v1 — binary, D087/D088)
 
-Unified body for disk, relay plaintext, and E2E AEAD plaintext (D026, E010). Stored canonically in `messages.chat_payload_json` (D069).
+Unified body for disk, relay public channel, and E2E AEAD plaintext (D026, E010). Stored canonically in `messages.chat_payload` BLOB (D069/D078). On the wire, public channel carries RFC 4648 base64 in **`body.content_b64`**.
 
-```json
-{
-  "schema_version": 1,
-  "content_type": "text",
-  "text": "Hello",
-  "payload": {}
-}
-```
+**Encoder:** **`ChatPayloadCodec::Encode`** / **`Decode`** in `base/messaging` using **`WireLenUtf8`** and **`OutputArchive`**.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| `schema_version` | integer | yes | **1** in v1 |
-| `content_type` | string | yes | `text`, `system` **`[v1]`**; rich types **`[post-v1]`** |
-| `text` | string | conditional | Required for `text`; snippet for other types |
-| `payload` | object | yes | Type-specific; `{}` allowed for `text` |
+### Binary layout (`payload_version = 1`)
 
-**`[v1]` `content_type` payload shapes:** see [DESIGN § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).
+| Offset | Size | Field |
+|--------|------|-------|
+| 0 | 1 | `payload_version` = **`1`** |
+| 1 | 1 | `content_type` enum — see table below |
+| | var | `text` — **LenUtf8** |
+| | var | **Type tail** — inline fields below (not a nested length blob) |
+
+| `content_type` | Value | Maturity |
+|----------------|-------|----------|
+| `text` | `0` | **`[v1]`** |
+| `system` | `1` | **`[v1]`** |
+| `annotation` | `2` | **`[post-v1]`** |
+| `contact_card` | `3` | **`[post-v1]`** |
+| `crypto_tx` | `4` | **`[post-v1]`** |
+
+**Rules:** reject unknown `content_type` on relay ingest (D050). Max serialized size: **`kMaxChatPayloadBytes`** (64 KiB) on public; **`kMaxE2ePlaintextBytes`** (128 KiB) after E2E decrypt (D029). Bump **`payload_version`** for breaking layout changes.
+
+### Type tails (inline, v1)
+
+**`content_type = text`:**
+
+| Field | Encoding | Canonical rule |
+|-------|----------|----------------|
+| `sub_version` | `u8` = **`1`** | **Omit** when `format = plain` (0) — default |
+| `format` | `u8` | **`0`** = plain |
+
+**`content_type = system`:**
+
+| Field | Encoding |
+|-------|----------|
+| `sub_version` | `u8` = **`1`** |
+| `control_type` | **LenUtf8** |
+| `detail` | **LenUtf8** (empty = zero length) |
+
+**`[post-v1]`** types: documented sub-layouts in [DESIGN § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).
+
+### Frozen vectors (BLAKE2b-256 of `0x01` ‖ bytes)
+
+Regenerate: [`chatpayload_codec.py`](../e2e-message-crypto/tools/chatpayload_codec.py), [`gen_sign_vectors.py`](../e2e-message-crypto/tools/gen_sign_vectors.py).
+
+#### Vector A — ASCII text, plain default (E014 / AEAD fixtures)
+
+| Field | Value |
+|-------|-------|
+| Logical | `content_type=text`, `text="Hello"` |
+| **`bytes` (hex)** | `0100000000000000000548656c6c6f` |
+| **`content_b64`** | `AQAAAAAAAAAABUhlbGxv` |
+| **`body_hash` (hex)** | `c3883ac60f3d527e364ecca8dd28144886dc12f00fbef22502ef0f24ce2f1c74` |
+
+#### Vector B — non-ASCII text, plain default
+
+| Field | Value |
+|-------|-------|
+| Logical | `content_type=text`, `text="Café ☕"` |
+| **`bytes` (hex)** | `01000000000000000009436166c3a920e29895` |
+| **`content_b64`** | `AQAAAAAAAAAACUNhZsOpIOKYlQ==` |
+| **`body_hash` (hex)** | `e02629e02b6a8328d2d69bdfc1f0fcd12646f1013684939e687d610692517eba` |
+
+#### Vector C — system with LenUtf8 tail
+
+| Field | Value |
+|-------|-------|
+| Logical | `content_type=system`, `text="Peer joined"`, `control_type="member_joined"`, `detail="alice"` |
+| **`bytes` (hex)** | `0101000000000000000b50656572206a6f696e656401000000000000000d6d656d6265725f6a6f696e65640000000000000005616c696365` |
+| **`body_hash` (hex)** | `b5bd1016b9ae31b1269638fe3fb86f44e1f74dfedc03bf3041812f885757453f` |
 
 ---
 
@@ -175,7 +254,8 @@ Single request shape for **`FetchChatTargetMessages`** (D058). HTTP: query param
 |----------|---------------|-----------|
 | SQLite `thread.db` / `profile.db` | `PRAGMA user_version` | Column/table layout change — **migrate** (D069) |
 | `RelayEnvelope` | `envelope_version` | Outer wire shape or signing canonical set changes |
-| `ChatPayload` | `schema_version` | Body schema or required payload keys change |
+| `ChatPayload` | `payload_version` | Body binary layout or required tail fields change (D087) |
+| Binary wire profile | (per-format version byte) | LenUtf8 rules unchanged; bump format version on layout break |
 | E2E AAD | `aad_version` | [e2e-message-crypto](../e2e-message-crypto/DESIGN.md) |
 | libp2p history | protocol id `/pp-browser/chat-history/1.0.0` | Request/response breaking change → new protocol id |
 

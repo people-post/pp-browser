@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Generate frozen E014 Ed25519 signing test vectors for DESIGN.md.
 
-Canonical sender_contact_id fixture: relay:alice123 (D082 / E017).
-E2E blob uses the real AEAD fixture from gen_aead_vectors.py.
+Binary Wire Profile: LenUtf8 for sign-string fields (D088).
 """
 
 import base64
@@ -12,7 +11,9 @@ import struct
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from gen_aead_vectors import NONCE, SESSION_KEY, build_aad, encrypt
+from chatpayload_codec import VECTOR_A, VECTOR_B, VECTOR_C
+from gen_aead_vectors import build_aad, e2e_blob_from_plaintext
+from wire_codec import len_utf8
 
 DOMAIN = b"pp-browser:relay-envelope-sign-v1\x00"
 
@@ -36,15 +37,13 @@ def build_sign_bytes(
     out += struct.pack(">Q", sender_seq)
     out += struct.pack(">I", session_epoch)
     out += body_hash
-    for value in (message_id, sender_contact_id):
-        encoded = value.encode("utf-8")
-        out += struct.pack(">H", len(encoded))
-        out += encoded
+    out += len_utf8(message_id)
+    out += len_utf8(sender_contact_id)
     return bytes(out)
 
 
 def main() -> None:
-    canonical_payload = b'{"schema_version":1,"content_type":"text","text":"Hello","payload":{}}'
+    canonical_payload = VECTOR_A
     pub_body_hash = blake2b_256(bytes([0x01]) + canonical_payload)
     pub_sign = build_sign_bytes(
         pub_body_hash,
@@ -65,8 +64,7 @@ def main() -> None:
         1,
         1719662400456,
     )
-    e2e_ciphertext = encrypt(SESSION_KEY, NONCE, canonical_payload, e2e_aad)
-    e2e_blob = bytes([0x01]) + NONCE + e2e_ciphertext
+    e2e_blob = e2e_blob_from_plaintext(canonical_payload, e2e_aad)
     e2e_body_hash = blake2b_256(bytes([0x02]) + e2e_blob)
     e2e_sign = build_sign_bytes(
         e2e_body_hash,
@@ -78,7 +76,6 @@ def main() -> None:
         "relay:alice123",
     )
 
-    # TEST ONLY — deterministic 32-byte Ed25519 private key (do not use in production).
     test_priv = bytes.fromhex(
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
     )
@@ -89,7 +86,13 @@ def main() -> None:
     derived_pub = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     assert derived_pub == test_pub
 
-    print("canonical_payload:", canonical_payload.decode())
+    print("vector_a_hex:", VECTOR_A.hex())
+    print("vector_a_body_hash:", blake2b_256(bytes([0x01]) + VECTOR_A).hex())
+    print("vector_b_hex:", VECTOR_B.hex())
+    print("vector_b_body_hash:", blake2b_256(bytes([0x01]) + VECTOR_B).hex())
+    print("vector_c_hex:", VECTOR_C.hex())
+    print("vector_c_body_hash:", blake2b_256(bytes([0x01]) + VECTOR_C).hex())
+    print("content_b64:", base64.b64encode(canonical_payload).decode())
     print("pub_body_hash:", pub_body_hash.hex())
     print("pub_sign_bytes:", pub_sign.hex())
     print("e2e_blob:", e2e_blob.hex())

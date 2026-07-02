@@ -21,7 +21,7 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 ### Design closure (required before c1)
 
 - [x] Resolve **O001** — `body.e2e.payload_b64` (E009)
-- [x] Resolve **O002** — JSON `ChatPayload` plaintext (E010)
+- [x] Resolve **O002** — binary `ChatPayload` plaintext (E010/D087)
 - [x] Resolve **O003** — paste base64 (E011); rotation bundle (E020/D086)
 - [x] Resolve **O006** — peer signing keys (E016)
 - [x] Document canonical **Ed25519 sign payload** field list for e2e envelopes (coordinate with chat-storage v6) — E014
@@ -82,10 +82,10 @@ Check boxes when the work is **merged and verified**. **Design must be solid bef
 
 ### Envelope and types
 
-- [ ] `RelayMessageBody`: `body.e2e.payload_b64` + `body.content` (ChatPayload) per E009/E010
+- [ ] `RelayMessageBody`: `body.e2e.payload_b64` + `body.content_b64` (binary ChatPayload) per E009/E010/D087
 - [ ] `P2pMessagingService`: branch on `channel == e2e`
-- [ ] Encrypt: serialize `ChatPayload` JSON → AAD → `MessageCipher` → `body.e2e.payload_b64`
-- [ ] Decrypt on poll → parse JSON → `ThreadMessage`
+- [ ] Encrypt: `ChatPayloadCodec::Encode` → AAD → `MessageCipher` → `body.e2e.payload_b64`
+- [ ] Decrypt on poll → `ChatPayloadCodec::Decode` → `ThreadMessage`
 - [ ] `EnvelopeSigner` — build/verify canonical sign bytes per E014 (coordinate `ChatPayloadCodec` for body hash)
 - [ ] `PeerSigningKeyStore` + directory `signing_public_key_b64` on hits (E016); lazy `GET /v1/users/{relay_user_id}`
 - [ ] Inbound Ed25519 verify before decrypt — resolve key from store (E016, D081)

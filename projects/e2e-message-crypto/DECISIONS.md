@@ -34,8 +34,8 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E004 — Canonical AAD binds `ChatTargetKey` context and `sender_seq`
 
 **Date:** 2026-06-29  
-**Updated:** 2026-07-02 — communicating identity values in AAD (D079).  
-**Decision:** AEAD associated data (`aad_version = 1` only): `channel`, `peer_contact_id`, `message_id`, `sender_contact_id`, `sender_seq` (u64 BE), `session_epoch` (u32 BE), `timestamp` (i64 BE) — layout in DESIGN.md. AAD string fields carry **communicating identity values** (D079) — not local `Contact.id`, not `local:self`. Sender sets `peer_contact_id` to recipient's identity value from `ChatTargetKey`. **No `thread_id` in AAD.** No dual AAD version support (D016).  
+**Updated:** 2026-07-02 — LenUtf8 string fields (D088).  
+**Decision:** AEAD associated data (`aad_version = 1` only): `channel`, `peer_contact_id`, `message_id`, `sender_contact_id`, `sender_seq` (u64 BE), `session_epoch` (u32 BE), `timestamp` (i64 BE) — layout in DESIGN.md. Identity/id strings are **LenUtf8** (u64 BE + UTF-8). AAD string fields carry **communicating identity values** (D079) — not local `Contact.id`, not `local:self`. Sender sets `peer_contact_id` to recipient's identity value from `ChatTargetKey`. **No `thread_id` in AAD.** No dual AAD version support (D016).  
 **Rationale:** Aligns with [chat-storage D079](../chat-storage-and-memory/DECISIONS.md#d079--local-contact-vs-communicating-identity-identity-keyed-chattargetkey); local thread and address-book ids are device-private.  
 **Alternatives:** Bind `thread_id` in AAD (superseded); encrypt only `text` with nonce.
 
@@ -64,7 +64,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-29 — nested object (E009).  
-**Decision:** E2E relay `body` shape is **`{ "e2e": { "payload_b64": "…" } }`**. `payload_b64` decodes to **`[version:1][nonce:24][ciphertext+tag]`**. Outer envelope fields remain signed JSON. Public channel uses **`{ "content": { …ChatPayload… } }`** plaintext (D026).  
+**Decision:** E2E relay `body` shape is **`{ "e2e": { "payload_b64": "…" } }`**. `payload_b64` decodes to **`[version:1][nonce:24][ciphertext+tag]`**. Outer envelope fields remain signed JSON. Public channel uses **`{ "content_b64": "…" }`** over binary `ChatPayload` (D087).  
 **Rationale:** Extensible nested shape; separates public structured content from E2E blob.  
 **Alternatives:** Flat `body.ciphertext_b64`; encrypt entire envelope JSON.
 
@@ -73,18 +73,19 @@ Record significant choices here so future sessions (human or agent) do not re-li
 ## E009 — Nested `body.e2e` object for ciphertext
 
 **Date:** 2026-06-29  
-**Decision:** Ciphertext field is **`body.e2e.payload_b64`**, not a top-level `body` string. Public relay uses sibling **`body.content`** for `ChatPayload` JSON.  
+**Decision:** Ciphertext field is **`body.e2e.payload_b64`**, not a top-level `body` string. Public relay uses sibling **`body.content_b64`** for binary `ChatPayload` (D087).  
 **Rationale:** Room for future `body.e2e.key_id` or algorithm hints without breaking public messages.  
 **Alternatives:** `body.ciphertext_b64`; `body.e2e.ciphertext`.
 
 ---
 
-## E010 — AEAD plaintext is JSON `ChatPayload`
+## E010 — AEAD plaintext is binary `ChatPayload`
 
 **Date:** 2026-06-29  
-**Decision:** Bytes encrypted inside the E2E blob are **UTF-8 JSON** of the same `ChatPayload` object used on the public channel (`schema_version`, `content_type`, `text`, `payload`) — see [chat-storage D026](../chat-storage-and-memory/DECISIONS.md). Not raw `text` only. Max decrypted size **`kMaxE2ePlaintextBytes` (128 KiB)** per [chat-storage D029](../chat-storage-and-memory/DECISIONS.md); reject before JSON parse after decrypt.  
-**Rationale:** Contact cards, annotations, and crypto txs work identically on E2E and public; one codec path.  
-**Alternatives:** UTF-8 `text` only; separate binary framing per type.
+**Updated:** 2026-07-02 — binary layout (D087); supersedes JSON plaintext.  
+**Decision:** Bytes encrypted inside the E2E blob are **binary `ChatPayload` v1** — the same bytes as public **`body.content_b64`** after base64 decode — see [chat-storage D087](../chat-storage-and-memory/DECISIONS.md#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext) / [WIRE_SCHEMAS](../chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087). Not raw `text` only. Max decrypted size **`kMaxE2ePlaintextBytes` (128 KiB)** per [chat-storage D029](../chat-storage-and-memory/DECISIONS.md); reject before `ChatPayloadCodec::Decode` after decrypt.  
+**Rationale:** Contact cards, annotations, and crypto txs work identically on E2E and public; one codec path; no JSON canonicalization drift between sign and encrypt.  
+**Alternatives:** UTF-8 `text` only; JSON `ChatPayload` (rejected — D087).
 
 ---
 
@@ -139,13 +140,13 @@ Display **BLAKE2b fingerprint** of the **active** `master_psk` for out-of-band v
 - **Domain prefix:** `"pp-browser:relay-envelope-sign-v1\0"` (UTF-8 + NUL), then **`sign_version = 1`** byte, then fields below.
 - **Signed fields:** `envelope_version`, `route_kind`, `channel`, `timestamp` (Unix **milliseconds**, i64 BE), `sender_seq` (u64 BE), `session_epoch` (u32 BE), **`body_hash`** (BLAKE2b-256, 32 bytes), `message_id`, `sender_contact_id` (length-prefixed UTF-8 strings, u16 BE length).
 - **E2E seq/epoch on public:** wire omits `sender_seq`/`session_epoch` on `public_relay` (D045); signing uses **`0`** for both.
-- **Body hash:** `BLAKE2b-256(body_kind || payload_bytes)` — `body_kind=0x01` + canonical **`ChatPayload`** UTF-8 JSON for `public_relay`; `body_kind=0x02` + **decoded** `body.e2e.payload_b64` bytes for `e2e`. Same hash function; branch-specific payload extraction.
+- **Body hash:** `BLAKE2b-256(body_kind || payload_bytes)` — `body_kind=0x01` + **decoded** **`body.content_b64`** bytes for `public_relay`; `body_kind=0x02` + **decoded** `body.e2e.payload_b64` bytes for `e2e`. Same hash function; branch-specific payload extraction.
 - **Not signed:** `thread_id`, `sender_relay_id`, `signature`, unknown top-level keys (D073).
 - **Signature wire encoding:** standard **base64** (RFC 4648, padded) only in v1 — matches `Ed25519Signer`.
 - **Implementation:** shared **`EnvelopeSigner`** in `src/base/messaging/`; c1 test vectors and c2 wiring must use it.
 
-**Rationale:** JSON `dump()` signing is non-canonical and today's code incorrectly includes `thread_id`. Binary layout matches `CanonicalAad` style; BLAKE2b aligns with PSK fingerprints (E002); body hash binds public semantics (D078 JSON) and E2E ciphertext bytes separately.  
-**Alternatives:** Sign canonical JSON of outer envelope (rejected — key order/whitespace footguns); SHA-256 body hash (acceptable but splits hash primitive from libsodium story); hash base64 string for E2E (rejected — binds encoding not ciphertext).
+**Rationale:** JSON `dump()` signing is non-canonical and today's code incorrectly includes `thread_id`. Binary layout matches `CanonicalAad` style; BLAKE2b aligns with PSK fingerprints (E002); body hash binds public binary body (D087/D078) and E2E ciphertext bytes separately.  
+**Alternatives:** Sign canonical JSON of outer envelope (rejected — key order/whitespace footguns); SHA-256 body hash (acceptable but splits hash primitive from libsodium story); hash base64 string for E2E (rejected — binds encoding not ciphertext); JSON `ChatPayload` body hash (rejected — D087).
 
 ---
 

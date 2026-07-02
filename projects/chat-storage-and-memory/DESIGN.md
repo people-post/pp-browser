@@ -51,7 +51,7 @@ When building **`[v1]`** phases, satisfy these so **`[post-v1]`** features plug 
 | **Set `transport` at send/receive** | `[post-v1]` badge UI reads column |
 | **Participant check on all inbound direct** | D027 auth model |
 | **Do not hardcode “AI never relays” in store layer** | Shared `@ai` sets `relay_visible=true` on specific rows only |
-| **`chat_payload_json` is canonical body** (D069) | Denormalized `content_type` / `payload` / `text` / `control_type` written only via `ChatPayloadCodec` |
+| **`chat_payload` BLOB is canonical body** (D069/D087) | Denormalized `content_type` / `payload` / `text` / `control_type` written only via `ChatPayloadCodec` |
 | **`envelope_version` on every relay envelope** (D072) | Independent wire evolution from `ChatPayload.schema_version` and SQLite `user_version` |
 | **Cap `empty_closed_seqs` / use ranges** (D071) | Bounded `sync_state.state_json`; coalesce before append |
 | **Production disk: migrate, don’t wipe** (D069) | D016 wipe is dev/pre-users only; shippable layouts use incremental `user_version` migrations |
@@ -195,8 +195,8 @@ C++ struct in `src/base/messaging/ThreadTypes.h` must stay aligned with store co
 |-------|------|-------------|-------|
 | `id` | UUID | v2a | Client-generated; dedup on ingest |
 | `thread_id` | UUID | v2a | |
-| `chat_payload_json` | JSON object | **v2a** | Canonical **`ChatPayload`** UTF-8 JSON (D069); wire-aligned |
-| `content_type` | enum | **v4** wire+store | Denormalized from `chat_payload_json`; `text`, `system` **`[v1]`** |
+| `chat_payload` | BLOB | **v2a** | Canonical **binary `ChatPayload`** (D069/D087); wire-aligned |
+| `content_type` | enum | **v4** wire+store | Denormalized from `chat_payload`; `text`, `system` **`[v1]`** |
 | `payload` | JSON object | **v4** | Denormalized `ChatPayload.payload` |
 | `text` | optional string | v2a | Display snippet / search / plain fallback; AI raw for `text` turns |
 | `content_rml` | optional string | v2a | Rendered blocks (AI assistant) |
@@ -228,7 +228,7 @@ Target struct in `ThreadTypes.h`. **v2a-p2p** removes legacy fields.
 | `sender_relay_id` | v2a-p2p | |
 | `sender_contact_id` | **v2a-p2p** | Sender **communicating identity value** on wire (D079, D082) — e.g. `relay:abc123` |
 | `route` | **v2a-p2p** | `{ kind, channel }` (D056) |
-| `body.content` | **v2a-p2p** | Minimal **ChatPayload** JSON (D063) — not flat `body.text` |
+| `body.content_b64` | **v2a-p2p** | Binary **ChatPayload** base64 (D063/D087) — not flat `body.text` |
 | `sender_seq`, `session_epoch` | **v6** | E2E only |
 | `timestamp`, `signature` | v2a-p2p | |
 
@@ -242,32 +242,30 @@ Target struct in `ThreadTypes.h`. **v2a-p2p** removes legacy fields.
 
 ### ChatPayload (unified message body — D026)
 
-One schema for disk, relay plaintext (`public_relay`), and AEAD plaintext (`e2e` — E010). Envelope `body.content` holds this object; E2E encrypts its UTF-8 JSON serialization.
+One schema for disk, relay plaintext (`public_relay`), and AEAD plaintext (`e2e` — E010/D087). Envelope `body.content_b64` holds base64 over binary bytes; E2E encrypts the same binary serialization.
 
-**Wire phasing (D063):** **v2a-p2p** ships **`body.content`** with minimal **`text`** ChatPayload (see below). **v4** adds full validator (`system`, unknown-type reject, D030, size caps) — **same wire shape**, no second parser.
+**Wire phasing (D063):** **v2a-p2p** ships **`body.content_b64`** with minimal **`text`** ChatPayload (see below). **v4** adds full validator (`system`, unknown-type reject, D030, size caps) — **same wire shape**, no second parser.
 
-**`[v1]` validator** accepts `text` and `system` on inbound relay; rejects unknown types. **`[post-v1]`** enables additional rows in the table below. Enum and columns exist from first schema — do not remove unused types.
+**Binary layout (v1 — D087/D088):** see [WIRE_SCHEMAS.md § ChatPayload](WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088) and [§ Wire profile](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
 
-**Minimal payload (v2a-p2p send/receive — D063):**
+**`[v1]` validator** accepts `text` and `system` on inbound relay; rejects unknown `content_type` enum values.
 
-```json
-{
-  "schema_version": 1,
-  "content_type": "text",
-  "text": "optional human-readable snippet",
-  "payload": {}
-}
-```
+**Logical v1 `text` example** (canonical: plain default, no format tail):
 
-| `content_type` | Maturity | `payload` shape (required keys) | UI |
-|----------------|----------|----------------------------------|-----|
-| `text` | **`[v1]`** | `{}` or `{"format":"plain"}` | Normal bubble; `text` required |
-| `system` | **`[v1]`** | `control_type`; optional `detail` | Centered system line |
+| Field | Value |
+|-------|-------|
+| `content_type` | `text` (enum `0`) |
+| `text` | `"optional human-readable snippet"` (LenUtf8) |
+
+| `content_type` | Maturity | Type tail (inline) | UI |
+|----------------|----------|-------------------|-----|
+| `text` | **`[v1]`** | omit when plain default; else `sub_version` + `format` | Normal bubble; `text` required |
+| `system` | **`[v1]`** | `sub_version` + `control_type` + `detail` (LenUtf8) | Centered system line |
 | `annotation` | **`[post-v1]`** | `annotation_type`, `target_message_id`; optional `value` | Inline on target; badge |
 | `contact_card` | **`[post-v1]`** | `contact_id`, `display_name`; optional `relay_user_id`, `avatar_url` | Contact card chrome |
 | `crypto_tx` | **`[post-v1]`** | `chain_id`, `asset`, `amount`, `direction`; optional `tx_hash`, `status`, `to_address` | Transaction card |
 
-**`[post-v1]` examples:**
+**`[post-v1]` logical examples** (future binary sub-layouts TBD):
 
 ```json
 {
@@ -384,9 +382,9 @@ CREATE TABLE messages (
   id TEXT PRIMARY KEY,
   display_order INTEGER NOT NULL,    -- UI transcript sort + pagination (D054)
   sender_contact_id TEXT NOT NULL,
-  chat_payload_json TEXT NOT NULL,   -- canonical ChatPayload UTF-8 JSON (D069); wire-aligned
+  chat_payload BLOB NOT NULL,        -- canonical binary ChatPayload (D069/D087); wire-aligned
   content_type TEXT NOT NULL,        -- denormalized cache — write only via ChatPayloadCodec
-  payload TEXT NOT NULL,             -- denormalized ChatPayload.payload object JSON
+  payload TEXT NOT NULL,             -- denormalized typed fields as JSON for queries
   text TEXT,                         -- denormalized ChatPayload.text
   content_rml TEXT,                  -- local-only assistant RML (never from wire, D030)
   user_payload TEXT,                 -- local-only LLM structured JSON (AI turns)
@@ -552,7 +550,7 @@ Disk layout and wire format evolve on **separate version axes** — see [WIRE_SC
 4. **Breaking wire cutover (D016)** ≠ breaking disk layout — do not wipe user transcripts on disk version bump.
 5. **Dev builds** may offer “reset local data” on unsupported `user_version`; production shows blocking error + export hint.
 
-**Canonical message body on disk (D069):** `messages.chat_payload_json` holds the full **`ChatPayload`** object (same JSON as wire plaintext / E2E decrypt output). Columns `content_type`, `payload`, `text`, `control_type`, and `target_message_id` are **denormalized caches** populated **only** by `ChatPayloadCodec::EncodeToRow` on write — never updated independently. Local-only columns (`content_rml`, `user_payload`, `chat_actions`) sit outside `ChatPayload`.
+**Canonical message body on disk (D069):** `messages.chat_payload` holds the full **binary `ChatPayload`** (same bytes as wire decode / E2E decrypt output). Columns `content_type`, `payload`, `text`, `control_type`, and `target_message_id` are **denormalized caches** populated **only** by `ChatPayloadCodec::EncodeToRow` on write — never updated independently. Local-only columns (`content_rml`, `user_payload`, `chat_actions`) sit outside `ChatPayload`.
 
 ## Clear / forget semantics (user-facing — D024)
 
@@ -653,14 +651,14 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 
 ## Relay / direct envelope (D056, D063)
 
-**No `thread_id` on the wire** — each peer keeps a local `thread_id` / `local_thread_id` only. Direct P2P routing uses **`sender_contact_id`** (communicating identity **value**, D079) + **`route`** (D056). Legacy envelopes that include `thread_id` or flat `body.text` without `body.content` are **rejected** (D016 — no dual-parser).
+**No `thread_id` on the wire** — each peer keeps a local `thread_id` / `local_thread_id` only. Direct P2P routing uses **`sender_contact_id`** (communicating identity **value**, D079) + **`route`** (D056). Legacy envelopes that include `thread_id` or flat `body.text` without `body.content_b64` are **rejected** (D016 — no dual-parser).
 
 ### Wire cutover phasing (D063)
 
 | Phase | Envelope | Body | Notes |
 |-------|----------|------|-------|
 | **Baseline (today)** | includes `thread_id` | flat `text` / `content_rml` | Removed at v2a-p2p — wipe data (D016) |
-| **v2a-p2p** | **`envelope_version`**, `sender_contact_id`, `route`, no `thread_id` | **`body.content`** minimal ChatPayload `text` | Single cutover; update `RelayEnvelope` C++ (D066, D072) |
+| **v2a-p2p** | **`envelope_version`**, `sender_contact_id`, `route`, no `thread_id` | **`body.content_b64`** minimal binary `text` ChatPayload (D087) | Single cutover; update `RelayEnvelope` C++ (D066, D072) |
 | **v4** | unchanged | same shape | Add validator: `system`, reject unknown types, D030, D029 limits |
 | **v6** | + `sender_seq`, `session_epoch` (E2E) | E2E: encrypted ChatPayload | AAD + signature bind seq fields |
 
@@ -677,12 +675,7 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
     "channel": "public_relay"
   },
   "body": {
-    "content": {
-      "schema_version": 1,
-      "content_type": "text",
-      "text": "Hello",
-      "payload": {}
-    }
+    "content_b64": "AQAAAAAAAAAABUhlbGxv"
   },
   "timestamp": 1719662400123,
   "signature": "…"
@@ -706,9 +699,9 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 }
 ```
 
-**Unknown-field policy (D073):** ingest **ignores** unknown top-level envelope keys (after required fields parse). **`ChatPayload`:** ignore unknown keys inside `payload` for known types; **reject** unknown `content_type` on relay ingest. Full rules: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).
+**Unknown-field policy (D073):** ingest **ignores** unknown top-level envelope keys (after required fields parse). **`ChatPayload` (binary):** reject unknown `content_type` on relay ingest; reject unknown typed sub-record fields in v1. Full rules: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).
 
-**Normative JSON shapes:** [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) — `RelayEnvelope`, `ChatPayload`, `ChatHistoryRequest`, `ChatHistoryResponse`. C++ codecs and relay/libp2p glue share one struct pair for history fetch (D072).
+**Normative wire shapes:** [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) — `RelayEnvelope` (JSON), binary `ChatPayload` (D087), `ChatHistoryRequest`, `ChatHistoryResponse`. C++ codecs and relay/libp2p glue share one struct pair for history fetch (D072).
 
 **`[post-v1]` group** — `route`: `{ "kind": "group", "group_id": "group:…" }` (no `ChatTargetKey`).
 
@@ -722,7 +715,7 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 | `sender_seq`, `session_epoch` | E2E only | Omitted on public (D045) |
 | `sender_instance_id` | **`[future]`** | Multi-device extension (D074); omit in v1 |
 
-`payload_b64` decodes to `[payload_version:1][nonce:24][ciphertext+tag]`; AEAD plaintext is UTF-8 `ChatPayload` JSON (E010).
+`payload_b64` decodes to `[payload_version:1][nonce:24][ciphertext+tag]`; AEAD plaintext is binary `ChatPayload` v1 (E010/D087) — same bytes as `body.content_b64` on public.
 
 **Inbound routing (direct):**
 
@@ -1029,8 +1022,8 @@ Ordered steps — **single linear sequence**; do not reorder in implementation (
 4. **Resolve local thread (direct)** — build **`ChatTargetKey`** from `envelope.sender_contact_id` (value) + inferred **`peer_identity_kind`** (v1: `relay_user`) + `envelope.route.channel` → lookup **`chat_targets`** → `local_thread_id`. **Inbound (D062, D080):** if no row — **E2E hard reject**; **public** → **ephemeral UI only**, stop before persist (steps 5–12). If row exists but shell missing → hard reject. Outbound user send uses **`FindOrCreateDirectThread`**. **`[post-v1]` group:** `route.group_id` → group thread lookup.
 5. **Per-thread UUID dedup** — `HasMessageId(local_thread_id, envelope.message_id)`; benign duplicate → stop (D034).
 6. **Participant check** — `envelope.sender_contact_id` must equal thread's **`peer_identity_value`** (and kind matches). Outbound reflected echo may use `local:self` in local rows only — not on wire.
-7. **Decrypt (E2E only)** — resolve `master_psk` via **`IPskSessionStore::ResolveMasterPskForEpoch(envelope.session_epoch)`** (E018/D085 — **never** `chat_targets.session_epoch`, which may lag on passive adopt); derive session key with HKDF `info` using **`envelope.session_epoch`** (E015); AEAD decrypt + verify AAD binds the same epoch. Failure → hard reject. **`public_relay`:** skip to step 8 with `body.content` plaintext.
-8. **Plaintext size** — decrypted UTF-8 JSON ≤ `kMaxE2ePlaintextBytes`; public `body.content` ≤ `kMaxChatPayloadJsonBytes`. Reject before `nlohmann::parse` (D033).
+7. **Decrypt (E2E only)** — resolve `master_psk` via **`IPskSessionStore::ResolveMasterPskForEpoch(envelope.session_epoch)`** (E018/D085 — **never** `chat_targets.session_epoch`, which may lag on passive adopt); derive session key with HKDF `info` using **`envelope.session_epoch`** (E015); AEAD decrypt + verify AAD binds the same epoch. Failure → hard reject. **`public_relay`:** skip to step 8 with decoded **`body.content_b64`** plaintext.
+8. **Plaintext size** — decrypted binary ≤ `kMaxE2ePlaintextBytes`; public `content_b64` decoded length ≤ `kMaxChatPayloadBytes`. Reject before `ChatPayloadCodec::Decode` (D033).
 9. **Parse & validate `ChatPayload`** — **`[v1]`** types `text`, `system`; strip wire `content_rml` (D030).
 10. **History floor (E2E only, D037)** — if `sender_seq ≤ history_floor_seq[peer][epoch]`, silent discard, stop.
 11. **D013 ingest classifier (E2E only)** — normal · gap · soft compromised · hard reject; `ReplayWindow` before gap declaration (D020). Skip when `sync_state=compromised` except to record incidents — do not persist new rows until resolved (D068).

@@ -254,7 +254,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-06-30 — minimal `text` payload in v2a-p2p wire (D063); v4 validator hardening.  
-**Decision:** One wire/disk payload shape in **`body.content`**. **v2a-p2p** ships minimal **`text`** ChatPayload on wire (D063). **v4** validator accepts **`text`** and **`system`**; reject unknown `content_type` on inbound relay. **`[post-v1]`** rich types — [DESIGN.md § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).  
+**Decision:** One wire/disk payload shape in **`body.content_b64`** (binary ChatPayload — D087). **v2a-p2p** ships minimal **`text`** ChatPayload on wire (D063). **v4** validator accepts **`text`** and **`system`**; reject unknown `content_type` on inbound relay. **`[post-v1]`** rich types — [DESIGN.md § ChatPayload](DESIGN.md#chatpayload-unified-message-body--d026).  
 **Rationale:** One parser path; wire lands with routing cutover; v4 deepens validation without second break.  
 **Alternatives:** All types in v1 (original D026); flat `body.text` until v4 (rejected — D063).
 
@@ -293,8 +293,8 @@ Vendor SQLite in `pp_base` (not libp2p fork). `IThreadStore` is the only feature
 | Limit | Value | Applies to |
 |-------|-------|------------|
 | `kMaxComposeTextBytes` | **64 KiB** | User composer `text` |
-| `kMaxChatPayloadJsonBytes` | **64 KiB** | Serialized `ChatPayload` on `public_relay` |
-| `kMaxE2ePlaintextBytes` | **128 KiB** | AEAD plaintext JSON (E010); checked before/after decrypt |
+| `kMaxChatPayloadBytes` | **64 KiB** | Serialized binary `ChatPayload` on `public_relay` (D087) |
+| `kMaxE2ePlaintextBytes` | **128 KiB** | AEAD plaintext binary (E010); checked before/after decrypt |
 | `kMaxRelayEnvelopeJsonBytes` | **256 KiB** | Full signed POST body |
 | `kMaxContentRmlBytes` | **256 KiB** | **Local-only** assistant RML on disk (not accepted from wire) |
 | `kMaxUserPayloadBytes` | **64 KiB** | Persisted `user_payload` on AI thread rows (aligns with platform-safety-limits) |
@@ -701,7 +701,7 @@ No hard max file size in v1.
 ## D063 — Wire cutover in v2a-p2p (envelope final; minimal ChatPayload)
 
 **Date:** 2026-06-30  
-**Decision:** **v2a-p2p** ships the **final relay envelope shape** (D056): `sender_contact_id`, `route`, **no `thread_id`**; reject legacy envelopes (D016). **Body** uses **`body.content` minimal ChatPayload** — `schema_version=1`, `content_type=text`, `text`, `payload={}` — from v2a-p2p, not the legacy `RelayMessageBody { text, content_rml }`. **Phase v4** adds validator hardening (`system` type, unknown-type reject, D030 strip remote `content_rml`, size checks) — **not a second wire break**. Single parser for send/receive; no dual-version support.  
+**Decision:** **v2a-p2p** ships the **final relay envelope shape** (D056): `sender_contact_id`, `route`, **no `thread_id`**; reject legacy envelopes (D016). **Body** uses **`body.content_b64`** minimal binary **`text`** ChatPayload (D087) — from v2a-p2p, not the legacy `RelayMessageBody { text, content_rml }`. **Phase v4** adds validator hardening (`system` type, unknown-type reject, D030 strip remote `content_rml`, size caps) — **not a second wire break**. Single parser for send/receive; no dual-version support.  
 **Rationale:** D016 forbids two relay breaking changes; routing cutover and payload shape land together once; v4 deepens validation on the same wire.  
 **Alternatives:** Legacy flat body until v4 (rejected — two cutovers); keep `thread_id` through v4 (rejected — D056).
 
@@ -740,8 +740,8 @@ No hard max file size in v1.
 
 | Phase | C++ / wire requirement |
 |-------|------------------------|
-| **v2a-core** | `ThreadMessage.display_order` (`int64_t`); **`chat_payload_json`** or equivalent store field (D078); `GetMessagesPage` / `AppendMessage` assign and read it. Other v4/v6 columns may remain store-only until wired. |
-| **v2a-p2p** | **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route` (`kind`, `channel`); **`body.content`** as minimal `ChatPayload` (D063, D072). **Grep gate:** no `envelope.thread_id` / `body.text` top-level relay body in `src/feature/` or `tests/` (except legacy rejection tests). |
+| **v2a-core** | `ThreadMessage.display_order` (`int64_t`); **`chat_payload`** BLOB or equivalent store field (D078/D087); `GetMessagesPage` / `AppendMessage` assign and read it. Other v4/v6 columns may remain store-only until wired. |
+| **v2a-p2p** | **`RelayEnvelope`:** remove `thread_id`; add **`envelope_version`**, `sender_contact_id`, `route` (`kind`, `channel`); **`body.content_b64`** as minimal binary `ChatPayload` (D063, D072, D087). **Grep gate:** no `envelope.thread_id` / `body.text` top-level relay body in `src/feature/` or `tests/` (except legacy rejection tests). |
 | **v4** | `ThreadMessage.content_type`, `payload`; full ChatPayload codec + validator. |
 | **v6** | `sender_seq`, `session_epoch` on `ThreadMessage` + envelope. |
 
@@ -812,7 +812,7 @@ No hard max file size in v1.
 ## D072 — `envelope_version` + shared history wire types
 
 **Date:** 2026-06-29  
-**Decision:** Every **`RelayEnvelope`** includes **`envelope_version: 1`** in v2a-p2p+; value is included in **Ed25519 canonical signing bytes**. Canonical **byte layout**, body hash, and `EnvelopeSigner` API: [e2e-message-crypto E014](../e2e-message-crypto/DECISIONS.md#e014--canonical-ed25519-relay-envelope-signing-bytes) / [DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes). Bump independently of `ChatPayload.schema_version` and SQLite `user_version`. **`ChatHistoryRequest` / `ChatHistoryResponse`** are **one C++ struct pair** shared by relay `GET /v1/chat-targets/messages` (D027) and libp2p `/pp-browser/chat-history/1.0.0` (D060). Normative JSON: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).  
+**Decision:** Every **`RelayEnvelope`** includes **`envelope_version: 1`** in v2a-p2p+; value is included in **Ed25519 canonical signing bytes**. Canonical **byte layout**, body hash, and `EnvelopeSigner` API: [e2e-message-crypto E014](../e2e-message-crypto/DECISIONS.md#e014--canonical-ed25519-relay-envelope-signing-bytes) / [DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes). Bump independently of `ChatPayload.payload_version` (D087) and SQLite `user_version`. **`ChatHistoryRequest` / `ChatHistoryResponse`** are **one C++ struct pair** shared by relay `GET /v1/chat-targets/messages` (D027) and libp2p `/pp-browser/chat-history/1.0.0` (D060). Normative wire: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).  
 **Rationale:** Outer wire evolution without dual-parser; prevent relay/libp2p request shape drift.  
 **Alternatives:** Implicit optional fields only (rejected); separate HTTP vs libp2p structs (rejected).
 
@@ -863,12 +863,13 @@ No hard max file size in v1.
 
 ---
 
-## D078 — Canonical on-disk body: `chat_payload_json` + single encoder
+## D078 — Canonical on-disk body: `chat_payload` BLOB + single encoder
 
 **Date:** 2026-06-29  
-**Decision:** `messages.chat_payload_json` stores the full **`ChatPayload`** JSON (wire-aligned). Columns `content_type`, `payload`, `text`, `control_type`, `target_message_id` are **denormalized caches** written **only** via **`ChatPayloadCodec::EncodeToRow`** — never updated independently on the hot path. Local-only: `content_rml`, `user_payload`, `chat_actions`.  
-**Rationale:** One canonical body simplifies migrations and matches E2E/plaintext wire; denormalized columns keep indexed queries without parsing JSON every read.  
-**Alternatives:** Split columns only with no canonical JSON (rejected — drift risk); JSON-only row with no denorm (rejected — query/index cost).
+**Updated:** 2026-07-02 — binary `ChatPayload` (D087); supersedes `chat_payload_json`.  
+**Decision:** `messages.chat_payload` stores the full **`ChatPayload`** binary (wire-aligned per [D087](#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext)). Columns `content_type`, `payload`, `text`, `control_type`, `target_message_id` are **denormalized caches** written **only** via **`ChatPayloadCodec::EncodeToRow`** — never updated independently on the hot path. Local-only: `content_rml`, `user_payload`, `chat_actions`.  
+**Rationale:** One canonical body simplifies migrations and matches E2E/plaintext wire; denormalized columns keep indexed queries without parsing binary every read.  
+**Alternatives:** Split columns only with no canonical blob (rejected — drift risk); blob-only row with no denorm (rejected — query/index cost); JSON on disk (rejected — D087).
 
 ---
 
@@ -959,7 +960,7 @@ where `<opaque_id>` is **relay-assigned** at registration, **URL-safe** (`[A-Za-
 **Cross-project:** [e2e-message-crypto E018](../e2e-message-crypto/DECISIONS.md#e018--retired-psk-ledger-for-historical-decrypt-after-rotate_psk), [E008/D084](../e2e-message-crypto/DECISIONS.md#e008--psk-store-v1-in-profiledb-chat_targets-at-rest-encryption-deferred).  
 **Decision:** Epoch bump coordinator **`rotate_psk`** path must append the previous `(session_epoch, master_psk_b64)` to **`chat_targets.retired_psks_json`** before replacing the active PSK and incrementing epoch (E018/D084). **Epoch-only** bump ([D014](#d014--peer-reset-requires-session_epoch-bump), same `master_psk`) does **not** append a retired entry. All PSK + seq updates in one **`profile.db` transaction**.
 
-**Decrypt:** feature layer resolves `master_psk` by **`envelope.session_epoch`** (E019/D085) via `IPskSessionStore::ResolveMasterPskForEpoch` — active PSK or retired ledger — then HKDF (E015). Never use lagging `chat_targets.session_epoch` for inbound decrypt. Messages already in `thread.db` as plaintext (`chat_payload_json`, D048/D069) remain readable without decrypt.
+**Decrypt:** feature layer resolves `master_psk` by **`envelope.session_epoch`** (E019/D085) via `IPskSessionStore::ResolveMasterPskForEpoch` — active PSK or retired ledger — then HKDF (E015). Never use lagging `chat_targets.session_epoch` for inbound decrypt. Messages already in `thread.db` as plaintext (`chat_payload`, D048/D069) remain readable without decrypt.
 
 **Pruning:** optional — drop retired entry for epoch `E` when no local transcript rows for `E`, user cleared/abandoned that epoch sync surface, and no pending old-epoch sync work (E018). Hard cap: **`kMaxRetiredPskEpochs` (8)** — prune lowest epochs when ledger exceeds cap (D086/E020).
 
@@ -1085,6 +1086,51 @@ If peer's last known epoch is older than the tail window, **disclose** that rela
 
 **Rationale:** Retired ledger alone cannot cover peer-initiated multi-hop rotation unless OOB carries the skipped keys; a bounded tail keeps paste/QR size predictable (`~1 KiB` at K=8) while fixing the common 1→2→3 offline gap.  
 **Alternatives rejected:** O006-A round-trip gate only (does not fix zero-message double-rotate); O006-C defer; unbounded retired history (storage + OOB size).
+
+---
+
+## D087 — Binary `ChatPayload` v1 (E014 body_hash + E010 plaintext)
+
+**Date:** 2026-07-02  
+**Updated:** 2026-07-02 — flattened type tail + pp Binary Wire Profile (D088).  
+**Decision:** Message body semantics use **binary `ChatPayload` v1** per [WIRE_SCHEMAS § ChatPayload](WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088) and [§ Wire profile](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088):
+
+| Path | Encoding |
+|------|----------|
+| Public relay wire | **`body.content_b64`** — RFC 4648 base64 over binary bytes |
+| E014 public `body_hash` | `body_kind=0x01` \|\| decoded **`content_b64`** bytes |
+| E010 AEAD plaintext | Same binary bytes as public (before encrypt) |
+| Disk (`messages.chat_payload`) | Raw BLOB — same bytes as wire decode / E2E decrypt output |
+
+**Layout (v1):** `payload_version`, `content_type`, `text` (**LenUtf8**), inline **type tail** (no opaque `typed_payload` blob). **`schema_version`** byte removed — use **`payload_version`** only.
+
+**Implementation:** **`ChatPayloadCodec`** via **`WireLenUtf8`** + **`OutputArchive`** / **`binaryPack`** ([`Serialize.hpp`](../../src/common/Serialize.hpp), [`BinaryPack.hpp`](../../src/common/BinaryPack.hpp)).
+
+**Rationale:** Relay is greenfield (D016); binary matches crypto formats; one profile (D088) across payload, AAD, and sign strings.  
+**Alternatives:** JSON body (rejected); opaque typed blob with mixed u16/u32 lengths (rejected — D088).
+
+---
+
+## D088 — pp Binary Wire Profile (LenUtf8 / LenBytes)
+
+**Date:** 2026-07-02  
+**Decision:** All in-tree **binary** wire formats share one encoding profile documented in [WIRE_SCHEMAS § Wire profile](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088):
+
+| Construct | Rule |
+|-----------|------|
+| **LenUtf8** | `u64` BE count + UTF-8 bytes — C++ **`WireLenUtf8`** |
+| **LenBytes** | `u64` BE count + opaque bytes — C++ **`WireLenBytes`** |
+| **Integers** | Fixed-width big-endian |
+| **Fixed raw** | No length prefix (`std::array<uint8_t, N>`) |
+| **Decode** | Exact consume; reject trailing bytes; enforce D029 caps at codec |
+| **Forbidden** | Maps/sets/floats/pointers/JSON inside signed or hashed bytes |
+
+**Applies to:** ChatPayload (D087), E2E AAD string fields (E004), E014 sign-string fields, E2E ciphertext tail (**LenBytes** after fixed nonce).
+
+**Reference implementation:** [`src/common/Serialize.hpp`](../../src/common/Serialize.hpp), [`src/common/BinaryPack.hpp`](../../src/common/BinaryPack.hpp) (`pbr::` namespace, **`Roe<T>`** errors).
+
+**Rationale:** One length-prefix rule eliminates u16/u32/u64 drift; aligns C++ archive with normative bytes; same class of bug as JSON canonicalization.  
+**Alternatives:** Per-format length widths (rejected); raw `std::string` on wire (rejected — ambiguous).
 
 ---
 
