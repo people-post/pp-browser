@@ -8,7 +8,9 @@ target_compile_definitions(sqlite3 PRIVATE
   SQLITE_OMIT_DEPRECATED
 )
 if(UNIX)
-  target_link_libraries(sqlite3 PRIVATE pthread)
+  if(NOT ANDROID)
+    target_link_libraries(sqlite3 PRIVATE pthread)
+  endif()
   if(NOT APPLE)
     target_link_libraries(sqlite3 PRIVATE dl m)
   else()

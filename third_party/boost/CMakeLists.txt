@@ -54,4 +54,6 @@ if(NOT TARGET Boost::boost)
   add_library(Boost::boost ALIAS Boost_boost)
   target_include_directories(Boost_boost INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(Boost_boost INTERFACE Boost::headers)
+  # Vendored Boost is linked via CMake targets; disable MSVC #pragma comment(lib) auto-link.
+  target_compile_definitions(Boost_boost INTERFACE BOOST_ALL_NO_LIB)
 endif()
