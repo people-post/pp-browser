@@ -9,46 +9,61 @@ For each of `relay`, `directory`, and `registration`:
 | Priority | Condition | Implementation |
 |----------|-----------|----------------|
 | 1 | `base_url` non-empty in `config.json` | `Http*Client` |
-| 2 | `base_url` empty and promoted MCP client running | `Mcp*Client` (infra tools) |
-| 3 | otherwise | `Mock*Client` |
-
-Explicit HTTP URLs always win, even when promoted MCP is connected.
+| 2 | otherwise | `Mock*Client` |
 
 ## Config shape
 
 ```json
 {
-  "relay": { "base_url": "", "transport": "http" },
-  "directory": { "base_url": "" },
-  "registration": { "base_url": "" }
+  "relay": { "base_url": "https://host/api/relay", "transport": "http" },
+  "directory": { "base_url": "https://host/api/relay" },
+  "registration": { "base_url": "https://host/api/relay" }
 }
 ```
 
-`transport` is reserved for future libp2p support (`http` | `libp2p`). v1 ignores non-HTTP transports.
+`transport` is reserved for future libp2p support (`http` | `libp2p`). v1 uses HTTP when `base_url` is set.
 
-## Promoted MCP infra tools
+## HTTP registration (challenge + sign bytes)
 
-When HTTP URLs are unset, the promoted MCP client bridges native interfaces:
+When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegistrationClient` uses a 2-step challenge flow:
 
-| Native interface | MCP tool | Result shape |
-|------------------|----------|--------------|
-| `IDirectoryClient::SearchPeople` | `search_people` | JSON array of directory hits |
-| `IRegistrationClient::Register` | `register_user` | `{ success, relay_user_id, message }` |
-| `IRegistrationClient::UpdateNickname` | `update_profile_nickname` | `{ success, message }` |
-| `IRelayClient::Send` | `relay_send` | relay envelope fields |
-| `IRelayClient::PollInbox` | `relay_poll_inbox` | `{ messages, next_cursor }` |
+| Step | HTTP | Request body | Response |
+|------|------|--------------|----------|
+| Start | `POST /v1/register/start` | `{ public_key, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
+| Finish | `POST /v1/register/finish` | `{ challenge, public_key, signature, timestamp, nickname?, signature_alg? }` | `{ success, relay_user_id, message, expires_at }` |
 
-These tool names are excluded from the agent tool registry when registered via promoted MCP (native `MessagingTools` own the agent-facing names).
+Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=1`, challenge (len-prefixed UTF-8), 32-byte raw public key, `signature_alg` u8 (`0=ed25519`), `timestamp` i64 BE.
+
+## HTTP relay API auth (per-request sign bytes)
+
+All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api-v1\0` canonical bytes.
+
+| Op | HTTP | Signed fields |
+|----|------|----------------|
+| send | `POST /v1/messages` | sender, recipient, stream_id, index_key |
+| poll_inbox | `POST /v1/inbox/poll` | requester_contact_id, cursor |
+| stream_history | `POST /v1/streams/messages/query` | requester, sender, stream_id, optional index range, limit, order |
+
+`blob_b64` is **not** included in transport auth (E014 envelope signature covers message integrity inside the blob).
+
+## Directory and profile
+
+| HTTP | Purpose |
+|------|---------|
+| `GET /v1/users/:relay_user_id` | Public lookup (`signing_public_key_b64`, nickname, expires_at) |
+| `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
+
+## Native agent tools
+
+[`MessagingTools`](../src/feature/ai/tools/MessagingTools.cpp) exposes `search_people`, `register_user`, and `update_profile_nickname` as native C++ tools calling `MessagingHub` → `Http*Client` directly (not via MCP).
 
 ## MCP client buckets
 
 | Bucket | Config | Agent tools |
 |--------|--------|-------------|
-| Promoted | `promoted_mcp` (+ platform default) | Feed/AI tools; infra tools bridged natively |
+| Promoted | `promoted_mcp` (+ platform default) | Feed/AI tools (not relay infra) |
 | Custom | `mcp_servers[]` | All tools; collisions prefixed as `{id}__{tool}` |
-
-[`McpRuntime`](../src/base/ai/mcp/McpRuntime.cpp) starts one client for promoted MCP and one per enabled `mcp_servers` entry.
 
 ## libp2p (deferred)
 
-Future work adds `Libp2p*Client` implementations behind the same interfaces. `ServiceEndpointConfig::transport` and optional peer/multiaddr fields are reserved in config schema; factory selection will branch on `transport` without touching `MessagingHub` or `P2pMessagingService`.
+Future work adds `Libp2p*Client` implementations behind the same interfaces and sign-byte auth over libp2p HTTP to www.

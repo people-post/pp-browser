@@ -65,7 +65,6 @@ private:
   std::function<void(const std::string&)> on_delivery_notice_;
   mutable std::mutex retry_mutex_;
   std::vector<PendingRelaySend> retry_queue_;
-  bool mcp_throttled_poll_ = false;
   uint64_t last_relay_poll_ms_ = 0;
   std::atomic<bool> poll_pending_{false};
 };

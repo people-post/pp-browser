@@ -22,10 +22,10 @@ set(PP_BROWSER_BASE_SOURCES
   platform/SdlAppEvents.cpp
   platform/SdlAssetFileInterface.cpp
   net/HttpClient.cpp
-  net/McpDirectoryClient.cpp
-  net/McpInfraBridge.cpp
-  net/McpRegistrationClient.cpp
-  net/McpRelayClient.cpp
+  net/RelayApiSignPayload.cpp
+  net/RelaySignBytes.cpp
+  net/RegistrationClientUtil.cpp
+  net/RegistrationSignPayload.cpp
   net/ServiceClientFactory.cpp
   net/ServiceClientsImpl.cpp
   data/AppPaths.cpp
@@ -51,6 +51,7 @@ set(PP_BROWSER_BASE_SOURCES
   messaging/RelayWirePayload.cpp
   messaging/JsonThreadStore.cpp
   messaging/MessagingJson.cpp
+  messaging/RelayStreamKey.cpp
   messaging/PeopleDiscoveryBlocks.cpp
   messaging/SqliteThreadStore.cpp
   crypto/CryptoUtil.cpp

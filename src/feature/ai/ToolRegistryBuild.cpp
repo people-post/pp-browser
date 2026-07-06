@@ -6,8 +6,6 @@
 #include "base/ai/mcp/McpClient.h"
 #include "feature/messaging/MessagingHub.h"
 
-#include <unordered_set>
-
 namespace pbr {
 
 ToolRegistry ToolRegistry::BuildFromConfig(const AppConfig& config, McpClient* promoted_mcp,
@@ -17,11 +15,8 @@ ToolRegistry ToolRegistry::BuildFromConfig(const AppConfig& config, McpClient* p
   registry.Register(WebSearchTool::Make(config.search));
   RegisterMessagingTools(registry, MessagingHub::Instance());
 
-  static const std::unordered_set<std::string> kPromotedDenylist = {
-      "search_people", "register_user", "update_profile_nickname", "relay_send", "relay_poll_inbox"};
-
   if (promoted_mcp && promoted_mcp->IsRunning()) {
-    McpToolAdapter::RegisterTools(registry, *promoted_mcp, {.denylist = kPromotedDenylist});
+    McpToolAdapter::RegisterTools(registry, *promoted_mcp, {});
   }
 
   for (size_t i = 0; i < custom_mcps.size(); ++i) {

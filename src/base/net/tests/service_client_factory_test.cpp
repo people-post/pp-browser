@@ -1,15 +1,14 @@
-#include "base/ai/mcp/McpClient.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/net/ServiceClientFactory.h"
 
 #include <gtest/gtest.h>
 
-TEST(ServiceClientFactoryTest, BuildsHttpMockAndMcpClients) {
+TEST(ServiceClientFactoryTest, BuildsHttpAndMockClients) {
   pbr::AppConfig config;
   config.relay.base_url = "https://relay.example";
 
-  auto clients = pbr::CreateServiceClients(config, nullptr);
+  auto clients = pbr::CreateServiceClients(config);
   ASSERT_TRUE(static_cast<bool>(clients.relay));
   ASSERT_TRUE(static_cast<bool>(clients.directory));
   ASSERT_TRUE(static_cast<bool>(clients.registration));
@@ -25,22 +24,16 @@ TEST(ServiceClientFactoryTest, BuildsHttpMockAndMcpClients) {
   envelope.route.kind = "direct";
   envelope.route.channel = pbr::ThreadChannel::E2e;
   envelope.body.e2e.payload_b64 = *payload_b64;
+  envelope.sender_seq = 1;
+  envelope.order_key = 1;
+  envelope.stream_key = "v1:e2e:1:relay:peer:relay:self";
+  envelope.recipient_contact_id = "relay:peer";
   envelope.timestamp = 1;
   const auto http_send = clients.relay->Send(envelope);
   EXPECT_FALSE(static_cast<bool>(http_send));
 
   pbr::AppConfig mock_config;
-  auto mock_clients = pbr::CreateServiceClients(mock_config, nullptr);
+  auto mock_clients = pbr::CreateServiceClients(mock_config);
   const auto mock_send = mock_clients.relay->Send(envelope);
   EXPECT_TRUE(static_cast<bool>(mock_send));
-
-  auto& promoted = pbr::McpClient::MockInstance();
-  auto mcp_clients = pbr::CreateServiceClients(mock_config, &promoted);
-  auto mcp_hits = mcp_clients.directory->SearchPeople("alice");
-  ASSERT_TRUE(static_cast<bool>(mcp_hits));
-  ASSERT_FALSE((*mcp_hits).empty());
-  EXPECT_EQ((*mcp_hits)[0].nickname, "alice");
-
-  const auto mcp_send = mcp_clients.relay->Send(envelope);
-  EXPECT_TRUE(static_cast<bool>(mcp_send));
 }

@@ -98,6 +98,31 @@ struct RelayEnvelope {
   uint32_t session_epoch = 1;
   int64_t timestamp = 0;
   std::string signature;
+  /** Opaque conversation scope for relay indexing (unsigned). */
+  std::string stream_key;
+  /** Per-sender monotonic key for relay range fetch (= sender_seq in v1). */
+  uint64_t order_key = 0;
+  /** Delivery target — relay routing only (unsigned). */
+  std::optional<std::string> recipient_contact_id;
+};
+
+/** Opaque relay HTTP wire record for send (routing + blob). */
+struct RelayWireSendRecord {
+  std::string sender_contact_id;
+  std::string recipient_contact_id;
+  std::string stream_id;
+  uint64_t index_key = 0;
+  std::string blob_b64;
+  int64_t timestamp = 0;
+  std::string signature;
+};
+
+/** Opaque relay HTTP wire record returned on poll/history. */
+struct RelayInboundRecord {
+  std::string sender_contact_id;
+  std::string stream_id;
+  uint64_t index_key = 0;
+  std::string blob_b64;
 };
 
 struct ChatHistoryCursor {

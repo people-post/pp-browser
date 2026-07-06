@@ -1,6 +1,5 @@
 #pragma once
 
-#include "base/ai/mcp/McpClient.h"
 #include "base/data/Config.h"
 #include "base/net/ServiceClients.h"
 
@@ -14,6 +13,6 @@ struct ServiceClients {
   std::unique_ptr<IRegistrationClient> registration;
 };
 
-ServiceClients CreateServiceClients(const AppConfig& config, McpClient* promoted_mcp);
+ServiceClients CreateServiceClients(const AppConfig& config);
 
 } // namespace pbr

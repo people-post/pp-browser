@@ -545,7 +545,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
 
   if (MessagingHub::Instance().IsInitialized()) {
     const auto& bootstrap = SessionStore::Instance().Snapshot();
-    (void)MessagingHub::Instance().Reinitialize(state->config, bootstrap.profile_data_dir, state->mcp.PromotedPtr());
+    (void)MessagingHub::Instance().Reinitialize(state->config, bootstrap.profile_data_dir);
   }
 
   BrowserThread::ResumeIO();

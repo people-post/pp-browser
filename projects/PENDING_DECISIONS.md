@@ -48,7 +48,7 @@ Resolve top-to-bottom. Items 1–3 affect release definition and integration tes
 v6-sync needs relay support that is **not fully in this repo** today:
 
 - Client: `IRelayClient::FetchChatHistory` (or equivalent) — in progress
-- Server: **`GET /v1/chat-targets/messages`** per [WIRE_SCHEMAS](chat-storage-and-memory/WIRE_SCHEMAS.md) — party auth, seq-scoped fetch (D027)
+- Server: **`GET /api/relay/v1/streams/messages`** per [WIRE_SCHEMAS](chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay) — party auth via inbox + sender, `order_key`-scoped fetch (D027)
 - Also needed for c2 verify path: **`signing_public_key_b64`** on directory hits + lazy **`GET /v1/users/{relay_user_id}`** (E016/D081)
 
 | Option | Implication |

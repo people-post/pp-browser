@@ -929,57 +929,54 @@ Receiver treats E2E sender violations as soft compromised ingest (D013) — paus
 
 E2E backfill is **peer-first** (D060); **relay** (D027) when peer offline or direct unavailable.
 
-### Relay API — chat-target message fetch (D027, D056)
+### Relay API — stream message fetch (D027, D056)
 
-**Relay fallback** for **`FetchChatTargetMessages`** (D058) when peer-direct (D060) is unavailable. Authenticated as relay user.
+**Relay fallback** for **`FetchChatTargetMessages`** (D058) when peer-direct (D060) is unavailable. The relay is **chat-agnostic**; pp-browser maps `ChatHistoryRequest` to opaque **`stream_key`** + **`order_key`** (v1: `order_key === sender_seq`). Normative wire: [WIRE_SCHEMAS § Stream history](WIRE_SCHEMAS.md#stream-history-http-relay).
 
-**Authorization (required):** Relay MUST verify the authenticated caller is a **party to the requested `ChatTargetKey`** (1:1: `peer_identity_value` is an identity they may message; **`[post-v1]`** group: member of `group_id`). Non-participants receive **403**. Client ingest MUST reject when `sender_contact_id` does not match the thread's bound **`peer_identity_value`** (and kind).
+**Authorization (required):** `requester_contact_id` must be the inbox owner and must differ from `sender_contact_id`. Non-participants receive **403**. Client ingest MUST reject when `sender_contact_id` does not match the thread's bound **`peer_identity_value`**.
 
-**`GET /v1/chat-targets/messages`**
+**`GET /api/relay/v1/streams/messages`**
 
 | Query param | Required | Description |
 |-------------|----------|-------------|
-| `peer_identity_kind` | yes | Other party's identity kind (v1: `relay_user`) |
-| `peer_identity_value` | yes | Other party's communicating identity (stream owner for fetch) |
-| `channel` | yes | `e2e` \| `e2e_public` |
-| `session_epoch` | yes (E2E) | Epoch scope |
-| `min_sender_seq` | no | Inclusive lower bound (gap repair, E2E) |
-| `max_sender_seq` | no | Inclusive upper bound (gap repair, E2E) |
+| `requester_contact_id` | yes | Authenticated relay user (inbox owner) |
+| `sender_contact_id` | yes | Stream sender whose messages are fetched |
+| `stream_key` | yes | Opaque stream id — v1: `v1:{channel}:{session_epoch}:{id_lo}:{id_hi}` |
+| `min_order_key` | no | Inclusive lower bound (gap repair) |
+| `max_order_key` | no | Inclusive upper bound (gap repair) |
 | `limit` | no | Default **50**, max **100** |
 | `order` | no | `asc` (default) or `desc` |
 
-Relay stores messages by **(recipient inbox, sender_contact_id, channel)** — not client `thread_id`.
+Relay stores messages by **(recipient_contact_id, sender_contact_id, stream_key, order_key)** — not client `thread_id`, `channel`, or `session_epoch` as first-class index fields.
 
-**Sync mode usage** (when `history_floor_seq` is set, use `min_sender_seq = floor + 1` on all modes):
+**Sync mode usage** (when `history_floor_seq` is set, use `min_order_key = floor + 1` — client maps from `min_sender_seq`):
 
 | Mode | Typical request |
 |------|-----------------|
-| Tail sync | `min_sender_seq=floor+1`, `order=desc`, `limit=50` |
-| Gap repair | `min_sender_seq=max(N+1, floor+1)`, `max_sender_seq=M`, `order=asc` |
-| User-initiated sync | Tail + gap ranges; optional `max_sender_seq=loaded_min-1`, `limit=25`, `order=desc` |
+| Tail sync | `min_order_key=floor+1`, `order=desc`, `limit=50` |
+| Gap repair | `min_order_key=max(N+1, floor+1)`, `max_order_key=M`, `order=asc` |
+| User-initiated sync | Tail + gap ranges; optional `max_order_key=loaded_min-1`, `limit=25`, `order=desc` |
 | Scroll backfill **`[post-v1]`** | Same older-range params as user sync; scroll trigger only |
 
 Discard any below-floor rows in relay responses without compromising (D037).
 
-**Response 200:**
+**Response 200** (stream-shaped; client merges chat fields from request):
 
 ```json
 {
-  "peer_identity_kind": "relay_user",
-  "peer_identity_value": "relay:…",
-  "channel": "e2e",
-  "session_epoch": 1,
-  "messages": [ /* RelayEnvelope[] — no thread_id */ ],
+  "stream_key": "v1:e2e:1:relay:alice:relay:bob",
+  "sender_contact_id": "relay:…",
+  "messages": [ /* RelayEnvelope[] — no thread_id; routing fields stripped */ ],
   "has_more": true,
   "cursor": {
-    "next_min_sender_seq": 10,
-    "next_max_sender_seq": null
+    "next_min_order_key": 10,
+    "next_max_order_key": null
   }
 }
 ```
 
 - Each element is a full signed `RelayEnvelope` (client verifies signature; resolves `ChatTargetKey`; **E2E** runs D013 ingest).
-- **`POST /v1/messages`** (or existing send): idempotent on `message_id` — duplicate POST returns 200 with same id (D017). Reject body > `kMaxRelayEnvelopeJsonBytes` (D029). **Reject** bodies containing `thread_id`.
+- **`POST /api/relay/v1/messages`** (or existing send): idempotent on `message_id` — duplicate POST returns 200 with same id (D017). Reject body > `kMaxRelayEnvelopeJsonBytes` (D029). **Reject** bodies containing `thread_id`. Send body includes unsigned routing fields: `recipient_contact_id`, `stream_key`, `order_key`.
 - Inbox **poll** may remain for notifications; clients must not rely on poll alone for seq-complete history. Max **100** messages per poll response (D029/D032).
 
 MCP bridge: expose equivalent `relay_fetch_chat_target_messages` tool with same parameters.

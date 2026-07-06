@@ -1,4 +1,7 @@
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/RelayStreamKey.h"
+
+#include "base/crypto/CryptoUtil.h"
 
 #include <nlohmann/json.hpp>
 #include <sstream>
@@ -260,6 +263,33 @@ nlohmann::json RelayEnvelopeToJson(const RelayEnvelope& envelope) {
   if (envelope.route.group_id) {
     route["group_id"] = *envelope.route.group_id;
   }
+  nlohmann::json json = {{"envelope_version", envelope.envelope_version},
+                         {"message_id", envelope.message_id},
+                         {"sender_relay_id", envelope.sender_relay_id},
+                         {"sender_contact_id", envelope.sender_contact_id},
+                         {"route", std::move(route)},
+                         {"body", std::move(body)},
+                         {"sender_seq", envelope.sender_seq},
+                         {"session_epoch", envelope.session_epoch},
+                         {"timestamp", envelope.timestamp},
+                         {"signature", envelope.signature},
+                         {"stream_key", envelope.stream_key},
+                         {"order_key", envelope.order_key}};
+  if (envelope.recipient_contact_id) {
+    json["recipient_contact_id"] = *envelope.recipient_contact_id;
+  }
+  return json;
+}
+
+nlohmann::json RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope) {
+  nlohmann::json body = {{"e2e", {{"payload_b64", envelope.body.e2e.payload_b64}}}};
+  if (envelope.body.e2e.key_init_b64) {
+    body["e2e"]["key_init_b64"] = *envelope.body.e2e.key_init_b64;
+  }
+  nlohmann::json route = {{"kind", envelope.route.kind}, {"channel", ThreadChannelToString(envelope.route.channel)}};
+  if (envelope.route.group_id) {
+    route["group_id"] = *envelope.route.group_id;
+  }
   return {{"envelope_version", envelope.envelope_version},
           {"message_id", envelope.message_id},
           {"sender_relay_id", envelope.sender_relay_id},
@@ -364,7 +394,85 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json) {
   if (json.contains("signature") && json["signature"].is_string()) {
     envelope.signature = json["signature"].get<std::string>();
   }
+  if (json.contains("stream_key") && json["stream_key"].is_string()) {
+    envelope.stream_key = json["stream_key"].get<std::string>();
+  }
+  if (json.contains("order_key") && json["order_key"].is_number_unsigned()) {
+    envelope.order_key = json["order_key"].get<uint64_t>();
+  }
+  if (json.contains("recipient_contact_id") && json["recipient_contact_id"].is_string()) {
+    envelope.recipient_contact_id = json["recipient_contact_id"].get<std::string>();
+  }
   return envelope;
+}
+
+nlohmann::json RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
+  return {{"sender_contact_id", record.sender_contact_id},
+          {"recipient_contact_id", record.recipient_contact_id},
+          {"stream_id", record.stream_id},
+          {"index_key", record.index_key},
+          {"blob_b64", record.blob_b64},
+          {"timestamp", record.timestamp},
+          {"signature", record.signature}};
+}
+
+Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& envelope) {
+  if (!envelope.recipient_contact_id || envelope.recipient_contact_id->empty()) {
+    return Error("Missing recipient_contact_id for relay send");
+  }
+  if (envelope.stream_key.empty()) {
+    return Error("Missing stream_key for relay send");
+  }
+  const uint64_t index_key = envelope.order_key != 0 ? envelope.order_key : envelope.sender_seq;
+  const std::string serialized = RelayEnvelopeToApplicationJson(envelope).dump();
+  const ByteVector bytes(serialized.begin(), serialized.end());
+  RelayWireSendRecord record;
+  record.sender_contact_id = envelope.sender_contact_id;
+  record.recipient_contact_id = *envelope.recipient_contact_id;
+  record.stream_id = envelope.stream_key;
+  record.index_key = index_key;
+  record.blob_b64 = Base64Encode(bytes);
+  return record;
+}
+
+Roe<RelayInboundRecord> ParseRelayInboundRecord(const nlohmann::json& json) {
+  if (!json.contains("sender_contact_id") || !json["sender_contact_id"].is_string()) {
+    return Error("Missing sender_contact_id");
+  }
+  if (!json.contains("stream_id") || !json["stream_id"].is_string()) {
+    return Error("Missing stream_id");
+  }
+  if (!json.contains("index_key") || !json["index_key"].is_number_unsigned()) {
+    return Error("Missing index_key");
+  }
+  if (!json.contains("blob_b64") || !json["blob_b64"].is_string()) {
+    return Error("Missing blob_b64");
+  }
+  RelayInboundRecord record;
+  record.sender_contact_id = json["sender_contact_id"].get<std::string>();
+  record.stream_id = json["stream_id"].get<std::string>();
+  record.index_key = json["index_key"].get<uint64_t>();
+  record.blob_b64 = json["blob_b64"].get<std::string>();
+  return record;
+}
+
+Roe<RelayEnvelope> RelayEnvelopeFromInboundRecord(const RelayInboundRecord& record) {
+  auto decoded = Base64Decode(record.blob_b64);
+  if (!decoded) {
+    return decoded.error();
+  }
+  const std::string serialized(decoded->begin(), decoded->end());
+  const nlohmann::json app_json = nlohmann::json::parse(serialized, nullptr, false);
+  if (app_json.is_discarded()) {
+    return Error("Invalid relay blob JSON");
+  }
+  auto envelope = ParseRelayEnvelope(app_json);
+  if (!envelope) {
+    return envelope.error();
+  }
+  envelope->stream_key = record.stream_id;
+  envelope->order_key = record.index_key;
+  return *envelope;
 }
 
 nlohmann::json ChatHistoryRequestToJson(const ChatHistoryRequest& request) {
@@ -413,29 +521,49 @@ Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const nlohmann::json& json) {
   return request;
 }
 
-std::string ChatHistoryRequestToQueryString(const ChatHistoryRequest& request) {
-  const nlohmann::json json = ChatHistoryRequestToJson(request);
+std::string StreamHistoryRequestToQueryString(const ChatHistoryRequest& request) {
+  const std::string stream_key =
+      BuildCanonicalRelayStreamKey(request.requester_identity_value, request.peer_identity_value, request.channel,
+                                 request.session_epoch);
   std::ostringstream out;
   bool first = true;
   auto append = [&](const char* key, const std::string& value) {
     out << (first ? '?' : '&') << key << '=' << value;
     first = false;
   };
-  append("requester_identity_kind", json["requester_identity_kind"].get<std::string>());
-  append("requester_identity_value", json["requester_identity_value"].get<std::string>());
-  append("peer_identity_kind", json["peer_identity_kind"].get<std::string>());
-  append("peer_identity_value", json["peer_identity_value"].get<std::string>());
-  append("channel", json["channel"].get<std::string>());
-  append("session_epoch", std::to_string(json["session_epoch"].get<uint32_t>()));
-  append("limit", std::to_string(json["limit"].get<size_t>()));
-  append("order", json["order"].get<std::string>());
-  if (json.contains("min_sender_seq")) {
-    append("min_sender_seq", std::to_string(json["min_sender_seq"].get<uint64_t>()));
+  append("requester_contact_id", request.requester_identity_value);
+  append("sender_contact_id", request.peer_identity_value);
+  append("stream_id", stream_key);
+  append("limit", std::to_string(request.limit));
+  append("order", request.order);
+  if (request.min_sender_seq) {
+    append("min_index_key", std::to_string(*request.min_sender_seq));
   }
-  if (json.contains("max_sender_seq")) {
-    append("max_sender_seq", std::to_string(json["max_sender_seq"].get<uint64_t>()));
+  if (request.max_sender_seq) {
+    append("max_index_key", std::to_string(*request.max_sender_seq));
   }
   return out.str();
+}
+
+std::string ChatHistoryRequestToQueryString(const ChatHistoryRequest& request) {
+  return StreamHistoryRequestToQueryString(request);
+}
+
+nlohmann::json ChatHistoryRequestToStreamHistoryJson(const ChatHistoryRequest& request) {
+  nlohmann::json json = {{"requester_contact_id", request.requester_identity_value},
+                         {"sender_contact_id", request.peer_identity_value},
+                         {"stream_id", BuildCanonicalRelayStreamKey(request.requester_identity_value,
+                                                                    request.peer_identity_value, request.channel,
+                                                                    request.session_epoch)},
+                         {"limit", request.limit},
+                         {"order", request.order}};
+  if (request.min_sender_seq) {
+    json["min_index_key"] = *request.min_sender_seq;
+  }
+  if (request.max_sender_seq) {
+    json["max_index_key"] = *request.max_sender_seq;
+  }
+  return json;
 }
 
 nlohmann::json ChatHistoryResponseToJson(const ChatHistoryResponse& response) {
@@ -465,32 +593,57 @@ nlohmann::json ChatHistoryResponseToJson(const ChatHistoryResponse& response) {
 
 Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json) {
   ChatHistoryResponse response;
-  if (!json.contains("peer_identity_kind") || !json.contains("peer_identity_value") ||
-      !json.contains("channel") || !json.contains("session_epoch") || !json.contains("messages") ||
-      !json.contains("has_more")) {
+  const bool stream_shape =
+      (json.contains("stream_id") || json.contains("stream_key")) && json.contains("sender_contact_id");
+  const bool chat_shape = json.contains("peer_identity_kind") && json.contains("peer_identity_value");
+  if (!json.contains("messages") || !json.contains("has_more") || (!stream_shape && !chat_shape)) {
     return Error("Incomplete ChatHistoryResponse");
   }
-  response.peer_identity_kind = json["peer_identity_kind"].get<std::string>();
-  response.peer_identity_value = json["peer_identity_value"].get<std::string>();
-  response.channel = ThreadChannelFromString(json["channel"].get<std::string>());
-  response.session_epoch = json["session_epoch"].get<uint32_t>();
+  if (chat_shape) {
+    response.peer_identity_kind = json["peer_identity_kind"].get<std::string>();
+    response.peer_identity_value = json["peer_identity_value"].get<std::string>();
+    response.channel = ThreadChannelFromString(json["channel"].get<std::string>());
+    response.session_epoch = json["session_epoch"].get<uint32_t>();
+  } else {
+    response.peer_identity_value = json["sender_contact_id"].get<std::string>();
+  }
   response.has_more = json["has_more"].get<bool>();
   if (json["messages"].is_array()) {
     for (const auto& item : json["messages"]) {
-      auto envelope = ParseRelayEnvelope(item);
-      if (!envelope) {
-        return envelope.error();
+      if (item.contains("blob_b64")) {
+        auto inbound = ParseRelayInboundRecord(item);
+        if (!inbound) {
+          return inbound.error();
+        }
+        auto envelope = RelayEnvelopeFromInboundRecord(*inbound);
+        if (!envelope) {
+          return envelope.error();
+        }
+        response.messages.push_back(*envelope);
+      } else {
+        auto envelope = ParseRelayEnvelope(item);
+        if (!envelope) {
+          return envelope.error();
+        }
+        response.messages.push_back(*envelope);
       }
-      response.messages.push_back(*envelope);
     }
   }
   if (json.contains("cursor") && json["cursor"].is_object()) {
     const auto& cursor = json["cursor"];
     if (cursor.contains("next_min_sender_seq") && cursor["next_min_sender_seq"].is_number_unsigned()) {
       response.cursor.next_min_sender_seq = cursor["next_min_sender_seq"].get<uint64_t>();
+    } else if (cursor.contains("next_min_index_key") && cursor["next_min_index_key"].is_number_unsigned()) {
+      response.cursor.next_min_sender_seq = cursor["next_min_index_key"].get<uint64_t>();
+    } else if (cursor.contains("next_min_order_key") && cursor["next_min_order_key"].is_number_unsigned()) {
+      response.cursor.next_min_sender_seq = cursor["next_min_order_key"].get<uint64_t>();
     }
     if (cursor.contains("next_max_sender_seq") && cursor["next_max_sender_seq"].is_number_unsigned()) {
       response.cursor.next_max_sender_seq = cursor["next_max_sender_seq"].get<uint64_t>();
+    } else if (cursor.contains("next_max_index_key") && cursor["next_max_index_key"].is_number_unsigned()) {
+      response.cursor.next_max_sender_seq = cursor["next_max_index_key"].get<uint64_t>();
+    } else if (cursor.contains("next_max_order_key") && cursor["next_max_order_key"].is_number_unsigned()) {
+      response.cursor.next_max_sender_seq = cursor["next_max_order_key"].get<uint64_t>();
     }
   }
   return response;

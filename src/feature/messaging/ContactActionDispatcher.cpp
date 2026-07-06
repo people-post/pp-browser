@@ -1,7 +1,7 @@
 #include "feature/messaging/ContactActionDispatcher.h"
 
-#include "common/Utilities.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/net/RegistrationClientUtil.h"
 
 #include <nlohmann/json.hpp>
 
@@ -113,18 +113,11 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!identity) {
       return identity.error();
     }
-    const int64_t timestamp = util::NowUnixMs();
-    nlohmann::json body = {{"public_key", identity->public_key_b64},
-                           {"nickname", identity->nickname},
-                           {"timestamp", timestamp}};
-    auto signature = identity_.SignPayload(body.dump());
-    if (!signature) {
-      return signature.error();
-    }
     if (!registration_) {
       return Error("Registration client not configured");
     }
-    auto result = registration_->Register(identity->public_key_b64, identity->nickname, *signature, timestamp);
+
+    auto result = FinishRegistrationWithIdentity(*registration_, identity_, identity->nickname);
     if (!result) {
       return result.error();
     }

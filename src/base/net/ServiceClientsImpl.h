@@ -3,15 +3,19 @@
 #include "base/people/ContactTypes.h"
 #include "base/net/ServiceClients.h"
 
+#include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
 
 namespace pbr {
 
+using RelayAuthSigner = std::function<Roe<std::string>(const std::vector<uint8_t>&)>;
+
 class MockDirectoryClient : public IDirectoryClient {
 public:
   Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) override;
+  Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
 };
 
 class MockRelayClient : public IRelayClient {
@@ -26,7 +30,7 @@ public:
   }
 
   Roe<void> Send(const RelayEnvelope& envelope) override;
-  Roe<RelayPollResult> PollInbox(const std::string& cursor) override;
+  Roe<RelayPollResult> PollInbox(const std::string& requester_contact_id, const std::string& cursor) override;
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;
 
 private:
@@ -40,27 +44,35 @@ private:
 
 class MockRegistrationClient : public IRegistrationClient {
 public:
-  Roe<RegistrationResult> Register(const std::string& public_key_b64, const std::string& nickname,
-                                   const std::string& signature, int64_t timestamp) override;
+  Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
+                                                 const std::string& signature_alg = "ed25519") override;
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const std::string& signature,
+                                             int64_t timestamp, const std::string& signature_alg = "ed25519") override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
-                                         int64_t timestamp) override;
+                                         int64_t timestamp, const std::string& relay_user_id) override;
 };
 
 class HttpRelayClient : public IRelayClient {
 public:
   explicit HttpRelayClient(std::string base_url);
+  void SetAuthSigner(RelayAuthSigner signer) { auth_signer_ = std::move(signer); }
   Roe<void> Send(const RelayEnvelope& envelope) override;
-  Roe<RelayPollResult> PollInbox(const std::string& cursor) override;
+  Roe<RelayPollResult> PollInbox(const std::string& requester_contact_id, const std::string& cursor) override;
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;
 
 private:
+  Roe<std::string> SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const;
+
   std::string base_url_;
+  RelayAuthSigner auth_signer_;
 };
 
 class HttpDirectoryClient : public IDirectoryClient {
 public:
   explicit HttpDirectoryClient(std::string base_url);
   Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) override;
+  Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
 
 private:
   std::string base_url_;
@@ -69,10 +81,13 @@ private:
 class HttpRegistrationClient : public IRegistrationClient {
 public:
   explicit HttpRegistrationClient(std::string base_url);
-  Roe<RegistrationResult> Register(const std::string& public_key_b64, const std::string& nickname,
-                                   const std::string& signature, int64_t timestamp) override;
+  Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64, const std::string& nickname,
+                                                 const std::string& signature_alg = "ed25519") override;
+  Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
+                                             const std::string& nickname, const std::string& signature,
+                                             int64_t timestamp, const std::string& signature_alg = "ed25519") override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
-                                         int64_t timestamp) override;
+                                         int64_t timestamp, const std::string& relay_user_id) override;
 
 private:
   std::string base_url_;

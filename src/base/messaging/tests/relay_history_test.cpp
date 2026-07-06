@@ -1,6 +1,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/people/Ed25519Signer.h"
@@ -28,7 +29,11 @@ TEST(RelayHistoryTest, MockFetchFiltersBySeqRange) {
     EXPECT_TRUE(payload);
     envelope.body.e2e.payload_b64 = *payload;
     envelope.sender_seq = seq;
+    envelope.order_key = seq;
     envelope.session_epoch = 1;
+    envelope.stream_key =
+        BuildCanonicalRelayStreamKey("relay:local", "relay:peer", ThreadChannel::E2e, envelope.session_epoch);
+    envelope.recipient_contact_id = "relay:local";
     envelope.timestamp = static_cast<int64_t>(seq);
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
     EXPECT_TRUE(sign_bytes);
@@ -42,6 +47,9 @@ TEST(RelayHistoryTest, MockFetchFiltersBySeqRange) {
   RelayEnvelope outbound = make_envelope(1, "seed");
   outbound.sender_contact_id = "relay:local";
   outbound.sender_relay_id = "relay:local";
+  outbound.recipient_contact_id = "relay:peer";
+  outbound.stream_key =
+      BuildCanonicalRelayStreamKey("relay:local", "relay:peer", ThreadChannel::E2e, outbound.session_epoch);
   relay.SetNextReplySenderId("relay:peer");
   ASSERT_TRUE(static_cast<bool>(relay.Send(outbound)));
 
@@ -79,7 +87,8 @@ TEST(RelayHistoryTest, HistoryRequestBuildsQueryString) {
   request.order = "asc";
 
   const std::string query = ChatHistoryRequestToQueryString(request);
-  EXPECT_NE(query.find("peer_identity_value=relay:peer"), std::string::npos);
-  EXPECT_NE(query.find("min_sender_seq=10"), std::string::npos);
-  EXPECT_NE(query.find("max_sender_seq=42"), std::string::npos);
+  EXPECT_NE(query.find("sender_contact_id=relay:peer"), std::string::npos);
+  EXPECT_NE(query.find("stream_id="), std::string::npos);
+  EXPECT_NE(query.find("min_index_key=10"), std::string::npos);
+  EXPECT_NE(query.find("max_index_key=42"), std::string::npos);
 }

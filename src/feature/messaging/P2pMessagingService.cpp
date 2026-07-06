@@ -5,8 +5,8 @@
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
+#include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
-#include "base/net/McpRelayClient.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/platform/BrowserThread.h"
 
@@ -44,7 +44,6 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
       BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
     }
   });
-  mcp_throttled_poll_ = dynamic_cast<McpRelayClient*>(relay_) != nullptr;
 }
 
 void P2pMessagingService::RegisterPeerSigningKey(const std::string& peer_identity_kind,
@@ -64,7 +63,6 @@ void P2pMessagingService::RegisterMockPeerKeyForReply(const std::string& peer_id
 void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
   relay_ = relay;
   relay_cursor_.clear();
-  mcp_throttled_poll_ = dynamic_cast<McpRelayClient*>(relay_) != nullptr;
   poll_pending_ = false;
   if (chat_sync_) {
     chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_);
@@ -235,6 +233,13 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     return payload_b64.error();
   }
 
+  auto peer_relay_id = ResolvePeerRelayId(**thread);
+  if (!peer_relay_id) {
+    appended->delivery = MessageDelivery::Failed;
+    (void)store_.UpdateMessage(*appended);
+    return Error("Direct thread missing peer relay id");
+  }
+
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;
   envelope.message_id = message.id;
@@ -244,7 +249,11 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   envelope.route.channel = (*thread)->channel;
   envelope.body.e2e.payload_b64 = *payload_b64;
   envelope.sender_seq = *message.sender_seq;
+  envelope.order_key = envelope.sender_seq;
   envelope.session_epoch = *message.session_epoch;
+  envelope.stream_key = BuildCanonicalRelayStreamKey(identity->relay_user_id, *peer_relay_id, (*thread)->channel,
+                                                     *message.session_epoch);
+  envelope.recipient_contact_id = *peer_relay_id;
   envelope.timestamp = message.timestamp;
 
   auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
@@ -327,7 +336,7 @@ void P2pMessagingService::PollAndMerge() {
   RetryFailedOutbound();
 
   const uint64_t now = util::NowUnixMs();
-  const uint64_t poll_interval = mcp_throttled_poll_ ? 5000 : kForegroundRelayPollIntervalMs;
+  const uint64_t poll_interval = kForegroundRelayPollIntervalMs;
   if (now - last_relay_poll_ms_ < poll_interval) {
     return;
   }
@@ -347,7 +356,11 @@ void P2pMessagingService::PollAndMerge() {
     if (!relay_) {
       return;
     }
-    auto poll = relay_->PollInbox(relay_cursor_);
+    auto identity = identity_.Get();
+    if (!identity) {
+      return;
+    }
+    auto poll = relay_->PollInbox(identity->relay_user_id, relay_cursor_);
     if (!poll) {
       return;
     }

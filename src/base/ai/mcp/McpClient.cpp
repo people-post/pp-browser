@@ -123,18 +123,6 @@ Roe<nlohmann::json> McpClient::Request(const std::string& method, const nlohmann
                                             {{"type", "object"},
                                              {"properties", {{"query", {{"type", "string"}}}}},
                                              {"required", nlohmann::json::array({"query"})}}}},
-                                          {{"name", "search_people"},
-                                           {"description", "Search people"},
-                                           {"inputSchema", {{"type", "object"}}}},
-                                          {{"name", "register_user"},
-                                           {"description", "Register user"},
-                                           {"inputSchema", {{"type", "object"}}}},
-                                          {{"name", "relay_send"},
-                                           {"description", "Relay send"},
-                                           {"inputSchema", {{"type", "object"}}}},
-                                          {{"name", "relay_poll_inbox"},
-                                           {"description", "Relay poll"},
-                                           {"inputSchema", {{"type", "object"}}}},
                                       })}};
     }
     if (method == "tools/call") {
@@ -143,22 +131,6 @@ Roe<nlohmann::json> McpClient::Request(const std::string& method, const nlohmann
         return nlohmann::json{{"content",
                                nlohmann::json::array({{{"type", "text"},
                                                        {"text", R"([{"name":"Ada","email":"ada@example.com"}])"}}})}};
-      }
-      if (name == "search_people") {
-        return nlohmann::json{{"content",
-                               nlohmann::json::array({{{"type", "text"},
-                                                       {"text", R"([{"hit_id":"hit_alice","display_name":"Alice","nickname":"alice","ids":[{"kind":"relay_user","value":"relay:alice123","primary":true}]}])"}}})}};
-      }
-      if (name == "register_user") {
-        return nlohmann::json{
-            {"content", nlohmann::json::array({{{"type", "text"}, {"text", R"({"success":true,"relay_user_id":"relay:test"})"}}})}};
-      }
-      if (name == "relay_send") {
-        return nlohmann::json{{"content", nlohmann::json::array({{{"type", "text"}, {"text", R"({"success":true})"}}})}};
-      }
-      if (name == "relay_poll_inbox") {
-        return nlohmann::json{{"content",
-                               nlohmann::json::array({{{"type", "text"}, {"text", R"({"messages":[],"next_cursor":"0"})"}}})}};
       }
     }
     return nlohmann::json::object();

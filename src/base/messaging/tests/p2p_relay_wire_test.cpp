@@ -46,6 +46,44 @@ TEST(P2pRelayWireTest, RelayEnvelopeRoundTripAndPayloadCodec) {
   EXPECT_EQ(*decoded, "hello relay");
 }
 
+TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
+  using namespace pbr;
+
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "550e8400-e29b-41d4-a716-446655440000";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "relay:alice123";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2e;
+  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.sender_seq = 7;
+  envelope.order_key = 7;
+  envelope.session_epoch = 1;
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+  envelope.stream_key = "v1:e2e:1:relay:alice123:relay:bob456";
+  envelope.recipient_contact_id = "relay:bob456";
+
+  const auto wire = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(wire));
+  EXPECT_EQ(wire.value().stream_id, envelope.stream_key);
+  EXPECT_EQ(wire.value().index_key, 7u);
+
+  RelayInboundRecord inbound;
+  inbound.sender_contact_id = wire.value().sender_contact_id;
+  inbound.stream_id = wire.value().stream_id;
+  inbound.index_key = wire.value().index_key;
+  inbound.blob_b64 = wire.value().blob_b64;
+
+  const auto restored = RelayEnvelopeFromInboundRecord(inbound);
+  ASSERT_TRUE(static_cast<bool>(restored));
+  EXPECT_EQ(restored.value().message_id, envelope.message_id);
+  EXPECT_EQ(restored.value().stream_key, envelope.stream_key);
+  EXPECT_EQ(restored.value().order_key, envelope.order_key);
+  EXPECT_FALSE(restored.value().recipient_contact_id.has_value());
+}
+
 TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
   using namespace pbr;
 

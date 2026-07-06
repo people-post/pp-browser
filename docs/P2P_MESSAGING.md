@@ -1,6 +1,6 @@
 # P2P messaging
 
-Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local persistence as source of truth; HTTP relay/directory/registration transport with promoted-MCP and mock fallbacks.
+Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local persistence as source of truth; HTTP relay/directory/registration transport with mock fallback when `base_url` is unset.
 
 **Normative wire shapes:** [chat-storage WIRE_SCHEMAS.md](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md). **E2E crypto:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md).
 
@@ -9,12 +9,11 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 [`CreateServiceClients`](../src/base/net/ServiceClientFactory.cpp) picks an implementation per endpoint:
 
 1. `base_url` set → HTTP client (`HttpRelayClient`, etc.)
-2. else promoted MCP running → MCP bridge (`McpRelayClient`, etc.)
-3. else in-process mock (dev default)
+2. else in-process mock (dev default)
 
-Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md) for the MCP infra tool contract.
+Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md).
 
-**Baseline gap:** `IRelayClient` today exposes only `Send` and `PollInbox`. History fetch (`FetchChatTargetMessages` / `GET /v1/chat-targets/messages`) is planned in chat-storage **v6** — see [WIRE_SCHEMAS § ChatHistoryRequest](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#chathistoryrequest-shared--relay-get--libp2p-d060).
+**Baseline gap:** `IRelayClient` exposes `Send`, `PollInbox`, and `FetchChatHistory`. HTTP relay history uses signed `POST /api/relay/v1/streams/messages/query` — see [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay).
 
 ## Data model
 
@@ -116,7 +115,7 @@ Local store is written **before** send. Server rejections do not delete history.
 | Gap repair | Automatic on seq hole |
 | User sync | Thread menu **Sync with peer** (D059) |
 
-**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `GET /v1/chat-targets/messages` fallback. Query params match [ChatHistoryRequest](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#chathistoryrequest-shared--relay-get--libp2p-d060) field names (D027). Full spec: [chat-storage DESIGN § P2P sync](../projects/chat-storage-and-memory/DESIGN.md#p2p-sync-e2e-only--d045).
+**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `POST /api/relay/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay).
 
 Scroll-to-top backfill is **`[post-v1]`** (D052); uses the same fetch primitive.
 

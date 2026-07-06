@@ -1,7 +1,7 @@
 #include "feature/ai/tools/MessagingTools.h"
 
-#include "common/Utilities.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/net/RegistrationClientUtil.h"
 
 #include <nlohmann/json.hpp>
 
@@ -140,16 +140,7 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
                          identity = hub.Identity().Get();
                        }
 
-                       const int64_t timestamp = util::NowUnixMs();
-                       nlohmann::json body = {{"public_key", identity->public_key_b64},
-                                              {"nickname", identity->nickname},
-                                              {"timestamp", timestamp}};
-                       auto signature = hub.Identity().SignPayload(body.dump());
-                       if (!signature) {
-                         return signature.error();
-                       }
-                       auto result = hub.Registration().Register(identity->public_key_b64, identity->nickname,
-                                                                 *signature, timestamp);
+                       auto result = FinishRegistrationWithIdentity(hub.Registration(), hub.Identity(), identity->nickname);
                        if (!result) {
                          return result.error();
                        }
@@ -176,13 +167,7 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
          if (nickname.empty()) {
            return Error("nickname required");
          }
-         const int64_t timestamp = util::NowUnixMs();
-         nlohmann::json body = {{"nickname", nickname}, {"timestamp", timestamp}};
-         auto signature = hub.Identity().SignPayload(body.dump());
-         if (!signature) {
-           return signature.error();
-         }
-         auto result = hub.Registration().UpdateNickname(nickname, *signature, timestamp);
+         auto result = UpdateRegisteredNickname(hub.Registration(), hub.Identity(), nickname);
          if (!result) {
            return result.error();
          }

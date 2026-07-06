@@ -1,10 +1,8 @@
 #include "feature/settings/ProfileSettingsSection.h"
 
 #include "base/data/SessionStore.h"
-#include "common/Utilities.h"
+#include "base/net/RegistrationClientUtil.h"
 #include "feature/messaging/MessagingHub.h"
-
-#include <nlohmann/json.hpp>
 
 namespace pbr {
 
@@ -66,13 +64,8 @@ Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& /*
   }
 
   if (identity->registered) {
-    const int64_t timestamp = util::NowUnixMs();
-    nlohmann::json body = {{"nickname", state.profile_nickname}, {"timestamp", timestamp}};
-    auto signature = MessagingHub::Instance().Identity().SignPayload(body.dump());
-    if (!signature) {
-      return signature.error();
-    }
-    auto result = MessagingHub::Instance().Registration().UpdateNickname(state.profile_nickname, *signature, timestamp);
+    auto result = UpdateRegisteredNickname(MessagingHub::Instance().Registration(), MessagingHub::Instance().Identity(),
+                                           state.profile_nickname);
     if (!result) {
       return result.error();
     }
@@ -108,17 +101,8 @@ Roe<void> ProfileSettingsSection::RegisterIdentity(SettingsUiState& state) {
     }
   }
 
-  const int64_t timestamp = util::NowUnixMs();
-  nlohmann::json body = {{"public_key", identity->public_key_b64},
-                         {"nickname", identity->nickname},
-                         {"timestamp", timestamp}};
-  auto signature = MessagingHub::Instance().Identity().SignPayload(body.dump());
-  if (!signature) {
-    return signature.error();
-  }
-
-  auto result = MessagingHub::Instance().Registration().Register(identity->public_key_b64, identity->nickname,
-                                                                 *signature, timestamp);
+  auto result = FinishRegistrationWithIdentity(MessagingHub::Instance().Registration(),
+                                             MessagingHub::Instance().Identity(), identity->nickname);
   if (!result) {
     return result.error();
   }

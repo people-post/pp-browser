@@ -42,16 +42,58 @@ All in-tree **binary** wire formats (ChatPayload, AAD, E014 string fields, E2E b
 
 | Layer | Rule |
 |-------|------|
-| **`RelayEnvelope`** | **Ignore** unknown top-level keys on ingest after required fields parse. Required keys must be present. Do not fail on forward-compatible extensions. |
+| **`RelayEnvelope`** (application blob) | **Ignore** unknown top-level keys on ingest after required fields parse. Required keys must be present. Do not fail on forward-compatible extensions. |
+| **`RelayWireRecord`** (HTTP relay) | **Reject** unknown top-level keys. Relay is format-blind — only routing + `blob_b64`. |
 | **`ChatPayload` (binary)** | **Reject** unknown `content_type` on **relay ingest** (D030/D050). **Reject** unknown tail fields for known types in v1. |
 | **`ChatHistoryRequest` / `ChatHistoryResponse`** | **Reject** unknown top-level keys (server/client negotiated API). |
 | **Signature input** | Only documented canonical fields participate in signed bytes — unknown envelope keys are **not** signed unless a future `envelope_version` spec says otherwise. **Normative byte layout:** [e2e-message-crypto DESIGN § Ed25519 signing](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) (E014). |
 
 ---
 
+## `RelayWireRecord` (HTTP relay — opaque store-and-forward)
+
+The relay **never parses** application envelopes. pp-browser wraps the signed `RelayEnvelope` (below) into `blob_b64` and sends routing metadata separately.
+
+**Send** `POST /api/relay/v1/messages`:
+
+```json
+{
+  "sender_contact_id": "relay:alice123",
+  "recipient_contact_id": "relay:bob456",
+  "stream_id": "v1:e2e:1:relay:alice123:relay:bob456",
+  "index_key": 42,
+  "blob_b64": "base64-of-application-envelope-json"
+}
+```
+
+**Poll / history** returns `RelayInboundRecord[]` (no `recipient_contact_id`):
+
+```json
+{
+  "sender_contact_id": "relay:alice123",
+  "stream_id": "v1:e2e:1:relay:alice123:relay:bob456",
+  "index_key": 42,
+  "blob_b64": "…"
+}
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `sender_contact_id` | string | yes | Sender relay id |
+| `recipient_contact_id` | string | send only | Inbox owner |
+| `stream_id` | string | yes | Opaque conversation scope (pp-browser: canonical `v1:…` stream key) |
+| `index_key` | integer (u64) | yes | Monotonic per-sender per-stream; **v1:** equals `sender_seq` |
+| `blob_b64` | string | yes | RFC 4648 base64 of application envelope JSON (unsigned routing fields omitted) |
+
+**Dedup:** relay unique key `(sender_contact_id, stream_id, index_key)`. **Signature verification:** client-side only (`RelayReceivePipeline`).
+
+**Codec:** `RelayWireSendRecordFromEnvelope` / `RelayEnvelopeFromInboundRecord` in `base/messaging/MessagingJson.*`.
+
+---
+
 ## `RelayEnvelope` (v1 — `envelope_version: 1`)
 
-Signed outer wrapper. **No `thread_id`.** See [DESIGN § Relay envelope](DESIGN.md#relay--direct-envelope-d056-d063).
+Signed application wrapper **inside `blob_b64`**. **No `thread_id`.** See [DESIGN § Relay envelope](DESIGN.md#relay--direct-envelope-d056-d063).
 
 ```json
 {
@@ -101,6 +143,18 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | `timestamp` | integer (i64) | yes | Unix **milliseconds**; display metadata; not sort authority (D054). Included in sign bytes (E014). |
 | `signature` | string | yes | Ed25519 over [canonical sign bytes](../e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes); **base64** (RFC 4648, padded) in v1 |
 | `sender_instance_id` | string (UUID) | **`[future]`** | Multi-device extension (D074); omit in v1 |
+
+### Relay routing metadata (unsigned — v1)
+
+Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64`). The relay indexes on these fields; they are **not** included in E014 sign bytes.
+
+| Field | Type | Required on send | Notes |
+|-------|------|------------------|-------|
+| `recipient_contact_id` | string | yes | Inbox owner — relay delivery target |
+| `stream_id` | string | yes | Opaque conversation scope; v1 canonical: `v1:{channel}:{session_epoch}:{id_lo}:{id_hi}` with sorted relay ids |
+| `index_key` | integer (u64) | yes | Monotonic per-stream ordering for gap fill; **v1:** equals `sender_seq` |
+
+**Client builders:** `BuildCanonicalRelayStreamKey` (`base/messaging/RelayStreamKey.*`) maps to wire `stream_id`.
 
 ### `Route`
 
@@ -191,17 +245,11 @@ Regenerate: [`chatpayload_codec.py`](../e2e-message-crypto/tools/chatpayload_cod
 
 ---
 
-## `ChatHistoryRequest` (shared — relay GET + libp2p D060)
+## `ChatHistoryRequest` (shared — libp2p D060; relay maps via `stream_key`)
 
-Single request shape for **`FetchChatTargetMessages`** (D058). **libp2p (D060):** UTF-8 JSON body on stream. **HTTP relay (D027):** `GET /v1/chat-targets/messages` with **the same field names as query parameters** (snake_case, values URL-encoded). Omit optional fields when unset.
+Single request shape for **`FetchChatTargetMessages`** (D058) in pp-browser. **libp2p (D060):** UTF-8 JSON body on stream using the chat-shaped fields below. **HTTP relay (D027):** generic `GET /api/relay/v1/streams/messages` — the client maps this struct to relay query params (`requester_contact_id`, `sender_contact_id`, `stream_key`, `min_order_key`, `max_order_key`, `limit`, `order`). See [Stream history (HTTP relay)](#stream-history-http-relay) below.
 
-Example HTTP request:
-
-```
-GET /v1/chat-targets/messages?requester_identity_kind=relay_user&requester_identity_value=relay%3Alocal&peer_identity_kind=relay_user&peer_identity_value=relay%3Apeer&channel=e2e&session_epoch=1&min_sender_seq=10&max_sender_seq=42&limit=50&order=asc
-```
-
-JSON body form (libp2p / documentation):
+Example libp2p / client JSON:
 
 ```json
 {
@@ -226,17 +274,54 @@ JSON body form (libp2p / documentation):
 | `peer_identity_value` | string | yes | Other party (`ChatTargetKey.peer_identity_value`) |
 | `channel` | string | yes | `e2e` \| `e2e_public` |
 | `session_epoch` | integer | yes | Required for both direct tiers |
-| `min_sender_seq` | integer | no | Inclusive lower bound |
-| `max_sender_seq` | integer | no | Inclusive upper bound |
+| `min_sender_seq` | integer | no | Inclusive lower bound — mapped to relay `min_index_key` in v1 |
+| `max_sender_seq` | integer | no | Inclusive upper bound — mapped to relay `max_index_key` in v1 |
 | `limit` | integer | no | Default **50**, max **100** (D029) |
 | `order` | string | no | `asc` (default) \| `desc` |
+
+### Stream history (HTTP relay)
+
+Relay is **chat-agnostic**. History is scoped by opaque `stream_id` + `index_key` (not `channel` / `session_epoch` on the wire).
+
+```
+GET /api/relay/v1/streams/messages?requester_contact_id=relay%3Abob&sender_contact_id=relay%3Aalice&stream_id=v1%3Ae2e%3A1%3Arelay%3Aalice%3Arelay%3Abob&min_index_key=10&max_index_key=42&limit=50&order=asc
+```
+
+| Query param | Type | Required | Notes |
+|-------------|------|----------|-------|
+| `requester_contact_id` | string | yes | Inbox owner (must differ from `sender_contact_id`) |
+| `sender_contact_id` | string | yes | Stream sender whose messages are fetched |
+| `stream_id` | string | yes | Opaque stream id (v1 canonical form above) |
+| `min_index_key` | integer | no | Inclusive lower bound |
+| `max_index_key` | integer | no | Inclusive upper bound |
+| `limit` | integer | no | Default **50**, max **100** |
+| `order` | string | no | `asc` (default) \| `desc` |
+
+**MCP:** `relay_fetch_stream_history` with the same field names as the query params.
 
 ---
 
 ## `ChatHistoryResponse`
 
+Client-facing response (libp2p and mapped relay). **HTTP relay** returns a stream-shaped JSON body; pp-browser merges chat fields from the request when absent.
+
+Stream-shaped relay response:
+
 ```json
 {
+  "stream_id": "v1:e2e:1:relay:alice:relay:bob",
+  "sender_contact_id": "relay:peer",
+  "messages": [],
+  "has_more": false,
+  "cursor": {
+    "next_min_index_key": null,
+    "next_max_index_key": null
+  }
+}
+```
+
+Chat-shaped response (libp2p / documentation):
+
   "peer_identity_kind": "relay_user",
   "peer_identity_value": "relay:peer",
   "channel": "e2e",
@@ -256,7 +341,7 @@ JSON body form (libp2p / documentation):
 | `peer_identity_value` | string | yes | Stream owner identity value |
 | `channel` | string | yes | |
 | `session_epoch` | integer | yes | Both direct tiers |
-| `messages` | `RelayEnvelope[]` | yes | No `thread_id` on elements |
+| `messages` | `RelayInboundRecord[]` | yes | Opaque blobs; client unwraps to `RelayEnvelope` |
 | `has_more` | boolean | yes | |
 | `cursor` | object | yes | Pagination hints for caller |
 
