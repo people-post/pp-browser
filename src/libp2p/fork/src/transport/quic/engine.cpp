@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifdef _WIN32
+#include <winsock2.h>
+#endif
 #include <boost/asio/ssl/context.hpp>
 #include <vector>
 #include <libp2p/common/asio_buffer.hpp>
@@ -406,7 +409,12 @@ namespace libp2p::transport::lsquic {
                         reading_.remote.data(),
                         &len);
       if (n == -1) {
+#ifdef _WIN32
+        const auto wsa_error = WSAGetLastError();
+        if (wsa_error == WSAEWOULDBLOCK) {
+#else
         if (errno == EAGAIN or errno == EWOULDBLOCK) {
+#endif
           auto cb =
               [weak_self{weak_from_this()}](boost::system::error_code ec) {
                 auto self = weak_self.lock();

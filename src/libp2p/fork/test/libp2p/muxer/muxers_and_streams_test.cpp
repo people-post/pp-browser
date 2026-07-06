@@ -13,6 +13,7 @@
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/injector/host_injector.hpp>
+#include <libp2p/transport/tcp.hpp>
 
 #define TRACE_ENABLED 1
 #include <libp2p/common/trace.hpp>
@@ -101,6 +102,19 @@ struct fmt::formatter<libp2p::regression::Stats::Event> {
 };
 
 namespace libp2p::regression {
+  struct InjectorHolderBase {
+    virtual ~InjectorHolderBase() = default;
+  };
+
+  template <typename Injector>
+  struct InjectorHolder : InjectorHolderBase {
+    Injector injector;
+
+    template <typename... Args>
+    explicit InjectorHolder(Args &&...args)
+        : injector(std::forward<Args>(args)...) {}
+  };
+
   class Node : public std::enable_shared_from_this<Node> {
    public:
     using Behavior = std::function<void(Node &node)>;
@@ -113,13 +127,17 @@ namespace libp2p::regression {
          InjectorArgs &&...args)
         : behavior_(behavior) {
       stats_.node_id = node_id;
-      auto injector =
-          injector::makeHostInjector<boost::di::extension::shared_config>(
-              boost::di::bind<boost::asio::io_context>.to(
-                  io)[boost::di::override],
-
-              std::forward<decltype(args)>(args)...);
-      host_ = injector.template create<std::shared_ptr<Host>>();
+      auto injector = injector::makeHostInjector<
+          boost::di::extension::shared_config>(
+          boost::di::bind<boost::asio::io_context>.to(
+              io)[boost::di::override],
+          injector::useTransportAdaptors<transport::TcpTransport>(),
+          std::forward<InjectorArgs>(args)...);
+      using Injector = decltype(injector);
+      injector_ =
+          std::make_unique<InjectorHolder<Injector>>(std::move(injector));
+      host_ = static_cast<InjectorHolder<Injector> *>(injector_.get())
+                  ->injector.template create<std::shared_ptr<Host>>();
 
       if (!jumbo_msg) {
         write_buf_ = std::make_shared<Bytes>(getId().toVector());
@@ -222,6 +240,7 @@ namespace libp2p::regression {
    private:
     const Behavior &behavior_;
     Stats stats_;
+    std::unique_ptr<InjectorHolderBase> injector_;
     std::shared_ptr<libp2p::Host> host_;
     std::shared_ptr<connection::Stream> accepted_stream_;
     std::shared_ptr<connection::Stream> connected_stream_;
