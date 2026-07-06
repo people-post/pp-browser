@@ -103,7 +103,7 @@ Inbound routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: sende
 
 **Wire cutover (D063):** v2a-p2p ships this final envelope shape. v4 adds ChatPayload **validation** only — no second wire break. See [DESIGN § Wire cutover phasing](../projects/chat-storage-and-memory/DESIGN.md#wire-cutover-phasing-d063).
 
-**Baseline code** still uses legacy `RelayEnvelope` with `thread_id` and `body.text` — replaced in v2a-p2p.
+**Private `e2e` encrypt:** outbound send and inbound poll decrypt via `E2eRelayPayloadCodec` (c2). **`e2e_public`** remains plaintext on wire until c3 auto-key.
 
 Local store is written **before** send. Server rejections do not delete history. **Unsent/failed** rows stay local — user **retries send**; **peer sync** (`FetchChatTargetMessages`, D058) fetches **missing messages from the peer**, not your pending outbox.
 

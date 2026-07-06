@@ -1,9 +1,9 @@
-# Current state — as of 2026-07-02
+# Current state — as of 2026-07-06
 
 Inventory of what exists in the codebase today for message encryption. Update when landing phase work.
 
 **Planned:** full E2E stack in [DESIGN.md](DESIGN.md) — see [PHASES.md](PHASES.md).  
-**Agent batch:** Wave **1** (**c1**) is **done**. Next: **c2** after chat **v6** ingest pipeline — see [chat-storage CURRENT_STATE § Next agent](../chat-storage-and-memory/CURRENT_STATE.md#next-agent--start-here).
+**Agent batch:** Waves **1** (**c1**) and **5** (**c2**) are **done**. Next: **c3** (PSK UX, verify gate, rotation) — see [chat-storage CURRENT_STATE § Next agent](../chat-storage-and-memory/CURRENT_STATE.md#next-agent--start-here).
 
 ## Release scope (v1 batch)
 
@@ -18,21 +18,33 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 |------|--------|----------|
 | `base/crypto/` module | **Implemented** | `src/base/crypto/*` |
 | libsodium vendored + linked | **Yes** | `third_party/libsodium/`, `src/base/CMakeLists.txt` |
-| `IPskSessionStore` | **Interface + skeleton store** | `IPskSessionStore.h`, `SqlitePskSessionStore.*` (reads/writes `chat_targets` PSK columns) |
+| `IPskSessionStore` | **Interface + SQLite store** | `IPskSessionStore.h`, `SqlitePskSessionStore.*` |
 | `MessageCipher` / AEAD | **Implemented** | `MessageCipher.*`, `EncryptedPayload.*` |
 | Unit tests + frozen vectors | **7/7 pass** | `src/base/crypto/tests/crypto_vectors_test.cpp` |
 | `docs/MESSAGE_ENCRYPTION.md` | **Promoted** | Stable spec |
+
+## Messaging integration (c2)
+
+| Area | Status | Location |
+|------|--------|----------|
+| Relay wire codec | **Implemented** | `E2eRelayPayloadCodec.*` — encrypt/decrypt `body.e2e.payload_b64` |
+| Outbound encrypt (`channel == e2e`) | **Implemented** | `P2pMessagingService::SendUserMessage` |
+| Inbound decrypt | **Implemented** | `RelayReceivePipeline::ProcessEnvelope` |
+| History re-encrypt on export | **Implemented** | `ChatHistoryResponder`, `Libp2pChatHistoryService` |
+| Directory signing key resolver | **Implemented** | `RelayDirectorySigningKeyResolver.*` |
+| Hub wiring | **Implemented** | `MessagingHub` — `SqlitePskSessionStore`, resolver, `P2pMessagingService` |
+| `e2e_public` on wire | **Plaintext** (unchanged until c3) | `RelayWirePayload` path |
 
 ## Related messaging (today)
 
 | Area | Status | Location |
 |------|--------|----------|
 | Relay body wire shape | **`body.e2e.payload_b64`** (D090) | `ThreadTypes.h`, `ParseRelayEnvelope` |
-| Payload bytes on wire (pre-c2) | **Plaintext ChatPayload** (base64) | `RelayWirePayload.*` — encrypt in c2 |
+| Payload bytes on wire (`e2e`) | **AEAD ciphertext** (base64 blob) | `E2eRelayPayloadCodec.*` |
 | Outbound signing | **E014 canonical bytes** via `EnvelopeSigner` | `P2pMessagingService.cpp` |
-| Inbound verify | **Implemented** (requires `PeerSigningKeyStore` entry) | `RelayReceivePipeline` step 2 |
+| Inbound verify | **Implemented** (requires resolver / store entry) | `RelayReceivePipeline` step 2 |
 | `Thread.encrypted` + `ThreadChannel` | **Set on direct threads** | chat-storage v2b |
-| `sender_seq` / `session_epoch` on envelope | **On wire struct**; seq allocated on send | chat v6 adds message-row + sync semantics |
+| `sender_seq` / `session_epoch` on envelope | **On wire + AAD** | chat v6 |
 | Tier split (`e2e` / `e2e_public`) | **Implemented** | [chat-storage CURRENT_STATE](../chat-storage-and-memory/CURRENT_STATE.md) |
 
 ## Identity and keys (today)
@@ -41,8 +53,8 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 |------|--------|----------|
 | Local Ed25519 keypair | Implemented | `IdentityStore`, `Ed25519Signer` |
 | Private key at rest | Base64 in JSON (not encrypted) | `identity.json` |
-| Per-contact PSK persistence | **Skeleton** — `chat_targets.master_psk_b64` etc. | `SqlitePskSessionStore` — UX in c3 |
-| Peer public keys for verify | **Skeleton** — `PeerSigningKeyStore` + mock relay test keys | E016 — directory lazy fetch in c2 |
+| Per-contact PSK persistence | **Store reads/writes `chat_targets`** | `SqlitePskSessionStore` — install UX in c3 |
+| Peer public keys for verify | **Cache + lazy directory fetch** | `PeerSigningKeyStore`, `RelayDirectorySigningKeyResolver` |
 
 ## Third-party crypto libraries
 
@@ -58,15 +70,17 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 |------|----------|
 | Ed25519 round-trip | `tests/messaging_foundation_test.cpp` |
 | E2E crypto (frozen vectors) | `src/base/crypto/tests/crypto_vectors_test.cpp` — **7 tests** |
-| PSK store round-trip | **Not yet** — skeleton only |
+| Relay encrypt/decrypt + pipeline | `src/base/messaging/tests/e2e_relay_crypto_test.cpp` — **2 tests** |
+| Chat sync (encrypted envelopes) | `src/base/messaging/tests/chat_sync_test.cpp` — **9 tests** |
+| History responder (encrypted export) | `src/base/messaging/tests/chat_history_responder_test.cpp` |
 
 ## Known gaps (summary)
 
-1. **c2** — wire `MessageCipher` into send/receive; directory-backed `PeerSigningKeyStore`; decrypt on ingest.
-2. **c3** — PSK export/import, fingerprint gate, rotation UX; enable **`e2e_public`** send.
-3. No end-to-end manual test with two profiles + relay (planned c2/c3).
-4. PSK session store lacks dedicated unit tests (c1 skeleton).
-5. **c1 rule still applies for new crypto code:** no `#include` of `ThreadTypes` / `P2pMessagingService` inside `base/crypto` (integration in c2 via feature layer).
+1. **c3** — PSK export/import, fingerprint gate, rotation UX; enable **`e2e_public`** send.
+2. No end-to-end manual test with two profiles + live relay (planned c3).
+3. PSK session store lacks dedicated unit tests (optional stretch).
+4. Send fails with "PSK not configured" until user installs PSK (c3 UX).
+5. **c1 rule still applies for new crypto code:** no `#include` of `ThreadTypes` / `P2pMessagingService` inside `base/crypto` (integration via feature/base-messaging layer).
 
 ## Design completion checklist (phase d0)
 
@@ -93,3 +107,11 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 - [x] All c1 vector tests green (`pp_browser_crypto_vectors_test`)
 - [x] Module usable without messaging includes in `base/crypto`
 - [ ] PSK store round-trip tests (optional stretch — skeleton landed)
+
+## Phase c2 exit criteria
+
+- [x] `P2pMessagingService` encrypt/decrypt on `channel == e2e`
+- [x] `RelayDirectorySigningKeyResolver` + inbound verify before decrypt
+- [x] Fail closed on decrypt error
+- [x] Automated round-trip + receive-pipeline tests green
+- [ ] Manual two-profile relay exchange (deferred to c3 UX)

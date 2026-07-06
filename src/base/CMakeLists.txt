@@ -41,6 +41,7 @@ set(PP_BROWSER_BASE_SOURCES
   people/IdentityStore.cpp
   messaging/EnvelopeSigner.cpp
   messaging/E2eIngestClassifier.cpp
+  messaging/E2eRelayPayloadCodec.cpp
   messaging/PeerSigningKeyStore.cpp
   messaging/AtAiParser.cpp
   messaging/ChatPayloadCodec.cpp

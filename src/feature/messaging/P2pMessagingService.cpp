@@ -2,8 +2,10 @@
 #include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/P2pMessagingService.h"
 
+#include "base/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "base/messaging/E2eIntegrityUtil.h"
+#include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
@@ -16,6 +18,7 @@
 #include <algorithm>
 #include <atomic>
 #include <mutex>
+#include <optional>
 
 #include <nlohmann/json.hpp>
 
@@ -37,13 +40,14 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
 
 P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                          IRelayClient* relay, InboxController& inbox,
-                                         PeerSigningKeyStore& signing_key_store)
+                                         PeerSigningKeyStore& signing_key_store,
+                                         IPeerSigningKeyResolver& signing_key_resolver, IPskSessionStore& psk_store)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
-      signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_store_),
+      signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), psk_store_(psk_store),
       epoch_coordinator_(store) {
   redirectLogger("P2pMessagingService");
-  receive_pipeline_ = std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_);
-  peer_history_ = std::make_unique<Libp2pChatHistoryService>(store_, identity_);
+  receive_pipeline_ = std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_);
+  peer_history_ = std::make_unique<Libp2pChatHistoryService>(store_, identity_, psk_store_);
   peer_history_->Start();
   chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, peer_history_.get());
   chat_sync_->SetOnMessagesChanged([this]() {
@@ -346,18 +350,52 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     return appended.error();
   }
 
-  auto payload_b64 = RelayWirePayload::EncodePlaintextText(text);
-  if (!payload_b64) {
-    appended->delivery = MessageDelivery::Failed;
-    (void)store_.UpdateMessage(*appended);
-    return payload_b64.error();
-  }
-
   auto peer_relay_id = ResolvePeerRelayId(**thread);
   if (!peer_relay_id) {
     appended->delivery = MessageDelivery::Failed;
     (void)store_.UpdateMessage(*appended);
     return Error("Direct thread missing peer relay id");
+  }
+
+  std::optional<std::string> payload_b64;
+  if (E2eRelayPayloadCodec::RequiresEncryption((*thread)->channel)) {
+    const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
+    auto master_psk_b64 = psk_store_.ResolveMasterPskForEpoch(target_key, *message.session_epoch);
+    if (!master_psk_b64 || !master_psk_b64->has_value()) {
+      appended->delivery = MessageDelivery::Failed;
+      (void)store_.UpdateMessage(*appended);
+      return Error("PSK not configured for this chat");
+    }
+    auto master_psk = Base64Decode(**master_psk_b64);
+    if (!master_psk) {
+      appended->delivery = MessageDelivery::Failed;
+      (void)store_.UpdateMessage(*appended);
+      return master_psk.error();
+    }
+    E2eEncryptParams params;
+    params.text = text;
+    params.channel = E2eRelayPayloadCodec::ChannelFromThread((*thread)->channel);
+    params.peer_contact_id = *peer_relay_id;
+    params.sender_contact_id = identity->relay_user_id;
+    params.message_id = message.id;
+    params.sender_seq = *message.sender_seq;
+    params.session_epoch = *message.session_epoch;
+    params.timestamp = message.timestamp;
+    auto encrypted = E2eRelayPayloadCodec::EncryptText(params, *master_psk);
+    if (!encrypted) {
+      appended->delivery = MessageDelivery::Failed;
+      (void)store_.UpdateMessage(*appended);
+      return encrypted.error();
+    }
+    payload_b64 = std::move(*encrypted);
+  } else {
+    auto plaintext = RelayWirePayload::EncodePlaintextText(text);
+    if (!plaintext) {
+      appended->delivery = MessageDelivery::Failed;
+      (void)store_.UpdateMessage(*appended);
+      return plaintext.error();
+    }
+    payload_b64 = std::move(*plaintext);
   }
 
   RelayEnvelope envelope;
@@ -500,8 +538,9 @@ void P2pMessagingService::PollAndMerge() {
     }
 
     bool changed = false;
+    const std::string local_relay_id = identity->relay_user_id;
     for (const RelayEnvelope& envelope : poll->messages) {
-      const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope);
+      const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_relay_id);
       if (outcome.decision == IngestDecision::AcceptGap) {
         const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
         auto thread = store_.FindDirectThread(inbound_target);

@@ -4,6 +4,7 @@
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
+#include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/people/ContactTypes.h"
 
@@ -33,8 +34,9 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
 
 } // namespace
 
-RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys)
-    : store_(store), signing_keys_(signing_keys) {}
+RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys,
+                                           IPskSessionStore& psk_store)
+    : store_(store), signing_keys_(signing_keys), psk_store_(psk_store) {}
 
 ReplayWindow& RelayReceivePipeline::ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch) {
   const ReplayKey key{thread_id, session_epoch};
@@ -68,6 +70,7 @@ std::optional<std::string> RelayReceivePipeline::FindMessageIdAtSeq(const std::s
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& envelope,
+                                                          const std::string& local_relay_user_id,
                                                           const bool authorized_older_backfill,
                                                           const MessageTransport transport) {
   RelayReceiveOutcome outcome;
@@ -118,16 +121,37 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
     return outcome;
   }
 
-  auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
-  if (!decoded) {
+  ThreadMessage message;
+  if (E2eRelayPayloadCodec::RequiresEncryption(envelope.route.channel)) {
+    if (local_relay_user_id.empty()) {
+      outcome.decision = IngestDecision::HardReject;
+      return outcome;
+    }
+    const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
+    auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_);
+    if (!decrypted) {
+      outcome.decision = IngestDecision::HardReject;
+      return outcome;
+    }
+    message = std::move(*decrypted);
+  } else {
+    auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
+    if (!decoded) {
+      outcome.decision = IngestDecision::HardReject;
+      return outcome;
+    }
+    if (decoded->content_type != ChatContentType::Text) {
+      outcome.decision = IngestDecision::HardReject;
+      return outcome;
+    }
+    ChatPayloadValidator::SanitizeInboundFields(*decoded);
+    message = std::move(*decoded);
+  }
+
+  if (message.content_type != ChatContentType::Text) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
-  if (decoded->content_type != ChatContentType::Text) {
-    outcome.decision = IngestDecision::HardReject;
-    return outcome;
-  }
-  ChatPayloadValidator::SanitizeInboundFields(*decoded);
 
   const std::string seq_owner =
       (*thread)->participant_contact_ids.empty() ? envelope.sender_contact_id : (*thread)->participant_contact_ids.front();
@@ -175,20 +199,20 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
     return outcome;
   }
 
-  ThreadMessage message = *decoded;
-  message.id = envelope.message_id;
-  message.thread_id = resolved_thread_id;
-  message.sender_contact_id = seq_owner;
-  message.timestamp = envelope.timestamp;
-  message.delivery = MessageDelivery::Relayed;
-  message.relay_visible = true;
-  message.transport = transport;
-  message.sender_seq = envelope.sender_seq;
-  message.session_epoch = envelope.session_epoch;
+  ThreadMessage persisted = message;
+  persisted.id = envelope.message_id;
+  persisted.thread_id = resolved_thread_id;
+  persisted.sender_contact_id = seq_owner;
+  persisted.timestamp = envelope.timestamp;
+  persisted.delivery = MessageDelivery::Relayed;
+  persisted.relay_visible = true;
+  persisted.transport = transport;
+  persisted.sender_seq = envelope.sender_seq;
+  persisted.session_epoch = envelope.session_epoch;
 
   if (classified.decision == IngestDecision::AcceptEpochAdvance) {
     const uint32_t old_epoch = *chat_target_epoch;
-    if (!store_.AppendMessageWithPassiveEpochAdopt(message, old_epoch, envelope.session_epoch,
+    if (!store_.AppendMessageWithPassiveEpochAdopt(persisted, old_epoch, envelope.session_epoch,
                                                    classified.sync_state)) {
       outcome.decision = IngestDecision::HardReject;
       return outcome;
@@ -199,7 +223,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
     return outcome;
   }
 
-  if (!store_.AppendMessage(message)) {
+  if (!store_.AppendMessage(persisted)) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }

@@ -1,10 +1,12 @@
+#include "base/crypto/CryptoUtil.h"
 #include "base/messaging/ChatHistoryResponder.h"
 #include "base/messaging/ChatHistoryStreamCodec.h"
+#include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
-#include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/people/Ed25519Signer.h"
 #include "base/people/IdentityStore.h"
+#include "feature/messaging/SqlitePskSessionStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -17,7 +19,7 @@ class ResponderHarness {
 public:
   explicit ResponderHarness(const std::string& suffix)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_chat_history_" + suffix)),
-        store(data_dir.string()), identity(data_dir.string()) {
+        store(data_dir.string()), identity(data_dir.string()), psk_store(store.ProfileDbPath()) {
     std::filesystem::remove_all(data_dir);
     if (!identity.LoadOrCreate()) {
       throw std::runtime_error("identity load failed");
@@ -33,6 +35,18 @@ public:
       throw std::runtime_error("thread create failed");
     }
     thread = *created;
+
+    PskSessionRecord psk;
+    psk.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
+    psk.session_epoch = 1;
+    const auto master = HexToBytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    if (!master) {
+      throw std::runtime_error("psk bytes");
+    }
+    psk.master_psk_b64 = Base64Encode(*master);
+    if (!psk_store.Save(psk)) {
+      throw std::runtime_error("psk save");
+    }
   }
 
   void SeedOutbound(uint64_t seq, const std::string& text) {
@@ -55,6 +69,7 @@ public:
   std::filesystem::path data_dir;
   SqliteThreadStore store;
   IdentityStore identity;
+  SqlitePskSessionStore psk_store;
   Thread thread;
   std::string local_relay_id;
 };
@@ -76,7 +91,8 @@ TEST(ChatHistoryResponderTest, ServesSignedOutboundRows) {
   request.limit = 10;
   request.order = "asc";
 
-  auto response = ChatHistoryResponder::Serve(harness.store, harness.identity, request, harness.local_relay_id);
+  auto response =
+      ChatHistoryResponder::Serve(harness.store, harness.identity, harness.psk_store, request, harness.local_relay_id);
   ASSERT_TRUE(static_cast<bool>(response));
   ASSERT_EQ(response->messages.size(), 2u);
   EXPECT_EQ(response->messages[0].sender_seq, 1u);
@@ -96,7 +112,8 @@ TEST(ChatHistoryResponderTest, RejectsNonParticipantRequester) {
   request.channel = ThreadChannel::E2e;
   request.session_epoch = 1;
 
-  auto response = ChatHistoryResponder::Serve(harness.store, harness.identity, request, harness.local_relay_id);
+  auto response =
+      ChatHistoryResponder::Serve(harness.store, harness.identity, harness.psk_store, request, harness.local_relay_id);
   EXPECT_FALSE(static_cast<bool>(response));
 }
 

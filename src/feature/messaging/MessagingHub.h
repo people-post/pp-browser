@@ -18,6 +18,8 @@
 namespace pbr {
 
 class AgentSession;
+class RelayDirectorySigningKeyResolver;
+class SqlitePskSessionStore;
 
 class MessagingHub {
 public:
@@ -55,6 +57,8 @@ private:
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
   PeerSigningKeyStore signing_key_store_;
+  std::unique_ptr<SqlitePskSessionStore> psk_store_;
+  std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<MockRelayClient> mock_relay_;
   std::unique_ptr<MockDirectoryClient> mock_directory_;

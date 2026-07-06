@@ -103,11 +103,12 @@ Roe<void> WriteExactFrame(const std::shared_ptr<Stream>& stream, const std::vect
 } // namespace
 
 struct Libp2pChatHistoryService::Impl {
-  explicit Impl(IThreadStore& store_ref, IdentityStore& identity_ref)
-      : store(store_ref), identity(identity_ref) {}
+  explicit Impl(IThreadStore& store_ref, IdentityStore& identity_ref, IPskSessionStore& psk_store_ref)
+      : store(store_ref), identity(identity_ref), psk_store(psk_store_ref) {}
 
   IThreadStore& store;
   IdentityStore& identity;
+  IPskSessionStore& psk_store;
   std::shared_ptr<boost::asio::io_context> io_context;
   std::shared_ptr<libp2p::Host> host;
   std::thread io_thread;
@@ -146,7 +147,7 @@ struct Libp2pChatHistoryService::Impl {
       return;
     }
 
-    auto response = ChatHistoryResponder::Serve(store, identity, *request, local_identity->relay_user_id);
+    auto response = ChatHistoryResponder::Serve(store, identity, psk_store, *request, local_identity->relay_user_id);
     if (!response) {
       stream->close([](auto&&) {});
       return;
@@ -163,8 +164,10 @@ struct Libp2pChatHistoryService::Impl {
   }
 };
 
-Libp2pChatHistoryService::Libp2pChatHistoryService(IThreadStore& store, IdentityStore& identity)
-    : impl_(std::make_unique<Impl>(store, identity)), store_(store), identity_(identity) {}
+Libp2pChatHistoryService::Libp2pChatHistoryService(IThreadStore& store, IdentityStore& identity,
+                                                   IPskSessionStore& psk_store)
+    : impl_(std::make_unique<Impl>(store, identity, psk_store)), store_(store), identity_(identity),
+      psk_store_(psk_store) {}
 
 Libp2pChatHistoryService::~Libp2pChatHistoryService() {
   Stop();

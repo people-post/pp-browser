@@ -165,24 +165,24 @@ d0 (complete)
 ### Envelope and types
 
 - [x] Wire shape: `body.e2e.payload_b64` only (chat v2a-p2p — plaintext bytes until c2)
-- [ ] `P2pMessagingService`: **encrypt/decrypt** on `channel == e2e` (replace `RelayWirePayload` plaintext path)
-- [ ] Encrypt: `ChatPayloadCodec::Encode` → AAD → `MessageCipher` → `body.e2e.payload_b64`
-- [ ] Decrypt on poll → `ChatPayloadCodec::Decode` → `ThreadMessage`
-- [ ] `EnvelopeSigner` — build/verify canonical sign bytes per E014 (coordinate `ChatPayloadCodec` for body hash)
-- [ ] `IPeerSigningKeyResolver` + `RelayDirectoryResolver` + `PeerSigningKeyStore` with provenance (E016/E024); lazy `GET /v1/users/{relay_user_id}`
-- [ ] Inbound Ed25519 verify before decrypt — resolve key via resolver (E016/E024, D081)
+- [x] `P2pMessagingService`: **encrypt/decrypt** on `channel == e2e` (replace `RelayWirePayload` plaintext path)
+- [x] Encrypt: `ChatPayloadCodec::Encode` → AAD → `MessageCipher` → `body.e2e.payload_b64`
+- [x] Decrypt on poll → `ChatPayloadCodec::Decode` → `ThreadMessage`
+- [x] `EnvelopeSigner` — build/verify canonical sign bytes per E014 (coordinate `ChatPayloadCodec` for body hash)
+- [x] `IPeerSigningKeyResolver` + `RelayDirectorySigningKeyResolver` + `PeerSigningKeyStore` with provenance (E016/E024); lazy `GET /v1/users/{relay_user_id}`
+- [x] Inbound Ed25519 verify before decrypt — resolve key via resolver (E016/E024, D081)
 
 ### Ingest
 
-- [ ] Wire `ReplayWindow` into receive path
-- [ ] Fail closed on decrypt error (do not store plaintext garbage)
+- [x] Wire `ReplayWindow` into receive path
+- [x] Fail closed on decrypt error (do not store plaintext garbage)
 
 ### Docs
 
-- [ ] Update [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md) relay envelope section
-- [ ] Update chat-storage [CURRENT_STATE.md](../chat-storage-and-memory/CURRENT_STATE.md)
+- [x] Update [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md) relay envelope section
+- [x] Update chat-storage [CURRENT_STATE.md](../chat-storage-and-memory/CURRENT_STATE.md)
 
-**Exit criteria:** Two devices with shared PSK exchange E2E messages via relay; relay cannot read body; public thread still plaintext.
+**Exit criteria:** Two devices with shared PSK exchange E2E messages via relay; relay cannot read body; public thread still plaintext. *(Automated round-trip + pipeline tests green; manual two-profile relay test deferred to c3 UX.)*
 
 ---
 

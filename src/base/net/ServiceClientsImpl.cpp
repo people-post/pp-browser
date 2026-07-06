@@ -22,12 +22,14 @@ Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::stri
   alice.display_name = "Alice Example";
   alice.nickname = "alice";
   alice.ids = {{ContactIdKind::RelayUser, "relay:alice123", true}};
+  alice.signing_public_key_b64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
 
   DirectoryHit bob;
   bob.hit_id = "hit_bob";
   bob.display_name = "Bob Builder";
   bob.nickname = "bob";
   bob.ids = {{ContactIdKind::RelayUser, "relay:bob456", true}};
+  bob.signing_public_key_b64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
 
   if (query.empty()) {
     return std::vector<DirectoryHit>{alice, bob};
@@ -418,6 +420,9 @@ DirectoryHit DirectoryHitFromRelayUserJson(const nlohmann::json& json) {
   if (json.contains("nickname") && json["nickname"].is_string()) {
     hit.nickname = json["nickname"].get<std::string>();
     hit.display_name = hit.nickname;
+  }
+  if (json.contains("signing_public_key_b64") && json["signing_public_key_b64"].is_string()) {
+    hit.signing_public_key_b64 = json["signing_public_key_b64"].get<std::string>();
   }
   return hit;
 }

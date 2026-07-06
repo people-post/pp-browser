@@ -4,6 +4,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/IThreadStore.h"
+#include "base/crypto/IPskSessionStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/EpochBumpCoordinator.h"
@@ -24,7 +25,8 @@ namespace pbr {
 class P2pMessagingService : public Module {
 public:
   P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
-                      InboxController& inbox, PeerSigningKeyStore& signing_key_store);
+                      InboxController& inbox, PeerSigningKeyStore& signing_key_store,
+                      IPeerSigningKeyResolver& signing_key_resolver, IPskSessionStore& psk_store);
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text);
   void PollAndMerge();
@@ -74,7 +76,8 @@ private:
   IRelayClient* relay_ = nullptr;
   InboxController& inbox_;
   PeerSigningKeyStore& signing_key_store_;
-  PeerSigningKeyResolver signing_key_resolver_;
+  IPeerSigningKeyResolver& signing_key_resolver_;
+  IPskSessionStore& psk_store_;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<Libp2pChatHistoryService> peer_history_;
   std::unique_ptr<ChatSyncService> chat_sync_;

@@ -1,5 +1,5 @@
 #include "base/crypto/CryptoUtil.h"
-#include "base/messaging/E2eIngestClassifier.h"
+#include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "base/messaging/RelayWirePayload.h"
@@ -10,6 +10,7 @@
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/RelayReceivePipeline.h"
+#include "feature/messaging/SqlitePskSessionStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -26,8 +27,9 @@ public:
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_chat_sync_" + suffix)),
         store(data_dir.string()),
         identity(data_dir.string()),
+        psk_store(store.ProfileDbPath()),
         key_resolver(key_store),
-        receive_pipeline(store, key_resolver),
+        receive_pipeline(store, key_resolver, psk_store),
         sync(store, identity, &relay, receive_pipeline, &peer_history) {
     std::filesystem::remove_all(data_dir);
 
@@ -57,6 +59,19 @@ public:
     if (!identity.LoadOrCreate()) {
       throw std::runtime_error("Failed to load identity");
     }
+    local_relay_id = identity.Get()->relay_user_id;
+
+    PskSessionRecord psk;
+    psk.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
+    psk.session_epoch = 1;
+    const auto master = HexToBytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    if (!master) {
+      throw std::runtime_error("Failed to build test PSK");
+    }
+    psk.master_psk_b64 = Base64Encode(*master);
+    if (!psk_store.Save(psk)) {
+      throw std::runtime_error("Failed to save test PSK");
+    }
   }
 
   RelayEnvelope MakePeerEnvelope(uint64_t seq, const std::string& text) const {
@@ -67,9 +82,23 @@ public:
     envelope.sender_contact_id = "relay:peer";
     envelope.route.kind = "direct";
     envelope.route.channel = ThreadChannel::E2e;
-    auto payload = RelayWirePayload::EncodePlaintextText(text);
+
+    const auto master = HexToBytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    if (!master) {
+      throw std::runtime_error("Failed to build test PSK");
+    }
+    E2eEncryptParams params;
+    params.text = text;
+    params.channel = CryptoChannel::E2e;
+    params.peer_contact_id = local_relay_id;
+    params.sender_contact_id = "relay:peer";
+    params.message_id = envelope.message_id;
+    params.sender_seq = seq;
+    params.session_epoch = 1;
+    params.timestamp = static_cast<int64_t>(seq);
+    auto payload = E2eRelayPayloadCodec::EncryptText(params, *master);
     if (!payload) {
-      throw std::runtime_error("Failed to encode payload");
+      throw std::runtime_error("Failed to encode encrypted payload");
     }
     envelope.body.e2e.payload_b64 = *payload;
     envelope.sender_seq = seq;
@@ -116,6 +145,7 @@ public:
   std::filesystem::path data_dir;
   SqliteThreadStore store;
   IdentityStore identity;
+  SqlitePskSessionStore psk_store;
   MockRelayClient relay;
   MockChatHistoryPeerClient peer_history;
   PeerSigningKeyStore key_store;
@@ -123,6 +153,7 @@ public:
   RelayReceivePipeline receive_pipeline;
   ChatSyncService sync;
   Thread thread;
+  std::string local_relay_id;
   Ed25519KeyPair peer_keys;
   std::vector<uint8_t> peer_private_key;
 };
@@ -154,7 +185,8 @@ TEST(ChatSyncTest, ReceivePipelineIngestsGapFill) {
   SyncTestHarness harness("pipeline");
   harness.SeedPeerSeq(1, "one");
 
-  const RelayReceiveOutcome outcome = harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(2, "two"));
+  const RelayReceiveOutcome outcome =
+      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(2, "two"), harness.local_relay_id);
   EXPECT_EQ(outcome.decision, IngestDecision::AcceptContiguous);
   EXPECT_TRUE(outcome.persisted);
 }
@@ -234,7 +266,8 @@ TEST(ChatSyncTest, LateFillAcceptsAfterAuthoritativeEmptyClose) {
   EXPECT_TRUE(empty_close->empty_gap_closed);
 
   harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
-  const RelayReceiveOutcome outcome = harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(2, "two"));
+  const RelayReceiveOutcome outcome =
+      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(2, "two"), harness.local_relay_id);
   EXPECT_EQ(outcome.decision, IngestDecision::AcceptLateFill);
   EXPECT_TRUE(outcome.persisted);
 
@@ -289,7 +322,7 @@ TEST(ChatSyncTest, RetryGapSyncRepairsKnownGap) {
   harness.SeedPeerSeq(1, "one");
 
   const RelayReceiveOutcome gap_outcome =
-      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(3, "three"));
+      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(3, "three"), harness.local_relay_id);
   EXPECT_EQ(gap_outcome.decision, IngestDecision::AcceptGap);
 
   harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));

@@ -1,6 +1,6 @@
 # E2E message encryption
 
-**Status:** Wave 1 (**c1**) complete (2026-07-02) — **c2 blocked on chat v6**  
+**Status:** Wave 5 (**c2**) complete (2026-07-06) — **c3 next** (PSK UX)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
 **Related project:** [chat-storage-and-memory](../chat-storage-and-memory/) (three tiers D089, `ChatPayload`, `sender_seq`, ingest rules, identity-keyed `ChatTargetKey` D079)
@@ -28,8 +28,8 @@ High-assurance **symmetric E2E** for all P2P tiers: manual PSK (private), automa
 |-------|------|--------|
 | d0 | Design baseline (this folder) | **Complete** |
 | c1 | `base/crypto` groundwork (libsodium, no messaging wiring) | **Done** (PSK store tests optional) |
-| c2 | Messaging integration (AEAD on wire, verify) | Not started — after chat **v6** |
-| c3 | Key distribution UX — **private tier** (import, fingerprint, rotation) | Not started |
+| c2 | Messaging integration (AEAD on wire, verify) | **Done** (2026-07-06) |
+| c3 | Key distribution UX — **private tier** (import, fingerprint, rotation) | **Next** |
 | c3+ | **Public tier** auto-key (`e2e_public`) | Not scheduled |
 | c4 | Post-quantum migration (hybrid KEM / signatures) | Deferred |
 

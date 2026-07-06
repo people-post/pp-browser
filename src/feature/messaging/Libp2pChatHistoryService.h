@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/crypto/IPskSessionStore.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
@@ -19,7 +20,7 @@ inline constexpr const char* kChatHistoryProtocolId = "/pp-browser/chat-history/
 /** D060 libp2p peer-direct history — responder + requester over `/pp-browser/chat-history/1.0.0`. */
 class Libp2pChatHistoryService : public IChatHistoryPeerClient {
 public:
-  Libp2pChatHistoryService(IThreadStore& store, IdentityStore& identity);
+  Libp2pChatHistoryService(IThreadStore& store, IdentityStore& identity, IPskSessionStore& psk_store);
   ~Libp2pChatHistoryService() override;
 
   Libp2pChatHistoryService(const Libp2pChatHistoryService&) = delete;
@@ -39,6 +40,7 @@ private:
   std::unique_ptr<Impl> impl_;
   IThreadStore& store_;
   IdentityStore& identity_;
+  IPskSessionStore& psk_store_;
 };
 
 } // namespace pbr

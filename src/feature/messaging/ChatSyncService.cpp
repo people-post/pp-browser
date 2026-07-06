@@ -117,9 +117,12 @@ Roe<ChatSyncResult> ChatSyncService::IngestHistoryResponse(const std::string& th
       request.max_sender_seq && sync_state->loaded_min_seq > 0 &&
       *request.max_sender_seq < sync_state->loaded_min_seq;
 
+  auto identity = identity_.Get();
+  const std::string local_relay_id = identity ? (*identity).relay_user_id : std::string{};
+
   for (const RelayEnvelope& envelope : response.messages) {
     const RelayReceiveOutcome outcome =
-        receive_pipeline_.ProcessEnvelope(envelope, authorized_older_backfill, transport);
+        receive_pipeline_.ProcessEnvelope(envelope, local_relay_id, authorized_older_backfill, transport);
     if (outcome.persisted) {
       ++result.ingested;
       changed = true;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/crypto/ReplayWindow.h"
+#include "base/crypto/IPskSessionStore.h"
 #include "base/messaging/E2eIngestClassifier.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
@@ -20,9 +21,10 @@ struct RelayReceiveOutcome {
 /** v6 receive pipeline steps 0–12 (feature layer orchestration). */
 class RelayReceivePipeline {
 public:
-  RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys);
+  RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys, IPskSessionStore& psk_store);
 
-  RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, bool authorized_older_backfill = false,
+  RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
+                                      bool authorized_older_backfill = false,
                                       MessageTransport transport = MessageTransport::Relay);
 
 private:
@@ -49,6 +51,7 @@ private:
 
   IThreadStore& store_;
   IPeerSigningKeyResolver& signing_keys_;
+  IPskSessionStore& psk_store_;
   std::unordered_map<ReplayKey, ReplayWindow, ReplayKeyHash> replay_windows_;
 };
 
