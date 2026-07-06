@@ -3,10 +3,14 @@
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingLimits.h"
-#include "base/messaging/PeerSigningKeyStore.h"
+#include "base/crypto/AutoKeyEstablishment.h"
+#include "base/people/Ed25519Signer.h"
+#include "base/people/IdentityStore.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SqliteThreadStore.h"
+#include "base/crypto/AutoKeyEstablishment.h"
 #include "base/people/Ed25519Signer.h"
+#include "base/people/IdentityStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 
@@ -31,9 +35,10 @@ public:
   explicit PipelineHarness(const std::string& suffix, const ThreadChannel channel)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_cross_cutting_" + suffix)),
         store(data_dir.string()),
+        identity(data_dir.string()),
         psk_store(store.ProfileDbPath()),
         key_resolver(key_store),
-        pipeline(store, key_resolver, psk_store) {
+        pipeline(store, key_resolver, psk_store, identity) {
     std::filesystem::remove_all(data_dir);
 
     auto generated = Ed25519Signer::GenerateKeyPair();
@@ -67,6 +72,15 @@ public:
       if (!psk_store.Save(psk)) {
         throw std::runtime_error("Failed to save test PSK");
       }
+    } else if (channel == ThreadChannel::E2ePublic) {
+      if (!identity.LoadOrCreate()) {
+        throw std::runtime_error("Failed to load local identity");
+      }
+      auto kem_private = identity.GetOrCreateHybridKemPrivateKey();
+      if (!kem_private) {
+        throw std::runtime_error("Failed to load local KEM key");
+      }
+      local_kem_private = std::move(*kem_private);
     }
   }
 
@@ -98,6 +112,35 @@ public:
         throw std::runtime_error("Failed to encrypt payload");
       }
       envelope.body.e2e.payload_b64 = *payload;
+    } else if (channel == ThreadChannel::E2ePublic) {
+      auto local_public_b64 = identity.GetHybridKemPublicKeyB64();
+      if (!local_public_b64) {
+        throw std::runtime_error("Missing local KEM public key");
+      }
+      auto local_public = Base64Decode(*local_public_b64);
+      if (!local_public) {
+        throw std::runtime_error("Failed to decode local KEM public key");
+      }
+      auto established = AutoKeyEstablishment::EncapsulateForRecipient(*local_public);
+      if (!established) {
+        throw std::runtime_error("Failed to establish auto-key");
+      }
+      E2eEncryptParams params;
+      params.text = text;
+      params.channel = CryptoChannel::E2ePublic;
+      params.peer_contact_id = "relay:local";
+      params.sender_contact_id = "relay:peer";
+      params.message_id = envelope.message_id;
+      params.sender_seq = seq;
+      params.session_epoch = 1;
+      params.timestamp = envelope.timestamp;
+      auto payload = E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, established->master_psk,
+                                                                  established->key_init_b64);
+      if (!payload) {
+        throw std::runtime_error("Failed to encrypt public payload");
+      }
+      envelope.body.e2e.payload_b64 = payload->payload_b64;
+      envelope.body.e2e.key_init_b64 = payload->key_init_b64;
     } else {
       auto payload = RelayWirePayload::EncodePlaintextText(text);
       if (!payload) {
@@ -121,12 +164,14 @@ public:
 
   std::filesystem::path data_dir;
   SqliteThreadStore store;
+  IdentityStore identity;
   SqlitePskSessionStore psk_store;
   PeerSigningKeyStore key_store;
   PeerSigningKeyResolver key_resolver;
   RelayReceivePipeline pipeline;
   Thread thread;
   Ed25519KeyPair peer_keys;
+  std::optional<ByteVector> local_kem_private;
 };
 
 } // namespace
@@ -172,7 +217,7 @@ TEST(MessagingCrossCuttingTest, FindOnlyRejectsUnknownSenderThread) {
   EXPECT_FALSE(outcome.persisted);
 }
 
-TEST(MessagingCrossCuttingTest, E2ePublicIngestUsesPlaintextDecodePath) {
+TEST(MessagingCrossCuttingTest, E2ePublicIngestUsesEncryptedAutoKeyPath) {
   PipelineHarness harness("e2e_public", ThreadChannel::E2ePublic);
   const RelayEnvelope envelope =
       harness.MakeSignedEnvelope("public-msg-1", 1, "public hello", ThreadChannel::E2ePublic);

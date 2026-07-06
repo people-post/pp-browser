@@ -794,6 +794,9 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
   if (json.contains("signing_public_key_b64") && json["signing_public_key_b64"].is_string()) {
     hit.signing_public_key_b64 = json["signing_public_key_b64"].get<std::string>();
   }
+  if (json.contains("kem_public_key_b64") && json["kem_public_key_b64"].is_string()) {
+    hit.kem_public_key_b64 = json["kem_public_key_b64"].get<std::string>();
+  }
   return hit;
 }
 

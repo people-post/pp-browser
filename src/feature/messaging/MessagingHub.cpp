@@ -1,5 +1,6 @@
 #include "feature/messaging/MessagingHub.h"
 
+#include "feature/messaging/RelayDirectoryKemKeyResolver.h"
 #include "feature/messaging/RelayDirectorySigningKeyResolver.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 
@@ -102,9 +103,11 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath());
   signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
+  kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
-                                                signing_key_store_, *signing_resolver_, *psk_store_);
+                                                signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
+                                                *psk_store_);
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
 
   initialized_ = true;
@@ -148,6 +151,7 @@ void MessagingHub::Shutdown() {
   actions_.reset();
   p2p_.reset();
   signing_resolver_.reset();
+  kem_resolver_.reset();
   psk_store_.reset();
   inbox_.reset();
   http_relay_.reset();

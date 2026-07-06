@@ -6,6 +6,7 @@
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "base/messaging/ThreadTypes.h"
+#include "base/people/IdentityStore.h"
 
 #include <string>
 #include <unordered_map>
@@ -21,7 +22,8 @@ struct RelayReceiveOutcome {
 /** v6 receive pipeline steps 0–12 (feature layer orchestration). */
 class RelayReceivePipeline {
 public:
-  RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys, IPskSessionStore& psk_store);
+  RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys, IPskSessionStore& psk_store,
+                       IdentityStore& identity);
 
   RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                       bool authorized_older_backfill = false,
@@ -44,6 +46,8 @@ private:
   };
 
   Roe<bool> VerifySignature(const RelayEnvelope& envelope, const DirectChatTarget& target) const;
+  Roe<void> PersistDerivedAutoKeyPsk(const RelayEnvelope& envelope, const ChatTargetKey& target_key,
+                                     const ByteVector& master_psk) const;
   std::optional<std::string> FindMessageIdAtSeq(const std::string& thread_id, const uint32_t session_epoch,
                                                 const std::string& seq_owner_contact_id,
                                                 const uint64_t sender_seq) const;
@@ -52,6 +56,7 @@ private:
   IThreadStore& store_;
   IPeerSigningKeyResolver& signing_keys_;
   IPskSessionStore& psk_store_;
+  IdentityStore& identity_;
   std::unordered_map<ReplayKey, ReplayWindow, ReplayKeyHash> replay_windows_;
 };
 

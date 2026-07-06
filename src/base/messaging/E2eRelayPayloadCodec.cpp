@@ -1,5 +1,6 @@
 #include "base/messaging/E2eRelayPayloadCodec.h"
 
+#include "base/crypto/AutoKeyEstablishment.h"
 #include "base/crypto/CanonicalAad.h"
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
@@ -24,7 +25,7 @@ ChatTargetKey E2eRelayPayloadCodec::ChatTargetFromThread(const Thread& thread) {
 }
 
 bool E2eRelayPayloadCodec::RequiresEncryption(const ThreadChannel channel) {
-  return channel == ThreadChannel::E2e;
+  return channel == ThreadChannel::E2e || channel == ThreadChannel::E2ePublic;
 }
 
 namespace {
@@ -98,10 +99,23 @@ Roe<std::string> E2eRelayPayloadCodec::EncryptText(const E2eEncryptParams& param
   return EncryptedPayload::EncodeBase64(*blob);
 }
 
+Roe<E2eEncryptResult> E2eRelayPayloadCodec::EncryptTextWithAutoKey(const E2eEncryptParams& params,
+                                                                 const ByteVector& master_psk,
+                                                                 const std::optional<std::string>& key_init_b64) {
+  auto payload = EncryptText(params, master_psk);
+  if (!payload) {
+    return payload.error();
+  }
+  E2eEncryptResult result;
+  result.payload_b64 = std::move(*payload);
+  result.key_init_b64 = key_init_b64;
+  return result;
+}
+
 Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& envelope,
                                                          const std::string& local_contact_id,
-                                                         const ChatTargetKey& target_key,
-                                                         IPskSessionStore& psk_store) {
+                                                         const ChatTargetKey& target_key, IPskSessionStore& psk_store,
+                                                         const std::optional<ByteVector>& local_kem_private_key) {
   if (envelope.body.e2e.payload_b64.empty()) {
     return Error("Missing E2E payload");
   }
@@ -109,6 +123,51 @@ Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& en
   auto expected_aad = ExpectedReceiveAad(envelope, local_contact_id);
   if (!expected_aad) {
     return expected_aad.error();
+  }
+
+  if (envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value()) {
+    auto master_psk = AutoKeyEstablishment::ResolveOrDeriveMasterPsk(envelope, target_key, psk_store,
+                                                                      *local_kem_private_key);
+    if (!master_psk) {
+      return master_psk.error();
+    }
+    if (master_psk->size() != kMasterPskSize) {
+      return Error("Invalid master PSK size");
+    }
+
+    auto session_key = SessionKeyDeriver::Derive(*master_psk, expected_aad->channel, envelope.session_epoch);
+    if (!session_key) {
+      return session_key.error();
+    }
+
+    auto blob_bytes = EncryptedPayload::DecodeBase64(envelope.body.e2e.payload_b64);
+    if (!blob_bytes) {
+      return blob_bytes.error();
+    }
+    auto blob = EncryptedPayload::DecodeBlob(*blob_bytes);
+    if (!blob) {
+      return blob.error();
+    }
+
+    auto aad = CanonicalAad::Build(*expected_aad);
+    if (!aad) {
+      return aad.error();
+    }
+
+    auto plaintext = MessageCipher::Decrypt(*session_key, *blob, *aad);
+    if (!plaintext) {
+      return plaintext.error();
+    }
+    if (plaintext->size() > kMaxE2ePlaintextBytes) {
+      return Error("Decrypted payload exceeds limit");
+    }
+
+    auto message = ChatPayloadValidator::DecodeValidated(*plaintext);
+    if (!message) {
+      return message.error();
+    }
+    ChatPayloadValidator::SanitizeInboundFields(*message);
+    return *message;
   }
 
   auto master_psk_b64 = psk_store.ResolveMasterPskForEpoch(target_key, envelope.session_epoch);

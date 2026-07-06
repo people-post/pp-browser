@@ -63,6 +63,12 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
                                        *hit.signing_public_key_b64, "directory");
         }
       }
+      if (p2p_ && hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
+        if (auto relay_id = PrimaryRelayIdFromHit(hit)) {
+          p2p_->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::RelayUser), *relay_id,
+                                  *hit.kem_public_key_b64, "directory");
+        }
+      }
       auto contact = contacts_.AddFromDirectoryHit(hit);
       if (!contact) {
         return contact.error();
@@ -107,6 +113,12 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       if (auto relay_id = PrimaryRelayIdFromHit(hit)) {
         p2p_->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), *relay_id,
                                      *hit.signing_public_key_b64, "directory");
+      }
+    }
+    if (p2p_ && hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
+      if (auto relay_id = PrimaryRelayIdFromHit(hit)) {
+        p2p_->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::RelayUser), *relay_id,
+                                *hit.kem_public_key_b64, "directory");
       }
     }
     auto contact = contacts_.AddFromDirectoryHit(hit);

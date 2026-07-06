@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "common/Error.h"
 #include "common/Module.h"
+#include "base/crypto/CryptoTypes.h"
 #include "base/people/IdentityTypes.h"
 
 #include <mutex>
@@ -21,6 +22,8 @@ public:
   Roe<LocalIdentity> Update(const LocalIdentity& identity);
   Roe<std::string> SignPayload(const std::string& canonical_json) const;
   Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;
+  Roe<ByteVector> GetOrCreateHybridKemPrivateKey() const;
+  Roe<std::string> GetHybridKemPublicKeyB64() const;
   void Flush();
 
 private:

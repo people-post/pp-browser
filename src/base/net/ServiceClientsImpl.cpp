@@ -2,6 +2,7 @@
 
 #include "common/Utilities.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/HybridKem.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/RelayStreamKey.h"
@@ -13,8 +14,31 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <mutex>
 
 namespace pbr {
+
+namespace {
+
+std::optional<std::string> MockPeerKemPublicKeyB64() {
+  static std::once_flag once;
+  static std::string value;
+  std::call_once(once, []() {
+    auto keys = HybridKem::GenerateKeyPair();
+    if (!keys) {
+      return;
+    }
+    if (keys) {
+      value = Base64Encode(keys->public_key);
+    }
+  });
+  if (value.empty()) {
+    return std::nullopt;
+  }
+  return value;
+}
+
+} // namespace
 
 Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::string& query) {
   DirectoryHit alice;
@@ -23,6 +47,11 @@ Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::stri
   alice.nickname = "alice";
   alice.ids = {{ContactIdKind::RelayUser, "relay:alice123", true}};
   alice.signing_public_key_b64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
+  if (auto kem = MockPeerKemPublicKeyB64()) {
+    alice.kem_public_key_b64 = *kem;
+  } else if (!default_kem_public_key_b64_.empty()) {
+    alice.kem_public_key_b64 = default_kem_public_key_b64_;
+  }
 
   DirectoryHit bob;
   bob.hit_id = "hit_bob";
@@ -30,6 +59,11 @@ Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::stri
   bob.nickname = "bob";
   bob.ids = {{ContactIdKind::RelayUser, "relay:bob456", true}};
   bob.signing_public_key_b64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
+  if (auto kem = MockPeerKemPublicKeyB64()) {
+    bob.kem_public_key_b64 = *kem;
+  } else if (!default_kem_public_key_b64_.empty()) {
+    bob.kem_public_key_b64 = default_kem_public_key_b64_;
+  }
 
   if (query.empty()) {
     return std::vector<DirectoryHit>{alice, bob};
@@ -426,6 +460,9 @@ DirectoryHit DirectoryHitFromRelayUserJson(const nlohmann::json& json) {
   }
   if (json.contains("signing_public_key_b64") && json["signing_public_key_b64"].is_string()) {
     hit.signing_public_key_b64 = json["signing_public_key_b64"].get<std::string>();
+  }
+  if (json.contains("kem_public_key_b64") && json["kem_public_key_b64"].is_string()) {
+    hit.kem_public_key_b64 = json["kem_public_key_b64"].get<std::string>();
   }
   return hit;
 }

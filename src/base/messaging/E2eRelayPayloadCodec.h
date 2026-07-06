@@ -22,6 +22,11 @@ struct E2eEncryptParams {
   int64_t timestamp = 0;
 };
 
+struct E2eEncryptResult {
+  std::string payload_b64;
+  std::optional<std::string> key_init_b64;
+};
+
 /** E2E ciphertext in body.e2e.payload_b64 (D090) — base/messaging wire codec. */
 class E2eRelayPayloadCodec {
 public:
@@ -30,8 +35,11 @@ public:
   static bool RequiresEncryption(ThreadChannel channel);
 
   static Roe<std::string> EncryptText(const E2eEncryptParams& params, const ByteVector& master_psk);
+  static Roe<E2eEncryptResult> EncryptTextWithAutoKey(const E2eEncryptParams& params, const ByteVector& master_psk,
+                                                      const std::optional<std::string>& key_init_b64 = std::nullopt);
   static Roe<ThreadMessage> DecryptEnvelope(const RelayEnvelope& envelope, const std::string& local_contact_id,
-                                            const ChatTargetKey& target_key, IPskSessionStore& psk_store);
+                                            const ChatTargetKey& target_key, IPskSessionStore& psk_store,
+                                            const std::optional<ByteVector>& local_kem_private_key = std::nullopt);
 };
 
 } // namespace pbr

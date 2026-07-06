@@ -1,12 +1,14 @@
 #include "feature/messaging/RelayReceivePipeline.h"
 
+#include "base/crypto/AutoKeyEstablishment.h"
+#include "base/crypto/CryptoUtil.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/RelayWirePayload.h"
-#include "base/people/ContactTypes.h"
+#include "base/messaging/SyncStateCodec.h"
 
 #include "common/Utilities.h"
 
@@ -35,8 +37,8 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
 } // namespace
 
 RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys,
-                                           IPskSessionStore& psk_store)
-    : store_(store), signing_keys_(signing_keys), psk_store_(psk_store) {}
+                                           IPskSessionStore& psk_store, IdentityStore& identity)
+    : store_(store), signing_keys_(signing_keys), psk_store_(psk_store), identity_(identity) {}
 
 ReplayWindow& RelayReceivePipeline::ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch) {
   const ReplayKey key{thread_id, session_epoch};
@@ -50,6 +52,28 @@ Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
     return key.error();
   }
   return EnvelopeSigner::Verify(envelope, key->signing_public_key_b64);
+}
+
+Roe<void> RelayReceivePipeline::PersistDerivedAutoKeyPsk(const RelayEnvelope& envelope,
+                                                        const ChatTargetKey& target_key,
+                                                        const ByteVector& master_psk) const {
+  auto existing = psk_store_.Load(target_key);
+  if (!existing) {
+    return existing.error();
+  }
+  PskSessionRecord record;
+  if (*existing) {
+    record = **existing;
+  } else {
+    record.key = target_key;
+    record.session_epoch = envelope.session_epoch;
+  }
+  if (!record.master_psk_b64.has_value()) {
+    record.master_psk_b64 = Base64Encode(master_psk);
+    record.session_epoch = envelope.session_epoch;
+    return psk_store_.Save(record);
+  }
+  return {};
 }
 
 std::optional<std::string> RelayReceivePipeline::FindMessageIdAtSeq(const std::string& thread_id,
@@ -94,25 +118,34 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
 
   const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
   auto thread = store_.FindDirectThread(inbound_target);
-  if (!thread || !*thread) {
+  if (!thread) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
 
-  if (!IsEnvelopeFromPeer(**thread, envelope)) {
+  const bool auto_create = !*thread && envelope.route.channel == ThreadChannel::E2ePublic;
+  if (!*thread && !auto_create) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
 
-  const std::string& resolved_thread_id = (*thread)->id;
-  auto has_message_id = store_.HasMessageId(resolved_thread_id, envelope.message_id);
-  if (!has_message_id) {
+  if (!auto_create && !IsEnvelopeFromPeer(**thread, envelope)) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
-  if (*has_message_id) {
-    outcome.decision = IngestDecision::BenignDuplicate;
-    return outcome;
+
+  std::string resolved_thread_id;
+  if (!auto_create) {
+    resolved_thread_id = (*thread)->id;
+    auto has_message_id = store_.HasMessageId(resolved_thread_id, envelope.message_id);
+    if (!has_message_id) {
+      outcome.decision = IngestDecision::HardReject;
+      return outcome;
+    }
+    if (*has_message_id) {
+      outcome.decision = IngestDecision::BenignDuplicate;
+      return outcome;
+    }
   }
 
   auto verified = VerifySignature(envelope, inbound_target);
@@ -127,13 +160,37 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
       outcome.decision = IngestDecision::HardReject;
       return outcome;
     }
-    const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
-    auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_);
+
+    ChatTargetKey target_key;
+    target_key.peer_identity_kind = inbound_target.peer_identity_kind;
+    target_key.peer_identity_value = inbound_target.peer_identity_value;
+    target_key.channel = E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel);
+
+    std::optional<ByteVector> local_kem_private_key;
+    if (envelope.route.channel == ThreadChannel::E2ePublic) {
+      auto kem_private = identity_.GetOrCreateHybridKemPrivateKey();
+      if (!kem_private) {
+        outcome.decision = IngestDecision::HardReject;
+        return outcome;
+      }
+      local_kem_private_key = std::move(*kem_private);
+    }
+
+    auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_,
+                                                           local_kem_private_key);
     if (!decrypted) {
       outcome.decision = IngestDecision::HardReject;
       return outcome;
     }
     message = std::move(*decrypted);
+
+    if (envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value()) {
+      auto master_psk = AutoKeyEstablishment::ResolveOrDeriveMasterPsk(envelope, target_key, psk_store_,
+                                                                       *local_kem_private_key);
+      if (master_psk) {
+        (void)PersistDerivedAutoKeyPsk(envelope, target_key, *master_psk);
+      }
+    }
   } else {
     auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
     if (!decoded) {
@@ -158,28 +215,48 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
     return outcome;
   }
 
-  const std::string seq_owner =
-      (*thread)->participant_contact_ids.empty() ? envelope.sender_contact_id : (*thread)->participant_contact_ids.front();
-
-  auto sync_state = store_.GetPeerSyncState(resolved_thread_id, envelope.session_epoch);
-  if (!sync_state) {
-    outcome.decision = IngestDecision::HardReject;
-    return outcome;
+  if (auto_create) {
+    auto created = store_.FindOrCreateDirectThread(inbound_target, "", envelope.sender_contact_id);
+    if (!created) {
+      outcome.decision = IngestDecision::HardReject;
+      return outcome;
+    }
+    resolved_thread_id = created->id;
+    outcome.thread_changed = true;
   }
 
-  auto chat_target_epoch = store_.GetChatTargetSessionEpoch(resolved_thread_id);
-  if (!chat_target_epoch) {
-    outcome.decision = IngestDecision::HardReject;
-    return outcome;
+  const std::string seq_owner =
+      auto_create ? envelope.sender_contact_id
+                  : ((*thread)->participant_contact_ids.empty() ? envelope.sender_contact_id
+                                                                : (*thread)->participant_contact_ids.front());
+
+  PeerSyncState sync_state;
+  uint32_t chat_target_epoch = envelope.session_epoch;
+  if (auto_create) {
+    sync_state = DefaultPeerSyncState();
+  } else {
+    auto loaded_sync_state = store_.GetPeerSyncState(resolved_thread_id, envelope.session_epoch);
+    if (!loaded_sync_state) {
+      outcome.decision = IngestDecision::HardReject;
+      return outcome;
+    }
+    sync_state = *loaded_sync_state;
+
+    auto loaded_epoch = store_.GetChatTargetSessionEpoch(resolved_thread_id);
+    if (!loaded_epoch) {
+      outcome.decision = IngestDecision::HardReject;
+      return outcome;
+    }
+    chat_target_epoch = *loaded_epoch;
   }
 
   IngestClassifierInput classifier_input;
   classifier_input.sender_seq = envelope.sender_seq;
   classifier_input.session_epoch = envelope.session_epoch;
   classifier_input.message_id = envelope.message_id;
-  classifier_input.sync_state = *sync_state;
-  classifier_input.chat_target_epoch = *chat_target_epoch;
-  classifier_input.strict_mode = (*thread)->channel == ThreadChannel::E2e;
+  classifier_input.sync_state = sync_state;
+  classifier_input.chat_target_epoch = chat_target_epoch;
+  classifier_input.strict_mode = envelope.route.channel == ThreadChannel::E2e;
   classifier_input.authorized_older_backfill = authorized_older_backfill;
   classifier_input.has_message_id = false;
   classifier_input.existing_message_id_at_seq =
@@ -216,7 +293,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
   persisted.session_epoch = envelope.session_epoch;
 
   if (classified.decision == IngestDecision::AcceptEpochAdvance) {
-    const uint32_t old_epoch = *chat_target_epoch;
+    const uint32_t old_epoch = chat_target_epoch;
     if (!store_.AppendMessageWithPassiveEpochAdopt(persisted, old_epoch, envelope.session_epoch,
                                                    classified.sync_state)) {
       outcome.decision = IngestDecision::HardReject;

@@ -5,6 +5,7 @@
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/people/Ed25519Signer.h"
+#include "base/people/IdentityStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 
@@ -87,6 +88,8 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
   SqlitePskSessionStore psk_store(store.ProfileDbPath());
+  IdentityStore identity(data_dir.string());
+  ASSERT_TRUE(static_cast<bool>(identity.LoadOrCreate()));
   PeerSigningKeyStore key_store;
 
   auto peer_keys = Ed25519Signer::GenerateKeyPair();
@@ -105,7 +108,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   InstallTestPsk(psk_store, *thread);
 
   PeerSigningKeyResolver key_resolver(key_store);
-  RelayReceivePipeline pipeline(store, key_resolver, psk_store);
+  RelayReceivePipeline pipeline(store, key_resolver, psk_store, identity);
 
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;

@@ -15,8 +15,15 @@ using RelayAuthSigner = std::function<Roe<std::string>(const std::vector<uint8_t
 
 class MockDirectoryClient : public IDirectoryClient {
 public:
+  void SetDefaultKemPublicKeyB64(std::string kem_public_key_b64) {
+    default_kem_public_key_b64_ = std::move(kem_public_key_b64);
+  }
+
   Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query) override;
   Roe<DirectoryHit> LookupRelayUser(const std::string& relay_user_id) override;
+
+private:
+  std::string default_kem_public_key_b64_;
 };
 
 class MockRelayClient : public IRelayClient {

@@ -4,9 +4,10 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/IThreadStore.h"
-#include "base/messaging/SendRelayOptions.h"
+#include "base/messaging/PeerKemKeyStore.h"
 #include "base/crypto/IPskSessionStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
+#include "base/messaging/SendRelayOptions.h"
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/EpochBumpCoordinator.h"
 #include "feature/messaging/InboxController.h"
@@ -28,7 +29,8 @@ class P2pMessagingService : public Module {
 public:
   P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
                       InboxController& inbox, PeerSigningKeyStore& signing_key_store,
-                      IPeerSigningKeyResolver& signing_key_resolver, IPskSessionStore& psk_store);
+                      IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
+                      IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store);
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
                                      const SendRelayOptions& options = {});
@@ -39,6 +41,8 @@ public:
   void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
   void RegisterPeerSigningKey(const std::string& peer_identity_kind, const std::string& peer_identity_value,
                               const std::string& signing_public_key_b64, const std::string& source = "manual");
+  void RegisterPeerKemKey(const std::string& peer_identity_kind, const std::string& peer_identity_value,
+                          const std::string& kem_public_key_b64, const std::string& source = "manual");
   void MaybeTailSync(const std::string& thread_id);
   /** D059 — full user-initiated sync (async on IO thread). */
   void SyncWithPeer(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
@@ -93,6 +97,8 @@ private:
   InboxController& inbox_;
   PeerSigningKeyStore& signing_key_store_;
   IPeerSigningKeyResolver& signing_key_resolver_;
+  PeerKemKeyStore& kem_key_store_;
+  IPeerKemKeyResolver& kem_key_resolver_;
   IPskSessionStore& psk_store_;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<Libp2pChatHistoryService> peer_history_;

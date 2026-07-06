@@ -1141,7 +1141,6 @@ void ChatController::UpdateThreadChrome() {
   if (auto thread = MessagingHub::Instance().Inbox().GetActiveThread()) {
     chat_.thread_title = thread->title.c_str();
     chat_.thread_encrypted = thread->encrypted;
-    chat_.compose_disabled = thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2ePublic;
     const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
     chat_.show_thread_actions = !MessagingHub::Instance().Inbox().IsAiHomeThread(active_id);
     chat_.show_forget_memory = thread->kind == ThreadKind::Ai;
@@ -1199,8 +1198,8 @@ void ChatController::UpdateThreadChrome() {
       chat_.draft_placeholder = "Ask anything…";
     } else if (thread->kind == ThreadKind::Direct) {
       if (thread->channel == ThreadChannel::E2ePublic) {
-        chat_.thread_subtitle = "Public E2E tier — messaging coming soon";
-        chat_.draft_placeholder = "Messaging not available yet";
+        chat_.thread_subtitle = "Public E2E tier — auto-key encrypted";
+        chat_.draft_placeholder = "Message… · @ai · @ai+ · @ai++";
       } else if (thread->channel == ThreadChannel::E2e) {
         chat_.thread_subtitle = "End-to-end encrypted (private tier)";
         chat_.draft_placeholder = "Secure message… · @ai · @ai+ · @ai++";

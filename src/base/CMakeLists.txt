@@ -42,7 +42,10 @@ set(PP_BROWSER_BASE_SOURCES
   messaging/EnvelopeSigner.cpp
   messaging/E2eIngestClassifier.cpp
   messaging/E2eRelayPayloadCodec.cpp
+  crypto/HybridKem.cpp
+  crypto/AutoKeyEstablishment.cpp
   crypto/PskBundleCodec.cpp
+  messaging/PeerKemKeyStore.cpp
   messaging/PeerSigningKeyStore.cpp
   messaging/AtAiParser.cpp
   messaging/ChatPayloadCodec.cpp
@@ -104,6 +107,7 @@ target_link_libraries(pp_base PUBLIC
 )
 if(TARGET OpenSSL::Crypto)
   target_link_libraries(pp_base PUBLIC OpenSSL::Crypto)
+  target_compile_definitions(pp_base PUBLIC OPENSSL_UNSTABLE_EXPERIMENTAL_KYBER)
 endif()
 
 # Backward-compatible alias for tests and scripts that link pp_identity.

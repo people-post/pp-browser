@@ -2,6 +2,7 @@
 #include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/P2pMessagingService.h"
 
+#include "base/crypto/AutoKeyEstablishment.h"
 #include "base/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "base/messaging/E2eIntegrityUtil.h"
@@ -42,12 +43,14 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
 P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                          IRelayClient* relay, InboxController& inbox,
                                          PeerSigningKeyStore& signing_key_store,
-                                         IPeerSigningKeyResolver& signing_key_resolver, IPskSessionStore& psk_store)
+                                         IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
+                                         IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
-      signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), psk_store_(psk_store),
-      epoch_coordinator_(store), psk_coordinator_(store, psk_store) {
+      signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
+      kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), epoch_coordinator_(store),
+      psk_coordinator_(store, psk_store) {
   redirectLogger("P2pMessagingService");
-  receive_pipeline_ = std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_);
+  receive_pipeline_ = std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_);
   peer_history_ = std::make_unique<Libp2pChatHistoryService>(store_, identity_, psk_store_);
   peer_history_->Start();
   chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, peer_history_.get());
@@ -65,6 +68,15 @@ void P2pMessagingService::RegisterPeerSigningKey(const std::string& peer_identit
   record.signing_public_key_b64 = signing_public_key_b64;
   record.source = source;
   signing_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
+}
+
+void P2pMessagingService::RegisterPeerKemKey(const std::string& peer_identity_kind,
+                                           const std::string& peer_identity_value,
+                                           const std::string& kem_public_key_b64, const std::string& source) {
+  PeerKemKeyRecord record;
+  record.kem_public_key_b64 = kem_public_key_b64;
+  record.source = source;
+  kem_key_store_.Put(peer_identity_kind, peer_identity_value, std::move(record));
 }
 
 void P2pMessagingService::RegisterMockPeerKeyForReply(const std::string& peer_identity_value) {
@@ -364,9 +376,6 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   if (!*thread || (*thread)->kind != ThreadKind::Direct) {
     return Error("Not a direct thread");
   }
-  if ((*thread)->channel == ThreadChannel::E2ePublic) {
-    return Error("Public tier messaging is not enabled yet");
-  }
   if ((*thread)->channel == ThreadChannel::E2e && IsThreadCompromised(thread_id)) {
     return Error("Messaging paused — rotate the encryption key or pause only");
   }
@@ -425,19 +434,59 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   }
 
   std::optional<std::string> payload_b64;
+  std::optional<std::string> key_init_b64;
   if (E2eRelayPayloadCodec::RequiresEncryption((*thread)->channel)) {
     const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
+    ByteVector master_psk;
     auto master_psk_b64 = psk_store_.ResolveMasterPskForEpoch(target_key, *message.session_epoch);
-    if (!master_psk_b64 || !master_psk_b64->has_value()) {
+    if (!master_psk_b64) {
       appended->delivery = MessageDelivery::Failed;
       (void)store_.UpdateMessage(*appended);
-      return Error("PSK not configured for this chat");
+      return master_psk_b64.error();
     }
-    auto master_psk = Base64Decode(**master_psk_b64);
-    if (!master_psk) {
-      appended->delivery = MessageDelivery::Failed;
-      (void)store_.UpdateMessage(*appended);
-      return master_psk.error();
+    if (!master_psk_b64->has_value()) {
+      if ((*thread)->channel != ThreadChannel::E2ePublic) {
+        appended->delivery = MessageDelivery::Failed;
+        (void)store_.UpdateMessage(*appended);
+        return Error("PSK not configured for this chat");
+      }
+      auto peer_kem = kem_key_resolver_.Resolve(target_key.peer_identity_kind, target_key.peer_identity_value);
+      if (!peer_kem) {
+        appended->delivery = MessageDelivery::Failed;
+        (void)store_.UpdateMessage(*appended);
+        return peer_kem.error();
+      }
+      auto peer_public = Base64Decode(peer_kem->kem_public_key_b64);
+      if (!peer_public) {
+        appended->delivery = MessageDelivery::Failed;
+        (void)store_.UpdateMessage(*appended);
+        return peer_public.error();
+      }
+      auto established = AutoKeyEstablishment::EncapsulateForRecipient(*peer_public);
+      if (!established) {
+        appended->delivery = MessageDelivery::Failed;
+        (void)store_.UpdateMessage(*appended);
+        return established.error();
+      }
+      master_psk = std::move(established->master_psk);
+      key_init_b64 = std::move(established->key_init_b64);
+      PskSessionRecord record;
+      record.key = target_key;
+      record.session_epoch = *message.session_epoch;
+      record.master_psk_b64 = Base64Encode(master_psk);
+      if (auto saved = psk_store_.Save(record); !saved) {
+        appended->delivery = MessageDelivery::Failed;
+        (void)store_.UpdateMessage(*appended);
+        return saved.error();
+      }
+    } else {
+      auto decoded = Base64Decode(**master_psk_b64);
+      if (!decoded) {
+        appended->delivery = MessageDelivery::Failed;
+        (void)store_.UpdateMessage(*appended);
+        return decoded.error();
+      }
+      master_psk = std::move(*decoded);
     }
     E2eEncryptParams params;
     params.text = text;
@@ -448,13 +497,14 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     params.sender_seq = *message.sender_seq;
     params.session_epoch = *message.session_epoch;
     params.timestamp = message.timestamp;
-    auto encrypted = E2eRelayPayloadCodec::EncryptText(params, *master_psk);
+    auto encrypted = E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, master_psk, key_init_b64);
     if (!encrypted) {
       appended->delivery = MessageDelivery::Failed;
       (void)store_.UpdateMessage(*appended);
       return encrypted.error();
     }
-    payload_b64 = std::move(*encrypted);
+    payload_b64 = std::move(encrypted->payload_b64);
+    key_init_b64 = std::move(encrypted->key_init_b64);
   } else {
     auto plaintext = RelayWirePayload::EncodePlaintextText(text);
     if (!plaintext) {
@@ -473,6 +523,9 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   envelope.route.kind = "direct";
   envelope.route.channel = (*thread)->channel;
   envelope.body.e2e.payload_b64 = *payload_b64;
+  if (key_init_b64 && !key_init_b64->empty()) {
+    envelope.body.e2e.key_init_b64 = std::move(*key_init_b64);
+  }
   envelope.sender_seq = *message.sender_seq;
   envelope.order_key = envelope.sender_seq;
   envelope.session_epoch = *message.session_epoch;

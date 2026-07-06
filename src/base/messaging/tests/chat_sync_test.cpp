@@ -29,7 +29,7 @@ public:
         identity(data_dir.string()),
         psk_store(store.ProfileDbPath()),
         key_resolver(key_store),
-        receive_pipeline(store, key_resolver, psk_store),
+        receive_pipeline(store, key_resolver, psk_store, identity),
         sync(store, identity, &relay, receive_pipeline, &peer_history) {
     std::filesystem::remove_all(data_dir);
 
