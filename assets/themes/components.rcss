@@ -92,6 +92,15 @@ select selectbox option {
   min-width: 0;
 }
 
+.chat-gap-banner {
+  flex-shrink: 0;
+  margin-bottom: 8dp;
+  padding: 8dp 12dp;
+  border-radius: 8dp;
+  background-color: var(--color-surface-elevated);
+  gap: 8dp;
+}
+
 .chat-header-title {
   font-size: 22dp;
   margin-bottom: 4dp;

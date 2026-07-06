@@ -360,11 +360,11 @@ Existing foundation this project builds on.
 - [x] **Gap repair** — automatic via D058
 - [x] **Authoritative empty gap close** — success + zero messages closes hole **only when D067 guard passes**; `empty_closed_seqs[]` / `empty_closed_ranges[]` + late fill (D061/D067/D071)
 - [ ] **Compromised thread (D068)** — outbox frozen; no gap/tail sync; epoch bump cancels old-epoch pending; coordinator updates `chat_targets` PSK + epoch in one `profile.db` txn (D084)
-- [ ] **User-initiated sync** — thread menu **Sync with peer**; gap banner **Retry sync** (D059)
-- [ ] Gap repair assigns **`display_order`** between seq neighbors (D054 Rule 2)
+- [x] **User-initiated sync** — thread menu **Sync with peer**; gap banner **Retry sync** (D059)
+- [ ] Gap repair assigns **`display_order`** between seq neighbors (D054 Rule 2) — deferred D065 partial
 - [ ] **Gap repair UI defer** — D065: skip refresh above window; defer + anchor when renumber touches loaded page
-- [ ] Reorder buffer / `ReplayWindow` k=32 (D020)
-- [ ] Persist **`loaded_min_seq` / `loaded_max_seq`** watermarks (prerequisite for post-v6c)
+- [x] Reorder buffer / `ReplayWindow` k=32 (D020)
+- [x] Persist **`loaded_min_seq` / `loaded_max_seq`** watermarks in `sync_state` (prerequisite for post-v6c)
 
 ### v6-libp2p — libp2p peer-direct (D060)
 

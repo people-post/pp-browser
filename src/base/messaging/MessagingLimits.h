@@ -14,6 +14,8 @@ inline constexpr int kMaxOutboxRetryAttempts = 5;
 inline constexpr int kMaxGapRepairRounds = 5;
 inline constexpr uint64_t kMaxGapRepairSeqSpan = 500;
 inline constexpr size_t kDefaultTailSyncLimit = 50;
+/** D059 — one older-history page per user-initiated sync. */
+inline constexpr size_t kUserSyncOlderHistoryLimit = 25;
 inline constexpr size_t kDefaultMessagesPageSize = 100;
 inline constexpr size_t kMaxOpenThreadDbs = 16;
 

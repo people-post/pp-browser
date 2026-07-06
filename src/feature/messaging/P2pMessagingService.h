@@ -33,6 +33,11 @@ public:
   void RegisterPeerSigningKey(const std::string& peer_identity_kind, const std::string& peer_identity_value,
                               const std::string& signing_public_key_b64, const std::string& source = "manual");
   void MaybeTailSync(const std::string& thread_id);
+  /** D059 — full user-initiated sync (async on IO thread). */
+  void SyncWithPeer(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
+  /** D059 — gap banner retry (async on IO thread). */
+  void RetryGapSync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
+  void TailSyncActiveE2eThread();
 
 private:
   struct PendingRelaySend {
@@ -50,6 +55,9 @@ private:
                        const std::string& error_message = {});
   void RegisterMockPeerKeyForReply(const std::string& peer_identity_value);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
+  void RunSyncOnIo(const std::string& thread_id, std::function<Roe<ChatSyncResult>()> task,
+                   std::function<void(Roe<ChatSyncResult>)> on_complete);
+  bool IsE2ePrivateThread(const std::string& thread_id) const;
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -67,6 +75,7 @@ private:
   std::vector<PendingRelaySend> retry_queue_;
   uint64_t last_relay_poll_ms_ = 0;
   std::atomic<bool> poll_pending_{false};
+  std::atomic<bool> sync_pending_{false};
 };
 
 } // namespace pbr

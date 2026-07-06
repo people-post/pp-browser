@@ -15,6 +15,7 @@ enum class IngestDecision {
   AcceptContiguous,
   AcceptBootstrap,
   AcceptLateFill,
+  AcceptBackfill,
   AcceptEpochAdvance,
   AcceptGap,
   SoftCompromised,
@@ -30,6 +31,8 @@ struct IngestClassifierInput {
   bool strict_mode = true;
   std::optional<std::string> existing_message_id_at_seq;
   bool has_message_id = false;
+  /** D059/D058 — authorized older-history fetch below contiguous tail. */
+  bool authorized_older_backfill = false;
 };
 
 struct IngestClassifierResult {
@@ -45,6 +48,7 @@ public:
 
   static void ApplyContiguousAdvance(PeerSyncState& state, const uint64_t sender_seq);
   static void ApplyPersistedMessage(PeerSyncState& state, const uint64_t sender_seq);
+  static void ApplyBackfillMessage(PeerSyncState& state, const uint64_t sender_seq);
 };
 
 } // namespace pbr

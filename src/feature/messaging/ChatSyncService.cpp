@@ -102,39 +102,93 @@ Roe<ChatSyncResult> ChatSyncService::IngestHistoryResponse(const std::string& th
 
   ChatSyncResult result;
   bool changed = false;
+
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread) {
+    return Error("Thread not found");
+  }
+  auto sync_state = store_.GetPeerSyncState(thread_id, request.session_epoch);
+  if (!sync_state) {
+    return sync_state.error();
+  }
+  const bool authorized_older_backfill =
+      request.max_sender_seq && sync_state->loaded_min_seq > 0 &&
+      *request.max_sender_seq < sync_state->loaded_min_seq;
+
   for (const RelayEnvelope& envelope : response.messages) {
-    const RelayReceiveOutcome outcome = receive_pipeline_.ProcessEnvelope(envelope);
+    const RelayReceiveOutcome outcome =
+        receive_pipeline_.ProcessEnvelope(envelope, authorized_older_backfill);
     if (outcome.persisted) {
       ++result.ingested;
       changed = true;
     }
   }
 
-  if (changed && on_messages_changed_) {
-    on_messages_changed_();
-  }
-
   if (result.ingested == 0 && request.min_sender_seq && request.max_sender_seq) {
-    auto thread = store_.GetThread(thread_id);
-    if (!thread || !*thread) {
-      return Error("Thread not found");
-    }
-    auto sync_state = store_.GetPeerSyncState(thread_id, request.session_epoch);
-    if (!sync_state) {
-      return sync_state.error();
+    auto fresh_sync_state = store_.GetPeerSyncState(thread_id, request.session_epoch);
+    if (!fresh_sync_state) {
+      return fresh_sync_state.error();
     }
     const std::string seq_owner = (*thread)->participant_contact_ids.empty()
                                       ? (*thread)->peer_identity_value
                                       : (*thread)->participant_contact_ids.front();
     if (PassesEmptyGapGuard(thread_id, request.session_epoch, seq_owner, *request.max_sender_seq)) {
-      PeerSyncState updated = *sync_state;
+      PeerSyncState updated = *fresh_sync_state;
       CloseEmptyGap(updated, *request.min_sender_seq, *request.max_sender_seq);
       (void)store_.SetPeerSyncState(thread_id, request.session_epoch, updated);
       result.empty_gap_closed = true;
     }
   }
 
+  if (result.ingested > 0 || result.empty_gap_closed) {
+    AdvanceContiguousThroughStoredSeqs(thread_id, request.session_epoch);
+  }
+
+  if (changed && on_messages_changed_) {
+    on_messages_changed_();
+  }
+
   return result;
+}
+
+void ChatSyncService::AdvanceContiguousThroughStoredSeqs(const std::string& thread_id,
+                                                         const uint32_t session_epoch) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread) {
+    return;
+  }
+  auto sync_state = store_.GetPeerSyncState(thread_id, session_epoch);
+  if (!sync_state) {
+    return;
+  }
+
+  const std::string seq_owner = (*thread)->participant_contact_ids.empty()
+                                    ? (*thread)->peer_identity_value
+                                    : (*thread)->participant_contact_ids.front();
+
+  PeerSyncState updated = *sync_state;
+  bool changed = false;
+  while (updated.contiguous_peer_seq < updated.loaded_max_seq) {
+    SeqRangeQuery query;
+    query.session_epoch = session_epoch;
+    query.seq_owner_contact_id = seq_owner;
+    query.min_sender_seq = updated.contiguous_peer_seq + 1;
+    query.max_sender_seq = updated.contiguous_peer_seq + 1;
+    query.limit = 1;
+    auto rows = store_.GetMessagesBySeqRange(thread_id, query);
+    if (!rows || rows->empty()) {
+      break;
+    }
+    updated.contiguous_peer_seq += 1;
+    changed = true;
+  }
+  if (updated.phase == PeerSyncPhase::Gap && updated.contiguous_peer_seq == updated.loaded_max_seq) {
+    updated.phase = PeerSyncPhase::Ok;
+    changed = true;
+  }
+  if (changed) {
+    (void)store_.SetPeerSyncState(thread_id, session_epoch, updated);
+  }
 }
 
 Roe<ChatSyncResult> ChatSyncService::FetchChatTargetMessages(const std::string& thread_id,
@@ -185,7 +239,12 @@ Roe<ChatSyncResult> ChatSyncService::TailSync(const std::string& thread_id) {
     return sync_state.error();
   }
 
-  auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, std::nullopt, std::nullopt,
+  std::optional<uint64_t> tail_min_seq;
+  if (sync_state->loaded_max_seq > 0) {
+    tail_min_seq = sync_state->loaded_max_seq + 1;
+  }
+
+  auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, tail_min_seq, std::nullopt,
                               kDefaultTailSyncLimit, "desc");
   if (!request) {
     return request.error();
@@ -219,6 +278,83 @@ Roe<ChatSyncResult> ChatSyncService::RepairGap(const std::string& thread_id, con
     return request.error();
   }
   return FetchChatTargetMessages(thread_id, *request);
+}
+
+void ChatSyncService::MergeSyncResult(ChatSyncResult& aggregate, const ChatSyncResult& partial) const {
+  aggregate.ingested += partial.ingested;
+  aggregate.empty_gap_closed = aggregate.empty_gap_closed || partial.empty_gap_closed;
+}
+
+Roe<ChatSyncResult> ChatSyncService::RepairKnownGap(const std::string& thread_id) {
+  auto session_epoch = store_.GetChatTargetSessionEpoch(thread_id);
+  if (!session_epoch) {
+    return session_epoch.error();
+  }
+  auto sync_state = store_.GetPeerSyncState(thread_id, *session_epoch);
+  if (!sync_state) {
+    return sync_state.error();
+  }
+  if (sync_state->phase != PeerSyncPhase::Gap) {
+    return ChatSyncResult{};
+  }
+  if (sync_state->loaded_max_seq <= sync_state->contiguous_peer_seq + 1) {
+    return ChatSyncResult{};
+  }
+  return RepairGap(thread_id, sync_state->contiguous_peer_seq + 1, sync_state->loaded_max_seq - 1);
+}
+
+Roe<ChatSyncResult> ChatSyncService::FetchOlderHistoryIfNeeded(const std::string& thread_id) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread) {
+    return Error("Thread not found");
+  }
+  auto session_epoch = store_.GetChatTargetSessionEpoch(thread_id);
+  if (!session_epoch) {
+    return session_epoch.error();
+  }
+  auto sync_state = store_.GetPeerSyncState(thread_id, *session_epoch);
+  if (!sync_state) {
+    return sync_state.error();
+  }
+  if (sync_state->loaded_min_seq <= sync_state->history_floor_seq + 1) {
+    return ChatSyncResult{};
+  }
+
+  const uint64_t max_seq = sync_state->loaded_min_seq - 1;
+  auto request = BuildRequest(**thread, *session_epoch, sync_state->history_floor_seq, std::nullopt, max_seq,
+                              kUserSyncOlderHistoryLimit, "desc");
+  if (!request) {
+    return request.error();
+  }
+  return FetchChatTargetMessages(thread_id, *request);
+}
+
+Roe<ChatSyncResult> ChatSyncService::UserInitiatedSync(const std::string& thread_id) {
+  ChatSyncResult aggregate;
+
+  auto tail = TailSync(thread_id);
+  if (!tail) {
+    return tail.error();
+  }
+  MergeSyncResult(aggregate, *tail);
+
+  auto gap = RepairKnownGap(thread_id);
+  if (!gap) {
+    return gap.error();
+  }
+  MergeSyncResult(aggregate, *gap);
+
+  auto older = FetchOlderHistoryIfNeeded(thread_id);
+  if (!older) {
+    return older.error();
+  }
+  MergeSyncResult(aggregate, *older);
+
+  return aggregate;
+}
+
+Roe<ChatSyncResult> ChatSyncService::RetryGapSync(const std::string& thread_id) {
+  return RepairKnownGap(thread_id);
 }
 
 } // namespace pbr

@@ -40,6 +40,15 @@ void E2eIngestClassifier::ApplyPersistedMessage(PeerSyncState& state, const uint
   }
 }
 
+void E2eIngestClassifier::ApplyBackfillMessage(PeerSyncState& state, const uint64_t sender_seq) {
+  if (state.loaded_min_seq == 0 || sender_seq < state.loaded_min_seq) {
+    state.loaded_min_seq = sender_seq;
+  }
+  if (sender_seq > state.loaded_max_seq) {
+    state.loaded_max_seq = sender_seq;
+  }
+}
+
 IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput& input,
                                                      ReplayWindow& replay_window) {
   IngestClassifierResult result;
@@ -97,6 +106,14 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
   }
 
   if (input.sender_seq < input.sync_state.contiguous_peer_seq) {
+    if (input.authorized_older_backfill && input.sender_seq > input.sync_state.history_floor_seq &&
+        (input.sync_state.loaded_min_seq == 0 || input.sender_seq < input.sync_state.loaded_min_seq) &&
+        !input.existing_message_id_at_seq) {
+      result.decision = IngestDecision::AcceptBackfill;
+      result.persist_message = true;
+      ApplyBackfillMessage(result.sync_state, input.sender_seq);
+      return result;
+    }
     result.decision = IngestDecision::SoftCompromised;
     result.sync_state.phase = PeerSyncPhase::Compromised;
     return result;

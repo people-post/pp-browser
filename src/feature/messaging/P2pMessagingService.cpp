@@ -72,6 +72,75 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
       }
     });
   }
+  TailSyncActiveE2eThread();
+}
+
+bool P2pMessagingService::IsE2ePrivateThread(const std::string& thread_id) const {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread) {
+    return false;
+  }
+  return (*thread)->kind == ThreadKind::Direct && (*thread)->channel == ThreadChannel::E2e;
+}
+
+void P2pMessagingService::TailSyncActiveE2eThread() {
+  const std::string& active_id = inbox_.ActiveThreadId();
+  if (active_id.empty() || !IsE2ePrivateThread(active_id)) {
+    return;
+  }
+  MaybeTailSync(active_id);
+}
+
+void P2pMessagingService::RunSyncOnIo(const std::string& thread_id,
+                                      std::function<Roe<ChatSyncResult>()> task,
+                                      std::function<void(Roe<ChatSyncResult>)> on_complete) {
+  if (!chat_sync_ || !IsE2ePrivateThread(thread_id)) {
+    if (on_complete) {
+      BrowserThread::PostTask(BrowserThreadId::UI,
+                              [on_complete = std::move(on_complete)]() { on_complete(Error("Sync not available")); });
+    }
+    return;
+  }
+
+  bool expected = false;
+  if (!sync_pending_.compare_exchange_strong(expected, true)) {
+    if (on_complete) {
+      BrowserThread::PostTask(BrowserThreadId::UI, [on_complete = std::move(on_complete)]() {
+        on_complete(Error("Sync already in progress"));
+      });
+    }
+    return;
+  }
+
+  BrowserThread::PostTask(BrowserThreadId::IO, [this, thread_id, task = std::move(task),
+                                                  on_complete = std::move(on_complete)]() mutable {
+    struct SyncGuard {
+      std::atomic<bool>& pending;
+      ~SyncGuard() { pending = false; }
+    } guard{sync_pending_};
+
+    Roe<ChatSyncResult> result = task();
+    if (result && on_messages_changed_) {
+      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+    }
+    if (on_complete) {
+      BrowserThread::PostTask(BrowserThreadId::UI,
+                              [on_complete = std::move(on_complete), result = std::move(result)]() mutable {
+                                on_complete(std::move(result));
+                              });
+    }
+  });
+}
+
+void P2pMessagingService::SyncWithPeer(const std::string& thread_id,
+                                       std::function<void(Roe<ChatSyncResult>)> on_complete) {
+  RunSyncOnIo(thread_id, [this, thread_id]() { return chat_sync_->UserInitiatedSync(thread_id); },
+              std::move(on_complete));
+}
+
+void P2pMessagingService::RetryGapSync(const std::string& thread_id,
+                                       std::function<void(Roe<ChatSyncResult>)> on_complete) {
+  RunSyncOnIo(thread_id, [this, thread_id]() { return chat_sync_->RetryGapSync(thread_id); }, std::move(on_complete));
 }
 
 std::optional<std::string> P2pMessagingService::ResolvePeerRelayId(const Thread& thread) const {

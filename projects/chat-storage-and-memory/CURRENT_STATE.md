@@ -3,14 +3,14 @@
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
 **Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D068 in [DECISIONS.md](DECISIONS.md).  
-**Agent batch:** Waves **1–2** merged; **Wave 3** landed; **Wave 4 v6-schema + v6-pipeline** landed; **v6-sync** in progress — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
+**Agent batch:** Waves **1–2** merged; **Wave 3** landed; **Wave 4 v6-schema + v6-pipeline + v6-sync** landed; **v6-libp2p** next — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
 
 ## Next agent — start here
 
 | Priority | Work | Blocked by |
 |----------|------|------------|
-| **Wave 4c** | **v6-sync** — user-initiated sync UX, gap repair polish, empty-gap D067 tests; **live relay** integration (D093) | v6-pipeline (done) |
-| **Wave 4d–4e** | **v6-libp2p (release-critical D094)**, v6-integrity banners | 4c |
+| **Wave 4d** | **v6-libp2p** — `/pp-browser/chat-history/1.0.0` (**release-critical D094**) | v6-sync (done) |
+| **Wave 4e** | **v6-integrity** — compromised freeze (D068), epoch bump txn, banners | 4d optional parallel |
 | **Wave 5–6** | [e2e c2](../e2e-message-crypto/PHASES.md#phase-c2--messaging-integration) — AEAD on wire | v6 ingest pipeline (done) |
 | **UX gaps (v2a-core)** | Composer `maxlength` (`kMaxComposeTextBytes`) | — |
 
@@ -18,7 +18,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 
 - Signing: `src/base/messaging/EnvelopeSigner.*` (E014 canonical bytes)
 - Receive: `src/feature/messaging/RelayReceivePipeline.*`, `src/base/messaging/E2eIngestClassifier.*`
-- Sync: `src/feature/messaging/ChatSyncService.*`, `IRelayClient::FetchChatHistory`
+- Sync: `src/feature/messaging/ChatSyncService.*` — `UserInitiatedSync`, `RetryGapSync`, `TailSync`
 - Store: `SqliteThreadStore.*` — history floor on clear (D037), `sync_state`
 - Feature: `P2pMessagingService.cpp` — E014 outbound sign, 2 s poll backoff, gap repair trigger
 - Tests: `envelope_signer_test`, `e2e_ingest_classifier_test`, `v6_pipeline_test`, `relay_history_test`
@@ -89,8 +89,9 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 | Inbound find-only routing (D062) | **Implemented** | `RelayReceivePipeline` |
 | **History floor on clear** (D037) | **Implemented** | `SqliteThreadStore::ClearMessages` |
 | **Poll backoff 2 s** + batch cap (D032/D029) | **Implemented** | `P2pMessagingService` |
-| **`FetchChatTargetMessages`** / tail sync | **Partial** | `ChatSyncService` — relay fetch + gap repair hook |
-| **User-initiated sync UX** (D059) | **Not implemented** | thread menu / gap banner |
+| **`FetchChatTargetMessages`** / tail sync | **Implemented** | `ChatSyncService` — relay fetch + gap repair + user sync |
+| **User-initiated sync UX** (D059) | **Implemented** | `chat.rml` — Sync with peer / Retry sync banner |
+| **Tail sync on open + reconnect** | **Implemented** | `OnSelectThread`, `SetRelayClient`, messaging init |
 | libp2p history (D060) | **Not implemented — release-critical** (D094) | v6-libp2p |
 | Relay history fetch (D027) | **Implemented** (`HttpRelayClient`) | D093 — live relay ready |
 | Integrity banners (D068) | **Not implemented** | v6-integrity |
@@ -110,7 +111,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 
 | Area | Location | Notes |
 |------|----------|-------|
-| v6 pipeline + classifier | `src/base/messaging/tests/` | `v6_pipeline_test`, `e2e_ingest_classifier_test`, `envelope_signer_test`, `relay_history_test`, `chat_sync_test` |
+| v6 pipeline + classifier | `src/base/messaging/tests/` | `v6_pipeline_test`, `e2e_ingest_classifier_test`, `envelope_signer_test`, `relay_history_test`, `chat_sync_test` (8 tests) |
 | v6 schema | `v6_schema_test` | seq/epoch/sync_state |
 | SqliteThreadStore | `sqlite_thread_store_test` | AI transcript, memory |
 | Messaging foundation | `tests/messaging_foundation_test.cpp` | envelope + legacy reject |
@@ -119,10 +120,11 @@ Run: `./build/tests/base_messaging_tests/pp_browser_v6_pipeline_test` (and sibli
 
 ## Known gaps (summary)
 
-1. **Wave 4c (v6-sync)** — user-initiated sync UX; authoritative empty-gap D067 integration tests; tail sync on all open paths.
-2. **Wave 4d–4e** — libp2p peer-direct (**blocks v1 release**, D094); integrity/compromised UX.
+1. **Wave 4d (v6-libp2p)** — peer-direct history (**blocks v1 release**, D094).
+2. **Wave 4e (v6-integrity)** — compromised freeze UX, epoch bump txn.
 3. **c2** — real AEAD in `payload_b64` (plaintext interim).
 4. Poll still invoked each UI frame (throttled to 2 s — D032 partial).
 5. Composer maxlength not wired.
+6. Live relay integration tests (D093) — client ready; coordinate against external relay.
 
 **Non-chat safety gaps:** [platform-safety-limits](../platform-safety-limits/).

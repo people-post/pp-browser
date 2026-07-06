@@ -67,7 +67,8 @@ std::optional<std::string> RelayReceivePipeline::FindMessageIdAtSeq(const std::s
   return rows->front().id;
 }
 
-RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& envelope) {
+RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& envelope,
+                                                          const bool authorized_older_backfill) {
   RelayReceiveOutcome outcome;
 
   const nlohmann::json wire_json = RelayEnvelopeToJson(envelope);
@@ -149,6 +150,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
   classifier_input.sync_state = *sync_state;
   classifier_input.chat_target_epoch = *chat_target_epoch;
   classifier_input.strict_mode = (*thread)->channel == ThreadChannel::E2e;
+  classifier_input.authorized_older_backfill = authorized_older_backfill;
   classifier_input.has_message_id = false;
   classifier_input.existing_message_id_at_seq =
       FindMessageIdAtSeq(resolved_thread_id, envelope.session_epoch, seq_owner, envelope.sender_seq);

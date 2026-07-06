@@ -12,6 +12,7 @@
 #include "common/Utilities.h"
 #include "feature/messaging/MessagingHub.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DocumentLoader.h"
@@ -533,6 +534,16 @@ void ChatController::ForgetMemoryCallback(Rml::DataModelHandle /*model*/, Rml::E
   Instance().OnForgetMemory();
 }
 
+void ChatController::SyncWithPeerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                          const Rml::VariantList& /*args*/) {
+  Instance().OnSyncWithPeer();
+}
+
+void ChatController::RetryGapSyncCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                           const Rml::VariantList& /*args*/) {
+  Instance().OnRetryGapSync();
+}
+
 void ChatController::FinalizeThreadDisplay() {
   ClearWorkingSet();
   working_set_by_entry_.clear();
@@ -690,6 +701,62 @@ void ChatController::OnForgetMemory() {
   ShellHost::Instance().DirtyWindow();
 }
 
+void ChatController::OnSyncWithPeer() {
+  if (!messaging_ready_ || chat_.sync_in_progress) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  chat_.sync_in_progress = true;
+  chat_.status = "Syncing missing messages from peer…";
+  DirtyChatChrome();
+
+  MessagingHub::Instance().P2p().SyncWithPeer(thread_id, [this](Roe<ChatSyncResult> result) {
+    chat_.sync_in_progress = false;
+    if (result) {
+      chat_.status = result->ingested > 0 ? "Sync complete." : "Up to date with peer.";
+    } else {
+      chat_.status = result.error().message.c_str();
+    }
+    RefreshFromMessaging();
+    DirtyChatChrome();
+    ShellHost::Instance().DirtyWindow();
+  });
+}
+
+void ChatController::OnRetryGapSync() {
+  if (!messaging_ready_ || chat_.sync_in_progress) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  chat_.sync_in_progress = true;
+  chat_.status = "Retrying sync for missing messages…";
+  DirtyChatChrome();
+
+  MessagingHub::Instance().P2p().RetryGapSync(thread_id, [this](Roe<ChatSyncResult> result) {
+    chat_.sync_in_progress = false;
+    if (result) {
+      if (result->ingested > 0 || result->empty_gap_closed) {
+        chat_.status = "Gap repair complete.";
+      } else {
+        chat_.status = "No missing messages found for this gap.";
+      }
+    } else {
+      chat_.status = result.error().message.c_str();
+    }
+    RefreshFromMessaging();
+    DirtyChatChrome();
+    ShellHost::Instance().DirtyWindow();
+  });
+}
+
 void ChatController::RefreshFromMessaging() {
   SyncShellSessions();
   SyncDisplayFromThread();
@@ -759,6 +826,16 @@ void ChatController::UpdateThreadChrome() {
     const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
     chat_.show_thread_actions = !MessagingHub::Instance().Inbox().IsAiHomeThread(active_id);
     chat_.show_forget_memory = thread->kind == ThreadKind::Ai;
+    chat_.show_sync_with_peer = false;
+    chat_.show_gap_banner = false;
+    if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2e) {
+      chat_.show_sync_with_peer = true;
+      if (auto epoch = MessagingHub::Instance().Store().GetChatTargetSessionEpoch(thread->id)) {
+        if (auto sync_state = MessagingHub::Instance().Store().GetPeerSyncState(thread->id, *epoch)) {
+          chat_.show_gap_banner = sync_state->phase == PeerSyncPhase::Gap;
+        }
+      }
+    }
     if (thread->kind == ThreadKind::Ai) {
       chat_.thread_subtitle = "AI home — ask to find people or open conversations";
       chat_.draft_placeholder = "Ask anything…";
@@ -1283,6 +1360,7 @@ bool ChatController::Setup(Rml::Context* context) {
       ShellHost::Instance().DirtyWindow();
     });
     RefreshFromMessaging();
+    MessagingHub::Instance().P2p().TailSyncActiveE2eThread();
   }
 
   agent_->Configure(config);
@@ -1324,6 +1402,9 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("compose_disabled", &ChatController::Instance().chat_.compose_disabled);
         ctor.Bind("show_thread_actions", &ChatController::Instance().chat_.show_thread_actions);
         ctor.Bind("show_forget_memory", &ChatController::Instance().chat_.show_forget_memory);
+        ctor.Bind("show_sync_with_peer", &ChatController::Instance().chat_.show_sync_with_peer);
+        ctor.Bind("show_gap_banner", &ChatController::Instance().chat_.show_gap_banner);
+        ctor.Bind("sync_in_progress", &ChatController::Instance().chat_.sync_in_progress);
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
@@ -1334,6 +1415,8 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("open_working_set", &ChatController::OpenWorkingSetCallback);
         ctor.BindEventCallback("clear_history", &ChatController::ClearHistoryCallback);
         ctor.BindEventCallback("forget_memory", &ChatController::ForgetMemoryCallback);
+        ctor.BindEventCallback("sync_with_peer", &ChatController::SyncWithPeerCallback);
+        ctor.BindEventCallback("retry_gap_sync", &ChatController::RetryGapSyncCallback);
       })) {
     return false;
   }

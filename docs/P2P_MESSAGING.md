@@ -111,9 +111,9 @@ Local store is written **before** send. Server rejections do not delete history.
 
 | Mode | Trigger |
 |------|---------|
-| Tail sync | Open E2E thread, reconnect |
-| Gap repair | Automatic on seq hole |
-| User sync | Thread menu **Sync with peer** (D059) |
+| Tail sync | Open E2E thread, reconnect (`TailSync` — fetches seq > `loaded_max_seq`) |
+| Gap repair | Automatic on seq hole; **Retry sync** banner (D059) |
+| User sync | Thread menu **Sync with peer** — tail + gap repair + one older-history page (D059) |
 
 **Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `POST /api/relay/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay).
 
@@ -139,7 +139,9 @@ Composer: `Message… or @ai ask assistant`
 |------|------|
 | `src/feature/messaging/MessagingHub.*` | Wiring, lifecycle |
 | `src/feature/messaging/InboxController.*` | Active thread, display rows |
-| `src/feature/messaging/P2pMessagingService.*` | Send, poll, dedup |
+| `src/feature/messaging/P2pMessagingService.*` | Send, poll, dedup, sync UX |
+| `src/feature/messaging/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
+| `src/feature/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
 | `src/feature/messaging/MessageRouter.*` | Composer routing |
 | `src/feature/messaging/ContactActionDispatcher.*` | Chip payloads |
 | `src/feature/ai/tools/MessagingTools.*` | Agent tool definitions |

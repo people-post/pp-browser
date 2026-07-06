@@ -195,3 +195,92 @@ TEST(ChatSyncTest, EmptyGapCloseWhenAuthoritativeGuardPasses) {
   ASSERT_EQ(sync_state->empty_closed_seqs.size(), 1u);
   EXPECT_EQ(sync_state->empty_closed_seqs.front(), 2u);
 }
+
+TEST(ChatSyncTest, EmptyGapCloseBlockedWhenHigherSeqHeld) {
+  SyncTestHarness harness("empty_gap_guard_fail");
+  harness.SeedPeerSeq(1, "one");
+
+  ThreadMessage higher;
+  higher.id = "local-three";
+  higher.thread_id = harness.thread.id;
+  higher.sender_contact_id = "contact-peer";
+  higher.text = "three";
+  higher.timestamp = 3;
+  higher.delivery = MessageDelivery::Relayed;
+  higher.relay_visible = true;
+  higher.transport = MessageTransport::Relay;
+  higher.sender_seq = 3;
+  higher.session_epoch = 1;
+  ASSERT_TRUE(static_cast<bool>(harness.store.AppendMessage(higher)));
+
+  auto result = harness.sync.RepairGap(harness.thread.id, 2, 2);
+  ASSERT_TRUE(static_cast<bool>(result));
+  EXPECT_EQ(result->ingested, 0u);
+  EXPECT_FALSE(result->empty_gap_closed);
+
+  auto sync_state = harness.store.GetPeerSyncState(harness.thread.id, 1);
+  ASSERT_TRUE(static_cast<bool>(sync_state));
+  EXPECT_EQ(sync_state->contiguous_peer_seq, 1u);
+  EXPECT_TRUE(sync_state->empty_closed_seqs.empty());
+}
+
+TEST(ChatSyncTest, LateFillAcceptsAfterAuthoritativeEmptyClose) {
+  SyncTestHarness harness("late_fill");
+  harness.SeedPeerSeq(1, "one");
+
+  auto empty_close = harness.sync.RepairGap(harness.thread.id, 2, 2);
+  ASSERT_TRUE(static_cast<bool>(empty_close));
+  EXPECT_TRUE(empty_close->empty_gap_closed);
+
+  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
+  const RelayReceiveOutcome outcome = harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(2, "two"));
+  EXPECT_EQ(outcome.decision, IngestDecision::AcceptLateFill);
+  EXPECT_TRUE(outcome.persisted);
+
+  auto sync_state = harness.store.GetPeerSyncState(harness.thread.id, 1);
+  ASSERT_TRUE(static_cast<bool>(sync_state));
+  EXPECT_EQ(sync_state->contiguous_peer_seq, 2u);
+  EXPECT_TRUE(sync_state->empty_closed_seqs.empty());
+}
+
+TEST(ChatSyncTest, UserInitiatedSyncFetchesOlderHistory) {
+  SyncTestHarness harness("user_older");
+  harness.SeedPeerSeq(5, "five");
+
+  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(3, "three"));
+
+  auto result = harness.sync.UserInitiatedSync(harness.thread.id);
+  ASSERT_TRUE(static_cast<bool>(result));
+  EXPECT_GE(result->ingested, 1u);
+
+  auto messages = harness.store.GetMessages(harness.thread.id);
+  ASSERT_TRUE(static_cast<bool>(messages));
+  bool found_three = false;
+  for (const ThreadMessage& message : *messages) {
+    if (message.text == "three") {
+      found_three = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_three);
+}
+
+TEST(ChatSyncTest, RetryGapSyncRepairsKnownGap) {
+  SyncTestHarness harness("retry_gap");
+  harness.SeedPeerSeq(1, "one");
+
+  const RelayReceiveOutcome gap_outcome =
+      harness.receive_pipeline.ProcessEnvelope(harness.MakePeerEnvelope(3, "three"));
+  EXPECT_EQ(gap_outcome.decision, IngestDecision::AcceptGap);
+
+  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "two"));
+
+  auto result = harness.sync.RetryGapSync(harness.thread.id);
+  ASSERT_TRUE(static_cast<bool>(result));
+  EXPECT_EQ(result->ingested, 1u);
+
+  auto sync_state = harness.store.GetPeerSyncState(harness.thread.id, 1);
+  ASSERT_TRUE(static_cast<bool>(sync_state));
+  EXPECT_EQ(sync_state->contiguous_peer_seq, 3u);
+  EXPECT_EQ(sync_state->phase, PeerSyncPhase::Ok);
+}

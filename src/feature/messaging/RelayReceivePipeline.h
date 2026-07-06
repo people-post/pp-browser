@@ -22,7 +22,7 @@ class RelayReceivePipeline {
 public:
   RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys);
 
-  RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope);
+  RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, bool authorized_older_backfill = false);
 
 private:
   struct ReplayKey {

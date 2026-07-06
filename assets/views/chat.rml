@@ -11,10 +11,16 @@
     <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
             data-if="auxiliary_available && (layout_mode == 'expanded' || compact_chat_open || nav_tab == 'home')"
             data-event-click="toggle_auxiliary()">Details</button>
+    <button class="shell-toolbar-btn chat-thread-action" data-if="show_sync_with_peer && !sync_in_progress"
+            data-event-click="sync_with_peer()">Sync with peer</button>
     <button class="shell-toolbar-btn chat-thread-action" data-if="show_thread_actions"
             data-event-click="clear_history()">Clear history</button>
     <button class="shell-toolbar-btn chat-thread-action" data-if="show_forget_memory"
             data-event-click="forget_memory()">Forget AI memory</button>
+  </div>
+  <div class="chat-gap-banner stack" data-if="show_gap_banner && !sync_in_progress">
+    <p class="text muted">Some messages from your peer may be missing.</p>
+    <button class="chat-suggestion" data-event-click="retry_gap_sync()">Retry sync</button>
   </div>
   <div class="messages" data-mount-id="messages">
     <div class="chat-empty stack" data-if="!has_turns && !loading">
