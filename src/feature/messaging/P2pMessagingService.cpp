@@ -1,4 +1,5 @@
 #include "base/people/ContactTypes.h"
+#include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/P2pMessagingService.h"
 
 #include "common/Utilities.h"
@@ -38,7 +39,9 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_store_) {
   redirectLogger("P2pMessagingService");
   receive_pipeline_ = std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_);
-  chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_);
+  peer_history_ = std::make_unique<Libp2pChatHistoryService>(store_, identity_);
+  peer_history_->Start();
+  chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, peer_history_.get());
   chat_sync_->SetOnMessagesChanged([this]() {
     if (on_messages_changed_) {
       BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
@@ -65,7 +68,7 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
   relay_cursor_.clear();
   poll_pending_ = false;
   if (chat_sync_) {
-    chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_);
+    chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, peer_history_.get());
     chat_sync_->SetOnMessagesChanged([this]() {
       if (on_messages_changed_) {
         BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
@@ -73,6 +76,13 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
     });
   }
   TailSyncActiveE2eThread();
+}
+
+void P2pMessagingService::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
+                                                     const std::string& multiaddr) {
+  if (peer_history_) {
+    peer_history_->RegisterPeerEndpoint(peer_relay_user_id, multiaddr);
+  }
 }
 
 bool P2pMessagingService::IsE2ePrivateThread(const std::string& thread_id) const {

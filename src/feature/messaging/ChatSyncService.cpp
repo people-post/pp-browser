@@ -9,8 +9,9 @@
 namespace pbr {
 
 ChatSyncService::ChatSyncService(IThreadStore& store, IdentityStore& identity, IRelayClient* relay,
-                                 RelayReceivePipeline& receive_pipeline)
-    : store_(store), identity_(identity), relay_(relay), receive_pipeline_(receive_pipeline) {}
+                                 RelayReceivePipeline& receive_pipeline, IChatHistoryPeerClient* peer_client)
+    : store_(store), identity_(identity), relay_(relay), peer_client_(peer_client),
+      receive_pipeline_(receive_pipeline) {}
 
 void ChatSyncService::SetOnMessagesChanged(std::function<void()> callback) {
   on_messages_changed_ = std::move(callback);
@@ -95,7 +96,8 @@ std::optional<std::pair<uint64_t, uint64_t>> ChatSyncService::ClampGapRange(cons
 
 Roe<ChatSyncResult> ChatSyncService::IngestHistoryResponse(const std::string& thread_id,
                                                            const ChatHistoryRequest& request,
-                                                           const ChatHistoryResponse& response) {
+                                                           const ChatHistoryResponse& response,
+                                                           const MessageTransport transport) {
   if (response.session_epoch != request.session_epoch) {
     return Error("History response epoch mismatch");
   }
@@ -117,7 +119,7 @@ Roe<ChatSyncResult> ChatSyncService::IngestHistoryResponse(const std::string& th
 
   for (const RelayEnvelope& envelope : response.messages) {
     const RelayReceiveOutcome outcome =
-        receive_pipeline_.ProcessEnvelope(envelope, authorized_older_backfill);
+        receive_pipeline_.ProcessEnvelope(envelope, authorized_older_backfill, transport);
     if (outcome.persisted) {
       ++result.ingested;
       changed = true;
@@ -193,10 +195,6 @@ void ChatSyncService::AdvanceContiguousThroughStoredSeqs(const std::string& thre
 
 Roe<ChatSyncResult> ChatSyncService::FetchChatTargetMessages(const std::string& thread_id,
                                                              ChatHistoryRequest request) {
-  if (!relay_) {
-    return Error("Relay client not configured");
-  }
-
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
     return Error("Thread not found");
@@ -218,11 +216,22 @@ Roe<ChatSyncResult> ChatSyncService::FetchChatTargetMessages(const std::string& 
   }
   request.limit = std::min(request.limit, kMaxPollBatchMessages);
 
+  if (peer_client_ && peer_client_->IsPeerReachable(request.peer_identity_value)) {
+    auto peer_response = peer_client_->FetchChatHistory(request);
+    if (peer_response) {
+      return IngestHistoryResponse(thread_id, request, *peer_response, MessageTransport::Direct);
+    }
+  }
+
+  if (!relay_) {
+    return Error("Relay client not configured");
+  }
+
   auto response = relay_->FetchChatHistory(request);
   if (!response) {
     return response.error();
   }
-  return IngestHistoryResponse(thread_id, request, *response);
+  return IngestHistoryResponse(thread_id, request, *response, MessageTransport::Relay);
 }
 
 Roe<ChatSyncResult> ChatSyncService::TailSync(const std::string& thread_id) {

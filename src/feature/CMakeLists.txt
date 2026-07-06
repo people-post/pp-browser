@@ -5,6 +5,7 @@ set(PP_BROWSER_FEATURE_SOURCES
   messaging/P2pMessagingService.cpp
   messaging/RelayReceivePipeline.cpp
   messaging/ChatSyncService.cpp
+  messaging/Libp2pChatHistoryService.cpp
   messaging/SqlitePskSessionStore.cpp
   messaging/ContactActionDispatcher.cpp
   ai/AgentSession.cpp

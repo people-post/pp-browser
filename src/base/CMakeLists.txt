@@ -52,6 +52,8 @@ set(PP_BROWSER_BASE_SOURCES
   messaging/JsonThreadStore.cpp
   messaging/MessagingJson.cpp
   messaging/RelayStreamKey.cpp
+  messaging/ChatHistoryResponder.cpp
+  messaging/ChatHistoryStreamCodec.cpp
   messaging/PeopleDiscoveryBlocks.cpp
   messaging/SqliteThreadStore.cpp
   crypto/CryptoUtil.cpp

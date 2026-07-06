@@ -3,14 +3,13 @@
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
 **Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D068 in [DECISIONS.md](DECISIONS.md).  
-**Agent batch:** Waves **1–2** merged; **Wave 3** landed; **Wave 4 v6-schema + v6-pipeline + v6-sync** landed; **v6-libp2p** next — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
+**Agent batch:** Waves **1–2** merged; **Wave 3** landed; **Wave 4 v6-schema + v6-pipeline + v6-sync + v6-libp2p** landed; **v6-integrity** next — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
 
 ## Next agent — start here
 
 | Priority | Work | Blocked by |
 |----------|------|------------|
-| **Wave 4d** | **v6-libp2p** — `/pp-browser/chat-history/1.0.0` (**release-critical D094**) | v6-sync (done) |
-| **Wave 4e** | **v6-integrity** — compromised freeze (D068), epoch bump txn, banners | 4d optional parallel |
+| **Wave 4e** | **v6-integrity** — compromised freeze (D068), epoch bump txn, banners | — |
 | **Wave 5–6** | [e2e c2](../e2e-message-crypto/PHASES.md#phase-c2--messaging-integration) — AEAD on wire | v6 ingest pipeline (done) |
 | **UX gaps (v2a-core)** | Composer `maxlength` (`kMaxComposeTextBytes`) | — |
 
@@ -28,7 +27,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 - Relay body uses **`body.e2e.payload_b64`** but payload is **plaintext ChatPayload** (base64) until e2e **c2** encrypts.
 - **`e2e_public`** threads exist and show tier badge; **compose/send disabled** until c3 auto-key.
 - Inbound poll: **find-only** via `chat_targets` (no auto-create thread on unknown sender — D062).
-- libp2p peer-direct history (D060) not wired — relay fetch works; **peer-direct required for v1 release** (D094).
+- libp2p peer-direct history (D060): **`Libp2pChatHistoryService`** on `/pp-browser/chat-history/1.0.0`; register dial endpoints via `P2pMessagingService::RegisterPeerDirectEndpoint`.
 - Relay history: **`HttpRelayClient::FetchChatHistory`** shipped; external relay D027 ready for integration tests (D093).
 
 ## Release scope (v1 batch)
@@ -92,7 +91,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 | **`FetchChatTargetMessages`** / tail sync | **Implemented** | `ChatSyncService` — relay fetch + gap repair + user sync |
 | **User-initiated sync UX** (D059) | **Implemented** | `chat.rml` — Sync with peer / Retry sync banner |
 | **Tail sync on open + reconnect** | **Implemented** | `OnSelectThread`, `SetRelayClient`, messaging init |
-| libp2p history (D060) | **Not implemented — release-critical** (D094) | v6-libp2p |
+| libp2p history (D060) | **Implemented** | `Libp2pChatHistoryService`, `ChatHistoryResponder` — peer-first in `ChatSyncService` |
 | Relay history fetch (D027) | **Implemented** (`HttpRelayClient`) | D093 — live relay ready |
 | Integrity banners (D068) | **Not implemented** | v6-integrity |
 | Gap detection on live ingest | **Partial** | classifier + auto `RepairGap` on `AcceptGap` |
@@ -120,11 +119,10 @@ Run: `./build/tests/base_messaging_tests/pp_browser_v6_pipeline_test` (and sibli
 
 ## Known gaps (summary)
 
-1. **Wave 4d (v6-libp2p)** — peer-direct history (**blocks v1 release**, D094).
-2. **Wave 4e (v6-integrity)** — compromised freeze UX, epoch bump txn.
-3. **c2** — real AEAD in `payload_b64` (plaintext interim).
-4. Poll still invoked each UI frame (throttled to 2 s — D032 partial).
-5. Composer maxlength not wired.
-6. Live relay integration tests (D093) — client ready; coordinate against external relay.
+1. **Wave 4e (v6-integrity)** — compromised freeze UX, epoch bump txn.
+2. **c2** — real AEAD in `payload_b64` (plaintext interim).
+3. Poll still invoked each UI frame (throttled to 2 s — D032 partial).
+4. Composer maxlength not wired.
+5. Live relay integration tests (D093) — client ready; coordinate against external relay.
 
 **Non-chat safety gaps:** [platform-safety-limits](../platform-safety-limits/).

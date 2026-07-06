@@ -7,6 +7,7 @@
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "feature/messaging/ChatSyncService.h"
 #include "feature/messaging/InboxController.h"
+#include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "base/net/ServiceClients.h"
 
@@ -37,6 +38,7 @@ public:
   void SyncWithPeer(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
   /** D059 — gap banner retry (async on IO thread). */
   void RetryGapSync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
+  void RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
   void TailSyncActiveE2eThread();
 
 private:
@@ -67,6 +69,7 @@ private:
   PeerSigningKeyStore& signing_key_store_;
   PeerSigningKeyResolver signing_key_resolver_;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
+  std::unique_ptr<Libp2pChatHistoryService> peer_history_;
   std::unique_ptr<ChatSyncService> chat_sync_;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;

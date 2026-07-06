@@ -23,6 +23,14 @@ public:
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
 };
 
+/** D060 peer-direct history — libp2p `/pp-browser/chat-history/1.0.0`. */
+class IChatHistoryPeerClient {
+public:
+  virtual ~IChatHistoryPeerClient() = default;
+  virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
+  virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
+};
+
 class IDirectoryClient {
 public:
   virtual ~IDirectoryClient() = default;

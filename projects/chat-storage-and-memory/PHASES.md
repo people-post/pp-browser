@@ -355,7 +355,7 @@ Existing foundation this project builds on.
 
 ### v6-sync — Sync modes (E2E only — D052, D058, D059)
 
-- [x] **`FetchChatTargetMessages`** — unified backfill; peer-direct (D060) then relay D027 (D058) — relay path shipped; peer-direct pending v6-libp2p (D094)
+- [x] **`FetchChatTargetMessages`** — unified backfill; peer-direct (D060) then relay D027 (D058)
 - [x] **Tail sync** — desc limit 50
 - [x] **Gap repair** — automatic via D058
 - [x] **Authoritative empty gap close** — success + zero messages closes hole **only when D067 guard passes**; `empty_closed_seqs[]` / `empty_closed_ranges[]` + late fill (D061/D067/D071)
@@ -368,9 +368,9 @@ Existing foundation this project builds on.
 
 ### v6-libp2p — libp2p peer-direct (D060)
 
-- [ ] Protocol **`/pp-browser/chat-history/1.0.0`** — request/response mirrors D027
-- [ ] Responder serves `GetMessagesBySeqRange` from local `thread.db`
-- [ ] Requester ingests envelopes; `transport=direct` on persist
+- [x] Protocol **`/pp-browser/chat-history/1.0.0`** — request/response mirrors D027
+- [x] Responder serves `GetMessagesBySeqRange` from local `thread.db`
+- [x] Requester ingests envelopes; `transport=direct` on persist
 
 ### v6-integrity — Integrity and UX
 

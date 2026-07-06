@@ -68,7 +68,8 @@ std::optional<std::string> RelayReceivePipeline::FindMessageIdAtSeq(const std::s
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& envelope,
-                                                          const bool authorized_older_backfill) {
+                                                          const bool authorized_older_backfill,
+                                                          const MessageTransport transport) {
   RelayReceiveOutcome outcome;
 
   const nlohmann::json wire_json = RelayEnvelopeToJson(envelope);
@@ -179,7 +180,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
   message.timestamp = envelope.timestamp;
   message.delivery = MessageDelivery::Relayed;
   message.relay_visible = true;
-  message.transport = MessageTransport::Relay;
+  message.transport = transport;
   message.sender_seq = envelope.sender_seq;
   message.session_epoch = envelope.session_epoch;
 

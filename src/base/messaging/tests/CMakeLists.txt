@@ -70,6 +70,15 @@ target_link_libraries(pp_browser_relay_history_test PRIVATE
   pp_common)
 pp_browser_add_gtest(pp_browser_relay_history_test)
 
+add_executable(pp_browser_chat_history_responder_test chat_history_responder_test.cpp)
+target_include_directories(pp_browser_chat_history_responder_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pp_browser_chat_history_responder_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_base
+  pp_common)
+pp_browser_add_gtest(pp_browser_chat_history_responder_test)
+
 add_executable(pp_browser_chat_sync_test chat_sync_test.cpp)
 target_include_directories(pp_browser_chat_sync_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(pp_browser_chat_sync_test PRIVATE

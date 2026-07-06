@@ -6,6 +6,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace pbr {
@@ -40,6 +41,27 @@ private:
   size_t poll_index_ = 0;
   std::string next_reply_sender_id_;
   std::vector<uint8_t> reply_signing_private_key_;
+};
+
+/** Test double for D060 peer-direct fetch. */
+class MockChatHistoryPeerClient : public IChatHistoryPeerClient {
+public:
+  void SetPeerReachable(const std::string& peer_identity_value, const bool reachable = true) {
+    std::lock_guard lock(mutex_);
+    reachable_peers_[peer_identity_value] = reachable;
+  }
+  void AddDeliveredEnvelope(RelayEnvelope envelope) {
+    std::lock_guard lock(mutex_);
+    delivered_.push_back(std::move(envelope));
+  }
+
+  bool IsPeerReachable(const std::string& peer_identity_value) const override;
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override;
+
+private:
+  mutable std::mutex mutex_;
+  std::unordered_map<std::string, bool> reachable_peers_;
+  std::vector<RelayEnvelope> delivered_;
 };
 
 class MockRegistrationClient : public IRegistrationClient {

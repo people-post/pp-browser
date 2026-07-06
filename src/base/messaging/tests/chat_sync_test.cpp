@@ -28,7 +28,7 @@ public:
         identity(data_dir.string()),
         key_resolver(key_store),
         receive_pipeline(store, key_resolver),
-        sync(store, identity, &relay, receive_pipeline) {
+        sync(store, identity, &relay, receive_pipeline, &peer_history) {
     std::filesystem::remove_all(data_dir);
 
     auto generated = Ed25519Signer::GenerateKeyPair();
@@ -117,6 +117,7 @@ public:
   SqliteThreadStore store;
   IdentityStore identity;
   MockRelayClient relay;
+  MockChatHistoryPeerClient peer_history;
   PeerSigningKeyStore key_store;
   PeerSigningKeyResolver key_resolver;
   RelayReceivePipeline receive_pipeline;
@@ -263,6 +264,24 @@ TEST(ChatSyncTest, UserInitiatedSyncFetchesOlderHistory) {
     }
   }
   EXPECT_TRUE(found_three);
+}
+
+TEST(ChatSyncTest, PeerDirectPreferredOverRelay) {
+  SyncTestHarness harness("peer_first");
+  harness.SeedPeerSeq(1, "one");
+
+  harness.peer_history.SetPeerReachable("relay:peer");
+  harness.peer_history.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "via-direct"));
+
+  auto result = harness.sync.RepairGap(harness.thread.id, 2, 2);
+  ASSERT_TRUE(static_cast<bool>(result));
+  EXPECT_EQ(result->ingested, 1u);
+
+  auto messages = harness.store.GetMessages(harness.thread.id);
+  ASSERT_TRUE(static_cast<bool>(messages));
+  ASSERT_EQ(messages->size(), 2u);
+  EXPECT_EQ(messages->back().text, "via-direct");
+  EXPECT_EQ(*messages->back().transport, MessageTransport::Direct);
 }
 
 TEST(ChatSyncTest, RetryGapSyncRepairsKnownGap) {

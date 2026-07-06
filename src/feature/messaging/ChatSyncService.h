@@ -17,11 +17,11 @@ struct ChatSyncResult {
   bool empty_gap_closed = false;
 };
 
-/** D058 unified E2E backfill — relay transport in v6-sync (libp2p deferred to v6-libp2p). */
+/** D058 unified E2E backfill — peer-direct (D060) then relay (D027). */
 class ChatSyncService {
 public:
   ChatSyncService(IThreadStore& store, IdentityStore& identity, IRelayClient* relay,
-                  RelayReceivePipeline& receive_pipeline);
+                  RelayReceivePipeline& receive_pipeline, IChatHistoryPeerClient* peer_client = nullptr);
 
   Roe<ChatSyncResult> FetchChatTargetMessages(const std::string& thread_id, ChatHistoryRequest request);
   Roe<ChatSyncResult> TailSync(const std::string& thread_id);
@@ -42,7 +42,8 @@ private:
                                      std::optional<uint64_t> min_sender_seq, std::optional<uint64_t> max_sender_seq,
                                      size_t limit, const std::string& order) const;
   Roe<ChatSyncResult> IngestHistoryResponse(const std::string& thread_id, const ChatHistoryRequest& request,
-                                            const ChatHistoryResponse& response);
+                                            const ChatHistoryResponse& response,
+                                            MessageTransport transport = MessageTransport::Relay);
   bool PassesEmptyGapGuard(const std::string& thread_id, uint32_t session_epoch, const std::string& seq_owner,
                            uint64_t gap_max) const;
   void CloseEmptyGap(PeerSyncState& state, uint64_t min_seq, uint64_t max_seq) const;
@@ -52,6 +53,7 @@ private:
   IThreadStore& store_;
   IdentityStore& identity_;
   IRelayClient* relay_ = nullptr;
+  IChatHistoryPeerClient* peer_client_ = nullptr;
   RelayReceivePipeline& receive_pipeline_;
   std::function<void()> on_messages_changed_;
 };

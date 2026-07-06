@@ -157,6 +157,41 @@ Roe<ChatHistoryResponse> MockRelayClient::FetchChatHistory(const ChatHistoryRequ
   return response;
 }
 
+bool MockChatHistoryPeerClient::IsPeerReachable(const std::string& peer_identity_value) const {
+  std::lock_guard lock(mutex_);
+  const auto it = reachable_peers_.find(peer_identity_value);
+  return it != reachable_peers_.end() && it->second;
+}
+
+Roe<ChatHistoryResponse> MockChatHistoryPeerClient::FetchChatHistory(const ChatHistoryRequest& request) {
+  if (!IsPeerReachable(request.peer_identity_value)) {
+    return Error("Peer-direct history unavailable");
+  }
+  std::lock_guard lock(mutex_);
+  ChatHistoryResponse response;
+  response.peer_identity_kind = request.peer_identity_kind;
+  response.peer_identity_value = request.peer_identity_value;
+  response.channel = request.channel;
+  response.session_epoch = request.session_epoch;
+  for (const RelayEnvelope& envelope : delivered_) {
+    if (EnvelopeMatchesHistoryRequest(envelope, request)) {
+      response.messages.push_back(envelope);
+    }
+  }
+  if (request.order == "desc") {
+    std::sort(response.messages.begin(), response.messages.end(),
+              [](const RelayEnvelope& a, const RelayEnvelope& b) { return a.sender_seq > b.sender_seq; });
+  } else {
+    std::sort(response.messages.begin(), response.messages.end(),
+              [](const RelayEnvelope& a, const RelayEnvelope& b) { return a.sender_seq < b.sender_seq; });
+  }
+  if (response.messages.size() > request.limit) {
+    response.messages.resize(request.limit);
+    response.has_more = true;
+  }
+  return response;
+}
+
 Roe<RegistrationStartResult> MockRegistrationClient::StartRegistration(const std::string& /*public_key_b64*/,
                                                                        const std::string& /*nickname*/,
                                                                        const std::string& signature_alg) {
