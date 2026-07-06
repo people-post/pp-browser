@@ -544,6 +544,16 @@ void ChatController::RetryGapSyncCallback(Rml::DataModelHandle /*model*/, Rml::E
   Instance().OnRetryGapSync();
 }
 
+void ChatController::StartNewSecureChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                const Rml::VariantList& /*args*/) {
+  Instance().OnStartNewSecureChat();
+}
+
+void ChatController::PauseIntegrityCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& /*args*/) {
+  Instance().OnPauseIntegrityOnly();
+}
+
 void ChatController::FinalizeThreadDisplay() {
   ClearWorkingSet();
   working_set_by_entry_.clear();
@@ -757,6 +767,55 @@ void ChatController::OnRetryGapSync() {
   });
 }
 
+void ChatController::OnStartNewSecureChat() {
+  if (!messaging_ready_) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  ShellFeedback::ShowConfirm(
+      ShellHost::Instance().State(), "Start new secure chat?",
+      "This bumps the session epoch and cancels unsent messages from the previous epoch. "
+      "Your saved transcript stays on this device.",
+      [this, thread_id](bool ok) {
+        if (!ok) {
+          return;
+        }
+        auto result = MessagingHub::Instance().P2p().StartNewSecureChat(thread_id);
+        if (!result) {
+          chat_.status = result.error().message.c_str();
+        } else {
+          chat_.status = "New secure session started.";
+        }
+        RefreshFromMessaging();
+        DirtyChatChrome();
+        ShellHost::Instance().DirtyWindow();
+      });
+  ShellHost::Instance().RequestSyncLayout();
+  ShellHost::Instance().DirtyWindow();
+}
+
+void ChatController::OnPauseIntegrityOnly() {
+  if (!messaging_ready_) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  if (!MessagingHub::Instance().P2p().PauseIntegrityOnly(thread_id)) {
+    return;
+  }
+  chat_.status = "Messaging paused until you start a new secure chat.";
+  RefreshFromMessaging();
+  DirtyChatChrome();
+  ShellHost::Instance().DirtyWindow();
+}
+
 void ChatController::RefreshFromMessaging() {
   SyncShellSessions();
   SyncDisplayFromThread();
@@ -828,12 +887,22 @@ void ChatController::UpdateThreadChrome() {
     chat_.show_forget_memory = thread->kind == ThreadKind::Ai;
     chat_.show_sync_with_peer = false;
     chat_.show_gap_banner = false;
+    chat_.show_compromised_banner = false;
     if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2e) {
-      chat_.show_sync_with_peer = true;
       if (auto epoch = MessagingHub::Instance().Store().GetChatTargetSessionEpoch(thread->id)) {
         if (auto sync_state = MessagingHub::Instance().Store().GetPeerSyncState(thread->id, *epoch)) {
-          chat_.show_gap_banner = sync_state->phase == PeerSyncPhase::Gap;
+          const bool compromised = sync_state->phase == PeerSyncPhase::Compromised;
+          chat_.show_compromised_banner = compromised;
+          chat_.compose_disabled = compromised;
+          if (!compromised) {
+            chat_.show_sync_with_peer = true;
+            chat_.show_gap_banner = sync_state->phase == PeerSyncPhase::Gap;
+          }
+        } else {
+          chat_.show_sync_with_peer = true;
         }
+      } else {
+        chat_.show_sync_with_peer = true;
       }
     }
     if (thread->kind == ThreadKind::Ai) {
@@ -1404,6 +1473,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("show_forget_memory", &ChatController::Instance().chat_.show_forget_memory);
         ctor.Bind("show_sync_with_peer", &ChatController::Instance().chat_.show_sync_with_peer);
         ctor.Bind("show_gap_banner", &ChatController::Instance().chat_.show_gap_banner);
+        ctor.Bind("show_compromised_banner", &ChatController::Instance().chat_.show_compromised_banner);
         ctor.Bind("sync_in_progress", &ChatController::Instance().chat_.sync_in_progress);
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
@@ -1417,6 +1487,8 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("forget_memory", &ChatController::ForgetMemoryCallback);
         ctor.BindEventCallback("sync_with_peer", &ChatController::SyncWithPeerCallback);
         ctor.BindEventCallback("retry_gap_sync", &ChatController::RetryGapSyncCallback);
+        ctor.BindEventCallback("start_new_secure_chat", &ChatController::StartNewSecureChatCallback);
+        ctor.BindEventCallback("pause_integrity_only", &ChatController::PauseIntegrityCallback);
       })) {
     return false;
   }

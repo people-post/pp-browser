@@ -582,6 +582,25 @@ Roe<void> JsonThreadStore::SetPeerSyncState(const std::string& /*thread_id*/, ui
   return {};
 }
 
+Roe<void> JsonThreadStore::CancelOldEpochPending(const std::string& /*thread_id*/, uint32_t /*old_session_epoch*/) {
+  return {};
+}
+
+Roe<void> JsonThreadStore::AdoptChatTargetEpoch(const std::string& /*thread_id*/, uint32_t /*new_session_epoch*/) {
+  return {};
+}
+
+Roe<ThreadMessage> JsonThreadStore::AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message,
+                                                                     uint32_t /*old_session_epoch*/,
+                                                                     uint32_t /*new_session_epoch*/,
+                                                                     const PeerSyncState& /*new_sync_state*/) {
+  return AppendMessage(message);
+}
+
+Roe<uint32_t> JsonThreadStore::BumpLocalChatTargetEpoch(const std::string& /*thread_id*/) {
+  return 2u;
+}
+
 Roe<void> JsonThreadStore::ReconcileOutbox() {
   return {};
 }

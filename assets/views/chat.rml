@@ -19,8 +19,13 @@
             data-event-click="forget_memory()">Forget AI memory</button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_gap_banner && !sync_in_progress">
-    <p class="text muted">Some messages from your peer may be missing.</p>
+    <p class="text muted">Some messages from your peer may be missing. Peer sync does not resend your unsent messages.</p>
     <button class="chat-suggestion" data-event-click="retry_gap_sync()">Retry sync</button>
+  </div>
+  <div class="chat-gap-banner stack" data-if="show_compromised_banner && !sync_in_progress">
+    <p class="text muted">Message integrity issue detected. Sending and sync are paused until you resolve this.</p>
+    <button class="chat-suggestion" data-event-click="start_new_secure_chat()">Start new secure chat</button>
+    <button class="chat-suggestion" data-event-click="pause_integrity_only()">Pause only</button>
   </div>
   <div class="messages" data-mount-id="messages">
     <div class="chat-empty stack" data-if="!has_turns && !loading">

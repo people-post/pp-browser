@@ -58,6 +58,7 @@ private:
     bool show_forget_memory = false;
     bool show_sync_with_peer = false;
     bool show_gap_banner = false;
+    bool show_compromised_banner = false;
     bool sync_in_progress = false;
     std::vector<TranscriptDisplayRow> turns;
     std::vector<MessageDisplayRow> messages;
@@ -98,6 +99,8 @@ private:
   static void ForgetMemoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SyncWithPeerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void RetryGapSyncCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void StartNewSecureChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void PauseIntegrityCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenWorkingSetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
@@ -108,6 +111,8 @@ private:
   void OnForgetMemory();
   void OnSyncWithPeer();
   void OnRetryGapSync();
+  void OnStartNewSecureChat();
+  void OnPauseIntegrityOnly();
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
   void SendChatAction(const std::string& entry_id, int action_index);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);

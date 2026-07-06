@@ -62,6 +62,17 @@ public:
   virtual Roe<PeerSyncState> GetPeerSyncState(const std::string& thread_id, uint32_t session_epoch) const = 0;
   virtual Roe<void> SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
                                      const PeerSyncState& state) = 0;
+  /** D068 — remove relay_visible pending/failed rows for old epoch and purge matching outbox rows. */
+  virtual Roe<void> CancelOldEpochPending(const std::string& thread_id, uint32_t old_session_epoch) = 0;
+  /** D014/D085 — set chat_targets.session_epoch and reset next_outgoing_seq=1. */
+  virtual Roe<void> AdoptChatTargetEpoch(const std::string& thread_id, uint32_t new_session_epoch) = 0;
+  /** D085 — passive adopt: cancel old pending, adopt epoch, append inbound row, persist sync_state. */
+  virtual Roe<ThreadMessage> AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message,
+                                                                uint32_t old_session_epoch,
+                                                                uint32_t new_session_epoch,
+                                                                const PeerSyncState& new_sync_state) = 0;
+  /** D014/D068 — local epoch bump: cancel old pending, adopt epoch+1, init fresh sync_state. */
+  virtual Roe<uint32_t> BumpLocalChatTargetEpoch(const std::string& thread_id) = 0;
   virtual Roe<void> ReconcileOutbox() = 0;
 
   /** D017 — durable outbox index; empty until v2a-p2p populates rows. */

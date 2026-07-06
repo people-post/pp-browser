@@ -51,6 +51,12 @@ public:
   Roe<PeerSyncState> GetPeerSyncState(const std::string& thread_id, uint32_t session_epoch) const override;
   Roe<void> SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
                              const PeerSyncState& state) override;
+  Roe<void> CancelOldEpochPending(const std::string& thread_id, uint32_t old_session_epoch) override;
+  Roe<void> AdoptChatTargetEpoch(const std::string& thread_id, uint32_t new_session_epoch) override;
+  Roe<ThreadMessage> AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message, uint32_t old_session_epoch,
+                                                        uint32_t new_session_epoch,
+                                                        const PeerSyncState& new_sync_state) override;
+  Roe<uint32_t> BumpLocalChatTargetEpoch(const std::string& thread_id) override;
   Roe<void> ReconcileOutbox() override;
   Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const override;
   void Flush() override;
@@ -87,6 +93,11 @@ private:
   Roe<DirectChatTarget> DirectTargetForThread(const Thread& thread) const;
   Roe<void> EnsurePeerSyncState(const std::string& thread_id, const DirectChatTarget& target,
                                 uint32_t session_epoch) const;
+  Roe<void> CancelOldEpochPendingUnlocked(sqlite3* thread_db, const std::string& thread_id,
+                                          uint32_t old_session_epoch) const;
+  Roe<void> AdoptChatTargetEpochUnlocked(const std::string& thread_id, uint32_t new_session_epoch) const;
+  Roe<void> UpsertPeerSyncStateUnlocked(sqlite3* thread_db, const DirectChatTarget& target, uint32_t session_epoch,
+                                        const PeerSyncState& state) const;
 
   std::string data_dir_;
   mutable std::mutex profile_mutex_;

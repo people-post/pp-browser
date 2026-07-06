@@ -165,7 +165,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
   }
   if (classified.decision == IngestDecision::SoftCompromised || classified.decision == IngestDecision::HardReject) {
     if (classified.decision == IngestDecision::SoftCompromised) {
-      (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state);
+      PeerSyncState compromised_state = classified.sync_state;
+      compromised_state.phase = PeerSyncPhase::Compromised;
+      (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, compromised_state);
     }
     return outcome;
   }
@@ -183,6 +185,19 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
   message.transport = transport;
   message.sender_seq = envelope.sender_seq;
   message.session_epoch = envelope.session_epoch;
+
+  if (classified.decision == IngestDecision::AcceptEpochAdvance) {
+    const uint32_t old_epoch = *chat_target_epoch;
+    if (!store_.AppendMessageWithPassiveEpochAdopt(message, old_epoch, envelope.session_epoch,
+                                                   classified.sync_state)) {
+      outcome.decision = IngestDecision::HardReject;
+      return outcome;
+    }
+    replay_windows_.erase(ReplayKey{resolved_thread_id, old_epoch});
+    outcome.persisted = true;
+    outcome.thread_changed = true;
+    return outcome;
+  }
 
   if (!store_.AppendMessage(message)) {
     outcome.decision = IngestDecision::HardReject;

@@ -6,6 +6,7 @@
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "feature/messaging/ChatSyncService.h"
+#include "feature/messaging/EpochBumpCoordinator.h"
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/Libp2pChatHistoryService.h"
 #include "feature/messaging/RelayReceivePipeline.h"
@@ -38,6 +39,10 @@ public:
   void SyncWithPeer(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
   /** D059 — gap banner retry (async on IO thread). */
   void RetryGapSync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
+  /** D038/D068 — epoch-only bump to recover from compromised state. */
+  Roe<uint32_t> StartNewSecureChat(const std::string& thread_id);
+  /** D038 — pause ingest/outbound without rotating keys. */
+  Roe<void> PauseIntegrityOnly(const std::string& thread_id);
   void RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
   void TailSyncActiveE2eThread();
 
@@ -60,6 +65,8 @@ private:
   void RunSyncOnIo(const std::string& thread_id, std::function<Roe<ChatSyncResult>()> task,
                    std::function<void(Roe<ChatSyncResult>)> on_complete);
   bool IsE2ePrivateThread(const std::string& thread_id) const;
+  bool IsThreadCompromised(const std::string& thread_id) const;
+  void PurgeRetryQueueForThread(const std::string& thread_id);
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -71,6 +78,7 @@ private:
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<Libp2pChatHistoryService> peer_history_;
   std::unique_ptr<ChatSyncService> chat_sync_;
+  EpochBumpCoordinator epoch_coordinator_;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;
   std::function<void(const std::string&)> on_delivery_notice_;

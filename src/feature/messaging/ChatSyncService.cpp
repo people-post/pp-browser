@@ -247,6 +247,9 @@ Roe<ChatSyncResult> ChatSyncService::TailSync(const std::string& thread_id) {
   if (!sync_state) {
     return sync_state.error();
   }
+  if (sync_state->phase == PeerSyncPhase::Compromised) {
+    return Error("Sync disabled while thread is compromised");
+  }
 
   std::optional<uint64_t> tail_min_seq;
   if (sync_state->loaded_max_seq > 0) {
@@ -274,6 +277,9 @@ Roe<ChatSyncResult> ChatSyncService::RepairGap(const std::string& thread_id, con
   auto sync_state = store_.GetPeerSyncState(thread_id, *session_epoch);
   if (!sync_state) {
     return sync_state.error();
+  }
+  if (sync_state->phase == PeerSyncPhase::Compromised) {
+    return Error("Sync disabled while thread is compromised");
   }
 
   const auto range = ClampGapRange(gap_min, gap_max, sync_state->history_floor_seq);

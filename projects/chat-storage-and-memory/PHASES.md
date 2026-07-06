@@ -351,7 +351,7 @@ Existing foundation this project builds on.
 - [ ] Outbox retry **`kMaxOutboxRetryAttempts`**; gap repair **`kMaxGapRepairRounds`** / **`kMaxGapRepairSeqSpan`** (D041)
 - [x] Clear history → `history_floor_seq = loaded_max_seq` (not contiguous-only); below-floor silent discard (D037)
 - [ ] Peer reset / integrity recovery — **no continue-anyway** (D014, D038, D046)
-- [ ] **Epoch bump transaction** with e2e crypto sessions (D047); **passive epoch adopt** on first ingest when peer bumps first (D085); **rich OOB bundle** export/import (D086/E020)
+- [x] **Epoch bump transaction** with e2e crypto sessions (D047); **passive epoch adopt** on first ingest when peer bumps first (D085); **rich OOB bundle** export/import (D086/E020)
 
 ### v6-sync — Sync modes (E2E only — D052, D058, D059)
 
@@ -359,7 +359,7 @@ Existing foundation this project builds on.
 - [x] **Tail sync** — desc limit 50
 - [x] **Gap repair** — automatic via D058
 - [x] **Authoritative empty gap close** — success + zero messages closes hole **only when D067 guard passes**; `empty_closed_seqs[]` / `empty_closed_ranges[]` + late fill (D061/D067/D071)
-- [ ] **Compromised thread (D068)** — outbox frozen; no gap/tail sync; epoch bump cancels old-epoch pending; coordinator updates `chat_targets` PSK + epoch in one `profile.db` txn (D084)
+- [x] **Compromised thread (D068)** — outbox frozen; no gap/tail sync; epoch bump cancels old-epoch pending; coordinator updates `chat_targets` PSK + epoch in one `profile.db` txn (D084)
 - [x] **User-initiated sync** — thread menu **Sync with peer**; gap banner **Retry sync** (D059)
 - [ ] Gap repair assigns **`display_order`** between seq neighbors (D054 Rule 2) — deferred D065 partial
 - [ ] **Gap repair UI defer** — D065: skip refresh above window; defer + anchor when renumber touches loaded page
@@ -374,9 +374,9 @@ Existing foundation this project builds on.
 
 ### v6-integrity — Integrity and UX
 
-- [ ] E2E gap / compromised banners; choice sheet: rotate PSK or pause only (D046)
-- [ ] **Sync with peer** + **Retry sync** copy: peer sync ≠ retry unsent (D059)
-- [ ] Unit tests: seq, outbox, floor (`loaded_max_seq`), epoch, reorder, reconciliation, clear-after-gap-repair no resurrection, **empty gap close guard + late fill (D067)**, **inbound find-only (D062)**, **compromised outbox freeze (D068)**, **pending cancel on epoch bump (D068)**, **passive epoch adopt txn (D085)**, **PSK bundle merge + ledger cap (D086/E020)**
+- [x] E2E gap / compromised banners; choice sheet: rotate PSK or pause only (D046) — epoch-only bump until c3 PSK rotation
+- [x] **Sync with peer** + **Retry sync** copy: peer sync ≠ retry unsent (D059)
+- [x] Unit tests: seq, outbox, floor (`loaded_max_seq`), epoch, reorder, reconciliation, clear-after-gap-repair no resurrection, **empty gap close guard + late fill (D067)**, **inbound find-only (D062)**, **compromised outbox freeze (D068)**, **pending cancel on epoch bump (D068)**, **passive epoch adopt txn (D085)**, **PSK bundle merge + ledger cap (D086/E020)** — partial: `v6_integrity_test` covers bump/adopt/compromised; D086 bundle tests deferred to e2e c3
 
 ### Docs
 

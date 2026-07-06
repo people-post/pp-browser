@@ -3,14 +3,17 @@
 #include "feature/messaging/P2pMessagingService.h"
 
 #include "common/Utilities.h"
+#include "base/messaging/E2eIntegrityUtil.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
+#include "base/messaging/SyncStateTypes.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/platform/BrowserThread.h"
 
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 
@@ -36,7 +39,8 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
                                          IRelayClient* relay, InboxController& inbox,
                                          PeerSigningKeyStore& signing_key_store)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
-      signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_store_) {
+      signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_store_),
+      epoch_coordinator_(store) {
   redirectLogger("P2pMessagingService");
   receive_pipeline_ = std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_);
   peer_history_ = std::make_unique<Libp2pChatHistoryService>(store_, identity_);
@@ -91,6 +95,40 @@ bool P2pMessagingService::IsE2ePrivateThread(const std::string& thread_id) const
     return false;
   }
   return (*thread)->kind == ThreadKind::Direct && (*thread)->channel == ThreadChannel::E2e;
+}
+
+bool P2pMessagingService::IsThreadCompromised(const std::string& thread_id) const {
+  return IsE2ePrivateThread(thread_id) && IsE2eThreadCompromised(store_, thread_id);
+}
+
+void P2pMessagingService::PurgeRetryQueueForThread(const std::string& thread_id) {
+  std::lock_guard lock(retry_mutex_);
+  retry_queue_.erase(std::remove_if(retry_queue_.begin(), retry_queue_.end(),
+                                     [&](const PendingRelaySend& item) { return item.thread_id == thread_id; }),
+                     retry_queue_.end());
+}
+
+Roe<uint32_t> P2pMessagingService::StartNewSecureChat(const std::string& thread_id) {
+  if (!IsE2ePrivateThread(thread_id)) {
+    return Error("Not a private E2E thread");
+  }
+  auto new_epoch = epoch_coordinator_.StartNewSecureChat(thread_id);
+  if (!new_epoch) {
+    return new_epoch.error();
+  }
+  PurgeRetryQueueForThread(thread_id);
+  if (on_messages_changed_) {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+  }
+  return *new_epoch;
+}
+
+Roe<void> P2pMessagingService::PauseIntegrityOnly(const std::string& thread_id) {
+  if (!IsE2ePrivateThread(thread_id)) {
+    return Error("Not a private E2E thread");
+  }
+  PurgeRetryQueueForThread(thread_id);
+  return epoch_coordinator_.PauseOnly(thread_id);
 }
 
 void P2pMessagingService::TailSyncActiveE2eThread() {
@@ -266,6 +304,9 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   if ((*thread)->channel == ThreadChannel::E2ePublic) {
     return Error("Public tier messaging is not enabled yet");
   }
+  if ((*thread)->channel == ThreadChannel::E2e && IsThreadCompromised(thread_id)) {
+    return Error("Messaging paused — start a new secure chat or delete this conversation");
+  }
   if ((*thread)->peer_identity_value.empty()) {
     return Error("Direct thread missing peer identity");
   }
@@ -382,6 +423,13 @@ void P2pMessagingService::RetryFailedOutbound() {
     return;
   }
 
+  pending.erase(std::remove_if(pending.begin(), pending.end(),
+                               [this](const PendingRelaySend& item) { return IsThreadCompromised(item.thread_id); }),
+                pending.end());
+  if (pending.empty()) {
+    return;
+  }
+
   BrowserThread::PostTask(BrowserThreadId::IO, [this, pending = std::move(pending)]() mutable {
     if (!relay_) {
       std::lock_guard lock(retry_mutex_);
@@ -391,6 +439,9 @@ void P2pMessagingService::RetryFailedOutbound() {
     }
     std::vector<PendingRelaySend> still_pending;
     for (PendingRelaySend& item : pending) {
+      if (IsThreadCompromised(item.thread_id)) {
+        continue;
+      }
       const auto result = relay_->Send(item.envelope);
       if (result) {
         ApplySendResult(item.thread_id, item.message_id, true);

@@ -1434,6 +1434,269 @@ Roe<void> SqliteThreadStore::SetPeerSyncState(const std::string& thread_id, cons
   return {};
 }
 
+Roe<void> SqliteThreadStore::CancelOldEpochPendingUnlocked(sqlite3* thread_db, const std::string& thread_id,
+                                                           const uint32_t old_session_epoch) const {
+  std::vector<std::string> message_ids;
+  sqlite3_stmt* select_stmt = nullptr;
+  const char* select_sql =
+      "SELECT id FROM messages WHERE relay_visible = 1 AND session_epoch = ? AND delivery IN ('pending', 'failed');";
+  if (sqlite3_prepare_v2(thread_db, select_sql, -1, &select_stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare old-epoch pending select");
+  }
+  sqlite3_bind_int(select_stmt, 1, static_cast<int>(old_session_epoch));
+  while (sqlite3_step(select_stmt) == SQLITE_ROW) {
+    if (sqlite3_column_text(select_stmt, 0)) {
+      message_ids.emplace_back(reinterpret_cast<const char*>(sqlite3_column_text(select_stmt, 0)));
+    }
+  }
+  sqlite3_finalize(select_stmt);
+
+  for (const std::string& message_id : message_ids) {
+    sqlite3_stmt* outbox_stmt = nullptr;
+    if (sqlite3_prepare_v2(profile_db_, "DELETE FROM outbox WHERE message_id = ?;", -1, &outbox_stmt, nullptr) ==
+        SQLITE_OK) {
+      sqlite3_bind_text(outbox_stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+      sqlite3_step(outbox_stmt);
+      sqlite3_finalize(outbox_stmt);
+    }
+  }
+
+  sqlite3_stmt* delete_stmt = nullptr;
+  const char* delete_sql =
+      "DELETE FROM messages WHERE relay_visible = 1 AND session_epoch = ? AND delivery IN ('pending', 'failed');";
+  if (sqlite3_prepare_v2(thread_db, delete_sql, -1, &delete_stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare old-epoch pending delete");
+  }
+  sqlite3_bind_int(delete_stmt, 1, static_cast<int>(old_session_epoch));
+  if (sqlite3_step(delete_stmt) != SQLITE_DONE) {
+    sqlite3_finalize(delete_stmt);
+    return Error("Failed to delete old-epoch pending messages");
+  }
+  sqlite3_finalize(delete_stmt);
+  (void)thread_id;
+  return {};
+}
+
+Roe<void> SqliteThreadStore::AdoptChatTargetEpochUnlocked(const std::string& thread_id,
+                                                          const uint32_t new_session_epoch) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(profile_db_,
+                         "UPDATE chat_targets SET session_epoch = ?, next_outgoing_seq = 1 WHERE local_thread_id = ?;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare chat_targets epoch adopt");
+  }
+  sqlite3_bind_int(stmt, 1, static_cast<int>(new_session_epoch));
+  sqlite3_bind_text(stmt, 2, thread_id.c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return Error("Failed to adopt chat target epoch");
+  }
+  sqlite3_finalize(stmt);
+
+  if (sqlite3_prepare_v2(profile_db_, "UPDATE threads SET session_epoch = ? WHERE id = ?;", -1, &stmt, nullptr) !=
+      SQLITE_OK) {
+    return Error("Failed to prepare threads epoch cache update");
+  }
+  sqlite3_bind_int(stmt, 1, static_cast<int>(new_session_epoch));
+  sqlite3_bind_text(stmt, 2, thread_id.c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return Error("Failed to update threads epoch cache");
+  }
+  sqlite3_finalize(stmt);
+  return {};
+}
+
+Roe<void> SqliteThreadStore::UpsertPeerSyncStateUnlocked(sqlite3* thread_db, const DirectChatTarget& target,
+                                                         const uint32_t session_epoch,
+                                                         const PeerSyncState& state) const {
+  const std::string state_json = PeerSyncStateToJson(state);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(thread_db,
+                         "INSERT INTO sync_state (peer_identity_kind, peer_identity_value, session_epoch, state_json) "
+                         "VALUES (?, ?, ?, ?) "
+                         "ON CONFLICT(peer_identity_kind, peer_identity_value, session_epoch) DO UPDATE SET "
+                         "state_json=excluded.state_json;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare sync_state upsert");
+  }
+  sqlite3_bind_text(stmt, 1, target.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, target.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 3, static_cast<int>(session_epoch));
+  sqlite3_bind_text(stmt, 4, state_json.c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_DONE) {
+    sqlite3_finalize(stmt);
+    return Error("Failed to upsert sync_state");
+  }
+  sqlite3_finalize(stmt);
+  return {};
+}
+
+Roe<void> SqliteThreadStore::CancelOldEpochPending(const std::string& thread_id, const uint32_t old_session_epoch) {
+  if (auto init = EnsureInitialized(); !init) {
+    return init.error();
+  }
+  std::lock_guard profile_lock(profile_mutex_);
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  return CancelOldEpochPendingUnlocked(*thread_db, thread_id, old_session_epoch);
+}
+
+Roe<void> SqliteThreadStore::AdoptChatTargetEpoch(const std::string& thread_id, const uint32_t new_session_epoch) {
+  if (auto init = EnsureInitialized(); !init) {
+    return init.error();
+  }
+  std::lock_guard profile_lock(profile_mutex_);
+  return AdoptChatTargetEpochUnlocked(thread_id, new_session_epoch);
+}
+
+Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message,
+                                                                       const uint32_t old_session_epoch,
+                                                                       const uint32_t new_session_epoch,
+                                                                       const PeerSyncState& new_sync_state) {
+  if (auto init = EnsureInitialized(); !init) {
+    return init.error();
+  }
+  auto thread = GetThread(message.thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  auto target = DirectTargetForThread(**thread);
+  if (!target) {
+    return target.error();
+  }
+
+  ThreadMessage stored = message;
+  {
+    std::lock_guard profile_lock(profile_mutex_);
+    auto thread_db = OpenThreadDb(message.thread_id);
+    if (!thread_db) {
+      return thread_db.error();
+    }
+
+    if (auto cancelled = CancelOldEpochPendingUnlocked(*thread_db, message.thread_id, old_session_epoch); !cancelled) {
+      return cancelled.error();
+    }
+    if (auto adopted = AdoptChatTargetEpochUnlocked(message.thread_id, new_session_epoch); !adopted) {
+      return adopted.error();
+    }
+    if (auto sync = UpsertPeerSyncStateUnlocked(*thread_db, *target, new_session_epoch, new_sync_state); !sync) {
+      return sync.error();
+    }
+
+    if (stored.display_order <= 0) {
+      auto next = NextDisplayOrder(*thread_db);
+      if (!next) {
+        return next.error();
+      }
+      stored.display_order = *next;
+    }
+
+    auto chat_payload = ChatPayloadCodec::EncodeToRow(stored);
+    if (!chat_payload) {
+      return chat_payload.error();
+    }
+    const nlohmann::json payload_json = {{"text", stored.text}};
+    const std::string payload_text = payload_json.dump();
+    const std::string chat_actions_json = ChatActionsToJson(stored.chat_actions).dump();
+
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql =
+        "INSERT INTO messages (id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
+        "content_rml, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+    if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+      return Error("Failed to prepare passive-adopt append");
+    }
+    sqlite3_bind_text(stmt, 1, stored.id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, stored.display_order);
+    sqlite3_bind_text(stmt, 3, stored.sender_contact_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_blob(stmt, 4, chat_payload->data(), static_cast<int>(chat_payload->size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, ContentTypeToDb(stored.content_type).c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 6, payload_text.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 7, stored.text.c_str(), -1, SQLITE_TRANSIENT);
+    if (stored.content_rml) {
+      sqlite3_bind_text(stmt, 8, stored.content_rml->c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+      sqlite3_bind_null(stmt, 8);
+    }
+    sqlite3_bind_text(stmt, 9, chat_actions_json.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 10, stored.timestamp);
+    sqlite3_bind_int(stmt, 11, stored.relay_visible ? 1 : 0);
+    sqlite3_bind_text(stmt, 12, MessageDeliveryToString(stored.delivery).c_str(), -1, SQLITE_TRANSIENT);
+    if (stored.transport) {
+      sqlite3_bind_text(stmt, 13, MessageTransportToString(*stored.transport).c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+      sqlite3_bind_null(stmt, 13);
+    }
+    if (stored.sender_seq) {
+      sqlite3_bind_int64(stmt, 14, static_cast<sqlite3_int64>(*stored.sender_seq));
+    } else {
+      sqlite3_bind_null(stmt, 14);
+    }
+    if (stored.session_epoch) {
+      sqlite3_bind_int(stmt, 15, static_cast<int>(*stored.session_epoch));
+    } else {
+      sqlite3_bind_null(stmt, 15);
+    }
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      sqlite3_finalize(stmt);
+      return Error("Failed to append message during passive adopt");
+    }
+    sqlite3_finalize(stmt);
+  }
+
+  if (auto catalog = UpdateThreadCatalogFromMessage(stored, false); !catalog) {
+    return catalog.error();
+  }
+  return stored;
+}
+
+Roe<uint32_t> SqliteThreadStore::BumpLocalChatTargetEpoch(const std::string& thread_id) {
+  if (auto init = EnsureInitialized(); !init) {
+    return init.error();
+  }
+  auto thread = GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  auto target = DirectTargetForThread(**thread);
+  if (!target) {
+    return target.error();
+  }
+
+  const auto old_epoch = GetChatTargetSessionEpoch(thread_id);
+  if (!old_epoch) {
+    return old_epoch.error();
+  }
+  const uint32_t new_epoch = *old_epoch + 1;
+
+  std::lock_guard profile_lock(profile_mutex_);
+  auto thread_db = OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+
+  if (auto cancelled = CancelOldEpochPendingUnlocked(*thread_db, thread_id, *old_epoch); !cancelled) {
+    return cancelled.error();
+  }
+  if (auto adopted = AdoptChatTargetEpochUnlocked(thread_id, new_epoch); !adopted) {
+    return adopted.error();
+  }
+  if (auto sync = UpsertPeerSyncStateUnlocked(*thread_db, *target, new_epoch, DefaultPeerSyncState()); !sync) {
+    return sync.error();
+  }
+  return new_epoch;
+}
+
 Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesBySeqRange(const std::string& thread_id,
                                                                          const SeqRangeQuery& query) const {
   auto thread_db = OpenThreadDb(thread_id);

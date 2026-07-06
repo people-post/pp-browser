@@ -47,6 +47,12 @@ public:
   Roe<PeerSyncState> GetPeerSyncState(const std::string& thread_id, uint32_t session_epoch) const override;
   Roe<void> SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
                              const PeerSyncState& state) override;
+  Roe<void> CancelOldEpochPending(const std::string& thread_id, uint32_t old_session_epoch) override;
+  Roe<void> AdoptChatTargetEpoch(const std::string& thread_id, uint32_t new_session_epoch) override;
+  Roe<ThreadMessage> AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message, uint32_t old_session_epoch,
+                                                        uint32_t new_session_epoch,
+                                                        const PeerSyncState& new_sync_state) override;
+  Roe<uint32_t> BumpLocalChatTargetEpoch(const std::string& thread_id) override;
   Roe<void> ReconcileOutbox() override;
   Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const override;
   void Flush() override;
