@@ -84,15 +84,18 @@ namespace libp2p::transport {
 
   std::shared_ptr<lsquic::Engine> QuicTransport::makeClient(
       boost::asio::ip::udp protocol) const {
+    boost::asio::ip::udp::socket socket{*io_context_, protocol};
+    boost::system::error_code ec;
+    socket.bind({protocol, 0}, ec);
+    if (ec) {
+      throw boost::system::system_error{ec};
+    }
     return std::make_shared<lsquic::Engine>(io_context_,
                                             ssl_context_,
                                             mux_config_,
                                             local_peer_,
                                             key_codec_,
-                                            boost::asio::ip::udp::socket{
-                                                *io_context_,
-                                                protocol,
-                                            },
+                                            std::move(socket),
                                             true);
   }
 }  // namespace libp2p::transport
