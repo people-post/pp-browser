@@ -14,7 +14,7 @@ One durable conversation model for AI and P2P chat: SQLite per thread, `profile.
 
 ## Release scope (v1 batch)
 
-Before the first customer release, agents implement **chat v2a–v6** plus [e2e c1–c3](../e2e-message-crypto/PHASES.md) (private `e2e` tier). Exclude unless explicitly expanded: post-v4/6b/c/d, `e2e_public` auto-key (c3+), group E2E (O008), PQ (c4). See [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
+**Bucket B — v1 + post-v1 polish** ([D092](DECISIONS.md#d092--release-scope-bucket-b)): chat **v2a–v6** plus [e2e c1–c3](../e2e-message-crypto/PHASES.md) (private `e2e` tier), **plus** post-v4, post-v6b/c/d. Peer-direct history (**D060**) is **required** for v1 ([D094](DECISIONS.md#d094--peer-direct-history-required-for-v1-d060)). Exclude unless explicitly expanded: `e2e_public` auto-key (c3+), group E2E, PQ (c4). See [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
 
 ## Documents in this folder
 
@@ -55,8 +55,8 @@ See [PHASES.md](PHASES.md) for full checklists. For **agent batch delivery** (al
 
 ## Open questions
 
-**Human checklist (scope, relay, libp2p, platform limits):** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md)
+**Human checklist (scope, relay, libp2p):** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) — **all resolved 2026-07-06** ([D092–D095](DECISIONS.md#d092--release-scope-bucket-b)).
 
-**In this project:** O008 (group pairwise wire shape) — see [DECISIONS.md](DECISIONS.md#open-decisions-not-yet-resolved). **O007 resolved** — [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) + [D091](DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).
+**In this project:** **O008 resolved** → [D095](DECISIONS.md#d095--group-pairwise-wire-shape-o008) (N ciphertexts per message). **O007 resolved** — [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) + [D091](DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).
 
 **Cross-project (e2e-message-crypto):** three tiers E021/E022; peer signing keys E016/D081; PSK UX and wire-up after chat-storage **v2b + v6** — see [PHASES.md](PHASES.md) § Cross-project.

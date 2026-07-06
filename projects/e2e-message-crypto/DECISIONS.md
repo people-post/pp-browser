@@ -122,7 +122,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-07-02  
 **Updated:** 2026-07-02 — reopened for UX-first group tier with pairwise keys (E022, D089).  
-**Decision:** **Group E2E** is **`[post-v1]`** — not in c1–c3. When implemented: **pairwise sender-keys** (encrypt per member using pair-wise secrets), **not** a single shared group PSK and **not** MLS in the first slice. Ingest policy matches **`e2e_public`** (relaxed default — D046). Wire details: O008.  
+**Decision:** **Group E2E** is **`[post-v1]`** — not in c1–c3. When implemented: **pairwise sender-keys** (encrypt per member using pair-wise secrets), **not** a single shared group PSK and **not** MLS in the first slice. Ingest policy matches **`e2e_public`** (relaxed default — D046). Wire shape: **N ciphertexts per message** ([chat-storage D095](../chat-storage-and-memory/DECISIONS.md#d095--group-pairwise-wire-shape-o008)).  
 **Rationale:** Single group PSK is weak on membership change; MLS is heavy UX; pairwise model reuses 1:1 crypto machinery and matches user preference for pair keys.  
 **Alternatives:** Shared group PSK (rejected); MLS (deferred); group out of scope entirely (superseded — E022).
 
@@ -311,7 +311,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 
 **Date:** 2026-07-02  
 **Cross-project:** [chat-storage D076/D089](../chat-storage-and-memory/DECISIONS.md#d076--group-chat-placeholders-in-catalog--sync-scope).  
-**Decision:** Group message bodies are E2E encrypted using **pairwise sender-keys** — the sender encrypts for each member using pair-wise secrets (reuse 1:1 crypto machinery where possible), **not** a single shared group PSK. MLS is deferred. Membership changes rotate affected pair keys. Ingest policy: relaxed default (D046). Exact fan-out wire shape: **O008**.
+**Decision:** Group message bodies are E2E encrypted using **pairwise sender-keys** — the sender encrypts for each member using pair-wise secrets (reuse 1:1 crypto machinery where possible), **not** a single shared group PSK. MLS is deferred. Membership changes rotate affected pair keys. Ingest policy: relaxed default (D046). Wire shape: **N ciphertexts per message** — [chat-storage D095](../chat-storage-and-memory/DECISIONS.md#d095--group-pairwise-wire-shape-o008) (O008 resolved).
 
 **Rationale:** User preference for pair keys over group-wide secret; avoids weak membership model of shared PSK; reuses `ChatTargetKey`-style pair scoping.  
 **Alternatives:** Single group PSK (rejected); MLS (deferred); plaintext group relay (rejected — E021).

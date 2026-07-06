@@ -42,9 +42,9 @@ For **batch delivery** (agents complete work before one release), use this secti
 
 | Bucket | Phases | Notes |
 |--------|--------|-------|
-| **v1 private E2E release** | v2a–v6 + [e2e c1–c3](../e2e-message-crypto/PHASES.md) | Default batch target |
-| **v1 + post-v1 polish** | + post-v4, post-v6b/c/d | Additive; low rework if v1 constraints followed |
-| **Full three-tier product** | + `e2e_public` auto-key (e2e c3+), group (E022/O008) | O008 still open; not in v1 checklists |
+| **v1 private E2E release** | v2a–v6 + [e2e c1–c3](../e2e-message-crypto/PHASES.md) | Minimal private-only batch |
+| **v1 + post-v1 polish** *(chosen — [D092](DECISIONS.md#d092--release-scope-bucket-b))* | + post-v4, post-v6b/c/d | **Current release target**; peer-direct D060 required ([D094](DECISIONS.md#d094--peer-direct-history-required-for-v1-d060)) |
+| **Full three-tier product** | + `e2e_public` auto-key (e2e c3+), group (E022/D095) | Not in v1 checklists |
 | **PQ** | e2e c4 | Deferred — exclude unless scope expands |
 
 ### Work waves
@@ -79,7 +79,7 @@ Wave 7 (optional post-v1)
 | **4a** | **v6-schema** — `sender_seq`, `session_epoch`, `sync_state`, `chat_targets` PSK columns, `GetMessagesBySeqRange` | v2b + v4 |
 | **4b** | **v6-pipeline** — outbox, receive classifier, `ReplayWindow`, inbound find-only (D062), floor semantics | 4a |
 | **4c** | **v6-sync** — `FetchChatTargetMessages`, tail/gap, empty-gap guard (D067), user sync (D059) | 4b |
-| **4d** | **v6-libp2p** — `/pp-browser/chat-history/1.0.0` (relay-only stub OK first) | 4c |
+| **4d** | **v6-libp2p** — `/pp-browser/chat-history/1.0.0` (**release-critical** — [D094](DECISIONS.md#d094--peer-direct-history-required-for-v1-d060)) | 4c |
 | **4e** | **v6-integrity** — compromised freeze (D068), epoch bump txn, passive adopt (D085), banners | 4b + c1 `ReplayWindow` |
 | **5–6** | *(e2e)* c2 → c3 | After v6 exit; see [e2e PHASES](../e2e-message-crypto/PHASES.md#agent-batch-delivery-order) |
 | **7** | post-v6c, post-v6d, post-v4, post-v6b; `e2e_public` + post-v6e with e2e c3+ | After v1 + c3 |
@@ -355,7 +355,7 @@ Existing foundation this project builds on.
 
 ### v6-sync — Sync modes (E2E only — D052, D058, D059)
 
-- [x] **`FetchChatTargetMessages`** — unified backfill; peer-direct (D060) then relay D027 (D058) — relay-only for now
+- [x] **`FetchChatTargetMessages`** — unified backfill; peer-direct (D060) then relay D027 (D058) — relay path shipped; peer-direct pending v6-libp2p (D094)
 - [x] **Tail sync** — desc limit 50
 - [x] **Gap repair** — automatic via D058
 - [x] **Authoritative empty gap close** — success + zero messages closes hole **only when D067 guard passes**; `empty_closed_seqs[]` / `empty_closed_ranges[]` + late fill (D061/D067/D071)

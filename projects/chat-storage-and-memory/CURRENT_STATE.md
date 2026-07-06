@@ -1,4 +1,4 @@
-# Current state — as of 2026-07-02
+# Current state — as of 2026-07-06
 
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
@@ -9,8 +9,8 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 
 | Priority | Work | Blocked by |
 |----------|------|------------|
-| **Wave 4c** | **v6-sync** — user-initiated sync UX, gap repair polish, empty-gap D067 tests | v6-pipeline (done) |
-| **Wave 4d–4e** | v6-libp2p, v6-integrity banners | 4c |
+| **Wave 4c** | **v6-sync** — user-initiated sync UX, gap repair polish, empty-gap D067 tests; **live relay** integration (D093) | v6-pipeline (done) |
+| **Wave 4d–4e** | **v6-libp2p (release-critical D094)**, v6-integrity banners | 4c |
 | **Wave 5–6** | [e2e c2](../e2e-message-crypto/PHASES.md#phase-c2--messaging-integration) — AEAD on wire | v6 ingest pipeline (done) |
 | **UX gaps (v2a-core)** | Composer `maxlength` (`kMaxComposeTextBytes`) | — |
 
@@ -28,15 +28,19 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 - Relay body uses **`body.e2e.payload_b64`** but payload is **plaintext ChatPayload** (base64) until e2e **c2** encrypts.
 - **`e2e_public`** threads exist and show tier badge; **compose/send disabled** until c3 auto-key.
 - Inbound poll: **find-only** via `chat_targets` (no auto-create thread on unknown sender — D062).
-- libp2p peer-direct history (D060) not wired — relay-only fetch in v6-sync.
+- libp2p peer-direct history (D060) not wired — relay fetch works; **peer-direct required for v1 release** (D094).
+- Relay history: **`HttpRelayClient::FetchChatHistory`** shipped; external relay D027 ready for integration tests (D093).
 
 ## Release scope (v1 batch)
 
+**Bucket B** ([D092](DECISIONS.md#d092--release-scope-bucket-b)):
+
 | In scope | Out of scope (unless expanded) |
 |----------|--------------------------------|
-| chat v2a–v6 | post-v4, post-v6b/c/d |
-| e2e c1–c3 (private `e2e` tier) | e2e c3+ (`e2e_public` auto-key), c4 PQ |
-| AI storage + memory (v3) | Group E2E (O008) |
+| chat v2a–v6 + post-v4, post-v6b/c/d | `e2e_public` auto-key (c3+), group E2E |
+| e2e c1–c3 (private `e2e` tier) | c4 PQ |
+| AI storage + memory (v3) | |
+| libp2p peer-direct history (D060) — **required** (D094) | |
 
 ## Persistence
 
@@ -87,7 +91,8 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 | **Poll backoff 2 s** + batch cap (D032/D029) | **Implemented** | `P2pMessagingService` |
 | **`FetchChatTargetMessages`** / tail sync | **Partial** | `ChatSyncService` — relay fetch + gap repair hook |
 | **User-initiated sync UX** (D059) | **Not implemented** | thread menu / gap banner |
-| libp2p history (D060) | **Not implemented** | v6-libp2p |
+| libp2p history (D060) | **Not implemented — release-critical** (D094) | v6-libp2p |
+| Relay history fetch (D027) | **Implemented** (`HttpRelayClient`) | D093 — live relay ready |
 | Integrity banners (D068) | **Not implemented** | v6-integrity |
 | Gap detection on live ingest | **Partial** | classifier + auto `RepairGap` on `AcceptGap` |
 
@@ -115,7 +120,7 @@ Run: `./build/tests/base_messaging_tests/pp_browser_v6_pipeline_test` (and sibli
 ## Known gaps (summary)
 
 1. **Wave 4c (v6-sync)** — user-initiated sync UX; authoritative empty-gap D067 integration tests; tail sync on all open paths.
-2. **Wave 4d–4e** — libp2p peer-direct; integrity/compromised UX.
+2. **Wave 4d–4e** — libp2p peer-direct (**blocks v1 release**, D094); integrity/compromised UX.
 3. **c2** — real AEAD in `payload_b64` (plaintext interim).
 4. Poll still invoked each UI frame (throttled to 2 s — D032 partial).
 5. Composer maxlength not wired.

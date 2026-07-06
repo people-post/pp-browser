@@ -13,7 +13,7 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md).
 
-**Baseline gap:** `IRelayClient` exposes `Send`, `PollInbox`, and `FetchChatHistory`. HTTP relay history uses signed `POST /api/relay/v1/streams/messages/query` — see [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay).
+**Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST /api/relay/v1/streams/messages/query`; mock when `base_url` unset. See [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay). External relay is ready for integration tests ([D093](../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)).
 
 ## Data model
 

@@ -10,7 +10,7 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | In scope | Out of scope (unless expanded) |
 |----------|--------------------------------|
 | d0 (complete), c1, c2, c3 — **private `e2e` tier** | c3+ (`e2e_public` auto-key), c4 PQ |
-| | Group E2E (E022 / O008) |
+| | Group E2E (E022 / D095 wire shape) |
 
 ## E2E crypto module
 

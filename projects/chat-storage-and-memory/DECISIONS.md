@@ -1229,17 +1229,48 @@ Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future d
 
 ---
 
+## D092 — Release scope bucket B
+
+**Date:** 2026-07-06  
+**Decision:** First customer release = **v1 + post-v1 polish** (PHASES scope bucket **B**): chat **v2a–v6** + [e2e c1–c3](../e2e-message-crypto/PHASES.md) (private `e2e` tier) **plus** post-v4, post-v6b/c/d. Still excludes unless expanded: `e2e_public` auto-key (c3+), group E2E, PQ (c4).  
+**Rationale:** Ship core E2E + sync with additive polish phases without opening public tier or group wire work.  
+**Alternatives:** Bucket A (minimal private only); C/D (public tier or PQ — deferred).
+
+---
+
+## D093 — Relay backend for v6-sync (D027)
+
+**Date:** 2026-07-06  
+**Decision:** **External relay D027 is ready** for v6-sync exit validation. Client ships `HttpRelayClient::FetchChatHistory` (signed `POST …/v1/streams/messages/query`) and `MockRelayClient` for dev/CI when relay `base_url` is unset. v6-sync integration tests may use **live relay**; mock-only exit is **not** required.  
+**Rationale:** Relay service and client contract are both available — unblock v6-sync without waiting on mock-only criteria.  
+**Alternatives:** B — mock-only until relay ships (superseded); C — in-repo relay stub (not needed).
+
+---
+
+## D094 — Peer-direct history required for v1 (D060)
+
+**Date:** 2026-07-06  
+**Product override:** v1 release **requires** libp2p peer-direct **`/pp-browser/chat-history/1.0.0`** (wave **v6-libp2p** / PHASES 4d). Relay D027 remains **fallback** when peer is offline or direct fails (D058 transport order unchanged).  
+**Rationale:** “Sync with peer” (D059) must exercise direct transport in v1, not relay-only.  
+**Alternatives:** A — relay-only for v1 (superseded — peer-direct deferred to post-v1).
+
+---
+
+## D095 — Group pairwise wire shape (O008)
+
+**Date:** 2026-07-06  
+**Cross-project:** [e2e E022](../e2e-message-crypto/DECISIONS.md#e022--group-e2e-pairwise-sender-keys).  
+**Decision:** Group outbound wire uses **N ciphertexts per message** — the sender includes **one AEAD ciphertext per member**, each encrypted with that member's pairwise secret (reuse 1:1 `ChatTargetKey` crypto). **Not** a sender-keys tree; **not** relay-side encrypted fan-out in v1 slice. Normative detail when group ships: extend `RelayEnvelope` / group send path with a member→ciphertext map (exact JSON field names TBD at implementation).  
+**Rationale:** Matches E022 pairwise sender-keys policy; simplest fan-out on existing pair machinery.  
+**Alternatives:** Sender-keys tree (deferred); relay encrypted fan-out (deferred).
+
+---
+
 ## Open decisions (not yet resolved)
 
-**Human checklist:** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) — scope, relay, libp2p, platform limits (prioritized).
+**Human checklist:** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) — all chat rollout items resolved 2026-07-06.
 
-| ID | Question | Options |
-|----|----------|---------|
-| O008 | Group pairwise wire shape | N ciphertexts per message; sender-keys tree; encrypted fan-out via relay |
-
-**Resolved:** **O007** → [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007) (hybrid KEM PSK + `IPeerSigningKeyResolver`; CAIP-10 for blockchain contact ids — D091).
+**Resolved:** **O007** → [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007); **O008** → D095 (N ciphertexts per message).
 
 **Cross-project (e2e-message-crypto):** D090/E023 (no legacy wire); three tiers E021/E022; peer signing keys E016/D081; relay identity format E017/D082; retired PSK ledger E018/D083; PSK in `profile.db` `chat_targets` E008/D084; passive epoch advance E019/D085; rich OOB bundle E020/D086; auto-key O007/E024.  
-**Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — not chat wire scope.
-
-When resolved, move rows to numbered decisions above.
+**Cross-project (platform-safety-limits):** LLM response caps, profile JSON store limits — tracked in [platform-safety-limits/](../platform-safety-limits/), not this checklist.
