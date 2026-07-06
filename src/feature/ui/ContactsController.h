@@ -30,6 +30,7 @@ public:
     Rml::String nickname;
     Rml::String relay_id;
     Rml::String trust;
+    Rml::String signing_fingerprint;
   };
 
   bool RegisterModel(Rml::Context* context);

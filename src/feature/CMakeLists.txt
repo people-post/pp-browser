@@ -7,6 +7,7 @@ set(PP_BROWSER_FEATURE_SOURCES
   messaging/ChatSyncService.cpp
   messaging/RelayDirectorySigningKeyResolver.cpp
   messaging/EpochBumpCoordinator.cpp
+  messaging/PskSessionCoordinator.cpp
   messaging/Libp2pChatHistoryService.cpp
   messaging/SqlitePskSessionStore.cpp
   messaging/ContactActionDispatcher.cpp

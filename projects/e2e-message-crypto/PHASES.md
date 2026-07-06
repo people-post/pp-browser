@@ -192,14 +192,14 @@ d0 (complete)
 
 **Depends on:** c2; chat-storage “Secure message” thread creation (v2b).
 
-- [ ] Secure-message flow: **Generate** PSK (CSPRNG, E011) — default for thread starter
-- [ ] **Export** epoch-1 key: raw base64 + Copy + fingerprint display (E011)
-- [ ] **Import** PSK: raw base64 (E011) or bundle on rotation (E020/D086)
-- [ ] Fingerprint compare + explicit confirm; persist **`psk_verified_at`**; E2E send gate until verified (E011)
-- [ ] Add-contact: display signing-key fingerprint (E016); **`[post-v1]`** explicit confirm
-- [ ] Key rotation flow: `rotate_psk` → export **`pp-browser-psk-bundle-v1`** (E020/D086); append `retired_psks[]`, bump `session_epoch` (E018); epoch-only bump (D014) without retired entry
-- [ ] Bundle import: merge retired tail, cap at **`kMaxRetiredPskEpochs` (8)**; truncate disclosure when export omits older epochs
-- [ ] Compromise path hooks chat-storage D011/D038 UX (choice sheet + E018 disclosure copy)
+- [x] Secure-message flow: **Generate** PSK (CSPRNG, E011) — default for thread starter
+- [x] **Export** epoch-1 key: raw base64 + Copy + fingerprint display (E011)
+- [x] **Import** PSK: raw base64 (E011) or bundle on rotation (E020/D086)
+- [x] Fingerprint compare + explicit confirm; persist **`psk_verified_at`**; E2E send gate until verified (E011)
+- [x] Add-contact: display signing-key fingerprint (E016); **`[post-v1]`** explicit confirm
+- [x] Key rotation flow: `rotate_psk` → export **`pp-browser-psk-bundle-v1`** (E020/D086); append `retired_psks[]`, bump `session_epoch` (E018); epoch-only bump (D014) without retired entry
+- [x] Bundle import: merge retired tail, cap at **`kMaxRetiredPskEpochs` (8)**; truncate disclosure when export omits older epochs
+- [x] Compromise path hooks chat-storage D011/D038 UX (choice sheet + E018 disclosure copy)
 - [ ] Optional: QR encode/decode for PSK
 
 **Exit criteria:** User can start e2e thread, verify fingerprint, send/receive, rotate after simulated epoch bump.

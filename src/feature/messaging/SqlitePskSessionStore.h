@@ -24,7 +24,7 @@ public:
   Roe<void> MarkPskVerified(const ChatTargetKey& key, int64_t verified_at_ms) override;
   Roe<bool> IsPskVerified(const ChatTargetKey& key) const override;
   Roe<PskBundleV1> ExportPskBundle(const ChatTargetKey& key) const override;
-  Roe<void> ImportPskBundle(const PskBundleV1& bundle) override;
+  Roe<void> ImportPskBundle(const ChatTargetKey& key, const PskBundleV1& bundle) override;
 
 private:
   Roe<sqlite3*> OpenDb() const;

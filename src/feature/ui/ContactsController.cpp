@@ -1,6 +1,7 @@
 #include "feature/ui/ContactsController.h"
 
-#include "base/messaging/ThreadTypes.h"
+#include "base/crypto/PskFingerprint.h"
+#include "base/people/Ed25519Signer.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/people/ContactTypes.h"
 #include "feature/messaging/MessagingHub.h"
@@ -41,6 +42,19 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
   detail.nickname = contact.server_nickname.c_str();
   detail.relay_id = PrimaryRelayId(contact).c_str();
   detail.trust = TrustLevelToString(contact.trust).c_str();
+  if (MessagingHub::Instance().IsInitialized()) {
+    const std::string relay_id = PrimaryRelayId(contact);
+    if (!relay_id.empty()) {
+      if (auto key = MessagingHub::Instance().SigningKeys().Get(ContactIdKindToString(ContactIdKind::RelayUser),
+                                                                relay_id)) {
+        if (auto bytes = Ed25519Signer::FromBase64(key->signing_public_key_b64)) {
+          if (auto digest = PskFingerprint::Compute(*bytes)) {
+            detail.signing_fingerprint = PskFingerprint::FormatDisplay(*digest).c_str();
+          }
+        }
+      }
+    }
+  }
   return detail;
 }
 
@@ -86,6 +100,7 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
       detail_handle.RegisterMember("nickname", &ContactDetail::nickname);
       detail_handle.RegisterMember("relay_id", &ContactDetail::relay_id);
       detail_handle.RegisterMember("trust", &ContactDetail::trust);
+      detail_handle.RegisterMember("signing_fingerprint", &ContactDetail::signing_fingerprint);
     }
     ctor.RegisterArray<std::vector<ContactListRow>>();
     ctor.Bind("contacts", &controller.contacts_);
@@ -233,9 +248,11 @@ void ContactsController::OnSecureMessage() {
   }
 
   const std::string contact_id = selected_.id.c_str();
-  if (!MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e)) {
+  auto thread = MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
+  if (!thread) {
     return;
   }
+  (void)MessagingHub::Instance().P2p().EnsurePskGenerated(thread->id);
 
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
   ShellHost::Instance().SetPrimaryPane("chat");

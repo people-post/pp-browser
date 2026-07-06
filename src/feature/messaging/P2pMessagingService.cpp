@@ -44,7 +44,7 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
                                          IPeerSigningKeyResolver& signing_key_resolver, IPskSessionStore& psk_store)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), psk_store_(psk_store),
-      epoch_coordinator_(store) {
+      epoch_coordinator_(store), psk_coordinator_(store, psk_store) {
   redirectLogger("P2pMessagingService");
   receive_pipeline_ = std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_);
   peer_history_ = std::make_unique<Libp2pChatHistoryService>(store_, identity_, psk_store_);
@@ -105,6 +105,14 @@ bool P2pMessagingService::IsThreadCompromised(const std::string& thread_id) cons
   return IsE2ePrivateThread(thread_id) && IsE2eThreadCompromised(store_, thread_id);
 }
 
+bool P2pMessagingService::IsPskReadyToSend(const std::string& thread_id) const {
+  if (!IsE2ePrivateThread(thread_id)) {
+    return true;
+  }
+  auto status = psk_coordinator_.GetStatus(thread_id);
+  return status && status->has_psk && status->verified;
+}
+
 void P2pMessagingService::PurgeRetryQueueForThread(const std::string& thread_id) {
   std::lock_guard lock(retry_mutex_);
   retry_queue_.erase(std::remove_if(retry_queue_.begin(), retry_queue_.end(),
@@ -133,6 +141,49 @@ Roe<void> P2pMessagingService::PauseIntegrityOnly(const std::string& thread_id) 
   }
   PurgeRetryQueueForThread(thread_id);
   return epoch_coordinator_.PauseOnly(thread_id);
+}
+
+Roe<std::string> P2pMessagingService::RotatePskAndExportBundle(const std::string& thread_id) {
+  if (!IsE2ePrivateThread(thread_id)) {
+    return Error("Not a private E2E thread");
+  }
+  auto bundle = psk_coordinator_.RotatePskAndExportBundle(thread_id, util::NowUnixMs());
+  if (!bundle) {
+    return bundle.error();
+  }
+  PurgeRetryQueueForThread(thread_id);
+  if (on_messages_changed_) {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+  }
+  return bundle;
+}
+
+Roe<PskSessionStatus> P2pMessagingService::GetPskStatus(const std::string& thread_id) const {
+  return psk_coordinator_.GetStatus(thread_id);
+}
+
+Roe<PskExportView> P2pMessagingService::EnsurePskGenerated(const std::string& thread_id) {
+  return psk_coordinator_.EnsureGenerated(thread_id);
+}
+
+Roe<PskExportView> P2pMessagingService::GetPskExportView(const std::string& thread_id) const {
+  return psk_coordinator_.GetExportView(thread_id);
+}
+
+Roe<std::string> P2pMessagingService::ExportPskBundleJson(const std::string& thread_id) const {
+  return psk_coordinator_.ExportBundleJson(thread_id);
+}
+
+Roe<void> P2pMessagingService::ImportPskRawBase64(const std::string& thread_id, const std::string& raw_b64) {
+  return psk_coordinator_.ImportRawBase64(thread_id, raw_b64);
+}
+
+Roe<void> P2pMessagingService::ImportPskBundleJson(const std::string& thread_id, const std::string& bundle_json) {
+  return psk_coordinator_.ImportBundleJson(thread_id, bundle_json);
+}
+
+Roe<void> P2pMessagingService::MarkPskVerified(const std::string& thread_id) {
+  return psk_coordinator_.MarkVerified(thread_id, util::NowUnixMs());
 }
 
 void P2pMessagingService::TailSyncActiveE2eThread() {
@@ -309,7 +360,10 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     return Error("Public tier messaging is not enabled yet");
   }
   if ((*thread)->channel == ThreadChannel::E2e && IsThreadCompromised(thread_id)) {
-    return Error("Messaging paused — start a new secure chat or delete this conversation");
+    return Error("Messaging paused — rotate the encryption key or pause only");
+  }
+  if ((*thread)->channel == ThreadChannel::E2e && !IsPskReadyToSend(thread_id)) {
+    return Error("Verify the encryption key with your contact before sending");
   }
   if ((*thread)->peer_identity_value.empty()) {
     return Error("Direct thread missing peer identity");

@@ -45,7 +45,7 @@ public:
   virtual Roe<void> MarkPskVerified(const ChatTargetKey& key, int64_t verified_at_ms) = 0;
   virtual Roe<bool> IsPskVerified(const ChatTargetKey& key) const = 0;
   virtual Roe<PskBundleV1> ExportPskBundle(const ChatTargetKey& key) const = 0;
-  virtual Roe<void> ImportPskBundle(const PskBundleV1& bundle) = 0;
+  virtual Roe<void> ImportPskBundle(const ChatTargetKey& key, const PskBundleV1& bundle) = 0;
 };
 
 } // namespace pbr

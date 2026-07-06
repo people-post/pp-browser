@@ -3,13 +3,13 @@
 Inventory of what exists in the codebase today. Update this file when landing phase work.
 
 **Planned but not implemented:** see [DESIGN.md](DESIGN.md) and D008–D068 in [DECISIONS.md](DECISIONS.md).  
-**Agent batch:** Waves **1–2** merged; **Wave 3** landed; **Wave 4** (v6-schema through **v6-integrity**) landed; **Wave 5** (e2e **c2**) landed — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
+**Agent batch:** Waves **1–2** merged; **Wave 3** landed; **Wave 4** (v6) landed; **Wave 5** (e2e **c2**) and **Wave 6** (e2e **c3**) landed — see [PHASES § Agent batch delivery](PHASES.md#agent-batch-delivery-order).
 
 ## Next agent — start here
 
 | Priority | Work | Blocked by |
 |----------|------|------------|
-| **Wave 6** | [e2e c3](../e2e-message-crypto/PHASES.md#phase-c3--key-distribution-ux) — PSK UX, verify gate, rotation | c2 (done) |
+| **c3+ / post-v1** | `e2e_public` auto-key (E013/E024) | c3 (done) |
 | **UX gaps (v2a-core)** | Composer `maxlength` (`kMaxComposeTextBytes`) | — |
 
 **Key paths (wave 5 — c2):**
@@ -118,7 +118,7 @@ Run: `./build/tests/base_messaging_tests/pp_browser_v6_pipeline_test` (and sibli
 
 ## Known gaps (summary)
 
-1. **c3** — PSK export/import, fingerprint gate, rotation UX; enable **`e2e_public`** send.
+1. **c3+** — `e2e_public` auto-key send path.
 2. Poll still invoked each UI frame (throttled to 2 s — D032 partial).
 3. Composer maxlength not wired.
 4. Live relay integration tests (D093) — client ready; coordinate against external relay.

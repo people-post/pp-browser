@@ -2,14 +2,17 @@
 
 #include "base/messaging/MessagingJson.h"
 #include "base/net/RegistrationClientUtil.h"
+#include "base/people/ContactTypes.h"
+#include "feature/messaging/P2pMessagingService.h"
 
 #include <nlohmann/json.hpp>
 
 namespace pbr {
 
 ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts,
-                                                 IdentityStore& identity, IRegistrationClient* registration)
-    : inbox_(inbox), contacts_(contacts), identity_(identity), registration_(registration) {
+                                                 IdentityStore& identity, IRegistrationClient* registration,
+                                                 P2pMessagingService* p2p)
+    : inbox_(inbox), contacts_(contacts), identity_(identity), registration_(registration), p2p_(p2p) {
   redirectLogger("ContactActionDispatcher");
 }
 
@@ -20,6 +23,24 @@ void ContactActionDispatcher::SetRegistrationClient(IRegistrationClient* registr
 void ContactActionDispatcher::SetOnActionMessage(std::function<void(const std::string& message)> callback) {
   on_action_message_ = std::move(callback);
 }
+
+namespace {
+
+std::optional<std::string> PrimaryRelayIdFromHit(const DirectoryHit& hit) {
+  for (const ContactId& id : hit.ids) {
+    if (id.kind == ContactIdKind::RelayUser && id.primary) {
+      return id.value;
+    }
+  }
+  for (const ContactId& id : hit.ids) {
+    if (id.kind == ContactIdKind::RelayUser) {
+      return id.value;
+    }
+  }
+  return std::nullopt;
+}
+
+} // namespace
 
 Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::string& payload_json) {
   const nlohmann::json payload = nlohmann::json::parse(payload_json, nullptr, false);
@@ -34,8 +55,14 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     ThreadChannel channel = ThreadChannel::E2ePublic;
     if (payload.contains("contact_id") && payload["contact_id"].is_string()) {
       contact_id = payload["contact_id"].get<std::string>();
-    } else if (payload.contains("directory_hit") && payload["directory_hit"].is_object()) {
+    } else     if (payload.contains("directory_hit") && payload["directory_hit"].is_object()) {
       const DirectoryHit hit = DirectoryHitFromJson(payload["directory_hit"]);
+      if (p2p_ && hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
+        if (auto relay_id = PrimaryRelayIdFromHit(hit)) {
+          p2p_->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), *relay_id,
+                                       *hit.signing_public_key_b64, "directory");
+        }
+      }
       auto contact = contacts_.AddFromDirectoryHit(hit);
       if (!contact) {
         return contact.error();
@@ -62,6 +89,9 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!thread) {
       return thread.error();
     }
+    if (p2p_) {
+      (void)p2p_->EnsurePskGenerated(thread->id);
+    }
     if (on_action_message_) {
       on_action_message_("Opened secure conversation with " + thread->title);
     }
@@ -73,6 +103,12 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       return Error("Missing directory_hit");
     }
     const DirectoryHit hit = DirectoryHitFromJson(payload["directory_hit"]);
+    if (p2p_ && hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
+      if (auto relay_id = PrimaryRelayIdFromHit(hit)) {
+        p2p_->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), *relay_id,
+                                     *hit.signing_public_key_b64, "directory");
+      }
+    }
     auto contact = contacts_.AddFromDirectoryHit(hit);
     if (!contact) {
       return contact.error();

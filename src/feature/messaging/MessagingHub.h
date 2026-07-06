@@ -42,6 +42,7 @@ public:
   IRegistrationClient& Registration();
 
   void BindAgent(AgentSession& agent);
+  PeerSigningKeyStore& SigningKeys();
 
 private:
   MessagingHub() = default;

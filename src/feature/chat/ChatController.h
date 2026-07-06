@@ -59,6 +59,13 @@ private:
     bool show_sync_with_peer = false;
     bool show_gap_banner = false;
     bool show_compromised_banner = false;
+    bool show_psk_setup_banner = false;
+    bool show_psk_import = false;
+    bool psk_has_key = false;
+    bool psk_verified = false;
+    Rml::String psk_fingerprint;
+    Rml::String psk_export_b64;
+    Rml::String psk_import_text;
     bool sync_in_progress = false;
     std::vector<TranscriptDisplayRow> turns;
     std::vector<MessageDisplayRow> messages;
@@ -101,6 +108,11 @@ private:
   static void RetryGapSyncCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void StartNewSecureChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void PauseIntegrityCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CopyPskKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void TogglePskImportCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ImportPskCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void VerifyPskCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void RotatePskExportCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenWorkingSetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
@@ -113,6 +125,11 @@ private:
   void OnRetryGapSync();
   void OnStartNewSecureChat();
   void OnPauseIntegrityOnly();
+  void OnCopyPskKey();
+  void OnTogglePskImport();
+  void OnImportPsk();
+  void OnVerifyPsk();
+  void OnRotatePskExport();
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
   void SendChatAction(const std::string& entry_id, int action_index);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
@@ -122,6 +139,7 @@ private:
   void SyncDisplayFromThread();
   void SyncShellSessions();
   void UpdateThreadChrome();
+  void ResetChatPanelState();
   void UpdateSidebarPreview(const std::string& preview_text);
   void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
                             const std::string& finish_reason = {}, const std::string& thread_id = {},

@@ -44,6 +44,7 @@ public:
       throw std::runtime_error("psk bytes");
     }
     psk.master_psk_b64 = Base64Encode(*master);
+    psk.psk_verified_at = 1;
     if (!psk_store.Save(psk)) {
       throw std::runtime_error("psk save");
     }

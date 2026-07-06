@@ -26,6 +26,7 @@ void InstallTestPsk(SqlitePskSessionStore& psk_store, const Thread& thread) {
   record.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
   record.session_epoch = 1;
   record.master_psk_b64 = Base64Encode(TestMasterPsk());
+  record.psk_verified_at = 1;
   ASSERT_TRUE(static_cast<bool>(psk_store.Save(record)));
 }
 

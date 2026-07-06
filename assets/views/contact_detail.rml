@@ -7,10 +7,12 @@
     <h2 class="heading-2" data-rml="selected.display_name"></h2>
     <p class="text muted" data-if="selected.nickname != ''">Nickname: <span data-rml="selected.nickname"></span></p>
     <p class="text muted" data-if="selected.relay_id != ''">Relay ID: <span data-rml="selected.relay_id"></span></p>
+    <p class="text muted" data-if="selected.signing_fingerprint != ''">Signing fingerprint: <span data-rml="selected.signing_fingerprint"></span></p>
     <p class="text muted" data-if="selected.trust != ''">Trust: <span data-rml="selected.trust"></span></p>
   </div>
 
   <div class="contacts-actions">
-    <button class="btn btn-primary" type="button" data-event-click="start_chat()">Start chat</button>
+    <button class="btn btn-primary" type="button" data-event-click="secure_message()">Secure message</button>
+    <button class="btn" type="button" data-event-click="start_chat()">Start chat</button>
   </div>
 </div>

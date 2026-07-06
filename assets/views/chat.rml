@@ -23,9 +23,22 @@
     <button class="chat-suggestion" data-event-click="retry_gap_sync()">Retry sync</button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_compromised_banner && !sync_in_progress">
-    <p class="text muted">Message integrity issue detected. Sending and sync are paused until you resolve this.</p>
-    <button class="chat-suggestion" data-event-click="start_new_secure_chat()">Start new secure chat</button>
+    <p class="text muted">Message integrity issue detected. Sending and sync are paused. Rotate the encryption key and share the bundle with your contact, or pause only.</p>
+    <button class="chat-suggestion" data-event-click="rotate_psk_export()">Rotate key &amp; export bundle</button>
+    <button class="chat-suggestion" data-event-click="start_new_secure_chat()">New epoch (same key)</button>
     <button class="chat-suggestion" data-event-click="pause_integrity_only()">Pause only</button>
+  </div>
+  <div class="chat-gap-banner stack" data-if="show_psk_setup_banner && !sync_in_progress">
+    <p class="text muted" data-if="!psk_has_key">Share your encryption key with this contact out of band, then verify the fingerprint before sending.</p>
+    <p class="text muted" data-if="psk_has_key && !psk_verified">Compare this fingerprint with your contact, then confirm verification before sending.</p>
+    <p class="text muted" data-if="psk_fingerprint != ''">Fingerprint: <span data-rml="psk_fingerprint"></span></p>
+    <p class="text muted" data-if="psk_export_b64 != ''">Key: <span data-rml="psk_export_b64"></span></p>
+    <button class="chat-suggestion" data-if="psk_has_key" data-event-click="copy_psk_key()">Copy key</button>
+    <button class="chat-suggestion" data-if="psk_has_key && !psk_verified" data-event-click="verify_psk()">I've verified this fingerprint</button>
+    <button class="chat-suggestion" data-event-click="toggle_psk_import()">Import key or bundle</button>
+    <textarea class="prompt-composer-input" data-if="show_psk_import" rows="4" data-value="psk_import_text"
+              placeholder="Paste raw base64 key or pp-browser-psk-bundle-v1 JSON"></textarea>
+    <button class="chat-suggestion" data-if="show_psk_import" data-event-click="import_psk()">Install imported key</button>
   </div>
   <div class="messages" data-mount-id="messages">
     <div class="chat-empty stack" data-if="!has_turns && !loading">

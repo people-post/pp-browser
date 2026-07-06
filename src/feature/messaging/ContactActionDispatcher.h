@@ -4,6 +4,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/InboxController.h"
+#include "feature/messaging/P2pMessagingService.h"
 #include "base/net/ServiceClients.h"
 
 #include <functional>
@@ -15,7 +16,7 @@ namespace pbr {
 class ContactActionDispatcher : public Module {
 public:
   ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts, IdentityStore& identity,
-                          IRegistrationClient* registration);
+                          IRegistrationClient* registration, P2pMessagingService* p2p = nullptr);
 
   Roe<std::optional<std::string>> Dispatch(const std::string& payload_json);
   void SetRegistrationClient(IRegistrationClient* registration);
@@ -26,6 +27,7 @@ private:
   ContactsStore& contacts_;
   IdentityStore& identity_;
   IRegistrationClient* registration_ = nullptr;
+  P2pMessagingService* p2p_ = nullptr;
   std::function<void(const std::string&)> on_action_message_;
 };
 

@@ -152,20 +152,26 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   }
 
   if (was_active) {
-    if (!ai_home_thread_id_.empty()) {
+    active_thread_id_.clear();
+    if (auto ensure = EnsureAiHomeThread(); ensure) {
       if (auto opened = OpenThread(ai_home_thread_id_)) {
         return {};
       }
     }
     auto threads = store_.ListThreads();
-    if (!threads || threads->empty()) {
-      active_thread_id_.clear();
-      if (on_thread_changed_) {
-        on_thread_changed_();
+    if (threads) {
+      for (const Thread& candidate : *threads) {
+        if (candidate.id == thread_id) {
+          continue;
+        }
+        if (auto opened = OpenThread(candidate.id)) {
+          return {};
+        }
       }
-      return {};
     }
-    (void)OpenThread(threads->front().id);
+    if (on_thread_changed_) {
+      on_thread_changed_();
+    }
   } else if (on_thread_changed_) {
     on_thread_changed_();
   }

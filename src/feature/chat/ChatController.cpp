@@ -25,6 +25,7 @@
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
+#include <RmlUi/Core/SystemInterface.h>
 
 #include <nlohmann/json.hpp>
 
@@ -281,6 +282,18 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "thread_encrypted");
   DataModelHost::Instance().Dirty("chat", "compose_disabled");
   DataModelHost::Instance().Dirty("chat", "draft_placeholder");
+  DataModelHost::Instance().Dirty("chat", "show_thread_actions");
+  DataModelHost::Instance().Dirty("chat", "show_forget_memory");
+  DataModelHost::Instance().Dirty("chat", "show_sync_with_peer");
+  DataModelHost::Instance().Dirty("chat", "show_gap_banner");
+  DataModelHost::Instance().Dirty("chat", "show_compromised_banner");
+  DataModelHost::Instance().Dirty("chat", "show_psk_setup_banner");
+  DataModelHost::Instance().Dirty("chat", "show_psk_import");
+  DataModelHost::Instance().Dirty("chat", "psk_has_key");
+  DataModelHost::Instance().Dirty("chat", "psk_verified");
+  DataModelHost::Instance().Dirty("chat", "psk_fingerprint");
+  DataModelHost::Instance().Dirty("chat", "psk_export_b64");
+  DataModelHost::Instance().Dirty("chat", "psk_import_text");
 }
 
 void DirtyChat() {
@@ -554,6 +567,31 @@ void ChatController::PauseIntegrityCallback(Rml::DataModelHandle /*model*/, Rml:
   Instance().OnPauseIntegrityOnly();
 }
 
+void ChatController::CopyPskKeyCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& /*args*/) {
+  Instance().OnCopyPskKey();
+}
+
+void ChatController::TogglePskImportCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                           const Rml::VariantList& /*args*/) {
+  Instance().OnTogglePskImport();
+}
+
+void ChatController::ImportPskCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                     const Rml::VariantList& /*args*/) {
+  Instance().OnImportPsk();
+}
+
+void ChatController::VerifyPskCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                       const Rml::VariantList& /*args*/) {
+  Instance().OnVerifyPsk();
+}
+
+void ChatController::RotatePskExportCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                             const Rml::VariantList& /*args*/) {
+  Instance().OnRotatePskExport();
+}
+
 void ChatController::FinalizeThreadDisplay() {
   ClearWorkingSet();
   working_set_by_entry_.clear();
@@ -612,8 +650,15 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                                chat_.loading = false;
                                pending_reply_.reset();
                                ClearFormState();
+                               ClearWorkingSet();
+                               working_set_by_entry_.clear();
                                widgets_by_entry_.clear();
+                               chat_.turns.clear();
                                RefreshFromMessaging();
+                               if (shell_.sessions.empty()) {
+                                 ShellHost::Instance().SelectNavTab(NavTab::Home);
+                                 ShellHost::Instance().CloseCompactChat();
+                               }
                                ShellHost::Instance().RequestSyncLayout();
                                ShellHost::Instance().DirtyWindow();
                              });
@@ -810,9 +855,144 @@ void ChatController::OnPauseIntegrityOnly() {
   if (!MessagingHub::Instance().P2p().PauseIntegrityOnly(thread_id)) {
     return;
   }
-  chat_.status = "Messaging paused until you start a new secure chat.";
+  chat_.status = "Messaging paused until you rotate the encryption key.";
   RefreshFromMessaging();
-  DirtyChatChrome();
+  DirtyChatHeader();
+  ShellHost::Instance().DirtyWindow();
+}
+
+void ChatController::OnCopyPskKey() {
+  if (!messaging_ready_) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+  auto exported = MessagingHub::Instance().P2p().EnsurePskGenerated(thread_id);
+  if (!exported) {
+    chat_.status = exported.error().message.c_str();
+    DirtyChatChrome();
+    return;
+  }
+  chat_.psk_export_b64 = exported->master_psk_b64.c_str();
+  chat_.psk_fingerprint = exported->fingerprint.c_str();
+  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+    system->SetClipboardText(chat_.psk_export_b64);
+  }
+  chat_.status = "Encryption key copied.";
+  DirtyChatHeader();
+  ShellHost::Instance().DirtyWindow();
+}
+
+void ChatController::OnTogglePskImport() {
+  chat_.show_psk_import = !chat_.show_psk_import;
+  DirtyChatHeader();
+  ShellHost::Instance().DirtyWindow();
+}
+
+void ChatController::OnImportPsk() {
+  if (!messaging_ready_) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+  const std::string pasted = chat_.psk_import_text.c_str();
+  if (pasted.empty()) {
+    chat_.status = "Paste a key or bundle first.";
+    DirtyChatChrome();
+    return;
+  }
+
+  if (pasted.find('{') != std::string::npos) {
+    if (auto imported = MessagingHub::Instance().P2p().ImportPskBundleJson(thread_id, pasted); !imported) {
+      chat_.status = imported.error().message.c_str();
+    } else {
+      chat_.psk_import_text = "";
+      chat_.show_psk_import = false;
+      chat_.status = "Encryption key installed. Verify the fingerprint before sending.";
+    }
+  } else if (auto imported = MessagingHub::Instance().P2p().ImportPskRawBase64(thread_id, pasted); !imported) {
+    chat_.status = imported.error().message.c_str();
+  } else {
+    chat_.psk_import_text = "";
+    chat_.show_psk_import = false;
+    chat_.status = "Encryption key installed. Verify the fingerprint before sending.";
+  }
+  RefreshFromMessaging();
+  DirtyChatHeader();
+  ShellHost::Instance().DirtyWindow();
+}
+
+void ChatController::OnVerifyPsk() {
+  if (!messaging_ready_) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  ShellFeedback::ShowConfirmWithCheckbox(
+      ShellHost::Instance().State(), "Verify encryption fingerprint",
+      "Only confirm after you compared this fingerprint with your contact out of band.",
+      "I've verified this fingerprint with my contact", false,
+      [this, thread_id](const bool confirmed, const bool checked) {
+        if (!confirmed || !checked) {
+          return;
+        }
+        auto result = MessagingHub::Instance().P2p().MarkPskVerified(thread_id);
+        if (!result) {
+          chat_.status = result.error().message.c_str();
+        } else {
+          chat_.status = "Encryption key verified. You can send secure messages.";
+        }
+        RefreshFromMessaging();
+        DirtyChatHeader();
+        ShellHost::Instance().DirtyWindow();
+      });
+  ShellHost::Instance().RequestSyncLayout();
+  ShellHost::Instance().DirtyWindow();
+}
+
+void ChatController::OnRotatePskExport() {
+  if (!messaging_ready_) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  ShellFeedback::ShowConfirm(
+      ShellHost::Instance().State(), "Rotate encryption key?",
+      "This generates a new key, bumps the session epoch, and cancels unsent messages from the previous epoch. "
+      "Share the exported bundle with your contact out of band.",
+      [this, thread_id](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        auto bundle = MessagingHub::Instance().P2p().RotatePskAndExportBundle(thread_id);
+        if (!bundle) {
+          chat_.status = bundle.error().message.c_str();
+          DirtyChatChrome();
+          ShellHost::Instance().DirtyWindow();
+          return;
+        }
+        if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+          system->SetClipboardText(*bundle);
+        }
+        ShellFeedback::ShowAlert(
+            ShellHost::Instance().State(), "Rotation bundle exported",
+            "The pp-browser-psk-bundle-v1 JSON was copied to your clipboard. Send it to your contact securely.");
+        chat_.status = "Encryption key rotated. Share the bundle with your contact.";
+        RefreshFromMessaging();
+        DirtyChatHeader();
+        ShellHost::Instance().DirtyWindow();
+      });
+  ShellHost::Instance().RequestSyncLayout();
   ShellHost::Instance().DirtyWindow();
 }
 
@@ -874,6 +1054,29 @@ void ChatController::SyncShellSessions() {
   }
 }
 
+void ChatController::ResetChatPanelState() {
+  chat_.thread_title = "";
+  chat_.thread_subtitle = "";
+  chat_.thread_encrypted = false;
+  chat_.compose_disabled = false;
+  chat_.show_thread_actions = false;
+  chat_.show_forget_memory = false;
+  chat_.show_sync_with_peer = false;
+  chat_.show_gap_banner = false;
+  chat_.show_compromised_banner = false;
+  chat_.show_psk_setup_banner = false;
+  chat_.show_psk_import = false;
+  chat_.psk_has_key = false;
+  chat_.psk_verified = false;
+  chat_.psk_fingerprint = "";
+  chat_.psk_export_b64 = "";
+  chat_.messages.clear();
+  chat_.turns.clear();
+  chat_.has_turns = false;
+  chat_.use_messages_layout = true;
+  chat_.draft_placeholder = "Ask anything…";
+}
+
 void ChatController::UpdateThreadChrome() {
   if (!messaging_ready_) {
     return;
@@ -888,6 +1091,12 @@ void ChatController::UpdateThreadChrome() {
     chat_.show_sync_with_peer = false;
     chat_.show_gap_banner = false;
     chat_.show_compromised_banner = false;
+    chat_.show_psk_setup_banner = false;
+    chat_.show_psk_import = false;
+    chat_.psk_has_key = false;
+    chat_.psk_verified = false;
+    chat_.psk_fingerprint = "";
+    chat_.psk_export_b64 = "";
     if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2e) {
       if (auto epoch = MessagingHub::Instance().Store().GetChatTargetSessionEpoch(thread->id)) {
         if (auto sync_state = MessagingHub::Instance().Store().GetPeerSyncState(thread->id, *epoch)) {
@@ -903,6 +1112,26 @@ void ChatController::UpdateThreadChrome() {
         }
       } else {
         chat_.show_sync_with_peer = true;
+      }
+
+      if (!chat_.show_compromised_banner) {
+        if (auto status = MessagingHub::Instance().P2p().GetPskStatus(thread->id)) {
+          chat_.psk_has_key = status->has_psk;
+          chat_.psk_verified = status->verified;
+          chat_.psk_fingerprint = status->fingerprint.c_str();
+          chat_.show_psk_setup_banner = !status->has_psk || !status->verified;
+          if (status->has_psk) {
+            if (auto exported = MessagingHub::Instance().P2p().GetPskExportView(thread->id)) {
+              chat_.psk_export_b64 = exported->master_psk_b64.c_str();
+            }
+          } else if (auto generated = MessagingHub::Instance().P2p().EnsurePskGenerated(thread->id)) {
+            chat_.psk_has_key = true;
+            chat_.psk_fingerprint = generated->fingerprint.c_str();
+            chat_.psk_export_b64 = generated->master_psk_b64.c_str();
+            chat_.show_psk_setup_banner = true;
+          }
+          chat_.compose_disabled = !status->has_psk || !status->verified;
+        }
       }
     }
     if (thread->kind == ThreadKind::Ai) {
@@ -924,6 +1153,23 @@ void ChatController::UpdateThreadChrome() {
           thread->encrypted ? "End-to-end encrypted" : "Group chat";
       chat_.draft_placeholder = "Message the group… or @ai ask assistant";
     }
+  } else {
+    chat_.thread_title = "";
+    chat_.thread_subtitle = "";
+    chat_.thread_encrypted = false;
+    chat_.compose_disabled = false;
+    chat_.show_thread_actions = false;
+    chat_.show_forget_memory = false;
+    chat_.show_sync_with_peer = false;
+    chat_.show_gap_banner = false;
+    chat_.show_compromised_banner = false;
+    chat_.show_psk_setup_banner = false;
+    chat_.show_psk_import = false;
+    chat_.psk_has_key = false;
+    chat_.psk_verified = false;
+    chat_.psk_fingerprint = "";
+    chat_.psk_export_b64 = "";
+    chat_.draft_placeholder = "Ask anything…";
   }
 }
 
@@ -931,8 +1177,14 @@ void ChatController::SyncDisplayFromThread() {
   if (!messaging_ready_) {
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  chat_.messages = MessagingHub::Instance().Inbox().BuildDisplayRows(thread_id);
+  auto& inbox = MessagingHub::Instance().Inbox();
+  if (!inbox.GetActiveThread()) {
+    ResetChatPanelState();
+    return;
+  }
+  const std::string thread_id = inbox.ActiveThreadId();
+  chat_.messages = inbox.BuildDisplayRows(thread_id);
+  chat_.turns.clear();
   chat_.has_turns = !chat_.messages.empty();
   chat_.use_messages_layout = true;
 }
@@ -1474,6 +1726,13 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("show_sync_with_peer", &ChatController::Instance().chat_.show_sync_with_peer);
         ctor.Bind("show_gap_banner", &ChatController::Instance().chat_.show_gap_banner);
         ctor.Bind("show_compromised_banner", &ChatController::Instance().chat_.show_compromised_banner);
+        ctor.Bind("show_psk_setup_banner", &ChatController::Instance().chat_.show_psk_setup_banner);
+        ctor.Bind("show_psk_import", &ChatController::Instance().chat_.show_psk_import);
+        ctor.Bind("psk_has_key", &ChatController::Instance().chat_.psk_has_key);
+        ctor.Bind("psk_verified", &ChatController::Instance().chat_.psk_verified);
+        ctor.Bind("psk_fingerprint", &ChatController::Instance().chat_.psk_fingerprint);
+        ctor.Bind("psk_export_b64", &ChatController::Instance().chat_.psk_export_b64);
+        ctor.Bind("psk_import_text", &ChatController::Instance().chat_.psk_import_text);
         ctor.Bind("sync_in_progress", &ChatController::Instance().chat_.sync_in_progress);
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
@@ -1489,6 +1748,11 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("retry_gap_sync", &ChatController::RetryGapSyncCallback);
         ctor.BindEventCallback("start_new_secure_chat", &ChatController::StartNewSecureChatCallback);
         ctor.BindEventCallback("pause_integrity_only", &ChatController::PauseIntegrityCallback);
+        ctor.BindEventCallback("copy_psk_key", &ChatController::CopyPskKeyCallback);
+        ctor.BindEventCallback("toggle_psk_import", &ChatController::TogglePskImportCallback);
+        ctor.BindEventCallback("import_psk", &ChatController::ImportPskCallback);
+        ctor.BindEventCallback("verify_psk", &ChatController::VerifyPskCallback);
+        ctor.BindEventCallback("rotate_psk_export", &ChatController::RotatePskExportCallback);
       })) {
     return false;
   }

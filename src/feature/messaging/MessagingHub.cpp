@@ -105,7 +105,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
 
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, *psk_store_);
-  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_);
+  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
 
   initialized_ = true;
   return {};
@@ -130,6 +130,10 @@ Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string&
 void MessagingHub::BindAgent(AgentSession& agent) {
   agent_ = &agent;
   router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, agent);
+}
+
+PeerSigningKeyStore& MessagingHub::SigningKeys() {
+  return signing_key_store_;
 }
 
 void MessagingHub::Shutdown() {

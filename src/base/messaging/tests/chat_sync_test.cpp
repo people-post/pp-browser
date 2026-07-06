@@ -69,6 +69,7 @@ public:
       throw std::runtime_error("Failed to build test PSK");
     }
     psk.master_psk_b64 = Base64Encode(*master);
+    psk.psk_verified_at = 1;
     if (!psk_store.Save(psk)) {
       throw std::runtime_error("Failed to save test PSK");
     }
