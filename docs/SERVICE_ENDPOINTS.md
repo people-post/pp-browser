@@ -29,10 +29,10 @@ When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegist
 
 | Step | HTTP | Request body | Response |
 |------|------|--------------|----------|
-| Start | `POST /v1/register/start` | `{ public_key, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
-| Finish | `POST /v1/register/finish` | `{ challenge, public_key, signature, timestamp, nickname?, signature_alg? }` | `{ success, relay_user_id, message, expires_at }` |
+| Start | `POST /v1/register/start` | `{ public_key, kem_public_key_b64, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
+| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, signature, timestamp, nickname?, signature_alg? }` | `{ success, relay_user_id, message, expires_at }` |
 
-Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=1`, challenge (len-prefixed UTF-8), 32-byte raw public key, `signature_alg` u8 (`0=ed25519`), `timestamp` i64 BE.
+Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=2`, challenge (len-prefixed UTF-8), 32-byte raw Ed25519 public key, 1216-byte raw hybrid KEM public key, `signature_alg` u8 (`0=ed25519`), `timestamp` i64 BE.
 
 ## HTTP relay API auth (per-request sign bytes)
 
@@ -50,7 +50,8 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 
 | HTTP | Purpose |
 |------|---------|
-| `GET /v1/users/:relay_user_id` | Public lookup (`signing_public_key_b64`, nickname, expires_at) |
+| `GET /v1/search?q=` | Search relay users (`hits[]` with `signing_public_key_b64`, `kem_public_key_b64`, `relay_user_id`, `nickname`) |
+| `GET /v1/users/:relay_user_id` | Public lookup (`signing_public_key_b64`, `kem_public_key_b64`, nickname, expires_at) |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
 
 ## Native agent tools

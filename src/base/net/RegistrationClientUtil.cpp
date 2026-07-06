@@ -11,15 +11,19 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
   if (!loaded) {
     return loaded.error();
   }
+  if (loaded->kem_public_key_b64.empty()) {
+    return Error("kem_public_key_b64 not set");
+  }
 
-  auto start = registration.StartRegistration(loaded->public_key_b64, nickname);
+  auto start = registration.StartRegistration(loaded->public_key_b64, nickname, "ed25519",
+                                              loaded->kem_public_key_b64);
   if (!start) {
     return start.error();
   }
 
   const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes =
-      BuildRegistrationSignBytes(start->challenge, loaded->public_key_b64, start->signature_alg, timestamp);
+  const auto sign_bytes = BuildRegistrationSignBytes(start->challenge, loaded->public_key_b64,
+                                                     loaded->kem_public_key_b64, start->signature_alg, timestamp);
   if (sign_bytes.empty()) {
     return Error("Failed to build registration sign bytes");
   }
@@ -30,7 +34,7 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
   }
 
   return registration.FinishRegistration(start->challenge, loaded->public_key_b64, nickname, *signature, timestamp,
-                                       start->signature_alg);
+                                           start->signature_alg, loaded->kem_public_key_b64);
 }
 
 Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registration, IdentityStore& identity,

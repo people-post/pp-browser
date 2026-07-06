@@ -55,11 +55,13 @@ public:
   virtual ~IRegistrationClient() = default;
   virtual Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64,
                                                          const std::string& nickname,
-                                                         const std::string& signature_alg = "ed25519") = 0;
+                                                         const std::string& signature_alg = "ed25519",
+                                                         const std::string& kem_public_key_b64 = "") = 0;
   virtual Roe<RegistrationResult> FinishRegistration(const std::string& challenge,
                                                      const std::string& public_key_b64, const std::string& nickname,
                                                      const std::string& signature, int64_t timestamp,
-                                                     const std::string& signature_alg = "ed25519") = 0;
+                                                     const std::string& signature_alg = "ed25519",
+                                                     const std::string& kem_public_key_b64 = "") = 0;
   virtual Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                                  int64_t timestamp, const std::string& relay_user_id) = 0;
 };
