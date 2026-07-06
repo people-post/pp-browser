@@ -18,7 +18,7 @@
 #include <soralog/impl/sink_to_console.hpp>
 #include <soralog/impl/sink_to_file.hpp>
 #include <soralog/impl/sink_to_nowhere.hpp>
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__ANDROID__)
 #include <soralog/impl/sink_to_syslog.hpp>
 #endif
 
@@ -674,9 +674,10 @@ namespace soralog {
 
   void ConfiguratorFromYAML::Applicator::parseSinkToSyslog(
       const std::string &name, const YAML::Node &sink_node) {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__ANDROID__)
     (void)sink_node;
-    errors_ << "E: Syslog sink '" << name << "' is not supported on Windows\n";
+    errors_ << "E: Syslog sink '" << name
+            << "' is not supported on this platform\n";
     has_error_ = true;
 #else
     bool fail = false;

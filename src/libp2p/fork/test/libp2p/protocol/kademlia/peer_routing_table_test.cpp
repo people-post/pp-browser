@@ -125,7 +125,7 @@ TEST_F(PeerRoutingTableTest, RecyclingTest) {
   std::vector<PeerId> peers;
 
   // Generate peers for first bucket, in count more than bucket capacity
-  for (int i = 0; i < 3; ++i) {
+  while (peers.size() != 3) {
     auto peer_id = testutil::randomPeerId();
     NodeId node_id(peer_id);
     if (node_id.commonPrefixLen(NodeId(self_id)) == 0) {

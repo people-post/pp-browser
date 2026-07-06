@@ -65,7 +65,7 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 
 - `protobuf/CMakeLists.txt` — Hunter removed
 - `qtils/CMakeLists.txt`, `soralog/CMakeLists.txt` — accept `PACKAGE_MANAGER=vendored`; soralog uses `target_include_directories`
-- `soralog/` — MSVC toolchain support; skip Unix-only `pthread`/`syslog` pieces on Windows; guard `sysexits.h` in `sink_to_file.cpp`; `util.hpp` uses generated thread names on Windows/Android; C++20 `atomic_flag` init, Clang-only sanitizer attrs, and MSVC `do/while` log macros; `level.hpp` undefs Windows `ERROR`/`DEBUG`/`IGNORE`/`min`/`max` macros before the `Level` enum and `std::min`/`std::max` (c-ares/Boost include `windows.h` first); root `CMakeLists.txt` defines `NOMINMAX` for MSVC
+- `soralog/` — MSVC toolchain support; skip Unix-only `pthread`/`syslog` pieces on Windows/Android; `configurator_from_yaml.cpp` guards `SinkToSyslog` like Windows on Android; guard `sysexits.h` in `sink_to_file.cpp`; `util.hpp` uses generated thread names on Windows/Android; C++20 `atomic_flag` init, Clang-only sanitizer attrs, and MSVC `do/while` log macros; `level.hpp` undefs Windows `ERROR`/`DEBUG`/`IGNORE`/`min`/`max` macros before the `Level` enum and `std::min`/`std::max` (c-ares/Boost include `windows.h` first); root `CMakeLists.txt` defines `NOMINMAX` for MSVC
 - `boost/CMakeLists.txt` — pp-browser wrapper using Boost CMake superproject; unified `boost/` include for compiled libs
 - `lsquic/` — skip duplicate `lsquic_conn_ssl.patch` on qdrvm tag; fix double-applied symbols in-tree
 - lsquic — remaining patches applied at import (`cmake/patches/libp2p/lsquic/`)
