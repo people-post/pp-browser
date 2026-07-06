@@ -8,6 +8,7 @@
 #include <libp2p/security/tls/ssl_context.hpp>
 #include <libp2p/transport/quic/connection.hpp>
 #include <libp2p/transport/quic/engine.hpp>
+#include <libp2p/transport/quic/error.hpp>
 #include <libp2p/transport/quic/listener.hpp>
 #include <libp2p/transport/quic/transport.hpp>
 #include <libp2p/transport/tcp/tcp_util.hpp>
@@ -24,9 +25,7 @@ namespace libp2p::transport {
         mux_config_{mux_config},
         local_peer_{id_mgr.getId()},
         key_codec_{std::move(key_codec)},
-        resolver_{*io_context_},
-        client4_{makeClient(boost::asio::ip::udp::v4())},
-        client6_{makeClient(boost::asio::ip::udp::v6())} {}
+        resolver_{*io_context_} {}
 
   void QuicTransport::dial(const PeerId &peer,
                            Multiaddress address,
@@ -48,8 +47,10 @@ namespace libp2p::transport {
             return cb(r.error());
           }
           auto remote = r.value().begin()->endpoint();
-          auto v4 = remote.protocol() == boost::asio::ip::udp::v4();
-          auto &client = v4 ? self->client4_ : self->client6_;
+          auto client = self->clientFor(remote);
+          if (not client) {
+            return cb(QuicError::CANT_CREATE_CONNECTION);
+          }
           client->connect(
               remote,
               peer,
@@ -80,6 +81,22 @@ namespace libp2p::transport {
 
   peer::ProtocolName QuicTransport::getProtocolId() const {
     return "/quic/1.0.0";
+  }
+
+  std::shared_ptr<lsquic::Engine> QuicTransport::clientFor(
+      boost::asio::ip::udp::endpoint remote) {
+    const auto v4 = remote.protocol() == boost::asio::ip::udp::v4();
+    auto &client = v4 ? client4_ : client6_;
+    if (client) {
+      return client;
+    }
+    try {
+      client = makeClient(v4 ? boost::asio::ip::udp::v4()
+                             : boost::asio::ip::udp::v6());
+    } catch (const boost::system::system_error &) {
+      return nullptr;
+    }
+    return client;
   }
 
   std::shared_ptr<lsquic::Engine> QuicTransport::makeClient(
