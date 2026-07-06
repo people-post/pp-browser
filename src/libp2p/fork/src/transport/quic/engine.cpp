@@ -399,7 +399,7 @@ namespace libp2p::transport::lsquic {
   void Engine::readLoop() {
     // https://github.com/cbodley/nexus/blob/d1d8486f713fd089917331239d755932c7c8ed8e/src/socket.cc#L293
     while (true) {
-      socklen_t len = socket_local_.size();
+      socklen_t len = static_cast<socklen_t>(reading_.remote.capacity());
 #ifdef _WIN32
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
       auto *recv_buf = reinterpret_cast<char *>(reading_.buf.data());
@@ -437,6 +437,7 @@ namespace libp2p::transport::lsquic {
         }
         return;
       }
+      reading_.remote.resize(static_cast<std::size_t>(len));
       lsquic_engine_packet_in(engine_,
                               reading_.buf.data(),
                               n,

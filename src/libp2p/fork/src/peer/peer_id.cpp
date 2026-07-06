@@ -98,7 +98,7 @@ namespace libp2p::peer {
     return encodeBase58(hash_.toBuffer());
   }
 
-  const std::vector<uint8_t> &PeerId::toVector() const {
+  libp2p::Bytes PeerId::toVector() const {
     return hash_.toBuffer();
   }
 

@@ -140,7 +140,8 @@ namespace libp2p::regression {
                   ->injector.template create<std::shared_ptr<Host>>();
 
       if (!jumbo_msg) {
-        write_buf_ = std::make_shared<Bytes>(getId().toVector());
+        const peer::PeerId peer_id = host_->getId();
+        write_buf_ = std::make_shared<Bytes>(peer_id.toVector());
       } else {
         static const size_t kJumboSize = 40 * 1024 * 1024;
         write_buf_ = std::make_shared<Bytes>(kJumboSize, 0x99);

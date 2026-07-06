@@ -151,7 +151,7 @@ namespace libp2p::protocol::kademlia {
     if (closer_peers) {
       for (const auto &p : closer_peers.value()) {
         pb::Message_Peer *pb_peer = pb_msg.add_closerpeers();
-        auto &pid_v = p.info.id.toVector();
+        const auto pid_v = p.info.id.toVector();
         pb_peer->set_id(std::string(pid_v.begin(), pid_v.end()));
         for (const auto &addr : p.info.addresses) {
           auto &bytes = addr.getBytesAddress();
@@ -163,7 +163,7 @@ namespace libp2p::protocol::kademlia {
     if (provider_peers) {
       for (const auto &p : provider_peers.value()) {
         pb::Message_Peer *pb_peer = pb_msg.add_providerpeers();
-        auto &pid_v = p.info.id.toVector();
+        const auto pid_v = p.info.id.toVector();
         pb_peer->set_id(std::string(pid_v.begin(), pid_v.end()));
         for (const auto &addr : p.info.addresses) {
           auto &bytes = addr.getBytesAddress();

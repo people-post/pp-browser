@@ -448,29 +448,30 @@ namespace libp2p::security::tls_details {
       log()->info("cannot unmarshal remote peer id");
       return TlsError::TLS_INCOMPATIBLE_CERTIFICATE_EXTENSION;
     }
+    auto peer_id = std::move(peer_id_res).value();
 
     auto peer_pubkey_res = key_marshaller.unmarshalPublicKey(pub_key_bytes);
     if (!peer_pubkey_res) {
       log()->info("cannot unmarshal remote public key");
       return TlsError::TLS_INCOMPATIBLE_CERTIFICATE_EXTENSION;
     }
+    auto peer_pubkey = std::move(peer_pubkey_res).value();
 
-    if (peer_pubkey_res.value().type != crypto::Key::Type::Ed25519) {
+    if (peer_pubkey.type != crypto::Key::Type::Ed25519) {
       log()->info("remote peer's public key wrong type");
       return TlsError::TLS_INCOMPATIBLE_CERTIFICATE_EXTENSION;
     }
 
     // 3. Verify
     auto verify_ext_res = verifyExtensionSignature(peer_certificate,
-                                                   peer_pubkey_res.value(),
+                                                   peer_pubkey,
                                                    bin_fields.signature,
-                                                   peer_id_res.value());
+                                                   peer_id);
     if (!verify_ext_res) {
       return std::move(verify_ext_res).as_failure();
     }
 
-    return PubkeyAndPeerId{std::move(peer_pubkey_res.value()),
-                           std::move(peer_id_res.value())};
+    return PubkeyAndPeerId{std::move(peer_pubkey), std::move(peer_id)};
   }
 
   const char *x509ErrorToStr(int error) {

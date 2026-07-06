@@ -222,12 +222,16 @@ TEST(TCP, DialToNoServer) {
       std::make_shared<TcpTransport>(context, mux_config, std::move(upgrader));
   auto ma = "/ip4/127.0.0.1/tcp/40003"_multiaddr;
 
-  transport->dial(testutil::randomPeerId(), ma, [](auto &&rc) {
+  transport->dial(testutil::randomPeerId(), ma, [context](auto &&rc) {
     ASSERT_OUTCOME_ERROR(rc, boost::asio::error::connection_refused);
+    context->stop();
   });
 
   using std::chrono_literals::operator""ms;
-  context->run_for(50ms);
+  context->run_for(500ms);
+  transport.reset();
+  context->restart();
+  context->poll();
 }
 
 /**

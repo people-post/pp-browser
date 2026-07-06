@@ -42,7 +42,10 @@ namespace libp2p::transport {
     try {
       // setup acceptor, throws
       acceptor_.open(endpoint.protocol());
+#ifndef _WIN32
+      // Windows SO_REUSEADDR allows multiple listeners on the same port.
       acceptor_.set_option(ip::tcp::acceptor::reuse_address(true));
+#endif
       acceptor_.bind(endpoint);
       acceptor_.listen();
 

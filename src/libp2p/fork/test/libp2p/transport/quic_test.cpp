@@ -19,24 +19,38 @@ using libp2p::StreamAndProtocol;
 using libp2p::StreamAndProtocolOrError;
 using libp2p::connection::Stream;
 
-auto makeInjector(std::shared_ptr<io_context> io) {
-  return libp2p::injector::makeHostInjector<
-      boost::di::extension::shared_config>(
-      boost::di::bind<io_context>().to(io));
-}
-using Injector = decltype(makeInjector(nullptr));
+namespace {
+  struct InjectorHolderBase {
+    virtual ~InjectorHolderBase() = default;
+  };
+
+  template <typename Injector>
+  struct InjectorHolder : InjectorHolderBase {
+    Injector injector;
+
+    template <typename... Args>
+    explicit InjectorHolder(Args &&...args)
+        : injector(std::forward<Args>(args)...) {}
+  };
+
+  auto makeInjector(std::shared_ptr<io_context> io) {
+    return libp2p::injector::makeHostInjector<
+        boost::di::extension::shared_config>(
+        boost::di::bind<io_context>().to(io));
+  }
+}  // namespace
 
 struct Peer {
-  Peer(std::shared_ptr<io_context> io) : injector{makeInjector(io)} {
-    inject(io);
-    inject(host);
-  }
-  template <typename T>
-  void inject(T &t) {
-    t = injector.create<T>();
+  explicit Peer(std::shared_ptr<io_context> io) {
+    using Injector = decltype(makeInjector(io));
+    injector_ =
+        std::make_unique<InjectorHolder<Injector>>(makeInjector(std::move(io)));
+    auto &injector = static_cast<InjectorHolder<Injector> *>(injector_.get())
+                         ->injector;
+    host = injector.create<std::shared_ptr<Host>>();
   }
 
-  Injector injector;
+  std::unique_ptr<InjectorHolderBase> injector_;
   std::shared_ptr<Host> host;
   std::shared_ptr<Stream> stream;
 };
