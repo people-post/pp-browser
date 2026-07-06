@@ -40,6 +40,10 @@
               placeholder="Paste raw base64 key or pp-browser-psk-bundle-v1 JSON"></textarea>
     <button class="chat-suggestion" data-if="show_psk_import" data-event-click="import_psk()">Install imported key</button>
   </div>
+  <div class="chat-gap-banner stack" data-if="show_older_history_hint && !sync_in_progress">
+    <p class="text muted">Older messages may be available from your peer.</p>
+    <button class="chat-suggestion" data-event-click="load_older_history()">Load older messages</button>
+  </div>
   <div class="messages" data-mount-id="messages">
     <div class="chat-empty stack" data-if="!has_turns && !loading">
       <h2 class="heading-2 chat-empty-title">Welcome</h2>
@@ -52,6 +56,9 @@
     <div data-if="use_messages_layout">
       <div data-for="row : messages" data-class="row.row_class">
         <p class="sender-label muted" data-if="row.sender_label != ''" data-rml="row.sender_label"></p>
+        <p class="text-xs muted chat-transport-line" data-if="row.transport_badge != ''">
+          <span data-rml="row.transport_badge"></span>
+        </p>
         <div selectable="text" data-model="chat" data-rml="row.content_rml"></div>
       </div>
     </div>

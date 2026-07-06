@@ -13,7 +13,16 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md).
 
-**Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST /api/relay/v1/streams/messages/query`; mock when `base_url` unset. See [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay). External relay is ready for integration tests ([D093](../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)).
+**Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST …/v1/streams/messages/query`; mock when `base_url` unset. See [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay). Live integration tests ([D093](../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)) run when these env vars are set:
+
+| Variable | Purpose |
+|----------|---------|
+| `PP_BROWSER_RELAY_INTEGRATION_URL` | Relay base URL |
+| `PP_BROWSER_RELAY_INTEGRATION_REQUESTER` | Requester `relay_user_id` |
+| `PP_BROWSER_RELAY_INTEGRATION_PEER` | Peer `relay_user_id` for history query |
+| `PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX` | Ed25519 seed (hex) for relay API signing |
+
+CI uses mock only; `pp_browser_relay_live_integration_test` skips when env is unset.
 
 ## Data model
 
@@ -114,10 +123,11 @@ Local store is written **before** send. Server rejections do not delete history.
 | Tail sync | Open E2E thread, reconnect (`TailSync` — fetches seq > `loaded_max_seq`) |
 | Gap repair | Automatic on seq hole; **Retry sync** banner (D059) |
 | User sync | Thread menu **Sync with peer** — tail + gap repair + one older-history page (D059) |
+| Scroll backfill | **Load older messages** banner at transcript top (D052/post-v6c) |
 
-**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `POST /api/relay/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay).
+**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay).
 
-Scroll-to-top backfill is **`[post-v1]`** (D052); uses the same fetch primitive.
+Per-message **Direct / Relay / Local** badges read the persisted `transport` column (post-v6d).
 
 ## AI-centric UX
 
@@ -127,11 +137,17 @@ Scroll-to-top backfill is **`[post-v1]`** (D052); uses the same fetch primitive.
 
 ## @ai in direct threads
 
-Composer: `Message… or @ai ask assistant`
+Composer: `Message… or @ai ask assistant` (max length `kMaxComposeTextBytes`).
 
-- Pattern: `^@ai\s+(.+)` (case-insensitive)
-- **Local only** — not relayed; appended as `ai:assistant` message with `relay_visible=false`
-- Uses `AgentSession::SubmitScopedAssist` with thread transcript context
+| Mode | Prefix | Relay |
+|------|--------|-------|
+| Local assist | `@ai …` | No — `relay_visible=false`, local `ai:assistant` row |
+| Shared reply | `@ai+ …` | Yes — user prompt relayed; AI reply sent with `generation=ai_on_behalf` |
+| Shared full | `@ai++ …` | Yes — user prompt + full AI reply relayed to peer |
+
+Shared modes show a one-time confirm dialog before first send. Parser: `AtAiParser` (`@ai share`, `@ai share all` aliases).
+
+Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript context.
 
 ## Modules
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/ai/AgentSession.h"
+#include "base/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
 #include "base/data/Config.h"
@@ -67,6 +68,7 @@ private:
     Rml::String psk_export_b64;
     Rml::String psk_import_text;
     bool sync_in_progress = false;
+    bool show_older_history_hint = false;
     std::vector<TranscriptDisplayRow> turns;
     std::vector<MessageDisplayRow> messages;
     bool use_messages_layout = true;
@@ -114,6 +116,7 @@ private:
   static void VerifyPskCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void RotatePskExportCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenWorkingSetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void LoadOlderHistoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
   void OnNewChat();
@@ -144,10 +147,12 @@ private:
   void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
                             const std::string& finish_reason = {}, const std::string& thread_id = {},
                             ResponseGoal response_goal = ResponseGoal::General,
-                            RenderMode render_mode = RenderMode::Blocks);
+                            RenderMode render_mode = RenderMode::Blocks, AtAiMode shared_ai_mode = AtAiMode::None);
   void HandleAgentEvent(const AgentEvent& event);
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload);
   void RefreshFromMessaging();
+  void OnLoadOlderHistory();
+  void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
 
   std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
   bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;

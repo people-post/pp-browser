@@ -64,7 +64,9 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | PSK bundle codec | `psk_bundle_codec_test.cpp` — **3 tests** |
 | PSK session coordinator | `psk_session_coordinator_test.cpp` — **1 test** |
 | Relay encrypt/decrypt + pipeline | `e2e_relay_crypto_test.cpp` — **2 tests** |
-| Chat sync (encrypted envelopes) | `chat_sync_test.cpp` — **9 tests** |
+| Chat sync (encrypted envelopes) | `chat_sync_test.cpp` — **13 tests** |
+| Cross-cutting ingest | `messaging_cross_cutting_test.cpp` — **6 tests** |
+| Live relay (D093, env-gated) | `relay_live_integration_test.cpp` |
 
 ## Known gaps (summary)
 

@@ -1,6 +1,7 @@
 #include "base/messaging/SqliteThreadStore.h"
 
 #include "base/messaging/ChatPayloadCodec.h"
+#include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/ConversationSummaryCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
@@ -64,6 +65,11 @@ CREATE TABLE IF NOT EXISTS chat_targets (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_targets_local_thread ON chat_targets(local_thread_id);
 )sql";
+
+constexpr const char* kMessageSelectColumns =
+    "id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
+    "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery, transport, "
+    "sender_seq, session_epoch, target_message_id, generation, seq_owner_contact_id, ai_invoke_mode";
 
 constexpr const char* kThreadSchemaV1 = R"sql(
 CREATE TABLE IF NOT EXISTS messages (
@@ -151,13 +157,9 @@ Roe<void> ConfigureDb(sqlite3* db) {
   return {};
 }
 
-std::string ContentTypeToDb(ChatContentType type) {
-  return type == ChatContentType::System ? "system" : "text";
-}
+std::string ContentTypeToDb(ChatContentType type) { return ChatContentTypeToDb(type); }
 
-ChatContentType ContentTypeFromDb(const std::string& value) {
-  return value == "system" ? ChatContentType::System : ChatContentType::Text;
-}
+ChatContentType ContentTypeFromDb(const std::string& value) { return ChatContentTypeFromDb(value); }
 
 nlohmann::json ChatActionsToJson(const std::vector<TranscriptChatAction>& actions) {
   nlohmann::json out = nlohmann::json::array();
@@ -364,6 +366,9 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(sqlite3_stmt* stmt) const {
   std::vector<uint8_t> chat_payload(static_cast<const uint8_t*>(blob),
                                     static_cast<const uint8_t*>(blob) + blob_size);
   message.content_type = ContentTypeFromDb(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)));
+  if (sqlite3_column_text(stmt, 5)) {
+    message.payload_json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+  }
   if (sqlite3_column_text(stmt, 6)) {
     message.text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
   }
@@ -384,6 +389,18 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(sqlite3_stmt* stmt) const {
   }
   if (sqlite3_column_type(stmt, 15) != SQLITE_NULL) {
     message.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 15));
+  }
+  if (sqlite3_column_type(stmt, 16) != SQLITE_NULL) {
+    message.target_message_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 16));
+  }
+  if (sqlite3_column_type(stmt, 17) != SQLITE_NULL) {
+    message.generation = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 17));
+  }
+  if (sqlite3_column_type(stmt, 18) != SQLITE_NULL) {
+    message.seq_owner_contact_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 18));
+  }
+  if (sqlite3_column_type(stmt, 19) != SQLITE_NULL) {
+    message.ai_invoke_mode = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 19));
   }
   (void)ChatPayloadCodec::ApplyRowToMessage(chat_payload, message);
   return message;
@@ -626,15 +643,11 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesPage(const std::st
   if (limit == 0) {
     limit = kDefaultMessagesPageSize;
   }
-  const char* sql = before_display_order.has_value()
-                        ? "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-                          "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery, transport, "
-                          "sender_seq, session_epoch FROM messages "
-                          "WHERE display_order < ? ORDER BY display_order DESC LIMIT ?;"
-                        : "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-                          "content_rml, user_payload, chat_actions, timestamp, relay_visible, delivery, transport, "
-                          "sender_seq, session_epoch FROM messages ORDER BY display_order DESC LIMIT ?;";
-  auto page = QueryMessages(thread_id, sql, before_display_order, limit);
+  const std::string select_prefix = std::string("SELECT ") + kMessageSelectColumns + " FROM messages ";
+  const std::string sql = before_display_order.has_value()
+                                ? select_prefix + "WHERE display_order < ? ORDER BY display_order DESC LIMIT ?;"
+                                : select_prefix + "ORDER BY display_order DESC LIMIT ?;";
+  auto page = QueryMessages(thread_id, sql.c_str(), before_display_order, limit);
   if (!page) {
     return page.error();
   }
@@ -663,11 +676,10 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesForContext(const s
   }
 
   sqlite3_stmt* stmt = nullptr;
-  const char* sql =
-      "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, content_rml, "
-      "user_payload, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch "
-      "FROM messages WHERE content_type IN ('text', 'system') AND display_order > ? ORDER BY display_order DESC;";
-  if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+  const std::string context_sql = std::string("SELECT ") + kMessageSelectColumns +
+                                  " FROM messages WHERE content_type IN ('text', 'system') AND display_order > ? "
+                                  "ORDER BY display_order DESC;";
+  if (sqlite3_prepare_v2(*thread_db, context_sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare context query");
   }
   sqlite3_bind_int64(stmt, 1, compaction_cursor);
@@ -805,11 +817,10 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetContextEligibleMessagesAft
     return thread_db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  const char* sql =
-      "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, content_rml, "
-      "user_payload, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch "
-      "FROM messages WHERE content_type IN ('text', 'system') AND display_order > ? ORDER BY display_order ASC;";
-  if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+  const std::string compaction_sql = std::string("SELECT ") + kMessageSelectColumns +
+                                     " FROM messages WHERE content_type IN ('text', 'system') AND display_order > ? "
+                                     "ORDER BY display_order ASC;";
+  if (sqlite3_prepare_v2(*thread_db, compaction_sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare compaction query");
   }
   sqlite3_bind_int64(stmt, 1, after_display_order);
@@ -853,15 +864,16 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
   if (!chat_payload) {
     return chat_payload.error();
   }
-  const nlohmann::json payload_json = {{"text", stored.text}};
-  const std::string payload_text = payload_json.dump();
+  const std::string payload_text =
+      stored.payload_json.empty() ? ChatPayloadCodec::BuildPayloadJson(stored) : stored.payload_json;
   const std::string chat_actions_json = ChatActionsToJson(stored.chat_actions).dump();
 
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO messages (id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-      "content_rml, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+      "content_rml, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, "
+      "target_message_id, generation, seq_owner_contact_id, ai_invoke_mode) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare append");
   }
@@ -896,6 +908,26 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
   } else {
     sqlite3_bind_null(stmt, 15);
   }
+  if (stored.target_message_id) {
+    sqlite3_bind_text(stmt, 16, stored.target_message_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 16);
+  }
+  if (stored.generation) {
+    sqlite3_bind_text(stmt, 17, stored.generation->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 17);
+  }
+  if (stored.seq_owner_contact_id) {
+    sqlite3_bind_text(stmt, 18, stored.seq_owner_contact_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 18);
+  }
+  if (stored.ai_invoke_mode) {
+    sqlite3_bind_text(stmt, 19, stored.ai_invoke_mode->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 19);
+  }
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     return Error("Failed to append message");
@@ -922,15 +954,16 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   if (!chat_payload) {
     return chat_payload.error();
   }
-  const nlohmann::json payload_json = {{"text", message.text}};
-  const std::string payload_text = payload_json.dump();
+  const std::string payload_text =
+      message.payload_json.empty() ? ChatPayloadCodec::BuildPayloadJson(message) : message.payload_json;
   const std::string chat_actions_json = ChatActionsToJson(message.chat_actions).dump();
 
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "UPDATE messages SET sender_contact_id = ?, chat_payload = ?, content_type = ?, payload = ?, text = ?, "
       "content_rml = ?, chat_actions = ?, timestamp = ?, relay_visible = ?, delivery = ?, transport = ?, "
-      "sender_seq = ?, session_epoch = ? WHERE id = ?;";
+      "sender_seq = ?, session_epoch = ?, target_message_id = ?, generation = ?, seq_owner_contact_id = ?, "
+      "ai_invoke_mode = ? WHERE id = ?;";
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return false;
   }
@@ -963,7 +996,27 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   } else {
     sqlite3_bind_null(stmt, 13);
   }
-  sqlite3_bind_text(stmt, 14, message.id.c_str(), -1, SQLITE_TRANSIENT);
+  if (message.target_message_id) {
+    sqlite3_bind_text(stmt, 14, message.target_message_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 14);
+  }
+  if (message.generation) {
+    sqlite3_bind_text(stmt, 15, message.generation->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 15);
+  }
+  if (message.seq_owner_contact_id) {
+    sqlite3_bind_text(stmt, 16, message.seq_owner_contact_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 16);
+  }
+  if (message.ai_invoke_mode) {
+    sqlite3_bind_text(stmt, 17, message.ai_invoke_mode->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 17);
+  }
+  sqlite3_bind_text(stmt, 18, message.id.c_str(), -1, SQLITE_TRANSIENT);
   const bool updated = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(*thread_db) > 0;
   sqlite3_finalize(stmt);
   if (updated && message.delivery != MessageDelivery::Pending) {
@@ -1601,15 +1654,16 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const T
     if (!chat_payload) {
       return chat_payload.error();
     }
-    const nlohmann::json payload_json = {{"text", stored.text}};
-    const std::string payload_text = payload_json.dump();
+    const std::string payload_text =
+        stored.payload_json.empty() ? ChatPayloadCodec::BuildPayloadJson(stored) : stored.payload_json;
     const std::string chat_actions_json = ChatActionsToJson(stored.chat_actions).dump();
 
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
         "INSERT INTO messages (id, display_order, sender_contact_id, chat_payload, content_type, payload, text, "
-        "content_rml, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+        "content_rml, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch, "
+        "target_message_id, generation, seq_owner_contact_id, ai_invoke_mode) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
     if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
       return Error("Failed to prepare passive-adopt append");
     }
@@ -1643,6 +1697,26 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const T
       sqlite3_bind_int(stmt, 15, static_cast<int>(*stored.session_epoch));
     } else {
       sqlite3_bind_null(stmt, 15);
+    }
+    if (stored.target_message_id) {
+      sqlite3_bind_text(stmt, 16, stored.target_message_id->c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+      sqlite3_bind_null(stmt, 16);
+    }
+    if (stored.generation) {
+      sqlite3_bind_text(stmt, 17, stored.generation->c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+      sqlite3_bind_null(stmt, 17);
+    }
+    if (stored.seq_owner_contact_id) {
+      sqlite3_bind_text(stmt, 18, stored.seq_owner_contact_id->c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+      sqlite3_bind_null(stmt, 18);
+    }
+    if (stored.ai_invoke_mode) {
+      sqlite3_bind_text(stmt, 19, stored.ai_invoke_mode->c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+      sqlite3_bind_null(stmt, 19);
     }
     if (sqlite3_step(stmt) != SQLITE_DONE) {
       sqlite3_finalize(stmt);
@@ -1705,10 +1779,9 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesBySeqRange(const s
   }
 
   const char* order_clause = query.ascending ? "ASC" : "DESC";
-  std::string sql =
-      "SELECT id, display_order, sender_contact_id, chat_payload, content_type, payload, text, content_rml, "
-      "user_payload, chat_actions, timestamp, relay_visible, delivery, transport, sender_seq, session_epoch "
-      "FROM messages WHERE relay_visible = 1 AND session_epoch = ? AND sender_contact_id = ? AND sender_seq IS NOT NULL";
+  std::string sql = std::string("SELECT ") + kMessageSelectColumns +
+                    " FROM messages WHERE relay_visible = 1 AND session_epoch = ? AND sender_contact_id = ? AND "
+                    "sender_seq IS NOT NULL";
   if (query.min_sender_seq) {
     sql += " AND sender_seq >= ?";
   }

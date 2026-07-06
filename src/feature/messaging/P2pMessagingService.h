@@ -4,6 +4,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/IThreadStore.h"
+#include "base/messaging/SendRelayOptions.h"
 #include "base/crypto/IPskSessionStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "feature/messaging/ChatSyncService.h"
@@ -29,7 +30,8 @@ public:
                       InboxController& inbox, PeerSigningKeyStore& signing_key_store,
                       IPeerSigningKeyResolver& signing_key_resolver, IPskSessionStore& psk_store);
 
-  Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text);
+  Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
+                                     const SendRelayOptions& options = {});
   void PollAndMerge();
   void RetryFailedOutbound();
   void SetRelayClient(IRelayClient* relay);
@@ -57,6 +59,8 @@ public:
   Roe<void> ImportPskBundleJson(const std::string& thread_id, const std::string& bundle_json);
   Roe<void> MarkPskVerified(const std::string& thread_id);
   void RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
+  /** D052 — fetch one older-history page when scrolled to top. */
+  void ScrollBackfill(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
   void TailSyncActiveE2eThread();
 
 private:

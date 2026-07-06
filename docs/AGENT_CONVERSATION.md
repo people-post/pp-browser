@@ -128,6 +128,14 @@ Inspired by user-ai turn-pair windowing and prepare/complete turn split. Simplif
 - **Kept:** sliding window, char budgets, turn index, session id
 - **Deferred:** curation, retractions, digest consolidation, retrieval — add via new `IContextPolicy` or `ICompactionService` when needed
 
+## Compaction (v3 — D039/D040)
+
+Long AI threads persist a **`ConversationSummary`** in the thread store (`GetThreadMemory` / `SetThreadMemory`). After **`kCompactionTurnThreshold` (20)** text turns since the last summary, `ThreadCompactionService` runs an async compaction job and stores a trimmed summary (max **`kMaxSummaryBytes`**, 8 KiB).
+
+**Context assembly:** `GetMessagesForContext` returns messages after `compacted_through_display_order`, keeping at least **`kCompactionMinTurnsKept` (6)** recent turn pairs. `ThreadContextPolicy` filters to `content_type=text` (+ selected `system`) for LLM input — rich P2P payload types do not enter agent context unless summarized as text.
+
+**Forget memory:** clearing the summary key leaves the transcript intact (`ClearMessages` with `forget_memory`).
+
 ## Extension roadmap
 
 | Phase | Work |
@@ -135,6 +143,6 @@ Inspired by user-ai turn-pair windowing and prepare/complete turn split. Simplif
 | v1 | Conversation + sliding context + New chat |
 | v2 | `IConversationStore` for disk persistence |
 | v2 | Multi-session sidebar switching |
-| v3 | `ICompactionService` → `ConversationSummary` for very long threads |
+| v3 | `ICompactionService` → `ConversationSummary` for very long threads | **Done** — see [Compaction](#compaction-v3--d039d040) |
 | v3 | Transcript edit / "forget that" APIs |
 | v4 | Retrieval-augmented `IContextPolicy` |

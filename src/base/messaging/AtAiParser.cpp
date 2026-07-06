@@ -19,14 +19,39 @@ std::string Trim(const std::string& text) {
   return text.substr(start, end - start);
 }
 
+AtAiParseResult MatchPrompt(const std::string& trimmed, const std::regex& pattern, const AtAiMode mode) {
+  std::smatch match;
+  if (std::regex_match(trimmed, match, pattern) && match.size() >= 2) {
+    return AtAiParseResult{.is_ai_invoke = true, .mode = mode, .prompt = Trim(match[1].str())};
+  }
+  return {};
+}
+
 } // namespace
 
 AtAiParseResult ParseAtAiPrefix(const std::string& text) {
-  static const std::regex pattern(R"(^@ai\s+(.+)$)", std::regex::icase);
   const std::string trimmed = Trim(text);
-  std::smatch match;
-  if (std::regex_match(trimmed, match, pattern) && match.size() >= 2) {
-    return AtAiParseResult{.is_ai_invoke = true, .prompt = Trim(match[1].str())};
+  if (auto result = MatchPrompt(trimmed, std::regex(R"(^@ai\+\+\s+(.+)$)", std::regex::icase), AtAiMode::SharedFull);
+      result.is_ai_invoke) {
+    return result;
+  }
+  if (auto result = MatchPrompt(trimmed, std::regex(R"(^@ai\+\s+(.+)$)", std::regex::icase), AtAiMode::SharedReply);
+      result.is_ai_invoke) {
+    return result;
+  }
+  if (auto result =
+          MatchPrompt(trimmed, std::regex(R"(^@ai\s+share\s+all\s+(.+)$)", std::regex::icase), AtAiMode::SharedFull);
+      result.is_ai_invoke) {
+    return result;
+  }
+  if (auto result =
+          MatchPrompt(trimmed, std::regex(R"(^@ai\s+share\s+(.+)$)", std::regex::icase), AtAiMode::SharedReply);
+      result.is_ai_invoke) {
+    return result;
+  }
+  if (auto result = MatchPrompt(trimmed, std::regex(R"(^@ai\s+(.+)$)", std::regex::icase), AtAiMode::Local);
+      result.is_ai_invoke) {
+    return result;
   }
   return {};
 }

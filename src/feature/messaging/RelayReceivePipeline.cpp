@@ -140,7 +140,10 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
       outcome.decision = IngestDecision::HardReject;
       return outcome;
     }
-    if (decoded->content_type != ChatContentType::Text) {
+    if (decoded->content_type != ChatContentType::Text && decoded->content_type != ChatContentType::System &&
+        decoded->content_type != ChatContentType::Annotation &&
+        decoded->content_type != ChatContentType::ContactCard &&
+        decoded->content_type != ChatContentType::CryptoTx) {
       outcome.decision = IngestDecision::HardReject;
       return outcome;
     }
@@ -148,7 +151,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
     message = std::move(*decoded);
   }
 
-  if (message.content_type != ChatContentType::Text) {
+  if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System &&
+      message.content_type != ChatContentType::Annotation && message.content_type != ChatContentType::ContactCard &&
+      message.content_type != ChatContentType::CryptoTx) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }

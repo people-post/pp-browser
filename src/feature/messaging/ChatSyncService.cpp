@@ -321,7 +321,7 @@ Roe<ChatSyncResult> ChatSyncService::RepairKnownGap(const std::string& thread_id
   return RepairGap(thread_id, sync_state->contiguous_peer_seq + 1, sync_state->loaded_max_seq - 1);
 }
 
-Roe<ChatSyncResult> ChatSyncService::FetchOlderHistoryIfNeeded(const std::string& thread_id) {
+Roe<ChatSyncResult> ChatSyncService::ScrollBackfill(const std::string& thread_id) {
   auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
     return Error("Thread not found");
@@ -362,7 +362,7 @@ Roe<ChatSyncResult> ChatSyncService::UserInitiatedSync(const std::string& thread
   }
   MergeSyncResult(aggregate, *gap);
 
-  auto older = FetchOlderHistoryIfNeeded(thread_id);
+  auto older = ScrollBackfill(thread_id);
   if (!older) {
     return older.error();
   }

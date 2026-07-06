@@ -11,7 +11,9 @@
 #include "feature/chat/ChatWidgetStateBuilder.h"
 #include "common/Utilities.h"
 #include "feature/messaging/MessagingHub.h"
+#include "base/messaging/AtAiParser.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/SendRelayOptions.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/messaging/ThreadTypes.h"
 #include "feature/ui/DataModelHost.h"
@@ -22,6 +24,8 @@
 #include "base/data/SessionStore.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ContactsController.h"
+
+#include <nlohmann/json.hpp>
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
@@ -756,6 +760,58 @@ void ChatController::OnForgetMemory() {
   ShellHost::Instance().DirtyWindow();
 }
 
+void ChatController::LoadOlderHistoryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                              const Rml::VariantList& /*args*/) {
+  Instance().OnLoadOlderHistory();
+}
+
+void ChatController::OnLoadOlderHistory() {
+  if (!messaging_ready_ || chat_.sync_in_progress) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  chat_.sync_in_progress = true;
+  chat_.status = "Loading older messages…";
+  DirtyChatChrome();
+
+  MessagingHub::Instance().P2p().ScrollBackfill(thread_id, [this](Roe<ChatSyncResult> result) {
+    chat_.sync_in_progress = false;
+    chat_.status = "";
+    if (!result) {
+      chat_.status = result.error().message.c_str();
+    } else if (result->ingested == 0) {
+      chat_.show_older_history_hint = false;
+    }
+    RefreshFromMessaging();
+    DirtyChatChrome();
+  });
+}
+
+void ChatController::SendSharedAssistantRelay(const std::string& thread_id, const AtAiMode mode,
+                                              const std::string& plain_text) {
+  if (!messaging_ready_ || plain_text.empty()) {
+    return;
+  }
+  auto thread = MessagingHub::Instance().Store().GetThread(thread_id);
+  if (!thread || !*thread) {
+    return;
+  }
+
+  SendRelayOptions opts;
+  opts.sender_contact_id = kAiAssistantContactId;
+  opts.generation = "ai_on_behalf";
+  opts.ai_invoke_mode = mode == AtAiMode::SharedFull ? "shared_full" : "shared_reply";
+  if (!(*thread)->participant_contact_ids.empty()) {
+    opts.seq_owner_contact_id = (*thread)->participant_contact_ids.front();
+  }
+  opts.update_preview = true;
+  (void)MessagingHub::Instance().P2p().SendUserMessage(thread_id, plain_text, opts);
+}
+
 void ChatController::OnSyncWithPeer() {
   if (!messaging_ready_ || chat_.sync_in_progress) {
     return;
@@ -1063,6 +1119,7 @@ void ChatController::ResetChatPanelState() {
   chat_.show_forget_memory = false;
   chat_.show_sync_with_peer = false;
   chat_.show_gap_banner = false;
+  chat_.show_older_history_hint = false;
   chat_.show_compromised_banner = false;
   chat_.show_psk_setup_banner = false;
   chat_.show_psk_import = false;
@@ -1090,6 +1147,7 @@ void ChatController::UpdateThreadChrome() {
     chat_.show_forget_memory = thread->kind == ThreadKind::Ai;
     chat_.show_sync_with_peer = false;
     chat_.show_gap_banner = false;
+    chat_.show_older_history_hint = false;
     chat_.show_compromised_banner = false;
     chat_.show_psk_setup_banner = false;
     chat_.show_psk_import = false;
@@ -1106,6 +1164,8 @@ void ChatController::UpdateThreadChrome() {
           if (!compromised) {
             chat_.show_sync_with_peer = true;
             chat_.show_gap_banner = sync_state->phase == PeerSyncPhase::Gap;
+            chat_.show_older_history_hint =
+                sync_state->loaded_min_seq > sync_state->history_floor_seq + 1;
           }
         } else {
           chat_.show_sync_with_peer = true;
@@ -1143,10 +1203,10 @@ void ChatController::UpdateThreadChrome() {
         chat_.draft_placeholder = "Messaging not available yet";
       } else if (thread->channel == ThreadChannel::E2e) {
         chat_.thread_subtitle = "End-to-end encrypted (private tier)";
-        chat_.draft_placeholder = "Secure message… or @ai ask assistant";
+        chat_.draft_placeholder = "Secure message… · @ai · @ai+ · @ai++";
       } else {
         chat_.thread_subtitle = "Direct message";
-        chat_.draft_placeholder = "Message… or @ai ask assistant";
+        chat_.draft_placeholder = "Message… · @ai · @ai+ · @ai++";
       }
     } else {
       chat_.thread_subtitle =
@@ -1162,6 +1222,7 @@ void ChatController::UpdateThreadChrome() {
     chat_.show_forget_memory = false;
     chat_.show_sync_with_peer = false;
     chat_.show_gap_banner = false;
+    chat_.show_older_history_hint = false;
     chat_.show_compromised_banner = false;
     chat_.show_psk_setup_banner = false;
     chat_.show_psk_import = false;
@@ -1514,7 +1575,7 @@ void ChatController::SelectCalendarDay(const std::string& entry_id, const std::s
 
 void ChatController::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, const bool from_llm,
                                     const std::string& finish_reason, const std::string& thread_id,
-                                    ResponseGoal response_goal, RenderMode render_mode) {
+                                    ResponseGoal response_goal, RenderMode render_mode, const AtAiMode shared_ai_mode) {
   if (!from_llm) {
     response_goal = InferResponseGoalFromBlocksJson(raw_output);
   }
@@ -1590,6 +1651,34 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
     }
 
     ApplyWorkingSetFromParse(entry_id, parsed.working_set_candidates);
+
+    if (shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull) {
+      const std::string active_thread =
+          thread_id.empty() ? MessagingHub::Instance().Inbox().ActiveThreadId() : thread_id;
+      std::string relay_plain = raw_output;
+      if (StructuredTextParser::IsBlocksJsonDocument(raw_output)) {
+        try {
+          const nlohmann::json blocks_doc = nlohmann::json::parse(raw_output);
+          if (blocks_doc.contains("blocks") && blocks_doc["blocks"].is_array()) {
+            std::string joined;
+            for (const auto& block : blocks_doc["blocks"]) {
+              if (block.value("type", "") == "paragraph" && block.contains("text") &&
+                  block["text"].is_string()) {
+                if (!joined.empty()) {
+                  joined += "\n";
+                }
+                joined += block["text"].get<std::string>();
+              }
+            }
+            if (!joined.empty()) {
+              relay_plain = joined;
+            }
+          }
+        } catch (const std::exception&) {
+        }
+      }
+      SendSharedAssistantRelay(active_thread, shared_ai_mode, relay_plain);
+    }
   }
 
   SyncDisplayFromThread();
@@ -1624,7 +1713,8 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     break;
   case AgentEventType::AssistantReady:
     FinishAssistantReply(event.entry_id, event.text, !StructuredTextParser::IsBlocksJsonDocument(event.text),
-                       event.finish_reason, event.thread_id, event.response_goal, event.render_mode);
+                         event.finish_reason, event.thread_id, event.response_goal, event.render_mode,
+                         event.shared_ai_mode);
     break;
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;
@@ -1675,6 +1765,22 @@ bool ChatController::Setup(Rml::Context* context) {
     MessagingHub::Instance().Router().SetOnLocalAction(
         [this](const std::string& message, const std::optional<std::string>& payload) {
           HandleLocalAction(message, payload);
+        });
+    MessagingHub::Instance().Router().SetSharedAiConfirmCallback(
+        [this](const std::string& thread_id, const AtAiMode mode, const std::string& prompt,
+               std::function<void(bool confirmed, bool dont_ask_again)> done) {
+          const char* mode_label = mode == AtAiMode::SharedFull ? "share the prompt and reply" : "share the AI reply";
+          ShellFeedback::ShowConfirmWithCheckbox(
+              ShellHost::Instance().State(), "Share with peer?",
+              std::string("This will ") + mode_label +
+                  " on the encrypted thread. Your local @ai assist stays private.",
+              "Don't ask again for this conversation", false,
+              [this, thread_id, done = std::move(done)](const bool ok, const bool dont_ask) {
+                if (ok && dont_ask) {
+                  MessagingHub::Instance().Router().MarkSharedAiConfirmed(thread_id);
+                }
+                done(ok, dont_ask);
+              });
         });
     MessagingHub::Instance().Actions().SetOnActionMessage([this](const std::string& message) {
       ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
@@ -1734,6 +1840,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("psk_export_b64", &ChatController::Instance().chat_.psk_export_b64);
         ctor.Bind("psk_import_text", &ChatController::Instance().chat_.psk_import_text);
         ctor.Bind("sync_in_progress", &ChatController::Instance().chat_.sync_in_progress);
+        ctor.Bind("show_older_history_hint", &ChatController::Instance().chat_.show_older_history_hint);
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
@@ -1753,6 +1860,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("import_psk", &ChatController::ImportPskCallback);
         ctor.BindEventCallback("verify_psk", &ChatController::VerifyPskCallback);
         ctor.BindEventCallback("rotate_psk_export", &ChatController::RotatePskExportCallback);
+        ctor.BindEventCallback("load_older_history", &ChatController::LoadOlderHistoryCallback);
       })) {
     return false;
   }

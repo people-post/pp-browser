@@ -4,7 +4,7 @@
 **Not ADRs:** When you choose, record the outcome in the relevant [DECISIONS.md](chat-storage-and-memory/DECISIONS.md) (or e2e) and check the box here.
 
 **Last reviewed:** 2026-07-06  
-**Context:** [chat-storage CURRENT_STATE](chat-storage-and-memory/CURRENT_STATE.md) — Waves 1–3 + v6-schema + v6-pipeline + **v6-sync** landed; **v6-libp2p** next.
+**Context:** [chat-storage CURRENT_STATE](chat-storage-and-memory/CURRENT_STATE.md) — Waves **1–7** landed (Bucket B); release hygiene pending.
 
 ---
 

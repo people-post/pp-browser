@@ -337,3 +337,96 @@ TEST(ChatSyncTest, RetryGapSyncRepairsKnownGap) {
   EXPECT_EQ(sync_state->contiguous_peer_seq, 3u);
   EXPECT_EQ(sync_state->phase, PeerSyncPhase::Ok);
 }
+
+TEST(ChatSyncTest, ScrollBackfillFetchesOlderHistory) {
+  SyncTestHarness harness("scroll_backfill");
+  harness.SeedPeerSeq(10, "ten");
+
+  PeerSyncState state = DefaultPeerSyncState();
+  state.contiguous_peer_seq = 10;
+  state.loaded_min_seq = 10;
+  state.loaded_max_seq = 10;
+  state.history_floor_seq = 4;
+  ASSERT_TRUE(static_cast<bool>(harness.store.SetPeerSyncState(harness.thread.id, 1, state)));
+
+  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(7, "seven"));
+
+  auto result = harness.sync.ScrollBackfill(harness.thread.id);
+  ASSERT_TRUE(static_cast<bool>(result));
+  EXPECT_GE(result->ingested, 1u);
+
+  auto messages = harness.store.GetMessages(harness.thread.id);
+  ASSERT_TRUE(static_cast<bool>(messages));
+  bool found_seven = false;
+  for (const ThreadMessage& message : *messages) {
+    if (message.text == "seven") {
+      found_seven = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_seven);
+}
+
+TEST(ChatSyncTest, GapRepairClampsWideSeqSpan) {
+  SyncTestHarness harness("gap_clamp");
+  harness.SeedPeerSeq(1, "one");
+
+  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(2, "near"));
+  harness.relay.AddDeliveredEnvelope(harness.MakePeerEnvelope(502, "far"));
+
+  auto result = harness.sync.RepairGap(harness.thread.id, 2, 600);
+  ASSERT_TRUE(static_cast<bool>(result));
+  EXPECT_GE(result->ingested, 1u);
+
+  auto messages = harness.store.GetMessages(harness.thread.id);
+  ASSERT_TRUE(static_cast<bool>(messages));
+  bool found_near = false;
+  bool found_far = false;
+  for (const ThreadMessage& message : *messages) {
+    if (message.text == "near") {
+      found_near = true;
+    }
+    if (message.text == "far") {
+      found_far = true;
+    }
+  }
+  EXPECT_TRUE(found_near);
+  EXPECT_FALSE(found_far);
+}
+
+TEST(ChatSyncTest, CompromisedThreadBlocksSync) {
+  SyncTestHarness harness("compromised_sync");
+  harness.SeedPeerSeq(1, "one");
+
+  PeerSyncState compromised = DefaultPeerSyncState();
+  compromised.contiguous_peer_seq = 1;
+  compromised.loaded_min_seq = 1;
+  compromised.loaded_max_seq = 1;
+  compromised.phase = PeerSyncPhase::Compromised;
+  ASSERT_TRUE(static_cast<bool>(harness.store.SetPeerSyncState(harness.thread.id, 1, compromised)));
+
+  auto tail = harness.sync.TailSync(harness.thread.id);
+  ASSERT_FALSE(static_cast<bool>(tail));
+  EXPECT_NE(tail.error().message.find("compromised"), std::string::npos);
+}
+
+TEST(ChatSyncTest, RelayFetch403ForNonPartyReturnsError) {
+  SyncTestHarness harness("relay_403");
+  harness.relay.SetFetchHistoryError("Relay history fetch failed with status 403");
+
+  ChatHistoryRequest request;
+  request.requester_identity_kind = "relay_user";
+  request.requester_identity_value = harness.local_relay_id;
+  request.peer_identity_kind = "relay_user";
+  request.peer_identity_value = "relay:peer";
+  request.channel = ThreadChannel::E2e;
+  request.session_epoch = 1;
+  request.min_sender_seq = 2;
+  request.max_sender_seq = 2;
+  request.limit = 10;
+  request.order = "asc";
+
+  auto response = harness.relay.FetchChatHistory(request);
+  ASSERT_FALSE(static_cast<bool>(response));
+  EXPECT_NE(response.error().message.find("403"), std::string::npos);
+}

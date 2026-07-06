@@ -25,6 +25,15 @@ target_link_libraries(pp_browser_chat_payload_validator_test PRIVATE
   pp_common)
 pp_browser_add_gtest(pp_browser_chat_payload_validator_test)
 
+add_executable(pp_browser_chat_payload_rich_types_test chat_payload_rich_types_test.cpp)
+target_include_directories(pp_browser_chat_payload_rich_types_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pp_browser_chat_payload_rich_types_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_base
+  pp_common)
+pp_browser_add_gtest(pp_browser_chat_payload_rich_types_test)
+
 add_executable(pp_browser_v6_schema_test v6_schema_test.cpp)
 target_include_directories(pp_browser_v6_schema_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(pp_browser_v6_schema_test PRIVATE
@@ -108,6 +117,25 @@ target_link_libraries(pp_browser_e2e_relay_crypto_test PRIVATE
   pp_base
   pp_common)
 pp_browser_add_gtest(pp_browser_e2e_relay_crypto_test)
+
+add_executable(pp_browser_messaging_cross_cutting_test messaging_cross_cutting_test.cpp)
+target_include_directories(pp_browser_messaging_cross_cutting_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pp_browser_messaging_cross_cutting_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_feature
+  pp_base
+  pp_common)
+pp_browser_add_gtest(pp_browser_messaging_cross_cutting_test)
+
+add_executable(pp_browser_relay_live_integration_test relay_live_integration_test.cpp)
+target_include_directories(pp_browser_relay_live_integration_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pp_browser_relay_live_integration_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_base
+  pp_common)
+pp_browser_add_gtest(pp_browser_relay_live_integration_test)
 
 add_executable(pp_browser_psk_session_coordinator_test psk_session_coordinator_test.cpp)
 target_include_directories(pp_browser_psk_session_coordinator_test PRIVATE ${CMAKE_SOURCE_DIR}/src)

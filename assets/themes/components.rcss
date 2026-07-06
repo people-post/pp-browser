@@ -1022,6 +1022,41 @@ select selectbox option {
   flex: 1;
 }
 
+.chat-transport-line {
+  margin: 0 0 4dp 0;
+}
+
+.chat-transport-badge,
+.chat-shared-badge,
+.chat-annotation-badge {
+  display: inline-block;
+  margin-right: 6dp;
+  padding: 1dp 6dp;
+  border-radius: 4dp;
+  background-color: rgba(128, 128, 128, 0.15);
+  font-size: 11dp;
+}
+
+.chat-system-line {
+  text-align: center;
+  margin: 8dp 0;
+}
+
+.chat-card {
+  border-radius: 8dp;
+  padding: 10dp 12dp;
+  margin: 4dp 0;
+  background-color: rgba(128, 128, 128, 0.08);
+}
+
+.chat-orphan-annotation {
+  margin: 6dp 0;
+}
+
+.message-row-annotation-orphan {
+  opacity: 0.85;
+}
+
 .sidebar-panel {
   display: flex;
   flex-direction: column;

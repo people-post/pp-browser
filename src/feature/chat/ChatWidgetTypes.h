@@ -63,9 +63,11 @@ struct TranscriptDisplayRow {
 };
 
 struct MessageDisplayRow {
+  Rml::String message_id;
   Rml::String sender_label;
   Rml::String content_rml;
   Rml::String row_class;
+  Rml::String transport_badge;
   bool has_content = true;
   bool has_form = false;
   FormWidgetState form;

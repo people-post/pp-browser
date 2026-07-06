@@ -393,9 +393,9 @@ Existing foundation this project builds on.
 
 **Depends on:** v6 watermarks, D058/D060/D027.
 
-- [ ] Scroll to top invokes D058 older-range fetch — page `(history_floor_seq, loaded_min_seq)`
-- [ ] Same ingest + floor rules as user-initiated sync (D059)
-- [ ] Scroll hint UX when older history may exist
+- [x] Scroll to top invokes D058 older-range fetch — page `(history_floor_seq, loaded_min_seq)`
+- [x] Same ingest + floor rules as user-initiated sync (D059)
+- [x] Scroll hint UX when older history may exist
 
 ---
 
@@ -405,10 +405,10 @@ Existing foundation this project builds on.
 
 **Depends on:** v4 validator + `BuildDisplayRows` branching.
 
-- [ ] Validator accepts `annotation`, `contact_card`, `crypto_tx` on inbound relay
-- [ ] Type-specific UI templates; `BuildDisplayRows` merge for annotations
-- [ ] Orphan target badge (D043); annotation cap **`kMaxAnnotationsPerTarget`** (D042)
-- [ ] LLM context unchanged unless summarized in `text`
+- [x] Validator accepts `annotation`, `contact_card`, `crypto_tx` on inbound relay
+- [x] Type-specific UI templates; `BuildDisplayRows` merge for annotations
+- [x] Orphan target badge (D043); annotation cap **`kMaxAnnotationsPerTarget`** (D042)
+- [x] LLM context unchanged unless summarized in `text`
 
 ---
 
@@ -418,10 +418,10 @@ Existing foundation this project builds on.
 
 **Depends on:** v6 E2E send pipeline + seq on `relay_visible` rows.
 
-- [ ] Parser for `@ai+`, `@ai++` (and optional long-form aliases)
-- [ ] `generation`, `seq_owner_contact_id`; trigger user owns `sender_seq`
-- [ ] Shared reply (+1 seq) and shared full (+2 seq) flows
-- [ ] Confirm UX before first shared send
+- [x] Parser for `@ai+`, `@ai++` (and optional long-form aliases)
+- [x] `generation`, `seq_owner_contact_id`; trigger user owns `sender_seq`
+- [x] Shared reply (+1 seq) and shared full (+2 seq) flows
+- [x] Confirm UX before first shared send
 
 ---
 
@@ -431,8 +431,8 @@ Existing foundation this project builds on.
 
 **Depends on:** v4 `transport` column populated; libp2p direct path when available.
 
-- [ ] E2E per-message Direct / Relay / Local indicator
-- [ ] Read `transport` column; no inference from thread type alone
+- [x] E2E per-message Direct / Relay / Local indicator
+- [x] Read `transport` column; no inference from thread type alone
 
 ---
 
@@ -479,16 +479,16 @@ Ship SQLite storage + private-tier envelope plumbing without c2; E2E body crypto
 
 ## Cross-cutting tasks
 
-- [ ] `SqliteThreadStore` unit tests (`profile.db`, per-thread db, clear, delete, outbox, **chat_targets**, **reconciliation**, size reject)
-- [ ] Ingest tests: oversize envelope, remote content_rml stripped (D029–D030)
-- [ ] Public vs E2E ingest path tests (D045)
+- [x] `SqliteThreadStore` unit tests (`profile.db`, per-thread db, clear, delete, outbox, **chat_targets**, **reconciliation**, size reject) — partial via `sqlite_thread_store_test`, `p2p_relay_wire_test`, `messaging_cross_cutting_test`
+- [x] Ingest tests: oversize envelope, remote content_rml stripped (D029–D030) — `messaging_cross_cutting_test`, `chat_payload_validator_test`
+- [x] Public vs E2E ingest path tests (D045) — `messaging_cross_cutting_test`, `e2e_relay_crypto_test`
 - [ ] Agent tool docs if `list_conversations` must expose channel
-- [ ] Fuzz/dedup: duplicate relay `message_id` ignored via per-thread store check
-- [ ] `GetMessagesForContext` / compaction tests (D039–D040)
-- [ ] Outbox/gap repair limit tests (D041)
-- [ ] Relay fetch 403 for non-party chat target (D027)
-- [ ] **`FetchChatTargetMessages`**: peer-direct then relay; empty gap close with D067 guard + late fill (D058–D061/D067)
-- [ ] User-initiated sync + inbound find-only + compromised freeze tests (D059, D062, D068)
+- [x] Fuzz/dedup: duplicate relay `message_id` ignored via per-thread store check — `messaging_cross_cutting_test`
+- [x] `GetMessagesForContext` / compaction tests (D039–D040) — `sqlite_thread_store_test`
+- [x] Outbox/gap repair limit tests (D041) — `chat_sync_test` gap clamp; outbox in `p2p_relay_wire_test`
+- [x] Relay fetch 403 for non-party chat target (D027) — `chat_sync_test` mock 403; live via `relay_live_integration_test` env
+- [x] **`FetchChatTargetMessages`**: peer-direct then relay; empty gap close with D067 guard + late fill (D058–D061/D067) — `chat_sync_test`
+- [x] User-initiated sync + inbound find-only + compromised freeze tests (D059, D062, D068) — `chat_sync_test`, `messaging_cross_cutting_test`, `v6_integrity_test`
 
 ---
 
@@ -519,3 +519,4 @@ Ship SQLite storage + private-tier envelope plumbing without c2; E2E body crypto
 | 2026-07-02 | Agent batch delivery order — parallel waves, v6 sub-packages, rollout gates to skip; traceability **Agent wave** column |
 | 2026-07-02 | **Waves 1–2 landed:** v2a-core + v2a-p2p + v2b in tree; `CURRENT_STATE.md` next-agent section; interim plaintext `payload_b64` + JSON signing until c2/E014 |
 | 2026-07-02 | Pre-implementation doc hygiene — CURRENT_STATE accuracy, D027 query params, `MessagingLimits.h` path, v6 sub-headings |
+| 2026-07-06 | Waves 3–7 landed — v3/v4/v6, e2e c2/c3, post-v4/6b/c/d; cross-cutting tests + D093 live relay env gate |

@@ -1,12 +1,15 @@
 #include "feature/messaging/InboxController.h"
 
+#include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 
 #include "base/ai/StructuredTextParser.h"
 #include "feature/chat/ChatFormHelper.h"
 #include "common/Utilities.h"
-#include "base/messaging/MessagingJson.h"
+#include <map>
+#include <unordered_map>
 
 namespace pbr {
 
@@ -346,6 +349,57 @@ std::string InboxController::ResolveRowClass(const std::string& sender_contact_i
   return "message-row-peer";
 }
 
+std::string InboxController::BuildTransportBadgeHtml(const ThreadMessage& message) const {
+  if (!message.transport) {
+    return "";
+  }
+  const std::string label = MessageTransportBadgeLabel(*message.transport);
+  return "<span class=\"chat-transport-badge muted\">" + StructuredTextParser::EscapeText(label) + "</span>";
+}
+
+std::string InboxController::BuildSharedBadgeHtml(const ThreadMessage& message) const {
+  if (!message.ai_invoke_mode ||
+      (message.ai_invoke_mode != "shared_reply" && message.ai_invoke_mode != "shared_full")) {
+    return "";
+  }
+  return "<span class=\"chat-shared-badge muted\">Shared</span>";
+}
+
+std::string InboxController::BuildSystemRml(const ThreadMessage& message) const {
+  return "<div class=\"chat-system-line muted\"><p>" + StructuredTextParser::EscapeText(message.text) + "</p></div>";
+}
+
+std::string InboxController::BuildContactCardRml(const ThreadMessage& message) const {
+  auto fields = ChatPayloadCodec::DecodeContactCardJson(message.payload_json);
+  const std::string name =
+      fields ? fields->display_name : (message.text.empty() ? "Contact" : message.text);
+  const std::string relay = fields && !fields->relay_user_id.empty() ? fields->relay_user_id : "";
+  std::string html = "<div class=\"chat-card chat-contact-card\"><h3 class=\"heading-3\">" +
+                     StructuredTextParser::EscapeText(name) + "</h3>";
+  if (!relay.empty()) {
+    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(relay) + "</p>";
+  }
+  html += "</div>";
+  return html;
+}
+
+std::string InboxController::BuildCryptoTxRml(const ThreadMessage& message) const {
+  auto fields = ChatPayloadCodec::DecodeCryptoTxJson(message.payload_json);
+  const std::string summary = message.text.empty() ? "Transaction" : message.text;
+  std::string html = "<div class=\"chat-card chat-tx-card\"><h3 class=\"heading-3\">" +
+                     StructuredTextParser::EscapeText(summary) + "</h3>";
+  if (fields) {
+    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(fields->asset) + " · " +
+            StructuredTextParser::EscapeText(fields->amount) + " · " +
+            StructuredTextParser::EscapeText(fields->direction) + "</p>";
+    if (!fields->status.empty()) {
+      html += "<p class=\"text muted\">Status: " + StructuredTextParser::EscapeText(fields->status) + "</p>";
+    }
+  }
+  html += "</div>";
+  return html;
+}
+
 std::string InboxController::BuildMessageRml(const ThreadMessage& message) const {
   if (message.content_rml) {
     if (message.content_rml->find("__ENTRY__") != std::string::npos) {
@@ -353,10 +407,23 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
     }
     return *message.content_rml;
   }
+  if (message.content_type == ChatContentType::System) {
+    return BuildSystemRml(message);
+  }
+  if (message.content_type == ChatContentType::ContactCard) {
+    return BuildContactCardRml(message);
+  }
+  if (message.content_type == ChatContentType::CryptoTx) {
+    return BuildCryptoTxRml(message);
+  }
   const std::string bubble_class = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
   const std::string paragraph =
       message.sender_contact_id == kLocalSelfContactId ? "<p class=\"bubble-text\">" : "<p>";
-  return "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + paragraph +
+  std::string badges = BuildTransportBadgeHtml(message) + BuildSharedBadgeHtml(message);
+  if (!badges.empty()) {
+    badges = "<div class=\"chat-message-meta\">" + badges + "</div>";
+  }
+  return badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + paragraph +
          StructuredTextParser::EscapeText(message.text) + "</p></div>";
 }
 
@@ -367,17 +434,72 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(const std::stri
     return rows;
   }
 
+  std::unordered_map<std::string, size_t> row_index_by_id;
+  std::unordered_map<std::string, size_t> annotation_count_by_target;
+  std::vector<ThreadMessage> orphan_annotations;
+  std::vector<ThreadMessage> pending_annotations;
+
   for (const ThreadMessage& message : *messages) {
-    if (message.content_type != ChatContentType::Text) {
+    if (message.content_type == ChatContentType::Annotation) {
+      pending_annotations.push_back(message);
       continue;
     }
+    if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System &&
+        message.content_type != ChatContentType::ContactCard && message.content_type != ChatContentType::CryptoTx) {
+      continue;
+    }
+
     MessageDisplayRow row;
+    row.message_id = message.id.c_str();
     row.sender_label = ResolveSenderLabel(message.sender_contact_id).c_str();
     row.content_rml = BuildMessageRml(message).c_str();
     row.row_class = ResolveRowClass(message.sender_contact_id).c_str();
+    if (message.transport) {
+      row.transport_badge = MessageTransportBadgeLabel(*message.transport).c_str();
+    }
+    row.has_content = true;
+    row_index_by_id[message.id] = rows.size();
+    rows.push_back(std::move(row));
+  }
+
+  for (const ThreadMessage& annotation : pending_annotations) {
+    const std::string target_id =
+        annotation.target_message_id.value_or("");
+    if (target_id.empty()) {
+      orphan_annotations.push_back(annotation);
+      continue;
+    }
+    const auto row_it = row_index_by_id.find(target_id);
+    if (row_it == row_index_by_id.end()) {
+      orphan_annotations.push_back(annotation);
+      continue;
+    }
+    if (annotation_count_by_target[target_id] >= kMaxAnnotationsPerTarget) {
+      continue;
+    }
+    ++annotation_count_by_target[target_id];
+    const std::string badge =
+        "<span class=\"chat-annotation-badge\" title=\"" +
+        StructuredTextParser::EscapeText(annotation.text) + "\">" +
+        StructuredTextParser::EscapeText(annotation.text) + "</span>";
+    rows[row_it->second].content_rml =
+        (std::string(rows[row_it->second].content_rml.c_str()) + badge).c_str();
+  }
+
+  for (const ThreadMessage& annotation : orphan_annotations) {
+    MessageDisplayRow row;
+    row.message_id = annotation.id.c_str();
+    row.sender_label = ResolveSenderLabel(annotation.sender_contact_id).c_str();
+    row.content_rml =
+        ("<div class=\"chat-orphan-annotation muted\"><span class=\"chat-annotation-badge\">" +
+         StructuredTextParser::EscapeText(annotation.text) +
+         "</span> <span class=\"text-xs\">(unlinked)</span></div>")
+            .c_str();
+    row.row_class = "message-row-annotation-orphan";
     row.has_content = true;
     rows.push_back(std::move(row));
   }
+
   return rows;
 }
 

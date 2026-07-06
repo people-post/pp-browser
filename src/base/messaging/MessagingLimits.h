@@ -18,6 +18,8 @@ inline constexpr size_t kDefaultTailSyncLimit = 50;
 inline constexpr size_t kUserSyncOlderHistoryLimit = 25;
 inline constexpr size_t kDefaultMessagesPageSize = 100;
 inline constexpr size_t kMaxOpenThreadDbs = 16;
+/** D042 — cap merged annotations per target message. */
+inline constexpr size_t kMaxAnnotationsPerTarget = 32;
 
 /** D040 — AI compaction (v3). */
 inline constexpr int kCompactionTurnThreshold = 20;

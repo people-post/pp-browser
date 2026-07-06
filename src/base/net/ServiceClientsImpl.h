@@ -29,6 +29,8 @@ public:
     std::lock_guard lock(mutex_);
     delivered_.push_back(std::move(envelope));
   }
+  /** When set, FetchChatHistory returns this error (e.g. simulates relay 403). */
+  void SetFetchHistoryError(std::string error) { fetch_history_error_ = std::move(error); }
 
   Roe<void> Send(const RelayEnvelope& envelope) override;
   Roe<RelayPollResult> PollInbox(const std::string& requester_contact_id, const std::string& cursor) override;
@@ -41,6 +43,7 @@ private:
   size_t poll_index_ = 0;
   std::string next_reply_sender_id_;
   std::vector<uint8_t> reply_signing_private_key_;
+  std::string fetch_history_error_;
 };
 
 /** Test double for D060 peer-direct fetch. */

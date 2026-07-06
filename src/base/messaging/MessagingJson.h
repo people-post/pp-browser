@@ -20,6 +20,8 @@ MessageDelivery MessageDeliveryFromString(const std::string& value);
 
 std::string MessageTransportToString(MessageTransport transport);
 MessageTransport MessageTransportFromString(const std::string& value);
+/** post-v6d — short label for per-message transport badge. */
+std::string MessageTransportBadgeLabel(MessageTransport transport);
 
 nlohmann::json ThreadToJson(const Thread& thread);
 Thread ThreadFromJson(const nlohmann::json& json);

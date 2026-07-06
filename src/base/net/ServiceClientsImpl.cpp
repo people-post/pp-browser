@@ -135,6 +135,9 @@ bool EnvelopeMatchesHistoryRequest(const RelayEnvelope& envelope, const ChatHist
 
 Roe<ChatHistoryResponse> MockRelayClient::FetchChatHistory(const ChatHistoryRequest& request) {
   std::lock_guard lock(mutex_);
+  if (!fetch_history_error_.empty()) {
+    return Error(fetch_history_error_);
+  }
   ChatHistoryResponse response;
   response.peer_identity_kind = request.peer_identity_kind;
   response.peer_identity_value = request.peer_identity_value;

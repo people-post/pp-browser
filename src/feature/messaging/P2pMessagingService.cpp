@@ -8,6 +8,7 @@
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
+#include "base/messaging/SendRelayOptions.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/RelayStreamKey.h"
 #include "base/messaging/RelayWirePayload.h"
@@ -186,6 +187,12 @@ Roe<void> P2pMessagingService::MarkPskVerified(const std::string& thread_id) {
   return psk_coordinator_.MarkVerified(thread_id, util::NowUnixMs());
 }
 
+void P2pMessagingService::ScrollBackfill(const std::string& thread_id,
+                                         std::function<void(Roe<ChatSyncResult>)> on_complete) {
+  RunSyncOnIo(thread_id, [this, thread_id]() { return chat_sync_->ScrollBackfill(thread_id); },
+              std::move(on_complete));
+}
+
 void P2pMessagingService::TailSyncActiveE2eThread() {
   const std::string& active_id = inbox_.ActiveThreadId();
   if (active_id.empty() || !IsE2ePrivateThread(active_id)) {
@@ -348,7 +355,8 @@ void P2pMessagingService::ApplySendResult(const std::string& thread_id, const st
   }
 }
 
-Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& thread_id, const std::string& text) {
+Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& thread_id, const std::string& text,
+                                                         const SendRelayOptions& options) {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -372,12 +380,15 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   ThreadMessage message;
   message.id = util::GenerateUuid();
   message.thread_id = thread_id;
-  message.sender_contact_id = kLocalSelfContactId;
+  message.sender_contact_id = options.sender_contact_id.value_or(kLocalSelfContactId);
   message.text = text;
   message.timestamp = util::NowUnixMs();
   message.delivery = MessageDelivery::Pending;
   message.relay_visible = true;
   message.transport = MessageTransport::Relay;
+  message.generation = options.generation;
+  message.ai_invoke_mode = options.ai_invoke_mode;
+  message.seq_owner_contact_id = options.seq_owner_contact_id;
 
   auto sender_seq = store_.AllocateSenderSeq(thread_id);
   if (!sender_seq) {
@@ -395,7 +406,9 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     return appended.error();
   }
 
-  (void)inbox_.UpdatePreview(thread_id, text);
+  if (options.update_preview) {
+    (void)inbox_.UpdatePreview(thread_id, text);
+  }
 
   auto identity = identity_.Get();
   if (!identity) {

@@ -1,0 +1,19 @@
+#pragma once
+
+#include "base/messaging/ThreadTypes.h"
+
+#include <optional>
+#include <string>
+
+namespace pbr {
+
+/** Options for outbound relay-visible messages (post-v6b shared @ai). */
+struct SendRelayOptions {
+  std::optional<std::string> sender_contact_id;
+  std::optional<std::string> generation;
+  std::optional<std::string> ai_invoke_mode;
+  std::optional<std::string> seq_owner_contact_id;
+  bool update_preview = true;
+};
+
+} // namespace pbr

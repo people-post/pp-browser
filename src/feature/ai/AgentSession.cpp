@@ -84,6 +84,7 @@ struct AgentSession::Impl {
   std::unique_ptr<ThreadCompactionService> compaction;
   std::string pending_thread_id;
   AgentTurnMode turn_mode = AgentTurnMode::Conversation;
+  AtAiMode assist_mode = AtAiMode::Local;
 };
 
 void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event) {
@@ -110,6 +111,7 @@ void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const 
                               .thread_id = state->pending_thread_id,
                               .finish_reason = finish_reason,
                               .scoped_assist = state->turn_mode == AgentTurnMode::ScopedAssist,
+                              .shared_ai_mode = state->assist_mode,
                               .response_goal = state->turn_plan.response_goal,
                               .render_mode = state->turn_plan.render_mode});
 }
@@ -126,6 +128,7 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->people_list_blocks.reset();
   state->pending_entry_id.clear();
   state->pending_thread_id.clear();
+  state->assist_mode = AtAiMode::Local;
   state->turn_mode = AgentTurnMode::Conversation;
   PushLoading(state, false);
 }
@@ -159,6 +162,12 @@ void AgentSession::InjectSynthesisPolicy(const std::shared_ptr<Impl>& state) {
 void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
                                             std::string* out_message_id) {
   if (!state->thread_store || state->pending_thread_id.empty()) {
+    return;
+  }
+  if (state->turn_mode == AgentTurnMode::ScopedAssist && state->assist_mode != AtAiMode::Local) {
+    if (out_message_id) {
+      *out_message_id = util::GenerateUuid();
+    }
     return;
   }
 
@@ -644,7 +653,7 @@ void AgentSession::SubmitToThread(const std::string& thread_id, const std::strin
 }
 
 void AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
-                                      std::optional<std::string> user_payload) {
+                                      std::optional<std::string> user_payload, const AtAiMode mode) {
   if (prompt.empty() || impl_->busy.exchange(true)) {
     return;
   }
@@ -654,6 +663,7 @@ void AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::s
   impl_->pending_user_payload = std::move(user_payload);
   impl_->pending_thread_id = thread_id;
   impl_->turn_mode = AgentTurnMode::ScopedAssist;
+  impl_->assist_mode = mode;
 
   BrowserThread::PostTask(BrowserThreadId::IO, [impl = impl_]() {
     if (!impl->configured) {

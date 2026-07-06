@@ -158,9 +158,11 @@ void RegisterChatWidgetDataTypes(Rml::DataModelConstructor& ctor) {
   ctor.RegisterArray<std::vector<TranscriptDisplayRow>>();
 
   if (auto message_handle = ctor.RegisterStruct<MessageDisplayRow>()) {
+    message_handle.RegisterMember("message_id", &MessageDisplayRow::message_id);
     message_handle.RegisterMember("sender_label", &MessageDisplayRow::sender_label);
     message_handle.RegisterMember("content_rml", &MessageDisplayRow::content_rml);
     message_handle.RegisterMember("row_class", &MessageDisplayRow::row_class);
+    message_handle.RegisterMember("transport_badge", &MessageDisplayRow::transport_badge);
     message_handle.RegisterMember("has_content", &MessageDisplayRow::has_content);
     message_handle.RegisterMember("has_form", &MessageDisplayRow::has_form);
     message_handle.RegisterMember("form", &MessageDisplayRow::form);

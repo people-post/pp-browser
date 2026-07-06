@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/ai/conversation/ConversationTypes.h"
+#include "base/messaging/ChatPayloadTypes.h"
 
 #include <cstdint>
 #include <optional>
@@ -20,8 +21,6 @@ enum class MessageDelivery { Local, Pending, Relayed, Failed };
 
 /** How a message reached this device (D051). */
 enum class MessageTransport { Local, Relay, Direct };
-
-enum class ChatContentType { Text, System };
 
 /** Direct P2P tier (D089). None for AI / non-E2E threads. */
 enum class ThreadChannel { None, E2e, E2ePublic };
@@ -62,6 +61,12 @@ struct ThreadMessage {
   int64_t display_order = 0;
   ChatContentType content_type = ChatContentType::Text;
   std::string text;
+  /** Denormalized JSON tail for rich payload types (post-v4). */
+  std::string payload_json;
+  std::optional<std::string> target_message_id;
+  std::optional<std::string> generation;
+  std::optional<std::string> seq_owner_contact_id;
+  std::optional<std::string> ai_invoke_mode;
   std::optional<std::string> content_rml;
   std::vector<TranscriptChatAction> chat_actions;
   int64_t timestamp = 0;

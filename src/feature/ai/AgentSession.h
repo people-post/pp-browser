@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/ai/LlmClient.h"
+#include "base/messaging/AtAiParser.h"
 #include "base/ai/TurnPlan.h"
 #include "base/ai/TurnTrace.h"
 #include "base/ai/conversation/ConversationTypes.h"
@@ -36,6 +36,7 @@ struct AgentEvent {
   std::string thread_id;
   std::string finish_reason;
   bool scoped_assist = false;
+  AtAiMode shared_ai_mode = AtAiMode::None;
   ResponseGoal response_goal = ResponseGoal::General;
   RenderMode render_mode = RenderMode::Blocks;
 };
@@ -55,7 +56,8 @@ public:
   void SubmitToThread(const std::string& thread_id, const std::string& user_text,
                       std::optional<std::string> user_payload = std::nullopt);
   void SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
-                          std::optional<std::string> user_payload = std::nullopt);
+                          std::optional<std::string> user_payload = std::nullopt,
+                          AtAiMode mode = AtAiMode::Local);
   void PollEvents(std::vector<AgentEvent>& out);
   void Cancel();
   void StartNewConversation();

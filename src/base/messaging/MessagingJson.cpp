@@ -138,6 +138,18 @@ MessageTransport MessageTransportFromString(const std::string& value) {
   return MessageTransport::Local;
 }
 
+std::string MessageTransportBadgeLabel(const MessageTransport transport) {
+  switch (transport) {
+  case MessageTransport::Direct:
+    return "Direct";
+  case MessageTransport::Relay:
+    return "Relay";
+  case MessageTransport::Local:
+    return "Local";
+  }
+  return "Local";
+}
+
 nlohmann::json ThreadToJson(const Thread& thread) {
   nlohmann::json json = {{"id", thread.id},
                          {"kind", ThreadKindToString(thread.kind)},

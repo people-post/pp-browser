@@ -46,6 +46,7 @@ set(PP_BROWSER_BASE_SOURCES
   messaging/PeerSigningKeyStore.cpp
   messaging/AtAiParser.cpp
   messaging/ChatPayloadCodec.cpp
+  messaging/ChatPayloadTypes.cpp
   messaging/ChatPayloadValidator.cpp
   messaging/SyncStateCodec.cpp
   messaging/ConversationSummaryCodec.cpp

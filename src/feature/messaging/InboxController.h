@@ -46,6 +46,11 @@ private:
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
   std::string ResolveRowClass(const std::string& sender_contact_id) const;
   std::string BuildMessageRml(const ThreadMessage& message) const;
+  std::string BuildSystemRml(const ThreadMessage& message) const;
+  std::string BuildContactCardRml(const ThreadMessage& message) const;
+  std::string BuildCryptoTxRml(const ThreadMessage& message) const;
+  std::string BuildTransportBadgeHtml(const ThreadMessage& message) const;
+  std::string BuildSharedBadgeHtml(const ThreadMessage& message) const;
 
   IThreadStore& store_;
   ContactsStore& contacts_;
