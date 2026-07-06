@@ -4,10 +4,10 @@
   <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2"
             maxlength="65536"
             data-value="draft" data-attr-placeholder="draft_placeholder"
-            data-attr-disabled="compose_disabled"></textarea>
+            data-attrif-disabled="compose_disabled"></textarea>
   <div class="prompt-composer-footer">
     <div class="prompt-composer-leading"></div>
-    <button class="prompt-send-btn" type="button" data-event-click="send_message()" data-attr-disabled="compose_disabled">
+    <button class="prompt-send-btn" type="button" data-event-click="send_message()" data-attrif-disabled="compose_disabled">
       <svg src="../icons/send.svg" width="18" height="18" crop-to-content="true"></svg>
     </button>
   </div>

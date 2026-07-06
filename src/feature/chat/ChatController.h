@@ -151,6 +151,7 @@ private:
   void HandleAgentEvent(const AgentEvent& event);
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload);
   void RefreshFromMessaging();
+  void OnShellLayoutSynced();
   void OnLoadOlderHistory();
   void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
 
@@ -186,6 +187,7 @@ private:
   std::map<std::string, std::vector<WorkingSetCandidate>> working_set_by_entry_;
   WorkingSetAffinity active_working_set_affinity_ = WorkingSetAffinity::None;
   std::string active_working_set_entry_id_;
+  bool focus_draft_after_sync_ = false;
 };
 
 bool SetupChatController(Rml::Context* context);

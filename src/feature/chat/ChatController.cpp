@@ -1300,14 +1300,32 @@ void ChatController::OnNewChat() {
   chat_.draft = "";
   chat_.status = "";
   chat_.loading = false;
+  chat_.compose_disabled = false;
   pending_reply_.reset();
+  if (agent_) {
+    agent_->Cancel();
+  }
   ClearWorkingSet();
   working_set_by_entry_.clear();
   ClearFormState();
   widgets_by_entry_.clear();
-  RefreshFromMessaging();
-  ShellHost::Instance().RequestSyncLayout();
+  ShellHost::Instance().SetPrimaryPane("chat");
+  focus_draft_after_sync_ = true;
+  FinalizeThreadDisplay();
   ShellHost::Instance().DirtyWindow();
+}
+
+void ChatController::OnShellLayoutSynced() {
+  if (!focus_draft_after_sync_) {
+    return;
+  }
+  focus_draft_after_sync_ = false;
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  if (Rml::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
+    draft->Focus();
+  }
 }
 
 bool ChatController::IsFormEditable(const std::string& entry_id, const std::string& form_id) const {
@@ -1950,6 +1968,7 @@ bool ChatController::Setup(Rml::Context* context) {
   });
   ShellHost::Instance().SetOnLayoutSynced([]() {
     SettingsController::Instance().OnShellLayoutSynced();
+    ChatController::Instance().OnShellLayoutSynced();
   });
   ShellHost::Instance().RegisterPane(
       {.key = "sidebar", .rml_path = "views/sidebar.rml", .role = PaneRole::Secondary});
