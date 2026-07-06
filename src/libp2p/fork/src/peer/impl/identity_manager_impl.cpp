@@ -29,9 +29,8 @@ namespace libp2p::peer {
     keyPair_ = std::make_unique<crypto::KeyPair>(std::move(keyPair));
 
     // it is ok to use .value()
-    auto id = peer::PeerId::fromPublicKey(
-                  marshaller->marshal(keyPair_->publicKey).value())
-                  .value();
-    id_ = std::make_unique<peer::PeerId>(std::move(id));
+    auto marshalled_key = marshaller->marshal(keyPair_->publicKey);
+    auto peer_id = peer::PeerId::fromPublicKey(marshalled_key.value());
+    id_ = std::make_unique<peer::PeerId>(std::move(peer_id).value());
   }
 }  // namespace libp2p::peer

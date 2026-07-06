@@ -139,6 +139,18 @@
 
 namespace libp2p::injector {
 
+  namespace detail {
+    /**
+     * Boost.DI hands bound instances to by-value constructor parameters via
+     * move. KeyPair is consumed by both IdentityManagerImpl and Noise; keep one
+     * shared copy and return a fresh copy per injection site.
+     */
+    inline auto bindSharedKeyPair(crypto::KeyPair key_pair) {
+      auto store = std::make_shared<crypto::KeyPair>(std::move(key_pair));
+      return boost::di::bind<crypto::KeyPair>().to([store] { return *store; });
+    }
+  }  // namespace detail
+
   /**
    * @brief Instruct injector to use this keypair. Can be used once.
    *
@@ -150,8 +162,7 @@ namespace libp2p::injector {
    * @endcode
    */
   inline auto useKeyPair(crypto::KeyPair key_pair) {
-    return boost::di::bind<crypto::KeyPair>().to(
-        std::move(key_pair))[boost::di::override];
+    return detail::bindSharedKeyPair(std::move(key_pair))[boost::di::override];
   }
 
   /**
@@ -308,7 +319,7 @@ namespace libp2p::injector {
     return di::make_injector<InjectorConfig>(
         di::bind<crypto::random::RandomGenerator>.to<crypto::random::BoostRandomGenerator>(),
 
-        di::bind<crypto::KeyPair>().to(std::move(keypair)),
+        detail::bindSharedKeyPair(std::move(keypair)),
         di::bind<crypto::random::CSPRNG>().to(std::move(csprng)),
         di::bind<crypto::ed25519::Ed25519Provider>().to(std::move(ed25519_provider)),
         di::bind<crypto::rsa::RsaProvider>().to(std::move(rsa_provider)),

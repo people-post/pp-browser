@@ -40,7 +40,7 @@ namespace libp2p::host {
   }
 
   peer::PeerId BasicHost::getId() const {
-    return idmgr_->getId();
+    return peer::PeerId{idmgr_->getId()};
   }
 
   peer::PeerInfo BasicHost::getPeerInfo() const {

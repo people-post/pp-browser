@@ -48,8 +48,7 @@ namespace libp2p::peer {
     if (!multihash_res) {
       return multihash_res.error();
     }
-    auto multihash = std::move(multihash_res).value();
-    return PeerId{std::move(multihash)};
+    return PeerId{multihash_res.value()};
   }
 
   PeerId::FactoryResult PeerId::fromBase58(std::string_view id) {
@@ -63,14 +62,14 @@ namespace libp2p::peer {
     if (!hash_res) {
       return std::move(hash_res).as_failure();
     }
-    auto hash = std::move(hash_res).value();
+    const auto &hash = hash_res.value();
 
     if (hash.getType() != multi::HashType::sha256
         && hash.toBuffer().size() > kMaxInlineKeyLength) {
       return FactoryError::SHA256_EXPECTED;
     }
 
-    return PeerId{std::move(hash)};
+    return PeerId{hash};
   }
 
   PeerId::FactoryResult PeerId::fromHash(const Multihash &hash) {
