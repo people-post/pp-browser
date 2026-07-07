@@ -20,10 +20,12 @@ namespace libp2p::transport {
     }
     auto &[info, layers] = r.value();
     auto conn = std::make_shared<TcpConnection>(*context_, layers);
+    auto self = shared_from_this();
     auto upgrader = upgrader_;
     auto dial_timeout = mux_config_.dial_timeout;
     auto connect =
         [conn,
+         self,
          upgrader = std::move(upgrader),
          address,
          remoteId,
@@ -38,6 +40,7 @@ namespace libp2p::transport {
           conn->connect(
               r.value(),
               [conn,
+               self,
                upgrader,
                address,
                remoteId,
