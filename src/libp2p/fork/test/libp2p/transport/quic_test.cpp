@@ -67,7 +67,7 @@ TEST(Quic, Test) {
 #ifdef _WIN32
   // TODO: QUIC causes an access violation (SEH 0xc0000005) on Windows.
   // Skip until the lsquic Windows port is validated.
-  GTEST_SKIP() << "QUIC test skipped on Windows (lsquic not yet stable)";
+  GTEST_SKIP() << "QUIC test skipped on Windows (lsquic Windows port not yet validated)";
 #endif
   std::string protocol = "/test";
   const size_t size = 1 << 20;
