@@ -91,6 +91,8 @@ jobs:
 
       - name: Test
         shell: bash
+        env:
+          TRACE_DEBUG: "1"
         run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Smoke run (Linux)
