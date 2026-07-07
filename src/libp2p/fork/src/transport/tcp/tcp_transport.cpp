@@ -20,11 +20,16 @@ namespace libp2p::transport {
     }
     auto &[info, layers] = r.value();
     auto conn = std::make_shared<TcpConnection>(*context_, layers);
+    auto upgrader = upgrader_;
+    auto dial_timeout = mux_config_.dial_timeout;
     auto connect =
-        [=,
-         self{shared_from_this()},
-         handler{std::move(handler)},
-         layers = std::move(layers)](
+        [conn,
+         upgrader = std::move(upgrader),
+         address,
+         remoteId,
+         handler = std::move(handler),
+         layers = std::move(layers),
+         dial_timeout](
             outcome::result<boost::asio::ip::tcp::resolver::results_type>
                 r) mutable {
           if (not r) {
@@ -32,22 +37,23 @@ namespace libp2p::transport {
           }
           conn->connect(
               r.value(),
-              [=, handler{std::move(handler)}, layers = std::move(layers)](
-                  auto ec, auto &e) mutable {
+              [conn,
+               upgrader,
+               address,
+               remoteId,
+               handler = std::move(handler),
+               layers = std::move(layers)](auto ec, auto &e) mutable {
                 if (ec) {
                   std::ignore = conn->close();
                   return handler(ec);
                 }
 
-                auto session =
-                    std::make_shared<UpgraderSession>(self->upgrader_,
-                                                      std::move(layers),
-                                                      std::move(conn),
-                                                      handler);
+                auto session = std::make_shared<UpgraderSession>(
+                    upgrader, std::move(layers), std::move(conn), handler);
 
                 session->upgradeOutbound(address, remoteId);
               },
-              mux_config_.dial_timeout);
+              dial_timeout);
         };
     resolve(resolver_, info, std::move(connect));
   }

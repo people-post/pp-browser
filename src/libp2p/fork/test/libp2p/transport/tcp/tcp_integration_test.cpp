@@ -227,11 +227,10 @@ TEST(TCP, DialToNoServer) {
     context->stop();
   });
 
-  using std::chrono_literals::operator""ms;
-  context->run_for(500ms);
+  context->run();
   transport.reset();
   context->restart();
-  context->poll();
+  context->run();
 }
 
 /**

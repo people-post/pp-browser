@@ -23,7 +23,7 @@ namespace libp2p::transport {
       : io_context_{std::move(io_context)},
         ssl_context_{ssl_context.quic},
         mux_config_{mux_config},
-        local_peer_{id_mgr.getId()},
+        local_peer_{peer::PeerId{id_mgr.getId()}},
         key_codec_{std::move(key_codec)},
         resolver_{*io_context_} {}
 

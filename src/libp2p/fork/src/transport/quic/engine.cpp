@@ -6,15 +6,20 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+#include <ws2tcpip.h>
 // winsock2.h pulls in wincrypt.h which defines these as integer constants,
 // conflicting with BoringSSL's typedefs in openssl/base.h.
 #undef X509_NAME
 #undef X509_EXTENSIONS
 #undef PKCS7_ISSUER_AND_SERIAL
 #undef PKCS7_SIGNER_INFO
+#else
+#include <arpa/inet.h>
+#include <cerrno>
 #endif
 #include <boost/asio/ssl/context.hpp>
 #include <vector>
+#include <cstring>
 #include <libp2p/common/asio_buffer.hpp>
 #include <libp2p/common/asio_cb.hpp>
 #include <libp2p/muxer/muxed_connection_config.hpp>
@@ -29,6 +34,49 @@
 #include <qtils/option_take.hpp>
 
 namespace libp2p::transport::lsquic {
+  namespace {
+    outcome::result<boost::asio::ip::udp::endpoint> udpEndpointFromSockaddr(
+        const sockaddr *addr) {
+      if (addr == nullptr) {
+        return QuicError::HANDSHAKE_FAILED;
+      }
+      if (addr->sa_family == AF_INET) {
+        const auto *v4 = reinterpret_cast<const sockaddr_in *>(addr);
+        return boost::asio::ip::udp::endpoint{
+            boost::asio::ip::make_address_v4(ntohl(v4->sin_addr.s_addr)),
+            ntohs(v4->sin_port)};
+      }
+      if (addr->sa_family == AF_INET6) {
+        const auto *v6 = reinterpret_cast<const sockaddr_in6 *>(addr);
+        boost::asio::ip::address_v6::bytes_type bytes{};
+        static_assert(bytes.size() == 16);
+        std::memcpy(bytes.data(), &v6->sin6_addr, bytes.size());
+        return boost::asio::ip::udp::endpoint{
+            boost::asio::ip::address_v6{bytes, v6->sin6_scope_id},
+            ntohs(v6->sin6_port)};
+      }
+      return QuicError::HANDSHAKE_FAILED;
+    }
+
+    outcome::result<Multiaddress> remoteQuicAddr(
+        lsquic_conn_t *conn,
+        const std::optional<Connecting> &connecting) {
+      if (connecting) {
+        return detail::makeQuicAddr(connecting->remote);
+      }
+      const struct sockaddr *local_sa = nullptr;
+      const struct sockaddr *peer_sa = nullptr;
+      if (lsquic_conn_get_sockaddr(conn, &local_sa, &peer_sa) != 0) {
+        return QuicError::HANDSHAKE_FAILED;
+      }
+      auto endpoint_res = udpEndpointFromSockaddr(peer_sa);
+      if (!endpoint_res) {
+        return endpoint_res.as_failure();
+      }
+      return detail::makeQuicAddr(std::move(endpoint_res).value());
+    }
+  }  // namespace
+
   Engine::Engine(std::shared_ptr<boost::asio::io_context> io_context,
                  std::shared_ptr<boost::asio::ssl::context> ssl_context,
                  const muxer::MuxedConnectionConfig &mux_config,
@@ -45,6 +93,7 @@ namespace libp2p::transport::lsquic {
         socket_local_{socket_.local_endpoint()},
         local_{detail::makeQuicAddr(socket_local_).value()} {
     socket_.non_blocking(true);
+    reading_.remote = boost::asio::ip::udp::endpoint{socket_local_.protocol(), 0};
 
     lsquicInit();
 
@@ -105,6 +154,9 @@ namespace libp2p::transport::lsquic {
           return QuicError::HANDSHAKE_FAILED;
         }
         auto cert = SSL_get_peer_certificate(lsquic_conn_ssl(conn));
+        if (cert == nullptr) {
+          return QuicError::HANDSHAKE_FAILED;
+        }
         auto info_res = security::tls_details::verifyPeerAndExtractIdentity(
             cert, *self->key_codec_);
         if (!info_res) {
@@ -114,12 +166,17 @@ namespace libp2p::transport::lsquic {
         if (op and info.peer_id != op->peer) {
           return security::TlsError::TLS_UNEXPECTED_PEER_ID;
         }
+        auto remote_res = remoteQuicAddr(conn, op);
+        if (!remote_res) {
+          return remote_res.error();
+        }
+        auto remote = std::move(remote_res).value();
         auto conn = std::make_shared<QuicConnection>(
             self->io_context_,
             conn_ctx,
             op.has_value(),
             self->local_,
-            detail::makeQuicAddr(op->remote).value(),
+            std::move(remote),
             self->local_peer_,
             info.peer_id,
             info.public_key);
@@ -414,11 +471,12 @@ namespace libp2p::transport::lsquic {
                         0,
                         reading_.remote.data(),
                         &len);
-      if (n == -1) {
 #ifdef _WIN32
+      if (n == SOCKET_ERROR) {
         const auto wsa_error = WSAGetLastError();
         if (wsa_error == WSAEWOULDBLOCK) {
 #else
+      if (n == -1) {
         if (errno == EAGAIN or errno == EWOULDBLOCK) {
 #endif
           auto cb =
