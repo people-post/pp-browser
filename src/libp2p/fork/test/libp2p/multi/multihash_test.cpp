@@ -116,3 +116,35 @@ TEST(Multihash, CompareDifferentHashes) {
   ASSERT_FALSE(hash1 < hash1);
   ASSERT_FALSE(hash2 < hash2);
 }
+
+/**
+ * @given a multihash
+ * @when move-constructing / move-assigning / copy-assigning
+ * @then the destination holds the original value (moved-from is unspecified)
+ */
+TEST(Multihash, MoveAndCopy) {
+  std::vector<uint8_t> hash{2, 3, 4};
+  auto original = Multihash::create(HashType::blake2s128, hash).value();
+  const auto expected_type = original.getType();
+  // Copy: toBuffer() returns a reference into the Multihash.
+  const Bytes expected_buffer = original.toBuffer();
+  const Bytes expected_digest(original.getHash().begin(),
+                              original.getHash().end());
+
+  auto moved = std::move(original);
+  ASSERT_EQ(moved.getType(), expected_type);
+  ASSERT_EQ(moved.toBuffer(), expected_buffer);
+  ASSERT_TRUE(moved.getHash() == BytesIn(expected_digest));
+
+  auto copy = Multihash::create(HashType::sha256, hash).value();
+  copy = moved;
+  ASSERT_EQ(copy, moved);
+  ASSERT_EQ(copy.getType(), expected_type);
+  ASSERT_EQ(copy.toBuffer(), expected_buffer);
+
+  auto other = Multihash::create(HashType::sha256, hash).value();
+  other = std::move(moved);
+  ASSERT_EQ(other.getType(), expected_type);
+  ASSERT_EQ(other.toBuffer(), expected_buffer);
+  ASSERT_TRUE(other.getHash() == BytesIn(expected_digest));
+}

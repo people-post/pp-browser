@@ -51,6 +51,7 @@ Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/
 
 **pp-browser fork changes (initial import):**
 
+- `Multihash` — inline value storage instead of `shared_ptr` (avoids null moved-from state that broke MSVC Release peer identity paths)
 - `Noise` — take `IdentityManager` and copy `getKeyPair()` instead of a DI-bound `KeyPair` by value (MSVC/Boost.DI moved the same KeyPair into IdentityManager and Noise)
 - `network_injector.hpp` — `bindSharedKeyPair()` returns a fresh KeyPair copy per injection from a shared store
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded

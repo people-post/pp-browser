@@ -26,7 +26,7 @@ namespace libp2p::peer {
   using multi::detail::decodeBase58;
   using multi::detail::encodeBase58;
 
-  PeerId::PeerId(multi::Multihash hash) : hash_{std::move(hash)} {}
+  PeerId::PeerId(const multi::Multihash &hash) : hash_{hash} {}
 
   PeerId::FactoryResult PeerId::fromPublicKey(const crypto::ProtobufKey &key) {
     std::vector<uint8_t> hash;

@@ -92,7 +92,7 @@ namespace libp2p::peer {
      * Create an instance of PeerId
      * @param hash, with which PeerId is to be created
      */
-    explicit PeerId(multi::Multihash hash);
+    explicit PeerId(const multi::Multihash &hash);
 
     multi::Multihash hash_;
   };

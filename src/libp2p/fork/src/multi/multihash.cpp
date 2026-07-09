@@ -6,10 +6,10 @@
 
 #include <libp2p/multi/multihash.hpp>
 
+#include <boost/assert.hpp>
 #include <boost/container_hash/hash.hpp>
 #include <libp2p/basic/varint_prefix_reader.hpp>
 #include <libp2p/common/types.hpp>
-#include <libp2p/log/logger.hpp>
 #include <qtils/hex.hpp>
 #include <qtils/unhex.hpp>
 
@@ -34,8 +34,7 @@ OUTCOME_CPP_DEFINE_CATEGORY(libp2p::multi, Multihash::Error, e) {
 
 namespace libp2p::multi {
 
-  Multihash::Multihash(HashType type, BytesIn hash)
-      : data_(std::make_shared<const Data>(type, hash)) {}
+  Multihash::Multihash(HashType type, BytesIn hash) : data_(type, hash) {}
 
   namespace {
     template <typename Buffer>
@@ -61,20 +60,8 @@ namespace libp2p::multi {
     std_hash = boost::hash_range(bytes.begin(), bytes.end());
   }
 
-  const Multihash::Data &Multihash::data() const {
-#if NDEBUG
-    if (data_ == nullptr) {
-      log::createLogger("Multihash")->critical("attempt to use moved object");
-      throw std::runtime_error("attempt to use moved multihash");
-    }
-#else
-    BOOST_ASSERT(data_);
-#endif
-    return *data_;
-  }
-
   size_t Multihash::stdHash() const {
-    return data().std_hash;
+    return data_.std_hash;
   }
 
   outcome::result<Multihash> Multihash::create(HashType type, BytesIn hash) {
@@ -124,29 +111,23 @@ namespace libp2p::multi {
   }
 
   const HashType &Multihash::getType() const {
-    return data().type;
+    return data_.type;
   }
 
   BytesIn Multihash::getHash() const {
-    const auto &d = data();
-    return BytesIn(d.bytes).subspan(d.hash_offset);
+    return BytesIn(data_.bytes).subspan(data_.hash_offset);
   }
 
   std::string Multihash::toHex() const {
-    return fmt::format("{:X}", data().bytes);
+    return fmt::format("{:X}", data_.bytes);
   }
 
   const Bytes &Multihash::toBuffer() const {
-    return data().bytes;
+    return data_.bytes;
   }
 
   bool Multihash::operator==(const Multihash &other) const {
-    const auto &a = data();
-    const auto &b = other.data();
-    if (data_ == other.data_) {
-      return true;
-    }
-    return a.bytes == b.bytes && a.type == b.type;
+    return data_.bytes == other.data_.bytes && data_.type == other.data_.type;
   }
 
   bool Multihash::operator!=(const Multihash &other) const {
@@ -154,12 +135,10 @@ namespace libp2p::multi {
   }
 
   bool Multihash::operator<(const class libp2p::multi::Multihash &other) const {
-    const auto &a = data();
-    const auto &b = other.data();
-    if (a.type == b.type) {
-      return a.bytes < b.bytes;
+    if (data_.type == other.data_.type) {
+      return data_.bytes < other.data_.bytes;
     }
-    return a.type < b.type;
+    return data_.type < other.data_.type;
   }
 
 }  // namespace libp2p::multi

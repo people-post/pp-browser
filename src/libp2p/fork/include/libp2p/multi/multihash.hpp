@@ -7,6 +7,7 @@
 #pragma once
 
 #include <utility>
+#include <vector>
 
 #include <libp2p/common/types.hpp>
 #include <libp2p/multi/hash_type.hpp>
@@ -18,6 +19,9 @@ namespace libp2p::multi {
    * Special format of hash used in Libp2p. Allows to differentiate between
    * outputs of different hash functions. More
    * https://github.com/multiformats/multihash
+   *
+   * Value type with inline storage (no shared_ptr). Moved-from state is
+   * unspecified, as usual for C++ value types.
    */
   class Multihash {
    public:
@@ -121,15 +125,14 @@ namespace libp2p::multi {
       // as soon as toBuffer() -> span<const uint8_t> is acceptable
       std::vector<uint8_t> bytes;
       uint8_t hash_offset{};  ///< size of non-hash data from the beginning
-      HashType type;
-      size_t std_hash;  ///< Hash for unordered containers
+      HashType type{};
+      size_t std_hash{};  ///< Hash for unordered containers
 
+      Data() = default;
       Data(HashType t, BytesIn h);
     };
 
-    const Data &data() const;
-
-    std::shared_ptr<const Data> data_;
+    Data data_;
   };
 
 }  // namespace libp2p::multi
