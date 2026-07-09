@@ -1,6 +1,7 @@
 #include "RmlUi_Backend.h"
 #include "RmlUi_Platform_SDL.h"
 #include "RmlUi_Renderer_GL3.h"
+#include "TextLoupeRenderer.h"
 #include "TouchSimOverlay.h"
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
@@ -109,6 +110,7 @@ struct BackendData {
 	SDL_GLContext glcontext = nullptr;
 
 	bool running = true;
+	bool force_next_frame = false;
 };
 static Rml::UniquePtr<BackendData> data;
 #if SDL_MAJOR_VERSION >= 3
@@ -236,6 +238,9 @@ void Backend::SyncContext(Rml::Context* context)
 	context->SetDimensions(Rml::Vector2i(pixel_w, pixel_h));
 	context->SetDensityIndependentPixelRatio(SDL_GetWindowDisplayScale(data->window));
 	data->render_interface.SetViewport(pixel_w, pixel_h);
+	data->force_next_frame = true;
+	Rml::Log::Message(Rml::Log::LT_DEBUG, "SyncContext: %dx%d scale=%.3f", pixel_w, pixel_h,
+		SDL_GetWindowDisplayScale(data->window));
 #else
 	(void)context;
 #endif
@@ -251,7 +256,52 @@ SDL_Window* Backend::GetWindow()
 {
 	return data ? data->window : nullptr;
 }
+
+void Backend::RecoverAfterDeviceReset(Rml::Context* context)
+{
+	if (!data)
+		return;
+
+	SDL_GLContext current = SDL_GL_GetCurrentContext();
+	if (current)
+		data->glcontext = current;
+	else if (data->glcontext)
+		SDL_GL_MakeCurrent(data->window, data->glcontext);
+
+	Rml::Log::Message(Rml::Log::LT_WARNING, "Recovering GPU resources after RENDER_DEVICE_RESET");
+
+	// Drop RmlUi-owned GPU caches first (stale GL names), then rebuild renderer objects.
+	Rml::ReleaseTextures(&data->render_interface);
+	Rml::ReleaseCompiledGeometry(&data->render_interface);
+	Rml::ReleaseFontResources();
+
+	TextLoupeRenderer::ReleaseGpuResources();
+	data->render_interface.RecoverGpuResources();
+
+	if (context)
+		SyncContext(context);
+
+	data->force_next_frame = true;
+}
 #endif
+
+bool Backend::CanRender()
+{
+	if (!data || !data->window)
+		return false;
+
+#if SDL_MAJOR_VERSION >= 3
+	if (!SDL_GL_GetCurrentContext())
+		return false;
+
+	int pixel_w = 0;
+	int pixel_h = 0;
+	SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
+	return pixel_w > 0 && pixel_h > 0;
+#else
+	return true;
+#endif
+}
 
 void Backend::Shutdown()
 {
@@ -333,8 +383,13 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 	bool result = data->running;
 	data->running = true;
 
+	const bool force_frame = data->force_next_frame;
+	data->force_next_frame = false;
+
 	SDL_Event ev;
-	if (power_save)
+	if (force_frame)
+		has_event = SDL_PollEvent(&ev);
+	else if (power_save)
 		has_event = SDL_WaitEventTimeout(&ev, static_cast<int>(Rml::Math::Min(context->GetNextUpdateDelay(), 10.0) * 1000));
 	else
 		has_event = SDL_PollEvent(&ev);
@@ -386,6 +441,10 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 		case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
 		case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
 			SyncContext(context);
+			propagate_event = false;
+			break;
+		case SDL_EVENT_RENDER_DEVICE_RESET:
+			RecoverAfterDeviceReset(context);
 			propagate_event = false;
 			break;
 		case SDL_EVENT_WILL_ENTER_BACKGROUND:

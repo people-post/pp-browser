@@ -33,6 +33,7 @@ bool SdlAppEvents::PreProcess(Rml::Context* context, SDL_Event& event, bool& pro
   case SDL_EVENT_DID_ENTER_FOREGROUND:
     AppLifecycle::OnDidEnterForeground();
     if (context) {
+      // Resume may restore EGL without a device-reset event; re-sync size/viewport.
       Backend::SyncContext(context);
       Theme::SyncSystemTheme(context);
     }

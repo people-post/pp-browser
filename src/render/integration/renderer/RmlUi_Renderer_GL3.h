@@ -31,6 +31,9 @@ public:
 	// Optional, can be used to clear the active framebuffer.
 	void Clear();
 
+	// Rebuild shaders, layer FBOs, and internal geometry after an EGL/GL context loss.
+	void RecoverGpuResources();
+
 	// -- Inherited from Rml::RenderInterface --
 
 	Rml::CompiledGeometryHandle CompileGeometry(Rml::Span<const Rml::Vertex> vertices, Rml::Span<const int> indices) override;
@@ -147,6 +150,8 @@ private:
 
 		void BeginFrame(int new_width, int new_height);
 		void EndFrame();
+		// Drop all layer/postprocess FBOs so the next BeginFrame recreates them.
+		void InvalidateFramebuffers();
 
 	private:
 		void DestroyFramebuffers();

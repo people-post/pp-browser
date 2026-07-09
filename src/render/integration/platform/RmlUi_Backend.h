@@ -28,9 +28,14 @@ Rml::RenderInterface* GetRenderInterface();
 
 void SyncContext(Rml::Context* context);
 
+// True when the window has a current GL context and a positive pixel size.
+bool CanRender();
+
 #if RMLUI_SDL_VERSION_MAJOR >= 3
 void SetPreProcessEventHandler(PreProcessEventCallback callback);
 SDL_Window* GetWindow();
+// Rebuild GL resources and invalidate RmlUi GPU caches after SDL_EVENT_RENDER_DEVICE_RESET.
+void RecoverAfterDeviceReset(Rml::Context* context);
 #endif
 
 bool ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback = nullptr, bool power_save = false);

@@ -267,6 +267,12 @@ void DrawCircle(GLuint program, GLint projection_location, GLint center_location
 
 namespace TextLoupeRenderer {
 
+void ReleaseGpuResources()
+{
+	// After EGL context loss, GL names are invalid; drop state without glDelete*.
+	g_state = {};
+}
+
 void Render(Rml::TextLoupePhase phase, const Rml::TextLoupeState& state, RenderInterface_GL3& renderer, float dp_ratio)
 {
 	if (!state.active)

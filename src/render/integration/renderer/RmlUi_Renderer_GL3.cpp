@@ -801,6 +801,28 @@ RenderInterface_GL3::~RenderInterface_GL3()
 	}
 }
 
+void RenderInterface_GL3::RecoverGpuResources()
+{
+	// GL object names are invalid after context loss; drop handles without issuing GL deletes.
+	fullscreen_quad_geometry = {};
+	program_data.reset();
+	program_transform_dirty.reset();
+	active_program = {};
+	render_layers.InvalidateFramebuffers();
+
+	auto mut_program_data = Rml::MakeUnique<Gfx::ProgramData>();
+	if (!Gfx::CreateShaders(*mut_program_data))
+	{
+		Rml::Log::Message(Rml::Log::LT_ERROR, "Failed to recreate OpenGL shaders after device reset.");
+		return;
+	}
+
+	program_data = std::move(mut_program_data);
+	Rml::Mesh mesh;
+	Rml::MeshUtilities::GenerateQuad(mesh, Rml::Vector2f(-1), Rml::Vector2f(2), {});
+	fullscreen_quad_geometry = RenderInterface_GL3::CompileGeometry(mesh.vertices, mesh.indices);
+}
+
 void RenderInterface_GL3::SetViewport(int width, int height, int offset_x, int offset_y)
 {
 	viewport_width = Rml::Math::Max(width, 1);
@@ -2167,6 +2189,18 @@ void RenderInterface_GL3::RenderLayerStack::DestroyFramebuffers()
 
 	for (Gfx::FramebufferData& fb : fb_postprocess)
 		Gfx::DestroyFramebuffer(fb);
+}
+
+void RenderInterface_GL3::RenderLayerStack::InvalidateFramebuffers()
+{
+	RMLUI_ASSERTMSG(layers_size == 0, "Do not call this during frame rendering, that is, between BeginFrame() and EndFrame().");
+
+	// After EGL context loss, previous FBO/texture names are stale; clear without glDelete*.
+	fb_layers.clear();
+	for (Gfx::FramebufferData& fb : fb_postprocess)
+		fb = {};
+	width = 0;
+	height = 0;
 }
 
 const Gfx::FramebufferData& RenderInterface_GL3::RenderLayerStack::EnsureFramebufferPostprocess(int index)

@@ -193,9 +193,12 @@ void Application::Run() {
     ContextMenuHost::Instance().Update();
     ShellHost::Instance().Update(context);
     context->Update();
-    Backend::BeginFrame();
-    context->Render();
-    Backend::PresentFrame();
+    // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
+    if (Backend::CanRender()) {
+      Backend::BeginFrame();
+      context->Render();
+      Backend::PresentFrame();
+    }
   }
 }
 

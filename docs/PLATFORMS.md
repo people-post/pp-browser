@@ -23,6 +23,20 @@ Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libma
 
 Profile-scoped data layout (`profiles/{id}/`) is unchanged on mobile.
 
+### Android GL lifecycle (rotation / Recents)
+
+Android keeps the activity alive across orientation changes (`configChanges` in the manifest). SDL tears down and restores the EGL surface on pause/resume and during some rotations.
+
+| Event | App response |
+|-------|----------------|
+| `SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED` / display scale / safe area | `Backend::SyncContext` updates RmlUi dimensions, DP ratio, and GL viewport; next frame is forced (no long power-save wait) |
+| `SDL_EVENT_RENDER_DEVICE_RESET` | Rebuild GL3 shaders/FBOs, release TextLoupe GPU state, `Rml::ReleaseTextures` / `ReleaseCompiledGeometry` / `ReleaseFontResources`, then `SyncContext` |
+| `SDL_EVENT_DID_ENTER_FOREGROUND` | `SyncContext` + theme sync (size may have changed while backgrounded) |
+| Invalid surface / zero pixel size | Skip `BeginFrame` / `PresentFrame` (avoids clearing into a dead surface) |
+| `onPause` / focus loss (before surface destroy) | `MainActivity` best-effort `PixelCopy` of `SDLSurface` into `TaskDescription` so Recents is less likely to show a black tile |
+
+Do not issue OpenGL calls after `SDL_EVENT_WILL_ENTER_BACKGROUND`; SDL may have already backed up the EGL context.
+
 Build: [BUILD.md](BUILD.md#android-local).
 
 ## iOS (reserved)

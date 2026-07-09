@@ -1,13 +1,196 @@
 package dev.pp_browser.app;
 
+import android.app.ActivityManager;
+import android.graphics.Bitmap;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.util.Log;
+import android.view.PixelCopy;
+
 import org.libsdl.app.SDLActivity;
+import org.libsdl.app.SDLSurface;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * SDL3 and other native deps are statically linked into libmain.so (see root CMakeLists.txt).
+ *
+ * Captures a last-good SurfaceView frame into the task description before the EGL surface is
+ * torn down, so Recents / app-switcher is less likely to show a black tile.
+ *
+ * On API 24+, SDL pauses from {@code onStop} after {@code surfaceDestroyed}; capture must happen
+ * earlier from {@code onPause} / focus loss while {@code mIsSurfaceReady} is still true.
  */
 public class MainActivity extends SDLActivity {
+    private static final String TAG = "pp-browser";
+    private static final int THUMBNAIL_MAX_EDGE = 512;
+    private static final long PIXEL_COPY_TIMEOUT_MS = 80;
+
+    private HandlerThread mPixelCopyThread;
+    private Handler mPixelCopyHandler;
+    private final AtomicBoolean mThumbnailCapturedForPause = new AtomicBoolean(false);
+
     @Override
     protected String[] getLibraries() {
         return new String[] { "main" };
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (mPixelCopyThread != null) {
+            mPixelCopyThread.quitSafely();
+            mPixelCopyThread = null;
+            mPixelCopyHandler = null;
+        }
+        super.onDestroy();
+    }
+
+    @Override
+    protected void onResume() {
+        mThumbnailCapturedForPause.set(false);
+        super.onResume();
+    }
+
+    @Override
+    protected void onPause() {
+        // SurfaceView is still valid here; capture before SDL/system tear it down.
+        captureRecentsThumbnailOnce();
+        super.onPause();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        if (!hasFocus) {
+            captureRecentsThumbnailOnce();
+        }
+        super.onWindowFocusChanged(hasFocus);
+    }
+
+    @Override
+    protected void pauseNativeThread() {
+        // Fallback if pause is reached while the surface is somehow still ready.
+        captureRecentsThumbnailOnce();
+        super.pauseNativeThread();
+    }
+
+    private Handler ensurePixelCopyHandler() {
+        if (mPixelCopyHandler == null) {
+            mPixelCopyThread = new HandlerThread("pp-browser-pixelcopy");
+            mPixelCopyThread.start();
+            mPixelCopyHandler = new Handler(mPixelCopyThread.getLooper());
+        }
+        return mPixelCopyHandler;
+    }
+
+    private void captureRecentsThumbnailOnce() {
+        if (!mThumbnailCapturedForPause.compareAndSet(false, true)) {
+            return;
+        }
+        captureRecentsThumbnail();
+    }
+
+    /**
+     * Best-effort PixelCopy of the SDL SurfaceView into {@link #setTaskDescription}.
+     * Uses a background Handler so we can wait without deadlocking the UI thread.
+     */
+    private void captureRecentsThumbnail() {
+        final SDLSurface surface = mSurface;
+        if (surface == null || !surface.mIsSurfaceReady) {
+            Log.v(TAG, "Recents thumbnail: surface not ready");
+            return;
+        }
+
+        final int width = surface.getWidth();
+        final int height = surface.getHeight();
+        if (width <= 0 || height <= 0) {
+            Log.v(TAG, "Recents thumbnail: invalid size " + width + "x" + height);
+            return;
+        }
+
+        final Bitmap source;
+        try {
+            source = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        } catch (OutOfMemoryError e) {
+            Log.w(TAG, "Recents thumbnail: bitmap alloc failed", e);
+            return;
+        }
+
+        final AtomicReference<Bitmap> result = new AtomicReference<>();
+        final CountDownLatch latch = new CountDownLatch(1);
+        final Handler handler = ensurePixelCopyHandler();
+
+        try {
+            PixelCopy.request(surface, source, copyResult -> {
+                if (copyResult == PixelCopy.SUCCESS) {
+                    result.set(source);
+                } else {
+                    source.recycle();
+                    Log.v(TAG, "Recents thumbnail: PixelCopy failed (" + copyResult + ")");
+                }
+                latch.countDown();
+            }, handler);
+        } catch (IllegalArgumentException e) {
+            source.recycle();
+            Log.w(TAG, "Recents thumbnail: PixelCopy request rejected", e);
+            return;
+        }
+
+        try {
+            if (!latch.await(PIXEL_COPY_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                Log.v(TAG, "Recents thumbnail: PixelCopy timed out");
+                handler.postDelayed(() -> {
+                    if (result.get() == null && !source.isRecycled()) {
+                        source.recycle();
+                    }
+                }, 500);
+                return;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            if (result.get() == null && !source.isRecycled()) {
+                source.recycle();
+            }
+            return;
+        }
+
+        final Bitmap captured = result.get();
+        if (captured == null) {
+            return;
+        }
+
+        Bitmap icon = scaleForTaskDescription(captured);
+        if (icon != captured) {
+            captured.recycle();
+        }
+
+        try {
+            applyTaskDescriptionIcon(icon);
+        } catch (Exception e) {
+            Log.w(TAG, "Recents thumbnail: setTaskDescription failed", e);
+            if (!icon.isRecycled()) {
+                icon.recycle();
+            }
+        }
+    }
+
+    private static Bitmap scaleForTaskDescription(Bitmap source) {
+        final int maxEdge = Math.max(source.getWidth(), source.getHeight());
+        if (maxEdge <= THUMBNAIL_MAX_EDGE) {
+            return source;
+        }
+        final float scale = (float) THUMBNAIL_MAX_EDGE / (float) maxEdge;
+        final int w = Math.max(1, Math.round(source.getWidth() * scale));
+        final int h = Math.max(1, Math.round(source.getHeight() * scale));
+        return Bitmap.createScaledBitmap(source, w, h, true);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void applyTaskDescriptionIcon(Bitmap icon) {
+        // Bitmap overload is deprecated but remains the portable way to supply a live screenshot.
+        setTaskDescription(new ActivityManager.TaskDescription(getString(R.string.app_name), icon));
+        Log.v(TAG, "Recents thumbnail updated (" + icon.getWidth() + "x" + icon.getHeight() + ")");
     }
 }
