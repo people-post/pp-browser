@@ -11,6 +11,7 @@ namespace {
 
 AppLifecycleState g_state = AppLifecycleState::Foreground;
 std::vector<std::function<void()>> g_background_listeners;
+std::vector<std::function<void()>> g_foreground_listeners;
 
 } // namespace
 
@@ -40,6 +41,9 @@ void AppLifecycle::OnDidEnterForeground() {
   }
   g_state = AppLifecycleState::Foreground;
   BrowserThread::ResumeIO();
+  for (const auto& listener : g_foreground_listeners) {
+    listener();
+  }
   logging::getLogger("AppLifecycle").info << "Entering foreground";
 }
 
@@ -53,8 +57,18 @@ void AppLifecycle::AddBackgroundListener(std::function<void()> listener) {
   }
 }
 
+void AppLifecycle::AddForegroundListener(std::function<void()> listener) {
+  if (listener) {
+    g_foreground_listeners.push_back(std::move(listener));
+  }
+}
+
 void AppLifecycle::ClearBackgroundListeners() {
   g_background_listeners.clear();
+}
+
+void AppLifecycle::ClearForegroundListeners() {
+  g_foreground_listeners.clear();
 }
 
 } // namespace pbr

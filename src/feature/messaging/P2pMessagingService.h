@@ -12,9 +12,12 @@
 #include "feature/messaging/EpochBumpCoordinator.h"
 #include "feature/messaging/InboxController.h"
 #include "feature/messaging/Libp2pChatHistoryService.h"
+#include "feature/messaging/Libp2pDirectChatService.h"
 #include "feature/messaging/PskSessionCoordinator.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "base/net/ServiceClients.h"
+#include "libp2p/integration/host/Libp2pHost.h"
+#include "libp2p/integration/host/PeerSessionManager.h"
 
 #include <atomic>
 #include <functional>
@@ -30,7 +33,8 @@ public:
   P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
                       InboxController& inbox, PeerSigningKeyStore& signing_key_store,
                       IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
-                      IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store);
+                      IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
+                      Libp2pHost* libp2p_host = nullptr, PeerSessionManager* peer_sessions = nullptr);
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
                                      const SendRelayOptions& options = {});
@@ -63,9 +67,14 @@ public:
   Roe<void> ImportPskBundleJson(const std::string& thread_id, const std::string& bundle_json);
   Roe<void> MarkPskVerified(const std::string& thread_id);
   void RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
+  /** Register all multiaddrs from a contact (keyed by relay id). */
+  void RegisterContactDirectEndpoints(const Contact& contact);
   /** D052 — fetch one older-history page when scrolled to top. */
   void ScrollBackfill(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
   void TailSyncActiveE2eThread();
+  void TickLibp2p();
+  /** Warm connection for an open E2E thread (background, failure silent). */
+  void WarmPeerForThread(const std::string& thread_id);
 
 private:
   struct PendingRelaySend {
@@ -80,7 +89,8 @@ private:
   void EnqueueRetry(PendingRelaySend pending);
   void NotifyDeliveryIssue(const Thread& thread, const std::string& error_message);
   void ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
-                       const std::string& error_message = {});
+                       const std::string& error_message = {},
+                       MessageTransport transport = MessageTransport::Relay);
   void RegisterMockPeerKeyForReply(const std::string& peer_identity_value);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
   void RunSyncOnIo(const std::string& thread_id, std::function<Roe<ChatSyncResult>()> task,
@@ -89,6 +99,7 @@ private:
   bool IsThreadCompromised(const std::string& thread_id) const;
   bool IsPskReadyToSend(const std::string& thread_id) const;
   void PurgeRetryQueueForThread(const std::string& thread_id);
+  void HandleDirectInbound(RelayEnvelope envelope);
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -100,8 +111,11 @@ private:
   PeerKemKeyStore& kem_key_store_;
   IPeerKemKeyResolver& kem_key_resolver_;
   IPskSessionStore& psk_store_;
+  Libp2pHost* libp2p_host_ = nullptr;
+  PeerSessionManager* peer_sessions_ = nullptr;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<Libp2pChatHistoryService> peer_history_;
+  std::unique_ptr<Libp2pDirectChatService> direct_chat_;
   std::unique_ptr<ChatSyncService> chat_sync_;
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;

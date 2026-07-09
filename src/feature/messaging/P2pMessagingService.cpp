@@ -44,15 +44,22 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
                                          IRelayClient* relay, InboxController& inbox,
                                          PeerSigningKeyStore& signing_key_store,
                                          IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
-                                         IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store)
+                                         IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
+                                         Libp2pHost* libp2p_host, PeerSessionManager* peer_sessions)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
-      kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), epoch_coordinator_(store),
-      psk_coordinator_(store, psk_store) {
+      kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), libp2p_host_(libp2p_host),
+      peer_sessions_(peer_sessions), epoch_coordinator_(store), psk_coordinator_(store, psk_store) {
   redirectLogger("P2pMessagingService");
   receive_pipeline_ = std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_);
-  peer_history_ = std::make_unique<Libp2pChatHistoryService>(store_, identity_, psk_store_);
-  peer_history_->Start();
+  if (libp2p_host_ && peer_sessions_) {
+    peer_history_ =
+        std::make_unique<Libp2pChatHistoryService>(*libp2p_host_, *peer_sessions_, store_, identity_, psk_store_);
+    peer_history_->Start();
+    direct_chat_ = std::make_unique<Libp2pDirectChatService>(*libp2p_host_, *peer_sessions_);
+    direct_chat_->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
+    direct_chat_->Start();
+  }
   chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, peer_history_.get());
   chat_sync_->SetOnMessagesChanged([this]() {
     if (on_messages_changed_) {
@@ -101,9 +108,77 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
 
 void P2pMessagingService::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
                                                      const std::string& multiaddr) {
-  if (peer_history_) {
+  if (peer_sessions_) {
+    (void)peer_sessions_->RegisterEndpoint(peer_relay_user_id, multiaddr);
+  } else if (peer_history_) {
     peer_history_->RegisterPeerEndpoint(peer_relay_user_id, multiaddr);
   }
+}
+
+void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact) {
+  std::optional<std::string> relay_id;
+  for (const ContactId& id : contact.ids) {
+    if (id.kind == ContactIdKind::RelayUser && id.primary) {
+      relay_id = id.value;
+      break;
+    }
+  }
+  if (!relay_id) {
+    for (const ContactId& id : contact.ids) {
+      if (id.kind == ContactIdKind::RelayUser) {
+        relay_id = id.value;
+        break;
+      }
+    }
+  }
+  if (!relay_id) {
+    return;
+  }
+  for (const std::string& ma : contact.multiaddrs) {
+    RegisterPeerDirectEndpoint(*relay_id, ma);
+  }
+}
+
+void P2pMessagingService::HandleDirectInbound(RelayEnvelope envelope) {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return;
+  }
+  const RelayReceiveOutcome outcome =
+      receive_pipeline_->ProcessEnvelope(envelope, identity->relay_user_id, false, MessageTransport::Direct);
+  if (outcome.decision == IngestDecision::AcceptGap) {
+    auto thread = store_.FindDirectThread(InboundTargetFromEnvelope(envelope));
+    if (thread && *thread) {
+      MaybeRepairGap((*thread)->id, envelope);
+    }
+  }
+  if (outcome.persisted || outcome.thread_changed) {
+    if (on_messages_changed_) {
+      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+    }
+  }
+}
+
+void P2pMessagingService::TickLibp2p() {
+  if (peer_sessions_) {
+    peer_sessions_->Tick();
+  }
+}
+
+void P2pMessagingService::WarmPeerForThread(const std::string& thread_id) {
+  if (!peer_sessions_) {
+    return;
+  }
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Direct) {
+    return;
+  }
+  const std::string peer = (*thread)->peer_identity_value;
+  if (peer.empty() || !peer_sessions_->IsDialable(peer)) {
+    return;
+  }
+  peer_sessions_->MarkWarm(peer);
+  peer_sessions_->EnsureConnection(peer);
 }
 
 bool P2pMessagingService::IsE2ePrivateThread(const std::string& thread_id) const {
@@ -321,6 +396,7 @@ void P2pMessagingService::NotifyDeliveryIssue(const Thread& thread, const std::s
 }
 
 void P2pMessagingService::MaybeTailSync(const std::string& thread_id) {
+  WarmPeerForThread(thread_id);
   if (!chat_sync_) {
     return;
   }
@@ -344,7 +420,7 @@ void P2pMessagingService::MaybeRepairGap(const std::string& thread_id, const Rel
 }
 
 void P2pMessagingService::ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
-                                          const std::string& error_message) {
+                                          const std::string& error_message, MessageTransport transport) {
   auto messages = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!messages) {
     return;
@@ -352,6 +428,9 @@ void P2pMessagingService::ApplySendResult(const std::string& thread_id, const st
   for (ThreadMessage& existing : *messages) {
     if (existing.id == message_id) {
       existing.delivery = success ? MessageDelivery::Relayed : MessageDelivery::Failed;
+      if (success) {
+        existing.transport = transport;
+      }
       (void)store_.UpdateMessage(existing);
       break;
     }
@@ -550,20 +629,31 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     RegisterMockPeerKeyForReply((*thread)->peer_identity_value);
   }
 
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, thread_id, envelope, message_id = message.id]() mutable {
-    if (!relay_) {
-      ApplySendResult(thread_id, message_id, false, "Relay client not configured");
-      return;
-    }
-    const auto result = relay_->Send(envelope);
-    if (!result) {
-      EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .thread_id = thread_id,
-                                    .attempt_count = 1});
-      ApplySendResult(thread_id, message_id, false, result.error().message);
-      return;
-    }
-    ApplySendResult(thread_id, message_id, true);
-  });
+  BrowserThread::PostTask(
+      BrowserThreadId::IO, [this, thread_id, envelope, message_id = message.id, peer_relay_id = *peer_relay_id]() mutable {
+        if (direct_chat_ && direct_chat_->IsPeerReachable(peer_relay_id)) {
+          if (peer_sessions_) {
+            peer_sessions_->MarkWarm(peer_relay_id);
+          }
+          const auto direct = direct_chat_->SendEnvelope(peer_relay_id, envelope);
+          if (direct) {
+            ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Direct);
+            return;
+          }
+        }
+        if (!relay_) {
+          ApplySendResult(thread_id, message_id, false, "Relay client not configured");
+          return;
+        }
+        const auto result = relay_->Send(envelope);
+        if (!result) {
+          EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .thread_id = thread_id,
+                                        .attempt_count = 1});
+          ApplySendResult(thread_id, message_id, false, result.error().message);
+          return;
+        }
+        ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay);
+      });
 
   if (on_messages_changed_) {
     on_messages_changed_();
@@ -600,9 +690,19 @@ void P2pMessagingService::RetryFailedOutbound() {
       if (IsThreadCompromised(item.thread_id)) {
         continue;
       }
+      if (item.envelope.recipient_contact_id && direct_chat_ &&
+          direct_chat_->IsPeerReachable(*item.envelope.recipient_contact_id)) {
+        if (peer_sessions_) {
+          peer_sessions_->MarkWarm(*item.envelope.recipient_contact_id);
+        }
+        if (direct_chat_->SendEnvelope(*item.envelope.recipient_contact_id, item.envelope)) {
+          ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Direct);
+          continue;
+        }
+      }
       const auto result = relay_->Send(item.envelope);
       if (result) {
-        ApplySendResult(item.thread_id, item.message_id, true);
+        ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Relay);
         continue;
       }
       if (item.attempt_count < kMaxOutboxRetryAttempts) {

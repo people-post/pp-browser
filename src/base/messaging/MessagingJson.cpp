@@ -715,10 +715,15 @@ nlohmann::json ContactToJson(const Contact& contact) {
   for (const ContactId& id : contact.ids) {
     ids.push_back({{"kind", ContactIdKindToString(id.kind)}, {"value", id.value}, {"primary", id.primary}});
   }
+  nlohmann::json multiaddrs = nlohmann::json::array();
+  for (const std::string& ma : contact.multiaddrs) {
+    multiaddrs.push_back(ma);
+  }
   return {{"id", contact.id},
           {"display_name", contact.display_name},
           {"server_nickname", contact.server_nickname},
           {"ids", std::move(ids)},
+          {"multiaddrs", std::move(multiaddrs)},
           {"trust", TrustLevelToString(contact.trust)}};
 }
 
@@ -751,6 +756,13 @@ Contact ContactFromJson(const nlohmann::json& json) {
       contact.ids.push_back(std::move(id));
     }
   }
+  if (json.contains("multiaddrs") && json["multiaddrs"].is_array()) {
+    for (const auto& item : json["multiaddrs"]) {
+      if (item.is_string()) {
+        contact.multiaddrs.push_back(item.get<std::string>());
+      }
+    }
+  }
   return contact;
 }
 
@@ -759,10 +771,15 @@ nlohmann::json DirectoryHitToJson(const DirectoryHit& hit) {
   for (const ContactId& id : hit.ids) {
     ids.push_back({{"kind", ContactIdKindToString(id.kind)}, {"value", id.value}, {"primary", id.primary}});
   }
+  nlohmann::json multiaddrs = nlohmann::json::array();
+  for (const std::string& ma : hit.multiaddrs) {
+    multiaddrs.push_back(ma);
+  }
   return {{"hit_id", hit.hit_id},
           {"display_name", hit.display_name},
           {"nickname", hit.nickname},
-          {"ids", std::move(ids)}};
+          {"ids", std::move(ids)},
+          {"multiaddrs", std::move(multiaddrs)}};
 }
 
 DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
@@ -796,6 +813,13 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
   }
   if (json.contains("kem_public_key_b64") && json["kem_public_key_b64"].is_string()) {
     hit.kem_public_key_b64 = json["kem_public_key_b64"].get<std::string>();
+  }
+  if (json.contains("multiaddrs") && json["multiaddrs"].is_array()) {
+    for (const auto& item : json["multiaddrs"]) {
+      if (item.is_string()) {
+        hit.multiaddrs.push_back(item.get<std::string>());
+      }
+    }
   }
   return hit;
 }

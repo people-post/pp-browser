@@ -426,9 +426,15 @@ void ContactsController::OnStartChat() {
   }
 
   const std::string contact_id = selected_.id.c_str();
-  if (!MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic)) {
+  auto contact = MessagingHub::Instance().Contacts().Get(contact_id);
+  if (contact && *contact) {
+    MessagingHub::Instance().P2p().RegisterContactDirectEndpoints(**contact);
+  }
+  auto thread = MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
+  if (!thread) {
     return;
   }
+  MessagingHub::Instance().P2p().WarmPeerForThread(thread->id);
 
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
   ShellHost::Instance().SetPrimaryPane("chat");
@@ -441,11 +447,16 @@ void ContactsController::OnSecureMessage() {
   }
 
   const std::string contact_id = selected_.id.c_str();
+  auto contact = MessagingHub::Instance().Contacts().Get(contact_id);
+  if (contact && *contact) {
+    MessagingHub::Instance().P2p().RegisterContactDirectEndpoints(**contact);
+  }
   auto thread = MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
   if (!thread) {
     return;
   }
   (void)MessagingHub::Instance().P2p().EnsurePskGenerated(thread->id);
+  MessagingHub::Instance().P2p().WarmPeerForThread(thread->id);
 
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
   ShellHost::Instance().SetPrimaryPane("chat");

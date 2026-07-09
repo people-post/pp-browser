@@ -208,6 +208,34 @@ Roe<std::string> IdentityStore::SignBytes(const std::vector<uint8_t>& sign_bytes
   return Ed25519Signer::Sign(std::string(sign_bytes.begin(), sign_bytes.end()), private_key_);
 }
 
+Roe<ByteVector> IdentityStore::GetEd25519PrivateKey() const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  if (private_key_.size() != 32) {
+    return Error("Invalid Ed25519 private key size");
+  }
+  return private_key_;
+}
+
+Roe<ByteVector> IdentityStore::GetEd25519PublicKey() const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  auto public_key = Ed25519Signer::FromBase64(identity_.public_key_b64);
+  if (!public_key) {
+    return public_key.error();
+  }
+  if (public_key->size() != 32) {
+    return Error("Invalid Ed25519 public key size");
+  }
+  return *public_key;
+}
+
 Roe<ByteVector> IdentityStore::GetOrCreateHybridKemPrivateKey() const {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();

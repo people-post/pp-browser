@@ -22,6 +22,9 @@ public:
   Roe<LocalIdentity> Update(const LocalIdentity& identity);
   Roe<std::string> SignPayload(const std::string& canonical_json) const;
   Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;
+  /** Raw 32-byte Ed25519 private key for libp2p Host identity binding. */
+  Roe<ByteVector> GetEd25519PrivateKey() const;
+  Roe<ByteVector> GetEd25519PublicKey() const;
   Roe<ByteVector> GetOrCreateHybridKemPrivateKey() const;
   Roe<std::string> GetHybridKemPublicKeyB64() const;
   void Flush();

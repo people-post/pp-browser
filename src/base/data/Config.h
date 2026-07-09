@@ -30,6 +30,16 @@ struct SearchConfig {
   std::string api_key;
 };
 
+struct Libp2pConfig {
+  /** Listen multiaddr for the shared host (must be dialable by peers for direct chat). */
+  std::string listen_multiaddr = "/ip4/127.0.0.1/tcp/40123";
+  size_t max_connections = 48;
+  size_t max_concurrent_dials = 6;
+  int dial_timeout_ms = 8000;
+  int idle_ttl_ms = 180000;
+  int dial_failure_backoff_ms = 30000;
+};
+
 struct AppConfig {
   LlmConfig llm;
   std::string llm_api_key_env;
@@ -39,6 +49,7 @@ struct AppConfig {
   ServiceEndpointConfig relay;
   ServiceEndpointConfig directory;
   ServiceEndpointConfig registration;
+  Libp2pConfig libp2p;
   McpConfig promoted_mcp;
   std::vector<McpConfig> mcp_servers;
   SearchConfig search;

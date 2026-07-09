@@ -73,6 +73,9 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       if (!contact) {
         return contact.error();
       }
+      if (p2p_) {
+        p2p_->RegisterContactDirectEndpoints(*contact);
+      }
       contact_id = contact->id;
     } else {
       return Error("Missing contact_id or directory_hit");
@@ -80,6 +83,13 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     auto thread = inbox_.FindOrCreateDirectThread(contact_id, channel);
     if (!thread) {
       return thread.error();
+    }
+    if (p2p_) {
+      auto contact = contacts_.Get(contact_id);
+      if (contact && *contact) {
+        p2p_->RegisterContactDirectEndpoints(**contact);
+      }
+      p2p_->WarmPeerForThread(thread->id);
     }
     if (on_action_message_) {
       on_action_message_("Opened conversation with " + thread->title);
@@ -96,7 +106,12 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       return thread.error();
     }
     if (p2p_) {
+      auto contact = contacts_.Get(payload["contact_id"].get<std::string>());
+      if (contact && *contact) {
+        p2p_->RegisterContactDirectEndpoints(**contact);
+      }
       (void)p2p_->EnsurePskGenerated(thread->id);
+      p2p_->WarmPeerForThread(thread->id);
     }
     if (on_action_message_) {
       on_action_message_("Opened secure conversation with " + thread->title);
@@ -124,6 +139,9 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     auto contact = contacts_.AddFromDirectoryHit(hit);
     if (!contact) {
       return contact.error();
+    }
+    if (p2p_) {
+      p2p_->RegisterContactDirectEndpoints(*contact);
     }
     if (on_action_message_) {
       on_action_message_("Added " + contact->display_name + " to contacts");

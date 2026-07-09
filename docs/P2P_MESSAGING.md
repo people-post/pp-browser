@@ -127,6 +127,12 @@ Local store is written **before** send. Server rejections do not delete history.
 
 **Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay).
 
+### Direct live send (`/pp-browser/chat/1.0.0`)
+
+Outbound `SendUserMessage` tries libp2p direct first when the peer has a registered dialable multiaddr (`Contact.multiaddrs` / `RegisterPeerDirectEndpoint`); on failure falls back to `IRelayClient::Send`. Inbound direct envelopes use the same `RelayEnvelope` shape and `RelayReceivePipeline` with `MessageTransport::Direct`.
+
+**Session policy** (`PeerSessionManager`): on-demand dial, reuse existing connections, warm the open-thread peer, idle disconnect, global connection caps. No separate app connection pool.
+
 Per-message **Direct / Relay / Local** badges read the persisted `transport` column (post-v6d).
 
 ## Identity model
@@ -169,9 +175,11 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 
 | Path | Role |
 |------|------|
-| `src/feature/messaging/MessagingHub.*` | Wiring, lifecycle |
+| `src/feature/messaging/MessagingHub.*` | Wiring, lifecycle, shared `Libp2pHost` / `PeerSessionManager` |
 | `src/feature/messaging/InboxController.*` | Active thread, display rows |
-| `src/feature/messaging/P2pMessagingService.*` | Send, poll, dedup, sync UX |
+| `src/feature/messaging/P2pMessagingService.*` | Send (direct→relay), poll, dedup, sync UX |
+| `src/feature/messaging/Libp2pChatHistoryService.*` | D060 history over shared host |
+| `src/feature/messaging/Libp2pDirectChatService.*` | `/pp-browser/chat/1.0.0` push |
 | `src/feature/messaging/ChatSyncService.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
 | `src/feature/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
 | `src/feature/messaging/MessageRouter.*` | Composer routing |

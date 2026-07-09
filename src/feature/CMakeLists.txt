@@ -10,6 +10,7 @@ set(PP_BROWSER_FEATURE_SOURCES
   messaging/EpochBumpCoordinator.cpp
   messaging/PskSessionCoordinator.cpp
   messaging/Libp2pChatHistoryService.cpp
+  messaging/Libp2pDirectChatService.cpp
   messaging/SqlitePskSessionStore.cpp
   messaging/ContactActionDispatcher.cpp
   ai/AgentSession.cpp

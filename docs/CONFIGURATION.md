@@ -104,13 +104,22 @@ On tab entry, [`SettingsController`](../src/feature/ui/SettingsController.cpp) r
   "search": { "provider": "duckduckgo" },
   "relay": { "base_url": "" },
   "directory": { "base_url": "" },
-  "registration": { "base_url": "" }
+  "registration": { "base_url": "" },
+  "libp2p": {
+    "listen_multiaddr": "/ip4/0.0.0.0/tcp/40123",
+    "max_connections": 48,
+    "max_concurrent_dials": 6,
+    "dial_timeout_ms": 8000,
+    "idle_ttl_ms": 180000,
+    "dial_failure_backoff_ms": 30000
+  }
 }
 ```
 
 - **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../src/base/platform/PlatformDefaults.cpp).
 - **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
 - **`relay` / `directory` / `registration`** — separate HTTP endpoints. Empty `base_url` falls back to promoted MCP infra tools, then in-process mocks. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md).
+- **`libp2p`** — shared host listen address and session policy (on-demand dial, warm-active, idle TTL, connection caps). Default listen is loopback; use a non-loopback multiaddr for LAN/direct peers. Contacts may store dialable `multiaddrs` (must include `/p2p/<PeerId>`).
 
 Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
 

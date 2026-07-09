@@ -1295,6 +1295,22 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 
 ---
 
+## D097 — Shared libp2p host + on-demand session policy + direct chat protocol
+
+**Date:** 2026-07-09  
+**Decision:**
+
+1. One shared `Libp2pHost` (Yamux + Noise) owned by `MessagingHub`; history and direct chat register protocol handlers on it.
+2. `PeerSessionManager` implements on-demand dial, ConnectionManager reuse, warm-active set, idle TTL, connection caps, dial backoff — **not** an app-level socket pool.
+3. Direct live messaging uses `/pp-browser/chat/1.0.0` (length-prefixed JSON `RelayEnvelope`); send path is direct-first then relay fallback; ingest via `RelayReceivePipeline` with `MessageTransport::Direct`.
+4. v1 thread routing remains relay-id (`ChatTargetKey`); PeerId is used for dial via multiaddr `/p2p/…`. Contacts persist `multiaddrs`.
+5. Mobile background: suspend cold peer connections; keep warm (active-thread) set.
+
+**Rationale:** Aligns with cpp-libp2p Dialer reuse; scales to many contacts without holding all connections; keeps relay as offline path.  
+**Alternatives:** App connection pool (rejected); always-on mesh to all contacts (rejected); PeerId-native threads in same change (deferred — D096).
+
+---
+
 ## Open decisions (not yet resolved)
 
 **Human checklist:** [PENDING_DECISIONS.md](../PENDING_DECISIONS.md) — all chat rollout items resolved 2026-07-06.

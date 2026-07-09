@@ -1,19 +1,12 @@
 #include "app/Application.h"
 #include "app/Bootstrap.h"
 #include "base/data/SessionStore.h"
-#include "libp2p/integration/host/Libp2pHost.h"
 #include "common/Logger.h"
 #include "base/platform/Platform.h"
 
 #include <SDL3/SDL_main.h>
 
 #include <cstring>
-
-namespace {
-
-pbr::Libp2pHost g_libp2p_host;
-
-} // namespace
 
 int main(int argc, char** argv) {
   bool debug_mode = false;
@@ -32,10 +25,6 @@ int main(int argc, char** argv) {
   root.setLevel(debug_mode ? pbr::logging::Level::DEBUG
                            : pbr::logging::Level::WARNING);
   root.info << "Logging level set to " << (debug_mode ? "DEBUG" : "WARNING");
-
-  if (g_libp2p_host.IsAvailable()) {
-    root.info << "libp2p linked";
-  }
 
   if (!pbr::Platform::EarlyInit()) {
     root.error << "Platform early init failed";

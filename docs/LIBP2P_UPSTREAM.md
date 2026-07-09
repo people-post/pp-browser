@@ -81,8 +81,16 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 
 libp2p is built in-tree via `add_subdirectory(src/libp2p)` and linked into the `pp-browser` executable (`p2p` target). App glue lives in `src/libp2p/integration/host/`:
 
-- `Libp2pHost.*` — host bootstrap stub; transport wiring lands separately
+- `Libp2pHost.*` — shared ExplicitHost (Yamux + Noise over TCP); owned by `MessagingHub`; binds app Ed25519 identity when available
+- `PeerSessionManager.*` — on-demand dial + warm-active session policy (reuse ConnectionManager; idle TTL; caps; dial backoff). Not an app-level socket pool.
 - `PeerIdUtil.*` — derive base58 Peer ID from the app Ed25519 signing public key (network identity / Me settings; see [D096](../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route))
+
+Feature protocols on the shared host:
+
+| Protocol | Service |
+|----------|---------|
+| `/pp-browser/chat-history/1.0.0` | `Libp2pChatHistoryService` (D060) |
+| `/pp-browser/chat/1.0.0` | `Libp2pDirectChatService` (direct send/receive) |
 
 ## TLS note
 

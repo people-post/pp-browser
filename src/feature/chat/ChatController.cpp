@@ -1903,6 +1903,15 @@ bool ChatController::Setup(Rml::Context* context) {
 
   context_ = context;
   AppLifecycle::AddBackgroundListener([this]() { OnApplicationPause(); });
+  AppLifecycle::AddForegroundListener([this]() {
+    if (!messaging_ready_) {
+      return;
+    }
+    const std::string active = MessagingHub::Instance().Inbox().ActiveThreadId();
+    if (!active.empty()) {
+      MessagingHub::Instance().P2p().WarmPeerForThread(active);
+    }
+  });
   const AppConfig& config = SessionStore::Instance().Snapshot().config;
   ClearFormState();
   widgets_by_entry_.clear();
@@ -2172,6 +2181,9 @@ void ChatController::OnApplicationPause() {
   if (agent_) {
     agent_->Cancel();
   }
+  if (messaging_ready_) {
+    MessagingHub::Instance().SuspendLibp2pColdPeers();
+  }
 }
 
 void ChatController::Update() {
@@ -2182,6 +2194,7 @@ void ChatController::Update() {
   }
 
   if (messaging_ready_ && AppLifecycle::IsForeground()) {
+    MessagingHub::Instance().TickLibp2p();
     MessagingHub::Instance().P2p().PollAndMerge();
   }
 
@@ -2198,6 +2211,7 @@ void ChatController::Update() {
 
 void ChatController::Shutdown() {
   AppLifecycle::ClearBackgroundListeners();
+  AppLifecycle::ClearForegroundListeners();
   if (agent_) {
     agent_->Cancel();
     agent_.reset();

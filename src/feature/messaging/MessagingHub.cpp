@@ -6,10 +6,50 @@
 
 #include "feature/ai/AgentSession.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/people/ContactTypes.h"
+#include "base/platform/Platform.h"
+#include "common/Logger.h"
 
+#include <algorithm>
+#include <chrono>
 #include <filesystem>
 
 namespace pbr {
+
+namespace {
+
+std::optional<std::string> PrimaryRelayIdFromContact(const Contact& contact) {
+  for (const ContactId& id : contact.ids) {
+    if (id.kind == ContactIdKind::RelayUser && id.primary) {
+      return id.value;
+    }
+  }
+  for (const ContactId& id : contact.ids) {
+    if (id.kind == ContactIdKind::RelayUser) {
+      return id.value;
+    }
+  }
+  return std::nullopt;
+}
+
+PeerSessionConfig SessionConfigFromApp(const AppConfig& config) {
+  PeerSessionConfig session;
+  session.max_connections = config.libp2p.max_connections;
+  session.max_concurrent_dials = config.libp2p.max_concurrent_dials;
+  session.dial_timeout = std::chrono::milliseconds(config.libp2p.dial_timeout_ms);
+  session.idle_ttl = std::chrono::milliseconds(config.libp2p.idle_ttl_ms);
+  session.dial_failure_backoff = std::chrono::milliseconds(config.libp2p.dial_failure_backoff_ms);
+  if (Platform::Detect() == PlatformKind::Android) {
+    session.max_connections = std::min(session.max_connections, size_t{16});
+    session.max_concurrent_dials = std::min(session.max_concurrent_dials, size_t{4});
+    if (session.idle_ttl > std::chrono::milliseconds(120000)) {
+      session.idle_ttl = std::chrono::milliseconds(120000);
+    }
+  }
+  return session;
+}
+
+} // namespace
 
 MessagingHub& MessagingHub::Instance() {
   static MessagingHub hub;
@@ -76,6 +116,56 @@ void MessagingHub::InstallServiceClients(const AppConfig& config) {
   UpdateServiceClients(config);
 }
 
+Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
+  StopLibp2p();
+  libp2p_host_ = std::make_unique<Libp2pHost>();
+
+  Libp2pHostConfig host_config;
+  host_config.listen_multiaddr = config.libp2p.listen_multiaddr;
+  if (auto priv = identity_->GetEd25519PrivateKey()) {
+    host_config.ed25519_private_key = *priv;
+  }
+  if (auto pub = identity_->GetEd25519PublicKey()) {
+    host_config.ed25519_public_key = *pub;
+  }
+
+  auto started = libp2p_host_->Start(host_config);
+  if (!started) {
+    libp2p_host_.reset();
+    return started.error();
+  }
+
+  peer_sessions_ = std::make_unique<PeerSessionManager>(*libp2p_host_, SessionConfigFromApp(config));
+  return {};
+}
+
+void MessagingHub::StopLibp2p() {
+  peer_sessions_.reset();
+  if (libp2p_host_) {
+    libp2p_host_->Stop();
+    libp2p_host_.reset();
+  }
+}
+
+void MessagingHub::RegisterContactEndpoints() {
+  if (!p2p_ || !contacts_) {
+    return;
+  }
+  auto listed = contacts_->List();
+  if (!listed) {
+    return;
+  }
+  for (const Contact& contact : *listed) {
+    auto relay_id = PrimaryRelayIdFromContact(contact);
+    if (!relay_id || contact.multiaddrs.empty()) {
+      continue;
+    }
+    for (const std::string& ma : contact.multiaddrs) {
+      p2p_->RegisterPeerDirectEndpoint(*relay_id, ma);
+    }
+  }
+}
+
 Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
   if (initialized_) {
     return {};
@@ -105,9 +195,15 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
+  if (auto libp2p = StartLibp2p(config); !libp2p) {
+    // Direct transport unavailable; messaging still works via relay.
+    logging::getLogger("MessagingHub").warning << "libp2p host start failed: " << libp2p.error().message;
+  }
+
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
-                                                *psk_store_);
+                                                *psk_store_, libp2p_host_.get(), peer_sessions_.get());
+  RegisterContactEndpoints();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
 
   initialized_ = true;
@@ -127,6 +223,9 @@ Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string&
   if (actions_) {
     actions_->SetRegistrationClient(registration_);
   }
+  if (peer_sessions_) {
+    peer_sessions_->SetConfig(SessionConfigFromApp(config));
+  }
   return {};
 }
 
@@ -137,6 +236,21 @@ void MessagingHub::BindAgent(AgentSession& agent) {
 
 PeerSigningKeyStore& MessagingHub::SigningKeys() {
   return signing_key_store_;
+}
+
+void MessagingHub::TickLibp2p() {
+  if (peer_sessions_) {
+    peer_sessions_->Tick();
+  }
+  if (p2p_) {
+    p2p_->TickLibp2p();
+  }
+}
+
+void MessagingHub::SuspendLibp2pColdPeers() {
+  if (peer_sessions_) {
+    peer_sessions_->SuspendColdPeers();
+  }
 }
 
 void MessagingHub::Shutdown() {
@@ -150,6 +264,7 @@ void MessagingHub::Shutdown() {
   identity_->Flush();
   actions_.reset();
   p2p_.reset();
+  StopLibp2p();
   signing_resolver_.reset();
   kem_resolver_.reset();
   psk_store_.reset();
@@ -206,6 +321,14 @@ IDirectoryClient& MessagingHub::Directory() {
 
 IRegistrationClient& MessagingHub::Registration() {
   return *registration_;
+}
+
+Libp2pHost* MessagingHub::Libp2p() {
+  return libp2p_host_.get();
+}
+
+PeerSessionManager* MessagingHub::Sessions() {
+  return peer_sessions_.get();
 }
 
 } // namespace pbr

@@ -56,5 +56,8 @@ iOS is not shipped yet. Shared abstractions exist for a future Xcode target:
 ## Deferred
 
 - Android Keystore / iOS Keychain for API keys
-- libp2p background suspend and relay fallback
 - Release signing and Play distribution
+
+## libp2p background
+
+On `AppLifecycle::OnWillEnterBackground`, messaging suspends cold peer connections (`PeerSessionManager::SuspendColdPeers`) while keeping the warm (active-thread) set. Foreground resume may re-warm the open thread. Relay poll remains paused in background as before.

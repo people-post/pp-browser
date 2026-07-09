@@ -11,6 +11,8 @@
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "base/net/ServiceClientsImpl.h"
+#include "libp2p/integration/host/Libp2pHost.h"
+#include "libp2p/integration/host/PeerSessionManager.h"
 
 #include <functional>
 #include <memory>
@@ -42,9 +44,16 @@ public:
   IdentityStore& Identity();
   IDirectoryClient& Directory();
   IRegistrationClient& Registration();
+  Libp2pHost* Libp2p();
+  PeerSessionManager* Sessions();
 
   void BindAgent(AgentSession& agent);
   PeerSigningKeyStore& SigningKeys();
+
+  /** Idle sweep / session policy tick (call from UI loop). */
+  void TickLibp2p();
+  /** Drop cold peer connections (Android background). */
+  void SuspendLibp2pColdPeers();
 
 private:
   MessagingHub() = default;
@@ -52,6 +61,9 @@ private:
   void InstallServiceClients(const AppConfig& config);
   void UpdateServiceClients(const AppConfig& config);
   void WireRelayAuthSigner();
+  Roe<void> StartLibp2p(const AppConfig& config);
+  void StopLibp2p();
+  void RegisterContactEndpoints();
 
   std::string data_dir_;
   AppConfig config_;
@@ -77,6 +89,8 @@ private:
   IRelayClient* relay_ = nullptr;
   IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
+  std::unique_ptr<Libp2pHost> libp2p_host_;
+  std::unique_ptr<PeerSessionManager> peer_sessions_;
   std::unique_ptr<P2pMessagingService> p2p_;
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;

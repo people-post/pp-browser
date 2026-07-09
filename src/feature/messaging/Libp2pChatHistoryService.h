@@ -5,13 +5,11 @@
 #include "base/messaging/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/IdentityStore.h"
+#include "libp2p/integration/host/Libp2pHost.h"
+#include "libp2p/integration/host/PeerSessionManager.h"
 
-#include <atomic>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
-#include <unordered_map>
 
 namespace pbr {
 
@@ -20,13 +18,15 @@ inline constexpr const char* kChatHistoryProtocolId = "/pp-browser/chat-history/
 /** D060 libp2p peer-direct history — responder + requester over `/pp-browser/chat-history/1.0.0`. */
 class Libp2pChatHistoryService : public IChatHistoryPeerClient {
 public:
-  Libp2pChatHistoryService(IThreadStore& store, IdentityStore& identity, IPskSessionStore& psk_store);
+  Libp2pChatHistoryService(Libp2pHost& host, PeerSessionManager& sessions, IThreadStore& store,
+                           IdentityStore& identity, IPskSessionStore& psk_store);
   ~Libp2pChatHistoryService() override;
 
   Libp2pChatHistoryService(const Libp2pChatHistoryService&) = delete;
   Libp2pChatHistoryService& operator=(const Libp2pChatHistoryService&) = delete;
 
-  void Start(const std::string& listen_multiaddr = "/ip4/127.0.0.1/tcp/40123");
+  /** Register protocol handler on the shared host. */
+  void Start();
   void Stop();
 
   /** Map relay communicating identity → dialable multiaddr (must include `/p2p/`). */
@@ -38,9 +38,12 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
+  Libp2pHost& host_;
+  PeerSessionManager& sessions_;
   IThreadStore& store_;
   IdentityStore& identity_;
   IPskSessionStore& psk_store_;
+  bool started_ = false;
 };
 
 } // namespace pbr

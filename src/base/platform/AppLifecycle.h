@@ -16,7 +16,9 @@ public:
   static void OnLowMemory();
 
   static void AddBackgroundListener(std::function<void()> listener);
+  static void AddForegroundListener(std::function<void()> listener);
   static void ClearBackgroundListeners();
+  static void ClearForegroundListeners();
 };
 
 } // namespace pbr

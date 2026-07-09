@@ -164,6 +164,7 @@ Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
   contact.display_name = hit.display_name.empty() ? hit.nickname : hit.display_name;
   contact.server_nickname = hit.nickname;
   contact.ids = hit.ids;
+  contact.multiaddrs = hit.multiaddrs;
   contact.trust = TrustLevel::Unknown;
   return Upsert(contact);
 }

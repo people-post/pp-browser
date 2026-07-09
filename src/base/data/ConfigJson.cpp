@@ -126,6 +126,36 @@ void from_json(const nlohmann::json& j, ServiceEndpointConfig& endpoint) {
   }
 }
 
+void to_json(nlohmann::json& j, const Libp2pConfig& config) {
+  j = nlohmann::json{{"listen_multiaddr", config.listen_multiaddr},
+                     {"max_connections", config.max_connections},
+                     {"max_concurrent_dials", config.max_concurrent_dials},
+                     {"dial_timeout_ms", config.dial_timeout_ms},
+                     {"idle_ttl_ms", config.idle_ttl_ms},
+                     {"dial_failure_backoff_ms", config.dial_failure_backoff_ms}};
+}
+
+void from_json(const nlohmann::json& j, Libp2pConfig& config) {
+  if (j.contains("listen_multiaddr") && j["listen_multiaddr"].is_string()) {
+    config.listen_multiaddr = j["listen_multiaddr"].get<std::string>();
+  }
+  if (j.contains("max_connections") && j["max_connections"].is_number_unsigned()) {
+    config.max_connections = j["max_connections"].get<size_t>();
+  }
+  if (j.contains("max_concurrent_dials") && j["max_concurrent_dials"].is_number_unsigned()) {
+    config.max_concurrent_dials = j["max_concurrent_dials"].get<size_t>();
+  }
+  if (j.contains("dial_timeout_ms") && j["dial_timeout_ms"].is_number_integer()) {
+    config.dial_timeout_ms = j["dial_timeout_ms"].get<int>();
+  }
+  if (j.contains("idle_ttl_ms") && j["idle_ttl_ms"].is_number_integer()) {
+    config.idle_ttl_ms = j["idle_ttl_ms"].get<int>();
+  }
+  if (j.contains("dial_failure_backoff_ms") && j["dial_failure_backoff_ms"].is_number_integer()) {
+    config.dial_failure_backoff_ms = j["dial_failure_backoff_ms"].get<int>();
+  }
+}
+
 void to_json(nlohmann::json& j, const McpConfig& config) {
   j = nlohmann::json::object();
   if (!config.id.empty()) {
@@ -173,7 +203,8 @@ void to_json(nlohmann::json& j, const AppConfig& config) {
                      {"context", config.context},
                      {"relay", config.relay},
                      {"directory", config.directory},
-                     {"registration", config.registration}};
+                     {"registration", config.registration},
+                     {"libp2p", config.libp2p}};
   if (!config.llm_api_key_env.empty()) {
     j["llm"]["api_key_env"] = config.llm_api_key_env;
     j["llm"].erase("api_key");
@@ -242,6 +273,9 @@ void from_json(const nlohmann::json& j, AppConfig& config) {
   }
   if (j.contains("registration") && j["registration"].is_object()) {
     from_json(j["registration"], config.registration);
+  }
+  if (j.contains("libp2p") && j["libp2p"].is_object()) {
+    from_json(j["libp2p"], config.libp2p);
   }
 }
 
