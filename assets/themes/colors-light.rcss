@@ -622,6 +622,25 @@ select selectbox option:hover {
   border: 1dp #e5e7eb;
 }
 
+.context-menu-scrim {
+  background-color: #00000066;
+}
+
+.context-menu-sheet-list {
+  background-color: #ffffff;
+  border: 1dp #e5e7eb;
+}
+
+.context-menu-sheet-cancel {
+  background-color: #ffffff;
+  color: #4a6cf7;
+  border: 1dp #e5e7eb;
+}
+
+.context-menu-sheet-cancel:hover {
+  background-color: #f3f4f6;
+}
+
 .context-menu-item {
   color: #1a1a1a;
 }

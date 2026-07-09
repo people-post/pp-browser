@@ -18,6 +18,11 @@ namespace pbr {
 
 namespace {
 
+constexpr float kViewportMarginPx = 8.f;
+constexpr float kActionSheetInsetDp = 12.f;
+constexpr float kActionSheetBottomDp = 20.f;
+constexpr float kActionSheetMaxWidthDp = 480.f;
+
 Rml::Element* FindTextEditor(Rml::Element* element) {
   for (Rml::Element* node = element; node; node = node->GetParentNode()) {
     const Rml::String& tag = node->GetTagName();
@@ -72,6 +77,26 @@ void PasteIntoEditor(Rml::Element* editor) {
   editor->DispatchEvent(Rml::EventId::Textinput, parameters);
 }
 
+void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuAction>& actions) {
+  for (size_t i = 0; i < actions.size(); ++i) {
+    const ContextMenuAction& action = actions[i];
+    const bool enabled = !action.enabled || action.enabled();
+    if (!enabled) {
+      continue;
+    }
+    out << "<button class=\"context-menu-item";
+    if (action.danger) {
+      out << " context-menu-item--danger";
+    }
+    out << "\" type=\"button\" data-item-index=\"" << i << "\">";
+    if (!action.icon.empty()) {
+      out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon
+          << "\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg></div>";
+    }
+    out << "<span class=\"context-menu-item-label\">" << action.label << "</span></button>";
+  }
+}
+
 } // namespace
 
 ContextMenuHost& ContextMenuHost::Instance() {
@@ -87,6 +112,16 @@ void ContextMenuHost::Install(Rml::Context* context) {
   context_->SetTouchLongPressCallback([](Rml::Vector2i position, Rml::Element* target) {
     ContextMenuHost::Instance().OnLongPress(position, target);
   });
+}
+
+void ContextMenuHost::SetCompactLayout(bool compact) {
+  if (compact_layout_ == compact) {
+    return;
+  }
+  compact_layout_ = compact;
+  if (IsOpen() || dismiss_pending_) {
+    Dismiss();
+  }
 }
 
 void ContextMenuHost::RegisterProvider(
@@ -181,7 +216,96 @@ std::vector<ContextMenuAction> ContextMenuHost::CollectActions(const ContextMenu
   return actions;
 }
 
-void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::vector<ContextMenuAction>& actions) {
+void ContextMenuHost::ClampFloatPanel(Rml::Vector2i preferred) {
+  if (!panel_ || !context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+
+  Rml::ElementDocument* document = context_->GetDocument(0);
+  document->UpdateDocument();
+
+  const Rml::Vector2i dims = context_->GetDimensions();
+  const Rml::Vector2f size = panel_->GetBox().GetSize(Rml::BoxArea::Border);
+  if (size.x <= 0.f || size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
+    return;
+  }
+
+  float left = static_cast<float>(preferred.x);
+  float top = static_cast<float>(preferred.y);
+  const float max_left = static_cast<float>(dims.x) - size.x - kViewportMarginPx;
+  const float max_top = static_cast<float>(dims.y) - size.y - kViewportMarginPx;
+
+  if (left > max_left) {
+    left = max_left;
+  }
+  if (left < kViewportMarginPx) {
+    left = kViewportMarginPx;
+  }
+
+  if (top + size.y > static_cast<float>(dims.y) - kViewportMarginPx) {
+    // Prefer flipping above the preferred anchor when there is room.
+    const float flipped = static_cast<float>(preferred.y) - size.y;
+    if (flipped >= kViewportMarginPx) {
+      top = flipped;
+    } else if (max_top >= kViewportMarginPx) {
+      top = max_top;
+    } else {
+      top = kViewportMarginPx;
+    }
+  }
+  if (top > max_top && max_top >= kViewportMarginPx) {
+    top = max_top;
+  }
+  if (top < kViewportMarginPx) {
+    top = kViewportMarginPx;
+  }
+
+  char left_buf[32];
+  char top_buf[32];
+  std::snprintf(left_buf, sizeof(left_buf), "%.0fpx", left);
+  std::snprintf(top_buf, sizeof(top_buf), "%.0fpx", top);
+  panel_->SetProperty("left", left_buf);
+  panel_->SetProperty("top", top_buf);
+}
+
+void ContextMenuHost::LayoutActionSheet() {
+  if (!panel_ || !context_) {
+    return;
+  }
+
+  const Rml::Vector2i dims = context_->GetDimensions();
+  if (dims.x <= 0 || dims.y <= 0) {
+    return;
+  }
+
+  const float dp = context_->GetDensityIndependentPixelRatio();
+  const float inset = kActionSheetInsetDp * dp;
+  const float bottom = kActionSheetBottomDp * dp;
+  const float max_width = kActionSheetMaxWidthDp * dp;
+  float width = static_cast<float>(dims.x) - inset * 2.f;
+  if (width > max_width) {
+    width = max_width;
+  }
+  if (width < 1.f) {
+    width = 1.f;
+  }
+  const float left = (static_cast<float>(dims.x) - width) * 0.5f;
+
+  char left_buf[32];
+  char width_buf[32];
+  char bottom_buf[32];
+  std::snprintf(left_buf, sizeof(left_buf), "%.0fpx", left);
+  std::snprintf(width_buf, sizeof(width_buf), "%.0fpx", width);
+  std::snprintf(bottom_buf, sizeof(bottom_buf), "%.0fpx", bottom);
+  // Viewport frame only; children stretch via RCSS width: 100%.
+  panel_->SetProperty("left", left_buf);
+  panel_->SetProperty("right", "auto");
+  panel_->SetProperty("width", width_buf);
+  panel_->SetProperty("bottom", bottom_buf);
+}
+
+void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::vector<ContextMenuAction>& actions,
+                                 Presentation presentation) {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
@@ -196,35 +320,33 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
     return;
   }
 
+  presentation_ = presentation;
+
   // Outer layer is created via CreateElement; InnerRML must only contain its children
   // (scrim + panel). Nesting another unclosed context-menu-layer div caused XML parse
   // errors and crashes on dismiss/outside click.
   std::ostringstream out;
   out << "<div class=\"context-menu-scrim\" id=\"context-menu-scrim\"></div>";
-  out << "<div class=\"context-menu-panel\" id=\"context-menu-panel\" style=\"left: " << request.position.x
-      << "px; top: " << request.position.y << "px;\">";
-  for (size_t i = 0; i < actions.size(); ++i) {
-    const ContextMenuAction& action = actions[i];
-    const bool enabled = !action.enabled || action.enabled();
-    if (!enabled) {
-      continue;
-    }
-    out << "<button class=\"context-menu-item";
-    if (action.danger) {
-      out << " context-menu-item--danger";
-    }
-    out << "\" type=\"button\" data-item-index=\"" << i << "\">";
-    if (!action.icon.empty()) {
-      out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon
-          << "\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg></div>";
-    }
-    out << "<span class=\"context-menu-item-label\">" << action.label << "</span></button>";
+  if (presentation == Presentation::ActionSheet) {
+    out << "<div class=\"context-menu-sheet\" id=\"context-menu-panel\">";
+    out << "<div class=\"context-menu-sheet-list\" id=\"context-menu-sheet-list\">";
+    AppendActionButtons(out, actions);
+    out << "</div>";
+    out << "<button class=\"context-menu-sheet-cancel\" type=\"button\" id=\"context-menu-cancel\">Cancel</button>";
+    out << "</div>";
+  } else {
+    out << "<div class=\"context-menu-panel\" id=\"context-menu-panel\" style=\"left: " << request.position.x
+        << "px; top: " << request.position.y << "px;\">";
+    AppendActionButtons(out, actions);
+    out << "</div>";
   }
-  out << "</div>";
 
   Rml::ElementPtr layer_element = document->CreateElement("div");
   layer_element->SetAttribute("id", "context-menu-layer");
   layer_element->SetClass("context-menu-layer", true);
+  if (presentation == Presentation::ActionSheet) {
+    layer_element->SetClass("context-menu-layer--sheet", true);
+  }
   layer_element->SetInnerRML(out.str());
   layer_ = body->AppendChild(std::move(layer_element));
   panel_ = layer_ ? layer_->GetElementById("context-menu-panel") : nullptr;
@@ -233,6 +355,12 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   }
   layer_->AddEventListener(Rml::EventId::Mousedown, this, true);
   layer_->AddEventListener(Rml::EventId::Click, this, true);
+
+  if (presentation == Presentation::Float) {
+    ClampFloatPanel(request.position);
+  } else {
+    LayoutActionSheet();
+  }
 }
 
 void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
@@ -266,7 +394,8 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
     menu_editor_ = nullptr;
     return;
   }
-  RenderMenu(request, active_actions_);
+  // Contextual menus stay anchored near the pointer/selection even on compact layout.
+  RenderMenu(request, active_actions_, Presentation::Float);
 }
 
 void ContextMenuHost::ShowActions(Rml::Vector2i position, std::vector<ContextMenuAction> actions) {
@@ -297,7 +426,9 @@ void ContextMenuHost::ShowActions(Rml::Vector2i position, std::vector<ContextMen
   ContextMenuRequest request;
   request.position = position;
   request.context = context_;
-  RenderMenu(request, active_actions_);
+  const Presentation presentation =
+      compact_layout_ ? Presentation::ActionSheet : Presentation::Float;
+  RenderMenu(request, active_actions_, presentation);
 }
 
 void ContextMenuHost::Dismiss() {
@@ -307,6 +438,7 @@ void ContextMenuHost::Dismiss() {
   Rml::Element* layer = layer_;
   layer_ = nullptr;
   panel_ = nullptr;
+  presentation_ = Presentation::Float;
   if (layer) {
     layer->RemoveEventListener(Rml::EventId::Mousedown, this, true);
     layer->RemoveEventListener(Rml::EventId::Click, this, true);
@@ -402,10 +534,19 @@ void ContextMenuHost::ProcessEvent(Rml::Event& event) {
     return;
   }
 
-  if (target->GetId() == "context-menu-scrim") {
+  if (target->GetId() == "context-menu-scrim" || target->GetId() == "context-menu-cancel") {
     RequestDismiss();
     event.StopPropagation();
     return;
+  }
+
+  // Cancel may be hit via a child text node path; walk up for the cancel id.
+  for (Rml::Element* node = target; node && node != layer_; node = node->GetParentNode()) {
+    if (node->GetId() == "context-menu-cancel") {
+      RequestDismiss();
+      event.StopPropagation();
+      return;
+    }
   }
 
   const int index = FindMenuItemIndex(target);

@@ -405,6 +405,7 @@ void ShellHost::ApplyLayoutModeFromContext(Rml::Context* context) {
   state_.shell_width_dp = width_dp;
   state_.layout_mode = ShellLayout::FromWidth(width_dp, config_.compact_breakpoint_dp);
   ShellLayout::SyncLayoutModeString(state_);
+  ContextMenuHost::Instance().SetCompactLayout(state_.layout_mode == LayoutMode::Compact);
 }
 
 void ShellHost::SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback) {

@@ -37,6 +37,8 @@ public:
   static ContextMenuHost& Instance();
 
   void Install(Rml::Context* context);
+  /// Compact layout uses a bottom action sheet for ShowActions; floats stay clamped.
+  void SetCompactLayout(bool compact);
   void RegisterProvider(std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)> provider);
   void ShowAt(const ContextMenuRequest& request);
   /// Show an explicit action list (no copy/select/paste text actions).
@@ -51,11 +53,16 @@ public:
   bool OnContextPointer(Rml::Context* context, int x, int y);
 
 private:
+  enum class Presentation { Float, ActionSheet };
+
   void ProcessEvent(Rml::Event& event) override;
   void OnDetach(Rml::Element* element) override;
   std::vector<ContextMenuAction> CollectActions(const ContextMenuRequest& request) const;
   std::vector<ContextMenuAction> BuildTextActions() const;
-  void RenderMenu(const ContextMenuRequest& request, const std::vector<ContextMenuAction>& actions);
+  void RenderMenu(const ContextMenuRequest& request, const std::vector<ContextMenuAction>& actions,
+                   Presentation presentation);
+  void ClampFloatPanel(Rml::Vector2i preferred);
+  void LayoutActionSheet();
   int FindMenuItemIndex(Rml::Element* target) const;
   void HandleMenuAction(int index);
   void RequestDismiss();
@@ -67,6 +74,8 @@ private:
   Rml::Element* layer_ = nullptr;
   Rml::Element* panel_ = nullptr;
   bool dismiss_pending_ = false;
+  bool compact_layout_ = false;
+  Presentation presentation_ = Presentation::Float;
   std::string copy_snapshot_;
   std::vector<ContextMenuAction> active_actions_;
   std::vector<std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)>> providers_;

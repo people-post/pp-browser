@@ -1780,9 +1780,60 @@ select selectbox option {
 .context-menu-panel {
   position: absolute;
   min-width: 180dp;
+  max-width: 100%;
   padding: 4dp;
   border-radius: 8dp;
   box-shadow: 0 4dp 16dp rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
+}
+
+/* Compact ShowActions: iOS-style bottom action sheet.
+   Sheet frame (left / width / bottom) comes from ContextMenuHost::LayoutActionSheet.
+   Block stack (not flex) avoids min-content overflow past the viewport frame. */
+.context-menu-layer--sheet {
+  box-sizing: border-box;
+}
+
+.context-menu-sheet {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.context-menu-sheet-list {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  margin-bottom: 8dp;
+  padding: 4dp;
+  border-radius: 12dp;
+  overflow: auto;
+  max-height: 320dp;
+  box-sizing: border-box;
+  /* No box-shadow: blur extend (~1.5*radius) exceeds the 12dp sheet inset and
+     RmlUi clips the shadow texture to the window, which clips the painted panel. */
+}
+
+.context-menu-sheet-cancel {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 48dp;
+  margin: 0;
+  padding: 12dp 16dp;
+  border: 0;
+  border-radius: 12dp;
+  font-family: LatoLatin;
+  font-size: 16dp;
+  font-weight: bold;
+  text-align: center;
+  cursor: pointer;
+  box-sizing: border-box;
 }
 
 .context-menu-item {
@@ -1791,6 +1842,7 @@ select selectbox option {
   align-items: center;
   gap: 10dp;
   width: 100%;
+  min-width: 0;
   min-height: 40dp;
   margin: 0;
   padding: 8dp 12dp;
@@ -1799,6 +1851,21 @@ select selectbox option {
   background-color: transparent;
   text-align: left;
   cursor: pointer;
+  box-sizing: border-box;
+}
+
+.context-menu-layer--sheet .context-menu-item {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 48dp;
+  padding: 12dp 16dp;
+  border-radius: 8dp;
+  box-sizing: border-box;
+}
+
+.context-menu-layer--sheet .context-menu-item-label {
+  font-size: 16dp;
 }
 
 .context-menu-item-icon {

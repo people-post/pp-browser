@@ -175,7 +175,9 @@ Data binding: `thread_is_ai` / `thread_is_private` / `thread_is_public` / `threa
 
 ### Shell
 
-`.shell-pane`, `.shell-toolbar`, `.shell-banner`, `.shell-toast`, `.shell-dialog`, `.context-menu-panel`, `.context-menu-item`, `.context-menu-item--danger`
+`.shell-pane`, `.shell-toolbar`, `.shell-banner`, `.shell-toast`, `.shell-dialog`, `.context-menu-panel`, `.context-menu-sheet`, `.context-menu-sheet-list`, `.context-menu-sheet-cancel`, `.context-menu-item`, `.context-menu-item--danger`
+
+**Context menus:** `ShowAt` (long-press / right-click) always uses a viewport-clamped float near the pointer. `ShowActions` (chrome overflow such as `⋯`) uses the same float on expanded layout, and a bottom action sheet (`.context-menu-layer--sheet`) on compact layout. Sheet frame geometry is set in `ContextMenuHost::LayoutActionSheet` from the viewport; RCSS only styles the shell and stretched children. Confirmations stay in `.shell-dialog`.
 
 ### Sidebar
 
