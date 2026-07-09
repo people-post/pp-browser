@@ -142,8 +142,11 @@ See [D096](../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles
 ## Messaging UX
 
 - **Me tab** — nickname, **Peer ID** (primary), Relay ID (secondary / after register), Copy ID / Share (Peer ID), Register; preference rows (Assistant, Network, …) stay one tap away.
-- **New message** (Sessions header) and **Message a contact** (Home empty state) switch to Contacts to pick a peer.
-- Sessions `+` remains **New AI chat**.
+- Sessions header **`+`** opens a menu:
+  - **Chat with AI** — new AI thread
+  - **Message a contact** — switch to Contacts to pick a peer (then Secure / Public on contact detail)
+  - **Find someone** — new AI thread with draft prefilled for directory discovery
+- Home empty state **Message a contact** still switches to Contacts.
 - Directory discovery still uses agent tools: `search_people`, `list_contacts`, `list_conversations`, `open_conversation`, `start_conversation`.
 - Results render as `long_list` blocks with **Message** / **Add contact** chips (`send_chat_action` + JSON `payload`).
 - **Registration** also via `register_user` / `update_profile_nickname` tools (alternate to Me tab).

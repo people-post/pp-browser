@@ -410,15 +410,6 @@ select selectbox option:hover {
   background-color: #818cf8;
 }
 
-.sidebar-new-message {
-  background-color: #374151;
-  color: #e5e7eb;
-}
-
-.sidebar-new-message:hover {
-  background-color: #4b5563;
-}
-
 .sidebar-session {
   background-color: #1f2937;
   border: 1dp #374151;

@@ -22,6 +22,7 @@
 #include "feature/ui/ShellFeedback.h"
 #include "base/data/Config.h"
 #include "base/data/SessionStore.h"
+#include "base/ui/ContextMenuHost.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ContactsController.h"
 
@@ -530,6 +531,11 @@ void ChatController::NewChatCallback(Rml::DataModelHandle /*model*/, Rml::Event&
 void ChatController::NewMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                         const Rml::VariantList& /*args*/) {
   Instance().OnNewMessage();
+}
+
+void ChatController::OpenNewSessionMenuCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                                const Rml::VariantList& /*args*/) {
+  Instance().OnOpenNewSessionMenu(ev);
 }
 
 void ChatController::SelectThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
@@ -1323,6 +1329,51 @@ void ChatController::OnNewMessage() {
   ShellHost::Instance().SelectNavTab(NavTab::Contacts);
 }
 
+void ChatController::OnOpenNewSessionMenu(Rml::Event& ev) {
+  Rml::Element* target = ev.GetCurrentElement();
+  if (!target) {
+    target = ev.GetTargetElement();
+  }
+  Rml::Vector2i position{0, 0};
+  if (target) {
+    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
+    const Rml::Box& box = target->GetBox();
+    position.x = static_cast<int>(offset.x);
+    position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + 4.0f);
+  }
+
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({
+      "chat_with_ai",
+      "Chat with AI",
+      nullptr,
+      []() { ChatController::Instance().OnNewChat(); },
+  });
+  actions.push_back({
+      "message_contact",
+      "Message a contact",
+      nullptr,
+      []() { ChatController::Instance().OnNewMessage(); },
+  });
+  actions.push_back({
+      "find_someone",
+      "Find someone",
+      nullptr,
+      []() { ChatController::Instance().OnFindSomeone(); },
+  });
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ChatController::OnFindSomeone() {
+  if (!messaging_ready_) {
+    return;
+  }
+  OnNewChat();
+  focus_draft_after_sync_ = true;
+  chat_.draft = "Find someone on the network";
+  DirtyChatChrome();
+}
+
 void ChatController::OnShellLayoutSynced() {
   if (!focus_draft_after_sync_) {
     return;
@@ -1919,6 +1970,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("working_set", &ChatController::Instance().shell_.working_set);
         ctor.BindEventCallback("new_chat", &ChatController::NewChatCallback);
         ctor.BindEventCallback("new_message", &ChatController::NewMessageCallback);
+        ctor.BindEventCallback("open_new_session_menu", &ChatController::OpenNewSessionMenuCallback);
         ctor.BindEventCallback("select_thread", &ChatController::SelectThreadCallback);
         ctor.BindEventCallback("close_thread", &ChatController::CloseThreadCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);

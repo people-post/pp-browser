@@ -260,6 +260,37 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
   RenderMenu(request, active_actions_);
 }
 
+void ContextMenuHost::ShowActions(Rml::Vector2i position, std::vector<ContextMenuAction> actions) {
+  Dismiss();
+  if (!context_ || actions.empty()) {
+    return;
+  }
+
+  menu_context_ = context_;
+  menu_target_ = nullptr;
+  menu_editor_ = nullptr;
+  copy_snapshot_.clear();
+  active_actions_ = std::move(actions);
+
+  bool any_enabled = false;
+  for (const ContextMenuAction& action : active_actions_) {
+    if (!action.enabled || action.enabled()) {
+      any_enabled = true;
+      break;
+    }
+  }
+  if (!any_enabled) {
+    active_actions_.clear();
+    menu_context_ = nullptr;
+    return;
+  }
+
+  ContextMenuRequest request;
+  request.position = position;
+  request.context = context_;
+  RenderMenu(request, active_actions_);
+}
+
 void ContextMenuHost::Dismiss() {
   if (layer_) {
     layer_->RemoveEventListener(Rml::EventId::Mousedown, this, true);

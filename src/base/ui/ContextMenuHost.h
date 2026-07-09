@@ -35,6 +35,8 @@ public:
   void Install(Rml::Context* context);
   void RegisterProvider(std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)> provider);
   void ShowAt(const ContextMenuRequest& request);
+  /// Show an explicit action list (no copy/select/paste text actions).
+  void ShowActions(Rml::Vector2i position, std::vector<ContextMenuAction> actions);
   void Dismiss();
   bool IsOpen() const { return layer_ != nullptr; }
   bool HandleDismiss();

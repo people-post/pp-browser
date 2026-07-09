@@ -1097,8 +1097,7 @@ select selectbox option {
   margin-left: auto;
 }
 
-.sidebar-new-chat,
-.sidebar-new-message {
+.sidebar-new-chat {
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1114,8 +1113,7 @@ select selectbox option {
   cursor: pointer;
 }
 
-.sidebar-new-chat svg,
-.sidebar-new-message svg {
+.sidebar-new-chat svg {
   flex-shrink: 0;
 }
 
