@@ -33,7 +33,7 @@
               data-event-click="toggle_auxiliary()">Details</button>
       <button class="chat-header-more-btn" type="button" data-if="show_thread_menu"
               data-event-click="open_thread_actions_menu()">
-        <svg src="../icons/more.svg" width="18" height="18" crop-to-content="true"></svg>
+        <svg src="../icons/more.svg"></svg>
       </button>
     </div>
   </div>

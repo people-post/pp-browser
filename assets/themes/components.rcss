@@ -161,6 +161,8 @@ select selectbox option {
 
 .chat-header-more-btn svg {
   flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
 }
 
 .messages {
