@@ -8,13 +8,12 @@
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/connection/stream.hpp>
+#include <libp2p/host/explicit_host.hpp>
 #include <libp2p/host/host.hpp>
-#include <libp2p/injector/host_injector.hpp>
 #include <libp2p/log/configurator.hpp>
 #include <libp2p/log/logger.hpp>
 #include <libp2p/multi/multiaddress.hpp>
 #include <libp2p/peer/peer_info.hpp>
-#include <libp2p/security/noise.hpp>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
@@ -181,8 +180,11 @@ void Libp2pChatHistoryService::Start(const std::string& listen_multiaddr) {
   EnsureLibp2pLoggingInitialized();
 
   impl_->io_context = std::make_shared<boost::asio::io_context>(1);
-  auto injector = libp2p::injector::makeHostInjector();
-  impl_->host = injector.create<std::shared_ptr<libp2p::Host>>();
+  // Explicit Host wiring (no Boost.DI): Yamux + Noise over TCP.
+  impl_->host = libp2p::createExplicitHost(
+      impl_->io_context,
+      libp2p::HostMuxerKind::Yamux,
+      libp2p::HostSecurityKind::Noise);
 
   impl_->host->setProtocolHandler({ProtocolName{kChatHistoryProtocolId}},
                                   [impl = impl_.get()](libp2p::StreamAndProtocol stream) {

@@ -54,6 +54,7 @@ Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/
 - `Multihash` — inline value storage instead of `shared_ptr` (avoids null moved-from state that broke MSVC Release peer identity paths)
 - `Noise` — take `IdentityManager` and copy `getKeyPair()` instead of a DI-bound `KeyPair` by value (MSVC/Boost.DI moved the same KeyPair into IdentityManager and Noise)
 - `network_injector.hpp` — `bindSharedKeyPair()` returns a fresh KeyPair copy per injection from a shared store
+- `host/explicit_host.*` — preferred Host factory (no Boost.DI); used by `Libp2pChatHistoryService` and `muxers_and_streams_test`. Boost.DI injectors remain for upstream-shaped examples/injector unit tests only
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
 - `cmake/dependencies.cmake` — vendored mode verifies parent-provided targets; explicit `Protobuf_INCLUDE_DIR`; GTest when testing/coverage
 - `test/CMakeLists.txt` — vendored `link_libraries` for acceptance/helper test targets (qtils, gmock, secp256k1)

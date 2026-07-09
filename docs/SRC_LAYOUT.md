@@ -44,13 +44,15 @@ Product UI composition (`ShellHost`, `DocumentLoader`, `RmlMount`) stays in `src
 | Path | Role |
 |------|------|
 | `libp2p/fork/` | Upstream-shaped cpp-libp2p hard fork (`include/`, `src/`, `cmake/`, `example/`, `test/`) |
-| `libp2p/fork/example/` | Sample programs (`PP_BROWSER_LIBP2P_EXAMPLES`) |
+| `libp2p/fork/include/libp2p/host/explicit_host.hpp` | Preferred Host factory (no Boost.DI); app + muxer tests |
+| `libp2p/fork/example/` | Sample programs (`PP_BROWSER_LIBP2P_EXAMPLES`); may still use DI injectors |
 | `libp2p/fork/test/` | Unit tests (`PP_BROWSER_LIBP2P_TESTING` / coverage) |
-| `libp2p/integration/host/` | `Libp2pHost` bootstrap glue |
+| `libp2p/integration/host/` | `Libp2pHost` bootstrap glue (stub; chat history uses `createExplicitHost`) |
 
 Dependency rule:
 
 ```
+feature/messaging → fork/include (createExplicitHost)
 integration/host → fork/include (public API only)
 ```
 

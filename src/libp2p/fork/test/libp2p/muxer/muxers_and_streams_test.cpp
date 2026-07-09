@@ -8,15 +8,14 @@
 #include <iosfwd>
 
 #include <gtest/gtest.h>
-#include <boost/di/extension/scopes/shared.hpp>
 
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
-#include <libp2p/injector/host_injector.hpp>
-#include <libp2p/transport/tcp.hpp>
 
 #define TRACE_ENABLED 1
 #include <libp2p/common/trace.hpp>
+
+#include <libp2p/host/explicit_host.hpp>
 
 #include "testutil/prepare_loggers.hpp"
 
@@ -102,42 +101,20 @@ struct fmt::formatter<libp2p::regression::Stats::Event> {
 };
 
 namespace libp2p::regression {
-  struct InjectorHolderBase {
-    virtual ~InjectorHolderBase() = default;
-  };
-
-  template <typename Injector>
-  struct InjectorHolder : InjectorHolderBase {
-    Injector injector;
-
-    template <typename... Args>
-    explicit InjectorHolder(Args &&...args)
-        : injector(std::forward<Args>(args)...) {}
-  };
 
   class Node : public std::enable_shared_from_this<Node> {
    public:
     using Behavior = std::function<void(Node &node)>;
 
-    template <typename... InjectorArgs>
     Node(int node_id,
          bool jumbo_msg,
          const Behavior &behavior,
          std::shared_ptr<boost::asio::io_context> io,
-         InjectorArgs &&...args)
+         HostMuxerKind muxer,
+         HostSecurityKind security)
         : behavior_(behavior) {
       stats_.node_id = node_id;
-      auto injector = injector::makeHostInjector<
-          boost::di::extension::shared_config>(
-          boost::di::bind<boost::asio::io_context>.to(
-              io)[boost::di::override],
-          injector::useTransportAdaptors<transport::TcpTransport>(),
-          std::forward<InjectorArgs>(args)...);
-      using Injector = decltype(injector);
-      injector_ =
-          std::make_unique<InjectorHolder<Injector>>(std::move(injector));
-      host_ = static_cast<InjectorHolder<Injector> *>(injector_.get())
-                  ->injector.template create<std::shared_ptr<Host>>();
+      host_ = createExplicitHost(std::move(io), muxer, security);
 
       if (!jumbo_msg) {
         const peer::PeerId peer_id = host_->getId();
@@ -241,7 +218,6 @@ namespace libp2p::regression {
    private:
     const Behavior &behavior_;
     Stats stats_;
-    std::unique_ptr<InjectorHolderBase> injector_;
     std::shared_ptr<libp2p::Host> host_;
     std::shared_ptr<connection::Stream> accepted_stream_;
     std::shared_ptr<connection::Stream> connected_stream_;
@@ -337,274 +313,244 @@ namespace libp2p::regression {
     io->run_for(max_duration);
   }
 
+  void testStreamsGetNotifiedAboutEOF(bool jumbo_msg,
+                                      HostMuxerKind muxer,
+                                      HostSecurityKind security) {
+    constexpr size_t kServerId = 0;
+    constexpr size_t kClientId = 1;
+
+    bool server_read = false;
+    bool client_read = false;
+    bool eof_passed = false;
+
+    std::shared_ptr<boost::asio::io_context> io;
+    std::shared_ptr<Node> client;
+    std::shared_ptr<Node> server;
+
+    Node::Behavior server_behavior = [&](Node &node) {
+      auto stats = node.getStats();
+      TRACE("Server event: {}", stats.lastEvent());
+      switch (stats.lastEvent()) {
+        case Stats::ACCEPTED:
+        case Stats::WRITE:
+          return node.read();
+        case Stats::READ:
+          server_read = true;
+          return node.write();
+        case Stats::READ_FAILURE:
+        case Stats::WRITE_FAILURE:
+          eof_passed = true;
+          break;
+        default:
+          return;
+      }
+      io->stop();
+    };
+
+    Node::Behavior client_behavior = [&](Node &node) {
+      auto stats = node.getStats();
+      TRACE("Client event: {}", stats.lastEvent());
+      switch (stats.lastEvent()) {
+        case Stats::CONNECTED:
+          return node.write();
+        case Stats::WRITE:
+          return node.read();
+        case Stats::READ:
+          TRACE("server eof");
+          client_read = true;
+
+          // disconnect
+          node.stop();
+          client.reset();
+
+          return;
+        default:
+          break;
+      }
+      io->stop();
+    };
+
+    auto listen_to =
+        libp2p::multi::Multiaddress::create("/ip4/127.0.0.1/tcp/40000").value();
+
+    io = std::make_shared<boost::asio::io_context>();
+
+    server = std::make_shared<Node>(
+        kServerId, jumbo_msg, server_behavior, io, muxer, security);
+    client = std::make_shared<Node>(
+        kClientId, jumbo_msg, client_behavior, io, muxer, security);
+
+    post(*io, [&]() {
+      server->listen(listen_to);
+      libp2p::peer::PeerInfo peer_info{server->getId(), {listen_to}};
+      client->connect(peer_info);
+    });
+
+    runEventLoop(io);
+
+    EXPECT_TRUE(server_read);
+    EXPECT_TRUE(client_read);
+    EXPECT_TRUE(eof_passed);
+
+    if (server) {
+      server->stop();
+    }
+    if (client) {
+      client->stop();
+    }
+  }
+
+  void testOutboundConnectionAcceptsStreams(HostMuxerKind muxer,
+                                            HostSecurityKind security) {
+    constexpr size_t kServerId = 0;
+    constexpr size_t kClientId = 1;
+
+    bool client_accepted_stream = false;
+    bool client_read_from_accepted_stream = false;
+    bool server_read_from_connected_stream = false;
+
+    std::shared_ptr<boost::asio::io_context> io;
+    std::shared_ptr<Node> client;
+    std::shared_ptr<Node> server;
+
+    Node::Behavior server_behavior = [&](Node &node) {
+      auto stats = node.getStats();
+      TRACE("Server event: {}", stats.lastEvent());
+      switch (stats.lastEvent()) {
+        case Stats::ACCEPTED:
+          // make reverse stream to peer, dont give any address in peerInfo
+          // so dialer should reuse existing connection
+          return node.connect(libp2p::peer::PeerInfo{client->getId(), {}});
+
+        case Stats::CONNECTED:
+          // write something through reverse stream
+          return node.write(CONNECTED_STREAM);
+
+        case Stats::WRITE:
+          // read from reverse stream
+          return node.read(CONNECTED_STREAM);
+
+        case Stats::READ:
+          server_read_from_connected_stream = true;
+          break;
+
+        default:
+          break;
+      }
+      io->stop();
+    };
+
+    Node::Behavior client_behavior = [&](Node &node) {
+      auto stats = node.getStats();
+      TRACE("Client event: {}", stats.lastEvent());
+      switch (stats.lastEvent()) {
+        case Stats::CONNECTED:
+          // do nothing, wait for inbound stream
+          return;
+
+        case Stats::ACCEPTED:
+          client_accepted_stream = true;
+          return node.read(ACCEPTED_STREAM);
+
+        case Stats::READ:
+          client_read_from_accepted_stream = true;
+          return node.write(ACCEPTED_STREAM);
+
+        case Stats::WRITE:
+          return;
+
+        default:
+          break;
+      }
+      io->stop();
+    };
+
+    auto listen_to =
+        libp2p::multi::Multiaddress::create("/ip4/127.0.0.1/tcp/40001").value();
+
+    io = std::make_shared<boost::asio::io_context>();
+
+    server = std::make_shared<Node>(
+        kServerId, false, server_behavior, io, muxer, security);
+    client = std::make_shared<Node>(
+        kClientId, false, client_behavior, io, muxer, security);
+
+    post(*io, [&]() {
+      server->listen(listen_to);
+      libp2p::peer::PeerInfo peer_info{server->getId(), {listen_to}};
+      client->connect(peer_info);
+    });
+
+    runEventLoop(io);
+
+    EXPECT_TRUE(client_accepted_stream);
+    EXPECT_TRUE(client_read_from_accepted_stream);
+    EXPECT_TRUE(server_read_from_connected_stream);
+
+    if (server) {
+      server->stop();
+    }
+    if (client) {
+      client->stop();
+    }
+  }
+
 }  // namespace libp2p::regression
 
-template <typename... InjectorArgs>
-void testStreamsGetNotifiedAboutEOF(bool jumbo_msg, InjectorArgs &&...args) {
-  using namespace libp2p::regression;  // NOLINT
-
-  constexpr size_t kServerId = 0;
-  constexpr size_t kClientId = 1;
-
-  bool server_read = false;
-  bool client_read = false;
-  bool eof_passed = false;
-
-  std::shared_ptr<boost::asio::io_context> io;
-  std::shared_ptr<Node> client;
-  std::shared_ptr<Node> server;
-
-  Node::Behavior server_behavior = [&](Node &node) {
-    auto stats = node.getStats();
-    TRACE("Server event: {}", stats.lastEvent());
-    switch (stats.lastEvent()) {
-      case Stats::ACCEPTED:
-      case Stats::WRITE:
-        return node.read();
-      case Stats::READ:
-        server_read = true;
-        return node.write();
-      case Stats::READ_FAILURE:
-      case Stats::WRITE_FAILURE:
-        eof_passed = true;
-        break;
-      default:
-        return;
-    }
-    io->stop();
-  };
-
-  Node::Behavior client_behavior = [&](Node &node) {
-    auto stats = node.getStats();
-    TRACE("Client event: {}", stats.lastEvent());
-    switch (stats.lastEvent()) {
-      case Stats::CONNECTED:
-        return node.write();
-      case Stats::WRITE:
-        return node.read();
-      case Stats::READ:
-        TRACE("server eof");
-        client_read = true;
-
-        // disconnect
-        node.stop();
-        client.reset();
-
-        return;
-      default:
-        break;
-    }
-    io->stop();
-  };
-
-  auto listen_to =
-      libp2p::multi::Multiaddress::create("/ip4/127.0.0.1/tcp/40000").value();
-
-  io = std::make_shared<boost::asio::io_context>();
-
-  server = std::make_shared<Node>(kServerId,
-                                  jumbo_msg,
-                                  server_behavior,
-                                  io,
-                                  std::forward<decltype(args)>(args)...);
-  client = std::make_shared<Node>(kClientId,
-                                  jumbo_msg,
-                                  client_behavior,
-                                  io,
-                                  std::forward<decltype(args)>(args)...);
-
-  post(*io, [&]() {
-    server->listen(listen_to);
-    libp2p::peer::PeerInfo peer_info{server->getId(), {listen_to}};
-    client->connect(peer_info);
-  });
-
-  runEventLoop(io);
-
-  EXPECT_TRUE(server_read);
-  EXPECT_TRUE(client_read);
-  EXPECT_TRUE(eof_passed);
-
-  if (server) {
-    server->stop();
-  }
-  if (client) {
-    client->stop();
-  }
-}
-
-template <typename... InjectorArgs>
-void testOutboundConnectionAcceptsStreams(InjectorArgs &&...args) {
-  using namespace libp2p::regression;  // NOLINT
-
-  constexpr size_t kServerId = 0;
-  constexpr size_t kClientId = 1;
-
-  bool client_accepted_stream = false;
-  bool client_read_from_accepted_stream = false;
-  bool server_read_from_connected_stream = false;
-
-  std::shared_ptr<boost::asio::io_context> io;
-  std::shared_ptr<Node> client;
-  std::shared_ptr<Node> server;
-
-  Node::Behavior server_behavior = [&](Node &node) {
-    auto stats = node.getStats();
-    TRACE("Server event: {}", stats.lastEvent());
-    switch (stats.lastEvent()) {
-      case Stats::ACCEPTED:
-        // make reverse stream to peer, dont give any address in peerInfo
-        // so dialer should reuse existing connection
-        return node.connect(libp2p::peer::PeerInfo{client->getId(), {}});
-
-      case Stats::CONNECTED:
-        // write something through reverse stream
-        return node.write(CONNECTED_STREAM);
-
-      case Stats::WRITE:
-        // read from reverse stream
-        return node.read(CONNECTED_STREAM);
-
-      case Stats::READ:
-        server_read_from_connected_stream = true;
-        break;
-
-      default:
-        break;
-    }
-    io->stop();
-  };
-
-  Node::Behavior client_behavior = [&](Node &node) {
-    auto stats = node.getStats();
-    TRACE("Client event: {}", stats.lastEvent());
-    switch (stats.lastEvent()) {
-      case Stats::CONNECTED:
-        // do nothing, wait for inbound stream
-        return;
-
-      case Stats::ACCEPTED:
-        client_accepted_stream = true;
-        return node.read(ACCEPTED_STREAM);
-
-      case Stats::READ:
-        client_read_from_accepted_stream = true;
-        return node.write(ACCEPTED_STREAM);
-
-      case Stats::WRITE:
-        return;
-
-      default:
-        break;
-    }
-    io->stop();
-  };
-
-  auto listen_to =
-      libp2p::multi::Multiaddress::create("/ip4/127.0.0.1/tcp/40001").value();
-
-  io = std::make_shared<boost::asio::io_context>();
-
-  server = std::make_shared<Node>(kServerId,
-                                  false,
-                                  server_behavior,
-                                  io,
-                                  std::forward<decltype(args)>(args)...);
-  client = std::make_shared<Node>(kClientId,
-                                  false,
-                                  client_behavior,
-                                  io,
-                                  std::forward<decltype(args)>(args)...);
-
-  post(*io, [&]() {
-    server->listen(listen_to);
-    libp2p::peer::PeerInfo peer_info{server->getId(), {listen_to}};
-    client->connect(peer_info);
-  });
-
-  runEventLoop(io);
-
-  EXPECT_TRUE(client_accepted_stream);
-  EXPECT_TRUE(client_read_from_accepted_stream);
-  EXPECT_TRUE(server_read_from_connected_stream);
-
-  if (server) {
-    server->stop();
-  }
-  if (client) {
-    client->stop();
-  }
-}
-
 TEST(StreamsRegression, YamuxStreamsGetNotifiedAboutEOF) {
-  testStreamsGetNotifiedAboutEOF(
+  libp2p::regression::testStreamsGetNotifiedAboutEOF(
       false,
-      boost::di::bind<libp2p::muxer::MuxerAdaptor *[]>()
-          .to<libp2p::muxer::Yamux>()[boost::di::override]);
+      libp2p::HostMuxerKind::Yamux,
+      libp2p::HostSecurityKind::Plaintext);
 }
 
 TEST(StreamsRegression, YamuxStreamsGetNotifiedAboutEOFJumboMsg) {
-  testStreamsGetNotifiedAboutEOF(
+  libp2p::regression::testStreamsGetNotifiedAboutEOF(
       true,
-      boost::di::bind<libp2p::muxer::MuxerAdaptor *[]>()
-          .to<libp2p::muxer::Yamux>()[boost::di::override]);
+      libp2p::HostMuxerKind::Yamux,
+      libp2p::HostSecurityKind::Plaintext);
 }
 
 TEST(StreamsRegression, MplexStreamsGetNotifiedAboutEOF) {
-  testStreamsGetNotifiedAboutEOF(
+  libp2p::regression::testStreamsGetNotifiedAboutEOF(
       false,
-      boost::di::bind<libp2p::muxer::MuxerAdaptor *[]>()
-          .to<libp2p::muxer::Mplex>()[boost::di::override]);
+      libp2p::HostMuxerKind::Mplex,
+      libp2p::HostSecurityKind::Plaintext);
 }
 
 TEST(StreamsRegression, OutboundMplexConnectionAcceptsStreams) {
-  testOutboundConnectionAcceptsStreams(
-      boost::di::bind<libp2p::muxer::MuxerAdaptor *[]>()
-          .to<libp2p::muxer::Mplex>()[boost::di::override]);
+  libp2p::regression::testOutboundConnectionAcceptsStreams(
+      libp2p::HostMuxerKind::Mplex, libp2p::HostSecurityKind::Plaintext);
 }
 
 TEST(StreamsRegression, OutboundYamuxConnectionAcceptsStreams) {
-  testOutboundConnectionAcceptsStreams(
-      boost::di::bind<libp2p::muxer::MuxerAdaptor *[]>()
-          .to<libp2p::muxer::Yamux>()[boost::di::override]);
+  libp2p::regression::testOutboundConnectionAcceptsStreams(
+      libp2p::HostMuxerKind::Yamux, libp2p::HostSecurityKind::Plaintext);
 }
 
 TEST(StreamsRegression, OutboundYamuxTLSConnectionAcceptsStreams) {
-  testOutboundConnectionAcceptsStreams(
-      boost::di::bind<libp2p::muxer::MuxerAdaptor *[]>()
-          .to<libp2p::muxer::Yamux>()[boost::di::override],
-      libp2p::injector::useSecurityAdaptors<libp2p::security::TlsAdaptor>());
+  libp2p::regression::testOutboundConnectionAcceptsStreams(
+      libp2p::HostMuxerKind::Yamux, libp2p::HostSecurityKind::Tls);
 }
 
 TEST(StreamsRegression, YamuxTLSStreamsGetNotifiedAboutEOF) {
-  testStreamsGetNotifiedAboutEOF(
-      false,
-      boost::di::bind<libp2p::muxer::MuxerAdaptor *[]>()
-          .to<libp2p::muxer::Yamux>()[boost::di::override],
-      libp2p::injector::useSecurityAdaptors<libp2p::security::TlsAdaptor>());
+  libp2p::regression::testStreamsGetNotifiedAboutEOF(
+      false, libp2p::HostMuxerKind::Yamux, libp2p::HostSecurityKind::Tls);
 }
 
 TEST(StreamsRegression, OutboundYamuxNoiseConnectionAcceptsStreams) {
-  testOutboundConnectionAcceptsStreams(
-      boost::di::bind<libp2p::muxer::MuxerAdaptor *[]>()
-          .to<libp2p::muxer::Yamux>()[boost::di::override],
-      libp2p::injector::useSecurityAdaptors<libp2p::security::Noise>());
+  libp2p::regression::testOutboundConnectionAcceptsStreams(
+      libp2p::HostMuxerKind::Yamux, libp2p::HostSecurityKind::Noise);
 }
 
 TEST(StreamsRegression, YamuxNoiseStreamsGetNotifiedAboutEOF) {
-  testStreamsGetNotifiedAboutEOF(
-      false,
-      boost::di::bind<libp2p::muxer::MuxerAdaptor *[]>()
-          .to<libp2p::muxer::Yamux>()[boost::di::override],
-      libp2p::injector::useSecurityAdaptors<libp2p::security::Noise>());
+  libp2p::regression::testStreamsGetNotifiedAboutEOF(
+      false, libp2p::HostMuxerKind::Yamux, libp2p::HostSecurityKind::Noise);
 }
 
 TEST(StreamsRegression, YamuxNoiseStreamsGetNotifiedAboutEOFJumboMsg) {
-  testStreamsGetNotifiedAboutEOF(
-      true,
-      boost::di::bind<libp2p::muxer::MuxerAdaptor *[]>()
-          .to<libp2p::muxer::Yamux>()[boost::di::override],
-      libp2p::injector::useSecurityAdaptors<libp2p::security::Noise>());
+  libp2p::regression::testStreamsGetNotifiedAboutEOF(
+      true, libp2p::HostMuxerKind::Yamux, libp2p::HostSecurityKind::Noise);
 }
 
 int main(int argc, char *argv[]) {
