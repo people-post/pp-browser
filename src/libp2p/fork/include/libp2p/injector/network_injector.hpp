@@ -141,9 +141,10 @@ namespace libp2p::injector {
 
   namespace detail {
     /**
-     * Boost.DI hands bound instances to by-value constructor parameters via
-     * move. KeyPair is consumed by both IdentityManagerImpl and Noise; keep one
-     * shared copy and return a fresh copy per injection site.
+     * Only IdentityManagerImpl should consume the DI-bound KeyPair (by value).
+     * Noise and other adaptors copy keys from IdentityManager. Still return a
+     * fresh KeyPair copy from a shared store so overrides / future consumers
+     * cannot move the same instance twice.
      */
     inline auto bindSharedKeyPair(crypto::KeyPair key_pair) {
       auto store = std::make_shared<crypto::KeyPair>(std::move(key_pair));

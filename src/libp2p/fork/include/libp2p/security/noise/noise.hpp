@@ -10,6 +10,7 @@
 #include <libp2p/crypto/key.hpp>
 #include <libp2p/crypto/key_marshaller.hpp>
 #include <libp2p/log/logger.hpp>
+#include <libp2p/peer/identity_manager.hpp>
 #include <libp2p/security/security_adaptor.hpp>
 
 namespace libp2p::security {
@@ -19,7 +20,7 @@ namespace libp2p::security {
    public:
     static constexpr auto kProtocolId = "/noise";
 
-    Noise(crypto::KeyPair local_key,
+    Noise(std::shared_ptr<peer::IdentityManager> idmgr,
           std::shared_ptr<crypto::CryptoProvider> crypto_provider,
           std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller);
 

@@ -48,6 +48,7 @@ namespace libp2p::peer {
     if (!multihash_res) {
       return multihash_res.error();
     }
+    // Copy from the lvalue outcome; avoid MSVC move-from-temporary pitfalls.
     return PeerId{multihash_res.value()};
   }
 

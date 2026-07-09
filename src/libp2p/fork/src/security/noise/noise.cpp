@@ -14,12 +14,17 @@ namespace libp2p::security {
   }
 
   Noise::Noise(
-      crypto::KeyPair local_key,
+      std::shared_ptr<peer::IdentityManager> idmgr,
       std::shared_ptr<crypto::CryptoProvider> crypto_provider,
       std::shared_ptr<crypto::marshaller::KeyMarshaller> key_marshaller)
-      : local_key_{std::move(local_key)},
-        crypto_provider_{std::move(crypto_provider)},
-        key_marshaller_{std::move(key_marshaller)} {}
+      : crypto_provider_{std::move(crypto_provider)},
+        key_marshaller_{std::move(key_marshaller)} {
+    BOOST_ASSERT(idmgr != nullptr);
+    // Copy from IdentityManager instead of taking KeyPair from DI. Boost.DI
+    // moves by-value bindings; KeyPair must only be consumed once (by
+    // IdentityManagerImpl) or MSVC leaves a moved-from Multihash in PeerId.
+    local_key_ = idmgr->getKeyPair();
+  }
 
   void Noise::secureInbound(
       std::shared_ptr<connection::LayerConnection> inbound,
