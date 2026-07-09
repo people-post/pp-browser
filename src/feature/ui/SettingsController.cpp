@@ -73,6 +73,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.directory_base_url = bindings_.directory_base_url.c_str();
   ui_state_.registration_base_url = bindings_.registration_base_url.c_str();
   ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
+  ui_state_.profile_peer_id = bindings_.profile_peer_id.c_str();
   ui_state_.profile_relay_id = bindings_.profile_relay_id.c_str();
   ui_state_.profile_public_key = bindings_.profile_public_key.c_str();
   ui_state_.profile_registered = bindings_.profile_registered.c_str();
@@ -101,6 +102,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.directory_base_url = ui_state_.directory_base_url.c_str();
   bindings_.registration_base_url = ui_state_.registration_base_url.c_str();
   bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
+  bindings_.profile_peer_id = ui_state_.profile_peer_id.c_str();
   bindings_.profile_relay_id = ui_state_.profile_relay_id.c_str();
   bindings_.profile_public_key = ui_state_.profile_public_key.c_str();
   bindings_.profile_registered = ui_state_.profile_registered.c_str();
@@ -178,6 +180,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("directory_base_url", &controller.bindings_.directory_base_url);
     ctor.Bind("registration_base_url", &controller.bindings_.registration_base_url);
     ctor.Bind("profile_nickname", &controller.bindings_.profile_nickname);
+    ctor.Bind("profile_peer_id", &controller.bindings_.profile_peer_id);
     ctor.Bind("profile_relay_id", &controller.bindings_.profile_relay_id);
     ctor.Bind("profile_public_key", &controller.bindings_.profile_public_key);
     ctor.Bind("profile_registered", &controller.bindings_.profile_registered);
@@ -223,6 +226,7 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "directory_base_url");
   host.Dirty("settings", "registration_base_url");
   host.Dirty("settings", "profile_nickname");
+  host.Dirty("settings", "profile_peer_id");
   host.Dirty("settings", "profile_relay_id");
   host.Dirty("settings", "profile_public_key");
   host.Dirty("settings", "profile_registered");
@@ -625,28 +629,32 @@ void SettingsController::OnRegisterProfile() {
 }
 
 void SettingsController::OnCopyProfileId() {
-  const std::string relay_id = bindings_.profile_relay_id.c_str();
-  if (relay_id.empty()) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "No relay ID yet — register first");
+  const std::string peer_id = bindings_.profile_peer_id.c_str();
+  if (peer_id.empty()) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), "No Peer ID yet");
     ShellHost::Instance().DirtyWindow();
     return;
   }
   if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
-    system->SetClipboardText(bindings_.profile_relay_id);
+    system->SetClipboardText(bindings_.profile_peer_id);
   }
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Relay ID copied");
+  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Peer ID copied");
   ShellHost::Instance().DirtyWindow();
 }
 
 void SettingsController::OnShareProfile() {
-  const std::string relay_id = bindings_.profile_relay_id.c_str();
-  if (relay_id.empty()) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "No relay ID yet — register first");
+  const std::string peer_id = bindings_.profile_peer_id.c_str();
+  if (peer_id.empty()) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), "No Peer ID yet");
     ShellHost::Instance().DirtyWindow();
     return;
   }
   const std::string nickname = bindings_.profile_nickname.c_str();
-  std::string invite = nickname.empty() ? relay_id : (nickname + " (" + relay_id + ")");
+  const std::string relay_id = bindings_.profile_relay_id.c_str();
+  std::string invite = nickname.empty() ? peer_id : (nickname + " (" + peer_id + ")");
+  if (!relay_id.empty()) {
+    invite += " [" + relay_id + "]";
+  }
   if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
     system->SetClipboardText(invite.c_str());
   }

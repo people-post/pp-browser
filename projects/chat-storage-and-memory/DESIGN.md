@@ -162,7 +162,7 @@ Address book and wire routing use **different id spaces**:
 | **`ChatTargetKey`** | Long-lived P2P conversation | `(relay_user, "relay:bob456", e2e)` | **Implied** by `sender_contact_id` + `route` |
 | **`local:self`** | Local transcript sentinel | Outbound row UI | **No** |
 
-A **Contact** represents a person or entity (human or non-human later). **`Contact.ids[]`** may include `relay_user`, `peer_id`, `blockchain`, and `custom` entries — only some are **messaging identities**. **`blockchain`** values use **CAIP-10** ([D091](DECISIONS.md#d091--blockchain-contact-id-caip-10-e024)). v1 relay path uses **`ContactIdKind::RelayUser`** values on the wire.
+A **Contact** represents a person or entity (human or non-human later). **`Contact.ids[]`** may include `relay_user`, `peer_id`, `blockchain`, and `custom` entries — only some are **messaging identities**. Roles ([D096](DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route)): **`peer_id`** = network who; **`blockchain`** (CAIP-10, [D091](DECISIONS.md#d091--blockchain-contact-id-caip-10-e024)) = find/lookup → Peer ID; **`relay_user`** = v1 route. v1 wire uses **`ContactIdKind::RelayUser`**.
 
 **Thread binding rules:**
 

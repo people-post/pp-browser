@@ -16,6 +16,8 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/data/tests
   ${CMAKE_BINARY_DIR}/tests/base_data_tests)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/net/tests
   ${CMAKE_BINARY_DIR}/tests/base_net_tests)
+add_subdirectory(${CMAKE_SOURCE_DIR}/src/base/people/tests
+  ${CMAKE_BINARY_DIR}/tests/base_people_tests)
 
 add_executable(pp_browser_rml_mount_test rml_mount_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/ai/RmlValidator.cpp)

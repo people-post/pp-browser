@@ -26,6 +26,7 @@ struct SettingsUiState {
   std::string directory_base_url;
   std::string registration_base_url;
   std::string profile_nickname;
+  std::string profile_peer_id;
   std::string profile_relay_id;
   std::string profile_public_key;
   std::string profile_registered = "no";

@@ -91,10 +91,14 @@ set(PP_BROWSER_BASE_SOURCES
   ui/InputCoordinator.cpp
   ui/ContextMenuHost.cpp
   ${CMAKE_SOURCE_DIR}/src/libp2p/integration/host/Libp2pHost.cpp
+  ${CMAKE_SOURCE_DIR}/src/libp2p/integration/host/PeerIdUtil.cpp
 )
 
 add_library(pp_base STATIC ${PP_BROWSER_BASE_SOURCES})
-target_include_directories(pp_base PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(pp_base PUBLIC
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include
+)
 target_link_libraries(pp_base PUBLIC
   pp_common
   pp_rmlui_backend
@@ -104,6 +108,8 @@ target_link_libraries(pp_base PUBLIC
   CURL::libcurl
   SQLite::SQLite3
   sodium
+  p2p_peer_id
+  p2p_keys_proto
 )
 if(TARGET OpenSSL::Crypto)
   target_link_libraries(pp_base PUBLIC OpenSSL::Crypto)

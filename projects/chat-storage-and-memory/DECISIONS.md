@@ -1217,15 +1217,15 @@ eip155:{chain_id}:{address}
 
 | Use | Allowed |
 |-----|---------|
-| **`Contact.ids[]`** metadata, people search, UI | yes |
-| On-chain attestation linking relay identity ↔ signing key ↔ CAIP-10 | **`[post-v1]`** (E024 Anchor 1) |
-| **`ChatTargetKey.peer_identity_value`** / wire **`sender_contact_id`** | **no** — remains `relay:…` (D082) until deliberate protocol bump |
+| **`Contact.ids[]`** metadata, people search, UI | yes — first-class **lookup** handle (find Peer ID; see [D096](#d096--identity-roles-peer-id-who-caip-10-find-relay-route)) |
+| On-chain attestation linking **CAIP-10 ↔ Peer ID ↔ signing key** (and optional relay id) | **`[post-v1]`** (E024 Anchor 1) |
+| **`ChatTargetKey.peer_identity_value`** / wire **`sender_contact_id`** | **no** — remains `relay:…` (D082) until deliberate protocol bump; not CAIP-10 |
 | PSK / hybrid KEM | **no** — blockchain attests signing keys only; PSK stays peer KEM (E024) |
 
 Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future decision — do not overload `eip155:` with non-EVM semantics.
 
-**Rationale:** CAIP-10 is the standard hook for on-chain identity search/verify without migrating messaging wire identity prematurely.  
-**Alternatives:** Raw `0x` address only (rejected — ambiguous chain); ENS/DID strings in `Blockchain` kind (deferred — resolver layer); blockchain as wire identity in v1 (rejected — E024).
+**Rationale:** CAIP-10 is the standard hook for on-chain identity **search and attestation** without making the wallet the dialable or wire identity.  
+**Alternatives:** Raw `0x` address only (rejected — ambiguous chain); ENS/DID strings in `Blockchain` kind (deferred — resolver layer); blockchain as wire identity in v1 (rejected — E024 / D096).
 
 ---
 
@@ -1263,6 +1263,35 @@ Non-EVM chains: add new **`ContactIdKind`** or a namespaced prefix in a future d
 **Decision:** Group outbound wire uses **N ciphertexts per message** — the sender includes **one AEAD ciphertext per member**, each encrypted with that member's pairwise secret (reuse 1:1 `ChatTargetKey` crypto). **Not** a sender-keys tree; **not** relay-side encrypted fan-out in v1 slice. Normative detail when group ships: extend `RelayEnvelope` / group send path with a member→ciphertext map (exact JSON field names TBD at implementation).  
 **Rationale:** Matches E022 pairwise sender-keys policy; simplest fan-out on existing pair machinery.  
 **Alternatives:** Sender-keys tree (deferred); relay encrypted fan-out (deferred).
+
+---
+
+## D096 — Identity roles: Peer ID (who), CAIP-10 (find), relay (route)
+
+**Date:** 2026-07-09  
+**Updated:** 2026-07-09 — clarify chain vs peer vs relay roles.  
+**Amends UX of:** D082 (relay-user string remains wire format).  
+**Cross-project:** [D091](#d091--blockchain-contact-id-caip-10-e024), [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007).  
+**Decision:**
+
+Identity strings serve different verbs — do not treat them as interchangeable “user ids”:
+
+| Role | Kind / value | First-class for | Not for |
+|------|----------------|-----------------|---------|
+| **Network identity (who)** | libp2p **Peer ID** (base58) | Product self-id, dial/bind, Me primary, future `peer_id` threads | — |
+| **Lookup / social handle (find)** | **CAIP-10** blockchain account (`ContactIdKind::Blockchain`) | People search, link-to-peer resolution, on-chain attestation → Peer ID + signing key | Dialing; v1 wire `sender_contact_id` |
+| **Transport / registry handle (route)** | **`relay:<opaque_id>`** | v1 relay inbox, directory by relay id, v1 `ChatTargetKey` | Product primary id |
+
+1. **Peer ID:** Derived from the Ed25519 signing public key (same key as registration + envelope signatures). Held on `LocalIdentity.peer_id` as an **in-memory** cache only — **not** written to `identity.json` (pubkey is the durable source). Me settings: primary line; Copy / Share use Peer ID.
+2. **CAIP-10:** First-class **lookup** handle — resolve `eip155:{chain_id}:{address}` → Peer ID (+ signing pubkey, optional relay id, multiaddrs). Attestation strengthens signing trust (E024 Anchor 1); does **not** become wire identity in v1 (D091).
+3. **Relay ID:** Registration-assigned (D082), empty until register succeeds; secondary on Me. Lookup path into Peer ID / keys via relay/directory — **not** synthesized from a pubkey prefix.
+4. **v1 wire unchanged:** `ChatTargetKey` / `sender_contact_id` / AAD continue to use `peer_identity_kind = relay_user` and `relay:…` until a deliberate protocol bump to `peer_id` threads (D079). Target directory map: `CAIP-10 | nickname | relay_id → Peer ID`.
+5. **One keypair:** The Ed25519 key in `identity.json` is the source for Peer ID derivation, message signing, and registration proofs.
+
+**Slogan:** Peer ID = who. Chain account = how you find who. Relay = how messages route today.
+
+**Rationale:** Dialable P2P identity exists before relay registration; wallet search and attestation must not be confused with the network id or the v1 transport account.  
+**Alternatives:** Keep relay-first Settings (rejected); CAIP-10 as Me primary / wire id in v1 (rejected — D091); flip wire to Peer ID in the same change (rejected — protocol bump).
 
 ---
 

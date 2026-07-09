@@ -129,9 +129,19 @@ Local store is written **before** send. Server rejections do not delete history.
 
 Per-message **Direct / Relay / Local** badges read the persisted `transport` column (post-v6d).
 
+## Identity model
+
+| Role | Example | Use |
+|------|---------|-----|
+| **Who** (network id) | libp2p Peer ID | Me primary, dial/bind, future direct threads |
+| **Find** (lookup) | CAIP-10 `eip155:…:0x…`, nickname | Search / attest → resolve to Peer ID |
+| **Route** (v1 transport) | `relay:…` | Relay inbox + v1 `ChatTargetKey` / wire |
+
+See [D096](../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route), [D091](../projects/chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).
+
 ## Messaging UX
 
-- **Me tab** — identity-first: nickname, relay ID, Copy ID / Share (clipboard invite), Register; preference rows (Assistant, Network, …) stay one tap away.
+- **Me tab** — nickname, **Peer ID** (primary), Relay ID (secondary / after register), Copy ID / Share (Peer ID), Register; preference rows (Assistant, Network, …) stay one tap away.
 - **New message** (Sessions header) and **Message a contact** (Home empty state) switch to Contacts to pick a peer.
 - Sessions `+` remains **New AI chat**.
 - Directory discovery still uses agent tools: `search_people`, `list_contacts`, `list_conversations`, `open_conversation`, `start_conversation`.

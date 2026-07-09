@@ -77,7 +77,10 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 
 ## Integration status
 
-libp2p is built in-tree via `add_subdirectory(src/libp2p)` and linked into the `pp-browser` executable (`p2p` target). App glue is a stub in `src/libp2p/integration/host/Libp2pHost.*`; transport wiring lands separately.
+libp2p is built in-tree via `add_subdirectory(src/libp2p)` and linked into the `pp-browser` executable (`p2p` target). App glue lives in `src/libp2p/integration/host/`:
+
+- `Libp2pHost.*` — host bootstrap stub; transport wiring lands separately
+- `PeerIdUtil.*` — derive base58 Peer ID from the app Ed25519 signing public key (network identity / Me settings; see [D096](../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route))
 
 ## TLS note
 

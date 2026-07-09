@@ -24,6 +24,14 @@ public:
     if (!identity.LoadOrCreate()) {
       throw std::runtime_error("identity load failed");
     }
+    {
+      LocalIdentity updated = *identity.Get();
+      updated.relay_user_id = "relay:local";
+      updated.registered = true;
+      if (!identity.Update(updated)) {
+        throw std::runtime_error("Failed to set test relay id");
+      }
+    }
     local_relay_id = identity.Get()->relay_user_id;
 
     DirectChatTarget target;

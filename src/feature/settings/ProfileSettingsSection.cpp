@@ -27,6 +27,7 @@ void ProfileSettingsSection::SyncFromSession(const BootstrapResult& /*bootstrap*
     return;
   }
   state.profile_nickname = identity->nickname;
+  state.profile_peer_id = identity->peer_id;
   state.profile_relay_id = identity->relay_user_id;
   state.profile_public_key = identity->public_key_b64;
   state.profile_registered = identity->registered ? "yes" : "no";

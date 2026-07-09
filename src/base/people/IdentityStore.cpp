@@ -3,6 +3,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/HybridKem.h"
 #include "base/people/Ed25519Signer.h"
+#include "libp2p/integration/host/PeerIdUtil.h"
 
 #include <filesystem>
 #include <fstream>
@@ -23,6 +24,19 @@ Roe<void> EnsureHybridKemKeys(LocalIdentity& identity, bool& dirty_flag) {
   identity.kem_public_key_b64 = Base64Encode(generated->public_key);
   identity.kem_private_key_b64 = Base64Encode(generated->private_key);
   dirty_flag = true;
+  return {};
+}
+
+Roe<void> DerivePeerId(LocalIdentity& identity) {
+  auto public_key = Ed25519Signer::FromBase64(identity.public_key_b64);
+  if (!public_key) {
+    return public_key.error();
+  }
+  auto derived = PeerIdFromEd25519PublicKey(*public_key);
+  if (!derived) {
+    return derived.error();
+  }
+  identity.peer_id = *derived;
   return {};
 }
 
@@ -54,8 +68,11 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     identity_.public_key_b64 = Ed25519Signer::ToBase64(keys->public_key);
     identity_.encrypted_private_key_b64 = Ed25519Signer::ToBase64(keys->private_key);
     identity_.nickname = "user";
-    identity_.relay_user_id = "relay:" + identity_.public_key_b64.substr(0, 12);
+    identity_.relay_user_id.clear();
     identity_.registered = false;
+    if (auto peer = DerivePeerId(identity_); !peer) {
+      return peer.error();
+    }
     if (auto kem = EnsureHybridKemKeys(identity_, dirty_); !kem) {
       return kem.error();
     }
@@ -96,6 +113,10 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     return private_key.error();
   }
   private_key_ = std::move(*private_key);
+
+  if (auto peer = DerivePeerId(identity_); !peer) {
+    return peer.error();
+  }
   if (auto kem = EnsureHybridKemKeys(identity_, dirty_); !kem) {
     return kem.error();
   }
@@ -158,6 +179,9 @@ Roe<LocalIdentity> IdentityStore::Update(const LocalIdentity& identity) {
     return load.error();
   }
   identity_ = identity;
+  if (auto peer = DerivePeerId(identity_); !peer) {
+    return peer.error();
+  }
   dirty_ = true;
   if (Save()) {
     dirty_ = false;

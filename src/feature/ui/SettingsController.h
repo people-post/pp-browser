@@ -63,6 +63,7 @@ private:
     Rml::String directory_base_url;
     Rml::String registration_base_url;
     Rml::String profile_nickname;
+    Rml::String profile_peer_id;
     Rml::String profile_relay_id;
     Rml::String profile_public_key;
     Rml::String profile_registered = "no";

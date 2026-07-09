@@ -341,7 +341,7 @@ with `ikm = master_psk` and `salt = "pp-browser-msg-v1"` unchanged. **`channel`*
 | **API** | **`IPeerSigningKeyResolver::Resolve(kind, identity_value)`** → `{ signing_public_key_b64, fingerprint, source, source_ref?, trusted_at? }` |
 | **Cache** | **`PeerSigningKeyStore`** — same key as E016; persist resolver results with **provenance** (`source`: `relay_directory`, `manual_paste`, `on_chain`, …; `source_ref`: tx hash / registry id when applicable) |
 | **v1 backends** | **`RelayDirectoryResolver`** — directory search hit + lazy **`GET /v1/users/{relay_user_id}`** (E016/D081); **`ManualPasteResolver`** — user paste at add-contact |
-| **`[post-v1]` backend** | **`OnChainAttestationResolver`** — verify on-chain identity attestation (CAIP-10 linked — D091) binding `(peer_identity_kind, peer_identity_value)` → `signing_public_key_b64` |
+| **`[post-v1]` backend** | **`OnChainAttestationResolver`** — verify on-chain attestation (CAIP-10 → Peer ID / communicating identity — D091/D096) binding `(peer_identity_kind, peer_identity_value)` → `signing_public_key_b64` |
 | **v1 ingest policy** | **Relay directory** — fail closed if key missing or verify fails (D081) |
 | **`[post-v1]` ingest policy** | **Chain-preferred** — when a valid on-chain attestation exists for the communicating identity, it **confirms or overrides** the relay key; relay-only binding accepted when no chain attestation is present |
 | **Rejected** | Relay as sole long-term trust with no upgrade path; TOFU pin on first message without directory; key embedded in `sender_contact_id` (E016) |
@@ -373,11 +373,12 @@ Unchanged from D080 — independent of PSK anchor:
 
 Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no mandatory OOB PSK fingerprint before first send.
 
-### Blockchain hookup (attestation layer — not wire identity v1)
+### Blockchain hookup (lookup + attestation — not wire identity v1)
 
 - **`ContactIdKind::Blockchain`** values use **CAIP-10** ([D091](../chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024)) — e.g. `eip155:1:0x…`
-- On-chain attestation (future) links **CAIP-10 account** ↔ **communicating identity** (`relay:…`) ↔ **Ed25519 signing key** — strengthens Anchor 1 only
-- **`ChatTargetKey` / wire `sender_contact_id`** remain **`relay_user`** until a deliberate protocol bump; blockchain does **not** replace hybrid KEM for PSK
+- **Role (D096):** CAIP-10 is a first-class **lookup** handle — resolve to **libp2p Peer ID** (+ signing pubkey). It is not the product network id and not v1 wire identity.
+- On-chain attestation (future) links **CAIP-10 account** ↔ **Peer ID** ↔ **Ed25519 signing key** (optional relay id) — strengthens Anchor 1 only
+- **`ChatTargetKey` / wire `sender_contact_id`** remain **`relay_user`** until a deliberate protocol bump to `peer_id`; blockchain does **not** replace hybrid KEM for PSK
 
 ### Phasing
 
