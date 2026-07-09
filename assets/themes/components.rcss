@@ -1543,11 +1543,50 @@ select selectbox option {
   margin-bottom: 8dp;
 }
 
+.contacts-header {
+  justify-content: space-between;
+}
+
 .contacts-header-title {
   margin-top: 0;
   margin-bottom: 0;
   font-size: 14dp;
   font-weight: bold;
+}
+
+.contacts-header-actions {
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4dp;
+}
+
+.contacts-find-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin-bottom: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+  font-family: LatoLatin;
+  cursor: pointer;
+}
+
+.contacts-find-btn svg {
+  flex-shrink: 0;
+}
+
+.contacts-search {
+  flex-shrink: 0;
+  margin-bottom: 8dp;
+}
+
+.contacts-search-field {
+  margin-bottom: 0;
 }
 
 .contacts-list {
@@ -1556,18 +1595,49 @@ select selectbox option {
   overflow-y: auto;
 }
 
-.contacts-row {
+.contacts-row,
+.contacts-thread-row {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   min-height: 44dp;
   margin-bottom: 4dp;
-  padding: 8dp;
+  padding: 6dp 8dp;
   border-radius: 6dp;
   box-sizing: border-box;
   cursor: pointer;
+  gap: 8dp;
+}
+
+.contacts-row-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18dp;
+  height: 18dp;
+}
+
+.contacts-row-icon svg {
+  flex-shrink: 0;
+}
+
+.contacts-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.contacts-row-title-line {
+  align-items: center;
+  gap: 6dp;
+  min-width: 0;
 }
 
 .contacts-row-title {
+  flex: 1;
+  min-width: 0;
   margin-top: 0;
   margin-bottom: 2dp;
   font-size: 13dp;
@@ -1585,14 +1655,26 @@ select selectbox option {
   text-overflow: ellipsis;
 }
 
+.contacts-trust-badge {
+  flex-shrink: 0;
+  padding: 1dp 6dp;
+  border-radius: 8dp;
+  font-size: 10dp;
+}
+
+.contacts-empty {
+  margin-top: 12dp;
+  gap: 8dp;
+}
+
 .contacts-back-btn {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36dp;
-  height: 36dp;
-  min-width: 36dp;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
   margin-right: 4dp;
   margin-bottom: 0;
   padding: 0;
@@ -1610,12 +1692,37 @@ select selectbox option {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  gap: 12dp;
+}
+
+.contact-profile-card {
+  flex-shrink: 0;
+  padding: 10dp;
+  border-radius: 8dp;
+  box-sizing: border-box;
+  gap: 6dp;
+}
+
+.contacts-trust-actions {
+  margin-top: 4dp;
   gap: 8dp;
+  flex-wrap: wrap;
+}
+
+.contacts-threads {
+  gap: 4dp;
 }
 
 .contacts-actions {
   flex-shrink: 0;
   margin-top: 16dp;
+  gap: 8dp;
+}
+
+.contacts-actions-hint {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 12dp;
 }
 
 .contact-detail-panel {
@@ -1625,10 +1732,6 @@ select selectbox option {
   padding: 24dp;
   box-sizing: border-box;
   overflow: hidden;
-}
-
-.contacts-row--active {
-  background-color: rgba(59, 130, 246, 0.12);
 }
 
 .shell-nav-page--under-overlay {

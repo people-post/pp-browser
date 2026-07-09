@@ -21,6 +21,7 @@ Productivity-oriented (Notion/Slack): neutral surfaces, one primary blue accent,
 | Primary chat | `chat.rml` | Header, bubbles, empty state, E2E chrome |
 | Composer | `composer.rml` | Prompt card, send button |
 | Working set | `preview.rml` | Panel, chips, long-list rows |
+| Contacts | `contacts.rml`, `contact_detail.rml` | List rows, profile card, trust badges, find button |
 | Settings | `settings.rml` | Sections, fields |
 | Feedback | `ShellFeedback` | Dialog, confirm, banner |
 
@@ -179,6 +180,10 @@ Data binding: `thread_is_ai` / `thread_is_private` / `thread_is_public` / `threa
 ### Sidebar
 
 `.sidebar-panel`, `.sidebar-session`, `.sidebar-session-active`, `.sidebar-session--ai`, `.sidebar-session--private`, `.sidebar-session--public`, `.sidebar-session--group`, `.sidebar-unread`
+
+### Contacts
+
+`.contacts-panel`, `.contacts-row`, `.contacts-row--active`, `.contacts-find-btn`, `.contact-profile-card`, `.contacts-trust-badge`, `.contacts-thread-row`
 
 ## RCSS file layout
 

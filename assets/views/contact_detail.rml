@@ -4,15 +4,51 @@
   </div>
 
   <div class="contacts-detail-body stack">
-    <h2 class="heading-2" data-rml="selected.display_name"></h2>
-    <p class="text muted" data-if="selected.nickname != ''">Nickname: <span data-rml="selected.nickname"></span></p>
-    <p class="text muted" data-if="selected.relay_id != ''">Relay ID: <span data-rml="selected.relay_id"></span></p>
-    <p class="text muted" data-if="selected.signing_fingerprint != ''">Signing fingerprint: <span data-rml="selected.signing_fingerprint"></span></p>
-    <p class="text muted" data-if="selected.trust != ''">Trust: <span data-rml="selected.trust"></span></p>
+    <div class="contact-profile-card stack">
+      <h2 class="heading-2" data-rml="selected.display_name"></h2>
+      <p class="text muted" data-if="selected.nickname != ''">Nickname: <span data-rml="selected.nickname"></span></p>
+      <div data-for="identity : selected.identities">
+        <p class="text muted me-profile-meta">
+          <span data-rml="identity.label"></span>: <span data-rml="identity.value"></span>
+          <span data-if="identity.is_primary"> (primary)</span>
+        </p>
+      </div>
+      <p class="text muted me-profile-meta" data-if="selected.signing_fingerprint != ''">
+        Signing fingerprint: <span data-rml="selected.signing_fingerprint"></span>
+      </p>
+      <p class="text muted">Trust: <span data-rml="selected.trust"></span></p>
+      <div class="me-profile-actions row">
+        <button class="btn btn-secondary" type="button" data-event-click="copy_contact_id()">Copy ID</button>
+        <button class="btn btn-secondary" type="button" data-event-click="share_contact()">Share</button>
+      </div>
+      <div class="contacts-trust-actions row">
+        <button class="btn btn-secondary" type="button" data-event-click="set_trust('friendly')">Friendly</button>
+        <button class="btn btn-secondary" type="button" data-event-click="set_trust('unknown')">Unknown</button>
+        <button class="btn btn-secondary" type="button" data-event-click="set_trust('blocked')">Blocked</button>
+      </div>
+    </div>
+
+    <div class="contacts-threads stack" data-if="selected.threads.size > 0">
+      <p class="settings-section-title">Conversations</p>
+      <div data-for="thread : selected.threads" class="contacts-thread-row"
+           data-event-click="open_thread(thread.id)">
+        <div class="contacts-row-icon" data-if="thread.kind == 'private'">
+          <svg src="../icons/lock.svg" width="14" height="14" crop-to-content="true"></svg>
+        </div>
+        <div class="contacts-row-icon" data-if="thread.kind == 'public'">
+          <svg src="../icons/message.svg" width="14" height="14" crop-to-content="true"></svg>
+        </div>
+        <div class="contacts-row-body">
+          <p class="contacts-row-title" data-rml="thread.title"></p>
+          <p class="contacts-row-subtitle text muted" data-rml="thread.channel_label"></p>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="contacts-actions">
+  <div class="contacts-actions stack">
+    <p class="text muted contacts-actions-hint">Secure uses a shared key. Public chat is encrypted without a private shared key.</p>
     <button class="btn btn-primary" type="button" data-event-click="secure_message()">Secure message</button>
-    <button class="btn" type="button" data-event-click="start_chat()">Start chat</button>
+    <button class="btn btn-secondary" type="button" data-event-click="start_chat()">Public chat</button>
   </div>
 </div>

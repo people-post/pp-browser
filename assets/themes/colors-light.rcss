@@ -488,6 +488,50 @@ select selectbox option:hover {
   border: 1dp #e5e7eb;
 }
 
+.contacts-find-btn {
+  background-color: #4a6cf7;
+  color: #ffffff;
+}
+
+.contacts-find-btn:hover {
+  background-color: #5a7cff;
+}
+
+.contacts-row,
+.contacts-thread-row {
+  background-color: #ffffff;
+  border: 1dp #e5e7eb;
+}
+
+.contacts-row--active {
+  background-color: #eef2ff;
+  border-color: #c7d2fe;
+  box-shadow: inset 3dp 0 0 #4a6cf7;
+}
+
+.contacts-row-title {
+  color: #333333;
+}
+
+.contact-profile-card {
+  background-color: #f8fafc;
+  border: 1dp #e5e7eb;
+}
+
+.contacts-trust-badge--friendly {
+  background-color: #ecfdf5;
+  color: #0f766e;
+}
+
+.contacts-trust-badge--blocked {
+  background-color: #fef2f2;
+  color: #b91c1c;
+}
+
+.contacts-back-btn:hover {
+  background-color: #f3f4f6;
+}
+
 .sidebar-footer {
   border-top: 1dp #e5e7eb;
 }

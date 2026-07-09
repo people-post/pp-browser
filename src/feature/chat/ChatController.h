@@ -40,6 +40,8 @@ public:
   void FinalizeThreadDisplay();
   void OnHomeTabActivated();
   void OnSessionsTabActivated();
+  void OnFindSomeone();
+  void OnSelectThread(const std::string& thread_id);
 
 private:
   struct ActiveForm {
@@ -131,8 +133,6 @@ private:
   void OnNewMessage();
   void OnOpenNewSessionMenu(Rml::Event& ev);
   void OnOpenThreadActionsMenu(Rml::Event& ev);
-  void OnFindSomeone();
-  void OnSelectThread(const std::string& thread_id);
   void OnCloseThread(const std::string& thread_id);
   void OnClearHistory();
   void OnForgetMemory();

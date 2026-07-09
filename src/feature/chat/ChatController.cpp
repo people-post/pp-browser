@@ -1294,6 +1294,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
         return;
       }
       RefreshFromMessaging();
+      ContactsController::Instance().Refresh();
       const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
       auto& inbox = MessagingHub::Instance().Inbox();
       if (inbox.IsAiHomeThread(active_id)) {
