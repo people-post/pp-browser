@@ -90,16 +90,16 @@ See [INPUT.md](INPUT.md) for behavior details.
 
 ### Cloud LLM (default)
 
-First launch uses cloud defaults (`https://api.openai.com/v1`, model `gpt-4o-mini`). Open **Settings**, enter your API key, and save.
+First launch uses cloud defaults (`https://api.openai.com/v1`, model `gpt-4o-mini`). Open **Me → Assistant**, enter your API key, and save.
 
 Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exists.
 
 ### Local Ollama (optional dev)
 
 1. Start Ollama and pull a model, e.g. `ollama pull llama3.2`
-2. Open **Settings** → preset **Ollama (localhost)** → save, or use a config with `http://localhost:11434/v1` (see `_llm_ollama_dev_example` in `config.json.example`)
+2. Open **Me → Assistant** → preset **Ollama (localhost)** → save, or use a config with `http://localhost:11434/v1` (see `_llm_ollama_dev_example` in `config.json.example`)
 
-For other providers, set `base_url`, `model`, and API key in Settings or config JSON.
+For other providers, set `base_url`, `model`, and API key in Me → Assistant or config JSON.
 
 Config and data paths: [CONFIGURATION.md](CONFIGURATION.md). During development, delete `~/.local/share/pp-browser` if the on-disk layout changes (no legacy migration).
 
@@ -168,6 +168,6 @@ export PP_BROWSER_RELEASE_VERSION=0.1.0-rc1
 
 The first clean NDK build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../assets/) are packaged into the APK automatically.
 
-Launch **pp-browser** on the device/emulator. On first launch, open **Settings** and enter a cloud API key. Use `adb logcat -s pp-browser` for native logs.
+Launch **pp-browser** on the device/emulator. On first launch, open **Me → Assistant** and enter a cloud API key. Use `adb logcat -s pp-browser` for native logs.
 
 See [PLATFORMS.md](PLATFORMS.md) for mobile lifecycle, navigation, and asset I/O.

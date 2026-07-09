@@ -410,6 +410,15 @@ select selectbox option:hover {
   background-color: #5a7cff;
 }
 
+.sidebar-new-message {
+  background-color: #e5e7eb;
+  color: #374151;
+}
+
+.sidebar-new-message:hover {
+  background-color: #d1d5db;
+}
+
 .sidebar-session {
   background-color: #ffffff;
   border: 1dp #e5e7eb;
@@ -458,6 +467,11 @@ select selectbox option:hover {
 
 .settings-label {
   color: #6b7280;
+}
+
+.me-profile-card {
+  background-color: #f8fafc;
+  border: 1dp #e5e7eb;
 }
 
 .sidebar-footer {

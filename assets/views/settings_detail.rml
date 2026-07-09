@@ -91,19 +91,6 @@
       </div>
     </div>
 
-    <div class="settings-section stack" data-if="selected_id == 'profile'">
-      <label class="settings-field">
-        <span class="settings-label">Nickname</span>
-        <input class="field" type="text" data-value="profile_nickname" data-event-change="on_profile_field_changed()"/>
-      </label>
-      <p class="text muted">Relay ID: <span data-rml="profile_relay_id"></span></p>
-      <p class="text muted settings-path">Public key: <span data-rml="profile_public_key"></span></p>
-      <p class="text muted">Registered: <span data-rml="profile_registered"></span></p>
-      <div class="settings-actions row">
-        <button class="btn btn-secondary" type="button" data-event-click="register_profile()">Register on network</button>
-      </div>
-    </div>
-
     <div class="settings-section stack" data-if="selected_id == 'appearance'">
       <label class="settings-field">
         <span class="settings-label">Theme</span>

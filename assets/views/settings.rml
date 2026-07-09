@@ -1,8 +1,34 @@
 <div class="settings-panel stack" data-model="settings">
   <div class="settings-list-view" data-if="!compact_layout || !show_detail">
     <div class="settings-header row">
-      <h2 class="heading-2">Settings</h2>
+      <h2 class="heading-2">Me</h2>
     </div>
+
+    <div class="me-profile-card stack">
+      <label class="settings-field">
+        <span class="settings-label">Nickname</span>
+        <input class="field" type="text" data-value="profile_nickname" data-event-change="on_profile_field_changed()"
+               placeholder="Your display name"/>
+      </label>
+      <p class="text muted me-profile-meta" data-if="profile_relay_id != ''">
+        Relay ID: <span data-rml="profile_relay_id"></span>
+      </p>
+      <p class="text muted me-profile-meta" data-if="profile_relay_id == ''">
+        Relay ID: not registered yet
+      </p>
+      <p class="text muted me-profile-meta">
+        Registered: <span data-rml="profile_registered"></span>
+      </p>
+      <div class="me-profile-actions row">
+        <button class="btn btn-secondary" type="button" data-event-click="copy_profile_id()">Copy ID</button>
+        <button class="btn btn-secondary" type="button" data-event-click="share_profile()">Share</button>
+        <button class="btn btn-primary" type="button" data-if="profile_registered != 'yes'"
+                data-event-click="register_profile()">Register on network</button>
+      </div>
+      <p class="text muted" data-if="status != ''" data-rml="status"></p>
+    </div>
+
+    <p class="settings-section-title me-preferences-label">Preferences</p>
     <div class="settings-list">
       <div data-for="section : sections"
            class="settings-row"
@@ -107,19 +133,6 @@
         </label>
         <div class="settings-actions row">
           <button class="btn btn-secondary" type="button" data-event-click="reset_section('network')">Reset to defaults</button>
-        </div>
-      </div>
-
-      <div class="settings-section stack" data-if="selected_id == 'profile'">
-        <label class="settings-field">
-          <span class="settings-label">Nickname</span>
-          <input class="field" type="text" data-value="profile_nickname" data-event-change="on_profile_field_changed()"/>
-        </label>
-        <p class="text muted">Relay ID: <span data-rml="profile_relay_id"></span></p>
-        <p class="text muted settings-path">Public key: <span data-rml="profile_public_key"></span></p>
-        <p class="text muted">Registered: <span data-rml="profile_registered"></span></p>
-        <div class="settings-actions row">
-          <button class="btn btn-secondary" type="button" data-event-click="register_profile()">Register on network</button>
         </div>
       </div>
 

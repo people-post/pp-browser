@@ -18,7 +18,8 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_TRUE(ShellLayout::TabHasSecondary(NavTab::Sessions));
   EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Sessions), std::string("sidebar"));
   EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Contacts), std::string("contacts"));
-  EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Settings), std::string("settings"));
+  EXPECT_EQ(ShellLayout::NavTabString(NavTab::Me), std::string("me"));
+  EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Me), std::string("settings"));
 
   ShellState cleared_tab{};
   cleared_tab.primary_pane_key = "chat";

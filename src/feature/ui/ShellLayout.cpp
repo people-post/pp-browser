@@ -11,8 +11,8 @@ const char* ShellLayout::LayoutModeString(LayoutMode mode) {
 }
 
 const char* ShellLayout::NavTabString(NavTab tab) {
-  if (tab == NavTab::Settings) {
-    return "settings";
+  if (tab == NavTab::Me) {
+    return "me";
   }
   if (tab == NavTab::Contacts) {
     return "contacts";
@@ -35,7 +35,7 @@ const char* ShellLayout::NavContentKey(NavTab tab) {
   if (tab == NavTab::Home) {
     return nullptr;
   }
-  if (tab == NavTab::Settings) {
+  if (tab == NavTab::Me) {
     return "settings";
   }
   if (tab == NavTab::Contacts) {

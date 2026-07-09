@@ -64,7 +64,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | E2E symmetric crypto (`base/crypto`) | `src/base/crypto/`, [docs/MESSAGE_ENCRYPTION.md](docs/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
 | Chat storage / memory | [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) — **Waves 1–2 done**; Wave 3 next (v3 ∥ v4) |
 | Config / data / profiles | `src/app/Bootstrap.*`, `src/base/data/`, `src/base/platform/`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
-| In-app settings | `src/feature/ui/SettingsController.*`, `assets/views/settings.rml` |
+| In-app settings (Me tab) | `src/feature/ui/SettingsController.*`, `assets/views/settings.rml` |
 | Build | [docs/BUILD.md](docs/BUILD.md) |
 | Source layers | [docs/SRC_LAYOUT.md](docs/SRC_LAYOUT.md) |
 

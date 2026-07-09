@@ -1,4 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
-  <circle cx="20" cy="12.727" r="7.273" stroke="#374151" stroke-width="3.636"/>
-  <path d="M 7.273 36.364 c 0 -7.03 5.706 -12.727 12.727 -12.727 s 12.727 5.697 12.727 12.727" stroke="#374151" stroke-width="3.636" stroke-linecap="round"/>
+  <!-- Back person (smaller, offset) -->
+  <circle cx="26.5" cy="12" r="5.5" stroke="#374151" stroke-width="3.2"/>
+  <path d="M 34.5 33.5 c 0 -4.7 -3.6 -8.5 -8 -8.5" stroke="#374151" stroke-width="3.2" stroke-linecap="round"/>
+  <!-- Front person -->
+  <circle cx="15" cy="13.5" r="6.2" stroke="#374151" stroke-width="3.2"/>
+  <path d="M 5.5 34.5 c 0 -5.5 4.3 -10 9.5 -10 s 9.5 4.5 9.5 10" stroke="#374151" stroke-width="3.2" stroke-linecap="round"/>
 </svg>

@@ -63,7 +63,7 @@ Profile-scoped layout (see [CONFIGURATION.md](CONFIGURATION.md)). **Legacy (toda
 
 **Target (v2a+):** see [chat-storage-and-memory DESIGN.md](../projects/chat-storage-and-memory/DESIGN.md) — `profile.db` (`threads` + `outbox` + `chat_targets`) + per-thread `thread.db`; no `index.json`.
 
-Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux) or in-app **Settings**:
+Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux) or in-app **Me → Network**:
 
 ```json
 {
@@ -129,11 +129,14 @@ Local store is written **before** send. Server rejections do not delete history.
 
 Per-message **Direct / Relay / Local** badges read the persisted `transport` column (post-v6d).
 
-## AI-centric UX
+## Messaging UX
 
-- **No dedicated search UI** — use agent tools: `search_people`, `list_contacts`, `list_conversations`, `open_conversation`, `start_conversation`.
+- **Me tab** — identity-first: nickname, relay ID, Copy ID / Share (clipboard invite), Register; preference rows (Assistant, Network, …) stay one tap away.
+- **New message** (Sessions header) and **Message a contact** (Home empty state) switch to Contacts to pick a peer.
+- Sessions `+` remains **New AI chat**.
+- Directory discovery still uses agent tools: `search_people`, `list_contacts`, `list_conversations`, `open_conversation`, `start_conversation`.
 - Results render as `long_list` blocks with **Message** / **Add contact** chips (`send_chat_action` + JSON `payload`).
-- **Registration** via `register_user` and `update_profile_nickname` tools (no sidebar banner).
+- **Registration** also via `register_user` / `update_profile_nickname` tools (alternate to Me tab).
 
 ## @ai in direct threads
 

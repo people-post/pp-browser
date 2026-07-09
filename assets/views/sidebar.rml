@@ -1,9 +1,14 @@
 <div class="sidebar-panel" data-model="shell">
   <div class="sidebar-header row">
     <p class="sidebar-header-title">Sessions</p>
-    <button class="sidebar-new-chat" type="button" data-event-click="new_chat()">
-      <svg src="../icons/plus.svg" width="18" height="18" crop-to-content="true"></svg>
-    </button>
+    <div class="sidebar-header-actions row">
+      <button class="sidebar-new-message" type="button" data-event-click="new_message()">
+        <svg src="../icons/message.svg" width="18" height="18" crop-to-content="true"></svg>
+      </button>
+      <button class="sidebar-new-chat" type="button" data-event-click="new_chat()">
+        <svg src="../icons/plus.svg" width="18" height="18" crop-to-content="true"></svg>
+      </button>
+    </div>
   </div>
   <div class="sidebar-sessions">
     <div data-for="session : sessions" class="sidebar-session" data-class-sidebar-session-active="session.active">

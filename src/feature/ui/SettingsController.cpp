@@ -10,6 +10,7 @@
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
+#include <RmlUi/Core/SystemInterface.h>
 #include <SDL3/SDL.h>
 
 namespace pbr {
@@ -52,6 +53,9 @@ const SettingsSectionHandler* SettingsController::FindHandler(const std::string&
 void SettingsController::InitSections() {
   sections_.clear();
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
+    if (std::string(handler->Id()) == "profile") {
+      continue;
+    }
     const SettingsSectionListItem item = handler->ListItem();
     sections_.push_back({.id = item.id.c_str(), .title = item.title.c_str(), .subtitle = item.subtitle.c_str()});
   }
@@ -193,6 +197,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
     ctor.BindEventCallback("on_profile_field_changed", &SettingsController::OnProfileFieldChangedCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
+    ctor.BindEventCallback("copy_profile_id", &SettingsController::OnCopyProfileIdCallback);
+    ctor.BindEventCallback("share_profile", &SettingsController::OnShareProfileCallback);
     ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
     ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
   });
@@ -236,7 +242,7 @@ void SettingsController::FinishPaneResync() {
   }
   // Select widgets can emit a spurious change on the frame after remount.
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-    if (ShellHost::Instance().State().nav_tab != NavTab::Settings) {
+    if (ShellHost::Instance().State().nav_tab != NavTab::Me) {
       suppress_auto_save_ = false;
       return;
     }
@@ -253,7 +259,7 @@ void SettingsController::OnShellLayoutSynced() {
   if (!suppress_auto_save_) {
     return;
   }
-  if (ShellHost::Instance().State().nav_tab != NavTab::Settings) {
+  if (ShellHost::Instance().State().nav_tab != NavTab::Me) {
     suppress_auto_save_ = false;
     return;
   }
@@ -301,9 +307,9 @@ void SettingsController::SyncLayoutMode() {
 }
 
 void SettingsController::OpenSettings() {
-  const bool already_settings = ShellHost::Instance().State().nav_tab == NavTab::Settings;
-  ShellHost::Instance().SelectNavTab(NavTab::Settings);
-  if (already_settings) {
+  const bool already_me = ShellHost::Instance().State().nav_tab == NavTab::Me;
+  ShellHost::Instance().SelectNavTab(NavTab::Me);
+  if (already_me) {
     OnNavTabActivated();
     FinishPaneResync();
   }
@@ -582,6 +588,16 @@ void SettingsController::OnRegisterProfileCallback(Rml::DataModelHandle /*model*
   Instance().OnRegisterProfile();
 }
 
+void SettingsController::OnCopyProfileIdCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                 const Rml::VariantList& /*args*/) {
+  Instance().OnCopyProfileId();
+}
+
+void SettingsController::OnShareProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                const Rml::VariantList& /*args*/) {
+  Instance().OnShareProfile();
+}
+
 void SettingsController::OnAddMcpServerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                               const Rml::VariantList& /*args*/) {
   Instance().OnAddMcpServer();
@@ -606,6 +622,36 @@ void SettingsController::OnRegisterProfile() {
   PushUiStateToBindings();
   DirtyAll();
   MaybeShowSaveToast("profile");
+}
+
+void SettingsController::OnCopyProfileId() {
+  const std::string relay_id = bindings_.profile_relay_id.c_str();
+  if (relay_id.empty()) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), "No relay ID yet — register first");
+    ShellHost::Instance().DirtyWindow();
+    return;
+  }
+  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+    system->SetClipboardText(bindings_.profile_relay_id);
+  }
+  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Relay ID copied");
+  ShellHost::Instance().DirtyWindow();
+}
+
+void SettingsController::OnShareProfile() {
+  const std::string relay_id = bindings_.profile_relay_id.c_str();
+  if (relay_id.empty()) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), "No relay ID yet — register first");
+    ShellHost::Instance().DirtyWindow();
+    return;
+  }
+  const std::string nickname = bindings_.profile_nickname.c_str();
+  std::string invite = nickname.empty() ? relay_id : (nickname + " (" + relay_id + ")");
+  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+    system->SetClipboardText(invite.c_str());
+  }
+  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Invite copied");
+  ShellHost::Instance().DirtyWindow();
 }
 
 void SettingsController::OnAddMcpServer() {

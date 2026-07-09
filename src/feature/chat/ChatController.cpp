@@ -527,6 +527,11 @@ void ChatController::NewChatCallback(Rml::DataModelHandle /*model*/, Rml::Event&
   Instance().OnNewChat();
 }
 
+void ChatController::NewMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                        const Rml::VariantList& /*args*/) {
+  Instance().OnNewMessage();
+}
+
 void ChatController::SelectThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
   if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
     return;
@@ -1314,6 +1319,10 @@ void ChatController::OnNewChat() {
   ShellHost::Instance().DirtyWindow();
 }
 
+void ChatController::OnNewMessage() {
+  ShellHost::Instance().SelectNavTab(NavTab::Contacts);
+}
+
 void ChatController::OnShellLayoutSynced() {
   if (!focus_draft_after_sync_) {
     return;
@@ -1878,6 +1887,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("verify_psk", &ChatController::VerifyPskCallback);
         ctor.BindEventCallback("rotate_psk_export", &ChatController::RotatePskExportCallback);
         ctor.BindEventCallback("load_older_history", &ChatController::LoadOlderHistoryCallback);
+        ctor.BindEventCallback("new_message", &ChatController::NewMessageCallback);
       })) {
     return false;
   }
@@ -1908,6 +1918,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("working_set_rml", &ChatController::Instance().shell_.working_set_rml);
         ctor.Bind("working_set", &ChatController::Instance().shell_.working_set);
         ctor.BindEventCallback("new_chat", &ChatController::NewChatCallback);
+        ctor.BindEventCallback("new_message", &ChatController::NewMessageCallback);
         ctor.BindEventCallback("select_thread", &ChatController::SelectThreadCallback);
         ctor.BindEventCallback("close_thread", &ChatController::CloseThreadCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
@@ -1937,7 +1948,7 @@ bool ChatController::Setup(Rml::Context* context) {
   ShellHost::Instance().Initialize(context);
   ShellHost::Instance().SetOnNavTabChanged([](NavTab tab) {
     static NavTab previous_tab = NavTab::Home;
-    if (previous_tab == NavTab::Settings && tab != NavTab::Settings) {
+    if (previous_tab == NavTab::Me && tab != NavTab::Me) {
       SettingsController::Instance().OnNavTabDeactivated();
     }
     if (tab == NavTab::Home) {
@@ -1946,7 +1957,7 @@ bool ChatController::Setup(Rml::Context* context) {
     if (tab == NavTab::Sessions) {
       ChatController::Instance().OnSessionsTabActivated();
     }
-    if (tab == NavTab::Settings) {
+    if (tab == NavTab::Me) {
       SettingsController::Instance().OnNavTabActivated();
     }
     if (tab == NavTab::Contacts) {
@@ -1958,7 +1969,7 @@ bool ChatController::Setup(Rml::Context* context) {
     if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
       ContactsController::Instance().SyncLayoutMode();
     }
-    if (ShellHost::Instance().State().nav_tab == NavTab::Settings) {
+    if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
       SettingsController::Instance().SyncLayoutMode();
     }
     if (mode == LayoutMode::Compact && ShellHost::Instance().State().nav_tab == NavTab::Home) {
@@ -2002,7 +2013,7 @@ bool ChatController::Setup(Rml::Context* context) {
     ShellHost::Instance().DirtyWindow();
   } else if (config.llm.require_api_key && config.llm.api_key.empty()) {
     ShellFeedback::ShowBanner(ShellHost::Instance().State(),
-                              "Add your API key in Settings to enable the assistant.");
+                              "Add your API key in Me → Assistant to enable the assistant.");
     ShellHost::Instance().DirtyWindow();
   }
 
@@ -2068,7 +2079,7 @@ bool SetupChatController(Rml::Context* context) {
 }
 
 void UpdateChatController() {
-  if (ShellHost::Instance().State().nav_tab == NavTab::Settings) {
+  if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
     SettingsController::Instance().Tick();
   }
   ChatController::Instance().Update();

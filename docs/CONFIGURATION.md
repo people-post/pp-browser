@@ -78,16 +78,16 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 
 **No legacy import:** older flat layouts (e.g. `identity.json` at data root) are not migrated. Delete the data directory when the layout changes during development.
 
-## In-app settings
+## In-app settings (Me tab)
 
-Open **Settings** from the nav rail (gear icon). The settings tab uses a **category list → detail** layout:
+Open **Me** from the nav rail (person icon). The Me tab shows an **identity card** (nickname, relay ID, Copy ID / Share / Register) above a **Preferences** list → detail layout:
 
 | Section | Persists to | Scope |
 |---------|-------------|-------|
-| LLM | `config.json` | machine |
+| Profile (Me card) | `identity.json` | profile |
+| Assistant | `config.json` | machine |
 | Integrations | `config.json` | machine |
 | Network | `config.json` | machine |
-| Profile | `identity.json` | profile |
 | Appearance | `preferences.json` | profile |
 | Storage | read-only paths | — |
 
@@ -112,13 +112,13 @@ On tab entry, [`SettingsController`](../src/feature/ui/SettingsController.cpp) r
 - **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
 - **`relay` / `directory` / `registration`** — separate HTTP endpoints. Empty `base_url` falls back to promoted MCP infra tools, then in-process mocks. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md).
 
-Enter an **API key** directly in Settings (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
+Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
 
 ### Verify settings persistence (manual)
 
 ```bash
 pp-browser --config /tmp/pp-test-config.json
-# Settings → LLM → change model → wait briefly → back → reopen Settings
+# Me → Assistant → change model → wait briefly → back → reopen Me
 jq .llm.model /tmp/pp-test-config.json
 ```
 

@@ -49,6 +49,7 @@
       <h2 class="heading-2 chat-empty-title">Welcome</h2>
       <p class="text muted">Ask the assistant to find people, show contacts, or open a conversation.</p>
       <button class="chat-suggestion" data-event-click="send_suggestion('Find someone on the network')">Find someone</button>
+      <button class="chat-suggestion" data-event-click="new_message()">Message a contact</button>
       <button class="chat-suggestion" data-event-click="send_suggestion('Show my contacts')">Show my contacts</button>
       <button class="chat-suggestion" data-event-click="send_suggestion('What conversations do I have?')">My conversations</button>
       <button class="chat-suggestion" data-event-click="send_suggestion('help')">Show help</button>

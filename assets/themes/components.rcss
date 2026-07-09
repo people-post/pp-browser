@@ -1080,7 +1080,15 @@ select selectbox option {
   font-weight: bold;
 }
 
-.sidebar-new-chat {
+.sidebar-header-actions {
+  flex-shrink: 0;
+  gap: 6dp;
+  align-items: center;
+  margin-left: auto;
+}
+
+.sidebar-new-chat,
+.sidebar-new-message {
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1096,7 +1104,8 @@ select selectbox option {
   cursor: pointer;
 }
 
-.sidebar-new-chat svg {
+.sidebar-new-chat svg,
+.sidebar-new-message svg {
   flex-shrink: 0;
 }
 
@@ -1288,6 +1297,34 @@ select selectbox option {
   margin-bottom: 0;
   font-size: 14dp;
   font-weight: bold;
+}
+
+.me-profile-card {
+  flex-shrink: 0;
+  margin-bottom: 12dp;
+  padding: 10dp;
+  border-radius: 8dp;
+  box-sizing: border-box;
+  gap: 6dp;
+}
+
+.me-profile-meta {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 12dp;
+  word-break: break-all;
+}
+
+.me-profile-actions {
+  margin-top: 4dp;
+  gap: 8dp;
+  flex-wrap: wrap;
+}
+
+.me-preferences-label {
+  flex-shrink: 0;
+  margin-top: 4dp;
+  margin-bottom: 6dp;
 }
 
 .settings-list {

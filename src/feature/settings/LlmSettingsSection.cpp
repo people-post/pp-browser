@@ -25,7 +25,7 @@ const char* LlmSettingsSection::Id() const {
 }
 
 SettingsSectionListItem LlmSettingsSection::ListItem() const {
-  return {.id = Id(), .title = "LLM", .subtitle = "Model, endpoint, API key"};
+  return {.id = Id(), .title = "Assistant", .subtitle = "Model, endpoint, API key"};
 }
 
 SettingsFlushMode LlmSettingsSection::FlushMode() const {

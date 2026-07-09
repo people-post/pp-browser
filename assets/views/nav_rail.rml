@@ -16,8 +16,8 @@
   </button>
   <div class="shell-nav-spacer"></div>
   <button class="shell-nav-tab" type="button"
-          data-class-shell-nav-tab--active="nav_tab == 'settings'"
-          data-event-click="select_nav_tab('settings')">
-    <svg src="../icons/settings.svg" width="22" height="22" crop-to-content="true"></svg>
+          data-class-shell-nav-tab--active="nav_tab == 'me'"
+          data-event-click="select_nav_tab('me')">
+    <svg src="../icons/me.svg" width="22" height="22" crop-to-content="true"></svg>
   </button>
 </div>
