@@ -26,10 +26,12 @@ git push origin v0.1.0
 ```
 
 4. GitHub Actions workflow [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs automatically:
-   - **macOS**: builds `pp-browser.app`, packages a `.dmg`
-   - **Windows**: builds the app, packages an NSIS `.exe` installer
-   - **Android**: builds a release APK (`assembleRelease`) with native code compiled in Release mode
+   - **macOS** (`macos-14`): builds `pp-browser.app`, packages a `.dmg`
+   - **Windows** (`windows-2022`): builds the app, packages an NSIS `.exe` installer
+   - **Android** (`ubuntu-24.04`, NDK `27.0.12077973`): builds a release APK (`assembleRelease`) with native code compiled in Release mode
 5. When all jobs succeed, a GitHub Release is created with the artifacts attached.
+
+Release CI uses the same OS runners, Android NDK, and compiler-cache setup as [build CI](../.github/workflows/build.yml). Linux desktop packages are not published.
 
 Release builds use:
 
@@ -103,6 +105,6 @@ Document secret names and exact commands when signing is enabled.
 
 | Item | Notes |
 |------|-------|
-| Intel macOS / universal binary | Current GHA `macos-latest` is arm64 only |
-| Linux `.deb` / AppImage | Not in current target |
+| Intel macOS / universal binary | Current GHA `macos-14` is arm64 only |
+| Linux `.deb` / AppImage | Not in current target (no Linux desktop release artifact) |
 | Auto-update channel | Separate effort |

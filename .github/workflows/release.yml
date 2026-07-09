@@ -131,11 +131,12 @@ jobs:
           choco install nasm --no-progress -y
           echo "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
+      - name: Enable sccache
+        shell: bash
+        run: echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.10
-
-      - name: Enable sccache
-        run: echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
 
       - name: sccache stats (pre-build)
         run: sccache --zero-stats || true
@@ -202,6 +203,16 @@ jobs:
 
   android:
     runs-on: ubuntu-24.04
+    env:
+      # Set before setup-java / Gradle daemon so native builds inherit ccache config.
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: true
+      CCACHE_COMPILERCHECK: string:android-ndk-r27.0.12077973
+      CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
+      CCACHE_MAXSIZE: 10G
+      ORG_GRADLE_PROJECT_ppBrowserCompilerCache: ON
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
 
     steps:
       - uses: actions/checkout@v4
@@ -214,9 +225,53 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'ndk;27.0.12077973'
 
-      - name: Install NDK
-        run: sdkmanager "ndk;26.1.10909125"
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Ensure Android cache directories exist
+        run: |
+          mkdir -p "$CCACHE_DIR"
+          mkdir -p "$HOME/.gradle/caches"
+          mkdir -p "$HOME/.gradle/wrapper"
+          mkdir -p "$GITHUB_WORKSPACE/android/.gradle"
+          mkdir -p "$GITHUB_WORKSPACE/android/build"
+          mkdir -p "$GITHUB_WORKSPACE/android/app/.cxx"
+          chmod -R u+rwX "$CCACHE_DIR" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle" "$GITHUB_WORKSPACE/android/build" "$GITHUB_WORKSPACE/android/app/.cxx"
+
+      - name: Restore Android Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+            android/build
+            android/app/.cxx
+          key: ${{ runner.os }}-android-gradle-v2-${{ hashFiles('android/build.gradle*', 'android/settings.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-android-gradle-v2-
+            ${{ runner.os }}-android-gradle-v1-
+
+      - name: Restore Android ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-android-ccache-v3-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-android-ccache-v3-
+            ${{ runner.os }}-android-ccache-v2-
+
+      - name: ccache stats (pre-build)
+        run: |
+          echo "=== restored ccache (before zero-stats) ==="
+          ccache --show-stats || true
+          ccache --print-config 2>/dev/null || true
+          ccache --zero-stats || true
 
       - name: Parse version from tag
         id: version
@@ -231,10 +286,14 @@ jobs:
       - name: Build release APK
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/26.1.10909125
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973
           PP_BROWSER_VERSION: ${{ steps.version.outputs.project_version }}
           PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
         run: ./scripts/android_build.sh apk-release
+
+      - name: ccache stats (post-build)
+        if: always()
+        run: ccache --show-stats || true
 
       - name: Package APK
         shell: bash
