@@ -1,9 +1,28 @@
 <div class="chat-panel stack" data-model="chat"
-     data-class-chat-shell--e2e="thread_encrypted">
+     data-class-chat-shell--ai="thread_is_ai"
+     data-class-chat-shell--private="thread_is_private"
+     data-class-chat-shell--public="thread_is_public"
+     data-class-chat-shell--group="thread_is_group"
+     data-class-chat-shell--e2e="thread_is_private">
   <div class="chat-header">
     <div class="chat-header-main">
-      <div class="chat-header-secure-row" data-if="thread_encrypted">
-        <span class="text-xs chat-secure-badge">Encrypted</span>
+      <div class="chat-header-type-row">
+        <div class="chat-header-type-icon" data-if="thread_is_ai">
+          <svg src="../icons/sparkle.svg" width="16" height="16" crop-to-content="true"></svg>
+        </div>
+        <div class="chat-header-type-icon" data-if="thread_is_private">
+          <svg src="../icons/lock.svg" width="16" height="16" crop-to-content="true"></svg>
+        </div>
+        <div class="chat-header-type-icon" data-if="thread_is_public">
+          <svg src="../icons/message.svg" width="16" height="16" crop-to-content="true"></svg>
+        </div>
+        <div class="chat-header-type-icon" data-if="thread_is_group">
+          <svg src="../icons/group.svg" width="16" height="16" crop-to-content="true"></svg>
+        </div>
+        <span class="text-xs chat-type-badge" data-if="thread_is_ai">Assistant</span>
+        <span class="text-xs chat-type-badge" data-if="thread_is_private">Private</span>
+        <span class="text-xs chat-type-badge" data-if="thread_is_public">Chat</span>
+        <span class="text-xs chat-type-badge" data-if="thread_is_group">Group</span>
       </div>
       <h1 class="heading-1 chat-header-title" data-rml="thread_title"></h1>
       <p class="text muted" data-rml="thread_subtitle"></p>

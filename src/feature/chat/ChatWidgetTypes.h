@@ -79,8 +79,8 @@ struct SessionDisplayRow {
   Rml::String id;
   Rml::String title;
   Rml::String preview;
+  /** Visual chat type: ai | private | public | group */
   Rml::String kind;
-  Rml::String tier_badge;
   int unread_count = 0;
   bool active = false;
   bool closable = false;

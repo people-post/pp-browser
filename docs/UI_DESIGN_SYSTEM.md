@@ -130,18 +130,29 @@ Hex values live in `assets/themes/colors-light.rcss` and `assets/themes/colors-d
 | `selection-user` | `#ffffff33` | User bubble selection |
 | `toast-bg` | `#374151` | Toast |
 
-## E2E vs public threads
+## Chat types (sidebar + header)
 
-Moderate visual distinction at the chat shell level (not a global theme swap).
+Visual distinction by chat type — icons and accent rails, not plaintext Private/Public badges.
 
-| Element | Public (`.chat-shell--public`) | E2E (`.chat-shell--e2e`) |
-|---------|-------------------------------|--------------------------|
-| Header | Standard pane surface | Subtle secure surface tint + 4dp left border (`accent-secure`) |
-| Title row | Thread title only | Title + lock label (`.chat-secure-badge`) |
-| Subtitle | Kind description | "End-to-end encrypted" |
+| Type | `session.kind` / flags | Icon | Accent |
+|------|------------------------|------|--------|
+| AI | `ai` / `thread_is_ai` | `sparkle.svg` | `accent-primary` |
+| Private direct | `private` / `thread_is_private` | `lock.svg` | `accent-secure` |
+| Public direct | `public` / `thread_is_public` | `message.svg` | muted / neutral |
+| Group | `group` / `thread_is_group` | `group.svg` | warm secondary |
+
+**Sidebar:** leading type icon for kind; selection uses a clear filled row + 3dp accent rail (idle rows have no rail). No text tier badge.
+
+**Chat header:** type icon + short label (Assistant / Private / Chat / Group) + human subtitle. Private keeps the secure shell tint (`.chat-shell--e2e` / `.chat-shell--private`).
+
+| Element | Public (`.chat-shell--public`) | Private (`.chat-shell--e2e`) |
+|---------|-------------------------------|------------------------------|
+| Header | Neutral left border | Secure surface tint + teal left border |
+| Type row | Message icon + “Chat” | Lock icon + “Private” |
+| Subtitle | “Encrypted · easy start” | “Verified private · E2E” |
 | Composer | `border-subtle` | Stronger secure border |
 
-Data binding: `thread_encrypted` on chat model; `data-class-chat-shell--e2e="thread_encrypted"` on chat root.
+Data binding: `thread_is_ai` / `thread_is_private` / `thread_is_public` / `thread_is_group` on chat model; `session.kind` on shell sessions.
 
 ## Component classes (reuse before adding rules)
 
@@ -159,7 +170,7 @@ Data binding: `thread_encrypted` on chat model; `data-class-chat-shell--e2e="thr
 
 ### Chat
 
-`.chat-panel`, `.chat-header`, `.chat-shell--e2e`, `.chat-shell--public`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
+`.chat-panel`, `.chat-header`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
 
 ### Shell
 
@@ -167,7 +178,7 @@ Data binding: `thread_encrypted` on chat model; `data-class-chat-shell--e2e="thr
 
 ### Sidebar
 
-`.sidebar-panel`, `.sidebar-session`, `.sidebar-session-active`, `.sidebar-unread`
+`.sidebar-panel`, `.sidebar-session`, `.sidebar-session-active`, `.sidebar-session--ai`, `.sidebar-session--private`, `.sidebar-session--public`, `.sidebar-session--group`, `.sidebar-unread`
 
 ## RCSS file layout
 

@@ -1,5 +1,5 @@
 <div class="prompt-composer" data-model="chat"
-     data-class-prompt-composer--e2e="thread_encrypted"
+     data-class-prompt-composer--e2e="thread_is_private"
      data-class-prompt-composer--disabled="compose_disabled">
   <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2"
             maxlength="65536"

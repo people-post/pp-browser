@@ -54,6 +54,10 @@ private:
     Rml::String thread_title;
     Rml::String thread_subtitle;
     bool thread_encrypted = false;
+    bool thread_is_ai = false;
+    bool thread_is_private = false;
+    bool thread_is_public = false;
+    bool thread_is_group = false;
     bool compose_disabled = false;
     bool show_thread_actions = false;
     bool show_forget_memory = false;

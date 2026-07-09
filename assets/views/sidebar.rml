@@ -8,10 +8,26 @@
     </div>
   </div>
   <div class="sidebar-sessions">
-    <div data-for="session : sessions" class="sidebar-session" data-class-sidebar-session-active="session.active">
+    <div data-for="session : sessions" class="sidebar-session"
+         data-class-sidebar-session-active="session.active"
+         data-class-sidebar-session--ai="session.kind == 'ai'"
+         data-class-sidebar-session--private="session.kind == 'private'"
+         data-class-sidebar-session--public="session.kind == 'public'"
+         data-class-sidebar-session--group="session.kind == 'group'">
       <div class="sidebar-session-body" data-event-click="select_thread(session.id)">
+        <div class="sidebar-session-icon" data-if="session.kind == 'ai'">
+          <svg src="../icons/sparkle.svg" width="14" height="14" crop-to-content="true"></svg>
+        </div>
+        <div class="sidebar-session-icon" data-if="session.kind == 'private'">
+          <svg src="../icons/lock.svg" width="14" height="14" crop-to-content="true"></svg>
+        </div>
+        <div class="sidebar-session-icon" data-if="session.kind == 'public'">
+          <svg src="../icons/message.svg" width="14" height="14" crop-to-content="true"></svg>
+        </div>
+        <div class="sidebar-session-icon" data-if="session.kind == 'group'">
+          <svg src="../icons/group.svg" width="14" height="14" crop-to-content="true"></svg>
+        </div>
         <p class="sidebar-session-title" data-rml="session.title"></p>
-        <span class="sidebar-tier-badge" data-if="session.tier_badge != ''" data-rml="session.tier_badge"></span>
         <span class="sidebar-unread" data-if="session.unread_count > 0" data-rml="session.unread_count"></span>
       </div>
       <button class="sidebar-session-close" type="button" data-if="session.closable" data-event-click="close_thread(session.id)">
