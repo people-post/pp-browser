@@ -46,6 +46,7 @@ public:
     Rml::String relay_id;
     Rml::String peer_id;
     Rml::String trust;
+    Rml::String trust_key;
     Rml::String signing_fingerprint;
     std::vector<ContactIdentityRow> identities;
     std::vector<ContactThreadRow> threads;

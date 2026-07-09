@@ -1709,6 +1709,23 @@ select selectbox option {
   flex-wrap: wrap;
 }
 
+.contacts-trust-btn {
+  font-size: 12dp;
+  padding: 6dp 10dp;
+}
+
+.btn-icon {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6dp;
+}
+
+.btn-icon svg {
+  flex-shrink: 0;
+}
+
 .contacts-threads {
   gap: 4dp;
 }
@@ -1717,6 +1734,11 @@ select selectbox option {
   flex-shrink: 0;
   margin-top: 16dp;
   gap: 8dp;
+}
+
+.contacts-action-buttons {
+  gap: 8dp;
+  flex-wrap: wrap;
 }
 
 .contacts-actions-hint {

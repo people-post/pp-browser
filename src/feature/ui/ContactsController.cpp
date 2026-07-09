@@ -127,6 +127,7 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
   detail.relay_id = PrimaryIdOfKind(contact, ContactIdKind::RelayUser).c_str();
   detail.peer_id = PrimaryIdOfKind(contact, ContactIdKind::PeerId).c_str();
   detail.trust = TrustDisplayLabel(contact.trust).c_str();
+  detail.trust_key = TrustLevelToString(contact.trust).c_str();
 
   detail.identities.reserve(contact.ids.size());
   for (const ContactId& id : contact.ids) {
@@ -221,6 +222,7 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
       detail_handle.RegisterMember("relay_id", &ContactDetail::relay_id);
       detail_handle.RegisterMember("peer_id", &ContactDetail::peer_id);
       detail_handle.RegisterMember("trust", &ContactDetail::trust);
+      detail_handle.RegisterMember("trust_key", &ContactDetail::trust_key);
       detail_handle.RegisterMember("signing_fingerprint", &ContactDetail::signing_fingerprint);
       detail_handle.RegisterMember("identities", &ContactDetail::identities);
       detail_handle.RegisterMember("threads", &ContactDetail::threads);

@@ -23,8 +23,14 @@
         Registered: <span data-rml="profile_registered"></span>
       </p>
       <div class="me-profile-actions row">
-        <button class="btn btn-secondary" type="button" data-event-click="copy_profile_id()">Copy ID</button>
-        <button class="btn btn-secondary" type="button" data-event-click="share_profile()">Share</button>
+        <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
+          <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
+          Copy ID
+        </button>
+        <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_profile()">
+          <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
+          Share
+        </button>
         <button class="btn btn-primary" type="button" data-if="profile_registered != 'yes'"
                 data-event-click="register_profile()">Register on network</button>
       </div>

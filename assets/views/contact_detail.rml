@@ -18,13 +18,25 @@
       </p>
       <p class="text muted">Trust: <span data-rml="selected.trust"></span></p>
       <div class="me-profile-actions row">
-        <button class="btn btn-secondary" type="button" data-event-click="copy_contact_id()">Copy ID</button>
-        <button class="btn btn-secondary" type="button" data-event-click="share_contact()">Share</button>
+        <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_contact_id()">
+          <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
+          Copy ID
+        </button>
+        <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_contact()">
+          <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
+          Share
+        </button>
       </div>
       <div class="contacts-trust-actions row">
-        <button class="btn btn-secondary" type="button" data-event-click="set_trust('friendly')">Friendly</button>
-        <button class="btn btn-secondary" type="button" data-event-click="set_trust('unknown')">Unknown</button>
-        <button class="btn btn-secondary" type="button" data-event-click="set_trust('blocked')">Blocked</button>
+        <button class="btn btn-secondary contacts-trust-btn"
+                data-class-contacts-trust-btn--active="selected.trust_key == 'friendly'"
+                type="button" data-event-click="set_trust('friendly')">Friendly</button>
+        <button class="btn btn-secondary contacts-trust-btn"
+                data-class-contacts-trust-btn--active="selected.trust_key == 'unknown'"
+                type="button" data-event-click="set_trust('unknown')">Unknown</button>
+        <button class="btn btn-secondary contacts-trust-btn"
+                data-class-contacts-trust-btn--active="selected.trust_key == 'blocked'"
+                type="button" data-event-click="set_trust('blocked')">Blocked</button>
       </div>
     </div>
 
@@ -48,7 +60,16 @@
 
   <div class="contacts-actions stack">
     <p class="text muted contacts-actions-hint">Secure uses a shared key. Public chat is encrypted without a private shared key.</p>
-    <button class="btn btn-primary" type="button" data-event-click="secure_message()">Secure message</button>
-    <button class="btn btn-secondary" type="button" data-event-click="start_chat()">Public chat</button>
+    <div class="contacts-action-buttons row">
+      <button class="btn btn-primary btn-icon contacts-action-secure" type="button"
+              data-event-click="secure_message()">
+        <svg src="../icons/lock.svg" width="14" height="14" crop-to-content="true"></svg>
+        Secure message
+      </button>
+      <button class="btn btn-secondary btn-icon" type="button" data-event-click="start_chat()">
+        <svg src="../icons/message.svg" width="14" height="14" crop-to-content="true"></svg>
+        Public chat
+      </button>
+    </div>
   </div>
 </div>
