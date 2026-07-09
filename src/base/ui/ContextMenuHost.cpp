@@ -196,8 +196,10 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
     return;
   }
 
+  // Outer layer is created via CreateElement; InnerRML must only contain its children
+  // (scrim + panel). Nesting another unclosed context-menu-layer div caused XML parse
+  // errors and crashes on dismiss/outside click.
   std::ostringstream out;
-  out << "<div id=\"context-menu-layer\" class=\"context-menu-layer\">";
   out << "<div class=\"context-menu-scrim\" id=\"context-menu-scrim\"></div>";
   out << "<div class=\"context-menu-panel\" id=\"context-menu-panel\" style=\"left: " << request.position.x
       << "px; top: " << request.position.y << "px;\">";
@@ -207,8 +209,16 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
     if (!enabled) {
       continue;
     }
-    out << "<button class=\"context-menu-item\" type=\"button\" data-item-index=\"" << i << "\">" << action.label
-        << "</button>";
+    out << "<button class=\"context-menu-item";
+    if (action.danger) {
+      out << " context-menu-item--danger";
+    }
+    out << "\" type=\"button\" data-item-index=\"" << i << "\">";
+    if (!action.icon.empty()) {
+      out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon
+          << "\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg></div>";
+    }
+    out << "<span class=\"context-menu-item-label\">" << action.label << "</span></button>";
   }
   out << "</div>";
 
@@ -216,9 +226,8 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   layer_element->SetAttribute("id", "context-menu-layer");
   layer_element->SetClass("context-menu-layer", true);
   layer_element->SetInnerRML(out.str());
-  body->AppendChild(std::move(layer_element));
-  layer_ = document->GetElementById("context-menu-layer");
-  panel_ = document->GetElementById("context-menu-panel");
+  layer_ = body->AppendChild(std::move(layer_element));
+  panel_ = layer_ ? layer_->GetElementById("context-menu-panel") : nullptr;
   if (!layer_) {
     return;
   }
@@ -292,14 +301,18 @@ void ContextMenuHost::ShowActions(Rml::Vector2i position, std::vector<ContextMen
 }
 
 void ContextMenuHost::Dismiss() {
-  if (layer_) {
-    layer_->RemoveEventListener(Rml::EventId::Mousedown, this, true);
-    layer_->RemoveEventListener(Rml::EventId::Click, this, true);
-    if (Rml::Element* parent = layer_->GetParentNode()) {
-      parent->RemoveChild(layer_);
+  dismiss_pending_ = false;
+  // Capture and clear before RemoveEventListener: DetachEvent invokes OnDetach, which
+  // would otherwise null layer_ mid-function and crash the second RemoveEventListener.
+  Rml::Element* layer = layer_;
+  layer_ = nullptr;
+  panel_ = nullptr;
+  if (layer) {
+    layer->RemoveEventListener(Rml::EventId::Mousedown, this, true);
+    layer->RemoveEventListener(Rml::EventId::Click, this, true);
+    if (Rml::Element* parent = layer->GetParentNode()) {
+      parent->RemoveChild(layer);
     }
-    layer_ = nullptr;
-    panel_ = nullptr;
   }
   active_actions_.clear();
   menu_context_ = nullptr;
@@ -308,12 +321,34 @@ void ContextMenuHost::Dismiss() {
   copy_snapshot_.clear();
 }
 
+void ContextMenuHost::RequestDismiss() {
+  // Defer DOM removal until after the current pointer event finishes. Removing the
+  // hover/active target mid-mousedown leaves dangling Context::active pointers.
+  dismiss_pending_ = true;
+}
+
+void ContextMenuHost::Update() {
+  if (!dismiss_pending_) {
+    return;
+  }
+  Dismiss();
+}
+
 bool ContextMenuHost::HandleDismiss() {
-  if (!IsOpen()) {
+  if (!IsOpen() && !dismiss_pending_) {
     return false;
   }
   Dismiss();
   return true;
+}
+
+void ContextMenuHost::OnDetach(Rml::Element* element) {
+  if (element == layer_) {
+    layer_ = nullptr;
+    panel_ = nullptr;
+  } else if (element == panel_) {
+    panel_ = nullptr;
+  }
 }
 
 int ContextMenuHost::FindMenuItemIndex(Rml::Element* target) const {
@@ -337,10 +372,12 @@ void ContextMenuHost::HandleMenuAction(int index) {
   const ContextMenuAction action = active_actions_[static_cast<size_t>(index)];
 
   Rml::Context* action_context = menu_context_ ? menu_context_ : context_;
-  Dismiss();
+  // Copy run callback before deferred dismiss clears active_actions_.
+  const std::function<void()> run = action.run;
+  RequestDismiss();
 
-  if (action.run) {
-    action.run();
+  if (run) {
+    run();
   }
   if (action_context) {
     if (Rml::SelectionController* selection = action_context->GetSelectionController()) {
@@ -351,7 +388,7 @@ void ContextMenuHost::HandleMenuAction(int index) {
 }
 
 void ContextMenuHost::ProcessEvent(Rml::Event& event) {
-  if (!layer_) {
+  if (!layer_ || dismiss_pending_) {
     return;
   }
 
@@ -366,7 +403,7 @@ void ContextMenuHost::ProcessEvent(Rml::Event& event) {
   }
 
   if (target->GetId() == "context-menu-scrim") {
-    Dismiss();
+    RequestDismiss();
     event.StopPropagation();
     return;
   }

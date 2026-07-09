@@ -27,15 +27,15 @@
       <h1 class="heading-1 chat-header-title" data-rml="thread_title"></h1>
       <p class="text muted" data-rml="thread_subtitle"></p>
     </div>
-    <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
-            data-if="auxiliary_available && (layout_mode == 'expanded' || compact_chat_open || nav_tab == 'home')"
-            data-event-click="toggle_auxiliary()">Details</button>
-    <button class="shell-toolbar-btn chat-thread-action" data-if="show_sync_with_peer && !sync_in_progress"
-            data-event-click="sync_with_peer()">Sync with peer</button>
-    <button class="shell-toolbar-btn chat-thread-action" data-if="show_thread_actions"
-            data-event-click="clear_history()">Clear history</button>
-    <button class="shell-toolbar-btn chat-thread-action" data-if="show_forget_memory"
-            data-event-click="forget_memory()">Forget AI memory</button>
+    <div class="chat-header-actions row">
+      <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
+              data-if="auxiliary_available && (layout_mode == 'expanded' || compact_chat_open || nav_tab == 'home')"
+              data-event-click="toggle_auxiliary()">Details</button>
+      <button class="chat-header-more-btn" type="button" data-if="show_thread_menu"
+              data-event-click="open_thread_actions_menu()">
+        <svg src="../icons/more.svg" width="18" height="18" crop-to-content="true"></svg>
+      </button>
+    </div>
   </div>
   <div class="chat-gap-banner stack" data-if="show_gap_banner && !sync_in_progress">
     <p class="text muted">Some messages from your peer may be missing. Peer sync does not resend your unsent messages.</p>

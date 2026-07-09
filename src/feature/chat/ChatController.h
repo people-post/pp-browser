@@ -62,6 +62,7 @@ private:
     bool show_thread_actions = false;
     bool show_forget_memory = false;
     bool show_sync_with_peer = false;
+    bool show_thread_menu = false;
     bool show_gap_banner = false;
     bool show_compromised_banner = false;
     bool show_psk_setup_banner = false;
@@ -108,6 +109,7 @@ private:
   static void NewChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void NewMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenNewSessionMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OpenThreadActionsMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CloseThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ClearHistoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -128,6 +130,7 @@ private:
   void OnNewChat();
   void OnNewMessage();
   void OnOpenNewSessionMenu(Rml::Event& ev);
+  void OnOpenThreadActionsMenu(Rml::Event& ev);
   void OnFindSomeone();
   void OnSelectThread(const std::string& thread_id);
   void OnCloseThread(const std::string& thread_id);

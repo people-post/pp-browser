@@ -294,6 +294,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "show_thread_actions");
   DataModelHost::Instance().Dirty("chat", "show_forget_memory");
   DataModelHost::Instance().Dirty("chat", "show_sync_with_peer");
+  DataModelHost::Instance().Dirty("chat", "show_thread_menu");
   DataModelHost::Instance().Dirty("chat", "show_gap_banner");
   DataModelHost::Instance().Dirty("chat", "show_compromised_banner");
   DataModelHost::Instance().Dirty("chat", "show_psk_setup_banner");
@@ -559,6 +560,11 @@ void ChatController::NewMessageCallback(Rml::DataModelHandle /*model*/, Rml::Eve
 void ChatController::OpenNewSessionMenuCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
                                                 const Rml::VariantList& /*args*/) {
   Instance().OnOpenNewSessionMenu(ev);
+}
+
+void ChatController::OpenThreadActionsMenuCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                                   const Rml::VariantList& /*args*/) {
+  Instance().OnOpenThreadActionsMenu(ev);
 }
 
 void ChatController::SelectThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
@@ -1137,6 +1143,7 @@ void ChatController::ResetChatPanelState() {
   chat_.show_thread_actions = false;
   chat_.show_forget_memory = false;
   chat_.show_sync_with_peer = false;
+  chat_.show_thread_menu = false;
   chat_.show_gap_banner = false;
   chat_.show_older_history_hint = false;
   chat_.show_compromised_banner = false;
@@ -1235,6 +1242,8 @@ void ChatController::UpdateThreadChrome() {
       chat_.thread_subtitle = thread->encrypted ? "Group · E2E" : "Group chat";
       chat_.draft_placeholder = "Message the group… or @ai ask assistant";
     }
+    chat_.show_thread_menu =
+        chat_.show_thread_actions || chat_.show_forget_memory || chat_.show_sync_with_peer;
   } else {
     chat_.thread_title = "";
     chat_.thread_subtitle = "";
@@ -1247,6 +1256,7 @@ void ChatController::UpdateThreadChrome() {
     chat_.show_thread_actions = false;
     chat_.show_forget_memory = false;
     chat_.show_sync_with_peer = false;
+    chat_.show_thread_menu = false;
     chat_.show_gap_banner = false;
     chat_.show_older_history_hint = false;
     chat_.show_compromised_banner = false;
@@ -1364,19 +1374,76 @@ void ChatController::OnOpenNewSessionMenu(Rml::Event& ev) {
       "Chat with AI",
       nullptr,
       []() { ChatController::Instance().OnNewChat(); },
+      "../icons/sparkle.svg",
   });
   actions.push_back({
       "message_contact",
       "Message a contact",
       nullptr,
       []() { ChatController::Instance().OnNewMessage(); },
+      "../icons/contacts.svg",
   });
   actions.push_back({
       "find_someone",
       "Find someone",
       nullptr,
       []() { ChatController::Instance().OnFindSomeone(); },
+      "../icons/message.svg",
   });
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ChatController::OnOpenThreadActionsMenu(Rml::Event& ev) {
+  Rml::Element* target = ev.GetCurrentElement();
+  if (!target) {
+    target = ev.GetTargetElement();
+  }
+  Rml::Vector2i position{0, 0};
+  if (target) {
+    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
+    const Rml::Box& box = target->GetBox();
+    const Rml::Vector2f size = box.GetSize(Rml::BoxArea::Border);
+    // Anchor near the right edge of the trigger so the menu stays in the header corner.
+    position.x = static_cast<int>(offset.x + size.x - 180.0f);
+    if (position.x < 0) {
+      position.x = static_cast<int>(offset.x);
+    }
+    position.y = static_cast<int>(offset.y + size.y + 4.0f);
+  }
+
+  std::vector<ContextMenuAction> actions;
+  if (chat_.show_sync_with_peer && !chat_.sync_in_progress) {
+    actions.push_back({
+        "sync_with_peer",
+        "Sync with peer",
+        nullptr,
+        []() { ChatController::Instance().OnSyncWithPeer(); },
+        "../icons/sync.svg",
+    });
+  }
+  if (chat_.show_thread_actions) {
+    actions.push_back({
+        "clear_history",
+        "Clear history…",
+        nullptr,
+        []() { ChatController::Instance().OnClearHistory(); },
+        "../icons/trash.svg",
+        true,
+    });
+  }
+  if (chat_.show_forget_memory) {
+    actions.push_back({
+        "forget_memory",
+        "Forget AI memory…",
+        nullptr,
+        []() { ChatController::Instance().OnForgetMemory(); },
+        "../icons/sparkle.svg",
+        true,
+    });
+  }
+  if (actions.empty()) {
+    return;
+  }
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
@@ -1927,6 +1994,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("show_thread_actions", &ChatController::Instance().chat_.show_thread_actions);
         ctor.Bind("show_forget_memory", &ChatController::Instance().chat_.show_forget_memory);
         ctor.Bind("show_sync_with_peer", &ChatController::Instance().chat_.show_sync_with_peer);
+        ctor.Bind("show_thread_menu", &ChatController::Instance().chat_.show_thread_menu);
         ctor.Bind("show_gap_banner", &ChatController::Instance().chat_.show_gap_banner);
         ctor.Bind("show_compromised_banner", &ChatController::Instance().chat_.show_compromised_banner);
         ctor.Bind("show_psk_setup_banner", &ChatController::Instance().chat_.show_psk_setup_banner);
@@ -1948,6 +2016,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("open_working_set", &ChatController::OpenWorkingSetCallback);
         ctor.BindEventCallback("clear_history", &ChatController::ClearHistoryCallback);
         ctor.BindEventCallback("forget_memory", &ChatController::ForgetMemoryCallback);
+        ctor.BindEventCallback("open_thread_actions_menu", &ChatController::OpenThreadActionsMenuCallback);
         ctor.BindEventCallback("sync_with_peer", &ChatController::SyncWithPeerCallback);
         ctor.BindEventCallback("retry_gap_sync", &ChatController::RetryGapSyncCallback);
         ctor.BindEventCallback("start_new_secure_chat", &ChatController::StartNewSecureChatCallback);

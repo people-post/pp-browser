@@ -544,4 +544,34 @@ select selectbox option:hover {
 .chat-shell--group .chat-type-badge {
   color: #fbbf24;
 }
+
+.chat-header-more-btn {
+  background-color: #374151;
+  color: #f9fafb;
+}
+
+.chat-header-more-btn:hover {
+  background-color: #4b5563;
+}
+
+.context-menu-panel {
+  background-color: #1f2937;
+  border: 1dp #374151;
+}
+
+.context-menu-item {
+  color: #f9fafb;
+}
+
+.context-menu-item:hover {
+  background-color: #374151;
+}
+
+.context-menu-item--danger {
+  color: #f87171;
+}
+
+.context-menu-item--danger:hover {
+  background-color: #450a0a;
+}
 }

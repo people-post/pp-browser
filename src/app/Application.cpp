@@ -190,6 +190,7 @@ void Application::Run() {
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
     BrowserThread::RunUITasks();
     UpdateChatController();
+    ContextMenuHost::Instance().Update();
     ShellHost::Instance().Update(context);
     context->Update();
     Backend::BeginFrame();

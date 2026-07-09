@@ -143,7 +143,7 @@ Visual distinction by chat type — icons and accent rails, not plaintext Privat
 
 **Sidebar:** leading type icon for kind; selection uses a clear filled row + 3dp accent rail (idle rows have no rail). No text tier badge.
 
-**Chat header:** type icon + short label (Assistant / Private / Chat / Group) + human subtitle. Private keeps the secure shell tint (`.chat-shell--e2e` / `.chat-shell--private`).
+**Chat header:** type icon + short label (Assistant / Private / Chat / Group) + human subtitle. Thread tools (Clear history, Forget AI memory, Sync with peer) live in a `⋯` overflow menu (`.chat-header-more-btn` → `ContextMenuHost`); Details stays visible. Private keeps the secure shell tint (`.chat-shell--e2e` / `.chat-shell--private`).
 
 | Element | Public (`.chat-shell--public`) | Private (`.chat-shell--e2e`) |
 |---------|-------------------------------|------------------------------|
@@ -170,11 +170,11 @@ Data binding: `thread_is_ai` / `thread_is_private` / `thread_is_public` / `threa
 
 ### Chat
 
-`.chat-panel`, `.chat-header`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
+`.chat-panel`, `.chat-header`, `.chat-header-actions`, `.chat-header-more-btn`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
 
 ### Shell
 
-`.shell-pane`, `.shell-toolbar`, `.shell-banner`, `.shell-toast`, `.shell-dialog`
+`.shell-pane`, `.shell-toolbar`, `.shell-banner`, `.shell-toast`, `.shell-dialog`, `.context-menu-panel`, `.context-menu-item`, `.context-menu-item--danger`
 
 ### Sidebar
 

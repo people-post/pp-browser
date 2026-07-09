@@ -1467,10 +1467,15 @@ void Context::OnElementDetach(Element* element)
 	if (it_active != active_chain.end())
 	{
 		active_chain.erase(it_active);
-
-		if (active == element)
-			active = nullptr;
 	}
+
+	// Clear active even when the chain has not been copied yet (e.g. element destroyed
+	// mid-mousedown before active_chain is populated from hover_chain).
+	if (active == element)
+		active = nullptr;
+
+	if (last_click_element == element)
+		last_click_element = nullptr;
 
 	if (drag)
 	{
