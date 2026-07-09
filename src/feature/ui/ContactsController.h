@@ -69,6 +69,7 @@ private:
   static void CopyIdCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ShareContactCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SetTrustCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void RemoveContactCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnSearchChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
@@ -82,6 +83,7 @@ private:
   void OnCopyId();
   void OnShareContact();
   void OnSetTrust(const std::string& trust);
+  void OnRemoveContact();
   void OnOpenThread(const std::string& thread_id);
   void OnSearchChanged();
   void DirtyAll();

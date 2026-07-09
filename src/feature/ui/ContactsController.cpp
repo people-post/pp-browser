@@ -243,6 +243,7 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
     ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
     ctor.BindEventCallback("set_trust", &ContactsController::SetTrustCallback);
+    ctor.BindEventCallback("remove_contact", &ContactsController::RemoveContactCallback);
     ctor.BindEventCallback("open_thread", &ContactsController::OpenThreadCallback);
     ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
   });
@@ -369,6 +370,11 @@ void ContactsController::SetTrustCallback(Rml::DataModelHandle /*model*/, Rml::E
     return;
   }
   Instance().OnSetTrust(std::string(args[0].Get<Rml::String>().c_str()));
+}
+
+void ContactsController::RemoveContactCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                               const Rml::VariantList& /*args*/) {
+  Instance().OnRemoveContact();
 }
 
 void ContactsController::OpenThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -546,6 +552,48 @@ void ContactsController::OnSetTrust(const std::string& trust) {
   SyncFromStore();
   DirtyAll();
   ShellFeedback::ShowToast(ShellHost::Instance().State(), "Trust updated");
+  ShellHost::Instance().DirtyWindow();
+}
+
+void ContactsController::OnRemoveContact() {
+  if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
+    return;
+  }
+
+  const std::string contact_id = selected_.id.c_str();
+  const std::string display_name = selected_.display_name.empty() ? "this contact" : selected_.display_name.c_str();
+  const std::string message = "Remove " + display_name +
+                              " from contacts? Conversations stay on this device. "
+                              "You can add them again later from Find.";
+
+  ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "Remove contact", message,
+                             [this, contact_id](bool ok) {
+                               if (!ok) {
+                                 return;
+                               }
+                               auto removed = MessagingHub::Instance().Contacts().Remove(contact_id);
+                               if (!removed) {
+                                 ShellFeedback::ShowToast(ShellHost::Instance().State(), "Could not remove contact");
+                                 ShellHost::Instance().DirtyWindow();
+                                 return;
+                               }
+                               if (!*removed) {
+                                 ShellFeedback::ShowToast(ShellHost::Instance().State(), "Contact not found");
+                                 ShellHost::Instance().DirtyWindow();
+                                 return;
+                               }
+                               show_detail_ = false;
+                               selected_ = {};
+                               SyncFromStore();
+                               DirtyAll();
+                               if (ShellHost::Instance().State().layout_mode != LayoutMode::Compact) {
+                                 ShellHost::Instance().ClearPrimaryPane();
+                               }
+                               ShellFeedback::ShowToast(ShellHost::Instance().State(), "Contact removed");
+                               ShellHost::Instance().RequestSyncLayout();
+                               ShellHost::Instance().DirtyWindow();
+                             });
+  ShellHost::Instance().RequestSyncLayout();
   ShellHost::Instance().DirtyWindow();
 }
 

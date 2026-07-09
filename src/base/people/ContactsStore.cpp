@@ -131,6 +131,27 @@ Roe<Contact> ContactsStore::Upsert(const Contact& contact) {
   return Error("Failed to save contacts");
 }
 
+Roe<bool> ContactsStore::Remove(const std::string& contact_id) {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+
+  const auto it = std::find_if(contacts_.begin(), contacts_.end(),
+                               [&](const Contact& contact) { return contact.id == contact_id; });
+  if (it == contacts_.end()) {
+    return false;
+  }
+
+  contacts_.erase(it);
+  dirty_ = true;
+  if (Save()) {
+    return true;
+  }
+  return Error("Failed to save contacts");
+}
+
 Roe<std::vector<Contact>> ContactsStore::SearchLocal(const std::string& query) const {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();

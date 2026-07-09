@@ -18,6 +18,7 @@ public:
   Roe<std::vector<Contact>> List() const;
   Roe<std::optional<Contact>> Get(const std::string& contact_id) const;
   Roe<Contact> Upsert(const Contact& contact);
+  Roe<bool> Remove(const std::string& contact_id);
   Roe<std::vector<Contact>> SearchLocal(const std::string& query) const;
   Roe<Contact> AddFromDirectoryHit(const DirectoryHit& hit);
   void Flush();

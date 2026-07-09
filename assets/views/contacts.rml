@@ -88,6 +88,12 @@
                   data-class-contacts-trust-btn--active="selected.trust_key == 'blocked'"
                   type="button" data-event-click="set_trust('blocked')">Blocked</button>
         </div>
+        <div class="me-profile-actions row">
+          <button class="btn btn-secondary btn-icon" type="button" data-event-click="remove_contact()">
+            <svg src="../icons/trash.svg" width="14" height="14" crop-to-content="true"></svg>
+            Remove contact
+          </button>
+        </div>
       </div>
 
       <div class="contacts-threads stack" data-if="selected.threads.size > 0">
