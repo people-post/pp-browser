@@ -1,6 +1,7 @@
 #include "feature/ui/ShellFeedback.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace pbr {
 
@@ -18,6 +19,17 @@ float DurationMs(ToastDuration duration) {
   return duration == ToastDuration::Long ? 6000.f : 3000.f;
 }
 
+/** Default ShowToast now_ms is 0; treat that as "use wall clock" so callers that omit
+ *  timing still expire correctly under power-save (idle frames can be seconds apart). */
+float ResolveNowMs(float now_ms) {
+  if (now_ms > 0.f) {
+    return now_ms;
+  }
+  using clock = std::chrono::steady_clock;
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch());
+  return static_cast<float>(ms.count());
+}
+
 } // namespace
 
 void ShellFeedback::ShowToast(ShellState& state, const std::string& message, ToastDuration duration, float now_ms) {
@@ -25,7 +37,7 @@ void ShellFeedback::ShowToast(ShellState& state, const std::string& message, Toa
   ToastEntry entry;
   entry.id = NextToastId(state);
   entry.message = Rml::String(message.c_str());
-  entry.expires_at_ms = now_ms + DurationMs(duration);
+  entry.expires_at_ms = ResolveNowMs(now_ms) + DurationMs(duration);
   state.toasts.push_back(std::move(entry));
   while (state.toasts.size() > config.max_toasts) {
     state.toasts.erase(state.toasts.begin());

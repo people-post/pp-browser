@@ -16,6 +16,7 @@
 #include <RmlUi/Core/ElementDocument.h>
 
 #include <algorithm>
+#include <chrono>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -160,14 +161,12 @@ void ShellHost::SetAuxiliaryAvailable(bool available) {
     state_.auxiliary_open = false;
   }
   DirtyWindow();
-  if (available && !was_available) {
-    if (state_.layout_mode == LayoutMode::Expanded) {
-      state_.auxiliary_open = true;
-      RequestSyncLayout();
-    } else {
-      ShellFeedback::ShowToast(state_, "Preview ready — tap Preview to open.", ToastDuration::Short, elapsed_ms_);
-      DirtyWindow();
-    }
+  // Compact: callers open the sheet via OpenAuxiliary() when appropriate. Do not toast
+  // "tap Preview" here — that message stuck on mobile when the fake frame clock stalled,
+  // and it conflicts with auto-open. Expanded still opens the side pane immediately.
+  if (available && !was_available && state_.layout_mode == LayoutMode::Expanded) {
+    state_.auxiliary_open = true;
+    RequestSyncLayout();
   }
 }
 
@@ -791,7 +790,12 @@ void ShellHost::SyncLayout() {
 }
 
 void ShellHost::Update(Rml::Context* context) {
-  elapsed_ms_ += 16.f;
+  // Wall clock: power-save WaitEventTimeout can sleep up to ~10s between frames, so a
+  // fake +=16ms clock made Short toasts linger for minutes on idle mobile screens.
+  // Must match ShellFeedback::ShowToast's default clock (steady_clock).
+  using clock = std::chrono::steady_clock;
+  elapsed_ms_ = static_cast<float>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch()).count());
   const size_t toast_count_before = state_.toasts.size();
   ShellFeedback::ExpireToasts(state_, elapsed_ms_);
   if (state_.toasts.size() != toast_count_before) {
