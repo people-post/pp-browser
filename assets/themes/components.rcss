@@ -609,7 +609,7 @@ select selectbox option {
 }
 
 .shell-nav-rail {
-  flex: 0 0 56dp;
+  flex: 0 0 72dp;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -621,7 +621,7 @@ select selectbox option {
   flex: 0 0 auto;
   flex-direction: row;
   width: 100%;
-  height: 48dp;
+  height: 56dp;
 }
 
 .shell-nav-rail-inner {
@@ -640,7 +640,7 @@ select selectbox option {
   flex-direction: row;
   justify-content: flex-start;
   gap: 0;
-  height: 48dp;
+  height: 56dp;
 }
 
 .shell-nav-spacer {
@@ -658,11 +658,13 @@ select selectbox option {
 .shell-nav-tab {
   flex-shrink: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
+  gap: 2dp;
+  width: 52dp;
+  height: 56dp;
+  min-width: 52dp;
   margin-bottom: 0;
   padding: 0;
   border: 0;
@@ -672,6 +674,14 @@ select selectbox option {
 
 .shell-nav-tab svg {
   flex-shrink: 0;
+}
+
+.shell-nav-tab-label {
+  margin: 0;
+  padding: 0;
+  font-size: 10dp;
+  text-align: center;
+  line-height: 1.1;
 }
 
 .shell-nav-page {
@@ -822,7 +832,7 @@ select selectbox option {
 }
 
 .shell-sheet-compact {
-  bottom: 48dp;
+  bottom: 56dp;
 }
 
 .shell-toolbar {

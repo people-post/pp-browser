@@ -3,21 +3,25 @@
           data-class-shell-nav-tab--active="nav_tab == 'home'"
           data-event-click="select_nav_tab('home')">
     <svg src="../icons/sparkle.svg" width="22" height="22" crop-to-content="true"></svg>
+    <p class="shell-nav-tab-label">Home</p>
   </button>
   <button class="shell-nav-tab" type="button"
           data-class-shell-nav-tab--active="nav_tab == 'sessions'"
           data-event-click="select_nav_tab('sessions')">
     <svg src="../icons/sessions.svg" width="22" height="22" crop-to-content="true"></svg>
+    <p class="shell-nav-tab-label">Sessions</p>
   </button>
   <button class="shell-nav-tab" type="button"
           data-class-shell-nav-tab--active="nav_tab == 'contacts'"
           data-event-click="select_nav_tab('contacts')">
     <svg src="../icons/contacts.svg" width="22" height="22" crop-to-content="true"></svg>
+    <p class="shell-nav-tab-label">Contacts</p>
   </button>
   <div class="shell-nav-spacer"></div>
   <button class="shell-nav-tab" type="button"
           data-class-shell-nav-tab--active="nav_tab == 'me'"
           data-event-click="select_nav_tab('me')">
     <svg src="../icons/me.svg" width="22" height="22" crop-to-content="true"></svg>
+    <p class="shell-nav-tab-label">Me</p>
   </button>
 </div>

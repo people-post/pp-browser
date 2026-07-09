@@ -29,7 +29,7 @@ enum class ToastDuration { Short, Long };
 
 struct ShellConfig {
   float compact_breakpoint_dp = 768.f;
-  float nav_rail_width_dp = 56.f;
+  float nav_rail_width_dp = 72.f;
   float secondary_width_dp = 240.f;
   float auxiliary_width_dp = 320.f;
   float toolbar_height_dp = 48.f;
