@@ -33,13 +33,13 @@ namespace libp2p::protocol::example::utility {
   void setupLoggers(char level) {
     switch (level) {
       case 'e':
-        libp2p::log::setLevelOfGroup("main", libp2p::log::Level::ERROR);
+        libp2p::log::setLevelOfGroup("main", soralog::kLevelError);
         break;
       case 'w':
         libp2p::log::setLevelOfGroup("main", libp2p::log::Level::WARN);
         break;
       case 'd':
-        libp2p::log::setLevelOfGroup("main", libp2p::log::Level::DEBUG);
+        libp2p::log::setLevelOfGroup("main", soralog::kLevelDebug);
         break;
       case 't':
         libp2p::log::setLevelOfGroup("main", libp2p::log::Level::TRACE);

@@ -55,7 +55,7 @@ namespace libp2p::log {
 
     template <typename... Args>
     void debug(std::string_view fmt, const Args &...args) {
-      log(Level::DEBUG, fmt, args...);
+      log(soralog::kLevelDebug, fmt, args...);
     }
 
     template <typename... Args>
@@ -75,7 +75,7 @@ namespace libp2p::log {
 
     template <typename... Args>
     void error(std::string_view fmt, const Args &...args) {
-      log(Level::ERROR, fmt, args...);
+      log(soralog::kLevelError, fmt, args...);
     }
 
     template <typename... Args>

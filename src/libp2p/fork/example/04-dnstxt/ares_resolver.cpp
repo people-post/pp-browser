@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
   if (std::getenv("TRACE_DEBUG") != nullptr) {
     libp2p::log::setLevelOfGroup("main", soralog::Level::TRACE);
   } else {
-    libp2p::log::setLevelOfGroup("main", soralog::Level::ERROR);
+    libp2p::log::setLevelOfGroup("main", soralog::kLevelError);
   }
 
   // create a default Host via an injector
