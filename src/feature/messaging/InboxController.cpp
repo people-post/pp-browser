@@ -182,9 +182,6 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
 }
 
 Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
-  if (IsAiHomeThread(thread_id)) {
-    return Error("Cannot clear AI home thread history");
-  }
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();

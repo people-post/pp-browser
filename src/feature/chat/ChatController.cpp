@@ -715,7 +715,7 @@ void ChatController::OnClearHistory() {
     return;
   }
   const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty() || MessagingHub::Instance().Inbox().IsAiHomeThread(thread_id)) {
+  if (thread_id.empty()) {
     return;
   }
 
@@ -1172,8 +1172,7 @@ void ChatController::UpdateThreadChrome() {
     chat_.thread_is_private = visual_kind == "private";
     chat_.thread_is_public = visual_kind == "public";
     chat_.thread_is_group = visual_kind == "group";
-    const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-    chat_.show_thread_actions = !MessagingHub::Instance().Inbox().IsAiHomeThread(active_id);
+    chat_.show_thread_actions = true;
     chat_.show_forget_memory = thread->kind == ThreadKind::Ai;
     chat_.show_sync_with_peer = false;
     chat_.show_gap_banner = false;
