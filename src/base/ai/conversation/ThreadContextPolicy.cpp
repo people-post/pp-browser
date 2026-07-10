@@ -40,14 +40,16 @@ ContextBuildResult ThreadContextPolicy::Build(const std::vector<ThreadMessage>& 
                                               const std::optional<std::string>& current_user_payload,
                                               const std::optional<ConversationSummary>& summary) const {
   ContextBuildResult result;
-  result.messages.push_back(ChatMessage{.role = "system", .content = system_prompt});
-
+  std::string system_content = system_prompt;
   if (summary && !summary->text.empty()) {
     const std::string trimmed = TrimTextToCharBudget(summary->text, budget_.max_summary_chars);
-    result.messages.push_back(
-        ChatMessage{.role = "system", .content = "Conversation summary:\n" + trimmed});
+    if (!system_content.empty()) {
+      system_content += "\n\n";
+    }
+    system_content += "Conversation summary:\n" + trimmed;
     result.provenance.summary_included = true;
   }
+  result.messages.push_back(ChatMessage{.role = "system", .content = std::move(system_content)});
 
   int char_budget = budget_.max_recent_chars;
   std::vector<std::string> lines;
@@ -102,13 +104,13 @@ std::vector<ChatMessage> ThreadContextPolicy::BuildAssistContext(const std::vect
   }
 
   std::vector<ChatMessage> out;
-  out.push_back(ChatMessage{.role = "system",
-                            .content = "You are assisting in a person-to-person chat. Use the transcript for "
-                                       "context. Reply concisely."});
+  std::string system_content =
+      "You are assisting in a person-to-person chat. Use the transcript for context. Reply concisely.";
   if (summary && !summary->text.empty()) {
     const std::string trimmed = TrimTextToCharBudget(summary->text, budget_.max_summary_chars);
-    out.push_back(ChatMessage{.role = "system", .content = "Conversation summary:\n" + trimmed});
+    system_content += "\n\nConversation summary:\n" + trimmed;
   }
+  out.push_back(ChatMessage{.role = "system", .content = std::move(system_content)});
   if (!transcript.str().empty()) {
     out.push_back(ChatMessage{.role = "user", .content = "Transcript:\n" + transcript.str()});
   }

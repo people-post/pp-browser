@@ -21,13 +21,19 @@ TEST(ThreadContextPolicyTest, InjectsThreadMemorySummary) {
   const ContextBuildResult built = policy.Build({prior}, "system prompt", "follow up", std::nullopt, summary);
   ASSERT_TRUE(built.provenance.summary_included);
 
+  int system_count = 0;
   bool saw_summary = false;
   for (const ChatMessage& message : built.messages) {
-    if (message.role == "system" && message.content.find("Conversation summary:") != std::string::npos &&
-        message.content.find("dark mode") != std::string::npos) {
-      saw_summary = true;
+    if (message.role == "system") {
+      ++system_count;
+      if (message.content.find("Conversation summary:") != std::string::npos &&
+          message.content.find("dark mode") != std::string::npos &&
+          message.content.find("system prompt") != std::string::npos) {
+        saw_summary = true;
+      }
     }
   }
+  EXPECT_EQ(system_count, 1);
   EXPECT_TRUE(saw_summary);
   EXPECT_EQ(built.messages.back().content, "follow up");
 }

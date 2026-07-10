@@ -79,13 +79,40 @@ Roe<std::string> LlmClient::Complete(const std::string& system_prompt, const std
   return *result->content;
 }
 
+std::vector<ChatMessage> LlmClient::CoalesceLeadingSystemMessages(std::vector<ChatMessage> messages) {
+  size_t leading_systems = 0;
+  while (leading_systems < messages.size() && messages[leading_systems].role == "system") {
+    ++leading_systems;
+  }
+  if (leading_systems <= 1) {
+    return messages;
+  }
+
+  std::string merged = messages[0].content;
+  for (size_t i = 1; i < leading_systems; ++i) {
+    if (merged.empty()) {
+      merged = messages[i].content;
+    } else if (!messages[i].content.empty()) {
+      merged += "\n\n";
+      merged += messages[i].content;
+    }
+  }
+
+  std::vector<ChatMessage> out;
+  out.reserve(messages.size() - leading_systems + 1);
+  out.push_back(ChatMessage{.role = "system", .content = std::move(merged)});
+  out.insert(out.end(), messages.begin() + static_cast<std::ptrdiff_t>(leading_systems), messages.end());
+  return out;
+}
+
 Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& request) const {
   if (config_.require_api_key && config_.api_key.empty()) {
     return Error("LLM API key not configured");
   }
 
+  const std::vector<ChatMessage> wire_messages = CoalesceLeadingSystemMessages(request.messages);
   nlohmann::json messages = nlohmann::json::array();
-  for (const ChatMessage& message : request.messages) {
+  for (const ChatMessage& message : wire_messages) {
     messages.push_back(MessageToJson(message));
   }
 

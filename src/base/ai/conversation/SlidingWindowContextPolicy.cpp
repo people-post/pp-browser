@@ -101,13 +101,16 @@ ContextBuildResult SlidingWindowContextPolicy::Build(const std::string& system_p
   ContextProvenance provenance;
 
   std::vector<ChatMessage> prefix;
-  prefix.push_back(ChatMessage{.role = "system", .content = system_prompt});
-
+  std::string system_content = system_prompt;
   if (const auto& summary = conversation.Summary(); summary && !summary->text.empty()) {
     const std::string trimmed = TrimTextToCharBudget(summary->text, budget.max_summary_chars);
-    prefix.push_back(ChatMessage{.role = "system", .content = "Conversation summary:\n" + trimmed});
+    if (!system_content.empty()) {
+      system_content += "\n\n";
+    }
+    system_content += "Conversation summary:\n" + trimmed;
     provenance.summary_included = true;
   }
+  prefix.push_back(ChatMessage{.role = "system", .content = std::move(system_content)});
 
   const std::vector<TranscriptEntry> completed = conversation.CompletedEntries();
   bool char_trimmed = false;

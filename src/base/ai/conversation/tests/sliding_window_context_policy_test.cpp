@@ -82,11 +82,17 @@ TEST(SlidingWindowContextPolicyTest, ConversationContextScenarios) {
       policy.Build("system", summary_conversation, summary_current, budget);
   assert(with_summary.provenance.summary_included);
   bool saw_summary = false;
+  int system_count = 0;
   for (const pbr::ChatMessage& message : with_summary.messages) {
-    if (message.role == "system" && message.content.find("Conversation summary:") != std::string::npos) {
-      saw_summary = true;
+    if (message.role == "system") {
+      ++system_count;
+      if (message.content.find("Conversation summary:") != std::string::npos &&
+          message.content.find("system") != std::string::npos) {
+        saw_summary = true;
+      }
     }
   }
+  assert(system_count == 1);
   assert(saw_summary);
 
   pbr::TurnCoordinator coordinator;

@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <utility>
+#include <vector>
 
 TEST(LlmClientTest, ParsesToolCallsAndContentResponses) {
   const std::string tool_response = R"({
@@ -61,4 +63,22 @@ TEST(LlmClientTest, ParsesTruncatedResponses) {
   auto truncated_result = pbr::LlmClient::ParseChatCompletionResponse(truncated_response);
   ASSERT_TRUE(static_cast<bool>(truncated_result));
   EXPECT_EQ(truncated_result->finish_reason, "length");
+}
+
+TEST(LlmClientTest, CoalescesLeadingSystemMessages) {
+  std::vector<pbr::ChatMessage> messages = {
+      {.role = "system", .content = "prompt"},
+      {.role = "system", .content = "Conversation summary:\nprefs"},
+      {.role = "user", .content = "hi"},
+      {.role = "system", .content = "late instruction"},
+  };
+
+  const auto normalized = pbr::LlmClient::CoalesceLeadingSystemMessages(std::move(messages));
+  ASSERT_EQ(normalized.size(), 3u);
+  EXPECT_EQ(normalized[0].role, "system");
+  EXPECT_EQ(normalized[0].content, "prompt\n\nConversation summary:\nprefs");
+  EXPECT_EQ(normalized[1].role, "user");
+  EXPECT_EQ(normalized[1].content, "hi");
+  EXPECT_EQ(normalized[2].role, "system");
+  EXPECT_EQ(normalized[2].content, "late instruction");
 }

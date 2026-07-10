@@ -59,6 +59,9 @@ public:
 
   static Roe<ChatCompletionResponse> ParseChatCompletionResponse(const std::string& response);
 
+  // Merge leading consecutive system messages into one. Safe for strict chat templates (e.g. Qwen).
+  static std::vector<ChatMessage> CoalesceLeadingSystemMessages(std::vector<ChatMessage> messages);
+
 private:
   LlmConfig config_;
 };

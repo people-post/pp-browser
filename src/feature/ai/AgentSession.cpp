@@ -154,9 +154,14 @@ void AgentSession::PopulateTurnTraceFromPlan(const std::shared_ptr<Impl>& state)
 
 void AgentSession::InjectSynthesisPolicy(const std::shared_ptr<Impl>& state) {
   const std::string policy = PromptBuilder::BuildSynthesisPrompt(state->turn_plan);
-  const auto insert_at = state->turn_scratch.front().role == "system" ? state->turn_scratch.begin() + 1
-                                                                      : state->turn_scratch.begin();
-  state->turn_scratch.insert(insert_at, ChatMessage{.role = "system", .content = policy});
+  if (!state->turn_scratch.empty() && state->turn_scratch.front().role == "system") {
+    if (!state->turn_scratch.front().content.empty() && !policy.empty()) {
+      state->turn_scratch.front().content += "\n\n";
+    }
+    state->turn_scratch.front().content += policy;
+    return;
+  }
+  state->turn_scratch.insert(state->turn_scratch.begin(), ChatMessage{.role = "system", .content = policy});
 }
 
 void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
