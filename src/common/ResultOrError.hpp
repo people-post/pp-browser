@@ -232,6 +232,33 @@ public:
     }
   }
 
+  ResultOrError& operator=(const ResultOrError& other) {
+    if (this != &other) {
+      if (!hasValue_) {
+        reinterpret_cast<E*>(&storage_)->~E();
+      }
+      hasValue_ = other.hasValue_;
+      if (!hasValue_) {
+        new (&storage_) E(*reinterpret_cast<const E*>(&other.storage_));
+      }
+    }
+    return *this;
+  }
+
+  ResultOrError& operator=(ResultOrError&& other) noexcept {
+    if (this != &other) {
+      if (!hasValue_) {
+        reinterpret_cast<E*>(&storage_)->~E();
+      }
+      hasValue_ = other.hasValue_;
+      if (!hasValue_) {
+        new (&storage_) E(std::move(*reinterpret_cast<E*>(&other.storage_)));
+        other.hasValue_ = true;
+      }
+    }
+    return *this;
+  }
+
   bool isOk() const { return hasValue_; }
   bool isError() const { return !hasValue_; }
   explicit operator bool() const { return hasValue_; }
