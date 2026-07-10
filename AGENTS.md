@@ -59,6 +59,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | App entry / chat bootstrap | `src/app/Application.cpp`, `src/app/main.cpp`, `src/feature/chat/ChatController.cpp` |
 | Structured AI replies | `src/base/ai/StructuredTextParser.cpp` |
 | Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
+| AI-centric intent / agency (long-term) | [projects/ai-centric-interface/](projects/ai-centric-interface/) — 10 acts, open domains; v1 thin coverage first |
 | P2P messaging | `src/feature/messaging/`, [docs/P2P_MESSAGING.md](docs/P2P_MESSAGING.md) |
 | SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | E2E symmetric crypto (`base/crypto`) | `src/base/crypto/`, [docs/MESSAGE_ENCRYPTION.md](docs/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
