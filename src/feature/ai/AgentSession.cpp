@@ -536,30 +536,52 @@ void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) 
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   BrowserThread::PauseIO();
 
-  state->llm = std::make_unique<LlmClient>(state->config.llm);
+  try {
+    state->llm = std::make_unique<LlmClient>(state->config.llm);
 
-  const AppConfig defaults = SessionStore::Instance().DefaultConfig();
-  state->mcp.Start(state->config, defaults);
+    const AppConfig defaults = SessionStore::Instance().DefaultConfig();
+    state->mcp.Start(state->config, defaults);
 
-  std::vector<std::string> custom_prefixes;
-  custom_prefixes.reserve(state->config.mcp_servers.size());
-  for (const McpConfig& entry : state->config.mcp_servers) {
-    custom_prefixes.push_back(entry.id);
-  }
+    std::vector<std::string> custom_prefixes;
+    custom_prefixes.reserve(state->config.mcp_servers.size());
+    for (const McpConfig& entry : state->config.mcp_servers) {
+      custom_prefixes.push_back(entry.id);
+    }
 
-  state->tools = ToolRegistry::BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
-                                               custom_prefixes);
-  state->configured = true;
-  RefreshCompactionService(state);
+    state->tools = ToolRegistry::BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
+                                                 custom_prefixes);
+    state->configured = true;
+    RefreshCompactionService(state);
 
-  logging::getLogger("AgentSession").info << "Agent configured with " << state->tools.Tools().size() << " tool(s)";
-  for (const ToolDescriptor& tool : state->tools.Tools()) {
-    logging::getLogger("AgentSession").info << "  - " << tool.definition.name;
-  }
+    logging::getLogger("AgentSession").info << "Agent configured with " << state->tools.Tools().size() << " tool(s)";
+    for (const ToolDescriptor& tool : state->tools.Tools()) {
+      logging::getLogger("AgentSession").info << "  - " << tool.definition.name;
+    }
 
-  if (MessagingHub::Instance().IsInitialized()) {
-    const auto& bootstrap = SessionStore::Instance().Snapshot();
-    (void)MessagingHub::Instance().Reinitialize(state->config, bootstrap.profile_data_dir);
+    if (MessagingHub::Instance().IsInitialized()) {
+      const auto& bootstrap = SessionStore::Instance().Snapshot();
+      (void)MessagingHub::Instance().Reinitialize(state->config, bootstrap.profile_data_dir);
+    }
+  } catch (const std::exception& e) {
+    state->configured = false;
+    state->mcp.Stop();
+    state->llm.reset();
+    state->tools.Clear();
+    RefreshCompactionService(state);
+    logging::getLogger("AgentSession").error << "Agent configure failed: " << e.what();
+    PushError(state, std::string("Agent configure failed: ") + e.what());
+    BrowserThread::ResumeIO();
+    return;
+  } catch (...) {
+    state->configured = false;
+    state->mcp.Stop();
+    state->llm.reset();
+    state->tools.Clear();
+    RefreshCompactionService(state);
+    logging::getLogger("AgentSession").error << "Agent configure failed: unknown exception";
+    PushError(state, "Agent configure failed");
+    BrowserThread::ResumeIO();
+    return;
   }
 
   BrowserThread::ResumeIO();

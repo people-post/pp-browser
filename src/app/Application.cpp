@@ -203,25 +203,25 @@ void Application::Run() {
 }
 
 void Application::Shutdown() {
-  if (!initialized_) {
-    return;
+  if (initialized_) {
+    ShutdownChatController();
+
+    BrowserThread::RunUITasks();
+
+    ActionRouter::Instance().Detach();
+    Rml::RemoveContext("main");
+#ifdef PPBROWSER_ENABLE_DEBUGGER
+    Rml::Debugger::Shutdown();
+#endif
+    Rml::Shutdown();
+    Backend::Shutdown();
+
+    log().info << "Shutdown complete";
+    initialized_ = false;
   }
 
-  ShutdownChatController();
-
-  BrowserThread::RunUITasks();
+  // Always tear down runners — Initialize may have started them before failing.
   BrowserThread::Shutdown();
-
-  ActionRouter::Instance().Detach();
-  Rml::RemoveContext("main");
-#ifdef PPBROWSER_ENABLE_DEBUGGER
-  Rml::Debugger::Shutdown();
-#endif
-  Rml::Shutdown();
-  Backend::Shutdown();
-
-  log().info << "Shutdown complete";
-  initialized_ = false;
 }
 
 } // namespace pbr

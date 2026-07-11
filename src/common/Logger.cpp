@@ -102,7 +102,11 @@ LoggerNode::LoggerNode(const std::string &name)
 std::string LoggerNode::getFullName() const {
   std::vector<std::string> parts;
 
-  auto current = const_cast<LoggerNode*>(this)->shared_from_this();
+  // weak_from_this avoids std::bad_weak_ptr if this node is not owned by a shared_ptr.
+  auto current = const_cast<LoggerNode*>(this)->weak_from_this().lock();
+  if (!current) {
+    return name_;
+  }
   while (current && !current->getName().empty()) {
     parts.push_back(current->getName());
     current = current->getParent();
@@ -227,7 +231,8 @@ void LoggerNode::removeChild(LoggerNode* child) {
 std::shared_ptr<LoggerNode> LoggerNode::getOrInitChild(const std::string& fullName) {
   std::string trimmedName = trimLeadingDot(fullName);
   if (trimmedName.empty()) {
-    return shared_from_this();
+    auto self = weak_from_this().lock();
+    return self ? self : std::shared_ptr<LoggerNode>{};
   }
 
   auto firstDot = trimmedName.find('.');
@@ -235,6 +240,9 @@ std::shared_ptr<LoggerNode> LoggerNode::getOrInitChild(const std::string& fullNa
     return getOrInitDirectChild(trimmedName);
   } else {
     auto sp = getOrInitChild(trimmedName.substr(0, firstDot));
+    if (!sp) {
+      return {};
+    }
     return sp->getOrInitChild(trimmedName.substr(firstDot + 1));
   }
 }
@@ -249,7 +257,8 @@ std::shared_ptr<LoggerNode> LoggerNode::getOrInitDirectChild(const std::string& 
   }
 
   auto newChild = std::make_shared<LoggerNode>(name);
-  newChild->setParent(shared_from_this());
+  // Prefer weak_from_this: shared_from_this throws bad_weak_ptr when ownership is missing.
+  newChild->setParent(weak_from_this());
   spChildren_.push_back(newChild);
 
   return newChild;
@@ -313,6 +322,9 @@ void Logger::redirectTo(const std::string &targetLoggerName) {
 
 Logger getLogger(const std::string &name) {
   auto spNode = g_spRoot->getOrInitChild(name);
+  if (!spNode) {
+    return Logger(g_spRoot);
+  }
   return Logger(spNode);
 }
 
