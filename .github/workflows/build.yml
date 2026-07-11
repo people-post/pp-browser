@@ -18,6 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/free-disk-space
+
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
 
@@ -126,18 +130,23 @@ jobs:
       CCACHE_NOHASHDIR: true
       CCACHE_COMPILERCHECK: string:android-ndk-r27.0.12077973
       CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
-      CCACHE_MAXSIZE: 10G
+      # Keep well under GitHub-hosted runner free disk (~14GB before cleanup).
+      CCACHE_MAXSIZE: 2G
       ORG_GRADLE_PROJECT_ppBrowserCompilerCache: ON
       GRADLE_OPTS: -Dorg.gradle.daemon=false
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Free disk space
+        uses: ./.github/actions/free-disk-space
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -155,38 +164,41 @@ jobs:
           mkdir -p "$HOME/.gradle/caches"
           mkdir -p "$HOME/.gradle/wrapper"
           mkdir -p "$GITHUB_WORKSPACE/android/.gradle"
-          mkdir -p "$GITHUB_WORKSPACE/android/build"
-          mkdir -p "$GITHUB_WORKSPACE/android/app/.cxx"
-          chmod -R u+rwX "$CCACHE_DIR" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle" "$GITHUB_WORKSPACE/android/build" "$GITHUB_WORKSPACE/android/app/.cxx"
+          chmod -R u+rwX "$CCACHE_DIR" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle"
 
       - name: Restore Android Gradle cache
         uses: actions/cache@v4
         with:
+          # Intentionally omit android/build and android/app/.cxx — large intermediates
+          # that often exhaust runner disk when restored.
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
             android/.gradle
-            android/build
-            android/app/.cxx
-          key: ${{ runner.os }}-android-gradle-v2-${{ hashFiles('android/build.gradle*', 'android/settings.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-android-gradle-v3-${{ hashFiles('android/build.gradle*', 'android/settings.gradle*', 'android/gradle.properties', 'android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
-            ${{ runner.os }}-android-gradle-v2-
-            ${{ runner.os }}-android-gradle-v1-
+            ${{ runner.os }}-android-gradle-v3-
 
       - name: Restore Android ccache
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-android-ccache-v3-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
+          key: ${{ runner.os }}-android-ccache-v4-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-android-ccache-v3-
-            ${{ runner.os }}-android-ccache-v2-
+            ${{ runner.os }}-android-ccache-v4-
+
+      - name: Disk usage (pre-build)
+        run: |
+          df -h
+          du -sh .cache/ccache ~/.gradle android/.gradle 2>/dev/null || true
 
       - name: ccache stats (pre-build)
         run: |
           echo "=== restored ccache (before zero-stats) ==="
           ccache --show-stats || true
           ccache --print-config 2>/dev/null || true
+          # Cap any oversized restored cache from older CCACHE_MAXSIZE=10G runs.
+          ccache --max-size="${CCACHE_MAXSIZE}" || true
           ccache --zero-stats || true
 
       - name: Build debug APK
@@ -194,6 +206,12 @@ jobs:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973
         run: ./scripts/android_build.sh apk
+
+      - name: Disk usage (post-build)
+        if: always()
+        run: |
+          df -h
+          du -sh .cache/ccache ~/.gradle android/.gradle android/build android/app/.cxx android/app/build 2>/dev/null || true
 
       - name: ccache stats (post-build)
         if: always()
