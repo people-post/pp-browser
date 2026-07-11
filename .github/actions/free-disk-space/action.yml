@@ -26,6 +26,12 @@ runs:
           /opt/hostedtoolcache/CodeQL \
           || true
 
+        # setup-android installs into ANDROID_SDK_ROOT (/usr/local/lib/android/sdk on
+        # Ubuntu runners). After deleting that tree, recreate a writable parent —
+        # the runner user cannot mkdir under /usr/local/lib (EACCES).
+        sudo mkdir -p /usr/local/lib/android
+        sudo chmod a+rwx /usr/local/lib/android
+
         sudo docker system prune -af || true
         sudo apt-get clean || true
         sudo rm -rf /var/lib/apt/lists/* || true
