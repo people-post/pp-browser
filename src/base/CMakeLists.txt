@@ -29,6 +29,7 @@ set(PP_BROWSER_BASE_SOURCES
   net/ServiceClientFactory.cpp
   net/ServiceClientsImpl.cpp
   data/AppPaths.cpp
+  data/AtomicFileWrite.cpp
   data/Config.cpp
   data/ConfigJson.cpp
   data/LlmPreset.cpp
@@ -69,6 +70,10 @@ set(PP_BROWSER_BASE_SOURCES
   crypto/MessageCipher.cpp
   crypto/EncryptedPayload.cpp
   crypto/ReplayWindow.cpp
+  crypto/PinKeyDeriver.cpp
+  crypto/FileCipher.cpp
+  crypto/DataKeyVault.cpp
+  crypto/PinResolver.cpp
   ai/LlmClient.cpp
   ai/PromptBuilder.cpp
   ai/RmlValidator.cpp

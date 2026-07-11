@@ -542,8 +542,9 @@ No hard max file size in v1.
 ## D048 — No encryption at rest for thread DBs (v1)
 
 **Date:** 2026-06-29  
-**Decision:** `thread.db` and `profile.db` are **plaintext SQLite**. E2E confidentiality is wire-only. SQLCipher / OS keychain for transcripts deferred.  
-**Rationale:** Explicit assumption; PSK-at-rest is separate (e2e E008).  
+**Updated:** 2026-07-11 — identity + PSK at-rest shipped in [at-rest-crypto](../at-rest-crypto/); this decision still applies to **`thread.db` transcripts only**.  
+**Decision:** `thread.db` remains **plaintext SQLite**. E2E confidentiality is wire-only for message bodies; local transcripts are trusted. SQLCipher for transcripts deferred. Profile secrets (`identity.enc`, PSK columns) use the PIN/DEK vault — see [AT_REST_ENCRYPTION.md](../../docs/AT_REST_ENCRYPTION.md).  
+**Rationale:** Explicit assumption for transcripts; PSK/identity at-rest tracked separately (e2e E008 / at-rest A002).  
 **Alternatives:** Encrypt all thread DBs in v2a.
 
 ---

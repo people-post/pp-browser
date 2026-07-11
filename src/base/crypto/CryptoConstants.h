@@ -10,8 +10,11 @@ inline constexpr uint8_t kEncryptedPayloadVersion = 1;
 
 inline constexpr size_t kMasterPskSize = 32;
 inline constexpr size_t kSessionKeySize = 32;
+inline constexpr size_t kDataEncryptionKeySize = 32;
 inline constexpr size_t kAeadNonceSize = 24;
 inline constexpr size_t kPskFingerprintSize = 32;
+
+inline constexpr uint8_t kVaultFileVersion = 1;
 
 inline constexpr const char* kHkdfSalt = "pp-browser-msg-v1";
 inline constexpr const char* kAutoKeyHkdfInfoPrefix = "auto-key-v1|channel:";

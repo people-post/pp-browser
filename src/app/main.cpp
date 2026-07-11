@@ -11,12 +11,16 @@
 int main(int argc, char** argv) {
   bool debug_mode = false;
   std::string profile_override;
+  std::string pin;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--debug") == 0) {
       debug_mode = true;
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
       profile_override = argv[i + 1];
+      ++i;
+    } else if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
+      pin = argv[i + 1];
       ++i;
     }
   }
@@ -40,6 +44,7 @@ int main(int argc, char** argv) {
   options.argc = argc;
   options.argv = argv;
   options.profile_override = profile_override;
+  options.pin = pin;
 
   auto bootstrap_result = pbr::Bootstrap::Run(options);
   if (!bootstrap_result) {

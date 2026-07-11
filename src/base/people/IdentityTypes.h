@@ -6,7 +6,8 @@ namespace pbr {
 
 struct LocalIdentity {
   std::string public_key_b64;
-  std::string encrypted_private_key_b64;
+  /** Ed25519 private key (base64). Plaintext only in memory; on disk inside identity.enc. */
+  std::string private_key_b64;
   std::string kem_public_key_b64;
   std::string kem_private_key_b64;
   std::string nickname;

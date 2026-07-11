@@ -1,5 +1,6 @@
 #include "base/data/UserPreferences.h"
 
+#include "base/data/AtomicFileWrite.h"
 #include "base/data/ConfigJson.h"
 #include "base/data/SchemaVersion.h"
 
@@ -61,12 +62,7 @@ Roe<void> UserPreferences::SaveMachine(const std::string& data_dir, const Machin
   std::error_code ec;
   std::filesystem::create_directories(data_dir, ec);
 
-  std::ofstream out(path);
-  if (!out) {
-    return Error("Failed to write machine preferences: " + path);
-  }
-  out << MachinePrefsToJson(prefs).dump(2);
-  return {};
+  return AtomicFileWrite::Write(path, MachinePrefsToJson(prefs).dump(2));
 }
 
 Roe<ProfilePreferences> UserPreferences::LoadProfile(const std::string& profile_data_dir) {
@@ -101,12 +97,7 @@ Roe<void> UserPreferences::SaveProfile(const std::string& profile_data_dir, cons
   std::error_code ec;
   std::filesystem::create_directories(profile_data_dir, ec);
 
-  std::ofstream out(path);
-  if (!out) {
-    return Error("Failed to write profile preferences: " + path);
-  }
-  out << ProfilePrefsToJson(prefs).dump(2);
-  return {};
+  return AtomicFileWrite::Write(path, ProfilePrefsToJson(prefs).dump(2));
 }
 
 } // namespace pbr

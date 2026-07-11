@@ -1,3 +1,4 @@
+#include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/E2eIngestClassifier.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
@@ -22,6 +23,14 @@ ByteVector TestMasterPsk() {
   return *bytes;
 }
 
+ByteVector TestDek() {
+  ByteVector dek(kDataEncryptionKeySize);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+
 void InstallTestPsk(SqlitePskSessionStore& psk_store, const Thread& thread) {
   PskSessionRecord record;
   record.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
@@ -36,7 +45,8 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
       std::filesystem::temp_directory_path() / "pp_browser_e2e_relay_crypto";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
-  SqlitePskSessionStore psk_store(store.ProfileDbPath());
+  SqlitePskSessionStore psk_store(store.ProfileDbPath(), "test");
+  ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
 
   DirectChatTarget target;
   target.peer_identity_kind = "relay_user";
@@ -87,8 +97,10 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
       std::filesystem::temp_directory_path() / "pp_browser_e2e_pipeline_crypto";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
-  SqlitePskSessionStore psk_store(store.ProfileDbPath());
-  IdentityStore identity(data_dir.string());
+  SqlitePskSessionStore psk_store(store.ProfileDbPath(), "test");
+  ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
+  IdentityStore identity(data_dir.string(), "test");
+  ASSERT_TRUE(static_cast<bool>(identity.SetDek(TestDek())));
   ASSERT_TRUE(static_cast<bool>(identity.LoadOrCreate()));
   PeerSigningKeyStore key_store;
 

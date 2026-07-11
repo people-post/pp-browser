@@ -80,7 +80,7 @@ These are recorded ADRs; agents should not re-litigate. Change only with explici
 |-------|----------|-----|
 | Private PSK UX | Generate/import + **mandatory fingerprint confirm** before send | E011 |
 | Multi-device | **Unsupported v1** — seq conflicts → integrity pause | D015 |
-| PSK at rest | **Not encrypted** in v1 | E008 |
+| PSK at rest | **Encrypted under profile DEK** | E008 / [at-rest A005](at-rest-crypto/DECISIONS.md#a005--supersedes-e008-deferred-at-rest-for-psk) |
 | Signing key trust | Relay directory + cache; fingerprint **display-only** v1 | E016 |
 | Strict vs relaxed ingest | **`e2e` strict**; **`e2e_public`/group relaxed when shipped | D013, D046 |
 | Scroll backfill | **Deferred** post-v1 | D052 |

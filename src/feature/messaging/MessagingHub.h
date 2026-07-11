@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/crypto/DataKeyVault.h"
 #include "base/data/Config.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
@@ -29,10 +30,14 @@ class MessagingHub {
 public:
   static MessagingHub& Instance();
 
-  Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir);
-  Roe<void> Reinitialize(const AppConfig& config, const std::string& profile_data_dir);
+  Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir,
+                       const std::string& pin);
+  Roe<void> Reinitialize(const AppConfig& config, const std::string& profile_data_dir,
+                         const std::string& pin = {});
   void Shutdown();
   bool IsInitialized() const { return initialized_; }
+  DataKeyVault* Vault();
+  bool IsVaultUnlocked() const;
 
   InboxController& Inbox();
   P2pMessagingService& P2p();
@@ -68,6 +73,7 @@ private:
   std::string data_dir_;
   AppConfig config_;
   AgentSession* agent_ = nullptr;
+  std::unique_ptr<DataKeyVault> vault_;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;

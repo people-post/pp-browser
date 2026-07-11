@@ -1,13 +1,17 @@
 #include "base/people/IdentityStore.h"
 
+#include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/FileCipher.h"
 #include "base/crypto/HybridKem.h"
+#include "base/data/AtomicFileWrite.h"
 #include "base/people/Ed25519Signer.h"
 #include "libp2p/integration/host/PeerIdUtil.h"
 
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <sodium.h>
 
 namespace pbr {
 
@@ -40,25 +44,95 @@ Roe<void> DerivePeerId(LocalIdentity& identity) {
   return {};
 }
 
+LocalIdentity IdentityFromJson(const nlohmann::json& root) {
+  LocalIdentity identity;
+  if (root.contains("public_key_b64") && root["public_key_b64"].is_string()) {
+    identity.public_key_b64 = root["public_key_b64"].get<std::string>();
+  }
+  if (root.contains("private_key_b64") && root["private_key_b64"].is_string()) {
+    identity.private_key_b64 = root["private_key_b64"].get<std::string>();
+  }
+  if (root.contains("nickname") && root["nickname"].is_string()) {
+    identity.nickname = root["nickname"].get<std::string>();
+  }
+  if (root.contains("relay_user_id") && root["relay_user_id"].is_string()) {
+    identity.relay_user_id = root["relay_user_id"].get<std::string>();
+  }
+  if (root.contains("registered") && root["registered"].is_boolean()) {
+    identity.registered = root["registered"].get<bool>();
+  }
+  if (root.contains("kem_public_key_b64") && root["kem_public_key_b64"].is_string()) {
+    identity.kem_public_key_b64 = root["kem_public_key_b64"].get<std::string>();
+  }
+  if (root.contains("kem_private_key_b64") && root["kem_private_key_b64"].is_string()) {
+    identity.kem_private_key_b64 = root["kem_private_key_b64"].get<std::string>();
+  }
+  return identity;
+}
+
+nlohmann::json IdentityToJson(const LocalIdentity& identity) {
+  return {{"public_key_b64", identity.public_key_b64},
+          {"private_key_b64", identity.private_key_b64},
+          {"kem_public_key_b64", identity.kem_public_key_b64},
+          {"kem_private_key_b64", identity.kem_private_key_b64},
+          {"nickname", identity.nickname},
+          {"relay_user_id", identity.relay_user_id},
+          {"registered", identity.registered}};
+}
+
 } // namespace
 
-IdentityStore::IdentityStore(std::string data_dir) : data_dir_(std::move(data_dir)) {
+IdentityStore::IdentityStore(std::string data_dir, std::string profile_id)
+    : data_dir_(std::move(data_dir)), profile_id_(std::move(profile_id)) {
   redirectLogger("IdentityStore");
+  if (profile_id_.empty()) {
+    profile_id_ = std::filesystem::path(data_dir_).filename().string();
+    if (profile_id_.empty()) {
+      profile_id_ = "default";
+    }
+  }
+}
+
+Roe<void> IdentityStore::SetDek(ByteVector dek) {
+  if (dek.size() != kDataEncryptionKeySize) {
+    return Error("Invalid DEK size");
+  }
+  std::lock_guard lock(mutex_);
+  if (!dek_.empty()) {
+    sodium_memzero(dek_.data(), dek_.size());
+  }
+  dek_ = std::move(dek);
+  loaded_ = false;
+  return {};
+}
+
+Roe<void> IdentityStore::RequireDek() const {
+  if (dek_.size() != kDataEncryptionKeySize) {
+    return Error("IdentityStore DEK not set (unlock profile vault first)");
+  }
+  return {};
 }
 
 std::string IdentityStore::StorePath() const {
-  return (std::filesystem::path(data_dir_) / "identity.json").string();
+  return (std::filesystem::path(data_dir_) / "identity.enc").string();
+}
+
+std::string IdentityStore::ProfileId() const {
+  return profile_id_;
 }
 
 Roe<void> IdentityStore::EnsureLoaded() const {
   if (loaded_) {
     return {};
   }
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
+  }
 
   std::error_code ec;
   std::filesystem::create_directories(data_dir_, ec);
 
-  std::ifstream in(StorePath());
+  std::ifstream in(StorePath(), std::ios::binary);
   if (!in) {
     auto keys = Ed25519Signer::GenerateKeyPair();
     if (!keys) {
@@ -66,7 +140,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     }
     private_key_ = keys->private_key;
     identity_.public_key_b64 = Ed25519Signer::ToBase64(keys->public_key);
-    identity_.encrypted_private_key_b64 = Ed25519Signer::ToBase64(keys->private_key);
+    identity_.private_key_b64 = Ed25519Signer::ToBase64(keys->private_key);
     identity_.nickname = "user";
     identity_.relay_user_id.clear();
     identity_.registered = false;
@@ -81,34 +155,20 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     return {};
   }
 
-  const nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
+  ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  const std::string aad = FileCipher::BuildAad("identity", ProfileId());
+  auto plaintext = FileCipher::Decrypt(dek_, blob, aad);
+  if (!plaintext) {
+    return plaintext.error();
+  }
+  const nlohmann::json root =
+      nlohmann::json::parse(plaintext->begin(), plaintext->end(), nullptr, false);
   if (root.is_discarded()) {
-    return Error("Failed to parse identity.json");
+    return Error("Failed to parse decrypted identity");
   }
 
-  if (root.contains("public_key_b64") && root["public_key_b64"].is_string()) {
-    identity_.public_key_b64 = root["public_key_b64"].get<std::string>();
-  }
-  if (root.contains("encrypted_private_key_b64") && root["encrypted_private_key_b64"].is_string()) {
-    identity_.encrypted_private_key_b64 = root["encrypted_private_key_b64"].get<std::string>();
-  }
-  if (root.contains("nickname") && root["nickname"].is_string()) {
-    identity_.nickname = root["nickname"].get<std::string>();
-  }
-  if (root.contains("relay_user_id") && root["relay_user_id"].is_string()) {
-    identity_.relay_user_id = root["relay_user_id"].get<std::string>();
-  }
-  if (root.contains("registered") && root["registered"].is_boolean()) {
-    identity_.registered = root["registered"].get<bool>();
-  }
-  if (root.contains("kem_public_key_b64") && root["kem_public_key_b64"].is_string()) {
-    identity_.kem_public_key_b64 = root["kem_public_key_b64"].get<std::string>();
-  }
-  if (root.contains("kem_private_key_b64") && root["kem_private_key_b64"].is_string()) {
-    identity_.kem_private_key_b64 = root["kem_private_key_b64"].get<std::string>();
-  }
-
-  auto private_key = Ed25519Signer::FromBase64(identity_.encrypted_private_key_b64);
+  identity_ = IdentityFromJson(root);
+  auto private_key = Ed25519Signer::FromBase64(identity_.private_key_b64);
   if (!private_key) {
     return private_key.error();
   }
@@ -125,20 +185,17 @@ Roe<void> IdentityStore::EnsureLoaded() const {
 }
 
 Roe<void> IdentityStore::Save() const {
-  const nlohmann::json root = {{"public_key_b64", identity_.public_key_b64},
-                               {"encrypted_private_key_b64", identity_.encrypted_private_key_b64},
-                               {"kem_public_key_b64", identity_.kem_public_key_b64},
-                               {"kem_private_key_b64", identity_.kem_private_key_b64},
-                               {"nickname", identity_.nickname},
-                               {"relay_user_id", identity_.relay_user_id},
-                               {"registered", identity_.registered}};
-
-  std::ofstream out(StorePath());
-  if (!out) {
-    return Error("Failed to write identity.json");
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
   }
-  out << root.dump(2);
-  return {};
+  const std::string json = IdentityToJson(identity_).dump(2);
+  const ByteVector plaintext(json.begin(), json.end());
+  const std::string aad = FileCipher::BuildAad("identity", ProfileId());
+  auto ciphertext = FileCipher::Encrypt(dek_, plaintext, aad);
+  if (!ciphertext) {
+    return ciphertext.error();
+  }
+  return AtomicFileWrite::Write(StorePath(), *ciphertext);
 }
 
 void IdentityStore::Flush() {

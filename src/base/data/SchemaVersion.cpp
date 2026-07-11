@@ -1,5 +1,7 @@
 #include "base/data/SchemaVersion.h"
 
+#include "base/data/AtomicFileWrite.h"
+
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -67,15 +69,8 @@ Roe<void> SchemaVersion::EnsureProfileManifest(const std::string& profile_data_d
       return Roe<void>::error(Error("Failed to check profile manifest"));
     }
     const nlohmann::json root = {{"schema_version", kCurrentSchemaVersion}};
-    const std::string payload = root.dump(2);
-    std::ofstream out(manifest_path, std::ios::trunc);
-    if (!out) {
-      return Roe<void>::error(Error("Failed to write profile manifest"));
-    }
-    out << payload;
-    out.flush();
-    if (!out) {
-      return Roe<void>::error(Error("Failed to flush profile manifest"));
+    if (auto written = AtomicFileWrite::Write(manifest_path.string(), root.dump(2)); !written) {
+      return Roe<void>::error(Error(written.error().message));
     }
     return {};
   }

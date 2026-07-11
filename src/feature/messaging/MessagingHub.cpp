@@ -166,9 +166,13 @@ void MessagingHub::RegisterContactEndpoints() {
   }
 }
 
-Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
+Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir,
+                                   const std::string& pin) {
   if (initialized_) {
     return {};
+  }
+  if (pin.empty()) {
+    return Error("Profile PIN is required");
   }
 
   config_ = config;
@@ -176,12 +180,35 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   std::error_code ec;
   std::filesystem::create_directories(data_dir_, ec);
 
+  std::string profile_id = std::filesystem::path(data_dir_).filename().string();
+  if (profile_id.empty()) {
+    profile_id = "default";
+  }
+
+  vault_ = std::make_unique<DataKeyVault>(DataKeyVault::VaultPathForProfile(data_dir_), profile_id);
+  if (!vault_->Exists()) {
+    if (auto created = vault_->Create(pin); !created) {
+      return created.error();
+    }
+  } else if (auto unlocked = vault_->Unlock(pin); !unlocked) {
+    return unlocked.error();
+  }
+  auto dek = vault_->Dek();
+  if (!dek) {
+    return dek.error();
+  }
+
   store_ = std::make_unique<SqliteThreadStore>(data_dir_);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
-  identity_ = std::make_unique<IdentityStore>(data_dir_);
+  identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id);
+  if (auto set = identity_->SetDek(*dek); !set) {
+    return set.error();
+  }
 
   if (auto identity = identity_->LoadOrCreate()) {
     (void)identity;
+  } else {
+    return identity.error();
   }
 
   (void)store_->ReconcileOutbox();
@@ -191,7 +218,10 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
 
   InstallServiceClients(config);
 
-  psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath());
+  psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id);
+  if (auto set = psk_store_->SetDek(*dek); !set) {
+    return set.error();
+  }
   signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
@@ -210,9 +240,10 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   return {};
 }
 
-Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string& profile_data_dir) {
+Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string& profile_data_dir,
+                                     const std::string& pin) {
   if (!initialized_) {
-    return Initialize(config, profile_data_dir);
+    return Initialize(config, profile_data_dir, pin);
   }
 
   config_ = config;
@@ -284,7 +315,19 @@ void MessagingHub::Shutdown() {
   identity_.reset();
   contacts_.reset();
   store_.reset();
+  if (vault_) {
+    vault_->Lock();
+    vault_.reset();
+  }
   initialized_ = false;
+}
+
+DataKeyVault* MessagingHub::Vault() {
+  return vault_.get();
+}
+
+bool MessagingHub::IsVaultUnlocked() const {
+  return vault_ && vault_->IsUnlocked();
 }
 
 InboxController& MessagingHub::Inbox() {

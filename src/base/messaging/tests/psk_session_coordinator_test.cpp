@@ -1,3 +1,4 @@
+#include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/crypto/PskBundleCodec.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
@@ -18,12 +19,21 @@ ByteVector TestPskBytes() {
   return *bytes;
 }
 
+ByteVector TestDek() {
+  ByteVector dek(kDataEncryptionKeySize);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+
 TEST(PskSessionCoordinatorTest, GenerateImportVerifyAndRotate) {
   const std::filesystem::path data_dir =
       std::filesystem::temp_directory_path() / "pp_browser_psk_session_coordinator";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
-  SqlitePskSessionStore psk_store(store.ProfileDbPath());
+  SqlitePskSessionStore psk_store(store.ProfileDbPath(), "test");
+  ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
   PskSessionCoordinator coordinator(store, psk_store);
 
   DirectChatTarget target;

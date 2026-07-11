@@ -2,6 +2,7 @@
 
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/FileCipher.h"
 #include "base/crypto/PskBundleCodec.h"
 #include "base/crypto/PskFingerprint.h"
 
@@ -31,9 +32,102 @@ void ApplyFingerprint(PskSessionRecord& record) {
 
 } // namespace
 
-SqlitePskSessionStore::SqlitePskSessionStore(std::string profile_db_path)
-    : profile_db_path_(std::move(profile_db_path)) {
+SqlitePskSessionStore::SqlitePskSessionStore(std::string profile_db_path, std::string profile_id)
+    : profile_db_path_(std::move(profile_db_path)), profile_id_(std::move(profile_id)) {
   redirectLogger("SqlitePskSessionStore");
+  if (profile_id_.empty()) {
+    profile_id_ = "default";
+  }
+}
+
+Roe<void> SqlitePskSessionStore::SetDek(ByteVector dek) {
+  if (dek.size() != kDataEncryptionKeySize) {
+    return Error("Invalid DEK size");
+  }
+  std::lock_guard lock(mutex_);
+  if (!dek_.empty()) {
+    sodium_memzero(dek_.data(), dek_.size());
+  }
+  dek_ = std::move(dek);
+  return {};
+}
+
+Roe<void> SqlitePskSessionStore::RequireDek() const {
+  if (dek_.size() != kDataEncryptionKeySize) {
+    return Error("PSK store DEK not set (unlock profile vault first)");
+  }
+  return {};
+}
+
+Roe<std::string> SqlitePskSessionStore::EncryptPskB64(const std::string& plaintext_b64) const {
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
+  }
+  const ByteVector plain(plaintext_b64.begin(), plaintext_b64.end());
+  const std::string aad = FileCipher::BuildAad("psk", profile_id_);
+  auto cipher = FileCipher::Encrypt(dek_, plain, aad);
+  if (!cipher) {
+    return cipher.error();
+  }
+  return Base64Encode(*cipher);
+}
+
+Roe<std::string> SqlitePskSessionStore::DecryptPskB64(const std::string& ciphertext_b64) const {
+  if (auto dek = RequireDek(); !dek) {
+    return dek.error();
+  }
+  auto blob = Base64Decode(ciphertext_b64);
+  if (!blob) {
+    return blob.error();
+  }
+  const std::string aad = FileCipher::BuildAad("psk", profile_id_);
+  auto plain = FileCipher::Decrypt(dek_, *blob, aad);
+  if (!plain) {
+    return plain.error();
+  }
+  return std::string(plain->begin(), plain->end());
+}
+
+Roe<PskSessionRecord> SqlitePskSessionStore::DecryptRecord(PskSessionRecord record) const {
+  if (record.master_psk_b64) {
+    auto decrypted = DecryptPskB64(*record.master_psk_b64);
+    if (!decrypted) {
+      return decrypted.error();
+    }
+    record.master_psk_b64 = *decrypted;
+  }
+  for (RetiredPskEntry& entry : record.retired_psks) {
+    if (entry.master_psk_b64.empty()) {
+      continue;
+    }
+    auto decrypted = DecryptPskB64(entry.master_psk_b64);
+    if (!decrypted) {
+      return decrypted.error();
+    }
+    entry.master_psk_b64 = *decrypted;
+  }
+  return record;
+}
+
+Roe<PskSessionRecord> SqlitePskSessionStore::EncryptRecord(PskSessionRecord record) const {
+  if (record.master_psk_b64) {
+    auto encrypted = EncryptPskB64(*record.master_psk_b64);
+    if (!encrypted) {
+      return encrypted.error();
+    }
+    record.master_psk_b64 = *encrypted;
+  }
+  for (RetiredPskEntry& entry : record.retired_psks) {
+    if (entry.master_psk_b64.empty()) {
+      continue;
+    }
+    auto encrypted = EncryptPskB64(entry.master_psk_b64);
+    if (!encrypted) {
+      return encrypted.error();
+    }
+    entry.master_psk_b64 = *encrypted;
+  }
+  return record;
 }
 
 Roe<sqlite3*> SqlitePskSessionStore::OpenDb() const {
@@ -92,13 +186,26 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
     }
   }
   sqlite3_finalize(stmt);
-  return std::optional<PskSessionRecord>(record);
+  if (!record.master_psk_b64 && record.retired_psks.empty()) {
+    return std::optional<PskSessionRecord>(record);
+  }
+  auto decrypted = DecryptRecord(std::move(record));
+  if (!decrypted) {
+    return decrypted.error();
+  }
+  return std::optional<PskSessionRecord>(*decrypted);
 }
 
 Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
   PskSessionRecord to_save = record;
   ApplyFingerprint(to_save);
   PskBundleCodec::CapRetiredTail(to_save.retired_psks, to_save.session_epoch);
+
+  auto encrypted = EncryptRecord(std::move(to_save));
+  if (!encrypted) {
+    return encrypted.error();
+  }
+  to_save = *encrypted;
 
   auto db = OpenDb();
   if (!db) {

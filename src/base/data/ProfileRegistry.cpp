@@ -1,5 +1,6 @@
 #include "base/data/ProfileRegistry.h"
 
+#include "base/data/AtomicFileWrite.h"
 #include "base/data/SchemaVersion.h"
 
 #include <filesystem>
@@ -93,12 +94,7 @@ Roe<void> ProfileRegistry::Save(const std::string& data_dir, const ProfileRegist
   std::error_code ec;
   std::filesystem::create_directories(data_dir, ec);
 
-  std::ofstream out(RegistryPath(data_dir));
-  if (!out) {
-    return Error("Failed to write profile registry");
-  }
-  out << root.dump(2);
-  return {};
+  return AtomicFileWrite::Write(RegistryPath(data_dir), root.dump(2));
 }
 
 Roe<void> ProfileRegistry::EnsureActiveProfile() {

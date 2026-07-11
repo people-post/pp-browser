@@ -1,3 +1,4 @@
+#include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/ChatHistoryResponder.h"
 #include "base/messaging/ChatHistoryStreamCodec.h"
@@ -15,12 +16,23 @@ namespace {
 
 using namespace pbr;
 
+ByteVector TestDek() {
+  ByteVector dek(kDataEncryptionKeySize);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+
 class ResponderHarness {
 public:
   explicit ResponderHarness(const std::string& suffix)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_chat_history_" + suffix)),
-        store(data_dir.string()), identity(data_dir.string()), psk_store(store.ProfileDbPath()) {
+        store(data_dir.string()), identity(data_dir.string(), "test"), psk_store(store.ProfileDbPath(), "test") {
     std::filesystem::remove_all(data_dir);
+    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
+      throw std::runtime_error("dek setup failed");
+    }
     if (!identity.LoadOrCreate()) {
       throw std::runtime_error("identity load failed");
     }

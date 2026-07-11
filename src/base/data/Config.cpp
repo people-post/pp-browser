@@ -1,6 +1,7 @@
 #include "base/data/Config.h"
 
 #include "base/data/AppPaths.h"
+#include "base/data/AtomicFileWrite.h"
 #include "base/data/ConfigJson.h"
 #include "base/data/LlmPreset.h"
 #include "base/platform/Platform.h"
@@ -102,12 +103,7 @@ Roe<void> Config::SaveToFile(const std::string& path, const AppConfig& config) {
   std::error_code ec;
   std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
 
-  std::ofstream out(path);
-  if (!out) {
-    return Error("Failed to write config file: " + path);
-  }
-  out << root.dump(2);
-  return {};
+  return AtomicFileWrite::Write(path, root.dump(2));
 }
 
 } // namespace pbr

@@ -22,6 +22,8 @@ struct BootstrapOptions {
   int argc = 0;
   char** argv = nullptr;
   std::string profile_override;
+  /** Profile unlock PIN; falls back to PP_BROWSER_PIN. */
+  std::string pin;
 };
 
 } // namespace pbr

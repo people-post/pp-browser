@@ -30,16 +30,27 @@ ByteVector TestMasterPsk() {
   return *bytes;
 }
 
+ByteVector TestDek() {
+  ByteVector dek(32);
+  for (size_t i = 0; i < dek.size(); ++i) {
+    dek[i] = static_cast<uint8_t>(0xa0 + i);
+  }
+  return dek;
+}
+
 class PipelineHarness {
 public:
   explicit PipelineHarness(const std::string& suffix, const ThreadChannel channel)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_cross_cutting_" + suffix)),
         store(data_dir.string()),
-        identity(data_dir.string()),
-        psk_store(store.ProfileDbPath()),
+        identity(data_dir.string(), "test"),
+        psk_store(store.ProfileDbPath(), "test"),
         key_resolver(key_store),
         pipeline(store, key_resolver, psk_store, identity) {
     std::filesystem::remove_all(data_dir);
+    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
+      throw std::runtime_error("Failed to set test DEK");
+    }
 
     auto generated = Ed25519Signer::GenerateKeyPair();
     if (!generated) {

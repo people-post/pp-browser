@@ -1,5 +1,6 @@
 #include "app/Bootstrap.h"
 
+#include "base/crypto/PinResolver.h"
 #include "base/data/AppPaths.h"
 #include "base/data/Config.h"
 #include "base/data/SchemaVersion.h"
@@ -55,7 +56,12 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options) {
     return profile_prefs.error();
   }
 
-  if (auto hub = MessagingHub::Instance().Initialize(*config, profile_data_dir); !hub) {
+  auto pin = PinResolver::Require(options.pin);
+  if (!pin) {
+    return pin.error();
+  }
+
+  if (auto hub = MessagingHub::Instance().Initialize(*config, profile_data_dir, *pin); !hub) {
     return hub.error();
   }
 

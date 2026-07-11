@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include "common/Error.h"
 #include "common/Module.h"
 #include "base/crypto/CryptoTypes.h"
@@ -9,13 +8,15 @@
 #include <mutex>
 #include <string>
 #include <vector>
-#include <vector>
 
 namespace pbr {
 
 class IdentityStore : public Module {
 public:
-  explicit IdentityStore(std::string data_dir);
+  explicit IdentityStore(std::string data_dir, std::string profile_id = {});
+
+  /** Required before LoadOrCreate/Get/Save — DEK from unlocked DataKeyVault. */
+  Roe<void> SetDek(ByteVector dek);
 
   Roe<LocalIdentity> LoadOrCreate();
   Roe<LocalIdentity> Get() const;
@@ -32,9 +33,13 @@ public:
 private:
   Roe<void> EnsureLoaded() const;
   Roe<void> Save() const;
+  Roe<void> RequireDek() const;
   std::string StorePath() const;
+  std::string ProfileId() const;
 
   std::string data_dir_;
+  std::string profile_id_;
+  mutable ByteVector dek_;
   mutable std::mutex mutex_;
   mutable bool loaded_ = false;
   mutable LocalIdentity identity_;

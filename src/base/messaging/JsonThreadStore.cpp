@@ -1,5 +1,6 @@
 #include "base/messaging/JsonThreadStore.h"
 
+#include "base/data/AtomicFileWrite.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/SyncStateCodec.h"
@@ -82,12 +83,7 @@ Roe<void> JsonThreadStore::SaveIndex() const {
   }
   const nlohmann::json root = {{"threads", std::move(threads)}};
 
-  std::ofstream out(IndexPath());
-  if (!out) {
-    return Error("Failed to write thread index");
-  }
-  out << root.dump(2);
-  return {};
+  return AtomicFileWrite::Write(IndexPath(), root.dump(2));
 }
 
 Roe<void> JsonThreadStore::SaveMessages(const std::string& thread_id) const {
@@ -100,12 +96,7 @@ Roe<void> JsonThreadStore::SaveMessages(const std::string& thread_id) const {
   }
   const nlohmann::json root = {{"messages", std::move(messages)}};
 
-  std::ofstream out(ThreadPath(thread_id));
-  if (!out) {
-    return Error("Failed to write thread messages: " + thread_id);
-  }
-  out << root.dump(2);
-  return {};
+  return AtomicFileWrite::Write(ThreadPath(thread_id), root.dump(2));
 }
 
 void JsonThreadStore::Flush() {

@@ -1,7 +1,8 @@
 #include "base/people/ContactsStore.h"
 
-#include "common/Utilities.h"
+#include "base/data/AtomicFileWrite.h"
 #include "base/messaging/MessagingJson.h"
+#include "common/Utilities.h"
 
 #include <algorithm>
 #include <cctype>
@@ -64,12 +65,7 @@ Roe<void> ContactsStore::Save() const {
   }
   const nlohmann::json root = {{"contacts", std::move(contacts)}};
 
-  std::ofstream out(StorePath());
-  if (!out) {
-    return Error("Failed to write contacts.json");
-  }
-  out << root.dump(2);
-  return {};
+  return AtomicFileWrite::Write(StorePath(), root.dump(2));
 }
 
 void ContactsStore::Flush() {

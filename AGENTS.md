@@ -63,6 +63,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | P2P messaging | `src/feature/messaging/`, [docs/P2P_MESSAGING.md](docs/P2P_MESSAGING.md) |
 | SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | E2E symmetric crypto (`base/crypto`) | `src/base/crypto/`, [docs/MESSAGE_ENCRYPTION.md](docs/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
+| At-rest encryption (PIN vault) | `src/base/crypto/DataKeyVault.*`, [docs/AT_REST_ENCRYPTION.md](docs/AT_REST_ENCRYPTION.md) — [projects/at-rest-crypto/](projects/at-rest-crypto/) |
 | Chat storage / memory | [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) — **Waves 1–2 done**; Wave 3 next (v3 ∥ v4) |
 | Config / data / profiles | `src/app/Bootstrap.*`, `src/base/data/`, `src/base/platform/`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
 | In-app settings (Me tab) | `src/feature/ui/SettingsController.*`, `assets/views/settings.rml` |

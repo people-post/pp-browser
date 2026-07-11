@@ -28,16 +28,19 @@ Override data root with `data_dir` in config (supports `~` expansion).
 {data_dir}/profiles/{id}/
   manifest.json
   preferences.json
-  identity.json
+  vault.bin                 # PIN-wrapped DEK (required)
+  identity.enc              # identity JSON under DEK AEAD
   contacts.json
   threads/
-    profile.db              # thread catalog, outbox, chat_targets (SQLite)
+    profile.db              # thread catalog, outbox, chat_targets (PSK columns encrypted)
     {thread_id}/
-      thread.db             # messages, memory, sync_state
+      thread.db             # messages, memory, sync_state (plaintext — D048)
       blobs/                # attachment placeholder
 ```
 
-Legacy flat `threads/index.json` and `{thread_id}.json` are removed on first run after the SQLite migration (development wipe — see [chat-storage D016](projects/chat-storage-and-memory/DECISIONS.md)).
+**PIN:** pass `--pin` or set `PP_BROWSER_PIN`. First run creates `vault.bin`; unlock is mandatory. Forgotten PIN → wipe the profile directory. See [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md).
+
+Legacy flat `threads/index.json` and `{thread_id}.json` are removed on first run after the SQLite migration (development wipe — see [chat-storage D016](projects/chat-storage-and-memory/DECISIONS.md)). Plaintext `identity.json` is not migrated — wipe the profile and recreate.
 
 Phase 1 ships a single `default` profile. Use `--profile NAME` for dev isolation (no account-switcher UI yet).
 
@@ -84,7 +87,7 @@ Open **Me** from the nav rail (person icon). The Me tab shows an **identity card
 
 | Section | Persists to | Scope |
 |---------|-------------|-------|
-| Profile (Me card) | `identity.json` | profile |
+| Profile (Me card) | `identity.enc` (+ `vault.bin`) | profile |
 | Assistant | `config.json` | machine |
 | Integrations | `config.json` | machine |
 | Network | `config.json` | machine |

@@ -91,11 +91,12 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 ---
 
-## E008 — PSK store v1 in `profile.db` `chat_targets`; at-rest encryption deferred
+## E008 — PSK store v1 in `profile.db` `chat_targets`; at-rest via profile DEK
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — superseded `sessions.json`; columns on `chat_targets` (D084).  
-**Decision:** PSK material lives in **`profile.db` → `chat_targets`** for **`e2e`** and **`e2e_public`** channels (D090).  
+**Updated:** 2026-07-11 — at-rest encryption shipped ([at-rest A005](../at-rest-crypto/DECISIONS.md#a005--supersedes-e008-deferred-at-rest-for-psk)); PSK + retired ledger blobs encrypted under profile DEK; fingerprints remain plaintext.  
+**Decision:** PSK material lives in **`profile.db` → `chat_targets`** for **`e2e`** and **`e2e_public`** channels (D090). On disk, `master_psk_b64` and retired `master_psk_b64` entries are **AEAD ciphertext** (base64) under the profile DEK from `vault.bin` — see [AT_REST_ENCRYPTION.md](../../docs/AT_REST_ENCRYPTION.md).  
 **Rationale:** Crypto session is per chat target, not per thread shell; colocating PSK with seq/epoch avoids cross-file races on epoch bump and survives delete/recreate of `local_thread_id`.  
 **Alternatives:** `sessions.json` sidecar (rejected — dual-store sync); PSK in `thread.db` (rejected — shell is ephemeral); block c1 on keychain integration.
 
