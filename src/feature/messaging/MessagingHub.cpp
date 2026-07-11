@@ -166,13 +166,9 @@ void MessagingHub::RegisterContactEndpoints() {
   }
 }
 
-Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir,
-                                   const std::string& pin) {
+Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
   if (initialized_) {
     return {};
-  }
-  if (pin.empty()) {
-    return Error("Profile PIN is required");
   }
 
   config_ = config;
@@ -180,36 +176,15 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   std::error_code ec;
   std::filesystem::create_directories(data_dir_, ec);
 
-  std::string profile_id = std::filesystem::path(data_dir_).filename().string();
-  if (profile_id.empty()) {
-    profile_id = "default";
+  profile_id_ = std::filesystem::path(data_dir_).filename().string();
+  if (profile_id_.empty()) {
+    profile_id_ = "default";
   }
 
-  vault_ = std::make_unique<DataKeyVault>(DataKeyVault::VaultPathForProfile(data_dir_), profile_id);
-  if (!vault_->Exists()) {
-    if (auto created = vault_->Create(pin); !created) {
-      return created.error();
-    }
-  } else if (auto unlocked = vault_->Unlock(pin); !unlocked) {
-    return unlocked.error();
-  }
-  auto dek = vault_->Dek();
-  if (!dek) {
-    return dek.error();
-  }
-
+  vault_ = std::make_unique<DataKeyVault>(DataKeyVault::VaultPathForProfile(data_dir_), profile_id_);
   store_ = std::make_unique<SqliteThreadStore>(data_dir_);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
-  identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id);
-  if (auto set = identity_->SetDek(*dek); !set) {
-    return set.error();
-  }
-
-  if (auto identity = identity_->LoadOrCreate()) {
-    (void)identity;
-  } else {
-    return identity.error();
-  }
+  identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
 
   (void)store_->ReconcileOutbox();
 
@@ -218,15 +193,43 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
 
   InstallServiceClients(config);
 
-  psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id);
-  if (auto set = psk_store_->SetDek(*dek); !set) {
-    return set.error();
-  }
+  psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
-  if (auto libp2p = StartLibp2p(config); !libp2p) {
-    // Direct transport unavailable; messaging still works via relay.
+  // P2P stack without libp2p until secrets unlock (relay-capable once identity exists).
+  p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
+                                                signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
+                                                *psk_store_, nullptr, nullptr);
+  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
+
+  secrets_ready_ = false;
+  initialized_ = true;
+  return {};
+}
+
+bool MessagingHub::HasVault() const {
+  return vault_ && vault_->Exists();
+}
+
+bool MessagingHub::NeedsVaultUnlock() const {
+  return initialized_ && HasVault() && !secrets_ready_;
+}
+
+void MessagingHub::SetOnSecretsReady(std::function<void()> callback) {
+  on_secrets_ready_ = std::move(callback);
+}
+
+void MessagingHub::NotifySecretsReady() {
+  if (on_secrets_ready_) {
+    on_secrets_ready_();
+  }
+}
+
+Roe<void> MessagingHub::BuildMessagingStack() {
+  WireRelayAuthSigner();
+
+  if (auto libp2p = StartLibp2p(config_); !libp2p) {
     logging::getLogger("MessagingHub").warning << "libp2p host start failed: " << libp2p.error().message;
   }
 
@@ -235,15 +238,64 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
                                                 *psk_store_, libp2p_host_.get(), peer_sessions_.get());
   RegisterContactEndpoints();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
-
-  initialized_ = true;
+  if (agent_) {
+    router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, *agent_);
+  }
   return {};
 }
 
-Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string& profile_data_dir,
-                                     const std::string& pin) {
+Roe<void> MessagingHub::EnsureSecretsUnlocked(const std::string& pin) {
   if (!initialized_) {
-    return Initialize(config, profile_data_dir, pin);
+    return Error("Messaging hub not initialized");
+  }
+  if (secrets_ready_) {
+    return {};
+  }
+  if (pin.empty()) {
+    return Error("PIN is required");
+  }
+  if (!vault_) {
+    vault_ = std::make_unique<DataKeyVault>(DataKeyVault::VaultPathForProfile(data_dir_), profile_id_);
+  }
+
+  if (!vault_->Exists()) {
+    if (auto created = vault_->Create(pin); !created) {
+      return created.error();
+    }
+  } else if (!vault_->IsUnlocked()) {
+    if (auto unlocked = vault_->Unlock(pin); !unlocked) {
+      return unlocked.error();
+    }
+  }
+
+  auto dek = vault_->Dek();
+  if (!dek) {
+    return dek.error();
+  }
+  if (auto set = identity_->SetDek(*dek); !set) {
+    return set.error();
+  }
+  if (auto set = psk_store_->SetDek(*dek); !set) {
+    return set.error();
+  }
+  if (auto identity = identity_->LoadOrCreate(); !identity) {
+    return identity.error();
+  } else {
+    (void)identity;
+  }
+
+  if (auto built = BuildMessagingStack(); !built) {
+    return built.error();
+  }
+
+  secrets_ready_ = true;
+  NotifySecretsReady();
+  return {};
+}
+
+Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string& profile_data_dir) {
+  if (!initialized_) {
+    return Initialize(config, profile_data_dir);
   }
 
   config_ = config;
@@ -262,7 +314,9 @@ Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string&
 
 void MessagingHub::BindAgent(AgentSession& agent) {
   agent_ = &agent;
-  router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, agent);
+  if (p2p_) {
+    router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, agent);
+  }
 }
 
 PeerSigningKeyStore& MessagingHub::SigningKeys() {
@@ -270,6 +324,9 @@ PeerSigningKeyStore& MessagingHub::SigningKeys() {
 }
 
 void MessagingHub::TickLibp2p() {
+  if (!secrets_ready_) {
+    return;
+  }
   if (peer_sessions_) {
     peer_sessions_->Tick();
   }
@@ -292,7 +349,9 @@ void MessagingHub::Shutdown() {
   agent_ = nullptr;
   store_->Flush();
   contacts_->Flush();
-  identity_->Flush();
+  if (secrets_ready_) {
+    identity_->Flush();
+  }
   actions_.reset();
   p2p_.reset();
   StopLibp2p();
@@ -319,6 +378,7 @@ void MessagingHub::Shutdown() {
     vault_->Lock();
     vault_.reset();
   }
+  secrets_ready_ = false;
   initialized_ = false;
 }
 

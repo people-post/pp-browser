@@ -4,6 +4,7 @@
 #include "base/platform/PlatformNavigation.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ui/DataModelHost.h"
+#include "feature/ui/PinGateController.h"
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellInterruption.h"
@@ -88,6 +89,13 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("dialog_show_checkbox", &host.state_.dialog.show_checkbox);
     ctor.Bind("dialog_checkbox_label", &host.state_.dialog.checkbox_label);
     ctor.Bind("dialog_checkbox_checked", &host.state_.dialog.checkbox_checked);
+    ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
+    ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
+    ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
+    ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
+    ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
+    ctor.Bind("pin_gate_pin", &host.state_.pin_gate.pin);
+    ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
 
     ctor.BindEventCallback("toggle_auxiliary", &ShellHost::ToggleAuxiliaryCallback);
@@ -100,6 +108,8 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("dialog_ok", &ShellHost::DialogOkCallback);
     ctor.BindEventCallback("dialog_cancel", &ShellHost::DialogCancelCallback);
     ctor.BindEventCallback("dialog_toggle_checkbox", &ShellHost::DialogToggleCheckboxCallback);
+    ctor.BindEventCallback("pin_gate_submit", &ShellHost::PinGateSubmitCallback);
+    ctor.BindEventCallback("pin_gate_cancel", &ShellHost::PinGateCancelCallback);
   });
 }
 
@@ -307,6 +317,13 @@ bool ShellHost::HandleDismiss() {
     DirtyWindow();
     return true;
   }
+  if (state_.pin_gate.active) {
+    if (state_.pin_gate.create_mode) {
+      PinGateController::Instance().OnCancel();
+    }
+    // Unlock: consume Escape without dismissing or quitting.
+    return true;
+  }
   if (!ShellInterruption::DismissTop(state_)) {
     return false;
   }
@@ -332,6 +349,13 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "dialog_show_checkbox");
   DataModelHost::Instance().Dirty("window", "dialog_checkbox_label");
   DataModelHost::Instance().Dirty("window", "dialog_checkbox_checked");
+  DataModelHost::Instance().Dirty("window", "pin_gate_active");
+  DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_title");
+  DataModelHost::Instance().Dirty("window", "pin_gate_message");
+  DataModelHost::Instance().Dirty("window", "pin_gate_error");
+  DataModelHost::Instance().Dirty("window", "pin_gate_pin");
+  DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "activity_visible");
 }
 
@@ -591,6 +615,29 @@ std::string ShellHost::SerializeDialog() const {
   return out.str();
 }
 
+std::string ShellHost::SerializePinGate() const {
+  if (!state_.pin_gate.active) {
+    return {};
+  }
+  std::ostringstream out;
+  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
+  out << "<div class=\"shell-scrim\"></div>";
+  out << "<div class=\"shell-dialog shell-pin-gate\">";
+  out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"pin_gate_title\"></h2>";
+  out << "<p class=\"text shell-dialog-message\" data-rml=\"pin_gate_message\"></p>";
+  out << "<p class=\"text shell-pin-gate-error\" data-rml=\"pin_gate_error\"></p>";
+  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" data-value=\"pin_gate_pin\" "
+         "placeholder=\"PIN\"/>";
+  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" data-if=\"pin_gate_create_mode\" "
+         "data-value=\"pin_gate_pin_confirm\" placeholder=\"Confirm PIN\"/>";
+  out << "<div class=\"shell-dialog-actions row\">";
+  out << "<button class=\"shell-dialog-cancel\" data-if=\"pin_gate_create_mode\" "
+         "data-event-click=\"pin_gate_cancel()\">Not now</button>";
+  out << "<button class=\"shell-dialog-ok\" data-event-click=\"pin_gate_submit()\">Continue</button>";
+  out << "</div></div></div>";
+  return out.str();
+}
+
 std::string ShellHost::SerializeShellRoot() const {
   std::ostringstream out;
   if (state_.layout_mode == LayoutMode::Expanded) {
@@ -601,6 +648,7 @@ std::string ShellHost::SerializeShellRoot() const {
   out << SerializeTransientLayer();
   out << SerializeOverlays();
   out << SerializeDialog();
+  out << SerializePinGate();
   return out.str();
 }
 
@@ -881,6 +929,16 @@ void ShellHost::DialogToggleCheckboxCallback(Rml::DataModelHandle /*model*/, Rml
   ShellHost& host = Instance();
   host.state_.dialog.checkbox_checked = !host.state_.dialog.checkbox_checked;
   host.DirtyWindow();
+}
+
+void ShellHost::PinGateSubmitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& /*args*/) {
+  PinGateController::Instance().OnSubmit();
+}
+
+void ShellHost::PinGateCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& /*args*/) {
+  PinGateController::Instance().OnCancel();
 }
 
 } // namespace pbr

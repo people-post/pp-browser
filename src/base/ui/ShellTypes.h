@@ -23,6 +23,7 @@ enum class InterruptionKind {
   Transient,
   OverlayLayer,
   Dialog,
+  PinGate,
 };
 
 enum class ToastDuration { Short, Long };
@@ -76,6 +77,18 @@ struct DialogState {
   std::function<void(bool confirmed, bool checkbox_checked)> on_result;
 };
 
+/** PIN unlock / create overlay. Unlock is mandatory; create may cancel / Escape. */
+struct PinGateState {
+  bool active = false;
+  bool create_mode = false;
+  Rml::String title;
+  Rml::String message;
+  Rml::String error;
+  Rml::String pin;
+  Rml::String pin_confirm;
+  std::function<void(bool unlocked)> on_result;
+};
+
 struct PaneVisibility {
   bool secondary = false;
   bool primary = true;
@@ -104,6 +117,7 @@ struct ShellState {
   Rml::String banner_message;
   std::vector<ToastEntry> toasts;
   DialogState dialog;
+  PinGateState pin_gate;
 
   bool activity_visible = false;
 

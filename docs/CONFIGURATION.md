@@ -28,7 +28,7 @@ Override data root with `data_dir` in config (supports `~` expansion).
 {data_dir}/profiles/{id}/
   manifest.json
   preferences.json
-  vault.bin                 # PIN-wrapped DEK (required)
+  vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   identity.enc              # identity JSON under DEK AEAD
   contacts.json
   threads/
@@ -38,7 +38,7 @@ Override data root with `data_dir` in config (supports `~` expansion).
       blobs/                # attachment placeholder
 ```
 
-**PIN:** pass `--pin` or set `PP_BROWSER_PIN`. First run creates `vault.bin`; unlock is mandatory. Forgotten PIN → wipe the profile directory. See [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md).
+**PIN:** Interactive unlock/create uses an in-app modal. `--pin` / `PP_BROWSER_PIN` remain optional for tests/CI. If `vault.bin` exists, unlock is required soon after UI load (no cancel). If not, PIN create is deferred until first secrets use; the user may dismiss and retry later. Forgotten PIN → wipe the profile directory. See [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md).
 
 Legacy flat `threads/index.json` and `{thread_id}.json` are removed on first run after the SQLite migration (development wipe — see [chat-storage D016](projects/chat-storage-and-memory/DECISIONS.md)). Plaintext `identity.json` is not migrated — wipe the profile and recreate.
 

@@ -30,12 +30,22 @@ class MessagingHub {
 public:
   static MessagingHub& Instance();
 
-  Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir,
-                       const std::string& pin);
-  Roe<void> Reinitialize(const AppConfig& config, const std::string& profile_data_dir,
-                         const std::string& pin = {});
+  /** Core store/inbox/AI — no PIN. Secrets stay locked until EnsureSecretsUnlocked. */
+  Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir);
+  Roe<void> Reinitialize(const AppConfig& config, const std::string& profile_data_dir);
   void Shutdown();
   bool IsInitialized() const { return initialized_; }
+
+  bool HasVault() const;
+  bool NeedsVaultUnlock() const;
+  bool AreSecretsReady() const { return secrets_ready_; }
+
+  /**
+   * Create vault (if missing) or unlock existing vault with PIN, then load identity,
+   * enable PSK encryption, and start libp2p.
+   */
+  Roe<void> EnsureSecretsUnlocked(const std::string& pin);
+
   DataKeyVault* Vault();
   bool IsVaultUnlocked() const;
 
@@ -60,6 +70,8 @@ public:
   /** Drop cold peer connections (Android background). */
   void SuspendLibp2pColdPeers();
 
+  void SetOnSecretsReady(std::function<void()> callback);
+
 private:
   MessagingHub() = default;
 
@@ -69,8 +81,11 @@ private:
   Roe<void> StartLibp2p(const AppConfig& config);
   void StopLibp2p();
   void RegisterContactEndpoints();
+  Roe<void> BuildMessagingStack();
+  void NotifySecretsReady();
 
   std::string data_dir_;
+  std::string profile_id_;
   AppConfig config_;
   AgentSession* agent_ = nullptr;
   std::unique_ptr<DataKeyVault> vault_;
@@ -100,7 +115,9 @@ private:
   std::unique_ptr<P2pMessagingService> p2p_;
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
+  std::function<void()> on_secrets_ready_;
   bool initialized_ = false;
+  bool secrets_ready_ = false;
 };
 
 } // namespace pbr

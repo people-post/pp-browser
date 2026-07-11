@@ -30,6 +30,7 @@ set(PP_BROWSER_FEATURE_SOURCES
   ui/ShellLayout.cpp
   ui/ShellFeedback.cpp
   ui/ShellInterruption.cpp
+  ui/PinGateController.cpp
   ui/DocumentLoader.cpp
   ui/RmlMount.cpp
   ui/DataModelHost.cpp

@@ -30,3 +30,11 @@
 - [x] `docs/AT_REST_ENCRYPTION.md`
 - [x] Update `CONFIGURATION.md`
 - [x] Supersede E008 deferred note; cross-link D048
+
+## a5 — GUI unlock / deferred create (A006)
+
+- [x] `MessagingHub::Initialize` without PIN; `EnsureSecretsUnlocked`
+- [x] `PinGateController` + shell overlay
+- [x] Early unlock when vault exists; defer create until secrets use
+- [x] Gate Register / Secure message / PSK actions
+- [x] CLI/env PIN optional for automation only

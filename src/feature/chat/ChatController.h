@@ -18,6 +18,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -166,6 +167,8 @@ private:
   void OnShellLayoutSynced();
   void OnLoadOlderHistory();
   void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
+  void WireMessagingBindings();
+  void WithSecrets(std::function<void()> action);
 
   std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
   bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;

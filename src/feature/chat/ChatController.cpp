@@ -18,6 +18,7 @@
 #include "base/messaging/ThreadTypes.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DocumentLoader.h"
+#include "feature/ui/PinGateController.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/ShellFeedback.h"
 #include "base/data/Config.h"
@@ -912,31 +913,33 @@ void ChatController::OnStartNewSecureChat() {
   if (!messaging_ready_) {
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
+  WithSecrets([this]() {
+    const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+    if (thread_id.empty()) {
+      return;
+    }
 
-  ShellFeedback::ShowConfirm(
-      ShellHost::Instance().State(), "Start new secure chat?",
-      "This bumps the session epoch and cancels unsent messages from the previous epoch. "
-      "Your saved transcript stays on this device.",
-      [this, thread_id](bool ok) {
-        if (!ok) {
-          return;
-        }
-        auto result = MessagingHub::Instance().P2p().StartNewSecureChat(thread_id);
-        if (!result) {
-          chat_.status = result.error().message.c_str();
-        } else {
-          chat_.status = "New secure session started.";
-        }
-        RefreshFromMessaging();
-        DirtyChatChrome();
-        ShellHost::Instance().DirtyWindow();
-      });
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
+    ShellFeedback::ShowConfirm(
+        ShellHost::Instance().State(), "Start new secure chat?",
+        "This bumps the session epoch and cancels unsent messages from the previous epoch. "
+        "Your saved transcript stays on this device.",
+        [this, thread_id](bool ok) {
+          if (!ok) {
+            return;
+          }
+          auto result = MessagingHub::Instance().P2p().StartNewSecureChat(thread_id);
+          if (!result) {
+            chat_.status = result.error().message.c_str();
+          } else {
+            chat_.status = "New secure session started.";
+          }
+          RefreshFromMessaging();
+          DirtyChatChrome();
+          ShellHost::Instance().DirtyWindow();
+        });
+    ShellHost::Instance().RequestSyncLayout();
+    ShellHost::Instance().DirtyWindow();
+  });
 }
 
 void ChatController::OnPauseIntegrityOnly() {
@@ -961,24 +964,26 @@ void ChatController::OnCopyPskKey() {
   if (!messaging_ready_) {
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-  auto exported = MessagingHub::Instance().P2p().EnsurePskGenerated(thread_id);
-  if (!exported) {
-    chat_.status = exported.error().message.c_str();
-    DirtyChatChrome();
-    return;
-  }
-  chat_.psk_export_b64 = exported->master_psk_b64.c_str();
-  chat_.psk_fingerprint = exported->fingerprint.c_str();
-  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
-    system->SetClipboardText(chat_.psk_export_b64);
-  }
-  chat_.status = "Encryption key copied.";
-  DirtyChatHeader();
-  ShellHost::Instance().DirtyWindow();
+  WithSecrets([this]() {
+    const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+    if (thread_id.empty()) {
+      return;
+    }
+    auto exported = MessagingHub::Instance().P2p().EnsurePskGenerated(thread_id);
+    if (!exported) {
+      chat_.status = exported.error().message.c_str();
+      DirtyChatChrome();
+      return;
+    }
+    chat_.psk_export_b64 = exported->master_psk_b64.c_str();
+    chat_.psk_fingerprint = exported->fingerprint.c_str();
+    if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+      system->SetClipboardText(chat_.psk_export_b64);
+    }
+    chat_.status = "Encryption key copied.";
+    DirtyChatHeader();
+    ShellHost::Instance().DirtyWindow();
+  });
 }
 
 void ChatController::OnTogglePskImport() {
@@ -989,6 +994,10 @@ void ChatController::OnTogglePskImport() {
 
 void ChatController::OnImportPsk() {
   if (!messaging_ready_) {
+    return;
+  }
+  if (!MessagingHub::Instance().AreSecretsReady()) {
+    WithSecrets([this]() { OnImportPsk(); });
     return;
   }
   const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
@@ -1026,6 +1035,10 @@ void ChatController::OnVerifyPsk() {
   if (!messaging_ready_) {
     return;
   }
+  if (!MessagingHub::Instance().AreSecretsReady()) {
+    WithSecrets([this]() { OnVerifyPsk(); });
+    return;
+  }
   const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
   if (thread_id.empty()) {
     return;
@@ -1055,6 +1068,10 @@ void ChatController::OnVerifyPsk() {
 
 void ChatController::OnRotatePskExport() {
   if (!messaging_ready_) {
+    return;
+  }
+  if (!MessagingHub::Instance().AreSecretsReady()) {
+    WithSecrets([this]() { OnRotatePskExport(); });
     return;
   }
   const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
@@ -1204,7 +1221,10 @@ void ChatController::UpdateThreadChrome() {
       }
 
       if (!chat_.show_compromised_banner) {
-        if (auto status = MessagingHub::Instance().P2p().GetPskStatus(thread->id)) {
+        if (!MessagingHub::Instance().AreSecretsReady()) {
+          chat_.show_psk_setup_banner = true;
+          chat_.compose_disabled = true;
+        } else if (auto status = MessagingHub::Instance().P2p().GetPskStatus(thread->id)) {
           chat_.psk_has_key = status->has_psk;
           chat_.psk_verified = status->verified;
           chat_.psk_fingerprint = status->fingerprint.c_str();
@@ -1895,42 +1915,34 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
   }
 }
 
-bool ChatController::Setup(Rml::Context* context) {
-  if (!context) {
-    return false;
+void ChatController::WithSecrets(std::function<void()> action) {
+  PinGateController::Instance().EnsureUnlocked(
+      [this, action = std::move(action)](const bool unlocked) {
+        if (!unlocked) {
+          ShellFeedback::ShowToast(ShellHost::Instance().State(), "PIN required to continue");
+          ShellHost::Instance().DirtyWindow();
+          return;
+        }
+        if (action) {
+          action();
+        }
+      });
+}
+
+void ChatController::WireMessagingBindings() {
+  if (!MessagingHub::Instance().IsInitialized() || !agent_) {
+    return;
   }
-
-  context_ = context;
-  AppLifecycle::AddBackgroundListener([this]() { OnApplicationPause(); });
-  AppLifecycle::AddForegroundListener([this]() {
-    if (!messaging_ready_) {
-      return;
-    }
-    const std::string active = MessagingHub::Instance().Inbox().ActiveThreadId();
-    if (!active.empty()) {
-      MessagingHub::Instance().P2p().WarmPeerForThread(active);
-    }
+  messaging_ready_ = true;
+  agent_->SetThreadStore(&MessagingHub::Instance().Store());
+  MessagingHub::Instance().BindAgent(*agent_);
+  MessagingHub::Instance().P2p().SetOnMessagesChanged([this]() { RefreshFromMessaging(); });
+  MessagingHub::Instance().P2p().SetOnDeliveryNotice([this](const std::string& message) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
+    ShellHost::Instance().DirtyWindow();
   });
-  const AppConfig& config = SessionStore::Instance().Snapshot().config;
-  ClearFormState();
-  widgets_by_entry_.clear();
-  chat_ = {};
-  shell_ = {};
-  shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
-  pending_reply_.reset();
-  use_llm_ = !config.llm.base_url.empty();
-  agent_.emplace();
-
-  if (MessagingHub::Instance().IsInitialized()) {
-    messaging_ready_ = true;
-    agent_->SetThreadStore(&MessagingHub::Instance().Store());
-    MessagingHub::Instance().BindAgent(*agent_);
-    MessagingHub::Instance().P2p().SetOnMessagesChanged([this]() { RefreshFromMessaging(); });
-    MessagingHub::Instance().P2p().SetOnDeliveryNotice([this](const std::string& message) {
-      ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
-      ShellHost::Instance().DirtyWindow();
-    });
-    MessagingHub::Instance().Inbox().SetOnThreadChanged([this]() { RefreshFromMessaging(); });
+  MessagingHub::Instance().Inbox().SetOnThreadChanged([this]() { RefreshFromMessaging(); });
+  if (MessagingHub::Instance().HasRouter()) {
     MessagingHub::Instance().Router().SetOnLocalAction(
         [this](const std::string& message, const std::optional<std::string>& payload) {
           HandleLocalAction(message, payload);
@@ -1951,12 +1963,51 @@ bool ChatController::Setup(Rml::Context* context) {
                 done(ok, dont_ask);
               });
         });
-    MessagingHub::Instance().Actions().SetOnActionMessage([this](const std::string& message) {
-      ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
-      ShellHost::Instance().DirtyWindow();
-    });
-    RefreshFromMessaging();
+  }
+  MessagingHub::Instance().Actions().SetOnActionMessage([this](const std::string& message) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
+    ShellHost::Instance().DirtyWindow();
+  });
+  RefreshFromMessaging();
+  if (MessagingHub::Instance().AreSecretsReady()) {
     MessagingHub::Instance().P2p().TailSyncActiveE2eThread();
+  }
+}
+
+bool ChatController::Setup(Rml::Context* context) {
+  if (!context) {
+    return false;
+  }
+
+  context_ = context;
+  AppLifecycle::AddBackgroundListener([this]() { OnApplicationPause(); });
+  AppLifecycle::AddForegroundListener([this]() {
+    if (!messaging_ready_) {
+      return;
+    }
+    const std::string active = MessagingHub::Instance().Inbox().ActiveThreadId();
+    if (!active.empty() && MessagingHub::Instance().AreSecretsReady()) {
+      MessagingHub::Instance().P2p().WarmPeerForThread(active);
+    }
+  });
+  const AppConfig& config = SessionStore::Instance().Snapshot().config;
+  ClearFormState();
+  widgets_by_entry_.clear();
+  chat_ = {};
+  shell_ = {};
+  shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
+  pending_reply_.reset();
+  use_llm_ = !config.llm.base_url.empty();
+  agent_.emplace();
+
+  if (MessagingHub::Instance().IsInitialized()) {
+    WireMessagingBindings();
+    MessagingHub::Instance().SetOnSecretsReady([this]() {
+      WireMessagingBindings();
+      if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
+        SettingsController::Instance().OnNavTabActivated();
+      }
+    });
   }
 
   agent_->Configure(config);
@@ -2153,6 +2204,8 @@ bool ChatController::Setup(Rml::Context* context) {
   ShellHost::Instance().Update(context);
   ShellHost::Instance().SyncLayout();
 
+  PinGateController::Instance().PromptUnlockIfVaultExists();
+
   if (messaging_ready_) {
     OnHomeTabActivated();
   }
@@ -2194,7 +2247,9 @@ void ChatController::Update() {
 
   if (messaging_ready_ && AppLifecycle::IsForeground()) {
     MessagingHub::Instance().TickLibp2p();
-    MessagingHub::Instance().P2p().PollAndMerge();
+    if (MessagingHub::Instance().AreSecretsReady()) {
+      MessagingHub::Instance().P2p().PollAndMerge();
+    }
   }
 
   if (!agent_) {

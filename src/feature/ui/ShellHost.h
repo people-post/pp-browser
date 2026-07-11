@@ -64,6 +64,8 @@ public:
   static void DialogOkCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void DialogCancelCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void DialogToggleCheckboxCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void PinGateSubmitCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void PinGateCancelCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   static bool RegisterWindowModel(Rml::Context* context);
 
@@ -77,6 +79,7 @@ private:
   std::string SerializeCompactBase() const;
   std::string SerializeOverlays() const;
   std::string SerializeDialog() const;
+  std::string SerializePinGate() const;
   std::string SerializeTransientLayer() const;
   const char* NavContentKey() const;
   void MountPaneBodies();

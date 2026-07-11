@@ -6,7 +6,7 @@ Normative spec for profile secrets on disk. Planning ADRs: [projects/at-rest-cry
 
 ## Overview
 
-- **Mandatory PIN** per profile (`--pin` or `PP_BROWSER_PIN`).
+- **PIN per profile** — collected in-app; `--pin` / `PP_BROWSER_PIN` optional for tests/CI.
 - Random **32-byte DEK** wrapped by a PIN-derived KEK (Argon2id).
 - **XChaCha20-Poly1305** encrypts identity and PSK material under the DEK.
 - Whole-file replaces use **atomic write** (tmp → fsync → rename).
@@ -61,11 +61,11 @@ JSON fields: `public_key_b64`, `private_key_b64`, `kem_*`, `nickname`, `relay_us
 
 ## Unlock flow
 
-1. Resolve PIN (`--pin` else `PP_BROWSER_PIN`).
-2. If no `vault.bin` → create vault + DEK.
-3. Else unlock vault → DEK in memory.
-4. Load `identity.enc`; enable PSK store decrypt/encrypt.
-5. Lock clears DEK (`sodium_memzero`).
+1. App starts without requiring a PIN (local AI/chat works).
+2. **If `vault.bin` exists:** blocking unlock modal after UI load.
+3. **If no vault:** PIN create is deferred until first secrets use (Register, Secure message, PSK actions, etc.) via `EnsureSecretsUnlocked`. User may cancel (“Not now”) and retry later.
+4. Optional automation: `--pin` or `PP_BROWSER_PIN` still unlocks at bootstrap for tests/CI.
+5. Lock on exit clears DEK (`sodium_memzero`).
 
 ## Threat model (v1)
 
@@ -77,4 +77,4 @@ JSON fields: `public_key_b64`, `private_key_b64`, `kem_*`, `nickname`, `relay_us
 
 ## Test fixtures
 
-Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore::SetDek` with a fixed DEK instead of a PIN UI.
+Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`.

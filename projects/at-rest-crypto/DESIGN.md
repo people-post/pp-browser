@@ -36,7 +36,7 @@ base/data
 
 ## PIN policy
 
-- Mandatory per profile.
-- Provide via `--pin` or `PP_BROWSER_PIN`.
-- First run creates `vault.bin`; subsequent runs unlock.
+- Collected in-app (blocking overlay). CLI/env optional for automation.
+- No vault → defer create until first secrets use; user may cancel and retry later.
+- Vault exists → unlock after UI load (mandatory; no cancel).
 - No recovery key in v1.

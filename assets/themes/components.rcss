@@ -1059,6 +1059,17 @@ select selectbox option {
   cursor: pointer;
 }
 
+.shell-pin-gate-input {
+  width: 100%;
+  margin-bottom: 10dp;
+}
+
+.shell-pin-gate-error {
+  min-height: 1.2em;
+  margin-bottom: 8dp;
+  color: #b42318;
+}
+
 .chat-empty {
   padding: 24dp;
   margin-bottom: 16dp;

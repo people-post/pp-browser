@@ -3,6 +3,9 @@
 namespace pbr {
 
 InterruptionKind ShellInterruption::Top(const ShellState& state) {
+  if (state.pin_gate.active) {
+    return InterruptionKind::PinGate;
+  }
   if (state.dialog.active) {
     return InterruptionKind::Dialog;
   }
@@ -23,6 +26,9 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
 
 bool ShellInterruption::DismissTop(ShellState& state) {
   switch (Top(state)) {
+  case InterruptionKind::PinGate:
+    // Handled in ShellHost::HandleDismiss (create cancels; unlock blocks).
+    return false;
   case InterruptionKind::Dialog:
     state.dialog = {};
     state.transient_active = !state.transient_stack.empty();

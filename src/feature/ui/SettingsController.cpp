@@ -4,6 +4,7 @@
 #include "base/platform/BrowserThread.h"
 #include "feature/settings/ProfileSettingsSection.h"
 #include "feature/ui/DataModelHost.h"
+#include "feature/ui/PinGateController.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
 
@@ -617,15 +618,22 @@ void SettingsController::OnRemoveMcpServerCallback(Rml::DataModelHandle /*model*
 
 void SettingsController::OnRegisterProfile() {
   PullBindingsToUiState();
-  if (auto registered = ProfileSettingsSection::RegisterIdentity(ui_state_); !registered) {
-    status_ = registered.error().message;
-    DataModelHost::Instance().Dirty("settings", "status");
-    return;
-  }
-  status_ = "";
-  PushUiStateToBindings();
-  DirtyAll();
-  MaybeShowSaveToast("profile");
+  PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
+    if (!unlocked) {
+      status_ = "PIN required to register";
+      DataModelHost::Instance().Dirty("settings", "status");
+      return;
+    }
+    if (auto registered = ProfileSettingsSection::RegisterIdentity(ui_state_); !registered) {
+      status_ = registered.error().message;
+      DataModelHost::Instance().Dirty("settings", "status");
+      return;
+    }
+    status_ = "";
+    PushUiStateToBindings();
+    DirtyAll();
+    MaybeShowSaveToast("profile");
+  });
 }
 
 void SettingsController::OnCopyProfileId() {

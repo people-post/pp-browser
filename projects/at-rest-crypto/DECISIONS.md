@@ -28,8 +28,9 @@
 **Rationale:** Fixed binary layout; AAD prevents file swap across purposes/profiles.  
 **Alternatives:** JSON vault; separate AEAD library.
 
-## A005 — Supersedes E008 deferred at-rest for PSK
+## A006 — GUI PIN; defer create; early unlock if vault exists
 
 **Date:** 2026-07-11  
-**Decision:** PSK material on `chat_targets` is stored encrypted under the profile DEK. E008’s “at-rest encryption deferred” is closed for PSK. Fingerprints remain plaintext for display.  
-**Cross-ref:** [e2e E008](../e2e-message-crypto/DECISIONS.md#e008--psk-store-v1-in-profiledb-chat_targets-at-rest-encryption-deferred).
+**Decision:** PIN is collected in-app (blocking overlay). CLI/env PIN is optional for automation only. **No vault:** defer PIN create until `EnsureSecretsUnlocked` (first secrets use); create dialog may be cancelled (“Not now” / Escape). **Vault exists:** require unlock after UI load before secrets APIs (no cancel). Single hub API owns both paths.  
+**Rationale:** Normal users need GUI; deferring create keeps local AI light; early unlock when vault exists avoids half-unlocked sync/E2E paths.  
+**Alternatives:** Mandatory CLI PIN; defer unlock even when vault exists.

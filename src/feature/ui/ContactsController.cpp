@@ -8,6 +8,7 @@
 #include "feature/chat/ChatController.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
+#include "feature/ui/PinGateController.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
 
@@ -452,21 +453,28 @@ void ContactsController::OnSecureMessage() {
     return;
   }
 
-  const std::string contact_id = selected_.id.c_str();
-  auto contact = MessagingHub::Instance().Contacts().Get(contact_id);
-  if (contact && *contact) {
-    MessagingHub::Instance().P2p().RegisterContactDirectEndpoints(**contact);
-  }
-  auto thread = MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
-  if (!thread) {
-    return;
-  }
-  (void)MessagingHub::Instance().P2p().EnsurePskGenerated(thread->id);
-  MessagingHub::Instance().P2p().WarmPeerForThread(thread->id);
+  PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
+    if (!unlocked) {
+      ShellFeedback::ShowToast(ShellHost::Instance().State(), "PIN required to continue");
+      ShellHost::Instance().DirtyWindow();
+      return;
+    }
+    const std::string contact_id = selected_.id.c_str();
+    auto contact = MessagingHub::Instance().Contacts().Get(contact_id);
+    if (contact && *contact) {
+      MessagingHub::Instance().P2p().RegisterContactDirectEndpoints(**contact);
+    }
+    auto thread = MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
+    if (!thread) {
+      return;
+    }
+    (void)MessagingHub::Instance().P2p().EnsurePskGenerated(thread->id);
+    MessagingHub::Instance().P2p().WarmPeerForThread(thread->id);
 
-  ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-  ShellHost::Instance().SetPrimaryPane("chat");
-  ChatController::Instance().FinalizeThreadDisplay();
+    ShellHost::Instance().SelectNavTab(NavTab::Sessions);
+    ShellHost::Instance().SetPrimaryPane("chat");
+    ChatController::Instance().FinalizeThreadDisplay();
+  });
 }
 
 void ContactsController::OnFindSomeone() {
