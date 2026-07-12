@@ -19,7 +19,7 @@ SettingsFlushMode ProfileSettingsSection::FlushMode() const {
 }
 
 void ProfileSettingsSection::SyncFromSession(const BootstrapResult& /*bootstrap*/, SettingsUiState& state) {
-  if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().AreSecretsReady()) {
+  if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().IsMessagingReady()) {
     return;
   }
   auto identity = MessagingHub::Instance().Identity().Get();
@@ -48,7 +48,7 @@ Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& /*
   if (!MessagingHub::Instance().IsInitialized()) {
     return Error("Messaging hub not initialized");
   }
-  if (!MessagingHub::Instance().AreSecretsReady()) {
+  if (!MessagingHub::Instance().IsMessagingReady()) {
     return Error("Unlock profile PIN to save identity");
   }
 
@@ -87,7 +87,7 @@ Roe<void> ProfileSettingsSection::RegisterIdentity(SettingsUiState& state) {
   if (!MessagingHub::Instance().IsInitialized()) {
     return Error("Messaging hub not initialized");
   }
-  if (!MessagingHub::Instance().AreSecretsReady()) {
+  if (!MessagingHub::Instance().IsMessagingReady()) {
     return Error("Unlock profile PIN to register");
   }
 

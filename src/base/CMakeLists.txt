@@ -74,6 +74,7 @@ set(PP_BROWSER_BASE_SOURCES
   crypto/FileCipher.cpp
   crypto/DataKeyVault.cpp
   crypto/PinResolver.cpp
+  crypto/ProfileSecretsService.cpp
   ai/LlmClient.cpp
   ai/PromptBuilder.cpp
   ai/RmlValidator.cpp

@@ -2,6 +2,7 @@
 
 #include "base/crypto/PinDefaults.h"
 #include "base/crypto/PinResolver.h"
+#include "base/crypto/ProfileSecretsService.h"
 #include "base/data/AppPaths.h"
 #include "base/data/Config.h"
 #include "base/data/SchemaVersion.h"
@@ -11,6 +12,17 @@
 #include "base/platform/PlatformLogSink.h"
 
 namespace pbr {
+
+namespace {
+
+Roe<void> UnlockProfileForBootstrap(const std::string& pin) {
+  if (auto unlocked = ProfileSecretsService::Instance().Unlock(pin); !unlocked) {
+    return unlocked.error();
+  }
+  return MessagingHub::Instance().EnsureMessagingReady();
+}
+
+} // namespace
 
 Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options) {
   PlatformServices::Register();
@@ -57,18 +69,22 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options) {
     return profile_prefs.error();
   }
 
+  if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_data_dir); !secrets) {
+    return secrets.error();
+  }
+
   if (auto hub = MessagingHub::Instance().Initialize(*config, profile_data_dir); !hub) {
     return hub.error();
   }
 
   // Optional CLI/env unlock for tests/automation — GUI handles interactive unlock.
   if (auto pin = PinResolver::Resolve(options.pin); pin) {
-    if (auto unlocked = MessagingHub::Instance().EnsureSecretsUnlocked(*pin); !unlocked) {
+    if (auto unlocked = UnlockProfileForBootstrap(*pin); !unlocked) {
       return unlocked.error();
     }
-  } else if (profile_prefs->pin_is_default && MessagingHub::Instance().HasVault() &&
-             !MessagingHub::Instance().AreSecretsReady()) {
-    (void)MessagingHub::Instance().EnsureSecretsUnlocked(kDefaultProfilePin);
+  } else if (profile_prefs->pin_is_default && ProfileSecretsService::Instance().HasVault() &&
+             !ProfileSecretsService::Instance().IsUnlocked()) {
+    (void)UnlockProfileForBootstrap(kDefaultProfilePin);
   }
 
   BootstrapResult result{};

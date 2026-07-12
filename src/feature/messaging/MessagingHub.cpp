@@ -6,6 +6,7 @@
 
 #include "feature/ai/AgentSession.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/ProfileSecretsService.h"
 #include "base/people/ContactTypes.h"
 #include "base/platform/Platform.h"
 #include "common/Logger.h"
@@ -181,7 +182,6 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     profile_id_ = "default";
   }
 
-  vault_ = std::make_unique<DataKeyVault>(DataKeyVault::VaultPathForProfile(data_dir_), profile_id_);
   store_ = std::make_unique<SqliteThreadStore>(data_dir_);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
@@ -194,35 +194,30 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   InstallServiceClients(config);
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
+  ProfileSecretsService& secrets = ProfileSecretsService::Instance();
+  secrets.RegisterDekConsumer(identity_.get());
+  secrets.RegisterDekConsumer(psk_store_.get());
   signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
-  // P2P stack without libp2p until secrets unlock (relay-capable once identity exists).
+  // P2P stack without libp2p until profile unlock (relay-capable once identity exists).
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, nullptr, nullptr);
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
 
-  secrets_ready_ = false;
+  messaging_ready_ = false;
   initialized_ = true;
   return {};
 }
 
-bool MessagingHub::HasVault() const {
-  return vault_ && vault_->Exists();
+void MessagingHub::SetOnMessagingReady(std::function<void()> callback) {
+  on_messaging_ready_ = std::move(callback);
 }
 
-bool MessagingHub::NeedsVaultUnlock() const {
-  return initialized_ && HasVault() && !secrets_ready_;
-}
-
-void MessagingHub::SetOnSecretsReady(std::function<void()> callback) {
-  on_secrets_ready_ = std::move(callback);
-}
-
-void MessagingHub::NotifySecretsReady() {
-  if (on_secrets_ready_) {
-    on_secrets_ready_();
+void MessagingHub::NotifyMessagingReady() {
+  if (on_messaging_ready_) {
+    on_messaging_ready_();
   }
 }
 
@@ -244,39 +239,15 @@ Roe<void> MessagingHub::BuildMessagingStack() {
   return {};
 }
 
-Roe<void> MessagingHub::EnsureSecretsUnlocked(const std::string& pin) {
+Roe<void> MessagingHub::EnsureMessagingReady() {
   if (!initialized_) {
     return Error("Messaging hub not initialized");
   }
-  if (secrets_ready_) {
+  if (messaging_ready_) {
     return {};
   }
-  if (pin.empty()) {
-    return Error("PIN is required");
-  }
-  if (!vault_) {
-    vault_ = std::make_unique<DataKeyVault>(DataKeyVault::VaultPathForProfile(data_dir_), profile_id_);
-  }
-
-  if (!vault_->Exists()) {
-    if (auto created = vault_->Create(pin); !created) {
-      return created.error();
-    }
-  } else if (!vault_->IsUnlocked()) {
-    if (auto unlocked = vault_->Unlock(pin); !unlocked) {
-      return unlocked.error();
-    }
-  }
-
-  auto dek = vault_->Dek();
-  if (!dek) {
-    return dek.error();
-  }
-  if (auto set = identity_->SetDek(*dek); !set) {
-    return set.error();
-  }
-  if (auto set = psk_store_->SetDek(*dek); !set) {
-    return set.error();
+  if (!ProfileSecretsService::Instance().IsUnlocked()) {
+    return Error("Profile vault is locked");
   }
   if (auto identity = identity_->LoadOrCreate(); !identity) {
     return identity.error();
@@ -288,8 +259,8 @@ Roe<void> MessagingHub::EnsureSecretsUnlocked(const std::string& pin) {
     return built.error();
   }
 
-  secrets_ready_ = true;
-  NotifySecretsReady();
+  messaging_ready_ = true;
+  NotifyMessagingReady();
   return {};
 }
 
@@ -324,7 +295,7 @@ PeerSigningKeyStore& MessagingHub::SigningKeys() {
 }
 
 void MessagingHub::TickLibp2p() {
-  if (!secrets_ready_) {
+  if (!messaging_ready_) {
     return;
   }
   if (peer_sessions_) {
@@ -349,7 +320,7 @@ void MessagingHub::Shutdown() {
   agent_ = nullptr;
   store_->Flush();
   contacts_->Flush();
-  if (secrets_ready_) {
+  if (messaging_ready_) {
     identity_->Flush();
   }
   actions_.reset();
@@ -357,6 +328,13 @@ void MessagingHub::Shutdown() {
   StopLibp2p();
   signing_resolver_.reset();
   kem_resolver_.reset();
+  ProfileSecretsService& secrets = ProfileSecretsService::Instance();
+  if (identity_) {
+    secrets.UnregisterDekConsumer(identity_.get());
+  }
+  if (psk_store_) {
+    secrets.UnregisterDekConsumer(psk_store_.get());
+  }
   psk_store_.reset();
   inbox_.reset();
   http_relay_.reset();
@@ -374,20 +352,8 @@ void MessagingHub::Shutdown() {
   identity_.reset();
   contacts_.reset();
   store_.reset();
-  if (vault_) {
-    vault_->Lock();
-    vault_.reset();
-  }
-  secrets_ready_ = false;
+  messaging_ready_ = false;
   initialized_ = false;
-}
-
-DataKeyVault* MessagingHub::Vault() {
-  return vault_.get();
-}
-
-bool MessagingHub::IsVaultUnlocked() const {
-  return vault_ && vault_->IsUnlocked();
 }
 
 InboxController& MessagingHub::Inbox() {

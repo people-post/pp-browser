@@ -106,6 +106,15 @@ Roe<void> IdentityStore::SetDek(ByteVector dek) {
   return {};
 }
 
+void IdentityStore::ClearDek() {
+  std::lock_guard lock(mutex_);
+  if (!dek_.empty()) {
+    sodium_memzero(dek_.data(), dek_.size());
+    dek_.clear();
+  }
+  loaded_ = false;
+}
+
 Roe<void> IdentityStore::RequireDek() const {
   if (dek_.size() != kDataEncryptionKeySize) {
     return Error("IdentityStore DEK not set (unlock profile vault first)");

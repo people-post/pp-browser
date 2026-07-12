@@ -11,6 +11,7 @@
 #include "feature/chat/ChatWidgetStateBuilder.h"
 #include "common/Utilities.h"
 #include "feature/messaging/MessagingHub.h"
+#include "base/crypto/ProfileSecretsService.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/SendRelayOptions.h"
@@ -996,7 +997,7 @@ void ChatController::OnImportPsk() {
   if (!messaging_ready_) {
     return;
   }
-  if (!MessagingHub::Instance().AreSecretsReady()) {
+  if (!MessagingHub::Instance().IsMessagingReady()) {
     WithSecrets([this]() { OnImportPsk(); });
     return;
   }
@@ -1035,7 +1036,7 @@ void ChatController::OnVerifyPsk() {
   if (!messaging_ready_) {
     return;
   }
-  if (!MessagingHub::Instance().AreSecretsReady()) {
+  if (!MessagingHub::Instance().IsMessagingReady()) {
     WithSecrets([this]() { OnVerifyPsk(); });
     return;
   }
@@ -1070,7 +1071,7 @@ void ChatController::OnRotatePskExport() {
   if (!messaging_ready_) {
     return;
   }
-  if (!MessagingHub::Instance().AreSecretsReady()) {
+  if (!MessagingHub::Instance().IsMessagingReady()) {
     WithSecrets([this]() { OnRotatePskExport(); });
     return;
   }
@@ -1221,7 +1222,7 @@ void ChatController::UpdateThreadChrome() {
       }
 
       if (!chat_.show_compromised_banner) {
-        if (!MessagingHub::Instance().AreSecretsReady()) {
+        if (!MessagingHub::Instance().IsMessagingReady()) {
           chat_.show_psk_setup_banner = true;
           chat_.compose_disabled = true;
         } else if (auto status = MessagingHub::Instance().P2p().GetPskStatus(thread->id)) {
@@ -1969,7 +1970,7 @@ void ChatController::WireMessagingBindings() {
     ShellHost::Instance().DirtyWindow();
   });
   RefreshFromMessaging();
-  if (MessagingHub::Instance().AreSecretsReady()) {
+  if (MessagingHub::Instance().IsMessagingReady()) {
     MessagingHub::Instance().P2p().TailSyncActiveE2eThread();
   }
 }
@@ -1986,7 +1987,7 @@ bool ChatController::Setup(Rml::Context* context) {
       return;
     }
     const std::string active = MessagingHub::Instance().Inbox().ActiveThreadId();
-    if (!active.empty() && MessagingHub::Instance().AreSecretsReady()) {
+    if (!active.empty() && MessagingHub::Instance().IsMessagingReady()) {
       MessagingHub::Instance().P2p().WarmPeerForThread(active);
     }
   });
@@ -2002,7 +2003,7 @@ bool ChatController::Setup(Rml::Context* context) {
 
   if (MessagingHub::Instance().IsInitialized()) {
     WireMessagingBindings();
-    MessagingHub::Instance().SetOnSecretsReady([this]() {
+    MessagingHub::Instance().SetOnMessagingReady([this]() {
       WireMessagingBindings();
       if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
         SettingsController::Instance().OnNavTabActivated();
@@ -2247,7 +2248,7 @@ void ChatController::Update() {
 
   if (messaging_ready_ && AppLifecycle::IsForeground()) {
     MessagingHub::Instance().TickLibp2p();
-    if (MessagingHub::Instance().AreSecretsReady()) {
+    if (MessagingHub::Instance().IsMessagingReady()) {
       MessagingHub::Instance().P2p().PollAndMerge();
     }
   }
@@ -2272,6 +2273,7 @@ void ChatController::Shutdown() {
   }
   if (messaging_ready_) {
     MessagingHub::Instance().Shutdown();
+    ProfileSecretsService::Instance().Shutdown();
     messaging_ready_ = false;
   }
   pending_reply_.reset();

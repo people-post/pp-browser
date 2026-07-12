@@ -1,7 +1,7 @@
 #include "feature/settings/SecuritySettingsSection.h"
 
+#include "base/crypto/ProfileSecretsService.h"
 #include "base/data/SessionStore.h"
-#include "feature/messaging/MessagingHub.h"
 
 namespace pbr {
 
@@ -18,7 +18,7 @@ SettingsFlushMode SecuritySettingsSection::FlushMode() const {
 }
 
 void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
-  if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().HasVault()) {
+  if (!ProfileSecretsService::Instance().IsInitialized() || !ProfileSecretsService::Instance().HasVault()) {
     state.pin_protection_status = "Not set up";
     state.security_can_change_pin = false;
     return;
@@ -28,7 +28,7 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
   } else {
     state.pin_protection_status = "Custom PIN";
   }
-  state.security_can_change_pin = MessagingHub::Instance().AreSecretsReady();
+  state.security_can_change_pin = ProfileSecretsService::Instance().IsUnlocked();
 }
 
 bool SecuritySettingsSection::IsPersisted(const SettingsUiState& /*state*/,

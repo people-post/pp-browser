@@ -52,6 +52,14 @@ Roe<void> SqlitePskSessionStore::SetDek(ByteVector dek) {
   return {};
 }
 
+void SqlitePskSessionStore::ClearDek() {
+  std::lock_guard lock(mutex_);
+  if (!dek_.empty()) {
+    sodium_memzero(dek_.data(), dek_.size());
+    dek_.clear();
+  }
+}
+
 Roe<void> SqlitePskSessionStore::RequireDek() const {
   if (dek_.size() != kDataEncryptionKeySize) {
     return Error("PSK store DEK not set (unlock profile vault first)");

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/crypto/IDekConsumer.h"
 #include "base/crypto/IPskSessionStore.h"
 #include "base/crypto/CryptoTypes.h"
 
@@ -13,11 +14,12 @@ struct sqlite3;
 namespace pbr {
 
 /** v1 PSK persistence on profile.db chat_targets; PSK columns encrypted with profile DEK. */
-class SqlitePskSessionStore : public Module, public IPskSessionStore {
+class SqlitePskSessionStore : public Module, public IPskSessionStore, public IDekConsumer {
 public:
   explicit SqlitePskSessionStore(std::string profile_db_path, std::string profile_id = {});
 
-  Roe<void> SetDek(ByteVector dek);
+  Roe<void> SetDek(ByteVector dek) override;
+  void ClearDek() override;
 
   Roe<std::optional<PskSessionRecord>> Load(const ChatTargetKey& key) const override;
   Roe<void> Save(const PskSessionRecord& record) override;

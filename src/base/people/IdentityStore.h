@@ -3,6 +3,7 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "base/crypto/CryptoTypes.h"
+#include "base/crypto/IDekConsumer.h"
 #include "base/people/IdentityTypes.h"
 
 #include <mutex>
@@ -11,12 +12,13 @@
 
 namespace pbr {
 
-class IdentityStore : public Module {
+class IdentityStore : public Module, public IDekConsumer {
 public:
   explicit IdentityStore(std::string data_dir, std::string profile_id = {});
 
   /** Required before LoadOrCreate/Get/Save — DEK from unlocked DataKeyVault. */
-  Roe<void> SetDek(ByteVector dek);
+  Roe<void> SetDek(ByteVector dek) override;
+  void ClearDek() override;
 
   Roe<LocalIdentity> LoadOrCreate();
   Roe<LocalIdentity> Get() const;

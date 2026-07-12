@@ -42,3 +42,18 @@
 **Decision:** On first secrets use when no `vault.bin` exists, show a three-way chooser: **Set a PIN** (custom create flow), **Just continue** (auto-create vault with `kDefaultProfilePin` = `123456` from `src/base/crypto/PinDefaults.h`), or **Not now** (defer). Persist `pin_is_default: true` in `preferences.json` (schema v3) when the default path is chosen; clear it on **Change PIN** in Me → Security (`DataKeyVault::ChangePin`). When `pin_is_default` is true, bootstrap and `PromptUnlockIfVaultExists` attempt silent unlock with the default PIN — no blocking modal unless unlock fails. Custom-PIN profiles keep A006 blocking unlock. Show a one-time toast after default provisioning pointing to Me → Security.  
 **Rationale:** Reduces friction for users who want E2E/register without choosing a PIN upfront; keeps encryption on by default while making stronger protection opt-up via Settings. `pin_is_default` avoids Argon2 probing on every startup for custom-PIN users.  
 **Alternatives:** Hardcoded default without flag; nag on every secrets action; truly unprotected (no vault) mode.
+
+## A008 — IDekConsumer registry for DEK fan-out
+
+**Date:** 2026-07-12  
+**Decision:** At-rest stores that need the profile DEK implement `IDekConsumer` (`SetDek` / `ClearDek`). Registry and fan-out live on the profile secrets service (see A009).  
+**Rationale:** Avoids hand-wiring each new encrypted store into unlock; lock zeroing stays consistent.  
+**Alternatives:** Keep manual `identity_->SetDek` / `psk_store_->SetDek` calls; shared DEK pointer (rejected — copies keep lifetime simple and match existing test injection).  
+**Superseded in part by:** A009 (registry owner moved off MessagingHub).
+
+## A009 — ProfileSecretsService (app-wide vault owner)
+
+**Date:** 2026-07-12  
+**Decision:** Move `vault.bin`, PIN unlock, and `IDekConsumer` fan-out from `MessagingHub` to `ProfileSecretsService` (`base/crypto`). Bootstrap initializes the profile service before the hub. `MessagingHub::EnsureMessagingReady()` loads identity and starts libp2p/P2P after `ProfileSecretsService::IsUnlocked()`. UI/settings use the profile service for vault state and Change PIN; messaging features use `IsMessagingReady()`.  
+**Rationale:** Profile PIN/DEK is app-wide infrastructure, not messaging-specific; enables future non-messaging encrypted stores without depending on the hub.  
+**Alternatives:** Keep vault in MessagingHub with `IDekConsumer` only (A008); fat `Application` owner (rejected — app wires, base owns domain).

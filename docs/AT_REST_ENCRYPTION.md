@@ -73,9 +73,22 @@ JSON fields: `public_key_b64`, `private_key_b64`, `kem_*`, `nickname`, `relay_us
    - **Not now** — cancel; retry on next secrets action.
 5. Optional automation: `--pin` or `PP_BROWSER_PIN` unlocks at bootstrap for tests/CI (takes precedence over silent default unlock).
 6. **Change PIN:** Me → Security when unlocked (`DataKeyVault::ChangePin`); clears `pin_is_default`.
-7. Lock on exit clears DEK (`sodium_memzero`).
+7. Lock on exit clears DEK (`sodium_memzero`) in the vault and all registered `IDekConsumer`s.
 
 Default PIN is intentionally weak — offline disk theft with `pin_is_default` true is trivial. Users who want real protection should set or change their PIN in Me → Security.
+
+### DEK consumers
+
+[`ProfileSecretsService`](../src/base/crypto/ProfileSecretsService.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../src/base/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore` (registered from `MessagingHub::Initialize`). To add a new encrypted store:
+
+1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
+2. Register via `ProfileSecretsService::RegisterDekConsumer` during init (typically from the feature that owns the store).
+3. Gate first use with `PinGateController::EnsureUnlocked` (profile unlock + `MessagingHub::EnsureMessagingReady` when messaging is needed), or check `ProfileSecretsService::IsUnlocked()`.
+4. Document the on-disk path and AAD purpose here.
+
+**Messaging:** E2E/P2P actions also require `MessagingHub::IsMessagingReady()` after profile unlock.
+
+Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vault required).
 
 ## Threat model (v1)
 
@@ -88,4 +101,4 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 
 ## Test fixtures
 
-Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`.
+Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`. New `IDekConsumer` stores should accept the same direct `SetDek` injection in tests.

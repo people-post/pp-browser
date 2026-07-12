@@ -1,5 +1,6 @@
 #include "feature/ui/SettingsController.h"
 
+#include "base/crypto/ProfileSecretsService.h"
 #include "base/data/SessionStore.h"
 #include "base/platform/BrowserThread.h"
 #include "feature/messaging/MessagingHub.h"
@@ -711,12 +712,12 @@ void SettingsController::OnChangePinCallback(Rml::DataModelHandle /*model*/, Rml
 }
 
 void SettingsController::OnChangePin() {
-  if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().HasVault()) {
+  if (!ProfileSecretsService::Instance().IsInitialized() || !ProfileSecretsService::Instance().HasVault()) {
     status_ = "Set up key protection first";
     DataModelHost::Instance().Dirty("settings", "status");
     return;
   }
-  if (!MessagingHub::Instance().AreSecretsReady()) {
+  if (!ProfileSecretsService::Instance().IsUnlocked()) {
     PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
       if (!unlocked) {
         status_ = "Unlock profile PIN to change it";
@@ -747,7 +748,7 @@ void SettingsController::OnChangePin() {
     return;
   }
 
-  DataKeyVault* vault = MessagingHub::Instance().Vault();
+  DataKeyVault* vault = ProfileSecretsService::Instance().Vault();
   if (vault == nullptr) {
     status_ = "Vault unavailable";
     DataModelHost::Instance().Dirty("settings", "status");

@@ -1,6 +1,7 @@
 #include "feature/ui/PinGateController.h"
 
 #include "base/crypto/PinDefaults.h"
+#include "base/crypto/ProfileSecretsService.h"
 #include "base/data/SessionStore.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
@@ -8,6 +9,17 @@
 #include "feature/ui/ShellHost.h"
 
 namespace pbr {
+
+namespace {
+
+Roe<void> UnlockProfileAndMessaging(const std::string& pin) {
+  if (auto unlocked = ProfileSecretsService::Instance().Unlock(pin); !unlocked) {
+    return unlocked.error();
+  }
+  return MessagingHub::Instance().EnsureMessagingReady();
+}
+
+} // namespace
 
 PinGateController& PinGateController::Instance() {
   static PinGateController controller;
@@ -59,13 +71,18 @@ bool PinGateController::TrySilentDefaultUnlock() {
   if (!SessionStore::Instance().Snapshot().profile_prefs.pin_is_default) {
     return false;
   }
-  if (MessagingHub::Instance().AreSecretsReady()) {
+  if (MessagingHub::Instance().IsMessagingReady()) {
     return true;
   }
-  if (!MessagingHub::Instance().HasVault()) {
+  if (!ProfileSecretsService::Instance().HasVault()) {
     return false;
   }
-  return static_cast<bool>(MessagingHub::Instance().EnsureSecretsUnlocked(kDefaultProfilePin));
+  if (!ProfileSecretsService::Instance().IsUnlocked()) {
+    if (!ProfileSecretsService::Instance().Unlock(kDefaultProfilePin)) {
+      return false;
+    }
+  }
+  return static_cast<bool>(MessagingHub::Instance().EnsureMessagingReady());
 }
 
 void PinGateController::ShowChooser(std::function<void(bool)> done) {
@@ -121,13 +138,23 @@ void PinGateController::EnsureUnlocked(std::function<void(bool unlocked)> done) 
     }
     return;
   }
-  if (MessagingHub::Instance().AreSecretsReady()) {
+  if (MessagingHub::Instance().IsMessagingReady()) {
     if (done) {
       done(true);
     }
     return;
   }
-  if (!MessagingHub::Instance().HasVault()) {
+  if (ProfileSecretsService::Instance().IsUnlocked()) {
+    if (auto ready = MessagingHub::Instance().EnsureMessagingReady(); ready) {
+      if (done) {
+        done(true);
+      }
+    } else if (done) {
+      done(false);
+    }
+    return;
+  }
+  if (!ProfileSecretsService::Instance().HasVault()) {
     ShowChooser(std::move(done));
     return;
   }
@@ -144,10 +171,10 @@ void PinGateController::PromptUnlockIfVaultExists() {
   if (!MessagingHub::Instance().IsInitialized()) {
     return;
   }
-  if (MessagingHub::Instance().AreSecretsReady()) {
+  if (MessagingHub::Instance().IsMessagingReady()) {
     return;
   }
-  if (!MessagingHub::Instance().NeedsVaultUnlock()) {
+  if (!ProfileSecretsService::Instance().NeedsUnlock()) {
     return;
   }
   if (TrySilentDefaultUnlock()) {
@@ -179,7 +206,7 @@ void PinGateController::OnUseDefaultPin() {
     return;
   }
 
-  auto unlocked = MessagingHub::Instance().EnsureSecretsUnlocked(kDefaultProfilePin);
+  auto unlocked = UnlockProfileAndMessaging(kDefaultProfilePin);
   if (!unlocked) {
     gate.error = unlocked.error().message.c_str();
     DirtyPinFields();
@@ -219,7 +246,7 @@ void PinGateController::OnSubmit() {
     }
   }
 
-  auto unlocked = MessagingHub::Instance().EnsureSecretsUnlocked(pin);
+  auto unlocked = UnlockProfileAndMessaging(pin);
   if (!unlocked) {
     gate.error = unlocked.error().message.c_str();
     gate.pin = "";

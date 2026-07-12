@@ -46,3 +46,17 @@
 - [x] Silent unlock at bootstrap and `PromptUnlockIfVaultExists` when `pin_is_default`
 - [x] Me → Security section: protection status + Change PIN
 - [x] Docs + ADR A007
+
+## a7 — IDekConsumer registry (A008)
+
+- [x] `IDekConsumer` (`SetDek` / `ClearDek`) in `base/crypto`
+- [x] `IdentityStore` + `SqlitePskSessionStore` implement the interface
+- [x] Consumer registration on `ProfileSecretsService` (moved from hub in a8)
+- [x] Docs + ADR A008
+
+## a8 — ProfileSecretsService (A009)
+
+- [x] `ProfileSecretsService` in `base/crypto` — vault, unlock, DEK fan-out
+- [x] `MessagingHub::EnsureMessagingReady` (libp2p/P2P after profile unlock)
+- [x] `PinGateController`, `Bootstrap`, Settings → profile service; messaging checks → hub
+- [x] Docs + ADR A009

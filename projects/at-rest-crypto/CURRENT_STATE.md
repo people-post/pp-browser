@@ -5,7 +5,9 @@
 | `AtomicFileWrite` | **Yes** | `src/base/data/AtomicFileWrite.*` |
 | JSON writers atomic | **Yes** | Config, prefs, registry, manifest, contacts, JsonThreadStore |
 | `PinKeyDeriver` / `FileCipher` / `DataKeyVault` | **Yes** | `src/base/crypto/` |
-| `EnsureSecretsUnlocked` | **Yes** | Hub API; create or unlock |
+| `ProfileSecretsService` | **Yes** | Vault unlock, DEK fan-out, Change PIN |
+| `IDekConsumer` registry | **Yes** | `ProfileSecretsService::RegisterDekConsumer`; identity + PSK |
+| `EnsureMessagingReady` | **Yes** | `MessagingHub` after profile unlock |
 | PIN GUI gate | **Yes** | `PinGateController` + shell overlay |
 | Three-way chooser (A007) | **Yes** | Set PIN / default / Not now on first secrets use |
 | Default PIN + `pin_is_default` | **Yes** | `PinDefaults.h`; `preferences.json` schema v3 |
