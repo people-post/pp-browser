@@ -72,6 +72,11 @@ private:
     Rml::String config_dir;
     Rml::String data_dir;
     Rml::String profile_dir;
+    Rml::String pin_protection_status;
+    bool security_can_change_pin = false;
+    Rml::String pin_change_old;
+    Rml::String pin_change_new;
+    Rml::String pin_change_confirm;
   };
 
   SettingsController();
@@ -90,6 +95,7 @@ private:
   static void OnShareProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnAddMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRemoveMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnChangePinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void InitSections();
   SettingsSectionHandler* FindHandler(const std::string& section_id);
@@ -114,6 +120,7 @@ private:
   void OnShareProfile();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
+  void OnChangePin();
 
   std::vector<std::unique_ptr<SettingsSectionHandler>> section_handlers_;
   std::unordered_map<std::string, SettingsSectionHandler*> section_handlers_by_id_;

@@ -38,3 +38,11 @@
 - [x] Early unlock when vault exists; defer create until secrets use
 - [x] Gate Register / Secure message / PSK actions
 - [x] CLI/env PIN optional for automation only
+
+## a6 — Three-way chooser + default PIN (A007)
+
+- [x] Chooser overlay: Set a PIN / Just continue / Not now (full-width vertical stack)
+- [x] `kDefaultProfilePin` + `pin_is_default` in `preferences.json` (schema v3)
+- [x] Silent unlock at bootstrap and `PromptUnlockIfVaultExists` when `pin_is_default`
+- [x] Me → Security section: protection status + Change PIN
+- [x] Docs + ADR A007

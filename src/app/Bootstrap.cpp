@@ -1,5 +1,6 @@
 #include "app/Bootstrap.h"
 
+#include "base/crypto/PinDefaults.h"
 #include "base/crypto/PinResolver.h"
 #include "base/data/AppPaths.h"
 #include "base/data/Config.h"
@@ -65,6 +66,9 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options) {
     if (auto unlocked = MessagingHub::Instance().EnsureSecretsUnlocked(*pin); !unlocked) {
       return unlocked.error();
     }
+  } else if (profile_prefs->pin_is_default && MessagingHub::Instance().HasVault() &&
+             !MessagingHub::Instance().AreSecretsReady()) {
+    (void)MessagingHub::Instance().EnsureSecretsUnlocked(kDefaultProfilePin);
   }
 
   BootstrapResult result{};

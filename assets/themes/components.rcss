@@ -1059,6 +1059,22 @@ select selectbox option {
   cursor: pointer;
 }
 
+.shell-pin-gate-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 8dp;
+  margin-top: 16dp;
+}
+
+.shell-pin-gate-chooser .shell-dialog-ok,
+.shell-pin-gate-chooser .shell-dialog-cancel,
+.shell-pin-gate-chooser .btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  box-sizing: border-box;
+}
+
 .shell-pin-gate-input {
   width: 100%;
   margin-bottom: 10dp;

@@ -45,6 +45,7 @@ set(PP_BROWSER_FEATURE_SOURCES
   settings/IntegrationsSettingsSection.cpp
   settings/NetworkSettingsSection.cpp
   settings/ProfileSettingsSection.cpp
+  settings/SecuritySettingsSection.cpp
   settings/AppearanceSettingsSection.cpp
   settings/StorageSettingsSection.cpp
   settings/SettingsSections.cpp

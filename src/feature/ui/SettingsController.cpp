@@ -2,6 +2,7 @@
 
 #include "base/data/SessionStore.h"
 #include "base/platform/BrowserThread.h"
+#include "feature/messaging/MessagingHub.h"
 #include "feature/settings/ProfileSettingsSection.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
@@ -112,6 +113,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
   bindings_.profile_dir = ui_state_.profile_dir.c_str();
+  bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
+  bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
 
   bindings_.mcp_servers.clear();
   bindings_.mcp_servers.reserve(ui_state_.mcp_servers.size());
@@ -190,6 +193,11 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
     ctor.Bind("profile_dir", &controller.bindings_.profile_dir);
+    ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
+    ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
+    ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
+    ctor.Bind("pin_change_new", &controller.bindings_.pin_change_new);
+    ctor.Bind("pin_change_confirm", &controller.bindings_.pin_change_confirm);
     ctor.Bind("status", &controller.status_);
     ctor.BindEventCallback("select_section", &SettingsController::SelectSectionCallback);
     ctor.BindEventCallback("back_to_list", &SettingsController::BackToListCallback);
@@ -205,6 +213,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("share_profile", &SettingsController::OnShareProfileCallback);
     ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
     ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
+    ctor.BindEventCallback("change_pin", &SettingsController::OnChangePinCallback);
   });
 }
 
@@ -236,6 +245,11 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
   host.Dirty("settings", "profile_dir");
+  host.Dirty("settings", "pin_protection_status");
+  host.Dirty("settings", "security_can_change_pin");
+  host.Dirty("settings", "pin_change_old");
+  host.Dirty("settings", "pin_change_new");
+  host.Dirty("settings", "pin_change_confirm");
   host.Dirty("settings", "status");
 }
 
@@ -689,6 +703,76 @@ void SettingsController::OnRemoveMcpServer(const int index) {
   PushUiStateToBindings();
   DataModelHost::Instance().Dirty("settings", "mcp_servers");
   MarkSectionDirty("integrations");
+}
+
+void SettingsController::OnChangePinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                             const Rml::VariantList& /*args*/) {
+  Instance().OnChangePin();
+}
+
+void SettingsController::OnChangePin() {
+  if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().HasVault()) {
+    status_ = "Set up key protection first";
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+  if (!MessagingHub::Instance().AreSecretsReady()) {
+    PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
+      if (!unlocked) {
+        status_ = "Unlock profile PIN to change it";
+        DataModelHost::Instance().Dirty("settings", "status");
+        return;
+      }
+      OnChangePin();
+    });
+    return;
+  }
+
+  const std::string old_pin = bindings_.pin_change_old.c_str();
+  const std::string new_pin = bindings_.pin_change_new.c_str();
+  const std::string confirm = bindings_.pin_change_confirm.c_str();
+  if (old_pin.empty() || new_pin.empty()) {
+    status_ = "Current and new PIN are required";
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+  if (new_pin != confirm) {
+    status_ = "New PINs do not match";
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+  if (new_pin.size() < 4) {
+    status_ = "Use at least 4 characters";
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+
+  DataKeyVault* vault = MessagingHub::Instance().Vault();
+  if (vault == nullptr) {
+    status_ = "Vault unavailable";
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+  if (auto changed = vault->ChangePin(old_pin, new_pin); !changed) {
+    status_ = changed.error().message.c_str();
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+
+  ProfilePreferences prefs = SessionStore::Instance().Snapshot().profile_prefs;
+  prefs.pin_is_default = false;
+  if (auto saved = SessionStore::Instance().SaveProfilePrefs(prefs); !saved) {
+    status_ = saved.error().message.c_str();
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+
+  bindings_.pin_change_old = "";
+  bindings_.pin_change_new = "";
+  bindings_.pin_change_confirm = "";
+  status_ = "PIN updated";
+  SyncBindingsFromSession();
+  DirtyAll();
 }
 
 } // namespace pbr

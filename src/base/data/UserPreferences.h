@@ -33,11 +33,13 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 2;
+  static constexpr int kSchemaVersion = 3;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
   std::string appearance = "system";
+  /** True when vault was created with kDefaultProfilePin and not yet changed. */
+  bool pin_is_default = false;
 };
 
 class UserPreferences {

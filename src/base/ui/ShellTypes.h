@@ -77,9 +77,10 @@ struct DialogState {
   std::function<void(bool confirmed, bool checkbox_checked)> on_result;
 };
 
-/** PIN unlock / create overlay. Unlock is mandatory; create may cancel / Escape. */
+/** PIN unlock / create / chooser overlay. Unlock is mandatory; create and chooser may cancel. */
 struct PinGateState {
   bool active = false;
+  bool chooser_mode = false;
   bool create_mode = false;
   Rml::String title;
   Rml::String message;

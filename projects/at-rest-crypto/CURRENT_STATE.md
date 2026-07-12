@@ -7,7 +7,11 @@
 | `PinKeyDeriver` / `FileCipher` / `DataKeyVault` | **Yes** | `src/base/crypto/` |
 | `EnsureSecretsUnlocked` | **Yes** | Hub API; create or unlock |
 | PIN GUI gate | **Yes** | `PinGateController` + shell overlay |
-| Defer create / early unlock | **Yes** | A006 |
+| Three-way chooser (A007) | **Yes** | Set PIN / default / Not now on first secrets use |
+| Default PIN + `pin_is_default` | **Yes** | `PinDefaults.h`; `preferences.json` schema v3 |
+| Silent unlock (default PIN) | **Yes** | Bootstrap + `PromptUnlockIfVaultExists` |
+| Change PIN (Settings) | **Yes** | Me → Security; `DataKeyVault::ChangePin` |
+| Defer create / early unlock | **Yes** | A006; default-PIN path per A007 |
 | `--pin` / `PP_BROWSER_PIN` | **Optional** | Tests/CI only |
 | `identity.enc` | **Yes** | Under DEK after unlock |
 | PSK columns encrypted | **Yes** | After DEK set |

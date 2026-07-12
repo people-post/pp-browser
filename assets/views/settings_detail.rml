@@ -106,6 +106,36 @@
       </div>
     </div>
 
+    <div class="settings-section stack" data-if="selected_id == 'security'">
+      <p class="text muted">Protection: <span data-rml="pin_protection_status"></span></p>
+      <p class="text muted" data-if="pin_protection_status == 'App default'">
+        Your keys use the app default. Change it below for stronger protection.
+      </p>
+      <p class="text muted" data-if="pin_protection_status == 'Not set up'">
+        Key protection is created when you first use secure messaging or register on the network.
+      </p>
+      <div data-if="security_can_change_pin" class="stack">
+        <label class="settings-field">
+          <span class="settings-label">Current PIN</span>
+          <input class="field" type="password" data-value="pin_change_old" placeholder="Current PIN"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">New PIN</span>
+          <input class="field" type="password" data-value="pin_change_new" placeholder="At least 4 characters"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">Confirm new PIN</span>
+          <input class="field" type="password" data-value="pin_change_confirm" placeholder="Confirm new PIN"/>
+        </label>
+        <div class="settings-actions row">
+          <button class="btn btn-primary" type="button" data-event-click="change_pin()">Change PIN</button>
+        </div>
+      </div>
+      <p class="text muted" data-if="!security_can_change_pin && pin_protection_status != 'Not set up'">
+        Unlock your profile to change the PIN.
+      </p>
+    </div>
+
     <div class="settings-section stack" data-if="selected_id == 'storage'">
       <p class="text muted">Profile: <span data-rml="profile_label"></span></p>
       <p class="text muted settings-path">Config: <span data-rml="config_dir"></span></p>

@@ -1,7 +1,10 @@
 #include "feature/ui/PinGateController.h"
 
+#include "base/crypto/PinDefaults.h"
+#include "base/data/SessionStore.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
+#include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
 
 namespace pbr {
@@ -31,12 +34,59 @@ void PinGateController::Finish(const bool unlocked) {
 
 void PinGateController::DirtyPinFields() {
   DataModelHost::Instance().Dirty("window", "pin_gate_active");
+  DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
+}
+
+void PinGateController::SetPinIsDefault(const bool is_default) {
+  if (!SessionStore::Instance().IsInitialized()) {
+    return;
+  }
+  ProfilePreferences prefs = SessionStore::Instance().Snapshot().profile_prefs;
+  prefs.pin_is_default = is_default;
+  (void)SessionStore::Instance().SaveProfilePrefs(prefs);
+}
+
+bool PinGateController::TrySilentDefaultUnlock() {
+  if (!SessionStore::Instance().IsInitialized()) {
+    return false;
+  }
+  if (!SessionStore::Instance().Snapshot().profile_prefs.pin_is_default) {
+    return false;
+  }
+  if (MessagingHub::Instance().AreSecretsReady()) {
+    return true;
+  }
+  if (!MessagingHub::Instance().HasVault()) {
+    return false;
+  }
+  return static_cast<bool>(MessagingHub::Instance().EnsureSecretsUnlocked(kDefaultProfilePin));
+}
+
+void PinGateController::ShowChooser(std::function<void(bool)> done) {
+  if (done) {
+    pending_.push_back(std::move(done));
+  }
+  if (showing_) {
+    return;
+  }
+  showing_ = true;
+
+  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  gate = {};
+  gate.active = true;
+  gate.chooser_mode = true;
+  gate.title = "PIN required";
+  gate.message =
+      "Secure messaging needs a PIN. Set your own, use the app default, or skip for now.";
+  ShellHost::Instance().RequestSyncLayout();
+  DirtyPinFields();
+  ShellHost::Instance().DirtyWindow();
 }
 
 void PinGateController::ShowGate(const bool create_mode, std::function<void(bool)> done) {
@@ -54,7 +104,7 @@ void PinGateController::ShowGate(const bool create_mode, std::function<void(bool
   gate.create_mode = create_mode;
   if (create_mode) {
     gate.title = "Create a PIN";
-    gate.message = "Protect your identity and chat keys with a PIN. You'll need it next time you open this profile.";
+    gate.message = "Choose a PIN to protect your identity and chat keys.";
   } else {
     gate.title = "Unlock profile";
     gate.message = "Enter your PIN to unlock identity and encrypted keys.";
@@ -77,7 +127,17 @@ void PinGateController::EnsureUnlocked(std::function<void(bool unlocked)> done) 
     }
     return;
   }
-  ShowGate(!MessagingHub::Instance().HasVault(), std::move(done));
+  if (!MessagingHub::Instance().HasVault()) {
+    ShowChooser(std::move(done));
+    return;
+  }
+  if (TrySilentDefaultUnlock()) {
+    if (done) {
+      done(true);
+    }
+    return;
+  }
+  ShowGate(false, std::move(done));
 }
 
 void PinGateController::PromptUnlockIfVaultExists() {
@@ -90,12 +150,52 @@ void PinGateController::PromptUnlockIfVaultExists() {
   if (!MessagingHub::Instance().NeedsVaultUnlock()) {
     return;
   }
+  if (TrySilentDefaultUnlock()) {
+    return;
+  }
   ShowGate(false, nullptr);
+}
+
+void PinGateController::OnSetPin() {
+  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!gate.active || !gate.chooser_mode) {
+    return;
+  }
+  gate.chooser_mode = false;
+  gate.create_mode = true;
+  gate.error = "";
+  gate.pin = "";
+  gate.pin_confirm = "";
+  gate.title = "Create a PIN";
+  gate.message = "Choose a PIN to protect your identity and chat keys.";
+  DirtyPinFields();
+  ShellHost::Instance().RequestSyncLayout();
+  ShellHost::Instance().DirtyWindow();
+}
+
+void PinGateController::OnUseDefaultPin() {
+  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!gate.active || !gate.chooser_mode) {
+    return;
+  }
+
+  auto unlocked = MessagingHub::Instance().EnsureSecretsUnlocked(kDefaultProfilePin);
+  if (!unlocked) {
+    gate.error = unlocked.error().message.c_str();
+    DirtyPinFields();
+    return;
+  }
+
+  SetPinIsDefault(true);
+  Finish(true);
+  ShellFeedback::ShowToast(ShellHost::Instance().State(),
+                           "Using the app default. Change anytime in Me → Security.");
+  ShellHost::Instance().DirtyWindow();
 }
 
 void PinGateController::OnSubmit() {
   PinGateState& gate = ShellHost::Instance().State().pin_gate;
-  if (!gate.active) {
+  if (!gate.active || gate.chooser_mode) {
     return;
   }
 
@@ -128,12 +228,16 @@ void PinGateController::OnSubmit() {
     return;
   }
 
+  if (gate.create_mode) {
+    SetPinIsDefault(false);
+  }
+
   Finish(true);
 }
 
 void PinGateController::OnCancel() {
   PinGateState& gate = ShellHost::Instance().State().pin_gate;
-  if (!gate.active || !gate.create_mode) {
+  if (!gate.active || (!gate.create_mode && !gate.chooser_mode)) {
     return;
   }
   Finish(false);

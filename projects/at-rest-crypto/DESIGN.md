@@ -17,12 +17,16 @@ feature/messaging (MessagingHub unlock)
         │
         ▼
 base/crypto
-  PinKeyDeriver · DataKeyVault · FileCipher · PinResolver
+  PinDefaults · PinKeyDeriver · DataKeyVault · FileCipher · PinResolver
         │
         ├─ people/IdentityStore  → identity.enc
         └─ SqlitePskSessionStore → chat_targets PSK columns
 base/data
   AtomicFileWrite  → all JSON/blob replaces
+  UserPreferences  → pin_is_default in preferences.json
+feature/ui
+  PinGateController  → chooser / create / unlock overlay
+  SecuritySettingsSection  → Me → Security status + Change PIN
 ```
 
 ## Threat model (v1)
@@ -36,7 +40,10 @@ base/data
 
 ## PIN policy
 
-- Collected in-app (blocking overlay). CLI/env optional for automation.
-- No vault → defer create until first secrets use; user may cancel and retry later.
-- Vault exists → unlock after UI load (mandatory; no cancel).
+- Collected in-app (`PinGateController` overlay). CLI/env optional for automation.
+- **No vault:** defer until first secrets use; three-way chooser (A007) — custom PIN, Just continue (app default), or cancel.
+- **Vault + `pin_is_default`:** silent unlock at bootstrap and UI load; toast nudges user to Me → Security.
+- **Vault + custom PIN:** blocking unlock after UI load (mandatory; no cancel).
+- **Change PIN:** Me → Security when unlocked; clears `pin_is_default`.
+- Default PIN (`123456`) is weak by design — document clearly; not a substitute for user-chosen PIN.
 - No recovery key in v1.

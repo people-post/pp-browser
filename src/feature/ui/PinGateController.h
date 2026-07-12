@@ -16,18 +16,23 @@ public:
   /** If secrets already ready, runs done(true) immediately. Otherwise shows PIN UI. */
   void EnsureUnlocked(std::function<void(bool unlocked)> done);
 
-  /** After shell load: if vault exists and locked, show blocking unlock. */
+  /** After shell load: silent default unlock or blocking unlock when vault exists. */
   void PromptUnlockIfVaultExists();
 
   void OnSubmit();
-  /** Create mode only — unlock mode ignores cancel. */
+  /** Create / chooser modes only — unlock mode ignores cancel. */
   void OnCancel();
+  void OnSetPin();
+  void OnUseDefaultPin();
   void DirtyPinFields();
 
 private:
   PinGateController() = default;
 
+  void ShowChooser(std::function<void(bool)> done);
   void ShowGate(bool create_mode, std::function<void(bool)> done);
+  bool TrySilentDefaultUnlock();
+  void SetPinIsDefault(bool is_default);
   void Finish(bool unlocked);
   void DrainQueue(bool unlocked);
 

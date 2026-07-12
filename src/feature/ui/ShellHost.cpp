@@ -90,6 +90,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("dialog_checkbox_label", &host.state_.dialog.checkbox_label);
     ctor.Bind("dialog_checkbox_checked", &host.state_.dialog.checkbox_checked);
     ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
+    ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
@@ -110,6 +111,8 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("dialog_toggle_checkbox", &ShellHost::DialogToggleCheckboxCallback);
     ctor.BindEventCallback("pin_gate_submit", &ShellHost::PinGateSubmitCallback);
     ctor.BindEventCallback("pin_gate_cancel", &ShellHost::PinGateCancelCallback);
+    ctor.BindEventCallback("pin_gate_set_pin", &ShellHost::PinGateSetPinCallback);
+    ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
   });
 }
 
@@ -318,7 +321,7 @@ bool ShellHost::HandleDismiss() {
     return true;
   }
   if (state_.pin_gate.active) {
-    if (state_.pin_gate.create_mode) {
+    if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode) {
       PinGateController::Instance().OnCancel();
     }
     // Unlock: consume Escape without dismissing or quitting.
@@ -350,6 +353,7 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "dialog_checkbox_label");
   DataModelHost::Instance().Dirty("window", "dialog_checkbox_checked");
   DataModelHost::Instance().Dirty("window", "pin_gate_active");
+  DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
@@ -626,11 +630,17 @@ std::string ShellHost::SerializePinGate() const {
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"pin_gate_title\"></h2>";
   out << "<p class=\"text shell-dialog-message\" data-rml=\"pin_gate_message\"></p>";
   out << "<p class=\"text shell-pin-gate-error\" data-rml=\"pin_gate_error\"></p>";
-  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" data-value=\"pin_gate_pin\" "
-         "placeholder=\"PIN\"/>";
-  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" data-if=\"pin_gate_create_mode\" "
-         "data-value=\"pin_gate_pin_confirm\" placeholder=\"Confirm PIN\"/>";
-  out << "<div class=\"shell-dialog-actions row\">";
+  out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_chooser_mode\">";
+  out << "<button class=\"shell-dialog-ok\" data-event-click=\"pin_gate_set_pin()\">Set a PIN</button>";
+  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_use_default()\">Just continue</button>";
+  out << "<button class=\"shell-dialog-cancel\" data-event-click=\"pin_gate_cancel()\">Not now</button>";
+  out << "</div>";
+  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" data-if=\"!pin_gate_chooser_mode\" "
+         "data-value=\"pin_gate_pin\" placeholder=\"PIN\"/>";
+  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
+         "data-if=\"pin_gate_create_mode && !pin_gate_chooser_mode\" data-value=\"pin_gate_pin_confirm\" "
+         "placeholder=\"Confirm PIN\"/>";
+  out << "<div class=\"shell-dialog-actions row\" data-if=\"!pin_gate_chooser_mode\">";
   out << "<button class=\"shell-dialog-cancel\" data-if=\"pin_gate_create_mode\" "
          "data-event-click=\"pin_gate_cancel()\">Not now</button>";
   out << "<button class=\"shell-dialog-ok\" data-event-click=\"pin_gate_submit()\">Continue</button>";
@@ -939,6 +949,16 @@ void ShellHost::PinGateSubmitCallback(Rml::DataModelHandle /*model*/, Rml::Event
 void ShellHost::PinGateCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
   PinGateController::Instance().OnCancel();
+}
+
+void ShellHost::PinGateSetPinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& /*args*/) {
+  PinGateController::Instance().OnSetPin();
+}
+
+void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                          const Rml::VariantList& /*args*/) {
+  PinGateController::Instance().OnUseDefaultPin();
 }
 
 } // namespace pbr

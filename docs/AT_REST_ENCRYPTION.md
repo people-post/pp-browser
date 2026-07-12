@@ -7,6 +7,8 @@ Normative spec for profile secrets on disk. Planning ADRs: [projects/at-rest-cry
 ## Overview
 
 - **PIN per profile** — collected in-app; `--pin` / `PP_BROWSER_PIN` optional for tests/CI.
+- **First secrets use:** three-way chooser — **Set a PIN**, **Just continue** (app default `123456`), or **Not now**.
+- **`pin_is_default`** in `preferences.json` — when true, bootstrap and UI load silently unlock with the default PIN; cleared after **Change PIN** in Me → Security.
 - Random **32-byte DEK** wrapped by a PIN-derived KEK (Argon2id).
 - **XChaCha20-Poly1305** encrypts identity and PSK material under the DEK.
 - Whole-file replaces use **atomic write** (tmp → fsync → rename).
@@ -27,6 +29,7 @@ Interactive `crypto_pwhash` ops/mem limits are stored in `vault.bin` so unlock m
 
 ```
 profiles/{id}/
+  preferences.json  # profile prefs incl. pin_is_default (schema v3)
   vault.bin       # wrapped DEK + KDF params
   identity.enc    # AEAD(identity JSON) under DEK
   contacts.json   # plaintext (atomic write)
@@ -62,16 +65,24 @@ JSON fields: `public_key_b64`, `private_key_b64`, `kem_*`, `nickname`, `relay_us
 ## Unlock flow
 
 1. App starts without requiring a PIN (local AI/chat works).
-2. **If `vault.bin` exists:** blocking unlock modal after UI load.
-3. **If no vault:** PIN create is deferred until first secrets use (Register, Secure message, PSK actions, etc.) via `EnsureSecretsUnlocked`. User may cancel (“Not now”) and retry later.
-4. Optional automation: `--pin` or `PP_BROWSER_PIN` still unlocks at bootstrap for tests/CI.
-5. Lock on exit clears DEK (`sodium_memzero`).
+2. **If `vault.bin` exists and `pin_is_default` is true:** silent unlock at bootstrap and after UI load (no modal). If silent unlock fails, fall back to the blocking unlock modal.
+3. **If `vault.bin` exists and custom PIN:** blocking unlock modal after UI load (no cancel).
+4. **If no vault:** defer until first secrets use (Register, Secure message, PSK actions, etc.) via `PinGateController::EnsureUnlocked`. Show a **three-way chooser:**
+   - **Set a PIN** — create flow with confirm.
+   - **Just continue** — create vault with `kDefaultProfilePin` (`123456`), set `pin_is_default`, proceed; toast points to Me → Security.
+   - **Not now** — cancel; retry on next secrets action.
+5. Optional automation: `--pin` or `PP_BROWSER_PIN` unlocks at bootstrap for tests/CI (takes precedence over silent default unlock).
+6. **Change PIN:** Me → Security when unlocked (`DataKeyVault::ChangePin`); clears `pin_is_default`.
+7. Lock on exit clears DEK (`sodium_memzero`).
+
+Default PIN is intentionally weak — offline disk theft with `pin_is_default` true is trivial. Users who want real protection should set or change their PIN in Me → Security.
 
 ## Threat model (v1)
 
 | Capability | Protected by |
 |------------|--------------|
 | Offline read of identity / PSK without PIN | AEAD + Argon2id |
+| Offline read when `pin_is_default` | **Weak** — known default PIN in source |
 | Crash mid JSON write | Atomic rename |
 | Transcript theft from `thread.db` | **Not** protected (D048) |
 

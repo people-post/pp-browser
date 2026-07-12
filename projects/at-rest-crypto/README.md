@@ -1,6 +1,6 @@
 # At-rest crypto
 
-**Status:** Implementation in progress (atomic writes + vault + identity/PSK encryption)  
+**Status:** Implemented (atomic writes + vault + identity/PSK encryption + GUI PIN flows)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [docs/AT_REST_ENCRYPTION.md](../../docs/AT_REST_ENCRYPTION.md), [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md)  
 **Related:** [e2e-message-crypto](../e2e-message-crypto/) (wire E2E; E008 PSK-at-rest), [chat-storage-and-memory](../chat-storage-and-memory/) (D048 plaintext transcripts)
@@ -14,9 +14,11 @@ Protect profile secrets on disk with a PIN-wrapped DEK (libsodium Argon2id + XCh
 | In | Out |
 |----|-----|
 | `AtomicFileWrite` for JSON/blob stores | SQLCipher / `thread.db` encryption |
-| `vault.bin` + mandatory PIN unlock | OS keychain unlock convenience |
+| `vault.bin` + PIN unlock (custom or default) | OS keychain unlock convenience |
 | Encrypted `identity.enc` | Encrypting contacts/prefs wholesale |
 | Encrypted PSK columns in `profile.db` | PIN recovery / multi-device vault sync |
+| Three-way chooser + optional default PIN (A007) | Truly unprotected (no vault) mode |
+| Change PIN in Me → Security | Nag on every secrets action |
 
 ## Documents
 
@@ -36,3 +38,5 @@ Protect profile secrets on disk with a PIN-wrapped DEK (libsodium Argon2id + XCh
 | a2 | Identity.enc + bootstrap PIN gate | Done |
 | a3 | PSK column encryption | Done |
 | a4 | Normative docs + cross-links | Done |
+| a5 | GUI unlock / deferred create (A006) | Done |
+| a6 | Three-way chooser + default PIN (A007) | Done |
