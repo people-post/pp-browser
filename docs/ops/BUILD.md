@@ -92,7 +92,7 @@ See [INPUT.md](../ui/INPUT.md) for behavior details.
 
 ### Brief LLM (default)
 
-First launch uses Brief defaults (`https://www.brief.global/api/llm/v1`, model `grok-4-1-fast-reasoning`). **Register your identity** in Me → Profile — finish registration automatically issues a Brief API key (stored in the profile vault). Until registered, switch to **Cloud** / **Custom** with a key or **Ollama**. Rotate the key anytime with **Rotate Brief API key** under Profile.
+First launch uses Brief defaults (`https://www.brief.global/api/llm/v1`, model `grok-4-1-fast-reasoning`). **Register your identity** in Me → Profile — finish registration automatically issues a Brief API key (stored in the profile vault). Until registered, switch to **Cloud** / **Custom** with a key or **Ollama**. Use **Renew registration** near expiry (or with auto-renew on). Rotate the key anytime with **Rotate Brief API key** under Profile while registration is active.
 
 Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exists.
 

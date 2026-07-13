@@ -18,6 +18,8 @@ struct LocalIdentity {
   /** Brief LLM API key (plaintext in memory; persisted inside identity.enc). Empty until registered. */
   std::string brief_llm_api_key;
   bool registered = false;
+  /** ISO-8601 expiry from register/finish; empty until registered or if server omitted it. */
+  std::string registration_expires_at;
 };
 
 } // namespace pbr

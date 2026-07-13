@@ -88,6 +88,12 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_relay_id = bindings_.profile_relay_id.c_str();
   ui_state_.profile_public_key = bindings_.profile_public_key.c_str();
   ui_state_.profile_registered = bindings_.profile_registered.c_str();
+  ui_state_.profile_registration_status = bindings_.profile_registration_status.c_str();
+  ui_state_.profile_registration_expires = bindings_.profile_registration_expires.c_str();
+  ui_state_.profile_register_label = bindings_.profile_register_label.c_str();
+  ui_state_.profile_show_register = bindings_.profile_show_register;
+  ui_state_.profile_show_rotate = bindings_.profile_show_rotate;
+  ui_state_.auto_renew_registration = bindings_.auto_renew_registration.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
   ui_state_.appearance = bindings_.appearance.c_str();
 
@@ -118,6 +124,12 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_relay_id = ui_state_.profile_relay_id.c_str();
   bindings_.profile_public_key = ui_state_.profile_public_key.c_str();
   bindings_.profile_registered = ui_state_.profile_registered.c_str();
+  bindings_.profile_registration_status = ui_state_.profile_registration_status.c_str();
+  bindings_.profile_registration_expires = ui_state_.profile_registration_expires.c_str();
+  bindings_.profile_register_label = ui_state_.profile_register_label.c_str();
+  bindings_.profile_show_register = ui_state_.profile_show_register;
+  bindings_.profile_show_rotate = ui_state_.profile_show_rotate;
+  bindings_.auto_renew_registration = ui_state_.auto_renew_registration.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
   bindings_.appearance = ui_state_.appearance.c_str();
   bindings_.profile_label = ui_state_.profile_label.c_str();
@@ -200,6 +212,12 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("profile_relay_id", &controller.bindings_.profile_relay_id);
     ctor.Bind("profile_public_key", &controller.bindings_.profile_public_key);
     ctor.Bind("profile_registered", &controller.bindings_.profile_registered);
+    ctor.Bind("profile_registration_status", &controller.bindings_.profile_registration_status);
+    ctor.Bind("profile_registration_expires", &controller.bindings_.profile_registration_expires);
+    ctor.Bind("profile_register_label", &controller.bindings_.profile_register_label);
+    ctor.Bind("profile_show_register", &controller.bindings_.profile_show_register);
+    ctor.Bind("profile_show_rotate", &controller.bindings_.profile_show_rotate);
+    ctor.Bind("auto_renew_registration", &controller.bindings_.auto_renew_registration);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
     ctor.Bind("appearance", &controller.bindings_.appearance);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
@@ -256,6 +274,12 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "profile_relay_id");
   host.Dirty("settings", "profile_public_key");
   host.Dirty("settings", "profile_registered");
+  host.Dirty("settings", "profile_registration_status");
+  host.Dirty("settings", "profile_registration_expires");
+  host.Dirty("settings", "profile_register_label");
+  host.Dirty("settings", "profile_show_register");
+  host.Dirty("settings", "profile_show_rotate");
+  host.Dirty("settings", "auto_renew_registration");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
   host.Dirty("settings", "profile_label");
@@ -625,9 +649,14 @@ void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*mo
   Instance().MarkSectionDirty("network");
 }
 
-void SettingsController::OnProfileFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+void SettingsController::OnProfileFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
                                                        const Rml::VariantList& /*args*/) {
-  Instance().MarkSectionDirty("profile");
+  auto& controller = Instance();
+  const Rml::String value = EventValue(ev);
+  if (value == "auto" || value == "off") {
+    controller.bindings_.auto_renew_registration = value;
+  }
+  controller.MarkSectionDirty("profile");
 }
 
 void SettingsController::OnRegisterProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -665,7 +694,8 @@ void SettingsController::OnRemoveMcpServerCallback(Rml::DataModelHandle /*model*
 
 void SettingsController::OnRegisterProfile() {
   PullBindingsToUiState();
-  PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
+  const bool renewing = ui_state_.profile_registered == "yes";
+  PinGateController::Instance().EnsureUnlocked([this, renewing](const bool unlocked) {
     if (!unlocked) {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
       return;
@@ -674,10 +704,12 @@ void SettingsController::OnRegisterProfile() {
       ReportFailure(registered.error());
       return;
     }
-    status_ = "Registered — Brief API key saved";
+    const char* message =
+        renewing ? "Registration renewed — Brief API key updated" : "Registered — Brief API key saved";
+    status_ = message;
     PushUiStateToBindings();
     DirtyAll();
-    UserFeedback::Ok("Registered — Brief API key saved");
+    UserFeedback::Ok(message);
   });
 }
 

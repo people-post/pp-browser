@@ -31,7 +31,7 @@ Interactive `crypto_pwhash` ops/mem limits are stored in `vault.bin` so unlock m
 
 ```
 profiles/{id}/
-  preferences.json  # profile prefs incl. pin_is_default (schema v3)
+  preferences.json  # profile prefs incl. pin_is_default (schema v4)
   vault.bin       # wrapped DEK + KDF params
   identity.enc    # AEAD(identity JSON) under DEK
   contacts.json   # plaintext (atomic write)

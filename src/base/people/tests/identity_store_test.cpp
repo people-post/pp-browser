@@ -88,6 +88,7 @@ TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
   identity.relay_user_id = "relay:alice123";
   identity.brief_llm_api_key = "brf_llm_testkeyABCDEFGHIJKLMNOP";
   identity.registered = true;
+  identity.registration_expires_at = "2099-06-01T00:00:00.000Z";
   auto updated = store.Update(identity);
   ASSERT_TRUE(static_cast<bool>(updated)) << updated.error().message;
 
@@ -98,6 +99,7 @@ TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
   EXPECT_EQ(loaded->relay_user_id, "relay:alice123");
   EXPECT_EQ(loaded->brief_llm_api_key, "brf_llm_testkeyABCDEFGHIJKLMNOP");
   EXPECT_TRUE(loaded->registered);
+  EXPECT_EQ(loaded->registration_expires_at, "2099-06-01T00:00:00.000Z");
   EXPECT_FALSE(loaded->peer_id.empty());
 }
 

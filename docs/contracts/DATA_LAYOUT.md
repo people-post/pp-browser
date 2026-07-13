@@ -47,7 +47,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 |--------------|------|
 | `vault.bin` | PIN-wrapped DEK |
 | `identity.enc` | Identity JSON under DEK AEAD |
-| `preferences.json` → `pin_is_default` | Schema v3; set when user chooses default PIN (“Just continue”); cleared on Change PIN |
+| `preferences.json` → `pin_is_default` | Schema v4; set when user chooses default PIN (“Just continue”); cleared on Change PIN |
+| `preferences.json` → `auto_renew_registration` | Schema v4; default true; renew near/past expiry after unlock |
 
 Interactive unlock / chooser UX: [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md). Forgotten PIN → wipe the profile directory.
 
@@ -66,6 +67,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | Key | File | Notes |
 |-----|------|--------|
 | `appearance` | `preferences.json` | `system`, `light`, or `dark` |
-| `pin_is_default` | `preferences.json` | boolean, schema v3 |
+| `pin_is_default` | `preferences.json` | boolean, schema v4 |
+| `auto_renew_registration` | `preferences.json` | boolean, schema v4 (default true) |
 
 Stylesheet entry points (`foundation.rcss`, `components.rcss`, `colors-*.rcss`) and theme UX: [ui/UI_DESIGN_SYSTEM.md](../ui/UI_DESIGN_SYSTEM.md). The legacy `theme` path field in config remains for compatibility.

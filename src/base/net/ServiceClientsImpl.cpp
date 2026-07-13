@@ -248,7 +248,9 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(const std::st
                                                                    const std::string& /*kem_public_key_b64*/) {
   return RegistrationResult{.success = true,
                             .relay_user_id = "relay:" + public_key_b64.substr(0, 12),
-                            .message = "Registered as " + nickname};
+                            .message = "Registered as " + nickname,
+                            .llm_api_key = "brf_llm_mock_key",
+                            .expires_at = "2099-01-01T00:00:00.000Z"};
 }
 
 Roe<RegistrationResult> MockRegistrationClient::UpdateNickname(const std::string& new_nickname,
@@ -578,6 +580,9 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
     }
     if (root.contains("llm_api_key") && root["llm_api_key"].is_string()) {
       result.llm_api_key = root["llm_api_key"].get<std::string>();
+    }
+    if (root.contains("expires_at") && root["expires_at"].is_string()) {
+      result.expires_at = root["expires_at"].get<std::string>();
     }
   }
   return result;

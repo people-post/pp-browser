@@ -12,6 +12,7 @@
 #include "common/Utilities.h"
 #include "feature/messaging/MessagingHub.h"
 #include "base/crypto/ProfileSecretsService.h"
+#include "base/net/RegistrationClientUtil.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/SendRelayOptions.h"
@@ -1989,6 +1990,21 @@ void ChatController::WireMessagingBindings() {
   RefreshFromMessaging();
   if (MessagingHub::Instance().IsMessagingReady()) {
     MessagingHub::Instance().P2p().TailSyncActiveE2eThread();
+
+    const bool auto_renew = SessionStore::Instance().Snapshot().profile_prefs.auto_renew_registration;
+    auto renew = MaybeAutoRenewRegistration(MessagingHub::Instance().Registration(),
+                                            MessagingHub::Instance().Identity(), auto_renew);
+    if (!renew) {
+      log().warning << "Auto-renew registration failed: " << renew.error().message;
+    } else if (*renew) {
+      ReloadAgentConfig();
+      log().info << "Network registration auto-renewed";
+    } else {
+      auto identity = MessagingHub::Instance().Identity().Get();
+      if (identity && ShouldRenewRegistration(*identity) && !auto_renew) {
+        UserFeedback::NeedsSetup("Network registration expires soon — renew in Me → Profile");
+      }
+    }
   }
 }
 

@@ -65,6 +65,9 @@ LocalIdentity IdentityFromJson(const nlohmann::json& root) {
   if (root.contains("registered") && root["registered"].is_boolean()) {
     identity.registered = root["registered"].get<bool>();
   }
+  if (root.contains("registration_expires_at") && root["registration_expires_at"].is_string()) {
+    identity.registration_expires_at = root["registration_expires_at"].get<std::string>();
+  }
   if (root.contains("kem_public_key_b64") && root["kem_public_key_b64"].is_string()) {
     identity.kem_public_key_b64 = root["kem_public_key_b64"].get<std::string>();
   }
@@ -82,7 +85,8 @@ nlohmann::json IdentityToJson(const LocalIdentity& identity) {
           {"nickname", identity.nickname},
           {"relay_user_id", identity.relay_user_id},
           {"brief_llm_api_key", identity.brief_llm_api_key},
-          {"registered", identity.registered}};
+          {"registered", identity.registered},
+          {"registration_expires_at", identity.registration_expires_at}};
 }
 
 } // namespace
@@ -159,6 +163,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     identity_.relay_user_id.clear();
     identity_.brief_llm_api_key.clear();
     identity_.registered = false;
+    identity_.registration_expires_at.clear();
     if (auto peer = DerivePeerId(identity_); !peer) {
       return peer.error();
     }

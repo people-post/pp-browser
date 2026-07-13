@@ -183,18 +183,12 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       return Error("Registration client not configured");
     }
 
-    auto result = FinishRegistrationWithIdentity(*registration_, identity_, identity->nickname);
+    auto result = FinishAndPersistRegistration(*registration_, identity_, identity->nickname);
     if (!result) {
       return result.error();
     }
-    LocalIdentity updated = *identity;
-    updated.registered = result->success;
-    if (!result->relay_user_id.empty()) {
-      updated.relay_user_id = result->relay_user_id;
-    }
-    (void)identity_.Update(updated);
     if (on_action_message_) {
-      on_action_message_(result->message);
+      on_action_message_(result->registered ? "Registered on network" : "Registration failed");
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }

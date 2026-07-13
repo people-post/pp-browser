@@ -30,6 +30,13 @@ struct SettingsUiState {
   std::string profile_relay_id;
   std::string profile_public_key;
   std::string profile_registered = "no";
+  std::string profile_registration_status = "not registered";
+  std::string profile_registration_expires;
+  std::string profile_register_label = "Register on network";
+  bool profile_show_register = true;
+  bool profile_show_rotate = false;
+  /** UI select value: "auto" or "off". */
+  std::string auto_renew_registration = "auto";
   std::string brief_llm_key_masked;
   std::string appearance = "system";
   std::string profile_label;

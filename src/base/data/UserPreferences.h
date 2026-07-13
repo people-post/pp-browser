@@ -33,13 +33,15 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 3;
+  static constexpr int kSchemaVersion = 4;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
   std::string appearance = "system";
   /** True when vault was created with kDefaultProfilePin and not yet changed. */
   bool pin_is_default = false;
+  /** When true, renew network registration near/past expiry after unlock. */
+  bool auto_renew_registration = true;
 };
 
 class UserPreferences {

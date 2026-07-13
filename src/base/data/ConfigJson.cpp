@@ -354,7 +354,8 @@ void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
   j = nlohmann::json{{"schema_version", prefs.schema_version},
                      {"theme", prefs.theme},
                      {"appearance", prefs.appearance},
-                     {"pin_is_default", prefs.pin_is_default}};
+                     {"pin_is_default", prefs.pin_is_default},
+                     {"auto_renew_registration", prefs.auto_renew_registration}};
 }
 
 void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
@@ -369,6 +370,11 @@ void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
   }
   if (j.contains("pin_is_default") && j["pin_is_default"].is_boolean()) {
     prefs.pin_is_default = j["pin_is_default"].get<bool>();
+  }
+  if (j.contains("auto_renew_registration") && j["auto_renew_registration"].is_boolean()) {
+    prefs.auto_renew_registration = j["auto_renew_registration"].get<bool>();
+  } else {
+    prefs.auto_renew_registration = true;
   }
 }
 

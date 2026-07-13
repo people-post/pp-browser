@@ -25,6 +25,13 @@ std::string MaskBriefLlmApiKey(const std::string& key) {
   return key.substr(0, sizeof(kPrefix) - 1 + 4) + "••••";
 }
 
+std::string FormatExpiresDisplay(const std::string& iso) {
+  if (iso.size() >= 10) {
+    return iso.substr(0, 10);
+  }
+  return iso;
+}
+
 void SyncBriefKeyMasked(SettingsUiState& state) {
   state.brief_llm_key_masked.clear();
   if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().IsMessagingReady()) {
@@ -35,6 +42,18 @@ void SyncBriefKeyMasked(SettingsUiState& state) {
     return;
   }
   state.brief_llm_key_masked = MaskBriefLlmApiKey(identity->brief_llm_api_key);
+}
+
+void SyncRegistrationUi(SettingsUiState& state, const LocalIdentity& identity) {
+  const RegistrationStatus status = ClassifyRegistration(identity);
+  state.profile_registered = identity.registered ? "yes" : "no";
+  state.profile_registration_status = RegistrationStatusLabel(status);
+  state.profile_registration_expires =
+      identity.registration_expires_at.empty() ? "" : FormatExpiresDisplay(identity.registration_expires_at);
+  state.profile_register_label = RegistrationActionLabel(status);
+  state.profile_show_register = true;
+  state.profile_show_rotate = (status == RegistrationStatus::Active || status == RegistrationStatus::ExpiringSoon) &&
+                              !identity.brief_llm_api_key.empty();
 }
 
 void ReconfigureAgentIfNeeded() {
@@ -55,7 +74,8 @@ SettingsFlushMode ProfileSettingsSection::FlushMode() const {
   return SettingsFlushMode::Debounced;
 }
 
-void ProfileSettingsSection::SyncFromSession(const BootstrapResult& /*bootstrap*/, SettingsUiState& state) {
+void ProfileSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
+  state.auto_renew_registration = bootstrap.profile_prefs.auto_renew_registration ? "auto" : "off";
   if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().IsMessagingReady()) {
     return;
   }
@@ -67,11 +87,15 @@ void ProfileSettingsSection::SyncFromSession(const BootstrapResult& /*bootstrap*
   state.profile_peer_id = identity->peer_id;
   state.profile_relay_id = identity->relay_user_id;
   state.profile_public_key = identity->public_key_b64;
-  state.profile_registered = identity->registered ? "yes" : "no";
+  SyncRegistrationUi(state, *identity);
   SyncBriefKeyMasked(state);
 }
 
-bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& /*bootstrap*/) const {
+bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {
+  const bool auto_renew = state.auto_renew_registration != "off";
+  if (auto_renew != bootstrap.profile_prefs.auto_renew_registration) {
+    return false;
+  }
   if (!MessagingHub::Instance().IsInitialized()) {
     return true;
   }
@@ -82,21 +106,38 @@ bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   return state.profile_nickname == identity->nickname;
 }
 
-Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& /*store*/) {
-  if (!MessagingHub::Instance().IsInitialized()) {
-    return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
+Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
+  const bool auto_renew = state.auto_renew_registration != "off";
+  if (auto_renew != store.Snapshot().profile_prefs.auto_renew_registration) {
+    ProfilePreferences prefs = store.Snapshot().profile_prefs;
+    prefs.auto_renew_registration = auto_renew;
+    prefs.schema_version = ProfilePreferences::kSchemaVersion;
+    if (auto saved = store.SaveProfilePrefs(prefs); !saved) {
+      return saved.error();
+    }
   }
-  if (!MessagingHub::Instance().IsMessagingReady()) {
-    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to save identity");
+
+  if (!MessagingHub::Instance().IsInitialized()) {
+    SyncFromSession(store.Snapshot(), state);
+    return {};
   }
 
   auto identity = MessagingHub::Instance().Identity().Get();
   if (!identity) {
+    if (!MessagingHub::Instance().IsMessagingReady()) {
+      SyncFromSession(store.Snapshot(), state);
+      return {};
+    }
     return identity.error();
   }
 
   if (state.profile_nickname == identity->nickname) {
+    SyncFromSession(store.Snapshot(), state);
     return {};
+  }
+
+  if (!MessagingHub::Instance().IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to save identity");
   }
 
   LocalIdentity updated = *identity;
@@ -113,7 +154,7 @@ Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& /*
     }
   }
 
-  SyncFromSession(SessionStore::Instance().Snapshot(), state);
+  SyncFromSession(store.Snapshot(), state);
   return {};
 }
 
@@ -146,22 +187,10 @@ Roe<void> ProfileSettingsSection::RegisterIdentity(SettingsUiState& state) {
     }
   }
 
-  auto result = FinishRegistrationWithIdentity(MessagingHub::Instance().Registration(),
-                                             MessagingHub::Instance().Identity(), identity->nickname);
-  if (!result) {
-    return result.error();
-  }
-
-  LocalIdentity updated = *identity;
-  updated.registered = result->success;
-  if (!result->relay_user_id.empty()) {
-    updated.relay_user_id = result->relay_user_id;
-  }
-  if (!result->llm_api_key.empty()) {
-    updated.brief_llm_api_key = result->llm_api_key;
-  }
-  if (auto saved = MessagingHub::Instance().Identity().Update(updated); !saved) {
-    return saved.error();
+  auto applied = FinishAndPersistRegistration(MessagingHub::Instance().Registration(),
+                                              MessagingHub::Instance().Identity(), identity->nickname);
+  if (!applied) {
+    return applied.error();
   }
 
   ProfileSettingsSection section;
@@ -203,8 +232,17 @@ Roe<void> ProfileSettingsSection::RotateBriefLlmKey(SettingsUiState& state) {
     return response.error();
   }
   if (response->status_code == 401 || response->status_code == 403) {
+    LocalIdentity expired = *identity;
+    MarkRegistrationExpired(expired);
+    (void)MessagingHub::Instance().Identity().Update(expired);
+    ProfileSettingsSection section;
+    section.SyncFromSession(SessionStore::Instance().Snapshot(), state);
+    const char* renew_hint = response->status_code == 403
+                                 ? "Registration expired — use Renew registration in Me → Profile."
+                                 : "Brief API key rejected — renew registration in Me → Profile.";
     return AppError::Auth(Err::Auth::Forbidden,
-                       "Brief key rotate HTTP " + std::to_string(response->status_code));
+                          "Brief key rotate HTTP " + std::to_string(response->status_code))
+        .WithUser(renew_hint);
   }
   if (response->status_code < 200 || response->status_code >= 300) {
     auto json = nlohmann::json::parse(response->body, nullptr, false);
@@ -223,12 +261,12 @@ Roe<void> ProfileSettingsSection::RotateBriefLlmKey(SettingsUiState& state) {
   auto root = nlohmann::json::parse(response->body, nullptr, false);
   if (root.is_discarded() || !root.contains("llm_api_key") || !root["llm_api_key"].is_string()) {
     return AppError::Auth(Err::Auth::Generic, "Brief API key rotate response missing llm_api_key")
-        .WithUser("Couldn't update Brief API key — try registering again in Me → Profile.");
+        .WithUser("Couldn't update Brief API key — try Renew registration in Me → Profile.");
   }
   const std::string new_key = root["llm_api_key"].get<std::string>();
   if (new_key.empty()) {
     return AppError::Auth(Err::Auth::Generic, "Brief API key rotate returned empty key")
-        .WithUser("Couldn't update Brief API key — try registering again in Me → Profile.");
+        .WithUser("Couldn't update Brief API key — try Renew registration in Me → Profile.");
   }
 
   LocalIdentity updated = *identity;

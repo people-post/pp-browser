@@ -140,19 +140,14 @@ void RegisterMessagingTools(ToolRegistry& registry, MessagingHub& hub) {
                          identity = hub.Identity().Get();
                        }
 
-                       auto result = FinishRegistrationWithIdentity(hub.Registration(), hub.Identity(), identity->nickname);
+                       auto result = FinishAndPersistRegistration(hub.Registration(), hub.Identity(), identity->nickname);
                        if (!result) {
                          return result.error();
                        }
-                       LocalIdentity updated = *identity;
-                       updated.registered = result->success;
-                       if (!result->relay_user_id.empty()) {
-                         updated.relay_user_id = result->relay_user_id;
-                       }
-                       (void)hub.Identity().Update(updated);
-                       return nlohmann::json{{"success", result->success},
-                                             {"relay_user_id", updated.relay_user_id},
-                                             {"message", result->message}}
+                       return nlohmann::json{{"success", result->registered},
+                                             {"relay_user_id", result->relay_user_id},
+                                             {"message", "Registered"},
+                                             {"expires_at", result->registration_expires_at}}
                            .dump();
                      }});
 

@@ -44,6 +44,8 @@ struct RegistrationResult {
   std::string message;
   /** Brief LLM API key returned once from register/finish or rotate. */
   std::string llm_api_key;
+  /** ISO-8601 registration expiry from register/finish. */
+  std::string expires_at;
 };
 
 struct RegistrationStartResult {

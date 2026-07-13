@@ -68,6 +68,12 @@ private:
     Rml::String profile_relay_id;
     Rml::String profile_public_key;
     Rml::String profile_registered = "no";
+    Rml::String profile_registration_status = "not registered";
+    Rml::String profile_registration_expires;
+    Rml::String profile_register_label = "Register on network";
+    bool profile_show_register = true;
+    bool profile_show_rotate = false;
+    Rml::String auto_renew_registration = "auto";
     Rml::String brief_llm_key_masked;
     Rml::String appearance = "system";
     Rml::String profile_label;

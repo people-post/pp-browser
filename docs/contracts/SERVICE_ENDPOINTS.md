@@ -85,7 +85,7 @@ Default assistant preset uses OpenAI-compatible completions at:
 
 Upstream is user-ai `POST /v1/chat/completions` (stateless; www→user-ai uses service token). pp-browser stores the plaintext key in profile `identity.enc` (`brief_llm_api_key`) and sends standard Bearer auth when preset is `brief`.
 
-Lost key: re-run Profile → Register (finish) to issue a new key.
+Lost key or expired registration: use **Renew registration** in Me → Profile (finish) to issue a new key. **Rotate Brief API key** remains available while registration is active.
 
 ## libp2p (deferred)
 
