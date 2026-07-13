@@ -19,8 +19,8 @@
 
 | Env / file | Purpose |
 |------------|---------|
-| `BRF_FCM_PROJECT_ID` | Firebase project id |
-| `BRF_FCM_SERVICE_ACCOUNT_JSON` | Service account JSON path or inline JSON |
+| `BRF_WWW_FCM_PROJECT_ID` | Firebase project id (www; aliases `BRF_FCM_PROJECT_ID`) |
+| `BRF_WWW_FCM_SERVICE_ACCOUNT_PATH` / `…_JSON` | Service account path or JSON (www) |
 | `android/app/google-services.json` | Enables FCM source set in Android build |
 
 ## Follow-ups
