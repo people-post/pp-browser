@@ -47,7 +47,7 @@ Override data root with `data_dir` in config (supports `~` expansion).
 
 Forgotten PIN → wipe the profile directory. See [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md).
 
-Legacy flat `threads/index.json` and `{thread_id}.json` are removed on first run after the SQLite migration (development wipe — see [chat-storage D016](projects/chat-storage-and-memory/DECISIONS.md)). Plaintext `identity.json` is not migrated — wipe the profile and recreate.
+Legacy flat `threads/index.json` and `{thread_id}.json` are removed on first run after the SQLite migration (development wipe — see [chat-storage D016](../projects/chat-storage-and-memory/DECISIONS.md)). Plaintext `identity.json` is not migrated — wipe the profile and recreate. Compatibility overview: [COMPATIBILITY.md](COMPATIBILITY.md).
 
 Phase 1 ships a single `default` profile. Use `--profile NAME` for dev isolation (no account-switcher UI yet).
 
@@ -88,7 +88,7 @@ See [UI_DESIGN_SYSTEM.md](UI_DESIGN_SYSTEM.md) for tokens and component classes.
 
 All JSON stores include `schema_version` (or `config_version` for config). Unsupported newer versions fail with a clear error. Forward migrators can be registered for future v1→v2 changes during development.
 
-**No legacy import:** older flat layouts (e.g. `identity.json` at data root) are not migrated. Delete the data directory when the layout changes during development.
+**No legacy import:** older flat layouts (e.g. `identity.json` at data root) are not migrated. Delete the data directory when the layout changes during development. See [COMPATIBILITY.md](COMPATIBILITY.md) for dirty-folder and newer-peer policy.
 
 ## In-app settings (Me tab)
 

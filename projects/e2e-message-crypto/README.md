@@ -2,7 +2,7 @@
 
 **Status:** Wave 6 (**c3**) complete (2026-07-06) — private `e2e` PSK UX landed  
 **Owner:** Hongwei + agents  
-**Stable refs:** [MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
+**Stable refs:** [MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md), [WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md), [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [COMPATIBILITY.md](../../docs/COMPATIBILITY.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
 **Related project:** [chat-storage-and-memory](../chat-storage-and-memory/) (three tiers D089, `ChatPayload`, `sender_seq`, ingest rules, identity-keyed `ChatTargetKey` D079)
 
 ## One-line goal

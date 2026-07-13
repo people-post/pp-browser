@@ -2,7 +2,7 @@
 
 Normative spec for profile secrets on disk. Planning ADRs: [projects/at-rest-crypto/](../projects/at-rest-crypto/).
 
-**Related:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md) (wire E2E), [CONFIGURATION.md](CONFIGURATION.md).
+**Related:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md) (wire E2E), [CONFIGURATION.md](CONFIGURATION.md), [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Overview
 

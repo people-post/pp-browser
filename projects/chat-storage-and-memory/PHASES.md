@@ -9,7 +9,7 @@ This file has **two orderings**:
 | **Phase sections below** (v2a → v2b → …) | Incremental rollout, traceability, exit criteria |
 | **[Agent batch delivery](#agent-batch-delivery-order)** | Agents finish all `[v1]` work before a single release — parallel waves, merged gates |
 
-Before each phase, read [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints) and [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).
+Before each phase, read [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints) and [docs/WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md).
 
 Check boxes when work is **merged and verified**. Add sub-items freely; keep phase boundaries stable unless DECISIONS records a change.
 
@@ -106,10 +106,11 @@ Wave 7 (optional post-v1)
 Give each agent **only** the slice it needs:
 
 1. [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints) — always
-2. [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) — wire, codec, history fetch
+2. [docs/WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md) — wire, codec, history fetch
 3. [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) — when touching crypto or coordinating with e2e
-4. Relevant **phase checklist** section(s) in this file
-5. [CURRENT_STATE.md](CURRENT_STATE.md) — update in the same PR
+4. [docs/COMPATIBILITY.md](../../docs/COMPATIBILITY.md) — dirty disk / newer peer policy
+5. Relevant **phase checklist** section(s) in this file
+6. [CURRENT_STATE.md](CURRENT_STATE.md) — update in the same PR
 
 ### Anti-patterns (cause rework)
 

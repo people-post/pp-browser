@@ -12,7 +12,7 @@ pp-browser is a native AI-oriented UI shell:
 - **Third-party libs** — FreeType, nlohmann/json, curl, SDL3, SDL3_image, and libp2p deps in [`third_party/`](third_party/)
 - **Four-layer source tree** — `src/common/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/SRC_LAYOUT.md](docs/SRC_LAYOUT.md)
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture. Doc tiers (architecture / contracts / ops): [docs/README.md](docs/README.md). Compatibility (dirty disk, newer peers): [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ## RmlUi is maintained in-tree
 
@@ -60,14 +60,15 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Structured AI replies | `src/base/ai/StructuredTextParser.cpp` |
 | Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency (long-term) | [projects/ai-centric-interface/](projects/ai-centric-interface/) — 10 acts, open domains; v1 thin coverage first |
-| P2P messaging | `src/feature/messaging/`, [docs/P2P_MESSAGING.md](docs/P2P_MESSAGING.md) |
+| P2P messaging | `src/feature/messaging/`, [docs/P2P_MESSAGING.md](docs/P2P_MESSAGING.md), [docs/WIRE_SCHEMAS.md](docs/WIRE_SCHEMAS.md) |
 | Contacts UI / store | `src/feature/ui/ContactsController.*`, `src/base/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
 | SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | E2E symmetric crypto (`base/crypto`) | `src/base/crypto/`, [docs/MESSAGE_ENCRYPTION.md](docs/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
 | At-rest encryption (PIN vault) | `ProfileSecretsService`, `DataKeyVault`, `IDekConsumer`, `PinGateController`, [docs/AT_REST_ENCRYPTION.md](docs/AT_REST_ENCRYPTION.md) — [projects/at-rest-crypto/](projects/at-rest-crypto/) |
 | PIN chooser / Change PIN | `PinGateController`, `SecuritySettingsSection`, Me → Security — ADR A007 in [projects/at-rest-crypto/DECISIONS.md](projects/at-rest-crypto/DECISIONS.md) |
 | Chat storage / memory | [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) — **Waves 1–2 done**; Wave 3 next (v3 ∥ v4) |
-| Config / data / profiles | `src/app/Bootstrap.*`, `src/base/data/`, `src/base/platform/`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md) |
+| Config / data / profiles | `src/app/Bootstrap.*`, `src/base/data/`, `src/base/platform/`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md), [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) |
+| Doc map / contracts | [docs/README.md](docs/README.md) |
 | In-app settings (Me tab) | `src/feature/ui/SettingsController.*`, `assets/views/settings.rml` |
 | Build | [docs/BUILD.md](docs/BUILD.md) |
 | Source layers | [docs/SRC_LAYOUT.md](docs/SRC_LAYOUT.md) |

@@ -56,7 +56,7 @@ When building **`[v1]`** phases, satisfy these so **`[post-v1]`** features plug 
 | **`envelope_version` on every relay envelope** (D072) | Independent wire evolution from `ChatPayload.payload_version` and SQLite `user_version` |
 | **Cap `empty_closed_seqs` / use ranges** (D071) | Bounded `sync_state.state_json`; coalesce before append |
 | **Production disk: migrate, don’t wipe** (D069) | D016 wipe is dev/pre-users only; shippable layouts use incremental `user_version` migrations |
-| **Shared history request/response types** (D072) | One struct for relay GET and libp2p D060 — see [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) |
+| **Shared history request/response types** (D072) | One struct for relay GET and libp2p D060 — see [docs/WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md) |
 | **Ignore unknown envelope keys** (D073) | Forward-compatible wire extensions without dual-parser |
 
 ## Principles
@@ -298,7 +298,7 @@ One schema for disk and wire: **binary `ChatPayload`** (D087) inside AEAD plaint
 
 **Wire (D063/D090):** Direct envelopes use **`body.e2e.payload_b64`** only. **v4** adds full validator (`system`, unknown-type reject, D030, size caps) — **same wire shape**, no second parser.
 
-**Binary layout (v1 — D087/D088):** see [WIRE_SCHEMAS.md § ChatPayload](WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088) and [§ Wire profile](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
+**Binary layout (v1 — D087/D088):** see [docs/WIRE_SCHEMAS.md § ChatPayload](../../docs/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088) and [§ Wire profile](../../docs/WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
 
 **`[v1]` validator** accepts `text` and `system` on inbound relay; rejects unknown `content_type` enum values.
 
@@ -583,7 +583,7 @@ No separate JSON sidecar for seq or PSK state — durable counters and keys in `
 
 ### Schema evolution (D069)
 
-Disk layout and wire format evolve on **separate version axes** — see [WIRE_SCHEMAS.md § Versioning matrix](WIRE_SCHEMAS.md#versioning-matrix).
+Disk layout and wire format evolve on **separate version axes** — see [docs/WIRE_SCHEMAS.md § Versioning matrix](../../docs/WIRE_SCHEMAS.md#versioning-matrix) and [docs/COMPATIBILITY.md](../../docs/COMPATIBILITY.md).
 
 | Axis | Mechanism | Production policy |
 |------|-----------|-------------------|
@@ -734,9 +734,9 @@ Aliases **`[post-v1]`:** `@ai share …` → shared reply; `@ai share all …` �
 
 **Public direct (`e2e_public`)** — same shape; `route.channel` = `e2e_public`.
 
-**Unknown-field policy (D073):** ingest **ignores** unknown top-level envelope keys (after required fields parse). **`ChatPayload` (binary):** reject unknown `content_type` on relay ingest; reject unknown typed sub-record fields in v1. Full rules: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md).
+**Unknown-field policy (D073):** ingest **ignores** unknown top-level envelope keys (after required fields parse). **`ChatPayload` (binary):** reject unknown `content_type` on relay ingest today; soft-skip direction in [COMPATIBILITY.md](../../docs/COMPATIBILITY.md). Full rules: [docs/WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md).
 
-**Normative wire shapes:** [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) — `RelayEnvelope` (JSON), binary `ChatPayload` (D087), `ChatHistoryRequest`, `ChatHistoryResponse`. C++ codecs and relay/libp2p glue share one struct pair for history fetch (D072).
+**Normative wire shapes:** [docs/WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md) — `RelayEnvelope` (JSON), binary `ChatPayload` (D087), `ChatHistoryRequest`, `ChatHistoryResponse`. C++ codecs and relay/libp2p glue share one struct pair for history fetch (D072).
 
 **`[post-v1]` group** — `route`: `{ "kind": "group", "group_id": "group:…" }` (no `ChatTargetKey`).
 
@@ -931,7 +931,7 @@ E2E backfill is **peer-first** (D060); **relay** (D027) when peer offline or dir
 
 ### Relay API — stream message fetch (D027, D056)
 
-**Relay fallback** for **`FetchChatTargetMessages`** (D058) when peer-direct (D060) is unavailable. The relay is **chat-agnostic**; pp-browser maps `ChatHistoryRequest` to opaque **`stream_key`** + **`order_key`** (v1: `order_key === sender_seq`). Normative wire: [WIRE_SCHEMAS § Stream history](WIRE_SCHEMAS.md#stream-history-http-relay).
+**Relay fallback** for **`FetchChatTargetMessages`** (D058) when peer-direct (D060) is unavailable. The relay is **chat-agnostic**; pp-browser maps `ChatHistoryRequest` to opaque **`stream_key`** + **`order_key`** (v1: `order_key === sender_seq`). Normative wire: [WIRE_SCHEMAS § Stream history](../../docs/WIRE_SCHEMAS.md#stream-history-http-relay).
 
 **Authorization (required):** `requester_contact_id` must be the inbox owner and must differ from `sender_contact_id`. Non-participants receive **403**. Client ingest MUST reject when `sender_contact_id` does not match the thread's bound **`peer_identity_value`**.
 

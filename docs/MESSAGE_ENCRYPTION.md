@@ -2,9 +2,9 @@
 
 Normative spec for symmetric end-to-end encryption of P2P chat message bodies. **Three tiers** (private direct, public direct, group) — all product P2P uses ciphertext on the wire ([D089](../projects/chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021), [E021](../projects/e2e-message-crypto/DECISIONS.md#e021--three-chat-tiers-both-direct-tiers-e2e-d089)). Planning, phases, and ADRs live in [projects/e2e-message-crypto/](../projects/e2e-message-crypto/).
 
-**Related:** [P2P_MESSAGING.md](P2P_MESSAGING.md), [chat-storage WIRE_SCHEMAS.md](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md), [CONFIGURATION.md](CONFIGURATION.md).
+**Related:** [P2P_MESSAGING.md](P2P_MESSAGING.md), [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [CONFIGURATION.md](CONFIGURATION.md).
 
-**C++ wire profile:** [Serialize.hpp](../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`); [Binary Wire Profile (D088)](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
+**C++ wire profile:** [Serialize.hpp](../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`); [Binary Wire Profile (D088)](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
 
 ## Overview
 
@@ -88,7 +88,7 @@ session_key = HKDF-SHA256(
 
 ## AEAD plaintext (E010)
 
-Binary **`ChatPayload` v1** — AEAD plaintext. Layout: [WIRE_SCHEMAS § ChatPayload](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088).
+Binary **`ChatPayload` v1** — AEAD plaintext. Layout: [WIRE_SCHEMAS § ChatPayload](WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088).
 
 **Vector A fixture** (`text="Hello"`, plain default):
 

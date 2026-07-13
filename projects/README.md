@@ -1,18 +1,31 @@
 # Ongoing projects
 
-Work-in-progress design and implementation tracking for pp-browser. Unlike [`docs/`](../docs/), these files are **living project notes**: they change as work proceeds, track checkboxes, and record decisions before they land in stable reference docs.
+Work-in-progress design and implementation tracking for pp-browser. Unlike [`docs/`](../docs/) **contracts** and architecture (stable, versioned), these files are **living project notes**: they change as work proceeds, track checkboxes, and record decisions **before** normative text lands in stable reference docs.
+
+**Doc map:** [`docs/README.md`](../docs/README.md) — Architecture | Contracts | Product/UI | Ops.  
+**Compatibility policy:** [`docs/COMPATIBILITY.md`](../docs/COMPATIBILITY.md).
 
 ## How to use (humans and agents)
 
 1. Open the project folder for the feature you are working on.
 2. Read **DESIGN.md** (complete spec) and **CURRENT_STATE.md** (today) before coding.
 3. **Human:** unresolved rollout choices live in **[PENDING_DECISIONS.md](PENDING_DECISIONS.md)** — resolve before expanding scope or v6-sync exit criteria.
-3. Pick tasks from **PHASES.md** (ordering only); for batch pre-release delivery, follow **PHASES § Agent batch delivery** in [chat-storage](chat-storage-and-memory/PHASES.md#agent-batch-delivery-order) and [e2e](e2e-message-crypto/PHASES.md#agent-batch-delivery-order).
-4. Mark items done in the same PR that implements them.
-5. Log non-obvious choices in **DECISIONS.md** (date + rationale).
-6. When a phase ships, update the status line in the project **README.md**.
+4. Pick tasks from **PHASES.md** (ordering only); for batch pre-release delivery, follow **PHASES § Agent batch delivery** in [chat-storage](chat-storage-and-memory/PHASES.md#agent-batch-delivery-order) and [e2e](e2e-message-crypto/PHASES.md#agent-batch-delivery-order).
+5. Mark items done in the same PR that implements them.
+6. Log non-obvious choices in **DECISIONS.md** (date + rationale).
+7. When a phase ships, update the status line in the project **README.md**.
 
-When a project is fully delivered and stable, fold enduring facts into `docs/` and archive or delete the project folder.
+## Lifecycle: promote → freeze → archive
+
+| Stage | Where | Rule |
+|-------|--------|------|
+| Explore | `DESIGN.md`, open ADRs | Churn expected |
+| Ship | `PHASES.md`, `CURRENT_STATE.md` | Checkboxes match code |
+| **Promote** | [`docs/`](../docs/) **contracts** | Wire, disk, HTTP, crypto, compat policy — **one canonical file**; same release window as the ship |
+| **Freeze** | Project `DECISIONS.md` | Mark outcomes **superseded by** `docs/…`; do not edit normative tables in two places |
+| **Archive** | Delete or clearly mark project folder done | When delivery ends; enduring facts already in `docs/` |
+
+Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs. Do not leave shipped wire schemas only under `projects/` (example: [WIRE_SCHEMAS.md](../docs/WIRE_SCHEMAS.md) was promoted from chat-storage).
 
 ## Active projects
 

@@ -238,7 +238,7 @@ Fixed byte order (big-endian integers). **`aad_version = 1`** is the only AAD la
 
 ## AEAD: plaintext (inside ciphertext — E010)
 
-Binary **`ChatPayload` v1** ([chat-storage D087](../chat-storage-and-memory/DECISIONS.md#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext), [WIRE_SCHEMAS](../chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087)) — AEAD plaintext for all direct tiers.
+Binary **`ChatPayload` v1** ([chat-storage D087](../chat-storage-and-memory/DECISIONS.md#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext), [WIRE_SCHEMAS](../../docs/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087)) — AEAD plaintext for all direct tiers.
 
 **Vector A fixture** (`text="Hello"`, plain default):
 
@@ -264,7 +264,7 @@ Libsodium API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `n
 
 ## Relay envelope integration (phase c2 — D056)
 
-Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** **`envelope_version: 1`** required (chat-storage D072). Normative shapes: [WIRE_SCHEMAS.md](../chat-storage-and-memory/WIRE_SCHEMAS.md). See [chat-storage DESIGN § Relay envelope](../chat-storage-and-memory/DESIGN.md#relay--direct-envelope-d056).
+Outer envelope: JSON + Ed25519 signature. **No `thread_id`.** **`envelope_version: 1`** required (chat-storage D072). Normative shapes: [docs/WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md). See [chat-storage DESIGN § Relay envelope](../chat-storage-and-memory/DESIGN.md#relay--direct-envelope-d056).
 
 ```json
 {
@@ -519,7 +519,7 @@ Do **not** use this keypair outside tests.
 
 ### Ed25519 envelope signing (E014)
 
-**Binary `ChatPayload` v1 — Vector A** (see [WIRE_SCHEMAS § ChatPayload](../chat-storage-and-memory/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088)):
+**Binary `ChatPayload` v1 — Vector A** (see [WIRE_SCHEMAS § ChatPayload](../../docs/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088)):
 
 | Field | Value |
 |-------|-------|

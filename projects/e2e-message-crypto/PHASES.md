@@ -54,9 +54,10 @@ d0 (complete)
 
 1. [DESIGN.md](DESIGN.md) — module map, test vectors
 2. [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) — normative wire/crypto (agents implement against this)
-3. [chat-storage WIRE_SCHEMAS.md](../chat-storage-and-memory/WIRE_SCHEMAS.md) — `RelayEnvelope`, binary ChatPayload (c2+)
-4. [chat-storage DESIGN § Implementer constraints](../chat-storage-and-memory/DESIGN.md#implementer-constraints) — when touching envelope or store columns
-5. Relevant **phase checklist** below + [CURRENT_STATE.md](CURRENT_STATE.md) (update in same PR)
+3. [docs/WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md) — `RelayEnvelope`, binary ChatPayload (c2+)
+4. [docs/COMPATIBILITY.md](../../docs/COMPATIBILITY.md) — forward-compat vs hard reject
+5. [chat-storage DESIGN § Implementer constraints](../chat-storage-and-memory/DESIGN.md#implementer-constraints) — when touching envelope or store columns
+6. Relevant **phase checklist** below + [CURRENT_STATE.md](CURRENT_STATE.md) (update in same PR)
 
 ### Rollout gates to skip in batch mode
 

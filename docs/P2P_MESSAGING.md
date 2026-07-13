@@ -2,7 +2,7 @@
 
 Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local persistence as source of truth; HTTP relay/directory/registration transport with mock fallback when `base_url` is unset.
 
-**Normative wire shapes:** [chat-storage WIRE_SCHEMAS.md](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md). **E2E crypto:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md).
+**Normative wire shapes:** [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md). **E2E crypto:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md). **Compatibility:** [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Service resolution
 
@@ -13,7 +13,7 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md).
 
-**Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST …/v1/streams/messages/query`; mock when `base_url` unset. See [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay). Live integration tests ([D093](../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)) run when these env vars are set:
+**Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST …/v1/streams/messages/query`; mock when `base_url` unset. See [WIRE_SCHEMAS § Stream history](WIRE_SCHEMAS.md#stream-history-http-relay). Live integration tests ([D093](../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)) run when these env vars are set:
 
 | Variable | Purpose |
 |----------|---------|
@@ -80,7 +80,7 @@ Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is r
 
 **No `thread_id` on the wire.** All direct tiers use **`body.e2e.payload_b64`** (AEAD ciphertext). Reject `public_relay`, `body.content_b64`, flat `body.text`, and legacy `thread_id`.
 
-Full spec: [WIRE_SCHEMAS § RelayEnvelope](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#relayenvelope-v1--envelope_version-1).
+Full spec: [WIRE_SCHEMAS § RelayEnvelope](WIRE_SCHEMAS.md#relayenvelope-v1--envelope_version-1).
 
 ```json
 {
@@ -125,7 +125,7 @@ Local store is written **before** send. Server rejections do not delete history.
 | User sync | Thread menu **Sync with peer** — tail + gap repair + one older-history page (D059) |
 | Scroll backfill | **Load older messages** banner at transcript top (D052/post-v6c) |
 
-**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../projects/chat-storage-and-memory/WIRE_SCHEMAS.md#stream-history-http-relay).
+**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](WIRE_SCHEMAS.md#stream-history-http-relay).
 
 ### Direct live send (`/pp-browser/chat/1.0.0`)
 

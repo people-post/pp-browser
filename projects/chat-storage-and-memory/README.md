@@ -2,7 +2,7 @@
 
 **Status:** Waves 1–7 landed in tree (2026-07-06) — Bucket B feature-complete; release hygiene pending  
 **Owner:** Hongwei + agents  
-**Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
+**Stable refs:** [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md), [COMPATIBILITY.md](../../docs/COMPATIBILITY.md), [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md), [CONFIGURATION.md](../../docs/CONFIGURATION.md)  
 **Related project:** [e2e-message-crypto](../e2e-message-crypto/) (symmetric E2E body crypto; depends on v2b + v6 for wire-up)  
 **Recent:** D090 (no `public_relay` / plaintext direct wire) — see [DECISIONS.md](DECISIONS.md)
 
@@ -21,7 +21,7 @@ One durable conversation model for AI and P2P chat: SQLite per thread, `profile.
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | **Complete system specification** — all behavior with `[v1]` / `[post-v1]` maturity tags |
-| [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) | **Normative wire shapes** — envelope JSON, binary ChatPayload (D087), history fetch (D072) |
+| [WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md) | **Normative wire** (promoted) — envelope JSON, binary ChatPayload (D087), history fetch (D072). Stub left at [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md). |
 | [PHASES.md](PHASES.md) | **Implementation order** — checklists, exit criteria, traceability; **[agent batch waves](PHASES.md#agent-batch-delivery-order)** for pre-release delivery |
 | [DECISIONS.md](DECISIONS.md) | Recorded decisions (ADR-style rationale) |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |

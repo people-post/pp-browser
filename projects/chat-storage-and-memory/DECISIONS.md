@@ -2,6 +2,8 @@
 
 Record significant choices here so future sessions (human or agent) do not re-litigate them. Format: **ID**, **date**, **decision**, **rationale**, **alternatives considered**.
 
+**Normative wire (promoted):** [`docs/WIRE_SCHEMAS.md`](../../docs/WIRE_SCHEMAS.md). **Compatibility policy:** [`docs/COMPATIBILITY.md`](../../docs/COMPATIBILITY.md). Links below to `WIRE_SCHEMAS.md` resolve via a stub in this folder.
+
 ---
 
 ## D001 — Storage backend (superseded by D028)
