@@ -85,7 +85,7 @@ Also:
 - [ ] Synthesis prompt: short act-specific reminder (optional if `synthesis_hints` enough)
 - [ ] Update [CURRENT_STATE.md](CURRENT_STATE.md) gap table
 
-**Exit criteria:** `tests/fixtures/turn_plans/` (or equivalent) has ≥1 example per act; Monitor/Repair never no-op without user-visible text.
+**Exit criteria:** `src/base/ai/tests/fixtures/turn_plans/` (or equivalent) has ≥1 example per act; Monitor/Repair never no-op without user-visible text.
 
 ---
 

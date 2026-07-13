@@ -9,7 +9,7 @@
 namespace {
 
 std::string ReadFixture(const char* name) {
-  std::ifstream in(std::string("tests/fixtures/turn_plans/") + name);
+  std::ifstream in(std::string(PP_BROWSER_TURN_PLAN_FIXTURES_DIR) + "/" + name);
   std::ostringstream buffer;
   buffer << in.rdbuf();
   return buffer.str();

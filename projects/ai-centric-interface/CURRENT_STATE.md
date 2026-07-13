@@ -99,7 +99,7 @@ Root cause: **Discover-shaped planning + Operate API that only accepts directory
 
 | Asset | Location |
 |-------|----------|
-| Turn plan parse fixtures | `tests/fixtures/turn_plans/` (`people_discovery`, `headlines`, `chitchat_no_tools`) |
+| Turn plan parse fixtures | `src/base/ai/tests/fixtures/turn_plans/` (`people_discovery`, `headlines`, `chitchat_no_tools`) |
 | Payload plan tests | `src/feature/ai/tests/payload_turn_plan_test.cpp` |
 | Prompt builder tests | `src/base/ai/tests/prompt_builder_test.cpp` |
 

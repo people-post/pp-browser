@@ -155,3 +155,13 @@ target_link_libraries(pp_browser_psk_session_coordinator_test PRIVATE
   pp_base
   pp_common)
 pp_browser_add_gtest(pp_browser_psk_session_coordinator_test)
+
+add_executable(pp_browser_messaging_foundation_test messaging_foundation_test.cpp)
+target_link_libraries(pp_browser_messaging_foundation_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_base
+  pp_common
+  nlohmann_json::nlohmann_json)
+target_include_directories(pp_browser_messaging_foundation_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_gtest(pp_browser_messaging_foundation_test)

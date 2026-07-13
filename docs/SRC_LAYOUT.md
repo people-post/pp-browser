@@ -89,7 +89,7 @@ integration/host → fork/include (public API only)
 
 ## Test placement
 
-- Keep integration and environment-heavy tests in [`tests/`](../tests/).
+- Keep integration and environment-heavy tests in [`tests/`](../tests/) (e.g. fork-level RmlUi click routing).
 - Prefer colocated unit tests under module paths such as `src/base/.../tests/` and `src/feature/.../tests/`.
 - Register module-local tests through CMake so they are discovered by CTest in regular desktop builds.
 
