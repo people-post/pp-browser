@@ -73,4 +73,16 @@ std::vector<uint8_t> BuildRelayApiStreamHistorySignBytes(const ChatHistoryReques
   return RelaySignOssToBytes(oss);
 }
 
+std::vector<uint8_t> BuildRelayApiDeviceSignBytes(const RelayApiOp op, const std::string& relay_user_id,
+                                                  const std::string& platform, const std::string& device_id,
+                                                  const std::string& push_token, const int64_t timestamp) {
+  std::ostringstream oss;
+  AppendRelayApiHeader(oss, op, timestamp);
+  RelaySignAppendWireLenUtf8(oss, relay_user_id);
+  RelaySignAppendWireLenUtf8(oss, platform);
+  RelaySignAppendWireLenUtf8(oss, device_id);
+  RelaySignAppendWireLenUtf8(oss, push_token);
+  return RelaySignOssToBytes(oss);
+}
+
 } // namespace pbr

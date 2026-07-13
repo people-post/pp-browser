@@ -33,7 +33,7 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 4;
+  static constexpr int kSchemaVersion = 5;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
@@ -42,6 +42,8 @@ struct ProfilePreferences {
   bool pin_is_default = false;
   /** When true, renew network registration near/past expiry after unlock. */
   bool auto_renew_registration = true;
+  /** P005 — OS banners + FCM registration; sync continues when false. */
+  bool show_notifications = true;
 };
 
 class UserPreferences {

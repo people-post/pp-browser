@@ -94,6 +94,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_show_register = bindings_.profile_show_register;
   ui_state_.profile_show_rotate = bindings_.profile_show_rotate;
   ui_state_.auto_renew_registration = bindings_.auto_renew_registration.c_str();
+  ui_state_.show_notifications = bindings_.show_notifications.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
   ui_state_.appearance = bindings_.appearance.c_str();
 
@@ -130,6 +131,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_show_register = ui_state_.profile_show_register;
   bindings_.profile_show_rotate = ui_state_.profile_show_rotate;
   bindings_.auto_renew_registration = ui_state_.auto_renew_registration.c_str();
+  bindings_.show_notifications = ui_state_.show_notifications.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
   bindings_.appearance = ui_state_.appearance.c_str();
   bindings_.profile_label = ui_state_.profile_label.c_str();
@@ -218,6 +220,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("profile_show_register", &controller.bindings_.profile_show_register);
     ctor.Bind("profile_show_rotate", &controller.bindings_.profile_show_rotate);
     ctor.Bind("auto_renew_registration", &controller.bindings_.auto_renew_registration);
+    ctor.Bind("show_notifications", &controller.bindings_.show_notifications);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
     ctor.Bind("appearance", &controller.bindings_.appearance);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
@@ -280,6 +283,7 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "profile_show_register");
   host.Dirty("settings", "profile_show_rotate");
   host.Dirty("settings", "auto_renew_registration");
+  host.Dirty("settings", "show_notifications");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
   host.Dirty("settings", "profile_label");
@@ -656,6 +660,7 @@ void SettingsController::OnProfileFieldChangedCallback(Rml::DataModelHandle /*mo
   if (value == "auto" || value == "off") {
     controller.bindings_.auto_renew_registration = value;
   }
+  controller.PullBindingsToUiState();
   controller.MarkSectionDirty("profile");
 }
 

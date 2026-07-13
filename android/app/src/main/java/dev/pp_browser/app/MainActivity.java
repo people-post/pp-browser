@@ -1,11 +1,21 @@
 package dev.pp_browser.app;
 
 import android.app.ActivityManager;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.PixelCopy;
+
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
@@ -28,6 +38,8 @@ public class MainActivity extends SDLActivity {
     private static final String TAG = "pp-browser";
     private static final int THUMBNAIL_MAX_EDGE = 512;
     private static final long PIXEL_COPY_TIMEOUT_MS = 80;
+    private static final String CHANNEL_MESSAGES = "messages";
+    private static final String PREFS = "pp_browser_device";
 
     private HandlerThread mPixelCopyThread;
     private Handler mPixelCopyHandler;
@@ -36,6 +48,19 @@ public class MainActivity extends SDLActivity {
     @Override
     protected String[] getLibraries() {
         return new String[] { "main" };
+    }
+
+    @Override
+    protected void onCreate(android.os.Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        ensureNotificationChannel();
+        InboxSyncWorker.schedule(this, true);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
     }
 
     @Override
@@ -56,7 +81,6 @@ public class MainActivity extends SDLActivity {
 
     @Override
     protected void onPause() {
-        // SurfaceView is still valid here; capture before SDL/system tear it down.
         captureRecentsThumbnailOnce();
         super.onPause();
     }
@@ -71,9 +95,60 @@ public class MainActivity extends SDLActivity {
 
     @Override
     protected void pauseNativeThread() {
-        // Fallback if pause is reached while the surface is somehow still ready.
         captureRecentsThumbnailOnce();
         super.pauseNativeThread();
+    }
+
+    /** Called from native AndroidLocalNotifier. */
+    public void showLocalNotification(String title, String body, String threadId) {
+        ensureNotificationChannel();
+        Intent open = new Intent(this, MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        if (threadId != null && !threadId.isEmpty()) {
+            open.putExtra("thread_id", threadId);
+        }
+        int req = threadId == null ? 0 : threadId.hashCode();
+        PendingIntent pi = PendingIntent.getActivity(
+                this, req, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_MESSAGES)
+                .setSmallIcon(android.R.drawable.stat_notify_chat)
+                .setContentTitle(title != null ? title : "New message")
+                .setContentText(body != null ? body : "You have a new message")
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH);
+        NotificationManagerCompat.from(this).notify(req == 0 ? 1 : req, builder.build());
+    }
+
+    public void clearLocalNotification(String threadId) {
+        int req = threadId == null || threadId.isEmpty() ? 1 : threadId.hashCode();
+        NotificationManagerCompat.from(this).cancel(req);
+    }
+
+    public String getStableDeviceId() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String id = prefs.getString("device_id", null);
+        if (id == null || id.isEmpty()) {
+            id = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+            if (id == null || id.isEmpty()) {
+                id = "android-" + System.currentTimeMillis();
+            }
+            prefs.edit().putString("device_id", id).apply();
+        }
+        return id;
+    }
+
+    private void ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
+        NotificationChannel channel = new NotificationChannel(
+                CHANNEL_MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("Incoming chat messages");
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm != null) {
+            nm.createNotificationChannel(channel);
+        }
     }
 
     private Handler ensurePixelCopyHandler() {
@@ -92,10 +167,6 @@ public class MainActivity extends SDLActivity {
         captureRecentsThumbnail();
     }
 
-    /**
-     * Best-effort PixelCopy of the SDL SurfaceView into {@link #setTaskDescription}.
-     * Uses a background Handler so we can wait without deadlocking the UI thread.
-     */
     private void captureRecentsThumbnail() {
         final SDLSurface surface = mSurface;
         if (surface == null || !surface.mIsSurfaceReady) {
@@ -189,7 +260,6 @@ public class MainActivity extends SDLActivity {
 
     @SuppressWarnings("deprecation")
     private void applyTaskDescriptionIcon(Bitmap icon) {
-        // Bitmap overload is deprecated but remains the portable way to supply a live screenshot.
         setTaskDescription(new ActivityManager.TaskDescription(getString(R.string.app_name), icon));
         Log.v(TAG, "Recents thumbnail updated (" + icon.getWidth() + "x" + icon.getHeight() + ")");
     }

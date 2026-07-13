@@ -2,7 +2,8 @@ plugins {
     id 'com.android.application'
 }
 
-def buildWithCMake = true
+def googleServicesFile = file('google-services.json')
+def enableFcm = googleServicesFile.exists()
 def ppBrowserVersion = project.findProperty('ppBrowserVersion') ?: '0.1.0'
 def ppBrowserReleaseVersion = project.findProperty('ppBrowserReleaseVersion') ?: ppBrowserVersion
 def ppBrowserCompilerCache = (project.findProperty('ppBrowserCompilerCache') ?: 'OFF').toString().toUpperCase()
@@ -33,6 +34,7 @@ android {
         targetSdkVersion 35
         versionCode 1
         versionName ppBrowserReleaseVersion
+        buildConfigField "boolean", "ENABLE_FCM", enableFcm ? "true" : "false"
         externalNativeBuild {
             cmake {
                 arguments(*ppBrowserCmakeArgs)
@@ -45,14 +47,22 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            // Unsigned CI/local release APKs until a release keystore is configured.
             signingConfig signingConfigs.debug
         }
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     sourceSets {
         main {
             assets.srcDirs = ['../../assets']
+            if (enableFcm) {
+                java.srcDirs += ['src/fcm/java']
+            } else {
+                java.srcDirs += ['src/nofcm/java']
+            }
         }
     }
 
@@ -74,4 +84,15 @@ android {
 }
 
 dependencies {
+    implementation 'androidx.annotation:annotation:1.8.2'
+    implementation 'androidx.core:core:1.15.0'
+    implementation 'androidx.work:work-runtime:2.9.1'
+    if (enableFcm) {
+        implementation platform('com.google.firebase:firebase-bom:33.7.0')
+        implementation 'com.google.firebase:firebase-messaging'
+    }
+}
+
+if (enableFcm) {
+    apply plugin: 'com.google.gms.google-services'
 }

@@ -3,6 +3,7 @@ set(PP_BROWSER_FEATURE_SOURCES
   messaging/InboxController.cpp
   messaging/MessageRouter.cpp
   messaging/P2pMessagingService.cpp
+  messaging/PushDeviceCoordinator.cpp
   messaging/RelayReceivePipeline.cpp
   messaging/ChatSyncService.cpp
   messaging/RelayDirectorySigningKeyResolver.cpp

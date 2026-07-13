@@ -11,6 +11,7 @@
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "base/net/ServiceClientsImpl.h"
+#include "base/net/IPushDeviceClient.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
@@ -51,6 +52,7 @@ public:
   IdentityStore& Identity();
   IDirectoryClient& Directory();
   IRegistrationClient& Registration();
+  IPushDeviceClient* PushDevices();
   Libp2pHost* Libp2p();
   PeerSessionManager* Sessions();
 
@@ -93,9 +95,11 @@ private:
   std::string http_directory_url_;
   std::string http_registration_url_;
   std::unique_ptr<HttpRelayClient> http_relay_;
+  std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
   std::unique_ptr<HttpDirectoryClient> http_directory_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   IRelayClient* relay_ = nullptr;
+  IPushDeviceClient* push_devices_ = nullptr;
   IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
   std::unique_ptr<Libp2pHost> libp2p_host_;

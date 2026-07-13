@@ -32,6 +32,14 @@
           <option value="off">Off</option>
         </select>
       </label>
+      <label class="settings-field">
+        <span class="settings-label">Show notifications</span>
+        <select class="field" data-value="show_notifications" data-event-change="on_profile_field_changed()">
+          <option value="on">On</option>
+          <option value="off">Off</option>
+        </select>
+      </label>
+      <p class="text muted">Off silences OS banners and unregisters push; inbox still syncs in the background.</p>
       <div class="me-profile-actions row">
         <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
           <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>

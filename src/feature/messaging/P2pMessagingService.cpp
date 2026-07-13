@@ -16,6 +16,7 @@
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/net/ServiceClientsImpl.h"
+#include "base/platform/AppLifecycle.h"
 #include "base/platform/BrowserThread.h"
 
 #include <algorithm>
@@ -708,14 +709,13 @@ void P2pMessagingService::RetryFailedOutbound() {
 }
 
 void P2pMessagingService::PollAndMerge() {
+  SyncInboxFromWake(false);
+}
+
+void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
   RetryFailedOutbound();
 
-  const uint64_t now = util::NowUnixMs();
-  const uint64_t poll_interval = kForegroundRelayPollIntervalMs;
-  if (now - last_relay_poll_ms_ < poll_interval) {
-    return;
-  }
-  last_relay_poll_ms_ = now;
+  last_relay_poll_ms_ = util::NowUnixMs();
 
   bool expected = false;
   if (!poll_pending_.compare_exchange_strong(expected, true)) {
@@ -745,6 +745,12 @@ void P2pMessagingService::PollAndMerge() {
     }
 
     bool changed = false;
+    struct UnreadNotice {
+      std::string title;
+      std::string body;
+      std::string thread_id;
+    };
+    std::vector<UnreadNotice> background_notices;
     const std::string local_relay_id = identity->relay_user_id;
     for (const RelayEnvelope& envelope : poll->messages) {
       const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_relay_id);
@@ -768,12 +774,21 @@ void P2pMessagingService::PollAndMerge() {
       if (inbox_.ActiveThreadId() != resolved_thread_id) {
         Thread updated = **thread;
         updated.unread_count += 1;
+        std::string preview;
         auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
         if (decoded) {
-          updated.preview = decoded->text;
+          preview = decoded->text;
+          updated.preview = preview;
         }
         updated.updated_at = util::NowUnixMs();
         (void)store_.UpsertThread(updated);
+        if (!AppLifecycle::IsForeground()) {
+          background_notices.push_back(UnreadNotice{
+              .title = "New message",
+              .body = preview.empty() ? "You have a new message" : preview,
+              .thread_id = resolved_thread_id,
+          });
+        }
       } else if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64); decoded) {
         (void)inbox_.UpdatePreview(resolved_thread_id, decoded->text);
       }
@@ -781,6 +796,13 @@ void P2pMessagingService::PollAndMerge() {
 
     if (changed && on_messages_changed_) {
       BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+    }
+    if (!background_notices.empty() && on_background_unread_) {
+      BrowserThread::PostTask(BrowserThreadId::UI, [this, notices = std::move(background_notices)]() mutable {
+        for (auto& notice : notices) {
+          on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id));
+        }
+      });
     }
   });
 }
@@ -791,6 +813,11 @@ void P2pMessagingService::SetOnMessagesChanged(std::function<void()> callback) {
 
 void P2pMessagingService::SetOnDeliveryNotice(std::function<void(const std::string&)> callback) {
   on_delivery_notice_ = std::move(callback);
+}
+
+void P2pMessagingService::SetOnBackgroundUnread(
+    std::function<void(std::string title, std::string body, std::string thread_id)> callback) {
+  on_background_unread_ = std::move(callback);
 }
 
 } // namespace pbr

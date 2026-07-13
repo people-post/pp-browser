@@ -37,6 +37,8 @@ struct SettingsUiState {
   bool profile_show_rotate = false;
   /** UI select value: "auto" or "off". */
   std::string auto_renew_registration = "auto";
+  /** UI select value: "on" or "off" (P005). */
+  std::string show_notifications = "on";
   std::string brief_llm_key_masked;
   std::string appearance = "system";
   std::string profile_label;

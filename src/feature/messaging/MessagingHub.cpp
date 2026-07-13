@@ -46,12 +46,18 @@ MessagingHub& MessagingHub::Instance() {
 }
 
 void MessagingHub::WireRelayAuthSigner() {
-  if (!http_relay_ || !identity_) {
+  if (!identity_) {
     return;
   }
-  http_relay_->SetAuthSigner([this](const std::vector<uint8_t>& sign_bytes) -> Roe<std::string> {
+  auto signer = [this](const std::vector<uint8_t>& sign_bytes) -> Roe<std::string> {
     return identity_->SignBytes(sign_bytes);
-  });
+  };
+  if (http_relay_) {
+    http_relay_->SetAuthSigner(signer);
+  }
+  if (http_push_devices_) {
+    http_push_devices_->SetAuthSigner(signer);
+  }
 }
 
 void MessagingHub::UpdateServiceClients(const AppConfig& config) {
@@ -68,13 +74,17 @@ void MessagingHub::UpdateServiceClients(const AppConfig& config) {
     if (!http_relay_ || http_relay_url_ != relay_url) {
       http_relay_url_ = relay_url;
       http_relay_ = std::make_unique<HttpRelayClient>(http_relay_url_);
+      http_push_devices_ = std::make_unique<HttpPushDeviceClient>(http_relay_url_);
       WireRelayAuthSigner();
     }
     relay_ = http_relay_.get();
+    push_devices_ = http_push_devices_.get();
   } else {
     http_relay_.reset();
+    http_push_devices_.reset();
     http_relay_url_.clear();
     relay_ = nullptr;
+    push_devices_ = nullptr;
     logging::getLogger("MessagingHub").warning << "relay.base_url is empty; relay client disabled";
   }
 
@@ -382,6 +392,10 @@ IDirectoryClient& MessagingHub::Directory() {
 
 IRegistrationClient& MessagingHub::Registration() {
   return *registration_;
+}
+
+IPushDeviceClient* MessagingHub::PushDevices() {
+  return push_devices_;
 }
 
 Libp2pHost* MessagingHub::Libp2p() {

@@ -1,5 +1,8 @@
 #include "feature/chat/ChatController.h"
 #include "base/platform/AppLifecycle.h"
+#include "base/platform/BackgroundSyncScheduler.h"
+#include "base/platform/ILocalNotifier.h"
+#include "feature/messaging/PushDeviceCoordinator.h"
 
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/WorkingSetPolicy.h"
@@ -1960,6 +1963,21 @@ void ChatController::WireMessagingBindings() {
     ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
     ShellHost::Instance().DirtyWindow();
   });
+  MessagingHub::Instance().P2p().SetOnBackgroundUnread(
+      [](std::string title, std::string body, std::string thread_id) {
+        if (!SessionStore::Instance().Snapshot().profile_prefs.show_notifications) {
+          return;
+        }
+        ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
+      });
+  BackgroundSyncScheduler::Instance().SetSyncHandler([](bool force) {
+    if (!MessagingHub::Instance().IsMessagingReady()) {
+      return;
+    }
+    MessagingHub::Instance().P2p().SyncInboxFromWake(force);
+  });
+  (void)PushDeviceCoordinator::SyncWithPreference(
+      SessionStore::Instance().Snapshot().profile_prefs.show_notifications);
   MessagingHub::Instance().Inbox().SetOnThreadChanged([this]() { RefreshFromMessaging(); });
   if (MessagingHub::Instance().HasRouter()) {
     MessagingHub::Instance().Router().SetOnLocalAction(
@@ -2291,10 +2309,10 @@ void ChatController::Update() {
     FinishAssistantReply(reply.entry_id, reply.output, reply.from_llm, {}, reply.thread_id);
   }
 
-  if (messaging_ready_ && AppLifecycle::IsForeground()) {
+  if (messaging_ready_) {
     MessagingHub::Instance().TickLibp2p();
     if (MessagingHub::Instance().IsMessagingReady()) {
-      MessagingHub::Instance().P2p().PollAndMerge();
+      BackgroundSyncScheduler::Instance().Tick();
     }
   }
 

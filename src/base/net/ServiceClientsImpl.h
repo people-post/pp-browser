@@ -1,6 +1,8 @@
 #pragma once
 
 #include "base/people/ContactTypes.h"
+#include "base/net/IPushDeviceClient.h"
+#include "base/net/RelayApiSignPayload.h"
 #include "base/net/ServiceClients.h"
 
 #include <functional>
@@ -97,6 +99,21 @@ public:
 
 private:
   Roe<std::string> SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const;
+
+  std::string base_url_;
+  RelayAuthSigner auth_signer_;
+};
+
+class HttpPushDeviceClient : public IPushDeviceClient {
+public:
+  explicit HttpPushDeviceClient(std::string base_url);
+  void SetAuthSigner(RelayAuthSigner signer) { auth_signer_ = std::move(signer); }
+  Roe<void> RegisterDevice(const PushDeviceRegistration& registration) override;
+  Roe<void> UnregisterDevice(const PushDeviceRegistration& registration) override;
+
+private:
+  Roe<std::string> SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const;
+  Roe<void> PostDevice(const char* path, RelayApiOp op, const PushDeviceRegistration& registration);
 
   std::string base_url_;
   RelayAuthSigner auth_signer_;

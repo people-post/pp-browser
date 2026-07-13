@@ -74,6 +74,7 @@ private:
     bool profile_show_register = true;
     bool profile_show_rotate = false;
     Rml::String auto_renew_registration = "auto";
+    Rml::String show_notifications = "on";
     Rml::String brief_llm_key_masked;
     Rml::String appearance = "system";
     Rml::String profile_label;

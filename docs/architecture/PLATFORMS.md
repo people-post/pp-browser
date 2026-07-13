@@ -19,7 +19,7 @@ Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libma
 | `PlatformDefaults` | Brief LLM + network (`https://www.brief.global`) | Same as desktop |
 | `ICredentialStore` | `EnvCredentialStore` | `EnvCredentialStore` (inline API key in Settings; Keystore deferred) |
 | libp2p | Built and linked (`p2p::p2p`) | Built and linked (same vendor tree) |
-| `MessagingHub` | Foreground poll loop | Poll paused in background via `AppLifecycle` |
+| `MessagingHub` | Foreground poll loop | `BackgroundSyncScheduler`: 2s foreground / ~45s background; FCM wake + WorkManager when enabled |
 | Navigation | Escape → dismiss then exit | Back → dismiss then minimize; Escape same as desktop |
 | MCP stdio | Supported | Skipped; use `mcp.url` |
 
@@ -62,4 +62,6 @@ iOS is not shipped yet. Shared abstractions exist for a future Xcode target:
 
 ## libp2p background
 
-On `AppLifecycle::OnWillEnterBackground`, messaging suspends cold peer connections (`PeerSessionManager::SuspendColdPeers`) while keeping the warm (active-thread) set. Foreground resume may re-warm the open thread. Relay poll remains paused in background as before.
+On `AppLifecycle::OnWillEnterBackground`, messaging suspends cold peer connections (`PeerSessionManager::SuspendColdPeers`) while keeping the warm (active-thread) set. Foreground resume may re-warm the open thread.
+
+Inbox sync uses [`BackgroundSyncScheduler`](../../src/base/platform/BackgroundSyncScheduler.h): foreground poll every 2s; while backgrounded and the process is alive, poll every ~45s (IO temporarily held open). Android additionally uses WorkManager (~15 min when notifications are off; rarer backup when on) and optional FCM opaque wakes when `google-services.json` is present. See [projects/push-notifications](../../projects/push-notifications/).

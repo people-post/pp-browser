@@ -6,6 +6,7 @@
 #include "base/net/HttpClient.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "feature/chat/ChatController.h"
+#include "feature/messaging/PushDeviceCoordinator.h"
 #include "feature/messaging/MessagingHub.h"
 
 #include <nlohmann/json.hpp>
@@ -76,6 +77,7 @@ SettingsFlushMode ProfileSettingsSection::FlushMode() const {
 
 void ProfileSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.auto_renew_registration = bootstrap.profile_prefs.auto_renew_registration ? "auto" : "off";
+  state.show_notifications = bootstrap.profile_prefs.show_notifications ? "on" : "off";
   if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().IsMessagingReady()) {
     return;
   }
@@ -96,6 +98,10 @@ bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   if (auto_renew != bootstrap.profile_prefs.auto_renew_registration) {
     return false;
   }
+  const bool show_notifications = state.show_notifications != "off";
+  if (show_notifications != bootstrap.profile_prefs.show_notifications) {
+    return false;
+  }
   if (!MessagingHub::Instance().IsInitialized()) {
     return true;
   }
@@ -108,13 +114,23 @@ bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
 
 Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
   const bool auto_renew = state.auto_renew_registration != "off";
-  if (auto_renew != store.Snapshot().profile_prefs.auto_renew_registration) {
-    ProfilePreferences prefs = store.Snapshot().profile_prefs;
+  const bool show_notifications = state.show_notifications != "off";
+  ProfilePreferences prefs = store.Snapshot().profile_prefs;
+  bool prefs_dirty = false;
+  if (auto_renew != prefs.auto_renew_registration) {
     prefs.auto_renew_registration = auto_renew;
+    prefs_dirty = true;
+  }
+  if (show_notifications != prefs.show_notifications) {
+    prefs.show_notifications = show_notifications;
+    prefs_dirty = true;
+  }
+  if (prefs_dirty) {
     prefs.schema_version = ProfilePreferences::kSchemaVersion;
     if (auto saved = store.SaveProfilePrefs(prefs); !saved) {
       return saved.error();
     }
+    (void)PushDeviceCoordinator::SyncWithPreference(show_notifications);
   }
 
   if (!MessagingHub::Instance().IsInitialized()) {

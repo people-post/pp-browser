@@ -422,6 +422,55 @@ Roe<ChatHistoryResponse> HttpRelayClient::FetchChatHistory(const ChatHistoryRequ
   return *parsed;
 }
 
+HttpPushDeviceClient::HttpPushDeviceClient(std::string base_url) : base_url_(std::move(base_url)) {}
+
+Roe<std::string> HttpPushDeviceClient::SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const {
+  if (!auth_signer_) {
+    return Error("Relay auth signer not configured");
+  }
+  if (sign_bytes.empty()) {
+    return Error("Empty relay API sign bytes");
+  }
+  return auth_signer_(sign_bytes);
+}
+
+Roe<void> HttpPushDeviceClient::PostDevice(const char* path, const RelayApiOp op,
+                                           const PushDeviceRegistration& registration) {
+  if (base_url_.empty()) {
+    return Error("Relay base_url not configured");
+  }
+  const int64_t timestamp = util::NowUnixMs();
+  const auto sign_bytes = BuildRelayApiDeviceSignBytes(op, registration.relay_user_id, registration.platform,
+                                                       registration.device_id, registration.push_token, timestamp);
+  auto signature = SignRelayApiBytes(sign_bytes);
+  if (!signature) {
+    return signature.error();
+  }
+  const nlohmann::json body = {{"relay_user_id", registration.relay_user_id},
+                               {"platform", registration.platform},
+                               {"device_id", registration.device_id},
+                               {"push_token", registration.push_token},
+                               {"timestamp", timestamp},
+                               {"signature", *signature}};
+  const std::string url = base_url_ + path;
+  const auto response = HttpClient::Post(url, body.dump(), {{"Content-Type", "application/json"}});
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error(std::string("Device API failed with status ") + std::to_string(response.value().status_code));
+  }
+  return {};
+}
+
+Roe<void> HttpPushDeviceClient::RegisterDevice(const PushDeviceRegistration& registration) {
+  return PostDevice("/v1/devices/register", RelayApiOp::DeviceRegister, registration);
+}
+
+Roe<void> HttpPushDeviceClient::UnregisterDevice(const PushDeviceRegistration& registration) {
+  return PostDevice("/v1/devices/unregister", RelayApiOp::DeviceUnregister, registration);
+}
+
 HttpDirectoryClient::HttpDirectoryClient(std::string base_url) : base_url_(std::move(base_url)) {}
 
 Roe<std::vector<DirectoryHit>> HttpDirectoryClient::SearchPeople(const std::string& query) {

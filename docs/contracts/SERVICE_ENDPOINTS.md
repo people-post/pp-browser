@@ -47,6 +47,8 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 | send | `POST /v1/messages` | sender, recipient, stream_id, index_key |
 | poll_inbox | `POST /v1/inbox/poll` | requester_contact_id, cursor |
 | stream_history | `POST /v1/streams/messages/query` | requester, sender, stream_id, optional index range, limit, order |
+| device_register | `POST /v1/devices/register` | relay_user_id, platform, device_id, push_token |
+| device_unregister | `POST /v1/devices/unregister` | relay_user_id, platform, device_id, push_token |
 
 `blob_b64` is **not** included in transport auth (E014 envelope signature covers message integrity inside the blob).
 
@@ -57,6 +59,17 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 | `GET /v1/search?q=` | Search relay users (`hits[]` with `signing_public_key_b64`, `kem_public_key_b64`, `relay_user_id`, `nickname`) |
 | `GET /v1/users/:relay_user_id` | Public lookup (`signing_public_key_b64`, `kem_public_key_b64`, nickname, expires_at) |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
+
+## HTTP device push (opaque wake)
+
+Signed with `pp-browser:relay-api-v1` ops `DeviceRegister=3` / `DeviceUnregister=4` over `(relay_user_id, platform, device_id, push_token)`.
+
+| HTTP | Purpose |
+|------|---------|
+| `POST /v1/devices/register` | Bind FCM token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` |
+| `POST /v1/devices/unregister` | Remove device binding (alerts off / logout) |
+
+On `POST /v1/messages` accept, Brief best-effort sends an FCM **data** message `{ type: inbox_wake }` to registered tokens (env: `BRF_FCM_PROJECT_ID`, `BRF_FCM_SERVICE_ACCOUNT_JSON`). Failures do not fail message store. See [projects/push-notifications](../../projects/push-notifications/).
 
 ## Native agent tools
 

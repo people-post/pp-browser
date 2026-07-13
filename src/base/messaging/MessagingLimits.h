@@ -10,6 +10,12 @@ inline constexpr size_t kMaxRelayEnvelopeBytes = 256 * 1024;
 inline constexpr size_t kMaxRelayEnvelopeJsonBytes = 256 * 1024;
 inline constexpr size_t kMaxPollBatchMessages = 100;
 inline constexpr uint64_t kForegroundRelayPollIntervalMs = 2000;
+/** D032 / P006 — in-process background poll while app is alive. */
+inline constexpr uint64_t kBackgroundRelayPollIntervalMs = 45000;
+/** WorkManager backup when alerts on (milliseconds). */
+inline constexpr uint64_t kWorkManagerAlertsOnBackupIntervalMs = 3ULL * 60ULL * 60ULL * 1000ULL;
+/** WorkManager when alerts off (~15 min Android minimum). */
+inline constexpr uint64_t kWorkManagerAlertsOffIntervalMs = 15ULL * 60ULL * 1000ULL;
 inline constexpr int kMaxOutboxRetryAttempts = 5;
 inline constexpr int kMaxGapRepairRounds = 5;
 inline constexpr uint64_t kMaxGapRepairSeqSpan = 500;

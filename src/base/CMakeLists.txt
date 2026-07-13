@@ -14,6 +14,13 @@ set(PP_BROWSER_BASE_SOURCES
   platform/IosAssetLocator.cpp
   platform/IosPathProvider.cpp
   platform/IPathProvider.cpp
+  platform/ILocalNotifier.cpp
+  platform/IPushDeviceRegistrar.cpp
+  platform/DesktopLocalNotifier.cpp
+  platform/AndroidLocalNotifier.cpp
+  platform/AndroidPushDeviceRegistrar.cpp
+  platform/BackgroundSyncScheduler.cpp
+  platform/PushWakeJni.cpp
   platform/Platform.cpp
   platform/PlatformDefaults.cpp
   platform/PlatformEarlyInit.cpp

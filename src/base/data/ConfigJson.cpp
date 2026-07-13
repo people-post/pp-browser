@@ -355,7 +355,8 @@ void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
                      {"theme", prefs.theme},
                      {"appearance", prefs.appearance},
                      {"pin_is_default", prefs.pin_is_default},
-                     {"auto_renew_registration", prefs.auto_renew_registration}};
+                     {"auto_renew_registration", prefs.auto_renew_registration},
+                     {"show_notifications", prefs.show_notifications}};
 }
 
 void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
@@ -375,6 +376,11 @@ void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
     prefs.auto_renew_registration = j["auto_renew_registration"].get<bool>();
   } else {
     prefs.auto_renew_registration = true;
+  }
+  if (j.contains("show_notifications") && j["show_notifications"].is_boolean()) {
+    prefs.show_notifications = j["show_notifications"].get<bool>();
+  } else {
+    prefs.show_notifications = true;
   }
 }
 
