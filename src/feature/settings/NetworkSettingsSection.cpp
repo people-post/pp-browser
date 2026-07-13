@@ -1,5 +1,6 @@
 #include "feature/settings/NetworkSettingsSection.h"
 
+#include "base/data/Config.h"
 #include "base/data/SessionStore.h"
 #include "feature/settings/SettingsLogic.h"
 
@@ -39,9 +40,10 @@ Roe<void> NetworkSettingsSection::Flush(SettingsUiState& state, SessionStore& st
 }
 
 void NetworkSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& /*store*/) {
-  state.relay_base_url.clear();
-  state.directory_base_url.clear();
-  state.registration_base_url.clear();
+  const AppConfig defaults = Config::DefaultAppConfig();
+  state.relay_base_url = defaults.relay.base_url;
+  state.directory_base_url = defaults.directory.base_url;
+  state.registration_base_url = defaults.registration.base_url;
 }
 
 } // namespace pbr

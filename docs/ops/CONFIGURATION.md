@@ -26,7 +26,7 @@ After bootstrap, a single [`SessionStore`](../../src/base/data/SessionStore.h) o
 
 ## LLM presets
 
-`config.json` may include `llm.preset`: `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/base/data/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
+`config.json` may include `llm.preset`: `"brief"`, `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/base/data/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
 
 ## Theme and appearance (runtime)
 
@@ -56,14 +56,20 @@ On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp
 
 ```json
 {
+  "llm": {
+    "preset": "brief",
+    "base_url": "https://www.brief.global/api/llm/v1",
+    "model": "grok-4-1-fast-reasoning",
+    "require_api_key": false
+  },
   "promoted_mcp": { "url": "https://www.brief.global/mcp" },
   "mcp_servers": [
     { "id": "my-tooling", "url": "https://example.com/mcp", "enabled": true }
   ],
   "search": { "provider": "duckduckgo" },
-  "relay": { "base_url": "" },
-  "directory": { "base_url": "" },
-  "registration": { "base_url": "" },
+  "relay": { "base_url": "https://www.brief.global/api/relay" },
+  "directory": { "base_url": "https://www.brief.global/api/relay" },
+  "registration": { "base_url": "https://www.brief.global/api/relay" },
   "libp2p": {
     "listen_multiaddr": "/ip4/0.0.0.0/tcp/40123",
     "max_connections": 48,
@@ -75,12 +81,13 @@ On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp
 }
 ```
 
+- **`llm`** — default preset is **Brief** (no API key). **Cloud**, **Ollama**, and **Custom** remain available in Me → Assistant.
 - **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../../src/base/platform/PlatformDefaults.cpp).
 - **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
-- **`relay` / `directory` / `registration`** — separate HTTP endpoints. Empty `base_url` falls back to promoted MCP infra tools, then in-process mocks. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
+- **`relay` / `directory` / `registration`** — HTTP endpoints; platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 - **`libp2p`** — shared host listen address and session policy (on-demand dial, warm-active, idle TTL, connection caps). Default listen is loopback; use a non-loopback multiaddr for LAN/direct peers. Contacts may store dialable `multiaddrs` (must include `/p2p/<PeerId>`).
 
-Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Cloud**; **Ollama (localhost)** remains available for local dev.
+Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief**; **Ollama (localhost)** remains available for local dev.
 
 ### Verify settings persistence (manual)
 
@@ -98,7 +105,7 @@ Shared abstractions under `src/base/platform/` — see [PLATFORMS.md](../archite
 
 - `IPathProvider` / `IAssetLocator` — desktop paths vs APK/bundle assets
 - `AssetIO` / `SdlAssetFileInterface` — unified bundle reads for UI and RmlUi
-- `PlatformDefaults` — cloud LLM on all platforms
+- `PlatformDefaults` — Brief network + Brief LLM on all platforms
 - `PlatformNavigation` — Escape and Android back → `ShellHost::HandleDismiss()`
 - `AppLifecycle` — background IO pause, agent cancel, P2P poll guard
 - `ICredentialStore` / `EnvCredentialStore` — env-backed keys; Keystore deferred
@@ -108,7 +115,7 @@ Shared abstractions under `src/base/platform/` — see [PLATFORMS.md](../archite
 | Variable | Purpose |
 |----------|---------|
 | `PP_BROWSER_CONFIG` | Explicit config file path |
-| `PP_BROWSER_LLM_MODEL` | Default cloud model when no config file |
+| `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |
 
 API keys can be set inline in Settings/config (`llm.api_key`) or via `api_key_env` resolved through `ICredentialStore`.

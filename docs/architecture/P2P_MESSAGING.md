@@ -2,7 +2,7 @@
 
 **Tier:** architecture
 
-Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local persistence as source of truth; HTTP relay/directory/registration transport with mock fallback when `base_url` is unset.
+Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local persistence as source of truth; HTTP relay/directory/registration transport against Brief by default (`https://www.brief.global/api/relay`).
 
 **Normative wire shapes:** [WIRE_SCHEMAS.md](../contracts/WIRE_SCHEMAS.md). **E2E crypto:** [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). **Compatibility:** [COMPATIBILITY.md](../contracts/COMPATIBILITY.md).
 
@@ -10,12 +10,12 @@ Person-to-person chat in pp-browser uses a **foundation-first** architecture: on
 
 [`CreateServiceClients`](../../src/base/net/ServiceClientFactory.cpp) picks an implementation per endpoint:
 
-1. `base_url` set → HTTP client (`HttpRelayClient`, etc.)
-2. else in-process mock (dev default)
+1. `base_url` set (platform default or config) → HTTP client (`HttpRelayClient`, etc.)
+2. else client left unset (should not happen after defaults / empty coalesce)
 
 Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
-**Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST …/v1/streams/messages/query`; mock when `base_url` unset. See [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay). Live integration tests ([D093](../../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)) run when these env vars are set:
+**Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST …/v1/streams/messages/query`. Unit tests may construct `MockRelayClient` directly. See [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay). Live integration tests ([D093](../../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)) run when these env vars are set:
 
 | Variable | Purpose |
 |----------|---------|
@@ -24,7 +24,7 @@ Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IR
 | `PP_BROWSER_RELAY_INTEGRATION_PEER` | Peer `relay_user_id` for history query |
 | `PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX` | Ed25519 seed (hex) for relay API signing |
 
-CI uses mock only; `pp_browser_relay_live_integration_test` skips when env is unset.
+CI constructs `MockRelayClient` in unit tests; `pp_browser_relay_live_integration_test` skips when env is unset.
 
 ## Data model
 
@@ -70,13 +70,13 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
 ```json
 {
   "data_dir": "~/.local/share/pp-browser",
-  "relay": { "base_url": "" },
-  "directory": { "base_url": "" },
-  "registration": { "base_url": "" }
+  "relay": { "base_url": "https://www.brief.global/api/relay" },
+  "directory": { "base_url": "https://www.brief.global/api/relay" },
+  "registration": { "base_url": "https://www.brief.global/api/relay" }
 }
 ```
 
-Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is running; otherwise in-process mocks.
+Platform defaults use the Brief URLs above. Empty `base_url` values coalesce to those defaults; production never falls back to in-process mocks (`Mock*Client` is test-only).
 
 ## Relay envelope (target — D056, D090)
 

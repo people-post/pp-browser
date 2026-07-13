@@ -89,9 +89,6 @@ private:
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
   std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;
   std::unique_ptr<InboxController> inbox_;
-  std::unique_ptr<MockRelayClient> mock_relay_;
-  std::unique_ptr<MockDirectoryClient> mock_directory_;
-  std::unique_ptr<MockRegistrationClient> mock_registration_;
   std::string http_relay_url_;
   std::string http_directory_url_;
   std::string http_registration_url_;

@@ -92,6 +92,16 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
   }
 
   AppConfig config = MergeConfig(DefaultAppConfig(), root);
+  const AppConfig defaults = DefaultAppConfig();
+  if (config.relay.base_url.empty()) {
+    config.relay.base_url = defaults.relay.base_url;
+  }
+  if (config.directory.base_url.empty()) {
+    config.directory.base_url = defaults.directory.base_url;
+  }
+  if (config.registration.base_url.empty()) {
+    config.registration.base_url = defaults.registration.base_url;
+  }
   ResolveConfigCredentials(config);
   ResolveLlmAuthRequirements(config);
   return config;

@@ -1,5 +1,6 @@
 #include "feature/settings/SettingsLogic.h"
 
+#include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
 #include "feature/settings/SettingsUiState.h"
 
@@ -48,7 +49,7 @@ AppConfig ApplyLlmSettingsDraft(const AppConfig& base, const SettingsDraft& draf
   } else if (!draft.llm_api_key_env.empty()) {
     config.llm_api_key_env = draft.llm_api_key_env;
     config.llm.api_key.clear();
-  } else if (ResolvePreset(config) != "cloud") {
+  } else if (ResolvePreset(config) == "brief" || ResolvePreset(config) == "ollama") {
     config.llm.api_key.clear();
     config.llm_api_key_env.clear();
   }
@@ -83,9 +84,14 @@ AppConfig ApplyIntegrationsSettingsDraft(const AppConfig& base, const SettingsUi
 
 AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState& state) {
   AppConfig config = base;
-  config.relay.base_url = state.relay_base_url;
-  config.directory.base_url = state.directory_base_url;
-  config.registration.base_url = state.registration_base_url;
+  const AppConfig defaults = Config::DefaultAppConfig();
+  config.relay.base_url =
+      state.relay_base_url.empty() ? defaults.relay.base_url : state.relay_base_url;
+  config.directory.base_url =
+      state.directory_base_url.empty() ? defaults.directory.base_url : state.directory_base_url;
+  config.registration.base_url = state.registration_base_url.empty()
+                                     ? defaults.registration.base_url
+                                     : state.registration_base_url;
   return config;
 }
 

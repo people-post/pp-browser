@@ -8,6 +8,7 @@
       <label class="settings-field">
         <span class="settings-label">Preset</span>
         <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
+          <option value="brief">Brief (default)</option>
           <option value="cloud">Cloud (OpenAI-compatible)</option>
           <option value="ollama">Ollama (localhost)</option>
           <option value="custom">Custom</option>

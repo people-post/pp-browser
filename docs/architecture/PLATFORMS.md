@@ -16,7 +16,7 @@ Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libma
 | `IPathProvider` | `DesktopPathProvider` | `AndroidPathProvider` (internal storage) |
 | `IAssetLocator` | `PP_BROWSER_ASSETS_DIR` / bundle | APK assets via `AndroidAssetLocator` + `SdlAssetFileInterface` |
 | `AssetIO` | `std::ifstream` on bundle path | `SDL_IOFromFile` on relative APK paths |
-| `PlatformDefaults` | Cloud LLM (`https://api.openai.com/v1`) | Same as desktop |
+| `PlatformDefaults` | Brief LLM + network (`https://www.brief.global`) | Same as desktop |
 | `ICredentialStore` | `EnvCredentialStore` | `EnvCredentialStore` (inline API key in Settings; Keystore deferred) |
 | libp2p | Built and linked (`p2p::p2p`) | Built and linked (same vendor tree) |
 | `MessagingHub` | Foreground poll loop | Poll paused in background via `AppLifecycle` |

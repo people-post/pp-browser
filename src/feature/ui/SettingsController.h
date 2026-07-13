@@ -51,7 +51,7 @@ public:
 
 private:
   struct SettingsBindings {
-    Rml::String llm_preset = "cloud";
+    Rml::String llm_preset = "brief";
     Rml::String llm_base_url;
     Rml::String llm_model;
     Rml::String llm_api_key;

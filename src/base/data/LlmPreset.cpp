@@ -7,6 +7,8 @@ namespace pbr {
 
 namespace {
 
+constexpr const char* kBriefBaseUrl = "https://www.brief.global/api/llm/v1";
+constexpr const char* kCloudBaseUrl = "https://api.openai.com/v1";
 constexpr const char* kOllamaBaseUrl = "http://localhost:11434/v1";
 
 struct LlmPresetSpec {
@@ -17,7 +19,8 @@ struct LlmPresetSpec {
 };
 
 constexpr LlmPresetSpec kLlmPresets[] = {
-    {"cloud", "https://api.openai.com/v1", true, false},
+    {"brief", kBriefBaseUrl, false, true},
+    {"cloud", kCloudBaseUrl, true, false},
     {"ollama", kOllamaBaseUrl, false, true},
 };
 
@@ -34,8 +37,12 @@ std::string InferLegacyPreset(const AppConfig& config) {
   if (config.llm.base_url.find("11434") != std::string::npos) {
     return "ollama";
   }
-  if (config.llm.base_url == PlatformDefaults::For(Platform::Detect()).llm.base_url) {
+  if (config.llm.base_url == kCloudBaseUrl) {
     return "cloud";
+  }
+  if (config.llm.base_url == kBriefBaseUrl ||
+      config.llm.base_url == PlatformDefaults::For(Platform::Detect()).llm.base_url) {
+    return "brief";
   }
   return "custom";
 }

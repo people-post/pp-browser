@@ -10,16 +10,18 @@ For each of `relay`, `directory`, and `registration`:
 
 | Priority | Condition | Implementation |
 |----------|-----------|----------------|
-| 1 | `base_url` non-empty in `config.json` | `Http*Client` |
-| 2 | otherwise | `Mock*Client` |
+| 1 | `base_url` non-empty (platform default or `config.json`) | `Http*Client` |
+| 2 | otherwise | Client not created (`CreateServiceClients` leaves unset); production defaults always fill Brief URLs |
+
+Platform defaults (`PlatformDefaults`) set all three to `https://www.brief.global/api/relay`. Empty values in settings/config coalesce back to those defaults. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
 
 ## Config shape
 
 ```json
 {
-  "relay": { "base_url": "https://host/api/relay", "transport": "http" },
-  "directory": { "base_url": "https://host/api/relay" },
-  "registration": { "base_url": "https://host/api/relay" }
+  "relay": { "base_url": "https://www.brief.global/api/relay", "transport": "http" },
+  "directory": { "base_url": "https://www.brief.global/api/relay" },
+  "registration": { "base_url": "https://www.brief.global/api/relay" }
 }
 ```
 

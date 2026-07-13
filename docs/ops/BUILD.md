@@ -90,11 +90,15 @@ cmake --build build -j
 
 See [INPUT.md](../ui/INPUT.md) for behavior details.
 
-### Cloud LLM (default)
+### Brief LLM (default)
 
-First launch uses cloud defaults (`https://api.openai.com/v1`, model `gpt-4o-mini`). Open **Me → Assistant**, enter your API key, and save.
+First launch uses Brief defaults (`https://www.brief.global/api/llm/v1`, model `grok-4-1-fast-reasoning`, no API key). Brief free completions require a registered relay identity once the gateway is available; until then use **Cloud** / **Custom** with a key or **Ollama**.
 
 Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exists.
+
+### Cloud LLM (optional)
+
+Open **Me → Assistant**, choose **Cloud (OpenAI-compatible)**, enter your API key, and save.
 
 ### Local Ollama (optional dev)
 

@@ -5,11 +5,11 @@
 #include "feature/messaging/SqlitePskSessionStore.h"
 
 #include "feature/ai/AgentSession.h"
-#include "base/crypto/CryptoUtil.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/people/ContactTypes.h"
 #include "base/platform/Platform.h"
+#include "base/platform/PlatformDefaults.h"
 #include "common/Logger.h"
 
 #include <algorithm>
@@ -54,49 +54,54 @@ void MessagingHub::WireRelayAuthSigner() {
 }
 
 void MessagingHub::UpdateServiceClients(const AppConfig& config) {
-  if (!config.relay.base_url.empty()) {
-    if (!http_relay_ || http_relay_url_ != config.relay.base_url) {
-      http_relay_url_ = config.relay.base_url;
+  const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
+  const std::string relay_url =
+      config.relay.base_url.empty() ? defaults.relay.base_url : config.relay.base_url;
+  const std::string directory_url =
+      config.directory.base_url.empty() ? defaults.directory.base_url : config.directory.base_url;
+  const std::string registration_url = config.registration.base_url.empty()
+                                           ? defaults.registration.base_url
+                                           : config.registration.base_url;
+
+  if (!relay_url.empty()) {
+    if (!http_relay_ || http_relay_url_ != relay_url) {
+      http_relay_url_ = relay_url;
       http_relay_ = std::make_unique<HttpRelayClient>(http_relay_url_);
       WireRelayAuthSigner();
     }
     relay_ = http_relay_.get();
   } else {
-    if (!mock_relay_) {
-      mock_relay_ = std::make_unique<MockRelayClient>();
-      const auto test_private_key = HexToBytes(
-          "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
-      if (test_private_key) {
-        mock_relay_->SetReplySigningPrivateKey(*test_private_key);
-      }
-    }
-    relay_ = mock_relay_.get();
+    http_relay_.reset();
+    http_relay_url_.clear();
+    relay_ = nullptr;
+    logging::getLogger("MessagingHub").warning << "relay.base_url is empty; relay client disabled";
   }
 
-  if (!config.directory.base_url.empty()) {
-    if (!http_directory_ || http_directory_url_ != config.directory.base_url) {
-      http_directory_url_ = config.directory.base_url;
+  if (!directory_url.empty()) {
+    if (!http_directory_ || http_directory_url_ != directory_url) {
+      http_directory_url_ = directory_url;
       http_directory_ = std::make_unique<HttpDirectoryClient>(http_directory_url_);
     }
     directory_ = http_directory_.get();
   } else {
-    if (!mock_directory_) {
-      mock_directory_ = std::make_unique<MockDirectoryClient>();
-    }
-    directory_ = mock_directory_.get();
+    http_directory_.reset();
+    http_directory_url_.clear();
+    directory_ = nullptr;
+    logging::getLogger("MessagingHub").warning << "directory.base_url is empty; directory client disabled";
   }
 
-  if (!config.registration.base_url.empty()) {
-    if (!http_registration_ || http_registration_url_ != config.registration.base_url) {
-      http_registration_url_ = config.registration.base_url;
+  if (!registration_url.empty()) {
+    if (!http_registration_ || http_registration_url_ != registration_url) {
+      http_registration_url_ = registration_url;
       http_registration_ = std::make_unique<HttpRegistrationClient>(http_registration_url_);
     }
     registration_ = http_registration_.get();
   } else {
-    if (!mock_registration_) {
-      mock_registration_ = std::make_unique<MockRegistrationClient>();
-    }
-    registration_ = mock_registration_.get();
+    http_registration_.reset();
+    http_registration_url_.clear();
+    registration_ = nullptr;
+    logging::getLogger("MessagingHub").warning
+        << "registration.base_url is empty; registration client disabled";
   }
 }
 
@@ -327,9 +332,6 @@ void MessagingHub::Shutdown() {
   http_relay_.reset();
   http_directory_.reset();
   http_registration_.reset();
-  mock_relay_.reset();
-  mock_directory_.reset();
-  mock_registration_.reset();
   relay_ = nullptr;
   directory_ = nullptr;
   registration_ = nullptr;

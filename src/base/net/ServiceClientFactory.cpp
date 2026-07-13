@@ -1,6 +1,7 @@
 #include "base/net/ServiceClientFactory.h"
 
 #include "base/net/ServiceClientsImpl.h"
+#include "common/Logger.h"
 
 namespace pbr {
 
@@ -10,19 +11,22 @@ ServiceClients CreateServiceClients(const AppConfig& config) {
   if (!config.relay.base_url.empty()) {
     clients.relay = std::make_unique<HttpRelayClient>(config.relay.base_url);
   } else {
-    clients.relay = std::make_unique<MockRelayClient>();
+    logging::getLogger("ServiceClientFactory").warning
+        << "relay.base_url is empty; relay client not created";
   }
 
   if (!config.directory.base_url.empty()) {
     clients.directory = std::make_unique<HttpDirectoryClient>(config.directory.base_url);
   } else {
-    clients.directory = std::make_unique<MockDirectoryClient>();
+    logging::getLogger("ServiceClientFactory").warning
+        << "directory.base_url is empty; directory client not created";
   }
 
   if (!config.registration.base_url.empty()) {
     clients.registration = std::make_unique<HttpRegistrationClient>(config.registration.base_url);
   } else {
-    clients.registration = std::make_unique<MockRegistrationClient>();
+    logging::getLogger("ServiceClientFactory").warning
+        << "registration.base_url is empty; registration client not created";
   }
 
   return clients;

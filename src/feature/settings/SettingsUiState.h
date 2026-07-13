@@ -14,7 +14,7 @@ struct McpServerUiState {
 };
 
 struct SettingsUiState {
-  std::string llm_preset = "cloud";
+  std::string llm_preset = "brief";
   std::string llm_base_url;
   std::string llm_model;
   std::string llm_api_key;

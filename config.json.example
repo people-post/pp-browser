@@ -1,6 +1,12 @@
 {
   "config_version": 1,
   "llm": {
+    "preset": "brief",
+    "base_url": "https://www.brief.global/api/llm/v1",
+    "model": "grok-4-1-fast-reasoning",
+    "require_api_key": false
+  },
+  "_llm_cloud_example": {
     "preset": "cloud",
     "base_url": "https://api.openai.com/v1",
     "model": "gpt-4o-mini",
@@ -21,6 +27,15 @@
   },
   "promoted_mcp": {
     "url": "https://www.brief.global/mcp"
+  },
+  "relay": {
+    "base_url": "https://www.brief.global/api/relay"
+  },
+  "directory": {
+    "base_url": "https://www.brief.global/api/relay"
+  },
+  "registration": {
+    "base_url": "https://www.brief.global/api/relay"
   },
   "search": {
     "provider": "duckduckgo"
