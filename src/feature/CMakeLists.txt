@@ -29,6 +29,7 @@ set(PP_BROWSER_FEATURE_SOURCES
   ui/ShellChatOverlayGesture.cpp
   ui/ShellLayout.cpp
   ui/ShellFeedback.cpp
+  ui/UserFeedback.cpp
   ui/ShellInterruption.cpp
   ui/PinGateController.cpp
   ui/DocumentLoader.cpp

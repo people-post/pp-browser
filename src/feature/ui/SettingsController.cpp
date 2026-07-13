@@ -13,6 +13,8 @@
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
+#include "feature/ui/UserFeedback.h"
+#include "base/error/AppError.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
@@ -147,8 +149,8 @@ void SettingsController::SyncBindingsFromSession() {
 
 void SettingsController::ReloadFromDisk() {
   if (auto reloaded = SessionStore::Instance().ReloadFromDisk(); !reloaded) {
-    status_ = reloaded.error().message;
-    log().warning << "ReloadFromDisk failed: " << status_.c_str();
+    log().warning << "ReloadFromDisk failed: " << AppError::Log(reloaded.error());
+    ReportFailure(reloaded.error());
     return;
   }
   status_ = "";
@@ -429,8 +431,8 @@ bool SettingsController::FlushSection(const std::string& section_id) {
 
   PullBindingsToUiState();
   if (auto flushed = handler->Flush(ui_state_, SessionStore::Instance()); !flushed) {
-    status_ = flushed.error().message;
-    DataModelHost::Instance().Dirty("settings", "status");
+    log().warning << "FlushSection(" << section_id << ") failed: " << AppError::Log(flushed.error());
+    ReportFailure(flushed.error());
     return false;
   }
 
@@ -454,7 +456,17 @@ void SettingsController::MaybeShowSaveToast(const std::string& section_id) {
   }
   last_toast_section_ = section_id;
   last_toast_at_ms_ = now;
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Settings saved");
+  UserFeedback::Ok("Settings saved");
+}
+
+void SettingsController::ReportFailure(const Error& err) {
+  log().warning << "Settings failure: " << AppError::Log(err);
+  status_ = UserFeedback::FailFrom(err).c_str();
+  DataModelHost::Instance().Dirty("settings", "status");
+}
+
+void SettingsController::ReportFailure(const std::string& technical_message) {
+  ReportFailure(Error(technical_message));
 }
 
 void SettingsController::OnResetSection(const std::string& section_id) {
@@ -655,19 +667,17 @@ void SettingsController::OnRegisterProfile() {
   PullBindingsToUiState();
   PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
     if (!unlocked) {
-      status_ = "PIN required to register";
-      DataModelHost::Instance().Dirty("settings", "status");
+      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
       return;
     }
     if (auto registered = ProfileSettingsSection::RegisterIdentity(ui_state_); !registered) {
-      status_ = registered.error().message;
-      DataModelHost::Instance().Dirty("settings", "status");
+      ReportFailure(registered.error());
       return;
     }
     status_ = "Registered — Brief API key saved";
     PushUiStateToBindings();
     DirtyAll();
-    MaybeShowSaveToast("profile");
+    UserFeedback::Ok("Registered — Brief API key saved");
   });
 }
 
@@ -675,42 +685,36 @@ void SettingsController::OnRotateBriefLlmKey() {
   PullBindingsToUiState();
   PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
     if (!unlocked) {
-      status_ = "PIN required to rotate API key";
-      DataModelHost::Instance().Dirty("settings", "status");
+      ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
       return;
     }
     if (auto rotated = ProfileSettingsSection::RotateBriefLlmKey(ui_state_); !rotated) {
-      status_ = rotated.error().message;
-      DataModelHost::Instance().Dirty("settings", "status");
+      ReportFailure(rotated.error());
       return;
     }
     status_ = "Brief API key rotated";
     PushUiStateToBindings();
     DirtyAll();
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "Brief API key rotated");
-    ShellHost::Instance().DirtyWindow();
+    UserFeedback::Ok("Brief API key rotated");
   });
 }
 
 void SettingsController::OnCopyProfileId() {
   const std::string peer_id = bindings_.profile_peer_id.c_str();
   if (peer_id.empty()) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "No Peer ID yet");
-    ShellHost::Instance().DirtyWindow();
+    UserFeedback::Fail("No Peer ID yet — register on the network first.");
     return;
   }
   if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
     system->SetClipboardText(bindings_.profile_peer_id);
   }
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Peer ID copied");
-  ShellHost::Instance().DirtyWindow();
+  UserFeedback::Ok("Peer ID copied");
 }
 
 void SettingsController::OnShareProfile() {
   const std::string peer_id = bindings_.profile_peer_id.c_str();
   if (peer_id.empty()) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "No Peer ID yet");
-    ShellHost::Instance().DirtyWindow();
+    UserFeedback::Fail("No Peer ID yet — register on the network first.");
     return;
   }
   const std::string nickname = bindings_.profile_nickname.c_str();
@@ -722,8 +726,7 @@ void SettingsController::OnShareProfile() {
   if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
     system->SetClipboardText(invite.c_str());
   }
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Invite copied");
-  ShellHost::Instance().DirtyWindow();
+  UserFeedback::Ok("Invite copied");
 }
 
 void SettingsController::OnAddMcpServer() {
@@ -768,8 +771,7 @@ void SettingsController::OnResetProfile() {
           return;
         }
         if (!checked) {
-          ShellFeedback::ShowToast(ShellHost::Instance().State(), "Check the box to confirm reset");
-          ShellHost::Instance().DirtyWindow();
+          UserFeedback::Fail("Check the box to confirm reset");
           return;
         }
         PerformResetProfile();
@@ -783,8 +785,7 @@ void SettingsController::PerformResetProfile() {
   const AppConfig config = bootstrap.config;
 
   if (profile_dir.empty()) {
-    status_ = "Profile path unavailable";
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile path unavailable"));
     return;
   }
 
@@ -796,34 +797,29 @@ void SettingsController::PerformResetProfile() {
   std::error_code ec;
   std::filesystem::remove_all(profile_dir, ec);
   if (ec) {
-    status_ = "Failed to delete profile data";
     log().error << "remove_all(" << profile_dir << "): " << ec.message();
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(AppError::Storage(Err::Storage::Failed, "Failed to delete profile data: " + ec.message()));
     return;
   }
 
   AppPaths::EnsureDirs(profile_dir);
   if (auto manifest = SchemaVersion::EnsureProfileManifest(profile_dir); !manifest) {
-    status_ = manifest.error().message.c_str();
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(manifest.error());
     return;
   }
 
   if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_dir); !secrets) {
-    status_ = secrets.error().message.c_str();
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(secrets.error());
     return;
   }
 
   if (auto hub = MessagingHub::Instance().Initialize(config, profile_dir); !hub) {
-    status_ = hub.error().message.c_str();
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(hub.error());
     return;
   }
 
   if (auto prefs = SessionStore::Instance().ReloadProfilePrefs(); !prefs) {
-    status_ = prefs.error().message.c_str();
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(prefs.error());
     return;
   }
 
@@ -836,21 +832,20 @@ void SettingsController::PerformResetProfile() {
   status_ = "";
   SyncBindingsFromSession();
   DirtyAll();
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Profile reset");
+  UserFeedback::Ok("Profile reset");
   ShellHost::Instance().RequestSyncLayout();
 }
 
 void SettingsController::OnChangePin() {
   if (!ProfileSecretsService::Instance().IsInitialized() || !ProfileSecretsService::Instance().HasVault()) {
-    status_ = "Set up key protection first";
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
+                      .WithUser("Set up key protection first"));
     return;
   }
   if (!ProfileSecretsService::Instance().IsUnlocked()) {
     PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
       if (!unlocked) {
-        status_ = "Unlock profile PIN to change it";
-        DataModelHost::Instance().Dirty("settings", "status");
+        ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
         return;
       }
       OnChangePin();
@@ -862,38 +857,33 @@ void SettingsController::OnChangePin() {
   const std::string new_pin = bindings_.pin_change_new.c_str();
   const std::string confirm = bindings_.pin_change_confirm.c_str();
   if (old_pin.empty() || new_pin.empty()) {
-    status_ = "Current and new PIN are required";
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(AppError::Pin(Err::Pin::Required, "Current and new PIN are required")
+                      .WithUser("Current and new PIN are required"));
     return;
   }
   if (new_pin != confirm) {
-    status_ = "New PINs do not match";
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(AppError::Pin(Err::Pin::Mismatch, "New PINs do not match"));
     return;
   }
   if (new_pin.size() < 4) {
-    status_ = "Use at least 4 characters";
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(AppError::Pin(Err::Pin::TooShort, "Use at least 4 characters"));
     return;
   }
 
   DataKeyVault* vault = ProfileSecretsService::Instance().Vault();
   if (vault == nullptr) {
-    status_ = "Vault unavailable";
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable"));
     return;
   }
   if (auto changed = vault->ChangePin(old_pin, new_pin); !changed) {
-    status_ = changed.error().message.c_str();
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(changed.error());
     return;
   }
 
   ProfilePreferences prefs = SessionStore::Instance().Snapshot().profile_prefs;
   prefs.pin_is_default = false;
   if (auto saved = SessionStore::Instance().SaveProfilePrefs(prefs); !saved) {
-    status_ = saved.error().message.c_str();
-    DataModelHost::Instance().Dirty("settings", "status");
+    ReportFailure(saved.error());
     return;
   }
 
@@ -903,6 +893,7 @@ void SettingsController::OnChangePin() {
   status_ = "PIN updated";
   SyncBindingsFromSession();
   DirtyAll();
+  UserFeedback::Ok("PIN updated");
 }
 
 } // namespace pbr

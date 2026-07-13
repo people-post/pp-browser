@@ -3,6 +3,7 @@
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
+#include "common/Error.h"
 #include "common/Module.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
@@ -117,6 +118,8 @@ private:
   void FlushAllDirty();
   bool FlushSection(const std::string& section_id);
   void MaybeShowSaveToast(const std::string& section_id);
+  void ReportFailure(const Error& err);
+  void ReportFailure(const std::string& technical_message);
   void DirtyAll();
   void CompleteSectionSelection(bool expanded);
   void OnRegisterProfile();

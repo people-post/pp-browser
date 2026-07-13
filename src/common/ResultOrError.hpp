@@ -11,17 +11,19 @@ namespace pbr {
 
 struct RoeErrorBase {
   int32_t code;
+  int32_t category;
   std::string message;
+  std::string user;
 
-  RoeErrorBase() : code(0), message("") {}
+  RoeErrorBase() : code(-1), category(0), message(""), user("") {}
 
-  RoeErrorBase(int32_t c, const std::string& msg) : code(c), message(msg) {}
+  RoeErrorBase(int32_t c, const std::string& msg) : code(c), category(0), message(msg), user("") {}
 
-  RoeErrorBase(int32_t c, std::string&& msg) : code(c), message(std::move(msg)) {}
+  RoeErrorBase(int32_t c, std::string&& msg) : code(c), category(0), message(std::move(msg)), user("") {}
 
-  explicit RoeErrorBase(const std::string& msg) : code(-1), message(msg) {}
+  explicit RoeErrorBase(const std::string& msg) : code(-1), category(0), message(msg), user("") {}
 
-  explicit RoeErrorBase(std::string&& msg) : code(-1), message(std::move(msg)) {}
+  explicit RoeErrorBase(std::string&& msg) : code(-1), category(0), message(std::move(msg)), user("") {}
 };
 
 template <typename T, typename E = std::string>

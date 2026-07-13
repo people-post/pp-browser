@@ -12,6 +12,7 @@
 #include "base/ai/conversation/ThreadCompactionService.h"
 #include "base/ai/conversation/ThreadContextPolicy.h"
 #include "base/ai/conversation/TurnCoordinator.h"
+#include "base/error/AppError.h"
 #include "common/Logger.h"
 #include "base/ai/mcp/McpClient.h"
 #include "base/ai/mcp/McpRuntime.h"
@@ -119,6 +120,10 @@ void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const 
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message) {
   PushEvent(state, AgentEvent{.type = AgentEventType::Error, .message = message});
+}
+
+void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& err) {
+  PushError(state, AppError::Display(err));
 }
 
 void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
@@ -354,7 +359,7 @@ void AgentSession::RunSynthesisStep(const std::shared_ptr<Impl>& state) {
 
   auto result = state->llm->Complete(request);
   if (!result) {
-    PushError(state, result.error().message);
+    PushError(state, result.error());
     FinishTurn(state);
     return;
   }
@@ -383,7 +388,7 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
   }
 
   if (!state->llm) {
-    return Error("LLM not configured");
+    return AppError::Config(Err::Config::MissingKey, "LLM not configured");
   }
 
   state->planner_started = std::chrono::steady_clock::now();
@@ -403,7 +408,7 @@ void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
 
   auto plan = ResolveTurnPlan(state);
   if (!plan) {
-    PushError(state, plan.error().message);
+    PushError(state, plan.error());
     FinishTurn(state);
     return;
   }
@@ -466,7 +471,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
     auto messages = state->thread_store->GetMessagesForContext(state->pending_thread_id, state->config.context);
     if (!messages) {
-      PushError(state, messages.error().message);
+      PushError(state, messages.error());
       FinishTurn(state);
       return;
     }
@@ -496,7 +501,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
     auto messages = state->thread_store->GetMessagesForContext(state->pending_thread_id, state->config.context);
     if (!messages) {
-      PushError(state, messages.error().message);
+      PushError(state, messages.error());
       FinishTurn(state);
       return;
     }

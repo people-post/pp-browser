@@ -6,6 +6,7 @@
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/MessageCipher.h"
 #include "base/data/AtomicFileWrite.h"
+#include "base/error/AppError.h"
 
 #include <cstring>
 #include <filesystem>
@@ -63,7 +64,7 @@ void DataKeyVault::Lock() {
 
 Roe<ByteVector> DataKeyVault::Dek() const {
   if (dek_.empty()) {
-    return Error("Profile vault is locked");
+    return AppError::Pin(Err::Pin::Required, "Profile vault is locked");
   }
   return dek_;
 }
@@ -187,7 +188,8 @@ Roe<void> DataKeyVault::Unlock(std::string_view pin) {
   auto dek = UnwrapDek(*kek, *wrapped);
   sodium_memzero(kek->data(), kek->size());
   if (!dek) {
-    return Error("Incorrect PIN or corrupt vault");
+    return AppError::Pin(Err::Pin::Generic, "Incorrect PIN or corrupt vault")
+        .WithUser("Incorrect PIN or corrupt vault");
   }
   Lock();
   dek_ = std::move(*dek);

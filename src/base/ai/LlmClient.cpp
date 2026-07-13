@@ -1,5 +1,7 @@
 #include "base/ai/LlmClient.h"
 
+#include "base/error/AppError.h"
+
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
@@ -52,37 +54,46 @@ bool IsOllamaEndpoint(const std::string& base_url) {
   return base_url.find("11434") != std::string::npos || base_url.find("ollama") != std::string::npos;
 }
 
-std::string MapHttpErrorMessage(long http_code, const std::string& response_body) {
+Error MapHttpError(long http_code, const std::string& response_body) {
   auto json = nlohmann::json::parse(response_body, nullptr, false);
-  std::string message;
-  std::string code;
+  std::string api_message;
+  std::string api_code;
   if (!json.is_discarded() && json.contains("error")) {
     const auto& err = json["error"];
     if (err.is_object()) {
       if (err.contains("message") && err["message"].is_string()) {
-        message = err["message"].get<std::string>();
+        api_message = err["message"].get<std::string>();
       }
       if (err.contains("code") && err["code"].is_string()) {
-        code = err["code"].get<std::string>();
+        api_code = err["code"].get<std::string>();
       }
     } else if (err.is_string()) {
-      message = err.get<std::string>();
+      api_message = err.get<std::string>();
     }
   }
+
+  const std::string detail = !api_message.empty()
+                                 ? ("LLM HTTP " + std::to_string(http_code) + ": " + api_message)
+                                 : ("LLM HTTP " + std::to_string(http_code));
+
   if (http_code == 429) {
-    return message.empty()
-               ? "Brief assistant is busy; try later or use your own API key."
-               : message;
+    auto err = AppError::Auth(Err::Auth::RateLimited, detail);
+    if (!api_message.empty()) {
+      err.WithUser(api_message);
+    }
+    return err;
   }
-  if (http_code == 401 || http_code == 403 || code == "not_registered" || code == "auth_error") {
-    return message.empty()
-               ? "Register or rotate your Brief API key in Me → Profile."
-               : message;
+  if (http_code == 401 || http_code == 403 || api_code == "not_registered" || api_code == "auth_error") {
+    auto err = AppError::Auth(Err::Auth::Forbidden, detail);
+    if (!api_message.empty()) {
+      err.WithUser(api_message);
+    }
+    return err;
   }
-  if (!message.empty()) {
-    return "LLM API error: " + message;
+  if (!api_message.empty()) {
+    return AppError::Network(Err::Network::HttpError, detail).WithUser("LLM API error: " + api_message);
   }
-  return "LLM HTTP " + std::to_string(http_code);
+  return AppError::Network(Err::Network::HttpError, detail);
 }
 
 } // namespace
@@ -106,7 +117,7 @@ Roe<std::string> LlmClient::Complete(const std::string& system_prompt, const std
     return result.error();
   }
   if (!result->content) {
-    return Error("LLM response missing content");
+    return AppError::Internal("LLM response missing content");
   }
   return *result->content;
 }
@@ -139,7 +150,7 @@ std::vector<ChatMessage> LlmClient::CoalesceLeadingSystemMessages(std::vector<Ch
 
 Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& request) const {
   if (config_.require_api_key && config_.api_key.empty()) {
-    return Error("LLM API key not configured");
+    return AppError::Config(Err::Config::MissingKey, "LLM API key not configured");
   }
 
   const std::vector<ChatMessage> wire_messages = CoalesceLeadingSystemMessages(request.messages);
@@ -165,7 +176,7 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
 
   CURL* curl = curl_easy_init();
   if (!curl) {
-    return Error("curl init failed");
+    return AppError::Internal("curl init failed");
   }
 
   struct curl_slist* headers = nullptr;
@@ -193,11 +204,11 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
 
   if (code != CURLE_OK) {
     log().error << "curl failed: " << curl_easy_strerror(code);
-    return Error(std::string("curl failed: ") + curl_easy_strerror(code));
+    return AppError::Network(Err::Network::Unreachable, std::string("curl failed: ") + curl_easy_strerror(code));
   }
 
   if (http_code >= 400) {
-    return Error(MapHttpErrorMessage(http_code, response));
+    return MapHttpError(http_code, response);
   }
 
   log().debug << "LLM response received (" << response.size() << " bytes)";
@@ -211,17 +222,18 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
 Roe<ChatCompletionResponse> LlmClient::ParseChatCompletionResponse(const std::string& response) {
   auto json = nlohmann::json::parse(response, nullptr, false);
   if (json.is_discarded()) {
-    return Error("Failed to parse LLM response JSON");
+    return AppError::Internal("Failed to parse LLM response JSON");
   }
 
   if (json.contains("error")) {
     const auto& err = json["error"];
     const std::string message = err.contains("message") ? err["message"].get<std::string>() : err.dump();
-    return Error("LLM API error: " + message);
+    return AppError::Network(Err::Network::HttpError, "LLM API error: " + message)
+        .WithUser("LLM API error: " + message);
   }
 
   if (!json.contains("choices") || !json["choices"].is_array() || json["choices"].empty()) {
-    return Error("LLM response missing choices");
+    return AppError::Internal("LLM response missing choices");
   }
 
   const auto& choice = json["choices"][0];

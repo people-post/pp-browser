@@ -5,6 +5,7 @@
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/HybridKem.h"
 #include "base/data/AtomicFileWrite.h"
+#include "base/error/AppError.h"
 #include "base/people/Ed25519Signer.h"
 #include "libp2p/integration/host/PeerIdUtil.h"
 
@@ -121,7 +122,7 @@ void IdentityStore::ClearDek() {
 
 Roe<void> IdentityStore::RequireDek() const {
   if (dek_.size() != kDataEncryptionKeySize) {
-    return Error("IdentityStore DEK not set (unlock profile vault first)");
+    return AppError::Pin(Err::Pin::Required, "IdentityStore DEK not set (unlock profile vault first)");
   }
   return {};
 }

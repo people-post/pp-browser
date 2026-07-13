@@ -5,6 +5,7 @@
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/PskBundleCodec.h"
 #include "base/crypto/PskFingerprint.h"
+#include "base/error/AppError.h"
 
 #include <nlohmann/json.hpp>
 #include <sodium.h>
@@ -62,7 +63,7 @@ void SqlitePskSessionStore::ClearDek() {
 
 Roe<void> SqlitePskSessionStore::RequireDek() const {
   if (dek_.size() != kDataEncryptionKeySize) {
-    return Error("PSK store DEK not set (unlock profile vault first)");
+    return AppError::Pin(Err::Pin::Required, "PSK store DEK not set (unlock profile vault first)");
   }
   return {};
 }

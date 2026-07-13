@@ -1,5 +1,7 @@
 #include "base/crypto/ProfileSecretsService.h"
 
+#include "base/error/AppError.h"
+
 #include <algorithm>
 #include <filesystem>
 
@@ -101,13 +103,13 @@ void ProfileSecretsService::NotifyUnlocked() {
 
 Roe<void> ProfileSecretsService::Unlock(const std::string& pin) {
   if (!initialized_) {
-    return Error("Profile secrets service not initialized");
+    return AppError::Pin(Err::Pin::VaultUnavailable, "Profile secrets service not initialized");
   }
   if (unlocked_) {
     return {};
   }
   if (pin.empty()) {
-    return Error("PIN is required");
+    return AppError::Pin(Err::Pin::Required, "PIN is required");
   }
   if (!vault_) {
     vault_ = std::make_unique<DataKeyVault>(DataKeyVault::VaultPathForProfile(profile_data_dir_), profile_id_);

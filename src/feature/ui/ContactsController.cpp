@@ -13,6 +13,7 @@
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
+#include "feature/ui/UserFeedback.h"
 
 #include "base/ui/ShellTypes.h"
 
@@ -590,7 +591,7 @@ bool ContactsController::FlushSelectedContact() {
 
   Contact updated = BuildContactFromDetail(**existing, selected_);
   if (!MessagingHub::Instance().Contacts().Upsert(updated)) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "Could not save contact");
+    UserFeedback::Fail("Could not save contact");
     ShellHost::Instance().DirtyWindow();
     return false;
   }
@@ -644,7 +645,7 @@ void ContactsController::OnAddContact() {
   }
   auto created = MessagingHub::Instance().Contacts().AddEmpty();
   if (!created) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "Could not add contact");
+    UserFeedback::Fail("Could not add contact");
     ShellHost::Instance().DirtyWindow();
     return;
   }
@@ -793,7 +794,7 @@ void ContactsController::OnSetTrust(const std::string& trust) {
   Contact updated = **contact;
   updated.trust = TrustLevelFromString(trust);
   if (!MessagingHub::Instance().Contacts().Upsert(updated)) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "Could not update trust");
+    UserFeedback::Fail("Could not update trust");
     ShellHost::Instance().DirtyWindow();
     return;
   }
@@ -822,7 +823,7 @@ void ContactsController::OnRemoveContact() {
                                }
                                auto removed = MessagingHub::Instance().Contacts().Remove(contact_id);
                                if (!removed) {
-                                 ShellFeedback::ShowToast(ShellHost::Instance().State(), "Could not remove contact");
+                                 UserFeedback::Fail("Could not remove contact");
                                  ShellHost::Instance().DirtyWindow();
                                  return;
                                }

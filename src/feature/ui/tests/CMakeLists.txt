@@ -9,3 +9,12 @@ target_link_libraries(pp_browser_shell_host_test PRIVATE
 target_include_directories(pp_browser_shell_host_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_link_rmlui_core(pp_browser_shell_host_test)
 pp_browser_add_gtest(pp_browser_shell_host_test)
+
+add_executable(pp_browser_user_feedback_test
+  user_feedback_test.cpp
+  ${CMAKE_SOURCE_DIR}/src/base/error/AppError.cpp)
+target_link_libraries(pp_browser_user_feedback_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main)
+target_include_directories(pp_browser_user_feedback_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+pp_browser_add_gtest(pp_browser_user_feedback_test)

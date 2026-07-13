@@ -1,5 +1,7 @@
 #include "base/crypto/PinResolver.h"
 
+#include "base/error/AppError.h"
+
 #include <cstdlib>
 
 namespace pbr {
@@ -12,13 +14,13 @@ Roe<std::string> PinResolver::Resolve(std::string_view cli_pin) {
   if (env != nullptr && env[0] != '\0') {
     return std::string(env);
   }
-  return Error("No PIN provided");
+  return AppError::Pin(Err::Pin::Required, "No PIN provided");
 }
 
 Roe<std::string> PinResolver::Require(std::string_view cli_pin) {
   auto resolved = Resolve(cli_pin);
   if (!resolved) {
-    return Error("Profile PIN required: pass --pin, set PP_BROWSER_PIN, or unlock in the app");
+    return AppError::Pin(Err::Pin::Required, "Profile PIN required via --pin, PP_BROWSER_PIN, or in-app unlock");
   }
   return resolved;
 }

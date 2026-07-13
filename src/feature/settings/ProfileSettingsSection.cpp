@@ -2,6 +2,7 @@
 
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
+#include "base/error/AppError.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "feature/chat/ChatController.h"
@@ -83,10 +84,10 @@ bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
 
 Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& /*store*/) {
   if (!MessagingHub::Instance().IsInitialized()) {
-    return Error("Messaging hub not initialized");
+    return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
   if (!MessagingHub::Instance().IsMessagingReady()) {
-    return Error("Unlock profile PIN to save identity");
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to save identity");
   }
 
   auto identity = MessagingHub::Instance().Identity().Get();
@@ -122,10 +123,10 @@ void ProfileSettingsSection::ResetToDefaults(SettingsUiState& state, const Sessi
 
 Roe<void> ProfileSettingsSection::RegisterIdentity(SettingsUiState& state) {
   if (!MessagingHub::Instance().IsInitialized()) {
-    return Error("Messaging hub not initialized");
+    return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
   if (!MessagingHub::Instance().IsMessagingReady()) {
-    return Error("Unlock profile PIN to register");
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to register");
   }
 
   auto identity = MessagingHub::Instance().Identity().Get();
@@ -171,10 +172,10 @@ Roe<void> ProfileSettingsSection::RegisterIdentity(SettingsUiState& state) {
 
 Roe<void> ProfileSettingsSection::RotateBriefLlmKey(SettingsUiState& state) {
   if (!MessagingHub::Instance().IsInitialized()) {
-    return Error("Messaging hub not initialized");
+    return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
   if (!MessagingHub::Instance().IsMessagingReady()) {
-    return Error("Unlock profile PIN to rotate API key");
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to rotate API key");
   }
 
   auto identity = MessagingHub::Instance().Identity().Get();
@@ -182,7 +183,8 @@ Roe<void> ProfileSettingsSection::RotateBriefLlmKey(SettingsUiState& state) {
     return identity.error();
   }
   if (identity->brief_llm_api_key.empty()) {
-    return Error("No Brief API key yet — register on the network first");
+    return AppError::Auth(Err::Auth::NotRegistered, "No Brief API key yet")
+        .WithUser("No Brief API key yet — register on the network in Me first.");
   }
 
   const AppConfig& config = SessionStore::Instance().Snapshot().config;
@@ -201,29 +203,32 @@ Roe<void> ProfileSettingsSection::RotateBriefLlmKey(SettingsUiState& state) {
     return response.error();
   }
   if (response->status_code == 401 || response->status_code == 403) {
-    return Error("Rotate or re-register your Brief API key in Me → Profile.");
+    return AppError::Auth(Err::Auth::Forbidden,
+                       "Brief key rotate HTTP " + std::to_string(response->status_code));
   }
   if (response->status_code < 200 || response->status_code >= 300) {
     auto json = nlohmann::json::parse(response->body, nullptr, false);
+    std::string detail = "Brief API key rotate failed (HTTP " + std::to_string(response->status_code) + ")";
     if (!json.is_discarded() && json.contains("error")) {
       const auto& err = json["error"];
       if (err.is_string()) {
-        return Error(err.get<std::string>());
-      }
-      if (err.is_object() && err.contains("message") && err["message"].is_string()) {
-        return Error(err["message"].get<std::string>());
+        detail = err.get<std::string>();
+      } else if (err.is_object() && err.contains("message") && err["message"].is_string()) {
+        detail = err["message"].get<std::string>();
       }
     }
-    return Error("Brief API key rotate failed (HTTP " + std::to_string(response->status_code) + ")");
+    return AppError::Network(Err::Network::HttpError, detail);
   }
 
   auto root = nlohmann::json::parse(response->body, nullptr, false);
   if (root.is_discarded() || !root.contains("llm_api_key") || !root["llm_api_key"].is_string()) {
-    return Error("Brief API key rotate response missing llm_api_key");
+    return AppError::Auth(Err::Auth::Generic, "Brief API key rotate response missing llm_api_key")
+        .WithUser("Couldn't update Brief API key — try registering again in Me → Profile.");
   }
   const std::string new_key = root["llm_api_key"].get<std::string>();
   if (new_key.empty()) {
-    return Error("Brief API key rotate returned empty key");
+    return AppError::Auth(Err::Auth::Generic, "Brief API key rotate returned empty key")
+        .WithUser("Couldn't update Brief API key — try registering again in Me → Profile.");
   }
 
   LocalIdentity updated = *identity;

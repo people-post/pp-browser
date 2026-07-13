@@ -22,6 +22,7 @@
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/ShellFeedback.h"
+#include "feature/ui/UserFeedback.h"
 #include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
@@ -1916,8 +1917,7 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     break;
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;
-    ShellFeedback::ShowBanner(ShellHost::Instance().State(), event.message);
-    ShellHost::Instance().DirtyWindow();
+    UserFeedback::NeedsSetup(event.message);
     if (agent_ && !agent_->conversation().Entries().empty()) {
       const TranscriptEntry& entry = agent_->conversation().Entries().back();
       agent_->CompleteAssistantMessage(entry.id, event.message);
@@ -2229,8 +2229,7 @@ bool ChatController::Setup(Rml::Context* context) {
   }
 
   if (!use_llm_) {
-    ShellFeedback::ShowBanner(ShellHost::Instance().State(), "Using mock replies — LLM is not configured.");
-    ShellHost::Instance().DirtyWindow();
+    UserFeedback::NeedsSetup("Using mock replies — LLM is not configured.");
   } else if (ResolvePreset(config) == "brief") {
     std::string brief_key;
     if (MessagingHub::Instance().IsInitialized()) {
@@ -2239,15 +2238,11 @@ bool ChatController::Setup(Rml::Context* context) {
       }
     }
     if (brief_key.empty()) {
-      ShellFeedback::ShowBanner(
-          ShellHost::Instance().State(),
+      UserFeedback::NeedsSetup(
           "Register your identity in Me → Profile to use Brief assistant (or switch to Cloud/Ollama).");
-      ShellHost::Instance().DirtyWindow();
     }
   } else if (config.llm.require_api_key && config.llm.api_key.empty()) {
-    ShellFeedback::ShowBanner(ShellHost::Instance().State(),
-                              "Add your API key in Me → Assistant to enable the assistant.");
-    ShellHost::Instance().DirtyWindow();
+    UserFeedback::NeedsSetup("Add your API key in Me → Assistant to enable the assistant.");
   }
 
   return true;

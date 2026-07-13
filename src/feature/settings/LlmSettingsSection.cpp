@@ -2,7 +2,6 @@
 
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
-#include "feature/messaging/MessagingHub.h"
 #include "feature/settings/SettingsLogic.h"
 
 namespace pbr {
@@ -40,20 +39,7 @@ void LlmSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, Setti
   state.llm_model = config.llm.model;
   state.llm_api_key = config.llm.api_key;
   state.llm_api_key_env = bootstrap.config.llm_api_key_env;
-  state.brief_llm_key_masked.clear();
-  if (MessagingHub::Instance().IsInitialized() && MessagingHub::Instance().IsMessagingReady()) {
-    if (auto identity = MessagingHub::Instance().Identity().Get()) {
-      constexpr const char kPrefix[] = "brf_llm_";
-      const std::string& key = identity->brief_llm_api_key;
-      if (!key.empty()) {
-        if (key.size() <= sizeof(kPrefix) - 1 + 4) {
-          state.brief_llm_key_masked = std::string(kPrefix) + "••••";
-        } else {
-          state.brief_llm_key_masked = key.substr(0, sizeof(kPrefix) - 1 + 4) + "••••";
-        }
-      }
-    }
-  }
+  // brief_llm_key_masked is owned by ProfileSettingsSection (needs MessagingHub).
 }
 
 bool LlmSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {

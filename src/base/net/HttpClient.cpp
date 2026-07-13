@@ -1,5 +1,7 @@
 #include "base/net/HttpClient.h"
 
+#include "base/error/AppError.h"
+
 #include <curl/curl.h>
 
 namespace pbr {
@@ -16,7 +18,7 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
                           const std::map<std::string, std::string>& headers) {
   CURL* curl = curl_easy_init();
   if (!curl) {
-    return Error("Failed to init curl");
+    return AppError::Internal("Failed to init curl");
   }
 
   std::string response_body;
@@ -48,7 +50,8 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
   curl_easy_cleanup(curl);
 
   if (code != CURLE_OK) {
-    return Error(std::string("HTTP request failed: ") + curl_easy_strerror(code));
+    return AppError::Network(Err::Network::Unreachable,
+                          std::string("HTTP request failed: ") + curl_easy_strerror(code));
   }
 
   return HttpResponse{.status_code = status_code, .body = std::move(response_body)};

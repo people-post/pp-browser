@@ -6,6 +6,7 @@
 
 #include "feature/ai/AgentSession.h"
 #include "base/crypto/ProfileSecretsService.h"
+#include "base/error/AppError.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/people/ContactTypes.h"
 #include "base/platform/Platform.h"
@@ -233,13 +234,13 @@ Roe<void> MessagingHub::BuildMessagingStack() {
 
 Roe<void> MessagingHub::EnsureMessagingReady() {
   if (!initialized_) {
-    return Error("Messaging hub not initialized");
+    return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
   if (messaging_ready_) {
     return {};
   }
   if (!ProfileSecretsService::Instance().IsUnlocked()) {
-    return Error("Profile vault is locked");
+    return AppError::Pin(Err::Pin::Required, "Profile vault is locked");
   }
   if (auto identity = identity_->LoadOrCreate(); !identity) {
     return identity.error();
