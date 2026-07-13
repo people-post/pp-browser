@@ -1730,6 +1730,16 @@ select selectbox option {
   gap: 6dp;
 }
 
+.contacts-edit-field {
+  width: 100%;
+  gap: 4dp;
+}
+
+.contacts-multiaddrs-field {
+  min-height: 72dp;
+  resize: none;
+}
+
 .contacts-trust-actions {
   margin-top: 4dp;
   gap: 8dp;

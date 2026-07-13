@@ -63,4 +63,23 @@ TEST_F(ContactsStoreTest, RemoveMissingReturnsFalse) {
   EXPECT_FALSE(*removed);
 }
 
+TEST_F(ContactsStoreTest, AddEmptyPersists) {
+  ContactsStore store(data_dir_.string());
+
+  auto created = store.AddEmpty();
+  ASSERT_TRUE(static_cast<bool>(created)) << "add empty failed";
+  EXPECT_FALSE(created->id.empty());
+  EXPECT_TRUE(created->display_name.empty());
+  EXPECT_TRUE(created->server_nickname.empty());
+  EXPECT_TRUE(created->ids.empty());
+  EXPECT_TRUE(created->multiaddrs.empty());
+
+  ContactsStore reloaded(data_dir_.string());
+  auto loaded = reloaded.Get(created->id);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  ASSERT_TRUE(loaded->has_value());
+  EXPECT_EQ(loaded->value().id, created->id);
+  EXPECT_TRUE(loaded->value().display_name.empty());
+}
+
 } // namespace

@@ -186,4 +186,11 @@ Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
   return Upsert(contact);
 }
 
+Roe<Contact> ContactsStore::AddEmpty() {
+  Contact contact;
+  contact.id = util::GenerateUuid();
+  contact.trust = TrustLevel::Unknown;
+  return Upsert(contact);
+}
+
 } // namespace pbr

@@ -21,6 +21,7 @@ public:
   Roe<bool> Remove(const std::string& contact_id);
   Roe<std::vector<Contact>> SearchLocal(const std::string& query) const;
   Roe<Contact> AddFromDirectoryHit(const DirectoryHit& hit);
+  Roe<Contact> AddEmpty();
   void Flush();
 
 private:

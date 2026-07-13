@@ -5,6 +5,7 @@
 #include "base/crypto/AutoKeyEstablishment.h"
 #include "base/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
+#include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/E2eIntegrityUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
@@ -116,26 +117,12 @@ void P2pMessagingService::RegisterPeerDirectEndpoint(const std::string& peer_rel
 }
 
 void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact) {
-  std::optional<std::string> relay_id;
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::RelayUser && id.primary) {
-      relay_id = id.value;
-      break;
-    }
-  }
-  if (!relay_id) {
-    for (const ContactId& id : contact.ids) {
-      if (id.kind == ContactIdKind::RelayUser) {
-        relay_id = id.value;
-        break;
-      }
-    }
-  }
-  if (!relay_id) {
+  const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
+  if (target.peer_identity_value.empty()) {
     return;
   }
   for (const std::string& ma : contact.multiaddrs) {
-    RegisterPeerDirectEndpoint(*relay_id, ma);
+    RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
   }
 }
 

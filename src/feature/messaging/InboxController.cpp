@@ -245,7 +245,7 @@ Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact
 
   const DirectChatTarget target = DirectChatTargetFromContact(**contact, channel);
   if (target.peer_identity_value.empty()) {
-    return Error("Contact has no relay identity");
+    return Error("Contact has no messaging identity");
   }
 
   const std::string title =
@@ -268,7 +268,7 @@ Roe<Thread> InboxController::CreateDirectThread(const std::string& contact_id, T
 
   const DirectChatTarget target = DirectChatTargetFromContact(**contact, channel);
   if (target.peer_identity_value.empty()) {
-    return Error("Contact has no relay identity");
+    return Error("Contact has no messaging identity");
   }
 
   Thread thread;

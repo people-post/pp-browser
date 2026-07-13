@@ -1,10 +1,12 @@
 #include "feature/ui/ContactsController.h"
 
 #include "base/crypto/PskFingerprint.h"
+#include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/Ed25519Signer.h"
+#include "base/ui/ContextMenuHost.h"
 #include "feature/chat/ChatController.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
@@ -19,11 +21,51 @@
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/SystemInterface.h>
 
+#include <SDL3/SDL.h>
+
 #include <algorithm>
+#include <cctype>
+#include <sstream>
 
 namespace pbr {
 
 namespace {
+
+constexpr uint32_t kContactDebounceMs = 400;
+
+std::string TrimCopy(std::string text) {
+  while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) {
+    text.erase(text.begin());
+  }
+  while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) {
+    text.pop_back();
+  }
+  return text;
+}
+
+std::vector<std::string> ParseMultiaddrsFromText(const std::string& text) {
+  std::vector<std::string> out;
+  std::istringstream stream(text);
+  std::string line;
+  while (std::getline(stream, line)) {
+    line = TrimCopy(std::move(line));
+    if (!line.empty()) {
+      out.push_back(std::move(line));
+    }
+  }
+  return out;
+}
+
+std::string MultiaddrsToText(const std::vector<std::string>& multiaddrs) {
+  std::ostringstream out;
+  for (size_t i = 0; i < multiaddrs.size(); ++i) {
+    if (i > 0) {
+      out << '\n';
+    }
+    out << multiaddrs[i];
+  }
+  return out.str();
+}
 
 std::string IdentityKindLabel(const ContactIdKind kind) {
   switch (kind) {
@@ -111,6 +153,9 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact) {
   ContactsController::ContactListRow row;
   row.id = contact.id.c_str();
   row.title = contact.display_name.empty() ? contact.server_nickname.c_str() : contact.display_name.c_str();
+  if (row.title.empty()) {
+    row.title = "New contact";
+  }
   row.subtitle = PrimaryIdentityValue(contact).c_str();
   if (row.subtitle.empty() && !contact.server_nickname.empty() &&
       contact.server_nickname != contact.display_name) {
@@ -179,6 +224,46 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
   return detail;
 }
 
+void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const Contact& contact) {
+  detail.multiaddrs_text = MultiaddrsToText(contact.multiaddrs).c_str();
+  const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
+  if (target.peer_identity_value.empty()) {
+    detail.can_message = false;
+    detail.message_hint = "Add a relay ID, or a peer ID with multiaddr, to message.";
+    return;
+  }
+  if (target.peer_identity_kind == ContactIdKindToString(ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
+    detail.can_message = false;
+    detail.message_hint = "Add a multiaddr for direct messaging without relay.";
+    return;
+  }
+  detail.can_message = true;
+  detail.message_hint = "";
+}
+
+Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail) {
+  Contact contact = existing;
+  contact.display_name = detail.display_name.c_str();
+  contact.server_nickname = detail.nickname.c_str();
+  contact.ids.clear();
+  for (const ContactId& id : existing.ids) {
+    if (id.kind != ContactIdKind::RelayUser && id.kind != ContactIdKind::PeerId) {
+      contact.ids.push_back(id);
+    }
+  }
+  const std::string relay = detail.relay_id.c_str();
+  const std::string peer = detail.peer_id.c_str();
+  const bool has_relay = !relay.empty();
+  if (has_relay) {
+    contact.ids.push_back({ContactIdKind::RelayUser, relay, true});
+  }
+  if (!peer.empty()) {
+    contact.ids.push_back({ContactIdKind::PeerId, peer, !has_relay});
+  }
+  contact.multiaddrs = ParseMultiaddrsFromText(detail.multiaddrs_text.c_str());
+  return contact;
+}
+
 } // namespace
 
 ContactsController::ContactsController() {
@@ -222,9 +307,12 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
       detail_handle.RegisterMember("nickname", &ContactDetail::nickname);
       detail_handle.RegisterMember("relay_id", &ContactDetail::relay_id);
       detail_handle.RegisterMember("peer_id", &ContactDetail::peer_id);
+      detail_handle.RegisterMember("multiaddrs_text", &ContactDetail::multiaddrs_text);
       detail_handle.RegisterMember("trust", &ContactDetail::trust);
       detail_handle.RegisterMember("trust_key", &ContactDetail::trust_key);
       detail_handle.RegisterMember("signing_fingerprint", &ContactDetail::signing_fingerprint);
+      detail_handle.RegisterMember("message_hint", &ContactDetail::message_hint);
+      detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
       detail_handle.RegisterMember("identities", &ContactDetail::identities);
       detail_handle.RegisterMember("threads", &ContactDetail::threads);
     }
@@ -240,6 +328,7 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("back_to_list", &ContactsController::BackToListCallback);
     ctor.BindEventCallback("start_chat", &ContactsController::StartChatCallback);
     ctor.BindEventCallback("secure_message", &ContactsController::SecureMessageCallback);
+    ctor.BindEventCallback("on_add_contact_menu", &ContactsController::AddContactMenuCallback);
     ctor.BindEventCallback("find_someone", &ContactsController::FindSomeoneCallback);
     ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
     ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
@@ -247,6 +336,7 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("remove_contact", &ContactsController::RemoveContactCallback);
     ctor.BindEventCallback("open_thread", &ContactsController::OpenThreadCallback);
     ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
+    ctor.BindEventCallback("on_contact_field_changed", &ContactsController::OnContactFieldChangedCallback);
   });
 }
 
@@ -305,6 +395,7 @@ void ContactsController::SyncFromStore() {
 }
 
 void ContactsController::Refresh() {
+  FlushPending();
   SyncFromStore();
   if (!selected_.id.empty()) {
     LoadSelectedDetail(selected_.id.c_str());
@@ -316,8 +407,11 @@ void ContactsController::Refresh() {
 }
 
 void ContactsController::OnNavTabActivated() {
+  FlushPending();
   show_detail_ = false;
   selected_ = {};
+  contact_dirty_ = false;
+  debounce_deadline_ms_ = 0;
   search_query_ = "";
   compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
   SyncFromStore();
@@ -350,9 +444,19 @@ void ContactsController::SecureMessageCallback(Rml::DataModelHandle /*model*/, R
   Instance().OnSecureMessage();
 }
 
+void ContactsController::AddContactMenuCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                              const Rml::VariantList& /*args*/) {
+  Instance().OnAddContactMenu(ev);
+}
+
 void ContactsController::FindSomeoneCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                              const Rml::VariantList& /*args*/) {
   Instance().OnFindSomeone();
+}
+
+void ContactsController::OnContactFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                         const Rml::VariantList& /*args*/) {
+  Instance().OnContactFieldChanged();
 }
 
 void ContactsController::CopyIdCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -402,9 +506,15 @@ void ContactsController::LoadSelectedDetail(const std::string& contact_id) {
     return;
   }
   selected_ = ToContactDetail(**contact);
+  ApplyMessagingEligibility(selected_, **contact);
+}
+
+void ContactsController::UpdateMessagingEligibility(const Contact& contact) {
+  ApplyMessagingEligibility(selected_, contact);
 }
 
 void ContactsController::OnSelectContact(const std::string& contact_id) {
+  FlushPending();
   LoadSelectedDetail(contact_id);
   if (selected_.id.empty()) {
     return;
@@ -422,15 +532,140 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
 }
 
 void ContactsController::OnBackToList() {
+  FlushPending();
   show_detail_ = false;
   selected_ = {};
+  contact_dirty_ = false;
+  debounce_deadline_ms_ = 0;
   DirtyAll();
+}
+
+void ContactsController::OnContactFieldChanged() {
+  if (selected_.id.empty()) {
+    return;
+  }
+  contact_dirty_ = true;
+  debounce_deadline_ms_ = SDL_GetTicks() + kContactDebounceMs;
+
+  if (MessagingHub::Instance().IsInitialized()) {
+    if (auto existing = MessagingHub::Instance().Contacts().Get(selected_.id.c_str())) {
+      if (*existing) {
+        const Contact preview = BuildContactFromDetail(**existing, selected_);
+        UpdateMessagingEligibility(preview);
+        DataModelHost::Instance().Dirty("contacts", "selected");
+      }
+    }
+  }
+}
+
+void ContactsController::Tick() {
+  if (!contact_dirty_ || debounce_deadline_ms_ == 0) {
+    return;
+  }
+  if (SDL_GetTicks() >= debounce_deadline_ms_) {
+    debounce_deadline_ms_ = 0;
+    (void)FlushSelectedContact();
+  }
+}
+
+void ContactsController::FlushPending() {
+  if (!contact_dirty_) {
+    return;
+  }
+  debounce_deadline_ms_ = 0;
+  (void)FlushSelectedContact();
+}
+
+bool ContactsController::FlushSelectedContact() {
+  if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
+    contact_dirty_ = false;
+    return true;
+  }
+
+  auto existing = MessagingHub::Instance().Contacts().Get(selected_.id.c_str());
+  if (!existing || !*existing) {
+    contact_dirty_ = false;
+    return false;
+  }
+
+  Contact updated = BuildContactFromDetail(**existing, selected_);
+  if (!MessagingHub::Instance().Contacts().Upsert(updated)) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), "Could not save contact");
+    ShellHost::Instance().DirtyWindow();
+    return false;
+  }
+
+  MessagingHub::Instance().P2p().RegisterContactDirectEndpoints(updated);
+  UpdateMessagingEligibility(updated);
+  contact_dirty_ = false;
+  SyncFromStore();
+  DataModelHost::Instance().Dirty("contacts", "contacts");
+  DataModelHost::Instance().Dirty("contacts", "selected");
+  if (context_) {
+    context_->Update();
+  }
+  return true;
+}
+
+void ContactsController::OnAddContactMenu(Rml::Event& ev) {
+  Rml::Element* target = ev.GetCurrentElement();
+  if (!target) {
+    target = ev.GetTargetElement();
+  }
+  Rml::Vector2i position{0, 0};
+  if (target) {
+    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
+    const Rml::Box& box = target->GetBox();
+    position.x = static_cast<int>(offset.x);
+    position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + 4.0f);
+  }
+
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({
+      "add_contact",
+      "Add contact",
+      nullptr,
+      []() { ContactsController::Instance().OnAddContact(); },
+      "../icons/contacts.svg",
+  });
+  actions.push_back({
+      "find_someone",
+      "Find someone",
+      nullptr,
+      []() { ContactsController::Instance().OnFindSomeone(); },
+      "../icons/sparkle.svg",
+  });
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ContactsController::OnAddContact() {
+  if (!MessagingHub::Instance().IsInitialized()) {
+    return;
+  }
+  auto created = MessagingHub::Instance().Contacts().AddEmpty();
+  if (!created) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), "Could not add contact");
+    ShellHost::Instance().DirtyWindow();
+    return;
+  }
+  SyncFromStore();
+  OnSelectContact(created->id);
+  DirtyAll();
+  if (context_) {
+    context_->Update();
+  }
 }
 
 void ContactsController::OnStartChat() {
   if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
     return;
   }
+  if (!selected_.can_message) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), selected_.message_hint.c_str());
+    ShellHost::Instance().DirtyWindow();
+    return;
+  }
+  FlushPending();
 
   const std::string contact_id = selected_.id.c_str();
   auto contact = MessagingHub::Instance().Contacts().Get(contact_id);
@@ -452,6 +687,12 @@ void ContactsController::OnSecureMessage() {
   if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
     return;
   }
+  if (!selected_.can_message) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), selected_.message_hint.c_str());
+    ShellHost::Instance().DirtyWindow();
+    return;
+  }
+  FlushPending();
 
   PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
     if (!unlocked) {
@@ -592,6 +833,8 @@ void ContactsController::OnRemoveContact() {
                                }
                                show_detail_ = false;
                                selected_ = {};
+                               contact_dirty_ = false;
+                               debounce_deadline_ms_ = 0;
                                SyncFromStore();
                                DirtyAll();
                                if (ShellHost::Instance().State().layout_mode != LayoutMode::Compact) {

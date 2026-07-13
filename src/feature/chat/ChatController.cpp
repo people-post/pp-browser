@@ -2293,6 +2293,9 @@ void UpdateChatController() {
   if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
     SettingsController::Instance().Tick();
   }
+  if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
+    ContactsController::Instance().Tick();
+  }
   ChatController::Instance().Update();
 }
 
