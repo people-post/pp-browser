@@ -11,37 +11,37 @@ namespace {
 
 class ScopedEnv {
 public:
+  // Pass nullptr to temporarily unset the variable (e.g. clear HOME so
+  // Windows tilde expansion falls back to USERPROFILE).
   ScopedEnv(const char* name, const char* value) : name_(name) {
     if (const char* prev = std::getenv(name)) {
       previous_ = prev;
     }
-#if defined(_WIN32)
-    assignment_ = std::string(name) + "=" + value;
-    _putenv(assignment_.c_str());
-#else
-    setenv(name, value, 1);
-#endif
+    Apply(value);
   }
 
   ~ScopedEnv() {
     if (previous_) {
-#if defined(_WIN32)
-      assignment_ = std::string(name_) + "=" + *previous_;
-      _putenv(assignment_.c_str());
-#else
-      setenv(name_, previous_->c_str(), 1);
-#endif
+      Apply(previous_->c_str());
     } else {
-#if defined(_WIN32)
-      assignment_ = std::string(name_) + "=";
-      _putenv(assignment_.c_str());
-#else
-      unsetenv(name_);
-#endif
+      Apply(nullptr);
     }
   }
 
 private:
+  void Apply(const char* value) {
+#if defined(_WIN32)
+    assignment_ = value ? (std::string(name_) + "=" + value) : (std::string(name_) + "=");
+    _putenv(assignment_.c_str());
+#else
+    if (value) {
+      setenv(name_, value, 1);
+    } else {
+      unsetenv(name_);
+    }
+#endif
+  }
+
   const char* name_;
   std::optional<std::string> previous_;
   std::string assignment_;
@@ -68,6 +68,8 @@ TEST(DesktopPathProviderTest, DataDirUsesLocalAppData) {
 }
 
 TEST(DesktopPathProviderTest, ExpandsTildeUnderUserProfile) {
+  // ExpandHome prefers HOME; unset it so USERPROFILE is used for '~'.
+  ScopedEnv home("HOME", nullptr);
   ScopedEnv profile("USERPROFILE", "C:/tmp/pp-browser-home");
   pbr::DesktopPathProvider provider;
   ExpectPathEq(provider.DataDir("~/custom-data"), "C:/tmp/pp-browser-home/custom-data");
