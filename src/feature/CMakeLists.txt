@@ -66,3 +66,14 @@ target_link_libraries(pp_feature PUBLIC
   CURL::libcurl
   Threads::Threads
 )
+
+if(PP_BROWSER_BUILD_TESTS)
+  pp_browser_register_tests(
+    ai/bindings/tests
+    ai/tests
+    messaging/tests
+    chat/tests
+    ui/tests
+    settings/tests
+  )
+endif()

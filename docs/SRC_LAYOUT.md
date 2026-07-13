@@ -91,7 +91,8 @@ integration/host → fork/include (public API only)
 
 - Keep integration and environment-heavy tests in [`tests/`](../tests/) (e.g. fork-level RmlUi click routing).
 - Prefer colocated unit tests under module paths such as `src/base/.../tests/` and `src/feature/.../tests/`.
-- Register module-local tests through CMake so they are discovered by CTest in regular desktop builds.
+- Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`).
+- Layer CMakeLists register colocated suites via `pp_browser_register_tests(...)`; root enables GTest and calls `pp_browser_add_registered_tests()` when `PP_BROWSER_BUILD_TESTS` is on.
 
 ## Litmus tests
 

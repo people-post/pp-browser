@@ -126,3 +126,17 @@ endif()
 
 # Backward-compatible alias for tests and scripts that link pp_identity.
 add_library(pp_identity ALIAS pp_base)
+
+if(PP_BROWSER_BUILD_TESTS)
+  pp_browser_register_tests(
+    ai/tests
+    ai/conversation/tests
+    ai/mcp/tests
+    messaging/tests
+    crypto/tests
+    data/tests
+    net/tests
+    people/tests
+    platform/tests
+  )
+endif()

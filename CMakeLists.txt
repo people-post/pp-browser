@@ -49,6 +49,13 @@ option(PP_BROWSER_LIBP2P_TESTING "Build in-tree libp2p unit tests" ${PP_BROWSER_
 option(PP_BROWSER_LIBP2P_EXAMPLES "Build in-tree libp2p examples" OFF)
 option(PP_BROWSER_LIBP2P_COVERAGE "Enable libp2p gcovr coverage targets" OFF)
 
+if(PP_BROWSER_IS_MOBILE)
+  set(PP_BROWSER_BUILD_TESTS_DEFAULT OFF)
+else()
+  set(PP_BROWSER_BUILD_TESTS_DEFAULT ON)
+endif()
+option(PP_BROWSER_BUILD_TESTS "Build host unit and integration tests" ${PP_BROWSER_BUILD_TESTS_DEFAULT})
+
 include(dependencies)
 include(Progress)
 find_package(Threads REQUIRED)
@@ -118,6 +125,13 @@ if(ANDROID)
   target_link_libraries(pp_rmlui_backend PUBLIC log GLESv3 EGL)
 endif()
 
+if(PP_BROWSER_BUILD_TESTS)
+  pp_configure_status("Configuring tests...")
+  include(PpBrowserTesting)
+  enable_testing()
+  pp_browser_enable_googletest()
+endif()
+
 add_subdirectory(src/common)
 add_subdirectory(src/base)
 
@@ -128,6 +142,11 @@ set(PP_BROWSER_APP_SOURCES
 )
 
 add_subdirectory(src/feature)
+
+if(PP_BROWSER_BUILD_TESTS)
+  pp_browser_add_registered_tests()
+  add_subdirectory(tests)
+endif()
 
 if(ANDROID)
   add_library(${PP_BROWSER_APP_TARGET} SHARED ${PP_BROWSER_APP_SOURCES})
@@ -192,12 +211,6 @@ if(PPBROWSER_ENABLE_DEBUGGER)
 endif()
 
 if(NOT PP_BROWSER_IS_MOBILE)
-  pp_configure_status("Configuring tests...")
-  include(LinkRmlUi)
-  include(PpBrowserTesting)
-  enable_testing()
-  pp_browser_enable_googletest()
-  add_subdirectory(tests)
   pp_configure_status("Configure step complete")
 
   if(APPLE AND PP_BROWSER_PACKAGED_BUILD)
