@@ -73,6 +73,28 @@ TEST(DesktopPathProviderTest, ExpandsTildeUnderUserProfile) {
   ExpectPathEq(provider.DataDir("~/custom-data"), "C:/tmp/pp-browser-home/custom-data");
 }
 
+#elif defined(__APPLE__)
+
+TEST(DesktopPathProviderTest, ConfigDirUsesApplicationSupport) {
+  ScopedEnv home("HOME", "/tmp/pp-browser-test-home");
+  pbr::DesktopPathProvider provider;
+  ExpectPathEq(provider.ConfigDir(),
+               "/tmp/pp-browser-test-home/Library/Application Support/pp-browser");
+}
+
+TEST(DesktopPathProviderTest, DataDirUsesApplicationSupportData) {
+  ScopedEnv home("HOME", "/tmp/pp-browser-test-home");
+  pbr::DesktopPathProvider provider;
+  ExpectPathEq(provider.DataDir(""),
+               "/tmp/pp-browser-test-home/Library/Application Support/pp-browser/data");
+}
+
+TEST(DesktopPathProviderTest, ExpandsTildeUnderHome) {
+  ScopedEnv home("HOME", "/tmp/pp-browser-test-home");
+  pbr::DesktopPathProvider provider;
+  ExpectPathEq(provider.DataDir("~/custom-data"), "/tmp/pp-browser-test-home/custom-data");
+}
+
 #else
 
 TEST(DesktopPathProviderTest, ConfigDirUsesXdgConfigHome) {
