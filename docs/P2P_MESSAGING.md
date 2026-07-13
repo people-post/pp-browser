@@ -139,9 +139,13 @@ Per-message **Direct / Relay / Local** badges read the persisted `transport` col
 
 | Role | Example | Use |
 |------|---------|-----|
-| **Who** (network id) | libp2p Peer ID | Me primary, dial/bind, future direct threads |
+| **Who** (network id) | libp2p Peer ID | Me primary, dial/bind, direct-only threads when no relay |
 | **Find** (lookup) | CAIP-10 `eip155:…:0x…`, nickname | Search / attest → resolve to Peer ID |
-| **Route** (v1 transport) | `relay:…` | Relay inbox + v1 `ChatTargetKey` / wire |
+| **Route** (optional offline) | `relay:…` | Relay inbox + preferred v1 `ChatTargetKey` / wire when present |
+
+**Local contact book:** `Contact.id` is a stable UUID (local only). `Contact.ids[]` holds external handles (`relay_user`, `peer_id`, …). Threads link via `participant_contact_ids` → `Contact.id`.
+
+**Thread target from contact** (`DirectChatTargetFromContact`): prefer primary/first `relay_user`; else `peer_id`. Relay is **not** required. Direct-only messaging needs peer ID **and** at least one dialable multiaddr (`Contact.multiaddrs`); endpoints register under the same chat-target identity value.
 
 See [D096](../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route), [D091](../projects/chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).
 
@@ -153,6 +157,10 @@ See [D096](../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles
   - **Message a contact** — switch to Contacts to pick a peer (then Secure / Public on contact detail)
   - **Find someone** — new AI thread with draft prefilled for directory discovery
 - Home empty state **Message a contact** still switches to Contacts.
+- **Contacts tab** header **`+`** opens a menu:
+  - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open editable detail (display name, nickname, optional relay ID, peer ID, multiaddrs); debounced save
+  - **Find someone** — same as Sessions find flow
+- Secure / Public on contact detail are enabled when the contact is **routable** (relay ID, or peer ID + multiaddr). Otherwise a short hint is shown.
 - Directory discovery still uses agent tools: `search_people`, `list_contacts`, `list_conversations`, `open_conversation`, `start_conversation`.
 - Results render as `long_list` blocks with **Message** / **Add contact** chips (`send_chat_action` + JSON `payload`).
 - **Registration** also via `register_user` / `update_profile_nickname` tools (alternate to Me tab).
@@ -185,6 +193,9 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/messaging/MessageRouter.*` | Composer routing |
 | `src/feature/messaging/ContactActionDispatcher.*` | Chip payloads |
 | `src/feature/ai/tools/MessagingTools.*` | Agent tool definitions |
+| `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` / `Upsert` |
+| `src/feature/ui/ContactsController.*` | Contacts list/detail UI, manual add/edit, message gating |
+| `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
 
 ## Group chat (future)
 
