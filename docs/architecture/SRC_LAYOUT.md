@@ -1,17 +1,19 @@
 # Source layout
 
+**Tier:** architecture
+
 `src/` is organized in four layers plus fork sidecars. See dependency rules before adding includes.
 
 ## Layers
 
 | Layer | Path | Role |
 |-------|------|------|
-| Common | [`src/common/`](../src/common/) | App-independent utilities (logger, `ResultOrError`, `SequencedTaskRunner`) |
-| Base | [`src/base/`](../src/base/) | pp-browser primitives: platform, data, people, messaging/ai/ui building blocks |
-| Feature | [`src/feature/`](../src/feature/) | Composed capabilities: chat, agent session, shell, messaging hub |
-| App | [`src/app/`](../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
+| Common | [`src/common/`](../../src/common/) | App-independent utilities (logger, `ResultOrError`, `SequencedTaskRunner`) |
+| Base | [`src/base/`](../../src/base/) | pp-browser primitives: platform, data, people, messaging/ai/ui building blocks |
+| Feature | [`src/feature/`](../../src/feature/) | Composed capabilities: chat, agent session, shell, messaging hub |
+| App | [`src/app/`](../../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
 
-**Fork sidecars** (not layers): [`src/render/`](../src/render/), [`src/libp2p/`](../src/libp2p/)
+**Fork sidecars** (not layers): [`src/render/`](../../src/render/), [`src/libp2p/`](../../src/libp2p/)
 
 ## Dependency rule
 

@@ -10,7 +10,7 @@ AI-native browser shell built with **SDL3** and a **hard-forked [RmlUi](https://
 
 ## Build
 
-See [docs/BUILD.md](docs/BUILD.md). Documentation map: [docs/README.md](docs/README.md).
+See [docs/ops/BUILD.md](docs/ops/BUILD.md). Documentation map: [docs/README.md](docs/README.md).
 
 ## Third-party notice
 

@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
 #else
     root.error << " If no window appears, reconfigure from a clean build: "
                << "rm -rf build && cmake -B build -S . && cmake --build build. "
-               << "Ensure DISPLAY is set. On Linux install: libx11-dev and libgl-dev (see docs/BUILD.md).";
+               << "Ensure DISPLAY is set. On Linux install: libx11-dev and libgl-dev (see docs/ops/BUILD.md).";
 #endif
     return 1;
   }

@@ -1,6 +1,6 @@
 # Design — at-rest encryption
 
-**Normative:** [docs/AT_REST_ENCRYPTION.md](../../docs/AT_REST_ENCRYPTION.md).
+**Normative:** [docs/contracts/AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md).
 
 ## Principles
 

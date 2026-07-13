@@ -1,5 +1,7 @@
 # RmlUi hard fork
 
+**Tier:** architecture
+
 pp-browser vendors RmlUi under `src/render/fork/` as a **hard fork** (committed source, no git submodule).
 
 ## Layout
@@ -79,7 +81,7 @@ pp-browser-owned integration code:
 - `src/render/fork/reference/backends/` — upstream sample backends (**reference only**; not linked). Do not dual-edit `RmlUi_Platform_SDL.cpp` here; mirror changes in `integration/platform/` if needed.
 - `src/app/` — application lifecycle and `InputCoordinator`
 
-See [INPUT.md](INPUT.md) for the full input architecture.
+See [INPUT.md](../ui/INPUT.md) for the full input architecture.
 
 ## License
 

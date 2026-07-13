@@ -1,5 +1,7 @@
 # RCSS profile for AI generation
 
+**Tier:** product / UI
+
 pp-browser uses [RmlUi RCSS](https://mikke89.github.io/RmlUiDoc/pages/rcss.html). Only properties listed below are supported.
 
 ## Units

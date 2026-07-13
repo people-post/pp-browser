@@ -1,5 +1,7 @@
 # RML profile for AI generation
 
+**Tier:** product / UI
+
 AI-generated UI must follow this profile.
 
 ## Allowed RML elements

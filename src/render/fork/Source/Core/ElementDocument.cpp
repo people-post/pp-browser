@@ -188,7 +188,7 @@ void ElementDocument::ProcessHeader(const DocumentHeader* document_header)
 	// Set the title to the document title.
 	title = document_header->title;
 
-	// Built-in UA sheet (fork); author RCSS overrides. Gaps vs browsers: docs/RMLUI_UPSTREAM.md
+	// Built-in UA sheet (fork); author RCSS overrides. Gaps vs browsers: docs/architecture/RMLUI_UPSTREAM.md
 	SharedPtr<StyleSheetContainer> new_style_sheet;
 	if (const StyleSheetContainer* user_agent_sheet = UserAgentStyleSheet::GetStyleSheetContainer())
 		new_style_sheet = user_agent_sheet->CombineStyleSheetContainer(StyleSheetContainer());

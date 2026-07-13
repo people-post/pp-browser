@@ -1,5 +1,7 @@
 # Platforms
 
+**Tier:** architecture
+
 ## Desktop
 
 pp-browser ships as a desktop SDL3 + OpenGL3 application. Path resolution uses XDG on Linux, Application Support on macOS, and AppData on Windows.
@@ -37,7 +39,7 @@ Android keeps the activity alive across orientation changes (`configChanges` in 
 
 Do not issue OpenGL calls after `SDL_EVENT_WILL_ENTER_BACKGROUND`; SDL may have already backed up the EGL context.
 
-Build: [BUILD.md](BUILD.md#android-local).
+Build: [BUILD.md](../ops/BUILD.md#android-local).
 
 ## iOS (reserved)
 

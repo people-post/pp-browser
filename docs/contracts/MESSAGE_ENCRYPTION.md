@@ -1,10 +1,12 @@
 # Message encryption (E2E)
 
-Normative spec for symmetric end-to-end encryption of P2P chat message bodies. **Three tiers** (private direct, public direct, group) — all product P2P uses ciphertext on the wire ([D089](../projects/chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021), [E021](../projects/e2e-message-crypto/DECISIONS.md#e021--three-chat-tiers-both-direct-tiers-e2e-d089)). Planning, phases, and ADRs live in [projects/e2e-message-crypto/](../projects/e2e-message-crypto/).
+**Tier:** contract
 
-**Related:** [P2P_MESSAGING.md](P2P_MESSAGING.md), [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [CONFIGURATION.md](CONFIGURATION.md).
+Normative spec for symmetric end-to-end encryption of P2P chat message bodies. **Three tiers** (private direct, public direct, group) — all product P2P uses ciphertext on the wire ([D089](../../projects/chat-storage-and-memory/DECISIONS.md#d089--three-chat-tiers-both-direct-tiers-e2e-e021), [E021](../../projects/e2e-message-crypto/DECISIONS.md#e021--three-chat-tiers-both-direct-tiers-e2e-d089)). Planning, phases, and ADRs live in [projects/e2e-message-crypto/](../../projects/e2e-message-crypto/).
 
-**C++ wire profile:** [Serialize.hpp](../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`); [Binary Wire Profile (D088)](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
+**Related:** [P2P_MESSAGING.md](../architecture/P2P_MESSAGING.md), [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [DATA_LAYOUT.md](DATA_LAYOUT.md).
+
+**C++ wire profile:** [Serialize.hpp](../../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`); [Binary Wire Profile (D088)](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
 
 ## Overview
 
@@ -15,7 +17,7 @@ Normative spec for symmetric end-to-end encryption of P2P chat message bodies. *
 - **XChaCha20-Poly1305** (libsodium AEAD) encrypts the message body with canonical associated data (AAD).
 - **Ed25519** signs the outer relay envelope (classical; PQ hybrid planned separately).
 - Relay sees ciphertext on both direct tiers; plaintext **binary `ChatPayload`** (D087) is inside the AEAD layer only.
-- **No `public_relay`** — reject plaintext direct wire ([D090](../projects/chat-storage-and-memory/DECISIONS.md#d090--no-public_relay--plaintext-direct-wire), [E023](../projects/e2e-message-crypto/DECISIONS.md#e023--no-public_relay-wire-value-d090)).
+- **No `public_relay`** — reject plaintext direct wire ([D090](../../projects/chat-storage-and-memory/DECISIONS.md#d090--no-public_relay--plaintext-direct-wire), [E023](../../projects/e2e-message-crypto/DECISIONS.md#e023--no-public_relay-wire-value-d090)).
 
 ## Threat model (v1)
 
@@ -170,7 +172,7 @@ Outbound HKDF uses `chat_targets.session_epoch`; inbound uses `envelope.session_
 | `ReplayWindow` | Seq acceptance helper (D013 classifier is authoritative) |
 | `IPskSessionStore` | PSK + retired epochs on `chat_targets` |
 
-Implementation: [projects/e2e-message-crypto/PHASES.md](../projects/e2e-message-crypto/PHASES.md) phase c1.
+Implementation: [projects/e2e-message-crypto/PHASES.md](../../projects/e2e-message-crypto/PHASES.md) phase c1.
 
 ## Frozen test vectors
 

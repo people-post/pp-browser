@@ -10,7 +10,7 @@ class StyleSheetContainer;
     Built-in user-agent stylesheet providing baseline layout for common HTML elements.
     Merged into every document before author stylesheets.
 
-    Fork note: upstream RmlUi has no UA sheet; see docs/RMLUI_UPSTREAM.md for gaps
+    Fork note: upstream RmlUi has no UA sheet; see docs/architecture/RMLUI_UPSTREAM.md for gaps
     vs browsers (minimal rule set, no opt-out, form controls still in app theme).
  */
 class UserAgentStyleSheet {

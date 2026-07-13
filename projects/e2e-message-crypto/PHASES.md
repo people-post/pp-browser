@@ -53,9 +53,9 @@ d0 (complete)
 ### Agent session reading list
 
 1. [DESIGN.md](DESIGN.md) — module map, test vectors
-2. [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) — normative wire/crypto (agents implement against this)
-3. [docs/WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md) — `RelayEnvelope`, binary ChatPayload (c2+)
-4. [docs/COMPATIBILITY.md](../../docs/COMPATIBILITY.md) — forward-compat vs hard reject
+2. [docs/contracts/MESSAGE_ENCRYPTION.md](../../docs/contracts/MESSAGE_ENCRYPTION.md) — normative wire/crypto (agents implement against this)
+3. [docs/contracts/WIRE_SCHEMAS.md](../../docs/contracts/WIRE_SCHEMAS.md) — `RelayEnvelope`, binary ChatPayload (c2+)
+4. [docs/contracts/COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) — forward-compat vs hard reject
 5. [chat-storage DESIGN § Implementer constraints](../chat-storage-and-memory/DESIGN.md#implementer-constraints) — when touching envelope or store columns
 6. Relevant **phase checklist** below + [CURRENT_STATE.md](CURRENT_STATE.md) (update in same PR)
 
@@ -65,7 +65,7 @@ d0 (complete)
 |------|-------------------------|
 | c1 before any chat work | c1 only needs d0 — **parallel** with v2a-core |
 | c2 after full v6 UX | c2 needs v6 **envelope + ingest pipeline**, not every v6 UX banner |
-| Per-phase doc churn | Batch [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md) / [AGENTS.md](../../AGENTS.md) updates at end of c1 or c3 |
+| Per-phase doc churn | Batch [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md) / [AGENTS.md](../../AGENTS.md) updates at end of c1 or c3 |
 
 ### Anti-patterns (cause rework)
 
@@ -109,9 +109,9 @@ d0 (complete)
 - [x] Add **Ed25519 frozen test vectors** (hex) to DESIGN.md § Test vectors
 - [x] Add **HKDF** frozen test vector to DESIGN.md § Test vectors (E015)
 - [x] Add AEAD / blob codec frozen test vectors ([`tools/gen_aead_vectors.py`](tools/gen_aead_vectors.py))
-- [x] Promote to [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) (stable reference copy)
+- [x] Promote to [docs/contracts/MESSAGE_ENCRYPTION.md](../../docs/contracts/MESSAGE_ENCRYPTION.md) (stable reference copy)
 
-**Exit criteria:** All open decisions for c1 resolved; **all** frozen test vectors (incl. AEAD/codec) in DESIGN.md; `docs/MESSAGE_ENCRYPTION.md` promoted; human sign-off to start implementation.
+**Exit criteria:** All open decisions for c1 resolved; **all** frozen test vectors (incl. AEAD/codec) in DESIGN.md; `docs/contracts/MESSAGE_ENCRYPTION.md` promoted; human sign-off to start implementation.
 
 ---
 
@@ -151,7 +151,7 @@ d0 (complete)
 
 ### Docs / agent guide
 
-- [x] [AGENTS.md](../../AGENTS.md) — row for `base/crypto` + `docs/MESSAGE_ENCRYPTION.md`
+- [x] [AGENTS.md](../../AGENTS.md) — row for `base/crypto` + `docs/contracts/MESSAGE_ENCRYPTION.md`
 
 **Exit criteria:** All c1 tests green; module usable from tests/examples without messaging includes.
 
@@ -180,7 +180,7 @@ d0 (complete)
 
 ### Docs
 
-- [x] Update [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md) relay envelope section
+- [x] Update [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md) relay envelope section
 - [x] Update chat-storage [CURRENT_STATE.md](../chat-storage-and-memory/CURRENT_STATE.md)
 
 **Exit criteria:** Two devices with shared PSK exchange E2E messages via relay; relay cannot read body; public thread still plaintext. *(Automated round-trip + pipeline tests green; manual two-profile relay test deferred to c3 UX.)*

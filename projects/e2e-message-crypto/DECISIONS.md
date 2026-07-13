@@ -85,7 +85,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — binary layout (D087); supersedes JSON plaintext.  
-**Decision:** Bytes encrypted inside the E2E blob are **binary `ChatPayload` v1** — see [chat-storage D087](../chat-storage-and-memory/DECISIONS.md#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext) / [WIRE_SCHEMAS](../../docs/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088). Not raw `text` only. Max decrypted size **`kMaxE2ePlaintextBytes` (128 KiB)** per [chat-storage D029](../chat-storage-and-memory/DECISIONS.md); reject before `ChatPayloadCodec::Decode` after decrypt.  
+**Decision:** Bytes encrypted inside the E2E blob are **binary `ChatPayload` v1** — see [chat-storage D087](../chat-storage-and-memory/DECISIONS.md#d087--binary-chatpayload-v1-e014-body_hash--e010-plaintext) / [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md#chatpayload-v1--binary-d087d088). Not raw `text` only. Max decrypted size **`kMaxE2ePlaintextBytes` (128 KiB)** per [chat-storage D029](../chat-storage-and-memory/DECISIONS.md); reject before `ChatPayloadCodec::Decode` after decrypt.  
 **Rationale:** Contact cards, annotations, and crypto txs work identically on E2E and public; one codec path; no JSON canonicalization drift between sign and encrypt.  
 **Alternatives:** UTF-8 `text` only; JSON `ChatPayload` (rejected — D087).
 
@@ -96,7 +96,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — superseded `sessions.json`; columns on `chat_targets` (D084).  
 **Updated:** 2026-07-11 — at-rest encryption shipped ([at-rest A005](../at-rest-crypto/DECISIONS.md#a005--supersedes-e008-deferred-at-rest-for-psk)); PSK + retired ledger blobs encrypted under profile DEK; fingerprints remain plaintext.  
-**Decision:** PSK material lives in **`profile.db` → `chat_targets`** for **`e2e`** and **`e2e_public`** channels (D090). On disk, `master_psk_b64` and retired `master_psk_b64` entries are **AEAD ciphertext** (base64) under the profile DEK from `vault.bin` — see [AT_REST_ENCRYPTION.md](../../docs/AT_REST_ENCRYPTION.md).  
+**Decision:** PSK material lives in **`profile.db` → `chat_targets`** for **`e2e`** and **`e2e_public`** channels (D090). On disk, `master_psk_b64` and retired `master_psk_b64` entries are **AEAD ciphertext** (base64) under the profile DEK from `vault.bin` — see [AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md).  
 **Rationale:** Crypto session is per chat target, not per thread shell; colocating PSK with seq/epoch avoids cross-file races on epoch bump and survives delete/recreate of `local_thread_id`.  
 **Alternatives:** `sessions.json` sidecar (rejected — dual-store sync); PSK in `thread.db` (rejected — shell is ephemeral); block c1 on keychain integration.
 

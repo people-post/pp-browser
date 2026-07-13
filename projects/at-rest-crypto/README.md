@@ -2,7 +2,7 @@
 
 **Status:** Implemented (atomic writes + vault + identity/PSK encryption + GUI PIN flows)  
 **Owner:** Hongwei + agents  
-**Stable refs:** [docs/AT_REST_ENCRYPTION.md](../../docs/AT_REST_ENCRYPTION.md), [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md)  
+**Stable refs:** [docs/contracts/AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md), [docs/contracts/DATA_LAYOUT.md](../../docs/contracts/DATA_LAYOUT.md)  
 **Related:** [e2e-message-crypto](../e2e-message-crypto/) (wire E2E; E008 PSK-at-rest), [chat-storage-and-memory](../chat-storage-and-memory/) (D048 plaintext transcripts)
 
 ## One-line goal

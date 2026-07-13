@@ -1,5 +1,7 @@
 # Architecture
 
+**Tier:** architecture
+
 pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — windowing and GPU presentation
@@ -21,11 +23,11 @@ Presentation (RML/RCSS) is separate from behavior (C++ action routing and MCP).
 
 ## Chat agent
 
-Multi-turn chat uses a shared [`Conversation`](../src/base/ai/conversation/Conversation.h) transcript for UI and LLM context. See [AGENT_CONVERSATION.md](AGENT_CONVERSATION.md).
+Multi-turn chat uses a shared [`Conversation`](../../src/base/ai/conversation/Conversation.h) transcript for UI and LLM context. See [AGENT_CONVERSATION.md](../ui/AGENT_CONVERSATION.md).
 
 ## Dynamic RML (`RmlMount`)
 
-Runtime UI updates use [`src/feature/ui/RmlMount.cpp`](../src/feature/ui/RmlMount.cpp):
+Runtime UI updates use [`src/feature/ui/RmlMount.cpp`](../../src/feature/ui/RmlMount.cpp):
 
 - `MountInner` — browser-like inner markup mount (`SetInnerRML`) with optional validation, focus, and scroll preservation (`data-mount-id`)
 - `InjectRcss` — merge dynamic RCSS into the active document (re-inject by `source_tag` replaces prior rules)
@@ -33,11 +35,11 @@ Runtime UI updates use [`src/feature/ui/RmlMount.cpp`](../src/feature/ui/RmlMoun
 
 ## Window Shell
 
-Chat uses the role-based shell in [`src/feature/ui/ShellHost.*`](../src/feature/ui/ShellHost.cpp):
+Chat uses the role-based shell in [`src/feature/ui/ShellHost.*`](../../src/feature/ui/ShellHost.cpp):
 
 - **ShellLayout** — Compact/Expanded modes (768dp breakpoint)
 - **ShellHost** — Primary/Secondary/Auxiliary panes, overlays, Safari-style compact toolbar
 - **ShellInterruption** — Escape dismiss ordering
 - **ShellFeedback** — Banner, toast, alert/confirm dialog
 
-See [WINDOW_SHELL.md](WINDOW_SHELL.md).
+See [WINDOW_SHELL.md](../ui/WINDOW_SHELL.md).

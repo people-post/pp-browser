@@ -1,0 +1,71 @@
+# Data layout (on-disk)
+
+**Tier:** contract  
+**Related:** [COMPATIBILITY.md](COMPATIBILITY.md), [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md), [ops/CONFIGURATION.md](../ops/CONFIGURATION.md), [architecture/PLATFORMS.md](../architecture/PLATFORMS.md).
+
+pp-browser stores machine-wide connection settings separately from per-profile identity data. No first-run wizard is required: built-in platform defaults apply when no config file exists.
+
+## Terminology
+
+| Term | Meaning |
+|------|---------|
+| **Profile** | Network identity namespace (keypair, contacts, conversations) |
+| **Session / thread** | One conversation in the sidebar (not an account) |
+| **Machine** | One app install under one OS user |
+
+## Paths (desktop)
+
+| Scope | Linux | macOS | Windows |
+|-------|-------|-------|---------|
+| Config | `$XDG_CONFIG_HOME/pp-browser/config.json` or `~/.config/pp-browser/` | `~/Library/Application Support/pp-browser/` | `%APPDATA%/pp-browser/` |
+| Data | `$XDG_DATA_HOME/pp-browser/` or `~/.local/share/pp-browser/` | `~/Library/Application Support/pp-browser/data/` | `%LOCALAPPDATA%/pp-browser/` |
+
+Override data root with `data_dir` in config (supports `~` expansion). How config is resolved and edited: [ops/CONFIGURATION.md](../ops/CONFIGURATION.md).
+
+## On-disk layout
+
+```
+{config_dir}/config.json
+{data_dir}/profiles.json
+{data_dir}/machine.json
+{data_dir}/profiles/{id}/
+  manifest.json
+  preferences.json
+  vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
+  identity.enc              # identity JSON under DEK AEAD
+  contacts.json
+  threads/
+    profile.db              # thread catalog, outbox, chat_targets (PSK columns encrypted)
+    {thread_id}/
+      thread.db             # messages, memory, sync_state (plaintext — D048)
+      blobs/                # attachment placeholder
+```
+
+### PIN-related files (disk only)
+
+| File / field | Role |
+|--------------|------|
+| `vault.bin` | PIN-wrapped DEK |
+| `identity.enc` | Identity JSON under DEK AEAD |
+| `preferences.json` → `pin_is_default` | Schema v3; set when user chooses default PIN (“Just continue”); cleared on Change PIN |
+
+Interactive unlock / chooser UX: [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md). Forgotten PIN → wipe the profile directory.
+
+Legacy flat `threads/index.json` and `{thread_id}.json` are removed on first run after the SQLite migration (development wipe — see [chat-storage D016](../../projects/chat-storage-and-memory/DECISIONS.md)). Plaintext `identity.json` is not migrated — wipe the profile and recreate. Overview: [COMPATIBILITY.md](COMPATIBILITY.md).
+
+Phase 1 ships a single `default` profile. Use `--profile NAME` for dev isolation (no account-switcher UI yet).
+
+## Schema versioning
+
+All JSON stores include `schema_version` (or `config_version` for config). Unsupported newer versions fail with a clear error. Forward migrators can be registered for future v1→v2 changes during development.
+
+**No legacy import:** older flat layouts (e.g. `identity.json` at data root) are not migrated. Delete the data directory when the layout changes during development. See [COMPATIBILITY.md](COMPATIBILITY.md) for dirty-folder and newer-peer policy.
+
+## Preferences on disk
+
+| Key | File | Notes |
+|-----|------|--------|
+| `appearance` | `preferences.json` | `system`, `light`, or `dark` |
+| `pin_is_default` | `preferences.json` | boolean, schema v3 |
+
+Stylesheet entry points (`foundation.rcss`, `components.rcss`, `colors-*.rcss`) and theme UX: [ui/UI_DESIGN_SYSTEM.md](../ui/UI_DESIGN_SYSTEM.md). The legacy `theme` path field in config remains for compatibility.

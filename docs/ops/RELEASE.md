@@ -1,5 +1,7 @@
 # Releasing pp-browser
 
+**Tier:** ops
+
 Tag-triggered CI builds unsigned macOS and Windows installers, an Android release APK, and publishes them to [GitHub Releases](https://github.com/people-post/pp-browser/releases).
 
 ## Tag convention

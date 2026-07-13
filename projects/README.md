@@ -3,7 +3,7 @@
 Work-in-progress design and implementation tracking for pp-browser. Unlike [`docs/`](../docs/) **contracts** and architecture (stable, versioned), these files are **living project notes**: they change as work proceeds, track checkboxes, and record decisions **before** normative text lands in stable reference docs.
 
 **Doc map:** [`docs/README.md`](../docs/README.md) — Architecture | Contracts | Product/UI | Ops.  
-**Compatibility policy:** [`docs/COMPATIBILITY.md`](../docs/COMPATIBILITY.md).
+**Compatibility policy:** [`docs/contracts/COMPATIBILITY.md`](../docs/contracts/COMPATIBILITY.md).
 
 ## How to use (humans and agents)
 
@@ -21,11 +21,11 @@ Work-in-progress design and implementation tracking for pp-browser. Unlike [`doc
 |-------|--------|------|
 | Explore | `DESIGN.md`, open ADRs | Churn expected |
 | Ship | `PHASES.md`, `CURRENT_STATE.md` | Checkboxes match code |
-| **Promote** | [`docs/`](../docs/) **contracts** | Wire, disk, HTTP, crypto, compat policy — **one canonical file**; same release window as the ship |
+| **Promote** | [`docs/contracts/`](../docs/contracts/) (and other tiers as appropriate) | Wire, disk, HTTP, crypto, compat policy — **one canonical file**; same release window as the ship |
 | **Freeze** | Project `DECISIONS.md` | Mark outcomes **superseded by** `docs/…`; do not edit normative tables in two places |
 | **Archive** | Delete or clearly mark project folder done | When delivery ends; enduring facts already in `docs/` |
 
-Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs. Do not leave shipped wire schemas only under `projects/` (example: [WIRE_SCHEMAS.md](../docs/WIRE_SCHEMAS.md) was promoted from chat-storage).
+Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs. Do not leave shipped wire schemas only under `projects/` (example: [WIRE_SCHEMAS.md](../docs/contracts/WIRE_SCHEMAS.md) was promoted from chat-storage).
 
 ## Active projects
 

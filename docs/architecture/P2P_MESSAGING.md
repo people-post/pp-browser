@@ -1,19 +1,21 @@
 # P2P messaging
 
+**Tier:** architecture
+
 Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local persistence as source of truth; HTTP relay/directory/registration transport with mock fallback when `base_url` is unset.
 
-**Normative wire shapes:** [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md). **E2E crypto:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md). **Compatibility:** [COMPATIBILITY.md](COMPATIBILITY.md).
+**Normative wire shapes:** [WIRE_SCHEMAS.md](../contracts/WIRE_SCHEMAS.md). **E2E crypto:** [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). **Compatibility:** [COMPATIBILITY.md](../contracts/COMPATIBILITY.md).
 
 ## Service resolution
 
-[`CreateServiceClients`](../src/base/net/ServiceClientFactory.cpp) picks an implementation per endpoint:
+[`CreateServiceClients`](../../src/base/net/ServiceClientFactory.cpp) picks an implementation per endpoint:
 
 1. `base_url` set → HTTP client (`HttpRelayClient`, etc.)
 2. else in-process mock (dev default)
 
-Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md).
+Native messaging code (`P2pMessagingService`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`; the factory swaps implementations underneath. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
-**Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST …/v1/streams/messages/query`; mock when `base_url` unset. See [WIRE_SCHEMAS § Stream history](WIRE_SCHEMAS.md#stream-history-http-relay). Live integration tests ([D093](../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)) run when these env vars are set:
+**Relay history (D027):** `IRelayClient::FetchChatHistory` — `HttpRelayClient` uses signed `POST …/v1/streams/messages/query`; mock when `base_url` unset. See [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay). Live integration tests ([D093](../../projects/chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)) run when these env vars are set:
 
 | Variable | Purpose |
 |----------|---------|
@@ -36,7 +38,7 @@ CI uses mock only; `pp_browser_relay_live_integration_test` skips when env is un
 | `unread_count` | Sidebar badge |
 | `preview` | Last message snippet |
 
-**Target (v2b+):** `channel` (`e2e` \| `e2e_public`) on direct threads — see [DESIGN § Three chat tiers](../projects/chat-storage-and-memory/DESIGN.md#three-chat-tiers-d089).
+**Target (v2b+):** `channel` (`e2e` \| `e2e_public`) on direct threads — see [DESIGN § Three chat tiers](../../projects/chat-storage-and-memory/DESIGN.md#three-chat-tiers-d089).
 
 ### ThreadMessage
 
@@ -51,7 +53,7 @@ Special IDs: `local:self`, `ai:assistant`.
 
 ## Persistence
 
-Profile-scoped layout (see [CONFIGURATION.md](CONFIGURATION.md)). **Legacy (today):**
+Profile-scoped layout (see [DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md)). **Legacy (today):**
 
 ```
 {data_dir}/profiles/{profile_id}/
@@ -61,7 +63,7 @@ Profile-scoped layout (see [CONFIGURATION.md](CONFIGURATION.md)). **Legacy (toda
   threads/{thread_id}.json
 ```
 
-**Target (v2a+):** see [chat-storage-and-memory DESIGN.md](../projects/chat-storage-and-memory/DESIGN.md) — `profile.db` (`threads` + `outbox` + `chat_targets`) + per-thread `thread.db`; no `index.json`.
+**Target (v2a+):** see [chat-storage-and-memory DESIGN.md](../../projects/chat-storage-and-memory/DESIGN.md) — `profile.db` (`threads` + `outbox` + `chat_targets`) + per-thread `thread.db`; no `index.json`.
 
 Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux) or in-app **Me → Network**:
 
@@ -80,7 +82,7 @@ Empty `base_url` uses promoted MCP infra tools when the promoted MCP client is r
 
 **No `thread_id` on the wire.** All direct tiers use **`body.e2e.payload_b64`** (AEAD ciphertext). Reject `public_relay`, `body.content_b64`, flat `body.text`, and legacy `thread_id`.
 
-Full spec: [WIRE_SCHEMAS § RelayEnvelope](WIRE_SCHEMAS.md#relayenvelope-v1--envelope_version-1).
+Full spec: [WIRE_SCHEMAS § RelayEnvelope](../contracts/WIRE_SCHEMAS.md#relayenvelope-v1--envelope_version-1).
 
 ```json
 {
@@ -104,13 +106,13 @@ Full spec: [WIRE_SCHEMAS § RelayEnvelope](WIRE_SCHEMAS.md#relayenvelope-v1--env
 
 **Private direct:** `"channel": "e2e"`. **Public direct:** `"channel": "e2e_public"` (same body shape).
 
-**AEAD plaintext** is binary **ChatPayload** (D087/D090) — not JSON `body.content`. See [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md).
+**AEAD plaintext** is binary **ChatPayload** (D087/D090) — not JSON `body.content`. See [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md).
 
 Inbound routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: sender_contact_id, channel }` → local thread lookup (**private `e2e`:** find-only, D062; **`e2e_public`:** auto-create after decrypt, D080).
 
-**Signature verify (E014, E016):** Inbound messages are verified with **`EnvelopeSigner::Verify`** using the sender's Ed25519 public key from **`PeerSigningKeyStore`** (directory at add-contact; lazy `GET /v1/users/{relay_user_id}` on cache miss). See [e2e DECISIONS E016](../projects/e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).
+**Signature verify (E014, E016):** Inbound messages are verified with **`EnvelopeSigner::Verify`** using the sender's Ed25519 public key from **`PeerSigningKeyStore`** (directory at add-contact; lazy `GET /v1/users/{relay_user_id}` on cache miss). See [e2e DECISIONS E016](../../projects/e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).
 
-**Wire cutover (D063):** v2a-p2p ships this final envelope shape. v4 adds ChatPayload **validation** only — no second wire break. See [DESIGN § Wire cutover phasing](../projects/chat-storage-and-memory/DESIGN.md#wire-cutover-phasing-d063).
+**Wire cutover (D063):** v2a-p2p ships this final envelope shape. v4 adds ChatPayload **validation** only — no second wire break. See [DESIGN § Wire cutover phasing](../../projects/chat-storage-and-memory/DESIGN.md#wire-cutover-phasing-d063).
 
 **Private `e2e` encrypt:** outbound send and inbound poll decrypt via `E2eRelayPayloadCodec` (c2). **`e2e_public`** remains plaintext on wire until c3 auto-key.
 
@@ -125,7 +127,7 @@ Local store is written **before** send. Server rejections do not delete history.
 | User sync | Thread menu **Sync with peer** — tail + gap repair + one older-history page (D059) |
 | Scroll backfill | **Load older messages** banner at transcript top (D052/post-v6c) |
 
-**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](WIRE_SCHEMAS.md#stream-history-http-relay).
+**Transport:** libp2p peer-direct `/pp-browser/chat-history/1.0.0` first; relay `POST …/v1/streams/messages/query` fallback (client maps `ChatHistoryRequest` → `stream_key` / `order_key`). Full spec: [WIRE_SCHEMAS § Stream history](../contracts/WIRE_SCHEMAS.md#stream-history-http-relay).
 
 ### Direct live send (`/pp-browser/chat/1.0.0`)
 
@@ -147,7 +149,7 @@ Per-message **Direct / Relay / Local** badges read the persisted `transport` col
 
 **Thread target from contact** (`DirectChatTargetFromContact`): prefer primary/first `relay_user`; else `peer_id`. Relay is **not** required. Direct-only messaging needs peer ID **and** at least one dialable multiaddr (`Contact.multiaddrs`); endpoints register under the same chat-target identity value.
 
-See [D096](../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route), [D091](../projects/chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).
+See [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route), [D091](../../projects/chat-storage-and-memory/DECISIONS.md#d091--blockchain-contact-id-caip-10-e024).
 
 ## Messaging UX
 

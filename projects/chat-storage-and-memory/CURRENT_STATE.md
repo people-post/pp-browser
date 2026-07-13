@@ -45,7 +45,7 @@ Inventory of what exists in the codebase today. Update this file when landing ph
 |------|--------|----------|
 | **SqliteThreadStore** (v2a) | **Implemented** | `src/base/messaging/SqliteThreadStore.*` |
 | Legacy `JsonThreadStore` | Retained for tests | `src/base/messaging/JsonThreadStore.*` |
-| Profile-scoped paths | Implemented | `{data_dir}/profiles/{id}/threads/` — [CONFIGURATION.md](../../docs/CONFIGURATION.md) |
+| Profile-scoped paths | Implemented | `{data_dir}/profiles/{id}/threads/` — [CONFIGURATION.md](../../docs/contracts/DATA_LAYOUT.md) |
 | `IThreadStore` interface | Extended (routing, outbox, rich cols) | `src/base/messaging/IThreadStore.h` |
 | SQLite + libsodium on `pp_base` | **Linked** | `src/base/CMakeLists.txt` |
 | `MessagingLimits.h` | **Implemented** | poll/gap/outbox caps (D029/D041) |

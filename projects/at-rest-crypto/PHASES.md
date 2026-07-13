@@ -27,7 +27,7 @@
 
 ## a4 — Docs
 
-- [x] `docs/AT_REST_ENCRYPTION.md`
+- [x] `docs/contracts/AT_REST_ENCRYPTION.md`
 - [x] Update `CONFIGURATION.md`
 - [x] Supersede E008 deferred note; cross-link D048
 

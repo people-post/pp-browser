@@ -9,7 +9,7 @@ This file has **two orderings**:
 | **Phase sections below** (v2a → v2b → …) | Incremental rollout, traceability, exit criteria |
 | **[Agent batch delivery](#agent-batch-delivery-order)** | Agents finish all `[v1]` work before a single release — parallel waves, merged gates |
 
-Before each phase, read [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints) and [docs/WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md).
+Before each phase, read [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints) and [docs/contracts/WIRE_SCHEMAS.md](../../docs/contracts/WIRE_SCHEMAS.md).
 
 Check boxes when work is **merged and verified**. Add sub-items freely; keep phase boundaries stable unless DECISIONS records a change.
 
@@ -106,9 +106,9 @@ Wave 7 (optional post-v1)
 Give each agent **only** the slice it needs:
 
 1. [DESIGN.md § Implementer constraints](DESIGN.md#implementer-constraints) — always
-2. [docs/WIRE_SCHEMAS.md](../../docs/WIRE_SCHEMAS.md) — wire, codec, history fetch
-3. [docs/MESSAGE_ENCRYPTION.md](../../docs/MESSAGE_ENCRYPTION.md) — when touching crypto or coordinating with e2e
-4. [docs/COMPATIBILITY.md](../../docs/COMPATIBILITY.md) — dirty disk / newer peer policy
+2. [docs/contracts/WIRE_SCHEMAS.md](../../docs/contracts/WIRE_SCHEMAS.md) — wire, codec, history fetch
+3. [docs/contracts/MESSAGE_ENCRYPTION.md](../../docs/contracts/MESSAGE_ENCRYPTION.md) — when touching crypto or coordinating with e2e
+4. [docs/contracts/COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) — dirty disk / newer peer policy
 5. Relevant **phase checklist** section(s) in this file
 6. [CURRENT_STATE.md](CURRENT_STATE.md) — update in the same PR
 
@@ -133,7 +133,7 @@ Existing foundation this project builds on.
 - [x] `AgentSession::SubmitToThread` + thread context policy
 - [x] Sliding window / turn coordinator for AI
 - [x] Sidebar: list threads, new AI thread, close (= delete) thread
-- [x] Docs: [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md), [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md)
+- [x] Docs: [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md)
 
 ---
 
@@ -155,7 +155,7 @@ Existing foundation this project builds on.
 
 - [x] SQLite in `third_party/` (amalgamation) — **not** libp2p fork SQLite
 - [x] Link `pp_base` to SQLite in [src/base/CMakeLists.txt](../../src/base/CMakeLists.txt)
-- [ ] Document in [BUILD.md](../../docs/BUILD.md) if not already noted
+- [ ] Document in [BUILD.md](../../docs/ops/BUILD.md) if not already noted
 
 #### `ThreadMessage` + store types (D066)
 
@@ -223,8 +223,8 @@ Existing foundation this project builds on.
 
 ### Docs
 
-- [ ] Update [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md) persistence section
-- [x] Update [CONFIGURATION.md](../../docs/CONFIGURATION.md) on-disk layout
+- [ ] Update [AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md) persistence section
+- [x] Update [CONFIGURATION.md](../../docs/contracts/DATA_LAYOUT.md) on-disk layout
 - [x] Update this file + README progress snapshot
 
 **Exit criteria:** v2a-core criteria + per-thread `HasMessageId`; outbox reconciliation passes; clear cancels pending outbox rows; **new relay envelope** on send/receive (D063).
@@ -289,7 +289,7 @@ Existing foundation this project builds on.
 
 ### Docs
 
-- [ ] Extend [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md) compaction section
+- [ ] Extend [AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md) compaction section
 
 **Exit criteria:** 20+ turn AI thread uses summary in LLM context; forget memory clears `memory` table but leaves messages.
 
@@ -381,7 +381,7 @@ Existing foundation this project builds on.
 
 ### Docs
 
-- [ ] Extend [P2P_MESSAGING.md](../../docs/P2P_MESSAGING.md): envelope limits (D029), verify pipeline, relay auth (D027), [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md)
+- [ ] Extend [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md): envelope limits (D029), verify pipeline, relay auth (D027), [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md)
 - [ ] Document single-active-device (D015, E2E only)
 
 **Exit criteria:** **Private (`e2e`)** gap auto-repair; **user-initiated sync** via relay (direct when libp2p up); outbox survives restart; strict integrity UX only (no relaxed ingest); `e2e_public` shells unaffected (not message-functional until c3).

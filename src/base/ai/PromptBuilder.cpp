@@ -65,7 +65,7 @@ std::string PromptBuilder::DefaultRcssProfile() {
 - Units: dp, px, %, em
 
 Not supported: resize, CSS grid, background-image/gradients, border-style, @media, pseudo-elements, fit-content, vw/vh/rem.
-Do not use raw #hex colors in generated RCSS; reuse design-system classes from docs/UI_DESIGN_SYSTEM.md.
+Do not use raw #hex colors in generated RCSS; reuse design-system classes from docs/ui/UI_DESIGN_SYSTEM.md.
 Prefer existing classes (.stack, .row, .card, .text, .heading-1, .heading-2, .heading-3, .btn, .btn-primary, .btn-secondary, .field, .muted, .error, .text-xs, .chat-callout, .chat-callout-warning) before adding rules.
 Avoid inline-block containers with background; use display:block or flex instead.)";
 }

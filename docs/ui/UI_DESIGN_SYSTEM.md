@@ -1,5 +1,7 @@
 # UI Design System
 
+**Tier:** product / UI
+
 Source of truth for pp-browser theming, spacing, and component styling. AI-generated UI must reuse classes documented here rather than inventing raw hex colors.
 
 ## Principles

@@ -1,6 +1,8 @@
 # Service endpoints
 
-Relay, directory, and registration share a common resolution pattern. All client creation goes through [`CreateServiceClients`](../src/base/net/ServiceClientFactory.cpp) so future libp2p transports can plug in without changing messaging or agent code.
+**Tier:** contract
+
+Relay, directory, and registration share a common resolution pattern. All client creation goes through [`CreateServiceClients`](../../src/base/net/ServiceClientFactory.cpp) so future libp2p transports can plug in without changing messaging or agent code.
 
 ## Resolution order
 
@@ -56,7 +58,7 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 
 ## Native agent tools
 
-[`MessagingTools`](../src/feature/ai/tools/MessagingTools.cpp) exposes `search_people`, `register_user`, and `update_profile_nickname` as native C++ tools calling `MessagingHub` → `Http*Client` directly (not via MCP).
+[`MessagingTools`](../../src/feature/ai/tools/MessagingTools.cpp) exposes `search_people`, `register_user`, and `update_profile_nickname` as native C++ tools calling `MessagingHub` → `Http*Client` directly (not via MCP).
 
 ## MCP client buckets
 

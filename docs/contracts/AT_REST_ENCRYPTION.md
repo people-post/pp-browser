@@ -1,8 +1,10 @@
 # At-rest encryption
 
-Normative spec for profile secrets on disk. Planning ADRs: [projects/at-rest-crypto/](../projects/at-rest-crypto/).
+**Tier:** contract
 
-**Related:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md) (wire E2E), [CONFIGURATION.md](CONFIGURATION.md), [COMPATIBILITY.md](COMPATIBILITY.md).
+Normative spec for profile secrets on disk. Planning ADRs: [projects/at-rest-crypto/](../../projects/at-rest-crypto/).
+
+**Related:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md) (wire E2E), [DATA_LAYOUT.md](DATA_LAYOUT.md), [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Overview
 
@@ -79,7 +81,7 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 
 ### DEK consumers
 
-[`ProfileSecretsService`](../src/base/crypto/ProfileSecretsService.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../src/base/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore` (registered from `MessagingHub::Initialize`). To add a new encrypted store:
+[`ProfileSecretsService`](../../src/base/crypto/ProfileSecretsService.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/base/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore` (registered from `MessagingHub::Initialize`). To add a new encrypted store:
 
 1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
 2. Register via `ProfileSecretsService::RegisterDekConsumer` during init (typically from the feature that owns the store).

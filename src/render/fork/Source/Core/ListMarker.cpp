@@ -2,7 +2,7 @@
 
 #include "../../Include/RmlUi/Core/Element.h"
 
-// FORK_WORKAROUND — see ListMarker.h and docs/RMLUI_UPSTREAM.md.
+// FORK_WORKAROUND — see ListMarker.h and docs/architecture/RMLUI_UPSTREAM.md.
 
 namespace Rml {
 

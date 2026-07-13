@@ -1,5 +1,7 @@
 # Building pp-browser
 
+**Tier:** ops
+
 ## Prerequisites
 
 - CMake 3.24+
@@ -12,7 +14,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../third_party/): FreeType, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), libsodium, and (for libp2p) BoringSSL, Boost, Protobuf, lsquic, and related packages.
+**Vendored source** under [`third_party/`](../../third_party/): FreeType, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), libsodium, and (for libp2p) BoringSSL, Boost, Protobuf, lsquic, and related packages.
 
 **System packages:** X11 and OpenGL development headers on Linux for the GUI.
 
@@ -86,7 +88,7 @@ cmake -B build -S . -DRMLUI_BACKEND_SIMULATE_TOUCH=ON
 cmake --build build -j
 ```
 
-See [INPUT.md](INPUT.md) for behavior details.
+See [INPUT.md](../ui/INPUT.md) for behavior details.
 
 ### Cloud LLM (default)
 
@@ -101,7 +103,7 @@ Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exist
 
 For other providers, set `base_url`, `model`, and API key in Me → Assistant or config JSON.
 
-Config and data paths: [CONFIGURATION.md](CONFIGURATION.md). During development, delete `~/.local/share/pp-browser` if the on-disk layout changes (no legacy migration).
+Config and data paths: [DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md). During development, delete `~/.local/share/pp-browser` if the on-disk layout changes (no legacy migration).
 
 **If no window appears** (or exit code 1), reconfigure from a clean build directory:
 
@@ -166,8 +168,8 @@ export PP_BROWSER_RELEASE_VERSION=0.1.0-rc1
 ./scripts/android_build.sh apk-release
 ```
 
-The first clean NDK build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../assets/) are packaged into the APK automatically.
+The first clean NDK build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are packaged into the APK automatically.
 
 Launch **pp-browser** on the device/emulator. On first launch, open **Me → Assistant** and enter a cloud API key. Use `adb logcat -s pp-browser` for native logs.
 
-See [PLATFORMS.md](PLATFORMS.md) for mobile lifecycle, navigation, and asset I/O.
+See [PLATFORMS.md](../architecture/PLATFORMS.md) for mobile lifecycle, navigation, and asset I/O.

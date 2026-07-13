@@ -2,7 +2,7 @@
 
 **Status:** Design baseline (d0) — planning  
 **Owner:** Hongwei + agents  
-**Stable refs:** [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md), [AGENTS.md](../../AGENTS.md)  
+**Stable refs:** [AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md), [AGENTS.md](../../AGENTS.md)  
 **Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (transcript / memory), [platform-safety-limits](../platform-safety-limits/) (LLM/MCP caps)
 
 ## One-line goal

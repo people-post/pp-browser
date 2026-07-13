@@ -125,7 +125,7 @@ Each track gets its own checklist subsection in this file when started.
 
 1. [DESIGN.md](DESIGN.md) — taxonomy + v1 matrix  
 2. [CURRENT_STATE.md](CURRENT_STATE.md) — code map + gaps  
-3. [docs/AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md) — turn pipeline  
+3. [docs/ui/AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md) — turn pipeline  
 4. Relevant phase checklist above  
 5. Update CURRENT_STATE + checkboxes in the same PR  
 

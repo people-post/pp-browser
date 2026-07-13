@@ -1,5 +1,7 @@
 # Window Shell
 
+**Tier:** product / UI
+
 The Window Shell replaces the old split-panel layout with a role-based, responsive container for the chat UI.
 
 ## Subsystems

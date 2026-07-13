@@ -22,9 +22,9 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 | `MessageCipher` / AEAD | **Implemented** | `MessageCipher.*`, `EncryptedPayload.*` |
 | `PskBundleCodec` (E020) | **Implemented** | `PskBundleCodec.*` |
 | Unit tests + frozen vectors | **7/7 pass** | `src/base/crypto/tests/crypto_vectors_test.cpp` |
-| `docs/MESSAGE_ENCRYPTION.md` | **Promoted** | Stable crypto contract |
-| `docs/WIRE_SCHEMAS.md` | **Promoted** | Normative wire (was under chat-storage) |
-| `docs/COMPATIBILITY.md` | **Policy** | Dirty disk + newer peer/API |
+| `docs/contracts/MESSAGE_ENCRYPTION.md` | **Promoted** | Stable crypto contract |
+| `docs/contracts/WIRE_SCHEMAS.md` | **Promoted** | Normative wire (was under chat-storage) |
+| `docs/contracts/COMPATIBILITY.md` | **Policy** | Dirty disk + newer peer/API |
 
 ## Messaging integration (c2)
 

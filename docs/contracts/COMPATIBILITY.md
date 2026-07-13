@@ -1,7 +1,9 @@
 # Compatibility policy
 
+**Tier:** contract
+
 **Status:** Normative policy (contracts tier).  
-**Related:** [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md), [CONFIGURATION.md](CONFIGURATION.md), [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md), [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md), [docs/README.md](README.md).
+**Related:** [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md), [DATA_LAYOUT.md](DATA_LAYOUT.md), [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md), [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md), [docs/README.md](../README.md).
 
 This doc answers: what happens when the data directory has leftovers, or when a **newer peer / API** talks to this build? Goal: **no crash**; degrade or fail clearly; avoid dual parsers for obsolete wire (D016).
 
@@ -21,7 +23,7 @@ Do not use one policy for all three.
 
 ## On-disk (dirty folders)
 
-Expected layout: [CONFIGURATION.md](CONFIGURATION.md).
+Expected layout: [DATA_LAYOUT.md](DATA_LAYOUT.md).
 
 | Dirt | Behavior today |
 |------|----------------|

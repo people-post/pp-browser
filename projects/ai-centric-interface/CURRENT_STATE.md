@@ -15,7 +15,7 @@ Inventory of what exists today relative to [DESIGN.md](DESIGN.md). Update when l
 
 ## Turn pipeline (exists)
 
-Documented in [docs/AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md):
+Documented in [docs/ui/AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md):
 
 ```
 user → context → Plan → Execute tools → Synthesize blocks → validate → UI

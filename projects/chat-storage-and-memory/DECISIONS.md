@@ -2,7 +2,7 @@
 
 Record significant choices here so future sessions (human or agent) do not re-litigate them. Format: **ID**, **date**, **decision**, **rationale**, **alternatives considered**.
 
-**Normative wire (promoted):** [`docs/WIRE_SCHEMAS.md`](../../docs/WIRE_SCHEMAS.md). **Compatibility policy:** [`docs/COMPATIBILITY.md`](../../docs/COMPATIBILITY.md). Links below to `WIRE_SCHEMAS.md` resolve via a stub in this folder.
+**Normative wire (promoted):** [`docs/contracts/WIRE_SCHEMAS.md`](../../docs/contracts/WIRE_SCHEMAS.md). **Compatibility policy:** [`docs/contracts/COMPATIBILITY.md`](../../docs/contracts/COMPATIBILITY.md). Links below to `WIRE_SCHEMAS.md` resolve via a stub in this folder.
 
 ---
 
@@ -68,7 +68,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-27  
 **Decision:** Target state uses `IThreadStore` / `ThreadMessage` as the only durable transcript for AI and P2P. In-memory `Conversation` becomes an implementation detail or is removed from hot paths when messaging is enabled.  
-**Rationale:** [AGENT_CONVERSATION.md](../../docs/AGENT_CONVERSATION.md) already describes conversation-first design; dual models caused persistence gaps for AI home.  
+**Rationale:** [AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md) already describes conversation-first design; dual models caused persistence gaps for AI home.  
 **Alternatives:** Persist `Conversation` separately and sync to threads; SQLite-only unified table without JSON migration path.
 
 ---
@@ -545,7 +545,7 @@ No hard max file size in v1.
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-11 — identity + PSK at-rest shipped in [at-rest-crypto](../at-rest-crypto/); this decision still applies to **`thread.db` transcripts only**.  
-**Decision:** `thread.db` remains **plaintext SQLite**. E2E confidentiality is wire-only for message bodies; local transcripts are trusted. SQLCipher for transcripts deferred. Profile secrets (`identity.enc`, PSK columns) use the PIN/DEK vault — see [AT_REST_ENCRYPTION.md](../../docs/AT_REST_ENCRYPTION.md).  
+**Decision:** `thread.db` remains **plaintext SQLite**. E2E confidentiality is wire-only for message bodies; local transcripts are trusted. SQLCipher for transcripts deferred. Profile secrets (`identity.enc`, PSK columns) use the PIN/DEK vault — see [AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md).  
 **Rationale:** Explicit assumption for transcripts; PSK/identity at-rest tracked separately (e2e E008 / at-rest A002).  
 **Alternatives:** Encrypt all thread DBs in v2a.
 

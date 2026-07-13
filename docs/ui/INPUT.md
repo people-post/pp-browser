@@ -1,5 +1,7 @@
 # Input handling architecture
 
+**Tier:** product / UI
+
 pp-browser routes user input through four layers. Each layer has a single responsibility; feature logic does not belong in SDL glue or scattered `Context` forks.
 
 ## Layers

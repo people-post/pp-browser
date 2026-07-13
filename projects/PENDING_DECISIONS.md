@@ -43,7 +43,7 @@
 **Re-evaluated 2026-07-06:** External relay **D027 is ready**. Client side is shipped:
 
 - `IRelayClient::FetchChatHistory` — `HttpRelayClient` + `MockRelayClient` in `src/base/net/ServiceClientsImpl.*`
-- Signed **`POST …/v1/streams/messages/query`** per [WIRE_SCHEMAS § Stream history](../docs/WIRE_SCHEMAS.md#stream-history-http-relay)
+- Signed **`POST …/v1/streams/messages/query`** per [WIRE_SCHEMAS § Stream history](../docs/contracts/WIRE_SCHEMAS.md#stream-history-http-relay)
 - Tests: `relay_history_test`, `chat_sync_test`
 
 **Resolved:** **A — External relay implements D027** — coordinate integration tests against live relay for v6-sync exit ([D093](chat-storage-and-memory/DECISIONS.md#d093--relay-backend-for-v6-sync-d027)). Mock remains for CI/dev when `base_url` unset.

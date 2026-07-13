@@ -1,5 +1,7 @@
 # libp2p hard fork
 
+**Tier:** architecture
+
 pp-browser vendors [cpp-libp2p](https://github.com/libp2p/cpp-libp2p) under `src/libp2p/fork/` as a **hard fork** (committed source, no git submodule).
 
 ## Layout
@@ -21,7 +23,7 @@ fork/src → fork/include
 
 ## Provenance
 
-See [`src/libp2p/fork/UPSTREAM.json`](../src/libp2p/fork/UPSTREAM.json) for the upstream commit SHA.
+See [`src/libp2p/fork/UPSTREAM.json`](../../src/libp2p/fork/UPSTREAM.json) for the upstream commit SHA.
 
 Imported from upstream commit `28e4abcea0bf3fb1b04e51febfea38305f101fe7` (2026-06-13).
 
@@ -41,7 +43,7 @@ Upstream uses Hunter; pp-browser **removed Hunter** and vendors all dependencies
 
 - Import script: [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.sh)
 - CMake wiring: [`cmake/libp2p_dependencies.cmake`](../cmake/libp2p_dependencies.cmake)
-- Versions recorded in [`third_party/UPSTREAM.json`](../third_party/UPSTREAM.json) under `libp2p_dependencies`
+- Versions recorded in [`third_party/UPSTREAM.json`](../../third_party/UPSTREAM.json) under `libp2p_dependencies`
 
 When `PP_BROWSER_LIBP2P_TESTING` or `PP_BROWSER_LIBP2P_COVERAGE` is ON, googletest is built from `third_party/googletest`.
 
@@ -83,7 +85,7 @@ libp2p is built in-tree via `add_subdirectory(src/libp2p)` and linked into the `
 
 - `Libp2pHost.*` — shared ExplicitHost (Yamux + Noise over TCP); owned by `MessagingHub`; binds app Ed25519 identity when available
 - `PeerSessionManager.*` — on-demand dial + warm-active session policy (reuse ConnectionManager; idle TTL; caps; dial backoff). Not an app-level socket pool.
-- `PeerIdUtil.*` — derive base58 Peer ID from the app Ed25519 signing public key (network identity / Me settings; see [D096](../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route))
+- `PeerIdUtil.*` — derive base58 Peer ID from the app Ed25519 signing public key (network identity / Me settings; see [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route))
 
 Feature protocols on the shared host:
 
