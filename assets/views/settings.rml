@@ -33,6 +33,8 @@
         </button>
         <button class="btn btn-primary" type="button" data-if="profile_registered != 'yes'"
                 data-event-click="register_profile()">Register on network</button>
+        <button class="btn btn-secondary" type="button" data-if="profile_registered == 'yes'"
+                data-event-click="rotate_brief_llm_key()">Rotate Brief API key</button>
       </div>
       <p class="text muted" data-if="status != ''" data-rml="status"></p>
     </div>
@@ -77,11 +79,20 @@
           <span class="settings-label">Model</span>
           <input class="field" type="text" data-value="llm_model" data-event-change="on_llm_field_changed()"/>
         </label>
-        <label class="settings-field">
+        <div class="settings-field stack" data-if="llm_preset == 'brief'">
+          <span class="settings-label">Brief API key</span>
+          <p class="text muted" data-if="brief_llm_key_masked != ''">
+            <span data-rml="brief_llm_key_masked"></span> — rotate under Profile
+          </p>
+          <p class="text muted" data-if="brief_llm_key_masked == ''">
+            Issued automatically when you register in Profile.
+          </p>
+        </div>
+        <label class="settings-field" data-if="llm_preset != 'brief'">
           <span class="settings-label">API key</span>
           <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="Optional for local / Ollama endpoints"/>
         </label>
-        <label class="settings-field">
+        <label class="settings-field" data-if="llm_preset != 'brief'">
           <span class="settings-label">API key env var (advanced)</span>
           <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
         </label>

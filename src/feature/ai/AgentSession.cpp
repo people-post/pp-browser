@@ -15,6 +15,7 @@
 #include "common/Logger.h"
 #include "base/ai/mcp/McpClient.h"
 #include "base/ai/mcp/McpRuntime.h"
+#include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
 #include "common/Utilities.h"
 #include "base/messaging/IThreadStore.h"
@@ -537,7 +538,17 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   BrowserThread::PauseIO();
 
   try {
-    state->llm = std::make_unique<LlmClient>(state->config.llm);
+    LlmConfig llm_config = state->config.llm;
+    if (ResolvePreset(state->config) == "brief") {
+      llm_config.require_api_key = true;
+      llm_config.api_key.clear();
+      if (MessagingHub::Instance().IsInitialized()) {
+        if (auto identity = MessagingHub::Instance().Identity().Get()) {
+          llm_config.api_key = identity->brief_llm_api_key;
+        }
+      }
+    }
+    state->llm = std::make_unique<LlmClient>(llm_config);
 
     const AppConfig defaults = SessionStore::Instance().DefaultConfig();
     state->mcp.Start(state->config, defaults);

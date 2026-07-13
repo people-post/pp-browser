@@ -82,3 +82,14 @@ TEST(LlmClientTest, CoalescesLeadingSystemMessages) {
   EXPECT_EQ(normalized[2].role, "system");
   EXPECT_EQ(normalized[2].content, "late instruction");
 }
+
+TEST(LlmClientTest, RequiresApiKeyWhenConfigured) {
+  pbr::LlmConfig config;
+  config.require_api_key = true;
+  config.api_key.clear();
+  config.base_url = "http://127.0.0.1:9/v1";
+  pbr::LlmClient client(config);
+  auto result = client.Complete("sys", "user");
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_NE(result.error().message.find("API key"), std::string::npos);
+}

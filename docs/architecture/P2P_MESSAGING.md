@@ -153,7 +153,7 @@ See [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-ro
 
 ## Messaging UX
 
-- **Me tab** — nickname, **Peer ID** (primary), Relay ID (secondary / after register), Copy ID / Share (Peer ID), Register; preference rows (Assistant, Network, …) stay one tap away.
+- **Me tab** — nickname, **Peer ID** (primary), Relay ID (secondary / after register), Copy ID / Share (Peer ID), Register / Rotate Brief API key; preference rows (Assistant, Network, …) stay one tap away.
 - Sessions header **`+`** opens a menu:
   - **Chat with AI** — new AI thread
   - **Message a contact** — switch to Contacts to pick a peer (then Secure / Public on contact detail)

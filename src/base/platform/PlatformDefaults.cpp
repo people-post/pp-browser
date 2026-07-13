@@ -23,7 +23,7 @@ AppConfig BriefDefaults() {
   if (config.llm.model.empty()) {
     config.llm.model = "grok-4-1-fast-reasoning";
   }
-  config.llm.require_api_key = false;
+  config.llm.require_api_key = true;
   config.theme = "themes/base.rcss";
   config.search.provider = "duckduckgo";
   config.promoted_mcp.url = std::string(kBriefOrigin) + "/mcp";

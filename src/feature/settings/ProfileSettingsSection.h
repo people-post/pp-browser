@@ -16,6 +16,7 @@ public:
   void ResetToDefaults(SettingsUiState& state, const SessionStore& store) override;
 
   static Roe<void> RegisterIdentity(SettingsUiState& state);
+  static Roe<void> RotateBriefLlmKey(SettingsUiState& state);
 };
 
 } // namespace pbr

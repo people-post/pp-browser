@@ -19,7 +19,6 @@ std::string JsonStringOrDefault(const nlohmann::json& json, const char* key,
   return default_value;
 }
 
-
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out) {
   const size_t total = size * nmemb;
   out->append(static_cast<char*>(contents), total);
@@ -51,6 +50,39 @@ nlohmann::json ToolsToJson(const std::vector<ToolDefinition>& tools) {
 
 bool IsOllamaEndpoint(const std::string& base_url) {
   return base_url.find("11434") != std::string::npos || base_url.find("ollama") != std::string::npos;
+}
+
+std::string MapHttpErrorMessage(long http_code, const std::string& response_body) {
+  auto json = nlohmann::json::parse(response_body, nullptr, false);
+  std::string message;
+  std::string code;
+  if (!json.is_discarded() && json.contains("error")) {
+    const auto& err = json["error"];
+    if (err.is_object()) {
+      if (err.contains("message") && err["message"].is_string()) {
+        message = err["message"].get<std::string>();
+      }
+      if (err.contains("code") && err["code"].is_string()) {
+        code = err["code"].get<std::string>();
+      }
+    } else if (err.is_string()) {
+      message = err.get<std::string>();
+    }
+  }
+  if (http_code == 429) {
+    return message.empty()
+               ? "Brief assistant is busy; try later or use your own API key."
+               : message;
+  }
+  if (http_code == 401 || http_code == 403 || code == "not_registered" || code == "auth_error") {
+    return message.empty()
+               ? "Register or rotate your Brief API key in Me → Profile."
+               : message;
+  }
+  if (!message.empty()) {
+    return "LLM API error: " + message;
+  }
+  return "LLM HTTP " + std::to_string(http_code);
 }
 
 } // namespace
@@ -138,9 +170,10 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
 
   struct curl_slist* headers = nullptr;
   headers = curl_slist_append(headers, "Content-Type: application/json");
+  std::string bearer_header;
   if (!config_.api_key.empty()) {
-    const std::string auth = "Authorization: Bearer " + config_.api_key;
-    headers = curl_slist_append(headers, auth.c_str());
+    bearer_header = "Authorization: Bearer " + config_.api_key;
+    headers = curl_slist_append(headers, bearer_header.c_str());
   }
 
   const std::string url = config_.base_url + "/chat/completions";
@@ -153,12 +186,18 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
 
   const CURLcode code = curl_easy_perform(curl);
+  long http_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
   curl_slist_free_all(headers);
   curl_easy_cleanup(curl);
 
   if (code != CURLE_OK) {
     log().error << "curl failed: " << curl_easy_strerror(code);
     return Error(std::string("curl failed: ") + curl_easy_strerror(code));
+  }
+
+  if (http_code >= 400) {
+    return Error(MapHttpErrorMessage(http_code, response));
   }
 
   log().debug << "LLM response received (" << response.size() << " bytes)";

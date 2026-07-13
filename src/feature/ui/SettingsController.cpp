@@ -86,6 +86,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_relay_id = bindings_.profile_relay_id.c_str();
   ui_state_.profile_public_key = bindings_.profile_public_key.c_str();
   ui_state_.profile_registered = bindings_.profile_registered.c_str();
+  ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
   ui_state_.appearance = bindings_.appearance.c_str();
 
   ui_state_.mcp_servers.clear();
@@ -115,6 +116,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_relay_id = ui_state_.profile_relay_id.c_str();
   bindings_.profile_public_key = ui_state_.profile_public_key.c_str();
   bindings_.profile_registered = ui_state_.profile_registered.c_str();
+  bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
   bindings_.appearance = ui_state_.appearance.c_str();
   bindings_.profile_label = ui_state_.profile_label.c_str();
   bindings_.config_dir = ui_state_.config_dir.c_str();
@@ -196,6 +198,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("profile_relay_id", &controller.bindings_.profile_relay_id);
     ctor.Bind("profile_public_key", &controller.bindings_.profile_public_key);
     ctor.Bind("profile_registered", &controller.bindings_.profile_registered);
+    ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
     ctor.Bind("appearance", &controller.bindings_.appearance);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
@@ -218,6 +221,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
     ctor.BindEventCallback("on_profile_field_changed", &SettingsController::OnProfileFieldChangedCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
+    ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
     ctor.BindEventCallback("copy_profile_id", &SettingsController::OnCopyProfileIdCallback);
     ctor.BindEventCallback("share_profile", &SettingsController::OnShareProfileCallback);
     ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
@@ -250,6 +254,7 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "profile_relay_id");
   host.Dirty("settings", "profile_public_key");
   host.Dirty("settings", "profile_registered");
+  host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
@@ -618,6 +623,11 @@ void SettingsController::OnRegisterProfileCallback(Rml::DataModelHandle /*model*
   Instance().OnRegisterProfile();
 }
 
+void SettingsController::OnRotateBriefLlmKeyCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                     const Rml::VariantList& /*args*/) {
+  Instance().OnRotateBriefLlmKey();
+}
+
 void SettingsController::OnCopyProfileIdCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                  const Rml::VariantList& /*args*/) {
   Instance().OnCopyProfileId();
@@ -654,10 +664,31 @@ void SettingsController::OnRegisterProfile() {
       DataModelHost::Instance().Dirty("settings", "status");
       return;
     }
-    status_ = "";
+    status_ = "Registered — Brief API key saved";
     PushUiStateToBindings();
     DirtyAll();
     MaybeShowSaveToast("profile");
+  });
+}
+
+void SettingsController::OnRotateBriefLlmKey() {
+  PullBindingsToUiState();
+  PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
+    if (!unlocked) {
+      status_ = "PIN required to rotate API key";
+      DataModelHost::Instance().Dirty("settings", "status");
+      return;
+    }
+    if (auto rotated = ProfileSettingsSection::RotateBriefLlmKey(ui_state_); !rotated) {
+      status_ = rotated.error().message;
+      DataModelHost::Instance().Dirty("settings", "status");
+      return;
+    }
+    status_ = "Brief API key rotated";
+    PushUiStateToBindings();
+    DirtyAll();
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), "Brief API key rotated");
+    ShellHost::Instance().DirtyWindow();
   });
 }
 

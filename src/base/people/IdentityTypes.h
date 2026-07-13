@@ -15,6 +15,8 @@ struct LocalIdentity {
   std::string peer_id;
   /** Transport handle (route): relay-assigned; empty until registered (D082 / D096). */
   std::string relay_user_id;
+  /** Brief LLM API key (plaintext in memory; persisted inside identity.enc). Empty until registered. */
+  std::string brief_llm_api_key;
   bool registered = false;
 };
 

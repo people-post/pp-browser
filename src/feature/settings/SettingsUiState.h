@@ -30,6 +30,7 @@ struct SettingsUiState {
   std::string profile_relay_id;
   std::string profile_public_key;
   std::string profile_registered = "no";
+  std::string brief_llm_key_masked;
   std::string appearance = "system";
   std::string profile_label;
   std::string config_dir;

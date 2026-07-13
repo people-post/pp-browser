@@ -45,6 +45,8 @@ public:
   void OnSelectThread(const std::string& thread_id);
   /** Rebind to MessagingHub after a full profile data wipe/reinit. */
   void OnProfileDataReset();
+  /** Re-read agent LLM config (e.g. after Brief API key register/rotate). */
+  void ReloadAgentConfig();
 
 private:
   struct ActiveForm {

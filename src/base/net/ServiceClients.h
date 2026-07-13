@@ -42,6 +42,8 @@ struct RegistrationResult {
   bool success = false;
   std::string relay_user_id;
   std::string message;
+  /** Brief LLM API key returned once from register/finish or rotate. */
+  std::string llm_api_key;
 };
 
 struct RegistrationStartResult {

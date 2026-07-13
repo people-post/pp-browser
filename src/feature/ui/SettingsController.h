@@ -67,6 +67,7 @@ private:
     Rml::String profile_relay_id;
     Rml::String profile_public_key;
     Rml::String profile_registered = "no";
+    Rml::String brief_llm_key_masked;
     Rml::String appearance = "system";
     Rml::String profile_label;
     Rml::String config_dir;
@@ -92,6 +93,7 @@ private:
   static void OnNetworkFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnProfileFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnRotateBriefLlmKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnCopyProfileIdCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnShareProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnAddMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -118,6 +120,7 @@ private:
   void DirtyAll();
   void CompleteSectionSelection(bool expanded);
   void OnRegisterProfile();
+  void OnRotateBriefLlmKey();
   void OnCopyProfileId();
   void OnShareProfile();
   void OnAddMcpServer();

@@ -86,6 +86,7 @@ TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
   identity.private_key_b64 = private_key_b64;
   identity.nickname = "alice";
   identity.relay_user_id = "relay:alice123";
+  identity.brief_llm_api_key = "brf_llm_testkeyABCDEFGHIJKLMNOP";
   identity.registered = true;
   auto updated = store.Update(identity);
   ASSERT_TRUE(static_cast<bool>(updated)) << updated.error().message;
@@ -95,6 +96,7 @@ TEST_F(IdentityStoreTest, KeepsRegisteredRelayId) {
   auto loaded = reloaded.LoadOrCreate();
   ASSERT_TRUE(static_cast<bool>(loaded)) << loaded.error().message;
   EXPECT_EQ(loaded->relay_user_id, "relay:alice123");
+  EXPECT_EQ(loaded->brief_llm_api_key, "brf_llm_testkeyABCDEFGHIJKLMNOP");
   EXPECT_TRUE(loaded->registered);
   EXPECT_FALSE(loaded->peer_id.empty());
 }

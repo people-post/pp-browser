@@ -19,7 +19,7 @@ struct LlmPresetSpec {
 };
 
 constexpr LlmPresetSpec kLlmPresets[] = {
-    {"brief", kBriefBaseUrl, false, true},
+    {"brief", kBriefBaseUrl, true, false},
     {"cloud", kCloudBaseUrl, true, false},
     {"ollama", kOllamaBaseUrl, false, true},
 };
@@ -78,7 +78,13 @@ void ResolveLlmAuthRequirements(AppConfig& config) {
     return;
   }
 
-  if (ResolvePreset(config) != "cloud") {
+  const std::string preset = ResolvePreset(config);
+  if (preset == "brief") {
+    // Key lives in identity.enc; still required at request time.
+    config.llm.require_api_key = true;
+    return;
+  }
+  if (preset != "cloud") {
     config.llm.require_api_key = false;
   }
 }

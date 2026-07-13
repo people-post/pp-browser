@@ -61,7 +61,7 @@ AAD examples: `identity|{profile_id}|1`, `psk|{profile_id}|1`.
 
 ### Identity plaintext (inside `identity.enc`)
 
-JSON fields: `public_key_b64`, `private_key_b64`, `kem_*`, `nickname`, `relay_user_id`, `registered`.  
+JSON fields: `public_key_b64`, `private_key_b64`, `kem_*`, `nickname`, `relay_user_id`, `brief_llm_api_key`, `registered`.  
 (`peer_id` remains in-memory only.)
 
 ## Unlock flow

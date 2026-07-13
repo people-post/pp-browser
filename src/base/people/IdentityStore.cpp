@@ -58,6 +58,9 @@ LocalIdentity IdentityFromJson(const nlohmann::json& root) {
   if (root.contains("relay_user_id") && root["relay_user_id"].is_string()) {
     identity.relay_user_id = root["relay_user_id"].get<std::string>();
   }
+  if (root.contains("brief_llm_api_key") && root["brief_llm_api_key"].is_string()) {
+    identity.brief_llm_api_key = root["brief_llm_api_key"].get<std::string>();
+  }
   if (root.contains("registered") && root["registered"].is_boolean()) {
     identity.registered = root["registered"].get<bool>();
   }
@@ -77,6 +80,7 @@ nlohmann::json IdentityToJson(const LocalIdentity& identity) {
           {"kem_private_key_b64", identity.kem_private_key_b64},
           {"nickname", identity.nickname},
           {"relay_user_id", identity.relay_user_id},
+          {"brief_llm_api_key", identity.brief_llm_api_key},
           {"registered", identity.registered}};
 }
 
@@ -152,6 +156,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     identity_.private_key_b64 = Ed25519Signer::ToBase64(keys->private_key);
     identity_.nickname = "user";
     identity_.relay_user_id.clear();
+    identity_.brief_llm_api_key.clear();
     identity_.registered = false;
     if (auto peer = DerivePeerId(identity_); !peer) {
       return peer.error();

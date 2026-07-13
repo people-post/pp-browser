@@ -23,6 +23,7 @@
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/ShellFeedback.h"
 #include "base/data/Config.h"
+#include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ui/SettingsController.h"
@@ -2230,6 +2231,19 @@ bool ChatController::Setup(Rml::Context* context) {
   if (!use_llm_) {
     ShellFeedback::ShowBanner(ShellHost::Instance().State(), "Using mock replies — LLM is not configured.");
     ShellHost::Instance().DirtyWindow();
+  } else if (ResolvePreset(config) == "brief") {
+    std::string brief_key;
+    if (MessagingHub::Instance().IsInitialized()) {
+      if (auto identity = MessagingHub::Instance().Identity().Get()) {
+        brief_key = identity->brief_llm_api_key;
+      }
+    }
+    if (brief_key.empty()) {
+      ShellFeedback::ShowBanner(
+          ShellHost::Instance().State(),
+          "Register your identity in Me → Profile to use Brief assistant (or switch to Cloud/Ollama).");
+      ShellHost::Instance().DirtyWindow();
+    }
   } else if (config.llm.require_api_key && config.llm.api_key.empty()) {
     ShellFeedback::ShowBanner(ShellHost::Instance().State(),
                               "Add your API key in Me → Assistant to enable the assistant.");
@@ -2244,6 +2258,10 @@ void ChatController::ApplyRuntimeConfig(const AppConfig& config) {
   if (agent_) {
     agent_->Configure(config);
   }
+}
+
+void ChatController::ReloadAgentConfig() {
+  ApplyRuntimeConfig(SessionStore::Instance().Snapshot().config);
 }
 
 void ChatController::OnApplicationPause() {

@@ -576,6 +576,9 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
     if (root.contains("message") && root["message"].is_string()) {
       result.message = root["message"].get<std::string>();
     }
+    if (root.contains("llm_api_key") && root["llm_api_key"].is_string()) {
+      result.llm_api_key = root["llm_api_key"].get<std::string>();
+    }
   }
   return result;
 }

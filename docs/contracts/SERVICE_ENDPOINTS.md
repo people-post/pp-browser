@@ -34,7 +34,7 @@ When `registration.base_url` is set (e.g. `https://host/api/relay`), `HttpRegist
 | Step | HTTP | Request body | Response |
 |------|------|--------------|----------|
 | Start | `POST /v1/register/start` | `{ public_key, kem_public_key_b64, nickname?, signature_alg? }` | `{ challenge, signature_alg, expires_at }` |
-| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, signature, timestamp, nickname?, signature_alg? }` | `{ success, relay_user_id, message, expires_at }` |
+| Finish | `POST /v1/register/finish` | `{ challenge, public_key, kem_public_key_b64, signature, timestamp, nickname?, signature_alg? }` | `{ success, relay_user_id, message, expires_at, llm_api_key }` |
 
 Finish signs canonical bytes: domain `pp-browser:relay-register-v1\0`, `sign_version=2`, challenge (len-prefixed UTF-8), 32-byte raw Ed25519 public key, 1216-byte raw hybrid KEM public key, `signature_alg` u8 (`0=ed25519`), `timestamp` i64 BE.
 
@@ -68,6 +68,24 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 |--------|--------|-------------|
 | Promoted | `promoted_mcp` (+ platform default) | Feed/AI tools (not relay infra) |
 | Custom | `mcp_servers[]` | All tools; collisions prefixed as `{id}__{tool}` |
+
+## Brief LLM gateway
+
+Default assistant preset uses OpenAI-compatible completions at:
+
+`POST https://www.brief.global/api/llm/v1/chat/completions`
+
+| Requirement | Detail |
+|-------------|--------|
+| Auth | `Authorization: Bearer <brf_llm_…>` issued on directory registration finish |
+| Issue | Opaque key returned once in `register/finish` as `llm_api_key`; stored hashed on `RelayUser` |
+| Rotate | `POST /api/llm/v1/keys/rotate` with current Bearer; returns new `llm_api_key` once |
+| Limits | Global 300 req/min (`llm:global`); per-user 30 req/min (`llm:user:{id}`). Env: `BRF_WWW_LLM_GLOBAL_RPM`, `BRF_WWW_LLM_USER_RPM` |
+| Errors | `401` invalid key, `403` registration expired (`code: not_registered`), `429` (`global_rate_limit` / `user_rate_limit`), `400` if `stream: true` |
+
+Upstream is user-ai `POST /v1/chat/completions` (stateless; www→user-ai uses service token). pp-browser stores the plaintext key in profile `identity.enc` (`brief_llm_api_key`) and sends standard Bearer auth when preset is `brief`.
+
+Lost key: re-run Profile → Register (finish) to issue a new key.
 
 ## libp2p (deferred)
 

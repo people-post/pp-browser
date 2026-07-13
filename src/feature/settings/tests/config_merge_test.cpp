@@ -19,12 +19,12 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   ASSERT_TRUE(static_cast<bool>(config));
   EXPECT_EQ(config->llm.model, "custom-model");
   EXPECT_EQ(config->llm.base_url, "https://www.brief.global/api/llm/v1");
-  EXPECT_FALSE(config->llm.require_api_key);
+  EXPECT_TRUE(config->llm.require_api_key);
   EXPECT_EQ(config->relay.base_url, "https://www.brief.global/api/relay");
 
   const pbr::AppConfig defaults = pbr::Config::DefaultAppConfig();
   EXPECT_EQ(defaults.llm.base_url, "https://www.brief.global/api/llm/v1");
-  EXPECT_FALSE(defaults.llm.require_api_key);
+  EXPECT_TRUE(defaults.llm.require_api_key);
   EXPECT_EQ(defaults.llm.preset, "brief");
   EXPECT_EQ(defaults.theme, "themes/base.rcss");
   EXPECT_EQ(defaults.relay.base_url, "https://www.brief.global/api/relay");
@@ -50,7 +50,7 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   pbr::AppConfig brief_config = defaults;
   pbr::ApplyPreset(brief_config, "brief", {});
   EXPECT_EQ(brief_config.llm.base_url, "https://www.brief.global/api/llm/v1");
-  EXPECT_FALSE(brief_config.llm.require_api_key);
+  EXPECT_TRUE(brief_config.llm.require_api_key);
   EXPECT_EQ(brief_config.llm.preset, "brief");
 
   pbr::AppConfig ollama_config = defaults;

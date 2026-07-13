@@ -1,10 +1,46 @@
 #include "feature/settings/ProfileSettingsSection.h"
 
+#include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
+#include "base/net/HttpClient.h"
 #include "base/net/RegistrationClientUtil.h"
+#include "feature/chat/ChatController.h"
 #include "feature/messaging/MessagingHub.h"
 
+#include <nlohmann/json.hpp>
+
 namespace pbr {
+
+namespace {
+
+std::string MaskBriefLlmApiKey(const std::string& key) {
+  constexpr const char kPrefix[] = "brf_llm_";
+  if (key.empty()) {
+    return "";
+  }
+  if (key.size() <= sizeof(kPrefix) - 1 + 4) {
+    return std::string(kPrefix) + "••••";
+  }
+  return key.substr(0, sizeof(kPrefix) - 1 + 4) + "••••";
+}
+
+void SyncBriefKeyMasked(SettingsUiState& state) {
+  state.brief_llm_key_masked.clear();
+  if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().IsMessagingReady()) {
+    return;
+  }
+  auto identity = MessagingHub::Instance().Identity().Get();
+  if (!identity) {
+    return;
+  }
+  state.brief_llm_key_masked = MaskBriefLlmApiKey(identity->brief_llm_api_key);
+}
+
+void ReconfigureAgentIfNeeded() {
+  ChatController::Instance().ReloadAgentConfig();
+}
+
+} // namespace
 
 const char* ProfileSettingsSection::Id() const {
   return "profile";
@@ -31,6 +67,7 @@ void ProfileSettingsSection::SyncFromSession(const BootstrapResult& /*bootstrap*
   state.profile_relay_id = identity->relay_user_id;
   state.profile_public_key = identity->public_key_b64;
   state.profile_registered = identity->registered ? "yes" : "no";
+  SyncBriefKeyMasked(state);
 }
 
 bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& /*bootstrap*/) const {
@@ -119,12 +156,85 @@ Roe<void> ProfileSettingsSection::RegisterIdentity(SettingsUiState& state) {
   if (!result->relay_user_id.empty()) {
     updated.relay_user_id = result->relay_user_id;
   }
+  if (!result->llm_api_key.empty()) {
+    updated.brief_llm_api_key = result->llm_api_key;
+  }
   if (auto saved = MessagingHub::Instance().Identity().Update(updated); !saved) {
     return saved.error();
   }
 
   ProfileSettingsSection section;
   section.SyncFromSession(SessionStore::Instance().Snapshot(), state);
+  ReconfigureAgentIfNeeded();
+  return {};
+}
+
+Roe<void> ProfileSettingsSection::RotateBriefLlmKey(SettingsUiState& state) {
+  if (!MessagingHub::Instance().IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  if (!MessagingHub::Instance().IsMessagingReady()) {
+    return Error("Unlock profile PIN to rotate API key");
+  }
+
+  auto identity = MessagingHub::Instance().Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (identity->brief_llm_api_key.empty()) {
+    return Error("No Brief API key yet — register on the network first");
+  }
+
+  const AppConfig& config = SessionStore::Instance().Snapshot().config;
+  std::string base_url = config.llm.base_url;
+  if (ResolvePreset(config) != "brief" || base_url.empty()) {
+    base_url = "https://www.brief.global/api/llm/v1";
+  }
+  while (!base_url.empty() && base_url.back() == '/') {
+    base_url.pop_back();
+  }
+  const std::string url = base_url + "/keys/rotate";
+
+  auto response = HttpClient::Post(url, "{}", {{"Authorization", "Bearer " + identity->brief_llm_api_key},
+                                               {"Content-Type", "application/json"}});
+  if (!response) {
+    return response.error();
+  }
+  if (response->status_code == 401 || response->status_code == 403) {
+    return Error("Rotate or re-register your Brief API key in Me → Profile.");
+  }
+  if (response->status_code < 200 || response->status_code >= 300) {
+    auto json = nlohmann::json::parse(response->body, nullptr, false);
+    if (!json.is_discarded() && json.contains("error")) {
+      const auto& err = json["error"];
+      if (err.is_string()) {
+        return Error(err.get<std::string>());
+      }
+      if (err.is_object() && err.contains("message") && err["message"].is_string()) {
+        return Error(err["message"].get<std::string>());
+      }
+    }
+    return Error("Brief API key rotate failed (HTTP " + std::to_string(response->status_code) + ")");
+  }
+
+  auto root = nlohmann::json::parse(response->body, nullptr, false);
+  if (root.is_discarded() || !root.contains("llm_api_key") || !root["llm_api_key"].is_string()) {
+    return Error("Brief API key rotate response missing llm_api_key");
+  }
+  const std::string new_key = root["llm_api_key"].get<std::string>();
+  if (new_key.empty()) {
+    return Error("Brief API key rotate returned empty key");
+  }
+
+  LocalIdentity updated = *identity;
+  updated.brief_llm_api_key = new_key;
+  if (auto saved = MessagingHub::Instance().Identity().Update(updated); !saved) {
+    return saved.error();
+  }
+
+  ProfileSettingsSection section;
+  section.SyncFromSession(SessionStore::Instance().Snapshot(), state);
+  ReconfigureAgentIfNeeded();
   return {};
 }
 
