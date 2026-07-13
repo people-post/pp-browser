@@ -35,6 +35,7 @@ struct SettingsUiState {
   std::string config_dir;
   std::string data_dir;
   std::string profile_dir;
+  std::string profile_size_label;
   std::string pin_protection_status;
   bool security_can_change_pin = false;
 };

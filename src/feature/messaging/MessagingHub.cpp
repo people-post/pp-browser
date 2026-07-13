@@ -339,6 +339,8 @@ void MessagingHub::Shutdown() {
   identity_.reset();
   contacts_.reset();
   store_.reset();
+  signing_key_store_.Clear();
+  kem_key_store_.Clear();
   messaging_ready_ = false;
   initialized_ = false;
 }

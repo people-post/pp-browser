@@ -54,6 +54,15 @@ selection {
   color: #f9fafb;
 }
 
+.btn-danger {
+  background-color: #dc2626;
+  color: #ffffff;
+}
+
+.btn-danger:hover {
+  background-color: #ef4444;
+}
+
 .field {
   background-color: #1f2937;
   color: #f9fafb;
@@ -481,6 +490,10 @@ select selectbox option:hover {
 
 .settings-label {
   color: #9ca3af;
+}
+
+.settings-danger-zone {
+  border-top: 1dp #374151;
 }
 
 .me-profile-card {

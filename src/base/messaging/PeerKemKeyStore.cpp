@@ -22,6 +22,11 @@ std::optional<PeerKemKeyRecord> PeerKemKeyStore::Get(const std::string& peer_ide
   return it->second;
 }
 
+void PeerKemKeyStore::Clear() {
+  std::lock_guard lock(mutex_);
+  keys_.clear();
+}
+
 PeerKemKeyResolver::PeerKemKeyResolver(PeerKemKeyStore& store) : store_(store) {}
 
 Roe<PeerKemKeyRecord> PeerKemKeyResolver::Resolve(const std::string& peer_identity_kind,

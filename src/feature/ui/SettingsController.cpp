@@ -1,10 +1,14 @@
 #include "feature/ui/SettingsController.h"
 
 #include "base/crypto/ProfileSecretsService.h"
+#include "base/data/AppPaths.h"
+#include "base/data/SchemaVersion.h"
 #include "base/data/SessionStore.h"
 #include "base/platform/BrowserThread.h"
+#include "feature/chat/ChatController.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/ProfileSettingsSection.h"
+#include "feature/ui/ContactsController.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/ShellFeedback.h"
@@ -15,6 +19,8 @@
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/SystemInterface.h>
 #include <SDL3/SDL.h>
+
+#include <filesystem>
 
 namespace pbr {
 
@@ -114,6 +120,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
   bindings_.profile_dir = ui_state_.profile_dir.c_str();
+  bindings_.profile_size_label = ui_state_.profile_size_label.c_str();
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
 
@@ -194,6 +201,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
     ctor.Bind("profile_dir", &controller.bindings_.profile_dir);
+    ctor.Bind("profile_size_label", &controller.bindings_.profile_size_label);
     ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
     ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
@@ -215,6 +223,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
     ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
     ctor.BindEventCallback("change_pin", &SettingsController::OnChangePinCallback);
+    ctor.BindEventCallback("reset_profile", &SettingsController::OnResetProfileCallback);
   });
 }
 
@@ -246,6 +255,7 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
   host.Dirty("settings", "profile_dir");
+  host.Dirty("settings", "profile_size_label");
   host.Dirty("settings", "pin_protection_status");
   host.Dirty("settings", "security_can_change_pin");
   host.Dirty("settings", "pin_change_old");
@@ -709,6 +719,94 @@ void SettingsController::OnRemoveMcpServer(const int index) {
 void SettingsController::OnChangePinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                              const Rml::VariantList& /*args*/) {
   Instance().OnChangePin();
+}
+
+void SettingsController::OnResetProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                const Rml::VariantList& /*args*/) {
+  Instance().OnResetProfile();
+}
+
+void SettingsController::OnResetProfile() {
+  ShellFeedback::ShowConfirmWithCheckbox(
+      ShellHost::Instance().State(), "Reset this profile?",
+      "This deletes all chats, contacts, identity keys, and PIN protection for this profile. "
+      "Machine settings (assistant, network, integrations) are kept. This cannot be undone.",
+      "I understand this cannot be undone", false,
+      [this](const bool confirmed, const bool checked) {
+        if (!confirmed) {
+          return;
+        }
+        if (!checked) {
+          ShellFeedback::ShowToast(ShellHost::Instance().State(), "Check the box to confirm reset");
+          ShellHost::Instance().DirtyWindow();
+          return;
+        }
+        PerformResetProfile();
+      });
+  ShellHost::Instance().RequestSyncLayout();
+}
+
+void SettingsController::PerformResetProfile() {
+  const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
+  const std::string profile_dir = bootstrap.profile_data_dir;
+  const AppConfig config = bootstrap.config;
+
+  if (profile_dir.empty()) {
+    status_ = "Profile path unavailable";
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+
+  log().info << "Resetting profile data at " << profile_dir;
+
+  MessagingHub::Instance().Shutdown();
+  ProfileSecretsService::Instance().Shutdown();
+
+  std::error_code ec;
+  std::filesystem::remove_all(profile_dir, ec);
+  if (ec) {
+    status_ = "Failed to delete profile data";
+    log().error << "remove_all(" << profile_dir << "): " << ec.message();
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+
+  AppPaths::EnsureDirs(profile_dir);
+  if (auto manifest = SchemaVersion::EnsureProfileManifest(profile_dir); !manifest) {
+    status_ = manifest.error().message.c_str();
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+
+  if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_dir); !secrets) {
+    status_ = secrets.error().message.c_str();
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+
+  if (auto hub = MessagingHub::Instance().Initialize(config, profile_dir); !hub) {
+    status_ = hub.error().message.c_str();
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+
+  if (auto prefs = SessionStore::Instance().ReloadProfilePrefs(); !prefs) {
+    status_ = prefs.error().message.c_str();
+    DataModelHost::Instance().Dirty("settings", "status");
+    return;
+  }
+
+  ChatController::Instance().OnProfileDataReset();
+  ContactsController::Instance().Refresh();
+
+  bindings_.pin_change_old = "";
+  bindings_.pin_change_new = "";
+  bindings_.pin_change_confirm = "";
+  status_ = "";
+  SyncBindingsFromSession();
+  DirtyAll();
+  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Profile reset");
+  ShellHost::Instance().RequestSyncLayout();
 }
 
 void SettingsController::OnChangePin() {

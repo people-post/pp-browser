@@ -167,7 +167,7 @@ Data binding: `thread_is_ai` / `thread_is_private` / `thread_is_public` / `threa
 
 ### Controls
 
-`.btn`, `.btn-primary`, `.btn-secondary`, `.btn-ghost`, `.btn-icon`, `.field`
+`.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger`, `.btn-ghost`, `.btn-icon`, `.field`
 
 ### Chat
 

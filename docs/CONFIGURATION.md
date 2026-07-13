@@ -102,7 +102,7 @@ Open **Me** from the nav rail (person icon). The Me tab shows an **identity card
 | Network | `config.json` | machine |
 | Appearance | `preferences.json` | profile |
 | Security | `vault.bin` + `preferences.json` (`pin_is_default`) | profile |
-| Storage | read-only paths | — |
+| Storage | paths + profile size; reset wipes profile dir | — |
 
 On tab entry, [`SettingsController`](../src/feature/ui/SettingsController.cpp) reloads from disk via `SessionStore::ReloadFromDisk()` so the UI matches persisted files. Changes **auto-save per block**: select fields save immediately; text fields debounce ~500ms. Pending changes flush before switching sections or leaving the tab. Config sections apply through [`SettingsLogic`](../src/feature/settings/SettingsLogic.cpp), write to disk, and reload into `SessionStore`. Config changes hot-reload via listeners → `AgentSession::Configure` and `MessagingHub::Reinitialize`; appearance changes apply via appearance listeners → `Theme::ApplyAppearance`.
 

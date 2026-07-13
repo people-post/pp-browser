@@ -21,6 +21,7 @@ public:
   void Put(const std::string& peer_identity_kind, const std::string& peer_identity_value, PeerKemKeyRecord record);
   std::optional<PeerKemKeyRecord> Get(const std::string& peer_identity_kind,
                                       const std::string& peer_identity_value) const;
+  void Clear();
 
 private:
   static std::string MakeKey(const std::string& kind, const std::string& value);

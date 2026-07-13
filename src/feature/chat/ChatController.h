@@ -43,6 +43,8 @@ public:
   void OnSessionsTabActivated();
   void OnFindSomeone();
   void OnSelectThread(const std::string& thread_id);
+  /** Rebind to MessagingHub after a full profile data wipe/reinit. */
+  void OnProfileDataReset();
 
 private:
   struct ActiveForm {

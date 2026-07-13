@@ -1528,6 +1528,17 @@ select selectbox option {
   justify-content: flex-end;
 }
 
+.settings-danger-zone {
+  margin-top: 24dp;
+  padding-top: 16dp;
+  gap: 8dp;
+}
+
+.settings-danger-zone .settings-actions {
+  margin-top: 4dp;
+  justify-content: flex-start;
+}
+
 .sidebar-footer {
   margin-top: auto;
   padding: 12dp 16dp;

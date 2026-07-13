@@ -22,6 +22,11 @@ std::optional<PeerSigningKeyRecord> PeerSigningKeyStore::Get(const std::string& 
   return it->second;
 }
 
+void PeerSigningKeyStore::Clear() {
+  std::lock_guard lock(mutex_);
+  keys_.clear();
+}
+
 PeerSigningKeyResolver::PeerSigningKeyResolver(PeerSigningKeyStore& store) : store_(store) {}
 
 Roe<PeerSigningKeyRecord> PeerSigningKeyResolver::Resolve(const std::string& peer_identity_kind,

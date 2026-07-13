@@ -1118,6 +1118,22 @@ void ChatController::RefreshFromMessaging() {
   DirtyShell();
 }
 
+void ChatController::OnProfileDataReset() {
+  messaging_ready_ = false;
+  ClearWorkingSet();
+  ClearFormState();
+  widgets_by_entry_.clear();
+  working_set_by_entry_.clear();
+  pending_reply_.reset();
+  ResetChatPanelState();
+  if (MessagingHub::Instance().IsInitialized()) {
+    WireMessagingBindings();
+  } else {
+    DirtyChat();
+    DirtyShell();
+  }
+}
+
 void ChatController::SyncShellSessions() {
   if (!messaging_ready_) {
     return;

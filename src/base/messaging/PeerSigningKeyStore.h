@@ -22,6 +22,7 @@ public:
            PeerSigningKeyRecord record);
   std::optional<PeerSigningKeyRecord> Get(const std::string& peer_identity_kind,
                                           const std::string& peer_identity_value) const;
+  void Clear();
 
 private:
   static std::string MakeKey(const std::string& kind, const std::string& value);

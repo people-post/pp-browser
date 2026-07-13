@@ -138,9 +138,20 @@
 
     <div class="settings-section stack" data-if="selected_id == 'storage'">
       <p class="text muted">Profile: <span data-rml="profile_label"></span></p>
+      <p class="text" data-rml="profile_size_label"></p>
       <p class="text muted settings-path">Config: <span data-rml="config_dir"></span></p>
       <p class="text muted settings-path">Data: <span data-rml="data_dir"></span></p>
       <p class="text muted settings-path">Profile data: <span data-rml="profile_dir"></span></p>
+      <div class="settings-danger-zone stack">
+        <p class="text muted">
+          Reset deletes chats, contacts, keys, and PIN for this profile. Machine settings are kept.
+        </p>
+        <div class="settings-actions row">
+          <button class="btn btn-danger" type="button" data-event-click="reset_profile()">
+            Reset this profile
+          </button>
+        </div>
+      </div>
     </div>
 
     <p class="text muted" data-if="status != ''" data-rml="status"></p>
