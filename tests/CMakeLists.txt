@@ -41,34 +41,50 @@ pp_browser_add_gtest(pp_browser_shell_host_test)
 
 add_executable(pp_browser_turn_planner_test turn_planner_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/ai/TurnPlan.cpp)
-target_link_libraries(pp_browser_turn_planner_test PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_turn_planner_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_turn_planner_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(turn_planner_test pp_browser_turn_planner_test ${CMAKE_SOURCE_DIR})
+pp_browser_add_gtest(pp_browser_turn_planner_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 add_executable(pp_browser_chat_form_helper_test chat_form_helper_test.cpp
   ${CMAKE_SOURCE_DIR}/src/feature/chat/ChatFormHelper.cpp
   ${CMAKE_SOURCE_DIR}/src/feature/chat/ChatWidgetStateBuilder.cpp
   ${CMAKE_SOURCE_DIR}/src/feature/chat/CalendarHelper.cpp)
-target_link_libraries(pp_browser_chat_form_helper_test PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_chat_form_helper_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  nlohmann_json::nlohmann_json)
 pp_browser_link_rmlui_core(pp_browser_chat_form_helper_test)
 target_include_directories(pp_browser_chat_form_helper_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(chat_form_helper_test pp_browser_chat_form_helper_test)
+pp_browser_add_gtest(pp_browser_chat_form_helper_test)
 
 add_executable(pp_browser_calendar_helper_test calendar_helper_test.cpp
   ${CMAKE_SOURCE_DIR}/src/feature/chat/CalendarHelper.cpp)
+target_link_libraries(pp_browser_calendar_helper_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main)
 pp_browser_link_rmlui_core(pp_browser_calendar_helper_test)
 target_include_directories(pp_browser_calendar_helper_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(calendar_helper_test pp_browser_calendar_helper_test)
+pp_browser_add_gtest(pp_browser_calendar_helper_test)
 
 add_executable(pp_browser_click_routing_test click_routing_test.cpp)
+target_link_libraries(pp_browser_click_routing_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main)
 pp_browser_link_rmlui_core(pp_browser_click_routing_test)
 target_include_directories(pp_browser_click_routing_test PRIVATE ${CMAKE_SOURCE_DIR}/src/render/fork/Source/Core)
-pp_browser_add_test(click_routing_test pp_browser_click_routing_test)
+pp_browser_add_gtest(pp_browser_click_routing_test)
 
 add_executable(pp_browser_chat_action_dispatcher_test chat_action_dispatcher_test.cpp)
-target_link_libraries(pp_browser_chat_action_dispatcher_test PRIVATE pp_base nlohmann_json::nlohmann_json)
+target_link_libraries(pp_browser_chat_action_dispatcher_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  pp_base
+  nlohmann_json::nlohmann_json)
 target_include_directories(pp_browser_chat_action_dispatcher_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(chat_action_dispatcher_test pp_browser_chat_action_dispatcher_test)
+pp_browser_add_gtest(pp_browser_chat_action_dispatcher_test)
 
 add_executable(pp_browser_messaging_foundation_test messaging_foundation_test.cpp)
 target_link_libraries(pp_browser_messaging_foundation_test PRIVATE
@@ -96,8 +112,11 @@ set(PP_BROWSER_SETTINGS_SECTION_TEST_SOURCES
 add_executable(pp_browser_desktop_path_provider_test desktop_path_provider_test.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/IPathProvider.cpp
   ${CMAKE_SOURCE_DIR}/src/base/platform/DesktopPathProvider.cpp)
+target_link_libraries(pp_browser_desktop_path_provider_test PRIVATE
+  GTest::gtest
+  GTest::gtest_main)
 target_include_directories(pp_browser_desktop_path_provider_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-pp_browser_add_test(desktop_path_provider_test pp_browser_desktop_path_provider_test)
+pp_browser_add_gtest(pp_browser_desktop_path_provider_test)
 
 add_executable(pp_browser_config_merge_test config_merge_test.cpp ${PP_BROWSER_CONFIG_TEST_SOURCES})
 target_compile_definitions(pp_browser_config_merge_test PRIVATE PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")

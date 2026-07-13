@@ -18,13 +18,6 @@ function(pp_browser_enable_googletest)
     EXCLUDE_FROM_ALL)
 endfunction()
 
-function(pp_browser_add_test test_name executable_target)
-  add_test(NAME ${test_name} COMMAND $<TARGET_FILE:${executable_target}>)
-  if(ARGN)
-    set_tests_properties(${test_name} PROPERTIES WORKING_DIRECTORY ${ARGN})
-  endif()
-endfunction()
-
 function(pp_browser_add_gtest executable_target)
   set(one_value_args WORKING_DIRECTORY)
   cmake_parse_arguments(PP_GTEST "" "${one_value_args}" "" ${ARGN})

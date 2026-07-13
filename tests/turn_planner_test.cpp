@@ -1,6 +1,7 @@
 #include "base/ai/TurnPlan.h"
 
-#include <cassert>
+#include <gtest/gtest.h>
+
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -16,31 +17,28 @@ std::string ReadFixture(const char* name) {
 
 } // namespace
 
-int main() {
-  {
-    const std::string fixture = ReadFixture("headlines.json");
-    auto plan = pbr::ParseTurnPlanFromLlmOutput(fixture, pbr::TurnPlanSource::Planner);
-    assert(plan);
-    assert(plan->response_goal == pbr::ResponseGoal::Headlines);
-    assert(!plan->tools.empty());
-    assert(plan->tools[0].name == "web_search");
-  }
+TEST(TurnPlannerTest, ParsesHeadlinesFixture) {
+  const std::string fixture = ReadFixture("headlines.json");
+  auto plan = pbr::ParseTurnPlanFromLlmOutput(fixture, pbr::TurnPlanSource::Planner);
+  ASSERT_TRUE(plan);
+  EXPECT_EQ(plan->response_goal, pbr::ResponseGoal::Headlines);
+  ASSERT_FALSE(plan->tools.empty());
+  EXPECT_EQ(plan->tools[0].name, "web_search");
+}
 
-  {
-    const std::string fixture = ReadFixture("people_discovery.json");
-    auto plan = pbr::ParseTurnPlanFromLlmOutput(fixture, pbr::TurnPlanSource::Planner);
-    assert(plan);
-    assert(plan->render_mode == pbr::RenderMode::PeopleList);
-    assert(plan->tools[0].name == "search_people");
-  }
+TEST(TurnPlannerTest, ParsesPeopleDiscoveryFixture) {
+  const std::string fixture = ReadFixture("people_discovery.json");
+  auto plan = pbr::ParseTurnPlanFromLlmOutput(fixture, pbr::TurnPlanSource::Planner);
+  ASSERT_TRUE(plan);
+  EXPECT_EQ(plan->render_mode, pbr::RenderMode::PeopleList);
+  ASSERT_FALSE(plan->tools.empty());
+  EXPECT_EQ(plan->tools[0].name, "search_people");
+}
 
-  {
-    const std::string fixture = ReadFixture("chitchat_no_tools.json");
-    auto plan = pbr::ParseTurnPlanFromLlmOutput(fixture, pbr::TurnPlanSource::Planner);
-    assert(plan);
-    assert(plan->tools.empty());
-    assert(plan->response_goal == pbr::ResponseGoal::General);
-  }
-
-  return 0;
+TEST(TurnPlannerTest, ParsesChitchatWithNoTools) {
+  const std::string fixture = ReadFixture("chitchat_no_tools.json");
+  auto plan = pbr::ParseTurnPlanFromLlmOutput(fixture, pbr::TurnPlanSource::Planner);
+  ASSERT_TRUE(plan);
+  EXPECT_TRUE(plan->tools.empty());
+  EXPECT_EQ(plan->response_goal, pbr::ResponseGoal::General);
 }

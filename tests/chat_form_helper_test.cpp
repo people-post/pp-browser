@@ -1,32 +1,40 @@
 #include "feature/chat/ChatFormHelper.h"
 #include "feature/chat/ChatWidgetStateBuilder.h"
 
-#include <cassert>
-#include <iostream>
+#include <gtest/gtest.h>
+
 #include <map>
 #include <optional>
 #include <string>
 
-int main() {
+TEST(ChatFormHelperTest, AppliesSubmitTemplate) {
   const std::map<std::string, std::string> values{{"name", "Alice"}, {"date", "2026-06-15"}};
   const std::string display =
       pbr::ApplySubmitTemplate("Book for {{name}} on {{date}}", values);
-  assert(display == "Book for Alice on 2026-06-15");
+  EXPECT_EQ(display, "Book for Alice on 2026-06-15");
+}
 
+TEST(ChatFormHelperTest, BuildsFormSubmissionPayload) {
+  const std::map<std::string, std::string> values{{"name", "Alice"}, {"date", "2026-06-15"}};
   const std::string payload = pbr::BuildFormSubmissionPayload("booking", values);
-  assert(payload.find("\"type\":\"form_submission\"") != std::string::npos);
-  assert(payload.find("\"form_id\":\"booking\"") != std::string::npos);
-  assert(payload.find("\"name\":\"Alice\"") != std::string::npos);
+  EXPECT_NE(payload.find("\"type\":\"form_submission\""), std::string::npos);
+  EXPECT_NE(payload.find("\"form_id\":\"booking\""), std::string::npos);
+  EXPECT_NE(payload.find("\"name\":\"Alice\""), std::string::npos);
+}
 
-  const std::string rml = R"(<div class="chat-form" data-form-id="booking" id="form-__ENTRY__-booking"></div>)";
+TEST(ChatFormHelperTest, ExtractsFormIdAndInjectsPlaceholders) {
+  const std::string rml =
+      R"(<div class="chat-form" data-form-id="booking" id="form-__ENTRY__-booking"></div>)";
   const std::optional<std::string> form_id = pbr::ExtractFormId(rml);
-  assert(form_id.has_value());
-  assert(*form_id == "booking");
+  ASSERT_TRUE(form_id.has_value());
+  EXPECT_EQ(*form_id, "booking");
 
   const std::string hydrated = pbr::InjectEntryPlaceholders(rml, "entry_42");
-  assert(hydrated.find("__ENTRY__") == std::string::npos);
-  assert(hydrated.find("entry_42") != std::string::npos);
+  EXPECT_EQ(hydrated.find("__ENTRY__"), std::string::npos);
+  EXPECT_NE(hydrated.find("entry_42"), std::string::npos);
+}
 
+TEST(ChatFormHelperTest, BuildsFormValuesMap) {
   pbr::FormWidgetState form;
   form.form_id = "booking";
   pbr::FormFieldRow name_field;
@@ -39,9 +47,6 @@ int main() {
   form.fields.push_back(date_field);
 
   const std::map<std::string, std::string> bound_values = pbr::FormValuesMap(form);
-  assert(bound_values.at("name") == "Alice");
-  assert(bound_values.at("date") == "2026-06-15");
-
-  std::cout << "chat_form_helper_test passed\n";
-  return 0;
+  EXPECT_EQ(bound_values.at("name"), "Alice");
+  EXPECT_EQ(bound_values.at("date"), "2026-06-15");
 }

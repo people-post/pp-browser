@@ -6,9 +6,8 @@
 #include <RmlUi/Core/SystemInterface.h>
 #include <RmlUi/Core/Types.h>
 
-#include <cassert>
-#include <cstdlib>
-#include <iostream>
+#include <gtest/gtest.h>
+
 #include <unordered_map>
 
 namespace {
@@ -16,31 +15,19 @@ namespace {
 Rml::SystemInterface g_system_interface;
 std::unordered_map<Rml::Element*, bool> g_contains_point;
 
-[[noreturn]] void Fail(const char* message)
-{
-	std::cerr << "click_routing_test failed: " << message << "\n";
-	std::exit(1);
-}
-
-void Require(bool condition, const char* message)
-{
-	if (!condition)
-		Fail(message);
-}
-
 Rml::ElementPtr MakeElement(const char* tag)
 {
 	Rml::ElementPtr element = Rml::Factory::InstanceElement(nullptr, "*", tag, Rml::XMLAttributes());
-	Require(static_cast<bool>(element), "Factory::InstanceElement returned null");
+	EXPECT_TRUE(static_cast<bool>(element));
 	return element;
 }
 
 Rml::Element* AppendChild(Rml::Element& parent, const char* tag)
 {
 	Rml::ElementPtr child = Rml::Factory::InstanceElement(&parent, "*", tag, Rml::XMLAttributes());
-	Require(static_cast<bool>(child), "Factory::InstanceElement child returned null");
+	EXPECT_TRUE(static_cast<bool>(child));
 	Rml::Element* inserted = parent.AppendChild(std::move(child), false);
-	Require(inserted != nullptr, "AppendChild returned null");
+	EXPECT_NE(inserted, nullptr);
 	return inserted;
 }
 
@@ -59,150 +46,152 @@ Rml::Element* NullFocus(Rml::Element* /*element*/) { return nullptr; }
 Rml::Element* g_focus_result = nullptr;
 Rml::Element* ReturnFocusResult(Rml::Element* /*element*/) { return g_focus_result; }
 
-Rml::Element* Resolve(Rml::Element* press_hover, Rml::Element* release_hover, Rml::Vector2f point, Rml::ClickRouting::FindFocusElementFn find_focus)
+Rml::Element* Resolve(Rml::Element* press_hover, Rml::Element* release_hover, Rml::Vector2f point,
+                      Rml::ClickRouting::FindFocusElementFn find_focus)
 {
-	return Rml::ClickRouting::ResolveClickTargetWithPredicate(press_hover, release_hover, point, find_focus, MockPointWithin, nullptr);
+	return Rml::ClickRouting::ResolveClickTargetWithPredicate(press_hover, release_hover, point, find_focus,
+	                                                          MockPointWithin, nullptr);
 }
 
-void TestTreeHelpers()
+class ClickRoutingTest : public ::testing::Test {
+protected:
+	static void SetUpTestSuite()
+	{
+		Rml::SetSystemInterface(&g_system_interface);
+		ASSERT_TRUE(Rml::Initialise());
+	}
+
+	static void TearDownTestSuite() { Rml::Shutdown(); }
+
+	void SetUp() override { g_contains_point.clear(); }
+};
+
+} // namespace
+
+TEST_F(ClickRoutingTest, TreeHelpers)
 {
-	g_contains_point.clear();
 	Rml::ElementPtr root_ptr = MakeElement("div");
+	ASSERT_TRUE(static_cast<bool>(root_ptr));
 	Rml::Element& root = *root_ptr;
 	Rml::Element* child = AppendChild(root, "span");
+	ASSERT_NE(child, nullptr);
 	Rml::Element* grandchild = AppendChild(*child, "option");
+	ASSERT_NE(grandchild, nullptr);
 
-	assert(Rml::ClickRouting::IsAncestorOf(&root, grandchild));
-	assert(Rml::ClickRouting::IsAncestorOf(child, grandchild));
-	assert(!Rml::ClickRouting::IsAncestorOf(grandchild, &root));
+	EXPECT_TRUE(Rml::ClickRouting::IsAncestorOf(&root, grandchild));
+	EXPECT_TRUE(Rml::ClickRouting::IsAncestorOf(child, grandchild));
+	EXPECT_FALSE(Rml::ClickRouting::IsAncestorOf(grandchild, &root));
 
-	assert(Rml::ClickRouting::InSameClickTree(grandchild, grandchild));
-	assert(Rml::ClickRouting::InSameClickTree(child, grandchild));
-	assert(Rml::ClickRouting::InSameClickTree(grandchild, child));
+	EXPECT_TRUE(Rml::ClickRouting::InSameClickTree(grandchild, grandchild));
+	EXPECT_TRUE(Rml::ClickRouting::InSameClickTree(child, grandchild));
+	EXPECT_TRUE(Rml::ClickRouting::InSameClickTree(grandchild, child));
 
 	Rml::Element* sibling_b = AppendChild(root, "span");
-	assert(!Rml::ClickRouting::InSameClickTree(child, sibling_b));
+	ASSERT_NE(sibling_b, nullptr);
+	EXPECT_FALSE(Rml::ClickRouting::InSameClickTree(child, sibling_b));
 }
 
-void TestFindInteractiveElement()
+TEST_F(ClickRoutingTest, FindInteractiveElement)
 {
-	g_contains_point.clear();
 	Rml::ElementPtr div_ptr = MakeElement("div");
+	ASSERT_TRUE(static_cast<bool>(div_ptr));
 	Rml::Element& div = *div_ptr;
 	Rml::Element* button = AppendChild(div, "button");
+	ASSERT_NE(button, nullptr);
 	Rml::Element* text = AppendChild(*button, "span");
+	ASSERT_NE(text, nullptr);
 
-	assert(Rml::ClickRouting::FindInteractiveElement(text) == button);
+	EXPECT_EQ(Rml::ClickRouting::FindInteractiveElement(text), button);
 
 	Rml::ElementPtr scrim_ptr = MakeElement("div");
+	ASSERT_TRUE(static_cast<bool>(scrim_ptr));
 	Rml::Element& scrim = *scrim_ptr;
 	scrim.SetAttribute("data-event-click", "close()");
-	assert(Rml::ClickRouting::FindInteractiveElement(&scrim) == &scrim);
+	EXPECT_EQ(Rml::ClickRouting::FindInteractiveElement(&scrim), &scrim);
 }
 
-void TestResolveClickTargetTier1Option()
+TEST_F(ClickRoutingTest, ResolveClickTargetTier1Option)
 {
-	g_contains_point.clear();
 	Rml::ElementPtr select_ptr = MakeElement("select");
+	ASSERT_TRUE(static_cast<bool>(select_ptr));
 	Rml::Element& select = *select_ptr;
 	Rml::Element* selectbox = AppendChild(select, "selectbox");
+	ASSERT_NE(selectbox, nullptr);
 	Rml::Element* option = AppendChild(*selectbox, "option");
+	ASSERT_NE(option, nullptr);
 
 	const Rml::Vector2f point{10.f, 10.f};
-	Rml::Element* target = Resolve(option, option, point, NullFocus);
-	assert(target == option);
+	EXPECT_EQ(Resolve(option, option, point, NullFocus), option);
 }
 
-void TestResolveClickTargetTier1ButtonChild()
+TEST_F(ClickRoutingTest, ResolveClickTargetTier1ButtonChild)
 {
-	g_contains_point.clear();
 	Rml::ElementPtr button_ptr = MakeElement("button");
+	ASSERT_TRUE(static_cast<bool>(button_ptr));
 	Rml::Element& button = *button_ptr;
 	Rml::Element* label = AppendChild(button, "span");
+	ASSERT_NE(label, nullptr);
 
 	const Rml::Vector2f point{4.f, 4.f};
-	Rml::Element* target = Resolve(label, label, point, NullFocus);
-	assert(target == label);
+	EXPECT_EQ(Resolve(label, label, point, NullFocus), label);
 }
 
-void TestResolveClickTargetTier2SiblingChildren()
+TEST_F(ClickRoutingTest, ResolveClickTargetTier2SiblingChildren)
 {
-	g_contains_point.clear();
 	Rml::ElementPtr button_ptr = MakeElement("button");
+	ASSERT_TRUE(static_cast<bool>(button_ptr));
 	Rml::Element& button = *button_ptr;
 	Rml::Element* press = AppendChild(button, "span");
 	Rml::Element* release = AppendChild(button, "span");
+	ASSERT_NE(press, nullptr);
+	ASSERT_NE(release, nullptr);
 
 	SetContains(&button, true);
 	SetContains(press, false);
 	SetContains(release, false);
 
 	const Rml::Vector2f point{8.f, 8.f};
-	Rml::Element* target = Resolve(press, release, point, NullFocus);
-	assert(target == &button);
+	EXPECT_EQ(Resolve(press, release, point, NullFocus), &button);
 }
 
-void TestResolveClickTargetUnrelated()
+TEST_F(ClickRoutingTest, ResolveClickTargetUnrelated)
 {
-	g_contains_point.clear();
 	Rml::ElementPtr press_ptr = MakeElement("div");
 	Rml::ElementPtr release_ptr = MakeElement("div");
+	ASSERT_TRUE(static_cast<bool>(press_ptr));
+	ASSERT_TRUE(static_cast<bool>(release_ptr));
 	Rml::Element& press = *press_ptr;
 	Rml::Element& release = *release_ptr;
 	SetContains(&press, true);
 	SetContains(&release, true);
 
 	const Rml::Vector2f point{1.f, 1.f};
-	assert(Resolve(&press, &release, point, NullFocus) == nullptr);
+	EXPECT_EQ(Resolve(&press, &release, point, NullFocus), nullptr);
 }
 
-void TestResolveClickTargetTier3Geometry()
+TEST_F(ClickRoutingTest, ResolveClickTargetTier3Geometry)
 {
-	g_contains_point.clear();
 	Rml::ElementPtr press_ptr = MakeElement("div");
+	ASSERT_TRUE(static_cast<bool>(press_ptr));
 	Rml::Element& press = *press_ptr;
 	SetContains(&press, true);
 
 	const Rml::Vector2f point{2.f, 2.f};
-	Rml::Element* target = Resolve(&press, nullptr, point, NullFocus);
-	assert(target == &press);
+	EXPECT_EQ(Resolve(&press, nullptr, point, NullFocus), &press);
 }
 
-void TestResolveClickTargetTier3Focus()
+TEST_F(ClickRoutingTest, ResolveClickTargetTier3Focus)
 {
-	g_contains_point.clear();
 	Rml::ElementPtr press_ptr = MakeElement("div");
 	Rml::ElementPtr release_ptr = MakeElement("span");
+	ASSERT_TRUE(static_cast<bool>(press_ptr));
+	ASSERT_TRUE(static_cast<bool>(release_ptr));
 	Rml::Element& press = *press_ptr;
 	Rml::Element& release = *release_ptr;
 	g_focus_result = &press;
 	SetContains(&press, false);
 
 	const Rml::Vector2f point{0.f, 0.f};
-	Rml::Element* target = Resolve(&press, &release, point, ReturnFocusResult);
-	assert(target == &press);
+	EXPECT_EQ(Resolve(&press, &release, point, ReturnFocusResult), &press);
 	g_focus_result = nullptr;
-}
-
-} // namespace
-
-int main()
-{
-	Rml::SetSystemInterface(&g_system_interface);
-	if (!Rml::Initialise())
-		Fail("Rml::Initialise returned false");
-
-	TestTreeHelpers();
-	TestFindInteractiveElement();
-	TestResolveClickTargetTier1Option();
-	TestResolveClickTargetTier1ButtonChild();
-	TestResolveClickTargetTier2SiblingChildren();
-	TestResolveClickTargetUnrelated();
-	TestResolveClickTargetTier3Geometry();
-	TestResolveClickTargetTier3Focus();
-
-	Rml::Shutdown();
-
-	std::cout << "click_routing_test passed\n";
-	return 0;
 }

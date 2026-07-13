@@ -121,12 +121,12 @@ Requires `DISPLAY` (or Wayland session) and X11 dev packages on Linux.
 ctest --test-dir build --output-on-failure
 ```
 
-pp-browser tests now use a hybrid layout:
+pp-browser tests use a hybrid layout:
 
 - Integration-heavy tests remain under [`tests/`](../tests/).
 - Unit tests can live near the module they validate, for example under `src/.../tests/`.
 
-The project uses GoogleTest for migrated suites, discovered through CTest. To run only GoogleTest pilot suites:
+All pp-browser suites use GoogleTest and are discovered through CTest. To run a subset by suite name:
 
 ```bash
 ctest --test-dir build -R "BindingsManifestTest|TurnPlanTest|ConfigJsonTest|SchemaVersionTest" --output-on-failure
