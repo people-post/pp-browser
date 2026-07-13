@@ -11,17 +11,17 @@
 | Platform | `ILocalNotifier`, `IPushDeviceRegistrar`, `BackgroundSyncScheduler`, desktop + Android notifiers |
 | Net | `HttpPushDeviceClient` + relay-api device sign ops 3/4 |
 | Messaging | `SyncInboxFromWake`, background unread → OS notify when alerts on |
-| Brief (www) | `/v1/devices/register|unregister`, Mongo `relay_push_devices`, FCM wake on message accept |
+| Relay contract | Client calls `/v1/devices/register|unregister`; expects opaque FCM wakes from the provider when tokens are registered |
 | Android | FCM (opt-in via `google-services.json`), WorkManager, NotificationCompat, JNI wake/token |
 | Contracts | `SERVICE_ENDPOINTS.md`, `PLATFORMS.md` updated |
 
-## Ops
+## Ops (client)
 
-| Env / file | Purpose |
-|------------|---------|
-| `BRF_WWW_FCM_PROJECT_ID` | Firebase project id (www; aliases `BRF_FCM_PROJECT_ID`) |
-| `BRF_WWW_FCM_SERVICE_ACCOUNT_PATH` / `…_JSON` | Service account path or JSON (www) |
-| `android/app/google-services.json` | Enables FCM source set in Android build |
+| Item | Purpose |
+|------|---------|
+| `android/app/google-services.json` | Enables FCM source set in the Android build (provider-agnostic Firebase project) |
+
+Relay operators configure their own FCM credentials on the server; those settings are not part of this repository.
 
 ## Follow-ups
 

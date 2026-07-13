@@ -69,7 +69,7 @@ Signed with `pp-browser:relay-api-v1` ops `DeviceRegister=3` / `DeviceUnregister
 | `POST /v1/devices/register` | Bind FCM token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` |
 | `POST /v1/devices/unregister` | Remove device binding (alerts off / logout) |
 
-On `POST /v1/messages` accept, Brief best-effort sends an FCM **data** message `{ type: inbox_wake }` to registered tokens. Env (www): `BRF_WWW_FCM_PROJECT_ID`, `BRF_WWW_FCM_SERVICE_ACCOUNT_PATH` or `BRF_WWW_FCM_SERVICE_ACCOUNT_JSON` (aliases `BRF_FCM_*`). Failures do not fail message store. See [projects/push-notifications](../../projects/push-notifications/) and www `README` § Relay device push.
+On `POST /v1/messages` accept, a conforming relay **best-effort** sends an FCM **data** message `{ type: inbox_wake }` to registered device tokens for the recipient. Failures must not fail message store. How the provider authenticates to FCM is outside this contract. See [projects/push-notifications](../../projects/push-notifications/).
 
 ## Native agent tools
 

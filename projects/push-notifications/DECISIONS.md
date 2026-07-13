@@ -4,12 +4,12 @@
 
 **Date:** 2026-07-13  
 **Decision:** FCM/APNs payloads carry `type=inbox_wake` (data message). No message text, contact names, or thread ids.  
-**Rationale:** Aligns with E2E threat model; OS vendors and Brief must not learn content via push.
+**Rationale:** Aligns with E2E threat model; OS vendors and the relay must not learn content via push.
 
 ## P002 — No commercial push SaaS
 
 **Date:** 2026-07-13  
-**Decision:** Brief talks to FCM (and later APNs) directly. No OneSignal / Firebase Console product analytics as source of truth.  
+**Decision:** The configured relay talks to FCM (and later APNs) directly. No OneSignal / Firebase Console product analytics as source of truth.  
 **Rationale:** Aggregators see engagement stats across the user base; conflicts with privacy product stance.
 
 ## P003 — PIN-locked generic notify
@@ -28,7 +28,7 @@
 
 **Date:** 2026-07-13  
 **Decision:** **Show notifications** controls OS banners and FCM registration only. Inbox sync stays on via slow poll / WorkManager when alerts are off. Unregister FCM when alerts off.  
-**Rationale:** Users who silence banners still want unread catch-up; unregister keeps Brief send stats honest.
+**Rationale:** Users who silence banners still want unread catch-up; unregister keeps provider push send paths honest.
 
 ## P006 — Background poll + WorkManager fallback
 

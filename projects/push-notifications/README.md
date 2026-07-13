@@ -5,17 +5,17 @@
 **Stable refs:** [docs/contracts/SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md)  
 **Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D032 poll), [e2e-message-crypto](../e2e-message-crypto/) (opaque wake; ciphertexts on relay)
 
-**Cross-repo:** Brief relay device APIs + FCM send live in `web2/www` (`/api/relay/v1/devices/*`).
+Relay providers that speak this HTTP profile implement device register/unregister and optional FCM wakes; pp-browser does not depend on a specific server codebase.
 
 ## One-line goal
 
-Wake clients with opaque FCM data messages from Brief (no commercial push SaaS), show local OS alerts after client-side ingest, and keep inbox sync via slow poll / WorkManager when the user turns alerts off.
+Wake clients with opaque FCM data messages from the configured relay (no commercial push SaaS), show local OS alerts after client-side ingest, and keep inbox sync via slow poll / WorkManager when the user turns alerts off.
 
 ## Release scope (v1)
 
 | In | Out |
 |----|-----|
-| Brief-owned FCM gateway + device register/unregister | Commercial aggregators (OneSignal, etc.) |
+| Relay-owned FCM gateway + device register/unregister | Commercial aggregators (OneSignal, etc.) |
 | Opaque `inbox_wake` payloads only | Message text / contact names on the push path |
 | `Show notifications` pref (alerts ≠ sync) | Toggle to disable all background sync |
 | Background poll 30–60s while process alive | Desktop remote wake when process dead |
@@ -37,7 +37,7 @@ Wake clients with opaque FCM data messages from Brief (no commercial push SaaS),
 |-------|------|--------|
 | p0 | Project docs + ADRs | Done |
 | p1 | Contracts, prefs, platform stubs | Done |
-| p2 | Brief device APIs + FCM send | Done |
+| p2 | Relay device APIs + FCM send (provider) | Done |
 | p3 | BackgroundSyncScheduler + WorkManager | Done |
 | p4 | Android FCM E2E | Done |
 | p5 | Desktop local notifier | Done |

@@ -12,11 +12,10 @@
 - [x] `ILocalNotifier`, `IPushDeviceRegistrar`, `IPushDeviceClient`
 - [x] PlatformServices wiring
 
-## p2 — Brief gateway (www)
+## p2 — Relay provider gateway
 
-- [x] Mongo device store
-- [x] `POST /v1/devices/register` / `unregister`
-- [x] Best-effort FCM data send on message accept
+- [x] Device register / unregister HTTP contract consumed by client
+- [x] Provider best-effort FCM data send on message accept (out of client tree)
 
 ## p3 — BackgroundSyncScheduler
 

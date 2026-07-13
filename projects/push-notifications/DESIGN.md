@@ -5,7 +5,7 @@
 | Adversary | Capability | Mitigation |
 |-----------|------------|------------|
 | FCM / APNs | Sees device token, timing, opaque data map | No plaintext; `type=inbox_wake` only |
-| Brief relay | Already sees ciphertext envelopes + who talks to whom | Push adds only “device may be woken”; no extra body |
+| Relay | Already sees ciphertext envelopes + who talks to whom | Push adds only “device may be woken”; no extra body |
 | Commercial SaaS | Aggregated opens/clicks/segments | **Rejected** — no SaaS (P002) |
 | Local attacker with locked vault | Background wake | No auto-unlock; generic notify or silent defer (P003) |
 
@@ -14,7 +14,7 @@
 **Show notifications** controls:
 
 1. Whether `ILocalNotifier` may post OS banners
-2. Whether an FCM token is registered with Brief
+2. Whether an FCM token is registered with the relay
 
 Inbox sync remains enabled while the process (or WorkManager job) can run. There is no v1 toggle to disable all background network.
 
@@ -45,8 +45,8 @@ Constant: `kBackgroundRelayPollIntervalMs = 45000`.
 
 ## Client flow
 
-1. Peer → Brief `POST /v1/messages` (ciphertext).
-2. If recipient has registered device token(s) → best-effort FCM data send.
+1. Peer → relay `POST /v1/messages` (ciphertext).
+2. If recipient has registered device token(s) → provider best-effort FCM data send.
 3. Client `SyncInboxFromWake` → signed `PollInbox` → `RelayReceivePipeline`.
 4. If `!IsForeground()` and alerts on → `ILocalNotifier`; else unread/badge only.
 
@@ -54,7 +54,7 @@ Constant: `kBackgroundRelayPollIntervalMs = 45000`.
 
 Background wake/poll must not unlock the DEK. If vault locked and alerts on → generic “New message”. If alerts off → no UI.
 
-## HTTP (Brief)
+## HTTP (relay provider)
 
 | Endpoint | Purpose |
 |----------|---------|
