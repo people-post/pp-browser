@@ -10,36 +10,9 @@
         <input class="field" type="text" data-value="profile_nickname" data-event-change="on_profile_field_changed()"
                placeholder="Your display name"/>
       </label>
-      <p class="text muted me-profile-meta" data-if="profile_peer_id != ''">
-        Peer ID: <span data-rml="profile_peer_id"></span>
-      </p>
-      <p class="text muted me-profile-meta" data-if="profile_relay_id != ''">
-        Relay ID: <span data-rml="profile_relay_id"></span>
-      </p>
-      <p class="text muted me-profile-meta" data-if="profile_relay_id == ''">
-        Relay ID: not registered yet
-      </p>
       <p class="text muted me-profile-meta">
         Registration: <span data-rml="profile_registration_status"></span>
       </p>
-      <p class="text muted me-profile-meta" data-if="profile_registration_expires != ''">
-        Expires: <span data-rml="profile_registration_expires"></span>
-      </p>
-      <label class="settings-field">
-        <span class="settings-label">Auto-renew registration</span>
-        <select class="field" data-value="auto_renew_registration" data-event-change="on_profile_field_changed()">
-          <option value="auto">Auto</option>
-          <option value="off">Off</option>
-        </select>
-      </label>
-      <label class="settings-field">
-        <span class="settings-label">Show notifications</span>
-        <select class="field" data-value="show_notifications" data-event-change="on_profile_field_changed()">
-          <option value="on">On</option>
-          <option value="off">Off</option>
-        </select>
-      </label>
-      <p class="text muted">Off silences OS banners and unregisters push; inbox still syncs in the background.</p>
       <div class="me-profile-actions row">
         <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
           <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
@@ -49,10 +22,9 @@
           <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
           Share
         </button>
-        <button class="btn btn-primary" type="button" data-if="profile_show_register"
+        <button class="btn btn-primary" type="button"
+                data-if="profile_show_register && profile_registration_status != 'active'"
                 data-event-click="register_profile()"><span data-rml="profile_register_label"></span></button>
-        <button class="btn btn-secondary" type="button" data-if="profile_show_rotate"
-                data-event-click="rotate_brief_llm_key()">Rotate Brief API key</button>
       </div>
       <p class="text muted" data-if="status != ''" data-rml="status"></p>
     </div>
@@ -78,6 +50,58 @@
     </div>
 
     <div class="settings-detail-body stack">
+      <div class="settings-section stack" data-if="selected_id == 'profile'">
+        <label class="settings-field">
+          <span class="settings-label">Nickname</span>
+          <input class="field" type="text" data-value="profile_nickname" data-event-change="on_profile_field_changed()"
+                 placeholder="Your display name"/>
+        </label>
+        <p class="text muted me-profile-meta" data-if="profile_peer_id != ''">
+          Peer ID: <span data-rml="profile_peer_id"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_relay_id != ''">
+          Relay ID: <span data-rml="profile_relay_id"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_relay_id == ''">
+          Relay ID: not registered yet
+        </p>
+        <p class="text muted me-profile-meta">
+          Registration: <span data-rml="profile_registration_status"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_registration_expires != ''">
+          Expires: <span data-rml="profile_registration_expires"></span>
+        </p>
+        <label class="settings-field">
+          <span class="settings-label">Auto-renew registration</span>
+          <select class="field" data-value="auto_renew_registration" data-event-change="on_profile_field_changed()">
+            <option value="auto">Auto</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">Show notifications</span>
+          <select class="field" data-value="show_notifications" data-event-change="on_profile_field_changed()">
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
+        <p class="text muted">Off silences OS banners and unregisters push; inbox still syncs in the background.</p>
+        <div class="me-profile-actions row">
+          <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
+            <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
+            Copy ID
+          </button>
+          <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_profile()">
+            <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
+            Share
+          </button>
+          <button class="btn btn-primary" type="button" data-if="profile_show_register"
+                  data-event-click="register_profile()"><span data-rml="profile_register_label"></span></button>
+          <button class="btn btn-secondary" type="button" data-if="profile_show_rotate"
+                  data-event-click="rotate_brief_llm_key()">Rotate Brief API key</button>
+        </div>
+      </div>
+
       <div class="settings-section stack" data-if="selected_id == 'llm'">
         <label class="settings-field">
           <span class="settings-label">Preset</span>

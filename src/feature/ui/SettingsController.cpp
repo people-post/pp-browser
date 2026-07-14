@@ -64,9 +64,6 @@ const SettingsSectionHandler* SettingsController::FindHandler(const std::string&
 void SettingsController::InitSections() {
   sections_.clear();
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
-    if (std::string(handler->Id()) == "profile") {
-      continue;
-    }
     const SettingsSectionListItem item = handler->ListItem();
     sections_.push_back({.id = item.id.c_str(), .title = item.title.c_str(), .subtitle = item.subtitle.c_str()});
   }
