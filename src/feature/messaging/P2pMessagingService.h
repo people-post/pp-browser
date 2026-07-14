@@ -28,6 +28,18 @@
 
 namespace pbr {
 
+/** Aggregated peer-link UX for a direct chat thread. */
+struct ThreadPeerLinkView {
+  PeerLinkPhase phase = PeerLinkPhase::Unavailable;
+  std::string status_label;
+  std::string banner_message;
+  bool show_banner = false;
+  bool show_retry = false;
+  int backoff_seconds = 0;
+  bool has_direct_endpoint = false;
+  bool relay_available = false;
+};
+
 class P2pMessagingService : public Module {
 public:
   P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
@@ -78,8 +90,12 @@ public:
   void ScrollBackfill(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_complete = {});
   void TailSyncActiveE2eThread();
   void TickLibp2p();
-  /** Warm connection for an open E2E thread (background, failure silent). */
+  /** Warm connection for an open direct thread (background). */
   void WarmPeerForThread(const std::string& thread_id);
+  /** Snapshotted link UX for the open thread (header + soft banner). */
+  ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
+  /** Clear dial backoff and dial again for the thread's peer. */
+  void RetryPeerDial(const std::string& thread_id);
 
 private:
   struct PendingRelaySend {
@@ -93,9 +109,11 @@ private:
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
   void EnqueueRetry(PendingRelaySend pending);
   void NotifyDeliveryIssue(const Thread& thread, const std::string& error_message);
+  void NotifyRelayFallback(const std::string& thread_id);
   void ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
                        const std::string& error_message = {},
-                       MessageTransport transport = MessageTransport::Relay);
+                       MessageTransport transport = MessageTransport::Relay,
+                       bool relay_after_direct_attempt = false);
   void RegisterMockPeerKeyForReply(const std::string& peer_identity_value);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
   void RunSyncOnIo(const std::string& thread_id, std::function<Roe<ChatSyncResult>()> task,
@@ -130,6 +148,9 @@ private:
   std::function<void(std::string, std::string, std::string)> on_background_unread_;
   mutable std::mutex retry_mutex_;
   std::vector<PendingRelaySend> retry_queue_;
+  mutable std::mutex link_ux_mutex_;
+  mutable std::string relay_fallback_notice_thread_id_;
+  mutable std::string relay_fallback_notice_text_;
   uint64_t last_relay_poll_ms_ = 0;
   std::atomic<bool> poll_pending_{false};
   std::atomic<bool> sync_pending_{false};

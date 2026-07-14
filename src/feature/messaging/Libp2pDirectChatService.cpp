@@ -148,7 +148,8 @@ Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_us
     return Error("libp2p direct chat service not started");
   }
   if (!sessions_.IsDialable(peer_relay_user_id)) {
-    return Error("Peer-direct endpoint not registered");
+    return Error("Peer-direct endpoint not registered")
+        .WithUser("No usable peer address — add a dialable multiaddr on the contact.");
   }
 
   const std::string envelope_json = RelayEnvelopeToJson(envelope).dump();
@@ -163,18 +164,24 @@ Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_us
   sessions_.OpenStream(peer_relay_user_id, {ProtocolName{kDirectChatProtocolId}},
                        [frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
                          if (!stream_res) {
-                           result_promise->set_value(Error("libp2p chat stream open failed"));
+                           result_promise->set_value(
+                               Error("libp2p chat stream open failed")
+                                   .WithUser("Reached the peer but chat handshake failed."));
                            return;
                          }
                          auto stream = std::move(stream_res.value().stream);
                          if (!WriteExactFrame(stream, frame)) {
-                           result_promise->set_value(Error("Failed to send direct chat envelope"));
+                           result_promise->set_value(
+                               Error("Failed to send direct chat envelope")
+                                   .WithUser("Direct send didn't confirm — will use relay if available."));
                            return;
                          }
                          auto ack_frame = ReadExactFrame(stream);
                          stream->close([](auto&&) {});
                          if (!ack_frame) {
-                           result_promise->set_value(Error("Failed to read direct chat ack"));
+                           result_promise->set_value(
+                               Error("Failed to read direct chat ack")
+                                   .WithUser("Direct send didn't confirm — will use relay if available."));
                            return;
                          }
                          result_promise->set_value({});

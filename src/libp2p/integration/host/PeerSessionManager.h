@@ -29,6 +29,26 @@ struct PeerSessionConfig {
   std::chrono::milliseconds dial_failure_backoff{30000};
 };
 
+/** Live peer link phase for UI (on-demand dial + warm session). */
+enum class PeerLinkPhase {
+  Unavailable, // host down / no endpoint
+  Idle,        // dialable, not connected
+  Dialing,
+  Connected,
+  Backoff, // recent dial failure; wait before retry
+};
+
+struct PeerLinkSnapshot {
+  PeerLinkPhase phase = PeerLinkPhase::Unavailable;
+  std::chrono::milliseconds backoff_remaining{0};
+  std::string detail; // last dial error (technical); prefer PeerDialErrorUserCopy for display
+  bool host_running = false;
+  bool has_endpoint = false;
+};
+
+/** Map dial/transport Error::message strings to end-user copy. */
+std::string PeerDialErrorUserCopy(const std::string& technical_message);
+
 /**
  * On-demand dial + warm-active session policy over a shared Libp2pHost.
  * Does not pool sockets separately — reuses ConnectionManager via Host::newStream/connect.
@@ -51,6 +71,8 @@ public:
 
   bool IsDialable(const std::string& peer_relay_user_id) const;
   bool IsConnected(const std::string& peer_relay_user_id) const;
+  bool IsDialing(const std::string& peer_relay_user_id) const;
+  PeerLinkSnapshot GetLinkSnapshot(const std::string& peer_relay_user_id) const;
 
   std::optional<libp2p::peer::PeerInfo> ResolvePeerInfo(const std::string& peer_relay_user_id) const;
 
@@ -58,6 +80,9 @@ public:
   void MarkWarm(const std::string& peer_relay_user_id);
   void ClearWarm(const std::string& peer_relay_user_id);
   void ClearAllWarm();
+
+  /** Clear dial failure backoff so the next EnsureConnection may dial immediately. */
+  void ClearDialBackoff(const std::string& peer_relay_user_id);
 
   /** Dial if needed; coalesce concurrent dials; enforce caps. */
   void EnsureConnection(const std::string& peer_relay_user_id,
@@ -83,6 +108,7 @@ private:
     std::optional<libp2p::peer::PeerInfo> info;
     std::chrono::steady_clock::time_point last_touch{};
     std::chrono::steady_clock::time_point dial_failed_until{};
+    std::string last_error;
     bool warm = false;
   };
 

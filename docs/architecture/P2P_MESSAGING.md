@@ -163,6 +163,7 @@ See [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-ro
   - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open editable detail (display name, nickname, optional relay ID, peer ID, multiaddrs); debounced save
   - **Find someone** — same as Sessions find flow
 - Secure / Public on contact detail are enabled when the contact is **routable** (relay ID, or peer ID + multiaddr). Otherwise a short hint is shown.
+- **Peer link status** (direct threads) — chat header shows live link state (`Connecting…` / `Direct` / `Via relay` / backoff countdown). Soft banner + **Retry connection** on dial backoff; toast when a send falls back to relay after a direct attempt.
 - Directory discovery still uses agent tools: `search_people`, `list_contacts`, `list_conversations`, `open_conversation`, `start_conversation`.
 - Results render as `long_list` blocks with **Message** / **Add contact** chips (`send_chat_action` + JSON `payload`).
 - **Registration** also via `register_user` / `update_profile_nickname` tools (alternate to Me tab).

@@ -68,6 +68,42 @@ TEST_F(PeerSessionManagerTest, WarmAndClear) {
   EXPECT_EQ(sessions_->WarmPeerCount(), 0u);
 }
 
+TEST_F(PeerSessionManagerTest, LinkSnapshotAndBackoff) {
+  auto peer_id = host_.LocalPeerIdBase58();
+  ASSERT_TRUE(peer_id);
+  // Unreachable port — connection refused should fail quickly into backoff.
+  const std::string ma = "/ip4/127.0.0.1/tcp/1/p2p/" + *peer_id;
+  ASSERT_TRUE(sessions_->RegisterEndpoint("relay:dave", ma));
+
+  PeerLinkSnapshot snap = sessions_->GetLinkSnapshot("relay:dave");
+  EXPECT_TRUE(snap.host_running);
+  EXPECT_TRUE(snap.has_endpoint);
+  EXPECT_EQ(snap.phase, PeerLinkPhase::Idle);
+  EXPECT_FALSE(sessions_->IsDialing("relay:dave"));
+
+  EXPECT_EQ(sessions_->GetLinkSnapshot("relay:missing").phase, PeerLinkPhase::Unavailable);
+  EXPECT_EQ(PeerDialErrorUserCopy("libp2p dial failed"),
+            "Peer didn't answer — they may be offline or the address may be wrong.");
+
+  std::atomic<bool> done{false};
+  sessions_->EnsureConnection("relay:dave", [&](Roe<void> result) {
+    EXPECT_FALSE(result);
+    done = true;
+  });
+  for (int i = 0; i < 250 && !done.load(); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  ASSERT_TRUE(done.load());
+  snap = sessions_->GetLinkSnapshot("relay:dave");
+  EXPECT_EQ(snap.phase, PeerLinkPhase::Backoff);
+  EXPECT_FALSE(sessions_->IsDialable("relay:dave"));
+  EXPECT_FALSE(PeerDialErrorUserCopy(snap.detail).empty());
+
+  sessions_->ClearDialBackoff("relay:dave");
+  EXPECT_TRUE(sessions_->IsDialable("relay:dave"));
+  EXPECT_EQ(sessions_->GetLinkSnapshot("relay:dave").phase, PeerLinkPhase::Idle);
+}
+
 TEST_F(PeerSessionManagerTest, HostExposesLocalPeerId) {
   auto peer_id = host_.LocalPeerIdBase58();
   ASSERT_TRUE(peer_id);

@@ -292,6 +292,11 @@ void DirtyChatTurns() {
 void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "thread_title");
   DataModelHost::Instance().Dirty("chat", "thread_subtitle");
+  DataModelHost::Instance().Dirty("chat", "peer_link_status");
+  DataModelHost::Instance().Dirty("chat", "peer_link_banner");
+  DataModelHost::Instance().Dirty("chat", "show_peer_link");
+  DataModelHost::Instance().Dirty("chat", "show_peer_link_banner");
+  DataModelHost::Instance().Dirty("chat", "show_retry_peer_dial");
   DataModelHost::Instance().Dirty("chat", "thread_encrypted");
   DataModelHost::Instance().Dirty("chat", "thread_is_ai");
   DataModelHost::Instance().Dirty("chat", "thread_is_private");
@@ -312,6 +317,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "psk_fingerprint");
   DataModelHost::Instance().Dirty("chat", "psk_export_b64");
   DataModelHost::Instance().Dirty("chat", "psk_import_text");
+  DataModelHost::Instance().Dirty("chat", "show_older_history_hint");
 }
 
 /** Sidebar / header visual type: ai | private | public | group */
@@ -813,6 +819,24 @@ void ChatController::LoadOlderHistoryCallback(Rml::DataModelHandle /*model*/, Rm
   Instance().OnLoadOlderHistory();
 }
 
+void ChatController::RetryPeerDialCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                           const Rml::VariantList& /*args*/) {
+  Instance().OnRetryPeerDial();
+}
+
+void ChatController::OnRetryPeerDial() {
+  if (!messaging_ready_ || !MessagingHub::Instance().IsMessagingReady()) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+  MessagingHub::Instance().P2p().RetryPeerDial(thread_id);
+  UpdatePeerLinkChrome();
+  DirtyChatHeader();
+}
+
 void ChatController::OnLoadOlderHistory() {
   if (!messaging_ready_ || chat_.sync_in_progress) {
     return;
@@ -1174,6 +1198,11 @@ void ChatController::SyncShellSessions() {
 void ChatController::ResetChatPanelState() {
   chat_.thread_title = "";
   chat_.thread_subtitle = "";
+  chat_.peer_link_status = "";
+  chat_.peer_link_banner = "";
+  chat_.show_peer_link = false;
+  chat_.show_peer_link_banner = false;
+  chat_.show_retry_peer_dial = false;
   chat_.thread_encrypted = false;
   chat_.thread_is_ai = false;
   chat_.thread_is_private = false;
@@ -1286,9 +1315,15 @@ void ChatController::UpdateThreadChrome() {
     }
     chat_.show_thread_menu =
         chat_.show_thread_actions || chat_.show_forget_memory || chat_.show_sync_with_peer;
+    UpdatePeerLinkChrome();
   } else {
     chat_.thread_title = "";
     chat_.thread_subtitle = "";
+    chat_.peer_link_status = "";
+    chat_.peer_link_banner = "";
+    chat_.show_peer_link = false;
+    chat_.show_peer_link_banner = false;
+    chat_.show_retry_peer_dial = false;
     chat_.thread_encrypted = false;
     chat_.thread_is_ai = false;
     chat_.thread_is_private = false;
@@ -1310,6 +1345,27 @@ void ChatController::UpdateThreadChrome() {
     chat_.psk_export_b64 = "";
     chat_.draft_placeholder = "Ask anything…";
   }
+}
+
+void ChatController::UpdatePeerLinkChrome() {
+  chat_.peer_link_status = "";
+  chat_.peer_link_banner = "";
+  chat_.show_peer_link = false;
+  chat_.show_peer_link_banner = false;
+  chat_.show_retry_peer_dial = false;
+  if (!messaging_ready_ || !MessagingHub::Instance().IsMessagingReady()) {
+    return;
+  }
+  auto thread = MessagingHub::Instance().Inbox().GetActiveThread();
+  if (!thread || thread->kind != ThreadKind::Direct) {
+    return;
+  }
+  const ThreadPeerLinkView link = MessagingHub::Instance().P2p().GetThreadPeerLink(thread->id);
+  chat_.show_peer_link = !link.status_label.empty();
+  chat_.peer_link_status = link.status_label.c_str();
+  chat_.show_peer_link_banner = link.show_banner && !link.banner_message.empty();
+  chat_.peer_link_banner = link.banner_message.c_str();
+  chat_.show_retry_peer_dial = link.show_retry;
 }
 
 void ChatController::SyncDisplayFromThread() {
@@ -2097,6 +2153,11 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("use_messages_layout", &ChatController::Instance().chat_.use_messages_layout);
         ctor.Bind("thread_title", &ChatController::Instance().chat_.thread_title);
         ctor.Bind("thread_subtitle", &ChatController::Instance().chat_.thread_subtitle);
+        ctor.Bind("peer_link_status", &ChatController::Instance().chat_.peer_link_status);
+        ctor.Bind("peer_link_banner", &ChatController::Instance().chat_.peer_link_banner);
+        ctor.Bind("show_peer_link", &ChatController::Instance().chat_.show_peer_link);
+        ctor.Bind("show_peer_link_banner", &ChatController::Instance().chat_.show_peer_link_banner);
+        ctor.Bind("show_retry_peer_dial", &ChatController::Instance().chat_.show_retry_peer_dial);
         ctor.Bind("thread_encrypted", &ChatController::Instance().chat_.thread_encrypted);
         ctor.Bind("thread_is_ai", &ChatController::Instance().chat_.thread_is_ai);
         ctor.Bind("thread_is_private", &ChatController::Instance().chat_.thread_is_private);
@@ -2139,6 +2200,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("verify_psk", &ChatController::VerifyPskCallback);
         ctor.BindEventCallback("rotate_psk_export", &ChatController::RotatePskExportCallback);
         ctor.BindEventCallback("load_older_history", &ChatController::LoadOlderHistoryCallback);
+        ctor.BindEventCallback("retry_peer_dial", &ChatController::RetryPeerDialCallback);
         ctor.BindEventCallback("new_message", &ChatController::NewMessageCallback);
       })) {
     return false;
@@ -2313,6 +2375,25 @@ void ChatController::Update() {
     MessagingHub::Instance().TickLibp2p();
     if (MessagingHub::Instance().IsMessagingReady()) {
       BackgroundSyncScheduler::Instance().Tick();
+      const auto now = std::chrono::steady_clock::now();
+      if (now - last_peer_link_poll_ >= std::chrono::milliseconds(400)) {
+        last_peer_link_poll_ = now;
+        if (auto thread = MessagingHub::Instance().Inbox().GetActiveThread()) {
+          if (thread->kind == ThreadKind::Direct) {
+            const Rml::String prev_status = chat_.peer_link_status;
+            const Rml::String prev_banner = chat_.peer_link_banner;
+            const bool prev_show = chat_.show_peer_link;
+            const bool prev_banner_show = chat_.show_peer_link_banner;
+            const bool prev_retry = chat_.show_retry_peer_dial;
+            UpdatePeerLinkChrome();
+            if (chat_.peer_link_status != prev_status || chat_.peer_link_banner != prev_banner ||
+                chat_.show_peer_link != prev_show || chat_.show_peer_link_banner != prev_banner_show ||
+                chat_.show_retry_peer_dial != prev_retry) {
+              DirtyChatHeader();
+            }
+          }
+        }
+      }
     }
   }
 

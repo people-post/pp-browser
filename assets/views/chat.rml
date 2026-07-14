@@ -26,6 +26,7 @@
       </div>
       <h1 class="heading-1 chat-header-title" data-rml="thread_title"></h1>
       <p class="text muted" data-rml="thread_subtitle"></p>
+      <p class="text-xs chat-peer-link" data-if="show_peer_link" data-rml="peer_link_status"></p>
     </div>
     <div class="chat-header-actions row">
       <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
@@ -36,6 +37,10 @@
         <svg src="../icons/more.svg"></svg>
       </button>
     </div>
+  </div>
+  <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">
+    <p class="text muted" data-rml="peer_link_banner"></p>
+    <button class="chat-suggestion" data-if="show_retry_peer_dial" data-event-click="retry_peer_dial()">Retry connection</button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_gap_banner && !sync_in_progress">
     <p class="text muted">Some messages from your peer may be missing. Peer sync does not resend your unsent messages.</p>

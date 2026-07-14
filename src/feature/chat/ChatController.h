@@ -14,6 +14,7 @@
 #include <RmlUi/Core/Input.h>
 #include <RmlUi/Core/Types.h>
 
+#include <chrono>
 #include <map>
 #include <optional>
 #include <set>
@@ -60,6 +61,11 @@ private:
     Rml::String status;
     Rml::String thread_title;
     Rml::String thread_subtitle;
+    Rml::String peer_link_status;
+    Rml::String peer_link_banner;
+    bool show_peer_link = false;
+    bool show_peer_link_banner = false;
+    bool show_retry_peer_dial = false;
     bool thread_encrypted = false;
     bool thread_is_ai = false;
     bool thread_is_private = false;
@@ -132,6 +138,7 @@ private:
   static void RotatePskExportCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenWorkingSetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void LoadOlderHistoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void RetryPeerDialCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
   void OnNewChat();
@@ -170,6 +177,8 @@ private:
   void RefreshFromMessaging();
   void OnShellLayoutSynced();
   void OnLoadOlderHistory();
+  void OnRetryPeerDial();
+  void UpdatePeerLinkChrome();
   void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
   void WireMessagingBindings();
   void WithSecrets(std::function<void()> action);
@@ -207,6 +216,7 @@ private:
   WorkingSetAffinity active_working_set_affinity_ = WorkingSetAffinity::None;
   std::string active_working_set_entry_id_;
   bool focus_draft_after_sync_ = false;
+  std::chrono::steady_clock::time_point last_peer_link_poll_{};
 };
 
 bool SetupChatController(Rml::Context* context);

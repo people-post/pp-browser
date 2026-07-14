@@ -239,7 +239,11 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
     return;
   }
   detail.can_message = true;
-  detail.message_hint = "";
+  if (contact.multiaddrs.empty()) {
+    detail.message_hint = "Relay messaging available. Add a multiaddr for a direct link.";
+  } else {
+    detail.message_hint = "";
+  }
 }
 
 Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail) {

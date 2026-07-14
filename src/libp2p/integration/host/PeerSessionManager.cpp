@@ -7,10 +7,60 @@
 #include <libp2p/peer/peer_id.hpp>
 
 #include <algorithm>
-
 #include <system_error>
 
 namespace pbr {
+
+namespace {
+
+Error DialError(const std::string& technical, const std::string& user) {
+  return Error(technical).WithUser(user);
+}
+
+} // namespace
+
+std::string PeerDialErrorUserCopy(const std::string& technical_message) {
+  if (technical_message.empty()) {
+    return {};
+  }
+  if (technical_message.find("host not running") != std::string::npos) {
+    return "Direct messaging is off — check Me → Network.";
+  }
+  if (technical_message.find("Empty peer endpoint") != std::string::npos ||
+      technical_message.find("Invalid multiaddr") != std::string::npos ||
+      technical_message.find("missing /p2p/") != std::string::npos ||
+      technical_message.find("Invalid PeerId") != std::string::npos) {
+    return "Peer address looks wrong — edit the contact multiaddr.";
+  }
+  if (technical_message.find("not registered") != std::string::npos ||
+      technical_message.find("missing PeerInfo") != std::string::npos ||
+      technical_message.find("Peer-direct endpoint") != std::string::npos) {
+    return "No usable peer address — add a dialable multiaddr on the contact.";
+  }
+  if (technical_message.find("backoff") != std::string::npos) {
+    return "Waiting before retrying the peer connection.";
+  }
+  if (technical_message.find("Too many concurrent") != std::string::npos) {
+    return "Busy connecting to other peers — try again shortly.";
+  }
+  if (technical_message.find("dial failed") != std::string::npos ||
+      technical_message.find("timed out") != std::string::npos ||
+      technical_message.find("timeout") != std::string::npos) {
+    return "Peer didn't answer — they may be offline or the address may be wrong.";
+  }
+  if (technical_message.find("stream open failed") != std::string::npos) {
+    return "Reached the peer but chat handshake failed.";
+  }
+  if (technical_message.find("Failed to send") != std::string::npos ||
+      technical_message.find("Failed to read") != std::string::npos ||
+      technical_message.find("ack") != std::string::npos) {
+    return "Direct send didn't confirm — will use relay if available.";
+  }
+  if (technical_message.find("Relay client not configured") != std::string::npos) {
+    return "Couldn't deliver — relay isn't configured.";
+  }
+  return technical_message;
+}
 
 PeerSessionManager::PeerSessionManager(Libp2pHost& host, PeerSessionConfig config)
     : host_(host), config_(std::move(config)), last_sweep_(std::chrono::steady_clock::now()) {}
@@ -25,20 +75,22 @@ void PeerSessionManager::SetConfig(PeerSessionConfig config) {
 Roe<void> PeerSessionManager::RegisterEndpoint(const std::string& peer_relay_user_id,
                                                const std::string& multiaddr) {
   if (peer_relay_user_id.empty() || multiaddr.empty()) {
-    return Error("Empty peer endpoint");
+    return DialError("Empty peer endpoint", "Peer address looks wrong — edit the contact multiaddr.");
   }
   auto parsed = libp2p::multi::Multiaddress::create(multiaddr);
   if (!parsed) {
-    return Error("Invalid multiaddr");
+    return DialError("Invalid multiaddr", "Peer address looks wrong — edit the contact multiaddr.");
   }
   const libp2p::multi::Multiaddress& address = parsed.value();
   const auto peer_id_str = address.getPeerId();
   if (!peer_id_str) {
-    return Error("Multiaddr missing /p2p/ PeerId");
+    return DialError("Multiaddr missing /p2p/ PeerId",
+                     "Peer address looks wrong — edit the contact multiaddr.");
   }
   auto peer_id = libp2p::peer::PeerId::fromBase58(*peer_id_str);
   if (!peer_id) {
-    return Error("Invalid PeerId in multiaddr");
+    return DialError("Invalid PeerId in multiaddr",
+                     "Peer address looks wrong — edit the contact multiaddr.");
   }
 
   libp2p::peer::PeerInfo info{peer_id.value(), {address}};
@@ -93,6 +145,62 @@ bool PeerSessionManager::IsConnected(const std::string& peer_relay_user_id) cons
   return host_.GetHost().connectedness(*info) == libp2p::Host::Connectedness::CONNECTED;
 }
 
+bool PeerSessionManager::IsDialing(const std::string& peer_relay_user_id) const {
+  std::lock_guard lock(mutex_);
+  return inflight_dials_.find(peer_relay_user_id) != inflight_dials_.end();
+}
+
+PeerLinkSnapshot PeerSessionManager::GetLinkSnapshot(const std::string& peer_relay_user_id) const {
+  PeerLinkSnapshot snap;
+  snap.host_running = host_.IsRunning();
+  if (!snap.host_running) {
+    snap.phase = PeerLinkPhase::Unavailable;
+    snap.detail = "libp2p host not running";
+    return snap;
+  }
+
+  std::optional<libp2p::peer::PeerInfo> info;
+  bool dialing = false;
+  {
+    std::lock_guard lock(mutex_);
+    const auto it = endpoints_.find(peer_relay_user_id);
+    if (it == endpoints_.end() || !it->second.info || it->second.info->addresses.empty()) {
+      snap.phase = PeerLinkPhase::Unavailable;
+      snap.has_endpoint = false;
+      if (it != endpoints_.end()) {
+        snap.detail = it->second.last_error;
+      }
+      if (snap.detail.empty()) {
+        snap.detail = "Peer endpoint not registered";
+      }
+      return snap;
+    }
+    snap.has_endpoint = true;
+    snap.detail = it->second.last_error;
+    info = it->second.info;
+    dialing = inflight_dials_.find(peer_relay_user_id) != inflight_dials_.end();
+    const auto now = std::chrono::steady_clock::now();
+    if (!dialing && it->second.dial_failed_until > now) {
+      snap.phase = PeerLinkPhase::Backoff;
+      snap.backoff_remaining =
+          std::chrono::duration_cast<std::chrono::milliseconds>(it->second.dial_failed_until - now);
+      return snap;
+    }
+  }
+
+  if (dialing) {
+    snap.phase = PeerLinkPhase::Dialing;
+    return snap;
+  }
+  if (info && host_.GetHost().connectedness(*info) == libp2p::Host::Connectedness::CONNECTED) {
+    snap.phase = PeerLinkPhase::Connected;
+    snap.detail.clear();
+    return snap;
+  }
+  snap.phase = PeerLinkPhase::Idle;
+  return snap;
+}
+
 std::optional<libp2p::peer::PeerInfo> PeerSessionManager::ResolvePeerInfo(
     const std::string& peer_relay_user_id) const {
   std::lock_guard lock(mutex_);
@@ -127,6 +235,16 @@ void PeerSessionManager::ClearAllWarm() {
   for (auto& [_, state] : endpoints_) {
     state.warm = false;
   }
+}
+
+void PeerSessionManager::ClearDialBackoff(const std::string& peer_relay_user_id) {
+  std::lock_guard lock(mutex_);
+  auto it = endpoints_.find(peer_relay_user_id);
+  if (it == endpoints_.end()) {
+    return;
+  }
+  it->second.dial_failed_until = {};
+  it->second.last_error.clear();
 }
 
 void PeerSessionManager::TouchPeerLocked(const std::string& peer_relay_user_id) {
@@ -192,8 +310,14 @@ void PeerSessionManager::FinishDial(const std::string& peer_relay_user_id, Roe<v
       auto ep = endpoints_.find(peer_relay_user_id);
       if (ep != endpoints_.end()) {
         ep->second.dial_failed_until = std::chrono::steady_clock::now() + config_.dial_failure_backoff;
+        ep->second.last_error = result.error().message;
       }
     } else {
+      auto ep = endpoints_.find(peer_relay_user_id);
+      if (ep != endpoints_.end()) {
+        ep->second.last_error.clear();
+        ep->second.dial_failed_until = {};
+      }
       TouchPeerLocked(peer_relay_user_id);
       EvictIfOverCapLocked();
     }
@@ -218,20 +342,22 @@ void PeerSessionManager::EnsureConnectionOnIo(const std::string& peer_relay_user
     auto it = endpoints_.find(peer_relay_user_id);
     if (it == endpoints_.end()) {
       if (on_complete) {
-        on_complete(Error("Peer endpoint not registered"));
+        on_complete(DialError("Peer endpoint not registered",
+                              "No usable peer address — add a dialable multiaddr on the contact."));
       }
       return;
     }
     const auto now = std::chrono::steady_clock::now();
     if (it->second.dial_failed_until > now) {
       if (on_complete) {
-        on_complete(Error("Peer dial in backoff"));
+        on_complete(DialError("Peer dial in backoff", "Waiting before retrying the peer connection."));
       }
       return;
     }
     if (!it->second.info) {
       if (on_complete) {
-        on_complete(Error("Peer endpoint missing PeerInfo"));
+        on_complete(DialError("Peer endpoint missing PeerInfo",
+                              "No usable peer address — add a dialable multiaddr on the contact."));
       }
       return;
     }
@@ -239,6 +365,7 @@ void PeerSessionManager::EnsureConnectionOnIo(const std::string& peer_relay_user
 
     if (host_.GetHost().connectedness(*info) == libp2p::Host::Connectedness::CONNECTED) {
       TouchPeerLocked(peer_relay_user_id);
+      it->second.last_error.clear();
       if (on_complete) {
         on_complete({});
       }
@@ -262,7 +389,8 @@ void PeerSessionManager::EnsureConnectionOnIo(const std::string& peer_relay_user
   if (!rejected.empty()) {
     for (auto& waiter : rejected) {
       if (waiter.on_complete) {
-        waiter.on_complete(Error("Too many concurrent dials"));
+        waiter.on_complete(
+            DialError("Too many concurrent dials", "Busy connecting to other peers — try again shortly."));
       }
     }
     return;
@@ -273,7 +401,15 @@ void PeerSessionManager::EnsureConnectionOnIo(const std::string& peer_relay_user
 
   host_.GetHost().connect(*info, [this, peer_relay_user_id](libp2p::Host::ConnectionResult result) {
     if (!result) {
-      FinishDial(peer_relay_user_id, Error("libp2p dial failed"));
+      std::string technical = "libp2p dial failed";
+      try {
+        technical += ": ";
+        technical += result.error().message();
+      } catch (...) {
+      }
+      FinishDial(peer_relay_user_id,
+                 DialError(technical,
+                           "Peer didn't answer — they may be offline or the address may be wrong."));
       return;
     }
     FinishDial(peer_relay_user_id, {});
@@ -284,7 +420,7 @@ void PeerSessionManager::EnsureConnection(const std::string& peer_relay_user_id,
                                           std::function<void(Roe<void>)> on_complete) {
   if (!host_.IsRunning()) {
     if (on_complete) {
-      on_complete(Error("libp2p host not running"));
+      on_complete(DialError("libp2p host not running", "Direct messaging is off — check Me → Network."));
     }
     return;
   }
@@ -352,8 +488,13 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
                                     if (ep != endpoints_.end()) {
                                       ep->second.dial_failed_until =
                                           std::chrono::steady_clock::now() + config_.dial_failure_backoff;
+                                      ep->second.last_error = "libp2p chat stream open failed";
                                     }
                                   } else {
+                                    auto ep = endpoints_.find(peer_relay_user_id);
+                                    if (ep != endpoints_.end()) {
+                                      ep->second.last_error.clear();
+                                    }
                                     TouchPeerLocked(peer_relay_user_id);
                                   }
                                 }
