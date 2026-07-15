@@ -1,5 +1,6 @@
 #include "base/ui/ViewCatalog.h"
 
+#include "base/i18n/LocalizationService.h"
 #include "base/platform/AssetIO.h"
 #include "base/platform/IAssetLocator.h"
 
@@ -48,7 +49,11 @@ std::string ViewCatalog::LoadFile(const std::string& absolute_path) {
 
 std::string ViewCatalog::LoadBody(const std::string& key_or_path) {
   const std::string relative = ResolvePath(key_or_path);
-  return LoadFile(IAssetLocator::Instance().Resolve(relative));
+  const std::string raw = LoadFile(IAssetLocator::Instance().Resolve(relative));
+  if (raw.empty()) {
+    return raw;
+  }
+  return LocalizationService::Instance().LocalizeText(raw);
 }
 
 } // namespace pbr

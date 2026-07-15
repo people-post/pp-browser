@@ -1,6 +1,6 @@
 # Multi-language UI (i18n)
 
-**Status:** i0 design — plan ready, implementation not started  
+**Status:** i1–i6 landed (partial i5 coverage remains)  
 **Owner:** agents + product  
 **Stable refs:** [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/contracts/DATA_LAYOUT.md](../../docs/contracts/DATA_LAYOUT.md), [docs/ui/RML_PROFILE.md](../../docs/ui/RML_PROFILE.md)  
 **Related:** Appearance preferences (`AppearanceSettingsSection`), shell/context menus (`ContextMenuHost`, `ShellHost`)
@@ -13,19 +13,19 @@ Ship English and Simplified Chinese as first-class UI languages, selectable in M
 
 | In | Out |
 |----|-----|
-| `en` + `zh-Hans` locale catalogs | Full UI coverage on day one (ship chrome + settings first) |
+| `en` + `zh-Hans` locale catalogs | 100% string coverage on day one |
 | Profile pref `language` (`system` / BCP-47) | Per-thread or per-contact language |
-| Settings picker: dropdown desktop, bottom sheet compact/mobile | OS translation of AI chat content |
+| Settings picker: float desktop, bottom sheet compact/mobile | OS translation of AI chat content |
 | Runtime language switch without restart | RTL layout (Arabic/Hebrew) |
-| CJK fallback fonts | ICU / gettext tooling |
-| `Tr(key)` + simple `{name}` interpolation | Plural/gender rules beyond ICU MessageFormat lite |
+| CJK fallback font subset | ICU / gettext tooling |
+| `Tr(key)` + `{name}` interpolation + `{{i18n:key}}` RML tokens | Full MessageFormat plurals |
 
 ## Documents
 
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Architecture, catalog format, UI flow, string ownership |
-| [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today (no i18n) |
+| [CURRENT_STATE.md](CURRENT_STATE.md) | What the codebase does today |
 | [PHASES.md](PHASES.md) | Delivery checklist |
 | [DECISIONS.md](DECISIONS.md) | ADRs (I001+) |
 
@@ -33,10 +33,10 @@ Ship English and Simplified Chinese as first-class UI languages, selectable in M
 
 | Phase | Name | Status |
 |-------|------|--------|
-| i0 | Project docs + ADRs | Done (this folder) |
-| i1 | Pref + LocalizationService + catalogs | Not started |
-| i2 | Settings language picker (sheet on mobile) | Not started |
-| i3 | Localize shell chrome + settings + nav | Not started |
-| i4 | Fonts / shaping for zh-Hans | Not started |
-| i5 | Localize remaining feature surfaces | Not started |
-| i6 | Promote contracts + ops docs | Not started |
+| i0 | Project docs + ADRs | Done |
+| i1 | Pref + LocalizationService + catalogs | Done |
+| i2 | Settings language picker (sheet on mobile) | Done |
+| i3 | Localize shell chrome + settings + nav | Done |
+| i4 | Fonts / shaping for zh-Hans | Done (rmlui-language prop deferred) |
+| i5 | Remaining feature surfaces | Partial — continue widening |
+| i6 | Promote contracts + ops docs | Done |

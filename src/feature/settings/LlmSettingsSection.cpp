@@ -2,6 +2,7 @@
 
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
+#include "base/i18n/LocalizationService.h"
 #include "feature/settings/SettingsLogic.h"
 
 namespace pbr {
@@ -25,7 +26,7 @@ const char* LlmSettingsSection::Id() const {
 }
 
 SettingsSectionListItem LlmSettingsSection::ListItem() const {
-  return {.id = Id(), .title = "Assistant", .subtitle = "Model, endpoint, API key"};
+  return {.id = Id(), .title = Tr("settings.assistant.title"), .subtitle = Tr("settings.assistant.subtitle")};
 }
 
 SettingsFlushMode LlmSettingsSection::FlushMode() const {

@@ -41,6 +41,10 @@ struct SettingsUiState {
   std::string show_notifications = "on";
   std::string brief_llm_key_masked;
   std::string appearance = "system";
+  /** Pref: `system` or BCP-47 tag. */
+  std::string language = "system";
+  /** Display label for the language row / picker value. */
+  std::string language_label = "System";
   std::string profile_label;
   std::string config_dir;
   std::string data_dir;

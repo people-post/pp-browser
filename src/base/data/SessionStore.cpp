@@ -59,6 +59,7 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
 
   const std::string previous_theme = bootstrap_.profile_prefs.theme;
   const std::string previous_appearance = bootstrap_.profile_prefs.appearance;
+  const std::string previous_language = bootstrap_.profile_prefs.language;
   bootstrap_.profile_prefs = std::move(*reloaded);
 
   if (bootstrap_.profile_prefs.theme != previous_theme) {
@@ -66,6 +67,9 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
   }
   if (bootstrap_.profile_prefs.appearance != previous_appearance) {
     NotifyAppearanceListeners(bootstrap_.profile_prefs.appearance);
+  }
+  if (bootstrap_.profile_prefs.language != previous_language) {
+    NotifyLanguageListeners(bootstrap_.profile_prefs.language);
   }
   return {};
 }
@@ -88,6 +92,7 @@ Roe<void> SessionStore::ReloadProfilePrefs() {
 
   const std::string previous_theme = bootstrap_.profile_prefs.theme;
   const std::string previous_appearance = bootstrap_.profile_prefs.appearance;
+  const std::string previous_language = bootstrap_.profile_prefs.language;
   bootstrap_.profile_prefs = std::move(*reloaded);
 
   if (bootstrap_.profile_prefs.theme != previous_theme) {
@@ -95,6 +100,9 @@ Roe<void> SessionStore::ReloadProfilePrefs() {
   }
   if (bootstrap_.profile_prefs.appearance != previous_appearance) {
     NotifyAppearanceListeners(bootstrap_.profile_prefs.appearance);
+  }
+  if (bootstrap_.profile_prefs.language != previous_language) {
+    NotifyLanguageListeners(bootstrap_.profile_prefs.language);
   }
   return {};
 }
@@ -142,6 +150,18 @@ void SessionStore::AddAppearanceListener(std::function<void(const std::string& a
 void SessionStore::NotifyAppearanceListeners(const std::string& appearance) {
   for (const auto& listener : appearance_listeners_) {
     listener(appearance);
+  }
+}
+
+void SessionStore::AddLanguageListener(std::function<void(const std::string& language)> listener) {
+  if (listener) {
+    language_listeners_.push_back(std::move(listener));
+  }
+}
+
+void SessionStore::NotifyLanguageListeners(const std::string& language) {
+  for (const auto& listener : language_listeners_) {
+    listener(language);
   }
 }
 

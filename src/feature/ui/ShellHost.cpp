@@ -1,5 +1,6 @@
 #include "feature/ui/ShellHost.h"
 
+#include "base/i18n/LocalizationService.h"
 #include "base/platform/BrowserThread.h"
 #include "base/platform/PlatformNavigation.h"
 #include "base/ui/ContextMenuHost.h"
@@ -613,8 +614,10 @@ std::string ShellHost::SerializeDialog() const {
   out << "</label>";
   out << "<div class=\"shell-dialog-actions row\">";
   out << "<button class=\"shell-dialog-cancel\" data-if=\"dialog_show_cancel\" "
-         "data-event-click=\"dialog_cancel()\">Cancel</button>";
-  out << "<button class=\"shell-dialog-ok\" data-event-click=\"dialog_ok()\">OK</button>";
+         "data-event-click=\"dialog_cancel()\">"
+      << Tr("common.cancel") << "</button>";
+  out << "<button class=\"shell-dialog-ok\" data-event-click=\"dialog_ok()\">" << Tr("common.ok")
+      << "</button>";
   out << "</div></div></div>";
   return out.str();
 }
@@ -631,19 +634,26 @@ std::string ShellHost::SerializePinGate() const {
   out << "<p class=\"text shell-dialog-message\" data-rml=\"pin_gate_message\"></p>";
   out << "<p class=\"text shell-pin-gate-error\" data-rml=\"pin_gate_error\"></p>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_chooser_mode\">";
-  out << "<button class=\"shell-dialog-ok\" data-event-click=\"pin_gate_set_pin()\">Set a PIN</button>";
-  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_use_default()\">Just continue</button>";
-  out << "<button class=\"shell-dialog-cancel\" data-event-click=\"pin_gate_cancel()\">Not now</button>";
+  out << "<button class=\"shell-dialog-ok\" data-event-click=\"pin_gate_set_pin()\">" << Tr("pin.set_pin")
+      << "</button>";
+  out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_use_default()\">"
+      << Tr("pin.just_continue") << "</button>";
+  out << "<button class=\"shell-dialog-cancel\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
+      << "</button>";
   out << "</div>";
   out << "<input class=\"field shell-pin-gate-input\" type=\"password\" data-if=\"!pin_gate_chooser_mode\" "
-         "data-value=\"pin_gate_pin\" placeholder=\"PIN\"/>";
+         "data-value=\"pin_gate_pin\" placeholder=\""
+      << Tr("pin.placeholder") << "\"/>";
   out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
          "data-if=\"pin_gate_create_mode && !pin_gate_chooser_mode\" data-value=\"pin_gate_pin_confirm\" "
-         "placeholder=\"Confirm PIN\"/>";
+         "placeholder=\""
+      << Tr("pin.confirm_placeholder") << "\"/>";
   out << "<div class=\"shell-dialog-actions row\" data-if=\"!pin_gate_chooser_mode\">";
   out << "<button class=\"shell-dialog-cancel\" data-if=\"pin_gate_create_mode\" "
-         "data-event-click=\"pin_gate_cancel()\">Not now</button>";
-  out << "<button class=\"shell-dialog-ok\" data-event-click=\"pin_gate_submit()\">Continue</button>";
+         "data-event-click=\"pin_gate_cancel()\">"
+      << Tr("pin.not_now") << "</button>";
+  out << "<button class=\"shell-dialog-ok\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
+      << "</button>";
   out << "</div></div></div>";
   return out.str();
 }

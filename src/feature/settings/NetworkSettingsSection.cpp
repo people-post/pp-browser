@@ -2,6 +2,7 @@
 
 #include "base/data/Config.h"
 #include "base/data/SessionStore.h"
+#include "base/i18n/LocalizationService.h"
 #include "feature/settings/SettingsLogic.h"
 
 namespace pbr {
@@ -11,7 +12,7 @@ const char* NetworkSettingsSection::Id() const {
 }
 
 SettingsSectionListItem NetworkSettingsSection::ListItem() const {
-  return {.id = Id(), .title = "Network", .subtitle = "Relay, directory, registration"};
+  return {.id = Id(), .title = Tr("settings.network.title"), .subtitle = Tr("settings.network.subtitle")};
 }
 
 SettingsFlushMode NetworkSettingsSection::FlushMode() const {

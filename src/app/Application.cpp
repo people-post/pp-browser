@@ -3,13 +3,16 @@
 #include "base/ui/InputCoordinator.h"
 #include "base/ui/ContextMenuHost.h"
 #include "base/data/SessionStore.h"
+#include "base/i18n/LocalizationService.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "base/platform/BrowserThread.h"
 #include "base/platform/IAssetLocator.h"
+#include "base/platform/IPathProvider.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformServices.h"
 #include "base/platform/SdlAppEvents.h"
+#include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellHost.h"
 #include "base/ui/Theme.h"
 
@@ -124,6 +127,14 @@ bool Application::Initialize(const char* window_title) {
   const std::string theme_path = AssetsPath(bootstrap.profile_prefs.theme);
   Theme::LoadBase(theme_path);
   Rml::LoadFontFace(AssetsPath("fonts/LatoLatin-Regular.ttf"));
+  // CJK fallback for Simplified Chinese UI (and other non-Latin glyphs).
+  Rml::LoadFontFace(AssetsPath("fonts/NotoSansSC-Regular.subset.ttf"), true);
+
+  if (auto loaded = LocalizationService::Instance().LoadFromAssets(IPathProvider::Instance().BundleAssetsDir());
+      !loaded) {
+    log().warning << "Localization catalogs failed to load: " << loaded.error().message;
+  }
+  LocalizationService::Instance().SetPreferredLanguage(bootstrap.profile_prefs.language);
 
   auto* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
   if (!context) {
@@ -157,6 +168,12 @@ bool Application::Initialize(const char* window_title) {
         ctx->GetDocument(0)->UpdateDocument();
       }
     }
+  });
+
+  SessionStore::Instance().AddLanguageListener([](const std::string& language) {
+    LocalizationService::Instance().SetPreferredLanguage(language);
+    SettingsController::Instance().RefreshLocalizedChrome();
+    ShellHost::Instance().RequestSyncLayout(true);
   });
 
   SdlAppEvents::Install();

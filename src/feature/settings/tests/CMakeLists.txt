@@ -28,6 +28,8 @@ pp_browser_add_gtest(pp_browser_config_merge_test)
 add_executable(pp_browser_settings_sections_test
   settings_sections_test.cpp
   ${PP_BROWSER_SETTINGS_SECTION_TEST_SOURCES})
+target_compile_definitions(pp_browser_settings_sections_test PRIVATE
+  PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 target_link_libraries(pp_browser_settings_sections_test PRIVATE
   GTest::gtest
   GTest::gtest_main

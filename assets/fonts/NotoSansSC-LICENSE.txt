@@ -1,0 +1,3 @@
+Noto Sans SC subset bundled for pp-browser UI fallback glyphs.
+Source: Google Noto Sans SC (SIL Open Font License 1.1).
+https://fonts.google.com/noto/specimen/Noto+Sans+SC

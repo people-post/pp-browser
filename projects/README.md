@@ -36,4 +36,4 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [platform-safety-limits](platform-safety-limits/) | Planning | LLM HTTP, profile JSON, MCP, parser output — non-chat limits |
 | [e2e-message-crypto](e2e-message-crypto/) | **c1 done** — c2 after chat v6 | `base/crypto` + vectors; AEAD on wire in c2 — [CURRENT_STATE](e2e-message-crypto/CURRENT_STATE.md) |
 | [push-notifications](push-notifications/) | **Wave 1 done** | Owned Brief FCM wake + local alerts; alerts ≠ sync — [CURRENT_STATE](push-notifications/CURRENT_STATE.md) |
-| [i18n](i18n/) | **i0 design** — i1 next | EN + zh-Hans UI language; catalogs + Settings picker (sheet on mobile) — [CURRENT_STATE](i18n/CURRENT_STATE.md) |
+| [i18n](i18n/) | **i1–i6 landed** — widen i5 | EN + zh-Hans UI language; Settings picker (sheet on mobile) — [CURRENT_STATE](i18n/CURRENT_STATE.md) |

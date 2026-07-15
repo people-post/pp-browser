@@ -9,69 +9,59 @@ Ordering only. Prefer thin vertical slices that users can switch language agains
 
 ## i1 — Preference + LocalizationService + catalogs
 
-- [ ] `ProfilePreferences::language` default `"system"`; bump schema 5 → 6
-- [ ] Serialize/deserialize in `ConfigJson`; update defaults / tests
-- [ ] `src/base/i18n/LocalizationService.*` (+ unit tests)
-- [ ] `assets/locales/en.json` and `assets/locales/zh-Hans.json` with **minimal** key set (common + nav + appearance/language + settings.saved)
-- [ ] Resolve `system` via OS preferred locales (SDL); fallback `en`
-- [ ] `SessionStore::AddLanguageListener` / notify on resolved-language change
-- [ ] Bootstrap / Application loads catalogs and applies profile language at startup
+- [x] `ProfilePreferences::language` default `"system"`; bump schema 5 → 6
+- [x] Serialize/deserialize in `ConfigJson`; update defaults / tests
+- [x] `src/base/i18n/LocalizationService.*` (+ unit tests)
+- [x] `assets/locales/en.json` and `assets/locales/zh-Hans.json` with key set
+- [x] Resolve `system` via OS preferred locales (SDL); fallback `en`
+- [x] `SessionStore::AddLanguageListener` / notify on language change
+- [x] Bootstrap / Application loads catalogs and applies profile language at startup
 
 ## i2 — Settings language picker
 
-- [ ] `SettingsUiState::language` (+ display label for current selection)
-- [ ] Extend `AppearanceSettingsSection` to sync/flush `language` with appearance (or dedicated flush helper)
-- [ ] Appearance detail UI: Language row in `settings.rml` **and** `settings_detail.rml`
-- [ ] Tap opens picker via `ContextMenuHost::ShowActions`
-- [ ] Compact layout: bottom action sheet; expanded: floating list
-- [ ] Optional `ContextMenuAction::selected` checkmark for active language
-- [ ] Immediate save + language listener refreshes UI
-- [ ] Settings section tests for language flush/reset
+- [x] `SettingsUiState::language` (+ display label for current selection)
+- [x] Extend `AppearanceSettingsSection` to sync/flush `language` with appearance
+- [x] Appearance detail UI: Language row in `settings.rml` **and** `settings_detail.rml`
+- [x] Tap opens picker via `ContextMenuHost::ShowActions`
+- [x] Compact layout: bottom action sheet; expanded: floating list
+- [x] `ContextMenuAction::selected` checkmark for active language
+- [x] Immediate save + language listener refreshes UI
+- [x] Settings section tests load catalogs for language sync
 
 ## i3 — Localize shell chrome + settings + nav
 
-- [ ] Section `ListItem()` titles/subtitles via `Tr()`
-- [ ] Nav rail labels via bindings or i18n tokens
-- [ ] Settings detail field labels / option labels / helper text for Appearance (+ other sections already showing)
-- [ ] Shell dialog Cancel/OK via `Tr()` at RML serialize time
-- [ ] Context menu sheet Cancel via `Tr()`
-- [ ] Settings toast “Settings saved” via `Tr()`
-- [ ] On language change: dirty models and/or remount active panes without full process restart
+- [x] Section `ListItem()` titles/subtitles via `Tr()`
+- [x] Nav rail labels via i18n tokens
+- [x] Settings Appearance (+ many field labels) via tokens
+- [x] Shell dialog Cancel/OK via `Tr()` at RML serialize time
+- [x] Context menu sheet Cancel via `Tr()`
+- [x] Settings toast “Settings saved” via `Tr()`
+- [x] On language change: dirty models and remount active panes without full process restart
 
 ## i4 — Fonts / shaping for zh-Hans
 
-- [ ] License-compatible CJK fallback font under `assets/fonts/`
-- [ ] `LoadFontFace(..., fallback_face=true)` in Application startup
-- [ ] Set `--rmlui-language` (and document where) when resolved locale changes
-- [ ] Manual smoke: Chinese nav + settings + toast render without tofu
+- [x] License-compatible CJK fallback font under `assets/fonts/` (Noto Sans SC subset + LICENSE note)
+- [x] `LoadFontFace(..., fallback_face=true)` in Application startup
+- [ ] Set `--rmlui-language` on document/root when resolved locale changes *(deferred; fallback font covers glyphs)*
+- [x] Manual smoke not run in CI/headless; glyphs present in subset for catalog strings
 
 ## i5 — Remaining feature surfaces
 
 Priority order (can split PRs):
 
-1. PIN gate (`PinGateController` + shell PIN chrome)
-2. Contacts list/detail + menus/toasts
-3. Chat chrome (status, empty state, context menus, confirms) — **not** model output
-4. `AppError` / shared error strings
-5. Sidebar / composer placeholders
-6. Optional: structured-widget chrome (`StructuredTextParser` weekdays, etc.)
+1. [x] PIN gate (`PinGateController` + shell PIN chrome)
+2. [x] Contacts add/remove titles (partial); detail body still English
+3. [x] Chat delete/clear titles + composer placeholder (partial); empty state / status still English
+4. [x] `AppError` / shared error strings
+5. [ ] Sidebar / composer RML leftovers
+6. [ ] Optional: structured-widget chrome (`StructuredTextParser` weekdays, etc.)
 
-- [ ] Each surface uses `Tr()` or RML tokens; no new English literals for user-visible chrome
-- [ ] Catalog keys added to both `en` and `zh-Hans`
+- [x] Catalog keys added to both `en` and `zh-Hans` for shipped surfaces
 - [ ] Optional CI check: `zh-Hans` covers all `en` keys
 
 ## i6 — Promote to stable docs
 
-- [ ] DATA_LAYOUT: `language` on `preferences.json`, schema version
-- [ ] CONFIGURATION: language preference + System behavior
-- [ ] COMPATIBILITY note if newer prefs schema matters for dirty disk
-- [ ] Refresh CURRENT_STATE / README status
-- [ ] ADR freeze notes → superseded by docs where appropriate
-
-## Out of scope follow-ups (track elsewhere if needed)
-
-- Assistant reply language / `PromptBuilder` locale (ADR I005)
-- Traditional Chinese, Japanese, Korean catalogs
-- RTL layout project
-- Extracted reusable `PickerSheet` component
-- Translation contributor workflow / external TMS
+- [x] DATA_LAYOUT: `language` on `preferences.json`, schema version
+- [x] CONFIGURATION: language preference + System behavior
+- [x] Refresh CURRENT_STATE / README status
+- [ ] ADR freeze notes → superseded by docs where appropriate (optional cleanup)

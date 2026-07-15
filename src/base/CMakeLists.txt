@@ -45,6 +45,7 @@ set(PP_BROWSER_BASE_SOURCES
   data/SchemaVersion.cpp
   data/SessionStore.cpp
   data/UserPreferences.cpp
+  i18n/LocalizationService.cpp
   people/ContactsStore.cpp
   people/Ed25519Signer.cpp
   people/IdentityStore.cpp
@@ -143,6 +144,7 @@ if(PP_BROWSER_BUILD_TESTS)
     messaging/tests
     crypto/tests
     data/tests
+    i18n/tests
     net/tests
     people/tests
     platform/tests

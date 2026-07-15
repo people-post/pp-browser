@@ -49,6 +49,8 @@ public:
   void OnShellLayoutSynced();
   void SyncLayoutMode();
   void Tick();
+  /** Rebuild localized section titles / bindings after UI language changes. */
+  void RefreshLocalizedChrome();
 
 private:
   struct SettingsBindings {
@@ -77,6 +79,8 @@ private:
     Rml::String show_notifications = "on";
     Rml::String brief_llm_key_masked;
     Rml::String appearance = "system";
+    Rml::String language = "system";
+    Rml::String language_label = "System";
     Rml::String profile_label;
     Rml::String config_dir;
     Rml::String data_dir;
@@ -97,6 +101,7 @@ private:
   static void OnLlmFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnLlmPresetChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnAppearanceChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnChooseLanguageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnIntegrationsFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnNetworkFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnProfileFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -138,6 +143,8 @@ private:
   void OnChangePin();
   void OnResetProfile();
   void PerformResetProfile();
+  void OnChooseLanguage();
+  void ApplyLanguageChoice(const std::string& language_pref);
 
   std::vector<std::unique_ptr<SettingsSectionHandler>> section_handlers_;
   std::unordered_map<std::string, SettingsSectionHandler*> section_handlers_by_id_;

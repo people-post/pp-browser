@@ -354,6 +354,7 @@ void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
   j = nlohmann::json{{"schema_version", prefs.schema_version},
                      {"theme", prefs.theme},
                      {"appearance", prefs.appearance},
+                     {"language", prefs.language},
                      {"pin_is_default", prefs.pin_is_default},
                      {"auto_renew_registration", prefs.auto_renew_registration},
                      {"show_notifications", prefs.show_notifications}};
@@ -368,6 +369,11 @@ void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
   }
   if (j.contains("appearance") && j["appearance"].is_string()) {
     prefs.appearance = j["appearance"].get<std::string>();
+  }
+  if (j.contains("language") && j["language"].is_string()) {
+    prefs.language = j["language"].get<std::string>();
+  } else {
+    prefs.language = "system";
   }
   if (j.contains("pin_is_default") && j["pin_is_default"].is_boolean()) {
     prefs.pin_is_default = j["pin_is_default"].get<bool>();

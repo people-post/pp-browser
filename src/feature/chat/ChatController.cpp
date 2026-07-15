@@ -1,4 +1,5 @@
 #include "feature/chat/ChatController.h"
+#include "base/i18n/LocalizationService.h"
 #include "base/platform/AppLifecycle.h"
 #include "base/platform/BackgroundSyncScheduler.h"
 #include "base/platform/ILocalNotifier.h"
@@ -694,8 +695,8 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     return;
   }
 
-  ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "Delete conversation",
-                             "Delete this conversation? This cannot be undone.",
+  ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.delete_conversation"),
+                             Tr("chat.delete_confirm"),
                              [this, thread_id](bool ok) {
                                if (!ok) {
                                  return;
@@ -746,7 +747,7 @@ void ChatController::OnClearHistory() {
 
   if (is_ai) {
     ShellFeedback::ShowConfirmWithCheckbox(
-        ShellHost::Instance().State(), "Clear message history?", message, "Also forget what AI learned", false,
+        ShellHost::Instance().State(), Tr("chat.clear_history"), message, "Also forget what AI learned", false,
         [this, thread_id](bool ok, bool forget_memory) {
           if (!ok) {
             return;
@@ -765,7 +766,7 @@ void ChatController::OnClearHistory() {
           ShellHost::Instance().DirtyWindow();
         });
   } else {
-    ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "Clear message history?", message,
+    ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.clear_history"), message,
                                [this, thread_id](bool ok) {
                                  if (!ok) {
                                    return;

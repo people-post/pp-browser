@@ -2,6 +2,7 @@
 
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/SessionStore.h"
+#include "base/i18n/LocalizationService.h"
 
 namespace pbr {
 
@@ -10,7 +11,7 @@ const char* SecuritySettingsSection::Id() const {
 }
 
 SettingsSectionListItem SecuritySettingsSection::ListItem() const {
-  return {.id = Id(), .title = "Security", .subtitle = "PIN and key protection"};
+  return {.id = Id(), .title = Tr("settings.security.title"), .subtitle = Tr("settings.security.subtitle")};
 }
 
 SettingsFlushMode SecuritySettingsSection::FlushMode() const {

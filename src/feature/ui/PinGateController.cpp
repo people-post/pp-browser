@@ -3,6 +3,7 @@
 #include "base/crypto/PinDefaults.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/SessionStore.h"
+#include "base/i18n/LocalizationService.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/ShellFeedback.h"
@@ -98,9 +99,8 @@ void PinGateController::ShowChooser(std::function<void(bool)> done) {
   gate = {};
   gate.active = true;
   gate.chooser_mode = true;
-  gate.title = "PIN required";
-  gate.message =
-      "Secure messaging needs a PIN. Set your own, use the app default, or skip for now.";
+  gate.title = Tr("pin.chooser_title").c_str();
+  gate.message = Tr("pin.chooser_message").c_str();
   ShellHost::Instance().RequestSyncLayout();
   DirtyPinFields();
   ShellHost::Instance().DirtyWindow();
@@ -120,11 +120,11 @@ void PinGateController::ShowGate(const bool create_mode, std::function<void(bool
   gate.active = true;
   gate.create_mode = create_mode;
   if (create_mode) {
-    gate.title = "Create a PIN";
-    gate.message = "Choose a PIN to protect your identity and chat keys.";
+    gate.title = Tr("pin.create_title").c_str();
+    gate.message = Tr("pin.create_message").c_str();
   } else {
-    gate.title = "Unlock profile";
-    gate.message = "Enter your PIN to unlock identity and encrypted keys.";
+    gate.title = Tr("pin.unlock_title").c_str();
+    gate.message = Tr("pin.unlock_message").c_str();
   }
   ShellHost::Instance().RequestSyncLayout();
   DirtyPinFields();
@@ -193,8 +193,8 @@ void PinGateController::OnSetPin() {
   gate.error = "";
   gate.pin = "";
   gate.pin_confirm = "";
-  gate.title = "Create a PIN";
-  gate.message = "Choose a PIN to protect your identity and chat keys.";
+  gate.title = Tr("pin.create_title").c_str();
+  gate.message = Tr("pin.create_message").c_str();
   DirtyPinFields();
   ShellHost::Instance().RequestSyncLayout();
   ShellHost::Instance().DirtyWindow();

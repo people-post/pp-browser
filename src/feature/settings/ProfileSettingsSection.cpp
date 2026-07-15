@@ -3,6 +3,7 @@
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
 #include "base/error/AppError.h"
+#include "base/i18n/LocalizationService.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "feature/chat/ChatController.h"
@@ -68,7 +69,7 @@ const char* ProfileSettingsSection::Id() const {
 }
 
 SettingsSectionListItem ProfileSettingsSection::ListItem() const {
-  return {.id = Id(), .title = "Profile", .subtitle = "Identity and network registration"};
+  return {.id = Id(), .title = Tr("settings.profile.title"), .subtitle = Tr("settings.profile.subtitle")};
 }
 
 SettingsFlushMode ProfileSettingsSection::FlushMode() const {

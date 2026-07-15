@@ -1,6 +1,7 @@
 #include "feature/settings/StorageSettingsSection.h"
 
 #include "base/data/AppPaths.h"
+#include "base/i18n/LocalizationService.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -65,7 +66,7 @@ const char* StorageSettingsSection::Id() const {
 }
 
 SettingsSectionListItem StorageSettingsSection::ListItem() const {
-  return {.id = Id(), .title = "Storage", .subtitle = "Paths, usage, and reset"};
+  return {.id = Id(), .title = Tr("settings.storage.title"), .subtitle = Tr("settings.storage.subtitle")};
 }
 
 SettingsFlushMode StorageSettingsSection::FlushMode() const {
