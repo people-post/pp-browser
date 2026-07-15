@@ -69,6 +69,12 @@ TEST_F(PeerSessionManagerTest, WarmAndClear) {
 }
 
 TEST_F(PeerSessionManagerTest, LinkSnapshotAndBackoff) {
+  // Lengthen backoff for this case so GetLinkSnapshot cannot race past expiry on
+  // slow CI hosts (SetUp default is 100ms, which flakes when dial takes longer).
+  PeerSessionConfig config = sessions_->GetConfig();
+  config.dial_failure_backoff = std::chrono::milliseconds(5000);
+  sessions_->SetConfig(config);
+
   auto peer_id = host_.LocalPeerIdBase58();
   ASSERT_TRUE(peer_id);
   // Unreachable port — connection refused should fail quickly into backoff.
@@ -97,6 +103,7 @@ TEST_F(PeerSessionManagerTest, LinkSnapshotAndBackoff) {
   snap = sessions_->GetLinkSnapshot("relay:dave");
   EXPECT_EQ(snap.phase, PeerLinkPhase::Backoff);
   EXPECT_FALSE(sessions_->IsDialable("relay:dave"));
+  EXPECT_GE(snap.backoff_remaining.count(), 1000);
   EXPECT_FALSE(PeerDialErrorUserCopy(snap.detail).empty());
 
   sessions_->ClearDialBackoff("relay:dave");
