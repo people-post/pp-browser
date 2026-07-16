@@ -1,9 +1,8 @@
 #include "base/platform/SdlAppEvents.h"
 
+#include "base/platform/AppEventHooks.h"
 #include "base/platform/AppLifecycle.h"
 #include "base/platform/PlatformNavigation.h"
-#include "base/ui/ContextMenuHost.h"
-#include "base/ui/Theme.h"
 
 #include "RmlUi_Backend.h"
 
@@ -18,6 +17,7 @@ void SdlAppEvents::Install() {
 
 bool SdlAppEvents::PreProcess(Rml::Context* context, SDL_Event& event, bool& propagate_event) {
   (void)propagate_event;
+  const AppEventHooks& hooks = GetAppEventHooks();
   switch (event.type) {
   case SDL_EVENT_KEY_DOWN:
     if (event.key.key == SDLK_AC_BACK) {
@@ -32,26 +32,26 @@ bool SdlAppEvents::PreProcess(Rml::Context* context, SDL_Event& event, bool& pro
     return true;
   case SDL_EVENT_DID_ENTER_FOREGROUND:
     AppLifecycle::OnDidEnterForeground();
-    if (context) {
+    if (context && hooks.on_sync_system_theme) {
       // Resume may restore EGL without a device-reset event; re-sync size/viewport.
       Backend::SyncContext(context);
-      Theme::SyncSystemTheme(context);
+      hooks.on_sync_system_theme(context);
     }
     return true;
   case SDL_EVENT_SYSTEM_THEME_CHANGED:
-    if (context) {
-      Theme::SyncSystemTheme(context);
+    if (context && hooks.on_sync_system_theme) {
+      hooks.on_sync_system_theme(context);
     }
     return true;
   case SDL_EVENT_LOW_MEMORY:
     AppLifecycle::OnLowMemory();
     return true;
   case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    if (event.button.button == SDL_BUTTON_RIGHT && context) {
+    if (event.button.button == SDL_BUTTON_RIGHT && context && hooks.on_context_pointer) {
       const float scale = context->GetDensityIndependentPixelRatio();
       const int x = static_cast<int>(event.button.x * scale);
       const int y = static_cast<int>(event.button.y * scale);
-      if (ContextMenuHost::Instance().OnContextPointer(context, x, y)) {
+      if (hooks.on_context_pointer(context, x, y)) {
         propagate_event = false;
         return true;
       }

@@ -2,6 +2,7 @@
 
 #include "base/people/ContactTypes.h"
 #include "base/messaging/ThreadTypes.h"
+#include "common/Error.h"
 
 #include <nlohmann/json_fwd.hpp>
 #include <string>

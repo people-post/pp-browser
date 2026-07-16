@@ -103,24 +103,24 @@ ai, ui                         parallel consumers of messaging + data
 
 ---
 
-## Current state (honest snapshot)
+## Current state
 
-The layout above reflects **intent**. The codebase is a single `pp_base` target with pragmatic cross-includes that we are gradually straightening out.
+The dependency hierarchy above is **enforced at the header level** for the former cycle points. Shared types live in their owning modules:
 
-**What works well today**
+| Type | Header |
+|------|--------|
+| `LlmConfig` | `data/LlmConfig.h` |
+| `ContextBudget` | `data/ContextBudget.h` |
+| `TranscriptChatAction` | `messaging/ChatActionTypes.h` |
+| `ConversationSummary` | `messaging/ThreadMemoryTypes.h` |
+| `RelayEnvelope` (+ wire records) | `messaging/RelayEnvelope.h` |
+| `ThreadChannel` | `messaging/ThreadChannel.h` |
 
-- Outer layer discipline is respected — no base → feature/app includes.
-- Clear module homes for most concerns (crypto, people, net, ai sub-trees).
-- Colocated tests under `*/tests/`, registered from [`CMakeLists.txt`](CMakeLists.txt).
+**Intentional one-way edges** (not cycles): `ai/` → `messaging/` for thread context and compaction; `messaging/` → `crypto/` for E2E codecs; `crypto/` → `messaging/RelayEnvelope.h` for auto-key establishment.
 
-**Known coupling (technical debt, not blockers)**
+**Platform / UI:** SDL pre-processing delegates theme sync and context-menu handling via `platform/AppEventHooks.h`, wired from `app/Application.cpp`.
 
-- **data ↔ ai** — `Config.h` embeds LLM/conversation config types defined in `ai/`.
-- **crypto ↔ messaging** — key-establishment APIs reference relay/thread wire types from `messaging/`.
-- **ai ↔ messaging** — thread model and conversation transcript share message-shape types.
-- **platform → ui** — SDL event path touches context-menu/theme helpers (impl-only today).
-
-These cycles are understood; fixes generally mean extracting neutral type headers into the owning lower module. New work should **not add** cycles.
+Regressions are caught by [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh).
 
 **Where active development lives**
 
@@ -139,7 +139,8 @@ These cycles are understood; fixes generally mean extracting neutral type header
 1. Find the module that **owns** the data, protocol, or external integration.
 2. Follow the dependency principles above; if two modules need the same struct, split or move types before adding another cross-include.
 3. Add tests in `src/base/<module>/tests/` and register the directory in [`CMakeLists.txt`](CMakeLists.txt) if new.
-4. Document externally visible behavior in [`docs/contracts/`](../../docs/contracts/) when wire formats, encryption, or on-disk layout change.
+4. Run [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh) before pushing.
+5. Document externally visible behavior in [`docs/contracts/`](../../docs/contracts/) when wire formats, encryption, or on-disk layout change.
 
 ---
 

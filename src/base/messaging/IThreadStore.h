@@ -1,9 +1,10 @@
 #pragma once
 
 #include "common/Error.h"
-#include "base/ai/conversation/ConversationTypes.h"
-#include "base/messaging/ThreadTypes.h"
+#include "base/data/ContextBudget.h"
 #include "base/messaging/SyncStateTypes.h"
+#include "base/messaging/ThreadMemoryTypes.h"
+#include "base/messaging/ThreadTypes.h"
 
 #include <optional>
 #include <string>

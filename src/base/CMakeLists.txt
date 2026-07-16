@@ -2,6 +2,7 @@ set(PP_BROWSER_BASE_SOURCES
   error/AppError.cpp
   platform/AndroidAssetLocator.cpp
   platform/AndroidPathProvider.cpp
+  platform/AppEventHooks.cpp
   platform/AppLifecycle.cpp
   platform/AssetIO.cpp
   platform/BrowserThread.cpp

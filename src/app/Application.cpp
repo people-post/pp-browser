@@ -11,6 +11,7 @@
 #include "base/platform/IPathProvider.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformServices.h"
+#include "base/platform/AppEventHooks.h"
 #include "base/platform/SdlAppEvents.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellHost.h"
@@ -176,6 +177,16 @@ bool Application::Initialize(const char* window_title) {
     ShellHost::Instance().RequestSyncLayout(true);
   });
 
+  SetAppEventHooks(AppEventHooks{
+      .on_sync_system_theme =
+          [](Rml::Context* ctx) {
+            Theme::SyncSystemTheme(ctx);
+          },
+      .on_context_pointer =
+          [](Rml::Context* ctx, int x, int y) {
+            return ContextMenuHost::Instance().OnContextPointer(ctx, x, y);
+          },
+  });
   SdlAppEvents::Install();
 
   ContextMenuHost::Instance().Install(context);

@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 TEST(V6SchemaTest, OutboundMessagePersistsSenderSeqAndEpoch) {
   using namespace pbr;

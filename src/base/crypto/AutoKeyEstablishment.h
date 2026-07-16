@@ -3,7 +3,7 @@
 #include "base/crypto/CryptoTypes.h"
 #include "base/crypto/HybridKem.h"
 #include "base/crypto/IPskSessionStore.h"
-#include "base/messaging/ThreadTypes.h"
+#include "base/messaging/RelayEnvelope.h"
 
 #include "common/Error.h"
 
