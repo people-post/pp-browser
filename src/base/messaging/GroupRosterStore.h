@@ -40,6 +40,9 @@ public:
   Roe<uint64_t> AllocateGroupSenderSeq(const std::string& group_id) const;
   Roe<uint32_t> GetGroupSessionEpoch(const std::string& group_id) const;
   Roe<void> BumpGroupSessionEpoch(const std::string& group_id, uint32_t new_epoch) const;
+
+private:
+  std::string profile_db_path_;
 };
 
 } // namespace pbr
