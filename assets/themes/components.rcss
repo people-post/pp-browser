@@ -1944,3 +1944,25 @@ select selectbox option {
   font-family: LatoLatin;
   font-size: 14dp;
 }
+
+.context-menu-item-check {
+  flex-shrink: 0;
+  margin-left: 8dp;
+  font-family: LatoLatin;
+  font-size: 14dp;
+  color: #2563eb;
+}
+
+.context-menu-item--selected .context-menu-item-label {
+  font-weight: bold;
+}
+
+.settings-language-button {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}

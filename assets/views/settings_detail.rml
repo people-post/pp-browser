@@ -6,7 +6,7 @@
   <div class="settings-detail-body stack">
     <div class="settings-section stack" data-if="selected_id == 'profile'">
       <label class="settings-field">
-        <span class="settings-label">Nickname</span>
+        <span class="settings-label">{{i18n:settings.nickname}}</span>
         <input class="field" type="text" data-value="profile_nickname" data-event-change="on_profile_field_changed()"
                placeholder="Your display name"/>
       </label>
@@ -26,17 +26,17 @@
         Expires: <span data-rml="profile_registration_expires"></span>
       </p>
       <label class="settings-field">
-        <span class="settings-label">Auto-renew registration</span>
+        <span class="settings-label">{{i18n:settings.auto_renew}}</span>
         <select class="field" data-value="auto_renew_registration" data-event-change="on_profile_field_changed()">
-          <option value="auto">Auto</option>
-          <option value="off">Off</option>
+          <option value="auto">{{i18n:settings.auto_renew.auto}}</option>
+          <option value="off">{{i18n:settings.auto_renew.off}}</option>
         </select>
       </label>
       <label class="settings-field">
-        <span class="settings-label">Show notifications</span>
+        <span class="settings-label">{{i18n:settings.notifications}}</span>
         <select class="field" data-value="show_notifications" data-event-change="on_profile_field_changed()">
-          <option value="on">On</option>
-          <option value="off">Off</option>
+          <option value="on">{{i18n:settings.notifications.on}}</option>
+          <option value="off">{{i18n:settings.notifications.off}}</option>
         </select>
       </label>
       <p class="text muted">Off silences OS banners and unregisters push; inbox still syncs in the background.</p>
@@ -58,7 +58,7 @@
 
     <div class="settings-section stack" data-if="selected_id == 'llm'">
       <label class="settings-field">
-        <span class="settings-label">Preset</span>
+        <span class="settings-label">{{i18n:settings.llm.preset}}</span>
         <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
           <option value="brief">Brief (default)</option>
           <option value="cloud">Cloud (OpenAI-compatible)</option>
@@ -68,11 +68,11 @@
       </label>
       <p class="text muted">Preset defaults apply when saved. Leave API key blank to keep the existing key.</p>
       <label class="settings-field">
-        <span class="settings-label">Base URL</span>
+        <span class="settings-label">{{i18n:settings.llm.base_url}}</span>
         <input class="field" type="text" data-value="llm_base_url" data-event-change="on_llm_field_changed()"/>
       </label>
       <label class="settings-field">
-        <span class="settings-label">Model</span>
+        <span class="settings-label">{{i18n:settings.llm.model}}</span>
         <input class="field" type="text" data-value="llm_model" data-event-change="on_llm_field_changed()"/>
       </label>
       <div class="settings-field stack" data-if="llm_preset == 'brief'">
@@ -85,25 +85,25 @@
         </p>
       </div>
       <label class="settings-field" data-if="llm_preset != 'brief'">
-        <span class="settings-label">API key</span>
+        <span class="settings-label">{{i18n:settings.llm.api_key}}</span>
         <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="Optional for local / Ollama endpoints"/>
       </label>
       <label class="settings-field" data-if="llm_preset != 'brief'">
-        <span class="settings-label">API key env var (advanced)</span>
+        <span class="settings-label">{{i18n:settings.llm.api_key_env}}</span>
         <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
       </label>
       <div class="settings-actions row">
-        <button class="btn btn-secondary" type="button" data-event-click="reset_section('llm')">Reset to defaults</button>
+        <button class="btn btn-secondary" type="button" data-event-click="reset_section('llm')">{{i18n:common.reset_defaults}}</button>
       </div>
     </div>
 
     <div class="settings-section stack" data-if="selected_id == 'integrations'">
       <label class="settings-field">
-        <span class="settings-label">Promoted MCP URL</span>
+        <span class="settings-label">{{i18n:settings.integrations.promoted_mcp}}</span>
         <input class="field" type="text" data-value="promoted_mcp_url" data-event-change="on_integrations_field_changed()" placeholder="Blank uses platform default"/>
       </label>
       <label class="settings-field">
-        <span class="settings-label">Search provider</span>
+        <span class="settings-label">{{i18n:settings.integrations.search}}</span>
         <input class="field" type="text" data-value="search_provider" data-event-change="on_integrations_field_changed()"/>
       </label>
       <p class="text muted">Custom MCP servers (stdio on desktop; URL on mobile).</p>
@@ -129,68 +129,75 @@
         </div>
       </div>
       <div class="settings-actions row">
-        <button class="btn btn-secondary" type="button" data-event-click="add_mcp_server()">Add MCP server</button>
-        <button class="btn btn-secondary" type="button" data-event-click="reset_section('integrations')">Reset to defaults</button>
+        <button class="btn btn-secondary" type="button" data-event-click="add_mcp_server()">{{i18n:settings.integrations.add_mcp}}</button>
+        <button class="btn btn-secondary" type="button" data-event-click="reset_section('integrations')">{{i18n:common.reset_defaults}}</button>
       </div>
     </div>
 
     <div class="settings-section stack" data-if="selected_id == 'network'">
       <p class="text muted">Leave blank to use promoted MCP infra tools; mocks apply when promoted MCP is unavailable.</p>
       <label class="settings-field">
-        <span class="settings-label">Relay base URL</span>
+        <span class="settings-label">{{i18n:settings.network.relay}}</span>
         <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>
       </label>
       <label class="settings-field">
-        <span class="settings-label">Directory base URL</span>
+        <span class="settings-label">{{i18n:settings.network.directory}}</span>
         <input class="field" type="text" data-value="directory_base_url" data-event-change="on_network_field_changed()"/>
       </label>
       <label class="settings-field">
-        <span class="settings-label">Registration base URL</span>
+        <span class="settings-label">{{i18n:settings.network.registration}}</span>
         <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
       </label>
       <div class="settings-actions row">
-        <button class="btn btn-secondary" type="button" data-event-click="reset_section('network')">Reset to defaults</button>
+        <button class="btn btn-secondary" type="button" data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
       </div>
     </div>
 
-    <div class="settings-section stack" data-if="selected_id == 'appearance'">
-      <label class="settings-field">
-        <span class="settings-label">Theme</span>
-        <select class="field" data-value="appearance" data-event-change="on_appearance_changed()">
-          <option value="system">System</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
-      </label>
-      <p class="text muted">Follows your OS light/dark setting when set to System.</p>
-      <div class="settings-actions row">
-        <button class="btn btn-secondary" type="button" data-event-click="reset_section('appearance')">Reset to defaults</button>
-      </div>
-    </div>
+<div class="settings-section stack" data-if="selected_id == 'appearance'">
+  <label class="settings-field">
+    <span class="settings-label">{{i18n:settings.theme.label}}</span>
+    <select class="field" data-value="appearance" data-event-change="on_appearance_changed()">
+      <option value="system">{{i18n:settings.theme.system}}</option>
+      <option value="light">{{i18n:settings.theme.light}}</option>
+      <option value="dark">{{i18n:settings.theme.dark}}</option>
+    </select>
+  </label>
+  <p class="text muted">{{i18n:settings.theme.help}}</p>
+  <label class="settings-field">
+    <span class="settings-label">{{i18n:settings.language.label}}</span>
+    <button class="field settings-language-button" type="button" data-event-click="on_choose_language()">
+      <span data-rml="language_label"></span>
+    </button>
+  </label>
+  <p class="text muted">{{i18n:settings.language.help}}</p>
+  <div class="settings-actions row">
+    <button class="btn btn-secondary" type="button" data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>
+  </div>
+</div>
 
     <div class="settings-section stack" data-if="selected_id == 'security'">
-      <p class="text muted">Protection: <span data-rml="pin_protection_status"></span></p>
+      <p class="text muted">{{i18n:settings.security.protection}} <span data-rml="pin_protection_status"></span></p>
       <p class="text muted" data-if="pin_protection_status == 'App default'">
-        Your keys use the app default. Change it below for stronger protection.
+        {{i18n:settings.security.default_hint}}
       </p>
       <p class="text muted" data-if="pin_protection_status == 'Not set up'">
-        Key protection is created when you first use secure messaging or register on the network.
+        {{i18n:settings.security.not_setup_hint}}
       </p>
       <div data-if="security_can_change_pin" class="stack">
         <label class="settings-field">
-          <span class="settings-label">Current PIN</span>
+          <span class="settings-label">{{i18n:settings.security.current_pin}}</span>
           <input class="field" type="password" data-value="pin_change_old" placeholder="Current PIN"/>
         </label>
         <label class="settings-field">
-          <span class="settings-label">New PIN</span>
+          <span class="settings-label">{{i18n:settings.security.new_pin}}</span>
           <input class="field" type="password" data-value="pin_change_new" placeholder="At least 4 characters"/>
         </label>
         <label class="settings-field">
-          <span class="settings-label">Confirm new PIN</span>
+          <span class="settings-label">{{i18n:settings.security.confirm_pin}}</span>
           <input class="field" type="password" data-value="pin_change_confirm" placeholder="Confirm new PIN"/>
         </label>
         <div class="settings-actions row">
-          <button class="btn btn-primary" type="button" data-event-click="change_pin()">Change PIN</button>
+          <button class="btn btn-primary" type="button" data-event-click="change_pin()">{{i18n:settings.security.change_pin}}</button>
         </div>
       </div>
       <p class="text muted" data-if="!security_can_change_pin && pin_protection_status != 'Not set up'">

@@ -4,7 +4,9 @@
 #include "base/data/AppPaths.h"
 #include "base/data/SchemaVersion.h"
 #include "base/data/SessionStore.h"
+#include "base/i18n/LocalizationService.h"
 #include "base/platform/BrowserThread.h"
+#include "base/ui/ContextMenuHost.h"
 #include "feature/chat/ChatController.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/ProfileSettingsSection.h"
@@ -94,6 +96,8 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.show_notifications = bindings_.show_notifications.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
   ui_state_.appearance = bindings_.appearance.c_str();
+  ui_state_.language = bindings_.language.c_str();
+  ui_state_.language_label = bindings_.language_label.c_str();
 
   ui_state_.mcp_servers.clear();
   ui_state_.mcp_servers.reserve(bindings_.mcp_servers.size());
@@ -131,6 +135,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.show_notifications = ui_state_.show_notifications.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
   bindings_.appearance = ui_state_.appearance.c_str();
+  bindings_.language = ui_state_.language.c_str();
+  bindings_.language_label = ui_state_.language_label.c_str();
   bindings_.profile_label = ui_state_.profile_label.c_str();
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
@@ -220,6 +226,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("show_notifications", &controller.bindings_.show_notifications);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
     ctor.Bind("appearance", &controller.bindings_.appearance);
+    ctor.Bind("language", &controller.bindings_.language);
+    ctor.Bind("language_label", &controller.bindings_.language_label);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
@@ -237,6 +245,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_llm_field_changed", &SettingsController::OnLlmFieldChangedCallback);
     ctor.BindEventCallback("on_llm_preset_changed", &SettingsController::OnLlmPresetChangedCallback);
     ctor.BindEventCallback("on_appearance_changed", &SettingsController::OnAppearanceChangedCallback);
+    ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
     ctor.BindEventCallback("on_profile_field_changed", &SettingsController::OnProfileFieldChangedCallback);
@@ -283,6 +292,8 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "show_notifications");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
+  host.Dirty("settings", "language");
+  host.Dirty("settings", "language_label");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
@@ -481,7 +492,7 @@ void SettingsController::MaybeShowSaveToast(const std::string& section_id) {
   }
   last_toast_section_ = section_id;
   last_toast_at_ms_ = now;
-  UserFeedback::Ok("Settings saved");
+  UserFeedback::Ok(Tr("settings.saved"));
 }
 
 void SettingsController::ReportFailure(const Error& err) {
@@ -640,6 +651,67 @@ void SettingsController::OnAppearanceChangedCallback(Rml::DataModelHandle /*mode
   controller.MarkSectionDirty("appearance");
 }
 
+void SettingsController::OnChooseLanguageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                    const Rml::VariantList& /*args*/) {
+  Instance().OnChooseLanguage();
+}
+
+void SettingsController::OnChooseLanguage() {
+  auto& loc = LocalizationService::Instance();
+  const std::string current = bindings_.language.empty() ? "system" : std::string(bindings_.language.c_str());
+
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({.id = "system",
+                     .label = loc.LanguageDisplayLabel("system"),
+                     .enabled = {},
+                     .run =
+                         [this]() {
+                           ApplyLanguageChoice("system");
+                         },
+                     .icon = {},
+                     .danger = false,
+                     .selected = current == "system"});
+
+  for (const LocaleInfo& info : loc.AvailableLocales()) {
+    const std::string tag = info.tag;
+    actions.push_back({.id = tag,
+                       .label = loc.LanguageDisplayLabel(tag),
+                       .enabled = {},
+                       .run =
+                           [this, tag]() {
+                             ApplyLanguageChoice(tag);
+                           },
+                       .icon = {},
+                       .danger = false,
+                       .selected = current == tag});
+  }
+
+  ContextMenuHost::Instance().ShowActions(Rml::Vector2i(0, 0), std::move(actions));
+}
+
+void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  bindings_.language = language_pref.c_str();
+  bindings_.language_label = LocalizationService::Instance().LanguageDisplayLabel(language_pref).c_str();
+  PullBindingsToUiState();
+  MarkSectionDirty("appearance");
+  FlushPending();
+  DirtyAll();
+}
+
+void SettingsController::RefreshLocalizedChrome() {
+  InitSections();
+  SyncBindingsFromSession();
+  if (!selected_id_.empty()) {
+    if (const SettingsSectionHandler* handler = FindHandler(selected_id_.c_str())) {
+      selected_title_ = handler->ListItem().title.c_str();
+    }
+  }
+  DirtyAll();
+}
+
 void SettingsController::OnIntegrationsFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                             const Rml::VariantList& /*args*/) {
   Instance().MarkSectionDirty("integrations");
@@ -796,16 +868,14 @@ void SettingsController::OnResetProfileCallback(Rml::DataModelHandle /*model*/, 
 
 void SettingsController::OnResetProfile() {
   ShellFeedback::ShowConfirmWithCheckbox(
-      ShellHost::Instance().State(), "Reset this profile?",
-      "This deletes all chats, contacts, identity keys, and PIN protection for this profile. "
-      "Machine settings (assistant, network, integrations) are kept. This cannot be undone.",
-      "I understand this cannot be undone", false,
+      ShellHost::Instance().State(), Tr("settings.storage.reset_confirm_title"),
+      Tr("settings.storage.reset_confirm_message"), Tr("settings.storage.reset_confirm_check"), false,
       [this](const bool confirmed, const bool checked) {
         if (!confirmed) {
           return;
         }
         if (!checked) {
-          UserFeedback::Fail("Check the box to confirm reset");
+          UserFeedback::Fail(Tr("settings.storage.reset_confirm_check"));
           return;
         }
         PerformResetProfile();
@@ -866,7 +936,7 @@ void SettingsController::PerformResetProfile() {
   status_ = "";
   SyncBindingsFromSession();
   DirtyAll();
-  UserFeedback::Ok("Profile reset");
+  UserFeedback::Ok(Tr("settings.storage.profile_reset"));
   ShellHost::Instance().RequestSyncLayout();
 }
 

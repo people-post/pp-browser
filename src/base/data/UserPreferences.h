@@ -33,11 +33,13 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 5;
+  static constexpr int kSchemaVersion = 6;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
   std::string appearance = "system";
+  /** UI language: `system` or a shipped BCP-47 tag (`en`, `zh-Hans`). */
+  std::string language = "system";
   /** True when vault was created with kDefaultProfilePin and not yet changed. */
   bool pin_is_default = false;
   /** When true, renew network registration near/past expiry after unlock. */

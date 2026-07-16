@@ -2,6 +2,7 @@
 
 #include "base/data/Config.h"
 #include "base/data/SessionStore.h"
+#include "base/i18n/LocalizationService.h"
 #include "feature/settings/SettingsLogic.h"
 
 namespace pbr {
@@ -40,7 +41,9 @@ const char* IntegrationsSettingsSection::Id() const {
 }
 
 SettingsSectionListItem IntegrationsSettingsSection::ListItem() const {
-  return {.id = Id(), .title = "Integrations", .subtitle = "MCP endpoints and web search"};
+  return {.id = Id(),
+          .title = Tr("settings.integrations.title"),
+          .subtitle = Tr("settings.integrations.subtitle")};
 }
 
 SettingsFlushMode IntegrationsSettingsSection::FlushMode() const {

@@ -1,6 +1,7 @@
 #include "feature/ui/ContactsController.h"
 
 #include "base/crypto/PskFingerprint.h"
+#include "base/i18n/LocalizationService.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/ThreadTypes.h"
@@ -628,7 +629,7 @@ void ContactsController::OnAddContactMenu(Rml::Event& ev) {
   std::vector<ContextMenuAction> actions;
   actions.push_back({
       "add_contact",
-      "Add contact",
+      Tr("contacts.add"),
       nullptr,
       []() { ContactsController::Instance().OnAddContact(); },
       "../icons/contacts.svg",
@@ -820,7 +821,7 @@ void ContactsController::OnRemoveContact() {
                               " from contacts? Conversations stay on this device. "
                               "You can add them again later from Find.";
 
-  ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "Remove contact", message,
+  ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("contacts.remove"), message,
                              [this, contact_id](bool ok) {
                                if (!ok) {
                                  return;

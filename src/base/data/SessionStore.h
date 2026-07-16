@@ -31,6 +31,7 @@ public:
   void AddConfigListener(std::function<void(const AppConfig&)> listener);
   void AddThemeListener(std::function<void(const std::string& theme)> listener);
   void AddAppearanceListener(std::function<void(const std::string& appearance)> listener);
+  void AddLanguageListener(std::function<void(const std::string& language)> listener);
 
 private:
   SessionStore() = default;
@@ -38,12 +39,14 @@ private:
   void NotifyConfigListeners(const AppConfig& config);
   void NotifyThemeListeners(const std::string& theme);
   void NotifyAppearanceListeners(const std::string& appearance);
+  void NotifyLanguageListeners(const std::string& language);
 
   bool initialized_ = false;
   BootstrapResult bootstrap_;
   std::vector<std::function<void(const AppConfig&)>> config_listeners_;
   std::vector<std::function<void(const std::string&)>> theme_listeners_;
   std::vector<std::function<void(const std::string&)>> appearance_listeners_;
+  std::vector<std::function<void(const std::string&)>> language_listeners_;
 };
 
 } // namespace pbr

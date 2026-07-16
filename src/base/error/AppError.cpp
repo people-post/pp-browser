@@ -1,5 +1,7 @@
 #include "base/error/AppError.h"
 
+#include "base/i18n/LocalizationService.h"
+
 namespace pbr {
 
 Error AppError::Auth(Err::Auth code, const std::string& detail) {
@@ -58,60 +60,60 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
     case Err::Auth::NotRegistered:
     case Err::Auth::Forbidden:
     case Err::Auth::Expired:
-      return "Register or rotate your Brief API key in Me → Profile.";
+      return Tr("errors.auth.register_or_rotate");
     case Err::Auth::RateLimited:
-      return "Service is busy — try again shortly.";
+      return Tr("errors.auth.busy");
     case Err::Auth::Generic:
     default:
-      return "Authentication failed — check Me → Profile / Assistant.";
+      return Tr("errors.auth.failed");
     }
   case ErrorCategory::Network:
     switch (static_cast<Err::Network>(code)) {
     case Err::Network::Unreachable:
     case Err::Network::Timeout:
-      return "Can't reach the server — check network or Me → Network / Assistant.";
+      return Tr("errors.network.unreachable");
     case Err::Network::HttpError:
-      return "Request failed — try again, or check Me → Assistant.";
+      return Tr("errors.network.http");
     case Err::Network::Generic:
     default:
-      return "Can't reach the server — check network or Me → Network / Assistant.";
+      return Tr("errors.network.unreachable");
     }
   case ErrorCategory::Pin:
     switch (static_cast<Err::Pin>(code)) {
     case Err::Pin::Required:
-      return "Unlock your profile PIN to continue.";
+      return Tr("errors.pin.unlock");
     case Err::Pin::Mismatch:
-      return "New PINs do not match";
+      return Tr("errors.pin.mismatch");
     case Err::Pin::TooShort:
-      return "Use at least 4 characters";
+      return Tr("errors.pin.too_short");
     case Err::Pin::VaultUnavailable:
-      return "Vault unavailable";
+      return Tr("errors.pin.vault");
     case Err::Pin::Generic:
     default:
-      return "PIN required to continue";
+      return Tr("errors.pin.required");
     }
   case ErrorCategory::Config:
     switch (static_cast<Err::Config>(code)) {
     case Err::Config::MissingKey:
-      return "Configure the assistant in Me → Assistant.";
+      return Tr("errors.config.missing_key");
     case Err::Config::Invalid:
-      return "Check settings in Me and try again.";
+      return Tr("errors.config.invalid");
     case Err::Config::Generic:
     default:
-      return "Check settings in Me and try again.";
+      return Tr("errors.config.invalid");
     }
   case ErrorCategory::Storage:
     switch (static_cast<Err::Storage>(code)) {
     case Err::Storage::Unavailable:
-      return "Profile data unavailable";
+      return Tr("errors.storage.unavailable");
     case Err::Storage::Failed:
-      return "Couldn't update local data — try again.";
+      return Tr("errors.storage.failed");
     case Err::Storage::Generic:
     default:
-      return "Couldn't update local data — try again.";
+      return Tr("errors.storage.failed");
     }
   case ErrorCategory::Internal:
-    return "Something went wrong — try again.";
+    return Tr("errors.internal");
   case ErrorCategory::Unknown:
   default:
     return {};
@@ -129,7 +131,7 @@ std::string AppError::Display(const Error& err) {
   if (!err.message.empty()) {
     return err.message;
   }
-  return "Something went wrong — try again.";
+  return Tr("errors.internal");
 }
 
 std::string AppError::Log(const Error& err) {

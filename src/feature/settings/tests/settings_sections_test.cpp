@@ -4,9 +4,23 @@
 #include "feature/settings/NetworkSettingsSection.h"
 #include "feature/settings/StorageSettingsSection.h"
 
+#include "base/i18n/LocalizationService.h"
+
 #include <gtest/gtest.h>
 
+namespace {
+
+void LoadLocales() {
+#ifdef PP_BROWSER_ASSETS_DIR
+  ASSERT_TRUE(pbr::LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+#endif
+  pbr::LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
+} // namespace
+
 TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
+  LoadLocales();
   pbr::BootstrapResult bootstrap;
   bootstrap.config.llm.preset = "cloud";
   bootstrap.config.llm.base_url = "https://api.openai.com/v1";

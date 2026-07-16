@@ -1,5 +1,7 @@
 #include "base/ui/ContextMenuHost.h"
 
+#include "base/i18n/LocalizationService.h"
+
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
@@ -88,12 +90,19 @@ void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuA
     if (action.danger) {
       out << " context-menu-item--danger";
     }
+    if (action.selected) {
+      out << " context-menu-item--selected";
+    }
     out << "\" type=\"button\" data-item-index=\"" << i << "\">";
     if (!action.icon.empty()) {
       out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon
           << "\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg></div>";
     }
-    out << "<span class=\"context-menu-item-label\">" << action.label << "</span></button>";
+    out << "<span class=\"context-menu-item-label\">" << action.label << "</span>";
+    if (action.selected) {
+      out << "<span class=\"context-menu-item-check\">✓</span>";
+    }
+    out << "</button>";
   }
 }
 
@@ -332,7 +341,8 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
     out << "<div class=\"context-menu-sheet-list\" id=\"context-menu-sheet-list\">";
     AppendActionButtons(out, actions);
     out << "</div>";
-    out << "<button class=\"context-menu-sheet-cancel\" type=\"button\" id=\"context-menu-cancel\">Cancel</button>";
+    out << "<button class=\"context-menu-sheet-cancel\" type=\"button\" id=\"context-menu-cancel\">"
+        << Tr("common.cancel") << "</button>";
     out << "</div>";
   } else {
     out << "<div class=\"context-menu-panel\" id=\"context-menu-panel\" style=\"left: " << request.position.x

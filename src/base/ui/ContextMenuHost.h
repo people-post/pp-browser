@@ -24,6 +24,8 @@ struct ContextMenuAction {
   std::string icon;
   /// When true, menu item uses danger styling (destructive actions).
   bool danger = false;
+  /// When true, show a selected/checkmark affordance (pickers).
+  bool selected = false;
 };
 
 struct ContextMenuRequest {

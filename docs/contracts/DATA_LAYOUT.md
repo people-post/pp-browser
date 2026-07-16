@@ -67,7 +67,9 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | Key | File | Notes |
 |-----|------|--------|
 | `appearance` | `preferences.json` | `system`, `light`, or `dark` |
+| `language` | `preferences.json` | `system` or BCP-47 tag (`en`, `zh-Hans`); schema v6 |
 | `pin_is_default` | `preferences.json` | boolean, schema v4 |
 | `auto_renew_registration` | `preferences.json` | boolean, schema v4 (default true) |
+| `show_notifications` | `preferences.json` | boolean; alerts ≠ sync |
 
 Stylesheet entry points (`foundation.rcss`, `components.rcss`, `colors-*.rcss`) and theme UX: [ui/UI_DESIGN_SYSTEM.md](../ui/UI_DESIGN_SYSTEM.md). The legacy `theme` path field in config remains for compatibility.
