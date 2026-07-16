@@ -1,176 +1,154 @@
-# `src/base` — product primitives
+# `src/base`
 
-**Tier:** architecture (module guide)
-
-The **base** layer holds pp-browser-specific building blocks: one store, one client, one parser per concern. Feature code in [`src/feature/`](../feature/) composes these into workflows and screens; the app layer wires everything at startup.
-
-Layer rule (repo-wide):
+Product-specific **primitives** for pp-browser: stores, clients, codecs, and UI building blocks that feature code composes into screens and workflows.
 
 ```
-app → feature → base → common
+app        wires startup, profiles, global services
+feature    chat, shell, agent session, messaging hub
+base       ← you are here
+common     logger, ResultOrError, task runner (app-agnostic)
 ```
 
-Base must not `#include` from `feature/` or `app/`. See [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) for the full four-layer picture.
+**Rule:** dependencies flow downward only. Base may use `common/`; it must not `#include` from `feature/` or `app/`. Repo-wide layout: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
 
-## CMake target
+Everything under this tree builds as one static library, **`pp_base`** (alias `pp_identity`). Sources are in [`CMakeLists.txt`](CMakeLists.txt).
 
-All modules compile into a single static library:
+---
 
-| Target | Alias | Notes |
-|--------|-------|-------|
-| `pp_base` | `pp_identity` | Links `pp_common`, RmlUi, SDL3, curl, SQLite, libsodium, libp2p |
+## What belongs here
 
-Sources are listed in [`CMakeLists.txt`](CMakeLists.txt). libp2p host glue under [`src/libp2p/integration/host/`](../libp2p/integration/host/) is compiled into `pp_base` (fork sidecar, not a base subfolder).
+Base code should be **single-purpose**: one store, one client, one parser, one codec.
 
-Colocated unit tests live in `*/tests/` and register via `pp_browser_register_tests(...)` when `PP_BROWSER_BUILD_TESTS` is on.
+| Put it in base when… | Put it in feature when… |
+|----------------------|---------------------------|
+| It owns a data model or wire format | It coordinates several base modules into a user flow |
+| It talks to one external system (HTTP, SQLite, libsodium) | It implements a screen, controller, or session lifecycle |
+| It is reusable across multiple features | It is only meaningful in one UI context |
 
-## Directory map
+If you are unsure, ask: *“Could another feature import this without pulling in a specific screen?”* Yes → base. No → feature.
+
+---
+
+## Module map
+
+Ten top-level folders. Two sub-trees under `ai/`.
 
 ```
 src/base/
-├── error/          App error taxonomy and display helpers
-├── platform/       OS/SDL, paths, assets, threading, credentials, notifications
-├── i18n/           Localization catalogs and locale detection
-├── data/           Config, profiles, session, schema, atomic file I/O
-├── crypto/         E2E message crypto, hybrid KEM, at-rest PIN vault
-├── people/         Identity, contacts, Ed25519 signing
-├── net/            HTTP client, relay/registration/directory service clients
-├── messaging/      Thread types, JSON/SQLite stores, wire codecs, E2E ingest
-├── ai/             LLM client, turn plans, conversation, MCP client/runtime
-│   ├── conversation/
-│   └── mcp/
-└── ui/             Theme, view catalog, shell/working-set types, input glue
+├── platform/     OS & runtime — SDL, paths, assets, BrowserThread, credentials, notifications
+├── data/         Config, profiles, session, schema version, atomic file writes
+├── error/        App error categories on top of common/Error.h
+├── i18n/         Localization catalogs (JSON assets)
+│
+├── people/       Identity, contacts, Ed25519 signing
+├── crypto/       E2E message crypto, hybrid KEM, at-rest PIN vault
+├── net/          HTTP client, relay / registration / directory clients
+├── messaging/    Threads, SQLite + JSON stores, relay/group/E2E codecs
+│
+├── ai/           LLM client, turn plans, structured chat parsing, MCP
+│   ├── conversation/   transcript, context policies, compaction
+│   └── mcp/            MCP client, runtime, schema adapter
+└── ui/           Theme, view catalog, working-set types, input glue (RmlUi-facing)
 ```
 
-Includes use the repo root `${CMAKE_SOURCE_DIR}/src` with layer-prefixed paths:
+**Domain grouping (mental model):**
 
-```cpp
-#include "base/data/Config.h"
-#include "common/Error.h"
-```
+| Domain | Modules | Typical question it answers |
+|--------|---------|----------------------------|
+| **Runtime** | platform, data, error, i18n | Where do files live? What is configured? How do we report errors? |
+| **Identity & trust** | people, crypto | Who am I? How are messages and disk encrypted? |
+| **Connectivity** | net, messaging | How do we reach services and peers? How are threads stored and encoded? |
+| **Intelligence & presentation** | ai, ui | How do we call the LLM and shape context? What RmlUi assets/types does the shell need? |
 
-## Module roles
+Start points when exploring:
 
-| Module | Responsibility | Key entry points |
-|--------|----------------|------------------|
-| **error** | Product error categories (`ErrorCategory`, `Err::*`) over `common/Error.h` | `AppError.h` |
-| **platform** | SDL lifecycle, desktop/Android/iOS path & asset providers, `BrowserThread`, credential store, local notifications, background sync | `Platform.h`, `BrowserThread.h`, `AssetIO.h` |
-| **i18n** | String catalogs loaded from JSON assets | `LocalizationService.h` |
-| **data** | `AppConfig`, profile registry, session store, schema versioning, LLM presets | `Config.h`, `ProfileRegistry.h`, `BootstrapTypes.h` |
-| **crypto** | Message encryption, hybrid KEM key establishment, PSK bundles, replay window, PIN-derived at-rest vault | `MessageCipher.h`, `AutoKeyEstablishment.h`, `DataKeyVault.h` |
-| **people** | Local identity, contacts persistence, signing | `IdentityStore.h`, `ContactsStore.h` |
-| **net** | HTTP transport and signed calls to relay, registration, directory services | `HttpClient.h`, `ServiceClientFactory.h` |
-| **messaging** | Chat thread model, SQLite/JSON persistence, relay/group/E2E codecs, envelope signing, `@ai` parsing | `ThreadTypes.h`, `IThreadStore.h`, `SqliteThreadStore.h` |
-| **ai** | LLM HTTP client, turn plan/trace, structured chat parsing, prompt building, context policies, MCP | `LlmClient.h`, `TurnPlan.h`, `conversation/Conversation.h`, `mcp/McpClient.h` |
-| **ui** | RmlUi-facing theme/view catalog, working-set panel types, input coordinator, context menu host | `Theme.h`, `ViewCatalog.h`, `WorkingSetTypes.h` |
+- Bootstrap & config → `data/BootstrapTypes.h`, `data/Config.h`
+- Chat persistence → `messaging/IThreadStore.h`, `messaging/SqliteThreadStore.h`
+- Agent transcript → `ai/conversation/Conversation.h`
+- Shell theming → `ui/Theme.h`, `ui/ViewCatalog.h`
 
-Contract docs for several areas: [`docs/contracts/`](../../docs/contracts/) (encryption, wire schemas, data layout, compatibility).
+Includes use the repo root: `#include "base/data/Config.h"`.
 
-## Dependency design (target)
+---
 
-Within base we prefer **small, mostly independent modules** with **downward-only** `#include` edges. The intended hierarchy is not fully enforced yet (see [Current state](#current-state)), but new code should aim for this shape:
+## Dependency design
+
+**Goal:** small modules that are as independent as possible, arranged in a **hierarchy without cycles**. Shared types live in the module that owns the data or protocol, not in a consumer.
+
+Intended direction (not fully realized yet — see below):
 
 ```
-                    common
-                       ↑
-         ┌─────────────┼─────────────┐
-         │             │             │
-      error          i18n        (leaf wrappers)
-         │             │
-         └──────┬──────┘
-                ↓
-            platform          OS paths, SDL, threading
-                ↓
-              data            config / profiles / session (no ai types)
-         ┌──────┴──────┐
-         ↓             ↓
-      crypto        people         keys, identity, contacts
-         └──────┬──────┘
-                ↓
-               net              HTTP + service clients
-                ↓
-           messaging           threads, codecs, stores
-          ┌─────┴─────┐
-          ↓           ↓
-         ai           ui           LLM pipeline; RmlUi shell types
+common
+  ↑
+platform, error, i18n          thin / leaf where possible
+  ↑
+data                           config & persistence (should not depend on ai)
+  ↑
+crypto, people
+  ↑
+net
+  ↑
+messaging
+  ↑
+ai, ui                         parallel consumers of messaging + data
 ```
 
-Guidelines when adding or moving code:
+**Principles for new code:**
 
-1. **Prefer leaf modules** — `error` and thin type headers should not pull in heavy dependencies.
-2. **Shared DTOs live low** — wire structs and config structs belong in the module that owns persistence or the protocol, not in a consumer.
-3. **Header includes define coupling** — a header `#include` creates compile-time dependency; keep impl-only includes in `.cpp` when possible.
-4. **No base → feature** — orchestration that needs multiple base modules belongs in `src/feature/`.
-5. **Fork boundaries** — RmlUi integration types stay in `base/ui` or `src/render/integration/`; libp2p public API only via `src/libp2p/fork/include/`.
+1. **Downward includes only** — when module A needs a type from B, B should not include A’s headers.
+2. **Shared structs go low** — if two modules need the same DTO, move it to the lower owner (or a dedicated `*Types.h` in that owner).
+3. **Headers are contracts** — prefer heavy includes in `.cpp` files; keep headers lean to limit compile-time coupling.
+4. **Orchestration stays up** — multi-module workflows (`AgentSession`, `ShellHost`, `MessagingHub`) belong in `feature/`.
+5. **Fork glue stays at the edge** — RmlUi in `base/ui` + `src/render/integration/`; libp2p public API via `src/libp2p/fork/include/` (host bootstrap is compiled into `pp_base`).
 
-## Current state
+---
 
-All base sources build as **one** `pp_base` target today. Cross-module coupling is real and documented here so refactors can shrink it over time.
+## Current state (honest snapshot)
 
-### Observed header-level dependencies
+The layout above reflects **intent**. The codebase is a single `pp_base` target with pragmatic cross-includes that we are gradually straightening out.
 
-| Module | Depends on (other base modules, headers) |
-|--------|------------------------------------------|
-| error | — |
-| i18n | — |
-| platform | data |
-| data | **ai** |
-| crypto | **messaging** |
-| people | crypto |
-| net | data, messaging, people |
-| messaging | ai, crypto, people |
-| ai | data, messaging, ui |
-| ui | — |
+**What works well today**
 
-Implementation (`.cpp`) adds further edges — e.g. `platform` → messaging/ui for background sync and SDL event routing, `i18n` → platform for asset loading, `error` → i18n for localized messages.
+- Outer layer discipline is respected — no base → feature/app includes.
+- Clear module homes for most concerns (crypto, people, net, ai sub-trees).
+- Colocated tests under `*/tests/`, registered from [`CMakeLists.txt`](CMakeLists.txt).
 
-### Known circular includes (header level)
+**Known coupling (technical debt, not blockers)**
 
-These are the main places where the graph is not yet acyclic:
+- **data ↔ ai** — `Config.h` embeds LLM/conversation config types defined in `ai/`.
+- **crypto ↔ messaging** — key-establishment APIs reference relay/thread wire types from `messaging/`.
+- **ai ↔ messaging** — thread model and conversation transcript share message-shape types.
+- **platform → ui** — SDL event path touches context-menu/theme helpers (impl-only today).
 
-| Cycle | Cause | Likely fix direction |
-|-------|-------|----------------------|
-| **data ↔ ai** | `Config.h` includes `LlmClient.h` and `ConversationTypes.h`; MCP runtime includes `Config.h` | Extract `LlmConfig` / MCP config structs into `data/` (or a neutral types header) so `data` does not depend on `ai` |
-| **crypto ↔ messaging** | `AutoKeyEstablishment.h` uses `RelayEnvelope` / `ChatTargetKey` from `ThreadTypes.h`; messaging E2E headers include crypto types | Move shared wire/target types to a small shared header (e.g. `messaging/wire/` or `crypto/wire/`) owned below both |
-| **ai ↔ messaging** | `ThreadTypes.h` includes `ConversationTypes.h`; compaction/context policies bridge thread store and conversation | Split chat-thread DTOs from AI conversation DTOs; depend on shared neutral types where both need the same shape |
+These cycles are understood; fixes generally mean extracting neutral type headers into the owning lower module. New work should **not add** cycles.
 
-Other coupling worth knowing but not full header cycles:
+**Where active development lives**
 
-- **platform → ui** — `SdlAppEvents.cpp` forwards events into `ContextMenuHost` / `Theme` (could move behind a feature-layer callback).
-- **messaging hub** — largest cross-module consumer (crypto, people, net, ai types in thread model).
+| Area | Base role | Feature / project pointer |
+|------|-----------|---------------------------|
+| Chat storage | SQLite thread store, codecs | [`projects/chat-storage-and-memory/`](../../projects/chat-storage-and-memory/) |
+| E2E crypto | Message cipher, hybrid KEM, PSK | [`docs/contracts/MESSAGE_ENCRYPTION.md`](../../docs/contracts/MESSAGE_ENCRYPTION.md) |
+| At-rest vault | PIN vault, profile secrets | [`projects/at-rest-crypto/`](../../projects/at-rest-crypto/) |
+| Agent turns | LlmClient, TurnPlan, conversation | `feature/ai/` (`AgentSession`, turn pipeline) |
+| Window shell | Theme, view catalog, working-set types | `feature/ui/ShellHost` |
 
-No upward `#include` of `feature/` or `app/` was found in base — the outer layer rule is respected.
+---
 
-### Maturity notes
+## Adding or changing code
 
-| Area | State |
-|------|-------|
-| **data / platform** | Stable bootstrap path (`BootstrapTypes.h`, path providers, config JSON) |
-| **messaging** | SQLite thread store and relay codecs in active use; JSON store retained for compatibility |
-| **crypto** | E2E and at-rest vault implemented; see [`projects/e2e-message-crypto/`](../../projects/e2e-message-crypto/) and [`projects/at-rest-crypto/`](../../projects/at-rest-crypto/) |
-| **ai** | Turn plan pipeline, conversation policies, MCP client; feature layer owns `AgentSession` / turn execution |
-| **ui** | Theme and view catalog; full shell composition lives in `feature/ui/ShellHost` |
-| **Dependency hygiene** | Aspirational hierarchy above; cycles listed above remain acceptable technical debt until typed splits land |
+1. Find the module that **owns** the data, protocol, or external integration.
+2. Follow the dependency principles above; if two modules need the same struct, split or move types before adding another cross-include.
+3. Add tests in `src/base/<module>/tests/` and register the directory in [`CMakeLists.txt`](CMakeLists.txt) if new.
+4. Document externally visible behavior in [`docs/contracts/`](../../docs/contracts/) when wire formats, encryption, or on-disk layout change.
 
-## Adding code here
+---
 
-**Litmus test** (from SRC_LAYOUT): base code is product-specific but **single-purpose** — one store, one client, one parser. If you are coordinating multiple modules into a user-visible workflow, put it in `feature/`.
+## Further reading
 
-Checklist:
-
-1. Pick the module that **owns the data or protocol** you are implementing.
-2. Add `#include "base/…"` only from modules **at or below** your target layer in the diagram above.
-3. Put tests beside the module: `src/base/<module>/tests/`, register the directory in [`CMakeLists.txt`](CMakeLists.txt).
-4. Avoid new header cycles — if two modules need the same struct, move the struct to the lower module or a dedicated types header.
-5. Document wire/crypto behavior in [`docs/contracts/`](../../docs/contracts/) when behavior is externally visible.
-
-## Related docs
-
-| Doc | Topic |
-|-----|-------|
-| [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | Four-layer layout and fork sidecars |
-| [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) | End-to-end system view |
-| [`docs/contracts/DATA_LAYOUT.md`](../../docs/contracts/DATA_LAYOUT.md) | On-disk layout |
+| Doc | Why |
+|-----|-----|
+| [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | Full four-layer layout, fork sidecars, test placement |
+| [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) | System overview (SDL, RmlUi, agent, shell) |
+| [`docs/contracts/DATA_LAYOUT.md`](../../docs/contracts/DATA_LAYOUT.md) | On-disk paths and profile layout |
 | [`docs/contracts/WIRE_SCHEMAS.md`](../../docs/contracts/WIRE_SCHEMAS.md) | Messaging wire formats |
-| [`docs/contracts/MESSAGE_ENCRYPTION.md`](../../docs/contracts/MESSAGE_ENCRYPTION.md) | E2E crypto |
-| [`docs/ui/RML_PROFILE.md`](../../docs/ui/RML_PROFILE.md) / [`RCSS_PROFILE.md`](../../docs/ui/RCSS_PROFILE.md) | UI generation constraints (ai + ui) |
+| [`AGENTS.md`](../../AGENTS.md) | Agent-oriented map of the whole repo |
