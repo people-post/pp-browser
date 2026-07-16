@@ -1,0 +1,46 @@
+#pragma once
+
+#include "base/messaging/GroupTypes.h"
+#include "base/messaging/ThreadTypes.h"
+
+#include "common/Error.h"
+
+#include <optional>
+#include <string>
+
+namespace pbr {
+
+/** Encode/decode group membership system payloads (detail JSON in ChatPayload). */
+class GroupMembershipCodec {
+public:
+  static Roe<std::string> EncodeInvite(const GroupInvitePayload& payload);
+  static Roe<GroupInvitePayload> DecodeInvite(const std::string& detail_json);
+
+  static Roe<std::string> EncodeInviteResponse(const std::string& invite_nonce, const std::string& group_id);
+  static Roe<std::pair<std::string, std::string>> DecodeInviteResponse(const std::string& detail_json);
+
+  static Roe<std::string> EncodeMemberJoined(const std::string& group_id, const std::string& member_identity,
+                                             MemberRole role, uint64_t roster_epoch);
+  static Roe<std::string> EncodeMemberLeft(const std::string& group_id, const std::string& member_identity,
+                                           uint64_t roster_epoch);
+  static Roe<std::string> EncodeMemberRemoved(const std::string& group_id, const std::string& member_identity,
+                                              uint64_t roster_epoch);
+  static Roe<std::string> EncodeOwnerTransferred(const std::string& group_id, const std::string& new_owner_identity,
+                                                 uint64_t roster_epoch);
+  static Roe<std::string> EncodeGroupRenamed(const std::string& group_id, const std::string& title,
+                                            uint64_t roster_epoch);
+  static Roe<std::string> EncodeGroupForked(const GroupForkPayload& payload);
+
+  static Roe<ThreadMessage> BuildSystemMessage(const std::string& thread_id, GroupMembershipControlType type,
+                                               const std::string& display_text, const std::string& detail_json,
+                                               const std::string& sender_contact_id);
+
+  static std::vector<TranscriptChatAction> BuildInviteChatActions(const GroupInvitePayload& invite);
+  static std::optional<GroupMembershipControlType> ControlTypeFromMessage(const ThreadMessage& message);
+  static Roe<GroupInvitePayload> DecodeInviteFromMessage(const ThreadMessage& message);
+
+  static Roe<GroupPolicy> DecodeGroupPolicy(const std::string& policy_json);
+  static std::string EncodeGroupPolicy(const GroupPolicy& policy);
+};
+
+} // namespace pbr

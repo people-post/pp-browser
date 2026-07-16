@@ -100,7 +100,17 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
   }
 
   if ((*thread)->kind == ThreadKind::Direct) {
-    auto sent = p2p_.SendUserMessage(thread_id, text);
+    SendRelayOptions opts;
+    auto sent = p2p_.SendUserMessage(thread_id, text, opts);
+    if (!sent) {
+      return sent.error();
+    }
+    return {};
+  }
+
+  if ((*thread)->kind == ThreadKind::Group) {
+    SendRelayOptions group_opts;
+    auto sent = p2p_.SendGroupMessage(thread_id, text, group_opts);
     if (!sent) {
       return sent.error();
     }
@@ -126,6 +136,9 @@ bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::st
   }
 
   if ((*thread)->kind == ThreadKind::Direct) {
+    return ParseAtAiPrefix(text).is_ai_invoke;
+  }
+  if ((*thread)->kind == ThreadKind::Group) {
     return ParseAtAiPrefix(text).is_ai_invoke;
   }
   return true;

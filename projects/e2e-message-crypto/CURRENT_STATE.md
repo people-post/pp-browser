@@ -9,8 +9,9 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 
 | In scope | Out of scope (unless expanded) |
 |----------|--------------------------------|
-| d0 (complete), c1, c2, c3 — **private `e2e` tier** | c3+ (`e2e_public` auto-key), c4 PQ |
-| | Group E2E (E022 / D095 wire shape) |
+| d0 (complete), c1, c2, c3 — **private `e2e` tier** | c4 PQ |
+| **`e2e_public` auto-key (E024)** — compose + ingest for direct threads | |
+| **Group pairwise E2E (E022/D095)** — N ciphertexts per member, membership events | MLS / sender-key tree |
 
 ## E2E crypto module
 
@@ -32,6 +33,8 @@ Inventory of what exists in the codebase today for message encryption. Update wh
 |------|--------|----------|
 | Relay wire codec | **Implemented** | `E2eRelayPayloadCodec.*` |
 | Outbound encrypt (`channel == e2e`) | **Implemented** | `P2pMessagingService::SendUserMessage` |
+| Outbound encrypt (`channel == e2e_public`) | **Implemented** | Auto-key encapsulation in `SendUserMessage` |
+| Group outbound encrypt (pairwise per member) | **Implemented** | `P2pMessagingService::SendGroupMessage`, `GroupE2ePayloadCodec` |
 | Inbound decrypt | **Implemented** | `RelayReceivePipeline::ProcessEnvelope` |
 | History re-encrypt on export | **Implemented** | `ChatHistoryResponder`, `Libp2pChatHistoryService` |
 | Directory signing key resolver | **Implemented** | `RelayDirectorySigningKeyResolver.*` |

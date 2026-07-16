@@ -33,7 +33,7 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 6;
+  static constexpr int kSchemaVersion = 7;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
@@ -46,6 +46,8 @@ struct ProfilePreferences {
   bool auto_renew_registration = true;
   /** P005 — OS banners + FCM registration; sync continues when false. */
   bool show_notifications = true;
+  /** G007 — inbound group invite policy: everyone | contacts_only | nobody */
+  std::string group_invite_policy = "contacts_only";
 };
 
 class UserPreferences {

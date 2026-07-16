@@ -1,5 +1,7 @@
 #include "feature/messaging/MessagingHub.h"
 
+#include "feature/messaging/GroupInviteGate.h"
+#include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/RelayDirectoryKemKeyResolver.h"
 #include "feature/messaging/RelayDirectorySigningKeyResolver.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
@@ -7,7 +9,9 @@
 #include "feature/ai/AgentSession.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/error/AppError.h"
+#include "base/data/UserPreferences.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/GroupTypes.h"
 #include "base/people/ContactTypes.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformDefaults.h"
@@ -197,6 +201,8 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   InstallServiceClients(config);
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
+  group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
+  group_invite_gate_ = std::make_unique<GroupInviteGate>(*contacts_, *group_roster_);
   ProfileSecretsService& secrets = ProfileSecretsService::Instance();
   secrets.RegisterDekConsumer(identity_.get());
   secrets.RegisterDekConsumer(psk_store_.get());
@@ -206,8 +212,17 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   // P2P stack without libp2p until profile unlock (relay-capable once identity exists).
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
-                                                *psk_store_, nullptr, nullptr);
+                                                *psk_store_, *group_roster_, group_invite_gate_.get(), nullptr, nullptr);
+  group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
+                                                               *group_invite_gate_, *p2p_);
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
+
+  if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
+    group_invite_gate_->SetInboundPolicy(GroupInvitePolicyFromString(prefs->group_invite_policy));
+    if (group_membership_) {
+      group_membership_->SetInboundPolicy(GroupInvitePolicyFromString(prefs->group_invite_policy));
+    }
+  }
 
   messaging_ready_ = false;
   initialized_ = true;
@@ -233,7 +248,15 @@ Roe<void> MessagingHub::BuildMessagingStack() {
 
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
-                                                *psk_store_, libp2p_host_.get(), peer_sessions_.get());
+                                                *psk_store_, *group_roster_, group_invite_gate_.get(), libp2p_host_.get(),
+                                                peer_sessions_.get());
+  group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
+                                                               *group_invite_gate_, *p2p_);
+  if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
+    const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
+    group_invite_gate_->SetInboundPolicy(policy);
+    group_membership_->SetInboundPolicy(policy);
+  }
   RegisterContactEndpoints();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
   if (agent_) {
@@ -327,7 +350,10 @@ void MessagingHub::Shutdown() {
     identity_->Flush();
   }
   actions_.reset();
+  group_membership_.reset();
   p2p_.reset();
+  group_invite_gate_.reset();
+  group_roster_.reset();
   StopLibp2p();
   signing_resolver_.reset();
   kem_resolver_.reset();
@@ -364,6 +390,10 @@ InboxController& MessagingHub::Inbox() {
 
 P2pMessagingService& MessagingHub::P2p() {
   return *p2p_;
+}
+
+GroupMembershipService& MessagingHub::Groups() {
+  return *group_membership_;
 }
 
 MessageRouter& MessagingHub::Router() {

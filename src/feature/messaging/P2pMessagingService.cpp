@@ -7,7 +7,8 @@
 #include "common/Utilities.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/E2eIntegrityUtil.h"
-#include "base/messaging/E2eRelayPayloadCodec.h"
+#include "base/messaging/GroupE2ePayloadCodec.h"
+#include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/SendRelayOptions.h"
@@ -47,13 +48,16 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
                                          PeerSigningKeyStore& signing_key_store,
                                          IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
                                          IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
+                                         GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
                                          Libp2pHost* libp2p_host, PeerSessionManager* peer_sessions)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
-      kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), libp2p_host_(libp2p_host),
+      kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster), libp2p_host_(libp2p_host),
       peer_sessions_(peer_sessions), epoch_coordinator_(store), psk_coordinator_(store, psk_store) {
   redirectLogger("P2pMessagingService");
-  receive_pipeline_ = std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_);
+  receive_pipeline_ =
+      std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
+                                             invite_gate);
   if (libp2p_host_ && peer_sessions_) {
     peer_history_ =
         std::make_unique<Libp2pChatHistoryService>(*libp2p_host_, *peer_sessions_, store_, identity_, psk_store_);
@@ -820,6 +824,116 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
         ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay, tried_direct);
       });
 
+  if (on_messages_changed_) {
+    on_messages_changed_();
+  }
+  return *appended;
+}
+
+Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thread_id, const std::string& text,
+                                                          const SendRelayOptions& options) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+    return Error("Not a group thread");
+  }
+
+  auto identity = identity_.Get();
+  if (!identity || identity->relay_user_id.empty()) {
+    return Error("Local relay identity unavailable");
+  }
+
+  auto members = group_roster_.ListMembers(*(*thread)->group_id);
+  if (!members) {
+    return members.error();
+  }
+
+  ThreadMessage message;
+  message.id = util::GenerateUuid();
+  message.thread_id = thread_id;
+  message.sender_contact_id = options.sender_contact_id.value_or(kLocalSelfContactId);
+  message.text = text;
+  message.timestamp = util::NowUnixMs();
+  message.delivery = MessageDelivery::Pending;
+  message.relay_visible = true;
+  message.transport = MessageTransport::Relay;
+
+  auto sender_seq = store_.AllocateSenderSeq(thread_id);
+  if (!sender_seq) {
+    return sender_seq.error();
+  }
+  auto session_epoch = store_.GetChatTargetSessionEpoch(thread_id);
+  if (!session_epoch) {
+    return session_epoch.error();
+  }
+  message.sender_seq = *sender_seq;
+  message.session_epoch = *session_epoch;
+
+  auto appended = store_.AppendMessage(message);
+  if (!appended) {
+    return appended.error();
+  }
+  if (options.update_preview) {
+    (void)inbox_.UpdatePreview(thread_id, text);
+  }
+
+  std::vector<GroupMemberTarget> targets;
+  for (const GroupRosterMember& member : *members) {
+    if (member.member_identity == identity->relay_user_id) {
+      continue;
+    }
+    GroupMemberTarget target;
+    target.member_identity = member.member_identity;
+    target.target_key = GroupE2ePayloadCodec::PairTargetKey(member.member_identity);
+    targets.push_back(std::move(target));
+  }
+
+  auto resolve_kem = [this](const ChatTargetKey& key) -> Roe<ByteVector> {
+    auto kem = kem_key_resolver_.Resolve(key.peer_identity_kind, key.peer_identity_value);
+    if (!kem) {
+      return kem.error();
+    }
+    return Base64Decode(kem->kem_public_key_b64);
+  };
+
+  auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
+      text, *(*thread)->group_id, identity->relay_user_id, message.id, *message.sender_seq, *message.session_epoch,
+      message.timestamp, targets, psk_store_, resolve_kem);
+  if (!encrypted) {
+    appended->delivery = MessageDelivery::Failed;
+    (void)store_.UpdateMessage(*appended);
+    return encrypted.error();
+  }
+
+  for (const auto& [recipient, payload_b64] : encrypted->member_payloads) {
+    RelayEnvelope envelope;
+    envelope.envelope_version = kRelayEnvelopeVersion;
+    envelope.message_id = message.id;
+    envelope.sender_relay_id = identity->relay_user_id;
+    envelope.sender_contact_id = identity->relay_user_id;
+    envelope.route.kind = "group";
+    envelope.route.group_id = *(*thread)->group_id;
+    envelope.body.e2e.member_payloads = {{recipient, payload_b64}};
+    envelope.sender_seq = *message.sender_seq;
+    envelope.order_key = envelope.sender_seq;
+    envelope.session_epoch = *message.session_epoch;
+    envelope.stream_key = BuildGroupRelayStreamKey(*(*thread)->group_id, *message.session_epoch);
+    envelope.recipient_contact_id = recipient;
+    envelope.timestamp = message.timestamp;
+
+    auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
+    if (!sign_bytes) {
+      continue;
+    }
+    if (auto signature = identity_.SignBytes(*sign_bytes)) {
+      envelope.signature = *signature;
+    }
+    if (relay_) {
+      (void)relay_->Send(envelope);
+    }
+  }
+
+  appended->delivery = MessageDelivery::Relayed;
+  (void)store_.UpdateMessage(*appended);
   if (on_messages_changed_) {
     on_messages_changed_();
   }

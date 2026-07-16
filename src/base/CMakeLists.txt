@@ -51,6 +51,10 @@ set(PP_BROWSER_BASE_SOURCES
   people/IdentityStore.cpp
   messaging/EnvelopeSigner.cpp
   messaging/E2eIngestClassifier.cpp
+  messaging/GroupTypes.cpp
+  messaging/GroupMembershipCodec.cpp
+  messaging/GroupE2ePayloadCodec.cpp
+  messaging/GroupRosterStore.cpp
   messaging/E2eRelayPayloadCodec.cpp
   crypto/HybridKem.cpp
   crypto/AutoKeyEstablishment.cpp

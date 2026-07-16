@@ -98,6 +98,9 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.appearance = bindings_.appearance.c_str();
   ui_state_.language = bindings_.language.c_str();
   ui_state_.language_label = bindings_.language_label.c_str();
+  ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
+  ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
+  ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
 
   ui_state_.mcp_servers.clear();
   ui_state_.mcp_servers.reserve(bindings_.mcp_servers.size());
@@ -144,6 +147,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_size_label = ui_state_.profile_size_label.c_str();
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
+  bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
 
   bindings_.mcp_servers.clear();
   bindings_.mcp_servers.reserve(ui_state_.mcp_servers.size());
@@ -235,6 +239,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("profile_size_label", &controller.bindings_.profile_size_label);
     ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
+    ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
     ctor.Bind("pin_change_new", &controller.bindings_.pin_change_new);
     ctor.Bind("pin_change_confirm", &controller.bindings_.pin_change_confirm);
@@ -248,6 +253,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
+    ctor.BindEventCallback("on_security_field_changed", &SettingsController::OnSecurityFieldChangedCallback);
     ctor.BindEventCallback("on_profile_field_changed", &SettingsController::OnProfileFieldChangedCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
     ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
@@ -301,6 +307,7 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "profile_size_label");
   host.Dirty("settings", "pin_protection_status");
   host.Dirty("settings", "security_can_change_pin");
+  host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "pin_change_old");
   host.Dirty("settings", "pin_change_new");
   host.Dirty("settings", "pin_change_confirm");
@@ -720,6 +727,12 @@ void SettingsController::OnIntegrationsFieldChangedCallback(Rml::DataModelHandle
 void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                        const Rml::VariantList& /*args*/) {
   Instance().MarkSectionDirty("network");
+}
+
+void SettingsController::OnSecurityFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                        const Rml::VariantList& /*args*/) {
+  Instance().PullBindingsToUiState();
+  Instance().MarkSectionDirty("security");
 }
 
 void SettingsController::OnProfileFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,

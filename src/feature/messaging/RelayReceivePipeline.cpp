@@ -4,11 +4,15 @@
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/EnvelopeSigner.h"
+#include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
-#include "base/messaging/E2eRelayPayloadCodec.h"
+#include "base/messaging/GroupE2ePayloadCodec.h"
+#include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SyncStateCodec.h"
+#include "base/people/ContactTypes.h"
+#include "feature/messaging/GroupInviteGate.h"
 
 #include "common/Utilities.h"
 
@@ -37,8 +41,44 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
 } // namespace
 
 RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys,
-                                           IPskSessionStore& psk_store, IdentityStore& identity)
-    : store_(store), signing_keys_(signing_keys), psk_store_(psk_store), identity_(identity) {}
+                                           IPskSessionStore& psk_store, IdentityStore& identity,
+                                           GroupRosterStore& group_roster, GroupInviteGate* invite_gate)
+    : store_(store), signing_keys_(signing_keys), psk_store_(psk_store), identity_(identity),
+      group_roster_(group_roster), invite_gate_(invite_gate) {}
+
+Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message) const {
+  if (!invite_gate_) {
+    return {};
+  }
+  auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
+  if (!invite) {
+    if (invite.error().message.find("not a group invite") != std::string::npos) {
+      return {};
+    }
+    return invite.error();
+  }
+  auto allowed = invite_gate_->AllowsInboundInvite(*invite);
+  if (!allowed) {
+    return allowed.error();
+  }
+  if (!*allowed) {
+    return Error("Invite blocked by policy");
+  }
+
+  PendingGroupInvite pending;
+  pending.invite_nonce = invite->invite_nonce;
+  pending.group_id = invite->group_id;
+  pending.inviter_identity = invite->inviter_identity;
+  pending.invitee_identity = invite->invitee_identity;
+  pending.status = InviteStatus::Pending;
+  pending.expires_at = invite->expires_at;
+  pending.created_at = util::NowUnixMs();
+  if (auto recorded = group_roster_.UpsertPendingInvite(pending); !recorded) {
+    return recorded.error();
+  }
+  message.chat_actions = GroupMembershipCodec::BuildInviteChatActions(*invite);
+  return {};
+}
 
 ReplayWindow& RelayReceivePipeline::ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch) {
   const ReplayKey key{thread_id, session_epoch};
@@ -97,6 +137,16 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
                                                           const std::string& local_relay_user_id,
                                                           const bool authorized_older_backfill,
                                                           const MessageTransport transport) {
+  if (envelope.route.kind == "group") {
+    return ProcessGroupEnvelope(envelope, local_relay_user_id, authorized_older_backfill, transport);
+  }
+  return ProcessDirectEnvelope(envelope, local_relay_user_id, authorized_older_backfill, transport);
+}
+
+RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvelope& envelope,
+                                                                const std::string& local_relay_user_id,
+                                                                const bool authorized_older_backfill,
+                                                                const MessageTransport transport) {
   RelayReceiveOutcome outcome;
 
   const nlohmann::json wire_json = RelayEnvelopeToJson(envelope);
@@ -292,6 +342,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
   persisted.sender_seq = envelope.sender_seq;
   persisted.session_epoch = envelope.session_epoch;
 
+  if (auto membership = ApplyInboundMembershipMessage(persisted); !membership) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+
   if (classified.decision == IngestDecision::AcceptEpochAdvance) {
     const uint32_t old_epoch = chat_target_epoch;
     if (!store_.AppendMessageWithPassiveEpochAdopt(persisted, old_epoch, envelope.session_epoch,
@@ -310,6 +365,128 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
     return outcome;
   }
 
+  (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state);
+  outcome.persisted = true;
+  outcome.thread_changed = true;
+  return outcome;
+}
+
+RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelope& envelope,
+                                                               const std::string& local_relay_user_id,
+                                                               const bool authorized_older_backfill,
+                                                               const MessageTransport transport) {
+  RelayReceiveOutcome outcome;
+  if (!envelope.route.group_id || local_relay_user_id.empty()) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+  const std::string& group_id = *envelope.route.group_id;
+  if (!group_roster_.IsMember(group_id, local_relay_user_id)) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+
+  DirectChatTarget inbound_target;
+  inbound_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  inbound_target.peer_identity_value = envelope.sender_contact_id;
+  inbound_target.channel = ThreadChannel::E2ePublic;
+
+  auto verified = VerifySignature(envelope, inbound_target);
+  if (!verified || !*verified) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+
+  auto kem_private = identity_.GetOrCreateHybridKemPrivateKey();
+  if (!kem_private) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+
+  auto decrypted = GroupE2ePayloadCodec::DecryptForLocalMember(envelope, local_relay_user_id, psk_store_,
+                                                                 *kem_private);
+  if (!decrypted) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+  ThreadMessage message = std::move(*decrypted);
+
+  auto thread = store_.FindGroupThread(group_id);
+  if (!thread) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+  if (!*thread) {
+    auto created = store_.FindOrCreateGroupThread(group_id, "Group chat", {});
+    if (!created) {
+      outcome.decision = IngestDecision::HardReject;
+      return outcome;
+    }
+    thread = Roe<std::optional<Thread>>(*created);
+    outcome.thread_changed = true;
+  }
+  const std::string resolved_thread_id = (**thread).id;
+
+  auto has_message_id = store_.HasMessageId(resolved_thread_id, envelope.message_id);
+  if (!has_message_id) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+  if (*has_message_id) {
+    outcome.decision = IngestDecision::BenignDuplicate;
+    return outcome;
+  }
+
+  PeerSyncState sync_state = DefaultPeerSyncState();
+  if (auto loaded = store_.GetPeerSyncState(resolved_thread_id, envelope.session_epoch)) {
+    sync_state = *loaded;
+  }
+
+  IngestClassifierInput classifier_input;
+  classifier_input.sender_seq = envelope.sender_seq;
+  classifier_input.session_epoch = envelope.session_epoch;
+  classifier_input.message_id = envelope.message_id;
+  classifier_input.sync_state = sync_state;
+  classifier_input.chat_target_epoch = envelope.session_epoch;
+  classifier_input.strict_mode = false;
+  classifier_input.authorized_older_backfill = authorized_older_backfill;
+  classifier_input.has_message_id = false;
+  classifier_input.existing_message_id_at_seq = FindMessageIdAtSeq(
+      resolved_thread_id, envelope.session_epoch, envelope.sender_contact_id, envelope.sender_seq);
+
+  auto& replay_window = ReplayWindowFor(resolved_thread_id, envelope.session_epoch);
+  const IngestClassifierResult classified = E2eIngestClassifier::Classify(classifier_input, replay_window);
+  outcome.decision = classified.decision;
+  if (classified.decision == IngestDecision::SilentDiscard || classified.decision == IngestDecision::BenignDuplicate) {
+    return outcome;
+  }
+  if (classified.decision == IngestDecision::SoftCompromised || classified.decision == IngestDecision::HardReject) {
+    return outcome;
+  }
+  if (!classified.persist_message) {
+    return outcome;
+  }
+
+  ThreadMessage persisted = message;
+  persisted.id = envelope.message_id;
+  persisted.thread_id = resolved_thread_id;
+  persisted.sender_contact_id = envelope.sender_contact_id;
+  persisted.timestamp = envelope.timestamp;
+  persisted.delivery = MessageDelivery::Relayed;
+  persisted.relay_visible = true;
+  persisted.transport = transport;
+  persisted.sender_seq = envelope.sender_seq;
+  persisted.session_epoch = envelope.session_epoch;
+
+  if (auto membership = ApplyInboundMembershipMessage(persisted); !membership) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+
+  if (!store_.AppendMessage(persisted)) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
   (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state);
   outcome.persisted = true;
   outcome.thread_changed = true;

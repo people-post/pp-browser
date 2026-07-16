@@ -3,6 +3,8 @@
 #include "base/crypto/ReplayWindow.h"
 #include "base/crypto/IPskSessionStore.h"
 #include "base/messaging/E2eIngestClassifier.h"
+#include "base/messaging/GroupE2ePayloadCodec.h"
+#include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "base/messaging/ThreadTypes.h"
@@ -12,6 +14,8 @@
 #include <unordered_map>
 
 namespace pbr {
+
+class GroupInviteGate;
 
 struct RelayReceiveOutcome {
   bool persisted = false;
@@ -23,13 +27,18 @@ struct RelayReceiveOutcome {
 class RelayReceivePipeline {
 public:
   RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys, IPskSessionStore& psk_store,
-                       IdentityStore& identity);
+                       IdentityStore& identity, GroupRosterStore& group_roster,
+                       GroupInviteGate* invite_gate = nullptr);
 
   RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                       bool authorized_older_backfill = false,
                                       MessageTransport transport = MessageTransport::Relay);
 
 private:
+  RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
+                                            bool authorized_older_backfill, MessageTransport transport);
+  RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
+                                           bool authorized_older_backfill, MessageTransport transport);
   struct ReplayKey {
     std::string thread_id;
     uint32_t session_epoch = 0;
@@ -52,11 +61,14 @@ private:
                                                 const std::string& seq_owner_contact_id,
                                                 const uint64_t sender_seq) const;
   ReplayWindow& ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch);
+  Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message) const;
 
   IThreadStore& store_;
   IPeerSigningKeyResolver& signing_keys_;
   IPskSessionStore& psk_store_;
   IdentityStore& identity_;
+  GroupRosterStore& group_roster_;
+  GroupInviteGate* invite_gate_ = nullptr;
   std::unordered_map<ReplayKey, ReplayWindow, ReplayKeyHash> replay_windows_;
 };
 

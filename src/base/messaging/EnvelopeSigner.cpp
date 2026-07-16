@@ -62,18 +62,29 @@ uint8_t EnvelopeSigner::ChannelByte(const RelayRoute& route) {
 }
 
 Roe<std::vector<uint8_t>> EnvelopeSigner::BodyHash(const RelayMessageBody& body) {
-  if (body.e2e.payload_b64.empty()) {
-    return Error("Missing E2E payload for body hash");
-  }
-  auto decoded = Base64Decode(body.e2e.payload_b64);
-  if (!decoded) {
-    return decoded.error();
-  }
   EnsureSodiumInit();
   std::vector<uint8_t> input;
-  input.reserve(1 + decoded->size());
   input.push_back(kBodyKindE2e);
-  input.insert(input.end(), decoded->begin(), decoded->end());
+
+  if (body.e2e.member_payloads && !body.e2e.member_payloads->empty()) {
+    for (const auto& [member_id, payload_b64] : *body.e2e.member_payloads) {
+      (void)member_id;
+      auto decoded = Base64Decode(payload_b64);
+      if (!decoded) {
+        return decoded.error();
+      }
+      input.insert(input.end(), decoded->begin(), decoded->end());
+    }
+  } else {
+    if (body.e2e.payload_b64.empty()) {
+      return Error("Missing E2E payload for body hash");
+    }
+    auto decoded = Base64Decode(body.e2e.payload_b64);
+    if (!decoded) {
+      return decoded.error();
+    }
+    input.insert(input.end(), decoded->begin(), decoded->end());
+  }
 
   std::vector<uint8_t> digest(32);
   if (crypto_generichash(digest.data(), digest.size(), input.data(), input.size(), nullptr, 0) != 0) {

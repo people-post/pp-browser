@@ -10,6 +10,7 @@
 #include "base/people/Ed25519Signer.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/ChatSyncService.h"
+#include "base/messaging/GroupRosterStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 
@@ -38,7 +39,8 @@ public:
         identity(data_dir.string(), "test"),
         psk_store(store.ProfileDbPath(), "test"),
         key_resolver(key_store),
-        receive_pipeline(store, key_resolver, psk_store, identity),
+        roster_store(store.ProfileDbPath()),
+        receive_pipeline(store, key_resolver, psk_store, identity, roster_store),
         sync(store, identity, &relay, receive_pipeline, &peer_history) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
@@ -171,6 +173,7 @@ public:
   MockChatHistoryPeerClient peer_history;
   PeerSigningKeyStore key_store;
   PeerSigningKeyResolver key_resolver;
+  GroupRosterStore roster_store;
   RelayReceivePipeline receive_pipeline;
   ChatSyncService sync;
   Thread thread;
