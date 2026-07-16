@@ -3,6 +3,7 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/ConversationSummaryCodec.h"
+#include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/SyncStateCodec.h"
@@ -283,6 +284,10 @@ Roe<void> SqliteThreadStore::OpenProfileDb() const {
       return version.error();
     }
   }
+  GroupRosterStore roster_store(ProfileDbFile(data_dir_));
+  if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {
+    return group_schema.error();
+  }
   return {};
 }
 
@@ -503,7 +508,8 @@ Roe<std::vector<Thread>> SqliteThreadStore::ListThreads() const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(profile_db_,
                          "SELECT id, kind, channel, title, participant_contact_ids, updated_at, unread_count, "
-                         "preview, peer_identity_kind, peer_identity_value FROM threads ORDER BY updated_at DESC;",
+                         "preview, peer_identity_kind, peer_identity_value, group_id FROM threads ORDER BY "
+                         "updated_at DESC;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to list threads");
   }
@@ -543,7 +549,10 @@ Thread SqliteThreadStore::ReadThreadRow(sqlite3_stmt* stmt) const {
   if (sqlite3_column_text(stmt, 9)) {
     thread.peer_identity_value = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
   }
-  thread.encrypted = ThreadChannelIsE2e(thread.channel);
+  if (sqlite3_column_text(stmt, 10)) {
+    thread.group_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
+  }
+  thread.encrypted = thread.kind == ThreadKind::Group || ThreadChannelIsE2e(thread.channel);
   return thread;
 }
 
@@ -579,12 +588,13 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   const std::string channel_text = ThreadChannelToString(thread.channel);
   const char* sql =
       "INSERT INTO threads (id, kind, channel, title, participant_contact_ids, preview, updated_at, unread_count, "
-      "peer_identity_kind, peer_identity_value) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "peer_identity_kind, peer_identity_value, group_id) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, channel=excluded.channel, title=excluded.title, "
       "participant_contact_ids=excluded.participant_contact_ids, preview=excluded.preview, "
       "updated_at=excluded.updated_at, unread_count=excluded.unread_count, "
-      "peer_identity_kind=excluded.peer_identity_kind, peer_identity_value=excluded.peer_identity_value;";
+      "peer_identity_kind=excluded.peer_identity_kind, peer_identity_value=excluded.peer_identity_value, "
+      "group_id=excluded.group_id;";
   if (sqlite3_prepare_v2(profile_db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to upsert thread");
   }
@@ -598,6 +608,11 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   sqlite3_bind_int(stmt, 8, thread.unread_count);
   sqlite3_bind_text(stmt, 9, thread.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 10, thread.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  if (thread.group_id) {
+    sqlite3_bind_text(stmt, 11, thread.group_id->c_str(), -1, SQLITE_TRANSIENT);
+  } else {
+    sqlite3_bind_null(stmt, 11);
+  }
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     return Error("Failed to upsert thread row");
@@ -1303,9 +1318,101 @@ Roe<Thread> SqliteThreadStore::FindOrCreateDirectThread(const DirectChatTarget& 
   return *saved;
 }
 
+Roe<std::optional<Thread>> SqliteThreadStore::FindGroupThread(const std::string& group_id) const {
+  if (auto init = EnsureInitialized(); !init) {
+    return init.error();
+  }
+  GroupRosterStore roster(ProfileDbFile(data_dir_));
+  auto mapped_thread_id = roster.FindThreadIdForGroup(group_id);
+  if (!mapped_thread_id) {
+    return mapped_thread_id.error();
+  }
+  std::optional<std::string> thread_id = mapped_thread_id.value();
+  if (!thread_id) {
+    std::lock_guard lock(profile_mutex_);
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(profile_db_, "SELECT id FROM threads WHERE group_id = ? LIMIT 1;", -1, &stmt, nullptr) !=
+        SQLITE_OK) {
+      return Error("Failed to prepare group thread lookup");
+    }
+    sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_text(stmt, 0)) {
+      thread_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    }
+    sqlite3_finalize(stmt);
+  }
+  if (!thread_id) {
+    return Roe<std::optional<Thread>>(std::optional<Thread>{});
+  }
+  return GetThread(*thread_id);
+}
+
+Roe<Thread> SqliteThreadStore::FindOrCreateGroupThread(const std::string& group_id, const std::string& title,
+                                                        const std::vector<std::string>& participant_contact_ids) {
+  if (auto existing = FindGroupThread(group_id)) {
+    if (!existing) {
+      return existing.error();
+    }
+    if (*existing) {
+      return **existing;
+    }
+  }
+
+  Thread thread;
+  thread.id = util::GenerateUuid();
+  thread.kind = ThreadKind::Group;
+  thread.channel = ThreadChannel::None;
+  thread.group_id = group_id;
+  thread.participant_contact_ids = participant_contact_ids;
+  thread.title = title;
+  thread.encrypted = true;
+  thread.updated_at = util::NowUnixMs();
+
+  auto saved = UpsertThread(thread);
+  if (!saved) {
+    return saved.error();
+  }
+
+  GroupRosterStore roster(ProfileDbFile(data_dir_));
+  if (auto target = roster.UpsertGroupTarget(group_id, saved->id, 1, 1); !target) {
+    return target.error();
+  }
+  return *saved;
+}
+
+Roe<std::vector<ThreadMessage>> SqliteThreadStore::ExportMessagesUpTo(
+    const std::string& thread_id, const std::optional<std::string>& max_message_id) const {
+  auto messages = GetMessages(thread_id);
+  if (!messages) {
+    return messages.error();
+  }
+  if (!max_message_id) {
+    return *messages;
+  }
+  std::vector<ThreadMessage> exported;
+  for (const ThreadMessage& message : *messages) {
+    exported.push_back(message);
+    if (message.id == *max_message_id) {
+      break;
+    }
+  }
+  return exported;
+}
+
 Roe<uint64_t> SqliteThreadStore::AllocateSenderSeq(const std::string& thread_id) {
   if (auto init = EnsureInitialized(); !init) {
     return init.error();
+  }
+  auto thread = GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
+    GroupRosterStore roster(ProfileDbFile(data_dir_));
+    return roster.AllocateGroupSenderSeq(*(*thread)->group_id);
   }
   std::lock_guard lock(profile_mutex_);
   sqlite3_stmt* stmt = nullptr;
@@ -1338,6 +1445,17 @@ Roe<uint64_t> SqliteThreadStore::AllocateSenderSeq(const std::string& thread_id)
 Roe<uint32_t> SqliteThreadStore::GetChatTargetSessionEpoch(const std::string& thread_id) const {
   if (auto init = EnsureInitialized(); !init) {
     return init.error();
+  }
+  auto thread = GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
+    GroupRosterStore roster(ProfileDbFile(data_dir_));
+    return roster.GetGroupSessionEpoch(*(*thread)->group_id);
   }
   std::lock_guard lock(profile_mutex_);
   sqlite3_stmt* stmt = nullptr;

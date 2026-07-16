@@ -52,6 +52,8 @@ struct SettingsUiState {
   std::string profile_size_label;
   std::string pin_protection_status;
   bool security_can_change_pin = false;
+  /** G007 — everyone | contacts_only | nobody */
+  std::string group_invite_policy = "contacts_only";
 };
 
 struct SettingsSectionListItem {

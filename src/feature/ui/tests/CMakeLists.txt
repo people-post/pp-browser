@@ -15,6 +15,8 @@ add_executable(pp_browser_user_feedback_test
   ${CMAKE_SOURCE_DIR}/src/base/error/AppError.cpp)
 target_link_libraries(pp_browser_user_feedback_test PRIVATE
   GTest::gtest
-  GTest::gtest_main)
+  GTest::gtest_main
+  pp_base
+  pp_common)
 target_include_directories(pp_browser_user_feedback_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 pp_browser_add_gtest(pp_browser_user_feedback_test)

@@ -4,6 +4,7 @@
 #include "base/messaging/ChatPayloadTypes.h"
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -44,6 +45,8 @@ struct Thread {
   std::vector<std::string> participant_contact_ids;
   std::string peer_identity_kind;
   std::string peer_identity_value;
+  /** Wire group scope when kind=Group (D076). */
+  std::optional<std::string> group_id;
   int64_t updated_at = 0;
   int unread_count = 0;
   std::string preview;
@@ -86,6 +89,8 @@ struct RelayRoute {
 struct RelayE2eBody {
   std::string payload_b64;
   std::optional<std::string> key_init_b64;
+  /** D095 — one AEAD blob per group member (recipient identity → base64). */
+  std::optional<std::map<std::string, std::string>> member_payloads;
 };
 
 struct RelayMessageBody {

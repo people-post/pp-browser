@@ -4,6 +4,7 @@
 #include "base/crypto/CryptoUtil.h"
 
 #include <nlohmann/json.hpp>
+#include <map>
 #include <sstream>
 
 namespace pbr {
@@ -267,11 +268,20 @@ ThreadMessage ThreadMessageFromJson(const nlohmann::json& json) {
 }
 
 nlohmann::json RelayEnvelopeToJson(const RelayEnvelope& envelope) {
-  nlohmann::json body = {{"e2e", {{"payload_b64", envelope.body.e2e.payload_b64}}}};
-  if (envelope.body.e2e.key_init_b64) {
-    body["e2e"]["key_init_b64"] = *envelope.body.e2e.key_init_b64;
+  nlohmann::json e2e_body = nlohmann::json::object();
+  if (envelope.body.e2e.member_payloads && !envelope.body.e2e.member_payloads->empty()) {
+    e2e_body["member_payloads"] = *envelope.body.e2e.member_payloads;
+  } else {
+    e2e_body["payload_b64"] = envelope.body.e2e.payload_b64;
   }
-  nlohmann::json route = {{"kind", envelope.route.kind}, {"channel", ThreadChannelToString(envelope.route.channel)}};
+  if (envelope.body.e2e.key_init_b64) {
+    e2e_body["key_init_b64"] = *envelope.body.e2e.key_init_b64;
+  }
+  nlohmann::json body = {{"e2e", std::move(e2e_body)}};
+  nlohmann::json route = {{"kind", envelope.route.kind}};
+  if (envelope.route.kind == "direct") {
+    route["channel"] = ThreadChannelToString(envelope.route.channel);
+  }
   if (envelope.route.group_id) {
     route["group_id"] = *envelope.route.group_id;
   }
@@ -294,11 +304,20 @@ nlohmann::json RelayEnvelopeToJson(const RelayEnvelope& envelope) {
 }
 
 nlohmann::json RelayEnvelopeToApplicationJson(const RelayEnvelope& envelope) {
-  nlohmann::json body = {{"e2e", {{"payload_b64", envelope.body.e2e.payload_b64}}}};
-  if (envelope.body.e2e.key_init_b64) {
-    body["e2e"]["key_init_b64"] = *envelope.body.e2e.key_init_b64;
+  nlohmann::json e2e_body = nlohmann::json::object();
+  if (envelope.body.e2e.member_payloads && !envelope.body.e2e.member_payloads->empty()) {
+    e2e_body["member_payloads"] = *envelope.body.e2e.member_payloads;
+  } else {
+    e2e_body["payload_b64"] = envelope.body.e2e.payload_b64;
   }
-  nlohmann::json route = {{"kind", envelope.route.kind}, {"channel", ThreadChannelToString(envelope.route.channel)}};
+  if (envelope.body.e2e.key_init_b64) {
+    e2e_body["key_init_b64"] = *envelope.body.e2e.key_init_b64;
+  }
+  nlohmann::json body = {{"e2e", std::move(e2e_body)}};
+  nlohmann::json route = {{"kind", envelope.route.kind}};
+  if (envelope.route.kind == "direct") {
+    route["channel"] = ThreadChannelToString(envelope.route.channel);
+  }
   if (envelope.route.group_id) {
     route["group_id"] = *envelope.route.group_id;
   }
@@ -360,8 +379,8 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json) {
   if (e2e.contains("content_rml")) {
     return Error("Remote content_rml is not supported on wire");
   }
-  if (!e2e.contains("payload_b64") || !e2e["payload_b64"].is_string()) {
-    return Error("Missing body.e2e.payload_b64");
+  if (!e2e.contains("payload_b64") && !e2e.contains("member_payloads")) {
+    return Error("Missing body.e2e.payload_b64 or member_payloads");
   }
 
   RelayEnvelope envelope;
@@ -369,7 +388,18 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json) {
   envelope.message_id = json["message_id"].get<std::string>();
   envelope.sender_relay_id = json["sender_relay_id"].get<std::string>();
   envelope.sender_contact_id = json["sender_contact_id"].get<std::string>();
-  envelope.body.e2e.payload_b64 = e2e["payload_b64"].get<std::string>();
+  if (e2e.contains("payload_b64") && e2e["payload_b64"].is_string()) {
+    envelope.body.e2e.payload_b64 = e2e["payload_b64"].get<std::string>();
+  }
+  if (e2e.contains("member_payloads") && e2e["member_payloads"].is_object()) {
+    std::map<std::string, std::string> payloads;
+    for (auto it = e2e["member_payloads"].begin(); it != e2e["member_payloads"].end(); ++it) {
+      if (it.value().is_string()) {
+        payloads[it.key()] = it.value().get<std::string>();
+      }
+    }
+    envelope.body.e2e.member_payloads = std::move(payloads);
+  }
   if (e2e.contains("key_init_b64") && e2e["key_init_b64"].is_string()) {
     envelope.body.e2e.key_init_b64 = e2e["key_init_b64"].get<std::string>();
   }
@@ -378,7 +408,10 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json) {
   if (route.contains("kind") && route["kind"].is_string()) {
     envelope.route.kind = route["kind"].get<std::string>();
   }
-  if (route.contains("channel") && route["channel"].is_string()) {
+  if (envelope.route.kind == "direct") {
+    if (!route.contains("channel") || !route["channel"].is_string()) {
+      return Error("Missing route.channel");
+    }
     const std::string channel_value = route["channel"].get<std::string>();
     if (channel_value == "public_relay") {
       return Error("public_relay channel is not supported");
@@ -387,11 +420,16 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const nlohmann::json& json) {
     if (envelope.route.channel == ThreadChannel::None) {
       return Error("Invalid route.channel");
     }
-  } else {
-    return Error("Missing route.channel");
+  } else if (envelope.route.kind == "group") {
+    envelope.route.channel = ThreadChannel::None;
+  } else if (route.contains("channel") && route["channel"].is_string()) {
+    envelope.route.channel = ThreadChannelFromString(route["channel"].get<std::string>());
   }
   if (route.contains("group_id") && route["group_id"].is_string()) {
     envelope.route.group_id = route["group_id"].get<std::string>();
+  }
+  if (envelope.route.kind == "group" && !envelope.route.group_id) {
+    return Error("Missing route.group_id for group envelope");
   }
 
   if (json.contains("sender_seq") && json["sender_seq"].is_number_unsigned()) {

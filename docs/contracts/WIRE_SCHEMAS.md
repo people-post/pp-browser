@@ -165,7 +165,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | `kind` | Fields | Maturity |
 |--------|--------|----------|
 | `direct` | `channel`: `e2e` \| `e2e_public` | **`[v1]`** private; **`[post-v1]`** public |
-| `group` | `group_id`: string | **`[post-v1]`** |
+| `group` | `group_id`: string | **`[v1]`** (Bucket C) |
 
 ### `body.e2e` (direct tiers — D090, E024)
 
@@ -173,6 +173,14 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 |-------|------|----------|-------|
 | `payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
 | `key_init_b64` | string | no | **`e2e_public` only** — hybrid KEM encapsulation for recipient to derive `master_psk` when local PSK missing (E024). Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK. |
+
+### `body.e2e` (group tier — D095, E022)
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `member_payloads` | object map | yes | Keys = recipient relay ids; values = RFC 4648 base64 ciphertext blobs (pairwise `e2e_public` per member). Each value uses the same AEAD layout as direct `payload_b64`. |
+
+**Rules:** `route.kind=group` requires `member_payloads`; omit `payload_b64` and `route.channel`. One envelope is fan-out per member on send (client may emit N relay records). See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
 
 ---
 
@@ -217,6 +225,8 @@ Unified body for disk and E2E AEAD plaintext (D026, E010). Stored canonically in
 | `sub_version` | `u8` = **`1`** |
 | `control_type` | **LenUtf8** |
 | `detail` | **LenUtf8** (empty = zero length) |
+
+**Group membership `control_type` values (Bucket C):** `group_invite`, `group_invite_accept`, `group_invite_decline`, `member_joined`, `member_left`, `member_removed`, `owner_transferred`, `group_renamed`, `group_forked`. Detail JSON schemas: [group chat DESIGN § Membership events](../../projects/group-chat/DESIGN.md#membership-event-wire-schema).
 
 **`[post-v1]`** types: documented sub-layouts in [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026).
 

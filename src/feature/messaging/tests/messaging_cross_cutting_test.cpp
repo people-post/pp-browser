@@ -11,6 +11,7 @@
 #include "base/crypto/AutoKeyEstablishment.h"
 #include "base/people/Ed25519Signer.h"
 #include "base/people/IdentityStore.h"
+#include "base/messaging/GroupRosterStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 
@@ -40,13 +41,14 @@ ByteVector TestDek() {
 
 class PipelineHarness {
 public:
-  explicit PipelineHarness(const std::string& suffix, const ThreadChannel channel)
+  explicit   PipelineHarness(const std::string& suffix, const ThreadChannel channel)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_cross_cutting_" + suffix)),
         store(data_dir.string()),
         identity(data_dir.string(), "test"),
+        roster_store(store.ProfileDbPath()),
         psk_store(store.ProfileDbPath(), "test"),
         key_resolver(key_store),
-        pipeline(store, key_resolver, psk_store, identity) {
+        pipeline(store, key_resolver, psk_store, identity, roster_store) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
@@ -176,6 +178,7 @@ public:
   std::filesystem::path data_dir;
   SqliteThreadStore store;
   IdentityStore identity;
+  GroupRosterStore roster_store;
   SqlitePskSessionStore psk_store;
   PeerSigningKeyStore key_store;
   PeerSigningKeyResolver key_resolver;

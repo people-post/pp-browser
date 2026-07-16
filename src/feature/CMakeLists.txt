@@ -14,6 +14,8 @@ set(PP_BROWSER_FEATURE_SOURCES
   messaging/Libp2pDirectChatService.cpp
   messaging/SqlitePskSessionStore.cpp
   messaging/ContactActionDispatcher.cpp
+  messaging/GroupInviteGate.cpp
+  messaging/GroupMembershipService.cpp
   ai/AgentSession.cpp
   ai/TurnPlanner.cpp
   ai/TurnExecutor.cpp

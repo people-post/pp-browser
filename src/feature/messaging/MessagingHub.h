@@ -6,7 +6,10 @@
 #include "feature/messaging/ContactActionDispatcher.h"
 #include "feature/messaging/InboxController.h"
 #include "base/messaging/PeerKemKeyStore.h"
+#include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
+#include "feature/messaging/GroupInviteGate.h"
+#include "feature/messaging/GroupMembershipService.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
@@ -44,6 +47,7 @@ public:
 
   InboxController& Inbox();
   P2pMessagingService& P2p();
+  GroupMembershipService& Groups();
   MessageRouter& Router();
   ContactActionDispatcher& Actions();
   bool HasRouter() const { return router_ != nullptr; }
@@ -88,6 +92,9 @@ private:
   PeerSigningKeyStore signing_key_store_;
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<SqlitePskSessionStore> psk_store_;
+  std::unique_ptr<GroupRosterStore> group_roster_;
+  std::unique_ptr<GroupInviteGate> group_invite_gate_;
+  std::unique_ptr<GroupMembershipService> group_membership_;
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
   std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;
   std::unique_ptr<InboxController> inbox_;

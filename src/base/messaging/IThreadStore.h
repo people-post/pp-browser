@@ -55,6 +55,16 @@ public:
   virtual Roe<Thread> FindOrCreateDirectThread(const DirectChatTarget& target,
                                                const std::string& participant_contact_id,
                                                const std::string& title) = 0;
+
+  /** Group thread lookup by wire group_id (D076). */
+  virtual Roe<std::optional<Thread>> FindGroupThread(const std::string& group_id) const = 0;
+  /** Create group thread shell when accepting invite / creating group. */
+  virtual Roe<Thread> FindOrCreateGroupThread(const std::string& group_id, const std::string& title,
+                                              const std::vector<std::string>& participant_contact_ids) = 0;
+  /** v1.1 hook — export transcript up to message id for fork copy. */
+  virtual Roe<std::vector<ThreadMessage>> ExportMessagesUpTo(const std::string& thread_id,
+                                                             const std::optional<std::string>& max_message_id) const = 0;
+
   virtual Roe<uint64_t> AllocateSenderSeq(const std::string& thread_id) = 0;
   virtual Roe<uint32_t> GetChatTargetSessionEpoch(const std::string& thread_id) const = 0;
   virtual Roe<std::vector<ThreadMessage>> GetMessagesBySeqRange(const std::string& thread_id,

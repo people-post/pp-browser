@@ -27,6 +27,7 @@ public:
   Roe<Thread> CreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
+  Roe<Thread> CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids);
 
   bool IsAiHomeThread(const std::string& thread_id) const;
   Roe<void> CloseThread(const std::string& thread_id);

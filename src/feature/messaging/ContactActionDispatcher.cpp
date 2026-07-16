@@ -3,7 +3,10 @@
 #include "base/messaging/MessagingJson.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/people/ContactTypes.h"
+#include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/P2pMessagingService.h"
+#include "base/messaging/GroupTypes.h"
+#include "base/people/ContactTypes.h"
 
 #include <nlohmann/json.hpp>
 
@@ -189,6 +192,95 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     }
     if (on_action_message_) {
       on_action_message_(result->registered ? "Registered on network" : "Registration failed");
+    }
+    return Roe<std::optional<std::string>>(std::optional<std::string>{});
+  }
+
+  if (type == "accept_group_invite") {
+    if (!payload.contains("invite_nonce") || !payload["invite_nonce"].is_string()) {
+      return Error("Missing invite_nonce");
+    }
+    if (!MessagingHub::Instance().IsInitialized()) {
+      return Error("Messaging not initialized");
+    }
+    auto thread = MessagingHub::Instance().Groups().AcceptInvite(payload["invite_nonce"].get<std::string>());
+    if (!thread) {
+      return thread.error();
+    }
+    (void)inbox_.OpenThread(thread->id);
+    if (on_action_message_) {
+      on_action_message_("Joined " + thread->title);
+    }
+    return Roe<std::optional<std::string>>(std::optional<std::string>{});
+  }
+
+  if (type == "decline_group_invite") {
+    if (!payload.contains("invite_nonce") || !payload["invite_nonce"].is_string()) {
+      return Error("Missing invite_nonce");
+    }
+    if (!MessagingHub::Instance().IsInitialized()) {
+      return Error("Messaging not initialized");
+    }
+    if (auto declined = MessagingHub::Instance().Groups().DeclineInvite(payload["invite_nonce"].get<std::string>());
+        !declined) {
+      return declined.error();
+    }
+    if (on_action_message_) {
+      on_action_message_("Declined group invitation");
+    }
+    return Roe<std::optional<std::string>>(std::optional<std::string>{});
+  }
+
+  if (type == "block_group_inviter") {
+    if (!payload.contains("inviter_identity") || !payload["inviter_identity"].is_string()) {
+      return Error("Missing inviter_identity");
+    }
+    const std::string inviter_identity = payload["inviter_identity"].get<std::string>();
+    auto contacts = contacts_.List();
+    if (!contacts) {
+      return contacts.error();
+    }
+    bool updated = false;
+    for (Contact& contact : *contacts) {
+      for (const ContactId& id : contact.ids) {
+        if (id.value == inviter_identity) {
+          contact.trust = TrustLevel::Blocked;
+          if (auto saved = contacts_.Upsert(contact); !saved) {
+            return saved.error();
+          }
+          updated = true;
+          break;
+        }
+      }
+    }
+    if (payload.contains("invite_nonce") && payload["invite_nonce"].is_string() &&
+        MessagingHub::Instance().IsInitialized()) {
+      (void)MessagingHub::Instance().Groups().DeclineInvite(payload["invite_nonce"].get<std::string>());
+    }
+    if (on_action_message_) {
+      on_action_message_(updated ? "Blocked inviter" : "Blocked unknown inviter");
+    }
+    return Roe<std::optional<std::string>>(std::optional<std::string>{});
+  }
+
+  if (type == "create_group") {
+    if (!payload.contains("title") || !payload["title"].is_string()) {
+      return Error("Missing title");
+    }
+    std::vector<std::string> member_contact_ids;
+    if (payload.contains("member_contact_ids") && payload["member_contact_ids"].is_array()) {
+      for (const nlohmann::json& entry : payload["member_contact_ids"]) {
+        if (entry.is_string()) {
+          member_contact_ids.push_back(entry.get<std::string>());
+        }
+      }
+    }
+    auto thread = inbox_.CreateGroup(payload["title"].get<std::string>(), member_contact_ids);
+    if (!thread) {
+      return thread.error();
+    }
+    if (on_action_message_) {
+      on_action_message_("Created group " + thread->title);
     }
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }

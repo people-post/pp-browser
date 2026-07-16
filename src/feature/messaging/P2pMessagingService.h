@@ -4,6 +4,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "base/messaging/IThreadStore.h"
+#include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/PeerKemKeyStore.h"
 #include "base/crypto/IPskSessionStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
@@ -15,6 +16,7 @@
 #include "feature/messaging/Libp2pDirectChatService.h"
 #include "feature/messaging/PskSessionCoordinator.h"
 #include "feature/messaging/RelayReceivePipeline.h"
+#include "feature/messaging/GroupInviteGate.h"
 #include "base/net/ServiceClients.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
@@ -45,11 +47,14 @@ public:
   P2pMessagingService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
                       InboxController& inbox, PeerSigningKeyStore& signing_key_store,
                       IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
-                      IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
-                      Libp2pHost* libp2p_host = nullptr, PeerSessionManager* peer_sessions = nullptr);
+                                         IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
+                                         GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
+                                         Libp2pHost* libp2p_host = nullptr, PeerSessionManager* peer_sessions = nullptr);
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
                                      const SendRelayOptions& options = {});
+  Roe<ThreadMessage> SendGroupMessage(const std::string& thread_id, const std::string& text,
+                                      const SendRelayOptions& options = {});
   void PollAndMerge();
   /** Same ingest as PollAndMerge; `force` bypasses foreground rate limit. */
   void SyncInboxFromWake(bool force = true);
@@ -134,6 +139,7 @@ private:
   PeerKemKeyStore& kem_key_store_;
   IPeerKemKeyResolver& kem_key_resolver_;
   IPskSessionStore& psk_store_;
+  GroupRosterStore& group_roster_;
   Libp2pHost* libp2p_host_ = nullptr;
   PeerSessionManager* peer_sessions_ = nullptr;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;

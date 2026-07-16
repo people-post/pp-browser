@@ -40,6 +40,11 @@ public:
   Roe<std::optional<Thread>> FindDirectThread(const DirectChatTarget& target) const override;
   Roe<Thread> FindOrCreateDirectThread(const DirectChatTarget& target, const std::string& participant_contact_id,
                                        const std::string& title) override;
+  Roe<std::optional<Thread>> FindGroupThread(const std::string& group_id) const override;
+  Roe<Thread> FindOrCreateGroupThread(const std::string& group_id, const std::string& title,
+                                      const std::vector<std::string>& participant_contact_ids) override;
+  Roe<std::vector<ThreadMessage>> ExportMessagesUpTo(const std::string& thread_id,
+                                                     const std::optional<std::string>& max_message_id) const override;
   Roe<uint64_t> AllocateSenderSeq(const std::string& thread_id) override;
   Roe<uint32_t> GetChatTargetSessionEpoch(const std::string& thread_id) const override;
   Roe<std::vector<ThreadMessage>> GetMessagesBySeqRange(const std::string& thread_id,

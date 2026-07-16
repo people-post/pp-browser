@@ -249,6 +249,15 @@
         <p class="text muted" data-if="!security_can_change_pin && pin_protection_status != 'Not set up'">
           Unlock your profile to change the PIN.
         </p>
+        <label class="settings-field">
+          <span class="settings-label">Group invites</span>
+          <select class="field" data-value="group_invite_policy" data-event-change="on_security_field_changed()">
+            <option value="everyone">Everyone</option>
+            <option value="contacts_only">Contacts only</option>
+            <option value="nobody">Nobody</option>
+          </select>
+        </label>
+        <p class="text muted">Controls who can invite you to group chats. Separate from direct messages.</p>
       </div>
 
       <div class="settings-section stack" data-if="selected_id == 'storage'">

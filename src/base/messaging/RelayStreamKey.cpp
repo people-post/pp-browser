@@ -16,4 +16,8 @@ std::string BuildCanonicalRelayStreamKey(const std::string& contact_id_a, const 
   return "v1:" + ThreadChannelToString(channel) + ":" + std::to_string(session_epoch) + ":" + lo + ":" + hi;
 }
 
+std::string BuildGroupRelayStreamKey(const std::string& group_id, const uint32_t session_epoch) {
+  return "v1:group:" + group_id + ":" + std::to_string(session_epoch);
+}
+
 } // namespace pbr

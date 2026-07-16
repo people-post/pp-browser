@@ -7,6 +7,7 @@
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/people/Ed25519Signer.h"
 #include "base/people/IdentityStore.h"
+#include "base/messaging/GroupRosterStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 
@@ -120,7 +121,8 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   InstallTestPsk(psk_store, *thread);
 
   PeerSigningKeyResolver key_resolver(key_store);
-  RelayReceivePipeline pipeline(store, key_resolver, psk_store, identity);
+  GroupRosterStore roster_store(store.ProfileDbPath());
+  RelayReceivePipeline pipeline(store, key_resolver, psk_store, identity, roster_store);
 
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;

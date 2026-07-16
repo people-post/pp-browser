@@ -1295,6 +1295,10 @@ void ChatController::UpdateThreadChrome() {
           chat_.compose_disabled = !status->has_psk || !status->verified;
         }
       }
+    } else if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2ePublic) {
+      chat_.compose_disabled = !MessagingHub::Instance().IsMessagingReady();
+    } else if (thread->kind == ThreadKind::Group) {
+      chat_.compose_disabled = !MessagingHub::Instance().IsMessagingReady();
     }
     if (thread->kind == ThreadKind::Ai) {
       chat_.thread_subtitle = "Local assistant";
@@ -1311,7 +1315,13 @@ void ChatController::UpdateThreadChrome() {
         chat_.draft_placeholder = "Message… · @ai · @ai+ · @ai++";
       }
     } else {
-      chat_.thread_subtitle = thread->encrypted ? "Group · E2E" : "Group chat";
+      std::string roster_label = thread->encrypted ? "Group · E2E" : "Group chat";
+      if (MessagingHub::Instance().IsMessagingReady() && thread->group_id) {
+        if (auto roster = MessagingHub::Instance().Groups().ListRoster(*thread->group_id)) {
+          roster_label += " · " + std::to_string(roster->size()) + " members";
+        }
+      }
+      chat_.thread_subtitle = roster_label.c_str();
       chat_.draft_placeholder = "Message the group… or @ai ask assistant";
     }
     chat_.show_thread_menu =

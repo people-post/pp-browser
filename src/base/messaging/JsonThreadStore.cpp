@@ -513,6 +513,45 @@ Roe<Thread> JsonThreadStore::FindOrCreateDirectThread(const DirectChatTarget& ta
   return UpsertThread(thread);
 }
 
+Roe<std::optional<Thread>> JsonThreadStore::FindGroupThread(const std::string& group_id) const {
+  if (auto load = EnsureLoaded(); !load) {
+    return load.error();
+  }
+  std::lock_guard lock(mutex_);
+  for (const Thread& thread : threads_) {
+    if (thread.group_id && *thread.group_id == group_id) {
+      return Roe<std::optional<Thread>>(thread);
+    }
+  }
+  return Roe<std::optional<Thread>>(std::optional<Thread>{});
+}
+
+Roe<Thread> JsonThreadStore::FindOrCreateGroupThread(const std::string& group_id, const std::string& title,
+                                                     const std::vector<std::string>& participant_contact_ids) {
+  if (auto existing = FindGroupThread(group_id)) {
+    if (!existing) {
+      return existing.error();
+    }
+    if (*existing) {
+      return **existing;
+    }
+  }
+  Thread thread;
+  thread.id = util::GenerateUuid();
+  thread.kind = ThreadKind::Group;
+  thread.group_id = group_id;
+  thread.participant_contact_ids = participant_contact_ids;
+  thread.title = title;
+  thread.encrypted = true;
+  thread.updated_at = util::NowUnixMs();
+  return UpsertThread(thread);
+}
+
+Roe<std::vector<ThreadMessage>> JsonThreadStore::ExportMessagesUpTo(
+    const std::string& thread_id, const std::optional<std::string>& max_message_id) const {
+  return GetMessages(thread_id);
+}
+
 Roe<uint64_t> JsonThreadStore::AllocateSenderSeq(const std::string& /*thread_id*/) {
   static uint64_t next_seq = 1;
   return next_seq++;

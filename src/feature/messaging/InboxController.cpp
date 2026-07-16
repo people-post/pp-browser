@@ -1,7 +1,9 @@
 #include "feature/messaging/InboxController.h"
 
+#include "feature/messaging/MessagingHub.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 
@@ -9,9 +11,30 @@
 #include "feature/chat/ChatFormHelper.h"
 #include "common/Utilities.h"
 #include <map>
+#include <sstream>
 #include <unordered_map>
 
 namespace pbr {
+
+namespace {
+
+std::string InlineChatActionButtonsRml(const std::vector<TranscriptChatAction>& chat_actions) {
+  std::ostringstream out;
+  for (size_t i = 0; i < chat_actions.size(); ++i) {
+    out << "<button class=\"chat-suggestion\" data-event-click=\"send_chat_action('__ENTRY__', " << i << ")\">"
+        << StructuredTextParser::EscapeText(chat_actions[i].label) << "</button>";
+  }
+  return out.str();
+}
+
+std::string HydrateChatActions(const std::string& body_rml, const std::vector<TranscriptChatAction>& chat_actions) {
+  if (chat_actions.empty() || body_rml.find("chat-suggestion") != std::string::npos) {
+    return body_rml;
+  }
+  return body_rml + InlineChatActionButtonsRml(chat_actions);
+}
+
+} // namespace
 
 InboxController::InboxController(IThreadStore& store, ContactsStore& contacts)
     : store_(store), contacts_(contacts) {
@@ -257,6 +280,18 @@ Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact
   return OpenThread(thread->id);
 }
 
+Roe<Thread> InboxController::CreateGroup(const std::string& title,
+                                         const std::vector<std::string>& member_contact_ids) {
+  if (!MessagingHub::Instance().IsInitialized()) {
+    return Error("Messaging not initialized");
+  }
+  auto created = MessagingHub::Instance().Groups().CreateGroup(title, member_contact_ids);
+  if (!created) {
+    return created.error();
+  }
+  return OpenThread(created->id);
+}
+
 Roe<Thread> InboxController::CreateDirectThread(const std::string& contact_id, ThreadChannel channel) {
   auto contact = contacts_.Get(contact_id);
   if (!contact) {
@@ -363,6 +398,21 @@ std::string InboxController::BuildSharedBadgeHtml(const ThreadMessage& message) 
 }
 
 std::string InboxController::BuildSystemRml(const ThreadMessage& message) const {
+  const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
+  if (control_type && *control_type == GroupMembershipControlType::GroupInvite) {
+    auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
+    const std::string title =
+        invite ? invite->group_title : (message.text.empty() ? "Group invitation" : message.text);
+    std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
+                       StructuredTextParser::EscapeText(title) + "</h3>";
+    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(message.text) + "</p>";
+    html += HydrateChatActions("", message.chat_actions);
+    html += "</div>";
+    if (html.find("__ENTRY__") != std::string::npos) {
+      return InjectEntryPlaceholders(html, message.id);
+    }
+    return html;
+  }
   return "<div class=\"chat-system-line muted\"><p>" + StructuredTextParser::EscapeText(message.text) + "</p></div>";
 }
 
@@ -420,8 +470,13 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   if (!badges.empty()) {
     badges = "<div class=\"chat-message-meta\">" + badges + "</div>";
   }
-  return badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + paragraph +
-         StructuredTextParser::EscapeText(message.text) + "</p></div>";
+  std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + paragraph +
+                     StructuredTextParser::EscapeText(message.text) + "</p></div>";
+  body = HydrateChatActions(body, message.chat_actions);
+  if (body.find("__ENTRY__") != std::string::npos) {
+    return InjectEntryPlaceholders(body, message.id);
+  }
+  return body;
 }
 
 std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(const std::string& thread_id) const {
