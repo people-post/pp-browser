@@ -7,6 +7,7 @@
 #include "common/Utilities.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/E2eIntegrityUtil.h"
+#include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/EnvelopeSigner.h"
@@ -912,7 +913,7 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
     envelope.sender_contact_id = identity->relay_user_id;
     envelope.route.kind = "group";
     envelope.route.group_id = *(*thread)->group_id;
-    envelope.body.e2e.member_payloads = {{recipient, payload_b64}};
+    envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{recipient, payload_b64}};
     envelope.sender_seq = *message.sender_seq;
     envelope.order_key = envelope.sender_seq;
     envelope.session_epoch = *message.session_epoch;

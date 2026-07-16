@@ -3,6 +3,7 @@
 #include "base/crypto/AutoKeyEstablishment.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/ChatPayloadValidator.h"
+#include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/MessagingJson.h"

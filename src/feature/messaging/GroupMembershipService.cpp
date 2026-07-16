@@ -65,7 +65,10 @@ Roe<void> GroupMembershipService::AppendMembershipSystemEvent(const std::string&
   if (!message) {
     return message.error();
   }
-  return store_.AppendMessage(*message);
+  if (auto appended = store_.AppendMessage(*message); !appended) {
+    return appended.error();
+  }
+  return {};
 }
 
 Roe<void> GroupMembershipService::SendInviteDirectMessage(const GroupInvitePayload& invite,

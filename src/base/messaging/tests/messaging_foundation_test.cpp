@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   using namespace pbr;

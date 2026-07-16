@@ -1,7 +1,7 @@
 #pragma once
 
-#include "base/ai/LlmClient.h"
-#include "base/ai/conversation/ConversationTypes.h"
+#include "base/data/ContextBudget.h"
+#include "base/data/LlmConfig.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
