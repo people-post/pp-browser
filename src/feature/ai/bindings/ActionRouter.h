@@ -25,6 +25,7 @@ public:
 
   void SetManifest(const BindingsManifest& manifest);
   void SetToolExecutor(ToolExecutor executor);
+  void SetModelDirtyCallback(std::function<void(const std::string& model, const std::string& binding)> callback);
   void RegisterStub(const std::string& action, std::function<void()> handler);
 
   void Invoke(const std::string& action);
@@ -35,6 +36,7 @@ private:
   Rml::Context* context_ = nullptr;
   BindingsManifest manifest_;
   ToolExecutor tool_executor_;
+  std::function<void(const std::string& model, const std::string& binding)> model_dirty_callback_;
   std::unordered_map<std::string, std::function<void()>> stubs_;
 };
 

@@ -1,4 +1,4 @@
-#include "feature/settings/SecuritySettingsSection.h"
+#include "feature/ui/SecuritySettingsSection.h"
 
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/SessionStore.h"

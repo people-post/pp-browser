@@ -74,11 +74,19 @@ integration/host → fork/include (public API only)
 
 | Path | Contents |
 |------|----------|
+| `feature/settings/` | Settings apply logic (no messaging/chat deps) |
 | `feature/messaging/` | MessagingHub, router, inbox, P2P service |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
-| `feature/ui/` | ShellHost, DocumentLoader, RmlMount, SettingsController |
-| `feature/chat/` | Chat UI and helpers |
-| `feature/settings/` | Settings apply logic |
+| `feature/ui/` | ShellHost, settings UI, profile/security sections, `ChatSessionActions` bridge |
+| `feature/chat/` | Chat UI, agent↔hub wiring, messaging agent tools |
+
+Feature module libraries link in acyclic order (each `PUBLIC_LIBS` only lower layers):
+
+```
+settings → ai/tools → ai/bindings → ai → messaging → ui → chat
+```
+
+Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. `ChatSessionActions` in `feature/ui/` breaks the former settings/chat/ui include cycles without reversing the link graph.
 
 ## CMake targets
 

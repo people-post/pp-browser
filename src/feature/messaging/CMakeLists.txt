@@ -10,7 +10,6 @@ pp_browser_add_feature_library(pp_feature_messaging
     Libp2pDirectChatService.cpp
     MessageRouter.cpp
     MessagingHub.cpp
-    MessagingTools.cpp
     P2pMessagingService.cpp
     PskSessionCoordinator.cpp
     PushDeviceCoordinator.cpp
@@ -19,6 +18,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     RelayReceivePipeline.cpp
     SqlitePskSessionStore.cpp
   PUBLIC_LIBS
+    pp_feature_ai
     p2p
     nlohmann_json::nlohmann_json
     CURL::libcurl)

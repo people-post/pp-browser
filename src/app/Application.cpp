@@ -13,6 +13,8 @@
 #include "base/platform/PlatformServices.h"
 #include "base/platform/AppEventHooks.h"
 #include "base/platform/SdlAppEvents.h"
+#include "feature/ui/ContactsController.h"
+#include "feature/ui/DataModelHost.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellHost.h"
 #include "base/ui/Theme.h"
@@ -192,6 +194,9 @@ bool Application::Initialize(const char* window_title) {
   ContextMenuHost::Instance().Install(context);
 
   ActionRouter::Instance().Attach(context);
+  ActionRouter::Instance().SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
+    DataModelHost::Instance().Dirty(model, binding);
+  });
   if (!SetupChatController(context)) {
     log().error << "SetupChatController failed";
     Rml::RemoveContext("main");
@@ -217,6 +222,12 @@ void Application::Run() {
 
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
     BrowserThread::RunUITasks();
+    if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
+      SettingsController::Instance().Tick();
+    }
+    if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
+      ContactsController::Instance().Tick();
+    }
     UpdateChatController();
     ContextMenuHost::Instance().Update();
     ShellHost::Instance().Update(context);

@@ -3,7 +3,11 @@ pp_browser_add_feature_library(pp_feature_chat
     CalendarHelper.cpp
     ChatController.cpp
     ChatWidgetStateBuilder.cpp
+    MessagingTools.cpp
   PUBLIC_LIBS
+    pp_feature_ai
+    pp_feature_messaging
+    pp_feature_ui
     pp_rmlui_backend
     RmlUi::Core
     nlohmann_json::nlohmann_json)

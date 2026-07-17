@@ -1,10 +1,13 @@
 pp_browser_add_feature_library(pp_feature_ui
   SOURCES
+    ChatSessionActions.cpp
     ContactsController.cpp
     DataModelHost.cpp
     DocumentLoader.cpp
     PinGateController.cpp
+    ProfileSettingsSection.cpp
     RmlMount.cpp
+    SecuritySettingsSection.cpp
     SettingsController.cpp
     ShellChatOverlayGesture.cpp
     ShellFeedback.cpp
@@ -13,6 +16,8 @@ pp_browser_add_feature_library(pp_feature_ui
     ShellLayout.cpp
     UserFeedback.cpp
   PUBLIC_LIBS
+    pp_feature_settings
+    pp_feature_messaging
     pp_rmlui_backend
     RmlUi::Core
     nlohmann_json::nlohmann_json)

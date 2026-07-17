@@ -1,4 +1,4 @@
-#include "feature/messaging/MessagingTools.h"
+#include "feature/chat/MessagingTools.h"
 
 #include "feature/messaging/MessagingHub.h"
 

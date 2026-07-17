@@ -1,4 +1,4 @@
-#include "feature/settings/ProfileSettingsSection.h"
+#include "feature/ui/ProfileSettingsSection.h"
 
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
@@ -6,7 +6,7 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RegistrationClientUtil.h"
-#include "feature/chat/ChatController.h"
+#include "feature/ui/ChatSessionActions.h"
 #include "feature/messaging/PushDeviceCoordinator.h"
 #include "feature/messaging/MessagingHub.h"
 
@@ -59,7 +59,9 @@ void SyncRegistrationUi(SettingsUiState& state, const LocalIdentity& identity) {
 }
 
 void ReconfigureAgentIfNeeded() {
-  ChatController::Instance().ReloadAgentConfig();
+  if (ChatSessionActions::Instance().reload_agent_config) {
+    ChatSessionActions::Instance().reload_agent_config();
+  }
 }
 
 } // namespace
