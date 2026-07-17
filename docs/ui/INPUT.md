@@ -94,7 +94,7 @@ Build with `-DRMLUI_BACKEND_SIMULATE_TOUCH=ON` to route mouse input through the 
 ```bash
 cmake -B build -S . -DRMLUI_BACKEND_SIMULATE_TOUCH=ON
 cmake --build build -j
-./build/pp-browser
+./build/src/app/pp-browser
 ```
 
 Implementation: [`TouchSimOverlay`](src/render/integration/host/TouchSimOverlay.cpp) in `pp_rmlui_backend` (compiled only when the CMake option is set). Each frame it polls `SDL_GetMouseState`, maps window coordinates to pixel space the same way as synthetic finger events (`x / window_w * pixel_w`), and draws the dot at the current pointer position while the window has mouse focus — not only during press. The overlay sets its own GL viewport from live `SDL_GetWindowSizeInPixels` so it stays aligned after window resize. Real mobile builds are unchanged.

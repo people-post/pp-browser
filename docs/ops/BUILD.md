@@ -76,7 +76,7 @@ CI uses ccache (Linux/macOS) and sccache (Windows) automatically via `-DPP_BROWS
 From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
 
 ```bash
-./build/pp-browser
+./build/src/app/pp-browser
 ```
 
 ### Simulated touch (optional dev)

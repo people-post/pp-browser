@@ -107,7 +107,7 @@ jobs:
           xvfb_pid=$!
           sleep 1
           set +e
-          timeout 3 ./build/pp-browser
+          timeout 3 ./build/src/app/pp-browser
           code=$?
           kill "$xvfb_pid" 2>/dev/null || true
           wait "$xvfb_pid" 2>/dev/null || true
