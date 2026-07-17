@@ -739,6 +739,14 @@ select selectbox option {
   flex-shrink: 0;
 }
 
+.shell-nav-tab-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
 .shell-nav-tab-label {
   margin: 0;
   padding: 0;
@@ -1261,11 +1269,38 @@ select selectbox option {
 
 .sidebar-unread {
   flex-shrink: 0;
+}
+
+.badge-count {
+  flex-shrink: 0;
   min-width: 20dp;
   padding: 2dp 6dp;
   border-radius: 10dp;
   font-size: 11dp;
   text-align: center;
+}
+
+.badge-count--nav {
+  position: absolute;
+  top: -4dp;
+  right: -8dp;
+  min-width: 16dp;
+  padding: 1dp 4dp;
+  font-size: 10dp;
+  line-height: 1.1;
+}
+
+.badge-dot {
+  flex-shrink: 0;
+  width: 8dp;
+  height: 8dp;
+  border-radius: 4dp;
+}
+
+.badge-dot--nav {
+  position: absolute;
+  top: -2dp;
+  right: -4dp;
 }
 
 .sidebar-session-close {

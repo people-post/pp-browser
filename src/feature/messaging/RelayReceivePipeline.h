@@ -21,6 +21,8 @@ struct RelayReceiveOutcome {
   bool persisted = false;
   bool thread_changed = false;
   IngestDecision decision = IngestDecision::HardReject;
+  /** Set when `persisted` is true. */
+  std::string thread_id;
 };
 
 /** v6 receive pipeline steps 0–12 (feature layer orchestration). */

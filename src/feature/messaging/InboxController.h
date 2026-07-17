@@ -35,6 +35,11 @@ public:
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
 
   void MarkThreadRead(const std::string& thread_id);
+  void IncrementUnread(const std::string& thread_id, int delta = 1);
+  void OnInboundMessagePersisted(const std::string& thread_id,
+                                 const std::optional<std::string>& preview = std::nullopt);
+  int SumUnread() const;
+  int SumUnreadForContact(const std::string& contact_id) const;
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
 
   std::vector<MessageDisplayRow> BuildDisplayRows(const std::string& thread_id) const;

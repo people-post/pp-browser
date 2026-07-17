@@ -99,6 +99,14 @@ struct PaneVisibility {
   bool auxiliary_sheet = false;
 };
 
+struct NavBadgeState {
+  int sessions_unread = 0;
+  int contacts_unread = 0;
+  bool me_attention = false;
+  Rml::String sessions_unread_display;
+  Rml::String contacts_unread_display;
+};
+
 struct ShellState {
   LayoutMode layout_mode = LayoutMode::Expanded;
   Rml::String layout_mode_str = "expanded";
@@ -121,6 +129,8 @@ struct ShellState {
   PinGateState pin_gate;
 
   bool activity_visible = false;
+
+  NavBadgeState nav_badges;
 
   float shell_width_dp = 1280.f;
 };

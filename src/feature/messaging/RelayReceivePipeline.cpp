@@ -358,6 +358,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     replay_windows_.erase(ReplayKey{resolved_thread_id, old_epoch});
     outcome.persisted = true;
     outcome.thread_changed = true;
+    outcome.thread_id = resolved_thread_id;
     return outcome;
   }
 
@@ -369,6 +370,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state);
   outcome.persisted = true;
   outcome.thread_changed = true;
+  outcome.thread_id = resolved_thread_id;
   return outcome;
 }
 
@@ -491,6 +493,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, classified.sync_state);
   outcome.persisted = true;
   outcome.thread_changed = true;
+  outcome.thread_id = resolved_thread_id;
   return outcome;
 }
 

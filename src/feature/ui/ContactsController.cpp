@@ -1,5 +1,6 @@
 #include "feature/ui/ContactsController.h"
 
+#include "feature/ui/BadgeAggregator.h"
 #include "base/crypto/PskFingerprint.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/DirectChatTarget.h"
@@ -164,6 +165,10 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact) {
     row.subtitle = contact.server_nickname.c_str();
   }
   row.trust = TrustLevelToString(contact.trust).c_str();
+  if (MessagingHub::Instance().IsInitialized()) {
+    row.unread_count = MessagingHub::Instance().Inbox().SumUnreadForContact(contact.id);
+    row.unread_display = FormatBadgeCount(row.unread_count).c_str();
+  }
   return row;
 }
 
@@ -215,6 +220,8 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
         row.title = thread.title.empty() ? ChannelLabel(thread.channel).c_str() : thread.title.c_str();
         row.channel_label = ChannelLabel(thread.channel).c_str();
         row.kind = ThreadKindClass(thread.channel).c_str();
+        row.unread_count = thread.unread_count;
+        row.unread_display = FormatBadgeCount(thread.unread_count).c_str();
         detail.threads.push_back(std::move(row));
       }
       std::sort(detail.threads.begin(), detail.threads.end(),
@@ -294,6 +301,8 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
       list_handle.RegisterMember("title", &ContactListRow::title);
       list_handle.RegisterMember("subtitle", &ContactListRow::subtitle);
       list_handle.RegisterMember("trust", &ContactListRow::trust);
+      list_handle.RegisterMember("unread_count", &ContactListRow::unread_count);
+      list_handle.RegisterMember("unread_display", &ContactListRow::unread_display);
     }
     if (auto identity_handle = ctor.RegisterStruct<ContactIdentityRow>()) {
       identity_handle.RegisterMember("label", &ContactIdentityRow::label);
@@ -306,6 +315,8 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
       thread_handle.RegisterMember("title", &ContactThreadRow::title);
       thread_handle.RegisterMember("channel_label", &ContactThreadRow::channel_label);
       thread_handle.RegisterMember("kind", &ContactThreadRow::kind);
+      thread_handle.RegisterMember("unread_count", &ContactThreadRow::unread_count);
+      thread_handle.RegisterMember("unread_display", &ContactThreadRow::unread_display);
     }
     if (auto detail_handle = ctor.RegisterStruct<ContactDetail>()) {
       detail_handle.RegisterMember("id", &ContactDetail::id);

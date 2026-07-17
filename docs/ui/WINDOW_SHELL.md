@@ -72,6 +72,8 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `dismiss_banner()` | Hide banner |
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
 
+Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). Refreshed by `BadgeAggregator` on messaging events.
+
 Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`. The nav rail mounts from `assets/views/nav_rail.rml`.
 
 ## Composer chrome

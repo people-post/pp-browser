@@ -26,6 +26,8 @@ public:
     Rml::String title;
     Rml::String subtitle;
     Rml::String trust;
+    int unread_count = 0;
+    Rml::String unread_display;
   };
 
   struct ContactIdentityRow {
@@ -40,6 +42,8 @@ public:
     Rml::String title;
     Rml::String channel_label;
     Rml::String kind;
+    int unread_count = 0;
+    Rml::String unread_display;
   };
 
   struct ContactDetail {

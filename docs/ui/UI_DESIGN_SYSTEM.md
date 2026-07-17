@@ -19,7 +19,7 @@ Productivity-oriented (Notion/Slack): neutral surfaces, one primary blue accent,
 | Surface | RML / module | Themed elements |
 |---------|--------------|-----------------|
 | Shell chrome | `window_shell.rml`, `ShellHost` | Banner, toast, activity strip, scrims, toolbar |
-| Navigation | `sidebar.rml` | Session rows, unread badges, footer |
+| Navigation | `sidebar.rml`, `nav_rail.rml` | Session rows, unread badges, nav tab badges |
 | Primary chat | `chat.rml` | Header, bubbles, empty state, E2E chrome |
 | Composer | `composer.rml` | Prompt card, send button |
 | Working set | `preview.rml` | Panel, chips, long-list rows |
@@ -157,6 +157,25 @@ Visual distinction by chat type — icons and accent rails, not plaintext Privat
 
 Data binding: `thread_is_ai` / `thread_is_private` / `thread_is_public` / `thread_is_group` on chat model; `session.kind` on shell sessions.
 
+## Notification badges
+
+Three tiers reuse the same badge components; do not confuse them with semantic label badges (trust, transport, chat type).
+
+| Tier | Location | Kind | Data |
+|------|----------|------|------|
+| Nav rail | `nav_rail.rml` | `.badge-count--nav` or `.badge-dot--nav` | `window.nav_badges` |
+| List row | Sessions sidebar, contacts list | `.badge-count` | Per-row `unread_count` / `unread_display` |
+| Nested row | Contact detail → Conversations | `.badge-count` | Per-thread unread |
+
+| Class | Use |
+|-------|-----|
+| `.badge-count` | Numeric pill (`1`, `12`, `99+`) for message unread |
+| `.badge-dot` | Non-count attention (future Me-tab security prompts) |
+| `.sidebar-unread` | Alias layout on session rows (extends `.badge-count`) |
+| `.contacts-trust-badge` | **Not** a notification badge — trust label only |
+
+Counts cap at **99+** in C++ (`FormatBadgeCount`). Home tab stays badge-free; Sessions and Contacts tabs show aggregate P2P unread via `BadgeAggregator`.
+
 ## Component classes (reuse before adding rules)
 
 ### Layout
@@ -177,17 +196,17 @@ Data binding: `thread_is_ai` / `thread_is_private` / `thread_is_public` / `threa
 
 ### Shell
 
-`.shell-pane`, `.shell-toolbar`, `.shell-banner`, `.shell-toast`, `.shell-dialog`, `.context-menu-panel`, `.context-menu-sheet`, `.context-menu-sheet-list`, `.context-menu-sheet-cancel`, `.context-menu-item`, `.context-menu-item--danger`
+`.shell-pane`, `.shell-toolbar`, `.shell-banner`, `.shell-toast`, `.shell-dialog`, `.shell-nav-tab-icon-wrap`, `.badge-count`, `.badge-count--nav`, `.badge-dot`, `.badge-dot--nav`, `.context-menu-panel`, `.context-menu-sheet`, `.context-menu-sheet-list`, `.context-menu-sheet-cancel`, `.context-menu-item`, `.context-menu-item--danger`
 
 **Context menus:** `ShowAt` (long-press / right-click) always uses a viewport-clamped float near the pointer. `ShowActions` (chrome overflow such as `⋯`) uses the same float on expanded layout, and a bottom action sheet (`.context-menu-layer--sheet`) on compact layout. Sheet frame geometry is set in `ContextMenuHost::LayoutActionSheet` from the viewport; RCSS only styles the shell and stretched children. Confirmations stay in `.shell-dialog`.
 
 ### Sidebar
 
-`.sidebar-panel`, `.sidebar-session`, `.sidebar-session-active`, `.sidebar-session--ai`, `.sidebar-session--private`, `.sidebar-session--public`, `.sidebar-session--group`, `.sidebar-unread`
+`.sidebar-panel`, `.sidebar-session`, `.sidebar-session-active`, `.sidebar-session--ai`, `.sidebar-session--private`, `.sidebar-session--public`, `.sidebar-session--group`, `.sidebar-unread`, `.badge-count`
 
 ### Contacts
 
-`.contacts-panel`, `.contacts-row`, `.contacts-row--active`, `.contacts-find-btn`, `.contact-profile-card`, `.contacts-edit-field`, `.contacts-multiaddrs-field`, `.contacts-trust-badge`, `.contacts-thread-row`, `.contacts-actions-hint`
+`.contacts-panel`, `.contacts-row`, `.contacts-row--active`, `.contacts-find-btn`, `.contact-profile-card`, `.contacts-edit-field`, `.contacts-multiaddrs-field`, `.contacts-trust-badge`, `.contacts-unread`, `.contacts-thread-row`, `.contacts-actions-hint`
 
 ## RCSS file layout
 
