@@ -50,6 +50,7 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | Doc | Topic |
 |-----|--------|
 | [ui/UI_DESIGN_SYSTEM.md](ui/UI_DESIGN_SYSTEM.md) | Tokens, components, theme |
+| [ui/PRODUCT_BRANDING.md](ui/PRODUCT_BRANDING.md) | Product name (Frame), icon rationale, asset paths |
 | [ui/WINDOW_SHELL.md](ui/WINDOW_SHELL.md) | Shell layout |
 | [ui/WORKING_SET_PANEL.md](ui/WORKING_SET_PANEL.md) | Auxiliary pane |
 | [ui/RML_PROFILE.md](ui/RML_PROFILE.md) / [ui/RCSS_PROFILE.md](ui/RCSS_PROFILE.md) | AI-safe RML/RCSS (agent conventions) |

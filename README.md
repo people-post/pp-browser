@@ -1,6 +1,10 @@
-# pp-browser
+# Frame
 
-AI-native browser shell built with **SDL3** and a **hard-forked [RmlUi](https://github.com/mikke89/RmlUi)** (RML/RCSS UI).
+**Frame** is an AI-centric browsing shell (repo codename: `pp-browser`) built with **SDL3** and a **hard-forked [RmlUi](https://github.com/mikke89/RmlUi)** (RML/RCSS UI).
+
+Product tagline: *The internet, rendered for you.*
+
+Branding rationale, icon mockups, and review checklist: [docs/ui/PRODUCT_BRANDING.md](docs/ui/PRODUCT_BRANDING.md).
 
 ## Features
 

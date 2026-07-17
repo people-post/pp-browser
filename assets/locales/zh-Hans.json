@@ -12,6 +12,9 @@
     "common.remove": "移除",
     "common.share": "分享",
 
+    "app.name": "Frame",
+    "app.tagline": "为你渲染的互联网",
+
     "nav.home": "首页",
     "nav.sessions": "会话",
     "nav.contacts": "联系人",

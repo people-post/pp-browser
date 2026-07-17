@@ -24,16 +24,23 @@ target_compile_definitions(${PP_BROWSER_APP_TARGET} PRIVATE ${_pp_browser_compil
 
 if(WIN32)
   set_target_properties(${PP_BROWSER_APP_TARGET} PROPERTIES WIN32_EXECUTABLE TRUE)
+  target_sources(${PP_BROWSER_APP_TARGET} PRIVATE
+    ${CMAKE_SOURCE_DIR}/assets/branding/app-icon.rc)
 endif()
 
 if(APPLE AND PP_BROWSER_PACKAGED_BUILD AND NOT PP_BROWSER_IS_IOS)
   set_target_properties(${PP_BROWSER_APP_TARGET} PROPERTIES
     MACOSX_BUNDLE TRUE
-    MACOSX_BUNDLE_GUI_IDENTIFIER "dev.pp-browser.app"
-    MACOSX_BUNDLE_BUNDLE_NAME "pp-browser"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "dev.frame.app"
+    MACOSX_BUNDLE_BUNDLE_NAME "Frame"
+    MACOSX_BUNDLE_ICON_FILE app-icon.png
     MACOSX_BUNDLE_BUNDLE_VERSION "${PP_BROWSER_RELEASE_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PP_BROWSER_RELEASE_VERSION}"
   )
+  set_source_files_properties(${CMAKE_SOURCE_DIR}/assets/branding/app-icon.png PROPERTIES
+    MACOSX_PACKAGE_LOCATION Resources)
+  target_sources(${PP_BROWSER_APP_TARGET} PRIVATE
+    ${CMAKE_SOURCE_DIR}/assets/branding/app-icon.png)
 endif()
 
 target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
@@ -71,7 +78,7 @@ if(NOT PP_BROWSER_IS_MOBILE)
 
   if(APPLE AND PP_BROWSER_PACKAGED_BUILD)
     install(TARGETS ${PP_BROWSER_APP_TARGET} BUNDLE DESTINATION .)
-    install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/ DESTINATION pp-browser.app/Contents/Resources/assets)
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/ DESTINATION Frame.app/Contents/Resources/assets)
   elseif(WIN32 AND PP_BROWSER_PACKAGED_BUILD)
     install(TARGETS ${PP_BROWSER_APP_TARGET} RUNTIME DESTINATION .)
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/ DESTINATION assets)

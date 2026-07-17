@@ -12,6 +12,9 @@
     "common.remove": "Remove",
     "common.share": "Share",
 
+    "app.name": "Frame",
+    "app.tagline": "The internet, rendered for you.",
+
     "nav.home": "Home",
     "nav.sessions": "Sessions",
     "nav.contacts": "Contacts",

@@ -1,6 +1,7 @@
 #include "base/platform/DesktopLocalNotifier.h"
 
 #include "base/platform/AppLifecycle.h"
+#include "base/platform/ProductBranding.h"
 
 #include <cstdlib>
 #include <string>
@@ -31,7 +32,8 @@ std::string ShellEscapeSingleQuotes(const std::string& input) {
 
 void PostDesktopNotification(const std::string& title, const std::string& body) {
 #if defined(__linux__)
-  const std::string cmd = "notify-send --app-name=pp-browser '" + ShellEscapeSingleQuotes(title) + "' '" +
+  const std::string cmd = "notify-send --app-name=" + std::string(kProductName) + " '" +
+                          ShellEscapeSingleQuotes(title) + "' '" +
                           ShellEscapeSingleQuotes(body) + "' >/dev/null 2>&1 &";
   (void)std::system(cmd.c_str());
 #elif defined(__APPLE__)

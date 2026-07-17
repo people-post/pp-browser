@@ -2,6 +2,7 @@
 #include "app/Bootstrap.h"
 #include "base/data/SessionStore.h"
 #include "common/Logger.h"
+#include "base/platform/ProductBranding.h"
 #include "base/platform/Platform.h"
 
 #include <SDL3/SDL_main.h>
@@ -48,15 +49,15 @@ int main(int argc, char** argv) {
 
   auto bootstrap_result = pbr::Bootstrap::Run(options);
   if (!bootstrap_result) {
-    root.error << "pp-browser: " << bootstrap_result.error().message;
+    root.error << pbr::kProductName << ": " << bootstrap_result.error().message;
     return 1;
   }
 
   pbr::SessionStore::Instance().Initialize(std::move(bootstrap_result.value()));
 
   pbr::Application app;
-  if (!app.Initialize("pp-browser")) {
-    root.error << "pp-browser: failed to initialize.";
+  if (!app.Initialize(pbr::kProductName)) {
+    root.error << pbr::kProductName << ": failed to initialize.";
 #if defined(__ANDROID__)
     root.error << " Check logcat for SDL/OpenGL errors.";
 #else
