@@ -10,9 +10,11 @@
 #include "base/ai/conversation/Conversation.h"
 #include "base/platform/IAssetLocator.h"
 #include "base/ui/InputCoordinator.h"
+#include "base/ui/ChatFormHelper.h"
 #include "feature/chat/CalendarHelper.h"
-#include "feature/chat/ChatFormHelper.h"
+#include "feature/ui/ChatSessionActions.h"
 #include "feature/chat/ChatWidgetStateBuilder.h"
+#include "feature/chat/MessagingTools.h"
 #include "common/Utilities.h"
 #include "feature/messaging/MessagingHub.h"
 #include "base/crypto/ProfileSecretsService.h"
@@ -32,8 +34,8 @@
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
 #include "base/ui/ContextMenuHost.h"
-#include "feature/ui/SettingsController.h"
 #include "feature/ui/ContactsController.h"
+#include "feature/ui/SettingsController.h"
 
 #include <nlohmann/json.hpp>
 
@@ -2119,6 +2121,13 @@ bool ChatController::Setup(Rml::Context* context) {
   use_llm_ = !config.llm.base_url.empty();
   agent_.emplace();
 
+  ChatSessionActions& actions = ChatSessionActions::Instance();
+  actions.reload_agent_config = [this]() { ReloadAgentConfig(); };
+  actions.finalize_thread_display = [this]() { FinalizeThreadDisplay(); };
+  actions.select_thread = [this](const std::string& thread_id) { OnSelectThread(thread_id); };
+  actions.on_find_someone = [this]() { OnFindSomeone(); };
+  actions.on_profile_data_reset = [this]() { OnProfileDataReset(); };
+
   if (MessagingHub::Instance().IsInitialized()) {
     WireMessagingBindings();
     MessagingHub::Instance().SetOnMessagingReady([this]() {
@@ -2356,9 +2365,28 @@ bool ChatController::Setup(Rml::Context* context) {
 }
 
 void ChatController::ApplyRuntimeConfig(const AppConfig& config) {
-  use_llm_ = !config.llm.base_url.empty();
-  if (agent_) {
-    agent_->Configure(config);
+  AppConfig runtime = config;
+  use_llm_ = !runtime.llm.base_url.empty();
+  if (!agent_) {
+    return;
+  }
+  if (ResolvePreset(runtime) == "brief") {
+    runtime.llm.require_api_key = true;
+    if (MessagingHub::Instance().IsInitialized()) {
+      if (auto identity = MessagingHub::Instance().Identity().Get()) {
+        runtime.llm.api_key = identity->brief_llm_api_key;
+      }
+    }
+  }
+  agent_->SetToolRegistrationHook([](ToolRegistry& tools) {
+    if (MessagingHub::Instance().IsInitialized()) {
+      RegisterMessagingTools(tools, MessagingHub::Instance());
+    }
+  });
+  agent_->Configure(runtime);
+  if (MessagingHub::Instance().IsInitialized()) {
+    const auto& bootstrap = SessionStore::Instance().Snapshot();
+    (void)MessagingHub::Instance().Reinitialize(runtime, bootstrap.profile_data_dir);
   }
 }
 
@@ -2445,12 +2473,6 @@ bool SetupChatController(Rml::Context* context) {
 }
 
 void UpdateChatController() {
-  if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
-    SettingsController::Instance().Tick();
-  }
-  if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
-    ContactsController::Instance().Tick();
-  }
   ChatController::Instance().Update();
 }
 

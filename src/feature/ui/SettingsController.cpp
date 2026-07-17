@@ -7,12 +7,13 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/platform/BrowserThread.h"
 #include "base/ui/ContextMenuHost.h"
-#include "feature/chat/ChatController.h"
+#include "feature/ui/ChatSessionActions.h"
 #include "feature/messaging/MessagingHub.h"
-#include "feature/settings/ProfileSettingsSection.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
+#include "feature/ui/ProfileSettingsSection.h"
+#include "feature/ui/SecuritySettingsSection.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
@@ -41,7 +42,11 @@ Rml::String EventValue(Rml::Event& ev) {
 
 SettingsController::SettingsController() {
   redirectLogger("SettingsController");
-  section_handlers_ = CreateSettingsSections();
+  section_handlers_.push_back(std::make_unique<ProfileSettingsSection>());
+  for (auto& section : CreateSettingsSections()) {
+    section_handlers_.push_back(std::move(section));
+  }
+  section_handlers_.push_back(std::make_unique<SecuritySettingsSection>());
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     section_handlers_by_id_[handler->Id()] = handler.get();
   }
@@ -940,7 +945,9 @@ void SettingsController::PerformResetProfile() {
     return;
   }
 
-  ChatController::Instance().OnProfileDataReset();
+  if (ChatSessionActions::Instance().on_profile_data_reset) {
+    ChatSessionActions::Instance().on_profile_data_reset();
+  }
   ContactsController::Instance().Refresh();
 
   bindings_.pin_change_old = "";

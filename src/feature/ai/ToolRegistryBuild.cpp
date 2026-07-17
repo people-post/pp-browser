@@ -1,10 +1,8 @@
 #include "feature/ai/ToolRegistry.h"
 
 #include "feature/ai/tools/McpToolAdapter.h"
-#include "feature/ai/tools/MessagingTools.h"
 #include "feature/ai/tools/WebSearchTool.h"
 #include "base/ai/mcp/McpClient.h"
-#include "feature/messaging/MessagingHub.h"
 
 namespace pbr {
 
@@ -13,7 +11,6 @@ ToolRegistry ToolRegistry::BuildFromConfig(const AppConfig& config, McpClient* p
                                            const std::vector<std::string>& custom_prefixes) {
   ToolRegistry registry;
   registry.Register(WebSearchTool::Make(config.search));
-  RegisterMessagingTools(registry, MessagingHub::Instance());
 
   if (promoted_mcp && promoted_mcp->IsRunning()) {
     McpToolAdapter::RegisterTools(registry, *promoted_mcp, {});

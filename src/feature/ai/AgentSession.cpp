@@ -22,7 +22,6 @@
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/platform/BrowserThread.h"
-#include "feature/messaging/MessagingHub.h"
 
 #include <atomic>
 #include <chrono>
@@ -87,6 +86,7 @@ struct AgentSession::Impl {
   std::string pending_thread_id;
   AgentTurnMode turn_mode = AgentTurnMode::Conversation;
   AtAiMode assist_mode = AtAiMode::Local;
+  ToolRegistrationHook tool_registration_hook;
 };
 
 void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event) {
@@ -546,12 +546,6 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     LlmConfig llm_config = state->config.llm;
     if (ResolvePreset(state->config) == "brief") {
       llm_config.require_api_key = true;
-      llm_config.api_key.clear();
-      if (MessagingHub::Instance().IsInitialized()) {
-        if (auto identity = MessagingHub::Instance().Identity().Get()) {
-          llm_config.api_key = identity->brief_llm_api_key;
-        }
-      }
     }
     state->llm = std::make_unique<LlmClient>(llm_config);
 
@@ -566,17 +560,15 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
 
     state->tools = ToolRegistry::BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
                                                  custom_prefixes);
+    if (state->tool_registration_hook) {
+      state->tool_registration_hook(state->tools);
+    }
     state->configured = true;
     RefreshCompactionService(state);
 
     logging::getLogger("AgentSession").info << "Agent configured with " << state->tools.Tools().size() << " tool(s)";
     for (const ToolDescriptor& tool : state->tools.Tools()) {
       logging::getLogger("AgentSession").info << "  - " << tool.definition.name;
-    }
-
-    if (MessagingHub::Instance().IsInitialized()) {
-      const auto& bootstrap = SessionStore::Instance().Snapshot();
-      (void)MessagingHub::Instance().Reinitialize(state->config, bootstrap.profile_data_dir);
     }
   } catch (const std::exception& e) {
     state->configured = false;
@@ -621,6 +613,10 @@ void AgentSession::Configure(const AppConfig& config) {
   impl_->configured = false;
 
   BrowserThread::PostTask(BrowserThreadId::IO, [impl = impl_]() { ConfigureOnIO(impl); });
+}
+
+void AgentSession::SetToolRegistrationHook(ToolRegistrationHook hook) {
+  impl_->tool_registration_hook = std::move(hook);
 }
 
 McpClient* AgentSession::PromotedMcp() {

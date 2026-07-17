@@ -74,11 +74,19 @@ integration/host → fork/include (public API only)
 
 | Path | Contents |
 |------|----------|
+| `feature/settings/` | Settings apply logic (no messaging/chat deps) |
 | `feature/messaging/` | MessagingHub, router, inbox, P2P service |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
-| `feature/ui/` | ShellHost, DocumentLoader, RmlMount, SettingsController |
-| `feature/chat/` | Chat UI and helpers |
-| `feature/settings/` | Settings apply logic |
+| `feature/ui/` | ShellHost, settings UI, profile/security sections, `ChatSessionActions` bridge |
+| `feature/chat/` | Chat UI, agent↔hub wiring, messaging agent tools |
+
+Feature module libraries link in acyclic order (each `PUBLIC_LIBS` only lower layers):
+
+```
+settings → ai/tools → ai/bindings → ai → messaging → ui → chat
+```
+
+Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. `ChatSessionActions` in `feature/ui/` breaks the former settings/chat/ui include cycles without reversing the link graph.
 
 ## CMake targets
 
@@ -87,17 +95,18 @@ integration/host → fork/include (public API only)
 | `pp_common` | common |
 | `pp_base_*` | base — one static library per module folder (e.g. `pp_base_data`, `pp_base_messaging`) |
 | `pp_base` | base aggregate (`INTERFACE`; `pp_identity` is an alias) |
-| `pp_feature` | feature |
+| `pp_feature_*` | feature — one static library per module folder (e.g. `pp_feature_messaging`, `pp_feature_chat`) |
+| `pp_feature` | feature aggregate (`INTERFACE`) |
 | `pp-browser` | app executable |
 
-Base module tests compile to one executable per folder (e.g. `pp_browser_data_test`, `pp_browser_messaging_test`).
+Base module tests compile to one executable per folder (e.g. `pp_browser_data_test`, `pp_browser_messaging_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix (e.g. `pp_browser_feature_chat_test`) to avoid name clashes with base suites.
 
 ## Test placement
 
 - Keep integration and environment-heavy tests in [`tests/`](../tests/) (e.g. fork-level RmlUi click routing).
 - Prefer colocated unit tests under module paths such as `src/base/.../tests/` and `src/feature/.../tests/`.
-- Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`).
-- Layer CMakeLists register colocated suites via `pp_browser_register_tests(...)`; root enables GTest and calls `pp_browser_add_registered_tests()` when `PP_BROWSER_BUILD_TESTS` is on.
+- Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`, except legacy cases being migrated).
+- Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on; helpers live in `cmake/PpBrowserBase.cmake` and `cmake/PpBrowserFeature.cmake`.
 
 ## Litmus tests
 

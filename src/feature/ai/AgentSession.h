@@ -8,6 +8,7 @@
 #include "base/data/Config.h"
 #include "common/Error.h"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -17,6 +18,9 @@ namespace pbr {
 
 class Conversation;
 class IThreadStore;
+class ToolRegistry;
+
+using ToolRegistrationHook = std::function<void(ToolRegistry&)>;
 
 enum class AgentEventType {
   LoadingChanged,
@@ -50,6 +54,7 @@ public:
   AgentSession& operator=(const AgentSession&) = delete;
 
   void Configure(const AppConfig& config);
+  void SetToolRegistrationHook(ToolRegistrationHook hook);
   McpClient* PromotedMcp();
   void SetThreadStore(IThreadStore* store);
   void Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);

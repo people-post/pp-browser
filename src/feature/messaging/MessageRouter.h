@@ -1,6 +1,5 @@
 #pragma once
 
-#include "feature/ai/AgentSession.h"
 #include "base/messaging/AtAiParser.h"
 #include "common/Module.h"
 #include "feature/messaging/InboxController.h"
@@ -12,6 +11,8 @@
 #include <unordered_set>
 
 namespace pbr {
+
+class AgentSession;
 
 class MessageRouter : public Module {
 public:

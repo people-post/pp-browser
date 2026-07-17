@@ -1,5 +1,7 @@
 #pragma once
 
+#include "base/ui/ChatWidgetTypes.h"
+
 #include <map>
 #include <optional>
 #include <string>
@@ -13,5 +15,6 @@ std::string BuildFormSubmissionPayload(const std::string& form_id,
 
 std::optional<std::string> ExtractFormId(const std::string& rml);
 std::string InjectEntryPlaceholders(const std::string& rml, const std::string& entry_id);
+std::map<std::string, std::string> FormValuesMap(const FormWidgetState& form);
 
 } // namespace pbr

@@ -1,4 +1,4 @@
-#include "feature/chat/ChatFormHelper.h"
+#include "base/ui/ChatFormHelper.h"
 
 #include <nlohmann/json.hpp>
 
@@ -52,6 +52,18 @@ std::string InjectEntryPlaceholders(const std::string& rml, const std::string& e
     pos += entry_id.size();
   }
   return out;
+}
+
+std::map<std::string, std::string> FormValuesMap(const FormWidgetState& form) {
+  std::map<std::string, std::string> values;
+  for (const FormFieldRow& field : form.fields) {
+    if (std::string(field.field_type.c_str()) == "checkbox") {
+      values[std::string(field.id.c_str())] = field.checked ? "true" : "false";
+    } else {
+      values[std::string(field.id.c_str())] = std::string(field.value.c_str());
+    }
+  }
+  return values;
 }
 
 } // namespace pbr

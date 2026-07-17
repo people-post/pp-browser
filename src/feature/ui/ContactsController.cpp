@@ -8,7 +8,7 @@
 #include "base/people/ContactTypes.h"
 #include "base/people/Ed25519Signer.h"
 #include "base/ui/ContextMenuHost.h"
-#include "feature/chat/ChatController.h"
+#include "feature/ui/ChatSessionActions.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
@@ -686,7 +686,7 @@ void ContactsController::OnStartChat() {
 
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
   ShellHost::Instance().SetPrimaryPane("chat");
-  ChatController::Instance().FinalizeThreadDisplay();
+  ChatSessionActions::Instance().finalize_thread_display();
 }
 
 void ContactsController::OnSecureMessage() {
@@ -720,13 +720,15 @@ void ContactsController::OnSecureMessage() {
 
     ShellHost::Instance().SelectNavTab(NavTab::Sessions);
     ShellHost::Instance().SetPrimaryPane("chat");
-    ChatController::Instance().FinalizeThreadDisplay();
+    ChatSessionActions::Instance().finalize_thread_display();
   });
 }
 
 void ContactsController::OnFindSomeone() {
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-  ChatController::Instance().OnFindSomeone();
+  if (ChatSessionActions::Instance().on_find_someone) {
+    ChatSessionActions::Instance().on_find_someone();
+  }
 }
 
 void ContactsController::OnCopyId() {
@@ -860,7 +862,9 @@ void ContactsController::OnOpenThread(const std::string& thread_id) {
   }
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
   ShellHost::Instance().SetPrimaryPane("chat");
-  ChatController::Instance().OnSelectThread(thread_id);
+  if (ChatSessionActions::Instance().select_thread) {
+    ChatSessionActions::Instance().select_thread(thread_id);
+  }
 }
 
 void ContactsController::OnSearchChanged() {

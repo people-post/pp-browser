@@ -6,7 +6,7 @@
 #include "base/ai/TurnPlan.h"
 #include "base/data/Config.h"
 #include "common/Module.h"
-#include "feature/chat/ChatWidgetTypes.h"
+#include "base/ui/ChatWidgetTypes.h"
 #include "base/ui/WorkingSetTypes.h"
 
 #include <RmlUi/Core/DataModelHandle.h>

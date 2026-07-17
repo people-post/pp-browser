@@ -1,4 +1,6 @@
-#include "feature/ai/tools/MessagingTools.h"
+#include "feature/chat/MessagingTools.h"
+
+#include "feature/messaging/MessagingHub.h"
 
 #include "base/messaging/MessagingJson.h"
 #include "base/net/RegistrationClientUtil.h"

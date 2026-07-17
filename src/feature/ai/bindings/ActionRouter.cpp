@@ -1,7 +1,5 @@
 #include "feature/ai/bindings/ActionRouter.h"
 
-#include "feature/ui/DataModelHost.h"
-
 #include <RmlUi/Core/Context.h>
 
 namespace pbr {
@@ -32,6 +30,11 @@ void ActionRouter::SetToolExecutor(ToolExecutor executor) {
   tool_executor_ = std::move(executor);
 }
 
+void ActionRouter::SetModelDirtyCallback(
+    std::function<void(const std::string& model, const std::string& binding)> callback) {
+  model_dirty_callback_ = std::move(callback);
+}
+
 void ActionRouter::RegisterStub(const std::string& action, std::function<void()> handler) {
   stubs_[action] = std::move(handler);
 }
@@ -60,8 +63,8 @@ void ActionRouter::Invoke(const std::string& action) {
   }
 
   auto result = tool_executor_(binding->tool, binding->params);
-  if (!binding->result_bind.empty()) {
-    DataModelHost::Instance().Dirty("main", binding->result_bind);
+  if (!binding->result_bind.empty() && model_dirty_callback_) {
+    model_dirty_callback_("main", binding->result_bind);
   }
   (void)result;
 }

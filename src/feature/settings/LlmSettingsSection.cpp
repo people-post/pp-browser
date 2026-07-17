@@ -40,7 +40,7 @@ void LlmSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, Setti
   state.llm_model = config.llm.model;
   state.llm_api_key = config.llm.api_key;
   state.llm_api_key_env = bootstrap.config.llm_api_key_env;
-  // brief_llm_key_masked is owned by ProfileSettingsSection (needs MessagingHub).
+  // brief_llm_key_masked is owned by ProfileSettingsSection in feature/ui (needs MessagingHub).
 }
 
 bool LlmSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {

@@ -1,11 +1,5 @@
-add_executable(pp_browser_bindings_test
-  bindings_test.cpp
-  ${CMAKE_SOURCE_DIR}/src/feature/ai/bindings/BindingsManifest.cpp)
-
-target_include_directories(pp_browser_bindings_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(pp_browser_bindings_test PRIVATE
-  GTest::gtest
-  GTest::gtest_main
-  nlohmann_json::nlohmann_json)
-
-pp_browser_add_gtest(pp_browser_bindings_test)
+pp_browser_add_feature_folder_tests(
+  pp_feature_ai_bindings
+  pp_browser_feature_ai_bindings_test
+  LINK_LIBS
+    nlohmann_json::nlohmann_json)

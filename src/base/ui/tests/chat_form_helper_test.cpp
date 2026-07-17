@@ -1,5 +1,4 @@
-#include "feature/chat/ChatFormHelper.h"
-#include "feature/chat/ChatWidgetStateBuilder.h"
+#include "base/ui/ChatFormHelper.h"
 
 #include <gtest/gtest.h>
 
