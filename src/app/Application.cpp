@@ -4,7 +4,7 @@
 #include "base/ui/ContextMenuHost.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
-#include "common/ProductBranding.h"
+#include "base/platform/ProductBranding.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "base/platform/BrowserThread.h"

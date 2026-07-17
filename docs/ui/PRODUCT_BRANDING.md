@@ -73,7 +73,7 @@ A soft portal/window frame containing clean geometric content blocks and a small
 - **Not “browser”** — avoids the Chrome / Safari / Arc category while staying honest about “seeing” the internet.
 - **Room for AI + social** — neutral enough that messaging stays supporting infrastructure, not the headline.
 
-Constants live in [`src/common/ProductBranding.h`](../../src/common/ProductBranding.h):
+Constants live in [`src/base/platform/ProductBranding.h`](../../src/base/platform/ProductBranding.h):
 
 ```cpp
 kProductName    = "Frame"

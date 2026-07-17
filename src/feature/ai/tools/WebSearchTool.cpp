@@ -1,7 +1,7 @@
 #include "feature/ai/tools/WebSearchTool.h"
 
 #include "common/Logger.h"
-#include "common/ProductBranding.h"
+#include "base/platform/ProductBranding.h"
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>

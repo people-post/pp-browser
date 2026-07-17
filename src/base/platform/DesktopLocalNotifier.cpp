@@ -1,7 +1,7 @@
 #include "base/platform/DesktopLocalNotifier.h"
 
 #include "base/platform/AppLifecycle.h"
-#include "common/ProductBranding.h"
+#include "base/platform/ProductBranding.h"
 
 #include <cstdlib>
 #include <string>

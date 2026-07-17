@@ -2,7 +2,7 @@
 #include "app/Bootstrap.h"
 #include "base/data/SessionStore.h"
 #include "common/Logger.h"
-#include "common/ProductBranding.h"
+#include "base/platform/ProductBranding.h"
 #include "base/platform/Platform.h"
 
 #include <SDL3/SDL_main.h>
