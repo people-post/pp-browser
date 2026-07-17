@@ -19,6 +19,7 @@ function(pp_browser_enable_googletest)
 endfunction()
 
 # Layer CMakeLists register colocated test dirs; root adds them after libs exist.
+# Base and feature modules may also add tests/ directly from their CMakeLists.
 function(pp_browser_register_tests)
   foreach(subdir ${ARGN})
     set_property(GLOBAL APPEND PROPERTY PP_BROWSER_REGISTERED_TEST_DIRS

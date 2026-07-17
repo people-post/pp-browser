@@ -1,8 +1,20 @@
 #include "base/error/AppError.h"
+#include "base/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
 
-TEST(AppErrorTest, TypedFactoriesSetIntFields) {
+namespace {
+
+class AppErrorTest : public ::testing::Test {
+protected:
+  static void SetUpTestSuite() {
+    ASSERT_TRUE(pbr::LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  }
+};
+
+} // namespace
+
+TEST_F(AppErrorTest, TypedFactoriesSetIntFields) {
   using namespace pbr;
   const Error auth = AppError::Auth(Err::Auth::Forbidden, "HTTP 403");
   EXPECT_EQ(auth.category, static_cast<int32_t>(ErrorCategory::Auth));
@@ -17,7 +29,7 @@ TEST(AppErrorTest, TypedFactoriesSetIntFields) {
   EXPECT_NE(AppError::Log(with_user).find("detail=\"LLM HTTP 502\""), std::string::npos);
 }
 
-TEST(AppErrorTest, PinAndConfigDisplayFromCatalog) {
+TEST_F(AppErrorTest, PinAndConfigDisplayFromCatalog) {
   using namespace pbr;
   EXPECT_EQ(AppError::Display(AppError::Pin(Err::Pin::Required, "vault locked")),
             "Unlock your profile PIN to continue.");

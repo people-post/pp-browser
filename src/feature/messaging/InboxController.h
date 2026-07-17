@@ -2,7 +2,7 @@
 
 #include "common/Module.h"
 #include "base/people/ContactsStore.h"
-#include "feature/chat/ChatWidgetTypes.h"
+#include "base/ui/ChatWidgetTypes.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
 

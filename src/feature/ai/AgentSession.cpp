@@ -5,6 +5,7 @@
 #include "base/ai/PromptBuilder.h"
 #include "base/ai/StructuredTextParser.h"
 #include "feature/ai/ToolRegistry.h"
+#include "feature/messaging/MessagingTools.h"
 #include "base/ai/ToolResultFormatter.h"
 #include "feature/ai/TurnExecutor.h"
 #include "feature/ai/TurnPlanner.h"
@@ -566,6 +567,9 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
 
     state->tools = ToolRegistry::BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
                                                  custom_prefixes);
+    if (MessagingHub::Instance().IsInitialized()) {
+      RegisterMessagingTools(state->tools, MessagingHub::Instance());
+    }
     state->configured = true;
     RefreshCompactionService(state);
 

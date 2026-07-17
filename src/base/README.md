@@ -48,7 +48,7 @@ src/base/
 ├── ai/           LLM client, turn plans, structured chat parsing, MCP
 │   ├── conversation/   transcript, context policies, compaction
 │   └── mcp/            MCP client, runtime, schema adapter
-└── ui/           Theme, view catalog, working-set types, input glue (RmlUi-facing)
+└── ui/           Theme, view catalog, chat widget DTOs/form helpers, input glue (RmlUi-facing)
 ```
 
 **Domain grouping (mental model):**

@@ -4,11 +4,11 @@
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/GroupMembershipCodec.h"
+#include "base/ui/ChatFormHelper.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 
 #include "base/ai/StructuredTextParser.h"
-#include "feature/chat/ChatFormHelper.h"
 #include "common/Utilities.h"
 #include <map>
 #include <sstream>

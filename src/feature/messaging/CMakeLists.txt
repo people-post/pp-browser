@@ -1,0 +1,28 @@
+pp_browser_add_feature_library(pp_feature_messaging
+  SOURCES
+    ChatSyncService.cpp
+    ContactActionDispatcher.cpp
+    EpochBumpCoordinator.cpp
+    GroupInviteGate.cpp
+    GroupMembershipService.cpp
+    InboxController.cpp
+    Libp2pChatHistoryService.cpp
+    Libp2pDirectChatService.cpp
+    MessageRouter.cpp
+    MessagingHub.cpp
+    MessagingTools.cpp
+    P2pMessagingService.cpp
+    PskSessionCoordinator.cpp
+    PushDeviceCoordinator.cpp
+    RelayDirectoryKemKeyResolver.cpp
+    RelayDirectorySigningKeyResolver.cpp
+    RelayReceivePipeline.cpp
+    SqlitePskSessionStore.cpp
+  PUBLIC_LIBS
+    p2p
+    nlohmann_json::nlohmann_json
+    CURL::libcurl)
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()

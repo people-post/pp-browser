@@ -1,7 +1,6 @@
 pp_browser_add_base_folder_tests(
   pp_base_data
   pp_browser_data_test
-  EXTRA_SOURCES
-    ${CMAKE_SOURCE_DIR}/src/feature/settings/SettingsLogic.cpp
   LINK_LIBS
+    pp_feature_settings
     nlohmann_json::nlohmann_json)

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "base/ai/StructuredTextParser.h"
-#include "feature/chat/ChatWidgetTypes.h"
+#include "base/ui/ChatWidgetTypes.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 
@@ -14,8 +14,6 @@ FormWidgetState BuildFormWidgetState(const nlohmann::json& config);
 CalendarWidgetState BuildCalendarWidgetState(const nlohmann::json& config);
 
 void ApplyWidgetInits(const std::vector<WidgetInit>& inits, TurnWidgetState& state);
-
-std::map<std::string, std::string> FormValuesMap(const FormWidgetState& form);
 
 void RegisterChatWidgetDataTypes(Rml::DataModelConstructor& ctor);
 

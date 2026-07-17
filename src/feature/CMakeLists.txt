@@ -1,83 +1,27 @@
-set(PP_BROWSER_FEATURE_SOURCES
-  messaging/MessagingHub.cpp
-  messaging/InboxController.cpp
-  messaging/MessageRouter.cpp
-  messaging/P2pMessagingService.cpp
-  messaging/PushDeviceCoordinator.cpp
-  messaging/RelayReceivePipeline.cpp
-  messaging/ChatSyncService.cpp
-  messaging/RelayDirectorySigningKeyResolver.cpp
-  messaging/RelayDirectoryKemKeyResolver.cpp
-  messaging/EpochBumpCoordinator.cpp
-  messaging/PskSessionCoordinator.cpp
-  messaging/Libp2pChatHistoryService.cpp
-  messaging/Libp2pDirectChatService.cpp
-  messaging/SqlitePskSessionStore.cpp
-  messaging/ContactActionDispatcher.cpp
-  messaging/GroupInviteGate.cpp
-  messaging/GroupMembershipService.cpp
-  ai/AgentSession.cpp
-  ai/TurnPlanner.cpp
-  ai/TurnExecutor.cpp
-  ai/PayloadTurnPlanBuilder.cpp
-  ai/ToolRegistry.cpp
-  ai/ToolRegistryBuild.cpp
-  ai/UiGenerator.cpp
-  ai/tools/WebSearchTool.cpp
-  ai/tools/McpToolAdapter.cpp
-  ai/tools/MessagingTools.cpp
-  ai/bindings/ActionRouter.cpp
-  ai/bindings/BindingsManifest.cpp
-  ui/ShellHost.cpp
-  ui/ShellChatOverlayGesture.cpp
-  ui/ShellLayout.cpp
-  ui/ShellFeedback.cpp
-  ui/UserFeedback.cpp
-  ui/ShellInterruption.cpp
-  ui/PinGateController.cpp
-  ui/DocumentLoader.cpp
-  ui/RmlMount.cpp
-  ui/DataModelHost.cpp
-  ui/SettingsController.cpp
-  ui/ContactsController.cpp
-  chat/ChatController.cpp
-  chat/ChatFormHelper.cpp
-  chat/ChatWidgetStateBuilder.cpp
-  chat/CalendarHelper.cpp
-  settings/SettingsLogic.cpp
-  settings/LlmSettingsSection.cpp
-  settings/IntegrationsSettingsSection.cpp
-  settings/NetworkSettingsSection.cpp
-  settings/ProfileSettingsSection.cpp
-  settings/SecuritySettingsSection.cpp
-  settings/AppearanceSettingsSection.cpp
-  settings/StorageSettingsSection.cpp
-  settings/SettingsSections.cpp
+include(PpBrowserFeature)
+
+add_subdirectory(settings)
+add_subdirectory(messaging)
+add_subdirectory(ai)
+add_subdirectory(chat)
+add_subdirectory(ui)
+
+set(PP_FEATURE_MODULE_LIBS
+  pp_feature_settings
+  pp_feature_messaging
+  pp_feature_ai_bindings
+  pp_feature_ai_tools
+  pp_feature_ai
+  pp_feature_chat
+  pp_feature_ui
 )
 
-add_library(pp_feature STATIC ${PP_BROWSER_FEATURE_SOURCES})
-target_include_directories(pp_feature PUBLIC
-  ${CMAKE_SOURCE_DIR}/src
-  ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include
-)
-target_link_libraries(pp_feature PUBLIC
-  pp_base
-  pp_common
+add_library(pp_feature INTERFACE)
+target_link_libraries(pp_feature INTERFACE
+  "$<LINK_GROUP:RESCAN,${PP_FEATURE_MODULE_LIBS}>"
   pp_rmlui_backend
   RmlUi::Core
   p2p
   nlohmann_json::nlohmann_json
   CURL::libcurl
-  Threads::Threads
-)
-
-if(PP_BROWSER_BUILD_TESTS)
-  pp_browser_register_tests(
-    ai/bindings/tests
-    ai/tests
-    messaging/tests
-    chat/tests
-    ui/tests
-    settings/tests
-  )
-endif()
+  Threads::Threads)

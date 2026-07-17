@@ -11,7 +11,7 @@
 #include "base/platform/IAssetLocator.h"
 #include "base/ui/InputCoordinator.h"
 #include "feature/chat/CalendarHelper.h"
-#include "feature/chat/ChatFormHelper.h"
+#include "base/ui/ChatFormHelper.h"
 #include "feature/chat/ChatWidgetStateBuilder.h"
 #include "common/Utilities.h"
 #include "feature/messaging/MessagingHub.h"
