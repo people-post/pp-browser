@@ -1,0 +1,39 @@
+pp_browser_add_base_library(pp_base_platform
+  SOURCES
+    AndroidAssetLocator.cpp
+    AndroidPathProvider.cpp
+    AppEventHooks.cpp
+    AppLifecycle.cpp
+    AssetIO.cpp
+    BackgroundSyncScheduler.cpp
+    BrowserThread.cpp
+    DesktopAssetLocator.cpp
+    DesktopLocalNotifier.cpp
+    DesktopPathProvider.cpp
+    EnvCredentialStore.cpp
+    ExecutablePath.cpp
+    IAssetLocator.cpp
+    ICredentialStore.cpp
+    ILocalNotifier.cpp
+    IosAssetLocator.cpp
+    IosPathProvider.cpp
+    IPathProvider.cpp
+    IPushDeviceRegistrar.cpp
+    AndroidLocalNotifier.cpp
+    AndroidPushDeviceRegistrar.cpp
+    Platform.cpp
+    PlatformEarlyInit.cpp
+    PlatformLogSink.cpp
+    PlatformNavigation.cpp
+    PlatformServices.cpp
+    PushWakeJni.cpp
+    SdlAppEvents.cpp
+    SdlAssetFileInterface.cpp
+  PUBLIC_LIBS
+    pp_rmlui_backend
+    RmlUi::Core
+    ${PP_BROWSER_SDL3_TARGET})
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()

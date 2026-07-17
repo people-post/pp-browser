@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
 #include "base/messaging/ThreadTypes.h"
 #include "common/Error.h"
@@ -50,17 +51,5 @@ std::string ChatHistoryRequestToQueryString(const ChatHistoryRequest& request);
 nlohmann::json ChatHistoryRequestToStreamHistoryJson(const ChatHistoryRequest& request);
 nlohmann::json ChatHistoryResponseToJson(const ChatHistoryResponse& response);
 Roe<ChatHistoryResponse> ChatHistoryResponseFromJson(const nlohmann::json& json);
-
-std::string ContactIdKindToString(ContactIdKind kind);
-ContactIdKind ContactIdKindFromString(const std::string& value);
-
-std::string TrustLevelToString(TrustLevel level);
-TrustLevel TrustLevelFromString(const std::string& value);
-
-nlohmann::json ContactToJson(const Contact& contact);
-Contact ContactFromJson(const nlohmann::json& json);
-
-nlohmann::json DirectoryHitToJson(const DirectoryHit& hit);
-DirectoryHit DirectoryHitFromJson(const nlohmann::json& json);
 
 } // namespace pbr

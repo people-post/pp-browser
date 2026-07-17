@@ -1,157 +1,33 @@
-set(PP_BROWSER_BASE_SOURCES
-  error/AppError.cpp
-  platform/AndroidAssetLocator.cpp
-  platform/AndroidPathProvider.cpp
-  platform/AppEventHooks.cpp
-  platform/AppLifecycle.cpp
-  platform/AssetIO.cpp
-  platform/BrowserThread.cpp
-  platform/DesktopAssetLocator.cpp
-  platform/DesktopPathProvider.cpp
-  platform/EnvCredentialStore.cpp
-  platform/ExecutablePath.cpp
-  platform/IAssetLocator.cpp
-  platform/ICredentialStore.cpp
-  platform/IosAssetLocator.cpp
-  platform/IosPathProvider.cpp
-  platform/IPathProvider.cpp
-  platform/ILocalNotifier.cpp
-  platform/IPushDeviceRegistrar.cpp
-  platform/DesktopLocalNotifier.cpp
-  platform/AndroidLocalNotifier.cpp
-  platform/AndroidPushDeviceRegistrar.cpp
-  platform/BackgroundSyncScheduler.cpp
-  platform/PushWakeJni.cpp
-  platform/Platform.cpp
-  platform/PlatformDefaults.cpp
-  platform/PlatformEarlyInit.cpp
-  platform/PlatformLogSink.cpp
-  platform/PlatformNavigation.cpp
-  platform/PlatformServices.cpp
-  platform/SdlAppEvents.cpp
-  platform/SdlAssetFileInterface.cpp
-  net/HttpClient.cpp
-  net/RelayApiSignPayload.cpp
-  net/RelaySignBytes.cpp
-  net/RegistrationClientUtil.cpp
-  net/RegistrationSignPayload.cpp
-  net/ServiceClientFactory.cpp
-  net/ServiceClientsImpl.cpp
-  data/AppPaths.cpp
-  data/AtomicFileWrite.cpp
-  data/Config.cpp
-  data/ConfigJson.cpp
-  data/LlmPreset.cpp
-  data/ProfileRegistry.cpp
-  data/SchemaVersion.cpp
-  data/SessionStore.cpp
-  data/UserPreferences.cpp
-  i18n/LocalizationService.cpp
-  people/ContactsStore.cpp
-  people/Ed25519Signer.cpp
-  people/IdentityStore.cpp
-  messaging/EnvelopeSigner.cpp
-  messaging/E2eIngestClassifier.cpp
-  messaging/GroupTypes.cpp
-  messaging/GroupMembershipCodec.cpp
-  messaging/GroupE2ePayloadCodec.cpp
-  messaging/GroupRosterStore.cpp
-  messaging/E2eRelayPayloadCodec.cpp
-  crypto/HybridKem.cpp
-  crypto/AutoKeyEstablishment.cpp
-  crypto/PskBundleCodec.cpp
-  messaging/PeerKemKeyStore.cpp
-  messaging/PeerSigningKeyStore.cpp
-  messaging/AtAiParser.cpp
-  messaging/ChatPayloadCodec.cpp
-  messaging/ChatPayloadTypes.cpp
-  messaging/ChatPayloadValidator.cpp
-  messaging/SyncStateCodec.cpp
-  messaging/ConversationSummaryCodec.cpp
-  messaging/DirectChatTarget.cpp
-  messaging/RelayWirePayload.cpp
-  messaging/JsonThreadStore.cpp
-  messaging/MessagingJson.cpp
-  messaging/RelayStreamKey.cpp
-  messaging/ChatHistoryResponder.cpp
-  messaging/ChatHistoryStreamCodec.cpp
-  messaging/PeopleDiscoveryBlocks.cpp
-  messaging/SqliteThreadStore.cpp
-  crypto/CryptoUtil.cpp
-  crypto/PskFingerprint.cpp
-  crypto/SessionKeyDeriver.cpp
-  crypto/CanonicalAad.cpp
-  crypto/MessageCipher.cpp
-  crypto/EncryptedPayload.cpp
-  crypto/ReplayWindow.cpp
-  crypto/PinKeyDeriver.cpp
-  crypto/FileCipher.cpp
-  crypto/DataKeyVault.cpp
-  crypto/PinResolver.cpp
-  crypto/ProfileSecretsService.cpp
-  ai/LlmClient.cpp
-  ai/PromptBuilder.cpp
-  ai/RmlValidator.cpp
-  ai/StructuredTextParser.cpp
-  ai/ToolResultFormatter.cpp
-  ai/TurnPlan.cpp
-  ai/TurnTrace.cpp
-  ai/WorkingSetPolicy.cpp
-  ai/conversation/Conversation.cpp
-  ai/conversation/SlidingWindowContextPolicy.cpp
-  ai/conversation/ThreadCompactionService.cpp
-  ai/conversation/ThreadContextPolicy.cpp
-  ai/conversation/TurnCoordinator.cpp
-  ai/conversation/UserMessageFormatter.cpp
-  ai/mcp/McpClient.cpp
-  ai/mcp/McpRuntime.cpp
-  ai/mcp/SchemaAdapter.cpp
-  ui/Theme.cpp
-  ui/ViewCatalog.cpp
-  ui/InputCoordinator.cpp
-  ui/ContextMenuHost.cpp
-  ${CMAKE_SOURCE_DIR}/src/libp2p/integration/host/Libp2pHost.cpp
-  ${CMAKE_SOURCE_DIR}/src/libp2p/integration/host/PeerSessionManager.cpp
-  ${CMAKE_SOURCE_DIR}/src/libp2p/integration/host/PeerIdUtil.cpp
+include(PpBrowserBase)
+
+# Acyclic module order: each library links only lower layers.
+add_subdirectory(platform)
+add_subdirectory(i18n)
+add_subdirectory(error)
+add_subdirectory(data)
+add_subdirectory(crypto)
+add_subdirectory(people)
+add_subdirectory(messaging)
+add_subdirectory(net)
+add_subdirectory(ai)
+add_subdirectory(ui)
+
+set(PP_BASE_MODULE_LIBS
+  pp_base_error
+  pp_base_platform
+  pp_base_data
+  pp_base_i18n
+  pp_base_crypto
+  pp_base_people
+  pp_base_messaging
+  pp_base_net
+  pp_base_ai
+  pp_base_ai_conversation
+  pp_base_ai_mcp
+  pp_base_ui
 )
 
-add_library(pp_base STATIC ${PP_BROWSER_BASE_SOURCES})
-target_include_directories(pp_base PUBLIC
-  ${CMAKE_SOURCE_DIR}/src
-  ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include
-)
-target_link_libraries(pp_base PUBLIC
-  pp_common
-  pp_rmlui_backend
-  RmlUi::Core
-  ${PP_BROWSER_SDL3_TARGET}
-  nlohmann_json::nlohmann_json
-  CURL::libcurl
-  SQLite::SQLite3
-  sodium
-  p2p
-  p2p_peer_id
-  p2p_keys_proto
-)
-if(TARGET OpenSSL::Crypto)
-  target_link_libraries(pp_base PUBLIC OpenSSL::Crypto)
-  target_compile_definitions(pp_base PUBLIC OPENSSL_UNSTABLE_EXPERIMENTAL_KYBER)
-endif()
+add_library(pp_base INTERFACE)
+target_link_libraries(pp_base INTERFACE ${PP_BASE_MODULE_LIBS})
 
-# Backward-compatible alias for tests and scripts that link pp_identity.
 add_library(pp_identity ALIAS pp_base)
-
-if(PP_BROWSER_BUILD_TESTS)
-  pp_browser_register_tests(
-    ai/tests
-    ai/conversation/tests
-    ai/mcp/tests
-    messaging/tests
-    crypto/tests
-    data/tests
-    i18n/tests
-    net/tests
-    people/tests
-    platform/tests
-  )
-endif()

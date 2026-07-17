@@ -7,6 +7,7 @@
 #include "base/crypto/EncryptedPayload.h"
 #include "base/crypto/MessageCipher.h"
 #include "base/crypto/SessionKeyDeriver.h"
+#include "base/messaging/AutoKeyEnvelopeResolver.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/ChatPayloadValidator.h"
 
@@ -126,8 +127,7 @@ Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& en
   }
 
   if (envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value()) {
-    auto master_psk = AutoKeyEstablishment::ResolveOrDeriveMasterPsk(envelope, target_key, psk_store,
-                                                                      *local_kem_private_key);
+    auto master_psk = ResolveOrDeriveMasterPsk(envelope, target_key, psk_store, *local_kem_private_key);
     if (!master_psk) {
       return master_psk.error();
     }

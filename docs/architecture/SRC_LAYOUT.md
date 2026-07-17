@@ -85,9 +85,12 @@ integration/host → fork/include (public API only)
 | Target | Layer |
 |--------|-------|
 | `pp_common` | common |
-| `pp_base` | base (`pp_identity` is an alias) |
+| `pp_base_*` | base — one static library per module folder (e.g. `pp_base_data`, `pp_base_messaging`) |
+| `pp_base` | base aggregate (`INTERFACE`; `pp_identity` is an alias) |
 | `pp_feature` | feature |
 | `pp-browser` | app executable |
+
+Base module tests compile to one executable per folder (e.g. `pp_browser_data_test`, `pp_browser_messaging_test`).
 
 ## Test placement
 

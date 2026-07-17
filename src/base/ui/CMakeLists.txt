@@ -1,0 +1,11 @@
+pp_browser_add_base_library(pp_base_ui
+  SOURCES
+    ContextMenuHost.cpp
+    InputCoordinator.cpp
+    Theme.cpp
+    ViewCatalog.cpp
+  PUBLIC_LIBS
+    pp_base_platform
+    pp_base_i18n
+    pp_rmlui_backend
+    RmlUi::Core)

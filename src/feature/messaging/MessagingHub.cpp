@@ -14,7 +14,7 @@
 #include "base/messaging/GroupTypes.h"
 #include "base/people/ContactTypes.h"
 #include "base/platform/Platform.h"
-#include "base/platform/PlatformDefaults.h"
+#include "base/data/PlatformDefaults.h"
 #include "common/Logger.h"
 
 #include <algorithm>

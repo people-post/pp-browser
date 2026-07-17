@@ -1,6 +1,5 @@
-add_executable(pp_browser_localization_service_test localization_service_test.cpp)
-target_include_directories(pp_browser_localization_service_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_compile_definitions(pp_browser_localization_service_test PRIVATE
-  PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
-target_link_libraries(pp_browser_localization_service_test PRIVATE pp_base GTest::gtest_main)
-pp_browser_add_gtest(pp_browser_localization_service_test)
+pp_browser_add_base_folder_tests(
+  pp_base_i18n
+  pp_browser_i18n_test
+  PRIVATE_DEFINITIONS
+    PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
