@@ -4,6 +4,8 @@
 
 Product tagline: *The internet, rendered for you.*
 
+Branding rationale, icon mockups, and review checklist: [docs/ui/PRODUCT_BRANDING.md](docs/ui/PRODUCT_BRANDING.md).
+
 ## Features
 
 - Cross-platform native window (Linux, Windows, macOS)
