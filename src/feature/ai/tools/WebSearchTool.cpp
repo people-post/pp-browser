@@ -1,6 +1,7 @@
 #include "feature/ai/tools/WebSearchTool.h"
 
 #include "common/Logger.h"
+#include "common/ProductBranding.h"
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
@@ -36,7 +37,7 @@ std::string UrlEncode(const std::string& value) {
 }
 
 std::vector<std::string> DefaultHeaders() {
-  return {"User-Agent: pp-browser/0.1 (web search tool)"};
+  return {"User-Agent: " + std::string(kProductName) + "/0.1 (web search tool)"};
 }
 
 std::string Trim(const std::string& text) {

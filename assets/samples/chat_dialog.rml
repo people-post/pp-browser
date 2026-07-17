@@ -9,7 +9,7 @@
 <body data-model="chat" class="chat-body">
   <div class="chat-shell">
     <div class="chat-header">
-      <h1 class="heading-1 chat-header-title">pp-browser</h1>
+      <h1 class="heading-1 chat-header-title">{{i18n:app.name}}</h1>
       <p class="text muted">Ask anything. Assistant replies use structured text.</p>
     </div>
     <div class="messages">

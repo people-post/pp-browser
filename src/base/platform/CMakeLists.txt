@@ -29,10 +29,12 @@ pp_browser_add_base_library(pp_base_platform
     PushWakeJni.cpp
     SdlAppEvents.cpp
     SdlAssetFileInterface.cpp
+    WindowIcon.cpp
   PUBLIC_LIBS
     pp_rmlui_backend
     RmlUi::Core
-    ${PP_BROWSER_SDL3_TARGET})
+    ${PP_BROWSER_SDL3_TARGET}
+    ${PP_BROWSER_SDL3_IMAGE_TARGET})
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

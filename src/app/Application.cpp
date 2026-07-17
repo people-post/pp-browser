@@ -4,6 +4,7 @@
 #include "base/ui/ContextMenuHost.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
+#include "common/ProductBranding.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "base/platform/BrowserThread.h"
@@ -13,6 +14,7 @@
 #include "base/platform/PlatformServices.h"
 #include "base/platform/AppEventHooks.h"
 #include "base/platform/SdlAppEvents.h"
+#include "base/platform/WindowIcon.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/SettingsController.h"
@@ -109,6 +111,16 @@ bool Application::Initialize(const char* window_title) {
     log().error << "Backend::Initialize failed (SDL/OpenGL window could not be created)";
     return false;
   }
+
+#if RMLUI_SDL_VERSION_MAJOR >= 3
+  if (!Platform::IsMobile()) {
+    if (auto* window = Backend::GetWindow()) {
+      if (!SetWindowIconFromAsset(window, kAppIconAsset)) {
+        log().warning << "Failed to load window icon from " << kAppIconAsset;
+      }
+    }
+  }
+#endif
 
   Rml::SetSystemInterface(Backend::GetSystemInterface());
   Rml::SetRenderInterface(Backend::GetRenderInterface());
