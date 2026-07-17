@@ -99,7 +99,7 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 | `pp_base` | base aggregate (`INTERFACE`; `pp_identity` is an alias) |
 | `pp_feature_*` | feature — one static library per module folder (e.g. `pp_feature_messaging`, `pp_feature_chat`) |
 | `pp_feature` | feature aggregate (`INTERFACE`) |
-| `pp-browser` | app executable |
+| `pp-browser` | app executable (defined in [`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)) |
 
 Base module tests compile to one executable per folder (e.g. `pp_browser_data_test`, `pp_browser_messaging_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix (e.g. `pp_browser_feature_chat_test`) to avoid name clashes with base suites.
 
