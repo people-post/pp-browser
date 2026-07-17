@@ -52,6 +52,13 @@ if(RMLUI_IS_ROOT_PROJECT)
 				"Please disable either BUILD_SHARED_LIBS or BUILD_TESTING.")
 		endif()
 	endif()
+else()
+	option(RMLUI_TESTS "Build RmlUi test suite." OFF)
+	option(RMLUI_BENCHMARKS "Build RmlUi benchmarks." OFF)
+	option(RMLUI_VISUAL_TESTS "Build RmlUi visual tests." OFF)
+	if(RMLUI_TESTS)
+		enable_testing()
+	endif()
 endif()
 
 option(RMLUI_LUA_BINDINGS "Build Lua bindings." OFF)
@@ -132,18 +139,19 @@ endif()
 if(RMLUI_SHELL)
 	include("CMake/BackendAutoSelection.cmake")
 	include("CMake/DependenciesForBackends.cmake")
+	include("CMake/DependenciesForShell.cmake")
 	add_subdirectory("reference/backends")
 endif()
 
 if(RMLUI_SAMPLES)
 	add_subdirectory("Samples")
+elseif(RMLUI_TESTS)
+	add_subdirectory("Samples/shell")
 endif()
 
 if(RMLUI_TESTS)
 	add_subdirectory("Tests")
 endif()
-
-# Add an interface library to include all sub-libraries.
 # RMLUI_CMAKE_MINIMUM_VERSION_RAISE_NOTICE:
 # From CMake 3.13 we can place target_link_libraries in the same source as each sub-library is declared, see CMP0079.
 add_library(rmlui INTERFACE)

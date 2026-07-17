@@ -211,6 +211,7 @@ if(NOT TARGET SDL::SDL)
   add_library(SDL_alias INTERFACE)
   add_library(SDL::SDL ALIAS SDL_alias)
   target_link_libraries(SDL_alias INTERFACE ${PP_BROWSER_SDL3_TARGET})
+  target_compile_definitions(SDL_alias INTERFACE RMLUI_SDL_VERSION_MAJOR=3)
 endif()
 
 if(NOT TARGET SDL_image::SDL_image)
