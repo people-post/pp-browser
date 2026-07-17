@@ -72,6 +72,8 @@ integration/host → fork/include (public API only)
 
 ## Feature subfolders
 
+Module map, dependency rules, and test placement: [`src/feature/README.md`](../../src/feature/README.md).
+
 | Path | Contents |
 |------|----------|
 | `feature/settings/` | Settings apply logic (no messaging/chat deps) |
@@ -105,7 +107,7 @@ Base module tests compile to one executable per folder (e.g. `pp_browser_data_te
 
 - Keep integration and environment-heavy tests in [`tests/`](../tests/) (e.g. fork-level RmlUi click routing).
 - Prefer colocated unit tests under module paths such as `src/base/.../tests/` and `src/feature/.../tests/`.
-- Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`, except legacy cases being migrated).
+- Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`).
 - Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on; helpers live in `cmake/PpBrowserBase.cmake` and `cmake/PpBrowserFeature.cmake`.
 
 ## Litmus tests
