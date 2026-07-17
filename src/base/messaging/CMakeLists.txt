@@ -1,0 +1,41 @@
+pp_browser_add_base_library(pp_base_messaging
+  SOURCES
+    AtAiParser.cpp
+    AutoKeyEnvelopeResolver.cpp
+    ChatHistoryResponder.cpp
+    ChatHistoryStreamCodec.cpp
+    ChatPayloadCodec.cpp
+    ChatPayloadTypes.cpp
+    ChatPayloadValidator.cpp
+    ConversationSummaryCodec.cpp
+    DirectChatTarget.cpp
+    E2eIngestClassifier.cpp
+    E2eRelayPayloadCodec.cpp
+    EnvelopeSigner.cpp
+    GroupE2ePayloadCodec.cpp
+    GroupMembershipCodec.cpp
+    GroupRosterStore.cpp
+    GroupTypes.cpp
+    JsonThreadStore.cpp
+    MessagingJson.cpp
+    PeerKemKeyStore.cpp
+    PeerSigningKeyStore.cpp
+    PeopleDiscoveryBlocks.cpp
+    RelayStreamKey.cpp
+    RelayWirePayload.cpp
+    SqliteThreadStore.cpp
+    SyncStateCodec.cpp
+  PUBLIC_LIBS
+    pp_base_error
+    pp_base_data
+    pp_base_crypto
+    pp_base_people
+    nlohmann_json::nlohmann_json
+    sodium
+    SQLite::SQLite3)
+
+pp_browser_add_base_p2p_includes(pp_base_messaging)
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()

@@ -1,6 +1,6 @@
 #include "feature/messaging/RelayReceivePipeline.h"
 
-#include "base/crypto/AutoKeyEstablishment.h"
+#include "base/messaging/AutoKeyEnvelopeResolver.h"
 #include "base/crypto/CryptoUtil.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
@@ -236,7 +236,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     message = std::move(*decrypted);
 
     if (envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value()) {
-      auto master_psk = AutoKeyEstablishment::ResolveOrDeriveMasterPsk(envelope, target_key, psk_store_,
+      auto master_psk = ResolveOrDeriveMasterPsk(envelope, target_key, psk_store_,
                                                                        *local_kem_private_key);
       if (master_psk) {
         (void)PersistDerivedAutoKeyPsk(envelope, target_key, *master_psk);

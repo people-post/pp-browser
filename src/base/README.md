@@ -11,7 +11,7 @@ common     logger, ResultOrError, task runner (app-agnostic)
 
 **Rule:** dependencies flow downward only. Base may use `common/`; it must not `#include` from `feature/` or `app/`. Repo-wide layout: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
 
-Everything under this tree builds as one static library, **`pp_base`** (alias `pp_identity`). Sources are in [`CMakeLists.txt`](CMakeLists.txt).
+Each top-level folder (and `ai/conversation`, `ai/mcp`) builds as its own static library — **`pp_base_<module>`** (e.g. `pp_base_data`, `pp_base_ai_conversation`). The aggregate **`pp_base`** (`INTERFACE`; alias `pp_identity`) links all module libraries for feature and app code. See [`CMakeLists.txt`](CMakeLists.txt) and per-folder `CMakeLists.txt` files.
 
 ---
 
@@ -75,14 +75,16 @@ Includes use the repo root: `#include "base/data/Config.h"`.
 
 **Goal:** small modules that are as independent as possible, arranged in a **hierarchy without cycles**. Shared types live in the module that owns the data or protocol, not in a consumer.
 
-Intended direction (not fully realized yet — see below):
+Intended direction:
 
 ```
 common
   ↑
-platform, error, i18n          thin / leaf where possible
+platform, i18n
   ↑
-data                           config & persistence (should not depend on ai)
+error (uses i18n for catalogued messages)
+  ↑
+data (includes PlatformDefaults — config defaults keyed by PlatformKind)
   ↑
 crypto, people
   ↑
@@ -90,8 +92,10 @@ net
   ↑
 messaging
   ↑
-ai, ui                         parallel consumers of messaging + data
+ai, ui
 ```
+
+Resolved cycles (2026): `PlatformDefaults` moved from `platform/` to `data/`; contact JSON helpers live in `people/ContactJson.*`; envelope PSK resolution lives in `messaging/AutoKeyEnvelopeResolver.*`.
 
 **Principles for new code:**
 
@@ -138,7 +142,7 @@ Regressions are caught by [`scripts/check_base_includes.sh`](../../scripts/check
 
 1. Find the module that **owns** the data, protocol, or external integration.
 2. Follow the dependency principles above; if two modules need the same struct, split or move types before adding another cross-include.
-3. Add tests in `src/base/<module>/tests/` and register the directory in [`CMakeLists.txt`](CMakeLists.txt) if new.
+3. Add tests in `src/base/<module>/tests/` (`*_test.cpp` files). One executable per folder is created automatically (`pp_browser_<module>_test`).
 4. Run [`scripts/check_base_includes.sh`](../../scripts/check_base_includes.sh) before pushing.
 5. Document externally visible behavior in [`docs/contracts/`](../../docs/contracts/) when wire formats, encryption, or on-disk layout change.
 

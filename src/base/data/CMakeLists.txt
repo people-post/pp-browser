@@ -1,0 +1,20 @@
+pp_browser_add_base_library(pp_base_data
+  SOURCES
+    AppPaths.cpp
+    AtomicFileWrite.cpp
+    Config.cpp
+    ConfigJson.cpp
+    LlmPreset.cpp
+    PlatformDefaults.cpp
+    ProfileRegistry.cpp
+    SchemaVersion.cpp
+    SessionStore.cpp
+    UserPreferences.cpp
+  PUBLIC_LIBS
+    pp_base_error
+    pp_base_platform
+    nlohmann_json::nlohmann_json)
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()

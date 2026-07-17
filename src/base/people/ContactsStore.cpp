@@ -1,7 +1,7 @@
 #include "base/people/ContactsStore.h"
 
 #include "base/data/AtomicFileWrite.h"
-#include "base/messaging/MessagingJson.h"
+#include "base/people/ContactJson.h"
 #include "common/Utilities.h"
 
 #include <algorithm>

@@ -2,12 +2,9 @@
 
 #include "base/crypto/CryptoTypes.h"
 #include "base/crypto/HybridKem.h"
-#include "base/crypto/IPskSessionStore.h"
-#include "base/messaging/RelayEnvelope.h"
 
 #include "common/Error.h"
 
-#include <optional>
 #include <string>
 
 namespace pbr {
@@ -24,9 +21,6 @@ public:
   static Roe<ByteVector> DeriveMasterPskFromKeyInit(const ByteVector& local_private_key,
                                                     const std::string& key_init_b64);
   static Roe<AutoKeyEncapsulation> EncapsulateForRecipient(const ByteVector& peer_public_key);
-  static Roe<ByteVector> ResolveOrDeriveMasterPsk(const RelayEnvelope& envelope, const ChatTargetKey& target_key,
-                                                  IPskSessionStore& psk_store,
-                                                  const ByteVector& local_private_key);
 };
 
 } // namespace pbr
