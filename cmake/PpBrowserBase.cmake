@@ -1,3 +1,5 @@
+include(PpBrowserLibp2p)
+
 function(pp_browser_add_base_library target)
   cmake_parse_arguments(ARG "" "" "SOURCES;PUBLIC_LIBS;PRIVATE_LIBS" ${ARGN})
   add_library(${target} STATIC ${ARG_SOURCES})
@@ -9,8 +11,7 @@ function(pp_browser_add_base_library target)
 endfunction()
 
 function(pp_browser_add_base_p2p_includes target)
-  target_include_directories(${target} PUBLIC
-    ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include)
+  pp_browser_add_libp2p_includes(${target})
 endfunction()
 
 function(pp_browser_add_base_folder_tests lib_target test_target)

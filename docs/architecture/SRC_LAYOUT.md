@@ -99,16 +99,20 @@ Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirt
 | `pp_base` | base aggregate (`INTERFACE`; `pp_identity` is an alias) |
 | `pp_feature_*` | feature — one static library per module folder (e.g. `pp_feature_messaging`, `pp_feature_chat`) |
 | `pp_feature` | feature aggregate (`INTERFACE`) |
+| `pp_rmlui_backend` | render integration (SDL/GL glue; defined in [`src/render/CMakeLists.txt`](../../src/render/CMakeLists.txt)) |
+| `pp_libp2p_integration` | libp2p integration glue (defined in [`src/libp2p/integration/CMakeLists.txt`](../../src/libp2p/integration/CMakeLists.txt)) |
 | `pp-browser` | app executable (defined in [`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)) |
 
 Base module tests compile to one executable per folder (e.g. `pp_browser_data_test`, `pp_browser_messaging_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix (e.g. `pp_browser_feature_chat_test`) to avoid name clashes with base suites.
+
+Fork-sidecar CMake helpers live in `cmake/PpBrowserRender.cmake` and `cmake/PpBrowserLibp2p.cmake` (mirroring `cmake/PpBrowserBase.cmake` and `cmake/PpBrowserFeature.cmake`).
 
 ## Test placement
 
 - Fork-level RmlUi tests live in [`src/render/fork/Tests/`](../../src/render/fork/Tests/) (upstream doctest suite plus fork-specific `ClickRouting.cpp`).
 - Keep integration and environment-heavy **pp-browser** tests outside the fork when they span app layers; colocate module unit tests under `src/base/.../tests/` and `src/feature/.../tests/`.
 - Place a test with the **highest layer it includes or links** (base tests must not depend on `pp_feature`).
-- Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on; helpers live in `cmake/PpBrowserBase.cmake` and `cmake/PpBrowserFeature.cmake`.
+- Module `CMakeLists.txt` files add `tests/` subdirectories when `PP_BROWSER_BUILD_TESTS` is on; helpers live in `cmake/PpBrowserBase.cmake`, `cmake/PpBrowserFeature.cmake`, `cmake/PpBrowserRender.cmake`, and `cmake/PpBrowserLibp2p.cmake`.
 
 ## Litmus tests
 
