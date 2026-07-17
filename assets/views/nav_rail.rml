@@ -2,26 +2,41 @@
   <button class="shell-nav-tab" type="button"
           data-class-shell-nav-tab--active="nav_tab == 'home'"
           data-event-click="select_nav_tab('home')">
-    <svg src="../icons/sparkle.svg" width="22" height="22" crop-to-content="true"></svg>
+    <div class="shell-nav-tab-icon-wrap">
+      <svg src="../icons/sparkle.svg" width="22" height="22" crop-to-content="true"></svg>
+    </div>
     <p class="shell-nav-tab-label">{{i18n:nav.home}}</p>
   </button>
   <button class="shell-nav-tab" type="button"
           data-class-shell-nav-tab--active="nav_tab == 'sessions'"
           data-event-click="select_nav_tab('sessions')">
-    <svg src="../icons/sessions.svg" width="22" height="22" crop-to-content="true"></svg>
+    <div class="shell-nav-tab-icon-wrap">
+      <svg src="../icons/sessions.svg" width="22" height="22" crop-to-content="true"></svg>
+      <span class="badge-count badge-count--nav"
+            data-if="nav_badges.sessions_unread > 0"
+            data-rml="nav_badges.sessions_unread_display"></span>
+    </div>
     <p class="shell-nav-tab-label">{{i18n:nav.sessions}}</p>
   </button>
   <button class="shell-nav-tab" type="button"
           data-class-shell-nav-tab--active="nav_tab == 'contacts'"
           data-event-click="select_nav_tab('contacts')">
-    <svg src="../icons/contacts.svg" width="22" height="22" crop-to-content="true"></svg>
+    <div class="shell-nav-tab-icon-wrap">
+      <svg src="../icons/contacts.svg" width="22" height="22" crop-to-content="true"></svg>
+      <span class="badge-count badge-count--nav"
+            data-if="nav_badges.contacts_unread > 0"
+            data-rml="nav_badges.contacts_unread_display"></span>
+    </div>
     <p class="shell-nav-tab-label">{{i18n:nav.contacts}}</p>
   </button>
   <div class="shell-nav-spacer"></div>
   <button class="shell-nav-tab" type="button"
           data-class-shell-nav-tab--active="nav_tab == 'me'"
           data-event-click="select_nav_tab('me')">
-    <svg src="../icons/me.svg" width="22" height="22" crop-to-content="true"></svg>
+    <div class="shell-nav-tab-icon-wrap">
+      <svg src="../icons/me.svg" width="22" height="22" crop-to-content="true"></svg>
+      <span class="badge-dot badge-dot--nav" data-if="nav_badges.me_attention"></span>
+    </div>
     <p class="shell-nav-tab-label">{{i18n:nav.me}}</p>
   </button>
 </div>

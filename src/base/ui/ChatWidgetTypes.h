@@ -82,6 +82,7 @@ struct SessionDisplayRow {
   /** Visual chat type: ai | private | public | group */
   Rml::String kind;
   int unread_count = 0;
+  Rml::String unread_display;
   bool active = false;
   bool closable = false;
 };

@@ -1,4 +1,5 @@
 #include "feature/chat/ChatController.h"
+#include "feature/ui/BadgeAggregator.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/platform/AppLifecycle.h"
 #include "base/platform/BackgroundSyncScheduler.h"
@@ -1147,8 +1148,10 @@ void ChatController::RefreshFromMessaging() {
   SyncShellSessions();
   SyncDisplayFromThread();
   UpdateThreadChrome();
+  BadgeAggregator::Instance().Refresh();
   DirtyChat();
   DirtyShell();
+  ShellHost::Instance().DirtyWindow();
 }
 
 void ChatController::OnProfileDataReset() {
@@ -1192,6 +1195,7 @@ void ChatController::SyncShellSessions() {
     row.preview = thread.preview.c_str();
     row.kind = SessionVisualKind(thread);
     row.unread_count = thread.unread_count;
+    row.unread_display = FormatBadgeCount(thread.unread_count).c_str();
     row.active = thread.id == active_id;
     row.closable = !inbox.IsAiHomeThread(thread.id);
     shell_.sessions.push_back(std::move(row));
@@ -2027,7 +2031,10 @@ void ChatController::WireMessagingBindings() {
   messaging_ready_ = true;
   agent_->SetThreadStore(&MessagingHub::Instance().Store());
   MessagingHub::Instance().BindAgent(*agent_);
-  MessagingHub::Instance().P2p().SetOnMessagesChanged([this]() { RefreshFromMessaging(); });
+  MessagingHub::Instance().P2p().SetOnMessagesChanged([this]() {
+    RefreshFromMessaging();
+    ContactsController::Instance().Refresh();
+  });
   MessagingHub::Instance().P2p().SetOnDeliveryNotice([this](const std::string& message) {
     ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
     ShellHost::Instance().DirtyWindow();
@@ -2047,7 +2054,10 @@ void ChatController::WireMessagingBindings() {
   });
   (void)PushDeviceCoordinator::SyncWithPreference(
       SessionStore::Instance().Snapshot().profile_prefs.show_notifications);
-  MessagingHub::Instance().Inbox().SetOnThreadChanged([this]() { RefreshFromMessaging(); });
+  MessagingHub::Instance().Inbox().SetOnThreadChanged([this]() {
+    RefreshFromMessaging();
+    ContactsController::Instance().Refresh();
+  });
   if (MessagingHub::Instance().HasRouter()) {
     MessagingHub::Instance().Router().SetOnLocalAction(
         [this](const std::string& message, const std::optional<std::string>& payload) {
@@ -2240,6 +2250,7 @@ bool ChatController::Setup(Rml::Context* context) {
           session_handle.RegisterMember("preview", &ChatController::SessionRow::preview);
           session_handle.RegisterMember("kind", &ChatController::SessionRow::kind);
           session_handle.RegisterMember("unread_count", &ChatController::SessionRow::unread_count);
+          session_handle.RegisterMember("unread_display", &ChatController::SessionRow::unread_display);
           session_handle.RegisterMember("active", &ChatController::SessionRow::active);
           session_handle.RegisterMember("closable", &ChatController::SessionRow::closable);
         }

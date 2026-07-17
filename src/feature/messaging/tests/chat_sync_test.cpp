@@ -7,9 +7,11 @@
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/SyncStateCodec.h"
 #include "base/net/ServiceClientsImpl.h"
+#include "base/people/ContactsStore.h"
 #include "base/people/Ed25519Signer.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/ChatSyncService.h"
+#include "feature/messaging/InboxController.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
@@ -40,8 +42,10 @@ public:
         psk_store(store.ProfileDbPath(), "test"),
         key_resolver(key_store),
         roster_store(store.ProfileDbPath()),
+        contacts(data_dir.string()),
+        inbox(store, contacts),
         receive_pipeline(store, key_resolver, psk_store, identity, roster_store),
-        sync(store, identity, &relay, receive_pipeline, &peer_history) {
+        sync(store, identity, &relay, receive_pipeline, inbox, &peer_history) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
@@ -174,6 +178,8 @@ public:
   PeerSigningKeyStore key_store;
   PeerSigningKeyResolver key_resolver;
   GroupRosterStore roster_store;
+  ContactsStore contacts;
+  InboxController inbox;
   RelayReceivePipeline receive_pipeline;
   ChatSyncService sync;
   Thread thread;

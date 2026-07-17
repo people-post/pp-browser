@@ -461,6 +461,15 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
+.badge-count {
+  background-color: #3b82f6;
+  color: #ffffff;
+}
+
+.badge-dot {
+  background-color: #3b82f6;
+}
+
 .sidebar-session-close:hover {
   background-color: #f3f4f6;
 }

@@ -10,6 +10,7 @@
 
 #include "base/ai/StructuredTextParser.h"
 #include "common/Utilities.h"
+#include <algorithm>
 #include <map>
 #include <sstream>
 #include <unordered_map>
@@ -330,9 +331,87 @@ void InboxController::MarkThreadRead(const std::string& thread_id) {
   if (!thread || !*thread) {
     return;
   }
+  if ((*thread)->unread_count == 0) {
+    return;
+  }
   Thread updated = **thread;
   updated.unread_count = 0;
   (void)store_.UpsertThread(updated);
+}
+
+void InboxController::IncrementUnread(const std::string& thread_id, const int delta) {
+  if (delta <= 0 || thread_id.empty() || thread_id == active_thread_id_ || IsAiHomeThread(thread_id)) {
+    return;
+  }
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread) {
+    return;
+  }
+  Thread updated = **thread;
+  updated.unread_count += delta;
+  updated.updated_at = util::NowUnixMs();
+  (void)store_.UpsertThread(updated);
+}
+
+void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
+                                                const std::optional<std::string>& preview) {
+  if (thread_id.empty()) {
+    return;
+  }
+  auto thread = store_.GetThread(thread_id);
+  if (!thread || !*thread) {
+    return;
+  }
+
+  Thread updated = **thread;
+  bool changed = false;
+  if (preview && *preview != updated.preview) {
+    updated.preview = *preview;
+    changed = true;
+  }
+  if (thread_id != active_thread_id_ && !IsAiHomeThread(thread_id)) {
+    updated.unread_count += 1;
+    changed = true;
+  }
+  if (!changed) {
+    return;
+  }
+  updated.updated_at = util::NowUnixMs();
+  (void)store_.UpsertThread(updated);
+}
+
+int InboxController::SumUnread() const {
+  auto threads = store_.ListThreads();
+  if (!threads) {
+    return 0;
+  }
+  int total = 0;
+  for (const Thread& thread : *threads) {
+    if (IsAiHomeThread(thread.id)) {
+      continue;
+    }
+    total += thread.unread_count;
+  }
+  return total;
+}
+
+int InboxController::SumUnreadForContact(const std::string& contact_id) const {
+  if (contact_id.empty()) {
+    return 0;
+  }
+  auto threads = store_.ListThreads();
+  if (!threads) {
+    return 0;
+  }
+  int total = 0;
+  for (const Thread& thread : *threads) {
+    if (std::find(thread.participant_contact_ids.begin(), thread.participant_contact_ids.end(), contact_id) ==
+        thread.participant_contact_ids.end()) {
+      continue;
+    }
+    total += thread.unread_count;
+  }
+  return total;
 }
 
 Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std::string& preview) {

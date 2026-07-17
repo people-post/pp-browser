@@ -100,6 +100,15 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
 
+    if (auto badge_handle = ctor.RegisterStruct<NavBadgeState>()) {
+      badge_handle.RegisterMember("sessions_unread", &NavBadgeState::sessions_unread);
+      badge_handle.RegisterMember("contacts_unread", &NavBadgeState::contacts_unread);
+      badge_handle.RegisterMember("me_attention", &NavBadgeState::me_attention);
+      badge_handle.RegisterMember("sessions_unread_display", &NavBadgeState::sessions_unread_display);
+      badge_handle.RegisterMember("contacts_unread_display", &NavBadgeState::contacts_unread_display);
+    }
+    ctor.Bind("nav_badges", &host.state_.nav_badges);
+
     ctor.BindEventCallback("toggle_auxiliary", &ShellHost::ToggleAuxiliaryCallback);
     ctor.BindEventCallback("open_auxiliary", &ShellHost::OpenAuxiliaryCallback);
     ctor.BindEventCallback("select_nav_tab", &ShellHost::SelectNavTabCallback);

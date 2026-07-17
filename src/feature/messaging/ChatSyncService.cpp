@@ -1,5 +1,6 @@
 #include "feature/messaging/ChatSyncService.h"
 
+#include "feature/messaging/InboxController.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/people/ContactTypes.h"
@@ -9,9 +10,10 @@
 namespace pbr {
 
 ChatSyncService::ChatSyncService(IThreadStore& store, IdentityStore& identity, IRelayClient* relay,
-                                 RelayReceivePipeline& receive_pipeline, IChatHistoryPeerClient* peer_client)
+                                 RelayReceivePipeline& receive_pipeline, InboxController& inbox,
+                                 IChatHistoryPeerClient* peer_client)
     : store_(store), identity_(identity), relay_(relay), peer_client_(peer_client),
-      receive_pipeline_(receive_pipeline) {}
+      receive_pipeline_(receive_pipeline), inbox_(inbox) {}
 
 void ChatSyncService::SetOnMessagesChanged(std::function<void()> callback) {
   on_messages_changed_ = std::move(callback);
@@ -126,6 +128,9 @@ Roe<ChatSyncResult> ChatSyncService::IngestHistoryResponse(const std::string& th
     if (outcome.persisted) {
       ++result.ingested;
       changed = true;
+      if (!outcome.thread_id.empty()) {
+        inbox_.OnInboundMessagePersisted(outcome.thread_id);
+      }
     }
   }
 

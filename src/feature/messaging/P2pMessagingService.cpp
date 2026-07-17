@@ -67,7 +67,8 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
     direct_chat_->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
     direct_chat_->Start();
   }
-  chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, peer_history_.get());
+  chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, inbox_,
+                                                 peer_history_.get());
   chat_sync_->SetOnMessagesChanged([this]() {
     if (on_messages_changed_) {
       BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
@@ -103,7 +104,8 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
   relay_cursor_.clear();
   poll_pending_ = false;
   if (chat_sync_) {
-    chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, peer_history_.get());
+    chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, inbox_,
+                                                 peer_history_.get());
     chat_sync_->SetOnMessagesChanged([this]() {
       if (on_messages_changed_) {
         BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
@@ -144,6 +146,13 @@ void P2pMessagingService::HandleDirectInbound(RelayEnvelope envelope) {
     if (thread && *thread) {
       MaybeRepairGap((*thread)->id, envelope);
     }
+  }
+  if (outcome.persisted && !outcome.thread_id.empty()) {
+    std::optional<std::string> preview;
+    if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
+      preview = decoded->text;
+    }
+    inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
   }
   if (outcome.persisted || outcome.thread_changed) {
     if (on_messages_changed_) {
@@ -1069,32 +1078,21 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
         continue;
       }
       changed = true;
-      const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
-      auto thread = store_.FindDirectThread(inbound_target);
-      if (!thread || !*thread) {
+      if (outcome.thread_id.empty()) {
         continue;
       }
-      const std::string& resolved_thread_id = (*thread)->id;
-      if (inbox_.ActiveThreadId() != resolved_thread_id) {
-        Thread updated = **thread;
-        updated.unread_count += 1;
-        std::string preview;
-        auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64);
-        if (decoded) {
-          preview = decoded->text;
-          updated.preview = preview;
-        }
-        updated.updated_at = util::NowUnixMs();
-        (void)store_.UpsertThread(updated);
-        if (!AppLifecycle::IsForeground()) {
-          background_notices.push_back(UnreadNotice{
-              .title = "New message",
-              .body = preview.empty() ? "You have a new message" : preview,
-              .thread_id = resolved_thread_id,
-          });
-        }
-      } else if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64); decoded) {
-        (void)inbox_.UpdatePreview(resolved_thread_id, decoded->text);
+      const std::string& resolved_thread_id = outcome.thread_id;
+      std::optional<std::string> preview;
+      if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
+        preview = decoded->text;
+      }
+      inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
+      if (!AppLifecycle::IsForeground() && inbox_.ActiveThreadId() != resolved_thread_id) {
+        background_notices.push_back(UnreadNotice{
+            .title = "New message",
+            .body = preview && !preview->empty() ? *preview : "You have a new message",
+            .thread_id = resolved_thread_id,
+        });
       }
     }
 

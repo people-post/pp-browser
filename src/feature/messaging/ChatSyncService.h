@@ -12,6 +12,8 @@
 
 namespace pbr {
 
+class InboxController;
+
 struct ChatSyncResult {
   size_t ingested = 0;
   bool empty_gap_closed = false;
@@ -21,7 +23,8 @@ struct ChatSyncResult {
 class ChatSyncService {
 public:
   ChatSyncService(IThreadStore& store, IdentityStore& identity, IRelayClient* relay,
-                  RelayReceivePipeline& receive_pipeline, IChatHistoryPeerClient* peer_client = nullptr);
+                  RelayReceivePipeline& receive_pipeline, InboxController& inbox,
+                  IChatHistoryPeerClient* peer_client = nullptr);
 
   Roe<ChatSyncResult> FetchChatTargetMessages(const std::string& thread_id, ChatHistoryRequest request);
   Roe<ChatSyncResult> TailSync(const std::string& thread_id);
@@ -56,6 +59,7 @@ private:
   IRelayClient* relay_ = nullptr;
   IChatHistoryPeerClient* peer_client_ = nullptr;
   RelayReceivePipeline& receive_pipeline_;
+  InboxController& inbox_;
   std::function<void()> on_messages_changed_;
 };
 

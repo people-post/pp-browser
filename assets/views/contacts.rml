@@ -29,6 +29,9 @@
                   data-if="contact.trust == 'friendly'">Friendly</span>
             <span class="contacts-trust-badge contacts-trust-badge--blocked"
                   data-if="contact.trust == 'blocked'">Blocked</span>
+            <span class="badge-count contacts-unread"
+                  data-if="contact.unread_count > 0"
+                  data-rml="contact.unread_display"></span>
           </div>
           <p class="contacts-row-subtitle text muted" data-if="contact.subtitle != ''" data-rml="contact.subtitle"></p>
         </div>
@@ -128,6 +131,9 @@
             <p class="contacts-row-title" data-rml="thread.title"></p>
             <p class="contacts-row-subtitle text muted" data-rml="thread.channel_label"></p>
           </div>
+          <span class="badge-count contacts-unread"
+                data-if="thread.unread_count > 0"
+                data-rml="thread.unread_display"></span>
         </div>
       </div>
     </div>
