@@ -129,10 +129,17 @@ ctest --test-dir build --output-on-failure
 
 pp-browser tests use a hybrid layout:
 
-- Integration-heavy tests remain under [`tests/`](../tests/).
-- Unit tests can live near the module they validate, for example under `src/.../tests/`.
+- RmlUi fork unit tests (doctest) under [`src/render/fork/Tests/`](../src/render/fork/Tests/); enabled with `PP_BROWSER_BUILD_TESTS`.
+- GoogleTest module suites under `src/.../tests/`.
 
-All pp-browser suites use GoogleTest and are discovered through CTest. To run a subset by suite name:
+All suites are discovered through CTest. To run RmlUi fork tests:
+
+```bash
+ctest --test-dir build -R rmlui_unit_tests --output-on-failure
+ctest --test-dir build -R ClickRouting --output-on-failure
+```
+
+To run a subset of pp-browser GoogleTest suites by name:
 
 ```bash
 ctest --test-dir build -R "BindingsManifestTest|TurnPlanTest|ConfigJsonTest|SchemaVersionTest" --output-on-failure

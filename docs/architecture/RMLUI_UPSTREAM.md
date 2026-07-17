@@ -8,7 +8,10 @@ pp-browser vendors RmlUi under `src/render/fork/` as a **hard fork** (committed 
 
 | Path | Role |
 |------|------|
-| `src/render/fork/` | Upstream-shaped RmlUi (`Include/`, `Source/`, `CMake/`) |
+| `src/render/fork/` | Upstream-shaped RmlUi (`Include/`, `Source/`, `CMake/`, `Tests/`, minimal `Samples/`) |
+| `src/render/fork/Tests/` | Upstream RmlUi unit tests (doctest); fork-specific `ClickRouting.cpp` |
+| `src/render/fork/Samples/shell/` | Test harness utility (`rmlui_shell`); not linked by the app |
+| `src/render/fork/Samples/assets/` | Fonts and minimal RML/RCSS for the test harness |
 | `src/render/fork/reference/backends/` | Upstream sample backends (**reference only**; not linked) |
 | `src/render/integration/platform/` | SDL platform adapter (compiled into `pp_rmlui_backend`) |
 | `src/render/integration/renderer/` | OpenGL3 render interface |
@@ -22,7 +25,16 @@ integration/host → integration/platform + integration/renderer → fork/Includ
 
 ## Provenance
 
-See `src/render/fork/UPSTREAM.json` for the upstream tag and commit SHA.
+See `src/render/fork/UPSTREAM.json` for the upstream tag and commit SHA. Re-import test trees with `./scripts/rmlui_tests_import.sh` when bumping the fork version.
+
+## Tests
+
+When `PP_BROWSER_BUILD_TESTS` is on, pp-browser builds upstream `rmlui_unit_tests` (doctest) from `src/render/fork/Tests/`. Fork-specific click-routing coverage lives in `Tests/Source/UnitTests/ClickRouting.cpp`. Visual tests and benchmarks are gated off by default (`RMLUI_VISUAL_TESTS`, `RMLUI_BENCHMARKS`).
+
+```bash
+ctest --test-dir build -R rmlui_unit_tests --output-on-failure
+ctest --test-dir build -R ClickRouting --output-on-failure
+```
 
 ## Patching
 
@@ -30,7 +42,10 @@ Edit files under `src/render/fork/` directly in pp-browser commits (except `src/
 
 **pp-browser fork patches (as of import):**
 
-- `CMakeLists.txt` — wrap `add_subdirectory("Samples")` in `if(RMLUI_SAMPLES)` (Samples tree excluded from hard fork)
+- `CMakeLists.txt` — wrap `add_subdirectory("Samples")` in `if(RMLUI_SAMPLES)`; add `RMLUI_TESTS` option for embedded pp-browser builds; import minimal `Samples/shell` when tests are on
+- `CMake/DependenciesForBackends.cmake` — reuse parent `SDL::SDL` alias when pp-browser provides vendored SDL3
+- `Samples/shell/` — `reference/backends` include path; `RMLUI_SAMPLES_ROOT` compile-time samples root for tests
+- `Tests/Source/UnitTests/ElementDocument.cpp` — `ReloadStyleSheet` uses bundled `assets/demo.rml` instead of excluded sample demos
 - `ElementSelectableText` — selectable static text via `selectable="text"` on containers; participates in document `SelectionController`
 - `SelectionController` / `SelectionTypes` — participation-based static text selection (`Element::QuerySelection`, `BuildSelectionContent`, cross-container drag/copy)
 - `SelectionHighlight` — shared selection background geometry and RCSS color resolution for static (`ElementText::RenderSelectionSlice`) and editor (`WidgetTextInput`) paths; lollipop **selection handle** geometry (`BuildSelectionHandleGeometry`)

@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/mikke89/RmlUi.git",
+  "version": "6.2",
+  "tag": "6.2",
+  "commit": "2230d1a6e8e0848ed87a5761e2a5160b2a175ba4",
+  "imported_paths": [
+    "Tests",
+    "Samples/shell",
+    "Samples/assets"
+  ],
+  "import_script": "scripts/rmlui_tests_import.sh"
+}
