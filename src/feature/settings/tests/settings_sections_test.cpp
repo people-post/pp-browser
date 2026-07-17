@@ -56,6 +56,7 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   pbr::AppearanceSettingsSection appearance_section;
   appearance_section.SyncFromSession(bootstrap, state);
   EXPECT_EQ(state.appearance, "dark");
+  EXPECT_EQ(state.appearance_label, "Dark");
 
   pbr::StorageSettingsSection storage_section;
   storage_section.SyncFromSession(bootstrap, state);

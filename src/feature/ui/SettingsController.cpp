@@ -9,6 +9,7 @@
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ui/ChatSessionActions.h"
 #include "feature/messaging/MessagingHub.h"
+#include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
@@ -101,6 +102,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.show_notifications = bindings_.show_notifications.c_str();
   ui_state_.brief_llm_key_masked = bindings_.brief_llm_key_masked.c_str();
   ui_state_.appearance = bindings_.appearance.c_str();
+  ui_state_.appearance_label = bindings_.appearance_label.c_str();
   ui_state_.language = bindings_.language.c_str();
   ui_state_.language_label = bindings_.language_label.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
@@ -143,6 +145,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.show_notifications = ui_state_.show_notifications.c_str();
   bindings_.brief_llm_key_masked = ui_state_.brief_llm_key_masked.c_str();
   bindings_.appearance = ui_state_.appearance.c_str();
+  bindings_.appearance_label = ui_state_.appearance_label.c_str();
   bindings_.language = ui_state_.language.c_str();
   bindings_.language_label = ui_state_.language_label.c_str();
   bindings_.profile_label = ui_state_.profile_label.c_str();
@@ -235,6 +238,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("show_notifications", &controller.bindings_.show_notifications);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
     ctor.Bind("appearance", &controller.bindings_.appearance);
+    ctor.Bind("appearance_label", &controller.bindings_.appearance_label);
     ctor.Bind("language", &controller.bindings_.language);
     ctor.Bind("language_label", &controller.bindings_.language_label);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
@@ -254,7 +258,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("reset_section", &SettingsController::ResetSectionCallback);
     ctor.BindEventCallback("on_llm_field_changed", &SettingsController::OnLlmFieldChangedCallback);
     ctor.BindEventCallback("on_llm_preset_changed", &SettingsController::OnLlmPresetChangedCallback);
-    ctor.BindEventCallback("on_appearance_changed", &SettingsController::OnAppearanceChangedCallback);
+    ctor.BindEventCallback("on_choose_theme", &SettingsController::OnChooseThemeCallback);
     ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
@@ -303,6 +307,7 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "show_notifications");
   host.Dirty("settings", "brief_llm_key_masked");
   host.Dirty("settings", "appearance");
+  host.Dirty("settings", "appearance_label");
   host.Dirty("settings", "language");
   host.Dirty("settings", "language_label");
   host.Dirty("settings", "profile_label");
@@ -639,36 +644,77 @@ void SettingsController::OnLlmPresetChangedCallback(Rml::DataModelHandle /*model
   controller.FlushSection("llm");
 }
 
-void SettingsController::OnAppearanceChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                       const Rml::VariantList& /*args*/) {
-  auto& controller = Instance();
-  if (controller.suppress_auto_save_) {
-    return;
-  }
-
-  const Rml::String value = EventValue(ev);
-  if (!value.empty()) {
-    controller.bindings_.appearance = value;
-  }
-
-  controller.PullBindingsToUiState();
-  const SettingsSectionHandler* handler = controller.FindHandler("appearance");
-  if (!handler) {
-    return;
-  }
-  if (handler->IsPersisted(controller.ui_state_, SessionStore::Instance().Snapshot())) {
-    return;
-  }
-
-  controller.MarkSectionDirty("appearance");
+void SettingsController::OnChooseThemeCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                                 const Rml::VariantList& /*args*/) {
+  Instance().OnChooseTheme(ev);
 }
 
-void SettingsController::OnChooseLanguageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+void SettingsController::OnChooseTheme(Rml::Event& ev) {
+  Rml::Element* target = ev.GetCurrentElement();
+  if (!target) {
+    target = ev.GetTargetElement();
+  }
+  Rml::Vector2i position{0, 0};
+  if (target) {
+    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
+    const Rml::Box& box = target->GetBox();
+    position.x = static_cast<int>(offset.x);
+    position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + 4.0f);
+  }
+
+  const std::string current =
+      bindings_.appearance.empty() ? "system" : std::string(bindings_.appearance.c_str());
+
+  static const char* kThemeIds[] = {"system", "light", "dark"};
+  std::vector<ContextMenuAction> actions;
+  actions.reserve(3);
+  for (const char* id : kThemeIds) {
+    const std::string theme_id = id;
+    actions.push_back({.id = theme_id,
+                       .label = ThemeDisplayLabel(theme_id),
+                       .enabled = {},
+                       .run =
+                           [this, theme_id]() {
+                             ApplyThemeChoice(theme_id);
+                           },
+                       .icon = {},
+                       .danger = false,
+                       .selected = current == theme_id});
+  }
+
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void SettingsController::ApplyThemeChoice(const std::string& appearance_pref) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  bindings_.appearance = appearance_pref.c_str();
+  bindings_.appearance_label = ThemeDisplayLabel(appearance_pref).c_str();
+  PullBindingsToUiState();
+  MarkSectionDirty("appearance");
+  FlushPending();
+  DirtyAll();
+}
+
+void SettingsController::OnChooseLanguageCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
                                                     const Rml::VariantList& /*args*/) {
-  Instance().OnChooseLanguage();
+  Instance().OnChooseLanguage(ev);
 }
 
-void SettingsController::OnChooseLanguage() {
+void SettingsController::OnChooseLanguage(Rml::Event& ev) {
+  Rml::Element* target = ev.GetCurrentElement();
+  if (!target) {
+    target = ev.GetTargetElement();
+  }
+  Rml::Vector2i position{0, 0};
+  if (target) {
+    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
+    const Rml::Box& box = target->GetBox();
+    position.x = static_cast<int>(offset.x);
+    position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + 4.0f);
+  }
+
   auto& loc = LocalizationService::Instance();
   const std::string current = bindings_.language.empty() ? "system" : std::string(bindings_.language.c_str());
 
@@ -698,7 +744,7 @@ void SettingsController::OnChooseLanguage() {
                        .selected = current == tag});
   }
 
-  ContextMenuHost::Instance().ShowActions(Rml::Vector2i(0, 0), std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
 void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {

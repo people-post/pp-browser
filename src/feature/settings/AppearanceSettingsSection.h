@@ -2,7 +2,12 @@
 
 #include "feature/settings/SettingsSectionHandler.h"
 
+#include <string>
+
 namespace pbr {
+
+/** Display label for theme pref (`system` / `light` / `dark`). */
+std::string ThemeDisplayLabel(const std::string& appearance_pref);
 
 class AppearanceSettingsSection final : public SettingsSectionHandler {
 public:

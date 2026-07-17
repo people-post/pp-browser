@@ -5,6 +5,16 @@
 
 namespace pbr {
 
+std::string ThemeDisplayLabel(const std::string& appearance_pref) {
+  if (appearance_pref == "light") {
+    return Tr("settings.theme.light");
+  }
+  if (appearance_pref == "dark") {
+    return Tr("settings.theme.dark");
+  }
+  return Tr("settings.theme.system");
+}
+
 const char* AppearanceSettingsSection::Id() const {
   return "appearance";
 }
@@ -21,6 +31,7 @@ SettingsFlushMode AppearanceSettingsSection::FlushMode() const {
 
 void AppearanceSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.appearance = bootstrap.profile_prefs.appearance;
+  state.appearance_label = ThemeDisplayLabel(state.appearance);
   state.language = bootstrap.profile_prefs.language.empty() ? "system" : bootstrap.profile_prefs.language;
   state.language_label = LocalizationService::Instance().LanguageDisplayLabel(state.language);
 }
@@ -46,6 +57,7 @@ Roe<void> AppearanceSettingsSection::Flush(SettingsUiState& state, SessionStore&
 void AppearanceSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& store) {
   const ProfilePreferences defaults = store.DefaultProfilePrefs();
   state.appearance = defaults.appearance;
+  state.appearance_label = ThemeDisplayLabel(state.appearance);
   state.language = defaults.language;
   state.language_label = LocalizationService::Instance().LanguageDisplayLabel(state.language);
 }

@@ -41,6 +41,8 @@ struct SettingsUiState {
   std::string show_notifications = "on";
   std::string brief_llm_key_masked;
   std::string appearance = "system";
+  /** Display label for the theme row / picker value. */
+  std::string appearance_label = "System";
   /** Pref: `system` or BCP-47 tag. */
   std::string language = "system";
   /** Display label for the language row / picker value. */

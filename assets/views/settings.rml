@@ -202,11 +202,9 @@
       <div class="settings-section stack" data-if="selected_id == 'appearance'">
         <label class="settings-field">
           <span class="settings-label">{{i18n:settings.theme.label}}</span>
-          <select class="field" data-value="appearance" data-event-change="on_appearance_changed()">
-            <option value="system">{{i18n:settings.theme.system}}</option>
-            <option value="light">{{i18n:settings.theme.light}}</option>
-            <option value="dark">{{i18n:settings.theme.dark}}</option>
-          </select>
+          <button class="field settings-language-button" type="button" data-event-click="on_choose_theme()">
+            <span data-rml="appearance_label"></span>
+          </button>
         </label>
         <p class="text muted">{{i18n:settings.theme.help}}</p>
         <label class="settings-field">

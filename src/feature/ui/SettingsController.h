@@ -79,6 +79,7 @@ private:
     Rml::String show_notifications = "on";
     Rml::String brief_llm_key_masked;
     Rml::String appearance = "system";
+    Rml::String appearance_label = "System";
     Rml::String language = "system";
     Rml::String language_label = "System";
     Rml::String profile_label;
@@ -101,7 +102,7 @@ private:
   static void ResetSectionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnLlmFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnLlmPresetChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnAppearanceChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnChooseThemeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChooseLanguageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnIntegrationsFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnNetworkFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -145,7 +146,9 @@ private:
   void OnChangePin();
   void OnResetProfile();
   void PerformResetProfile();
-  void OnChooseLanguage();
+  void OnChooseTheme(Rml::Event& ev);
+  void ApplyThemeChoice(const std::string& appearance_pref);
+  void OnChooseLanguage(Rml::Event& ev);
   void ApplyLanguageChoice(const std::string& language_pref);
 
   std::vector<std::unique_ptr<SettingsSectionHandler>> section_handlers_;
