@@ -3,6 +3,7 @@ pp_browser_add_feature_library(pp_feature_ui
     BadgeAggregator.cpp
     ChatSessionActions.cpp
     ContactsController.cpp
+    PeoplePickerController.cpp
     DataModelHost.cpp
     DocumentLoader.cpp
     PinGateController.cpp

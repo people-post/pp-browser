@@ -1848,6 +1848,105 @@ select selectbox option {
   font-size: 12dp;
 }
 
+.people-picker {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  gap: 12dp;
+}
+
+.people-picker-header {
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 28dp;
+}
+
+.people-picker-title {
+  margin: 0;
+  font-family: LatoLatin;
+  font-size: 18dp;
+  font-weight: bold;
+}
+
+.people-picker-search {
+  flex-shrink: 0;
+}
+
+.people-picker-search-field {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.people-picker-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.people-picker-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10dp;
+  padding: 10dp 8dp;
+  margin-bottom: 4dp;
+  border-radius: 8dp;
+  cursor: pointer;
+}
+
+.people-picker-check {
+  width: 22dp;
+  height: 22dp;
+  border-radius: 11dp;
+  border-width: 1dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.people-picker-check-mark {
+  margin: 0;
+  font-size: 12dp;
+  font-weight: bold;
+}
+
+.people-picker-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.people-picker-row-title {
+  margin: 0;
+  font-family: LatoLatin;
+  font-size: 14dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.people-picker-row-subtitle {
+  margin: 2dp 0 0 0;
+  font-size: 12dp;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.people-picker-locked-label {
+  margin: 0;
+  font-size: 11dp;
+  flex-shrink: 0;
+}
+
+.people-picker-footer {
+  flex-shrink: 0;
+  justify-content: flex-end;
+  gap: 8dp;
+  padding-top: 8dp;
+}
+
 .contact-detail-panel {
   display: flex;
   flex-direction: column;

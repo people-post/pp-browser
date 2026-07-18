@@ -563,6 +563,29 @@ select selectbox option:hover {
   background-color: #0d9488;
 }
 
+.people-picker-row:hover {
+  background-color: #374151;
+}
+
+.people-picker-row--selected {
+  background-color: #312e81;
+}
+
+.people-picker-check {
+  border-color: #4b5563;
+  background-color: #111827;
+}
+
+.people-picker-row--selected .people-picker-check {
+  border-color: #818cf8;
+  background-color: #6366f1;
+  color: #ffffff;
+}
+
+.people-picker-check-mark {
+  color: #ffffff;
+}
+
 .contacts-trust-btn--active {
   background-color: #312e81;
   color: #e0e7ff;

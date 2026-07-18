@@ -1,0 +1,38 @@
+<div class="people-picker stack" data-model="people_picker">
+  <div class="people-picker-header row">
+    <p class="people-picker-title" data-rml="title"></p>
+  </div>
+
+  <div class="people-picker-search">
+    <input class="field people-picker-search-field" type="text" data-value="search_query"
+           data-event-change="on_search_changed()" placeholder="{{i18n:people_picker.search_placeholder}}"/>
+  </div>
+
+  <div class="people-picker-list">
+    <div data-for="row : rows"
+         class="people-picker-row"
+         data-class-people-picker-row--selected="row.selected"
+         data-class-people-picker-row--locked="row.locked"
+         data-event-click="toggle_contact(row.id)">
+      <div class="people-picker-check">
+        <p class="people-picker-check-mark" data-if="row.selected">✓</p>
+      </div>
+      <div class="people-picker-row-body">
+        <p class="people-picker-row-title" data-rml="row.title"></p>
+        <p class="people-picker-row-subtitle text muted" data-if="row.subtitle != ''" data-rml="row.subtitle"></p>
+      </div>
+      <p class="text muted people-picker-locked-label" data-if="row.locked">{{i18n:people_picker.in_chat}}</p>
+    </div>
+
+    <p class="text muted" data-if="rows.size == 0 && search_query == ''">{{i18n:people_picker.empty}}</p>
+    <p class="text muted" data-if="rows.size == 0 && search_query != ''">{{i18n:people_picker.no_matches}}</p>
+  </div>
+
+  <div class="people-picker-footer row">
+    <button class="btn btn-secondary" type="button" data-event-click="cancel_picker()">{{i18n:common.cancel}}</button>
+    <button class="btn btn-primary" type="button" data-event-click="confirm_picker()"
+            data-attrif-disabled="!cta_enabled">
+      <span data-rml="cta_label"></span>
+    </button>
+  </div>
+</div>

@@ -40,6 +40,7 @@
 #include "base/data/SessionStore.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ui/ContactsController.h"
+#include "feature/ui/PeoplePickerController.h"
 
 #include <RmlUi/Core/SystemInterface.h>
 #include "feature/ui/SettingsController.h"
@@ -1490,7 +1491,7 @@ void ChatController::OnNewChat() {
 }
 
 void ChatController::OnNewMessage() {
-  ShellHost::Instance().SelectNavTab(NavTab::Contacts);
+  PeoplePickerController::Instance().OpenFree();
 }
 
 void ChatController::OnOpenNewSessionMenu(Rml::Event& ev) {
@@ -1610,8 +1611,19 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
   if (thread->kind == ThreadKind::Direct) {
     const PeerDisplayLabel label = MessagingHub::Instance().Inbox().ResolveThreadLabel(*thread);
     const std::string peer_id = thread->peer_identity_value;
-    if (label.contact_id) {
-      const std::string contact_id = *label.contact_id;
+    std::optional<std::string> dm_contact_id = label.contact_id;
+    if (!dm_contact_id && !thread->participant_contact_ids.empty()) {
+      dm_contact_id = thread->participant_contact_ids.front();
+    }
+    if (dm_contact_id) {
+      const std::string contact_id = *dm_contact_id;
+      actions.push_back({
+          "add_people",
+          "Add people…",
+          nullptr,
+          [contact_id]() { PeoplePickerController::Instance().OpenFromDm(contact_id); },
+          "../icons/group.svg",
+      });
       actions.push_back({
           "edit_contact",
           "Edit contact",
@@ -2521,6 +2533,10 @@ bool ChatController::Setup(Rml::Context* context) {
   }
 
   if (!ContactsController::Instance().RegisterModel(context)) {
+    return false;
+  }
+
+  if (!PeoplePickerController::Instance().RegisterModel(context)) {
     return false;
   }
 
