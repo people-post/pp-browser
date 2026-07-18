@@ -18,9 +18,10 @@ Messaging, contacts, and related tools are **essential but secondary** — they 
 
 ## Icon — decision
 
-### Chosen: portal viewport (mockup #1)
+### Chosen: portal viewport (soft sky palette)
 
-**Asset:** [`assets/branding/app-icon.png`](../../assets/branding/app-icon.png)
+**Asset:** [`assets/branding/app-icon.png`](../../assets/branding/app-icon.png)  
+**Source mockup:** [`icon-mockup-08-soft-sky.png`](../../assets/branding/mockups/icon-mockup-08-soft-sky.png)
 
 A soft portal/window frame containing clean geometric content blocks and a small action accent, with a thin line to an external node suggesting API/intent input.
 
@@ -37,16 +38,21 @@ A soft portal/window frame containing clean geometric content blocks and a small
 
 | Mockup | Concept | When to prefer |
 |--------|---------|----------------|
+| `icon-mockup-01-portal-viewport.png` | Original dark slate + coral portal | Darker / warmer launch identity |
 | `icon-mockup-02-compass-nodes.png` | Compass of connected nodes | More abstract brand; favicon-first identity |
 | `icon-mockup-03-speech-viewport.png` | Speech bubble as viewport | Conversation is the primary entry metaphor |
 | `icon-mockup-04-monogram-portal.png` | Letterform portal + action arrow | Monogram-first brand (pairs with a single-letter name) |
+| `icon-mockup-05`–`07` | Light warm palettes (blush / sunny / berry) | Warmer “care” emotional brand |
+| `icon-mockup-09-silver-cyan.png` | Silver gray + cyan accent | Cooler / more neon accent |
+| `icon-mockup-10-slate-indigo.png` | Pale slate + indigo accent | Deeper blue, more solemn |
 
 ### Visual system (icon)
 
-- **Shape:** rounded squircle; one strong silhouette + one accent.
-- **Palette:** deep slate base, warm off-white portal, coral action accent (see mockup #1).
+- **Shape:** rounded squircle with **transparent corners** (RGBA); one strong silhouette + one accent.
+- **Palette:** cool light gray-blue base (`#F0F4F8`), white portal, soft slate content bars, sky-blue action accent (`#4A7CF0`) — aligns with UI `accent-primary`.
 - **Style:** flat / soft; no glossy browser bezel or skeuomorphic chrome.
 - **Density:** at 32×32, recognize portal + one accent only; social hints stay subtle.
+- **Dock / launcher:** opaque light fills only inside the squircle; outside corners are alpha=0 so the icon blends with the desktop (do not ship an opaque square canvas).
 
 ### Clichés rejected
 
@@ -142,14 +148,20 @@ A future **slug migration** (`frame` data paths, executable rename) should be a 
 
 ```
 assets/branding/
-  app-icon.png          # Primary (portal viewport)
+  app-icon.png          # Primary portal viewport (soft sky)
   app-icon.ico          # Windows executable icon
   app-icon.rc           # Windows resource script
   mockups/
-    icon-mockup-01-portal-viewport.png
+    icon-mockup-01-portal-viewport.png   # original dark slate + coral
     icon-mockup-02-compass-nodes.png
     icon-mockup-03-speech-viewport.png
     icon-mockup-04-monogram-portal.png
+    icon-mockup-05-soft-blush.png        # light warm: peach cream + rose-coral
+    icon-mockup-06-sunny-care.png        # light warm: sunny cream + apricot
+    icon-mockup-07-apricot-berry.png     # light warm: apricot blush + berry
+    icon-mockup-08-soft-sky.png          # adopted: gray-blue + sky blue
+    icon-mockup-09-silver-cyan.png       # light cool: silver gray + cyan
+    icon-mockup-10-slate-indigo.png      # light cool: slate + indigo blue
 ```
 
 ---
