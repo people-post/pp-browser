@@ -5,6 +5,8 @@
 #include "base/ui/ChatWidgetTypes.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
+#include "feature/messaging/DirectoryShadowCache.h"
+#include "feature/messaging/PeerDisplayResolver.h"
 
 #include <functional>
 #include <optional>
@@ -15,7 +17,8 @@ namespace pbr {
 
 class InboxController : public Module {
 public:
-  InboxController(IThreadStore& store, ContactsStore& contacts);
+  InboxController(IThreadStore& store, ContactsStore& contacts, PeerDisplayResolver& labels,
+                  DirectoryShadowCache* shadows = nullptr);
 
   Roe<std::vector<Thread>> ListThreads();
   Roe<Thread> GetActiveThread() const;
@@ -28,6 +31,7 @@ public:
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids);
+  Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
 
   bool IsAiHomeThread(const std::string& thread_id) const;
   Roe<void> CloseThread(const std::string& thread_id);
@@ -44,8 +48,14 @@ public:
 
   std::vector<MessageDisplayRow> BuildDisplayRows(const std::string& thread_id) const;
 
+  PeerDisplayLabel ResolveThreadLabel(const Thread& thread) const;
+  PeerDisplayResolver& Labels() { return labels_; }
+  const PeerDisplayResolver& Labels() const { return labels_; }
+  DirectoryShadowCache* Shadows() { return shadows_; }
+
   using ThreadChangedCallback = std::function<void()>;
   void SetOnThreadChanged(ThreadChangedCallback callback);
+  void NotifyThreadChanged();
 
 private:
   Roe<void> EnsureAiHomeThread();
@@ -60,6 +70,8 @@ private:
 
   IThreadStore& store_;
   ContactsStore& contacts_;
+  PeerDisplayResolver& labels_;
+  DirectoryShadowCache* shadows_ = nullptr;
   std::string active_thread_id_;
   std::string ai_home_thread_id_;
   ThreadChangedCallback on_thread_changed_;

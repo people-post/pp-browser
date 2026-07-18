@@ -11,7 +11,9 @@
 #include "base/people/Ed25519Signer.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/ChatSyncService.h"
+#include "feature/messaging/DirectoryShadowCache.h"
 #include "feature/messaging/InboxController.h"
+#include "feature/messaging/PeerDisplayResolver.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "feature/messaging/RelayReceivePipeline.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
@@ -43,7 +45,9 @@ public:
         key_resolver(key_store),
         roster_store(store.ProfileDbPath()),
         contacts(data_dir.string()),
-        inbox(store, contacts),
+        shadows(directory),
+        labels(contacts, shadows),
+        inbox(store, contacts, labels, &shadows),
         receive_pipeline(store, key_resolver, psk_store, identity, roster_store),
         sync(store, identity, &relay, receive_pipeline, inbox, &peer_history) {
     std::filesystem::remove_all(data_dir);
@@ -179,6 +183,9 @@ public:
   PeerSigningKeyResolver key_resolver;
   GroupRosterStore roster_store;
   ContactsStore contacts;
+  MockDirectoryClient directory;
+  DirectoryShadowCache shadows;
+  PeerDisplayResolver labels;
   InboxController inbox;
   RelayReceivePipeline receive_pipeline;
   ChatSyncService sync;

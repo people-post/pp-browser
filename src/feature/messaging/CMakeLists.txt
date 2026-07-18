@@ -2,6 +2,7 @@ pp_browser_add_feature_library(pp_feature_messaging
   SOURCES
     ChatSyncService.cpp
     ContactActionDispatcher.cpp
+    DirectoryShadowCache.cpp
     EpochBumpCoordinator.cpp
     GroupInviteGate.cpp
     GroupMembershipService.cpp
@@ -11,6 +12,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     MessageRouter.cpp
     MessagingHub.cpp
     P2pMessagingService.cpp
+    PeerDisplayResolver.cpp
     PskSessionCoordinator.cpp
     PushDeviceCoordinator.cpp
     RelayDirectoryKemKeyResolver.cpp

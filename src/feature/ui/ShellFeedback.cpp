@@ -67,6 +67,9 @@ void ShellFeedback::ShowAlert(ShellState& state, const std::string& title, const
   state.dialog.show_cancel = false;
   state.dialog.show_checkbox = false;
   state.dialog.checkbox_checked = false;
+  state.dialog.show_prompt = false;
+  state.dialog.prompt_value = {};
+  state.dialog.on_prompt_result = {};
   state.dialog.on_result = [on_ok = std::move(on_ok)](bool ok, bool) {
     if (ok && on_ok) {
       on_ok();
@@ -83,6 +86,9 @@ void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, con
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = false;
   state.dialog.checkbox_checked = false;
+  state.dialog.show_prompt = false;
+  state.dialog.prompt_value = {};
+  state.dialog.on_prompt_result = {};
   state.dialog.on_result = [on_result = std::move(on_result)](bool ok, bool) {
     if (on_result) {
       on_result(ok);
@@ -101,7 +107,25 @@ void ShellFeedback::ShowConfirmWithCheckbox(ShellState& state, const std::string
   state.dialog.show_checkbox = true;
   state.dialog.checkbox_label = Rml::String(checkbox_label.c_str());
   state.dialog.checkbox_checked = checkbox_default;
+  state.dialog.show_prompt = false;
+  state.dialog.prompt_value = {};
+  state.dialog.on_prompt_result = {};
   state.dialog.on_result = std::move(on_result);
+}
+
+void ShellFeedback::ShowPrompt(ShellState& state, const std::string& title, const std::string& message,
+                               const std::string& default_value,
+                               std::function<void(bool, std::string)> on_result) {
+  state.dialog.active = true;
+  state.dialog.kind = OverlayKind::Confirm;
+  state.dialog.title = Rml::String(title.c_str());
+  state.dialog.message = Rml::String(message.c_str());
+  state.dialog.show_cancel = true;
+  state.dialog.show_checkbox = false;
+  state.dialog.show_prompt = true;
+  state.dialog.prompt_value = Rml::String(default_value.c_str());
+  state.dialog.on_result = {};
+  state.dialog.on_prompt_result = std::move(on_result);
 }
 
 void ShellFeedback::DialogOk(ShellState& state) {
@@ -109,9 +133,18 @@ void ShellFeedback::DialogOk(ShellState& state) {
     return;
   }
   const bool checkbox_checked = state.dialog.checkbox_checked;
+  const std::string prompt_value = state.dialog.prompt_value.c_str();
+  const bool is_prompt = state.dialog.show_prompt;
   auto callback = std::move(state.dialog.on_result);
+  auto prompt_callback = std::move(state.dialog.on_prompt_result);
   state.dialog = {};
   state.transient_active = !state.transient_stack.empty();
+  if (is_prompt) {
+    if (prompt_callback) {
+      prompt_callback(true, prompt_value);
+    }
+    return;
+  }
   if (callback) {
     callback(true, checkbox_checked);
   }
@@ -121,9 +154,17 @@ void ShellFeedback::DialogCancel(ShellState& state) {
   if (!state.dialog.active) {
     return;
   }
+  const bool is_prompt = state.dialog.show_prompt;
   auto callback = std::move(state.dialog.on_result);
+  auto prompt_callback = std::move(state.dialog.on_prompt_result);
   state.dialog = {};
   state.transient_active = !state.transient_stack.empty();
+  if (is_prompt) {
+    if (prompt_callback) {
+      prompt_callback(false, {});
+    }
+    return;
+  }
   if (callback) {
     callback(false, false);
   }

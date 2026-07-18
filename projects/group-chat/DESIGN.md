@@ -237,9 +237,17 @@ Opaque: `v1:group:{group_id}:{session_epoch}`
 |--------|-------|
 | `group_id` | PK |
 | `owner_identity` | current owner communicating identity |
-| `title` | |
-| `roster_epoch` | monotonic |
-| `policy_json` | group_policy blob |
+| `title` | Shared group name (owner rename / create). Clients may also keep a local override on `threads.local_title` (not synced). |
+
+### Dual title display `[v1]`
+
+| Priority | Source | Synced? |
+|----------|--------|---------|
+| 1 | `threads.local_title` | No (device-only nickname) |
+| 2 | `group_metadata.title` | Yes (`group_renamed`) |
+| 3 | `threads.title` cache / `"Group chat"` | Denormalized |
+
+When a local override is active, UI may show the shared name in the subtitle (`Shared: …`). Owner “Rename for everyone” updates metadata + fans out `group_renamed` DMs; it does not clear peers’ `local_title`.
 
 **`pending_group_invites`**:
 

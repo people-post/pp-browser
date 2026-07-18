@@ -140,6 +140,15 @@ select selectbox option {
   margin-bottom: 4dp;
 }
 
+.chat-header-title-btn {
+  decorator: none;
+  border-width: 0;
+  background-color: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
 .chat-preview-btn {
   flex-shrink: 0;
   margin-top: 2dp;

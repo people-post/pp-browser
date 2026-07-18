@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/people/ContactsStore.h"
@@ -30,6 +31,11 @@ public:
   Roe<void> LeaveGroup(const std::string& group_id);
   Roe<Thread> ForkGroup(const std::string& group_id, const std::string& new_title,
                         const std::vector<std::string>& member_contact_ids);
+  /** Owner-only; updates shared metadata.title and fans out group_renamed DMs. Leaves local_title alone. */
+  Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
+  /** Apply an inbound group_renamed control (from peer DM). */
+  Roe<void> ApplyInboundGroupRenamed(const GroupMembershipCodec::GroupRenamedPayload& payload,
+                                     const std::string& actor_identity);
 
   Roe<void> HandleInboundInvitePayload(const GroupInvitePayload& invite);
   Roe<std::vector<GroupRosterMember>> ListRoster(const std::string& group_id) const;
@@ -42,6 +48,8 @@ private:
                                         const std::string& text, const std::string& detail_json,
                                         const std::string& sender_identity);
   Roe<void> SendInviteDirectMessage(const GroupInvitePayload& invite, const std::string& invitee_contact_id);
+  Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
+                                    const std::string& title, uint64_t roster_epoch);
 
   IThreadStore& store_;
   ContactsStore& contacts_;

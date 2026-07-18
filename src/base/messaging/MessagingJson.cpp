@@ -160,6 +160,9 @@ nlohmann::json ThreadToJson(const Thread& thread) {
                          {"unread_count", thread.unread_count},
                          {"preview", thread.preview},
                          {"encrypted", thread.encrypted}};
+  if (!thread.local_title.empty()) {
+    json["local_title"] = thread.local_title;
+  }
   if (thread.channel != ThreadChannel::None) {
     json["channel"] = ThreadChannelToString(thread.channel);
   }
@@ -185,6 +188,9 @@ Thread ThreadFromJson(const nlohmann::json& json) {
   }
   if (json.contains("title") && json["title"].is_string()) {
     thread.title = json["title"].get<std::string>();
+  }
+  if (json.contains("local_title") && json["local_title"].is_string()) {
+    thread.local_title = json["local_title"].get<std::string>();
   }
   if (json.contains("participant_contact_ids") && json["participant_contact_ids"].is_array()) {
     for (const auto& id : json["participant_contact_ids"]) {

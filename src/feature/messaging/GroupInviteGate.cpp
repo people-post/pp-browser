@@ -13,18 +13,11 @@ void GroupInviteGate::SetInboundPolicy(const GroupInvitePolicy policy) {
 }
 
 std::optional<Contact> GroupInviteGate::FindContactByIdentity(const std::string& identity) const {
-  auto contacts = contacts_.List();
-  if (!contacts) {
+  auto contact = contacts_.FindByIdentity(identity);
+  if (!contact || !*contact) {
     return std::nullopt;
   }
-  for (const Contact& contact : *contacts) {
-    for (const ContactId& id : contact.ids) {
-      if (id.value == identity) {
-        return contact;
-      }
-    }
-  }
-  return std::nullopt;
+  return **contact;
 }
 
 Roe<bool> GroupInviteGate::AllowsInboundInvite(const GroupInvitePayload& invite) const {

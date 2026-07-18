@@ -7,7 +7,9 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -35,8 +37,15 @@ public:
   static bool RequiresEncryption(ThreadChannel channel);
 
   static Roe<std::string> EncryptText(const E2eEncryptParams& params, const ByteVector& master_psk);
+  /** Encrypt a prebuilt ChatPayload plaintext blob (system/control, etc.). */
+  static Roe<std::string> EncryptChatPayloadBytes(const E2eEncryptParams& params, const std::vector<uint8_t>& plaintext,
+                                                  const ByteVector& master_psk);
   static Roe<E2eEncryptResult> EncryptTextWithAutoKey(const E2eEncryptParams& params, const ByteVector& master_psk,
                                                       const std::optional<std::string>& key_init_b64 = std::nullopt);
+  static Roe<E2eEncryptResult> EncryptChatPayloadWithAutoKey(const E2eEncryptParams& params,
+                                                             const std::vector<uint8_t>& plaintext,
+                                                             const ByteVector& master_psk,
+                                                             const std::optional<std::string>& key_init_b64 = std::nullopt);
   static Roe<ThreadMessage> DecryptEnvelope(const RelayEnvelope& envelope, const std::string& local_contact_id,
                                             const ChatTargetKey& target_key, IPskSessionStore& psk_store,
                                             const std::optional<ByteVector>& local_kem_private_key = std::nullopt);

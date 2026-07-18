@@ -68,7 +68,13 @@ Roe<std::string> E2eRelayPayloadCodec::EncryptText(const E2eEncryptParams& param
   if (!plaintext) {
     return plaintext.error();
   }
-  if (plaintext->size() > kMaxE2ePlaintextBytes) {
+  return EncryptChatPayloadBytes(params, *plaintext, master_psk);
+}
+
+Roe<std::string> E2eRelayPayloadCodec::EncryptChatPayloadBytes(const E2eEncryptParams& params,
+                                                               const std::vector<uint8_t>& plaintext,
+                                                               const ByteVector& master_psk) {
+  if (plaintext.size() > kMaxE2ePlaintextBytes) {
     return Error("ChatPayload exceeds E2E plaintext limit");
   }
 
@@ -88,7 +94,7 @@ Roe<std::string> E2eRelayPayloadCodec::EncryptText(const E2eEncryptParams& param
     return nonce.error();
   }
 
-  auto encrypted = MessageCipher::Encrypt(*session_key, *plaintext, *aad, *nonce);
+  auto encrypted = MessageCipher::Encrypt(*session_key, plaintext, *aad, *nonce);
   if (!encrypted) {
     return encrypted.error();
   }
@@ -104,6 +110,19 @@ Roe<E2eEncryptResult> E2eRelayPayloadCodec::EncryptTextWithAutoKey(const E2eEncr
                                                                  const ByteVector& master_psk,
                                                                  const std::optional<std::string>& key_init_b64) {
   auto payload = EncryptText(params, master_psk);
+  if (!payload) {
+    return payload.error();
+  }
+  E2eEncryptResult result;
+  result.payload_b64 = std::move(*payload);
+  result.key_init_b64 = key_init_b64;
+  return result;
+}
+
+Roe<E2eEncryptResult> E2eRelayPayloadCodec::EncryptChatPayloadWithAutoKey(
+    const E2eEncryptParams& params, const std::vector<uint8_t>& plaintext, const ByteVector& master_psk,
+    const std::optional<std::string>& key_init_b64) {
+  auto payload = EncryptChatPayloadBytes(params, plaintext, master_psk);
   if (!payload) {
     return payload.error();
   }

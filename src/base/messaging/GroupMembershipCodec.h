@@ -29,6 +29,13 @@ public:
                                                  uint64_t roster_epoch);
   static Roe<std::string> EncodeGroupRenamed(const std::string& group_id, const std::string& title,
                                             uint64_t roster_epoch);
+  struct GroupRenamedPayload {
+    std::string group_id;
+    std::string title;
+    uint64_t roster_epoch = 0;
+  };
+  static Roe<GroupRenamedPayload> DecodeGroupRenamed(const std::string& detail_json);
+  static Roe<GroupRenamedPayload> DecodeGroupRenamedFromMessage(const ThreadMessage& message);
   static Roe<std::string> EncodeGroupForked(const GroupForkPayload& payload);
 
   static Roe<ThreadMessage> BuildSystemMessage(const std::string& thread_id, GroupMembershipControlType type,

@@ -169,6 +169,43 @@ Roe<std::string> GroupMembershipCodec::EncodeGroupRenamed(const std::string& gro
   return nlohmann::json({{"group_id", group_id}, {"title", title}, {"roster_epoch", roster_epoch}}).dump();
 }
 
+Roe<GroupMembershipCodec::GroupRenamedPayload> GroupMembershipCodec::DecodeGroupRenamed(
+    const std::string& detail_json) {
+  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
+  if (!json.is_object()) {
+    return Error("Invalid group_renamed detail");
+  }
+  GroupRenamedPayload payload;
+  if (json.contains("group_id") && json["group_id"].is_string()) {
+    payload.group_id = json["group_id"].get<std::string>();
+  }
+  if (json.contains("title") && json["title"].is_string()) {
+    payload.title = json["title"].get<std::string>();
+  }
+  if (json.contains("roster_epoch") && json["roster_epoch"].is_number_unsigned()) {
+    payload.roster_epoch = json["roster_epoch"].get<uint64_t>();
+  } else if (json.contains("roster_epoch") && json["roster_epoch"].is_number_integer()) {
+    payload.roster_epoch = static_cast<uint64_t>(json["roster_epoch"].get<int64_t>());
+  }
+  if (payload.group_id.empty() || payload.title.empty()) {
+    return Error("group_renamed missing group_id or title");
+  }
+  return payload;
+}
+
+Roe<GroupMembershipCodec::GroupRenamedPayload> GroupMembershipCodec::DecodeGroupRenamedFromMessage(
+    const ThreadMessage& message) {
+  const auto control_type = ControlTypeFromMessage(message);
+  if (!control_type || *control_type != GroupMembershipControlType::GroupRenamed) {
+    return Error("Message is not a group rename");
+  }
+  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
+  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+    return Error("Missing group_renamed detail");
+  }
+  return DecodeGroupRenamed(payload["detail"].get<std::string>());
+}
+
 Roe<std::string> GroupMembershipCodec::EncodeGroupForked(const GroupForkPayload& payload) {
   nlohmann::json json = {{"source_group_id", payload.source_group_id},
                          {"new_group_id", payload.new_group_id},

@@ -141,12 +141,24 @@ Roe<ThreadMessage> ChatPayloadCodec::DecodeToMessageFields(const std::vector<uin
 
 Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeToRow(const ThreadMessage& message) {
   switch (message.content_type) {
-  case ChatContentType::System:
+  case ChatContentType::System: {
+    std::string control_type = "system";
+    std::string detail;
+    const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
+    if (payload.is_object()) {
+      if (payload.contains("control_type") && payload["control_type"].is_string()) {
+        control_type = payload["control_type"].get<std::string>();
+      }
+      if (payload.contains("detail") && payload["detail"].is_string()) {
+        detail = payload["detail"].get<std::string>();
+      }
+    }
     return EncodePayloadBytes(kContentTypeSystem, message.text, [&](OutputArchive& ar) {
       ar & kSubVersion;
-      WriteLenUtf8(ar, "system");
-      WriteLenUtf8(ar, "");
+      WriteLenUtf8(ar, control_type);
+      WriteLenUtf8(ar, detail);
     });
+  }
   case ChatContentType::Annotation: {
     ChatAnnotationFields fields;
     if (auto decoded = DecodeAnnotationJson(message.payload_json)) {

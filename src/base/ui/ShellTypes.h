@@ -74,7 +74,10 @@ struct DialogState {
   bool show_checkbox = false;
   Rml::String checkbox_label;
   bool checkbox_checked = false;
+  bool show_prompt = false;
+  Rml::String prompt_value;
   std::function<void(bool confirmed, bool checkbox_checked)> on_result;
+  std::function<void(bool confirmed, std::string prompt_value)> on_prompt_result;
 };
 
 /** PIN unlock / create / chooser overlay. Unlock is mandatory; create and chooser may cancel. */

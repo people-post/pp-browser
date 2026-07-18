@@ -20,7 +20,7 @@ namespace pbr {
 
 namespace {
 
-constexpr int kProfileUserVersion = 1;
+constexpr int kProfileUserVersion = 2;
 constexpr int kThreadUserVersion = 1;
 
 constexpr const char* kProfileSchemaV1 = R"sql(
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS threads (
   peer_identity_kind TEXT,
   peer_identity_value TEXT,
   title TEXT NOT NULL,
+  local_title TEXT NOT NULL DEFAULT '',
   participant_contact_ids TEXT NOT NULL,
   preview TEXT,
   updated_at INTEGER NOT NULL,
@@ -144,6 +145,23 @@ Roe<void> ExecSql(sqlite3* db, const char* sql) {
 Roe<void> ApplyUserVersion(sqlite3* db, int version) {
   if (auto result = ExecSql(db, ("PRAGMA user_version = " + std::to_string(version) + ";").c_str()); !result) {
     return result.error();
+  }
+  return {};
+}
+
+Roe<void> MigrateProfileDb(sqlite3* db, int from_version) {
+  if (from_version < 2) {
+    // Additive column for dual group titles (local override).
+    if (auto result = ExecSql(db, "ALTER TABLE threads ADD COLUMN local_title TEXT NOT NULL DEFAULT '';"); !result) {
+      // Ignore duplicate-column errors from partially migrated DBs.
+      const std::string& msg = result.error().message;
+      if (msg.find("duplicate column") == std::string::npos) {
+        return result.error();
+      }
+    }
+  }
+  if (auto version = ApplyUserVersion(db, kProfileUserVersion); !version) {
+    return version.error();
   }
   return {};
 }
@@ -280,8 +298,12 @@ Roe<void> SqliteThreadStore::OpenProfileDb() const {
     if (auto schema = ExecSql(profile_db_, kProfileSchemaV1); !schema) {
       return schema.error();
     }
-    if (auto version = ApplyUserVersion(profile_db_, kThreadUserVersion); !version) {
+    if (auto version = ApplyUserVersion(profile_db_, kProfileUserVersion); !version) {
       return version.error();
+    }
+  } else if (user_version < kProfileUserVersion) {
+    if (auto migrated = MigrateProfileDb(profile_db_, user_version); !migrated) {
+      return migrated.error();
     }
   }
   GroupRosterStore roster_store(ProfileDbFile(data_dir_));
@@ -508,8 +530,8 @@ Roe<std::vector<Thread>> SqliteThreadStore::ListThreads() const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(profile_db_,
                          "SELECT id, kind, channel, title, participant_contact_ids, updated_at, unread_count, "
-                         "preview, peer_identity_kind, peer_identity_value, group_id FROM threads ORDER BY "
-                         "updated_at DESC;",
+                         "preview, peer_identity_kind, peer_identity_value, group_id, local_title FROM threads "
+                         "ORDER BY updated_at DESC;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to list threads");
   }
@@ -552,6 +574,9 @@ Thread SqliteThreadStore::ReadThreadRow(sqlite3_stmt* stmt) const {
   if (sqlite3_column_text(stmt, 10)) {
     thread.group_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
   }
+  if (sqlite3_column_text(stmt, 11)) {
+    thread.local_title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
+  }
   thread.encrypted = thread.kind == ThreadKind::Group || ThreadChannelIsE2e(thread.channel);
   return thread;
 }
@@ -587,10 +612,11 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   sqlite3_stmt* stmt = nullptr;
   const std::string channel_text = ThreadChannelToString(thread.channel);
   const char* sql =
-      "INSERT INTO threads (id, kind, channel, title, participant_contact_ids, preview, updated_at, unread_count, "
-      "peer_identity_kind, peer_identity_value, group_id) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "INSERT INTO threads (id, kind, channel, title, local_title, participant_contact_ids, preview, updated_at, "
+      "unread_count, peer_identity_kind, peer_identity_value, group_id) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, channel=excluded.channel, title=excluded.title, "
+      "local_title=excluded.local_title, "
       "participant_contact_ids=excluded.participant_contact_ids, preview=excluded.preview, "
       "updated_at=excluded.updated_at, unread_count=excluded.unread_count, "
       "peer_identity_kind=excluded.peer_identity_kind, peer_identity_value=excluded.peer_identity_value, "
@@ -602,16 +628,17 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   sqlite3_bind_text(stmt, 2, ThreadKindToString(thread.kind).c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 3, channel_text.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 4, thread.title.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 5, participants_json.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 6, thread.preview.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int64(stmt, 7, thread.updated_at);
-  sqlite3_bind_int(stmt, 8, thread.unread_count);
-  sqlite3_bind_text(stmt, 9, thread.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 10, thread.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 5, thread.local_title.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 6, participants_json.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 7, thread.preview.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(stmt, 8, thread.updated_at);
+  sqlite3_bind_int(stmt, 9, thread.unread_count);
+  sqlite3_bind_text(stmt, 10, thread.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 11, thread.peer_identity_value.c_str(), -1, SQLITE_TRANSIENT);
   if (thread.group_id) {
-    sqlite3_bind_text(stmt, 11, thread.group_id->c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 12, thread.group_id->c_str(), -1, SQLITE_TRANSIENT);
   } else {
-    sqlite3_bind_null(stmt, 11);
+    sqlite3_bind_null(stmt, 12);
   }
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);

@@ -13,6 +13,7 @@
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SyncStateCodec.h"
 #include "base/people/ContactTypes.h"
+#include "base/people/PeerDisplayLabel.h"
 #include "feature/messaging/GroupInviteGate.h"
 
 #include "common/Utilities.h"
@@ -51,6 +52,50 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   if (!invite_gate_) {
     return {};
   }
+
+  auto renamed = GroupMembershipCodec::DecodeGroupRenamedFromMessage(message);
+  if (renamed) {
+    auto metadata = group_roster_.LoadMetadata(renamed->group_id);
+    if (!metadata) {
+      return metadata.error();
+    }
+    if (!*metadata) {
+      return Error("Unknown group for rename");
+    }
+    if ((*metadata)->owner_identity != message.sender_contact_id) {
+      return Error("Rename rejected: actor is not the group owner");
+    }
+    GroupMetadata updated = **metadata;
+    updated.title = renamed->title;
+    if (renamed->roster_epoch > updated.roster_epoch) {
+      updated.roster_epoch = renamed->roster_epoch;
+    }
+    if (auto saved = group_roster_.UpsertMetadata(updated); !saved) {
+      return saved.error();
+    }
+    auto thread = store_.FindGroupThread(renamed->group_id);
+    if (thread && *thread) {
+      Thread row = **thread;
+      row.title = renamed->title;
+      row.updated_at = util::NowUnixMs();
+      (void)store_.UpsertThread(row);
+      auto detail =
+          GroupMembershipCodec::EncodeGroupRenamed(renamed->group_id, renamed->title, updated.roster_epoch);
+      if (detail) {
+        auto sys = GroupMembershipCodec::BuildSystemMessage(row.id, GroupMembershipControlType::GroupRenamed,
+                                                            "Group renamed to " + renamed->title, *detail,
+                                                            message.sender_contact_id);
+        if (sys) {
+          (void)store_.AppendMessage(*sys);
+        }
+      }
+    }
+    return {};
+  }
+  if (renamed.error().message.find("not a group rename") == std::string::npos) {
+    return renamed.error();
+  }
+
   auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
   if (!invite) {
     if (invite.error().message.find("not a group invite") != std::string::npos) {
@@ -267,7 +312,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   }
 
   if (auto_create) {
-    auto created = store_.FindOrCreateDirectThread(inbound_target, "", envelope.sender_contact_id);
+    const std::string fallback_title = ShortRelayId(envelope.sender_contact_id);
+    auto created = store_.FindOrCreateDirectThread(
+        inbound_target, "", fallback_title.empty() ? envelope.sender_contact_id : fallback_title);
     if (!created) {
       outcome.decision = IngestDecision::HardReject;
       return outcome;

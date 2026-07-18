@@ -101,6 +101,30 @@ Roe<std::optional<Contact>> ContactsStore::Get(const std::string& contact_id) co
   return Roe<std::optional<Contact>>(std::optional<Contact>{});
 }
 
+Roe<std::optional<Contact>> ContactsStore::FindByIdentity(const std::string& identity_value,
+                                                          const std::optional<ContactIdKind> kind) const {
+  if (identity_value.empty()) {
+    return Roe<std::optional<Contact>>(std::optional<Contact>{});
+  }
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  for (const Contact& contact : contacts_) {
+    for (const ContactId& id : contact.ids) {
+      if (id.value != identity_value) {
+        continue;
+      }
+      if (kind && id.kind != *kind) {
+        continue;
+      }
+      return Roe<std::optional<Contact>>(contact);
+    }
+  }
+  return Roe<std::optional<Contact>>(std::optional<Contact>{});
+}
+
 Roe<Contact> ContactsStore::Upsert(const Contact& contact) {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();

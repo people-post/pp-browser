@@ -38,6 +38,8 @@ struct Thread {
   ThreadKind kind = ThreadKind::Ai;
   ThreadChannel channel = ThreadChannel::None;
   std::string title;
+  /** Per-device group nickname override; wins over shared title at render time. */
+  std::string local_title;
   std::vector<std::string> participant_contact_ids;
   std::string peer_identity_kind;
   std::string peer_identity_value;

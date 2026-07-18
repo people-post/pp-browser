@@ -73,6 +73,7 @@ private:
     bool thread_is_group = false;
     bool compose_disabled = false;
     bool show_thread_actions = false;
+    bool show_peer_sheet = false;
     bool show_forget_memory = false;
     bool show_sync_with_peer = false;
     bool show_thread_menu = false;
@@ -123,6 +124,7 @@ private:
   static void NewMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenNewSessionMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenThreadActionsMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OpenPeerSheetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CloseThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ClearHistoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -145,6 +147,7 @@ private:
   void OnNewMessage();
   void OnOpenNewSessionMenu(Rml::Event& ev);
   void OnOpenThreadActionsMenu(Rml::Event& ev);
+  void OnOpenPeerSheet(Rml::Event& ev);
   void OnCloseThread(const std::string& thread_id);
   void OnClearHistory();
   void OnForgetMemory();

@@ -20,6 +20,8 @@
 #include "feature/chat/MessagingTools.h"
 #include "common/Utilities.h"
 #include "feature/messaging/MessagingHub.h"
+#include "base/messaging/GroupTypes.h"
+#include "base/people/PeerDisplayLabel.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/messaging/AtAiParser.h"
@@ -38,6 +40,8 @@
 #include "base/data/SessionStore.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ui/ContactsController.h"
+
+#include <RmlUi/Core/SystemInterface.h>
 #include "feature/ui/SettingsController.h"
 
 #include <nlohmann/json.hpp>
@@ -311,6 +315,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "compose_disabled");
   DataModelHost::Instance().Dirty("chat", "draft_placeholder");
   DataModelHost::Instance().Dirty("chat", "show_thread_actions");
+  DataModelHost::Instance().Dirty("chat", "show_peer_sheet");
   DataModelHost::Instance().Dirty("chat", "show_forget_memory");
   DataModelHost::Instance().Dirty("chat", "show_sync_with_peer");
   DataModelHost::Instance().Dirty("chat", "show_thread_menu");
@@ -585,6 +590,11 @@ void ChatController::OpenNewSessionMenuCallback(Rml::DataModelHandle /*model*/, 
 void ChatController::OpenThreadActionsMenuCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
                                                    const Rml::VariantList& /*args*/) {
   Instance().OnOpenThreadActionsMenu(ev);
+}
+
+void ChatController::OpenPeerSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                           const Rml::VariantList& /*args*/) {
+  Instance().OnOpenPeerSheet(ev);
 }
 
 void ChatController::SelectThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
@@ -1193,7 +1203,7 @@ void ChatController::SyncShellSessions() {
     }
     SessionRow row;
     row.id = thread.id.c_str();
-    row.title = thread.title.c_str();
+    row.title = inbox.ResolveThreadLabel(thread).title.c_str();
     row.preview = thread.preview.c_str();
     row.kind = SessionVisualKind(thread);
     row.unread_count = thread.unread_count;
@@ -1243,13 +1253,15 @@ void ChatController::UpdateThreadChrome() {
     return;
   }
   if (auto thread = MessagingHub::Instance().Inbox().GetActiveThread()) {
-    chat_.thread_title = thread->title.c_str();
+    const PeerDisplayLabel label = MessagingHub::Instance().Inbox().ResolveThreadLabel(*thread);
+    chat_.thread_title = label.title.c_str();
     chat_.thread_encrypted = thread->encrypted;
     const Rml::String visual_kind = SessionVisualKind(*thread);
     chat_.thread_is_ai = visual_kind == "ai";
     chat_.thread_is_private = visual_kind == "private";
     chat_.thread_is_public = visual_kind == "public";
     chat_.thread_is_group = visual_kind == "group";
+    chat_.show_peer_sheet = thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group;
     chat_.show_thread_actions = true;
     chat_.show_forget_memory = thread->kind == ThreadKind::Ai;
     chat_.show_sync_with_peer = false;
@@ -1322,12 +1334,18 @@ void ChatController::UpdateThreadChrome() {
         chat_.thread_subtitle = "Direct message";
         chat_.draft_placeholder = "Message… · @ai · @ai+ · @ai++";
       }
+      if (label.trust == PeerLabelTrust::DirectoryUnverified) {
+        chat_.thread_subtitle = std::string(chat_.thread_subtitle.c_str()) + " · Unverified";
+      }
     } else {
       std::string roster_label = thread->encrypted ? "Group · E2E" : "Group chat";
       if (MessagingHub::Instance().IsMessagingReady() && thread->group_id) {
         if (auto roster = MessagingHub::Instance().Groups().ListRoster(*thread->group_id)) {
           roster_label += " · " + std::to_string(roster->size()) + " members";
         }
+      }
+      if (label.shared_title) {
+        roster_label = "Shared: " + *label.shared_title + " · " + roster_label;
       }
       chat_.thread_subtitle = roster_label.c_str();
       chat_.draft_placeholder = "Message the group… or @ai ask assistant";
@@ -1338,6 +1356,7 @@ void ChatController::UpdateThreadChrome() {
   } else {
     chat_.thread_title = "";
     chat_.thread_subtitle = "";
+    chat_.show_peer_sheet = false;
     chat_.peer_link_status = "";
     chat_.peer_link_banner = "";
     chat_.show_peer_link = false;
@@ -1350,6 +1369,7 @@ void ChatController::UpdateThreadChrome() {
     chat_.thread_is_group = false;
     chat_.compose_disabled = false;
     chat_.show_thread_actions = false;
+    chat_.show_peer_sheet = false;
     chat_.show_forget_memory = false;
     chat_.show_sync_with_peer = false;
     chat_.show_thread_menu = false;
@@ -1559,6 +1579,169 @@ void ChatController::OnOpenThreadActionsMenu(Rml::Event& ev) {
         true,
     });
   }
+  if (actions.empty()) {
+    return;
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
+  if (!messaging_ready_ || !chat_.show_peer_sheet) {
+    return;
+  }
+  auto thread = MessagingHub::Instance().Inbox().GetActiveThread();
+  if (!thread) {
+    return;
+  }
+
+  Rml::Element* target = ev.GetCurrentElement();
+  if (!target) {
+    target = ev.GetTargetElement();
+  }
+  Rml::Vector2i position{0, 0};
+  if (target) {
+    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
+    const Rml::Box& box = target->GetBox();
+    position.x = static_cast<int>(offset.x);
+    position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + 4.0f);
+  }
+
+  std::vector<ContextMenuAction> actions;
+  if (thread->kind == ThreadKind::Direct) {
+    const PeerDisplayLabel label = MessagingHub::Instance().Inbox().ResolveThreadLabel(*thread);
+    const std::string peer_id = thread->peer_identity_value;
+    if (label.contact_id) {
+      const std::string contact_id = *label.contact_id;
+      actions.push_back({
+          "edit_contact",
+          "Edit contact",
+          nullptr,
+          [contact_id]() { ContactsController::Instance().OnSelectContact(contact_id); },
+          "../icons/contacts.svg",
+      });
+    } else {
+      actions.push_back({
+          "add_contact",
+          "Add to contacts",
+          nullptr,
+          [peer_id]() {
+            DirectoryHit hit;
+            if (auto shadow = MessagingHub::Instance().DirectoryShadows().Get(peer_id)) {
+              hit = *shadow;
+            } else {
+              hit.hit_id = peer_id;
+              hit.ids = {{ContactIdKind::RelayUser, peer_id, true}};
+            }
+            auto created = MessagingHub::Instance().Contacts().AddFromDirectoryHit(hit);
+            if (!created) {
+              UserFeedback::Fail("Could not add contact");
+              ShellHost::Instance().DirtyWindow();
+              return;
+            }
+            ContactsController::Instance().OnSelectContact(created->id);
+            MessagingHub::Instance().Inbox().NotifyThreadChanged();
+          },
+          "../icons/contacts.svg",
+      });
+    }
+    if (!peer_id.empty()) {
+      actions.push_back({
+          "copy_id",
+          "Copy ID",
+          nullptr,
+          [peer_id]() {
+            if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+              system->SetClipboardText(peer_id.c_str());
+            }
+            ShellFeedback::ShowToast(ShellHost::Instance().State(), "ID copied");
+            ShellHost::Instance().DirtyWindow();
+          },
+          "../icons/copy.svg",
+      });
+    }
+  } else if (thread->kind == ThreadKind::Group && thread->group_id) {
+    const std::string thread_id = thread->id;
+    const std::string group_id = *thread->group_id;
+    const std::string current_local = thread->local_title;
+    const PeerDisplayLabel label = MessagingHub::Instance().Inbox().ResolveThreadLabel(*thread);
+    const std::string shared_default = label.shared_title.value_or(thread->title);
+
+    actions.push_back({
+        "rename_for_me",
+        "Rename for me",
+        nullptr,
+        [thread_id, current_local, shared_default]() {
+          ShellFeedback::ShowPrompt(
+              ShellHost::Instance().State(), "Rename for me", "Local nickname for this group",
+              current_local.empty() ? shared_default : current_local,
+              [thread_id](bool ok, std::string value) {
+                if (!ok) {
+                  return;
+                }
+                if (auto saved = MessagingHub::Instance().Inbox().SetThreadLocalTitle(thread_id, value); !saved) {
+                  UserFeedback::Fail(saved.error().message);
+                }
+                ShellHost::Instance().DirtyWindow();
+              });
+          ShellHost::Instance().DirtyWindow();
+        },
+        "../icons/message.svg",
+    });
+    if (!current_local.empty()) {
+      actions.push_back({
+          "clear_my_name",
+          "Clear my name",
+          nullptr,
+          [thread_id]() {
+            (void)MessagingHub::Instance().Inbox().SetThreadLocalTitle(thread_id, "");
+            ShellHost::Instance().DirtyWindow();
+          },
+          "../icons/trash.svg",
+      });
+    }
+
+    bool is_owner = false;
+    if (auto identity = MessagingHub::Instance().Identity().Get()) {
+      if (auto roster = MessagingHub::Instance().Groups().ListRoster(group_id)) {
+        for (const auto& member : *roster) {
+          if (member.member_identity == identity->relay_user_id && member.role == MemberRole::Owner) {
+            is_owner = true;
+            break;
+          }
+        }
+      }
+    }
+    if (is_owner) {
+      actions.push_back({
+          "rename_for_everyone",
+          "Rename for everyone",
+          nullptr,
+          [group_id, shared_default]() {
+            ShellFeedback::ShowPrompt(
+                ShellHost::Instance().State(), "Rename for everyone", "Shared group name for all members",
+                shared_default, [group_id](bool ok, std::string value) {
+                  if (!ok) {
+                    return;
+                  }
+                  if (value.empty()) {
+                    UserFeedback::Fail("Title required");
+                    ShellHost::Instance().DirtyWindow();
+                    return;
+                  }
+                  if (auto renamed = MessagingHub::Instance().Groups().RenameGroupShared(group_id, value); !renamed) {
+                    UserFeedback::Fail(renamed.error().message);
+                  } else {
+                    MessagingHub::Instance().Inbox().NotifyThreadChanged();
+                  }
+                  ShellHost::Instance().DirtyWindow();
+                });
+            ShellHost::Instance().DirtyWindow();
+          },
+          "../icons/group.svg",
+      });
+    }
+  }
+
   if (actions.empty()) {
     return;
   }
@@ -2246,6 +2429,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("thread_is_group", &ChatController::Instance().chat_.thread_is_group);
         ctor.Bind("compose_disabled", &ChatController::Instance().chat_.compose_disabled);
         ctor.Bind("show_thread_actions", &ChatController::Instance().chat_.show_thread_actions);
+        ctor.Bind("show_peer_sheet", &ChatController::Instance().chat_.show_peer_sheet);
         ctor.Bind("show_forget_memory", &ChatController::Instance().chat_.show_forget_memory);
         ctor.Bind("show_sync_with_peer", &ChatController::Instance().chat_.show_sync_with_peer);
         ctor.Bind("show_thread_menu", &ChatController::Instance().chat_.show_thread_menu);
@@ -2271,6 +2455,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("clear_history", &ChatController::ClearHistoryCallback);
         ctor.BindEventCallback("forget_memory", &ChatController::ForgetMemoryCallback);
         ctor.BindEventCallback("open_thread_actions_menu", &ChatController::OpenThreadActionsMenuCallback);
+        ctor.BindEventCallback("open_peer_sheet", &ChatController::OpenPeerSheetCallback);
         ctor.BindEventCallback("sync_with_peer", &ChatController::SyncWithPeerCallback);
         ctor.BindEventCallback("retry_gap_sync", &ChatController::RetryGapSyncCallback);
         ctor.BindEventCallback("start_new_secure_chat", &ChatController::StartNewSecureChatCallback);

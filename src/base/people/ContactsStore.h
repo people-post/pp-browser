@@ -17,6 +17,9 @@ public:
 
   Roe<std::vector<Contact>> List() const;
   Roe<std::optional<Contact>> Get(const std::string& contact_id) const;
+  /** Exact match on contact.ids[].value; when kind is set, also requires matching kind. */
+  Roe<std::optional<Contact>> FindByIdentity(const std::string& identity_value,
+                                             std::optional<ContactIdKind> kind = std::nullopt) const;
   Roe<Contact> Upsert(const Contact& contact);
   Roe<bool> Remove(const std::string& contact_id);
   Roe<std::vector<Contact>> SearchLocal(const std::string& query) const;

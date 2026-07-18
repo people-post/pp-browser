@@ -37,8 +37,9 @@ std::string HydrateChatActions(const std::string& body_rml, const std::vector<Tr
 
 } // namespace
 
-InboxController::InboxController(IThreadStore& store, ContactsStore& contacts)
-    : store_(store), contacts_(contacts) {
+InboxController::InboxController(IThreadStore& store, ContactsStore& contacts, PeerDisplayResolver& labels,
+                                 DirectoryShadowCache* shadows)
+    : store_(store), contacts_(contacts), labels_(labels), shadows_(shadows) {
   redirectLogger("InboxController");
 }
 
@@ -435,19 +436,45 @@ void InboxController::SetOnThreadChanged(ThreadChangedCallback callback) {
   on_thread_changed_ = std::move(callback);
 }
 
+void InboxController::NotifyThreadChanged() {
+  if (on_thread_changed_) {
+    on_thread_changed_();
+  }
+}
+
+PeerDisplayLabel InboxController::ResolveThreadLabel(const Thread& thread) const {
+  if (shadows_ && thread.kind == ThreadKind::Direct && !thread.peer_identity_value.empty()) {
+    shadows_->EnsureLookup(thread.peer_identity_value);
+  }
+  return labels_.ResolveThread(thread);
+}
+
+Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  if ((*thread)->kind != ThreadKind::Group) {
+    return Error("Local titles are only supported for groups");
+  }
+  Thread updated = **thread;
+  updated.local_title = local_title;
+  updated.updated_at = util::NowUnixMs();
+  if (auto saved = store_.UpsertThread(updated); !saved) {
+    return saved.error();
+  }
+  NotifyThreadChanged();
+  return {};
+}
+
 std::string InboxController::ResolveSenderLabel(const std::string& sender_contact_id) const {
-  if (sender_contact_id == kLocalSelfContactId) {
-    return "You";
+  if (shadows_ && sender_contact_id.rfind("relay:", 0) == 0) {
+    shadows_->EnsureLookup(sender_contact_id);
   }
-  if (sender_contact_id == kAiAssistantContactId) {
-    return "AI";
-  }
-  if (auto contact = contacts_.Get(sender_contact_id)) {
-    if (*contact) {
-      return (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
-    }
-  }
-  return sender_contact_id;
+  return labels_.ResolveSender(sender_contact_id).title;
 }
 
 std::string InboxController::ResolveRowClass(const std::string& sender_contact_id) const {

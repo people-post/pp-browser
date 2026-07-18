@@ -3,6 +3,7 @@ set(PP_BASE_PEOPLE_SOURCES
   ContactsStore.cpp
   Ed25519Signer.cpp
   IdentityStore.cpp
+  PeerDisplayLabel.cpp
 )
 
 pp_browser_add_base_library(pp_base_people

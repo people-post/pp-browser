@@ -69,6 +69,7 @@ public:
   void Refresh();
   void Tick();
   void FlushPending();
+  void OnSelectContact(const std::string& contact_id);
 
 private:
   ContactsController();
@@ -89,7 +90,6 @@ private:
 
   void SyncFromStore();
   void LoadSelectedDetail(const std::string& contact_id);
-  void OnSelectContact(const std::string& contact_id);
   void OnBackToList();
   void OnStartChat();
   void OnSecureMessage();

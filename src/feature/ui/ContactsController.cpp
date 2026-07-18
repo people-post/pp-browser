@@ -618,6 +618,7 @@ bool ContactsController::FlushSelectedContact() {
   SyncFromStore();
   DataModelHost::Instance().Dirty("contacts", "contacts");
   DataModelHost::Instance().Dirty("contacts", "selected");
+  MessagingHub::Instance().Inbox().NotifyThreadChanged();
   if (context_) {
     context_->Update();
   }
@@ -860,6 +861,7 @@ void ContactsController::OnRemoveContact() {
                                  ShellHost::Instance().ClearPrimaryPane();
                                }
                                ShellFeedback::ShowToast(ShellHost::Instance().State(), "Contact removed");
+                               MessagingHub::Instance().Inbox().NotifyThreadChanged();
                                ShellHost::Instance().RequestSyncLayout();
                                ShellHost::Instance().DirtyWindow();
                              });

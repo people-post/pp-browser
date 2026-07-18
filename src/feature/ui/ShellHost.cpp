@@ -90,6 +90,8 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("dialog_show_checkbox", &host.state_.dialog.show_checkbox);
     ctor.Bind("dialog_checkbox_label", &host.state_.dialog.checkbox_label);
     ctor.Bind("dialog_checkbox_checked", &host.state_.dialog.checkbox_checked);
+    ctor.Bind("dialog_show_prompt", &host.state_.dialog.show_prompt);
+    ctor.Bind("dialog_prompt_value", &host.state_.dialog.prompt_value);
     ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
@@ -362,6 +364,8 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "dialog_show_checkbox");
   DataModelHost::Instance().Dirty("window", "dialog_checkbox_label");
   DataModelHost::Instance().Dirty("window", "dialog_checkbox_checked");
+  DataModelHost::Instance().Dirty("window", "dialog_show_prompt");
+  DataModelHost::Instance().Dirty("window", "dialog_prompt_value");
   DataModelHost::Instance().Dirty("window", "pin_gate_active");
   DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
@@ -621,6 +625,8 @@ std::string ShellHost::SerializeDialog() const {
          "data-event-change=\"dialog_toggle_checkbox()\"/>";
   out << "<span data-rml=\"dialog_checkbox_label\"></span>";
   out << "</label>";
+  out << "<input class=\"shell-dialog-prompt\" type=\"text\" data-if=\"dialog_show_prompt\" "
+         "data-value=\"dialog_prompt_value\"/>";
   out << "<div class=\"shell-dialog-actions row\">";
   out << "<button class=\"shell-dialog-cancel\" data-if=\"dialog_show_cancel\" "
          "data-event-click=\"dialog_cancel()\">"

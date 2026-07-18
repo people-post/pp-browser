@@ -195,14 +195,21 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
 
   (void)store_->ReconcileOutbox();
 
-  inbox_ = std::make_unique<InboxController>(*store_, *contacts_);
-  (void)inbox_->CreateAiHomeThread();
-
   InstallServiceClients(config);
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
   group_invite_gate_ = std::make_unique<GroupInviteGate>(*contacts_, *group_roster_);
+  directory_shadows_ = std::make_unique<DirectoryShadowCache>(*directory_);
+  peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, *directory_shadows_, group_roster_.get());
+  inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
+  directory_shadows_->SetOnUpdated([this]() {
+    if (inbox_) {
+      inbox_->NotifyThreadChanged();
+    }
+  });
+  (void)inbox_->CreateAiHomeThread();
+
   ProfileSecretsService& secrets = ProfileSecretsService::Instance();
   secrets.RegisterDekConsumer(identity_.get());
   secrets.RegisterDekConsumer(psk_store_.get());
@@ -366,6 +373,8 @@ void MessagingHub::Shutdown() {
   }
   psk_store_.reset();
   inbox_.reset();
+  peer_labels_.reset();
+  directory_shadows_.reset();
   http_relay_.reset();
   http_directory_.reset();
   http_registration_.reset();
@@ -418,6 +427,14 @@ IdentityStore& MessagingHub::Identity() {
 
 IDirectoryClient& MessagingHub::Directory() {
   return *directory_;
+}
+
+DirectoryShadowCache& MessagingHub::DirectoryShadows() {
+  return *directory_shadows_;
+}
+
+PeerDisplayResolver& MessagingHub::PeerLabels() {
+  return *peer_labels_;
 }
 
 IRegistrationClient& MessagingHub::Registration() {

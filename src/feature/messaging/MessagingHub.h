@@ -4,7 +4,9 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/ContactActionDispatcher.h"
+#include "feature/messaging/DirectoryShadowCache.h"
 #include "feature/messaging/InboxController.h"
+#include "feature/messaging/PeerDisplayResolver.h"
 #include "base/messaging/PeerKemKeyStore.h"
 #include "base/messaging/GroupRosterStore.h"
 #include "base/messaging/PeerSigningKeyStore.h"
@@ -55,6 +57,8 @@ public:
   ContactsStore& Contacts();
   IdentityStore& Identity();
   IDirectoryClient& Directory();
+  DirectoryShadowCache& DirectoryShadows();
+  PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
   IPushDeviceClient* PushDevices();
   Libp2pHost* Libp2p();
@@ -94,6 +98,8 @@ private:
   std::unique_ptr<SqlitePskSessionStore> psk_store_;
   std::unique_ptr<GroupRosterStore> group_roster_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
+  std::unique_ptr<DirectoryShadowCache> directory_shadows_;
+  std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipService> group_membership_;
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
   std::unique_ptr<RelayDirectoryKemKeyResolver> kem_resolver_;

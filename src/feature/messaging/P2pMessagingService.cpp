@@ -6,6 +6,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/E2eIntegrityUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"
@@ -653,6 +654,12 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   message.generation = options.generation;
   message.ai_invoke_mode = options.ai_invoke_mode;
   message.seq_owner_contact_id = options.seq_owner_contact_id;
+  if (options.content_type) {
+    message.content_type = *options.content_type;
+  }
+  if (options.payload_json) {
+    message.payload_json = *options.payload_json;
+  }
 
   auto sender_seq = store_.AllocateSenderSeq(thread_id);
   if (!sender_seq) {
@@ -752,7 +759,16 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     params.sender_seq = *message.sender_seq;
     params.session_epoch = *message.session_epoch;
     params.timestamp = message.timestamp;
-    auto encrypted = E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, master_psk, key_init_b64);
+    Roe<E2eEncryptResult> encrypted = [&]() -> Roe<E2eEncryptResult> {
+      if (options.content_type && *options.content_type != ChatContentType::Text) {
+        auto plaintext = ChatPayloadCodec::EncodeToRow(message);
+        if (!plaintext) {
+          return plaintext.error();
+        }
+        return E2eRelayPayloadCodec::EncryptChatPayloadWithAutoKey(params, *plaintext, master_psk, key_init_b64);
+      }
+      return E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, master_psk, key_init_b64);
+    }();
     if (!encrypted) {
       appended->delivery = MessageDelivery::Failed;
       (void)store_.UpdateMessage(*appended);
@@ -1087,13 +1103,22 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
         preview = decoded->text;
       }
       inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
-      if (!AppLifecycle::IsForeground() && inbox_.ActiveThreadId() != resolved_thread_id) {
-        background_notices.push_back(UnreadNotice{
-            .title = "New message",
-            .body = preview && !preview->empty() ? *preview : "You have a new message",
-            .thread_id = resolved_thread_id,
-        });
-      }
+        if (!AppLifecycle::IsForeground() && inbox_.ActiveThreadId() != resolved_thread_id) {
+          std::string notice_title = "New message";
+          if (auto thread = store_.GetThread(resolved_thread_id)) {
+            if (*thread) {
+              notice_title = inbox_.ResolveThreadLabel(**thread).title;
+              if (notice_title.empty()) {
+                notice_title = "New message";
+              }
+            }
+          }
+          background_notices.push_back(UnreadNotice{
+              .title = std::move(notice_title),
+              .body = preview && !preview->empty() ? *preview : "You have a new message",
+              .thread_id = resolved_thread_id,
+          });
+        }
     }
 
     if (changed && on_messages_changed_) {

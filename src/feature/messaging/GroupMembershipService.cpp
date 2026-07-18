@@ -4,8 +4,11 @@
 #include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/messaging/SendRelayOptions.h"
+#include "base/people/ContactJson.h"
 
 #include "common/Utilities.h"
+
+#include <nlohmann/json.hpp>
 
 namespace pbr {
 
@@ -404,6 +407,159 @@ Roe<Thread> GroupMembershipService::ForkGroup(const std::string& group_id, const
   (void)AppendMembershipSystemEvent(new_thread->id, GroupMembershipControlType::GroupForked, "Forked from group",
                                     *fork_detail, *local);
   return *new_thread;
+}
+
+Roe<void> GroupMembershipService::SendRenameDirectMessage(const std::string& member_identity,
+                                                          const std::string& group_id, const std::string& title,
+                                                          const uint64_t roster_epoch) {
+  DirectChatTarget direct_target;
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_value = member_identity;
+  direct_target.channel = ThreadChannel::E2ePublic;
+
+  std::string contact_id;
+  std::string dm_title = member_identity;
+  if (auto contact = contacts_.FindByIdentity(member_identity, ContactIdKind::RelayUser)) {
+    if (*contact) {
+      contact_id = (*contact)->id;
+      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+      if (dm_title.empty()) {
+        dm_title = member_identity;
+      }
+    }
+  }
+
+  auto thread = store_.FindOrCreateDirectThread(direct_target, contact_id, dm_title);
+  if (!thread) {
+    return thread.error();
+  }
+
+  auto detail = GroupMembershipCodec::EncodeGroupRenamed(group_id, title, roster_epoch);
+  if (!detail) {
+    return detail.error();
+  }
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const std::string display = "Group renamed to " + title;
+  const std::string payload_json =
+      nlohmann::json({{"control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupRenamed)},
+                      {"detail", *detail}})
+          .dump();
+  SendRelayOptions opts;
+  opts.generation = "system";
+  opts.update_preview = false;
+  opts.content_type = ChatContentType::System;
+  opts.payload_json = payload_json;
+  opts.sender_contact_id = *local;
+  auto sent = p2p_.SendUserMessage(thread->id, display, opts);
+  if (!sent) {
+    return sent.error();
+  }
+  return {};
+}
+
+Roe<void> GroupMembershipService::RenameGroupShared(const std::string& group_id, const std::string& title) {
+  if (title.empty()) {
+    return Error("Group title required");
+  }
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  if (*local != metadata->owner_identity) {
+    return Error("Only the group owner may rename the group for everyone");
+  }
+  if (!RoleHasPermission(MemberRole::Owner, kPermRename)) {
+    return Error("Actor lacks rename permission");
+  }
+
+  metadata->title = title;
+  if (auto saved = roster_.UpsertMetadata(*metadata); !saved) {
+    return saved.error();
+  }
+
+  auto thread = store_.FindGroupThread(group_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (*thread) {
+    Thread updated = **thread;
+    updated.title = title;
+    updated.updated_at = util::NowUnixMs();
+    if (auto upserted = store_.UpsertThread(updated); !upserted) {
+      return upserted.error();
+    }
+    auto detail = GroupMembershipCodec::EncodeGroupRenamed(group_id, title, metadata->roster_epoch);
+    if (!detail) {
+      return detail.error();
+    }
+    if (auto event = AppendMembershipSystemEvent(updated.id, GroupMembershipControlType::GroupRenamed,
+                                                 "Group renamed to " + title, *detail, *local);
+        !event) {
+      return event.error();
+    }
+  }
+
+  auto members = roster_.ListMembers(group_id);
+  if (!members) {
+    return members.error();
+  }
+  for (const GroupRosterMember& member : *members) {
+    if (member.member_identity == *local) {
+      continue;
+    }
+    if (auto sent = SendRenameDirectMessage(member.member_identity, group_id, title, metadata->roster_epoch); !sent) {
+      return sent.error();
+    }
+  }
+  return {};
+}
+
+Roe<void> GroupMembershipService::ApplyInboundGroupRenamed(const GroupMembershipCodec::GroupRenamedPayload& payload,
+                                                           const std::string& actor_identity) {
+  auto metadata = roster_.LoadMetadata(payload.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (!*metadata) {
+    return Error("Unknown group for rename");
+  }
+  if (!actor_identity.empty() && (*metadata)->owner_identity != actor_identity) {
+    return Error("Rename rejected: actor is not the group owner");
+  }
+  GroupMetadata updated = **metadata;
+  updated.title = payload.title;
+  if (payload.roster_epoch > updated.roster_epoch) {
+    updated.roster_epoch = payload.roster_epoch;
+  }
+  if (auto saved = roster_.UpsertMetadata(updated); !saved) {
+    return saved.error();
+  }
+
+  auto thread = store_.FindGroupThread(payload.group_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (*thread) {
+    Thread row = **thread;
+    row.title = payload.title;
+    row.updated_at = util::NowUnixMs();
+    if (auto upserted = store_.UpsertThread(row); !upserted) {
+      return upserted.error();
+    }
+    auto detail = GroupMembershipCodec::EncodeGroupRenamed(payload.group_id, payload.title, updated.roster_epoch);
+    if (detail) {
+      (void)AppendMembershipSystemEvent(row.id, GroupMembershipControlType::GroupRenamed,
+                                        "Group renamed to " + payload.title, *detail, actor_identity);
+    }
+  }
+  return {};
 }
 
 Roe<std::vector<GroupRosterMember>> GroupMembershipService::ListRoster(const std::string& group_id) const {
