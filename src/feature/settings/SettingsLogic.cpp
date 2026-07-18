@@ -54,7 +54,7 @@ AppConfig ApplyLlmSettingsDraft(const AppConfig& base, const SettingsDraft& draf
     config.llm_api_key_env.clear();
   }
 
-  ResolveLlmAuthRequirements(config);
+  NormalizeLlmConfig(config);
   return config;
 }
 

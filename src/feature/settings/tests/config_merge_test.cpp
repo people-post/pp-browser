@@ -65,11 +65,19 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   EXPECT_EQ(pbr::ResolvePreset(custom_config), "custom");
 
   pbr::SettingsDraft draft;
-  draft.llm_preset = "custom";
-  draft.llm_base_url = "https://proxy.example/v1";
-  draft.llm_model = "my-model";
-  draft.llm_api_key_env = "OPENAI_API_KEY";
-  const pbr::AppConfig built = pbr::ApplyLlmSettingsDraft(defaults, draft);
+  draft.llm_preset = "brief";
+  draft.llm_base_url = "https://www.brief.global/api/llm/v1";
+  draft.llm_model = "brief";  // preset-name mistake → normalized to default
+  const pbr::AppConfig brief_from_draft = pbr::ApplyLlmSettingsDraft(defaults, draft);
+  EXPECT_EQ(brief_from_draft.llm.model, "grok-4-1-fast-reasoning");
+  EXPECT_TRUE(brief_from_draft.llm.api_key.empty());
+
+  pbr::SettingsDraft custom_draft;
+  custom_draft.llm_preset = "custom";
+  custom_draft.llm_base_url = "https://proxy.example/v1";
+  custom_draft.llm_model = "my-model";
+  custom_draft.llm_api_key_env = "OPENAI_API_KEY";
+  const pbr::AppConfig built = pbr::ApplyLlmSettingsDraft(defaults, custom_draft);
   EXPECT_EQ(built.llm.model, "my-model");
   EXPECT_EQ(built.llm.base_url, "https://proxy.example/v1");
   EXPECT_EQ(built.llm_api_key_env, "OPENAI_API_KEY");

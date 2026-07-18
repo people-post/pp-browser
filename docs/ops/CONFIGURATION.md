@@ -28,6 +28,33 @@ After bootstrap, a single [`SessionStore`](../../src/base/data/SessionStore.h) o
 
 `config.json` may include `llm.preset`: `"brief"`, `"cloud"`, `"ollama"`, or `"custom"`. Preset metadata and apply logic live in `src/base/data/LlmPreset.*`. Legacy files without `preset` infer it once from `base_url`.
 
+`NormalizeLlmConfig` is the single write-boundary translator: it turns preset intent into precise `base_url`, `model` (wire id), and auth flags. Settings flush and config load both call it. Runtime Brief chat only overlays `identity.brief_llm_api_key` — it does not re-interpret model/preset. See **Settings: normalize at write boundary** below.
+
+## Settings: normalize at write boundary
+
+Machine and profile settings should follow the same shape as LLM config:
+
+| Layer | Responsibility |
+|-------|----------------|
+| UI / draft | Capture **user intent** (preset, toggles, free-text overrides) |
+| **One normalizer** (per settings domain) | Translate intent → **precise persisted fields** |
+| Disk (`config.json` / `preferences.json`) | Store only precise values |
+| Runtime readers | Interpret fields literally; inject secrets from vault/env if needed |
+
+**Do:**
+
+- Put translation in one function (e.g. `NormalizeLlmConfig`, future `NormalizeNetworkConfig`)
+- Call it on settings flush **and** on load (heal dirty / partial / legacy files)
+- On preset-like UI changes, update draft defaults (e.g. model → `DefaultModelForPreset`) before flush so the user sees what will be saved
+- Keep vault/env secrets out of the normalizer’s persisted outputs when the domain says so (Brief API key → `identity.enc`)
+
+**Don’t:**
+
+- Re-encode the same denylist / “fixup” in `ChatController`, `LlmClient`, and settings
+- Persist ambiguous values (`model: "brief"`) and hope every reader guesses
+
+When adding a new Me-tab section, add its normalizer next to the domain types under `src/base/data/` or `src/feature/settings/`, wire it from that section’s `Flush` + the relevant load path, and document the precise on-disk fields here.
+
 ## Theme and appearance (runtime)
 
 **Appearance (light/dark):** `profiles/{id}/preferences.json` → `appearance` (`system`, `light`, or `dark`). System follows `SDL_GetSystemTheme` and live-updates on `SDL_EVENT_SYSTEM_THEME_CHANGED`.

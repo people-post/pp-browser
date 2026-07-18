@@ -2,6 +2,7 @@
 
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/AppPaths.h"
+#include "base/data/LlmPreset.h"
 #include "base/data/SchemaVersion.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
@@ -633,6 +634,23 @@ void SettingsController::OnLlmPresetChangedCallback(Rml::DataModelHandle /*model
   }
 
   controller.PullBindingsToUiState();
+  // Translate preset intent → precise default model before flush/normalize.
+  const std::string preset = controller.ui_state_.llm_preset;
+  if (const std::string default_model = DefaultModelForPreset(preset); !default_model.empty()) {
+    controller.ui_state_.llm_model = default_model;
+    controller.bindings_.llm_model = default_model.c_str();
+  }
+  if (preset != "custom") {
+    // Known presets own base_url; clear custom URL so Normalize/ApplyPreset fill it.
+    AppConfig scratch;
+    ApplyPreset(scratch, preset, {});
+    controller.ui_state_.llm_base_url = scratch.llm.base_url;
+    controller.bindings_.llm_base_url = scratch.llm.base_url.c_str();
+  }
+  DataModelHost::Instance().Dirty("settings", "llm_model");
+  DataModelHost::Instance().Dirty("settings", "llm_base_url");
+  DataModelHost::Instance().Dirty("settings", "llm_preset");
+
   const SettingsSectionHandler* handler = controller.FindHandler("llm");
   if (!handler) {
     return;

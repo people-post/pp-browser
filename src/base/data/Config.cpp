@@ -103,7 +103,7 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
     config.registration.base_url = defaults.registration.base_url;
   }
   ResolveConfigCredentials(config);
-  ResolveLlmAuthRequirements(config);
+  NormalizeLlmConfig(config);
   return config;
 }
 

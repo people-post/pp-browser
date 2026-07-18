@@ -2394,7 +2394,9 @@ bool ChatController::Setup(Rml::Context* context) {
     });
   }
 
-  agent_->Configure(config);
+  // Must go through ApplyRuntimeConfig so Brief injects identity.brief_llm_api_key.
+  // A raw Configure(SessionStore config) wipes the vault key after WireMessagingBindings.
+  ApplyRuntimeConfig(config);
   log().info << "Chat initialized (model: " << config.llm.model << ")";
 
   DataModelHost::Instance().Clear();
