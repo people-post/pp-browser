@@ -1984,10 +1984,19 @@ void ChatController::SendChatAction(const std::string& entry_id, int action_inde
       return;
     }
     const TranscriptChatAction& action = message.chat_actions[static_cast<size_t>(action_index)];
-    if (ShouldCloseWorkingSetForAction(action.payload)) {
-      ClearWorkingSet();
-    }
-    HandleLocalAction(action.message, action.payload);
+    // Copy by value: layout-mutating actions close the working set / remount panes. Doing that
+    // synchronously destroys the click target and leaves RmlUi data views with dangling aliases
+    // ("Variable address not found" → segfault). Defer like SettingsController section open.
+    const std::string action_message = action.message;
+    const std::optional<std::string> action_payload = action.payload;
+    const bool close_working_set = ShouldCloseWorkingSetForAction(action_payload);
+    BrowserThread::PostTask(BrowserThreadId::UI, [action_message, action_payload, close_working_set]() {
+      auto& self = ChatController::Instance();
+      if (close_working_set) {
+        self.ClearWorkingSet();
+      }
+      self.HandleLocalAction(action_message, action_payload);
+    });
     return;
   }
 

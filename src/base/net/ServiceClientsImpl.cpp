@@ -9,6 +9,7 @@
 #include "base/messaging/RelayWirePayload.h"
 #include "base/net/HttpClient.h"
 #include "base/net/RelayApiSignPayload.h"
+#include "base/people/ContactJson.h"
 #include "base/people/Ed25519Signer.h"
 
 #include <nlohmann/json.hpp>
@@ -498,30 +499,6 @@ Roe<std::vector<DirectoryHit>> HttpDirectoryClient::SearchPeople(const std::stri
   return hits;
 }
 
-namespace {
-
-DirectoryHit DirectoryHitFromRelayUserJson(const nlohmann::json& json) {
-  DirectoryHit hit;
-  if (json.contains("relay_user_id") && json["relay_user_id"].is_string()) {
-    const std::string relay_user_id = json["relay_user_id"].get<std::string>();
-    hit.hit_id = relay_user_id;
-    hit.ids.push_back({ContactIdKind::RelayUser, relay_user_id, true});
-  }
-  if (json.contains("nickname") && json["nickname"].is_string()) {
-    hit.nickname = json["nickname"].get<std::string>();
-    hit.display_name = hit.nickname;
-  }
-  if (json.contains("signing_public_key_b64") && json["signing_public_key_b64"].is_string()) {
-    hit.signing_public_key_b64 = json["signing_public_key_b64"].get<std::string>();
-  }
-  if (json.contains("kem_public_key_b64") && json["kem_public_key_b64"].is_string()) {
-    hit.kem_public_key_b64 = json["kem_public_key_b64"].get<std::string>();
-  }
-  return hit;
-}
-
-} // namespace
-
 Roe<DirectoryHit> HttpDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
@@ -542,7 +519,7 @@ Roe<DirectoryHit> HttpDirectoryClient::LookupRelayUser(const std::string& relay_
   if (root.is_discarded() || !root.contains("relay_user_id")) {
     return Error("Invalid relay user lookup JSON");
   }
-  return DirectoryHitFromRelayUserJson(root);
+  return DirectoryHitFromJson(root);
 }
 
 HttpRegistrationClient::HttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}

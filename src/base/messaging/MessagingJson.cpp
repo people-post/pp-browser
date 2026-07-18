@@ -36,8 +36,13 @@ std::vector<TranscriptChatAction> ChatActionsFromJson(const nlohmann::json& json
     if (item.contains("message") && item["message"].is_string()) {
       action.message = item["message"].get<std::string>();
     }
-    if (item.contains("payload") && item["payload"].is_string()) {
-      action.payload = item["payload"].get<std::string>();
+    if (item.contains("payload")) {
+      if (item["payload"].is_string()) {
+        action.payload = item["payload"].get<std::string>();
+      } else if (item["payload"].is_object()) {
+        // Older / in-memory shapes stored payload as a nested object.
+        action.payload = item["payload"].dump();
+      }
     }
     out.push_back(std::move(action));
   }
