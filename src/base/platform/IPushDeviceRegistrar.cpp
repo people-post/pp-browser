@@ -1,5 +1,7 @@
 #include "base/platform/IPushDeviceRegistrar.h"
 
+#include <mutex>
+
 namespace pbr {
 
 namespace {
@@ -14,6 +16,8 @@ public:
 
 IPushDeviceRegistrar* g_push_registrar = nullptr;
 UnsupportedPushDeviceRegistrar g_unsupported_push_registrar;
+std::mutex g_token_handler_mutex;
+IPushDeviceRegistrar::TokenChangedFn g_token_changed_handler;
 
 } // namespace
 
@@ -23,6 +27,22 @@ IPushDeviceRegistrar& IPushDeviceRegistrar::Instance() {
 
 void IPushDeviceRegistrar::SetInstance(IPushDeviceRegistrar* registrar) {
   g_push_registrar = registrar;
+}
+
+void IPushDeviceRegistrar::SetTokenChangedHandler(TokenChangedFn handler) {
+  std::lock_guard lock(g_token_handler_mutex);
+  g_token_changed_handler = std::move(handler);
+}
+
+void IPushDeviceRegistrar::NotifyTokenChanged(const std::string& token) {
+  TokenChangedFn handler;
+  {
+    std::lock_guard lock(g_token_handler_mutex);
+    handler = g_token_changed_handler;
+  }
+  if (handler && !token.empty()) {
+    handler(token);
+  }
 }
 
 } // namespace pbr

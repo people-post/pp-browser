@@ -181,6 +181,8 @@ private:
   void UpdatePeerLinkChrome();
   void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
   void WireMessagingBindings();
+  /** Show/clear LLM setup banners once identity is readable (after unlock). */
+  void RefreshLlmSetupBanner();
   void WithSecrets(std::function<void()> action);
 
   std::string HydrateAssistantRml(const TranscriptEntry& entry) const;

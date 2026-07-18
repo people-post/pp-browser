@@ -1,5 +1,7 @@
 #include "base/platform/AndroidPushDeviceRegistrar.h"
 
+#include "base/platform/IPushDeviceRegistrar.h"
+
 #include <mutex>
 #include <string>
 
@@ -87,7 +89,9 @@ extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_PpPushBridge_nativeSe
   if (utf == nullptr) {
     return;
   }
-  pbr::SetAndroidCachedFcmToken(utf);
+  const std::string token_str = utf;
   env->ReleaseStringUTFChars(token, utf);
+  pbr::SetAndroidCachedFcmToken(token_str);
+  pbr::IPushDeviceRegistrar::NotifyTokenChanged(token_str);
 }
 #endif

@@ -2,6 +2,7 @@
 
 #include "common/Error.h"
 
+#include <functional>
 #include <string>
 
 namespace pbr {
@@ -9,6 +10,8 @@ namespace pbr {
 /** Platform push token source (FCM on Android; unsupported on desktop). */
 class IPushDeviceRegistrar {
 public:
+  using TokenChangedFn = std::function<void(const std::string& token)>;
+
   virtual ~IPushDeviceRegistrar() = default;
 
   virtual bool IsSupported() const = 0;
@@ -19,6 +22,10 @@ public:
 
   static IPushDeviceRegistrar& Instance();
   static void SetInstance(IPushDeviceRegistrar* registrar);
+
+  /** Invoked when a platform push token becomes available or refreshes (may be off UI thread). */
+  static void SetTokenChangedHandler(TokenChangedFn handler);
+  static void NotifyTokenChanged(const std::string& token);
 };
 
 } // namespace pbr

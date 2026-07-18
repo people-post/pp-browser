@@ -3,7 +3,9 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/platform/AppLifecycle.h"
 #include "base/platform/BackgroundSyncScheduler.h"
+#include "base/platform/BrowserThread.h"
 #include "base/platform/ILocalNotifier.h"
+#include "base/platform/IPushDeviceRegistrar.h"
 #include "feature/messaging/PushDeviceCoordinator.h"
 
 #include "base/ai/StructuredTextParser.h"
@@ -2024,8 +2026,45 @@ void ChatController::WithSecrets(std::function<void()> action) {
       });
 }
 
+void ChatController::RefreshLlmSetupBanner() {
+  const AppConfig& config = SessionStore::Instance().Snapshot().config;
+  use_llm_ = !config.llm.base_url.empty();
+  constexpr const char* kRegisterBrief =
+      "Register your identity in Me → Profile to use Brief assistant (or switch to Cloud/Ollama).";
+
+  if (!use_llm_) {
+    UserFeedback::NeedsSetup("Using mock replies — LLM is not configured.");
+    return;
+  }
+  if (ResolvePreset(config) == "brief") {
+    std::string brief_key;
+    if (MessagingHub::Instance().IsMessagingReady()) {
+      if (auto identity = MessagingHub::Instance().Identity().Get()) {
+        brief_key = identity->brief_llm_api_key;
+      }
+    }
+    if (brief_key.empty()) {
+      UserFeedback::NeedsSetup(kRegisterBrief);
+      return;
+    }
+    auto& shell = ShellHost::Instance().State();
+    if (shell.banner_message == kRegisterBrief) {
+      ShellFeedback::DismissBanner(shell);
+      ShellHost::Instance().DirtyWindow();
+    }
+    return;
+  }
+  if (config.llm.require_api_key && config.llm.api_key.empty()) {
+    UserFeedback::NeedsSetup("Add your API key in Me → Assistant to enable the assistant.");
+  }
+}
+
 void ChatController::WireMessagingBindings() {
   if (!MessagingHub::Instance().IsInitialized() || !agent_) {
+    return;
+  }
+  // Identity / Brief key / push registration are only valid after vault unlock.
+  if (!MessagingHub::Instance().IsMessagingReady()) {
     return;
   }
   messaging_ready_ = true;
@@ -2051,6 +2090,15 @@ void ChatController::WireMessagingBindings() {
       return;
     }
     MessagingHub::Instance().P2p().SyncInboxFromWake(force);
+  });
+  IPushDeviceRegistrar::SetTokenChangedHandler([](const std::string& /*token*/) {
+    BrowserThread::PostTask(BrowserThreadId::UI, []() {
+      if (!MessagingHub::Instance().IsMessagingReady()) {
+        return;
+      }
+      (void)PushDeviceCoordinator::SyncWithPreference(
+          SessionStore::Instance().Snapshot().profile_prefs.show_notifications);
+    });
   });
   (void)PushDeviceCoordinator::SyncWithPreference(
       SessionStore::Instance().Snapshot().profile_prefs.show_notifications);
@@ -2085,24 +2133,24 @@ void ChatController::WireMessagingBindings() {
     ShellHost::Instance().DirtyWindow();
   });
   RefreshFromMessaging();
-  if (MessagingHub::Instance().IsMessagingReady()) {
-    MessagingHub::Instance().P2p().TailSyncActiveE2eThread();
+  MessagingHub::Instance().P2p().TailSyncActiveE2eThread();
 
-    const bool auto_renew = SessionStore::Instance().Snapshot().profile_prefs.auto_renew_registration;
-    auto renew = MaybeAutoRenewRegistration(MessagingHub::Instance().Registration(),
-                                            MessagingHub::Instance().Identity(), auto_renew);
-    if (!renew) {
-      log().warning << "Auto-renew registration failed: " << renew.error().message;
-    } else if (*renew) {
-      ReloadAgentConfig();
-      log().info << "Network registration auto-renewed";
-    } else {
-      auto identity = MessagingHub::Instance().Identity().Get();
-      if (identity && ShouldRenewRegistration(*identity) && !auto_renew) {
-        UserFeedback::NeedsSetup("Network registration expires soon — renew in Me → Profile");
-      }
+  const bool auto_renew = SessionStore::Instance().Snapshot().profile_prefs.auto_renew_registration;
+  auto renew = MaybeAutoRenewRegistration(MessagingHub::Instance().Registration(),
+                                          MessagingHub::Instance().Identity(), auto_renew);
+  if (!renew) {
+    log().warning << "Auto-renew registration failed: " << renew.error().message;
+  } else if (*renew) {
+    log().info << "Network registration auto-renewed";
+  } else {
+    auto identity = MessagingHub::Instance().Identity().Get();
+    if (identity && ShouldRenewRegistration(*identity) && !auto_renew) {
+      UserFeedback::NeedsSetup("Network registration expires soon — renew in Me → Profile");
     }
   }
+  // Always reload so Brief key from identity is applied after unlock (not only on renew).
+  ReloadAgentConfig();
+  RefreshLlmSetupBanner();
 }
 
 bool ChatController::Setup(Rml::Context* context) {
@@ -2142,8 +2190,11 @@ bool ChatController::Setup(Rml::Context* context) {
     WireMessagingBindings();
     MessagingHub::Instance().SetOnMessagingReady([this]() {
       WireMessagingBindings();
+      ContactsController::Instance().Refresh();
       if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
         SettingsController::Instance().OnNavTabActivated();
+      } else if (ShellHost::Instance().State().nav_tab == NavTab::Home) {
+        OnHomeTabActivated();
       }
     });
   }
@@ -2355,21 +2406,12 @@ bool ChatController::Setup(Rml::Context* context) {
     OnHomeTabActivated();
   }
 
-  if (!use_llm_) {
-    UserFeedback::NeedsSetup("Using mock replies — LLM is not configured.");
-  } else if (ResolvePreset(config) == "brief") {
-    std::string brief_key;
-    if (MessagingHub::Instance().IsInitialized()) {
-      if (auto identity = MessagingHub::Instance().Identity().Get()) {
-        brief_key = identity->brief_llm_api_key;
-      }
-    }
-    if (brief_key.empty()) {
-      UserFeedback::NeedsSetup(
-          "Register your identity in Me → Profile to use Brief assistant (or switch to Cloud/Ollama).");
-    }
-  } else if (config.llm.require_api_key && config.llm.api_key.empty()) {
-    UserFeedback::NeedsSetup("Add your API key in Me → Assistant to enable the assistant.");
+  // Brief key lives in the vault — refresh after unlock via WireMessagingBindings.
+  // Non-Brief setup can be checked immediately (config-only).
+  if (ResolvePreset(config) != "brief") {
+    RefreshLlmSetupBanner();
+  } else if (messaging_ready_) {
+    RefreshLlmSetupBanner();
   }
 
   return true;
@@ -2461,6 +2503,7 @@ void ChatController::Update() {
 void ChatController::Shutdown() {
   AppLifecycle::ClearBackgroundListeners();
   AppLifecycle::ClearForegroundListeners();
+  IPushDeviceRegistrar::SetTokenChangedHandler(nullptr);
   if (agent_) {
     agent_->Cancel();
     agent_.reset();
