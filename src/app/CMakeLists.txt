@@ -28,7 +28,10 @@ if(WIN32)
     ${CMAKE_SOURCE_DIR}/assets/branding/app-icon.rc)
 endif()
 
-if(APPLE AND PP_BROWSER_PACKAGED_BUILD AND NOT PP_BROWSER_IS_IOS)
+if(PP_BROWSER_IS_IOS)
+  include(IosBundle)
+  pp_browser_configure_ios_app(${PP_BROWSER_APP_TARGET})
+elseif(APPLE AND PP_BROWSER_PACKAGED_BUILD)
   set_target_properties(${PP_BROWSER_APP_TARGET} PROPERTIES
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_GUI_IDENTIFIER "dev.frame.app"
@@ -90,6 +93,8 @@ if(NOT PP_BROWSER_IS_MOBILE)
   if(PP_BROWSER_PACKAGED_BUILD AND (APPLE OR WIN32))
     include(CPackOptions)
   endif()
+elseif(PP_BROWSER_IS_IOS)
+  pp_configure_status("iOS target: install with cmake --install (see docs/ops/IOS_BUILD.md)")
 else()
   pp_configure_status("Mobile target: skipping host tests and desktop install rules")
 endif()

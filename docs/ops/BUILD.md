@@ -184,3 +184,24 @@ The first clean NDK build can take 15–30 minutes (libp2p + RmlUi + BoringSSL).
 Launch **pp-browser** on the device/emulator. On first launch, open **Me → Assistant** and enter a cloud API key. Use `adb logcat -s pp-browser` for native logs.
 
 See [PLATFORMS.md](../architecture/PLATFORMS.md) for mobile lifecycle, navigation, and asset I/O.
+
+## iOS (local, macOS required)
+
+Build **Frame.app** for the iOS Simulator or device with CMake + Xcode. Signing placeholders mirror macOS ([`packaging/ios/signing.env.example`](../../packaging/ios/signing.env.example)).
+
+### Prerequisites
+
+- macOS with Xcode 15+ and iOS SDK
+- CMake 3.24+, Ninja (recommended)
+- Perl (lsquic codegen — same as desktop)
+
+### Build and run (simulator)
+
+```bash
+./scripts/ios_build.sh sim
+./scripts/ios_build.sh run-sim
+```
+
+Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md).
+
+The first clean iOS build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are copied into `Frame.app/assets/` automatically.

@@ -1,0 +1,227 @@
+# iOS build and signing
+
+**Tier:** ops
+
+How to build **Frame** for iOS (simulator and device) and connect an **Apple Developer Program** account for on-device testing. Repo codename remains `pp-browser`; the shipped iOS product is **Frame** (`Frame.app`).
+
+**Related:** [BUILD.md](BUILD.md), [PLATFORMS.md](../architecture/PLATFORMS.md), [MACOS_SIGNING.md](MACOS_SIGNING.md) (macOS Developer ID — separate from iOS provisioning), [PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md).
+
+---
+
+## Overview
+
+| What | Value in this repo |
+|------|-------------------|
+| iOS app bundle | `Frame.app` |
+| Bundle ID | `dev.frame.ios` ([`packaging/ios/Info.plist`](../../packaging/ios/Info.plist), [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake)) |
+| Build script | [`scripts/ios_build.sh`](../../scripts/ios_build.sh) |
+| Signing script | [`scripts/ios_sign.sh`](../../scripts/ios_sign.sh) |
+| Entitlements | [`packaging/ios/Frame.entitlements`](../../packaging/ios/Frame.entitlements) |
+| Local env template | [`packaging/ios/signing.env.example`](../../packaging/ios/signing.env.example) |
+| Export template | [`packaging/ios/ExportOptions.plist.example`](../../packaging/ios/ExportOptions.plist.example) |
+
+iOS builds require **macOS + Xcode**. Linux CI can cross-compile some dependencies, but producing a runnable `.app` is macOS-only today.
+
+Until you fill in signing placeholders, **simulator builds work unsigned**; **device installs require** a development certificate and provisioning profile.
+
+---
+
+## Prerequisites
+
+- macOS with **Xcode 15+** and iOS SDK
+- **CMake 3.24+**, **Ninja** (recommended)
+- **Perl** (lsquic codegen — same as desktop/Android)
+- Vendored trees present (`./scripts/vendor_import.sh`, `./scripts/libp2p_vendor_import.sh` if needed)
+
+Install command-line tools if needed:
+
+```bash
+xcode-select --install
+```
+
+---
+
+## Quick start (simulator)
+
+From the repository root:
+
+```bash
+chmod +x scripts/ios_build.sh scripts/ios_sign.sh   # once, if not executable
+./scripts/ios_build.sh sim
+```
+
+Open **Simulator.app**, then:
+
+```bash
+./scripts/ios_build.sh run-sim
+```
+
+On first launch, open **Me → Assistant** and enter a cloud API key (same as Android/desktop).
+
+---
+
+## Build commands
+
+```bash
+./scripts/ios_build.sh configure-sim     # CMake → build-ios-simulator/
+./scripts/ios_build.sh configure-device  # CMake → build-ios-device/
+./scripts/ios_build.sh build             # Build current tree
+./scripts/ios_build.sh install           # Install to install-ios/Frame.app
+./scripts/ios_build.sh sim               # configure + build + install (simulator)
+./scripts/ios_build.sh device            # configure + build + install (device)
+./scripts/ios_build.sh xcode             # -G Xcode for IDE debugging
+./scripts/ios_build.sh clean             # Remove build-ios-* trees
+```
+
+Optional version metadata:
+
+```bash
+export PP_BROWSER_VERSION=0.1.0
+export PP_BROWSER_RELEASE_VERSION=0.1.0-rc1
+./scripts/ios_build.sh sim
+```
+
+Manual CMake (equivalent to `configure-sim`):
+
+```bash
+cmake -B build-ios-simulator -S . \
+  -DCMAKE_SYSTEM_NAME=iOS \
+  -DCMAKE_OSX_SYSROOT=iphonesimulator \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DPP_BROWSER_PACKAGED_BUILD=ON \
+  -G Ninja
+cmake --build build-ios-simulator -j
+cmake --install build-ios-simulator --prefix install-ios
+```
+
+The first clean iOS build can take **15–30 minutes** (libp2p + RmlUi + BoringSSL), similar to Android NDK.
+
+---
+
+## One-time: Apple Developer Portal
+
+Do this at [developer.apple.com/account](https://developer.apple.com/account) after enrolling in the Apple Developer Program.
+
+### 1. Register the iOS bundle ID
+
+1. **Certificates, Identifiers & Profiles → Identifiers → App IDs**
+2. Register **`dev.frame.ios`** (or your org ID, e.g. `com.yourorg.frame.ios`)
+3. If you change the ID, update:
+   - [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist)
+   - `PP_BROWSER_IOS_BUNDLE_ID` in [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake)
+   - [`packaging/ios/signing.env.example`](../../packaging/ios/signing.env.example)
+
+### 2. Create an iOS Development certificate
+
+1. **Certificates → +**
+2. Choose **Apple Development** (for device testing) or **Apple Distribution** (TestFlight/App Store)
+3. Create a CSR in Keychain Access → upload → download cert → double-click to install
+
+### 3. Create a provisioning profile
+
+1. **Profiles → + → iOS App Development** (or Ad Hoc / App Store)
+2. Select App ID **`dev.frame.ios`**
+3. Select your development certificate and test devices
+4. Download **`Frame_iOS_Development.mobileprovision`**
+
+### 4. Note your Team ID
+
+**Membership details → Team ID** (10 characters, e.g. `AB12CD34EF`).
+
+### 5. Optional: APNs key (push — deferred)
+
+Push notifications are not implemented yet ([`projects/push-notifications/`](../../projects/push-notifications/)). When ready:
+
+1. **Keys → + → Apple Push Notifications service (APNs)**
+2. Download **`AuthKey_XXXX.p8`** (once)
+3. Fill `IOS_APNS_*` placeholders in `signing.env.example`
+
+---
+
+## Local signing setup
+
+```bash
+cp packaging/ios/signing.env.example packaging/ios/signing.env
+# Edit signing.env — replace YOUR_* placeholders
+source packaging/ios/signing.env
+```
+
+| Variable | Placeholder | Purpose |
+|----------|-------------|---------|
+| `IOS_BUNDLE_IDENTIFIER` | `dev.frame.ios` | Must match App ID |
+| `IOS_DEVELOPMENT_TEAM` | `YOUR_TEAM_ID` | 10-character Team ID |
+| `IOS_SIGNING_IDENTITY` | `Apple Development: …` | From Keychain |
+| `IOS_PROVISIONING_PROFILE_PATH` | `/path/to/*.mobileprovision` | Development profile |
+
+Sign after install:
+
+```bash
+./scripts/ios_build.sh device install
+./scripts/ios_sign.sh sign-app install-ios/Frame.app
+```
+
+Install on a connected device via Xcode **Devices and Simulators**, or archive/export when ready for TestFlight.
+
+For IPA export, copy and edit the export template:
+
+```bash
+cp packaging/ios/ExportOptions.plist.example packaging/ios/ExportOptions.plist
+./scripts/ios_sign.sh export-ipa install-ios/Frame.app
+```
+
+---
+
+## GitHub Actions secrets (optional CI)
+
+When you add an iOS release job later, typical secrets mirror the local env:
+
+| Secret | Purpose |
+|--------|---------|
+| `IOS_CERTIFICATE_BASE64` | Base64 of signing `.p12` |
+| `IOS_CERTIFICATE_PASSWORD` | `.p12` export password |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Base64 of `.mobileprovision` |
+| `IOS_SIGNING_IDENTITY` | Exact codesign identity string |
+| `IOS_DEVELOPMENT_TEAM` | Team ID |
+| `IOS_BUNDLE_IDENTIFIER` | `dev.frame.ios` |
+
+No iOS release workflow is wired yet — macOS release CI remains in [`.github/workflows/release.yml`](../../.github/workflows/release.yml).
+
+---
+
+## Architecture notes
+
+| Component | iOS behavior |
+|-----------|--------------|
+| Renderer | OpenGL ES 3 via SDL (same pattern as Android) |
+| Assets | `Frame.app/assets/` — staged by [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake) |
+| Paths | [`IosPathProvider`](../../src/base/platform/IosPathProvider.cpp) — SDL pref path under sandbox |
+| MCP | HTTP URL only — no subprocess on mobile |
+| libp2p | Built and linked; host `protoc` bootstrapped on first cross-compile |
+| Keychain / APNs | Placeholder entitlements; implementation deferred |
+
+See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset behavior (mirror Android where applicable).
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely fix |
+|---------|------------|
+| `iOS builds require macOS` | Run on a Mac; simulator/device tooling is not available on Linux agents |
+| Codesign / profile mismatch | Ensure App ID, profile, and `IOS_BUNDLE_IDENTIFIER` all match |
+| Blank window / GL error | Confirm `UIRequiredDeviceCapabilities` includes `opengles-3`; check device logs in Xcode |
+| Missing assets | Re-run `cmake --build` so POST_BUILD asset copy runs; verify `Frame.app/assets/` |
+| `host protoc` failure | Ensure Perl is installed; delete `build-host-protoc/` and reconfigure |
+
+---
+
+## Quick checklist
+
+- [ ] Xcode + command-line tools installed
+- [ ] `./scripts/ios_build.sh sim` succeeds
+- [ ] Simulator launch via `./scripts/ios_build.sh run-sim`
+- [ ] App ID `dev.frame.ios` registered (or plist/CMake updated)
+- [ ] Development cert + provisioning profile created
+- [ ] `packaging/ios/signing.env` filled from example
+- [ ] `./scripts/ios_sign.sh sign-app install-ios/Frame.app` verifies on device

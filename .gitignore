@@ -76,3 +76,8 @@ config.json
 
 # macOS signing credentials (see packaging/macos/signing.env.example)
 packaging/macos/signing.env
+
+# iOS signing / export (see packaging/ios/signing.env.example)
+packaging/ios/signing.env
+packaging/ios/ExportOptions.plist
+dist-ios/

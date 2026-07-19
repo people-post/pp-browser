@@ -197,7 +197,7 @@ Open the DMG, drag Frame to Applications, launch without right-click → Open.
 | **Org bundle ID** | Switch from `dev.frame.app` before first public signed release if needed |
 | **Intel / universal binary** | Current GHA `macos-14` is Apple Silicon only |
 | **Mac App Store** | Different cert, sandbox, review — not covered here |
-| **iOS** | Separate Xcode target, provisioning profiles, Keychain — see [PLATFORMS.md](../architecture/PLATFORMS.md) |
+| **iOS** | Separate bundle id, provisioning profiles, Keychain — see [IOS_BUILD.md](IOS_BUILD.md) |
 
 ---
 
