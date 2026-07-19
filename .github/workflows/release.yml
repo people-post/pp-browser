@@ -72,6 +72,14 @@ jobs:
       - name: Install
         run: cmake --install build
 
+      - name: Sign macOS app
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ./scripts/macos_sign_and_notarize.sh sign-app "${INSTALL_PREFIX}/Frame.app"
+
       - name: Package
         shell: bash
         run: |
@@ -107,6 +115,16 @@ jobs:
             exit 1
           fi
           echo "Packaged ${dmg}"
+          echo "dmg_path=${dmg}" >> "$GITHUB_ENV"
+
+      - name: Notarize and staple DMG
+        env:
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_P8_BASE64: ${{ secrets.APPLE_NOTARY_P8_BASE64 }}
+        run: |
+          ./scripts/macos_sign_and_notarize.sh notarize "${dmg_path}"
+          ./scripts/macos_sign_and_notarize.sh staple "${dmg_path}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6

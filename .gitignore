@@ -73,3 +73,6 @@ __pycache__/
 
 # Local user config (use --config or user config dir)
 config.json
+
+# macOS signing credentials (see packaging/macos/signing.env.example)
+packaging/macos/signing.env
