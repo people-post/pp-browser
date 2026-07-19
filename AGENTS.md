@@ -71,6 +71,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Doc map / contracts | [docs/README.md](docs/README.md) |
 | In-app settings (Me tab) | `src/feature/ui/SettingsController.*`, `assets/views/settings.rml` |
 | Build | [docs/ops/BUILD.md](docs/ops/BUILD.md) |
+| macOS signing / notarization | [docs/ops/MACOS_SIGNING.md](docs/ops/MACOS_SIGNING.md) |
 | Source layers | [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md) |
 
 ## Conventions

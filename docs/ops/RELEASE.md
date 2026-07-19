@@ -2,7 +2,9 @@
 
 **Tier:** ops
 
-Tag-triggered CI builds unsigned macOS and Windows installers, an Android release APK, and publishes them to [GitHub Releases](https://github.com/people-post/pp-browser/releases).
+Tag-triggered CI builds macOS and Windows installers, an Android release APK, and publishes them to [GitHub Releases](https://github.com/people-post/pp-browser/releases).
+
+When [macOS signing secrets](MACOS_SIGNING.md#github-repository-secrets) are configured, release CI code-signs and notarizes the macOS DMG. Until then, macOS artifacts ship unsigned (Gatekeeper override required). **Full setup guide:** [MACOS_SIGNING.md](MACOS_SIGNING.md).
 
 ## Tag convention
 
@@ -28,7 +30,7 @@ git push origin v0.1.0
 ```
 
 4. GitHub Actions workflow [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs automatically:
-   - **macOS** (`macos-14`): builds `pp-browser.app`, packages a `.dmg`
+   - **macOS** (`macos-14`): builds `Frame.app`, optionally signs + notarizes, packages a `.dmg`
    - **Windows** (`windows-2022`): builds the app, packages an NSIS `.exe` installer
    - **Android** (`ubuntu-24.04`, NDK `27.0.12077973`): builds a release APK (`assembleRelease`) with native code compiled in Release mode
 5. When all jobs succeed, a GitHub Release is created with the artifacts attached.
@@ -43,17 +45,21 @@ Release builds use:
 
 | Platform | File | Contents |
 |----------|------|----------|
-| macOS (Apple Silicon) | `pp-browser-<version>-macos.dmg` | Drag-and-drop install of `pp-browser.app` |
-| Windows x64 | `pp-browser-<version>-windows-x64.exe` | NSIS installer (exe + `assets/` under install dir) |
+| macOS (Apple Silicon) | `frame-<version>-macos.dmg` | Drag-and-drop install of `Frame.app` |
+| Windows x64 | `frame-<version>-windows-x64.exe` | NSIS installer (exe + `assets/` under install dir) |
 | Android | `pp-browser-<version>-android.apk` | Universal APK (`armeabi-v7a`, `arm64-v8a`, `x86_64`); signed with the debug keystore until a release keystore is configured |
+
+## macOS code signing and notarization
+
+See **[MACOS_SIGNING.md](MACOS_SIGNING.md)** for the full guide: Apple Developer Portal setup, GitHub secrets, local smoke test, CI flow, and troubleshooting.
 
 ## Installing unsigned builds
 
-Artifacts are **not code-signed** in the current pipeline. Users may need to override OS protections:
+When signing secrets are **not** configured, macOS artifacts are unsigned. Users may need to override OS protections:
 
 ### macOS
 
-1. Open the `.dmg` and drag `pp-browser` to Applications.
+1. Open the `.dmg` and drag **Frame** to Applications.
 2. On first launch, macOS Gatekeeper may block the app. Either:
    - Right-click the app → **Open** → confirm, or
    - **System Settings → Privacy & Security** → allow the app.
@@ -85,23 +91,14 @@ Linux dev installs still use `bin/pp-browser` and `share/pp-browser/assets/`; CP
 - [ ] Version bumped in `CMakeLists.txt`
 - [ ] `main` CI green ([`build.yml`](../.github/workflows/build.yml))
 - [ ] Smoke-tested packaged build locally (if possible on target OS)
+- [ ] macOS signing secrets configured (optional; unsigned OK until ready)
 
-## Future: code signing
-
-When certificates are available, extend the release workflow:
-
-### macOS
-
-- Import signing certificate and notarization credentials as GitHub secrets
-- After `cmake --install`, run `codesign` on `pp-browser.app`
-- Submit to Apple with `notarytool`, staple the ticket, then run `cpack`
-
-### Windows
+## Future: Windows code signing
 
 - Import an Authenticode certificate (`.pfx`) as a secret
 - Sign the NSIS installer (or the main exe before packaging) with `signtool`
 
-Document secret names and exact commands when signing is enabled.
+Document secret names and exact commands when Windows signing is enabled.
 
 ## Deferred
 
@@ -110,3 +107,4 @@ Document secret names and exact commands when signing is enabled.
 | Intel macOS / universal binary | Current GHA `macos-14` is arm64 only |
 | Linux `.deb` / AppImage | Not in current target (no Linux desktop release artifact) |
 | Auto-update channel | Separate effort |
+| iOS distribution | Separate Xcode target; see [PLATFORMS.md](../architecture/PLATFORMS.md) |
