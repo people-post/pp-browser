@@ -4,7 +4,7 @@
 
 namespace pbr {
 
-// Reserved for a future iOS build; not selected at runtime on desktop or Android.
+// Selected at runtime on iPhone/iPad (TARGET_OS_IPHONE).
 class IosPathProvider : public IPathProvider {
 public:
   std::string ConfigDir() const override;

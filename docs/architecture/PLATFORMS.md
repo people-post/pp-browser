@@ -41,19 +41,22 @@ Do not issue OpenGL calls after `SDL_EVENT_WILL_ENTER_BACKGROUND`; SDL may have 
 
 Build: [BUILD.md](../ops/BUILD.md#android-local).
 
-## iOS (reserved)
+## iOS (scaffold)
 
-iOS is not shipped yet. Shared abstractions exist for a future Xcode target:
+iOS builds use CMake + Xcode toolchains from the repo root (no separate Gradle-style wrapper yet). Simulator builds work unsigned; device builds need Apple provisioning.
 
-| Component | Status |
-|-----------|--------|
-| `PlatformKind::IOS` | Defined |
-| `IosPathProvider` / `IosAssetLocator` | Stubs use relative bundle paths (same as Android) |
-| `SdlAssetFileInterface` | Ready for iOS bundle reads |
-| CMake | `-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator -DCMAKE_OSX_ARCHITECTURES=arm64` |
-| Renderer | GLES via SDL (same pattern as Android); Metal is a later fork change |
-| libp2p | Built and linked on all platforms |
-| MCP | HTTP URL only (no subprocess on iOS) |
+| Component | Desktop | iOS |
+|-----------|---------|-----|
+| `Platform::Detect()` | `Desktop` | `IOS` (`TARGET_OS_IPHONE`) |
+| `IPathProvider` | `DesktopPathProvider` | `IosPathProvider` (SDL pref path sandbox) |
+| `IAssetLocator` | `DesktopAssetLocator` | `IosAssetLocator` → `Frame.app/assets/` |
+| `AssetIO` | filesystem | `SdlAssetFileInterface` + bundle-relative paths |
+| Renderer | OpenGL 3.3 | OpenGL ES 3 (SDL) |
+| libp2p | Built and linked | Built and linked |
+| MCP | stdio + HTTP | HTTP URL only |
+| Push | N/A (desktop local notify) | APNs deferred — placeholders in `packaging/ios/` |
+
+Build and signing placeholders: [IOS_BUILD.md](../ops/IOS_BUILD.md). Scripts: [`scripts/ios_build.sh`](../../scripts/ios_build.sh), [`scripts/ios_sign.sh`](../../scripts/ios_sign.sh).
 
 ## Deferred
 
