@@ -9,7 +9,7 @@ The Window Shell replaces the old split-panel layout with a role-based, responsi
 | Subsystem | Module | Role |
 |-----------|--------|------|
 | Layout | `ShellLayout` | Pure width/mode/visibility math |
-| Navigation | `ShellHost`, `ViewCatalog` | Pane registry, overlays, DOM sync |
+| Navigation | `ShellHost`, `ViewCatalog`, `FlowCoordinator` | Pane registry, overlays, multi-step flows, DOM sync |
 | Interruption | `ShellInterruption` | Escape/back/scrim dismiss ordering |
 | Feedback | `ShellFeedback` | Toast, banner, alert/confirm dialog |
 
@@ -56,6 +56,32 @@ Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).
 6. Base panes
 
 Escape (priority 110) calls `ShellHost::HandleDismiss()` before app quit (priority 100). Toasts and banners are informational and not in the dismiss stack.
+
+## Presentation taxonomy
+
+Choose the lightest primitive that fits the user task:
+
+| Style | API | Use when | Examples |
+|-------|-----|----------|----------|
+| **Pane navigation** | `SetPrimaryPane`, `PushTransient` / `PopTransient` | User stays in a tab; back returns within that tab | Sessions→chat, Contacts→detail (compact uses transient) |
+| **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`) |
+| **Atomic feedback** | `ShellFeedback` dialog/toast | One-shot confirm/rename/prompt with no surrounding flow | Delete confirm, rename thread |
+
+**Do not** stack `ShellFeedback::ShowPrompt` on top of an active `PushLayer` flow. Keep wizard steps in the same overlay (or push a dedicated step view on the overlay stack).
+
+### FlowCoordinator
+
+`FlowCoordinator` (`feature/ui/FlowCoordinator.*`) coordinates multi-step modal flows over overlay layers:
+
+- `BeginModal(layer_id, on_step_back, on_cancel)` — register handlers when opening a modal flow
+- `HandleDismiss()` — called from `ShellHost::HandleDismiss()` before popping overlays; step-back handler can return to a previous step instead of closing
+- `NotifyLayerClosing(id)` — sync controller state when the user closes the layer via scrim/×
+
+Reference implementation: group create in `PeoplePickerController` (select members → name group in one overlay).
+
+### Compact drill-down
+
+Prefer `PushTransient("contact_detail")` over inline `show_detail_` flags in list RML. The shell renders transient chrome (back button wired to `transient_back()`). Controllers should listen with `ShellHost::SetOnTransientPopped()` to clear selection state.
 
 ## RML / data model
 

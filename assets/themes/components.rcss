@@ -1947,6 +1947,44 @@ select selectbox option {
   padding-top: 8dp;
 }
 
+.people-picker-name,
+.people-picker-select {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 12dp;
+}
+
+.people-picker-name-help {
+  margin: 0;
+}
+
+.people-picker-name-field {
+  flex-shrink: 0;
+}
+
+.people-picker-members {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.people-picker-members-label {
+  margin: 0 0 4dp 0;
+}
+
+.people-picker-member-chips {
+  flex-wrap: wrap;
+  gap: 6dp;
+}
+
+.people-picker-member-chip {
+  padding: 4dp 10dp;
+  border-radius: 999dp;
+  font-size: 13dp;
+}
+
 .contact-detail-panel {
   display: flex;
   flex-direction: column;

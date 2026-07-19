@@ -8,6 +8,7 @@
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
+#include "feature/ui/FlowCoordinator.h"
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
 #include "base/ui/ViewCatalog.h"
@@ -287,8 +288,12 @@ void ShellHost::PopTransient() {
   if (state_.transient_stack.empty()) {
     return;
   }
+  const std::string popped_key = state_.transient_stack.back().spec.key;
   state_.transient_stack.pop_back();
   state_.transient_active = !state_.transient_stack.empty();
+  if (on_transient_popped_) {
+    on_transient_popped_(popped_key);
+  }
   RequestSyncLayout();
 }
 
@@ -307,6 +312,8 @@ void ShellHost::CloseLayer(int layer_id) {
   if (state_.overlay_stack.empty()) {
     return;
   }
+  const int closing_id = layer_id < 0 ? state_.overlay_stack.back().id : layer_id;
+  FlowCoordinator::Instance().NotifyLayerClosing(closing_id);
   if (layer_id < 0) {
     state_.overlay_stack.pop_back();
   } else {
@@ -337,6 +344,11 @@ bool ShellHost::HandleDismiss() {
       PinGateController::Instance().OnCancel();
     }
     // Unlock: consume Escape without dismissing or quitting.
+    return true;
+  }
+  if (FlowCoordinator::Instance().HandleDismiss()) {
+    RequestSyncLayout();
+    DirtyWindow();
     return true;
   }
   if (!ShellInterruption::DismissTop(state_)) {
@@ -388,6 +400,10 @@ void ShellHost::SetOnBeforeTransientMount(std::function<void(const std::string& 
 
 void ShellHost::SetOnTransientMounted(std::function<void(const std::string& key)> callback) {
   on_transient_mounted_ = std::move(callback);
+}
+
+void ShellHost::SetOnTransientPopped(std::function<void(const std::string& key)> callback) {
+  on_transient_popped_ = std::move(callback);
 }
 
 void ShellHost::SetOnNavTabChanged(std::function<void(NavTab tab)> callback) {

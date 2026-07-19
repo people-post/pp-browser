@@ -50,6 +50,7 @@ public:
   void SetActivityVisible(bool visible);
   void SetOnBeforeTransientMount(std::function<void(const std::string& key)> callback);
   void SetOnTransientMounted(std::function<void(const std::string& key)> callback);
+  void SetOnTransientPopped(std::function<void(const std::string& key)> callback);
   void SetOnNavTabChanged(std::function<void(NavTab tab)> callback);
   void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
   void SetOnLayoutSynced(std::function<void()> callback);
@@ -114,6 +115,7 @@ private:
   ShellChatOverlayGesture chat_overlay_gesture_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
+  std::function<void(const std::string&)> on_transient_popped_;
   std::function<void(NavTab)> on_nav_tab_changed_;
   std::function<void(LayoutMode)> on_layout_mode_changed_;
   std::function<void()> on_layout_synced_;

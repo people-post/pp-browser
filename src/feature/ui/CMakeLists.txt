@@ -6,6 +6,7 @@ pp_browser_add_feature_library(pp_feature_ui
     PeoplePickerController.cpp
     DataModelHost.cpp
     DocumentLoader.cpp
+    FlowCoordinator.cpp
     PinGateController.cpp
     ProfileSettingsSection.cpp
     RmlMount.cpp
