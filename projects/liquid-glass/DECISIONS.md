@@ -1,0 +1,88 @@
+# Liquid Glass — decisions
+
+Record dated outcomes. When shipped, mark **superseded by** stable doc — do not duplicate normative tables in two places.
+
+---
+
+## LG001 — Compact-only scope
+
+**Date:** 2026-07-19  
+**Status:** Accepted  
+**Decision:** Liquid Glass applies only when `layout_mode == compact` (&lt;768dp). Expanded desktop shell keeps current flat productivity surfaces.  
+**Rationale:** Apple Liquid Glass is a mobile idiom; expanded layout users expect dense pane separation (Notion/Slack). Reduces blast radius and GPU cost on desktop multi-pane.  
+**Superseded by:** (pending) `docs/ui/UI_DESIGN_SYSTEM.md` Materials section
+
+---
+
+## LG002 — RmlUi backdrop-filter first; no native UIVisualEffectView in v1
+
+**Date:** 2026-07-19  
+**Status:** Accepted  
+**Decision:** Implement glass via RCSS `backdrop-filter` and GL3/GLES renderer path shared with Android/desktop. Do not embed native iOS `UIVisualEffectView` or Android-only blur overlays in v1.  
+**Rationale:** Single RML tree, one QA matrix, matches existing render stack. Native materials can be revisited if GLES path cannot reach fidelity on Apple Silicon iOS devices.  
+**Superseded by:** —
+
+---
+
+## LG003 — Chrome surface inventory (open)
+
+**Date:** 2026-07-19  
+**Status:** **Open — resolve before lg3**  
+**Options:**
+
+| Option | Surfaces |
+|--------|----------|
+| **A (minimal)** | Bottom nav pill + chat/transient headers only |
+| **B (recommended)** | A + auxiliary sheet header strip + Home composer strip |
+| **C (max)** | B + full sheet glass body + scrim tint adjustment |
+
+**Recommendation:** B — highest impact without full-sheet blur cost.  
+**Owner:** Product / design
+
+---
+
+## LG004 — Renderer fidelity path (open)
+
+**Date:** 2026-07-19  
+**Status:** **Open — resolve after lg2 visual review**  
+**Decision rule:**
+
+- If lg2 blur + lg3 shape passes side-by-side iOS 26 tab bar review → **skip lg5**.
+- If highlight/refraction clearly missing → time-box lg5 shader spike (max ~3 engineering days).
+
+**Owner:** Engineering + design review
+
+---
+
+## LG005 — Performance reference device (open)
+
+**Date:** 2026-07-19  
+**Status:** **Open — resolve before lg6 gate**  
+**Decision:** Name one **minimum Android device** (or emulator profile) and one **iOS device/simulator** for FPS acceptance.  
+**Placeholder:** Pixel 6a class / iPhone 15 Simulator — replace with owner hardware.  
+**Gate:** Compact chat scroll avg frame time regression ≤ 4ms vs glass-off on reference Android.
+
+---
+
+## LG006 — Reduce transparency setting (open)
+
+**Date:** 2026-07-19  
+**Status:** **Open — resolve before lg6**  
+**Options:**
+
+| Option | Behavior |
+|--------|----------|
+| **A** | New Me → Accessibility toggle “Reduce transparency” |
+| **B** | Follow system only (iOS `UIAccessibilityIsReduceTransparencyEnabled` — needs platform bridge) |
+| **C** | A + system when bridge exists |
+
+**Recommendation:** A for v1 (consistent cross-platform); add B when iOS shell matures.
+
+---
+
+## LG007 — Feature flag default (open)
+
+**Date:** 2026-07-19  
+**Status:** **Open — resolve at lg6**  
+**Options:** Always on when compact | `ProfilePreferences` user toggle | compile-time `PP_BROWSER_LIQUID_GLASS`  
+**Recommendation:** Profile pref default **on**, hidden from Settings until lg3 polish complete; allows internal dogfood off switch.
