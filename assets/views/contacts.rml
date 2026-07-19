@@ -1,5 +1,5 @@
 <div class="contacts-panel" data-model="contacts">
-  <div class="contacts-list-view" data-if="!compact_layout || !show_detail">
+  <div class="contacts-list-view">
     <div class="contacts-header row">
       <p class="contacts-header-title">Contacts</p>
       <div class="contacts-header-actions row">
@@ -45,115 +45,6 @@
         </button>
       </div>
       <p class="text muted" data-if="contacts.size == 0 && search_query != ''">No matching contacts.</p>
-    </div>
-  </div>
-
-  <div data-if="compact_layout && show_detail" class="contacts-detail-view stack">
-    <div class="contacts-detail-header row">
-      <button class="contacts-back-btn" type="button" data-event-click="back_to_list()">
-        <svg src="../icons/back.svg" width="18" height="18"></svg>
-      </button>
-      <p class="contacts-header-title">Contact</p>
-    </div>
-
-    <div class="contacts-detail-body stack">
-      <div class="contact-profile-card stack">
-        <label class="settings-field contacts-edit-field">
-          <span class="text muted">Display name</span>
-          <input class="field" type="text" data-value="selected.display_name"
-                 data-event-change="on_contact_field_changed()" placeholder="Name"/>
-        </label>
-        <label class="settings-field contacts-edit-field">
-          <span class="text muted">Nickname</span>
-          <input class="field" type="text" data-value="selected.nickname"
-                 data-event-change="on_contact_field_changed()" placeholder="Optional nickname"/>
-        </label>
-        <label class="settings-field contacts-edit-field">
-          <span class="text muted">Relay ID</span>
-          <input class="field" type="text" data-value="selected.relay_id"
-                 data-event-change="on_contact_field_changed()" placeholder="Optional — offline relay"/>
-        </label>
-        <label class="settings-field contacts-edit-field">
-          <span class="text muted">Peer ID</span>
-          <input class="field" type="text" data-value="selected.peer_id"
-                 data-event-change="on_contact_field_changed()" placeholder="libp2p Peer ID"/>
-        </label>
-        <label class="settings-field contacts-edit-field">
-          <span class="text muted">Multiaddrs</span>
-          <textarea class="field contacts-multiaddrs-field" rows="3" data-value="selected.multiaddrs_text"
-                    data-event-change="on_contact_field_changed()"
-                    placeholder="One multiaddr per line (for direct messaging)"></textarea>
-        </label>
-        <p class="text muted me-profile-meta" data-if="selected.signing_fingerprint != ''">
-          Signing fingerprint: <span data-rml="selected.signing_fingerprint"></span>
-        </p>
-        <p class="text muted">Trust: <span data-rml="selected.trust"></span></p>
-        <div class="me-profile-actions row">
-          <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_contact_id()">
-            <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
-            Copy ID
-          </button>
-          <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_contact()">
-            <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
-            Share
-          </button>
-        </div>
-        <div class="contacts-trust-actions row">
-          <button class="btn btn-secondary contacts-trust-btn"
-                  data-class-contacts-trust-btn--active="selected.trust_key == 'friendly'"
-                  type="button" data-event-click="set_trust('friendly')">Friendly</button>
-          <button class="btn btn-secondary contacts-trust-btn"
-                  data-class-contacts-trust-btn--active="selected.trust_key == 'unknown'"
-                  type="button" data-event-click="set_trust('unknown')">Unknown</button>
-          <button class="btn btn-secondary contacts-trust-btn"
-                  data-class-contacts-trust-btn--active="selected.trust_key == 'blocked'"
-                  type="button" data-event-click="set_trust('blocked')">Blocked</button>
-        </div>
-        <div class="me-profile-actions row">
-          <button class="btn btn-secondary btn-icon" type="button" data-event-click="remove_contact()">
-            <svg src="../icons/trash.svg" width="14" height="14" crop-to-content="true"></svg>
-            Remove contact
-          </button>
-        </div>
-      </div>
-
-      <div class="contacts-threads stack" data-if="selected.threads.size > 0">
-        <p class="settings-section-title">Conversations</p>
-        <div data-for="thread : selected.threads" class="contacts-thread-row"
-             data-event-click="open_thread(thread.id)">
-          <div class="contacts-row-icon" data-if="thread.kind == 'private'">
-            <svg src="../icons/lock.svg" width="14" height="14" crop-to-content="true"></svg>
-          </div>
-          <div class="contacts-row-icon" data-if="thread.kind == 'public'">
-            <svg src="../icons/message.svg" width="14" height="14" crop-to-content="true"></svg>
-          </div>
-          <div class="contacts-row-body">
-            <p class="contacts-row-title" data-rml="thread.title"></p>
-            <p class="contacts-row-subtitle text muted" data-rml="thread.channel_label"></p>
-          </div>
-          <span class="badge-count contacts-unread"
-                data-if="thread.unread_count > 0"
-                data-rml="thread.unread_display"></span>
-        </div>
-      </div>
-    </div>
-
-    <div class="contacts-actions stack">
-      <p class="text muted contacts-actions-hint" data-if="selected.can_message">
-        Secure uses a shared key. Public chat is encrypted without a private shared key.
-      </p>
-      <p class="text muted contacts-actions-hint" data-if="!selected.can_message" data-rml="selected.message_hint"></p>
-      <div class="contacts-action-buttons row" data-if="selected.can_message">
-        <button class="btn btn-primary btn-icon contacts-action-secure" type="button"
-                data-event-click="secure_message()">
-          <svg src="../icons/lock.svg" width="14" height="14" crop-to-content="true"></svg>
-          Secure message
-        </button>
-        <button class="btn btn-secondary btn-icon" type="button" data-event-click="start_chat()">
-          <svg src="../icons/message.svg" width="14" height="14" crop-to-content="true"></svg>
-          Public chat
-        </button>
-      </div>
     </div>
   </div>
 </div>

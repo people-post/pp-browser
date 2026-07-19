@@ -70,6 +70,10 @@ std::string MultiaddrsToText(const std::vector<std::string>& multiaddrs) {
   return out.str();
 }
 
+bool IsContactDetailTransientActive(const ShellState& state) {
+  return !state.transient_stack.empty() && state.transient_stack.back().spec.key == "contact_detail";
+}
+
 std::string IdentityKindLabel(const ContactIdKind kind) {
   switch (kind) {
   case ContactIdKind::RelayUser:
@@ -294,7 +298,7 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
   }
   context_ = context;
 
-  return DataModelHost::Instance().Register(context, "contacts", [](Rml::DataModelConstructor& ctor) {
+  const bool registered = DataModelHost::Instance().Register(context, "contacts", [](Rml::DataModelConstructor& ctor) {
     auto& controller = ContactsController::Instance();
     if (auto list_handle = ctor.RegisterStruct<ContactListRow>()) {
       list_handle.RegisterMember("id", &ContactListRow::id);
@@ -339,7 +343,6 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("contacts", &controller.contacts_);
     ctor.Bind("search_query", &controller.search_query_);
     ctor.Bind("compact_layout", &controller.compact_layout_);
-    ctor.Bind("show_detail", &controller.show_detail_);
     ctor.Bind("selected", &controller.selected_);
     ctor.BindEventCallback("select_contact", &ContactsController::SelectContactCallback);
     ctor.BindEventCallback("back_to_list", &ContactsController::BackToListCallback);
@@ -355,6 +358,16 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
     ctor.BindEventCallback("on_contact_field_changed", &ContactsController::OnContactFieldChangedCallback);
   });
+
+  if (registered) {
+    ShellHost::Instance().SetOnTransientPopped([](const std::string& key) {
+      if (key == "contact_detail") {
+        ContactsController::Instance().OnDetailDismissed();
+      }
+    });
+  }
+
+  return registered;
 }
 
 void ContactsController::DirtyAll() {
@@ -362,7 +375,6 @@ void ContactsController::DirtyAll() {
   host.Dirty("contacts", "contacts");
   host.Dirty("contacts", "search_query");
   host.Dirty("contacts", "compact_layout");
-  host.Dirty("contacts", "show_detail");
   host.Dirty("contacts", "selected");
 }
 
@@ -373,14 +385,23 @@ void ContactsController::SyncLayoutMode() {
   }
 
   compact_layout_ = compact;
+  ShellState& state = ShellHost::Instance().State();
   if (!compact) {
-    show_detail_ = false;
+    if (IsContactDetailTransientActive(state)) {
+      ShellHost::Instance().PopTransient();
+    }
     if (!selected_.id.empty()) {
       ShellHost::Instance().SetPrimaryPane("contact_detail");
     }
   } else if (!selected_.id.empty()) {
-    show_detail_ = true;
     ShellHost::Instance().ClearPrimaryPane();
+    if (!IsContactDetailTransientActive(state)) {
+      PaneSpec spec;
+      spec.key = "contact_detail";
+      ShellHost::Instance().PushTransient(spec);
+    }
+  } else if (IsContactDetailTransientActive(state)) {
+    ShellHost::Instance().PopTransient();
   }
   DirtyAll();
 }
@@ -425,7 +446,6 @@ void ContactsController::Refresh() {
 
 void ContactsController::OnNavTabActivated() {
   FlushPending();
-  show_detail_ = false;
   selected_ = {};
   contact_dirty_ = false;
   debounce_deadline_ms_ = 0;
@@ -537,24 +557,54 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
     return;
   }
 
+  OpenContactDetailPane();
+  DirtyAll();
+}
+
+void ContactsController::OpenContactDetailPane() {
   compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  ShellState& state = ShellHost::Instance().State();
   if (compact_layout_) {
-    show_detail_ = true;
     ShellHost::Instance().ClearPrimaryPane();
-  } else {
-    show_detail_ = false;
-    ShellHost::Instance().SetPrimaryPane("contact_detail");
+    if (!IsContactDetailTransientActive(state)) {
+      PaneSpec spec;
+      spec.key = "contact_detail";
+      ShellHost::Instance().PushTransient(spec);
+    }
+    return;
   }
+
+  if (IsContactDetailTransientActive(state)) {
+    ShellHost::Instance().PopTransient();
+  }
+  ShellHost::Instance().SetPrimaryPane("contact_detail");
+}
+
+bool ContactsController::CloseContactDetailPane() {
+  ShellState& state = ShellHost::Instance().State();
+  if (IsContactDetailTransientActive(state)) {
+    ShellHost::Instance().PopTransient();
+    return true;
+  }
+  if (state.layout_mode != LayoutMode::Compact) {
+    ShellHost::Instance().ClearPrimaryPane();
+  }
+  return false;
+}
+
+void ContactsController::OnDetailDismissed() {
+  FlushPending();
+  selected_ = {};
+  contact_dirty_ = false;
+  debounce_deadline_ms_ = 0;
   DirtyAll();
 }
 
 void ContactsController::OnBackToList() {
   FlushPending();
-  show_detail_ = false;
-  selected_ = {};
-  contact_dirty_ = false;
-  debounce_deadline_ms_ = 0;
-  DirtyAll();
+  if (!CloseContactDetailPane()) {
+    OnDetailDismissed();
+  }
 }
 
 void ContactsController::OnContactFieldChanged() {
@@ -851,15 +901,11 @@ void ContactsController::OnRemoveContact() {
                                  ShellHost::Instance().DirtyWindow();
                                  return;
                                }
-                               show_detail_ = false;
-                               selected_ = {};
-                               contact_dirty_ = false;
-                               debounce_deadline_ms_ = 0;
+                               if (!CloseContactDetailPane()) {
+                                 OnDetailDismissed();
+                               }
                                SyncFromStore();
                                DirtyAll();
-                               if (ShellHost::Instance().State().layout_mode != LayoutMode::Compact) {
-                                 ShellHost::Instance().ClearPrimaryPane();
-                               }
                                ShellFeedback::ShowToast(ShellHost::Instance().State(), "Contact removed");
                                MessagingHub::Instance().Inbox().NotifyThreadChanged();
                                ShellHost::Instance().RequestSyncLayout();

@@ -586,6 +586,11 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
+.people-picker-member-chip {
+  background-color: #1e293b;
+  color: #c7d2fe;
+}
+
 .contacts-trust-btn--active {
   background-color: #312e81;
   color: #e0e7ff;

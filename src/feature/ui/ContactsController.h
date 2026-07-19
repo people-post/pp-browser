@@ -70,6 +70,7 @@ public:
   void Tick();
   void FlushPending();
   void OnSelectContact(const std::string& contact_id);
+  void OnDetailDismissed();
 
 private:
   ContactsController();
@@ -90,6 +91,8 @@ private:
 
   void SyncFromStore();
   void LoadSelectedDetail(const std::string& contact_id);
+  void OpenContactDetailPane();
+  bool CloseContactDetailPane();
   void OnBackToList();
   void OnStartChat();
   void OnSecureMessage();
@@ -110,7 +113,6 @@ private:
   std::vector<ContactListRow> contacts_;
   Rml::String search_query_;
   bool compact_layout_ = false;
-  bool show_detail_ = false;
   ContactDetail selected_;
   Rml::Context* context_ = nullptr;
   bool contact_dirty_ = false;

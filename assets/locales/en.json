@@ -3,6 +3,7 @@
   "locale": "en",
   "strings": {
     "common.cancel": "Cancel",
+    "common.back": "Back",
     "common.ok": "OK",
     "common.continue": "Continue",
     "common.reset_defaults": "Reset to defaults",
@@ -130,9 +131,11 @@
     "people_picker.in_chat": "In chat",
     "people_picker.cta_select": "Select people",
     "people_picker.cta_message": "Message",
+    "people_picker.cta_next": "Next",
     "people_picker.cta_create_group": "Create group",
     "people_picker.group_title_prompt": "Group name",
     "people_picker.group_title_help": "Name this group for everyone",
+    "people_picker.members_label": "Members",
     "people_picker.default_group_title": "Group chat",
     "people_picker.pin_required": "PIN required to continue",
 

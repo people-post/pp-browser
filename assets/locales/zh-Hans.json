@@ -3,6 +3,7 @@
   "locale": "zh-Hans",
   "strings": {
     "common.cancel": "取消",
+    "common.back": "返回",
     "common.ok": "确定",
     "common.continue": "继续",
     "common.reset_defaults": "恢复默认",
@@ -130,9 +131,11 @@
     "people_picker.in_chat": "当前聊天",
     "people_picker.cta_select": "选择联系人",
     "people_picker.cta_message": "发消息",
+    "people_picker.cta_next": "下一步",
     "people_picker.cta_create_group": "创建群组",
     "people_picker.group_title_prompt": "群组名称",
     "people_picker.group_title_help": "为此群组命名（对所有人可见）",
+    "people_picker.members_label": "成员",
     "people_picker.default_group_title": "群聊",
     "people_picker.pin_required": "需要 PIN 才能继续",
 
