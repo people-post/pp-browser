@@ -63,7 +63,8 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | Doc | Topic |
 |-----|--------|
 | [ops/BUILD.md](ops/BUILD.md) | Build and test |
-| [ops/RELEASE.md](ops/RELEASE.md) | Release notes process |
+| [ops/RELEASE.md](ops/RELEASE.md) | Tagging, artifacts, release CI |
+| [ops/MACOS_SIGNING.md](ops/MACOS_SIGNING.md) | Apple Developer ID — sign + notarize Frame.app |
 | [ops/CONFIGURATION.md](ops/CONFIGURATION.md) | Config resolution, Me tab, presets, env vars |
 
 ---
