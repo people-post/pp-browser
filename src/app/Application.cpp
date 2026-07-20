@@ -13,6 +13,7 @@
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformServices.h"
 #include "base/platform/AppEventHooks.h"
+#include "base/platform/MobileWindowSizing.h"
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
 #include "feature/ui/ContactsController.h"
@@ -31,13 +32,6 @@
 #include "RmlUi_Renderer_GL3.h"
 #include "TextLoupeRenderer.h"
 
-#if defined(__APPLE__)
-#include <TargetConditionals.h>
-#endif
-#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
-#include <SDL3/SDL.h>
-#endif
-
 #ifdef PPBROWSER_ENABLE_DEBUGGER
 #include <RmlUi/Debugger.h>
 #endif
@@ -49,23 +43,6 @@ namespace {
 bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier,
                     float /*native_dp_ratio*/, bool priority) {
   return InputCoordinator::Instance().ProcessKeyDown(context, key, key_modifier, priority);
-}
-
-void ResolveMobileWindowSize(int& width, int& height) {
-#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
-  if (!SDL_WasInit(SDL_INIT_VIDEO)) {
-    SDL_InitSubSystem(SDL_INIT_VIDEO);
-  }
-  const SDL_DisplayID display = SDL_GetPrimaryDisplay();
-  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display);
-  if (mode && mode->w > 0 && mode->h > 0) {
-    width = mode->w;
-    height = mode->h;
-  }
-#else
-  (void)width;
-  (void)height;
-#endif
 }
 
 } // namespace

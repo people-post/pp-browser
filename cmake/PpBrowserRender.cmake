@@ -36,6 +36,7 @@ endfunction()
 function(pp_browser_add_rmlui_backend)
   set(_pp_rmlui_backend_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/platform/RmlUi_Platform_SDL.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration/platform/MobileGlLifecycle.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/renderer/RmlUi_Renderer_GL3.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/renderer/TextLoupeRenderer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/host/BrowserHost.cpp

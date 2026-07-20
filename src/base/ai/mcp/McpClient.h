@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/platform/os/OsProcess.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
@@ -42,16 +43,7 @@ private:
   bool http_ = false;
   std::string http_url_;
   int request_id_ = 1;
-
-#if defined(_WIN32)
-  void* process_ = nullptr;
-  void* stdin_write_ = nullptr;
-  void* stdout_read_ = nullptr;
-#else
-  int child_pid_ = -1;
-  int stdin_write_fd_ = -1;
-  int stdout_read_fd_ = -1;
-#endif
+  os::OsProcessPipe process_;
 };
 
 } // namespace pbr

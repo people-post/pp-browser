@@ -1,15 +1,7 @@
 #include "base/ai/mcp/McpClient.h"
 
 #include "base/net/HttpClient.h"
-
-#include <sstream>
-
-#ifndef _WIN32
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
+#include "base/platform/os/OsProcess.h"
 
 namespace pbr {
 
@@ -25,21 +17,7 @@ void McpClient::Stop() {
   if (!running_) {
     return;
   }
-#ifndef _WIN32
-  if (stdin_write_fd_ >= 0) {
-    close(stdin_write_fd_);
-    stdin_write_fd_ = -1;
-  }
-  if (stdout_read_fd_ >= 0) {
-    close(stdout_read_fd_);
-    stdout_read_fd_ = -1;
-  }
-  if (child_pid_ > 0) {
-    kill(child_pid_, SIGTERM);
-    waitpid(child_pid_, nullptr, 0);
-    child_pid_ = -1;
-  }
-#endif
+  process_.Stop();
   running_ = false;
   mock_ = false;
   http_ = false;
@@ -54,47 +32,14 @@ bool McpClient::Start(const std::string& command, const std::vector<std::string>
     running_ = true;
     return true;
   }
-#ifndef _WIN32
-  int stdin_pipe[2]{};
-  int stdout_pipe[2]{};
-  if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0) {
-    log().error << "Failed to create pipes for MCP process";
-    return false;
+  if (!process_.Start(command, args)) {
+    mock_ = true;
+    running_ = true;
+    return true;
   }
-
-  child_pid_ = fork();
-  if (child_pid_ == 0) {
-    dup2(stdin_pipe[0], STDIN_FILENO);
-    dup2(stdout_pipe[1], STDOUT_FILENO);
-    close(stdin_pipe[0]);
-    close(stdin_pipe[1]);
-    close(stdout_pipe[0]);
-    close(stdout_pipe[1]);
-
-    std::vector<char*> argv;
-    argv.push_back(const_cast<char*>(command.c_str()));
-    for (const auto& arg : args) {
-      argv.push_back(const_cast<char*>(arg.c_str()));
-    }
-    argv.push_back(nullptr);
-    execvp(command.c_str(), argv.data());
-    _exit(127);
-  }
-
-  close(stdin_pipe[0]);
-  close(stdout_pipe[1]);
-  stdin_write_fd_ = stdin_pipe[1];
-  stdout_read_fd_ = stdout_pipe[0];
   running_ = true;
-  log().info << "Started MCP process: " << command << " (pid=" << child_pid_ << ")";
+  log().info << "Started MCP process: " << command;
   return true;
-#else
-  (void)args;
-  (void)command;
-  mock_ = true;
-  running_ = true;
-  return true;
-#endif
 }
 
 bool McpClient::StartHttp(const std::string& url) {
@@ -168,7 +113,10 @@ Roe<nlohmann::json> McpClient::Request(const std::string& method, const nlohmann
     return resp.value("result", nlohmann::json::object());
   }
 
-#ifndef _WIN32
+  if (!process_.IsActive()) {
+    return nlohmann::json::object();
+  }
+
   nlohmann::json req = {{"jsonrpc", "2.0"},
                         {"id", request_id_++},
                         {"method", method},
@@ -176,14 +124,14 @@ Roe<nlohmann::json> McpClient::Request(const std::string& method, const nlohmann
 
   const std::string payload = req.dump() + "\n";
   log().debug << "MCP request: " << method;
-  if (write(stdin_write_fd_, payload.data(), payload.size()) < 0) {
+  if (process_.Write(payload.data(), payload.size()) < 0) {
     log().error << "MCP write failed for method: " << method;
     return Error("MCP write failed");
   }
 
   std::string line;
   char ch = 0;
-  while (read(stdout_read_fd_, &ch, 1) == 1) {
+  while (process_.Read(&ch, 1) == 1) {
     if (ch == '\n') {
       break;
     }
@@ -205,11 +153,6 @@ Roe<nlohmann::json> McpClient::Request(const std::string& method, const nlohmann
     return Error(resp["error"].dump());
   }
   return resp.value("result", nlohmann::json::object());
-#else
-  (void)method;
-  (void)params;
-  return nlohmann::json::object();
-#endif
 }
 
 Roe<void> McpClient::Initialize() {

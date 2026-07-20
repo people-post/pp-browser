@@ -1,5 +1,6 @@
 #include "base/net/RegistrationClientUtil.h"
 
+#include "base/platform/os/OsTime.h"
 #include "common/Utilities.h"
 #include "base/net/RegistrationSignPayload.h"
 
@@ -40,11 +41,7 @@ std::optional<int64_t> ParseIso8601ToUnixMs(const std::string& iso) {
   tm.tm_sec = second;
   tm.tm_isdst = 0;
 
-#if defined(_WIN32)
-  const time_t seconds = _mkgmtime(&tm);
-#else
-  const time_t seconds = timegm(&tm);
-#endif
+  const time_t seconds = os::TimeGm(&tm);
   if (seconds == static_cast<time_t>(-1)) {
     return std::nullopt;
   }
