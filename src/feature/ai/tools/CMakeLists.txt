@@ -3,5 +3,6 @@ pp_browser_add_feature_library(pp_feature_ai_tools
     McpToolAdapter.cpp
     WebSearchTool.cpp
   PUBLIC_LIBS
+    pp_base_net
     nlohmann_json::nlohmann_json
     CURL::libcurl)

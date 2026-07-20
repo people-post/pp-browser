@@ -24,6 +24,7 @@ Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libma
 | `MessagingHub` | Foreground poll loop | `BackgroundSyncScheduler`: 2s foreground / ~45s background; FCM wake + WorkManager when enabled |
 | Navigation | Escape → dismiss then exit | Back → dismiss then minimize; Escape same as desktop |
 | MCP stdio | Supported | Skipped; use `mcp.url` |
+| HTTPS (curl + BoringSSL) | Host CA bundle / Secure Transport / Schannel | `os::TlsCaPath()` → system CAPATH; `ApplyCurlSslDefaults` applies it to curl |
 
 Profile-scoped data layout (`profiles/{id}/`) is unchanged on mobile.
 

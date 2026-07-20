@@ -1,5 +1,6 @@
 pp_browser_add_base_library(pp_base_net
   SOURCES
+    CurlSsl.cpp
     HttpClient.cpp
     RelayApiSignPayload.cpp
     RelaySignBytes.cpp

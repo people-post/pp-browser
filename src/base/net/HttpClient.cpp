@@ -1,6 +1,7 @@
 #include "base/net/HttpClient.h"
 
 #include "base/error/AppError.h"
+#include "base/net/CurlSsl.h"
 
 #include <curl/curl.h>
 
@@ -20,6 +21,8 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
   if (!curl) {
     return AppError::Internal("Failed to init curl");
   }
+
+  ApplyCurlSslDefaults(curl);
 
   std::string response_body;
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());

@@ -102,6 +102,13 @@ else()
   find_package(OpenSSL REQUIRED)
 endif()
 
+# Android has no /etc/ssl CA bundle; BoringSSL needs an explicit CAPATH (hashed PEMs).
+# Runtime os::TlsCaPath() may prefer the Conscrypt apex path when present.
+if(ANDROID)
+  set(CURL_CA_BUNDLE "none" CACHE STRING "" FORCE)
+  set(CURL_CA_PATH "/system/etc/security/cacerts" CACHE STRING "" FORCE)
+endif()
+
 add_subdirectory("${PP_THIRD_PARTY_DIR}/curl"
                  "${CMAKE_BINARY_DIR}/third_party/curl" EXCLUDE_FROM_ALL)
 

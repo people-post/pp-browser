@@ -1,6 +1,7 @@
 #include "base/ai/LlmClient.h"
 
 #include "base/error/AppError.h"
+#include "base/net/CurlSsl.h"
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
@@ -178,6 +179,7 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
   if (!curl) {
     return AppError::Internal("curl init failed");
   }
+  ApplyCurlSslDefaults(curl);
 
   struct curl_slist* headers = nullptr;
   headers = curl_slist_append(headers, "Content-Type: application/json");

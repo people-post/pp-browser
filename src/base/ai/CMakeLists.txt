@@ -11,6 +11,7 @@ pp_browser_add_base_library(pp_base_ai
   PUBLIC_LIBS
     pp_base_error
     pp_base_messaging
+    pp_base_net
     nlohmann_json::nlohmann_json
     CURL::libcurl)
 

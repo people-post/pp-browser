@@ -39,6 +39,8 @@ set(_pp_platform_os_sources
   os/OsFile_Posix.cpp
   os/OsTime_Posix.cpp
   os/OsProcess_Posix.cpp
+  os/OsTlsCaPath_Android.cpp
+  os/OsTlsCaPath_Default.cpp
 )
 
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")

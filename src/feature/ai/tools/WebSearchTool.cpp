@@ -1,6 +1,7 @@
 #include "feature/ai/tools/WebSearchTool.h"
 
 #include "common/Logger.h"
+#include "base/net/CurlSsl.h"
 #include "base/platform/ProductBranding.h"
 
 #include <curl/curl.h>
@@ -136,6 +137,7 @@ Roe<std::string> HttpGet(const std::string& url, const std::vector<std::string>&
   if (!curl) {
     return Error("curl init failed");
   }
+  ApplyCurlSslDefaults(curl);
 
   struct curl_slist* headers = nullptr;
   for (const std::string& header : DefaultHeaders()) {
@@ -169,6 +171,7 @@ Roe<std::string> HttpPost(const std::string& url, const std::string& body,
   if (!curl) {
     return Error("curl init failed");
   }
+  ApplyCurlSslDefaults(curl);
 
   struct curl_slist* headers = nullptr;
   headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
@@ -428,6 +431,7 @@ Roe<std::string> SearchTavily(const SearchConfig& config, const std::string& que
   if (!curl) {
     return Error("curl init failed");
   }
+  ApplyCurlSslDefaults(curl);
 
   struct curl_slist* headers = nullptr;
   headers = curl_slist_append(headers, "Content-Type: application/json");
