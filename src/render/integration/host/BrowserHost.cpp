@@ -11,6 +11,7 @@
 #include <RmlUi/Core/Log.h>
 #include <RmlUi/Core/Profiling.h>
 
+#include <atomic>
 #include <cstdio>
 #include <string>
 
@@ -123,6 +124,9 @@ static Rml::UniquePtr<BackendData> data;
 #if SDL_MAJOR_VERSION >= 3
 static PreProcessEventCallback g_pre_process_event = nullptr;
 #endif
+// Custom SDL user event that wakes SDL_WaitEventTimeout when UI work is posted.
+static Uint32 g_wake_event_type = 0;
+static std::atomic<bool> g_wake_pending{false};
 
 bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize)
 {
@@ -135,6 +139,9 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0)
 		return false;
 #endif
+
+	g_wake_event_type = SDL_RegisterEvents(1);
+	g_wake_pending.store(false, std::memory_order_relaxed);
 
 	// Submit click events when focusing the window.
 	SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
@@ -335,6 +342,8 @@ void Backend::Shutdown()
 	SDL_DestroyWindow(data->window);
 
 	data.reset();
+	g_wake_event_type = 0;
+	g_wake_pending.store(false, std::memory_order_relaxed);
 
 	SDL_Quit();
 }
@@ -405,14 +414,24 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 	SDL_Event ev;
 	if (force_frame)
 		has_event = SDL_PollEvent(&ev);
-	else if (power_save)
-		has_event = SDL_WaitEventTimeout(&ev, static_cast<int>(Rml::Math::Min(context->GetNextUpdateDelay(), 10.0) * 1000));
-	else
+	else if (power_save) {
+		// Cap idle wait so main-loop work (relay poll tick, libp2p tick, badge refresh) is not
+		// starved until the next touch. Foreground inbox poll is 2s; the old 10s cap made Android
+		// (and idle desktop) feel like notifications only appear after interaction.
+		constexpr double k_max_power_save_wait_sec = 2.0;
+		const double delay_sec = Rml::Math::Min(context->GetNextUpdateDelay(), k_max_power_save_wait_sec);
+		has_event = SDL_WaitEventTimeout(&ev, static_cast<int>(delay_sec * 1000));
+	} else
 		has_event = SDL_PollEvent(&ev);
 
 	while (has_event)
 	{
 		bool propagate_event = true;
+		if (g_wake_event_type != 0 && ev.type == g_wake_event_type) {
+			g_wake_pending.store(false, std::memory_order_relaxed);
+			has_event = SDL_PollEvent(&ev);
+			continue;
+		}
 #if SDL_MAJOR_VERSION >= 3
 		if (g_pre_process_event && g_pre_process_event(context, ev, propagate_event)) {
 			has_event = SDL_PollEvent(&ev);
@@ -499,6 +518,28 @@ void Backend::RequestExit()
 	RMLUI_ASSERT(data);
 
 	data->running = false;
+}
+
+void Backend::WakeEventLoop()
+{
+	if (!data || g_wake_event_type == 0)
+		return;
+
+	// Coalesce: one pending wake is enough to drain any number of queued UI tasks.
+	bool expected = false;
+	if (!g_wake_pending.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+		return;
+
+	SDL_Event ev{};
+	ev.type = g_wake_event_type;
+#if SDL_MAJOR_VERSION >= 3
+	if (!SDL_PushEvent(&ev))
+#else
+	if (SDL_PushEvent(&ev) < 0)
+#endif
+	{
+		g_wake_pending.store(false, std::memory_order_relaxed);
+	}
 }
 
 void Backend::BeginFrame()

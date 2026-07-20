@@ -47,6 +47,9 @@ public:
   bool HandleDismiss();
 
   void DirtyWindow();
+  // Deferred remount of the nav rail (safe from click handlers). Use when badge counts change
+  // and DirtyVariable alone may not refresh data-if views.
+  void RequestRemountNavRail();
   void SetActivityVisible(bool visible);
   void SetOnBeforeTransientMount(std::function<void(const std::string& key)> callback);
   void SetOnTransientMounted(std::function<void(const std::string& key)> callback);

@@ -21,6 +21,9 @@ public:
 
   static void PostTask(BrowserThreadId id, std::function<void()> task);
 
+  // Optional hook (typically Backend::WakeEventLoop) so UI posts break power-save waits.
+  static void SetUIWakeCallback(std::function<void()> callback);
+
   static void PauseIO();
   static void ResumeIO();
 
@@ -37,6 +40,7 @@ public:
 private:
   static std::unique_ptr<SequencedTaskRunner> ui_runner_;
   static std::unique_ptr<SequencedTaskRunner> io_runner_;
+  static std::function<void()> ui_wake_callback_;
 };
 
 } // namespace pbr

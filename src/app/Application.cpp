@@ -88,6 +88,8 @@ bool Application::Initialize(const char* window_title) {
     log().error << "Backend::Initialize failed (SDL/OpenGL window could not be created)";
     return false;
   }
+  // Power-save WaitEventTimeout otherwise holds UI posts (toasts, OS notify, inbox) until input.
+  BrowserThread::SetUIWakeCallback([]() { Backend::WakeEventLoop(); });
 
 #if RMLUI_SDL_VERSION_MAJOR >= 3
   if (!Platform::IsMobile()) {
@@ -247,6 +249,7 @@ void Application::Shutdown() {
     Rml::Debugger::Shutdown();
 #endif
     Rml::Shutdown();
+    BrowserThread::SetUIWakeCallback(nullptr);
     Backend::Shutdown();
 
     log().info << "Shutdown complete";

@@ -111,6 +111,13 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
       badge_handle.RegisterMember("contacts_unread_display", &NavBadgeState::contacts_unread_display);
     }
     ctor.Bind("nav_badges", &host.state_.nav_badges);
+    // Top-level scalars: DirtyVariable("nav_badges") alone has not been reliable for data-if/data-rml
+    // on nested struct members (Android needed remount/tab switches). Mirror the fields as scalars.
+    ctor.Bind("nav_sessions_unread", &host.state_.nav_badges.sessions_unread);
+    ctor.Bind("nav_contacts_unread", &host.state_.nav_badges.contacts_unread);
+    ctor.Bind("nav_me_attention", &host.state_.nav_badges.me_attention);
+    ctor.Bind("nav_sessions_unread_display", &host.state_.nav_badges.sessions_unread_display);
+    ctor.Bind("nav_contacts_unread_display", &host.state_.nav_badges.contacts_unread_display);
 
     ctor.BindEventCallback("toggle_auxiliary", &ShellHost::ToggleAuxiliaryCallback);
     ctor.BindEventCallback("open_auxiliary", &ShellHost::OpenAuxiliaryCallback);
@@ -363,6 +370,12 @@ bool ShellHost::HandleDismiss() {
 void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "layout_mode");
   DataModelHost::Instance().Dirty("window", "nav_tab");
+  DataModelHost::Instance().Dirty("window", "nav_badges");
+  DataModelHost::Instance().Dirty("window", "nav_sessions_unread");
+  DataModelHost::Instance().Dirty("window", "nav_contacts_unread");
+  DataModelHost::Instance().Dirty("window", "nav_me_attention");
+  DataModelHost::Instance().Dirty("window", "nav_sessions_unread_display");
+  DataModelHost::Instance().Dirty("window", "nav_contacts_unread_display");
   DataModelHost::Instance().Dirty("window", "compact_chat_open");
   DataModelHost::Instance().Dirty("window", "auxiliary_open");
   DataModelHost::Instance().Dirty("window", "auxiliary_available");
@@ -387,6 +400,18 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "activity_visible");
+}
+
+void ShellHost::RequestRemountNavRail() {
+  BrowserThread::PostTask(BrowserThreadId::UI, []() {
+    ShellHost& host = ShellHost::Instance();
+    // Compact chat overlay omits the rail from the DOM.
+    if (host.state_.layout_mode == LayoutMode::Compact && host.state_.compact_chat_open) {
+      return;
+    }
+    host.MountNavRail();
+    host.DirtyWindow();
+  });
 }
 
 void ShellHost::SetActivityVisible(bool visible) {
@@ -439,6 +464,8 @@ void ShellHost::RequestSyncLayout(bool restore_focus_after) {
     return;
   }
   sync_pending_ = true;
+  // Always defer: SyncLayout remounts the shell DOM. Flushing synchronously from a click
+  // handler (e.g. compact_chat_back) destroys the target element mid-dispatch and crashes.
   BrowserThread::PostTask(BrowserThreadId::UI, []() { ShellHost::Instance().FlushPendingSyncLayout(); });
 }
 
@@ -890,8 +917,8 @@ void ShellHost::SyncLayout() {
 }
 
 void ShellHost::Update(Rml::Context* context) {
-  // Wall clock: power-save WaitEventTimeout can sleep up to ~10s between frames, so a
-  // fake +=16ms clock made Short toasts linger for minutes on idle mobile screens.
+  // Wall clock: power-save WaitEventTimeout can sleep up to ~2s between idle frames, so a
+  // fake +=16ms clock made Short toasts linger far too long on idle mobile screens.
   // Must match ShellFeedback::ShowToast's default clock (steady_clock).
   using clock = std::chrono::steady_clock;
   elapsed_ms_ = static_cast<float>(

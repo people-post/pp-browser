@@ -1,4 +1,4 @@
-<div class="shell-nav-rail-inner" data-model="window">
+<div class="shell-nav-rail-inner">
   <button class="shell-nav-tab" type="button"
           data-class-shell-nav-tab--active="nav_tab == 'home'"
           data-event-click="select_nav_tab('home')">
@@ -13,8 +13,8 @@
     <div class="shell-nav-tab-icon-wrap">
       <svg src="../icons/sessions.svg" width="22" height="22" crop-to-content="true"></svg>
       <span class="badge-count badge-count--nav"
-            data-if="nav_badges.sessions_unread > 0"
-            data-rml="nav_badges.sessions_unread_display"></span>
+            data-if="nav_sessions_unread > 0"
+            data-rml="nav_sessions_unread_display"></span>
     </div>
     <p class="shell-nav-tab-label">{{i18n:nav.sessions}}</p>
   </button>
@@ -24,8 +24,8 @@
     <div class="shell-nav-tab-icon-wrap">
       <svg src="../icons/contacts.svg" width="22" height="22" crop-to-content="true"></svg>
       <span class="badge-count badge-count--nav"
-            data-if="nav_badges.contacts_unread > 0"
-            data-rml="nav_badges.contacts_unread_display"></span>
+            data-if="nav_contacts_unread > 0"
+            data-rml="nav_contacts_unread_display"></span>
     </div>
     <p class="shell-nav-tab-label">{{i18n:nav.contacts}}</p>
   </button>
@@ -35,7 +35,7 @@
           data-event-click="select_nav_tab('me')">
     <div class="shell-nav-tab-icon-wrap">
       <svg src="../icons/me.svg" width="22" height="22" crop-to-content="true"></svg>
-      <span class="badge-dot badge-dot--nav" data-if="nav_badges.me_attention"></span>
+      <span class="badge-dot badge-dot--nav" data-if="nav_me_attention"></span>
     </div>
     <p class="shell-nav-tab-label">{{i18n:nav.me}}</p>
   </button>

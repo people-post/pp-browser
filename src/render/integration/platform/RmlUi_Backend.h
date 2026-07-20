@@ -41,6 +41,9 @@ void RecoverAfterDeviceReset(Rml::Context* context);
 bool ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback = nullptr, bool power_save = false);
 void RequestExit();
 
+// Thread-safe: breaks SDL_WaitEventTimeout so posted UI work can run without waiting for input.
+void WakeEventLoop();
+
 void BeginFrame();
 void PresentFrame();
 

@@ -1158,6 +1158,8 @@ void ChatController::OnRotatePskExport() {
 }
 
 void ChatController::RefreshFromMessaging() {
+  const int prev_sessions = ShellHost::Instance().State().nav_badges.sessions_unread;
+  const int prev_contacts = ShellHost::Instance().State().nav_badges.contacts_unread;
   SyncShellSessions();
   SyncDisplayFromThread();
   UpdateThreadChrome();
@@ -1165,6 +1167,10 @@ void ChatController::RefreshFromMessaging() {
   DirtyChat();
   DirtyShell();
   ShellHost::Instance().DirtyWindow();
+  const NavBadgeState& badges = ShellHost::Instance().State().nav_badges;
+  if (badges.sessions_unread != prev_sessions || badges.contacts_unread != prev_contacts) {
+    ShellHost::Instance().RequestRemountNavRail();
+  }
 }
 
 void ChatController::OnProfileDataReset() {
@@ -2578,6 +2584,9 @@ bool ChatController::Setup(Rml::Context* context) {
     if (tab == NavTab::Contacts) {
       ContactsController::Instance().OnNavTabActivated();
     }
+    // Active-thread deduction for sessions badge depends on nav_tab.
+    BadgeAggregator::Instance().Refresh();
+    ShellHost::Instance().DirtyWindow();
     previous_tab = tab;
   });
   ShellHost::Instance().SetOnLayoutModeChanged([](LayoutMode mode) {

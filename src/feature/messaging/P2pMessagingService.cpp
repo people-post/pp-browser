@@ -1046,12 +1046,13 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
 
   last_relay_poll_ms_ = util::NowUnixMs();
 
-  bool expected = false;
-  if (!poll_pending_.compare_exchange_strong(expected, true)) {
-    return;
-  }
-
+  // Take poll_pending_ only on the IO thread after the task is queued. Setting it on the UI
+  // thread before PostTask left it stuck forever when IO was paused (PostTask drops work).
   BrowserThread::PostTask(BrowserThreadId::IO, [this]() {
+    bool expected = false;
+    if (!poll_pending_.compare_exchange_strong(expected, true)) {
+      return;
+    }
     struct PollGuard {
       std::atomic<bool>& pending;
       ~PollGuard() { pending = false; }
@@ -1103,22 +1104,22 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
         preview = decoded->text;
       }
       inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
-        if (!AppLifecycle::IsForeground() && inbox_.ActiveThreadId() != resolved_thread_id) {
-          std::string notice_title = "New message";
-          if (auto thread = store_.GetThread(resolved_thread_id)) {
-            if (*thread) {
-              notice_title = inbox_.ResolveThreadLabel(**thread).title;
-              if (notice_title.empty()) {
-                notice_title = "New message";
-              }
+      if (!AppLifecycle::IsForeground() && inbox_.ActiveThreadId() != resolved_thread_id) {
+        std::string notice_title = "New message";
+        if (auto thread = store_.GetThread(resolved_thread_id)) {
+          if (*thread) {
+            notice_title = inbox_.ResolveThreadLabel(**thread).title;
+            if (notice_title.empty()) {
+              notice_title = "New message";
             }
           }
-          background_notices.push_back(UnreadNotice{
-              .title = std::move(notice_title),
-              .body = preview && !preview->empty() ? *preview : "You have a new message",
-              .thread_id = resolved_thread_id,
-          });
         }
+        background_notices.push_back(UnreadNotice{
+            .title = std::move(notice_title),
+            .body = preview && !preview->empty() ? *preview : "You have a new message",
+            .thread_id = resolved_thread_id,
+        });
+      }
     }
 
     if (changed && on_messages_changed_) {

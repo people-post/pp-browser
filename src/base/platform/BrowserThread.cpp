@@ -4,6 +4,7 @@ namespace pbr {
 
 std::unique_ptr<SequencedTaskRunner> BrowserThread::ui_runner_;
 std::unique_ptr<SequencedTaskRunner> BrowserThread::io_runner_;
+std::function<void()> BrowserThread::ui_wake_callback_;
 
 void BrowserThread::Initialize() {
   if (!ui_runner_) {
@@ -15,6 +16,7 @@ void BrowserThread::Initialize() {
 }
 
 void BrowserThread::Shutdown() {
+  ui_wake_callback_ = nullptr;
   if (io_runner_) {
     io_runner_->Stop();
     io_runner_.reset();
@@ -42,6 +44,13 @@ bool BrowserThread::CurrentlyOn(const BrowserThreadId id) {
 
 void BrowserThread::PostTask(const BrowserThreadId id, std::function<void()> task) {
   Get(id).PostTask(std::move(task));
+  if (id == BrowserThreadId::UI && ui_wake_callback_) {
+    ui_wake_callback_();
+  }
+}
+
+void BrowserThread::SetUIWakeCallback(std::function<void()> callback) {
+  ui_wake_callback_ = std::move(callback);
 }
 
 void BrowserThread::PauseIO() {
