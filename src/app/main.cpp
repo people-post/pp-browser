@@ -9,6 +9,10 @@
 
 #include <cstring>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 int main(int argc, char** argv) {
   bool debug_mode = false;
   std::string profile_override;
@@ -27,9 +31,15 @@ int main(int argc, char** argv) {
   }
 
   auto root = pbr::logging::getRootLogger();
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+  // Simulator/device debugging: always capture INFO+; --debug enables DEBUG.
+  root.setLevel(debug_mode ? pbr::logging::Level::DEBUG : pbr::logging::Level::INFO);
+  root.info << "Logging level set to " << (debug_mode ? "DEBUG" : "INFO");
+#else
   root.setLevel(debug_mode ? pbr::logging::Level::DEBUG
                            : pbr::logging::Level::WARNING);
   root.info << "Logging level set to " << (debug_mode ? "DEBUG" : "WARNING");
+#endif
 
   if (!pbr::Platform::EarlyInit()) {
     root.error << "Platform early init failed";
@@ -60,6 +70,8 @@ int main(int argc, char** argv) {
     root.error << pbr::kProductName << ": failed to initialize.";
 #if defined(__ANDROID__)
     root.error << " Check logcat for SDL/OpenGL errors.";
+#elif defined(__APPLE__) && TARGET_OS_IPHONE
+    root.error << " Check Console / Application Support/.../frame-debug.log for SDL/OpenGL errors.";
 #else
     root.error << " If no window appears, reconfigure from a clean build: "
                << "rm -rf build && cmake -B build -S . && cmake --build build. "

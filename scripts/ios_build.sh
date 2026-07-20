@@ -19,7 +19,7 @@ Commands:
   install           cmake --install into INSTALL_PREFIX (default: install-ios/)
   sim               configure-sim + build + install (simulator .app)
   device            configure-device + build + install (device .app)
-  run-sim           Install Frame.app on booted simulator and launch
+  run-sim           Boot a simulator if needed, install Frame.app, and launch
   xcode             Configure with -G Xcode (open in Xcode for debugging)
   clean             Remove build-ios-* directories
 
@@ -30,7 +30,7 @@ Environment:
   PP_BROWSER_VERSION        Passed to CMake (e.g. 0.1.0)
   PP_BROWSER_RELEASE_VERSION  Full version string (e.g. 0.1.0-rc1)
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
-  IOS_SIMULATOR_UDID        Target a specific simulator (optional)
+  IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
 
 Requires (macOS only):
   Xcode 15+ with iOS SDK
@@ -121,6 +121,45 @@ cmd_install() {
   fi
 }
 
+pick_simulator_udid() {
+  # Prefer a booted device; otherwise the newest available iPhone (else any iOS device).
+  xcrun simctl list devices available -j | python3 -c "
+import json, sys
+raw = sys.stdin.read()
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError as e:
+    sys.stderr.write('simctl JSON parse failed: %s\n' % e)
+    sys.stderr.write(raw[:500] + '\n')
+    raise SystemExit(1)
+booted, iphones, others = [], [], []
+for runtime, devices in data.get('devices', {}).items():
+    rt = runtime.lower()
+    if 'ios' not in rt and 'iphone' not in rt:
+        continue
+    for d in devices:
+        if d.get('isAvailable') is False:
+            continue
+        entry = (runtime, d.get('name', ''), d['udid'])
+        if d.get('state') == 'Booted':
+            booted.append(entry)
+        if 'iPhone' in d.get('name', ''):
+            iphones.append(entry)
+        else:
+            others.append(entry)
+if booted:
+    print(booted[0][2])
+elif iphones:
+    print(iphones[-1][2])
+elif others:
+    print(others[-1][2])
+else:
+    sys.stderr.write('No iOS simulator devices. Runtimes seen: %s\n' %
+                     (', '.join(data.get('devices', {}).keys()) or '(none)'))
+    raise SystemExit(1)
+"
+}
+
 cmd_run_sim() {
   require_macos
   local app="${INSTALL_PREFIX}/Frame.app"
@@ -130,26 +169,49 @@ cmd_run_sim() {
   fi
 
   local udid="${IOS_SIMULATOR_UDID:-}"
+  local pick_err=""
   if [[ -z "$udid" ]]; then
-    udid="$(xcrun simctl list devices booted -j | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for runtime, devices in data.get('devices', {}).items():
-    for d in devices:
-        if d.get('isAvailable') and d.get('state') == 'Booted':
-            print(d['udid'])
-            raise SystemExit(0)
-raise SystemExit('no booted simulator')
-" 2>/dev/null || true)"
+    if ! udid="$(pick_simulator_udid 2>/tmp/pp-ios-sim-pick.err)"; then
+      pick_err="$(cat /tmp/pp-ios-sim-pick.err 2>/dev/null || true)"
+      udid=""
+    fi
   fi
   if [[ -z "$udid" ]]; then
-    echo "error: no booted iOS simulator — open Simulator.app or set IOS_SIMULATOR_UDID" >&2
+    echo "error: no available iOS simulator" >&2
+    [[ -n "$pick_err" ]] && printf '%s\n' "$pick_err" >&2
+    echo "hint: install a simulator runtime, then retry:" >&2
+    echo "  xcodebuild -downloadPlatform iOS" >&2
+    echo "  # or: Xcode → Settings → Platforms → iOS → Get" >&2
+    echo "  xcrun simctl list devices available" >&2
+    echo "  # optional: IOS_SIMULATOR_UDID=<udid> ./scripts/ios_build.sh run-sim" >&2
     exit 1
+  fi
+
+  local state
+  state="$(xcrun simctl list devices -j | python3 -c "
+import json, sys
+udid = sys.argv[1]
+data = json.load(sys.stdin)
+for devices in data.get('devices', {}).values():
+    for d in devices:
+        if d.get('udid') == udid:
+            print(d.get('state', ''))
+            raise SystemExit(0)
+" "$udid" 2>/dev/null || true)"
+
+  if [[ "$state" != "Booted" ]]; then
+    echo "==> Booting simulator ${udid}"
+    open -a Simulator --args -CurrentDeviceUDID "$udid"
+    xcrun simctl boot "$udid" 2>/dev/null || true
+    xcrun simctl bootstatus "$udid" -b
   fi
 
   echo "==> Installing on simulator ${udid}"
   xcrun simctl install "$udid" "$app"
-  xcrun simctl launch "$udid" dev.frame.ios
+  echo "==> Launching Frame (--debug)"
+  xcrun simctl launch "$udid" dev.frame.ios --debug
+  echo "==> Debug log path:"
+  echo "  find ~/Library/Developer/CoreSimulator/Devices/${udid}/data/Containers/Data/Application -name frame-debug.log -exec cat {} \\;"
 }
 
 cmd_clean() {

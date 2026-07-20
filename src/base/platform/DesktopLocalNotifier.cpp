@@ -6,6 +6,10 @@
 #include <cstdlib>
 #include <string>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -36,7 +40,7 @@ void PostDesktopNotification(const std::string& title, const std::string& body) 
                           ShellEscapeSingleQuotes(title) + "' '" +
                           ShellEscapeSingleQuotes(body) + "' >/dev/null 2>&1 &";
   (void)std::system(cmd.c_str());
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) && !TARGET_OS_IPHONE
   const std::string cmd = "osascript -e 'display notification \"" + ShellEscapeSingleQuotes(body) +
                           "\" with title \"" + ShellEscapeSingleQuotes(title) + "\"' >/dev/null 2>&1 &";
   (void)std::system(cmd.c_str());

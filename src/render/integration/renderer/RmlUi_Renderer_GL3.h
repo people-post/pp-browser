@@ -31,6 +31,9 @@ public:
 	// Optional, can be used to clear the active framebuffer.
 	void Clear();
 
+	// iOS (and some GLES platforms) use a non-zero window framebuffer; desktop GL uses 0.
+	void SetOutputFramebuffer(unsigned int framebuffer_id);
+
 	// Rebuild shaders, layer FBOs, and internal geometry after an EGL/GL context loss.
 	void RecoverGpuResources();
 
@@ -112,6 +115,8 @@ private:
 	int viewport_height = 0;
 	int viewport_offset_x = 0;
 	int viewport_offset_y = 0;
+	// Desktop GL: 0. iOS UIKit GLES: non-zero drawable FBO from SDL.
+	unsigned int output_framebuffer = 0;
 
 	Rml::CompiledGeometryHandle fullscreen_quad_geometry = {};
 

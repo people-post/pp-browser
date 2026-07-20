@@ -232,6 +232,7 @@ void Application::Run() {
     return;
   }
 
+  int skip_log_countdown = 0;
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
     BrowserThread::RunUITasks();
     if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
@@ -249,6 +250,10 @@ void Application::Run() {
       Backend::BeginFrame();
       context->Render();
       Backend::PresentFrame();
+      skip_log_countdown = 0;
+    } else if (skip_log_countdown-- <= 0) {
+      log().warning << "CanRender=false; skipping frame (docs=" << context->GetNumDocuments() << ")";
+      skip_log_countdown = 120;
     }
   }
 }

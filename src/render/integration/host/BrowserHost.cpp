@@ -9,11 +9,22 @@
 #include <RmlUi/Core/Log.h>
 #include <RmlUi/Core/Profiling.h>
 
+#include <cstdio>
+#include <string>
+
 #if SDL_MAJOR_VERSION >= 3
 	#include <SDL3_image/SDL_image.h>
 	#include <SDL3/SDL.h>
 #else
 	#include <SDL_image.h>
+#endif
+
+#if defined(__APPLE__)
+	#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+	#define GLES_SILENCE_DEPRECATION 1
+	#include <OpenGLES/ES3/gl.h>
+#endif
 #endif
 
 #if defined RMLUI_PLATFORM_EMSCRIPTEN
@@ -108,6 +119,10 @@ struct BackendData {
 
 	SDL_Window* window = nullptr;
 	SDL_GLContext glcontext = nullptr;
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	unsigned int uikit_framebuffer = 0;
+	unsigned int uikit_renderbuffer = 0;
+#endif
 
 	bool running = true;
 	bool force_next_frame = false;
@@ -139,14 +154,8 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "1");
 #endif
 
-#if defined(RMLUI_PLATFORM_EMSCRIPTEN)
-    // GLES 3.0 (WebGL 2.0)
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-#elif defined(__ANDROID__)
-    // GLES 3.0 — widely supported (emulators often lack ES 3.2).
+#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+    // GLES 3.0 (WebGL 2.0 / Android / iOS). iOS rejects ES > 3.0.
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -172,6 +181,10 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
 	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, allow_resize);
 	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	// iOS expects a fullscreen scene; a non-fullscreen GL window can stay blank.
+	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
+#endif
 	SDL_Window* window = SDL_CreateWindowWithProperties(props);
 	SDL_DestroyProperties(props);
 #else
@@ -188,7 +201,19 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	}
 
 	SDL_GLContext glcontext = SDL_GL_CreateContext(window);
-	SDL_GL_MakeCurrent(window, glcontext);
+	if (!glcontext)
+	{
+		Rml::Log::Message(Rml::Log::LT_ERROR, "SDL error on create GL context: %s", SDL_GetError());
+		SDL_DestroyWindow(window);
+		return false;
+	}
+	if (!SDL_GL_MakeCurrent(window, glcontext))
+	{
+		Rml::Log::Message(Rml::Log::LT_ERROR, "SDL error on MakeCurrent: %s", SDL_GetError());
+		SDL_GL_DestroyContext(glcontext);
+		SDL_DestroyWindow(window);
+		return false;
+	}
 	SDL_GL_SetSwapInterval(1);
 
 	if (!RmlGL3::Initialize())
@@ -219,6 +244,36 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 		SDL_GetWindowSizeInPixels(window, &pixel_w, &pixel_h);
 		data->render_interface.SetViewport(pixel_w, pixel_h);
 	}
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	{
+		// iOS has no GL framebuffer 0 for the screen; SDL exposes the UIKit drawable FBO/RBO.
+		const SDL_PropertiesID wprops = SDL_GetWindowProperties(window);
+		data->uikit_framebuffer = static_cast<unsigned int>(
+			SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_FRAMEBUFFER_NUMBER, 0));
+		data->uikit_renderbuffer = static_cast<unsigned int>(
+			SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_RENDERBUFFER_NUMBER, 0));
+		if (data->uikit_framebuffer == 0) {
+			GLint binding = 0;
+			glGetIntegerv(GL_FRAMEBUFFER_BINDING, &binding);
+			data->uikit_framebuffer = static_cast<unsigned int>(binding);
+		}
+		data->render_interface.SetOutputFramebuffer(data->uikit_framebuffer);
+		// Use ERROR so it surfaces even when Rml log level is high; also mirror to stderr.
+		Rml::Log::Message(Rml::Log::LT_ERROR, "iOS drawable FBO=%u RBO=%u", data->uikit_framebuffer,
+			data->uikit_renderbuffer);
+		std::fprintf(stderr, "[Frame] iOS drawable FBO=%u RBO=%u\n", data->uikit_framebuffer,
+			data->uikit_renderbuffer);
+		if (char* pref = SDL_GetPrefPath("dev.frame", "pp-browser")) {
+			const std::string path = std::string(pref) + "frame-debug.log";
+			SDL_free(pref);
+			if (FILE* f = std::fopen(path.c_str(), "a")) {
+				std::fprintf(f, "[I] iOS drawable FBO=%u RBO=%u\n", data->uikit_framebuffer,
+					data->uikit_renderbuffer);
+				std::fclose(f);
+			}
+		}
+	}
+#endif
 #endif
 
 	TouchSimOverlay::Initialize(window);
@@ -278,6 +333,17 @@ void Backend::RecoverAfterDeviceReset(Rml::Context* context)
 	TextLoupeRenderer::ReleaseGpuResources();
 	data->render_interface.RecoverGpuResources();
 
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	{
+		const SDL_PropertiesID wprops = SDL_GetWindowProperties(data->window);
+		data->uikit_framebuffer = static_cast<unsigned int>(
+			SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_FRAMEBUFFER_NUMBER, 0));
+		data->uikit_renderbuffer = static_cast<unsigned int>(
+			SDL_GetNumberProperty(wprops, SDL_PROP_WINDOW_UIKIT_OPENGL_RENDERBUFFER_NUMBER, 0));
+		data->render_interface.SetOutputFramebuffer(data->uikit_framebuffer);
+	}
+#endif
+
 	if (context)
 		SyncContext(context);
 
@@ -287,12 +353,16 @@ void Backend::RecoverAfterDeviceReset(Rml::Context* context)
 
 bool Backend::CanRender()
 {
-	if (!data || !data->window)
+	if (!data || !data->window || !data->glcontext)
 		return false;
 
 #if SDL_MAJOR_VERSION >= 3
-	if (!SDL_GL_GetCurrentContext())
-		return false;
+	// iOS/Android can drop the current context across lifecycle events.
+	if (SDL_GL_GetCurrentContext() != data->glcontext)
+	{
+		if (!SDL_GL_MakeCurrent(data->window, data->glcontext))
+			return false;
+	}
 
 	int pixel_w = 0;
 	int pixel_h = 0;
@@ -488,6 +558,10 @@ void Backend::RequestExit()
 void Backend::BeginFrame()
 {
 	RMLUI_ASSERT(data);
+#if SDL_MAJOR_VERSION >= 3
+	if (data->glcontext && SDL_GL_GetCurrentContext() != data->glcontext)
+		SDL_GL_MakeCurrent(data->window, data->glcontext);
+#endif
 
 	data->render_interface.Clear();
 	data->render_interface.BeginFrame();
@@ -506,6 +580,14 @@ void Backend::PresentFrame()
 		SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
 		TouchSimOverlay::Draw(data->window, pixel_w, pixel_h);
 	}
+#endif
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	// SDL_uikitopenglview::swapBuffers requires the UIKit color renderbuffer to be bound.
+	if (data->uikit_framebuffer != 0)
+		glBindFramebuffer(GL_FRAMEBUFFER, data->uikit_framebuffer);
+	if (data->uikit_renderbuffer != 0)
+		glBindRenderbuffer(GL_RENDERBUFFER, data->uikit_renderbuffer);
 #endif
 
 	SDL_GL_SwapWindow(data->window);

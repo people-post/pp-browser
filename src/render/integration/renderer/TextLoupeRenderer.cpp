@@ -2,9 +2,17 @@
 
 #include "RmlUi_Renderer_GL3.h"
 
-#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__)
+#if defined(__APPLE__)
+	#include <TargetConditionals.h>
+#endif
+
+#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
 	#define LOUPE_SHADER_HEADER "#version 300 es\nprecision highp float;\n"
-	#include <GLES3/gl3.h>
+	#if defined(__APPLE__) && TARGET_OS_IPHONE
+		#include <OpenGLES/ES3/gl.h>
+	#else
+		#include <GLES3/gl3.h>
+	#endif
 #else
 	#define LOUPE_SHADER_HEADER "#version 330 core\n"
 	#include "RmlUi_Include_GL3.h"
@@ -148,7 +156,7 @@ void EnsureCaptureTarget(int texture_size)
 	glGenFramebuffers(1, &g_state.capture_framebuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, g_state.capture_framebuffer);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_state.capture_texture, 0);
-#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__)
+#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
 	{
 		const GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
 		glDrawBuffers(1, &draw_buffer);

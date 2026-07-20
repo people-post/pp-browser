@@ -48,7 +48,12 @@ std::string IosPathProvider::CacheDir(const std::string& data_dir) const {
 }
 
 std::string IosPathProvider::BundleAssetsDir() const {
-  // Packaged under Frame.app/assets (see cmake/IosBundle.cmake).
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+  if (const char* base = SDL_GetBasePath()) {
+    return JoinPath(std::filesystem::path(base), "assets");
+  }
+#endif
+  // Fallback: SDL chdirs into the .app bundle before main.
   return "assets";
 }
 

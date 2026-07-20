@@ -165,11 +165,23 @@ set(SDL_LIBURING OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${PP_THIRD_PARTY_DIR}/sdl3"
                  "${CMAKE_BINARY_DIR}/third_party/sdl3" EXCLUDE_FROM_ALL)
+# UIKit video events reference GCKeyboard/GCMouse even with SDL_JOYSTICK=OFF.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  if(TARGET SDL3-static)
+    target_link_libraries(SDL3-static PUBLIC "$<LINK_LIBRARY:FRAMEWORK,GameController>")
+  elseif(TARGET SDL3)
+    target_link_libraries(SDL3 PUBLIC "$<LINK_LIBRARY:FRAMEWORK,GameController>")
+  endif()
+endif()
 pp_configure_status("SDL3 configured; starting SDL3_image...")
 
 # SDL3_image: stb for PNG/JPG (matches FetchContent on Linux); external/ codecs vendored for MSVC.
 set(SDLIMAGE_BACKEND_STB ON CACHE BOOL "" FORCE)
 set(SDLIMAGE_BACKEND_WIC OFF CACHE BOOL "" FORCE)
+# ImageIO.m needs the ImageIO framework; on iOS we use STB only (same as Android).
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  set(SDLIMAGE_BACKEND_IMAGEIO OFF CACHE BOOL "" FORCE)
+endif()
 set(SDLIMAGE_AVIF OFF CACHE BOOL "" FORCE)
 set(SDLIMAGE_JXL OFF CACHE BOOL "" FORCE)
 set(SDLIMAGE_TIF OFF CACHE BOOL "" FORCE)

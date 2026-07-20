@@ -780,7 +780,11 @@ if(INSTALL_ENABLED)
   install(TARGETS crypto ssl
           EXPORT OpenSSLTargets ${INSTALL_DESTINATION_DEFAULT})
   if(NOT HUNTER_ENABLED)
+  # iOS defaults executables to MACOSX_BUNDLE; install then needs BUNDLE
+  # DESTINATION. Skip shipping the bssl CLI (app only links crypto/ssl).
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   install(TARGETS bssl DESTINATION ${INSTALL_DESTINATION_DEFAULT})
+  endif()
   endif(NOT HUNTER_ENABLED)
   install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
   install(EXPORT OpenSSLTargets

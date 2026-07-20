@@ -17,12 +17,18 @@
 	#pragma warning(disable : 4505)
 #endif
 
-#if defined RMLUI_PLATFORM_EMSCRIPTEN
+#if defined(__APPLE__)
+	#include <TargetConditionals.h>
+#endif
+
+#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+	#define RMLUI_GL_ES3 1
 	#define RMLUI_SHADER_HEADER_VERSION "#version 300 es\nprecision highp float;\n"
-	#include <GLES3/gl3.h>
-#elif defined __ANDROID__
-	#define RMLUI_SHADER_HEADER_VERSION "#version 300 es\nprecision highp float;\n"
-	#include <GLES3/gl3.h>
+	#if defined(__APPLE__) && TARGET_OS_IPHONE
+		#include <OpenGLES/ES3/gl.h>
+	#else
+		#include <GLES3/gl3.h>
+	#endif
 #elif defined RMLUI_GL3_CUSTOM_LOADER
 	#define RMLUI_SHADER_HEADER_VERSION "#version 330\n"
 	#include RMLUI_GL3_CUSTOM_LOADER
@@ -34,7 +40,12 @@
 
 // Determines the anti-aliasing quality when creating layers. Enables better-looking visuals, especially when transforms are applied.
 #ifndef RMLUI_NUM_MSAA_SAMPLES
-	#define RMLUI_NUM_MSAA_SAMPLES 2
+	#if defined(RMLUI_GL_ES3)
+		// Multisampled FBOs are unreliable on some GLES drivers (notably iOS Simulator).
+		#define RMLUI_NUM_MSAA_SAMPLES 0
+	#else
+		#define RMLUI_NUM_MSAA_SAMPLES 2
+	#endif
 #endif
 
 #define MAX_NUM_STOPS 16
@@ -593,7 +604,7 @@ static bool CreateProgram(GLuint& out_program, Uniforms& inout_uniform_map, Prog
 static bool CreateFramebuffer(FramebufferData& out_fb, int width, int height, int samples, FramebufferAttachment attachment,
 	GLuint shared_depth_stencil_buffer)
 {
-#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__)
+#if defined(RMLUI_GL_ES3)
 	constexpr GLint wrap_mode = GL_CLAMP_TO_EDGE;
 #else
 	constexpr GLint wrap_mode = GL_CLAMP_TO_BORDER; // GL_REPEAT GL_MIRRORED_REPEAT GL_CLAMP_TO_EDGE
@@ -626,7 +637,7 @@ static bool CreateFramebuffer(FramebufferData& out_fb, int width, int height, in
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, min_mag_filter);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_mode);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_mode);
-#if !defined(RMLUI_PLATFORM_EMSCRIPTEN) && !defined(__ANDROID__)
+#if !defined(RMLUI_GL_ES3)
 		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, &border_color[0]);
 #endif
 
@@ -891,7 +902,7 @@ void RenderInterface_GL3::BeginFrame()
 	glBlendEquation(GL_FUNC_ADD);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-#if !defined(RMLUI_PLATFORM_EMSCRIPTEN) && !defined(__ANDROID__)
+#if !defined(RMLUI_GL_ES3)
 	// We do blending in nonlinear sRGB space because that is the common practice and gives results that we are used to.
 	glDisable(GL_FRAMEBUFFER_SRGB);
 #endif
@@ -927,8 +938,8 @@ void RenderInterface_GL3::EndFrame()
 
 	glBlitFramebuffer(0, 0, fb_active.width, fb_active.height, 0, 0, fb_postprocess.width, fb_postprocess.height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
-	// Draw to backbuffer
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	// Draw to the window framebuffer (0 on desktop; UIKit drawable FBO on iOS).
+	glBindFramebuffer(GL_FRAMEBUFFER, output_framebuffer);
 	glViewport(viewport_offset_x, viewport_offset_y, viewport_width, viewport_height);
 
 	// Assuming we have an opaque background, we can just write to it with the premultiplied alpha blend mode and we'll get the correct result.
@@ -995,8 +1006,14 @@ void RenderInterface_GL3::EndFrame()
 
 void RenderInterface_GL3::Clear()
 {
+	glBindFramebuffer(GL_FRAMEBUFFER, output_framebuffer);
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
+}
+
+void RenderInterface_GL3::SetOutputFramebuffer(unsigned int framebuffer_id)
+{
+	output_framebuffer = framebuffer_id;
 }
 
 Rml::CompiledGeometryHandle RenderInterface_GL3::CompileGeometry(Rml::Span<const Rml::Vertex> vertices, Rml::Span<const int> indices)
@@ -1794,7 +1811,7 @@ void RenderInterface_GL3::BlitTopLayerRegion(Rml::Rectanglei src_region_top_left
 	const Rml::Rectanglei saved_scissor = scissor_state;
 	EnableScissorRegion(false);
 
-#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__)
+#if defined(RMLUI_GL_ES3)
 	// GLES drivers often fail subregion blits from multisampled renderbuffers; resolve first.
 	BlitLayerToPostprocessPrimary(render_layers.GetTopLayerHandle());
 	const Gfx::FramebufferData& source = render_layers.GetPostprocessPrimary();
@@ -2224,12 +2241,9 @@ void RenderInterface_GL3::ResetProgram()
 
 bool RmlGL3::Initialize(Rml::String* out_message)
 {
-#if defined(RMLUI_PLATFORM_EMSCRIPTEN)
-    if (out_message)
-        *out_message = "Started Emscripten WebGL renderer.";
-#elif defined(__ANDROID__)
-    if (out_message)
-        *out_message = "Started OpenGL ES 3 renderer.";
+#if defined(RMLUI_GL_ES3)
+	if (out_message)
+		*out_message = "Started OpenGL ES 3 renderer.";
 #elif !defined RMLUI_GL3_CUSTOM_LOADER
 	const int gl_version = gladLoaderLoadGL();
 	if (gl_version == 0)
@@ -2248,7 +2262,7 @@ bool RmlGL3::Initialize(Rml::String* out_message)
 
 void RmlGL3::Shutdown()
 {
-#if !defined(RMLUI_PLATFORM_EMSCRIPTEN) && !defined(__ANDROID__) && !defined(RMLUI_GL3_CUSTOM_LOADER)
+#if !defined(RMLUI_GL_ES3) && !defined(RMLUI_GL3_CUSTOM_LOADER)
 	gladLoaderUnloadGL();
 #endif
 }
