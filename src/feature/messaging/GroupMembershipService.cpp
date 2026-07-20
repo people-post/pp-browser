@@ -93,19 +93,19 @@ Roe<void> GroupMembershipService::SendInviteDirectMessage(const GroupInvitePaylo
   if (!local) {
     return local.error();
   }
-  auto sys = GroupMembershipCodec::BuildSystemMessage(thread->id, GroupMembershipControlType::GroupInvite,
-                                                      "Group invitation: " + invite.group_title, *detail, *local);
-  if (!sys) {
-    return sys.error();
-  }
-  sys->chat_actions = GroupMembershipCodec::BuildInviteChatActions(invite);
-  sys->relay_visible = true;
-  if (auto appended = store_.AppendMessage(*sys); !appended) {
-    return appended.error();
-  }
+  // Send as a system ChatPayload on the wire (same shape as group_renamed). Do not attach
+  // Accept/Decline locally — those are for the invitee, hydrated on inbound ingest.
+  const std::string display = "Group invitation: " + invite.group_title;
+  const std::string payload_json =
+      nlohmann::json({{"control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupInvite)},
+                      {"detail", *detail}})
+          .dump();
   SendRelayOptions opts;
   opts.generation = "system";
-  auto sent = p2p_.SendUserMessage(thread->id, "Group invitation: " + invite.group_title, opts);
+  opts.content_type = ChatContentType::System;
+  opts.payload_json = payload_json;
+  opts.sender_contact_id = *local;
+  auto sent = p2p_.SendUserMessage(thread->id, display, opts);
   if (!sent) {
     return sent.error();
   }

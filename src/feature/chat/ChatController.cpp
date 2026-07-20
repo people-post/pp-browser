@@ -1426,27 +1426,34 @@ void ChatController::SyncDisplayFromThread() {
 
 void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
   if (payload && !payload->empty()) {
-    if (auto result = MessagingHub::Instance().Actions().Dispatch(*payload)) {
-      if (*result) {
-        SendUserText(message, *result);
-        return;
-      }
-      RefreshFromMessaging();
-      ContactsController::Instance().Refresh();
-      const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-      auto& inbox = MessagingHub::Instance().Inbox();
-      if (inbox.IsAiHomeThread(active_id)) {
-        ShellHost::Instance().SelectNavTab(NavTab::Home);
-      } else {
-        ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-      }
-      ShellHost::Instance().SetPrimaryPane("chat");
-      if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact &&
-          ShellHost::Instance().State().nav_tab == NavTab::Sessions) {
-        ShellHost::Instance().OpenCompactChat();
-      }
+    auto result = MessagingHub::Instance().Actions().Dispatch(*payload);
+    if (!result) {
+      // Never re-route the same action payload through MessageRouter — that loops
+      // HandleLocalAction → SendUserText → Route → HandleLocalAction until stack overflow.
+      log().warning << "Local action failed: " << result.error().message;
+      ShellFeedback::ShowToast(ShellHost::Instance().State(), result.error().message);
+      ShellHost::Instance().DirtyWindow();
       return;
     }
+    if (*result) {
+      SendUserText(message, *result);
+      return;
+    }
+    RefreshFromMessaging();
+    ContactsController::Instance().Refresh();
+    const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+    auto& inbox = MessagingHub::Instance().Inbox();
+    if (inbox.IsAiHomeThread(active_id)) {
+      ShellHost::Instance().SelectNavTab(NavTab::Home);
+    } else {
+      ShellHost::Instance().SelectNavTab(NavTab::Sessions);
+    }
+    ShellHost::Instance().SetPrimaryPane("chat");
+    if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact &&
+        ShellHost::Instance().State().nav_tab == NavTab::Sessions) {
+      ShellHost::Instance().OpenCompactChat();
+    }
+    return;
   }
   SendUserText(message, payload);
 }
