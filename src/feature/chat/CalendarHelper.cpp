@@ -1,5 +1,7 @@
 #include "feature/chat/CalendarHelper.h"
 
+#include "base/platform/os/OsTime.h"
+
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -110,11 +112,9 @@ TodayYmd TodayLocalDate() {
   TodayYmd today;
   const std::time_t now = std::time(nullptr);
   std::tm local_tm{};
-#if defined(_WIN32)
-  localtime_s(&local_tm, &now);
-#else
-  localtime_r(&now, &local_tm);
-#endif
+  if (!os::LocalTime(now, &local_tm)) {
+    return today;
+  }
   today.year = local_tm.tm_year + 1900;
   today.month = local_tm.tm_mon + 1;
   today.day = local_tm.tm_mday;

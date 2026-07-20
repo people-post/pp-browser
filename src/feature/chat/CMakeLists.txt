@@ -5,6 +5,7 @@ pp_browser_add_feature_library(pp_feature_chat
     ChatWidgetStateBuilder.cpp
     MessagingTools.cpp
   PUBLIC_LIBS
+    pp_base_platform
     pp_feature_ai
     pp_feature_messaging
     pp_feature_ui

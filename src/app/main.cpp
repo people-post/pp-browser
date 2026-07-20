@@ -2,16 +2,14 @@
 #include "app/Bootstrap.h"
 #include "base/data/SessionStore.h"
 #include "common/Logger.h"
-#include "base/platform/ProductBranding.h"
 #include "base/platform/Platform.h"
+#include "base/platform/PlatformLogDefaults.h"
+#include "base/platform/PlatformStartupHints.h"
+#include "base/platform/ProductBranding.h"
 
 #include <SDL3/SDL_main.h>
 
 #include <cstring>
-
-#if defined(__APPLE__)
-#include <TargetConditionals.h>
-#endif
 
 int main(int argc, char** argv) {
   bool debug_mode = false;
@@ -31,15 +29,12 @@ int main(int argc, char** argv) {
   }
 
   auto root = pbr::logging::getRootLogger();
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-  // Simulator/device debugging: always capture INFO+; --debug enables DEBUG.
-  root.setLevel(debug_mode ? pbr::logging::Level::DEBUG : pbr::logging::Level::INFO);
-  root.info << "Logging level set to " << (debug_mode ? "DEBUG" : "INFO");
-#else
-  root.setLevel(debug_mode ? pbr::logging::Level::DEBUG
-                           : pbr::logging::Level::WARNING);
-  root.info << "Logging level set to " << (debug_mode ? "DEBUG" : "WARNING");
-#endif
+  const auto default_level = pbr::DefaultRootLogLevel(debug_mode);
+  root.setLevel(default_level);
+  root.info << "Logging level set to "
+            << (default_level == pbr::logging::Level::DEBUG   ? "DEBUG"
+                : default_level == pbr::logging::Level::INFO ? "INFO"
+                                                             : "WARNING");
 
   if (!pbr::Platform::EarlyInit()) {
     root.error << "Platform early init failed";
@@ -67,16 +62,7 @@ int main(int argc, char** argv) {
 
   pbr::Application app;
   if (!app.Initialize(pbr::kProductName)) {
-    root.error << pbr::kProductName << ": failed to initialize.";
-#if defined(__ANDROID__)
-    root.error << " Check logcat for SDL/OpenGL errors.";
-#elif defined(__APPLE__) && TARGET_OS_IPHONE
-    root.error << " Check Console / Application Support/.../frame-debug.log for SDL/OpenGL errors.";
-#else
-    root.error << " If no window appears, reconfigure from a clean build: "
-               << "rm -rf build && cmake -B build -S . && cmake --build build. "
-               << "Ensure DISPLAY is set. On Linux install: libx11-dev and libgl-dev (see docs/ops/BUILD.md).";
-#endif
+    root.error << pbr::kProductName << ": failed to initialize." << pbr::InitFailureHint();
     return 1;
   }
   app.Run();

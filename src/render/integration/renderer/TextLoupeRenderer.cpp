@@ -1,13 +1,10 @@
 #include "TextLoupeRenderer.h"
 
+#include "GlBackend.h"
 #include "RmlUi_Renderer_GL3.h"
 
-#if defined(__APPLE__)
-	#include <TargetConditionals.h>
-#endif
-
-#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
-	#define LOUPE_SHADER_HEADER "#version 300 es\nprecision highp float;\n"
+#if defined(RMLUI_GL_ES3)
+	#define LOUPE_SHADER_HEADER PP_BROWSER_SHADER_HEADER_GLES
 	#if defined(__APPLE__) && TARGET_OS_IPHONE
 		#include <OpenGLES/ES3/gl.h>
 	#else

@@ -1,4 +1,5 @@
 #include "RmlUi_Renderer_GL3.h"
+#include "GlBackend.h"
 #include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/DecorationTypes.h>
 #include <RmlUi/Core/FileInterface.h>
@@ -17,23 +18,18 @@
 	#pragma warning(disable : 4505)
 #endif
 
-#if defined(__APPLE__)
-	#include <TargetConditionals.h>
-#endif
-
-#if defined(RMLUI_PLATFORM_EMSCRIPTEN) || defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
-	#define RMLUI_GL_ES3 1
-	#define RMLUI_SHADER_HEADER_VERSION "#version 300 es\nprecision highp float;\n"
+#if defined(RMLUI_GL_ES3)
+	#define RMLUI_SHADER_HEADER_VERSION PP_BROWSER_SHADER_HEADER_GLES
 	#if defined(__APPLE__) && TARGET_OS_IPHONE
 		#include <OpenGLES/ES3/gl.h>
 	#else
 		#include <GLES3/gl3.h>
 	#endif
 #elif defined RMLUI_GL3_CUSTOM_LOADER
-	#define RMLUI_SHADER_HEADER_VERSION "#version 330\n"
+	#define RMLUI_SHADER_HEADER_VERSION PP_BROWSER_SHADER_HEADER_GL
 	#include RMLUI_GL3_CUSTOM_LOADER
 #else
-	#define RMLUI_SHADER_HEADER_VERSION "#version 330\n"
+	#define RMLUI_SHADER_HEADER_VERSION PP_BROWSER_SHADER_HEADER_GL
 	#define GLAD_GL_IMPLEMENTATION
 	#include "RmlUi_Include_GL3.h"
 #endif

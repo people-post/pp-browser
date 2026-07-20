@@ -2,6 +2,8 @@
 
 **Tier:** architecture
 
+Platform code file layout and `#ifdef` policy: [PLATFORM_CODE.md](PLATFORM_CODE.md).
+
 ## Desktop
 
 pp-browser ships as a desktop SDL3 + OpenGL3 application. Path resolution uses XDG on Linux, Application Support on macOS, and AppData on Windows.
