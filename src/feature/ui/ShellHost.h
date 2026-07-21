@@ -58,6 +58,10 @@ public:
   void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
   void SetOnLayoutSynced(std::function<void()> callback);
 
+  /** Seed bottom inset from machine.json (used when SDL reports zero). */
+  void SetSafeAreaBottomFromPrefs(int bottom_dp);
+  void RefreshSafeAreaInsets(Rml::Context* context);
+
   static void ToggleAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectNavTabCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -103,10 +107,13 @@ private:
   void RestoreFocus();
   void FlushPendingSyncLayout();
   void ScheduleCompactChatDismiss();
+  void ApplyCompactChromeLayout();
+  int ReadSafeAreaBottomFromSdl(Rml::Context* context) const;
 
   Rml::Context* context_ = nullptr;
   ShellState state_;
   ShellConfig config_;
+  int safe_area_bottom_from_prefs_dp_ = 0;
   LayoutMode last_synced_mode_ = LayoutMode::Expanded;
   int next_pane_id_ = 1;
   int next_overlay_id_ = 1;

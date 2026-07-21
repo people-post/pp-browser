@@ -1,5 +1,7 @@
 #include "feature/ui/ShellLayout.h"
 
+#include <algorithm>
+
 namespace pbr {
 
 LayoutMode ShellLayout::FromWidth(float width_dp, float breakpoint) {
@@ -62,6 +64,16 @@ PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
   vis.compact_chat_overlay = state.compact_chat_open;
   vis.auxiliary_sheet = state.auxiliary_open;
   return vis;
+}
+
+CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& config, int safe_area_bottom_dp) {
+  CompactChromeLayout layout{};
+  const float safe_bottom = static_cast<float>(std::max(0, safe_area_bottom_dp));
+  layout.content_padding_bottom_dp = config.compact_nav_height_dp + safe_bottom;
+  layout.chrome_bottom_dp = safe_bottom;
+  layout.sheet_bottom_dp = config.compact_nav_height_dp + safe_bottom;
+  layout.chrome_horizontal_inset_dp = config.compact_nav_horizontal_inset_dp;
+  return layout;
 }
 
 } // namespace pbr

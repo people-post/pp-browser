@@ -17,12 +17,12 @@ Execute in order. Each phase should land reviewable PRs; do not batch lg1+lg5 in
 
 ### Tasks
 
-- [ ] Change `.shell-bottom-chrome` to absolute bottom overlay with horizontal inset (see DESIGN.md)
-- [ ] Add `.shell-nav-page` / chat body `padding-bottom`: nav height (56dp) + safe-area bottom
-- [ ] Plumb safe-area bottom into shell layout (SDL display event or existing `ProfilePreferences.safe_area` if wired)
-- [ ] Ensure `#shell-composer-mount` on Home tab respects bottom inset (composer above nav pill visually)
-- [ ] Verify interruption / dismiss order unchanged (`ShellInterruption` tests)
-- [ ] Update `shell_host_test` if layout visibility flags change
+- [x] Change `.shell-bottom-chrome` to absolute bottom overlay with horizontal inset (see DESIGN.md)
+- [x] Add `.shell-nav-page` / chat body `padding-bottom`: nav height (56dp) + safe-area bottom
+- [x] Plumb safe-area bottom into shell layout (SDL display event or existing `ProfilePreferences.safe_area` if wired)
+- [x] Ensure `#shell-composer-mount` on Home tab respects bottom inset (composer above nav pill visually)
+- [x] Verify interruption / dismiss order unchanged (`ShellInterruption` tests)
+- [x] Update `shell_host_test` if layout visibility flags change
 - [ ] Manual QA: compact Home, Sessions overlay, Me list — no content permanently hidden behind nav
 
 ### Files (expected)
