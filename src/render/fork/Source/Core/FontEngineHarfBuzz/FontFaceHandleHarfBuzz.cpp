@@ -713,24 +713,43 @@ bool FontFaceHandleHarfBuzz::GenerateLayer(FontFaceLayer* layer)
 void FontFaceHandleHarfBuzz::ConfigureTextShapingBuffer(hb_buffer_t* shaping_buffer, StringView string,
 	const TextShapingContext& text_shaping_context, const LanguageDataMap& registered_languages, TextFlowDirection* determined_text_direction) const
 {
-	// Set the buffer's language based on the value of the element's 'lang' attribute.
+	// Language drives OpenType `locl` (e.g. CJK regional forms). Keep the element's lang.
 	hb_buffer_set_language(shaping_buffer, hb_language_from_string(text_shaping_context.language.c_str(), -1));
 
-	// Set the buffer's script.
+	// Script must follow the *text*, not the UI language. After chat/UI language support,
+	// the document root is often lang=zh-Hans; inheriting that into Latin text inputs made
+	// HarfBuzz shape with HB_SCRIPT_HAN, so glyphs/advances jittered as more characters were typed.
 	hb_script_t script = HB_SCRIPT_UNKNOWN;
-	auto registered_language_location = registered_languages.find(text_shaping_context.language);
-	if (registered_language_location != registered_languages.cend())
-		// Get script from registered language data.
-		script = hb_script_from_string(registered_language_location->second.script_code.c_str(), -1);
-	else
+	hb_unicode_funcs_t* unicode_functions = hb_unicode_funcs_get_default();
+	if (unicode_functions != nullptr && !string.empty())
 	{
-		// Try to guess script from the first character of the string.
-		hb_unicode_funcs_t* unicode_functions = hb_unicode_funcs_get_default();
-		if (unicode_functions != nullptr && !string.empty())
+		const char* cursor = string.begin();
+		const char* end = string.end();
+		while (cursor < end)
 		{
-			Character first_character = Rml::StringUtilities::ToCharacter(string.begin(), string.end());
-			script = hb_unicode_script(unicode_functions, (hb_codepoint_t)first_character);
+			const Character character = Rml::StringUtilities::ToCharacter(cursor, end);
+			const int character_bytes = (int)Rml::StringUtilities::BytesUTF8(character);
+			if (character_bytes <= 0)
+				break;
+			cursor += character_bytes;
+
+			if (IsControlCharacter(character) || (char32_t)character == U' ' || (char32_t)character == U'\t')
+				continue;
+
+			script = hb_unicode_script(unicode_functions, (hb_codepoint_t)character);
+			if (script != HB_SCRIPT_COMMON && script != HB_SCRIPT_INHERITED && script != HB_SCRIPT_UNKNOWN)
+				break;
+			script = HB_SCRIPT_UNKNOWN;
 		}
+	}
+
+	auto registered_language_location = registered_languages.find(text_shaping_context.language);
+	if (script == HB_SCRIPT_UNKNOWN)
+	{
+		if (registered_language_location != registered_languages.cend())
+			script = hb_script_from_string(registered_language_location->second.script_code.c_str(), -1);
+		else
+			script = HB_SCRIPT_LATIN;
 	}
 
 	hb_buffer_set_script(shaping_buffer, script);

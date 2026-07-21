@@ -58,6 +58,17 @@ Open **Simulator.app**, then:
 
 On first launch, open **Me → Assistant** and enter a cloud API key (same as Android/desktop).
 
+### Soft keyboard (Simulator)
+
+Focusing a text field calls `SDL_StartTextInput` → UIKit `becomeFirstResponder`. That is enough for a **device**. On the **Simulator**, macOS’s hardware keyboard is usually “connected”, and iOS hides the software keyboard.
+
+To show it:
+
+- **I/O → Keyboard → Toggle Software Keyboard** (or **⌘K**)
+- Or uncheck **I/O → Keyboard → Connect Hardware Keyboard** so the soft keyboard appears whenever a field is focused
+
+If typing with the Mac keyboard works but nothing appears on screen, the app path is fine — only the Simulator soft-keyboard visibility is off.
+
 ---
 
 ## Build commands
