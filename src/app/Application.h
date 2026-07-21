@@ -3,8 +3,11 @@
 #include "app/Bootstrap.h"
 #include "common/Module.h"
 
+#include <memory>
 #include <optional>
 #include <string>
+
+class FontEngineInterfaceHarfBuzz;
 
 namespace pbr {
 
@@ -24,6 +27,7 @@ public:
 
 private:
   bool initialized_ = false;
+  std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;
 };
 
 } // namespace pbr

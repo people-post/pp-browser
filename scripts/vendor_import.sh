@@ -18,9 +18,10 @@ declare -A REPOS=(
   [sdl3_image]="https://github.com/libsdl-org/SDL_image.git|release-3.2.4"
   [lunasvg]="https://github.com/sammycage/lunasvg.git|v3.5.0"
   [libsodium]="https://github.com/jedisct1/libsodium.git|1.0.20-RELEASE"
+  [harfbuzz]="https://github.com/harfbuzz/harfbuzz.git|9.0.0"
 )
 
-DEFAULT_ORDER=(freetype nlohmann_json curl sdl3 sdl3_image lunasvg libsodium sqlite)
+DEFAULT_ORDER=(freetype nlohmann_json curl sdl3 sdl3_image lunasvg libsodium harfbuzz sqlite)
 
 import_sdl3_image_externals() {
   local image_root="${THIRD_PARTY}/sdl3_image"

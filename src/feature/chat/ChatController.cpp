@@ -1,6 +1,7 @@
 #include "feature/chat/ChatController.h"
 #include "feature/ui/BadgeAggregator.h"
 #include "base/i18n/LocalizationService.h"
+#include "base/i18n/ScriptLanguageDetector.h"
 #include "base/platform/AppLifecycle.h"
 #include "base/platform/BackgroundSyncScheduler.h"
 #include "base/platform/BrowserThread.h"
@@ -25,6 +26,8 @@
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/messaging/AtAiParser.h"
+#include "base/messaging/ChatPayloadValidator.h"
+#include "base/messaging/MessagingLimits.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "base/messaging/SyncStateTypes.h"
@@ -128,7 +131,8 @@ std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index) {
 }
 
 Rml::String UserMessageRml(const std::string& text) {
-  return Rml::String(("<div class=\"bubble bubble-user\" selectable=\"text\"><p class=\"bubble-text\">" + StructuredTextParser::EscapeText(text) +
+  const std::string open_tag = ApplyLangAttribute(R"(<div class="bubble bubble-user")", text);
+  return Rml::String((open_tag + R"( selectable="text"><p class="bubble-text">)" + StructuredTextParser::EscapeText(text) +
                       "</p></div>")
                          .c_str());
 }
@@ -1474,6 +1478,11 @@ void ChatController::OnSendMessage() {
     return;
   }
 
+  if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), "Message is too long to send.");
+    return;
+  }
+
   chat_.draft = "";
   DirtyChatChrome();
   SendUserText(text);
@@ -2088,8 +2097,8 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
       if (messages) {
         for (ThreadMessage& message : *messages) {
           if (message.id == entry_id) {
-            message.content_rml = "<div class=\"bubble bubble-assistant\" selectable=\"text\"><p class=\"error\">" +
-                                  StructuredTextParser::EscapeText(parsed.error) + "</p></div>";
+            message.content_rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", parsed.error) +
+                                  R"( selectable="text"><p class="error">)" + StructuredTextParser::EscapeText(parsed.error) + "</p></div>";
             (void)MessagingHub::Instance().Store().UpdateMessage(message);
             break;
           }
@@ -2114,6 +2123,9 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
     std::string hydrated = InjectEntryPlaceholders(parsed.rml, entry_id);
     hydrated = HydrateLegacyChatActions(hydrated, chat_actions);
 
+    const std::string assistant_open =
+        ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", raw_output) + R"( selectable="text">)";
+
     if (messaging_ready_) {
       const std::string active_thread = thread_id.empty() ? MessagingHub::Instance().Inbox().ActiveThreadId() : thread_id;
       auto messages = MessagingHub::Instance().Store().GetMessagesPage(active_thread, std::nullopt, 10000);
@@ -2121,7 +2133,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
       if (messages) {
         for (ThreadMessage& message : *messages) {
           if (message.id == entry_id) {
-            message.content_rml = "<div class=\"bubble bubble-assistant\" selectable=\"text\">" + hydrated + "</div>";
+            message.content_rml = assistant_open + hydrated + "</div>";
             message.chat_actions = chat_actions;
             (void)MessagingHub::Instance().Store().UpdateMessage(message);
             updated = true;
@@ -2135,8 +2147,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
         ai_message.thread_id = active_thread;
         ai_message.sender_contact_id = kAiAssistantContactId;
         ai_message.text = raw_output;
-        ai_message.content_rml =
-            "<div class=\"bubble bubble-assistant\" selectable=\"text\">" + hydrated + "</div>";
+        ai_message.content_rml = assistant_open + hydrated + "</div>";
         ai_message.chat_actions = chat_actions;
         ai_message.timestamp = util::NowUnixMs();
         ai_message.transport = MessageTransport::Local;

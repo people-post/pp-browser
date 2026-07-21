@@ -11,6 +11,7 @@ function(pp_require_vendored name)
 endfunction()
 
 pp_require_vendored(freetype)
+pp_require_vendored(harfbuzz)
 pp_require_vendored(nlohmann_json)
 pp_require_vendored(curl)
 pp_require_vendored(sdl3)
@@ -41,6 +42,21 @@ if(NOT TARGET Freetype::Freetype)
   else()
     message(FATAL_ERROR "FreeType target not found after add_subdirectory")
   endif()
+endif()
+
+# HarfBuzz (RmlUi text shaping)
+set(HB_BUILD_UTILS OFF CACHE BOOL "" FORCE)
+set(HB_BUILD_SUBSET OFF CACHE BOOL "" FORCE)
+set(HB_HAVE_GLIB OFF CACHE BOOL "" FORCE)
+set(HB_HAVE_ICU OFF CACHE BOOL "" FORCE)
+set(HB_HAVE_GRAPHITE2 OFF CACHE BOOL "" FORCE)
+set(HB_HAVE_GOBJECT OFF CACHE BOOL "" FORCE)
+
+add_subdirectory("${PP_THIRD_PARTY_DIR}/harfbuzz"
+                 "${CMAKE_BINARY_DIR}/third_party/harfbuzz" EXCLUDE_FROM_ALL)
+
+if(TARGET harfbuzz AND NOT TARGET harfbuzz::harfbuzz)
+  add_library(harfbuzz::harfbuzz ALIAS harfbuzz)
 endif()
 
 # nlohmann-json (header-only)

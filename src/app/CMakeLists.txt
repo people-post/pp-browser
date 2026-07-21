@@ -49,6 +49,7 @@ endif()
 target_include_directories(${PP_BROWSER_APP_TARGET} PRIVATE
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include
+  ${CMAKE_SOURCE_DIR}/src/render/fork/Source/Core/FontEngineHarfBuzz
 )
 
 target_link_libraries(${PP_BROWSER_APP_TARGET} PRIVATE
