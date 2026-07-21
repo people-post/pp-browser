@@ -70,3 +70,31 @@ TEST(SessionStoreTest, SavesAndReloadsConfigAndProfilePreferences) {
   std::filesystem::remove_all(profile_dir);
   std::filesystem::remove_all(data_dir);
 }
+
+TEST(SessionStoreTest, ReloadFromDiskUsesDefaultsWhenConfigMissing) {
+  const std::string config_path =
+      UniquePath("pp_browser_session_store_missing_config_") + ".json";
+  const std::string profile_dir = UniquePath("pp_browser_session_store_missing_profile_");
+  const std::string data_dir = UniquePath("pp_browser_session_store_missing_data_");
+
+  std::filesystem::create_directories(profile_dir);
+  std::filesystem::create_directories(data_dir);
+  ASSERT_FALSE(std::filesystem::exists(config_path));
+
+  pbr::BootstrapResult bootstrap{};
+  bootstrap.config = pbr::Config::DefaultAppConfig();
+  bootstrap.config.llm.model = "in-memory-only";
+  bootstrap.config_path = config_path;
+  bootstrap.data_dir = data_dir;
+  bootstrap.profile_data_dir = profile_dir;
+  bootstrap.profile_prefs = pbr::UserPreferences::DefaultProfile();
+
+  pbr::SessionStore::Instance().Initialize(std::move(bootstrap));
+
+  EXPECT_TRUE(pbr::SessionStore::Instance().ReloadFromDisk());
+  EXPECT_EQ(pbr::SessionStore::Instance().Snapshot().config.llm.model,
+            pbr::Config::DefaultAppConfig().llm.model);
+
+  std::filesystem::remove_all(profile_dir);
+  std::filesystem::remove_all(data_dir);
+}

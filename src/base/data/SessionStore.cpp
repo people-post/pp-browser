@@ -3,6 +3,8 @@
 #include "base/data/Config.h"
 #include "base/data/UserPreferences.h"
 
+#include <filesystem>
+
 namespace pbr {
 
 SessionStore& SessionStore::Instance() {
@@ -75,6 +77,13 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
 }
 
 Roe<void> SessionStore::ReloadConfig() {
+  // Match Config::Load / bootstrap: missing config is not an error — use defaults.
+  if (bootstrap_.config_path.empty() || !std::filesystem::exists(bootstrap_.config_path)) {
+    bootstrap_.config = Config::DefaultAppConfig();
+    NotifyConfigListeners(bootstrap_.config);
+    return {};
+  }
+
   auto reloaded = Config::LoadFromFile(bootstrap_.config_path);
   if (!reloaded) {
     return reloaded.error();

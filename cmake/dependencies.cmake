@@ -51,6 +51,13 @@ set(HB_HAVE_GLIB OFF CACHE BOOL "" FORCE)
 set(HB_HAVE_ICU OFF CACHE BOOL "" FORCE)
 set(HB_HAVE_GRAPHITE2 OFF CACHE BOOL "" FORCE)
 set(HB_HAVE_GOBJECT OFF CACHE BOOL "" FORCE)
+# Vendored HarfBuzz compiles CoreText when HB_HAVE_CORETEXT (default ON on
+# Apple). On iOS that requires HB_IOS so it links CoreText/CoreGraphics instead
+# of ApplicationServices (macOS-only); otherwise the final app link fails with
+# undefined CT* symbols.
+if(PP_BROWSER_IS_IOS)
+  set(HB_IOS ON CACHE BOOL "" FORCE)
+endif()
 
 add_subdirectory("${PP_THIRD_PARTY_DIR}/harfbuzz"
                  "${CMAKE_BINARY_DIR}/third_party/harfbuzz" EXCLUDE_FROM_ALL)
