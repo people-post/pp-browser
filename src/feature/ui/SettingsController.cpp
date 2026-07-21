@@ -276,7 +276,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
   });
 }
 
-void SettingsController::DirtyAll() {
+void SettingsController::DirtyAll(bool include_profile_nickname) {
   auto& host = DataModelHost::Instance();
   host.Dirty("settings", "sections");
   host.Dirty("settings", "selected_id");
@@ -294,7 +294,9 @@ void SettingsController::DirtyAll() {
   host.Dirty("settings", "relay_base_url");
   host.Dirty("settings", "directory_base_url");
   host.Dirty("settings", "registration_base_url");
-  host.Dirty("settings", "profile_nickname");
+  if (include_profile_nickname) {
+    host.Dirty("settings", "profile_nickname");
+  }
   host.Dirty("settings", "profile_peer_id");
   host.Dirty("settings", "profile_relay_id");
   host.Dirty("settings", "profile_public_key");
@@ -496,8 +498,16 @@ bool SettingsController::FlushSection(const std::string& section_id) {
   }
 
   status_ = "";
+  // Keep the live nickname through Push/Dirty. SyncFromSession after flush can race
+  // with continued typing when DirtyAll re-pushes profile_nickname into data-value
+  // inputs (SetValue resets cursor/IME and looks like characters mutating).
+  const Rml::String live_nickname = bindings_.profile_nickname;
+  const bool preserve_nickname = (section_id == "profile");
   PushUiStateToBindings();
-  DirtyAll();
+  if (preserve_nickname) {
+    bindings_.profile_nickname = live_nickname;
+  }
+  DirtyAll(!preserve_nickname);
   MaybeShowSaveToast(section_id);
   ShellHost::Instance().DirtyWindow();
   return true;

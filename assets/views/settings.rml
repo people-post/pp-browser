@@ -51,11 +51,9 @@
 
     <div class="settings-detail-body stack">
       <div class="settings-section stack" data-if="selected_id == 'profile'">
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.nickname}}</span>
-          <input class="field" type="text" data-value="profile_nickname" data-event-change="on_profile_field_changed()"
-                 placeholder="Your display name"/>
-        </label>
+        <p class="text muted me-profile-meta">
+          {{i18n:settings.nickname}}: <span data-rml="profile_nickname"></span>
+        </p>
         <p class="text muted me-profile-meta" data-if="profile_peer_id != ''">
           Peer ID: <span data-rml="profile_peer_id"></span>
         </p>

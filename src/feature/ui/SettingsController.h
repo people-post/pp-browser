@@ -135,7 +135,7 @@ private:
   void MaybeShowSaveToast(const std::string& section_id);
   void ReportFailure(const Error& err);
   void ReportFailure(const std::string& technical_message);
-  void DirtyAll();
+  void DirtyAll(bool include_profile_nickname = true);
   void CompleteSectionSelection(bool expanded);
   void OnRegisterProfile();
   void OnRotateBriefLlmKey();

@@ -264,20 +264,25 @@ void WidgetTextInput::SetValue(String value)
 	{
 		parent->SetAttribute("value", value);
 		DispatchChangeEvent();
+		return;
 	}
-	else
-	{
-		TransformValue(value);
 
-		text_element->SetText(value);
+	TransformValue(value);
 
-		// Reset the IME composition range when the value changes.
-		ime_composition_begin_index = 0;
-		ime_composition_end_index = 0;
+	// Skip reformatting when the displayed value is unchanged. Data-model write-back
+	// (DirtyVariable → data-value) often re-applies the same string; resetting IME /
+	// cursor there makes characters appear to mutate while typing.
+	if (value == GetValue())
+		return;
 
-		FormatElement();
-		UpdateCursorPosition(true);
-	}
+	text_element->SetText(value);
+
+	// Reset the IME composition range when the value changes.
+	ime_composition_begin_index = 0;
+	ime_composition_end_index = 0;
+
+	FormatElement();
+	UpdateCursorPosition(true);
 }
 
 void WidgetTextInput::TransformValue(String& /*value*/) {}
