@@ -507,56 +507,58 @@ void ShellHost::SetOnLayoutSynced(std::function<void()> callback) {
   on_layout_synced_ = std::move(callback);
 }
 
-void ShellHost::SetSafeAreaBottomFromPrefs(int bottom_dp) {
+void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {
+  safe_area_top_from_prefs_dp_ = std::max(0, top_dp);
   safe_area_bottom_from_prefs_dp_ = std::max(0, bottom_dp);
+  state_.safe_area_top_dp = std::max(state_.safe_area_top_dp, safe_area_top_from_prefs_dp_);
   state_.safe_area_bottom_dp = std::max(state_.safe_area_bottom_dp, safe_area_bottom_from_prefs_dp_);
-  ApplyCompactChromeLayout();
+  ApplySafeAreaLayout();
 }
 
-int ShellHost::ReadSafeAreaBottomFromSdl(Rml::Context* context) const {
+ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
+  SafeAreaFromSdl insets{};
 #if RMLUI_SDL_VERSION_MAJOR >= 3
   // SDL_GetWindowSafeArea is in window/point units (same as SDL_GetWindowSize).
   // Do not mix with context->GetDimensions(), which are framebuffer pixels on
-  // Retina — that overstates the inset by ~display scale and floats the nav
-  // far above the home indicator on iOS.
-  (void)context;
+  // Retina — that overstates insets by ~display scale on iOS.
   SDL_Window* window = Backend::GetWindow();
   if (!window) {
-    return 0;
+    return insets;
   }
   SDL_Rect safe{};
   if (!SDL_GetWindowSafeArea(window, &safe)) {
-    return 0;
+    return insets;
   }
   int win_w = 0;
   int win_h = 0;
   if (!SDL_GetWindowSize(window, &win_w, &win_h) || win_h <= 0) {
-    return 0;
+    return insets;
   }
-  const int bottom = win_h - (safe.y + safe.h);
-  return std::max(0, bottom);
-#else
-  (void)context;
-  return 0;
+  insets.top_dp = std::max(0, safe.y);
+  insets.bottom_dp = std::max(0, win_h - (safe.y + safe.h));
 #endif
+  return insets;
 }
 
 void ShellHost::RefreshSafeAreaInsets(Rml::Context* context) {
-  const int sdl_bottom = ReadSafeAreaBottomFromSdl(context);
-  const int effective_bottom = std::max(sdl_bottom, safe_area_bottom_from_prefs_dp_);
-  if (effective_bottom == state_.safe_area_bottom_dp) {
+  (void)context;
+  const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
+  const int effective_top = std::max(sdl.top_dp, safe_area_top_from_prefs_dp_);
+  const int effective_bottom = std::max(sdl.bottom_dp, safe_area_bottom_from_prefs_dp_);
+  if (effective_top == state_.safe_area_top_dp && effective_bottom == state_.safe_area_bottom_dp) {
     return;
   }
+  state_.safe_area_top_dp = effective_top;
   state_.safe_area_bottom_dp = effective_bottom;
-  ApplyCompactChromeLayout();
+  ApplySafeAreaLayout();
 }
 
-void ShellHost::ApplyCompactChromeLayout() {
-  if (!context_ || context_->GetNumDocuments() == 0 || state_.layout_mode != LayoutMode::Compact) {
+void ShellHost::ApplySafeAreaLayout() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  const CompactChromeLayout layout =
-      ShellLayout::ComputeCompactChromeLayout(config_, state_.safe_area_bottom_dp);
+  const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
+      config_, state_.safe_area_top_dp, state_.safe_area_bottom_dp);
   Rml::ElementDocument* doc = context_->GetDocument(0);
 
   auto set_dp = [](Rml::Element* element, const char* property, float value_dp) {
@@ -567,6 +569,12 @@ void ShellHost::ApplyCompactChromeLayout() {
     element->SetProperty(property, value.c_str());
   };
 
+  // iOS draws fullscreen under the status bar / notch; inset the whole shell.
+  set_dp(doc, "top", layout.shell_top_dp);
+
+  if (state_.layout_mode != LayoutMode::Compact) {
+    return;
+  }
   set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom", layout.content_padding_bottom_dp);
   set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
   set_dp(doc->GetElementById("shell-auxiliary-sheet"), "bottom", layout.sheet_bottom_dp);
@@ -985,7 +993,7 @@ void ShellHost::SyncLayout() {
   if (on_layout_synced_) {
     on_layout_synced_();
   }
-  ApplyCompactChromeLayout();
+  ApplySafeAreaLayout();
 }
 
 void ShellHost::Update(Rml::Context* context) {

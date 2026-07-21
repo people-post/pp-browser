@@ -66,9 +66,13 @@ PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
   return vis;
 }
 
-CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& config, int safe_area_bottom_dp) {
+CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& config,
+                                                            int safe_area_top_dp,
+                                                            int safe_area_bottom_dp) {
   CompactChromeLayout layout{};
+  const float safe_top = static_cast<float>(std::max(0, safe_area_top_dp));
   const float safe_bottom = static_cast<float>(std::max(0, safe_area_bottom_dp));
+  layout.shell_top_dp = safe_top;
   layout.content_padding_bottom_dp = config.compact_nav_height_dp + safe_bottom;
   layout.chrome_bottom_dp = safe_bottom;
   layout.sheet_bottom_dp = config.compact_nav_height_dp + safe_bottom;

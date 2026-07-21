@@ -43,8 +43,10 @@ struct ShellConfig {
   float toast_short_ms = 3000.f;
 };
 
-/** Derived dp offsets for compact floating chrome (lg1). */
+/** Derived dp offsets for compact floating chrome + safe-area (lg1). */
 struct CompactChromeLayout {
+  /** Top inset for status bar / notch; applied to the shell document body. */
+  float shell_top_dp = 0.f;
   float content_padding_bottom_dp = 0.f;
   float chrome_bottom_dp = 0.f;
   float sheet_bottom_dp = 0.f;
@@ -148,6 +150,8 @@ struct ShellState {
   NavBadgeState nav_badges;
 
   float shell_width_dp = 1280.f;
+  /** Top safe-area inset in dp (SDL and/or machine prefs); clears status bar / notch. */
+  int safe_area_top_dp = 0;
   /** Bottom safe-area inset in dp (SDL and/or machine prefs). */
   int safe_area_bottom_dp = 0;
 };

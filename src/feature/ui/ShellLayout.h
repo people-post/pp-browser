@@ -13,7 +13,9 @@ struct ShellLayout {
   static PaneVisibility WhichPanesVisible(const ShellState& state);
   static const char* NavContentKey(NavTab tab);
   static bool TabHasSecondary(NavTab tab);
-  static CompactChromeLayout ComputeCompactChromeLayout(const ShellConfig& config, int safe_area_bottom_dp);
+  static CompactChromeLayout ComputeCompactChromeLayout(const ShellConfig& config,
+                                                        int safe_area_top_dp,
+                                                        int safe_area_bottom_dp);
 };
 
 } // namespace pbr

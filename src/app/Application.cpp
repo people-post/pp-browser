@@ -224,7 +224,8 @@ bool Application::Initialize(const char* window_title) {
     return false;
   }
 
-  ShellHost::Instance().SetSafeAreaBottomFromPrefs(bootstrap.machine_prefs.safe_area.bottom);
+  ShellHost::Instance().SetSafeAreaInsetsFromPrefs(bootstrap.machine_prefs.safe_area.top,
+                                                   bootstrap.machine_prefs.safe_area.bottom);
   ShellHost::Instance().RefreshSafeAreaInsets(context);
 
   ApplyUiDocumentLanguage(context);
