@@ -224,6 +224,9 @@ bool Application::Initialize(const char* window_title) {
     return false;
   }
 
+  ShellHost::Instance().SetSafeAreaBottomFromPrefs(bootstrap.machine_prefs.safe_area.bottom);
+  ShellHost::Instance().RefreshSafeAreaInsets(context);
+
   ApplyUiDocumentLanguage(context);
 
   log().info << "Initialization complete";

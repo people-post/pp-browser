@@ -13,6 +13,8 @@
 #include "feature/ui/ShellLayout.h"
 #include "base/ui/ViewCatalog.h"
 
+#include "RmlUi_Backend.h"
+
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Element.h>
@@ -23,6 +25,10 @@
 #include <optional>
 #include <sstream>
 #include <string>
+
+#if RMLUI_SDL_VERSION_MAJOR >= 3
+#include <SDL3/SDL.h>
+#endif
 
 namespace pbr {
 
@@ -501,6 +507,72 @@ void ShellHost::SetOnLayoutSynced(std::function<void()> callback) {
   on_layout_synced_ = std::move(callback);
 }
 
+void ShellHost::SetSafeAreaBottomFromPrefs(int bottom_dp) {
+  safe_area_bottom_from_prefs_dp_ = std::max(0, bottom_dp);
+  state_.safe_area_bottom_dp = std::max(state_.safe_area_bottom_dp, safe_area_bottom_from_prefs_dp_);
+  ApplyCompactChromeLayout();
+}
+
+int ShellHost::ReadSafeAreaBottomFromSdl(Rml::Context* context) const {
+#if RMLUI_SDL_VERSION_MAJOR >= 3
+  if (!context) {
+    return 0;
+  }
+  SDL_Window* window = Backend::GetWindow();
+  if (!window) {
+    return 0;
+  }
+  SDL_Rect safe{};
+  if (!SDL_GetWindowSafeArea(window, &safe)) {
+    return 0;
+  }
+  const int pixel_h = context->GetDimensions().y;
+  const int bottom_px = pixel_h - (safe.y + safe.h);
+  if (bottom_px <= 0) {
+    return 0;
+  }
+  const float dp_ratio = context->GetDensityIndependentPixelRatio();
+  if (dp_ratio <= 0.f) {
+    return 0;
+  }
+  return static_cast<int>(static_cast<float>(bottom_px) / dp_ratio + 0.5f);
+#else
+  (void)context;
+  return 0;
+#endif
+}
+
+void ShellHost::RefreshSafeAreaInsets(Rml::Context* context) {
+  const int sdl_bottom = ReadSafeAreaBottomFromSdl(context);
+  const int effective_bottom = std::max(sdl_bottom, safe_area_bottom_from_prefs_dp_);
+  if (effective_bottom == state_.safe_area_bottom_dp) {
+    return;
+  }
+  state_.safe_area_bottom_dp = effective_bottom;
+  ApplyCompactChromeLayout();
+}
+
+void ShellHost::ApplyCompactChromeLayout() {
+  if (!context_ || context_->GetNumDocuments() == 0 || state_.layout_mode != LayoutMode::Compact) {
+    return;
+  }
+  const CompactChromeLayout layout =
+      ShellLayout::ComputeCompactChromeLayout(config_, state_.safe_area_bottom_dp);
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+
+  auto set_dp = [](Rml::Element* element, const char* property, float value_dp) {
+    if (!element) {
+      return;
+    }
+    const std::string value = std::to_string(static_cast<int>(value_dp)) + "dp";
+    element->SetProperty(property, value.c_str());
+  };
+
+  set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom", layout.content_padding_bottom_dp);
+  set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
+  set_dp(doc->GetElementById("shell-auxiliary-sheet"), "bottom", layout.sheet_bottom_dp);
+}
+
 void ShellHost::OnLayoutModeChanged() {
   if (state_.layout_mode == LayoutMode::Expanded) {
     state_.compact_chat_open = false;
@@ -572,7 +644,7 @@ std::string ShellHost::SerializeCompactBase() const {
     if (home_inline) {
       out << " shell-nav-page--home";
     }
-    out << "\">";
+    out << "\" id=\"shell-nav-page\">";
     if (const char* nav_content = NavContentKey()) {
       out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
     } else if (home_inline) {
@@ -581,7 +653,7 @@ std::string ShellHost::SerializeCompactBase() const {
     }
     out << "</div>";
   } else if (state_.nav_tab == NavTab::Sessions) {
-    out << "<div class=\"shell-nav-page shell-nav-page--under-overlay\">";
+    out << "<div class=\"shell-nav-page shell-nav-page--under-overlay\" id=\"shell-nav-page\">";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-sidebar\"></div>";
     out << "</div>";
   }
@@ -600,7 +672,7 @@ std::string ShellHost::SerializeCompactBase() const {
 
   if (state_.auxiliary_open) {
     out << "<div class=\"shell-sheet-scrim\" data-event-click=\"toggle_auxiliary()\"></div>";
-    out << "<div class=\"shell-sheet shell-sheet-auxiliary shell-sheet-compact\">";
+    out << "<div class=\"shell-sheet shell-sheet-auxiliary shell-sheet-compact\" id=\"shell-auxiliary-sheet\">";
     for (const PaneState& pane : state_.panes) {
       if (pane.spec.role == PaneRole::Auxiliary) {
         out << SerializePaneSlot(pane.spec.key, nullptr);
@@ -610,7 +682,7 @@ std::string ShellHost::SerializeCompactBase() const {
   }
 
   if (!state_.compact_chat_open) {
-    out << "<div class=\"shell-bottom-chrome\">";
+    out << "<div class=\"shell-bottom-chrome\" id=\"shell-bottom-chrome\">";
     out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
     out << "</div>";
   }
@@ -914,6 +986,7 @@ void ShellHost::SyncLayout() {
   if (on_layout_synced_) {
     on_layout_synced_();
   }
+  ApplyCompactChromeLayout();
 }
 
 void ShellHost::Update(Rml::Context* context) {
@@ -936,6 +1009,9 @@ void ShellHost::Update(Rml::Context* context) {
 
   const LayoutMode previous = state_.layout_mode;
   ApplyLayoutModeFromContext(context);
+  if (state_.layout_mode == LayoutMode::Compact) {
+    RefreshSafeAreaInsets(context);
+  }
   if (previous != state_.layout_mode) {
     OnLayoutModeChanged();
     SaveFocus();

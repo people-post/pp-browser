@@ -770,6 +770,8 @@ select selectbox option {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-sizing: border-box;
+  padding-bottom: 56dp;
 }
 
 .shell-nav-page .shell-pane-body {
@@ -855,10 +857,14 @@ select selectbox option {
 }
 
 .shell-bottom-chrome {
-  flex-shrink: 0;
+  position: absolute;
+  bottom: 0;
+  left: 12dp;
+  right: 12dp;
   display: flex;
   flex-direction: column;
   z-index: 15;
+  box-sizing: border-box;
 }
 
 .shell-composer-mount {
@@ -909,10 +915,6 @@ select selectbox option {
   width: 320dp;
   max-width: 90%;
   z-index: 21;
-}
-
-.shell-sheet-compact {
-  bottom: 56dp;
 }
 
 .shell-toolbar {

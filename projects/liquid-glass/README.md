@@ -1,6 +1,6 @@
 # Liquid Glass — compact shell chrome
 
-**Status:** **Deferred** — planning only (no implementation started)  
+**Status:** **In progress** — lg1 layout foundation  
 **Owner:** TBD  
 **Stable refs:** [docs/ui/UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md), [docs/ui/WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md), [docs/ui/RCSS_PROFILE.md](../../docs/ui/RCSS_PROFILE.md), [docs/architecture/RMLUI_UPSTREAM.md](../../docs/architecture/RMLUI_UPSTREAM.md)
 
@@ -41,7 +41,7 @@ This is a **renderer + layout + design-system** project, not a theme tweak. Ship
 | Phase | Name | Status |
 |-------|------|--------|
 | lg0 | Project docs + ADRs | Done |
-| lg1 | Layout foundation (floating compact chrome) | Not started |
+| lg1 | Layout foundation (floating compact chrome) | In progress |
 | lg2 | Frosted glass materials (RCSS tokens + backdrop-filter) | Not started |
 | lg3 | Liquid shape + edge treatment | Not started |
 | lg4 | Motion + scroll coupling | Not started |

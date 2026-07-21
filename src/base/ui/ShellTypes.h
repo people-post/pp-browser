@@ -35,8 +35,20 @@ struct ShellConfig {
   float auxiliary_width_dp = 320.f;
   float toolbar_height_dp = 48.f;
   float frame_padding_dp = 24.f;
+  /** Compact bottom nav bar height (excludes safe-area inset). */
+  float compact_nav_height_dp = 56.f;
+  /** Horizontal inset for floating compact nav pill (lg1 layout). */
+  float compact_nav_horizontal_inset_dp = 12.f;
   size_t max_toasts = 3;
   float toast_short_ms = 3000.f;
+};
+
+/** Derived dp offsets for compact floating chrome (lg1). */
+struct CompactChromeLayout {
+  float content_padding_bottom_dp = 0.f;
+  float chrome_bottom_dp = 0.f;
+  float sheet_bottom_dp = 0.f;
+  float chrome_horizontal_inset_dp = 0.f;
 };
 
 struct PaneSpec {
@@ -136,6 +148,8 @@ struct ShellState {
   NavBadgeState nav_badges;
 
   float shell_width_dp = 1280.f;
+  /** Bottom safe-area inset in dp (SDL and/or machine prefs). */
+  int safe_area_bottom_dp = 0;
 };
 
 } // namespace pbr
