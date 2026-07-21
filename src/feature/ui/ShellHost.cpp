@@ -518,9 +518,9 @@ void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {
 ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   SafeAreaFromSdl insets{};
 #if RMLUI_SDL_VERSION_MAJOR >= 3
-  // SDL_GetWindowSafeArea is in window/point units (same as SDL_GetWindowSize).
-  // Do not mix with context->GetDimensions(), which are framebuffer pixels on
-  // Retina — that overstates insets by ~display scale on iOS.
+  // SDL_GetWindowSafeArea is in window coordinates (points on iOS, pixels on Android).
+  // RmlUi "dp" values are multiplied by display scale into framebuffer pixels — convert
+  // so both platforms clear the same physical inset.
   SDL_Window* window = Backend::GetWindow();
   if (!window) {
     return insets;
@@ -534,8 +534,15 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   if (!SDL_GetWindowSize(window, &win_w, &win_h) || win_h <= 0) {
     return insets;
   }
-  insets.top_dp = std::max(0, safe.y);
-  insets.bottom_dp = std::max(0, win_h - (safe.y + safe.h));
+  const float density = SDL_GetWindowPixelDensity(window);
+  const float display_scale = SDL_GetWindowDisplayScale(window);
+  // context_px = window_units * density; dp = context_px / display_scale
+  const float window_to_dp =
+      (display_scale > 0.f) ? ((density > 0.f ? density : 1.f) / display_scale) : 1.f;
+  const int top_win = std::max(0, safe.y);
+  const int bottom_win = std::max(0, win_h - (safe.y + safe.h));
+  insets.top_dp = static_cast<int>(static_cast<float>(top_win) * window_to_dp + 0.5f);
+  insets.bottom_dp = static_cast<int>(static_cast<float>(bottom_win) * window_to_dp + 0.5f);
 #endif
   return insets;
 }
@@ -569,8 +576,9 @@ void ShellHost::ApplySafeAreaLayout() {
     element->SetProperty(property, value.c_str());
   };
 
-  // iOS draws fullscreen under the status bar / notch; inset the whole shell.
+  // Keep the shell inside the safe rect (status bar / home indicator / IME).
   set_dp(doc, "top", layout.shell_top_dp);
+  set_dp(doc, "bottom", layout.shell_bottom_dp);
 
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
@@ -578,6 +586,8 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom", layout.content_padding_bottom_dp);
   set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
   set_dp(doc->GetElementById("shell-auxiliary-sheet"), "bottom", layout.sheet_bottom_dp);
+  // Chat overlay hides the nav rail — no extra bottom padding beyond shell inset.
+  set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
 }
 
 void ShellHost::OnLayoutModeChanged() {
@@ -1016,9 +1026,7 @@ void ShellHost::Update(Rml::Context* context) {
 
   const LayoutMode previous = state_.layout_mode;
   ApplyLayoutModeFromContext(context);
-  if (state_.layout_mode == LayoutMode::Compact) {
-    RefreshSafeAreaInsets(context);
-  }
+  RefreshSafeAreaInsets(context);
   if (previous != state_.layout_mode) {
     OnLayoutModeChanged();
     SaveFocus();

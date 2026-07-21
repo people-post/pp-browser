@@ -47,6 +47,9 @@ struct ShellConfig {
 struct CompactChromeLayout {
   /** Top inset for status bar / notch; applied to the shell document body. */
   float shell_top_dp = 0.f;
+  /** Bottom inset for home indicator / IME; applied to the shell document body. */
+  float shell_bottom_dp = 0.f;
+  /** Extra padding inside content so the last row clears the floating nav. */
   float content_padding_bottom_dp = 0.f;
   float chrome_bottom_dp = 0.f;
   float sheet_bottom_dp = 0.f;

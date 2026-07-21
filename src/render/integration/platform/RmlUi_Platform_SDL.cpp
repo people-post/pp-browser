@@ -112,7 +112,14 @@ void SystemInterface_SDL::ActivateKeyboard(Rml::Vector2f caret_position, float l
 	if (window)
 	{
 #if SDL_MAJOR_VERSION >= 3
-		const SDL_Rect rect = {int(caret_position.x), int(caret_position.y), 1, int(line_height)};
+		// RmlUi layout is in framebuffer pixels (SyncContext uses GetWindowSizeInPixels).
+		// SDL_SetTextInputArea expects window coordinates (points on iOS). Passing pixels
+		// makes UIKit pan the GL view by ~display-scale too far → mostly black screen.
+		const float density = SDL_GetWindowPixelDensity(window);
+		const float scale = density > 0.f ? density : 1.f;
+		const int caret_h = int(line_height / scale + 0.5f);
+		const SDL_Rect rect = {int(caret_position.x / scale + 0.5f), int(caret_position.y / scale + 0.5f), 1,
+			caret_h > 0 ? caret_h : 1};
 		SDL_SetTextInputArea(window, &rect, 0);
 		SDL_StartTextInput(window);
 #else

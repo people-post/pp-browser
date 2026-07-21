@@ -462,12 +462,23 @@ extern int SDL_AppleTVRemoteOpenedAsJoystick;
 
 - (void)safeAreaInsetsDidChange
 {
-    // Update the safe area insets
+    // Update the safe area insets. When the software keyboard is visible, keep its
+    // height as the bottom inset so the app can reflow (pp-browser shell) instead of
+    // relying on GL view-frame pan.
+    int bottom = (int)SDL_ceilf(self.safeAreaInsets.bottom);
+#ifdef SDL_IPHONE_KEYBOARD
+    if (sdlwindow && sdlwindow->internal) {
+        SDL_UIKitWindowData *data = (__bridge SDL_UIKitWindowData *)sdlwindow->internal;
+        if (data.viewcontroller != nil && data.viewcontroller.keyboardHeight > bottom) {
+            bottom = data.viewcontroller.keyboardHeight;
+        }
+    }
+#endif
     SDL_SetWindowSafeAreaInsets(sdlwindow,
                                 (int)SDL_ceilf(self.safeAreaInsets.left),
                                 (int)SDL_ceilf(self.safeAreaInsets.right),
                                 (int)SDL_ceilf(self.safeAreaInsets.top),
-                                (int)SDL_ceilf(self.safeAreaInsets.bottom));
+                                bottom);
 }
 
 - (SDL_Scancode)scancodeFromPress:(UIPress *)press

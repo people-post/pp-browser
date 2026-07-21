@@ -516,8 +516,10 @@ static void SDLCALL SDL_HideHomeIndicatorHintChanged(void *userdata, const char 
     /* The keyboard rect is in the coordinate space of the screen/window, but we
      * want its height in the coordinate space of the view. */
     kbrect = [self.view convertRect:kbrect fromView:nil];
+    const CGRect overlap = CGRectIntersection(self.view.bounds, kbrect);
+    const int height = CGRectIsNull(overlap) ? 0 : (int)SDL_ceilf(CGRectGetHeight(overlap));
 
-    [self setKeyboardHeight:(int)kbrect.size.height];
+    [self setKeyboardHeight:height];
 #endif
 
     /* A keyboard hide transition has been interrupted with a show (keyboardWillHide has been called but keyboardDidHide didn't).
@@ -592,35 +594,36 @@ static void SDLCALL SDL_HideHomeIndicatorHintChanged(void *userdata, const char 
 
 - (void)updateKeyboard
 {
-    SDL_UIKitWindowData *data = (__bridge SDL_UIKitWindowData *) window->internal;
+    SDL_UIKitWindowData *data = (__bridge SDL_UIKitWindowData *)window->internal;
 
-    CGAffineTransform t = self.view.transform;
-    CGPoint offset = CGPointMake(0.0, 0.0);
 #ifdef SDL_PLATFORM_VISIONOS
     CGRect frame = UIKit_ComputeViewFrame(window);
 #else
     CGRect frame = UIKit_ComputeViewFrame(window, data.uiwindow.screen);
 #endif
 
-    if (self.keyboardHeight && self.textInputRect.h) {
-        int rectbottom = (int)(self.textInputRect.y + self.textInputRect.h);
-        int keybottom = (int)(self.view.bounds.size.height - self.keyboardHeight);
-        if (keybottom < rectbottom) {
-            offset.y = keybottom - rectbottom;
-        }
-    }
-
-    /* Apply this view's transform (except any translation) to the offset, in
-     * order to orient it correctly relative to the frame's coordinate space. */
-    t.tx = 0.0;
-    t.ty = 0.0;
-    offset = CGPointApplyAffineTransform(offset, t);
-
-    // Apply the updated offset to the view's frame.
-    frame.origin.x += offset.x;
-    frame.origin.y += offset.y;
-
+    // pp-browser: do not pan the GL view for the software keyboard (that left
+    // inputs covered or over-scrolled into black). Publish keyboard height via
+    // safe-area bottom and let the shell reflow instead.
     self.view.frame = frame;
+    [self publishKeyboardSafeAreaInsets];
+}
+
+- (void)publishKeyboardSafeAreaInsets
+{
+    if (!self.view || !window) {
+        return;
+    }
+    const UIEdgeInsets safe = self.view.safeAreaInsets;
+    int bottom = (int)SDL_ceilf(safe.bottom);
+    if (self.keyboardHeight > bottom) {
+        bottom = self.keyboardHeight;
+    }
+    SDL_SetWindowSafeAreaInsets(window,
+                                (int)SDL_ceilf(safe.left),
+                                (int)SDL_ceilf(safe.right),
+                                (int)SDL_ceilf(safe.top),
+                                bottom);
 }
 
 - (void)setKeyboardHeight:(int)height

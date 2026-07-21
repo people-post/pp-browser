@@ -108,6 +108,7 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   const ShellConfig config{};
   const CompactChromeLayout no_inset = ShellLayout::ComputeCompactChromeLayout(config, 0, 0);
   EXPECT_FLOAT_EQ(no_inset.shell_top_dp, 0.f);
+  EXPECT_FLOAT_EQ(no_inset.shell_bottom_dp, 0.f);
   EXPECT_FLOAT_EQ(no_inset.content_padding_bottom_dp, 56.f);
   EXPECT_FLOAT_EQ(no_inset.chrome_bottom_dp, 0.f);
   EXPECT_FLOAT_EQ(no_inset.sheet_bottom_dp, 56.f);
@@ -115,7 +116,12 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
 
   const CompactChromeLayout with_inset = ShellLayout::ComputeCompactChromeLayout(config, 47, 34);
   EXPECT_FLOAT_EQ(with_inset.shell_top_dp, 47.f);
-  EXPECT_FLOAT_EQ(with_inset.content_padding_bottom_dp, 90.f);
-  EXPECT_FLOAT_EQ(with_inset.chrome_bottom_dp, 34.f);
-  EXPECT_FLOAT_EQ(with_inset.sheet_bottom_dp, 90.f);
+  EXPECT_FLOAT_EQ(with_inset.shell_bottom_dp, 34.f);
+  EXPECT_FLOAT_EQ(with_inset.content_padding_bottom_dp, 56.f);
+  EXPECT_FLOAT_EQ(with_inset.chrome_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(with_inset.sheet_bottom_dp, 56.f);
+
+  const CompactChromeLayout with_keyboard = ShellLayout::ComputeCompactChromeLayout(config, 47, 336);
+  EXPECT_FLOAT_EQ(with_keyboard.shell_bottom_dp, 336.f);
+  EXPECT_FLOAT_EQ(with_keyboard.content_padding_bottom_dp, 56.f);
 }
