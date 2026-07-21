@@ -27,6 +27,17 @@ TEST(ChatPayloadValidatorTest, RejectsOversizeOutboundText) {
   EXPECT_FALSE(static_cast<bool>(ChatPayloadValidator::ValidateOutboundText(oversized)));
 }
 
+TEST(ChatPayloadValidatorTest, RejectsOversizeMultibyteOutboundText) {
+  using namespace pbr;
+
+  const std::string one_cjk = "\xE4\xBD\xA0";
+  std::string oversized;
+  while (oversized.size() <= kMaxComposeTextBytes) {
+    oversized += one_cjk;
+  }
+  EXPECT_FALSE(static_cast<bool>(ChatPayloadValidator::ValidateOutboundText(oversized)));
+}
+
 TEST(ChatPayloadValidatorTest, SanitizesInboundPresentationFields) {
   using namespace pbr;
 

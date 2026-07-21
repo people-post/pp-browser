@@ -10,7 +10,7 @@
 | Preference | `ProfilePreferences::language` (`system` / BCP-47), schema v6 |
 | Settings UI | Me → Appearance → Language row; bottom sheet (compact) / float list (expanded) via `ContextMenuHost` |
 | Apply | `SessionStore` language listener → set catalog + remount shell + refresh settings chrome |
-| Fonts | `LatoLatin` + `NotoSansSC-Regular.subset.ttf` fallback |
+| Fonts | `LatoLatin` + full Noto Sans CJK (SC/JP/KR/TC) + Noto Emoji; HarfBuzz shaping for chat |
 | RML tokens | `{{i18n:key}}` replaced in `ViewCatalog::LoadBody` |
 | Tests | `pp_browser_localization_service_test`; settings sections load catalogs |
 

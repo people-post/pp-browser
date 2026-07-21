@@ -14,13 +14,19 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): FreeType, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), libsodium, and (for libp2p) BoringSSL, Boost, Protobuf, lsquic, and related packages.
+**Vendored source** under [`third_party/`](../../third_party/): FreeType, HarfBuzz, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), libsodium, and (for libp2p) BoringSSL, Boost, Protobuf, lsquic, and related packages.
 
 **System packages:** X11 and OpenGL development headers on Linux for the GUI.
 
 RmlUi is **hard-forked** under `src/render/fork/`. libp2p is **hard-forked** under `src/libp2p/fork/` (not in `third_party/`).
 
 If base `third_party/` trees are missing, run `./scripts/vendor_import.sh` from the repo root.
+
+Chat/CJK fonts (Noto Sans CJK Regular + Noto Emoji) ship under `assets/fonts/`. To refresh them:
+
+```bash
+./scripts/fonts_import_noto.sh
+```
 
 If libp2p dependency trees are missing, run `./scripts/libp2p_vendor_import.sh`.
 

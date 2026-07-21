@@ -4,6 +4,8 @@
 #include "base/ui/ContextMenuHost.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
+#include "base/messaging/ChatPayloadValidator.h"
+#include "base/messaging/MessagingLimits.h"
 #include "base/platform/ProductBranding.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
@@ -31,6 +33,7 @@
 #include "RmlUi_Backend.h"
 #include "RmlUi_Renderer_GL3.h"
 #include "TextLoupeRenderer.h"
+#include "FontEngineInterfaceHarfBuzz.h"
 
 #ifdef PPBROWSER_ENABLE_DEBUGGER
 #include <RmlUi/Debugger.h>
@@ -43,6 +46,17 @@ namespace {
 bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier,
                     float /*native_dp_ratio*/, bool priority) {
   return InputCoordinator::Instance().ProcessKeyDown(context, key, key_modifier, priority);
+}
+
+void ApplyUiDocumentLanguage(Rml::Context* context) {
+  if (!context || context->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* document = context->GetDocument(0);
+  if (!document) {
+    return;
+  }
+  document->SetAttribute("lang", LocalizationService::Instance().ResolvedLanguage().c_str());
 }
 
 } // namespace
@@ -108,6 +122,14 @@ bool Application::Initialize(const char* window_title) {
     Rml::SetFileInterface(packaged_files);
   }
 
+  harfbuzz_font_engine_ = std::make_unique<FontEngineInterfaceHarfBuzz>();
+  harfbuzz_font_engine_->RegisterLanguage("en", "Latn", TextFlowDirection::LeftToRight);
+  harfbuzz_font_engine_->RegisterLanguage("zh-Hans", "Hans", TextFlowDirection::LeftToRight);
+  harfbuzz_font_engine_->RegisterLanguage("zh-Hant", "Hant", TextFlowDirection::LeftToRight);
+  harfbuzz_font_engine_->RegisterLanguage("ja", "Jpan", TextFlowDirection::LeftToRight);
+  harfbuzz_font_engine_->RegisterLanguage("ko", "Kore", TextFlowDirection::LeftToRight);
+  Rml::SetFontEngineInterface(harfbuzz_font_engine_.get());
+
   if (!Rml::Initialise()) {
     log().error << "Rml::Initialise failed";
     Backend::Shutdown();
@@ -121,8 +143,11 @@ bool Application::Initialize(const char* window_title) {
   const std::string theme_path = AssetsPath(bootstrap.profile_prefs.theme);
   Theme::LoadBase(theme_path);
   Rml::LoadFontFace(AssetsPath("fonts/LatoLatin-Regular.ttf"));
-  // CJK fallback for Simplified Chinese UI (and other non-Latin glyphs).
-  Rml::LoadFontFace(AssetsPath("fonts/NotoSansSC-Regular.subset.ttf"), true);
+  Rml::LoadFontFace(AssetsPath("fonts/NotoSansCJKsc-Regular.otf"), true);
+  Rml::LoadFontFace(AssetsPath("fonts/NotoSansCJKjp-Regular.otf"), true);
+  Rml::LoadFontFace(AssetsPath("fonts/NotoSansCJKkr-Regular.otf"), true);
+  Rml::LoadFontFace(AssetsPath("fonts/NotoSansCJKtc-Regular.otf"), true);
+  Rml::LoadFontFace(AssetsPath("fonts/NotoEmoji-Regular.ttf"), true);
 
   if (auto loaded = LocalizationService::Instance().LoadFromAssets(IPathProvider::Instance().BundleAssetsDir());
       !loaded) {
@@ -168,6 +193,9 @@ bool Application::Initialize(const char* window_title) {
     LocalizationService::Instance().SetPreferredLanguage(language);
     SettingsController::Instance().RefreshLocalizedChrome();
     ShellHost::Instance().RequestSyncLayout(true);
+    if (auto* ctx = Rml::GetContext("main")) {
+      ApplyUiDocumentLanguage(ctx);
+    }
   });
 
   SetAppEventHooks(AppEventHooks{
@@ -195,6 +223,8 @@ bool Application::Initialize(const char* window_title) {
     Backend::Shutdown();
     return false;
   }
+
+  ApplyUiDocumentLanguage(context);
 
   log().info << "Initialization complete";
   initialized_ = true;
@@ -249,6 +279,7 @@ void Application::Shutdown() {
     Rml::Debugger::Shutdown();
 #endif
     Rml::Shutdown();
+    harfbuzz_font_engine_.reset();
     BrowserThread::SetUIWakeCallback(nullptr);
     Backend::Shutdown();
 
