@@ -515,9 +515,11 @@ void ShellHost::SetSafeAreaBottomFromPrefs(int bottom_dp) {
 
 int ShellHost::ReadSafeAreaBottomFromSdl(Rml::Context* context) const {
 #if RMLUI_SDL_VERSION_MAJOR >= 3
-  if (!context) {
-    return 0;
-  }
+  // SDL_GetWindowSafeArea is in window/point units (same as SDL_GetWindowSize).
+  // Do not mix with context->GetDimensions(), which are framebuffer pixels on
+  // Retina — that overstates the inset by ~display scale and floats the nav
+  // far above the home indicator on iOS.
+  (void)context;
   SDL_Window* window = Backend::GetWindow();
   if (!window) {
     return 0;
@@ -526,16 +528,13 @@ int ShellHost::ReadSafeAreaBottomFromSdl(Rml::Context* context) const {
   if (!SDL_GetWindowSafeArea(window, &safe)) {
     return 0;
   }
-  const int pixel_h = context->GetDimensions().y;
-  const int bottom_px = pixel_h - (safe.y + safe.h);
-  if (bottom_px <= 0) {
+  int win_w = 0;
+  int win_h = 0;
+  if (!SDL_GetWindowSize(window, &win_w, &win_h) || win_h <= 0) {
     return 0;
   }
-  const float dp_ratio = context->GetDensityIndependentPixelRatio();
-  if (dp_ratio <= 0.f) {
-    return 0;
-  }
-  return static_cast<int>(static_cast<float>(bottom_px) / dp_ratio + 0.5f);
+  const int bottom = win_h - (safe.y + safe.h);
+  return std::max(0, bottom);
 #else
   (void)context;
   return 0;
