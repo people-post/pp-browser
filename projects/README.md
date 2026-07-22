@@ -37,4 +37,4 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [e2e-message-crypto](e2e-message-crypto/) | **c1 done** — c2 after chat v6 | `base/crypto` + vectors; AEAD on wire in c2 — [CURRENT_STATE](e2e-message-crypto/CURRENT_STATE.md) |
 | [push-notifications](push-notifications/) | **Wave 1 done** | Owned Brief FCM wake + local alerts; alerts ≠ sync — [CURRENT_STATE](push-notifications/CURRENT_STATE.md) |
 | [i18n](i18n/) | **i1–i6 landed** — widen i5 | EN + zh-Hans UI language; Settings picker (sheet on mobile) — [CURRENT_STATE](i18n/CURRENT_STATE.md) |
-| [liquid-glass](liquid-glass/) | **In progress** — lg1 layout | Apple-faithful Liquid Glass on compact shell chrome — [PHASES](liquid-glass/PHASES.md) |
+| [liquid-glass](liquid-glass/) | **In progress** — lg8 pivot done | Floating Chrome on compact shell — top-layer frost only — [PHASES](liquid-glass/PHASES.md) |

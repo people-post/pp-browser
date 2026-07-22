@@ -27,6 +27,29 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
   return InterruptionKind::None;
 }
 
+CompactChromeFrostSurface ShellInterruption::CompactChromeFrostSurface(const ShellState& state) {
+  if (state.layout_mode != LayoutMode::Compact) {
+    return CompactChromeFrostSurface::None;
+  }
+  switch (Top(state)) {
+  case InterruptionKind::PinGate:
+  case InterruptionKind::Dialog:
+  case InterruptionKind::OverlayLayer:
+    return CompactChromeFrostSurface::None;
+  case InterruptionKind::Transient:
+    return CompactChromeFrostSurface::TransientHeader;
+  case InterruptionKind::AccountSheet:
+    return CompactChromeFrostSurface::AccountSheetHeader;
+  case InterruptionKind::AuxiliarySheet:
+    return CompactChromeFrostSurface::AuxiliarySheetChrome;
+  case InterruptionKind::CompactChatOverlay:
+    return CompactChromeFrostSurface::ChatOverlayHeader;
+  case InterruptionKind::None:
+    return CompactChromeFrostSurface::BottomNav;
+  }
+  return CompactChromeFrostSurface::None;
+}
+
 bool ShellInterruption::DismissTop(ShellState& state) {
   switch (Top(state)) {
   case InterruptionKind::PinGate:

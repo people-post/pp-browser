@@ -27,6 +27,16 @@ enum class InterruptionKind {
   PinGate,
 };
 
+/** At most one compact chrome bar uses backdrop frost per frame. */
+enum class CompactChromeFrostSurface {
+  None,
+  BottomNav,
+  ChatOverlayHeader,
+  AuxiliarySheetChrome,
+  AccountSheetHeader,
+  TransientHeader,
+};
+
 enum class ToastDuration { Short, Long };
 
 struct ShellConfig {

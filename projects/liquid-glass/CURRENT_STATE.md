@@ -1,39 +1,40 @@
-# Liquid Glass — current state
+# Floating Chrome — current state
 
-**Last updated:** 2026-07-21  
-**Implementation:** lg2 + lg3 landed (LG003 = C); visual QA deferred
+**Last updated:** 2026-07-22  
+**Implementation:** lg1–lg3 + lg8 (Floating Chrome pivot)
 
-## Shipped (lg1–lg3)
+## Shipped
 
 | Surface | Treatment |
 |---------|-----------|
-| Bottom nav | Twin floating pills (Home | Sessions+Contacts+Me); `backdrop-filter: blur(20px)` + glass fill; active tab capsule 12dp |
-| Chat overlay header | Full-bleed frosted bar; absolute over messages (`padding-top` 48dp on body) |
-| Transient header | Same glass material; absolute over transient pane |
-| Auxiliary sheet | Full-body glass (LG003=C); lighter scrim tint |
-| Home / overlay composer | Glass strip on `#shell-composer-mount` (`surface-glass`); softer composer card |
+| Bottom nav | Twin floating pills; **opaque** `.surface-chrome` fill + elevation shadow; **frost** (`blur(12px)`) only when bottom nav is top chrome |
+| Chat overlay header | Opaque chrome; frost when chat overlay is top interruption |
+| Transient header | Opaque chrome; frost when transient layer is top |
+| Auxiliary sheet | **Opaque** body (`surface-elevated`); 8dp top strip; frost on strip when sheet is top |
+| Account sheet | Opaque body; header bar frost when account sheet is top |
+| Home / overlay composer | Opaque `.surface-chrome` strip (never frost) |
+
+### Frost selection (C++)
+
+`ShellInterruption::CompactChromeFrostSurface(state)` picks **at most one** bar per frame from the interruption stack. Modals (dialog, overlay, pin gate) → no frost.
 
 ### Tokens / utilities
 
 | Item | Location |
 |------|----------|
-| Glass fills / borders / shadows | `assets/themes/colors-light.rcss`, `colors-dark.rcss` |
-| `.surface-glass` / `.surface-glass--opaque` | `components.rcss` + theme colors |
-| Markup classes | `ShellHost::SerializeCompactBase`, `SerializeTransientLayer` |
+| Chrome fills / borders / shadows | `assets/themes/colors-light.rcss`, `colors-dark.rcss` |
+| `.surface-chrome` / `.surface-chrome--frost` / `.surface-chrome--solid` | `components.rcss` + theme colors |
+| Frost class wiring | `ShellHost::SerializeCompactBase`, `SerializeTransientLayer`, `SerializeAccountSheet` |
 
-**Not yet:** scroll-coupled motion (lg4), custom specular shader (lg5), reduce-transparency wiring / perf gates (lg6), stable `docs/ui/` promotion (lg7).
+**Not yet:** reduce-transparency pref wiring (lg6), perf gates (lg6), stable `docs/ui/` promotion (lg7).
 
-## Rendering capabilities (relevant)
+## Rendering
 
 | Capability | Status |
 |------------|--------|
-| `backdrop-filter: blur()` | Used on compact chrome |
-| `filter: shader(...)` | Experimental — deferred (lg5; only if visual review fails) |
-
-## Incident note (2026-07-21)
-
-White/empty iOS Simulator frame during lg2/lg3 dogfood was **not** caused by glass/`backdrop-filter`. Root cause: `AssetIO` / `SdlAssetFileInterface` used `TARGET_OS_IPHONE` without `#include <TargetConditionals.h>`, so packaged view/locale reads always failed. Fixed in platform asset IO; glass materials re-applied.
+| `backdrop-filter: blur()` | **One surface max** via `--frost` or `shell-bottom-chrome--frost` |
+| Custom glass shaders (lg5) | Cancelled |
 
 ## Next agent — start here
 
-Continue with **lg4** (optional polish) or **lg6** (fallbacks + perf) in [PHASES.md](PHASES.md). Resolve LG005 / LG006 / LG007 before lg6 merge gates. Do not start lg5 until side-by-side iOS review of lg2–lg3.
+Continue with **lg6** (fallbacks + perf) in [PHASES.md](PHASES.md). Resolve LG005 / LG006 / LG007 before lg6 merge gates.

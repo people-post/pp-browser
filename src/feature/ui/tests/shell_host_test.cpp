@@ -104,6 +104,41 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_TRUE(dismiss_transient.transient_stack.empty());
   EXPECT_FALSE(dismiss_transient.transient_active);
 
+  ShellState compact_base{};
+  compact_base.layout_mode = LayoutMode::Compact;
+  EXPECT_EQ(ShellInterruption::CompactChromeFrostSurface(compact_base),
+            CompactChromeFrostSurface::BottomNav);
+
+  ShellState compact_chat_frost = compact_base;
+  compact_chat_frost.compact_chat_open = true;
+  EXPECT_EQ(ShellInterruption::CompactChromeFrostSurface(compact_chat_frost),
+            CompactChromeFrostSurface::ChatOverlayHeader);
+
+  ShellState compact_aux_frost = compact_base;
+  compact_aux_frost.auxiliary_open = true;
+  EXPECT_EQ(ShellInterruption::CompactChromeFrostSurface(compact_aux_frost),
+            CompactChromeFrostSurface::AuxiliarySheetChrome);
+
+  ShellState compact_account_frost = compact_base;
+  compact_account_frost.account_sheet_open = true;
+  EXPECT_EQ(ShellInterruption::CompactChromeFrostSurface(compact_account_frost),
+            CompactChromeFrostSurface::AccountSheetHeader);
+
+  ShellState compact_transient_frost = compact_base;
+  compact_transient_frost.transient_stack.push_back(transient_pane);
+  compact_transient_frost.transient_active = true;
+  EXPECT_EQ(ShellInterruption::CompactChromeFrostSurface(compact_transient_frost),
+            CompactChromeFrostSurface::TransientHeader);
+
+  ShellState compact_dialog_frost = compact_base;
+  compact_dialog_frost.dialog.active = true;
+  EXPECT_EQ(ShellInterruption::CompactChromeFrostSurface(compact_dialog_frost),
+            CompactChromeFrostSurface::None);
+
+  ShellState expanded_base{};
+  expanded_base.layout_mode = LayoutMode::Expanded;
+  EXPECT_EQ(ShellInterruption::CompactChromeFrostSurface(expanded_base), CompactChromeFrostSurface::None);
+
   ShellState toast_state{};
   ShellFeedback::ShowToast(toast_state, "Hello", ToastDuration::Short, 1000.f);
   EXPECT_EQ(toast_state.toasts.size(), 1U);
