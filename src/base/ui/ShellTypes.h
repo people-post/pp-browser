@@ -169,6 +169,11 @@ struct ShellState {
   int safe_area_top_dp = 0;
   /** Bottom safe-area inset in dp (SDL and/or machine prefs). */
   int safe_area_bottom_dp = 0;
+
+  /** From profile prefs — opaque compact chrome only (no backdrop frost). */
+  bool reduce_transparency = false;
+  /** From profile prefs — when false, frost tier disabled; layout unchanged. */
+  bool compact_chrome_frost = true;
 };
 
 } // namespace pbr

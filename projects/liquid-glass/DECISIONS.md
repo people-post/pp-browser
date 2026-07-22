@@ -50,38 +50,30 @@ Record dated outcomes. When shipped, mark **superseded by** stable doc — do no
 
 ---
 
-## LG005 — Performance reference device (open)
+## LG005 — Performance reference device
 
 **Date:** 2026-07-19  
-**Status:** **Open — resolve before lg6 gate**  
-**Decision:** Name one **minimum Android device** (or emulator profile) and one **iOS device/simulator** for FPS acceptance.  
-**Placeholder:** Pixel 6a class / iPhone 15 Simulator — replace with owner hardware.  
-**Gate:** Compact chat scroll avg frame time regression ≤ 4ms vs glass-off on reference Android.
+**Status:** Accepted (2026-07-22)  
+**Decision:** Manual profiling on **Pixel 6a class** Android and **iPhone 15 Simulator**. Gate: compact chat scroll avg frame time with single-surface frost ≤ +2ms vs all-opaque on reference Android; ≤ 1 `backdrop-filter` surface visible.  
+**Superseded by:** [CURRENT_STATE.md](CURRENT_STATE.md) perf gate table; [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials)
 
 ---
 
-## LG006 — Reduce transparency setting (open)
+## LG006 — Reduce transparency setting
 
 **Date:** 2026-07-19  
-**Status:** **Open — resolve before lg6**  
-**Options:**
-
-| Option | Behavior |
-|--------|----------|
-| **A** | New Me → Accessibility toggle “Reduce transparency” |
-| **B** | Follow system only (iOS `UIAccessibilityIsReduceTransparencyEnabled` — needs platform bridge) |
-| **C** | A + system when bridge exists |
-
-**Recommendation:** A for v1 (consistent cross-platform); add B when iOS shell matures.
+**Status:** Accepted (2026-07-22) — **Option A**  
+**Decision:** Me → Appearance → **Reduce transparency** toggle (`ProfilePreferences.reduce_transparency`, schema v8). Applies `.surface-chrome--solid` and disables frost tier. System bridge deferred.  
+**Superseded by:** [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials)
 
 ---
 
-## LG007 — Feature flag default (open)
+## LG007 — Feature flag default
 
 **Date:** 2026-07-19  
-**Status:** **Open — resolve at lg6**  
-**Options:** Always on when compact | `ProfilePreferences` user toggle | compile-time `PP_BROWSER_LIQUID_GLASS`  
-**Recommendation:** Profile pref default **on**, hidden from Settings until polish complete; allows internal dogfood off switch.
+**Status:** Accepted (2026-07-22)  
+**Decision:** Frost tier **on** by default (`compact_chrome_frost = true`). Dogfood off via profile JSON only (not exposed in Settings v1). `reduce_transparency` disables frost for accessibility.  
+**Superseded by:** [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials)
 
 ---
 

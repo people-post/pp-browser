@@ -358,7 +358,9 @@ void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
                      {"pin_is_default", prefs.pin_is_default},
                      {"auto_renew_registration", prefs.auto_renew_registration},
                      {"show_notifications", prefs.show_notifications},
-                     {"group_invite_policy", prefs.group_invite_policy}};
+                     {"group_invite_policy", prefs.group_invite_policy},
+                     {"reduce_transparency", prefs.reduce_transparency},
+                     {"compact_chrome_frost", prefs.compact_chrome_frost}};
 }
 
 void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
@@ -393,6 +395,16 @@ void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
     prefs.group_invite_policy = j["group_invite_policy"].get<std::string>();
   } else {
     prefs.group_invite_policy = "contacts_only";
+  }
+  if (j.contains("reduce_transparency") && j["reduce_transparency"].is_boolean()) {
+    prefs.reduce_transparency = j["reduce_transparency"].get<bool>();
+  } else {
+    prefs.reduce_transparency = false;
+  }
+  if (j.contains("compact_chrome_frost") && j["compact_chrome_frost"].is_boolean()) {
+    prefs.compact_chrome_frost = j["compact_chrome_frost"].get<bool>();
+  } else {
+    prefs.compact_chrome_frost = true;
   }
 }
 

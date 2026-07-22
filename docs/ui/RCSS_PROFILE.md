@@ -111,4 +111,6 @@ See [UI_DESIGN_SYSTEM.md](UI_DESIGN_SYSTEM.md) for the full token table and surf
 
 Theme colors are applied via `@media (theme: light|dark)` in app stylesheets only — not in AI output.
 
+**Compact floating chrome** utilities (`.surface-chrome`, `.surface-chrome--frost`, `.surface-chrome--solid`) are **theme-only** — defined in `assets/themes/components.rcss` and `colors-*.rcss`. Do not emit `backdrop-filter` or these classes in AI-generated RCSS/RML.
+
 Author stylesheets should use these classes instead of bare `h1`, `p`, `button`, `input`, etc. The user-agent stylesheet provides baseline layout for semantic elements; only `.bubble-assistant` scopes rich-text overrides for AI-generated markup.

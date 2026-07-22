@@ -45,6 +45,8 @@ struct SettingsUiState {
   std::string appearance_label = "System";
   /** Pref: `system` or BCP-47 tag. */
   std::string language = "system";
+  /** UI select value: `on` or `off` — disables backdrop frost on compact chrome. */
+  std::string reduce_transparency = "off";
   /** Display label for the language row / picker value. */
   std::string language_label = "System";
   std::string profile_label;

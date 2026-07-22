@@ -65,11 +65,16 @@ NavTab NavTabFromString(const Rml::String& value) {
   return NavTab::Home;
 }
 
-std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeFrostSurface active) {
-  if (surface != CompactChromeFrostSurface::None && surface == active) {
-    return "surface-chrome surface-chrome--frost";
+std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeFrostSurface active,
+                               bool frost_enabled, bool solid) {
+  std::string cls = "surface-chrome";
+  if (frost_enabled && surface != CompactChromeFrostSurface::None && surface == active) {
+    cls += " surface-chrome--frost";
   }
-  return "surface-chrome";
+  if (solid) {
+    cls += " surface-chrome--solid";
+  }
+  return cls;
 }
 
 } // namespace
@@ -639,6 +644,20 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
 }
 
+bool ShellHost::ChromeFrostEnabled() const {
+  return !state_.reduce_transparency && state_.compact_chrome_frost;
+}
+
+void ShellHost::SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost) {
+  if (state_.reduce_transparency == reduce_transparency &&
+      state_.compact_chrome_frost == compact_chrome_frost) {
+    return;
+  }
+  state_.reduce_transparency = reduce_transparency;
+  state_.compact_chrome_frost = compact_chrome_frost;
+  RequestSyncLayout();
+}
+
 void ShellHost::OnLayoutModeChanged() {
   if (state_.layout_mode == LayoutMode::Expanded) {
     state_.compact_chat_open = false;
@@ -706,12 +725,18 @@ std::string ShellHost::SerializeAccountSheet() const {
     return {};
   }
   const CompactChromeFrostSurface frost = ShellInterruption::CompactChromeFrostSurface(state_);
+  const bool frost_enabled = ChromeFrostEnabled();
+  const bool solid = state_.reduce_transparency;
   std::ostringstream out;
   out << "<div class=\"shell-account-sheet-scrim\" data-event-click=\"close_account_sheet()\"></div>";
-  out << "<div class=\"shell-account-sheet surface-chrome\" id=\"shell-account-sheet\">";
+  out << "<div class=\"shell-account-sheet surface-chrome";
+  if (solid) {
+    out << " surface-chrome--solid";
+  }
+  out << "\" id=\"shell-account-sheet\">";
   out << "<div class=\"shell-account-sheet-grabber\"></div>";
   out << "<div class=\"shell-account-sheet-header row "
-      << SurfaceChromeClass(CompactChromeFrostSurface::AccountSheetHeader, frost) << "\">";
+      << SurfaceChromeClass(CompactChromeFrostSurface::AccountSheetHeader, frost, frost_enabled, solid) << "\">";
   out << "<h2 class=\"heading-2\">Me</h2>";
   out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_account_sheet()\">×</button>";
   out << "</div>";
@@ -722,6 +747,8 @@ std::string ShellHost::SerializeAccountSheet() const {
 
 std::string ShellHost::SerializeCompactBase() const {
   const CompactChromeFrostSurface frost = ShellInterruption::CompactChromeFrostSurface(state_);
+  const bool frost_enabled = ChromeFrostEnabled();
+  const bool solid = state_.reduce_transparency;
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-base shell-layer-compact\" data-model=\"window\">";
 
@@ -736,7 +763,11 @@ std::string ShellHost::SerializeCompactBase() const {
       out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
     } else if (home_inline) {
       out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
-      out << "<div class=\"shell-composer-mount surface-chrome\" id=\"shell-composer-mount\"></div>";
+      out << "<div class=\"shell-composer-mount surface-chrome";
+      if (solid) {
+        out << " surface-chrome--solid";
+      }
+      out << "\" id=\"shell-composer-mount\"></div>";
     }
     out << "</div>";
   } else if (state_.nav_tab == NavTab::Sessions) {
@@ -748,22 +779,30 @@ std::string ShellHost::SerializeCompactBase() const {
   if (state_.compact_chat_open) {
     out << "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">";
     out << "<div class=\"shell-chat-overlay-chrome row "
-        << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost) << "\">";
+        << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost, frost_enabled, solid) << "\">";
     out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
     out << "<svg src=\"../icons/back.svg\"></svg>";
     out << "</button>";
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
-    out << "<div class=\"shell-composer-mount surface-chrome\" id=\"shell-composer-mount\"></div>";
+    out << "<div class=\"shell-composer-mount surface-chrome";
+    if (solid) {
+      out << " surface-chrome--solid";
+    }
+    out << "\" id=\"shell-composer-mount\"></div>";
     out << "</div>";
   }
 
   if (state_.auxiliary_open) {
     out << "<div class=\"shell-sheet-scrim\" data-event-click=\"toggle_auxiliary()\"></div>";
-    out << "<div class=\"shell-sheet shell-sheet-auxiliary shell-sheet-compact surface-chrome\" "
-           "id=\"shell-auxiliary-sheet\">";
+    out << "<div class=\"shell-sheet shell-sheet-auxiliary shell-sheet-compact surface-chrome";
+    if (solid) {
+      out << " surface-chrome--solid";
+    }
+    out << "\" id=\"shell-auxiliary-sheet\">";
     out << "<div class=\"shell-sheet-compact-chrome "
-        << SurfaceChromeClass(CompactChromeFrostSurface::AuxiliarySheetChrome, frost) << "\"></div>";
+        << SurfaceChromeClass(CompactChromeFrostSurface::AuxiliarySheetChrome, frost, frost_enabled, solid)
+        << "\"></div>";
     for (const PaneState& pane : state_.panes) {
       if (pane.spec.role == PaneRole::Auxiliary) {
         out << SerializePaneSlot(pane.spec.key, nullptr);
@@ -774,8 +813,11 @@ std::string ShellHost::SerializeCompactBase() const {
 
   if (!state_.compact_chat_open) {
     out << "<div class=\"shell-bottom-chrome";
-    if (frost == CompactChromeFrostSurface::BottomNav) {
+    if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
       out << " shell-bottom-chrome--frost";
+    }
+    if (solid) {
+      out << " shell-bottom-chrome--solid";
     }
     out << "\" id=\"shell-bottom-chrome\">";
     out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
@@ -793,10 +835,12 @@ std::string ShellHost::SerializeTransientLayer() const {
   }
   const PaneState& top = state_.transient_stack.back();
   const CompactChromeFrostSurface frost = ShellInterruption::CompactChromeFrostSurface(state_);
+  const bool frost_enabled = ChromeFrostEnabled();
+  const bool solid = state_.reduce_transparency;
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-transient\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome "
-      << SurfaceChromeClass(CompactChromeFrostSurface::TransientHeader, frost) << "\">";
+      << SurfaceChromeClass(CompactChromeFrostSurface::TransientHeader, frost, frost_enabled, solid) << "\">";
   out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
          "<svg src=\"../icons/back.svg\"></svg>"
          "</button>";

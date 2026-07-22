@@ -58,6 +58,10 @@ select selectbox option {
   backdrop-filter: blur(12px);
 }
 
+.shell-bottom-chrome--solid .shell-nav-rail--compact .shell-nav-pill {
+  backdrop-filter: none;
+}
+
 .surface-chrome--solid,
 .shell-bottom-chrome--frost.surface-chrome--solid .shell-nav-rail--compact .shell-nav-pill,
 .surface-chrome--solid.surface-chrome--frost,

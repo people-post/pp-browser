@@ -1,40 +1,41 @@
 # Floating Chrome — current state
 
 **Last updated:** 2026-07-22  
-**Implementation:** lg1–lg3 + lg8 (Floating Chrome pivot)
+**Status:** **Shipped** (lg1–lg3, lg8, lg6, lg7)
+
+Normative guidance: [docs/ui/UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials), [docs/ui/WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md#compact-floating-chrome).
 
 ## Shipped
 
 | Surface | Treatment |
 |---------|-----------|
-| Bottom nav | Twin floating pills; **opaque** `.surface-chrome` fill + elevation shadow; **frost** (`blur(12px)`) only when bottom nav is top chrome |
-| Chat overlay header | Opaque chrome; frost when chat overlay is top interruption |
-| Transient header | Opaque chrome; frost when transient layer is top |
-| Auxiliary sheet | **Opaque** body (`surface-elevated`); 8dp top strip; frost on strip when sheet is top |
-| Account sheet | Opaque body; header bar frost when account sheet is top |
-| Home / overlay composer | Opaque `.surface-chrome` strip (never frost) |
+| Bottom nav | Twin floating pills; opaque `.surface-chrome`; frost when top chrome |
+| Chat / transient headers | Opaque; frost when respective layer is top |
+| Auxiliary sheet | Opaque body; frosted top strip when top |
+| Account sheet | Opaque body; frosted header when top |
+| Composer strip | Opaque (never frost) |
 
-### Frost selection (C++)
+## Preferences (`preferences.json` schema v8)
 
-`ShellInterruption::CompactChromeFrostSurface(state)` picks **at most one** bar per frame from the interruption stack. Modals (dialog, overlay, pin gate) → no frost.
+| Field | Default | UI |
+|-------|---------|-----|
+| `reduce_transparency` | `false` | Me → Appearance → Reduce transparency |
+| `compact_chrome_frost` | `true` | Profile JSON only (dogfood off switch) |
 
-### Tokens / utilities
+## Performance gate (LG005)
 
-| Item | Location |
-|------|----------|
-| Chrome fills / borders / shadows | `assets/themes/colors-light.rcss`, `colors-dark.rcss` |
-| `.surface-chrome` / `.surface-chrome--frost` / `.surface-chrome--solid` | `components.rcss` + theme colors |
-| Frost class wiring | `ShellHost::SerializeCompactBase`, `SerializeTransientLayer`, `SerializeAccountSheet` |
+Reference devices for manual scroll profiling:
 
-**Not yet:** reduce-transparency pref wiring (lg6), perf gates (lg6), stable `docs/ui/` promotion (lg7).
+| Platform | Device |
+|----------|--------|
+| Android | Pixel 6a class (or equivalent mid-tier GLES) |
+| iOS | iPhone 15 Simulator |
+
+**Gate:** compact chat scroll avg frame time with frost ≤ +2ms vs all-opaque on reference Android; ≤ 1 backdrop-filter surface visible at any time.
 
 ## Rendering
 
 | Capability | Status |
 |------------|--------|
-| `backdrop-filter: blur()` | **One surface max** via `--frost` or `shell-bottom-chrome--frost` |
-| Custom glass shaders (lg5) | Cancelled |
-
-## Next agent — start here
-
-Continue with **lg6** (fallbacks + perf) in [PHASES.md](PHASES.md). Resolve LG005 / LG006 / LG007 before lg6 merge gates.
+| `backdrop-filter` | ≤ 1 surface via `--frost` |
+| Custom glass shaders | Cancelled (LG008) |

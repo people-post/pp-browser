@@ -61,6 +61,8 @@ When adding a new Me-tab section, add its normalizer next to the domain types un
 
 **Language (UI):** `preferences.json` → `language` (`system`, `en`, or `zh-Hans`). `system` follows `SDL_GetPreferredLocales` and picks the first shipped catalog match (else English). Changing language in Me → Appearance applies immediately via `LocalizationService` + shell remount. Catalogs live under `assets/locales/`.
 
+**Compact chrome materials:** `preferences.json` → `reduce_transparency` (Me → Appearance; opaque shell, no backdrop frost) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
+
 **PIN state:** `preferences.json` → `pin_is_default` — see [DATA_LAYOUT](../contracts/DATA_LAYOUT.md) and [AT_REST_ENCRYPTION](../contracts/AT_REST_ENCRYPTION.md).
 
 See [ui/UI_DESIGN_SYSTEM.md](../ui/UI_DESIGN_SYSTEM.md) for tokens and component classes.

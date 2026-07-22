@@ -198,7 +198,28 @@ Counts cap at **99+** in C++ (`FormatBadgeCount`). Home tab stays badge-free; Se
 
 `.shell-pane`, `.shell-toolbar`, `.shell-banner`, `.shell-toast`, `.shell-dialog`, `.shell-nav-tab-icon-wrap`, `.badge-count`, `.badge-count--nav`, `.badge-dot`, `.badge-dot--nav`, `.context-menu-panel`, `.context-menu-sheet`, `.context-menu-sheet-list`, `.context-menu-sheet-cancel`, `.context-menu-item`, `.context-menu-item--danger`
 
+**Compact floating chrome** (theme-only — see [Materials](#compact-floating-chrome-materials)): `.surface-chrome`, `.surface-chrome--frost`, `.surface-chrome--solid`, `.shell-bottom-chrome--frost`
+
 **Context menus:** `ShowAt` (long-press / right-click) always uses a viewport-clamped float near the pointer. `ShowActions` (chrome overflow such as `⋯`) uses the same float on expanded layout, and a bottom action sheet (`.context-menu-layer--sheet`) on compact layout. Sheet frame geometry is set in `ContextMenuHost::LayoutActionSheet` from the viewport; RCSS only styles the shell and stretched children. Confirmations stay in `.shell-dialog`.
+
+## Compact floating chrome (materials)
+
+Compact layout (`<768dp`) uses **Floating Chrome**: inset floating nav pills, opaque elevated bars, and **at most one** backdrop-frost surface per frame on the topmost visible chrome bar.
+
+| Class | Use |
+|-------|-----|
+| `.surface-chrome` | Default compact chrome fill (~94% opaque); no blur |
+| `.surface-chrome--frost` | Single-surface `backdrop-filter: blur(12px)` tier |
+| `.surface-chrome--solid` | Accessibility / reduce-transparency — disables frost |
+| `.shell-bottom-chrome--frost` | Frost on bottom nav pills when base chrome is top |
+
+Frost target is chosen in C++ from the interruption stack (`ShellInterruption::CompactChromeFrostSurface`). Modals (dialog, overlay, pin gate) never use frost.
+
+**Preference:** Me → Appearance → **Reduce transparency** (`ProfilePreferences.reduce_transparency`) forces opaque chrome. **Frost tier** defaults on (`compact_chrome_frost`); disable via profile JSON for dogfood.
+
+Token values live in `colors-light.rcss` / `colors-dark.rcss` (`chrome-fill`, `chrome-fill-frost`, `chrome-border-highlight`). Do not use these utilities in AI-generated RML.
+
+See [WINDOW_SHELL.md](WINDOW_SHELL.md) for layout geometry (content scrolls under floating nav).
 
 ### Sidebar
 

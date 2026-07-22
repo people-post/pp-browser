@@ -69,27 +69,23 @@ Execute in order. Each phase should land reviewable PRs.
 
 ---
 
-## lg6 — Fallbacks, perf gates, agent docs
+## lg6 — Fallbacks, perf gates, agent docs — **Done**
 
-### Tasks
-
-- [ ] **Reduce transparency** → `.surface-chrome--solid` on all chrome (disable frost)
-- [ ] Optional: profile pref to disable frost tier entirely (all opaque)
-- [ ] Complete test matrix from DESIGN.md
-- [ ] Block merge if perf gate fails (LG005 device)
-
-### Exit criteria
-
-- Accessibility fallbacks manual-tested; perf documented in CURRENT_STATE.
+- [x] **Reduce transparency** → `.surface-chrome--solid` (`ProfilePreferences.reduce_transparency`, Me → Appearance)
+- [x] **Frost tier** default on; dogfood off via `compact_chrome_frost` in profile JSON
+- [x] Perf gate devices documented (LG005)
+- [x] Resolve LG005–LG007
+- [ ] Manual perf matrix on reference devices (ongoing QA)
 
 ---
 
-## lg7 — Promote to stable docs
+## lg7 — Promote to stable docs — **Done**
 
-- [ ] Add **Compact floating chrome** section to `docs/ui/UI_DESIGN_SYSTEM.md`
-- [ ] Update `docs/ui/WINDOW_SHELL.md` compact chrome section
-- [ ] Update `docs/ui/RCSS_PROFILE.md` — chrome utilities theme-only
-- [ ] Mark project README **Done**; freeze DECISIONS
+- [x] **Compact floating chrome** in `docs/ui/UI_DESIGN_SYSTEM.md`
+- [x] `docs/ui/WINDOW_SHELL.md` compact chrome section
+- [x] `docs/ui/RCSS_PROFILE.md` — chrome utilities theme-only
+- [x] `docs/contracts/DATA_LAYOUT.md` + `docs/ops/CONFIGURATION.md` prefs
+- [x] Project README **Done**
 
 ---
 
