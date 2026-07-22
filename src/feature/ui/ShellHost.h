@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/ui/ShellTypes.h"
+#include "feature/ui/ShellBottomSheetGesture.h"
 #include "feature/ui/ShellChatOverlayGesture.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
@@ -40,6 +41,8 @@ public:
   void ClearPrimaryPane();
   void OpenCompactChat();
   void CloseCompactChat();
+  void OpenAccountSheet();
+  void CloseAccountSheet();
   void PushTransient(const PaneSpec& spec);
   void PopTransient();
   int PushLayer(const PaneSpec& spec);
@@ -66,6 +69,8 @@ public:
   static void OpenAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectNavTabCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CompactChatBackCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OpenAccountSheetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CloseAccountSheetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void PopTransientCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CloseLayerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void DismissBannerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -87,6 +92,7 @@ private:
   std::string SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false) const;
   std::string SerializeExpandedBase() const;
   std::string SerializeCompactBase() const;
+  std::string SerializeAccountSheet() const;
   std::string SerializeOverlays() const;
   std::string SerializeDialog() const;
   std::string SerializePinGate() const;
@@ -98,6 +104,8 @@ private:
   void MountComposer();
   void AttachChatOverlayGesture();
   void DetachChatOverlayGesture();
+  void AttachAccountSheetGesture();
+  void DetachAccountSheetGesture();
   void ApplyLayoutModeFromContext(Rml::Context* context);
   void OnLayoutModeChanged();
   int AllocatePaneId();
@@ -107,6 +115,7 @@ private:
   void RestoreFocus();
   void FlushPendingSyncLayout();
   void ScheduleCompactChatDismiss();
+  void ScheduleAccountSheetDismiss();
   void ApplySafeAreaLayout();
   struct SafeAreaFromSdl {
     int top_dp = 0;
@@ -124,10 +133,12 @@ private:
   int next_overlay_id_ = 1;
   float elapsed_ms_ = 0.f;
   float compact_chat_dismiss_at_ms_ = -1.f;
+  float account_sheet_dismiss_at_ms_ = -1.f;
   Rml::String saved_focus_id_;
   bool sync_pending_ = false;
   bool restore_focus_after_sync_ = false;
   ShellChatOverlayGesture chat_overlay_gesture_;
+  ShellBottomSheetGesture account_sheet_gesture_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(const std::string&)> on_transient_popped_;

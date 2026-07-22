@@ -2419,8 +2419,8 @@ bool ChatController::Setup(Rml::Context* context) {
     MessagingHub::Instance().SetOnMessagingReady([this]() {
       WireMessagingBindings();
       ContactsController::Instance().Refresh();
-      if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
-        SettingsController::Instance().OnNavTabActivated();
+      if (ShellHost::Instance().State().account_sheet_open) {
+        SettingsController::Instance().OnAccountSheetOpened();
       } else if (ShellHost::Instance().State().nav_tab == NavTab::Home) {
         OnHomeTabActivated();
       }
@@ -2579,18 +2579,11 @@ bool ChatController::Setup(Rml::Context* context) {
 
   ShellHost::Instance().Initialize(context);
   ShellHost::Instance().SetOnNavTabChanged([](NavTab tab) {
-    static NavTab previous_tab = NavTab::Home;
-    if (previous_tab == NavTab::Me && tab != NavTab::Me) {
-      SettingsController::Instance().OnNavTabDeactivated();
-    }
     if (tab == NavTab::Home) {
       ChatController::Instance().OnHomeTabActivated();
     }
     if (tab == NavTab::Sessions) {
       ChatController::Instance().OnSessionsTabActivated();
-    }
-    if (tab == NavTab::Me) {
-      SettingsController::Instance().OnNavTabActivated();
     }
     if (tab == NavTab::Contacts) {
       ContactsController::Instance().OnNavTabActivated();
@@ -2598,14 +2591,10 @@ bool ChatController::Setup(Rml::Context* context) {
     // Active-thread deduction for sessions badge depends on nav_tab.
     BadgeAggregator::Instance().Refresh();
     ShellHost::Instance().DirtyWindow();
-    previous_tab = tab;
   });
   ShellHost::Instance().SetOnLayoutModeChanged([](LayoutMode mode) {
     if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
       ContactsController::Instance().SyncLayoutMode();
-    }
-    if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
-      SettingsController::Instance().SyncLayoutMode();
     }
     if (mode == LayoutMode::Compact && ShellHost::Instance().State().nav_tab == NavTab::Home) {
       ChatController::Instance().OnHomeTabActivated();

@@ -337,7 +337,8 @@ select selectbox option:hover {
 }
 
 .shell-drawer-scrim,
-.shell-sheet-scrim {
+.shell-sheet-scrim,
+.shell-account-sheet-scrim {
   background-color: #00000040;
 }
 
@@ -357,6 +358,14 @@ select selectbox option:hover {
   /* Soft shadow stays inside the sheet (leftward); avoid large blur that
      would exceed remaining viewport margin on the right edge. */
   box-shadow: -2dp 0 8dp #00000022;
+}
+
+.shell-profile-btn {
+  background-color: #e5e7eb;
+}
+
+.shell-account-sheet-grabber {
+  background-color: #d1d5db;
 }
 
 .shell-toolbar {

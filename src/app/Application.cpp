@@ -248,7 +248,7 @@ void Application::Run() {
   int skip_log_countdown = 0;
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
     BrowserThread::RunUITasks();
-    if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
+    if (ShellHost::Instance().State().account_sheet_open) {
       SettingsController::Instance().Tick();
     }
     if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {

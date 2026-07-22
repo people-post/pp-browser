@@ -13,9 +13,6 @@ const char* ShellLayout::LayoutModeString(LayoutMode mode) {
 }
 
 const char* ShellLayout::NavTabString(NavTab tab) {
-  if (tab == NavTab::Me) {
-    return "me";
-  }
   if (tab == NavTab::Contacts) {
     return "contacts";
   }
@@ -36,9 +33,6 @@ void ShellLayout::SyncNavTabString(ShellState& state) {
 const char* ShellLayout::NavContentKey(NavTab tab) {
   if (tab == NavTab::Home) {
     return nullptr;
-  }
-  if (tab == NavTab::Me) {
-    return "settings";
   }
   if (tab == NavTab::Contacts) {
     return "contacts";

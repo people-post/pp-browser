@@ -44,8 +44,8 @@ public:
 
   bool RegisterModel(Rml::Context* context);
   void OpenSettings();
-  void OnNavTabActivated();
-  void OnNavTabDeactivated();
+  void OnAccountSheetOpened();
+  void OnAccountSheetClosed();
   void OnShellLayoutSynced();
   void SyncLayoutMode();
   void Tick();
@@ -157,6 +157,7 @@ private:
   Rml::String selected_id_;
   Rml::String selected_title_;
   bool compact_layout_ = false;
+  bool in_account_sheet_ = false;
   bool show_detail_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;

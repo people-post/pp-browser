@@ -213,6 +213,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("selected_id", &controller.selected_id_);
     ctor.Bind("selected_title", &controller.selected_title_);
     ctor.Bind("compact_layout", &controller.compact_layout_);
+    ctor.Bind("in_account_sheet", &controller.in_account_sheet_);
     ctor.Bind("show_detail", &controller.show_detail_);
     ctor.Bind("llm_preset", &controller.bindings_.llm_preset);
     ctor.Bind("llm_base_url", &controller.bindings_.llm_base_url);
@@ -282,6 +283,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "selected_id");
   host.Dirty("settings", "selected_title");
   host.Dirty("settings", "compact_layout");
+  host.Dirty("settings", "in_account_sheet");
   host.Dirty("settings", "show_detail");
   host.Dirty("settings", "llm_preset");
   host.Dirty("settings", "llm_base_url");
@@ -335,7 +337,7 @@ void SettingsController::FinishPaneResync() {
   }
   // Select widgets can emit a spurious change on the frame after remount.
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-    if (ShellHost::Instance().State().nav_tab != NavTab::Me) {
+    if (!ShellHost::Instance().State().account_sheet_open) {
       suppress_auto_save_ = false;
       return;
     }
@@ -352,30 +354,38 @@ void SettingsController::OnShellLayoutSynced() {
   if (!suppress_auto_save_) {
     return;
   }
-  if (ShellHost::Instance().State().nav_tab != NavTab::Me) {
+  if (ShellHost::Instance().State().account_sheet_open) {
+    FinishPaneResync();
+  } else {
     suppress_auto_save_ = false;
-    return;
   }
-  FinishPaneResync();
 }
 
-void SettingsController::OnNavTabActivated() {
-  log().info << "OnNavTabActivated";
+void SettingsController::OnAccountSheetOpened() {
+  log().info << "OnAccountSheetOpened";
   dirty_sections_.clear();
   debounce_deadline_ms_ = 0;
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
-  compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  in_account_sheet_ = true;
+  compact_layout_ = true;
   ReloadFromDisk();
   suppress_auto_save_ = true;
 }
 
-void SettingsController::OnNavTabDeactivated() {
+void SettingsController::OnAccountSheetClosed() {
   FlushPending();
+  in_account_sheet_ = false;
+  show_detail_ = false;
+  selected_id_.clear();
+  selected_title_.clear();
 }
 
 void SettingsController::SyncLayoutMode() {
+  if (in_account_sheet_) {
+    return;
+  }
   const bool compact = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
   if (compact_layout_ == compact) {
     return;
@@ -400,10 +410,10 @@ void SettingsController::SyncLayoutMode() {
 }
 
 void SettingsController::OpenSettings() {
-  const bool already_me = ShellHost::Instance().State().nav_tab == NavTab::Me;
-  ShellHost::Instance().SelectNavTab(NavTab::Me);
-  if (already_me) {
-    OnNavTabActivated();
+  const bool already_open = ShellHost::Instance().State().account_sheet_open;
+  ShellHost::Instance().OpenAccountSheet();
+  if (already_open) {
+    OnAccountSheetOpened();
     FinishPaneResync();
   }
 }
@@ -572,13 +582,18 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
 
   status_ = "";
-  compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
-  if (compact_layout_) {
+  if (in_account_sheet_) {
     show_detail_ = true;
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() { CompleteSectionSelection(false); });
   } else {
-    show_detail_ = false;
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { CompleteSectionSelection(true); });
+    compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+    if (compact_layout_) {
+      show_detail_ = true;
+      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { CompleteSectionSelection(false); });
+    } else {
+      show_detail_ = false;
+      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { CompleteSectionSelection(true); });
+    }
   }
 }
 
