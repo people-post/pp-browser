@@ -289,10 +289,13 @@ select selectbox option:hover {
 }
 
 .shell-nav-rail--compact .shell-nav-pill {
-  background-color: #1f2937b3;
+  background-color: #1f2937f0;
   border-top: 1dp #ffffff1a;
-  /* No box-shadow: blur extend exceeds the 12dp chrome inset and clips the pill
-     (same failure mode as .context-menu-sheet-list on Android). */
+  box-shadow: 0 2dp 12dp #00000040;
+}
+
+.shell-bottom-chrome--frost .shell-nav-rail--compact .shell-nav-pill {
+  background-color: #1f2937b3;
 }
 
 .shell-nav-tab {
@@ -323,9 +326,14 @@ select selectbox option:hover {
 }
 
 .shell-chat-overlay-chrome {
-  background-color: #1f2937b3;
+  background-color: #1f2937f0;
   border-bottom: 1dp #ffffff0f;
   border-top: 1dp #ffffff1a;
+  box-shadow: 0 2dp 12dp #00000040;
+}
+
+.shell-chat-overlay-chrome.surface-chrome--frost {
+  background-color: #1f2937b3;
 }
 
 .shell-pane-auxiliary {
@@ -353,11 +361,34 @@ select selectbox option:hover {
 }
 
 .shell-sheet-compact {
-  background-color: #1f2937b3;
-  border-left: 1dp #ffffff1a;
-  /* Soft shadow stays inside the sheet (leftward); avoid large blur that
-     would exceed remaining viewport margin on the right edge. */
+  background-color: #1f2937;
+  border-left: 1dp #374151;
   box-shadow: -2dp 0 8dp #00000066;
+}
+
+.shell-sheet-compact-chrome {
+  background-color: #1f2937f0;
+  border-bottom: 1dp #ffffff0f;
+}
+
+.shell-sheet-compact-chrome.surface-chrome--frost {
+  background-color: #1f2937b3;
+  border-bottom: 1dp #ffffff0f;
+  border-top: 1dp #ffffff1a;
+}
+
+.shell-account-sheet {
+  background-color: #1f2937;
+}
+
+.shell-account-sheet-header {
+  background-color: #1f2937f0;
+  border-bottom: 1dp #ffffff0f;
+}
+
+.shell-account-sheet-header.surface-chrome--frost {
+  background-color: #1f2937b3;
+  border-top: 1dp #ffffff1a;
 }
 
 .shell-profile-btn {
@@ -388,30 +419,39 @@ select selectbox option:hover {
 }
 
 .shell-transient-chrome {
-  background-color: #1f2937b3;
+  background-color: #1f2937f0;
   border-bottom: 1dp #ffffff0f;
   border-top: 1dp #ffffff1a;
+  box-shadow: 0 2dp 12dp #00000040;
 }
 
-.shell-composer-mount.surface-glass {
+.shell-transient-chrome.surface-chrome--frost {
   background-color: #1f2937b3;
-  border-top: 1dp #ffffff1a;
 }
 
-.shell-composer-mount.surface-glass .prompt-composer {
-  background-color: #1f2937d9;
-  border: 1dp #ffffff0f;
+.shell-composer-mount.surface-chrome {
+  background-color: #1f2937f0;
+  border-top: 1dp #374151;
+}
+
+.shell-composer-mount.surface-chrome .prompt-composer {
+  background-color: #1f2937;
+  border: 1dp #374151;
   box-shadow: none;
 }
 
-/* Glass material utilities (compact chrome). */
-.surface-glass {
-  background-color: #1f2937b3;
+/* Floating Chrome utilities (compact shell; theme-only). */
+.surface-chrome {
+  background-color: #1f2937f0;
   border-top: 1dp #ffffff1a;
 }
 
-.surface-glass--opaque {
-  background-color: #1f2937d9;
+.surface-chrome--frost {
+  background-color: #1f2937b3;
+}
+
+.surface-chrome--solid {
+  background-color: #1f2937f0;
 }
 
 .shell-back-btn {

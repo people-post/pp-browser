@@ -33,7 +33,7 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 7;
+  static constexpr int kSchemaVersion = 8;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
@@ -48,6 +48,10 @@ struct ProfilePreferences {
   bool show_notifications = true;
   /** G007 — inbound group invite policy: everyone | contacts_only | nobody */
   std::string group_invite_policy = "contacts_only";
+  /** When true, compact shell chrome uses opaque surfaces only (no backdrop frost). */
+  bool reduce_transparency = false;
+  /** When false, disables the single-surface frost tier (dogfood / perf); opaque chrome remains. */
+  bool compact_chrome_frost = true;
 };
 
 class UserPreferences {

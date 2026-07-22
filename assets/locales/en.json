@@ -34,7 +34,7 @@
     "settings.security.title": "Security",
     "settings.security.subtitle": "PIN and key protection",
     "settings.appearance.title": "Appearance",
-    "settings.appearance.subtitle": "Theme and language",
+    "settings.appearance.subtitle": "Theme, language, and chrome",
     "settings.storage.title": "Storage",
     "settings.storage.subtitle": "Paths, usage, and reset",
 
@@ -50,6 +50,11 @@
     "settings.language.zh_hans": "简体中文",
     "settings.language.help": "App UI language. Changes apply immediately.",
     "settings.language.choose": "Choose language",
+
+    "settings.reduce_transparency.label": "Reduce transparency",
+    "settings.reduce_transparency.on": "On",
+    "settings.reduce_transparency.off": "Off",
+    "settings.reduce_transparency.help": "Uses opaque compact navigation and headers instead of backdrop blur.",
 
     "settings.nickname": "Nickname",
     "settings.peer_id": "Peer ID",

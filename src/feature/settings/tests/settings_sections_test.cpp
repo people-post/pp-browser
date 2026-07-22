@@ -57,6 +57,13 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   appearance_section.SyncFromSession(bootstrap, state);
   EXPECT_EQ(state.appearance, "dark");
   EXPECT_EQ(state.appearance_label, "Dark");
+  EXPECT_EQ(state.reduce_transparency, "off");
+
+  bootstrap.profile_prefs.reduce_transparency = true;
+  EXPECT_FALSE(appearance_section.IsPersisted(state, bootstrap));
+  appearance_section.SyncFromSession(bootstrap, state);
+  EXPECT_EQ(state.reduce_transparency, "on");
+  EXPECT_TRUE(appearance_section.IsPersisted(state, bootstrap));
 
   pbr::StorageSettingsSection storage_section;
   storage_section.SyncFromSession(bootstrap, state);

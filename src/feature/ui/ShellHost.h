@@ -65,6 +65,9 @@ public:
   void SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp);
   void RefreshSafeAreaInsets(Rml::Context* context);
 
+  /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
+  void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
+
   static void ToggleAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenAuxiliaryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectNavTabCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -117,6 +120,7 @@ private:
   void ScheduleCompactChatDismiss();
   void ScheduleAccountSheetDismiss();
   void ApplySafeAreaLayout();
+  bool ChromeFrostEnabled() const;
   struct SafeAreaFromSdl {
     int top_dp = 0;
     int bottom_dp = 0;

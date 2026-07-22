@@ -227,6 +227,12 @@ bool Application::Initialize(const char* window_title) {
   ShellHost::Instance().SetSafeAreaInsetsFromPrefs(bootstrap.machine_prefs.safe_area.top,
                                                    bootstrap.machine_prefs.safe_area.bottom);
   ShellHost::Instance().RefreshSafeAreaInsets(context);
+  ShellHost::Instance().SyncChromeMaterialPrefs(bootstrap.profile_prefs.reduce_transparency,
+                                                bootstrap.profile_prefs.compact_chrome_frost);
+
+  SessionStore::Instance().AddChromeMaterialListener([](bool reduce_transparency, bool compact_chrome_frost) {
+    ShellHost::Instance().SyncChromeMaterialPrefs(reduce_transparency, compact_chrome_frost);
+  });
 
   ApplyUiDocumentLanguage(context);
 

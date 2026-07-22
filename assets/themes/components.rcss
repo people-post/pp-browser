@@ -43,25 +43,34 @@ select selectbox option {
   margin-bottom: 12dp;
 }
 
-/* Liquid Glass materials — theme colors in colors-*.rcss; compact shell chrome only. */
-.surface-glass {
-  backdrop-filter: blur(20px);
+/* Floating Chrome — compact shell materials; theme colors in colors-*.rcss.
+   Default: opaque elevated surfaces. At most one bar uses backdrop frost per frame
+   (see ShellInterruption::ResolveFrostSurface). */
+.surface-chrome {
+  backdrop-filter: none;
 }
 
-/* Compact chrome that uses glass even when selectors carry material without the utility class. */
-.shell-nav-rail--compact .shell-nav-pill,
-.shell-chat-overlay-chrome,
-.shell-transient-chrome,
-.shell-sheet-compact {
-  backdrop-filter: blur(20px);
+.surface-chrome--frost {
+  backdrop-filter: blur(12px);
 }
 
-.surface-glass--opaque,
-.shell-nav-rail--compact .shell-nav-pill.surface-glass--opaque,
-.shell-chat-overlay-chrome.surface-glass--opaque,
-.shell-transient-chrome.surface-glass--opaque,
-.shell-sheet-compact.surface-glass--opaque,
-.shell-composer-mount.surface-glass--opaque {
+.shell-bottom-chrome--frost .shell-nav-rail--compact .shell-nav-pill {
+  backdrop-filter: blur(12px);
+}
+
+.shell-bottom-chrome--solid .shell-nav-rail--compact .shell-nav-pill {
+  backdrop-filter: none;
+}
+
+.surface-chrome--solid,
+.shell-bottom-chrome--frost.surface-chrome--solid .shell-nav-rail--compact .shell-nav-pill,
+.surface-chrome--solid.surface-chrome--frost,
+.shell-nav-rail--compact .shell-nav-pill.surface-chrome--solid,
+.shell-chat-overlay-chrome.surface-chrome--solid,
+.shell-transient-chrome.surface-chrome--solid,
+.shell-sheet-compact-chrome.surface-chrome--solid,
+.shell-account-sheet-header.surface-chrome--solid,
+.shell-composer-mount.surface-chrome--solid {
   backdrop-filter: none;
 }
 
@@ -1036,12 +1045,12 @@ select selectbox option {
   margin-bottom: 8dp;
 }
 
-.shell-composer-mount.surface-glass {
+.shell-composer-mount.surface-chrome {
   padding-top: 8dp;
   box-sizing: border-box;
 }
 
-.shell-composer-mount.surface-glass .prompt-composer {
+.shell-composer-mount.surface-chrome .prompt-composer {
   margin-bottom: 8dp;
 }
 
@@ -1054,6 +1063,19 @@ select selectbox option {
   border-radius: 16dp 0 0 16dp;
   overflow: hidden;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-sheet-compact-chrome {
+  flex-shrink: 0;
+  height: 8dp;
+  box-sizing: border-box;
+}
+
+.shell-sheet-compact .shell-pane {
+  flex: 1;
+  min-height: 0;
 }
 
 .shell-pane-body {

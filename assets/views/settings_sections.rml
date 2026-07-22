@@ -160,6 +160,14 @@
           </button>
         </label>
         <p class="text muted">{{i18n:settings.language.help}}</p>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.reduce_transparency.label}}</span>
+          <select class="field" data-value="reduce_transparency" data-event-change="on_appearance_field_changed()">
+            <option value="off">{{i18n:settings.reduce_transparency.off}}</option>
+            <option value="on">{{i18n:settings.reduce_transparency.on}}</option>
+          </select>
+        </label>
+        <p class="text muted">{{i18n:settings.reduce_transparency.help}}</p>
         <div class="settings-actions row">
           <button class="btn btn-secondary" type="button" data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>
         </div>

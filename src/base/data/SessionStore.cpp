@@ -62,6 +62,8 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
   const std::string previous_theme = bootstrap_.profile_prefs.theme;
   const std::string previous_appearance = bootstrap_.profile_prefs.appearance;
   const std::string previous_language = bootstrap_.profile_prefs.language;
+  const bool previous_reduce_transparency = bootstrap_.profile_prefs.reduce_transparency;
+  const bool previous_compact_chrome_frost = bootstrap_.profile_prefs.compact_chrome_frost;
   bootstrap_.profile_prefs = std::move(*reloaded);
 
   if (bootstrap_.profile_prefs.theme != previous_theme) {
@@ -72,6 +74,11 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
   }
   if (bootstrap_.profile_prefs.language != previous_language) {
     NotifyLanguageListeners(bootstrap_.profile_prefs.language);
+  }
+  if (bootstrap_.profile_prefs.reduce_transparency != previous_reduce_transparency ||
+      bootstrap_.profile_prefs.compact_chrome_frost != previous_compact_chrome_frost) {
+    NotifyChromeMaterialListeners(bootstrap_.profile_prefs.reduce_transparency,
+                                  bootstrap_.profile_prefs.compact_chrome_frost);
   }
   return {};
 }
@@ -102,6 +109,8 @@ Roe<void> SessionStore::ReloadProfilePrefs() {
   const std::string previous_theme = bootstrap_.profile_prefs.theme;
   const std::string previous_appearance = bootstrap_.profile_prefs.appearance;
   const std::string previous_language = bootstrap_.profile_prefs.language;
+  const bool previous_reduce_transparency = bootstrap_.profile_prefs.reduce_transparency;
+  const bool previous_compact_chrome_frost = bootstrap_.profile_prefs.compact_chrome_frost;
   bootstrap_.profile_prefs = std::move(*reloaded);
 
   if (bootstrap_.profile_prefs.theme != previous_theme) {
@@ -112,6 +121,11 @@ Roe<void> SessionStore::ReloadProfilePrefs() {
   }
   if (bootstrap_.profile_prefs.language != previous_language) {
     NotifyLanguageListeners(bootstrap_.profile_prefs.language);
+  }
+  if (bootstrap_.profile_prefs.reduce_transparency != previous_reduce_transparency ||
+      bootstrap_.profile_prefs.compact_chrome_frost != previous_compact_chrome_frost) {
+    NotifyChromeMaterialListeners(bootstrap_.profile_prefs.reduce_transparency,
+                                  bootstrap_.profile_prefs.compact_chrome_frost);
   }
   return {};
 }
@@ -171,6 +185,19 @@ void SessionStore::AddLanguageListener(std::function<void(const std::string& lan
 void SessionStore::NotifyLanguageListeners(const std::string& language) {
   for (const auto& listener : language_listeners_) {
     listener(language);
+  }
+}
+
+void SessionStore::AddChromeMaterialListener(
+    std::function<void(bool reduce_transparency, bool compact_chrome_frost)> listener) {
+  if (listener) {
+    chrome_material_listeners_.push_back(std::move(listener));
+  }
+}
+
+void SessionStore::NotifyChromeMaterialListeners(bool reduce_transparency, bool compact_chrome_frost) {
+  for (const auto& listener : chrome_material_listeners_) {
+    listener(reduce_transparency, compact_chrome_frost);
   }
 }
 

@@ -106,6 +106,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.appearance_label = bindings_.appearance_label.c_str();
   ui_state_.language = bindings_.language.c_str();
   ui_state_.language_label = bindings_.language_label.c_str();
+  ui_state_.reduce_transparency = bindings_.reduce_transparency.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
@@ -149,6 +150,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.appearance_label = ui_state_.appearance_label.c_str();
   bindings_.language = ui_state_.language.c_str();
   bindings_.language_label = ui_state_.language_label.c_str();
+  bindings_.reduce_transparency = ui_state_.reduce_transparency.c_str();
   bindings_.profile_label = ui_state_.profile_label.c_str();
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
@@ -242,6 +244,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("appearance_label", &controller.bindings_.appearance_label);
     ctor.Bind("language", &controller.bindings_.language);
     ctor.Bind("language_label", &controller.bindings_.language_label);
+    ctor.Bind("reduce_transparency", &controller.bindings_.reduce_transparency);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
@@ -261,6 +264,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_llm_preset_changed", &SettingsController::OnLlmPresetChangedCallback);
     ctor.BindEventCallback("on_choose_theme", &SettingsController::OnChooseThemeCallback);
     ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
+    ctor.BindEventCallback("on_appearance_field_changed", &SettingsController::OnAppearanceFieldChangedCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
     ctor.BindEventCallback("on_security_field_changed", &SettingsController::OnSecurityFieldChangedCallback);
@@ -313,6 +317,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "appearance_label");
   host.Dirty("settings", "language");
   host.Dirty("settings", "language_label");
+  host.Dirty("settings", "reduce_transparency");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
@@ -789,6 +794,17 @@ void SettingsController::OnProfileFieldChangedCallback(Rml::DataModelHandle /*mo
   }
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("profile");
+}
+
+void SettingsController::OnAppearanceFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                                        const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  const Rml::String value = EventValue(ev);
+  if (value == "on" || value == "off") {
+    controller.bindings_.reduce_transparency = value;
+  }
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("appearance");
 }
 
 void SettingsController::OnRegisterProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

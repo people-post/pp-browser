@@ -27,7 +27,7 @@ Record dated outcomes. When shipped, mark **superseded by** stable doc — do no
 ## LG003 — Chrome surface inventory
 
 **Date:** 2026-07-21  
-**Status:** Accepted  
+**Status:** Superseded by [LG008](#lg008--floating-chrome-top-layer-frost-only) (sheet body opaque; frost on header strip only when top)  
 **Decision:** **C (max)** — bottom nav pill + chat/transient headers + Home/overlay composer strip + **full auxiliary sheet glass body** + lighter scrim tint.  
 **Rationale:** Highest material coverage for compact chrome; sheet body glass is acceptable GPU cost while the sheet is open. Visual QA / blur radius tuning deferred.  
 **Superseded by:** (pending) `docs/ui/UI_DESIGN_SYSTEM.md` Materials section
@@ -42,48 +42,45 @@ Record dated outcomes. When shipped, mark **superseded by** stable doc — do no
 
 ---
 
-## LG004 — Renderer fidelity path (open)
+## LG004 — Renderer fidelity path
 
 **Date:** 2026-07-19  
-**Status:** **Open — resolve after lg2 visual review**  
-**Decision rule:**
-
-- If lg2 blur + lg3 shape passes side-by-side iOS 26 tab bar review → **skip lg5**.
-- If highlight/refraction clearly missing → time-box lg5 shader spike (max ~3 engineering days).
-
-**Owner:** Engineering + design review
+**Status:** **Closed — skip lg5 (LG008, 2026-07-22)**  
+**Decision:** Floating Chrome uses stock `backdrop-filter` on at most one surface. No custom shader spike.
 
 ---
 
-## LG005 — Performance reference device (open)
+## LG005 — Performance reference device
 
 **Date:** 2026-07-19  
-**Status:** **Open — resolve before lg6 gate**  
-**Decision:** Name one **minimum Android device** (or emulator profile) and one **iOS device/simulator** for FPS acceptance.  
-**Placeholder:** Pixel 6a class / iPhone 15 Simulator — replace with owner hardware.  
-**Gate:** Compact chat scroll avg frame time regression ≤ 4ms vs glass-off on reference Android.
+**Status:** Accepted (2026-07-22)  
+**Decision:** Manual profiling on **Pixel 6a class** Android and **iPhone 15 Simulator**. Gate: compact chat scroll avg frame time with single-surface frost ≤ +2ms vs all-opaque on reference Android; ≤ 1 `backdrop-filter` surface visible.  
+**Superseded by:** [CURRENT_STATE.md](CURRENT_STATE.md) perf gate table; [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials)
 
 ---
 
-## LG006 — Reduce transparency setting (open)
+## LG006 — Reduce transparency setting
 
 **Date:** 2026-07-19  
-**Status:** **Open — resolve before lg6**  
-**Options:**
-
-| Option | Behavior |
-|--------|----------|
-| **A** | New Me → Accessibility toggle “Reduce transparency” |
-| **B** | Follow system only (iOS `UIAccessibilityIsReduceTransparencyEnabled` — needs platform bridge) |
-| **C** | A + system when bridge exists |
-
-**Recommendation:** A for v1 (consistent cross-platform); add B when iOS shell matures.
+**Status:** Accepted (2026-07-22) — **Option A**  
+**Decision:** Me → Appearance → **Reduce transparency** toggle (`ProfilePreferences.reduce_transparency`, schema v8). Applies `.surface-chrome--solid` and disables frost tier. System bridge deferred.  
+**Superseded by:** [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials)
 
 ---
 
-## LG007 — Feature flag default (open)
+## LG007 — Feature flag default
 
 **Date:** 2026-07-19  
-**Status:** **Open — resolve at lg6**  
-**Options:** Always on when compact | `ProfilePreferences` user toggle | compile-time `PP_BROWSER_LIQUID_GLASS`  
-**Recommendation:** Profile pref default **on**, hidden from Settings until lg3 polish complete; allows internal dogfood off switch.
+**Status:** Accepted (2026-07-22)  
+**Decision:** Frost tier **on** by default (`compact_chrome_frost = true`). Dogfood off via profile JSON only (not exposed in Settings v1). `reduce_transparency` disables frost for accessibility.  
+**Superseded by:** [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials)
+
+---
+
+## LG008 — Floating Chrome: top-layer frost only
+
+**Date:** 2026-07-22  
+**Status:** Accepted  
+**Decision:** Pivot from Apple-faithful Liquid Glass to **Floating Chrome**. All compact chrome uses opaque `.surface-chrome` by default. **At most one** visible chrome bar per frame may add `.surface-chrome--frost` (`backdrop-filter: blur(12px)`), selected by `ShellInterruption::ResolveFrostSurface` from the interruption stack. Cancel lg4 (scroll motion) and lg5 (custom shaders). Auxiliary sheet body is opaque; frost limited to top strip / headers.  
+**Rationale:** Multi-surface blur caused O(N) backdrop passes during chat scroll; floating layout already delivers hierarchy. Top-layer-only frost preserves depth cue at bounded GPU cost.  
+**Supersedes:** Apple-faithful targets in DESIGN.md; LG003=C full sheet glass; LG004 shader path; lg4/lg5 phases.

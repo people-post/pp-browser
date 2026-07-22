@@ -1,39 +1,41 @@
-# Liquid Glass — current state
+# Floating Chrome — current state
 
-**Last updated:** 2026-07-21  
-**Implementation:** lg2 + lg3 landed (LG003 = C); visual QA deferred
+**Last updated:** 2026-07-22  
+**Status:** **Shipped** (lg1–lg3, lg8, lg6, lg7)
 
-## Shipped (lg1–lg3)
+Normative guidance: [docs/ui/UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials), [docs/ui/WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md#compact-floating-chrome).
+
+## Shipped
 
 | Surface | Treatment |
 |---------|-----------|
-| Bottom nav | Twin floating pills (Home | Sessions+Contacts+Me); `backdrop-filter: blur(20px)` + glass fill; active tab capsule 12dp |
-| Chat overlay header | Full-bleed frosted bar; absolute over messages (`padding-top` 48dp on body) |
-| Transient header | Same glass material; absolute over transient pane |
-| Auxiliary sheet | Full-body glass (LG003=C); lighter scrim tint |
-| Home / overlay composer | Glass strip on `#shell-composer-mount` (`surface-glass`); softer composer card |
+| Bottom nav | Twin floating pills; opaque `.surface-chrome`; frost when top chrome |
+| Chat / transient headers | Opaque; frost when respective layer is top |
+| Auxiliary sheet | Opaque body; frosted top strip when top |
+| Account sheet | Opaque body; frosted header when top |
+| Composer strip | Opaque (never frost) |
 
-### Tokens / utilities
+## Preferences (`preferences.json` schema v8)
 
-| Item | Location |
-|------|----------|
-| Glass fills / borders / shadows | `assets/themes/colors-light.rcss`, `colors-dark.rcss` |
-| `.surface-glass` / `.surface-glass--opaque` | `components.rcss` + theme colors |
-| Markup classes | `ShellHost::SerializeCompactBase`, `SerializeTransientLayer` |
+| Field | Default | UI |
+|-------|---------|-----|
+| `reduce_transparency` | `false` | Me → Appearance → Reduce transparency |
+| `compact_chrome_frost` | `true` | Profile JSON only (dogfood off switch) |
 
-**Not yet:** scroll-coupled motion (lg4), custom specular shader (lg5), reduce-transparency wiring / perf gates (lg6), stable `docs/ui/` promotion (lg7).
+## Performance gate (LG005)
 
-## Rendering capabilities (relevant)
+Reference devices for manual scroll profiling:
+
+| Platform | Device |
+|----------|--------|
+| Android | Pixel 6a class (or equivalent mid-tier GLES) |
+| iOS | iPhone 15 Simulator |
+
+**Gate:** compact chat scroll avg frame time with frost ≤ +2ms vs all-opaque on reference Android; ≤ 1 backdrop-filter surface visible at any time.
+
+## Rendering
 
 | Capability | Status |
 |------------|--------|
-| `backdrop-filter: blur()` | Used on compact chrome |
-| `filter: shader(...)` | Experimental — deferred (lg5; only if visual review fails) |
-
-## Incident note (2026-07-21)
-
-White/empty iOS Simulator frame during lg2/lg3 dogfood was **not** caused by glass/`backdrop-filter`. Root cause: `AssetIO` / `SdlAssetFileInterface` used `TARGET_OS_IPHONE` without `#include <TargetConditionals.h>`, so packaged view/locale reads always failed. Fixed in platform asset IO; glass materials re-applied.
-
-## Next agent — start here
-
-Continue with **lg4** (optional polish) or **lg6** (fallbacks + perf) in [PHASES.md](PHASES.md). Resolve LG005 / LG006 / LG007 before lg6 merge gates. Do not start lg5 until side-by-side iOS review of lg2–lg3.
+| `backdrop-filter` | ≤ 1 surface via `--frost` |
+| Custom glass shaders | Cancelled (LG008) |
