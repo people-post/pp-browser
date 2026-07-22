@@ -81,6 +81,6 @@ Record dated outcomes. When shipped, mark **superseded by** stable doc — do no
 
 **Date:** 2026-07-22  
 **Status:** Accepted  
-**Decision:** Pivot from Apple-faithful Liquid Glass to **Floating Chrome**. All compact chrome uses opaque `.surface-chrome` by default. **At most one** visible chrome bar per frame may add `.surface-chrome--frost` (`backdrop-filter: blur(12px)`), selected by `ShellInterruption::CompactChromeFrostSurface` from the interruption stack. Cancel lg4 (scroll motion) and lg5 (custom shaders). Auxiliary sheet body is opaque; frost limited to top strip / headers.  
+**Decision:** Pivot from Apple-faithful Liquid Glass to **Floating Chrome**. All compact chrome uses opaque `.surface-chrome` by default. **At most one** visible chrome bar per frame may add `.surface-chrome--frost` (`backdrop-filter: blur(12px)`), selected by `ShellInterruption::ResolveFrostSurface` from the interruption stack. Cancel lg4 (scroll motion) and lg5 (custom shaders). Auxiliary sheet body is opaque; frost limited to top strip / headers.  
 **Rationale:** Multi-surface blur caused O(N) backdrop passes during chat scroll; floating layout already delivers hierarchy. Top-layer-only frost preserves depth cue at bounded GPU cost.  
 **Supersedes:** Apple-faithful targets in DESIGN.md; LG003=C full sheet glass; LG004 shader path; lg4/lg5 phases.

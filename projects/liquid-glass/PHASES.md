@@ -47,7 +47,7 @@ Execute in order. Each phase should land reviewable PRs.
 
 - [x] ADR LG008; update DESIGN / CURRENT_STATE / README
 - [x] Rename `.surface-glass` → `.surface-chrome` (+ `--frost`, `--solid`)
-- [x] Remove multi-surface blur; frost via `ShellInterruption::CompactChromeFrostSurface`
+- [x] Remove multi-surface blur; frost via `ShellInterruption::ResolveFrostSurface`
 - [x] Wire frost classes in `ShellHost` serialization
 - [x] Opaque auxiliary sheet body + top strip; opaque account sheet body
 - [x] Restore standard scrim opacity (light theme)
