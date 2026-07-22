@@ -923,12 +923,12 @@ select selectbox option {
   position: absolute;
   left: 0;
   right: 0;
+  /* Nearly full-height sheet: small top peek; bottom is shell floor (covers nav). */
+  top: 48dp;
   bottom: 0;
   z-index: 27;
   display: flex;
   flex-direction: column;
-  height: 88%;
-  max-height: calc(100% - 48dp);
   border-radius: 16dp 16dp 0 0;
   overflow: hidden;
   box-sizing: border-box;

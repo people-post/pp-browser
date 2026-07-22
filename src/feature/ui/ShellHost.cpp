@@ -1048,10 +1048,12 @@ void ShellHost::AttachAccountSheetGesture() {
   if (!sheet) {
     return;
   }
+  // Fallback until layout resolves; gesture prefers the live box via ResolveSheetHeightDp.
+  // Matches .shell-account-sheet top peek (toolbar_height_dp / 48dp).
   const float dp_ratio = context_->GetDensityIndependentPixelRatio();
   const float height_dp =
       (dp_ratio > 0.f) ? (static_cast<float>(context_->GetDimensions().y) / dp_ratio) : state_.shell_width_dp;
-  const float sheet_height_dp = height_dp * 0.88f;
+  const float sheet_height_dp = std::max(0.f, height_dp - config_.toolbar_height_dp);
   account_sheet_gesture_.Attach(sheet, context_, sheet_height_dp, [this]() { ScheduleAccountSheetDismiss(); });
 }
 
