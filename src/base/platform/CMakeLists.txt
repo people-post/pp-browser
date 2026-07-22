@@ -41,6 +41,9 @@ set(_pp_platform_os_sources
   os/OsProcess_Posix.cpp
   os/OsTlsCaPath_Android.cpp
   os/OsTlsCaPath_Default.cpp
+  os/OsTlsPlatformCurl_Android.cpp
+  os/OsTlsPlatformCurl_Default.cpp
+  os/OsTlsPlatformCurl_Ios.cpp
 )
 
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
@@ -75,6 +78,21 @@ pp_browser_add_base_library(pp_base_platform
     RmlUi::Core
     ${PP_BROWSER_SDL3_TARGET}
     ${PP_BROWSER_SDL3_IMAGE_TARGET})
+
+# iOS: curl uses BoringSSL; OsTlsPlatformCurl_Ios installs a SecTrust verify callback.
+if(PP_BROWSER_IS_IOS)
+  target_link_libraries(pp_base_platform PUBLIC
+    CURL::libcurl
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    "-framework Security"
+    "-framework CoreFoundation")
+endif()
+
+# Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
+if(PP_BROWSER_IS_ANDROID)
+  target_link_libraries(pp_base_platform PUBLIC CURL::libcurl)
+endif()
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

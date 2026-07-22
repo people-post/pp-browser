@@ -19,7 +19,7 @@ See also: [PLATFORMS.md](PLATFORMS.md) (runtime matrix), [SRC_LAYOUT.md](SRC_LAY
 |------|------|
 | `base/platform/Platform.{h,cpp}` | `PlatformKind` detection, capability flags |
 | `base/platform/PlatformServices.*` | Registers Android/iOS/desktop implementations at startup |
-| `base/platform/os/` | Low-level OS primitives (`OsFile`, `OsTime`, `OsProcess`, `OsTlsCaPath`, executable path) |
+| `base/platform/os/` | Low-level OS primitives (`OsFile`, `OsTime`, `OsProcess`, `OsTlsCaPath` / `OsTlsPlatformCurl`, executable path) |
 | `base/platform/desktop/` | Per-OS desktop path and notification implementations |
 | `base/platform/Android*`, `Ios*`, `Desktop*` | Facades implementing `IPathProvider`, `ILocalNotifier`, etc. |
 | `base/platform/MobileWindowSizing.*` | SDL display-mode sizing for mobile windows |

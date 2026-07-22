@@ -24,7 +24,7 @@ Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libma
 | `MessagingHub` | Foreground poll loop | `BackgroundSyncScheduler`: 2s foreground / ~45s background; FCM wake + WorkManager when enabled |
 | Navigation | Escape → dismiss then exit | Back → dismiss then minimize; Escape same as desktop |
 | MCP stdio | Supported | Skipped; use `mcp.url` |
-| HTTPS (curl + BoringSSL) | Host CA bundle / Secure Transport / Schannel | `os::TlsCaPath()` → system CAPATH; `ApplyCurlSslDefaults` applies it to curl |
+| HTTPS (curl + BoringSSL) | Host CA bundle / Secure Transport / Schannel | `os::ApplyPlatformCurlSsl` → system CAPATH (`TlsCaPath`); same entry as iOS via `ApplyCurlSslDefaults` |
 
 Profile-scoped data layout (`profiles/{id}/`) is unchanged on mobile.
 
@@ -60,6 +60,18 @@ iOS builds use CMake + Xcode toolchains from the repo root (no separate Gradle-s
 | libp2p | Built and linked | Built and linked |
 | MCP | stdio + HTTP | HTTP URL only |
 | Push | N/A (desktop local notify) | APNs deferred — placeholders in `packaging/ios/` |
+| HTTPS (curl + BoringSSL) | Secure Transport (macOS) | `os::ApplyPlatformCurlSsl` → Security.framework `SecTrust` verify callback (system roots / MDM); no bundled CA file |
+
+### Mobile HTTPS trust (curl + BoringSSL)
+
+Mobile builds link curl against vendored BoringSSL (no Secure Transport on iOS). BoringSSL has no built-in CA store, so peer verification must use the OS:
+
+| Platform | Mechanism | Tracks OS distrust / MDM roots? |
+|----------|-----------|----------------------------------|
+| Android | `CURLOPT_CAPATH` → Conscrypt/system hashed PEMs (`os::TlsCaPath`) | Yes (OS CA updates) |
+| iOS | `CURLOPT_SSL_CTX_FUNCTION` → `SecTrustEvaluateWithError` | Yes (Keychain trust store) |
+
+Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/base/platform/os/OsTlsPlatformCurl_*`).
 
 Build and signing placeholders: [IOS_BUILD.md](../ops/IOS_BUILD.md). Scripts: [`scripts/ios_build.sh`](../../scripts/ios_build.sh), [`scripts/ios_sign.sh`](../../scripts/ios_sign.sh).
 

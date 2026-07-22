@@ -125,11 +125,15 @@ else()
   find_package(OpenSSL REQUIRED)
 endif()
 
-# Android has no /etc/ssl CA bundle; BoringSSL needs an explicit CAPATH (hashed PEMs).
-# Runtime os::TlsCaPath() may prefer the Conscrypt apex path when present.
+# Mobile + BoringSSL: do not bake host (/etc/ssl) CA paths into curl_config.h.
+# Android: runtime os::TlsCaPath() / ApplyPlatformCurlSsl sets CAPATH (apex preferred).
+# iOS: ApplyPlatformCurlSsl installs a SecTrust SSL_CTX verify callback.
 if(ANDROID)
   set(CURL_CA_BUNDLE "none" CACHE STRING "" FORCE)
   set(CURL_CA_PATH "/system/etc/security/cacerts" CACHE STRING "" FORCE)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  set(CURL_CA_BUNDLE "none" CACHE STRING "" FORCE)
+  set(CURL_CA_PATH "none" CACHE STRING "" FORCE)
 endif()
 
 add_subdirectory("${PP_THIRD_PARTY_DIR}/curl"

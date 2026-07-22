@@ -4,7 +4,7 @@
 
 namespace pbr {
 
-/** Apply platform TLS defaults (e.g. Android system CAPATH) to a curl easy handle. */
+/** Apply platform TLS trust defaults (iOS SecTrust / Android CAPATH / desktop no-op). */
 void ApplyCurlSslDefaults(CURL* curl);
 
 } // namespace pbr

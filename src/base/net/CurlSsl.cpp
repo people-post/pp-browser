@@ -1,6 +1,6 @@
 #include "base/net/CurlSsl.h"
 
-#include "base/platform/os/OsTlsCaPath.h"
+#include "base/platform/os/OsTlsPlatformCurl.h"
 
 namespace pbr {
 
@@ -8,9 +8,7 @@ void ApplyCurlSslDefaults(CURL* curl) {
   if (!curl) {
     return;
   }
-  if (const char* ca_path = os::TlsCaPath()) {
-    curl_easy_setopt(curl, CURLOPT_CAPATH, ca_path);
-  }
+  os::ApplyPlatformCurlSsl(curl);
 }
 
 } // namespace pbr
