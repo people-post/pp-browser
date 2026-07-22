@@ -7,7 +7,7 @@
 
 | Surface | Treatment |
 |---------|-----------|
-| Bottom nav | Floating pill (`border-radius` 24dp, inset 12dp); `backdrop-filter: blur(20px)` + glass fill; active tab capsule 12dp |
+| Bottom nav | Twin floating pills (Home | Sessions+Contacts+Me); `backdrop-filter: blur(20px)` + glass fill; active tab capsule 12dp |
 | Chat overlay header | Full-bleed frosted bar; absolute over messages (`padding-top` 48dp on body) |
 | Transient header | Same glass material; absolute over transient pane |
 | Auxiliary sheet | Full-body glass (LG003=C); lighter scrim tint |

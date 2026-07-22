@@ -285,9 +285,13 @@ select selectbox option:hover {
 .shell-nav-rail--compact {
   border-right: 0;
   border-top: 0;
+  background-color: transparent;
+}
+
+.shell-nav-rail--compact .shell-nav-pill {
   background-color: #ffffffb3;
-  /* No box-shadow: blur extend (~1.5*radius) exceeds the 12dp chrome inset and
-     RmlUi clips the shadow texture to the window, which clips the painted pill
+  border-top: 1dp #ffffff66;
+  /* No box-shadow: blur extend exceeds the 12dp chrome inset and clips the pill
      (same failure mode as .context-menu-sheet-list on Android). */
 }
 

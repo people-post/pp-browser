@@ -8,7 +8,7 @@ Apple’s **Liquid Glass** (iOS 26 / system materials) combines **translucency**
 
 | Surface | RML / C++ | Glass treatment |
 |---------|-----------|-----------------|
-| Bottom nav rail | `nav_rail.rml`, `.shell-nav-rail--compact` | Floating pill; blur + tint; active tab luminance |
+| Bottom nav rail | `nav_rail.rml`, `.shell-nav-rail--compact` | Twin floating pills (Home | rest); blur + tint; active tab luminance |
 | Bottom chrome wrapper | `.shell-bottom-chrome` | Overlay positioning; safe-area padding |
 | Chat overlay header | `.shell-chat-overlay-chrome` | Frosted bar over scrolling messages |
 | Transient back header | `.shell-transient-chrome` | Same material as overlay header |
@@ -100,17 +100,18 @@ Tune values against real chat scroll capture on device.
 
 ## Component-level spec
 
-### Bottom nav pill
+### Bottom nav pills
 
 | Property | Target |
 |----------|--------|
 | Height | 56dp + safe-area bottom |
 | Horizontal inset | 12–16dp from screen edges |
-| Corner radius | 22–28dp (full pill) |
+| Layout | Two pills: primary (Home) left, secondary (Sessions / Contacts / Me) right |
+| Corner radius | 22–28dp (full pill) per glass cluster |
 | Tab active state | Capsule fill inside pill (`border-radius: 12dp`) |
 | Badges | Unchanged logic; ensure contrast on glass |
 
-DOM: optional wrapper `.shell-nav-glass` inside `.shell-bottom-chrome` for rounded clip + blur.
+DOM: `.shell-nav-pill--primary` / `.shell-nav-pill--secondary` inside `.shell-nav-rail-inner`; glass on pills in compact only.
 
 ### Chat / transient headers
 

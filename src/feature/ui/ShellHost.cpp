@@ -701,7 +701,7 @@ std::string ShellHost::SerializeCompactBase() const {
 
   if (!state_.compact_chat_open) {
     out << "<div class=\"shell-bottom-chrome\" id=\"shell-bottom-chrome\">";
-    out << "<div class=\"shell-nav-rail shell-nav-rail--compact surface-glass\" id=\"shell-nav-rail-mount\"></div>";
+    out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
     out << "</div>";
   }
 

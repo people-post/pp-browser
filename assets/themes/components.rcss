@@ -49,7 +49,7 @@ select selectbox option {
 }
 
 /* Compact chrome that uses glass even when selectors carry material without the utility class. */
-.shell-nav-rail--compact,
+.shell-nav-rail--compact .shell-nav-pill,
 .shell-chat-overlay-chrome,
 .shell-transient-chrome,
 .shell-sheet-compact {
@@ -57,7 +57,7 @@ select selectbox option {
 }
 
 .surface-glass--opaque,
-.shell-nav-rail--compact.surface-glass--opaque,
+.shell-nav-rail--compact .shell-nav-pill.surface-glass--opaque,
 .shell-chat-overlay-chrome.surface-glass--opaque,
 .shell-transient-chrome.surface-glass--opaque,
 .shell-sheet-compact.surface-glass--opaque,
@@ -716,9 +716,8 @@ select selectbox option {
   flex-direction: row;
   width: 100%;
   height: 56dp;
-  border-radius: 24dp;
-  overflow: hidden;
   box-sizing: border-box;
+  background-color: transparent;
 }
 
 .shell-nav-rail-inner {
@@ -733,12 +732,45 @@ select selectbox option {
   box-sizing: border-box;
 }
 
+.shell-nav-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.shell-nav-pill--secondary {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  justify-content: flex-start;
+}
+
 .shell-nav-rail--compact .shell-nav-rail-inner {
   flex-direction: row;
-  justify-content: flex-start;
-  gap: 0;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12dp;
+  height: 56dp;
+  padding: 0;
+}
+
+.shell-nav-rail--compact .shell-nav-pill {
+  flex-direction: row;
+  align-items: center;
   height: 56dp;
   padding: 4dp 6dp;
+  border-radius: 24dp;
+  overflow: hidden;
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.shell-nav-rail--compact .shell-nav-pill--secondary {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 0;
 }
 
 .shell-nav-spacer {
@@ -747,10 +779,14 @@ select selectbox option {
   min-height: 0;
 }
 
-.shell-nav-rail--compact .shell-nav-spacer {
+.shell-nav-pill--secondary > .shell-nav-spacer {
   flex: 1 1 auto;
-  width: auto;
-  height: auto;
+  width: 100%;
+  min-height: 0;
+}
+
+.shell-nav-rail--compact .shell-nav-spacer {
+  display: none;
 }
 
 .shell-nav-tab {
