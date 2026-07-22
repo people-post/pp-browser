@@ -643,8 +643,10 @@ void ShellHost::ApplySafeAreaLayout() {
   }
   set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom", layout.content_padding_bottom_dp);
   set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
+  // Auxiliary sheet sits above the nav rail; account sheet covers it and draws from
+  // the shell bottom (safe-area already applied via document bottom inset).
   set_dp(doc->GetElementById("shell-auxiliary-sheet"), "bottom", layout.sheet_bottom_dp);
-  set_dp(doc->GetElementById("shell-account-sheet"), "bottom", layout.sheet_bottom_dp);
+  set_dp(doc->GetElementById("shell-account-sheet"), "bottom", layout.chrome_bottom_dp);
   // Chat overlay hides the nav rail — no extra bottom padding beyond shell inset.
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
 }

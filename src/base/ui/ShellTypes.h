@@ -71,6 +71,7 @@ struct CompactChromeLayout {
   /** Extra padding inside content so the last row clears the floating nav. */
   float content_padding_bottom_dp = 0.f;
   float chrome_bottom_dp = 0.f;
+  /** Auxiliary sheet offset above the compact nav rail (account sheet uses chrome_bottom_dp). */
   float sheet_bottom_dp = 0.f;
   float chrome_horizontal_inset_dp = 0.f;
 };
