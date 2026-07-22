@@ -724,7 +724,7 @@ std::string ShellHost::SerializeAccountSheet() const {
   if (!state_.account_sheet_open) {
     return {};
   }
-  const CompactChromeFrostSurface frost = ShellInterruption::CompactChromeFrostSurface(state_);
+  const CompactChromeFrostSurface frost = ShellInterruption::ResolveFrostSurface(state_);
   const bool frost_enabled = ChromeFrostEnabled();
   const bool solid = state_.reduce_transparency;
   std::ostringstream out;
@@ -746,7 +746,7 @@ std::string ShellHost::SerializeAccountSheet() const {
 }
 
 std::string ShellHost::SerializeCompactBase() const {
-  const CompactChromeFrostSurface frost = ShellInterruption::CompactChromeFrostSurface(state_);
+  const CompactChromeFrostSurface frost = ShellInterruption::ResolveFrostSurface(state_);
   const bool frost_enabled = ChromeFrostEnabled();
   const bool solid = state_.reduce_transparency;
   std::ostringstream out;
@@ -834,7 +834,7 @@ std::string ShellHost::SerializeTransientLayer() const {
     return {};
   }
   const PaneState& top = state_.transient_stack.back();
-  const CompactChromeFrostSurface frost = ShellInterruption::CompactChromeFrostSurface(state_);
+  const CompactChromeFrostSurface frost = ShellInterruption::ResolveFrostSurface(state_);
   const bool frost_enabled = ChromeFrostEnabled();
   const bool solid = state_.reduce_transparency;
   std::ostringstream out;

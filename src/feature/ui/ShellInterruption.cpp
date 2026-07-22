@@ -27,7 +27,7 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
   return InterruptionKind::None;
 }
 
-CompactChromeFrostSurface ShellInterruption::CompactChromeFrostSurface(const ShellState& state) {
+CompactChromeFrostSurface ShellInterruption::ResolveFrostSurface(const ShellState& state) {
   if (state.layout_mode != LayoutMode::Compact) {
     return CompactChromeFrostSurface::None;
   }

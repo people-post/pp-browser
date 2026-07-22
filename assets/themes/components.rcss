@@ -45,7 +45,7 @@ select selectbox option {
 
 /* Floating Chrome — compact shell materials; theme colors in colors-*.rcss.
    Default: opaque elevated surfaces. At most one bar uses backdrop frost per frame
-   (see ShellInterruption::CompactChromeFrostSurface). */
+   (see ShellInterruption::ResolveFrostSurface). */
 .surface-chrome {
   backdrop-filter: none;
 }

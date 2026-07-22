@@ -213,7 +213,7 @@ Compact layout (`<768dp`) uses **Floating Chrome**: inset floating nav pills, op
 | `.surface-chrome--solid` | Accessibility / reduce-transparency — disables frost |
 | `.shell-bottom-chrome--frost` | Frost on bottom nav pills when base chrome is top |
 
-Frost target is chosen in C++ from the interruption stack (`ShellInterruption::CompactChromeFrostSurface`). Modals (dialog, overlay, pin gate) never use frost.
+Frost target is chosen in C++ from the interruption stack (`ShellInterruption::ResolveFrostSurface`). Modals (dialog, overlay, pin gate) never use frost.
 
 **Preference:** Me → Appearance → **Reduce transparency** (`ProfilePreferences.reduce_transparency`) forces opaque chrome. **Frost tier** defaults on (`compact_chrome_frost`); disable via profile JSON for dogfood.
 

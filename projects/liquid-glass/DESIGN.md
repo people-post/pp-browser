@@ -42,7 +42,7 @@ Unchanged from lg1 — see [WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md). Con
 
 ## Frost selection (normative)
 
-`ShellInterruption::CompactChromeFrostSurface(state)` returns at most one target:
+`ShellInterruption::ResolveFrostSurface(state)` returns at most one target:
 
 | Top interruption | Frost surface |
 |------------------|---------------|
@@ -122,4 +122,4 @@ When promoted (lg7): glass utilities documented as **theme-only** in [RCSS_PROFI
 | Dialog open | No frost anywhere |
 | Reduce transparency pref | All `--solid`, no blur |
 
-Automated: `shell_host_test` covers `CompactChromeFrostSurface` mapping.
+Automated: `shell_host_test` covers `ResolveFrostSurface` mapping.
