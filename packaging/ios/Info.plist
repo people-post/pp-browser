@@ -23,6 +23,11 @@
   <string>0.1.0</string>
   <key>LSRequiresIPhoneOS</key>
   <true/>
+  <!-- Shown: SDL prefersStatusBarHidden follows non-fullscreen window flags. -->
+  <key>UIStatusBarHidden</key>
+  <false/>
+  <key>UIViewControllerBasedStatusBarAppearance</key>
+  <true/>
   <key>UILaunchScreen</key>
   <dict/>
   <key>UIRequiredDeviceCapabilities</key>

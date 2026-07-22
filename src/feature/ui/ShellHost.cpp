@@ -629,9 +629,14 @@ void ShellHost::ApplySafeAreaLayout() {
     element->SetProperty(property, value.c_str());
   };
 
-  // Keep the shell inside the safe rect (status bar / home indicator / IME).
+  // Body stays full-bleed at the top so the theme background paints under the
+  // translucent status bar. Content + chrome are inset via content_top_dp.
   set_dp(doc, "top", layout.shell_top_dp);
   set_dp(doc, "bottom", layout.shell_bottom_dp);
+  set_dp(doc->GetElementById("shell-root"), "top", layout.content_top_dp);
+  set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
+  // Absolute toast stack is positioned from the chrome top edge (ignores padding).
+  set_dp(doc->GetElementById("shell-toast-stack"), "top", 8.f + layout.content_top_dp);
 
   if (state_.layout_mode != LayoutMode::Compact) {
     return;

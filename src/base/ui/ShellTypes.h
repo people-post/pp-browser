@@ -56,10 +56,18 @@ struct ShellConfig {
 
 /** Derived dp offsets for compact floating chrome + safe-area (lg1). */
 struct CompactChromeLayout {
-  /** Top inset for status bar / notch; applied to the shell document body. */
+  /**
+   * Body top offset — kept at 0 so the document background paints under the
+   * translucent status bar (edge-to-edge blend).
+   */
   float shell_top_dp = 0.f;
   /** Bottom inset for home indicator / IME; applied to the shell document body. */
   float shell_bottom_dp = 0.f;
+  /**
+   * Top safe-area inset applied to #shell-root / chrome so content clears the
+   * status bar while the body background remains full-bleed.
+   */
+  float content_top_dp = 0.f;
   /** Extra padding inside content so the last row clears the floating nav. */
   float content_padding_bottom_dp = 0.f;
   float chrome_bottom_dp = 0.f;

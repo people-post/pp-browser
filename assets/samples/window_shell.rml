@@ -12,7 +12,7 @@
       <p class="shell-banner-text" data-rml="banner_message"></p>
       <button class="shell-banner-dismiss" data-event-click="dismiss_banner()">×</button>
     </div>
-    <div class="shell-toast-stack">
+    <div id="shell-toast-stack" class="shell-toast-stack">
       <div data-for="toast : toasts" class="shell-toast">
         <p class="shell-toast-text" data-rml="toast.message"></p>
       </div>

@@ -142,7 +142,7 @@ Call `ShellHost::Update(context)` each frame (resize, toast expiry).
 When `layout_mode == compact`:
 
 - **Bottom nav** floats above content (`position: absolute`; 12dp horizontal inset). Content panes use `padding-bottom` equal to nav height (56dp) plus safe-area bottom so the last row is not hidden.
-- **Safe area** — shell document `top` / `bottom` follow SDL safe-area insets and `machine.json` `safe_area` prefs (`ShellHost::RefreshSafeAreaInsets`).
+- **Safe area** — top is edge-to-edge (body background under the status bar); `#shell-root` / chrome use `content_top_dp`. Bottom still insets the shell document. Values come from SDL safe-area insets and `machine.json` `safe_area` prefs (`ShellHost::RefreshSafeAreaInsets`).
 - **Materials** — default opaque `.surface-chrome`; one bar may add `.surface-chrome--frost` (see [UI_DESIGN_SYSTEM.md](UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials)). Reduce transparency (Me → Appearance) applies `.surface-chrome--solid` and disables frost.
 - **Interruption order** unchanged — only presentation differs; chat overlay hides bottom nav while open.
 

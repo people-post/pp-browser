@@ -34,11 +34,10 @@ void ConfigureSdlGlAttributes() {
 }
 
 void SetMobileWindowCreateProperties(SDL_PropertiesID props) {
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-  SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
-#else
+  // iOS: do not create as SDL fullscreen/borderless. UIKit still fills the
+  // screen; those flags only hide the system status bar via
+  // prefersStatusBarHidden. ShellHost already insets content for safe area.
   (void)props;
-#endif
 }
 
 void InitIosDrawableFromWindow(SDL_Window* window, unsigned int& framebuffer, unsigned int& renderbuffer) {
