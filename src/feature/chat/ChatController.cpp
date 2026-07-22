@@ -2617,8 +2617,6 @@ bool ChatController::Setup(Rml::Context* context) {
   ShellHost::Instance().RegisterPane(
       {.key = "contact_detail", .rml_path = "views/contact_detail.rml", .role = PaneRole::Primary});
   ShellHost::Instance().RegisterPane(
-      {.key = "settings_detail", .rml_path = "views/settings_detail.rml", .role = PaneRole::Primary});
-  ShellHost::Instance().RegisterPane(
       {.key = "preview", .rml_path = "views/preview.rml", .role = PaneRole::Auxiliary, .toolbar_label = "Preview"});
 
   if (DocumentLoader::LoadFile(context, IAssetLocator::Instance().Resolve("samples/window_shell.rml")) == nullptr) {

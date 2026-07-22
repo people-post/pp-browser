@@ -212,7 +212,6 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("sections", &controller.sections_);
     ctor.Bind("selected_id", &controller.selected_id_);
     ctor.Bind("selected_title", &controller.selected_title_);
-    ctor.Bind("compact_layout", &controller.compact_layout_);
     ctor.Bind("in_account_sheet", &controller.in_account_sheet_);
     ctor.Bind("show_detail", &controller.show_detail_);
     ctor.Bind("llm_preset", &controller.bindings_.llm_preset);
@@ -282,7 +281,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "sections");
   host.Dirty("settings", "selected_id");
   host.Dirty("settings", "selected_title");
-  host.Dirty("settings", "compact_layout");
   host.Dirty("settings", "in_account_sheet");
   host.Dirty("settings", "show_detail");
   host.Dirty("settings", "llm_preset");
@@ -369,7 +367,6 @@ void SettingsController::OnAccountSheetOpened() {
   selected_id_.clear();
   selected_title_.clear();
   in_account_sheet_ = true;
-  compact_layout_ = true;
   ReloadFromDisk();
   suppress_auto_save_ = true;
 }
@@ -380,33 +377,6 @@ void SettingsController::OnAccountSheetClosed() {
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
-}
-
-void SettingsController::SyncLayoutMode() {
-  if (in_account_sheet_) {
-    return;
-  }
-  const bool compact = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
-  if (compact_layout_ == compact) {
-    return;
-  }
-
-  log().info << "SyncLayoutMode compact=" << compact;
-  suppress_auto_save_ = true;
-  compact_layout_ = compact;
-  if (!compact) {
-    show_detail_ = false;
-    if (!selected_id_.empty()) {
-      ShellHost::Instance().SetPrimaryPane("settings_detail");
-      BrowserThread::RunUITasks();
-    }
-  } else if (!selected_id_.empty()) {
-    show_detail_ = true;
-    ShellHost::Instance().ClearPrimaryPane();
-    BrowserThread::RunUITasks();
-  }
-  DirtyAll();
-  suppress_auto_save_ = false;
 }
 
 void SettingsController::OpenSettings() {
@@ -555,18 +525,6 @@ void SettingsController::OnResetSection(const std::string& section_id) {
   FlushSection(section_id);
 }
 
-void SettingsController::CompleteSectionSelection(bool expanded) {
-  suppress_auto_save_ = true;
-  if (expanded) {
-    ShellHost::Instance().SetPrimaryPane("settings_detail");
-    BrowserThread::RunUITasks();
-  } else {
-    FinishPaneResync();
-  }
-  log().info << "CompleteSectionSelection id=" << selected_id_.c_str()
-             << " expanded=" << expanded;
-}
-
 void SettingsController::OnSelectSection(const std::string& section_id) {
   log().info << "OnSelectSection(" << section_id << ")";
   FlushPending();
@@ -582,19 +540,12 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
 
   status_ = "";
-  if (in_account_sheet_) {
-    show_detail_ = true;
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { CompleteSectionSelection(false); });
-  } else {
-    compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
-    if (compact_layout_) {
-      show_detail_ = true;
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { CompleteSectionSelection(false); });
-    } else {
-      show_detail_ = false;
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { CompleteSectionSelection(true); });
-    }
-  }
+  show_detail_ = true;
+  BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+    suppress_auto_save_ = true;
+    FinishPaneResync();
+    log().info << "OnSelectSection complete id=" << selected_id_.c_str();
+  });
 }
 
 void SettingsController::OnBackToList() {
