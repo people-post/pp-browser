@@ -197,13 +197,13 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
   margin-bottom: 0;
   padding: 0;
   border: 0;
-  border-radius: 8dp;
+  border-radius: 18dp;
   font-family: LatoLatin;
   cursor: pointer;
 }
