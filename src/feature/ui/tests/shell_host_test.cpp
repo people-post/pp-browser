@@ -18,8 +18,6 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_TRUE(ShellLayout::TabHasSecondary(NavTab::Sessions));
   EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Sessions), std::string("sidebar"));
   EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Contacts), std::string("contacts"));
-  EXPECT_EQ(ShellLayout::NavTabString(NavTab::Me), std::string("me"));
-  EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Me), std::string("settings"));
 
   ShellState cleared_tab{};
   cleared_tab.primary_pane_key = "chat";
@@ -88,6 +86,18 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   ShellState dismiss_chat = chat_overlay_state;
   EXPECT_TRUE(ShellInterruption::DismissTop(dismiss_chat));
   EXPECT_FALSE(dismiss_chat.compact_chat_open);
+
+  ShellState account_sheet_state{};
+  account_sheet_state.account_sheet_open = true;
+  EXPECT_EQ(ShellInterruption::Top(account_sheet_state), InterruptionKind::AccountSheet);
+
+  ShellState dismiss_account_sheet = account_sheet_state;
+  EXPECT_TRUE(ShellInterruption::DismissTop(dismiss_account_sheet));
+  EXPECT_FALSE(dismiss_account_sheet.account_sheet_open);
+
+  ShellState transient_with_sheet = transient_state;
+  transient_with_sheet.account_sheet_open = true;
+  EXPECT_EQ(ShellInterruption::Top(transient_with_sheet), InterruptionKind::Transient);
 
   ShellState dismiss_transient = transient_state;
   EXPECT_TRUE(ShellInterruption::DismissTop(dismiss_transient));

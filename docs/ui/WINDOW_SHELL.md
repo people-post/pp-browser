@@ -26,7 +26,7 @@ Nav rail → Secondary (index/list) → Primary (drill-down) → Auxiliary → T
 | Role | Position | Purpose | Expanded | Compact |
 |------|----------|---------|----------|---------|
 | Nav rail | Left / bottom | Tab switcher | Left column | Bottom bar |
-| Secondary | First content column | Tab index / list (sessions, contacts, me) | Beside nav rail (Home tab omits this) | Full page above nav rail |
+| Secondary | First content column | Tab index / list (sessions, contacts) | Beside nav rail (Home tab omits this) | Full page above nav rail |
 | Primary | Next column right | Tab drill-down content (chat, contact detail) | Center column when set; Home tab always shows chat | Home: inline chat in nav page; Sessions: overlay on thread select |
 | Auxiliary | Next column right | Further content in this tab (working set) | Right column when open | Sheet |
 | Transient | Overlay | Deeper drill-down in this tab | Over primary | Over primary |
@@ -40,7 +40,8 @@ Primary is **tab-scoped drill-down content**, not always chat. Examples:
 | Home (default) | (none) | AI home chat + composer |
 | Sessions | Session list | Chat + composer |
 | Contacts | Contact list | Contact detail |
-| Me | Compact identity strip + preference list | Preference section detail |
+
+**Account / Me settings** are not a nav-rail tab. A profile button in the Home tab header opens an iOS-style **account bottom sheet** (`OpenAccountSheet` / `close_account_sheet`). Settings content mounts into `#pane-body-settings` inside the sheet. Swipe down on the grabber/header, tap the scrim or ×, or press Escape/back to dismiss. Tab switch clears the sheet via `ClearTabContext()`.
 
 The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
 
@@ -51,9 +52,10 @@ Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).
 1. Dialog (alert/confirm)
 2. Overlay layer (`push_layer`)
 3. Transient stack
-4. Auxiliary sheet (compact)
-5. Compact chat overlay (compact)
-6. Base panes
+4. Account bottom sheet (Me / settings)
+5. Auxiliary sheet (compact)
+6. Compact chat overlay (compact)
+7. Base panes
 
 Escape (priority 110) calls `ShellHost::HandleDismiss()` before app quit (priority 100). Toasts and banners are informational and not in the dismiss stack.
 
@@ -64,6 +66,7 @@ Choose the lightest primitive that fits the user task:
 | Style | API | Use when | Examples |
 |-------|-----|----------|----------|
 | **Pane navigation** | `SetPrimaryPane`, `PushTransient` / `PopTransient` | User stays in a tab; back returns within that tab | Sessions→chat, Contacts→detail (compact uses transient) |
+| **Account sheet** | `OpenAccountSheet` / `close_account_sheet` | Profile and preferences from Home without leaving the tab | Me settings, profile card, preference sections |
 | **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`) |
 | **Atomic feedback** | `ShellFeedback` dialog/toast | One-shot confirm/rename/prompt with no surrounding flow | Delete confirm, rename thread |
 
@@ -89,7 +92,9 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 
 | Callback | Action |
 |----------|--------|
-| `select_nav_tab(tab)` | Switch nav rail tab (`home`, `sessions`, `contacts`, or `me`); clears tab context |
+| `select_nav_tab(tab)` | Switch nav rail tab (`home`, `sessions`, or `contacts`); clears tab context |
+| `open_account_sheet()` | Open Me / settings bottom sheet (Home tab profile button) |
+| `close_account_sheet()` | Dismiss account bottom sheet |
 | `compact_chat_back()` | Close compact chat overlay |
 | `toggle_auxiliary()` | Open/close preview sheet/panel |
 | `open_auxiliary()` | Open preview when available |
@@ -98,7 +103,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `dismiss_banner()` | Hide banner |
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
 
-Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). Refreshed by `BadgeAggregator` on messaging events.
+Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). The profile attention dot appears on the Home header profile button, not the nav rail. Refreshed by `BadgeAggregator` on messaging events.
 
 Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`. The nav rail mounts from `assets/views/nav_rail.rml`.
 
@@ -111,7 +116,7 @@ Primary panes may set `provides_composer = true` on `PaneSpec`. The shell mounts
 | Expanded | `#pane-composer-{key}` | Below `#pane-body-{key}` in the primary column |
 | Compact | `#shell-composer-mount` | Home tab: below chat in nav page; Sessions overlay: inside overlay |
 
-On compact, the composer appears on the Home tab (inline) or inside the Sessions chat overlay after selecting a thread. Me and other list pages do not show the composer.
+On compact, the composer appears on the Home tab (inline) or inside the Sessions chat overlay after selecting a thread. Sessions and Contacts list pages do not show the composer.
 
 ## C++ usage
 

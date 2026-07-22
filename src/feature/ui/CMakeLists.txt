@@ -13,6 +13,7 @@ pp_browser_add_feature_library(pp_feature_ui
     SecuritySettingsSection.cpp
     SettingsController.cpp
     ShellChatOverlayGesture.cpp
+    ShellBottomSheetGesture.cpp
     ShellFeedback.cpp
     ShellHost.cpp
     ShellInterruption.cpp

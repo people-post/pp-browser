@@ -12,7 +12,7 @@ enum class PaneRole { Primary, Secondary, Auxiliary, Transient };
 
 enum class LayoutMode { Compact, Expanded };
 
-enum class NavTab { Home, Sessions, Contacts, Me };
+enum class NavTab { Home, Sessions, Contacts };
 
 enum class OverlayKind { Generic, Alert, Confirm, Custom };
 
@@ -20,6 +20,7 @@ enum class InterruptionKind {
   None,
   CompactChatOverlay,
   AuxiliarySheet,
+  AccountSheet,
   Transient,
   OverlayLayer,
   Dialog,
@@ -137,6 +138,7 @@ struct ShellState {
   std::vector<OverlayEntry> overlay_stack;
 
   bool compact_chat_open = false;
+  bool account_sheet_open = false;
   bool auxiliary_open = false;
   bool auxiliary_available = false;
   bool transient_active = false;

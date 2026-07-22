@@ -44,10 +44,9 @@ public:
 
   bool RegisterModel(Rml::Context* context);
   void OpenSettings();
-  void OnNavTabActivated();
-  void OnNavTabDeactivated();
+  void OnAccountSheetOpened();
+  void OnAccountSheetClosed();
   void OnShellLayoutSynced();
-  void SyncLayoutMode();
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
   void RefreshLocalizedChrome();
@@ -136,7 +135,6 @@ private:
   void ReportFailure(const Error& err);
   void ReportFailure(const std::string& technical_message);
   void DirtyAll(bool include_profile_nickname = true);
-  void CompleteSectionSelection(bool expanded);
   void OnRegisterProfile();
   void OnRotateBriefLlmKey();
   void OnCopyProfileId();
@@ -156,7 +154,7 @@ private:
   std::vector<SectionListRow> sections_;
   Rml::String selected_id_;
   Rml::String selected_title_;
-  bool compact_layout_ = false;
+  bool in_account_sheet_ = false;
   bool show_detail_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;

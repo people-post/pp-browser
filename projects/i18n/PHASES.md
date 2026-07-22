@@ -21,7 +21,7 @@ Ordering only. Prefer thin vertical slices that users can switch language agains
 
 - [x] `SettingsUiState::language` (+ display label for current selection)
 - [x] Extend `AppearanceSettingsSection` to sync/flush `language` with appearance
-- [x] Appearance detail UI: Language row in `settings.rml` **and** `settings_detail.rml`
+- [x] Appearance detail UI: Language row in `settings.rml` (via shared `settings_sections.rml` fragment)
 - [x] Tap opens picker via `ContextMenuHost::ShowActions`
 - [x] Compact layout: bottom action sheet; expanded: floating list
 - [x] `ContextMenuAction::selected` checkmark for active language

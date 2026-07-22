@@ -9,6 +9,7 @@
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/FlowCoordinator.h"
+#include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
 #include "base/ui/ViewCatalog.h"
@@ -55,9 +56,6 @@ std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index = 0)
 }
 
 NavTab NavTabFromString(const Rml::String& value) {
-  if (value == "me" || value == "settings") {
-    return NavTab::Me;
-  }
   if (value == "contacts") {
     return NavTab::Contacts;
   }
@@ -86,6 +84,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("layout_mode", &host.state_.layout_mode_str);
     ctor.Bind("nav_tab", &host.state_.nav_tab_str);
     ctor.Bind("compact_chat_open", &host.state_.compact_chat_open);
+    ctor.Bind("account_sheet_open", &host.state_.account_sheet_open);
     ctor.Bind("auxiliary_open", &host.state_.auxiliary_open);
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
@@ -130,6 +129,8 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("open_auxiliary", &ShellHost::OpenAuxiliaryCallback);
     ctor.BindEventCallback("select_nav_tab", &ShellHost::SelectNavTabCallback);
     ctor.BindEventCallback("compact_chat_back", &ShellHost::CompactChatBackCallback);
+    ctor.BindEventCallback("open_account_sheet", &ShellHost::OpenAccountSheetCallback);
+    ctor.BindEventCallback("close_account_sheet", &ShellHost::CloseAccountSheetCallback);
     ctor.BindEventCallback("transient_back", &ShellHost::PopTransientCallback);
     ctor.BindEventCallback("close_layer", &ShellHost::CloseLayerCallback);
     ctor.BindEventCallback("dismiss_banner", &ShellHost::DismissBannerCallback);
@@ -154,6 +155,7 @@ void ShellHost::Initialize(Rml::Context* context) {
   next_overlay_id_ = 1;
   elapsed_ms_ = 0.f;
   compact_chat_dismiss_at_ms_ = -1.f;
+  account_sheet_dismiss_at_ms_ = -1.f;
   saved_focus_id_.clear();
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
@@ -231,6 +233,12 @@ void ShellHost::ClearTabContext() {
   state_.compact_chat_open = false;
   compact_chat_dismiss_at_ms_ = -1.f;
   DetachChatOverlayGesture();
+  if (state_.account_sheet_open) {
+    state_.account_sheet_open = false;
+    account_sheet_dismiss_at_ms_ = -1.f;
+    DetachAccountSheetGesture();
+    SettingsController::Instance().OnAccountSheetClosed();
+  }
 }
 
 void ShellHost::SetPrimaryPane(const std::string& key) {
@@ -278,6 +286,33 @@ void ShellHost::CloseCompactChat() {
 
 void ShellHost::ScheduleCompactChatDismiss() {
   compact_chat_dismiss_at_ms_ = elapsed_ms_ + 220.f;
+}
+
+void ShellHost::ScheduleAccountSheetDismiss() {
+  account_sheet_dismiss_at_ms_ = elapsed_ms_ + 220.f;
+}
+
+void ShellHost::OpenAccountSheet() {
+  if (state_.account_sheet_open) {
+    return;
+  }
+  state_.account_sheet_open = true;
+  account_sheet_dismiss_at_ms_ = -1.f;
+  SettingsController::Instance().OnAccountSheetOpened();
+  RequestSyncLayout();
+  DirtyWindow();
+}
+
+void ShellHost::CloseAccountSheet() {
+  if (!state_.account_sheet_open) {
+    return;
+  }
+  state_.account_sheet_open = false;
+  account_sheet_dismiss_at_ms_ = -1.f;
+  DetachAccountSheetGesture();
+  SettingsController::Instance().OnAccountSheetClosed();
+  RequestSyncLayout();
+  DirtyWindow();
 }
 
 void ShellHost::ToggleAuxiliary() {
@@ -365,6 +400,10 @@ bool ShellHost::HandleDismiss() {
     DirtyWindow();
     return true;
   }
+  if (ShellInterruption::Top(state_) == InterruptionKind::AccountSheet) {
+    CloseAccountSheet();
+    return true;
+  }
   if (!ShellInterruption::DismissTop(state_)) {
     return false;
   }
@@ -384,6 +423,7 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "nav_sessions_unread_display");
   DataModelHost::Instance().Dirty("window", "nav_contacts_unread_display");
   DataModelHost::Instance().Dirty("window", "compact_chat_open");
+  DataModelHost::Instance().Dirty("window", "account_sheet_open");
   DataModelHost::Instance().Dirty("window", "auxiliary_open");
   DataModelHost::Instance().Dirty("window", "auxiliary_available");
   DataModelHost::Instance().Dirty("window", "transient_active");
@@ -587,6 +627,7 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom", layout.content_padding_bottom_dp);
   set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
   set_dp(doc->GetElementById("shell-auxiliary-sheet"), "bottom", layout.sheet_bottom_dp);
+  set_dp(doc->GetElementById("shell-account-sheet"), "bottom", layout.sheet_bottom_dp);
   // Chat overlay hides the nav rail — no extra bottom padding beyond shell inset.
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
 }
@@ -649,6 +690,24 @@ std::string ShellHost::SerializeExpandedBase() const {
     }
   }
   out << "</div></div>";
+  out << SerializeAccountSheet();
+  return out.str();
+}
+
+std::string ShellHost::SerializeAccountSheet() const {
+  if (!state_.account_sheet_open) {
+    return {};
+  }
+  std::ostringstream out;
+  out << "<div class=\"shell-account-sheet-scrim\" data-event-click=\"close_account_sheet()\"></div>";
+  out << "<div class=\"shell-account-sheet surface-glass\" id=\"shell-account-sheet\">";
+  out << "<div class=\"shell-account-sheet-grabber\"></div>";
+  out << "<div class=\"shell-account-sheet-header row\">";
+  out << "<h2 class=\"heading-2\">Me</h2>";
+  out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_account_sheet()\">×</button>";
+  out << "</div>";
+  out << "<div class=\"shell-pane-body shell-account-sheet-body\" id=\"pane-body-settings\"></div>";
+  out << "</div>";
   return out.str();
 }
 
@@ -706,6 +765,7 @@ std::string ShellHost::SerializeCompactBase() const {
     out << "</div>";
   }
 
+  out << SerializeAccountSheet();
   out << "</div>";
   return out.str();
 }
@@ -909,6 +969,23 @@ void ShellHost::DetachChatOverlayGesture() {
   chat_overlay_gesture_.Detach();
 }
 
+void ShellHost::AttachAccountSheetGesture() {
+  if (!context_ || context_->GetNumDocuments() == 0 || !state_.account_sheet_open) {
+    DetachAccountSheetGesture();
+    return;
+  }
+  Rml::Element* sheet = context_->GetDocument(0)->GetElementById("shell-account-sheet");
+  if (!sheet) {
+    return;
+  }
+  const float sheet_height_dp = state_.shell_width_dp * 0.88f;
+  account_sheet_gesture_.Attach(sheet, context_, sheet_height_dp, [this]() { ScheduleAccountSheetDismiss(); });
+}
+
+void ShellHost::DetachAccountSheetGesture() {
+  account_sheet_gesture_.Detach();
+}
+
 void ShellHost::MountPaneBodies() {
   auto mount_key = [this](const std::string& key) {
     if (!context_ || context_->GetNumDocuments() == 0) {
@@ -929,6 +1006,7 @@ void ShellHost::MountPaneBodies() {
   };
 
   DetachChatOverlayGesture();
+  DetachAccountSheetGesture();
   MountNavRail();
   MountNavContent();
 
@@ -959,6 +1037,11 @@ void ShellHost::MountPaneBodies() {
 
   if (state_.auxiliary_open) {
     mount_key("preview");
+  }
+
+  if (state_.account_sheet_open) {
+    mount_key("settings");
+    AttachAccountSheetGesture();
   }
 
   if (!state_.transient_stack.empty()) {
@@ -1029,6 +1112,11 @@ void ShellHost::Update(Rml::Context* context) {
     CloseCompactChat();
   }
 
+  if (account_sheet_dismiss_at_ms_ >= 0.f && elapsed_ms_ >= account_sheet_dismiss_at_ms_) {
+    account_sheet_dismiss_at_ms_ = -1.f;
+    CloseAccountSheet();
+  }
+
   const LayoutMode previous = state_.layout_mode;
   ApplyLayoutModeFromContext(context);
   RefreshSafeAreaInsets(context);
@@ -1063,6 +1151,16 @@ void ShellHost::SelectNavTabCallback(Rml::DataModelHandle /*model*/, Rml::Event&
 void ShellHost::CompactChatBackCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                         const Rml::VariantList& /*args*/) {
   Instance().CloseCompactChat();
+}
+
+void ShellHost::OpenAccountSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                         const Rml::VariantList& /*args*/) {
+  Instance().OpenAccountSheet();
+}
+
+void ShellHost::CloseAccountSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                          const Rml::VariantList& /*args*/) {
+  Instance().CloseAccountSheet();
 }
 
 void ShellHost::PopTransientCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

@@ -261,7 +261,7 @@ v1 requirements:
 
 | Risk | Mitigation |
 |------|------------|
-| Dual `settings.rml` / `settings_detail.rml` drift | Shared binding keys; same labels; consider shared fragment later |
+| Dual settings RML drift | Section bodies live in `settings_sections.rml`, included from `settings.rml` via `{{include:settings_sections}}` |
 | Incomplete coverage looks half-translated | Phase order: chrome + settings first; ship picker with those surfaces |
 | Key explosion / unused keys | Lint: every `en` key referenced or marked intentional; ZH completeness check in CI once ZH ships |
 | Chat/AI English prompts vs ZH UI | ADR I005 — UI language only in v1 |

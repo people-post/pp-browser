@@ -1,0 +1,225 @@
+      <div class="settings-section stack" data-if="selected_id == 'profile'">
+        <p class="text muted me-profile-meta">
+          {{i18n:settings.nickname}}: <span data-rml="profile_nickname"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_peer_id != ''">
+          Peer ID: <span data-rml="profile_peer_id"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_relay_id != ''">
+          Relay ID: <span data-rml="profile_relay_id"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_relay_id == ''">
+          Relay ID: not registered yet
+        </p>
+        <p class="text muted me-profile-meta">
+          Registration: <span data-rml="profile_registration_status"></span>
+        </p>
+        <p class="text muted me-profile-meta" data-if="profile_registration_expires != ''">
+          Expires: <span data-rml="profile_registration_expires"></span>
+        </p>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.auto_renew}}</span>
+          <select class="field" data-value="auto_renew_registration" data-event-change="on_profile_field_changed()">
+            <option value="auto">{{i18n:settings.auto_renew.auto}}</option>
+            <option value="off">{{i18n:settings.auto_renew.off}}</option>
+          </select>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.notifications}}</span>
+          <select class="field" data-value="show_notifications" data-event-change="on_profile_field_changed()">
+            <option value="on">{{i18n:settings.notifications.on}}</option>
+            <option value="off">{{i18n:settings.notifications.off}}</option>
+          </select>
+        </label>
+        <p class="text muted">Off silences OS banners and unregisters push; inbox still syncs in the background.</p>
+        <div class="me-profile-actions row">
+          <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
+            <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
+            Copy ID
+          </button>
+          <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_profile()">
+            <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
+            Share
+          </button>
+          <button class="btn btn-primary" type="button" data-if="profile_show_register"
+                  data-event-click="register_profile()"><span data-rml="profile_register_label"></span></button>
+          <button class="btn btn-secondary" type="button" data-if="profile_show_rotate"
+                  data-event-click="rotate_brief_llm_key()">Rotate Brief API key</button>
+        </div>
+      </div>
+
+      <div class="settings-section stack" data-if="selected_id == 'llm'">
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.llm.preset}}</span>
+          <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
+            <option value="brief">Brief (default)</option>
+            <option value="cloud">Cloud (OpenAI-compatible)</option>
+            <option value="ollama">Ollama (localhost)</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <p class="text muted">Preset defaults apply when saved. Leave API key blank to keep the existing key.</p>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.llm.base_url}}</span>
+          <input class="field" type="text" data-value="llm_base_url" data-event-change="on_llm_field_changed()"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.llm.model}}</span>
+          <input class="field" type="text" data-value="llm_model" data-event-change="on_llm_field_changed()"/>
+        </label>
+        <div class="settings-field stack" data-if="llm_preset == 'brief'">
+          <span class="settings-label">Brief API key</span>
+          <p class="text muted" data-if="brief_llm_key_masked != ''">
+            <span data-rml="brief_llm_key_masked"></span> — rotate under Profile
+          </p>
+          <p class="text muted" data-if="brief_llm_key_masked == ''">
+            Issued automatically when you register in Profile.
+          </p>
+        </div>
+        <label class="settings-field" data-if="llm_preset != 'brief'">
+          <span class="settings-label">{{i18n:settings.llm.api_key}}</span>
+          <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="Optional for local / Ollama endpoints"/>
+        </label>
+        <label class="settings-field" data-if="llm_preset != 'brief'">
+          <span class="settings-label">{{i18n:settings.llm.api_key_env}}</span>
+          <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
+        </label>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button" data-event-click="reset_section('llm')">{{i18n:common.reset_defaults}}</button>
+        </div>
+      </div>
+
+      <div class="settings-section stack" data-if="selected_id == 'integrations'">
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.integrations.promoted_mcp}}</span>
+          <input class="field" type="text" data-value="promoted_mcp_url" data-event-change="on_integrations_field_changed()" placeholder="Blank uses platform default"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.integrations.search}}</span>
+          <input class="field" type="text" data-value="search_provider" data-event-change="on_integrations_field_changed()"/>
+        </label>
+        <p class="text muted">Custom MCP servers (stdio on desktop; URL on mobile).</p>
+        <div data-for="server, server_index : mcp_servers" class="settings-subsection stack">
+          <label class="settings-field">
+            <span class="settings-label">ID</span>
+            <input class="field" type="text" data-value="server.id" data-event-change="on_integrations_field_changed()"/>
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">URL</span>
+            <input class="field" type="text" data-value="server.url" data-event-change="on_integrations_field_changed()"/>
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">Command</span>
+            <input class="field" type="text" data-value="server.command" data-event-change="on_integrations_field_changed()"/>
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">Args</span>
+            <input class="field" type="text" data-value="server.args_text" data-event-change="on_integrations_field_changed()" placeholder="space-separated"/>
+          </label>
+          <div class="settings-actions row">
+            <button class="btn btn-secondary" type="button" data-event-click="remove_mcp_server(server_index)">Remove</button>
+          </div>
+        </div>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button" data-event-click="add_mcp_server()">{{i18n:settings.integrations.add_mcp}}</button>
+          <button class="btn btn-secondary" type="button" data-event-click="reset_section('integrations')">{{i18n:common.reset_defaults}}</button>
+        </div>
+      </div>
+
+      <div class="settings-section stack" data-if="selected_id == 'network'">
+        <p class="text muted">Leave blank to use promoted MCP infra tools; mocks apply when promoted MCP is unavailable.</p>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.network.relay}}</span>
+          <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.network.directory}}</span>
+          <input class="field" type="text" data-value="directory_base_url" data-event-change="on_network_field_changed()"/>
+        </label>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.network.registration}}</span>
+          <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
+        </label>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button" data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
+        </div>
+      </div>
+
+      <div class="settings-section stack" data-if="selected_id == 'appearance'">
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.theme.label}}</span>
+          <button class="field settings-language-button" type="button" data-event-click="on_choose_theme()">
+            <span data-rml="appearance_label"></span>
+          </button>
+        </label>
+        <p class="text muted">{{i18n:settings.theme.help}}</p>
+        <label class="settings-field">
+          <span class="settings-label">{{i18n:settings.language.label}}</span>
+          <button class="field settings-language-button" type="button" data-event-click="on_choose_language()">
+            <span data-rml="language_label"></span>
+          </button>
+        </label>
+        <p class="text muted">{{i18n:settings.language.help}}</p>
+        <div class="settings-actions row">
+          <button class="btn btn-secondary" type="button" data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>
+        </div>
+      </div>
+
+      <div class="settings-section stack" data-if="selected_id == 'security'">
+        <p class="text muted">{{i18n:settings.security.protection}} <span data-rml="pin_protection_status"></span></p>
+        <p class="text muted" data-if="pin_protection_status == 'App default'">
+          {{i18n:settings.security.default_hint}}
+        </p>
+        <p class="text muted" data-if="pin_protection_status == 'Not set up'">
+          {{i18n:settings.security.not_setup_hint}}
+        </p>
+        <div data-if="security_can_change_pin" class="stack">
+          <label class="settings-field">
+            <span class="settings-label">{{i18n:settings.security.current_pin}}</span>
+            <input class="field" type="password" data-value="pin_change_old" placeholder="Current PIN"/>
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">{{i18n:settings.security.new_pin}}</span>
+            <input class="field" type="password" data-value="pin_change_new" placeholder="At least 4 characters"/>
+          </label>
+          <label class="settings-field">
+            <span class="settings-label">{{i18n:settings.security.confirm_pin}}</span>
+            <input class="field" type="password" data-value="pin_change_confirm" placeholder="Confirm new PIN"/>
+          </label>
+          <div class="settings-actions row">
+            <button class="btn btn-primary" type="button" data-event-click="change_pin()">{{i18n:settings.security.change_pin}}</button>
+          </div>
+        </div>
+        <p class="text muted" data-if="!security_can_change_pin && pin_protection_status != 'Not set up'">
+          Unlock your profile to change the PIN.
+        </p>
+        <label class="settings-field">
+          <span class="settings-label">Group invites</span>
+          <select class="field" data-value="group_invite_policy" data-event-change="on_security_field_changed()">
+            <option value="everyone">Everyone</option>
+            <option value="contacts_only">Contacts only</option>
+            <option value="nobody">Nobody</option>
+          </select>
+        </label>
+        <p class="text muted">Controls who can invite you to group chats. Separate from direct messages.</p>
+      </div>
+
+      <div class="settings-section stack" data-if="selected_id == 'storage'">
+        <p class="text muted">Profile: <span data-rml="profile_label"></span></p>
+        <p class="text" data-rml="profile_size_label"></p>
+        <p class="text muted settings-path">Config: <span data-rml="config_dir"></span></p>
+        <p class="text muted settings-path">Data: <span data-rml="data_dir"></span></p>
+        <p class="text muted settings-path">Profile data: <span data-rml="profile_dir"></span></p>
+        <div class="settings-danger-zone stack">
+          <p class="text muted">
+            Reset deletes chats, contacts, keys, and PIN for this profile. Machine settings are kept.
+          </p>
+          <div class="settings-actions row">
+            <button class="btn btn-danger" type="button" data-event-click="reset_profile()">
+              Reset this profile
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <p class="text muted" data-if="status != ''" data-rml="status"></p>

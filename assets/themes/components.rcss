@@ -205,6 +205,33 @@ select selectbox option {
   height: 18dp;
 }
 
+.shell-profile-btn {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  padding: 0;
+  border: 0;
+  border-radius: 18dp;
+  cursor: pointer;
+}
+
+.shell-profile-btn svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
+}
+
+.badge-dot--profile {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
 .messages {
   flex: 1;
   min-width: 0;
@@ -871,6 +898,64 @@ select selectbox option {
 
 .shell-chat-overlay--dragging {
   transition: none;
+}
+
+.shell-account-sheet-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 26;
+  focus: none;
+}
+
+.shell-account-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 27;
+  display: flex;
+  flex-direction: column;
+  height: 88%;
+  max-height: calc(100% - 48dp);
+  border-radius: 16dp 16dp 0 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  transform: translateY(0);
+  transition: transform 250ms;
+}
+
+.shell-account-sheet--dragging {
+  transition: none;
+}
+
+.shell-account-sheet-grabber {
+  flex-shrink: 0;
+  width: 36dp;
+  height: 5dp;
+  margin: 8dp auto 4dp;
+  border-radius: 3dp;
+}
+
+.shell-account-sheet-header {
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16dp 8dp;
+  box-sizing: border-box;
+}
+
+.shell-account-sheet-header .heading-2 {
+  margin: 0;
+}
+
+.shell-account-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .shell-chat-overlay-chrome {
