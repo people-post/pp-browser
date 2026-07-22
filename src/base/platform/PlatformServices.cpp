@@ -14,6 +14,10 @@
 #include "base/platform/Platform.h"
 #include "base/platform/SdlAssetFileInterface.h"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 namespace pbr {
 
 namespace {

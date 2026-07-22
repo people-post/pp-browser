@@ -30,6 +30,10 @@
 | `backdrop-filter: blur()` | Used on compact chrome |
 | `filter: shader(...)` | Experimental — deferred (lg5; only if visual review fails) |
 
+## Incident note (2026-07-21)
+
+White/empty iOS Simulator frame during lg2/lg3 dogfood was **not** caused by glass/`backdrop-filter`. Root cause: `AssetIO` / `SdlAssetFileInterface` used `TARGET_OS_IPHONE` without `#include <TargetConditionals.h>`, so packaged view/locale reads always failed. Fixed in platform asset IO; glass materials re-applied.
+
 ## Next agent — start here
 
 Continue with **lg4** (optional polish) or **lg6** (fallbacks + perf) in [PHASES.md](PHASES.md). Resolve LG005 / LG006 / LG007 before lg6 merge gates. Do not start lg5 until side-by-side iOS review of lg2–lg3.

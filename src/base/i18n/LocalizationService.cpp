@@ -1,6 +1,7 @@
 #include "base/i18n/LocalizationService.h"
 
 #include "base/platform/AssetIO.h"
+#include "base/platform/IAssetLocator.h"
 
 #include <SDL3/SDL_locale.h>
 
@@ -28,31 +29,47 @@ Roe<void> LocalizationService::LoadFromAssets(const std::string& assets_root) {
   catalogs_.clear();
   available_.clear();
 
+  auto try_load_locale_file = [&](const std::string& absolute_or_relative) -> bool {
+    std::string text;
+    if (!AssetIO::ReadText(absolute_or_relative, text)) {
+      return false;
+    }
+    const nlohmann::json root = nlohmann::json::parse(text, nullptr, false);
+    if (root.is_discarded() || !LooksLikeLocaleJson(root)) {
+      return false;
+    }
+    std::unordered_map<std::string, std::string> strings;
+    for (const auto& [key, value] : root["strings"].items()) {
+      if (value.is_string()) {
+        strings[key] = value.get<std::string>();
+      }
+    }
+    const std::string locale = root["locale"].get<std::string>();
+    catalogs_[locale] = std::move(strings);
+    return true;
+  };
+
+  // Prefer explicit files via the same Resolve() path as ViewCatalog (works on iOS
+  // packaged builds). directory_iterator + absolute SDL reads has been failing to
+  // populate catalogs on simulator even when locales/*.json are present in the bundle.
+  for (const char* tag : {"en", "zh-Hans"}) {
+    const std::string relative = std::string("locales/") + tag + ".json";
+    const std::string resolved = IAssetLocator::Instance().Resolve(relative);
+    if (try_load_locale_file(resolved)) {
+      continue;
+    }
+    const std::string under_root =
+        (std::filesystem::path(assets_root) / relative).lexically_normal().string();
+    if (try_load_locale_file(under_root)) {
+      continue;
+    }
+    (void)try_load_locale_file(relative);
+  }
+
+  // Also pick up any extra locale JSON dropped into the locales dir (desktop / future).
   const std::filesystem::path locales_dir = std::filesystem::path(assets_root) / "locales";
   std::error_code ec;
-  if (!std::filesystem::is_directory(locales_dir, ec)) {
-    // Mobile packaged builds may resolve assets differently; try reading en/zh-Hans via AssetIO.
-    for (const char* tag : {"en", "zh-Hans"}) {
-      const std::string relative = std::string("locales/") + tag + ".json";
-      const std::string path = (std::filesystem::path(assets_root) / relative).lexically_normal().string();
-      std::string text;
-      if (!AssetIO::ReadText(path, text) && !AssetIO::ReadText(relative, text)) {
-        continue;
-      }
-      const nlohmann::json root = nlohmann::json::parse(text, nullptr, false);
-      if (root.is_discarded() || !LooksLikeLocaleJson(root)) {
-        continue;
-      }
-      std::unordered_map<std::string, std::string> strings;
-      for (const auto& [key, value] : root["strings"].items()) {
-        if (value.is_string()) {
-          strings[key] = value.get<std::string>();
-        }
-      }
-      const std::string locale = root["locale"].get<std::string>();
-      catalogs_[locale] = std::move(strings);
-    }
-  } else {
+  if (std::filesystem::is_directory(locales_dir, ec)) {
     for (const auto& entry : std::filesystem::directory_iterator(locales_dir, ec)) {
       if (ec || !entry.is_regular_file()) {
         continue;
@@ -60,22 +77,7 @@ Roe<void> LocalizationService::LoadFromAssets(const std::string& assets_root) {
       if (entry.path().extension() != ".json") {
         continue;
       }
-      std::string text;
-      if (!AssetIO::ReadText(entry.path().string(), text)) {
-        continue;
-      }
-      const nlohmann::json root = nlohmann::json::parse(text, nullptr, false);
-      if (root.is_discarded() || !LooksLikeLocaleJson(root)) {
-        continue;
-      }
-      std::unordered_map<std::string, std::string> strings;
-      for (const auto& [key, value] : root["strings"].items()) {
-        if (value.is_string()) {
-          strings[key] = value.get<std::string>();
-        }
-      }
-      const std::string locale = root["locale"].get<std::string>();
-      catalogs_[locale] = std::move(strings);
+      (void)try_load_locale_file(entry.path().string());
     }
   }
 

@@ -1,12 +1,12 @@
 #include "base/platform/SdlAssetFileInterface.h"
 
-#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
-
-#include <SDL3/SDL.h>
-
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
 #endif
+
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+
+#include <SDL3/SDL.h>
 
 #if defined(__ANDROID__) || TARGET_OS_IPHONE
 

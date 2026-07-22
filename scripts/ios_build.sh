@@ -208,6 +208,8 @@ for devices in data.get('devices', {}).values():
 
   echo "==> Installing on simulator ${udid}"
   xcrun simctl install "$udid" "$app"
+  echo "==> Terminating any running Frame instance"
+  xcrun simctl terminate "$udid" dev.frame.ios 2>/dev/null || true
   echo "==> Launching Frame (--debug)"
   xcrun simctl launch "$udid" dev.frame.ios --debug
   echo "==> Debug log path:"

@@ -19,6 +19,7 @@
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Core/Log.h>
 
 #include <algorithm>
 #include <chrono>
@@ -919,9 +920,12 @@ void ShellHost::MountPaneBodies() {
       return;
     }
     const std::string body = ViewCatalog::LoadBody(key);
-    if (!body.empty()) {
-      RmlMount::MountInner(target, body);
+    if (body.empty()) {
+      // Avoid silent blank panes (common when packaged asset reads fail).
+      Rml::Log::Message(Rml::Log::LT_ERROR, "ShellHost: failed to load view body for '%s'", key.c_str());
+      return;
     }
+    RmlMount::MountInner(target, body);
   };
 
   DetachChatOverlayGesture();
