@@ -1046,7 +1046,10 @@ void ShellHost::AttachAccountSheetGesture() {
   if (!sheet) {
     return;
   }
-  const float sheet_height_dp = state_.shell_width_dp * 0.88f;
+  const float dp_ratio = context_->GetDensityIndependentPixelRatio();
+  const float height_dp =
+      (dp_ratio > 0.f) ? (static_cast<float>(context_->GetDimensions().y) / dp_ratio) : state_.shell_width_dp;
+  const float sheet_height_dp = height_dp * 0.88f;
   account_sheet_gesture_.Attach(sheet, context_, sheet_height_dp, [this]() { ScheduleAccountSheetDismiss(); });
 }
 

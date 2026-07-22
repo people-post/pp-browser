@@ -2,6 +2,7 @@
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>
+#include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Event.h>
 
 #include <cstdio>
@@ -11,6 +12,7 @@ namespace pbr {
 namespace {
 
 constexpr float kDismissThresholdRatio = 0.25f;
+constexpr int kDragDeadzonePx = 8;
 
 int EventMouseY(const Rml::Event& event) {
   return event.GetParameter<int>("mouse_y", 0);
@@ -25,28 +27,60 @@ void ShellBottomSheetGesture::Attach(Rml::Element* sheet, Rml::Context* context,
     return;
   }
   sheet_ = sheet;
+  document_ = sheet_->GetOwnerDocument();
   context_ = context;
   sheet_height_dp_ = sheet_height_dp;
   on_dismiss_ = std::move(on_dismiss);
   sheet_->AddEventListener(Rml::EventId::Mousedown, this);
-  sheet_->AddEventListener(Rml::EventId::Mousemove, this);
-  sheet_->AddEventListener(Rml::EventId::Mouseup, this);
   attached_ = true;
   SetSheetOffset(0.f, false);
 }
 
 void ShellBottomSheetGesture::Detach() {
+  SetDocumentDragCapture(false);
   if (attached_ && sheet_) {
     sheet_->RemoveEventListener(Rml::EventId::Mousedown, this);
-    sheet_->RemoveEventListener(Rml::EventId::Mousemove, this);
-    sheet_->RemoveEventListener(Rml::EventId::Mouseup, this);
   }
   sheet_ = nullptr;
+  document_ = nullptr;
   context_ = nullptr;
   on_dismiss_ = {};
   attached_ = false;
   tracking_ = false;
   dragging_ = false;
+}
+
+void ShellBottomSheetGesture::SetDocumentDragCapture(bool enabled) {
+  if (!document_ || document_drag_capture_ == enabled) {
+    return;
+  }
+  if (enabled) {
+    document_->AddEventListener(Rml::EventId::Mousemove, this, true);
+    document_->AddEventListener(Rml::EventId::Mouseup, this, true);
+  } else {
+    document_->RemoveEventListener(Rml::EventId::Mousemove, this, true);
+    document_->RemoveEventListener(Rml::EventId::Mouseup, this, true);
+  }
+  document_drag_capture_ = enabled;
+}
+
+float ShellBottomSheetGesture::PixelDeltaToDp(int delta_px) const {
+  const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
+  if (ratio <= 0.f) {
+    return static_cast<float>(delta_px);
+  }
+  return static_cast<float>(delta_px) / ratio;
+}
+
+float ShellBottomSheetGesture::ResolveSheetHeightDp() const {
+  if (sheet_ && context_) {
+    const float ratio = context_->GetDensityIndependentPixelRatio();
+    const float height_px = sheet_->GetBox().GetSize(Rml::BoxArea::Border).y;
+    if (ratio > 0.f && height_px > 0.f) {
+      return height_px / ratio;
+    }
+  }
+  return sheet_height_dp_;
 }
 
 bool ShellBottomSheetGesture::ShouldIgnoreTarget(Rml::Element* target) const {
@@ -71,40 +105,44 @@ bool ShellBottomSheetGesture::ShouldStartSwipe(Rml::Element* target) const {
   return false;
 }
 
-void ShellBottomSheetGesture::SetSheetOffset(float dy, bool animate) {
+void ShellBottomSheetGesture::SetSheetOffset(float dy_dp, bool animate) {
   if (!sheet_) {
     return;
   }
   sheet_->SetClass("shell-account-sheet--dragging", !animate);
   char buffer[64];
-  std::snprintf(buffer, sizeof(buffer), "translateY(%.1fdp)", dy < 0.f ? 0.f : dy);
+  std::snprintf(buffer, sizeof(buffer), "translateY(%.1fdp)", dy_dp < 0.f ? 0.f : dy_dp);
   sheet_->SetProperty("transform", buffer);
 }
 
-void ShellBottomSheetGesture::BeginDrag(int y) {
+void ShellBottomSheetGesture::BeginDrag(int y_px) {
   tracking_ = true;
   dragging_ = false;
-  drag_start_y_ = y;
-  drag_last_y_ = y;
+  drag_start_y_px_ = y_px;
+  drag_last_y_px_ = y_px;
+  SetDocumentDragCapture(true);
 }
 
-void ShellBottomSheetGesture::UpdateDrag(int y, Rml::Event& event) {
+void ShellBottomSheetGesture::UpdateDrag(int y_px, Rml::Event& event) {
   if (!tracking_ || !sheet_) {
     return;
   }
-  drag_last_y_ = y;
-  const int dy = y - drag_start_y_;
+  drag_last_y_px_ = y_px;
+  const int dy_px = y_px - drag_start_y_px_;
   if (!dragging_) {
-    if (dy > 8) {
+    if (dy_px > kDragDeadzonePx) {
       dragging_ = true;
       sheet_->SetClass("shell-account-sheet--dragging", true);
     } else {
       return;
     }
   }
-  if (dy > 0) {
-    SetSheetOffset(static_cast<float>(dy), false);
+  const float dy_dp = PixelDeltaToDp(dy_px);
+  if (dy_dp > 0.f) {
+    SetSheetOffset(dy_dp, false);
     event.StopPropagation();
+  } else {
+    SetSheetOffset(0.f, false);
   }
 }
 
@@ -113,14 +151,16 @@ void ShellBottomSheetGesture::EndDrag() {
     return;
   }
   tracking_ = false;
+  SetDocumentDragCapture(false);
   if (!dragging_) {
     return;
   }
   dragging_ = false;
-  const float dy = static_cast<float>(drag_last_y_ - drag_start_y_);
-  const float threshold = sheet_height_dp_ * kDismissThresholdRatio;
-  if (dy >= threshold && on_dismiss_) {
-    SetSheetOffset(sheet_height_dp_, true);
+  const float dy_dp = PixelDeltaToDp(drag_last_y_px_ - drag_start_y_px_);
+  const float height_dp = ResolveSheetHeightDp();
+  const float threshold = height_dp * kDismissThresholdRatio;
+  if (dy_dp >= threshold && on_dismiss_) {
+    SetSheetOffset(height_dp, true);
     on_dismiss_();
     return;
   }
