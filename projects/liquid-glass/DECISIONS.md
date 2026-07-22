@@ -24,20 +24,21 @@ Record dated outcomes. When shipped, mark **superseded by** stable doc — do no
 
 ---
 
-## LG003 — Chrome surface inventory (open)
+## LG003 — Chrome surface inventory
 
-**Date:** 2026-07-19  
-**Status:** **Open — resolve before lg3**  
-**Options:**
+**Date:** 2026-07-21  
+**Status:** Accepted  
+**Decision:** **C (max)** — bottom nav pill + chat/transient headers + Home/overlay composer strip + **full auxiliary sheet glass body** + lighter scrim tint.  
+**Rationale:** Highest material coverage for compact chrome; sheet body glass is acceptable GPU cost while the sheet is open. Visual QA / blur radius tuning deferred.  
+**Superseded by:** (pending) `docs/ui/UI_DESIGN_SYSTEM.md` Materials section
+
+**Options considered:**
 
 | Option | Surfaces |
 |--------|----------|
-| **A (minimal)** | Bottom nav pill + chat/transient headers only |
-| **B (recommended)** | A + auxiliary sheet header strip + Home composer strip |
-| **C (max)** | B + full sheet glass body + scrim tint adjustment |
-
-**Recommendation:** B — highest impact without full-sheet blur cost.  
-**Owner:** Product / design
+| A (minimal) | Bottom nav pill + chat/transient headers only |
+| B | A + auxiliary sheet header strip + Home composer strip |
+| **C (chosen)** | B + full sheet glass body + scrim tint adjustment |
 
 ---
 

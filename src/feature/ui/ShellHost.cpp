@@ -666,7 +666,7 @@ std::string ShellHost::SerializeCompactBase() const {
       out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
     } else if (home_inline) {
       out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
-      out << "<div class=\"shell-composer-mount\" id=\"shell-composer-mount\"></div>";
+      out << "<div class=\"shell-composer-mount surface-glass\" id=\"shell-composer-mount\"></div>";
     }
     out << "</div>";
   } else if (state_.nav_tab == NavTab::Sessions) {
@@ -677,19 +677,20 @@ std::string ShellHost::SerializeCompactBase() const {
 
   if (state_.compact_chat_open) {
     out << "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">";
-    out << "<div class=\"shell-chat-overlay-chrome row\">";
+    out << "<div class=\"shell-chat-overlay-chrome row surface-glass\">";
     out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
     out << "<svg src=\"../icons/back.svg\"></svg>";
     out << "</button>";
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
-    out << "<div class=\"shell-composer-mount\" id=\"shell-composer-mount\"></div>";
+    out << "<div class=\"shell-composer-mount surface-glass\" id=\"shell-composer-mount\"></div>";
     out << "</div>";
   }
 
   if (state_.auxiliary_open) {
     out << "<div class=\"shell-sheet-scrim\" data-event-click=\"toggle_auxiliary()\"></div>";
-    out << "<div class=\"shell-sheet shell-sheet-auxiliary shell-sheet-compact\" id=\"shell-auxiliary-sheet\">";
+    out << "<div class=\"shell-sheet shell-sheet-auxiliary shell-sheet-compact surface-glass\" "
+           "id=\"shell-auxiliary-sheet\">";
     for (const PaneState& pane : state_.panes) {
       if (pane.spec.role == PaneRole::Auxiliary) {
         out << SerializePaneSlot(pane.spec.key, nullptr);
@@ -700,7 +701,7 @@ std::string ShellHost::SerializeCompactBase() const {
 
   if (!state_.compact_chat_open) {
     out << "<div class=\"shell-bottom-chrome\" id=\"shell-bottom-chrome\">";
-    out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
+    out << "<div class=\"shell-nav-rail shell-nav-rail--compact surface-glass\" id=\"shell-nav-rail-mount\"></div>";
     out << "</div>";
   }
 
@@ -715,7 +716,7 @@ std::string ShellHost::SerializeTransientLayer() const {
   const PaneState& top = state_.transient_stack.back();
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-transient\" data-model=\"window\">";
-  out << "<div class=\"shell-transient-chrome\">";
+  out << "<div class=\"shell-transient-chrome surface-glass\">";
   out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
          "<svg src=\"../icons/back.svg\"></svg>"
          "</button>";

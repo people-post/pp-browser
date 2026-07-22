@@ -1,39 +1,35 @@
 # Liquid Glass — current state
 
 **Last updated:** 2026-07-21  
-**Implementation:** lg1 in progress (layout foundation)
+**Implementation:** lg2 + lg3 landed (LG003 = C); visual QA deferred
 
-## Baseline (pre-lg1)
+## Shipped (lg1–lg3)
 
-Compact shell chrome was **opaque and stacked**, not glass.
+| Surface | Treatment |
+|---------|-----------|
+| Bottom nav | Floating pill (`border-radius` 24dp, inset 12dp); `backdrop-filter: blur(20px)` + glass fill; active tab capsule 12dp |
+| Chat overlay header | Full-bleed frosted bar; absolute over messages (`padding-top` 48dp on body) |
+| Transient header | Same glass material; absolute over transient pane |
+| Auxiliary sheet | Full-body glass (LG003=C); lighter scrim tint |
+| Home / overlay composer | Glass strip on `#shell-composer-mount` (`surface-glass`); softer composer card |
 
-| Surface | Location | Previous behavior |
-|---------|----------|-------------------|
-| Bottom nav | `ShellHost::SerializeCompactBase()`, `.shell-bottom-chrome`, `.shell-nav-rail--compact` | Flex sibling **below** content; solid bg + top border |
-| Nav tabs | `assets/views/nav_rail.rml`, `.shell-nav-tab` | 52×56dp targets; filled active state |
-| Chat overlay header | `.shell-chat-overlay-chrome` | Solid bar + back button |
-| Transient header | `.shell-transient-chrome` | Solid back row |
-| Auxiliary sheet | `.shell-sheet-compact` | Opaque panel above nav; scrim `#00000099` |
-| Composer (Home compact) | `#shell-composer-mount` | Standard elevated surface |
+### Tokens / utilities
 
-## lg1 — layout foundation (this PR)
+| Item | Location |
+|------|----------|
+| Glass fills / borders / shadows | `assets/themes/colors-light.rcss`, `colors-dark.rcss` |
+| `.surface-glass` / `.surface-glass--opaque` | `components.rcss` + theme colors |
+| Markup classes | `ShellHost::SerializeCompactBase`, `SerializeTransientLayer` |
 
-| Change | Location | Behavior |
-|--------|----------|----------|
-| Floating bottom chrome | `.shell-bottom-chrome` | `position: absolute`; horizontal inset 12dp; overlays content |
-| Content scroll padding | `.shell-nav-page`, `ShellHost::ApplyCompactChromeLayout()` | `padding-bottom`: 56dp nav + safe-area bottom |
-| Safe area | `ShellHost::RefreshSafeAreaInsets()`, `machine.json` `safe_area.bottom` | SDL `SDL_GetWindowSafeArea` with prefs fallback |
-| Auxiliary sheet offset | `#shell-auxiliary-sheet` | Bottom offset matches nav + safe area |
-
-**Not yet:** `backdrop-filter`, glass tokens, pill radius, motion, shaders (lg2–lg5 deferred).
+**Not yet:** scroll-coupled motion (lg4), custom specular shader (lg5), reduce-transparency wiring / perf gates (lg6), stable `docs/ui/` promotion (lg7).
 
 ## Rendering capabilities (relevant)
 
 | Capability | Status |
 |------------|--------|
-| `backdrop-filter: blur()` | Supported in RmlUi fork + `RmlUi_Renderer_GL3` — **not used in app yet** |
-| `filter: shader(...)` | Experimental — deferred (lg5) |
+| `backdrop-filter: blur()` | Used on compact chrome |
+| `filter: shader(...)` | Experimental — deferred (lg5; only if visual review fails) |
 
 ## Next agent — start here
 
-After lg1 merges, continue with **lg2** in [PHASES.md](PHASES.md): frosted glass RCSS tokens + `backdrop-filter` on compact chrome surfaces. Do not start lg5 until lg2 screenshots are reviewed.
+Continue with **lg4** (optional polish) or **lg6** (fallbacks + perf) in [PHASES.md](PHASES.md). Resolve LG005 / LG006 / LG007 before lg6 merge gates. Do not start lg5 until side-by-side iOS review of lg2–lg3.

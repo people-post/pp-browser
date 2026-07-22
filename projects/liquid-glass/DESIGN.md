@@ -125,8 +125,8 @@ DOM: optional wrapper `.shell-nav-glass` inside `.shell-bottom-chrome` for round
 
 | Property | Target |
 |----------|--------|
-| v1 | Frosted **header strip** only; body `surface-elevated` |
-| v2 | Full-height glass with blur (higher GPU cost) |
+| v1 (LG003=C) | Full-height glass body + lighter scrim tint |
+| Earlier option B | Frosted **header strip** only; body `surface-elevated` |
 
 ## Renderer path (lg5 — Apple-faithful extras)
 

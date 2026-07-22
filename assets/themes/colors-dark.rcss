@@ -284,7 +284,11 @@ select selectbox option:hover {
 
 .shell-nav-rail--compact {
   border-right: 0;
-  border-top: 1dp #374151;
+  border-top: 0;
+  background-color: #1f2937b3;
+  /* No box-shadow: blur extend (~1.5*radius) exceeds the 12dp chrome inset and
+     RmlUi clips the shadow texture to the window, which clips the painted pill
+     (same failure mode as .context-menu-sheet-list on Android). */
 }
 
 .shell-nav-tab {
@@ -301,13 +305,23 @@ select selectbox option:hover {
   color: #f9fafb;
 }
 
+.shell-nav-rail--compact .shell-nav-tab:hover {
+  background-color: #ffffff14;
+}
+
+.shell-nav-rail--compact .shell-nav-tab--active {
+  background-color: #374151;
+  color: #f9fafb;
+}
+
 .shell-chat-overlay {
   background-color: #111827;
 }
 
 .shell-chat-overlay-chrome {
-  background-color: #1f2937;
-  border-bottom: 1dp #374151;
+  background-color: #1f2937b3;
+  border-bottom: 1dp #ffffff0f;
+  border-top: 1dp #ffffff1a;
 }
 
 .shell-pane-auxiliary {
@@ -315,12 +329,12 @@ select selectbox option:hover {
 }
 
 .shell-bottom-chrome {
-  background-color: #111827;
+  background-color: transparent;
 }
 
 .shell-drawer-scrim,
 .shell-sheet-scrim {
-  background-color: #00000099;
+  background-color: #00000066;
 }
 
 .shell-drawer {
@@ -331,6 +345,14 @@ select selectbox option:hover {
 .shell-sheet {
   background-color: #111827;
   box-shadow: -2dp 0 12dp #00000066;
+}
+
+.shell-sheet-compact {
+  background-color: #1f2937b3;
+  border-left: 1dp #ffffff1a;
+  /* Soft shadow stays inside the sheet (leftward); avoid large blur that
+     would exceed remaining viewport margin on the right edge. */
+  box-shadow: -2dp 0 8dp #00000066;
 }
 
 .shell-toolbar {
@@ -353,8 +375,30 @@ select selectbox option:hover {
 }
 
 .shell-transient-chrome {
-  background-color: #1f2937;
-  border-bottom: 1dp #374151;
+  background-color: #1f2937b3;
+  border-bottom: 1dp #ffffff0f;
+  border-top: 1dp #ffffff1a;
+}
+
+.shell-composer-mount.surface-glass {
+  background-color: #1f2937b3;
+  border-top: 1dp #ffffff1a;
+}
+
+.shell-composer-mount.surface-glass .prompt-composer {
+  background-color: #1f2937d9;
+  border: 1dp #ffffff0f;
+  box-shadow: none;
+}
+
+/* Glass material utilities (compact chrome). */
+.surface-glass {
+  background-color: #1f2937b3;
+  border-top: 1dp #ffffff1a;
+}
+
+.surface-glass--opaque {
+  background-color: #1f2937d9;
 }
 
 .shell-back-btn {

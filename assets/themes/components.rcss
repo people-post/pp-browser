@@ -43,6 +43,28 @@ select selectbox option {
   margin-bottom: 12dp;
 }
 
+/* Liquid Glass materials — theme colors in colors-*.rcss; compact shell chrome only. */
+.surface-glass {
+  backdrop-filter: blur(20px);
+}
+
+/* Compact chrome that uses glass even when selectors carry material without the utility class. */
+.shell-nav-rail--compact,
+.shell-chat-overlay-chrome,
+.shell-transient-chrome,
+.shell-sheet-compact {
+  backdrop-filter: blur(20px);
+}
+
+.surface-glass--opaque,
+.shell-nav-rail--compact.surface-glass--opaque,
+.shell-chat-overlay-chrome.surface-glass--opaque,
+.shell-transient-chrome.surface-glass--opaque,
+.shell-sheet-compact.surface-glass--opaque,
+.shell-composer-mount.surface-glass--opaque {
+  backdrop-filter: none;
+}
+
 .chat-body {
   position: absolute;
   top: 0;
@@ -694,6 +716,9 @@ select selectbox option {
   flex-direction: row;
   width: 100%;
   height: 56dp;
+  border-radius: 24dp;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .shell-nav-rail-inner {
@@ -713,6 +738,7 @@ select selectbox option {
   justify-content: flex-start;
   gap: 0;
   height: 56dp;
+  padding: 4dp 6dp;
 }
 
 .shell-nav-spacer {
@@ -742,6 +768,11 @@ select selectbox option {
   border: 0;
   border-radius: 10dp;
   cursor: pointer;
+}
+
+.shell-nav-rail--compact .shell-nav-tab {
+  height: 48dp;
+  border-radius: 12dp;
 }
 
 .shell-nav-tab svg {
@@ -807,14 +838,23 @@ select selectbox option {
 }
 
 .shell-chat-overlay-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
   flex-shrink: 0;
   align-items: center;
+  min-height: 48dp;
   padding: 4dp 4dp;
+  box-sizing: border-box;
 }
 
 .shell-chat-overlay .shell-pane-body {
   flex: 1;
   min-height: 0;
+  padding-top: 48dp;
+  box-sizing: border-box;
 }
 
 .shell-chat-overlay .shell-composer-mount {
@@ -875,9 +915,24 @@ select selectbox option {
   margin-bottom: 8dp;
 }
 
+.shell-composer-mount.surface-glass {
+  padding-top: 8dp;
+  box-sizing: border-box;
+}
+
+.shell-composer-mount.surface-glass .prompt-composer {
+  margin-bottom: 8dp;
+}
+
 .shell-drawer .shell-pane,
 .shell-sheet .shell-pane {
   height: 100%;
+}
+
+.shell-sheet-compact {
+  border-radius: 16dp 0 0 16dp;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .shell-pane-body {
@@ -950,8 +1005,15 @@ select selectbox option {
 }
 
 .shell-transient-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
   flex-shrink: 0;
+  min-height: 48dp;
   padding: 4dp 4dp;
+  box-sizing: border-box;
 }
 
 .shell-back-btn {
@@ -983,6 +1045,8 @@ select selectbox option {
 .shell-layer-transient .shell-pane-transient {
   flex: 1;
   min-height: 0;
+  padding-top: 48dp;
+  box-sizing: border-box;
 }
 
 .shell-layer-overlay,

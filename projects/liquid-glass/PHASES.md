@@ -43,13 +43,13 @@ Execute in order. Each phase should land reviewable PRs; do not batch lg1+lg5 in
 
 ### Tasks
 
-- [ ] Add glass tokens to `colors-light.rcss` / `colors-dark.rcss`
-- [ ] Add `.surface-glass` / `.surface-glass--opaque` utilities in `components.rcss`
-- [ ] Apply to `.shell-nav-rail--compact` (or inner wrapper)
-- [ ] Apply to `.shell-chat-overlay-chrome`, `.shell-transient-chrome`
-- [ ] Remove or soften opaque `background-color` / `border-top` rules that fight glass in compact selectors
-- [ ] Side-by-side screenshot vs iOS 26 tab bar (Simulator) — tune blur radius and fill alpha
-- [ ] Profile scroll FPS desktop + one Android device; record baseline in CURRENT_STATE
+- [x] Add glass tokens to `colors-light.rcss` / `colors-dark.rcss`
+- [x] Add `.surface-glass` / `.surface-glass--opaque` utilities in `components.rcss`
+- [x] Apply to `.shell-nav-rail--compact` (or inner wrapper)
+- [x] Apply to `.shell-chat-overlay-chrome`, `.shell-transient-chrome`
+- [x] Remove or soften opaque `background-color` / `border-top` rules that fight glass in compact selectors
+- [ ] Side-by-side screenshot vs iOS 26 tab bar (Simulator) — tune blur radius and fill alpha **(deferred)**
+- [ ] Profile scroll FPS desktop + one Android device; record baseline in CURRENT_STATE **(deferred → lg6)**
 
 ### Exit criteria
 
@@ -60,20 +60,20 @@ Execute in order. Each phase should land reviewable PRs; do not batch lg1+lg5 in
 
 ## lg3 — Liquid shape + edge treatment
 
-**Goal:** Apple-like floating pill and specular edge without custom shaders.
+**Goal:** Apple-like floating pill and specular edge without custom shaders. **LG003 = C.**
 
 ### Tasks
 
-- [ ] Nav pill: `border-radius` 22–28dp, horizontal inset 12–16dp, optional `box-shadow`
-- [ ] Active tab capsule inside pill (adjust `.shell-nav-tab--active` for compact)
-- [ ] Specular top border via `glass-border-highlight` token
-- [ ] Chat overlay header: choose full-bleed frosted bar vs inset pill (resolve LG003)
-- [ ] Auxiliary sheet: frosted header strip (body opaque v1)
-- [ ] Optional: composer glass strip on Home compact (if LG003 includes composer)
+- [x] Nav pill: `border-radius` 22–28dp, horizontal inset 12–16dp, optional `box-shadow`
+- [x] Active tab capsule inside pill (adjust `.shell-nav-tab--active` for compact)
+- [x] Specular top border via `glass-border-highlight` token
+- [x] Chat overlay header: full-bleed frosted bar (absolute over messages)
+- [x] Auxiliary sheet: full-body glass + lighter scrim (LG003=C)
+- [x] Composer glass strip on Home compact + chat overlay
 
 ### Exit criteria
 
-- Visual review: reads as “floating glass control,” not flat toolbar with blur.
+- Visual review: reads as “floating glass control,” not flat toolbar with blur. **(deferred)**
 
 ---
 
@@ -142,10 +142,10 @@ Execute in order. Each phase should land reviewable PRs; do not batch lg1+lg5 in
 
 When resuming work in focused sessions:
 
-1. **Session A:** lg1 only (layout) — merge before blur.
-2. **Session B:** lg2 (frosted materials on nav + overlay header).
-3. **Session C:** lg3 (pill shape + edges).
+1. **Session A:** lg1 only (layout) — done.
+2. **Session B:** lg2 (frosted materials) — done (visual QA deferred).
+3. **Session C:** lg3 (pill shape + edges, LG003=C) — done (visual QA deferred).
 4. **Session D:** lg6 fallbacks + lg7 docs (can parallel lg4 motion if owner wants polish).
 5. **Session E (optional):** lg5 renderer spike — time-boxed; abandon if &gt;3 days without visual win.
 
-Do not start lg5 until lg2 screenshots are reviewed against iOS reference.
+Do not start lg5 until lg2–lg3 screenshots are reviewed against iOS reference.
