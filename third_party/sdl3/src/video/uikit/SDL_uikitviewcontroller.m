@@ -79,6 +79,12 @@ static void SDLCALL SDL_HideHomeIndicatorHintChanged(void *userdata, const char 
     BOOL rotatingOrientation;
     NSString *committedText;
     NSString *obligateForBackspace;
+    // pp-browser: dedupe safe-area publishes from per-keystroke SetTextInputArea.
+    int publishedSafeLeft;
+    int publishedSafeRight;
+    int publishedSafeTop;
+    int publishedSafeBottom;
+    BOOL hasPublishedSafeArea;
 #endif
 }
 
@@ -498,6 +504,7 @@ static void SDLCALL SDL_HideHomeIndicatorHintChanged(void *userdata, const char 
 - (bool)stopTextInput
 {
     textFieldFocused = NO;
+    hasPublishedSafeArea = NO;
     if (!textField.window) {
         /* textField has not been added to the view yet,
          * we will try again when that happens. */
@@ -615,15 +622,25 @@ static void SDLCALL SDL_HideHomeIndicatorHintChanged(void *userdata, const char 
         return;
     }
     const UIEdgeInsets safe = self.view.safeAreaInsets;
+    int left = (int)SDL_ceilf(safe.left);
+    int right = (int)SDL_ceilf(safe.right);
+    int top = (int)SDL_ceilf(safe.top);
     int bottom = (int)SDL_ceilf(safe.bottom);
     if (self.keyboardHeight > bottom) {
         bottom = self.keyboardHeight;
     }
-    SDL_SetWindowSafeAreaInsets(window,
-                                (int)SDL_ceilf(safe.left),
-                                (int)SDL_ceilf(safe.right),
-                                (int)SDL_ceilf(safe.top),
-                                bottom);
+    // Skip no-op publishes: SetTextInputArea runs on every keystroke and would
+    // otherwise re-notify safe-area listeners → shell reflow → OSK bounce.
+    if (hasPublishedSafeArea && left == publishedSafeLeft && right == publishedSafeRight &&
+        top == publishedSafeTop && bottom == publishedSafeBottom) {
+        return;
+    }
+    publishedSafeLeft = left;
+    publishedSafeRight = right;
+    publishedSafeTop = top;
+    publishedSafeBottom = bottom;
+    hasPublishedSafeArea = YES;
+    SDL_SetWindowSafeAreaInsets(window, left, right, top, bottom);
 }
 
 - (void)setKeyboardHeight:(int)height

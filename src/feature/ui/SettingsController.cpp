@@ -269,6 +269,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
     ctor.BindEventCallback("on_security_field_changed", &SettingsController::OnSecurityFieldChangedCallback);
     ctor.BindEventCallback("on_profile_field_changed", &SettingsController::OnProfileFieldChangedCallback);
+    ctor.BindEventCallback("on_profile_nickname_commit", &SettingsController::OnProfileNicknameCommitCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
     ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
     ctor.BindEventCallback("copy_profile_id", &SettingsController::OnCopyProfileIdCallback);
@@ -333,22 +334,28 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
 }
 
 void SettingsController::FinishPaneResync() {
-  SyncBindingsFromSession();
-  DirtyAll();
-  if (context_) {
-    context_->Update();
-  }
+  // Keep any in-progress nickname across Sync+Dirty. On fresh start the session
+  // nickname is still empty; a deferred resync after account-sheet open can
+  // otherwise push "" back into data-value and wipe characters mid-typing
+  // (looks like HarfBuzz/lang glyph jitter). Chat has no equivalent path.
+  auto resync_preserving_nickname = [this]() {
+    const Rml::String live_nickname = bindings_.profile_nickname;
+    SyncBindingsFromSession();
+    bindings_.profile_nickname = live_nickname;
+    DirtyAll(/*include_profile_nickname=*/false);
+    if (context_) {
+      context_->Update();
+    }
+  };
+
+  resync_preserving_nickname();
   // Select widgets can emit a spurious change on the frame after remount.
-  BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+  BrowserThread::PostTask(BrowserThreadId::UI, [this, resync_preserving_nickname]() {
     if (!ShellHost::Instance().State().account_sheet_open) {
       suppress_auto_save_ = false;
       return;
     }
-    SyncBindingsFromSession();
-    DirtyAll();
-    if (context_) {
-      context_->Update();
-    }
+    resync_preserving_nickname();
     suppress_auto_save_ = false;
   });
 }
@@ -377,6 +384,8 @@ void SettingsController::OnAccountSheetOpened() {
 }
 
 void SettingsController::OnAccountSheetClosed() {
+  // Nickname commits on blur; remount/close can skip blur, so persist here too.
+  CommitProfileNickname(/*show_toast=*/false);
   FlushPending();
   in_account_sheet_ = false;
   show_detail_ = false;
@@ -453,7 +462,7 @@ void SettingsController::Tick() {
   }
 }
 
-bool SettingsController::FlushSection(const std::string& section_id) {
+bool SettingsController::FlushSection(const std::string& section_id, bool show_toast) {
   if (suppress_auto_save_) {
     log().info << "FlushSection(" << section_id << ") suppressed during UI transition";
     return true;
@@ -485,17 +494,32 @@ bool SettingsController::FlushSection(const std::string& section_id) {
   status_ = "";
   // Keep the live nickname through Push/Dirty. SyncFromSession after flush can race
   // with continued typing when DirtyAll re-pushes profile_nickname into data-value
-  // inputs (SetValue resets cursor/IME and looks like characters mutating).
+  // inputs (SetValue resets cursor/IME and looks like characters mutating). Same
+  // preserve applies in FinishPaneResync (fresh-start empty identity wipe).
   const Rml::String live_nickname = bindings_.profile_nickname;
   const bool preserve_nickname = (section_id == "profile");
   PushUiStateToBindings();
   if (preserve_nickname) {
     bindings_.profile_nickname = live_nickname;
   }
+  if (preserve_nickname && !show_toast) {
+    // Silent nickname blur/close commit: skip DirtyAll/toast/DirtyWindow so the OSK
+    // session is not restarted by chrome refresh.
+    return true;
+  }
   DirtyAll(!preserve_nickname);
-  MaybeShowSaveToast(section_id);
+  if (show_toast) {
+    MaybeShowSaveToast(section_id);
+  }
   ShellHost::Instance().DirtyWindow();
   return true;
+}
+
+void SettingsController::CommitProfileNickname(bool show_toast) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  FlushSection("profile", show_toast);
 }
 
 void SettingsController::MaybeShowSaveToast(const std::string& section_id) {
@@ -794,6 +818,13 @@ void SettingsController::OnProfileFieldChangedCallback(Rml::DataModelHandle /*mo
   }
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("profile");
+}
+
+void SettingsController::OnProfileNicknameCommitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                         const Rml::VariantList& /*args*/) {
+  // Persist on blur so soft-keyboard sessions are not interrupted by debounced
+  // flush → toast/DirtyAll (dismisses and re-shows the OSK each keystroke).
+  Instance().CommitProfileNickname(/*show_toast=*/false);
 }
 
 void SettingsController::OnAppearanceFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,

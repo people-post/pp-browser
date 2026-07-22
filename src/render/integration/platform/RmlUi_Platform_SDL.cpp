@@ -120,8 +120,20 @@ void SystemInterface_SDL::ActivateKeyboard(Rml::Vector2f caret_position, float l
 		const int caret_h = int(line_height / scale + 0.5f);
 		const SDL_Rect rect = {int(caret_position.x / scale + 0.5f), int(caret_position.y / scale + 0.5f), 1,
 			caret_h > 0 ? caret_h : 1};
-		SDL_SetTextInputArea(window, &rect, 0);
-		SDL_StartTextInput(window);
+
+		// ShowCursor() calls this on every keystroke. Re-issuing StartTextInput / thrashing
+		// SetTextInputArea makes UIKit dismiss+reshow the soft keyboard (worse on small sims
+		// where safe-area republish from UpdateTextInputArea is more visible).
+		const bool already_active = SDL_TextInputActive(window);
+		const bool rect_changed = !already_active || rect.x != last_text_input_rect_.x || rect.y != last_text_input_rect_.y ||
+			rect.w != last_text_input_rect_.w || rect.h != last_text_input_rect_.h;
+		if (rect_changed) {
+			SDL_SetTextInputArea(window, &rect, 0);
+			last_text_input_rect_ = rect;
+		}
+		if (!already_active) {
+			SDL_StartTextInput(window);
+		}
 #else
 		(void)caret_position;
 		(void)line_height;
@@ -136,6 +148,7 @@ void SystemInterface_SDL::DeactivateKeyboard()
 	{
 #if SDL_MAJOR_VERSION >= 3
 		SDL_StopTextInput(window);
+		last_text_input_rect_ = {};
 #else
 		SDL_StopTextInput();
 #endif

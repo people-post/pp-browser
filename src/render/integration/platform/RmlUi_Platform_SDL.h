@@ -35,6 +35,10 @@ public:
 private:
 	SDL_Window* window = nullptr;
 
+#if RMLUI_SDL_VERSION_MAJOR >= 3
+	SDL_Rect last_text_input_rect_{};
+#endif
+
 	SDL_Cursor* cursor_default = nullptr;
 	SDL_Cursor* cursor_move = nullptr;
 	SDL_Cursor* cursor_pointer = nullptr;

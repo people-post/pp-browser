@@ -713,9 +713,6 @@ bool FontFaceHandleHarfBuzz::GenerateLayer(FontFaceLayer* layer)
 void FontFaceHandleHarfBuzz::ConfigureTextShapingBuffer(hb_buffer_t* shaping_buffer, StringView string,
 	const TextShapingContext& text_shaping_context, const LanguageDataMap& registered_languages, TextFlowDirection* determined_text_direction) const
 {
-	// Language drives OpenType `locl` (e.g. CJK regional forms). Keep the element's lang.
-	hb_buffer_set_language(shaping_buffer, hb_language_from_string(text_shaping_context.language.c_str(), -1));
-
 	// Script must follow the *text*, not the UI language. After chat/UI language support,
 	// the document root is often lang=zh-Hans; inheriting that into Latin text inputs made
 	// HarfBuzz shape with HB_SCRIPT_HAN, so glyphs/advances jittered as more characters were typed.
@@ -743,15 +740,22 @@ void FontFaceHandleHarfBuzz::ConfigureTextShapingBuffer(hb_buffer_t* shaping_buf
 		}
 	}
 
-	auto registered_language_location = registered_languages.find(text_shaping_context.language);
-	if (script == HB_SCRIPT_UNKNOWN)
+	// Language drives OpenType `locl` (CJK regional forms). Only keep the element's lang when
+	// it matches the detected script; otherwise Latin (or empty) runs under a CJK UI lang still
+	// pick the wrong features / caret widths. Fall back to Latin — never UI Hans/Jpan/Kore.
+	String language = text_shaping_context.language;
+	const bool cjk_script = script == HB_SCRIPT_HAN || script == HB_SCRIPT_HIRAGANA || script == HB_SCRIPT_KATAKANA ||
+		script == HB_SCRIPT_HANGUL || script == HB_SCRIPT_BOPOMOFO;
+	if (!cjk_script)
 	{
-		if (registered_language_location != registered_languages.cend())
-			script = hb_script_from_string(registered_language_location->second.script_code.c_str(), -1);
-		else
-			script = HB_SCRIPT_LATIN;
+		script = HB_SCRIPT_LATIN;
+		if (language.empty() || language.rfind("zh", 0) == 0 || language == "ja" || language == "ko")
+			language = "en";
 	}
 
+	hb_buffer_set_language(shaping_buffer, hb_language_from_string(language.c_str(), -1));
+
+	auto registered_language_location = registered_languages.find(language);
 	hb_buffer_set_script(shaping_buffer, script);
 
 	// Set the buffer's text-flow direction based on the value of the element's 'dir' attribute.

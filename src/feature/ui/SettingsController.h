@@ -109,6 +109,7 @@ private:
   static void OnNetworkFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnSecurityFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnProfileFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnProfileNicknameCommitCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRotateBriefLlmKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnCopyProfileIdCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -132,7 +133,8 @@ private:
   void MarkSectionDirty(const std::string& section_id);
   void FlushPending();
   void FlushAllDirty();
-  bool FlushSection(const std::string& section_id);
+  bool FlushSection(const std::string& section_id, bool show_toast = true);
+  void CommitProfileNickname(bool show_toast = false);
   void MaybeShowSaveToast(const std::string& section_id);
   void ReportFailure(const Error& err);
   void ReportFailure(const std::string& technical_message);

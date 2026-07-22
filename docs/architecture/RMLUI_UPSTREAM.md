@@ -65,7 +65,7 @@ Edit files under `src/render/fork/` directly in pp-browser commits (except `src/
 - `UserAgentStyleSheet` — built-in baseline RCSS merged into every document (block layout for `p`, headings, lists, tables)
 - `ListMarker` — **workaround**: layout-time bullet/number injection (see limitations below)
 - `ResolveValueOr` / `FlexFormattingContext` / `BuildBoxWidth` / `GetShrinkToFitWidth` — percentage and auto width no longer collapse to 0px when the containing block is indefinite or zero-sized
-- `FontEngineHarfBuzz/` — HarfBuzz text shaping engine ported from upstream `Samples/basic/harfbuzz`; enabled via `RMLUI_FONT_ENGINE_HARFBUZZ` (on by default in pp-browser builds); script is detected from string content (not forced from UI `lang`) so Latin inputs stay stable when the document is `lang=zh-Hans`
+- `FontEngineHarfBuzz/` — HarfBuzz text shaping engine ported from upstream `Samples/basic/harfbuzz`; enabled via `RMLUI_FONT_ENGINE_HARFBUZZ` (on by default in pp-browser builds); script is detected from string content (not forced from UI `lang`), and CJK UI `lang` is not applied to non-CJK runs, so Latin inputs stay stable when the document is `lang=zh-Hans`
 
 ### User-agent baseline: browser comparison and known gaps
 
