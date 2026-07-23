@@ -752,7 +752,9 @@ std::string ShellHost::SerializeAccountSheet() const {
   out << "<div class=\"shell-account-sheet-header row "
       << SurfaceChromeClass(CompactChromeFrostSurface::AccountSheetHeader, frost, frost_enabled, solid) << "\">";
   out << "<h2 class=\"heading-2\">Me</h2>";
-  out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_account_sheet()\">×</button>";
+  out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_account_sheet()\">";
+  out << "<svg src=\"../icons/close.svg\" width=\"14\" height=\"14\" crop-to-content=\"true\"></svg>";
+  out << "</button>";
   out << "</div>";
   out << "<div class=\"shell-pane-body shell-account-sheet-body\" id=\"pane-body-settings\"></div>";
   out << "</div>";

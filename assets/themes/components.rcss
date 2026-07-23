@@ -970,6 +970,26 @@ select selectbox option {
   margin: 0;
 }
 
+/* Circular close with cross icon (overrides absolute overlay .shell-close-btn). */
+.shell-account-sheet-header .shell-close-btn {
+  position: relative;
+  top: auto;
+  right: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  min-width: 32dp;
+  padding: 0;
+  border-radius: 16dp;
+}
+
+.shell-account-sheet-header .shell-close-btn svg {
+  flex-shrink: 0;
+}
+
 .shell-account-sheet-body {
   flex: 1;
   min-height: 0;
