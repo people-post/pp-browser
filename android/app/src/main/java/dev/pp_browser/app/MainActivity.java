@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.os.Build;
 import android.os.Handler;
@@ -13,9 +14,15 @@ import android.os.HandlerThread;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.PixelCopy;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
@@ -53,6 +60,7 @@ public class MainActivity extends SDLActivity {
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        applyNavigationBarColor();
         ensureNotificationChannel();
         InboxSyncWorker.schedule(this, true);
     }
@@ -77,6 +85,54 @@ public class MainActivity extends SDLActivity {
     protected void onResume() {
         mThumbnailCapturedForPause.set(false);
         super.onResume();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        applyNavigationBarColor();
+    }
+
+    @Override
+    protected boolean sendCommand(int command, Object data) {
+        final boolean result = super.sendCommand(command, data);
+        if (command == COMMAND_CHANGE_WINDOW_STYLE) {
+            // SDL may toggle immersive mode; re-assert nav color when bars return.
+            runOnUiThread(this::applyNavigationBarColor);
+        }
+        return result;
+    }
+
+    /**
+     * Theme the system navigation bar only. Does not touch layout-fullscreen /
+     * decor-fits flags (those raced SurfaceView attach and delayed first paint).
+     * Status bar stays on the theme splash color; coloring it reliably needs an
+     * opaque non-SurfaceView window on some OEMs.
+     */
+    private void applyNavigationBarColor() {
+        final Window window = getWindow();
+        if (window == null) {
+            return;
+        }
+
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+
+        final boolean lightUi =
+                (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                        != Configuration.UI_MODE_NIGHT_YES;
+        final int navColor = ContextCompat.getColor(
+                this, lightUi ? R.color.window_background_light : R.color.window_background);
+        window.setNavigationBarColor(navColor);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.setNavigationBarContrastEnforced(false);
+        }
+
+        final View decor = window.getDecorView();
+        final WindowInsetsControllerCompat insetsController =
+                WindowCompat.getInsetsController(window, decor);
+        insetsController.setAppearanceLightNavigationBars(lightUi);
     }
 
     @Override
