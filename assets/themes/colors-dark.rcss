@@ -4,6 +4,11 @@ body {
   background-color: #111827;
 }
 
+/* Monochrome icons are white sources; tint with image-color (does not inherit). */
+svg {
+  image-color: #9ca3af;
+}
+
 selection {
   background-color: #3b5998;
 }
@@ -47,6 +52,14 @@ selection {
 
 .btn-primary:hover {
   background-color: #818cf8;
+}
+
+.btn-primary svg,
+.prompt-send-btn svg,
+.sidebar-new-chat svg,
+.contacts-find-btn svg,
+.contacts-action-secure svg {
+  image-color: #ffffff;
 }
 
 .btn-secondary {
@@ -315,6 +328,10 @@ select selectbox option:hover {
   color: #9ca3af;
 }
 
+.shell-nav-tab svg {
+  image-color: #9ca3af;
+}
+
 .shell-nav-tab:hover {
   background-color: #1f2937;
 }
@@ -322,6 +339,10 @@ select selectbox option:hover {
 .shell-nav-tab--active {
   background-color: #374151;
   color: #f9fafb;
+}
+
+.shell-nav-tab--active svg {
+  image-color: #f9fafb;
 }
 
 .shell-nav-rail--compact .shell-nav-tab:hover {
@@ -659,6 +680,10 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
+.settings-row-chevron {
+  image-color: #6b7280;
+}
+
 .contacts-find-btn {
   background-color: #6366f1;
   color: #ffffff;
@@ -854,5 +879,9 @@ select selectbox option:hover {
 
 .context-menu-item--danger:hover {
   background-color: #450a0a;
+}
+
+.context-menu-item--danger svg {
+  image-color: #f87171;
 }
 }

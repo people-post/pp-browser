@@ -189,7 +189,9 @@ Counts cap at **99+** in C++ (`FormatBadgeCount`). Home stays badge-free. **Sess
 
 ### Controls
 
-`.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger`, `.btn-ghost`, `.btn-icon`, `.field`
+`.btn`, `.btn-primary`, `.btn-secondary`, `.btn-danger`, `.btn-danger-soft`, `.btn-ghost`, `.btn-icon`, `.field`
+
+**Icons:** Asset SVGs under `assets/icons/` are **white monochrome** sources. Tint with RCSS `image-color` (RmlUi does not inherit this property — set it on the `svg` element). Theme defaults live on the `svg` type selector in `colors-light.rcss` / `colors-dark.rcss`; override per control (nav active, primary buttons, danger menu items, muted chevrons). Do not bake theme grays into SVG stroke/fill.
 
 ### Chat
 
