@@ -55,6 +55,8 @@ The auxiliary pane is evolving from a reply mirror into a **working set** for br
 
 Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).
 
+**Team UI review mock:** open [`shell_layout_review.html`](shell_layout_review.html) in a browser for side-by-side expanded vs compact page compositions (static HTML facsimile of the RML shell — not a live render).
+
 ## Interruption priority (high → low)
 
 1. Dialog (alert/confirm)

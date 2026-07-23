@@ -53,6 +53,7 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 | [ui/UI_DESIGN_SYSTEM.md](ui/UI_DESIGN_SYSTEM.md) | Tokens, components, theme |
 | [ui/PRODUCT_BRANDING.md](ui/PRODUCT_BRANDING.md) | Product name (Frame), icon rationale, asset paths |
 | [ui/WINDOW_SHELL.md](ui/WINDOW_SHELL.md) | Shell layout |
+| [ui/shell_layout_review.html](ui/shell_layout_review.html) | Static HTML mock — expanded vs compact pages (team UI review) |
 | [ui/WORKING_SET_PANEL.md](ui/WORKING_SET_PANEL.md) | Auxiliary pane |
 | [ui/RML_PROFILE.md](ui/RML_PROFILE.md) / [ui/RCSS_PROFILE.md](ui/RCSS_PROFILE.md) | AI-safe RML/RCSS (agent conventions) |
 | [ui/CHAT_TEMPLATES.md](ui/CHAT_TEMPLATES.md), [ui/INPUT.md](ui/INPUT.md), [ui/AGENT_CONVERSATION.md](ui/AGENT_CONVERSATION.md) | Chat UX / agent conversation |

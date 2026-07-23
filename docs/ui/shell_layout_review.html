@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frame — Shell layout review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --surface-app: #f8f9fb;
+      --surface-elevated: #ffffff;
+      --surface-muted: #f3f4f6;
+      --text-primary: #1a1a1a;
+      --text-secondary: #333333;
+      --text-muted: #6b7280;
+      --text-heading: #111111;
+      --text-inverse: #ffffff;
+      --border-subtle: #e5e7eb;
+      --border-strong: #d1d5db;
+      --accent: #4a6cf7;
+      --accent-hover: #5a7cff;
+      --accent-secure: #0d9488;
+      --accent-secure-surface: #ecfdf5;
+      --accent-secure-border: #99f6e4;
+      --badge: #3b82f6;
+      --group-accent: #d97706;
+      --group-surface: #fffbeb;
+      --group-border: #fcd34d;
+      --chrome-fill: #fffffff0;
+      --chrome-frost: #ffffffb3;
+      --scrim: #00000066;
+      --nav-muted: #6b7280;
+      --nav-active-fg: #111827;
+      --review-bg: #e8ecf1;
+      --review-ink: #1f2937;
+      --review-muted: #64748b;
+      --font: "Lato", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--review-ink);
+      background: var(--review-bg);
+      line-height: 1.45;
+    }
+
+    /* —— Review chrome (not part of the app) —— */
+    .review-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: #0f172a;
+      color: #f8fafc;
+      border-bottom: 1px solid #1e293b;
+    }
+    .review-bar h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .review-bar p {
+      margin: 2px 0 0;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .review-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .review-nav a {
+      color: #cbd5e1;
+      text-decoration: none;
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #1e293b;
+    }
+    .review-nav a:hover { background: #334155; color: #fff; }
+    .review-note {
+      max-width: 1100px;
+      margin: 20px auto 8px;
+      padding: 0 20px;
+      color: var(--review-muted);
+      font-size: 13px;
+    }
+    .review-note strong { color: var(--review-ink); }
+    .scene {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 20px 40px;
+    }
+    .scene-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .scene-head h2 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--review-ink);
+    }
+    .scene-head .meta {
+      font-size: 12px;
+      color: var(--review-muted);
+    }
+    .pair {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 28px;
+      align-items: start;
+    }
+    @media (max-width: 1100px) {
+      .pair { grid-template-columns: 1fr; }
+    }
+    .frame-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--review-muted);
+    }
+    .frame-label .tag {
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+    }
+
+    /* —— Device frames —— */
+    .device-expanded {
+      width: 100%;
+      max-width: 980px;
+      height: 620px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #94a3b8;
+      box-shadow: 0 18px 40px #0f172a22;
+      background: var(--surface-app);
+    }
+    .device-compact {
+      width: 390px;
+      height: 720px;
+      border-radius: 28px;
+      overflow: hidden;
+      border: 8px solid #0f172a;
+      box-shadow: 0 18px 40px #0f172a33;
+      background: var(--surface-app);
+      position: relative;
+    }
+    .device-compact::before {
+      content: "";
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 96px;
+      height: 6px;
+      border-radius: 4px;
+      background: #1e293b;
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    /* —— Shared app primitives —— */
+    .app {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      background: var(--surface-app);
+      color: var(--text-primary);
+      font-size: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+    .muted { color: var(--text-muted); }
+    .row { display: flex; flex-direction: row; align-items: center; }
+    .stack { display: flex; flex-direction: column; }
+    .grow { flex: 1; min-width: 0; min-height: 0; }
+    button {
+      font-family: inherit;
+      cursor: default;
+      border: 0;
+    }
+    .icon {
+      width: 1em;
+      height: 1em;
+      display: block;
+      flex-shrink: 0;
+    }
+    .icon-22 { width: 22px; height: 22px; }
+    .icon-18 { width: 18px; height: 18px; }
+    .icon-16 { width: 16px; height: 16px; }
+    .icon-14 { width: 14px; height: 14px; }
+
+    /* Nav rail — expanded */
+    .nav-rail {
+      flex: 0 0 72px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 4px;
+      gap: 4px;
+      border-right: 1px solid var(--border-subtle);
+      background: var(--surface-app);
+    }
+    .nav-tab {
+      width: 52px;
+      height: 56px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--nav-muted);
+      padding: 0;
+    }
+    .nav-tab.active {
+      background: var(--surface-elevated);
+      color: var(--nav-active-fg);
+      box-shadow: 0 1px 2px #00000010;
+    }
+    .nav-tab .label {
+      font-size: 10px;
+      line-height: 1.1;
+      margin: 0;
+    }
+    .nav-icon-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .badge-count {
+      position: absolute;
+      top: -6px;
+      right: -10px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 8px;
+      background: var(--badge);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .badge-dot {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--badge);
+      border: 1.5px solid var(--surface-app);
+    }
+
+    /* Compact floating bottom nav */
+    .bottom-chrome {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 10px;
+      z-index: 15;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      pointer-events: none;
+    }
+    .nav-pill {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      height: 56px;
+      padding: 4px 6px;
+      border-radius: 24px;
+      background: var(--chrome-frost);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid #ffffff66;
+      box-shadow: 0 4px 16px #00000018;
+      pointer-events: auto;
+    }
+    .nav-pill .nav-tab {
+      height: 48px;
+      border-radius: 12px;
+    }
+    .nav-pill .nav-tab.active {
+      box-shadow: none;
+    }
+    .compact-page {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: 72px;
+      overflow: hidden;
+    }
+
+    /* Panes */
+    .pane-row {
+      display: flex;
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+    }
+    .pane-secondary {
+      flex: 0 0 240px;
+      border-right: 1px solid var(--border-subtle);
+      background: var(--surface-app);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .pane-primary {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--surface-app);
+    }
+    .pane-aux {
+      flex: 0 0 280px;
+      border-left: 1px solid var(--border-subtle);
+      background: var(--surface-app);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Home */
+    .home-panel {
+      height: 100%;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+    }
+    .home-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 8px 4px;
+      margin-bottom: 12px;
+    }
+    .home-brand-name {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-heading);
+    }
+    .home-brand-tagline {
+      margin: 2px 0 0;
+      font-size: 12px;
+    }
+    .profile-btn {
+      position: relative;
+      width: 44px;
+      height: 44px;
+      border-radius: 22px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+    }
+    .home-landing {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-bottom: 24px;
+    }
+    .home-landing-inner {
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .home-suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    /* Composer */
+    .prompt-composer {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      box-shadow: 0 2px 8px #00000014;
+      padding: 10px 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .prompt-composer.e2e {
+      border-color: var(--accent-secure-border);
+    }
+    .prompt-composer-input {
+      border: 0;
+      outline: none;
+      resize: none;
+      font-family: inherit;
+      font-size: 15px;
+      color: var(--text-muted);
+      background: transparent;
+      min-height: 44px;
+      width: 100%;
+    }
+    .prompt-composer-footer {
+      display: flex;
+      justify-content: flex-end;
+    }
+    .prompt-send {
+      width: 32px;
+      height: 32px;
+      border-radius: 16px;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .chat-suggestion {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    /* Sidebar / contacts list */
+    .list-panel {
+      height: 100%;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .list-header-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-heading);
+    }
+    .fab {
+      width: 44px;
+      height: 44px;
+      border-radius: 22px;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .session {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 44px;
+      margin-bottom: 4px;
+      padding: 0 8px;
+      border-radius: 6px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-subtle);
+    }
+    .session.active.ai {
+      background: #eef2ff;
+      border-color: #c7d2fe;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .session.active.private {
+      background: var(--accent-secure-surface);
+      border-color: var(--accent-secure-border);
+      box-shadow: inset 3px 0 0 var(--accent-secure);
+    }
+    .session.active.public {
+      background: var(--surface-muted);
+      border-color: var(--border-strong);
+      box-shadow: inset 3px 0 0 var(--text-muted);
+    }
+    .session.active.group {
+      background: var(--group-surface);
+      border-color: var(--group-border);
+      box-shadow: inset 3px 0 0 var(--group-accent);
+    }
+    .session-title {
+      flex: 1;
+      margin: 0;
+      font-size: 13px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .session .badge-inline {
+      position: static;
+      margin-left: auto;
+    }
+    .search-field {
+      width: 100%;
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface-elevated);
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .contact-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 8px;
+      border-radius: 8px;
+      margin-bottom: 2px;
+    }
+    .contact-row.active {
+      background: #eef2ff;
+    }
+    .contact-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 16px;
+      background: var(--surface-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .trust {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #dcfce7;
+      color: #166534;
+      font-weight: 700;
+    }
+
+    /* Chat */
+    .chat-panel {
+      height: 100%;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .chat-panel.e2e {
+      background: linear-gradient(180deg, var(--accent-secure-surface) 0, var(--accent-secure-surface) 72px, transparent 72px);
+      border-left: 3px solid var(--accent-secure);
+    }
+    .chat-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .chat-type-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 2px;
+    }
+    .chat-type-badge {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .chat-title {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-heading);
+    }
+    .chat-sub {
+      margin: 2px 0 0;
+      font-size: 13px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .more-btn, .details-btn {
+      height: 32px;
+      padding: 0 10px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+    }
+    .more-btn {
+      width: 32px;
+      background: transparent;
+      color: var(--text-muted);
+    }
+    .details-btn {
+      background: var(--accent);
+      color: #fff;
+    }
+    .messages {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 8px 0;
+    }
+    .bubble {
+      max-width: 78%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .bubble-user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .bubble-assistant, .bubble-peer {
+      align-self: flex-start;
+      background: var(--surface-muted);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      border-bottom-left-radius: 4px;
+    }
+    .composer-dock {
+      padding: 8px 12px 12px;
+      flex-shrink: 0;
+    }
+
+    /* Settings */
+    .settings-panel {
+      height: 100%;
+      padding: 12px;
+      overflow: auto;
+    }
+    .settings-panel h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+    }
+    .profile-card {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .field-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: block;
+      margin-bottom: 4px;
+    }
+    .field {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface-elevated);
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .btn {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-secondary { background: #e8eaed; color: var(--text-primary); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0 0 8px;
+      color: var(--text-heading);
+    }
+    .settings-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 10px;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      margin-bottom: 6px;
+      text-align: left;
+    }
+    .settings-row.active {
+      background: #eef2ff;
+      border-color: #c7d2fe;
+    }
+    .settings-row-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-heading);
+    }
+    .settings-row-sub {
+      margin: 2px 0 0;
+      font-size: 12px;
+    }
+    .chevron { color: var(--text-muted); font-size: 16px; }
+
+    /* Compact overlays */
+    .chat-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 25;
+      background: var(--surface-app);
+      display: flex;
+      flex-direction: column;
+    }
+    .overlay-chrome {
+      flex-shrink: 0;
+      min-height: 48px;
+      padding: 4px 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--chrome-fill);
+      border-bottom: 1px solid #00000014;
+      box-shadow: 0 2px 12px #00000014;
+    }
+    .back-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: #e8eaed;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-primary);
+    }
+    .account-scrim {
+      position: absolute;
+      inset: 0;
+      z-index: 26;
+      background: var(--scrim);
+    }
+    .account-sheet {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 48px;
+      bottom: 0;
+      z-index: 27;
+      background: var(--surface-app);
+      border-radius: 16px 16px 0 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 -8px 32px #00000033;
+    }
+    .sheet-grabber {
+      width: 36px;
+      height: 5px;
+      border-radius: 3px;
+      background: #cbd5e1;
+      margin: 8px auto 4px;
+      flex-shrink: 0;
+    }
+    .sheet-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px 8px;
+      flex-shrink: 0;
+    }
+    .sheet-header h2 { margin: 0; font-size: 20px; }
+    .close-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 16px;
+      background: #e8eaed;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: var(--text-muted);
+    }
+    .sheet-body {
+      flex: 1;
+      overflow: auto;
+      min-height: 0;
+    }
+    .working-set {
+      padding: 12px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ws-card {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .ws-card h3 {
+      margin: 0 0 4px;
+      font-size: 14px;
+    }
+    .ws-card p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--review-muted);
+    }
+    .legend span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      margin-right: 6px;
+      vertical-align: -1px;
+    }
+    .legend .ai::before { background: var(--accent); }
+    .legend .priv::before { background: var(--accent-secure); }
+    .legend .pub::before { background: var(--text-muted); }
+    .legend .grp::before { background: var(--group-accent); }
+  </style>
+</head>
+<body>
+  <header class="review-bar">
+    <div>
+      <h1>Frame — shell layout review</h1>
+      <p>Expanded (≥768dp) vs compact (&lt;768dp) · light theme · static mock for product review</p>
+    </div>
+    <nav class="review-nav">
+      <a href="#home">Home</a>
+      <a href="#sessions">Sessions</a>
+      <a href="#chat">Chat</a>
+      <a href="#private">Private</a>
+      <a href="#working-set">Working set</a>
+      <a href="#contacts">Contacts</a>
+      <a href="#me">Me</a>
+      <a href="#account-sheet">Account sheet</a>
+    </nav>
+  </header>
+
+  <p class="review-note">
+    <strong>Purpose:</strong> communicate shell geometry and page composition for team UI review.
+    This is an HTML facsimile of RmlUi views (<code>home</code>, <code>sidebar</code>, <code>chat</code>, <code>contacts</code>, <code>settings</code>, <code>nav_rail</code>),
+    not a live render. Tokens match <a href="UI_DESIGN_SYSTEM.md">UI_DESIGN_SYSTEM.md</a>; layout rules match
+    <a href="WINDOW_SHELL.md">WINDOW_SHELL.md</a>. Breakpoint: <strong>768dp</strong>.
+  </p>
+
+  <!-- ========== HOME ========== -->
+  <section class="scene" id="home">
+    <div class="scene-head">
+      <h2>1. Home landing</h2>
+      <span class="meta">Primary pane · centered composer · suggestion chips · Me on compact via profile button</span>
+    </div>
+    <div class="pair">
+      <div>
+        <div class="frame-label">Expanded <span class="tag">nav rail left · Me tab present · no secondary list</span></div>
+        <div class="device-expanded">
+          <div class="app">
+            <aside class="nav-rail" data-active="home"></aside>
+            <div class="pane-primary">
+              <div class="home-panel">
+                <div class="home-header">
+                  <div>
+                    <h1 class="home-brand-name">Frame</h1>
+                    <p class="home-brand-tagline muted">The internet, rendered for you.</p>
+                  </div>
+                </div>
+                <div class="home-landing">
+                  <div class="home-landing-inner">
+                    <div class="prompt-composer">
+                      <div class="prompt-composer-input">Ask anything…</div>
+                      <div class="prompt-composer-footer"><div class="prompt-send" data-icon="send"></div></div>
+                    </div>
+                    <div class="home-suggestions">
+                      <button class="chat-suggestion">Find someone</button>
+                      <button class="chat-suggestion">Today's headlines</button>
+                      <button class="chat-suggestion">Latest articles</button>
+                      <button class="chat-suggestion">Get started</button>
+                      <button class="chat-suggestion">What can you do?</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="frame-label">Compact <span class="tag">floating bottom pills · profile → account sheet</span></div>
+        <div class="device-compact">
+          <div class="app">
+            <div class="compact-page">
+              <div class="home-panel">
+                <div class="home-header">
+                  <div>
+                    <h1 class="home-brand-name">Frame</h1>
+                    <p class="home-brand-tagline muted">The internet, rendered for you.</p>
+                  </div>
+                  <button class="profile-btn" data-icon="me" title="Me"><span class="badge-dot"></span></button>
+                </div>
+                <div class="home-landing">
+                  <div class="home-landing-inner">
+                    <div class="prompt-composer">
+                      <div class="prompt-composer-input">Ask anything…</div>
+                      <div class="prompt-composer-footer"><div class="prompt-send" data-icon="send"></div></div>
+                    </div>
+                    <div class="home-suggestions">
+                      <button class="chat-suggestion">Find someone</button>
+                      <button class="chat-suggestion">Today's headlines</button>
+                      <button class="chat-suggestion">Get started</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="bottom-chrome" data-active="home" data-compact></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== SESSIONS LIST ========== -->
+  <section class="scene" id="sessions">
+    <div class="scene-head">
+      <h2>2. Sessions (list)</h2>
+      <span class="meta">Secondary = session index · chat type icons + accent rails · unread badges</span>
+    </div>
+    <div class="legend">
+      <span class="ai">AI</span>
+      <span class="priv">Private / E2E</span>
+      <span class="pub">Public direct</span>
+      <span class="grp">Group</span>
+    </div>
+    <div class="pair" style="margin-top:14px">
+      <div>
+        <div class="frame-label">Expanded <span class="tag">secondary 240dp + empty primary until selection</span></div>
+        <div class="device-expanded">
+          <div class="app">
+            <aside class="nav-rail" data-active="sessions"></aside>
+            <div class="pane-row grow">
+              <div class="pane-secondary" data-sessions-list data-active="ai-briefing"></div>
+              <div class="pane-primary" style="align-items:center;justify-content:center">
+                <p class="muted">Select a conversation</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="frame-label">Compact <span class="tag">full-page list above floating nav</span></div>
+        <div class="device-compact">
+          <div class="app">
+            <div class="compact-page">
+              <div data-sessions-list data-active="ai-briefing"></div>
+            </div>
+            <div class="bottom-chrome" data-active="sessions" data-compact></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== CHAT AI ========== -->
+  <section class="scene" id="chat">
+    <div class="scene-head">
+      <h2>3. Sessions → AI chat</h2>
+      <span class="meta">Expanded: secondary + primary + composer dock · Compact: full-screen chat overlay (hides bottom nav)</span>
+    </div>
+    <div class="pair">
+      <div>
+        <div class="frame-label">Expanded</div>
+        <div class="device-expanded">
+          <div class="app">
+            <aside class="nav-rail" data-active="sessions"></aside>
+            <div class="pane-row grow">
+              <div class="pane-secondary" data-sessions-list data-active="ai-briefing"></div>
+              <div class="pane-primary">
+                <div class="chat-panel grow">
+                  <div class="chat-header">
+                    <div>
+                      <div class="chat-type-row">
+                        <span data-icon="sparkle" class="icon-16"></span>
+                        <span class="chat-type-badge">Assistant</span>
+                      </div>
+                      <h1 class="chat-title">Morning briefing</h1>
+                      <p class="chat-sub muted">AI thread</p>
+                    </div>
+                    <div class="header-actions">
+                      <button class="more-btn" data-icon="more"></button>
+                      <button class="details-btn">Details</button>
+                    </div>
+                  </div>
+                  <div class="messages">
+                    <div class="bubble bubble-user">What should I know this morning?</div>
+                    <div class="bubble bubble-assistant">Here are three things worth your attention today — headlines, a calendar conflict, and one follow-up from Alex.</div>
+                    <div class="bubble bubble-user">Open the calendar conflict.</div>
+                    <div class="bubble bubble-assistant">Done — I put the conflict details in the working set so you can reschedule or decline.</div>
+                  </div>
+                </div>
+                <div class="composer-dock">
+                  <div class="prompt-composer">
+                    <div class="prompt-composer-input">Ask anything…</div>
+                    <div class="prompt-composer-footer"><div class="prompt-send" data-icon="send"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="frame-label">Compact <span class="tag">chat overlay · back chrome · composer at bottom</span></div>
+        <div class="device-compact">
+          <div class="app">
+            <div class="compact-page" style="opacity:.35">
+              <div data-sessions-list data-active="ai-briefing"></div>
+            </div>
+            <div class="chat-overlay">
+              <div class="overlay-chrome">
+                <button class="back-btn" data-icon="back"></button>
+                <div class="grow">
+                  <div class="chat-type-row">
+                    <span data-icon="sparkle" class="icon-14"></span>
+                    <span class="chat-type-badge">Assistant</span>
+                  </div>
+                  <strong style="font-size:15px">Morning briefing</strong>
+                </div>
+                <button class="details-btn">Details</button>
+              </div>
+              <div class="chat-panel grow" style="padding-top:4px">
+                <div class="messages">
+                  <div class="bubble bubble-user">What should I know this morning?</div>
+                  <div class="bubble bubble-assistant">Three things for today — headlines, a calendar conflict, and a follow-up from Alex.</div>
+                </div>
+              </div>
+              <div class="composer-dock">
+                <div class="prompt-composer">
+                  <div class="prompt-composer-input">Ask anything…</div>
+                  <div class="prompt-composer-footer"><div class="prompt-send" data-icon="send"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== PRIVATE ========== -->
+  <section class="scene" id="private">
+    <div class="scene-head">
+      <h2>4. Private / E2E chat chrome</h2>
+      <span class="meta">Secure surface tint + teal accent · lock type badge · stronger composer border</span>
+    </div>
+    <div class="pair">
+      <div>
+        <div class="frame-label">Expanded</div>
+        <div class="device-expanded">
+          <div class="app">
+            <aside class="nav-rail" data-active="sessions"></aside>
+            <div class="pane-row grow">
+              <div class="pane-secondary" data-sessions-list data-active="alex"></div>
+              <div class="pane-primary">
+                <div class="chat-panel e2e grow">
+                  <div class="chat-header">
+                    <div>
+                      <div class="chat-type-row">
+                        <span data-icon="lock" class="icon-16"></span>
+                        <span class="chat-type-badge">Private</span>
+                      </div>
+                      <h1 class="chat-title">Alex Chen</h1>
+                      <p class="chat-sub muted">Verified private · E2E</p>
+                    </div>
+                    <div class="header-actions">
+                      <button class="more-btn" data-icon="more"></button>
+                      <button class="details-btn">Details</button>
+                    </div>
+                  </div>
+                  <div class="messages">
+                    <div class="bubble bubble-peer">Can you send the signed key bundle when you have a minute?</div>
+                    <div class="bubble bubble-user">Sending now — compare the fingerprint before you import.</div>
+                  </div>
+                </div>
+                <div class="composer-dock">
+                  <div class="prompt-composer e2e">
+                    <div class="prompt-composer-input">Message…</div>
+                    <div class="prompt-composer-footer"><div class="prompt-send" data-icon="send"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="frame-label">Compact</div>
+        <div class="device-compact">
+          <div class="app">
+            <div class="chat-overlay">
+              <div class="overlay-chrome" style="background: var(--accent-secure-surface)">
+                <button class="back-btn" data-icon="back"></button>
+                <div class="grow">
+                  <div class="chat-type-row">
+                    <span data-icon="lock" class="icon-14"></span>
+                    <span class="chat-type-badge">Private</span>
+                  </div>
+                  <strong style="font-size:15px">Alex Chen</strong>
+                </div>
+              </div>
+              <div class="chat-panel e2e grow">
+                <div class="messages">
+                  <div class="bubble bubble-peer">Can you send the signed key bundle when you have a minute?</div>
+                  <div class="bubble bubble-user">Sending now.</div>
+                </div>
+              </div>
+              <div class="composer-dock">
+                <div class="prompt-composer e2e">
+                  <div class="prompt-composer-input">Message…</div>
+                  <div class="prompt-composer-footer"><div class="prompt-send" data-icon="send"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== WORKING SET ========== -->
+  <section class="scene" id="working-set">
+    <div class="scene-head">
+      <h2>5. Working set (auxiliary)</h2>
+      <span class="meta">Expanded: right column · Compact: sheet over chat (shown as side panel mock)</span>
+    </div>
+    <div class="pair">
+      <div>
+        <div class="frame-label">Expanded <span class="tag">nav · sessions · chat · auxiliary 320dp</span></div>
+        <div class="device-expanded">
+          <div class="app">
+            <aside class="nav-rail" data-active="sessions"></aside>
+            <div class="pane-row grow">
+              <div class="pane-secondary" data-sessions-list data-active="ai-briefing"></div>
+              <div class="pane-primary">
+                <div class="chat-panel grow">
+                  <div class="chat-header">
+                    <div>
+                      <div class="chat-type-row">
+                        <span data-icon="sparkle" class="icon-16"></span>
+                        <span class="chat-type-badge">Assistant</span>
+                      </div>
+                      <h1 class="chat-title">Morning briefing</h1>
+                    </div>
+                    <button class="details-btn">Details</button>
+                  </div>
+                  <div class="messages">
+                    <div class="bubble bubble-assistant">I found a calendar conflict — details are in the working set.</div>
+                  </div>
+                </div>
+                <div class="composer-dock">
+                  <div class="prompt-composer">
+                    <div class="prompt-composer-input">Ask anything…</div>
+                    <div class="prompt-composer-footer"><div class="prompt-send" data-icon="send"></div></div>
+                  </div>
+                </div>
+              </div>
+              <div class="pane-aux">
+                <div class="working-set">
+                  <h2 class="section-title" style="font-size:18px">Calendar conflict</h2>
+                  <p class="muted" style="margin:0 0 8px;font-size:12px">Actionable results from the assistant</p>
+                  <div class="ws-card">
+                    <h3>Design review vs 1:1</h3>
+                    <p>Thu 2:00–2:30 · Room overlap</p>
+                  </div>
+                  <div class="ws-card">
+                    <h3>Suggested actions</h3>
+                    <p>Reschedule · Decline · Ask Alex</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="frame-label">Compact <span class="tag">auxiliary as sheet over chat</span></div>
+        <div class="device-compact">
+          <div class="app">
+            <div class="chat-overlay" style="opacity:.4">
+              <div class="overlay-chrome">
+                <button class="back-btn" data-icon="back"></button>
+                <strong class="grow">Morning briefing</strong>
+              </div>
+              <div class="chat-panel grow"><div class="messages"></div></div>
+            </div>
+            <div class="account-scrim" style="z-index:28"></div>
+            <div class="account-sheet" style="z-index:29; top:120px">
+              <div class="sheet-grabber"></div>
+              <div class="sheet-header">
+                <h2>Calendar conflict</h2>
+                <button class="close-btn">×</button>
+              </div>
+              <div class="sheet-body">
+                <div class="working-set">
+                  <div class="ws-card">
+                    <h3>Design review vs 1:1</h3>
+                    <p>Thu 2:00–2:30 · Room overlap</p>
+                  </div>
+                  <div class="ws-card">
+                    <h3>Suggested actions</h3>
+                    <p>Reschedule · Decline · Ask Alex</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== CONTACTS ========== -->
+  <section class="scene" id="contacts">
+    <div class="scene-head">
+      <h2>6. Contacts</h2>
+      <span class="meta">Secondary list + primary detail · compact: list page, detail as transient overlay</span>
+    </div>
+    <div class="pair">
+      <div>
+        <div class="frame-label">Expanded</div>
+        <div class="device-expanded">
+          <div class="app">
+            <aside class="nav-rail" data-active="contacts"></aside>
+            <div class="pane-row grow">
+              <div class="pane-secondary" data-contacts-list data-active="alex"></div>
+              <div class="pane-primary">
+                <div class="settings-panel">
+                  <p class="list-header-title" style="margin-bottom:12px">Contact</p>
+                  <div class="profile-card">
+                    <div>
+                      <span class="field-label">Display name</span>
+                      <div class="field">Alex Chen</div>
+                    </div>
+                    <div>
+                      <span class="field-label">Nickname</span>
+                      <div class="field">alex</div>
+                    </div>
+                    <div>
+                      <span class="field-label">Peer ID</span>
+                      <div class="field" style="font-size:12px;color:var(--text-muted)">12D3KooW…a7f2</div>
+                    </div>
+                    <p class="muted" style="margin:0;font-size:12px">Trust: Friendly</p>
+                    <div class="btn-row">
+                      <button class="btn btn-secondary">Friendly</button>
+                      <button class="btn btn-secondary">Unknown</button>
+                      <button class="btn btn-secondary">Blocked</button>
+                    </div>
+                    <div class="btn-row">
+                      <button class="btn btn-secondary">Copy ID</button>
+                      <button class="btn btn-secondary">Share</button>
+                    </div>
+                  </div>
+                  <p class="section-title" style="font-size:16px">Conversations</p>
+                  <div class="session active private" style="margin-top:4px">
+                    <span data-icon="lock" class="icon-14"></span>
+                    <p class="session-title">Alex Chen</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="frame-label">Compact <span class="tag">list page (detail would push transient)</span></div>
+        <div class="device-compact">
+          <div class="app">
+            <div class="compact-page">
+              <div data-contacts-list data-active="alex"></div>
+            </div>
+            <div class="bottom-chrome" data-active="contacts" data-compact></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== ME EXPANDED ========== -->
+  <section class="scene" id="me">
+    <div class="scene-head">
+      <h2>7. Me / Settings (expanded)</h2>
+      <span class="meta">Nav rail Me tab · secondary preferences list · primary section detail</span>
+    </div>
+    <div class="pair">
+      <div>
+        <div class="frame-label">Expanded</div>
+        <div class="device-expanded">
+          <div class="app">
+            <aside class="nav-rail" data-active="me"></aside>
+            <div class="pane-row grow">
+              <div class="pane-secondary" style="flex-basis:280px">
+                <div class="settings-panel">
+                  <h2>Me</h2>
+                  <div class="profile-card">
+                    <div>
+                      <span class="field-label">Nickname</span>
+                      <div class="field">hongwei</div>
+                    </div>
+                    <p class="muted" style="margin:0;font-size:12px">Registration: active</p>
+                    <div class="btn-row">
+                      <button class="btn btn-secondary">Copy ID</button>
+                      <button class="btn btn-secondary">Share</button>
+                    </div>
+                  </div>
+                  <p class="section-title" style="font-size:16px">Preferences</p>
+                  <button class="settings-row"><div><p class="settings-row-title">Profile</p><p class="settings-row-sub muted">Identity and network registration</p></div><span class="chevron">›</span></button>
+                  <button class="settings-row"><div><p class="settings-row-title">Assistant</p><p class="settings-row-sub muted">Model, endpoint, API key</p></div><span class="chevron">›</span></button>
+                  <button class="settings-row active"><div><p class="settings-row-title">Appearance</p><p class="settings-row-sub muted">Theme, language, and chrome</p></div><span class="chevron">›</span></button>
+                  <button class="settings-row"><div><p class="settings-row-title">Security</p><p class="settings-row-sub muted">PIN and key protection</p></div><span class="chevron">›</span></button>
+                  <button class="settings-row"><div><p class="settings-row-title">Network</p><p class="settings-row-sub muted">Relay, directory, registration</p></div><span class="chevron">›</span></button>
+                </div>
+              </div>
+              <div class="pane-primary">
+                <div class="settings-panel">
+                  <div class="row" style="gap:8px;margin-bottom:16px">
+                    <button class="back-btn" data-icon="back"></button>
+                    <strong style="font-size:16px">Appearance</strong>
+                  </div>
+                  <button class="settings-row" style="justify-content:space-between">
+                    <span class="settings-row-title" style="font-weight:400">Theme</span>
+                    <span class="muted" style="font-size:13px">System ›</span>
+                  </button>
+                  <button class="settings-row" style="justify-content:space-between">
+                    <span class="settings-row-title" style="font-weight:400">Language</span>
+                    <span class="muted" style="font-size:13px">English ›</span>
+                  </button>
+                  <div class="settings-row" style="justify-content:space-between">
+                    <span class="settings-row-title" style="font-weight:400">Reduce transparency</span>
+                    <span style="width:44px;height:26px;border-radius:13px;background:#d1d5db;position:relative;display:inline-block">
+                      <span style="position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:11px;background:#fff;box-shadow:0 1px 3px #0003"></span>
+                    </span>
+                  </div>
+                  <p class="muted" style="font-size:12px;margin:8px 4px">Uses opaque compact navigation and headers instead of backdrop blur.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="frame-label">Compact note</div>
+        <div style="width:390px;padding:20px;background:#fff;border-radius:12px;border:1px solid #cbd5e1;font-size:13px;color:var(--review-muted)">
+          <p style="margin:0 0 8px;color:var(--review-ink);font-weight:700">No Me tab on compact nav</p>
+          <p style="margin:0">Compact uses Home’s profile button → <strong>account bottom sheet</strong> (next section). List→detail stays inside the sheet with local back / swipe dismiss.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== ACCOUNT SHEET ========== -->
+  <section class="scene" id="account-sheet">
+    <div class="scene-head">
+      <h2>8. Me on compact — account bottom sheet</h2>
+      <span class="meta">Covers bottom nav · nearly full height · grabber + × · nested settings detail</span>
+    </div>
+    <div class="pair">
+      <div>
+        <div class="frame-label">Expanded contrast <span class="tag">same content as Me tab (above)</span></div>
+        <div class="device-expanded" style="opacity:.55;height:420px">
+          <div class="app">
+            <aside class="nav-rail" data-active="me"></aside>
+            <div class="pane-primary" style="align-items:center;justify-content:center">
+              <p class="muted">See §7 for full expanded Me layout</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="frame-label">Compact <span class="tag">sheet over Home</span></div>
+        <div class="device-compact">
+          <div class="app">
+            <div class="compact-page">
+              <div class="home-panel">
+                <div class="home-header">
+                  <div>
+                    <h1 class="home-brand-name">Frame</h1>
+                    <p class="home-brand-tagline muted">The internet, rendered for you.</p>
+                  </div>
+                  <button class="profile-btn" data-icon="me"></button>
+                </div>
+                <div class="home-landing">
+                  <div class="home-landing-inner">
+                    <div class="prompt-composer">
+                      <div class="prompt-composer-input">Ask anything…</div>
+                      <div class="prompt-composer-footer"><div class="prompt-send" data-icon="send"></div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="bottom-chrome" data-active="home" data-compact></div>
+            <div class="account-scrim"></div>
+            <div class="account-sheet">
+              <div class="sheet-grabber"></div>
+              <div class="sheet-header">
+                <h2>Me</h2>
+                <button class="close-btn">×</button>
+              </div>
+              <div class="sheet-body">
+                <div class="settings-panel">
+                  <div class="profile-card">
+                    <div>
+                      <span class="field-label">Nickname</span>
+                      <div class="field">hongwei</div>
+                    </div>
+                    <p class="muted" style="margin:0;font-size:12px">Registration: active</p>
+                    <div class="btn-row">
+                      <button class="btn btn-secondary">Copy ID</button>
+                      <button class="btn btn-secondary">Share</button>
+                    </div>
+                  </div>
+                  <p class="section-title" style="font-size:16px">Preferences</p>
+                  <button class="settings-row"><div><p class="settings-row-title">Profile</p><p class="settings-row-sub muted">Identity and network registration</p></div><span class="chevron">›</span></button>
+                  <button class="settings-row"><div><p class="settings-row-title">Assistant</p><p class="settings-row-sub muted">Model, endpoint, API key</p></div><span class="chevron">›</span></button>
+                  <button class="settings-row"><div><p class="settings-row-title">Appearance</p><p class="settings-row-sub muted">Theme, language, and chrome</p></div><span class="chevron">›</span></button>
+                  <button class="settings-row"><div><p class="settings-row-title">Security</p><p class="settings-row-sub muted">PIN and key protection</p></div><span class="chevron">›</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="review-note" style="margin-bottom:48px">
+    Open this file in a browser: <code>docs/ui/shell_layout_review.html</code>.
+    Source of truth remains the RML/RCSS under <code>assets/views/</code> and <code>assets/themes/</code>.
+  </p>
+
+  <script>
+    const ICONS = {
+      sparkle: `<svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="10.9" stroke="currentColor" stroke-width="3.6"/><path d="M20 3.6v7.3M20 29.1v7.3M3.6 20h7.3M29.1 20h7.3" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/><path d="M8.6 8.6l5.2 5.2M26.2 26.2l5.2 5.2M31.4 8.6l-5.2 5.2M13.8 26.2l-5.2 5.2" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/></svg>`,
+      sessions: `<svg viewBox="0 0 40 40" fill="none"><path d="M23.6 14.5a3.6 3.6 0 0 1-3.6 3.6H9.1L1.8 25.4V5.5A3.6 3.6 0 0 1 5.5 1.8h14.5a3.6 3.6 0 0 1 3.6 3.6v9.1Z" stroke="currentColor" stroke-width="3.6" stroke-linejoin="round"/><path d="M30.9 14.5h3.6a3.6 3.6 0 0 1 3.6 3.6v20l-7.3-7.3H20a3.6 3.6 0 0 1-3.6-3.6v-1.8" stroke="currentColor" stroke-width="3.6" stroke-linejoin="round"/></svg>`,
+      contacts: `<svg viewBox="0 0 40 40" fill="none"><circle cx="14" cy="14" r="6" stroke="currentColor" stroke-width="3.6"/><path d="M4 32c0-5.5 4.5-10 10-10s10 4.5 10 10" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/><circle cx="28" cy="14" r="4.5" stroke="currentColor" stroke-width="3.2"/><path d="M24 32c.5-3.5 2.8-6.5 6-8" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>`,
+      me: `<svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="13" r="7" stroke="currentColor" stroke-width="3.6"/><path d="M8 34c0-6.6 5.4-12 12-12s12 5.4 12 12" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/></svg>`,
+      lock: `<svg viewBox="0 0 40 40" fill="none"><rect x="8" y="18" width="24" height="18" rx="3" stroke="currentColor" stroke-width="3.6"/><path d="M13 18v-5a7 7 0 0 1 14 0v5" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/></svg>`,
+      message: `<svg viewBox="0 0 40 40" fill="none"><path d="M6 8h28a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H16l-8 7V11a3 3 0 0 1 3-3Z" stroke="currentColor" stroke-width="3.6" stroke-linejoin="round"/></svg>`,
+      group: `<svg viewBox="0 0 40 40" fill="none"><circle cx="14" cy="14" r="5" stroke="currentColor" stroke-width="3.2"/><circle cx="26" cy="14" r="5" stroke="currentColor" stroke-width="3.2"/><path d="M4 32c0-4.4 3.6-8 8-8h4c1.2 0 2.3.3 3.3.8M36 32c0-4.4-3.6-8-8-8h-1" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>`,
+      plus: `<svg viewBox="0 0 40 40" fill="none"><path d="M20 8v24M8 20h24" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/></svg>`,
+      send: `<svg viewBox="0 0 40 40" fill="none"><path d="M8 20l24-12-8 24-4-8-12-4Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round"/></svg>`,
+      more: `<svg viewBox="0 0 40 40" fill="none"><circle cx="10" cy="20" r="3" fill="currentColor"/><circle cx="20" cy="20" r="3" fill="currentColor"/><circle cx="30" cy="20" r="3" fill="currentColor"/></svg>`,
+      back: `<svg viewBox="0 0 40 40" fill="none"><path d="M24 8L12 20l12 12" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    };
+
+    function iconHtml(name, cls = "icon") {
+      return `<span class="${cls}" aria-hidden="true">${ICONS[name] || ""}</span>`;
+    }
+
+    function iconSizeClass(el) {
+      if (el.classList.contains("icon-22")) return "icon icon-22";
+      if (el.classList.contains("icon-18")) return "icon icon-18";
+      if (el.classList.contains("icon-16")) return "icon icon-16";
+      if (el.classList.contains("icon-14")) return "icon icon-14";
+      if (el.classList.contains("prompt-send") || el.classList.contains("more-btn")) return "icon icon-14";
+      if (el.classList.contains("fab") || el.classList.contains("back-btn") || el.classList.contains("profile-btn")) {
+        return "icon icon-18";
+      }
+      return "icon icon-18";
+    }
+
+    function mountIcons(root = document) {
+      root.querySelectorAll("[data-icon]").forEach((el) => {
+        const name = el.getAttribute("data-icon");
+        if (!ICONS[name] || el.querySelector("svg")) return;
+        const wrap = document.createElement("span");
+        wrap.className = iconSizeClass(el);
+        wrap.setAttribute("aria-hidden", "true");
+        wrap.innerHTML = ICONS[name];
+        el.prepend(wrap);
+      });
+    }
+
+    function navRailHtml(active, compact) {
+      const tabs = [
+        { id: "home", label: "Home", icon: "sparkle" },
+        { id: "sessions", label: "Sessions", icon: "sessions", badge: "3" },
+        { id: "contacts", label: "Contacts", icon: "contacts", badge: "1" },
+        { id: "me", label: "Me", icon: "me", dot: true, expandedOnly: true },
+      ];
+      const makeTab = (t) => {
+        if (t.expandedOnly && compact) return "";
+        return `<button class="nav-tab ${t.id === active ? "active" : ""}">
+          <div class="nav-icon-wrap">
+            ${iconHtml(t.icon, "icon icon-22")}
+            ${t.badge ? `<span class="badge-count">${t.badge}</span>` : ""}
+            ${t.dot && t.id === "me" ? `<span class="badge-dot"></span>` : ""}
+          </div>
+          <p class="label">${t.label}</p>
+        </button>`;
+      };
+      if (compact) {
+        return `<div class="nav-pill">${makeTab(tabs[0])}</div>
+          <div class="nav-pill">${makeTab(tabs[1])}${makeTab(tabs[2])}</div>`;
+      }
+      return tabs.map(makeTab).join("");
+    }
+
+    function sessionsListHtml(activeId) {
+      const rows = [
+        { id: "ai-briefing", title: "Morning briefing", kind: "ai", icon: "sparkle" },
+        { id: "alex", title: "Alex Chen", kind: "private", icon: "lock", unread: "2" },
+        { id: "public-sam", title: "Sam Rivera", kind: "public", icon: "message" },
+        { id: "design", title: "Design crew", kind: "group", icon: "group", unread: "1" },
+      ];
+      return `<div class="list-panel">
+        <div class="list-header">
+          <p class="list-header-title">Sessions</p>
+          <button class="fab">${iconHtml("plus", "icon icon-18")}</button>
+        </div>
+        <div class="grow" style="overflow:auto">
+          ${rows.map((r) => `
+            <div class="session ${r.id === activeId ? "active " + r.kind : ""}">
+              ${iconHtml(r.icon, "icon icon-14")}
+              <p class="session-title">${r.title}</p>
+              ${r.unread ? `<span class="badge-count badge-inline" style="position:static">${r.unread}</span>` : ""}
+            </div>`).join("")}
+        </div>
+      </div>`;
+    }
+
+    function contactsListHtml(activeId) {
+      const rows = [
+        { id: "alex", title: "Alex Chen", sub: "Friendly · online", trust: true },
+        { id: "sam", title: "Sam Rivera", sub: "Public chat" },
+        { id: "maya", title: "Maya Okonkwo", sub: "Friendly", unread: "1" },
+      ];
+      return `<div class="list-panel">
+        <div class="list-header">
+          <p class="list-header-title">Contacts</p>
+          <button class="fab">${iconHtml("plus", "icon icon-18")}</button>
+        </div>
+        <div class="search-field">Search contacts</div>
+        <div class="grow" style="overflow:auto">
+          ${rows.map((r) => `
+            <div class="contact-row ${r.id === activeId ? "active" : ""}">
+              <div class="contact-avatar">${iconHtml("contacts", "icon icon-14")}</div>
+              <div class="grow">
+                <div class="row" style="gap:6px">
+                  <strong style="font-size:14px">${r.title}</strong>
+                  ${r.trust ? `<span class="trust">Friendly</span>` : ""}
+                  ${r.unread ? `<span class="badge-count" style="position:static">${r.unread}</span>` : ""}
+                </div>
+                <p class="muted" style="margin:2px 0 0;font-size:12px">${r.sub}</p>
+              </div>
+            </div>`).join("")}
+        </div>
+      </div>`;
+    }
+
+    document.querySelectorAll(".nav-rail").forEach((el) => {
+      el.innerHTML = navRailHtml(el.dataset.active, false);
+    });
+    document.querySelectorAll(".bottom-chrome").forEach((el) => {
+      el.innerHTML = navRailHtml(el.dataset.active, true);
+    });
+    document.querySelectorAll("[data-sessions-list]").forEach((el) => {
+      el.innerHTML = sessionsListHtml(el.dataset.active);
+      el.style.height = "100%";
+      el.style.display = "flex";
+      el.style.flexDirection = "column";
+      el.style.minHeight = "0";
+    });
+    document.querySelectorAll("[data-contacts-list]").forEach((el) => {
+      el.innerHTML = contactsListHtml(el.dataset.active);
+      el.style.height = "100%";
+      el.style.display = "flex";
+      el.style.flexDirection = "column";
+      el.style.minHeight = "0";
+    });
+    mountIcons();
+  </script>
+</body>
+</html>
