@@ -21,7 +21,7 @@ class LocalizationService {
 public:
   static LocalizationService& Instance();
 
-  /** Load catalogs from `{assets_root}/locales/*.json`. */
+  /** Load catalogs from `{assets_root}/locales` (all `.json` files). */
   Roe<void> LoadFromAssets(const std::string& assets_root);
 
   /** Preferred pref: `system` or a BCP-47 tag we ship. */
