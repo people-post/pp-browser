@@ -32,10 +32,11 @@ static constexpr float UNIT_SCROLL_LENGTH = 80.f;   // [dp]
 
 // If the user stops scrolling for this amount of time in seconds before touch/click release, don't apply inertia.
 static constexpr float SCROLL_INERTIA_DELAY = 0.1f;
-static constexpr float TOUCH_MOVEMENT_DECAY_RATE = 5.0f;
 static constexpr float TOUCH_CLICK_MAX_DISTANCE = DOUBLE_CLICK_MAX_DIST; // [dp]
 static constexpr float TOUCH_SCROLL_SLOP = 10.f;                         // [dp]
 static constexpr double TOUCH_LONG_PRESS_TIME = 0.5;                   // [s]
+// Recent touch samples used to estimate fling velocity (more stable than a single exponential window).
+static constexpr float TOUCH_VELOCITY_WINDOW = 0.1f; // [s]
 
 static bool IsContextMenuTarget(Element* element)
 {
@@ -313,6 +314,9 @@ bool Context::Update()
 			doc->UpdatePosition();
 		}
 	}
+
+	// Rubber-band overscroll is applied unclamped; layout may clamp scroll offsets — restore for this frame.
+	scroll_controller->RestoreOverscrollAfterLayout();
 
 	// Data-bound views (e.g. chat message list) may add or move elements during Update(); refresh
 	// hover and cursor now that layout reflects the new DOM.
@@ -1209,22 +1213,21 @@ bool Context::ProcessTouchStart(const Touch& touch, int key_modifier_state)
 	}
 
 	state->start_position = touch.position;
-	state->inertia_position = touch.position;
 	state->last_position = touch.position;
-	state->scrolling_start_time_x = 0;
-	state->scrolling_start_time_y = 0;
 	state->scrolling_last_time = GetSystemInterface()->GetElapsedTime();
 	state->touch_scrolling = false;
 	state->selection_armed = false;
 	state->long_press_fired = false;
 	state->touch_start_time = state->scrolling_last_time;
+	state->ClearSamples();
+	state->PushSample(touch.position, state->scrolling_last_time);
 
 	Element* touch_element = GetElementAtPoint(touch.position);
 	state->touch_target = touch_element;
 	state->scroll_container = touch_element ? touch_element->GetClosestScrollableContainer() : nullptr;
 
-	// reset any scrolling when we touch the element
-	if (state->scroll_container && scroll_controller->GetTarget() == state->scroll_container)
+	// Interrupt any coast / rubber-band settle when a new touch begins.
+	if (scroll_controller->GetMode() != ScrollController::Mode::None || scroll_controller->HasVisualOverscroll())
 		scroll_controller->Reset();
 
 	ProcessMouseMove(static_cast<int>(touch.position.x), static_cast<int>(touch.position.y), key_modifier_state);
@@ -1267,46 +1270,15 @@ bool Context::ProcessTouchMove(const Touch& touch, int key_modifier_state)
 		{
 			// Don't scroll and reset scrolling state when dragging any element (scrollbars and others)
 			// or drag-selecting static text inside a scroll container.
-			state->inertia_position = touch.position;
 			state->last_position = touch.position;
-			state->scrolling_start_time_x = 0;
-			state->scrolling_start_time_y = 0;
+			state->ClearSamples();
+			state->PushSample(touch.position, state->scrolling_last_time);
 		}
 		else if (delta.x != 0 || delta.y != 0)
 		{
-			// Use instant scrolling when touch is pressed even when default scroll behavior is smooth.
-			scroll_controller->InstantScrollOnTarget(state->scroll_container, -delta);
-
-			const double current_time = GetSystemInterface()->GetElapsedTime();
-
-			enum { Horizontal = 0, Vertical = 1 };
-			for (int axis : {Horizontal, Vertical})
-			{
-				bool& state_scrolling_positive = (axis == Horizontal ? state->scrolling_right : state->scrolling_down);
-				double& state_scrolling_start_time = (axis == Horizontal ? state->scrolling_start_time_x : state->scrolling_start_time_y);
-
-				// Time set to 0 means no touch move events happened before and direction is unclear.
-				const bool scroll_start = (state_scrolling_start_time == 0);
-
-				// If the user changes direction, reset the start time and position.
-				const bool going_positive = (delta[axis] > 0);
-				if (delta[axis] != 0 && (going_positive != state_scrolling_positive || scroll_start))
-				{
-					state->inertia_position[axis] = touch.position[axis];
-					state_scrolling_positive = going_positive;
-					state_scrolling_start_time = state->scrolling_last_time;
-				}
-				else
-				{
-					// Move inertia position towards end position with a weight of e^-kt to better capture and
-					// calculate velocity of the very last touch movements before touch release.
-					const float elapsed_time = static_cast<float>(current_time - state_scrolling_start_time);
-					const float weight = Math::Exp(-elapsed_time * TOUCH_MOVEMENT_DECAY_RATE);
-
-					state->inertia_position[axis] = touch.position[axis] - (touch.position[axis] - state->inertia_position[axis]) * weight;
-					state_scrolling_start_time = current_time - (current_time - state_scrolling_start_time) * weight;
-				}
-			}
+			// Finger-tracking with rubber-band overscroll past edges.
+			scroll_controller->InstantScrollOnTarget(state->scroll_container, -delta, true);
+			state->PushSample(touch.position, state->scrolling_last_time);
 
 			const float touch_max_distance = TOUCH_CLICK_MAX_DISTANCE * density_independent_pixel_ratio;
 			if (delta_from_start.SquaredMagnitude() >= touch_max_distance * touch_max_distance)
@@ -1332,23 +1304,40 @@ bool Context::ProcessTouchEnd(const Touch& touch, int key_modifier_state)
 
 	if (state->scroll_container)
 	{
-		double current_time = GetSystemInterface()->GetElapsedTime();
-		double time_since_last_move = current_time - state->scrolling_last_time;
-		if (time_since_last_move < SCROLL_INERTIA_DELAY)
+		const double current_time = GetSystemInterface()->GetElapsedTime();
+		const double time_since_last_move = current_time - state->scrolling_last_time;
+
+		Vector2f velocity;
+		if (time_since_last_move < SCROLL_INERTIA_DELAY && state->sample_count >= 2)
 		{
-			// apply scrolling inertia
-			Vector2f delta = touch.position - state->inertia_position;
+			constexpr int capacity = TouchState::VelocitySampleCapacity;
+			const auto& newest = state->samples[(state->sample_write + capacity - 1) % capacity];
+			const TouchState::Sample* oldest_in_window = &newest;
+			for (int i = 1; i < state->sample_count; i++)
+			{
+				const auto& candidate = state->samples[(state->sample_write + capacity - 1 - i) % capacity];
+				if (newest.time - candidate.time > TOUCH_VELOCITY_WINDOW)
+					break;
+				oldest_in_window = &candidate;
+			}
 
-			Vector2f velocity = -delta;
-			float elapsed_time_x = static_cast<float>(current_time - state->scrolling_start_time_x);
-			float elapsed_time_y = static_cast<float>(current_time - state->scrolling_start_time_y);
-			if (elapsed_time_x > 0)
-				velocity.x /= elapsed_time_x;
-			if (elapsed_time_y > 0)
-				velocity.y /= elapsed_time_y;
-
-			scroll_controller->ActivateInertia(state->scroll_container, velocity);
+			const float dt = static_cast<float>(newest.time - oldest_in_window->time);
+			if (dt > 1e-4f)
+				velocity = (oldest_in_window->position - newest.position) / dt;
 		}
+
+		const float scroll_top = state->scroll_container->GetScrollTop();
+		const float scroll_left = state->scroll_container->GetScrollLeft();
+		const float max_top = Math::Max(0.f, state->scroll_container->GetScrollHeight() - state->scroll_container->GetClientHeight());
+		const float max_left = Math::Max(0.f, state->scroll_container->GetScrollWidth() - state->scroll_container->GetClientWidth());
+		constexpr float overscroll_eps = 0.5f;
+		const bool overscrolled = scroll_top < -overscroll_eps || scroll_left < -overscroll_eps || scroll_top > max_top + overscroll_eps ||
+			scroll_left > max_left + overscroll_eps;
+
+		if (overscrolled)
+			scroll_controller->ActivateOverscrollSettle(state->scroll_container, velocity);
+		else if (velocity.x != 0.f || velocity.y != 0.f)
+			scroll_controller->ActivateInertia(state->scroll_container, velocity);
 	}
 
 	touch_states.erase(touch.identifier);
@@ -1377,6 +1366,16 @@ bool Context::ProcessTouchCancel(const Touch& touch)
 void Context::SetDefaultScrollBehavior(ScrollBehavior scroll_behavior, float speed_factor)
 {
 	scroll_controller->SetDefaultScrollBehavior(scroll_behavior, speed_factor);
+}
+
+void Context::SetScrollOverscrollEdges(bool min_x, bool max_x, bool min_y, bool max_y)
+{
+	scroll_controller->SetOverscrollEdgesEnabled(min_x, max_x, min_y, max_y);
+}
+
+void Context::ClearScrollOverscroll()
+{
+	scroll_controller->ClearPendingOverscroll();
 }
 
 RenderManager& Context::GetRenderManager()

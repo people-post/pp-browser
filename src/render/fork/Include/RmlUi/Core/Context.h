@@ -261,6 +261,11 @@ public:
 	/// @param[in] speed_factor A factor for adjusting the final smooth scrolling speed, must be strictly positive, defaults to 1.0.
 	void SetDefaultScrollBehavior(ScrollBehavior scroll_behavior, float speed_factor);
 
+	/// Enable/disable rubber-band overscroll per edge (min = top/left, max = bottom/right).
+	void SetScrollOverscrollEdges(bool min_x, bool max_x, bool min_y, bool max_y);
+	/// Clamp any active visual overscroll back into range and clear pending restore.
+	void ClearScrollOverscroll();
+
 	/// Retrieves the render manager which can be used to submit changes to the render state.
 	RenderManager& GetRenderManager();
 
@@ -363,20 +368,38 @@ private:
 
 	// The current state of Touches, required to implement proper inertia scrolling.
 	struct TouchState {
-		bool scrolling_right = false;
-		bool scrolling_down = false;
+		static constexpr int VelocitySampleCapacity = 8;
+
 		bool touch_scrolling = false;
 		bool selection_armed = false;
 		bool long_press_fired = false;
 		Vector2f start_position;
-		Vector2f inertia_position;
 		Vector2f last_position;
 		Element* scroll_container = nullptr;
 		Element* touch_target = nullptr;
 		double scrolling_last_time = 0;
-		double scrolling_start_time_x = 0;
-		double scrolling_start_time_y = 0;
 		double touch_start_time = 0;
+
+		struct Sample {
+			Vector2f position;
+			double time = 0;
+		};
+		Sample samples[VelocitySampleCapacity] = {};
+		int sample_count = 0;
+		int sample_write = 0;
+
+		void PushSample(Vector2f position, double time)
+		{
+			samples[sample_write] = {position, time};
+			sample_write = (sample_write + 1) % VelocitySampleCapacity;
+			sample_count = sample_count < VelocitySampleCapacity ? sample_count + 1 : VelocitySampleCapacity;
+		}
+
+		void ClearSamples()
+		{
+			sample_count = 0;
+			sample_write = 0;
+		}
 	};
 	SmallUnorderedMap<TouchId, TouchState> touch_states;
 	TouchLongPressCallback touch_long_press_callback;

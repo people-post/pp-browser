@@ -33,19 +33,22 @@ private:
   bool IsUnderSheet(Rml::Element* target) const;
   bool IsChromeRegion(Rml::Element* target) const;
   bool ScrollAncestorsAtTop(Rml::Element* target) const;
-  void BeginArm(int x_px, int y_px);
+  void PinScrollAncestorsAtTop();
+  void BeginArm(int x_px, int y_px, Rml::Element* target);
   void AbortArm(bool unlock_axis);
   void UpdateDrag(int x_px, int y_px, Rml::Event& event);
   void EndDrag();
   void SetSheetOffset(float dy_dp, bool animate);
   void SetDocumentDragCapture(bool enabled);
   void SetClickSuppress(bool enabled);
+  void SetDismissOwnsTopOverscroll(bool owns);
   float PixelDeltaToDp(int delta_px) const;
   float ResolveSheetHeightDp() const;
 
   Rml::Element* sheet_ = nullptr;
   Rml::ElementDocument* document_ = nullptr;
   Rml::Context* context_ = nullptr;
+  Rml::Element* arm_target_ = nullptr;
   float sheet_height_dp_ = 0.f;
   DismissCallback on_dismiss_;
   ShellGestureAxisLock* axis_lock_ = nullptr;
@@ -55,6 +58,7 @@ private:
   bool suppress_click_ = false;
   bool tracking_ = false;
   bool dragging_ = false;
+  bool dismiss_owns_top_overscroll_ = false;
   int drag_start_x_px_ = 0;
   int drag_start_y_px_ = 0;
   int drag_last_x_px_ = 0;

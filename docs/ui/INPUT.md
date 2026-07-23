@@ -51,6 +51,17 @@ Returning `false` from a binding or callback means the event is consumed.
 
 On touch devices (`SDL_HINT_TOUCH_MOUSE_EVENTS=0`), finger events map to `Context::ProcessTouch*`.
 
+**Scroll feel (overflow containers):**
+
+- Finger-down tracking is 1:1, with rubber-band resistance past the top/bottom (or left/right) edges.
+- Axes with `overflow: auto` and no overflow range do not move (no sideways wiggle on full-width lists).
+- On lift, fling velocity is estimated from recent touch samples (~100ms window) and applied as inertial coast (hard-clamped until edge contact, then a gentle spring settle).
+- Fling/settle lock to the dominant axis and never write non-scrollable axes (fixes diagonal X coast after lift).
+- Overscroll settle uses a stretch-scaled spring: farther past the edge → faster snap-back.
+- Releasing while overscrolled (or flinging into an edge) spring-settles back into range with a light bounce.
+- Touching again interrupts coast / settle immediately.
+- Account sheet pull-to-dismiss blocks top-edge rubber-band and pins list scroll at top so dismiss owns the gesture.
+
 **Read-only chat bubbles (iOS Messages / Safari):**
 
 - Finger down does **not** start selection.

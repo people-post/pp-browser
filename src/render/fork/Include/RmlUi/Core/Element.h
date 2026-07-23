@@ -399,13 +399,15 @@ public:
 	float GetScrollLeft();
 	/// Sets the left scroll offset of the element.
 	/// @param[in] scroll_left The element's new left scroll offset.
-	void SetScrollLeft(float scroll_left);
+	/// @param[in] clamp When true (default), clamps to the valid scroll range; false allows rubber-band overscroll.
+	void SetScrollLeft(float scroll_left, bool clamp = true);
 	/// Gets the top scroll offset of the element.
 	/// @return The element's top scroll offset.
 	float GetScrollTop();
 	/// Sets the top scroll offset of the element.
 	/// @param[in] scroll_top The element's new top scroll offset.
-	void SetScrollTop(float scroll_top);
+	/// @param[in] clamp When true (default), clamps to the valid scroll range; false allows rubber-band overscroll.
+	void SetScrollTop(float scroll_top, bool clamp = true);
 	/// Gets the width of the scrollable content of the element; it includes the element padding but not its margin.
 	/// @return The width (in pixels) of the scrollable content of the element.
 	float GetScrollWidth();

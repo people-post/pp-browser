@@ -45,12 +45,14 @@ void ShellBottomSheetGesture::Attach(Rml::Element* sheet, Rml::Context* context,
 void ShellBottomSheetGesture::Detach() {
   Abort();
   SetClickSuppress(false);
+  SetDismissOwnsTopOverscroll(false);
   if (attached_ && sheet_) {
     sheet_->RemoveEventListener(Rml::EventId::Mousedown, this);
   }
   sheet_ = nullptr;
   document_ = nullptr;
   context_ = nullptr;
+  arm_target_ = nullptr;
   on_dismiss_ = {};
   axis_lock_ = nullptr;
   attached_ = false;
@@ -167,6 +169,40 @@ bool ShellBottomSheetGesture::ScrollAncestorsAtTop(Rml::Element* target) const {
   return true;
 }
 
+void ShellBottomSheetGesture::PinScrollAncestorsAtTop() {
+  if (!arm_target_) {
+    return;
+  }
+  for (Rml::Element* node = arm_target_; node; node = node->GetParentNode()) {
+    if (node->GetScrollHeight() > node->GetClientHeight() + 0.5f && node->GetScrollTop() < kScrollTopEpsilonPx) {
+      node->SetScrollTop(0.f);
+    }
+    if (node == sheet_) {
+      break;
+    }
+  }
+  if (context_) {
+    context_->ClearScrollOverscroll();
+  }
+}
+
+void ShellBottomSheetGesture::SetDismissOwnsTopOverscroll(bool owns) {
+  if (dismiss_owns_top_overscroll_ == owns) {
+    return;
+  }
+  dismiss_owns_top_overscroll_ = owns;
+  if (!context_) {
+    return;
+  }
+  if (owns) {
+    // Block top (min-y) rubber-band so pull-down belongs to sheet dismiss.
+    context_->SetScrollOverscrollEdges(true, true, false, true);
+    PinScrollAncestorsAtTop();
+  } else {
+    context_->SetScrollOverscrollEdges(true, true, true, true);
+  }
+}
+
 bool ShellBottomSheetGesture::ShouldStartSwipe(Rml::Element* target) const {
   if (!IsUnderSheet(target)) {
     return false;
@@ -187,19 +223,23 @@ void ShellBottomSheetGesture::SetSheetOffset(float dy_dp, bool animate) {
   sheet_->SetProperty("transform", buffer);
 }
 
-void ShellBottomSheetGesture::BeginArm(int x_px, int y_px) {
+void ShellBottomSheetGesture::BeginArm(int x_px, int y_px, Rml::Element* target) {
   tracking_ = true;
   dragging_ = false;
+  arm_target_ = target;
   drag_start_x_px_ = x_px;
   drag_start_y_px_ = y_px;
   drag_last_x_px_ = x_px;
   drag_last_y_px_ = y_px;
+  SetDismissOwnsTopOverscroll(true);
   SetDocumentDragCapture(true);
 }
 
 void ShellBottomSheetGesture::AbortArm(bool unlock_axis) {
   if (!tracking_ && !dragging_) {
     SetDocumentDragCapture(false);
+    SetDismissOwnsTopOverscroll(false);
+    arm_target_ = nullptr;
     if (unlock_axis && axis_lock_ && axis_lock_->Get() == ShellGestureAxis::Vertical) {
       axis_lock_->Unlock();
     }
@@ -208,6 +248,8 @@ void ShellBottomSheetGesture::AbortArm(bool unlock_axis) {
   tracking_ = false;
   dragging_ = false;
   SetDocumentDragCapture(false);
+  SetDismissOwnsTopOverscroll(false);
+  arm_target_ = nullptr;
   SetSheetOffset(0.f, true);
   if (unlock_axis && axis_lock_ && axis_lock_->Get() == ShellGestureAxis::Vertical) {
     axis_lock_->Unlock();
@@ -266,6 +308,11 @@ void ShellBottomSheetGesture::UpdateDrag(int x_px, int y_px, Rml::Event& event) 
     sheet_->SetClass("shell-account-sheet--dragging", true);
   }
 
+  // While dismiss owns the pull-down, keep list scroll pinned at top (no competing rubber-band).
+  if (dy_px > 0) {
+    PinScrollAncestorsAtTop();
+  }
+
   const float dy_dp = PixelDeltaToDp(dy_px);
   if (dy_dp > 0.f) {
     SetSheetOffset(dy_dp, false);
@@ -280,12 +327,16 @@ void ShellBottomSheetGesture::EndDrag() {
     if (axis_lock_ && axis_lock_->Get() == ShellGestureAxis::Vertical) {
       axis_lock_->Unlock();
     }
+    SetDismissOwnsTopOverscroll(false);
+    arm_target_ = nullptr;
     return;
   }
   tracking_ = false;
   SetDocumentDragCapture(false);
   const bool was_dragging = dragging_;
   dragging_ = false;
+  SetDismissOwnsTopOverscroll(false);
+  arm_target_ = nullptr;
   if (axis_lock_ && axis_lock_->Get() == ShellGestureAxis::Vertical) {
     axis_lock_->Unlock();
   }
@@ -316,7 +367,7 @@ void ShellBottomSheetGesture::ProcessEvent(Rml::Event& event) {
     if (!ShouldStartSwipe(event.GetTargetElement())) {
       return;
     }
-    BeginArm(EventMouseX(event), EventMouseY(event));
+    BeginArm(EventMouseX(event), EventMouseY(event), event.GetTargetElement());
     break;
   case Rml::EventId::Mousemove:
     UpdateDrag(EventMouseX(event), EventMouseY(event), event);
