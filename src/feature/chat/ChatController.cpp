@@ -685,7 +685,7 @@ void ChatController::OnHomeTabActivated() {
   if (!messaging_ready_) {
     return;
   }
-  (void)MessagingHub::Instance().Inbox().CreateAiHomeThread();
+  MessagingHub::Instance().Inbox().ClearActiveThread();
   ClearWorkingSet();
   working_set_by_entry_.clear();
   ShellHost::Instance().SetPrimaryPane("chat");
@@ -1209,9 +1209,6 @@ void ChatController::SyncShellSessions() {
   const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
   auto& inbox = MessagingHub::Instance().Inbox();
   for (const Thread& thread : sorted_threads) {
-    if (inbox.IsAiHomeThread(thread.id)) {
-      continue;
-    }
     SessionRow row;
     row.id = thread.id.c_str();
     row.title = inbox.ResolveThreadLabel(thread).title.c_str();
@@ -1220,7 +1217,7 @@ void ChatController::SyncShellSessions() {
     row.unread_count = thread.unread_count;
     row.unread_display = FormatBadgeCount(thread.unread_count).c_str();
     row.active = thread.id == active_id;
-    row.closable = !inbox.IsAiHomeThread(thread.id);
+    row.closable = true;
     shell_.sessions.push_back(std::move(row));
   }
 }
@@ -1451,17 +1448,12 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
     }
     RefreshFromMessaging();
     ContactsController::Instance().Refresh();
-    const std::string active_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-    auto& inbox = MessagingHub::Instance().Inbox();
-    if (inbox.IsAiHomeThread(active_id)) {
-      ShellHost::Instance().SelectNavTab(NavTab::Home);
-    } else {
+    if (!MessagingHub::Instance().Inbox().ActiveThreadId().empty()) {
       ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-    }
-    ShellHost::Instance().SetPrimaryPane("chat");
-    if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact &&
-        ShellHost::Instance().State().nav_tab == NavTab::Sessions) {
-      ShellHost::Instance().OpenCompactChat();
+      ShellHost::Instance().SetPrimaryPane("chat");
+      if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
+        ShellHost::Instance().OpenCompactChat();
+      }
     }
     return;
   }
@@ -1892,10 +1884,30 @@ void ChatController::UpdateSidebarPreview(const std::string& preview_text) {
   DirtyShell();
 }
 
+bool ChatController::EnsureHomeOutboundSession() {
+  if (!messaging_ready_) {
+    return false;
+  }
+  if (!MessagingHub::Instance().Inbox().CreateNewAiThread()) {
+    return false;
+  }
+  ShellHost::Instance().SelectNavTab(NavTab::Sessions);
+  ShellHost::Instance().SetPrimaryPane("chat");
+  FinalizeThreadDisplay();
+  ShellHost::Instance().DirtyWindow();
+  return true;
+}
+
 void ChatController::SendUserText(const std::string& text, std::optional<std::string> user_payload) {
   const std::string trimmed = Trim(text);
   if (trimmed.empty() || chat_.loading) {
     return;
+  }
+
+  if (ShellHost::Instance().State().nav_tab == NavTab::Home) {
+    if (!EnsureHomeOutboundSession()) {
+      return;
+    }
   }
 
   for (auto& [id, widgets] : widgets_by_entry_) {

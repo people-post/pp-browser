@@ -104,5 +104,28 @@ TEST(InboxControllerUnreadTest, InactiveThreadIncrementsOnInbound) {
   EXPECT_EQ(loaded->value().preview, "ping");
 }
 
+TEST(InboxControllerTest, CreateClearCloseLeavesNoForcedAiHome) {
+  InboxTestEnv env("ai_session_lifecycle");
+
+  auto listed = env.inbox->ListThreads();
+  ASSERT_TRUE(listed);
+  EXPECT_TRUE(listed->empty());
+  EXPECT_TRUE(env.inbox->ActiveThreadId().empty());
+
+  auto created = env.inbox->CreateNewAiThread();
+  ASSERT_TRUE(created);
+  EXPECT_EQ(created->kind, ThreadKind::Ai);
+  EXPECT_EQ(env.inbox->ActiveThreadId(), created->id);
+
+  env.inbox->ClearActiveThread();
+  EXPECT_TRUE(env.inbox->ActiveThreadId().empty());
+
+  ASSERT_TRUE(env.inbox->CloseThread(created->id));
+  listed = env.inbox->ListThreads();
+  ASSERT_TRUE(listed);
+  EXPECT_TRUE(listed->empty());
+  EXPECT_TRUE(env.inbox->ActiveThreadId().empty());
+}
+
 } // namespace
 } // namespace pbr

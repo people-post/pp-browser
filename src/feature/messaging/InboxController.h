@@ -25,7 +25,7 @@ public:
   const std::string& ActiveThreadId() const { return active_thread_id_; }
 
   Roe<Thread> OpenThread(const std::string& thread_id);
-  Roe<Thread> CreateAiHomeThread();
+  void ClearActiveThread();
   Roe<Thread> CreateNewAiThread();
   Roe<Thread> CreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id);
@@ -33,7 +33,6 @@ public:
   Roe<Thread> CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
 
-  bool IsAiHomeThread(const std::string& thread_id) const;
   Roe<void> CloseThread(const std::string& thread_id);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
@@ -58,7 +57,6 @@ public:
   void NotifyThreadChanged();
 
 private:
-  Roe<void> EnsureAiHomeThread();
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
   std::string ResolveRowClass(const std::string& sender_contact_id) const;
   std::string BuildMessageRml(const ThreadMessage& message) const;
@@ -73,7 +71,6 @@ private:
   PeerDisplayResolver& labels_;
   DirectoryShadowCache* shadows_ = nullptr;
   std::string active_thread_id_;
-  std::string ai_home_thread_id_;
   ThreadChangedCallback on_thread_changed_;
 };
 

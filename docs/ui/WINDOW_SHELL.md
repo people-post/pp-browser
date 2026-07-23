@@ -37,7 +37,7 @@ Primary is **tab-scoped drill-down content**, not always chat. Examples:
 
 | Tab | Secondary | Primary (when selected) |
 |-----|-----------|-------------------------|
-| Home (default) | (none) | AI home chat + composer |
+| Home (default) | (none) | AI start landing + composer (no active thread) |
 | Sessions | Session list | Chat + composer |
 | Contacts | Contact list | Contact detail |
 
@@ -116,7 +116,7 @@ Primary panes may set `provides_composer = true` on `PaneSpec`. The shell mounts
 | Expanded | `#pane-composer-{key}` | Below `#pane-body-{key}` in the primary column |
 | Compact | `#shell-composer-mount` | Home tab: below chat in nav page; Sessions overlay: inside overlay |
 
-On compact, the composer appears on the Home tab (inline) or inside the Sessions chat overlay after selecting a thread. Sessions and Contacts list pages do not show the composer.
+On compact, the composer appears on the Home landing (inline) or inside the Sessions chat overlay after selecting a thread (or after starting a chat from Home). Sessions and Contacts list pages do not show the composer.
 
 ## C++ usage
 

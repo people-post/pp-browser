@@ -2,7 +2,7 @@
 
 **Tier:** architecture
 
-Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI home, direct, and future group threads; local persistence as source of truth; HTTP relay/directory/registration transport against Brief by default (`https://www.brief.global/api/relay`).
+Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI sessions, direct, and group threads; local persistence as source of truth; HTTP relay/directory/registration transport against Brief by default (`https://www.brief.global/api/relay`).
 
 **Normative wire shapes:** [WIRE_SCHEMAS.md](../contracts/WIRE_SCHEMAS.md). **E2E crypto:** [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). **Compatibility:** [COMPATIBILITY.md](../contracts/COMPATIBILITY.md).
 
@@ -158,7 +158,7 @@ See [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-ro
   - **Chat with AI** — new AI thread
   - **Message a contact** — switch to Contacts to pick a peer (then Secure / Public on contact detail)
   - **Find someone** — new AI thread with draft prefilled for directory discovery
-- Home empty state **Message a contact** still switches to Contacts.
+- Home is a prompt-first landing (no sticky AI thread). First send/suggestion creates a new AI session and switches to Sessions. **Message a contact** still switches to Contacts.
 - **Contacts tab** header **`+`** opens a menu:
   - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open editable detail (display name, nickname, optional relay ID, peer ID, multiaddrs); debounced save
   - **Find someone** — same as Sessions find flow

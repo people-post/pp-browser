@@ -160,6 +160,8 @@ private:
   void OnImportPsk();
   void OnVerifyPsk();
   void OnRotatePskExport();
+  /** From Home landing: mint AI thread, switch to Sessions, open chat. */
+  bool EnsureHomeOutboundSession();
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
   void SendChatAction(const std::string& entry_id, int action_index);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);

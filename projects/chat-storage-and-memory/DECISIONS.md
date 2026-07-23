@@ -68,7 +68,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-27  
 **Decision:** Target state uses `IThreadStore` / `ThreadMessage` as the only durable transcript for AI and P2P. In-memory `Conversation` becomes an implementation detail or is removed from hot paths when messaging is enabled.  
-**Rationale:** [AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md) already describes conversation-first design; dual models caused persistence gaps for AI home.  
+**Rationale:** [AGENT_CONVERSATION.md](../../docs/ui/AGENT_CONVERSATION.md) already describes conversation-first design; dual models caused persistence gaps for AI sessions.  
 **Alternatives:** Persist `Conversation` separately and sync to threads; SQLite-only unified table without JSON migration path.
 
 ---

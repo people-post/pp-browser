@@ -43,53 +43,7 @@ InboxController::InboxController(IThreadStore& store, ContactsStore& contacts, P
   redirectLogger("InboxController");
 }
 
-Roe<void> InboxController::EnsureAiHomeThread() {
-  if (!ai_home_thread_id_.empty()) {
-    if (auto thread = store_.GetThread(ai_home_thread_id_)) {
-      if (*thread) {
-        return {};
-      }
-    }
-  }
-
-  auto threads = store_.ListThreads();
-  if (!threads) {
-    return threads.error();
-  }
-
-  for (const Thread& thread : *threads) {
-    if (thread.kind == ThreadKind::Ai) {
-      ai_home_thread_id_ = thread.id;
-      if (active_thread_id_.empty()) {
-        active_thread_id_ = thread.id;
-      }
-      return {};
-    }
-  }
-
-  Thread thread;
-  thread.id = util::GenerateUuid();
-  thread.kind = ThreadKind::Ai;
-  thread.title = "pp-browser";
-  thread.preview = "Ask anything...";
-  thread.updated_at = util::NowUnixMs();
-  auto saved = store_.UpsertThread(thread);
-  if (!saved) {
-    return saved.error();
-  }
-
-  ai_home_thread_id_ = saved->id;
-  if (active_thread_id_.empty()) {
-    active_thread_id_ = saved->id;
-  }
-  return {};
-}
-
 Roe<std::vector<Thread>> InboxController::ListThreads() {
-  auto ensure = EnsureAiHomeThread();
-  if (!ensure) {
-    return ensure.error();
-  }
   return store_.ListThreads();
 }
 
@@ -124,24 +78,17 @@ Roe<Thread> InboxController::OpenThread(const std::string& thread_id) {
   return **thread;
 }
 
-Roe<Thread> InboxController::CreateAiHomeThread() {
-  auto ensure = EnsureAiHomeThread();
-  if (!ensure) {
-    return ensure.error();
+void InboxController::ClearActiveThread() {
+  if (active_thread_id_.empty()) {
+    return;
   }
-  auto thread = store_.GetThread(ai_home_thread_id_);
-  if (!thread || !*thread) {
-    return Error("Failed to load AI home thread");
+  active_thread_id_.clear();
+  if (on_thread_changed_) {
+    on_thread_changed_();
   }
-  return OpenThread(ai_home_thread_id_);
 }
 
 Roe<Thread> InboxController::CreateNewAiThread() {
-  auto ensure = EnsureAiHomeThread();
-  if (!ensure) {
-    return ensure.error();
-  }
-
   Thread thread;
   thread.id = util::GenerateUuid();
   thread.kind = ThreadKind::Ai;
@@ -156,15 +103,7 @@ Roe<Thread> InboxController::CreateNewAiThread() {
   return OpenThread(saved->id);
 }
 
-bool InboxController::IsAiHomeThread(const std::string& thread_id) const {
-  return !ai_home_thread_id_.empty() && thread_id == ai_home_thread_id_;
-}
-
 Roe<void> InboxController::CloseThread(const std::string& thread_id) {
-  if (IsAiHomeThread(thread_id)) {
-    return Error("Cannot close AI home thread");
-  }
-
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -181,11 +120,6 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
 
   if (was_active) {
     active_thread_id_.clear();
-    if (auto ensure = EnsureAiHomeThread(); ensure) {
-      if (auto opened = OpenThread(ai_home_thread_id_)) {
-        return {};
-      }
-    }
     auto threads = store_.ListThreads();
     if (threads) {
       for (const Thread& candidate : *threads) {
@@ -341,7 +275,7 @@ void InboxController::MarkThreadRead(const std::string& thread_id) {
 }
 
 void InboxController::IncrementUnread(const std::string& thread_id, const int delta) {
-  if (delta <= 0 || thread_id.empty() || thread_id == active_thread_id_ || IsAiHomeThread(thread_id)) {
+  if (delta <= 0 || thread_id.empty() || thread_id == active_thread_id_) {
     return;
   }
   auto thread = store_.GetThread(thread_id);
@@ -370,7 +304,7 @@ void InboxController::OnInboundMessagePersisted(const std::string& thread_id,
     updated.preview = *preview;
     changed = true;
   }
-  if (thread_id != active_thread_id_ && !IsAiHomeThread(thread_id)) {
+  if (thread_id != active_thread_id_) {
     updated.unread_count += 1;
     changed = true;
   }
@@ -388,9 +322,6 @@ int InboxController::SumUnread() const {
   }
   int total = 0;
   for (const Thread& thread : *threads) {
-    if (IsAiHomeThread(thread.id)) {
-      continue;
-    }
     total += thread.unread_count;
   }
   return total;

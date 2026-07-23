@@ -208,7 +208,6 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
       inbox_->NotifyThreadChanged();
     }
   });
-  (void)inbox_->CreateAiHomeThread();
 
   ProfileSecretsService& secrets = ProfileSecretsService::Instance();
   secrets.RegisterDekConsumer(identity_.get());

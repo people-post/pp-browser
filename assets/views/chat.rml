@@ -5,31 +5,33 @@
      data-class-chat-shell--group="thread_is_group"
      data-class-chat-shell--e2e="thread_is_private">
   <div class="chat-header">
-    <div class="chat-header-main">
-      <div class="chat-header-type-row">
-        <div class="chat-header-type-icon" data-if="thread_is_ai">
-          <svg src="../icons/sparkle.svg" width="16" height="16" crop-to-content="true"></svg>
+    <div class="chat-header-main" data-model="window" data-if="nav_tab != 'home'">
+      <div data-model="chat">
+        <div class="chat-header-type-row">
+          <div class="chat-header-type-icon" data-if="thread_is_ai">
+            <svg src="../icons/sparkle.svg" width="16" height="16" crop-to-content="true"></svg>
+          </div>
+          <div class="chat-header-type-icon" data-if="thread_is_private">
+            <svg src="../icons/lock.svg" width="16" height="16" crop-to-content="true"></svg>
+          </div>
+          <div class="chat-header-type-icon" data-if="thread_is_public">
+            <svg src="../icons/message.svg" width="16" height="16" crop-to-content="true"></svg>
+          </div>
+          <div class="chat-header-type-icon" data-if="thread_is_group">
+            <svg src="../icons/group.svg" width="16" height="16" crop-to-content="true"></svg>
+          </div>
+          <span class="text-xs chat-type-badge" data-if="thread_is_ai">Assistant</span>
+          <span class="text-xs chat-type-badge" data-if="thread_is_private">Private</span>
+          <span class="text-xs chat-type-badge" data-if="thread_is_public">Chat</span>
+          <span class="text-xs chat-type-badge" data-if="thread_is_group">Group</span>
         </div>
-        <div class="chat-header-type-icon" data-if="thread_is_private">
-          <svg src="../icons/lock.svg" width="16" height="16" crop-to-content="true"></svg>
-        </div>
-        <div class="chat-header-type-icon" data-if="thread_is_public">
-          <svg src="../icons/message.svg" width="16" height="16" crop-to-content="true"></svg>
-        </div>
-        <div class="chat-header-type-icon" data-if="thread_is_group">
-          <svg src="../icons/group.svg" width="16" height="16" crop-to-content="true"></svg>
-        </div>
-        <span class="text-xs chat-type-badge" data-if="thread_is_ai">Assistant</span>
-        <span class="text-xs chat-type-badge" data-if="thread_is_private">Private</span>
-        <span class="text-xs chat-type-badge" data-if="thread_is_public">Chat</span>
-        <span class="text-xs chat-type-badge" data-if="thread_is_group">Group</span>
+        <button class="heading-1 chat-header-title chat-header-title-btn" type="button"
+                data-if="show_peer_sheet" data-rml="thread_title"
+                data-event-click="open_peer_sheet()"></button>
+        <h1 class="heading-1 chat-header-title" data-if="!show_peer_sheet" data-rml="thread_title"></h1>
+        <p class="text muted" data-rml="thread_subtitle"></p>
+        <p class="text-xs chat-peer-link" data-if="show_peer_link" data-rml="peer_link_status"></p>
       </div>
-      <button class="heading-1 chat-header-title chat-header-title-btn" type="button"
-              data-if="show_peer_sheet" data-rml="thread_title"
-              data-event-click="open_peer_sheet()"></button>
-      <h1 class="heading-1 chat-header-title" data-if="!show_peer_sheet" data-rml="thread_title"></h1>
-      <p class="text muted" data-rml="thread_subtitle"></p>
-      <p class="text-xs chat-peer-link" data-if="show_peer_link" data-rml="peer_link_status"></p>
     </div>
     <div class="chat-header-actions row">
       <button class="chat-header-more-btn" type="button" data-if="show_thread_menu"
@@ -37,7 +39,7 @@
         <svg src="../icons/more.svg"></svg>
       </button>
       <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
-              data-if="auxiliary_available && (layout_mode == 'expanded' || compact_chat_open || nav_tab == 'home')"
+              data-if="auxiliary_available && (layout_mode == 'expanded' || compact_chat_open)"
               data-event-click="toggle_auxiliary()">Details</button>
       <button class="shell-profile-btn" type="button" data-model="window"
               data-if="nav_tab == 'home' && !account_sheet_open"
