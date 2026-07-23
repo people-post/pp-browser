@@ -95,6 +95,7 @@ private:
     Rml::String pin_change_new;
     Rml::String pin_change_confirm;
     Rml::String group_invite_policy = "contacts_only";
+    Rml::String group_invite_policy_label = "Contacts only";
   };
 
   SettingsController();
@@ -106,13 +107,12 @@ private:
   static void OnLlmPresetChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChooseThemeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChooseLanguageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnAppearanceFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnChooseGroupInvitePolicyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleShowNotificationsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleReduceTransparencyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ToggleAutoRenewRegistrationCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnIntegrationsFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnNetworkFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnSecurityFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnProfileFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnProfileNicknameCommitCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRotateBriefLlmKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -156,6 +156,8 @@ private:
   void ApplyThemeChoice(const std::string& appearance_pref);
   void OnChooseLanguage(Rml::Event& ev);
   void ApplyLanguageChoice(const std::string& language_pref);
+  void OnChooseGroupInvitePolicy(Rml::Event& ev);
+  void ApplyGroupInvitePolicyChoice(const std::string& policy);
 
   std::vector<std::unique_ptr<SettingsSectionHandler>> section_handlers_;
   std::unordered_map<std::string, SettingsSectionHandler*> section_handlers_by_id_;

@@ -17,13 +17,14 @@
         <p class="text muted me-profile-meta" data-if="profile_registration_expires != ''">
           Expires: <span data-rml="profile_registration_expires"></span>
         </p>
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.auto_renew}}</span>
-          <select class="field" data-value="auto_renew_registration" data-event-change="on_profile_field_changed()">
-            <option value="auto">{{i18n:settings.auto_renew.auto}}</option>
-            <option value="off">{{i18n:settings.auto_renew.off}}</option>
-          </select>
-        </label>
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.auto_renew}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="auto_renew_registration == 'auto'"
+                  data-event-click="toggle_auto_renew_registration()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
         <div class="settings-toggle-row row">
           <span class="settings-label settings-toggle-label">{{i18n:settings.notifications}}</span>
           <button class="settings-switch" type="button"
@@ -32,7 +33,7 @@
             <div class="settings-switch-knob"></div>
           </button>
         </div>
-        <p class="text muted">Off silences OS banners and unregisters push; inbox still syncs in the background.</p>
+        <p class="text muted settings-help">Off silences OS banners and unregisters push; inbox still syncs in the background.</p>
         <div class="me-profile-actions row">
           <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
             <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
@@ -147,20 +148,24 @@
       </div>
 
       <div class="settings-section stack" data-if="selected_id == 'appearance'">
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.theme.label}}</span>
-          <button class="field settings-language-button" type="button" data-event-click="on_choose_theme()">
-            <span data-rml="appearance_label"></span>
-          </button>
-        </label>
-        <p class="text muted">{{i18n:settings.theme.help}}</p>
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.language.label}}</span>
-          <button class="field settings-language-button" type="button" data-event-click="on_choose_language()">
-            <span data-rml="language_label"></span>
-          </button>
-        </label>
-        <p class="text muted">{{i18n:settings.language.help}}</p>
+        <button class="settings-toggle-row settings-choice-row row" type="button"
+                data-event-click="on_choose_theme()">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.theme.label}}</span>
+          <span class="settings-choice-value row">
+            <span class="settings-choice-value-text" data-rml="appearance_label"></span>
+            <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+          </span>
+        </button>
+        <p class="text muted settings-help">{{i18n:settings.theme.help}}</p>
+        <button class="settings-toggle-row settings-choice-row row" type="button"
+                data-event-click="on_choose_language()">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.language.label}}</span>
+          <span class="settings-choice-value row">
+            <span class="settings-choice-value-text" data-rml="language_label"></span>
+            <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+          </span>
+        </button>
+        <p class="text muted settings-help">{{i18n:settings.language.help}}</p>
         <div class="settings-toggle-row row">
           <span class="settings-label settings-toggle-label">{{i18n:settings.reduce_transparency.label}}</span>
           <button class="settings-switch" type="button"
@@ -169,7 +174,7 @@
             <div class="settings-switch-knob"></div>
           </button>
         </div>
-        <p class="text muted">{{i18n:settings.reduce_transparency.help}}</p>
+        <p class="text muted settings-help">{{i18n:settings.reduce_transparency.help}}</p>
         <div class="settings-actions row">
           <button class="btn btn-secondary" type="button" data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>
         </div>
@@ -203,15 +208,15 @@
         <p class="text muted" data-if="!security_can_change_pin && pin_protection_status != 'Not set up'">
           Unlock your profile to change the PIN.
         </p>
-        <label class="settings-field">
-          <span class="settings-label">Group invites</span>
-          <select class="field" data-value="group_invite_policy" data-event-change="on_security_field_changed()">
-            <option value="everyone">Everyone</option>
-            <option value="contacts_only">Contacts only</option>
-            <option value="nobody">Nobody</option>
-          </select>
-        </label>
-        <p class="text muted">Controls who can invite you to group chats. Separate from direct messages.</p>
+        <button class="settings-toggle-row settings-choice-row row" type="button"
+                data-event-click="on_choose_group_invite_policy()">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.security.group_invites}}</span>
+          <span class="settings-choice-value row">
+            <span class="settings-choice-value-text" data-rml="group_invite_policy_label"></span>
+            <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+          </span>
+        </button>
+        <p class="text muted settings-help">{{i18n:settings.security.group_invites.help}}</p>
       </div>
 
       <div class="settings-section stack" data-if="selected_id == 'storage'">

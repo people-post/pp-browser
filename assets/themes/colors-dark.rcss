@@ -615,6 +615,10 @@ select selectbox option:hover {
   box-shadow: 0 1dp 3dp #00000066;
 }
 
+.settings-choice-value-text {
+  color: #9ca3af;
+}
+
 .settings-danger-zone {
   border-top: 1dp #374151;
 }

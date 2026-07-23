@@ -1927,7 +1927,7 @@ select selectbox option {
   flex: 1;
   min-width: 0;
   margin-bottom: 0;
-  font-size: 13dp;
+  font-size: 15dp;
 }
 
 .settings-switch {
@@ -1959,6 +1959,35 @@ select selectbox option {
 
 .settings-switch--on .settings-switch-knob {
   transform: translateX(16dp);
+}
+
+.settings-choice-row {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-choice-value {
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4dp;
+}
+
+.settings-choice-value-text {
+  font-size: 13dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160dp;
+}
+
+.settings-help {
+  font-size: 12dp;
+  margin-top: 0;
+  margin-bottom: 4dp;
 }
 
 .settings-path {
@@ -2527,14 +2556,4 @@ select selectbox option {
 
 .context-menu-item--selected .context-menu-item-label {
   font-weight: bold;
-}
-
-.settings-language-button {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  text-align: left;
-  cursor: pointer;
 }

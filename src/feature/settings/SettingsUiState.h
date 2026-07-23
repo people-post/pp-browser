@@ -35,9 +35,9 @@ struct SettingsUiState {
   std::string profile_register_label = "Register on network";
   bool profile_show_register = true;
   bool profile_show_rotate = false;
-  /** UI select value: "auto" or "off". */
+  /** UI switch value: "auto" or "off". */
   std::string auto_renew_registration = "auto";
-  /** UI select value: "on" or "off" (P005). */
+  /** UI switch value: "on" or "off" (P005). */
   std::string show_notifications = "on";
   std::string brief_llm_key_masked;
   std::string appearance = "system";
@@ -58,6 +58,8 @@ struct SettingsUiState {
   bool security_can_change_pin = false;
   /** G007 — everyone | contacts_only | nobody */
   std::string group_invite_policy = "contacts_only";
+  /** Display label for the group-invite picker value. */
+  std::string group_invite_policy_label = "Contacts only";
 };
 
 struct SettingsSectionListItem {

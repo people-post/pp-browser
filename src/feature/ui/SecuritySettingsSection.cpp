@@ -8,6 +8,16 @@
 
 namespace pbr {
 
+std::string GroupInvitePolicyDisplayLabel(const std::string& policy) {
+  if (policy == "everyone") {
+    return Tr("settings.security.group_invites.everyone");
+  }
+  if (policy == "nobody") {
+    return Tr("settings.security.group_invites.nobody");
+  }
+  return Tr("settings.security.group_invites.contacts_only");
+}
+
 const char* SecuritySettingsSection::Id() const {
   return "security";
 }
@@ -22,6 +32,7 @@ SettingsFlushMode SecuritySettingsSection::FlushMode() const {
 
 void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.group_invite_policy = bootstrap.profile_prefs.group_invite_policy;
+  state.group_invite_policy_label = GroupInvitePolicyDisplayLabel(state.group_invite_policy);
   if (!ProfileSecretsService::Instance().IsInitialized() || !ProfileSecretsService::Instance().HasVault()) {
     state.pin_protection_status = "Not set up";
     state.security_can_change_pin = false;

@@ -2,14 +2,18 @@
 
 #include "feature/settings/SettingsSectionHandler.h"
 
+#include <string>
+
 namespace pbr {
+
+std::string GroupInvitePolicyDisplayLabel(const std::string& policy);
 
 class SecuritySettingsSection final : public SettingsSectionHandler {
 public:
   const char* Id() const override;
   SettingsSectionListItem ListItem() const override;
   SettingsFlushMode FlushMode() const override;
-  bool IsWritable() const override { return false; }
+  bool IsWritable() const override { return true; }
 
   void SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) override;
   bool IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const override;

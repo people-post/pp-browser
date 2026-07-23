@@ -92,6 +92,11 @@
     "settings.security.change_pin": "Change PIN",
     "settings.security.default_hint": "Your keys use the app default. Change it below for stronger protection.",
     "settings.security.not_setup_hint": "Key protection is created when you first use secure messaging or register on the network.",
+    "settings.security.group_invites": "Group invites",
+    "settings.security.group_invites.everyone": "Everyone",
+    "settings.security.group_invites.contacts_only": "Contacts only",
+    "settings.security.group_invites.nobody": "Nobody",
+    "settings.security.group_invites.help": "Controls who can invite you to group chats. Separate from direct messages.",
 
     "settings.storage.config_dir": "Config directory",
     "settings.storage.data_dir": "Data directory",

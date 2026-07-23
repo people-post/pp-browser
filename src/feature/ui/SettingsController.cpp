@@ -40,6 +40,39 @@ Rml::String EventValue(Rml::Event& ev) {
   return ev.GetParameter<Rml::String>("value", Rml::String());
 }
 
+/** Anchor ShowActions float menus under the right side of a settings choice row. */
+Rml::Vector2i ChoiceRowMenuPosition(Rml::Event& ev) {
+  Rml::Element* target = ev.GetCurrentElement();
+  if (!target) {
+    target = ev.GetTargetElement();
+  }
+  Rml::Vector2i position{0, 0};
+  if (!target) {
+    return position;
+  }
+
+  Rml::Element* anchor = target;
+  const int child_count = target->GetNumChildren();
+  for (int i = 0; i < child_count; ++i) {
+    Rml::Element* child = target->GetChild(i);
+    if (child && child->IsClassSet("settings-choice-value")) {
+      anchor = child;
+      break;
+    }
+  }
+
+  const Rml::Vector2f offset = anchor->GetAbsoluteOffset(Rml::BoxArea::Border);
+  const Rml::Vector2f size = anchor->GetBox().GetSize(Rml::BoxArea::Border);
+  // Match .context-menu-panel min-width so the menu's right edge lines up with the value.
+  constexpr float kMenuMinWidthPx = 180.0f;
+  position.x = static_cast<int>(offset.x + size.x - kMenuMinWidthPx);
+  if (position.x < 0) {
+    position.x = static_cast<int>(offset.x);
+  }
+  position.y = static_cast<int>(offset.y + size.y + 4.0f);
+  return position;
+}
+
 } // namespace
 
 SettingsController::SettingsController() {
@@ -110,6 +143,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
+  ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
 
   ui_state_.mcp_servers.clear();
   ui_state_.mcp_servers.reserve(bindings_.mcp_servers.size());
@@ -159,6 +193,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
+  bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
 
   bindings_.mcp_servers.clear();
   bindings_.mcp_servers.reserve(ui_state_.mcp_servers.size());
@@ -253,6 +288,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
+    ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
     ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
     ctor.Bind("pin_change_new", &controller.bindings_.pin_change_new);
     ctor.Bind("pin_change_confirm", &controller.bindings_.pin_change_confirm);
@@ -264,13 +300,12 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_llm_preset_changed", &SettingsController::OnLlmPresetChangedCallback);
     ctor.BindEventCallback("on_choose_theme", &SettingsController::OnChooseThemeCallback);
     ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
-    ctor.BindEventCallback("on_appearance_field_changed", &SettingsController::OnAppearanceFieldChangedCallback);
+    ctor.BindEventCallback("on_choose_group_invite_policy", &SettingsController::OnChooseGroupInvitePolicyCallback);
     ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
     ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
+    ctor.BindEventCallback("toggle_auto_renew_registration", &SettingsController::ToggleAutoRenewRegistrationCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
-    ctor.BindEventCallback("on_security_field_changed", &SettingsController::OnSecurityFieldChangedCallback);
-    ctor.BindEventCallback("on_profile_field_changed", &SettingsController::OnProfileFieldChangedCallback);
     ctor.BindEventCallback("on_profile_nickname_commit", &SettingsController::OnProfileNicknameCommitCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
     ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
@@ -329,6 +364,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "pin_protection_status");
   host.Dirty("settings", "security_can_change_pin");
   host.Dirty("settings", "group_invite_policy");
+  host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "pin_change_old");
   host.Dirty("settings", "pin_change_new");
   host.Dirty("settings", "pin_change_confirm");
@@ -697,17 +733,7 @@ void SettingsController::OnChooseThemeCallback(Rml::DataModelHandle /*model*/, R
 }
 
 void SettingsController::OnChooseTheme(Rml::Event& ev) {
-  Rml::Element* target = ev.GetCurrentElement();
-  if (!target) {
-    target = ev.GetTargetElement();
-  }
-  Rml::Vector2i position{0, 0};
-  if (target) {
-    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
-    const Rml::Box& box = target->GetBox();
-    position.x = static_cast<int>(offset.x);
-    position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + 4.0f);
-  }
+  const Rml::Vector2i position = ChoiceRowMenuPosition(ev);
 
   const std::string current =
       bindings_.appearance.empty() ? "system" : std::string(bindings_.appearance.c_str());
@@ -750,17 +776,7 @@ void SettingsController::OnChooseLanguageCallback(Rml::DataModelHandle /*model*/
 }
 
 void SettingsController::OnChooseLanguage(Rml::Event& ev) {
-  Rml::Element* target = ev.GetCurrentElement();
-  if (!target) {
-    target = ev.GetTargetElement();
-  }
-  Rml::Vector2i position{0, 0};
-  if (target) {
-    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
-    const Rml::Box& box = target->GetBox();
-    position.x = static_cast<int>(offset.x);
-    position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + 4.0f);
-  }
+  const Rml::Vector2i position = ChoiceRowMenuPosition(ev);
 
   auto& loc = LocalizationService::Instance();
   const std::string current = bindings_.language.empty() ? "system" : std::string(bindings_.language.c_str());
@@ -806,6 +822,50 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
   DirtyAll();
 }
 
+void SettingsController::OnChooseGroupInvitePolicyCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
+                                                           const Rml::VariantList& /*args*/) {
+  Instance().OnChooseGroupInvitePolicy(ev);
+}
+
+void SettingsController::OnChooseGroupInvitePolicy(Rml::Event& ev) {
+  const Rml::Vector2i position = ChoiceRowMenuPosition(ev);
+
+  const std::string current = bindings_.group_invite_policy.empty()
+                                  ? "contacts_only"
+                                  : std::string(bindings_.group_invite_policy.c_str());
+
+  static const char* kPolicyIds[] = {"everyone", "contacts_only", "nobody"};
+  std::vector<ContextMenuAction> actions;
+  actions.reserve(3);
+  for (const char* id : kPolicyIds) {
+    const std::string policy_id = id;
+    actions.push_back({.id = policy_id,
+                       .label = GroupInvitePolicyDisplayLabel(policy_id),
+                       .enabled = {},
+                       .run =
+                           [this, policy_id]() {
+                             ApplyGroupInvitePolicyChoice(policy_id);
+                           },
+                       .icon = {},
+                       .danger = false,
+                       .selected = current == policy_id});
+  }
+
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  bindings_.group_invite_policy = policy.c_str();
+  bindings_.group_invite_policy_label = GroupInvitePolicyDisplayLabel(policy).c_str();
+  PullBindingsToUiState();
+  MarkSectionDirty("security");
+  FlushPending();
+  DirtyAll();
+}
+
 void SettingsController::RefreshLocalizedChrome() {
   InitSections();
   SyncBindingsFromSession();
@@ -827,39 +887,11 @@ void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*mo
   Instance().MarkSectionDirty("network");
 }
 
-void SettingsController::OnSecurityFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                        const Rml::VariantList& /*args*/) {
-  Instance().PullBindingsToUiState();
-  Instance().MarkSectionDirty("security");
-}
-
-void SettingsController::OnProfileFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                       const Rml::VariantList& /*args*/) {
-  auto& controller = Instance();
-  const Rml::String value = EventValue(ev);
-  if (value == "auto" || value == "off") {
-    controller.bindings_.auto_renew_registration = value;
-  }
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("profile");
-}
-
 void SettingsController::OnProfileNicknameCommitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                          const Rml::VariantList& /*args*/) {
   // Persist on blur so soft-keyboard sessions are not interrupted by debounced
   // flush → toast/DirtyAll (dismisses and re-shows the OSK each keystroke).
   Instance().CommitProfileNickname(/*show_toast=*/false);
-}
-
-void SettingsController::OnAppearanceFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                        const Rml::VariantList& /*args*/) {
-  auto& controller = Instance();
-  const Rml::String value = EventValue(ev);
-  if (value == "on" || value == "off") {
-    controller.bindings_.reduce_transparency = value;
-  }
-  controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("appearance");
 }
 
 void SettingsController::ToggleShowNotificationsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -879,6 +911,16 @@ void SettingsController::ToggleReduceTransparencyCallback(Rml::DataModelHandle /
       controller.bindings_.reduce_transparency == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("appearance");
+  controller.DirtyAll();
+}
+
+void SettingsController::ToggleAutoRenewRegistrationCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                             const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.auto_renew_registration =
+      controller.bindings_.auto_renew_registration == "auto" ? "off" : "auto";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("profile");
   controller.DirtyAll();
 }
 

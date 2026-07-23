@@ -92,6 +92,11 @@
     "settings.security.change_pin": "更改 PIN",
     "settings.security.default_hint": "当前使用应用默认保护。建议在下方更改以提高安全性。",
     "settings.security.not_setup_hint": "首次使用安全消息或注册到网络时会创建密钥保护。",
+    "settings.security.group_invites": "群组邀请",
+    "settings.security.group_invites.everyone": "所有人",
+    "settings.security.group_invites.contacts_only": "仅联系人",
+    "settings.security.group_invites.nobody": "无人",
+    "settings.security.group_invites.help": "控制谁可以邀请你加入群聊。与私信无关。",
 
     "settings.storage.config_dir": "配置目录",
     "settings.storage.data_dir": "数据目录",
