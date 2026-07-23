@@ -116,7 +116,7 @@ Home is a dedicated primary pane (`home.rml`), not the chat panel:
 | Top left | Brand wordmark (`app.name`) + tagline |
 | Top right | Profile button (account sheet) |
 | Optical center | Composer mounted into `#home-composer-mount` |
-| Below composer | Soft suggestion chips (`send_suggestion` / `new_message`) |
+| Below composer | Soft suggestion chips (`send_suggestion`: find someone, headlines, articles, get started, capabilities) |
 
 Sending from Home mints an AI thread, switches to Sessions, and opens chat (`EnsureHomeOutboundSession`). Compact Home mounts `#pane-body-home` inline in the nav page (no separate bottom composer slot).
 

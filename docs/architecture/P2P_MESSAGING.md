@@ -158,7 +158,7 @@ See [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-ro
   - **Chat with AI** — new AI thread
   - **Message a contact** — switch to Contacts to pick a peer (then Secure / Public on contact detail)
   - **Find someone** — new AI thread with draft prefilled for directory discovery
-- Home is a prompt-first landing (no sticky AI thread). First send/suggestion creates a new AI session and switches to Sessions. **Message a contact** still switches to Contacts.
+- Home is a prompt-first landing (no sticky AI thread). First send/suggestion creates a new AI session and switches to Sessions. Home chips are AI intents (find someone, headlines, articles, get started, capabilities); messaging entry points live on Sessions / Contacts.
 - **Contacts tab** header **`+`** opens a menu:
   - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open editable detail (display name, nickname, optional relay ID, peer ID, multiaddrs); debounced save
   - **Find someone** — same as Sessions find flow

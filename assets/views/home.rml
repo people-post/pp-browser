@@ -16,10 +16,10 @@
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">
         <button class="chat-suggestion" data-event-click="send_suggestion('Find someone on the network')">Find someone</button>
-        <button class="chat-suggestion" data-event-click="new_message()">Message a contact</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('Show my contacts')">Show my contacts</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('What conversations do I have?')">My conversations</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('help')">Show help</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('What is in the news today?')">Today's headlines</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('Show me recent articles')">Latest articles</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('Help me get started — suggest three useful things I can ask, with an example for each.')">Get started</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('What can you do?')">What can you do?</button>
       </div>
     </div>
   </div>
