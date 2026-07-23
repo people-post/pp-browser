@@ -236,9 +236,9 @@ See [WINDOW_SHELL.md](WINDOW_SHELL.md) for layout geometry (content scrolls unde
 
 ### Settings / Me
 
-`.settings-panel`, `.me-profile-card`, `.settings-list`, `.settings-row` (disclosure `button` with trailing chevron), `.settings-row-text`, `.settings-row-title`, `.settings-row-subtitle`, `.settings-row-chevron`, `.settings-row--active`, `.settings-back-btn`, `.settings-section`
+`.settings-panel`, `.me-profile-card`, `.settings-list`, `.settings-row` (disclosure `button` with trailing chevron), `.settings-row-text`, `.settings-row-title`, `.settings-row-subtitle`, `.settings-row-chevron`, `.settings-row--active`, `.settings-back-btn`, `.settings-section`, `.settings-toggle-row`, `.settings-toggle-label`, `.settings-switch`, `.settings-switch--on`, `.settings-switch-knob`
 
-Preference rows use an iOS-style disclosure pattern: full-width button, title/subtitle on the left, `chevron-right.svg` on the right. Inside the account sheet, scroll-aware dismiss may start on these rows when scrolled to top; a clean tap still opens the section.
+Preference rows use an iOS-style disclosure pattern: full-width button, title/subtitle on the left, `chevron-right.svg` on the right. Binary on/off prefs use an iOS-style switch (`.settings-switch` with sliding `.settings-switch-knob`; on state via `data-class-settings-switch--on`). Inside the account sheet, scroll-aware dismiss may start on these rows when scrolled to top; a clean tap still opens the section.
 
 ## RCSS file layout
 

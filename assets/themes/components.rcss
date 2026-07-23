@@ -1913,6 +1913,54 @@ select selectbox option {
   margin-bottom: 4dp;
 }
 
+.settings-toggle-row {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12dp;
+  min-height: 44dp;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-toggle-label {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+  font-size: 13dp;
+}
+
+.settings-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 42dp;
+  height: 26dp;
+  min-width: 42dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.settings-switch-knob {
+  position: absolute;
+  top: 2dp;
+  left: 2dp;
+  width: 22dp;
+  height: 22dp;
+  border-radius: 999dp;
+  box-sizing: border-box;
+  transform: translateX(0);
+  transition: transform 200ms;
+  pointer-events: none;
+}
+
+.settings-switch--on .settings-switch-knob {
+  transform: translateX(16dp);
+}
+
 .settings-path {
   font-size: 12dp;
   word-break: break-all;

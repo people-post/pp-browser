@@ -265,6 +265,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_choose_theme", &SettingsController::OnChooseThemeCallback);
     ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
     ctor.BindEventCallback("on_appearance_field_changed", &SettingsController::OnAppearanceFieldChangedCallback);
+    ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
+    ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
     ctor.BindEventCallback("on_security_field_changed", &SettingsController::OnSecurityFieldChangedCallback);
@@ -858,6 +860,26 @@ void SettingsController::OnAppearanceFieldChangedCallback(Rml::DataModelHandle /
   }
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("appearance");
+}
+
+void SettingsController::ToggleShowNotificationsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                         const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.show_notifications =
+      controller.bindings_.show_notifications == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("profile");
+  controller.DirtyAll();
+}
+
+void SettingsController::ToggleReduceTransparencyCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                          const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.reduce_transparency =
+      controller.bindings_.reduce_transparency == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("appearance");
+  controller.DirtyAll();
 }
 
 void SettingsController::OnRegisterProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

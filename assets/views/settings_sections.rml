@@ -24,13 +24,14 @@
             <option value="off">{{i18n:settings.auto_renew.off}}</option>
           </select>
         </label>
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.notifications}}</span>
-          <select class="field" data-value="show_notifications" data-event-change="on_profile_field_changed()">
-            <option value="on">{{i18n:settings.notifications.on}}</option>
-            <option value="off">{{i18n:settings.notifications.off}}</option>
-          </select>
-        </label>
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.notifications}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="show_notifications == 'on'"
+                  data-event-click="toggle_show_notifications()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
         <p class="text muted">Off silences OS banners and unregisters push; inbox still syncs in the background.</p>
         <div class="me-profile-actions row">
           <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
@@ -160,13 +161,14 @@
           </button>
         </label>
         <p class="text muted">{{i18n:settings.language.help}}</p>
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.reduce_transparency.label}}</span>
-          <select class="field" data-value="reduce_transparency" data-event-change="on_appearance_field_changed()">
-            <option value="off">{{i18n:settings.reduce_transparency.off}}</option>
-            <option value="on">{{i18n:settings.reduce_transparency.on}}</option>
-          </select>
-        </label>
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.reduce_transparency.label}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="reduce_transparency == 'on'"
+                  data-event-click="toggle_reduce_transparency()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
         <p class="text muted">{{i18n:settings.reduce_transparency.help}}</p>
         <div class="settings-actions row">
           <button class="btn btn-secondary" type="button" data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>

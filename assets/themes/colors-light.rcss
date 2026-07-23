@@ -598,6 +598,23 @@ select selectbox option:hover {
   color: #6b7280;
 }
 
+.settings-toggle-label {
+  color: #1a1a1a;
+}
+
+.settings-switch {
+  background-color: #d1d5db;
+}
+
+.settings-switch--on {
+  background-color: #4a6cf7;
+}
+
+.settings-switch-knob {
+  background-color: #ffffff;
+  box-shadow: 0 1dp 3dp #00000033;
+}
+
 .settings-danger-zone {
   border-top: 1dp #e5e7eb;
 }
