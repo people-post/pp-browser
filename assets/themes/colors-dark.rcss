@@ -63,6 +63,18 @@ selection {
   background-color: #ef4444;
 }
 
+.btn-danger-soft {
+  background-color: #450a0a;
+  color: #fca5a5;
+  border: 1dp #7f1d1d;
+}
+
+.btn-danger-soft:hover {
+  background-color: #7f1d1d;
+  color: #fecaca;
+  border: 1dp #f87171;
+}
+
 .field {
   background-color: #1f2937;
   color: #f9fafb;

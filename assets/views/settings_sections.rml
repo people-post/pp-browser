@@ -86,8 +86,9 @@
           <span class="settings-label">{{i18n:settings.llm.api_key_env}}</span>
           <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
         </label>
-        <div class="settings-actions row">
-          <button class="btn btn-secondary" type="button" data-event-click="reset_section('llm')">{{i18n:common.reset_defaults}}</button>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button"
+                  data-event-click="reset_section('llm')">{{i18n:common.reset_defaults}}</button>
         </div>
       </div>
 
@@ -124,7 +125,10 @@
         </div>
         <div class="settings-actions row">
           <button class="btn btn-secondary" type="button" data-event-click="add_mcp_server()">{{i18n:settings.integrations.add_mcp}}</button>
-          <button class="btn btn-secondary" type="button" data-event-click="reset_section('integrations')">{{i18n:common.reset_defaults}}</button>
+        </div>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button"
+                  data-event-click="reset_section('integrations')">{{i18n:common.reset_defaults}}</button>
         </div>
       </div>
 
@@ -142,8 +146,9 @@
           <span class="settings-label">{{i18n:settings.network.registration}}</span>
           <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
         </label>
-        <div class="settings-actions row">
-          <button class="btn btn-secondary" type="button" data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button"
+                  data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
         </div>
       </div>
 
@@ -175,8 +180,9 @@
           </button>
         </div>
         <p class="text muted settings-help">{{i18n:settings.reduce_transparency.help}}</p>
-        <div class="settings-actions row">
-          <button class="btn btn-secondary" type="button" data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>
+        <div class="settings-actions stack">
+          <button class="btn btn-secondary settings-action-bar" type="button"
+                  data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>
         </div>
       </div>
 
@@ -229,10 +235,9 @@
           <p class="text muted">
             Reset deletes chats, contacts, keys, and PIN for this profile. Machine settings are kept.
           </p>
-          <div class="settings-actions row">
-            <button class="btn btn-danger" type="button" data-event-click="reset_profile()">
-              Reset this profile
-            </button>
+          <div class="settings-actions stack">
+            <button class="btn btn-danger-soft settings-action-bar" type="button"
+                    data-event-click="reset_profile()">{{i18n:settings.storage.reset_profile}}</button>
           </div>
         </div>
       </div>

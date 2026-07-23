@@ -138,6 +138,7 @@ private:
   bool CloseSettingsDetailPane();
   void OnBackToList();
   void OnResetSection(const std::string& section_id);
+  void PerformResetSection(const std::string& section_id);
   void MarkSectionDirty(const std::string& section_id);
   void FlushPending();
   void FlushAllDirty();

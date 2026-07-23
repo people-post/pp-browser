@@ -651,6 +651,24 @@ void SettingsController::OnResetSection(const std::string& section_id) {
     return;
   }
 
+  ShellFeedback::ShowConfirm(
+      ShellHost::Instance().State(), Tr("settings.reset_defaults_confirm_title"),
+      Tr("settings.reset_defaults_confirm_message"),
+      [this, section_id](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        PerformResetSection(section_id);
+      });
+  ShellHost::Instance().RequestSyncLayout();
+}
+
+void SettingsController::PerformResetSection(const std::string& section_id) {
+  SettingsSectionHandler* handler = FindHandler(section_id);
+  if (!handler || !handler->IsWritable()) {
+    return;
+  }
+
   handler->ResetToDefaults(ui_state_, SessionStore::Instance());
   PushUiStateToBindings();
   DirtyAll();

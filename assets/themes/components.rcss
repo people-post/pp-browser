@@ -1997,6 +1997,20 @@ select selectbox option {
   justify-content: flex-end;
 }
 
+.settings-action-bar {
+  display: block;
+  width: 100%;
+  text-align: center;
+  box-sizing: border-box;
+  padding-top: 12dp;
+  padding-bottom: 12dp;
+}
+
+/* Pre-confirm destructive action: soft tint, not solid fill. */
+.btn-danger-soft {
+  border-width: 1dp;
+}
+
 .settings-danger-zone {
   margin-top: 24dp;
   padding-top: 16dp;
@@ -2005,7 +2019,6 @@ select selectbox option {
 
 .settings-danger-zone .settings-actions {
   margin-top: 4dp;
-  justify-content: flex-start;
 }
 
 .sidebar-footer {
