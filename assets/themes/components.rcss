@@ -1812,13 +1812,12 @@ select selectbox option {
   justify-content: space-between;
   width: 100%;
   min-height: 44dp;
-  margin-bottom: 4dp;
-  padding: 8dp 10dp;
-  border: 0;
-  border-radius: 6dp;
+  margin-bottom: 6dp;
+  padding: 12dp 10dp;
+  border-width: 1dp;
+  border-radius: 10dp;
   box-sizing: border-box;
   cursor: pointer;
-  background-color: transparent;
   text-align: left;
 }
 
@@ -1831,7 +1830,8 @@ select selectbox option {
 .settings-row-title {
   margin-top: 0;
   margin-bottom: 0;
-  font-size: 13dp;
+  font-size: 15dp;
+  font-weight: bold;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1840,7 +1840,7 @@ select selectbox option {
 .settings-row-subtitle {
   margin-top: 0;
   margin-bottom: 0;
-  font-size: 11dp;
+  font-size: 12dp;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1849,10 +1849,6 @@ select selectbox option {
 .settings-row-chevron {
   flex-shrink: 0;
   margin-left: 8dp;
-}
-
-.settings-row--active {
-  background-color: rgba(59, 130, 246, 0.12);
 }
 
 .settings-back-btn {

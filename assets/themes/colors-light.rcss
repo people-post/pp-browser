@@ -628,6 +628,25 @@ select selectbox option:hover {
   border: 1dp #e5e7eb;
 }
 
+.settings-row {
+  background-color: #ffffff;
+  border: 1dp #e5e7eb;
+  color: #1a1a1a;
+}
+
+.settings-row:hover {
+  background-color: #f9fafb;
+}
+
+.settings-row--active {
+  background-color: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+.settings-row-title {
+  color: #111111;
+}
+
 .contacts-find-btn {
   background-color: #4a6cf7;
   color: #ffffff;

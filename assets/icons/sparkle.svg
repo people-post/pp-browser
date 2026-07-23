@@ -4,4 +4,8 @@
   <path d="M 20 29.091 V 36.364" stroke="#374151" stroke-width="3.636" stroke-linecap="round"/>
   <path d="M 3.636 20 H 10.909" stroke="#374151" stroke-width="3.636" stroke-linecap="round"/>
   <path d="M 29.091 20 H 36.364" stroke="#374151" stroke-width="3.636" stroke-linecap="round"/>
+  <path d="M 8.636 8.636 L 13.818 13.818" stroke="#374151" stroke-width="3.636" stroke-linecap="round"/>
+  <path d="M 26.182 26.182 L 31.364 31.364" stroke="#374151" stroke-width="3.636" stroke-linecap="round"/>
+  <path d="M 31.364 8.636 L 26.182 13.818" stroke="#374151" stroke-width="3.636" stroke-linecap="round"/>
+  <path d="M 13.818 26.182 L 8.636 31.364" stroke="#374151" stroke-width="3.636" stroke-linecap="round"/>
 </svg>
