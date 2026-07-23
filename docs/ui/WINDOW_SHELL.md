@@ -127,7 +127,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `dismiss_banner()` | Hide banner |
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
 
-Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). On expanded, the Me attention dot is on the Me nav-rail tab; on compact, it is on the Home profile button. Refreshed by `BadgeAggregator` on messaging events.
+Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). `sessions_unread` is aggregate chat unread; `contacts_unread` is reserved for future contacts-tab queues (not chat unread — currently always 0). On expanded, the Me attention dot is on the Me nav-rail tab; on compact, it is on the Home profile button. Refreshed by `BadgeAggregator` on messaging events.
 
 Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`. The nav rail mounts from `assets/views/nav_rail.rml`.
 

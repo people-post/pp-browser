@@ -175,7 +175,7 @@ Three tiers reuse the same badge components; do not confuse them with semantic l
 | `.sidebar-unread` | Alias layout on session rows (extends `.badge-count`) |
 | `.contacts-trust-badge` | **Not** a notification badge — trust label only |
 
-Counts cap at **99+** in C++ (`FormatBadgeCount`). Home tab stays badge-free; Sessions and Contacts tabs show aggregate P2P unread via `BadgeAggregator`.
+Counts cap at **99+** in C++ (`FormatBadgeCount`). Home stays badge-free. **Sessions** shows aggregate P2P chat unread via `BadgeAggregator`. **Contacts** nav badge stays at 0 for now (Contacts is a people directory, not an inbox); later wire it only to contacts-tab action queues (e.g. intro/contact requests, pending invites Accept/Decline), never to chat unread. Per-row unread on the contacts list remains a secondary affordance.
 
 ## Component classes (reuse before adding rules)
 

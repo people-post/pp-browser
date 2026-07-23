@@ -49,8 +49,10 @@ void BadgeAggregator::Refresh() {
     const int total = inbox.SumUnread();
     const NavTab tab = ShellHost::Instance().State().nav_tab;
     const int deduction = ActiveThreadUnreadDeduction(inbox, tab);
+    // Sessions owns aggregate chat unread. Contacts nav stays at 0 until a
+    // contacts-tab queue exists (intro requests, pending invites, etc.).
     next.sessions_unread = std::max(0, total - deduction);
-    next.contacts_unread = total;
+    next.contacts_unread = 0;
     next.sessions_unread_display = FormatBadgeCount(next.sessions_unread).c_str();
     next.contacts_unread_display = FormatBadgeCount(next.contacts_unread).c_str();
   }
