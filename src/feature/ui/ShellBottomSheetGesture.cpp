@@ -15,6 +15,10 @@ constexpr float kDismissThresholdRatio = 0.25f;
 constexpr int kDragDeadzonePx = 8;
 constexpr float kScrollTopEpsilonPx = 1.f;
 
+int EventMouseX(const Rml::Event& event) {
+  return event.GetParameter<int>("mouse_x", 0);
+}
+
 int EventMouseY(const Rml::Event& event) {
   return event.GetParameter<int>("mouse_y", 0);
 }
@@ -22,7 +26,7 @@ int EventMouseY(const Rml::Event& event) {
 } // namespace
 
 void ShellBottomSheetGesture::Attach(Rml::Element* sheet, Rml::Context* context, float sheet_height_dp,
-                                     DismissCallback on_dismiss) {
+                                     DismissCallback on_dismiss, ShellGestureAxisLock* axis_lock) {
   Detach();
   if (!sheet || !context) {
     return;
@@ -32,13 +36,14 @@ void ShellBottomSheetGesture::Attach(Rml::Element* sheet, Rml::Context* context,
   context_ = context;
   sheet_height_dp_ = sheet_height_dp;
   on_dismiss_ = std::move(on_dismiss);
+  axis_lock_ = axis_lock;
   sheet_->AddEventListener(Rml::EventId::Mousedown, this);
   attached_ = true;
   SetSheetOffset(0.f, false);
 }
 
 void ShellBottomSheetGesture::Detach() {
-  SetDocumentDragCapture(false);
+  Abort();
   SetClickSuppress(false);
   if (attached_ && sheet_) {
     sheet_->RemoveEventListener(Rml::EventId::Mousedown, this);
@@ -47,10 +52,13 @@ void ShellBottomSheetGesture::Detach() {
   document_ = nullptr;
   context_ = nullptr;
   on_dismiss_ = {};
+  axis_lock_ = nullptr;
   attached_ = false;
-  tracking_ = false;
-  dragging_ = false;
   suppress_click_ = false;
+}
+
+void ShellBottomSheetGesture::Abort() {
+  AbortArm(true);
 }
 
 void ShellBottomSheetGesture::SetDocumentDragCapture(bool enabled) {
@@ -179,41 +187,85 @@ void ShellBottomSheetGesture::SetSheetOffset(float dy_dp, bool animate) {
   sheet_->SetProperty("transform", buffer);
 }
 
-void ShellBottomSheetGesture::BeginArm(int y_px) {
+void ShellBottomSheetGesture::BeginArm(int x_px, int y_px) {
   tracking_ = true;
   dragging_ = false;
+  drag_start_x_px_ = x_px;
   drag_start_y_px_ = y_px;
+  drag_last_x_px_ = x_px;
   drag_last_y_px_ = y_px;
   SetDocumentDragCapture(true);
 }
 
-void ShellBottomSheetGesture::AbortArm() {
+void ShellBottomSheetGesture::AbortArm(bool unlock_axis) {
+  if (!tracking_ && !dragging_) {
+    SetDocumentDragCapture(false);
+    if (unlock_axis && axis_lock_ && axis_lock_->Get() == ShellGestureAxis::Vertical) {
+      axis_lock_->Unlock();
+    }
+    return;
+  }
   tracking_ = false;
   dragging_ = false;
   SetDocumentDragCapture(false);
+  SetSheetOffset(0.f, true);
+  if (unlock_axis && axis_lock_ && axis_lock_->Get() == ShellGestureAxis::Vertical) {
+    axis_lock_->Unlock();
+  }
 }
 
-void ShellBottomSheetGesture::UpdateDrag(int y_px, Rml::Event& event) {
+void ShellBottomSheetGesture::UpdateDrag(int x_px, int y_px, Rml::Event& event) {
   if (!tracking_ || !sheet_) {
     return;
   }
+  drag_last_x_px_ = x_px;
   drag_last_y_px_ = y_px;
+  const int dx_px = x_px - drag_start_x_px_;
   const int dy_px = y_px - drag_start_y_px_;
+
+  if (axis_lock_) {
+    const ShellGestureAxis axis = axis_lock_->Observe(dx_px, dy_px, kDragDeadzonePx);
+    if (axis == ShellGestureAxis::None) {
+      return;
+    }
+    if (axis == ShellGestureAxis::Horizontal) {
+      // Swipe-back won — release without unlocking.
+      tracking_ = false;
+      dragging_ = false;
+      SetDocumentDragCapture(false);
+      SetSheetOffset(0.f, false);
+      return;
+    }
+  } else {
+    if (!dragging_) {
+      if (dy_px < -kDragDeadzonePx) {
+        AbortArm(true);
+        return;
+      }
+      if (dy_px <= kDragDeadzonePx) {
+        return;
+      }
+    }
+  }
+
   if (!dragging_) {
     if (dy_px < -kDragDeadzonePx) {
       // Clear upward intent: release so overflow scroll can own the gesture.
-      AbortArm();
+      AbortArm(axis_lock_ == nullptr || axis_lock_->Get() != ShellGestureAxis::Vertical);
       return;
     }
-    if (dy_px > kDragDeadzonePx) {
-      dragging_ = true;
-      suppress_click_ = true;
-      SetClickSuppress(true);
-      sheet_->SetClass("shell-account-sheet--dragging", true);
-    } else {
+    if (dy_px <= kDragDeadzonePx && (!axis_lock_ || axis_lock_->Get() == ShellGestureAxis::None)) {
       return;
     }
+    if (dy_px <= 0) {
+      return;
+    }
+    dragging_ = true;
+    suppress_click_ = true;
+    SetClickSuppress(true);
+    sheet_->SetClass("shell-account-sheet--dragging", true);
   }
+
   const float dy_dp = PixelDeltaToDp(dy_px);
   if (dy_dp > 0.f) {
     SetSheetOffset(dy_dp, false);
@@ -225,14 +277,21 @@ void ShellBottomSheetGesture::UpdateDrag(int y_px, Rml::Event& event) {
 
 void ShellBottomSheetGesture::EndDrag() {
   if (!tracking_) {
+    if (axis_lock_ && axis_lock_->Get() == ShellGestureAxis::Vertical) {
+      axis_lock_->Unlock();
+    }
     return;
   }
   tracking_ = false;
   SetDocumentDragCapture(false);
-  if (!dragging_) {
+  const bool was_dragging = dragging_;
+  dragging_ = false;
+  if (axis_lock_ && axis_lock_->Get() == ShellGestureAxis::Vertical) {
+    axis_lock_->Unlock();
+  }
+  if (!was_dragging) {
     return;
   }
-  dragging_ = false;
   const float dy_dp = PixelDeltaToDp(drag_last_y_px_ - drag_start_y_px_);
   const float height_dp = ResolveSheetHeightDp();
   const float threshold = height_dp * kDismissThresholdRatio;
@@ -257,10 +316,10 @@ void ShellBottomSheetGesture::ProcessEvent(Rml::Event& event) {
     if (!ShouldStartSwipe(event.GetTargetElement())) {
       return;
     }
-    BeginArm(EventMouseY(event));
+    BeginArm(EventMouseX(event), EventMouseY(event));
     break;
   case Rml::EventId::Mousemove:
-    UpdateDrag(EventMouseY(event), event);
+    UpdateDrag(EventMouseX(event), EventMouseY(event), event);
     break;
   case Rml::EventId::Mouseup:
     EndDrag();

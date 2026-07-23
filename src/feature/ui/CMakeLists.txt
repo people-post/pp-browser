@@ -12,7 +12,7 @@ pp_browser_add_feature_library(pp_feature_ui
     RmlMount.cpp
     SecuritySettingsSection.cpp
     SettingsController.cpp
-    ShellChatOverlayGesture.cpp
+    ShellSwipeBackGesture.cpp
     ShellBottomSheetGesture.cpp
     ShellFeedback.cpp
     ShellHost.cpp

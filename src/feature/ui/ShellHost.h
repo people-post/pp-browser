@@ -2,7 +2,8 @@
 
 #include "base/ui/ShellTypes.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
-#include "feature/ui/ShellChatOverlayGesture.h"
+#include "feature/ui/ShellGestureAxis.h"
+#include "feature/ui/ShellSwipeBackGesture.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
@@ -12,6 +13,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace Rml {
 class Context;
@@ -19,6 +21,23 @@ class Element;
 }
 
 namespace pbr {
+
+enum class DismissStyle { Instant, Animated };
+
+enum class DismissTarget {
+  None,
+  LocalBack,
+  CompactChatOverlay,
+  AuxiliarySheet,
+  AccountSheet,
+  Transient,
+  OverlayLayer,
+};
+
+struct LocalBackEntry {
+  std::string id;
+  std::function<void()> commit;
+};
 
 class ShellHost {
 public:
@@ -51,7 +70,21 @@ public:
   void PopTransient();
   int PushLayer(const PaneSpec& spec);
   void CloseLayer(int layer_id = -1);
+
+  /**
+   * Single dismiss entry for Escape, back buttons, and swipe gestures.
+   * Animated style schedules CommitDismiss after the exit transition.
+   * When `force` is set, that target is dismissed (sheet swipe ignores local back).
+   */
+  bool RequestDismiss(DismissStyle style = DismissStyle::Instant,
+                      DismissTarget force = DismissTarget::None);
   bool HandleDismiss();
+
+  /** Nested back within the current interruption (e.g. settings list→detail). */
+  void PushLocalBack(const std::string& id, std::function<void()> commit);
+  bool ClearLocalBack(const std::string& id);
+  bool HasLocalBack(const std::string& id) const;
+  void RefreshDismissGestures();
 
   void DirtyWindow();
   // Deferred remount of the nav rail (safe from click handlers). Use when badge counts change
@@ -109,10 +142,9 @@ private:
   void MountNavRail();
   void MountNavContent();
   void MountComposer();
-  void AttachChatOverlayGesture();
-  void DetachChatOverlayGesture();
+  void DetachDismissGestures();
+  void AttachSwipeBackGesture();
   void AttachAccountSheetGesture();
-  void DetachAccountSheetGesture();
   void ApplyLayoutModeFromContext(Rml::Context* context);
   void OnLayoutModeChanged();
   int AllocatePaneId();
@@ -121,10 +153,9 @@ private:
   void SaveFocus();
   void RestoreFocus();
   void FlushPendingSyncLayout();
-  void ScheduleCompactChatDismiss();
-  void ScheduleAccountSheetDismiss();
-  void ScheduleDismissAfter(std::optional<std::chrono::steady_clock::time_point>& slot,
-                            std::chrono::milliseconds delay);
+  DismissTarget ResolveDismissTarget() const;
+  void BeginAnimatedDismiss(DismissTarget target);
+  void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
   bool ChromeFrostEnabled() const;
   struct SafeAreaFromSdl {
@@ -132,6 +163,11 @@ private:
     int bottom_dp = 0;
   };
   SafeAreaFromSdl ReadSafeAreaFromSdl() const;
+
+  struct PendingDismiss {
+    DismissTarget target = DismissTarget::None;
+    std::chrono::steady_clock::time_point at;
+  };
 
   Rml::Context* context_ = nullptr;
   ShellState state_;
@@ -142,12 +178,13 @@ private:
   int next_pane_id_ = 1;
   int next_overlay_id_ = 1;
   float elapsed_ms_ = 0.f;
-  std::optional<std::chrono::steady_clock::time_point> compact_chat_dismiss_at_;
-  std::optional<std::chrono::steady_clock::time_point> account_sheet_dismiss_at_;
+  std::optional<PendingDismiss> pending_dismiss_;
+  std::vector<LocalBackEntry> local_back_stack_;
   Rml::String saved_focus_id_;
   bool sync_pending_ = false;
   bool restore_focus_after_sync_ = false;
-  ShellChatOverlayGesture chat_overlay_gesture_;
+  ShellGestureAxisLock gesture_axis_lock_;
+  ShellSwipeBackGesture swipe_back_gesture_;
   ShellBottomSheetGesture account_sheet_gesture_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;

@@ -378,6 +378,7 @@ void SettingsController::OnAccountSheetOpened() {
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
+  ShellHost::Instance().ClearLocalBack("settings_detail");
   in_account_sheet_ = true;
   ReloadFromDisk();
   suppress_auto_save_ = true;
@@ -391,6 +392,7 @@ void SettingsController::OnAccountSheetClosed() {
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
+  ShellHost::Instance().ClearLocalBack("settings_detail");
 }
 
 void SettingsController::OpenSettings() {
@@ -570,20 +572,28 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
 
   status_ = "";
   show_detail_ = true;
+  DirtyAll();
+  if (context_) {
+    context_->Update();
+  }
+  ShellHost::Instance().PushLocalBack("settings_detail", [] {
+    SettingsController::Instance().ApplyBackToListUi();
+  });
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
     suppress_auto_save_ = true;
     FinishPaneResync();
+    ShellHost::Instance().RefreshDismissGestures();
     log().info << "OnSelectSection complete id=" << selected_id_.c_str();
   });
 }
 
-void SettingsController::OnBackToList() {
-  log().info << "OnBackToList";
+void SettingsController::ApplyBackToListUi() {
   FlushPending();
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
   status_ = "";
+  // Defer remount/dirty so CommitDismiss from ShellHost::Update is not re-entrant.
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
     suppress_auto_save_ = true;
     DirtyAll();
@@ -591,7 +601,19 @@ void SettingsController::OnBackToList() {
       context_->Update();
     }
     suppress_auto_save_ = false;
+    ShellHost::Instance().RefreshDismissGestures();
   });
+}
+
+void SettingsController::OnBackToList() {
+  log().info << "OnBackToList";
+  FlushPending();
+  // Prefer the shared dismiss path so Escape / swipe / back stay aligned.
+  if (ShellHost::Instance().HasLocalBack("settings_detail")) {
+    ShellHost::Instance().RequestDismiss(DismissStyle::Instant);
+    return;
+  }
+  ApplyBackToListUi();
 }
 
 void SettingsController::SelectSectionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

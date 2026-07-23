@@ -168,8 +168,9 @@ void ShellHost::Initialize(Rml::Context* context) {
   next_pane_id_ = 1;
   next_overlay_id_ = 1;
   elapsed_ms_ = 0.f;
-  compact_chat_dismiss_at_.reset();
-  account_sheet_dismiss_at_.reset();
+  pending_dismiss_.reset();
+  local_back_stack_.clear();
+  DetachDismissGestures();
   saved_focus_id_.clear();
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
@@ -245,12 +246,11 @@ void ShellHost::ClearTabContext() {
   state_.transient_stack.clear();
   state_.transient_active = false;
   state_.compact_chat_open = false;
-  compact_chat_dismiss_at_.reset();
-  DetachChatOverlayGesture();
+  pending_dismiss_.reset();
+  local_back_stack_.clear();
+  DetachDismissGestures();
   if (state_.account_sheet_open) {
     state_.account_sheet_open = false;
-    account_sheet_dismiss_at_.reset();
-    DetachAccountSheetGesture();
     SettingsController::Instance().OnAccountSheetClosed();
   }
 }
@@ -284,7 +284,9 @@ void ShellHost::OpenCompactChat() {
     return;
   }
   state_.compact_chat_open = true;
-  compact_chat_dismiss_at_.reset();
+  if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::CompactChatOverlay) {
+    pending_dismiss_.reset();
+  }
   RequestSyncLayout();
 }
 
@@ -293,22 +295,11 @@ void ShellHost::CloseCompactChat() {
     return;
   }
   state_.compact_chat_open = false;
-  compact_chat_dismiss_at_.reset();
-  DetachChatOverlayGesture();
+  if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::CompactChatOverlay) {
+    pending_dismiss_.reset();
+  }
+  DetachDismissGestures();
   RequestSyncLayout();
-}
-
-void ShellHost::ScheduleDismissAfter(std::optional<std::chrono::steady_clock::time_point>& slot,
-                                     std::chrono::milliseconds delay) {
-  slot = std::chrono::steady_clock::now() + delay;
-}
-
-void ShellHost::ScheduleCompactChatDismiss() {
-  ScheduleDismissAfter(compact_chat_dismiss_at_, std::chrono::milliseconds(220));
-}
-
-void ShellHost::ScheduleAccountSheetDismiss() {
-  ScheduleDismissAfter(account_sheet_dismiss_at_, std::chrono::milliseconds(220));
 }
 
 void ShellHost::OpenAccountSheet() {
@@ -316,7 +307,9 @@ void ShellHost::OpenAccountSheet() {
     return;
   }
   state_.account_sheet_open = true;
-  account_sheet_dismiss_at_.reset();
+  if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::AccountSheet) {
+    pending_dismiss_.reset();
+  }
   SettingsController::Instance().OnAccountSheetOpened();
   RequestSyncLayout();
   DirtyWindow();
@@ -327,8 +320,11 @@ void ShellHost::CloseAccountSheet() {
     return;
   }
   state_.account_sheet_open = false;
-  account_sheet_dismiss_at_.reset();
-  DetachAccountSheetGesture();
+  if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::AccountSheet) {
+    pending_dismiss_.reset();
+  }
+  local_back_stack_.clear();
+  DetachDismissGestures();
   SettingsController::Instance().OnAccountSheetClosed();
   RequestSyncLayout();
   DirtyWindow();
@@ -393,6 +389,92 @@ void ShellHost::CloseLayer(int layer_id) {
   RequestSyncLayout(true);
 }
 
+DismissTarget ShellHost::ResolveDismissTarget() const {
+  if (!local_back_stack_.empty()) {
+    return DismissTarget::LocalBack;
+  }
+  switch (ShellInterruption::Top(state_)) {
+  case InterruptionKind::OverlayLayer:
+    return DismissTarget::OverlayLayer;
+  case InterruptionKind::Transient:
+    return DismissTarget::Transient;
+  case InterruptionKind::AccountSheet:
+    return DismissTarget::AccountSheet;
+  case InterruptionKind::AuxiliarySheet:
+    return DismissTarget::AuxiliarySheet;
+  case InterruptionKind::CompactChatOverlay:
+    return DismissTarget::CompactChatOverlay;
+  case InterruptionKind::Dialog:
+  case InterruptionKind::PinGate:
+  case InterruptionKind::None:
+    return DismissTarget::None;
+  }
+  return DismissTarget::None;
+}
+
+void ShellHost::BeginAnimatedDismiss(DismissTarget target) {
+  pending_dismiss_ = PendingDismiss{
+      .target = target,
+      .at = std::chrono::steady_clock::now() + std::chrono::milliseconds(220),
+  };
+}
+
+void ShellHost::CommitDismiss(DismissTarget target) {
+  pending_dismiss_.reset();
+  switch (target) {
+  case DismissTarget::None:
+    return;
+  case DismissTarget::LocalBack: {
+    if (local_back_stack_.empty()) {
+      return;
+    }
+    LocalBackEntry entry = std::move(local_back_stack_.back());
+    local_back_stack_.pop_back();
+    if (entry.commit) {
+      entry.commit();
+    }
+    // commit schedules RefreshDismissGestures after the detail DOM updates.
+    DirtyWindow();
+    return;
+  }
+  case DismissTarget::CompactChatOverlay:
+    CloseCompactChat();
+    DirtyWindow();
+    return;
+  case DismissTarget::AuxiliarySheet:
+    CloseAuxiliary();
+    DirtyWindow();
+    return;
+  case DismissTarget::AccountSheet:
+    CloseAccountSheet();
+    return;
+  case DismissTarget::Transient:
+    PopTransient();
+    DirtyWindow();
+    return;
+  case DismissTarget::OverlayLayer:
+    CloseLayer();
+    DirtyWindow();
+    return;
+  }
+}
+
+bool ShellHost::RequestDismiss(DismissStyle style, DismissTarget force) {
+  if (pending_dismiss_) {
+    return true;
+  }
+  const DismissTarget target = (force != DismissTarget::None) ? force : ResolveDismissTarget();
+  if (target == DismissTarget::None) {
+    return false;
+  }
+  if (style == DismissStyle::Animated) {
+    BeginAnimatedDismiss(target);
+    return true;
+  }
+  CommitDismiss(target);
+  return true;
+}
+
 bool ShellHost::HandleDismiss() {
   if (ContextMenuHost::Instance().HandleDismiss()) {
     return true;
@@ -419,17 +501,45 @@ bool ShellHost::HandleDismiss() {
     DirtyWindow();
     return true;
   }
-  if (ShellInterruption::Top(state_) == InterruptionKind::AccountSheet) {
-    CloseAccountSheet();
+  return RequestDismiss(DismissStyle::Instant);
+}
+
+void ShellHost::PushLocalBack(const std::string& id, std::function<void()> commit) {
+  if (id.empty()) {
+    return;
+  }
+  ClearLocalBack(id);
+  local_back_stack_.push_back(LocalBackEntry{id, std::move(commit)});
+  RefreshDismissGestures();
+}
+
+bool ShellHost::ClearLocalBack(const std::string& id) {
+  const auto before = local_back_stack_.size();
+  local_back_stack_.erase(
+      std::remove_if(local_back_stack_.begin(), local_back_stack_.end(),
+                     [&id](const LocalBackEntry& entry) { return entry.id == id; }),
+      local_back_stack_.end());
+  if (local_back_stack_.size() != before) {
+    if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::LocalBack) {
+      pending_dismiss_.reset();
+    }
+    RefreshDismissGestures();
     return true;
   }
-  if (!ShellInterruption::DismissTop(state_)) {
-    return false;
+  return false;
+}
+
+bool ShellHost::HasLocalBack(const std::string& id) const {
+  return std::any_of(local_back_stack_.begin(), local_back_stack_.end(),
+                     [&id](const LocalBackEntry& entry) { return entry.id == id; });
+}
+
+void ShellHost::RefreshDismissGestures() {
+  DetachDismissGestures();
+  if (state_.account_sheet_open) {
+    AttachAccountSheetGesture();
   }
-  DetachChatOverlayGesture();
-  RequestSyncLayout();
-  DirtyWindow();
-  return true;
+  AttachSwipeBackGesture();
 }
 
 void ShellHost::DirtyWindow() {
@@ -675,8 +785,10 @@ void ShellHost::SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_c
 void ShellHost::OnLayoutModeChanged() {
   if (state_.layout_mode == LayoutMode::Expanded) {
     state_.compact_chat_open = false;
-    compact_chat_dismiss_at_.reset();
-    DetachChatOverlayGesture();
+    if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::CompactChatOverlay) {
+      pending_dismiss_.reset();
+    }
+    DetachDismissGestures();
   }
   if (on_layout_mode_changed_) {
     on_layout_mode_changed_(state_.layout_mode);
@@ -849,7 +961,7 @@ std::string ShellHost::SerializeTransientLayer() const {
   const bool frost_enabled = ChromeFrostEnabled();
   const bool solid = state_.reduce_transparency;
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-transient\" data-model=\"window\">";
+  out << "<div class=\"shell-layer shell-layer-transient\" id=\"shell-transient-layer\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome "
       << SurfaceChromeClass(CompactChromeFrostSurface::TransientHeader, frost, frost_enabled, solid) << "\">";
   out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
@@ -1034,26 +1146,65 @@ void ShellHost::MountComposer() {
   }
 }
 
-void ShellHost::AttachChatOverlayGesture() {
-  if (!context_ || context_->GetNumDocuments() == 0 || state_.layout_mode != LayoutMode::Compact ||
-      !state_.compact_chat_open) {
-    DetachChatOverlayGesture();
-    return;
-  }
-  Rml::Element* overlay = context_->GetDocument(0)->GetElementById("shell-chat-overlay");
-  if (!overlay) {
-    return;
-  }
-  chat_overlay_gesture_.Attach(overlay, context_, state_.shell_width_dp, [this]() { ScheduleCompactChatDismiss(); });
+void ShellHost::DetachDismissGestures() {
+  swipe_back_gesture_.Detach();
+  account_sheet_gesture_.Detach();
+  gesture_axis_lock_.Unlock();
 }
 
-void ShellHost::DetachChatOverlayGesture() {
-  chat_overlay_gesture_.Detach();
+void ShellHost::AttachSwipeBackGesture() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  ShellSwipeBackGesture::AttachOptions options;
+  options.width_dp_fallback = state_.shell_width_dp;
+  options.dragging_class = "shell-swipe-dragging";
+  options.axis_lock = &gesture_axis_lock_;
+  options.require_edge = true;
+
+  if (HasLocalBack("settings_detail")) {
+    Rml::Element* detail = doc->GetElementById("settings-detail-view");
+    // Listen on the pane body (full sheet width) so the 12dp settings-panel padding
+    // and true screen-left edge still arm swipe-back; slide only the detail view.
+    Rml::Element* listen = doc->GetElementById("pane-body-settings");
+    if (!listen) {
+      listen = doc->GetElementById("shell-account-sheet");
+    }
+    if (detail && listen) {
+      options.chrome_classes = {"settings-detail-header", "settings-back-btn", "shell-back-btn"};
+      options.transform_target = detail;
+      options.content_root = detail;
+      swipe_back_gesture_.Attach(listen, context_, std::move(options), [this]() {
+        RequestDismiss(DismissStyle::Animated, DismissTarget::LocalBack);
+      });
+      return;
+    }
+  }
+
+  if (!state_.transient_stack.empty()) {
+    if (Rml::Element* layer = doc->GetElementById("shell-transient-layer")) {
+      options.chrome_classes = {"shell-transient-chrome", "shell-back-btn"};
+      options.axis_lock = nullptr; // no sheet competition on transient
+      swipe_back_gesture_.Attach(layer, context_, std::move(options),
+                                 [this]() { RequestDismiss(DismissStyle::Animated, DismissTarget::Transient); });
+      return;
+    }
+  }
+
+  if (state_.layout_mode == LayoutMode::Compact && state_.compact_chat_open) {
+    if (Rml::Element* overlay = doc->GetElementById("shell-chat-overlay")) {
+      options.chrome_classes = {"shell-chat-overlay-chrome", "shell-back-btn"};
+      options.axis_lock = nullptr;
+      swipe_back_gesture_.Attach(overlay, context_, std::move(options), [this]() {
+        RequestDismiss(DismissStyle::Animated, DismissTarget::CompactChatOverlay);
+      });
+    }
+  }
 }
 
 void ShellHost::AttachAccountSheetGesture() {
   if (!context_ || context_->GetNumDocuments() == 0 || !state_.account_sheet_open) {
-    DetachAccountSheetGesture();
     return;
   }
   Rml::Element* sheet = context_->GetDocument(0)->GetElementById("shell-account-sheet");
@@ -1066,11 +1217,9 @@ void ShellHost::AttachAccountSheetGesture() {
   const float height_dp =
       (dp_ratio > 0.f) ? (static_cast<float>(context_->GetDimensions().y) / dp_ratio) : state_.shell_width_dp;
   const float sheet_height_dp = std::max(0.f, height_dp - config_.toolbar_height_dp);
-  account_sheet_gesture_.Attach(sheet, context_, sheet_height_dp, [this]() { ScheduleAccountSheetDismiss(); });
-}
-
-void ShellHost::DetachAccountSheetGesture() {
-  account_sheet_gesture_.Detach();
+  account_sheet_gesture_.Attach(
+      sheet, context_, sheet_height_dp,
+      [this]() { RequestDismiss(DismissStyle::Animated, DismissTarget::AccountSheet); }, &gesture_axis_lock_);
 }
 
 void ShellHost::MountPaneBodies() {
@@ -1092,8 +1241,7 @@ void ShellHost::MountPaneBodies() {
     RmlMount::MountInner(target, body);
   };
 
-  DetachChatOverlayGesture();
-  DetachAccountSheetGesture();
+  DetachDismissGestures();
   MountNavRail();
   MountNavContent();
 
@@ -1118,7 +1266,6 @@ void ShellHost::MountPaneBodies() {
     }
     mount_key("chat");
     MountComposer();
-    AttachChatOverlayGesture();
   } else if (state_.nav_tab == NavTab::Home) {
     mount_key("home");
     MountComposer();
@@ -1130,7 +1277,6 @@ void ShellHost::MountPaneBodies() {
 
   if (state_.account_sheet_open) {
     mount_key("settings");
-    AttachAccountSheetGesture();
   }
 
   if (!state_.transient_stack.empty()) {
@@ -1157,6 +1303,8 @@ void ShellHost::MountPaneBodies() {
       RmlMount::MountInner(target, body);
     }
   }
+
+  RefreshDismissGestures();
 }
 
 void ShellHost::SyncLayout() {
@@ -1197,14 +1345,10 @@ void ShellHost::Update(Rml::Context* context) {
     DirtyWindow();
   }
 
-  if (compact_chat_dismiss_at_ && now >= *compact_chat_dismiss_at_) {
-    compact_chat_dismiss_at_.reset();
-    CloseCompactChat();
-  }
-
-  if (account_sheet_dismiss_at_ && now >= *account_sheet_dismiss_at_) {
-    account_sheet_dismiss_at_.reset();
-    CloseAccountSheet();
+  if (pending_dismiss_ && now >= pending_dismiss_->at) {
+    const DismissTarget target = pending_dismiss_->target;
+    pending_dismiss_.reset();
+    CommitDismiss(target);
   }
 
   const LayoutMode previous = state_.layout_mode;
@@ -1228,15 +1372,10 @@ void ShellHost::NotifyFrameEnd(Rml::Context* context) {
   const auto now = clock::now();
   double delay_sec = std::numeric_limits<double>::infinity();
 
-  auto consider_deadline = [&](const std::optional<clock::time_point>& deadline) {
-    if (!deadline) {
-      return;
-    }
-    const double remaining = std::chrono::duration<double>(*deadline - now).count();
+  if (pending_dismiss_) {
+    const double remaining = std::chrono::duration<double>(pending_dismiss_->at - now).count();
     delay_sec = std::min(delay_sec, std::max(0.0, remaining));
-  };
-  consider_deadline(compact_chat_dismiss_at_);
-  consider_deadline(account_sheet_dismiss_at_);
+  }
 
   const double toast_delay = ShellFeedback::SecondsUntilNextToastExpiry(state_, elapsed_ms_);
   if (toast_delay >= 0.0) {
@@ -1269,7 +1408,7 @@ void ShellHost::SelectNavTabCallback(Rml::DataModelHandle /*model*/, Rml::Event&
 
 void ShellHost::CompactChatBackCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                         const Rml::VariantList& /*args*/) {
-  Instance().CloseCompactChat();
+  Instance().RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay);
 }
 
 void ShellHost::OpenAccountSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1279,12 +1418,13 @@ void ShellHost::OpenAccountSheetCallback(Rml::DataModelHandle /*model*/, Rml::Ev
 
 void ShellHost::CloseAccountSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                           const Rml::VariantList& /*args*/) {
+  // × always closes the sheet, even when a nested settings detail is open.
   Instance().CloseAccountSheet();
 }
 
 void ShellHost::PopTransientCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                      const Rml::VariantList& /*args*/) {
-  Instance().PopTransient();
+  Instance().RequestDismiss(DismissStyle::Instant, DismissTarget::Transient);
 }
 
 void ShellHost::CloseLayerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

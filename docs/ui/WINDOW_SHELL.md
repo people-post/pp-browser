@@ -86,6 +86,20 @@ Reference implementation: group create in `PeoplePickerController` (select membe
 
 Prefer `PushTransient("contact_detail")` over inline `show_detail_` flags in list RML. The shell renders transient chrome (back button wired to `transient_back()`). Controllers should listen with `ShellHost::SetOnTransientPopped()` to clear selection state.
 
+### Dismiss pipeline
+
+Escape, chrome back buttons, and swipe gestures share `ShellHost::RequestDismiss(style, force?)`:
+
+| Input | Typical target |
+|-------|----------------|
+| Escape / system back | Top of local-back stack, else `ShellInterruption::Top` |
+| `transient_back` / compact chat back | Forced transient / chat overlay |
+| Horizontal edge swipe | Same as back for that surface (`ShellSwipeBackGesture`) |
+| Vertical sheet swipe | Forced `AccountSheet` (still works over settings detail) |
+| Account sheet × | `CloseAccountSheet()` (clears nested local back) |
+
+Nested list→detail inside a sheet (Me settings) uses `PushLocalBack("settings_detail", commit)` so Escape/swipe-back pop detail before dismissing the sheet. Swipe-back and sheet dismiss may both arm; `ShellGestureAxisLock` commits the dominant axis after the deadzone (edge horizontal → back; vertical from anywhere at scroll top → dismiss sheet).
+
 ## RML / data model
 
 Root document: `assets/samples/window_shell.rml` with `data-model="window"`.

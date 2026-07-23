@@ -65,9 +65,10 @@ On touch devices (`SDL_HINT_TOUCH_MOUSE_EVENTS=0`), finger events map to `Contex
 - Tap places the caret via `WidgetTextInput` (touch still synthesizes mouse down).
 - Long press opens the edit menu (Copy / Paste / Select All).
 
-**Compact chat overlay:**
+**Compact chat overlay / drill-down:**
 
 - Swipe-back starts only from the left edge (~20dp) or overlay chrome, not from bubble content.
+- Settings detail (Me sheet) uses the same edge swipe-back; vertical dismiss-from-anywhere on the sheet remains available — axis lock picks the winner after the drag deadzone.
 
 ## Selection handles
 

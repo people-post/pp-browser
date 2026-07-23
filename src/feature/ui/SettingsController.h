@@ -46,6 +46,8 @@ public:
   void OpenSettings();
   void OnAccountSheetOpened();
   void OnAccountSheetClosed();
+  /** Clear detail UI without touching the shell local-back stack (used by dismiss commit). */
+  void ApplyBackToListUi();
   void OnShellLayoutSynced();
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */

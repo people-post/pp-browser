@@ -915,6 +915,7 @@ select selectbox option {
   transition: transform 250ms;
 }
 
+.shell-chat-overlay.shell-swipe-dragging,
 .shell-chat-overlay--dragging {
   transition: none;
 }
@@ -1213,6 +1214,12 @@ select selectbox option {
   display: flex;
   flex-direction: column;
   z-index: 10;
+  transform: translateX(0);
+  transition: transform 250ms;
+}
+
+.shell-layer-transient.shell-swipe-dragging {
+  transition: none;
 }
 
 .shell-layer-transient .shell-pane-transient {
@@ -1739,6 +1746,15 @@ select selectbox option {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.settings-detail-view {
+  transform: translateX(0);
+  transition: transform 250ms;
+}
+
+.settings-detail-view.shell-swipe-dragging {
+  transition: none;
 }
 
 .settings-header,
