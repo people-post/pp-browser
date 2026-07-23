@@ -1771,18 +1771,30 @@ select selectbox option {
 
 .settings-row {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
   min-height: 44dp;
   margin-bottom: 4dp;
-  padding: 8dp;
+  padding: 8dp 10dp;
+  border: 0;
   border-radius: 6dp;
   box-sizing: border-box;
   cursor: pointer;
+  background-color: transparent;
+  text-align: left;
+}
+
+.settings-row-text {
+  flex: 1;
+  min-width: 0;
+  gap: 2dp;
 }
 
 .settings-row-title {
   margin-top: 0;
-  margin-bottom: 2dp;
+  margin-bottom: 0;
   font-size: 13dp;
   white-space: nowrap;
   overflow: hidden;
@@ -1796,6 +1808,11 @@ select selectbox option {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.settings-row-chevron {
+  flex-shrink: 0;
+  margin-left: 8dp;
 }
 
 .settings-row--active {

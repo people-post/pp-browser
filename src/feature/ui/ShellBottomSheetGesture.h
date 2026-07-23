@@ -26,11 +26,16 @@ public:
 private:
   bool ShouldIgnoreTarget(Rml::Element* target) const;
   bool ShouldStartSwipe(Rml::Element* target) const;
-  void BeginDrag(int y_px);
+  bool IsUnderSheet(Rml::Element* target) const;
+  bool IsChromeRegion(Rml::Element* target) const;
+  bool ScrollAncestorsAtTop(Rml::Element* target) const;
+  void BeginArm(int y_px);
+  void AbortArm();
   void UpdateDrag(int y_px, Rml::Event& event);
   void EndDrag();
   void SetSheetOffset(float dy_dp, bool animate);
   void SetDocumentDragCapture(bool enabled);
+  void SetClickSuppress(bool enabled);
   float PixelDeltaToDp(int delta_px) const;
   float ResolveSheetHeightDp() const;
 
@@ -41,6 +46,8 @@ private:
   DismissCallback on_dismiss_;
   bool attached_ = false;
   bool document_drag_capture_ = false;
+  bool click_suppress_listener_ = false;
+  bool suppress_click_ = false;
   bool tracking_ = false;
   bool dragging_ = false;
   int drag_start_y_px_ = 0;

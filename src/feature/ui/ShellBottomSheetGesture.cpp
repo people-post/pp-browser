@@ -13,6 +13,7 @@ namespace {
 
 constexpr float kDismissThresholdRatio = 0.25f;
 constexpr int kDragDeadzonePx = 8;
+constexpr float kScrollTopEpsilonPx = 1.f;
 
 int EventMouseY(const Rml::Event& event) {
   return event.GetParameter<int>("mouse_y", 0);
@@ -38,6 +39,7 @@ void ShellBottomSheetGesture::Attach(Rml::Element* sheet, Rml::Context* context,
 
 void ShellBottomSheetGesture::Detach() {
   SetDocumentDragCapture(false);
+  SetClickSuppress(false);
   if (attached_ && sheet_) {
     sheet_->RemoveEventListener(Rml::EventId::Mousedown, this);
   }
@@ -48,6 +50,7 @@ void ShellBottomSheetGesture::Detach() {
   attached_ = false;
   tracking_ = false;
   dragging_ = false;
+  suppress_click_ = false;
 }
 
 void ShellBottomSheetGesture::SetDocumentDragCapture(bool enabled) {
@@ -62,6 +65,18 @@ void ShellBottomSheetGesture::SetDocumentDragCapture(bool enabled) {
     document_->RemoveEventListener(Rml::EventId::Mouseup, this, true);
   }
   document_drag_capture_ = enabled;
+}
+
+void ShellBottomSheetGesture::SetClickSuppress(bool enabled) {
+  if (!document_ || click_suppress_listener_ == enabled) {
+    return;
+  }
+  if (enabled) {
+    document_->AddEventListener(Rml::EventId::Click, this, true);
+  } else {
+    document_->RemoveEventListener(Rml::EventId::Click, this, true);
+  }
+  click_suppress_listener_ = enabled;
 }
 
 float ShellBottomSheetGesture::PixelDeltaToDp(int delta_px) const {
@@ -89,20 +104,69 @@ bool ShellBottomSheetGesture::ShouldIgnoreTarget(Rml::Element* target) const {
   }
   for (Rml::Element* node = target; node; node = node->GetParentNode()) {
     const Rml::String& tag = node->GetTagName();
-    if (tag == "textarea" || tag == "input" || tag == "select" || tag == "button") {
+    if (tag == "textarea" || tag == "input" || tag == "select") {
+      return true;
+    }
+    if (tag == "button") {
+      // Disclosure rows stay eligible for scroll-aware dismiss; action buttons do not.
+      if (node->IsClassSet("settings-row")) {
+        continue;
+      }
+      return true;
+    }
+    if (node->IsClassSet("btn") || node->IsClassSet("shell-close-btn") || node->IsClassSet("settings-back-btn")) {
       return true;
     }
   }
   return false;
 }
 
-bool ShellBottomSheetGesture::ShouldStartSwipe(Rml::Element* target) const {
+bool ShellBottomSheetGesture::IsUnderSheet(Rml::Element* target) const {
+  if (!sheet_ || !target) {
+    return false;
+  }
   for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+    if (node == sheet_) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ShellBottomSheetGesture::IsChromeRegion(Rml::Element* target) const {
+  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+    if (node == sheet_) {
+      break;
+    }
     if (node->IsClassSet("shell-account-sheet-grabber") || node->IsClassSet("shell-account-sheet-header")) {
       return true;
     }
   }
   return false;
+}
+
+bool ShellBottomSheetGesture::ScrollAncestorsAtTop(Rml::Element* target) const {
+  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+    if (node->GetScrollHeight() > node->GetClientHeight() + 0.5f) {
+      if (node->GetScrollTop() > kScrollTopEpsilonPx) {
+        return false;
+      }
+    }
+    if (node == sheet_) {
+      break;
+    }
+  }
+  return true;
+}
+
+bool ShellBottomSheetGesture::ShouldStartSwipe(Rml::Element* target) const {
+  if (!IsUnderSheet(target)) {
+    return false;
+  }
+  if (IsChromeRegion(target)) {
+    return true;
+  }
+  return ScrollAncestorsAtTop(target);
 }
 
 void ShellBottomSheetGesture::SetSheetOffset(float dy_dp, bool animate) {
@@ -115,12 +179,18 @@ void ShellBottomSheetGesture::SetSheetOffset(float dy_dp, bool animate) {
   sheet_->SetProperty("transform", buffer);
 }
 
-void ShellBottomSheetGesture::BeginDrag(int y_px) {
+void ShellBottomSheetGesture::BeginArm(int y_px) {
   tracking_ = true;
   dragging_ = false;
   drag_start_y_px_ = y_px;
   drag_last_y_px_ = y_px;
   SetDocumentDragCapture(true);
+}
+
+void ShellBottomSheetGesture::AbortArm() {
+  tracking_ = false;
+  dragging_ = false;
+  SetDocumentDragCapture(false);
 }
 
 void ShellBottomSheetGesture::UpdateDrag(int y_px, Rml::Event& event) {
@@ -130,8 +200,15 @@ void ShellBottomSheetGesture::UpdateDrag(int y_px, Rml::Event& event) {
   drag_last_y_px_ = y_px;
   const int dy_px = y_px - drag_start_y_px_;
   if (!dragging_) {
+    if (dy_px < -kDragDeadzonePx) {
+      // Clear upward intent: release so overflow scroll can own the gesture.
+      AbortArm();
+      return;
+    }
     if (dy_px > kDragDeadzonePx) {
       dragging_ = true;
+      suppress_click_ = true;
+      SetClickSuppress(true);
       sheet_->SetClass("shell-account-sheet--dragging", true);
     } else {
       return;
@@ -180,13 +257,20 @@ void ShellBottomSheetGesture::ProcessEvent(Rml::Event& event) {
     if (!ShouldStartSwipe(event.GetTargetElement())) {
       return;
     }
-    BeginDrag(EventMouseY(event));
+    BeginArm(EventMouseY(event));
     break;
   case Rml::EventId::Mousemove:
     UpdateDrag(EventMouseY(event), event);
     break;
   case Rml::EventId::Mouseup:
     EndDrag();
+    break;
+  case Rml::EventId::Click:
+    if (suppress_click_) {
+      event.StopImmediatePropagation();
+      suppress_click_ = false;
+      SetClickSuppress(false);
+    }
     break;
   default:
     break;

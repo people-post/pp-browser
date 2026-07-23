@@ -25,7 +25,7 @@ Productivity-oriented (Notion/Slack): neutral surfaces, one primary blue accent,
 | Composer | `composer.rml` | Prompt card, send button |
 | Working set | `preview.rml` | Panel, chips, long-list rows |
 | Contacts | `contacts.rml`, `contact_detail.rml` | List rows, editable profile fields, trust badges, `+` add/find menu |
-| Settings | `settings.rml` | Sections, fields |
+| Settings | `settings.rml` | Profile card, disclosure preference rows, section fields |
 | Feedback | `ShellFeedback` | Dialog, confirm, banner |
 
 ## Spacing scale (4dp grid)
@@ -233,6 +233,12 @@ See [WINDOW_SHELL.md](WINDOW_SHELL.md) for layout geometry (content scrolls unde
 ### Contacts
 
 `.contacts-panel`, `.contacts-row`, `.contacts-row--active`, `.contacts-find-btn`, `.contact-profile-card`, `.contacts-edit-field`, `.contacts-multiaddrs-field`, `.contacts-trust-badge`, `.contacts-unread`, `.contacts-thread-row`, `.contacts-actions-hint`
+
+### Settings / Me
+
+`.settings-panel`, `.me-profile-card`, `.settings-list`, `.settings-row` (disclosure `button` with trailing chevron), `.settings-row-text`, `.settings-row-title`, `.settings-row-subtitle`, `.settings-row-chevron`, `.settings-row--active`, `.settings-back-btn`, `.settings-section`
+
+Preference rows use an iOS-style disclosure pattern: full-width button, title/subtitle on the left, `chevron-right.svg` on the right. Inside the account sheet, scroll-aware dismiss may start on these rows when scrolled to top; a clean tap still opens the section.
 
 ## RCSS file layout
 
