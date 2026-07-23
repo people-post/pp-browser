@@ -32,5 +32,15 @@
       </div>
       <p class="shell-nav-tab-label">{{i18n:nav.contacts}}</p>
     </button>
+    <button class="shell-nav-tab" type="button"
+            data-if="layout_mode == 'expanded'"
+            data-class-shell-nav-tab--active="nav_tab == 'me'"
+            data-event-click="select_nav_tab('me')">
+      <div class="shell-nav-tab-icon-wrap">
+        <svg src="../icons/me.svg" width="22" height="22" crop-to-content="true"></svg>
+        <span class="badge-dot badge-dot--nav" data-if="nav_me_attention"></span>
+      </div>
+      <p class="shell-nav-tab-label">{{i18n:nav.me}}</p>
+    </button>
   </div>
 </div>

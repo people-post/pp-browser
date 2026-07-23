@@ -64,6 +64,9 @@ NavTab NavTabFromString(const Rml::String& value) {
   if (value == "sessions") {
     return NavTab::Sessions;
   }
+  if (value == "me") {
+    return NavTab::Me;
+  }
   return NavTab::Home;
 }
 
@@ -266,6 +269,14 @@ void ShellHost::ClearPrimaryPane() {
 }
 
 void ShellHost::SelectNavTab(NavTab tab) {
+  // Compact Me stays an account bottom sheet (same as before), not a list/detail tab.
+  if (tab == NavTab::Me && state_.layout_mode == LayoutMode::Compact) {
+    OpenAccountSheet();
+    return;
+  }
+  if (tab == NavTab::Me && state_.account_sheet_open) {
+    CloseAccountSheet();
+  }
   const bool tab_changed = state_.nav_tab != tab;
   if (tab_changed) {
     ClearTabContext();

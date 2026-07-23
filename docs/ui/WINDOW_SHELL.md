@@ -40,8 +40,16 @@ Primary is **tab-scoped drill-down content**, not always chat. Examples:
 | Home (default) | (none) | Home landing (`home.rml`: brand, centered composer, suggestion chips) |
 | Sessions | Session list | Chat + composer |
 | Contacts | Contact list | Contact detail |
+| Me | Settings list + profile card | Section detail (`settings_detail.rml`) |
 
-**Account / Me settings** are not a nav-rail tab. A profile button in the Home landing header opens an iOS-style **account bottom sheet** (`OpenAccountSheet` / `close_account_sheet`). Settings content mounts into `#pane-body-settings` inside the sheet. Swipe down on the grabber/header, or on the sheet body when scrollable ancestors are at the top, to dismiss (`ShellBottomSheetGesture`). A clean press/release (no dismiss past the drag deadzone) keeps normal click activation — e.g. preference disclosure rows open their section; a committed dismiss drag suppresses the following click. After a gesture dismiss, the sheet slides out then remounts home without requiring another input — `ShellHost` arms power-save via `NotifyFrameEnd` / `RequestNextUpdate` for the dismiss deadline. Tap the scrim or ×, or press Escape/back, to dismiss. Tab switch clears the sheet via `ClearTabContext()`.
+**Me / account settings** use a **layout-adaptive** presentation:
+
+| Layout | Entry | Presentation |
+|--------|--------|----------------|
+| **Expanded** | Nav rail Me tab (`select_nav_tab('me')`) | Secondary list → primary section detail (same pattern as Contacts) |
+| **Compact** | Home header profile button (`open_account_sheet`) | Existing **account bottom sheet** over the current tab. List→detail stays inside the sheet with local back / swipe dismiss. |
+
+Resizing between compact and expanded migrates Me between sheet and tab when appropriate (`SettingsController::SyncLayoutMode`). Tab switch still clears an open account sheet via `ClearTabContext()`.
 
 The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
 
@@ -66,7 +74,7 @@ Choose the lightest primitive that fits the user task:
 | Style | API | Use when | Examples |
 |-------|-----|----------|----------|
 | **Pane navigation** | `SetPrimaryPane`, `PushTransient` / `PopTransient` | User stays in a tab; back returns within that tab | Sessions→chat, Contacts→detail (compact uses transient) |
-| **Account sheet** | `OpenAccountSheet` / `close_account_sheet` | Profile and preferences from Home without leaving the tab | Me settings, profile card, preference sections |
+| **Account sheet** | `OpenAccountSheet` / `close_account_sheet` | Compact Me: profile and preferences without switching `nav_tab` | Me settings list/detail inside sheet |
 | **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`) |
 | **Atomic feedback** | `ShellFeedback` dialog/toast | One-shot confirm/rename/prompt with no surrounding flow | Delete confirm, rename thread |
 
@@ -106,8 +114,8 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 
 | Callback | Action |
 |----------|--------|
-| `select_nav_tab(tab)` | Switch nav rail tab (`home`, `sessions`, or `contacts`); clears tab context |
-| `open_account_sheet()` | Open Me / settings bottom sheet (Home landing profile button) |
+| `select_nav_tab(tab)` | Switch nav rail tab (`home`, `sessions`, `contacts`, or `me` on expanded); clears tab context. On compact, `me` still opens the account sheet if invoked. |
+| `open_account_sheet()` | Open Me / settings bottom sheet (compact Home profile button) |
 | `close_account_sheet()` | Dismiss account bottom sheet |
 | `compact_chat_back()` | Close compact chat overlay |
 | `toggle_auxiliary()` | Open/close preview sheet/panel |
@@ -117,7 +125,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `dismiss_banner()` | Hide banner |
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
 
-Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). The profile attention dot appears on the Home landing profile button, not the nav rail. Refreshed by `BadgeAggregator` on messaging events.
+Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). On expanded, the Me attention dot is on the Me nav-rail tab; on compact, it is on the Home profile button. Refreshed by `BadgeAggregator` on messaging events.
 
 Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`. The nav rail mounts from `assets/views/nav_rail.rml`.
 
@@ -128,7 +136,7 @@ Home is a dedicated primary pane (`home.rml`), not the chat panel:
 | Region | Content |
 |--------|---------|
 | Top left | Brand wordmark (`app.name`) + tagline |
-| Top right | Profile button (account sheet) |
+| Top right (compact) | Profile button → account sheet |
 | Optical center | Composer mounted into `#home-composer-mount` |
 | Below composer | Soft suggestion chips (`send_suggestion`: find someone, headlines, articles, get started, capabilities) |
 

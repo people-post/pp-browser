@@ -1,7 +1,7 @@
 <div class="settings-panel stack" data-model="settings">
   <div class="settings-list-view" data-if="!show_detail">
     <div class="settings-header row" data-if="!in_account_sheet">
-      <h2 class="heading-2">Me</h2>
+      <h2 class="heading-2">{{i18n:nav.me}}</h2>
     </div>
 
     <div class="me-profile-card stack">

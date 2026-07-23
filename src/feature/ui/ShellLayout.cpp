@@ -19,6 +19,9 @@ const char* ShellLayout::NavTabString(NavTab tab) {
   if (tab == NavTab::Sessions) {
     return "sessions";
   }
+  if (tab == NavTab::Me) {
+    return "me";
+  }
   return "home";
 }
 
@@ -36,6 +39,9 @@ const char* ShellLayout::NavContentKey(NavTab tab) {
   }
   if (tab == NavTab::Contacts) {
     return "contacts";
+  }
+  if (tab == NavTab::Me) {
+    return "settings";
   }
   return "sidebar";
 }

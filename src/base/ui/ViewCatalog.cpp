@@ -26,6 +26,7 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"contact_detail", "views/contact_detail.rml"},
       {"people_picker", "views/people_picker.rml"},
       {"settings", "views/settings.rml"},
+      {"settings_detail", "views/settings_detail.rml"},
       {"settings_sections", "views/settings_sections.rml"},
   };
   return keys;

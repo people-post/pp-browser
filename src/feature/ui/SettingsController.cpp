@@ -373,7 +373,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
 
 void SettingsController::FinishPaneResync() {
   // Keep any in-progress nickname across Sync+Dirty. On fresh start the session
-  // nickname is still empty; a deferred resync after account-sheet open can
+  // nickname is still empty; a deferred resync after Me-tab remount can
   // otherwise push "" back into data-value and wipe characters mid-typing
   // (looks like HarfBuzz/lang glyph jitter). Chat has no equivalent path.
   auto resync_preserving_nickname = [this]() {
@@ -389,7 +389,8 @@ void SettingsController::FinishPaneResync() {
   resync_preserving_nickname();
   // Select widgets can emit a spurious change on the frame after remount.
   BrowserThread::PostTask(BrowserThreadId::UI, [this, resync_preserving_nickname]() {
-    if (!ShellHost::Instance().State().account_sheet_open) {
+    const ShellState& state = ShellHost::Instance().State();
+    if (state.nav_tab != NavTab::Me && !state.account_sheet_open) {
       suppress_auto_save_ = false;
       return;
     }
@@ -402,10 +403,31 @@ void SettingsController::OnShellLayoutSynced() {
   if (!suppress_auto_save_) {
     return;
   }
-  if (ShellHost::Instance().State().account_sheet_open) {
+  const ShellState& state = ShellHost::Instance().State();
+  if (state.nav_tab == NavTab::Me || state.account_sheet_open) {
     FinishPaneResync();
   } else {
     suppress_auto_save_ = false;
+  }
+}
+
+void SettingsController::OnNavTabActivated() {
+  log().info << "OnNavTabActivated";
+  CommitProfileNickname(/*show_toast=*/false);
+  FlushPending();
+  dirty_sections_.clear();
+  debounce_deadline_ms_ = 0;
+  show_detail_ = false;
+  selected_id_.clear();
+  selected_title_.clear();
+  in_account_sheet_ = false;
+  ShellHost::Instance().ClearLocalBack("settings_detail");
+  compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  ReloadFromDisk();
+  suppress_auto_save_ = true;
+  DirtyAll();
+  if (context_) {
+    context_->Update();
   }
 }
 
@@ -423,7 +445,6 @@ void SettingsController::OnAccountSheetOpened() {
 }
 
 void SettingsController::OnAccountSheetClosed() {
-  // Nickname commits on blur; remount/close can skip blur, so persist here too.
   CommitProfileNickname(/*show_toast=*/false);
   FlushPending();
   in_account_sheet_ = false;
@@ -433,12 +454,54 @@ void SettingsController::OnAccountSheetClosed() {
   ShellHost::Instance().ClearLocalBack("settings_detail");
 }
 
-void SettingsController::OpenSettings() {
-  const bool already_open = ShellHost::Instance().State().account_sheet_open;
-  ShellHost::Instance().OpenAccountSheet();
-  if (already_open) {
-    OnAccountSheetOpened();
-    FinishPaneResync();
+void SettingsController::SyncLayoutMode() {
+  const bool compact = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  if (compact_layout_ == compact) {
+    return;
+  }
+  compact_layout_ = compact;
+
+  ShellState& state = ShellHost::Instance().State();
+  const Rml::String saved_id = selected_id_;
+  const Rml::String saved_title = selected_title_;
+  const bool had_detail = !saved_id.empty() || show_detail_;
+
+  if (compact) {
+    if (state.nav_tab == NavTab::Me) {
+      ShellHost::Instance().ClearPrimaryPane();
+      ShellHost::Instance().SelectNavTab(NavTab::Home);
+      selected_id_ = saved_id;
+      selected_title_ = saved_title;
+      show_detail_ = had_detail;
+      ShellHost::Instance().OpenAccountSheet();
+      // OpenAccountSheet resets selection; restore sheet detail state.
+      selected_id_ = saved_id;
+      selected_title_ = saved_title;
+      show_detail_ = had_detail;
+      in_account_sheet_ = true;
+      if (had_detail) {
+        ShellHost::Instance().ClearLocalBack("settings_detail");
+        ShellHost::Instance().PushLocalBack("settings_detail", [] {
+          SettingsController::Instance().ApplyBackToListUi();
+        });
+      }
+      DirtyAll();
+      return;
+    }
+  } else if (state.account_sheet_open) {
+    ShellHost::Instance().CloseAccountSheet();
+    selected_id_ = saved_id;
+    selected_title_ = saved_title;
+    show_detail_ = false;
+    in_account_sheet_ = false;
+    ShellHost::Instance().SelectNavTab(NavTab::Me);
+    // SelectNavTab activates Me and clears selection; restore for primary pane.
+    selected_id_ = saved_id;
+    selected_title_ = saved_title;
+    if (had_detail && !selected_id_.empty()) {
+      OpenSettingsDetailPane();
+    }
+    DirtyAll();
   }
 }
 
@@ -607,22 +670,80 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
       break;
     }
   }
+  if (selected_id_.empty()) {
+    return;
+  }
 
   status_ = "";
-  show_detail_ = true;
+  const bool sheet = ShellHost::Instance().State().account_sheet_open || in_account_sheet_;
+  if (sheet) {
+    show_detail_ = true;
+    DirtyAll();
+    if (context_) {
+      context_->Update();
+    }
+    ShellHost::Instance().PushLocalBack("settings_detail", [] {
+      SettingsController::Instance().ApplyBackToListUi();
+    });
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+      suppress_auto_save_ = true;
+      FinishPaneResync();
+      ShellHost::Instance().RefreshDismissGestures();
+      log().info << "OnSelectSection (sheet) complete id=" << selected_id_.c_str();
+    });
+    return;
+  }
+
+  show_detail_ = false;
+  OpenSettingsDetailPane();
   DirtyAll();
   if (context_) {
     context_->Update();
   }
-  ShellHost::Instance().PushLocalBack("settings_detail", [] {
-    SettingsController::Instance().ApplyBackToListUi();
-  });
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
     suppress_auto_save_ = true;
     FinishPaneResync();
-    ShellHost::Instance().RefreshDismissGestures();
-    log().info << "OnSelectSection complete id=" << selected_id_.c_str();
+    log().info << "OnSelectSection (pane) complete id=" << selected_id_.c_str();
   });
+}
+
+void SettingsController::OpenSettingsDetailPane() {
+  compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  ShellState& state = ShellHost::Instance().State();
+  auto is_settings_detail_transient = [](const ShellState& s) {
+    return !s.transient_stack.empty() && s.transient_stack.back().spec.key == "settings_detail";
+  };
+  // Compact Me uses the account sheet, not transient panes.
+  if (compact_layout_ || state.account_sheet_open) {
+    return;
+  }
+
+  if (is_settings_detail_transient(state)) {
+    ShellHost::Instance().PopTransient();
+  }
+  ShellHost::Instance().SetPrimaryPane("settings_detail");
+}
+
+bool SettingsController::CloseSettingsDetailPane() {
+  ShellState& state = ShellHost::Instance().State();
+  if (!state.transient_stack.empty() && state.transient_stack.back().spec.key == "settings_detail") {
+    ShellHost::Instance().PopTransient();
+    return true;
+  }
+  if (state.layout_mode != LayoutMode::Compact && state.nav_tab == NavTab::Me) {
+    ShellHost::Instance().ClearPrimaryPane();
+    return true;
+  }
+  return false;
+}
+
+void SettingsController::OnDetailDismissed() {
+  FlushPending();
+  selected_id_.clear();
+  selected_title_.clear();
+  show_detail_ = false;
+  status_ = "";
+  DirtyAll();
 }
 
 void SettingsController::ApplyBackToListUi() {
@@ -631,7 +752,6 @@ void SettingsController::ApplyBackToListUi() {
   selected_id_.clear();
   selected_title_.clear();
   status_ = "";
-  // Defer remount/dirty so CommitDismiss from ShellHost::Update is not re-entrant.
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
     suppress_auto_save_ = true;
     DirtyAll();
@@ -646,12 +766,19 @@ void SettingsController::ApplyBackToListUi() {
 void SettingsController::OnBackToList() {
   log().info << "OnBackToList";
   FlushPending();
-  // Prefer the shared dismiss path so Escape / swipe / back stay aligned.
   if (ShellHost::Instance().HasLocalBack("settings_detail")) {
     ShellHost::Instance().RequestDismiss(DismissStyle::Instant);
     return;
   }
-  ApplyBackToListUi();
+  if (in_account_sheet_ || ShellHost::Instance().State().account_sheet_open) {
+    ApplyBackToListUi();
+    return;
+  }
+  if (!CloseSettingsDetailPane()) {
+    OnDetailDismissed();
+  } else {
+    OnDetailDismissed();
+  }
 }
 
 void SettingsController::SelectSectionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

@@ -43,11 +43,13 @@ public:
   static SettingsController& Instance();
 
   bool RegisterModel(Rml::Context* context);
-  void OpenSettings();
+  void OnNavTabActivated();
+  void SyncLayoutMode();
   void OnAccountSheetOpened();
   void OnAccountSheetClosed();
-  /** Clear detail UI without touching the shell local-back stack (used by dismiss commit). */
+  /** Clear detail UI without touching the shell local-back stack (used by sheet dismiss). */
   void ApplyBackToListUi();
+  void OnDetailDismissed();
   void OnShellLayoutSynced();
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
@@ -132,6 +134,8 @@ private:
   void SyncBindingsFromSession();
   void FinishPaneResync();
   void OnSelectSection(const std::string& section_id);
+  void OpenSettingsDetailPane();
+  bool CloseSettingsDetailPane();
   void OnBackToList();
   void OnResetSection(const std::string& section_id);
   void MarkSectionDirty(const std::string& section_id);
@@ -166,6 +170,7 @@ private:
   Rml::String selected_title_;
   bool in_account_sheet_ = false;
   bool show_detail_ = false;
+  bool compact_layout_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;
   Rml::String status_;

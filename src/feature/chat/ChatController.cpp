@@ -2433,6 +2433,8 @@ bool ChatController::Setup(Rml::Context* context) {
       ContactsController::Instance().Refresh();
       if (ShellHost::Instance().State().account_sheet_open) {
         SettingsController::Instance().OnAccountSheetOpened();
+      } else if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
+        SettingsController::Instance().OnNavTabActivated();
       } else if (ShellHost::Instance().State().nav_tab == NavTab::Home) {
         OnHomeTabActivated();
       }
@@ -2600,6 +2602,9 @@ bool ChatController::Setup(Rml::Context* context) {
     if (tab == NavTab::Contacts) {
       ContactsController::Instance().OnNavTabActivated();
     }
+    if (tab == NavTab::Me) {
+      SettingsController::Instance().OnNavTabActivated();
+    }
     // Active-thread deduction for sessions badge depends on nav_tab.
     BadgeAggregator::Instance().Refresh();
     ShellHost::Instance().DirtyWindow();
@@ -2608,6 +2613,7 @@ bool ChatController::Setup(Rml::Context* context) {
     if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
       ContactsController::Instance().SyncLayoutMode();
     }
+    SettingsController::Instance().SyncLayoutMode();
     if (mode == LayoutMode::Compact && ShellHost::Instance().State().nav_tab == NavTab::Home) {
       ChatController::Instance().OnHomeTabActivated();
     }
@@ -2630,6 +2636,8 @@ bool ChatController::Setup(Rml::Context* context) {
                                        .provides_composer = true});
   ShellHost::Instance().RegisterPane(
       {.key = "contact_detail", .rml_path = "views/contact_detail.rml", .role = PaneRole::Primary});
+  ShellHost::Instance().RegisterPane(
+      {.key = "settings_detail", .rml_path = "views/settings_detail.rml", .role = PaneRole::Primary});
   ShellHost::Instance().RegisterPane(
       {.key = "preview", .rml_path = "views/preview.rml", .role = PaneRole::Auxiliary, .toolbar_label = "Preview"});
 

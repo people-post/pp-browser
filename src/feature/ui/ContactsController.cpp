@@ -1,6 +1,7 @@
 #include "feature/ui/ContactsController.h"
 
 #include "feature/ui/BadgeAggregator.h"
+#include "feature/ui/SettingsController.h"
 #include "base/crypto/PskFingerprint.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/DirectChatTarget.h"
@@ -363,6 +364,9 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
     ShellHost::Instance().SetOnTransientPopped([](const std::string& key) {
       if (key == "contact_detail") {
         ContactsController::Instance().OnDetailDismissed();
+      }
+      if (key == "settings_detail") {
+        SettingsController::Instance().OnDetailDismissed();
       }
     });
   }

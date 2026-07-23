@@ -20,7 +20,7 @@ Productivity-oriented (Notion/Slack): neutral surfaces, one primary blue accent,
 |---------|--------------|-----------------|
 | Shell chrome | `window_shell.rml`, `ShellHost` | Banner, toast, activity strip, scrims, toolbar |
 | Navigation | `sidebar.rml`, `nav_rail.rml` | Session rows, unread badges, nav tab badges |
-| Home landing | `home.rml` | Brand block, profile button, centered composer, suggestion chips |
+| Home landing | `home.rml` | Brand block, compact profile button, centered composer, suggestion chips |
 | Primary chat | `chat.rml` | Header, bubbles, empty state, E2E chrome |
 | Composer | `composer.rml` | Prompt card, send button |
 | Working set | `preview.rml` | Panel, chips, long-list rows |
@@ -238,7 +238,7 @@ See [WINDOW_SHELL.md](WINDOW_SHELL.md) for layout geometry (content scrolls unde
 
 `.settings-panel`, `.me-profile-card`, `.settings-list`, `.settings-row` (disclosure `button` with trailing chevron), `.settings-row-text`, `.settings-row-title`, `.settings-row-subtitle`, `.settings-row-chevron`, `.settings-row--active`, `.settings-back-btn`, `.settings-section`, `.settings-toggle-row`, `.settings-toggle-label`, `.settings-switch`, `.settings-switch--on`, `.settings-switch-knob`, `.settings-choice-row`, `.settings-choice-value`, `.settings-choice-value-text`, `.settings-help`
 
-Preference rows use an iOS-style disclosure pattern: full-width button, title/subtitle on the left, `chevron-right.svg` on the right. Binary on/off prefs use an iOS-style switch (`.settings-switch` with sliding `.settings-switch-knob`; on state via `data-class-settings-switch--on`). Limited-choice prefs (Theme, Language, Group invites) use `.settings-choice-row`: label left, muted current value + chevron right; tap opens `ContextMenuHost` (float on expanded, action sheet on compact). Preference labels use `.settings-toggle-label` (15dp); helper copy under rows uses `.settings-help` (12dp muted). Inside the account sheet, scroll-aware dismiss may start on these rows when scrolled to top; a clean tap still opens the section.
+Preference rows use an iOS-style disclosure pattern: full-width button, title/subtitle on the left, `chevron-right.svg` on the right. Binary on/off prefs use an iOS-style switch (`.settings-switch` with sliding `.settings-switch-knob`; on state via `data-class-settings-switch--on`). Limited-choice prefs (Theme, Language, Group invites) use `.settings-choice-row`: label left, muted current value + chevron right; tap opens `ContextMenuHost` (float on expanded, action sheet on compact). Preference labels use `.settings-toggle-label` (15dp); helper copy under rows uses `.settings-help` (12dp muted). Expanded Me uses secondary list + primary detail; compact Me uses the account bottom sheet (nested detail + swipe dismiss).
 
 ## RCSS file layout
 

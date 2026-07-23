@@ -1,0 +1,9 @@
+<div class="settings-detail-panel stack" data-model="settings">
+  <div class="settings-detail-header row">
+    <p class="settings-header-title" data-rml="selected_title"></p>
+  </div>
+
+  <div class="settings-detail-body stack">
+    {{include:settings_sections}}
+  </div>
+</div>
