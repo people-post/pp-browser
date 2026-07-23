@@ -50,6 +50,21 @@ void ShellFeedback::ExpireToasts(ShellState& state, float now_ms) {
                      state.toasts.end());
 }
 
+double ShellFeedback::SecondsUntilNextToastExpiry(const ShellState& state, float now_ms) {
+  if (state.toasts.empty()) {
+    return -1.0;
+  }
+  float soonest_ms = state.toasts.front().expires_at_ms;
+  for (const ToastEntry& toast : state.toasts) {
+    soonest_ms = std::min(soonest_ms, toast.expires_at_ms);
+  }
+  const float remaining_ms = soonest_ms - now_ms;
+  if (remaining_ms <= 0.f) {
+    return 0.0;
+  }
+  return static_cast<double>(remaining_ms) / 1000.0;
+}
+
 void ShellFeedback::ShowBanner(ShellState& state, const std::string& message) {
   state.banner_message = Rml::String(message.c_str());
 }

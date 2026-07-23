@@ -8,6 +8,8 @@ struct ShellFeedback {
   static void ShowToast(ShellState& state, const std::string& message, ToastDuration duration = ToastDuration::Short,
                         float now_ms = 0.f);
   static void ExpireToasts(ShellState& state, float now_ms);
+  /** Seconds until the soonest toast expiry, or < 0 if none. Used to arm power-save wake. */
+  static double SecondsUntilNextToastExpiry(const ShellState& state, float now_ms);
   static void ShowBanner(ShellState& state, const std::string& message);
   static void DismissBanner(ShellState& state);
   static void ShowAlert(ShellState& state, const std::string& title, const std::string& message,

@@ -36,6 +36,7 @@ Android keeps the activity alive across orientation changes (`configChanges` in 
 |-------|----------------|
 | `SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED` / display scale / safe area | `Backend::SyncContext` updates RmlUi dimensions, DP ratio, and GL viewport; next frame is forced (no long power-save wait) |
 | UI task posted (`BrowserThread::PostTask(UI)`) | `Backend::WakeEventLoop` pushes a coalesced SDL user event so `SDL_WaitEventTimeout` returns promptly |
+| Shell timers (gesture dismiss slide-out, toast expiry) | `ShellHost::NotifyFrameEnd` calls `Context::RequestNextUpdate` **after** `Context::Update` so power-save wakes for the next deadline without waiting for input |
 | Idle power-save wait | Capped at **2s** (foreground relay poll cadence). A 10s cap starved `BackgroundSyncScheduler` / badge refresh on touch-idle Android until the user tapped |
 | `SDL_EVENT_RENDER_DEVICE_RESET` | Rebuild GL3 shaders/FBOs, release TextLoupe GPU state, `Rml::ReleaseTextures` / `ReleaseCompiledGeometry` / `ReleaseFontResources`, then `SyncContext` |
 | `SDL_EVENT_DID_ENTER_FOREGROUND` | `SyncContext` + theme sync (size may have changed while backgrounded) |

@@ -264,6 +264,8 @@ void Application::Run() {
     ContextMenuHost::Instance().Update();
     ShellHost::Instance().Update(context);
     context->Update();
+    // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
+    ShellHost::Instance().NotifyFrameEnd(context);
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
     if (Backend::CanRender()) {
       Backend::BeginFrame();

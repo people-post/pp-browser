@@ -24,6 +24,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -166,8 +168,8 @@ void ShellHost::Initialize(Rml::Context* context) {
   next_pane_id_ = 1;
   next_overlay_id_ = 1;
   elapsed_ms_ = 0.f;
-  compact_chat_dismiss_at_ms_ = -1.f;
-  account_sheet_dismiss_at_ms_ = -1.f;
+  compact_chat_dismiss_at_.reset();
+  account_sheet_dismiss_at_.reset();
   saved_focus_id_.clear();
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
@@ -243,11 +245,11 @@ void ShellHost::ClearTabContext() {
   state_.transient_stack.clear();
   state_.transient_active = false;
   state_.compact_chat_open = false;
-  compact_chat_dismiss_at_ms_ = -1.f;
+  compact_chat_dismiss_at_.reset();
   DetachChatOverlayGesture();
   if (state_.account_sheet_open) {
     state_.account_sheet_open = false;
-    account_sheet_dismiss_at_ms_ = -1.f;
+    account_sheet_dismiss_at_.reset();
     DetachAccountSheetGesture();
     SettingsController::Instance().OnAccountSheetClosed();
   }
@@ -282,7 +284,7 @@ void ShellHost::OpenCompactChat() {
     return;
   }
   state_.compact_chat_open = true;
-  compact_chat_dismiss_at_ms_ = -1.f;
+  compact_chat_dismiss_at_.reset();
   RequestSyncLayout();
 }
 
@@ -291,17 +293,22 @@ void ShellHost::CloseCompactChat() {
     return;
   }
   state_.compact_chat_open = false;
-  compact_chat_dismiss_at_ms_ = -1.f;
+  compact_chat_dismiss_at_.reset();
   DetachChatOverlayGesture();
   RequestSyncLayout();
 }
 
+void ShellHost::ScheduleDismissAfter(std::optional<std::chrono::steady_clock::time_point>& slot,
+                                     std::chrono::milliseconds delay) {
+  slot = std::chrono::steady_clock::now() + delay;
+}
+
 void ShellHost::ScheduleCompactChatDismiss() {
-  compact_chat_dismiss_at_ms_ = elapsed_ms_ + 220.f;
+  ScheduleDismissAfter(compact_chat_dismiss_at_, std::chrono::milliseconds(220));
 }
 
 void ShellHost::ScheduleAccountSheetDismiss() {
-  account_sheet_dismiss_at_ms_ = elapsed_ms_ + 220.f;
+  ScheduleDismissAfter(account_sheet_dismiss_at_, std::chrono::milliseconds(220));
 }
 
 void ShellHost::OpenAccountSheet() {
@@ -309,7 +316,7 @@ void ShellHost::OpenAccountSheet() {
     return;
   }
   state_.account_sheet_open = true;
-  account_sheet_dismiss_at_ms_ = -1.f;
+  account_sheet_dismiss_at_.reset();
   SettingsController::Instance().OnAccountSheetOpened();
   RequestSyncLayout();
   DirtyWindow();
@@ -320,7 +327,7 @@ void ShellHost::CloseAccountSheet() {
     return;
   }
   state_.account_sheet_open = false;
-  account_sheet_dismiss_at_ms_ = -1.f;
+  account_sheet_dismiss_at_.reset();
   DetachAccountSheetGesture();
   SettingsController::Instance().OnAccountSheetClosed();
   RequestSyncLayout();
@@ -668,7 +675,7 @@ void ShellHost::SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_c
 void ShellHost::OnLayoutModeChanged() {
   if (state_.layout_mode == LayoutMode::Expanded) {
     state_.compact_chat_open = false;
-    compact_chat_dismiss_at_ms_ = -1.f;
+    compact_chat_dismiss_at_.reset();
     DetachChatOverlayGesture();
   }
   if (on_layout_mode_changed_) {
@@ -1179,21 +1186,22 @@ void ShellHost::Update(Rml::Context* context) {
   // fake +=16ms clock made Short toasts linger far too long on idle mobile screens.
   // Must match ShellFeedback::ShowToast's default clock (steady_clock).
   using clock = std::chrono::steady_clock;
+  const auto now = clock::now();
   elapsed_ms_ = static_cast<float>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch()).count());
+      std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
   const size_t toast_count_before = state_.toasts.size();
   ShellFeedback::ExpireToasts(state_, elapsed_ms_);
   if (state_.toasts.size() != toast_count_before) {
     DirtyWindow();
   }
 
-  if (compact_chat_dismiss_at_ms_ >= 0.f && elapsed_ms_ >= compact_chat_dismiss_at_ms_) {
-    compact_chat_dismiss_at_ms_ = -1.f;
+  if (compact_chat_dismiss_at_ && now >= *compact_chat_dismiss_at_) {
+    compact_chat_dismiss_at_.reset();
     CloseCompactChat();
   }
 
-  if (account_sheet_dismiss_at_ms_ >= 0.f && elapsed_ms_ >= account_sheet_dismiss_at_ms_) {
-    account_sheet_dismiss_at_ms_ = -1.f;
+  if (account_sheet_dismiss_at_ && now >= *account_sheet_dismiss_at_) {
+    account_sheet_dismiss_at_.reset();
     CloseAccountSheet();
   }
 
@@ -1208,6 +1216,35 @@ void ShellHost::Update(Rml::Context* context) {
     return;
   }
   DirtyWindow();
+}
+
+void ShellHost::NotifyFrameEnd(Rml::Context* context) {
+  if (!context) {
+    return;
+  }
+  using clock = std::chrono::steady_clock;
+  const auto now = clock::now();
+  double delay_sec = std::numeric_limits<double>::infinity();
+
+  auto consider_deadline = [&](const std::optional<clock::time_point>& deadline) {
+    if (!deadline) {
+      return;
+    }
+    const double remaining = std::chrono::duration<double>(*deadline - now).count();
+    delay_sec = std::min(delay_sec, std::max(0.0, remaining));
+  };
+  consider_deadline(compact_chat_dismiss_at_);
+  consider_deadline(account_sheet_dismiss_at_);
+
+  const double toast_delay = ShellFeedback::SecondsUntilNextToastExpiry(state_, elapsed_ms_);
+  if (toast_delay >= 0.0) {
+    delay_sec = std::min(delay_sec, toast_delay);
+  }
+
+  if (std::isfinite(delay_sec)) {
+    // Must run after Context::Update — that call resets next_update_timeout to infinity.
+    context->RequestNextUpdate(delay_sec);
+  }
 }
 
 void ShellHost::ToggleAuxiliaryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

@@ -8,7 +8,9 @@
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/Types.h>
 
+#include <chrono>
 #include <functional>
+#include <optional>
 #include <string>
 
 namespace Rml {
@@ -26,6 +28,8 @@ public:
   void SyncLayout();
   void RequestSyncLayout(bool restore_focus_after = false);
   void Update(Rml::Context* context);
+  /** Call after Rml::Context::Update so RequestNextUpdate is not cleared by it. Arms power-save. */
+  void NotifyFrameEnd(Rml::Context* context);
 
   ShellState& State() { return state_; }
   const ShellState& State() const { return state_; }
@@ -119,6 +123,8 @@ private:
   void FlushPendingSyncLayout();
   void ScheduleCompactChatDismiss();
   void ScheduleAccountSheetDismiss();
+  void ScheduleDismissAfter(std::optional<std::chrono::steady_clock::time_point>& slot,
+                            std::chrono::milliseconds delay);
   void ApplySafeAreaLayout();
   bool ChromeFrostEnabled() const;
   struct SafeAreaFromSdl {
@@ -136,8 +142,8 @@ private:
   int next_pane_id_ = 1;
   int next_overlay_id_ = 1;
   float elapsed_ms_ = 0.f;
-  float compact_chat_dismiss_at_ms_ = -1.f;
-  float account_sheet_dismiss_at_ms_ = -1.f;
+  std::optional<std::chrono::steady_clock::time_point> compact_chat_dismiss_at_;
+  std::optional<std::chrono::steady_clock::time_point> account_sheet_dismiss_at_;
   Rml::String saved_focus_id_;
   bool sync_pending_ = false;
   bool restore_focus_after_sync_ = false;
