@@ -5,33 +5,31 @@
      data-class-chat-shell--group="thread_is_group"
      data-class-chat-shell--e2e="thread_is_private">
   <div class="chat-header">
-    <div class="chat-header-main" data-model="window" data-if="nav_tab != 'home'">
-      <div data-model="chat">
-        <div class="chat-header-type-row">
-          <div class="chat-header-type-icon" data-if="thread_is_ai">
-            <svg src="../icons/sparkle.svg" width="16" height="16" crop-to-content="true"></svg>
-          </div>
-          <div class="chat-header-type-icon" data-if="thread_is_private">
-            <svg src="../icons/lock.svg" width="16" height="16" crop-to-content="true"></svg>
-          </div>
-          <div class="chat-header-type-icon" data-if="thread_is_public">
-            <svg src="../icons/message.svg" width="16" height="16" crop-to-content="true"></svg>
-          </div>
-          <div class="chat-header-type-icon" data-if="thread_is_group">
-            <svg src="../icons/group.svg" width="16" height="16" crop-to-content="true"></svg>
-          </div>
-          <span class="text-xs chat-type-badge" data-if="thread_is_ai">Assistant</span>
-          <span class="text-xs chat-type-badge" data-if="thread_is_private">Private</span>
-          <span class="text-xs chat-type-badge" data-if="thread_is_public">Chat</span>
-          <span class="text-xs chat-type-badge" data-if="thread_is_group">Group</span>
+    <div class="chat-header-main">
+      <div class="chat-header-type-row">
+        <div class="chat-header-type-icon" data-if="thread_is_ai">
+          <svg src="../icons/sparkle.svg" width="16" height="16" crop-to-content="true"></svg>
         </div>
-        <button class="heading-1 chat-header-title chat-header-title-btn" type="button"
-                data-if="show_peer_sheet" data-rml="thread_title"
-                data-event-click="open_peer_sheet()"></button>
-        <h1 class="heading-1 chat-header-title" data-if="!show_peer_sheet" data-rml="thread_title"></h1>
-        <p class="text muted" data-rml="thread_subtitle"></p>
-        <p class="text-xs chat-peer-link" data-if="show_peer_link" data-rml="peer_link_status"></p>
+        <div class="chat-header-type-icon" data-if="thread_is_private">
+          <svg src="../icons/lock.svg" width="16" height="16" crop-to-content="true"></svg>
+        </div>
+        <div class="chat-header-type-icon" data-if="thread_is_public">
+          <svg src="../icons/message.svg" width="16" height="16" crop-to-content="true"></svg>
+        </div>
+        <div class="chat-header-type-icon" data-if="thread_is_group">
+          <svg src="../icons/group.svg" width="16" height="16" crop-to-content="true"></svg>
+        </div>
+        <span class="text-xs chat-type-badge" data-if="thread_is_ai">Assistant</span>
+        <span class="text-xs chat-type-badge" data-if="thread_is_private">Private</span>
+        <span class="text-xs chat-type-badge" data-if="thread_is_public">Chat</span>
+        <span class="text-xs chat-type-badge" data-if="thread_is_group">Group</span>
       </div>
+      <button class="heading-1 chat-header-title chat-header-title-btn" type="button"
+              data-if="show_peer_sheet" data-rml="thread_title"
+              data-event-click="open_peer_sheet()"></button>
+      <h1 class="heading-1 chat-header-title" data-if="!show_peer_sheet" data-rml="thread_title"></h1>
+      <p class="text muted" data-rml="thread_subtitle"></p>
+      <p class="text-xs chat-peer-link" data-if="show_peer_link" data-rml="peer_link_status"></p>
     </div>
     <div class="chat-header-actions row">
       <button class="chat-header-more-btn" type="button" data-if="show_thread_menu"
@@ -41,12 +39,6 @@
       <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
               data-if="auxiliary_available && (layout_mode == 'expanded' || compact_chat_open)"
               data-event-click="toggle_auxiliary()">Details</button>
-      <button class="shell-profile-btn" type="button" data-model="window"
-              data-if="nav_tab == 'home' && !account_sheet_open"
-              data-event-click="open_account_sheet()">
-        <svg src="../icons/me.svg" width="18" height="18" crop-to-content="true"></svg>
-        <span class="badge-dot badge-dot--profile" data-if="nav_me_attention"></span>
-      </button>
     </div>
   </div>
   <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">
@@ -81,14 +73,7 @@
   </div>
   <div class="messages" data-mount-id="messages">
     <div class="chat-empty stack" data-if="!has_turns && !loading">
-      <h2 class="heading-2 chat-empty-title">{{i18n:app.name}}</h2>
-      <p class="text muted">{{i18n:app.tagline}}</p>
       <p class="text muted">{{i18n:chat.empty_body}}</p>
-      <button class="chat-suggestion" data-event-click="send_suggestion('Find someone on the network')">Find someone</button>
-      <button class="chat-suggestion" data-event-click="new_message()">Message a contact</button>
-      <button class="chat-suggestion" data-event-click="send_suggestion('Show my contacts')">Show my contacts</button>
-      <button class="chat-suggestion" data-event-click="send_suggestion('What conversations do I have?')">My conversations</button>
-      <button class="chat-suggestion" data-event-click="send_suggestion('help')">Show help</button>
     </div>
     <div data-if="use_messages_layout">
       <div data-for="row : messages" data-class="row.row_class">

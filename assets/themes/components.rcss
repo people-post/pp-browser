@@ -372,19 +372,21 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
+  width: 32dp;
+  height: 32dp;
+  min-width: 32dp;
   margin-bottom: 0;
   padding: 0;
   border: 0;
-  border-radius: 22dp;
+  border-radius: 16dp;
   font-family: LatoLatin;
   cursor: pointer;
 }
 
 .prompt-send-btn svg {
   flex-shrink: 0;
+  width: 14dp;
+  height: 14dp;
 }
 
 .code-block {
@@ -887,8 +889,16 @@ select selectbox option {
   height: auto;
 }
 
-.shell-nav-page--home .shell-composer-mount {
-  flex-shrink: 0;
+.shell-pane-home {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.shell-pane-home .shell-pane-body {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .shell-chat-overlay {
@@ -1330,6 +1340,77 @@ select selectbox option {
 .chat-empty-title {
   margin-top: 0;
   font-size: 20dp;
+}
+
+.home-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12dp;
+  box-sizing: border-box;
+}
+
+.home-header {
+  flex-shrink: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12dp;
+  margin-bottom: 12dp;
+  padding: 8dp 4dp;
+}
+
+.home-brand {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2dp;
+}
+
+.home-brand-name {
+  margin: 0;
+  font-family: LatoLatin;
+  font-size: 22dp;
+  font-weight: bold;
+}
+
+.home-brand-tagline {
+  margin: 0;
+}
+
+.home-landing {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding-bottom: 24dp;
+  box-sizing: border-box;
+}
+
+.home-landing-inner {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 640dp;
+  gap: 12dp;
+  box-sizing: border-box;
+}
+
+.home-composer-mount {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.home-composer-mount .prompt-composer {
+  margin: 0;
+}
+
+.home-suggestions {
+  display: block;
+  text-align: center;
+  padding: 0 4dp;
 }
 
 .chat-panel {

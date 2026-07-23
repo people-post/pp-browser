@@ -688,7 +688,7 @@ void ChatController::OnHomeTabActivated() {
   MessagingHub::Instance().Inbox().ClearActiveThread();
   ClearWorkingSet();
   working_set_by_entry_.clear();
-  ShellHost::Instance().SetPrimaryPane("chat");
+  ShellHost::Instance().SetPrimaryPane("home");
   RefreshFromMessaging();
   ShellHost::Instance().RequestSyncLayout();
   ShellHost::Instance().DirtyWindow();
@@ -2622,6 +2622,8 @@ bool ChatController::Setup(Rml::Context* context) {
       {.key = "contacts", .rml_path = "views/contacts.rml", .role = PaneRole::Secondary});
   ShellHost::Instance().RegisterPane(
       {.key = "settings", .rml_path = "views/settings.rml", .role = PaneRole::Secondary});
+  ShellHost::Instance().RegisterPane(
+      {.key = "home", .rml_path = "views/home.rml", .role = PaneRole::Primary});
   ShellHost::Instance().RegisterPane({.key = "chat",
                                        .rml_path = "views/chat.rml",
                                        .role = PaneRole::Primary,

@@ -52,7 +52,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 
 | Task | Where to look |
 |------|----------------|
-| Default chat UI | `assets/samples/window_shell.rml`, `assets/views/chat.rml`, `src/feature/chat/ChatController.cpp` |
+| Default chat UI | `assets/samples/window_shell.rml`, `assets/views/home.rml`, `assets/views/chat.rml`, `src/feature/chat/ChatController.cpp` |
 | Window shell / layout | `src/feature/ui/ShellHost.*`, [docs/ui/WINDOW_SHELL.md](docs/ui/WINDOW_SHELL.md) |
 | Working set panel | [docs/ui/WORKING_SET_PANEL.md](docs/ui/WORKING_SET_PANEL.md) — auxiliary pane design |
 | Theme / layout | `assets/themes/base.rcss` |

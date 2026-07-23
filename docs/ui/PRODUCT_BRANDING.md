@@ -119,7 +119,8 @@ Before public launch, run **domain**, **trademark**, and **app-store name** chec
 | Linux `notify-send --app-name` | Frame |
 | HTTP User-Agent (web search tool) | `Frame/0.1 …` |
 | Locales `app.name` / `app.tagline` | Frame + tagline (EN, zh-Hans) |
-| Chat empty state | Product name + tagline + existing `chat.empty_body` |
+| Home landing | Product name + tagline (top-left brand block) |
+| Chat empty state | Existing `chat.empty_body` (thread empty, no brand hero) |
 | macOS bundle (packaged) | `Frame.app`, icon `app-icon.png`, id `dev.frame.app` |
 | Windows CPack / NSIS | Display name Frame; embedded `app-icon.ico` |
 | README | Frame as product name; pp-browser as repo codename |

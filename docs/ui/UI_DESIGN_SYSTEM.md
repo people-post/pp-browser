@@ -20,6 +20,7 @@ Productivity-oriented (Notion/Slack): neutral surfaces, one primary blue accent,
 |---------|--------------|-----------------|
 | Shell chrome | `window_shell.rml`, `ShellHost` | Banner, toast, activity strip, scrims, toolbar |
 | Navigation | `sidebar.rml`, `nav_rail.rml` | Session rows, unread badges, nav tab badges |
+| Home landing | `home.rml` | Brand block, profile button, centered composer, suggestion chips |
 | Primary chat | `chat.rml` | Header, bubbles, empty state, E2E chrome |
 | Composer | `composer.rml` | Prompt card, send button |
 | Working set | `preview.rml` | Panel, chips, long-list rows |
@@ -62,7 +63,7 @@ Minimum **44dp** height/width on compact layout for:
 
 - `.shell-toolbar-btn`
 - `.sidebar-session` (increased from 36dp)
-- `.sidebar-new-chat`, `.prompt-send-btn` (44dp)
+- `.sidebar-new-chat` (44dp); `.prompt-send-btn` (32dp)
 - Primary action buttons in composer and forms
 
 ## Semantic color tokens
@@ -193,6 +194,10 @@ Counts cap at **99+** in C++ (`FormatBadgeCount`). Home tab stays badge-free; Se
 ### Chat
 
 `.chat-panel`, `.chat-header`, `.chat-header-actions`, `.chat-header-more-btn`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
+
+### Home landing
+
+`.home-panel`, `.home-header`, `.home-brand`, `.home-brand-name`, `.home-brand-tagline`, `.home-landing`, `.home-landing-inner`, `.home-composer-mount`, `.home-suggestions`
 
 ### Shell
 

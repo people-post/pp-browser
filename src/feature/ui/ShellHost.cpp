@@ -708,7 +708,7 @@ std::string ShellHost::SerializeExpandedBase() const {
   }
   Rml::String primary_key = state_.primary_pane_key;
   if (primary_key.empty() && state_.nav_tab == NavTab::Home) {
-    primary_key = "chat";
+    primary_key = "home";
   }
   if (!primary_key.empty()) {
     if (const PaneState* pane = FindPane(primary_key.c_str())) {
@@ -769,12 +769,7 @@ std::string ShellHost::SerializeCompactBase() const {
     if (const char* nav_content = NavContentKey()) {
       out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
     } else if (home_inline) {
-      out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
-      out << "<div class=\"shell-composer-mount surface-chrome";
-      if (solid) {
-        out << " surface-chrome--solid";
-      }
-      out << "\" id=\"shell-composer-mount\"></div>";
+      out << "<div class=\"shell-pane-body\" id=\"pane-body-home\"></div>";
     }
     out << "</div>";
   } else if (state_.nav_tab == NavTab::Sessions) {
@@ -987,6 +982,20 @@ void ShellHost::MountComposer() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  const std::string body = ViewCatalog::LoadBody("composer");
+  if (body.empty()) {
+    return;
+  }
+
+  // Home landing mounts the composer inside the home view (centered with chips).
+  if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open) {
+    if (Rml::Element* target = doc->GetElementById("home-composer-mount")) {
+      RmlMount::MountInner(target, body);
+    }
+    return;
+  }
+
   const PaneState* composer_pane = nullptr;
   if (state_.layout_mode == LayoutMode::Expanded) {
     if (!state_.primary_pane_key.empty()) {
@@ -999,12 +1008,6 @@ void ShellHost::MountComposer() {
     return;
   }
 
-  Rml::ElementDocument* doc = context_->GetDocument(0);
-  const std::string body = ViewCatalog::LoadBody("composer");
-  if (body.empty()) {
-    return;
-  }
-
   if (state_.layout_mode == LayoutMode::Expanded) {
     Rml::Element* target = doc->GetElementById(("pane-composer-" + composer_pane->spec.key).c_str());
     if (target) {
@@ -1013,7 +1016,7 @@ void ShellHost::MountComposer() {
     return;
   }
 
-  if (!state_.compact_chat_open && state_.nav_tab != NavTab::Home) {
+  if (!state_.compact_chat_open) {
     return;
   }
   Rml::Element* target = doc->GetElementById("shell-composer-mount");
@@ -1088,11 +1091,13 @@ void ShellHost::MountPaneBodies() {
   if (state_.layout_mode == LayoutMode::Expanded) {
     Rml::String primary_key = state_.primary_pane_key;
     if (primary_key.empty() && state_.nav_tab == NavTab::Home) {
-      primary_key = "chat";
+      primary_key = "home";
     }
     if (!primary_key.empty()) {
       mount_key(primary_key.c_str());
-      if (const PaneState* pane = FindPane(primary_key.c_str())) {
+      if (primary_key == "home") {
+        MountComposer();
+      } else if (const PaneState* pane = FindPane(primary_key.c_str())) {
         if (pane->spec.provides_composer) {
           MountComposer();
         }
@@ -1106,7 +1111,7 @@ void ShellHost::MountPaneBodies() {
     MountComposer();
     AttachChatOverlayGesture();
   } else if (state_.nav_tab == NavTab::Home) {
-    mount_key("chat");
+    mount_key("home");
     MountComposer();
   }
 

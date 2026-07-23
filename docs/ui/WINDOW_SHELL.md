@@ -27,7 +27,7 @@ Nav rail → Secondary (index/list) → Primary (drill-down) → Auxiliary → T
 |------|----------|---------|----------|---------|
 | Nav rail | Left / bottom | Tab switcher | Left column | Bottom bar |
 | Secondary | First content column | Tab index / list (sessions, contacts) | Beside nav rail (Home tab omits this) | Full page above nav rail |
-| Primary | Next column right | Tab drill-down content (chat, contact detail) | Center column when set; Home tab always shows chat | Home: inline chat in nav page; Sessions: overlay on thread select |
+| Primary | Next column right | Tab drill-down content (home landing, chat, contact detail) | Center column when set; Home tab shows landing | Home: inline landing in nav page; Sessions: overlay on thread select |
 | Auxiliary | Next column right | Further content in this tab (working set) | Right column when open | Sheet |
 | Transient | Overlay | Deeper drill-down in this tab | Over primary | Over primary |
 
@@ -37,11 +37,11 @@ Primary is **tab-scoped drill-down content**, not always chat. Examples:
 
 | Tab | Secondary | Primary (when selected) |
 |-----|-----------|-------------------------|
-| Home (default) | (none) | AI start landing + composer (no active thread) |
+| Home (default) | (none) | Home landing (`home.rml`: brand, centered composer, suggestion chips) |
 | Sessions | Session list | Chat + composer |
 | Contacts | Contact list | Contact detail |
 
-**Account / Me settings** are not a nav-rail tab. A profile button in the Home tab header opens an iOS-style **account bottom sheet** (`OpenAccountSheet` / `close_account_sheet`). Settings content mounts into `#pane-body-settings` inside the sheet. Swipe down on the grabber/header, tap the scrim or ×, or press Escape/back to dismiss. Tab switch clears the sheet via `ClearTabContext()`.
+**Account / Me settings** are not a nav-rail tab. A profile button in the Home landing header opens an iOS-style **account bottom sheet** (`OpenAccountSheet` / `close_account_sheet`). Settings content mounts into `#pane-body-settings` inside the sheet. Swipe down on the grabber/header, tap the scrim or ×, or press Escape/back to dismiss. Tab switch clears the sheet via `ClearTabContext()`.
 
 The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
 
@@ -93,7 +93,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | Callback | Action |
 |----------|--------|
 | `select_nav_tab(tab)` | Switch nav rail tab (`home`, `sessions`, or `contacts`); clears tab context |
-| `open_account_sheet()` | Open Me / settings bottom sheet (Home tab profile button) |
+| `open_account_sheet()` | Open Me / settings bottom sheet (Home landing profile button) |
 | `close_account_sheet()` | Dismiss account bottom sheet |
 | `compact_chat_back()` | Close compact chat overlay |
 | `toggle_auxiliary()` | Open/close preview sheet/panel |
@@ -103,24 +103,44 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `dismiss_banner()` | Hide banner |
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
 
-Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). The profile attention dot appears on the Home header profile button, not the nav rail. Refreshed by `BadgeAggregator` on messaging events.
+Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). The profile attention dot appears on the Home landing profile button, not the nav rail. Refreshed by `BadgeAggregator` on messaging events.
 
 Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`. The nav rail mounts from `assets/views/nav_rail.rml`.
 
+## Home landing
+
+Home is a dedicated primary pane (`home.rml`), not the chat panel:
+
+| Region | Content |
+|--------|---------|
+| Top left | Brand wordmark (`app.name`) + tagline |
+| Top right | Profile button (account sheet) |
+| Optical center | Composer mounted into `#home-composer-mount` |
+| Below composer | Soft suggestion chips (`send_suggestion` / `new_message`) |
+
+Sending from Home mints an AI thread, switches to Sessions, and opens chat (`EnsureHomeOutboundSession`). Compact Home mounts `#pane-body-home` inline in the nav page (no separate bottom composer slot).
+
 ## Composer chrome
 
-Primary panes may set `provides_composer = true` on `PaneSpec`. The shell mounts `assets/views/composer.rml` into a dedicated slot instead of embedding the prompt inside pane scroll content.
+Primary panes may set `provides_composer = true` on `PaneSpec`. The shell mounts `assets/views/composer.rml` into a dedicated slot instead of embedding the prompt inside pane scroll content. **Exception:** Home mounts the same composer body into `#home-composer-mount` inside the landing view so the prompt can sit centered with chips.
 
 | Layout | Mount target | Structure |
 |--------|--------------|-----------|
-| Expanded | `#pane-composer-{key}` | Below `#pane-body-{key}` in the primary column |
-| Compact | `#shell-composer-mount` | Home tab: below chat in nav page; Sessions overlay: inside overlay |
+| Expanded (chat) | `#pane-composer-{key}` | Below `#pane-body-{key}` in the primary column |
+| Expanded (home) | `#home-composer-mount` | Inside home landing stage |
+| Compact | `#shell-composer-mount` | Sessions overlay only |
+| Compact (home) | `#home-composer-mount` | Inside home landing; no bottom dock |
 
-On compact, the composer appears on the Home landing (inline) or inside the Sessions chat overlay after selecting a thread (or after starting a chat from Home). Sessions and Contacts list pages do not show the composer.
+On compact, the composer appears on the Home landing (centered) or inside the Sessions chat overlay after selecting a thread (or after starting a chat from Home). Sessions and Contacts list pages do not show the composer.
 
 ## C++ usage
 
 ```cpp
+ShellHost::Instance().RegisterPane({
+    .key = "home",
+    .rml_path = "views/home.rml",
+    .role = PaneRole::Primary,
+});
 ShellHost::Instance().RegisterPane({
     .key = "chat",
     .rml_path = "views/chat.rml",
@@ -128,7 +148,7 @@ ShellHost::Instance().RegisterPane({
     .provides_composer = true,
 });
 ShellHost::Instance().SelectNavTab(NavTab::Home);
-ShellHost::Instance().SetPrimaryPane("chat");
+ShellHost::Instance().SetPrimaryPane("home");
 ShellHost::Instance().SyncLayout();
 
 ShellFeedback::ShowBanner(ShellHost::Instance().State(), "Offline");

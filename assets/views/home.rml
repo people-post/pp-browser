@@ -1,0 +1,26 @@
+<div class="home-panel" data-model="chat">
+  <div class="home-header row">
+    <div class="home-brand stack">
+      <h1 class="home-brand-name">{{i18n:app.name}}</h1>
+      <p class="text-xs muted home-brand-tagline">{{i18n:app.tagline}}</p>
+    </div>
+    <button class="shell-profile-btn" type="button" data-model="window"
+            data-if="!account_sheet_open"
+            data-event-click="open_account_sheet()">
+      <svg src="../icons/me.svg" width="18" height="18" crop-to-content="true"></svg>
+      <span class="badge-dot badge-dot--profile" data-if="nav_me_attention"></span>
+    </button>
+  </div>
+  <div class="home-landing">
+    <div class="home-landing-inner stack">
+      <div class="home-composer-mount" id="home-composer-mount"></div>
+      <div class="home-suggestions">
+        <button class="chat-suggestion" data-event-click="send_suggestion('Find someone on the network')">Find someone</button>
+        <button class="chat-suggestion" data-event-click="new_message()">Message a contact</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('Show my contacts')">Show my contacts</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('What conversations do I have?')">My conversations</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('help')">Show help</button>
+      </div>
+    </div>
+  </div>
+</div>
