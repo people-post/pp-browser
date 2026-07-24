@@ -73,6 +73,12 @@ else()
   )
 endif()
 
+# Must enable OBJCXX before adding .mm sources to a target, or CMake leaves
+# CMAKE_OBJCXX_COMPILE_OBJECT unset and generation fails.
+if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
+  enable_language(OBJCXX)
+endif()
+
 pp_browser_add_base_library(pp_base_platform
   SOURCES
     ${_pp_platform_common_sources}
@@ -104,7 +110,6 @@ endif()
 
 # Desktop macOS: UNUserNotificationCenter for local banners.
 if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
-  enable_language(OBJCXX)
   target_link_libraries(pp_base_platform PUBLIC
     "-framework UserNotifications"
     "-framework CoreServices"

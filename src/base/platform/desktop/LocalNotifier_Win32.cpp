@@ -24,6 +24,10 @@
 #include <unordered_map>
 
 #pragma comment(lib, "runtimeobject.lib")
+#pragma comment(lib, "shell32.lib")
+
+// Shobjidl.h; forward-declare to avoid pulling shell COM headers alongside WinRT.
+extern "C" HRESULT WINAPI SetCurrentProcessExplicitAppUserModelID(PCWSTR AppID);
 
 using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::RuntimeClass;
