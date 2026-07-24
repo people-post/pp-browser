@@ -2794,12 +2794,19 @@ void ChatController::Shutdown() {
   AppLifecycle::ClearForegroundListeners();
   IPushDeviceRegistrar::SetTokenChangedHandler(nullptr);
   if (agent_) {
+    StartupPhase phase("Shutdown::AgentSession");
     agent_->Cancel();
     agent_.reset();
   }
   if (messaging_ready_) {
-    MessagingHub::Instance().Shutdown();
-    ProfileSecretsService::Instance().Shutdown();
+    {
+      StartupPhase phase("Shutdown::MessagingHub");
+      MessagingHub::Instance().Shutdown();
+    }
+    {
+      StartupPhase phase("Shutdown::ProfileSecrets");
+      ProfileSecretsService::Instance().Shutdown();
+    }
     messaging_ready_ = false;
   }
   pending_reply_.reset();

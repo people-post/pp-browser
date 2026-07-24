@@ -319,34 +319,52 @@ void Application::Run() {
 }
 
 void Application::Shutdown() {
+  StartupMark("shutdown_begin");
+  StartupPhase shutdown_total("Application::Shutdown");
+
   // Join notification watcher first so it cannot PostTask during teardown, and
   // so process exit does not std::terminate on an unjoined std::thread.
-  ILocalNotifier::Instance().Shutdown();
+  {
+    StartupPhase phase("Shutdown::LocalNotifier");
+    ILocalNotifier::Instance().Shutdown();
+  }
 
   if (initialized_) {
 #if RMLUI_SDL_VERSION_MAJOR >= 3
     Backend::SetLiveResizeHandler(nullptr, nullptr);
 #endif
-    ShutdownChatController();
+    {
+      StartupPhase phase("Shutdown::ChatController");
+      ShutdownChatController();
+    }
 
     BrowserThread::RunUITasks();
 
-    ActionRouter::Instance().Detach();
-    Rml::RemoveContext("main");
+    {
+      StartupPhase phase("Shutdown::RmlUi");
+      ActionRouter::Instance().Detach();
+      Rml::RemoveContext("main");
 #ifdef PPBROWSER_ENABLE_DEBUGGER
-    Rml::Debugger::Shutdown();
+      Rml::Debugger::Shutdown();
 #endif
-    Rml::Shutdown();
-    harfbuzz_font_engine_.reset();
+      Rml::Shutdown();
+      harfbuzz_font_engine_.reset();
+    }
     BrowserThread::SetUIWakeCallback(nullptr);
-    Backend::Shutdown();
+    {
+      StartupPhase phase("Shutdown::Backend");
+      Backend::Shutdown();
+    }
 
     log().info << "Shutdown complete";
     initialized_ = false;
   }
 
   // Always tear down runners — Initialize may have started them before failing.
-  BrowserThread::Shutdown();
+  {
+    StartupPhase phase("Shutdown::BrowserThread");
+    BrowserThread::Shutdown();
+  }
 }
 
 } // namespace pbr

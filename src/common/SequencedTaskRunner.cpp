@@ -96,6 +96,8 @@ void SequencedTaskRunner::Stop() {
     {
       std::lock_guard lock(mutex_);
       stopped_ = true;
+      // Abandon queued work on shutdown — do not drain (HTTP can block up to 30s).
+      tasks_.clear();
     }
     cv_.notify_all();
     if (thread_.joinable()) {
@@ -119,7 +121,9 @@ void SequencedTaskRunner::IOThreadMain() {
     {
       std::unique_lock lock(mutex_);
       cv_.wait(lock, [this]() { return stopped_ || (!paused_ && !tasks_.empty()); });
-      if (stopped_ && tasks_.empty()) {
+      if (stopped_) {
+        // Drop any remaining tasks; in-flight work below still finishes.
+        tasks_.clear();
         break;
       }
       if (paused_ || !DequeueOne(&task)) {

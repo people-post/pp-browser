@@ -496,8 +496,12 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 	int has_event = 0;
 #endif
 
-	bool result = data->running;
-	data->running = true;
+	// Exit without blocking in power-save wait — RequestExit / quit must feel instant.
+	if (!data->running) {
+		return false;
+	}
+
+	bool result = true;
 
 	const bool force_frame = data->force_next_frame;
 	data->force_next_frame = false;
@@ -535,6 +539,7 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 		{
 			propagate_event = false;
 			result = false;
+			data->running = false;
 		}
 		break;
 		case event_key_down:
@@ -601,7 +606,7 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 		has_event = SDL_PollEvent(&ev);
 	}
 
-	return result;
+	return result && data->running;
 }
 
 void Backend::RequestExit()
@@ -609,6 +614,9 @@ void Backend::RequestExit()
 	RMLUI_ASSERT(data);
 
 	data->running = false;
+	// Unblock SDL_WaitEventTimeout in ProcessEvents so titlebar close is not capped
+	// by the power-save idle wait (up to 2s).
+	WakeEventLoop();
 }
 
 void Backend::WakeEventLoop()
