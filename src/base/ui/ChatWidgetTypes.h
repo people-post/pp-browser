@@ -2,6 +2,7 @@
 
 #include <RmlUi/Core/Types.h>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -68,6 +69,8 @@ struct MessageDisplayRow {
   Rml::String content_rml;
   Rml::String row_class;
   Rml::String transport_badge;
+  /** Store cursor for local scroll-up paging (D031) — not bound to RML. */
+  int64_t display_order = 0;
   bool has_content = true;
   bool has_form = false;
   FormWidgetState form;

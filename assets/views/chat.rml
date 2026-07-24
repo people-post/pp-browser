@@ -71,7 +71,9 @@
     <p class="text muted">Older messages may be available from your peer.</p>
     <button class="chat-suggestion" data-event-click="load_older_history()">Load older messages</button>
   </div>
-  <div class="messages" data-mount-id="messages">
+  <div class="chat-messages-wrap">
+  <div id="chat-messages" class="messages" data-mount-id="messages"
+       data-event-scroll="messages_scroll()">
     <div class="chat-empty stack" data-if="!has_turns && !loading">
       <p class="text muted">{{i18n:chat.empty_body}}</p>
     </div>
@@ -96,5 +98,8 @@
     </div>
     <p class="text muted thinking" data-if="loading && status == ''">Thinking...</p>
     <p class="text muted thinking" data-if="loading && status != ''" data-rml="status"></p>
+  </div>
+  <button class="chat-jump-latest" type="button" data-if="show_jump_to_latest"
+          data-event-click="jump_to_latest()" data-rml="jump_to_latest_label"></button>
   </div>
 </div>

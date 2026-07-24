@@ -167,6 +167,7 @@
     "chat.delete_conversation": "Delete conversation",
     "chat.delete_confirm": "Delete this conversation? Message history will be removed.",
     "chat.clear_history": "Clear message history?",
+    "chat.jump_to_latest": "Latest",
     "chat.copy": "Copy",
     "chat.status.connecting": "Connecting…",
     "chat.status.online": "Online",

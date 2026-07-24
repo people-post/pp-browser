@@ -167,6 +167,7 @@
     "chat.delete_conversation": "删除对话",
     "chat.delete_confirm": "删除此对话？消息记录将被移除。",
     "chat.clear_history": "清除消息记录？",
+    "chat.jump_to_latest": "最新",
     "chat.copy": "复制",
     "chat.status.connecting": "连接中…",
     "chat.status.online": "在线",

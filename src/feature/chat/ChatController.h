@@ -25,6 +25,7 @@
 
 namespace Rml {
 class Context;
+class Element;
 }
 
 namespace pbr {
@@ -37,6 +38,8 @@ public:
 
   bool Setup(Rml::Context* context);
   void Update();
+  /** Call after Rml::Context::Update so follow-tail uses fresh layout heights. */
+  void AfterLayout();
   void Shutdown();
   void OnApplicationPause();
   void FinalizeThreadDisplay();
@@ -88,6 +91,8 @@ private:
     Rml::String psk_import_text;
     bool sync_in_progress = false;
     bool show_older_history_hint = false;
+    bool show_jump_to_latest = false;
+    Rml::String jump_to_latest_label;
     std::vector<TranscriptDisplayRow> turns;
     std::vector<MessageDisplayRow> messages;
     bool use_messages_layout = true;
@@ -141,6 +146,8 @@ private:
   static void OpenWorkingSetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void LoadOlderHistoryCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void RetryPeerDialCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void MessagesScrollCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void JumpToLatestCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void OnSendMessage();
   void OnNewChat();
@@ -183,12 +190,24 @@ private:
   void OnShellLayoutSynced();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
+  void OnMessagesScroll();
+  void OnJumpToLatest();
   void UpdatePeerLinkChrome();
   void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
   void WireMessagingBindings();
   /** Show/clear LLM setup banners once identity is readable (after unlock). */
   void RefreshLlmSetupBanner();
   void WithSecrets(std::function<void()> action);
+
+  Rml::Element* FindMessagesScrollElement() const;
+  void RequestScrollToLatest();
+  void ApplyTranscriptScrollPolicy();
+  void ScrollMessagesToBottom();
+  void UpdateJumpToLatestLabel();
+  void SetShowJumpToLatest(bool show);
+  void ResetTranscriptScrollState();
+  void MaybeLoadOlderLocalHistory();
+  void LoadOlderLocalHistory();
 
   std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
   bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;
@@ -224,10 +243,27 @@ private:
   std::string active_working_set_entry_id_;
   bool focus_draft_after_sync_ = false;
   std::chrono::steady_clock::time_point last_peer_link_poll_{};
+
+  /** Follow-tail / scroll-up paging for `.messages` (D031 + viewport policy). */
+  bool pinned_to_bottom_ = true;
+  bool pending_scroll_to_bottom_ = false;
+  int pending_scroll_settle_frames_ = 0;
+  int pending_scroll_attempts_ = 0;
+  float settle_scroll_height_ = -1.f;
+  bool suppress_scroll_handler_ = false;
+  bool loading_older_local_ = false;
+  bool has_more_local_history_ = false;
+  std::string scroll_thread_id_;
+  std::optional<int64_t> loaded_min_display_order_;
+  std::optional<float> pending_scroll_height_before_;
+  std::optional<float> pending_scroll_top_before_;
+  float last_messages_scroll_height_ = 0.f;
+  int unread_while_scrolled_ = 0;
 };
 
 bool SetupChatController(Rml::Context* context);
 void UpdateChatController();
+void AfterLayoutChatController();
 void ShutdownChatController();
 
 } // namespace pbr

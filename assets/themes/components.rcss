@@ -252,6 +252,40 @@ select selectbox option {
   padding-right: 8dp;
 }
 
+.chat-messages-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  /* Fill remaining chat-panel height; do not nest another flex column — that
+     lets .messages grow with content and lose overflow scrolling. */
+}
+
+.chat-messages-wrap .messages {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  flex: none;
+  margin-bottom: 0;
+}
+
+.chat-jump-latest {
+  position: absolute;
+  right: 16dp;
+  bottom: 16dp;
+  z-index: 5;
+  width: auto;
+  font-family: LatoLatin;
+  font-size: 13dp;
+  padding: 8dp 14dp;
+  border: 0;
+  border-radius: 16dp;
+  cursor: pointer;
+  focus: none;
+}
+
 .message-group {
   display: block;
 }
@@ -1560,8 +1594,9 @@ select selectbox option {
   font-size: 22dp;
 }
 
-.chat-panel .messages {
+.chat-panel .chat-messages-wrap {
   flex: 1;
+  min-height: 0;
 }
 
 .chat-transport-line {

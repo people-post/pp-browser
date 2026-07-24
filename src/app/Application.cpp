@@ -274,6 +274,7 @@ void Application::Run() {
     Backend::SyncContext(ctx);
     ShellHost::Instance().Update(ctx);
     ctx->Update();
+    AfterLayoutChatController();
     ShellHost::Instance().NotifyFrameEnd(ctx);
     if (!Backend::CanRender())
       return;
@@ -295,6 +296,7 @@ void Application::Run() {
     ContextMenuHost::Instance().Update();
     ShellHost::Instance().Update(context);
     context->Update();
+    AfterLayoutChatController();
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
     ShellHost::Instance().NotifyFrameEnd(context);
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.

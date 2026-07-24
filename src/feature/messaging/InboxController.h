@@ -45,7 +45,15 @@ public:
   int SumUnreadForContact(const std::string& contact_id) const;
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
 
-  std::vector<MessageDisplayRow> BuildDisplayRows(const std::string& thread_id) const;
+  /**
+   * Build visible transcript rows (D031).
+   * @param oldest_inclusive when set, load pages until this display_order is included
+   *        (expanded window after scroll-up); otherwise newest page only.
+   */
+  std::vector<MessageDisplayRow> BuildDisplayRows(
+      const std::string& thread_id, std::optional<int64_t> oldest_inclusive = std::nullopt) const;
+  /** True when local transcript has rows older than the given display_order. */
+  bool HasLocalMessagesBefore(const std::string& thread_id, int64_t before_display_order) const;
 
   PeerDisplayLabel ResolveThreadLabel(const Thread& thread) const;
   PeerDisplayResolver& Labels() { return labels_; }

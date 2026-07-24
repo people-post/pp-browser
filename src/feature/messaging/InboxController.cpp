@@ -516,11 +516,44 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   return body;
 }
 
-std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(const std::string& thread_id) const {
+bool InboxController::HasLocalMessagesBefore(const std::string& thread_id,
+                                             int64_t before_display_order) const {
+  auto page = store_.GetMessagesPage(thread_id, before_display_order, 1);
+  return page && !page->empty();
+}
+
+std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
+    const std::string& thread_id, std::optional<int64_t> oldest_inclusive) const {
   std::vector<MessageDisplayRow> rows;
-  auto messages = store_.GetMessagesPage(thread_id, std::nullopt, kDefaultMessagesPageSize);
-  if (!messages) {
-    return rows;
+  std::vector<ThreadMessage> messages;
+  std::optional<int64_t> before;
+  for (;;) {
+    auto page = store_.GetMessagesPage(thread_id, before, kDefaultMessagesPageSize);
+    if (!page || page->empty()) {
+      break;
+    }
+    const int64_t page_oldest = page->front().display_order;
+    const size_t page_size = page->size();
+    if (messages.empty()) {
+      messages = std::move(*page);
+    } else {
+      messages.insert(messages.begin(), page->begin(), page->end());
+    }
+    if (!oldest_inclusive.has_value()) {
+      break;
+    }
+    if (page_oldest <= *oldest_inclusive) {
+      messages.erase(std::remove_if(messages.begin(), messages.end(),
+                                    [&](const ThreadMessage& m) {
+                                      return m.display_order < *oldest_inclusive;
+                                    }),
+                     messages.end());
+      break;
+    }
+    if (page_size < kDefaultMessagesPageSize) {
+      break;
+    }
+    before = page_oldest;
   }
 
   std::unordered_map<std::string, size_t> row_index_by_id;
@@ -528,7 +561,7 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(const std::stri
   std::vector<ThreadMessage> orphan_annotations;
   std::vector<ThreadMessage> pending_annotations;
 
-  for (const ThreadMessage& message : *messages) {
+  for (const ThreadMessage& message : messages) {
     if (message.content_type == ChatContentType::Annotation) {
       pending_annotations.push_back(message);
       continue;
@@ -540,6 +573,7 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(const std::stri
 
     MessageDisplayRow row;
     row.message_id = message.id.c_str();
+    row.display_order = message.display_order;
     row.sender_label = ResolveSenderLabel(message.sender_contact_id).c_str();
     row.content_rml = BuildMessageRml(message).c_str();
     row.row_class = ResolveRowClass(message.sender_contact_id).c_str();
@@ -578,6 +612,7 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(const std::stri
   for (const ThreadMessage& annotation : orphan_annotations) {
     MessageDisplayRow row;
     row.message_id = annotation.id.c_str();
+    row.display_order = annotation.display_order;
     row.sender_label = ResolveSenderLabel(annotation.sender_contact_id).c_str();
     row.content_rml =
         ("<div class=\"chat-orphan-annotation muted\"><span class=\"chat-annotation-badge\">" +

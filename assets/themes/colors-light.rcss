@@ -178,6 +178,15 @@ select selectbox option:hover {
   background-color: #d8dce2;
 }
 
+.chat-jump-latest {
+  background-color: #1a1a1a;
+  color: #f9fafb;
+}
+
+.chat-jump-latest:hover {
+  background-color: #333333;
+}
+
 .chat-form {
   border: 1dp #d1d5db;
   background-color: #ffffff;

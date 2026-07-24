@@ -55,6 +55,8 @@
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
+#include <RmlUi/Core/Element.h>
+#include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/SystemInterface.h>
 
 #include <nlohmann/json.hpp>
@@ -337,6 +339,8 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "psk_export_b64");
   DataModelHost::Instance().Dirty("chat", "psk_import_text");
   DataModelHost::Instance().Dirty("chat", "show_older_history_hint");
+  DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
+  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
 }
 
 /** Sidebar / header visual type: ai | private | public | group */
@@ -679,6 +683,8 @@ void ChatController::FinalizeThreadDisplay() {
   ClearWorkingSet();
   working_set_by_entry_.clear();
   RefreshFromMessaging();
+  // Always land on latest when opening/showing a thread (incl. re-open same id).
+  RequestScrollToLatest();
   if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact &&
       ShellHost::Instance().State().nav_tab == NavTab::Sessions) {
     ShellHost::Instance().OpenCompactChat();
@@ -876,13 +882,24 @@ void ChatController::OnLoadOlderHistory() {
   chat_.status = "Loading older messages…";
   DirtyChatChrome();
 
-  MessagingHub::Instance().P2p().ScrollBackfill(thread_id, [this](Roe<ChatSyncResult> result) {
+  MessagingHub::Instance().P2p().ScrollBackfill(thread_id, [this, thread_id](Roe<ChatSyncResult> result) {
     chat_.sync_in_progress = false;
     chat_.status = "";
     if (!result) {
       chat_.status = result.error().message.c_str();
     } else if (result->ingested == 0) {
       chat_.show_older_history_hint = false;
+    } else if (!chat_.messages.empty()) {
+      Rml::Element* el = FindMessagesScrollElement();
+      if (el && !pinned_to_bottom_) {
+        pending_scroll_height_before_ = el->GetScrollHeight();
+        pending_scroll_top_before_ = el->GetScrollTop();
+      }
+      const int64_t before = chat_.messages.front().display_order;
+      auto older = MessagingHub::Instance().Store().GetMessagesPage(thread_id, before, kDefaultMessagesPageSize);
+      if (older && !older->empty()) {
+        loaded_min_display_order_ = older->front().display_order;
+      }
     }
     RefreshFromMessaging();
     DirtyChatChrome();
@@ -1227,6 +1244,261 @@ void ChatController::SyncShellSessions() {
   }
 }
 
+void ChatController::ResetTranscriptScrollState() {
+  pinned_to_bottom_ = true;
+  pending_scroll_to_bottom_ = false;
+  pending_scroll_settle_frames_ = 0;
+  pending_scroll_attempts_ = 0;
+  settle_scroll_height_ = -1.f;
+  suppress_scroll_handler_ = false;
+  loading_older_local_ = false;
+  has_more_local_history_ = false;
+  scroll_thread_id_.clear();
+  loaded_min_display_order_.reset();
+  pending_scroll_height_before_.reset();
+  pending_scroll_top_before_.reset();
+  last_messages_scroll_height_ = 0.f;
+  unread_while_scrolled_ = 0;
+  chat_.show_jump_to_latest = false;
+  chat_.jump_to_latest_label = "";
+}
+
+Rml::Element* ChatController::FindMessagesScrollElement() const {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return nullptr;
+  }
+  return context_->GetDocument(0)->GetElementById("chat-messages");
+}
+
+void ChatController::UpdateJumpToLatestLabel() {
+  if (unread_while_scrolled_ > 0) {
+    chat_.jump_to_latest_label =
+        (std::to_string(unread_while_scrolled_) + " new · Latest").c_str();
+  } else {
+    chat_.jump_to_latest_label = Tr("chat.jump_to_latest").c_str();
+  }
+}
+
+void ChatController::SetShowJumpToLatest(bool show) {
+  if (chat_.show_jump_to_latest == show && !show) {
+    return;
+  }
+  chat_.show_jump_to_latest = show;
+  if (show) {
+    UpdateJumpToLatestLabel();
+  } else {
+    unread_while_scrolled_ = 0;
+    chat_.jump_to_latest_label = "";
+  }
+  DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
+  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
+}
+
+void ChatController::RequestScrollToLatest() {
+  pinned_to_bottom_ = true;
+  pending_scroll_to_bottom_ = true;
+  pending_scroll_settle_frames_ = 0;
+  pending_scroll_attempts_ = 0;
+  settle_scroll_height_ = -1.f;
+  last_messages_scroll_height_ = 0.f;
+  SetShowJumpToLatest(false);
+}
+
+void ChatController::ScrollMessagesToBottom() {
+  Rml::Element* el = FindMessagesScrollElement();
+  if (!el) {
+    return;
+  }
+  const float max_top = std::max(0.f, el->GetScrollHeight() - el->GetClientHeight());
+  suppress_scroll_handler_ = true;
+  el->SetScrollTop(max_top);
+  suppress_scroll_handler_ = false;
+  pinned_to_bottom_ = true;
+  last_messages_scroll_height_ = el->GetScrollHeight();
+  SetShowJumpToLatest(false);
+}
+
+void ChatController::ApplyTranscriptScrollPolicy() {
+  Rml::Element* el = FindMessagesScrollElement();
+  if (!el) {
+    return;
+  }
+
+  if (pending_scroll_height_before_.has_value() && pending_scroll_top_before_.has_value()) {
+    const float delta = el->GetScrollHeight() - *pending_scroll_height_before_;
+    suppress_scroll_handler_ = true;
+    el->SetScrollTop(*pending_scroll_top_before_ + delta);
+    suppress_scroll_handler_ = false;
+    pending_scroll_height_before_.reset();
+    pending_scroll_top_before_.reset();
+    last_messages_scroll_height_ = el->GetScrollHeight();
+  }
+
+  const float scroll_height = el->GetScrollHeight();
+  const float max_top = std::max(0.f, scroll_height - el->GetClientHeight());
+  const float top = el->GetScrollTop();
+  constexpr float kNearBottomPx = 64.f;
+  const bool near_bottom = max_top <= 0.5f || (max_top - top) <= kNearBottomPx;
+
+  if (pending_scroll_to_bottom_) {
+    ScrollMessagesToBottom();
+    const float h = el->GetScrollHeight();
+    const float settled_max = std::max(0.f, h - el->GetClientHeight());
+    const float settled_top = el->GetScrollTop();
+    const bool at_bottom = settled_max <= 0.5f || (settled_max - settled_top) <= 1.f;
+    const bool height_stable = settle_scroll_height_ >= 0.f && std::abs(h - settle_scroll_height_) < 0.5f;
+
+    if (!chat_.has_turns) {
+      pending_scroll_to_bottom_ = false;
+      pending_scroll_settle_frames_ = 0;
+      settle_scroll_height_ = -1.f;
+    } else if (at_bottom && height_stable) {
+      ++pending_scroll_settle_frames_;
+      if (pending_scroll_settle_frames_ >= 3) {
+        pending_scroll_to_bottom_ = false;
+        pending_scroll_settle_frames_ = 0;
+        settle_scroll_height_ = -1.f;
+      }
+    } else {
+      settle_scroll_height_ = h;
+      pending_scroll_settle_frames_ = 0;
+      ++pending_scroll_attempts_;
+      if (pending_scroll_attempts_ > 60) {
+        pending_scroll_to_bottom_ = false;
+        pending_scroll_attempts_ = 0;
+        settle_scroll_height_ = -1.f;
+      }
+    }
+    last_messages_scroll_height_ = h;
+    return;
+  }
+
+  pending_scroll_attempts_ = 0;
+
+  // While pinned: follow content growth first. Only unpin when height is stable
+  // and the user has moved away from the bottom (otherwise incomplete layout
+  // looks like scroll-away and leaves the viewport near the top).
+  if (pinned_to_bottom_) {
+    if (scroll_height > last_messages_scroll_height_ + 0.5f) {
+      ScrollMessagesToBottom();
+      return;
+    }
+    if (!near_bottom) {
+      pinned_to_bottom_ = false;
+      last_messages_scroll_height_ = scroll_height;
+      return;
+    }
+    if (chat_.show_jump_to_latest) {
+      SetShowJumpToLatest(false);
+    }
+    last_messages_scroll_height_ = scroll_height;
+    return;
+  }
+
+  // Unpinned: user scrolled away — only re-pin when they return near the end.
+  if (near_bottom && max_top > 0.5f) {
+    pinned_to_bottom_ = true;
+    if (chat_.show_jump_to_latest) {
+      SetShowJumpToLatest(false);
+    }
+  }
+  last_messages_scroll_height_ = scroll_height;
+}
+
+void ChatController::MaybeLoadOlderLocalHistory() {
+  if (loading_older_local_ || !has_more_local_history_ || !messaging_ready_ ||
+      pending_scroll_to_bottom_) {
+    return;
+  }
+  Rml::Element* el = FindMessagesScrollElement();
+  if (!el) {
+    return;
+  }
+  // Only when the transcript actually overflows; otherwise scrollTop==0 is "at bottom"
+  // of a non-scrollable box and would spam prepend loads.
+  const float max_top = std::max(0.f, el->GetScrollHeight() - el->GetClientHeight());
+  if (max_top <= 1.f || el->GetScrollTop() > 72.f) {
+    return;
+  }
+  LoadOlderLocalHistory();
+}
+
+void ChatController::LoadOlderLocalHistory() {
+  if (loading_older_local_ || !messaging_ready_ || chat_.messages.empty()) {
+    return;
+  }
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+
+  const int64_t oldest = chat_.messages.front().display_order;
+  if (!MessagingHub::Instance().Inbox().HasLocalMessagesBefore(thread_id, oldest)) {
+    has_more_local_history_ = false;
+    return;
+  }
+
+  Rml::Element* el = FindMessagesScrollElement();
+  if (el) {
+    pending_scroll_height_before_ = el->GetScrollHeight();
+    pending_scroll_top_before_ = el->GetScrollTop();
+  }
+
+  loading_older_local_ = true;
+  auto older = MessagingHub::Instance().Store().GetMessagesPage(thread_id, oldest, kDefaultMessagesPageSize);
+  if (!older || older->empty()) {
+    has_more_local_history_ = false;
+    loading_older_local_ = false;
+    pending_scroll_height_before_.reset();
+    pending_scroll_top_before_.reset();
+    return;
+  }
+  loaded_min_display_order_ = older->front().display_order;
+  has_more_local_history_ =
+      MessagingHub::Instance().Inbox().HasLocalMessagesBefore(thread_id, *loaded_min_display_order_);
+
+  chat_.messages = MessagingHub::Instance().Inbox().BuildDisplayRows(thread_id, loaded_min_display_order_);
+  chat_.has_turns = !chat_.messages.empty();
+  DirtyChatTurns();
+  loading_older_local_ = false;
+}
+
+void ChatController::OnMessagesScroll() {
+  if (suppress_scroll_handler_) {
+    return;
+  }
+  Rml::Element* el = FindMessagesScrollElement();
+  if (!el) {
+    return;
+  }
+  const float max_top = std::max(0.f, el->GetScrollHeight() - el->GetClientHeight());
+  const float top = el->GetScrollTop();
+  constexpr float kNearBottomPx = 64.f;
+  const bool near_bottom = max_top <= 0.f || (max_top - top) <= kNearBottomPx;
+  if (near_bottom) {
+    pinned_to_bottom_ = true;
+    SetShowJumpToLatest(false);
+  } else {
+    pinned_to_bottom_ = false;
+  }
+  MaybeLoadOlderLocalHistory();
+}
+
+void ChatController::OnJumpToLatest() {
+  RequestScrollToLatest();
+  ScrollMessagesToBottom();
+}
+
+void ChatController::MessagesScrollCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& /*args*/) {
+  Instance().OnMessagesScroll();
+}
+
+void ChatController::JumpToLatestCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                          const Rml::VariantList& /*args*/) {
+  Instance().OnJumpToLatest();
+}
+
 void ChatController::ResetChatPanelState() {
   chat_.thread_title = "";
   chat_.thread_subtitle = "";
@@ -1259,6 +1531,7 @@ void ChatController::ResetChatPanelState() {
   chat_.has_turns = false;
   chat_.use_messages_layout = true;
   chat_.draft_placeholder = "Ask anything…";
+  ResetTranscriptScrollState();
 }
 
 void ChatController::UpdateThreadChrome() {
@@ -1430,10 +1703,42 @@ void ChatController::SyncDisplayFromThread() {
     return;
   }
   const std::string thread_id = inbox.ActiveThreadId();
-  chat_.messages = inbox.BuildDisplayRows(thread_id);
+  const bool thread_changed = thread_id != scroll_thread_id_;
+  if (thread_changed) {
+    scroll_thread_id_ = thread_id;
+    loaded_min_display_order_.reset();
+    unread_while_scrolled_ = 0;
+    RequestScrollToLatest();
+  }
+
+  const std::string prev_tail_id =
+      chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
+  const size_t prev_count = chat_.messages.size();
+
+  chat_.messages = inbox.BuildDisplayRows(thread_id, loaded_min_display_order_);
   chat_.turns.clear();
   chat_.has_turns = !chat_.messages.empty();
   chat_.use_messages_layout = true;
+
+  if (!chat_.messages.empty()) {
+    loaded_min_display_order_ = chat_.messages.front().display_order;
+    has_more_local_history_ =
+        inbox.HasLocalMessagesBefore(thread_id, chat_.messages.front().display_order);
+  } else {
+    loaded_min_display_order_.reset();
+    has_more_local_history_ = false;
+  }
+
+  if (thread_changed || pinned_to_bottom_) {
+    RequestScrollToLatest();
+  } else {
+    const std::string new_tail_id =
+        chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
+    if (!new_tail_id.empty() && new_tail_id != prev_tail_id && chat_.messages.size() > prev_count) {
+      unread_while_scrolled_ += static_cast<int>(chat_.messages.size() - prev_count);
+      SetShowJumpToLatest(true);
+    }
+  }
 }
 
 void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
@@ -1482,6 +1787,7 @@ void ChatController::OnSendMessage() {
 
   chat_.draft = "";
   DirtyChatChrome();
+  RequestScrollToLatest();
   SendUserText(text);
 }
 
@@ -1790,6 +2096,15 @@ void ChatController::OnFindSomeone() {
 }
 
 void ChatController::OnShellLayoutSynced() {
+  // SyncLayout remounts the shell DOM and resets scroll offsets — re-arm follow-tail.
+  if (pinned_to_bottom_ && chat_.has_turns) {
+    pending_scroll_to_bottom_ = true;
+    pending_scroll_settle_frames_ = 0;
+    pending_scroll_attempts_ = 0;
+    settle_scroll_height_ = -1.f;
+    last_messages_scroll_height_ = 0.f;
+  }
+  ApplyTranscriptScrollPolicy();
   if (!focus_draft_after_sync_) {
     return;
   }
@@ -2538,6 +2853,8 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("psk_import_text", &ChatController::Instance().chat_.psk_import_text);
         ctor.Bind("sync_in_progress", &ChatController::Instance().chat_.sync_in_progress);
         ctor.Bind("show_older_history_hint", &ChatController::Instance().chat_.show_older_history_hint);
+        ctor.Bind("show_jump_to_latest", &ChatController::Instance().chat_.show_jump_to_latest);
+        ctor.Bind("jump_to_latest_label", &ChatController::Instance().chat_.jump_to_latest_label);
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
@@ -2561,6 +2878,8 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("rotate_psk_export", &ChatController::RotatePskExportCallback);
         ctor.BindEventCallback("load_older_history", &ChatController::LoadOlderHistoryCallback);
         ctor.BindEventCallback("retry_peer_dial", &ChatController::RetryPeerDialCallback);
+        ctor.BindEventCallback("messages_scroll", &ChatController::MessagesScrollCallback);
+        ctor.BindEventCallback("jump_to_latest", &ChatController::JumpToLatestCallback);
         ctor.BindEventCallback("new_message", &ChatController::NewMessageCallback);
       })) {
     return false;
@@ -2778,15 +3097,17 @@ void ChatController::Update() {
     }
   }
 
-  if (!agent_) {
-    return;
+  if (agent_) {
+    std::vector<AgentEvent> events;
+    agent_->PollEvents(events);
+    for (const AgentEvent& event : events) {
+      HandleAgentEvent(event);
+    }
   }
+}
 
-  std::vector<AgentEvent> events;
-  agent_->PollEvents(events);
-  for (const AgentEvent& event : events) {
-    HandleAgentEvent(event);
-  }
+void ChatController::AfterLayout() {
+  ApplyTranscriptScrollPolicy();
 }
 
 void ChatController::Shutdown() {
@@ -2824,6 +3145,10 @@ bool SetupChatController(Rml::Context* context) {
 
 void UpdateChatController() {
   ChatController::Instance().Update();
+}
+
+void AfterLayoutChatController() {
+  ChatController::Instance().AfterLayout();
 }
 
 void ShutdownChatController() {
