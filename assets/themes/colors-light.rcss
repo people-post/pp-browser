@@ -302,6 +302,39 @@ select selectbox option:hover {
   image-color: #ffffff;
 }
 
+.shell-titlebar-btn--traffic,
+.shell-titlebar-btn--traffic:hover {
+  background-color: #00000000;
+}
+
+.shell-titlebar-btn--traffic-close .shell-titlebar-traffic-dot {
+  background-color: #ff5f57;
+}
+
+.shell-titlebar-btn--traffic-close:hover .shell-titlebar-traffic-dot {
+  background-color: #e0443e;
+}
+
+.shell-titlebar-btn--traffic-minimize .shell-titlebar-traffic-dot {
+  background-color: #febc2e;
+}
+
+.shell-titlebar-btn--traffic-minimize:hover .shell-titlebar-traffic-dot {
+  background-color: #dea123;
+}
+
+.shell-titlebar-btn--traffic-zoom .shell-titlebar-traffic-dot {
+  background-color: #28c840;
+}
+
+.shell-titlebar-btn--traffic-zoom:hover .shell-titlebar-traffic-dot {
+  background-color: #1aad2c;
+}
+
+.shell-titlebar-btn--traffic svg {
+  image-color: #4d0000;
+}
+
 .shell-banner {
   background-color: #fef3c7;
   border-bottom: 1dp #fcd34d;

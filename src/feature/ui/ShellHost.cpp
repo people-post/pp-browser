@@ -127,6 +127,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
+    ctor.Bind("titlebar_traffic_lights", &host.state_.titlebar_traffic_lights);
     ctor.Bind("window_maximized", &host.state_.window_maximized);
     ctor.Bind("fonts_ready", &host.state_.fonts_ready);
     ctor.Bind("unlock_in_progress", &host.state_.unlock_in_progress);
@@ -174,6 +175,7 @@ void ShellHost::Initialize(Rml::Context* context) {
   state_ = {};
   state_.layout_mode = LayoutMode::Expanded;
   state_.titlebar_visible = DesktopWindowChrome::Enabled();
+  state_.titlebar_traffic_lights = DesktopWindowChrome::ControlsLeading();
   state_.window_maximized = DesktopWindowChrome::IsMaximized();
   ShellLayout::SyncLayoutModeString(state_);
   ShellLayout::SyncNavTabString(state_);
@@ -188,9 +190,14 @@ void ShellHost::Initialize(Rml::Context* context) {
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
   PlatformNavigation::SetDismissHandler([] { return Instance().HandleDismiss(); });
+  if (state_.titlebar_traffic_lights) {
+    // Leading traffic lights: ~8+12×3+8×2+8 ≈ 68dp (native-like spacing).
+    config_.titlebar_controls_width_dp = 68.f;
+  }
   if (state_.titlebar_visible) {
     DesktopWindowChrome::Install();
-    DesktopWindowChrome::SetLayout(config_.titlebar_height_dp, config_.titlebar_controls_width_dp);
+    DesktopWindowChrome::SetLayout(config_.titlebar_height_dp, config_.titlebar_controls_width_dp,
+                                   5.f, state_.titlebar_traffic_lights);
   }
 }
 
@@ -612,6 +619,7 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "activity_visible");
   DataModelHost::Instance().Dirty("window", "titlebar_visible");
+  DataModelHost::Instance().Dirty("window", "titlebar_traffic_lights");
   DataModelHost::Instance().Dirty("window", "window_maximized");
   DataModelHost::Instance().Dirty("window", "fonts_ready");
   DataModelHost::Instance().Dirty("window", "unlock_in_progress");
@@ -796,7 +804,8 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc->GetElementById("shell-toast-stack"), "top", 8.f + layout.content_top_dp);
 
   if (state_.titlebar_visible) {
-    DesktopWindowChrome::SetLayout(config_.titlebar_height_dp, config_.titlebar_controls_width_dp);
+    DesktopWindowChrome::SetLayout(config_.titlebar_height_dp, config_.titlebar_controls_width_dp,
+                                   5.f, state_.titlebar_traffic_lights);
   }
 
   if (state_.layout_mode != LayoutMode::Compact) {
@@ -1410,6 +1419,7 @@ void ShellHost::Update(Rml::Context* context) {
     const bool maximized = DesktopWindowChrome::IsMaximized();
     if (maximized != state_.window_maximized) {
       state_.window_maximized = maximized;
+      DesktopWindowChrome::RefreshAppearance();
     }
   }
   DirtyWindow();

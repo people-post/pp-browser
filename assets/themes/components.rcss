@@ -658,6 +658,8 @@ select selectbox option {
   bottom: 0;
   padding: 0;
   margin: 0;
+  border-radius: 10dp;
+  overflow: hidden;
 }
 
 .shell-titlebar {
@@ -705,6 +707,14 @@ select selectbox option {
   height: 100%;
 }
 
+.shell-titlebar-controls--traffic {
+  align-items: center;
+  padding-left: 8dp;
+  padding-right: 8dp;
+  gap: 8dp;
+  box-sizing: border-box;
+}
+
 .shell-titlebar-btn {
   width: 40dp;
   min-width: 40dp;
@@ -724,6 +734,37 @@ select selectbox option {
   flex-shrink: 0;
   width: 12dp;
   height: 12dp;
+}
+
+.shell-titlebar-btn--traffic {
+  width: 12dp;
+  min-width: 12dp;
+  height: 12dp;
+  min-height: 12dp;
+  border-radius: 0;
+  padding: 0;
+}
+
+.shell-titlebar-traffic-dot {
+  width: 12dp;
+  height: 12dp;
+  min-width: 12dp;
+  min-height: 12dp;
+  border-radius: 6dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.shell-titlebar-btn--traffic svg {
+  width: 6dp;
+  height: 6dp;
+  opacity: 0;
+}
+
+.shell-titlebar-btn--traffic:hover svg {
+  opacity: 1;
 }
 
 .shell-chrome {

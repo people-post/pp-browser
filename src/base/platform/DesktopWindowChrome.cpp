@@ -11,6 +11,13 @@
 #include <cstring>
 #include <string>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if !TARGET_OS_IPHONE
+#include "base/platform/desktop/WindowChrome_Darwin.h"
+#endif
+#endif
+
 #if RMLUI_SDL_VERSION_MAJOR >= 3
 #include <SDL3/SDL.h>
 #if !defined(_WIN32) && !defined(__APPLE__) && !defined(__ANDROID__)
@@ -27,6 +34,7 @@ struct HitTestLayout {
   int titlebar_height_win = 36;
   int controls_width_win = 120;
   int edge_margin_win = 5;
+  bool controls_leading = false;
 };
 
 HitTestLayout g_layout{};
@@ -52,7 +60,13 @@ bool PointInTitlebarDrag(SDL_Window* window, int x, int y) {
   if (y < 0 || y >= g_layout.titlebar_height_win) {
     return false;
   }
-  return x >= 0 && x < win_w - g_layout.controls_width_win;
+  if (x < 0 || x >= win_w) {
+    return false;
+  }
+  if (g_layout.controls_leading) {
+    return x >= g_layout.controls_width_win;
+  }
+  return x < win_w - g_layout.controls_width_win;
 }
 
 bool SDLCALL TitlebarEventWatch(void* /*userdata*/, SDL_Event* event) {
@@ -134,6 +148,14 @@ bool DesktopWindowChrome::Enabled() {
   return Platform::IsDesktop();
 }
 
+bool DesktopWindowChrome::ControlsLeading() {
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+  return Platform::IsDesktop();
+#else
+  return false;
+#endif
+}
+
 void DesktopWindowChrome::Install() {
 #if RMLUI_SDL_VERSION_MAJOR >= 3
   if (!Enabled()) {
@@ -148,6 +170,22 @@ void DesktopWindowChrome::Install() {
     SDL_AddEventWatch(TitlebarEventWatch, nullptr);
     g_event_watch_installed = true;
   }
+  RefreshAppearance();
+#endif
+}
+
+void DesktopWindowChrome::RefreshAppearance() {
+#if RMLUI_SDL_VERSION_MAJOR >= 3 && defined(__APPLE__) && !TARGET_OS_IPHONE
+  if (!Enabled()) {
+    return;
+  }
+  SDL_Window* window = Backend::GetWindow();
+  if (!window) {
+    return;
+  }
+  const bool square = IsMaximized() ||
+                      ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0);
+  desktop::ApplyMacWindowRoundedCorners(window, square);
 #endif
 }
 
@@ -165,7 +203,7 @@ void DesktopWindowChrome::Uninstall() {
 }
 
 void DesktopWindowChrome::SetLayout(float titlebar_height_dp, float controls_width_dp,
-                                    float edge_margin_dp) {
+                                    float edge_margin_dp, bool controls_leading) {
 #if RMLUI_SDL_VERSION_MAJOR >= 3
   if (!Enabled()) {
     return;
@@ -180,6 +218,7 @@ void DesktopWindowChrome::SetLayout(float titlebar_height_dp, float controls_wid
       static_cast<int>(std::lround(DpToWindow(window, controls_width_dp)));
   g_layout.edge_margin_win =
       static_cast<int>(std::lround(DpToWindow(window, edge_margin_dp)));
+  g_layout.controls_leading = controls_leading;
   g_layout.titlebar_height_win = std::max(1, g_layout.titlebar_height_win);
   g_layout.controls_width_win = std::max(0, g_layout.controls_width_win);
   g_layout.edge_margin_win = std::max(1, g_layout.edge_margin_win);
@@ -187,6 +226,7 @@ void DesktopWindowChrome::SetLayout(float titlebar_height_dp, float controls_wid
   (void)titlebar_height_dp;
   (void)controls_width_dp;
   (void)edge_margin_dp;
+  (void)controls_leading;
 #endif
 }
 
@@ -215,6 +255,7 @@ void DesktopWindowChrome::ToggleMaximize() {
   } else {
     SDL_MaximizeWindow(window);
   }
+  RefreshAppearance();
 #endif
 }
 

@@ -8,10 +8,27 @@
 </head>
 <body data-model="window" class="shell-body">
   <div id="shell-titlebar" class="shell-titlebar" data-if="titlebar_visible">
+    <div id="shell-titlebar-controls" class="shell-titlebar-controls shell-titlebar-controls--traffic" data-if="titlebar_traffic_lights">
+      <button class="shell-titlebar-btn shell-titlebar-btn--traffic shell-titlebar-btn--traffic-close" type="button" data-event-click="titlebar_close()">
+        <div class="shell-titlebar-traffic-dot">
+          <svg src="../icons/close.svg" width="6" height="6" crop-to-content="true"></svg>
+        </div>
+      </button>
+      <button class="shell-titlebar-btn shell-titlebar-btn--traffic shell-titlebar-btn--traffic-minimize" type="button" data-event-click="titlebar_minimize()">
+        <div class="shell-titlebar-traffic-dot">
+          <svg src="../icons/window-minimize.svg" width="6" height="6" crop-to-content="true"></svg>
+        </div>
+      </button>
+      <button class="shell-titlebar-btn shell-titlebar-btn--traffic shell-titlebar-btn--traffic-zoom" type="button" data-event-click="titlebar_toggle_maximize()">
+        <div class="shell-titlebar-traffic-dot">
+          <svg src="../icons/plus.svg" width="6" height="6" crop-to-content="true"></svg>
+        </div>
+      </button>
+    </div>
     <div class="shell-titlebar-drag" data-event-dblclick="titlebar_toggle_maximize()">
       <p class="shell-titlebar-title">{{i18n:app.name}}</p>
     </div>
-    <div id="shell-titlebar-controls" class="shell-titlebar-controls">
+    <div class="shell-titlebar-controls shell-titlebar-controls--icons" data-if="!titlebar_traffic_lights">
       <button class="shell-titlebar-btn" type="button" data-event-click="titlebar_minimize()">
         <svg src="../icons/window-minimize.svg" width="12" height="12" crop-to-content="true"></svg>
       </button>

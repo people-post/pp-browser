@@ -64,6 +64,7 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     os/OsExecutablePath_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
     desktop/LocalNotifier_Darwin.mm
+    desktop/WindowChrome_Darwin.mm
   )
 else()
   list(APPEND _pp_platform_os_sources
@@ -108,6 +109,8 @@ endif()
 # Desktop macOS: UNUserNotificationCenter for local banners.
 if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
   target_link_libraries(pp_base_platform PUBLIC
+    "-framework AppKit"
+    "-framework QuartzCore"
     "-framework UserNotifications"
     "-framework CoreServices"
     "-framework Foundation")

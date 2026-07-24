@@ -47,7 +47,10 @@ struct ShellConfig {
   float toolbar_height_dp = 48.f;
   /** Desktop custom title bar height (0 on mobile). */
   float titlebar_height_dp = 36.f;
-  /** Right-side window control cluster width for hit-test exclusion. */
+  /**
+   * Window control cluster width for hit-test exclusion.
+   * Win/Linux icon strip ~120dp; macOS traffic lights ~68dp (set in ShellHost).
+   */
   float titlebar_controls_width_dp = 120.f;
   float frame_padding_dp = 24.f;
   /** Compact bottom nav bar height (excludes safe-area inset). */
@@ -193,6 +196,8 @@ struct ShellState {
 
   /** Desktop custom title bar (borderless window chrome). */
   bool titlebar_visible = false;
+  /** macOS: drawn traffic lights on the leading edge. */
+  bool titlebar_traffic_lights = false;
   bool window_maximized = false;
 
   /**
