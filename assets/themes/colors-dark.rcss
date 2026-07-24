@@ -50,7 +50,8 @@ selection {
   color: #ffffff;
 }
 
-.btn-primary:hover {
+.btn-primary:hover,
+.btn-primary:focus {
   background-color: #818cf8;
 }
 
@@ -67,12 +68,18 @@ selection {
   color: #f9fafb;
 }
 
+.btn-secondary:hover,
+.btn-secondary:focus {
+  background-color: #4b5563;
+}
+
 .btn-danger {
   background-color: #dc2626;
   color: #ffffff;
 }
 
-.btn-danger:hover {
+.btn-danger:hover,
+.btn-danger:focus {
   background-color: #ef4444;
 }
 
@@ -82,7 +89,8 @@ selection {
   border: 1dp #7f1d1d;
 }
 
-.btn-danger-soft:hover {
+.btn-danger-soft:hover,
+.btn-danger-soft:focus {
   background-color: #7f1d1d;
   color: #fecaca;
   border: 1dp #f87171;
@@ -696,8 +704,19 @@ select selectbox option:hover {
   color: #f9fafb;
 }
 
-.settings-row:hover {
+.settings-row:hover,
+.settings-row:focus {
   background-color: #273549;
+}
+
+.settings-back-btn:hover,
+.settings-back-btn:focus {
+  background-color: #374151;
+}
+
+.settings-choice-row:hover,
+.settings-choice-row:focus {
+  background-color: #374151;
 }
 
 .settings-row--active {
