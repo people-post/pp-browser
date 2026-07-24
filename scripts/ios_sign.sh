@@ -18,7 +18,7 @@ Commands:
   verify <Frame.app>       Verify codesign on an iOS app bundle
 
 Environment (local — source packaging/ios/signing.env):
-  IOS_BUNDLE_IDENTIFIER          dev.frame.ios
+  IOS_BUNDLE_IDENTIFIER          dev.pp-browser.ios
   IOS_DEVELOPMENT_TEAM           YOUR_TEAM_ID
   IOS_SIGNING_IDENTITY           e.g. "Apple Development: Name (TEAMID)"
   IOS_PROVISIONING_PROFILE_PATH  Path to .mobileprovision
@@ -158,7 +158,7 @@ cmd_sign_app() {
     exit 1
   fi
 
-  local bundle_id="${IOS_BUNDLE_IDENTIFIER:-dev.frame.ios}"
+  local bundle_id="${IOS_BUNDLE_IDENTIFIER:-dev.pp-browser.ios}"
   log "Signing ${app_path}"
   log "Identity: ${IOS_SIGNING_IDENTITY}"
   log "Team: ${IOS_DEVELOPMENT_TEAM}"

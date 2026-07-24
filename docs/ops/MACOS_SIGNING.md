@@ -2,9 +2,9 @@
 
 **Tier:** ops
 
-How to connect an **Apple Developer Program** account to pp-browser / **Frame** for signed, notarized macOS releases. Repo codename remains `pp-browser`; the shipped macOS product is **Frame** (`Frame.app`).
+How to connect an **Apple Developer Program** account to pp-browser / **Frame** for signed, notarized macOS releases. User-visible product is **Frame** (`Frame.app`); signing / reverse-DNS ID is **`dev.pp-browser.app`** ([PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md)).
 
-**Related:** [RELEASE.md](RELEASE.md) (tagging and artifacts), [BUILD.md](BUILD.md), [PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md) (bundle ID), [PLATFORMS.md](../architecture/PLATFORMS.md) (iOS deferred).
+**Related:** [RELEASE.md](RELEASE.md) (tagging and artifacts), [BUILD.md](BUILD.md), [PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md), [PLATFORMS.md](../architecture/PLATFORMS.md).
 
 ---
 
@@ -13,8 +13,8 @@ How to connect an **Apple Developer Program** account to pp-browser / **Frame** 
 | What | Value in this repo |
 |------|-------------------|
 | macOS app bundle | `Frame.app` |
-| Bundle ID | `dev.frame.app` ([`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)) |
-| Release artifact | `frame-<version>-macos.dmg` (CPack DragNDrop) |
+| Bundle ID | `dev.pp-browser.app` ([`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)) |
+| Release artifact | `pp-browser-<version>-macos.dmg` (CPack DragNDrop; volume name Frame) |
 | Entitlements | [`packaging/macos/Frame.entitlements`](../../packaging/macos/Frame.entitlements) |
 | Signing script | [`scripts/macos_sign_and_notarize.sh`](../../scripts/macos_sign_and_notarize.sh) |
 | Local env template | [`packaging/macos/signing.env.example`](../../packaging/macos/signing.env.example) |
@@ -33,8 +33,8 @@ Do this at [developer.apple.com/account](https://developer.apple.com/account) af
 ### 1. Register the bundle ID
 
 1. **Certificates, Identifiers & Profiles → Identifiers → App IDs**
-2. Register **`dev.frame.app`** (or your org ID, e.g. `com.yourorg.frame`)
-3. If you change the ID, update `MACOSX_BUNDLE_GUI_IDENTIFIER` in [`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt)
+2. Register **`dev.pp-browser.app`** (or your org ID, e.g. `com.yourorg.pp-browser`)
+3. If you change the ID, update `MACOSX_BUNDLE_GUI_IDENTIFIER` in [`src/app/CMakeLists.txt`](../../src/app/CMakeLists.txt). Pre-release installs using `dev.frame.app` are not migrated — reinstall after re-signing.
 
 ### 2. Create a Developer ID Application certificate
 
@@ -172,7 +172,7 @@ Open the DMG, drag Frame to Applications, launch without right-click → Open.
 ./scripts/macos_sign_and_notarize.sh staple     <Frame.app|file.dmg>
 
 # Convenience (after cpack, when dmg path is known):
-./scripts/macos_sign_and_notarize.sh release install/Frame.app build/frame-0.1.0-macos.dmg
+./scripts/macos_sign_and_notarize.sh release install/Frame.app build/pp-browser-0.1.0-macos.dmg
 ```
 
 ---
@@ -194,7 +194,6 @@ Open the DMG, drag Frame to Applications, launch without right-click → Open.
 | Item | Notes |
 |------|-------|
 | **`.icns` icon** | Packaged build uses `app-icon.png`; `.icns` improves dock quality ([PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md)) |
-| **Org bundle ID** | Switch from `dev.frame.app` before first public signed release if needed |
 | **Intel / universal binary** | Current GHA `macos-14` is Apple Silicon only |
 | **Mac App Store** | Different cert, sandbox, review — not covered here |
 | **iOS** | Separate bundle id, provisioning profiles, Keychain — see [IOS_BUILD.md](IOS_BUILD.md) |
@@ -204,7 +203,7 @@ Open the DMG, drag Frame to Applications, launch without right-click → Open.
 ## Quick checklist
 
 - [ ] Apple Developer Program active
-- [ ] Bundle ID `dev.frame.app` registered (or CMake updated)
+- [ ] Bundle ID `dev.pp-browser.app` registered (or CMake updated)
 - [ ] Developer ID Application cert in Keychain + `.p12` exported
 - [ ] App Store Connect API key (`.p8`) + Key ID + Issuer ID saved
 - [ ] Team ID noted

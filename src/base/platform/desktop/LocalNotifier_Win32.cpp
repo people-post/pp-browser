@@ -105,7 +105,7 @@ std::string XmlEscape(const std::string& input) {
 
 std::string TagForThread(const std::string& thread_id) {
   if (thread_id.empty()) {
-    return "frame-default";
+    return "pp-browser-default";
   }
   std::string tag = "t-";
   for (unsigned char c : thread_id) {

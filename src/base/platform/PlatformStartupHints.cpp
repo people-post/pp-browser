@@ -9,7 +9,7 @@ std::string_view InitFailureHint() {
   case PlatformKind::Android:
     return " Check logcat for SDL/OpenGL errors.";
   case PlatformKind::IOS:
-    return " Check Console / Application Support/.../frame-debug.log for SDL/OpenGL errors.";
+    return " Check Console / Application Support/.../pp-browser-debug.log for SDL/OpenGL errors.";
   case PlatformKind::Desktop:
   default:
     return " If no window appears, reconfigure from a clean build: "

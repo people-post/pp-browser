@@ -31,12 +31,12 @@ void EnsureIosLogFile() {
   if (g_log_file) {
     return;
   }
-  if (char* pref = SDL_GetPrefPath("dev.frame", "pp-browser")) {
-    const std::string path = std::string(pref) + "frame-debug.log";
+  if (char* pref = SDL_GetPrefPath("dev.pp-browser", "pp-browser")) {
+    const std::string path = std::string(pref) + "pp-browser-debug.log";
     SDL_free(pref);
     g_log_file = std::fopen(path.c_str(), "a");
     if (g_log_file) {
-      std::fprintf(g_log_file, "---- frame log open ----\n");
+      std::fprintf(g_log_file, "---- pp-browser log open ----\n");
       std::fflush(g_log_file);
     }
   }

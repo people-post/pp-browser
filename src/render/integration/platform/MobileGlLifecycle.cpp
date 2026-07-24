@@ -52,8 +52,8 @@ void InitIosDrawableFromWindow(SDL_Window* window, unsigned int& framebuffer, un
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &binding);
     framebuffer = static_cast<unsigned int>(binding);
   }
-  if (char* pref = SDL_GetPrefPath("dev.frame", "pp-browser")) {
-    const std::string path = std::string(pref) + "frame-debug.log";
+  if (char* pref = SDL_GetPrefPath("dev.pp-browser", "pp-browser")) {
+    const std::string path = std::string(pref) + "pp-browser-debug.log";
     SDL_free(pref);
     if (FILE* f = std::fopen(path.c_str(), "a")) {
       std::fprintf(f, "[I] iOS drawable FBO=%u RBO=%u\n", framebuffer, renderbuffer);

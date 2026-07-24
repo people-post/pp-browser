@@ -17,7 +17,7 @@
   <string>manual</string>
   <key>provisioningProfiles</key>
   <dict>
-    <key>dev.frame.ios</key>
+    <key>dev.pp-browser.ios</key>
     <string>Frame iOS Development</string>
   </dict>
   <key>compileBitcode</key>

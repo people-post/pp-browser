@@ -6,12 +6,12 @@
   <!-- Optional: shared container for extensions / push service (register group in Developer Portal). -->
   <key>com.apple.security.application-groups</key>
   <array>
-    <string>group.YOUR_TEAM_ID.dev.frame.ios</string>
+    <string>group.YOUR_TEAM_ID.dev.pp-browser.ios</string>
   </array>
   <!-- Keychain access for future secure API-key storage (placeholder). -->
   <key>keychain-access-groups</key>
   <array>
-    <string>$(AppIdentifierPrefix)dev.frame.ios</string>
+    <string>$(AppIdentifierPrefix)dev.pp-browser.ios</string>
   </array>
 </dict>
 </plist>

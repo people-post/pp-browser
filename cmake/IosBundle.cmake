@@ -1,6 +1,6 @@
 # iOS .app bundle metadata and asset staging for Frame (pp-browser).
 
-set(PP_BROWSER_IOS_BUNDLE_ID "dev.frame.ios" CACHE STRING "iOS CFBundleIdentifier")
+set(PP_BROWSER_IOS_BUNDLE_ID "dev.pp-browser.ios" CACHE STRING "iOS CFBundleIdentifier")
 set(PP_BROWSER_IOS_BUNDLE_NAME "Frame" CACHE STRING "iOS CFBundleDisplayName / bundle folder")
 set(PP_BROWSER_IOS_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum iOS version (IPHONEOS_DEPLOYMENT_TARGET)")
 

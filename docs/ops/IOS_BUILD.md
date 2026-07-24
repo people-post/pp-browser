@@ -2,7 +2,7 @@
 
 **Tier:** ops
 
-How to build **Frame** for iOS (simulator and device) and connect an **Apple Developer Program** account for on-device testing. Repo codename remains `pp-browser`; the shipped iOS product is **Frame** (`Frame.app`).
+How to build **Frame** for iOS (simulator and device) and connect an **Apple Developer Program** account for on-device testing. User-visible product is **Frame** (`Frame.app`); signing / reverse-DNS ID is **`dev.pp-browser.ios`** ([PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md)).
 
 **Related:** [BUILD.md](BUILD.md), [PLATFORMS.md](../architecture/PLATFORMS.md), [MACOS_SIGNING.md](MACOS_SIGNING.md) (macOS Developer ID — separate from iOS provisioning), [PRODUCT_BRANDING.md](../ui/PRODUCT_BRANDING.md).
 
@@ -13,7 +13,7 @@ How to build **Frame** for iOS (simulator and device) and connect an **Apple Dev
 | What | Value in this repo |
 |------|-------------------|
 | iOS app bundle | `Frame.app` |
-| Bundle ID | `dev.frame.ios` ([`packaging/ios/Info.plist`](../../packaging/ios/Info.plist), [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake)) |
+| Bundle ID | `dev.pp-browser.ios` ([`packaging/ios/Info.plist`](../../packaging/ios/Info.plist), [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake)) |
 | Build script | [`scripts/ios_build.sh`](../../scripts/ios_build.sh) |
 | Signing script | [`scripts/ios_sign.sh`](../../scripts/ios_sign.sh) |
 | Entitlements | [`packaging/ios/Frame.entitlements`](../../packaging/ios/Frame.entitlements) |
@@ -117,11 +117,13 @@ Do this at [developer.apple.com/account](https://developer.apple.com/account) af
 ### 1. Register the iOS bundle ID
 
 1. **Certificates, Identifiers & Profiles → Identifiers → App IDs**
-2. Register **`dev.frame.ios`** (or your org ID, e.g. `com.yourorg.frame.ios`)
+2. Register **`dev.pp-browser.ios`** (or your org ID, e.g. `com.yourorg.pp-browser.ios`)
 3. If you change the ID, update:
    - [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist)
    - `PP_BROWSER_IOS_BUNDLE_ID` in [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake)
    - [`packaging/ios/signing.env.example`](../../packaging/ios/signing.env.example)
+   - Entitlements / export templates under [`packaging/ios/`](../../packaging/ios/)
+4. Pre-release installs using `dev.frame.ios` are not migrated — delete the old app and reinstall.
 
 ### 2. Create an iOS Development certificate
 
@@ -132,7 +134,7 @@ Do this at [developer.apple.com/account](https://developer.apple.com/account) af
 ### 3. Create a provisioning profile
 
 1. **Profiles → + → iOS App Development** (or Ad Hoc / App Store)
-2. Select App ID **`dev.frame.ios`**
+2. Select App ID **`dev.pp-browser.ios`**
 3. Select your development certificate and test devices
 4. Download **`Frame_iOS_Development.mobileprovision`**
 
@@ -160,7 +162,7 @@ source packaging/ios/signing.env
 
 | Variable | Placeholder | Purpose |
 |----------|-------------|---------|
-| `IOS_BUNDLE_IDENTIFIER` | `dev.frame.ios` | Must match App ID |
+| `IOS_BUNDLE_IDENTIFIER` | `dev.pp-browser.ios` | Must match App ID |
 | `IOS_DEVELOPMENT_TEAM` | `YOUR_TEAM_ID` | 10-character Team ID |
 | `IOS_SIGNING_IDENTITY` | `Apple Development: …` | From Keychain |
 | `IOS_PROVISIONING_PROFILE_PATH` | `/path/to/*.mobileprovision` | Development profile |
@@ -194,7 +196,7 @@ When you add an iOS release job later, typical secrets mirror the local env:
 | `IOS_PROVISIONING_PROFILE_BASE64` | Base64 of `.mobileprovision` |
 | `IOS_SIGNING_IDENTITY` | Exact codesign identity string |
 | `IOS_DEVELOPMENT_TEAM` | Team ID |
-| `IOS_BUNDLE_IDENTIFIER` | `dev.frame.ios` |
+| `IOS_BUNDLE_IDENTIFIER` | `dev.pp-browser.ios` |
 
 No iOS release workflow is wired yet — macOS release CI remains in [`.github/workflows/release.yml`](../../.github/workflows/release.yml).
 
@@ -232,7 +234,7 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset beha
 - [ ] Xcode + command-line tools installed
 - [ ] `./scripts/ios_build.sh sim` succeeds
 - [ ] Simulator launch via `./scripts/ios_build.sh run-sim`
-- [ ] App ID `dev.frame.ios` registered (or plist/CMake updated)
+- [ ] App ID `dev.pp-browser.ios` registered (or plist/CMake updated)
 - [ ] Development cert + provisioning profile created
 - [ ] `packaging/ios/signing.env` filled from example
 - [ ] `./scripts/ios_sign.sh sign-app install-ios/Frame.app` verifies on device

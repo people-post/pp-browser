@@ -41,7 +41,7 @@ Local example:
   cmake --install build --prefix install
   $(basename "$0") sign-app install/Frame.app
   (cd build && cpack -G DragNDrop)
-  $(basename "$0") release install/Frame.app build/frame-0.1.0-macos.dmg
+  $(basename "$0") release install/Frame.app build/pp-browser-0.1.0-macos.dmg
 EOF
 }
 

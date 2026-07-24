@@ -3,13 +3,13 @@
 
 namespace pbr {
 
-// User-facing product identity. Internal paths, protocols, and CMake targets
-// keep the pp-browser slug for compatibility.
+// Frame = user-visible product name. pp-browser = internal slug (IDs, paths,
+// artifacts, protocols). See docs/ui/PRODUCT_BRANDING.md.
 inline constexpr const char* kProductName = "Frame";
 inline constexpr const char* kProductTagline = "The internet, rendered for you.";
-inline constexpr const char* kProductSlug = "frame";
-/** Windows AppUserModelID for toast notifications (matches macOS signing id style). */
-inline constexpr const char* kProductAumid = "dev.frame.app";
+inline constexpr const char* kProductSlug = "pp-browser";
+/** Windows AppUserModelID (aligns with macOS bundle id). */
+inline constexpr const char* kProductAumid = "dev.pp-browser.app";
 inline constexpr const char* kAppIconAsset = "branding/app-icon.png";
 
 } // namespace pbr

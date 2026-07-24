@@ -10,7 +10,7 @@
   <key>CFBundleExecutable</key>
   <string>Frame</string>
   <key>CFBundleIdentifier</key>
-  <string>dev.frame.ios</string>
+  <string>dev.pp-browser.ios</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>

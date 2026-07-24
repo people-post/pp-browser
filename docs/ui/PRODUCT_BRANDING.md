@@ -1,10 +1,32 @@
 # Product branding — Frame
 
 **Tier:** product / UI  
-**Status:** adopted (2026-07-17)  
+**Status:** adopted (2026-07-17); naming rule updated 2026-07-24  
 **PR:** [#28](https://github.com/people-post/pp-browser/pull/28)
 
-User-facing product identity for the AI-centric browsing shell. Repo codename remains **`pp-browser`** for CMake targets, config paths, and wire protocol IDs.
+User-facing product identity for the AI-centric browsing shell.
+
+## Naming rule (normative)
+
+| Layer | Name | Examples |
+|-------|------|----------|
+| **User-visible** | **Frame** | Window title, locales `app.name`, User-Agent, `CFBundleDisplayName` / `CFBundleName`, **`Frame.app`** folder, DMG volume name, NSIS display/shortcuts labeled Frame |
+| **Internal** | **pp-browser** | Repo, CMake target, config/data dirs, wire/protocol/crypto domains, reverse-DNS IDs, signing App IDs, AUMID, CPack package/file names (`pp-browser-<ver>-…`) |
+
+**`Frame.app` vs identifiers:** the on-disk / Finder bundle folder stays **`Frame.app`**. Only `CFBundleIdentifier` and related signing IDs use the `pp-browser` scheme.
+
+### Platform identifiers
+
+| Platform | Identifier | Notes |
+|----------|------------|--------|
+| macOS | `dev.pp-browser.app` | `MACOSX_BUNDLE_GUI_IDENTIFIER`; Developer ID signing |
+| iOS | `dev.pp-browser.ios` | `CFBundleIdentifier` |
+| Windows AUMID | `dev.pp-browser.app` | Toast notifications |
+| Android | `dev.pp_browser.app` | **Underscore required** — Android `applicationId` cannot contain hyphens; this is the platform spelling of the same logical `pp-browser` ID |
+
+Pre-release: installs signed or registered as `dev.frame.*` are not migrated — re-register App IDs and reinstall.
+
+Constants live in [`src/base/platform/ProductBranding.h`](../../src/base/platform/ProductBranding.h).
 
 ---
 
@@ -79,12 +101,11 @@ A soft portal/window frame containing clean geometric content blocks and a small
 - **Not “browser”** — avoids the Chrome / Safari / Arc category while staying honest about “seeing” the internet.
 - **Room for AI + social** — neutral enough that messaging stays supporting infrastructure, not the headline.
 
-Constants live in [`src/base/platform/ProductBranding.h`](../../src/base/platform/ProductBranding.h):
-
 ```cpp
-kProductName    = "Frame"
+kProductName    = "Frame"                         // user-visible
 kProductTagline = "The internet, rendered for you."
-kProductSlug    = "frame"   // bundle id, CPack, future slug migrations
+kProductSlug    = "pp-browser"                    // artifacts, ID helpers
+kProductAumid   = "dev.pp-browser.app"
 kAppIconAsset   = "branding/app-icon.png"
 ```
 
@@ -122,27 +143,28 @@ Before public launch, run **domain**, **trademark**, and **app-store name** chec
 | Locales `app.name` / `app.tagline` | Frame + tagline (EN, zh-Hans) |
 | Home landing | Product name + tagline (top-left brand block) |
 | Chat empty state | Existing `chat.empty_body` (thread empty, no brand hero) |
-| macOS bundle (packaged) | `Frame.app`, icon `app-icon.png`, id `dev.frame.app` |
-| Windows CPack / NSIS | Display name Frame; embedded `app-icon.ico` |
-| README | Frame as product name; pp-browser as repo codename |
+| macOS bundle (packaged) | `Frame.app`, icon `app-icon.png`, id `dev.pp-browser.app` |
+| iOS bundle | `Frame.app`, display name Frame, id `dev.pp-browser.ios` |
+| Windows CPack / NSIS | Display name Frame; artifact `pp-browser-<ver>-windows-x64.exe`; embedded `app-icon.ico` |
+| macOS CPack DMG | Volume name Frame; artifact `pp-browser-<ver>-macos.dmg` |
+| README | Frame as product name; pp-browser as repo / internal slug |
 
 **Runtime icon:** [`WindowIcon`](../../src/base/platform/WindowIcon.cpp) loads `branding/app-icon.png` via SDL after window creation (desktop only).
 
 ---
 
-## Intentionally unchanged (compatibility)
+## Internal surfaces (already `pp-browser`)
 
-These stay **`pp-browser`** until a deliberate migration:
-
-| Area | Reason |
+| Area | Notes |
 |------|--------|
 | CMake target `pp-browser` | Scripts, CI, and docs reference it |
-| Config/data dirs (`~/.config/pp-browser`, etc.) | Avoid breaking existing profiles |
+| Config/data dirs (`~/.config/pp-browser`, etc.) | See [DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md) |
 | P2P protocol IDs (`/pp-browser/chat/1.0.0`, …) | Wire compatibility with peers |
-| Crypto bundle strings (`pp-browser-psk-bundle-v1`) | On-disk / clipboard format |
-| GitHub repo name | Org/process change, not branding alone |
+| Crypto / signing domains (`pp-browser-psk-bundle-v1`, `pp-browser:relay-…`) | On-disk / clipboard / API |
+| GitHub repo name | Org/process; not a product rename |
+| Release artifact filenames | `pp-browser-<version>-…` (download names; installer UI still says Frame) |
 
-A future **slug migration** (`frame` data paths, executable rename) should be a separate ADR with wipe-vs-migrate policy per [`COMPATIBILITY.md`](../contracts/COMPATIBILITY.md).
+Renaming the executable binary or GitHub repo is out of scope for branding alone.
 
 ---
 
@@ -173,5 +195,5 @@ assets/branding/
 - [ ] Icon reads clearly at 16×16 and 32×32 (taskbar / dock)
 - [ ] “Frame” distinct from existing apps/trademarks in target markets
 - [ ] Tagline localized beyond EN / zh-Hans if needed
-- [ ] Decide whether to rename executable and data dirs for 1.0
+- [ ] Register Apple App IDs `dev.pp-browser.app` / `dev.pp-browser.ios` before signed builds
 - [ ] Generate `.icns` for macOS if packaged DMG quality bar requires it

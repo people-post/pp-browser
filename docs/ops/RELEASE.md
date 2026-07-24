@@ -45,8 +45,8 @@ Release builds use:
 
 | Platform | File | Contents |
 |----------|------|----------|
-| macOS (Apple Silicon) | `frame-<version>-macos.dmg` | Drag-and-drop install of `Frame.app` |
-| Windows x64 | `frame-<version>-windows-x64.exe` | NSIS installer (exe + `assets/` under install dir) |
+| macOS (Apple Silicon) | `pp-browser-<version>-macos.dmg` | Drag-and-drop install of `Frame.app` (DMG volume name Frame) |
+| Windows x64 | `pp-browser-<version>-windows-x64.exe` | NSIS installer (display name Frame; exe + `assets/` under install dir) |
 | Android | `pp-browser-<version>-android.apk` | Universal APK (`armeabi-v7a`, `arm64-v8a`, `x86_64`); signed with the debug keystore until a release keystore is configured |
 
 ## macOS code signing and notarization

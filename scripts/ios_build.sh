@@ -209,11 +209,11 @@ for devices in data.get('devices', {}).values():
   echo "==> Installing on simulator ${udid}"
   xcrun simctl install "$udid" "$app"
   echo "==> Terminating any running Frame instance"
-  xcrun simctl terminate "$udid" dev.frame.ios 2>/dev/null || true
+  xcrun simctl terminate "$udid" dev.pp-browser.ios 2>/dev/null || true
   echo "==> Launching Frame (--debug)"
-  xcrun simctl launch "$udid" dev.frame.ios --debug
+  xcrun simctl launch "$udid" dev.pp-browser.ios --debug
   echo "==> Debug log path:"
-  echo "  find ~/Library/Developer/CoreSimulator/Devices/${udid}/data/Containers/Data/Application -name frame-debug.log -exec cat {} \\;"
+  echo "  find ~/Library/Developer/CoreSimulator/Devices/${udid}/data/Containers/Data/Application -name pp-browser-debug.log -exec cat {} \\;"
 }
 
 cmd_clean() {

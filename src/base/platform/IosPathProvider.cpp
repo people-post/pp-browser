@@ -21,7 +21,7 @@ std::string JoinPath(const std::filesystem::path& base, const std::string& leaf)
 
 std::string RootDir() {
 #if defined(__APPLE__) && TARGET_OS_IPHONE
-  if (char* pref = SDL_GetPrefPath("dev.frame", "pp-browser")) {
+  if (char* pref = SDL_GetPrefPath("dev.pp-browser", "pp-browser")) {
     const std::string path(pref);
     SDL_free(pref);
     return path;
