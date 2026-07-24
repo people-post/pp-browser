@@ -78,6 +78,68 @@ TEST(GroupMembershipCodecTest, DecodeInviteResponseFromMessage) {
   EXPECT_EQ(declined->control_type, GroupMembershipControlType::GroupInviteDecline);
 }
 
+TEST(GroupMembershipCodecTest, OwnerTransferredLeavePreviousRoundTrip) {
+  auto encoded = GroupMembershipCodec::EncodeOwnerTransferred("group:g", "relay:bob", 4, true);
+  ASSERT_TRUE(encoded);
+  auto decoded = GroupMembershipCodec::DecodeOwnerTransferred(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->group_id, "group:g");
+  EXPECT_EQ(decoded->new_owner_identity, "relay:bob");
+  EXPECT_EQ(decoded->roster_epoch, 4u);
+  EXPECT_TRUE(decoded->leave_previous);
+
+  ThreadMessage message;
+  message.content_type = ChatContentType::System;
+  message.payload_json =
+      nlohmann::json({{"control_type", "owner_transferred"}, {"detail", *encoded}}).dump();
+  auto from_message = GroupMembershipCodec::DecodeOwnerTransferredFromMessage(message);
+  ASSERT_TRUE(from_message);
+  EXPECT_TRUE(from_message->leave_previous);
+}
+
+TEST(GroupMembershipCodecTest, DecodeMemberLeftAndRemoved) {
+  auto left_detail = GroupMembershipCodec::EncodeMemberLeft("group:g", "relay:bob", 3);
+  ASSERT_TRUE(left_detail);
+  ThreadMessage left_msg;
+  left_msg.content_type = ChatContentType::System;
+  left_msg.payload_json =
+      nlohmann::json({{"control_type", "member_left"}, {"detail", *left_detail}}).dump();
+  auto left = GroupMembershipCodec::DecodeMemberLeftFromMessage(left_msg);
+  ASSERT_TRUE(left);
+  EXPECT_EQ(left->member_identity, "relay:bob");
+  EXPECT_EQ(left->roster_epoch, 3u);
+
+  auto removed_detail = GroupMembershipCodec::EncodeMemberRemoved("group:g", "relay:carol", 5);
+  ASSERT_TRUE(removed_detail);
+  ThreadMessage removed_msg;
+  removed_msg.content_type = ChatContentType::System;
+  removed_msg.payload_json =
+      nlohmann::json({{"control_type", "member_removed"}, {"detail", *removed_detail}}).dump();
+  auto removed = GroupMembershipCodec::DecodeMemberRemovedFromMessage(removed_msg);
+  ASSERT_TRUE(removed);
+  EXPECT_EQ(removed->member_identity, "relay:carol");
+}
+
+TEST(GroupMembershipCodecTest, OwnerUnreachableActionsAndResolution) {
+  const auto actions = GroupMembershipCodec::BuildOwnerUnreachableChatActions("group:g", "relay:alice");
+  ASSERT_EQ(actions.size(), 3u);
+  EXPECT_NE(actions[0].payload->find("fork_group"), std::string::npos);
+  EXPECT_NE(actions[1].payload->find("message_group_owner"), std::string::npos);
+  EXPECT_NE(actions[2].payload->find("dismiss_owner_advisory"), std::string::npos);
+
+  ThreadMessage message;
+  message.content_type = ChatContentType::System;
+  message.payload_json = nlohmann::json({{"control_type", "group_owner_unreachable"},
+                                         {"detail", nlohmann::json({{"group_id", "group:g"}}).dump()}})
+                             .dump();
+  message.chat_actions = actions;
+  EXPECT_TRUE(GroupMembershipCodec::IsOwnerUnreachableAdvisory(message));
+  EXPECT_FALSE(GroupMembershipCodec::IsOwnerUnreachableResolved(message));
+  GroupMembershipCodec::ApplyOwnerUnreachableResolution(message);
+  EXPECT_TRUE(message.chat_actions.empty());
+  EXPECT_TRUE(GroupMembershipCodec::IsOwnerUnreachableResolved(message));
+}
+
 TEST(GroupMembershipCodecTest, ApplyInviteResolutionClearsActions) {
   GroupInvitePayload invite;
   invite.invite_nonce = "nonce-r";

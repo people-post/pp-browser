@@ -275,6 +275,78 @@ TEST(GroupInviteIngestTest, InboundAcceptAddsInviteeToOwnerRoster) {
   EXPECT_EQ(targets.size(), 1u);
 }
 
+TEST(GroupInviteIngestTest, InboundOwnerTransferredLeavePreviousUpdatesRoster) {
+  PartyHarness member("xfer_member", "relay:bob", "relay:alice");
+
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(member.roster.UpsertMetadata(metadata));
+  GroupRosterMember alice;
+  alice.member_identity = "relay:alice";
+  alice.role = MemberRole::Owner;
+  alice.joined_at = util::NowUnixMs();
+  GroupRosterMember bob;
+  bob.member_identity = "relay:bob";
+  bob.role = MemberRole::Member;
+  bob.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(member.roster.UpsertMember("group:hike", alice));
+  ASSERT_TRUE(member.roster.UpsertMember("group:hike", bob));
+  auto group_thread = member.store.FindOrCreateGroupThread("group:hike", "Weekend hike", {});
+  ASSERT_TRUE(group_thread);
+  ASSERT_TRUE(member.roster.UpsertGroupTarget("group:hike", group_thread->id, 1, 1));
+
+  auto detail = GroupMembershipCodec::EncodeOwnerTransferred("group:hike", "relay:bob", 2, true);
+  ASSERT_TRUE(detail);
+  const RelayEnvelope envelope =
+      member.MakeSystemEnvelope("owner_transferred", *detail, "Group ownership transferred", 1);
+  const RelayReceiveOutcome outcome = member.pipeline.ProcessEnvelope(envelope, "relay:bob");
+  EXPECT_TRUE(outcome.persisted) << "decision=" << static_cast<int>(outcome.decision);
+
+  auto meta = member.roster.LoadMetadata("group:hike");
+  ASSERT_TRUE(meta && meta->has_value());
+  EXPECT_EQ((*meta)->owner_identity, "relay:bob");
+  EXPECT_EQ((*meta)->roster_epoch, 2u);
+  auto members = member.roster.ListMembers("group:hike");
+  ASSERT_TRUE(members);
+  ASSERT_EQ(members->size(), 1u);
+  EXPECT_EQ(members->front().member_identity, "relay:bob");
+}
+
+TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsClosedThreadEvenIfStillMember) {
+  PartyHarness party("closed_thread", "relay:bob", "relay:alice");
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(party.roster.UpsertMetadata(metadata));
+  GroupRosterMember bob;
+  bob.member_identity = "relay:bob";
+  bob.role = MemberRole::Member;
+  bob.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(party.roster.UpsertMember("group:hike", bob));
+  // No local group thread (user deleted/dismissed) — must not resurrect.
+  ASSERT_FALSE(party.store.FindGroupThread("group:hike")->has_value());
+
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = util::GenerateUuid();
+  envelope.sender_contact_id = "relay:alice";
+  envelope.sender_relay_id = "relay:alice";
+  envelope.route.kind = "group";
+  envelope.route.group_id = "group:hike";
+  envelope.sender_seq = 1;
+  envelope.session_epoch = 1;
+  envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{"relay:bob", "deadbeef"}};
+  const RelayReceiveOutcome outcome = party.pipeline.ProcessEnvelope(envelope, "relay:bob");
+  EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
+  EXPECT_FALSE(outcome.persisted);
+  EXPECT_FALSE(party.store.FindGroupThread("group:hike")->has_value());
+}
+
 TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsNonMember) {
   PartyHarness owner("nonmember", "relay:alice", "relay:bob");
   GroupMetadata metadata;

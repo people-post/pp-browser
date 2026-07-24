@@ -31,6 +31,8 @@ enum class GroupMembershipControlType {
   OwnerTransferred,
   GroupRenamed,
   GroupForked,
+  /** Local-only advisory card; never sent on the wire. */
+  GroupOwnerUnreachable,
 };
 
 enum GroupPermission : uint32_t {

@@ -34,16 +34,19 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     std::optional<std::string> key_init_b64;
     auto master_psk_b64 = psk_store.ResolveMasterPskForEpoch(member.target_key, session_epoch);
     if (!master_psk_b64) {
-      return master_psk_b64.error();
+      result.failed_member_identities.push_back(member.member_identity);
+      continue;
     }
     if (!master_psk_b64->has_value()) {
       auto peer_public = resolve_peer_kem_public(member.target_key);
       if (!peer_public) {
-        return peer_public.error();
+        result.failed_member_identities.push_back(member.member_identity);
+        continue;
       }
       auto established = AutoKeyEstablishment::EncapsulateForRecipient(*peer_public);
       if (!established) {
-        return established.error();
+        result.failed_member_identities.push_back(member.member_identity);
+        continue;
       }
       master_psk = std::move(established->master_psk);
       key_init_b64 = std::move(established->key_init_b64);
@@ -52,12 +55,14 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
       record.session_epoch = session_epoch;
       record.master_psk_b64 = Base64Encode(master_psk);
       if (auto saved = psk_store.Save(record); !saved) {
-        return saved.error();
+        result.failed_member_identities.push_back(member.member_identity);
+        continue;
       }
     } else {
       auto decoded = Base64Decode(**master_psk_b64);
       if (!decoded) {
-        return decoded.error();
+        result.failed_member_identities.push_back(member.member_identity);
+        continue;
       }
       master_psk = std::move(*decoded);
     }
@@ -73,9 +78,13 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     params.timestamp = timestamp;
     auto encrypted = E2eRelayPayloadCodec::EncryptTextWithAutoKey(params, master_psk, key_init_b64);
     if (!encrypted) {
-      return encrypted.error();
+      result.failed_member_identities.push_back(member.member_identity);
+      continue;
     }
     result.member_payloads[member.member_identity] = std::move(encrypted->payload_b64);
+  }
+  if (result.member_payloads.empty() && !result.failed_member_identities.empty()) {
+    return Error("Failed to encrypt for any group member");
   }
   return result;
 }

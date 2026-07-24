@@ -32,7 +32,32 @@ public:
   static Roe<std::string> EncodeMemberRemoved(const std::string& group_id, const std::string& member_identity,
                                               uint64_t roster_epoch);
   static Roe<std::string> EncodeOwnerTransferred(const std::string& group_id, const std::string& new_owner_identity,
-                                                 uint64_t roster_epoch);
+                                                 uint64_t roster_epoch, bool leave_previous = false);
+
+  struct MemberLeftPayload {
+    std::string group_id;
+    std::string member_identity;
+    uint64_t roster_epoch = 0;
+  };
+  struct MemberRemovedPayload {
+    std::string group_id;
+    std::string member_identity;
+    uint64_t roster_epoch = 0;
+  };
+  struct OwnerTransferredPayload {
+    std::string group_id;
+    std::string new_owner_identity;
+    uint64_t roster_epoch = 0;
+    bool leave_previous = false;
+  };
+
+  static Roe<MemberLeftPayload> DecodeMemberLeft(const std::string& detail_json);
+  static Roe<MemberLeftPayload> DecodeMemberLeftFromMessage(const ThreadMessage& message);
+  static Roe<MemberRemovedPayload> DecodeMemberRemoved(const std::string& detail_json);
+  static Roe<MemberRemovedPayload> DecodeMemberRemovedFromMessage(const ThreadMessage& message);
+  static Roe<OwnerTransferredPayload> DecodeOwnerTransferred(const std::string& detail_json);
+  static Roe<OwnerTransferredPayload> DecodeOwnerTransferredFromMessage(const ThreadMessage& message);
+
   static Roe<std::string> EncodeGroupRenamed(const std::string& group_id, const std::string& title,
                                             uint64_t roster_epoch);
   struct GroupRenamedPayload {
@@ -49,9 +74,17 @@ public:
                                                const std::string& sender_contact_id);
 
   static std::vector<TranscriptChatAction> BuildInviteChatActions(const GroupInvitePayload& invite);
+  static std::vector<TranscriptChatAction> BuildOwnerUnreachableChatActions(const std::string& group_id,
+                                                                            const std::string& owner_identity);
   /** Mark an invite system message as accepted/declined/blocked; clears chat_actions. */
   static void ApplyInviteResolution(ThreadMessage& message, InviteStatus status, const std::string& status_text);
   static std::optional<InviteStatus> InviteResolutionFromMessage(const ThreadMessage& message);
+
+  /** Local advisory card: owner unreachable (payload control_type=group_owner_unreachable). */
+  static bool IsOwnerUnreachableAdvisory(const ThreadMessage& message);
+  static void ApplyOwnerUnreachableResolution(ThreadMessage& message);
+  static bool IsOwnerUnreachableResolved(const ThreadMessage& message);
+
   static std::optional<GroupMembershipControlType> ControlTypeFromMessage(const ThreadMessage& message);
   static Roe<GroupInvitePayload> DecodeInviteFromMessage(const ThreadMessage& message);
 

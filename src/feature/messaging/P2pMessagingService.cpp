@@ -1,5 +1,6 @@
 #include "base/people/ContactTypes.h"
 #include "feature/messaging/Libp2pChatHistoryService.h"
+#include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/P2pMessagingService.h"
 
 #include "base/crypto/AutoKeyEstablishment.h"
@@ -921,13 +922,25 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
     return Base64Decode(kem->kem_public_key_b64);
   };
 
+  const std::string group_id = *(*thread)->group_id;
   auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
-      text, *(*thread)->group_id, identity->relay_user_id, message.id, *message.sender_seq, *message.session_epoch,
+      text, group_id, identity->relay_user_id, message.id, *message.sender_seq, *message.session_epoch,
       message.timestamp, targets, psk_store_, resolve_kem);
   if (!encrypted) {
     appended->delivery = MessageDelivery::Failed;
     (void)store_.UpdateMessage(*appended);
+    if (MessagingHub::Instance().IsInitialized()) {
+      for (const GroupMemberTarget& target : targets) {
+        MessagingHub::Instance().Groups().MarkMemberUnreachable(group_id, target.member_identity);
+      }
+    }
     return encrypted.error();
+  }
+
+  if (MessagingHub::Instance().IsInitialized()) {
+    for (const std::string& failed_id : encrypted->failed_member_identities) {
+      MessagingHub::Instance().Groups().MarkMemberUnreachable(group_id, failed_id);
+    }
   }
 
   for (const auto& [recipient, payload_b64] : encrypted->member_payloads) {
@@ -937,17 +950,20 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
     envelope.sender_relay_id = identity->relay_user_id;
     envelope.sender_contact_id = identity->relay_user_id;
     envelope.route.kind = "group";
-    envelope.route.group_id = *(*thread)->group_id;
+    envelope.route.group_id = group_id;
     envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{recipient, payload_b64}};
     envelope.sender_seq = *message.sender_seq;
     envelope.order_key = envelope.sender_seq;
     envelope.session_epoch = *message.session_epoch;
-    envelope.stream_key = BuildGroupRelayStreamKey(*(*thread)->group_id, *message.session_epoch);
+    envelope.stream_key = BuildGroupRelayStreamKey(group_id, *message.session_epoch);
     envelope.recipient_contact_id = recipient;
     envelope.timestamp = message.timestamp;
 
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
     if (!sign_bytes) {
+      if (MessagingHub::Instance().IsInitialized()) {
+        MessagingHub::Instance().Groups().MarkMemberUnreachable(group_id, recipient);
+      }
       continue;
     }
     if (auto signature = identity_.SignBytes(*sign_bytes)) {
@@ -956,6 +972,13 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
     if (relay_) {
       (void)relay_->Send(envelope);
     }
+    if (MessagingHub::Instance().IsInitialized()) {
+      MessagingHub::Instance().Groups().ClearMemberUnreachable(group_id, recipient);
+    }
+  }
+
+  if (!encrypted->failed_member_identities.empty() && on_delivery_notice_) {
+    on_delivery_notice_("Some group members couldn’t receive this message");
   }
 
   appended->delivery = MessageDelivery::Relayed;

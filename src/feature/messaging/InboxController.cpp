@@ -113,8 +113,7 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   }
 
   if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id && MessagingHub::Instance().IsInitialized()) {
-    // Drop local membership so inbound group envelopes hard-reject instead of FindOrCreate-ing
-    // the session back with an unread after close.
+    // Always clear local membership before deleting the thread so inbound traffic cannot resurrect it.
     (void)MessagingHub::Instance().Groups().DismissLocalGroup(*(*thread)->group_id);
   }
 
@@ -453,6 +452,24 @@ std::string InboxController::BuildSystemRml(const ThreadMessage& message) const 
     std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
                        StructuredTextParser::EscapeText(title) + "</h3>";
     html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(message.text) + "</p>";
+    html += HydrateChatActions("", message.chat_actions);
+    html += "</div>";
+    if (html.find("__ENTRY__") != std::string::npos) {
+      return InjectEntryPlaceholders(html, message.id);
+    }
+    return html;
+  }
+  if (control_type && *control_type == GroupMembershipControlType::GroupOwnerUnreachable) {
+    if (GroupMembershipCodec::IsOwnerUnreachableResolved(message)) {
+      return "<div class=\"chat-system-line muted\"><p>" + StructuredTextParser::EscapeText(message.text) +
+             "</p></div>";
+    }
+    const std::string body =
+        "You can keep chatting with people who are online. Inviting, renaming for everyone, and removing "
+        "members need the owner. If they’ve left for good, start a new group from this one.";
+    std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
+                       StructuredTextParser::EscapeText("Owner hasn’t been reachable") + "</h3>";
+    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(body) + "</p>";
     html += HydrateChatActions("", message.chat_actions);
     html += "</div>";
     if (html.find("__ENTRY__") != std::string::npos) {

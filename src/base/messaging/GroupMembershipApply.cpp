@@ -67,4 +67,126 @@ Roe<void> ApplyInviteDeclineToRoster(GroupRosterStore& roster, const std::string
   return roster.UpdateInviteStatus(invite_nonce, InviteStatus::Declined);
 }
 
+namespace {
+
+Roe<GroupMetadata> LoadMetadataRequired(GroupRosterStore& roster, const std::string& group_id) {
+  auto metadata = roster.LoadMetadata(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (!metadata->has_value()) {
+    return Error("Group metadata not found");
+  }
+  return **metadata;
+}
+
+Roe<void> RequireNewerEpoch(const GroupMetadata& metadata, const uint64_t inbound_epoch) {
+  if (inbound_epoch <= metadata.roster_epoch) {
+    return Error("Stale roster_epoch");
+  }
+  return {};
+}
+
+} // namespace
+
+Roe<void> ApplyOwnerTransferredToRoster(GroupRosterStore& roster,
+                                        const GroupMembershipCodec::OwnerTransferredPayload& payload,
+                                        const std::string& actor_identity) {
+  auto metadata = LoadMetadataRequired(roster, payload.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (metadata->owner_identity != actor_identity) {
+    return Error("Transfer rejected: actor is not the group owner");
+  }
+  if (auto epoch = RequireNewerEpoch(*metadata, payload.roster_epoch); !epoch) {
+    return epoch.error();
+  }
+  if (payload.new_owner_identity.empty() || payload.new_owner_identity == actor_identity) {
+    return Error("Invalid new owner");
+  }
+  auto is_member = roster.IsMember(payload.group_id, payload.new_owner_identity);
+  if (!is_member) {
+    return is_member.error();
+  }
+  if (!*is_member) {
+    return Error("New owner is not a roster member");
+  }
+
+  GroupMetadata updated = *metadata;
+  updated.owner_identity = payload.new_owner_identity;
+  updated.roster_epoch = payload.roster_epoch;
+  if (auto saved = roster.UpsertMetadata(updated); !saved) {
+    return saved.error();
+  }
+
+  GroupRosterMember new_owner;
+  new_owner.member_identity = payload.new_owner_identity;
+  new_owner.role = MemberRole::Owner;
+  new_owner.joined_at = util::NowUnixMs();
+  if (auto upserted = roster.UpsertMember(payload.group_id, new_owner); !upserted) {
+    return upserted.error();
+  }
+
+  if (payload.leave_previous) {
+    if (auto removed = roster.RemoveMember(payload.group_id, actor_identity); !removed) {
+      return removed.error();
+    }
+  } else {
+    GroupRosterMember previous;
+    previous.member_identity = actor_identity;
+    previous.role = MemberRole::Member;
+    previous.joined_at = util::NowUnixMs();
+    (void)roster.UpsertMember(payload.group_id, previous);
+  }
+  return {};
+}
+
+Roe<void> ApplyMemberLeftToRoster(GroupRosterStore& roster, const GroupMembershipCodec::MemberLeftPayload& payload,
+                                  const std::string& actor_identity) {
+  if (payload.member_identity != actor_identity) {
+    return Error("member_left actor must match member_identity");
+  }
+  auto metadata = LoadMetadataRequired(roster, payload.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (metadata->owner_identity == actor_identity) {
+    return Error("Owner cannot leave without transfer");
+  }
+  if (auto epoch = RequireNewerEpoch(*metadata, payload.roster_epoch); !epoch) {
+    return epoch.error();
+  }
+  if (auto removed = roster.RemoveMember(payload.group_id, payload.member_identity); !removed) {
+    return removed.error();
+  }
+  GroupMetadata updated = *metadata;
+  updated.roster_epoch = payload.roster_epoch;
+  return roster.UpsertMetadata(updated);
+}
+
+Roe<void> ApplyMemberRemovedToRoster(GroupRosterStore& roster,
+                                     const GroupMembershipCodec::MemberRemovedPayload& payload,
+                                     const std::string& actor_identity) {
+  auto metadata = LoadMetadataRequired(roster, payload.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (metadata->owner_identity != actor_identity) {
+    return Error("Remove rejected: actor is not the group owner");
+  }
+  if (payload.member_identity == actor_identity) {
+    return Error("Owner cannot remove self");
+  }
+  if (auto epoch = RequireNewerEpoch(*metadata, payload.roster_epoch); !epoch) {
+    return epoch.error();
+  }
+  if (auto removed = roster.RemoveMember(payload.group_id, payload.member_identity); !removed) {
+    return removed.error();
+  }
+  GroupMetadata updated = *metadata;
+  updated.roster_epoch = payload.roster_epoch;
+  return roster.UpsertMetadata(updated);
+}
+
 } // namespace pbr

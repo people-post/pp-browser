@@ -162,5 +162,82 @@ TEST_F(GroupRosterInviteApplyTest, ClearGroupTargetRemovesMapping) {
   EXPECT_FALSE(found->has_value());
 }
 
+TEST_F(GroupRosterInviteApplyTest, TransferLeavePreviousSetsOwnerAndRemovesActor) {
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(roster_->UpsertMetadata(metadata));
+  GroupRosterMember alice;
+  alice.member_identity = "relay:alice";
+  alice.role = MemberRole::Owner;
+  alice.joined_at = util::NowUnixMs();
+  GroupRosterMember bob;
+  bob.member_identity = "relay:bob";
+  bob.role = MemberRole::Member;
+  bob.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(roster_->UpsertMember("group:hike", alice));
+  ASSERT_TRUE(roster_->UpsertMember("group:hike", bob));
+
+  GroupMembershipCodec::OwnerTransferredPayload payload;
+  payload.group_id = "group:hike";
+  payload.new_owner_identity = "relay:bob";
+  payload.roster_epoch = 2;
+  payload.leave_previous = true;
+  ASSERT_TRUE(ApplyOwnerTransferredToRoster(*roster_, payload, "relay:alice"));
+
+  auto meta = roster_->LoadMetadata("group:hike");
+  ASSERT_TRUE(meta && meta->has_value());
+  EXPECT_EQ((*meta)->owner_identity, "relay:bob");
+  EXPECT_EQ((*meta)->roster_epoch, 2u);
+  auto members = roster_->ListMembers("group:hike");
+  ASSERT_TRUE(members);
+  ASSERT_EQ(members->size(), 1u);
+  EXPECT_EQ(members->front().member_identity, "relay:bob");
+  EXPECT_EQ(members->front().role, MemberRole::Owner);
+}
+
+TEST_F(GroupRosterInviteApplyTest, MemberLeftRejectsOwnerAndStaleEpoch) {
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 3;
+  ASSERT_TRUE(roster_->UpsertMetadata(metadata));
+  GroupRosterMember alice;
+  alice.member_identity = "relay:alice";
+  alice.role = MemberRole::Owner;
+  alice.joined_at = util::NowUnixMs();
+  GroupRosterMember bob;
+  bob.member_identity = "relay:bob";
+  bob.role = MemberRole::Member;
+  bob.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(roster_->UpsertMember("group:hike", alice));
+  ASSERT_TRUE(roster_->UpsertMember("group:hike", bob));
+
+  GroupMembershipCodec::MemberLeftPayload owner_left;
+  owner_left.group_id = "group:hike";
+  owner_left.member_identity = "relay:alice";
+  owner_left.roster_epoch = 4;
+  EXPECT_FALSE(ApplyMemberLeftToRoster(*roster_, owner_left, "relay:alice"));
+
+  GroupMembershipCodec::MemberLeftPayload stale;
+  stale.group_id = "group:hike";
+  stale.member_identity = "relay:bob";
+  stale.roster_epoch = 3;
+  EXPECT_FALSE(ApplyMemberLeftToRoster(*roster_, stale, "relay:bob"));
+
+  GroupMembershipCodec::MemberLeftPayload ok;
+  ok.group_id = "group:hike";
+  ok.member_identity = "relay:bob";
+  ok.roster_epoch = 4;
+  ASSERT_TRUE(ApplyMemberLeftToRoster(*roster_, ok, "relay:bob"));
+  auto members = roster_->ListMembers("group:hike");
+  ASSERT_TRUE(members);
+  ASSERT_EQ(members->size(), 1u);
+  EXPECT_EQ(members->front().member_identity, "relay:alice");
+}
+
 } // namespace
 } // namespace pbr

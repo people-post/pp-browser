@@ -168,6 +168,9 @@ void ChatThreadChrome::Update() {
         if (auto roster = MessagingHub::Instance().Groups().ListRoster(*thread->group_id)) {
           roster_label += " · " + std::to_string(roster->size()) + " members";
         }
+        if (MessagingHub::Instance().Groups().IsOwnerUnreachable(*thread->group_id)) {
+          roster_label += " · Owner unreachable";
+        }
       }
       if (label.shared_title) {
         roster_label = "Shared: " + *label.shared_title + " · " + roster_label;

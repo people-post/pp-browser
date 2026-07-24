@@ -179,11 +179,132 @@ Roe<std::string> GroupMembershipCodec::EncodeMemberRemoved(const std::string& gr
 
 Roe<std::string> GroupMembershipCodec::EncodeOwnerTransferred(const std::string& group_id,
                                                             const std::string& new_owner_identity,
-                                                            const uint64_t roster_epoch) {
+                                                            const uint64_t roster_epoch,
+                                                            const bool leave_previous) {
   return nlohmann::json({{"group_id", group_id},
                          {"new_owner_identity", new_owner_identity},
-                         {"roster_epoch", roster_epoch}})
+                         {"roster_epoch", roster_epoch},
+                         {"leave_previous", leave_previous}})
       .dump();
+}
+
+namespace {
+
+uint64_t ReadRosterEpoch(const nlohmann::json& json) {
+  if (json.contains("roster_epoch") && json["roster_epoch"].is_number_unsigned()) {
+    return json["roster_epoch"].get<uint64_t>();
+  }
+  if (json.contains("roster_epoch") && json["roster_epoch"].is_number_integer()) {
+    return static_cast<uint64_t>(json["roster_epoch"].get<int64_t>());
+  }
+  return 0;
+}
+
+Roe<std::string> DetailFromMessage(const ThreadMessage& message, const GroupMembershipControlType expected,
+                                   const char* not_type_error) {
+  const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
+  if (!control_type || *control_type != expected) {
+    return Error(not_type_error);
+  }
+  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
+  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+    return Error("Missing membership detail");
+  }
+  return payload["detail"].get<std::string>();
+}
+
+} // namespace
+
+Roe<GroupMembershipCodec::MemberLeftPayload> GroupMembershipCodec::DecodeMemberLeft(
+    const std::string& detail_json) {
+  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
+  if (!json.is_object()) {
+    return Error("Invalid member_left detail");
+  }
+  MemberLeftPayload payload;
+  if (json.contains("group_id") && json["group_id"].is_string()) {
+    payload.group_id = json["group_id"].get<std::string>();
+  }
+  if (json.contains("member_identity") && json["member_identity"].is_string()) {
+    payload.member_identity = json["member_identity"].get<std::string>();
+  }
+  payload.roster_epoch = ReadRosterEpoch(json);
+  if (payload.group_id.empty() || payload.member_identity.empty()) {
+    return Error("member_left missing group_id or member_identity");
+  }
+  return payload;
+}
+
+Roe<GroupMembershipCodec::MemberLeftPayload> GroupMembershipCodec::DecodeMemberLeftFromMessage(
+    const ThreadMessage& message) {
+  auto detail = DetailFromMessage(message, GroupMembershipControlType::MemberLeft, "Message is not a member_left");
+  if (!detail) {
+    return detail.error();
+  }
+  return DecodeMemberLeft(*detail);
+}
+
+Roe<GroupMembershipCodec::MemberRemovedPayload> GroupMembershipCodec::DecodeMemberRemoved(
+    const std::string& detail_json) {
+  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
+  if (!json.is_object()) {
+    return Error("Invalid member_removed detail");
+  }
+  MemberRemovedPayload payload;
+  if (json.contains("group_id") && json["group_id"].is_string()) {
+    payload.group_id = json["group_id"].get<std::string>();
+  }
+  if (json.contains("member_identity") && json["member_identity"].is_string()) {
+    payload.member_identity = json["member_identity"].get<std::string>();
+  }
+  payload.roster_epoch = ReadRosterEpoch(json);
+  if (payload.group_id.empty() || payload.member_identity.empty()) {
+    return Error("member_removed missing group_id or member_identity");
+  }
+  return payload;
+}
+
+Roe<GroupMembershipCodec::MemberRemovedPayload> GroupMembershipCodec::DecodeMemberRemovedFromMessage(
+    const ThreadMessage& message) {
+  auto detail =
+      DetailFromMessage(message, GroupMembershipControlType::MemberRemoved, "Message is not a member_removed");
+  if (!detail) {
+    return detail.error();
+  }
+  return DecodeMemberRemoved(*detail);
+}
+
+Roe<GroupMembershipCodec::OwnerTransferredPayload> GroupMembershipCodec::DecodeOwnerTransferred(
+    const std::string& detail_json) {
+  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
+  if (!json.is_object()) {
+    return Error("Invalid owner_transferred detail");
+  }
+  OwnerTransferredPayload payload;
+  if (json.contains("group_id") && json["group_id"].is_string()) {
+    payload.group_id = json["group_id"].get<std::string>();
+  }
+  if (json.contains("new_owner_identity") && json["new_owner_identity"].is_string()) {
+    payload.new_owner_identity = json["new_owner_identity"].get<std::string>();
+  }
+  payload.roster_epoch = ReadRosterEpoch(json);
+  if (json.contains("leave_previous") && json["leave_previous"].is_boolean()) {
+    payload.leave_previous = json["leave_previous"].get<bool>();
+  }
+  if (payload.group_id.empty() || payload.new_owner_identity.empty()) {
+    return Error("owner_transferred missing group_id or new_owner_identity");
+  }
+  return payload;
+}
+
+Roe<GroupMembershipCodec::OwnerTransferredPayload> GroupMembershipCodec::DecodeOwnerTransferredFromMessage(
+    const ThreadMessage& message) {
+  auto detail = DetailFromMessage(message, GroupMembershipControlType::OwnerTransferred,
+                                  "Message is not an owner_transferred");
+  if (!detail) {
+    return detail.error();
+  }
+  return DecodeOwnerTransferred(*detail);
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeGroupRenamed(const std::string& group_id, const std::string& title,
@@ -260,6 +381,49 @@ std::vector<TranscriptChatAction> GroupMembershipCodec::BuildInviteChatActions(c
                                   {"invite_nonce", invite.invite_nonce}})
                        .dump()});
   return actions;
+}
+
+std::vector<TranscriptChatAction> GroupMembershipCodec::BuildOwnerUnreachableChatActions(
+    const std::string& group_id, const std::string& owner_identity) {
+  std::vector<TranscriptChatAction> actions;
+  actions.push_back({.label = "Start a new group",
+                     .message = "Fork this group",
+                     .payload = nlohmann::json({{"type", "fork_group"}, {"group_id", group_id}}).dump()});
+  actions.push_back({.label = "Message owner",
+                     .message = "Open a chat with the owner",
+                     .payload =
+                         nlohmann::json({{"type", "message_group_owner"}, {"owner_identity", owner_identity}}).dump()});
+  actions.push_back(
+      {.label = "Got it",
+       .message = "Dismiss this note",
+       .payload = nlohmann::json({{"type", "dismiss_owner_advisory"}, {"group_id", group_id}}).dump()});
+  return actions;
+}
+
+bool GroupMembershipCodec::IsOwnerUnreachableAdvisory(const ThreadMessage& message) {
+  const auto control_type = ControlTypeFromMessage(message);
+  return control_type && *control_type == GroupMembershipControlType::GroupOwnerUnreachable;
+}
+
+void GroupMembershipCodec::ApplyOwnerUnreachableResolution(ThreadMessage& message) {
+  nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
+  if (!payload.is_object()) {
+    payload = nlohmann::json::object();
+  }
+  payload["control_type"] = GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupOwnerUnreachable);
+  payload["resolution"] = "dismissed";
+  message.payload_json = payload.dump();
+  message.chat_actions.clear();
+  message.content_rml.reset();
+}
+
+bool GroupMembershipCodec::IsOwnerUnreachableResolved(const ThreadMessage& message) {
+  if (message.payload_json.empty()) {
+    return false;
+  }
+  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
+  return payload.is_object() && payload.contains("resolution") && payload["resolution"].is_string() &&
+         payload["resolution"].get<std::string>() == "dismissed";
 }
 
 void GroupMembershipCodec::ApplyInviteResolution(ThreadMessage& message, const InviteStatus status,

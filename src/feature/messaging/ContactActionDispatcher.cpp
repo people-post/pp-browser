@@ -1,12 +1,11 @@
 #include "feature/messaging/ContactActionDispatcher.h"
 
+#include "base/messaging/GroupTypes.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/people/ContactTypes.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/P2pMessagingService.h"
-#include "base/messaging/GroupTypes.h"
-#include "base/people/ContactTypes.h"
 
 #include <nlohmann/json.hpp>
 
@@ -285,6 +284,85 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (on_action_message_) {
       on_action_message_("Created group " + thread->title);
     }
+    return Roe<std::optional<std::string>>(std::optional<std::string>{});
+  }
+
+  if (type == "fork_group") {
+    if (!payload.contains("group_id") || !payload["group_id"].is_string()) {
+      return Error("Missing group_id");
+    }
+    if (!MessagingHub::Instance().IsInitialized()) {
+      return Error("Messaging not initialized");
+    }
+    const std::string group_id = payload["group_id"].get<std::string>();
+    auto roster = MessagingHub::Instance().Groups().ListRoster(group_id);
+    std::string old_title = "Group";
+    if (auto thread = MessagingHub::Instance().Store().FindGroupThread(group_id); thread && *thread) {
+      old_title = (*thread)->title.empty() ? old_title : (*thread)->title;
+    }
+    const std::string new_title = old_title + " (continued)";
+    std::vector<std::string> member_contact_ids;
+    if (roster) {
+      auto local = MessagingHub::Instance().Identity().Get();
+      for (const GroupRosterMember& member : *roster) {
+        if (local && member.member_identity == local->relay_user_id) {
+          continue;
+        }
+        if (MessagingHub::Instance().Groups().IsMemberUnreachable(group_id, member.member_identity)) {
+          continue;
+        }
+        if (auto contact = MessagingHub::Instance().Contacts().FindByIdentity(member.member_identity,
+                                                                             ContactIdKind::RelayUser)) {
+          if (*contact) {
+            member_contact_ids.push_back((*contact)->id);
+          }
+        }
+      }
+    }
+    auto forked = MessagingHub::Instance().Groups().ForkGroup(group_id, new_title, member_contact_ids);
+    if (!forked) {
+      return forked.error();
+    }
+    (void)MessagingHub::Instance().Groups().ResolveOwnerUnreachableAdvisory(group_id);
+    (void)inbox_.OpenThread(forked->id);
+    if (on_action_message_) {
+      on_action_message_("Started " + forked->title + " (fresh history)");
+    }
+    return Roe<std::optional<std::string>>(std::optional<std::string>{});
+  }
+
+  if (type == "message_group_owner") {
+    if (!payload.contains("owner_identity") || !payload["owner_identity"].is_string()) {
+      return Error("Missing owner_identity");
+    }
+    if (!MessagingHub::Instance().IsInitialized()) {
+      return Error("Messaging not initialized");
+    }
+    auto thread =
+        MessagingHub::Instance().Groups().OpenOwnerDirectMessage(payload["owner_identity"].get<std::string>());
+    if (!thread) {
+      return thread.error();
+    }
+    (void)inbox_.OpenThread(thread->id);
+    if (on_action_message_) {
+      on_action_message_("Opened chat with owner");
+    }
+    return Roe<std::optional<std::string>>(std::optional<std::string>{});
+  }
+
+  if (type == "dismiss_owner_advisory") {
+    if (!payload.contains("group_id") || !payload["group_id"].is_string()) {
+      return Error("Missing group_id");
+    }
+    if (!MessagingHub::Instance().IsInitialized()) {
+      return Error("Messaging not initialized");
+    }
+    if (auto resolved =
+            MessagingHub::Instance().Groups().ResolveOwnerUnreachableAdvisory(payload["group_id"].get<std::string>());
+        !resolved) {
+      return resolved.error();
+    }
+    inbox_.NotifyThreadChanged();
     return Roe<std::optional<std::string>>(std::optional<std::string>{});
   }
 

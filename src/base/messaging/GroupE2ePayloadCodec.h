@@ -22,6 +22,8 @@ struct GroupMemberTarget {
 
 struct GroupEncryptResult {
   std::map<std::string, std::string> member_payloads;
+  /** Members skipped because pairwise encrypt/key resolution failed. */
+  std::vector<std::string> failed_member_identities;
 };
 
 /** D095 — N ciphertexts per group message using pairwise e2e_public keys. */

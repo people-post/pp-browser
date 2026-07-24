@@ -72,6 +72,8 @@ std::string GroupMembershipControlTypeToWire(const GroupMembershipControlType ty
     return "group_renamed";
   case GroupMembershipControlType::GroupForked:
     return "group_forked";
+  case GroupMembershipControlType::GroupOwnerUnreachable:
+    return "group_owner_unreachable";
   }
   return "group_invite";
 }
@@ -103,6 +105,9 @@ std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(con
   }
   if (value == "group_forked") {
     return GroupMembershipControlType::GroupForked;
+  }
+  if (value == "group_owner_unreachable") {
+    return GroupMembershipControlType::GroupOwnerUnreachable;
   }
   return std::nullopt;
 }

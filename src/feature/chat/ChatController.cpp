@@ -496,29 +496,180 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     return;
   }
 
+  auto finish_close = [this, thread_id]() {
+    if (!MessagingHub::Instance().Inbox().CloseThread(thread_id)) {
+      UserFeedback::Fail("Could not delete conversation");
+      ShellHost::Instance().DirtyWindow();
+      return;
+    }
+    chat_.draft = "";
+    chat_.status = "";
+    chat_.loading = false;
+    pending_reply_.reset();
+    working_set_.ClearAll();
+    widgets_.ClearAll();
+    chat_.turns.clear();
+    RefreshFromMessaging();
+    if (shell_.sessions.empty()) {
+      ShellHost::Instance().SelectNavTab(NavTab::Home);
+      ShellHost::Instance().CloseCompactChat();
+    }
+    ShellHost::Instance().RequestSyncLayout();
+    ShellHost::Instance().DirtyWindow();
+  };
+
+  auto dismiss_and_close = [finish_close](const std::string& group_id) {
+    (void)MessagingHub::Instance().Groups().DismissLocalGroup(group_id);
+    finish_close();
+  };
+
+  auto thread = MessagingHub::Instance().Store().GetThread(thread_id);
+  if (thread && *thread && (*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
+    const std::string group_id = *(*thread)->group_id;
+    std::string local_identity;
+    if (auto identity = MessagingHub::Instance().Identity().Get()) {
+      local_identity = identity->relay_user_id;
+    }
+
+    bool is_owner = false;
+    if (auto owner = MessagingHub::Instance().Groups().IsLocalOwner(group_id)) {
+      is_owner = *owner;
+    } else if (auto roster = MessagingHub::Instance().Groups().ListRoster(group_id)) {
+      for (const GroupRosterMember& member : *roster) {
+        if (member.member_identity == local_identity && member.role == MemberRole::Owner) {
+          is_owner = true;
+          break;
+        }
+      }
+    }
+
+    std::vector<GroupRosterMember> members;
+    if (auto roster = MessagingHub::Instance().Groups().ListRoster(group_id)) {
+      members = *roster;
+    }
+
+    std::vector<GroupRosterMember> successors;
+    for (const GroupRosterMember& member : members) {
+      if (member.member_identity == local_identity) {
+        continue;
+      }
+      if (MessagingHub::Instance().Groups().IsMemberUnreachable(group_id, member.member_identity)) {
+        continue;
+      }
+      successors.push_back(member);
+    }
+
+    bool owner_on_roster = false;
+    if (auto owner_id = MessagingHub::Instance().Groups().OwnerIdentity(group_id)) {
+      for (const GroupRosterMember& member : members) {
+        if (member.member_identity == *owner_id) {
+          owner_on_roster = true;
+          break;
+        }
+      }
+    }
+
+    // Not the owner: normal leave — unless this is an orphaned/solo shell (owner missing or no
+    // reachable peers), then dismiss locally. Covers "both sides solo, neither is owner".
+    if (!is_owner) {
+      const bool orphaned_shell = successors.empty() || !owner_on_roster;
+      if (orphaned_shell) {
+        ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.group.dismiss_title"),
+                                   Tr("chat.group.dismiss_confirm"), [dismiss_and_close, group_id](bool ok) {
+                                     if (!ok) {
+                                       return;
+                                     }
+                                     dismiss_and_close(group_id);
+                                   });
+      } else {
+        ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.group.leave_title"),
+                                   Tr("chat.group.leave_confirm"),
+                                   [finish_close, dismiss_and_close, group_id](bool ok) {
+                                     if (!ok) {
+                                       return;
+                                     }
+                                     if (auto left = MessagingHub::Instance().Groups().LeaveGroup(group_id); !left) {
+                                       dismiss_and_close(group_id);
+                                       return;
+                                     }
+                                     finish_close();
+                                   });
+      }
+      ShellHost::Instance().RequestSyncLayout();
+      ShellHost::Instance().DirtyWindow();
+      return;
+    }
+
+    // Solo or only-unreachable peers: local dismiss — no transfer into a ghost roster.
+    if (successors.empty()) {
+      ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.group.dismiss_title"),
+                                 Tr("chat.group.dismiss_confirm"), [dismiss_and_close, group_id](bool ok) {
+                                   if (!ok) {
+                                     return;
+                                   }
+                                   dismiss_and_close(group_id);
+                                 });
+      ShellHost::Instance().RequestSyncLayout();
+      ShellHost::Instance().DirtyWindow();
+      return;
+    }
+
+    ShellFeedback::ShowConfirm(
+        ShellHost::Instance().State(), Tr("chat.group.leave_title"), Tr("chat.group.leave_owner_confirm"),
+        [finish_close, dismiss_and_close, group_id, successors](bool ok) {
+          if (!ok) {
+            return;
+          }
+          std::vector<ContextMenuAction> actions;
+          for (const GroupRosterMember& member : successors) {
+            std::string label = member.member_identity;
+            if (auto contact = MessagingHub::Instance().Contacts().FindByIdentity(member.member_identity,
+                                                                                  ContactIdKind::RelayUser)) {
+              if (*contact) {
+                label = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+                if (label.empty()) {
+                  label = member.member_identity;
+                }
+              }
+            }
+            const std::string successor = member.member_identity;
+            actions.push_back({
+                "transfer_" + successor,
+                "Transfer to " + label,
+                nullptr,
+                [finish_close, group_id, successor]() {
+                  if (auto left = MessagingHub::Instance().Groups().LeaveAsOwner(group_id, successor); !left) {
+                    UserFeedback::Fail(left.error().message);
+                    ShellHost::Instance().DirtyWindow();
+                    return;
+                  }
+                  finish_close();
+                },
+                "../icons/contacts.svg",
+            });
+          }
+          actions.push_back({
+              "dismiss_local",
+              "Dismiss on this device only",
+              nullptr,
+              [dismiss_and_close, group_id]() { dismiss_and_close(group_id); },
+              "../icons/trash.svg",
+              true,
+          });
+          ContextMenuHost::Instance().ShowActions(Rml::Vector2i(120, 120), std::move(actions));
+          ShellHost::Instance().DirtyWindow();
+        });
+    ShellHost::Instance().RequestSyncLayout();
+    ShellHost::Instance().DirtyWindow();
+    return;
+  }
+
   ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.delete_conversation"),
-                             Tr("chat.delete_confirm"),
-                             [this, thread_id](bool ok) {
+                             Tr("chat.delete_confirm"), [finish_close](bool ok) {
                                if (!ok) {
                                  return;
                                }
-                               if (!MessagingHub::Instance().Inbox().CloseThread(thread_id)) {
-                                 return;
-                               }
-                               chat_.draft = "";
-                               chat_.status = "";
-                               chat_.loading = false;
-                               pending_reply_.reset();
-                               working_set_.ClearAll();
-                               widgets_.ClearAll();
-                               chat_.turns.clear();
-                               RefreshFromMessaging();
-                               if (shell_.sessions.empty()) {
-                                 ShellHost::Instance().SelectNavTab(NavTab::Home);
-                                 ShellHost::Instance().CloseCompactChat();
-                               }
-                               ShellHost::Instance().RequestSyncLayout();
-                               ShellHost::Instance().DirtyWindow();
+                               finish_close();
                              });
   ShellHost::Instance().RequestSyncLayout();
   ShellHost::Instance().DirtyWindow();
@@ -802,6 +953,42 @@ void ChatController::SyncDisplayFromThread() {
 
 void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
   if (payload && !payload->empty()) {
+    const nlohmann::json action_json = nlohmann::json::parse(*payload, nullptr, false);
+    if (action_json.is_object() && action_json.contains("type") && action_json["type"].is_string() &&
+        action_json["type"].get<std::string>() == "fork_group") {
+      const std::string confirmed_payload = *payload;
+      ShellFeedback::ShowConfirm(
+          ShellHost::Instance().State(), "Start a new group?",
+          "This creates a new group with a fresh history. People who are still reachable can be invited again.",
+          [this, message, confirmed_payload](bool ok) {
+            if (!ok) {
+              return;
+            }
+            auto result = MessagingHub::Instance().Actions().Dispatch(confirmed_payload);
+            if (!result) {
+              log().warning << "Local action failed: " << result.error().message;
+              ShellFeedback::ShowToast(ShellHost::Instance().State(), result.error().message);
+              ShellHost::Instance().DirtyWindow();
+              return;
+            }
+            if (*result) {
+              SendUserText(message, *result);
+              return;
+            }
+            RefreshFromMessaging();
+            ContactsController::Instance().Refresh();
+            if (!MessagingHub::Instance().Inbox().ActiveThreadId().empty()) {
+              ShellHost::Instance().SelectNavTab(NavTab::Sessions);
+              ShellHost::Instance().SetPrimaryPane("chat");
+              if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
+                ShellHost::Instance().OpenCompactChat();
+              }
+            }
+            ShellHost::Instance().DirtyWindow();
+          });
+      ShellHost::Instance().DirtyWindow();
+      return;
+    }
     auto result = MessagingHub::Instance().Actions().Dispatch(*payload);
     if (!result) {
       // Never re-route the same action payload through MessageRouter — that loops
@@ -1061,7 +1248,9 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
     }
 
     bool is_owner = false;
+    std::string local_identity;
     if (auto identity = MessagingHub::Instance().Identity().Get()) {
+      local_identity = identity->relay_user_id;
       if (auto roster = MessagingHub::Instance().Groups().ListRoster(group_id)) {
         for (const auto& member : *roster) {
           if (member.member_identity == identity->relay_user_id && member.role == MemberRole::Owner) {
@@ -1071,6 +1260,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
         }
       }
     }
+    const bool owner_unreachable = MessagingHub::Instance().Groups().IsOwnerUnreachable(group_id);
     if (is_owner) {
       actions.push_back({
           "rename_for_everyone",
@@ -1095,6 +1285,59 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                   }
                   ShellHost::Instance().DirtyWindow();
                 });
+            ShellHost::Instance().DirtyWindow();
+          },
+          "../icons/group.svg",
+      });
+      for (const std::string& unreachable_id : MessagingHub::Instance().Groups().ListUnreachable(group_id)) {
+        if (unreachable_id == local_identity) {
+          continue;
+        }
+        std::string name = unreachable_id;
+        if (auto contact =
+                MessagingHub::Instance().Contacts().FindByIdentity(unreachable_id, ContactIdKind::RelayUser)) {
+          if (*contact) {
+            name = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+            if (name.empty()) {
+              name = unreachable_id;
+            }
+          }
+        }
+        actions.push_back({
+            "remove_unreachable_" + unreachable_id,
+            "Remove unreachable: " + name,
+            nullptr,
+            [group_id, unreachable_id, name]() {
+              ShellFeedback::ShowConfirm(
+                  ShellHost::Instance().State(), "Remove member",
+                  "Remove " + name + " from this group? Others will be notified.",
+                  [group_id, unreachable_id](bool ok) {
+                    if (!ok) {
+                      return;
+                    }
+                    if (auto removed =
+                            MessagingHub::Instance().Groups().RemoveMemberByIdentity(group_id, unreachable_id);
+                        !removed) {
+                      UserFeedback::Fail(removed.error().message);
+                    } else {
+                      MessagingHub::Instance().Inbox().NotifyThreadChanged();
+                    }
+                    ShellHost::Instance().DirtyWindow();
+                  });
+              ShellHost::Instance().DirtyWindow();
+            },
+            "../icons/trash.svg",
+            true,
+        });
+      }
+    } else if (owner_unreachable) {
+      actions.push_back({
+          "rename_for_everyone",
+          "Rename for everyone",
+          nullptr,
+          []() {
+            ShellFeedback::ShowToast(ShellHost::Instance().State(),
+                                     "Only the owner can do that — see the note in the chat");
             ShellHost::Instance().DirtyWindow();
           },
           "../icons/group.svg",

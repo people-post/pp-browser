@@ -11,7 +11,11 @@
 #include "common/Module.h"
 
 #include <functional>
+#include <mutex>
+#include <optional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace pbr {
@@ -33,7 +37,12 @@ public:
   Roe<void> ResolveInviteCard(const std::string& inviter_identity, const std::string& invite_nonce,
                               InviteStatus status, const std::string& status_text);
   Roe<void> RemoveMember(const std::string& group_id, const std::string& member_contact_id);
+  /** Owner prune by communicating identity (unreachable members may lack a contact row). */
+  Roe<void> RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity);
+  /** Non-owner leave: fan-out member_left then clear local membership. */
   Roe<void> LeaveGroup(const std::string& group_id);
+  /** Owner leave with successor: fan-out owner_transferred (leave_previous) then clear local. */
+  Roe<void> LeaveAsOwner(const std::string& group_id, const std::string& new_owner_identity);
   Roe<Thread> ForkGroup(const std::string& group_id, const std::string& new_title,
                         const std::vector<std::string>& member_contact_ids);
   /** Owner-only; updates shared metadata.title and fans out group_renamed DMs. Leaves local_title alone. */
@@ -43,6 +52,21 @@ public:
                                      const std::string& actor_identity);
 
   Roe<std::vector<GroupRosterMember>> ListRoster(const std::string& group_id) const;
+  /** True when local relay identity is the group metadata owner (authoritative for leave UI). */
+  Roe<bool> IsLocalOwner(const std::string& group_id) const;
+  /** Metadata owner identity for the group. */
+  Roe<std::string> OwnerIdentity(const std::string& group_id) const;
+
+  void MarkMemberUnreachable(const std::string& group_id, const std::string& member_identity);
+  void ClearMemberUnreachable(const std::string& group_id, const std::string& member_identity);
+  bool IsMemberUnreachable(const std::string& group_id, const std::string& member_identity) const;
+  std::vector<std::string> ListUnreachable(const std::string& group_id) const;
+  bool IsOwnerUnreachable(const std::string& group_id) const;
+
+  /** Insert at most one unresolved owner-unreachable advisory on the group thread. */
+  Roe<void> EnsureOwnerUnreachableAdvisory(const std::string& group_id);
+  Roe<void> ResolveOwnerUnreachableAdvisory(const std::string& group_id);
+  Roe<Thread> OpenOwnerDirectMessage(const std::string& owner_identity);
 
 private:
   Roe<std::string> ResolveRelayIdentity(const std::string& contact_id) const;
@@ -54,8 +78,15 @@ private:
   Roe<void> SendInviteDirectMessage(const GroupInvitePayload& invite, const std::string& invitee_contact_id);
   Roe<void> SendInviteResponseDirectMessage(const std::string& inviter_identity, const std::string& invite_nonce,
                                             const std::string& group_id, GroupMembershipControlType response_type);
+  Roe<void> SendMembershipDirectMessage(const std::string& peer_identity, GroupMembershipControlType control_type,
+                                        const std::string& detail_json, const std::string& display);
   Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
                                     const std::string& title, uint64_t roster_epoch);
+  Roe<void> RemoveMemberInternal(const std::string& group_id, const std::string& member_identity);
+  Roe<void> FanOutMembershipEvent(const std::string& group_id, GroupMembershipControlType control_type,
+                                  const std::string& detail_json, const std::string& display,
+                                  const std::string& skip_identity,
+                                  const std::optional<std::string>& also_notify_identity = std::nullopt);
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -63,6 +94,9 @@ private:
   GroupRosterStore& roster_;
   GroupInviteGate& invite_gate_;
   P2pMessagingService& p2p_;
+
+  mutable std::mutex unreachable_mutex_;
+  std::set<std::pair<std::string, std::string>> unreachable_;
 };
 
 } // namespace pbr

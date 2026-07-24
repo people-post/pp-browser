@@ -51,8 +51,114 @@ RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyR
 
 Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message,
                                                               const std::string& actor_identity) const {
+  // Resolve group_id from any membership control we understand, then ignore events for groups
+  // the local user has already left/dismissed (prevents transfer-to-leaver resurrection).
+  auto local_id = identity_.Get();
+  const std::string local_relay =
+      (local_id && !local_id->relay_user_id.empty()) ? local_id->relay_user_id : std::string();
+
+  auto ignore_if_not_member = [this, &local_relay](const std::string& group_id) -> Roe<bool> {
+    if (local_relay.empty() || group_id.empty()) {
+      return false;
+    }
+    auto is_member = group_roster_.IsMember(group_id, local_relay);
+    if (!is_member) {
+      return is_member.error();
+    }
+    return !*is_member; // true => ignore
+  };
+
+  auto transferred = GroupMembershipCodec::DecodeOwnerTransferredFromMessage(message);
+  if (transferred) {
+    if (auto ignore = ignore_if_not_member(transferred->group_id); ignore && *ignore) {
+      return {};
+    }
+    if (auto applied = ApplyOwnerTransferredToRoster(group_roster_, *transferred, actor_identity); !applied) {
+      return applied.error();
+    }
+    auto thread = store_.FindGroupThread(transferred->group_id);
+    if (thread && *thread) {
+      auto detail = GroupMembershipCodec::EncodeOwnerTransferred(
+          transferred->group_id, transferred->new_owner_identity, transferred->roster_epoch,
+          transferred->leave_previous);
+      if (detail) {
+        const std::string text = transferred->leave_previous ? "Ownership transferred; previous owner left"
+                                                             : "Group ownership transferred";
+        auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id,
+                                                            GroupMembershipControlType::OwnerTransferred, text,
+                                                            *detail, actor_identity);
+        if (sys) {
+          (void)store_.AppendMessage(*sys);
+        }
+      }
+    }
+    return {};
+  }
+  if (transferred.error().message.find("not an owner_transferred") == std::string::npos) {
+    return transferred.error();
+  }
+
+  auto left = GroupMembershipCodec::DecodeMemberLeftFromMessage(message);
+  if (left) {
+    if (auto ignore = ignore_if_not_member(left->group_id); ignore && *ignore) {
+      return {};
+    }
+    if (auto applied = ApplyMemberLeftToRoster(group_roster_, *left, actor_identity); !applied) {
+      return applied.error();
+    }
+    auto thread = store_.FindGroupThread(left->group_id);
+    if (thread && *thread) {
+      auto detail =
+          GroupMembershipCodec::EncodeMemberLeft(left->group_id, left->member_identity, left->roster_epoch);
+      if (detail) {
+        auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::MemberLeft,
+                                                            "Member left", *detail, actor_identity);
+        if (sys) {
+          (void)store_.AppendMessage(*sys);
+        }
+      }
+    }
+    return {};
+  }
+  if (left.error().message.find("not a member_left") == std::string::npos) {
+    return left.error();
+  }
+
+  auto removed = GroupMembershipCodec::DecodeMemberRemovedFromMessage(message);
+  if (removed) {
+    // If we are the removed member and already left, ignore; if still a member, drop self below.
+    if (auto ignore = ignore_if_not_member(removed->group_id); ignore && *ignore) {
+      return {};
+    }
+    if (auto applied = ApplyMemberRemovedToRoster(group_roster_, *removed, actor_identity); !applied) {
+      return applied.error();
+    }
+    if (!local_relay.empty() && removed->member_identity == local_relay) {
+      (void)group_roster_.ClearGroupTarget(removed->group_id);
+    }
+    auto thread = store_.FindGroupThread(removed->group_id);
+    if (thread && *thread) {
+      auto detail = GroupMembershipCodec::EncodeMemberRemoved(removed->group_id, removed->member_identity,
+                                                             removed->roster_epoch);
+      if (detail) {
+        auto sys = GroupMembershipCodec::BuildSystemMessage(
+            (*thread)->id, GroupMembershipControlType::MemberRemoved, "Member removed", *detail, actor_identity);
+        if (sys) {
+          (void)store_.AppendMessage(*sys);
+        }
+      }
+    }
+    return {};
+  }
+  if (removed.error().message.find("not a member_removed") == std::string::npos) {
+    return removed.error();
+  }
+
   auto renamed = GroupMembershipCodec::DecodeGroupRenamedFromMessage(message);
   if (renamed) {
+    if (auto ignore = ignore_if_not_member(renamed->group_id); ignore && *ignore) {
+      return {};
+    }
     auto metadata = group_roster_.LoadMetadata(renamed->group_id);
     if (!metadata) {
       return metadata.error();
@@ -504,13 +610,10 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     return outcome;
   }
   if (!*thread) {
-    auto created = store_.FindOrCreateGroupThread(group_id, "Group chat", {});
-    if (!created) {
-      outcome.decision = IngestDecision::HardReject;
-      return outcome;
-    }
-    thread = Roe<std::optional<Thread>>(*created);
-    outcome.thread_changed = true;
+    // Never resurrect a closed group session from inbound traffic. AcceptInvite / CreateGroup
+    // create the local thread explicitly; leave/dismiss clears it on purpose.
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
   }
   const std::string resolved_thread_id = (**thread).id;
 

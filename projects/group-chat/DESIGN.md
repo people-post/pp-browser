@@ -111,7 +111,7 @@ Delivered as **`ChatPayload` system messages** (`content_type=system`) with `con
 | `member_joined` | owner or self | `{ "group_id", "member_identity", "role", "roster_epoch" }` |
 | `member_left` | member | `{ "group_id", "member_identity", "roster_epoch" }` |
 | `member_removed` | owner | `{ "group_id", "member_identity", "roster_epoch" }` |
-| `owner_transferred` | owner | `{ "group_id", "new_owner_identity", "roster_epoch" }` |
+| `owner_transferred` | owner | `{ "group_id", "new_owner_identity", "roster_epoch", "leave_previous"? }` |
 | `group_renamed` | owner | `{ "group_id", "title", "roster_epoch" }` |
 | `group_forked` | actor | See ForkPayload |
 
@@ -278,6 +278,8 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 
 **Invite handshake `[v1]`:** Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest applies accept via roster upsert + `roster_epoch` bump (so subsequent group sends include the new member). Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` in local roster so member→owner fan-out is non-empty. Closing a group session dismisses local membership (and clears `group_targets`) so inbound group traffic hard-rejects instead of recreating the thread with an unread. After Accept/Decline/Block, the DM invite card is resolved in-place (actions cleared; status line text).
 
+**Leave / transfer / prune `[v1]` (G009):** Member close fans out `member_left` then deletes the local thread. Owner close with others picks a successor and fans out `owner_transferred` with `leave_previous: true` (one DM applies succession + removes the old owner). Solo owner close is local dismiss only. Ingest rejects `member_left` from a recorded owner and requires monotonic `roster_epoch`. Send/encrypt failure marks members unreachable; owner may remove via `member_removed` fan-out. Unreachable owner shows a local advisory card (Fork / Message owner / Got it) — no automatic second owner.
+
 **Auto-create:** on accepted invite / first valid `member_joined` for local identity.
 
 ---
@@ -296,10 +298,10 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 
 ## Phasing checklist
 
-- [x] Design doc + ADRs (G001–G008)
+- [x] Design doc + ADRs (G001–G009)
 - [ ] C0: `e2e_public` compose enabled when messaging ready
 - [x] C1: Group envelope parse/send, N ciphertexts (scaffold)
-- [x] C2: Membership codec + invite/accept/decline handshake (leave/remove/fork wire still local-only)
+- [x] C2: Membership codec + invite/accept/decline + leave/transfer/remove wire (fork peer fan-out still incomplete)
 - [x] C3: Roster store + group seq targets (group sync polish remaining)
 - [x] C4: Inbox create + invite UI + settings
 - [ ] C5: Fork flow (fresh start) — local only today; peer fan-out incomplete

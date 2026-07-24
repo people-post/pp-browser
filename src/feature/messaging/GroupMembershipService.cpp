@@ -9,6 +9,8 @@
 #include "common/Utilities.h"
 
 #include <nlohmann/json.hpp>
+#include <optional>
+#include <set>
 
 namespace pbr {
 
@@ -415,7 +417,79 @@ Roe<void> GroupMembershipService::ResolveInviteCard(const std::string& inviter_i
   return {};
 }
 
-Roe<void> GroupMembershipService::RemoveMember(const std::string& group_id, const std::string& member_contact_id) {
+Roe<void> GroupMembershipService::SendMembershipDirectMessage(const std::string& peer_identity,
+                                                              const GroupMembershipControlType control_type,
+                                                              const std::string& detail_json,
+                                                              const std::string& display) {
+  DirectChatTarget direct_target;
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_value = peer_identity;
+  direct_target.channel = ThreadChannel::E2ePublic;
+
+  std::string contact_id;
+  std::string dm_title = peer_identity;
+  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::RelayUser)) {
+    if (*contact) {
+      contact_id = (*contact)->id;
+      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+      if (dm_title.empty()) {
+        dm_title = peer_identity;
+      }
+    }
+  }
+
+  auto thread = store_.FindOrCreateDirectThread(direct_target, contact_id, dm_title);
+  if (!thread) {
+    return thread.error();
+  }
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const std::string payload_json =
+      nlohmann::json({{"control_type", GroupMembershipControlTypeToWire(control_type)}, {"detail", detail_json}})
+          .dump();
+  SendRelayOptions opts;
+  opts.generation = "system";
+  opts.update_preview = false;
+  opts.content_type = ChatContentType::System;
+  opts.payload_json = payload_json;
+  opts.sender_contact_id = *local;
+  auto sent = p2p_.SendUserMessage(thread->id, display, opts);
+  if (!sent) {
+    return sent.error();
+  }
+  return {};
+}
+
+Roe<void> GroupMembershipService::FanOutMembershipEvent(const std::string& group_id,
+                                                         const GroupMembershipControlType control_type,
+                                                         const std::string& detail_json, const std::string& display,
+                                                         const std::string& skip_identity,
+                                                         const std::optional<std::string>& also_notify_identity) {
+  auto members = roster_.ListMembers(group_id);
+  if (!members) {
+    return members.error();
+  }
+  std::set<std::string> notified;
+  for (const GroupRosterMember& member : *members) {
+    if (member.member_identity == skip_identity) {
+      continue;
+    }
+    notified.insert(member.member_identity);
+    if (auto sent = SendMembershipDirectMessage(member.member_identity, control_type, detail_json, display); !sent) {
+      return sent.error();
+    }
+  }
+  if (also_notify_identity && !also_notify_identity->empty() &&
+      notified.find(*also_notify_identity) == notified.end() && *also_notify_identity != skip_identity) {
+    (void)SendMembershipDirectMessage(*also_notify_identity, control_type, detail_json, display);
+  }
+  return {};
+}
+
+Roe<void> GroupMembershipService::RemoveMemberInternal(const std::string& group_id,
+                                                        const std::string& member_identity) {
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
@@ -427,31 +501,49 @@ Roe<void> GroupMembershipService::RemoveMember(const std::string& group_id, cons
   if (*local != metadata->owner_identity) {
     return Error("Only the group owner may remove members");
   }
-  auto member_identity = ResolveRelayIdentity(member_contact_id);
-  if (!member_identity) {
-    return member_identity.error();
-  }
-  if (*member_identity == *local) {
-    return Error("Owner cannot remove self — transfer ownership or delete group");
+  if (member_identity == *local) {
+    return Error("Owner cannot remove self — transfer ownership or leave");
   }
 
-  if (auto removed = roster_.RemoveMember(group_id, *member_identity); !removed) {
+  if (auto removed = roster_.RemoveMember(group_id, member_identity); !removed) {
     return removed.error();
   }
   metadata->roster_epoch += 1;
   (void)roster_.UpsertMetadata(*metadata);
   (void)roster_.BumpGroupSessionEpoch(group_id, metadata->session_epoch + 1);
+  ClearMemberUnreachable(group_id, member_identity);
 
   auto thread = store_.FindGroupThread(group_id);
   if (!thread || !*thread) {
     return Error("Group thread not found");
   }
-  auto detail = GroupMembershipCodec::EncodeMemberRemoved(group_id, *member_identity, metadata->roster_epoch);
+  auto detail = GroupMembershipCodec::EncodeMemberRemoved(group_id, member_identity, metadata->roster_epoch);
   if (!detail) {
     return detail.error();
   }
-  return AppendMembershipSystemEvent((*thread)->id, GroupMembershipControlType::MemberRemoved, "Member removed",
-                                     *detail, *local);
+  if (auto event = AppendMembershipSystemEvent((*thread)->id, GroupMembershipControlType::MemberRemoved,
+                                               "Member removed", *detail, *local);
+      !event) {
+    return event.error();
+  }
+  return FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberRemoved, *detail, "Member removed",
+                               *local, member_identity);
+}
+
+Roe<void> GroupMembershipService::RemoveMember(const std::string& group_id, const std::string& member_contact_id) {
+  auto member_identity = ResolveRelayIdentity(member_contact_id);
+  if (!member_identity) {
+    return member_identity.error();
+  }
+  return RemoveMemberInternal(group_id, *member_identity);
+}
+
+Roe<void> GroupMembershipService::RemoveMemberByIdentity(const std::string& group_id,
+                                                         const std::string& member_identity) {
+  if (member_identity.empty()) {
+    return Error("member_identity required");
+  }
+  return RemoveMemberInternal(group_id, member_identity);
 }
 
 Roe<void> GroupMembershipService::LeaveGroup(const std::string& group_id) {
@@ -466,20 +558,217 @@ Roe<void> GroupMembershipService::LeaveGroup(const std::string& group_id) {
   if (*local == metadata->owner_identity) {
     return Error("Owner must transfer ownership before leaving");
   }
-  (void)roster_.RemoveMember(group_id, *local);
-  metadata->roster_epoch += 1;
-  (void)roster_.UpsertMetadata(*metadata);
 
-  auto thread = store_.FindGroupThread(group_id);
-  if (!thread || !*thread) {
-    return Error("Group thread not found");
-  }
+  metadata->roster_epoch += 1;
   auto detail = GroupMembershipCodec::EncodeMemberLeft(group_id, *local, metadata->roster_epoch);
   if (!detail) {
     return detail.error();
   }
-  return AppendMembershipSystemEvent((*thread)->id, GroupMembershipControlType::MemberLeft, "Member left", *detail,
-                                     *local);
+  // Best-effort notify remaining members; local leave always proceeds so close cannot get stuck.
+  (void)FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberLeft, *detail, "Member left", *local);
+
+  (void)roster_.RemoveMember(group_id, *local);
+  (void)roster_.UpsertMetadata(*metadata);
+  (void)roster_.ClearGroupTarget(group_id);
+  return {};
+}
+
+Roe<void> GroupMembershipService::LeaveAsOwner(const std::string& group_id, const std::string& new_owner_identity) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (*local != metadata->owner_identity) {
+    return Error("Only the group owner may transfer ownership");
+  }
+  if (new_owner_identity.empty() || new_owner_identity == *local) {
+    return Error("Choose a different member as the new owner");
+  }
+  auto is_member = roster_.IsMember(group_id, new_owner_identity);
+  if (!is_member) {
+    return is_member.error();
+  }
+  if (!*is_member) {
+    return Error("Successor must be a group member");
+  }
+  if (IsMemberUnreachable(group_id, new_owner_identity)) {
+    return Error("Successor is unreachable — dismiss locally or pick someone else");
+  }
+
+  metadata->roster_epoch += 1;
+  metadata->owner_identity = new_owner_identity;
+  GroupRosterMember successor;
+  successor.member_identity = new_owner_identity;
+  successor.role = MemberRole::Owner;
+  successor.joined_at = util::NowUnixMs();
+  if (auto upserted = roster_.UpsertMember(group_id, successor); !upserted) {
+    return upserted.error();
+  }
+  if (auto removed = roster_.RemoveMember(group_id, *local); !removed) {
+    return removed.error();
+  }
+  if (auto saved = roster_.UpsertMetadata(*metadata); !saved) {
+    return saved.error();
+  }
+
+  auto detail =
+      GroupMembershipCodec::EncodeOwnerTransferred(group_id, new_owner_identity, metadata->roster_epoch, true);
+  if (!detail) {
+    return detail.error();
+  }
+  (void)FanOutMembershipEvent(group_id, GroupMembershipControlType::OwnerTransferred, *detail,
+                              "Group ownership transferred", *local);
+  (void)roster_.ClearGroupTarget(group_id);
+  return {};
+}
+
+void GroupMembershipService::MarkMemberUnreachable(const std::string& group_id, const std::string& member_identity) {
+  if (group_id.empty() || member_identity.empty()) {
+    return;
+  }
+  {
+    std::lock_guard lock(unreachable_mutex_);
+    unreachable_.insert({group_id, member_identity});
+  }
+  auto metadata = roster_.LoadMetadata(group_id);
+  if (metadata && *metadata && (**metadata).owner_identity == member_identity) {
+    auto local = LocalRelayIdentity();
+    if (local && *local != member_identity) {
+      (void)EnsureOwnerUnreachableAdvisory(group_id);
+    }
+  }
+}
+
+void GroupMembershipService::ClearMemberUnreachable(const std::string& group_id,
+                                                    const std::string& member_identity) {
+  if (group_id.empty() || member_identity.empty()) {
+    return;
+  }
+  bool was_owner = false;
+  {
+    std::lock_guard lock(unreachable_mutex_);
+    unreachable_.erase({group_id, member_identity});
+  }
+  auto metadata = roster_.LoadMetadata(group_id);
+  if (metadata && *metadata && (**metadata).owner_identity == member_identity) {
+    was_owner = true;
+  }
+  if (was_owner) {
+    (void)ResolveOwnerUnreachableAdvisory(group_id);
+  }
+}
+
+bool GroupMembershipService::IsMemberUnreachable(const std::string& group_id,
+                                                 const std::string& member_identity) const {
+  std::lock_guard lock(unreachable_mutex_);
+  return unreachable_.find({group_id, member_identity}) != unreachable_.end();
+}
+
+std::vector<std::string> GroupMembershipService::ListUnreachable(const std::string& group_id) const {
+  std::vector<std::string> out;
+  std::lock_guard lock(unreachable_mutex_);
+  for (const auto& entry : unreachable_) {
+    if (entry.first == group_id) {
+      out.push_back(entry.second);
+    }
+  }
+  return out;
+}
+
+bool GroupMembershipService::IsOwnerUnreachable(const std::string& group_id) const {
+  auto metadata = roster_.LoadMetadata(group_id);
+  if (!metadata || !*metadata) {
+    return false;
+  }
+  return IsMemberUnreachable(group_id, (**metadata).owner_identity);
+}
+
+Roe<void> GroupMembershipService::EnsureOwnerUnreachableAdvisory(const std::string& group_id) {
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  auto thread = store_.FindGroupThread(group_id);
+  if (!thread || !*thread) {
+    return {};
+  }
+  auto messages = store_.GetMessagesPage((*thread)->id, std::nullopt, 500);
+  if (!messages) {
+    return messages.error();
+  }
+  for (const ThreadMessage& message : *messages) {
+    if (GroupMembershipCodec::IsOwnerUnreachableAdvisory(message) &&
+        !GroupMembershipCodec::IsOwnerUnreachableResolved(message)) {
+      return {};
+    }
+  }
+
+  const std::string title = "Owner hasn’t been reachable";
+  const std::string body =
+      "You can keep chatting with people who are online. Inviting, renaming for everyone, and removing "
+      "members need the owner. If they’ve left for good, start a new group from this one.";
+  const std::string detail =
+      nlohmann::json({{"group_id", group_id}, {"owner_identity", metadata->owner_identity}}).dump();
+  auto message = GroupMembershipCodec::BuildSystemMessage((*thread)->id,
+                                                          GroupMembershipControlType::GroupOwnerUnreachable,
+                                                          title + "\n" + body, detail, metadata->owner_identity);
+  if (!message) {
+    return message.error();
+  }
+  message->chat_actions =
+      GroupMembershipCodec::BuildOwnerUnreachableChatActions(group_id, metadata->owner_identity);
+  message->text = title;
+  if (auto appended = store_.AppendMessage(*message); !appended) {
+    return appended.error();
+  }
+  return {};
+}
+
+Roe<void> GroupMembershipService::ResolveOwnerUnreachableAdvisory(const std::string& group_id) {
+  auto thread = store_.FindGroupThread(group_id);
+  if (!thread || !*thread) {
+    return {};
+  }
+  auto messages = store_.GetMessagesPage((*thread)->id, std::nullopt, 500);
+  if (!messages) {
+    return messages.error();
+  }
+  for (ThreadMessage& message : *messages) {
+    if (!GroupMembershipCodec::IsOwnerUnreachableAdvisory(message) ||
+        GroupMembershipCodec::IsOwnerUnreachableResolved(message)) {
+      continue;
+    }
+    GroupMembershipCodec::ApplyOwnerUnreachableResolution(message);
+    message.text = "Noted — you can keep chatting with people who are online.";
+    (void)store_.UpdateMessage(message);
+  }
+  return {};
+}
+
+Roe<Thread> GroupMembershipService::OpenOwnerDirectMessage(const std::string& owner_identity) {
+  if (owner_identity.empty()) {
+    return Error("owner_identity required");
+  }
+  DirectChatTarget direct_target;
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_value = owner_identity;
+  direct_target.channel = ThreadChannel::E2ePublic;
+  std::string contact_id;
+  std::string title = owner_identity;
+  if (auto contact = contacts_.FindByIdentity(owner_identity, ContactIdKind::RelayUser)) {
+    if (*contact) {
+      contact_id = (*contact)->id;
+      title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+      if (title.empty()) {
+        title = owner_identity;
+      }
+    }
+  }
+  return store_.FindOrCreateDirectThread(direct_target, contact_id, title);
 }
 
 Roe<Thread> GroupMembershipService::ForkGroup(const std::string& group_id, const std::string& new_title,
@@ -551,52 +840,12 @@ Roe<Thread> GroupMembershipService::ForkGroup(const std::string& group_id, const
 Roe<void> GroupMembershipService::SendRenameDirectMessage(const std::string& member_identity,
                                                           const std::string& group_id, const std::string& title,
                                                           const uint64_t roster_epoch) {
-  DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
-  direct_target.peer_identity_value = member_identity;
-  direct_target.channel = ThreadChannel::E2ePublic;
-
-  std::string contact_id;
-  std::string dm_title = member_identity;
-  if (auto contact = contacts_.FindByIdentity(member_identity, ContactIdKind::RelayUser)) {
-    if (*contact) {
-      contact_id = (*contact)->id;
-      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
-      if (dm_title.empty()) {
-        dm_title = member_identity;
-      }
-    }
-  }
-
-  auto thread = store_.FindOrCreateDirectThread(direct_target, contact_id, dm_title);
-  if (!thread) {
-    return thread.error();
-  }
-
   auto detail = GroupMembershipCodec::EncodeGroupRenamed(group_id, title, roster_epoch);
   if (!detail) {
     return detail.error();
   }
-  auto local = LocalRelayIdentity();
-  if (!local) {
-    return local.error();
-  }
-  const std::string display = "Group renamed to " + title;
-  const std::string payload_json =
-      nlohmann::json({{"control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupRenamed)},
-                      {"detail", *detail}})
-          .dump();
-  SendRelayOptions opts;
-  opts.generation = "system";
-  opts.update_preview = false;
-  opts.content_type = ChatContentType::System;
-  opts.payload_json = payload_json;
-  opts.sender_contact_id = *local;
-  auto sent = p2p_.SendUserMessage(thread->id, display, opts);
-  if (!sent) {
-    return sent.error();
-  }
-  return {};
+  return SendMembershipDirectMessage(member_identity, GroupMembershipControlType::GroupRenamed, *detail,
+                                     "Group renamed to " + title);
 }
 
 Roe<void> GroupMembershipService::RenameGroupShared(const std::string& group_id, const std::string& title) {
@@ -703,6 +952,26 @@ Roe<void> GroupMembershipService::ApplyInboundGroupRenamed(const GroupMembership
 
 Roe<std::vector<GroupRosterMember>> GroupMembershipService::ListRoster(const std::string& group_id) const {
   return roster_.ListMembers(group_id);
+}
+
+Roe<bool> GroupMembershipService::IsLocalOwner(const std::string& group_id) const {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto owner = OwnerIdentity(group_id);
+  if (!owner) {
+    return owner.error();
+  }
+  return *local == *owner;
+}
+
+Roe<std::string> GroupMembershipService::OwnerIdentity(const std::string& group_id) const {
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  return metadata->owner_identity;
 }
 
 } // namespace pbr

@@ -73,3 +73,12 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 **Decision:** Group outbound uses `body.e2e.member_payloads`: map of recipient communicating identity → base64 AEAD blob. Pairwise secrets reuse `ChatTargetKey` machinery (E022).  
 **Rationale:** Resolved O008/D095; reuses 1:1 crypto.  
 **Alternatives:** Single group PSK (rejected — E022); MLS v1 (deferred).
+
+---
+
+## G009 — Owner leave uses transfer+leave; prune is owner-choice
+
+**Date:** 2026-07-24  
+**Decision:** (1) Owner leave of a multi-member group fans out a single `owner_transferred` DM with `leave_previous: true` so peers apply succession and remove the old owner atomically. Plain `member_left` from a recorded owner is rejected. Solo-owner close is local dismiss only. (2) Send/encrypt failure marks a member unreachable locally; only the owner may `member_removed` after explicit confirm — no auto-drop. (3) Unreachable owner surfaces a local in-chat advisory (Fork / Message owner / Got it); no automatic second owner.  
+**Rationale:** Avoids transfer-without-leave / leave-without-transfer split-brain; keeps prune under human control; Fork is the ownership escape hatch.  
+**Alternatives:** Separate transfer then leave DMs; auto-promote next member; auto-prune on N failures.
