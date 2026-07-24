@@ -912,7 +912,7 @@ select selectbox option {
 
 .shell-nav-rail--compact .shell-nav-tab {
   height: 48dp;
-  border-radius: 12dp;
+  border-radius: 20dp;
 }
 
 .shell-nav-tab svg {

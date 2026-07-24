@@ -344,7 +344,7 @@ select selectbox option:hover {
 
 .shell-nav-rail--compact .shell-nav-pill {
   background-color: #1f2937f0;
-  border-top: 1dp #ffffff1a;
+  border-top: 1dp #ffffff0f;
   box-shadow: 0 2dp 12dp #00000040;
 }
 
