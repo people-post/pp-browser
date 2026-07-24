@@ -115,7 +115,8 @@ Before public launch, run **domain**, **trademark**, and **app-store name** chec
 
 | Surface | Value |
 |---------|--------|
-| SDL window title | Frame |
+| SDL window title | Frame (task switcher / accessibility; window is borderless on desktop) |
+| Desktop in-app title bar | Frame (`i18n:app.name` in `#shell-titlebar`) |
 | Linux `notify-send --app-name` | Frame |
 | HTTP User-Agent (web search tool) | `Frame/0.1 …` |
 | Locales `app.name` / `app.tagline` | Frame + tagline (EN, zh-Hans) |

@@ -7,6 +7,23 @@
   <link type="text/rcss" href="../themes/colors-dark.rcss"/>
 </head>
 <body data-model="window" class="shell-body">
+  <div id="shell-titlebar" class="shell-titlebar" data-if="titlebar_visible">
+    <div class="shell-titlebar-drag" data-event-dblclick="titlebar_toggle_maximize()">
+      <p class="shell-titlebar-title">{{i18n:app.name}}</p>
+    </div>
+    <div id="shell-titlebar-controls" class="shell-titlebar-controls">
+      <button class="shell-titlebar-btn" type="button" data-event-click="titlebar_minimize()">
+        <svg src="../icons/window-minimize.svg" width="12" height="12" crop-to-content="true"></svg>
+      </button>
+      <button class="shell-titlebar-btn" type="button" data-event-click="titlebar_toggle_maximize()">
+        <svg data-if="!window_maximized" src="../icons/window-maximize.svg" width="12" height="12" crop-to-content="true"></svg>
+        <svg data-if="window_maximized" src="../icons/window-restore.svg" width="12" height="12" crop-to-content="true"></svg>
+      </button>
+      <button class="shell-titlebar-btn shell-titlebar-btn--close" type="button" data-event-click="titlebar_close()">
+        <svg src="../icons/close.svg" width="12" height="12" crop-to-content="true"></svg>
+      </button>
+    </div>
+  </div>
   <div id="shell-chrome" class="shell-chrome">
     <div class="shell-banner" data-if="banner_message != ''">
       <p class="shell-banner-text" data-rml="banner_message"></p>

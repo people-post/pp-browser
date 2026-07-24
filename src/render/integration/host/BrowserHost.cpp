@@ -128,7 +128,7 @@ static PreProcessEventCallback g_pre_process_event = nullptr;
 static Uint32 g_wake_event_type = 0;
 static std::atomic<bool> g_wake_pending{false};
 
-bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize)
+bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize, bool borderless)
 {
 	RMLUI_ASSERT(!data);
 
@@ -167,11 +167,15 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
 	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, allow_resize);
 	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
+	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_BORDERLESS_BOOLEAN, borderless);
 	MobileGlLifecycle::SetMobileWindowCreateProperties(props);
 	SDL_Window* window = SDL_CreateWindowWithProperties(props);
 	SDL_DestroyProperties(props);
 #else
-	const Uint32 window_flags = (SDL_WINDOW_OPENGL | (allow_resize ? SDL_WINDOW_RESIZABLE : 0));
+	Uint32 window_flags = (SDL_WINDOW_OPENGL | (allow_resize ? SDL_WINDOW_RESIZABLE : 0));
+	if (borderless) {
+		window_flags |= SDL_WINDOW_BORDERLESS;
+	}
 	SDL_Window* window = SDL_CreateWindow(window_name, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, window_flags);
 	// SDL2 implicitly activates text input on window creation. Turn it off for now, it will be activated again e.g. when focusing a text input field.
 	SDL_StopTextInput();

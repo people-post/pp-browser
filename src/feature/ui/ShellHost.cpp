@@ -2,6 +2,7 @@
 
 #include "base/i18n/LocalizationService.h"
 #include "base/platform/BrowserThread.h"
+#include "base/platform/DesktopWindowChrome.h"
 #include "base/platform/PlatformNavigation.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ui/DataModelHost.h"
@@ -125,6 +126,8 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("pin_gate_pin", &host.state_.pin_gate.pin);
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
+    ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
+    ctor.Bind("window_maximized", &host.state_.window_maximized);
 
     if (auto badge_handle = ctor.RegisterStruct<NavBadgeState>()) {
       badge_handle.RegisterMember("sessions_unread", &NavBadgeState::sessions_unread);
@@ -158,6 +161,9 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("pin_gate_cancel", &ShellHost::PinGateCancelCallback);
     ctor.BindEventCallback("pin_gate_set_pin", &ShellHost::PinGateSetPinCallback);
     ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
+    ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
+    ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
+    ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
   });
 }
 
@@ -165,6 +171,8 @@ void ShellHost::Initialize(Rml::Context* context) {
   context_ = context;
   state_ = {};
   state_.layout_mode = LayoutMode::Expanded;
+  state_.titlebar_visible = DesktopWindowChrome::Enabled();
+  state_.window_maximized = DesktopWindowChrome::IsMaximized();
   ShellLayout::SyncLayoutModeString(state_);
   ShellLayout::SyncNavTabString(state_);
   last_synced_mode_ = LayoutMode::Expanded;
@@ -178,6 +186,10 @@ void ShellHost::Initialize(Rml::Context* context) {
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
   PlatformNavigation::SetDismissHandler([] { return Instance().HandleDismiss(); });
+  if (state_.titlebar_visible) {
+    DesktopWindowChrome::Install();
+    DesktopWindowChrome::SetLayout(config_.titlebar_height_dp, config_.titlebar_controls_width_dp);
+  }
 }
 
 Rml::Element* ShellHost::ShellRoot() const {
@@ -587,6 +599,8 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "activity_visible");
+  DataModelHost::Instance().Dirty("window", "titlebar_visible");
+  DataModelHost::Instance().Dirty("window", "window_maximized");
 }
 
 void ShellHost::RequestRemountNavRail() {
@@ -745,8 +759,9 @@ void ShellHost::ApplySafeAreaLayout() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
+  const float titlebar_dp = state_.titlebar_visible ? config_.titlebar_height_dp : 0.f;
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
-      config_, state_.safe_area_top_dp, state_.safe_area_bottom_dp);
+      config_, state_.safe_area_top_dp, state_.safe_area_bottom_dp, titlebar_dp);
   Rml::ElementDocument* doc = context_->GetDocument(0);
 
   auto set_dp = [](Rml::Element* element, const char* property, float value_dp) {
@@ -765,6 +780,10 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   // Absolute toast stack is positioned from the chrome top edge (ignores padding).
   set_dp(doc->GetElementById("shell-toast-stack"), "top", 8.f + layout.content_top_dp);
+
+  if (state_.titlebar_visible) {
+    DesktopWindowChrome::SetLayout(config_.titlebar_height_dp, config_.titlebar_controls_width_dp);
+  }
 
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
@@ -1372,6 +1391,12 @@ void ShellHost::Update(Rml::Context* context) {
     RestoreFocus();
     return;
   }
+  if (state_.titlebar_visible) {
+    const bool maximized = DesktopWindowChrome::IsMaximized();
+    if (maximized != state_.window_maximized) {
+      state_.window_maximized = maximized;
+    }
+  }
   DirtyWindow();
 }
 
@@ -1491,6 +1516,24 @@ void ShellHost::PinGateSetPinCallback(Rml::DataModelHandle /*model*/, Rml::Event
 void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                           const Rml::VariantList& /*args*/) {
   PinGateController::Instance().OnUseDefaultPin();
+}
+
+void ShellHost::TitlebarMinimizeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                         const Rml::VariantList& /*args*/) {
+  DesktopWindowChrome::Minimize();
+}
+
+void ShellHost::TitlebarToggleMaximizeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                               const Rml::VariantList& /*args*/) {
+  DesktopWindowChrome::ToggleMaximize();
+  ShellHost& host = Instance();
+  host.state_.window_maximized = DesktopWindowChrome::IsMaximized();
+  host.DirtyWindow();
+}
+
+void ShellHost::TitlebarCloseCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& /*args*/) {
+  DesktopWindowChrome::Close();
 }
 
 } // namespace pbr

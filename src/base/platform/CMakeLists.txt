@@ -9,6 +9,7 @@ set(_pp_platform_common_sources
   DesktopAssetLocator.cpp
   DesktopLocalNotifier.cpp
   DesktopPathProvider.cpp
+  DesktopWindowChrome.cpp
   desktop/PathHelpers.cpp
   EnvCredentialStore.cpp
   ExecutablePath.cpp

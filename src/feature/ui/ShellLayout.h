@@ -15,7 +15,8 @@ struct ShellLayout {
   static bool TabHasSecondary(NavTab tab);
   static CompactChromeLayout ComputeCompactChromeLayout(const ShellConfig& config,
                                                         int safe_area_top_dp,
-                                                        int safe_area_bottom_dp);
+                                                        int safe_area_bottom_dp,
+                                                        float titlebar_height_dp = 0.f);
 };
 
 } // namespace pbr

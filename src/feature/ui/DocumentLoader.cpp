@@ -1,5 +1,7 @@
 #include "feature/ui/DocumentLoader.h"
 
+#include "base/i18n/LocalizationService.h"
+#include "base/platform/AssetIO.h"
 #include "feature/ui/RmlMount.h"
 
 #include <RmlUi/Core/Context.h>
@@ -15,13 +17,13 @@ Rml::ElementDocument* DocumentLoader::LoadFile(Rml::Context* context, const std:
   if (!context) {
     return nullptr;
   }
-  CloseActive(context);
-  auto* document = context->LoadDocument(path);
-  if (document) {
-    document->Show();
-    g_active = document;
+  std::string raw;
+  if (!AssetIO::ReadText(path, raw) || raw.empty()) {
+    return nullptr;
   }
-  return document;
+  const std::string localized = LocalizationService::Instance().LocalizeText(raw);
+  // Preserve path as source_url so relative RCSS/asset hrefs resolve like LoadDocument(path).
+  return LoadFromMemory(context, localized, path);
 }
 
 Rml::ElementDocument* DocumentLoader::LoadFromMemory(Rml::Context* context, const std::string& rml,

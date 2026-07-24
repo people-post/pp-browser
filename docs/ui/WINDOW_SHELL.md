@@ -126,6 +126,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `close_layer(id)` | Close overlay layer |
 | `dismiss_banner()` | Hide banner |
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
+| `titlebar_minimize()` / `titlebar_toggle_maximize()` / `titlebar_close()` | Desktop custom title bar window controls |
 
 Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). `sessions_unread` is aggregate chat unread; `contacts_unread` is reserved for future contacts-tab queues (not chat unread — currently always 0). On expanded, the Me attention dot is on the Me nav-rail tab; on compact, it is on the Home profile button. Refreshed by `BadgeAggregator` on messaging events.
 
@@ -180,6 +181,12 @@ ShellFeedback::ShowConfirm(ShellHost::Instance().State(), "Title", "Message", []
 ```
 
 Call `ShellHost::Update(context)` each frame (resize, toast expiry).
+
+## Desktop custom title bar
+
+On desktop (`Platform::IsDesktop()`), the SDL window is created **borderless** and `#shell-titlebar` draws the caption (product name via `i18n:app.name`) plus minimize / maximize-restore / close. Drag and edge-resize use `SDL_SetWindowHitTest` (`DesktopWindowChrome`). Mobile builds keep the native/system chrome and omit the title bar.
+
+`content_top_dp` includes `titlebar_height_dp` (36dp) on desktop so `#shell-root` and banners sit below the bar. The title bar is a **platform** feature (still present when the desktop window is resized under 768dp), not expanded-layout-only.
 
 ## Compact floating chrome
 

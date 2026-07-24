@@ -174,4 +174,14 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(with_keyboard.content_top_dp, 47.f);
   EXPECT_FLOAT_EQ(with_keyboard.shell_bottom_dp, 336.f);
   EXPECT_FLOAT_EQ(with_keyboard.content_padding_bottom_dp, 56.f);
+
+  const CompactChromeLayout with_titlebar = ShellLayout::ComputeCompactChromeLayout(config, 0, 0, 36.f);
+  EXPECT_FLOAT_EQ(with_titlebar.shell_top_dp, 0.f);
+  EXPECT_FLOAT_EQ(with_titlebar.content_top_dp, 36.f);
+  EXPECT_FLOAT_EQ(with_titlebar.shell_bottom_dp, 0.f);
+
+  const CompactChromeLayout titlebar_and_safe =
+      ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 36.f);
+  EXPECT_FLOAT_EQ(titlebar_and_safe.content_top_dp, 83.f);
+  EXPECT_FLOAT_EQ(titlebar_and_safe.shell_bottom_dp, 34.f);
 }

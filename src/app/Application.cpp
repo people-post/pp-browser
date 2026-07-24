@@ -98,7 +98,7 @@ bool Application::Initialize(const char* window_title) {
 
   BrowserThread::Initialize();
 
-  if (!Backend::Initialize(window_title, window_width, window_height, true)) {
+  if (!Backend::Initialize(window_title, window_width, window_height, true, !Platform::IsMobile())) {
     log().error << "Backend::Initialize failed (SDL/OpenGL window could not be created)";
     return false;
   }

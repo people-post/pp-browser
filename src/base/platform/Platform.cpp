@@ -22,6 +22,10 @@ bool Platform::IsMobile() {
   return kind == PlatformKind::Android || kind == PlatformKind::IOS;
 }
 
+bool Platform::IsDesktop() {
+  return Detect() == PlatformKind::Desktop;
+}
+
 bool Platform::UsesPackagedAssets() {
   return Detect() != PlatformKind::Desktop;
 }

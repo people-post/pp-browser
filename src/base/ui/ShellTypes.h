@@ -45,6 +45,10 @@ struct ShellConfig {
   float secondary_width_dp = 240.f;
   float auxiliary_width_dp = 320.f;
   float toolbar_height_dp = 48.f;
+  /** Desktop custom title bar height (0 on mobile). */
+  float titlebar_height_dp = 36.f;
+  /** Right-side window control cluster width for hit-test exclusion. */
+  float titlebar_controls_width_dp = 120.f;
   float frame_padding_dp = 24.f;
   /** Compact bottom nav bar height (excludes safe-area inset). */
   float compact_nav_height_dp = 56.f;
@@ -64,8 +68,8 @@ struct CompactChromeLayout {
   /** Bottom inset for home indicator / IME; applied to the shell document body. */
   float shell_bottom_dp = 0.f;
   /**
-   * Top safe-area inset applied to #shell-root / chrome so content clears the
-   * status bar while the body background remains full-bleed.
+   * Top inset applied to #shell-root / chrome so content clears the status bar
+   * (mobile) and/or the desktop custom title bar.
    */
   float content_top_dp = 0.f;
   /** Extra padding inside content so the last row clears the floating nav. */
@@ -184,6 +188,10 @@ struct ShellState {
   bool reduce_transparency = false;
   /** From profile prefs — when false, frost tier disabled; layout unchanged. */
   bool compact_chrome_frost = true;
+
+  /** Desktop custom title bar (borderless window chrome). */
+  bool titlebar_visible = false;
+  bool window_maximized = false;
 };
 
 } // namespace pbr

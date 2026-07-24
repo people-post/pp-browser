@@ -265,6 +265,35 @@ select selectbox option:hover {
   color: #6b7280;
 }
 
+.shell-titlebar {
+  background-color: #111827;
+  border-bottom-color: #374151;
+}
+
+.shell-titlebar-title {
+  color: #ffffff;
+}
+
+.shell-titlebar-btn {
+  background-color: #00000000;
+}
+
+.shell-titlebar-btn:hover {
+  background-color: #374151;
+}
+
+.shell-titlebar-btn svg {
+  image-color: #e5e7eb;
+}
+
+.shell-titlebar-btn--close:hover {
+  background-color: #dc2626;
+}
+
+.shell-titlebar-btn--close:hover svg {
+  image-color: #ffffff;
+}
+
 .shell-banner {
   background-color: #422006;
   border-bottom: 1dp #854d0e;

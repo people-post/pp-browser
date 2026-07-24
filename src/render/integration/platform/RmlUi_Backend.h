@@ -20,7 +20,8 @@ using PreProcessEventCallback = bool (*)(Rml::Context* context, SDL_Event& event
 
 namespace Backend {
 
-bool Initialize(const char* window_name, int width, int height, bool allow_resize);
+bool Initialize(const char* window_name, int width, int height, bool allow_resize,
+                bool borderless = false);
 void Shutdown();
 
 Rml::SystemInterface* GetSystemInterface();

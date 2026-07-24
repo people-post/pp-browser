@@ -68,16 +68,19 @@ PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
 
 CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& config,
                                                             int safe_area_top_dp,
-                                                            int safe_area_bottom_dp) {
+                                                            int safe_area_bottom_dp,
+                                                            float titlebar_height_dp) {
   CompactChromeLayout layout{};
   const float safe_top = static_cast<float>(std::max(0, safe_area_top_dp));
   const float safe_bottom = static_cast<float>(std::max(0, safe_area_bottom_dp));
+  const float titlebar = std::max(0.f, titlebar_height_dp);
   // Edge-to-edge at the top: body stays at top:0 so theme background shows under
   // the status bar; content_top_dp insets #shell-root / chrome instead.
+  // Desktop adds the custom title bar height into content_top_dp.
   // Bottom still shrinks the body for home indicator / IME; chrome sits at the
   // bottom of that rect and content only needs nav-height padding.
   layout.shell_top_dp = 0.f;
-  layout.content_top_dp = safe_top;
+  layout.content_top_dp = safe_top + titlebar;
   layout.shell_bottom_dp = safe_bottom;
   layout.content_padding_bottom_dp = config.compact_nav_height_dp;
   layout.chrome_bottom_dp = 0.f;
