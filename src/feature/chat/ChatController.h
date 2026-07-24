@@ -1,23 +1,23 @@
 #pragma once
 
 #include "feature/ai/AgentSession.h"
+#include "feature/chat/ChatThreadChrome.h"
+#include "feature/chat/ChatTranscriptScroller.h"
+#include "feature/chat/ChatWidgetHost.h"
+#include "feature/chat/WorkingSetController.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
 #include "base/data/Config.h"
 #include "common/Module.h"
 #include "base/ui/ChatWidgetTypes.h"
-#include "base/ui/WorkingSetTypes.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/Input.h>
 #include <RmlUi/Core/Types.h>
 
-#include <chrono>
-#include <map>
 #include <optional>
-#include <set>
 #include <string>
 #include <functional>
 #include <utility>
@@ -53,11 +53,6 @@ public:
   void ReloadAgentConfig();
 
 private:
-  struct ActiveForm {
-    std::string entry_id;
-    std::string form_id;
-  };
-
   struct ChatState {
     Rml::String draft;
     Rml::String draft_placeholder;
@@ -199,33 +194,13 @@ private:
   void RefreshLlmSetupBanner();
   void WithSecrets(std::function<void()> action);
 
-  Rml::Element* FindMessagesScrollElement() const;
-  void RequestScrollToLatest();
-  void ApplyTranscriptScrollPolicy();
-  void ScrollMessagesToBottom();
-  void UpdateJumpToLatestLabel();
-  void SetShowJumpToLatest(bool show);
-  void ResetTranscriptScrollState();
-  void MaybeLoadOlderLocalHistory();
-  void LoadOlderLocalHistory();
-
   std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
   bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;
-  void ExpireFormsExcept(const std::string& entry_id, const std::string& form_id);
   void InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits);
   void MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const;
   TurnWidgetState* FindWidgetState(const std::string& entry_id);
   const TurnWidgetState* FindWidgetState(const std::string& entry_id) const;
   void ClearFormState();
-  void ClearWorkingSet();
-  void ApplyWorkingSetFromParse(const std::string& entry_id, const std::vector<WorkingSetCandidate>& candidates);
-  void OpenWorkingSet(const std::string& entry_id, int block_index);
-  void SyncWorkingSetWidgetBindings(const std::string& entry_id);
-  void DirtyWorkingSet();
-  std::vector<WorkingSetCandidate> HydrateWorkingSetCandidates(const std::vector<WorkingSetCandidate>& candidates,
-                                                                const std::string& entry_id) const;
-  bool ShouldCloseWorkingSetForAction(const std::optional<std::string>& payload) const;
-
   void ApplyRuntimeConfig(const AppConfig& config);
 
   Rml::Context* context_ = nullptr;
@@ -234,31 +209,12 @@ private:
   std::optional<AgentSession> agent_;
   bool use_llm_ = false;
   bool messaging_ready_ = false;
+  ChatTranscriptScroller scroller_;
+  WorkingSetController working_set_;
+  ChatThreadChrome chrome_;
+  ChatWidgetHost widgets_;
   std::optional<PendingReply> pending_reply_;
-  std::optional<ActiveForm> active_form_;
-  std::set<std::pair<std::string, std::string>> submitted_forms_;
-  std::map<std::string, TurnWidgetState> widgets_by_entry_;
-  std::map<std::string, std::vector<WorkingSetCandidate>> working_set_by_entry_;
-  WorkingSetAffinity active_working_set_affinity_ = WorkingSetAffinity::None;
-  std::string active_working_set_entry_id_;
   bool focus_draft_after_sync_ = false;
-  std::chrono::steady_clock::time_point last_peer_link_poll_{};
-
-  /** Follow-tail / scroll-up paging for `.messages` (D031 + viewport policy). */
-  bool pinned_to_bottom_ = true;
-  bool pending_scroll_to_bottom_ = false;
-  int pending_scroll_settle_frames_ = 0;
-  int pending_scroll_attempts_ = 0;
-  float settle_scroll_height_ = -1.f;
-  bool suppress_scroll_handler_ = false;
-  bool loading_older_local_ = false;
-  bool has_more_local_history_ = false;
-  std::string scroll_thread_id_;
-  std::optional<int64_t> loaded_min_display_order_;
-  std::optional<float> pending_scroll_height_before_;
-  std::optional<float> pending_scroll_top_before_;
-  float last_messages_scroll_height_ = 0.f;
-  int unread_while_scrolled_ = 0;
 };
 
 bool SetupChatController(Rml::Context* context);

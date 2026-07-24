@@ -1,4 +1,5 @@
 #include "feature/chat/ChatController.h"
+#include "feature/chat/ChatWidgetHost.h"
 #include "feature/ui/BadgeAggregator.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/i18n/ScriptLanguageDetector.h"
@@ -144,30 +145,6 @@ Rml::String UserMessageRml(const std::string& text) {
 
 Rml::String AssistantBubbleRml(const std::string& rml) {
   return Rml::String(rml.c_str());
-}
-
-std::string InlineChatActionButtonsRml(const std::vector<TranscriptChatAction>& chat_actions) {
-  std::ostringstream out;
-  for (size_t i = 0; i < chat_actions.size(); ++i) {
-    out << "<button class=\"chat-suggestion\" data-event-click=\"send_chat_action('__ENTRY__', " << i << ")\">"
-        << StructuredTextParser::EscapeText(chat_actions[i].label) << "</button>";
-  }
-  return out.str();
-}
-
-std::string HydrateLegacyChatActions(const std::string& assistant_rml,
-                                   const std::vector<TranscriptChatAction>& chat_actions) {
-  if (chat_actions.empty() || assistant_rml.find("chat-suggestion") != std::string::npos) {
-    return assistant_rml;
-  }
-
-  const std::string buttons = InlineChatActionButtonsRml(chat_actions);
-  constexpr const char* stack_close = "</div>";
-  if (assistant_rml.size() > 6 && assistant_rml.find("<div class=\"stack\">") == 0 &&
-      assistant_rml.compare(assistant_rml.size() - 6, 6, stack_close) == 0) {
-    return assistant_rml.substr(0, assistant_rml.size() - 6) + buttons + stack_close;
-  }
-  return assistant_rml + buttons;
 }
 
 Rml::String ErrorMessageRml(const std::string& message) {
@@ -379,8 +356,73 @@ void DirtyShell() {
 
 } // namespace
 
-ChatController::ChatController() {
+ChatController::ChatController()
+    : scroller_(context_,
+                ChatTranscriptScroller::View{
+                    .show_jump_to_latest = chat_.show_jump_to_latest,
+                    .jump_to_latest_label = chat_.jump_to_latest_label,
+                    .messages = chat_.messages,
+                    .has_turns = chat_.has_turns,
+                },
+                messaging_ready_),
+      working_set_(WorkingSetController::ShellView{
+          .working_set_active = shell_.working_set_active,
+          .working_set_title = shell_.working_set_title,
+          .working_set_subtitle = shell_.working_set_subtitle,
+          .working_set_rml = shell_.working_set_rml,
+          .working_set = shell_.working_set,
+      }),
+      chrome_(ChatThreadChrome::View{
+                 .draft_placeholder = chat_.draft_placeholder,
+                 .status = chat_.status,
+                 .thread_title = chat_.thread_title,
+                 .thread_subtitle = chat_.thread_subtitle,
+                 .peer_link_status = chat_.peer_link_status,
+                 .peer_link_banner = chat_.peer_link_banner,
+                 .show_peer_link = chat_.show_peer_link,
+                 .show_peer_link_banner = chat_.show_peer_link_banner,
+                 .show_retry_peer_dial = chat_.show_retry_peer_dial,
+                 .thread_encrypted = chat_.thread_encrypted,
+                 .thread_is_ai = chat_.thread_is_ai,
+                 .thread_is_private = chat_.thread_is_private,
+                 .thread_is_public = chat_.thread_is_public,
+                 .thread_is_group = chat_.thread_is_group,
+                 .compose_disabled = chat_.compose_disabled,
+                 .show_thread_actions = chat_.show_thread_actions,
+                 .show_peer_sheet = chat_.show_peer_sheet,
+                 .show_forget_memory = chat_.show_forget_memory,
+                 .show_sync_with_peer = chat_.show_sync_with_peer,
+                 .show_thread_menu = chat_.show_thread_menu,
+                 .show_gap_banner = chat_.show_gap_banner,
+                 .show_compromised_banner = chat_.show_compromised_banner,
+                 .show_psk_setup_banner = chat_.show_psk_setup_banner,
+                 .show_psk_import = chat_.show_psk_import,
+                 .psk_has_key = chat_.psk_has_key,
+                 .psk_verified = chat_.psk_verified,
+                 .psk_fingerprint = chat_.psk_fingerprint,
+                 .psk_export_b64 = chat_.psk_export_b64,
+                 .psk_import_text = chat_.psk_import_text,
+                 .sync_in_progress = chat_.sync_in_progress,
+                 .show_older_history_hint = chat_.show_older_history_hint,
+                 .turns = chat_.turns,
+                 .messages = chat_.messages,
+                 .use_messages_layout = chat_.use_messages_layout,
+                 .has_turns = chat_.has_turns,
+             },
+             messaging_ready_) {
   redirectLogger("ChatController");
+  scroller_.SetDirtyTurns([]() { DirtyChatTurns(); });
+  working_set_.SetWidgetLookup([this](const std::string& entry_id) -> const TurnWidgetState* {
+    return widgets_.Find(entry_id);
+  });
+  chrome_.SetRefreshFromMessaging([this]() { RefreshFromMessaging(); });
+  chrome_.SetWithSecrets([this](std::function<void()> action) { WithSecrets(std::move(action)); });
+  chrome_.SetOnScrollerReset([this]() { scroller_.Reset(); });
+  chrome_.SetCaptureScrollBeforePrepend([this]() { scroller_.CaptureScrollBeforePrependIfUnpinned(); });
+  chrome_.SetExpandLoadedMinFromOlderPage(
+      [this](const std::string& thread_id, int64_t before) {
+        scroller_.ExpandLoadedMinFromOlderPage(thread_id, before);
+      });
 }
 
 ChatController& ChatController::Instance() {
@@ -397,131 +439,7 @@ void ChatController::OpenWorkingSetCallback(Rml::DataModelHandle /*model*/, Rml:
   if (!block_index || *block_index < 0) {
     return;
   }
-  Instance().OpenWorkingSet(std::string(args[0].Get<Rml::String>().c_str()), *block_index);
-}
-
-void ChatController::DirtyWorkingSet() {
-  DataModelHost::Instance().Dirty("shell", "working_set_active");
-  DataModelHost::Instance().Dirty("shell", "working_set_title");
-  DataModelHost::Instance().Dirty("shell", "working_set_subtitle");
-  DataModelHost::Instance().Dirty("shell", "working_set_rml");
-  DataModelHost::Instance().Dirty("shell", "working_set");
-}
-
-std::vector<WorkingSetCandidate> ChatController::HydrateWorkingSetCandidates(
-    const std::vector<WorkingSetCandidate>& candidates, const std::string& entry_id) const {
-  std::vector<WorkingSetCandidate> hydrated;
-  hydrated.reserve(candidates.size());
-  for (WorkingSetCandidate candidate : candidates) {
-    candidate.artifact_rml = InjectEntryPlaceholders(candidate.artifact_rml, entry_id);
-    candidate.teaser_rml = InjectEntryPlaceholders(candidate.teaser_rml, entry_id);
-    hydrated.push_back(std::move(candidate));
-  }
-  return hydrated;
-}
-
-void ChatController::SyncWorkingSetWidgetBindings(const std::string& entry_id) {
-  shell_.working_set = {};
-  if (const TurnWidgetState* widgets = FindWidgetState(entry_id)) {
-    shell_.working_set = *widgets;
-  }
-  DirtyWorkingSet();
-}
-
-void ChatController::ClearWorkingSet() {
-  shell_.working_set_active = false;
-  shell_.working_set_title = "";
-  shell_.working_set_subtitle = "";
-  shell_.working_set_rml = "";
-  shell_.working_set = {};
-  active_working_set_affinity_ = WorkingSetAffinity::None;
-  active_working_set_entry_id_.clear();
-  ShellHost::Instance().SetAuxiliaryAvailable(false);
-  ShellHost::Instance().CloseAuxiliary();
-  DirtyWorkingSet();
-}
-
-void ChatController::OpenWorkingSet(const std::string& entry_id, const int block_index) {
-  const auto entry_it = working_set_by_entry_.find(entry_id);
-  if (entry_it == working_set_by_entry_.end()) {
-    return;
-  }
-
-  const WorkingSetCandidate* selected = nullptr;
-  for (const WorkingSetCandidate& candidate : entry_it->second) {
-    if (candidate.block_index == block_index) {
-      selected = &candidate;
-      break;
-    }
-  }
-  if (!selected) {
-    return;
-  }
-
-  shell_.working_set_active = true;
-  shell_.working_set_title = Rml::String(selected->title.c_str());
-  shell_.working_set_subtitle = Rml::String(selected->subtitle.c_str());
-  shell_.working_set_rml = Rml::String(selected->artifact_rml.c_str());
-  active_working_set_affinity_ = selected->affinity;
-  active_working_set_entry_id_ = entry_id;
-  SyncWorkingSetWidgetBindings(entry_id);
-
-  ShellHost::Instance().SetAuxiliaryAvailable(true);
-  ShellHost::Instance().OpenAuxiliary();
-  DirtyWorkingSet();
-}
-
-void ChatController::ApplyWorkingSetFromParse(const std::string& entry_id,
-                                        const std::vector<WorkingSetCandidate>& candidates) {
-  if (candidates.empty()) {
-    ClearWorkingSet();
-    return;
-  }
-
-  const std::vector<WorkingSetCandidate> hydrated = HydrateWorkingSetCandidates(candidates, entry_id);
-  working_set_by_entry_[entry_id] = hydrated;
-
-  const WorkingSetCandidate* primary = nullptr;
-  for (const WorkingSetCandidate& candidate : hydrated) {
-    if (candidate.auto_open) {
-      primary = &candidate;
-      break;
-    }
-  }
-  if (!primary) {
-    ClearWorkingSet();
-    return;
-  }
-
-  const bool same_task = shell_.working_set_active && active_working_set_entry_id_ == entry_id &&
-                         active_working_set_affinity_ == primary->affinity &&
-                         active_working_set_affinity_ != WorkingSetAffinity::None;
-
-  shell_.working_set_active = true;
-  shell_.working_set_title = Rml::String(primary->title.c_str());
-  shell_.working_set_subtitle = Rml::String(primary->subtitle.c_str());
-  shell_.working_set_rml = Rml::String(primary->artifact_rml.c_str());
-  active_working_set_affinity_ = primary->affinity;
-  active_working_set_entry_id_ = entry_id;
-  SyncWorkingSetWidgetBindings(entry_id);
-
-  ShellHost::Instance().SetAuxiliaryAvailable(true);
-  if (!same_task || !ShellHost::Instance().State().auxiliary_open) {
-    ShellHost::Instance().OpenAuxiliary();
-  }
-  DirtyWorkingSet();
-}
-
-bool ChatController::ShouldCloseWorkingSetForAction(const std::optional<std::string>& payload) const {
-  if (!payload || payload->empty()) {
-    return false;
-  }
-  const nlohmann::json doc = nlohmann::json::parse(*payload, nullptr, false);
-  if (doc.is_discarded() || !doc.is_object()) {
-    return false;
-  }
-  const std::string type = doc.value("type", "");
-  return type == "start_conversation" || type == "add_contact";
+  Instance().working_set_.Open(std::string(args[0].Get<Rml::String>().c_str()), *block_index);
 }
 
 void ChatController::SendMessageCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -680,11 +598,10 @@ void ChatController::RotatePskExportCallback(Rml::DataModelHandle /*model*/, Rml
 }
 
 void ChatController::FinalizeThreadDisplay() {
-  ClearWorkingSet();
-  working_set_by_entry_.clear();
+  working_set_.ClearAll();
   RefreshFromMessaging();
   // Always land on latest when opening/showing a thread (incl. re-open same id).
-  RequestScrollToLatest();
+  scroller_.RequestScrollToLatest();
   if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact &&
       ShellHost::Instance().State().nav_tab == NavTab::Sessions) {
     ShellHost::Instance().OpenCompactChat();
@@ -696,8 +613,7 @@ void ChatController::OnHomeTabActivated() {
     return;
   }
   MessagingHub::Instance().Inbox().ClearActiveThread();
-  ClearWorkingSet();
-  working_set_by_entry_.clear();
+  working_set_.ClearAll();
   ShellHost::Instance().SetPrimaryPane("home");
   RefreshFromMessaging();
   ShellHost::Instance().RequestSyncLayout();
@@ -705,8 +621,7 @@ void ChatController::OnHomeTabActivated() {
 }
 
 void ChatController::OnSessionsTabActivated() {
-  ClearWorkingSet();
-  working_set_by_entry_.clear();
+  working_set_.ClearAll();
 }
 
 void ChatController::OnSelectThread(const std::string& thread_id) {
@@ -739,10 +654,8 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                                chat_.status = "";
                                chat_.loading = false;
                                pending_reply_.reset();
-                               ClearFormState();
-                               ClearWorkingSet();
-                               working_set_by_entry_.clear();
-                               widgets_by_entry_.clear();
+                               working_set_.ClearAll();
+                               widgets_.ClearAll();
                                chat_.turns.clear();
                                RefreshFromMessaging();
                                if (shell_.sessions.empty()) {
@@ -790,8 +703,7 @@ void ChatController::OnClearHistory() {
           chat_.status = "";
           chat_.loading = false;
           pending_reply_.reset();
-          ClearFormState();
-          widgets_by_entry_.clear();
+          widgets_.ClearAll();
           RefreshFromMessaging();
           ShellHost::Instance().RequestSyncLayout();
           ShellHost::Instance().DirtyWindow();
@@ -809,8 +721,7 @@ void ChatController::OnClearHistory() {
                                  chat_.status = "";
                                  chat_.loading = false;
                                  pending_reply_.reset();
-                                 ClearFormState();
-                                 widgets_by_entry_.clear();
+                                 widgets_.ClearAll();
                                  RefreshFromMessaging();
                                  ShellHost::Instance().RequestSyncLayout();
                                  ShellHost::Instance().DirtyWindow();
@@ -856,56 +767,6 @@ void ChatController::RetryPeerDialCallback(Rml::DataModelHandle /*model*/, Rml::
   Instance().OnRetryPeerDial();
 }
 
-void ChatController::OnRetryPeerDial() {
-  if (!messaging_ready_ || !MessagingHub::Instance().IsMessagingReady()) {
-    return;
-  }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-  MessagingHub::Instance().P2p().RetryPeerDial(thread_id);
-  UpdatePeerLinkChrome();
-  DirtyChatHeader();
-}
-
-void ChatController::OnLoadOlderHistory() {
-  if (!messaging_ready_ || chat_.sync_in_progress) {
-    return;
-  }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-
-  chat_.sync_in_progress = true;
-  chat_.status = "Loading older messages…";
-  DirtyChatChrome();
-
-  MessagingHub::Instance().P2p().ScrollBackfill(thread_id, [this, thread_id](Roe<ChatSyncResult> result) {
-    chat_.sync_in_progress = false;
-    chat_.status = "";
-    if (!result) {
-      chat_.status = result.error().message.c_str();
-    } else if (result->ingested == 0) {
-      chat_.show_older_history_hint = false;
-    } else if (!chat_.messages.empty()) {
-      Rml::Element* el = FindMessagesScrollElement();
-      if (el && !pinned_to_bottom_) {
-        pending_scroll_height_before_ = el->GetScrollHeight();
-        pending_scroll_top_before_ = el->GetScrollTop();
-      }
-      const int64_t before = chat_.messages.front().display_order;
-      auto older = MessagingHub::Instance().Store().GetMessagesPage(thread_id, before, kDefaultMessagesPageSize);
-      if (older && !older->empty()) {
-        loaded_min_display_order_ = older->front().display_order;
-      }
-    }
-    RefreshFromMessaging();
-    DirtyChatChrome();
-  });
-}
-
 void ChatController::SendSharedAssistantRelay(const std::string& thread_id, const AtAiMode mode,
                                               const std::string& plain_text) {
   if (!messaging_ready_ || plain_text.empty()) {
@@ -927,268 +788,12 @@ void ChatController::SendSharedAssistantRelay(const std::string& thread_id, cons
   (void)MessagingHub::Instance().P2p().SendUserMessage(thread_id, plain_text, opts);
 }
 
-void ChatController::OnSyncWithPeer() {
-  if (!messaging_ready_ || chat_.sync_in_progress) {
-    return;
-  }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-
-  chat_.sync_in_progress = true;
-  chat_.status = "Syncing missing messages from peer…";
-  DirtyChatChrome();
-
-  MessagingHub::Instance().P2p().SyncWithPeer(thread_id, [this](Roe<ChatSyncResult> result) {
-    chat_.sync_in_progress = false;
-    if (result) {
-      chat_.status = result->ingested > 0 ? "Sync complete." : "Up to date with peer.";
-    } else {
-      chat_.status = result.error().message.c_str();
-    }
-    RefreshFromMessaging();
-    DirtyChatChrome();
-    ShellHost::Instance().DirtyWindow();
-  });
-}
-
-void ChatController::OnRetryGapSync() {
-  if (!messaging_ready_ || chat_.sync_in_progress) {
-    return;
-  }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-
-  chat_.sync_in_progress = true;
-  chat_.status = "Retrying sync for missing messages…";
-  DirtyChatChrome();
-
-  MessagingHub::Instance().P2p().RetryGapSync(thread_id, [this](Roe<ChatSyncResult> result) {
-    chat_.sync_in_progress = false;
-    if (result) {
-      if (result->ingested > 0 || result->empty_gap_closed) {
-        chat_.status = "Gap repair complete.";
-      } else {
-        chat_.status = "No missing messages found for this gap.";
-      }
-    } else {
-      chat_.status = result.error().message.c_str();
-    }
-    RefreshFromMessaging();
-    DirtyChatChrome();
-    ShellHost::Instance().DirtyWindow();
-  });
-}
-
-void ChatController::OnStartNewSecureChat() {
-  if (!messaging_ready_) {
-    return;
-  }
-  WithSecrets([this]() {
-    const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-    if (thread_id.empty()) {
-      return;
-    }
-
-    ShellFeedback::ShowConfirm(
-        ShellHost::Instance().State(), "Start new secure chat?",
-        "This bumps the session epoch and cancels unsent messages from the previous epoch. "
-        "Your saved transcript stays on this device.",
-        [this, thread_id](bool ok) {
-          if (!ok) {
-            return;
-          }
-          auto result = MessagingHub::Instance().P2p().StartNewSecureChat(thread_id);
-          if (!result) {
-            chat_.status = result.error().message.c_str();
-          } else {
-            chat_.status = "New secure session started.";
-          }
-          RefreshFromMessaging();
-          DirtyChatChrome();
-          ShellHost::Instance().DirtyWindow();
-        });
-    ShellHost::Instance().RequestSyncLayout();
-    ShellHost::Instance().DirtyWindow();
-  });
-}
-
-void ChatController::OnPauseIntegrityOnly() {
-  if (!messaging_ready_) {
-    return;
-  }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-
-  if (!MessagingHub::Instance().P2p().PauseIntegrityOnly(thread_id)) {
-    return;
-  }
-  chat_.status = "Messaging paused until you rotate the encryption key.";
-  RefreshFromMessaging();
-  DirtyChatHeader();
-  ShellHost::Instance().DirtyWindow();
-}
-
-void ChatController::OnCopyPskKey() {
-  if (!messaging_ready_) {
-    return;
-  }
-  WithSecrets([this]() {
-    const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-    if (thread_id.empty()) {
-      return;
-    }
-    auto exported = MessagingHub::Instance().P2p().EnsurePskGenerated(thread_id);
-    if (!exported) {
-      chat_.status = exported.error().message.c_str();
-      DirtyChatChrome();
-      return;
-    }
-    chat_.psk_export_b64 = exported->master_psk_b64.c_str();
-    chat_.psk_fingerprint = exported->fingerprint.c_str();
-    if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
-      system->SetClipboardText(chat_.psk_export_b64);
-    }
-    chat_.status = "Encryption key copied.";
-    DirtyChatHeader();
-    ShellHost::Instance().DirtyWindow();
-  });
-}
-
-void ChatController::OnTogglePskImport() {
-  chat_.show_psk_import = !chat_.show_psk_import;
-  DirtyChatHeader();
-  ShellHost::Instance().DirtyWindow();
-}
-
-void ChatController::OnImportPsk() {
-  if (!messaging_ready_) {
-    return;
-  }
-  if (!MessagingHub::Instance().IsMessagingReady()) {
-    WithSecrets([this]() { OnImportPsk(); });
-    return;
-  }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-  const std::string pasted = chat_.psk_import_text.c_str();
-  if (pasted.empty()) {
-    chat_.status = "Paste a key or bundle first.";
-    DirtyChatChrome();
-    return;
-  }
-
-  if (pasted.find('{') != std::string::npos) {
-    if (auto imported = MessagingHub::Instance().P2p().ImportPskBundleJson(thread_id, pasted); !imported) {
-      chat_.status = imported.error().message.c_str();
-    } else {
-      chat_.psk_import_text = "";
-      chat_.show_psk_import = false;
-      chat_.status = "Encryption key installed. Verify the fingerprint before sending.";
-    }
-  } else if (auto imported = MessagingHub::Instance().P2p().ImportPskRawBase64(thread_id, pasted); !imported) {
-    chat_.status = imported.error().message.c_str();
-  } else {
-    chat_.psk_import_text = "";
-    chat_.show_psk_import = false;
-    chat_.status = "Encryption key installed. Verify the fingerprint before sending.";
-  }
-  RefreshFromMessaging();
-  DirtyChatHeader();
-  ShellHost::Instance().DirtyWindow();
-}
-
-void ChatController::OnVerifyPsk() {
-  if (!messaging_ready_) {
-    return;
-  }
-  if (!MessagingHub::Instance().IsMessagingReady()) {
-    WithSecrets([this]() { OnVerifyPsk(); });
-    return;
-  }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-
-  ShellFeedback::ShowConfirmWithCheckbox(
-      ShellHost::Instance().State(), "Verify encryption fingerprint",
-      "Only confirm after you compared this fingerprint with your contact out of band.",
-      "I've verified this fingerprint with my contact", false,
-      [this, thread_id](const bool confirmed, const bool checked) {
-        if (!confirmed || !checked) {
-          return;
-        }
-        auto result = MessagingHub::Instance().P2p().MarkPskVerified(thread_id);
-        if (!result) {
-          chat_.status = result.error().message.c_str();
-        } else {
-          chat_.status = "Encryption key verified. You can send secure messages.";
-        }
-        RefreshFromMessaging();
-        DirtyChatHeader();
-        ShellHost::Instance().DirtyWindow();
-      });
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
-}
-
-void ChatController::OnRotatePskExport() {
-  if (!messaging_ready_) {
-    return;
-  }
-  if (!MessagingHub::Instance().IsMessagingReady()) {
-    WithSecrets([this]() { OnRotatePskExport(); });
-    return;
-  }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-
-  ShellFeedback::ShowConfirm(
-      ShellHost::Instance().State(), "Rotate encryption key?",
-      "This generates a new key, bumps the session epoch, and cancels unsent messages from the previous epoch. "
-      "Share the exported bundle with your contact out of band.",
-      [this, thread_id](const bool ok) {
-        if (!ok) {
-          return;
-        }
-        auto bundle = MessagingHub::Instance().P2p().RotatePskAndExportBundle(thread_id);
-        if (!bundle) {
-          chat_.status = bundle.error().message.c_str();
-          DirtyChatChrome();
-          ShellHost::Instance().DirtyWindow();
-          return;
-        }
-        if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
-          system->SetClipboardText(*bundle);
-        }
-        ShellFeedback::ShowAlert(
-            ShellHost::Instance().State(), "Rotation bundle exported",
-            "The pp-browser-psk-bundle-v1 JSON was copied to your clipboard. Send it to your contact securely.");
-        chat_.status = "Encryption key rotated. Share the bundle with your contact.";
-        RefreshFromMessaging();
-        DirtyChatHeader();
-        ShellHost::Instance().DirtyWindow();
-      });
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
-}
-
 void ChatController::RefreshFromMessaging() {
   const int prev_sessions = ShellHost::Instance().State().nav_badges.sessions_unread;
   const int prev_contacts = ShellHost::Instance().State().nav_badges.contacts_unread;
   SyncShellSessions();
   SyncDisplayFromThread();
-  UpdateThreadChrome();
+  chrome_.Update();
   BadgeAggregator::Instance().Refresh();
   DirtyChat();
   DirtyShell();
@@ -1201,12 +806,10 @@ void ChatController::RefreshFromMessaging() {
 
 void ChatController::OnProfileDataReset() {
   messaging_ready_ = false;
-  ClearWorkingSet();
-  ClearFormState();
-  widgets_by_entry_.clear();
-  working_set_by_entry_.clear();
+  working_set_.ClearAll();
+  widgets_.ClearAll();
   pending_reply_.reset();
-  ResetChatPanelState();
+  chrome_.ResetPanelState();
   if (MessagingHub::Instance().IsInitialized()) {
     WireMessagingBindings();
   } else {
@@ -1244,249 +847,12 @@ void ChatController::SyncShellSessions() {
   }
 }
 
-void ChatController::ResetTranscriptScrollState() {
-  pinned_to_bottom_ = true;
-  pending_scroll_to_bottom_ = false;
-  pending_scroll_settle_frames_ = 0;
-  pending_scroll_attempts_ = 0;
-  settle_scroll_height_ = -1.f;
-  suppress_scroll_handler_ = false;
-  loading_older_local_ = false;
-  has_more_local_history_ = false;
-  scroll_thread_id_.clear();
-  loaded_min_display_order_.reset();
-  pending_scroll_height_before_.reset();
-  pending_scroll_top_before_.reset();
-  last_messages_scroll_height_ = 0.f;
-  unread_while_scrolled_ = 0;
-  chat_.show_jump_to_latest = false;
-  chat_.jump_to_latest_label = "";
-}
-
-Rml::Element* ChatController::FindMessagesScrollElement() const {
-  if (!context_ || context_->GetNumDocuments() == 0) {
-    return nullptr;
-  }
-  return context_->GetDocument(0)->GetElementById("chat-messages");
-}
-
-void ChatController::UpdateJumpToLatestLabel() {
-  if (unread_while_scrolled_ > 0) {
-    chat_.jump_to_latest_label =
-        (std::to_string(unread_while_scrolled_) + " new · Latest").c_str();
-  } else {
-    chat_.jump_to_latest_label = Tr("chat.jump_to_latest").c_str();
-  }
-}
-
-void ChatController::SetShowJumpToLatest(bool show) {
-  if (chat_.show_jump_to_latest == show && !show) {
-    return;
-  }
-  chat_.show_jump_to_latest = show;
-  if (show) {
-    UpdateJumpToLatestLabel();
-  } else {
-    unread_while_scrolled_ = 0;
-    chat_.jump_to_latest_label = "";
-  }
-  DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
-  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
-}
-
-void ChatController::RequestScrollToLatest() {
-  pinned_to_bottom_ = true;
-  pending_scroll_to_bottom_ = true;
-  pending_scroll_settle_frames_ = 0;
-  pending_scroll_attempts_ = 0;
-  settle_scroll_height_ = -1.f;
-  last_messages_scroll_height_ = 0.f;
-  SetShowJumpToLatest(false);
-}
-
-void ChatController::ScrollMessagesToBottom() {
-  Rml::Element* el = FindMessagesScrollElement();
-  if (!el) {
-    return;
-  }
-  const float max_top = std::max(0.f, el->GetScrollHeight() - el->GetClientHeight());
-  suppress_scroll_handler_ = true;
-  el->SetScrollTop(max_top);
-  suppress_scroll_handler_ = false;
-  pinned_to_bottom_ = true;
-  last_messages_scroll_height_ = el->GetScrollHeight();
-  SetShowJumpToLatest(false);
-}
-
-void ChatController::ApplyTranscriptScrollPolicy() {
-  Rml::Element* el = FindMessagesScrollElement();
-  if (!el) {
-    return;
-  }
-
-  if (pending_scroll_height_before_.has_value() && pending_scroll_top_before_.has_value()) {
-    const float delta = el->GetScrollHeight() - *pending_scroll_height_before_;
-    suppress_scroll_handler_ = true;
-    el->SetScrollTop(*pending_scroll_top_before_ + delta);
-    suppress_scroll_handler_ = false;
-    pending_scroll_height_before_.reset();
-    pending_scroll_top_before_.reset();
-    last_messages_scroll_height_ = el->GetScrollHeight();
-  }
-
-  const float scroll_height = el->GetScrollHeight();
-  const float max_top = std::max(0.f, scroll_height - el->GetClientHeight());
-  const float top = el->GetScrollTop();
-  constexpr float kNearBottomPx = 64.f;
-  const bool near_bottom = max_top <= 0.5f || (max_top - top) <= kNearBottomPx;
-
-  if (pending_scroll_to_bottom_) {
-    ScrollMessagesToBottom();
-    const float h = el->GetScrollHeight();
-    const float settled_max = std::max(0.f, h - el->GetClientHeight());
-    const float settled_top = el->GetScrollTop();
-    const bool at_bottom = settled_max <= 0.5f || (settled_max - settled_top) <= 1.f;
-    const bool height_stable = settle_scroll_height_ >= 0.f && std::abs(h - settle_scroll_height_) < 0.5f;
-
-    if (!chat_.has_turns) {
-      pending_scroll_to_bottom_ = false;
-      pending_scroll_settle_frames_ = 0;
-      settle_scroll_height_ = -1.f;
-    } else if (at_bottom && height_stable) {
-      ++pending_scroll_settle_frames_;
-      if (pending_scroll_settle_frames_ >= 3) {
-        pending_scroll_to_bottom_ = false;
-        pending_scroll_settle_frames_ = 0;
-        settle_scroll_height_ = -1.f;
-      }
-    } else {
-      settle_scroll_height_ = h;
-      pending_scroll_settle_frames_ = 0;
-      ++pending_scroll_attempts_;
-      if (pending_scroll_attempts_ > 60) {
-        pending_scroll_to_bottom_ = false;
-        pending_scroll_attempts_ = 0;
-        settle_scroll_height_ = -1.f;
-      }
-    }
-    last_messages_scroll_height_ = h;
-    return;
-  }
-
-  pending_scroll_attempts_ = 0;
-
-  // While pinned: follow content growth first. Only unpin when height is stable
-  // and the user has moved away from the bottom (otherwise incomplete layout
-  // looks like scroll-away and leaves the viewport near the top).
-  if (pinned_to_bottom_) {
-    if (scroll_height > last_messages_scroll_height_ + 0.5f) {
-      ScrollMessagesToBottom();
-      return;
-    }
-    if (!near_bottom) {
-      pinned_to_bottom_ = false;
-      last_messages_scroll_height_ = scroll_height;
-      return;
-    }
-    if (chat_.show_jump_to_latest) {
-      SetShowJumpToLatest(false);
-    }
-    last_messages_scroll_height_ = scroll_height;
-    return;
-  }
-
-  // Unpinned: user scrolled away — only re-pin when they return near the end.
-  if (near_bottom && max_top > 0.5f) {
-    pinned_to_bottom_ = true;
-    if (chat_.show_jump_to_latest) {
-      SetShowJumpToLatest(false);
-    }
-  }
-  last_messages_scroll_height_ = scroll_height;
-}
-
-void ChatController::MaybeLoadOlderLocalHistory() {
-  if (loading_older_local_ || !has_more_local_history_ || !messaging_ready_ ||
-      pending_scroll_to_bottom_) {
-    return;
-  }
-  Rml::Element* el = FindMessagesScrollElement();
-  if (!el) {
-    return;
-  }
-  // Only when the transcript actually overflows; otherwise scrollTop==0 is "at bottom"
-  // of a non-scrollable box and would spam prepend loads.
-  const float max_top = std::max(0.f, el->GetScrollHeight() - el->GetClientHeight());
-  if (max_top <= 1.f || el->GetScrollTop() > 72.f) {
-    return;
-  }
-  LoadOlderLocalHistory();
-}
-
-void ChatController::LoadOlderLocalHistory() {
-  if (loading_older_local_ || !messaging_ready_ || chat_.messages.empty()) {
-    return;
-  }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-
-  const int64_t oldest = chat_.messages.front().display_order;
-  if (!MessagingHub::Instance().Inbox().HasLocalMessagesBefore(thread_id, oldest)) {
-    has_more_local_history_ = false;
-    return;
-  }
-
-  Rml::Element* el = FindMessagesScrollElement();
-  if (el) {
-    pending_scroll_height_before_ = el->GetScrollHeight();
-    pending_scroll_top_before_ = el->GetScrollTop();
-  }
-
-  loading_older_local_ = true;
-  auto older = MessagingHub::Instance().Store().GetMessagesPage(thread_id, oldest, kDefaultMessagesPageSize);
-  if (!older || older->empty()) {
-    has_more_local_history_ = false;
-    loading_older_local_ = false;
-    pending_scroll_height_before_.reset();
-    pending_scroll_top_before_.reset();
-    return;
-  }
-  loaded_min_display_order_ = older->front().display_order;
-  has_more_local_history_ =
-      MessagingHub::Instance().Inbox().HasLocalMessagesBefore(thread_id, *loaded_min_display_order_);
-
-  chat_.messages = MessagingHub::Instance().Inbox().BuildDisplayRows(thread_id, loaded_min_display_order_);
-  chat_.has_turns = !chat_.messages.empty();
-  DirtyChatTurns();
-  loading_older_local_ = false;
-}
-
 void ChatController::OnMessagesScroll() {
-  if (suppress_scroll_handler_) {
-    return;
-  }
-  Rml::Element* el = FindMessagesScrollElement();
-  if (!el) {
-    return;
-  }
-  const float max_top = std::max(0.f, el->GetScrollHeight() - el->GetClientHeight());
-  const float top = el->GetScrollTop();
-  constexpr float kNearBottomPx = 64.f;
-  const bool near_bottom = max_top <= 0.f || (max_top - top) <= kNearBottomPx;
-  if (near_bottom) {
-    pinned_to_bottom_ = true;
-    SetShowJumpToLatest(false);
-  } else {
-    pinned_to_bottom_ = false;
-  }
-  MaybeLoadOlderLocalHistory();
+  scroller_.OnMessagesScroll();
 }
 
 void ChatController::OnJumpToLatest() {
-  RequestScrollToLatest();
-  ScrollMessagesToBottom();
+  scroller_.OnJumpToLatest();
 }
 
 void ChatController::MessagesScrollCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1499,198 +865,60 @@ void ChatController::JumpToLatestCallback(Rml::DataModelHandle /*model*/, Rml::E
   Instance().OnJumpToLatest();
 }
 
-void ChatController::ResetChatPanelState() {
-  chat_.thread_title = "";
-  chat_.thread_subtitle = "";
-  chat_.peer_link_status = "";
-  chat_.peer_link_banner = "";
-  chat_.show_peer_link = false;
-  chat_.show_peer_link_banner = false;
-  chat_.show_retry_peer_dial = false;
-  chat_.thread_encrypted = false;
-  chat_.thread_is_ai = false;
-  chat_.thread_is_private = false;
-  chat_.thread_is_public = false;
-  chat_.thread_is_group = false;
-  chat_.compose_disabled = false;
-  chat_.show_thread_actions = false;
-  chat_.show_forget_memory = false;
-  chat_.show_sync_with_peer = false;
-  chat_.show_thread_menu = false;
-  chat_.show_gap_banner = false;
-  chat_.show_older_history_hint = false;
-  chat_.show_compromised_banner = false;
-  chat_.show_psk_setup_banner = false;
-  chat_.show_psk_import = false;
-  chat_.psk_has_key = false;
-  chat_.psk_verified = false;
-  chat_.psk_fingerprint = "";
-  chat_.psk_export_b64 = "";
-  chat_.messages.clear();
-  chat_.turns.clear();
-  chat_.has_turns = false;
-  chat_.use_messages_layout = true;
-  chat_.draft_placeholder = "Ask anything…";
-  ResetTranscriptScrollState();
+void ChatController::OnRetryPeerDial() {
+  chrome_.OnRetryPeerDial();
+}
+
+void ChatController::OnLoadOlderHistory() {
+  chrome_.OnLoadOlderHistory();
+}
+
+void ChatController::OnSyncWithPeer() {
+  chrome_.OnSyncWithPeer();
+}
+
+void ChatController::OnRetryGapSync() {
+  chrome_.OnRetryGapSync();
+}
+
+void ChatController::OnStartNewSecureChat() {
+  chrome_.OnStartNewSecureChat();
+}
+
+void ChatController::OnPauseIntegrityOnly() {
+  chrome_.OnPauseIntegrityOnly();
+}
+
+void ChatController::OnCopyPskKey() {
+  chrome_.OnCopyPskKey();
+}
+
+void ChatController::OnTogglePskImport() {
+  chrome_.OnTogglePskImport();
+}
+
+void ChatController::OnImportPsk() {
+  chrome_.OnImportPsk();
+}
+
+void ChatController::OnVerifyPsk() {
+  chrome_.OnVerifyPsk();
+}
+
+void ChatController::OnRotatePskExport() {
+  chrome_.OnRotatePskExport();
 }
 
 void ChatController::UpdateThreadChrome() {
-  if (!messaging_ready_) {
-    return;
-  }
-  if (auto thread = MessagingHub::Instance().Inbox().GetActiveThread()) {
-    const PeerDisplayLabel label = MessagingHub::Instance().Inbox().ResolveThreadLabel(*thread);
-    chat_.thread_title = label.title.c_str();
-    chat_.thread_encrypted = thread->encrypted;
-    const Rml::String visual_kind = SessionVisualKind(*thread);
-    chat_.thread_is_ai = visual_kind == "ai";
-    chat_.thread_is_private = visual_kind == "private";
-    chat_.thread_is_public = visual_kind == "public";
-    chat_.thread_is_group = visual_kind == "group";
-    chat_.show_peer_sheet = thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group;
-    chat_.show_thread_actions = true;
-    chat_.show_forget_memory = thread->kind == ThreadKind::Ai;
-    chat_.show_sync_with_peer = false;
-    chat_.show_gap_banner = false;
-    chat_.show_older_history_hint = false;
-    chat_.show_compromised_banner = false;
-    chat_.show_psk_setup_banner = false;
-    chat_.show_psk_import = false;
-    chat_.psk_has_key = false;
-    chat_.psk_verified = false;
-    chat_.psk_fingerprint = "";
-    chat_.psk_export_b64 = "";
-    if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2e) {
-      if (auto epoch = MessagingHub::Instance().Store().GetChatTargetSessionEpoch(thread->id)) {
-        if (auto sync_state = MessagingHub::Instance().Store().GetPeerSyncState(thread->id, *epoch)) {
-          const bool compromised = sync_state->phase == PeerSyncPhase::Compromised;
-          chat_.show_compromised_banner = compromised;
-          chat_.compose_disabled = compromised;
-          if (!compromised) {
-            chat_.show_sync_with_peer = true;
-            chat_.show_gap_banner = sync_state->phase == PeerSyncPhase::Gap;
-            chat_.show_older_history_hint =
-                sync_state->loaded_min_seq > sync_state->history_floor_seq + 1;
-          }
-        } else {
-          chat_.show_sync_with_peer = true;
-        }
-      } else {
-        chat_.show_sync_with_peer = true;
-      }
-
-      if (!chat_.show_compromised_banner) {
-        if (!MessagingHub::Instance().IsMessagingReady()) {
-          chat_.show_psk_setup_banner = true;
-          chat_.compose_disabled = true;
-        } else if (auto status = MessagingHub::Instance().P2p().GetPskStatus(thread->id)) {
-          chat_.psk_has_key = status->has_psk;
-          chat_.psk_verified = status->verified;
-          chat_.psk_fingerprint = status->fingerprint.c_str();
-          chat_.show_psk_setup_banner = !status->has_psk || !status->verified;
-          if (status->has_psk) {
-            if (auto exported = MessagingHub::Instance().P2p().GetPskExportView(thread->id)) {
-              chat_.psk_export_b64 = exported->master_psk_b64.c_str();
-            }
-          } else if (auto generated = MessagingHub::Instance().P2p().EnsurePskGenerated(thread->id)) {
-            chat_.psk_has_key = true;
-            chat_.psk_fingerprint = generated->fingerprint.c_str();
-            chat_.psk_export_b64 = generated->master_psk_b64.c_str();
-            chat_.show_psk_setup_banner = true;
-          }
-          chat_.compose_disabled = !status->has_psk || !status->verified;
-        }
-      }
-    } else if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2ePublic) {
-      chat_.compose_disabled = !MessagingHub::Instance().IsMessagingReady();
-    } else if (thread->kind == ThreadKind::Group) {
-      chat_.compose_disabled = !MessagingHub::Instance().IsMessagingReady();
-    }
-    if (thread->kind == ThreadKind::Ai) {
-      chat_.thread_subtitle = "Local assistant";
-      chat_.draft_placeholder = "Ask anything…";
-    } else if (thread->kind == ThreadKind::Direct) {
-      if (thread->channel == ThreadChannel::E2ePublic) {
-        chat_.thread_subtitle = "Encrypted · easy start";
-        chat_.draft_placeholder = "Message… · @ai · @ai+ · @ai++";
-      } else if (thread->channel == ThreadChannel::E2e) {
-        chat_.thread_subtitle = "Verified private · E2E";
-        chat_.draft_placeholder = "Secure message… · @ai · @ai+ · @ai++";
-      } else {
-        chat_.thread_subtitle = "Direct message";
-        chat_.draft_placeholder = "Message… · @ai · @ai+ · @ai++";
-      }
-      if (label.trust == PeerLabelTrust::DirectoryUnverified) {
-        chat_.thread_subtitle = std::string(chat_.thread_subtitle.c_str()) + " · Unverified";
-      }
-    } else {
-      std::string roster_label = thread->encrypted ? "Group · E2E" : "Group chat";
-      if (MessagingHub::Instance().IsMessagingReady() && thread->group_id) {
-        if (auto roster = MessagingHub::Instance().Groups().ListRoster(*thread->group_id)) {
-          roster_label += " · " + std::to_string(roster->size()) + " members";
-        }
-      }
-      if (label.shared_title) {
-        roster_label = "Shared: " + *label.shared_title + " · " + roster_label;
-      }
-      chat_.thread_subtitle = roster_label.c_str();
-      chat_.draft_placeholder = "Message the group… or @ai ask assistant";
-    }
-    chat_.show_thread_menu =
-        chat_.show_thread_actions || chat_.show_forget_memory || chat_.show_sync_with_peer;
-    UpdatePeerLinkChrome();
-  } else {
-    chat_.thread_title = "";
-    chat_.thread_subtitle = "";
-    chat_.show_peer_sheet = false;
-    chat_.peer_link_status = "";
-    chat_.peer_link_banner = "";
-    chat_.show_peer_link = false;
-    chat_.show_peer_link_banner = false;
-    chat_.show_retry_peer_dial = false;
-    chat_.thread_encrypted = false;
-    chat_.thread_is_ai = false;
-    chat_.thread_is_private = false;
-    chat_.thread_is_public = false;
-    chat_.thread_is_group = false;
-    chat_.compose_disabled = false;
-    chat_.show_thread_actions = false;
-    chat_.show_peer_sheet = false;
-    chat_.show_forget_memory = false;
-    chat_.show_sync_with_peer = false;
-    chat_.show_thread_menu = false;
-    chat_.show_gap_banner = false;
-    chat_.show_older_history_hint = false;
-    chat_.show_compromised_banner = false;
-    chat_.show_psk_setup_banner = false;
-    chat_.show_psk_import = false;
-    chat_.psk_has_key = false;
-    chat_.psk_verified = false;
-    chat_.psk_fingerprint = "";
-    chat_.psk_export_b64 = "";
-    chat_.draft_placeholder = "Ask anything…";
-  }
+  chrome_.Update();
 }
 
 void ChatController::UpdatePeerLinkChrome() {
-  chat_.peer_link_status = "";
-  chat_.peer_link_banner = "";
-  chat_.show_peer_link = false;
-  chat_.show_peer_link_banner = false;
-  chat_.show_retry_peer_dial = false;
-  if (!messaging_ready_ || !MessagingHub::Instance().IsMessagingReady()) {
-    return;
-  }
-  auto thread = MessagingHub::Instance().Inbox().GetActiveThread();
-  if (!thread || thread->kind != ThreadKind::Direct) {
-    return;
-  }
-  const ThreadPeerLinkView link = MessagingHub::Instance().P2p().GetThreadPeerLink(thread->id);
-  chat_.show_peer_link = !link.status_label.empty();
-  chat_.peer_link_status = link.status_label.c_str();
-  chat_.show_peer_link_banner = link.show_banner && !link.banner_message.empty();
-  chat_.peer_link_banner = link.banner_message.c_str();
-  chat_.show_retry_peer_dial = link.show_retry;
+  chrome_.UpdatePeerLink();
+}
+
+void ChatController::ResetChatPanelState() {
+  chrome_.ResetPanelState();
 }
 
 void ChatController::SyncDisplayFromThread() {
@@ -1699,46 +927,22 @@ void ChatController::SyncDisplayFromThread() {
   }
   auto& inbox = MessagingHub::Instance().Inbox();
   if (!inbox.GetActiveThread()) {
-    ResetChatPanelState();
+    chrome_.ResetPanelState();
     return;
   }
   const std::string thread_id = inbox.ActiveThreadId();
-  const bool thread_changed = thread_id != scroll_thread_id_;
-  if (thread_changed) {
-    scroll_thread_id_ = thread_id;
-    loaded_min_display_order_.reset();
-    unread_while_scrolled_ = 0;
-    RequestScrollToLatest();
-  }
+  const bool thread_changed = scroller_.BeginDisplaySync(thread_id);
 
   const std::string prev_tail_id =
       chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
   const size_t prev_count = chat_.messages.size();
 
-  chat_.messages = inbox.BuildDisplayRows(thread_id, loaded_min_display_order_);
+  chat_.messages = inbox.BuildDisplayRows(thread_id, scroller_.LoadedMinDisplayOrder());
   chat_.turns.clear();
   chat_.has_turns = !chat_.messages.empty();
   chat_.use_messages_layout = true;
 
-  if (!chat_.messages.empty()) {
-    loaded_min_display_order_ = chat_.messages.front().display_order;
-    has_more_local_history_ =
-        inbox.HasLocalMessagesBefore(thread_id, chat_.messages.front().display_order);
-  } else {
-    loaded_min_display_order_.reset();
-    has_more_local_history_ = false;
-  }
-
-  if (thread_changed || pinned_to_bottom_) {
-    RequestScrollToLatest();
-  } else {
-    const std::string new_tail_id =
-        chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
-    if (!new_tail_id.empty() && new_tail_id != prev_tail_id && chat_.messages.size() > prev_count) {
-      unread_while_scrolled_ += static_cast<int>(chat_.messages.size() - prev_count);
-      SetShowJumpToLatest(true);
-    }
-  }
+  scroller_.EndDisplaySync(thread_changed, prev_tail_id, prev_count);
 }
 
 void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
@@ -1787,7 +991,7 @@ void ChatController::OnSendMessage() {
 
   chat_.draft = "";
   DirtyChatChrome();
-  RequestScrollToLatest();
+  scroller_.RequestScrollToLatest();
   SendUserText(text);
 }
 
@@ -1805,10 +1009,8 @@ void ChatController::OnNewChat() {
   if (agent_) {
     agent_->Cancel();
   }
-  ClearWorkingSet();
-  working_set_by_entry_.clear();
-  ClearFormState();
-  widgets_by_entry_.clear();
+  working_set_.ClearAll();
+  widgets_.ClearAll();
   ShellHost::Instance().SetPrimaryPane("chat");
   focus_draft_after_sync_ = true;
   FinalizeThreadDisplay();
@@ -2097,14 +1299,7 @@ void ChatController::OnFindSomeone() {
 
 void ChatController::OnShellLayoutSynced() {
   // SyncLayout remounts the shell DOM and resets scroll offsets — re-arm follow-tail.
-  if (pinned_to_bottom_ && chat_.has_turns) {
-    pending_scroll_to_bottom_ = true;
-    pending_scroll_settle_frames_ = 0;
-    pending_scroll_attempts_ = 0;
-    settle_scroll_height_ = -1.f;
-    last_messages_scroll_height_ = 0.f;
-  }
-  ApplyTranscriptScrollPolicy();
+  scroller_.OnShellRemounted();
   if (!focus_draft_after_sync_) {
     return;
   }
@@ -2117,81 +1312,76 @@ void ChatController::OnShellLayoutSynced() {
   }
 }
 
-bool ChatController::IsFormEditable(const std::string& entry_id, const std::string& form_id) const {
-  if (submitted_forms_.count({entry_id, form_id}) > 0) {
-    return false;
-  }
-  return active_form_ && active_form_->entry_id == entry_id && active_form_->form_id == form_id;
-}
-
-TurnWidgetState* ChatController::FindWidgetState(const std::string& entry_id) {
-  const auto it = widgets_by_entry_.find(entry_id);
-  return it == widgets_by_entry_.end() ? nullptr : &it->second;
-}
-
-const TurnWidgetState* ChatController::FindWidgetState(const std::string& entry_id) const {
-  const auto it = widgets_by_entry_.find(entry_id);
-  return it == widgets_by_entry_.end() ? nullptr : &it->second;
-}
-
-void ChatController::MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const {
-  const TurnWidgetState* widgets = FindWidgetState(entry_id);
-  if (!widgets) {
+void ChatController::SubmitForm(const std::string& entry_id, const std::string& form_id) {
+  if (chat_.loading) {
     return;
   }
-
-  if (widgets->has_form) {
-    row.has_form = true;
-    row.form = widgets->form;
-    if (!IsFormEditable(entry_id, std::string(widgets->form.form_id.c_str()))) {
-      row.form.expired = true;
-    }
+  const auto submission = widgets_.TrySubmit(entry_id, form_id);
+  if (!submission) {
+    log().warning << "Ignoring submit for inactive or expired form: " << entry_id << "/" << form_id;
+    return;
   }
+  working_set_.Clear();
+  SyncDisplayFromThread();
+  SendUserText(submission->display_text, submission->payload);
+}
 
-  if (widgets->has_calendar) {
-    row.has_calendar = true;
-    row.calendar = widgets->calendar;
+void ChatController::CalendarPrev(const std::string& entry_id) {
+  if (!widgets_.ShiftCalendar(entry_id, -1)) {
+    return;
   }
+  if (working_set_.ActiveEntryId() == entry_id) {
+    working_set_.SyncWidgetBindings(entry_id);
+  }
+  SyncDisplayFromThread();
+}
+
+void ChatController::CalendarNext(const std::string& entry_id) {
+  if (!widgets_.ShiftCalendar(entry_id, 1)) {
+    return;
+  }
+  if (working_set_.ActiveEntryId() == entry_id) {
+    working_set_.SyncWidgetBindings(entry_id);
+  }
+  SyncDisplayFromThread();
+}
+
+void ChatController::SelectCalendarDay(const std::string& entry_id, const std::string& iso_date) {
+  if (chat_.loading) {
+    return;
+  }
+  if (!widgets_.IsCalendarDayAvailable(entry_id, iso_date)) {
+    return;
+  }
+  SendUserText("Selected " + iso_date);
 }
 
 std::string ChatController::HydrateAssistantRml(const TranscriptEntry& entry) const {
-  if (!entry.assistant_rml) {
-    return {};
-  }
+  return widgets_.HydrateAssistantRml(entry);
+}
 
-  std::string rml = HydrateLegacyChatActions(*entry.assistant_rml, entry.chat_actions);
-  return InjectEntryPlaceholders(rml, entry.id);
+bool ChatController::IsFormEditable(const std::string& entry_id, const std::string& form_id) const {
+  return widgets_.IsFormEditable(entry_id, form_id);
 }
 
 void ChatController::InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits) {
-  TurnWidgetState state;
-  ApplyWidgetInits(inits, state);
-  widgets_by_entry_[entry_id] = std::move(state);
-
-  if (const TurnWidgetState* widgets = FindWidgetState(entry_id); widgets && widgets->has_form) {
-    const std::string form_id = std::string(widgets->form.form_id.c_str());
-    if (submitted_forms_.count({entry_id, form_id}) == 0) {
-      active_form_ = ActiveForm{.entry_id = entry_id, .form_id = form_id};
-      ExpireFormsExcept(entry_id, form_id);
-    }
-  }
+  widgets_.Initialize(entry_id, inits);
 }
 
-void ChatController::ExpireFormsExcept(const std::string& entry_id, const std::string& form_id) {
-  for (auto& [id, widgets] : widgets_by_entry_) {
-    if (!widgets.has_form) {
-      continue;
-    }
-    const std::string widget_form_id = std::string(widgets.form.form_id.c_str());
-    if (id != entry_id || widget_form_id != form_id) {
-      widgets.form.expired = true;
-    }
-  }
+void ChatController::MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const {
+  widgets_.MergeIntoRow(entry_id, row);
+}
+
+TurnWidgetState* ChatController::FindWidgetState(const std::string& entry_id) {
+  return widgets_.Find(entry_id);
+}
+
+const TurnWidgetState* ChatController::FindWidgetState(const std::string& entry_id) const {
+  return widgets_.Find(entry_id);
 }
 
 void ChatController::ClearFormState() {
-  active_form_.reset();
-  submitted_forms_.clear();
+  widgets_.ClearForms();
 }
 
 void ChatController::UpdateSidebarPreview(const std::string& preview_text) {
@@ -2239,12 +1429,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     }
   }
 
-  for (auto& [id, widgets] : widgets_by_entry_) {
-    if (widgets.has_form && !widgets.form.expired) {
-      widgets.form.expired = true;
-    }
-  }
-  active_form_.reset();
+  widgets_.ExpireOpenForms();
   DirtyChatTurns();
 
   const bool use_mock_reply = !use_llm_;
@@ -2293,41 +1478,6 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   agent_->Submit(trimmed, std::move(user_payload));
 }
 
-void ChatController::SubmitForm(const std::string& entry_id, const std::string& form_id) {
-  if (chat_.loading) {
-    return;
-  }
-  if (!IsFormEditable(entry_id, form_id)) {
-    log().warning << "Ignoring submit for inactive or expired form: " << entry_id << "/" << form_id;
-    return;
-  }
-
-  TurnWidgetState* widgets = FindWidgetState(entry_id);
-  if (!widgets || !widgets->has_form) {
-    log().warning << "Form widget state missing: " << entry_id << "/" << form_id;
-    return;
-  }
-
-  const std::string bound_form_id = std::string(widgets->form.form_id.c_str());
-  if (bound_form_id != form_id) {
-    log().warning << "Form id mismatch: " << bound_form_id << " vs " << form_id;
-    return;
-  }
-
-  const std::map<std::string, std::string> values = FormValuesMap(widgets->form);
-  const std::string display_text =
-      ApplySubmitTemplate(std::string(widgets->form.submit_template.c_str()), values);
-  const std::string payload = BuildFormSubmissionPayload(form_id, values);
-
-  submitted_forms_.insert({entry_id, form_id});
-  widgets->form.expired = true;
-  active_form_.reset();
-  ClearWorkingSet();
-
-  SyncDisplayFromThread();
-  SendUserText(display_text, payload);
-}
-
 void ChatController::SendChatAction(const std::string& entry_id, int action_index) {
   if (chat_.loading || action_index < 0 || !messaging_ready_) {
     return;
@@ -2352,11 +1502,11 @@ void ChatController::SendChatAction(const std::string& entry_id, int action_inde
     // ("Variable address not found" → segfault). Defer like SettingsController section open.
     const std::string action_message = action.message;
     const std::optional<std::string> action_payload = action.payload;
-    const bool close_working_set = ShouldCloseWorkingSetForAction(action_payload);
+    const bool close_working_set = working_set_.ShouldCloseForAction(action_payload);
     BrowserThread::PostTask(BrowserThreadId::UI, [action_message, action_payload, close_working_set]() {
       auto& self = ChatController::Instance();
       if (close_working_set) {
-        self.ClearWorkingSet();
+        self.working_set_.Clear();
       }
       self.HandleLocalAction(action_message, action_payload);
     });
@@ -2364,58 +1514,6 @@ void ChatController::SendChatAction(const std::string& entry_id, int action_inde
   }
 
   log().warning << "Chat action entry not found: " << entry_id;
-}
-
-void ChatController::CalendarPrev(const std::string& entry_id) {
-  TurnWidgetState* widgets = FindWidgetState(entry_id);
-  if (!widgets || !widgets->has_calendar) {
-    return;
-  }
-  ShiftCalendarMonth(widgets->calendar, -1);
-  if (active_working_set_entry_id_ == entry_id) {
-    SyncWorkingSetWidgetBindings(entry_id);
-  }
-  SyncDisplayFromThread();
-}
-
-void ChatController::CalendarNext(const std::string& entry_id) {
-  TurnWidgetState* widgets = FindWidgetState(entry_id);
-  if (!widgets || !widgets->has_calendar) {
-    return;
-  }
-  ShiftCalendarMonth(widgets->calendar, 1);
-  if (active_working_set_entry_id_ == entry_id) {
-    SyncWorkingSetWidgetBindings(entry_id);
-  }
-  SyncDisplayFromThread();
-}
-
-void ChatController::SelectCalendarDay(const std::string& entry_id, const std::string& iso_date) {
-  if (chat_.loading) {
-    return;
-  }
-  const TurnWidgetState* widgets = FindWidgetState(entry_id);
-  if (!widgets || !widgets->has_calendar) {
-    return;
-  }
-
-  bool available = false;
-  for (const CalendarWeekRow& week : widgets->calendar.weeks) {
-    for (const CalendarDayRow& day : week.days) {
-      if (std::string(day.iso_date.c_str()) == iso_date && day.available) {
-        available = true;
-        break;
-      }
-    }
-    if (available) {
-      break;
-    }
-  }
-  if (!available) {
-    return;
-  }
-
-  SendUserText("Selected " + iso_date);
 }
 
 void ChatController::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, const bool from_llm,
@@ -2452,7 +1550,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
     }
 
     if (!parsed.widget_inits.empty()) {
-      InitializeWidgetState(entry_id, parsed.widget_inits);
+      widgets_.Initialize(entry_id, parsed.widget_inits);
     }
 
     std::vector<TranscriptChatAction> chat_actions;
@@ -2462,7 +1560,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
     }
 
     std::string hydrated = InjectEntryPlaceholders(parsed.rml, entry_id);
-    hydrated = HydrateLegacyChatActions(hydrated, chat_actions);
+    hydrated = HydrateChatActionButtons(hydrated, chat_actions);
 
     const std::string assistant_open =
         ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", raw_output) + R"( selectable="text">)";
@@ -2497,7 +1595,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
       (void)MessagingHub::Instance().Inbox().UpdatePreview(active_thread, parsed.rml);
     }
 
-    ApplyWorkingSetFromParse(entry_id, parsed.working_set_candidates);
+    working_set_.ApplyFromParse(entry_id, parsed.working_set_candidates);
 
     if (shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull) {
       const std::string active_thread =
@@ -2757,8 +1855,7 @@ bool ChatController::Setup(Rml::Context* context) {
     }
   });
   const AppConfig& config = SessionStore::Instance().Snapshot().config;
-  ClearFormState();
-  widgets_by_entry_.clear();
+  widgets_.ClearAll();
   chat_ = {};
   shell_ = {};
   shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
@@ -3076,23 +2173,8 @@ void ChatController::Update() {
     if (MessagingHub::Instance().IsMessagingReady()) {
       BackgroundSyncScheduler::Instance().Tick();
       const auto now = std::chrono::steady_clock::now();
-      if (now - last_peer_link_poll_ >= std::chrono::milliseconds(400)) {
-        last_peer_link_poll_ = now;
-        if (auto thread = MessagingHub::Instance().Inbox().GetActiveThread()) {
-          if (thread->kind == ThreadKind::Direct) {
-            const Rml::String prev_status = chat_.peer_link_status;
-            const Rml::String prev_banner = chat_.peer_link_banner;
-            const bool prev_show = chat_.show_peer_link;
-            const bool prev_banner_show = chat_.show_peer_link_banner;
-            const bool prev_retry = chat_.show_retry_peer_dial;
-            UpdatePeerLinkChrome();
-            if (chat_.peer_link_status != prev_status || chat_.peer_link_banner != prev_banner ||
-                chat_.show_peer_link != prev_show || chat_.show_peer_link_banner != prev_banner_show ||
-                chat_.show_retry_peer_dial != prev_retry) {
-              DirtyChatHeader();
-            }
-          }
-        }
+      if (chrome_.MaybePollPeerLink(now)) {
+        DirtyChatHeader();
       }
     }
   }
@@ -3107,7 +2189,7 @@ void ChatController::Update() {
 }
 
 void ChatController::AfterLayout() {
-  ApplyTranscriptScrollPolicy();
+  scroller_.ApplyPolicy();
 }
 
 void ChatController::Shutdown() {
@@ -3132,8 +2214,7 @@ void ChatController::Shutdown() {
   }
   pending_reply_.reset();
   context_ = nullptr;
-  ClearFormState();
-  widgets_by_entry_.clear();
+  widgets_.ClearAll();
   chat_ = {};
   shell_ = {};
   use_llm_ = false;

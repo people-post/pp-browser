@@ -2,8 +2,12 @@ pp_browser_add_feature_library(pp_feature_chat
   SOURCES
     CalendarHelper.cpp
     ChatController.cpp
+    ChatThreadChrome.cpp
+    ChatTranscriptScroller.cpp
+    ChatWidgetHost.cpp
     ChatWidgetStateBuilder.cpp
     MessagingTools.cpp
+    WorkingSetController.cpp
   PUBLIC_LIBS
     pp_base_platform
     pp_feature_ai

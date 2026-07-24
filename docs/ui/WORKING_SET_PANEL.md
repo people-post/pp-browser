@@ -8,7 +8,7 @@ This document is the authoritative design plan for the auxiliary working set pan
 
 ## Why
 
-Today, every successful assistant reply copies the full hydrated RML into the auxiliary pane and auto-opens it ([`ChatController::FinishAssistantReply`](../../src/feature/chat/ChatController.cpp)). That treats the panel as a duplicate of chat rather than a place to **work** on AI output (browse lists, fill forms, scan tables).
+Assistant replies route working-set candidates through [`WorkingSetController`](../../src/feature/chat/WorkingSetController.h) (invoked from [`ChatController::FinishAssistantReply`](../../src/feature/chat/ChatController.cpp)). The panel is a place to **work** on AI output (browse lists, fill forms, scan tables), not a duplicate of chat narrative.
 
 **Design principle:** Chat explains; panel lets you work. Never mirror narrative paragraphs in the panel.
 
@@ -51,7 +51,7 @@ Related docs: [WINDOW_SHELL.md](WINDOW_SHELL.md), [CHAT_TEMPLATES.md](CHAT_TEMPL
 - [x] Add `WorkingSetTypes` and extend `ParseResult` + `AgentEvent` with `response_goal`
 - [x] Implement `WorkingSetPolicy`: ResponseGoal-first routing + block heuristics + affinity
 - [x] Dual render in `StructuredTextParser`: artifact RML for panel, teasers for chat
-- [x] `WorkingSetController` in `ChatController`: apply, open, sticky update, clear, lifecycle hooks
+- [x] `WorkingSetController` (`src/feature/chat/`): apply, open, sticky update, clear; façade hooks from `ChatController`
 - [x] Update `preview.rml` + `base.rcss` for working set panel and chat chips
 - [x] Wire form/calendar panel bindings; update `PromptBuilder`, docs, tests
 
@@ -162,26 +162,25 @@ Teaser chip (entry placeholder injected later):
 
 Register `open_working_set(entry_id, block_index)` on `chat` and `shell` data models.
 
-### 4. WorkingSetController in ChatController
+### 4. WorkingSetController
 
-New methods replacing ad-hoc preview logic:
+Implemented in [`WorkingSetController.h/.cpp`](../../src/feature/chat/WorkingSetController.h); `ChatController` owns an instance and forwards RML/`FinishAssistantReply` hooks.
 
-- **`ApplyWorkingSetFromParse(entry_id, goal, candidates)`** — pick primary candidate (first auto-open eligible); set `working_set` state; `SetAuxiliaryAvailable(true)` + `OpenAuxiliary()` when any eligible block exists.
-- **`OpenWorkingSet(entry_id, block_index)`** — manual reopen from chip or header button.
-- **`UpdateWorkingSetInPlace(...)`** — same affinity, new artifact (pagination).
-- **`ClearWorkingSet()`** — reset state, `SetAuxiliaryAvailable(false)`, `CloseAuxiliary()`.
+- **`ApplyFromParse(entry_id, candidates)`** — pick primary candidate (first auto-open eligible); set `working_set` state; `SetAuxiliaryAvailable(true)` + `OpenAuxiliary()` when any eligible block exists.
+- **`Open(entry_id, block_index)`** — manual reopen from chip or header button.
+- **`Clear()` / `ClearAll()`** — reset panel (and forget entry candidates on thread switch / shutdown).
 
-In-memory anchor:
+In-memory anchor (`WorkingSetController`):
 
 ```cpp
-std::map<std::string, std::vector<WorkingSetCandidate>> working_set_by_entry_;
+std::map<std::string, std::vector<WorkingSetCandidate>> by_entry_;
 ```
 
-Populated at parse time in `FinishAssistantReply`.
+Populated at parse time via `FinishAssistantReply` → `ApplyFromParse`.
 
 ### 5. Sticky task lifecycle
 
-Add `WorkingSetAffinity active_affinity_` and optional `active_task_key_` (e.g. `"feed:blog_articles"`) to `ChatController`.
+`WorkingSetAffinity active_affinity_` (and active entry id) live on `WorkingSetController`.
 
 | Event | Behavior |
 |-------|----------|
@@ -264,7 +263,8 @@ Update [`PromptBuilder::ChatBlocksProfile()`](../../src/base/ai/PromptBuilder.cp
 | `src/base/ai/WorkingSetPolicy.h/.cpp` (new) | Goal + block routing |
 | `src/base/ai/StructuredTextParser.h/.cpp` | Candidates, dual render, teasers |
 | `src/feature/ai/AgentSession.h/.cpp` | Pass `response_goal` / `render_mode` in `AgentEvent` |
-| `src/feature/chat/ChatController.h/.cpp` | WorkingSetController, sticky lifecycle, callbacks |
+| `src/feature/chat/WorkingSetController.h/.cpp` | Sticky lifecycle, apply/open/clear |
+| `src/feature/chat/ChatController.h/.cpp` | Owns WorkingSetController; RML callbacks + reply hooks |
 | `assets/views/preview.rml` | Dynamic working set chrome |
 | `assets/themes/base.rcss` | Panel + chip styles |
 | `src/base/ai/PromptBuilder.cpp` | Side panel guidance for LLM |
