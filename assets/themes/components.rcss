@@ -908,6 +908,7 @@ select selectbox option {
   border: 0;
   border-radius: 10dp;
   cursor: pointer;
+  focus: none;
 }
 
 .shell-nav-rail--compact .shell-nav-tab {

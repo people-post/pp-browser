@@ -1347,7 +1347,12 @@ bool Context::ProcessTouchEnd(const Touch& touch, int key_modifier_state)
 	ProcessMouseMove(static_cast<int>(touch.position.x), static_cast<int>(touch.position.y), key_modifier_state);
 
 	// always assume touch press/release events are handled as left mouse button
-	return ProcessMouseButtonUp(0, key_modifier_state);
+	const bool result = ProcessMouseButtonUp(0, key_modifier_state);
+	// Clear sticky :hover after the last finger lifts so remount/layout shifts
+	// (e.g. compact nav pill reflow) cannot leave hover fill on the wrong control.
+	if (touch_states.empty())
+		ProcessMouseLeave();
+	return result;
 }
 
 bool Context::ProcessTouchCancel(const Touch& touch)
@@ -1360,7 +1365,10 @@ bool Context::ProcessTouchCancel(const Touch& touch)
 
 	ClearTextLoupeState();
 
-	return ProcessMouseButtonUp(0, 0);
+	const bool result = ProcessMouseButtonUp(0, 0);
+	if (touch_states.empty())
+		ProcessMouseLeave();
+	return result;
 }
 
 void Context::SetDefaultScrollBehavior(ScrollBehavior scroll_behavior, float speed_factor)
