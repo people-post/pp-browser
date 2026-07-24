@@ -13,7 +13,7 @@
 
 #if RMLUI_SDL_VERSION_MAJOR >= 3
 #include <SDL3/SDL.h>
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if !defined(_WIN32) && !defined(__APPLE__) && !defined(__ANDROID__)
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #endif
@@ -237,7 +237,8 @@ bool DesktopWindowChrome::IsMaximized() {
 #endif
 }
 
-#if RMLUI_SDL_VERSION_MAJOR >= 3 && !defined(_WIN32) && !defined(__APPLE__)
+#if RMLUI_SDL_VERSION_MAJOR >= 3 && !defined(_WIN32) && !defined(__APPLE__) && \
+    !defined(__ANDROID__)
 // GNOME X11 ignores XDG_ACTIVATION_TOKEN (SDL only consumes it on Wayland).
 // Apply the notification ActivationToken as _NET_STARTUP_ID and activate via EWMH.
 bool RaiseX11WithStartupId(SDL_Window* window, const std::string& token) {
@@ -311,7 +312,7 @@ void DesktopWindowChrome::RaiseAndFocus() {
     SDL_RestoreWindow(window);
   }
 
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if !defined(_WIN32) && !defined(__APPLE__) && !defined(__ANDROID__)
   const bool x11_raised = RaiseX11WithStartupId(window, token);
 #else
   const bool x11_raised = false;

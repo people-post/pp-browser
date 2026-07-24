@@ -1,4 +1,4 @@
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if !defined(_WIN32) && !defined(__APPLE__) && !defined(__ANDROID__)
 
 #include "base/platform/desktop/LocalNotifierImpl.h"
 
@@ -511,6 +511,21 @@ void ShutdownDesktopNotifications() {
   g_init_started = false;
   g_init_ok = false;
 }
+
+} // namespace pbr::desktop
+
+#elif defined(__ANDROID__)
+
+#include "base/platform/desktop/LocalNotifierImpl.h"
+
+namespace pbr::desktop {
+
+void PostDesktopNotification(const std::string& /*title*/, const std::string& /*body*/,
+                             const std::string& /*thread_id*/) {}
+
+void ClearDesktopNotification(const std::string& /*thread_id*/) {}
+
+void ShutdownDesktopNotifications() {}
 
 } // namespace pbr::desktop
 
