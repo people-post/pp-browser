@@ -60,6 +60,9 @@ public class MainActivity extends SDLActivity {
     private Handler mPixelCopyHandler;
     private final AtomicBoolean mThumbnailCapturedForPause = new AtomicBoolean(false);
 
+    /** App appearance preference from native Theme ("system" / "light" / "dark"). */
+    private volatile String mAppAppearance = "system";
+
     @Override
     protected String[] getLibraries() {
         return new String[] { "main" };
@@ -140,6 +143,36 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
+     * Called from native {@code AndroidSystemChrome} when Me → Theme (or system
+     * sync) changes the app appearance preference.
+     */
+    public void setAppAppearance(String appearance) {
+        final String normalized = normalizeAppearance(appearance);
+        runOnUiThread(() -> {
+            mAppAppearance = normalized;
+            applyNavigationBarColor();
+        });
+    }
+
+    private static String normalizeAppearance(String appearance) {
+        if ("light".equals(appearance) || "dark".equals(appearance)) {
+            return appearance;
+        }
+        return "system";
+    }
+
+    private boolean resolveLightNavigationBars() {
+        if ("light".equals(mAppAppearance)) {
+            return true;
+        }
+        if ("dark".equals(mAppAppearance)) {
+            return false;
+        }
+        return (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                != Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    /**
      * Theme the system navigation bar only. Does not touch layout-fullscreen /
      * decor-fits flags (those raced SurfaceView attach and delayed first paint).
      * Status bar stays on the theme splash color; coloring it reliably needs an
@@ -154,9 +187,7 @@ public class MainActivity extends SDLActivity {
         window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
 
-        final boolean lightUi =
-                (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
-                        != Configuration.UI_MODE_NIGHT_YES;
+        final boolean lightUi = resolveLightNavigationBars();
         final int navColor = ContextCompat.getColor(
                 this, lightUi ? R.color.window_background_light : R.color.window_background);
         window.setNavigationBarColor(navColor);

@@ -25,6 +25,7 @@ set(_pp_platform_common_sources
   PlatformStartupHints.cpp
   AndroidLocalNotifier.cpp
   AndroidPushDeviceRegistrar.cpp
+  AndroidSystemChrome.cpp
   Platform.cpp
   PlatformEarlyInit.cpp
   PlatformLogSink.cpp

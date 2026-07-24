@@ -1,5 +1,6 @@
 #include "base/ui/Theme.h"
 
+#include "base/platform/AndroidSystemChrome.h"
 #include "base/platform/AssetIO.h"
 
 #include <RmlUi/Core/Context.h>
@@ -82,6 +83,7 @@ void Theme::ApplyAppearance(Rml::Context* context, AppearanceMode preference) {
   g_active_preference = preference;
   g_context = context;
   ActivateResolvedTheme(context, ResolveDark(preference));
+  AndroidSystemChrome::SetAppearance(ToAppearanceString(preference));
 }
 
 void Theme::SyncSystemTheme(Rml::Context* context) {
