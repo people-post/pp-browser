@@ -36,6 +36,8 @@ public:
 
   Roe<void> UpsertGroupTarget(const std::string& group_id, const std::string& local_thread_id,
                               uint32_t session_epoch, uint64_t next_outgoing_seq) const;
+  Roe<void> ClearGroupTarget(const std::string& group_id) const;
+  Roe<void> ClearGroupTargetByThreadId(const std::string& local_thread_id) const;
   Roe<std::optional<std::string>> FindThreadIdForGroup(const std::string& group_id) const;
   Roe<uint64_t> AllocateGroupSenderSeq(const std::string& group_id) const;
   Roe<uint32_t> GetGroupSessionEpoch(const std::string& group_id) const;

@@ -1174,6 +1174,10 @@ Roe<bool> SqliteThreadStore::DeleteThread(const std::string& thread_id) {
   }
   std::lock_guard profile_lock(profile_mutex_);
   ClearChatTargetThreadLinkUnlocked(thread_id);
+  {
+    GroupRosterStore roster(ProfileDbFile(data_dir_));
+    (void)roster.ClearGroupTargetByThreadId(thread_id);
+  }
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(profile_db_, "DELETE FROM threads WHERE id = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
     sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);

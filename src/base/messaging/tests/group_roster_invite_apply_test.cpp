@@ -151,5 +151,16 @@ TEST_F(GroupRosterInviteApplyTest, InviteeAcceptSeedsOwnerAndSelfForFanout) {
   EXPECT_EQ(outbound, 1u);
 }
 
+TEST_F(GroupRosterInviteApplyTest, ClearGroupTargetRemovesMapping) {
+  ASSERT_TRUE(roster_->UpsertGroupTarget("group:hike", "thread-1", 1, 1));
+  auto found = roster_->FindThreadIdForGroup("group:hike");
+  ASSERT_TRUE(found && found->has_value());
+  EXPECT_EQ(**found, "thread-1");
+  ASSERT_TRUE(roster_->ClearGroupTarget("group:hike"));
+  found = roster_->FindThreadIdForGroup("group:hike");
+  ASSERT_TRUE(found);
+  EXPECT_FALSE(found->has_value());
+}
+
 } // namespace
 } // namespace pbr

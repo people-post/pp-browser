@@ -335,6 +335,8 @@ Roe<Thread> GroupMembershipService::AcceptInvite(const std::string& invite_nonce
       !sent) {
     return sent.error();
   }
+  (void)ResolveInviteCard((*pending)->inviter_identity, invite_nonce, InviteStatus::Accepted,
+                          "You joined " + title);
   return *thread;
 }
 
@@ -359,6 +361,57 @@ Roe<void> GroupMembershipService::DeclineInvite(const std::string& invite_nonce)
   // Best-effort notify inviter; local decline already recorded.
   (void)SendInviteResponseDirectMessage((*pending)->inviter_identity, invite_nonce, (*pending)->group_id,
                                         GroupMembershipControlType::GroupInviteDecline);
+  const std::string title =
+      (*pending)->group_title.empty() ? std::string("group invitation") : (*pending)->group_title;
+  (void)ResolveInviteCard((*pending)->inviter_identity, invite_nonce, InviteStatus::Declined,
+                          "You declined " + title);
+  return {};
+}
+
+Roe<void> GroupMembershipService::DismissLocalGroup(const std::string& group_id) {
+  if (group_id.empty()) {
+    return Error("group_id required");
+  }
+  auto local = LocalRelayIdentity();
+  if (local) {
+    (void)roster_.RemoveMember(group_id, *local);
+  }
+  (void)roster_.ClearGroupTarget(group_id);
+  return {};
+}
+
+Roe<void> GroupMembershipService::ResolveInviteCard(const std::string& inviter_identity,
+                                                    const std::string& invite_nonce, const InviteStatus status,
+                                                    const std::string& status_text) {
+  DirectChatTarget direct_target;
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_value = inviter_identity;
+  direct_target.channel = ThreadChannel::E2ePublic;
+  auto thread = store_.FindDirectThread(direct_target);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    // Invite may have landed on e2e channel in tests; try e2e as well.
+    direct_target.channel = ThreadChannel::E2e;
+    thread = store_.FindDirectThread(direct_target);
+    if (!thread || !*thread) {
+      return {};
+    }
+  }
+  auto messages = store_.GetMessagesPage((*thread)->id, std::nullopt, 500);
+  if (!messages) {
+    return messages.error();
+  }
+  for (ThreadMessage& message : *messages) {
+    auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
+    if (!invite || invite->invite_nonce != invite_nonce) {
+      continue;
+    }
+    GroupMembershipCodec::ApplyInviteResolution(message, status, status_text);
+    (void)store_.UpdateMessage(message);
+    return {};
+  }
   return {};
 }
 

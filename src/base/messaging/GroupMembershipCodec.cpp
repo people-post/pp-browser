@@ -262,6 +262,54 @@ std::vector<TranscriptChatAction> GroupMembershipCodec::BuildInviteChatActions(c
   return actions;
 }
 
+void GroupMembershipCodec::ApplyInviteResolution(ThreadMessage& message, const InviteStatus status,
+                                                 const std::string& status_text) {
+  nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
+  if (!payload.is_object()) {
+    payload = nlohmann::json::object();
+  }
+  payload["control_type"] = GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupInvite);
+  switch (status) {
+  case InviteStatus::Accepted:
+    payload["resolution"] = "accepted";
+    break;
+  case InviteStatus::Declined:
+    payload["resolution"] = "declined";
+    break;
+  case InviteStatus::Blocked:
+    payload["resolution"] = "blocked";
+    break;
+  default:
+    payload["resolution"] = "resolved";
+    break;
+  }
+  message.payload_json = payload.dump();
+  message.text = status_text;
+  message.chat_actions.clear();
+  message.content_rml.reset();
+}
+
+std::optional<InviteStatus> GroupMembershipCodec::InviteResolutionFromMessage(const ThreadMessage& message) {
+  if (message.payload_json.empty()) {
+    return std::nullopt;
+  }
+  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
+  if (!payload.is_object() || !payload.contains("resolution") || !payload["resolution"].is_string()) {
+    return std::nullopt;
+  }
+  const std::string value = payload["resolution"].get<std::string>();
+  if (value == "accepted") {
+    return InviteStatus::Accepted;
+  }
+  if (value == "declined") {
+    return InviteStatus::Declined;
+  }
+  if (value == "blocked") {
+    return InviteStatus::Blocked;
+  }
+  return InviteStatus::Expired;
+}
+
 std::optional<GroupMembershipControlType> GroupMembershipCodec::ControlTypeFromMessage(const ThreadMessage& message) {
   if (message.content_type != ChatContentType::System || message.payload_json.empty()) {
     return std::nullopt;

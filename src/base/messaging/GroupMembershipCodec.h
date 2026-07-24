@@ -49,6 +49,9 @@ public:
                                                const std::string& sender_contact_id);
 
   static std::vector<TranscriptChatAction> BuildInviteChatActions(const GroupInvitePayload& invite);
+  /** Mark an invite system message as accepted/declined/blocked; clears chat_actions. */
+  static void ApplyInviteResolution(ThreadMessage& message, InviteStatus status, const std::string& status_text);
+  static std::optional<InviteStatus> InviteResolutionFromMessage(const ThreadMessage& message);
   static std::optional<GroupMembershipControlType> ControlTypeFromMessage(const ThreadMessage& message);
   static Roe<GroupInvitePayload> DecodeInviteFromMessage(const ThreadMessage& message);
 

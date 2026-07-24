@@ -112,6 +112,12 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
     return Error("Thread not found");
   }
 
+  if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id && MessagingHub::Instance().IsInitialized()) {
+    // Drop local membership so inbound group envelopes hard-reject instead of FindOrCreate-ing
+    // the session back with an unread after close.
+    (void)MessagingHub::Instance().Groups().DismissLocalGroup(*(*thread)->group_id);
+  }
+
   const bool was_active = active_thread_id_ == thread_id;
   auto deleted = store_.DeleteThread(thread_id);
   if (!deleted || !*deleted) {
@@ -437,6 +443,10 @@ std::string InboxController::BuildSharedBadgeHtml(const ThreadMessage& message) 
 std::string InboxController::BuildSystemRml(const ThreadMessage& message) const {
   const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
   if (control_type && *control_type == GroupMembershipControlType::GroupInvite) {
+    if (GroupMembershipCodec::InviteResolutionFromMessage(message)) {
+      return "<div class=\"chat-system-line muted\"><p>" + StructuredTextParser::EscapeText(message.text) +
+             "</p></div>";
+    }
     auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
     const std::string title =
         invite ? invite->group_title : (message.text.empty() ? "Group invitation" : message.text);

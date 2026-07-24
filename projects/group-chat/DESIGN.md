@@ -276,7 +276,7 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 4. Classify seq (relaxed ingest default — D046)
 5. Append to group thread; update sync_state
 
-**Invite handshake `[v1]`:** Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest applies accept via roster upsert + `roster_epoch` bump (so subsequent group sends include the new member). Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` in local roster so member→owner fan-out is non-empty.
+**Invite handshake `[v1]`:** Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest applies accept via roster upsert + `roster_epoch` bump (so subsequent group sends include the new member). Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` in local roster so member→owner fan-out is non-empty. Closing a group session dismisses local membership (and clears `group_targets`) so inbound group traffic hard-rejects instead of recreating the thread with an unread. After Accept/Decline/Block, the DM invite card is resolved in-place (actions cleared; status line text).
 
 **Auto-create:** on accepted invite / first valid `member_joined` for local identity.
 

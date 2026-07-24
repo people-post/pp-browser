@@ -78,6 +78,29 @@ TEST(GroupMembershipCodecTest, DecodeInviteResponseFromMessage) {
   EXPECT_EQ(declined->control_type, GroupMembershipControlType::GroupInviteDecline);
 }
 
+TEST(GroupMembershipCodecTest, ApplyInviteResolutionClearsActions) {
+  GroupInvitePayload invite;
+  invite.invite_nonce = "nonce-r";
+  invite.inviter_identity = "relay:alice";
+  invite.group_title = "Hike";
+  auto detail = GroupMembershipCodec::EncodeInvite(invite);
+  ASSERT_TRUE(detail);
+  ThreadMessage message;
+  message.content_type = ChatContentType::System;
+  message.text = "Group invitation: Hike";
+  message.payload_json =
+      nlohmann::json({{"control_type", "group_invite"}, {"detail", *detail}}).dump();
+  message.chat_actions = GroupMembershipCodec::BuildInviteChatActions(invite);
+  ASSERT_EQ(message.chat_actions.size(), 3u);
+
+  GroupMembershipCodec::ApplyInviteResolution(message, InviteStatus::Accepted, "You joined Hike");
+  EXPECT_TRUE(message.chat_actions.empty());
+  EXPECT_EQ(message.text, "You joined Hike");
+  auto resolution = GroupMembershipCodec::InviteResolutionFromMessage(message);
+  ASSERT_TRUE(resolution);
+  EXPECT_EQ(*resolution, InviteStatus::Accepted);
+}
+
 TEST(GroupPermissionsTest, OwnerCanInviteMemberCannot) {
   EXPECT_TRUE(RoleHasPermission(MemberRole::Owner, GroupPermission::kPermInvite));
   EXPECT_FALSE(RoleHasPermission(MemberRole::Member, GroupPermission::kPermInvite));

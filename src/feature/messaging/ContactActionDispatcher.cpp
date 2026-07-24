@@ -255,7 +255,10 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     }
     if (payload.contains("invite_nonce") && payload["invite_nonce"].is_string() &&
         MessagingHub::Instance().IsInitialized()) {
-      (void)MessagingHub::Instance().Groups().DeclineInvite(payload["invite_nonce"].get<std::string>());
+      const std::string invite_nonce = payload["invite_nonce"].get<std::string>();
+      (void)MessagingHub::Instance().Groups().DeclineInvite(invite_nonce);
+      (void)MessagingHub::Instance().Groups().ResolveInviteCard(inviter_identity, invite_nonce,
+                                                                InviteStatus::Blocked, "You blocked the inviter");
     }
     if (on_action_message_) {
       on_action_message_(updated ? "Blocked inviter" : "Blocked unknown inviter");

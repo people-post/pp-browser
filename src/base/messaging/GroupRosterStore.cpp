@@ -425,6 +425,43 @@ Roe<void> GroupRosterStore::UpsertGroupTarget(const std::string& group_id, const
   return {};
 }
 
+Roe<void> GroupRosterStore::ClearGroupTarget(const std::string& group_id) const {
+  sqlite3* db = nullptr;
+  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "DELETE FROM group_targets WHERE group_id = ?;", -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare group target delete");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return {};
+}
+
+Roe<void> GroupRosterStore::ClearGroupTargetByThreadId(const std::string& local_thread_id) const {
+  sqlite3* db = nullptr;
+  if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "DELETE FROM group_targets WHERE local_thread_id = ?;", -1, &stmt, nullptr) !=
+      SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare group target delete by thread");
+  }
+  sqlite3_bind_text(stmt, 1, local_thread_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return {};
+}
+
 Roe<std::optional<std::string>> GroupRosterStore::FindThreadIdForGroup(const std::string& group_id) const {
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {

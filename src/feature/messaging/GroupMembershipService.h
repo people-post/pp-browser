@@ -27,6 +27,11 @@ public:
   Roe<void> InviteMember(const std::string& group_id, const std::string& invitee_contact_id);
   Roe<Thread> AcceptInvite(const std::string& invite_nonce);
   Roe<void> DeclineInvite(const std::string& invite_nonce);
+  /** Local leave used by session close — stops inbound group recreate without peer notify. */
+  Roe<void> DismissLocalGroup(const std::string& group_id);
+  /** Update the DM invite card after accept/decline/block. */
+  Roe<void> ResolveInviteCard(const std::string& inviter_identity, const std::string& invite_nonce,
+                              InviteStatus status, const std::string& status_text);
   Roe<void> RemoveMember(const std::string& group_id, const std::string& member_contact_id);
   Roe<void> LeaveGroup(const std::string& group_id);
   Roe<Thread> ForkGroup(const std::string& group_id, const std::string& new_title,
