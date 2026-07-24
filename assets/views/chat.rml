@@ -49,6 +49,9 @@
     <p class="text muted">Some messages from your peer may be missing. Peer sync does not resend your unsent messages.</p>
     <button class="chat-suggestion" data-event-click="retry_gap_sync()">Retry sync</button>
   </div>
+  <div class="chat-gap-banner stack" data-if="show_protocol_compat_banner && !sync_in_progress">
+    <p class="text muted" data-rml="protocol_compat_banner"></p>
+  </div>
   <div class="chat-gap-banner stack" data-if="show_compromised_banner && !sync_in_progress">
     <p class="text muted">Message integrity issue detected. Sending and sync are paused. Rotate the encryption key and share the bundle with your contact, or pause only.</p>
     <button class="chat-suggestion" data-event-click="rotate_psk_export()">Rotate key &amp; export bundle</button>

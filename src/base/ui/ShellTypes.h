@@ -111,6 +111,8 @@ struct DialogState {
   OverlayKind kind = OverlayKind::Alert;
   Rml::String title;
   Rml::String message;
+  /** When non-empty, used as the primary button label instead of common.ok. */
+  Rml::String ok_label;
   bool show_cancel = false;
   bool show_checkbox = false;
   Rml::String checkbox_label;

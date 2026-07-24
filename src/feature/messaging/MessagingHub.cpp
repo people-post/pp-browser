@@ -83,16 +83,20 @@ void MessagingHub::UpdateServiceClients(const AppConfig& config) {
       http_relay_url_ = relay_url;
       http_relay_ = std::make_unique<HttpRelayClient>(http_relay_url_);
       http_push_devices_ = std::make_unique<HttpPushDeviceClient>(http_relay_url_);
+      http_client_compat_ = std::make_unique<HttpClientCompatClient>(http_relay_url_);
       WireRelayAuthSigner();
     }
     relay_ = http_relay_.get();
     push_devices_ = http_push_devices_.get();
+    client_compat_ = http_client_compat_.get();
   } else {
     http_relay_.reset();
     http_push_devices_.reset();
+    http_client_compat_.reset();
     http_relay_url_.clear();
     relay_ = nullptr;
     push_devices_ = nullptr;
+    client_compat_ = nullptr;
     log().warning << "relay.base_url is empty; relay client disabled";
   }
 
@@ -450,6 +454,10 @@ IRegistrationClient& MessagingHub::Registration() {
 
 IPushDeviceClient* MessagingHub::PushDevices() {
   return push_devices_;
+}
+
+IClientCompatClient* MessagingHub::ClientCompat() {
+  return client_compat_;
 }
 
 Libp2pHost* MessagingHub::Libp2p() {

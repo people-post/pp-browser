@@ -373,5 +373,8 @@ Chat-shaped response (libp2p / documentation):
 | Binary wire profile | (per-format version byte) | LenUtf8 rules unchanged; bump format version on layout break |
 | E2E AAD | `aad_version` | [e2e-message-crypto DESIGN](../../projects/e2e-message-crypto/DESIGN.md) |
 | libp2p history | protocol id `/pp-browser/chat-history/1.0.0` | Request/response breaking change → new protocol id |
+| App release | `PP_BROWSER_RELEASE_VERSION` | Packaging + About + User-Agent; compared to `min_client_version` |
+| Client-compat | `schema_version` on `GET /v1/client-compat` | Product floor / soft update nudge ([SERVICE_ENDPOINTS](SERVICE_ENDPOINTS.md#client-compatibility-discovery)) |
+| Protocol gen | `protocol_gen` / `kProtocolGen` | Peer capability handshake via directory profile |
 
 **Dev-only wipe (D016):** legacy JSON threads + pre-v1 wire — not the same as production `user_version` migration. See [COMPATIBILITY.md](COMPATIBILITY.md).

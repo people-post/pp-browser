@@ -34,6 +34,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   identity.enc              # identity JSON under DEK AEAD
   contacts.json
+  client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
   threads/
     profile.db              # thread catalog, outbox, chat_targets (PSK columns encrypted)
     {thread_id}/

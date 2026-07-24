@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/people/ContactTypes.h"
+#include "base/net/ClientCompat.h"
 #include "base/net/IPushDeviceClient.h"
 #include "base/net/RelayApiSignPayload.h"
 #include "base/net/ServiceClients.h"
@@ -141,6 +142,35 @@ public:
                                              const std::string& kem_public_key_b64 = "") override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                          int64_t timestamp, const std::string& relay_user_id) override;
+
+private:
+  std::string base_url_;
+};
+
+class MockClientCompatClient : public IClientCompatClient {
+public:
+  void SetDocument(ClientCompatDocument doc) {
+    document_ = std::move(doc);
+    has_document_ = true;
+    error_.clear();
+  }
+  void SetError(std::string error) {
+    error_ = std::move(error);
+    has_document_ = false;
+  }
+
+  Roe<ClientCompatDocument> Fetch() override;
+
+private:
+  bool has_document_ = false;
+  ClientCompatDocument document_;
+  std::string error_;
+};
+
+class HttpClientCompatClient : public IClientCompatClient {
+public:
+  explicit HttpClientCompatClient(std::string base_url);
+  Roe<ClientCompatDocument> Fetch() override;
 
 private:
   std::string base_url_;

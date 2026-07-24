@@ -62,6 +62,9 @@ public:
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
   IPushDeviceClient* PushDevices();
+  IClientCompatClient* ClientCompat();
+  /** Profile data directory used for stores and client-compat cache. */
+  const std::string& ProfileDataDir() const { return data_dir_; }
   Libp2pHost* Libp2p();
   PeerSessionManager* Sessions();
 
@@ -112,10 +115,12 @@ private:
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
   std::unique_ptr<HttpDirectoryClient> http_directory_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
+  std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
   IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
+  IClientCompatClient* client_compat_ = nullptr;
   std::unique_ptr<Libp2pHost> libp2p_host_;
   std::unique_ptr<PeerSessionManager> peer_sessions_;
   std::unique_ptr<P2pMessagingService> p2p_;

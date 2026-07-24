@@ -13,7 +13,7 @@ struct ShellFeedback {
   static void ShowBanner(ShellState& state, const std::string& message);
   static void DismissBanner(ShellState& state);
   static void ShowAlert(ShellState& state, const std::string& title, const std::string& message,
-                        std::function<void()> on_ok = {});
+                        std::function<void()> on_ok = {}, const std::string& ok_label = {});
   static void ShowConfirm(ShellState& state, const std::string& title, const std::string& message,
                           std::function<void(bool)> on_result);
   static void ShowConfirmWithCheckbox(ShellState& state, const std::string& title, const std::string& message,

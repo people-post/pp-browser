@@ -242,4 +242,9 @@
         </div>
       </div>
 
+      <div class="settings-section stack" data-if="selected_id == 'about'">
+        <p class="heading-2" data-rml="app_name"></p>
+        <p class="text muted">{{i18n:settings.about.version}}: <span data-rml="app_version"></span></p>
+      </div>
+
       <p class="text muted" data-if="status != ''" data-rml="status"></p>

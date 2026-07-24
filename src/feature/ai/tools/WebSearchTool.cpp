@@ -2,6 +2,7 @@
 
 #include "common/Logger.h"
 #include "base/net/CurlSsl.h"
+#include "base/platform/AppVersion.h"
 #include "base/platform/ProductBranding.h"
 
 #include <curl/curl.h>
@@ -38,7 +39,7 @@ std::string UrlEncode(const std::string& value) {
 }
 
 std::vector<std::string> DefaultHeaders() {
-  return {"User-Agent: " + std::string(kProductName) + "/0.1 (web search tool)"};
+  return {"User-Agent: " + std::string(kProductName) + "/" + AppVersionString() + " (web search tool)"};
 }
 
 std::string Trim(const std::string& text) {

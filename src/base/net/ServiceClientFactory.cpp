@@ -10,6 +10,7 @@ ServiceClients CreateServiceClients(const AppConfig& config) {
 
   if (!config.relay.base_url.empty()) {
     clients.relay = std::make_unique<HttpRelayClient>(config.relay.base_url);
+    clients.client_compat = std::make_unique<HttpClientCompatClient>(config.relay.base_url);
   } else {
     logging::getLogger("ServiceClientFactory").warning
         << "relay.base_url is empty; relay client not created";

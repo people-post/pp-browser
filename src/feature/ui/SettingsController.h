@@ -98,6 +98,8 @@ private:
     Rml::String pin_change_confirm;
     Rml::String group_invite_policy = "contacts_only";
     Rml::String group_invite_policy_label = "Contacts only";
+    Rml::String app_name;
+    Rml::String app_version;
   };
 
   SettingsController();

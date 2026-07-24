@@ -1055,7 +1055,8 @@ std::string ShellHost::SerializeDialog() const {
   out << "<button class=\"shell-dialog-cancel\" data-if=\"dialog_show_cancel\" "
          "data-event-click=\"dialog_cancel()\">"
       << Tr("common.cancel") << "</button>";
-  out << "<button class=\"shell-dialog-ok\" data-event-click=\"dialog_ok()\">" << Tr("common.ok")
+  out << "<button class=\"shell-dialog-ok\" data-event-click=\"dialog_ok()\">"
+      << (state_.dialog.ok_label.empty() ? Tr("common.ok") : std::string(state_.dialog.ok_label.c_str()))
       << "</button>";
   out << "</div></div></div>";
   return out.str();

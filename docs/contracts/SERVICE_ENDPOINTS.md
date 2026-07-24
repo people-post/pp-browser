@@ -60,6 +60,44 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 | `GET /v1/users/:relay_user_id` | Public lookup (`signing_public_key_b64`, `kem_public_key_b64`, nickname, expires_at) |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
 
+Lookup / search hits and profile updates may include additive capability fields (ignored by older clients):
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `app_version` | string | Semver release string of the peer’s app |
+| `protocol_gen` | integer | Peer’s advertised protocol generation (default **1** if absent) |
+| `min_peer_protocol_gen` | integer | Minimum generation the peer requires of us (default **1** if absent) |
+
+Clients send the same three fields on `register/finish` and `profile/nickname` so the relay can store and return them. Relays that do not yet persist them simply ignore the keys.
+
+## Client compatibility discovery
+
+Unauthenticated public GET (directory-style; no identity unlock required):
+
+`GET {relay.base_url}/v1/client-compat`
+
+```json
+{
+  "schema_version": 1,
+  "min_client_version": "0.3.0",
+  "latest_client_version": "0.4.2",
+  "min_protocol_gen": 1,
+  "upgrade_url": "https://github.com/people-post/pp-browser/releases",
+  "message": ""
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `schema_version` | yes | **1**; reject unsupported **newer** |
+| `min_client_version` | no | Semver floor; client below → blocking update UX |
+| `latest_client_version` | no | Semver latest; client below (but ≥ min) → soft banner |
+| `min_protocol_gen` | no | Global protocol floor (default 1) |
+| `upgrade_url` | no | Empty → GitHub Releases fallback |
+| `message` | no | Empty → client locale strings |
+
+Unknown keys are ignored. Network failure: fail open (no gate); use last good profile cache (`client_compat.json`, TTL 6h) when present.
+
 ## HTTP device push (opaque wake)
 
 Signed with `pp-browser:relay-api-v1` ops `DeviceRegister=3` / `DeviceUnregister=4` over `(relay_user_id, platform, device_id, push_token)`.

@@ -31,6 +31,7 @@ set(_pp_platform_common_sources
   PlatformEarlyInit.cpp
   PlatformLogSink.cpp
   PlatformNavigation.cpp
+  PlatformOpenUrl.cpp
   PlatformServices.cpp
   PushWakeJni.cpp
   SdlAppEvents.cpp
@@ -81,6 +82,10 @@ pp_browser_add_base_library(pp_base_platform
     RmlUi::Core
     ${PP_BROWSER_SDL3_TARGET}
     ${PP_BROWSER_SDL3_IMAGE_TARGET})
+
+target_compile_definitions(pp_base_platform PUBLIC
+  "PP_BROWSER_RELEASE_VERSION=\"${PP_BROWSER_RELEASE_VERSION}\""
+  "PP_BROWSER_VERSION=\"${PP_BROWSER_VERSION}\"")
 
 # iOS: curl uses BoringSSL; OsTlsPlatformCurl_Ios installs a SecTrust verify callback.
 if(PP_BROWSER_IS_IOS)

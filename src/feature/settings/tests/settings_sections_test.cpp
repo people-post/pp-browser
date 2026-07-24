@@ -1,3 +1,4 @@
+#include "feature/settings/AboutSettingsSection.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/IntegrationsSettingsSection.h"
 #include "feature/settings/LlmSettingsSection.h"
@@ -71,4 +72,10 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   EXPECT_FALSE(state.profile_size_label.empty());
   EXPECT_NE(state.profile_size_label.find("Profile uses ~"), std::string::npos);
   EXPECT_FALSE(storage_section.IsWritable());
+
+  pbr::AboutSettingsSection about_section;
+  about_section.SyncFromSession(bootstrap, state);
+  EXPECT_FALSE(state.app_name.empty());
+  EXPECT_FALSE(state.app_version.empty());
+  EXPECT_FALSE(about_section.IsWritable());
 }

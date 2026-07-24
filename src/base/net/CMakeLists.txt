@@ -1,5 +1,7 @@
 pp_browser_add_base_library(pp_base_net
   SOURCES
+    ClientCompat.cpp
+    PeerProtocolCompat.cpp
     CurlSsl.cpp
     HttpClient.cpp
     RelayApiSignPayload.cpp
@@ -16,6 +18,10 @@ pp_browser_add_base_library(pp_base_net
     pp_base_messaging
     nlohmann_json::nlohmann_json
     CURL::libcurl)
+
+target_compile_definitions(pp_base_net PUBLIC
+  "PP_BROWSER_RELEASE_VERSION=\"${PP_BROWSER_RELEASE_VERSION}\""
+  "PP_BROWSER_VERSION=\"${PP_BROWSER_VERSION}\"")
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

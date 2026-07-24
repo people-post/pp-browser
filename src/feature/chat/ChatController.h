@@ -78,6 +78,8 @@ private:
     bool show_sync_with_peer = false;
     bool show_thread_menu = false;
     bool show_gap_banner = false;
+    bool show_protocol_compat_banner = false;
+    Rml::String protocol_compat_banner;
     bool show_compromised_banner = false;
     bool show_psk_setup_banner = false;
     bool show_psk_import = false;

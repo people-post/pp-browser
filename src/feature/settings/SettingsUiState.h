@@ -60,6 +60,8 @@ struct SettingsUiState {
   std::string group_invite_policy = "contacts_only";
   /** Display label for the group-invite picker value. */
   std::string group_invite_policy_label = "Contacts only";
+  std::string app_name;
+  std::string app_version;
 };
 
 struct SettingsSectionListItem {

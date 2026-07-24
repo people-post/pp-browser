@@ -194,6 +194,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
   bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
+  bindings_.app_name = ui_state_.app_name.c_str();
+  bindings_.app_version = ui_state_.app_version.c_str();
 
   bindings_.mcp_servers.clear();
   bindings_.mcp_servers.reserve(ui_state_.mcp_servers.size());
@@ -289,6 +291,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
+    ctor.Bind("app_name", &controller.bindings_.app_name);
+    ctor.Bind("app_version", &controller.bindings_.app_version);
     ctor.Bind("pin_change_old", &controller.bindings_.pin_change_old);
     ctor.Bind("pin_change_new", &controller.bindings_.pin_change_new);
     ctor.Bind("pin_change_confirm", &controller.bindings_.pin_change_confirm);
@@ -365,6 +369,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_can_change_pin");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
+  host.Dirty("settings", "app_name");
+  host.Dirty("settings", "app_version");
   host.Dirty("settings", "pin_change_old");
   host.Dirty("settings", "pin_change_new");
   host.Dirty("settings", "pin_change_confirm");

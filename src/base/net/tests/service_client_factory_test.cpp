@@ -15,6 +15,7 @@ TEST(ServiceClientFactoryTest, BuildsHttpClientsWhenConfigured) {
   ASSERT_TRUE(static_cast<bool>(clients.relay));
   ASSERT_TRUE(static_cast<bool>(clients.directory));
   ASSERT_TRUE(static_cast<bool>(clients.registration));
+  ASSERT_TRUE(static_cast<bool>(clients.client_compat));
 
   auto payload_b64 = pbr::RelayWirePayload::EncodePlaintextText("hello");
   ASSERT_TRUE(static_cast<bool>(payload_b64));
@@ -42,6 +43,7 @@ TEST(ServiceClientFactoryTest, LeavesClientsUnsetWhenBaseUrlEmpty) {
   EXPECT_FALSE(static_cast<bool>(empty_clients.relay));
   EXPECT_FALSE(static_cast<bool>(empty_clients.directory));
   EXPECT_FALSE(static_cast<bool>(empty_clients.registration));
+  EXPECT_FALSE(static_cast<bool>(empty_clients.client_compat));
 }
 
 TEST(ServiceClientFactoryTest, MockClientsRemainAvailableForTests) {

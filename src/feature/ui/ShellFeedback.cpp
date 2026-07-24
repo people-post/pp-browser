@@ -74,11 +74,12 @@ void ShellFeedback::DismissBanner(ShellState& state) {
 }
 
 void ShellFeedback::ShowAlert(ShellState& state, const std::string& title, const std::string& message,
-                              std::function<void()> on_ok) {
+                              std::function<void()> on_ok, const std::string& ok_label) {
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Alert;
   state.dialog.title = Rml::String(title.c_str());
   state.dialog.message = Rml::String(message.c_str());
+  state.dialog.ok_label = Rml::String(ok_label.c_str());
   state.dialog.show_cancel = false;
   state.dialog.show_checkbox = false;
   state.dialog.checkbox_checked = false;
@@ -98,6 +99,7 @@ void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, con
   state.dialog.kind = OverlayKind::Confirm;
   state.dialog.title = Rml::String(title.c_str());
   state.dialog.message = Rml::String(message.c_str());
+  state.dialog.ok_label = {};
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = false;
   state.dialog.checkbox_checked = false;
@@ -118,6 +120,7 @@ void ShellFeedback::ShowConfirmWithCheckbox(ShellState& state, const std::string
   state.dialog.kind = OverlayKind::Confirm;
   state.dialog.title = Rml::String(title.c_str());
   state.dialog.message = Rml::String(message.c_str());
+  state.dialog.ok_label = {};
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = true;
   state.dialog.checkbox_label = Rml::String(checkbox_label.c_str());
@@ -135,6 +138,7 @@ void ShellFeedback::ShowPrompt(ShellState& state, const std::string& title, cons
   state.dialog.kind = OverlayKind::Confirm;
   state.dialog.title = Rml::String(title.c_str());
   state.dialog.message = Rml::String(message.c_str());
+  state.dialog.ok_label = {};
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = false;
   state.dialog.show_prompt = true;

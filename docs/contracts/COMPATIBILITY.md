@@ -70,7 +70,8 @@ Normative shapes: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md). Crypto: [MESSAGE_ENCRYPTIO
 
 - Prefer **additive** JSON on existing `/v1/…` responses; old clients ignore unknown fields.
 - Breaking HTTP: new path or explicit API version; keep `/v1` until sunset.
-- Optional future: capabilities / `min_client` discovery so UX can say “update required” before a stream of soft-skips.
+- **Client-compat discovery:** unauthenticated `GET /v1/client-compat` on the relay base URL ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md#client-compatibility-discovery)). Compare local app semver (`PP_BROWSER_RELEASE_VERSION`) to `min_client_version` / `latest_client_version`. Below min → blocking update dialog; below latest → dismissible banner. Fail open on network error; cache TTL 6h under the profile dir.
+- **Peer protocol_gen:** directory lookup may return `app_version` / `protocol_gen` / `min_peer_protocol_gen`. If local `kProtocolGen` < peer `min_peer_protocol_gen` → contact “update required” banner (compose disabled). If peer gen < local `kMinPeerProtocolGen` → soft “peer outdated” banner. Absent fields default to **1**.
 - libp2p: version in protocol id (e.g. `/pp-browser/chat-history/1.0.0`); advertise multiple ids when bumping; no mutual protocol → clear incompatible state, not a crash loop.
 
 ---
@@ -79,6 +80,9 @@ Normative shapes: [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md). Crypto: [MESSAGE_ENCRYPTIO
 
 | Artifact | Field | Notes |
 |----------|--------|-------|
+| App release | `PP_BROWSER_RELEASE_VERSION` / `AppVersionString()` | Store / About / `min_client_version` compare |
+| Protocol gen | `kProtocolGen` / `protocol_gen` | Peer capability floor (integer) |
+| Client-compat doc | `schema_version` on `/v1/client-compat` | Product upgrade gate |
 | SQLite | `PRAGMA user_version` | Migrate in production (D069) |
 | Envelope | `envelope_version` | Signing / outer shape |
 | ChatPayload | `payload_version` | Body binary layout |
