@@ -1,17 +1,17 @@
 #include "feature/ai/ToolRegistry.h"
 
-#include "common/Logger.h"
-
 #include <sstream>
 
 namespace pbr {
 
-ToolRegistry::ToolRegistry() = default;
+ToolRegistry::ToolRegistry() {
+  redirectLogger("ToolRegistry");
+}
 
 void ToolRegistry::Register(ToolDescriptor tool) {
   for (const ToolDescriptor& existing : tools_) {
     if (existing.definition.name == tool.definition.name) {
-      logging::getLogger("ToolRegistry").warning << "Replacing duplicate tool: " << tool.definition.name;
+      log().warning << "Replacing duplicate tool: " << tool.definition.name;
     }
   }
   tools_.push_back(std::move(tool));

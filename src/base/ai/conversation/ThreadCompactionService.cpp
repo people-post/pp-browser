@@ -4,7 +4,6 @@
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/platform/BrowserThread.h"
-#include "common/Logger.h"
 #include "common/Utilities.h"
 
 #include <sstream>
@@ -35,7 +34,9 @@ std::string BuildCompactionPrompt(const std::vector<ThreadMessage>& messages,
 } // namespace
 
 ThreadCompactionService::ThreadCompactionService(IThreadStore& store, LlmClient* llm)
-    : store_(store), llm_(llm) {}
+    : store_(store), llm_(llm) {
+  redirectLogger("ThreadCompactionService");
+}
 
 void ThreadCompactionService::MaybeCompactAsync(const std::string& thread_id) {
   if (!llm_) {
@@ -101,14 +102,12 @@ void ThreadCompactionService::RunCompaction(const std::string& thread_id) {
   const auto summary_text =
       llm_->Complete("You produce durable conversation summaries for an AI assistant.", user_prompt);
   if (!summary_text) {
-    logging::getLogger("ThreadCompactionService").warning
-        << "Compaction failed for thread " << thread_id << ": " << summary_text.error().message;
+    log().warning << "Compaction failed for thread " << thread_id << ": " << summary_text.error().message;
     return;
   }
 
   if (summary_text.value().size() > kMaxSummaryBytes) {
-    logging::getLogger("ThreadCompactionService").warning
-        << "Compaction summary too large for thread " << thread_id;
+    log().warning << "Compaction summary too large for thread " << thread_id;
     return;
   }
 
@@ -120,8 +119,7 @@ void ThreadCompactionService::RunCompaction(const std::string& thread_id) {
   summary.updated_at = util::NowUnixMs();
 
   if (auto saved = store_.SetThreadMemory(thread_id, summary); !saved) {
-    logging::getLogger("ThreadCompactionService").warning
-        << "Failed to persist summary for thread " << thread_id << ": " << saved.error().message;
+    log().warning << "Failed to persist summary for thread " << thread_id << ": " << saved.error().message;
   }
 }
 

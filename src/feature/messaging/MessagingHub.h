@@ -3,6 +3,7 @@
 #include "base/data/Config.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
+#include "common/Module.h"
 #include "feature/messaging/ContactActionDispatcher.h"
 #include "feature/messaging/DirectoryShadowCache.h"
 #include "feature/messaging/InboxController.h"
@@ -31,7 +32,7 @@ class RelayDirectoryKemKeyResolver;
 class RelayDirectorySigningKeyResolver;
 class SqlitePskSessionStore;
 
-class MessagingHub {
+class MessagingHub : public Module {
 public:
   static MessagingHub& Instance();
 
@@ -75,7 +76,7 @@ public:
   void SetOnMessagingReady(std::function<void()> callback);
 
 private:
-  MessagingHub() = default;
+  MessagingHub();
 
   void InstallServiceClients(const AppConfig& config);
   void UpdateServiceClients(const AppConfig& config);

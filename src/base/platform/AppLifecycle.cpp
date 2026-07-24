@@ -5,7 +5,6 @@
 #include "base/platform/Platform.h"
 
 #include <atomic>
-#include <cstdio>
 #include <vector>
 
 namespace pbr {
@@ -46,11 +45,8 @@ bool AppLifecycle::IsUserAttentive() {
 void AppLifecycle::SetDesktopInputFocused(bool focused) {
   const bool prev = g_desktop_input_focused.exchange(focused, std::memory_order_relaxed);
   if (prev != focused) {
-    logging::getLogger("AppLifecycle").warning
+    logging::getLogger("AppLifecycle").info
         << "Desktop input focus=" << (focused ? "gained" : "lost");
-    std::fprintf(stderr, "[Frame][AppLifecycle] Desktop input focus=%s\n",
-                 focused ? "gained" : "lost");
-    std::fflush(stderr);
   }
 }
 

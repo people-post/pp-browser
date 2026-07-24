@@ -6,14 +6,14 @@
 
 namespace pbr {
 
-ToolRegistry ToolRegistry::BuildFromConfig(const AppConfig& config, McpClient* promoted_mcp,
-                                           const std::vector<McpClient*>& custom_mcps,
-                                           const std::vector<std::string>& custom_prefixes) {
-  ToolRegistry registry;
-  registry.Register(WebSearchTool::Make(config.search));
+void ToolRegistry::BuildFromConfig(const AppConfig& config, McpClient* promoted_mcp,
+                                   const std::vector<McpClient*>& custom_mcps,
+                                   const std::vector<std::string>& custom_prefixes) {
+  Clear();
+  Register(WebSearchTool::Make(config.search));
 
   if (promoted_mcp && promoted_mcp->IsRunning()) {
-    McpToolAdapter::RegisterTools(registry, *promoted_mcp, {});
+    McpToolAdapter::RegisterTools(*this, *promoted_mcp, {});
   }
 
   for (size_t i = 0; i < custom_mcps.size(); ++i) {
@@ -24,10 +24,8 @@ ToolRegistry ToolRegistry::BuildFromConfig(const AppConfig& config, McpClient* p
     const std::string prefix = i < custom_prefixes.size() && !custom_prefixes[i].empty()
                                    ? custom_prefixes[i] + "__"
                                    : "";
-    McpToolAdapter::RegisterTools(registry, *client, {.tool_prefix = prefix});
+    McpToolAdapter::RegisterTools(*this, *client, {.tool_prefix = prefix});
   }
-
-  return registry;
 }
 
 } // namespace pbr

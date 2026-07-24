@@ -1,14 +1,17 @@
 #pragma once
 
 #include "base/platform/ILocalNotifier.h"
+#include "common/Module.h"
 
 #include <functional>
 #include <string>
 
 namespace pbr {
 
-class DesktopLocalNotifier final : public ILocalNotifier {
+class DesktopLocalNotifier final : public ILocalNotifier, public Module {
 public:
+  DesktopLocalNotifier();
+
   void NotifyIncoming(const std::string& title, const std::string& body,
                       const std::string& thread_id = {}) override;
   void ClearForThread(const std::string& thread_id) override;

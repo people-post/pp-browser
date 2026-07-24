@@ -1,30 +1,12 @@
 #include "common/SequencedTaskRunner.h"
 
-#include "common/Logger.h"
-
 #include <exception>
 
 namespace pbr {
-namespace {
-
-void RunTaskSafely(std::function<void()>& task) {
-  if (!task) {
-    return;
-  }
-  try {
-    task();
-  } catch (const std::exception& e) {
-    logging::getLogger("SequencedTaskRunner").error
-        << "Uncaught exception in task: " << e.what();
-  } catch (...) {
-    logging::getLogger("SequencedTaskRunner").error << "Uncaught unknown exception in task";
-  }
-}
-
-} // namespace
 
 SequencedTaskRunner::SequencedTaskRunner(const bool uses_dedicated_thread)
     : uses_dedicated_thread_(uses_dedicated_thread) {
+  redirectLogger("SequencedTaskRunner");
   if (uses_dedicated_thread_) {
     thread_ = std::thread([this]() { IOThreadMain(); });
     {
@@ -38,6 +20,19 @@ SequencedTaskRunner::SequencedTaskRunner(const bool uses_dedicated_thread)
 
 SequencedTaskRunner::~SequencedTaskRunner() {
   Stop();
+}
+
+void SequencedTaskRunner::RunTaskSafely(std::function<void()>& task) {
+  if (!task) {
+    return;
+  }
+  try {
+    task();
+  } catch (const std::exception& e) {
+    log().error << "Uncaught exception in task: " << e.what();
+  } catch (...) {
+    log().error << "Uncaught unknown exception in task";
+  }
 }
 
 void SequencedTaskRunner::PostTask(std::function<void()> task) {

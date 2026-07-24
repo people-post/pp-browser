@@ -112,6 +112,8 @@ public:
 } // namespace
 
 void InstallPlatformLogSink() {
+  // Desktop: root ConsoleHandler (stderr) is installed in Logger.cpp.
+  // Mobile: add a platform handler (logcat / os_log + file).
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
   static bool installed = false;
   if (installed) {

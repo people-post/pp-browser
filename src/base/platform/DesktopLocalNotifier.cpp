@@ -5,9 +5,11 @@
 #include "base/platform/desktop/LocalNotifierImpl.h"
 #include "common/Logger.h"
 
-#include <cstdio>
-
 namespace pbr {
+
+DesktopLocalNotifier::DesktopLocalNotifier() {
+  redirectLogger("LocalNotifier");
+}
 
 void DesktopLocalNotifier::NotifyIncoming(const std::string& title, const std::string& body,
                                           const std::string& thread_id) {
@@ -26,16 +28,14 @@ void DesktopLocalNotifier::SetActivationHandler(
     std::function<void(std::string thread_id)> handler) {
   desktop::SetDesktopNotificationActivationHandler(
       [handler = std::move(handler)](const std::string& thread_id) {
+        // Named logger (same node as Module redirect) — safe from watch thread.
         if (!handler) {
           logging::getLogger("LocalNotifier").warning << "Activation ignored: no handler";
           return;
         }
         BrowserThread::PostTask(BrowserThreadId::UI, [handler, thread_id]() mutable {
-          logging::getLogger("LocalNotifier").warning
+          logging::getLogger("LocalNotifier").info
               << "Activation on UI thread thread=" << thread_id;
-          std::fprintf(stderr, "[Frame][LocalNotifier] Activation on UI thread thread=%s\n",
-                       thread_id.c_str());
-          std::fflush(stderr);
           handler(thread_id);
         });
       });

@@ -13,11 +13,12 @@
 #include "base/ai/conversation/ThreadContextPolicy.h"
 #include "base/ai/conversation/TurnCoordinator.h"
 #include "base/error/AppError.h"
-#include "common/Logger.h"
 #include "base/ai/mcp/McpClient.h"
 #include "base/ai/mcp/McpRuntime.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
+#include "common/Logger.h"
+#include "common/Module.h"
 #include "common/Utilities.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
@@ -55,7 +56,11 @@ void AppendSynthesisReminder(std::vector<ChatMessage>& messages, const TurnPlan&
 
 } // namespace
 
-struct AgentSession::Impl {
+struct AgentSession::Impl : public Module {
+  Impl() { redirectLogger("AgentSession"); }
+
+  logging::Logger& Log() const { return log(); }
+
   std::mutex event_mutex;
   std::vector<AgentEvent> pending_events;
 
@@ -227,7 +232,7 @@ void AgentSession::ValidateAndFinishAssistant(const std::shared_ptr<Impl>& state
   }
 
   if (!parsed.ok) {
-    logging::getLogger("AgentSession").warning << "Assistant output parse failed: " << parsed.error;
+    state->Log().warning << "Assistant output parse failed: " << parsed.error;
   }
 
   FinishAssistantOutput(state, assistant_raw, finish_reason);
@@ -321,7 +326,7 @@ void AgentSession::HandleSynthesisResponse(const std::shared_ptr<Impl>& state,
 
   if (response.content) {
     if (auto embedded = StructuredTextParser::ExtractEmbeddedToolCalls(*response.content)) {
-      logging::getLogger("AgentSession").warning << "Synthesis returned embedded tool blocks; extracting";
+      state->Log().warning << "Synthesis returned embedded tool blocks; extracting";
       std::vector<ToolCall> tool_calls;
       tool_calls.reserve(embedded->size());
       for (size_t i = 0; i < embedded->size(); ++i) {
@@ -558,17 +563,17 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
       custom_prefixes.push_back(entry.id);
     }
 
-    state->tools = ToolRegistry::BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
-                                                 custom_prefixes);
+    state->tools.BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
+                                 custom_prefixes);
     if (state->tool_registration_hook) {
       state->tool_registration_hook(state->tools);
     }
     state->configured = true;
     RefreshCompactionService(state);
 
-    logging::getLogger("AgentSession").info << "Agent configured with " << state->tools.Tools().size() << " tool(s)";
+    state->Log().info << "Agent configured with " << state->tools.Tools().size() << " tool(s)";
     for (const ToolDescriptor& tool : state->tools.Tools()) {
-      logging::getLogger("AgentSession").info << "  - " << tool.definition.name;
+      state->Log().info << "  - " << tool.definition.name;
     }
   } catch (const std::exception& e) {
     state->configured = false;
@@ -576,7 +581,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     state->llm.reset();
     state->tools.Clear();
     RefreshCompactionService(state);
-    logging::getLogger("AgentSession").error << "Agent configure failed: " << e.what();
+    state->Log().error << "Agent configure failed: " << e.what();
     PushError(state, std::string("Agent configure failed: ") + e.what());
     BrowserThread::ResumeIO();
     return;
@@ -586,7 +591,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     state->llm.reset();
     state->tools.Clear();
     RefreshCompactionService(state);
-    logging::getLogger("AgentSession").error << "Agent configure failed: unknown exception";
+    state->Log().error << "Agent configure failed: unknown exception";
     PushError(state, "Agent configure failed");
     BrowserThread::ResumeIO();
     return;

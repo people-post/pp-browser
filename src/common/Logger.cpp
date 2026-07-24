@@ -39,7 +39,10 @@ void ConsoleHandler::emit(Level level, const std::string &loggerName,
   if (level < level_) {
     return;
   }
-  std::cout << message << std::endl;
+  // stderr: unbuffered / line-buffered like typical CLI diagnostics; stdout can
+  // lag or disappear under GUI toolkits. Matches mobile PlatformLogSink.
+  (void)loggerName;
+  std::cerr << message << std::endl;
 }
 
 FileHandler::FileHandler(const std::string &filename) : filename_(filename) {

@@ -6,8 +6,7 @@
 
 namespace {
 
-pbr::ToolRegistry MakeRegistry() {
-  pbr::ToolRegistry registry;
+void FillEchoRegistry(pbr::ToolRegistry& registry) {
   registry.Register(pbr::ToolDescriptor{
       .definition =
           pbr::ToolDefinition{
@@ -19,7 +18,6 @@ pbr::ToolRegistry MakeRegistry() {
         return args.dump();
       },
   });
-  return registry;
 }
 
 } // namespace
@@ -28,7 +26,8 @@ TEST(TurnExecutorTest, ExecutesToolAndBuildsScratchMessages) {
   pbr::TurnPlan plan;
   plan.tools.push_back({.name = "echo_tool", .arguments = {{"query", "hello"}}});
 
-  pbr::ToolRegistry registry = MakeRegistry();
+  pbr::ToolRegistry registry;
+  FillEchoRegistry(registry);
   const pbr::TurnExecutionResult result = pbr::TurnExecutor::Execute(plan, registry);
   EXPECT_TRUE(result.ok);
   ASSERT_EQ(result.tools_executed.size(), 1u);

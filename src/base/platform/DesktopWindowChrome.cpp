@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -299,11 +298,8 @@ void DesktopWindowChrome::RaiseAndFocus() {
   // SDL Wayland RaiseWindow consumes XDG_ACTIVATION_TOKEN; GNOME Notifications
   // emit ActivationToken (startup id / xdg-activation) before ActionInvoked.
   const std::string token = desktop::TakePendingDesktopActivationToken();
-  logging::getLogger("LocalNotifier").warning
+  logging::getLogger("LocalNotifier").info
       << "RaiseAndFocus token=" << (token.empty() ? "none" : "yes");
-  std::fprintf(stderr, "[Frame][LocalNotifier] RaiseAndFocus token=%s\n",
-               token.empty() ? "none" : "yes");
-  std::fflush(stderr);
 
   if (!token.empty()) {
     SDL_setenv_unsafe("XDG_ACTIVATION_TOKEN", token.c_str(), 1);

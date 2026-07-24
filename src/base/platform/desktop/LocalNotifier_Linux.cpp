@@ -8,7 +8,6 @@
 #include <dbus/dbus.h>
 
 #include <atomic>
-#include <cstdio>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -49,10 +48,8 @@ bool g_init_started = false;
 bool g_init_ok = false;
 bool g_logged_fail = false;
 
-void Diag(const std::string& message) {
-  logging::getLogger("LocalNotifier").warning << message;
-  std::fprintf(stderr, "[Frame][LocalNotifier] %s\n", message.c_str());
-  std::fflush(stderr);
+logging::Logger Log() {
+  return logging::getLogger("LocalNotifier");
 }
 
 void LogFailOnce(const char* detail) {
@@ -60,7 +57,7 @@ void LogFailOnce(const char* detail) {
     return;
   }
   g_logged_fail = true;
-  Diag(std::string("Desktop notifications unavailable: ") + (detail ? detail : "unknown"));
+  Log().warning << "Desktop notifications unavailable: " << (detail ? detail : "unknown");
 }
 
 void CloseNotificationId(DBusConnection* conn, dbus_uint32_t id) {
@@ -162,7 +159,7 @@ DBusHandlerResult FilterMessage(DBusConnection* /*conn*/, DBusMessage* message, 
                               DBUS_TYPE_INVALID) &&
         token && *token) {
       SetPendingDesktopActivationToken(token);
-      Diag(std::string("ActivationToken id=") + std::to_string(id));
+      Log().info << "ActivationToken id=" << id;
     } else if (dbus_error_is_set(&err)) {
       dbus_error_free(&err);
     }
@@ -198,7 +195,7 @@ DBusHandlerResult FilterMessage(DBusConnection* /*conn*/, DBusMessage* message, 
   dbus_error_init(&err);
   if (!dbus_message_get_args(message, &err, DBUS_TYPE_UINT32, &id, DBUS_TYPE_STRING, &action,
                              DBUS_TYPE_INVALID)) {
-    Diag("ActionInvoked parse failed");
+    Log().warning << "ActionInvoked parse failed";
     if (dbus_error_is_set(&err)) {
       dbus_error_free(&err);
     }
@@ -214,8 +211,8 @@ DBusHandlerResult FilterMessage(DBusConnection* /*conn*/, DBusMessage* message, 
     }
     g_pending_activations.push_back(thread_id);
   }
-  Diag(std::string("ActionInvoked id=") + std::to_string(id) + " action=" +
-       (action ? action : "") + " thread=" + thread_id);
+  Log().info << "ActionInvoked id=" << id << " action=" << (action ? action : "")
+             << " thread=" << thread_id;
   return DBUS_HANDLER_RESULT_HANDLED;
 }
 
@@ -258,7 +255,7 @@ void SendNotify(DBusConnection* conn, const PendingPost& post) {
   DBusMessageIter actions;
   if (!dbus_message_iter_open_container(&args, DBUS_TYPE_ARRAY, "s", &actions)) {
     dbus_message_unref(msg);
-    Diag("Post failed: open actions");
+    Log().warning << "Post failed: open actions";
     return;
   }
   const char* default_key = "default";
@@ -267,14 +264,14 @@ void SendNotify(DBusConnection* conn, const PendingPost& post) {
       !dbus_message_iter_append_basic(&actions, DBUS_TYPE_STRING, &default_label) ||
       !dbus_message_iter_close_container(&args, &actions)) {
     dbus_message_unref(msg);
-    Diag("Post failed: build actions");
+    Log().warning << "Post failed: build actions";
     return;
   }
 
   DBusMessageIter hints;
   if (!dbus_message_iter_open_container(&args, DBUS_TYPE_ARRAY, "{sv}", &hints)) {
     dbus_message_unref(msg);
-    Diag("Post failed: open hints");
+    Log().warning << "Post failed: open hints";
     return;
   }
   const uint8_t urgency = 1;
@@ -295,7 +292,7 @@ void SendNotify(DBusConnection* conn, const PendingPost& post) {
   DBusMessage* reply = dbus_connection_send_with_reply_and_block(conn, msg, 5000, &err);
   dbus_message_unref(msg);
   if (!reply || dbus_error_is_set(&err)) {
-    Diag(std::string("Notify call failed: ") + (err.message ? err.message : "unknown"));
+    Log().warning << "Notify call failed: " << (err.message ? err.message : "unknown");
     if (dbus_error_is_set(&err)) {
       dbus_error_free(&err);
     }
@@ -307,7 +304,7 @@ void SendNotify(DBusConnection* conn, const PendingPost& post) {
 
   dbus_uint32_t new_id = 0;
   if (!dbus_message_get_args(reply, &err, DBUS_TYPE_UINT32, &new_id, DBUS_TYPE_INVALID)) {
-    Diag("Notify reply parse failed");
+    Log().warning << "Notify reply parse failed";
     if (dbus_error_is_set(&err)) {
       dbus_error_free(&err);
     }
@@ -325,8 +322,7 @@ void SendNotify(DBusConnection* conn, const PendingPost& post) {
     g_thread_to_id[post.thread_id] = new_id;
     g_id_to_thread[new_id] = post.thread_id;
   }
-  Diag(std::string("Posted notification id=") + std::to_string(new_id) +
-       " thread=" + post.thread_id);
+  Log().info << "Posted notification id=" << new_id << " thread=" << post.thread_id;
 }
 
 bool InitConnection() {
@@ -392,7 +388,7 @@ bool InitConnection() {
     g_conn = conn;
     g_init_ok = true;
   }
-  Diag("Freedesktop notification watcher started");
+  Log().info << "Freedesktop notification watcher started";
   return true;
 }
 

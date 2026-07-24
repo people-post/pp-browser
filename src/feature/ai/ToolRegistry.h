@@ -3,6 +3,7 @@
 #include "base/ai/LlmClient.h"
 #include "base/data/Config.h"
 #include "common/Error.h"
+#include "common/Module.h"
 
 #include <functional>
 #include <nlohmann/json.hpp>
@@ -18,7 +19,7 @@ struct ToolDescriptor {
   std::function<Roe<std::string>(const nlohmann::json& arguments)> execute;
 };
 
-class ToolRegistry {
+class ToolRegistry : public Module {
 public:
   ToolRegistry();
 
@@ -31,9 +32,9 @@ public:
 
   Roe<std::string> Execute(const std::string& name, const nlohmann::json& arguments) const;
 
-  static ToolRegistry BuildFromConfig(const AppConfig& config, McpClient* promoted_mcp,
-                                      const std::vector<McpClient*>& custom_mcps = {},
-                                      const std::vector<std::string>& custom_prefixes = {});
+  void BuildFromConfig(const AppConfig& config, McpClient* promoted_mcp,
+                       const std::vector<McpClient*>& custom_mcps = {},
+                       const std::vector<std::string>& custom_prefixes = {});
 
 private:
   std::vector<ToolDescriptor> tools_;

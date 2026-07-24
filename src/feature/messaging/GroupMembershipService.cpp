@@ -15,7 +15,9 @@ namespace pbr {
 GroupMembershipService::GroupMembershipService(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                                GroupRosterStore& roster, GroupInviteGate& invite_gate,
                                                P2pMessagingService& p2p)
-    : store_(store), contacts_(contacts), identity_(identity), roster_(roster), invite_gate_(invite_gate), p2p_(p2p) {}
+    : store_(store), contacts_(contacts), identity_(identity), roster_(roster), invite_gate_(invite_gate), p2p_(p2p) {
+  redirectLogger("GroupMembershipService");
+}
 
 void GroupMembershipService::SetInboundPolicy(const GroupInvitePolicy policy) {
   invite_gate_.SetInboundPolicy(policy);

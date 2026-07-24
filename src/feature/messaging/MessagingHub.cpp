@@ -15,7 +15,6 @@
 #include "base/people/ContactTypes.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
-#include "common/Logger.h"
 #include "common/StartupTiming.h"
 
 #include <algorithm>
@@ -48,6 +47,10 @@ PeerSessionConfig SessionConfigFromApp(const AppConfig& config) {
 MessagingHub& MessagingHub::Instance() {
   static MessagingHub hub;
   return hub;
+}
+
+MessagingHub::MessagingHub() {
+  redirectLogger("MessagingHub");
 }
 
 void MessagingHub::WireRelayAuthSigner() {
@@ -90,7 +93,7 @@ void MessagingHub::UpdateServiceClients(const AppConfig& config) {
     http_relay_url_.clear();
     relay_ = nullptr;
     push_devices_ = nullptr;
-    logging::getLogger("MessagingHub").warning << "relay.base_url is empty; relay client disabled";
+    log().warning << "relay.base_url is empty; relay client disabled";
   }
 
   if (!directory_url.empty()) {
@@ -103,7 +106,7 @@ void MessagingHub::UpdateServiceClients(const AppConfig& config) {
     http_directory_.reset();
     http_directory_url_.clear();
     directory_ = nullptr;
-    logging::getLogger("MessagingHub").warning << "directory.base_url is empty; directory client disabled";
+    log().warning << "directory.base_url is empty; directory client disabled";
   }
 
   if (!registration_url.empty()) {
@@ -116,8 +119,7 @@ void MessagingHub::UpdateServiceClients(const AppConfig& config) {
     http_registration_.reset();
     http_registration_url_.clear();
     registration_ = nullptr;
-    logging::getLogger("MessagingHub").warning
-        << "registration.base_url is empty; registration client disabled";
+    log().warning << "registration.base_url is empty; registration client disabled";
   }
 }
 
@@ -254,7 +256,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
   WireRelayAuthSigner();
 
   if (auto libp2p = StartLibp2p(config_); !libp2p) {
-    logging::getLogger("MessagingHub").warning << "libp2p host start failed: " << libp2p.error().message;
+    log().warning << "libp2p host start failed: " << libp2p.error().message;
   }
 
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,

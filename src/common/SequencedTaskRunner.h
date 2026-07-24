@@ -6,10 +6,12 @@
 #include <mutex>
 #include <thread>
 
+#include "common/Module.h"
+
 namespace pbr {
 
 // FIFO task queue. IO runner uses a dedicated thread; UI runner drains on the main thread.
-class SequencedTaskRunner {
+class SequencedTaskRunner : public Module {
 public:
   explicit SequencedTaskRunner(bool uses_dedicated_thread);
   ~SequencedTaskRunner();
@@ -29,6 +31,7 @@ private:
   void IOThreadMain();
   void EnqueueLocked(std::function<void()> task);
   bool DequeueOne(std::function<void()>* out);
+  void RunTaskSafely(std::function<void()>& task);
 
   const bool uses_dedicated_thread_;
   std::thread thread_;

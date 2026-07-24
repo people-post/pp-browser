@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/messaging/IThreadStore.h"
+#include "common/Module.h"
 
 #include <atomic>
 #include <memory>
@@ -13,7 +14,7 @@ namespace pbr {
 class LlmClient;
 
 /** Async AI transcript compaction (D040). */
-class ThreadCompactionService {
+class ThreadCompactionService : public Module {
 public:
   ThreadCompactionService(IThreadStore& store, LlmClient* llm);
 
