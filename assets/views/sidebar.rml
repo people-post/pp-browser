@@ -13,8 +13,9 @@
          data-class-sidebar-session--ai="session.kind == 'ai'"
          data-class-sidebar-session--private="session.kind == 'private'"
          data-class-sidebar-session--public="session.kind == 'public'"
-         data-class-sidebar-session--group="session.kind == 'group'">
-      <div class="sidebar-session-body" data-event-click="select_thread(session.id)">
+         data-class-sidebar-session--group="session.kind == 'group'"
+         data-event-click="select_thread(session.id)">
+      <div class="sidebar-session-body">
         <div class="sidebar-session-icon" data-if="session.kind == 'ai'">
           <svg src="../icons/sparkle.svg" width="14" height="14" crop-to-content="true"></svg>
         </div>

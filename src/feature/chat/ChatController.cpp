@@ -611,7 +611,8 @@ void ChatController::SelectThreadCallback(Rml::DataModelHandle /*model*/, Rml::E
   Instance().OnSelectThread(std::string(args[0].Get<Rml::String>().c_str()));
 }
 
-void ChatController::CloseThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/, const Rml::VariantList& args) {
+void ChatController::CloseThreadCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev, const Rml::VariantList& args) {
+  ev.StopPropagation();
   if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
     return;
   }
