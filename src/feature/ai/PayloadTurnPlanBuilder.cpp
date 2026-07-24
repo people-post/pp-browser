@@ -1,32 +1,15 @@
 #include "feature/ai/PayloadTurnPlanBuilder.h"
 
-#include <nlohmann/json.hpp>
+#include "common/Utilities.h"
 
-#include <algorithm>
-#include <cctype>
+#include <nlohmann/json.hpp>
 
 namespace pbr {
 
 namespace {
 
-std::string Trim(const std::string& text) {
-  const auto start = std::find_if_not(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); });
-  const auto end = std::find_if_not(text.rbegin(), text.rend(), [](unsigned char c) { return std::isspace(c); }).base();
-  if (start >= end) {
-    return {};
-  }
-  return std::string(start, end);
-}
-
 bool Contains(const std::string& haystack, const std::string& needle) {
   return haystack.find(needle) != std::string::npos;
-}
-
-std::string Lower(std::string text) {
-  for (char& c : text) {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
-  return text;
 }
 
 std::string JsonStringOrDefault(const nlohmann::json& json, const char* key,
@@ -45,7 +28,7 @@ bool IsMcpArticleFeedToolName(const std::string& tool_name) {
   if (tool_name == "blog_articles") {
     return true;
   }
-  const std::string lower = Lower(tool_name);
+  const std::string lower = util::ToLowerAscii(tool_name);
   return lower.find("article") != std::string::npos || lower.find("feed") != std::string::npos;
 }
 
@@ -74,7 +57,7 @@ std::optional<TurnPlan> TryBuildPlanFromPayload(const std::string& user_text, co
 
   TurnPlan plan;
   plan.source = TurnPlanSource::Payload;
-  plan.user_request = Trim(user_text);
+  plan.user_request = util::Trim(user_text);
   if (plan.user_request.empty()) {
     plan.user_request = payload;
   }

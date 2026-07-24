@@ -1,4 +1,5 @@
 #include "feature/chat/ChatController.h"
+#include "feature/chat/ChatDataModel.h"
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/ui/BadgeAggregator.h"
 #include "base/i18n/LocalizationService.h"
@@ -15,8 +16,10 @@
 #include "base/ai/WorkingSetPolicy.h"
 #include "base/ai/conversation/Conversation.h"
 #include "base/platform/IAssetLocator.h"
+#include "base/ui/ContextMenuHost.h"
 #include "base/ui/InputCoordinator.h"
 #include "base/ui/ChatFormHelper.h"
+#include "base/ui/RmlVariantHelpers.h"
 #include "feature/chat/CalendarHelper.h"
 #include "feature/ui/ChatSessionActions.h"
 #include "feature/chat/ChatWidgetStateBuilder.h"
@@ -60,12 +63,7 @@
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/SystemInterface.h>
 
-#include <nlohmann/json.hpp>
-
-#include <algorithm>
-#include <cctype>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -95,71 +93,8 @@ std::string ToolActivityLabel(const std::string& tool_name, const std::string& s
   return tool_name;
 }
 
-std::string Trim(const std::string& text) {
-  const auto start = std::find_if_not(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); });
-  const auto end = std::find_if_not(text.rbegin(), text.rend(), [](unsigned char c) { return std::isspace(c); }).base();
-  if (start >= end) {
-    return {};
-  }
-  return std::string(start, end);
-}
-
-std::string ToLower(std::string text) {
-  for (char& c : text) {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
-  return text;
-}
-
-std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index) {
-  if (args.size() <= index) {
-    return std::nullopt;
-  }
-  const Rml::Variant& value = args[index];
-  switch (value.GetType()) {
-  case Rml::Variant::INT:
-    return value.Get<int>();
-  case Rml::Variant::INT64:
-    return static_cast<int>(value.Get<int64_t>());
-  case Rml::Variant::FLOAT:
-    return static_cast<int>(value.Get<float>());
-  case Rml::Variant::DOUBLE:
-    return static_cast<int>(value.Get<double>());
-  case Rml::Variant::STRING:
-    try {
-      return std::stoi(std::string(value.Get<Rml::String>().c_str()));
-    } catch (...) {
-      return std::nullopt;
-    }
-  default:
-    return std::nullopt;
-  }
-}
-
-Rml::String UserMessageRml(const std::string& text) {
-  const std::string open_tag = ApplyLangAttribute(R"(<div class="bubble bubble-user")", text);
-  return Rml::String((open_tag + R"( selectable="text"><p class="bubble-text">)" + StructuredTextParser::EscapeText(text) +
-                      "</p></div>")
-                         .c_str());
-}
-
-Rml::String AssistantBubbleRml(const std::string& rml) {
-  return Rml::String(rml.c_str());
-}
-
-Rml::String ErrorMessageRml(const std::string& message) {
-  return Rml::String(("<p class=\"error\">" + StructuredTextParser::EscapeText(message) + "</p>").c_str());
-}
-
-std::string TruncatePreview(const std::string& text, size_t max_len = 48) {
-  if (text.size() <= max_len) {
-    return text;
-  }
-  return text.substr(0, max_len - 3) + "...";
-}
-
 std::string MockAssistantRespond(const std::string& query) {
-  const std::string lower = ToLower(query);
+  const std::string lower = util::ToLowerAscii(query);
 
   if (lower.find("find someone") != std::string::npos || lower.find("search people") != std::string::npos) {
     return R"JSON({
@@ -272,86 +207,6 @@ std::string MockAssistantRespond(const std::string& query) {
       { "type": "paragraph", "text": "Try help, list, code, button, form, calendar, card, or poll." }
     ]
   })JSON";
-}
-
-void DirtyChatChrome() {
-  DataModelHost::Instance().Dirty("chat", "draft");
-  DataModelHost::Instance().Dirty("chat", "status");
-  DataModelHost::Instance().Dirty("chat", "loading");
-  DataModelHost::Instance().Dirty("chat", "has_turns");
-}
-
-void DirtyChatTurns() {
-  DataModelHost::Instance().Dirty("chat", "turns");
-  DataModelHost::Instance().Dirty("chat", "messages");
-}
-
-void DirtyChatHeader() {
-  DataModelHost::Instance().Dirty("chat", "thread_title");
-  DataModelHost::Instance().Dirty("chat", "thread_subtitle");
-  DataModelHost::Instance().Dirty("chat", "peer_link_status");
-  DataModelHost::Instance().Dirty("chat", "peer_link_banner");
-  DataModelHost::Instance().Dirty("chat", "show_peer_link");
-  DataModelHost::Instance().Dirty("chat", "show_peer_link_banner");
-  DataModelHost::Instance().Dirty("chat", "show_retry_peer_dial");
-  DataModelHost::Instance().Dirty("chat", "thread_encrypted");
-  DataModelHost::Instance().Dirty("chat", "thread_is_ai");
-  DataModelHost::Instance().Dirty("chat", "thread_is_private");
-  DataModelHost::Instance().Dirty("chat", "thread_is_public");
-  DataModelHost::Instance().Dirty("chat", "thread_is_group");
-  DataModelHost::Instance().Dirty("chat", "compose_disabled");
-  DataModelHost::Instance().Dirty("chat", "draft_placeholder");
-  DataModelHost::Instance().Dirty("chat", "show_thread_actions");
-  DataModelHost::Instance().Dirty("chat", "show_peer_sheet");
-  DataModelHost::Instance().Dirty("chat", "show_forget_memory");
-  DataModelHost::Instance().Dirty("chat", "show_sync_with_peer");
-  DataModelHost::Instance().Dirty("chat", "show_thread_menu");
-  DataModelHost::Instance().Dirty("chat", "show_gap_banner");
-  DataModelHost::Instance().Dirty("chat", "show_compromised_banner");
-  DataModelHost::Instance().Dirty("chat", "show_psk_setup_banner");
-  DataModelHost::Instance().Dirty("chat", "show_psk_import");
-  DataModelHost::Instance().Dirty("chat", "psk_has_key");
-  DataModelHost::Instance().Dirty("chat", "psk_verified");
-  DataModelHost::Instance().Dirty("chat", "psk_fingerprint");
-  DataModelHost::Instance().Dirty("chat", "psk_export_b64");
-  DataModelHost::Instance().Dirty("chat", "psk_import_text");
-  DataModelHost::Instance().Dirty("chat", "show_older_history_hint");
-  DataModelHost::Instance().Dirty("chat", "show_jump_to_latest");
-  DataModelHost::Instance().Dirty("chat", "jump_to_latest_label");
-}
-
-/** Sidebar / header visual type: ai | private | public | group */
-Rml::String SessionVisualKind(const Thread& thread) {
-  switch (thread.kind) {
-  case ThreadKind::Ai:
-    return "ai";
-  case ThreadKind::Group:
-    return "group";
-  case ThreadKind::Direct:
-    if (thread.channel == ThreadChannel::E2e) {
-      return "private";
-    }
-    if (thread.channel == ThreadChannel::E2ePublic) {
-      return "public";
-    }
-    return "public";
-  }
-  return "public";
-}
-
-void DirtyChat() {
-  DirtyChatChrome();
-  DirtyChatTurns();
-  DirtyChatHeader();
-}
-
-void DirtyShell() {
-  DataModelHost::Instance().Dirty("shell", "sessions");
-  DataModelHost::Instance().Dirty("shell", "working_set_active");
-  DataModelHost::Instance().Dirty("shell", "working_set_title");
-  DataModelHost::Instance().Dirty("shell", "working_set_subtitle");
-  DataModelHost::Instance().Dirty("shell", "working_set_rml");
-  DataModelHost::Instance().Dirty("shell", "working_set");
 }
 
 } // namespace
@@ -979,7 +834,7 @@ void ChatController::OnSendMessage() {
     return;
   }
 
-  const std::string text = Trim(chat_.draft.c_str());
+  const std::string text = util::Trim(chat_.draft.c_str());
   if (text.empty()) {
     return;
   }
@@ -1022,17 +877,7 @@ void ChatController::OnNewMessage() {
 }
 
 void ChatController::OnOpenNewSessionMenu(Rml::Event& ev) {
-  Rml::Element* target = ev.GetCurrentElement();
-  if (!target) {
-    target = ev.GetTargetElement();
-  }
-  Rml::Vector2i position{0, 0};
-  if (target) {
-    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
-    const Rml::Box& box = target->GetBox();
-    position.x = static_cast<int>(offset.x);
-    position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + 4.0f);
-  }
+  const Rml::Vector2i position = MenuPositionBelowEvent(ev);
 
   std::vector<ContextMenuAction> actions;
   actions.push_back({
@@ -1060,22 +905,8 @@ void ChatController::OnOpenNewSessionMenu(Rml::Event& ev) {
 }
 
 void ChatController::OnOpenThreadActionsMenu(Rml::Event& ev) {
-  Rml::Element* target = ev.GetCurrentElement();
-  if (!target) {
-    target = ev.GetTargetElement();
-  }
-  Rml::Vector2i position{0, 0};
-  if (target) {
-    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
-    const Rml::Box& box = target->GetBox();
-    const Rml::Vector2f size = box.GetSize(Rml::BoxArea::Border);
-    // Anchor near the right edge of the trigger so the menu stays in the header corner.
-    position.x = static_cast<int>(offset.x + size.x - 180.0f);
-    if (position.x < 0) {
-      position.x = static_cast<int>(offset.x);
-    }
-    position.y = static_cast<int>(offset.y + size.y + 4.0f);
-  }
+  // Anchor near the right edge of the trigger so the menu stays in the header corner.
+  const Rml::Vector2i position = MenuPositionBelowRightAlignedEvent(ev);
 
   std::vector<ContextMenuAction> actions;
   if (chat_.show_sync_with_peer && !chat_.sync_in_progress) {
@@ -1122,17 +953,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
     return;
   }
 
-  Rml::Element* target = ev.GetCurrentElement();
-  if (!target) {
-    target = ev.GetTargetElement();
-  }
-  Rml::Vector2i position{0, 0};
-  if (target) {
-    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
-    const Rml::Box& box = target->GetBox();
-    position.x = static_cast<int>(offset.x);
-    position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + 4.0f);
-  }
+  const Rml::Vector2i position = MenuPositionBelowEvent(ev);
 
   std::vector<ContextMenuAction> actions;
   if (thread->kind == ThreadKind::Direct) {
@@ -1409,7 +1230,7 @@ bool ChatController::EnsureHomeOutboundSession() {
 }
 
 void ChatController::SendUserText(const std::string& text, std::optional<std::string> user_payload) {
-  const std::string trimmed = Trim(text);
+  const std::string trimmed = util::Trim(text);
   if (trimmed.empty() || chat_.loading) {
     return;
   }

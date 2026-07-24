@@ -1,6 +1,7 @@
 #include "feature/ai/tools/WebSearchTool.h"
 
 #include "common/Logger.h"
+#include "common/Utilities.h"
 #include "base/net/CurlSsl.h"
 #include "base/platform/AppVersion.h"
 #include "base/platform/ProductBranding.h"
@@ -8,8 +9,6 @@
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
-#include <algorithm>
-#include <cctype>
 #include <cstring>
 #include <regex>
 #include <sstream>
@@ -42,28 +41,12 @@ std::vector<std::string> DefaultHeaders() {
   return {"User-Agent: " + std::string(kProductName) + "/" + AppVersionString() + " (web search tool)"};
 }
 
-std::string Trim(const std::string& text) {
-  const auto start = std::find_if_not(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); });
-  const auto end = std::find_if_not(text.rbegin(), text.rend(), [](unsigned char c) { return std::isspace(c); }).base();
-  if (start >= end) {
-    return {};
-  }
-  return std::string(start, end);
-}
-
-std::string Lower(std::string text) {
-  for (char& c : text) {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
-  return text;
-}
-
 bool Contains(const std::string& haystack, const std::string& needle) {
   return haystack.find(needle) != std::string::npos;
 }
 
 bool WantsNewsHeadlines(const std::string& user_message) {
-  const std::string text = Lower(user_message);
+  const std::string text = util::ToLowerAscii(user_message);
   if (text.empty()) {
     return false;
   }
@@ -100,21 +83,21 @@ std::string StripLeadingPhrases(std::string text) {
   while (!text.empty() && (text.back() == '?' || text.back() == '.' || text.back() == '!')) {
     text.pop_back();
   }
-  return Trim(text);
+  return util::Trim(text);
 }
 
 std::string NormalizeWebSearchQuery(const std::string& user_message) {
-  const std::string trimmed = Trim(user_message);
+  const std::string trimmed = util::Trim(user_message);
   if (trimmed.empty()) {
     return trimmed;
   }
 
   if (WantsNewsHeadlines(trimmed)) {
-    const std::string text_lower = Lower(trimmed);
+    const std::string text_lower = util::ToLowerAscii(trimmed);
     const std::string key = "about ";
     const size_t pos = text_lower.find(key);
     if (pos != std::string::npos) {
-      std::string topic = Trim(text_lower.substr(pos + key.size()));
+      std::string topic = util::Trim(text_lower.substr(pos + key.size()));
       if (!topic.empty()) {
         return topic + " news";
       }
@@ -122,7 +105,7 @@ std::string NormalizeWebSearchQuery(const std::string& user_message) {
     return "breaking news";
   }
 
-  std::string normalized = StripLeadingPhrases(Lower(trimmed));
+  std::string normalized = StripLeadingPhrases(util::ToLowerAscii(trimmed));
   if (normalized.empty()) {
     return trimmed;
   }

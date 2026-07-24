@@ -1,22 +1,14 @@
 #include "base/ai/TurnPlan.h"
 
+#include "common/Utilities.h"
+
 #include <algorithm>
-#include <cctype>
 
 namespace pbr {
 
 namespace {
 
 constexpr int kMaxPlannedTools = 4;
-
-std::string Trim(const std::string& text) {
-  const auto start = std::find_if_not(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); });
-  const auto end = std::find_if_not(text.rbegin(), text.rend(), [](unsigned char c) { return std::isspace(c); }).base();
-  if (start >= end) {
-    return {};
-  }
-  return std::string(start, end);
-}
 
 std::string JsonStringOrDefault(const nlohmann::json& json, const char* key,
                                 const std::string& default_value = {}) {
@@ -40,7 +32,7 @@ std::optional<nlohmann::json> ExtractJsonObject(const std::string& text) {
     }
     const size_t end = text.find("```", content_start);
     if (end != std::string::npos) {
-      const std::string fenced = Trim(text.substr(content_start, end - content_start));
+      const std::string fenced = util::Trim(text.substr(content_start, end - content_start));
       const nlohmann::json doc = nlohmann::json::parse(fenced, nullptr, false);
       if (!doc.is_discarded() && doc.is_object()) {
         return doc;
@@ -48,7 +40,7 @@ std::optional<nlohmann::json> ExtractJsonObject(const std::string& text) {
     }
   }
 
-  const std::string trimmed = Trim(text);
+  const std::string trimmed = util::Trim(text);
   const nlohmann::json bare = nlohmann::json::parse(trimmed, nullptr, false);
   if (!bare.is_discarded() && bare.is_object()) {
     return bare;

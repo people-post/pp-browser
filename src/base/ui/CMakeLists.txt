@@ -3,6 +3,7 @@ pp_browser_add_base_library(pp_base_ui
     ChatFormHelper.cpp
     ContextMenuHost.cpp
     InputCoordinator.cpp
+    RmlVariantHelpers.cpp
     Theme.cpp
     ViewCatalog.cpp
   PUBLIC_LIBS

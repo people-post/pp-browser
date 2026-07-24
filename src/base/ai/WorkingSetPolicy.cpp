@@ -1,23 +1,13 @@
 #include "base/ai/WorkingSetPolicy.h"
 
 #include "base/ai/StructuredTextParser.h"
+#include "common/Utilities.h"
 
-#include <algorithm>
-#include <cctype>
 #include <sstream>
 
 namespace pbr {
 
 namespace {
-
-std::string Trim(const std::string& text) {
-  const auto start = std::find_if_not(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); });
-  const auto end = std::find_if_not(text.rbegin(), text.rend(), [](unsigned char c) { return std::isspace(c); }).base();
-  if (start >= end) {
-    return {};
-  }
-  return std::string(start, end);
-}
 
 int CountLines(const std::string& text) {
   if (text.empty()) {
@@ -185,7 +175,7 @@ BlockEligibility EvaluateBlock(const nlohmann::json& block, const ResponseGoal g
 }
 
 ResponseGoal InferResponseGoalFromBlocksJson(const std::string& json) {
-  const nlohmann::json doc = nlohmann::json::parse(Trim(json), nullptr, false);
+  const nlohmann::json doc = nlohmann::json::parse(util::Trim(json), nullptr, false);
   if (doc.is_discarded() || !doc.is_object() || !doc.contains("blocks") || !doc["blocks"].is_array()) {
     return ResponseGoal::General;
   }

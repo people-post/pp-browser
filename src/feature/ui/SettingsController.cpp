@@ -46,9 +46,8 @@ Rml::Vector2i ChoiceRowMenuPosition(Rml::Event& ev) {
   if (!target) {
     target = ev.GetTargetElement();
   }
-  Rml::Vector2i position{0, 0};
   if (!target) {
-    return position;
+    return {0, 0};
   }
 
   Rml::Element* anchor = target;
@@ -61,16 +60,8 @@ Rml::Vector2i ChoiceRowMenuPosition(Rml::Event& ev) {
     }
   }
 
-  const Rml::Vector2f offset = anchor->GetAbsoluteOffset(Rml::BoxArea::Border);
-  const Rml::Vector2f size = anchor->GetBox().GetSize(Rml::BoxArea::Border);
   // Match .context-menu-panel min-width so the menu's right edge lines up with the value.
-  constexpr float kMenuMinWidthPx = 180.0f;
-  position.x = static_cast<int>(offset.x + size.x - kMenuMinWidthPx);
-  if (position.x < 0) {
-    position.x = static_cast<int>(offset.x);
-  }
-  position.y = static_cast<int>(offset.y + size.y + 4.0f);
-  return position;
+  return MenuPositionBelowRightAligned(anchor);
 }
 
 } // namespace

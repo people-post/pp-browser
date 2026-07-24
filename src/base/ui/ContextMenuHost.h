@@ -1,5 +1,6 @@
 #pragma once
 
+#include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/EventListener.h>
 #include <RmlUi/Core/Types.h>
 #include <RmlUi/Core/Vector2.h>
@@ -33,6 +34,17 @@ struct ContextMenuRequest {
   Rml::Element* target = nullptr;
   Rml::Context* context = nullptr;
 };
+
+/** Anchor a float menu just below an element (left-aligned). */
+Rml::Vector2i MenuPositionBelow(Rml::Element* element, float gap_px = 4.f);
+/** Anchor a float menu below an element, right-aligned to ~menu_min_width_px. */
+Rml::Vector2i MenuPositionBelowRightAligned(Rml::Element* element, float menu_min_width_px = 180.f,
+                                            float gap_px = 4.f);
+/** Resolve current/target element from an event, then MenuPositionBelow. */
+Rml::Vector2i MenuPositionBelowEvent(Rml::Event& ev, float gap_px = 4.f);
+/** Resolve current/target element from an event, then MenuPositionBelowRightAligned. */
+Rml::Vector2i MenuPositionBelowRightAlignedEvent(Rml::Event& ev, float menu_min_width_px = 180.f,
+                                                 float gap_px = 4.f);
 
 class ContextMenuHost : public Rml::EventListener {
 public:

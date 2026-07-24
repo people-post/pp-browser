@@ -680,17 +680,7 @@ bool ContactsController::FlushSelectedContact() {
 }
 
 void ContactsController::OnAddContactMenu(Rml::Event& ev) {
-  Rml::Element* target = ev.GetCurrentElement();
-  if (!target) {
-    target = ev.GetTargetElement();
-  }
-  Rml::Vector2i position{0, 0};
-  if (target) {
-    const Rml::Vector2f offset = target->GetAbsoluteOffset(Rml::BoxArea::Border);
-    const Rml::Box& box = target->GetBox();
-    position.x = static_cast<int>(offset.x);
-    position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + 4.0f);
-  }
+  const Rml::Vector2i position = MenuPositionBelowEvent(ev);
 
   std::vector<ContextMenuAction> actions;
   actions.push_back({

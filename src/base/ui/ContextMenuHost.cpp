@@ -20,6 +20,53 @@ namespace pbr {
 
 namespace {
 
+Rml::Element* EventAnchorElement(Rml::Event& ev) {
+  Rml::Element* target = ev.GetCurrentElement();
+  if (!target) {
+    target = ev.GetTargetElement();
+  }
+  return target;
+}
+
+} // namespace
+
+Rml::Vector2i MenuPositionBelow(Rml::Element* element, float gap_px) {
+  Rml::Vector2i position{0, 0};
+  if (!element) {
+    return position;
+  }
+  const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+  const Rml::Box& box = element->GetBox();
+  position.x = static_cast<int>(offset.x);
+  position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + gap_px);
+  return position;
+}
+
+Rml::Vector2i MenuPositionBelowRightAligned(Rml::Element* element, float menu_min_width_px, float gap_px) {
+  Rml::Vector2i position{0, 0};
+  if (!element) {
+    return position;
+  }
+  const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+  const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+  position.x = static_cast<int>(offset.x + size.x - menu_min_width_px);
+  if (position.x < 0) {
+    position.x = static_cast<int>(offset.x);
+  }
+  position.y = static_cast<int>(offset.y + size.y + gap_px);
+  return position;
+}
+
+Rml::Vector2i MenuPositionBelowEvent(Rml::Event& ev, float gap_px) {
+  return MenuPositionBelow(EventAnchorElement(ev), gap_px);
+}
+
+Rml::Vector2i MenuPositionBelowRightAlignedEvent(Rml::Event& ev, float menu_min_width_px, float gap_px) {
+  return MenuPositionBelowRightAligned(EventAnchorElement(ev), menu_min_width_px, gap_px);
+}
+
+namespace {
+
 constexpr float kViewportMarginPx = 8.f;
 constexpr float kActionSheetInsetDp = 12.f;
 constexpr float kActionSheetBottomDp = 20.f;

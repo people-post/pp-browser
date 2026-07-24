@@ -5,6 +5,7 @@
 #include "base/platform/DesktopWindowChrome.h"
 #include "base/platform/PlatformNavigation.h"
 #include "base/ui/ContextMenuHost.h"
+#include "base/ui/RmlVariantHelpers.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/RmlMount.h"
@@ -38,25 +39,6 @@
 namespace pbr {
 
 namespace {
-
-std::optional<int> EventArgAsInt(const Rml::VariantList& args, size_t index = 0) {
-  if (args.size() <= index) {
-    return std::nullopt;
-  }
-  const Rml::Variant& value = args[index];
-  switch (value.GetType()) {
-  case Rml::Variant::INT:
-    return value.Get<int>();
-  case Rml::Variant::INT64:
-    return static_cast<int>(value.Get<int64_t>());
-  case Rml::Variant::FLOAT:
-    return static_cast<int>(value.Get<float>());
-  case Rml::Variant::DOUBLE:
-    return static_cast<int>(value.Get<double>());
-  default:
-    return std::nullopt;
-  }
-}
 
 NavTab NavTabFromString(const Rml::String& value) {
   if (value == "contacts") {
