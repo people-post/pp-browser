@@ -67,11 +67,95 @@ TEST(E2eIngestClassifierTest, SeqConflictMarksCompromised) {
   input.sync_state = DefaultPeerSyncState();
   input.sync_state.contiguous_peer_seq = 2;
   input.existing_message_id_at_seq = "msg-old";
+  input.strict_mode = true;
 
   ReplayWindow window(32);
   const IngestClassifierResult result = E2eIngestClassifier::Classify(input, window);
   EXPECT_EQ(result.decision, IngestDecision::SoftCompromised);
   EXPECT_EQ(result.sync_state.phase, PeerSyncPhase::Compromised);
+}
+
+TEST(E2eIngestClassifierTest, RelaxedSeqConflictKeepsFirstSeen) {
+  using namespace pbr;
+
+  IngestClassifierInput input;
+  input.sender_seq = 2;
+  input.session_epoch = 1;
+  input.message_id = "msg-new";
+  input.chat_target_epoch = 1;
+  input.sync_state = DefaultPeerSyncState();
+  input.sync_state.contiguous_peer_seq = 2;
+  input.existing_message_id_at_seq = "msg-old";
+  input.strict_mode = false;
+
+  ReplayWindow window(32);
+  const IngestClassifierResult result = E2eIngestClassifier::Classify(input, window);
+  EXPECT_EQ(result.decision, IngestDecision::SilentDiscard);
+  EXPECT_NE(result.sync_state.phase, PeerSyncPhase::Compromised);
+}
+
+TEST(E2eIngestClassifierTest, RelaxedClearsCompromisedLatchAndAcceptsContiguous) {
+  using namespace pbr;
+
+  IngestClassifierInput input;
+  input.sender_seq = 6;
+  input.session_epoch = 1;
+  input.message_id = "msg-6";
+  input.chat_target_epoch = 1;
+  input.sync_state = DefaultPeerSyncState();
+  input.sync_state.contiguous_peer_seq = 5;
+  input.sync_state.loaded_min_seq = 1;
+  input.sync_state.loaded_max_seq = 5;
+  input.sync_state.phase = PeerSyncPhase::Compromised;
+  input.strict_mode = false;
+
+  ReplayWindow window(32);
+  const IngestClassifierResult result = E2eIngestClassifier::Classify(input, window);
+  EXPECT_EQ(result.decision, IngestDecision::AcceptContiguous);
+  EXPECT_TRUE(result.persist_message);
+  EXPECT_EQ(result.sync_state.phase, PeerSyncPhase::Ok);
+  EXPECT_EQ(result.sync_state.contiguous_peer_seq, 6u);
+}
+
+TEST(E2eIngestClassifierTest, StrictCompromisedLatchBlocksFurtherIngest) {
+  using namespace pbr;
+
+  IngestClassifierInput input;
+  input.sender_seq = 6;
+  input.session_epoch = 1;
+  input.message_id = "msg-6";
+  input.chat_target_epoch = 1;
+  input.sync_state = DefaultPeerSyncState();
+  input.sync_state.contiguous_peer_seq = 5;
+  input.sync_state.phase = PeerSyncPhase::Compromised;
+  input.strict_mode = true;
+
+  ReplayWindow window(32);
+  const IngestClassifierResult result = E2eIngestClassifier::Classify(input, window);
+  EXPECT_EQ(result.decision, IngestDecision::SoftCompromised);
+  EXPECT_FALSE(result.persist_message);
+}
+
+TEST(E2eIngestClassifierTest, RelaxedRewindAcceptsWithoutLoweringContiguous) {
+  using namespace pbr;
+
+  IngestClassifierInput input;
+  input.sender_seq = 2;
+  input.session_epoch = 1;
+  input.message_id = "msg-2";
+  input.chat_target_epoch = 1;
+  input.sync_state = DefaultPeerSyncState();
+  input.sync_state.contiguous_peer_seq = 5;
+  input.sync_state.loaded_min_seq = 3;
+  input.sync_state.loaded_max_seq = 5;
+  input.strict_mode = false;
+
+  ReplayWindow window(32);
+  const IngestClassifierResult result = E2eIngestClassifier::Classify(input, window);
+  EXPECT_EQ(result.decision, IngestDecision::AcceptBackfill);
+  EXPECT_TRUE(result.persist_message);
+  EXPECT_EQ(result.sync_state.contiguous_peer_seq, 5u);
+  EXPECT_EQ(result.sync_state.loaded_min_seq, 2u);
 }
 
 TEST(E2eIngestClassifierTest, LateFillAcceptedWhenSeqWasEmptyClosed) {

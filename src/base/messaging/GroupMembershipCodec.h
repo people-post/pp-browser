@@ -34,6 +34,12 @@ public:
   static Roe<std::string> EncodeOwnerTransferred(const std::string& group_id, const std::string& new_owner_identity,
                                                  uint64_t roster_epoch, bool leave_previous = false);
 
+  struct MemberJoinedPayload {
+    std::string group_id;
+    std::string member_identity;
+    MemberRole role = MemberRole::Member;
+    uint64_t roster_epoch = 0;
+  };
   struct MemberLeftPayload {
     std::string group_id;
     std::string member_identity;
@@ -51,6 +57,8 @@ public:
     bool leave_previous = false;
   };
 
+  static Roe<MemberJoinedPayload> DecodeMemberJoined(const std::string& detail_json);
+  static Roe<MemberJoinedPayload> DecodeMemberJoinedFromMessage(const ThreadMessage& message);
   static Roe<MemberLeftPayload> DecodeMemberLeft(const std::string& detail_json);
   static Roe<MemberLeftPayload> DecodeMemberLeftFromMessage(const ThreadMessage& message);
   static Roe<MemberRemovedPayload> DecodeMemberRemoved(const std::string& detail_json);

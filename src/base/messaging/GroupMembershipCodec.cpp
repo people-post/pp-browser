@@ -215,6 +215,39 @@ Roe<std::string> DetailFromMessage(const ThreadMessage& message, const GroupMemb
 
 } // namespace
 
+Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMemberJoined(
+    const std::string& detail_json) {
+  const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);
+  if (!json.is_object()) {
+    return Error("Invalid member_joined detail");
+  }
+  MemberJoinedPayload payload;
+  if (json.contains("group_id") && json["group_id"].is_string()) {
+    payload.group_id = json["group_id"].get<std::string>();
+  }
+  if (json.contains("member_identity") && json["member_identity"].is_string()) {
+    payload.member_identity = json["member_identity"].get<std::string>();
+  }
+  if (json.contains("role") && json["role"].is_string()) {
+    payload.role = MemberRoleFromString(json["role"].get<std::string>());
+  }
+  payload.roster_epoch = ReadRosterEpoch(json);
+  if (payload.group_id.empty() || payload.member_identity.empty()) {
+    return Error("member_joined missing group_id or member_identity");
+  }
+  return payload;
+}
+
+Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMemberJoinedFromMessage(
+    const ThreadMessage& message) {
+  auto detail =
+      DetailFromMessage(message, GroupMembershipControlType::MemberJoined, "Message is not a member_joined");
+  if (!detail) {
+    return detail.error();
+  }
+  return DecodeMemberJoined(*detail);
+}
+
 Roe<GroupMembershipCodec::MemberLeftPayload> GroupMembershipCodec::DecodeMemberLeft(
     const std::string& detail_json) {
   const nlohmann::json json = nlohmann::json::parse(detail_json, nullptr, false);

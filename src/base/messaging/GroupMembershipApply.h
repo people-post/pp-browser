@@ -9,11 +9,19 @@
 
 namespace pbr {
 
-/** Owner-side roster mutations for invite accept/decline (no P2P). */
+/** Owner-side: pending invite → active member (requires pending row + matching invitee). */
 Roe<void> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
                                     const std::string& member_identity);
+/** Owner-side: clear pending invite (invitee was never an active encrypt target). */
 Roe<void> ApplyInviteDeclineToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
                                      const std::string& member_identity);
+
+/**
+ * Apply owner-signed member_joined. Actor must be current owner; roster_epoch must be > local.
+ * This is the peer-facing membership commit (G006).
+ */
+Roe<void> ApplyMemberJoinedToRoster(GroupRosterStore& roster, const GroupMembershipCodec::MemberJoinedPayload& payload,
+                                    const std::string& actor_identity);
 
 /**
  * Apply owner_transferred (optionally leave_previous). Actor must be current owner;

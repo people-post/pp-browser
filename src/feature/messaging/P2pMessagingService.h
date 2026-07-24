@@ -26,6 +26,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace pbr {
@@ -115,6 +116,7 @@ private:
   void EnqueueRetry(PendingRelaySend pending);
   void NotifyDeliveryIssue(const Thread& thread, const std::string& error_message);
   void NotifyRelayFallback(const std::string& thread_id);
+  void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
   void ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
                        const std::string& error_message = {},
                        MessageTransport transport = MessageTransport::Relay,
@@ -128,6 +130,8 @@ private:
   bool IsPskReadyToSend(const std::string& thread_id) const;
   void PurgeRetryQueueForThread(const std::string& thread_id);
   void HandleDirectInbound(RelayEnvelope envelope);
+
+  static constexpr int64_t kReceiveFailureNoticeCooldownMs = 5 * 60 * 1000;
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -157,6 +161,8 @@ private:
   mutable std::mutex link_ux_mutex_;
   mutable std::string relay_fallback_notice_thread_id_;
   mutable std::string relay_fallback_notice_text_;
+  mutable std::mutex receive_failure_mutex_;
+  std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   uint64_t last_relay_poll_ms_ = 0;
   std::atomic<bool> poll_pending_{false};
   std::atomic<bool> sync_pending_{false};

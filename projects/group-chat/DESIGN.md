@@ -108,7 +108,7 @@ Delivered as **`ChatPayload` system messages** (`content_type=system`) with `con
 | `group_invite` | owner | See InvitePayload |
 | `group_invite_accept` | invitee | `{ "invite_nonce", "group_id" }` |
 | `group_invite_decline` | invitee | `{ "invite_nonce", "group_id" }` |
-| `member_joined` | owner or self | `{ "group_id", "member_identity", "role", "roster_epoch" }` |
+| `member_joined` | owner | `{ "group_id", "member_identity", "role", "roster_epoch" }` |
 | `member_left` | member | `{ "group_id", "member_identity", "roster_epoch" }` |
 | `member_removed` | owner | `{ "group_id", "member_identity", "roster_epoch" }` |
 | `owner_transferred` | owner | `{ "group_id", "new_owner_identity", "roster_epoch", "leave_previous"? }` |
@@ -276,7 +276,7 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 4. Classify seq (relaxed ingest default — D046)
 5. Append to group thread; update sync_state
 
-**Invite handshake `[v1]`:** Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest applies accept via roster upsert + `roster_epoch` bump (so subsequent group sends include the new member). Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` in local roster so member→owner fan-out is non-empty. Closing a group session dismisses local membership (and clears `group_targets`) so inbound group traffic hard-rejects instead of recreating the thread with an unread. After Accept/Decline/Block, the DM invite card is resolved in-place (actions cleared; status line text).
+**Invite handshake `[v1]`:** Invite records **pending only** — the invitee is not an encrypt target until commit. Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest of accept requires the pending row, upserts the member, bumps `roster_epoch`, then publishes owner-signed `member_joined` to all active members (G006 commit). Peers apply `member_joined` (owner + epoch gates) as the roster source of truth. Decline clears pending only. Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` and self as `Member` locally so member→owner fan-out works before `member_joined` arrives. Closing a group session dismisses local membership (and clears `group_targets`) so inbound group traffic hard-rejects instead of recreating the thread with an unread. After Accept/Decline/Block, the DM invite card is resolved in-place (actions cleared; status line text).
 
 **Leave / transfer / prune `[v1]` (G009):** Member close fans out `member_left` then deletes the local thread. Owner close with others picks a successor and fans out `owner_transferred` with `leave_previous: true` (one DM applies succession + removes the old owner). Solo owner close is local dismiss only. Ingest rejects `member_left` from a recorded owner and requires monotonic `roster_epoch`. Send/encrypt failure marks members unreachable; owner may remove via `member_removed` fan-out. Unreachable owner shows a local advisory card (Fork / Message owner / Got it) — no automatic second owner.
 

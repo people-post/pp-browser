@@ -229,6 +229,8 @@ TEST(MessagingCrossCuttingTest, FindOnlyRejectsUnknownSenderThread) {
   const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(envelope, "relay:local");
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
+  // Stale/unknown peer traffic is silent — no receive_failure UI spam.
+  EXPECT_FALSE(outcome.receive_failure_notice.has_value());
 }
 
 TEST(MessagingCrossCuttingTest, E2ePublicIngestUsesEncryptedAutoKeyPath) {

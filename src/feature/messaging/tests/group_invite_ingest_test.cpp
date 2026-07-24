@@ -43,12 +43,13 @@ ByteVector TestDek() {
 }
 
 struct PartyHarness {
-  explicit PartyHarness(const std::string& suffix, const std::string& local_relay, const std::string& peer_relay)
+  explicit PartyHarness(const std::string& suffix, const std::string& local_relay, const std::string& peer_relay,
+                        const ThreadChannel channel = ThreadChannel::E2e)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_invite_ingest_" + suffix)),
         store(data_dir.string()), identity(data_dir.string(), "test"), roster(store.ProfileDbPath()),
         contacts(data_dir.string()), psk_store(store.ProfileDbPath(), "test"), key_resolver(key_store),
         gate(contacts, roster), pipeline(store, key_resolver, psk_store, identity, roster, &gate),
-        local_relay(local_relay), peer_relay(peer_relay) {
+        local_relay(local_relay), peer_relay(peer_relay), channel(channel) {
     std::filesystem::remove_all(data_dir);
     std::filesystem::create_directories(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek())) {
@@ -91,7 +92,7 @@ struct PartyHarness {
     DirectChatTarget target;
     target.peer_identity_kind = "relay_user";
     target.peer_identity_value = peer_relay;
-    target.channel = ThreadChannel::E2e;
+    target.channel = channel;
     // Use peer relay as participant so seq_owner stays a communicating identity.
     auto created = store.FindOrCreateDirectThread(target, peer_relay, peer_relay);
     if (!created) {
@@ -128,14 +129,14 @@ struct PartyHarness {
     envelope.sender_contact_id = peer_relay;
     envelope.sender_relay_id = peer_relay;
     envelope.route.kind = "direct";
-    envelope.route.channel = ThreadChannel::E2e;
+    envelope.route.channel = channel;
     envelope.sender_seq = seq;
     envelope.session_epoch = 1;
     envelope.timestamp = static_cast<int64_t>(seq);
 
     E2eEncryptParams params;
     params.text = text;
-    params.channel = CryptoChannel::E2e;
+    params.channel = E2eRelayPayloadCodec::ChannelFromThread(channel);
     params.peer_contact_id = local_relay;
     params.sender_contact_id = peer_relay;
     params.message_id = envelope.message_id;
@@ -175,6 +176,7 @@ struct PartyHarness {
   Thread dm_thread;
   std::string local_relay;
   std::string peer_relay;
+  ThreadChannel channel = ThreadChannel::E2e;
 };
 
 TEST(GroupInviteIngestTest, InboundInviteStoresPendingWithTitleAndActions) {
@@ -243,6 +245,11 @@ TEST(GroupInviteIngestTest, InboundAcceptAddsInviteeToOwnerRoster) {
       owner.MakeSystemEnvelope("group_invite_accept", *detail, "Accepted group invitation", 1);
   const RelayReceiveOutcome outcome = owner.pipeline.ProcessEnvelope(envelope, "relay:alice");
   EXPECT_TRUE(outcome.persisted) << "decision=" << static_cast<int>(outcome.decision);
+  ASSERT_TRUE(outcome.publish_member_joined_group_id);
+  EXPECT_EQ(*outcome.publish_member_joined_group_id, "group:hike");
+  ASSERT_TRUE(outcome.publish_member_joined_member_identity);
+  EXPECT_EQ(*outcome.publish_member_joined_member_identity, "relay:bob");
+  EXPECT_EQ(outcome.publish_member_joined_epoch, 2u);
 
   auto members = owner.roster.ListMembers("group:hike");
   ASSERT_TRUE(members);
@@ -273,6 +280,179 @@ TEST(GroupInviteIngestTest, InboundAcceptAddsInviteeToOwnerRoster) {
     targets.push_back(std::move(target));
   }
   EXPECT_EQ(targets.size(), 1u);
+}
+
+TEST(GroupInviteIngestTest, InboundAcceptAppliesEvenWhenDmSoftCompromised) {
+  // Private e2e: compromised latches; membership bypass still applies accept.
+  PartyHarness owner("accept_compromised", "relay:alice", "relay:bob", ThreadChannel::E2e);
+
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(owner.roster.UpsertMetadata(metadata));
+  GroupRosterMember owner_member;
+  owner_member.member_identity = "relay:alice";
+  owner_member.role = MemberRole::Owner;
+  owner_member.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(owner.roster.UpsertMember("group:hike", owner_member));
+  auto group_thread = owner.store.FindOrCreateGroupThread("group:hike", "Weekend hike", {});
+  ASSERT_TRUE(group_thread);
+
+  PendingGroupInvite pending;
+  pending.invite_nonce = "nonce-accept-compromised";
+  pending.group_id = "group:hike";
+  pending.group_title = "Weekend hike";
+  pending.inviter_identity = "relay:alice";
+  pending.invitee_identity = "relay:bob";
+  pending.roster_epoch = 1;
+  pending.status = InviteStatus::Pending;
+  pending.created_at = util::NowUnixMs();
+  ASSERT_TRUE(owner.roster.UpsertPendingInvite(pending));
+
+  PeerSyncState compromised = DefaultPeerSyncState();
+  compromised.contiguous_peer_seq = 5;
+  compromised.loaded_min_seq = 1;
+  compromised.loaded_max_seq = 5;
+  compromised.phase = PeerSyncPhase::Compromised;
+  ASSERT_TRUE(owner.store.SetPeerSyncState(owner.dm_thread.id, 1, compromised));
+
+  auto detail = GroupMembershipCodec::EncodeInviteResponse("nonce-accept-compromised", "group:hike");
+  ASSERT_TRUE(detail);
+  const RelayEnvelope envelope =
+      owner.MakeSystemEnvelope("group_invite_accept", *detail, "Accepted group invitation", 6);
+  const RelayReceiveOutcome outcome = owner.pipeline.ProcessEnvelope(envelope, "relay:alice");
+  EXPECT_EQ(outcome.decision, IngestDecision::SoftCompromised);
+  EXPECT_TRUE(outcome.persisted) << "membership accept must persist despite SoftCompromised";
+  ASSERT_TRUE(outcome.publish_member_joined_group_id);
+  EXPECT_EQ(*outcome.publish_member_joined_member_identity, "relay:bob");
+
+  auto members = owner.roster.ListMembers("group:hike");
+  ASSERT_TRUE(members);
+  ASSERT_EQ(members->size(), 2u);
+}
+
+TEST(GroupInviteIngestTest, InboundAcceptOnPublicClearsCompromisedLatch) {
+  // D046: e2e_public clears compromised and continues normal ingest.
+  PartyHarness owner("accept_public_relaxed", "relay:alice", "relay:bob", ThreadChannel::E2ePublic);
+
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(owner.roster.UpsertMetadata(metadata));
+  GroupRosterMember owner_member;
+  owner_member.member_identity = "relay:alice";
+  owner_member.role = MemberRole::Owner;
+  owner_member.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(owner.roster.UpsertMember("group:hike", owner_member));
+
+  PendingGroupInvite pending;
+  pending.invite_nonce = "nonce-accept-public";
+  pending.group_id = "group:hike";
+  pending.group_title = "Weekend hike";
+  pending.inviter_identity = "relay:alice";
+  pending.invitee_identity = "relay:bob";
+  pending.roster_epoch = 1;
+  pending.status = InviteStatus::Pending;
+  pending.created_at = util::NowUnixMs();
+  ASSERT_TRUE(owner.roster.UpsertPendingInvite(pending));
+
+  PeerSyncState compromised = DefaultPeerSyncState();
+  compromised.contiguous_peer_seq = 5;
+  compromised.loaded_min_seq = 1;
+  compromised.loaded_max_seq = 5;
+  compromised.phase = PeerSyncPhase::Compromised;
+  ASSERT_TRUE(owner.store.SetPeerSyncState(owner.dm_thread.id, 1, compromised));
+
+  auto detail = GroupMembershipCodec::EncodeInviteResponse("nonce-accept-public", "group:hike");
+  ASSERT_TRUE(detail);
+  const RelayEnvelope envelope =
+      owner.MakeSystemEnvelope("group_invite_accept", *detail, "Accepted group invitation", 6);
+  const RelayReceiveOutcome outcome = owner.pipeline.ProcessEnvelope(envelope, "relay:alice");
+  EXPECT_EQ(outcome.decision, IngestDecision::AcceptContiguous);
+  EXPECT_TRUE(outcome.persisted);
+  ASSERT_TRUE(outcome.publish_member_joined_group_id);
+  EXPECT_EQ(*outcome.publish_member_joined_member_identity, "relay:bob");
+
+  auto sync = owner.store.GetPeerSyncState(owner.dm_thread.id, 1);
+  ASSERT_TRUE(sync);
+  EXPECT_NE(sync->phase, PeerSyncPhase::Compromised);
+  EXPECT_EQ(sync->contiguous_peer_seq, 6u);
+
+  auto members = owner.roster.ListMembers("group:hike");
+  ASSERT_TRUE(members);
+  ASSERT_EQ(members->size(), 2u);
+}
+
+TEST(GroupInviteIngestTest, InboundAcceptWithoutPendingIsRejected) {
+  PartyHarness owner("accept_no_pending", "relay:alice", "relay:bob");
+
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(owner.roster.UpsertMetadata(metadata));
+  GroupRosterMember owner_member;
+  owner_member.member_identity = "relay:alice";
+  owner_member.role = MemberRole::Owner;
+  owner_member.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(owner.roster.UpsertMember("group:hike", owner_member));
+
+  auto detail = GroupMembershipCodec::EncodeInviteResponse("nonce-missing", "group:hike");
+  ASSERT_TRUE(detail);
+  const RelayEnvelope envelope =
+      owner.MakeSystemEnvelope("group_invite_accept", *detail, "Accepted group invitation", 1);
+  const RelayReceiveOutcome outcome = owner.pipeline.ProcessEnvelope(envelope, "relay:alice");
+  EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
+  EXPECT_FALSE(outcome.persisted);
+  EXPECT_FALSE(outcome.publish_member_joined_group_id);
+  auto members = owner.roster.ListMembers("group:hike");
+  ASSERT_TRUE(members);
+  EXPECT_EQ(members->size(), 1u);
+  ASSERT_TRUE(outcome.receive_failure_notice.has_value());
+  EXPECT_NE(outcome.receive_failure_notice->find("membership"), std::string::npos);
+}
+
+TEST(GroupInviteIngestTest, InboundMemberJoinedAddsPeerToRoster) {
+  PartyHarness member("joined_peer", "relay:carol", "relay:alice");
+
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(member.roster.UpsertMetadata(metadata));
+  GroupRosterMember alice;
+  alice.member_identity = "relay:alice";
+  alice.role = MemberRole::Owner;
+  alice.joined_at = util::NowUnixMs();
+  GroupRosterMember carol;
+  carol.member_identity = "relay:carol";
+  carol.role = MemberRole::Member;
+  carol.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(member.roster.UpsertMember("group:hike", alice));
+  ASSERT_TRUE(member.roster.UpsertMember("group:hike", carol));
+  auto group_thread = member.store.FindOrCreateGroupThread("group:hike", "Weekend hike", {});
+  ASSERT_TRUE(group_thread);
+  ASSERT_TRUE(member.roster.UpsertGroupTarget("group:hike", group_thread->id, 1, 1));
+
+  auto detail = GroupMembershipCodec::EncodeMemberJoined("group:hike", "relay:bob", MemberRole::Member, 2);
+  ASSERT_TRUE(detail);
+  const RelayEnvelope envelope =
+      member.MakeSystemEnvelope("member_joined", *detail, "Member joined the group", 1);
+  const RelayReceiveOutcome outcome = member.pipeline.ProcessEnvelope(envelope, "relay:carol");
+  EXPECT_TRUE(outcome.persisted) << "decision=" << static_cast<int>(outcome.decision);
+
+  auto members = member.roster.ListMembers("group:hike");
+  ASSERT_TRUE(members);
+  ASSERT_EQ(members->size(), 3u);
+  auto meta = member.roster.LoadMetadata("group:hike");
+  ASSERT_TRUE(meta && meta->has_value());
+  EXPECT_EQ((*meta)->roster_epoch, 2u);
 }
 
 TEST(GroupInviteIngestTest, InboundOwnerTransferredLeavePreviousUpdatesRoster) {

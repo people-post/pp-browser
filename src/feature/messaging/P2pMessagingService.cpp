@@ -136,6 +136,89 @@ void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact)
   }
 }
 
+namespace {
+
+void MaybePublishMemberJoinedAfterIngest(const RelayReceiveOutcome& outcome) {
+  if (!outcome.publish_member_joined_group_id || !outcome.publish_member_joined_member_identity) {
+    return;
+  }
+  if (!MessagingHub::Instance().IsInitialized()) {
+    return;
+  }
+  (void)MessagingHub::Instance().Groups().PublishMemberJoined(*outcome.publish_member_joined_group_id,
+                                                              *outcome.publish_member_joined_member_identity,
+                                                              outcome.publish_member_joined_epoch);
+}
+
+} // namespace
+
+void P2pMessagingService::MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome) {
+  if (!outcome.receive_failure_notice || outcome.receive_failure_notice->empty()) {
+    return;
+  }
+  const std::string& notice = *outcome.receive_failure_notice;
+  log().warning << "Inbound receive failure"
+                << " sender=" << (outcome.receive_failure_sender ? *outcome.receive_failure_sender : "")
+                << " detail=" << outcome.receive_failure_detail << " notice=" << notice;
+
+  // One toast/system line per sender+notice within the cooldown — old relay backlog must not flood UI.
+  const std::string rate_key =
+      (outcome.receive_failure_sender ? *outcome.receive_failure_sender : std::string{}) + "|" + notice;
+  const int64_t now_ms = util::NowUnixMs();
+  {
+    std::lock_guard lock(receive_failure_mutex_);
+    const auto it = receive_failure_last_ms_.find(rate_key);
+    if (it != receive_failure_last_ms_.end() && now_ms - it->second < kReceiveFailureNoticeCooldownMs) {
+      return;
+    }
+    receive_failure_last_ms_[rate_key] = now_ms;
+    if (receive_failure_last_ms_.size() > 64) {
+      // Drop stale entries so the map cannot grow without bound.
+      for (auto iter = receive_failure_last_ms_.begin(); iter != receive_failure_last_ms_.end();) {
+        if (now_ms - iter->second >= kReceiveFailureNoticeCooldownMs) {
+          iter = receive_failure_last_ms_.erase(iter);
+        } else {
+          ++iter;
+        }
+      }
+    }
+  }
+
+  if (outcome.receive_failure_thread_id && !outcome.receive_failure_thread_id->empty()) {
+    ThreadMessage local;
+    local.id = util::GenerateUuid();
+    local.thread_id = *outcome.receive_failure_thread_id;
+    local.sender_contact_id = kLocalSelfContactId;
+    local.content_type = ChatContentType::System;
+    local.text = notice;
+    local.payload_json =
+        nlohmann::json({{"control_type", "receive_failure"},
+                        {"detail",
+                         nlohmann::json({{"sender", outcome.receive_failure_sender.value_or("")},
+                                         {"detail", outcome.receive_failure_detail}})
+                             .dump()}})
+            .dump();
+    local.timestamp = now_ms;
+    local.delivery = MessageDelivery::Local;
+    local.relay_visible = false;
+    local.generation = "local";
+    if (store_.AppendMessage(local)) {
+      inbox_.OnInboundMessagePersisted(*outcome.receive_failure_thread_id, notice);
+    }
+  }
+
+  if (on_delivery_notice_) {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this, notice]() {
+      if (on_delivery_notice_) {
+        on_delivery_notice_(notice);
+      }
+    });
+  }
+  if (on_messages_changed_) {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+  }
+}
+
 void P2pMessagingService::HandleDirectInbound(RelayEnvelope envelope) {
   auto identity = identity_.Get();
   if (!identity) {
@@ -143,6 +226,8 @@ void P2pMessagingService::HandleDirectInbound(RelayEnvelope envelope) {
   }
   const RelayReceiveOutcome outcome =
       receive_pipeline_->ProcessEnvelope(envelope, identity->relay_user_id, false, MessageTransport::Direct);
+  MaybePublishMemberJoinedAfterIngest(outcome);
+  MaybeSurfaceReceiveFailure(outcome);
   if (outcome.decision == IngestDecision::AcceptGap) {
     auto thread = store_.FindDirectThread(InboundTargetFromEnvelope(envelope));
     if (thread && *thread) {
@@ -851,8 +936,9 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
         ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay, tried_direct);
       });
 
+  // Always hop to UI — SendUserMessage runs on IO during membership fan-out (PublishMemberJoined).
   if (on_messages_changed_) {
-    on_messages_changed_();
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
   }
   return *appended;
 }
@@ -978,13 +1064,17 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
   }
 
   if (!encrypted->failed_member_identities.empty() && on_delivery_notice_) {
-    on_delivery_notice_("Some group members couldn’t receive this message");
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+      if (on_delivery_notice_) {
+        on_delivery_notice_("Some group members couldn’t receive this message");
+      }
+    });
   }
 
   appended->delivery = MessageDelivery::Relayed;
   (void)store_.UpdateMessage(*appended);
   if (on_messages_changed_) {
-    on_messages_changed_();
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
   }
   return *appended;
 }
@@ -1107,6 +1197,8 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
     const std::string local_relay_id = identity->relay_user_id;
     for (const RelayEnvelope& envelope : poll->messages) {
       const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_relay_id);
+      MaybePublishMemberJoinedAfterIngest(outcome);
+      MaybeSurfaceReceiveFailure(outcome);
       if (outcome.decision == IngestDecision::AcceptGap) {
         const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
         auto thread = store_.FindDirectThread(inbound_target);

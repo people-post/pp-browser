@@ -83,24 +83,74 @@ TEST_F(GroupRosterInviteApplyTest, AcceptRejectsWrongSender) {
   ASSERT_FALSE(result);
 }
 
-TEST_F(GroupRosterInviteApplyTest, DeclineUpdatesStatusOnly) {
+TEST_F(GroupRosterInviteApplyTest, DeclineUpdatesStatusWithoutRemovingMembers) {
   GroupMetadata metadata;
   metadata.group_id = "group:hike";
   metadata.owner_identity = "relay:alice";
   metadata.title = "Weekend hike";
   metadata.roster_epoch = 1;
   ASSERT_TRUE(roster_->UpsertMetadata(metadata));
+  // Decline must not assume invitee was ever on the active roster (pending ≠ member).
   ASSERT_TRUE(roster_->UpsertPendingInvite(MakePending()));
 
   ASSERT_TRUE(ApplyInviteDeclineToRoster(*roster_, "nonce-1", "relay:bob"));
-
   auto members = roster_->ListMembers("group:hike");
   ASSERT_TRUE(members);
   EXPECT_TRUE(members->empty());
-
   auto loaded = roster_->LoadPendingInvite("nonce-1");
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->status, InviteStatus::Declined);
+}
+
+TEST_F(GroupRosterInviteApplyTest, MemberJoinedAddsMemberAndBumpsEpoch) {
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(roster_->UpsertMetadata(metadata));
+  GroupRosterMember alice;
+  alice.member_identity = "relay:alice";
+  alice.role = MemberRole::Owner;
+  alice.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(roster_->UpsertMember("group:hike", alice));
+
+  GroupMembershipCodec::MemberJoinedPayload payload;
+  payload.group_id = "group:hike";
+  payload.member_identity = "relay:bob";
+  payload.role = MemberRole::Member;
+  payload.roster_epoch = 2;
+  ASSERT_TRUE(ApplyMemberJoinedToRoster(*roster_, payload, "relay:alice"));
+
+  auto members = roster_->ListMembers("group:hike");
+  ASSERT_TRUE(members);
+  ASSERT_EQ(members->size(), 2u);
+  auto meta = roster_->LoadMetadata("group:hike");
+  ASSERT_TRUE(meta && meta->has_value());
+  EXPECT_EQ((*meta)->roster_epoch, 2u);
+}
+
+TEST_F(GroupRosterInviteApplyTest, MemberJoinedRejectsNonOwnerAndStaleEpoch) {
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 2;
+  ASSERT_TRUE(roster_->UpsertMetadata(metadata));
+
+  GroupMembershipCodec::MemberJoinedPayload non_owner;
+  non_owner.group_id = "group:hike";
+  non_owner.member_identity = "relay:bob";
+  non_owner.role = MemberRole::Member;
+  non_owner.roster_epoch = 3;
+  EXPECT_FALSE(ApplyMemberJoinedToRoster(*roster_, non_owner, "relay:eve"));
+
+  GroupMembershipCodec::MemberJoinedPayload stale;
+  stale.group_id = "group:hike";
+  stale.member_identity = "relay:bob";
+  stale.role = MemberRole::Member;
+  stale.roster_epoch = 2;
+  EXPECT_FALSE(ApplyMemberJoinedToRoster(*roster_, stale, "relay:alice"));
 }
 
 TEST_F(GroupRosterInviteApplyTest, PendingSnapshotRoundTrip) {

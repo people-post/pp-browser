@@ -56,6 +56,12 @@ public:
   Roe<bool> IsLocalOwner(const std::string& group_id) const;
   /** Metadata owner identity for the group. */
   Roe<std::string> OwnerIdentity(const std::string& group_id) const;
+  /**
+   * After a validated invite accept on the owner device: append local system line and fan out
+   * owner-signed member_joined DMs (peer-facing membership commit).
+   */
+  Roe<void> PublishMemberJoined(const std::string& group_id, const std::string& member_identity,
+                                uint64_t roster_epoch);
 
   void MarkMemberUnreachable(const std::string& group_id, const std::string& member_identity);
   void ClearMemberUnreachable(const std::string& group_id, const std::string& member_identity);

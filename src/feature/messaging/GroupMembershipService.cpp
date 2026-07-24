@@ -213,6 +213,7 @@ Roe<void> GroupMembershipService::InviteMember(const std::string& group_id, cons
   if (auto recorded = invite_gate_.RecordPendingInvite(pending); !recorded) {
     return recorded.error();
   }
+  // Pending only — invitee is not an encrypt target until owner commits member_joined.
   return SendInviteDirectMessage(invite, invitee_contact_id);
 }
 
@@ -972,6 +973,29 @@ Roe<std::string> GroupMembershipService::OwnerIdentity(const std::string& group_
     return metadata.error();
   }
   return metadata->owner_identity;
+}
+
+Roe<void> GroupMembershipService::PublishMemberJoined(const std::string& group_id,
+                                                      const std::string& member_identity,
+                                                      const uint64_t roster_epoch) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto detail =
+      GroupMembershipCodec::EncodeMemberJoined(group_id, member_identity, MemberRole::Member, roster_epoch);
+  if (!detail) {
+    return detail.error();
+  }
+  auto thread = store_.FindGroupThread(group_id);
+  if (thread && *thread) {
+    (void)AppendMembershipSystemEvent((*thread)->id, GroupMembershipControlType::MemberJoined,
+                                      "Member joined the group", *detail, *local);
+  }
+  // Fan out to every other active member (including the new member). Best-effort.
+  (void)FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberJoined, *detail, "Member joined the group",
+                              *local, member_identity);
+  return {};
 }
 
 } // namespace pbr

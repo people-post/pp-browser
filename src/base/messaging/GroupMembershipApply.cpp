@@ -16,11 +16,20 @@ Roe<void> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string&
     return Error("Invite not found");
   }
   const PendingGroupInvite& invite = **pending;
-  if (invite.status != InviteStatus::Pending) {
-    return Error("Invite is not pending");
-  }
   if (invite.invitee_identity != member_identity) {
     return Error("Invite accept sender does not match invitee");
+  }
+
+  // Idempotent re-delivery of accept: ensure member is active and invite marked accepted.
+  if (invite.status == InviteStatus::Accepted) {
+    GroupRosterMember member;
+    member.member_identity = member_identity;
+    member.role = MemberRole::Member;
+    member.joined_at = util::NowUnixMs();
+    return roster.UpsertMember(invite.group_id, member);
+  }
+  if (invite.status != InviteStatus::Pending) {
+    return Error("Invite is not pending");
   }
 
   GroupRosterMember member;
@@ -88,6 +97,34 @@ Roe<void> RequireNewerEpoch(const GroupMetadata& metadata, const uint64_t inboun
 }
 
 } // namespace
+
+Roe<void> ApplyMemberJoinedToRoster(GroupRosterStore& roster, const GroupMembershipCodec::MemberJoinedPayload& payload,
+                                    const std::string& actor_identity) {
+  auto metadata = LoadMetadataRequired(roster, payload.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (metadata->owner_identity != actor_identity) {
+    return Error("member_joined rejected: actor is not the group owner");
+  }
+  if (auto epoch = RequireNewerEpoch(*metadata, payload.roster_epoch); !epoch) {
+    return epoch.error();
+  }
+  if (payload.member_identity.empty()) {
+    return Error("member_joined missing member_identity");
+  }
+
+  GroupRosterMember member;
+  member.member_identity = payload.member_identity;
+  member.role = payload.role;
+  member.joined_at = util::NowUnixMs();
+  if (auto upserted = roster.UpsertMember(payload.group_id, member); !upserted) {
+    return upserted.error();
+  }
+  GroupMetadata updated = *metadata;
+  updated.roster_epoch = payload.roster_epoch;
+  return roster.UpsertMetadata(updated);
+}
 
 Roe<void> ApplyOwnerTransferredToRoster(GroupRosterStore& roster,
                                         const GroupMembershipCodec::OwnerTransferredPayload& payload,

@@ -18,6 +18,23 @@ void RemoveLateFillSeq(PeerSyncState& state, const uint64_t sender_seq) {
   seqs.erase(std::remove(seqs.begin(), seqs.end(), sender_seq), seqs.end());
 }
 
+/** D046 relaxed: accept inbound without lowering contiguous_peer_seq. */
+void ApplyRelaxedPersist(PeerSyncState& state, const uint64_t sender_seq) {
+  if (state.loaded_min_seq == 0 || sender_seq < state.loaded_min_seq) {
+    state.loaded_min_seq = sender_seq;
+  }
+  if (sender_seq > state.loaded_max_seq) {
+    state.loaded_max_seq = sender_seq;
+  }
+  if (sender_seq > state.contiguous_peer_seq) {
+    state.contiguous_peer_seq = sender_seq;
+  }
+  RemoveLateFillSeq(state, sender_seq);
+  if (state.phase == PeerSyncPhase::Compromised) {
+    state.phase = PeerSyncPhase::Ok;
+  }
+}
+
 } // namespace
 
 void E2eIngestClassifier::ApplyContiguousAdvance(PeerSyncState& state, const uint64_t sender_seq) {
@@ -74,14 +91,24 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
     return result;
   }
 
+  // Strict private e2e: compromised latches forever until rotate/pause UX (D038).
+  // Relaxed e2e_public/group (D046): clear latch and continue classifying.
   if (input.sync_state.phase == PeerSyncPhase::Compromised) {
-    result.decision = IngestDecision::SoftCompromised;
-    return result;
+    if (input.strict_mode) {
+      result.decision = IngestDecision::SoftCompromised;
+      return result;
+    }
+    result.sync_state.phase = PeerSyncPhase::Ok;
   }
 
   if (input.existing_message_id_at_seq && *input.existing_message_id_at_seq != input.message_id) {
-    result.decision = IngestDecision::SoftCompromised;
-    result.sync_state.phase = PeerSyncPhase::Compromised;
+    if (input.strict_mode) {
+      result.decision = IngestDecision::SoftCompromised;
+      result.sync_state.phase = PeerSyncPhase::Compromised;
+      return result;
+    }
+    // D046 LWW: keep first-seen (peer, epoch, sender_seq); discard conflicting inbound.
+    result.decision = IngestDecision::SilentDiscard;
     return result;
   }
 
@@ -114,8 +141,15 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
       ApplyBackfillMessage(result.sync_state, input.sender_seq);
       return result;
     }
-    result.decision = IngestDecision::SoftCompromised;
-    result.sync_state.phase = PeerSyncPhase::Compromised;
+    if (input.strict_mode) {
+      result.decision = IngestDecision::SoftCompromised;
+      result.sync_state.phase = PeerSyncPhase::Compromised;
+      return result;
+    }
+    // D046: accept rewind/non-contiguous; contiguous advances only on strict increase.
+    result.decision = IngestDecision::AcceptBackfill;
+    result.persist_message = true;
+    ApplyRelaxedPersist(result.sync_state, input.sender_seq);
     return result;
   }
 
@@ -136,8 +170,15 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
   }
 
   if (input.sender_seq == 1 && input.sync_state.contiguous_peer_seq > 0) {
-    result.decision = IngestDecision::SoftCompromised;
-    result.sync_state.phase = PeerSyncPhase::Compromised;
+    if (input.strict_mode) {
+      result.decision = IngestDecision::SoftCompromised;
+      result.sync_state.phase = PeerSyncPhase::Compromised;
+      return result;
+    }
+    // D046: peer restart-looking seq=1 — accept without latching compromised.
+    result.decision = IngestDecision::AcceptBackfill;
+    result.persist_message = true;
+    ApplyRelaxedPersist(result.sync_state, input.sender_seq);
     return result;
   }
 
@@ -160,9 +201,21 @@ IngestClassifierResult E2eIngestClassifier::Classify(const IngestClassifierInput
       }
       return result;
     }
-    result.decision = IngestDecision::SoftCompromised;
     if (input.strict_mode) {
+      result.decision = IngestDecision::SoftCompromised;
       result.sync_state.phase = PeerSyncPhase::Compromised;
+      return result;
+    }
+    // D046: gap beyond replay window — still persist; leave Gap for UI repair without
+    // pretending the contiguous tail jumped across the hole.
+    result.decision = IngestDecision::AcceptGap;
+    result.persist_message = true;
+    result.sync_state.phase = PeerSyncPhase::Gap;
+    if (input.sender_seq > result.sync_state.loaded_max_seq) {
+      result.sync_state.loaded_max_seq = input.sender_seq;
+    }
+    if (result.sync_state.loaded_min_seq == 0 || input.sender_seq < result.sync_state.loaded_min_seq) {
+      result.sync_state.loaded_min_seq = input.sender_seq;
     }
     return result;
   }

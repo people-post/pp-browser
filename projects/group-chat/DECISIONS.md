@@ -56,6 +56,8 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 **Rationale:** Aligns with D089 tier design; avoids single-writer bottleneck for messages.  
 **Alternatives:** Owner as message sync authority (rejected).
 
+**Invite commit (clarification):** A pending invite is not membership. `group_invite_accept` is a request the owner validates against the pending row; the peer-facing commit is owner-signed `member_joined` (monotonic `roster_epoch`). Group encrypt targets are active roster members only.
+
 ---
 
 ## G007 — Invite spam controls (three layers)

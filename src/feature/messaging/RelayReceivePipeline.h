@@ -10,6 +10,7 @@
 #include "base/messaging/ThreadTypes.h"
 #include "base/people/IdentityStore.h"
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -23,6 +24,21 @@ struct RelayReceiveOutcome {
   IngestDecision decision = IngestDecision::HardReject;
   /** Set when `persisted` is true. */
   std::string thread_id;
+  /**
+   * When set, the local user (owner) should publish owner-signed member_joined after ingest.
+   * Filled on successful group_invite_accept apply.
+   */
+  std::optional<std::string> publish_member_joined_group_id;
+  std::optional<std::string> publish_member_joined_member_identity;
+  uint64_t publish_member_joined_epoch = 0;
+  /**
+   * When an envelope from a known peer could not be read/applied: short UI notice + optional
+   * thread to attach a local system line. `receive_failure_detail` is for logs.
+   */
+  std::optional<std::string> receive_failure_notice;
+  std::optional<std::string> receive_failure_thread_id;
+  std::optional<std::string> receive_failure_sender;
+  std::string receive_failure_detail;
 };
 
 /** v6 receive pipeline steps 0–12 (feature layer orchestration). */
@@ -63,7 +79,8 @@ private:
                                                 const std::string& seq_owner_contact_id,
                                                 const uint64_t sender_seq) const;
   ReplayWindow& ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch);
-  Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message, const std::string& actor_identity) const;
+  Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message, const std::string& actor_identity,
+                                          RelayReceiveOutcome* outcome) const;
 
   IThreadStore& store_;
   IPeerSigningKeyResolver& signing_keys_;
