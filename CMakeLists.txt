@@ -13,6 +13,11 @@ endif()
 if(WIN32)
   # libp2p deps (Boost MASM, BoringSSL NASM) require these for Ninja + MSVC.
   project(pp-browser VERSION ${PP_BROWSER_VERSION} LANGUAGES CXX C ASM_MASM ASM_NASM)
+elseif(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  # Desktop macOS needs OBJCXX for .mm sources (e.g. LocalNotifier_Darwin.mm).
+  # enable_language(OBJCXX) from a subdirectory leaves CMAKE_OBJCXX_COMPILE_OBJECT
+  # unset at generate time under CMake 4.x.
+  project(pp-browser VERSION ${PP_BROWSER_VERSION} LANGUAGES CXX C OBJCXX)
 else()
   project(pp-browser VERSION ${PP_BROWSER_VERSION} LANGUAGES CXX C)
 endif()

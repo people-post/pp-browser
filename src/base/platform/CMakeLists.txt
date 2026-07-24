@@ -73,11 +73,8 @@ else()
   )
 endif()
 
-# Must enable OBJCXX before adding .mm sources to a target, or CMake leaves
-# CMAKE_OBJCXX_COMPILE_OBJECT unset and generation fails.
-if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
-  enable_language(OBJCXX)
-endif()
+# OBJCXX is enabled in the top-level project() for desktop Darwin (required so
+# CMAKE_OBJCXX_COMPILE_OBJECT is set at generate time).
 
 pp_browser_add_base_library(pp_base_platform
   SOURCES
