@@ -4,6 +4,7 @@
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
+#include "common/StartupTiming.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/ShellFeedback.h"
@@ -18,6 +19,13 @@ Roe<void> UnlockProfileAndMessaging(const std::string& pin) {
     return unlocked.error();
   }
   return MessagingHub::Instance().EnsureMessagingReady();
+}
+
+void SetUnlockInProgressUi(const bool in_progress) {
+  ShellHost::Instance().State().unlock_in_progress = in_progress;
+  ShellHost::Instance().SetActivityVisible(in_progress);
+  DataModelHost::Instance().Dirty("window", "unlock_in_progress");
+  ShellHost::Instance().DirtyWindow();
 }
 
 } // namespace
@@ -39,6 +47,8 @@ void PinGateController::DrainQueue(const bool unlocked) {
 }
 
 void PinGateController::Finish(const bool unlocked) {
+  unlock_in_progress_ = false;
+  SetUnlockInProgressUi(false);
   ShellHost::Instance().State().pin_gate = {};
   ShellHost::Instance().RequestSyncLayout();
   ShellHost::Instance().DirtyWindow();
@@ -66,6 +76,7 @@ void PinGateController::SetPinIsDefault(const bool is_default) {
 }
 
 bool PinGateController::TrySilentDefaultUnlock() {
+  StartupPhase phase("PinGate::TrySilentDefaultUnlock");
   if (!SessionStore::Instance().IsInitialized()) {
     return false;
   }
@@ -144,6 +155,13 @@ void PinGateController::EnsureUnlocked(std::function<void(bool unlocked)> done) 
     }
     return;
   }
+  // Deferred silent unlock still running — queue until it finishes.
+  if (unlock_in_progress_) {
+    if (done) {
+      pending_.push_back(std::move(done));
+    }
+    return;
+  }
   if (ProfileSecretsService::Instance().IsUnlocked()) {
     if (auto ready = MessagingHub::Instance().EnsureMessagingReady(); ready) {
       if (done) {
@@ -158,28 +176,57 @@ void PinGateController::EnsureUnlocked(std::function<void(bool unlocked)> done) 
     ShowChooser(std::move(done));
     return;
   }
-  if (TrySilentDefaultUnlock()) {
+  if (SessionStore::Instance().IsInitialized() &&
+      SessionStore::Instance().Snapshot().profile_prefs.pin_is_default) {
     if (done) {
-      done(true);
+      pending_.push_back(std::move(done));
     }
+    BeginDeferredUnlockAfterFirstPresent();
     return;
   }
   ShowGate(false, std::move(done));
 }
 
-void PinGateController::PromptUnlockIfVaultExists() {
+void PinGateController::BeginDeferredUnlockAfterFirstPresent() {
+  if (deferred_unlock_started_) {
+    return;
+  }
+  deferred_unlock_started_ = true;
+
   if (!MessagingHub::Instance().IsInitialized()) {
+    DrainQueue(false);
     return;
   }
   if (MessagingHub::Instance().IsMessagingReady()) {
+    DrainQueue(true);
     return;
   }
   if (!ProfileSecretsService::Instance().NeedsUnlock()) {
+    if (ProfileSecretsService::Instance().IsUnlocked()) {
+      const bool ready = static_cast<bool>(MessagingHub::Instance().EnsureMessagingReady());
+      DrainQueue(ready);
+    } else {
+      // No vault yet — leave locked until a feature calls EnsureUnlocked (chooser).
+      DrainQueue(false);
+    }
     return;
   }
-  if (TrySilentDefaultUnlock()) {
-    return;
+
+  if (SessionStore::Instance().IsInitialized() &&
+      SessionStore::Instance().Snapshot().profile_prefs.pin_is_default) {
+    unlock_in_progress_ = true;
+    SetUnlockInProgressUi(true);
+    StartupMark("deferred_silent_unlock_begin");
+    const bool ok = TrySilentDefaultUnlock();
+    unlock_in_progress_ = false;
+    SetUnlockInProgressUi(false);
+    StartupMark(ok ? "deferred_silent_unlock_ok" : "deferred_silent_unlock_fail");
+    if (ok) {
+      DrainQueue(true);
+      return;
+    }
   }
+
   ShowGate(false, nullptr);
 }
 

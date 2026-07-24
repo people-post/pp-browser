@@ -2,7 +2,8 @@
   <div class="home-header row">
     <div class="home-brand stack">
       <h1 class="home-brand-name">{{i18n:app.name}}</h1>
-      <p class="text-xs muted home-brand-tagline">{{i18n:app.tagline}}</p>
+      <p class="text-xs muted home-brand-tagline" data-model="window" data-if="fonts_ready">{{i18n:app.tagline}}</p>
+      <p class="text-xs muted home-brand-tagline" data-model="window" data-if="!fonts_ready">…</p>
     </div>
     <button class="shell-profile-btn" type="button" data-model="window"
             data-if="layout_mode == 'compact' && !account_sheet_open"
@@ -15,11 +16,16 @@
     <div class="home-landing-inner stack">
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">
-        <button class="chat-suggestion" data-event-click="send_suggestion('Find someone on the network')">Find someone</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('What is in the news today?')">Today's headlines</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('Show me recent articles')">Latest articles</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('Help me get started — suggest three useful things I can ask, with an example for each.')">Get started</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('What can you do?')">What can you do?</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('Find someone on the network')"
+                data-attrif-disabled="compose_disabled">Find someone</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('What is in the news today?')"
+                data-attrif-disabled="compose_disabled">Today's headlines</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('Show me recent articles')"
+                data-attrif-disabled="compose_disabled">Latest articles</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('Help me get started — suggest three useful things I can ask, with an example for each.')"
+                data-attrif-disabled="compose_disabled">Get started</button>
+        <button class="chat-suggestion" data-event-click="send_suggestion('What can you do?')"
+                data-attrif-disabled="compose_disabled">What can you do?</button>
       </div>
     </div>
   </div>

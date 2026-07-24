@@ -8,6 +8,7 @@ pp_browser_add_feature_library(pp_feature_ui
     DocumentLoader.cpp
     FlowCoordinator.cpp
     PinGateController.cpp
+    DeferredStartup.cpp
     ProfileSettingsSection.cpp
     RmlMount.cpp
     SecuritySettingsSection.cpp

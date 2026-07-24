@@ -20,6 +20,7 @@
 #include "feature/chat/ChatWidgetStateBuilder.h"
 #include "feature/chat/MessagingTools.h"
 #include "common/Utilities.h"
+#include "common/StartupTiming.h"
 #include "feature/messaging/MessagingHub.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/people/PeerDisplayLabel.h"
@@ -34,6 +35,7 @@
 #include "base/messaging/ThreadTypes.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DocumentLoader.h"
+#include "feature/ui/DeferredStartup.h"
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/ShellFeedback.h"
@@ -1903,6 +1905,15 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   if (trimmed.empty() || chat_.loading) {
     return;
   }
+  if (chat_.compose_disabled && messaging_ready_) {
+    return;
+  }
+  if (!messaging_ready_) {
+    WithSecrets([this, trimmed, user_payload = std::move(user_payload)]() mutable {
+      SendUserText(trimmed, std::move(user_payload));
+    });
+    return;
+  }
 
   if (ShellHost::Instance().State().nav_tab == NavTab::Home) {
     if (!EnsureHomeOutboundSession()) {
@@ -2253,12 +2264,21 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
 }
 
 void ChatController::WithSecrets(std::function<void()> action) {
+  if (PinGateController::Instance().IsUnlockInProgress()) {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(), Tr("startup.still_preparing"));
+    ShellHost::Instance().DirtyWindow();
+  }
   PinGateController::Instance().EnsureUnlocked(
       [this, action = std::move(action)](const bool unlocked) {
         if (!unlocked) {
-          ShellFeedback::ShowToast(ShellHost::Instance().State(), "PIN required to continue");
-          ShellHost::Instance().DirtyWindow();
+          if (!PinGateController::Instance().IsUnlockInProgress()) {
+            ShellFeedback::ShowToast(ShellHost::Instance().State(), "PIN required to continue");
+            ShellHost::Instance().DirtyWindow();
+          }
           return;
+        }
+        if (!messaging_ready_) {
+          WireMessagingBindings();
         }
         if (action) {
           action();
@@ -2310,6 +2330,8 @@ void ChatController::WireMessagingBindings() {
   messaging_ready_ = true;
   agent_->SetThreadStore(&MessagingHub::Instance().Store());
   MessagingHub::Instance().BindAgent(*agent_);
+  chat_.compose_disabled = false;
+  DirtyChatChrome();
   MessagingHub::Instance().P2p().SetOnMessagesChanged([this]() {
     RefreshFromMessaging();
     ContactsController::Instance().Refresh();
@@ -2394,6 +2416,7 @@ void ChatController::WireMessagingBindings() {
 }
 
 bool ChatController::Setup(Rml::Context* context) {
+  StartupPhase setup_phase("ChatController::Setup");
   if (!context) {
     return false;
   }
@@ -2418,6 +2441,7 @@ bool ChatController::Setup(Rml::Context* context) {
   pending_reply_.reset();
   use_llm_ = !config.llm.base_url.empty();
   agent_.emplace();
+  StartupMark("chat_after_agent_emplace");
 
   ChatSessionActions& actions = ChatSessionActions::Instance();
   actions.reload_agent_config = [this]() { ReloadAgentConfig(); };
@@ -2592,6 +2616,8 @@ bool ChatController::Setup(Rml::Context* context) {
   SessionStore::Instance().AddConfigListener([this](const AppConfig& updated) { ApplyRuntimeConfig(updated); });
 
   ShellHost::Instance().Initialize(context);
+  // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.
+  ShellHost::Instance().State().fonts_ready = !UiLanguageNeedsCjkFonts();
   ShellHost::Instance().SetOnNavTabChanged([](NavTab tab) {
     if (tab == NavTab::Home) {
       ChatController::Instance().OnHomeTabActivated();
@@ -2644,11 +2670,17 @@ bool ChatController::Setup(Rml::Context* context) {
   if (DocumentLoader::LoadFile(context, IAssetLocator::Instance().Resolve("samples/window_shell.rml")) == nullptr) {
     return false;
   }
+  StartupMark("chat_after_window_shell");
 
   ShellHost::Instance().Update(context);
-  ShellHost::Instance().SyncLayout();
+  {
+    StartupPhase phase("ShellHost::SyncLayout");
+    ShellHost::Instance().SyncLayout();
+  }
 
-  PinGateController::Instance().PromptUnlockIfVaultExists();
+  // Vault unlock + deferred fonts run after first present (DeferredStartup).
+  chat_.compose_disabled = !MessagingHub::Instance().IsMessagingReady();
+  DirtyChatChrome();
 
   if (messaging_ready_) {
     OnHomeTabActivated();

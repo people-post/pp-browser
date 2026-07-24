@@ -16,8 +16,14 @@ public:
   /** If secrets already ready, runs done(true) immediately. Otherwise shows PIN UI. */
   void EnsureUnlocked(std::function<void(bool unlocked)> done);
 
-  /** After shell load: silent default unlock or blocking unlock when vault exists. */
-  void PromptUnlockIfVaultExists();
+  /**
+   * After first present: async-scheduled silent default unlock or PIN UI when vault exists.
+   * Queues EnsureUnlocked callers while unlock_in_progress.
+   */
+  void BeginDeferredUnlockAfterFirstPresent();
+
+  /** True while deferred silent unlock is running (features must stay gated). */
+  bool IsUnlockInProgress() const { return unlock_in_progress_; }
 
   void OnSubmit();
   /** Create / chooser modes only — unlock mode ignores cancel. */
@@ -38,6 +44,8 @@ private:
 
   std::vector<std::function<void(bool)>> pending_;
   bool showing_ = false;
+  bool unlock_in_progress_ = false;
+  bool deferred_unlock_started_ = false;
 };
 
 } // namespace pbr

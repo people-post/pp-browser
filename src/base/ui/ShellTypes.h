@@ -192,6 +192,14 @@ struct ShellState {
   /** Desktop custom title bar (borderless window chrome). */
   bool titlebar_visible = false;
   bool window_maximized = false;
+
+  /**
+   * CJK/emoji fallback faces ready for chrome text. False until deferred load when the
+   * UI language needs CJK; true immediately for Latin-only UI.
+   */
+  bool fonts_ready = true;
+  /** Silent / deferred vault unlock in progress after first present. */
+  bool unlock_in_progress = false;
 };
 
 } // namespace pbr

@@ -16,6 +16,8 @@
     "app.name": "Frame",
     "app.tagline": "The internet, rendered for you.",
 
+    "startup.still_preparing": "Still preparing… try again in a moment.",
+
     "nav.home": "Home",
     "nav.sessions": "Sessions",
     "nav.contacts": "Contacts",

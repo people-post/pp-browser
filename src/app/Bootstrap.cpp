@@ -1,11 +1,11 @@
 #include "app/Bootstrap.h"
 
-#include "base/crypto/PinDefaults.h"
 #include "base/crypto/PinResolver.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/AppPaths.h"
 #include "base/data/Config.h"
 #include "base/data/SchemaVersion.h"
+#include "common/StartupTiming.h"
 #include "feature/messaging/MessagingHub.h"
 #include "base/platform/PlatformServices.h"
 
@@ -16,6 +16,7 @@ namespace pbr {
 namespace {
 
 Roe<void> UnlockProfileForBootstrap(const std::string& pin) {
+  StartupPhase phase("Bootstrap::Unlock+EnsureMessagingReady");
   if (auto unlocked = ProfileSecretsService::Instance().Unlock(pin); !unlocked) {
     return unlocked.error();
   }
@@ -68,23 +69,26 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options) {
   if (!profile_prefs) {
     return profile_prefs.error();
   }
+  StartupMark("bootstrap_after_prefs");
 
   if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_data_dir); !secrets) {
     return secrets.error();
   }
 
-  if (auto hub = MessagingHub::Instance().Initialize(*config, profile_data_dir); !hub) {
+  if (auto hub = [&]() -> Roe<void> {
+        StartupPhase phase("Bootstrap::MessagingHub::Initialize");
+        return MessagingHub::Instance().Initialize(*config, profile_data_dir);
+      }();
+      !hub) {
     return hub.error();
   }
 
-  // Optional CLI/env unlock for tests/automation — GUI handles interactive unlock.
+  // Optional CLI/env unlock for tests/automation only. Interactive / silent default unlock
+  // is deferred until after first present (see DeferredStartup / PinGateController).
   if (auto pin = PinResolver::Resolve(options.pin); pin) {
     if (auto unlocked = UnlockProfileForBootstrap(*pin); !unlocked) {
       return unlocked.error();
     }
-  } else if (profile_prefs->pin_is_default && ProfileSecretsService::Instance().HasVault() &&
-             !ProfileSecretsService::Instance().IsUnlocked()) {
-    (void)UnlockProfileForBootstrap(kDefaultProfilePin);
   }
 
   BootstrapResult result{};

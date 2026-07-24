@@ -27,6 +27,7 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
 
+import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -40,6 +41,13 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * On API 24+, SDL pauses from {@code onStop} after {@code surfaceDestroyed}; capture must happen
  * earlier from {@code onPause} / focus loss while {@code mIsSurfaceReady} is still true.
+ *
+ * Native argv (via {@link #getArguments()}):
+ * <ul>
+ *   <li>{@code --ez startup_timing true} → {@code --startup-timing}</li>
+ *   <li>{@code --ez debug true} → {@code --debug}</li>
+ *   <li>{@code -e pp_native_args "--startup-timing --debug"} → split on whitespace</li>
+ * </ul>
  */
 public class MainActivity extends SDLActivity {
     private static final String TAG = "pp-browser";
@@ -55,6 +63,34 @@ public class MainActivity extends SDLActivity {
     @Override
     protected String[] getLibraries() {
         return new String[] { "main" };
+    }
+
+    /**
+     * Forward Intent extras as native argv for {@code main()}.
+     * Example: {@code adb shell am start -n dev.pp_browser.app/.MainActivity --ez startup_timing true}
+     */
+    @Override
+    protected String[] getArguments() {
+        final Intent intent = getIntent();
+        if (intent == null) {
+            return new String[0];
+        }
+        final ArrayList<String> args = new ArrayList<>();
+        if (intent.getBooleanExtra("startup_timing", false)) {
+            args.add("--startup-timing");
+        }
+        if (intent.getBooleanExtra("debug", false)) {
+            args.add("--debug");
+        }
+        final String raw = intent.getStringExtra("pp_native_args");
+        if (raw != null && !raw.trim().isEmpty()) {
+            for (String part : raw.trim().split("\\s+")) {
+                if (!part.isEmpty()) {
+                    args.add(part);
+                }
+            }
+        }
+        return args.toArray(new String[0]);
     }
 
     @Override

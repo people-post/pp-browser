@@ -20,9 +20,11 @@
 #include "base/platform/WindowIcon.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/DataModelHost.h"
+#include "feature/ui/DeferredStartup.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellHost.h"
 #include "base/ui/Theme.h"
+#include "common/StartupTiming.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
@@ -98,7 +100,10 @@ bool Application::Initialize(const char* window_title) {
 
   BrowserThread::Initialize();
 
-  if (!Backend::Initialize(window_title, window_width, window_height, true, !Platform::IsMobile())) {
+  if (![&] {
+        StartupPhase phase("Backend::Initialize");
+        return Backend::Initialize(window_title, window_width, window_height, true, !Platform::IsMobile());
+      }()) {
     log().error << "Backend::Initialize failed (SDL/OpenGL window could not be created)";
     return false;
   }
@@ -130,7 +135,10 @@ bool Application::Initialize(const char* window_title) {
   harfbuzz_font_engine_->RegisterLanguage("ko", "Kore", TextFlowDirection::LeftToRight);
   Rml::SetFontEngineInterface(harfbuzz_font_engine_.get());
 
-  if (!Rml::Initialise()) {
+  if (![&] {
+        StartupPhase phase("Rml::Initialise");
+        return Rml::Initialise();
+      }()) {
     log().error << "Rml::Initialise failed";
     Backend::Shutdown();
     return false;
@@ -142,18 +150,19 @@ bool Application::Initialize(const char* window_title) {
 
   const std::string theme_path = AssetsPath(bootstrap.profile_prefs.theme);
   Theme::LoadBase(theme_path);
-  Rml::LoadFontFace(AssetsPath("fonts/LatoLatin-Regular.ttf"));
-  Rml::LoadFontFace(AssetsPath("fonts/NotoSansCJKsc-Regular.otf"), true);
-  Rml::LoadFontFace(AssetsPath("fonts/NotoSansCJKjp-Regular.otf"), true);
-  Rml::LoadFontFace(AssetsPath("fonts/NotoSansCJKkr-Regular.otf"), true);
-  Rml::LoadFontFace(AssetsPath("fonts/NotoSansCJKtc-Regular.otf"), true);
-  Rml::LoadFontFace(AssetsPath("fonts/NotoEmoji-Regular.ttf"), true);
-
-  if (auto loaded = LocalizationService::Instance().LoadFromAssets(IPathProvider::Instance().BundleAssetsDir());
-      !loaded) {
-    log().warning << "Localization catalogs failed to load: " << loaded.error().message;
+  {
+    StartupPhase phase("LoadFontFace:LatoLatin");
+    Rml::LoadFontFace(AssetsPath("fonts/LatoLatin-Regular.ttf"));
   }
-  LocalizationService::Instance().SetPreferredLanguage(bootstrap.profile_prefs.language);
+
+  {
+    StartupPhase phase("Localization::LoadFromAssets");
+    if (auto loaded = LocalizationService::Instance().LoadFromAssets(IPathProvider::Instance().BundleAssetsDir());
+        !loaded) {
+      log().warning << "Localization catalogs failed to load: " << loaded.error().message;
+    }
+    LocalizationService::Instance().SetPreferredLanguage(bootstrap.profile_prefs.language);
+  }
 
   auto* context = Rml::CreateContext("main", Rml::Vector2i(window_width, window_height));
   if (!context) {
@@ -216,7 +225,10 @@ bool Application::Initialize(const char* window_title) {
   ActionRouter::Instance().SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
     DataModelHost::Instance().Dirty(model, binding);
   });
-  if (!SetupChatController(context)) {
+  if (![&] {
+        StartupPhase phase("SetupChatController");
+        return SetupChatController(context);
+      }()) {
     log().error << "SetupChatController failed";
     Rml::RemoveContext("main");
     Rml::Shutdown();
@@ -252,6 +264,7 @@ void Application::Run() {
   }
 
   int skip_log_countdown = 0;
+  bool logged_first_present = false;
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
     BrowserThread::RunUITasks();
     if (ShellHost::Instance().State().account_sheet_open ||
@@ -272,6 +285,11 @@ void Application::Run() {
       Backend::BeginFrame();
       context->Render();
       Backend::PresentFrame();
+      if (!logged_first_present) {
+        StartupMark("first_present");
+        logged_first_present = true;
+        BrowserThread::PostTask(BrowserThreadId::UI, []() { OnFirstPresentDeferredStartup(); });
+      }
       skip_log_countdown = 0;
     } else if (skip_log_countdown-- <= 0) {
       log().warning << "CanRender=false; skipping frame (docs=" << context->GetNumDocuments() << ")";

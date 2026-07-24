@@ -187,7 +187,7 @@ export PP_BROWSER_RELEASE_VERSION=0.1.0-rc1
 
 The first clean NDK build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are packaged into the APK automatically.
 
-Launch **pp-browser** on the device/emulator. On first launch, open **Me → Assistant** and enter a cloud API key. Use `adb logcat -s pp-browser` for native logs.
+Launch **pp-browser** on the device/emulator. On first launch, open **Me → Assistant** and enter a cloud API key. Use `adb logcat -s pp-browser` for native logs. Cold-start timing (`[startup]` INFO lines): `adb shell am start -n dev.pp_browser.app/.MainActivity --ez startup_timing true` (or desktop `./pp-browser --startup-timing` / `PP_BROWSER_STARTUP_TIMING=1`). `--debug` also shows them (full DEBUG verbosity).
 
 See [PLATFORMS.md](../architecture/PLATFORMS.md) for mobile lifecycle, navigation, and asset I/O.
 

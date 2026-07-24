@@ -6,7 +6,8 @@
       <div class="shell-nav-tab-icon-wrap">
         <svg src="../icons/sparkle.svg" width="22" height="22" crop-to-content="true"></svg>
       </div>
-      <p class="shell-nav-tab-label">{{i18n:nav.home}}</p>
+      <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.home}}</p>
+      <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
     </button>
   </div>
   <div class="shell-nav-pill shell-nav-pill--secondary">
@@ -19,7 +20,8 @@
               data-if="nav_sessions_unread > 0"
               data-rml="nav_sessions_unread_display"></span>
       </div>
-      <p class="shell-nav-tab-label">{{i18n:nav.sessions}}</p>
+      <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.sessions}}</p>
+      <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
     </button>
     <button class="shell-nav-tab" type="button"
             data-class-shell-nav-tab--active="nav_tab == 'contacts'"
@@ -30,7 +32,8 @@
               data-if="nav_contacts_unread > 0"
               data-rml="nav_contacts_unread_display"></span>
       </div>
-      <p class="shell-nav-tab-label">{{i18n:nav.contacts}}</p>
+      <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.contacts}}</p>
+      <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
     </button>
     <button class="shell-nav-tab" type="button"
             data-if="layout_mode == 'expanded'"
@@ -40,7 +43,8 @@
         <svg src="../icons/me.svg" width="22" height="22" crop-to-content="true"></svg>
         <span class="badge-dot badge-dot--nav" data-if="nav_me_attention"></span>
       </div>
-      <p class="shell-nav-tab-label">{{i18n:nav.me}}</p>
+      <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.me}}</p>
+      <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
     </button>
   </div>
 </div>

@@ -113,6 +113,11 @@ public:
 
 void InstallPlatformLogSink() {
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+  static bool installed = false;
+  if (installed) {
+    return;
+  }
+  installed = true;
   logging::getRootLogger().addHandler(std::make_shared<PlatformLogHandler>());
 #endif
 }

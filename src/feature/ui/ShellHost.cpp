@@ -128,6 +128,8 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("activity_visible", &host.state_.activity_visible);
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
     ctor.Bind("window_maximized", &host.state_.window_maximized);
+    ctor.Bind("fonts_ready", &host.state_.fonts_ready);
+    ctor.Bind("unlock_in_progress", &host.state_.unlock_in_progress);
 
     if (auto badge_handle = ctor.RegisterStruct<NavBadgeState>()) {
       badge_handle.RegisterMember("sessions_unread", &NavBadgeState::sessions_unread);
@@ -281,6 +283,11 @@ void ShellHost::ClearPrimaryPane() {
 }
 
 void ShellHost::SelectNavTab(NavTab tab) {
+  if (state_.unlock_in_progress && tab != NavTab::Home) {
+    ShellFeedback::ShowToast(state_, Tr("startup.still_preparing"));
+    DirtyWindow();
+    return;
+  }
   // Compact Me stays an account bottom sheet (same as before), not a list/detail tab.
   if (tab == NavTab::Me && state_.layout_mode == LayoutMode::Compact) {
     OpenAccountSheet();
@@ -326,6 +333,11 @@ void ShellHost::CloseCompactChat() {
 }
 
 void ShellHost::OpenAccountSheet() {
+  if (state_.unlock_in_progress) {
+    ShellFeedback::ShowToast(state_, Tr("startup.still_preparing"));
+    DirtyWindow();
+    return;
+  }
   if (state_.account_sheet_open) {
     return;
   }
@@ -601,6 +613,8 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "activity_visible");
   DataModelHost::Instance().Dirty("window", "titlebar_visible");
   DataModelHost::Instance().Dirty("window", "window_maximized");
+  DataModelHost::Instance().Dirty("window", "fonts_ready");
+  DataModelHost::Instance().Dirty("window", "unlock_in_progress");
 }
 
 void ShellHost::RequestRemountNavRail() {

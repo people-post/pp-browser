@@ -16,6 +16,7 @@
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
 #include "common/Logger.h"
+#include "common/StartupTiming.h"
 
 #include <algorithm>
 #include <chrono>
@@ -125,6 +126,7 @@ void MessagingHub::InstallServiceClients(const AppConfig& config) {
 }
 
 Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
+  StartupPhase phase("MessagingHub::StartLibp2p");
   StopLibp2p();
   libp2p_host_ = std::make_unique<Libp2pHost>();
 
@@ -193,7 +195,10 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
 
-  (void)store_->ReconcileOutbox();
+  {
+    StartupPhase phase("MessagingHub::ReconcileOutbox");
+    (void)store_->ReconcileOutbox();
+  }
 
   InstallServiceClients(config);
 
@@ -272,6 +277,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
 }
 
 Roe<void> MessagingHub::EnsureMessagingReady() {
+  StartupPhase phase("MessagingHub::EnsureMessagingReady");
   if (!initialized_) {
     return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
