@@ -63,7 +63,7 @@ private:
                                                 const std::string& seq_owner_contact_id,
                                                 const uint64_t sender_seq) const;
   ReplayWindow& ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch);
-  Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message) const;
+  Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message, const std::string& actor_identity) const;
 
   IThreadStore& store_;
   IPeerSigningKeyResolver& signing_keys_;

@@ -5,6 +5,7 @@
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
 #include "base/messaging/EnvelopeSigner.h"
+#include "base/messaging/GroupMembershipApply.h"
 #include "base/messaging/GroupMembershipCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
@@ -48,11 +49,8 @@ RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyR
     : store_(store), signing_keys_(signing_keys), psk_store_(psk_store), identity_(identity),
       group_roster_(group_roster), invite_gate_(invite_gate) {}
 
-Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message) const {
-  if (!invite_gate_) {
-    return {};
-  }
-
+Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message,
+                                                              const std::string& actor_identity) const {
   auto renamed = GroupMembershipCodec::DecodeGroupRenamedFromMessage(message);
   if (renamed) {
     auto metadata = group_roster_.LoadMetadata(renamed->group_id);
@@ -62,7 +60,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (!*metadata) {
       return Error("Unknown group for rename");
     }
-    if ((*metadata)->owner_identity != message.sender_contact_id) {
+    if ((*metadata)->owner_identity != actor_identity) {
       return Error("Rename rejected: actor is not the group owner");
     }
     GroupMetadata updated = **metadata;
@@ -84,7 +82,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       if (detail) {
         auto sys = GroupMembershipCodec::BuildSystemMessage(row.id, GroupMembershipControlType::GroupRenamed,
                                                             "Group renamed to " + renamed->title, *detail,
-                                                            message.sender_contact_id);
+                                                            actor_identity);
         if (sys) {
           (void)store_.AppendMessage(*sys);
         }
@@ -94,6 +92,43 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   }
   if (renamed.error().message.find("not a group rename") == std::string::npos) {
     return renamed.error();
+  }
+
+  auto response = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
+  if (response) {
+    if (response->control_type == GroupMembershipControlType::GroupInviteAccept) {
+      if (auto applied = ApplyInviteAcceptToRoster(group_roster_, response->invite_nonce, actor_identity);
+          !applied) {
+        return applied.error();
+      }
+      auto metadata = group_roster_.LoadMetadata(response->group_id);
+      auto thread = store_.FindGroupThread(response->group_id);
+      if (thread && *thread && metadata && *metadata) {
+        auto detail = GroupMembershipCodec::EncodeMemberJoined(response->group_id, actor_identity, MemberRole::Member,
+                                                               (*metadata)->roster_epoch);
+        if (detail) {
+          auto sys = GroupMembershipCodec::BuildSystemMessage(
+              (*thread)->id, GroupMembershipControlType::MemberJoined, "Member joined the group", *detail,
+              actor_identity);
+          if (sys) {
+            (void)store_.AppendMessage(*sys);
+          }
+        }
+      }
+      return {};
+    }
+    if (auto declined = ApplyInviteDeclineToRoster(group_roster_, response->invite_nonce, actor_identity);
+        !declined) {
+      return declined.error();
+    }
+    return {};
+  }
+  if (response.error().message.find("not a group invite response") == std::string::npos) {
+    return response.error();
+  }
+
+  if (!invite_gate_) {
+    return {};
   }
 
   auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
@@ -114,8 +149,10 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   PendingGroupInvite pending;
   pending.invite_nonce = invite->invite_nonce;
   pending.group_id = invite->group_id;
+  pending.group_title = invite->group_title;
   pending.inviter_identity = invite->inviter_identity;
   pending.invitee_identity = invite->invitee_identity;
+  pending.roster_epoch = invite->roster_epoch == 0 ? 1 : invite->roster_epoch;
   pending.status = InviteStatus::Pending;
   pending.expires_at = invite->expires_at;
   pending.created_at = util::NowUnixMs();
@@ -390,7 +427,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   persisted.sender_seq = envelope.sender_seq;
   persisted.session_epoch = envelope.session_epoch;
 
-  if (auto membership = ApplyInboundMembershipMessage(persisted); !membership) {
+  if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id); !membership) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
@@ -528,7 +565,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   persisted.sender_seq = envelope.sender_seq;
   persisted.session_epoch = envelope.session_epoch;
 
-  if (auto membership = ApplyInboundMembershipMessage(persisted); !membership) {
+  if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id); !membership) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }

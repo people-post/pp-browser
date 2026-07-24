@@ -18,6 +18,12 @@ public:
 
   static Roe<std::string> EncodeInviteResponse(const std::string& invite_nonce, const std::string& group_id);
   static Roe<std::pair<std::string, std::string>> DecodeInviteResponse(const std::string& detail_json);
+  struct InviteResponsePayload {
+    std::string invite_nonce;
+    std::string group_id;
+    GroupMembershipControlType control_type = GroupMembershipControlType::GroupInviteAccept;
+  };
+  static Roe<InviteResponsePayload> DecodeInviteResponseFromMessage(const ThreadMessage& message);
 
   static Roe<std::string> EncodeMemberJoined(const std::string& group_id, const std::string& member_identity,
                                              MemberRole role, uint64_t roster_epoch);

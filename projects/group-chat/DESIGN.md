@@ -276,6 +276,8 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 4. Classify seq (relaxed ingest default — D046)
 5. Append to group thread; update sync_state
 
+**Invite handshake `[v1]`:** Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest applies accept via roster upsert + `roster_epoch` bump (so subsequent group sends include the new member). Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` in local roster so member→owner fan-out is non-empty.
+
 **Auto-create:** on accepted invite / first valid `member_joined` for local identity.
 
 ---
@@ -296,11 +298,11 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 
 - [x] Design doc + ADRs (G001–G008)
 - [ ] C0: `e2e_public` compose enabled when messaging ready
-- [ ] C1: Group envelope parse/send, N ciphertexts
-- [ ] C2: Membership codec + GroupMembershipService
-- [ ] C3: Roster store + group seq/sync
-- [ ] C4: Inbox create + invite UI + settings
-- [ ] C5: Fork flow (fresh start)
+- [x] C1: Group envelope parse/send, N ciphertexts (scaffold)
+- [x] C2: Membership codec + invite/accept/decline handshake (leave/remove/fork wire still local-only)
+- [x] C3: Roster store + group seq targets (group sync polish remaining)
+- [x] C4: Inbox create + invite UI + settings
+- [ ] C5: Fork flow (fresh start) — local only today; peer fan-out incomplete
 
 ---
 

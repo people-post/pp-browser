@@ -13,6 +13,7 @@ pp_browser_add_base_library(pp_base_messaging
     E2eRelayPayloadCodec.cpp
     EnvelopeSigner.cpp
     GroupE2ePayloadCodec.cpp
+    GroupMembershipApply.cpp
     GroupMembershipCodec.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp

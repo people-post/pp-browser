@@ -37,7 +37,6 @@ public:
   Roe<void> ApplyInboundGroupRenamed(const GroupMembershipCodec::GroupRenamedPayload& payload,
                                      const std::string& actor_identity);
 
-  Roe<void> HandleInboundInvitePayload(const GroupInvitePayload& invite);
   Roe<std::vector<GroupRosterMember>> ListRoster(const std::string& group_id) const;
 
 private:
@@ -48,6 +47,8 @@ private:
                                         const std::string& text, const std::string& detail_json,
                                         const std::string& sender_identity);
   Roe<void> SendInviteDirectMessage(const GroupInvitePayload& invite, const std::string& invitee_contact_id);
+  Roe<void> SendInviteResponseDirectMessage(const std::string& inviter_identity, const std::string& invite_nonce,
+                                            const std::string& group_id, GroupMembershipControlType response_type);
   Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
                                     const std::string& title, uint64_t roster_epoch);
 

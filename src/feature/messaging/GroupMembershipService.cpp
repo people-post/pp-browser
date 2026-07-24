@@ -201,8 +201,10 @@ Roe<void> GroupMembershipService::InviteMember(const std::string& group_id, cons
   PendingGroupInvite pending;
   pending.invite_nonce = invite.invite_nonce;
   pending.group_id = group_id;
+  pending.group_title = invite.group_title;
   pending.inviter_identity = invite.inviter_identity;
   pending.invitee_identity = invite.invitee_identity;
+  pending.roster_epoch = invite.roster_epoch;
   pending.status = InviteStatus::Pending;
   pending.expires_at = invite.expires_at;
   pending.created_at = util::NowUnixMs();
@@ -212,19 +214,54 @@ Roe<void> GroupMembershipService::InviteMember(const std::string& group_id, cons
   return SendInviteDirectMessage(invite, invitee_contact_id);
 }
 
-Roe<void> GroupMembershipService::HandleInboundInvitePayload(const GroupInvitePayload& invite) {
-  if (!invite_gate_.AllowsInboundInvite(invite)) {
-    return Error("Invite blocked by policy");
+Roe<void> GroupMembershipService::SendInviteResponseDirectMessage(const std::string& inviter_identity,
+                                                                  const std::string& invite_nonce,
+                                                                  const std::string& group_id,
+                                                                  const GroupMembershipControlType response_type) {
+  DirectChatTarget direct_target;
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  direct_target.peer_identity_value = inviter_identity;
+  direct_target.channel = ThreadChannel::E2ePublic;
+
+  std::string contact_id;
+  std::string dm_title = inviter_identity;
+  if (auto contact = contacts_.FindByIdentity(inviter_identity, ContactIdKind::RelayUser)) {
+    if (*contact) {
+      contact_id = (*contact)->id;
+      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+      if (dm_title.empty()) {
+        dm_title = inviter_identity;
+      }
+    }
   }
-  PendingGroupInvite pending;
-  pending.invite_nonce = invite.invite_nonce;
-  pending.group_id = invite.group_id;
-  pending.inviter_identity = invite.inviter_identity;
-  pending.invitee_identity = invite.invitee_identity;
-  pending.status = InviteStatus::Pending;
-  pending.expires_at = invite.expires_at;
-  pending.created_at = util::NowUnixMs();
-  return roster_.UpsertPendingInvite(pending);
+
+  auto thread = store_.FindOrCreateDirectThread(direct_target, contact_id, dm_title);
+  if (!thread) {
+    return thread.error();
+  }
+  auto detail = GroupMembershipCodec::EncodeInviteResponse(invite_nonce, group_id);
+  if (!detail) {
+    return detail.error();
+  }
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const bool accepted = response_type == GroupMembershipControlType::GroupInviteAccept;
+  const std::string display = accepted ? "Accepted group invitation" : "Declined group invitation";
+  const std::string payload_json =
+      nlohmann::json({{"control_type", GroupMembershipControlTypeToWire(response_type)}, {"detail", *detail}}).dump();
+  SendRelayOptions opts;
+  opts.generation = "system";
+  opts.update_preview = false;
+  opts.content_type = ChatContentType::System;
+  opts.payload_json = payload_json;
+  opts.sender_contact_id = *local;
+  auto sent = p2p_.SendUserMessage(thread->id, display, opts);
+  if (!sent) {
+    return sent.error();
+  }
+  return {};
 }
 
 Roe<Thread> GroupMembershipService::AcceptInvite(const std::string& invite_nonce) {
@@ -244,12 +281,32 @@ Roe<Thread> GroupMembershipService::AcceptInvite(const std::string& invite_nonce
     return Error("Invite not addressed to local identity");
   }
 
-  auto metadata = roster_.LoadMetadata((*pending)->group_id);
-  std::string title = metadata && metadata->has_value() ? metadata->value().title : "Group chat";
+  const std::string title =
+      (*pending)->group_title.empty() ? std::string("Group chat") : (*pending)->group_title;
+  const uint64_t roster_epoch = (*pending)->roster_epoch == 0 ? 1 : (*pending)->roster_epoch;
+
+  GroupMetadata metadata;
+  metadata.group_id = (*pending)->group_id;
+  metadata.owner_identity = (*pending)->inviter_identity;
+  metadata.title = title;
+  metadata.roster_epoch = roster_epoch;
+  if (auto saved = roster_.UpsertMetadata(metadata); !saved) {
+    return saved.error();
+  }
 
   auto thread = store_.FindOrCreateGroupThread((*pending)->group_id, title, {});
   if (!thread) {
     return thread.error();
+  }
+
+  // Seed both sides of the v1 create-invite pair so SendGroupMessage can fan out.
+  // (Owner already has self; invitee must also know the owner.)
+  GroupRosterMember owner;
+  owner.member_identity = (*pending)->inviter_identity;
+  owner.role = MemberRole::Owner;
+  owner.joined_at = util::NowUnixMs();
+  if (auto upsert_owner = roster_.UpsertMember((*pending)->group_id, owner); !upsert_owner) {
+    return upsert_owner.error();
   }
 
   GroupRosterMember member;
@@ -260,9 +317,10 @@ Roe<Thread> GroupMembershipService::AcceptInvite(const std::string& invite_nonce
     return upsert.error();
   }
   (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted);
+  (void)roster_.UpsertGroupTarget((*pending)->group_id, thread->id, 1, 1);
 
-  uint64_t roster_epoch = metadata && metadata->has_value() ? metadata->value().roster_epoch : 1;
-  auto detail = GroupMembershipCodec::EncodeMemberJoined((*pending)->group_id, *local, MemberRole::Member, roster_epoch);
+  auto detail =
+      GroupMembershipCodec::EncodeMemberJoined((*pending)->group_id, *local, MemberRole::Member, roster_epoch);
   if (!detail) {
     return detail.error();
   }
@@ -271,11 +329,37 @@ Roe<Thread> GroupMembershipService::AcceptInvite(const std::string& invite_nonce
       !event) {
     return event.error();
   }
+
+  if (auto sent = SendInviteResponseDirectMessage((*pending)->inviter_identity, invite_nonce, (*pending)->group_id,
+                                                  GroupMembershipControlType::GroupInviteAccept);
+      !sent) {
+    return sent.error();
+  }
   return *thread;
 }
 
 Roe<void> GroupMembershipService::DeclineInvite(const std::string& invite_nonce) {
-  return roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Declined);
+  auto pending = roster_.LoadPendingInvite(invite_nonce);
+  if (!pending || !pending->has_value()) {
+    return Error("Invite not found");
+  }
+  if ((*pending)->status != InviteStatus::Pending) {
+    return Error("Invite is not pending");
+  }
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  if (*local != (*pending)->invitee_identity) {
+    return Error("Invite not addressed to local identity");
+  }
+  if (auto status = roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Declined); !status) {
+    return status.error();
+  }
+  // Best-effort notify inviter; local decline already recorded.
+  (void)SendInviteResponseDirectMessage((*pending)->inviter_identity, invite_nonce, (*pending)->group_id,
+                                        GroupMembershipControlType::GroupInviteDecline);
+  return {};
 }
 
 Roe<void> GroupMembershipService::RemoveMember(const std::string& group_id, const std::string& member_contact_id) {

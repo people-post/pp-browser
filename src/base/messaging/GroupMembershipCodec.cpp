@@ -129,6 +129,28 @@ Roe<std::pair<std::string, std::string>> GroupMembershipCodec::DecodeInviteRespo
   return std::make_pair(json["invite_nonce"].get<std::string>(), json["group_id"].get<std::string>());
 }
 
+Roe<GroupMembershipCodec::InviteResponsePayload> GroupMembershipCodec::DecodeInviteResponseFromMessage(
+    const ThreadMessage& message) {
+  const auto control_type = ControlTypeFromMessage(message);
+  if (!control_type || (*control_type != GroupMembershipControlType::GroupInviteAccept &&
+                       *control_type != GroupMembershipControlType::GroupInviteDecline)) {
+    return Error("Message is not a group invite response");
+  }
+  const nlohmann::json payload = nlohmann::json::parse(message.payload_json, nullptr, false);
+  if (!payload.is_object() || !payload.contains("detail") || !payload["detail"].is_string()) {
+    return Error("Missing invite response detail");
+  }
+  auto decoded = DecodeInviteResponse(payload["detail"].get<std::string>());
+  if (!decoded) {
+    return decoded.error();
+  }
+  InviteResponsePayload result;
+  result.invite_nonce = decoded->first;
+  result.group_id = decoded->second;
+  result.control_type = *control_type;
+  return result;
+}
+
 Roe<std::string> GroupMembershipCodec::EncodeMemberJoined(const std::string& group_id,
                                                           const std::string& member_identity, const MemberRole role,
                                                           const uint64_t roster_epoch) {

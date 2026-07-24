@@ -89,8 +89,10 @@ struct GroupForkPayload {
 struct PendingGroupInvite {
   std::string invite_nonce;
   std::string group_id;
+  std::string group_title;
   std::string inviter_identity;
   std::string invitee_identity;
+  uint64_t roster_epoch = 1;
   InviteStatus status = InviteStatus::Pending;
   std::optional<int64_t> expires_at;
   int64_t created_at = 0;
