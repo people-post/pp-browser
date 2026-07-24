@@ -8,6 +8,14 @@ Platform code file layout and `#ifdef` policy: [PLATFORM_CODE.md](PLATFORM_CODE.
 
 pp-browser ships as a desktop SDL3 + OpenGL3 application. Path resolution uses XDG on Linux, Application Support on macOS, and AppData on Windows.
 
+### Live window resize
+
+On several OSes, `SDL_PollEvent` / `SDL_WaitEventTimeout` block for the whole interactive resize (or move) drag. The main loop cannot Present, so the compositor stretches the last frame — edge-repeat when growing.
+
+Fix: `SDL_AddEventWatch` in `BrowserHost` invokes an app-registered redraw on `PIXEL_SIZE_CHANGED` / `RESIZED` / live `EXPOSED` (`data1 == 1`). The handler (`Application::Run`) runs `SyncContext` → `ShellHost::Update` → `Context::Update` → `BeginFrame` / `Render` / `PresentFrame`. Duplicate size events for the same pixel size are coalesced.
+
+See [SDL wiki: AppFreezeDuringDrag](https://wiki.libsdl.org/SDL3/AppFreezeDuringDrag).
+
 ## Android (milestone 2)
 
 Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libmain.so`. The chat shell uses OpenGL ES 3.0 in the RmlUi backend.

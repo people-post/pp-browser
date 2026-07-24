@@ -265,6 +265,22 @@ void Application::Run() {
 
   int skip_log_countdown = 0;
   bool logged_first_present = false;
+#if RMLUI_SDL_VERSION_MAJOR >= 3
+  // Live layout+Present while the OS modal resize loop blocks Poll/WaitEvent.
+  Backend::SetLiveResizeHandler(context, [](Rml::Context* ctx) {
+    if (!ctx)
+      return;
+    Backend::SyncContext(ctx);
+    ShellHost::Instance().Update(ctx);
+    ctx->Update();
+    ShellHost::Instance().NotifyFrameEnd(ctx);
+    if (!Backend::CanRender())
+      return;
+    Backend::BeginFrame();
+    ctx->Render();
+    Backend::PresentFrame();
+  });
+#endif
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
     BrowserThread::RunUITasks();
     if (ShellHost::Instance().State().account_sheet_open ||
@@ -296,10 +312,16 @@ void Application::Run() {
       skip_log_countdown = 120;
     }
   }
+#if RMLUI_SDL_VERSION_MAJOR >= 3
+  Backend::SetLiveResizeHandler(nullptr, nullptr);
+#endif
 }
 
 void Application::Shutdown() {
   if (initialized_) {
+#if RMLUI_SDL_VERSION_MAJOR >= 3
+    Backend::SetLiveResizeHandler(nullptr, nullptr);
+#endif
     ShutdownChatController();
 
     BrowserThread::RunUITasks();

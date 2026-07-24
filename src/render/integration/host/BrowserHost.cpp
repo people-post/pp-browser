@@ -123,6 +123,76 @@ struct BackendData {
 static Rml::UniquePtr<BackendData> data;
 #if SDL_MAJOR_VERSION >= 3
 static PreProcessEventCallback g_pre_process_event = nullptr;
+static LiveResizeRedrawCallback g_live_resize_redraw = nullptr;
+static Rml::Context* g_live_resize_context = nullptr;
+static bool g_in_live_resize_redraw = false;
+static int g_live_resize_last_pixel_w = 0;
+static int g_live_resize_last_pixel_h = 0;
+
+// PollEvent/WaitEvent block during interactive resize on several OSes; SDL still
+// delivers events to watches. Redraw from here so the compositor does not stretch
+// the last frame (see SDL wiki AppFreezeDuringDrag).
+static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event)
+{
+	if (!data || !g_live_resize_redraw || !g_live_resize_context || !event || g_in_live_resize_redraw)
+		return true;
+
+	switch (event->type)
+	{
+	case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+	case SDL_EVENT_WINDOW_RESIZED:
+	case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+	case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+	case SDL_EVENT_WINDOW_EXPOSED:
+		if (event->window.windowID != SDL_GetWindowID(data->window))
+			return true;
+		break;
+	default:
+		return true;
+	}
+
+	bool size_may_have_changed = false;
+	bool live_expose = false;
+	switch (event->type)
+	{
+	case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+	case SDL_EVENT_WINDOW_RESIZED:
+	case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+	case SDL_EVENT_WINDOW_SAFE_AREA_CHANGED:
+		size_may_have_changed = true;
+		break;
+	case SDL_EVENT_WINDOW_EXPOSED:
+		// data1 == 1: live-resize expose while the modal resize/drag loop is active.
+		live_expose = (event->window.data1 == 1);
+		break;
+	default:
+		break;
+	}
+
+	if (!size_may_have_changed && !live_expose)
+		return true;
+
+	int pixel_w = 0;
+	int pixel_h = 0;
+	SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
+	const bool same_pixels = (pixel_w == g_live_resize_last_pixel_w && pixel_h == g_live_resize_last_pixel_h);
+	// Coalesce RESIZED + PIXEL_SIZE_CHANGED + follow-up EXPOSED for the same size.
+	// Still redraw on display-scale / safe-area when pixels are unchanged.
+	if (same_pixels)
+	{
+		if (live_expose)
+			return true;
+		if (event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event->type == SDL_EVENT_WINDOW_RESIZED)
+			return true;
+	}
+
+	g_in_live_resize_redraw = true;
+	g_live_resize_redraw(g_live_resize_context);
+	g_live_resize_last_pixel_w = pixel_w;
+	g_live_resize_last_pixel_h = pixel_h;
+	g_in_live_resize_redraw = false;
+	return true;
+}
 #endif
 // Custom SDL user event that wakes SDL_WaitEventTimeout when UI work is posted.
 static Uint32 g_wake_event_type = 0;
@@ -241,6 +311,10 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 
 	TouchSimOverlay::Initialize(window);
 
+#if SDL_MAJOR_VERSION >= 3
+	SDL_AddEventWatch(LiveResizeEventWatch, nullptr);
+#endif
+
 	return true;
 }
 
@@ -268,6 +342,14 @@ void Backend::SyncContext(Rml::Context* context)
 void Backend::SetPreProcessEventHandler(PreProcessEventCallback callback)
 {
 	g_pre_process_event = callback;
+}
+
+void Backend::SetLiveResizeHandler(Rml::Context* context, LiveResizeRedrawCallback callback)
+{
+	g_live_resize_context = context;
+	g_live_resize_redraw = callback;
+	g_live_resize_last_pixel_w = 0;
+	g_live_resize_last_pixel_h = 0;
 }
 
 SDL_Window* Backend::GetWindow()
@@ -337,6 +419,11 @@ void Backend::Shutdown()
 	TouchSimOverlay::Shutdown();
 
 #if SDL_MAJOR_VERSION >= 3
+	SDL_RemoveEventWatch(LiveResizeEventWatch, nullptr);
+	g_live_resize_redraw = nullptr;
+	g_live_resize_context = nullptr;
+	g_pre_process_event = nullptr;
+
 	SDL_GL_MakeCurrent(data->window, nullptr);
 	SDL_GL_DestroyContext(data->glcontext);
 #else

@@ -16,6 +16,9 @@
 using KeyDownCallback = bool (*)(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier, float native_dp_ratio, bool priority);
 #if RMLUI_SDL_VERSION_MAJOR >= 3
 using PreProcessEventCallback = bool (*)(Rml::Context* context, SDL_Event& event, bool& propagate_event);
+// Called from SDL_AddEventWatch while Poll/WaitEvent is blocked in a modal resize/drag.
+// Must SyncContext, Update layout, and Present so the OS does not stretch the last frame.
+using LiveResizeRedrawCallback = void (*)(Rml::Context* context);
 #endif
 
 namespace Backend {
@@ -34,6 +37,8 @@ bool CanRender();
 
 #if RMLUI_SDL_VERSION_MAJOR >= 3
 void SetPreProcessEventHandler(PreProcessEventCallback callback);
+// Register context + redraw for live window resize (see SDL wiki AppFreezeDuringDrag).
+void SetLiveResizeHandler(Rml::Context* context, LiveResizeRedrawCallback callback);
 SDL_Window* GetWindow();
 // Rebuild GL resources and invalidate RmlUi GPU caches after SDL_EVENT_RENDER_DEVICE_RESET.
 void RecoverAfterDeviceReset(Rml::Context* context);
