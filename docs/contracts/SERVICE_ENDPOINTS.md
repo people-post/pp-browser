@@ -60,15 +60,7 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 | `GET /v1/users/:relay_user_id` | Public lookup (`signing_public_key_b64`, `kem_public_key_b64`, nickname, expires_at) |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
 
-Lookup / search hits and profile updates may include additive capability fields (ignored by older clients):
-
-| Field | Type | Notes |
-|-------|------|--------|
-| `app_version` | string | Semver release string of the peer’s app |
-| `protocol_gen` | integer | Peer’s advertised protocol generation (default **1** if absent) |
-| `min_peer_protocol_gen` | integer | Minimum generation the peer requires of us (default **1** if absent) |
-
-Clients send the same three fields on `register/finish` and `profile/nickname` so the relay can store and return them. Relays that do not yet persist them simply ignore the keys.
+Peer protocol / app-version capability is **not** a directory concern. Peers discover mismatch via messaging / libp2p (soft-skip, protocol ids); the relay stays format-blind for that.
 
 ## Client compatibility discovery
 

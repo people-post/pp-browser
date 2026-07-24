@@ -23,8 +23,6 @@
 #include "common/Utilities.h"
 #include "common/StartupTiming.h"
 #include "feature/messaging/MessagingHub.h"
-#include "base/net/PeerProtocolCompat.h"
-#include "base/platform/AppVersion.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/people/PeerDisplayLabel.h"
 #include "base/crypto/ProfileSecretsService.h"
@@ -330,8 +328,6 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "show_sync_with_peer");
   DataModelHost::Instance().Dirty("chat", "show_thread_menu");
   DataModelHost::Instance().Dirty("chat", "show_gap_banner");
-  DataModelHost::Instance().Dirty("chat", "show_protocol_compat_banner");
-  DataModelHost::Instance().Dirty("chat", "protocol_compat_banner");
   DataModelHost::Instance().Dirty("chat", "show_compromised_banner");
   DataModelHost::Instance().Dirty("chat", "show_psk_setup_banner");
   DataModelHost::Instance().Dirty("chat", "show_psk_import");
@@ -1250,8 +1246,6 @@ void ChatController::ResetChatPanelState() {
   chat_.show_sync_with_peer = false;
   chat_.show_thread_menu = false;
   chat_.show_gap_banner = false;
-  chat_.show_protocol_compat_banner = false;
-  chat_.protocol_compat_banner = "";
   chat_.show_older_history_hint = false;
   chat_.show_compromised_banner = false;
   chat_.show_psk_setup_banner = false;
@@ -1285,8 +1279,6 @@ void ChatController::UpdateThreadChrome() {
     chat_.show_forget_memory = thread->kind == ThreadKind::Ai;
     chat_.show_sync_with_peer = false;
     chat_.show_gap_banner = false;
-    chat_.show_protocol_compat_banner = false;
-    chat_.protocol_compat_banner = "";
     chat_.show_older_history_hint = false;
     chat_.show_compromised_banner = false;
     chat_.show_psk_setup_banner = false;
@@ -1358,22 +1350,6 @@ void ChatController::UpdateThreadChrome() {
       if (label.trust == PeerLabelTrust::DirectoryUnverified) {
         chat_.thread_subtitle = std::string(chat_.thread_subtitle.c_str()) + " · Unverified";
       }
-      const std::string peer_id = thread->peer_identity_value;
-      if (!peer_id.empty()) {
-        MessagingHub::Instance().DirectoryShadows().EnsureLookup(peer_id);
-        if (auto shadow = MessagingHub::Instance().DirectoryShadows().Get(peer_id)) {
-          const PeerProtocolCompat compat =
-              EvaluatePeerProtocolCompat(*shadow, kProtocolGen, kMinPeerProtocolGen);
-          if (compat == PeerProtocolCompat::LocalTooOld) {
-            chat_.show_protocol_compat_banner = true;
-            chat_.protocol_compat_banner = Tr("compat.peer_update_required").c_str();
-            chat_.compose_disabled = true;
-          } else if (compat == PeerProtocolCompat::PeerTooOld) {
-            chat_.show_protocol_compat_banner = true;
-            chat_.protocol_compat_banner = Tr("compat.peer_outdated").c_str();
-          }
-        }
-      }
     } else {
       std::string roster_label = thread->encrypted ? "Group · E2E" : "Group chat";
       if (MessagingHub::Instance().IsMessagingReady() && thread->group_id) {
@@ -1411,8 +1387,6 @@ void ChatController::UpdateThreadChrome() {
     chat_.show_sync_with_peer = false;
     chat_.show_thread_menu = false;
     chat_.show_gap_banner = false;
-    chat_.show_protocol_compat_banner = false;
-    chat_.protocol_compat_banner = "";
     chat_.show_older_history_hint = false;
     chat_.show_compromised_banner = false;
     chat_.show_psk_setup_banner = false;
@@ -2554,8 +2528,6 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("show_sync_with_peer", &ChatController::Instance().chat_.show_sync_with_peer);
         ctor.Bind("show_thread_menu", &ChatController::Instance().chat_.show_thread_menu);
         ctor.Bind("show_gap_banner", &ChatController::Instance().chat_.show_gap_banner);
-        ctor.Bind("show_protocol_compat_banner", &ChatController::Instance().chat_.show_protocol_compat_banner);
-        ctor.Bind("protocol_compat_banner", &ChatController::Instance().chat_.protocol_compat_banner);
         ctor.Bind("show_compromised_banner", &ChatController::Instance().chat_.show_compromised_banner);
         ctor.Bind("show_psk_setup_banner", &ChatController::Instance().chat_.show_psk_setup_banner);
         ctor.Bind("show_psk_import", &ChatController::Instance().chat_.show_psk_import);

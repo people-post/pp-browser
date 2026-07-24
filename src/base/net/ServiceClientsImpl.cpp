@@ -11,7 +11,6 @@
 #include "base/net/RelayApiSignPayload.h"
 #include "base/people/ContactJson.h"
 #include "base/people/Ed25519Signer.h"
-#include "base/platform/AppVersion.h"
 
 #include <nlohmann/json.hpp>
 
@@ -580,10 +579,7 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
                          {"signature", signature},
                          {"timestamp", timestamp},
                          {"signature_alg", signature_alg},
-                         {"kem_public_key_b64", kem_public_key_b64},
-                         {"app_version", AppVersionString()},
-                         {"protocol_gen", kProtocolGen},
-                         {"min_peer_protocol_gen", kMinPeerProtocolGen}};
+                         {"kem_public_key_b64", kem_public_key_b64}};
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");
   }
@@ -627,10 +623,7 @@ Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string
   const nlohmann::json body = {{"relay_user_id", relay_user_id},
                                {"nickname", new_nickname},
                                {"timestamp", timestamp},
-                               {"signature", signature},
-                               {"app_version", AppVersionString()},
-                               {"protocol_gen", kProtocolGen},
-                               {"min_peer_protocol_gen", kMinPeerProtocolGen}};
+                               {"signature", signature}};
   const auto response =
       HttpClient::Post(base_url_ + "/v1/profile/nickname", body.dump(), {{"Content-Type", "application/json"}});
   if (!response) {

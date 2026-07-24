@@ -1,7 +1,6 @@
 pp_browser_add_base_library(pp_base_net
   SOURCES
     ClientCompat.cpp
-    PeerProtocolCompat.cpp
     CurlSsl.cpp
     HttpClient.cpp
     RelayApiSignPayload.cpp

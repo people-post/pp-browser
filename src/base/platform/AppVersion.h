@@ -22,12 +22,12 @@ inline constexpr const char* AppVersionCoreString() {
 }
 
 /**
- * Monotonic wire/capability generation advertised to peers and compared against
- * `min_protocol_gen` / `min_peer_protocol_gen`. Bump only when intentionally cutting old peers.
+ * Monotonic wire/capability generation for a future in-band messaging hello.
+ * Bump only when intentionally cutting old peers. Not advertised via directory.
  */
 inline constexpr int kProtocolGen = 1;
 
-/** Minimum peer protocol_gen this build accepts for full peer features. */
+/** Minimum peer protocol_gen this build will accept once in-band hello exists. */
 inline constexpr int kMinPeerProtocolGen = 1;
 
 inline constexpr const char* kDefaultUpgradeUrl =

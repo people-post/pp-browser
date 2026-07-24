@@ -46,8 +46,6 @@
     "compat.update_required.message": "This version of Frame is too old to continue. Please update to the latest release.",
     "compat.update_required.action": "Update",
     "compat.update_available.message": "A newer version of Frame is available.",
-    "compat.peer_update_required": "Update Frame to continue chatting with this contact.",
-    "compat.peer_outdated": "This contact is using an older version of Frame. Some features may not work.",
 
     "settings.theme.label": "Theme",
     "settings.theme.system": "System",

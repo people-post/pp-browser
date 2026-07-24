@@ -46,8 +46,6 @@
     "compat.update_required.message": "当前 Frame 版本过旧，请更新到最新版本后继续使用。",
     "compat.update_required.action": "更新",
     "compat.update_available.message": "有新版本的 Frame 可用。",
-    "compat.peer_update_required": "请更新 Frame 后才能与此联系人聊天。",
-    "compat.peer_outdated": "此联系人使用的 Frame 版本较旧，部分功能可能不可用。",
 
     "settings.theme.label": "主题",
     "settings.theme.system": "跟随系统",

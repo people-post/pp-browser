@@ -184,15 +184,6 @@ nlohmann::json DirectoryHitToJson(const DirectoryHit& hit) {
   if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
     out["kem_public_key_b64"] = *hit.kem_public_key_b64;
   }
-  if (hit.app_version && !hit.app_version->empty()) {
-    out["app_version"] = *hit.app_version;
-  }
-  if (hit.protocol_gen) {
-    out["protocol_gen"] = *hit.protocol_gen;
-  }
-  if (hit.min_peer_protocol_gen) {
-    out["min_peer_protocol_gen"] = *hit.min_peer_protocol_gen;
-  }
   return out;
 }
 
@@ -235,15 +226,6 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
         hit.multiaddrs.push_back(item.get<std::string>());
       }
     }
-  }
-  if (json.contains("app_version") && json["app_version"].is_string()) {
-    hit.app_version = json["app_version"].get<std::string>();
-  }
-  if (json.contains("protocol_gen") && json["protocol_gen"].is_number_integer()) {
-    hit.protocol_gen = json["protocol_gen"].get<int>();
-  }
-  if (json.contains("min_peer_protocol_gen") && json["min_peer_protocol_gen"].is_number_integer()) {
-    hit.min_peer_protocol_gen = json["min_peer_protocol_gen"].get<int>();
   }
   return hit;
 }

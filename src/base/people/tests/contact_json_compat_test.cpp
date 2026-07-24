@@ -58,9 +58,6 @@ TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
   hit.ids = {{ContactIdKind::RelayUser, "relay:x", true}};
   hit.signing_public_key_b64 = "sig";
   hit.kem_public_key_b64 = "kem";
-  hit.app_version = "0.4.2";
-  hit.protocol_gen = 2;
-  hit.min_peer_protocol_gen = 1;
 
   const DirectoryHit again = DirectoryHitFromJson(DirectoryHitToJson(hit));
   EXPECT_EQ(again.hit_id, hit.hit_id);
@@ -68,12 +65,6 @@ TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
   EXPECT_EQ(*again.signing_public_key_b64, "sig");
   ASSERT_TRUE(again.kem_public_key_b64.has_value());
   EXPECT_EQ(*again.kem_public_key_b64, "kem");
-  ASSERT_TRUE(again.app_version.has_value());
-  EXPECT_EQ(*again.app_version, "0.4.2");
-  ASSERT_TRUE(again.protocol_gen.has_value());
-  EXPECT_EQ(*again.protocol_gen, 2);
-  ASSERT_TRUE(again.min_peer_protocol_gen.has_value());
-  EXPECT_EQ(*again.min_peer_protocol_gen, 1);
 }
 
 } // namespace

@@ -1,6 +1,4 @@
 #include "base/net/ClientCompat.h"
-#include "base/net/PeerProtocolCompat.h"
-#include "base/people/ContactTypes.h"
 #include "base/platform/AppVersion.h"
 
 #include <gtest/gtest.h>
@@ -101,21 +99,6 @@ TEST(ClientCompatUpgradeUrl, FallsBackToDefault) {
   EXPECT_EQ(ResolvedUpgradeUrl(doc), kDefaultUpgradeUrl);
   doc.upgrade_url = "https://example.com/app";
   EXPECT_EQ(ResolvedUpgradeUrl(doc), "https://example.com/app");
-}
-
-TEST(PeerProtocolCompat, LocalTooOldAndPeerTooOld) {
-  DirectoryHit peer;
-  peer.protocol_gen = 2;
-  peer.min_peer_protocol_gen = 2;
-  EXPECT_EQ(EvaluatePeerProtocolCompat(peer, /*local=*/1, /*min=*/1), PeerProtocolCompat::LocalTooOld);
-
-  peer.protocol_gen = 1;
-  peer.min_peer_protocol_gen = 1;
-  EXPECT_EQ(EvaluatePeerProtocolCompat(peer, /*local=*/2, /*min=*/2), PeerProtocolCompat::PeerTooOld);
-
-  peer.protocol_gen = std::nullopt;
-  peer.min_peer_protocol_gen = std::nullopt;
-  EXPECT_EQ(EvaluatePeerProtocolCompat(peer, 1, 1), PeerProtocolCompat::Compatible);
 }
 
 TEST(AppVersion, ConstantsPresent) {
