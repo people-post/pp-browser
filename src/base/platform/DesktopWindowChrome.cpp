@@ -1,14 +1,23 @@
 #include "base/platform/DesktopWindowChrome.h"
 
 #include "base/platform/Platform.h"
+#include "base/platform/desktop/LocalNotifierImpl.h"
+#include "common/Logger.h"
 
 #include "RmlUi_Backend.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <string>
 
 #if RMLUI_SDL_VERSION_MAJOR >= 3
 #include <SDL3/SDL.h>
+#if !defined(_WIN32) && !defined(__APPLE__)
+#include <X11/Xatom.h>
+#include <X11/Xlib.h>
+#endif
 #endif
 
 namespace pbr {
@@ -226,6 +235,99 @@ bool DesktopWindowChrome::IsMaximized() {
   return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED) != 0;
 #else
   return false;
+#endif
+}
+
+#if RMLUI_SDL_VERSION_MAJOR >= 3 && !defined(_WIN32) && !defined(__APPLE__)
+// GNOME X11 ignores XDG_ACTIVATION_TOKEN (SDL only consumes it on Wayland).
+// Apply the notification ActivationToken as _NET_STARTUP_ID and activate via EWMH.
+bool RaiseX11WithStartupId(SDL_Window* window, const std::string& token) {
+  if (!window || SDL_strcmp(SDL_GetCurrentVideoDriver(), "x11") != 0) {
+    return false;
+  }
+  const SDL_PropertiesID props = SDL_GetWindowProperties(window);
+  auto* display = static_cast<Display*>(
+      SDL_GetPointerProperty(props, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr));
+  const Window xid = static_cast<Window>(
+      SDL_GetNumberProperty(props, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+  if (!display || xid == 0) {
+    return false;
+  }
+
+  if (!token.empty()) {
+    const Atom startup_id = XInternAtom(display, "_NET_STARTUP_ID", False);
+    XChangeProperty(display, xid, startup_id, XA_STRING, 8, PropModeReplace,
+                    reinterpret_cast<const unsigned char*>(token.c_str()),
+                    static_cast<int>(token.size()));
+  }
+
+  XMapRaised(display, xid);
+  XRaiseWindow(display, xid);
+
+  const Atom net_active = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
+  XEvent ev;
+  std::memset(&ev, 0, sizeof(ev));
+  ev.xclient.type = ClientMessage;
+  ev.xclient.window = xid;
+  ev.xclient.message_type = net_active;
+  ev.xclient.format = 32;
+  ev.xclient.data.l[0] = 1; // application
+  ev.xclient.data.l[1] = CurrentTime;
+  ev.xclient.data.l[2] = 0;
+  XSendEvent(display, DefaultRootWindow(display), False,
+             SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+  XFlush(display);
+  return true;
+}
+#endif
+
+void DesktopWindowChrome::RaiseAndFocus() {
+#if RMLUI_SDL_VERSION_MAJOR >= 3
+  if (!Enabled()) {
+    return;
+  }
+  SDL_Window* window = Backend::GetWindow();
+  if (!window) {
+    logging::getLogger("LocalNotifier").warning << "RaiseAndFocus: no window";
+    return;
+  }
+
+  // Do not SDL_FlashWindow here: on X11/GNOME urgency becomes the intermediate
+  // "App is ready" banner that forces a second click.
+  (void)SDL_FlashWindow(window, SDL_FLASH_CANCEL);
+
+  // SDL Wayland RaiseWindow consumes XDG_ACTIVATION_TOKEN; GNOME Notifications
+  // emit ActivationToken (startup id / xdg-activation) before ActionInvoked.
+  const std::string token = desktop::TakePendingDesktopActivationToken();
+  logging::getLogger("LocalNotifier").warning
+      << "RaiseAndFocus token=" << (token.empty() ? "none" : "yes");
+  std::fprintf(stderr, "[Frame][LocalNotifier] RaiseAndFocus token=%s\n",
+               token.empty() ? "none" : "yes");
+  std::fflush(stderr);
+
+  if (!token.empty()) {
+    SDL_setenv_unsafe("XDG_ACTIVATION_TOKEN", token.c_str(), 1);
+    SDL_setenv_unsafe("DESKTOP_STARTUP_ID", token.c_str(), 1);
+  }
+
+  SDL_ShowWindow(window);
+  if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) {
+    SDL_RestoreWindow(window);
+  }
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+  const bool x11_raised = RaiseX11WithStartupId(window, token);
+#else
+  const bool x11_raised = false;
+#endif
+  if (!x11_raised) {
+    SDL_RaiseWindow(window);
+  }
+
+  if (!token.empty()) {
+    SDL_unsetenv_unsafe("XDG_ACTIVATION_TOKEN");
+    SDL_unsetenv_unsafe("DESKTOP_STARTUP_ID");
+  }
 #endif
 }
 

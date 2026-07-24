@@ -10,6 +10,7 @@ set(_pp_platform_common_sources
   DesktopLocalNotifier.cpp
   DesktopPathProvider.cpp
   DesktopWindowChrome.cpp
+  desktop/LocalNotifierActivation.cpp
   desktop/PathHelpers.cpp
   EnvCredentialStore.cpp
   ExecutablePath.cpp
@@ -61,7 +62,7 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_os_sources
     os/OsExecutablePath_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
-    desktop/LocalNotifier_Darwin.cpp
+    desktop/LocalNotifier_Darwin.mm
   )
 else()
   list(APPEND _pp_platform_os_sources
@@ -94,6 +95,23 @@ endif()
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
 if(PP_BROWSER_IS_ANDROID)
   target_link_libraries(pp_base_platform PUBLIC CURL::libcurl)
+endif()
+
+# Desktop macOS: UNUserNotificationCenter for local banners.
+if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
+  enable_language(OBJCXX)
+  target_link_libraries(pp_base_platform PUBLIC
+    "-framework UserNotifications"
+    "-framework CoreServices"
+    "-framework Foundation")
+endif()
+
+# Desktop Linux: Freedesktop Notifications via libdbus-1; X11 raise uses libX11.
+if(PP_BROWSER_DESKTOP_OS STREQUAL "LINUX" AND NOT PP_BROWSER_IS_ANDROID)
+  find_package(PkgConfig REQUIRED)
+  find_package(X11 REQUIRED)
+  pkg_check_modules(PP_DBUS REQUIRED IMPORTED_TARGET dbus-1)
+  target_link_libraries(pp_base_platform PUBLIC PkgConfig::PP_DBUS X11::X11)
 endif()
 
 if(PP_BROWSER_BUILD_TESTS)

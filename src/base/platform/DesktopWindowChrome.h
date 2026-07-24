@@ -24,6 +24,9 @@ public:
   static void ToggleMaximize();
   static void Close();
   static bool IsMaximized();
+
+  /** Restore if minimized and raise/activate the main window (UI thread). */
+  static void RaiseAndFocus();
 };
 
 } // namespace pbr

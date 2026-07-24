@@ -8,6 +8,8 @@ namespace pbr {
 inline constexpr const char* kProductName = "Frame";
 inline constexpr const char* kProductTagline = "The internet, rendered for you.";
 inline constexpr const char* kProductSlug = "frame";
+/** Windows AppUserModelID for toast notifications (matches macOS signing id style). */
+inline constexpr const char* kProductAumid = "dev.frame.app";
 inline constexpr const char* kAppIconAsset = "branding/app-icon.png";
 
 } // namespace pbr

@@ -1104,7 +1104,7 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
         preview = decoded->text;
       }
       inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
-      if (!AppLifecycle::IsForeground() && inbox_.ActiveThreadId() != resolved_thread_id) {
+      if (!AppLifecycle::IsUserAttentive() && inbox_.ActiveThreadId() != resolved_thread_id) {
         std::string notice_title = "New message";
         if (auto thread = store_.GetThread(resolved_thread_id)) {
           if (*thread) {

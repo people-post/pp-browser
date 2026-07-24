@@ -11,6 +11,7 @@
 #include "feature/chat/ChatController.h"
 #include "base/platform/BrowserThread.h"
 #include "base/platform/IAssetLocator.h"
+#include "base/platform/ILocalNotifier.h"
 #include "base/platform/IPathProvider.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformServices.h"
@@ -318,6 +319,10 @@ void Application::Run() {
 }
 
 void Application::Shutdown() {
+  // Join notification watcher first so it cannot PostTask during teardown, and
+  // so process exit does not std::terminate on an unjoined std::thread.
+  ILocalNotifier::Instance().Shutdown();
+
   if (initialized_) {
 #if RMLUI_SDL_VERSION_MAJOR >= 3
     Backend::SetLiveResizeHandler(nullptr, nullptr);

@@ -2,7 +2,10 @@
 
 #include "common/Logger.h"
 #include "base/platform/BrowserThread.h"
+#include "base/platform/Platform.h"
 
+#include <atomic>
+#include <cstdio>
 #include <vector>
 
 namespace pbr {
@@ -13,6 +16,10 @@ AppLifecycleState g_state = AppLifecycleState::Foreground;
 std::vector<std::function<void()>> g_background_listeners;
 std::vector<std::function<void()>> g_foreground_listeners;
 
+// Updated only on the UI/SDL thread. Read from any thread for alert gating.
+std::atomic<bool> g_desktop_input_focused{true};
+std::atomic<bool> g_desktop_minimized{false};
+
 } // namespace
 
 AppLifecycleState AppLifecycle::Current() {
@@ -21,6 +28,34 @@ AppLifecycleState AppLifecycle::Current() {
 
 bool AppLifecycle::IsForeground() {
   return g_state == AppLifecycleState::Foreground;
+}
+
+bool AppLifecycle::IsUserAttentive() {
+  if (!IsForeground()) {
+    return false;
+  }
+  if (!Platform::IsDesktop()) {
+    return true;
+  }
+  if (g_desktop_minimized.load(std::memory_order_relaxed)) {
+    return false;
+  }
+  return g_desktop_input_focused.load(std::memory_order_relaxed);
+}
+
+void AppLifecycle::SetDesktopInputFocused(bool focused) {
+  const bool prev = g_desktop_input_focused.exchange(focused, std::memory_order_relaxed);
+  if (prev != focused) {
+    logging::getLogger("AppLifecycle").warning
+        << "Desktop input focus=" << (focused ? "gained" : "lost");
+    std::fprintf(stderr, "[Frame][AppLifecycle] Desktop input focus=%s\n",
+                 focused ? "gained" : "lost");
+    std::fflush(stderr);
+  }
+}
+
+void AppLifecycle::SetDesktopMinimized(bool minimized) {
+  g_desktop_minimized.store(minimized, std::memory_order_relaxed);
 }
 
 void AppLifecycle::OnWillEnterBackground() {

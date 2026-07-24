@@ -7,7 +7,7 @@
 - CMake 3.24+
 - C++20 compiler (GCC 13+, Clang 16+, or MSVC 2022)
 - OpenGL 3.3 drivers
-- Linux: `libx11-dev`, `libxext-dev`, `libxcursor-dev`, `libxinerama-dev`, `libxi-dev`, `libxrandr-dev`, `libxfixes-dev`, `libgl-dev`
+- Linux: `libx11-dev`, `libxext-dev`, `libxcursor-dev`, `libxinerama-dev`, `libxi-dev`, `libxrandr-dev`, `libxfixes-dev`, `libgl-dev`, `libdbus-1-dev` (local desktop notifications)
 - Perl (for lsquic code generation)
 
 curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.

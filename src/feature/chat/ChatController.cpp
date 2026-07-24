@@ -5,6 +5,7 @@
 #include "base/platform/AppLifecycle.h"
 #include "base/platform/BackgroundSyncScheduler.h"
 #include "base/platform/BrowserThread.h"
+#include "base/platform/DesktopWindowChrome.h"
 #include "base/platform/ILocalNotifier.h"
 #include "base/platform/IPushDeviceRegistrar.h"
 #include "feature/messaging/PushDeviceCoordinator.h"
@@ -707,6 +708,7 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
     return;
   }
   if (MessagingHub::Instance().Inbox().OpenThread(thread_id)) {
+    ILocalNotifier::Instance().ClearForThread(thread_id);
     MessagingHub::Instance().P2p().MaybeTailSync(thread_id);
     ShellHost::Instance().SetPrimaryPane("chat");
     FinalizeThreadDisplay();
@@ -2348,6 +2350,12 @@ void ChatController::WireMessagingBindings() {
         }
         ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
       });
+  ILocalNotifier::Instance().SetActivationHandler([](std::string thread_id) {
+    DesktopWindowChrome::RaiseAndFocus();
+    if (!thread_id.empty() && ChatSessionActions::Instance().select_thread) {
+      ChatSessionActions::Instance().select_thread(thread_id);
+    }
+  });
   BackgroundSyncScheduler::Instance().SetSyncHandler([](bool force) {
     if (!MessagingHub::Instance().IsMessagingReady()) {
       return;

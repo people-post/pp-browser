@@ -35,6 +35,8 @@
 
 - [x] `DesktopLocalNotifier`
 - [x] Background/minimized poll + alert when unfocused
+- [x] Native OS banners (Linux D-Bus, macOS UNUserNotificationCenter, Windows WinRT)
+- [x] Tap → raise window + open `thread_id`; `ClearForThread` on select
 
 ## p6 — Settings UI
 

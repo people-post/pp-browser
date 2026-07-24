@@ -2,6 +2,7 @@
 
 #include "base/platform/AppEventHooks.h"
 #include "base/platform/AppLifecycle.h"
+#include "base/platform/Platform.h"
 #include "base/platform/PlatformNavigation.h"
 
 #include "RmlUi_Backend.h"
@@ -10,6 +11,24 @@
 #include <SDL3/SDL.h>
 
 namespace pbr {
+namespace {
+
+void MaybeEnterDesktopForeground() {
+  if (!Platform::IsDesktop()) {
+    return;
+  }
+  SDL_Window* window = Backend::GetWindow();
+  if (!window) {
+    return;
+  }
+  const Uint32 flags = SDL_GetWindowFlags(window);
+  if ((flags & SDL_WINDOW_MINIMIZED) != 0) {
+    return;
+  }
+  AppLifecycle::OnDidEnterForeground();
+}
+
+} // namespace
 
 void SdlAppEvents::Install() {
   Backend::SetPreProcessEventHandler(&SdlAppEvents::PreProcess);
@@ -33,11 +52,35 @@ bool SdlAppEvents::PreProcess(Rml::Context* context, SDL_Event& event, bool& pro
   case SDL_EVENT_DID_ENTER_FOREGROUND:
     AppLifecycle::OnDidEnterForeground();
     if (context && hooks.on_sync_system_theme) {
-      // Resume may restore EGL without a device-reset event; re-sync size/viewport.
       Backend::SyncContext(context);
       hooks.on_sync_system_theme(context);
     }
     return true;
+  case SDL_EVENT_WINDOW_MINIMIZED:
+    if (Platform::IsDesktop()) {
+      AppLifecycle::SetDesktopMinimized(true);
+      AppLifecycle::SetDesktopInputFocused(false);
+      // Minimize slows poll / pauses IO. Clicking another app does not.
+      AppLifecycle::OnWillEnterBackground();
+    }
+    break;
+  case SDL_EVENT_WINDOW_RESTORED:
+    if (Platform::IsDesktop()) {
+      AppLifecycle::SetDesktopMinimized(false);
+    }
+    MaybeEnterDesktopForeground();
+    break;
+  case SDL_EVENT_WINDOW_FOCUS_LOST:
+    if (Platform::IsDesktop()) {
+      AppLifecycle::SetDesktopInputFocused(false);
+    }
+    break;
+  case SDL_EVENT_WINDOW_FOCUS_GAINED:
+    if (Platform::IsDesktop()) {
+      AppLifecycle::SetDesktopInputFocused(true);
+    }
+    MaybeEnterDesktopForeground();
+    break;
   case SDL_EVENT_SYSTEM_THEME_CHANGED:
     if (context && hooks.on_sync_system_theme) {
       hooks.on_sync_system_theme(context);
