@@ -1,4 +1,4 @@
-# Libp2p node roles — design
+# P2P mesh — design
 
 ## Model: role + capability checkboxes (N009)
 
@@ -229,14 +229,185 @@ Hot-reload: role / capability / pricing changes reconfigure modules (`MessagingH
 
 Until peer-hosted relays ship, keep **direct multiaddr** + **HTTP Brief relay** fallback.
 
+## Packaging: `pp-node` binary (N011)
+
+**Org / dedicated servers** (including the locked seed at `3.208.41.58:443`) run a **separate headless binary**, not a GUI flag on `pp-browser`.
+
+| Binary | Audience | Stack |
+|--------|----------|--------|
+| **`pp-browser`** | People (desktop/mobile UI) | SDL + RmlUi + optional in-app Node role (N009) |
+| **`pp-node`** | Org seeds, datacenter, power-user daemons | Same node **core** (libp2p / MessagingHub start path / capabilities); **no** UI |
+
+```mermaid
+flowchart LR
+  core[Shared node runtime core]
+  gui[pp-browser UI]
+  daemon[pp-node headless]
+  gui --> core
+  daemon --> core
+  seed["Org seed 3.208.41.58:443"] --> daemon
+  laptop[User desktop Node] --> gui
+```
+
+### Why not `--headless` on `pp-browser` as the server story
+
+Today `main` always boots SDL/RmlUi. A headless flag would still pull GUI deps, fight PIN/window lifecycle, and bloat systemd/Docker images. Optional `pp-browser --node-only` may exist later for **local dogfood only** — it is **not** the production org-server path (N011).
+
+### `pp-node` behavior
+
+- Always effective **Node** (no Client mode; no Me → Network UI).
+- Listen from config (org seed: `/ip4/0.0.0.0/tcp/443`; desktop in-app Node stays **40123**).
+- Capability / pricing defaults may be **ops-oriented** (more caps on) via a server config profile — still the same schema as the app.
+- Non-interactive identity unlock (key file / env / `--pin`-style automation); no window, no RmlUi.
+- Process model: start host → register/bootstrap as configured → run until SIGINT/SIGTERM (systemd-friendly).
+
+### CLI sketch
+
+```bash
+pp-node --config /etc/pp-node/config.json
+pp-node --listen /ip4/0.0.0.0/tcp/443 \
+        --capabilities dht,circuit_relay,message_relay
+```
+
+### Implementation rule
+
+**One networking stack, two entrypoints.** Extract a reusable “node runtime” from `MessagingHub::StartLibp2p` / host lifecycle; do **not** fork a second libp2p integration for servers. Phase **np** ships the binary after n1’s listen/bootstrap shell exists in the shared core.
+
+## Reachability & network help (N012)
+
+Users behind **home routers (NAT)** or **firewalls** often cannot accept inbound dials even when Node is on. Detect **reachability**, show a clear status, and teach **what they can do** — without over-claiming “firewall” vs “router.”
+
+### Status model (prefer these labels)
+
+| Status | Meaning | Typical cause |
+|--------|---------|----------------|
+| **Reachable** | Remotes can dial our advertised listen addr | Public IP, good port forward, or IPv6 |
+| **Outbound only** | We can dial seed/peers; inbound unlikely | NAT / router without forward; many firewalls |
+| **Blocked** | Cannot reach seed or open needed sockets | Outbound firewall, captive portal, offline |
+| **Unknown / Checking…** | Not measured yet | Startup |
+
+Do **not** show scary “You are behind a firewall” as a hard fact. Infer softly: private LAN IP + outbound-only → “likely behind a home router”; outbound fail → “network may be blocking connections.”
+
+### Detection (phased)
+
+| Stage | Mechanism |
+|-------|-----------|
+| **Cheap (nr / post-n1)** | Classify listen/interface IPs (RFC1918 vs public); dial Brief seed; notice whether any remote ever connects inbound |
+| **Better** | Seed / probe peer dial-back (“can you open a stream to me?”) — natural `pp-node` seed feature |
+| **Later** | AutoNAT-style observed addrs; hole punch; circuit-relay when stuck outbound-only |
+
+### UX (desktop; Node-relevant)
+
+1. **Me → Network — Connection card** — status chip + one sentence + **Learn what to do** / **Test again**.
+2. **Soft banner** — only if `node_enabled` and outbound-only (or blocked) for a while; not for every Client.
+3. **Guided sheet** by status:
+   - **Outbound only + private IP** → likely router/NAT: listen port (40123) → port-forward WAN→this PC → Test again. Brand-agnostic checklist; no false guarantees (CGNAT, ISP blocks, double NAT).
+   - **Blocked** → allow `pp-browser` / `pp-node` in OS firewall; try another network / disable VPN briefly.
+   - **Reachable** → short success: others can connect directly.
+4. Always offer **Skip / keep using relay** so messaging still works without port forward.
+5. **Clients** do not need port-forward coaching; optional light tip only if they care about hosting later.
+6. **`pp-node`** — ops logs / `--status` (inbound OK from probe), not consumer copy.
+
+### Rules
+
+- Do not nag for port forward until **Node is on** and status is measured outbound-only.
+- Explain **impact**: “Direct connections to you may use relay until inbound works.”
+- One next action per sheet; i18n en + zh-Hans when UI ships.
+
+Phase **nr** (reachability) follows n1 (and can share probes with **np** seed). Full AutoNAT / hole punch remain later than cheap detection + help UI.
+
+## Making inbound easier: UPnP + IPv6 (N013)
+
+Manual port-forward (N012) is the fallback. Prefer automatic / zero-config paths first:
+
+| Mechanism | Behavior |
+|-----------|----------|
+| **IPv6 listen / advertise** | When the host has a usable global IPv6 addr, prefer advertising it; many homes are inbound-reachable on v6 with no router UI. Connection card may say “Reachable via IPv6.” |
+| **UPnP / NAT-PMP / PCP** | One-tap (or auto-try when Node is on) to map WAN→listen port on supporting routers. Success → re-run reachability test. Failure → N012 manual guide. |
+| **Manual port forward** | Last resort checklist from N012 |
+
+Phase **nu** ships after **nr** has a status card (so success/failure is visible). Do not require UPnP for org `pp-node` on public IPs.
+
+## Relay path preference: contacts first (N014)
+
+When choosing a **circuit / message / media hop** (or asking someone to relay for us), use a **priority policy**, not a flat public marketplace.
+
+### Consumer side (who we ask to route us)
+
+Prefer, in order (illustrative; exact weights TBD at implement time):
+
+1. **Contacts** the user already trusts (and who offer the needed capability)  
+2. **Household / explicitly trusted nodes** (same person or tagged “home node”)  
+3. **Org Brief seed / operated `pp-node`**  
+4. **Other volunteer or paid public relays** (directory later)
+
+User intent: “I’d rather ask friends in my contact list for routing than a random paid peer.”
+
+### Provider side (who we prioritize when we host a relay)
+
+When this peer runs a relay capability, prefer serving **contacts / friends** (and optional household) before scarce capacity goes to strangers — especially on volunteer desktop Nodes. Paid public offering can still exist with its own queue/rate limits (N010).
+
+User intent: “I prefer routing **for** my friends.”
+
+### Rules
+
+- Preference is **policy on top of** circuit/message/media capabilities — not a new role.  
+- Contacts without the capability are skipped; fall through the list.  
+- Never force a friend to relay; they must have Node + capability on (and accept policy).  
+- HTTP Brief relay remains the ultimate fallback until peer relays are solid.  
+- Phase **nf** (friend-preferential routing) lands with or right after **n3** circuit-relay (needs a hop protocol). Message/media relays reuse the same preference stack.
+
+```mermaid
+flowchart TB
+  need[Need a relay hop]
+  need --> c[Try contact Nodes]
+  c -->|none| h[Household / trusted]
+  h -->|none| s[Org seed pp-node]
+  s -->|none| p[Public volunteer or paid]
+  p -->|none| http[HTTP Brief relay fallback]
+```
+
+## Preferred delivery order (N015)
+
+Ship value in this sequence unless a later ADR revises it:
+
+1. **n1** — Role shell, listen, bootstrap, master toggle  
+2. **np** — `pp-node` + seed dial-back probe support  
+3. **nr** — Reachability status + manual help (uses dial-back)  
+4. **nu** — IPv6 advertise + UPnP/NAT-PMP (N013)  
+5. **n3** — Circuit-relay capability (helps outbound-only users)  
+6. **nf** — Contact-first relay preference (N014)  
+7. **n4** — Message/audio/video relays + pricing (N010)  
+8. Capability directory / soft reputation  
+9. **n2** — DHT (useful, but seed + circuit + directory often cover chat UX earlier)  
+10. Chain settle rails, paid-jobs marketplace, Home Node pack, schedules/caps  
+
+Agents: prefer this order over “implement DHT next because it is n2.”
+
+## Horizons (still open)
+
+| Idea | Notes |
+|------|-------|
+| **Capability directory** | Find volunteer/paid relays after n4; still respect N014 contact priority |
+| **Node reputation / receipts** | Soft trust before heavy staking |
+| **Schedules & resource caps** | Node only on AC / idle; bandwidth ceilings |
+| **Home Node pack** | Always-on mini PC + `pp-node` |
+| **Gradual HTTP→peer message_relay** | Dual-run; don’t hard-cut Brief HTTP |
+| **Same PeerId for ops** | Org GUI profile and `pp-node` may share identity |
+| **Contribution UX** | Light thanks/stats for volunteer nodes |
+
 ## Out of scope for n1
 
 - Capability / pricing flags or UI
 - DHT / circuit / message / media / chain / jobs protocols
-- Publishing listen addrs / AutoNAT / hole punching
+- **`pp-node` binary** (phase **np**)
+- **Reachability UI / dial-back** (phase **nr**)
+- **UPnP / IPv6 auto-path** (phase **nu**)
+- **Friend-preferential routing** (phase **nf**)
+- Publishing listen addrs to public directory
 - Replacing HTTP Brief relay; DNS multiaddrs
 
 ## Docs + tests (n1)
 
-- Update `CONFIGURATION.md`, `P2P_MESSAGING.md`, `PLATFORMS.md` for Client vs Node.
+- Update `CONFIGURATION.md`, `P2P_MESSAGING.md`, `PLATFORMS.md` for Client vs Node (mention N011–N015 as follow-up).
 - Unit tests: JSON round-trip; role resolver; Network draft apply.

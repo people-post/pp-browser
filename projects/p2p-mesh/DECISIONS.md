@@ -1,4 +1,4 @@
-# Libp2p node roles — decisions
+# P2P mesh — decisions
 
 ## N001 — Desktop node default / mobile always client
 
@@ -66,3 +66,33 @@
 4. Clients may **pay** as consumers; they never host pricing.
 
 **Rationale:** Product intent is “relays may charge other users and settle on chain.” A jobs board is useful but different (continuous infra vs one-off work). Agents must not collapse both into `accept_paid_jobs` alone.
+
+## N011 — Separate `pp-node` binary for org / headless servers
+
+**Date:** 2026-07-26  
+**Decision:** Dedicated infrastructure (Brief org seeds, datacenter nodes, systemd/Docker daemons) runs **`pp-node`**, a headless binary that links the shared node runtime (libp2p host, bootstrap, later capabilities) **without** SDL/RmlUi. End-user apps remain **`pp-browser`** with in-process Client/Node (N009). Rejected as the production server path: `pp-browser --headless` / `--node-only` alone (GUI dependency weight, PIN/window coupling, poor ops images). Optional GUI `--node-only` may exist later for local dogfood only. Org seed listen stays **tcp/443**; in-app desktop Node listen stays **40123** (N003). One core, two entrypoints — do not maintain a second networking stack.  
+**Rationale:** Seed `3.208.41.58:443` and future org nodes need a small, non-interactive process; user desktops need a GUI. Same mesh protocols and PeerId model for both.
+
+## N012 — Reachability status + guided network help
+
+**Date:** 2026-07-26  
+**Decision:** When Node participation matters, surface a **reachability status** (Reachable / Outbound only / Blocked / Unknown) based on measurable signals (private vs public listen IP, dial to seed, later dial-back / AutoNAT) — not definitive “you are behind a firewall” claims. Me → Network shows a Connection card; soft banner + guided sheet teach **port forwarding** (outbound-only + private IP), firewall allowlisting (blocked), and always offer **relay / skip**. Clients are not nagged to port-forward. `pp-node` gets ops status, not consumer copy. Cheap detection + help UI is phase **nr**; full AutoNAT / hole punch come later.  
+**Rationale:** Mutual-help nodes fail silently behind NAT; users need to learn what is wrong and what they can do without feeling broken or blamed.
+
+## N013 — Prefer IPv6 + UPnP/NAT-PMP before manual port forward
+
+**Date:** 2026-07-26  
+**Decision:** To become **Reachable**, try **IPv6 advertisement** and **UPnP / NAT-PMP / PCP** mapping before relying on the N012 manual port-forward checklist. UI: auto-try or one-tap “Open port on router”; on failure, fall back to guided manual forward. Org `pp-node` on public IPs need not use UPnP. Phase **nu**.  
+**Rationale:** Most users never complete router configuration; IPv6 and UPnP convert far more Nodes to inbound-reachable.
+
+## N014 — Contact-first relay preference (ask friends; serve friends)
+
+**Date:** 2026-07-26  
+**Decision:** Relay hop selection (circuit / message / media) uses a **priority policy**: prefer **contacts** (and household/trusted tags), then org seed, then public volunteer/paid relays, then HTTP Brief fallback. When **hosting** a relay, prefer capacity for **contacts/friends** before strangers (especially volunteer desktop Nodes). This is policy on capabilities — not a new role. Friends must opt in via Node + capability; never coerce. Phase **nf**, with or right after circuit-relay (**n3**).  
+**Rationale:** Users want to ask people they know for routing and to help those people first; public paid relays are a backstop, not the default social path.
+
+## N015 — Delivery order: reachability and circuit before DHT
+
+**Date:** 2026-07-26  
+**Decision:** Preferred ship order is **n1 → np (incl. dial-back) → nr → nu (IPv6/UPnP) → n3 (circuit-relay) → nf (contact-first) → n4 (billable relays + pricing) → directory/reputation → n2 (DHT) → chain/jobs/Home Node**. DHT remains in scope but is not the next feature after n1 by default.  
+**Rationale:** Users feel “Node works” when they are reachable and can hop via trusted peers; Kademlia helps discovery later but does not unblock NAT or friend routing.

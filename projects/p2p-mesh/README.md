@@ -1,0 +1,63 @@
+# P2P mesh
+
+**Status:** **n0 done** — n1 next (role shell + bootstrap + Network UI)  
+**Formerly:** `projects/libp2p-node-roles/` (renamed; ADRs remain N001+)  
+**Owner:** Hongwei + agents  
+**Stable refs:** [docs/architecture/P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [docs/architecture/LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
+**Related:** [push-notifications](../push-notifications/) (HTTP Brief relay wake), messaging under `src/feature/messaging/`
+
+## One-line goal
+
+GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`** for org seeds; **reachability** (IPv6/UPnP + guides); **contact-first** relay preference. Billable relays may settle on chain.
+
+## Model (N009–N015)
+
+| Layer | Meaning |
+|-------|---------|
+| **Role** | Client vs Node (`node_enabled`) |
+| **Capabilities** | Checkboxes under Node (DHT, relays, chain, jobs, …) |
+| **Pricing** | Per billable relay: volunteer \| paid + on-chain settle (N010) |
+| **Packaging** | `pp-browser` vs headless **`pp-node`** (N011) |
+| **Reachability** | Status + help (N012); prefer IPv6 + UPnP (N013) |
+| **Relay preference** | Ask/serve **contacts first**, then seed, then public (N014) |
+| **Delivery order** | Reachability + circuit before DHT (N015) |
+
+## Release scope (n1)
+
+| In | Out |
+|----|-----|
+| `bootstrap_peers` + `node_enabled` | Caps / pricing / UPnP / friend routing |
+| Client skips listen; bootstrap seed | DHT, circuit, media, chain, jobs |
+| Me → Network master toggle | **np / nr / nu / nf** phases |
+| Docs + unit tests | DNS multiaddrs; public IPFS bootstrap |
+
+## Seed (locked)
+
+```
+/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR
+```
+
+Operated via **`pp-node`**. Desktop Node listen: `/ip4/0.0.0.0/tcp/40123`.
+
+## Documents
+
+| File | Purpose |
+|------|---------|
+| [DESIGN.md](DESIGN.md) | Full model, N010–N015, delivery order |
+| [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
+| [PHASES.md](PHASES.md) | Checklists in N015 order |
+| [DECISIONS.md](DECISIONS.md) | ADRs (N001+) |
+
+## Progress snapshot (N015 order)
+
+| Phase | Name | Status |
+|-------|------|--------|
+| n0 | Docs + ADRs through N015 | Done |
+| n1 | Role shell, listen, bootstrap, master toggle | **Next** |
+| np | `pp-node` + dial-back | After n1 |
+| nr | Reachability status + manual help | After n1 / with dial-back |
+| nu | IPv6 + UPnP/NAT-PMP | After nr |
+| n3 | Circuit-relay | After nu (approx.) |
+| nf | Contact-first relay preference | With/after n3 |
+| n4 | Billable relays + pricing | After nf basics |
+| n2 | DHT | Later than circuit (N015) |
