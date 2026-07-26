@@ -38,3 +38,4 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [push-notifications](push-notifications/) | **Wave 1 done** | Owned Brief FCM wake + local alerts; alerts ≠ sync — [CURRENT_STATE](push-notifications/CURRENT_STATE.md) |
 | [i18n](i18n/) | **i1–i6 landed** — widen i5 | EN + zh-Hans UI language; Settings picker (sheet on mobile) — [CURRENT_STATE](i18n/CURRENT_STATE.md) |
 | [liquid-glass](liquid-glass/) | **Done** | Floating Chrome on compact shell — [stable docs](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials) |
+| [libp2p-node-roles](libp2p-node-roles/) | **n0 done** — n1 next | Role + caps; relay pricing (N010); seed :443 — [CURRENT_STATE](libp2p-node-roles/CURRENT_STATE.md) |
