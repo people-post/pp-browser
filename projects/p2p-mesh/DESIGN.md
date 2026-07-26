@@ -141,10 +141,19 @@ Default `bootstrap_peers` entry (IP only, no DNS):
 ```
 
 - Seed listens on TCP **443** (libp2p transport — N007).
-- Desktop nodes listen on **/ip4/0.0.0.0/tcp/40123** (N003) when Node.
+- Desktop nodes prefer listen **/ip4/0.0.0.0/tcp/18517** (N003) when Node; busy-port policy **N016**.
 - Do **not** use public `bootstrap.libp2p.io` (N006).
 
 After host start, register each bootstrap multiaddr into `PeerSessionManager::RegisterEndpoint` under a stable key (PeerId from `/p2p/…`). Do not force a permanent warm dial on mobile.
+
+## Listen port & busy bind (N003 / N016)
+
+| Context | Preferred | If bind fails |
+|---------|-----------|----------------|
+| Desktop Node (`pp-browser`) | **18517** | Try **18517–18526**, then optional ephemeral; **persist** chosen `listen_multiaddr`; show **actual** port in Network / port-forward / UPnP UI |
+| Org `pp-node` | Configured (often **443**) | **Fail loud** by default — no silent port hop |
+
+Port-forward and firewall coaching must use the **live** listen port from config/runtime, not a hard-coded 18517 if fallback ran.
 
 ## Config model
 
@@ -154,7 +163,7 @@ After host start, register each bootstrap multiaddr into `PeerSessionManager::Re
 |-------|-----------------|
 | `bootstrap_peers` | vector; default = seed multiaddr above |
 | `node_enabled` | `true`; desktop opt-out; ignored on mobile |
-| `listen_multiaddr` | `/ip4/0.0.0.0/tcp/40123` when Node |
+| `listen_multiaddr` | Preferred `/ip4/0.0.0.0/tcp/18517` when Node; may change after N016 fallback |
 | session policy | keep existing |
 
 ### Later (capabilities + pricing)
@@ -164,7 +173,7 @@ Shape sketch (names TBD at implement time):
 ```json
 "libp2p": {
   "node_enabled": true,
-  "listen_multiaddr": "/ip4/0.0.0.0/tcp/40123",
+  "listen_multiaddr": "/ip4/0.0.0.0/tcp/18517",
   "bootstrap_peers": ["…"],
   "capabilities": {
     "dht": false,
@@ -256,7 +265,7 @@ Today `main` always boots SDL/RmlUi. A headless flag would still pull GUI deps, 
 ### `pp-node` behavior
 
 - Always effective **Node** (no Client mode; no Me → Network UI).
-- Listen from config (org seed: `/ip4/0.0.0.0/tcp/443`; desktop in-app Node stays **40123**).
+- Listen from config (org seed: `/ip4/0.0.0.0/tcp/443`; desktop preferred **18517**, N016 if busy).
 - Capability / pricing defaults may be **ops-oriented** (more caps on) via a server config profile — still the same schema as the app.
 - Non-interactive identity unlock (key file / env / `--pin`-style automation); no window, no RmlUi.
 - Process model: start host → register/bootstrap as configured → run until SIGINT/SIGTERM (systemd-friendly).
@@ -301,7 +310,7 @@ Do **not** show scary “You are behind a firewall” as a hard fact. Infer soft
 1. **Me → Network — Connection card** — status chip + one sentence + **Learn what to do** / **Test again**.
 2. **Soft banner** — only if `node_enabled` and outbound-only (or blocked) for a while; not for every Client.
 3. **Guided sheet** by status:
-   - **Outbound only + private IP** → likely router/NAT: listen port (40123) → port-forward WAN→this PC → Test again. Brand-agnostic checklist; no false guarantees (CGNAT, ISP blocks, double NAT).
+   - **Outbound only + private IP** → likely router/NAT: forward WAN→this PC on the **actual** listen port (preferred **18517**, or whatever was persisted after N016) → Test again. Brand-agnostic checklist; no false guarantees (CGNAT, ISP blocks, double NAT).
    - **Blocked** → allow `pp-browser` / `pp-node` in OS firewall; try another network / disable VPN briefly.
    - **Reachable** → short success: others can connect directly.
 4. Always offer **Skip / keep using relay** so messaging still works without port forward.

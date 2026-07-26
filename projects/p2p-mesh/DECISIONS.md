@@ -12,11 +12,12 @@
 **Decision:** Fixed bootstrap multiaddr is `/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR`. IP only — no DNS multiaddrs in v1.  
 **Rationale:** Deterministic Brief seed without DNS resolution failures; PeerId pins identity.
 
-## N003 — Desktop listen 40123; seed on 443
+## N003 — Desktop listen 18517; seed on 443
 
 **Date:** 2026-07-26  
-**Decision:** Desktop node listen remains `/ip4/0.0.0.0/tcp/40123`. Seed uses TCP **443**. Do not collapse desktop onto 443.  
-**Rationale:** Avoid colliding with local IPFS / other daemons on common ports; seed 443 is firewall-friendly for clients dialing out.
+**Updated:** 2026-07-26 (default port **18517**; was 40123)  
+**Decision:** Desktop / in-app Node preferred listen is `/ip4/0.0.0.0/tcp/18517`. Seed / org `pp-node` uses TCP **443**. Do not collapse desktop onto 443. Busy-port behavior is **N016**.  
+**Rationale:** App-specific high port avoids IPFS **4001** and other common daemons; 18517 is the Brief desktop default. Seed 443 stays firewall-friendly for clients dialing out.
 
 ## N004 — Client = no host→listen
 
@@ -70,7 +71,7 @@
 ## N011 — Separate `pp-node` binary for org / headless servers
 
 **Date:** 2026-07-26  
-**Decision:** Dedicated infrastructure (Brief org seeds, datacenter nodes, systemd/Docker daemons) runs **`pp-node`**, a headless binary that links the shared node runtime (libp2p host, bootstrap, later capabilities) **without** SDL/RmlUi. End-user apps remain **`pp-browser`** with in-process Client/Node (N009). Rejected as the production server path: `pp-browser --headless` / `--node-only` alone (GUI dependency weight, PIN/window coupling, poor ops images). Optional GUI `--node-only` may exist later for local dogfood only. Org seed listen stays **tcp/443**; in-app desktop Node listen stays **40123** (N003). One core, two entrypoints — do not maintain a second networking stack.  
+**Decision:** Dedicated infrastructure (Brief org seeds, datacenter nodes, systemd/Docker daemons) runs **`pp-node`**, a headless binary that links the shared node runtime (libp2p host, bootstrap, later capabilities) **without** SDL/RmlUi. End-user apps remain **`pp-browser`** with in-process Client/Node (N009). Rejected as the production server path: `pp-browser --headless` / `--node-only` alone (GUI dependency weight, PIN/window coupling, poor ops images). Optional GUI `--node-only` may exist later for local dogfood only. Org seed listen stays **tcp/443**; in-app desktop Node preferred listen stays **18517** (N003). One core, two entrypoints — do not maintain a second networking stack.  
 **Rationale:** Seed `3.208.41.58:443` and future org nodes need a small, non-interactive process; user desktops need a GUI. Same mesh protocols and PeerId model for both.
 
 ## N012 — Reachability status + guided network help
@@ -96,3 +97,15 @@
 **Date:** 2026-07-26  
 **Decision:** Preferred ship order is **n1 → np (incl. dial-back) → nr → nu (IPv6/UPnP) → n3 (circuit-relay) → nf (contact-first) → n4 (billable relays + pricing) → directory/reputation → n2 (DHT) → chain/jobs/Home Node**. DHT remains in scope but is not the next feature after n1 by default.  
 **Rationale:** Users feel “Node works” when they are reachable and can hop via trusted peers; Kademlia helps discovery later but does not unblock NAT or friend routing.
+
+## N016 — Listen port busy: desktop fallback + persist; `pp-node` fail loud
+
+**Date:** 2026-07-26  
+**Decision:**
+
+1. **Preferred desktop port** is **18517** (N003) in `listen_multiaddr` `/ip4/0.0.0.0/tcp/18517`.
+2. **`pp-browser` (Node):** If bind on the preferred port fails, try a small consecutive range (e.g. **18517–18526**), then optionally an OS ephemeral port if the range is exhausted. **Persist** the successfully bound port into config (`listen_multiaddr`). Surface the **actual** listen port in Me → Network / Connection card and in any port-forward / UPnP UI — never coach “forward 18517” if the host bound another port.
+3. **`pp-node` (ops):** By default **fail loudly** if the configured listen port cannot bind (especially **443**). Do not silently hop ports (firewall/systemd expectations). An explicit opt-in flag (e.g. `--listen-fallback`) may allow range fallback later; not the default.
+4. Today’s code returns a generic listen failure and continues without libp2p — n1/np must replace that with N016 behavior + clear user/ops errors.
+
+**Rationale:** Fixed preferred port keeps docs and UPnP simple; fallback avoids silent “Node on but dead” when 18517 is taken; ops seeds must not drift off 443 without the operator noticing.

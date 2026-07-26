@@ -6,17 +6,19 @@ Preferred order is **N015**: n1 → np → nr → nu → n3 → nf → n4 → �
 
 - [x] README, DESIGN, CURRENT_STATE, DECISIONS, PHASES
 - [x] Register in `projects/README.md` + `AGENTS.md`
-- [x] N008–N015 (infra, caps, pricing, `pp-node`, reachability, UPnP/IPv6, contact-first, delivery order)
+- [x] N008–N016 (infra, caps, pricing, `pp-node`, reachability, UPnP/IPv6, contact-first, delivery order, listen **18517** + busy-port)
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
 
 ## n1 — Role shell + bootstrap + Network UI
 
-- [ ] `Libp2pConfig`: `bootstrap_peers` (seed tcp/443), `node_enabled`, listen `/ip4/0.0.0.0/tcp/40123`
+- [ ] `Libp2pConfig`: `bootstrap_peers` (seed tcp/443), `node_enabled`, preferred listen `/ip4/0.0.0.0/tcp/18517`
+- [ ] Desktop busy-port fallback **18517–18526** (+ optional ephemeral); persist actual port (N016)
+- [ ] Clear error / UX if Node listen ultimately fails (no silent “no libp2p”)
 - [ ] `ConfigJson` + `config.json.example`
 - [ ] `ResolveLibp2pRole` (mobile → Client; desktop × `node_enabled`)
 - [ ] Skip `host->listen` for Client; register bootstrap peers
 - [ ] `SessionConfigFromApp` via `Platform::IsMobile()`
-- [ ] Me → Network master toggle + i18n (no caps / pricing / reachability UI yet)
+- [ ] Me → Network master toggle + i18n (no caps / pricing / reachability UI yet); surface **actual** listen port when Node
 - [ ] Docs + unit tests; refresh CURRENT_STATE / README
 
 ## np — Headless `pp-node` + dial-back (N011)
@@ -24,6 +26,7 @@ Preferred order is **N015**: n1 → np → nr → nu → n3 → nf → n4 → �
 - [ ] Extract shared **node runtime** (no second libp2p stack)
 - [ ] Executable **`pp-node`** without SDL/RmlUi
 - [ ] Non-interactive unlock; config; signal wait; ops listen `:443` example
+- [ ] **Fail loud** if configured listen port busy (N016) — no silent fallback by default
 - [ ] **Dial-back probe** API for clients’ reachability tests (feeds **nr**)
 - [ ] systemd/Docker sketch; not `pp-browser --headless` as prod path
 

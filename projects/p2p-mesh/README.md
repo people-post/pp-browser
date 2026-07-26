@@ -10,7 +10,7 @@
 
 GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`** for org seeds; **reachability** (IPv6/UPnP + guides); **contact-first** relay preference. Billable relays may settle on chain.
 
-## Model (N009–N015)
+## Model (N009–N016)
 
 | Layer | Meaning |
 |-------|---------|
@@ -19,6 +19,7 @@ GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`
 | **Pricing** | Per billable relay: volunteer \| paid + on-chain settle (N010) |
 | **Packaging** | `pp-browser` vs headless **`pp-node`** (N011) |
 | **Reachability** | Status + help (N012); prefer IPv6 + UPnP (N013) |
+| **Listen port** | Preferred **18517**; desktop busy fallback + persist (N016) |
 | **Relay preference** | Ask/serve **contacts first**, then seed, then public (N014) |
 | **Delivery order** | Reachability + circuit before DHT (N015) |
 
@@ -37,7 +38,7 @@ GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`
 /ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR
 ```
 
-Operated via **`pp-node`**. Desktop Node listen: `/ip4/0.0.0.0/tcp/40123`.
+Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/18517` (busy → fallback range + persist — N016).
 
 ## Documents
 

@@ -102,7 +102,7 @@ On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp
   "directory": { "base_url": "https://www.brief.global/api/relay" },
   "registration": { "base_url": "https://www.brief.global/api/relay" },
   "libp2p": {
-    "listen_multiaddr": "/ip4/0.0.0.0/tcp/40123",
+    "listen_multiaddr": "/ip4/0.0.0.0/tcp/18517",
     "max_connections": 48,
     "max_concurrent_dials": 6,
     "dial_timeout_ms": 8000,
@@ -116,7 +116,7 @@ On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp
 - **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../../src/base/data/PlatformDefaults.cpp).
 - **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
 - **`relay` / `directory` / `registration`** — HTTP endpoints; platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
-- **`libp2p`** — shared host listen address and session policy (on-demand dial, warm-active, idle TTL, connection caps). Default listen is loopback; use a non-loopback multiaddr for LAN/direct peers. Contacts may store dialable `multiaddrs` (must include `/p2p/<PeerId>`).
+- **`libp2p`** — shared host listen address and session policy (on-demand dial, warm-active, idle TTL, connection caps). Preferred desktop Node listen is `/ip4/0.0.0.0/tcp/18517` ([p2p-mesh N003](../../projects/p2p-mesh/DECISIONS.md)); if that port is busy, the app may fall back within **18517–18526** (or ephemeral) and persist the actual multiaddr ([N016](../../projects/p2p-mesh/DECISIONS.md)). Org `pp-node` should fail loud on its configured port (often 443). Code may still ship an older loopback default until n1 lands. Contacts may store dialable `multiaddrs` (must include `/p2p/<PeerId>`).
 
 Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
 
