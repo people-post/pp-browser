@@ -33,4 +33,21 @@ TEST(RelayApiSignPayloadTest, BuildPollInboxSignBytesMatchesGoldenVector) {
             "72656c61793a610000000000000000");
 }
 
+TEST(RelayApiSignPayloadTest, BuildAckInboxSignBytesMatchesGoldenVector) {
+  const auto bytes = BuildRelayApiAckInboxSignBytes("relay:a", "cur-1", 1700000000004);
+  ASSERT_FALSE(bytes.empty());
+  EXPECT_EQ(BytesToHex(bytes),
+            "70702d62726f777365723a72656c61792d6170692d76310001050000018bcfe568040000000000000007"
+            "72656c61793a6100000000000000056375722d31");
+}
+
+TEST(RelayApiSignPayloadTest, BuildClearInboxSignBytesMatchesGoldenVector) {
+  const auto bytes =
+      BuildRelayApiClearInboxSignBytes("relay:a", "2024-01-01T00:00:00.000Z", 1700000000005);
+  ASSERT_FALSE(bytes.empty());
+  EXPECT_EQ(BytesToHex(bytes),
+            "70702d62726f777365723a72656c61792d6170692d76310001060000018bcfe568050000000000000007"
+            "72656c61793a610000000000000018323032342d30312d30315430303a30303a30302e3030305a");
+}
+
 } // namespace pbr

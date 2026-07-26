@@ -20,13 +20,18 @@
 #include "base/messaging/RelayWirePayload.h"
 #include "base/messaging/SyncStateTypes.h"
 #include "base/net/ServiceClientsImpl.h"
+#include "base/net/RelayInboxCursor.h"
 #include "base/platform/AppLifecycle.h"
 #include "base/platform/BrowserThread.h"
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
 #include <mutex>
 #include <optional>
+#include <sstream>
 
 #include <nlohmann/json.hpp>
 
@@ -105,6 +110,9 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
   relay_ = relay;
   relay_cursor_.clear();
   poll_pending_ = false;
+  if (auto identity = identity_.Get()) {
+    LoadPersistedRelayCursor(identity->relay_user_id);
+  }
   if (chat_sync_) {
     chat_sync_ = std::make_unique<ChatSyncService>(store_, identity_, relay_, *receive_pipeline_, inbox_,
                                                  peer_history_.get());
@@ -115,6 +123,24 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
     });
   }
   TailSyncActiveE2eThread();
+}
+
+void P2pMessagingService::LoadPersistedRelayCursor(const std::string& relay_user_id) {
+  if (!MessagingHub::Instance().IsInitialized()) {
+    return;
+  }
+  const std::string loaded =
+      LoadRelayInboxCursor(MessagingHub::Instance().ProfileDataDir(), relay_user_id);
+  if (!loaded.empty()) {
+    relay_cursor_ = loaded;
+  }
+}
+
+void P2pMessagingService::PersistRelayCursor(const std::string& relay_user_id) {
+  if (!MessagingHub::Instance().IsInitialized() || relay_cursor_.empty()) {
+    return;
+  }
+  SaveRelayInboxCursor(MessagingHub::Instance().ProfileDataDir(), relay_user_id, relay_cursor_);
 }
 
 void P2pMessagingService::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
@@ -1154,6 +1180,39 @@ void P2pMessagingService::PollAndMerge() {
   SyncInboxFromWake(false);
 }
 
+namespace {
+
+std::string FormatUnixMsIso8601Utc(const int64_t unix_ms) {
+  const std::time_t seconds = static_cast<std::time_t>(unix_ms / 1000);
+  std::tm tm_utc{};
+#if defined(_WIN32)
+  gmtime_s(&tm_utc, &seconds);
+#else
+  gmtime_r(&seconds, &tm_utc);
+#endif
+  std::ostringstream oss;
+  oss << std::put_time(&tm_utc, "%Y-%m-%dT%H:%M:%S");
+  oss << '.' << std::setw(3) << std::setfill('0') << (unix_ms % 1000) << 'Z';
+  return oss.str();
+}
+
+} // namespace
+
+Roe<RelayDeleteResult> P2pMessagingService::ClearUndeliveredOlderThan(const int older_than_days) {
+  if (!relay_) {
+    return Error("Relay client unavailable");
+  }
+  if (older_than_days <= 0) {
+    return Error("older_than_days must be positive");
+  }
+  auto identity = identity_.Get();
+  if (!identity) {
+    return Error("Identity unavailable");
+  }
+  const int64_t before_ms = util::NowUnixMs() - static_cast<int64_t>(older_than_days) * 24LL * 60 * 60 * 1000;
+  return relay_->ClearInbox(identity->relay_user_id, FormatUnixMsIso8601Utc(before_ms));
+}
+
 void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
   RetryFailedOutbound();
 
@@ -1178,11 +1237,18 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
     if (!identity) {
       return;
     }
+    if (relay_cursor_.empty()) {
+      LoadPersistedRelayCursor(identity->relay_user_id);
+    }
     auto poll = relay_->PollInbox(identity->relay_user_id, relay_cursor_);
     if (!poll) {
       return;
     }
-    relay_cursor_ = poll->next_cursor;
+    // Never wipe progress on an empty next_cursor (drained/empty poll pages).
+    if (!poll->next_cursor.empty()) {
+      relay_cursor_ = poll->next_cursor;
+      PersistRelayCursor(identity->relay_user_id);
+    }
     if (poll->messages.size() > kMaxPollBatchMessages) {
       return;
     }
@@ -1234,6 +1300,14 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
             .body = preview && !preview->empty() ? *preview : "You have a new message",
             .thread_id = resolved_thread_id,
         });
+      }
+    }
+
+    // Auto-ack consumed watermark so another device / restart does not replay rejects.
+    if (!relay_cursor_.empty()) {
+      auto ack = relay_->AckInbox(local_relay_id, relay_cursor_);
+      if (!ack) {
+        log().warning << "Relay inbox ack failed: " << ack.error().message;
       }
     }
 

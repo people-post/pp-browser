@@ -10,6 +10,11 @@ Source of truth for pp-browser theming, spacing, and component styling. AI-gener
 - **Responsive** — shell layout switches at 768dp (C++ `ShellLayout`); touch targets stay at least 44dp on compact layout.
 - **Hierarchy through space** — importance is expressed with size, weight, spacing, and elevation—not decoration.
 
+## Copy / labels
+
+- **Confirm-leading actions end with `…`** — If a control opens a confirm dialog (or another intermediate step) before the real action runs, the button/menu label must end with an ellipsis (`…`, U+2026 — not three ASCII dots). Examples: `Reset to defaults…`, `Reset this profile…`, `Clear undelivered older than 7 days…`. Immediate actions (`Change PIN`, `Copy ID`, `Save`) omit the ellipsis.
+- Prefer the same `…` character in both `en.json` and `zh-Hans.json` for these labels.
+
 ## Aesthetic
 
 Productivity-oriented (Notion/Slack): neutral surfaces, one primary blue accent, restrained saturation, clear pane separation.

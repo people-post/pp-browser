@@ -59,6 +59,8 @@ public:
   void PollAndMerge();
   /** Same ingest as PollAndMerge; `force` bypasses foreground rate limit. */
   void SyncInboxFromWake(bool force = true);
+  /** Me recovery: delete undelivered relay rows older than `older_than_days` (does not clear local chat). */
+  Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
   void SetRelayClient(IRelayClient* relay);
   void SetOnMessagesChanged(std::function<void()> callback);
@@ -130,6 +132,8 @@ private:
   bool IsPskReadyToSend(const std::string& thread_id) const;
   void PurgeRetryQueueForThread(const std::string& thread_id);
   void HandleDirectInbound(RelayEnvelope envelope);
+  void LoadPersistedRelayCursor(const std::string& relay_user_id);
+  void PersistRelayCursor(const std::string& relay_user_id);
 
   static constexpr int64_t kReceiveFailureNoticeCooldownMs = 5 * 60 * 1000;
 

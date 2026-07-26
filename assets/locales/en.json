@@ -106,6 +106,12 @@
     "settings.security.group_invites.contacts_only": "Contacts only",
     "settings.security.group_invites.nobody": "Nobody",
     "settings.security.group_invites.help": "Controls who can invite you to group chats. Separate from direct messages.",
+    "settings.security.clear_undelivered": "Clear undelivered older than 7 days…",
+    "settings.security.clear_undelivered.help": "Removes old undelivered delivery-queue items from the relay. Does not clear local chat history.",
+    "settings.security.clear_undelivered_confirm_title": "Clear undelivered messages?",
+    "settings.security.clear_undelivered_confirm_message": "This deletes undelivered relay inbox items older than 7 days. Local chat history on this device is not deleted.",
+    "settings.security.clear_undelivered_done": "Undelivered relay items cleared",
+    "settings.security.clear_undelivered.not_ready": "Unlock and register before clearing the delivery queue.",
 
     "settings.storage.config_dir": "Config directory",
     "settings.storage.data_dir": "Data directory",

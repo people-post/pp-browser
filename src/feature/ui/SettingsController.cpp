@@ -309,6 +309,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("add_mcp_server", &SettingsController::OnAddMcpServerCallback);
     ctor.BindEventCallback("remove_mcp_server", &SettingsController::OnRemoveMcpServerCallback);
     ctor.BindEventCallback("change_pin", &SettingsController::OnChangePinCallback);
+    ctor.BindEventCallback("clear_undelivered_older_than", &SettingsController::OnClearUndeliveredCallback);
     ctor.BindEventCallback("reset_profile", &SettingsController::OnResetProfileCallback);
   });
 }
@@ -1192,6 +1193,40 @@ void SettingsController::OnRemoveMcpServer(const int index) {
 void SettingsController::OnChangePinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                              const Rml::VariantList& /*args*/) {
   Instance().OnChangePin();
+}
+
+void SettingsController::OnClearUndeliveredCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                    const Rml::VariantList& /*args*/) {
+  Instance().OnClearUndeliveredOlderThan();
+}
+
+void SettingsController::OnClearUndeliveredOlderThan() {
+  if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().IsMessagingReady()) {
+    ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.clear_undelivered.not_ready")));
+    return;
+  }
+
+  ShellFeedback::ShowConfirm(
+      ShellHost::Instance().State(), Tr("settings.security.clear_undelivered_confirm_title"),
+      Tr("settings.security.clear_undelivered_confirm_message"),
+      [this](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        BrowserThread::PostTask(BrowserThreadId::IO, [this]() {
+          auto result = MessagingHub::Instance().P2p().ClearUndeliveredOlderThan(7);
+          BrowserThread::PostTask(BrowserThreadId::UI, [this, result = std::move(result)]() mutable {
+            if (!result) {
+              ReportFailure(result.error());
+              return;
+            }
+            UserFeedback::Ok(Tr("settings.security.clear_undelivered_done"));
+            status_ = "";
+            DirtyAll();
+          });
+        });
+      });
+  ShellHost::Instance().RequestSyncLayout();
 }
 
 void SettingsController::OnResetProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

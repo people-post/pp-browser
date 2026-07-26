@@ -46,11 +46,15 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 |----|------|----------------|
 | send | `POST /v1/messages` | sender, recipient, stream_id, index_key |
 | poll_inbox | `POST /v1/inbox/poll` | requester_contact_id, cursor |
+| ack_inbox | `POST /v1/inbox/ack` | requester_contact_id, cursor |
+| clear_inbox | `POST /v1/inbox/clear` | requester_contact_id, before_created_at (ISO-8601) |
 | stream_history | `POST /v1/streams/messages/query` | requester, sender, stream_id, optional index range, limit, order |
 | device_register | `POST /v1/devices/register` | relay_user_id, platform, device_id, push_token |
 | device_unregister | `POST /v1/devices/unregister` | relay_user_id, platform, device_id, push_token |
 
 `blob_b64` is **not** included in transport auth (E014 envelope signature covers message integrity inside the blob).
+
+Inbox is a **delivery queue**: poll advances a cursor; clients may `ack` through that cursor to delete consumed rows. `clear` deletes recipient rows older than a timestamp (recovery). Messenger also applies a 14-day TTL on `created_at`. Chat history remains local + stream/P2P sync — not the inbox.
 
 ## Directory and profile
 

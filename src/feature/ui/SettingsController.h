@@ -125,6 +125,7 @@ private:
   static void OnAddMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRemoveMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnChangePinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void OnClearUndeliveredCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnResetProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void InitSections();
@@ -157,6 +158,7 @@ private:
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
   void OnChangePin();
+  void OnClearUndeliveredOlderThan();
   void OnResetProfile();
   void PerformResetProfile();
   void OnChooseTheme(Rml::Event& ev);

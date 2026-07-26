@@ -4,6 +4,7 @@ pp_browser_add_base_library(pp_base_net
     CurlSsl.cpp
     HttpClient.cpp
     RelayApiSignPayload.cpp
+    RelayInboxCursor.cpp
     RelaySignBytes.cpp
     RegistrationClientUtil.cpp
     RegistrationSignPayload.cpp

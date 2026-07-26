@@ -144,6 +144,42 @@ Roe<RelayPollResult> MockRelayClient::PollInbox(const std::string& /*requester_c
   return result;
 }
 
+Roe<RelayDeleteResult> MockRelayClient::AckInbox(const std::string& /*requester_contact_id*/,
+                                                 const std::string& cursor) {
+  std::lock_guard lock(mutex_);
+  RelayDeleteResult result;
+  if (cursor.empty()) {
+    return result;
+  }
+  size_t through = 0;
+  try {
+    through = static_cast<size_t>(std::stoull(cursor));
+  } catch (...) {
+    return Error("Invalid mock inbox cursor");
+  }
+  if (through > delivered_.size()) {
+    through = delivered_.size();
+  }
+  result.deleted = static_cast<int64_t>(through);
+  delivered_.erase(delivered_.begin(), delivered_.begin() + static_cast<std::ptrdiff_t>(through));
+  if (poll_index_ >= through) {
+    poll_index_ -= through;
+  } else {
+    poll_index_ = 0;
+  }
+  return result;
+}
+
+Roe<RelayDeleteResult> MockRelayClient::ClearInbox(const std::string& /*requester_contact_id*/,
+                                                   const std::string& /*before_created_at*/) {
+  std::lock_guard lock(mutex_);
+  RelayDeleteResult result;
+  result.deleted = static_cast<int64_t>(delivered_.size());
+  delivered_.clear();
+  poll_index_ = 0;
+  return result;
+}
+
 namespace {
 
 bool EnvelopeMatchesHistoryRequest(const RelayEnvelope& envelope, const ChatHistoryRequest& request) {
@@ -362,6 +398,91 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
         }
       }
     }
+  }
+  return result;
+}
+
+Roe<RelayDeleteResult> HttpRelayClient::AckInbox(const std::string& requester_contact_id,
+                                                 const std::string& cursor) {
+  if (base_url_.empty()) {
+    return Error("Relay base_url not configured");
+  }
+  if (cursor.empty()) {
+    return Error("Missing inbox cursor");
+  }
+  const int64_t timestamp = util::NowUnixMs();
+  const auto sign_bytes = BuildRelayApiAckInboxSignBytes(requester_contact_id, cursor, timestamp);
+  if (sign_bytes.empty()) {
+    return Error("Failed to build relay ack sign bytes");
+  }
+  auto signature = SignRelayApiBytes(sign_bytes);
+  if (!signature) {
+    return signature.error();
+  }
+
+  const nlohmann::json body = {{"requester_contact_id", requester_contact_id},
+                               {"cursor", cursor},
+                               {"timestamp", timestamp},
+                               {"signature", *signature}};
+  const std::string url = base_url_ + "/v1/inbox/ack";
+  const auto response = HttpClient::Post(url, body.dump(), {{"Content-Type", "application/json"}});
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error("Relay ack failed with status " + std::to_string(response.value().status_code));
+  }
+
+  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
+  if (root.is_discarded()) {
+    return Error("Invalid relay ack JSON");
+  }
+  RelayDeleteResult result;
+  if (root.contains("deleted") && root["deleted"].is_number_integer()) {
+    result.deleted = root["deleted"].get<int64_t>();
+  }
+  return result;
+}
+
+Roe<RelayDeleteResult> HttpRelayClient::ClearInbox(const std::string& requester_contact_id,
+                                                   const std::string& before_created_at) {
+  if (base_url_.empty()) {
+    return Error("Relay base_url not configured");
+  }
+  if (before_created_at.empty()) {
+    return Error("Missing before_created_at");
+  }
+  const int64_t timestamp = util::NowUnixMs();
+  const auto sign_bytes =
+      BuildRelayApiClearInboxSignBytes(requester_contact_id, before_created_at, timestamp);
+  if (sign_bytes.empty()) {
+    return Error("Failed to build relay clear sign bytes");
+  }
+  auto signature = SignRelayApiBytes(sign_bytes);
+  if (!signature) {
+    return signature.error();
+  }
+
+  const nlohmann::json body = {{"requester_contact_id", requester_contact_id},
+                               {"before_created_at", before_created_at},
+                               {"timestamp", timestamp},
+                               {"signature", *signature}};
+  const std::string url = base_url_ + "/v1/inbox/clear";
+  const auto response = HttpClient::Post(url, body.dump(), {{"Content-Type", "application/json"}});
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error("Relay clear failed with status " + std::to_string(response.value().status_code));
+  }
+
+  const nlohmann::json root = nlohmann::json::parse(response.value().body, nullptr, false);
+  if (root.is_discarded()) {
+    return Error("Invalid relay clear JSON");
+  }
+  RelayDeleteResult result;
+  if (root.contains("deleted") && root["deleted"].is_number_integer()) {
+    result.deleted = root["deleted"].get<int64_t>();
   }
   return result;
 }

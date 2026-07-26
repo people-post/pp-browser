@@ -31,6 +31,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 {data_dir}/profiles/{id}/
   manifest.json
   preferences.json
+  relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   identity.enc              # identity JSON under DEK AEAD
   contacts.json

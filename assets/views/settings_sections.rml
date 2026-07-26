@@ -223,6 +223,12 @@
           </span>
         </button>
         <p class="text muted settings-help">{{i18n:settings.security.group_invites.help}}</p>
+        <div class="stack settings-actions">
+          <p class="text muted settings-help">{{i18n:settings.security.clear_undelivered.help}}</p>
+          <button class="btn" type="button" data-event-click="clear_undelivered_older_than()">
+            {{i18n:settings.security.clear_undelivered}}
+          </button>
+        </div>
       </div>
 
       <div class="settings-section stack" data-if="selected_id == 'storage'">

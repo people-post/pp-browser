@@ -43,6 +43,7 @@ We **own and modify** the hard fork under [`src/libp2p/fork/`](src/libp2p/fork/)
 
 AI-generated UI and chat output must follow:
 
+- [docs/ui/UI_DESIGN_SYSTEM.md](docs/ui/UI_DESIGN_SYSTEM.md) — theming, spacing, copy rules (e.g. confirm-leading actions end with `…`)
 - [docs/ui/RML_PROFILE.md](docs/ui/RML_PROFILE.md) — allowed RML elements, structured JSON chat blocks
 - [docs/ui/RCSS_PROFILE.md](docs/ui/RCSS_PROFILE.md) — supported RCSS properties
 
