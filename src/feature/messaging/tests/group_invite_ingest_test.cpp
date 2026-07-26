@@ -42,10 +42,16 @@ ByteVector TestDek() {
   return dek;
 }
 
+// Temp-dir cleanup (Windows CI): do not call remove_all while SqliteThreadStore /
+// GroupRosterStore / SqlitePskSessionStore still hold open DB handles. Member
+// destructors close SQLite first; a harness destructor that remove_all's first
+// throws on Windows ("being used by another process") and aborts the test process.
+// Use a unique path and skip destructor cleanup (same as SyncTestHarness).
 struct PartyHarness {
   explicit PartyHarness(const std::string& suffix, const std::string& local_relay, const std::string& peer_relay,
                         const ThreadChannel channel = ThreadChannel::E2e)
-      : data_dir(std::filesystem::temp_directory_path() / ("pp_invite_ingest_" + suffix)),
+      : data_dir(std::filesystem::temp_directory_path() /
+                 ("pp_invite_ingest_" + suffix + "_" + util::GenerateUuid())),
         store(data_dir.string()), identity(data_dir.string(), "test"), roster(store.ProfileDbPath()),
         contacts(data_dir.string()), psk_store(store.ProfileDbPath(), "test"), key_resolver(key_store),
         gate(contacts, roster), pipeline(store, key_resolver, psk_store, identity, roster, &gate),
@@ -109,8 +115,6 @@ struct PartyHarness {
       throw std::runtime_error("Failed to save PSK");
     }
   }
-
-  ~PartyHarness() { std::filesystem::remove_all(data_dir); }
 
   RelayEnvelope MakeSystemEnvelope(const std::string& control_type, const std::string& detail,
                                    const std::string& text, const uint64_t seq) const {
