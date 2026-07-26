@@ -15,6 +15,10 @@
 #include <cstdio>
 #include <string>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #if SDL_MAJOR_VERSION >= 3
 	#include <SDL3_image/SDL_image.h>
 	#include <SDL3/SDL.h>
@@ -238,6 +242,13 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, allow_resize);
 	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
 	SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_BORDERLESS_BOOLEAN, borderless);
+	// macOS desktop: transparent buffer so CALayer-rounded corners composite to the
+	// desktop instead of opaque black (see DesktopWindowChrome::RefreshAppearance).
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+	if (borderless) {
+		SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, true);
+	}
+#endif
 	MobileGlLifecycle::SetMobileWindowCreateProperties(props);
 	SDL_Window* window = SDL_CreateWindowWithProperties(props);
 	SDL_DestroyProperties(props);

@@ -195,7 +195,7 @@ Control placement is platform-adaptive:
 | **macOS** | Drawn traffic lights (close → minimize → zoom) | Leading (left); hit-test excludes left band |
 | **Windows / Linux** | Icon strip (minimize / maximize-restore / close) | Trailing (right); hit-test excludes right band |
 
-On macOS, `DesktopWindowChrome::RefreshAppearance()` rounds the borderless `NSWindow` content view (~10pt) to match system windows; corners go square while maximized/fullscreen.
+On macOS only, `DesktopWindowChrome::RefreshAppearance()` rounds the borderless `NSWindow` content view (~10pt) to match system windows; corners go square while maximized/fullscreen. The window is created with `SDL_WINDOW_TRANSPARENT` and the GL backbuffer clears to alpha 0 so clipped corners composite to the desktop (not opaque black). Do **not** put `border-radius` on `.shell-body` — that paints fake rounded UI over an opaque rectangular window and leaves black corners on Win/Linux.
 
 Zoom / maximize both call `DesktopWindowChrome::ToggleMaximize()`. RML binds `titlebar_traffic_lights` (true on macOS desktop) to choose the cluster.
 

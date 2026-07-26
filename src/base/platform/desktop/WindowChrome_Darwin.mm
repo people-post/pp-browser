@@ -39,8 +39,11 @@ void ApplyMacWindowRoundedCorners(SDL_Window* window, bool square_corners) {
   const CGFloat radius = square_corners ? 0.0 : kWindowCornerRadiusPt;
 
   // Transparent outside the rounded clip so the desktop shows through.
+  // Requires SDL_WINDOW_TRANSPARENT at create time (NSOpenGLCPSurfaceOpacity=0,
+  // clear layer fill); otherwise WindowServer treats the full rect as opaque black.
   [nswindow setOpaque:NO];
   [nswindow setBackgroundColor:[NSColor clearColor]];
+  // SDL disables the shadow for transparent windows; restore a system-like drop shadow.
   [nswindow setHasShadow:YES];
 
   content.wantsLayer = YES;
@@ -48,12 +51,15 @@ void ApplyMacWindowRoundedCorners(SDL_Window* window, bool square_corners) {
   if (!layer) {
     return;
   }
+  layer.opaque = NO;
+  layer.backgroundColor = CGColorGetConstantColor(kCGColorClear);
   layer.cornerRadius = radius;
   layer.masksToBounds = YES;
   if (@available(macOS 10.13, *)) {
     layer.maskedCorners = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner | kCALayerMinXMaxYCorner |
                           kCALayerMaxXMaxYCorner;
   }
+  [nswindow invalidateShadow];
 }
 
 } // namespace desktop

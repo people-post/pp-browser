@@ -1003,7 +1003,9 @@ void RenderInterface_GL3::EndFrame()
 void RenderInterface_GL3::Clear()
 {
 	glBindFramebuffer(GL_FRAMEBUFFER, output_framebuffer);
-	glClearColor(0, 0, 0, 1);
+	// Alpha 0 so macOS transparent windows (rounded-corner clip) show the desktop
+	// instead of opaque black outside the CALayer mask.
+	glClearColor(0, 0, 0, 0);
 	glClear(GL_COLOR_BUFFER_BIT);
 }
 
