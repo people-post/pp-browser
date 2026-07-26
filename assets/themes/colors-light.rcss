@@ -373,6 +373,11 @@ select selectbox option:hover {
   background-color: #4a6cf7;
 }
 
+.shell-statusbar {
+  background-color: #f1f5f9;
+  border-top-color: #e5e7eb;
+}
+
 .shell-pane {
   background-color: #f8f9fb;
 }

@@ -3,9 +3,11 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/platform/BrowserThread.h"
 #include "base/platform/DesktopWindowChrome.h"
+#include "base/platform/Platform.h"
 #include "base/platform/PlatformNavigation.h"
 #include "base/ui/ContextMenuHost.h"
 #include "base/ui/RmlVariantHelpers.h"
+#include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/RmlMount.h"
@@ -108,6 +110,9 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("pin_gate_pin", &host.state_.pin_gate.pin);
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
+    ctor.Bind("statusbar_visible", &host.state_.statusbar_visible);
+    ctor.Bind("statusbar_connection", &host.state_.statusbar_connection);
+    ctor.Bind("statusbar_activity", &host.state_.statusbar_activity);
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
     ctor.Bind("titlebar_traffic_lights", &host.state_.titlebar_traffic_lights);
     ctor.Bind("window_maximized", &host.state_.window_maximized);
@@ -161,6 +166,7 @@ void ShellHost::Initialize(Rml::Context* context) {
   state_.window_maximized = DesktopWindowChrome::IsMaximized();
   ShellLayout::SyncLayoutModeString(state_);
   ShellLayout::SyncNavTabString(state_);
+  RefreshStatusbarVisibility();
   last_synced_mode_ = LayoutMode::Expanded;
   next_pane_id_ = 1;
   next_overlay_id_ = 1;
@@ -600,6 +606,9 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "activity_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_connection");
+  DataModelHost::Instance().Dirty("window", "statusbar_activity");
   DataModelHost::Instance().Dirty("window", "titlebar_visible");
   DataModelHost::Instance().Dirty("window", "titlebar_traffic_lights");
   DataModelHost::Instance().Dirty("window", "window_maximized");
@@ -620,7 +629,18 @@ void ShellHost::RequestRemountNavRail() {
 }
 
 void ShellHost::SetActivityVisible(bool visible) {
+  SetActivity(visible);
+}
+
+void ShellHost::SetActivity(bool visible, const Rml::String& message) {
   state_.activity_visible = visible;
+  if (!visible) {
+    state_.statusbar_activity.clear();
+  } else if (!message.empty()) {
+    state_.statusbar_activity = message;
+  } else {
+    state_.statusbar_activity = "Thinking...";
+  }
   DirtyWindow();
 }
 
@@ -781,6 +801,8 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc, "top", layout.shell_top_dp);
   set_dp(doc, "bottom", layout.shell_bottom_dp);
   set_dp(doc->GetElementById("shell-root"), "top", layout.content_top_dp);
+  const float statusbar_dp = state_.statusbar_visible ? config_.statusbar_height_dp : 0.f;
+  set_dp(doc->GetElementById("shell-root"), "bottom", statusbar_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   // Absolute toast stack is positioned from the chrome top edge (ignores padding).
   set_dp(doc->GetElementById("shell-toast-stack"), "top", 8.f + layout.content_top_dp);
@@ -803,6 +825,36 @@ void ShellHost::ApplySafeAreaLayout() {
   set_dp(doc->GetElementById("shell-chat-overlay"), "padding-bottom", 0.f);
 }
 
+void ShellHost::RefreshStatusbarVisibility() {
+  const bool visible = Platform::IsDesktop() && state_.layout_mode == LayoutMode::Expanded;
+  if (visible == state_.statusbar_visible) {
+    return;
+  }
+  state_.statusbar_visible = visible;
+  ApplySafeAreaLayout();
+}
+
+void ShellHost::RefreshStatusbarConnection() {
+  if (!state_.statusbar_visible) {
+    if (!state_.statusbar_connection.empty()) {
+      state_.statusbar_connection.clear();
+    }
+    return;
+  }
+  Rml::String next;
+  MessagingHub& hub = MessagingHub::Instance();
+  if (hub.IsMessagingReady()) {
+    if (Libp2pHost* host = hub.Libp2p(); host && host->IsRunning()) {
+      next = "Online";
+    } else {
+      next = "Direct off";
+    }
+  }
+  if (next != state_.statusbar_connection) {
+    state_.statusbar_connection = std::move(next);
+  }
+}
+
 bool ShellHost::ChromeFrostEnabled() const {
   return !state_.reduce_transparency && state_.compact_chrome_frost;
 }
@@ -818,6 +870,7 @@ void ShellHost::SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_c
 }
 
 void ShellHost::OnLayoutModeChanged() {
+  RefreshStatusbarVisibility();
   if (state_.layout_mode == LayoutMode::Expanded) {
     state_.compact_chat_open = false;
     if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::CompactChatOverlay) {
@@ -1397,6 +1450,7 @@ void ShellHost::Update(Rml::Context* context) {
     RestoreFocus();
     return;
   }
+  RefreshStatusbarConnection();
   if (state_.titlebar_visible) {
     const bool maximized = DesktopWindowChrome::IsMaximized();
     if (maximized != state_.window_maximized) {

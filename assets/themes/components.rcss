@@ -865,6 +865,36 @@ select selectbox option {
   opacity: 0.85;
 }
 
+.shell-statusbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 24dp;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12dp;
+  padding: 0 12dp;
+  box-sizing: border-box;
+  border-top-width: 1dp;
+  border-top-style: solid;
+  z-index: 50;
+}
+
+.shell-statusbar-connection,
+.shell-statusbar-activity {
+  margin-top: 0;
+  margin-bottom: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.shell-statusbar-activity {
+  text-align: right;
+}
+
 .shell-layer {
   position: absolute;
   top: 0;

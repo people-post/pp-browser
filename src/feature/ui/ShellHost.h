@@ -91,6 +91,8 @@ public:
   // and DirtyVariable alone may not refresh data-if views.
   void RequestRemountNavRail();
   void SetActivityVisible(bool visible);
+  /** Busy indicator: top strip (compact/mobile) and status-bar activity text (desktop expanded). */
+  void SetActivity(bool visible, const Rml::String& message = {});
   void SetOnBeforeTransientMount(std::function<void(const std::string& key)> callback);
   void SetOnTransientMounted(std::function<void(const std::string& key)> callback);
   void SetOnTransientPopped(std::function<void(const std::string& key)> callback);
@@ -160,6 +162,8 @@ private:
   void BeginAnimatedDismiss(DismissTarget target);
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
+  void RefreshStatusbarVisibility();
+  void RefreshStatusbarConnection();
   bool ChromeFrostEnabled() const;
   struct SafeAreaFromSdl {
     int top_dp = 0;

@@ -128,6 +128,8 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
 | `titlebar_minimize()` / `titlebar_toggle_maximize()` / `titlebar_close()` | Desktop custom title bar window controls (macOS traffic lights or Win/Linux icon strip) |
 
+Desktop expanded status bar binds `statusbar_visible`, `statusbar_connection`, and `statusbar_activity` (no click callbacks — display-only).
+
 Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). `sessions_unread` is aggregate chat unread; `contacts_unread` is reserved for future contacts-tab queues (not chat unread — currently always 0). On expanded, the Me attention dot is on the Me nav-rail tab; on compact, it is on the Home profile button. Refreshed by `BadgeAggregator` on messaging events.
 
 Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`. The nav rail mounts from `assets/views/nav_rail.rml`.
@@ -199,6 +201,19 @@ Zoom / maximize both call `DesktopWindowChrome::ToggleMaximize()`. RML binds `ti
 
 `content_top_dp` includes `titlebar_height_dp` (36dp) on desktop so `#shell-root` and banners sit below the bar. The title bar is a **platform** feature (still present when the desktop window is resized under 768dp), not expanded-layout-only.
 
+## Desktop expanded status bar
+
+On **desktop + expanded** layout (`Platform::IsDesktop() && layout_mode == Expanded`), `#shell-statusbar` is a thin (24dp) read-only bar at the bottom of the document (sibling of `#shell-root`):
+
+| Side | Field | Content |
+|------|--------|---------|
+| Left | `statusbar_connection` | Host readiness: **Online** / **Direct off** (empty while messaging not ready) |
+| Right | `statusbar_activity` | Ephemeral busy text (Thinking…, tool labels, Preparing…) via `ShellHost::SetActivity` |
+
+`#shell-root` is inset with `bottom = statusbar_height_dp` while visible. Compact layout and mobile/tablet platforms omit the bar.
+
+The top `.shell-activity-strip` (3dp progress pulse) remains for compact/mobile when `activity_visible`; it is hidden while the status bar is showing (`activity_visible && !statusbar_visible`) so busy state is not duplicated.
+
 ## Compact floating chrome
 
 When `layout_mode == compact`:
@@ -214,4 +229,4 @@ Expanded layout keeps flat productivity chrome (no floating nav, no frost tier).
 
 - **Batch A:** Layout, navigation, Chat migration, DOM slots for feedback
 - **Batch B:** Full interruption, feedback channels, confirm/banner in Chat
-- **Batch C:** Activity strip, focus restore, docs
+- **Batch C:** Activity strip → desktop expanded status bar; focus restore; docs

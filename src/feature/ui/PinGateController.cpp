@@ -23,7 +23,11 @@ Roe<void> UnlockProfileAndMessaging(const std::string& pin) {
 
 void SetUnlockInProgressUi(const bool in_progress) {
   ShellHost::Instance().State().unlock_in_progress = in_progress;
-  ShellHost::Instance().SetActivityVisible(in_progress);
+  if (in_progress) {
+    ShellHost::Instance().SetActivity(true, "Preparing...");
+  } else {
+    ShellHost::Instance().SetActivity(false);
+  }
   DataModelHost::Instance().Dirty("window", "unlock_in_progress");
   ShellHost::Instance().DirtyWindow();
 }

@@ -1694,7 +1694,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
   SyncShellSessions();
   chat_.loading = false;
   chat_.status = "";
-  ShellHost::Instance().SetActivityVisible(false);
+  ShellHost::Instance().SetActivity(false);
   DirtyChat();
   DirtyShell();
 }
@@ -1705,9 +1705,9 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     chat_.loading = event.loading;
     if (!event.loading) {
       chat_.status = "";
-      ShellHost::Instance().SetActivityVisible(false);
+      ShellHost::Instance().SetActivity(false);
     } else {
-      ShellHost::Instance().SetActivityVisible(true);
+      ShellHost::Instance().SetActivity(true);
       if (messaging_ready_) {
         SyncDisplayFromThread();
         DirtyChatTurns();
@@ -1717,7 +1717,7 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     break;
   case AgentEventType::ToolActivity:
     chat_.status = Rml::String(ToolActivityLabel(event.tool_name, event.status).c_str());
-    ShellHost::Instance().SetActivityVisible(true);
+    ShellHost::Instance().SetActivity(true, chat_.status);
     DirtyChatChrome();
     break;
   case AgentEventType::AssistantReady:
@@ -1737,7 +1737,7 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     }
     chat_.loading = false;
     chat_.status = "";
-    ShellHost::Instance().SetActivityVisible(false);
+    ShellHost::Instance().SetActivity(false);
     DirtyChatChrome();
     break;
   }

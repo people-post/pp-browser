@@ -18,7 +18,7 @@ Productivity-oriented (Notion/Slack): neutral surfaces, one primary blue accent,
 
 | Surface | RML / module | Themed elements |
 |---------|--------------|-----------------|
-| Shell chrome | `window_shell.rml`, `ShellHost` | Banner, toast, activity strip, scrims, toolbar, desktop title bar |
+| Shell chrome | `window_shell.rml`, `ShellHost` | Banner, toast, activity strip, desktop status bar, scrims, toolbar, desktop title bar |
 | Navigation | `sidebar.rml`, `nav_rail.rml` | Session rows, unread badges, nav tab badges |
 | Home landing | `home.rml` | Brand block, compact profile button, centered composer, suggestion chips |
 | Primary chat | `chat.rml` | Header, bubbles, empty state, E2E chrome |
@@ -206,6 +206,8 @@ Counts cap at **99+** in C++ (`FormatBadgeCount`). Home stays badge-free. **Sess
 `.shell-pane`, `.shell-toolbar`, `.shell-banner`, `.shell-toast`, `.shell-dialog`, `.shell-nav-tab-icon-wrap`, `.badge-count`, `.badge-count--nav`, `.badge-dot`, `.badge-dot--nav`, `.context-menu-panel`, `.context-menu-sheet`, `.context-menu-sheet-list`, `.context-menu-sheet-cancel`, `.context-menu-item`, `.context-menu-item--danger`
 
 **Desktop title bar** (desktop only — see [WINDOW_SHELL.md](WINDOW_SHELL.md#desktop-custom-title-bar)): `.shell-titlebar`, `.shell-titlebar-drag`, `.shell-titlebar-title`, `.shell-titlebar-controls`, `.shell-titlebar-btn`, `.shell-titlebar-btn--close`
+
+**Desktop expanded status bar** (desktop + expanded — see [WINDOW_SHELL.md](WINDOW_SHELL.md#desktop-expanded-status-bar)): `.shell-statusbar`, `.shell-statusbar-connection`, `.shell-statusbar-activity`
 
 **Compact floating chrome** (theme-only — see [Materials](#compact-floating-chrome-materials)): `.surface-chrome`, `.surface-chrome--frost`, `.surface-chrome--solid`, `.shell-bottom-chrome--frost`
 

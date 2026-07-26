@@ -51,8 +51,12 @@
         <p class="shell-toast-text" data-rml="toast.message"></p>
       </div>
     </div>
-    <div class="shell-activity-strip" data-if="activity_visible"></div>
+    <div class="shell-activity-strip" data-if="activity_visible && !statusbar_visible"></div>
   </div>
   <div id="shell-root" class="shell-root"></div>
+  <div id="shell-statusbar" class="shell-statusbar" data-if="statusbar_visible">
+    <p class="shell-statusbar-connection text-xs muted" data-rml="statusbar_connection"></p>
+    <p class="shell-statusbar-activity text-xs muted" data-rml="statusbar_activity"></p>
+  </div>
 </body>
 </rml>

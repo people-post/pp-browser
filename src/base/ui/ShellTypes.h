@@ -47,6 +47,8 @@ struct ShellConfig {
   float toolbar_height_dp = 48.f;
   /** Desktop custom title bar height (0 on mobile). */
   float titlebar_height_dp = 36.f;
+  /** Desktop + expanded bottom status bar height. */
+  float statusbar_height_dp = 24.f;
   /**
    * Window control cluster width for hit-test exclusion.
    * Win/Linux icon strip ~120dp; macOS traffic lights ~68dp (set in ShellHost).
@@ -180,6 +182,14 @@ struct ShellState {
   PinGateState pin_gate;
 
   bool activity_visible = false;
+
+  /**
+   * Desktop + expanded bottom status bar (read-only ambient chrome).
+   * Hidden on compact layout and on mobile/tablet platforms.
+   */
+  bool statusbar_visible = false;
+  Rml::String statusbar_connection;
+  Rml::String statusbar_activity;
 
   NavBadgeState nav_badges;
 
