@@ -32,7 +32,7 @@
     "settings.integrations.title": "集成",
     "settings.integrations.subtitle": "MCP 端点与网页搜索",
     "settings.network.title": "网络",
-    "settings.network.subtitle": "中继、目录与注册",
+    "settings.network.subtitle": "组网、中继与目录",
     "settings.security.title": "安全",
     "settings.security.subtitle": "PIN 与密钥保护",
     "settings.appearance.title": "外观",
@@ -93,6 +93,9 @@
     "settings.network.relay": "中继地址",
     "settings.network.directory": "目录地址",
     "settings.network.registration": "注册地址",
+    "settings.network.help_network": "协助组网",
+    "settings.network.help_network_hint": "开启后，本机可作为节点监听对等连接。解锁或重启应用后生效。",
+    "settings.network.listen": "监听地址",
 
     "settings.security.protection": "保护状态：",
     "settings.security.current_pin": "当前 PIN",

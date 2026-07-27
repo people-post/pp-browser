@@ -67,6 +67,8 @@ public:
   const std::string& ProfileDataDir() const { return data_dir_; }
   Libp2pHost* Libp2p();
   PeerSessionManager* Sessions();
+  /** Last libp2p start failure (empty if ok). For Network settings UX. */
+  const std::string& LastLibp2pError() const { return libp2p_last_error_; }
 
   void BindAgent(AgentSession& agent);
   PeerSigningKeyStore& SigningKeys();
@@ -87,6 +89,7 @@ private:
   Roe<void> StartLibp2p(const AppConfig& config);
   void StopLibp2p();
   void RegisterContactEndpoints();
+  void RegisterBootstrapPeers(const Libp2pConfig& libp2p_cfg);
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
 
@@ -123,6 +126,7 @@ private:
   IClientCompatClient* client_compat_ = nullptr;
   std::unique_ptr<Libp2pHost> libp2p_host_;
   std::unique_ptr<PeerSessionManager> peer_sessions_;
+  std::string libp2p_last_error_;
   std::unique_ptr<P2pMessagingService> p2p_;
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;

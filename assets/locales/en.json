@@ -32,7 +32,7 @@
     "settings.integrations.title": "Integrations",
     "settings.integrations.subtitle": "MCP endpoints and web search",
     "settings.network.title": "Network",
-    "settings.network.subtitle": "Relay, directory, registration",
+    "settings.network.subtitle": "Mesh, relay, directory",
     "settings.security.title": "Security",
     "settings.security.subtitle": "PIN and key protection",
     "settings.appearance.title": "Appearance",
@@ -93,6 +93,9 @@
     "settings.network.relay": "Relay base URL",
     "settings.network.directory": "Directory base URL",
     "settings.network.registration": "Registration base URL",
+    "settings.network.help_network": "Help the network",
+    "settings.network.help_network_hint": "When on, this desktop can listen for peers (Node). Takes effect after unlock or app restart.",
+    "settings.network.listen": "Listen address",
 
     "settings.security.protection": "Protection:",
     "settings.security.current_pin": "Current PIN",

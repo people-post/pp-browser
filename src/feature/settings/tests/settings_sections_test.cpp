@@ -52,6 +52,13 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   pbr::NetworkSettingsSection network_section;
   network_section.SyncFromSession(bootstrap, state);
   EXPECT_EQ(state.relay_base_url, "https://relay.example");
+  EXPECT_EQ(state.node_enabled, "on");
+  EXPECT_FALSE(state.libp2p_listen_multiaddr.empty());
+  EXPECT_TRUE(network_section.IsPersisted(state, bootstrap));
+
+  state.node_enabled = "off";
+  EXPECT_FALSE(network_section.IsPersisted(state, bootstrap));
+  state.node_enabled = "on";
   EXPECT_TRUE(network_section.IsPersisted(state, bootstrap));
 
   pbr::AppearanceSettingsSection appearance_section;

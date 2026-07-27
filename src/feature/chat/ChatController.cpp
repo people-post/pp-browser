@@ -2200,12 +2200,40 @@ void ChatController::ApplyRuntimeConfig(const AppConfig& config) {
       }
     }
   }
-  agent_->SetToolRegistrationHook([](ToolRegistry& tools) {
-    if (MessagingHub::Instance().IsInitialized()) {
-      RegisterMessagingTools(tools, MessagingHub::Instance());
+
+  // Network / libp2p saves notify config listeners too. Skip full MCP/agent rebuild
+  // when assistant inputs are unchanged — avoids PauseIO races on mesh Reset.
+  const bool reload_agent =
+      !agent_->IsConfigured() || runtime.llm.base_url != last_agent_runtime_.llm.base_url ||
+      runtime.llm.model != last_agent_runtime_.llm.model ||
+      runtime.llm.api_key != last_agent_runtime_.llm.api_key ||
+      runtime.llm.preset != last_agent_runtime_.llm.preset ||
+      runtime.llm_api_key_env != last_agent_runtime_.llm_api_key_env ||
+      runtime.promoted_mcp.url != last_agent_runtime_.promoted_mcp.url ||
+      runtime.search.provider != last_agent_runtime_.search.provider ||
+      runtime.mcp_servers.size() != last_agent_runtime_.mcp_servers.size();
+  bool servers_differ = reload_agent;
+  if (!servers_differ) {
+    for (size_t i = 0; i < runtime.mcp_servers.size(); ++i) {
+      const McpConfig& a = runtime.mcp_servers[i];
+      const McpConfig& b = last_agent_runtime_.mcp_servers[i];
+      if (a.id != b.id || a.url != b.url || a.command != b.command || a.enabled != b.enabled ||
+          a.args != b.args) {
+        servers_differ = true;
+        break;
+      }
     }
-  });
-  agent_->Configure(runtime);
+  }
+
+  if (servers_differ) {
+    agent_->SetToolRegistrationHook([](ToolRegistry& tools) {
+      if (MessagingHub::Instance().IsInitialized()) {
+        RegisterMessagingTools(tools, MessagingHub::Instance());
+      }
+    });
+    agent_->Configure(runtime);
+    last_agent_runtime_ = runtime;
+  }
   if (MessagingHub::Instance().IsInitialized()) {
     const auto& bootstrap = SessionStore::Instance().Snapshot();
     (void)MessagingHub::Instance().Reinitialize(runtime, bootstrap.profile_data_dir);
@@ -2263,6 +2291,9 @@ void ChatController::Shutdown() {
   if (agent_) {
     StartupPhase phase("Shutdown::AgentSession");
     agent_->Cancel();
+    // ConfigureOnIO may still be running (and used to touch MessagingHub via the
+    // tool hook). Wait before tearing the hub down.
+    agent_->WaitForConfigureIdle();
     agent_.reset();
   }
   if (messaging_ready_) {

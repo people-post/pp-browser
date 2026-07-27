@@ -53,3 +53,25 @@ TEST(ConfigJsonTest, ResolvesPromotedMcpFallbacks) {
   pbr::AppConfig empty_promoted;
   EXPECT_EQ(pbr::ResolvePromotedMcp(empty_promoted, defaults).url, "https://www.brief.global/mcp");
 }
+
+TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
+  pbr::AppConfig config;
+  config.libp2p.node_enabled = false;
+  config.libp2p.listen_multiaddr = "/ip4/0.0.0.0/tcp/18520";
+  config.libp2p.bootstrap_peers = {
+      "/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
+
+  nlohmann::json out;
+  pbr::to_json(out, config);
+  ASSERT_TRUE(out.contains("libp2p"));
+  EXPECT_EQ(out["libp2p"]["node_enabled"], false);
+  EXPECT_EQ(out["libp2p"]["listen_multiaddr"], "/ip4/0.0.0.0/tcp/18520");
+  ASSERT_EQ(out["libp2p"]["bootstrap_peers"].size(), 1u);
+
+  pbr::AppConfig parsed;
+  pbr::from_json(out, parsed);
+  EXPECT_FALSE(parsed.libp2p.node_enabled);
+  EXPECT_EQ(parsed.libp2p.listen_multiaddr, "/ip4/0.0.0.0/tcp/18520");
+  ASSERT_EQ(parsed.libp2p.bootstrap_peers.size(), 1u);
+  EXPECT_EQ(parsed.libp2p.bootstrap_peers[0], config.libp2p.bootstrap_peers[0]);
+}

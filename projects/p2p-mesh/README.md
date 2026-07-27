@@ -1,6 +1,6 @@
 # P2P mesh
 
-**Status:** **n0 done** — n1 next (role shell + bootstrap + Network UI)  
+**Status:** **n1 done** — next **np** (`pp-node` + dial-back)  
 **Formerly:** `projects/libp2p-node-roles/` (renamed; ADRs remain N001+)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [docs/architecture/P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [docs/architecture/LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
@@ -54,8 +54,8 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 | Phase | Name | Status |
 |-------|------|--------|
 | n0 | Docs + ADRs through N015 | Done |
-| n1 | Role shell, listen, bootstrap, master toggle | **Next** |
-| np | `pp-node` + dial-back | After n1 |
+| n1 | Role shell, listen, bootstrap, master toggle | **Done** |
+| np | `pp-node` + dial-back | **Next** |
 | nr | Reachability status + manual help | After n1 / with dial-back |
 | nu | IPv6 + UPnP/NAT-PMP | After nr |
 | n3 | Circuit-relay | After nu (approx.) |

@@ -25,6 +25,14 @@ struct SettingsUiState {
   std::string relay_base_url;
   std::string directory_base_url;
   std::string registration_base_url;
+  /** UI: "on" or "off" — desktop Node participation (N001). */
+  std::string node_enabled = "on";
+  /** True on desktop so Me → Network shows the help-the-network toggle. */
+  bool show_node_toggle = true;
+  /** Actual or preferred listen multiaddr (read-only display). */
+  std::string libp2p_listen_multiaddr;
+  /** Last libp2p start error for Network UX (may be empty). */
+  std::string libp2p_status_message;
   std::string profile_nickname;
   std::string profile_peer_id;
   std::string profile_relay_id;

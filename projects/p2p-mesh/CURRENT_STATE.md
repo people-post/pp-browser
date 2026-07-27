@@ -9,6 +9,18 @@
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
 | ADRs | N001–N016 in [DECISIONS.md](DECISIONS.md) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
+| **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
+
+## n1 in code
+
+| Area | State |
+|------|-------|
+| `Libp2pConfig` | `node_enabled`, `bootstrap_peers` (seed tcp/443), listen default **18517** |
+| Role | `ResolveLibp2pRole` — mobile Client; desktop × `node_enabled` |
+| Listen | Client skips `host->listen`; Node tries **18517–18526** then `/tcp/0`; persist bound addr |
+| Errors | `MessagingHub::LastLibp2pError` surfaced in Me → Network |
+| UI | Desktop **Help the network** toggle + actual listen multiaddr |
+| Tests | `Libp2pRole` helpers + ConfigJson / settings merge |
 
 ## Agent traps
 
@@ -22,20 +34,19 @@
 | Implement DHT right after n1 | Follow **N015** order (circuit/reachability before DHT) |
 | Always bind 18517 or die silently | Desktop: fallback range + persist (N016); `pp-node`: fail loud |
 
-## Today (before n1)
+## Still not done
 
 | Area | State |
 |------|-------|
-| Binaries | GUI only; no `pp-node` |
-| Libp2p | Always listen; no bootstrap/role/caps/pricing; code default still loopback **`:40123`** until n1 → target **18517** + N016 |
-| Reachability / UPnP / IPv6 prefer / friend routing | **Not implemented** |
-| Busy-port fallback | **Not implemented** (listen fail → generic error, no libp2p) |
-| Circuit-relay in fork | **Absent** |
+| Binaries | GUI only; no `pp-node` (**np**) |
+| Reachability / UPnP / IPv6 prefer / friend routing | **Not implemented** (nr / nu / nf) |
+| Circuit-relay in fork | **Absent** (n3) |
+| Caps / pricing UI | **Not implemented** (n4+) |
 
 ## Next
 
-1. **n1** — role shell + bootstrap + master toggle  
-2. Then **np → nr → nu → n3 → nf → n4** (N015); **n2 DHT later**
+1. **np** — headless `pp-node` + dial-back  
+2. Then **nr → nu → n3 → nf → n4**; **n2 DHT later** (N015)
 
 ## Follow-ups
 

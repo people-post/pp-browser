@@ -127,7 +127,13 @@ void from_json(const nlohmann::json& j, ServiceEndpointConfig& endpoint) {
 }
 
 void to_json(nlohmann::json& j, const Libp2pConfig& config) {
+  nlohmann::json peers = nlohmann::json::array();
+  for (const std::string& peer : config.bootstrap_peers) {
+    peers.push_back(peer);
+  }
   j = nlohmann::json{{"listen_multiaddr", config.listen_multiaddr},
+                     {"node_enabled", config.node_enabled},
+                     {"bootstrap_peers", std::move(peers)},
                      {"max_connections", config.max_connections},
                      {"max_concurrent_dials", config.max_concurrent_dials},
                      {"dial_timeout_ms", config.dial_timeout_ms},
@@ -138,6 +144,17 @@ void to_json(nlohmann::json& j, const Libp2pConfig& config) {
 void from_json(const nlohmann::json& j, Libp2pConfig& config) {
   if (j.contains("listen_multiaddr") && j["listen_multiaddr"].is_string()) {
     config.listen_multiaddr = j["listen_multiaddr"].get<std::string>();
+  }
+  if (j.contains("node_enabled") && j["node_enabled"].is_boolean()) {
+    config.node_enabled = j["node_enabled"].get<bool>();
+  }
+  if (j.contains("bootstrap_peers") && j["bootstrap_peers"].is_array()) {
+    config.bootstrap_peers.clear();
+    for (const auto& item : j["bootstrap_peers"]) {
+      if (item.is_string()) {
+        config.bootstrap_peers.push_back(item.get<std::string>());
+      }
+    }
   }
   if (j.contains("max_connections") && j["max_connections"].is_number_unsigned()) {
     config.max_connections = j["max_connections"].get<size_t>();

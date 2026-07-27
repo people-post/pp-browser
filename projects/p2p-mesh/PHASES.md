@@ -11,15 +11,15 @@ Preferred order is **N015**: n1 → np → nr → nu → n3 → nf → n4 → �
 
 ## n1 — Role shell + bootstrap + Network UI
 
-- [ ] `Libp2pConfig`: `bootstrap_peers` (seed tcp/443), `node_enabled`, preferred listen `/ip4/0.0.0.0/tcp/18517`
-- [ ] Desktop busy-port fallback **18517–18526** (+ optional ephemeral); persist actual port (N016)
-- [ ] Clear error / UX if Node listen ultimately fails (no silent “no libp2p”)
-- [ ] `ConfigJson` + `config.json.example`
-- [ ] `ResolveLibp2pRole` (mobile → Client; desktop × `node_enabled`)
-- [ ] Skip `host->listen` for Client; register bootstrap peers
-- [ ] `SessionConfigFromApp` via `Platform::IsMobile()`
-- [ ] Me → Network master toggle + i18n (no caps / pricing / reachability UI yet); surface **actual** listen port when Node
-- [ ] Docs + unit tests; refresh CURRENT_STATE / README
+- [x] `Libp2pConfig`: `bootstrap_peers` (seed tcp/443), `node_enabled`, preferred listen `/ip4/0.0.0.0/tcp/18517`
+- [x] Desktop busy-port fallback **18517–18526** (+ optional ephemeral); persist actual port (N016)
+- [x] Clear error / UX if Node listen ultimately fails (no silent “no libp2p”)
+- [x] `ConfigJson` + `config.json.example`
+- [x] `ResolveLibp2pRole` (mobile → Client; desktop × `node_enabled`)
+- [x] Skip `host->listen` for Client; register bootstrap peers
+- [x] `SessionConfigFromApp` via `Platform::IsMobile()`
+- [x] Me → Network master toggle + i18n (no caps / pricing / reachability UI yet); surface **actual** listen port when Node
+- [x] Docs + unit tests; refresh CURRENT_STATE / README
 
 ## np — Headless `pp-node` + dial-back (N011)
 

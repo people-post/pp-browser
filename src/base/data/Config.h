@@ -31,8 +31,15 @@ struct SearchConfig {
 };
 
 struct Libp2pConfig {
-  /** Listen multiaddr for the shared host (must be dialable by peers for direct chat). */
-  std::string listen_multiaddr = "/ip4/127.0.0.1/tcp/40123";
+  /**
+   * Preferred listen multiaddr when role is Node (N003).
+   * May be rewritten after busy-port fallback (N016).
+   */
+  std::string listen_multiaddr = "/ip4/0.0.0.0/tcp/18517";
+  /** Desktop opt-out of Node; ignored on mobile (always Client). */
+  bool node_enabled = true;
+  /** Seed / bootstrap dial targets (must include /p2p/<PeerId>). */
+  std::vector<std::string> bootstrap_peers;
   size_t max_connections = 48;
   size_t max_concurrent_dials = 6;
   int dial_timeout_ms = 8000;

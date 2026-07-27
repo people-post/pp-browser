@@ -4,6 +4,7 @@ pp_browser_add_base_library(pp_base_data
     AtomicFileWrite.cpp
     Config.cpp
     ConfigJson.cpp
+    Libp2pRole.cpp
     LlmPreset.cpp
     PlatformDefaults.cpp
     ProfileRegistry.cpp

@@ -113,6 +113,10 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.relay_base_url = bindings_.relay_base_url.c_str();
   ui_state_.directory_base_url = bindings_.directory_base_url.c_str();
   ui_state_.registration_base_url = bindings_.registration_base_url.c_str();
+  ui_state_.node_enabled = bindings_.node_enabled.c_str();
+  ui_state_.show_node_toggle = bindings_.show_node_toggle;
+  ui_state_.libp2p_listen_multiaddr = bindings_.libp2p_listen_multiaddr.c_str();
+  ui_state_.libp2p_status_message = bindings_.libp2p_status_message.c_str();
   ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
   ui_state_.profile_peer_id = bindings_.profile_peer_id.c_str();
   ui_state_.profile_relay_id = bindings_.profile_relay_id.c_str();
@@ -158,6 +162,10 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.relay_base_url = ui_state_.relay_base_url.c_str();
   bindings_.directory_base_url = ui_state_.directory_base_url.c_str();
   bindings_.registration_base_url = ui_state_.registration_base_url.c_str();
+  bindings_.node_enabled = ui_state_.node_enabled.c_str();
+  bindings_.show_node_toggle = ui_state_.show_node_toggle;
+  bindings_.libp2p_listen_multiaddr = ui_state_.libp2p_listen_multiaddr.c_str();
+  bindings_.libp2p_status_message = ui_state_.libp2p_status_message.c_str();
   bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
   bindings_.profile_peer_id = ui_state_.profile_peer_id.c_str();
   bindings_.profile_relay_id = ui_state_.profile_relay_id.c_str();
@@ -203,6 +211,11 @@ void SettingsController::SyncBindingsFromSession() {
   const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     handler->SyncFromSession(bootstrap, ui_state_);
+  }
+  if (MessagingHub::Instance().IsInitialized()) {
+    ui_state_.libp2p_status_message = MessagingHub::Instance().LastLibp2pError();
+  } else {
+    ui_state_.libp2p_status_message.clear();
   }
   PushUiStateToBindings();
 }
@@ -255,6 +268,10 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("relay_base_url", &controller.bindings_.relay_base_url);
     ctor.Bind("directory_base_url", &controller.bindings_.directory_base_url);
     ctor.Bind("registration_base_url", &controller.bindings_.registration_base_url);
+    ctor.Bind("node_enabled", &controller.bindings_.node_enabled);
+    ctor.Bind("show_node_toggle", &controller.bindings_.show_node_toggle);
+    ctor.Bind("libp2p_listen_multiaddr", &controller.bindings_.libp2p_listen_multiaddr);
+    ctor.Bind("libp2p_status_message", &controller.bindings_.libp2p_status_message);
     ctor.Bind("profile_nickname", &controller.bindings_.profile_nickname);
     ctor.Bind("profile_peer_id", &controller.bindings_.profile_peer_id);
     ctor.Bind("profile_relay_id", &controller.bindings_.profile_relay_id);
@@ -301,6 +318,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("toggle_auto_renew_registration", &SettingsController::ToggleAutoRenewRegistrationCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
+    ctor.BindEventCallback("toggle_node_enabled", &SettingsController::ToggleNodeEnabledCallback);
     ctor.BindEventCallback("on_profile_nickname_commit", &SettingsController::OnProfileNicknameCommitCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
     ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
@@ -332,6 +350,10 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "relay_base_url");
   host.Dirty("settings", "directory_base_url");
   host.Dirty("settings", "registration_base_url");
+  host.Dirty("settings", "node_enabled");
+  host.Dirty("settings", "show_node_toggle");
+  host.Dirty("settings", "libp2p_listen_multiaddr");
+  host.Dirty("settings", "libp2p_status_message");
   if (include_profile_nickname) {
     host.Dirty("settings", "profile_nickname");
   }
@@ -1028,6 +1050,18 @@ void SettingsController::OnIntegrationsFieldChangedCallback(Rml::DataModelHandle
 void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                        const Rml::VariantList& /*args*/) {
   Instance().MarkSectionDirty("network");
+}
+
+void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                   const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  if (!controller.bindings_.show_node_toggle) {
+    return;
+  }
+  controller.bindings_.node_enabled = controller.bindings_.node_enabled == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("network");
+  controller.DirtyAll();
 }
 
 void SettingsController::OnProfileNicknameCommitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

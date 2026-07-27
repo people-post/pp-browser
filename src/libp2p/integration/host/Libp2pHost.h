@@ -29,7 +29,9 @@ class PeerId;
 namespace pbr {
 
 struct Libp2pHostConfig {
-  std::string listen_multiaddr = "/ip4/127.0.0.1/tcp/40123";
+  std::string listen_multiaddr = "/ip4/0.0.0.0/tcp/18517";
+  /** When false, start host for outbound dials only (Client role). */
+  bool listen_enabled = true;
   /** Optional app Ed25519 identity (32-byte private + 32-byte public). When unset, host generates one. */
   std::optional<std::vector<uint8_t>> ed25519_private_key;
   std::optional<std::vector<uint8_t>> ed25519_public_key;

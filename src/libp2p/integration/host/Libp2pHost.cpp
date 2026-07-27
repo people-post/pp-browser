@@ -86,6 +86,25 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
   host_ = libp2p::createExplicitHost(io_context_, libp2p::HostMuxerKind::Yamux, libp2p::HostSecurityKind::Noise,
                                      key_pair);
 
+  std::promise<Roe<void>> listen_promise;
+  auto listen_future = listen_promise.get_future();
+
+  if (!config_.listen_enabled) {
+    io_thread_ = std::thread([this, listen_promise = std::move(listen_promise)]() mutable {
+      boost::asio::post(*io_context_, [this, listen_promise = std::move(listen_promise)]() mutable {
+        host_->start();
+        listen_promise.set_value({});
+      });
+      io_context_->run();
+    });
+    auto start_result = listen_future.get();
+    if (!start_result) {
+      Stop();
+      return start_result.error();
+    }
+    return {};
+  }
+
   auto ma_res = libp2p::multi::Multiaddress::create(config_.listen_multiaddr);
   if (!ma_res) {
     running_ = false;
@@ -95,14 +114,11 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
   }
   const libp2p::multi::Multiaddress ma = ma_res.value();
 
-  std::promise<Roe<void>> listen_promise;
-  auto listen_future = listen_promise.get_future();
-
   io_thread_ = std::thread([this, ma, listen_promise = std::move(listen_promise)]() mutable {
     boost::asio::post(*io_context_, [this, ma, listen_promise = std::move(listen_promise)]() mutable {
       auto listen_res = host_->listen(ma);
       if (!listen_res) {
-        listen_promise.set_value(Error("libp2p listen failed"));
+        listen_promise.set_value(Error("libp2p listen failed on " + config_.listen_multiaddr));
         return;
       }
       host_->start();

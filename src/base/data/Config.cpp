@@ -3,6 +3,7 @@
 #include "base/data/AppPaths.h"
 #include "base/data/AtomicFileWrite.h"
 #include "base/data/ConfigJson.h"
+#include "base/data/Libp2pRole.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/PlatformDefaults.h"
 #include "base/platform/Platform.h"
@@ -32,7 +33,9 @@ Config& Config::Instance() {
 }
 
 AppConfig Config::DefaultAppConfig() {
-  return PlatformDefaults::For(Platform::Detect());
+  AppConfig config = PlatformDefaults::For(Platform::Detect());
+  NormalizeLibp2pConfig(config.libp2p);
+  return config;
 }
 
 std::string Config::DiscoverConfigPath(int argc, char** argv) {
@@ -104,6 +107,7 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
   }
   ResolveConfigCredentials(config);
   NormalizeLlmConfig(config);
+  NormalizeLibp2pConfig(config.libp2p);
   return config;
 }
 

@@ -65,6 +65,8 @@ public:
                           AtAiMode mode = AtAiMode::Local);
   void PollEvents(std::vector<AgentEvent>& out);
   void Cancel();
+  /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
+  void WaitForConfigureIdle();
   void StartNewConversation();
 
   bool IsConfigured() const;

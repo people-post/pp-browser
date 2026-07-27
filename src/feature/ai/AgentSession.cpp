@@ -26,6 +26,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <nlohmann/json.hpp>
 
@@ -66,6 +67,9 @@ struct AgentSession::Impl : public Module {
 
   std::atomic<bool> cancelled{false};
   std::atomic<bool> busy{false};
+  std::mutex configure_mutex;
+  std::condition_variable configure_cv;
+  int configure_inflight = 0;
 
   AppConfig config;
   std::unique_ptr<LlmClient> llm;
@@ -545,6 +549,23 @@ void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) 
 }
 
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
+  {
+    std::lock_guard lock(state->configure_mutex);
+    ++state->configure_inflight;
+  }
+  struct InflightGuard {
+    const std::shared_ptr<Impl>& state;
+    ~InflightGuard() {
+      std::lock_guard lock(state->configure_mutex);
+      --state->configure_inflight;
+      state->configure_cv.notify_all();
+    }
+  } inflight_guard{state};
+
+  if (state->cancelled) {
+    return;
+  }
+
   BrowserThread::PauseIO();
 
   try {
@@ -565,8 +586,17 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
 
     state->tools.BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
                                  custom_prefixes);
-    if (state->tool_registration_hook) {
+    if (!state->cancelled && state->tool_registration_hook) {
       state->tool_registration_hook(state->tools);
+    }
+    if (state->cancelled) {
+      state->configured = false;
+      state->mcp.Stop();
+      state->llm.reset();
+      state->tools.Clear();
+      RefreshCompactionService(state);
+      BrowserThread::ResumeIO();
+      return;
     }
     state->configured = true;
     RefreshCompactionService(state);
@@ -616,6 +646,7 @@ AgentSession::~AgentSession() {
 void AgentSession::Configure(const AppConfig& config) {
   impl_->config = config;
   impl_->configured = false;
+  impl_->cancelled = false;
 
   BrowserThread::PostTask(BrowserThreadId::IO, [impl = impl_]() { ConfigureOnIO(impl); });
 }
@@ -727,6 +758,12 @@ void AgentSession::PollEvents(std::vector<AgentEvent>& out) {
 void AgentSession::Cancel() {
   impl_->cancelled = true;
   impl_->busy = false;
+  impl_->tool_registration_hook = nullptr;
+}
+
+void AgentSession::WaitForConfigureIdle() {
+  std::unique_lock lock(impl_->configure_mutex);
+  impl_->configure_cv.wait(lock, [&] { return impl_->configure_inflight == 0; });
 }
 
 void AgentSession::StartNewConversation() {

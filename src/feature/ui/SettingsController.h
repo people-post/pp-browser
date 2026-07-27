@@ -68,6 +68,10 @@ private:
     Rml::String relay_base_url;
     Rml::String directory_base_url;
     Rml::String registration_base_url;
+    Rml::String node_enabled = "on";
+    bool show_node_toggle = true;
+    Rml::String libp2p_listen_multiaddr;
+    Rml::String libp2p_status_message;
     Rml::String profile_nickname;
     Rml::String profile_peer_id;
     Rml::String profile_relay_id;
@@ -117,6 +121,7 @@ private:
   static void ToggleAutoRenewRegistrationCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnIntegrationsFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnNetworkFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ToggleNodeEnabledCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnProfileNicknameCommitCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRotateBriefLlmKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);

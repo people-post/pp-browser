@@ -1,6 +1,7 @@
 #include "feature/settings/SettingsLogic.h"
 
 #include "base/data/Config.h"
+#include "base/data/Libp2pRole.h"
 #include "base/data/LlmPreset.h"
 #include "feature/settings/SettingsUiState.h"
 
@@ -92,6 +93,11 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
   config.registration.base_url = state.registration_base_url.empty()
                                      ? defaults.registration.base_url
                                      : state.registration_base_url;
+  config.libp2p.node_enabled = (state.node_enabled != "off");
+  if (!state.libp2p_listen_multiaddr.empty()) {
+    config.libp2p.listen_multiaddr = state.libp2p_listen_multiaddr;
+  }
+  NormalizeLibp2pConfig(config.libp2p);
   return config;
 }
 

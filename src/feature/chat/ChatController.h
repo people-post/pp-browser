@@ -207,6 +207,7 @@ private:
   ChatState chat_;
   ShellState shell_;
   std::optional<AgentSession> agent_;
+  AppConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool messaging_ready_ = false;
   ChatTranscriptScroller scroller_;

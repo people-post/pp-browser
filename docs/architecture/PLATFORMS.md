@@ -91,6 +91,8 @@ Build and signing placeholders: [IOS_BUILD.md](../ops/IOS_BUILD.md). Scripts: [`
 
 ## libp2p background
 
+Desktop may run as a mesh **Node** (listen preferred on TCP **18517**, busy-port fallback per [p2p-mesh N016](../../projects/p2p-mesh/DECISIONS.md)) or **Client** (`node_enabled` off). Mobile is always Client — outbound dials only, no listen UI. See [p2p-mesh](../../projects/p2p-mesh/) and [CONFIGURATION.md](../ops/CONFIGURATION.md).
+
 On `AppLifecycle::OnWillEnterBackground`, messaging suspends cold peer connections (`PeerSessionManager::SuspendColdPeers`) while keeping the warm (active-thread) set. Foreground resume may re-warm the open thread.
 
 Inbox sync uses [`BackgroundSyncScheduler`](../../src/base/platform/BackgroundSyncScheduler.h): foreground poll every 2s; while backgrounded and the process is alive, poll every ~45s (IO temporarily held open). Android additionally uses WorkManager (~15 min when notifications are off; rarer backup when on) and optional FCM opaque wakes when `google-services.json` is present. See [projects/push-notifications](../../projects/push-notifications/).

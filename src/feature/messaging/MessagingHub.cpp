@@ -9,6 +9,8 @@
 #include "feature/ai/AgentSession.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/error/AppError.h"
+#include "base/data/Libp2pRole.h"
+#include "base/data/SessionStore.h"
 #include "base/data/UserPreferences.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/GroupTypes.h"
@@ -32,7 +34,7 @@ PeerSessionConfig SessionConfigFromApp(const AppConfig& config) {
   session.dial_timeout = std::chrono::milliseconds(config.libp2p.dial_timeout_ms);
   session.idle_ttl = std::chrono::milliseconds(config.libp2p.idle_ttl_ms);
   session.dial_failure_backoff = std::chrono::milliseconds(config.libp2p.dial_failure_backoff_ms);
-  if (Platform::Detect() == PlatformKind::Android) {
+  if (Platform::IsMobile()) {
     session.max_connections = std::min(session.max_connections, size_t{16});
     session.max_concurrent_dials = std::min(session.max_concurrent_dials, size_t{4});
     if (session.idle_ttl > std::chrono::milliseconds(120000)) {
@@ -40,6 +42,20 @@ PeerSessionConfig SessionConfigFromApp(const AppConfig& config) {
     }
   }
   return session;
+}
+
+std::string ResolveBoundListenMultiaddr(Libp2pHost& host, const std::string& requested) {
+  const auto listened = host.ListenMultiaddrs();
+  if (listened.empty()) {
+    return requested;
+  }
+  // Prefer an addr that includes a concrete TCP port (not 0).
+  for (const std::string& ma : listened) {
+    if (const auto port = TcpPortFromMultiaddr(ma); port && *port > 0) {
+      return ma;
+    }
+  }
+  return listened.front();
 }
 
 } // namespace
@@ -134,10 +150,14 @@ void MessagingHub::InstallServiceClients(const AppConfig& config) {
 Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
   StartupPhase phase("MessagingHub::StartLibp2p");
   StopLibp2p();
-  libp2p_host_ = std::make_unique<Libp2pHost>();
+  libp2p_last_error_.clear();
+
+  Libp2pConfig libp2p_cfg = config.libp2p;
+  NormalizeLibp2pConfig(libp2p_cfg);
+  const Libp2pRole role = ResolveLibp2pRole(libp2p_cfg);
 
   Libp2pHostConfig host_config;
-  host_config.listen_multiaddr = config.libp2p.listen_multiaddr;
+  host_config.listen_enabled = (role == Libp2pRole::Node);
   if (auto priv = identity_->GetEd25519PrivateKey()) {
     host_config.ed25519_private_key = *priv;
   }
@@ -145,14 +165,73 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
     host_config.ed25519_public_key = *pub;
   }
 
-  auto started = libp2p_host_->Start(host_config);
-  if (!started) {
-    libp2p_host_.reset();
-    return started.error();
+  Error last_error("libp2p host start failed");
+  if (role == Libp2pRole::Client) {
+    libp2p_host_ = std::make_unique<Libp2pHost>();
+    host_config.listen_multiaddr = libp2p_cfg.listen_multiaddr;
+    auto started = libp2p_host_->Start(host_config);
+    if (!started) {
+      libp2p_last_error_ = started.error().message;
+      libp2p_host_.reset();
+      return started.error();
+    }
+  } else {
+    const std::vector<std::string> candidates = BuildLibp2pListenCandidates(libp2p_cfg.listen_multiaddr);
+    bool started_ok = false;
+    for (const std::string& candidate : candidates) {
+      libp2p_host_ = std::make_unique<Libp2pHost>();
+      host_config.listen_multiaddr = candidate;
+      auto started = libp2p_host_->Start(host_config);
+      if (started) {
+        started_ok = true;
+        const std::string bound = ResolveBoundListenMultiaddr(*libp2p_host_, candidate);
+        if (bound != config_.libp2p.listen_multiaddr) {
+          config_.libp2p.listen_multiaddr = bound;
+          libp2p_cfg.listen_multiaddr = bound;
+          if (SessionStore::Instance().IsInitialized()) {
+            if (auto saved = SessionStore::Instance().SaveConfig(config_); !saved) {
+              log().warning << "Failed to persist libp2p listen multiaddr: " << saved.error().message;
+            } else {
+              log().info << "libp2p listening on " << bound;
+            }
+          } else {
+            log().info << "libp2p listening on " << bound << " (session store not ready to persist)";
+          }
+        }
+        break;
+      }
+      last_error = started.error();
+      libp2p_host_.reset();
+    }
+    if (!started_ok) {
+      libp2p_last_error_ = last_error.message;
+      return last_error;
+    }
   }
 
-  peer_sessions_ = std::make_unique<PeerSessionManager>(*libp2p_host_, SessionConfigFromApp(config));
+  peer_sessions_ = std::make_unique<PeerSessionManager>(*libp2p_host_, SessionConfigFromApp(config_));
+  RegisterBootstrapPeers(libp2p_cfg);
   return {};
+}
+
+void MessagingHub::RegisterBootstrapPeers(const Libp2pConfig& libp2p_cfg) {
+  if (!peer_sessions_) {
+    return;
+  }
+  size_t index = 0;
+  for (const std::string& ma : libp2p_cfg.bootstrap_peers) {
+    if (ma.empty()) {
+      continue;
+    }
+    std::string key = PeerIdFromMultiaddr(ma);
+    if (key.empty()) {
+      key = "bootstrap:" + std::to_string(index);
+    }
+    if (auto registered = peer_sessions_->RegisterEndpoint(key, ma); !registered) {
+      log().warning << "Failed to register bootstrap peer " << ma << ": " << registered.error().message;
+    }
+    ++index;
+  }
 }
 
 void MessagingHub::StopLibp2p() {
@@ -260,7 +339,8 @@ Roe<void> MessagingHub::BuildMessagingStack() {
   WireRelayAuthSigner();
 
   if (auto libp2p = StartLibp2p(config_); !libp2p) {
-    log().warning << "libp2p host start failed: " << libp2p.error().message;
+    log().warning << "libp2p host start failed: " << libp2p.error().message
+                  << " (direct P2P unavailable; relay messaging may still work)";
   }
 
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
