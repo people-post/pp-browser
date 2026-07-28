@@ -32,6 +32,12 @@ const std::string* UiEditSession::Baseline(const std::string& field_id) const {
 }
 
 bool UiEditSession::IsMidEdit(const std::string& field_id, const std::string& live) const {
+  // Remount/SetValue clears the binding to "" before we push loaded values. That must not
+  // look like an intentional edit vs a prior baseline (or nickname stays blank and blur
+  // commits an empty wipe).
+  if (RemountBlocking()) {
+    return false;
+  }
   const std::string* baseline = Baseline(field_id);
   return baseline && live != *baseline;
 }
@@ -57,6 +63,9 @@ void UiEditSession::OnCommitted(const std::string& field_id, const std::string& 
 
 std::string UiEditSession::ResolveAfterLoad(const std::string& field_id, const std::string& loaded,
                                             const std::string& live_binding) const {
+  if (RemountBlocking()) {
+    return loaded;
+  }
   if (IsMidEdit(field_id, live_binding)) {
     return live_binding;
   }

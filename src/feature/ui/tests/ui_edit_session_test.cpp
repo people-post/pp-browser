@@ -32,6 +32,23 @@ TEST(UiEditSessionTest, MidEditBlocksPushPreservesLiveOnLoad) {
   EXPECT_EQ(session.ResolveAfterLoad(field, "alice", "alic"), "alic");
 }
 
+TEST(UiEditSessionTest, RemountEmptyLiveResolvesToLoaded) {
+  pbr::UiEditSession session;
+  const std::string field = "nickname";
+
+  session.OnLoaded(field, "alice");
+  // Remount clears the binding before Dirty/SetValue; must not keep "" as mid-edit.
+  session.BeginRemount();
+  EXPECT_FALSE(session.IsMidEdit(field, ""));
+  EXPECT_EQ(session.ResolveAfterLoad(field, "alice", ""), "alice");
+  EXPECT_TRUE(session.ShouldPushToView(field, ""));
+  session.EndRemount();
+
+  // After remount settles, an intentional clear is mid-edit and may commit.
+  EXPECT_TRUE(session.IsMidEdit(field, ""));
+  EXPECT_TRUE(session.ShouldCommit(field, ""));
+}
+
 TEST(UiEditSessionTest, EmptyLiveWithoutBaselineResolvesToLoaded) {
   pbr::UiEditSession session;
   const std::string field = "nickname";

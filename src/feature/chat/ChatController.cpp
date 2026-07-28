@@ -2206,10 +2206,18 @@ void ChatController::ApplyRuntimeConfig(const AppConfig& config) {
   }
   if (ResolvePreset(runtime) == "brief") {
     runtime.llm.require_api_key = true;
-    if (MessagingHub::Instance().IsInitialized()) {
+    std::string brief_key;
+    if (MessagingHub::Instance().IsInitialized() && MessagingHub::Instance().IsMessagingReady()) {
       if (auto identity = MessagingHub::Instance().Identity().Get()) {
-        runtime.llm.api_key = identity->brief_llm_api_key;
+        brief_key = identity->brief_llm_api_key;
       }
+    }
+    if (!brief_key.empty()) {
+      runtime.llm.api_key = brief_key;
+    } else if (ResolvePreset(last_agent_runtime_) == "brief" && !last_agent_runtime_.llm.api_key.empty()) {
+      // Me tab ReloadFromDisk re-notifies config listeners. If identity is briefly
+      // unreadable, keep the last injected Brief key instead of reconfiguring empty.
+      runtime.llm.api_key = last_agent_runtime_.llm.api_key;
     }
   }
 

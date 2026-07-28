@@ -1,7 +1,10 @@
 #include "base/data/SessionStore.h"
 
 #include "base/data/Config.h"
+#include "base/data/ConfigJson.h"
 #include "base/data/UserPreferences.h"
+
+#include <nlohmann/json.hpp>
 
 #include <filesystem>
 
@@ -86,8 +89,13 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
 Roe<void> SessionStore::ReloadConfig() {
   // Match Config::Load / bootstrap: missing config is not an error — use defaults.
   if (bootstrap_.config_path.empty() || !std::filesystem::exists(bootstrap_.config_path)) {
-    bootstrap_.config = Config::DefaultAppConfig();
-    NotifyConfigListeners(bootstrap_.config);
+    AppConfig defaults = Config::DefaultAppConfig();
+    const bool changed = ConfigToJson(bootstrap_.config, Config::kConfigVersion) !=
+                         ConfigToJson(defaults, Config::kConfigVersion);
+    bootstrap_.config = std::move(defaults);
+    if (changed) {
+      NotifyConfigListeners(bootstrap_.config);
+    }
     return {};
   }
 
@@ -95,8 +103,14 @@ Roe<void> SessionStore::ReloadConfig() {
   if (!reloaded) {
     return reloaded.error();
   }
+  // Me tab opens ReloadFromDisk every time; skip listener churn when nothing changed so
+  // ChatController::ApplyRuntimeConfig does not rebuild the agent (Cancel/find-someone race).
+  const bool changed = ConfigToJson(bootstrap_.config, Config::kConfigVersion) !=
+                       ConfigToJson(*reloaded, Config::kConfigVersion);
   bootstrap_.config = std::move(*reloaded);
-  NotifyConfigListeners(bootstrap_.config);
+  if (changed) {
+    NotifyConfigListeners(bootstrap_.config);
+  }
   return {};
 }
 

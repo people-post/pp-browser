@@ -98,3 +98,42 @@ TEST(SessionStoreTest, ReloadFromDiskUsesDefaultsWhenConfigMissing) {
   std::filesystem::remove_all(profile_dir);
   std::filesystem::remove_all(data_dir);
 }
+
+TEST(SessionStoreTest, ReloadConfigSkipsListenerWhenUnchanged) {
+  const std::string config_path =
+      UniquePath("pp_browser_session_store_reload_unchanged_") + ".json";
+  const std::string profile_dir = UniquePath("pp_browser_session_store_reload_unchanged_profile_");
+  const std::string data_dir = UniquePath("pp_browser_session_store_reload_unchanged_data_");
+
+  std::filesystem::create_directories(profile_dir);
+  std::filesystem::create_directories(data_dir);
+
+  pbr::BootstrapResult bootstrap{};
+  bootstrap.config = pbr::Config::DefaultAppConfig();
+  bootstrap.config.llm.model = "stable-model";
+  bootstrap.config_path = config_path;
+  bootstrap.data_dir = data_dir;
+  bootstrap.profile_data_dir = profile_dir;
+  bootstrap.profile_prefs = pbr::UserPreferences::DefaultProfile();
+
+  pbr::SessionStore::Instance().Initialize(std::move(bootstrap));
+  ASSERT_TRUE(pbr::SessionStore::Instance().SaveConfig(pbr::SessionStore::Instance().Snapshot().config));
+
+  int notify_count = 0;
+  pbr::SessionStore::Instance().AddConfigListener([&](const pbr::AppConfig&) { ++notify_count; });
+
+  EXPECT_TRUE(pbr::SessionStore::Instance().ReloadConfig());
+  EXPECT_EQ(notify_count, 0);
+
+  pbr::AppConfig edited = pbr::SessionStore::Instance().Snapshot().config;
+  edited.llm.model = "changed-model";
+  ASSERT_TRUE(pbr::Config::SaveToFile(config_path, edited));
+
+  EXPECT_TRUE(pbr::SessionStore::Instance().ReloadConfig());
+  EXPECT_EQ(notify_count, 1);
+  EXPECT_EQ(pbr::SessionStore::Instance().Snapshot().config.llm.model, "changed-model");
+
+  std::filesystem::remove(config_path);
+  std::filesystem::remove_all(profile_dir);
+  std::filesystem::remove_all(data_dir);
+}

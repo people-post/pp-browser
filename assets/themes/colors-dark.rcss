@@ -615,6 +615,22 @@ select selectbox option:hover {
   background-color: #818cf8;
 }
 
+.shell-call-meter-label {
+  color: #9ca3af;
+}
+
+.shell-call-meter-hint {
+  color: #e5e7eb;
+}
+
+.shell-call-meter-seg {
+  background-color: #374151;
+}
+
+.shell-call-meter-seg--on {
+  background-color: #6366f1;
+}
+
 .chat-empty {
   background-color: #1f2937;
   border: 1dp #374151;

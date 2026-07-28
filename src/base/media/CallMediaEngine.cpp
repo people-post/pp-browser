@@ -6,6 +6,7 @@
 #include <opus.h>
 #include <rtc/rtc.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <deque>
@@ -67,9 +68,27 @@ struct CallMediaEngine::Impl {
 
   std::thread capture_thread;
   std::atomic<bool> capture_running{false};
+  std::atomic<float> local_input_level{0.f};
+  std::atomic<float> remote_output_level{0.f};
+  std::atomic<int64_t> remote_level_ms{0};
 
   std::mutex playback_mutex;
   std::deque<std::vector<int16_t>> playback_queue;
+
+  static float FramePeakLevel(const int16_t* pcm, int samples) {
+    int peak = 0;
+    for (int i = 0; i < samples; ++i) {
+      peak = std::max(peak, std::abs(static_cast<int>(pcm[i])));
+    }
+    return std::clamp(static_cast<float>(peak) / 32768.f, 0.f, 1.f);
+  }
+
+  static void SmoothLevel(std::atomic<float>& level, float instant) {
+    const float cur = level.load(std::memory_order_relaxed);
+    // Fast attack, slower decay so speaking lights up quickly and fades cleanly.
+    const float next = instant >= cur ? instant : (cur * 0.82f + instant * 0.18f);
+    level.store(std::clamp(next, 0.f, 1.f), std::memory_order_relaxed);
+  }
 
   void SetState(const std::string& state) {
     connection_state = state;
@@ -112,6 +131,9 @@ struct CallMediaEngine::Impl {
       std::lock_guard lock(playback_mutex);
       playback_queue.clear();
     }
+    local_input_level.store(0.f, std::memory_order_relaxed);
+    remote_output_level.store(0.f, std::memory_order_relaxed);
+    remote_level_ms.store(0, std::memory_order_relaxed);
   }
 
   void TearDownPcLocked() {
@@ -182,14 +204,30 @@ struct CallMediaEngine::Impl {
       std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
       std::vector<unsigned char> opus_buf(4000);
       while (capture_running.load()) {
-        if (!capture_stream || !track || !track->isOpen() || !encoder) {
+        if (!capture_stream) {
+          SmoothLevel(local_input_level, 0.f);
           std::this_thread::sleep_for(std::chrono::milliseconds(5));
           continue;
         }
         const int got = SDL_GetAudioStreamData(capture_stream, pcm.data(),
                                                static_cast<int>(pcm.size() * sizeof(int16_t)));
         if (got < static_cast<int>(pcm.size() * sizeof(int16_t))) {
+          SmoothLevel(local_input_level, 0.f);
+          const int64_t now = util::NowUnixMs();
+          if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
+            SmoothLevel(remote_output_level, 0.f);
+          }
           std::this_thread::sleep_for(std::chrono::milliseconds(2));
+          continue;
+        }
+        SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
+        {
+          const int64_t now = util::NowUnixMs();
+          if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
+            SmoothLevel(remote_output_level, 0.f);
+          }
+        }
+        if (!track || !track->isOpen() || !encoder) {
           continue;
         }
         const int encoded =
@@ -214,7 +252,12 @@ struct CallMediaEngine::Impl {
     const int decoded =
         opus_decode(decoder, reinterpret_cast<const unsigned char*>(data), static_cast<int>(size), pcm.data(),
                     kFrameSamples, 0);
-    if (decoded <= 0 || !playback_stream) {
+    if (decoded <= 0) {
+      return;
+    }
+    SmoothLevel(remote_output_level, FramePeakLevel(pcm.data(), decoded));
+    remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+    if (!playback_stream) {
       return;
     }
     (void)SDL_PutAudioStreamData(playback_stream, pcm.data(), decoded * static_cast<int>(sizeof(int16_t)));
@@ -392,6 +435,14 @@ std::string CallMediaEngine::ActiveCallId() const {
 std::string CallMediaEngine::ConnectionState() const {
   std::lock_guard lock(impl_->mutex);
   return impl_->connection_state;
+}
+
+float CallMediaEngine::LocalInputLevel() const {
+  return impl_->local_input_level.load(std::memory_order_relaxed);
+}
+
+float CallMediaEngine::RemoteOutputLevel() const {
+  return impl_->remote_output_level.load(std::memory_order_relaxed);
 }
 
 } // namespace pbr

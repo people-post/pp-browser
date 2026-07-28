@@ -562,10 +562,9 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     }
   } inflight_guard{state};
 
-  if (state->cancelled) {
-    return;
-  }
-
+  // Cancel() means "abort the active turn", not "abort agent configure". OnNewChat /
+  // find-someone calls Cancel while Me→ReloadFromDisk may still be reconfiguring; tearing
+  // down llm here left the session unconfigured and the next send showed MissingKey.
   BrowserThread::PauseIO();
 
   try {
@@ -586,17 +585,8 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
 
     state->tools.BuildFromConfig(state->config, state->mcp.PromotedPtr(), state->mcp.CustomPtrs(),
                                  custom_prefixes);
-    if (!state->cancelled && state->tool_registration_hook) {
+    if (state->tool_registration_hook) {
       state->tool_registration_hook(state->tools);
-    }
-    if (state->cancelled) {
-      state->configured = false;
-      state->mcp.Stop();
-      state->llm.reset();
-      state->tools.Clear();
-      RefreshCompactionService(state);
-      BrowserThread::ResumeIO();
-      return;
     }
     state->configured = true;
     RefreshCompactionService(state);
@@ -631,7 +621,12 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
 
   if (state->submit_when_ready && !state->pending_user_text.empty()) {
     state->submit_when_ready = false;
-    StartTurn(state);
+    if (!state->cancelled) {
+      StartTurn(state);
+    } else {
+      // OnNewChat Cancel raced configure; do not leave busy stuck from Submit.
+      state->busy = false;
+    }
   }
 }
 

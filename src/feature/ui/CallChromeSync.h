@@ -14,6 +14,10 @@ struct CallChromeLayer {
   std::string ring_caller_label;
   std::string ring_media_label;
   std::string in_call_title;
+  int in_call_mic_level = 0;
+  int in_call_peer_level = 0;
+  std::string in_call_mic_hint;
+  std::string in_call_peer_hint;
 };
 
 enum class CallChromeUpdate {

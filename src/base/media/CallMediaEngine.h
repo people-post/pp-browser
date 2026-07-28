@@ -50,6 +50,11 @@ public:
   std::string ActiveCallId() const;
   std::string ConnectionState() const;
 
+  /** Smoothed peak level 0..1 from local capture (mic pickup indicator). */
+  float LocalInputLevel() const;
+  /** Smoothed peak level 0..1 from decoded remote frames. */
+  float RemoteOutputLevel() const;
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;

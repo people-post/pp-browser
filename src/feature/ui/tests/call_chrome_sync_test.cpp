@@ -33,6 +33,18 @@ TEST(CallChromeSyncTest, SubtitleOnlyDirties) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 
+TEST(CallChromeSyncTest, MicLevelOnlyDirties) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_mic_level = 0;
+  synced.in_call_mic_hint = "Silent";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_mic_level = 3;
+  next.in_call_mic_hint = "Speaking";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
 TEST(CallChromeSyncTest, SwitchCallIdRemounts) {
   pbr::CallChromeLayer synced;
   synced.ring_active = true;

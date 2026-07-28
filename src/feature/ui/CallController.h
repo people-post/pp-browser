@@ -13,6 +13,8 @@ class Context;
 
 namespace pbr {
 
+class CallMediaEngine;
+
 /** Shell-level call ring / in-call chrome (a1; no media). */
 class CallController {
 public:
@@ -40,6 +42,8 @@ private:
   void SyncShellState();
   void ClearRing();
   void ClearInCall();
+  void ApplyAudioLevels(CallMediaEngine& media);
+  void RefreshCallLevels();
 
   bool bound_ = false;
   std::string ringing_call_id_;

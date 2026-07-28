@@ -462,9 +462,11 @@ void SettingsController::OnNavTabActivated() {
   in_account_sheet_ = false;
   ShellHost::Instance().ClearLocalBack("settings_detail");
   compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
-  ReloadFromDisk();
+  // Remount gate must wrap Reload/Sync: an empty nickname binding vs a prior baseline
+  // would otherwise look mid-edit and keep the field blank (then blur-commit wipes it).
   suppress_auto_save_ = true;
   UiEditSession::Instance().BeginRemount();
+  ReloadFromDisk();
   DirtyAll();
   if (context_) {
     context_->Update();
@@ -480,9 +482,9 @@ void SettingsController::OnAccountSheetOpened() {
   selected_title_.clear();
   ShellHost::Instance().ClearLocalBack("settings_detail");
   in_account_sheet_ = true;
-  ReloadFromDisk();
   suppress_auto_save_ = true;
   UiEditSession::Instance().BeginRemount();
+  ReloadFromDisk();
 }
 
 void SettingsController::OnMeSurfaceClosed() {

@@ -157,6 +157,12 @@ struct CallInProgressState {
   Rml::String call_id;
   Rml::String title;
   Rml::String subtitle;
+  /** Quantized mic level 0..5 for speaking meter bars. */
+  int mic_level = 0;
+  /** Quantized remote audio level 0..5. */
+  int peer_level = 0;
+  Rml::String mic_hint;
+  Rml::String peer_hint;
 };
 
 struct PaneVisibility {

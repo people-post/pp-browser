@@ -1462,6 +1462,10 @@ select selectbox option {
   z-index: 51;
 }
 
+.shell-call-in-progress {
+  margin-top: -170dp;
+}
+
 .shell-dialog-title {
   margin-top: 0;
   font-size: 18dp;
@@ -1471,6 +1475,43 @@ select selectbox option {
   display: block;
   margin-top: 0;
   margin-bottom: 8dp;
+}
+
+.shell-call-meters {
+  display: block;
+  margin-top: 12dp;
+  margin-bottom: 16dp;
+}
+
+.shell-call-meter {
+  display: block;
+  margin-bottom: 10dp;
+}
+
+.shell-call-meter-head {
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4dp;
+}
+
+.shell-call-meter-label {
+  font-size: 12dp;
+}
+
+.shell-call-meter-hint {
+  font-size: 12dp;
+}
+
+.shell-call-meter-track {
+  align-items: stretch;
+  gap: 4dp;
+  height: 10dp;
+}
+
+.shell-call-meter-seg {
+  flex-grow: 1;
+  height: 10dp;
+  border-radius: 2dp;
 }
 
 .shell-dialog-checkbox {

@@ -14,7 +14,11 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
   const bool labels_changed = synced.in_call_subtitle != next.in_call_subtitle ||
                               synced.ring_caller_label != next.ring_caller_label ||
                               synced.ring_media_label != next.ring_media_label ||
-                              synced.in_call_title != next.in_call_title;
+                              synced.in_call_title != next.in_call_title ||
+                              synced.in_call_mic_level != next.in_call_mic_level ||
+                              synced.in_call_peer_level != next.in_call_peer_level ||
+                              synced.in_call_mic_hint != next.in_call_mic_hint ||
+                              synced.in_call_peer_hint != next.in_call_peer_hint;
   if (labels_changed) {
     return CallChromeUpdate::DirtyOnly;
   }

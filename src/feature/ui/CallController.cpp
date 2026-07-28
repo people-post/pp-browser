@@ -1,5 +1,6 @@
 #include "feature/ui/CallController.h"
 
+#include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallTypes.h"
 #include "base/people/ContactTypes.h"
 #include "base/platform/ILocalNotifier.h"
@@ -24,7 +25,40 @@ CallChromeLayer CaptureCallChrome(const ShellState& state) {
       .ring_caller_label = state.call_ring.caller_label.c_str(),
       .ring_media_label = state.call_ring.media_label.c_str(),
       .in_call_title = state.call_in_progress.title.c_str(),
+      .in_call_mic_level = state.call_in_progress.mic_level,
+      .in_call_peer_level = state.call_in_progress.peer_level,
+      .in_call_mic_hint = state.call_in_progress.mic_hint.c_str(),
+      .in_call_peer_hint = state.call_in_progress.peer_hint.c_str(),
   };
+}
+
+int QuantizeAudioLevel(float level) {
+  if (level < 0.02f) {
+    return 0;
+  }
+  if (level < 0.05f) {
+    return 1;
+  }
+  if (level < 0.10f) {
+    return 2;
+  }
+  if (level < 0.20f) {
+    return 3;
+  }
+  if (level < 0.35f) {
+    return 4;
+  }
+  return 5;
+}
+
+const char* LevelHint(int level, bool remote) {
+  if (level <= 0) {
+    return remote ? "Quiet" : "Silent";
+  }
+  if (level <= 2) {
+    return "Speaking";
+  }
+  return "Loud";
 }
 
 } // namespace
@@ -49,6 +83,7 @@ void CallController::Tick() {
   if (auto* calls = MessagingHub::Instance().Calls()) {
     calls->SweepExpiredInvites();
   }
+  RefreshCallLevels();
 }
 
 void CallController::OnCallWake() {
@@ -101,6 +136,7 @@ void CallController::RefreshPendingRing() {
       const std::string state = calls->Media().ConnectionState();
       in_call.subtitle = state.empty() ? "Connecting…" : state;
     }
+    ApplyAudioLevels(calls->Media());
     SyncShellState();
     return;
   }
@@ -209,6 +245,26 @@ void CallController::DeclineCallback(Rml::DataModelHandle, Rml::Event&, const Rm
 
 void CallController::LeaveCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
   Instance().LeaveActive();
+}
+
+void CallController::ApplyAudioLevels(CallMediaEngine& media) {
+  auto& in_call = ShellHost::Instance().State().call_in_progress;
+  in_call.mic_level = QuantizeAudioLevel(media.LocalInputLevel());
+  in_call.peer_level = QuantizeAudioLevel(media.RemoteOutputLevel());
+  in_call.mic_hint = LevelHint(in_call.mic_level, false);
+  in_call.peer_hint = LevelHint(in_call.peer_level, true);
+}
+
+void CallController::RefreshCallLevels() {
+  if (active_call_id_.empty()) {
+    return;
+  }
+  auto* calls = MessagingHub::Instance().Calls();
+  if (!calls || !calls->Media().IsActive()) {
+    return;
+  }
+  ApplyAudioLevels(calls->Media());
+  SyncShellState();
 }
 
 } // namespace pbr
