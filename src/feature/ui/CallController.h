@@ -54,7 +54,9 @@ private:
   std::string DisplayNameForIdentity(const std::string& identity) const;
   static std::string FormatElapsed(int64_t connected_at_ms);
 
-  bool bound_ = false;
+  bool pending_call_wake_notify_ = false;
+  /** Last CallSessionManager we installed OnRingChanged on (recreated across unlock). */
+  const void* bound_calls_ = nullptr;
   std::string ringing_call_id_;
   std::string active_call_id_;
   int64_t ring_started_ms_ = 0;

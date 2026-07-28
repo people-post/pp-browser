@@ -798,19 +798,25 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (!invite) {
       return invite.error();
     }
-    if (CallSessionLogic::IsInviteExpired(*invite, util::NowUnixMs())) {
-      return {};
+    // Do not trust caller wall-clock for ring lifetime (clock skew drops live invites while the
+    // system message still persists → unread badge, no Accept UI). Re-arm from local receipt time.
+    const int64_t now = util::NowUnixMs();
+    if (CallSessionLogic::IsInviteExpired(*invite, now)) {
+      log().warning << "CallInvite past wire expires_at; re-arming locally call_id=" << invite->call_id
+                    << " expires_at=" << (invite->expires_at ? std::to_string(*invite->expires_at) : "none")
+                    << " now=" << now;
     }
     PendingCallInvite pending;
     pending.call_id = invite->call_id;
     pending.inviter_identity = invite->inviter_identity.empty() ? sender_identity : invite->inviter_identity;
-    pending.invitee_identity = invite->invitee_identity.empty() ? *local : invite->invitee_identity;
+    // Always key pending rows to local identity so ListPendingInvitesForInvitee matches.
+    pending.invitee_identity = *local;
     pending.media_mode = invite->media_mode;
     pending.origin_thread_id = invite->origin_thread_id;
     pending.origin_group_id = invite->origin_group_id;
     pending.sfu_hint = invite->sfu_hint;
-    pending.expires_at = invite->expires_at;
-    pending.created_at = message.timestamp > 0 ? message.timestamp : util::NowUnixMs();
+    pending.expires_at = now + kDefaultCallInviteTtlMs;
+    pending.created_at = message.timestamp > 0 ? message.timestamp : now;
     pending.status = "pending";
     if (auto saved = sessions_.UpsertPendingInvite(pending); !saved) {
       return saved.error();

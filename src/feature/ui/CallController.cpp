@@ -3,6 +3,7 @@
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallTypes.h"
 #include "base/people/ContactTypes.h"
+#include "base/platform/BrowserThread.h"
 #include "base/platform/ILocalNotifier.h"
 #include "base/ui/ShellTypes.h"
 #include "feature/messaging/MessagingHub.h"
@@ -85,13 +86,24 @@ CallController& CallController::Instance() {
 }
 
 void CallController::BindToMessaging() {
-  if (bound_ || !MessagingHub::Instance().IsInitialized()) {
+  if (!MessagingHub::Instance().IsInitialized()) {
+    bound_calls_ = nullptr;
     return;
   }
-  if (auto* calls = MessagingHub::Instance().Calls()) {
-    calls->SetOnRingChanged([this]() { RefreshPendingRing(); });
-    bound_ = true;
+  auto* calls = MessagingHub::Instance().Calls();
+  if (!calls) {
+    bound_calls_ = nullptr;
+    return;
   }
+  // CallSessionManager is recreated in BuildMessagingStack; rebind when the pointer changes.
+  if (bound_calls_ == calls) {
+    return;
+  }
+  calls->SetOnRingChanged([]() {
+    // Ingest may run on IO; shell/RmlUi updates must stay on UI.
+    BrowserThread::PostTask(BrowserThreadId::UI, []() { CallController::Instance().RefreshPendingRing(); });
+  });
+  bound_calls_ = calls;
 }
 
 void CallController::Tick() {
@@ -113,12 +125,9 @@ void CallController::Tick() {
 }
 
 void CallController::OnCallWake() {
+  // Inbox sync is async; notify once RefreshPendingRing sees the invite.
+  pending_call_wake_notify_ = true;
   RefreshPendingRing();
-  if (!ringing_call_id_.empty()) {
-    const auto& label = ShellHost::Instance().State().call_ring.caller_label;
-    const std::string body = label.empty() ? "Someone is calling you" : (std::string(label.c_str()) + " is calling");
-    ILocalNotifier::Instance().NotifyIncoming("Incoming call", body, "");
-  }
 }
 
 void CallController::ClearRing() {
@@ -246,6 +255,12 @@ void CallController::RefreshPendingRing() {
     ring.conflict_hint = copy.hint;
     ring.accept_label = copy.accept_label;
     ring.decline_label = copy.decline_label;
+    if (pending_call_wake_notify_) {
+      pending_call_wake_notify_ = false;
+      const std::string body =
+          caller_label.empty() ? "Someone is calling you" : (caller_label + " is calling");
+      ILocalNotifier::Instance().NotifyIncoming("Incoming call", body, "");
+    }
     SyncShellState();
     SyncRingtone();
     return;

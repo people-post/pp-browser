@@ -804,6 +804,8 @@ void ChatController::RefreshFromMessaging() {
   SyncDisplayFromThread();
   chrome_.Update();
   BadgeAggregator::Instance().Refresh();
+  // Inbox ingest (incl. call_invite) completes on IO; reconcile ring after messages change.
+  CallController::Instance().RefreshPendingRing();
   DirtyChat();
   DirtyShell();
   ShellHost::Instance().DirtyWindow();
@@ -1837,11 +1839,11 @@ void ChatController::WireMessagingBindings() {
       return;
     }
     const bool call_wake = BackgroundSyncScheduler::Instance().ConsumeCallWake();
-    MessagingHub::Instance().P2p().SyncInboxFromWake(force);
-    CallController::Instance().RefreshPendingRing();
+    // SyncInboxFromWake only queues IO; ring UI refreshes via OnRingChanged after ingest.
     if (call_wake) {
       CallController::Instance().OnCallWake();
     }
+    MessagingHub::Instance().P2p().SyncInboxFromWake(force);
   });
   IPushDeviceRegistrar::SetTokenChangedHandler([](const std::string& /*token*/) {
     BrowserThread::PostTask(BrowserThreadId::UI, []() {
