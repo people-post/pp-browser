@@ -33,14 +33,18 @@ function(pp_browser_add_libp2p_integration)
     host/Libp2pHost.cpp
     host/PeerSessionManager.cpp
     host/PeerIdUtil.cpp
+    host/NodeRuntime.cpp
+    host/DialBackService.cpp
   )
   target_include_directories(pp_libp2p_integration PUBLIC
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include)
   target_link_libraries(pp_libp2p_integration PUBLIC
+    pp_common
     p2p
     p2p_peer_id
-    p2p_keys_proto)
+    p2p_keys_proto
+    nlohmann_json::nlohmann_json)
 endfunction()
 
 function(pp_browser_add_libp2p_includes target)

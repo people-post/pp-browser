@@ -1,0 +1,14 @@
+{
+  "config_version": 1,
+  "data_dir": "/var/lib/pp-node",
+  "libp2p": {
+    "node_enabled": true,
+    "listen_multiaddr": "/ip4/0.0.0.0/tcp/443",
+    "bootstrap_peers": [],
+    "max_connections": 128,
+    "max_concurrent_dials": 16,
+    "dial_timeout_ms": 8000,
+    "idle_ttl_ms": 300000,
+    "dial_failure_backoff_ms": 30000
+  }
+}

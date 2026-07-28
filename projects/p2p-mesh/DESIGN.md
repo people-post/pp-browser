@@ -411,8 +411,8 @@ Agents: prefer this order over “implement DHT next because it is n2.”
 
 - Capability / pricing flags or UI
 - DHT / circuit / message / media / chain / jobs protocols
-- **`pp-node` binary** (phase **np**)
-- **Reachability UI / dial-back** (phase **nr**)
+- **`pp-node` binary** (phase **np** — done)
+- **Reachability UI** (phase **nr**; dial-back probe landed in **np**)
 - **UPnP / IPv6 auto-path** (phase **nu**)
 - **Friend-preferential routing** (phase **nf**)
 - Publishing listen addrs to public directory

@@ -23,6 +23,7 @@
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/IPushDeviceClient.h"
 #include "libp2p/integration/host/Libp2pHost.h"
+#include "libp2p/integration/host/NodeRuntime.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
 #include <functional>
@@ -94,7 +95,6 @@ private:
   Roe<void> StartLibp2p(const AppConfig& config);
   void StopLibp2p();
   void RegisterContactEndpoints();
-  void RegisterBootstrapPeers(const Libp2pConfig& libp2p_cfg);
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
 
@@ -133,8 +133,7 @@ private:
   IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
-  std::unique_ptr<Libp2pHost> libp2p_host_;
-  std::unique_ptr<PeerSessionManager> peer_sessions_;
+  std::unique_ptr<NodeRuntime> node_runtime_;
   std::string libp2p_last_error_;
   std::unique_ptr<P2pMessagingService> p2p_;
   std::unique_ptr<ContactActionDispatcher> actions_;

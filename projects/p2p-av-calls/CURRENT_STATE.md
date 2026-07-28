@@ -56,7 +56,7 @@
 
 **Do not:** claim mobile NAT success without seed SFU; ambient group Join; record/screen-share.
 
-**Parallel mesh work (other agents):** `pp-node` (np) → reachability/UPnP → circuit → seed SFU — required before NAT’d mobile green path.
+**Parallel mesh work (other agents):** `pp-node` (**np done**) → reachability/UPnP (**nr/nu**) → circuit → seed SFU — required before NAT’d mobile green path.
 
 ## Agent traps
 

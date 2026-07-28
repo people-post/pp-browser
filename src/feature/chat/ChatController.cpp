@@ -2134,6 +2134,10 @@ bool ChatController::Setup(Rml::Context* context) {
   // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.
   ShellHost::Instance().State().fonts_ready = !UiLanguageNeedsCjkFonts();
   ShellHost::Instance().SetOnNavTabChanged([](NavTab tab) {
+    static NavTab previous = NavTab::Home;
+    if (previous == NavTab::Me && tab != NavTab::Me) {
+      SettingsController::Instance().OnMeSurfaceClosed();
+    }
     if (tab == NavTab::Home) {
       ChatController::Instance().OnHomeTabActivated();
     }
@@ -2146,6 +2150,7 @@ bool ChatController::Setup(Rml::Context* context) {
     if (tab == NavTab::Me) {
       SettingsController::Instance().OnNavTabActivated();
     }
+    previous = tab;
     // Active-thread deduction for sessions badge depends on nav_tab.
     BadgeAggregator::Instance().Refresh();
     ShellHost::Instance().DirtyWindow();

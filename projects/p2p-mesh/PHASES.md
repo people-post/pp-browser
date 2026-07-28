@@ -23,12 +23,12 @@ Preferred order is **N015**: n1 → np → nr → nu → n3 → nf → n4 → �
 
 ## np — Headless `pp-node` + dial-back (N011)
 
-- [ ] Extract shared **node runtime** (no second libp2p stack)
-- [ ] Executable **`pp-node`** without SDL/RmlUi
-- [ ] Non-interactive unlock; config; signal wait; ops listen `:443` example
-- [ ] **Fail loud** if configured listen port busy (N016) — no silent fallback by default
-- [ ] **Dial-back probe** API for clients’ reachability tests (feeds **nr**)
-- [ ] systemd/Docker sketch; not `pp-browser --headless` as prod path
+- [x] Extract shared **node runtime** (no second libp2p stack)
+- [x] Executable **`pp-node`** without SDL/RmlUi
+- [x] Non-interactive unlock; config; signal wait; ops listen `:443` example
+- [x] **Fail loud** if configured listen port busy (N016) — no silent fallback by default
+- [x] **Dial-back probe** API for clients’ reachability tests (feeds **nr**)
+- [x] systemd/Docker sketch; not `pp-browser --headless` as prod path
 
 ## nr — Reachability status + guided help (N012)
 

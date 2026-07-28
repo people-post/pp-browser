@@ -38,10 +38,20 @@ std::string ReplaceTcpPortInMultiaddr(const std::string& multiaddr, int port);
 /** Extract PeerId after `/p2p/` (last component). */
 std::string PeerIdFromMultiaddr(const std::string& multiaddr);
 
+/** Busy-port policy when starting a Node listen (N016). */
+enum class ListenBusyPolicy {
+  /** Org `pp-node`: try configured addr only; fail if bind fails. */
+  FailLoud,
+  /** In-app desktop Node: preferred range then `/tcp/0`. */
+  DesktopFallback,
+};
+
 /**
- * Listen candidates for Node (N016): configured addr, then 18517–18526 siblings when
- * applicable, then `/tcp/0` ephemeral on the same IP prefix.
+ * Listen candidates for Node (N016).
+ * DesktopFallback: configured addr, then 18517–18526 siblings when applicable, then `/tcp/0`.
+ * FailLoud: configured addr only.
  */
-std::vector<std::string> BuildLibp2pListenCandidates(const std::string& preferred_multiaddr);
+std::vector<std::string> BuildLibp2pListenCandidates(const std::string& preferred_multiaddr,
+                                                    ListenBusyPolicy policy = ListenBusyPolicy::DesktopFallback);
 
 } // namespace pbr

@@ -40,6 +40,13 @@ TEST(Libp2pRoleTest, BuildListenCandidatesPreferredRange) {
   EXPECT_TRUE(saw_18526);
 }
 
+TEST(Libp2pRoleTest, BuildListenCandidatesFailLoudSingle) {
+  const auto candidates =
+      pbr::BuildLibp2pListenCandidates("/ip4/0.0.0.0/tcp/443", pbr::ListenBusyPolicy::FailLoud);
+  ASSERT_EQ(candidates.size(), 1u);
+  EXPECT_EQ(candidates.front(), "/ip4/0.0.0.0/tcp/443");
+}
+
 TEST(Libp2pRoleTest, ResolveRoleHonorsNodeEnabledOnDesktop) {
   pbr::Libp2pConfig on;
   on.node_enabled = true;

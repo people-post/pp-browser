@@ -62,7 +62,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency (long-term) | [projects/ai-centric-interface/](projects/ai-centric-interface/) — 10 acts, open domains; v1 thin coverage first |
 | P2P messaging | `src/feature/messaging/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
-| P2P mesh | [projects/p2p-mesh/](projects/p2p-mesh/) — Client/Node; `pp-node`; UPnP/IPv6; contact-first relays; n1 done, **np** next (N015 order) |
+| P2P mesh | [projects/p2p-mesh/](projects/p2p-mesh/) — Client/Node; `pp-node`; UPnP/IPv6; contact-first relays; np done, **nr** next (N015 order) |
 | P2P A/V calls | [projects/p2p-av-calls/](projects/p2p-av-calls/) — voice/video over mesh; libdatachannel + Opus + SDL; invite guests; **a2** in progress (LAN dogfood) |
 | Contacts UI / store | `src/feature/ui/ContactsController.*`, `src/base/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
 | SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |

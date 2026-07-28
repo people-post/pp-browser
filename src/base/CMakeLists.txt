@@ -15,6 +15,7 @@ add_subdirectory(ui)
 
 set(PP_BASE_MODULE_LIBS
   pp_base_error
+  pp_base_platform_core
   pp_base_platform
   pp_base_data
   pp_base_i18n

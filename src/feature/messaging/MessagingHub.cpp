@@ -28,12 +28,9 @@ namespace pbr {
 namespace {
 
 PeerSessionConfig SessionConfigFromApp(const AppConfig& config) {
-  PeerSessionConfig session;
-  session.max_connections = config.libp2p.max_connections;
-  session.max_concurrent_dials = config.libp2p.max_concurrent_dials;
-  session.dial_timeout = std::chrono::milliseconds(config.libp2p.dial_timeout_ms);
-  session.idle_ttl = std::chrono::milliseconds(config.libp2p.idle_ttl_ms);
-  session.dial_failure_backoff = std::chrono::milliseconds(config.libp2p.dial_failure_backoff_ms);
+  PeerSessionConfig session = MakePeerSessionConfig(
+      config.libp2p.max_connections, config.libp2p.max_concurrent_dials, config.libp2p.dial_timeout_ms,
+      config.libp2p.idle_ttl_ms, config.libp2p.dial_failure_backoff_ms);
   if (Platform::IsMobile()) {
     session.max_connections = std::min(session.max_connections, size_t{16});
     session.max_concurrent_dials = std::min(session.max_concurrent_dials, size_t{4});
@@ -42,20 +39,6 @@ PeerSessionConfig SessionConfigFromApp(const AppConfig& config) {
     }
   }
   return session;
-}
-
-std::string ResolveBoundListenMultiaddr(Libp2pHost& host, const std::string& requested) {
-  const auto listened = host.ListenMultiaddrs();
-  if (listened.empty()) {
-    return requested;
-  }
-  // Prefer an addr that includes a concrete TCP port (not 0).
-  for (const std::string& ma : listened) {
-    if (const auto port = TcpPortFromMultiaddr(ma); port && *port > 0) {
-      return ma;
-    }
-  }
-  return listened.front();
 }
 
 } // namespace
@@ -156,89 +139,52 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
   NormalizeLibp2pConfig(libp2p_cfg);
   const Libp2pRole role = ResolveLibp2pRole(libp2p_cfg);
 
-  Libp2pHostConfig host_config;
-  host_config.listen_enabled = (role == Libp2pRole::Node);
+  NodeRuntimeConfig runtime;
+  runtime.host.listen_enabled = (role == Libp2pRole::Node);
+  runtime.host.listen_multiaddr = libp2p_cfg.listen_multiaddr;
   if (auto priv = identity_->GetEd25519PrivateKey()) {
-    host_config.ed25519_private_key = *priv;
+    runtime.host.ed25519_private_key = *priv;
   }
   if (auto pub = identity_->GetEd25519PublicKey()) {
-    host_config.ed25519_public_key = *pub;
+    runtime.host.ed25519_public_key = *pub;
+  }
+  runtime.sessions = SessionConfigFromApp(config_);
+  runtime.bootstrap_peers = libp2p_cfg.bootstrap_peers;
+  if (runtime.host.listen_enabled) {
+    runtime.listen_candidates =
+        BuildLibp2pListenCandidates(libp2p_cfg.listen_multiaddr, ListenBusyPolicy::DesktopFallback);
   }
 
-  Error last_error("libp2p host start failed");
-  if (role == Libp2pRole::Client) {
-    libp2p_host_ = std::make_unique<Libp2pHost>();
-    host_config.listen_multiaddr = libp2p_cfg.listen_multiaddr;
-    auto started = libp2p_host_->Start(host_config);
-    if (!started) {
-      libp2p_last_error_ = started.error().message;
-      libp2p_host_.reset();
-      return started.error();
-    }
-  } else {
-    const std::vector<std::string> candidates = BuildLibp2pListenCandidates(libp2p_cfg.listen_multiaddr);
-    bool started_ok = false;
-    for (const std::string& candidate : candidates) {
-      libp2p_host_ = std::make_unique<Libp2pHost>();
-      host_config.listen_multiaddr = candidate;
-      auto started = libp2p_host_->Start(host_config);
-      if (started) {
-        started_ok = true;
-        const std::string bound = ResolveBoundListenMultiaddr(*libp2p_host_, candidate);
-        if (bound != config_.libp2p.listen_multiaddr) {
-          config_.libp2p.listen_multiaddr = bound;
-          libp2p_cfg.listen_multiaddr = bound;
-          if (SessionStore::Instance().IsInitialized()) {
-            if (auto saved = SessionStore::Instance().SaveConfig(config_); !saved) {
-              log().warning << "Failed to persist libp2p listen multiaddr: " << saved.error().message;
-            } else {
-              log().info << "libp2p listening on " << bound;
-            }
-          } else {
-            log().info << "libp2p listening on " << bound << " (session store not ready to persist)";
-          }
+  node_runtime_ = std::make_unique<NodeRuntime>();
+  auto started = node_runtime_->Start(runtime);
+  if (!started) {
+    libp2p_last_error_ = node_runtime_->LastError().empty() ? started.error().message : node_runtime_->LastError();
+    node_runtime_.reset();
+    return started.error();
+  }
+
+  if (runtime.host.listen_enabled) {
+    const std::string bound = node_runtime_->BoundListenMultiaddr();
+    if (!bound.empty() && bound != config_.libp2p.listen_multiaddr) {
+      config_.libp2p.listen_multiaddr = bound;
+      if (SessionStore::Instance().IsInitialized()) {
+        if (auto saved = SessionStore::Instance().SaveConfig(config_); !saved) {
+          log().warning << "Failed to persist libp2p listen multiaddr: " << saved.error().message;
+        } else {
+          log().info << "libp2p listening on " << bound;
         }
-        break;
+      } else {
+        log().info << "libp2p listening on " << bound << " (session store not ready to persist)";
       }
-      last_error = started.error();
-      libp2p_host_.reset();
-    }
-    if (!started_ok) {
-      libp2p_last_error_ = last_error.message;
-      return last_error;
     }
   }
-
-  peer_sessions_ = std::make_unique<PeerSessionManager>(*libp2p_host_, SessionConfigFromApp(config_));
-  RegisterBootstrapPeers(libp2p_cfg);
   return {};
 }
 
-void MessagingHub::RegisterBootstrapPeers(const Libp2pConfig& libp2p_cfg) {
-  if (!peer_sessions_) {
-    return;
-  }
-  size_t index = 0;
-  for (const std::string& ma : libp2p_cfg.bootstrap_peers) {
-    if (ma.empty()) {
-      continue;
-    }
-    std::string key = PeerIdFromMultiaddr(ma);
-    if (key.empty()) {
-      key = "bootstrap:" + std::to_string(index);
-    }
-    if (auto registered = peer_sessions_->RegisterEndpoint(key, ma); !registered) {
-      log().warning << "Failed to register bootstrap peer " << ma << ": " << registered.error().message;
-    }
-    ++index;
-  }
-}
-
 void MessagingHub::StopLibp2p() {
-  peer_sessions_.reset();
-  if (libp2p_host_) {
-    libp2p_host_->Stop();
-    libp2p_host_.reset();
+  if (node_runtime_) {
+    node_runtime_->Stop();
+    node_runtime_.reset();
   }
 }
 
@@ -352,8 +298,8 @@ Roe<void> MessagingHub::BuildMessagingStack() {
 
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
-                                                *psk_store_, *group_roster_, group_invite_gate_.get(), libp2p_host_.get(),
-                                                peer_sessions_.get());
+                                                *psk_store_, *group_roster_, group_invite_gate_.get(), Libp2p(),
+                                                Sessions());
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
@@ -411,8 +357,8 @@ Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string&
   if (actions_) {
     actions_->SetRegistrationClient(registration_);
   }
-  if (peer_sessions_) {
-    peer_sessions_->SetConfig(SessionConfigFromApp(config));
+  if (PeerSessionManager* sessions = Sessions()) {
+    sessions->SetConfig(SessionConfigFromApp(config));
   }
   return {};
 }
@@ -432,8 +378,8 @@ void MessagingHub::TickLibp2p() {
   if (!messaging_ready_) {
     return;
   }
-  if (peer_sessions_) {
-    peer_sessions_->Tick();
+  if (node_runtime_) {
+    node_runtime_->Tick();
   }
   if (p2p_) {
     p2p_->TickLibp2p();
@@ -441,8 +387,8 @@ void MessagingHub::TickLibp2p() {
 }
 
 void MessagingHub::SuspendLibp2pColdPeers() {
-  if (peer_sessions_) {
-    peer_sessions_->SuspendColdPeers();
+  if (node_runtime_) {
+    node_runtime_->SuspendColdPeers();
   }
 }
 
@@ -562,11 +508,11 @@ IClientCompatClient* MessagingHub::ClientCompat() {
 }
 
 Libp2pHost* MessagingHub::Libp2p() {
-  return libp2p_host_.get();
+  return node_runtime_ ? node_runtime_->Host() : nullptr;
 }
 
 PeerSessionManager* MessagingHub::Sessions() {
-  return peer_sessions_.get();
+  return node_runtime_ ? node_runtime_->Sessions() : nullptr;
 }
 
 } // namespace pbr

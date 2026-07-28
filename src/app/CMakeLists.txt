@@ -104,3 +104,7 @@ endif()
 if(ANDROID AND NOT TARGET pp-browser)
   add_library(pp-browser ALIAS main)
 endif()
+
+if(NOT PP_BROWSER_IS_MOBILE)
+  add_subdirectory(node)
+endif()

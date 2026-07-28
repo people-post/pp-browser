@@ -83,11 +83,16 @@ std::string PeerIdFromMultiaddr(const std::string& multiaddr) {
   return id;
 }
 
-std::vector<std::string> BuildLibp2pListenCandidates(const std::string& preferred_multiaddr) {
+std::vector<std::string> BuildLibp2pListenCandidates(const std::string& preferred_multiaddr,
+                                                    ListenBusyPolicy policy) {
   std::vector<std::string> out;
   const std::string preferred =
       preferred_multiaddr.empty() ? std::string(kPreferredLibp2pListenMultiaddr) : preferred_multiaddr;
   out.push_back(preferred);
+
+  if (policy == ListenBusyPolicy::FailLoud) {
+    return out;
+  }
 
   const auto port = TcpPortFromMultiaddr(preferred);
   if (port && *port >= kPreferredLibp2pListenPort && *port <= kLibp2pListenFallbackPortEnd) {

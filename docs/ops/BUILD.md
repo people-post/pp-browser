@@ -115,6 +115,20 @@ From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
 ./build/src/app/pp-browser
 ```
 
+### Headless mesh node (`pp-node`)
+
+Desktop builds also produce **`pp-node`** — org/seed daemon without SDL/RmlUi ([p2p-mesh N011](../../projects/p2p-mesh/DECISIONS.md)):
+
+```bash
+cmake --build build -j --target pp-node
+./build/src/app/node/pp-node --listen /ip4/0.0.0.0/tcp/18517 --pin "$PP_BROWSER_PIN"
+```
+
+- PIN via `--pin` or `PP_BROWSER_PIN` (required).
+- Default listen is fail-loud on the configured port (often **443** for ops). Pass `--listen-fallback` only for local dogfood.
+- Dial-back protocol `/pp-browser/dial-back/1.0.0` is enabled for reachability probes (feeds phase **nr**).
+- Sketches: [`packaging/pp-node/`](../../packaging/pp-node/).
+
 ### Simulated touch (optional dev)
 
 To exercise the mobile touch path on desktop (finger events from mouse, red contact dot overlay):

@@ -117,7 +117,13 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.show_node_toggle = bindings_.show_node_toggle;
   ui_state_.libp2p_listen_multiaddr = bindings_.libp2p_listen_multiaddr.c_str();
   ui_state_.libp2p_status_message = bindings_.libp2p_status_message.c_str();
-  ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
+  // Prefer draft when ready so flush always writes the intent-gated value.
+  if (nickname_.ready) {
+    nickname_.draft = bindings_.profile_nickname.c_str();
+    ui_state_.profile_nickname = nickname_.draft;
+  } else {
+    ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
+  }
   ui_state_.profile_peer_id = bindings_.profile_peer_id.c_str();
   ui_state_.profile_relay_id = bindings_.profile_relay_id.c_str();
   ui_state_.profile_public_key = bindings_.profile_public_key.c_str();
@@ -166,7 +172,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.show_node_toggle = ui_state_.show_node_toggle;
   bindings_.libp2p_listen_multiaddr = ui_state_.libp2p_listen_multiaddr.c_str();
   bindings_.libp2p_status_message = ui_state_.libp2p_status_message.c_str();
-  bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
+  bindings_.profile_nickname =
+      (nickname_.ready ? nickname_.draft : ui_state_.profile_nickname).c_str();
   bindings_.profile_peer_id = ui_state_.profile_peer_id.c_str();
   bindings_.profile_relay_id = ui_state_.profile_relay_id.c_str();
   bindings_.profile_public_key = ui_state_.profile_public_key.c_str();
@@ -217,7 +224,32 @@ void SettingsController::SyncBindingsFromSession() {
   } else {
     ui_state_.libp2p_status_message.clear();
   }
+  ApplyNicknameFromSession();
   PushUiStateToBindings();
+}
+
+void SettingsController::ApplyNicknameFromSession() {
+  if (MessagingHub::Instance().IsInitialized() && MessagingHub::Instance().IsMessagingReady()) {
+    auto identity = MessagingHub::Instance().Identity().Get();
+    if (identity) {
+      nickname_.OnHydrated(identity->nickname);
+      ui_state_.profile_nickname = nickname_.draft;
+      return;
+    }
+  }
+  nickname_.OnIdentityUnavailable();
+  if (nickname_.ready) {
+    ui_state_.profile_nickname = nickname_.draft;
+  }
+}
+
+void SettingsController::BeginHydration() {
+  ++hydration_epoch_;
+  suppress_auto_save_ = true;
+}
+
+void SettingsController::EndHydration() {
+  suppress_auto_save_ = false;
 }
 
 void SettingsController::ReloadFromDisk() {
@@ -319,6 +351,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
     ctor.BindEventCallback("toggle_node_enabled", &SettingsController::ToggleNodeEnabledCallback);
+    ctor.BindEventCallback("on_profile_nickname_changed", &SettingsController::OnProfileNicknameChangedCallback);
     ctor.BindEventCallback("on_profile_nickname_commit", &SettingsController::OnProfileNicknameCommitCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
     ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
@@ -354,7 +387,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "show_node_toggle");
   host.Dirty("settings", "libp2p_listen_multiaddr");
   host.Dirty("settings", "libp2p_status_message");
-  if (include_profile_nickname) {
+  // Never push nickname into a focused draft — SetValue resets cursor/IME.
+  if (include_profile_nickname && !nickname_.edited) {
     host.Dirty("settings", "profile_nickname");
   }
   host.Dirty("settings", "profile_peer_id");
@@ -392,30 +426,33 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
 }
 
 void SettingsController::FinishPaneResync() {
-  // Keep any in-progress nickname across Sync+Dirty. On fresh start the session
-  // nickname is still empty; a deferred resync after Me-tab remount can
-  // otherwise push "" back into data-value and wipe characters mid-typing
-  // (looks like HarfBuzz/lang glyph jitter). Chat has no equivalent path.
-  auto resync_preserving_nickname = [this]() {
-    const Rml::String live_nickname = bindings_.profile_nickname;
+  // Hydration epoch: ignore change/blur until settle. Nickname draft is
+  // intent-gated (NicknameDraft) so we no longer preserve/overwrite live strings.
+  const uint64_t epoch = hydration_epoch_;
+  auto settle = [this, epoch]() {
+    if (epoch != hydration_epoch_) {
+      return;
+    }
     SyncBindingsFromSession();
-    bindings_.profile_nickname = live_nickname;
-    DirtyAll(/*include_profile_nickname=*/false);
+    DirtyAll(/*include_profile_nickname=*/true);
     if (context_) {
       context_->Update();
     }
   };
 
-  resync_preserving_nickname();
+  settle();
   // Select widgets can emit a spurious change on the frame after remount.
-  BrowserThread::PostTask(BrowserThreadId::UI, [this, resync_preserving_nickname]() {
-    const ShellState& state = ShellHost::Instance().State();
-    if (state.nav_tab != NavTab::Me && !state.account_sheet_open) {
-      suppress_auto_save_ = false;
+  BrowserThread::PostTask(BrowserThreadId::UI, [this, epoch, settle]() {
+    if (epoch != hydration_epoch_) {
       return;
     }
-    resync_preserving_nickname();
-    suppress_auto_save_ = false;
+    const ShellState& state = ShellHost::Instance().State();
+    if (state.nav_tab != NavTab::Me && !state.account_sheet_open) {
+      EndHydration();
+      return;
+    }
+    settle();
+    EndHydration();
   });
 }
 
@@ -427,14 +464,13 @@ void SettingsController::OnShellLayoutSynced() {
   if (state.nav_tab == NavTab::Me || state.account_sheet_open) {
     FinishPaneResync();
   } else {
-    suppress_auto_save_ = false;
+    EndHydration();
   }
 }
 
 void SettingsController::OnNavTabActivated() {
   log().info << "OnNavTabActivated";
-  CommitProfileNickname(/*show_toast=*/false);
-  FlushPending();
+  // Load-only on activate. Persist on blur / account-sheet close via ShouldCommit.
   dirty_sections_.clear();
   debounce_deadline_ms_ = 0;
   show_detail_ = false;
@@ -443,8 +479,8 @@ void SettingsController::OnNavTabActivated() {
   in_account_sheet_ = false;
   ShellHost::Instance().ClearLocalBack("settings_detail");
   compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  BeginHydration();
   ReloadFromDisk();
-  suppress_auto_save_ = true;
   DirtyAll();
   if (context_) {
     context_->Update();
@@ -460,13 +496,17 @@ void SettingsController::OnAccountSheetOpened() {
   selected_title_.clear();
   ShellHost::Instance().ClearLocalBack("settings_detail");
   in_account_sheet_ = true;
+  BeginHydration();
   ReloadFromDisk();
-  suppress_auto_save_ = true;
+}
+
+void SettingsController::OnMeSurfaceClosed() {
+  CommitProfileNickname(/*show_toast=*/false);
+  FlushPending();
 }
 
 void SettingsController::OnAccountSheetClosed() {
-  CommitProfileNickname(/*show_toast=*/false);
-  FlushPending();
+  OnMeSurfaceClosed();
   in_account_sheet_ = false;
   show_detail_ = false;
   selected_id_.clear();
@@ -615,22 +655,18 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   }
 
   status_ = "";
-  // Keep the live nickname through Push/Dirty. SyncFromSession after flush can race
-  // with continued typing when DirtyAll re-pushes profile_nickname into data-value
-  // inputs (SetValue resets cursor/IME and looks like characters mutating). Same
-  // preserve applies in FinishPaneResync (fresh-start empty identity wipe).
-  const Rml::String live_nickname = bindings_.profile_nickname;
-  const bool preserve_nickname = (section_id == "profile");
+  if (section_id == "profile") {
+    // Only adopt identity when messaging can read it. Prefs-only flushes before
+    // unlock must not clear nickname_.edited / pretend an empty binding was saved.
+    if (MessagingHub::Instance().IsInitialized() && MessagingHub::Instance().IsMessagingReady()) {
+      if (auto identity = MessagingHub::Instance().Identity().Get()) {
+        nickname_.OnCommitSuccess(identity->nickname);
+        ui_state_.profile_nickname = nickname_.draft;
+      }
+    }
+  }
   PushUiStateToBindings();
-  if (preserve_nickname) {
-    bindings_.profile_nickname = live_nickname;
-  }
-  if (preserve_nickname && !show_toast) {
-    // Silent nickname blur/close commit: skip DirtyAll/toast/DirtyWindow so the OSK
-    // session is not restarted by chrome refresh.
-    return true;
-  }
-  DirtyAll(!preserve_nickname);
+  DirtyAll();
   if (show_toast) {
     MaybeShowSaveToast(section_id);
   }
@@ -640,6 +676,15 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
 
 void SettingsController::CommitProfileNickname(bool show_toast) {
   if (suppress_auto_save_) {
+    return;
+  }
+  if (nickname_.ready) {
+    const std::string live = bindings_.profile_nickname.c_str();
+    if (live != nickname_.draft) {
+      nickname_.OnUserEdit(live);
+    }
+  }
+  if (!nickname_.ShouldCommit()) {
     return;
   }
   FlushSection("profile", show_toast);
@@ -724,7 +769,7 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
       SettingsController::Instance().ApplyBackToListUi();
     });
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-      suppress_auto_save_ = true;
+      BeginHydration();
       FinishPaneResync();
       ShellHost::Instance().RefreshDismissGestures();
       log().info << "OnSelectSection (sheet) complete id=" << selected_id_.c_str();
@@ -739,7 +784,7 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
     context_->Update();
   }
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-    suppress_auto_save_ = true;
+    BeginHydration();
     FinishPaneResync();
     log().info << "OnSelectSection (pane) complete id=" << selected_id_.c_str();
   });
@@ -791,12 +836,12 @@ void SettingsController::ApplyBackToListUi() {
   selected_title_.clear();
   status_ = "";
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-    suppress_auto_save_ = true;
+    BeginHydration();
     DirtyAll();
     if (context_) {
       context_->Update();
     }
-    suppress_auto_save_ = false;
+    EndHydration();
     ShellHost::Instance().RefreshDismissGestures();
   });
 }
@@ -1064,10 +1109,18 @@ void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*
   controller.DirtyAll();
 }
 
+void SettingsController::OnProfileNicknameChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                          const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  if (controller.suppress_auto_save_) {
+    return;
+  }
+  controller.nickname_.OnUserEdit(controller.bindings_.profile_nickname.c_str());
+}
+
 void SettingsController::OnProfileNicknameCommitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                          const Rml::VariantList& /*args*/) {
-  // Persist on blur so soft-keyboard sessions are not interrupted by debounced
-  // flush → toast/DirtyAll (dismisses and re-shows the OSK each keystroke).
+  // Persist on blur only when NicknameDraft says the user edited since hydrate.
   Instance().CommitProfileNickname(/*show_toast=*/false);
 }
 
@@ -1135,6 +1188,7 @@ void SettingsController::OnRemoveMcpServerCallback(Rml::DataModelHandle /*model*
 }
 
 void SettingsController::OnRegisterProfile() {
+  CommitProfileNickname(/*show_toast=*/false);
   PullBindingsToUiState();
   const bool renewing = ui_state_.profile_registered == "yes";
   PinGateController::Instance().EnsureUnlocked([this, renewing](const bool unlocked) {
@@ -1145,6 +1199,12 @@ void SettingsController::OnRegisterProfile() {
     if (auto registered = ProfileSettingsSection::RegisterIdentity(ui_state_); !registered) {
       ReportFailure(registered.error());
       return;
+    }
+    if (MessagingHub::Instance().IsInitialized() && MessagingHub::Instance().IsMessagingReady()) {
+      if (auto identity = MessagingHub::Instance().Identity().Get()) {
+        nickname_.OnCommitSuccess(identity->nickname);
+        ui_state_.profile_nickname = nickname_.draft;
+      }
     }
     const char* message =
         renewing ? "Registration renewed — Brief API key updated" : "Registered — Brief API key saved";
@@ -1191,7 +1251,7 @@ void SettingsController::OnShareProfile() {
     UserFeedback::Fail("No Peer ID yet — register on the network first.");
     return;
   }
-  const std::string nickname = bindings_.profile_nickname.c_str();
+  const std::string nickname = nickname_.ready ? nickname_.draft : bindings_.profile_nickname.c_str();
   const std::string relay_id = bindings_.profile_relay_id.c_str();
   std::string invite = nickname.empty() ? peer_id : (nickname + " (" + peer_id + ")");
   if (!relay_id.empty()) {
