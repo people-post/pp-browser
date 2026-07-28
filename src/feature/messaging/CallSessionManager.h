@@ -1,5 +1,7 @@
 #pragma once
 
+#include "base/crypto/IPskSessionStore.h"
+#include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/CallSessionStore.h"
 #include "base/messaging/IThreadStore.h"
@@ -11,6 +13,7 @@
 #include "common/Module.h"
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -18,7 +21,7 @@
 namespace pbr {
 
 /**
- * Call session lifecycle + pairwise signaling (a1; no WebRTC).
+ * Call session lifecycle + pairwise signaling + media bring-up (a2 / V014).
  * Invite-only, hostless, min-identity epoch coordinator (V002/V005/V012).
  */
 class CallSessionManager : public Module {
@@ -26,7 +29,8 @@ public:
   using RingChangedFn = std::function<void()>;
 
   CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                     CallSessionStore& sessions, CallMediaKeyStore& media_keys, P2pMessagingService& p2p);
+                     CallSessionStore& sessions, CallMediaKeyStore& media_keys, P2pMessagingService& p2p,
+                     IPskSessionStore& psk_store, CallMediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
 
@@ -51,6 +55,8 @@ public:
   /** Apply inbound pairwise call system control (after DM persist). */
   Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity);
 
+  CallMediaEngine& Media();
+
 private:
   Roe<std::string> LocalRelayIdentity() const;
   Roe<void> SendCallDirectMessage(const std::string& peer_identity, CallControlType type,
@@ -64,13 +70,24 @@ private:
   Roe<CallRosterDetail> BuildRosterDetail(const std::string& call_id) const;
   void NotifyRingChanged();
 
+  Roe<ByteVector> ResolvePeerSessionKey(const std::string& peer_identity) const;
+  Roe<void> SendMediaKeyToPeer(const std::string& call_id, const std::string& peer_identity,
+                               uint32_t media_epoch, const std::string& media_key_id, const ByteVector& key_bytes);
+  Roe<void> StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity);
+  Roe<void> StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
+  void BindMediaCallbacks(const std::string& peer_identity);
+  void StopMediaIfCall(const std::string& call_id);
+
   IThreadStore& store_;
   ContactsStore& contacts_;
   IdentityStore& identity_;
   CallSessionStore& sessions_;
   CallMediaKeyStore& media_keys_;
   P2pMessagingService& p2p_;
+  IPskSessionStore& psk_store_;
+  CallMediaEngine& media_;
   RingChangedFn on_ring_changed_;
+  std::string media_peer_identity_;
 };
 
 } // namespace pbr

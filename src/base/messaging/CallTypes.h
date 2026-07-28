@@ -38,6 +38,10 @@ enum class CallControlType {
   CallEnded,
   /** Origin-thread history only (local); not required on pairwise wire. */
   CallStarted,
+  /** WebRTC SDP offer/answer (a2). */
+  CallSdp,
+  /** Trickle ICE candidate (a2). */
+  CallIce,
 };
 
 struct CallParticipantMedia {
@@ -138,6 +142,21 @@ struct CallEndedDetail {
 struct CallStartedDetail {
   std::string call_id;
   CallMediaMode media_mode = CallMediaMode::Voice;
+};
+
+struct CallSdpDetail {
+  std::string call_id;
+  std::string identity;
+  /** "offer" | "answer" */
+  std::string sdp_type;
+  std::string sdp;
+};
+
+struct CallIceDetail {
+  std::string call_id;
+  std::string identity;
+  std::string candidate;
+  std::string mid;
 };
 
 std::string GenerateCallId();

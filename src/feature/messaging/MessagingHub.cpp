@@ -291,6 +291,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
   call_session_store_ = std::make_unique<CallSessionStore>(store_->ProfileDbPath());
   call_media_keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath(), profile_id_);
+  call_media_engine_ = std::make_unique<CallMediaEngine>();
   group_invite_gate_ = std::make_unique<GroupInviteGate>(*contacts_, *group_roster_);
   directory_shadows_ = std::make_unique<DirectoryShadowCache>(*directory_);
   peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, *directory_shadows_, group_roster_.get());
@@ -315,7 +316,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
-                                                       *call_media_keys_, *p2p_);
+                                                       *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
   p2p_->SetCallSessionManager(call_sessions_.get());
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
 
@@ -356,7 +357,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
-                                                       *call_media_keys_, *p2p_);
+                                                       *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
   p2p_->SetCallSessionManager(call_sessions_.get());
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
     const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
@@ -475,6 +476,7 @@ void MessagingHub::Shutdown() {
   if (call_media_keys_) {
     secrets.UnregisterDekConsumer(call_media_keys_.get());
   }
+  call_media_engine_.reset();
   call_media_keys_.reset();
   call_session_store_.reset();
   psk_store_.reset();

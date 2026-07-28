@@ -16,6 +16,28 @@ Fix: `SDL_AddEventWatch` in `BrowserHost` invokes an app-registered redraw on `P
 
 See [SDL wiki: AppFreezeDuringDrag](https://wiki.libsdl.org/SDL3/AppFreezeDuringDrag).
 
+## A/V media (SDL + calls)
+
+Voice/video capture and playback go through **SDL3 audio** (and later camera) in [`CallMediaEngine`](../../src/base/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014. Signaling is mesh/E2E; media is WebRTC-shaped (libdatachannel).
+
+| Platform | SDL audio backend | Extra build packages? | Product checklist (not all done) |
+|----------|-------------------|----------------------|----------------------------------|
+| Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy |
+| Windows | WASAPI | No | OS microphone privacy |
+| macOS | CoreAudio | No | Mic privacy / usage string for notarized apps |
+| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + runtime permission; a3: camera |
+| iOS | CoreAudio | No | `NSMicrophoneUsageDescription`; `AVAudioSession` VoIP/play-and-record; optional background `audio`; a3: camera usage |
+
+**Agent traps**
+
+| Wrong | Right |
+|-------|--------|
+| Require Pulse/ALSA on Windows/macOS/mobile | Only Linux needs those `-dev` packages |
+| Claim mobile voice without manifest/plist permissions | Add Android/iOS mic (and later camera) entitlements first |
+| Assume LAN ICE proves mobile | Mobile NAT needs mesh seed SFU ([p2p-av-calls](../../projects/p2p-av-calls/)) |
+
+`Backend::Initialize` must **not** fail window bring-up on audio — init audio on demand in `CallMediaEngine` (`SDL_InitSubSystem(SDL_INIT_AUDIO)`).
+
 ## Android (milestone 2)
 
 Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libmain.so`. The chat shell uses OpenGL ES 3.0 in the RmlUi backend.
@@ -53,6 +75,8 @@ Android keeps the activity alive across orientation changes (`configChanges` in 
 
 Do not issue OpenGL calls after `SDL_EVENT_WILL_ENTER_BACKGROUND`; SDL may have already backed up the EGL context.
 
+**A/V (future):** add `android.permission.RECORD_AUDIO` (and camera at a3) to `android/app/src/main/AndroidManifest.xml`, plus a runtime permission prompt before `CallMediaEngine` opens capture. See [§ A/V media](#av-media-sdl--calls).
+
 Build: [BUILD.md](../ops/BUILD.md#android-local).
 
 ## iOS (scaffold)
@@ -81,6 +105,8 @@ Mobile builds link curl against vendored BoringSSL (no Secure Transport on iOS).
 | iOS | `CURLOPT_SSL_CTX_FUNCTION` → `SecTrustEvaluateWithError` | Yes (Keychain trust store) |
 
 Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/base/platform/os/OsTlsPlatformCurl_*`).
+
+**A/V (future):** add `NSMicrophoneUsageDescription` to [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); configure `AVAudioSession` for play-and-record / VoIP before capture; consider `UIBackgroundModes` → `audio` for in-call background. Camera usage strings at a3. See [§ A/V media](#av-media-sdl--calls).
 
 Build and signing placeholders: [IOS_BUILD.md](../ops/IOS_BUILD.md). Scripts: [`scripts/ios_build.sh`](../../scripts/ios_build.sh), [`scripts/ios_sign.sh`](../../scripts/ios_sign.sh).
 

@@ -117,4 +117,40 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 **Date:** 2026-07-28  
 **Decision:** Do **not** vendor a WebRTC stack in a1. Phase **a2** starts with a short **spike ADR** choosing among libwebrtc, a slim datachannel+media helper, or platform Media APIs + custom SRTP — scored on mobile/desktop CMake fit, binary size, SDL/RmlUi video blit, and license. Spike must prove 1:1 Opus on LAN before NAT/SFU work.  
 **Rationale:** Wrong library pick is costly; signaling does not need it.  
-**Alternatives:** Pick libwebrtc now without spike (rejected).
+**Alternatives:** Pick libwebrtc now without spike (rejected).  
+**Superseded by:** [V014](#v014--media-stack-libdatachannel--libopus--sdl)
+
+---
+
+## V014 — Media stack: libdatachannel + libopus + SDL
+
+**Date:** 2026-07-28  
+**Decision:** Ship a2+ voice media with:
+
+| Layer | Choice |
+|-------|--------|
+| WebRTC transport | Vendored **libdatachannel** (ICE/DTLS/SRTP/RTP; MPL-2.0) |
+| Audio codec | Vendored **libopus** |
+| Capture / playback | **SDL3 audio** (enable `SDL_AUDIO`; init in host) |
+| Signaling | Existing `ChatPayload` call controls + **`call_sdp` / `call_ice`** |
+
+**Wire crypto (a2):** DTLS-SRTP from libdatachannel provides media confidentiality on the peer connection. The shared call **media epoch key** (V004) is still minted and distributed via pairwise AEAD wrap for rotate-on-leave and for a later app-level frame AEAD / SFU-blind path — not used to replace DTLS-SRTP in a2.
+
+**Rejected for a2:** Full **libwebrtc** (GN build, binary size, BoringSSL conflict); GStreamer `webrtcbin`; LiveKit/mediasoup client SDKs (leaves mesh-owned SFU); custom Opus-over-libp2p (V001).
+
+**Rationale:** CMake-friendly, small footprint, fits vendored `third_party/` + BoringSSL via existing `FindOpenSSL.cmake`, SDL already owns the shell, leaves room for a3 video blit without Chromium.
+
+**Spike exit:** 1:1 Opus on LAN through Brief signaling; document LAN vs NAT in CURRENT_STATE.
+
+---
+
+## V015 — Pairwise wrap AAD for `call_media_key`
+
+**Date:** 2026-07-28  
+**Decision:** Inner wrap of epoch key bytes uses `MessageCipher` under the peer's active pairwise session key (`SessionKeyDeriver` + `IPskSessionStore`), channel matching call DMs (`e2e_public` today). AAD string:
+
+`call_media_key|<call_id>|<media_epoch>|<media_key_id>`
+
+Blob encoding matches chat: `EncryptedPayload::EncodeBlob` → base64 as `wrapped_key_b64`. Do not reuse message CanonicalAAD fields.
+
+**Rationale:** Binds wrap to call/epoch; reuses proven AEAD stack without inventing a second cipher.

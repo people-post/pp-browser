@@ -209,6 +209,54 @@ Roe<CallStartedDetail> CallControlCodec::DecodeStarted(const std::string& detail
   return detail;
 }
 
+Roe<std::string> CallControlCodec::EncodeSdp(const CallSdpDetail& detail) {
+  return nlohmann::json({{"call_id", detail.call_id},
+                         {"identity", detail.identity},
+                         {"sdp_type", detail.sdp_type},
+                         {"sdp", detail.sdp}})
+      .dump();
+}
+
+Roe<CallSdpDetail> CallControlCodec::DecodeSdp(const std::string& detail_json) {
+  const nlohmann::json json = ParseObject(detail_json);
+  if (!json.is_object() || !json.contains("call_id") || !json["call_id"].is_string()) {
+    return Error("Invalid call_sdp detail");
+  }
+  CallSdpDetail detail;
+  detail.call_id = json["call_id"].get<std::string>();
+  detail.identity = OptString(json, "identity").value_or("");
+  detail.sdp_type = OptString(json, "sdp_type").value_or("");
+  detail.sdp = OptString(json, "sdp").value_or("");
+  if (detail.sdp_type.empty() || detail.sdp.empty()) {
+    return Error("call_sdp requires sdp_type and sdp");
+  }
+  return detail;
+}
+
+Roe<std::string> CallControlCodec::EncodeIce(const CallIceDetail& detail) {
+  return nlohmann::json({{"call_id", detail.call_id},
+                         {"identity", detail.identity},
+                         {"candidate", detail.candidate},
+                         {"mid", detail.mid}})
+      .dump();
+}
+
+Roe<CallIceDetail> CallControlCodec::DecodeIce(const std::string& detail_json) {
+  const nlohmann::json json = ParseObject(detail_json);
+  if (!json.is_object() || !json.contains("call_id") || !json["call_id"].is_string()) {
+    return Error("Invalid call_ice detail");
+  }
+  CallIceDetail detail;
+  detail.call_id = json["call_id"].get<std::string>();
+  detail.identity = OptString(json, "identity").value_or("");
+  detail.candidate = OptString(json, "candidate").value_or("");
+  detail.mid = OptString(json, "mid").value_or("audio");
+  if (detail.candidate.empty()) {
+    return Error("call_ice requires candidate");
+  }
+  return detail;
+}
+
 Roe<ThreadMessage> CallControlCodec::BuildSystemMessage(const std::string& thread_id, const CallControlType type,
                                                         const std::string& display_text,
                                                         const std::string& detail_json,

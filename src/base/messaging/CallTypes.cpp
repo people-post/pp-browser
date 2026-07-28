@@ -102,6 +102,10 @@ std::string CallControlTypeToWire(const CallControlType type) {
     return "call_ended";
   case CallControlType::CallStarted:
     return "call_started";
+  case CallControlType::CallSdp:
+    return "call_sdp";
+  case CallControlType::CallIce:
+    return "call_ice";
   }
   return "call_invite";
 }
@@ -130,6 +134,12 @@ std::optional<CallControlType> CallControlTypeFromWire(const std::string& value)
   }
   if (value == "call_started") {
     return CallControlType::CallStarted;
+  }
+  if (value == "call_sdp") {
+    return CallControlType::CallSdp;
+  }
+  if (value == "call_ice") {
+    return CallControlType::CallIce;
   }
   return std::nullopt;
 }

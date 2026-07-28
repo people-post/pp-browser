@@ -7,8 +7,30 @@
 - CMake 3.24+
 - C++20 compiler (GCC 13+, Clang 16+, or MSVC 2022)
 - OpenGL 3.3 drivers
-- Linux: `libx11-dev`, `libxext-dev`, `libxcursor-dev`, `libxinerama-dev`, `libxi-dev`, `libxrandr-dev`, `libxfixes-dev`, `libgl-dev`, `libdbus-1-dev` (local desktop notifications)
+- Linux GUI: `libx11-dev`, `libxext-dev`, `libxcursor-dev`, `libxinerama-dev`, `libxi-dev`, `libxrandr-dev`, `libxfixes-dev`, `libgl-dev`, `libdbus-1-dev` (local desktop notifications)
+- Linux **voice calls** (a2+): `libpulse-dev`, `libasound2-dev` — SDL3 PulseAudio + ALSA drivers for mic/speaker. Install **both**; without them SDL builds dummy audio only. PipeWire desktops still use `libpulse-dev` (Pulse compatibility).
+- **Windows / macOS voice:** no extra packages — SDL uses **WASAPI** / **CoreAudio**. Ensure OS mic privacy allows the app (Windows Settings → Privacy → Microphone; macOS TCC prompt / shipped apps need mic usage string when notarized).
+- **Android / iOS voice:** no Pulse/ALSA packages; SDL uses AAudio/OpenSL ES or CoreAudio via the SDK. **Permissions and audio session are still TODO** before claiming mobile voice — see [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 - Perl (for lsquic code generation)
+
+Debian/Ubuntu one-liner:
+
+```bash
+sudo apt install \
+  libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev \
+  libgl-dev libdbus-1-dev \
+  libpulse-dev libasound2-dev
+```
+
+### Voice / video audio by platform (agents)
+
+| Platform | Build-time audio | Extra install? | Runtime still needed for product voice |
+|----------|------------------|----------------|----------------------------------------|
+| Linux | SDL Pulse + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev` | Pulse/PipeWire running |
+| Windows | SDL WASAPI | No | OS mic privacy if blocked |
+| macOS | SDL CoreAudio | No | TCC / `NSMicrophoneUsageDescription` for shipped builds |
+| Android | SDL AAudio / OpenSL ES | No (NDK) | `RECORD_AUDIO` (+ runtime grant); later camera |
+| iOS | SDL CoreAudio | No (Xcode SDK) | `NSMicrophoneUsageDescription`, `AVAudioSession` play-and-record; optional `UIBackgroundModes` `audio`; later camera |
 
 curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
@@ -16,7 +38,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 **Vendored source** under [`third_party/`](../../third_party/): FreeType, HarfBuzz, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), libsodium, and (for libp2p) BoringSSL, Boost, Protobuf, lsquic, and related packages.
 
-**System packages:** X11 and OpenGL development headers on Linux for the GUI.
+**System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`). Windows/macOS/mobile use OS audio stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
 RmlUi is **hard-forked** under `src/render/fork/`. libp2p is **hard-forked** under `src/libp2p/fork/` (not in `third_party/`).
 
@@ -35,6 +57,14 @@ Codec sources under `third_party/sdl3_image/external/` are committed as **regula
 ## Configure and build
 
 ```bash
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+Configure should print `pp-browser: SDL audio backends — PulseAudio + ALSA (dev packages found)` on Linux when voice deps are installed. If you install `libpulse-dev` / `libasound2-dev` after an older configure, wipe the SDL build tree and reconfigure so drivers are not stuck on dummy:
+
+```bash
+rm -rf build/third_party/sdl3
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```

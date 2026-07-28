@@ -70,7 +70,12 @@ void CallController::RefreshPendingRing() {
     in_call.active = true;
     in_call.call_id = (*active)->call_id;
     in_call.title = (*active)->media_mode == CallMediaMode::Video ? "Video call" : "Voice call";
-    in_call.subtitle = "Media not connected yet";
+    if (calls->Media().IsConnected()) {
+      in_call.subtitle = "Connected";
+    } else {
+      const std::string state = calls->Media().ConnectionState();
+      in_call.subtitle = state.empty() ? "Connecting…" : state;
+    }
     SyncShellState();
     return;
   }

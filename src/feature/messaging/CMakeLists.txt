@@ -23,6 +23,8 @@ pp_browser_add_feature_library(pp_feature_messaging
     SqlitePskSessionStore.cpp
   PUBLIC_LIBS
     pp_feature_ai
+    pp_base_crypto
+    pp_base_media
     p2p
     nlohmann_json::nlohmann_json
     CURL::libcurl)

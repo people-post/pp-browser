@@ -13,6 +13,7 @@
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/GroupMembershipService.h"
+#include "base/media/CallMediaEngine.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/CallSessionStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
@@ -110,6 +111,7 @@ private:
   std::unique_ptr<GroupRosterStore> group_roster_;
   std::unique_ptr<CallSessionStore> call_session_store_;
   std::unique_ptr<CallMediaKeyStore> call_media_keys_;
+  std::unique_ptr<CallMediaEngine> call_media_engine_;
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;

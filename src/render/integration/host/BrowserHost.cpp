@@ -207,11 +207,17 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	RMLUI_ASSERT(!data);
 
 #if SDL_MAJOR_VERSION >= 3
-	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
+	// Audio is initialized on demand by CallMediaEngine (a2); do not fail window
+	// bring-up if Pulse/ALSA is missing on a headless or minimal host.
+	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+		Rml::Log::Message(Rml::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
 		return false;
+	}
 #else
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0)
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0) {
+		Rml::Log::Message(Rml::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
 		return false;
+	}
 #endif
 
 	g_wake_event_type = SDL_RegisterEvents(1);

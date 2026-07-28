@@ -17,7 +17,7 @@ namespace pbr {
 
 /**
  * Vault-backed call media key slots (V011).
- * Encrypts epoch key bytes under the profile DEK; wrap-to-peer is stubbed until a2.
+ * Peer wrap uses pairwise session key + MessageCipher (V015).
  */
 class CallMediaKeyStore : public Module, public IDekConsumer {
 public:
@@ -29,9 +29,17 @@ public:
   /** Persist plaintext key bytes for (call_id, epoch); returns opaque media_key_id. */
   Roe<std::string> PutEpochKey(const std::string& call_id, uint32_t media_epoch, const ByteVector& key_bytes);
   Roe<std::optional<ByteVector>> LoadEpochKey(const std::string& call_id, uint32_t media_epoch) const;
-  /** Stub wrap: returns base64(key) until pairwise AEAD wiring. */
-  Roe<std::string> StubWrapKeyB64(const ByteVector& key_bytes) const;
   Roe<ByteVector> GenerateEpochKey() const;
+
+  static std::string BuildWrapAad(const std::string& call_id, uint32_t media_epoch, const std::string& media_key_id);
+
+  /** Wrap epoch key under pairwise session_key → base64 blob (V015). */
+  static Roe<std::string> WrapKeyB64(const ByteVector& session_key, const ByteVector& key_bytes,
+                                     const std::string& call_id, uint32_t media_epoch,
+                                     const std::string& media_key_id);
+  static Roe<ByteVector> UnwrapKeyB64(const ByteVector& session_key, const std::string& wrapped_key_b64,
+                                      const std::string& call_id, uint32_t media_epoch,
+                                      const std::string& media_key_id);
 
 private:
   Roe<sqlite3*> OpenDb() const;

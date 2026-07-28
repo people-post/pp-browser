@@ -8,6 +8,7 @@ add_subdirectory(data)
 add_subdirectory(crypto)
 add_subdirectory(people)
 add_subdirectory(messaging)
+add_subdirectory(media)
 add_subdirectory(net)
 add_subdirectory(ai)
 add_subdirectory(ui)
@@ -20,6 +21,7 @@ set(PP_BASE_MODULE_LIBS
   pp_base_crypto
   pp_base_people
   pp_base_messaging
+  pp_base_media
   pp_base_net
   pp_base_ai
   pp_base_ai_conversation

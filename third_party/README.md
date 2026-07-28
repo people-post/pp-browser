@@ -17,6 +17,8 @@ libp2p itself is a hard fork under [`src/libp2p/fork/`](../src/libp2p/fork/), no
 | `sdl3_image/` | [libsdl-org/SDL_image](https://github.com/libsdl-org/SDL_image) | `release-3.2.4` | Zlib |
 | `sqlite/` | [SQLite amalgamation](https://www.sqlite.org/download.html) | `3.53.3` (`3530300`) | Public domain |
 | `libsodium/` | [jedisct1/libsodium](https://github.com/jedisct1/libsodium) | `1.0.20-RELEASE` | ISC |
+| `opus/` | [xiph/opus](https://github.com/xiph/opus) | `v1.5.2` | BSD |
+| `libdatachannel/` | [paullouisageneau/libdatachannel](https://github.com/paullouisageneau/libdatachannel) | `v0.22.4` | MPL-2.0 |
 
 ### libp2p dependencies (when enabled)
 
@@ -52,9 +54,11 @@ Exact commit SHAs are recorded in [`UPSTREAM.json`](UPSTREAM.json).
 
 ## System dependencies (not vendored)
 
-- **Linux:** X11 and OpenGL development headers (when libp2p disabled: `libssl-dev` for curl TLS)
-- **Windows:** Schannel (via curl)
-- **macOS:** Secure Transport (via curl)
+- **Linux GUI:** X11 and OpenGL development headers (see [docs/ops/BUILD.md](../docs/ops/BUILD.md))
+- **Linux voice (a2+):** `libpulse-dev` + `libasound2-dev` — both required so SDL3 builds PulseAudio + ALSA drivers (not dummy-only). PipeWire desktops still need `libpulse-dev`.
+- **Windows / macOS / mobile:** no Pulse/ALSA packages — WASAPI / CoreAudio / AAudio. Mobile still needs manifest/plist mic (and later camera) permissions — [PLATFORMS § A/V](../docs/architecture/PLATFORMS.md#av-media-sdl--calls).
+- **Windows TLS:** Schannel (via curl)
+- **macOS TLS:** Secure Transport (via curl)
 
 When libp2p is enabled, BoringSSL in `third_party/boringssl/` provides TLS for curl and libp2p.
 

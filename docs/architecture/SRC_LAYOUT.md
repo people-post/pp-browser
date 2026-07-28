@@ -67,6 +67,7 @@ integration/host → fork/include (public API only)
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `base/people/` | Identity and contacts stores |
 | `base/messaging/` | Thread types, JSON store, parsers |
+| `base/media/` | `CallMediaEngine` — libdatachannel + Opus + SDL voice media (a2) |
 | `base/ai/` | LLM client, turn types, parsers, conversation, MCP client |
 | `base/ui/` | Theme, view catalog, shell/working-set types, input coordinator |
 

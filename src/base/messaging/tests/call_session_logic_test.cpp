@@ -1,3 +1,4 @@
+#include "base/messaging/CallControlCodec.h"
 #include "base/messaging/CallSessionLogic.h"
 #include "base/messaging/CallTypes.h"
 
@@ -58,6 +59,51 @@ TEST(CallControlTypeTest, WireRoundTrip) {
   EXPECT_EQ(CallControlTypeFromWire("call_join"), CallControlType::CallAccept);
   EXPECT_EQ(CallControlTypeFromWire("call_started"), CallControlType::CallStarted);
   EXPECT_FALSE(CallControlTypeFromWire("member_joined").has_value());
+}
+
+TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallSdp), "call_sdp");
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallIce), "call_ice");
+  EXPECT_EQ(CallControlTypeFromWire("call_sdp"), CallControlType::CallSdp);
+  EXPECT_EQ(CallControlTypeFromWire("call_ice"), CallControlType::CallIce);
+}
+
+TEST(CallControlCodecTest, SdpDetailRoundTrip) {
+  CallSdpDetail detail;
+  detail.call_id = "call:abc";
+  detail.identity = "relay:alice";
+  detail.sdp_type = "offer";
+  detail.sdp = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\n";
+
+  auto encoded = CallControlCodec::EncodeSdp(detail);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeSdp(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->call_id, detail.call_id);
+  EXPECT_EQ(decoded->identity, detail.identity);
+  EXPECT_EQ(decoded->sdp_type, detail.sdp_type);
+  EXPECT_EQ(decoded->sdp, detail.sdp);
+
+  EXPECT_FALSE(CallControlCodec::DecodeSdp(R"({"call_id":"call:abc"})"));
+}
+
+TEST(CallControlCodecTest, IceDetailRoundTrip) {
+  CallIceDetail detail;
+  detail.call_id = "call:abc";
+  detail.identity = "relay:bob";
+  detail.candidate = "candidate:1 1 UDP 2130706431 10.0.0.1 5000 typ host";
+  detail.mid = "audio";
+
+  auto encoded = CallControlCodec::EncodeIce(detail);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeIce(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->call_id, detail.call_id);
+  EXPECT_EQ(decoded->identity, detail.identity);
+  EXPECT_EQ(decoded->candidate, detail.candidate);
+  EXPECT_EQ(decoded->mid, detail.mid);
+
+  EXPECT_FALSE(CallControlCodec::DecodeIce(R"({"call_id":"call:abc"})"));
 }
 
 } // namespace

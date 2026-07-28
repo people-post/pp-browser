@@ -19,9 +19,11 @@ declare -A REPOS=(
   [lunasvg]="https://github.com/sammycage/lunasvg.git|v3.5.0"
   [libsodium]="https://github.com/jedisct1/libsodium.git|1.0.20-RELEASE"
   [harfbuzz]="https://github.com/harfbuzz/harfbuzz.git|9.0.0"
+  [opus]="https://github.com/xiph/opus.git|v1.5.2"
+  [libdatachannel]="https://github.com/paullouisageneau/libdatachannel.git|v0.22.4"
 )
 
-DEFAULT_ORDER=(freetype nlohmann_json curl sdl3 sdl3_image lunasvg libsodium harfbuzz sqlite)
+DEFAULT_ORDER=(freetype nlohmann_json curl sdl3 sdl3_image lunasvg libsodium harfbuzz opus libdatachannel sqlite)
 
 import_sdl3_image_externals() {
   local image_root="${THIRD_PARTY}/sdl3_image"
@@ -156,7 +158,7 @@ for name in "${ORDER[@]}"; do
   echo "==> ${name} @ ${tag}"
   preserve_pp_cmake "${name}"
 
-  if [[ "${name}" == "lunasvg" ]]; then
+  if [[ "${name}" == "lunasvg" || "${name}" == "libdatachannel" ]]; then
     git clone --depth 1 --branch "${tag}" --recursive "${url}" "${clone_dir}"
   else
     git clone --depth 1 --branch "${tag}" "${url}" "${clone_dir}"
@@ -166,6 +168,7 @@ for name in "${ORDER[@]}"; do
   rm -rf "${dest}"
   mkdir -p "${dest}"
   rsync -a --delete --exclude='.git' "${clone_dir}/" "${dest}/"
+  find "${dest}" -name '.git' -exec rm -rf {} + 2>/dev/null || true
   restore_pp_cmake "${name}"
 
   if [[ "${name}" == "libsodium" ]]; then

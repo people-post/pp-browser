@@ -2,7 +2,9 @@
 
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/EncryptedPayload.h"
 #include "base/crypto/FileCipher.h"
+#include "base/crypto/MessageCipher.h"
 #include "base/error/AppError.h"
 #include "base/messaging/CallSessionStore.h"
 #include "common/Utilities.h"
@@ -67,8 +69,51 @@ Roe<ByteVector> CallMediaKeyStore::GenerateEpochKey() const {
   return key;
 }
 
-Roe<std::string> CallMediaKeyStore::StubWrapKeyB64(const ByteVector& key_bytes) const {
-  return Base64Encode(key_bytes);
+std::string CallMediaKeyStore::BuildWrapAad(const std::string& call_id, const uint32_t media_epoch,
+                                            const std::string& media_key_id) {
+  return "call_media_key|" + call_id + "|" + std::to_string(media_epoch) + "|" + media_key_id;
+}
+
+Roe<std::string> CallMediaKeyStore::WrapKeyB64(const ByteVector& session_key, const ByteVector& key_bytes,
+                                               const std::string& call_id, const uint32_t media_epoch,
+                                               const std::string& media_key_id) {
+  if (session_key.empty() || key_bytes.empty() || call_id.empty() || media_key_id.empty()) {
+    return Error("WrapKeyB64 requires session_key, key_bytes, call_id, media_key_id");
+  }
+  auto nonce = MessageCipher::GenerateNonce();
+  if (!nonce) {
+    return nonce.error();
+  }
+  const std::string aad = BuildWrapAad(call_id, media_epoch, media_key_id);
+  const ByteVector aad_bytes(aad.begin(), aad.end());
+  auto encrypted = MessageCipher::Encrypt(session_key, key_bytes, aad_bytes, *nonce);
+  if (!encrypted) {
+    return encrypted.error();
+  }
+  auto blob = EncryptedPayload::EncodeBlob(*encrypted);
+  if (!blob) {
+    return blob.error();
+  }
+  return EncryptedPayload::EncodeBase64(*blob);
+}
+
+Roe<ByteVector> CallMediaKeyStore::UnwrapKeyB64(const ByteVector& session_key, const std::string& wrapped_key_b64,
+                                                const std::string& call_id, const uint32_t media_epoch,
+                                                const std::string& media_key_id) {
+  if (session_key.empty() || wrapped_key_b64.empty() || call_id.empty() || media_key_id.empty()) {
+    return Error("UnwrapKeyB64 requires session_key, wrapped_key_b64, call_id, media_key_id");
+  }
+  auto blob_bytes = EncryptedPayload::DecodeBase64(wrapped_key_b64);
+  if (!blob_bytes) {
+    return blob_bytes.error();
+  }
+  auto blob = EncryptedPayload::DecodeBlob(*blob_bytes);
+  if (!blob) {
+    return blob.error();
+  }
+  const std::string aad = BuildWrapAad(call_id, media_epoch, media_key_id);
+  const ByteVector aad_bytes(aad.begin(), aad.end());
+  return MessageCipher::Decrypt(session_key, *blob, aad_bytes);
 }
 
 Roe<std::string> CallMediaKeyStore::PutEpochKey(const std::string& call_id, const uint32_t media_epoch,

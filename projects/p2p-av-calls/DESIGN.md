@@ -25,7 +25,7 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 13 | Delivery | **Parallel:** a1 now; a2 LAN dogfood until seed SFU (V010) |
 | 14 | Persistence | `call_*` in **profile.db**; keys vault-backed (V011) |
 | 15 | Signaling carrier | Direct E2E `ChatPayload` system controls (V012) |
-| 16 | WebRTC lib | Deferred to **a2 spike** (V013) |
+| 16 | WebRTC lib | **libdatachannel + libopus + SDL** (V014) |
 
 ---
 

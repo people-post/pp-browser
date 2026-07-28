@@ -32,14 +32,16 @@ Mesh prerequisites (see [p2p-mesh PHASES](../p2p-mesh/PHASES.md)): **np → nr �
 
 ## a2 — 1:1 voice media
 
-- [ ] WebRTC library **spike ADR** (V013); prove Opus on LAN
-- [ ] ICE P2P on LAN dogfood; SFU/TURN via seed when available
-- [ ] Shared media key wrap over pairwise E2E; epoch 1
-- [ ] Two-device voice call green path (document NAT vs LAN in CURRENT_STATE)
+- [x] WebRTC library **spike ADR** ([V014](DECISIONS.md#v014--media-stack-libdatachannel--libopus--sdl)); code path for Opus on LAN
+- [x] ICE P2P signaling (`call_sdp` / `call_ice`); host candidates for LAN dogfood (no STUN/TURN yet)
+- [x] Shared media key wrap over pairwise E2E ([V015](DECISIONS.md#v015--pairwise-wrap-aad-for-call_media_key)); epoch 1 on accept + rotate
+- [x] Document platform audio deps (Linux Pulse/ALSA; Win WASAPI; Mac CoreAudio; mobile permissions TODO) — [BUILD](../../docs/ops/BUILD.md) + [PLATFORMS](../../docs/architecture/PLATFORMS.md#av-media-sdl--calls)
+- [ ] Two-device voice call green path (document NAT vs LAN in CURRENT_STATE) — **code ready; dogfood pending**
 
 ## a3 — 1:1 video (desktop + mobile)
 
 - [ ] Capture + render path in SDL/RmlUi shell (platform camera permissions)
+- [ ] Mobile mic permissions + audio session (Android `RECORD_AUDIO`; iOS usage string / `AVAudioSession`) if not done with a2 mobile bring-up
 - [ ] Lock video codec preference (H264 vs VP8)
 - [ ] Camera off by default on join (V009)
 - [ ] Mobile Client ↔ desktop / mobile↔mobile via seed SFU

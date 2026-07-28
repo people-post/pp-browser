@@ -1,6 +1,7 @@
 #include "feature/messaging/CallSessionManager.h"
 
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/SessionKeyDeriver.h"
 #include "base/messaging/CallSessionLogic.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/SendRelayOptions.h"
@@ -14,10 +15,14 @@ namespace pbr {
 
 CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                        CallSessionStore& sessions, CallMediaKeyStore& media_keys,
-                                       P2pMessagingService& p2p)
+                                       P2pMessagingService& p2p, IPskSessionStore& psk_store, CallMediaEngine& media)
     : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
-      p2p_(p2p) {
+      p2p_(p2p), psk_store_(psk_store), media_(media) {
   redirectLogger("CallSessionManager");
+}
+
+CallMediaEngine& CallSessionManager::Media() {
+  return media_;
 }
 
 void CallSessionManager::SetOnRingChanged(RingChangedFn callback) {
@@ -130,6 +135,118 @@ Roe<void> CallSessionManager::FanOutToJoined(const std::string& call_id, const C
     }
   }
   return {};
+}
+
+Roe<ByteVector> CallSessionManager::ResolvePeerSessionKey(const std::string& peer_identity) const {
+  ChatTargetKey target_key;
+  target_key.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
+  target_key.peer_identity_value = peer_identity;
+  target_key.channel = CryptoChannel::E2ePublic;
+
+  auto record = psk_store_.Load(target_key);
+  if (!record) {
+    return record.error();
+  }
+  if (!record->has_value()) {
+    return Error("No PSK session for peer");
+  }
+  const uint32_t active_epoch = (*record)->session_epoch;
+  auto master_psk_b64 = psk_store_.ResolveMasterPskForEpoch(target_key, active_epoch);
+  if (!master_psk_b64) {
+    return master_psk_b64.error();
+  }
+  if (!master_psk_b64->has_value()) {
+    return Error("No PSK for active session epoch");
+  }
+  auto master_psk = Base64Decode(**master_psk_b64);
+  if (!master_psk) {
+    return master_psk.error();
+  }
+  return SessionKeyDeriver::Derive(*master_psk, CryptoChannel::E2ePublic, active_epoch);
+}
+
+Roe<void> CallSessionManager::SendMediaKeyToPeer(const std::string& call_id, const std::string& peer_identity,
+                                                 const uint32_t media_epoch, const std::string& media_key_id,
+                                                 const ByteVector& key_bytes) {
+  auto session_key = ResolvePeerSessionKey(peer_identity);
+  if (!session_key) {
+    return session_key.error();
+  }
+  auto wrapped = CallMediaKeyStore::WrapKeyB64(*session_key, key_bytes, call_id, media_epoch, media_key_id);
+  if (!wrapped) {
+    return wrapped.error();
+  }
+  CallMediaKeyDetail key_detail;
+  key_detail.call_id = call_id;
+  key_detail.media_epoch = media_epoch;
+  key_detail.media_key_id = media_key_id;
+  key_detail.wrapped_key_b64 = *wrapped;
+  auto key_json = CallControlCodec::EncodeMediaKey(key_detail);
+  if (!key_json) {
+    return key_json.error();
+  }
+  return SendCallDirectMessage(peer_identity, CallControlType::CallMediaKey, *key_json, "Call media key");
+}
+
+void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
+  media_peer_identity_ = peer_identity;
+
+  media_.SetOnLocalDescription([this](const CallMediaEngine::LocalDescription& local) {
+    const std::string call_id = media_.ActiveCallId();
+    if (call_id.empty() || media_peer_identity_.empty()) {
+      return;
+    }
+    CallSdpDetail detail;
+    detail.call_id = call_id;
+    if (auto local_identity = LocalRelayIdentity()) {
+      detail.identity = *local_identity;
+    }
+    detail.sdp_type = local.type;
+    detail.sdp = local.sdp;
+    auto encoded = CallControlCodec::EncodeSdp(detail);
+    if (!encoded) {
+      return;
+    }
+    (void)SendCallDirectMessage(media_peer_identity_, CallControlType::CallSdp, *encoded, "Call signaling");
+  });
+
+  media_.SetOnIceCandidate([this](const CallMediaEngine::IceCandidate& ice) {
+    const std::string call_id = media_.ActiveCallId();
+    if (call_id.empty() || media_peer_identity_.empty()) {
+      return;
+    }
+    CallIceDetail detail;
+    detail.call_id = call_id;
+    if (auto local_identity = LocalRelayIdentity()) {
+      detail.identity = *local_identity;
+    }
+    detail.candidate = ice.candidate;
+    detail.mid = ice.mid;
+    auto encoded = CallControlCodec::EncodeIce(detail);
+    if (!encoded) {
+      return;
+    }
+    (void)SendCallDirectMessage(media_peer_identity_, CallControlType::CallIce, *encoded, "Call signaling");
+  });
+
+  media_.SetOnStateChanged([this](const std::string&) { NotifyRingChanged(); });
+}
+
+Roe<void> CallSessionManager::StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity) {
+  BindMediaCallbacks(peer_identity);
+  return media_.Start(call_id, CallMediaEngine::Role::Offerer);
+}
+
+Roe<void> CallSessionManager::StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity) {
+  BindMediaCallbacks(peer_identity);
+  return media_.Start(call_id, CallMediaEngine::Role::Answerer);
+}
+
+void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
+  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+    media_.Stop();
+  }
+  media_peer_identity_.clear();
 }
 
 Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_id, const CallMediaMode mode,
@@ -340,6 +457,7 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
       !sent) {
     return sent.error();
   }
+  (void)StartMediaAsAnswerer(call_id, (*pending)->inviter_identity);
 
   // Best-effort roster to inviter; full fan-out when we are coordinator later.
   auto roster = BuildRosterDetail(call_id);
@@ -430,19 +548,6 @@ Roe<void> CallSessionManager::MaybeRotateMediaKey(const std::string& call_id, co
     return saved.error();
   }
 
-  auto wrapped = media_keys_.StubWrapKeyB64(*key);
-  if (!wrapped) {
-    return wrapped.error();
-  }
-  CallMediaKeyDetail key_detail;
-  key_detail.call_id = call_id;
-  key_detail.media_epoch = new_epoch;
-  key_detail.media_key_id = *media_key_id;
-  key_detail.wrapped_key_b64 = *wrapped;
-  auto key_json = CallControlCodec::EncodeMediaKey(key_detail);
-  if (!key_json) {
-    return key_json.error();
-  }
   auto roster = BuildRosterDetail(call_id);
   if (!roster) {
     return roster.error();
@@ -456,13 +561,14 @@ Roe<void> CallSessionManager::MaybeRotateMediaKey(const std::string& call_id, co
     if (peer == *local) {
       continue;
     }
-    (void)SendCallDirectMessage(peer, CallControlType::CallMediaKey, *key_json, "Call media key");
+    (void)SendMediaKeyToPeer(call_id, peer, new_epoch, *media_key_id, *key);
     (void)SendCallDirectMessage(peer, CallControlType::CallRoster, *roster_json, "Call roster");
   }
   return {};
 }
 
 Roe<void> CallSessionManager::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms) {
+  StopMediaIfCall(session.call_id);
   session.state = CallSessionState::Ended;
   session.ended_at = util::NowUnixMs();
   if (auto saved = sessions_.UpsertSession(session); !saved) {
@@ -493,6 +599,7 @@ Roe<void> CallSessionManager::LeaveCall(const std::string& call_id) {
   if ((*session)->state == CallSessionState::Ended) {
     return {};
   }
+  StopMediaIfCall(call_id);
 
   const int64_t now = util::NowUnixMs();
   CallParticipant self;
@@ -693,6 +800,16 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       (void)sessions_.UpsertSession(**session);
     }
     (void)sessions_.UpdateInviteStatus(accept->call_id, identity, "accepted");
+
+    if (session && session->has_value()) {
+      const uint32_t epoch = (*session)->media_epoch;
+      auto key_bytes = media_keys_.LoadEpochKey(accept->call_id, epoch);
+      if (key_bytes && key_bytes->has_value()) {
+        (void)SendMediaKeyToPeer(accept->call_id, identity, epoch, (*session)->media_key_id, **key_bytes);
+      }
+      (void)StartMediaAsOfferer(accept->call_id, identity);
+    }
+
     NotifyRingChanged();
     return {};
   }
@@ -775,13 +892,31 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       (*session)->media_key_id = key->media_key_id;
       (void)sessions_.UpsertSession(**session);
     }
-    // Stub: unwrap is identity (base64) until pairwise AEAD wiring at a2.
     if (!key->wrapped_key_b64.empty()) {
-      if (auto bytes = Base64Decode(key->wrapped_key_b64)) {
-        (void)media_keys_.PutEpochKey(key->call_id, key->media_epoch, *bytes);
+      auto session_key = ResolvePeerSessionKey(sender_identity);
+      if (session_key) {
+        auto unwrapped = CallMediaKeyStore::UnwrapKeyB64(*session_key, key->wrapped_key_b64, key->call_id,
+                                                          key->media_epoch, key->media_key_id);
+        if (unwrapped) {
+          (void)media_keys_.PutEpochKey(key->call_id, key->media_epoch, *unwrapped);
+        }
       }
     }
     return {};
+  }
+  case CallControlType::CallSdp: {
+    auto sdp = CallControlCodec::DecodeSdp(detail_json);
+    if (!sdp) {
+      return sdp.error();
+    }
+    return media_.SetRemoteDescription(sdp->sdp_type, sdp->sdp);
+  }
+  case CallControlType::CallIce: {
+    auto ice = CallControlCodec::DecodeIce(detail_json);
+    if (!ice) {
+      return ice.error();
+    }
+    return media_.AddRemoteIceCandidate(ice->candidate, ice->mid);
   }
   case CallControlType::CallEnded: {
     auto ended = CallControlCodec::DecodeEnded(detail_json);
