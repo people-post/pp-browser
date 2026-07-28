@@ -927,6 +927,10 @@ select selectbox option:hover {
   color: #fbbf24;
 }
 
+.chat-header-call-btn svg {
+  image-color: #f9fafb;
+}
+
 .chat-header-more-btn {
   background-color: #374151;
   color: #f9fafb;
