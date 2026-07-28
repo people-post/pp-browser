@@ -631,6 +631,41 @@ select selectbox option:hover {
   background-color: #4a6cf7;
 }
 
+.shell-call-bar {
+  background-color: #ffffff;
+  border: 1dp #e5e7eb;
+}
+
+.shell-call-bar-title {
+  color: #111111;
+}
+
+.shell-call-bar-subtitle {
+  color: #6b7280;
+}
+
+.shell-call-mute {
+  background-color: #e8eaed;
+  color: #1a1a1a;
+}
+
+.shell-call-mute--on {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.shell-call-ring-eyebrow {
+  color: #6b7280;
+}
+
+.shell-call-ring--pulse {
+  border-color: #4a6cf7;
+}
+
+.shell-call-accept--pulse {
+  background-color: #5a7cff;
+}
+
 .chat-empty {
   background-color: #ffffff;
   border: 1dp #e5e7eb;

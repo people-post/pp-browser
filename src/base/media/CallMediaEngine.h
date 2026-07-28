@@ -45,10 +45,15 @@ public:
   Roe<void> AddRemoteIceCandidate(const std::string& candidate, const std::string& mid);
   void Stop();
 
+  void SetMuted(bool muted);
+  bool IsMuted() const;
+
   bool IsActive() const;
   bool IsConnected() const;
   std::string ActiveCallId() const;
   std::string ConnectionState() const;
+  /** Unix ms when media reached Connected; 0 if not connected yet. */
+  int64_t ConnectedAtMs() const;
 
   /** Smoothed peak level 0..1 from local capture (mic pickup indicator). */
   float LocalInputLevel() const;

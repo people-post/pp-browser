@@ -51,6 +51,8 @@ struct CallMediaEngine::Impl {
   Role role = Role::Offerer;
   std::atomic<bool> active{false};
   std::atomic<bool> connected{false};
+  std::atomic<bool> muted{false};
+  std::atomic<int64_t> connected_at_ms{0};
   std::string connection_state = "idle";
 
   LocalDescriptionFn on_local_description;
@@ -96,7 +98,14 @@ struct CallMediaEngine::Impl {
 
   void SetState(const std::string& state) {
     connection_state = state;
-    connected = (state == "connected");
+    const bool now_connected = (state == "connected");
+    if (now_connected && !connected.load()) {
+      connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+    }
+    if (!now_connected) {
+      connected_at_ms.store(0, std::memory_order_relaxed);
+    }
+    connected = now_connected;
     if (on_state_changed) {
       on_state_changed(state);
     }
@@ -250,7 +259,9 @@ struct CallMediaEngine::Impl {
           }
           if (pending.size() < static_cast<size_t>(kFrameSamples)) {
             if (got <= 0) {
-              SmoothLevel(local_input_level, 0.f);
+              if (!muted.load(std::memory_order_relaxed)) {
+                SmoothLevel(local_input_level, 0.f);
+              }
               const int64_t now = util::NowUnixMs();
               if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
                 SmoothLevel(remote_output_level, 0.f);
@@ -261,7 +272,12 @@ struct CallMediaEngine::Impl {
           }
           std::copy_n(pending.begin(), kFrameSamples, pcm.begin());
           pending.erase(pending.begin(), pending.begin() + kFrameSamples);
-          SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
+          if (muted.load(std::memory_order_relaxed)) {
+            std::fill(pcm.begin(), pcm.end(), 0);
+            SmoothLevel(local_input_level, 0.f);
+          } else {
+            SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
+          }
         } else {
           // No mic: send silence so the peer track stays alive / comfort noise path.
           std::fill(pcm.begin(), pcm.end(), 0);
@@ -442,6 +458,8 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
   }
   impl_->call_id = call_id;
   impl_->active = true;
+  impl_->muted.store(false, std::memory_order_relaxed);
+  impl_->connected_at_ms.store(0, std::memory_order_relaxed);
   impl_->SetState("connecting");
   impl_->StartCaptureLoop();
   return {};
@@ -484,10 +502,23 @@ void CallMediaEngine::Stop() {
     return;
   }
   impl_->active = false;
+  impl_->muted.store(false, std::memory_order_relaxed);
+  impl_->connected_at_ms.store(0, std::memory_order_relaxed);
   impl_->TearDownAudioLocked();
   impl_->TearDownPcLocked();
   impl_->call_id.clear();
   impl_->SetState("closed");
+}
+
+void CallMediaEngine::SetMuted(bool muted) {
+  impl_->muted.store(muted, std::memory_order_relaxed);
+  if (muted) {
+    impl_->local_input_level.store(0.f, std::memory_order_relaxed);
+  }
+}
+
+bool CallMediaEngine::IsMuted() const {
+  return impl_->muted.load(std::memory_order_relaxed);
 }
 
 bool CallMediaEngine::IsActive() const {
@@ -506,6 +537,10 @@ std::string CallMediaEngine::ActiveCallId() const {
 std::string CallMediaEngine::ConnectionState() const {
   std::lock_guard lock(impl_->mutex);
   return impl_->connection_state;
+}
+
+int64_t CallMediaEngine::ConnectedAtMs() const {
+  return impl_->connected_at_ms.load(std::memory_order_relaxed);
 }
 
 float CallMediaEngine::LocalInputLevel() const {

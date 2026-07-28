@@ -8,6 +8,8 @@ namespace pbr {
 struct CallChromeLayer {
   bool ring_active = false;
   bool in_call_active = false;
+  bool ring_pulse = false;
+  bool in_call_muted = false;
   std::string ring_call_id;
   std::string in_call_id;
   std::string in_call_subtitle;
@@ -18,6 +20,8 @@ struct CallChromeLayer {
   int in_call_peer_level = 0;
   std::string in_call_mic_hint;
   std::string in_call_peer_hint;
+  std::string in_call_elapsed;
+  std::string in_call_peer_label;
 };
 
 enum class CallChromeUpdate {

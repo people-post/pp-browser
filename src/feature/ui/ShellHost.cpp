@@ -113,6 +113,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("pin_gate_pin", &host.state_.pin_gate.pin);
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
     ctor.Bind("call_ring_active", &host.state_.call_ring.active);
+    ctor.Bind("call_ring_pulse", &host.state_.call_ring.pulse);
     ctor.Bind("call_ring_caller", &host.state_.call_ring.caller_label);
     ctor.Bind("call_ring_media", &host.state_.call_ring.media_label);
     ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
@@ -122,6 +123,9 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_peer_level", &host.state_.call_in_progress.peer_level);
     ctor.Bind("call_in_progress_mic_hint", &host.state_.call_in_progress.mic_hint);
     ctor.Bind("call_in_progress_peer_hint", &host.state_.call_in_progress.peer_hint);
+    ctor.Bind("call_in_progress_muted", &host.state_.call_in_progress.muted);
+    ctor.Bind("call_in_progress_elapsed", &host.state_.call_in_progress.elapsed);
+    ctor.Bind("call_in_progress_peer_label", &host.state_.call_in_progress.peer_label);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
     ctor.Bind("statusbar_visible", &host.state_.statusbar_visible);
     ctor.Bind("statusbar_connection", &host.state_.statusbar_connection);
@@ -167,6 +171,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("call_accept", &CallController::AcceptCallback);
     ctor.BindEventCallback("call_decline", &CallController::DeclineCallback);
     ctor.BindEventCallback("call_leave", &CallController::LeaveCallback);
+    ctor.BindEventCallback("call_mute", &CallController::MuteCallback);
     ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
     ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
     ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
@@ -620,6 +625,7 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "call_ring_active");
+  DataModelHost::Instance().Dirty("window", "call_ring_pulse");
   DataModelHost::Instance().Dirty("window", "call_ring_caller");
   DataModelHost::Instance().Dirty("window", "call_ring_media");
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
@@ -629,6 +635,9 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_peer_level");
   DataModelHost::Instance().Dirty("window", "call_in_progress_mic_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_peer_hint");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_muted");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_elapsed");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_peer_label");
   DataModelHost::Instance().Dirty("window", "activity_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_connection");
@@ -1175,51 +1184,54 @@ std::string ShellHost::SerializeCallRing() const {
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\" data-if=\"call_ring_active\">";
   out << "<div class=\"shell-scrim\"></div>";
-  out << "<div class=\"shell-dialog shell-call-ring\">";
+  out << "<div class=\"shell-dialog shell-call-ring\" data-class-shell-call-ring--pulse=\"call_ring_pulse\">";
+  out << "<p class=\"text-sm shell-call-ring-eyebrow\">Incoming call</p>";
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_ring_media\"></h2>";
   out << "<p class=\"text shell-dialog-message\" data-rml=\"call_ring_caller\"></p>";
   out << "<div class=\"shell-dialog-actions row\">";
   out << "<button class=\"shell-dialog-cancel\" data-event-click=\"call_decline()\">Decline</button>";
-  out << "<button class=\"shell-dialog-ok\" data-event-click=\"call_accept()\">Accept</button>";
+  out << "<button class=\"shell-dialog-ok shell-call-accept\" data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
+         "data-event-click=\"call_accept()\">Accept</button>";
   out << "</div></div></div>";
   return out.str();
 }
 
 std::string ShellHost::SerializeCallInProgress() const {
-  // Always present with data-if so Leave/show does not remount chat panes.
+  // Compact top bar — no full scrim so chat stays usable during the call.
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\" data-if=\"call_in_progress_active\">";
-  out << "<div class=\"shell-scrim\"></div>";
-  out << "<div class=\"shell-dialog shell-call-in-progress\">";
-  out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_in_progress_title\"></h2>";
-  out << "<p class=\"text shell-dialog-message\" data-rml=\"call_in_progress_subtitle\"></p>";
-  out << "<div class=\"shell-call-meters\">";
-  out << "<div class=\"shell-call-meter\">";
-  out << "<div class=\"shell-call-meter-head row\">";
-  out << "<span class=\"text-sm shell-call-meter-label\">You</span>";
-  out << "<span class=\"text-sm shell-call-meter-hint\" data-rml=\"call_in_progress_mic_hint\"></span>";
+  out << "<div class=\"shell-layer shell-layer-call-bar\" data-model=\"window\" data-if=\"call_in_progress_active\">";
+  out << "<div class=\"shell-call-bar\">";
+  out << "<div class=\"shell-call-bar-main\">";
+  out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\"></p>";
+  out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\"></p>";
   out << "</div>";
+  out << "<div class=\"shell-call-bar-meters row\">";
+  out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
+  out << "<span class=\"text-xs shell-call-meter-label\">You</span>";
   out << "<div class=\"shell-call-meter-track row\">";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 1\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 2\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 3\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 4\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_mic_level >= 5\"></div>";
-  out << "</div></div>";
-  out << "<div class=\"shell-call-meter\">";
-  out << "<div class=\"shell-call-meter-head row\">";
-  out << "<span class=\"text-sm shell-call-meter-label\">Them</span>";
-  out << "<span class=\"text-sm shell-call-meter-hint\" data-rml=\"call_in_progress_peer_hint\"></span>";
   out << "</div>";
+  out << "<span class=\"text-xs shell-call-meter-hint\" data-rml=\"call_in_progress_mic_hint\"></span>";
+  out << "</div>";
+  out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
+  out << "<span class=\"text-xs shell-call-meter-label\" data-rml=\"call_in_progress_peer_label\"></span>";
   out << "<div class=\"shell-call-meter-track row\">";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 1\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 2\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 3\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 4\"></div>";
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 5\"></div>";
-  out << "</div></div></div>";
-  out << "<div class=\"shell-dialog-actions row\">";
-  out << "<button class=\"shell-dialog-cancel\" data-event-click=\"call_leave()\">Leave</button>";
+  out << "</div>";
+  out << "<span class=\"text-xs shell-call-meter-hint\" data-rml=\"call_in_progress_peer_hint\"></span>";
+  out << "</div></div>";
+  out << "<div class=\"shell-call-bar-actions row\">";
+  out << "<button class=\"shell-call-mute\" data-class-shell-call-mute--on=\"call_in_progress_muted\" "
+         "data-event-click=\"call_mute()\">Mute</button>";
+  out << "<button class=\"shell-dialog-cancel shell-call-leave\" data-event-click=\"call_leave()\">Leave</button>";
   out << "</div></div></div>";
   return out.str();
 }

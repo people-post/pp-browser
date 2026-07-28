@@ -25,6 +25,12 @@ CallMediaEngine& CallSessionManager::Media() {
   return media_;
 }
 
+std::optional<std::string> CallSessionManager::TakeLastMediaError() {
+  auto out = std::move(last_media_error_);
+  last_media_error_.reset();
+  return out;
+}
+
 void CallSessionManager::SetOnRingChanged(RingChangedFn callback) {
   on_ring_changed_ = std::move(callback);
 }
@@ -466,6 +472,7 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
   }
   if (auto started = StartMediaAsAnswerer(call_id, (*pending)->inviter_identity); !started) {
     log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
+    return started.error();
   }
 
   // Best-effort roster to inviter; full fan-out when we are coordinator later.
@@ -694,6 +701,23 @@ Roe<std::optional<PendingCallInvite>> CallSessionManager::TopPendingInvite() {
   return std::optional<PendingCallInvite>{pending->front()};
 }
 
+Roe<std::optional<std::string>> CallSessionManager::PeerIdentityForCall(const std::string& call_id) const {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    return participants.error();
+  }
+  for (const CallParticipant& row : *participants) {
+    if (row.identity != *local && !row.identity.empty()) {
+      return std::optional<std::string>{row.identity};
+    }
+  }
+  return std::optional<std::string>{};
+}
+
 void CallSessionManager::SweepExpiredInvites() {
   auto local = LocalRelayIdentity();
   if (!local) {
@@ -817,7 +841,10 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
         (void)SendMediaKeyToPeer(accept->call_id, identity, epoch, (*session)->media_key_id, **key_bytes);
       }
       if (auto started = StartMediaAsOfferer(accept->call_id, identity); !started) {
+        // Accept already applied — keep session, surface error for UI toast.
         log().warning << "StartMediaAsOfferer failed: " << started.error().message;
+        last_media_error_ = started.error().message;
+        NotifyRingChanged();
       }
     }
 

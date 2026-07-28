@@ -53,3 +53,19 @@ TEST(CallChromeSyncTest, SwitchCallIdRemounts) {
   next.ring_call_id = "c2";
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
+
+TEST(CallChromeSyncTest, MuteElapsedPulseDirties) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_muted = false;
+  synced.in_call_elapsed = "0:01";
+  synced.in_call_peer_label = "Them";
+  synced.ring_pulse = false;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_muted = true;
+  next.in_call_elapsed = "0:02";
+  next.in_call_peer_label = "Alice";
+  next.ring_pulse = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}

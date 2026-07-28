@@ -146,17 +146,21 @@ struct PinGateState {
 /** Incoming call ring (a1 shell; no media). */
 struct CallRingState {
   bool active = false;
+  bool pulse = false;
   Rml::String call_id;
   Rml::String caller_label;
   Rml::String media_label;
 };
 
-/** Active in-call stub chrome (a1; leave only). */
+/** Active in-call chrome. */
 struct CallInProgressState {
   bool active = false;
+  bool muted = false;
   Rml::String call_id;
   Rml::String title;
   Rml::String subtitle;
+  Rml::String elapsed;
+  Rml::String peer_label;
   /** Quantized mic level 0..5 for speaking meter bars. */
   int mic_level = 0;
   /** Quantized remote audio level 0..5. */

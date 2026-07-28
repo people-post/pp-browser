@@ -36,7 +36,8 @@ Mesh prerequisites (see [p2p-mesh PHASES](../p2p-mesh/PHASES.md)): **np → nr �
 - [x] ICE P2P signaling (`call_sdp` / `call_ice`); host candidates for LAN dogfood (no STUN/TURN yet)
 - [x] Shared media key wrap over pairwise E2E ([V015](DECISIONS.md#v015--pairwise-wrap-aad-for-call_media_key)); epoch 1 on accept + rotate
 - [x] Document platform audio deps (Linux Pulse/ALSA; Win WASAPI; Mac CoreAudio; mobile permissions TODO) — [BUILD](../../docs/ops/BUILD.md) + [PLATFORMS](../../docs/architecture/PLATFORMS.md#av-media-sdl--calls)
-- [ ] Two-device voice call green path (document NAT vs LAN in CURRENT_STATE) — **code ready; dogfood pending**
+- [x] Two-device voice call green path (document NAT vs LAN in CURRENT_STATE) — **LAN dogfood OK 2026-07-28; NAT not claimed**
+- [x] Light mute + ringtone + compact in-call chrome (a2 polish)
 
 ## a3 — 1:1 video (desktop + mobile)
 

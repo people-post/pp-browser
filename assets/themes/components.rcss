@@ -1488,6 +1488,12 @@ select selectbox option {
   margin-bottom: 10dp;
 }
 
+.shell-call-meter--compact {
+  margin-bottom: 0;
+  margin-right: 12dp;
+  min-width: 88dp;
+}
+
 .shell-call-meter-head {
   justify-content: space-between;
   align-items: center;
@@ -1496,22 +1502,101 @@ select selectbox option {
 
 .shell-call-meter-label {
   font-size: 12dp;
+  display: block;
+  margin-bottom: 2dp;
 }
 
 .shell-call-meter-hint {
-  font-size: 12dp;
+  font-size: 11dp;
+  display: block;
+  margin-top: 2dp;
 }
 
 .shell-call-meter-track {
   align-items: stretch;
-  gap: 4dp;
-  height: 10dp;
+  gap: 3dp;
+  height: 8dp;
 }
 
 .shell-call-meter-seg {
   flex-grow: 1;
-  height: 10dp;
+  height: 8dp;
   border-radius: 2dp;
+}
+
+.shell-layer-call-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 45;
+  pointer-events: none;
+}
+
+.shell-call-bar {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12dp;
+  margin: 8dp 12dp;
+  padding: 10dp 12dp;
+  border-radius: 10dp;
+  box-sizing: border-box;
+}
+
+.shell-call-bar-main {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.shell-call-bar-title {
+  margin: 0;
+  font-size: 14dp;
+  font-weight: bold;
+}
+
+.shell-call-bar-subtitle {
+  margin: 2dp 0 0 0;
+  font-size: 12dp;
+}
+
+.shell-call-bar-meters {
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+
+.shell-call-bar-actions {
+  align-items: center;
+  gap: 8dp;
+  flex-shrink: 0;
+}
+
+.shell-call-mute {
+  min-width: 64dp;
+  height: 36dp;
+  padding: 0 12dp;
+  border-radius: 8dp;
+  font-size: 14dp;
+}
+
+.shell-call-leave {
+  min-width: 64dp;
+  height: 36dp;
+}
+
+.shell-call-ring-eyebrow {
+  margin: 0 0 4dp 0;
+  font-size: 12dp;
+}
+
+.shell-call-ring--pulse {
+  border-width: 2dp;
+}
+
+.shell-call-accept--pulse {
+  opacity: 1;
 }
 
 .shell-dialog-checkbox {

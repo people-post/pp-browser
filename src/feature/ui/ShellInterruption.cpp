@@ -40,9 +40,11 @@ CompactChromeFrostSurface ShellInterruption::ResolveFrostSurface(const ShellStat
   switch (Top(state)) {
   case InterruptionKind::PinGate:
   case InterruptionKind::CallRing:
-  case InterruptionKind::CallInProgress:
   case InterruptionKind::Dialog:
   case InterruptionKind::OverlayLayer:
+    return CompactChromeFrostSurface::None;
+  case InterruptionKind::CallInProgress:
+    // Compact call bar sits above chrome without a full-screen frost.
     return CompactChromeFrostSurface::None;
   case InterruptionKind::Transient:
     return CompactChromeFrostSurface::TransientHeader;

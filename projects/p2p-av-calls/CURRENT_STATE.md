@@ -14,7 +14,7 @@
 | Signaling | Direct E2E `ChatPayload` system controls via `CallSessionManager` (V012) + **`call_sdp` / `call_ice`** |
 | History | Origin-thread `call_started` / `call_ended` local system rows |
 | Push | Opaque `call_wake` (P008) + client fetch-then-ring |
-| UI | 1:1 Voice/Video header actions; ring Accept/Decline; in-call Leave; subtitle from media state |
+| UI | 1:1 Voice/Video header actions; ring Accept/Decline + pulse; compact in-call bar (mute, elapsed, meters, Leave) |
 | Media stack | `base/media/CallMediaEngine` — libdatachannel + libopus + SDL audio (V014) |
 | Media key wrap | Pairwise AEAD `WrapKeyB64` / `UnwrapKeyB64` (V015); sent on accept + rotate |
 | Tests | Coordinator / state / invite expiry; store CRUD; SDP/ICE codec; wrap round-trip |
@@ -23,8 +23,9 @@
 
 | Area | State |
 |------|-------|
-| Two-device LAN Opus green path | **Code ready** — needs human LAN dogfood (two desktops, same network). No STUN/TURN yet. Linux: `libpulse-dev` + `libasound2-dev`. Win/Mac: WASAPI/CoreAudio (no extra packages). See [BUILD.md](../../docs/ops/BUILD.md) + [PLATFORMS § A/V](../../docs/architecture/PLATFORMS.md#av-media-sdl--calls). |
-| NAT / mobile | **Not claimed** — mesh seed SFU + mobile mic permissions (Android `RECORD_AUDIO`, iOS usage string / audio session) still TODO |
+| Two-device LAN Opus green path | **LAN dogfood OK (2026-07-28)** — bidirectional voice heard (Win↔Linux); ICE host candidates; `disableAutoNegotiation`; answerer `onFrame` path. Still no STUN/TURN. Linux needs `libpulse-dev` + `libasound2-dev`. |
+| Call chrome polish | Ringtone + mute + elapsed timer + compact in-call bar + speaking meters (a2 UI) |
+| NAT / mobile | **Not claimed** — mesh seed SFU + mobile mic permissions (Android `RECORD_AUDIO` landed in dogfood; iOS usage string / audio session) still TODO |
 
 ## Not started (code)
 
@@ -35,7 +36,7 @@
 | Group start / multi-invite UX | Manager supports invite list; header is 1:1-only for now |
 | Missed/declined history hints | Deferred (v1.1) |
 | Video (a3) | Capture/render + codec lock |
-| Mobile mic / camera permissions | Android manifest + iOS plist / `AVAudioSession` — see [PLATFORMS § A/V](../../docs/architecture/PLATFORMS.md#av-media-sdl--calls) |
+| Mobile mic / camera permissions | Android manifest `RECORD_AUDIO` exercised in dogfood; iOS plist / `AVAudioSession` still open — see [PLATFORMS § A/V](../../docs/architecture/PLATFORMS.md#av-media-sdl--calls) |
 
 ## Mesh dependency snapshot
 
@@ -45,14 +46,14 @@
 | np / nr / nu / n3 | Needed for honest NAT + dial SFU |
 | n4 audio/video relay | SFU for mobile default path |
 
-## Next agent — finish a2 dogfood + polish
+## Next agent — close a2 / start a3 prep
 
-**Goal:** Prove 1:1 Opus on LAN; mark a2 done. No claim of NAT’d mobile until seed SFU.
+**Goal:** Mark a2 complete after any remaining Windows Accept UI flake; then video spike (a3) or seed SFU track.
 
-1. Two devices on same LAN: start voice call → accept → confirm bidirectional audio.
-2. Document result (LAN OK / failure notes) in this file; check remaining [PHASES.md](PHASES.md) a2 boxes.
-3. If ICE fails on LAN, inspect `call_sdp`/`call_ice` delivery latency and host candidates.
-4. Optional: light reconnect / mute plumbing before a3.
+1. ~~Two devices on same LAN: start voice call → accept → confirm bidirectional audio.~~ **Done (LAN).**
+2. Optional: re-verify Android→desktop once Accept chrome is solid; confirm `RECORD_AUDIO` on all Android builds.
+3. If ICE fails off-LAN, do not claim success — wait for STUN/TURN or seed SFU.
+4. Mute / ringtone / compact bar are in; dogfood those on a second LAN pass if time.
 
 **Do not:** claim mobile NAT success without seed SFU; ambient group Join; record/screen-share.
 

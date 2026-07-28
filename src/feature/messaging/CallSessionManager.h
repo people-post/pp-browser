@@ -49,6 +49,9 @@ public:
   Roe<std::optional<CallSession>> ActiveLocalCall() const;
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
 
+  /** First non-local participant identity for a call (display / peer label). */
+  Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
+
   /** Expire stale pending invites; notify UI if any changed. */
   void SweepExpiredInvites();
 
@@ -56,6 +59,9 @@ public:
   Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity);
 
   CallMediaEngine& Media();
+
+  /** Pop last media start failure (for UI toast). Empty if none. */
+  std::optional<std::string> TakeLastMediaError();
 
   /** Drop media callbacks before destroying this manager (avoids UAF on engine Stop). */
   void ClearMediaCallbacks();
@@ -91,6 +97,7 @@ private:
   CallMediaEngine& media_;
   RingChangedFn on_ring_changed_;
   std::string media_peer_identity_;
+  std::optional<std::string> last_media_error_;
 };
 
 } // namespace pbr

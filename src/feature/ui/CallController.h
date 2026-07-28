@@ -1,10 +1,12 @@
 #pragma once
 
+#include "base/media/CallRingtone.h"
 #include "feature/ui/CallChromeSync.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Types.h>
 
+#include <cstdint>
 #include <string>
 
 namespace Rml {
@@ -15,7 +17,7 @@ namespace pbr {
 
 class CallMediaEngine;
 
-/** Shell-level call ring / in-call chrome (a1; no media). */
+/** Shell-level call ring / in-call chrome. */
 class CallController {
 public:
   static CallController& Instance();
@@ -31,10 +33,12 @@ public:
   void AcceptIncoming();
   void DeclineIncoming();
   void LeaveActive();
+  void ToggleMute();
 
   static void AcceptCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
   static void DeclineCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
   static void LeaveCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
+  static void MuteCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
 
 private:
   CallController() = default;
@@ -44,12 +48,18 @@ private:
   void ClearInCall();
   void ApplyAudioLevels(CallMediaEngine& media);
   void RefreshCallLevels();
+  void SyncRingtone();
+  std::string DisplayNameForIdentity(const std::string& identity) const;
+  static std::string FormatElapsed(int64_t connected_at_ms);
 
   bool bound_ = false;
   std::string ringing_call_id_;
   std::string active_call_id_;
+  int64_t ring_started_ms_ = 0;
+  int64_t last_pulse_toggle_ms_ = 0;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
+  CallRingtone ringtone_;
 };
 
 } // namespace pbr
