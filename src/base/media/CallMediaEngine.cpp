@@ -224,6 +224,10 @@ struct CallMediaEngine::Impl {
     rtc::Configuration config;
     // LAN dogfood: host candidates only (no STUN/TURN until mesh SFU).
     config.enableIceTcp = false;
+    // We create offer/answer explicitly (offerer at Start; answerer after remote offer).
+    // Leaving auto-negotiation on would answer inside setRemoteDescription, then our
+    // second setLocalDescription(Answer) throws "Unexpected local … answer in … stable".
+    config.disableAutoNegotiation = true;
     pc = std::make_shared<rtc::PeerConnection>(config);
 
     pc->onStateChange([this](rtc::PeerConnection::State state) { SetState(StateToString(state)); });
