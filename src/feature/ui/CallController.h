@@ -1,5 +1,7 @@
 #pragma once
 
+#include "feature/ui/CallChromeSync.h"
+
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Types.h>
 
@@ -42,6 +44,8 @@ private:
   bool bound_ = false;
   std::string ringing_call_id_;
   std::string active_call_id_;
+  /** Last chrome applied — idle poll must not remount when unchanged. */
+  CallChromeLayer synced_chrome_;
 };
 
 } // namespace pbr

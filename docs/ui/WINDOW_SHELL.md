@@ -82,6 +82,20 @@ Choose the lightest primitive that fits the user task:
 
 **Do not** stack `ShellFeedback::ShowPrompt` on top of an active `PushLayer` flow. Keep wizard steps in the same overlay (or push a dedicated step view on the overlay stack).
 
+### DOM sync: DirtyWindow vs SyncLayout
+
+`SyncLayout` remounts the shell DOM (`SerializeShellRoot` + pane bodies). Use it only for **structural** changes. Binding updates must not remount.
+
+| Need | API |
+|------|-----|
+| Binding / text / badge / toast update | `DirtyWindow()` or model `Dirty` |
+| Shell tree change (nav, panes, overlays, dialog, call ring/in-call layer, layout mode) | `RequestSyncLayout(reason)` |
+| Periodic poll / tick | Reconcile state only; remount **iff** structure changed |
+
+Dialog open/close remount is owned by `ShellFeedback` (`dialog_open` / `dialog_close`). Callers of `ShowConfirm*` / `ShowAlert` / `ShowPrompt` must not also call `RequestSyncLayout` solely to show the dialog.
+
+Timers (e.g. foreground relay poll) must never remount “just in case.”
+
 ### FlowCoordinator
 
 `FlowCoordinator` (`feature/ui/FlowCoordinator.*`) coordinates multi-step modal flows over overlay layers:

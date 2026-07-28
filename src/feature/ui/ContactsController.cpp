@@ -16,6 +16,7 @@
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
+#include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
 
 #include "base/ui/ShellTypes.h"
@@ -612,7 +613,7 @@ void ContactsController::OnBackToList() {
 }
 
 void ContactsController::OnContactFieldChanged() {
-  if (selected_.id.empty()) {
+  if (selected_.id.empty() || UiEditSession::Instance().RemountBlocking()) {
     return;
   }
   contact_dirty_ = true;
@@ -648,6 +649,9 @@ void ContactsController::FlushPending() {
 }
 
 bool ContactsController::FlushSelectedContact() {
+  if (UiEditSession::Instance().RemountBlocking()) {
+    return true; // keep dirty; Tick/FlushPending will retry after remount settles
+  }
   if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
     contact_dirty_ = false;
     return true;
@@ -905,8 +909,6 @@ void ContactsController::OnRemoveContact() {
                                ShellHost::Instance().RequestSyncLayout();
                                ShellHost::Instance().DirtyWindow();
                              });
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
 }
 
 void ContactsController::OnOpenThread(const std::string& thread_id) {

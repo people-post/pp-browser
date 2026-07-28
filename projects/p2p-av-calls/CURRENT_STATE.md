@@ -74,3 +74,4 @@
 | Replace DTLS-SRTP with shared key alone in a2 | Shared key distributed; DTLS-SRTP on wire (V014) |
 | Require Pulse/ALSA on Win/Mac/mobile | Only Linux needs those `-dev` packages ([BUILD.md](../../docs/ops/BUILD.md)) |
 | Ship mobile voice without RECORD_AUDIO / NSMicrophoneUsageDescription | Add platform permissions first ([PLATFORMS](../../docs/architecture/PLATFORMS.md#av-media-sdl--calls)) |
+| Remount shell (`RequestSyncLayout`) from background poll every tick | Remount only when call ring / in-call **layers** change; poll reconciles; labels use `DirtyWindow` ([WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md#dom-sync-dirtywindow-vs-synclayout)) |

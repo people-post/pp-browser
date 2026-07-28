@@ -613,8 +613,6 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                                      finish_close();
                                    });
       }
-      ShellHost::Instance().RequestSyncLayout();
-      ShellHost::Instance().DirtyWindow();
       return;
     }
 
@@ -627,8 +625,6 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                                    }
                                    dismiss_and_close(group_id);
                                  });
-      ShellHost::Instance().RequestSyncLayout();
-      ShellHost::Instance().DirtyWindow();
       return;
     }
 
@@ -677,8 +673,6 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
           ContextMenuHost::Instance().ShowActions(Rml::Vector2i(120, 120), std::move(actions));
           ShellHost::Instance().DirtyWindow();
         });
-    ShellHost::Instance().RequestSyncLayout();
-    ShellHost::Instance().DirtyWindow();
     return;
   }
 
@@ -689,8 +683,6 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                                }
                                finish_close();
                              });
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
 }
 
 void ChatController::OnClearHistory() {
@@ -729,7 +721,6 @@ void ChatController::OnClearHistory() {
           pending_reply_.reset();
           widgets_.ClearAll();
           RefreshFromMessaging();
-          ShellHost::Instance().RequestSyncLayout();
           ShellHost::Instance().DirtyWindow();
         });
   } else {
@@ -747,12 +738,9 @@ void ChatController::OnClearHistory() {
                                  pending_reply_.reset();
                                  widgets_.ClearAll();
                                  RefreshFromMessaging();
-                                 ShellHost::Instance().RequestSyncLayout();
                                  ShellHost::Instance().DirtyWindow();
                                });
   }
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
 }
 
 void ChatController::OnForgetMemory() {
@@ -774,11 +762,8 @@ void ChatController::OnForgetMemory() {
         if (!MessagingHub::Instance().Inbox().ForgetThreadMemory(thread_id)) {
           return;
         }
-        ShellHost::Instance().RequestSyncLayout();
         ShellHost::Instance().DirtyWindow();
       });
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
 }
 
 void ChatController::LoadOlderHistoryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1004,7 +989,6 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
             }
             ShellHost::Instance().DirtyWindow();
           });
-      ShellHost::Instance().DirtyWindow();
       return;
     }
     auto result = MessagingHub::Instance().Actions().Dispatch(*payload);
@@ -1248,7 +1232,6 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                 }
                 ShellHost::Instance().DirtyWindow();
               });
-          ShellHost::Instance().DirtyWindow();
         },
         "../icons/message.svg",
     });
@@ -1303,7 +1286,6 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                   }
                   ShellHost::Instance().DirtyWindow();
                 });
-            ShellHost::Instance().DirtyWindow();
           },
           "../icons/group.svg",
       });
@@ -1342,7 +1324,6 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                     }
                     ShellHost::Instance().DirtyWindow();
                   });
-              ShellHost::Instance().DirtyWindow();
             },
             "../icons/trash.svg",
             true,

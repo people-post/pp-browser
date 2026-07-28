@@ -3,7 +3,6 @@
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
-#include "feature/settings/NicknameDraft.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
@@ -45,7 +44,7 @@ public:
 
   bool RegisterModel(Rml::Context* context);
   void OnNavTabActivated();
-  /** Persist in-progress nickname / dirty sections when leaving Me (tab or sheet). */
+  /** Persist nickname / dirty sections when leaving Me (tab or sheet). */
   void OnMeSurfaceClosed();
   void SyncLayoutMode();
   void OnAccountSheetOpened();
@@ -125,7 +124,6 @@ private:
   static void OnIntegrationsFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnNetworkFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleNodeEnabledCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnProfileNicknameChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnProfileNicknameCommitCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRotateBriefLlmKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -144,9 +142,6 @@ private:
   void PushUiStateToBindings();
   void ReloadFromDisk();
   void SyncBindingsFromSession();
-  void ApplyNicknameFromSession();
-  void BeginHydration();
-  void EndHydration();
   void FinishPaneResync();
   void OnSelectSection(const std::string& section_id);
   void OpenSettingsDetailPane();
@@ -158,6 +153,7 @@ private:
   void FlushPending();
   void FlushAllDirty();
   bool FlushSection(const std::string& section_id, bool show_toast = true);
+  /** Blur / leave-Me: flush nickname only when it differs from last loaded/saved. */
   void CommitProfileNickname(bool show_toast = false);
   void MaybeShowSaveToast(const std::string& section_id);
   void ReportFailure(const Error& err);
@@ -190,12 +186,10 @@ private:
   bool compact_layout_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;
-  NicknameDraft nickname_;
   Rml::String status_;
   Rml::Context* context_ = nullptr;
-  /** True while shell remount / data-value hydrate may emit spurious change/blur. */
+  /** Pane hydrate gate; also mirrored into UiEditSession remount depth. */
   bool suppress_auto_save_ = false;
-  uint64_t hydration_epoch_ = 0;
   std::unordered_set<std::string> dirty_sections_;
   uint64_t debounce_deadline_ms_ = 0;
   std::optional<std::string> last_toast_section_;

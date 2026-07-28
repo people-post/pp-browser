@@ -45,7 +45,7 @@ public:
 
   void Initialize(Rml::Context* context);
   void SyncLayout();
-  void RequestSyncLayout(bool restore_focus_after = false);
+  void RequestSyncLayout(bool restore_focus_after = false, const char* reason = nullptr);
   void Update(Rml::Context* context);
   /** Call after Rml::Context::Update so RequestNextUpdate is not cleared by it. Arms power-save. */
   void NotifyFrameEnd(Rml::Context* context);

@@ -128,8 +128,6 @@ void ClientCompatController::ShowUpdateRequired(const ClientCompatDocument& doc)
   ShellFeedback::ShowAlert(
       ShellHost::Instance().State(), title, message,
       [url]() { PlatformOpenUrl(url); }, Tr("compat.update_required.action"));
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
 }
 
 } // namespace pbr

@@ -379,8 +379,6 @@ void ChatThreadChrome::OnStartNewSecureChat() {
           DirtyChatChrome();
           ShellHost::Instance().DirtyWindow();
         });
-    ShellHost::Instance().RequestSyncLayout();
-    ShellHost::Instance().DirtyWindow();
   });
 }
 
@@ -514,8 +512,6 @@ void ChatThreadChrome::OnVerifyPsk() {
         DirtyChatHeader();
         ShellHost::Instance().DirtyWindow();
       });
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
 }
 
 void ChatThreadChrome::OnRotatePskExport() {
@@ -561,8 +557,6 @@ void ChatThreadChrome::OnRotatePskExport() {
         DirtyChatHeader();
         ShellHost::Instance().DirtyWindow();
       });
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
 }
 
 } // namespace pbr

@@ -17,7 +17,9 @@
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
+#include "feature/ui/UiEditSession.h"
 #include "base/ui/ViewCatalog.h"
+#include "common/Logger.h"
 
 #include "RmlUi_Backend.h"
 
@@ -525,8 +527,6 @@ bool ShellHost::HandleDismiss() {
     } else {
       ShellFeedback::DialogOk(state_);
     }
-    RequestSyncLayout();
-    DirtyWindow();
     return true;
   }
   if (state_.pin_gate.active) {
@@ -691,7 +691,11 @@ void ShellHost::RestoreFocus() {
   saved_focus_id_.clear();
 }
 
-void ShellHost::RequestSyncLayout(bool restore_focus_after) {
+void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason) {
+  static auto logger = logging::getLogger("ShellHost");
+  logger.debug << "RequestSyncLayout reason=" << (reason && reason[0] ? reason : "?")
+               << " pending=" << (sync_pending_ ? 1 : 0)
+               << " restore_focus=" << (restore_focus_after ? 1 : 0);
   if (restore_focus_after) {
     restore_focus_after_sync_ = true;
   }
@@ -1446,6 +1450,8 @@ void ShellHost::SyncLayout() {
   if (!root) {
     return;
   }
+  // Nestable remount gate: field blur/change commits must not run until settle.
+  UiEditSession::Instance().BeginRemount();
   const LayoutMode mode = state_.layout_mode;
   RmlMount::MountInner(root, SerializeShellRoot());
   last_synced_mode_ = mode;
@@ -1463,6 +1469,8 @@ void ShellHost::SyncLayout() {
     on_layout_synced_();
   }
   ApplySafeAreaLayout();
+  // Spurious change/blur can land on the next UI turn after remount.
+  BrowserThread::PostTask(BrowserThreadId::UI, []() { UiEditSession::Instance().EndRemount(); });
 }
 
 void ShellHost::Update(Rml::Context* context) {
@@ -1583,18 +1591,12 @@ void ShellHost::DismissBannerCallback(Rml::DataModelHandle /*model*/, Rml::Event
 
 void ShellHost::DialogOkCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                  const Rml::VariantList& /*args*/) {
-  ShellHost& host = Instance();
-  ShellFeedback::DialogOk(host.state_);
-  host.RequestSyncLayout();
-  host.DirtyWindow();
+  ShellFeedback::DialogOk(Instance().state_);
 }
 
 void ShellHost::DialogCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                      const Rml::VariantList& /*args*/) {
-  ShellHost& host = Instance();
-  ShellFeedback::DialogCancel(host.state_);
-  host.RequestSyncLayout();
-  host.DirtyWindow();
+  ShellFeedback::DialogCancel(Instance().state_);
 }
 
 void ShellHost::DialogToggleCheckboxCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

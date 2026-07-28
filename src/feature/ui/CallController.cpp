@@ -5,12 +5,29 @@
 #include "base/platform/ILocalNotifier.h"
 #include "base/ui/ShellTypes.h"
 #include "feature/messaging/MessagingHub.h"
+#include "feature/ui/CallChromeSync.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
 
 #include "common/Utilities.h"
 
 namespace pbr {
+namespace {
+
+CallChromeLayer CaptureCallChrome(const ShellState& state) {
+  return {
+      .ring_active = state.call_ring.active,
+      .in_call_active = state.call_in_progress.active,
+      .ring_call_id = state.call_ring.call_id.c_str(),
+      .in_call_id = state.call_in_progress.call_id.c_str(),
+      .in_call_subtitle = state.call_in_progress.subtitle.c_str(),
+      .ring_caller_label = state.call_ring.caller_label.c_str(),
+      .ring_media_label = state.call_ring.media_label.c_str(),
+      .in_call_title = state.call_in_progress.title.c_str(),
+  };
+}
+
+} // namespace
 
 CallController& CallController::Instance() {
   static CallController instance;
@@ -52,8 +69,17 @@ void CallController::ClearInCall() {
 }
 
 void CallController::SyncShellState() {
+  const CallChromeLayer next = CaptureCallChrome(ShellHost::Instance().State());
+  const CallChromeUpdate update = ClassifyCallChromeUpdate(synced_chrome_, next);
+  synced_chrome_ = next;
+
+  if (update == CallChromeUpdate::None) {
+    return;
+  }
   ShellHost::Instance().DirtyWindow();
-  ShellHost::Instance().RequestSyncLayout();
+  if (update == CallChromeUpdate::Remount) {
+    ShellHost::Instance().RequestSyncLayout(/*restore_focus_after=*/false, "call_chrome");
+  }
 }
 
 void CallController::RefreshPendingRing() {
@@ -143,11 +169,9 @@ bool CallController::StartVideoCall(const std::string& thread_id) {
 }
 
 void CallController::AcceptIncoming() {
-  if (ringing_call_id_.empty()) {
-    return;
-  }
+  BindToMessaging();
   auto* calls = MessagingHub::Instance().Calls();
-  if (!calls) {
+  if (!calls || ringing_call_id_.empty()) {
     return;
   }
   if (auto accepted = calls->AcceptInvite(ringing_call_id_); !accepted) {
@@ -157,30 +181,22 @@ void CallController::AcceptIncoming() {
 }
 
 void CallController::DeclineIncoming() {
-  if (ringing_call_id_.empty()) {
-    return;
-  }
+  BindToMessaging();
   auto* calls = MessagingHub::Instance().Calls();
-  if (!calls) {
+  if (!calls || ringing_call_id_.empty()) {
     return;
   }
-  if (auto declined = calls->DeclineInvite(ringing_call_id_); !declined) {
-    UserFeedback::Fail(declined.error().message);
-  }
+  (void)calls->DeclineInvite(ringing_call_id_);
   RefreshPendingRing();
 }
 
 void CallController::LeaveActive() {
-  if (active_call_id_.empty()) {
-    return;
-  }
+  BindToMessaging();
   auto* calls = MessagingHub::Instance().Calls();
-  if (!calls) {
+  if (!calls || active_call_id_.empty()) {
     return;
   }
-  if (auto left = calls->LeaveCall(active_call_id_); !left) {
-    UserFeedback::Fail(left.error().message);
-  }
+  (void)calls->LeaveCall(active_call_id_);
   RefreshPendingRing();
 }
 

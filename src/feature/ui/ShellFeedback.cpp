@@ -1,5 +1,7 @@
 #include "feature/ui/ShellFeedback.h"
 
+#include "feature/ui/ShellHost.h"
+
 #include <algorithm>
 #include <chrono>
 
@@ -28,6 +30,11 @@ float ResolveNowMs(float now_ms) {
   using clock = std::chrono::steady_clock;
   const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch());
   return static_cast<float>(ms.count());
+}
+
+void SyncDialogChrome(const char* reason) {
+  ShellHost::Instance().RequestSyncLayout(/*restore_focus_after=*/false, reason);
+  ShellHost::Instance().DirtyWindow();
 }
 
 } // namespace
@@ -91,6 +98,7 @@ void ShellFeedback::ShowAlert(ShellState& state, const std::string& title, const
       on_ok();
     }
   };
+  SyncDialogChrome("dialog_open");
 }
 
 void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, const std::string& message,
@@ -111,6 +119,7 @@ void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, con
       on_result(ok);
     }
   };
+  SyncDialogChrome("dialog_open");
 }
 
 void ShellFeedback::ShowConfirmWithCheckbox(ShellState& state, const std::string& title, const std::string& message,
@@ -129,6 +138,7 @@ void ShellFeedback::ShowConfirmWithCheckbox(ShellState& state, const std::string
   state.dialog.prompt_value = {};
   state.dialog.on_prompt_result = {};
   state.dialog.on_result = std::move(on_result);
+  SyncDialogChrome("dialog_open");
 }
 
 void ShellFeedback::ShowPrompt(ShellState& state, const std::string& title, const std::string& message,
@@ -145,6 +155,7 @@ void ShellFeedback::ShowPrompt(ShellState& state, const std::string& title, cons
   state.dialog.prompt_value = Rml::String(default_value.c_str());
   state.dialog.on_result = {};
   state.dialog.on_prompt_result = std::move(on_result);
+  SyncDialogChrome("dialog_open");
 }
 
 void ShellFeedback::DialogOk(ShellState& state) {
@@ -158,6 +169,7 @@ void ShellFeedback::DialogOk(ShellState& state) {
   auto prompt_callback = std::move(state.dialog.on_prompt_result);
   state.dialog = {};
   state.transient_active = !state.transient_stack.empty();
+  SyncDialogChrome("dialog_close");
   if (is_prompt) {
     if (prompt_callback) {
       prompt_callback(true, prompt_value);
@@ -178,6 +190,7 @@ void ShellFeedback::DialogCancel(ShellState& state) {
   auto prompt_callback = std::move(state.dialog.on_prompt_result);
   state.dialog = {};
   state.transient_active = !state.transient_stack.empty();
+  SyncDialogChrome("dialog_close");
   if (is_prompt) {
     if (prompt_callback) {
       prompt_callback(false, {});

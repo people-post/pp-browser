@@ -1,6 +1,7 @@
 pp_browser_add_feature_library(pp_feature_ui
   SOURCES
     BadgeAggregator.cpp
+    CallChromeSync.cpp
     CallController.cpp
     ChatSessionActions.cpp
     ContactsController.cpp
@@ -21,6 +22,7 @@ pp_browser_add_feature_library(pp_feature_ui
     ShellHost.cpp
     ShellInterruption.cpp
     ShellLayout.cpp
+    UiEditSession.cpp
     UserFeedback.cpp
   PUBLIC_LIBS
     pp_feature_settings

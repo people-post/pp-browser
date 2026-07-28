@@ -18,6 +18,7 @@
 #include "feature/ui/SecuritySettingsSection.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
+#include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
 #include "base/error/AppError.h"
 
@@ -117,13 +118,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.show_node_toggle = bindings_.show_node_toggle;
   ui_state_.libp2p_listen_multiaddr = bindings_.libp2p_listen_multiaddr.c_str();
   ui_state_.libp2p_status_message = bindings_.libp2p_status_message.c_str();
-  // Prefer draft when ready so flush always writes the intent-gated value.
-  if (nickname_.ready) {
-    nickname_.draft = bindings_.profile_nickname.c_str();
-    ui_state_.profile_nickname = nickname_.draft;
-  } else {
-    ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
-  }
+  ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
   ui_state_.profile_peer_id = bindings_.profile_peer_id.c_str();
   ui_state_.profile_relay_id = bindings_.profile_relay_id.c_str();
   ui_state_.profile_public_key = bindings_.profile_public_key.c_str();
@@ -172,8 +167,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.show_node_toggle = ui_state_.show_node_toggle;
   bindings_.libp2p_listen_multiaddr = ui_state_.libp2p_listen_multiaddr.c_str();
   bindings_.libp2p_status_message = ui_state_.libp2p_status_message.c_str();
-  bindings_.profile_nickname =
-      (nickname_.ready ? nickname_.draft : ui_state_.profile_nickname).c_str();
+  bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
   bindings_.profile_peer_id = ui_state_.profile_peer_id.c_str();
   bindings_.profile_relay_id = ui_state_.profile_relay_id.c_str();
   bindings_.profile_public_key = ui_state_.profile_public_key.c_str();
@@ -224,32 +218,25 @@ void SettingsController::SyncBindingsFromSession() {
   } else {
     ui_state_.libp2p_status_message.clear();
   }
-  ApplyNicknameFromSession();
-  PushUiStateToBindings();
-}
-
-void SettingsController::ApplyNicknameFromSession() {
+  // Baseline for blur commit. Never push identity over an in-progress edit —
+  // Sync+DirtyAll would SetValue the input and reset cursor / feel like focus loss.
+  auto& edits = UiEditSession::Instance();
+  const std::string live = bindings_.profile_nickname.c_str();
   if (MessagingHub::Instance().IsInitialized() && MessagingHub::Instance().IsMessagingReady()) {
-    auto identity = MessagingHub::Instance().Identity().Get();
-    if (identity) {
-      nickname_.OnHydrated(identity->nickname);
-      ui_state_.profile_nickname = nickname_.draft;
-      return;
+    if (auto identity = MessagingHub::Instance().Identity().Get()) {
+      // Resolve against the *previous* baseline first. OnLoaded before Resolve makes an
+      // empty binding look mid-edit vs the freshly loaded nickname (keeps nickname blank).
+      ui_state_.profile_nickname =
+          edits.ResolveAfterLoad(kUiFieldProfileNickname, identity->nickname, live);
+      if (!edits.IsMidEdit(kUiFieldProfileNickname, live)) {
+        edits.OnLoaded(kUiFieldProfileNickname, identity->nickname);
+      }
     }
+  } else if (const std::string* baseline = edits.Baseline(kUiFieldProfileNickname)) {
+    ui_state_.profile_nickname =
+        edits.ResolveAfterLoad(kUiFieldProfileNickname, *baseline, live);
   }
-  nickname_.OnIdentityUnavailable();
-  if (nickname_.ready) {
-    ui_state_.profile_nickname = nickname_.draft;
-  }
-}
-
-void SettingsController::BeginHydration() {
-  ++hydration_epoch_;
-  suppress_auto_save_ = true;
-}
-
-void SettingsController::EndHydration() {
-  suppress_auto_save_ = false;
+  PushUiStateToBindings();
 }
 
 void SettingsController::ReloadFromDisk() {
@@ -351,7 +338,6 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
     ctor.BindEventCallback("toggle_node_enabled", &SettingsController::ToggleNodeEnabledCallback);
-    ctor.BindEventCallback("on_profile_nickname_changed", &SettingsController::OnProfileNicknameChangedCallback);
     ctor.BindEventCallback("on_profile_nickname_commit", &SettingsController::OnProfileNicknameCommitCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
     ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
@@ -367,6 +353,10 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
 
 void SettingsController::DirtyAll(bool include_profile_nickname) {
   auto& host = DataModelHost::Instance();
+  const std::string live = bindings_.profile_nickname.c_str();
+  const bool push_nick =
+      include_profile_nickname &&
+      UiEditSession::Instance().ShouldPushToView(kUiFieldProfileNickname, live);
   host.Dirty("settings", "sections");
   host.Dirty("settings", "selected_id");
   host.Dirty("settings", "selected_title");
@@ -387,8 +377,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "show_node_toggle");
   host.Dirty("settings", "libp2p_listen_multiaddr");
   host.Dirty("settings", "libp2p_status_message");
-  // Never push nickname into a focused draft — SetValue resets cursor/IME.
-  if (include_profile_nickname && !nickname_.edited) {
+  if (push_nick) {
     host.Dirty("settings", "profile_nickname");
   }
   host.Dirty("settings", "profile_peer_id");
@@ -426,33 +415,26 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
 }
 
 void SettingsController::FinishPaneResync() {
-  // Hydration epoch: ignore change/blur until settle. Nickname draft is
-  // intent-gated (NicknameDraft) so we no longer preserve/overwrite live strings.
-  const uint64_t epoch = hydration_epoch_;
-  auto settle = [this, epoch]() {
-    if (epoch != hydration_epoch_) {
+  SyncBindingsFromSession();
+  DirtyAll();
+  if (context_) {
+    context_->Update();
+  }
+  // Select widgets can emit a spurious change on the frame after remount.
+  BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+    const ShellState& state = ShellHost::Instance().State();
+    if (state.nav_tab != NavTab::Me && !state.account_sheet_open) {
+      suppress_auto_save_ = false;
+      UiEditSession::Instance().EndRemount();
       return;
     }
     SyncBindingsFromSession();
-    DirtyAll(/*include_profile_nickname=*/true);
+    DirtyAll();
     if (context_) {
       context_->Update();
     }
-  };
-
-  settle();
-  // Select widgets can emit a spurious change on the frame after remount.
-  BrowserThread::PostTask(BrowserThreadId::UI, [this, epoch, settle]() {
-    if (epoch != hydration_epoch_) {
-      return;
-    }
-    const ShellState& state = ShellHost::Instance().State();
-    if (state.nav_tab != NavTab::Me && !state.account_sheet_open) {
-      EndHydration();
-      return;
-    }
-    settle();
-    EndHydration();
+    suppress_auto_save_ = false;
+    UiEditSession::Instance().EndRemount();
   });
 }
 
@@ -464,13 +446,14 @@ void SettingsController::OnShellLayoutSynced() {
   if (state.nav_tab == NavTab::Me || state.account_sheet_open) {
     FinishPaneResync();
   } else {
-    EndHydration();
+    suppress_auto_save_ = false;
+    UiEditSession::Instance().EndRemount();
   }
 }
 
 void SettingsController::OnNavTabActivated() {
   log().info << "OnNavTabActivated";
-  // Load-only on activate. Persist on blur / account-sheet close via ShouldCommit.
+  // Load only — never flush on activate (bindings may still be empty).
   dirty_sections_.clear();
   debounce_deadline_ms_ = 0;
   show_detail_ = false;
@@ -479,8 +462,9 @@ void SettingsController::OnNavTabActivated() {
   in_account_sheet_ = false;
   ShellHost::Instance().ClearLocalBack("settings_detail");
   compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
-  BeginHydration();
   ReloadFromDisk();
+  suppress_auto_save_ = true;
+  UiEditSession::Instance().BeginRemount();
   DirtyAll();
   if (context_) {
     context_->Update();
@@ -496,8 +480,9 @@ void SettingsController::OnAccountSheetOpened() {
   selected_title_.clear();
   ShellHost::Instance().ClearLocalBack("settings_detail");
   in_account_sheet_ = true;
-  BeginHydration();
   ReloadFromDisk();
+  suppress_auto_save_ = true;
+  UiEditSession::Instance().BeginRemount();
 }
 
 void SettingsController::OnMeSurfaceClosed() {
@@ -566,7 +551,7 @@ void SettingsController::SyncLayoutMode() {
 }
 
 void SettingsController::MarkSectionDirty(const std::string& section_id) {
-  if (suppress_auto_save_) {
+  if (suppress_auto_save_ || UiEditSession::Instance().RemountBlocking()) {
     log().info << "MarkSectionDirty(" << section_id << ") suppressed during UI transition";
     return;
   }
@@ -626,7 +611,7 @@ void SettingsController::Tick() {
 }
 
 bool SettingsController::FlushSection(const std::string& section_id, bool show_toast) {
-  if (suppress_auto_save_) {
+  if (suppress_auto_save_ || UiEditSession::Instance().RemountBlocking()) {
     log().info << "FlushSection(" << section_id << ") suppressed during UI transition";
     return true;
   }
@@ -655,17 +640,21 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   }
 
   status_ = "";
-  if (section_id == "profile") {
-    // Only adopt identity when messaging can read it. Prefs-only flushes before
-    // unlock must not clear nickname_.edited / pretend an empty binding was saved.
-    if (MessagingHub::Instance().IsInitialized() && MessagingHub::Instance().IsMessagingReady()) {
-      if (auto identity = MessagingHub::Instance().Identity().Get()) {
-        nickname_.OnCommitSuccess(identity->nickname);
-        ui_state_.profile_nickname = nickname_.draft;
-      }
+  if (section_id == "profile" && MessagingHub::Instance().IsInitialized() &&
+      MessagingHub::Instance().IsMessagingReady()) {
+    if (auto identity = MessagingHub::Instance().Identity().Get()) {
+      UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, identity->nickname);
+      ui_state_.profile_nickname = identity->nickname;
     }
   }
   PushUiStateToBindings();
+
+  // Field commits must not DirtyAll/DirtyWindow: SetValue/remount re-enters blur and
+  // looks like per-keystroke focus loss. Toast paths still refresh chrome.
+  if (section_id == "profile" && !show_toast) {
+    return true;
+  }
+
   DirtyAll();
   if (show_toast) {
     MaybeShowSaveToast(section_id);
@@ -675,16 +664,11 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
 }
 
 void SettingsController::CommitProfileNickname(bool show_toast) {
-  if (suppress_auto_save_) {
+  if (suppress_auto_save_ || UiEditSession::Instance().RemountBlocking()) {
     return;
   }
-  if (nickname_.ready) {
-    const std::string live = bindings_.profile_nickname.c_str();
-    if (live != nickname_.draft) {
-      nickname_.OnUserEdit(live);
-    }
-  }
-  if (!nickname_.ShouldCommit()) {
+  const std::string live = bindings_.profile_nickname.c_str();
+  if (!UiEditSession::Instance().ShouldCommit(kUiFieldProfileNickname, live)) {
     return;
   }
   FlushSection("profile", show_toast);
@@ -725,7 +709,6 @@ void SettingsController::OnResetSection(const std::string& section_id) {
         }
         PerformResetSection(section_id);
       });
-  ShellHost::Instance().RequestSyncLayout();
 }
 
 void SettingsController::PerformResetSection(const std::string& section_id) {
@@ -769,7 +752,8 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
       SettingsController::Instance().ApplyBackToListUi();
     });
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-      BeginHydration();
+      suppress_auto_save_ = true;
+      UiEditSession::Instance().BeginRemount();
       FinishPaneResync();
       ShellHost::Instance().RefreshDismissGestures();
       log().info << "OnSelectSection (sheet) complete id=" << selected_id_.c_str();
@@ -784,7 +768,8 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
     context_->Update();
   }
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-    BeginHydration();
+    suppress_auto_save_ = true;
+    UiEditSession::Instance().BeginRemount();
     FinishPaneResync();
     log().info << "OnSelectSection (pane) complete id=" << selected_id_.c_str();
   });
@@ -836,12 +821,14 @@ void SettingsController::ApplyBackToListUi() {
   selected_title_.clear();
   status_ = "";
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-    BeginHydration();
+    suppress_auto_save_ = true;
+    UiEditSession::Instance().BeginRemount();
     DirtyAll();
     if (context_) {
       context_->Update();
     }
-    EndHydration();
+    suppress_auto_save_ = false;
+    UiEditSession::Instance().EndRemount();
     ShellHost::Instance().RefreshDismissGestures();
   });
 }
@@ -1109,18 +1096,9 @@ void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*
   controller.DirtyAll();
 }
 
-void SettingsController::OnProfileNicknameChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                          const Rml::VariantList& /*args*/) {
-  auto& controller = Instance();
-  if (controller.suppress_auto_save_) {
-    return;
-  }
-  controller.nickname_.OnUserEdit(controller.bindings_.profile_nickname.c_str());
-}
-
 void SettingsController::OnProfileNicknameCommitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                          const Rml::VariantList& /*args*/) {
-  // Persist on blur only when NicknameDraft says the user edited since hydrate.
+  // Persist on blur only when the field differs from last loaded/saved nickname.
   Instance().CommitProfileNickname(/*show_toast=*/false);
 }
 
@@ -1202,8 +1180,8 @@ void SettingsController::OnRegisterProfile() {
     }
     if (MessagingHub::Instance().IsInitialized() && MessagingHub::Instance().IsMessagingReady()) {
       if (auto identity = MessagingHub::Instance().Identity().Get()) {
-        nickname_.OnCommitSuccess(identity->nickname);
-        ui_state_.profile_nickname = nickname_.draft;
+        UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, identity->nickname);
+        ui_state_.profile_nickname = identity->nickname;
       }
     }
     const char* message =
@@ -1251,7 +1229,7 @@ void SettingsController::OnShareProfile() {
     UserFeedback::Fail("No Peer ID yet — register on the network first.");
     return;
   }
-  const std::string nickname = nickname_.ready ? nickname_.draft : bindings_.profile_nickname.c_str();
+  const std::string nickname = bindings_.profile_nickname.c_str();
   const std::string relay_id = bindings_.profile_relay_id.c_str();
   std::string invite = nickname.empty() ? peer_id : (nickname + " (" + peer_id + ")");
   if (!relay_id.empty()) {
@@ -1320,7 +1298,6 @@ void SettingsController::OnClearUndeliveredOlderThan() {
           });
         });
       });
-  ShellHost::Instance().RequestSyncLayout();
 }
 
 void SettingsController::OnResetProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1342,7 +1319,6 @@ void SettingsController::OnResetProfile() {
         }
         PerformResetProfile();
       });
-  ShellHost::Instance().RequestSyncLayout();
 }
 
 void SettingsController::PerformResetProfile() {
