@@ -7,6 +7,7 @@
 #include "base/ui/ShellTypes.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/CallChromeSync.h"
+#include "feature/ui/CallConflictCopy.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
 
@@ -24,11 +25,16 @@ CallChromeLayer CaptureCallChrome(const ShellState& state) {
       .in_call_active = state.call_in_progress.active,
       .ring_pulse = state.call_ring.pulse,
       .in_call_muted = state.call_in_progress.muted,
+      .ring_conflict = state.call_ring.conflict,
       .ring_call_id = state.call_ring.call_id.c_str(),
       .in_call_id = state.call_in_progress.call_id.c_str(),
       .in_call_subtitle = state.call_in_progress.subtitle.c_str(),
       .ring_caller_label = state.call_ring.caller_label.c_str(),
       .ring_media_label = state.call_ring.media_label.c_str(),
+      .ring_eyebrow = state.call_ring.eyebrow.c_str(),
+      .ring_conflict_hint = state.call_ring.conflict_hint.c_str(),
+      .ring_accept_label = state.call_ring.accept_label.c_str(),
+      .ring_decline_label = state.call_ring.decline_label.c_str(),
       .in_call_title = state.call_in_progress.title.c_str(),
       .in_call_mic_level = state.call_in_progress.mic_level,
       .in_call_peer_level = state.call_in_progress.peer_level,
@@ -127,6 +133,10 @@ void CallController::ClearInCall() {
   ShellHost::Instance().State().call_in_progress = {};
 }
 
+void CallController::HideInCallChrome() {
+  ShellHost::Instance().State().call_in_progress = {};
+}
+
 void CallController::SyncShellState() {
   const CallChromeLayer next = CaptureCallChrome(ShellHost::Instance().State());
   const CallChromeUpdate update = ClassifyCallChromeUpdate(synced_chrome_, next);
@@ -188,20 +198,54 @@ void CallController::RefreshPendingRing() {
 
   auto top = calls->TopPendingInvite();
   if (top && top->has_value()) {
-    ClearInCall();
     ringing_call_id_ = (*top)->call_id;
     if (ring_started_ms_ == 0) {
       ring_started_ms_ = util::NowUnixMs();
     }
+
+    const std::string caller_label = [&]() {
+      std::string name = DisplayNameForIdentity((*top)->inviter_identity);
+      if (name.empty()) {
+        name = (*top)->inviter_identity;
+      }
+      return name;
+    }();
+
+    bool has_conflict = false;
+    bool same_peer = false;
+    std::string active_peer_label;
+    if (auto active = calls->ActiveLocalCall(); active && active->has_value() &&
+        (*active)->call_id != (*top)->call_id) {
+      has_conflict = true;
+      active_call_id_ = (*active)->call_id;
+      if (auto peer = calls->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
+        active_peer_label = DisplayNameForIdentity(**peer);
+        if (active_peer_label.empty()) {
+          active_peer_label = **peer;
+        }
+        same_peer = (**peer == (*top)->inviter_identity);
+      }
+    } else {
+      active_call_id_.clear();
+    }
+
+    const CallConflictCopy copy =
+        MakeCallConflictCopy(has_conflict, same_peer, caller_label, active_peer_label);
+
+    // Hide in-call bar while ringing; keep active_call_id_ when conflicting.
+    HideInCallChrome();
+
     auto& ring = ShellHost::Instance().State().call_ring;
     ring.active = true;
+    ring.conflict = has_conflict;
     ring.call_id = (*top)->call_id;
-    ring.caller_label = DisplayNameForIdentity((*top)->inviter_identity);
-    if (ring.caller_label.empty()) {
-      ring.caller_label = (*top)->inviter_identity;
-    }
+    ring.caller_label = caller_label;
     ring.media_label =
         (*top)->media_mode == CallMediaMode::Video ? "Incoming video call" : "Incoming voice call";
+    ring.eyebrow = copy.eyebrow;
+    ring.conflict_hint = copy.hint;
+    ring.accept_label = copy.accept_label;
+    ring.decline_label = copy.decline_label;
     SyncShellState();
     SyncRingtone();
     return;
@@ -292,6 +336,15 @@ void CallController::AcceptIncoming() {
     return;
   }
   ringtone_.Stop();
+  // End conflicting outbound/in-call first; AcceptInvite also enforces this.
+  if (!active_call_id_.empty() && active_call_id_ != ringing_call_id_) {
+    if (auto left = calls->LeaveCall(active_call_id_); !left) {
+      UserFeedback::Fail(left.error().message);
+      RefreshPendingRing();
+      return;
+    }
+    active_call_id_.clear();
+  }
   if (auto accepted = calls->AcceptInvite(ringing_call_id_); !accepted) {
     UserFeedback::Fail(accepted.error().message);
   }

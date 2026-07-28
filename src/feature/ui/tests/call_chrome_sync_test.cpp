@@ -69,3 +69,19 @@ TEST(CallChromeSyncTest, MuteElapsedPulseDirties) {
   next.ring_pulse = true;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
+
+TEST(CallChromeSyncTest, ConflictLabelsDirty) {
+  pbr::CallChromeLayer synced;
+  synced.ring_active = true;
+  synced.ring_call_id = "c1";
+  synced.ring_conflict = false;
+  synced.ring_accept_label = "Accept";
+  synced.ring_decline_label = "Decline";
+  pbr::CallChromeLayer next = synced;
+  next.ring_conflict = true;
+  next.ring_eyebrow = "You're already calling";
+  next.ring_conflict_hint = "Alice is calling you back. Answering ends your outgoing call.";
+  next.ring_accept_label = "End & Accept";
+  next.ring_decline_label = "Ignore";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}

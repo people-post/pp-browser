@@ -14,7 +14,7 @@
 | Signaling | Direct E2E `ChatPayload` system controls via `CallSessionManager` (V012) + **`call_sdp` / `call_ice`** |
 | History | Origin-thread `call_started` / `call_ended` local system rows |
 | Push | Opaque `call_wake` (P008) + client fetch-then-ring |
-| UI | 1:1 Voice/Video header actions; ring Accept/Decline + pulse; compact in-call bar (mute, elapsed, meters, Leave) |
+| UI | 1:1 Voice/Video; ring Accept/Decline + pulse; conflict ring (**End & Accept** / **Ignore** when outbound active); compact in-call bar (mute, elapsed, meters, Leave) |
 | Media stack | `base/media/CallMediaEngine` — libdatachannel + libopus + SDL audio (V014) |
 | Media key wrap | Pairwise AEAD `WrapKeyB64` / `UnwrapKeyB64` (V015); sent on accept + rotate |
 | Tests | Coordinator / state / invite expiry; store CRUD; SDP/ICE codec; wrap round-trip |
@@ -24,7 +24,7 @@
 | Area | State |
 |------|-------|
 | Two-device LAN Opus green path | **LAN dogfood OK (2026-07-28)** — bidirectional voice heard (Win↔Linux); ICE host candidates; `disableAutoNegotiation`; answerer `onFrame` path. Still no STUN/TURN. Linux needs `libpulse-dev` + `libasound2-dev`. |
-| Call chrome polish | Ringtone + mute + elapsed timer + compact in-call bar + speaking meters (a2 UI) |
+| Call chrome polish | Ringtone + mute + elapsed + compact bar + meters; **call conflict**: End & Accept ends outbound before joining inbound; Ignore declines inbound and restores Calling… |
 | NAT / mobile | **Not claimed** — mesh seed SFU + mobile mic permissions (Android `RECORD_AUDIO` landed in dogfood; iOS usage string / audio session) still TODO |
 
 ## Not started (code)

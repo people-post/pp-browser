@@ -86,6 +86,8 @@ private:
   Roe<void> StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
   void BindMediaCallbacks(const std::string& peer_identity);
   void StopMediaIfCall(const std::string& call_id);
+  /** End any other Joined local session before accepting/starting a different call. */
+  Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
 
   IThreadStore& store_;
   ContactsStore& contacts_;

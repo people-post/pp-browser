@@ -143,13 +143,19 @@ struct PinGateState {
   std::function<void(bool unlocked)> on_result;
 };
 
-/** Incoming call ring (a1 shell; no media). */
+/** Incoming call ring. */
 struct CallRingState {
   bool active = false;
   bool pulse = false;
+  /** True when Accept would end an existing local call. */
+  bool conflict = false;
   Rml::String call_id;
   Rml::String caller_label;
   Rml::String media_label;
+  Rml::String eyebrow;
+  Rml::String conflict_hint;
+  Rml::String accept_label;
+  Rml::String decline_label;
 };
 
 /** Active in-call chrome. */

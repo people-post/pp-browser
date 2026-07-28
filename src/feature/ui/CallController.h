@@ -46,6 +46,8 @@ private:
   void SyncShellState();
   void ClearRing();
   void ClearInCall();
+  /** Hide in-call bar without clearing active_call_id_ (conflict ring). */
+  void HideInCallChrome();
   void ApplyAudioLevels(CallMediaEngine& media);
   void RefreshCallLevels();
   void SyncRingtone();

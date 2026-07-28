@@ -10,11 +10,16 @@ struct CallChromeLayer {
   bool in_call_active = false;
   bool ring_pulse = false;
   bool in_call_muted = false;
+  bool ring_conflict = false;
   std::string ring_call_id;
   std::string in_call_id;
   std::string in_call_subtitle;
   std::string ring_caller_label;
   std::string ring_media_label;
+  std::string ring_eyebrow;
+  std::string ring_conflict_hint;
+  std::string ring_accept_label;
+  std::string ring_decline_label;
   std::string in_call_title;
   int in_call_mic_level = 0;
   int in_call_peer_level = 0;

@@ -262,6 +262,25 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   media_peer_identity_.clear();
 }
 
+Roe<void> CallSessionManager::LeaveCallIfActiveExcept(const std::string& keep_call_id) {
+  // Drain any conflicting Joined sessions (normally at most one).
+  for (int i = 0; i < 4; ++i) {
+    auto active = ActiveLocalCall();
+    if (!active) {
+      return active.error();
+    }
+    if (!active->has_value() || (*active)->call_id == keep_call_id) {
+      return {};
+    }
+    if (auto left = LeaveCall((*active)->call_id); !left) {
+      log().warning << "LeaveCallIfActiveExcept failed for " << (*active)->call_id << ": "
+                    << left.error().message;
+      return left.error();
+    }
+  }
+  return {};
+}
+
 Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_id, const CallMediaMode mode,
                                                const std::vector<std::string>& invitee_identities) {
   if (invitee_identities.empty()) {
@@ -270,6 +289,13 @@ Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_
   auto local = LocalRelayIdentity();
   if (!local) {
     return local.error();
+  }
+  auto pending = TopPendingInvite();
+  if (!pending) {
+    return pending.error();
+  }
+  if (pending->has_value()) {
+    return Error("Decline the incoming call first");
   }
   auto thread = store_.GetThread(origin_thread_id);
   if (!thread || !*thread) {
@@ -409,6 +435,9 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
     return local.error();
   }
   SweepExpiredInvites();
+  if (auto cleared = LeaveCallIfActiveExcept(call_id); !cleared) {
+    return cleared.error();
+  }
   auto pending = sessions_.LoadPendingInvite(call_id, *local);
   if (!pending || !pending->has_value() || (*pending)->status != "pending") {
     return Error("Pending call invite not found");

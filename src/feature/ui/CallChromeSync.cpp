@@ -22,7 +22,12 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.in_call_muted != next.in_call_muted ||
                               synced.in_call_elapsed != next.in_call_elapsed ||
                               synced.in_call_peer_label != next.in_call_peer_label ||
-                              synced.ring_pulse != next.ring_pulse;
+                              synced.ring_pulse != next.ring_pulse ||
+                              synced.ring_conflict != next.ring_conflict ||
+                              synced.ring_eyebrow != next.ring_eyebrow ||
+                              synced.ring_conflict_hint != next.ring_conflict_hint ||
+                              synced.ring_accept_label != next.ring_accept_label ||
+                              synced.ring_decline_label != next.ring_decline_label;
   if (labels_changed) {
     return CallChromeUpdate::DirtyOnly;
   }

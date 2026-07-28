@@ -114,8 +114,13 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
     ctor.Bind("call_ring_active", &host.state_.call_ring.active);
     ctor.Bind("call_ring_pulse", &host.state_.call_ring.pulse);
+    ctor.Bind("call_ring_conflict", &host.state_.call_ring.conflict);
     ctor.Bind("call_ring_caller", &host.state_.call_ring.caller_label);
     ctor.Bind("call_ring_media", &host.state_.call_ring.media_label);
+    ctor.Bind("call_ring_eyebrow", &host.state_.call_ring.eyebrow);
+    ctor.Bind("call_ring_conflict_hint", &host.state_.call_ring.conflict_hint);
+    ctor.Bind("call_ring_accept_label", &host.state_.call_ring.accept_label);
+    ctor.Bind("call_ring_decline_label", &host.state_.call_ring.decline_label);
     ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
     ctor.Bind("call_in_progress_title", &host.state_.call_in_progress.title);
     ctor.Bind("call_in_progress_subtitle", &host.state_.call_in_progress.subtitle);
@@ -626,8 +631,13 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
   DataModelHost::Instance().Dirty("window", "call_ring_active");
   DataModelHost::Instance().Dirty("window", "call_ring_pulse");
+  DataModelHost::Instance().Dirty("window", "call_ring_conflict");
   DataModelHost::Instance().Dirty("window", "call_ring_caller");
   DataModelHost::Instance().Dirty("window", "call_ring_media");
+  DataModelHost::Instance().Dirty("window", "call_ring_eyebrow");
+  DataModelHost::Instance().Dirty("window", "call_ring_conflict_hint");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_decline_label");
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
@@ -1185,13 +1195,15 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\" data-if=\"call_ring_active\">";
   out << "<div class=\"shell-scrim\"></div>";
   out << "<div class=\"shell-dialog shell-call-ring\" data-class-shell-call-ring--pulse=\"call_ring_pulse\">";
-  out << "<p class=\"text-sm shell-call-ring-eyebrow\">Incoming call</p>";
+  out << "<p class=\"text-sm shell-call-ring-eyebrow\" data-rml=\"call_ring_eyebrow\"></p>";
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_ring_media\"></h2>";
-  out << "<p class=\"text shell-dialog-message\" data-rml=\"call_ring_caller\"></p>";
+  out << "<p class=\"text shell-dialog-message\" data-if=\"!call_ring_conflict\" data-rml=\"call_ring_caller\"></p>";
+  out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\" data-rml=\"call_ring_conflict_hint\"></p>";
   out << "<div class=\"shell-dialog-actions row\">";
-  out << "<button class=\"shell-dialog-cancel\" data-event-click=\"call_decline()\">Decline</button>";
+  out << "<button class=\"shell-dialog-cancel\" data-event-click=\"call_decline()\" "
+         "data-rml=\"call_ring_decline_label\"></button>";
   out << "<button class=\"shell-dialog-ok shell-call-accept\" data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
-         "data-event-click=\"call_accept()\">Accept</button>";
+         "data-event-click=\"call_accept()\" data-rml=\"call_ring_accept_label\"></button>";
   out << "</div></div></div>";
   return out.str();
 }
