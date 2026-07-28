@@ -51,3 +51,5 @@
 ## Follow-ups
 
 See [PHASES.md](PHASES.md) and [DESIGN § Preferred delivery order](DESIGN.md#preferred-delivery-order-n015).
+
+**Calls:** [p2p-av-calls](../p2p-av-calls/) **a0** locked parallel delivery (V010): signaling (a1) proceeds now; NAT’d media needs nr/nu/n3 + seed SFU (n4). N014 applies to media SFU hops. Org `pp-node` seeds should enable volunteer `audio_relay` / `video_relay` when those caps ship.

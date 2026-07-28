@@ -4,7 +4,7 @@
 **Formerly:** `projects/libp2p-node-roles/` (renamed; ADRs remain N001+)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [docs/architecture/P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [docs/architecture/LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
-**Related:** [push-notifications](../push-notifications/) (HTTP Brief relay wake), messaging under `src/feature/messaging/`
+**Related:** [push-notifications](../push-notifications/) (HTTP Brief relay wake), [p2p-av-calls](../p2p-av-calls/) (voice/video SFU consumer), messaging under `src/feature/messaging/`
 
 ## One-line goal
 

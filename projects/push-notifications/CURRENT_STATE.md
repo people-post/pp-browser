@@ -31,3 +31,4 @@ Relay operators configure their own FCM credentials on the server; those setting
 - iOS / APNs
 - FCM token refresh → automatic re-register after native start
 - Android notification tap → open specific thread in ChatController (PendingIntent already embeds `thread_id`)
+- **`call_wake`** opaque type for [p2p-av-calls](../p2p-av-calls/) a1 (V006) — distinct from `inbox_wake`; client fetch-then-ring; no `call_id` in payload

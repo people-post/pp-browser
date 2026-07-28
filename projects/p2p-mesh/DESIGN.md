@@ -236,6 +236,8 @@ Hot-reload: role / capability / pricing changes reconfigure modules (`MessagingH
 | **n4+** | Blockchain node | + checkbox (settlement rails, not “paid jobs”) |
 | **later** | Accept paid jobs marketplace | + checkbox; job schema separate |
 
+**A/V calls consumer:** [p2p-av-calls](../p2p-av-calls/) needs **circuit (n3)** plus org-seed **audio/video SFU** (volunteer `audio_relay` / `video_relay` on `pp-node`) for mobile↔mobile. Prefer shipping seed SFU with or right after n4 media caps rather than treating it as a distant nicety — see call ADRs V001/V008.
+
 Until peer-hosted relays ship, keep **direct multiaddr** + **HTTP Brief relay** fallback.
 
 ## Packaging: `pp-node` binary (N011)

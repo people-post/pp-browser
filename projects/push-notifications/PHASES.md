@@ -48,3 +48,7 @@
 - [x] SERVICE_ENDPOINTS.md devices section
 - [x] PLATFORMS.md background poll + WorkManager
 - [x] Refresh CURRENT_STATE / README status
+
+## Later — call ring wake
+
+- [ ] Opaque **`call_wake`** type ([p2p-av-calls V006](../p2p-av-calls/DECISIONS.md#v006--call_wake-push-shape)); contract + client fetch-then-ring; relay emit on call invite path

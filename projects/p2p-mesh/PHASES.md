@@ -63,6 +63,7 @@ Preferred order is **N015**: n1 → np → nr → nu → n3 → nf → n4 → �
 
 - [ ] Message / audio / video relay + `pricing.*` (volunteer \| paid)
 - [ ] Still honor N014 when picking hops
+- [ ] Org `pp-node` seeds: volunteer **audio/video SFU** on for [p2p-av-calls](../p2p-av-calls/) mobile path (V008); pricing may stay volunteer initially
 - [ ] Blockchain rails / accept_paid_jobs later (secondary)
 
 ## n2 — DHT (later per N015)

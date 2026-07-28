@@ -38,4 +38,5 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [push-notifications](push-notifications/) | **Wave 1 done** | Owned Brief FCM wake + local alerts; alerts ≠ sync — [CURRENT_STATE](push-notifications/CURRENT_STATE.md) |
 | [i18n](i18n/) | **i1–i6 landed** — widen i5 | EN + zh-Hans UI language; Settings picker (sheet on mobile) — [CURRENT_STATE](i18n/CURRENT_STATE.md) |
 | [liquid-glass](liquid-glass/) | **Done** | Floating Chrome on compact shell — [stable docs](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials) |
-| [p2p-mesh](p2p-mesh/) | **n0 done** — n1 next | Client/Node mesh; `pp-node`; UPnP/IPv6; contact-first relays (N015 order) — [CURRENT_STATE](p2p-mesh/CURRENT_STATE.md) |
+| [p2p-mesh](p2p-mesh/) | **n1 done** — np next | Client/Node mesh; `pp-node`; UPnP/IPv6; contact-first relays (N015 order) — [CURRENT_STATE](p2p-mesh/CURRENT_STATE.md) |
+| [p2p-av-calls](p2p-av-calls/) | **a0 done** — a1 next | 1:1/group voice+video; WebRTC media + mesh SFU; invite guests; `call_wake` — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
