@@ -4,7 +4,7 @@
 
 | Adversary | Capability | Mitigation |
 |-----------|------------|------------|
-| FCM / APNs | Sees device token, timing, opaque data map | No plaintext; `type=inbox_wake` only |
+| FCM / APNs | Sees device token, timing, opaque data map | No plaintext; `type=inbox_wake` or `type=call_wake` only |
 | Relay | Already sees ciphertext envelopes + who talks to whom | Push adds only “device may be woken”; no extra body |
 | Commercial SaaS | Aggregated opens/clicks/segments | **Rejected** — no SaaS (P002) |
 | Local attacker with locked vault | Background wake | No auto-unlock; generic notify or silent defer (P003) |
@@ -28,7 +28,15 @@ FCM **data** message (not notification payload):
 }
 ```
 
-Optional non-identifying bookkeeping keys may be added later; never `thread_id`, contact names, or message body.
+Call ring (P008 / V006):
+
+```json
+{
+  "type": "call_wake"
+}
+```
+
+Optional non-identifying bookkeeping keys may be added later; never `thread_id`, `call_id`, contact names, or message body.
 
 ## Sync schedule
 

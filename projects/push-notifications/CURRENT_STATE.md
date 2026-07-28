@@ -1,6 +1,6 @@
 # Push notifications — current state
 
-**Last updated:** 2026-07-24
+**Last updated:** 2026-07-28
 
 ## Landed (wave 1)
 
@@ -16,6 +16,7 @@
 | Desktop local banners | Native OS APIs (Linux Freedesktop/D-Bus, macOS `UNUserNotificationCenter`, Windows WinRT toasts); tap → raise + open thread; `ClearForThread` on select |
 | Desktop lifecycle | Minimize / focus-lost treated as background so banners can fire while the process is alive |
 | Contracts | `SERVICE_ENDPOINTS.md`, `PLATFORMS.md` updated |
+| `call_wake` | Opaque type + Android JNI + client fetch-then-ring (P008 / V006); relay emit rule documented |
 
 ## Ops (client)
 
@@ -31,4 +32,4 @@ Relay operators configure their own FCM credentials on the server; those setting
 - iOS / APNs
 - FCM token refresh → automatic re-register after native start
 - Android notification tap → open specific thread in ChatController (PendingIntent already embeds `thread_id`)
-- **`call_wake`** opaque type for [p2p-av-calls](../p2p-av-calls/) a1 (V006) — distinct from `inbox_wake`; client fetch-then-ring; no `call_id` in payload
+- Relay implementation of `call_wake` emit on call-invite path (contract ready; provider outside this tree)

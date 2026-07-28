@@ -51,4 +51,4 @@
 
 ## Later — call ring wake
 
-- [ ] Opaque **`call_wake`** type ([p2p-av-calls V006](../p2p-av-calls/DECISIONS.md#v006--call_wake-push-shape)); contract + client fetch-then-ring; relay emit on call invite path
+- [x] Opaque **`call_wake`** type ([p2p-av-calls V006](../p2p-av-calls/DECISIONS.md#v006--call_wake-push-shape)); contract + client fetch-then-ring; relay emit on call invite path (P008)

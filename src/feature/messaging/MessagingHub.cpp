@@ -289,6 +289,8 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
+  call_session_store_ = std::make_unique<CallSessionStore>(store_->ProfileDbPath());
+  call_media_keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath(), profile_id_);
   group_invite_gate_ = std::make_unique<GroupInviteGate>(*contacts_, *group_roster_);
   directory_shadows_ = std::make_unique<DirectoryShadowCache>(*directory_);
   peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, *directory_shadows_, group_roster_.get());
@@ -302,6 +304,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   ProfileSecretsService& secrets = ProfileSecretsService::Instance();
   secrets.RegisterDekConsumer(identity_.get());
   secrets.RegisterDekConsumer(psk_store_.get());
+  secrets.RegisterDekConsumer(call_media_keys_.get());
   signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
@@ -311,6 +314,9 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), nullptr, nullptr);
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
+  call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
+                                                       *call_media_keys_, *p2p_);
+  p2p_->SetCallSessionManager(call_sessions_.get());
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
 
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
@@ -349,6 +355,9 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                 peer_sessions_.get());
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
+  call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
+                                                       *call_media_keys_, *p2p_);
+  p2p_->SetCallSessionManager(call_sessions_.get());
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
     const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
     group_invite_gate_->SetInboundPolicy(policy);
@@ -448,6 +457,7 @@ void MessagingHub::Shutdown() {
     identity_->Flush();
   }
   actions_.reset();
+  call_sessions_.reset();
   group_membership_.reset();
   p2p_.reset();
   group_invite_gate_.reset();
@@ -462,6 +472,11 @@ void MessagingHub::Shutdown() {
   if (psk_store_) {
     secrets.UnregisterDekConsumer(psk_store_.get());
   }
+  if (call_media_keys_) {
+    secrets.UnregisterDekConsumer(call_media_keys_.get());
+  }
+  call_media_keys_.reset();
+  call_session_store_.reset();
   psk_store_.reset();
   inbox_.reset();
   peer_labels_.reset();
@@ -494,6 +509,10 @@ P2pMessagingService& MessagingHub::P2p() {
 
 GroupMembershipService& MessagingHub::Groups() {
   return *group_membership_;
+}
+
+CallSessionManager* MessagingHub::Calls() {
+  return call_sessions_.get();
 }
 
 MessageRouter& MessagingHub::Router() {

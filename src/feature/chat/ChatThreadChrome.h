@@ -33,6 +33,7 @@ public:
     bool& compose_disabled;
     bool& show_thread_actions;
     bool& show_peer_sheet;
+    bool& show_call_actions;
     bool& show_forget_memory;
     bool& show_sync_with_peer;
     bool& show_thread_menu;

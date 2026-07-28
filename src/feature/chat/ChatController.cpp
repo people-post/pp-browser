@@ -42,6 +42,7 @@
 #include "feature/ui/DocumentLoader.h"
 #include "feature/ui/DeferredStartup.h"
 #include "feature/ui/PinGateController.h"
+#include "feature/ui/CallController.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/UserFeedback.h"
@@ -245,6 +246,7 @@ ChatController::ChatController()
                  .compose_disabled = chat_.compose_disabled,
                  .show_thread_actions = chat_.show_thread_actions,
                  .show_peer_sheet = chat_.show_peer_sheet,
+                 .show_call_actions = chat_.show_call_actions,
                  .show_forget_memory = chat_.show_forget_memory,
                  .show_sync_with_peer = chat_.show_sync_with_peer,
                  .show_thread_menu = chat_.show_thread_menu,
@@ -375,6 +377,22 @@ void ChatController::OpenNewSessionMenuCallback(Rml::DataModelHandle /*model*/, 
 void ChatController::OpenThreadActionsMenuCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
                                                    const Rml::VariantList& /*args*/) {
   Instance().OnOpenThreadActionsMenu(ev);
+}
+
+void ChatController::StartVoiceCallCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& /*args*/) {
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (!thread_id.empty()) {
+    CallController::Instance().StartVoiceCall(thread_id);
+  }
+}
+
+void ChatController::StartVideoCallCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& /*args*/) {
+  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  if (!thread_id.empty()) {
+    CallController::Instance().StartVideoCall(thread_id);
+  }
 }
 
 void ChatController::OpenPeerSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
@@ -1837,7 +1855,12 @@ void ChatController::WireMessagingBindings() {
     if (!MessagingHub::Instance().IsMessagingReady()) {
       return;
     }
+    const bool call_wake = BackgroundSyncScheduler::Instance().ConsumeCallWake();
     MessagingHub::Instance().P2p().SyncInboxFromWake(force);
+    CallController::Instance().RefreshPendingRing();
+    if (call_wake) {
+      CallController::Instance().OnCallWake();
+    }
   });
   IPushDeviceRegistrar::SetTokenChangedHandler([](const std::string& /*token*/) {
     BrowserThread::PostTask(BrowserThreadId::UI, []() {
@@ -2000,6 +2023,7 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.Bind("compose_disabled", &ChatController::Instance().chat_.compose_disabled);
         ctor.Bind("show_thread_actions", &ChatController::Instance().chat_.show_thread_actions);
         ctor.Bind("show_peer_sheet", &ChatController::Instance().chat_.show_peer_sheet);
+        ctor.Bind("show_call_actions", &ChatController::Instance().chat_.show_call_actions);
         ctor.Bind("show_forget_memory", &ChatController::Instance().chat_.show_forget_memory);
         ctor.Bind("show_sync_with_peer", &ChatController::Instance().chat_.show_sync_with_peer);
         ctor.Bind("show_thread_menu", &ChatController::Instance().chat_.show_thread_menu);
@@ -2027,6 +2051,8 @@ bool ChatController::Setup(Rml::Context* context) {
         ctor.BindEventCallback("clear_history", &ChatController::ClearHistoryCallback);
         ctor.BindEventCallback("forget_memory", &ChatController::ForgetMemoryCallback);
         ctor.BindEventCallback("open_thread_actions_menu", &ChatController::OpenThreadActionsMenuCallback);
+        ctor.BindEventCallback("start_voice_call", &ChatController::StartVoiceCallCallback);
+        ctor.BindEventCallback("start_video_call", &ChatController::StartVideoCallCallback);
         ctor.BindEventCallback("open_peer_sheet", &ChatController::OpenPeerSheetCallback);
         ctor.BindEventCallback("sync_with_peer", &ChatController::SyncWithPeerCallback);
         ctor.BindEventCallback("retry_gap_sync", &ChatController::RetryGapSyncCallback);

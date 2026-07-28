@@ -7,6 +7,7 @@
 #include "base/messaging/EnvelopeSigner.h"
 #include "base/messaging/GroupMembershipApply.h"
 #include "base/messaging/GroupMembershipCodec.h"
+#include "base/messaging/CallControlCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/GroupE2ePayloadCodec.h"
@@ -15,6 +16,7 @@
 #include "base/messaging/SyncStateCodec.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/PeerDisplayLabel.h"
+#include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/GroupInviteGate.h"
 
 #include "common/Utilities.h"
@@ -59,6 +61,10 @@ bool IsGroupMembershipControlMessage(const ThreadMessage& message) {
   return GroupMembershipCodec::ControlTypeFromMessage(message).has_value();
 }
 
+bool IsCallControlMessage(const ThreadMessage& message) {
+  return CallControlCodec::IsCallControlMessage(message);
+}
+
 } // namespace
 
 RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys,
@@ -66,6 +72,14 @@ RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyR
                                            GroupRosterStore& group_roster, GroupInviteGate* invite_gate)
     : store_(store), signing_keys_(signing_keys), psk_store_(psk_store), identity_(identity),
       group_roster_(group_roster), invite_gate_(invite_gate) {}
+
+Roe<void> RelayReceivePipeline::ApplyInboundCallMessage(ThreadMessage& message,
+                                                        const std::string& actor_identity) const {
+  if (!call_sessions_ || !IsCallControlMessage(message)) {
+    return {};
+  }
+  return call_sessions_->ApplyInboundControl(message, actor_identity);
+}
 
 Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message,
                                                               const std::string& actor_identity,
@@ -587,7 +601,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       compromised_state.phase = PeerSyncPhase::Compromised;
       (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, compromised_state);
       // Defense-in-depth: membership DMs still apply on a frozen private stream.
-      if (IsGroupMembershipControlMessage(message)) {
+      if (IsGroupMembershipControlMessage(message) || IsCallControlMessage(message)) {
         ThreadMessage persisted = message;
         persisted.id = envelope.message_id;
         persisted.thread_id = resolved_thread_id;
@@ -602,6 +616,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
             !membership) {
           MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply membership update",
                              membership.error().message, resolved_thread_id);
+          return outcome;
+        }
+        if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id); !call) {
+          MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply call update", call.error().message,
+                             resolved_thread_id);
           return outcome;
         }
         auto has_id = store_.HasMessageId(resolved_thread_id, envelope.message_id);
@@ -640,6 +659,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply membership update",
                        membership.error().message, resolved_thread_id);
+    return outcome;
+  }
+  if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id); !call) {
+    outcome.decision = IngestDecision::HardReject;
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply call update", call.error().message,
+                       resolved_thread_id);
     return outcome;
   }
 

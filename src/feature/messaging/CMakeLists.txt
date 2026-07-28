@@ -1,5 +1,7 @@
 pp_browser_add_feature_library(pp_feature_messaging
   SOURCES
+    CallMediaKeyStore.cpp
+    CallSessionManager.cpp
     ChatSyncService.cpp
     ContactActionDispatcher.cpp
     DirectoryShadowCache.cpp

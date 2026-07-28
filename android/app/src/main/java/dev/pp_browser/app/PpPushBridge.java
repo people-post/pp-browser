@@ -10,6 +10,8 @@ public final class PpPushBridge {
 
     public static native void nativeOnPushWake();
 
+    public static native void nativeOnCallWake();
+
     public static void onNewToken(String token) {
         if (token == null || token.isEmpty()) {
             return;
@@ -24,6 +26,13 @@ public final class PpPushBridge {
     public static void onInboxWake() {
         try {
             nativeOnPushWake();
+        } catch (UnsatisfiedLinkError ignored) {
+        }
+    }
+
+    public static void onCallWake() {
+        try {
+            nativeOnCallWake();
         } catch (UnsatisfiedLinkError ignored) {
         }
     }

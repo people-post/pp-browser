@@ -20,6 +20,7 @@
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
 #include "feature/ui/ContactsController.h"
+#include "feature/ui/CallController.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DeferredStartup.h"
 #include "feature/ui/SettingsController.h"
@@ -292,6 +293,7 @@ void Application::Run() {
     if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
       ContactsController::Instance().Tick();
     }
+    CallController::Instance().Tick();
     UpdateChatController();
     ContextMenuHost::Instance().Update();
     ShellHost::Instance().Update(context);

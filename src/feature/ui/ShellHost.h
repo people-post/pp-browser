@@ -141,6 +141,8 @@ private:
   std::string SerializeOverlays() const;
   std::string SerializeDialog() const;
   std::string SerializePinGate() const;
+  std::string SerializeCallRing() const;
+  std::string SerializeCallInProgress() const;
   std::string SerializeTransientLayer() const;
   const char* NavContentKey() const;
   void MountPaneBodies();

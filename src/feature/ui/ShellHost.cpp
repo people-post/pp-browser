@@ -10,6 +10,7 @@
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
+#include "feature/ui/CallController.h"
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/FlowCoordinator.h"
@@ -109,6 +110,12 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
     ctor.Bind("pin_gate_pin", &host.state_.pin_gate.pin);
     ctor.Bind("pin_gate_pin_confirm", &host.state_.pin_gate.pin_confirm);
+    ctor.Bind("call_ring_active", &host.state_.call_ring.active);
+    ctor.Bind("call_ring_caller", &host.state_.call_ring.caller_label);
+    ctor.Bind("call_ring_media", &host.state_.call_ring.media_label);
+    ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
+    ctor.Bind("call_in_progress_title", &host.state_.call_in_progress.title);
+    ctor.Bind("call_in_progress_subtitle", &host.state_.call_in_progress.subtitle);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
     ctor.Bind("statusbar_visible", &host.state_.statusbar_visible);
     ctor.Bind("statusbar_connection", &host.state_.statusbar_connection);
@@ -151,6 +158,9 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("pin_gate_cancel", &ShellHost::PinGateCancelCallback);
     ctor.BindEventCallback("pin_gate_set_pin", &ShellHost::PinGateSetPinCallback);
     ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
+    ctor.BindEventCallback("call_accept", &CallController::AcceptCallback);
+    ctor.BindEventCallback("call_decline", &CallController::DeclineCallback);
+    ctor.BindEventCallback("call_leave", &CallController::LeaveCallback);
     ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
     ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
     ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
@@ -1142,6 +1152,39 @@ std::string ShellHost::SerializePinGate() const {
   return out.str();
 }
 
+std::string ShellHost::SerializeCallRing() const {
+  if (!state_.call_ring.active) {
+    return {};
+  }
+  std::ostringstream out;
+  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
+  out << "<div class=\"shell-scrim\"></div>";
+  out << "<div class=\"shell-dialog shell-call-ring\">";
+  out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_ring_media\"></h2>";
+  out << "<p class=\"text shell-dialog-message\" data-rml=\"call_ring_caller\"></p>";
+  out << "<div class=\"shell-dialog-actions row\">";
+  out << "<button class=\"shell-dialog-cancel\" data-event-click=\"call_decline()\">Decline</button>";
+  out << "<button class=\"shell-dialog-ok\" data-event-click=\"call_accept()\">Accept</button>";
+  out << "</div></div></div>";
+  return out.str();
+}
+
+std::string ShellHost::SerializeCallInProgress() const {
+  if (!state_.call_in_progress.active) {
+    return {};
+  }
+  std::ostringstream out;
+  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
+  out << "<div class=\"shell-scrim\"></div>";
+  out << "<div class=\"shell-dialog shell-call-in-progress\">";
+  out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_in_progress_title\"></h2>";
+  out << "<p class=\"text shell-dialog-message\" data-rml=\"call_in_progress_subtitle\"></p>";
+  out << "<div class=\"shell-dialog-actions row\">";
+  out << "<button class=\"shell-dialog-cancel\" data-event-click=\"call_leave()\">Leave</button>";
+  out << "</div></div></div>";
+  return out.str();
+}
+
 std::string ShellHost::SerializeShellRoot() const {
   std::ostringstream out;
   if (state_.layout_mode == LayoutMode::Expanded) {
@@ -1152,6 +1195,8 @@ std::string ShellHost::SerializeShellRoot() const {
   out << SerializeTransientLayer();
   out << SerializeOverlays();
   out << SerializeDialog();
+  out << SerializeCallInProgress();
+  out << SerializeCallRing();
   out << SerializePinGate();
   return out.str();
 }

@@ -125,6 +125,12 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
   TailSyncActiveE2eThread();
 }
 
+void P2pMessagingService::SetCallSessionManager(CallSessionManager* calls) {
+  if (receive_pipeline_) {
+    receive_pipeline_->SetCallSessionManager(calls);
+  }
+}
+
 void P2pMessagingService::LoadPersistedRelayCursor(const std::string& relay_user_id) {
   if (!MessagingHub::Instance().IsInitialized()) {
     return;

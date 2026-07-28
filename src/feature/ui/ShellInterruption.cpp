@@ -6,6 +6,12 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
   if (state.pin_gate.active) {
     return InterruptionKind::PinGate;
   }
+  if (state.call_ring.active) {
+    return InterruptionKind::CallRing;
+  }
+  if (state.call_in_progress.active) {
+    return InterruptionKind::CallInProgress;
+  }
   if (state.dialog.active) {
     return InterruptionKind::Dialog;
   }
@@ -33,6 +39,8 @@ CompactChromeFrostSurface ShellInterruption::ResolveFrostSurface(const ShellStat
   }
   switch (Top(state)) {
   case InterruptionKind::PinGate:
+  case InterruptionKind::CallRing:
+  case InterruptionKind::CallInProgress:
   case InterruptionKind::Dialog:
   case InterruptionKind::OverlayLayer:
     return CompactChromeFrostSurface::None;
@@ -54,6 +62,11 @@ bool ShellInterruption::DismissTop(ShellState& state) {
   switch (Top(state)) {
   case InterruptionKind::PinGate:
     // Handled in ShellHost::HandleDismiss (create cancels; unlock blocks).
+    return false;
+  case InterruptionKind::CallRing:
+    // Decline is explicit; Escape does not silently dismiss a ring.
+    return false;
+  case InterruptionKind::CallInProgress:
     return false;
   case InterruptionKind::Dialog:
     state.dialog = {};

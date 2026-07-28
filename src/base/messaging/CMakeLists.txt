@@ -6,6 +6,10 @@ pp_browser_add_base_library(pp_base_messaging
     ChatHistoryStreamCodec.cpp
     ChatPayloadCodec.cpp
     ChatPayloadTypes.cpp
+    CallControlCodec.cpp
+    CallSessionLogic.cpp
+    CallSessionStore.cpp
+    CallTypes.cpp
     ChatPayloadValidator.cpp
     ConversationSummaryCodec.cpp
     DirectChatTarget.cpp

@@ -21,14 +21,14 @@ Mesh prerequisites (see [p2p-mesh PHASES](../p2p-mesh/PHASES.md)): **np → nr �
 
 ## a1 — Signaling + session + history + ring
 
-- [ ] `CallSession` / participant store on `profile.db` (V011); vault-backed media key slots
-- [ ] Signaling events via direct E2E system `control_type` (V012): invite / accept / decline / leave / roster / media_key / ended
-- [ ] Origin-thread system messages: `call_started` / `call_ended`
-- [ ] Invite-only join; guests without group membership
-- [ ] Hostless end on last leave; epoch coordinator = min identity (V002)
-- [ ] Push: `call_wake` type + client fetch-then-ring (V006); extend push project ADR/contracts + relay emit rule
-- [ ] Basic ring / in-call shell UI (no media yet or stub)
-- [ ] Unit tests: coordinator selection, session state machine, invite expiry
+- [x] `CallSession` / participant store on `profile.db` (V011); vault-backed media key slots
+- [x] Signaling events via direct E2E system `control_type` (V012): invite / accept / decline / leave / roster / media_key / ended
+- [x] Origin-thread system messages: `call_started` / `call_ended`
+- [x] Invite-only join; guests without group membership
+- [x] Hostless end on last leave; epoch coordinator = min identity (V002)
+- [x] Push: `call_wake` type + client fetch-then-ring (V006); extend push project ADR/contracts + relay emit rule
+- [x] Basic ring / in-call shell UI (no media yet or stub)
+- [x] Unit tests: coordinator selection, session state machine, invite expiry
 
 ## a2 — 1:1 voice media
 

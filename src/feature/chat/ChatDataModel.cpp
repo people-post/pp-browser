@@ -33,6 +33,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "draft_placeholder");
   DataModelHost::Instance().Dirty("chat", "show_thread_actions");
   DataModelHost::Instance().Dirty("chat", "show_peer_sheet");
+  DataModelHost::Instance().Dirty("chat", "show_call_actions");
   DataModelHost::Instance().Dirty("chat", "show_forget_memory");
   DataModelHost::Instance().Dirty("chat", "show_sync_with_peer");
   DataModelHost::Instance().Dirty("chat", "show_thread_menu");

@@ -14,6 +14,9 @@
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "base/messaging/SqliteThreadStore.h"
+#include "base/messaging/CallSessionStore.h"
+#include "feature/messaging/CallMediaKeyStore.h"
+#include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
 #include "base/net/ServiceClientsImpl.h"
@@ -51,6 +54,7 @@ public:
   InboxController& Inbox();
   P2pMessagingService& P2p();
   GroupMembershipService& Groups();
+  CallSessionManager* Calls();
   MessageRouter& Router();
   ContactActionDispatcher& Actions();
   bool HasRouter() const { return router_ != nullptr; }
@@ -104,6 +108,9 @@ private:
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<SqlitePskSessionStore> psk_store_;
   std::unique_ptr<GroupRosterStore> group_roster_;
+  std::unique_ptr<CallSessionStore> call_session_store_;
+  std::unique_ptr<CallMediaKeyStore> call_media_keys_;
+  std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;

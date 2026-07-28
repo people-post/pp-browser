@@ -28,6 +28,17 @@ void BackgroundSyncScheduler::RequestWakeSync() {
   last_poll_ms_ = util::NowUnixMs();
 }
 
+void BackgroundSyncScheduler::RequestCallWakeSync() {
+  pending_call_wake_ = true;
+  RequestWakeSync();
+}
+
+bool BackgroundSyncScheduler::ConsumeCallWake() {
+  const bool was = pending_call_wake_;
+  pending_call_wake_ = false;
+  return was;
+}
+
 void BackgroundSyncScheduler::Tick() {
   if (!handler_) {
     return;

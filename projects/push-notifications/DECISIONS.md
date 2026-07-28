@@ -41,3 +41,10 @@
 **Date:** 2026-07-13  
 **Decision:** Interfaces may mention `platform: ios`; APNs implementation after Android E2E.  
 **Rationale:** Android is shipped/m milestone 2; iOS is reserved.
+
+## P008 — `call_wake` opaque type
+
+**Date:** 2026-07-28  
+**Decision:** FCM/APNs may carry `type=call_wake` in addition to `inbox_wake`. Same opacity rules as P001 (no `call_id`, names, or media). Client treats `call_wake` as force sync then **fetch pending call invites → ring UI** (V006). Vault-locked behavior follows P003 with generic “Incoming call” copy when a banner is shown. Relay emits `call_wake` on call-invite class envelopes (see `SERVICE_ENDPOINTS.md`).  
+**Rationale:** Prioritize ring UX over chat badge without leaking call metadata to the push path.  
+**Alternatives:** Overload `inbox_wake` only (weak ring); put `call_id` in FCM (rejected).

@@ -8,7 +8,7 @@ import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
 /**
- * Receives opaque FCM data wakes ({@code type=inbox_wake}) and token refreshes.
+ * Receives opaque FCM data wakes ({@code type=inbox_wake} / {@code type=call_wake}) and token refreshes.
  * Enabled only when google-services.json is present (see app/build.gradle).
  */
 public class PpFirebaseMessagingService extends FirebaseMessagingService {
@@ -23,7 +23,9 @@ public class PpFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onMessageReceived(@NonNull RemoteMessage message) {
         String type = message.getData().get("type");
-        if ("inbox_wake".equals(type) || message.getData().isEmpty()) {
+        if ("call_wake".equals(type)) {
+            PpPushBridge.onCallWake();
+        } else if ("inbox_wake".equals(type) || message.getData().isEmpty()) {
             PpPushBridge.onInboxWake();
         }
     }

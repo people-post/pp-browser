@@ -24,6 +24,8 @@ enum class InterruptionKind {
   Transient,
   OverlayLayer,
   Dialog,
+  CallRing,
+  CallInProgress,
   PinGate,
 };
 
@@ -141,6 +143,22 @@ struct PinGateState {
   std::function<void(bool unlocked)> on_result;
 };
 
+/** Incoming call ring (a1 shell; no media). */
+struct CallRingState {
+  bool active = false;
+  Rml::String call_id;
+  Rml::String caller_label;
+  Rml::String media_label;
+};
+
+/** Active in-call stub chrome (a1; leave only). */
+struct CallInProgressState {
+  bool active = false;
+  Rml::String call_id;
+  Rml::String title;
+  Rml::String subtitle;
+};
+
 struct PaneVisibility {
   bool secondary = false;
   bool primary = true;
@@ -180,6 +198,8 @@ struct ShellState {
   std::vector<ToastEntry> toasts;
   DialogState dialog;
   PinGateState pin_gate;
+  CallRingState call_ring;
+  CallInProgressState call_in_progress;
 
   bool activity_visible = false;
 

@@ -32,6 +32,10 @@
       <p class="text-xs chat-peer-link" data-if="show_peer_link" data-rml="peer_link_status"></p>
     </div>
     <div class="chat-header-actions row">
+      <button class="btn btn-secondary btn-icon chat-header-call-btn" type="button" data-if="show_call_actions"
+              data-event-click="start_voice_call()">Voice</button>
+      <button class="btn btn-secondary btn-icon chat-header-call-btn" type="button" data-if="show_call_actions"
+              data-event-click="start_video_call()">Video</button>
       <button class="chat-header-more-btn" type="button" data-if="show_thread_menu"
               data-event-click="open_thread_actions_menu()">
         <svg src="../icons/more.svg"></svg>

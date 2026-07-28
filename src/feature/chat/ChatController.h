@@ -72,6 +72,7 @@ private:
     bool compose_disabled = false;
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
+    bool show_call_actions = false;
     bool show_forget_memory = false;
     bool show_sync_with_peer = false;
     bool show_thread_menu = false;
@@ -124,6 +125,8 @@ private:
   static void NewMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenNewSessionMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenThreadActionsMenuCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void StartVoiceCallCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void StartVideoCallCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OpenPeerSheetCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SelectThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CloseThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);

@@ -4,6 +4,7 @@
 #include "base/messaging/ChatPayloadTypes.h"
 #include "base/messaging/ConversationSummaryCodec.h"
 #include "base/messaging/GroupRosterStore.h"
+#include "base/messaging/CallSessionStore.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/SyncStateCodec.h"
@@ -309,6 +310,10 @@ Roe<void> SqliteThreadStore::OpenProfileDb() const {
   GroupRosterStore roster_store(ProfileDbFile(data_dir_));
   if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {
     return group_schema.error();
+  }
+  CallSessionStore call_store(ProfileDbFile(data_dir_));
+  if (auto call_schema = call_store.EnsureSchema(profile_db_); !call_schema) {
+    return call_schema.error();
   }
   return {};
 }

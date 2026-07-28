@@ -31,6 +31,8 @@
 
 namespace pbr {
 
+class CallSessionManager;
+
 /** Aggregated peer-link UX for a direct chat thread. */
 struct ThreadPeerLinkView {
   PeerLinkPhase phase = PeerLinkPhase::Unavailable;
@@ -63,6 +65,7 @@ public:
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
   void SetRelayClient(IRelayClient* relay);
+  void SetCallSessionManager(CallSessionManager* calls);
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
   /** Fired on UI thread when a background ingest bumps unread (for OS notify). */

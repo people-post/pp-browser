@@ -1,6 +1,6 @@
 # P2P A/V calls
 
-**Status:** **a0 done** — next **a1** (signaling + session + ring)  
+**Status:** **a1 done** — next **a2** (1:1 voice media / WebRTC spike)  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [p2p-mesh](../p2p-mesh/) (circuit + audio/video SFU caps), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md)
@@ -46,8 +46,8 @@
 |-------|------|--------|
 | v0 | Project docs + ADRs | Done |
 | a0 | Mesh/SFU prerequisites alignment | **Done** |
-| a1 | Signaling + session + history + ring wake | **Next** |
-| a2 | 1:1 voice (WebRTC + LAN dogfood / seed SFU) | Pending |
+| a1 | Signaling + session + history + ring wake | **Done** |
+| a2 | 1:1 voice (WebRTC + LAN dogfood / seed SFU) | **Next** |
 | a3 | 1:1 video (desktop + mobile) | Pending |
 | a4 | Group ≤8, guests, rotate-on-leave | Pending |
 | a5 | Cap decision 8→16, polish | Pending |

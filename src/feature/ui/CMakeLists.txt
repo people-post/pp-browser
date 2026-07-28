@@ -1,6 +1,7 @@
 pp_browser_add_feature_library(pp_feature_ui
   SOURCES
     BadgeAggregator.cpp
+    CallController.cpp
     ChatSessionActions.cpp
     ContactsController.cpp
     PeoplePickerController.cpp
