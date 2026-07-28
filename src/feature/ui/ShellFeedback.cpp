@@ -169,16 +169,15 @@ void ShellFeedback::DialogOk(ShellState& state) {
   auto prompt_callback = std::move(state.dialog.on_prompt_result);
   state.dialog = {};
   state.transient_active = !state.transient_stack.empty();
-  SyncDialogChrome("dialog_close");
+  // Run callbacks before remount so handlers can update shell state that the remount picks up.
   if (is_prompt) {
     if (prompt_callback) {
       prompt_callback(true, prompt_value);
     }
-    return;
-  }
-  if (callback) {
+  } else if (callback) {
     callback(true, checkbox_checked);
   }
+  SyncDialogChrome("dialog_close");
 }
 
 void ShellFeedback::DialogCancel(ShellState& state) {
@@ -190,16 +189,14 @@ void ShellFeedback::DialogCancel(ShellState& state) {
   auto prompt_callback = std::move(state.dialog.on_prompt_result);
   state.dialog = {};
   state.transient_active = !state.transient_stack.empty();
-  SyncDialogChrome("dialog_close");
   if (is_prompt) {
     if (prompt_callback) {
       prompt_callback(false, {});
     }
-    return;
-  }
-  if (callback) {
+  } else if (callback) {
     callback(false, false);
   }
+  SyncDialogChrome("dialog_close");
 }
 
 } // namespace pbr

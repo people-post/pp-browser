@@ -615,6 +615,12 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
+  DataModelHost::Instance().Dirty("window", "call_ring_active");
+  DataModelHost::Instance().Dirty("window", "call_ring_caller");
+  DataModelHost::Instance().Dirty("window", "call_ring_media");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_active");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_title");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
   DataModelHost::Instance().Dirty("window", "activity_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_connection");
@@ -1157,11 +1163,9 @@ std::string ShellHost::SerializePinGate() const {
 }
 
 std::string ShellHost::SerializeCallRing() const {
-  if (!state_.call_ring.active) {
-    return {};
-  }
+  // Always present with data-if so show/hide is DirtyWindow-only (no shell remount).
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
+  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\" data-if=\"call_ring_active\">";
   out << "<div class=\"shell-scrim\"></div>";
   out << "<div class=\"shell-dialog shell-call-ring\">";
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_ring_media\"></h2>";
@@ -1174,11 +1178,9 @@ std::string ShellHost::SerializeCallRing() const {
 }
 
 std::string ShellHost::SerializeCallInProgress() const {
-  if (!state_.call_in_progress.active) {
-    return {};
-  }
+  // Always present with data-if so Leave/show does not remount chat panes.
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
+  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\" data-if=\"call_in_progress_active\">";
   out << "<div class=\"shell-scrim\"></div>";
   out << "<div class=\"shell-dialog shell-call-in-progress\">";
   out << "<h2 class=\"heading-2 shell-dialog-title\" data-rml=\"call_in_progress_title\"></h2>";

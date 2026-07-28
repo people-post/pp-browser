@@ -404,6 +404,9 @@ void MessagingHub::Shutdown() {
     identity_->Flush();
   }
   actions_.reset();
+  if (call_sessions_) {
+    call_sessions_->ClearMediaCallbacks();
+  }
   call_sessions_.reset();
   group_membership_.reset();
   p2p_.reset();

@@ -192,27 +192,7 @@ select selectbox option {
   margin-top: 2dp;
 }
 
-.chat-header-call-btn {
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 2dp;
-  min-width: 44dp;
-  padding: 6dp 8dp;
-  border-radius: 8dp;
-}
-
-.chat-header-call-btn svg {
-  flex-shrink: 0;
-  width: 18dp;
-  height: 18dp;
-}
-
-.chat-header-call-label {
-  flex-shrink: 0;
-  font-size: 11dp;
-  line-height: 1.1;
-}
-
+.chat-header-call-btn,
 .chat-header-more-btn {
   flex-shrink: 0;
   display: flex;
@@ -229,6 +209,7 @@ select selectbox option {
   cursor: pointer;
 }
 
+.chat-header-call-btn svg,
 .chat-header-more-btn svg {
   flex-shrink: 0;
   width: 18dp;

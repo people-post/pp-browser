@@ -32,15 +32,13 @@
       <p class="text-xs chat-peer-link" data-if="show_peer_link" data-rml="peer_link_status"></p>
     </div>
     <div class="chat-header-actions row">
-      <button class="btn btn-secondary btn-icon chat-header-call-btn" type="button" data-if="show_call_actions"
+      <button class="chat-header-call-btn" type="button" data-if="show_call_actions"
               data-event-click="start_voice_call()">
-        <svg src="../icons/phone.svg" width="18" height="18" crop-to-content="true"></svg>
-        <span class="chat-header-call-label">Voice</span>
+        <svg src="../icons/phone.svg"></svg>
       </button>
-      <button class="btn btn-secondary btn-icon chat-header-call-btn" type="button" data-if="show_call_actions"
+      <button class="chat-header-call-btn" type="button" data-if="show_call_actions"
               data-event-click="start_video_call()">
-        <svg src="../icons/video.svg" width="18" height="18" crop-to-content="true"></svg>
-        <span class="chat-header-call-label">Video</span>
+        <svg src="../icons/video.svg"></svg>
       </button>
       <button class="chat-header-more-btn" type="button" data-if="show_thread_menu"
               data-event-click="open_thread_actions_menu()">

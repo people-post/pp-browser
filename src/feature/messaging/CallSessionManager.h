@@ -57,6 +57,9 @@ public:
 
   CallMediaEngine& Media();
 
+  /** Drop media callbacks before destroying this manager (avoids UAF on engine Stop). */
+  void ClearMediaCallbacks();
+
 private:
   Roe<std::string> LocalRelayIdentity() const;
   Roe<void> SendCallDirectMessage(const std::string& peer_identity, CallControlType type,

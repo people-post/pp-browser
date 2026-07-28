@@ -18,8 +18,8 @@ struct CallChromeLayer {
 
 enum class CallChromeUpdate {
   None,      // idle poll / no visible change
-  DirtyOnly, // subtitle/labels while layer already mounted
-  Remount,   // layer appear / disappear / switch call_id
+  DirtyOnly, // subtitle/labels while layer already shown
+  Remount,   // layer appear / disappear / switch call_id (UI uses DirtyWindow + data-if; no SyncLayout)
 };
 
 /** Pure gate: remount only on layer identity change; never remount on timer alone. */

@@ -232,6 +232,13 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
   media_.SetOnStateChanged([this](const std::string&) { NotifyRingChanged(); });
 }
 
+void CallSessionManager::ClearMediaCallbacks() {
+  media_.SetOnLocalDescription({});
+  media_.SetOnIceCandidate({});
+  media_.SetOnStateChanged({});
+  media_peer_identity_.clear();
+}
+
 Roe<void> CallSessionManager::StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity) {
   BindMediaCallbacks(peer_identity);
   return media_.Start(call_id, CallMediaEngine::Role::Offerer);

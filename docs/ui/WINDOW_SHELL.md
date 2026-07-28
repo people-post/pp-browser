@@ -92,6 +92,8 @@ Choose the lightest primitive that fits the user task:
 | Shell tree change (nav, panes, overlays, dialog, call ring/in-call layer, layout mode) | `RequestSyncLayout(reason)` |
 | Periodic poll / tick | Reconcile state only; remount **iff** structure changed |
 
+Call ring / in-call overlays are always mounted with `data-if` and updated via `DirtyWindow` — never remount the shell to show or hide them (that destroyed chat panes and caused crashes).
+
 Dialog open/close remount is owned by `ShellFeedback` (`dialog_open` / `dialog_close`). Callers of `ShowConfirm*` / `ShowAlert` / `ShowPrompt` must not also call `RequestSyncLayout` solely to show the dialog.
 
 Timers (e.g. foreground relay poll) must never remount “just in case.”

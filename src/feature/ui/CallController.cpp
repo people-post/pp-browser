@@ -76,10 +76,9 @@ void CallController::SyncShellState() {
   if (update == CallChromeUpdate::None) {
     return;
   }
+  // Call overlays live in the shell with data-if; never remount — remounting destroyed
+  // chat panes mid-call and led to data-model OOB / shutdown crashes.
   ShellHost::Instance().DirtyWindow();
-  if (update == CallChromeUpdate::Remount) {
-    ShellHost::Instance().RequestSyncLayout(/*restore_focus_after=*/false, "call_chrome");
-  }
 }
 
 void CallController::RefreshPendingRing() {

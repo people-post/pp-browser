@@ -927,17 +927,20 @@ select selectbox option:hover {
   color: #b45309;
 }
 
-.chat-header-call-btn svg {
-  image-color: #1a1a1a;
-}
-
+.chat-header-call-btn,
 .chat-header-more-btn {
   background-color: #e5e7eb;
   color: #1a1a1a;
 }
 
+.chat-header-call-btn:hover,
 .chat-header-more-btn:hover {
   background-color: #d1d5db;
+}
+
+.chat-header-call-btn svg,
+.chat-header-more-btn svg {
+  image-color: #1a1a1a;
 }
 
 .context-menu-panel {
