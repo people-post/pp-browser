@@ -6,37 +6,38 @@
 
 | Area | State |
 |------|-------|
-| Project docs | `projects/p2p-av-calls/` (v0 + **a0** + **a1** + **a2 in progress**) |
-| ADRs | V001–V015 in [DECISIONS.md](DECISIONS.md) — **V014** locks libdatachannel + Opus + SDL |
+| Project docs | `projects/p2p-av-calls/` (v0 → **a2 done**; **a3 planned** V016–V018) |
+| ADRs | V001–V018 in [DECISIONS.md](DECISIONS.md) — **V014** stack; **V016** a3 slice; **V017** H264 **platform HW**; **V018** capture/render |
 | Product model | Hybrid WebRTC media; mesh signaling; invite-only guests; hostless; shared media key; `call_wake` |
-| Delivery track | Parallel a1 vs mesh SFU; LAN dogfood for early a2 (V010) |
+| Delivery track | Parallel media vs mesh SFU; LAN dogfood for a2/a3 (V010 / V016) |
 | Persistence | `call_sessions` / `call_participants` / `pending_call_invites` / `call_media_keys` on `profile.db` (V011) |
 | Signaling | Direct E2E `ChatPayload` system controls via `CallSessionManager` (V012) + **`call_sdp` / `call_ice`** |
 | History | Origin-thread `call_started` / `call_ended` local system rows |
 | Push | Opaque `call_wake` (P008) + client fetch-then-ring |
-| UI | 1:1 Voice/Video; ring Accept/Decline + pulse; conflict ring (**End & Accept** / **Ignore** when outbound active); compact in-call bar (mute, elapsed, meters, Leave) |
-| Media stack | `base/media/CallMediaEngine` — libdatachannel + libopus + SDL audio (V014) |
+| UI | 1:1 Voice/Video start; ring Accept/Decline + pulse; conflict ring; compact in-call bar (mute, elapsed, meters, Leave) — **no video tiles / camera toggle yet** |
+| Media stack | `base/media/CallMediaEngine` — libdatachannel + libopus + SDL audio (V014); **audio only** |
 | Media key wrap | Pairwise AEAD `WrapKeyB64` / `UnwrapKeyB64` (V015); sent on accept + rotate |
-| Tests | Coordinator / state / invite expiry; store CRUD; SDP/ICE codec; wrap round-trip |
+| Tests | Coordinator / state / invite expiry; store CRUD; SDP/ICE codec; wrap round-trip; call chrome sync |
 
-## In progress / dogfood
-
-| Area | State |
-|------|-------|
-| Two-device LAN Opus green path | **LAN dogfood OK (2026-07-28)** — bidirectional voice heard (Win↔Linux); ICE host candidates; `disableAutoNegotiation`; answerer `onFrame` path. Still no STUN/TURN. Linux needs `libpulse-dev` + `libasound2-dev`. |
-| Call chrome polish | Ringtone + mute + elapsed + compact bar + meters; **call conflict**: End & Accept ends outbound before joining inbound; Ignore declines inbound and restores Calling… |
-| NAT / mobile | **Not claimed** — mesh seed SFU + mobile mic permissions (Android `RECORD_AUDIO` landed in dogfood; iOS usage string / audio session) still TODO |
-
-## Not started (code)
+## a2 closed (LAN voice)
 
 | Area | State |
 |------|-------|
-| Seed SFU (`audio_relay` / `video_relay`) | Mesh capability sketched; not implemented |
+| Two-device LAN Opus | **OK (2026-07-28)** — bidirectional voice (Win↔Linux); ICE host candidates; no STUN/TURN |
+| Call chrome polish | Ringtone + mute + elapsed + meters; conflict End & Accept / Ignore |
+| NAT / mobile voice | **Not claimed** — seed SFU + full mobile bring-up still TODO |
+
+## Not started (code) — a3 prep
+
+| Area | State |
+|------|-------|
+| H264 encode/decode | **Locked** platform HW (V017): Win MF / macOS VideoToolbox / Android MediaCodec; Linux VA-API best-effort — **no soft-codec product fallback** |
+| Video track + shell tiles | Capture/render path locked in V018; not implemented |
+| Seed SFU (`audio_relay` / `video_relay`) | Mesh capability sketched; not implemented — **not a3 exit** |
 | App-level frame AEAD under shared media key | Epoch key distributed; wire media still DTLS-SRTP (V014) |
 | Group start / multi-invite UX | Manager supports invite list; header is 1:1-only for now |
-| Missed/declined history hints | Deferred (v1.1) |
-| Video (a3) | Capture/render + codec lock |
-| Mobile mic / camera permissions | Android manifest `RECORD_AUDIO` exercised in dogfood; iOS plist / `AVAudioSession` still open — see [PLATFORMS § A/V](../../docs/architecture/PLATFORMS.md#av-media-sdl--calls) |
+| iOS A/V permissions / session | **Separate mobile-bring-up** (V016) — not a3 |
+| Android camera | Optional in a3 dogfood; `CAMERA` + runtime when exercised |
 
 ## Mesh dependency snapshot
 
@@ -46,18 +47,19 @@
 | np / nr / nu / n3 | Needed for honest NAT + dial SFU |
 | n4 audio/video relay | SFU for mobile default path |
 
-## Next agent — close a2 / start a3 prep
+## Next agent — a3 implement
 
-**Goal:** Mark a2 complete after any remaining Windows Accept UI flake; then video spike (a3) or seed SFU track.
+**Goal:** Implement LAN 1:1 video per V016–V018. Codec path: **platform HW** (V017). No OpenH264 vendor as product default.
 
-1. ~~Two devices on same LAN: start voice call → accept → confirm bidirectional audio.~~ **Done (LAN).**
-2. Optional: re-verify Android→desktop once Accept chrome is solid; confirm `RECORD_AUDIO` on all Android builds.
-3. If ICE fails off-LAN, do not claim success — wait for STUN/TURN or seed SFU.
-4. Mute / ringtone / compact bar are in; dogfood those on a second LAN pass if time.
+1. Add `IVideoCodec` + Win Media Foundation and/or macOS VideoToolbox first; Linux VA-API best-effort; fail video send clearly when no encoder.
+2. Wire encode → `H264RtpPacketizer` / decode ← depacketizer beside Opus in `CallMediaEngine`.
+3. SDL camera on Camera-toggle only (off by default); shell stage + PiP textures (V018); no shell remount for show/hide.
+4. Two LAN devices on HW-capable hosts: enable camera both sides → confirm remote video.
+5. Update CURRENT_STATE when LAN video green; leave NAT/SFU/iOS unclaimed; note Linux no-encoder cases.
 
-**Do not:** claim mobile NAT success without seed SFU; ambient group Join; record/screen-share.
+**Do not:** claim mobile NAT success without seed SFU; fold iOS into a3 exit; ship OpenH264/FFmpeg as a3 default; ambient group Join; record/screen-share.
 
-**Parallel mesh work (other agents):** `pp-node` (**np done**) → reachability/UPnP (**nr/nu**) → circuit → seed SFU — required before NAT’d mobile green path.
+**Parallel:** mesh **nr** → … → seed SFU; separate **iOS mobile-bring-up** (mic plist, `AVAudioSession`, later camera usage).
 
 ## Agent traps
 
@@ -71,9 +73,13 @@
 | Mobile hosts SFU | Client consumes seed/friend SFU (V008) |
 | Block a1 on mesh SFU | Parallel track (V010) |
 | Store call roster only in thread.db | profile.db (V011) |
-| Pull full libwebrtc for a2 | libdatachannel + Opus + SDL (V014) |
+| Pull full libwebrtc / OpenH264-as-default for a3 | libdatachannel + Opus + SDL + **platform HW H264** (V017) |
+| Expect video encode on every Linux box | VA-API best-effort; no encoder → fail send loudly (V017) |
 | Replace DTLS-SRTP with shared key alone in a2 | Shared key distributed; DTLS-SRTP on wire (V014) |
 | Require Pulse/ALSA on Win/Mac/mobile | Only Linux needs those `-dev` packages ([BUILD.md](../../docs/ops/BUILD.md)) |
-| Ship mobile voice without RECORD_AUDIO / NSMicrophoneUsageDescription | Add platform permissions first ([PLATFORMS](../../docs/architecture/PLATFORMS.md#av-media-sdl--calls)) |
+| Ship mobile voice without RECORD_AUDIO / NSMicrophoneUsageDescription | Platform permissions — iOS = separate bring-up ([PLATFORMS](../../docs/architecture/PLATFORMS.md#av-media-sdl--calls)) |
 | Remount shell (`RequestSyncLayout`) to show/hide call ring or in-call UI | Keep overlays in shell with `data-if`; update via `DirtyWindow` only ([WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md#dom-sync-dirtywindow-vs-synclayout)) |
-| Remount shell (`RequestSyncLayout`) from background poll every tick | Remount only when real shell structure changes; poll reconciles call state without remount |
+| Remount shell for video tiles / every frame | Persistent GL texture + DirtyWindow; never remount for pixels (V018) |
+| Claim a3 done when only SFU path works | a3 = LAN video; SFU is mesh-gated (V016) |
+| Pick VP8 as a3 primary | H264 (V017) |
+| Blit video after Present outside RmlUi layout | Layout-owned tiles (V018) |

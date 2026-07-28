@@ -39,13 +39,19 @@ Mesh prerequisites (see [p2p-mesh PHASES](../p2p-mesh/PHASES.md)): **np → nr �
 - [x] Two-device voice call green path (document NAT vs LAN in CURRENT_STATE) — **LAN dogfood OK 2026-07-28; NAT not claimed**
 - [x] Light mute + ringtone + compact in-call chrome (a2 polish)
 
-## a3 — 1:1 video (desktop + mobile)
+## a3 — 1:1 video (LAN; desktop + optional Android)
 
-- [ ] Capture + render path in SDL/RmlUi shell (platform camera permissions)
-- [ ] Mobile mic permissions + audio session (Android `RECORD_AUDIO`; iOS usage string / `AVAudioSession`) if not done with a2 mobile bring-up
-- [ ] Lock video codec preference (H264 vs VP8)
-- [ ] Camera off by default on join (V009)
-- [ ] Mobile Client ↔ desktop / mobile↔mobile via seed SFU
+Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-first-sfu--ios-separate). Codec: [V017](DECISIONS.md#v017--video-codec-h264-via-platform-hw). Shell path: [V018](DECISIONS.md#v018--video-capture--render-path-in-sdl--rmlui-shell).
+
+- [ ] Platform HW H264 backends behind `IVideoCodec` (Win MF / macOS VideoToolbox; Linux VA-API best-effort; Android MediaCodec optional)
+- [ ] Capture + encode + RTP video track; decode + persistent GL texture tiles (V018)
+- [ ] Shell video stage: remote tile + local PiP; **Camera** toggle; camera off on join (V009)
+- [ ] Desktop LAN dogfood on HW-capable machines — two devices, bidirectional video when enabled
+- [ ] Document LAN video OK + Linux “no encoder” limitation; **do not** claim NAT / seed SFU
+- [ ] iOS mic / `AVAudioSession` / camera usage — **not a3**; separate mobile-bring-up task
+
+**Deferred (mesh-gated, not a3 exit):** Mobile Client ↔ desktop / mobile↔mobile via seed SFU (V008 / n4).  
+**Accepted:** Linux hosts without usable HW H264 encoder may fail video send (V017).
 
 ## a4 — Group calls (≤8), guests, rotate-on-leave
 

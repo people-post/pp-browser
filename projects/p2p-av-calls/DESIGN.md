@@ -22,10 +22,13 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 10 | Media key | One shared call media key; **rotate on every leave**; overlapping epochs for UX |
 | 11 | Recording | Out of v1 |
 | 12 | SFU seeds | Org `pp-node` seeds run volunteer SFU; more seeds after release (ops) |
-| 13 | Delivery | **Parallel:** a1 now; a2 LAN dogfood until seed SFU (V010) |
+| 13 | Delivery | **Parallel** media vs mesh SFU (V010); a2 LAN voice done; a3 LAN video (V016); NAT after seed SFU |
 | 14 | Persistence | `call_*` in **profile.db**; keys vault-backed (V011) |
 | 15 | Signaling carrier | Direct E2E `ChatPayload` system controls (V012) |
 | 16 | WebRTC lib | **libdatachannel + libopus + SDL** (V014) |
+| 17 | a3 scope | LAN 1:1 video first; SFU / iOS bring-up deferred (V016) |
+| 18 | Video codec | **H264** CBP via **platform HW** (V017); Linux VA-API best-effort |
+| 19 | Video UI path | SDL camera → platform HW H264 → persistent GL texture in shell tiles (V018) |
 
 ---
 
@@ -36,7 +39,7 @@ Two planes:
 | Plane | Transport | Purpose |
 |-------|-----------|---------|
 | **Signaling** | Existing mesh / E2E messaging (direct + optional origin-thread system msgs) | Invite, accept, leave, roster, media-key epochs, SFU hints |
-| **Media** | WebRTC (ICE + DTLS-SRTP / equivalent) | Opus audio; video (H264 or VP8 — lock at a3) |
+| **Media** | WebRTC (ICE + DTLS-SRTP / equivalent) | Opus audio; video **H264** (V017); LAN first, SFU later (V016) |
 
 ```mermaid
 flowchart TB
@@ -182,8 +185,9 @@ ICE trickle / SDP: embed in signaling `detail` or follow-up system controls as n
 
 - **Signaling / discovery:** mesh + call events above  
 - **Media:** WebRTC-compatible ICE + encrypted media (DTLS-SRTP or equivalent profile locked at a2)  
-- **Codecs:** Opus audio required; video codec chosen in a3 (prefer hardware-friendly H264 on mobile)  
-- **Topology:** 1:1 try P2P; group (N≥3) prefer **SFU**; 1:1 falls back to SFU/TURN when ICE fails  
+- **Codecs:** Opus audio required; video **H264** Constrained Baseline via **platform HW** (V017: Win MF / macOS VideoToolbox / Android MediaCodec; Linux VA-API best-effort — no soft-codec product fallback).  
+- **Capture / blit:** SDL3 camera on user enable; shell RML tiles + persistent GL texture (V018); camera off on join (V009).  
+- **Topology:** 1:1 try P2P; group (N≥3) prefer **SFU**; 1:1 falls back to SFU/TURN when ICE fails. **a3** claims LAN only (V016).  
 
 ### SFU and mesh
 
@@ -255,7 +259,7 @@ CallKit / ConnectionService full OS integration: `[v1.1]` / platform follow-up; 
 |---------|----------|
 | 1:1 / group chat header | Voice / Video call actions |
 | Incoming | Full-screen or modal ring; Accept / Decline |
-| In-call | Roster, mute, camera, leave; duration |
+| In-call | Voice: compact bar (mute / leave / duration). Video: stage + PiP tiles + **Camera** toggle (off by default); mute / leave |
 | Origin thread | `call_started` / `call_ended` bubbles |
 | Invite | Share invite into a DM (guest) or pick member |
 
@@ -294,7 +298,7 @@ Honest mobile video needs mesh progress roughly:
 
 `n1` (done) → `np` (`pp-node`) → `nr` / `nu` → `n3` circuit → **SFU audio/video on seeds** (n4 media caps, volunteer first)
 
-**Delivery (V010):** **a1** proceeds in parallel; **a2** LAN dogfood allowed; NAT’d mobile green path after seed SFU.
+**Delivery (V010 / V016):** **a1** proceeded in parallel; **a2** LAN voice done; **a3** LAN video (not SFU); NAT’d mobile green path after seed SFU. **iOS** mic/session/camera = separate mobile-bring-up, not a3 exit.
 
 ### Mesh alignment (a0) — locked guidance
 

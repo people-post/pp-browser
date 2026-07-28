@@ -1,6 +1,6 @@
 # P2P A/V calls
 
-**Status:** **a2 in progress** — libdatachannel + Opus + SDL wired; LAN dogfood pending  
+**Status:** **a2 done** (LAN voice); **a3 planned** — H264 **platform HW** + shell path locked (V016–V018)  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [p2p-mesh](../p2p-mesh/) (circuit + audio/video SFU caps), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md)
@@ -36,9 +36,10 @@
 | Prerequisite | Why | Notes |
 |--------------|-----|--------|
 | Mesh **nr → nu → n3** (reachability, UPnP/IPv6, circuit) | NAT’d / Client peers | Mobile is always Client (no listen) |
-| Mesh **audio/video SFU** on org seeds (`pp-node`) | Mobile↔mobile default path | More SFU seeds post-release (ops) |
+| Mesh **audio/video SFU** on org seeds (`pp-node`) | Mobile↔mobile default path | More SFU seeds post-release (ops); **not a3 exit** (V016) |
 | Direct E2E + group messaging | Signaling + key wrap to invitees | Guests use direct pairwise only |
 | Push Wave 1 + **`call_wake`** | Background ring | Extends push-notifications |
+| Platform HW H264 (V017) | a3 video encode/decode | Win MF / macOS VT / Android MediaCodec; Linux VA-API best-effort |
 
 ## Progress snapshot
 
@@ -47,8 +48,8 @@
 | v0 | Project docs + ADRs | Done |
 | a0 | Mesh/SFU prerequisites alignment | **Done** |
 | a1 | Signaling + session + history + ring wake | **Done** |
-| a2 | 1:1 voice (WebRTC + LAN dogfood / seed SFU) | **In progress** — stack + signaling landed; dogfood pending |
-| a3 | 1:1 video (desktop + mobile) | Pending |
+| a2 | 1:1 voice (WebRTC + LAN dogfood) | **Done** — LAN Opus OK; NAT unclaimed |
+| a3 | 1:1 video (LAN; H264 platform HW; shell tiles) | **Planned** — V016–V018 locked; SFU/iOS deferred |
 | a4 | Group ≤8, guests, rotate-on-leave | Pending |
 | a5 | Cap decision 8→16, polish | Pending |
 | a6 | Promote contracts to `docs/` | Pending |

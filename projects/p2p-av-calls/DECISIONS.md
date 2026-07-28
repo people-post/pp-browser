@@ -154,3 +154,121 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 Blob encoding matches chat: `EncryptedPayload::EncodeBlob` → base64 as `wrapped_key_b64`. Do not reuse message CanonicalAAD fields.
 
 **Rationale:** Binds wrap to call/epoch; reuses proven AEAD stack without inventing a second cipher.
+
+---
+
+## V016 — a3 delivery slice: LAN video first; SFU / iOS separate
+
+**Date:** 2026-07-28  
+**Decision:** Phase **a3** ships **desktop (and optional Android) 1:1 video on the LAN/same-network ICE path**, with H264 locked (V017), camera-off-by-default (V009), and shell video surfaces (V018). Explicitly **out of a3 “done”**:
+
+| Deferred | Where it lands |
+|----------|----------------|
+| NAT’d mobile ↔ desktop / mobile↔mobile via seed SFU | Mesh **nr → nu → n3 → n4** SFU + call consumer; do **not** claim in a3 |
+| iOS mic / `AVAudioSession` / camera usage strings | Separate **mobile-bring-up** task (not a3 exit criteria) |
+| STUN/TURN beyond host ICE | With SFU / mesh reachability work |
+
+Same pattern as a2 (V010): LAN dogfood proves media + UI; NAT claims wait for org-seed SFU (V008).
+
+**a3 exit criteria (claimable):**
+
+1. Two devices on LAN: video call → accept → remote video visible when peer enables camera; local preview when self enables  
+2. Camera **off** on join until user toggles on; mic defaults on (V009)  
+3. Codec preference **H264** in SDP; encode/decode via **platform HW** (V017)  
+4. Desktop camera permissions / OS privacy prompts exercised; Android `CAMERA` (+ existing `RECORD_AUDIO`) if Android is in the dogfood set  
+5. Docs: CURRENT_STATE marks LAN video OK; NAT/SFU/iOS still unclaimed; Linux without usable HW encoder may fail video send (accepted) 
+
+**Rationale:** Mesh SFU is still pre-nr; blocking a3 on it repeats the false “mobile-ready” trap. iOS A/V session work is packaging-heavy and independent of the video pipeline design.  
+**Alternatives:** Full a3 checklist including SFU (rejected — mesh-gated); fold iOS into a3 (rejected — separate bring-up).
+
+---
+
+## V017 — Video codec H264 via platform HW
+
+**Date:** 2026-07-28  
+**Decision:** a3+ video uses **H.264 (AVC), Constrained Baseline** in SDP (`Description::Video` + libdatachannel `H264RtpPacketizer` / `H264RtpDepacketizer`). Encode/decode through **OS hardware APIs** behind a thin `IVideoCodec` (YUV/NAL in, NAL/YUV or RGBA out) — not a vendored soft codec as the product path. **VP8 is not the a3 primary.**
+
+**Wire profile (locked):**
+
+| Item | Choice |
+|------|--------|
+| Codec name in SDP | `H264` |
+| Profile | Constrained Baseline (WebRTC-friendly; target HW encoders accordingly) |
+| Packetization | libdatachannel H264 RTP helpers |
+| Audio | Unchanged Opus (V014) |
+| Encode / decode | **Platform HW** (below) |
+
+**Platform backends:**
+
+| OS | API | a3 expectation |
+|----|-----|----------------|
+| Windows | Media Foundation (prefer); QSV/NVENC later if needed | Primary desktop dogfood target |
+| macOS | VideoToolbox | Primary desktop dogfood target |
+| Android | MediaCodec | Optional a3 dogfood when exercised |
+| iOS | VideoToolbox | Separate mobile-bring-up (V016) |
+| Linux | VA-API (and/or V4L2 M2M) when present | **Best-effort** — no soft-codec product fallback in a3 |
+
+**Linux constraint (accepted):** Many Linux hosts (VMs, headless, missing iGPU drivers) have **no usable H264 encoder**. a3 may fail video **send** on those machines; document in CURRENT_STATE. Do **not** block a3 on universal Linux soft encode. Receiving/decoding may still work when a HW decoder exists.
+
+**Rejected for a3 product path:**
+
+| Option | Why not |
+|--------|---------|
+| OpenH264 as default | Cisco MPEG-LA coverage requires **their** downloadable binary + install-time download + user toggle + attribution — not a static `third_party/` link like Opus. Building from source drops Cisco’s royalty coverage ([FAQ](https://www.openh264.org/faq.html)). |
+| FFmpeg libavcodec as default | LGPL/size; patents unchanged; mobile better served by MediaCodec/VideoToolbox |
+| libvpx / VP8 primary | Diverges from H264 lock |
+| Full libwebrtc | Rejected (V014) |
+
+**Rationale:** Avoids OpenH264 distribution/patent dance; best battery and quality on Win/macOS/Android; matches long-term mobile path. Linux unevenness accepted for LAN dogfood.  
+**Alternatives:** OpenH264 portable soft default (rejected after patent/binary review); FFmpeg (rejected as primary).
+
+---
+
+## V018 — Video capture / render path in SDL + RmlUi shell
+
+**Date:** 2026-07-28  
+**Decision:** a3 video uses this pipeline (1:1 LAN):
+
+```text
+SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
+  → libdatachannel video Track + H264RtpPacketizer
+  → DTLS-SRTP (existing PC)
+  → H264RtpDepacketizer → platform HW decode → RGBA
+  → persistent GL texture → shell RML video tiles (layout)
+```
+
+### Capture
+
+- Init camera on demand: `SDL_InitSubSystem(SDL_INIT_CAMERA)` (same pattern as audio — do not fail window bring-up).  
+- Open device only when user **enables camera** (V009); closing camera on disable.  
+- Prefer front-facing when `SDL_GetCameraPosition` reports it (mobile later).  
+- Permissions: OS privacy prompts via SDL; Android `CAMERA` (+ runtime) when that platform is dogfooded. **iOS plist / session → separate mobile-bring-up (V016).**
+
+### Peer connection
+
+- Add a **video** `Description::Media` track alongside existing Opus audio (renegotiate or include in initial offer when `media_mode == video`).  
+- When camera off: do not send video frames (or send no track / paused track); remote UI shows placeholder — not a black full-screen surprise.  
+- Signal `video_enabled` on participant media (design entity already has `{ audio_muted, video_enabled }`); reuse roster / lightweight control as needed — no new push type.
+
+### Render in shell (chosen approach)
+
+**Chosen: layout-owned tiles + persistent GL texture updates** (not a free-floating post-Present overlay).
+
+| Approach | Verdict |
+|----------|---------|
+| **A. Shell RML placeholders** (`data-if` video stage) + **persistent `TextureHandle`** updated with `glTexSubImage2D` / `CallbackTextureInterface::SetTextureHandle` | **Adopt** — stays in RmlUi layout/hit-testing; DirtyWindow only; matches TextLoupe / Lottie “dynamic texture” patterns |
+| **B. `GenerateTexture` every frame** (full reallocate) | Reject for steady state — GC/alloc cost at 15–30 fps |
+| **C. OpenGL blit after `PresentFrame`, ignore RML** | Reject for a3 — breaks hit-testing, safe-area, theme; hard to keep compact bar + PiP consistent |
+| **D. Remount shell when video appears** | **Forbidden** — agent trap: use `data-if` + `DirtyWindow` only ([WINDOW_SHELL](../../docs/ui/WINDOW_SHELL.md)) |
+
+**UI composition (1:1 a3):**
+
+1. Voice calls keep today’s compact bottom bar (mute / meters / elapsed / Leave).  
+2. Video calls expand an in-shell **stage** (still overlay, not a new nav tab): large **remote** tile; small **local PiP** when local camera on; placeholder / avatar when remote camera off.  
+3. Actions: existing mute + Leave; add **Camera** toggle (off → on requests permission + opens SDL camera).  
+4. Chrome gate remains `CallChromeSync` / `DirtyWindow` — frame pixels update without remounting; only layer identity changes remount-class dirty.
+
+**Threading:** decode/upload on media thread → hand RGBA or GPU upload to UI thread before `Context::Render` (same discipline as audio level meters today). Never touch GL from the capture thread without a documented share context (prefer UI-thread upload).
+
+**Rationale:** Reuses SDL camera + GL3 render interface already shipping; avoids Chromium; keeps call chrome in the shell model proven in a2.  
+**Alternatives:** Full-screen native video widget (rejected for a3 shell unity); GStreamer pipeline (rejected — V014).

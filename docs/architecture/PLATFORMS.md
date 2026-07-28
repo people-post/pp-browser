@@ -18,15 +18,15 @@ See [SDL wiki: AppFreezeDuringDrag](https://wiki.libsdl.org/SDL3/AppFreezeDuring
 
 ## A/V media (SDL + calls)
 
-Voice/video capture and playback go through **SDL3 audio** (and later camera) in [`CallMediaEngine`](../../src/base/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014. Signaling is mesh/E2E; media is WebRTC-shaped (libdatachannel).
+Voice/video capture and playback go through **SDL3 audio** (and later camera) in [`CallMediaEngine`](../../src/base/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017 / V018. Signaling is mesh/E2E; media is WebRTC-shaped (libdatachannel). Video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux VA-API best-effort) — not OpenH264 as product default.
 
 | Platform | SDL audio backend | Extra build packages? | Product checklist (not all done) |
 |----------|-------------------|----------------------|----------------------------------|
 | Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy |
 | Windows | WASAPI | No | OS microphone privacy |
 | macOS | CoreAudio | No | Mic privacy / usage string for notarized apps |
-| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + runtime permission; a3: camera |
-| iOS | CoreAudio | No | `NSMicrophoneUsageDescription`; `AVAudioSession` VoIP/play-and-record; optional background `audio`; a3: camera usage |
+| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + runtime permission; optional a3 dogfood: `CAMERA` |
+| iOS | CoreAudio | No | **Separate mobile-bring-up** (not a3 exit, V016): `NSMicrophoneUsageDescription`; `AVAudioSession` VoIP/play-and-record; optional background `audio`; later camera usage |
 
 **Agent traps**
 
@@ -75,7 +75,7 @@ Android keeps the activity alive across orientation changes (`configChanges` in 
 
 Do not issue OpenGL calls after `SDL_EVENT_WILL_ENTER_BACKGROUND`; SDL may have already backed up the EGL context.
 
-**A/V (future):** add `android.permission.RECORD_AUDIO` (and camera at a3) to `android/app/src/main/AndroidManifest.xml`, plus a runtime permission prompt before `CallMediaEngine` opens capture. See [§ A/V media](#av-media-sdl--calls).
+**A/V:** `RECORD_AUDIO` for voice; optional a3 dogfood also needs `CAMERA` + runtime prompt before `CallMediaEngine` opens capture. See [§ A/V media](#av-media-sdl--calls).
 
 Build: [BUILD.md](../ops/BUILD.md#android-local).
 
@@ -106,7 +106,7 @@ Mobile builds link curl against vendored BoringSSL (no Secure Transport on iOS).
 
 Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/base/platform/os/OsTlsPlatformCurl_*`).
 
-**A/V (future):** add `NSMicrophoneUsageDescription` to [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); configure `AVAudioSession` for play-and-record / VoIP before capture; consider `UIBackgroundModes` → `audio` for in-call background. Camera usage strings at a3. See [§ A/V media](#av-media-sdl--calls).
+**A/V (mobile-bring-up task, not a3 exit — [V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-first-sfu--ios-separate)):** add `NSMicrophoneUsageDescription` to [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); configure `AVAudioSession` for play-and-record / VoIP before capture; consider `UIBackgroundModes` → `audio` for in-call background. Camera usage strings when iOS video is dogfooded. See [§ A/V media](#av-media-sdl--calls).
 
 Build and signing placeholders: [IOS_BUILD.md](../ops/IOS_BUILD.md). Scripts: [`scripts/ios_build.sh`](../../scripts/ios_build.sh), [`scripts/ios_sign.sh`](../../scripts/ios_sign.sh).
 
