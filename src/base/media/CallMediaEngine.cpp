@@ -221,13 +221,12 @@ struct CallMediaEngine::Impl {
     packetizer->addToChain(rtcp_recv);
     packetizer->addToChain(sr_reporter);
     audio_track->setMediaHandler(packetizer);
-    audio_track->onMessage(
-        [this](rtc::binary data) {
-          if (!data.empty()) {
-            OnRemoteOpusFrame(data.data(), data.size());
-          }
-        },
-        nullptr);
+    // Depacketizer attaches FrameInfo; Track delivers those via onFrame, not onMessage.
+    audio_track->onFrame([this](rtc::binary data, rtc::FrameInfo) {
+      if (!data.empty()) {
+        OnRemoteOpusFrame(data.data(), data.size());
+      }
+    });
     track = audio_track;
   }
 
@@ -332,6 +331,8 @@ struct CallMediaEngine::Impl {
     // Leaving auto-negotiation on would answer inside setRemoteDescription, then our
     // second setLocalDescription(Answer) throws "Unexpected local … answer in … stable".
     config.disableAutoNegotiation = true;
+    // Media-only PeerConnection (no DataChannel) still needs DTLS-SRTP.
+    config.forceMediaTransport = true;
     pc = std::make_shared<rtc::PeerConnection>(config);
     role = start_role;
     local_ssrc = (start_role == Role::Offerer) ? kOffererAudioSsrc : kAnswererAudioSsrc;
