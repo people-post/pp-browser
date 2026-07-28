@@ -464,7 +464,9 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
       !sent) {
     return sent.error();
   }
-  (void)StartMediaAsAnswerer(call_id, (*pending)->inviter_identity);
+  if (auto started = StartMediaAsAnswerer(call_id, (*pending)->inviter_identity); !started) {
+    log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
+  }
 
   // Best-effort roster to inviter; full fan-out when we are coordinator later.
   auto roster = BuildRosterDetail(call_id);
@@ -814,7 +816,9 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       if (key_bytes && key_bytes->has_value()) {
         (void)SendMediaKeyToPeer(accept->call_id, identity, epoch, (*session)->media_key_id, **key_bytes);
       }
-      (void)StartMediaAsOfferer(accept->call_id, identity);
+      if (auto started = StartMediaAsOfferer(accept->call_id, identity); !started) {
+        log().warning << "StartMediaAsOfferer failed: " << started.error().message;
+      }
     }
 
     NotifyRingChanged();

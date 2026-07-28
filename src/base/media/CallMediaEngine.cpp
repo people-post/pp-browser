@@ -21,7 +21,9 @@ constexpr int kChannels = 1;
 constexpr int kFrameMs = 20;
 constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000; // 960
 constexpr int kOpusPayloadType = 111;
-constexpr rtc::SSRC kAudioSsrc = 42;
+// Each peer must advertise a distinct send SSRC (SDP: local description lists only SSRCs we send).
+constexpr rtc::SSRC kOffererAudioSsrc = 1;
+constexpr rtc::SSRC kAnswererAudioSsrc = 2;
 
 std::string StateToString(rtc::PeerConnection::State state) {
   switch (state) {
@@ -58,6 +60,8 @@ struct CallMediaEngine::Impl {
   std::shared_ptr<rtc::PeerConnection> pc;
   std::shared_ptr<rtc::Track> track;
   std::shared_ptr<rtc::RtpPacketizationConfig> rtp_config;
+  rtc::SSRC local_ssrc = kOffererAudioSsrc;
+  bool capture_available = false;
 
   OpusEncoder* encoder = nullptr;
   OpusDecoder* decoder = nullptr;
@@ -134,6 +138,7 @@ struct CallMediaEngine::Impl {
     local_input_level.store(0.f, std::memory_order_relaxed);
     remote_output_level.store(0.f, std::memory_order_relaxed);
     remote_level_ms.store(0, std::memory_order_relaxed);
+    capture_available = false;
   }
 
   void TearDownPcLocked() {
@@ -178,13 +183,18 @@ struct CallMediaEngine::Impl {
     want.format = SDL_AUDIO_S16;
     want.channels = static_cast<Uint8>(kChannels);
 
+    // Mic is optional: headless / no-capture hosts can still receive and play audio.
     capture_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &want, nullptr, nullptr);
-    if (!capture_stream) {
-      return Error(std::string("SDL capture open failed: ") + SDL_GetError());
-    }
-    capture_device = SDL_GetAudioStreamDevice(capture_stream);
-    if (!SDL_ResumeAudioDevice(capture_device)) {
-      return Error(std::string("SDL capture resume failed: ") + SDL_GetError());
+    capture_available = false;
+    if (capture_stream) {
+      capture_device = SDL_GetAudioStreamDevice(capture_stream);
+      if (SDL_ResumeAudioDevice(capture_device)) {
+        capture_available = true;
+      } else {
+        SDL_DestroyAudioStream(capture_stream);
+        capture_stream = nullptr;
+        capture_device = 0;
+      }
     }
 
     playback_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
@@ -198,36 +208,69 @@ struct CallMediaEngine::Impl {
     return {};
   }
 
+  void BindAudioTrack(const std::shared_ptr<rtc::Track>& audio_track, rtc::SSRC ssrc) {
+    local_ssrc = ssrc;
+    rtp_config = std::make_shared<rtc::RtpPacketizationConfig>(ssrc, "audio", kOpusPayloadType,
+                                                               rtc::OpusRtpPacketizer::DefaultClockRate);
+    auto packetizer = std::make_shared<rtc::OpusRtpPacketizer>(rtp_config);
+    auto depacketizer = std::make_shared<rtc::OpusRtpDepacketizer>();
+    auto rtcp_recv = std::make_shared<rtc::RtcpReceivingSession>();
+    auto sr_reporter = std::make_shared<rtc::RtcpSrReporter>(rtp_config);
+    // Packetizer (out) → depacketizer (in) → RTCP RR/SR for a healthy SendRecv track.
+    packetizer->addToChain(depacketizer);
+    packetizer->addToChain(rtcp_recv);
+    packetizer->addToChain(sr_reporter);
+    audio_track->setMediaHandler(packetizer);
+    audio_track->onMessage(
+        [this](rtc::binary data) {
+          if (!data.empty()) {
+            OnRemoteOpusFrame(data.data(), data.size());
+          }
+        },
+        nullptr);
+    track = audio_track;
+  }
+
   void StartCaptureLoop() {
     capture_running = true;
     capture_thread = std::thread([this]() {
       std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
       std::vector<unsigned char> opus_buf(4000);
       while (capture_running.load()) {
-        if (!capture_stream) {
-          SmoothLevel(local_input_level, 0.f);
-          std::this_thread::sleep_for(std::chrono::milliseconds(5));
-          continue;
-        }
-        const int got = SDL_GetAudioStreamData(capture_stream, pcm.data(),
-                                               static_cast<int>(pcm.size() * sizeof(int16_t)));
-        if (got < static_cast<int>(pcm.size() * sizeof(int16_t))) {
-          SmoothLevel(local_input_level, 0.f);
-          const int64_t now = util::NowUnixMs();
-          if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
-            SmoothLevel(remote_output_level, 0.f);
+        const bool can_send = track && track->isOpen() && encoder;
+        if (capture_stream) {
+          const int got = SDL_GetAudioStreamData(capture_stream, pcm.data(),
+                                                 static_cast<int>(pcm.size() * sizeof(int16_t)));
+          if (got < static_cast<int>(pcm.size() * sizeof(int16_t))) {
+            SmoothLevel(local_input_level, 0.f);
+            const int64_t now = util::NowUnixMs();
+            if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
+              SmoothLevel(remote_output_level, 0.f);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            continue;
           }
-          std::this_thread::sleep_for(std::chrono::milliseconds(2));
-          continue;
+          SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
+        } else {
+          // No mic: send silence so the peer track stays alive / comfort noise path.
+          std::fill(pcm.begin(), pcm.end(), 0);
+          SmoothLevel(local_input_level, 0.f);
+          if (!can_send) {
+            const int64_t now = util::NowUnixMs();
+            if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
+              SmoothLevel(remote_output_level, 0.f);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
+            continue;
+          }
         }
-        SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
         {
           const int64_t now = util::NowUnixMs();
           if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
             SmoothLevel(remote_output_level, 0.f);
           }
         }
-        if (!track || !track->isOpen() || !encoder) {
+        if (!can_send) {
           continue;
         }
         const int encoded =
@@ -239,6 +282,9 @@ struct CallMediaEngine::Impl {
           track->send(reinterpret_cast<const std::byte*>(opus_buf.data()), static_cast<size_t>(encoded));
         } catch (...) {
           // Peer may be mid-renegotiation; drop frame.
+        }
+        if (!capture_stream) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
         }
       }
     });
@@ -272,6 +318,8 @@ struct CallMediaEngine::Impl {
     // second setLocalDescription(Answer) throws "Unexpected local … answer in … stable".
     config.disableAutoNegotiation = true;
     pc = std::make_shared<rtc::PeerConnection>(config);
+    role = start_role;
+    local_ssrc = (start_role == Role::Offerer) ? kOffererAudioSsrc : kAnswererAudioSsrc;
 
     pc->onStateChange([this](rtc::PeerConnection::State state) { SetState(StateToString(state)); });
 
@@ -298,29 +346,25 @@ struct CallMediaEngine::Impl {
       on_local_description(local);
     });
 
-    rtc::Description::Audio media("audio", rtc::Description::Direction::SendRecv);
-    media.addOpusCodec(kOpusPayloadType);
-    media.addSSRC(kAudioSsrc, "audio");
-    track = pc->addTrack(media);
+    // Answerer: SDP answer must list only SSRCs we send. After remote offer, onTrack fires with
+    // the negotiated m-line (remote SSRCs cleared) — re-add our send SSRC before answering.
+    // Offerer: same callback can fire on renegotiation; keep handlers on the negotiated track.
+    pc->onTrack([this](std::shared_ptr<rtc::Track> remote_track) {
+      if (!remote_track) {
+        return;
+      }
+      auto desc = remote_track->description();
+      desc.addSSRC(local_ssrc, "audio");
+      remote_track->setDescription(desc);
+      BindAudioTrack(remote_track, local_ssrc);
+    });
 
-    rtp_config = std::make_shared<rtc::RtpPacketizationConfig>(kAudioSsrc, "audio", kOpusPayloadType,
-                                                               rtc::OpusRtpPacketizer::DefaultClockRate);
-    auto packetizer = std::make_shared<rtc::OpusRtpPacketizer>(rtp_config);
-    auto depacketizer = std::make_shared<rtc::OpusRtpDepacketizer>();
-    // Packetizer only overrides outgoing(); depacketizer only overrides incoming() — chaining
-    // both on the track covers send (raw Opus -> RTP) and receive (RTP -> raw Opus) directions.
-    packetizer->addToChain(depacketizer);
-    track->setMediaHandler(packetizer);
-    track->onMessage(
-        [this](rtc::binary data) {
-          if (!data.empty()) {
-            OnRemoteOpusFrame(data.data(), data.size());
-          }
-        },
-        nullptr);
-
-    role = start_role;
     if (start_role == Role::Offerer) {
+      rtc::Description::Audio media("audio", rtc::Description::Direction::SendRecv);
+      media.addOpusCodec(kOpusPayloadType);
+      media.addSSRC(local_ssrc, "audio");
+      auto local_track = pc->addTrack(media);
+      BindAudioTrack(local_track, local_ssrc);
       pc->setLocalDescription();
     }
     return {};
@@ -364,6 +408,9 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
   if (auto audio = impl_->OpenAudioDevices(); !audio) {
     impl_->TearDownAudioLocked();
     return audio.error();
+  }
+  if (!impl_->capture_available) {
+    log().warning << "Call media started without capture device — sending silence; playback still active";
   }
   if (auto pc = impl_->SetupPeerConnection(role); !pc) {
     impl_->TearDownAudioLocked();
