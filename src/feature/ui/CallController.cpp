@@ -33,16 +33,16 @@ CallChromeLayer CaptureCallChrome(const ShellState& state) {
 }
 
 int QuantizeAudioLevel(float level) {
-  if (level < 0.02f) {
+  if (level < 0.008f) {
     return 0;
   }
-  if (level < 0.05f) {
+  if (level < 0.03f) {
     return 1;
   }
-  if (level < 0.10f) {
+  if (level < 0.08f) {
     return 2;
   }
-  if (level < 0.20f) {
+  if (level < 0.18f) {
     return 3;
   }
   if (level < 0.35f) {
@@ -123,6 +123,31 @@ void CallController::RefreshPendingRing() {
     return;
   }
 
+  // Prefer Accept/Decline over in-call chrome. A stale Joined session (crashed Leave, prior
+  // dogfood) would otherwise hide the ring forever while mic/media may still look "active".
+  auto top = calls->TopPendingInvite();
+  if (top && top->has_value()) {
+    ClearInCall();
+    ringing_call_id_ = (*top)->call_id;
+    auto& ring = ShellHost::Instance().State().call_ring;
+    ring.active = true;
+    ring.call_id = (*top)->call_id;
+    ring.caller_label = (*top)->inviter_identity;
+    if (auto contact = MessagingHub::Instance().Contacts().FindByIdentity((*top)->inviter_identity,
+                                                                         ContactIdKind::RelayUser)) {
+      if (*contact) {
+        ring.caller_label =
+            (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+        if (ring.caller_label.empty()) {
+          ring.caller_label = (*top)->inviter_identity;
+        }
+      }
+    }
+    ring.media_label = (*top)->media_mode == CallMediaMode::Video ? "Video call" : "Voice call";
+    SyncShellState();
+    return;
+  }
+
   if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
     active_call_id_ = (*active)->call_id;
     ClearRing();
@@ -140,31 +165,9 @@ void CallController::RefreshPendingRing() {
     SyncShellState();
     return;
   }
+
   ClearInCall();
-
-  auto top = calls->TopPendingInvite();
-  if (!top || !top->has_value()) {
-    ClearRing();
-    SyncShellState();
-    return;
-  }
-
-  ringing_call_id_ = (*top)->call_id;
-  auto& ring = ShellHost::Instance().State().call_ring;
-  ring.active = true;
-  ring.call_id = (*top)->call_id;
-  ring.caller_label = (*top)->inviter_identity;
-  if (auto contact = MessagingHub::Instance().Contacts().FindByIdentity((*top)->inviter_identity,
-                                                                       ContactIdKind::RelayUser)) {
-    if (*contact) {
-      ring.caller_label =
-          (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
-      if (ring.caller_label.empty()) {
-        ring.caller_label = (*top)->inviter_identity;
-      }
-    }
-  }
-  ring.media_label = (*top)->media_mode == CallMediaMode::Video ? "Video call" : "Voice call";
+  ClearRing();
   SyncShellState();
 }
 

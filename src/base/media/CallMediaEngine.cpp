@@ -235,21 +235,33 @@ struct CallMediaEngine::Impl {
     capture_running = true;
     capture_thread = std::thread([this]() {
       std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
+      std::vector<int16_t> pending;
+      pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
       std::vector<unsigned char> opus_buf(4000);
       while (capture_running.load()) {
         const bool can_send = track && track->isOpen() && encoder;
         if (capture_stream) {
-          const int got = SDL_GetAudioStreamData(capture_stream, pcm.data(),
-                                                 static_cast<int>(pcm.size() * sizeof(int16_t)));
-          if (got < static_cast<int>(pcm.size() * sizeof(int16_t))) {
-            SmoothLevel(local_input_level, 0.f);
-            const int64_t now = util::NowUnixMs();
-            if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
-              SmoothLevel(remote_output_level, 0.f);
+          // WASAPI/Pulse often return partial chunks — accumulate to one Opus frame.
+          int16_t chunk[kFrameSamples];
+          const int got = SDL_GetAudioStreamData(capture_stream, chunk,
+                                                 static_cast<int>(sizeof(chunk)));
+          if (got > 0) {
+            const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
+            pending.insert(pending.end(), chunk, chunk + samples);
+          }
+          if (pending.size() < static_cast<size_t>(kFrameSamples)) {
+            if (got <= 0) {
+              SmoothLevel(local_input_level, 0.f);
+              const int64_t now = util::NowUnixMs();
+              if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
+                SmoothLevel(remote_output_level, 0.f);
+              }
+              std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
             continue;
           }
+          std::copy_n(pending.begin(), kFrameSamples, pcm.begin());
+          pending.erase(pending.begin(), pending.begin() + kFrameSamples);
           SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
         } else {
           // No mic: send silence so the peer track stays alive / comfort noise path.
@@ -280,6 +292,9 @@ struct CallMediaEngine::Impl {
         }
         try {
           track->send(reinterpret_cast<const std::byte*>(opus_buf.data()), static_cast<size_t>(encoded));
+          if (rtp_config) {
+            rtp_config->timestamp += static_cast<uint32_t>(kFrameSamples);
+          }
         } catch (...) {
           // Peer may be mid-renegotiation; drop frame.
         }
@@ -366,6 +381,14 @@ struct CallMediaEngine::Impl {
       auto local_track = pc->addTrack(media);
       BindAudioTrack(local_track, local_ssrc);
       pc->setLocalDescription();
+    } else {
+      // Answerer: also seed a local SendRecv m-line so mid="audio" exists before the offer.
+      // processLocalDescription prefers this track and keeps our SSRC in the answer.
+      rtc::Description::Audio media("audio", rtc::Description::Direction::SendRecv);
+      media.addOpusCodec(kOpusPayloadType);
+      media.addSSRC(local_ssrc, "audio");
+      auto local_track = pc->addTrack(media);
+      BindAudioTrack(local_track, local_ssrc);
     }
     return {};
   }
