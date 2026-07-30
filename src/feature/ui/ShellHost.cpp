@@ -1225,11 +1225,12 @@ std::string ShellHost::SerializeCallInProgress() const {
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-call-bar\" data-model=\"window\" data-if=\"call_in_progress_active\">";
   out << "<div class=\"shell-call-stage\" data-if=\"call_in_progress_stage_visible\">";
-  out << "<div class=\"shell-call-remote\" id=\"call-remote-tile\">";
+  out << "<call-video-tile class=\"shell-call-remote\" id=\"call-remote-tile\" tile=\"remote\">";
   out << "<p class=\"text-sm shell-call-remote-placeholder\" data-if=\"!call_in_progress_remote_video\" "
          "data-rml=\"call_in_progress_remote_placeholder\"></p>";
-  out << "</div>";
-  out << "<div class=\"shell-call-pip\" id=\"call-local-tile\" data-if=\"call_in_progress_local_preview\"></div>";
+  out << "</call-video-tile>";
+  out << "<call-video-tile class=\"shell-call-pip\" id=\"call-local-tile\" tile=\"local\" "
+         "data-if=\"call_in_progress_local_preview\"></call-video-tile>";
   out << "</div>";
   out << "<div class=\"shell-call-bar\">";
   out << "<div class=\"shell-call-bar-row row\">";

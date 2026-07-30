@@ -8,7 +8,7 @@
 |------|-------|
 | Project docs | `projects/p2p-av-calls/` (v0 → **a2 done**; **a3 in progress** V016–V019) |
 | ADRs | V001–V019 in [DECISIONS.md](DECISIONS.md) (V016 updated: iOS wiring in a3) |
-| UI | In-call **icon** mute/camera/leave + compact stacked bar; stage/PiP; **GL tile blit** via `CallVideoTileRenderer` (V018 — aspect-correct letterbox) |
+| UI | In-call **icon** mute/camera/leave + compact stacked bar; stage/PiP; **`<call-video-tile>` OnRender** + persistent GL tex (V018 letterbox) |
 | Media stack | `CallMediaEngine` — Opus + **always H264 m-line** (V019); SDL camera; `CameraCaptureOrientation` (Android `SENSOR_ORIENTATION` + display rotation; iOS interface orientation); `IVideoCodec` factory |
 | Platform HW | **Win MF + macOS/iOS VT + Linux VA-API + Android MediaCodec (NDK)** implemented |
 | iOS wiring | `NSMicrophoneUsageDescription` + `NSCameraUsageDescription`; `AVAudioSession` play-and-record; `UIBackgroundModes` `audio` |
@@ -31,7 +31,7 @@
 | Shell Camera + stage chrome | **Done** — compact icon chrome dogfooded |
 | Capture orientation + letterbox tiles | **Done** — `CameraCaptureOrientation_*`; `CallVideoTileRenderer` contain-fit |
 | Mobile UI orientation | **Locked portrait** (Android manifest + iOS plist + `SDL_HINT_ORIENTATIONS`) — free rotation deferred (EGL/call crash class) |
-| GL persistent texture tiles (V018) | **Done** — uploads RGBA to `#call-remote-tile` / `#call-local-tile` |
+| GL persistent texture tiles (V018) | **Done** — `<call-video-tile>` `OnRender` + app-owned GL tex (`CallVideoTileRenderer`) |
 | Win MF / macOS VT / Android MediaCodec / Linux VA-API | **Code landed** |
 | iOS plist + AVAudioSession | **Done** — device dogfood optional (wiring-only exit) |
 | LAN video dogfood | **Partial (2026-07-30)** — see below |

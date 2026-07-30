@@ -1389,7 +1389,9 @@ select selectbox option {
 .shell-layer-transient {
   display: flex;
   flex-direction: column;
-  z-index: 10;
+  /* Above account sheet (29) / chat overlay (25); below context menu (40) and call chrome (45).
+     Matches WINDOW_SHELL interruption: transient > account > aux > chat. */
+  z-index: 30;
   transform: translateX(0);
   transition: transform 250ms;
 }
@@ -1533,13 +1535,14 @@ select selectbox option {
   left: 0;
   right: 0;
   z-index: 45;
-  pointer-events: none;
+  /* Capture hits over the messaging title / chat chrome underneath; children that
+     should pass through (none today) can opt out with pointer-events: none. */
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
 }
 
 .shell-call-bar {
-  pointer-events: auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1613,12 +1616,16 @@ select selectbox option {
 }
 
 .shell-call-stage {
-  pointer-events: none;
   margin: 8dp 12dp 0 12dp;
   height: 180dp;
   border-radius: 10dp;
   position: relative;
   overflow: hidden;
+}
+
+call-video-tile {
+  display: block;
+  box-sizing: border-box;
 }
 
 .shell-call-remote {

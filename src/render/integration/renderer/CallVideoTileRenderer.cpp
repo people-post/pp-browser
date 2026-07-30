@@ -1,6 +1,6 @@
 #include "CallVideoTileRenderer.h"
 
-#include "GlBackend.h"
+#include "RmlUi_Backend.h"
 #include "RmlUi_Renderer_GL3.h"
 
 #if defined(RMLUI_GL_ES3)
@@ -13,9 +13,7 @@
 	#include "RmlUi_Include_GL3.h"
 #endif
 
-#include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/Mesh.h>
 #include <RmlUi/Core/MeshUtilities.h>
 
@@ -35,8 +33,9 @@ void CallVideoTileRenderer::SubmitLocalFrame(Frame frame) {
 }
 
 void CallVideoTileRenderer::Clear() {
-  remote_ = {};
-  local_ = {};
+  ReleaseGpuResources();
+  remote_.pending = {};
+  local_.pending = {};
 }
 
 void CallVideoTileRenderer::ReleaseGpuResources() {
@@ -90,8 +89,14 @@ void CallVideoTileRenderer::UploadIfNeeded(GpuTile& tile) {
   tile.uploaded_seq = frame.seq;
 }
 
-void CallVideoTileRenderer::DrawTile(Rml::Element* element, GpuTile& tile, RenderInterface_GL3& renderer) {
+void CallVideoTileRenderer::DrawTile(Rml::Element* element, GpuTile& tile) {
   if (!element || tile.gl_tex == 0 || tile.uploaded_seq == 0) {
+    return;
+  }
+
+  Rml::RenderInterface* render_interface = Backend::GetRenderInterface();
+  auto* renderer = dynamic_cast<RenderInterface_GL3*>(render_interface);
+  if (!renderer) {
     return;
   }
 
@@ -120,31 +125,16 @@ void CallVideoTileRenderer::DrawTile(Rml::Element* element, GpuTile& tile, Rende
   Rml::Mesh mesh;
   Rml::MeshUtilities::GenerateQuad(mesh, draw_offset, draw_size,
                                    Rml::ColourbPremultiplied(255, 255, 255, 255));
-  const Rml::CompiledGeometryHandle handle = renderer.CompileGeometry(mesh.vertices, mesh.indices);
-  renderer.RenderGeometry(handle, Rml::Vector2f(0.f, 0.f),
-                          static_cast<Rml::TextureHandle>(static_cast<uintptr_t>(tile.gl_tex)));
-  renderer.ReleaseGeometry(handle);
+  const Rml::CompiledGeometryHandle handle = renderer->CompileGeometry(mesh.vertices, mesh.indices);
+  renderer->RenderGeometry(handle, Rml::Vector2f(0.f, 0.f),
+                           static_cast<Rml::TextureHandle>(static_cast<uintptr_t>(tile.gl_tex)));
+  renderer->ReleaseGeometry(handle);
 }
 
-void CallVideoTileRenderer::Draw(Rml::Context* context, RenderInterface_GL3& renderer) {
-  if (!context || context->GetNumDocuments() == 0) {
-    return;
-  }
-
-  UploadIfNeeded(remote_);
-  UploadIfNeeded(local_);
-
-  if (remote_.gl_tex == 0 && local_.gl_tex == 0) {
-    return;
-  }
-
-  Rml::ElementDocument* document = context->GetDocument(0);
-  if (!document) {
-    return;
-  }
-
-  DrawTile(document->GetElementById("call-remote-tile"), remote_, renderer);
-  DrawTile(document->GetElementById("call-local-tile"), local_, renderer);
+void CallVideoTileRenderer::RenderTile(CallVideoTileKind kind, Rml::Element* element) {
+  GpuTile& tile = (kind == CallVideoTileKind::Local) ? local_ : remote_;
+  UploadIfNeeded(tile);
+  DrawTile(element, tile);
 }
 
 } // namespace pbr

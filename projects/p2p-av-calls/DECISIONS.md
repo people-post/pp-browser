@@ -257,10 +257,11 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 
 | Approach | Verdict |
 |----------|---------|
-| **A. Shell RML placeholders** (`data-if` video stage) + **persistent `TextureHandle`** updated with `glTexSubImage2D` / `CallbackTextureInterface::SetTextureHandle` | **Adopt** — stays in RmlUi layout/hit-testing; DirtyWindow only; matches TextLoupe / Lottie “dynamic texture” patterns |
-| **B. `GenerateTexture` every frame** (full reallocate) | Reject for steady state — GC/alloc cost at 15–30 fps |
-| **C. OpenGL blit after `PresentFrame`, ignore RML** | Reject for a3 — breaks hit-testing, safe-area, theme; hard to keep compact bar + PiP consistent |
+| **A. Shell RML placeholders** (`data-if` video stage) + **persistent `TextureHandle`** updated with `glTexSubImage2D` / `CallbackTextureInterface::SetTextureHandle` | Optional — Rml `CallbackTexture` release calls `ReleaseTexture`/`glDeleteTextures`, so app-owned handles need careful lifetime transfer |
+| **B. Custom `<call-video-tile>` element `OnRender` + app-owned persistent GL tex** (`glTexSubImage2D`, letterbox `RenderGeometry`) | **Adopt** — paints in document stacking (below banner/dialogs); app keeps texture ownership; DirtyWindow only |
+| **C. OpenGL blit after `Context::Render` / `PresentFrame`** | Reject — breaks stacking (video over banner), hit-testing, safe-area |
 | **D. Remount shell when video appears** | **Forbidden** — agent trap: use `data-if` + `DirtyWindow` only ([WINDOW_SHELL](../../docs/ui/WINDOW_SHELL.md)) |
+| **E. `GenerateTexture` every frame** (full reallocate) | Reject for steady state — GC/alloc cost at 15–30 fps |
 
 **UI composition (1:1 a3; V019 — same in-call for Voice/Video start):**
 

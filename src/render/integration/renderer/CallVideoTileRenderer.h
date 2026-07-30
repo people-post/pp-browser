@@ -5,16 +5,18 @@
 #include <cstdint>
 #include <vector>
 
-class RenderInterface_GL3;
-
 namespace Rml {
-class Context;
 class Element;
 } // namespace Rml
 
 namespace pbr {
 
-/** V018: persistent GL textures blitted into shell call tile elements. */
+enum class CallVideoTileKind { Remote, Local };
+
+/**
+ * V018: persistent GL textures for call tiles. Ownership stays here; paint happens
+ * from ElementCallVideoTile::OnRender (in-document stacking, no post-Context blit).
+ */
 class CallVideoTileRenderer {
 public:
   struct Frame {
@@ -31,8 +33,8 @@ public:
   void SubmitLocalFrame(Frame frame);
   void Clear();
 
-  /** Upload pending pixels and draw into `#call-remote-tile` / `#call-local-tile`. UI thread only. */
-  void Draw(Rml::Context* context, RenderInterface_GL3& renderer);
+  /** Upload if needed and letterbox-draw into `element`. UI thread, GL context current. */
+  void RenderTile(CallVideoTileKind kind, Rml::Element* element);
 
   void ReleaseGpuResources();
 
@@ -48,7 +50,7 @@ private:
   };
 
   void UploadIfNeeded(GpuTile& tile);
-  void DrawTile(Rml::Element* element, GpuTile& tile, RenderInterface_GL3& renderer);
+  void DrawTile(Rml::Element* element, GpuTile& tile);
 
   GpuTile remote_;
   GpuTile local_;
