@@ -55,17 +55,19 @@ UINT32 EstimateBitrateBps(int width, int height, int fps) {
       std::clamp(raw, static_cast<double>(kMinBitrateBps), static_cast<double>(kMaxBitrateBps)));
 }
 
-// Enumerates MFTs for a category/type pair, preferring hardware (HW MFTs are
-// always asynchronous) then falling back to synchronous/asynchronous
-// software transforms. Returns activated transform instances, HW first.
+// Enumerates MFTs for a category/type pair. `prefer_hardware` puts HW MFTs
+// first (encoders); decoders often prefer sync software for reliable CPU
+// output formats without DXVA device binding.
 std::vector<ComPtr<IMFTransform>> EnumerateTransforms(GUID category,
                                                        const MFT_REGISTER_TYPE_INFO* input_info,
-                                                       const MFT_REGISTER_TYPE_INFO* output_info) {
+                                                       const MFT_REGISTER_TYPE_INFO* output_info,
+                                                       bool prefer_hardware = true) {
   std::vector<ComPtr<IMFTransform>> transforms;
-  const UINT32 flag_passes[] = {
-      MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER,
-      MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_ASYNCMFT | MFT_ENUM_FLAG_SORTANDFILTER,
-  };
+  const UINT32 hw_flags = MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER;
+  const UINT32 sw_flags =
+      MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_ASYNCMFT | MFT_ENUM_FLAG_SORTANDFILTER;
+  const UINT32 flag_passes[2] = {prefer_hardware ? hw_flags : sw_flags,
+                                 prefer_hardware ? sw_flags : hw_flags};
   for (UINT32 flags : flag_passes) {
     IMFActivate** activates = nullptr;
     UINT32 count = 0;
@@ -102,7 +104,29 @@ bool UnlockAsyncIfNeeded(IMFTransform* transform) {
   if (is_async) {
     attributes->SetUINT32(MF_TRANSFORM_ASYNC_UNLOCK, TRUE);
   }
+  // Low-latency decode helps real-time call paths (drops extra reordering delay).
+  attributes->SetUINT32(MF_LOW_LATENCY, TRUE);
   return is_async != 0;
+}
+
+bool AnnexBContainsIdr(const uint8_t* data, size_t size) {
+  size_t i = 0;
+  while (i + 3 < size) {
+    size_t sc = 0;
+    if (data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1) {
+      sc = 3;
+    } else if (i + 4 < size && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 0 && data[i + 3] == 1) {
+      sc = 4;
+    } else {
+      ++i;
+      continue;
+    }
+    if (i + sc < size && ((data[i + sc] & 0x1F) == 5)) {
+      return true;
+    }
+    i += sc;
+  }
+  return false;
 }
 
 HRESULT ProcessOneOutput(IMFTransform* transform, DWORD output_stream_id, DWORD buffer_size,
@@ -591,7 +615,10 @@ Roe<void> MediaFoundationVideoCodec::ConfigureDecoder() {
   ResetDecoder();
 
   MFT_REGISTER_TYPE_INFO input_info{MFMediaType_Video, MFVideoFormat_H264};
-  auto candidates = EnumerateTransforms(MFT_CATEGORY_VIDEO_DECODER, &input_info, nullptr);
+  // Prefer sync software decoder for receive: HW/DXVA paths often need a D3D
+  // device we do not bind, and fail NV12/RGB32 renegotiation silently.
+  auto candidates = EnumerateTransforms(MFT_CATEGORY_VIDEO_DECODER, &input_info, nullptr,
+                                         /*prefer_hardware=*/false);
   if (candidates.empty()) {
     return Error("no H264 decoder MFT available");
   }
@@ -803,6 +830,9 @@ Roe<VideoFrameRgba> MediaFoundationVideoCodec::Decode(const uint8_t* annex_b, si
   }
   input_sample->SetSampleTime(decode_timestamp_);
   decode_timestamp_ += 333333LL; // ~30fps hint; renderer paces on wall clock, not this pts.
+  if (AnnexBContainsIdr(annex_b, size)) {
+    input_sample->SetUINT32(MFSampleExtension_CleanPoint, TRUE);
+  }
 
   PumpOutcome outcome = PumpTransform(decoder_.Get(), decoder_events_.Get(), decoder_is_async_, 0,
                                        decoder_output_buffer_size_, decoder_provides_samples_,
@@ -811,30 +841,27 @@ Roe<VideoFrameRgba> MediaFoundationVideoCodec::Decode(const uint8_t* annex_b, si
     return Error("H264 decode failed");
   }
   if (outcome.stream_change) {
-    if (!RenegotiateDecoderOutputType()) {
-      return Error("H264 decoder output type negotiation failed");
-    }
-    // After fixing the output type, drain again. Async HW MFTs may need a
-    // fresh HaveOutput event; sync MFTs return the pending sample immediately.
-    PumpOutcome retry =
-        PumpTransform(decoder_.Get(), decoder_events_.Get(), decoder_is_async_, 0,
-                      decoder_output_buffer_size_, decoder_provides_samples_, nullptr);
-    if (retry.error) {
-      return Error("H264 decode failed after stream change");
-    }
-    if (retry.samples.empty()) {
+    // MF contract: after STREAM_CHANGE, SetOutputType then ProcessOutput again
+    // immediately (do not wait for a new async HaveOutput event).
+    for (int attempt = 0; attempt < 4; ++attempt) {
+      if (!RenegotiateDecoderOutputType()) {
+        return Error("H264 decoder output type negotiation failed");
+      }
       ComPtr<IMFSample> sample;
       const HRESULT retry_hr = ProcessOneOutput(decoder_.Get(), 0, decoder_output_buffer_size_,
                                                  decoder_provides_samples_, sample);
-      if (FAILED(retry_hr)) {
-        return Error(retry_hr == MF_E_TRANSFORM_NEED_MORE_INPUT
-                         ? "decoder needs more input after format change"
-                         : "H264 decode failed after stream change");
+      if (retry_hr == MF_E_TRANSFORM_STREAM_CHANGE) {
+        continue;
       }
-      return ConvertSampleToRgba(sample.Get(), decode_width_, decode_height_, decode_subtype_);
+      if (SUCCEEDED(retry_hr)) {
+        return ConvertSampleToRgba(sample.Get(), decode_width_, decode_height_, decode_subtype_);
+      }
+      if (retry_hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
+        return Error("decoder needs more input after format change");
+      }
+      return Error("H264 decode failed after stream change");
     }
-    return ConvertSampleToRgba(retry.samples.back().Get(), decode_width_, decode_height_,
-                               decode_subtype_);
+    return Error("H264 decoder output type negotiation failed");
   }
   if (outcome.samples.empty()) {
     return Error("decoder needs more input to produce a frame");

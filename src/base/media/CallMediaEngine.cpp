@@ -657,11 +657,22 @@ struct CallMediaEngine::Impl {
     }
     if (!video_codec->HasDecoder()) {
       if (auto configured = video_codec->ConfigureDecoder(); !configured) {
+        static bool logged_cfg = false;
+        if (!logged_cfg) {
+          logged_cfg = true;
+          SDL_Log("CallMediaEngine: ConfigureDecoder failed: %s", configured.error().message.c_str());
+        }
         return;
       }
     }
     auto decoded = video_codec->Decode(reinterpret_cast<const uint8_t*>(data), size);
     if (!decoded) {
+      static bool logged_decode = false;
+      if (!logged_decode) {
+        logged_decode = true;
+        SDL_Log("CallMediaEngine: remote H264 decode failed: %s (size=%zu)",
+                decoded.error().message.c_str(), size);
+      }
       return;
     }
     PublishRemoteFrame(std::move(*decoded));
