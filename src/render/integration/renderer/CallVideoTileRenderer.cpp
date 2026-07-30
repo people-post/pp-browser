@@ -101,8 +101,25 @@ void CallVideoTileRenderer::DrawTile(Rml::Element* element, GpuTile& tile, Rende
     return;
   }
 
+  // Letterbox / pillarbox into the tile so frames keep their native aspect ratio.
+  Rml::Vector2f draw_size = size;
+  Rml::Vector2f draw_offset = offset;
+  if (tile.tex_width > 0 && tile.tex_height > 0) {
+    const float tex_aspect =
+        static_cast<float>(tile.tex_width) / static_cast<float>(tile.tex_height);
+    const float box_aspect = size.x / size.y;
+    if (tex_aspect > box_aspect) {
+      draw_size.y = size.x / tex_aspect;
+      draw_offset.y = offset.y + (size.y - draw_size.y) * 0.5f;
+    } else if (tex_aspect < box_aspect) {
+      draw_size.x = size.y * tex_aspect;
+      draw_offset.x = offset.x + (size.x - draw_size.x) * 0.5f;
+    }
+  }
+
   Rml::Mesh mesh;
-  Rml::MeshUtilities::GenerateQuad(mesh, offset, size, Rml::ColourbPremultiplied(255, 255, 255, 255));
+  Rml::MeshUtilities::GenerateQuad(mesh, draw_offset, draw_size,
+                                   Rml::ColourbPremultiplied(255, 255, 255, 255));
   const Rml::CompiledGeometryHandle handle = renderer.CompileGeometry(mesh.vertices, mesh.indices);
   renderer.RenderGeometry(handle, Rml::Vector2f(0.f, 0.f),
                           static_cast<Rml::TextureHandle>(static_cast<uintptr_t>(tile.gl_tex)));

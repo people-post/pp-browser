@@ -45,9 +45,10 @@ Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wir
 
 - [x] Initial SDP always Opus + H264 m-lines (V019); mute/camera = content only; audio mandatory / video best-effort
 - [x] Platform HW H264 backends behind `IVideoCodec` (Win MF / macOS+iOS VT / Android MediaCodec / Linux VA-API best-effort)
-- [x] Capture + encode + RTP video track; decode + persistent GL texture tiles (V018); encode ~640×360 @ 15–24 fps
-- [x] Shell: unified in-call chrome + **Camera** on voice- and video-started calls; stage/PiP (V019); camera off on join (V009)
-- [ ] LAN dogfood: Win/macOS primary + Android + iOS wiring; bidirectional video when enabled
+- [x] Capture + encode + RTP video track; decode + persistent GL texture tiles (V018); encode ~640×360 desktop / ~360×640 mobile after orientation @ 15–24 fps
+- [x] Shell: unified in-call chrome + **Camera** on voice- and video-started calls; stage/PiP (V019); camera off on join (V009); compact icon mute/camera/leave
+- [x] Mobile capture orientation (`CameraCaptureOrientation`: Android Camera2 sensor + display; iOS interface orientation) + tile letterbox
+- [ ] LAN dogfood: Win/macOS primary + Android + iOS wiring; bidirectional video when enabled — **partial 2026-07-30:** Android local preview OK; Android→Linux receive/display OK; other pairs not claimed
 - [ ] Document LAN video OK + Linux “no encoder” limitation; **do not** claim NAT / seed SFU
 - [x] iOS mic / `AVAudioSession` / camera usage + background `audio` — **wiring done**; device dogfood optional
 

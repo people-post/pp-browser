@@ -28,7 +28,7 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 16 | WebRTC lib | **libdatachannel + libopus + SDL** (V014) |
 | 17 | a3 scope | LAN 1:1 video; SFU deferred; **iOS wiring in a3** (V016, 2026-07-30) |
 | 18 | Video codec | **H264** CBP via **platform HW** (V017); Linux VA-API best-effort |
-| 19 | Video UI path | SDL camera → platform HW H264 → persistent GL texture in shell tiles (V018) |
+| 19 | Video UI path | SDL camera → `CameraCaptureOrientation` → platform HW H264 → persistent GL texture + letterbox tiles (V018) |
 | 20 | Call media shape | Always Opus+H264 m-lines; Voice/Video = entry UX only; audio mandatory / video best-effort (V019) |
 
 ---
@@ -189,7 +189,7 @@ ICE trickle / SDP: embed in signaling `detail` or follow-up system controls as n
 - **Codecs:** Opus audio required; video **H264** Constrained Baseline via **platform HW** (V017: Win MF / macOS VideoToolbox / Android MediaCodec; Linux VA-API best-effort — no soft-codec product fallback).  
 - **SDP shape (V019):** Every call’s initial offer/answer includes **both** audio and video m-lines. Mute/camera change sent content only (no renegotiation). Audio is mandatory; video encode/decode is best-effort and must not tear down voice.  
 - **Voice vs Video start:** Two header buttons for familiar UX; once connected, same in-call model (Camera allowed; show remote video whenever peer sends frames). `media_mode` may remain for invite/history copy.  
-- **Capture / blit:** SDL3 camera on user enable; shell RML tiles + persistent GL texture (V018); camera off on join (V009). Encode defaults ~640×360 @ 15–24 fps (network adapt later).  
+- **Capture / blit:** SDL3 camera on user enable; `CameraCaptureOrientation` uprights mobile sensor buffers (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation); shell RML tiles + persistent GL texture with aspect-correct letterbox (V018); camera off on join (V009). Encode defaults ~640×360 (desktop) / ~360×640 (portrait mobile after rotation) @ 15–24 fps (network adapt later).  
 - **Topology:** 1:1 try P2P; group (N≥3) prefer **SFU**; 1:1 falls back to SFU/TURN when ICE fails. **a3** claims LAN only (V016); dogfood Win/macOS primary + Android + **iOS wiring**; NAT after seed SFU.  
 
 ### SFU and mesh
@@ -262,7 +262,7 @@ CallKit / ConnectionService full OS integration: `[v1.1]` / platform follow-up; 
 |---------|----------|
 | 1:1 / group chat header | Voice / Video call actions |
 | Incoming | Full-screen or modal ring; Accept / Decline |
-| In-call | Unified once connected (V019): mute / leave / duration + **Camera** (off by default); stage + PiP when any side has video frames; compact bar when neither does |
+| In-call | Unified once connected (V019): icon mute / camera / leave + meters / duration; stage + PiP when any side has video frames; compact stacked bar (icons stay on-screen) |
 | Origin thread | `call_started` / `call_ended` bubbles |
 | Invite | Share invite into a DM (guest) or pick member |
 

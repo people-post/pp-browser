@@ -3,6 +3,8 @@ pp_browser_add_base_library(pp_base_media
     CallMediaEngine.cpp
     CallRingtone.cpp
     CallAudioSession_Default.cpp
+    CameraCaptureOrientation_Default.cpp
+    CameraCaptureOrientation_Android.cpp
     VideoCodecFactory.cpp
     VideoCodecUnavailable.cpp
     VideoCodec_Win32.cpp
@@ -28,8 +30,10 @@ elseif(APPLE)
     "-framework CoreVideo"
     "-framework CoreFoundation")
   if(PP_BROWSER_IS_IOS)
-    target_sources(pp_base_media PRIVATE CallAudioSession_Ios.mm)
-    target_link_libraries(pp_base_media PRIVATE "-framework AVFoundation")
+    target_sources(pp_base_media PRIVATE
+      CallAudioSession_Ios.mm
+      CameraCaptureOrientation_Ios.mm)
+    target_link_libraries(pp_base_media PRIVATE "-framework AVFoundation" "-framework UIKit")
   endif()
 elseif(UNIX AND NOT ANDROID)
   # Linux VA-API (libva + DRM render node) — soft dep; stub builds without it.
@@ -50,7 +54,7 @@ elseif(UNIX AND NOT ANDROID)
       "  Runtime also needs a VA driver (e.g. intel-media-va-driver / mesa-va-drivers).")
   endif()
 elseif(ANDROID)
-  target_link_libraries(pp_base_media PRIVATE mediandk)
+  target_link_libraries(pp_base_media PRIVATE mediandk camera2ndk)
 endif()
 
 if(PP_BROWSER_BUILD_TESTS)

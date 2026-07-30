@@ -18,14 +18,14 @@ See [SDL wiki: AppFreezeDuringDrag](https://wiki.libsdl.org/SDL3/AppFreezeDuring
 
 ## A/V media (SDL + calls)
 
-Voice/video capture and playback go through **SDL3 audio** (and later camera) in [`CallMediaEngine`](../../src/base/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019. Signaling is mesh/E2E; media is WebRTC-shaped (libdatachannel). Every call negotiates Opus + H264 m-lines (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux **libva DRM** VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort.
+Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMediaEngine`](../../src/base/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019. Signaling is mesh/E2E; media is WebRTC-shaped (libdatachannel). Every call negotiates Opus + H264 m-lines (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux **libva DRM** VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort. Mobile upright capture uses [`CameraCaptureOrientation`](../../src/base/media/CameraCaptureOrientation.h) (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation).
 
 | Platform | SDL audio backend | Extra build packages? | Product checklist (not all done) |
 |----------|-------------------|----------------------|----------------------------------|
-| Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev`; video: `libva-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy; VA driver at runtime for H264 |
+| Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev`; video: `libva-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy; VA driver at runtime for H264; **Android→Linux LAN video receive OK 2026-07-30** |
 | Windows | WASAPI | No | OS microphone privacy |
 | macOS | CoreAudio | No | Mic privacy / usage string for notarized apps |
-| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + runtime permission; a3: `CAMERA` + runtime (V019) |
+| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + `CAMERA` + runtime; link `mediandk` + `camera2ndk`; LAN send dogfood OK 2026-07-30 |
 | iOS | CoreAudio | No | a3 wiring (V016): `NSMicrophoneUsageDescription` + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio`; device dogfood optional |
 
 **Agent traps**
@@ -34,7 +34,8 @@ Voice/video capture and playback go through **SDL3 audio** (and later camera) in
 |-------|--------|
 | Require Pulse/ALSA on Windows/macOS/mobile | Only Linux needs those `-dev` packages |
 | Claim mobile voice without manifest/plist permissions | Add Android/iOS mic (and later camera) entitlements first |
-| Assume LAN ICE proves mobile | Mobile NAT needs mesh seed SFU ([p2p-av-calls](../../projects/p2p-av-calls/)) |
+| Assume LAN ICE proves mobile NAT | Mobile NAT needs mesh seed SFU ([p2p-av-calls](../../projects/p2p-av-calls/)) |
+| Hardcode Android camera rotation | Use `CameraCaptureOrientation` / Camera2 metadata |
 
 `Backend::Initialize` must **not** fail window bring-up on audio — init audio on demand in `CallMediaEngine` (`SDL_InitSubSystem(SDL_INIT_AUDIO)`).
 

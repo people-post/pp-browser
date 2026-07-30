@@ -91,6 +91,126 @@ bool I420ToRgba(const VideoFrameI420& in, VideoFrameRgba& out) {
   return true;
 }
 
+bool CopyRgbToRgba(const uint8_t* src, const int width, const int height, const int stride_bytes,
+                   const bool has_alpha, VideoFrameRgba& out) {
+  if (!src || width <= 0 || height <= 0) {
+    return false;
+  }
+  const int bpp = has_alpha ? 4 : 3;
+  if (stride_bytes < width * bpp) {
+    return false;
+  }
+  out.width = width;
+  out.height = height;
+  out.rgba.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+  for (int y = 0; y < height; ++y) {
+    const uint8_t* row = src + static_cast<size_t>(y) * static_cast<size_t>(stride_bytes);
+    uint8_t* dst = out.rgba.data() + static_cast<size_t>(y) * static_cast<size_t>(width) * 4;
+    for (int x = 0; x < width; ++x) {
+      const uint8_t* px = row + x * bpp;
+      dst[x * 4 + 0] = px[0];
+      dst[x * 4 + 1] = px[1];
+      dst[x * 4 + 2] = px[2];
+      dst[x * 4 + 3] = has_alpha ? px[3] : 255;
+    }
+  }
+  return true;
+}
+
+bool RotateRgba90Cw(const VideoFrameRgba& in, VideoFrameRgba& out) {
+  if (in.width <= 0 || in.height <= 0 ||
+      in.rgba.size() < static_cast<size_t>(in.width) * static_cast<size_t>(in.height) * 4) {
+    return false;
+  }
+  out.width = in.height;
+  out.height = in.width;
+  out.rgba.resize(static_cast<size_t>(out.width) * static_cast<size_t>(out.height) * 4);
+  for (int y = 0; y < out.height; ++y) {
+    for (int x = 0; x < out.width; ++x) {
+      const int src_x = y;
+      const int src_y = in.height - 1 - x;
+      const size_t si = (static_cast<size_t>(src_y) * static_cast<size_t>(in.width) +
+                         static_cast<size_t>(src_x)) *
+                        4;
+      const size_t di =
+          (static_cast<size_t>(y) * static_cast<size_t>(out.width) + static_cast<size_t>(x)) * 4;
+      out.rgba[di + 0] = in.rgba[si + 0];
+      out.rgba[di + 1] = in.rgba[si + 1];
+      out.rgba[di + 2] = in.rgba[si + 2];
+      out.rgba[di + 3] = in.rgba[si + 3];
+    }
+  }
+  return true;
+}
+
+bool RotateRgba90Ccw(const VideoFrameRgba& in, VideoFrameRgba& out) {
+  if (in.width <= 0 || in.height <= 0 ||
+      in.rgba.size() < static_cast<size_t>(in.width) * static_cast<size_t>(in.height) * 4) {
+    return false;
+  }
+  out.width = in.height;
+  out.height = in.width;
+  out.rgba.resize(static_cast<size_t>(out.width) * static_cast<size_t>(out.height) * 4);
+  for (int y = 0; y < out.height; ++y) {
+    for (int x = 0; x < out.width; ++x) {
+      const int src_x = in.width - 1 - y;
+      const int src_y = x;
+      const size_t si = (static_cast<size_t>(src_y) * static_cast<size_t>(in.width) +
+                         static_cast<size_t>(src_x)) *
+                        4;
+      const size_t di =
+          (static_cast<size_t>(y) * static_cast<size_t>(out.width) + static_cast<size_t>(x)) * 4;
+      out.rgba[di + 0] = in.rgba[si + 0];
+      out.rgba[di + 1] = in.rgba[si + 1];
+      out.rgba[di + 2] = in.rgba[si + 2];
+      out.rgba[di + 3] = in.rgba[si + 3];
+    }
+  }
+  return true;
+}
+
+bool ScaleCenterCropRgba(const VideoFrameRgba& in, int out_w, int out_h, VideoFrameRgba& out) {
+  out_w = out_w > 0 ? (out_w & ~1) : 0;
+  out_h = out_h > 0 ? (out_h & ~1) : 0;
+  if (out_w < 2 || out_h < 2 || in.width <= 0 || in.height <= 0 ||
+      in.rgba.size() < static_cast<size_t>(in.width) * static_cast<size_t>(in.height) * 4) {
+    return false;
+  }
+  if (in.width == out_w && in.height == out_h) {
+    out = in;
+    return true;
+  }
+
+  const double scale =
+      std::max(static_cast<double>(out_w) / static_cast<double>(in.width),
+               static_cast<double>(out_h) / static_cast<double>(in.height));
+  const double src_w = static_cast<double>(out_w) / scale;
+  const double src_h = static_cast<double>(out_h) / scale;
+  const double src_x0 = (static_cast<double>(in.width) - src_w) * 0.5;
+  const double src_y0 = (static_cast<double>(in.height) - src_h) * 0.5;
+
+  out.width = out_w;
+  out.height = out_h;
+  out.rgba.resize(static_cast<size_t>(out_w) * static_cast<size_t>(out_h) * 4);
+  for (int y = 0; y < out_h; ++y) {
+    const int sy = std::clamp(static_cast<int>(src_y0 + (static_cast<double>(y) + 0.5) / scale), 0,
+                              in.height - 1);
+    for (int x = 0; x < out_w; ++x) {
+      const int sx = std::clamp(static_cast<int>(src_x0 + (static_cast<double>(x) + 0.5) / scale), 0,
+                                in.width - 1);
+      const size_t si =
+          (static_cast<size_t>(sy) * static_cast<size_t>(in.width) + static_cast<size_t>(sx)) * 4;
+      const size_t di =
+          (static_cast<size_t>(y) * static_cast<size_t>(out_w) + static_cast<size_t>(x)) * 4;
+      out.rgba[di + 0] = in.rgba[si + 0];
+      out.rgba[di + 1] = in.rgba[si + 1];
+      out.rgba[di + 2] = in.rgba[si + 2];
+      out.rgba[di + 3] = in.rgba[si + 3];
+    }
+  }
+  return true;
+}
+
 void PremultiplyRgbaInPlace(std::vector<uint8_t>& rgba) {
   for (size_t i = 0; i + 3 < rgba.size(); i += 4) {
     const uint8_t a = rgba[i + 3];

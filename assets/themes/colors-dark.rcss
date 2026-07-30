@@ -649,9 +649,17 @@ select selectbox option:hover {
   color: #f9fafb;
 }
 
+.shell-call-mute svg {
+  image-color: #f9fafb;
+}
+
 .shell-call-mute--on {
   background-color: #78350f;
   color: #fde68a;
+}
+
+.shell-call-mute--on svg {
+  image-color: #fde68a;
 }
 
 .shell-call-camera {
@@ -659,9 +667,26 @@ select selectbox option:hover {
   color: #f9fafb;
 }
 
+.shell-call-camera svg {
+  image-color: #f9fafb;
+}
+
 .shell-call-camera--on {
   background-color: #1e3a5f;
   color: #93c5fd;
+}
+
+.shell-call-camera--on svg {
+  image-color: #93c5fd;
+}
+
+.shell-call-leave {
+  background-color: #7f1d1d;
+  color: #fecaca;
+}
+
+.shell-call-leave svg {
+  image-color: #fecaca;
 }
 
 .shell-call-stage {

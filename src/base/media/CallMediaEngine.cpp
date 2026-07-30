@@ -1,6 +1,7 @@
 #include "base/media/CallMediaEngine.h"
 
 #include "base/media/CallAudioSession.h"
+#include "base/media/CameraCaptureOrientation.h"
 #include "base/media/IVideoCodec.h"
 #include "base/media/VideoYuv.h"
 #include "common/Utilities.h"
@@ -25,8 +26,8 @@ constexpr int kFrameMs = 20;
 constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
 constexpr int kOpusPayloadType = 111;
 constexpr int kH264PayloadType = 96;
-constexpr int kVideoWidth = 640;
-constexpr int kVideoHeight = 360;
+constexpr int kDefaultVideoWidth = 640;
+constexpr int kDefaultVideoHeight = 360;
 constexpr int kVideoFps = 20;
 
 constexpr rtc::SSRC kOffererAudioSsrc = 1;
@@ -50,10 +51,6 @@ std::string StateToString(rtc::PeerConnection::State state) {
     return "closed";
   }
   return "unknown";
-}
-
-int EvenDimension(int v) {
-  return v > 0 ? (v & ~1) : 0;
 }
 
 } // namespace
@@ -93,6 +90,10 @@ struct CallMediaEngine::Impl {
   std::unique_ptr<IVideoCodec> video_codec;
   SDL_Camera* camera = nullptr;
   SDL_CameraID camera_id = 0;
+  /** Clockwise degrees to apply to sensor buffers before encode. */
+  int camera_rotate_cw = 0;
+  int encode_width = kDefaultVideoWidth;
+  int encode_height = kDefaultVideoHeight;
 
   std::thread capture_thread;
   std::thread video_thread;
@@ -179,6 +180,9 @@ struct CallMediaEngine::Impl {
       camera = nullptr;
       camera_id = 0;
     }
+    camera_rotate_cw = 0;
+    encode_width = kDefaultVideoWidth;
+    encode_height = kDefaultVideoHeight;
     camera_enabled.store(false, std::memory_order_relaxed);
     if (video_codec) {
       video_codec->ResetEncoder();
@@ -479,33 +483,54 @@ struct CallMediaEngine::Impl {
         VideoFrameI420 i420;
         VideoFrameRgba preview;
         const bool has_alpha = src->format == SDL_PIXELFORMAT_RGBA32;
-        const int w = EvenDimension(std::min(src->w, kVideoWidth));
-        const int h = EvenDimension(std::min(src->h, kVideoHeight));
-        if (w >= 16 && h >= 16 && src->pixels) {
-          // Center-crop to even dims at top-left for a3 defaults (simple path).
-          const int use_w = EvenDimension(src->w) > 0 ? EvenDimension(src->w) : w;
-          const int use_h = EvenDimension(src->h) > 0 ? EvenDimension(src->h) : h;
-          const int enc_w = use_w > kVideoWidth ? kVideoWidth : use_w;
-          const int enc_h = use_h > kVideoHeight ? kVideoHeight : use_h;
-          const int even_w = EvenDimension(enc_w);
-          const int even_h = EvenDimension(enc_h);
-          if (even_w >= 16 && even_h >= 16 &&
-              RgbaToI420(static_cast<const uint8_t*>(src->pixels), even_w, even_h, src->pitch, has_alpha,
-                         i420)) {
-            if (I420ToRgba(i420, preview)) {
-              PublishLocalPreview(preview);
+        if (src->pixels && src->w >= 2 && src->h >= 2) {
+          VideoFrameRgba captured;
+          if (CopyRgbToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, src->pitch,
+                            has_alpha, captured)) {
+            VideoFrameRgba oriented = std::move(captured);
+            if (camera_rotate_cw == 90) {
+              VideoFrameRgba rotated;
+              if (RotateRgba90Cw(oriented, rotated)) {
+                oriented = std::move(rotated);
+              }
+            } else if (camera_rotate_cw == 270) {
+              VideoFrameRgba rotated;
+              if (RotateRgba90Ccw(oriented, rotated)) {
+                oriented = std::move(rotated);
+              }
+            } else if (camera_rotate_cw == 180) {
+              VideoFrameRgba once;
+              VideoFrameRgba twice;
+              if (RotateRgba90Cw(oriented, once) && RotateRgba90Cw(once, twice)) {
+                oriented = std::move(twice);
+              }
             }
-            if (video_codec && video_codec->HasEncoder() && video_track && video_track->isOpen()) {
-              auto encoded = video_codec->Encode(i420, need_keyframe);
-              if (encoded) {
-                need_keyframe = false;
-                try {
-                  video_track->send(reinterpret_cast<const std::byte*>(encoded->annex_b.data()),
-                                    encoded->annex_b.size());
-                  if (video_rtp_config) {
-                    video_rtp_config->timestamp += static_cast<uint32_t>(90000 / kVideoFps);
+
+            VideoFrameRgba fitted;
+            if (ScaleCenterCropRgba(oriented, encode_width, encode_height, fitted) &&
+                RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true,
+                           i420)) {
+              preview = std::move(fitted);
+              PremultiplyRgbaInPlace(preview.rgba);
+              {
+                std::lock_guard lock(video_frame_mutex);
+                local_video_frame.width = preview.width;
+                local_video_frame.height = preview.height;
+                local_video_frame.rgba = std::move(preview.rgba);
+                local_video_frame.seq = ++local_video_seq;
+              }
+              if (video_codec && video_codec->HasEncoder() && video_track && video_track->isOpen()) {
+                auto encoded = video_codec->Encode(i420, need_keyframe);
+                if (encoded) {
+                  need_keyframe = false;
+                  try {
+                    video_track->send(reinterpret_cast<const std::byte*>(encoded->annex_b.data()),
+                                      encoded->annex_b.size());
+                    if (video_rtp_config) {
+                      video_rtp_config->timestamp += static_cast<uint32_t>(90000 / kVideoFps);
+                    }
+                  } catch (...) {
                   }
-                } catch (...) {
                 }
               }
             }
@@ -626,12 +651,6 @@ struct CallMediaEngine::Impl {
     if (!video_codec) {
       video_codec = CreatePlatformVideoCodec();
     }
-    std::string encode_warn;
-    if (video_codec) {
-      if (auto cfg = video_codec->ConfigureEncoder(kVideoWidth, kVideoHeight, kVideoFps); !cfg) {
-        encode_warn = cfg.error().message;
-      }
-    }
 
     int count = 0;
     SDL_CameraID* cameras = SDL_GetCameras(&count);
@@ -652,10 +671,23 @@ struct CallMediaEngine::Impl {
     }
     SDL_free(cameras);
 
+    const CameraCaptureTransform xform = ResolveCameraCaptureTransform(chosen);
+    encode_width = xform.encode_width;
+    encode_height = xform.encode_height;
+    camera_rotate_cw = xform.rotate_cw;
+
+    std::string encode_warn;
+    if (video_codec) {
+      if (auto cfg = video_codec->ConfigureEncoder(encode_width, encode_height, kVideoFps); !cfg) {
+        encode_warn = cfg.error().message;
+      }
+    }
+
     SDL_CameraSpec want{};
     want.format = SDL_PIXELFORMAT_UNKNOWN;
-    want.width = kVideoWidth;
-    want.height = kVideoHeight;
+    // Prefer landscape sensor buffers; rotate/crop into encode_* below.
+    want.width = std::max(encode_width, encode_height);
+    want.height = std::min(encode_width, encode_height);
     want.framerate_numerator = kVideoFps;
     want.framerate_denominator = 1;
     camera = SDL_OpenCamera(chosen, &want);
@@ -663,6 +695,9 @@ struct CallMediaEngine::Impl {
       camera = SDL_OpenCamera(chosen, nullptr);
     }
     if (!camera) {
+      encode_width = kDefaultVideoWidth;
+      encode_height = kDefaultVideoHeight;
+      camera_rotate_cw = 0;
       return Error(std::string("SDL_OpenCamera failed: ") + SDL_GetError());
     }
     camera_id = chosen;

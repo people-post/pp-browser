@@ -1220,7 +1220,8 @@ std::string ShellHost::SerializeCallRing() const {
 }
 
 std::string ShellHost::SerializeCallInProgress() const {
-  // Compact top bar + optional video stage — no remount for frames (V018/V019).
+  // Compact-friendly: stage + stacked bar (title/actions row, meters row). Icon controls.
+  // Frames update via DirtyWindow only (V018/V019) — never remount for video.
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-call-bar\" data-model=\"window\" data-if=\"call_in_progress_active\">";
   out << "<div class=\"shell-call-stage\" data-if=\"call_in_progress_stage_visible\">";
@@ -1231,10 +1232,30 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-pip\" id=\"call-local-tile\" data-if=\"call_in_progress_local_preview\"></div>";
   out << "</div>";
   out << "<div class=\"shell-call-bar\">";
+  out << "<div class=\"shell-call-bar-row row\">";
   out << "<div class=\"shell-call-bar-main\">";
   out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\"></p>";
   out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\"></p>";
   out << "</div>";
+  out << "<div class=\"shell-call-bar-actions row\">";
+  out << "<button class=\"shell-call-mute\" type=\"button\" "
+         "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
+  out << "<svg data-if=\"!call_in_progress_muted\" src=\"../icons/mic.svg\" width=\"18\" height=\"18\" "
+         "crop-to-content=\"true\"></svg>";
+  out << "<svg data-if=\"call_in_progress_muted\" src=\"../icons/mic-off.svg\" width=\"18\" height=\"18\" "
+         "crop-to-content=\"true\"></svg>";
+  out << "</button>";
+  out << "<button class=\"shell-call-camera\" type=\"button\" "
+         "data-class-shell-call-camera--on=\"call_in_progress_camera_on\" data-event-click=\"call_camera()\">";
+  out << "<svg data-if=\"call_in_progress_camera_on\" src=\"../icons/video.svg\" width=\"18\" height=\"18\" "
+         "crop-to-content=\"true\"></svg>";
+  out << "<svg data-if=\"!call_in_progress_camera_on\" src=\"../icons/video-off.svg\" width=\"18\" height=\"18\" "
+         "crop-to-content=\"true\"></svg>";
+  out << "</button>";
+  out << "<button class=\"shell-call-leave\" type=\"button\" data-event-click=\"call_leave()\">";
+  out << "<svg src=\"../icons/phone-hangup.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+  out << "</button>";
+  out << "</div></div>";
   out << "<div class=\"shell-call-bar-meters row\">";
   out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
   out << "<span class=\"text-xs shell-call-meter-label\">You</span>";
@@ -1257,14 +1278,7 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-meter-seg\" data-class-shell-call-meter-seg--on=\"call_in_progress_peer_level >= 5\"></div>";
   out << "</div>";
   out << "<span class=\"text-xs shell-call-meter-hint\" data-rml=\"call_in_progress_peer_hint\"></span>";
-  out << "</div></div>";
-  out << "<div class=\"shell-call-bar-actions row\">";
-  out << "<button class=\"shell-call-mute\" data-class-shell-call-mute--on=\"call_in_progress_muted\" "
-         "data-event-click=\"call_mute()\">Mute</button>";
-  out << "<button class=\"shell-call-camera\" data-class-shell-call-camera--on=\"call_in_progress_camera_on\" "
-         "data-event-click=\"call_camera()\">Camera</button>";
-  out << "<button class=\"shell-dialog-cancel shell-call-leave\" data-event-click=\"call_leave()\">Leave</button>";
-  out << "</div></div></div>";
+  out << "</div></div></div></div>";
   return out.str();
 }
 

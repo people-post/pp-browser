@@ -1541,14 +1541,20 @@ select selectbox option {
 .shell-call-bar {
   pointer-events: auto;
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12dp;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8dp;
   margin: 8dp 12dp;
   padding: 10dp 12dp;
   border-radius: 10dp;
   box-sizing: border-box;
+}
+
+.shell-call-bar-row {
+  align-items: center;
+  justify-content: space-between;
+  gap: 8dp;
+  width: 100%;
 }
 
 .shell-call-bar-main {
@@ -1569,7 +1575,10 @@ select selectbox option {
 
 .shell-call-bar-meters {
   align-items: flex-start;
-  flex-shrink: 0;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8dp 12dp;
+  width: 100%;
 }
 
 .shell-call-bar-actions {
@@ -1578,26 +1587,35 @@ select selectbox option {
   flex-shrink: 0;
 }
 
-.shell-call-mute {
-  min-width: 64dp;
-  height: 36dp;
-  padding: 0 12dp;
-  border-radius: 8dp;
-  font-size: 14dp;
+.shell-call-mute,
+.shell-call-camera,
+.shell-call-leave {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 22dp;
+  cursor: pointer;
 }
 
-.shell-call-camera {
-  min-width: 72dp;
-  height: 36dp;
-  padding: 0 12dp;
-  border-radius: 8dp;
-  font-size: 14dp;
+.shell-call-mute svg,
+.shell-call-camera svg,
+.shell-call-leave svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
 }
 
 .shell-call-stage {
   pointer-events: none;
   margin: 8dp 12dp 0 12dp;
-  height: 220dp;
+  height: 180dp;
   border-radius: 10dp;
   position: relative;
   overflow: hidden;
@@ -1617,16 +1635,16 @@ select selectbox option {
 
 .shell-call-pip {
   position: absolute;
-  width: 96dp;
+  width: 72dp;
   height: 128dp;
   right: 10dp;
   bottom: 10dp;
   border-radius: 8dp;
+  overflow: hidden;
 }
 
 .shell-call-leave {
-  min-width: 64dp;
-  height: 36dp;
+  min-width: 44dp;
 }
 
 .shell-call-ring-eyebrow {

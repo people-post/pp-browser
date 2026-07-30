@@ -8,11 +8,11 @@
 |------|-------|
 | Project docs | `projects/p2p-av-calls/` (v0 → **a2 done**; **a3 in progress** V016–V019) |
 | ADRs | V001–V019 in [DECISIONS.md](DECISIONS.md) (V016 updated: iOS wiring in a3) |
-| Media stack | `CallMediaEngine` — Opus + **always H264 m-line** (V019); SDL camera on Camera toggle; `IVideoCodec` factory |
-| UI | In-call **Camera** + stage/PiP; **GL tile blit** via `CallVideoTileRenderer` (V018) |
+| UI | In-call **icon** mute/camera/leave + compact stacked bar; stage/PiP; **GL tile blit** via `CallVideoTileRenderer` (V018 — aspect-correct letterbox) |
+| Media stack | `CallMediaEngine` — Opus + **always H264 m-line** (V019); SDL camera; `CameraCaptureOrientation` (Android `SENSOR_ORIENTATION` + display rotation; iOS interface orientation); `IVideoCodec` factory |
 | Platform HW | **Win MF + macOS/iOS VT + Linux VA-API + Android MediaCodec (NDK)** implemented |
 | iOS wiring | `NSMicrophoneUsageDescription` + `NSCameraUsageDescription`; `AVAudioSession` play-and-record; `UIBackgroundModes` `audio` |
-| CMake | `SDL_CAMERA ON`; MF/`VideoToolbox`/`mediandk` linked; Android `RECORD_AUDIO` + `CAMERA` |
+| CMake | `SDL_CAMERA ON`; MF/`VideoToolbox`/`mediandk`+`camera2ndk` linked; Android `RECORD_AUDIO` + `CAMERA` |
 
 ## a2 closed (LAN voice)
 
@@ -28,18 +28,28 @@
 | Unified Opus+H264 SDP | **Done** in `CallMediaEngine` |
 | SDL camera + local preview frames | **Done** |
 | Camera / mute content + roster | **Done** |
-| Shell Camera + stage chrome | **Done** |
-| GL persistent texture tiles (V018) | **Done** — `CallVideoTileRenderer` uploads RGBA to `#call-remote-tile` / `#call-local-tile` |
-| Win MF / macOS VT / Android MediaCodec / Linux VA-API | **Code landed** — multi-host LAN dogfood pending |
+| Shell Camera + stage chrome | **Done** — compact icon chrome dogfooded |
+| Capture orientation + letterbox tiles | **Done** — `CameraCaptureOrientation_*`; `CallVideoTileRenderer` contain-fit |
+| GL persistent texture tiles (V018) | **Done** — uploads RGBA to `#call-remote-tile` / `#call-local-tile` |
+| Win MF / macOS VT / Android MediaCodec / Linux VA-API | **Code landed** |
 | iOS plist + AVAudioSession | **Done** — device dogfood optional (wiring-only exit) |
-| LAN bidirectional video dogfood | **Next** — Win/macOS/Linux/Android/iOS on real HW hosts |
+| LAN video dogfood | **Partial (2026-07-30)** — see below |
 
-## Next agent — LAN dogfood + claim green
+## a3 LAN video dogfood
 
-1. Dogfood bidirectional video on LAN across Win/macOS/Linux (+ Android/iOS when devices available).
-2. Update this file when green; leave NAT/SFU unclaimed. Document Linux hosts without usable HW encoder (accepted).
+| Path | State |
+|------|-------|
+| Android local preview (camera on) | **OK (2026-07-30)** |
+| Android → Linux receive + display | **OK (2026-07-30)** — upright after orientation fix; aspect letterboxed |
+| Linux → Android / Win↔* / macOS / iOS device | **Not claimed** |
+| NAT / seed SFU | **Not claimed** |
 
-**Do not:** OpenH264 as product default; fail call when H264 HW missing; renegotiate SDP for camera.
+## Next agent — finish LAN matrix + claim green
+
+1. Dogfood remaining LAN pairs (Linux→Android, Win/macOS, optional iOS device).
+2. When matrix is green enough for V016 exit, check PHASES a3 dogfood items and leave NAT/SFU unclaimed. Document Linux hosts without usable HW encoder (accepted).
+
+**Do not:** OpenH264 as product default; fail call when H264 HW missing; renegotiate SDP for camera; hardcode mobile sensor angles (use `CameraCaptureOrientation`).
 
 ## Agent traps
 
@@ -48,5 +58,8 @@
 | Audio-only SDP for voice + renegotiate on Camera | Always Opus+H264 initial SDP (V019) |
 | Fail `Start()` when H264 HW missing | Advertise video; encode/decode best-effort (V019) |
 | Remount shell for every video frame | DirtyWindow + persistent texture (V018) |
+| Stretch video to fill tile | Letterbox/pillarbox in `CallVideoTileRenderer` |
+| Hardcode Android front=270 / back=90 | `ACAMERA_SENSOR_ORIENTATION` + display rotation via `CameraCaptureOrientation` |
 | Hide Camera on voice-started calls | Same in-call once connected (V019) |
 | Defer iOS plist/session from a3 | iOS wiring is a3 exit (V016, 2026-07-30) |
+| Single-row text Mute/Camera/Leave on compact | Icon buttons + stacked call bar |

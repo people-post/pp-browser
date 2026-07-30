@@ -240,8 +240,10 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 
 - Init camera on demand: `SDL_InitSubSystem(SDL_INIT_CAMERA)` (same pattern as audio — do not fail window bring-up).  
 - Open device only when user **enables camera** (V009); closing camera on disable.  
-- Prefer front-facing when `SDL_GetCameraPosition` reports it (mobile later).  
-- Permissions: OS privacy prompts via SDL; Android `CAMERA` (+ runtime); **iOS** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` + `AVAudioSession` before capture (V016).
+- Prefer front-facing when `SDL_GetCameraPosition` reports it.  
+- **Orientation:** SDL does not apply sensor orientation. Before encode/preview, rotate via `CameraCaptureOrientation` — Android: `ACAMERA_SENSOR_ORIENTATION` + `Display.getRotation()` (CameraX compensation); iOS: conventional facing angles + interface orientation; desktop: identity. Portrait mobile encodes ~360×640 after rotation; desktop ~640×360.  
+- **Render fit:** `CallVideoTileRenderer` letterboxes/pillarboxes into `#call-remote-tile` / `#call-local-tile` (do not stretch).  
+- Permissions: OS privacy prompts via SDL; Android `CAMERA` (+ runtime) + link `camera2ndk` for metadata; **iOS** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` + `AVAudioSession` before capture (V016).
 
 ### Peer connection
 
@@ -262,7 +264,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 
 **UI composition (1:1 a3; V019 — same in-call for Voice/Video start):**
 
-1. In-call chrome is unified once connected: mute / meters / elapsed / Leave + **Camera** (allowed on voice-started calls too).  
+1. In-call chrome is unified once connected: icon mute / camera / leave + meters / elapsed (allowed on voice-started calls too). Compact layout uses a stacked bar so controls stay on-screen.  
 2. When remote (or local) video is active, expand an in-shell **stage** (still overlay, not a new nav tab): large **remote** tile; small **local PiP** when local camera on; placeholder / avatar when remote camera off. Compact bar-only when neither side has video frames.  
 3. Camera toggle off → on requests permission + opens SDL camera (encode starts then).  
 4. Chrome gate remains `CallChromeSync` / `DirtyWindow` — frame pixels update without remounting; only layer identity changes remount-class dirty.
@@ -288,7 +290,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 | Remote video | **Show** whenever the peer sends frames (including voice-started calls). |
 | `media_mode` | May remain on invite / history (“started as voice/video”) for copy; **runtime media UX is the same**. |
 | a3 dogfood | **Win** (Media Foundation) + **macOS** (VideoToolbox) primary; **Android** (MediaCodec + `CAMERA`) + **iOS** (VideoToolbox + plist/session wiring) **in a3**; Linux VA-API best-effort (V017). |
-| Encode defaults (a3) | Target ~**640×360 @ 15–24 fps**; network-adaptive bitrate/resolution **later** if not cheap. |
+| Encode defaults (a3) | Desktop ~**640×360**; portrait mobile ~**360×640** after orientation @ 15–24 fps; network-adaptive bitrate/resolution **later** if not cheap. |
 
 **Rationale:** One PC setup path; camera/mute never touch offer/answer; users get the UI they expect from two buttons without maintaining two in-call protocols.  
 **Alternatives:** Audio-only SDP for voice + renegotiate on camera (rejected — glare, second SDP round, dual code paths); keep voice chrome without Camera (rejected — same in-call model).  
