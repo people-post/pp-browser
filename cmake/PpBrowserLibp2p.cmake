@@ -40,6 +40,7 @@ function(pp_browser_add_libp2p_integration)
     host/ReachabilityService.cpp
     host/NatTraversal.cpp
     host/CircuitRelayService.cpp
+    host/MediaRelayService.cpp
   )
   target_include_directories(pp_libp2p_integration PUBLIC
     ${CMAKE_SOURCE_DIR}/src

@@ -53,25 +53,25 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 
 ## nf — Contact-first preference (N014) + media scorer prep (N020)
 
-- [ ] Circuit: simpler contacts → seed preference (N014 intent)
-- [ ] Provider: prefer serving contacts when hosting (esp. volunteer Node)
-- [ ] No coercion — friend must have capability on
-- [ ] Light UI: “Prefer contacts for routing” (default on) if needed
-- [ ] Message path may keep **HTTP Brief** without peer `message_relay`
-- [ ] Align docs/UI copy with **N020** for media (closed set; not hardcoded stages)
+- [x] Circuit: simpler contacts → seed preference (N014 intent)
+- [x] Provider: prefer serving contacts when hosting (esp. volunteer Node)
+- [x] No coercion — friend must have capability on
+- [x] Light UI: “Prefer contacts for routing” (default on) if needed
+- [x] Message path may keep **HTTP Brief** without peer `message_relay`
+- [x] Align docs/UI copy with **N020** for media (closed set; not hardcoded stages)
 
 ## n4-media — Blind media forwarder (N017–N021; unblocks a4)
 
-- [ ] Homegrown **content-agnostic** forwarder — no media keys, no codec decode
-- [ ] Framing: **`stream_id \| channel_id \| channel_type \| seq \| mark`** + opaque payload (N021)
-- [ ] QoS types v1: **`reliable_ordered`**, **`latest_lossy`** (+ optional `best_effort`); subscribe by `(stream_id, channel_id)`
-- [ ] Single **`media_relay`** capability; **C↑/C↓**, **B↑/B↓**, **A↑/A↓** (N019)
-- [ ] Quote / accept + billing ceiling; volunteer rate 0
-- [ ] Hop pick: **contacts ∪ org seed** only; filter → score; re-pick (N020 / V023)
-- [ ] Auth before attach; provider prefer contacts / limit strangers
-- [ ] Org `pp-node`: volunteer **`media_relay` on**; desktop checkbox **default on**
-- [ ] Call consumer maps audio/video_lo/video_hi per **V024** (same policy as 1:1 P2P backend)
-- [ ] `pricing.*` schema stub — pricing regulates later (not revenue-first)
+- [x] Homegrown **content-agnostic** forwarder — no media keys, no codec decode
+- [x] Framing: **`stream_id \| channel_id \| channel_type \| seq \| mark`** + opaque payload (N021)
+- [x] QoS types v1: **`reliable_ordered`**, **`latest_lossy`** (+ optional `best_effort`); subscribe by `(stream_id, channel_id)`
+- [x] Single **`media_relay`** capability; **C↑/C↓**, **B↑/B↓**, **A↑/A↓** (N019)
+- [x] Quote / accept + billing ceiling; volunteer rate 0
+- [x] Hop pick: **contacts ∪ org seed** only; filter → score; re-pick (N020 / V023)
+- [x] Auth before attach; provider prefer contacts / limit strangers
+- [x] Org `pp-node`: volunteer **`media_relay` on**; desktop checkbox **default on**
+- [ ] Call consumer maps audio/video_lo/video_hi per **V024** (same policy as 1:1 P2P backend) — **a4**
+- [x] `pricing.*` schema stub — pricing regulates later (not revenue-first)
 
 ## n4-message / pricing UI — deferred (N017 / N020 mid)
 

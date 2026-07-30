@@ -60,6 +60,11 @@ TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
   config.libp2p.listen_multiaddr = "/ip4/0.0.0.0/tcp/18520";
   config.libp2p.bootstrap_peers = {
       "/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
+  config.libp2p.prefer_contacts_for_routing = false;
+  config.libp2p.capabilities.circuit_relay = true;
+  config.libp2p.capabilities.media_relay = false;
+  config.libp2p.pricing.media_relay.mode = "volunteer";
+  config.libp2p.media_relay_budget.default_per_user_up_bps = 12345;
 
   nlohmann::json out;
   pbr::to_json(out, config);
@@ -67,6 +72,9 @@ TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
   EXPECT_EQ(out["libp2p"]["node_enabled"], false);
   EXPECT_EQ(out["libp2p"]["listen_multiaddr"], "/ip4/0.0.0.0/tcp/18520");
   ASSERT_EQ(out["libp2p"]["bootstrap_peers"].size(), 1u);
+  EXPECT_EQ(out["libp2p"]["prefer_contacts_for_routing"], false);
+  EXPECT_EQ(out["libp2p"]["capabilities"]["circuit_relay"], true);
+  EXPECT_EQ(out["libp2p"]["capabilities"]["media_relay"], false);
 
   pbr::AppConfig parsed;
   pbr::from_json(out, parsed);
@@ -74,4 +82,8 @@ TEST(ConfigJsonTest, RoundTripsLibp2pRoleFields) {
   EXPECT_EQ(parsed.libp2p.listen_multiaddr, "/ip4/0.0.0.0/tcp/18520");
   ASSERT_EQ(parsed.libp2p.bootstrap_peers.size(), 1u);
   EXPECT_EQ(parsed.libp2p.bootstrap_peers[0], config.libp2p.bootstrap_peers[0]);
+  EXPECT_FALSE(parsed.libp2p.prefer_contacts_for_routing);
+  EXPECT_TRUE(parsed.libp2p.capabilities.circuit_relay);
+  EXPECT_FALSE(parsed.libp2p.capabilities.media_relay);
+  EXPECT_EQ(parsed.libp2p.media_relay_budget.default_per_user_up_bps, 12345);
 }

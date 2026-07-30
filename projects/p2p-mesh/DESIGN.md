@@ -245,9 +245,9 @@ Hot-reload: role / capability / pricing changes reconfigure modules (`MessagingH
 | **n4+ / later** | Blockchain node | + checkbox (settlement rails, not “paid jobs”) |
 | **later** | Accept paid jobs marketplace | + checkbox; job schema separate |
 
-**A/V calls consumer:** [p2p-av-calls](../p2p-av-calls/) **a4** needs blind **`media_relay`** (V020/V021). Relay must not know payload contents. Exact SFU choice priority **TBD**.
+**A/V calls consumer:** [p2p-av-calls](../p2p-av-calls/) **a4** needs blind **`media_relay`** (V020/V021). Relay must not know payload contents. Hop pick: **N020 / V023** (contacts ∪ org seed). Mesh hop is in place; call soft-migrate + V024 remain **a4**.
 
-Until media_relay ships, keep **direct ICE** for 1:1; group waits on forwarder. HTTP Brief remains message offline fallback.
+HTTP Brief remains message offline fallback.
 
 ## Packaging: `pp-node` binary (N011)
 
@@ -381,13 +381,15 @@ Ship value in this sequence unless a later ADR revises it:
 3. **nr** — Reachability status + manual help (uses dial-back)  
 4. **nu** — IPv6 advertise + UPnP/NAT-PMP (N013)  
 5. **n3** — Circuit-relay capability (helps outbound-only users)  
-6. **nf** — Contact-first preference (N014); thin OK — SFU pick ranking TBD  
-7. **n4-media** — True audio/video SFU on `pp-node` + desktop checkboxes (N017); unblocks calls **a4**  
+6. **nf** — Contact-first preference (N014); thin OK  
+7. **n4-media** — Blind `media_relay` on `pp-node` + desktop (N017–N021); unblocks calls **a4**  
 8. **Later** — Peer message_relay (optional); paid pricing UI (N010); capability directory / soft reputation  
 9. **n2** — DHT (useful, but seed + circuit + directory often cover chat UX earlier)  
 10. Chain settle rails, paid-jobs marketplace, Home Node pack, schedules/caps  
 
 Agents: prefer **n4-media** for calls over peer message_relay or paid UI. Prefer this order over “implement DHT next because it is n2.”
+
+**A/V calls consumer:** [p2p-av-calls](../p2p-av-calls/) **a4** needs blind **`media_relay`** (V020/V021). Relay must not know payload contents. Hop pick: **N020 / V023** (contacts ∪ org seed).
 
 ## Horizons (still open)
 

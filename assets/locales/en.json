@@ -119,6 +119,10 @@
     "settings.network.banner_hint": "Direct connections may use relay until inbound works. See Me → Network.",
     "settings.network.circuit_relay": "Circuit relay",
     "settings.network.circuit_relay_hint": "Help NAT'd peers connect through this Node (volunteer).",
+    "settings.network.media_relay": "Media relay",
+    "settings.network.media_relay_hint": "Forward call media for friends and the network (blind; volunteer; default on).",
+    "settings.network.prefer_contacts": "Prefer contacts for routing",
+    "settings.network.prefer_contacts_hint": "Ask and serve contacts before the org seed. Does not coerce friends.",
 
     "settings.security.protection": "Protection:",
     "settings.security.current_pin": "Current PIN",

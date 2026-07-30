@@ -105,6 +105,9 @@ int main(int argc, char** argv) {
     if (boot->circuit_relay) {
       boot->circuit_relay->Stop();
     }
+    if (boot->media_relay) {
+      boot->media_relay->Stop();
+    }
     if (boot->runtime) {
       boot->runtime->Stop();
     }
@@ -123,6 +126,9 @@ int main(int argc, char** argv) {
   }
 
   root.info << "pp-node shutting down";
+  if (boot->media_relay) {
+    boot->media_relay->Stop();
+  }
   if (boot->circuit_relay) {
     boot->circuit_relay->Stop();
   }

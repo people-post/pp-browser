@@ -1,6 +1,6 @@
 # P2P mesh
 
-**Status:** **nr / nu / n3 done** — next **nf** + **n4-media** (N018–N021: framing/QoS, ↑/↓ quotes, contacts∪seed; pricing regulates later)  
+**Status:** **nf + n4-media done** — next calls **a4** (V024 adaptive + SFU consumer); message_relay / pricing UI / DHT later  
 **Formerly:** `projects/libp2p-node-roles/` (renamed; ADRs remain N001+)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [docs/architecture/P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [docs/architecture/LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
@@ -59,7 +59,7 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 | nr | Reachability status + manual help | **Done** |
 | nu | IPv6 + UPnP/NAT-PMP | **Done** |
 | n3 | Circuit-relay | **Done** |
-| nf | Contact-first preference (thin; SFU rank TBD) | **Next** |
-| n4-media | Framing/QoS + contacts∪seed pick | After nf — **unblocks a4** (N018–N021) |
+| nf | Contact-first preference | **Done** |
+| n4-media | Framing/QoS + contacts∪seed pick | **Done** — unblocks a4 |
 | n4-message / pricing | Peer message_relay; paid UI | Deferred (N017) |
 | n2 | DHT | Later than circuit (N015) |

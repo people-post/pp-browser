@@ -5,6 +5,7 @@
 #include "common/Error.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/MediaRelayService.h"
 #include "libp2p/integration/host/NodeRuntime.h"
 #include "libp2p/integration/host/ReachabilityService.h"
 
@@ -33,6 +34,7 @@ struct NodeBootstrapResult {
   std::unique_ptr<NodeRuntime> runtime;
   std::unique_ptr<DialBackService> dial_back;
   std::unique_ptr<CircuitRelayService> circuit_relay;
+  std::unique_ptr<MediaRelayService> media_relay;
   /** Heap-allocated: ReachabilityService is not movable (mutex). */
   std::unique_ptr<ReachabilityService> reachability;
 };

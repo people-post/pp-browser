@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_set>
 
 namespace pbr {
 
@@ -16,9 +17,17 @@ struct CircuitRelayBridgeResult {
   std::string error;
 };
 
+/** Provider admission (nf): volunteer desktop may prefer contacts. */
+struct CircuitRelayAdmissionPolicy {
+  /** When true and contact_peer_ids non-empty, refuse non-contact dialers. */
+  bool prefer_contacts_only = false;
+  std::unordered_set<std::string> contact_peer_ids;
+};
+
 /**
  * Custom circuit relay (n3): relay host bridges a stream to a target multiaddr.
  * Not libp2p circuit-relay v2 — integration-layer protocol like DialBackService.
+ * nf: optional contact-preferring admission via SetAdmissionPolicy.
  */
 class CircuitRelayService {
 public:
@@ -31,6 +40,9 @@ public:
   void Start();
   void Stop();
   bool IsStarted() const { return started_; }
+
+  /** Hot-update provider admission (MessagingHub feeds contact PeerIds). */
+  void SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy);
 
   /**
    * Client: ask relay peer to bridge this stream to `target_multiaddr`.

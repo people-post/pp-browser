@@ -119,6 +119,10 @@
     "settings.network.banner_hint": "入站可用前，直连可能走中继。见 我 → 网络。",
     "settings.network.circuit_relay": "电路中继",
     "settings.network.circuit_relay_hint": "帮助 NAT 后的节点通过此节点连接（自愿）。",
+    "settings.network.media_relay": "媒体中继",
+    "settings.network.media_relay_hint": "为好友与网络转发通话媒体（盲转发；自愿；默认开启）。",
+    "settings.network.prefer_contacts": "优先通过联系人路由",
+    "settings.network.prefer_contacts_hint": "先请求并服务联系人，再使用组织种子节点。不会强迫好友开启能力。",
 
     "settings.security.protection": "保护状态：",
     "settings.security.current_pin": "当前 PIN",

@@ -26,10 +26,12 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/MediaRelayService.h"
 #include "libp2p/integration/host/Reachability.h"
 #include "libp2p/integration/host/ReachabilityService.h"
 #include "libp2p/integration/host/NodeRuntime.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
+#include "base/people/MeshHopPolicy.h"
 
 #include <functional>
 #include <memory>
@@ -88,6 +90,14 @@ public:
   void RefreshMeshCapabilities();
   DialBackService* DialBack() { return dial_back_.get(); }
   CircuitRelayService* CircuitRelay() { return circuit_relay_.get(); }
+  MediaRelayService* MediaRelay() { return media_relay_.get(); }
+
+  /**
+   * nf: try circuit bridge via preferred hops (contacts then seed when prefer_contacts).
+   * Registers hop endpoints as needed; returns first successful bridge.
+   */
+  Roe<CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_multiaddr,
+                                                              int timeout_ms = 8000);
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
@@ -110,6 +120,7 @@ private:
   Roe<void> StartLibp2p(const AppConfig& config);
   void StopLibp2p();
   void StartMeshServices(Libp2pRole role);
+  void ApplyMeshAdmissionPolicies();
   void RegisterContactEndpoints();
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
@@ -152,6 +163,7 @@ private:
   std::unique_ptr<NodeRuntime> node_runtime_;
   std::unique_ptr<DialBackService> dial_back_;
   std::unique_ptr<CircuitRelayService> circuit_relay_;
+  std::unique_ptr<MediaRelayService> media_relay_;
   ReachabilityService reachability_;
   std::string libp2p_last_error_;
   bool upnp_auto_tried_ = false;

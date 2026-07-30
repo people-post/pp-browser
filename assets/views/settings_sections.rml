@@ -190,6 +190,26 @@
         </div>
         <p class="text muted settings-help" data-if="show_circuit_relay_toggle">{{i18n:settings.network.circuit_relay_hint}}</p>
 
+        <div class="settings-toggle-row row" data-if="show_media_relay_toggle">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.network.media_relay}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="media_relay_enabled == 'on'"
+                  data-event-click="toggle_media_relay()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help" data-if="show_media_relay_toggle">{{i18n:settings.network.media_relay_hint}}</p>
+
+        <div class="settings-toggle-row row" data-if="show_prefer_contacts_toggle">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.network.prefer_contacts}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="prefer_contacts_for_routing == 'on'"
+                  data-event-click="toggle_prefer_contacts()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help" data-if="show_prefer_contacts_toggle">{{i18n:settings.network.prefer_contacts_hint}}</p>
+
         <label class="settings-field" data-if="show_node_toggle && node_enabled == 'on'">
           <span class="settings-label">{{i18n:settings.network.listen}}</span>
           <p class="text muted" data-rml="libp2p_listen_multiaddr"></p>

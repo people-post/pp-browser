@@ -27,6 +27,8 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.registration_base_url = bootstrap.config.registration.base_url;
   state.node_enabled = bootstrap.config.libp2p.node_enabled ? "on" : "off";
   state.circuit_relay_enabled = bootstrap.config.libp2p.capabilities.circuit_relay ? "on" : "off";
+  state.media_relay_enabled = bootstrap.config.libp2p.capabilities.media_relay ? "on" : "off";
+  state.prefer_contacts_for_routing = bootstrap.config.libp2p.prefer_contacts_for_routing ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
   Libp2pConfig libp2p = bootstrap.config.libp2p;
   NormalizeLibp2pConfig(libp2p);
@@ -38,9 +40,13 @@ bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   const AppConfig& config = bootstrap.config;
   const bool node_on = state.node_enabled == "on";
   const bool circuit_on = state.circuit_relay_enabled == "on";
+  const bool media_on = state.media_relay_enabled == "on";
+  const bool prefer_contacts = state.prefer_contacts_for_routing == "on";
   return state.relay_base_url == config.relay.base_url && state.directory_base_url == config.directory.base_url &&
          state.registration_base_url == config.registration.base_url && node_on == config.libp2p.node_enabled &&
-         circuit_on == config.libp2p.capabilities.circuit_relay;
+         circuit_on == config.libp2p.capabilities.circuit_relay &&
+         media_on == config.libp2p.capabilities.media_relay &&
+         prefer_contacts == config.libp2p.prefer_contacts_for_routing;
 }
 
 Roe<void> NetworkSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
@@ -59,6 +65,8 @@ void NetworkSettingsSection::ResetToDefaults(SettingsUiState& state, const Sessi
   state.registration_base_url = defaults.registration.base_url;
   state.node_enabled = defaults.libp2p.node_enabled ? "on" : "off";
   state.circuit_relay_enabled = defaults.libp2p.capabilities.circuit_relay ? "on" : "off";
+  state.media_relay_enabled = defaults.libp2p.capabilities.media_relay ? "on" : "off";
+  state.prefer_contacts_for_routing = defaults.libp2p.prefer_contacts_for_routing ? "on" : "off";
   state.show_node_toggle = Platform::IsDesktop();
   Libp2pConfig libp2p = defaults.libp2p;
   NormalizeLibp2pConfig(libp2p);

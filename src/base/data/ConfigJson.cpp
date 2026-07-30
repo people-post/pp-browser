@@ -127,13 +127,71 @@ void from_json(const nlohmann::json& j, ServiceEndpointConfig& endpoint) {
 }
 
 void to_json(nlohmann::json& j, const Libp2pCapabilities& caps) {
-  j = nlohmann::json{{"circuit_relay", caps.circuit_relay}};
+  j = nlohmann::json{{"circuit_relay", caps.circuit_relay}, {"media_relay", caps.media_relay}};
 }
 
 void from_json(const nlohmann::json& j, Libp2pCapabilities& caps) {
   if (j.contains("circuit_relay") && j["circuit_relay"].is_boolean()) {
     caps.circuit_relay = j["circuit_relay"].get<bool>();
   }
+  if (j.contains("media_relay") && j["media_relay"].is_boolean()) {
+    caps.media_relay = j["media_relay"].get<bool>();
+  }
+}
+
+void to_json(nlohmann::json& j, const RelayPricingConfig& pricing) {
+  j = nlohmann::json{{"mode", pricing.mode}, {"rate", pricing.rate}};
+}
+
+void from_json(const nlohmann::json& j, RelayPricingConfig& pricing) {
+  if (j.contains("mode") && j["mode"].is_string()) {
+    pricing.mode = j["mode"].get<std::string>();
+  }
+  if (j.contains("rate") && j["rate"].is_number()) {
+    pricing.rate = j["rate"].get<double>();
+  }
+}
+
+void to_json(nlohmann::json& j, const Libp2pPricingConfig& pricing) {
+  j = nlohmann::json{{"media_relay", pricing.media_relay}};
+}
+
+void from_json(const nlohmann::json& j, Libp2pPricingConfig& pricing) {
+  if (j.contains("media_relay") && j["media_relay"].is_object()) {
+    from_json(j["media_relay"], pricing.media_relay);
+  }
+}
+
+void to_json(nlohmann::json& j, const MediaRelayBudgetConfig& budget) {
+  auto field = [](int64_t v) -> nlohmann::json {
+    if (v <= 0) {
+      return nullptr;
+    }
+    return v;
+  };
+  j = nlohmann::json{{"node_capacity_up_bps", field(budget.node_capacity_up_bps)},
+                     {"node_capacity_down_bps", field(budget.node_capacity_down_bps)},
+                     {"max_session_up_bps", field(budget.max_session_up_bps)},
+                     {"max_session_down_bps", field(budget.max_session_down_bps)},
+                     {"default_per_user_up_bps", field(budget.default_per_user_up_bps)},
+                     {"default_per_user_down_bps", field(budget.default_per_user_down_bps)}};
+}
+
+void from_json(const nlohmann::json& j, MediaRelayBudgetConfig& budget) {
+  auto read_bps = [&](const char* key, int64_t& out) {
+    if (!j.contains(key) || j[key].is_null()) {
+      return;
+    }
+    if (j[key].is_number_integer()) {
+      out = j[key].get<int64_t>();
+    }
+  };
+  read_bps("node_capacity_up_bps", budget.node_capacity_up_bps);
+  read_bps("node_capacity_down_bps", budget.node_capacity_down_bps);
+  read_bps("max_session_up_bps", budget.max_session_up_bps);
+  read_bps("max_session_down_bps", budget.max_session_down_bps);
+  read_bps("default_per_user_up_bps", budget.default_per_user_up_bps);
+  read_bps("default_per_user_down_bps", budget.default_per_user_down_bps);
 }
 
 void to_json(nlohmann::json& j, const Libp2pConfig& config) {
@@ -149,7 +207,10 @@ void to_json(nlohmann::json& j, const Libp2pConfig& config) {
                      {"dial_timeout_ms", config.dial_timeout_ms},
                      {"idle_ttl_ms", config.idle_ttl_ms},
                      {"dial_failure_backoff_ms", config.dial_failure_backoff_ms},
-                     {"capabilities", config.capabilities}};
+                     {"prefer_contacts_for_routing", config.prefer_contacts_for_routing},
+                     {"capabilities", config.capabilities},
+                     {"pricing", config.pricing},
+                     {"media_relay_budget", config.media_relay_budget}};
 }
 
 void from_json(const nlohmann::json& j, Libp2pConfig& config) {
@@ -182,8 +243,17 @@ void from_json(const nlohmann::json& j, Libp2pConfig& config) {
   if (j.contains("dial_failure_backoff_ms") && j["dial_failure_backoff_ms"].is_number_integer()) {
     config.dial_failure_backoff_ms = j["dial_failure_backoff_ms"].get<int>();
   }
+  if (j.contains("prefer_contacts_for_routing") && j["prefer_contacts_for_routing"].is_boolean()) {
+    config.prefer_contacts_for_routing = j["prefer_contacts_for_routing"].get<bool>();
+  }
   if (j.contains("capabilities") && j["capabilities"].is_object()) {
     from_json(j["capabilities"], config.capabilities);
+  }
+  if (j.contains("pricing") && j["pricing"].is_object()) {
+    from_json(j["pricing"], config.pricing);
+  }
+  if (j.contains("media_relay_budget") && j["media_relay_budget"].is_object()) {
+    from_json(j["media_relay_budget"], config.media_relay_budget);
   }
 }
 

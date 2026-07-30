@@ -11,7 +11,12 @@
     "idle_ttl_ms": 300000,
     "dial_failure_backoff_ms": 30000,
     "capabilities": {
-      "circuit_relay": true
+      "circuit_relay": true,
+      "media_relay": true
+    },
+    "prefer_contacts_for_routing": true,
+    "pricing": {
+      "media_relay": { "mode": "volunteer", "rate": 0 }
     }
   }
 }

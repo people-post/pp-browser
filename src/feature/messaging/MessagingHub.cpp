@@ -19,6 +19,8 @@
 #include "base/data/PlatformDefaults.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/MediaRelayService.h"
+#include "base/people/MeshHopPolicy.h"
 #include "libp2p/integration/host/NatTraversal.h"
 #include "libp2p/integration/host/Reachability.h"
 #include "common/StartupTiming.h"
@@ -28,6 +30,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <unordered_set>
 
 namespace pbr {
 
@@ -197,10 +200,20 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
   dial_back_ = std::make_unique<DialBackService>(*node_runtime_->Host(), *node_runtime_->Sessions());
   dial_back_->Start();
 
+  circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
   if (role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {
-    circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
     circuit_relay_->Start();
   }
+
+  // Outbound client API always available; inbound hosting only when Node + capability.
+  media_relay_ = std::make_unique<MediaRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+  media_relay_->SetBudget(config_.libp2p.media_relay_budget);
+  media_relay_->SetPricing(config_.libp2p.pricing.media_relay);
+  if (role == Libp2pRole::Node && config_.libp2p.capabilities.media_relay) {
+    media_relay_->Start();
+  }
+
+  ApplyMeshAdmissionPolicies();
 
   reachability_.SetOnUpdated([this]() {
     if (on_reachability_updated_) {
@@ -215,7 +228,40 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
   }
 }
 
+void MessagingHub::ApplyMeshAdmissionPolicies() {
+  const bool prefer = config_.libp2p.prefer_contacts_for_routing;
+  const bool node = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
+  std::unordered_set<std::string> contact_ids;
+  if (contacts_) {
+    if (auto listed = contacts_->List()) {
+      for (const std::string& id : ContactPeerIds(*listed)) {
+        contact_ids.insert(id);
+      }
+    }
+  }
+
+  // Org-style: if Node with no contacts loaded, do not refuse strangers.
+  const bool limit_strangers = prefer && node && !contact_ids.empty();
+
+  if (circuit_relay_) {
+    CircuitRelayAdmissionPolicy policy;
+    policy.prefer_contacts_only = limit_strangers;
+    policy.contact_peer_ids = contact_ids;
+    circuit_relay_->SetAdmissionPolicy(std::move(policy));
+  }
+  if (media_relay_) {
+    MediaRelayAdmissionPolicy policy;
+    policy.prefer_contacts_only = limit_strangers;
+    policy.contact_peer_ids = contact_ids;
+    media_relay_->SetAdmissionPolicy(std::move(policy));
+  }
+}
+
 void MessagingHub::StopLibp2p() {
+  if (media_relay_) {
+    media_relay_->Stop();
+    media_relay_.reset();
+  }
   if (circuit_relay_) {
     circuit_relay_->Stop();
     circuit_relay_.reset();
@@ -247,6 +293,7 @@ void MessagingHub::RegisterContactEndpoints() {
       p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
     }
   }
+  ApplyMeshAdmissionPolicies();
 }
 
 Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
@@ -494,10 +541,67 @@ void MessagingHub::RefreshMeshCapabilities() {
     circuit_relay_->Stop();
     circuit_relay_.reset();
   }
-  if (ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {
-    circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+  if (media_relay_) {
+    media_relay_->Stop();
+    media_relay_.reset();
+  }
+  const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);
+  circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+  if (role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {
     circuit_relay_->Start();
   }
+  media_relay_ = std::make_unique<MediaRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+  media_relay_->SetBudget(config_.libp2p.media_relay_budget);
+  media_relay_->SetPricing(config_.libp2p.pricing.media_relay);
+  if (role == Libp2pRole::Node && config_.libp2p.capabilities.media_relay) {
+    media_relay_->Start();
+  }
+  ApplyMeshAdmissionPolicies();
+}
+
+Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const std::string& target_multiaddr,
+                                                                          int timeout_ms) {
+  if (!circuit_relay_ || !node_runtime_ || !node_runtime_->Sessions()) {
+    return Error("circuit-relay not available");
+  }
+  std::vector<Contact> contacts;
+  if (contacts_) {
+    if (auto listed = contacts_->List()) {
+      contacts = std::move(*listed);
+    }
+  }
+  Libp2pConfig libp2p = config_.libp2p;
+  NormalizeLibp2pConfig(libp2p);
+  auto hops = OrderCircuitHops(CollectContactHopCandidates(contacts), CollectSeedHopCandidates(libp2p.bootstrap_peers),
+                               libp2p.prefer_contacts_for_routing);
+  if (hops.empty()) {
+    return Error("no circuit hop candidates");
+  }
+
+  CircuitRelayBridgeResult last;
+  last.error = "all hops failed";
+  PeerSessionManager& sessions = *node_runtime_->Sessions();
+  for (const MeshHopCandidate& hop : hops) {
+    const std::string key = hop.peer_id;
+    if (!hop.multiaddr.empty()) {
+      (void)sessions.RegisterEndpoint(key, hop.multiaddr);
+      sessions.ClearDialBackoff(key);
+    }
+    if (!sessions.IsDialable(key)) {
+      last.error = "hop not dialable: " + key;
+      continue;
+    }
+    auto bridged = circuit_relay_->RequestBridge(key, target_multiaddr, timeout_ms);
+    if (!bridged) {
+      last.error = bridged.error().message;
+      continue;
+    }
+    if (bridged->ok) {
+      return *bridged;
+    }
+    last = *bridged;
+  }
+  return last;
 }
 
 void MessagingHub::SuspendLibp2pColdPeers() {

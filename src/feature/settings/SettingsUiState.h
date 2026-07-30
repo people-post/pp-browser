@@ -40,6 +40,10 @@ struct SettingsUiState {
   bool show_reachability_help = false;
   std::string circuit_relay_enabled = "off";
   bool show_circuit_relay_toggle = false;
+  std::string media_relay_enabled = "on";
+  bool show_media_relay_toggle = false;
+  std::string prefer_contacts_for_routing = "on";
+  bool show_prefer_contacts_toggle = false;
   std::string profile_nickname;
   std::string profile_peer_id;
   std::string profile_relay_id;

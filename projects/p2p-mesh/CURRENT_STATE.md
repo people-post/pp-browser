@@ -14,6 +14,8 @@
 | **nr** | Reachability status + Connection card + guided help + `pp-node --status` (see below) |
 | **nu** | IPv6 listen candidates + UPnP (miniupnpc) + Connection card actions (see below) |
 | **n3** | Custom `/pp-browser/circuit-relay/1.0.0` + `capabilities.circuit_relay` + UI checkbox (see below) |
+| **nf** | Contact-first circuit preference + provider admission (see below) |
+| **n4-media** | Blind `media_relay` + N021 framing + quote/attach + closed-set pick helpers (see below) |
 
 ## n1 in code
 
@@ -66,7 +68,31 @@
 | Config | `libp2p.capabilities.circuit_relay` + JSON round-trip |
 | UI | **Circuit relay** checkbox under Node (hot refresh via `RefreshMeshCapabilities`) |
 | Seed | `packaging/pp-node/config.json.example` enables `circuit_relay: true` |
-| Auto-route | Deferred to **nf** (manual bridge API on `CircuitRelayService`) |
+| Auto-route | **nf** — `MessagingHub::RequestCircuitBridgePreferred` |
+
+## nf in code
+
+| Area | State |
+|------|-------|
+| Config | `prefer_contacts_for_routing` (default on) |
+| Pick | `MeshHopPolicy` — contacts → seed for circuit (`OrderCircuitHops`) |
+| API | `MessagingHub::RequestCircuitBridgePreferred` |
+| Provider | Circuit (and media) admission prefers contacts on volunteer desktop when contacts known; org seed with empty contacts serves all |
+| UI | **Prefer contacts for routing** toggle |
+
+## n4-media in code
+
+| Area | State |
+|------|-------|
+| Protocol | `/pp-browser/media-relay/1.0.0` (`MediaRelayService`) |
+| Framing | N021 binary frames: `stream_id \| channel_id \| channel_type \| seq \| mark` + opaque payload |
+| QoS | `reliable_ordered`, `latest_lossy`, `best_effort` |
+| Session | quote → accept → attach; subscribe `(stream_id, channel_id)`; ↑/↓ budget defaults; volunteer rate 0 |
+| Auth stub | `auth` must equal `call_id` (a4 will supply roster proof) |
+| Config | `capabilities.media_relay` **default on**; `pricing.media_relay`; `media_relay_budget` |
+| Pick helpers | `RankMediaHops` — contacts ∪ seed closed set (N020); call coordinator wires a4 |
+| Hosts | `pp-node` + desktop Node checkbox default on |
+| Tests | frame codec; hop policy; two-host quote/attach/fan-out |
 
 ## Agent traps
 
@@ -77,18 +103,19 @@
 | “Behind firewall” as hard fact | Reachability status + soft help (N012) |
 | Manual port-forward only | Prefer **IPv6 + UPnP**, then manual (N013) |
 | Pick random public relay first | **Contacts first**, then seed, then public (N014) |
+| Hardcoded N014 stages for media | **N020** / **V023** scorer over closed set |
 | Implement DHT right after n1 | Follow **N015** order (circuit/reachability before DHT) |
 | Always bind 18517 or die silently | Desktop: fallback range + persist (N016); `pp-node`: fail loud |
 | Link `MessagingHub` into `pp-node` | Thin `NodeRuntime` + identity/crypto only |
 | Silent port hop on org seed | Fail loud unless `--listen-fallback` |
 | libp2p circuit-relay v2 in fork | Custom pp-browser circuit-relay protocol (n3) |
+| Relay decodes Opus/H264 | Blind forward + `channel_type` only (N021) |
 
 ## Still not done
 
 | Area | State |
 |------|-------|
-| Contact-first relay routing | **nf** (not implemented; SFU pick ranking TBD) |
-| Blind `media_relay` + framing/QoS + closed-set pick | **n4-media** (N017–N021) — unblocks calls a4 |
+| Call consumer (a4) | Soft-migrate + V024 shared policy — [p2p-av-calls](../p2p-av-calls/) |
 | Peer message_relay | Deferred (N017); HTTP Brief remains |
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
@@ -96,9 +123,8 @@
 
 ## Next
 
-1. **nf** — circuit preference (N014); align with N020 media rules  
-2. **n4-media** — framing (N021) + ↑/↓ quotes + contacts∪seed pick + call V024 mapping  
-3. Curated public / paid regulation / **n2 DHT** later  
+1. **a4** — group / ICE-fail via `media_relay`; shared V024 adaptation (single video layer OK)  
+2. Curated public / paid regulation / **n2 DHT** later  
 
 ## Follow-ups
 

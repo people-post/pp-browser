@@ -5,6 +5,7 @@
 #include "common/Error.h"
 #include "common/Module.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,28 @@ struct SearchConfig {
 struct Libp2pCapabilities {
   /** Host circuit-relay bridge for NAT'd peers (n3). */
   bool circuit_relay = false;
+  /** Host blind media forwarder (n4-media / N018). Default on for Node hosts. */
+  bool media_relay = true;
+};
+
+/** ↑/↓ ceilings for media_relay (N019). 0 = unbounded / ops default. */
+struct MediaRelayBudgetConfig {
+  int64_t node_capacity_up_bps = 0;
+  int64_t node_capacity_down_bps = 0;
+  int64_t max_session_up_bps = 0;
+  int64_t max_session_down_bps = 0;
+  int64_t default_per_user_up_bps = 0;
+  int64_t default_per_user_down_bps = 0;
+};
+
+/** Per-capability pricing stub (N010 / N017). Volunteer ships first. */
+struct RelayPricingConfig {
+  std::string mode = "volunteer"; // volunteer | paid
+  double rate = 0.0;
+};
+
+struct Libp2pPricingConfig {
+  RelayPricingConfig media_relay;
 };
 
 struct Libp2pConfig {
@@ -50,7 +73,14 @@ struct Libp2pConfig {
   int dial_timeout_ms = 8000;
   int idle_ttl_ms = 180000;
   int dial_failure_backoff_ms = 30000;
+  /**
+   * Prefer contacts then org seed for circuit/media hop pick (nf / N014).
+   * On volunteer desktop Nodes, also prefer serving contacts (limit strangers).
+   */
+  bool prefer_contacts_for_routing = true;
   Libp2pCapabilities capabilities;
+  Libp2pPricingConfig pricing;
+  MediaRelayBudgetConfig media_relay_budget;
 };
 
 struct AppConfig {

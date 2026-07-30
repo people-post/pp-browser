@@ -7,6 +7,7 @@
 #include "base/data/ProfileRegistry.h"
 #include "base/data/SchemaVersion.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/MediaRelayService.h"
 #include "libp2p/integration/host/Reachability.h"
 #include "common/Logger.h"
 
@@ -109,6 +110,15 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     circuit_relay->Start();
   }
 
+  std::unique_ptr<MediaRelayService> media_relay;
+  // Org seed: media_relay default on (N018); host inbound when enabled.
+  if (config->libp2p.capabilities.media_relay) {
+    media_relay = std::make_unique<MediaRelayService>(*runtime->Host(), *runtime->Sessions());
+    media_relay->SetBudget(config->libp2p.media_relay_budget);
+    media_relay->SetPricing(config->libp2p.pricing.media_relay);
+    media_relay->Start();
+  }
+
   NodeBootstrapResult result;
   result.config = std::move(*config);
   result.data_dir = AppPaths::DataDir();
@@ -122,13 +132,15 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   result.runtime = std::move(runtime);
   result.dial_back = std::move(dial_back);
   result.circuit_relay = std::move(circuit_relay);
+  result.media_relay = std::move(media_relay);
   result.reachability = std::make_unique<ReachabilityService>();
 
   auto peer_id = result.runtime->Host()->LocalPeerIdBase58();
   log.info << "pp-node listening on " << result.config.libp2p.listen_multiaddr
            << (peer_id ? (" peer=" + *peer_id) : std::string())
            << " dial-back=" << kDialBackProtocolId
-           << " circuit-relay=" << (result.config.libp2p.capabilities.circuit_relay ? "on" : "off");
+           << " circuit-relay=" << (result.config.libp2p.capabilities.circuit_relay ? "on" : "off")
+           << " media-relay=" << (result.config.libp2p.capabilities.media_relay ? "on" : "off");
   return result;
 }
 

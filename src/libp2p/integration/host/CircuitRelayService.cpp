@@ -88,11 +88,22 @@ void BridgeStreams(const std::shared_ptr<Stream>& a, const std::shared_ptr<Strea
 }
 
 CircuitRelayBridgeResult RelayBridge(PeerSessionManager& sessions, const nlohmann::json& root,
-                                     const std::shared_ptr<Stream>& client_stream) {
+                                     const std::shared_ptr<Stream>& client_stream,
+                                     const CircuitRelayAdmissionPolicy& admission) {
   CircuitRelayBridgeResult out;
   if (root.value("op", "") != "bridge") {
     out.error = "unsupported op";
     return out;
+  }
+  if (admission.prefer_contacts_only && !admission.contact_peer_ids.empty()) {
+    std::string remote;
+    if (auto peer = client_stream->remotePeerId()) {
+      remote = peer.value().toBase58();
+    }
+    if (remote.empty() || admission.contact_peer_ids.find(remote) == admission.contact_peer_ids.end()) {
+      out.error = "prefer contacts: stranger refused";
+      return out;
+    }
   }
   const std::string target = root.value("target_multiaddr", "");
   if (target.empty()) {
@@ -163,10 +174,16 @@ CircuitRelayBridgeResult RelayBridge(PeerSessionManager& sessions, const nlohman
 struct CircuitRelayService::Impl {
   std::mutex handler_mutex;
   PeerSessionManager* sessions = nullptr;
+  CircuitRelayAdmissionPolicy admission;
 
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol) {
     auto stream = std::move(stream_and_protocol.stream);
     std::thread([this, stream = std::move(stream)]() mutable {
+      CircuitRelayAdmissionPolicy policy;
+      {
+        std::lock_guard<std::mutex> lock(handler_mutex);
+        policy = admission;
+      }
       CircuitRelayBridgeResult result;
       auto frame = ReadExactFrame(stream);
       if (!frame) {
@@ -178,7 +195,7 @@ struct CircuitRelayService::Impl {
         } else if (!sessions) {
           result.error = "circuit-relay service not ready";
         } else {
-          result = RelayBridge(*sessions, root, stream);
+          result = RelayBridge(*sessions, root, stream, policy);
           if (result.ok) {
             return;
           }
@@ -220,11 +237,16 @@ void CircuitRelayService::Stop() {
   started_ = false;
 }
 
+void CircuitRelayService::SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy) {
+  std::lock_guard<std::mutex> lock(impl_->handler_mutex);
+  impl_->admission = std::move(policy);
+}
+
 Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::string& relay_peer_key,
                                                                  const std::string& target_multiaddr,
                                                                  int timeout_ms) {
-  if (!started_ || !host_.IsRunning()) {
-    return Error("circuit-relay service not started");
+  if (!host_.IsRunning()) {
+    return Error("circuit-relay host not running");
   }
   if (!sessions_.IsDialable(relay_peer_key)) {
     return Error("relay peer endpoint not registered");

@@ -83,6 +83,10 @@ private:
     bool show_reachability_help = false;
     Rml::String circuit_relay_enabled = "off";
     bool show_circuit_relay_toggle = false;
+    Rml::String media_relay_enabled = "on";
+    bool show_media_relay_toggle = false;
+    Rml::String prefer_contacts_for_routing = "on";
+    bool show_prefer_contacts_toggle = false;
     Rml::String profile_nickname;
     Rml::String profile_peer_id;
     Rml::String profile_relay_id;
@@ -138,6 +142,8 @@ private:
   static void ShowReachabilityHelpCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void DismissReachabilityHelpCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleCircuitRelayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ToggleMediaRelayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void TogglePreferContactsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnProfileNicknameCommitCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRotateBriefLlmKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);

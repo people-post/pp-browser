@@ -1,0 +1,160 @@
+#include "base/people/MeshHopPolicy.h"
+
+#include "base/data/Libp2pRole.h"
+
+#include <algorithm>
+#include <unordered_set>
+
+namespace pbr {
+namespace {
+
+std::string PeerIdFromContact(const Contact& contact) {
+  for (const ContactId& id : contact.ids) {
+    if (id.kind == ContactIdKind::PeerId && !id.value.empty()) {
+      return id.value;
+    }
+  }
+  for (const std::string& ma : contact.multiaddrs) {
+    const std::string pid = PeerIdFromMultiaddr(ma);
+    if (!pid.empty()) {
+      return pid;
+    }
+  }
+  return {};
+}
+
+std::string FirstMultiaddrForPeer(const Contact& contact, const std::string& peer_id) {
+  for (const std::string& ma : contact.multiaddrs) {
+    if (PeerIdFromMultiaddr(ma) == peer_id) {
+      return ma;
+    }
+  }
+  if (!contact.multiaddrs.empty()) {
+    return contact.multiaddrs.front();
+  }
+  return {};
+}
+
+double MediaHopScore(const MeshHopCandidate& c) {
+  double score = c.residual_capacity * 100.0;
+  if (c.affinity == MeshHopAffinity::Contact) {
+    score += 25.0;
+  } else if (c.affinity == MeshHopAffinity::OrgSeed) {
+    score += 10.0;
+  }
+  if (c.dialable) {
+    score += 5.0;
+  }
+  return score;
+}
+
+} // namespace
+
+std::vector<MeshHopCandidate> CollectContactHopCandidates(const std::vector<Contact>& contacts) {
+  std::vector<MeshHopCandidate> out;
+  std::unordered_set<std::string> seen;
+  for (const Contact& contact : contacts) {
+    if (contact.trust == TrustLevel::Blocked) {
+      continue;
+    }
+    const std::string peer_id = PeerIdFromContact(contact);
+    if (peer_id.empty() || !seen.insert(peer_id).second) {
+      continue;
+    }
+    MeshHopCandidate c;
+    c.peer_id = peer_id;
+    c.multiaddr = FirstMultiaddrForPeer(contact, peer_id);
+    c.affinity = MeshHopAffinity::Contact;
+    out.push_back(std::move(c));
+  }
+  return out;
+}
+
+std::vector<MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::string>& bootstrap_peers) {
+  std::vector<MeshHopCandidate> out;
+  std::unordered_set<std::string> seen;
+  for (const std::string& ma : bootstrap_peers) {
+    const std::string peer_id = PeerIdFromMultiaddr(ma);
+    if (peer_id.empty() || !seen.insert(peer_id).second) {
+      continue;
+    }
+    MeshHopCandidate c;
+    c.peer_id = peer_id;
+    c.multiaddr = ma;
+    c.affinity = MeshHopAffinity::OrgSeed;
+    out.push_back(std::move(c));
+  }
+  return out;
+}
+
+std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> contacts,
+                                               std::vector<MeshHopCandidate> seeds,
+                                               bool prefer_contacts) {
+  std::vector<MeshHopCandidate> out;
+  std::unordered_set<std::string> seen;
+  auto append = [&](std::vector<MeshHopCandidate>& list) {
+    for (MeshHopCandidate& c : list) {
+      if (c.peer_id.empty() || !seen.insert(c.peer_id).second) {
+        continue;
+      }
+      out.push_back(std::move(c));
+    }
+  };
+  if (prefer_contacts) {
+    append(contacts);
+    append(seeds);
+  } else {
+    append(seeds);
+    append(contacts);
+  }
+  return out;
+}
+
+std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates) {
+  std::vector<MeshHopCandidate> filtered;
+  filtered.reserve(candidates.size());
+  for (MeshHopCandidate& c : candidates) {
+    if (c.affinity == MeshHopAffinity::Other) {
+      continue;
+    }
+    if (!c.dialable || c.recently_failed) {
+      continue;
+    }
+    if (c.residual_capacity <= 0.0) {
+      continue;
+    }
+    filtered.push_back(std::move(c));
+  }
+  std::stable_sort(filtered.begin(), filtered.end(),
+                   [](const MeshHopCandidate& a, const MeshHopCandidate& b) {
+                     return MediaHopScore(a) > MediaHopScore(b);
+                   });
+  return filtered;
+}
+
+bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& peer_id) {
+  if (peer_id.empty()) {
+    return false;
+  }
+  for (const Contact& contact : contacts) {
+    if (PeerIdFromContact(contact) == peer_id) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::vector<std::string> ContactPeerIds(const std::vector<Contact>& contacts) {
+  std::vector<std::string> out;
+  std::unordered_set<std::string> seen;
+  for (const Contact& contact : contacts) {
+    const std::string peer_id = PeerIdFromContact(contact);
+    if (peer_id.empty() || !seen.insert(peer_id).second) {
+      continue;
+    }
+    out.push_back(peer_id);
+  }
+  return out;
+}
+
+} // namespace pbr
