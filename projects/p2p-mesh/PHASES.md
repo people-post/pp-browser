@@ -6,7 +6,7 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 
 - [x] README, DESIGN, CURRENT_STATE, DECISIONS, PHASES
 - [x] Register in `projects/README.md` + `AGENTS.md`
-- [x] N008–N018 (infra, caps, pricing, `pp-node`, reachability, UPnP/IPv6, contact-first, delivery order, listen **18517** + busy-port, **n4-media split**, **blind media_relay**)
+- [x] N008–N019 (infra, caps, pricing, `pp-node`, reachability, UPnP/IPv6, contact-first, delivery order, listen **18517** + busy-port, **n4-media split**, **blind media_relay**, **↑/↓ quotes**)
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
 
 ## n1 — Role shell + bootstrap + Network UI
@@ -63,12 +63,13 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 ## n4-media — Blind media forwarder (N017 / N018; unblocks a4)
 
 - [ ] Homegrown **blind** selective forwarder — no media keys, no codec decode, no A/V payload classification
-- [ ] Single **`media_relay`** capability (+ advertised bandwidth / max_bps); rate-limit by **byte volume**
-- [ ] Org `pp-node`: volunteer **`media_relay` on** for [p2p-av-calls](../p2p-av-calls/) (V008 / V020 / V021)
+- [ ] Single **`media_relay`** capability; advertise **C↑/C↓**, grant **B↑/B↓**, carve **A↑/A↓** (N019)
+- [ ] Quote / accept + billing ceiling before attach (volunteer rate 0 OK); never bill above ceiling
+- [ ] Org `pp-node`: volunteer **`media_relay` on** for [p2p-av-calls](../p2p-av-calls/) (V008 / V020 / V021 / V022)
 - [ ] Desktop Node: Me → Network checkbox **default on** (volunteer); user may disable
 - [ ] Call consumer: group path + soft-migrate from 1:1 P2P (V021)
 - [ ] `pricing.*` schema stub — volunteer only in this phase
-- [ ] Honor pick/re-pick policy when ranking is locked (still TBD)
+- [ ] SFU **pick priority / scorer TBD** — do not hardcode final rank yet
 
 ## n4-message / pricing — deferred (N017)
 

@@ -187,16 +187,22 @@ Shape sketch (names TBD at implement time):
     "media_relay": { "mode": "volunteer", "rate": null }
   },
   "media_relay_budget": {
-    "max_aggregate_bps": null
+    "node_capacity_up_bps": null,
+    "node_capacity_down_bps": null,
+    "max_session_up_bps": null,
+    "max_session_down_bps": null,
+    "default_per_user_up_bps": null,
+    "default_per_user_down_bps": null
   }
 }
 ```
 
 - `capabilities.*` = host this service. **`media_relay` default true** on desktop Node / `pp-node` when Node is on (N018); user may disable.
-- `media_relay_budget.max_aggregate_bps` = advertised byte budget (null = unbounded / ops default). Relay limits by volume; does not classify A/V (N018).
+- `media_relay_budget.*` = **↑/↓** node / session / per-user ceilings (N019). `null` = unbounded / ops default. Relay limits by volume only; does not classify A/V.
+- Session **quote/accept** + billing ceiling: calls V022 / mesh N019 (volunteer rate 0 uses same path).
 - `pricing.*` = volunteer | paid (+ rate) for **billable** caps only — not a substitute for the capability flag.
 - `accept_paid_jobs` = marketplace on/off only; job rates live in a later jobs schema.
-- Older sketches’ `audio_relay` / `video_relay` map to **`media_relay`**.
+- Older sketches’ `audio_relay` / `video_relay` / single `max_aggregate_bps` map to **`media_relay`** + ↑/↓ fields.
 
 Do **not** ship capability/pricing keys/UI in n1 until the matching protocol works (N005).
 
@@ -234,7 +240,7 @@ Hot-reload: role / capability / pricing changes reconfigure modules (`MessagingH
 | **n1** | Role + listen + bootstrap | Master toggle only |
 | **n2** | DHT | + DHT checkbox (no pricing required) |
 | **n3** | Circuit relay | + checkbox (pricing optional / often volunteer) |
-| **n4-media** | Blind `media_relay` forwarder (N017/N018) | + checkbox **default on** (volunteer); max_bps / class; pricing stub |
+| **n4-media** | Blind `media_relay` forwarder (N017/N018/N019) | + checkbox **default on** (volunteer); ↑/↓ budgets + quote schema; pricing stub |
 | **later** | Peer message_relay | Optional; do not hard-cut HTTP Brief |
 | **later** | Paid relay UI / settle (N010) | Nested Free/Paid when metering ships |
 | **n4+ / later** | Blockchain node | + checkbox (settlement rails, not “paid jobs”) |

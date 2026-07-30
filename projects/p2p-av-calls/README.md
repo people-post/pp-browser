@@ -36,7 +36,7 @@
 | Prerequisite | Why | Notes |
 |--------------|-----|--------|
 | Mesh **nr → nu → n3** (reachability, UPnP/IPv6, circuit) | NAT’d / Client peers | Mobile is always Client (no listen) |
-| Mesh **n4-media** blind `media_relay` | Group (a4) + NAT media | Org `pp-node` + desktop default on (N018 / V021); no payload decode |
+| Mesh **n4-media** blind `media_relay` | Group (a4) + NAT media | Org `pp-node` + desktop default on (N018); ↑/↓ + quote (N019 / V022); no payload decode |
 | Peer `message_relay` | Offline inbox decentralization | **Separate** track — not a4 gate; HTTP Brief remains |
 | Direct E2E + group messaging | Signaling + key wrap to invitees | Guests use direct pairwise only |
 | Push Wave 1 + **`call_wake`** | Background ring | Extends push-notifications |
@@ -51,6 +51,6 @@
 | a1 | Signaling + session + history + ring wake | **Done** |
 | a2 | 1:1 voice (WebRTC + LAN dogfood) | **Done** — LAN Opus OK; NAT unclaimed |
 | a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **Done** — Android↔Win bidirectional; Linux receive-only (no camera); NAT unclaimed |
-| a4 | Group ≤8 via **blind `media_relay`**, guests, rotate | Pending — V020/V021; soft-migrate from 1:1 P2P; pick rank TBD |
+| a4 | Group ≤8 via **blind `media_relay`**, guests, rotate | Pending — V020–V022; soft-migrate; ↑/↓ quotes; pick rank TBD |
 | a5 | Cap decision 8→16, polish | Pending |
 | a6 | Promote contracts to `docs/` | Pending |

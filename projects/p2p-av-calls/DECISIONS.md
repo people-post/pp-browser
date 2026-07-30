@@ -339,7 +339,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 |-------|------|
 | **Blindness** | Relay forwards opaque media datagrams / framed blobs. It may use **routing metadata only** (publisher/subscriber ids, stream ids, byte counters, session membership). Payload confidentiality = **app-layer AEAD under the shared call media key** (V004) end-to-end among participants. DTLS/SRTP to the hop (if any) does **not** replace E2E call-key protection on the SFU path. |
 | **One module** | Single **`media_relay`** service (not separate audio/video decode pipelines). Capacity is expressed as **bandwidth / byte budget**, not “this is video.” |
-| **Client camera policy** | If the chosen relay’s advertised budget (or remaining quota) cannot support an extra video uplink, clients **disable Camera** (and stop sending video) rather than overloading the hop. Voice continues when possible. Relay enforces by **dropping / rate-limiting by size**, never by inspecting content. |
+| **Client camera policy** | Driven by **A↑** / session **B↑** (V022): if allowance cannot support video uplink class, **disable Camera**. Relay enforces by **dropping / rate-limiting by size**, never by inspecting content. |
 | **1:1** | Stay **direct P2P** when N=2 and ICE works (a2/a3 path). |
 | **Invite → N≥3** | **Same `call_id` / session** — do **not** end-and-restart a new call. Soft-migrate: coordinator picks SFU → all joined peers attach → tear down the 1:1 PC. UX may briefly show reconnecting; product copy must not feel like “call ended.” |
 | **N drops to 2** | **Stay on SFU** until hangup for v1 (avoid P2P↔SFU flip-flop). Optional later: re-P2P when alone-as-pair. |
@@ -350,3 +350,42 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 **Rationale:** Aligns confidentiality with V004 (SFU must not need keys); bandwidth-limited friend Nodes are real; soft-migrate preserves history/roster/key epoch continuity better than tear-down; staying on SFU after N→2 keeps one media code path.  
 **Alternatives:** Classic DTLS-terminating media SFU that sees clear RTP (rejected — contents exposure); hard end/restart call on 3rd invite (rejected — worse UX); separate audio/video relay processes that classify codecs (rejected — needs content awareness); return to P2P when N=2 in v1 (deferred — flip-flop risk).  
 **Cross-link:** Mesh [N018](../p2p-mesh/DECISIONS.md#n018--blind-media_relay-bandwidth-budgets-volunteer-default-on).
+
+---
+
+## V022 — Media relay bandwidth (↑/↓) + quote; no surprise payer bills
+
+**Date:** 2026-07-30  
+**Decision:** Define **upload and download** budgets separately for blind `media_relay` sessions, with a **pre-attach quote** so the **session payer** never gets a surprising bill. SFU **pick priority ranking remains TBD** (separate discussion); this ADR only locks metering / caps / billing UX shape. Mesh twin: [N019](../p2p-mesh/DECISIONS.md#n019--media_relay-updown-budgets-quotes-no-surprise-bills).
+
+### Perspectives
+
+| Perspective | Role |
+|-------------|------|
+| **Participant** | Bound by per-user uplink / downlink allowances |
+| **Payer** | Settles metered usage (v1: **call initiator**, sticky for the session) |
+| **Relay** | Advertises capacity, grants session budgets, enforces byte caps, may charge later (N010) |
+
+### Budget numbers (bytes/s or equivalent)
+
+| Symbol | Name | Meaning |
+|--------|------|---------|
+| **A↑** | `per_user_uplink` | Max this participant may **send** to the relay |
+| **A↓** | `per_user_downlink` | Max this participant may **receive** from the relay |
+| **B↑** | `session_uplink` | Max aggregate **ingress** for this call on the relay |
+| **B↓** | `session_downlink` | Max aggregate **egress** for this call on the relay |
+| **C↑ / C↓** | `node_capacity_up` / `node_capacity_down` | Relay global ceilings; session budgets ≤ remaining capacity |
+
+Camera / send policy uses **A↑** (and session **B↑**). Receive / subscribe pressure uses **A↓** and **B↓**. Relay still never classifies audio vs video — only byte volume (V021).
+
+### Quote + no surprise bills
+
+1. **Before attach** (and before soft-migrate 1:1→SFU): coordinator requests a **quote** from the candidate hop for estimated N + video intent.  
+2. Quote includes: proposed **A↑/A↓**, **B↑/B↓**, pricing mode/rate (0 if volunteer), **usage estimate**, and a hard **billing ceiling** (max chargeable bytes and/or max settlement amount for this accept).  
+3. **Payer explicitly accepts** the quote (volunteer: accept is still required for caps; money = 0).  
+4. Relay **must not bill above** the accepted ceiling. Enforcement = rate-limit / drop / force Camera off when caps hit — not open-ended metering.  
+5. **Re-quote + re-accept** when N grows, Camera would exceed **A↑**, re-pick hop, or payer would exceed ceiling. No silent upsell.  
+6. Paid settle UI may ship later (N017); **schema and quote flow are designed now** so volunteer=`rate 0` uses the same path.
+
+**Rationale:** Fan-out makes download dominate relay cost; splitting ↑/↓ matches physics. Initiator-as-payer is the simplest hostless rule. Ceilings prevent bill shock when pricing turns on.  
+**Alternatives:** Single combined bps (rejected — hides fan-out); bill without quote (rejected); each participant pays own share in v1 (deferred); coordinator as payer (rejected — initiator is clearer for “who started the call”).

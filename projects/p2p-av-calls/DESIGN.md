@@ -32,6 +32,7 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 20 | Call media shape | Always Opus+H264 m-lines; Voice/Video = entry UX only; audio mandatory / video best-effort (V019) |
 | 21 | a4 topology | Blind forwarder for N≥3; 1:1 P2P; soft-migrate on 3rd; pick/re-pick by coordinator (V021) |
 | 22 | Relay privacy | Relay never holds call media keys / never decodes payloads (V021) |
+| 23 | Relay bandwidth / bills | **A↑/A↓**, **B↑/B↓**, **C↑/C↓**; quote + ceiling; initiator pays (V022 / N019); pick rank TBD |
 
 ---
 
@@ -200,11 +201,13 @@ Consumes p2p-mesh **n4-media** (N017 / N018):
 
 | Capability | Call use |
 |------------|----------|
-| `media_relay` | Blind selective forwarder — one uplink, fan-out; bandwidth budget only |
+| `media_relay` | Blind selective forwarder — one uplink, fan-out; **↑/↓** byte budgets (V022 / N019) |
 | Circuit relay (n3) | Help dial SFU / peers when NATed |
-| Contact-first (N014) | Placeholder for SFU pick; **exact priority list TBD** |
+| Contact-first (N014) | Placeholder for SFU pick; **exact priority / scorer TBD** |
 
-**Blindness:** Relay never holds call media keys and never decodes payloads. Clients AEAD frames under the shared call key (V004/V021). Camera may be disabled client-side when the hop’s byte budget is too small.
+**Blindness:** Relay never holds call media keys and never decodes payloads. Clients AEAD frames under the shared call key (V004/V021).
+
+**Bandwidth + payer (V022 / N019):** Separate **A↑/A↓** (per user) and **B↑/B↓** (session) plus node **C↑/C↓**. Camera uses **A↑**. Before attach: **quote** (estimate + billing ceiling) accepted by **session payer** (v1: call initiator). Relay never bills above ceiling; re-quote on material change. Volunteer = rate 0 on the same path. Pick-priority ranking still open.
 
 **Mobile Client** never hosts. **Hosts:** org `pp-node` + desktop Node (`media_relay` **default on**, volunteer). Peer **message_relay** is separate — not an a4 dependency.
 
@@ -319,10 +322,11 @@ Honest mobile / group video needs mesh progress roughly:
 | `capabilities.circuit_relay` | **on** (help Clients dial SFU) |
 | `pricing.*` | Schema ready; volunteer-only until paid ships (N017) |
 | Blindness | No call keys on relay; byte-budget limits only (N018 / V021) |
+| Bandwidth | **↑/↓** per-user + session + node; quote/ceiling before attach (V022 / N019) |
 | Listen | Seed: public multiaddr (e.g. tcp/443) — fail loud if busy (N016) |
 | Scale-out | More SFU seeds post-release (V008); `bootstrap_peers` / config |
 
-Exact capability JSON keys in [p2p-mesh DESIGN](../p2p-mesh/DESIGN.md); implement with **n4-media** (N017/N018). Older `audio_relay` / `video_relay` sketches map to **`media_relay`** + bandwidth class.
+Exact capability JSON keys in [p2p-mesh DESIGN](../p2p-mesh/DESIGN.md); implement with **n4-media** (N017/N018/N019). Older `audio_relay` / `video_relay` sketches map to **`media_relay`** + ↑/↓ budgets.
 
 **LAN dogfood (a2/a3 without SFU):** Two devices on the same LAN with mutually reachable ICE host candidates. Group (a4) does **not** use LAN full-mesh — waits on SFU.
 

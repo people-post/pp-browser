@@ -44,7 +44,7 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 
 | File | Purpose |
 |------|---------|
-| [DESIGN.md](DESIGN.md) | Full model, N010–N017, delivery order |
+| [DESIGN.md](DESIGN.md) | Full model, N010–N019, delivery order |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
 | [PHASES.md](PHASES.md) | Checklists in N015 order |
 | [DECISIONS.md](DECISIONS.md) | ADRs (N001+) |

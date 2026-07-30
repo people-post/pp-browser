@@ -151,4 +151,37 @@
 
 **Rationale:** Matches product privacy (“relay must not know contents”); one module is enough for fan-out; friend Nodes need honest bandwidth limits without deep packet inspection of media.  
 **Alternatives:** Classic media-aware SFU (rejected); separate audio/video services that inspect codecs (rejected); desktop default off until dogfood (superseded — default on volunteer).  
-**Updates N017** host/checkbox wording from dual audio/video to blind `media_relay`.
+**Updates N017** host/checkbox wording from dual audio/video to blind `media_relay`.  
+**Bandwidth detail:** Split ↑/↓ budgets, quotes, and no-surprise billing are **N019** / calls **V022** (supersedes the single `max_aggregate_bps` sketch).
+
+---
+
+## N019 — `media_relay` ↑/↓ budgets, quotes, no surprise bills
+
+**Date:** 2026-07-30  
+**Decision:** `media_relay` capacity and future pricing use **separate upload and download** counters, session grants, and a **quote/accept** flow. Call-side rules: [V022](../p2p-av-calls/DECISIONS.md#v022--media-relay-bandwidth--quote-no-surprise-payer-bills). **SFU pick priority list / scorer is still TBD** — do not encode a hardcoded contacts→seed→public stage machine in this ADR.
+
+### Advertisement / grant shape (names illustrative)
+
+| Field | Meaning |
+|-------|---------|
+| `node_capacity_up` / `node_capacity_down` | Global Node ceilings (**C↑/C↓**) |
+| `max_session_up` / `max_session_down` | Max this hop will grant a new call (**B↑/B↓** caps) |
+| `default_per_user_up` / `default_per_user_down` | Default carve (**A↑/A↓**) |
+| `pricing.media_relay` | `volunteer` \| `paid` + rate (N010); volunteer ships first |
+
+### Session lifecycle
+
+1. Coordinator asks hop for a **quote** given N + intent (voice vs video uplink class).  
+2. Hop returns concrete **A↑/A↓**, **B↑/B↓**, estimate, rate, **billing ceiling**.  
+3. **Session payer** (v1: call **initiator**) accepts → attach.  
+4. Relay meters ↑ and ↓ **separately**; enforces by byte volume only (blind).  
+5. Never charge above accepted ceiling; on pressure, rate-limit/drop / signal clients to disable Camera.  
+6. Material change → **re-quote + re-accept**.
+
+### Relation to pick policy (later)
+
+Quotes and ↑/↓ fit will be **inputs** to a future generic scorer (cost, capacity, affinity). Until that discussion lands, implementers may use any temporary hop selection for dogfood but must not treat N014’s illustrative list as final code.
+
+**Rationale:** Egress (↓) dominates SFU cost; payer protection must exist before paid mode; designing counters now avoids a volunteer→paid rewrite.  
+**Alternatives:** Combined aggregate only (rejected); bill after the fact without ceiling (rejected); bake hardcoded priority tiers into this ADR (rejected — separate round).

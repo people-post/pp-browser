@@ -62,11 +62,12 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media) + [
 - [ ] Mesh gate: volunteer blind **`media_relay`** on org `pp-node` + desktop Node (default on) — n4-media / N018
 - [ ] Call consumer: N≥3 via blind forwarder; **1:1 stays P2P**; invite→N≥3 **soft-migrates** same `call_id` to SFU; re-pick on failure (V021)
 - [ ] App-layer E2E under call media key on SFU path (relay never holds keys)
-- [ ] Client Camera disabled when relay budget too small; relay limits by **byte volume** only
+- [ ] **↑/↓** budgets (**A/B/C**) + **quote/ceiling** before attach; initiator pays; Camera from **A↑** (V022 / N019)
 - [ ] Multi-invite; mid-call guest invite (signaling largely present)
 - [ ] Rotate media key on leave + overlapping epochs (V003)
 - [ ] In-call roster (mute / camera / speaking if cheap)
 - [ ] Reuse a3 Opus + H264 HW path — **no** new device codec matrix in a4
+- [ ] SFU pick priority / scorer — **TBD** (after bandwidth docs)
 
 ## a5 — Cap, polish, reconnect
 
