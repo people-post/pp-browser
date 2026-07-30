@@ -1099,7 +1099,8 @@ select selectbox option {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 26;
+  /* Above auxiliary sheet (26/27); below dialog/overlay layers. */
+  z-index: 28;
   focus: none;
 }
 
@@ -1110,7 +1111,7 @@ select selectbox option {
   /* Nearly full-height sheet: small top peek; bottom is shell floor (covers nav). */
   top: 48dp;
   bottom: 0;
-  z-index: 27;
+  z-index: 29;
   display: flex;
   flex-direction: column;
   border-radius: 16dp 16dp 0 0;
@@ -1295,7 +1296,9 @@ select selectbox option {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 20;
+  /* Must sit above .shell-chat-overlay (25) so compact working-set / Details sheet
+     is visible while chat is open (WINDOW_SHELL interruption: aux > chat). */
+  z-index: 26;
   focus: none;
 }
 
@@ -1306,7 +1309,7 @@ select selectbox option {
   bottom: 0;
   width: 280dp;
   max-width: 85%;
-  z-index: 21;
+  z-index: 27;
 }
 
 .shell-sheet {
@@ -1316,7 +1319,7 @@ select selectbox option {
   bottom: 0;
   width: 320dp;
   max-width: 90%;
-  z-index: 21;
+  z-index: 27;
 }
 
 .shell-toolbar {

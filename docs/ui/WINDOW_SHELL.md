@@ -67,6 +67,8 @@ Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).
 6. Compact chat overlay (compact)
 7. Base panes
 
+Compact z-index must match this order so sheets are not painted under the chat overlay: chat `25`, auxiliary scrim/sheet `26`/`27`, account scrim/sheet `28`/`29` (see `assets/themes/components.rcss`).
+
 Escape (priority 110) calls `ShellHost::HandleDismiss()` before app quit (priority 100). Toasts and banners are informational and not in the dismiss stack.
 
 ## Presentation taxonomy
