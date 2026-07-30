@@ -157,15 +157,14 @@ Blob encoding matches chat: `EncryptedPayload::EncodeBlob` → base64 as `wrappe
 
 ---
 
-## V016 — a3 delivery slice: LAN video first; SFU / iOS separate
+## V016 — a3 delivery slice: LAN video; mobile wiring included
 
-**Date:** 2026-07-28  
-**Decision:** Phase **a3** ships **desktop and Android 1:1 video on the LAN/same-network ICE path**, with H264 locked (V017), camera-off-by-default (V009), shell video surfaces (V018), and unified Opus+H264 / same in-call (V019). Explicitly **out of a3 “done”**:
+**Date:** 2026-07-28 (updated 2026-07-30)  
+**Decision:** Phase **a3** ships **desktop + Android + iOS wiring** for 1:1 video on the LAN/same-network ICE path, with H264 locked (V017), camera-off-by-default (V009), shell video surfaces (V018), and unified Opus+H264 / same in-call (V019). Explicitly **out of a3 “done”**:
 
 | Deferred | Where it lands |
 |----------|----------------|
 | NAT’d mobile ↔ desktop / mobile↔mobile via seed SFU | Mesh **nr → nu → n3 → n4** SFU + call consumer; do **not** claim in a3 |
-| iOS mic / `AVAudioSession` / camera usage strings | Separate **mobile-bring-up** task (not a3 exit criteria) |
 | STUN/TURN beyond host ICE | With SFU / mesh reachability work |
 
 Same pattern as a2 (V010): LAN dogfood proves media + UI; NAT claims wait for org-seed SFU (V008).
@@ -175,11 +174,11 @@ Same pattern as a2 (V010): LAN dogfood proves media + UI; NAT claims wait for or
 1. Two devices on LAN: video call → accept → remote video visible when peer enables camera; local preview when self enables  
 2. Camera **off** on join until user toggles on; mic defaults on (V009)  
 3. Codec preference **H264** in SDP; encode/decode via **platform HW** (V017)  
-4. Desktop camera permissions / OS privacy prompts exercised; Android `CAMERA` (+ existing `RECORD_AUDIO`) in a3 dogfood (V019)  
-5. Docs: CURRENT_STATE marks LAN video OK; NAT/SFU/iOS still unclaimed; Linux without usable HW encoder may fail video send (accepted); voice continues (V019) 
+4. Desktop camera permissions / OS privacy prompts exercised; Android `CAMERA` (+ `RECORD_AUDIO`); **iOS** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` + `AVAudioSession` play-and-record + `UIBackgroundModes` `audio` (V019) — **wiring complete**; physical iOS device dogfood optional follow-up  
+5. Docs: CURRENT_STATE marks LAN video path + mobile wiring; NAT/SFU still unclaimed; Linux without usable HW encoder may fail video send (accepted); voice continues (V019) 
 
-**Rationale:** Mesh SFU is still pre-nr; blocking a3 on it repeats the false “mobile-ready” trap. iOS A/V session work is packaging-heavy and independent of the video pipeline design.  
-**Alternatives:** Full a3 checklist including SFU (rejected — mesh-gated); fold iOS into a3 (rejected — separate bring-up).
+**Rationale:** Mesh SFU is still pre-nr; blocking a3 on it repeats the false “mobile-ready” trap. iOS A/V session + plist work ships with a3 so mobile shares one codec/UI path; NAT dogfood still mesh-gated.  
+**Alternatives:** Full a3 checklist including SFU (rejected — mesh-gated); defer iOS to separate bring-up (superseded 2026-07-30 — wiring-only iOS exit).
 
 ---
 
@@ -205,7 +204,7 @@ Same pattern as a2 (V010): LAN dogfood proves media + UI; NAT claims wait for or
 | Windows | Media Foundation (prefer); QSV/NVENC later if needed | Primary desktop dogfood target |
 | macOS | VideoToolbox | Primary desktop dogfood target |
 | Android | MediaCodec | **In a3** dogfood (V019) |
-| iOS | VideoToolbox | Separate mobile-bring-up (V016) |
+| iOS | VideoToolbox | **In a3** wiring (plist + AVAudioSession); device dogfood optional |
 | Linux | VA-API (and/or V4L2 M2M) when present | **Best-effort** — no soft-codec product fallback in a3 |
 
 **Linux constraint (accepted):** Many Linux hosts (VMs, headless, missing iGPU drivers) have **no usable H264 encoder**. a3 may fail video **send** on those machines; document in CURRENT_STATE. Do **not** block a3 on universal Linux soft encode. Receiving/decoding may still work when a HW decoder exists.
@@ -242,7 +241,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 - Init camera on demand: `SDL_InitSubSystem(SDL_INIT_CAMERA)` (same pattern as audio — do not fail window bring-up).  
 - Open device only when user **enables camera** (V009); closing camera on disable.  
 - Prefer front-facing when `SDL_GetCameraPosition` reports it (mobile later).  
-- Permissions: OS privacy prompts via SDL; Android `CAMERA` (+ runtime) when that platform is dogfooded. **iOS plist / session → separate mobile-bring-up (V016).**
+- Permissions: OS privacy prompts via SDL; Android `CAMERA` (+ runtime); **iOS** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` + `AVAudioSession` before capture (V016).
 
 ### Peer connection
 
@@ -288,7 +287,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 | Voice + Camera | **Allowed** — Camera toggle on voice-started calls. |
 | Remote video | **Show** whenever the peer sends frames (including voice-started calls). |
 | `media_mode` | May remain on invite / history (“started as voice/video”) for copy; **runtime media UX is the same**. |
-| a3 dogfood | **Win** (Media Foundation) + **macOS** (VideoToolbox) primary; **Android** (MediaCodec + `CAMERA`) **in a3**; Linux VA-API best-effort (V017). iOS still separate (V016). |
+| a3 dogfood | **Win** (Media Foundation) + **macOS** (VideoToolbox) primary; **Android** (MediaCodec + `CAMERA`) + **iOS** (VideoToolbox + plist/session wiring) **in a3**; Linux VA-API best-effort (V017). |
 | Encode defaults (a3) | Target ~**640×360 @ 15–24 fps**; network-adaptive bitrate/resolution **later** if not cheap. |
 
 **Rationale:** One PC setup path; camera/mute never touch offer/answer; users get the UI they expect from two buttons without maintaining two in-call protocols.  

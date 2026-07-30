@@ -1,6 +1,6 @@
 # P2P A/V calls
 
-**Status:** **a2 done** (LAN voice); **a3 in progress** — unified Opus+H264 + Camera UI; platform HW codecs + GL tiles next (V016–V019)  
+**Status:** **a2 done** (LAN voice); **a3 in progress** — GL tiles + mobile codecs/wiring (V016–V019)  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [p2p-mesh](../p2p-mesh/) (circuit + audio/video SFU caps), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md)
@@ -39,7 +39,7 @@
 | Mesh **audio/video SFU** on org seeds (`pp-node`) | Mobile↔mobile default path | More SFU seeds post-release (ops); **not a3 exit** (V016) |
 | Direct E2E + group messaging | Signaling + key wrap to invitees | Guests use direct pairwise only |
 | Push Wave 1 + **`call_wake`** | Background ring | Extends push-notifications |
-| Platform HW H264 (V017) + unified SDP (V019) | a3 video encode/decode | Win MF / macOS VT primary; Android MediaCodec in a3; Linux VA-API best-effort; always Opus+H264 m-lines |
+| Platform HW H264 (V017) + unified SDP (V019) | a3 video encode/decode | Win MF / macOS+iOS VT / Android MediaCodec / Linux VA-API best-effort |
 
 ## Progress snapshot
 
@@ -49,7 +49,7 @@
 | a0 | Mesh/SFU prerequisites alignment | **Done** |
 | a1 | Signaling + session + history + ring wake | **Done** |
 | a2 | 1:1 voice (WebRTC + LAN dogfood) | **Done** — LAN Opus OK; NAT unclaimed |
-| a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **In progress** — SDP/camera/UI wired; HW codecs + GL tiles next |
+| a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **In progress** — GL tiles + mobile wiring landed; LAN dogfood next |
 | a4 | Group ≤8, guests, rotate-on-leave | Pending |
 | a5 | Cap decision 8→16, polish | Pending |
 | a6 | Promote contracts to `docs/` | Pending |

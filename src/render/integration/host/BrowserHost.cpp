@@ -2,6 +2,7 @@
 #include "RmlUi_Platform_SDL.h"
 #include "RmlUi_Renderer_GL3.h"
 #include "TextLoupeRenderer.h"
+#include "CallVideoTileRenderer.h"
 #include "TouchSimOverlay.h"
 #include "GlBackend.h"
 #include "MobileGlLifecycle.h"
@@ -393,6 +394,7 @@ void Backend::RecoverAfterDeviceReset(Rml::Context* context)
 	Rml::ReleaseFontResources();
 
 	TextLoupeRenderer::ReleaseGpuResources();
+	CallVideoTileRenderer::Instance().ReleaseGpuResources();
 	data->render_interface.RecoverGpuResources();
 
 	MobileGlLifecycle::UpdateIosDrawableFromWindow(data->window, data->uikit_framebuffer, data->uikit_renderbuffer);

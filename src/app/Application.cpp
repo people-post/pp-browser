@@ -25,6 +25,7 @@
 #include "feature/ui/DeferredStartup.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellHost.h"
+#include "CallVideoTileRenderer.h"
 #include "base/ui/Theme.h"
 #include "common/StartupTiming.h"
 
@@ -281,6 +282,8 @@ void Application::Run() {
       return;
     Backend::BeginFrame();
     ctx->Render();
+    CallVideoTileRenderer::Instance().Draw(
+        ctx, static_cast<RenderInterface_GL3&>(*Backend::GetRenderInterface()));
     Backend::PresentFrame();
   });
 #endif
@@ -305,6 +308,8 @@ void Application::Run() {
     if (Backend::CanRender()) {
       Backend::BeginFrame();
       context->Render();
+      CallVideoTileRenderer::Instance().Draw(
+          context, static_cast<RenderInterface_GL3&>(*Backend::GetRenderInterface()));
       Backend::PresentFrame();
       if (!logged_first_present) {
         StartupMark("first_present");

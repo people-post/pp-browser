@@ -55,10 +55,15 @@
     <false/>
   </dict>
   <!-- Placeholder for future push (APNs) — enable when APNs is implemented. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Frame uses the microphone for voice and video calls.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Frame uses the camera for video calls.</string>
   <key>UIBackgroundModes</key>
   <array>
     <string>fetch</string>
     <string>remote-notification</string>
+    <string>audio</string>
   </array>
 </dict>
 </plist>

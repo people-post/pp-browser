@@ -32,7 +32,7 @@ sudo apt install \
 | Windows | SDL WASAPI | No | OS mic privacy if blocked |
 | macOS | SDL CoreAudio | No | TCC / `NSMicrophoneUsageDescription` for shipped builds |
 | Android | SDL AAudio / OpenSL ES | No (NDK) | `RECORD_AUDIO` (+ runtime grant); later camera |
-| iOS | SDL CoreAudio | No (Xcode SDK) | `NSMicrophoneUsageDescription`, `AVAudioSession` play-and-record; optional `UIBackgroundModes` `audio`; later camera |
+| iOS | SDL CoreAudio | No (Xcode SDK) | `NSMicrophoneUsageDescription`, `NSCameraUsageDescription`, `AVAudioSession` play-and-record; `UIBackgroundModes` `audio` (a3 wiring) |
 
 ### Linux H264 (VA-API) by agents
 

@@ -26,7 +26,7 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 14 | Persistence | `call_*` in **profile.db**; keys vault-backed (V011) |
 | 15 | Signaling carrier | Direct E2E `ChatPayload` system controls (V012) |
 | 16 | WebRTC lib | **libdatachannel + libopus + SDL** (V014) |
-| 17 | a3 scope | LAN 1:1 video first; SFU / iOS bring-up deferred (V016) |
+| 17 | a3 scope | LAN 1:1 video; SFU deferred; **iOS wiring in a3** (V016, 2026-07-30) |
 | 18 | Video codec | **H264** CBP via **platform HW** (V017); Linux VA-API best-effort |
 | 19 | Video UI path | SDL camera → platform HW H264 → persistent GL texture in shell tiles (V018) |
 | 20 | Call media shape | Always Opus+H264 m-lines; Voice/Video = entry UX only; audio mandatory / video best-effort (V019) |
@@ -190,7 +190,7 @@ ICE trickle / SDP: embed in signaling `detail` or follow-up system controls as n
 - **SDP shape (V019):** Every call’s initial offer/answer includes **both** audio and video m-lines. Mute/camera change sent content only (no renegotiation). Audio is mandatory; video encode/decode is best-effort and must not tear down voice.  
 - **Voice vs Video start:** Two header buttons for familiar UX; once connected, same in-call model (Camera allowed; show remote video whenever peer sends frames). `media_mode` may remain for invite/history copy.  
 - **Capture / blit:** SDL3 camera on user enable; shell RML tiles + persistent GL texture (V018); camera off on join (V009). Encode defaults ~640×360 @ 15–24 fps (network adapt later).  
-- **Topology:** 1:1 try P2P; group (N≥3) prefer **SFU**; 1:1 falls back to SFU/TURN when ICE fails. **a3** claims LAN only (V016); dogfood Win/macOS primary + Android in a3; iOS separate.  
+- **Topology:** 1:1 try P2P; group (N≥3) prefer **SFU**; 1:1 falls back to SFU/TURN when ICE fails. **a3** claims LAN only (V016); dogfood Win/macOS primary + Android + **iOS wiring**; NAT after seed SFU.  
 
 ### SFU and mesh
 
@@ -301,7 +301,7 @@ Honest mobile video needs mesh progress roughly:
 
 `n1` (done) → `np` (`pp-node`) → `nr` / `nu` → `n3` circuit → **SFU audio/video on seeds** (n4 media caps, volunteer first)
 
-**Delivery (V010 / V016):** **a1** proceeded in parallel; **a2** LAN voice done; **a3** LAN video (not SFU); NAT’d mobile green path after seed SFU. **iOS** mic/session/camera = separate mobile-bring-up, not a3 exit.
+**Delivery (V010 / V016):** **a1** proceeded in parallel; **a2** LAN voice done; **a3** LAN video (not SFU); NAT’d mobile green path after seed SFU. **iOS** mic/session/camera plist wiring is **in a3** (device dogfood optional).
 
 ### Mesh alignment (a0) — locked guidance
 

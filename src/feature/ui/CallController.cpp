@@ -9,6 +9,7 @@
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/CallConflictCopy.h"
+#include "CallVideoTileRenderer.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
 
@@ -145,10 +146,12 @@ void CallController::ClearRing() {
 void CallController::ClearInCall() {
   active_call_id_.clear();
   ShellHost::Instance().State().call_in_progress = {};
+  CallVideoTileRenderer::Instance().Clear();
 }
 
 void CallController::HideInCallChrome() {
   ShellHost::Instance().State().call_in_progress = {};
+  CallVideoTileRenderer::Instance().Clear();
 }
 
 void CallController::SyncShellState() {
@@ -445,6 +448,25 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   in_call.remote_video = media.HasRemoteVideo();
   CallMediaEngine::VideoTileFrame local_tile;
   in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
+  if (in_call.local_preview) {
+    CallVideoTileRenderer::Frame frame;
+    frame.width = local_tile.width;
+    frame.height = local_tile.height;
+    frame.seq = local_tile.seq;
+    frame.rgba = std::move(local_tile.rgba);
+    CallVideoTileRenderer::Instance().SubmitLocalFrame(std::move(frame));
+  }
+  if (in_call.remote_video) {
+    CallMediaEngine::VideoTileFrame remote_tile;
+    if (media.CopyRemoteVideoFrame(remote_tile)) {
+      CallVideoTileRenderer::Frame frame;
+      frame.width = remote_tile.width;
+      frame.height = remote_tile.height;
+      frame.seq = remote_tile.seq;
+      frame.rgba = std::move(remote_tile.rgba);
+      CallVideoTileRenderer::Instance().SubmitRemoteFrame(std::move(frame));
+    }
+  }
   in_call.stage_visible = in_call.camera_on || in_call.remote_video || in_call.local_preview;
   in_call.remote_placeholder = in_call.remote_video ? "" : "Camera off";
   in_call.mic_level = muted ? 0 : QuantizeAudioLevel(media.LocalInputLevel());
