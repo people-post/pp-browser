@@ -48,16 +48,18 @@ Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wir
 - [x] Capture + encode + RTP video track; decode + persistent GL texture tiles (V018); encode ~640×360 desktop / ~360×640 mobile after orientation @ 15–24 fps
 - [x] Shell: unified in-call chrome + **Camera** on voice- and video-started calls; stage/PiP (V019); camera off on join (V009); compact icon mute/camera/leave
 - [x] Mobile capture orientation (`CameraCaptureOrientation`: Android Camera2 sensor + display; iOS interface orientation) + tile letterbox
-- [ ] LAN dogfood: Win/macOS primary + Android + iOS wiring; bidirectional video when enabled — **partial 2026-07-30:** Android local preview OK; Android→Linux receive/display OK; other pairs not claimed
-- [ ] Document LAN video OK + Linux “no encoder” limitation; **do not** claim NAT / seed SFU
+- [x] LAN dogfood: Android ↔ Windows bidirectional; Android→Linux / Windows→Linux one-way (Linux dogfood host **no camera**); iOS wiring done — **OK 2026-07-30**; macOS/iOS device optional
+- [x] Document LAN video OK + Linux no-camera / no-encoder send limits; **do not** claim NAT / seed SFU
 - [x] iOS mic / `AVAudioSession` / camera usage + background `audio` — **wiring done**; device dogfood optional
 
 **Deferred (mesh-gated, not a3 exit):** Mobile Client ↔ desktop / mobile↔mobile via seed SFU (V008 / n4); network-adaptive encode.  
-**Accepted:** Linux hosts without usable HW H264 encoder may fail video send (V017); voice must continue (V019).
+**Accepted:** Linux video **send** needs camera + usable HW H264 encoder (V017); dogfood Linux was camera-less (receive OK). Voice must continue (V019).
 
 ## a4 — Group calls (≤8), guests, rotate-on-leave
 
-- [ ] SFU topology for N≥3; enforce engineering cap **8**
+Delivery topology TBD (V020): LAN full-mesh dogfood vs wait on mesh **n4** SFU — same parallel pattern as a2/a3.
+
+- [ ] Media topology for N≥3 (prefer SFU when available; LAN full-mesh OK for dogfood); enforce engineering cap **8**
 - [ ] Multi-invite; mid-call guest invite
 - [ ] Rotate media key on leave + overlapping epochs (V003)
 - [ ] In-call roster (mute / camera / speaking if cheap)

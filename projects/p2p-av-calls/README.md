@@ -1,6 +1,6 @@
 # P2P A/V calls
 
-**Status:** **a2 done** (LAN voice); **a3 in progress** — Android→Linux LAN video dogfood partial (V016–V019)  
+**Status:** **a3 done** (LAN 1:1 video); **a4** next (group ≤8) — NAT / seed SFU still unclaimed  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [p2p-mesh](../p2p-mesh/) (circuit + audio/video SFU caps), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md)
@@ -49,7 +49,7 @@
 | a0 | Mesh/SFU prerequisites alignment | **Done** |
 | a1 | Signaling + session + history + ring wake | **Done** |
 | a2 | 1:1 voice (WebRTC + LAN dogfood) | **Done** — LAN Opus OK; NAT unclaimed |
-| a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **In progress** — Android→Linux LAN video OK (2026-07-30); full matrix / NAT unclaimed |
-| a4 | Group ≤8, guests, rotate-on-leave | Pending |
+| a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **Done** — Android↔Win bidirectional; Linux receive-only (no camera); NAT unclaimed |
+| a4 | Group ≤8, guests, rotate-on-leave | Pending — SFU vs LAN full-mesh TBD (mesh n4) |
 | a5 | Cap decision 8→16, polish | Pending |
 | a6 | Promote contracts to `docs/` | Pending |

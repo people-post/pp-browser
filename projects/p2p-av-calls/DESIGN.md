@@ -22,7 +22,7 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 10 | Media key | One shared call media key; **rotate on every leave**; overlapping epochs for UX |
 | 11 | Recording | Out of v1 |
 | 12 | SFU seeds | Org `pp-node` seeds run volunteer SFU; more seeds after release (ops) |
-| 13 | Delivery | **Parallel** media vs mesh SFU (V010); a2 LAN voice done; a3 LAN video (V016); NAT after seed SFU |
+| 13 | Delivery | **Parallel** media vs mesh SFU (V010); a2–a3 LAN done; NAT after seed SFU |
 | 14 | Persistence | `call_*` in **profile.db**; keys vault-backed (V011) |
 | 15 | Signaling carrier | Direct E2E `ChatPayload` system controls (V012) |
 | 16 | WebRTC lib | **libdatachannel + libopus + SDL** (V014) |
@@ -301,7 +301,7 @@ Honest mobile video needs mesh progress roughly:
 
 `n1` (done) → `np` (`pp-node`) → `nr` / `nu` → `n3` circuit → **SFU audio/video on seeds** (n4 media caps, volunteer first)
 
-**Delivery (V010 / V016):** **a1** proceeded in parallel; **a2** LAN voice done; **a3** LAN video (not SFU); NAT’d mobile green path after seed SFU. **iOS** mic/session/camera plist wiring is **in a3** (device dogfood optional).
+**Delivery (V010 / V016):** **a1–a3** done on LAN (voice + 1:1 video); NAT’d mobile green path after seed SFU. **iOS** mic/session/camera plist wiring is **in a3** (device dogfood optional).
 
 ### Mesh alignment (a0) — locked guidance
 

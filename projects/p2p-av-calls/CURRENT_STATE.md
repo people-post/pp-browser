@@ -6,8 +6,8 @@
 
 | Area | State |
 |------|-------|
-| Project docs | `projects/p2p-av-calls/` (v0 → **a2 done**; **a3 in progress** V016–V019) |
-| ADRs | V001–V019 in [DECISIONS.md](DECISIONS.md) (V016 updated: iOS wiring in a3) |
+| Project docs | `projects/p2p-av-calls/` (v0 → **a3 done**; a4 next) |
+| ADRs | V001–V019 in [DECISIONS.md](DECISIONS.md) |
 | UI | In-call **icon** mute/camera/leave + compact stacked bar; stage/PiP; **`<call-video-tile>` OnRender** + persistent GL tex (V018 letterbox) |
 | Media stack | `CallMediaEngine` — Opus + **always H264 m-line** (V019); SDL camera; `CameraCaptureOrientation` (Android `SENSOR_ORIENTATION` + display rotation; iOS interface orientation); `IVideoCodec` factory |
 | Platform HW | **Win MF + macOS/iOS VT + Linux VA-API + Android MediaCodec (NDK)** implemented |
@@ -21,7 +21,7 @@
 | Two-device LAN Opus | **OK (2026-07-28)** — Win↔Linux; host ICE |
 | NAT / mobile voice | **Not claimed** |
 
-## a3 progress (code)
+## a3 closed (LAN 1:1 video)
 
 | Area | State |
 |------|-------|
@@ -34,21 +34,26 @@
 | GL persistent texture tiles (V018) | **Done** — `<call-video-tile>` `OnRender` + app-owned GL tex (`CallVideoTileRenderer`) |
 | Win MF / macOS VT / Android MediaCodec / Linux VA-API | **Code landed** |
 | iOS plist + AVAudioSession | **Done** — device dogfood optional (wiring-only exit) |
-| LAN video dogfood | **Partial (2026-07-30)** — see below |
+| LAN video dogfood | **OK (2026-07-30)** — see below; NAT / seed SFU **not claimed** |
 
 ## a3 LAN video dogfood
 
 | Path | State |
 |------|-------|
 | Android local preview (camera on) | **OK (2026-07-30)** |
-| Android → Linux receive + display | **OK (2026-07-30)** — upright after orientation fix; aspect letterboxed |
-| Linux → Android / Win↔* / macOS / iOS device | **Not claimed** |
+| Android ↔ Windows | **OK (2026-07-30)** — bidirectional video both ways |
+| Android → Linux / Windows → Linux | **OK (2026-07-30)** — one-way only (Linux dogfood host has **no camera** → no send; receive/display OK) |
+| Linux → Android / Linux → Windows | **Not claimed** — no capture on dogfood Linux host |
+| macOS / iOS device | **Not claimed** (iOS wiring complete; device dogfood optional) |
 | NAT / seed SFU | **Not claimed** |
 
-## Next agent — finish LAN matrix + claim green
+**Accepted Linux limits (V017 / V019):** Video send needs a camera **and** usable HW H264 encoder. Dogfood Linux lacked a camera (one-way receive only). Hosts without VA-API/usable encoder may also fail send; voice continues either way. Do **not** claim NAT or seed SFU.
 
-1. Dogfood remaining LAN pairs (Linux→Android, Win/macOS, optional iOS device).
-2. When matrix is green enough for V016 exit, check PHASES a3 dogfood items and leave NAT/SFU unclaimed. Document Linux hosts without usable HW encoder (accepted).
+## Next agent — a4 scoping + mesh SFU
+
+1. Agree a4 delivery slice (LAN full-mesh group vs wait on mesh **n4** SFU) — see discussion / upcoming V020.
+2. Group ≤8: multi-invite, guests, rotate-on-leave (signaling largely present); multi-peer media + roster UI still open.
+3. Do **not** claim NAT / mobile group until org-seed `audio_relay` / `video_relay` (mesh n4 + V008).
 
 **Do not:** OpenH264 as product default; fail call when H264 HW missing; renegotiate SDP for camera; hardcode mobile sensor angles (use `CameraCaptureOrientation`).
 
@@ -65,3 +70,4 @@
 | Hide Camera on voice-started calls | Same in-call once connected (V019) |
 | Defer iOS plist/session from a3 | iOS wiring is a3 exit (V016, 2026-07-30) |
 | Single-row text Mute/Camera/Leave on compact | Icon buttons + stacked call bar |
+| Claim Linux→peer video without camera/encoder | Document one-way; voice continues (V017/V019) |
