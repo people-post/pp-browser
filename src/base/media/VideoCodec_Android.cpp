@@ -82,6 +82,159 @@ void AppendStartCodeAndNal(std::vector<uint8_t>& out, const uint8_t* data, size_
   out.insert(out.end(), data, data + size);
 }
 
+// Minimal Exp-Golomb bit reader for SPS dimension extraction.
+class BitReader {
+public:
+  BitReader(const uint8_t* data, size_t size) : data_(data), size_(size) {}
+
+  bool Ok() const { return !error_; }
+
+  uint32_t ReadBits(int n) {
+    uint32_t v = 0;
+    for (int i = 0; i < n; ++i) {
+      if (bit_pos_ / 8 >= size_) {
+        error_ = true;
+        return 0;
+      }
+      const uint8_t byte = data_[bit_pos_ / 8];
+      const int bit = 7 - static_cast<int>(bit_pos_ % 8);
+      v = (v << 1) | static_cast<uint32_t>((byte >> bit) & 1);
+      ++bit_pos_;
+    }
+    return v;
+  }
+
+  uint32_t ReadUe() {
+    int zeros = 0;
+    while (Ok() && ReadBits(1) == 0) {
+      ++zeros;
+      if (zeros > 31) {
+        error_ = true;
+        return 0;
+      }
+    }
+    if (!Ok()) {
+      return 0;
+    }
+    if (zeros == 0) {
+      return 0;
+    }
+    return (1u << zeros) - 1u + ReadBits(zeros);
+  }
+
+  int32_t ReadSe() {
+    const uint32_t v = ReadUe();
+    if (!Ok()) {
+      return 0;
+    }
+    const int32_t n = static_cast<int32_t>(v);
+    return (n % 2 == 0) ? -(n / 2) : ((n + 1) / 2);
+  }
+
+  void SkipBits(int n) { (void)ReadBits(n); }
+
+private:
+  const uint8_t* data_ = nullptr;
+  size_t size_ = 0;
+  size_t bit_pos_ = 0;
+  bool error_ = false;
+};
+
+std::vector<uint8_t> StripEmulationPrevention(const uint8_t* data, size_t size) {
+  std::vector<uint8_t> out;
+  out.reserve(size);
+  for (size_t i = 0; i < size; ++i) {
+    if (i + 2 < size && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 3) {
+      out.push_back(0);
+      out.push_back(0);
+      i += 2;
+      continue;
+    }
+    out.push_back(data[i]);
+  }
+  return out;
+}
+
+// Qualcomm OMX.qcom.video.decoder.avc rejects configure without width/height
+// (ACodec configureCodec → -38 / OMX_ErrorUndefined). Parse from SPS.
+bool ParseSpsDimensions(const uint8_t* sps_nal, size_t sps_size, int& width, int& height) {
+  if (!sps_nal || sps_size < 4) {
+    return false;
+  }
+  const std::vector<uint8_t> rbsp = StripEmulationPrevention(sps_nal, sps_size);
+  if (rbsp.size() < 4) {
+    return false;
+  }
+  BitReader br(rbsp.data() + 1, rbsp.size() - 1); // skip NAL header
+  const int profile_idc = static_cast<int>(br.ReadBits(8));
+  br.SkipBits(8); // constraint flags
+  (void)br.ReadBits(8); // level_idc
+  (void)br.ReadUe(); // sps id
+  int chroma_format_idc = 1;
+  if (profile_idc == 100 || profile_idc == 110 || profile_idc == 122 || profile_idc == 244 ||
+      profile_idc == 44 || profile_idc == 83 || profile_idc == 86 || profile_idc == 118 ||
+      profile_idc == 128 || profile_idc == 138 || profile_idc == 139 || profile_idc == 134) {
+    chroma_format_idc = static_cast<int>(br.ReadUe());
+    if (chroma_format_idc == 3) {
+      br.SkipBits(1);
+    }
+    (void)br.ReadUe(); // bit_depth_luma
+    (void)br.ReadUe(); // bit_depth_chroma
+    br.SkipBits(1); // qpprime_y_zero_transform_bypass
+    if (br.ReadBits(1)) {
+      return false; // scaling matrix unsupported here
+    }
+  }
+  (void)br.ReadUe(); // log2_max_frame_num
+  const int poc_type = static_cast<int>(br.ReadUe());
+  if (poc_type == 0) {
+    (void)br.ReadUe();
+  } else if (poc_type == 1) {
+    br.SkipBits(1);
+    (void)br.ReadSe();
+    (void)br.ReadSe();
+    const uint32_t n = br.ReadUe();
+    for (uint32_t i = 0; i < n; ++i) {
+      (void)br.ReadSe();
+    }
+  }
+  (void)br.ReadUe(); // max_num_ref_frames
+  br.SkipBits(1); // gaps_in_frame_num
+  const int pic_width_in_mbs_minus1 = static_cast<int>(br.ReadUe());
+  const int pic_height_in_map_units_minus1 = static_cast<int>(br.ReadUe());
+  const int frame_mbs_only_flag = static_cast<int>(br.ReadBits(1));
+  if (!frame_mbs_only_flag) {
+    br.SkipBits(1);
+  }
+  br.SkipBits(1); // direct_8x8_inference
+  const int frame_cropping_flag = static_cast<int>(br.ReadBits(1));
+  int crop_left = 0;
+  int crop_right = 0;
+  int crop_top = 0;
+  int crop_bottom = 0;
+  if (frame_cropping_flag) {
+    crop_left = static_cast<int>(br.ReadUe());
+    crop_right = static_cast<int>(br.ReadUe());
+    crop_top = static_cast<int>(br.ReadUe());
+    crop_bottom = static_cast<int>(br.ReadUe());
+  }
+  if (!br.Ok()) {
+    return false;
+  }
+  const int width_mbs = pic_width_in_mbs_minus1 + 1;
+  const int height_mbs = (pic_height_in_map_units_minus1 + 1) * (2 - frame_mbs_only_flag);
+  width = width_mbs * 16;
+  height = height_mbs * 16;
+  if (frame_cropping_flag) {
+    const int crop_unit_x = (chroma_format_idc == 1 || chroma_format_idc == 2) ? 2 : 1;
+    const int crop_unit_y =
+        (chroma_format_idc == 1) ? (2 * (2 - frame_mbs_only_flag)) : (2 - frame_mbs_only_flag);
+    width -= (crop_left + crop_right) * crop_unit_x;
+    height -= (crop_top + crop_bottom) * crop_unit_y;
+  }
+  return width > 0 && height > 0;
+}
+
 std::vector<uint8_t> ToAnnexB(const uint8_t* data, size_t size) {
   std::vector<uint8_t> annex_b;
   if (!data || size == 0) {
@@ -386,10 +539,25 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
     return {};
   }
 
+  auto fail_decoder = [this](const char* message) -> Roe<void> {
+    if (decoder_) {
+      AMediaCodec_stop(decoder_);
+      AMediaCodec_delete(decoder_);
+      decoder_ = nullptr;
+    }
+    return Error(message);
+  };
+
   if (decoder_) {
     AMediaCodec_stop(decoder_);
     AMediaCodec_delete(decoder_);
     decoder_ = nullptr;
+  }
+
+  int width = 0;
+  int height = 0;
+  if (!ParseSpsDimensions(sps, sps_size, width, height)) {
+    return Error("failed to parse H264 SPS dimensions for MediaCodec");
   }
 
   decoder_ = AMediaCodec_createDecoderByType("video/avc");
@@ -400,33 +568,47 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
   // Byte-stream (Annex-B) CSD: separate SPS / PPS. Input buffers must also be
   // Annex-B — mixing AVCC length-prefixed NALs with Annex-B CSD fails on many
   // devices and is the Win→Android remote-black failure mode.
+  //
+  // Qualcomm OMX also requires width/height at configure time; CSD alone is not
+  // enough (configureCodec → -38 / 0x80001001). Win MF SPS is 640×360 Baseline.
   std::vector<uint8_t> csd0;
   AppendStartCodeAndNal(csd0, sps, sps_size);
   std::vector<uint8_t> csd1;
   AppendStartCodeAndNal(csd1, pps, pps_size);
 
-  AMediaFormat* format = AMediaFormat_new();
-  AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "video/avc");
-  AMediaFormat_setBuffer(format, "csd-0", csd0.data(), csd0.size());
-  AMediaFormat_setBuffer(format, "csd-1", csd1.data(), csd1.size());
-  // Prefer NV12 byte-buffer output so we can convert without Flexible/Image APIs.
-  AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, kColorFormatNv12);
+  auto make_format = [&](bool with_color) {
+    AMediaFormat* format = AMediaFormat_new();
+    AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "video/avc");
+    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, width);
+    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, height);
+    AMediaFormat_setBuffer(format, "csd-0", csd0.data(), csd0.size());
+    AMediaFormat_setBuffer(format, "csd-1", csd1.data(), csd1.size());
+    if (with_color) {
+      // Prefer NV12 byte-buffer output so we can convert without Flexible/Image APIs.
+      AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, kColorFormatNv12);
+    }
+    return format;
+  };
 
+  AMediaFormat* format = make_format(true);
   if (AMediaCodec_configure(decoder_, format, nullptr, nullptr, 0) != AMEDIA_OK) {
     // Some devices reject an explicit color format; retry without it.
     AMediaFormat_delete(format);
-    format = AMediaFormat_new();
-    AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "video/avc");
-    AMediaFormat_setBuffer(format, "csd-0", csd0.data(), csd0.size());
-    AMediaFormat_setBuffer(format, "csd-1", csd1.data(), csd1.size());
+    // MediaCodec may have reset the component after configure failure; recreate.
+    AMediaCodec_delete(decoder_);
+    decoder_ = AMediaCodec_createDecoderByType("video/avc");
+    if (!decoder_) {
+      return Error("AMediaCodec_createDecoderByType failed on retry");
+    }
+    format = make_format(false);
     if (AMediaCodec_configure(decoder_, format, nullptr, nullptr, 0) != AMEDIA_OK) {
       AMediaFormat_delete(format);
-      return Error("AMediaCodec_configure decoder failed");
+      return fail_decoder("AMediaCodec_configure decoder failed");
     }
   }
   AMediaFormat_delete(format);
   if (AMediaCodec_start(decoder_) != AMEDIA_OK) {
-    return Error("AMediaCodec_start decoder failed");
+    return fail_decoder("AMediaCodec_start decoder failed");
   }
 
   cached_sps_.assign(sps, sps + sps_size);
