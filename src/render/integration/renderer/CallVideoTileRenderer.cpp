@@ -1,5 +1,6 @@
 #include "CallVideoTileRenderer.h"
 
+#include "GlBackend.h"
 #include "RmlUi_Backend.h"
 #include "RmlUi_Renderer_GL3.h"
 
