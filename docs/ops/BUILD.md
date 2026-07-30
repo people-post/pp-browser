@@ -9,6 +9,7 @@
 - OpenGL 3.3 drivers
 - Linux GUI: `libx11-dev`, `libxext-dev`, `libxcursor-dev`, `libxinerama-dev`, `libxi-dev`, `libxrandr-dev`, `libxfixes-dev`, `libgl-dev`, `libdbus-1-dev` (local desktop notifications)
 - Linux **voice calls** (a2+): `libpulse-dev`, `libasound2-dev` — SDL3 PulseAudio + ALSA drivers for mic/speaker. Install **both**; without them SDL builds dummy audio only. PipeWire desktops still use `libpulse-dev` (Pulse compatibility).
+- Linux **video calls** (a3+, best-effort VA-API): `libva-dev` — soft link at configure time. Without it, `VideoCodec_Linux` builds the unavailable stub (voice still works). Runtime also needs a VA driver package (e.g. `mesa-va-drivers`, `intel-media-va-driver`, or vendor NVIDIA VA support) and a usable `/dev/dri/renderD*`.
 - **Windows / macOS voice:** no extra packages — SDL uses **WASAPI** / **CoreAudio**. Ensure OS mic privacy allows the app (Windows Settings → Privacy → Microphone; macOS TCC prompt / shipped apps need mic usage string when notarized).
 - **Android / iOS voice:** no Pulse/ALSA packages; SDL uses AAudio/OpenSL ES or CoreAudio via the SDK. **Permissions and audio session are still TODO** before claiming mobile voice — see [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 - Perl (for lsquic code generation)
@@ -19,7 +20,8 @@ Debian/Ubuntu one-liner:
 sudo apt install \
   libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev \
   libgl-dev libdbus-1-dev \
-  libpulse-dev libasound2-dev
+  libpulse-dev libasound2-dev \
+  libva-dev
 ```
 
 ### Voice / video audio by platform (agents)
@@ -32,13 +34,17 @@ sudo apt install \
 | Android | SDL AAudio / OpenSL ES | No (NDK) | `RECORD_AUDIO` (+ runtime grant); later camera |
 | iOS | SDL CoreAudio | No (Xcode SDK) | `NSMicrophoneUsageDescription`, `AVAudioSession` play-and-record; optional `UIBackgroundModes` `audio`; later camera |
 
+### Linux H264 (VA-API) by agents
+
+Configure should print `pp-browser: Linux H264 — libva + libva-drm (VA-API)` when `libva-dev` is present. Missing packages only warn; the codec falls back to the unavailable stub (V017/V019). Hosts without a usable HW encoder may still decode when VLD exists; video **send** can fail (accepted).
+
 curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
 **Vendored source** under [`third_party/`](../../third_party/): FreeType, HarfBuzz, nlohmann-json, curl, SDL3, SDL3_image, SQLite (amalgamation), libsodium, and (for libp2p) BoringSSL, Boost, Protobuf, lsquic, and related packages.
 
-**System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`). Windows/macOS/mobile use OS audio stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
+**System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
 RmlUi is **hard-forked** under `src/render/fork/`. libp2p is **hard-forked** under `src/libp2p/fork/` (not in `third_party/`).
 

@@ -18,11 +18,11 @@ See [SDL wiki: AppFreezeDuringDrag](https://wiki.libsdl.org/SDL3/AppFreezeDuring
 
 ## A/V media (SDL + calls)
 
-Voice/video capture and playback go through **SDL3 audio** (and later camera) in [`CallMediaEngine`](../../src/base/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019. Signaling is mesh/E2E; media is WebRTC-shaped (libdatachannel). Every call negotiates Opus + H264 m-lines (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort.
+Voice/video capture and playback go through **SDL3 audio** (and later camera) in [`CallMediaEngine`](../../src/base/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019. Signaling is mesh/E2E; media is WebRTC-shaped (libdatachannel). Every call negotiates Opus + H264 m-lines (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux **libva DRM** VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort.
 
 | Platform | SDL audio backend | Extra build packages? | Product checklist (not all done) |
 |----------|-------------------|----------------------|----------------------------------|
-| Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy |
+| Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev`; video: `libva-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy; VA driver at runtime for H264 |
 | Windows | WASAPI | No | OS microphone privacy |
 | macOS | CoreAudio | No | Mic privacy / usage string for notarized apps |
 | Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + runtime permission; a3 dogfood: `CAMERA` + runtime (V019) |

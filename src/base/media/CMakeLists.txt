@@ -26,6 +26,24 @@ elseif(APPLE)
     "-framework CoreMedia"
     "-framework CoreVideo"
     "-framework CoreFoundation")
+elseif(UNIX AND NOT ANDROID)
+  # Linux VA-API (libva + DRM render node) — soft dep; stub builds without it.
+  find_package(PkgConfig QUIET)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(PP_LIBVA QUIET libva libva-drm)
+  endif()
+  if(PP_LIBVA_FOUND)
+    target_compile_definitions(pp_base_media PRIVATE PP_BROWSER_HAS_LIBVA=1)
+    target_include_directories(pp_base_media PRIVATE ${PP_LIBVA_INCLUDE_DIRS})
+    target_link_libraries(pp_base_media PRIVATE ${PP_LIBVA_LIBRARIES})
+    message(STATUS "pp-browser: Linux H264 — libva + libva-drm (VA-API)")
+  else()
+    message(WARNING
+      "Linux H264 encode/decode needs libva development packages (best-effort VA-API).\n"
+      "  Without them VideoCodec_Linux falls back to the unavailable stub (voice still works).\n"
+      "  Debian/Ubuntu: sudo apt install libva-dev\n"
+      "  Runtime also needs a VA driver (e.g. intel-media-va-driver / mesa-va-drivers).")
+  endif()
 endif()
 
 if(PP_BROWSER_BUILD_TESTS)
