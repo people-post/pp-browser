@@ -7,7 +7,7 @@
 | Area | State |
 |------|-------|
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
-| ADRs | N001–N020 in [DECISIONS.md](DECISIONS.md) |
+| ADRs | N001–N021 in [DECISIONS.md](DECISIONS.md) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
 | **np** | Headless `pp-node` + shared `NodeRuntime` + dial-back protocol (see below) |
@@ -88,7 +88,7 @@
 | Area | State |
 |------|-------|
 | Contact-first relay routing | **nf** (not implemented; SFU pick ranking TBD) |
-| Blind `media_relay` + ↑/↓ quotes + closed-set pick | **n4-media** (N017–N020) — unblocks calls a4 |
+| Blind `media_relay` + framing/QoS + closed-set pick | **n4-media** (N017–N021) — unblocks calls a4 |
 | Peer message_relay | Deferred (N017); HTTP Brief remains |
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
@@ -97,11 +97,11 @@
 ## Next
 
 1. **nf** — circuit preference (N014); align with N020 media rules  
-2. **n4-media** — blind forwarder + ↑/↓ quotes + contacts∪seed pick (N018–N020)  
+2. **n4-media** — framing (N021) + ↑/↓ quotes + contacts∪seed pick + call V024 mapping  
 3. Curated public / paid regulation / **n2 DHT** later  
 
 ## Follow-ups
 
 See [PHASES.md](PHASES.md) and [DESIGN § Relay path preference](DESIGN.md#relay-path-preference-n014--n020).
 
-**Calls:** [p2p-av-calls](../p2p-av-calls/) **a4** — V020–V023. Short-term hop set = contacts ∪ org seed; pricing schema present at rate 0.
+**Calls:** [p2p-av-calls](../p2p-av-calls/) **a4** — V020–V024. Shared adaptive policy (1:1 P2P + SFU); N021 framing on hop only.

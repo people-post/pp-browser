@@ -49,7 +49,7 @@ A **node** is a voluntary **infrastructure element** of the Brief/pp-browser eco
 | **DHT** | Peer and content routing | n2 + checkbox |
 | **Circuit relay** | Hop for NATed peers | n3 + checkbox |
 | **Message relay** | Store-and-forward / inbox assist | **Separate** from n4-media (N017); HTTP Brief default for now |
-| **Media relay** | Blind selective forwarder for calls (`media_relay`) | **n4-media** + checkbox **default on**; bandwidth budget; pricing later (N018) |
+| **Media relay** | Content-agnostic multiplexed forwarder (`media_relay`) — framing + QoS types (N021) | **n4-media** + checkbox **default on**; ↑/↓ budgets; pricing later (N018–N019) |
 | **Blockchain node** | Chain participation (identity / DA / settlement rails) | n4+ + checkbox |
 | **Accept paid jobs** | Optional **marketplace** for discrete tasks (transcode, fetch, compute) — **not** the primary monetization path | later + checkbox |
 
@@ -240,8 +240,7 @@ Hot-reload: role / capability / pricing changes reconfigure modules (`MessagingH
 | **n1** | Role + listen + bootstrap | Master toggle only |
 | **n2** | DHT | + DHT checkbox (no pricing required) |
 | **n3** | Circuit relay | + checkbox (pricing optional / often volunteer) |
-| **n4-media** | Blind `media_relay` forwarder (N017/N018/N019) | + checkbox **default on** (volunteer); ↑/↓ budgets + quote schema; pricing stub |
-| **later** | Peer message_relay | Optional; do not hard-cut HTTP Brief |
+| **n4-media** | Blind `media_relay` + generic framing/QoS (N017–N021) | + checkbox **default on**; ↑/↓ + quote; `channel_type` policies || **later** | Peer message_relay | Optional; do not hard-cut HTTP Brief |
 | **later** | Paid relay UI / settle (N010) | Nested Free/Paid when metering ships |
 | **n4+ / later** | Blockchain node | + checkbox (settlement rails, not “paid jobs”) |
 | **later** | Accept paid jobs marketplace | + checkbox; job schema separate |
@@ -400,6 +399,7 @@ Agents: prefer **n4-media** for calls over peer message_relay or paid UI. Prefer
 | **Schedules & resource caps** | Node only on AC / idle; bandwidth ceilings |
 | **Home Node pack** | Always-on mini PC + `pp-node` |
 | **Gradual HTTP→peer message_relay** | Dual-run; don’t hard-cut Brief HTTP |
+| **Reuse `media_relay` for non-A/V** | Same framing/QoS (N021); optional rename `datagram_relay` |
 | **Same PeerId for ops** | Org GUI profile and `pp-node` may share identity |
 | **Contribution UX** | Light thanks/stats for volunteer nodes |
 

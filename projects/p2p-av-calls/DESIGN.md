@@ -34,6 +34,7 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 22 | Relay privacy | Relay never holds call media keys / never decodes payloads (V021) |
 | 23 | Relay bandwidth / bills | **A↑/A↓**, **B↑/B↓**, **C↑/C↓**; quote + ceiling; initiator pays (V022 / N019) |
 | 24 | Hop pick | Closed set contacts∪seed short-term; risk-aware score; pricing regulates later (V023 / N020) |
+| 25 | Adaptive media | **Same policy** for 1:1 P2P and SFU (audio ≫ lo ≫ hi; producer first); backends differ (V024 / N021) |
 
 ---
 
@@ -193,26 +194,45 @@ ICE trickle / SDP: embed in signaling `detail` or follow-up system controls as n
 - **Codecs:** Opus audio required; video **H264** Constrained Baseline via **platform HW** (V017: Win MF / macOS VideoToolbox / Android MediaCodec; Linux VA-API best-effort — no soft-codec product fallback).  
 - **SDP shape (V019):** Every call’s initial offer/answer includes **both** audio and video m-lines. Mute/camera change sent content only (no renegotiation). Audio is mandatory; video encode/decode is best-effort and must not tear down voice.  
 - **Voice vs Video start:** Two header buttons for familiar UX; once connected, same in-call model (Camera allowed; show remote video whenever peer sends frames). `media_mode` may remain for invite/history copy.  
-- **Capture / blit:** SDL3 camera on user enable; `CameraCaptureOrientation` uprights mobile sensor buffers (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation); shell RML tiles + persistent GL texture with aspect-correct letterbox (V018); camera off on join (V009). Encode defaults ~640×360 (desktop) / ~360×640 (portrait mobile after rotation) @ 15–24 fps (network adapt later).  
-- **Topology:** 1:1 **P2P** when ICE works; **N≥3** (or invite that would make N≥3) uses blind **`media_relay`** forwarder (V020/V021) — no full-mesh. Soft-migrate same `call_id`; stay on SFU if N later drops to 2 (v1). NAT’d path after seed/desktop dogfood.  
+- **Capture / blit:** SDL3 camera on user enable; `CameraCaptureOrientation` uprights mobile sensor buffers (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation); shell RML tiles + persistent GL texture with aspect-correct letterbox (V018); camera off on join (V009). Encode defaults ~640×360 (desktop) / ~360×640 (portrait mobile after rotation) @ 15–24 fps. **All calls** use adaptive priority per **V024** (audio ≫ video_lo ≫ video_hi) — 1:1 P2P and SFU share one policy module, two backends.  
+- **Topology:** 1:1 **P2P** when ICE works; **N≥3** (or 1:1 ICE fail) uses **`media_relay`** (V020/V021). Soft-migrate same `call_id`; stay on SFU if N later drops to 2 (v1).  
+
+### Adaptive media — shared policy (V024)
+
+**Agents: one policy module, two backends.** Do not implement “group-only” adaptation and leave 1:1 on a fixed bitrate.
+
+| | 1:1 P2P | SFU / group |
+|--|---------|-------------|
+| Backend | libdatachannel PC / RTP | N021 `media_relay` channels |
+| Producer | audio; then lo/hi by uplink | same |
+| Receiver demand | signaling / DC feedback | subscribe `(stream_id, channel_id)` |
+| Path QoS | local rate + playout; drop stale video, FIFO audio | relay `latest_lossy` / `reliable_ordered` |
+
+| Layer | Role |
+|-------|------|
+| **Producer** (cheapest) | Always **audio**; **video_lo** / **video_hi** by condition; stop hi→lo under pressure; encode hi only when useful |
+| **Receiver** | Demand lo vs hi (focus hi in group if downlink allows) |
+| **Path** | Last resort shed; never skip-to-latest on audio |
+
+Priority: **audio ≫ video_lo ≫ video_hi**. No new codecs in a4. Relay framing details: N021 (SFU path only).
 
 ### SFU and mesh
 
-Consumes p2p-mesh **n4-media** (N017 / N018):
+Consumes p2p-mesh **n4-media** (N017–N021):
 
 | Capability | Call use |
 |------------|----------|
-| `media_relay` | Blind selective forwarder — one uplink, fan-out; **↑/↓** byte budgets (V022 / N019) |
+| `media_relay` | Generic multiplexed forwarder — framing/QoS (N021); ↑/↓ budgets (N019); call maps A/V (V024) |
 | Circuit relay (n3) | Help dial SFU / peers when NATed |
 | Contact-first (N014) | Intent: prefer friends; **media algorithm = N020 / V023** |
 
-**Blindness:** Relay never holds call media keys and never decodes payloads. Clients AEAD frames under the shared call key (V004/V021).
+**Blindness:** Relay never holds call media keys and never decodes payloads. Clear metadata is **QoS/routing only** (`channel_type` ≠ codec). Clients AEAD payloads under the shared call key (V004/V021).
 
-**Bandwidth + payer (V022 / N019):** Separate **A↑/A↓**, **B↑/B↓**, **C↑/C↓**. Camera uses **A↑**. Quote + ceiling; initiator pays; volunteer rate 0.
+**Bandwidth + payer (V022 / N019):** **A↑/A↓**, **B↑/B↓**, **C↑/C↓**. Camera / publish layers from **A↑**. Quote + ceiling; initiator pays; volunteer rate 0.
 
-**Hop pick (V023 / N020):** Short-term feasible set = **contacts ∪ org seed** only (no open public). Filter → score (affinity + quality floor + capacity; price 0) → quote. Pricing **regulates** later; revenue is not the goal. Re-pick on failure.
+**Hop pick (V023 / N020):** Short-term **contacts ∪ org seed** only. Filter → score → quote. Pricing regulates later.
 
-**Mobile Client** never hosts. **Hosts:** org `pp-node` + desktop Node (`media_relay` **default on**, volunteer). Peer **message_relay** is separate — not an a4 dependency.
+**Mobile Client** never hosts. **Hosts:** org `pp-node` + desktop Node (`media_relay` **default on**, volunteer).
 
 ### Defaults
 
@@ -324,12 +344,13 @@ Honest mobile / group video needs mesh progress roughly:
 | Desktop Node | **`media_relay` default on** (volunteer); user may turn off |
 | `capabilities.circuit_relay` | **on** (help Clients dial SFU) |
 | `pricing.*` | Schema ready; volunteer-only until paid ships (N017) |
-| Blindness | No call keys on relay; byte-budget limits only (N018 / V021) |
+| Blindness | No call keys; opaque payload; QoS via clear framing only (N021 / V024) |
 | Bandwidth | **↑/↓** per-user + session + node; quote/ceiling before attach (V022 / N019) |
+| Framing | `stream_id \| channel_id \| channel_type \| seq \| mark` (N021) |
 | Listen | Seed: public multiaddr (e.g. tcp/443) — fail loud if busy (N016) |
 | Scale-out | More SFU seeds post-release (V008); `bootstrap_peers` / config |
 
-Exact capability JSON keys in [p2p-mesh DESIGN](../p2p-mesh/DESIGN.md); implement with **n4-media** (N017/N018/N019). Older `audio_relay` / `video_relay` sketches map to **`media_relay`** + ↑/↓ budgets.
+Exact capability JSON keys in [p2p-mesh DESIGN](../p2p-mesh/DESIGN.md); implement with **n4-media** (N017–N021).
 
 **LAN dogfood (a2/a3 without SFU):** Two devices on the same LAN with mutually reachable ICE host candidates. Group (a4) does **not** use LAN full-mesh — waits on SFU.
 

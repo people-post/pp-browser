@@ -57,21 +57,23 @@ Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wir
 
 ## a4 — Group calls (≤8), guests, rotate-on-leave
 
-Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[V023](DECISIONS.md#v023--media-hop-pick-short-term-closed-set-pricing-regulates-later). Blind `media_relay` (mesh N018–N020). No full-mesh.
+Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[V024](DECISIONS.md#v024--adaptive-call-media-over-generic-relay-channels). Blind `media_relay` (mesh N018–N021). No full-mesh.
 
-- [ ] Mesh gate: volunteer blind **`media_relay`** on org `pp-node` + desktop Node (default on) — n4-media
-- [ ] Call consumer: N≥3 via blind forwarder; **1:1 stays P2P**; invite→N≥3 **soft-migrates** same `call_id` to SFU; re-pick on failure (V021)
-- [ ] App-layer E2E under call media key on SFU path (relay never holds keys)
-- [ ] **↑/↓** budgets + **quote/ceiling**; initiator pays; Camera from **A↑** (V022 / N019)
-- [ ] Hop pick: **contacts ∪ org seed** only; affinity + quality floor + capacity; no open public (V023 / N020)
-- [ ] Multi-invite; mid-call guest invite (signaling largely present)
+- [ ] Mesh gate: volunteer **`media_relay`** on org `pp-node` + desktop (default on) — n4-media / N021 framing
+- [ ] Call consumer: N≥3 via forwarder; **1:1 stays P2P**; soft-migrate same `call_id`; re-pick (V021)
+- [ ] **V024 adaptation:** shared policy module for **1:1 P2P and SFU** (audio ≫ lo ≫ hi; producer first); backends differ; a4 may ship single video layer first
+- [ ] App-layer E2E under call media key (relay never holds keys)
+- [ ] **↑/↓** budgets + **quote/ceiling** when hop used; initiator pays (V022 / N019)
+- [ ] Hop pick: **contacts ∪ org seed** only (V023 / N020)
+- [ ] Multi-invite; mid-call guest invite
 - [ ] Rotate media key on leave + overlapping epochs (V003)
 - [ ] In-call roster (mute / camera / speaking if cheap)
-- [ ] Reuse a3 Opus + H264 HW path — **no** new device codec matrix in a4
+- [ ] Reuse a3 Opus + H264 HW — **no** new device codec matrix in a4
 
 ## a5 — Cap, polish, reconnect
 
 - [ ] Load-test; raise effective cap toward **16** or keep **8** with product copy
+- [ ] Full **video_lo + video_hi** on **both** P2P and SFU backends (V024 polish) if not in a4
 - [ ] Reconnect / “reconnecting…” after brief network loss
 - [ ] Missed/declined history hints optional
 - [ ] Document desktop dead-process ring limitation

@@ -6,38 +6,37 @@
 
 | Area | State |
 |------|-------|
-| Project docs | `projects/p2p-av-calls/` (v0 → **a3 done**; **a4 gated on blind `media_relay`** — V020–V023) |
-| ADRs | V001–V023 in [DECISIONS.md](DECISIONS.md) |
-| UI / media / HW | a3 LAN 1:1 path landed (see prior rows in git history / a3 section below) |
+| Project docs | **a3 done**; **a4 gated** — **V020–V024** |
+| ADRs | V001–V024 in [DECISIONS.md](DECISIONS.md) |
+| a2/a3 media | LAN 1:1 voice + video OK (Android↔Win; Linux receive-only); NAT unclaimed |
 
-## a2 / a3 closed
-
-LAN 1:1 voice + video OK (Android↔Win bidirectional; Linux receive-only). NAT / SFU **not claimed**.
-
-## a4 next (group ≤8 via blind forwarder)
+## a4 next
 
 | Area | State |
 |------|-------|
-| Topology | **V020/V021** — blind forwarder; 1:1 P2P; soft-migrate when N→≥3 |
-| Mesh gate | **n4-media** — `media_relay` on `pp-node` + desktop (default on) |
-| Privacy | Relay never holds call keys / never decodes payloads |
-| Bandwidth / bills | **V022 / N019** — ↑/↓ A/B/C; quote + ceiling; initiator pays |
-| Hop pick | **V023 / N020** — short-term **contacts ∪ org seed** only; risk-aware score; pricing regulates later (not revenue-first) |
-| Signaling | Invite / rotate / roster largely present from a1 |
+| Topology | 1:1 P2P; N≥3 / ICE-fail → `media_relay`; soft-migrate (V020/V021) |
+| Hop pick | Contacts ∪ org seed (V023 / N020) |
+| Budgets | ↑/↓ quote when hop used (V022 / N019) |
+| Framing | N021 on **SFU path only** |
+| Adaptive A/V | **V024 — one policy, two backends** (1:1 P2P + SFU); audio ≫ lo ≫ hi; producer first |
+| Codecs | Reuse a3 Opus + H264 |
 
-## Next agent
+## Next agent — start here
 
-1. Do **not** implement full-mesh, media-aware SFU, open public media_relay market, or `min(price)` sort.  
-2. Ship n4-media + call consumer per V020–V023 / N018–N020.  
-3. No new video codec/device matrix in a4.
+1. Read **V024** end-to-end: shared adaptation module; do **not** build group-only rate control.  
+2. Mesh **n4-media** N018–N021 for hop; call consumer wires SFU backend to same policy as P2P.  
+3. Soft-migrate 1:1→group must keep publish/demand roles (V021 + V024).  
+4. a4 may ship single video layer before full lo/hi on both backends.  
+5. **Do not:** full-mesh; decode on relay; open public market; `min(price)`; new codecs; force all 1:1 through relay.
 
 ## Agent traps
 
 | Wrong | Right |
 |-------|-------|
-| Hardcoded N014 stage list for media | Scorer over closed eligibility (V023) |
-| Open public / ultra-cheap wins | Short-term contacts ∪ seed only |
-| Revenue-first paid SFU | Pricing **regulates** scarcity/abuse later |
-| Full-mesh / decode on relay | Blind forwarder + call-key AEAD |
-| Bill without quote | Quote + ceiling (V022) |
-| Invent public directory in a4 | Mid-term N020 |
+| Adaptation only for group/SFU | Same V024 policy on **1:1 P2P** too |
+| Force 1:1 via `media_relay` when ICE works | P2P backend; relay when N≥3 or ICE fail |
+| Duplicate unrelated bitrate logic per path | One policy module, two backends |
+| Relay assumes Opus/H264 | QoS `channel_type` only (N021) |
+| Name relay API `keyframe` | Generic **`mark`** |
+| Relay-only adaptation | Producer rate control first |
+| Hardcoded N014 stages | Scorer + closed set (V023) |

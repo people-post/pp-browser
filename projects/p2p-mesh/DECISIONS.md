@@ -155,8 +155,9 @@
 **Rationale:** Matches product privacy (“relay must not know contents”); one module is enough for fan-out; friend Nodes need honest bandwidth limits without deep packet inspection of media.  
 **Alternatives:** Classic media-aware SFU (rejected); separate audio/video services that inspect codecs (rejected); desktop default off until dogfood (superseded — default on volunteer).  
 **Updates N017** host/checkbox wording from dual audio/video to blind `media_relay`.  
-**Bandwidth detail:** Split ↑/↓ budgets, quotes, and no-surprise billing are **N019** / calls **V022**.  
-**Pick detail:** **N020** / **V023**.
+**Bandwidth detail:** **N019** / **V022**.  
+**Pick detail:** **N020** / **V023**.  
+**Framing / QoS:** **N021** / call mapping **V024**.
 
 ---
 
@@ -227,3 +228,47 @@ Circuit may keep simpler N014-style preference in **nf**. Peer `message_relay` r
 
 **Rationale:** Closed set removes sybil/cheap-bait/capture for v1; scorer + rate-0 quotes avoid rewrite when regulation via price turns on.  
 **Alternatives:** Hardcoded N014 stages for media (rejected); open public + min price in v1 (rejected); revenue-first paid SFU (rejected).
+
+---
+
+## N021 — Generic `media_relay` framing; QoS channel types
+
+**Date:** 2026-07-30  
+**Decision:** The `media_relay` hop is a **content-agnostic multiplexed datagram forwarder**. It must not assume audio/video or decode payloads. Clear **framing metadata** enables subscribe, byte accounting, and QoS. Call A/V **policy** (1:1 P2P and SFU) and role→type mapping: [V024](../p2p-av-calls/DECISIONS.md#v024--adaptive-call-media-11-p2p-and-sfu-generic-relay-channels). Future non-call apps may reuse the same hop.
+
+### Packet / frame header (illustrative)
+
+| Field | Meaning |
+|-------|---------|
+| **`stream_id`** | Publisher flow / uplink identity within the session |
+| **`channel_id`** | Logical channel inside the stream |
+| **`channel_type`** | **QoS policy class** (not a media codec name) |
+| **`seq`** | Per-channel sequence (order / stale detection) |
+| **`mark`** | Optional sync bit (“safe shed boundary” — e.g. video IDR). Not named `keyframe` in the relay API. |
+| **payload** | Opaque bytes (E2E encrypted by the app) |
+
+Optional later: priority, deadline/`ttl_ms`, explicit `payload_len` for metering.
+
+### v1 `channel_type` policies (relay implements only these behaviors)
+
+| Type | Behavior |
+|------|----------|
+| **`reliable_ordered`** | FIFO; deliver even if late; drop only under extreme backlog |
+| **`latest_lossy`** | Prefer newest under congestion; may drop older; honor **`mark`** when shedding |
+| **`best_effort`** | Forward if room; first class to shed when defined |
+
+Relay **does not** interpret payload as Opus/H264/etc. Apps bind roles (audio, video_lo, …) to types at the edges.
+
+### Session ops
+
+- Receivers **subscribe** to `(stream_id, channel_id)` (or documented wildcards).  
+- Fan-out only along subscribe edges.  
+- Enforce **↑/↓** byte budgets (N019) on opaque sizes.  
+- Under pressure, apply the channel_type policy; never invent media semantics.
+
+### Reuse
+
+Same capability may later carry other real-time opaque fan-out (e.g. in-call data, thumbnails) by picking a `channel_type` — no A/V-specific relay fork required. Optional future rename (e.g. `datagram_relay`) is cosmetic.
+
+**Rationale:** Separates transport QoS from app codecs; enables stale-video drop without decrypt; keeps n4-media reusable.  
+**Alternatives:** A/V-specific SFU API (rejected — couples hop to calls); fully opaque pipe with no seq/type (rejected — cannot implement latest-lossy safely); relay named `keyframe` as media concept (rejected — use generic **`mark`**).

@@ -1,6 +1,6 @@
 # P2P A/V calls
 
-**Status:** **a3 done** (LAN 1:1 video); **a4** gated on **blind `media_relay`** (V020–V023) — contacts∪seed pick; NAT unclaimed  
+**Status:** **a3 done**; **a4** gated on **`media_relay`** (V020–V024) — adaptive channels; contacts∪seed; NAT unclaimed  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [p2p-mesh](../p2p-mesh/) (n4-media blind forwarder), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md)
@@ -36,7 +36,7 @@
 | Prerequisite | Why | Notes |
 |--------------|-----|--------|
 | Mesh **nr → nu → n3** (reachability, UPnP/IPv6, circuit) | NAT’d / Client peers | Mobile is always Client (no listen) |
-| Mesh **n4-media** blind `media_relay` | Group (a4) + NAT media | Contacts∪seed pick (N020); ↑/↓ quote (N019); desktop default on |
+| Mesh **n4-media** `media_relay` | Group (a4) + NAT media | N021 framing/QoS; N020 pick; N019 ↑/↓; call V024 |
 | Peer `message_relay` | Offline inbox decentralization | **Separate** track — not a4 gate; HTTP Brief remains |
 | Direct E2E + group messaging | Signaling + key wrap to invitees | Guests use direct pairwise only |
 | Push Wave 1 + **`call_wake`** | Background ring | Extends push-notifications |
@@ -51,6 +51,6 @@
 | a1 | Signaling + session + history + ring wake | **Done** |
 | a2 | 1:1 voice (WebRTC + LAN dogfood) | **Done** — LAN Opus OK; NAT unclaimed |
 | a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **Done** — Android↔Win bidirectional; Linux receive-only (no camera); NAT unclaimed |
-| a4 | Group ≤8 via **blind `media_relay`**, guests, rotate | Pending — V020–V023; contacts∪seed pick; ↑/↓ quotes |
+| a4 | Group ≤8 via **`media_relay`**, guests, rotate | Pending — V020–V024; **shared** adaptive policy (1:1 + SFU); generic QoS channels |
 | a5 | Cap decision 8→16, polish | Pending |
 | a6 | Promote contracts to `docs/` | Pending |

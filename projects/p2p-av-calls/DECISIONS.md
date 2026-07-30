@@ -440,3 +440,71 @@ Open public directory; paid settle UI; pure `min(price)` sort; hardcoded N014 st
 **Rationale:** Closed set removes sybil/cheap-bait/capture for v1; scorer + quote schema avoid a rewrite when regulation via price turns on; friend preference without guaranteeing flaky home uplinks.  
 **Alternatives:** Hardcoded priority list (rejected — brittle, gameable); open public + min price in v1 (rejected — abuse); revenue-first paid SFU (rejected).  
 **Updates:** Softens “pick TBD” in V020–V022; aligns with N014 as **illustrative outcome** (see N020).
+
+---
+
+## V024 — Adaptive call media (1:1 P2P and SFU); generic relay channels
+
+**Date:** 2026-07-30  
+**Updated:** 2026-07-30 — policy applies to **1:1 P2P** as well as group/SFU  
+**Decision:** One **adaptation policy** for all calls: priority **audio ≫ video_lo ≫ video_hi**, producer rate control first, prefer fluent low video over stalled high. **Transport backends differ**; do not force 1:1 through `media_relay` when P2P ICE works. Mesh hop framing: [N021](../p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types). **No new codec matrix** in a4 — reuse Opus + H264 HW (V017–V019).
+
+### Same policy brain, two backends
+
+| | **1:1 P2P** (ICE OK) | **SFU / group** (N≥3, or 1:1 ICE fail → hop) |
+|--|----------------------|--------------------------------------------------|
+| Transport | Existing libdatachannel PeerConnection / RTP | `media_relay` + N021 framing |
+| Fan-out | N/A (one peer) | Subscribe `(stream_id, channel_id)` |
+| Producer | Same: publish audio; lo/hi by uplink + network | Same |
+| Receiver demand | Peer feedback / “want hi” via signaling or datachannel | Subscribe set to hop |
+| Stale video / audio FIFO | Sender rate + receiver jitter/playout; stack may drop late video | Relay `latest_lossy` / `reliable_ordered` (N021) |
+| ↑/↓ quotes (V022) | N/A on pure P2P; apply when a hop is used | Full A/B/C + quote |
+
+**Agents:** Implement adaptation as a **shared module** (publish set, bitrate ladder, focus-hi). Wire P2P and relay as backends. Soft-migrate 1:1→group (V021) keeps the same roles so policy does not restart from scratch.
+
+### Priority
+
+```text
+audio  ≫  video_lo  ≫  video_hi
+```
+
+Audio is mandatory for a connected call; video is best-effort (V019). Prefer fluent low video over stalled high video.
+
+### Call track mapping (app layer)
+
+| App role | Publish when | Semantic QoS | On `media_relay` `channel_type` |
+|----------|--------------|--------------|--------------------------------|
+| **audio** | In call (unless muted) | FIFO; even if late | **`reliable_ordered`** |
+| **video_lo** | Camera on + uplink/network allow | Prefer latest under loss | **`latest_lossy`** (`mark` on IDR) |
+| **video_hi** | Spare uplink + stable; encode only if useful | Prefer latest under loss | **`latest_lossy`** |
+
+On P2P, map the same roles to RTP/tracks; QoS semantics are identical even if headers differ.
+
+### Three decision layers (cost order)
+
+| Layer | Who | Decision |
+|-------|-----|----------|
+| **1. Producer** (cheapest) | Sender | Send rate + layers (reserve audio; then lo; then hi). Stop hi→lo under congestion. |
+| **2. Receiver** | Each participant | Demand: need lo vs hi (and whose video in group). P2P = feedback; SFU = subscribe. |
+| **3. Path** | P2P stack and/or relay | Last resort: drop stale video; never skip-to-latest on audio. Relay uses N021; P2P uses local/playout policy. |
+
+### Relay-only details (when hop is used)
+
+- Fan-out by subscription; byte **B↓** pressure → per-`channel_type` policy (N021).  
+- Shed order: **video_hi → video_lo → never sacrifice audio FIFO**.  
+- Relay is **not** the primary rate controller.
+
+### Feedback
+
+Demand signals (“want hi?”, subscribe set) inform producers so they do not encode/upload unused layers. Heavy video loss may trigger consumer→producer keyframe/`mark` request via call signaling (E2E).
+
+### Phasing
+
+| Slice | Scope |
+|-------|--------|
+| **a4 must (SFU)** | N021 framing + subscribe; audio + ≥1 video `latest_lossy`; producer rate + Camera; relay stale-drop |
+| **a4 / follow-on (1:1)** | Same priority ladder + producer rate on P2P path (may start as single video layer); share policy module with SFU |
+| **a4 polish / a5** | Full **video_lo + video_hi**; focus-only hi; encode-hi-only-when-useful on both backends |
+
+**Rationale:** Users need fluent A/V on volatile links in 1:1 too; duplicating policy only for group causes drift. Shared brain + different pipes matches V021 soft-migrate.  
+**Alternatives:** Adaptation only on SFU (rejected — 1:1 regresses); force all 1:1 via relay (rejected — extra hop when P2P works); always encode hi+lo (rejected on weak mobiles).

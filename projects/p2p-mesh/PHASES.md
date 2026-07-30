@@ -6,7 +6,7 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 
 - [x] README, DESIGN, CURRENT_STATE, DECISIONS, PHASES
 - [x] Register in `projects/README.md` + `AGENTS.md`
-- [x] N008–N020 (infra through blind media_relay, ↑/↓ quotes, **hop pick / pricing-as-regulation**)
+- [x] N008–N021 (through hop pick, ↑/↓ quotes, **generic framing / QoS channel types**)
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
 
 ## n1 — Role shell + bootstrap + Network UI
@@ -60,17 +60,18 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [ ] Message path may keep **HTTP Brief** without peer `message_relay`
 - [ ] Align docs/UI copy with **N020** for media (closed set; not hardcoded stages)
 
-## n4-media — Blind media forwarder (N017–N020; unblocks a4)
+## n4-media — Blind media forwarder (N017–N021; unblocks a4)
 
-- [ ] Homegrown **blind** selective forwarder — no media keys, no codec decode, no A/V payload classification
-- [ ] Single **`media_relay`** capability; advertise **C↑/C↓**, grant **B↑/B↓**, carve **A↑/A↓** (N019)
-- [ ] Quote / accept + billing ceiling before attach (volunteer rate 0 OK); never bill above ceiling
-- [ ] Hop pick: **contacts ∪ org seed** only; filter → score (affinity + quality + capacity); re-pick (N020 / V023)
+- [ ] Homegrown **content-agnostic** forwarder — no media keys, no codec decode
+- [ ] Framing: **`stream_id \| channel_id \| channel_type \| seq \| mark`** + opaque payload (N021)
+- [ ] QoS types v1: **`reliable_ordered`**, **`latest_lossy`** (+ optional `best_effort`); subscribe by `(stream_id, channel_id)`
+- [ ] Single **`media_relay`** capability; **C↑/C↓**, **B↑/B↓**, **A↑/A↓** (N019)
+- [ ] Quote / accept + billing ceiling; volunteer rate 0
+- [ ] Hop pick: **contacts ∪ org seed** only; filter → score; re-pick (N020 / V023)
 - [ ] Auth before attach; provider prefer contacts / limit strangers
-- [ ] Org `pp-node`: volunteer **`media_relay` on**
-- [ ] Desktop Node: checkbox **default on** (volunteer); user may disable
-- [ ] Call consumer: group path + soft-migrate from 1:1 P2P (V021)
-- [ ] `pricing.*` schema stub — volunteer only; **pricing regulates later** (not revenue-first)
+- [ ] Org `pp-node`: volunteer **`media_relay` on**; desktop checkbox **default on**
+- [ ] Call consumer maps audio/video_lo/video_hi per **V024** (same policy as 1:1 P2P backend)
+- [ ] `pricing.*` schema stub — pricing regulates later (not revenue-first)
 
 ## n4-message / pricing UI — deferred (N017 / N020 mid)
 
