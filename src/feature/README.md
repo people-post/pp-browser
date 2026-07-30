@@ -9,7 +9,7 @@ base       stores, clients, codecs, UI building blocks
 common     logger, ResultOrError, task runner (app-agnostic)
 ```
 
-**Rule:** dependencies flow downward only. Feature may use `base/` and `common/`; it must not `#include` from `app/`. Repo-wide layout: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
+**Rule:** dependencies flow downward only. Feature may use `base/` and `common/`; it must not `#include` from `app/`. Repo-wide layout: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md). Runtime module wiring: [`docs/architecture/RUNTIME_COMPOSITION.md`](../../docs/architecture/RUNTIME_COMPOSITION.md).
 
 Each top-level folder (and `ai/tools`, `ai/bindings`) builds as its own static library — **`pp_feature_<module>`** (e.g. `pp_feature_messaging`, `pp_feature_chat`). The aggregate **`pp_feature`** (`INTERFACE`) links all module libraries for app code. See [`CMakeLists.txt`](CMakeLists.txt) and per-folder `CMakeLists.txt` files.
 

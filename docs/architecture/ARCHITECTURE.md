@@ -10,7 +10,7 @@ pp-browser is a native AI-oriented UI shell:
 - **ActionRouter** — maps UI events to MCP tool calls via bindings manifest
 - **UiGenerator** — LLM produces RML/RCSS/bindings from MCP tool schemas
 
-Source code follows a four-layer layout — see [SRC_LAYOUT.md](SRC_LAYOUT.md).
+Source code follows a four-layer layout — see [SRC_LAYOUT.md](SRC_LAYOUT.md). Runtime ownership and settings fan-out among app / messaging / shell / chat: [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md).
 
 ```
 Application → Backend (SDL_GL3) → RmlUi Context

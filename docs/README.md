@@ -21,6 +21,7 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md), this map.
 |-----|--------|
 | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | Overall system shape |
 | [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | `app → feature → base → common` |
+| [architecture/RUNTIME_COMPOSITION.md](architecture/RUNTIME_COMPOSITION.md) | App ↔ messaging / shell / chat / settings wiring |
 | [architecture/PLATFORMS.md](architecture/PLATFORMS.md) | Desktop / Android / path providers |
 | [architecture/PLATFORM_CODE.md](architecture/PLATFORM_CODE.md) | OS code layout, `#ifdef` policy |
 | [architecture/P2P_MESSAGING.md](architecture/P2P_MESSAGING.md) | Messaging architecture (pointers to wire/crypto) |

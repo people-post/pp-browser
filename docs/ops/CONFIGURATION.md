@@ -19,7 +19,7 @@ Layering: `PlatformDefaults` → user config file → field-level merge (partial
 
 After bootstrap, a single [`SessionStore`](../../src/base/data/SessionStore.h) owns the live `BootstrapResult` (config, profile prefs, paths). Settings and chat read/write through it; saves reload from disk before notifying listeners.
 
-**Disk DTOs vs service slices:** `AppConfig` / `ProfilePreferences` are persistence schemas. Hot-reload does **not** pass those blobs straight into services. [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) (composition root) projects nested service types and calls `Apply` only when a slice changes:
+**Disk DTOs vs service slices:** `AppConfig` / `ProfilePreferences` are persistence schemas. Hot-reload does **not** pass those blobs straight into services. [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) (composition root) projects nested service types and calls `Apply` only when a slice changes. Diagrams: [architecture/RUNTIME_COMPOSITION.md](../architecture/RUNTIME_COMPOSITION.md).
 
 | Disk DTO | Projector | Service slice | Apply |
 |----------|-----------|---------------|-------|
