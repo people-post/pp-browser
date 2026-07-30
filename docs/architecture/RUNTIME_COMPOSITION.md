@@ -121,6 +121,7 @@ flowchart LR
 
   Shell -.->|layout / Me sheet| Settings
   App -->|BindCommands SettingsCommands| Settings
+  App -->|BindChatPorts| Contacts
   Pin -.->|unlock gate| Settings
   Contacts -.->|hub-bound| Hub
 ```
@@ -257,6 +258,7 @@ flowchart TB
 | **LocalizationService** | `base/i18n/` | Locale catalogs; nested `Prefs` |
 | **SettingsController** | `feature/ui/` | Me-tab UI + flush to SessionStore; holds injected `SettingsCommands` |
 | **SettingsCommands** | `feature/settings/` | Imperative ports; app binds implementations |
+| **ChatSessionPorts** | `feature/ui/` | Chat nav ports for contacts/picker; app-filled from ChatController |
 | **ProfileIdentityView** | `base/people/` | Presentation projection of local identity |
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |

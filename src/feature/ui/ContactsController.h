@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
+#include "feature/ui/ChatSessionPorts.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
@@ -24,6 +25,7 @@ public:
   static ContactsController& Instance();
 
   void BindMessaging(MessagingHub& messaging);
+  void BindChatPorts(ChatSessionPorts ports);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -124,6 +126,7 @@ private:
   bool contact_dirty_ = false;
   uint64_t debounce_deadline_ms_ = 0;
   MessagingHub* messaging_ = nullptr;
+  ChatSessionPorts chat_ports_;
 
 };
 

@@ -22,7 +22,6 @@
 #include "base/ui/ChatFormHelper.h"
 #include "base/ui/RmlVariantHelpers.h"
 #include "feature/chat/CalendarHelper.h"
-#include "feature/ui/ChatSessionActions.h"
 #include "feature/chat/ChatWidgetStateBuilder.h"
 #include "feature/chat/MessagingTools.h"
 #include "common/Utilities.h"
@@ -1857,8 +1856,8 @@ void ChatController::WireMessagingBindings() {
       });
   ILocalNotifier::Instance().SetActivationHandler([](std::string thread_id) {
     DesktopWindowChrome::RaiseAndFocus();
-    if (!thread_id.empty() && ChatSessionActions::Instance().select_thread) {
-      ChatSessionActions::Instance().select_thread(thread_id);
+    if (!thread_id.empty()) {
+      ChatController::Instance().OnSelectThread(thread_id);
     }
   });
   BackgroundSyncScheduler::Instance().SetSyncHandler([this](bool force) {
@@ -1961,13 +1960,6 @@ bool ChatController::Setup(Rml::Context* context, MessagingHub& messaging) {
   use_llm_ = !config.llm.base_url.empty();
   agent_.emplace();
   StartupMark("chat_after_agent_emplace");
-
-  ChatSessionActions& actions = ChatSessionActions::Instance();
-  actions.reload_agent_config = [this]() { ReloadAgentConfig(); };
-  actions.finalize_thread_display = [this]() { FinalizeThreadDisplay(); };
-  actions.select_thread = [this](const std::string& thread_id) { OnSelectThread(thread_id); };
-  actions.on_find_someone = [this]() { OnFindSomeone(); };
-  actions.on_profile_data_reset = [this]() { OnProfileDataReset(); };
 
   if (Instance().Hub().IsInitialized()) {
     WireMessagingBindings();
@@ -2326,22 +2318,17 @@ void ChatController::Shutdown() {
   AppLifecycle::ClearBackgroundListeners();
   AppLifecycle::ClearForegroundListeners();
   IPushDeviceRegistrar::SetTokenChangedHandler(nullptr);
-  ChatSessionActions::Instance().on_profile_data_reset = nullptr;
-  ChatSessionActions::Instance().reload_agent_config = nullptr;
-  ChatSessionActions::Instance().finalize_thread_display = nullptr;
-  ChatSessionActions::Instance().select_thread = nullptr;
-  ChatSessionActions::Instance().on_find_someone = nullptr;
-  if (Instance().Hub().IsInitialized()) {
-    Instance().Hub().SetOnMessagingReady(nullptr);
-    Instance().Hub().SetOnReachabilityUpdated(nullptr);
-    Instance().Hub().P2p().SetOnMessagesChanged(nullptr);
-    Instance().Hub().P2p().SetOnDeliveryNotice(nullptr);
-    Instance().Hub().P2p().SetOnBackgroundUnread(nullptr);
-    Instance().Hub().Inbox().SetOnThreadChanged(nullptr);
-    Instance().Hub().Actions().SetOnActionMessage(nullptr);
-    if (Instance().Hub().HasRouter()) {
-      Instance().Hub().Router().SetOnLocalAction(nullptr);
-      Instance().Hub().Router().SetSharedAiConfirmCallback(nullptr);
+  // MessagingReady / ReachabilityUpdated are owned by Application.
+  if (messaging_ && messaging_->IsInitialized()) {
+    MessagingHub& hub = *messaging_;
+    hub.P2p().SetOnMessagesChanged(nullptr);
+    hub.P2p().SetOnDeliveryNotice(nullptr);
+    hub.P2p().SetOnBackgroundUnread(nullptr);
+    hub.Inbox().SetOnThreadChanged(nullptr);
+    hub.Actions().SetOnActionMessage(nullptr);
+    if (hub.HasRouter()) {
+      hub.Router().SetOnLocalAction(nullptr);
+      hub.Router().SetSharedAiConfirmCallback(nullptr);
     }
   }
   if (agent_) {

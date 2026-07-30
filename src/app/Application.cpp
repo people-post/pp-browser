@@ -27,7 +27,7 @@
 #include "base/platform/WindowIcon.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/SettingsCommands.h"
-#include "feature/ui/ChatSessionActions.h"
+#include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/CallController.h"
 #include "feature/ui/BadgeAggregator.h"
@@ -153,9 +153,7 @@ Roe<void> Application::ResetActiveProfile() {
     return prefs.error();
   }
 
-  if (ChatSessionActions::Instance().on_profile_data_reset) {
-    ChatSessionActions::Instance().on_profile_data_reset();
-  }
+  ChatController::Instance().OnProfileDataReset();
   ContactsController::Instance().Refresh();
   return {};
 }
@@ -301,15 +299,15 @@ bool Application::Initialize(const char* window_title) {
   };
   settings_commands.register_identity = [&messaging](const RegisterIdentityArgs& args) {
     auto result = messaging.RegisterIdentity(args.nickname);
-    if (result && ChatSessionActions::Instance().reload_agent_config) {
-      ChatSessionActions::Instance().reload_agent_config();
+    if (result) {
+      ChatController::Instance().ReloadAgentConfig();
     }
     return result;
   };
   settings_commands.rotate_brief_llm_key = [&messaging]() {
     auto result = messaging.RotateBriefLlmKey();
-    if (result && ChatSessionActions::Instance().reload_agent_config) {
-      ChatSessionActions::Instance().reload_agent_config();
+    if (result) {
+      ChatController::Instance().ReloadAgentConfig();
     }
     return result;
   };
@@ -346,11 +344,20 @@ bool Application::Initialize(const char* window_title) {
       }()) {
     log().error << "SetupChatController failed";
     SettingsController::Instance().BindCommands({});
+    ContactsController::Instance().BindChatPorts({});
+    PeoplePickerController::Instance().BindChatPorts({});
     Rml::RemoveContext("main");
     Rml::Shutdown();
     Backend::Shutdown();
     return false;
   }
+
+  ChatSessionPorts chat_ports;
+  chat_ports.finalize_thread_display = [] { ChatController::Instance().FinalizeThreadDisplay(); };
+  chat_ports.select_thread = [](const std::string& id) { ChatController::Instance().OnSelectThread(id); };
+  chat_ports.on_find_someone = [] { ChatController::Instance().OnFindSomeone(); };
+  ContactsController::Instance().BindChatPorts(chat_ports);
+  PeoplePickerController::Instance().BindChatPorts(std::move(chat_ports));
 
   // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
   config_apply_->InstallListeners();
@@ -470,6 +477,8 @@ void Application::Shutdown() {
   StartupPhase shutdown_total("Application::Shutdown");
 
   SettingsController::Instance().BindCommands({});
+  ContactsController::Instance().BindChatPorts({});
+  PeoplePickerController::Instance().BindChatPorts({});
 
   if (messaging_) {
     messaging_->SetOnMessagingReady(nullptr);

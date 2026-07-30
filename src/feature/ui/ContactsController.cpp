@@ -11,7 +11,7 @@
 #include "base/people/ContactTypes.h"
 #include "base/people/Ed25519Signer.h"
 #include "base/ui/ContextMenuHost.h"
-#include "feature/ui/ChatSessionActions.h"
+#include "feature/ui/ChatSessionPorts.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
@@ -296,6 +296,10 @@ ContactsController& ContactsController::Instance() {
 }
 void ContactsController::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
+}
+
+void ContactsController::BindChatPorts(ChatSessionPorts ports) {
+  chat_ports_ = std::move(ports);
 }
 
 MessagingHub& ContactsController::Hub() {
@@ -765,7 +769,9 @@ void ContactsController::OnStartChat() {
 
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
   ShellHost::Instance().SetPrimaryPane("chat");
-  ChatSessionActions::Instance().finalize_thread_display();
+  if (chat_ports_.finalize_thread_display) {
+    chat_ports_.finalize_thread_display();
+  }
 }
 
 void ContactsController::OnSecureMessage() {
@@ -799,14 +805,16 @@ void ContactsController::OnSecureMessage() {
 
     ShellHost::Instance().SelectNavTab(NavTab::Sessions);
     ShellHost::Instance().SetPrimaryPane("chat");
-    ChatSessionActions::Instance().finalize_thread_display();
+    if (chat_ports_.finalize_thread_display) {
+      chat_ports_.finalize_thread_display();
+    }
   });
 }
 
 void ContactsController::OnFindSomeone() {
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-  if (ChatSessionActions::Instance().on_find_someone) {
-    ChatSessionActions::Instance().on_find_someone();
+  if (chat_ports_.on_find_someone) {
+    chat_ports_.on_find_someone();
   }
 }
 
@@ -936,8 +944,8 @@ void ContactsController::OnOpenThread(const std::string& thread_id) {
   }
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
   ShellHost::Instance().SetPrimaryPane("chat");
-  if (ChatSessionActions::Instance().select_thread) {
-    ChatSessionActions::Instance().select_thread(thread_id);
+  if (chat_ports_.select_thread) {
+    chat_ports_.select_thread(thread_id);
   }
 }
 

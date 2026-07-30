@@ -40,7 +40,7 @@ src/feature/
 │   ├── tools/        Web search, MCP tool adapters
 │   └── bindings/     RmlUi action routing, bindings manifest
 ├── messaging/    MessagingHub, P2P/relay/sync orchestration
-├── ui/           Shell, settings/contacts controllers, RML mount, ChatSessionActions bridge
+├── ui/           Shell, settings/contacts controllers, RML mount, ChatSessionPorts
 └── chat/         Chat controller, agent↔hub wiring, messaging agent tools
 ```
 
@@ -112,7 +112,7 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 
 | Pattern | Location | Purpose |
 |---------|----------|---------|
-| `ChatSessionActions` | `ui/ChatSessionActions.h` | `std::function` bridge so contacts/profile UI can trigger chat actions without include cycles (still a singleton; prefer injected ports where practical) |
+| `ChatSessionPorts` | `ui/ChatSessionPorts.h` | Injected chat nav ports for contacts/people-picker; Application fills from `ChatController` — no singleton |
 | `SettingsCommands` | `settings/SettingsCommands.h` | Imperative settings ports (member on `SettingsController`); Application binds implementations — no extra singleton |
 | `ProfileIdentityView` | `base/people/ProfileIdentityView.h` | Shared identity presentation DTO (filled by `MessagingHub`) |
 | SessionStore listeners + nested service slices | `SessionStore`, nested `*::Apply` types, `ConfigApplyBridge` | Settings flush persists disk DTOs; app projects slices so settings UI does not own service apply |

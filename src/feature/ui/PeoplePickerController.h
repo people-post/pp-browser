@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
+#include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/PeoplePickerLogic.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
@@ -24,6 +25,7 @@ public:
   static PeoplePickerController& Instance();
 
   void BindMessaging(MessagingHub& messaging);
+  void BindChatPorts(ChatSessionPorts ports);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -98,6 +100,7 @@ private:
   Rml::String cta_label_;
   bool cta_enabled_ = false;
   MessagingHub* messaging_ = nullptr;
+  ChatSessionPorts chat_ports_;
 
 };
 

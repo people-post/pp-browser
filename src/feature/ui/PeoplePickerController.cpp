@@ -8,7 +8,7 @@
 #include "base/people/PeerDisplayLabel.h"
 #include "base/ui/ShellTypes.h"
 #include "feature/messaging/MessagingHub.h"
-#include "feature/ui/ChatSessionActions.h"
+#include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/FlowCoordinator.h"
 #include "feature/ui/PinGateController.h"
@@ -94,6 +94,10 @@ PeoplePickerController& PeoplePickerController::Instance() {
 }
 void PeoplePickerController::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
+}
+
+void PeoplePickerController::BindChatPorts(ChatSessionPorts ports) {
+  chat_ports_ = std::move(ports);
 }
 
 MessagingHub& PeoplePickerController::Hub() {
@@ -520,8 +524,8 @@ void PeoplePickerController::FinishOpenThread() {
   Close();
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
   ShellHost::Instance().SetPrimaryPane("chat");
-  if (ChatSessionActions::Instance().finalize_thread_display) {
-    ChatSessionActions::Instance().finalize_thread_display();
+  if (chat_ports_.finalize_thread_display) {
+    chat_ports_.finalize_thread_display();
   }
   ShellHost::Instance().DirtyWindow();
 }

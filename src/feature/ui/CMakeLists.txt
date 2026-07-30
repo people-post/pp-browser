@@ -4,7 +4,6 @@ pp_browser_add_feature_library(pp_feature_ui
     CallChromeSync.cpp
     CallConflictCopy.cpp
     CallController.cpp
-    ChatSessionActions.cpp
     ContactsController.cpp
     PeoplePickerController.cpp
     DataModelHost.cpp
