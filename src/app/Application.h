@@ -12,6 +12,7 @@ class FontEngineInterfaceHarfBuzz;
 
 namespace pbr {
 
+class ConfigApplyBridge;
 class MessagingHub;
 
 class Application : public Module {
@@ -38,6 +39,7 @@ public:
 private:
   bool initialized_ = false;
   std::unique_ptr<MessagingHub> messaging_;
+  std::unique_ptr<ConfigApplyBridge> config_apply_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;
 };
 

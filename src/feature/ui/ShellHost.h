@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/ui/ShellTypes.h"
+#include "base/data/UserPreferences.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
 #include "feature/ui/ShellGestureAxis.h"
 #include "feature/ui/ShellSwipeBackGesture.h"
@@ -43,6 +44,25 @@ struct LocalBackEntry {
 
 class ShellHost {
 public:
+  /** Theme / appearance / chrome materials projected from ProfilePreferences. */
+  struct ChromePrefs {
+    std::string theme = "themes/base.rcss";
+    std::string appearance = "system";
+    bool reduce_transparency = false;
+    bool compact_chrome_frost = true;
+
+    bool operator==(const ChromePrefs& other) const {
+      return theme == other.theme && appearance == other.appearance &&
+             reduce_transparency == other.reduce_transparency &&
+             compact_chrome_frost == other.compact_chrome_frost;
+    }
+    bool operator!=(const ChromePrefs& other) const { return !(*this == other); }
+  };
+
+  static ChromePrefs ProjectChrome(const ProfilePreferences& prefs);
+  /** Apply material fields only (theme/appearance are Theme-owned). */
+  void Apply(const ChromePrefs& prefs);
+
   static ShellHost& Instance();
 
   void BindMessaging(MessagingHub& messaging);

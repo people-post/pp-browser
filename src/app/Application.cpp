@@ -1,4 +1,5 @@
 #include "app/Application.h"
+#include "app/ConfigApplyBridge.h"
 
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/AppPaths.h"
@@ -81,6 +82,7 @@ void ApplyUiDocumentLanguage(Rml::Context* context) {
 Application::Application() {
   redirectLogger("Application");
   messaging_ = std::make_unique<MessagingHub>();
+  config_apply_ = std::make_unique<ConfigApplyBridge>();
 }
 
 Application::~Application() {
@@ -267,30 +269,6 @@ bool Application::Initialize(const char* window_title) {
       Theme::ParseAppearance(bootstrap.profile_prefs.appearance);
   Theme::ApplyAppearance(context, appearance);
 
-  SessionStore::Instance().AddAppearanceListener([this](const std::string& appearance) {
-    if (auto* ctx = Rml::GetContext("main")) {
-      Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance));
-    }
-  });
-
-  SessionStore::Instance().AddThemeListener([this](const std::string& theme) {
-    Theme::LoadBase(AssetsPath(theme));
-    if (auto* ctx = Rml::GetContext("main")) {
-      if (ctx->GetNumDocuments() > 0) {
-        ctx->GetDocument(0)->UpdateDocument();
-      }
-    }
-  });
-
-  SessionStore::Instance().AddLanguageListener([](const std::string& language) {
-    LocalizationService::Instance().SetPreferredLanguage(language);
-    SettingsController::Instance().RefreshLocalizedChrome();
-    ShellHost::Instance().RequestSyncLayout(true);
-    if (auto* ctx = Rml::GetContext("main")) {
-      ApplyUiDocumentLanguage(ctx);
-    }
-  });
-
   SetAppEventHooks(AppEventHooks{
       .on_sync_system_theme =
           [](Rml::Context* ctx) {
@@ -321,12 +299,8 @@ bool Application::Initialize(const char* window_title) {
   BadgeAggregator::Instance().BindMessaging(messaging);
   ShellHost::Instance().BindMessaging(messaging);
 
-  SessionStore::Instance().AddConfigListener([&messaging](const AppConfig& updated) {
-    messaging.ApplyRuntimeConfig(updated);
-  });
-  SessionStore::Instance().AddProfilePrefsListener([&messaging](const ProfilePreferences& prefs) {
-    messaging.ApplyProfilePrefs(prefs);
-  });
+  config_apply_->Bind(messaging, [](const std::string& relative) { return AssetsPath(relative); });
+  config_apply_->InstallListeners();
 
   if (![&] {
         StartupPhase phase("SetupChatController");
@@ -345,10 +319,6 @@ bool Application::Initialize(const char* window_title) {
   ShellHost::Instance().RefreshSafeAreaInsets(context);
   ShellHost::Instance().SyncChromeMaterialPrefs(bootstrap.profile_prefs.reduce_transparency,
                                                 bootstrap.profile_prefs.compact_chrome_frost);
-
-  SessionStore::Instance().AddChromeMaterialListener([](bool reduce_transparency, bool compact_chrome_frost) {
-    ShellHost::Instance().SyncChromeMaterialPrefs(reduce_transparency, compact_chrome_frost);
-  });
 
   ApplyUiDocumentLanguage(context);
 

@@ -585,22 +585,28 @@ void MessagingHub::RefreshMeshCapabilities() {
   WireCallMediaRelayDeps();
 }
 
-void MessagingHub::ApplyRuntimeConfig(const AppConfig& config) {
+void MessagingHub::Apply(const NetworkConfig& next) {
   if (!initialized_) {
     return;
   }
 
-  const bool service_urls_changed =
-      config.relay.base_url != config_.relay.base_url ||
-      config.directory.base_url != config_.directory.base_url ||
-      config.registration.base_url != config_.registration.base_url;
+  const bool service_urls_changed = next.relay.base_url != config_.relay.base_url ||
+                                    next.directory.base_url != config_.directory.base_url ||
+                                    next.registration.base_url != config_.registration.base_url;
   const bool mesh_changed =
-      config.libp2p.node_enabled != config_.libp2p.node_enabled ||
-      config.libp2p.capabilities.circuit_relay != config_.libp2p.capabilities.circuit_relay ||
-      config.libp2p.capabilities.media_relay != config_.libp2p.capabilities.media_relay ||
-      config.libp2p.prefer_contacts_for_routing != config_.libp2p.prefer_contacts_for_routing;
+      next.node_enabled != config_.libp2p.node_enabled ||
+      next.circuit_relay != config_.libp2p.capabilities.circuit_relay ||
+      next.media_relay != config_.libp2p.capabilities.media_relay ||
+      next.prefer_contacts_for_routing != config_.libp2p.prefer_contacts_for_routing;
 
-  config_ = config;
+  config_.relay = next.relay;
+  config_.directory = next.directory;
+  config_.registration = next.registration;
+  config_.libp2p.node_enabled = next.node_enabled;
+  config_.libp2p.capabilities.circuit_relay = next.circuit_relay;
+  config_.libp2p.capabilities.media_relay = next.media_relay;
+  config_.libp2p.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
+
   if (service_urls_changed) {
     UpdateServiceClients(config_);
   }
@@ -609,28 +615,43 @@ void MessagingHub::ApplyRuntimeConfig(const AppConfig& config) {
   }
 }
 
-void MessagingHub::ApplyProfilePrefs(const ProfilePreferences& prefs) {
+void MessagingHub::Apply(const PolicyPrefs& prefs) {
   if (!initialized_) {
     return;
   }
-  if (group_invite_gate_ || group_membership_) {
-    const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs.group_invite_policy);
-    if (group_invite_gate_) {
-      group_invite_gate_->SetInboundPolicy(policy);
-    }
-    if (group_membership_) {
-      group_membership_->SetInboundPolicy(policy);
-    }
+  if (group_invite_gate_) {
+    group_invite_gate_->SetInboundPolicy(prefs.group_invite_policy);
   }
-  if (!messaging_ready_) {
+  if (group_membership_) {
+    group_membership_->SetInboundPolicy(prefs.group_invite_policy);
+  }
+}
+
+void MessagingHub::Apply(const NotificationPrefs& prefs) {
+  if (!initialized_ || !messaging_ready_) {
     return;
   }
-  if (applied_show_notifications_known_ && applied_show_notifications_ == prefs.show_notifications) {
-    return;
-  }
-  applied_show_notifications_known_ = true;
-  applied_show_notifications_ = prefs.show_notifications;
   (void)PushDeviceCoordinator::SyncWithPreference(*this, prefs.show_notifications);
+}
+
+MessagingHub::NetworkConfig MessagingHub::ProjectNetwork(const AppConfig& config) {
+  NetworkConfig out;
+  out.relay = config.relay;
+  out.directory = config.directory;
+  out.registration = config.registration;
+  out.node_enabled = config.libp2p.node_enabled;
+  out.circuit_relay = config.libp2p.capabilities.circuit_relay;
+  out.media_relay = config.libp2p.capabilities.media_relay;
+  out.prefer_contacts_for_routing = config.libp2p.prefer_contacts_for_routing;
+  return out;
+}
+
+MessagingHub::PolicyPrefs MessagingHub::ProjectPolicy(const ProfilePreferences& prefs) {
+  return {.group_invite_policy = GroupInvitePolicyFromString(prefs.group_invite_policy)};
+}
+
+MessagingHub::NotificationPrefs MessagingHub::ProjectNotifications(const ProfilePreferences& prefs) {
+  return {.show_notifications = prefs.show_notifications};
 }
 
 Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const std::string& target_multiaddr,
@@ -769,8 +790,6 @@ void MessagingHub::Shutdown() {
   kem_key_store_.Clear();
   messaging_ready_ = false;
   initialized_ = false;
-  applied_show_notifications_known_ = false;
-  applied_show_notifications_ = true;
 }
 
 InboxController& MessagingHub::Inbox() {

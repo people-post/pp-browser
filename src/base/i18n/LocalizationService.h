@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "base/data/UserPreferences.h"
 
 #include <functional>
 #include <map>
@@ -19,6 +20,17 @@ struct LocaleInfo {
 
 class LocalizationService {
 public:
+  /** UI language preference projected from ProfilePreferences. */
+  struct Prefs {
+    std::string language = "system";
+
+    bool operator==(const Prefs& other) const { return language == other.language; }
+    bool operator!=(const Prefs& other) const { return !(*this == other); }
+  };
+
+  static Prefs Project(const ProfilePreferences& prefs);
+  void Apply(const Prefs& prefs);
+
   static LocalizationService& Instance();
 
   /** Load catalogs from `{assets_root}/locales` (all `.json` files). */

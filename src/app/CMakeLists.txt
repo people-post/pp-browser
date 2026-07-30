@@ -2,6 +2,7 @@ set(PP_BROWSER_APP_SOURCES
   main.cpp
   Application.cpp
   Bootstrap.cpp
+  ConfigApplyBridge.cpp
 )
 
 if(ANDROID)

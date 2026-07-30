@@ -3,6 +3,7 @@
 #include "base/data/Config.h"
 #include "base/data/Libp2pRole.h"
 #include "base/data/UserPreferences.h"
+#include "base/messaging/GroupTypes.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "common/Module.h"
@@ -47,6 +48,49 @@ class SqlitePskSessionStore;
 
 class MessagingHub : public Module {
 public:
+  /** Hot-reloadable network / mesh slice projected from AppConfig. */
+  struct NetworkConfig {
+    ServiceEndpointConfig relay;
+    ServiceEndpointConfig directory;
+    ServiceEndpointConfig registration;
+    bool node_enabled = true;
+    bool circuit_relay = false;
+    bool media_relay = true;
+    bool prefer_contacts_for_routing = true;
+
+    bool operator==(const NetworkConfig& other) const {
+      return relay.base_url == other.relay.base_url && directory.base_url == other.directory.base_url &&
+             registration.base_url == other.registration.base_url && node_enabled == other.node_enabled &&
+             circuit_relay == other.circuit_relay && media_relay == other.media_relay &&
+             prefer_contacts_for_routing == other.prefer_contacts_for_routing;
+    }
+    bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
+  };
+
+  /** Inbound group-invite policy projected from ProfilePreferences. */
+  struct PolicyPrefs {
+    GroupInvitePolicy group_invite_policy = GroupInvitePolicy::ContactsOnly;
+
+    bool operator==(const PolicyPrefs& other) const {
+      return group_invite_policy == other.group_invite_policy;
+    }
+    bool operator!=(const PolicyPrefs& other) const { return !(*this == other); }
+  };
+
+  /** Push / OS notification preference projected from ProfilePreferences. */
+  struct NotificationPrefs {
+    bool show_notifications = true;
+
+    bool operator==(const NotificationPrefs& other) const {
+      return show_notifications == other.show_notifications;
+    }
+    bool operator!=(const NotificationPrefs& other) const { return !(*this == other); }
+  };
+
+  static NetworkConfig ProjectNetwork(const AppConfig& config);
+  static PolicyPrefs ProjectPolicy(const ProfilePreferences& prefs);
+  static NotificationPrefs ProjectNotifications(const ProfilePreferences& prefs);
+
   MessagingHub();
   ~MessagingHub();
 
@@ -90,13 +134,9 @@ public:
   void TryUpnpPortMapping();
   void TickReachabilityUx();
   void RefreshMeshCapabilities();
-  /**
-   * Hot-apply persisted AppConfig owned by messaging (HTTP clients + mesh caps).
-   * No-ops unchanged slices so LLM/integrations saves do not rebuild relays.
-   */
-  void ApplyRuntimeConfig(const AppConfig& config);
-  /** Hot-apply profile prefs messaging owns (group invite policy, push preference). */
-  void ApplyProfilePrefs(const ProfilePreferences& prefs);
+  void Apply(const NetworkConfig& config);
+  void Apply(const PolicyPrefs& prefs);
+  void Apply(const NotificationPrefs& prefs);
   DialBackService* DialBack() { return dial_back_.get(); }
   CircuitRelayService* CircuitRelay() { return circuit_relay_.get(); }
   MediaRelayService* MediaRelay() { return media_relay_.get(); }
@@ -184,8 +224,6 @@ private:
   std::function<void()> on_messaging_ready_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
-  bool applied_show_notifications_known_ = false;
-  bool applied_show_notifications_ = true;
 };
 
 } // namespace pbr

@@ -19,10 +19,24 @@ Layering: `PlatformDefaults` → user config file → field-level merge (partial
 
 After bootstrap, a single [`SessionStore`](../../src/base/data/SessionStore.h) owns the live `BootstrapResult` (config, profile prefs, paths). Settings and chat read/write through it; saves reload from disk before notifying listeners.
 
-| Listener | Trigger |
-|----------|---------|
-| Config | `SessionStore::SaveConfig` → `ChatController` / `AgentSession::Configure` |
-| Theme | `SessionStore::SaveProfilePrefs` → `Theme::LoadBase` |
+**Disk DTOs vs service slices:** `AppConfig` / `ProfilePreferences` are persistence schemas. Hot-reload does **not** pass those blobs straight into services. [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) (composition root) projects nested service types and calls `Apply` only when a slice changes:
+
+| Disk DTO | Projector | Service slice | Apply |
+|----------|-----------|---------------|-------|
+| `AppConfig` | `MessagingHub::ProjectNetwork` | `MessagingHub::NetworkConfig` | `MessagingHub::Apply` |
+| `ProfilePreferences` | `MessagingHub::ProjectPolicy` | `MessagingHub::PolicyPrefs` | `MessagingHub::Apply` |
+| `ProfilePreferences` | `MessagingHub::ProjectNotifications` | `MessagingHub::NotificationPrefs` | `MessagingHub::Apply` |
+| `ProfilePreferences` | `ShellHost::ProjectChrome` | `ShellHost::ChromePrefs` | Theme + `ShellHost::Apply` (materials) |
+| `ProfilePreferences` | `LocalizationService::Project` | `LocalizationService::Prefs` | `LocalizationService::Apply` + shell remount |
+| `AppConfig` | (chat still listens to full config) | — | `ChatController::ApplyRuntimeConfig` |
+
+Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs.
+
+| SessionStore listener | Used by |
+|-----------------------|---------|
+| `AddConfigListener` | `ConfigApplyBridge` (messaging network) + `ChatController` (agent/LLM) |
+| `AddProfilePrefsListener` | `ConfigApplyBridge` (policy, notifications, chrome, locale) |
+| Theme / appearance / language / chrome field listeners | Still available; app hot-reload prefers slice projection via prefs listener |
 
 ## LLM presets
 
@@ -81,7 +95,7 @@ Open **Me** from the nav rail (person icon). The Me tab shows an **identity card
 | Security | `vault.bin` + `preferences.json` (`pin_is_default`) | profile |
 | Storage | paths + profile size; reset wipes profile dir | — |
 
-On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp) reloads from disk via `SessionStore::ReloadFromDisk()` so the UI matches persisted files. Changes **auto-save per block**: select fields save immediately; text fields debounce ~500ms. Pending changes flush before switching sections or leaving the tab. Config sections apply through [`SettingsLogic`](../../src/feature/settings/SettingsLogic.cpp), write to disk, and reload into `SessionStore`. Config changes hot-reload via listeners → `AgentSession::Configure` and `MessagingHub::Reinitialize`; appearance changes apply via appearance listeners → `Theme::ApplyAppearance`; language changes apply via language listeners → `LocalizationService` + shell remount.
+On tab entry, [`SettingsController`](../../src/feature/ui/SettingsController.cpp) reloads from disk via `SessionStore::ReloadFromDisk()` so the UI matches persisted files. Changes **auto-save per block**: select fields save immediately; text fields debounce ~500ms. Pending changes flush before switching sections or leaving the tab. Config sections apply through [`SettingsLogic`](../../src/feature/settings/SettingsLogic.cpp), write to disk, and reload into `SessionStore`. Runtime apply is owned by [`ConfigApplyBridge`](../../src/app/ConfigApplyBridge.h) (service slices) and `ChatController` (LLM/agent config listener) — not by settings controllers calling hubs directly.
 
 ### Machine config keys (`config.json`)
 

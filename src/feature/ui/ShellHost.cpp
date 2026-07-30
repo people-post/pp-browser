@@ -946,6 +946,17 @@ void ShellHost::SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_c
   RequestSyncLayout();
 }
 
+ShellHost::ChromePrefs ShellHost::ProjectChrome(const ProfilePreferences& prefs) {
+  return {.theme = prefs.theme,
+          .appearance = prefs.appearance,
+          .reduce_transparency = prefs.reduce_transparency,
+          .compact_chrome_frost = prefs.compact_chrome_frost};
+}
+
+void ShellHost::Apply(const ChromePrefs& prefs) {
+  SyncChromeMaterialPrefs(prefs.reduce_transparency, prefs.compact_chrome_frost);
+}
+
 void ShellHost::OnLayoutModeChanged() {
   RefreshStatusbarVisibility();
   if (state_.layout_mode == LayoutMode::Expanded) {

@@ -113,9 +113,9 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 | Pattern | Location | Purpose |
 |---------|----------|---------|
 | `ChatSessionActions` | `ui/ChatSessionActions.h` | `std::function` bridge so settings/profile UI can trigger chat actions without `settings` ↔ `chat` include cycles |
-| SessionStore listeners | `base/data/SessionStore` | Settings flush persists config/prefs; app wires `MessagingHub::ApplyRuntimeConfig` / `ApplyProfilePrefs` (and theme/language/chrome) so settings UI does not own service apply |
+| SessionStore listeners + nested service slices | `SessionStore`, `MessagingHub::{NetworkConfig,PolicyPrefs,NotificationPrefs}`, `ConfigApplyBridge` | Settings flush persists disk DTOs; app projects nested types and calls `Apply` so settings UI does not own service apply |
 | Hub-and-spoke within messaging | `MessagingHub` referenced from `MessageRouter`, `InboxController`, etc. | Orchestration inside single target `pp_feature_messaging` (compile coupling, not a link-cycle) |
-| App-level wiring | `app/Application.cpp` | Cross-controller callbacks (`ActionRouter`, shell tab ticks, SessionStore apply listeners) stay in `app/` per SRC_LAYOUT |
+| App-level wiring | `app/Application.cpp`, `app/ConfigApplyBridge.cpp` | Cross-controller callbacks and SessionStore → slice fan-out stay in `app/` per SRC_LAYOUT |
 
 ### Intentional one-way edges (not cycles)
 
