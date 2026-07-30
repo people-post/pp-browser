@@ -30,4 +30,13 @@ bool ScaleCenterCropRgba(const VideoFrameRgba& in, int out_w, int out_h, VideoFr
 /** Premultiply RGBA in place for RmlUi/GL textures. */
 void PremultiplyRgbaInPlace(std::vector<uint8_t>& rgba);
 
+/** Force every alpha byte to 255 (camera XRGB/odd conversions can leave A=0). */
+void ForceOpaqueAlphaInPlace(std::vector<uint8_t>& rgba);
+
+/** NV12 (Y plane + interleaved UV) → opaque RGBA8. `y_stride` is bytes per Y row. */
+bool Nv12ToRgba(const uint8_t* src, int width, int height, int y_stride, VideoFrameRgba& out);
+
+/** YUY2 packed 4:2:2 → opaque RGBA8. `stride_bytes` is bytes per row. */
+bool Yuy2ToRgba(const uint8_t* src, int width, int height, int stride_bytes, VideoFrameRgba& out);
+
 } // namespace pbr

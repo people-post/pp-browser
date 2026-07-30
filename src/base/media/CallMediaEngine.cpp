@@ -35,6 +35,97 @@ constexpr rtc::SSRC kAnswererAudioSsrc = 2;
 constexpr rtc::SSRC kOffererVideoSsrc = 3;
 constexpr rtc::SSRC kAnswererVideoSsrc = 4;
 
+/** Windows MF often returns NV12/YUY2 (sometimes bottom-up / negative pitch). Android usually
+ *  converts cleanly via SDL; desktop needs pitch-safe + YUV fallbacks or preview stays empty. */
+bool ConvertCameraSurfaceToRgba(SDL_Surface* surface, VideoFrameRgba& out) {
+  if (!surface || !surface->pixels || surface->w < 2 || surface->h < 2) {
+    return false;
+  }
+
+  SDL_Surface* owned = nullptr;
+  SDL_Surface* src = surface;
+
+  // Normalize negative pitch (MF bottom-up) into a positive-pitch duplicate. SDL YUV converters
+  // treat pitch as Uint32 and mis-locate the UV plane when pitch is negative.
+  if (surface->pitch < 0) {
+    const int abs_pitch = -surface->pitch;
+    owned = SDL_CreateSurface(surface->w, surface->h, surface->format);
+    if (!owned || !owned->pixels) {
+      if (owned) {
+        SDL_DestroySurface(owned);
+      }
+      return false;
+    }
+    const auto* src_bottom = static_cast<const uint8_t*>(surface->pixels);
+    auto* dst_base = static_cast<uint8_t*>(owned->pixels);
+    if (SDL_ISPIXELFORMAT_FOURCC(surface->format)) {
+      // Contiguous planar: Y rows are bottom-up; UV plane follows the Y plane in memory.
+      const uint8_t* y_top = src_bottom + surface->pitch * (surface->h - 1);
+      for (int y = 0; y < surface->h; ++y) {
+        std::memcpy(dst_base + static_cast<size_t>(y) * static_cast<size_t>(owned->pitch),
+                    y_top + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch),
+                    static_cast<size_t>(std::min(abs_pitch, owned->pitch)));
+      }
+      const size_t y_bytes = static_cast<size_t>(abs_pitch) * static_cast<size_t>(surface->h);
+      const uint8_t* uv_src = y_top + y_bytes;
+      uint8_t* uv_dst = dst_base + static_cast<size_t>(owned->pitch) * static_cast<size_t>(surface->h);
+      const int uv_rows = (surface->format == SDL_PIXELFORMAT_NV12 ||
+                           surface->format == SDL_PIXELFORMAT_NV21)
+                              ? (surface->h + 1) / 2
+                              : surface->h / 2;
+      for (int y = 0; y < uv_rows; ++y) {
+        std::memcpy(uv_dst + static_cast<size_t>(y) * static_cast<size_t>(owned->pitch),
+                    uv_src + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch),
+                    static_cast<size_t>(std::min(abs_pitch, owned->pitch)));
+      }
+    } else {
+      // Packed RGB/YUV: pixels points at the last row; rebuild top-down.
+      const uint8_t* top = src_bottom + surface->pitch * (surface->h - 1);
+      const int row_bytes = std::min(abs_pitch, owned->pitch);
+      for (int y = 0; y < surface->h; ++y) {
+        std::memcpy(dst_base + static_cast<size_t>(y) * static_cast<size_t>(owned->pitch),
+                    top + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch),
+                    static_cast<size_t>(row_bytes));
+      }
+    }
+    SDL_SetSurfaceColorspace(owned, SDL_GetSurfaceColorspace(surface));
+    src = owned;
+  }
+
+  bool ok = false;
+  SDL_Surface* converted =
+      SDL_ConvertSurfaceAndColorspace(src, SDL_PIXELFORMAT_RGBA32, nullptr, SDL_COLORSPACE_SRGB, 0);
+  if (converted && converted->pixels) {
+    ok = CopyRgbToRgba(static_cast<const uint8_t*>(converted->pixels), converted->w, converted->h,
+                       converted->pitch, true, out);
+    SDL_DestroySurface(converted);
+  }
+
+  if (!ok) {
+    const int pitch = src->pitch > 0 ? src->pitch : -src->pitch;
+    if (src->format == SDL_PIXELFORMAT_NV12) {
+      ok = Nv12ToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, out);
+    } else if (src->format == SDL_PIXELFORMAT_YUY2) {
+      ok = Yuy2ToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, out);
+    } else if (src->format == SDL_PIXELFORMAT_RGB24 || src->format == SDL_PIXELFORMAT_RGBA32 ||
+               src->format == SDL_PIXELFORMAT_XRGB8888 || src->format == SDL_PIXELFORMAT_ARGB8888 ||
+               src->format == SDL_PIXELFORMAT_XBGR8888 || src->format == SDL_PIXELFORMAT_ABGR8888) {
+      // Packed RGB with known channel layouts — try SDL again already failed; treat as byte RGB.
+      const bool has_alpha = SDL_BYTESPERPIXEL(src->format) >= 4;
+      ok = CopyRgbToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, has_alpha,
+                         out);
+    }
+  }
+
+  if (owned) {
+    SDL_DestroySurface(owned);
+  }
+  if (ok) {
+    ForceOpaqueAlphaInPlace(out.rgba);
+  }
+  return ok;
+}
+
 std::string StateToString(rtc::PeerConnection::State state) {
   switch (state) {
   case rtc::PeerConnection::State::New:
@@ -460,6 +551,7 @@ struct CallMediaEngine::Impl {
     video_thread = std::thread([this]() {
       const auto frame_period = std::chrono::milliseconds(1000 / kVideoFps);
       bool need_keyframe = true;
+      bool logged_convert_fail = false;
       while (video_running.load()) {
         const auto t0 = std::chrono::steady_clock::now();
         if (!camera || !camera_enabled.load(std::memory_order_relaxed)) {
@@ -473,73 +565,64 @@ struct CallMediaEngine::Impl {
           continue;
         }
 
-        SDL_Surface* converted = nullptr;
-        const SDL_Surface* src = surface;
-        if (surface->format != SDL_PIXELFORMAT_RGBA32 && surface->format != SDL_PIXELFORMAT_RGB24) {
-          converted = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
-          src = converted ? converted : surface;
-        }
-
         VideoFrameI420 i420;
-        VideoFrameRgba preview;
-        const bool has_alpha = src->format == SDL_PIXELFORMAT_RGBA32;
-        if (src->pixels && src->w >= 2 && src->h >= 2) {
-          VideoFrameRgba captured;
-          if (CopyRgbToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, src->pitch,
-                            has_alpha, captured)) {
-            VideoFrameRgba oriented = std::move(captured);
-            if (camera_rotate_cw == 90) {
-              VideoFrameRgba rotated;
-              if (RotateRgba90Cw(oriented, rotated)) {
-                oriented = std::move(rotated);
-              }
-            } else if (camera_rotate_cw == 270) {
-              VideoFrameRgba rotated;
-              if (RotateRgba90Ccw(oriented, rotated)) {
-                oriented = std::move(rotated);
-              }
-            } else if (camera_rotate_cw == 180) {
-              VideoFrameRgba once;
-              VideoFrameRgba twice;
-              if (RotateRgba90Cw(oriented, once) && RotateRgba90Cw(once, twice)) {
-                oriented = std::move(twice);
-              }
+        VideoFrameRgba captured;
+        if (ConvertCameraSurfaceToRgba(surface, captured)) {
+          VideoFrameRgba oriented = std::move(captured);
+          if (camera_rotate_cw == 90) {
+            VideoFrameRgba rotated;
+            if (RotateRgba90Cw(oriented, rotated)) {
+              oriented = std::move(rotated);
             }
+          } else if (camera_rotate_cw == 270) {
+            VideoFrameRgba rotated;
+            if (RotateRgba90Ccw(oriented, rotated)) {
+              oriented = std::move(rotated);
+            }
+          } else if (camera_rotate_cw == 180) {
+            VideoFrameRgba once;
+            VideoFrameRgba twice;
+            if (RotateRgba90Cw(oriented, once) && RotateRgba90Cw(once, twice)) {
+              oriented = std::move(twice);
+            }
+          }
 
-            VideoFrameRgba fitted;
-            if (ScaleCenterCropRgba(oriented, encode_width, encode_height, fitted) &&
-                RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true,
-                           i420)) {
-              preview = std::move(fitted);
-              PremultiplyRgbaInPlace(preview.rgba);
-              {
-                std::lock_guard lock(video_frame_mutex);
-                local_video_frame.width = preview.width;
-                local_video_frame.height = preview.height;
-                local_video_frame.rgba = std::move(preview.rgba);
-                local_video_frame.seq = ++local_video_seq;
-              }
-              if (video_codec && video_codec->HasEncoder() && video_track && video_track->isOpen()) {
-                auto encoded = video_codec->Encode(i420, need_keyframe);
-                if (encoded) {
-                  need_keyframe = false;
-                  try {
-                    video_track->send(reinterpret_cast<const std::byte*>(encoded->annex_b.data()),
-                                      encoded->annex_b.size());
-                    if (video_rtp_config) {
-                      video_rtp_config->timestamp += static_cast<uint32_t>(90000 / kVideoFps);
-                    }
-                  } catch (...) {
+          VideoFrameRgba fitted;
+          if (ScaleCenterCropRgba(oriented, encode_width, encode_height, fitted) &&
+              RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true,
+                         i420)) {
+            VideoFrameRgba preview = fitted;
+            PremultiplyRgbaInPlace(preview.rgba);
+            {
+              std::lock_guard lock(video_frame_mutex);
+              local_video_frame.width = preview.width;
+              local_video_frame.height = preview.height;
+              local_video_frame.rgba = std::move(preview.rgba);
+              local_video_frame.seq = ++local_video_seq;
+            }
+            if (video_codec && video_codec->HasEncoder() && video_track && video_track->isOpen()) {
+              auto encoded = video_codec->Encode(i420, need_keyframe);
+              if (encoded) {
+                need_keyframe = false;
+                try {
+                  video_track->send(reinterpret_cast<const std::byte*>(encoded->annex_b.data()),
+                                    encoded->annex_b.size());
+                  if (video_rtp_config) {
+                    video_rtp_config->timestamp += static_cast<uint32_t>(90000 / kVideoFps);
                   }
+                } catch (...) {
                 }
               }
             }
           }
+        } else if (!logged_convert_fail) {
+          logged_convert_fail = true;
+          // Use SDL_Log — CallMediaEngine logger isn't safe from this worker without more wiring.
+          SDL_Log("CallMediaEngine: camera frame convert failed (format=%s pitch=%d %dx%d): %s",
+                  SDL_GetPixelFormatName(surface->format), surface->pitch, surface->w, surface->h,
+                  SDL_GetError());
         }
 
-        if (converted) {
-          SDL_DestroySurface(converted);
-        }
         SDL_ReleaseCameraFrame(camera, surface);
 
         const auto elapsed = std::chrono::steady_clock::now() - t0;
@@ -684,6 +767,8 @@ struct CallMediaEngine::Impl {
     }
 
     SDL_CameraSpec want{};
+    // Prefer a convertible packed/YUV format. UNKNOWN picks the driver's first enum
+    // entry (often MJPG/NV12 on Windows); conversion is handled in the capture loop.
     want.format = SDL_PIXELFORMAT_UNKNOWN;
     // Prefer landscape sensor buffers; rotate/crop into encode_* below.
     want.width = std::max(encode_width, encode_height);
@@ -691,6 +776,11 @@ struct CallMediaEngine::Impl {
     want.framerate_numerator = kVideoFps;
     want.framerate_denominator = 1;
     camera = SDL_OpenCamera(chosen, &want);
+    if (!camera) {
+      // Fall back: ask SDL to deliver RGBA so the driver converts when possible.
+      want.format = SDL_PIXELFORMAT_RGBA32;
+      camera = SDL_OpenCamera(chosen, &want);
+    }
     if (!camera) {
       camera = SDL_OpenCamera(chosen, nullptr);
     }

@@ -220,4 +220,75 @@ void PremultiplyRgbaInPlace(std::vector<uint8_t>& rgba) {
   }
 }
 
+void ForceOpaqueAlphaInPlace(std::vector<uint8_t>& rgba) {
+  for (size_t i = 3; i < rgba.size(); i += 4) {
+    rgba[i] = 255;
+  }
+}
+
+bool Nv12ToRgba(const uint8_t* src, const int width, const int height, const int y_stride,
+                VideoFrameRgba& out) {
+  if (!src || width < 2 || height < 2 || (width & 1) || (height & 1) || y_stride < width) {
+    return false;
+  }
+  const uint8_t* y_plane = src;
+  const uint8_t* uv_plane = src + static_cast<size_t>(y_stride) * static_cast<size_t>(height);
+  const int uv_stride = y_stride;
+  out.width = width;
+  out.height = height;
+  out.rgba.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4, 255);
+  for (int y = 0; y < height; ++y) {
+    const uint8_t* y_row = y_plane + static_cast<size_t>(y) * static_cast<size_t>(y_stride);
+    const uint8_t* uv_row =
+        uv_plane + static_cast<size_t>(y / 2) * static_cast<size_t>(uv_stride);
+    uint8_t* dst = out.rgba.data() + static_cast<size_t>(y) * static_cast<size_t>(width) * 4;
+    for (int x = 0; x < width; ++x) {
+      const int Y = static_cast<int>(y_row[x]) - 16;
+      const int U = static_cast<int>(uv_row[(x & ~1) + 0]) - 128;
+      const int V = static_cast<int>(uv_row[(x & ~1) + 1]) - 128;
+      const int C = 298 * Y + 128;
+      const size_t i = static_cast<size_t>(x) * 4;
+      dst[i + 0] = ClampU8((C + 409 * V) >> 8);
+      dst[i + 1] = ClampU8((C - 100 * U - 208 * V) >> 8);
+      dst[i + 2] = ClampU8((C + 516 * U) >> 8);
+      dst[i + 3] = 255;
+    }
+  }
+  return true;
+}
+
+bool Yuy2ToRgba(const uint8_t* src, const int width, const int height, const int stride_bytes,
+                VideoFrameRgba& out) {
+  if (!src || width < 2 || height < 1 || (width & 1) || stride_bytes < width * 2) {
+    return false;
+  }
+  out.width = width;
+  out.height = height;
+  out.rgba.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4, 255);
+  for (int y = 0; y < height; ++y) {
+    const uint8_t* row = src + static_cast<size_t>(y) * static_cast<size_t>(stride_bytes);
+    uint8_t* dst = out.rgba.data() + static_cast<size_t>(y) * static_cast<size_t>(width) * 4;
+    for (int x = 0; x < width; x += 2) {
+      const uint8_t* p = row + x * 2;
+      const int Y0 = static_cast<int>(p[0]) - 16;
+      const int U = static_cast<int>(p[1]) - 128;
+      const int Y1 = static_cast<int>(p[2]) - 16;
+      const int V = static_cast<int>(p[3]) - 128;
+      const int C0 = 298 * Y0 + 128;
+      const int C1 = 298 * Y1 + 128;
+      const size_t i0 = static_cast<size_t>(x) * 4;
+      const size_t i1 = static_cast<size_t>(x + 1) * 4;
+      dst[i0 + 0] = ClampU8((C0 + 409 * V) >> 8);
+      dst[i0 + 1] = ClampU8((C0 - 100 * U - 208 * V) >> 8);
+      dst[i0 + 2] = ClampU8((C0 + 516 * U) >> 8);
+      dst[i0 + 3] = 255;
+      dst[i1 + 0] = ClampU8((C1 + 409 * V) >> 8);
+      dst[i1 + 1] = ClampU8((C1 - 100 * U - 208 * V) >> 8);
+      dst[i1 + 2] = ClampU8((C1 + 516 * U) >> 8);
+      dst[i1 + 3] = 255;
+    }
+  }
+  return true;
+}
+
 } // namespace pbr
