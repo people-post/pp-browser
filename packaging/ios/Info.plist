@@ -35,18 +35,14 @@
     <string>arm64</string>
     <string>opengles-3</string>
   </array>
+  <!-- Portrait only — avoid rotation EGL/shell churn (same policy as Android). -->
   <key>UISupportedInterfaceOrientations</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>
-    <string>UIInterfaceOrientationLandscapeLeft</string>
-    <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
   <key>UISupportedInterfaceOrientations~ipad</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>
-    <string>UIInterfaceOrientationPortraitUpsideDown</string>
-    <string>UIInterfaceOrientationLandscapeLeft</string>
-    <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
   <!-- Allow HTTPS to Brief API, relay, and custom LLM endpoints. -->
   <key>NSAppTransportSecurity</key>

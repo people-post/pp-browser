@@ -207,6 +207,13 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 {
 	RMLUI_ASSERT(!data);
 
+	// Mobile: lock UI to portrait so rotation does not tear down EGL / reshape the
+	// shell mid-frame (and so in-call video avoids orientation-related crashes).
+	// Must be set before SDL_Init. Desktop window resize is unaffected.
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+	SDL_SetHint(SDL_HINT_ORIENTATIONS, "Portrait");
+#endif
+
 #if SDL_MAJOR_VERSION >= 3
 	// Audio is initialized on demand by CallMediaEngine (a2); do not fail window
 	// bring-up if Pulse/ALSA is missing on a headless or minimal host.

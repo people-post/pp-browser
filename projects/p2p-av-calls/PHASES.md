@@ -77,6 +77,7 @@ Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wir
 
 ## Later horizons
 
+- [ ] Free device rotation on mobile (EGL + live `CameraCaptureOrientation` + encoder reconfig)
 - [ ] CallKit / ConnectionService-class OS call UI
 - [ ] Screen share
 - [ ] Recording (explicit user action)

@@ -30,6 +30,7 @@
 | Camera / mute content + roster | **Done** |
 | Shell Camera + stage chrome | **Done** — compact icon chrome dogfooded |
 | Capture orientation + letterbox tiles | **Done** — `CameraCaptureOrientation_*`; `CallVideoTileRenderer` contain-fit |
+| Mobile UI orientation | **Locked portrait** (Android manifest + iOS plist + `SDL_HINT_ORIENTATIONS`) — free rotation deferred (EGL/call crash class) |
 | GL persistent texture tiles (V018) | **Done** — uploads RGBA to `#call-remote-tile` / `#call-local-tile` |
 | Win MF / macOS VT / Android MediaCodec / Linux VA-API | **Code landed** |
 | iOS plist + AVAudioSession | **Done** — device dogfood optional (wiring-only exit) |
@@ -60,6 +61,7 @@
 | Remount shell for every video frame | DirtyWindow + persistent texture (V018) |
 | Stretch video to fill tile | Letterbox/pillarbox in `CallVideoTileRenderer` |
 | Hardcode Android front=270 / back=90 | `ACAMERA_SENSOR_ORIENTATION` + display rotation via `CameraCaptureOrientation` |
+| Rely on free device rotation during calls | Keep portrait lock until EGL + live capture re-orient are hardened |
 | Hide Camera on voice-started calls | Same in-call once connected (V019) |
 | Defer iOS plist/session from a3 | iOS wiring is a3 exit (V016, 2026-07-30) |
 | Single-row text Mute/Camera/Leave on compact | Icon buttons + stacked call bar |

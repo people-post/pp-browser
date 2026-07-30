@@ -61,7 +61,9 @@ Profile-scoped data layout (`profiles/{id}/`) is unchanged on mobile.
 
 ### Android GL lifecycle (rotation / Recents)
 
-Android keeps the activity alive across orientation changes (`configChanges` in the manifest). SDL tears down and restores the EGL surface on pause/resume and during some rotations.
+**UI orientation is locked to portrait** (`android:screenOrientation="portrait"` + `SDL_HINT_ORIENTATIONS=Portrait` before `SDL_Init`). The shell does not follow device rotation — avoids EGL surface churn, cropped/black frames, and in-call video crashes. Free rotation is deferred polish.
+
+Android still keeps the activity alive across other config changes (`configChanges` in the manifest). SDL tears down and restores the EGL surface on pause/resume (and would during rotations if unlocked).
 
 | Event | App response |
 |-------|----------------|
@@ -107,7 +109,7 @@ Mobile builds link curl against vendored BoringSSL (no Secure Transport on iOS).
 
 Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/base/platform/os/OsTlsPlatformCurl_*`).
 
-**A/V (a3 wiring — [V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wiring-included)):** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); `AVAudioSession` play-and-record / VoIP via `CallAudioSession` before capture; `UIBackgroundModes` → `audio` for in-call background. Physical device dogfood optional.
+**A/V (a3 wiring — [V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wiring-included)):** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); `AVAudioSession` play-and-record / VoIP via `CallAudioSession` before capture; `UIBackgroundModes` → `audio` for in-call background. **Portrait-only** (`UISupportedInterfaceOrientations` + `SDL_HINT_ORIENTATIONS`) — same rotation lock as Android. Physical device dogfood optional.
 
 Build and signing placeholders: [IOS_BUILD.md](../ops/IOS_BUILD.md). Scripts: [`scripts/ios_build.sh`](../../scripts/ios_build.sh), [`scripts/ios_sign.sh`](../../scripts/ios_sign.sh).
 

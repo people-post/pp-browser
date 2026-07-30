@@ -241,7 +241,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 - Init camera on demand: `SDL_InitSubSystem(SDL_INIT_CAMERA)` (same pattern as audio — do not fail window bring-up).  
 - Open device only when user **enables camera** (V009); closing camera on disable.  
 - Prefer front-facing when `SDL_GetCameraPosition` reports it.  
-- **Orientation:** SDL does not apply sensor orientation. Before encode/preview, rotate via `CameraCaptureOrientation` — Android: `ACAMERA_SENSOR_ORIENTATION` + `Display.getRotation()` (CameraX compensation); iOS: conventional facing angles + interface orientation; desktop: identity. Portrait mobile encodes ~360×640 after rotation; desktop ~640×360.  
+- **Orientation:** SDL does not apply sensor orientation. Before encode/preview, rotate via `CameraCaptureOrientation` — Android: `ACAMERA_SENSOR_ORIENTATION` + `Display.getRotation()` (CameraX compensation); iOS: conventional facing angles + interface orientation; desktop: identity. Portrait mobile encodes ~360×640 after rotation; desktop ~640×360. **Mobile UI is portrait-locked** (manifest/plist + `SDL_HINT_ORIENTATIONS`) until free rotation + EGL/live re-orient are hardened — display rotation for capture is effectively fixed while locked.  
 - **Render fit:** `CallVideoTileRenderer` letterboxes/pillarboxes into `#call-remote-tile` / `#call-local-tile` (do not stretch).  
 - Permissions: OS privacy prompts via SDL; Android `CAMERA` (+ runtime) + link `camera2ndk` for metadata; **iOS** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` + `AVAudioSession` before capture (V016).
 
