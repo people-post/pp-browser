@@ -10,8 +10,8 @@
 | ADRs | V001–V019 in [DECISIONS.md](DECISIONS.md) |
 | Media stack | `CallMediaEngine` — Opus + **always H264 m-line** (V019); SDL camera on Camera toggle; `IVideoCodec` factory |
 | UI | In-call **Camera** + stage/PiP placeholders (`data-if`); roster fan-out for mute/camera |
-| Platform HW | **Stubs** — Linux/Win/macOS/Android return unavailable until MF/VT/MediaCodec/VA-API wired; preview may work without encode |
-| CMake | `SDL_CAMERA ON`; Android `RECORD_AUDIO` + `CAMERA` in manifest |
+| Platform HW | **Win MF + macOS VT implemented** (unverified here — no Win/Apple SDK on this host); Linux/Android still unavailable stubs |
+| CMake | `SDL_CAMERA ON`; MF/`VideoToolbox` linked on Win/Apple; Android `RECORD_AUDIO` + `CAMERA` |
 
 ## a2 closed (LAN voice)
 
@@ -28,15 +28,14 @@
 | SDL camera + local preview frames | **Done** (RGBA queue for tiles; GL blit still TODO) |
 | Camera / mute content + roster | **Done** (`SetLocalVideoEnabled` / `SetLocalAudioMuted`) |
 | Shell Camera + stage chrome | **Done** (placeholders; persistent GL texture upload **not yet**) |
-| Win MF / macOS VT / Android MediaCodec / Linux VA-API | **Stub** → unavailable (encode fails soft; voice continues) |
-| LAN bidirectional video dogfood | **Blocked** on platform HW encode+decode |
+| Win MF / macOS VT / Android MediaCodec / Linux VA-API | **Win + macOS code landed** (dogfood next); Android/Linux still stub |
+| LAN bidirectional video dogfood | **Next** — Win/macOS HW code ready to try; needs real-host dogfood + GL tile blit |
 
 ## Next agent — finish a3 codecs + tile blit
 
-1. Implement real `IVideoCodec` backends: Win Media Foundation, macOS VideoToolbox first; Android MediaCodec; Linux VA-API best-effort.
+1. Dogfood Win MF + macOS VideoToolbox on real HW hosts (LAN bidirectional). Android MediaCodec + Linux VA-API still stubs.
 2. Wire persistent GL texture upload into `#call-remote-tile` / `#call-local-tile` (V018) — frames already in `CopyLocalVideoFrame` / `CopyRemoteVideoFrame`.
-3. LAN dogfood Win/macOS (+ Android): Camera on both sides → remote video.
-4. Update this file when green; leave NAT/SFU/iOS unclaimed.
+3. Update this file when green; leave NAT/SFU/iOS unclaimed.
 
 **Do not:** OpenH264 as product default; fail call when H264 HW missing; renegotiate SDP for camera; fold iOS into a3 exit.
 
