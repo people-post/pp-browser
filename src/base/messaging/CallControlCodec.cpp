@@ -257,6 +257,32 @@ Roe<CallIceDetail> CallControlCodec::DecodeIce(const std::string& detail_json) {
   return detail;
 }
 
+Roe<std::string> CallControlCodec::EncodeSfuAttach(const CallSfuAttachDetail& detail) {
+  return nlohmann::json({{"call_id", detail.call_id},
+                         {"hop_peer_id", detail.hop_peer_id},
+                         {"hop_multiaddr", detail.hop_multiaddr},
+                         {"quote_id", detail.quote_id},
+                         {"publisher_stream_id", detail.publisher_stream_id}})
+      .dump();
+}
+
+Roe<CallSfuAttachDetail> CallControlCodec::DecodeSfuAttach(const std::string& detail_json) {
+  const nlohmann::json json = ParseObject(detail_json);
+  if (!json.is_object() || !json.contains("call_id") || !json["call_id"].is_string()) {
+    return Error("Invalid call_sfu_attach detail");
+  }
+  CallSfuAttachDetail detail;
+  detail.call_id = json["call_id"].get<std::string>();
+  detail.hop_peer_id = OptString(json, "hop_peer_id").value_or("");
+  detail.hop_multiaddr = OptString(json, "hop_multiaddr").value_or("");
+  detail.quote_id = OptString(json, "quote_id").value_or("");
+  detail.publisher_stream_id = json.value("publisher_stream_id", 0u);
+  if (detail.hop_peer_id.empty()) {
+    return Error("call_sfu_attach requires hop_peer_id");
+  }
+  return detail;
+}
+
 Roe<ThreadMessage> CallControlCodec::BuildSystemMessage(const std::string& thread_id, const CallControlType type,
                                                         const std::string& display_text,
                                                         const std::string& detail_json,

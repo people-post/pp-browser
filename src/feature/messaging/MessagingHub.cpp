@@ -226,6 +226,21 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
     upnp_auto_tried_ = true;
     reachability_.StartProbe(*node_runtime_, *dial_back_, try_upnp);
   }
+  WireCallMediaRelayDeps();
+}
+
+void MessagingHub::WireCallMediaRelayDeps() {
+  if (!call_sessions_) {
+    return;
+  }
+  CallSessionManager::MediaRelayDeps deps;
+  deps.relay = media_relay_.get();
+  deps.sessions = node_runtime_ ? node_runtime_->Sessions() : nullptr;
+  Libp2pConfig libp2p = config_.libp2p;
+  NormalizeLibp2pConfig(libp2p);
+  deps.bootstrap_peers = libp2p.bootstrap_peers;
+  deps.prefer_contacts = libp2p.prefer_contacts_for_routing;
+  call_sessions_->SetMediaRelayDeps(std::move(deps));
 }
 
 void MessagingHub::ApplyMeshAdmissionPolicies() {
@@ -353,6 +368,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
                                                        *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
   p2p_->SetCallSessionManager(call_sessions_.get());
+  WireCallMediaRelayDeps();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
 
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
@@ -394,6 +410,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
                                                        *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
   p2p_->SetCallSessionManager(call_sessions_.get());
+  WireCallMediaRelayDeps();
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
     const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
     group_invite_gate_->SetInboundPolicy(policy);
@@ -557,6 +574,7 @@ void MessagingHub::RefreshMeshCapabilities() {
     media_relay_->Start();
   }
   ApplyMeshAdmissionPolicies();
+  WireCallMediaRelayDeps();
 }
 
 Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const std::string& target_multiaddr,

@@ -42,6 +42,8 @@ enum class CallControlType {
   CallSdp,
   /** Trickle ICE candidate (a2). */
   CallIce,
+  /** Soft-migrate onto media_relay hop (a4): hop peer id + stream map hint. */
+  CallSfuAttach,
 };
 
 struct CallParticipantMedia {
@@ -157,6 +159,17 @@ struct CallIceDetail {
   std::string identity;
   std::string candidate;
   std::string mid;
+};
+
+/** a4 soft-migrate onto blind media_relay (V021). */
+struct CallSfuAttachDetail {
+  std::string call_id;
+  /** Hop PeerId (session key / multiaddr /p2p/ id). */
+  std::string hop_peer_id;
+  std::string hop_multiaddr;
+  std::string quote_id;
+  /** Local publisher stream_id for this sender (others subscribe). */
+  uint32_t publisher_stream_id = 0;
 };
 
 std::string GenerateCallId();

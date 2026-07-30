@@ -39,4 +39,4 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [i18n](i18n/) | **i1–i6 landed** — widen i5 | EN + zh-Hans UI language; Settings picker (sheet on mobile) — [CURRENT_STATE](i18n/CURRENT_STATE.md) |
 | [liquid-glass](liquid-glass/) | **Done** | Floating Chrome on compact shell — [stable docs](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials) |
 | [p2p-mesh](p2p-mesh/) | **nf + n4-media done** — a4 next | N021 framing/QoS; N020 pick; pricing-as-regulation — [CURRENT_STATE](p2p-mesh/CURRENT_STATE.md) |
-| [p2p-av-calls](p2p-av-calls/) | **a3 done**; **a4** unblocked | V024 one policy / two backends (1:1 P2P + SFU) — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
+| [p2p-av-calls](p2p-av-calls/) | **a4 thin landed** — polish next | V024 adaptation + SFU soft-migrate; group chrome / AEAD follow-on — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |

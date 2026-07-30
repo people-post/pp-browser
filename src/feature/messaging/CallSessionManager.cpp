@@ -9,6 +9,7 @@
 #include "base/people/ContactTypes.h"
 #include "common/Utilities.h"
 
+#include <algorithm>
 #include <nlohmann/json.hpp>
 
 namespace pbr {
@@ -19,6 +20,10 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
     : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
       p2p_(p2p), psk_store_(psk_store), media_(media) {
   redirectLogger("CallSessionManager");
+}
+
+void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
+  relay_deps_ = std::move(deps);
 }
 
 CallMediaEngine& CallSessionManager::Media() {
@@ -60,6 +65,7 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled) {
   if (call_id.empty()) {
     return Error("No active call media");
   }
+  RefreshAdaptation(call_id);
   if (enabled) {
     if (auto cam = media_.SetCameraEnabled(true); !cam) {
       return cam.error();
@@ -317,6 +323,11 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   if (media_.IsActive() && media_.ActiveCallId() == call_id) {
     media_.Stop();
   }
+  if (sfu_attached_ && relay_deps_.relay) {
+    relay_deps_.relay->Detach();
+  }
+  sfu_attached_ = false;
+  local_publisher_stream_id_ = 0;
   media_peer_identity_.clear();
 }
 
@@ -557,7 +568,24 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
       !sent) {
     return sent.error();
   }
-  if (auto started = StartMediaAsAnswerer(call_id, (*pending)->inviter_identity); !started) {
+
+  auto joined_after = sessions_.CountJoined(call_id);
+  const size_t n_joined = joined_after ? *joined_after : 0;
+  if (row.sfu_hint && !row.sfu_hint->empty()) {
+    CallSfuAttachDetail attach;
+    attach.call_id = call_id;
+    attach.hop_peer_id = *row.sfu_hint;
+    attach.publisher_stream_id = PublisherStreamIdForLocal();
+    if (auto ok = AttachLocalToSfu(call_id, attach); !ok) {
+      log().warning << "AttachLocalToSfu (invite hint) failed: " << ok.error().message;
+      last_media_error_ = ok.error().message;
+    }
+  } else if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
+    if (auto mig = MaybeSoftMigrateToSfu(call_id); !mig) {
+      log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
+      last_media_error_ = mig.error().message;
+    }
+  } else if (auto started = StartMediaAsAnswerer(call_id, (*pending)->inviter_identity); !started) {
     log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
     return started.error();
   }
@@ -950,8 +978,14 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       if (key_bytes && key_bytes->has_value()) {
         (void)SendMediaKeyToPeer(accept->call_id, identity, epoch, (*session)->media_key_id, **key_bytes);
       }
-      if (auto started = StartMediaAsOfferer(accept->call_id, identity); !started) {
-        // Accept already applied — keep session, surface error for UI toast.
+      auto joined_after = sessions_.CountJoined(accept->call_id);
+      const size_t n_joined = joined_after ? *joined_after : 0;
+      if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
+        if (auto mig = MaybeSoftMigrateToSfu(accept->call_id); !mig) {
+          log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
+          last_media_error_ = mig.error().message;
+        }
+      } else if (auto started = StartMediaAsOfferer(accept->call_id, identity); !started) {
         log().warning << "StartMediaAsOfferer failed: " << started.error().message;
         last_media_error_ = started.error().message;
         NotifyRingChanged();
@@ -1057,6 +1091,9 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (!sdp) {
       return sdp.error();
     }
+    if (media_.IsSfuMode()) {
+      return {};
+    }
     return media_.SetRemoteDescription(sdp->sdp_type, sdp->sdp);
   }
   case CallControlType::CallIce: {
@@ -1064,7 +1101,22 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (!ice) {
       return ice.error();
     }
+    if (media_.IsSfuMode()) {
+      return {}; // ignore ICE after soft-migrate
+    }
     return media_.AddRemoteIceCandidate(ice->candidate, ice->mid);
+  }
+  case CallControlType::CallSfuAttach: {
+    auto attach = CallControlCodec::DecodeSfuAttach(detail_json);
+    if (!attach) {
+      return attach.error();
+    }
+    if (auto ok = AttachLocalToSfu(attach->call_id, *attach); !ok) {
+      last_media_error_ = ok.error().message;
+      log().warning << "AttachLocalToSfu (inbound) failed: " << ok.error().message;
+    }
+    NotifyRingChanged();
+    return {};
   }
   case CallControlType::CallEnded: {
     auto ended = CallControlCodec::DecodeEnded(detail_json);
@@ -1080,6 +1132,211 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   case CallControlType::CallStarted:
     return {};
   }
+  return {};
+}
+
+uint32_t CallSessionManager::PublisherStreamIdForLocal() const {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return 1;
+  }
+  uint32_t h = 2166136261u;
+  for (unsigned char c : *local) {
+    h ^= c;
+    h *= 16777619u;
+  }
+  return h == 0 ? 1u : h;
+}
+
+void CallSessionManager::RefreshAdaptation(const std::string& /*call_id*/) {
+  CallAdaptationInput in;
+  in.camera_user_wants = true; // gate applied when user toggles camera
+  in.muted = media_.IsMuted();
+  in.per_user_up_bps = 0; // unbounded until quote budgets wired into adaptation
+  in.allow_video_hi = false;
+  media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
+}
+
+Roe<void> CallSessionManager::MaybeSoftMigrateToSfu(const std::string& call_id) {
+  if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
+    return {};
+  }
+  if (!relay_deps_.relay || !relay_deps_.sessions) {
+    return Error("media_relay not available");
+  }
+
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    return participants.error();
+  }
+  std::vector<std::string> joined_ids;
+  for (const CallParticipant& p : *participants) {
+    if (p.state == CallParticipantState::Joined) {
+      joined_ids.push_back(p.identity);
+    }
+  }
+  const auto coordinator = CallSessionLogic::SelectEpochCoordinator(joined_ids);
+  if (!coordinator || *coordinator != *local) {
+    // Non-coordinator waits for CallSfuAttach from coordinator.
+    return {};
+  }
+
+  std::vector<Contact> contacts;
+  if (auto listed = contacts_.List()) {
+    contacts = std::move(*listed);
+  }
+  auto candidates = CollectContactHopCandidates(contacts);
+  auto seeds = CollectSeedHopCandidates(relay_deps_.bootstrap_peers);
+  candidates.insert(candidates.end(), seeds.begin(), seeds.end());
+  auto ranked = RankMediaHops(std::move(candidates));
+  if (ranked.empty()) {
+    return Error("no media_relay hop candidates");
+  }
+
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = static_cast<int>(joined_ids.size());
+  qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
+  qreq.want_down_bps = qreq.want_up_bps * std::max(1, static_cast<int>(joined_ids.size()) - 1);
+
+  std::string last_err = "all hops failed";
+  for (const MeshHopCandidate& hop : ranked) {
+    if (!hop.multiaddr.empty()) {
+      (void)relay_deps_.sessions->RegisterEndpoint(hop.peer_id, hop.multiaddr);
+      relay_deps_.sessions->ClearDialBackoff(hop.peer_id);
+    }
+    if (!relay_deps_.sessions->IsDialable(hop.peer_id)) {
+      last_err = "hop not dialable: " + hop.peer_id;
+      continue;
+    }
+    auto quote = relay_deps_.relay->RequestQuote(hop.peer_id, qreq, 8000);
+    if (!quote || !quote->ok) {
+      last_err = quote ? quote->error : quote.error().message;
+      continue;
+    }
+
+    CallSfuAttachDetail attach;
+    attach.call_id = call_id;
+    attach.hop_peer_id = hop.peer_id;
+    attach.hop_multiaddr = hop.multiaddr;
+    attach.quote_id = quote->quote_id;
+    attach.publisher_stream_id = PublisherStreamIdForLocal();
+
+    if (auto attached = AttachLocalToSfu(call_id, attach); !attached) {
+      last_err = attached.error().message;
+      continue;
+    }
+
+    auto session = sessions_.LoadSession(call_id);
+    if (session && session->has_value()) {
+      (*session)->sfu_hint = hop.peer_id;
+      (void)sessions_.UpsertSession(**session);
+    }
+
+    auto encoded = CallControlCodec::EncodeSfuAttach(attach);
+    if (encoded) {
+      (void)FanOutToJoined(call_id, CallControlType::CallSfuAttach, *encoded, "Call SFU attach", *local);
+    }
+    return {};
+  }
+  return Error(last_err);
+}
+
+Roe<void> CallSessionManager::AttachLocalToSfu(const std::string& call_id, const CallSfuAttachDetail& attach) {
+  if (!relay_deps_.relay || !relay_deps_.sessions) {
+    return Error("media_relay not available");
+  }
+  if (attach.hop_peer_id.empty()) {
+    return Error("missing hop_peer_id");
+  }
+  if (!attach.hop_multiaddr.empty()) {
+    (void)relay_deps_.sessions->RegisterEndpoint(attach.hop_peer_id, attach.hop_multiaddr);
+    relay_deps_.sessions->ClearDialBackoff(attach.hop_peer_id);
+  }
+  if (!relay_deps_.sessions->IsDialable(attach.hop_peer_id)) {
+    return Error("hop not dialable");
+  }
+
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  auto joined = sessions_.CountJoined(call_id);
+  qreq.participants = joined ? static_cast<int>(*joined) : 2;
+  qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
+  qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
+  auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 8000);
+  if (!quote || !quote->ok) {
+    return Error(quote ? quote->error : quote.error().message);
+  }
+  CallAdaptationInput in;
+  in.per_user_up_bps = quote->a_up_bps;
+  in.camera_user_wants = false;
+  media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
+
+  local_publisher_stream_id_ = PublisherStreamIdForLocal();
+
+  auto attach_res = relay_deps_.relay->AcceptAndAttach(
+      attach.hop_peer_id, quote->quote_id, call_id, call_id,
+      [this](MediaDataFrame frame) {
+        CallMediaEngine::SfuPacket pkt;
+        pkt.channel_id = frame.channel_id;
+        pkt.seq = frame.seq;
+        pkt.mark = frame.mark;
+        pkt.payload = std::move(frame.payload);
+        media_.OnSfuPacket(pkt);
+      },
+      8000);
+  if (!attach_res || !attach_res->ok) {
+    return Error(attach_res ? attach_res->error : attach_res.error().message);
+  }
+
+  auto participants = sessions_.ListParticipants(call_id);
+  if (participants) {
+    auto local = LocalRelayIdentity();
+    for (const CallParticipant& p : *participants) {
+      if (p.state != CallParticipantState::Joined) {
+        continue;
+      }
+      if (local && p.identity == *local) {
+        continue;
+      }
+      uint32_t h = 2166136261u;
+      for (unsigned char c : p.identity) {
+        h ^= c;
+        h *= 16777619u;
+      }
+      const uint32_t stream = h == 0 ? 1u : h;
+      (void)relay_deps_.relay->Subscribe(stream, 0);
+      (void)relay_deps_.relay->Subscribe(stream, 1);
+    }
+  }
+
+  const uint32_t pub = local_publisher_stream_id_;
+  auto started = media_.StartSfu(call_id, [this, pub](const CallMediaEngine::SfuPacket& pkt) {
+    if (!relay_deps_.relay) {
+      return;
+    }
+    MediaDataFrame frame;
+    frame.stream_id = pub;
+    frame.channel_id = pkt.channel_id;
+    frame.channel_type =
+        pkt.channel_id == 0 ? MediaChannelType::ReliableOrdered : MediaChannelType::LatestLossy;
+    frame.seq = pkt.seq;
+    frame.mark = pkt.mark;
+    frame.payload = pkt.payload;
+    (void)relay_deps_.relay->SendFrame(frame);
+  });
+  if (!started) {
+    relay_deps_.relay->Detach();
+    return started.error();
+  }
+
+  sfu_attached_ = true;
+  media_peer_identity_.clear();
+  RefreshAdaptation(call_id);
   return {};
 }
 

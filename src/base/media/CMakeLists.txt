@@ -1,5 +1,6 @@
 pp_browser_add_base_library(pp_base_media
   SOURCES
+    CallMediaAdaptation.cpp
     CallMediaEngine.cpp
     CallRingtone.cpp
     CallAudioSession_Default.cpp
@@ -58,5 +59,5 @@ elseif(ANDROID)
 endif()
 
 if(PP_BROWSER_BUILD_TESTS)
-  # Media engine unit tests need devices; keep out of default CI for now.
+  add_subdirectory(tests)
 endif()

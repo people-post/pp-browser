@@ -171,6 +171,13 @@ struct CallMediaEngine::Impl {
   IceCandidateFn on_ice_candidate;
   StateChangedFn on_state_changed;
 
+  bool sfu_mode = false;
+  SfuSendFn sfu_send;
+  std::atomic<uint32_t> sfu_audio_seq{0};
+  std::atomic<uint32_t> sfu_video_seq{0};
+  std::atomic<bool> adaptation_camera_allowed{true};
+  int64_t adaptation_target_video_bps = 0;
+
   std::shared_ptr<rtc::PeerConnection> pc;
   std::shared_ptr<rtc::Track> audio_track;
   std::shared_ptr<rtc::Track> video_track;
@@ -509,7 +516,9 @@ struct CallMediaEngine::Impl {
       pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
       std::vector<unsigned char> opus_buf(4000);
       while (capture_running.load()) {
-        const bool can_send = audio_track && audio_track->isOpen() && encoder;
+        const bool can_send_p2p = audio_track && audio_track->isOpen() && encoder;
+        const bool can_send_sfu = sfu_mode && static_cast<bool>(sfu_send) && encoder;
+        const bool can_send = can_send_p2p || can_send_sfu;
         if (capture_stream) {
           int16_t chunk[kFrameSamples];
           const int got = SDL_GetAudioStreamData(capture_stream, chunk, static_cast<int>(sizeof(chunk)));
@@ -564,12 +573,24 @@ struct CallMediaEngine::Impl {
         if (encoded <= 0) {
           continue;
         }
-        try {
-          audio_track->send(reinterpret_cast<const std::byte*>(opus_buf.data()), static_cast<size_t>(encoded));
-          if (audio_rtp_config) {
-            audio_rtp_config->timestamp += static_cast<uint32_t>(kFrameSamples);
+        if (can_send_sfu) {
+          SfuPacket pkt;
+          pkt.channel_id = 0;
+          pkt.seq = sfu_audio_seq.fetch_add(1) + 1;
+          pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
+          try {
+            sfu_send(pkt);
+          } catch (...) {
           }
-        } catch (...) {
+        }
+        if (can_send_p2p) {
+          try {
+            audio_track->send(reinterpret_cast<const std::byte*>(opus_buf.data()), static_cast<size_t>(encoded));
+            if (audio_rtp_config) {
+              audio_rtp_config->timestamp += static_cast<uint32_t>(kFrameSamples);
+            }
+          } catch (...) {
+          }
         }
         if (!capture_stream) {
           std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
@@ -632,17 +653,30 @@ struct CallMediaEngine::Impl {
               local_video_frame.rgba = std::move(preview.rgba);
               local_video_frame.seq = ++local_video_seq;
             }
-            if (video_codec && video_codec->HasEncoder() && video_track && video_track->isOpen()) {
+            if (video_codec && video_codec->HasEncoder()) {
               auto encoded = video_codec->Encode(i420, need_keyframe);
               if (encoded) {
                 need_keyframe = false;
-                try {
-                  video_track->send(reinterpret_cast<const std::byte*>(encoded->annex_b.data()),
-                                    encoded->annex_b.size());
-                  if (video_rtp_config) {
-                    video_rtp_config->timestamp += static_cast<uint32_t>(90000 / kVideoFps);
+                if (sfu_mode && sfu_send) {
+                  SfuPacket pkt;
+                  pkt.channel_id = 1;
+                  pkt.seq = sfu_video_seq.fetch_add(1) + 1;
+                  pkt.mark = encoded->keyframe ? 1 : 0;
+                  pkt.payload = encoded->annex_b;
+                  try {
+                    sfu_send(pkt);
+                  } catch (...) {
                   }
-                } catch (...) {
+                }
+                if (video_track && video_track->isOpen()) {
+                  try {
+                    video_track->send(reinterpret_cast<const std::byte*>(encoded->annex_b.data()),
+                                      encoded->annex_b.size());
+                    if (video_rtp_config) {
+                      video_rtp_config->timestamp += static_cast<uint32_t>(90000 / kVideoFps);
+                    }
+                  } catch (...) {
+                  }
                 }
               }
             }
@@ -899,10 +933,13 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
     impl_->TearDownAudioLocked();
     return pc.error();
   }
+  impl_->sfu_mode = false;
+  impl_->sfu_send = nullptr;
   impl_->call_id = call_id;
   impl_->active = true;
   impl_->muted.store(false, std::memory_order_relaxed);
   impl_->camera_enabled.store(false, std::memory_order_relaxed);
+  impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
   impl_->connected_at_ms.store(0, std::memory_order_relaxed);
   impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
   impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
@@ -910,6 +947,74 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
   impl_->SetState("connecting");
   impl_->StartCaptureLoop();
   return {};
+}
+
+Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) {
+  std::lock_guard lock(impl_->mutex);
+  if (call_id.empty()) {
+    return Error("call_id required");
+  }
+  if (!send) {
+    return Error("SFU send callback required");
+  }
+  if (impl_->active) {
+    if (impl_->call_id == call_id && impl_->sfu_mode) {
+      impl_->sfu_send = std::move(send);
+      return {};
+    }
+    // Soft-migrate: tear down P2P then bring up SFU for same or new call_id.
+    impl_->active = false;
+    impl_->TearDownAudioLocked();
+    impl_->TearDownPcLocked();
+    impl_->call_id.clear();
+  }
+  if (!impl_->video_codec) {
+    impl_->video_codec = CreatePlatformVideoCodec();
+  }
+  if (auto audio = impl_->OpenAudioDevices(); !audio) {
+    impl_->TearDownAudioLocked();
+    return audio.error();
+  }
+  impl_->sfu_mode = true;
+  impl_->sfu_send = std::move(send);
+  impl_->sfu_audio_seq.store(0);
+  impl_->sfu_video_seq.store(0);
+  impl_->call_id = call_id;
+  impl_->active = true;
+  impl_->muted.store(false, std::memory_order_relaxed);
+  impl_->camera_enabled.store(false, std::memory_order_relaxed);
+  impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
+  impl_->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+  impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
+  impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
+  impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
+  impl_->SetState("connected");
+  impl_->StartCaptureLoop();
+  return {};
+}
+
+void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
+  if (!impl_->active || !impl_->sfu_mode || packet.payload.empty()) {
+    return;
+  }
+  if (packet.channel_id == 0) {
+    impl_->OnRemoteOpusFrame(reinterpret_cast<const std::byte*>(packet.payload.data()), packet.payload.size());
+  } else if (packet.channel_id == 1) {
+    impl_->OnRemoteH264Frame(reinterpret_cast<const std::byte*>(packet.payload.data()), packet.payload.size());
+  }
+}
+
+bool CallMediaEngine::IsSfuMode() const {
+  return impl_->sfu_mode;
+}
+
+void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
+  impl_->adaptation_camera_allowed.store(decision.camera_allowed, std::memory_order_relaxed);
+  impl_->adaptation_target_video_bps = decision.target_video_lo_bps;
+  if (!decision.camera_allowed && impl_->camera_enabled.load(std::memory_order_relaxed)) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->CloseCameraLocked();
+  }
 }
 
 Roe<void> CallMediaEngine::SetRemoteDescription(const std::string& type, const std::string& sdp) {
@@ -945,7 +1050,7 @@ Roe<void> CallMediaEngine::AddRemoteIceCandidate(const std::string& candidate, c
 
 void CallMediaEngine::Stop() {
   std::lock_guard lock(impl_->mutex);
-  if (!impl_->active && !impl_->pc) {
+  if (!impl_->active && !impl_->pc && !impl_->sfu_mode) {
     return;
   }
   impl_->active = false;
@@ -954,6 +1059,8 @@ void CallMediaEngine::Stop() {
   impl_->connected_at_ms.store(0, std::memory_order_relaxed);
   impl_->TearDownAudioLocked();
   impl_->TearDownPcLocked();
+  impl_->sfu_mode = false;
+  impl_->sfu_send = nullptr;
   impl_->call_id.clear();
   impl_->SetState("closed");
 }
@@ -977,6 +1084,9 @@ Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled) {
   if (!enabled) {
     impl_->CloseCameraLocked();
     return {};
+  }
+  if (!impl_->adaptation_camera_allowed.load(std::memory_order_relaxed)) {
+    return Error("Camera blocked by adaptation (uplink/path)");
   }
   auto opened = impl_->EnableCameraLocked();
   if (!opened) {

@@ -1,6 +1,6 @@
 # P2P A/V calls
 
-**Status:** **a3 done**; **a4** gated on **`media_relay`** (V020–V024) — adaptive channels; contacts∪seed; NAT unclaimed  
+**Status:** **a4 thin landed** (soft-migrate + V024 adaptation + SFU engine); group chrome / AEAD / ICE-fail auto polish next  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [p2p-mesh](../p2p-mesh/) (n4-media blind forwarder), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md)
@@ -51,6 +51,6 @@
 | a1 | Signaling + session + history + ring wake | **Done** |
 | a2 | 1:1 voice (WebRTC + LAN dogfood) | **Done** — LAN Opus OK; NAT unclaimed |
 | a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **Done** — Android↔Win bidirectional; Linux receive-only (no camera); NAT unclaimed |
-| a4 | Group ≤8 via **`media_relay`**, guests, rotate | Pending — V020–V024; **shared** adaptive policy (1:1 + SFU); generic QoS channels |
+| a4 | Group ≤8 via **`media_relay`**, guests, rotate | **Thin landed** — soft-migrate + V024 + SFU mode; chrome/AEAD polish next |
 | a5 | Cap decision 8→16, polish | Pending |
 | a6 | Promote contracts to `docs/` | Pending |

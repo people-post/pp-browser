@@ -121,6 +121,7 @@ private:
   void StopLibp2p();
   void StartMeshServices(Libp2pRole role);
   void ApplyMeshAdmissionPolicies();
+  void WireCallMediaRelayDeps();
   void RegisterContactEndpoints();
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();

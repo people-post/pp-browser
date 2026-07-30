@@ -70,7 +70,7 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [x] Hop pick: **contacts ∪ org seed** only; filter → score; re-pick (N020 / V023)
 - [x] Auth before attach; provider prefer contacts / limit strangers
 - [x] Org `pp-node`: volunteer **`media_relay` on**; desktop checkbox **default on**
-- [ ] Call consumer maps audio/video_lo/video_hi per **V024** (same policy as 1:1 P2P backend) — **a4**
+- [x] Call consumer maps audio/video_lo/video_hi per **V024** (same policy as 1:1 P2P backend) — **a4 thin** (single video layer)
 - [x] `pricing.*` schema stub — pricing regulates later (not revenue-first)
 
 ## n4-message / pricing UI — deferred (N017 / N020 mid)

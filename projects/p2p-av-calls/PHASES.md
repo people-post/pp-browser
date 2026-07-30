@@ -59,16 +59,17 @@ Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wir
 
 Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[V024](DECISIONS.md#v024--adaptive-call-media-over-generic-relay-channels). Blind `media_relay` (mesh N018–N021). No full-mesh.
 
-- [ ] Mesh gate: volunteer **`media_relay`** on org `pp-node` + desktop (default on) — n4-media / N021 framing
-- [ ] Call consumer: N≥3 via forwarder; **1:1 stays P2P**; soft-migrate same `call_id`; re-pick (V021)
-- [ ] **V024 adaptation:** shared policy module for **1:1 P2P and SFU** (audio ≫ lo ≫ hi; producer first); backends differ; a4 may ship single video layer first
-- [ ] App-layer E2E under call media key (relay never holds keys)
-- [ ] **↑/↓** budgets + **quote/ceiling** when hop used; initiator pays (V022 / N019)
-- [ ] Hop pick: **contacts ∪ org seed** only (V023 / N020)
-- [ ] Multi-invite; mid-call guest invite
-- [ ] Rotate media key on leave + overlapping epochs (V003)
-- [ ] In-call roster (mute / camera / speaking if cheap)
-- [ ] Reuse a3 Opus + H264 HW — **no** new device codec matrix in a4
+- [x] Mesh gate: volunteer **`media_relay`** on org `pp-node` + desktop (default on) — n4-media / N021 framing
+- [x] Call consumer: N≥3 via forwarder; **1:1 stays P2P**; soft-migrate same `call_id`; re-pick (V021) — thin path
+- [x] **V024 adaptation:** shared policy module for **1:1 P2P and SFU** (audio ≫ lo ≫ hi; producer first); backends differ; a4 ships single video layer
+- [ ] App-layer E2E under call media key (relay never holds keys) — follow-on
+- [x] **↑/↓** budgets + **quote/ceiling** when hop used; initiator pays (V022 / N019) — volunteer quote path
+- [x] Hop pick: **contacts ∪ org seed** only (V023 / N020)
+- [ ] Multi-invite; mid-call guest invite — API yes; chrome polish pending
+- [x] Rotate media key on leave + overlapping epochs (V003) — existing a1 path
+- [ ] In-call roster (mute / camera / speaking if cheap) — mute/camera roster exists; speaking pending
+- [x] Reuse a3 Opus + H264 HW — **no** new device codec matrix in a4
+- [ ] ICE-fail 1:1 → SFU auto path — topology helper ready; wire from PC failed pending
 
 ## a5 — Cap, polish, reconnect
 

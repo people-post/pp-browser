@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/media/CallMediaAdaptation.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
@@ -50,13 +51,34 @@ public:
   void SetOnIceCandidate(IceCandidateFn callback);
   void SetOnStateChanged(StateChangedFn callback);
 
+  /**
+   * SFU encoded packet (app maps to N021 MediaDataFrame).
+   * channel: 0 = audio (reliable_ordered), 1 = video_lo (latest_lossy).
+   */
+  struct SfuPacket {
+    uint16_t channel_id = 0;
+    uint32_t seq = 0;
+    uint8_t mark = 0;
+    std::vector<uint8_t> payload;
+  };
+  using SfuSendFn = std::function<void(const SfuPacket&)>;
+
   Roe<void> Start(const std::string& call_id, Role role);
+  /** Blind SFU backend: no PeerConnection; capture/encode → SfuSendFn (V021/V024). */
+  Roe<void> StartSfu(const std::string& call_id, SfuSendFn send);
+  /** Inbound SFU payload (already demuxed to local subscribe). */
+  void OnSfuPacket(const SfuPacket& packet);
+  bool IsSfuMode() const;
+
   Roe<void> SetRemoteDescription(const std::string& type, const std::string& sdp);
   Roe<void> AddRemoteIceCandidate(const std::string& candidate, const std::string& mid);
   void Stop();
 
   void SetMuted(bool muted);
   bool IsMuted() const;
+
+  /** Apply V024 producer decision (camera gate + stored target bps). */
+  void ApplyAdaptation(const CallAdaptationDecision& decision);
 
   /** Open/close SDL camera + encode. Best-effort: fails without killing voice (V019). */
   Roe<void> SetCameraEnabled(bool enabled);

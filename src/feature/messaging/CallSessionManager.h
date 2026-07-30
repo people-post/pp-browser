@@ -1,14 +1,18 @@
 #pragma once
 
 #include "base/crypto/IPskSessionStore.h"
+#include "base/media/CallMediaAdaptation.h"
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/CallSessionStore.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
+#include "base/people/MeshHopPolicy.h"
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/P2pMessagingService.h"
+#include "libp2p/integration/host/MediaRelayService.h"
+#include "libp2p/integration/host/PeerSessionManager.h"
 
 #include "common/Module.h"
 
@@ -22,17 +26,25 @@ namespace pbr {
 
 /**
  * Call session lifecycle + pairwise signaling + media bring-up (a2 / V014).
- * Invite-only, hostless, min-identity epoch coordinator (V002/V005/V012).
+ * a4: soft-migrate onto blind media_relay when N≥3 (V020–V024).
  */
 class CallSessionManager : public Module {
 public:
   using RingChangedFn = std::function<void()>;
+
+  struct MediaRelayDeps {
+    MediaRelayService* relay = nullptr;
+    PeerSessionManager* sessions = nullptr;
+    std::vector<std::string> bootstrap_peers;
+    bool prefer_contacts = true;
+  };
 
   CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                      CallSessionStore& sessions, CallMediaKeyStore& media_keys, P2pMessagingService& p2p,
                      IPskSessionStore& psk_store, CallMediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
+  void SetMediaRelayDeps(MediaRelayDeps deps);
 
   /** Start a 1:1 (or multi-invite) call linked to origin_thread_id. Invites peer identities. */
   Roe<CallSession> StartCall(const std::string& origin_thread_id, CallMediaMode mode,
@@ -93,8 +105,12 @@ private:
   Roe<void> StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
   void BindMediaCallbacks(const std::string& peer_identity);
   void StopMediaIfCall(const std::string& call_id);
-  /** End any other Joined local session before accepting/starting a different call. */
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
+
+  Roe<void> MaybeSoftMigrateToSfu(const std::string& call_id);
+  Roe<void> AttachLocalToSfu(const std::string& call_id, const CallSfuAttachDetail& attach);
+  uint32_t PublisherStreamIdForLocal() const;
+  void RefreshAdaptation(const std::string& call_id);
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -104,9 +120,12 @@ private:
   P2pMessagingService& p2p_;
   IPskSessionStore& psk_store_;
   CallMediaEngine& media_;
+  MediaRelayDeps relay_deps_;
   RingChangedFn on_ring_changed_;
   std::string media_peer_identity_;
   std::optional<std::string> last_media_error_;
+  bool sfu_attached_ = false;
+  uint32_t local_publisher_stream_id_ = 0;
 };
 
 } // namespace pbr

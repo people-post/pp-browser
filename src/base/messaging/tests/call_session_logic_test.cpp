@@ -68,6 +68,8 @@ TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallIce), "call_ice");
   EXPECT_EQ(CallControlTypeFromWire("call_sdp"), CallControlType::CallSdp);
   EXPECT_EQ(CallControlTypeFromWire("call_ice"), CallControlType::CallIce);
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallSfuAttach), "call_sfu_attach");
+  EXPECT_EQ(CallControlTypeFromWire("call_sfu_attach"), CallControlType::CallSfuAttach);
 }
 
 TEST(CallControlCodecTest, SdpDetailRoundTrip) {
