@@ -33,6 +33,13 @@ struct SettingsUiState {
   std::string libp2p_listen_multiaddr;
   /** Last libp2p start error for Network UX (may be empty). */
   std::string libp2p_status_message;
+  std::string reachability_status_label;
+  std::string reachability_summary;
+  std::string reachability_help_kind;
+  bool show_connection_card = false;
+  bool show_reachability_help = false;
+  std::string circuit_relay_enabled = "off";
+  bool show_circuit_relay_toggle = false;
   std::string profile_nickname;
   std::string profile_peer_id;
   std::string profile_relay_id;

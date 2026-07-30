@@ -35,6 +35,11 @@ function(pp_browser_add_libp2p_integration)
     host/PeerIdUtil.cpp
     host/NodeRuntime.cpp
     host/DialBackService.cpp
+    host/StreamJsonFrame.cpp
+    host/Reachability.cpp
+    host/ReachabilityService.cpp
+    host/NatTraversal.cpp
+    host/CircuitRelayService.cpp
   )
   target_include_directories(pp_libp2p_integration PUBLIC
     ${CMAKE_SOURCE_DIR}/src
@@ -45,6 +50,13 @@ function(pp_browser_add_libp2p_integration)
     p2p_peer_id
     p2p_keys_proto
     nlohmann_json::nlohmann_json)
+  if(TARGET miniupnpc-static)
+    target_link_libraries(pp_libp2p_integration PRIVATE miniupnpc-static)
+    target_compile_definitions(pp_libp2p_integration PUBLIC PP_BROWSER_HAS_MINIUPNPC)
+    target_include_directories(pp_libp2p_integration PRIVATE
+      ${CMAKE_SOURCE_DIR}/third_party/miniupnpc/include
+      ${CMAKE_BINARY_DIR}/third_party/miniupnpc)
+  endif()
 endfunction()
 
 function(pp_browser_add_libp2p_includes target)

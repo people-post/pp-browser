@@ -4,7 +4,9 @@
 #include "base/people/IdentityStore.h"
 #include "common/Error.h"
 #include "libp2p/integration/host/DialBackService.h"
+#include "libp2p/integration/host/CircuitRelayService.h"
 #include "libp2p/integration/host/NodeRuntime.h"
+#include "libp2p/integration/host/ReachabilityService.h"
 
 #include <memory>
 #include <string>
@@ -30,6 +32,8 @@ struct NodeBootstrapResult {
   std::unique_ptr<IdentityStore> identity;
   std::unique_ptr<NodeRuntime> runtime;
   std::unique_ptr<DialBackService> dial_back;
+  std::unique_ptr<CircuitRelayService> circuit_relay;
+  ReachabilityService reachability;
 };
 
 /** Headless node bootstrap: config + PIN unlock + NodeRuntime + dial-back (N011). */

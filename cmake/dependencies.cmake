@@ -25,6 +25,17 @@ pp_require_vendored(libdatachannel)
 # libp2p deps (BoringSSL must be available before curl TLS on Linux)
 include(libp2p_dependencies)
 
+if(NOT PP_BROWSER_IS_MOBILE)
+  pp_require_vendored(miniupnpc)
+  set(UPNPC_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+  set(UPNPC_BUILD_STATIC ON CACHE BOOL "" FORCE)
+  set(UPNPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
+  set(UPNPC_NO_INSTALL ON CACHE BOOL "" FORCE)
+  add_subdirectory("${PP_THIRD_PARTY_DIR}/miniupnpc"
+                 "${CMAKE_BINARY_DIR}/third_party/miniupnpc" EXCLUDE_FROM_ALL)
+endif()
+
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 # FreeType (RmlUi font engine)

@@ -21,6 +21,7 @@
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
 #include "base/error/AppError.h"
+#include "libp2p/integration/host/Reachability.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
@@ -39,6 +40,44 @@ constexpr uint64_t kToastSuppressMs = 2000;
 
 Rml::String EventValue(Rml::Event& ev) {
   return ev.GetParameter<Rml::String>("value", Rml::String());
+}
+
+std::string ReachabilityStatusLabel(ReachabilityStatus status) {
+  switch (status) {
+  case ReachabilityStatus::Checking:
+    return Tr("settings.network.reachability.checking");
+  case ReachabilityStatus::Reachable:
+    return Tr("settings.network.reachability.reachable");
+  case ReachabilityStatus::OutboundOnly:
+    return Tr("settings.network.reachability.outbound_only");
+  case ReachabilityStatus::Blocked:
+    return Tr("settings.network.reachability.blocked");
+  case ReachabilityStatus::Unknown:
+  default:
+    return Tr("settings.network.reachability.unknown");
+  }
+}
+
+std::string ReachabilitySummary(const ReachabilitySnapshot& snap) {
+  switch (snap.status) {
+  case ReachabilityStatus::Checking:
+    return Tr("settings.network.reachability.summary_checking");
+  case ReachabilityStatus::Reachable:
+    if (snap.signals.has_global_ipv6 && snap.signals.dial_back_ok) {
+      return Tr("settings.network.reachability.summary_reachable_ipv6");
+    }
+    if (snap.signals.upnp_mapped) {
+      return Tr("settings.network.reachability.summary_reachable_upnp");
+    }
+    return Tr("settings.network.reachability.summary_reachable");
+  case ReachabilityStatus::OutboundOnly:
+    return Tr("settings.network.reachability.summary_outbound_only");
+  case ReachabilityStatus::Blocked:
+    return Tr("settings.network.reachability.summary_blocked");
+  case ReachabilityStatus::Unknown:
+  default:
+    return Tr("settings.network.reachability.summary_unknown");
+  }
 }
 
 /** Anchor ShowActions float menus under the right side of a settings choice row. */
@@ -118,6 +157,13 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.show_node_toggle = bindings_.show_node_toggle;
   ui_state_.libp2p_listen_multiaddr = bindings_.libp2p_listen_multiaddr.c_str();
   ui_state_.libp2p_status_message = bindings_.libp2p_status_message.c_str();
+  ui_state_.reachability_status_label = bindings_.reachability_status_label.c_str();
+  ui_state_.reachability_summary = bindings_.reachability_summary.c_str();
+  ui_state_.reachability_help_kind = bindings_.reachability_help_kind.c_str();
+  ui_state_.show_connection_card = bindings_.show_connection_card;
+  ui_state_.show_reachability_help = bindings_.show_reachability_help;
+  ui_state_.circuit_relay_enabled = bindings_.circuit_relay_enabled.c_str();
+  ui_state_.show_circuit_relay_toggle = bindings_.show_circuit_relay_toggle;
   ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
   ui_state_.profile_peer_id = bindings_.profile_peer_id.c_str();
   ui_state_.profile_relay_id = bindings_.profile_relay_id.c_str();
@@ -167,6 +213,13 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.show_node_toggle = ui_state_.show_node_toggle;
   bindings_.libp2p_listen_multiaddr = ui_state_.libp2p_listen_multiaddr.c_str();
   bindings_.libp2p_status_message = ui_state_.libp2p_status_message.c_str();
+  bindings_.reachability_status_label = ui_state_.reachability_status_label.c_str();
+  bindings_.reachability_summary = ui_state_.reachability_summary.c_str();
+  bindings_.reachability_help_kind = ui_state_.reachability_help_kind.c_str();
+  bindings_.show_connection_card = ui_state_.show_connection_card;
+  bindings_.show_reachability_help = ui_state_.show_reachability_help;
+  bindings_.circuit_relay_enabled = ui_state_.circuit_relay_enabled.c_str();
+  bindings_.show_circuit_relay_toggle = ui_state_.show_circuit_relay_toggle;
   bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
   bindings_.profile_peer_id = ui_state_.profile_peer_id.c_str();
   bindings_.profile_relay_id = ui_state_.profile_relay_id.c_str();
@@ -218,7 +271,8 @@ void SettingsController::SyncBindingsFromSession() {
   } else {
     ui_state_.libp2p_status_message.clear();
   }
-  // Baseline for blur commit. Never push identity over an in-progress edit —
+  SyncReachabilityFromHub();
+  // Baseline for blur commit.
   // Sync+DirtyAll would SetValue the input and reset cursor / feel like focus loss.
   auto& edits = UiEditSession::Instance();
   const std::string live = bindings_.profile_nickname.c_str();
@@ -291,6 +345,13 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("show_node_toggle", &controller.bindings_.show_node_toggle);
     ctor.Bind("libp2p_listen_multiaddr", &controller.bindings_.libp2p_listen_multiaddr);
     ctor.Bind("libp2p_status_message", &controller.bindings_.libp2p_status_message);
+    ctor.Bind("reachability_status_label", &controller.bindings_.reachability_status_label);
+    ctor.Bind("reachability_summary", &controller.bindings_.reachability_summary);
+    ctor.Bind("reachability_help_kind", &controller.bindings_.reachability_help_kind);
+    ctor.Bind("show_connection_card", &controller.bindings_.show_connection_card);
+    ctor.Bind("show_reachability_help", &controller.bindings_.show_reachability_help);
+    ctor.Bind("circuit_relay_enabled", &controller.bindings_.circuit_relay_enabled);
+    ctor.Bind("show_circuit_relay_toggle", &controller.bindings_.show_circuit_relay_toggle);
     ctor.Bind("profile_nickname", &controller.bindings_.profile_nickname);
     ctor.Bind("profile_peer_id", &controller.bindings_.profile_peer_id);
     ctor.Bind("profile_relay_id", &controller.bindings_.profile_relay_id);
@@ -338,6 +399,11 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
     ctor.BindEventCallback("toggle_node_enabled", &SettingsController::ToggleNodeEnabledCallback);
+    ctor.BindEventCallback("retest_reachability", &SettingsController::RetestReachabilityCallback);
+    ctor.BindEventCallback("try_upnp_port", &SettingsController::TryUpnpPortCallback);
+    ctor.BindEventCallback("show_reachability_help", &SettingsController::ShowReachabilityHelpCallback);
+    ctor.BindEventCallback("dismiss_reachability_help", &SettingsController::DismissReachabilityHelpCallback);
+    ctor.BindEventCallback("toggle_circuit_relay", &SettingsController::ToggleCircuitRelayCallback);
     ctor.BindEventCallback("on_profile_nickname_commit", &SettingsController::OnProfileNicknameCommitCallback);
     ctor.BindEventCallback("register_profile", &SettingsController::OnRegisterProfileCallback);
     ctor.BindEventCallback("rotate_brief_llm_key", &SettingsController::OnRotateBriefLlmKeyCallback);
@@ -377,6 +443,13 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "show_node_toggle");
   host.Dirty("settings", "libp2p_listen_multiaddr");
   host.Dirty("settings", "libp2p_status_message");
+  host.Dirty("settings", "reachability_status_label");
+  host.Dirty("settings", "reachability_summary");
+  host.Dirty("settings", "reachability_help_kind");
+  host.Dirty("settings", "show_connection_card");
+  host.Dirty("settings", "show_reachability_help");
+  host.Dirty("settings", "circuit_relay_enabled");
+  host.Dirty("settings", "show_circuit_relay_toggle");
   if (push_nick) {
     host.Dirty("settings", "profile_nickname");
   }
@@ -642,6 +715,9 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   }
 
   status_ = "";
+  if (section_id == "network" && MessagingHub::Instance().IsMessagingReady()) {
+    MessagingHub::Instance().RefreshMeshCapabilities();
+  }
   if (section_id == "profile" && MessagingHub::Instance().IsInitialized() &&
       MessagingHub::Instance().IsMessagingReady()) {
     if (auto identity = MessagingHub::Instance().Identity().Get()) {
@@ -1086,6 +1162,31 @@ void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*mo
   Instance().MarkSectionDirty("network");
 }
 
+void SettingsController::SyncReachabilityFromHub() {
+  auto& hub = MessagingHub::Instance();
+  ui_state_.show_connection_card =
+      ui_state_.show_node_toggle && ui_state_.node_enabled == "on" && hub.IsMessagingReady();
+  ui_state_.show_circuit_relay_toggle = ui_state_.show_connection_card;
+
+  if (ui_state_.show_connection_card) {
+    const ReachabilitySnapshot snap = hub.Reachability();
+    ui_state_.reachability_status_label = ReachabilityStatusLabel(snap.status);
+    ui_state_.reachability_summary = ReachabilitySummary(snap);
+    ui_state_.reachability_help_kind = ReachabilityHelpKey(snap.status);
+  } else {
+    ui_state_.reachability_status_label.clear();
+    ui_state_.reachability_summary.clear();
+    ui_state_.reachability_help_kind.clear();
+    ui_state_.show_reachability_help = false;
+  }
+
+  if (MessagingHub::Instance().IsInitialized()) {
+    const auto& cfg = SessionStore::Instance().Snapshot().config.libp2p;
+    ui_state_.circuit_relay_enabled = cfg.capabilities.circuit_relay ? "on" : "off";
+  }
+  PushUiStateToBindings();
+}
+
 void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                    const Rml::VariantList& /*args*/) {
   auto& controller = Instance();
@@ -1093,6 +1194,49 @@ void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*
     return;
   }
   controller.bindings_.node_enabled = controller.bindings_.node_enabled == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("network");
+  controller.DirtyAll();
+}
+
+void SettingsController::RetestReachabilityCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                    const Rml::VariantList& /*args*/) {
+  MessagingHub::Instance().RunReachabilityProbe(false);
+  Instance().SyncReachabilityFromHub();
+  Instance().DirtyAll();
+}
+
+void SettingsController::TryUpnpPortCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                             const Rml::VariantList& /*args*/) {
+  MessagingHub::Instance().TryUpnpPortMapping();
+  Instance().SyncReachabilityFromHub();
+  Instance().DirtyAll();
+}
+
+void SettingsController::ShowReachabilityHelpCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                      const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.show_reachability_help = true;
+  controller.PullBindingsToUiState();
+  controller.DirtyAll();
+}
+
+void SettingsController::DismissReachabilityHelpCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                         const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.show_reachability_help = false;
+  controller.PullBindingsToUiState();
+  controller.DirtyAll();
+}
+
+void SettingsController::ToggleCircuitRelayCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                    const Rml::VariantList& /*args*/) {
+  auto& controller = Instance();
+  if (!controller.bindings_.show_circuit_relay_toggle) {
+    return;
+  }
+  controller.bindings_.circuit_relay_enabled =
+      controller.bindings_.circuit_relay_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("network");
   controller.DirtyAll();

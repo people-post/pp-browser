@@ -6,6 +6,8 @@
 #include "base/data/Libp2pRole.h"
 #include "base/data/ProfileRegistry.h"
 #include "base/data/SchemaVersion.h"
+#include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/Reachability.h"
 #include "common/Logger.h"
 
 #include <utility>
@@ -84,6 +86,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   const ListenBusyPolicy busy =
       options.listen_fallback ? ListenBusyPolicy::DesktopFallback : ListenBusyPolicy::FailLoud;
   runtime_cfg.listen_candidates = BuildLibp2pListenCandidates(config->libp2p.listen_multiaddr, busy);
+  AppendIpv6ListenCandidatesForPreferred(config->libp2p.listen_multiaddr, runtime_cfg.listen_candidates);
 
   auto runtime = std::make_unique<NodeRuntime>();
   if (auto started = runtime->Start(runtime_cfg); !started) {
@@ -100,6 +103,12 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   auto dial_back = std::make_unique<DialBackService>(*runtime->Host(), *runtime->Sessions());
   dial_back->Start();
 
+  std::unique_ptr<CircuitRelayService> circuit_relay;
+  if (config->libp2p.capabilities.circuit_relay) {
+    circuit_relay = std::make_unique<CircuitRelayService>(*runtime->Host(), *runtime->Sessions());
+    circuit_relay->Start();
+  }
+
   NodeBootstrapResult result;
   result.config = std::move(*config);
   result.data_dir = AppPaths::DataDir();
@@ -112,11 +121,13 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   result.identity = std::move(identity);
   result.runtime = std::move(runtime);
   result.dial_back = std::move(dial_back);
+  result.circuit_relay = std::move(circuit_relay);
 
   auto peer_id = result.runtime->Host()->LocalPeerIdBase58();
   log.info << "pp-node listening on " << result.config.libp2p.listen_multiaddr
            << (peer_id ? (" peer=" + *peer_id) : std::string())
-           << " dial-back=" << kDialBackProtocolId;
+           << " dial-back=" << kDialBackProtocolId
+           << " circuit-relay=" << (result.config.libp2p.capabilities.circuit_relay ? "on" : "off");
   return result;
 }
 

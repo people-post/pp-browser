@@ -94,6 +94,7 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
                                      ? defaults.registration.base_url
                                      : state.registration_base_url;
   config.libp2p.node_enabled = (state.node_enabled != "off");
+  config.libp2p.capabilities.circuit_relay = (state.circuit_relay_enabled == "on");
   if (!state.libp2p_listen_multiaddr.empty()) {
     config.libp2p.listen_multiaddr = state.libp2p_listen_multiaddr;
   }

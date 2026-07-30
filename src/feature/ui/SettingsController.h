@@ -56,6 +56,8 @@ public:
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
   void RefreshLocalizedChrome();
+  /** Refresh reachability Connection card from MessagingHub (nr). */
+  void SyncReachabilityFromHub();
 
 private:
   struct SettingsBindings {
@@ -74,6 +76,13 @@ private:
     bool show_node_toggle = true;
     Rml::String libp2p_listen_multiaddr;
     Rml::String libp2p_status_message;
+    Rml::String reachability_status_label;
+    Rml::String reachability_summary;
+    Rml::String reachability_help_kind;
+    bool show_connection_card = false;
+    bool show_reachability_help = false;
+    Rml::String circuit_relay_enabled = "off";
+    bool show_circuit_relay_toggle = false;
     Rml::String profile_nickname;
     Rml::String profile_peer_id;
     Rml::String profile_relay_id;
@@ -124,6 +133,11 @@ private:
   static void OnIntegrationsFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnNetworkFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ToggleNodeEnabledCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void RetestReachabilityCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void TryUpnpPortCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ShowReachabilityHelpCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void DismissReachabilityHelpCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ToggleCircuitRelayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnProfileNicknameCommitCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnRotateBriefLlmKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);

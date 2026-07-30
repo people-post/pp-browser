@@ -23,6 +23,10 @@
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/IPushDeviceClient.h"
 #include "libp2p/integration/host/Libp2pHost.h"
+#include "libp2p/integration/host/DialBackService.h"
+#include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/Reachability.h"
+#include "libp2p/integration/host/ReachabilityService.h"
 #include "libp2p/integration/host/NodeRuntime.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
@@ -76,6 +80,16 @@ public:
   /** Last libp2p start failure (empty if ok). For Network settings UX. */
   const std::string& LastLibp2pError() const { return libp2p_last_error_; }
 
+  ReachabilitySnapshot Reachability() const;
+  void RunReachabilityProbe(bool try_upnp);
+  void TryUpnpPortMapping();
+  void TickReachabilityUx();
+  void RefreshMeshCapabilities();
+  DialBackService* DialBack() { return dial_back_.get(); }
+  CircuitRelayService* CircuitRelay() { return circuit_relay_.get(); }
+
+  void SetOnReachabilityUpdated(std::function<void()> callback);
+
   void BindAgent(AgentSession& agent);
   PeerSigningKeyStore& SigningKeys();
 
@@ -94,6 +108,7 @@ private:
   void WireRelayAuthSigner();
   Roe<void> StartLibp2p(const AppConfig& config);
   void StopLibp2p();
+  void StartMeshServices(Libp2pRole role);
   void RegisterContactEndpoints();
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
@@ -134,7 +149,14 @@ private:
   IRegistrationClient* registration_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
   std::unique_ptr<NodeRuntime> node_runtime_;
+  std::unique_ptr<DialBackService> dial_back_;
+  std::unique_ptr<CircuitRelayService> circuit_relay_;
+  ReachabilityService reachability_;
   std::string libp2p_last_error_;
+  bool upnp_auto_tried_ = false;
+  bool reachability_banner_shown_ = false;
+  uint64_t reachability_outbound_since_ms_ = 0;
+  std::function<void()> on_reachability_updated_;
   std::unique_ptr<P2pMessagingService> p2p_;
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;

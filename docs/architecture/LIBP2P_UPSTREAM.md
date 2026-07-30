@@ -94,6 +94,8 @@ Feature protocols on the shared host:
 |----------|---------|
 | `/pp-browser/chat-history/1.0.0` | `Libp2pChatHistoryService` (D060) |
 | `/pp-browser/chat/1.0.0` | `Libp2pDirectChatService` (direct send/receive) |
+| `/pp-browser/dial-back/1.0.0` | `DialBackService` (np seed probe; nr reachability) |
+| `/pp-browser/circuit-relay/1.0.0` | `CircuitRelayService` (n3 stream bridge; not libp2p circuit v2) |
 
 ## TLS note
 

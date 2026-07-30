@@ -32,24 +32,24 @@ Preferred order is **N015**: n1 → np → nr → nu → n3 → nf → n4 → �
 
 ## nr — Reachability status + guided help (N012)
 
-- [ ] Status: Reachable / Outbound only / Blocked / Unknown
-- [ ] Signals: private vs public IP; dial seed; inbound-seen; **dial-back** via seed
-- [ ] Me → Network Connection card; soft banner; guided sheets; Skip/relay
-- [ ] i18n; `pp-node --status` for ops
+- [x] Status: Reachable / Outbound only / Blocked / Unknown
+- [x] Signals: private vs public IP; dial seed; inbound-seen; **dial-back** via seed
+- [x] Me → Network Connection card; soft banner; guided sheets; Skip/relay
+- [x] i18n; `pp-node --status` for ops
 
 ## nu — IPv6 + UPnP/NAT-PMP (N013)
 
-- [ ] Advertise usable global IPv6 when present; reflect in Connection card
-- [ ] UPnP / NAT-PMP / PCP try or one-tap; re-test reachability
-- [ ] On failure → existing N012 manual port-forward sheet
-- [ ] Skip UPnP requirement for public `pp-node` seeds
+- [x] Advertise usable global IPv6 when present; reflect in Connection card
+- [x] UPnP / NAT-PMP / PCP try or one-tap; re-test reachability
+- [x] On failure → existing N012 manual port-forward sheet
+- [x] Skip UPnP requirement for public `pp-node` seeds
 
 ## n3 — Circuit-relay capability
 
-- [ ] Fork/protocol work (absent today); `capabilities.circuit_relay` + checkbox
-- [ ] Org `pp-node` seed may offer circuit-relay
-- [ ] HTTP Brief relay remains fallback
-- [ ] Pricing optional (often volunteer initially)
+- [x] Fork/protocol work (absent today); `capabilities.circuit_relay` + checkbox
+- [x] Org `pp-node` seed may offer circuit-relay
+- [x] HTTP Brief relay remains fallback
+- [x] Pricing optional (often volunteer initially)
 
 ## nf — Contact-first relay preference (N014)
 

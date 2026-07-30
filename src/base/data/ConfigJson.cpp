@@ -126,6 +126,16 @@ void from_json(const nlohmann::json& j, ServiceEndpointConfig& endpoint) {
   }
 }
 
+void to_json(nlohmann::json& j, const Libp2pCapabilities& caps) {
+  j = nlohmann::json{{"circuit_relay", caps.circuit_relay}};
+}
+
+void from_json(const nlohmann::json& j, Libp2pCapabilities& caps) {
+  if (j.contains("circuit_relay") && j["circuit_relay"].is_boolean()) {
+    caps.circuit_relay = j["circuit_relay"].get<bool>();
+  }
+}
+
 void to_json(nlohmann::json& j, const Libp2pConfig& config) {
   nlohmann::json peers = nlohmann::json::array();
   for (const std::string& peer : config.bootstrap_peers) {
@@ -138,7 +148,8 @@ void to_json(nlohmann::json& j, const Libp2pConfig& config) {
                      {"max_concurrent_dials", config.max_concurrent_dials},
                      {"dial_timeout_ms", config.dial_timeout_ms},
                      {"idle_ttl_ms", config.idle_ttl_ms},
-                     {"dial_failure_backoff_ms", config.dial_failure_backoff_ms}};
+                     {"dial_failure_backoff_ms", config.dial_failure_backoff_ms},
+                     {"capabilities", config.capabilities}};
 }
 
 void from_json(const nlohmann::json& j, Libp2pConfig& config) {
@@ -170,6 +181,9 @@ void from_json(const nlohmann::json& j, Libp2pConfig& config) {
   }
   if (j.contains("dial_failure_backoff_ms") && j["dial_failure_backoff_ms"].is_number_integer()) {
     config.dial_failure_backoff_ms = j["dial_failure_backoff_ms"].get<int>();
+  }
+  if (j.contains("capabilities") && j["capabilities"].is_object()) {
+    from_json(j["capabilities"], config.capabilities);
   }
 }
 

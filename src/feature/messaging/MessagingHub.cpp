@@ -17,7 +17,12 @@
 #include "base/people/ContactTypes.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
+#include "libp2p/integration/host/DialBackService.h"
+#include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/Reachability.h"
 #include "common/StartupTiming.h"
+
+#include <SDL3/SDL_timer.h>
 
 #include <algorithm>
 #include <chrono>
@@ -153,6 +158,7 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
   if (runtime.host.listen_enabled) {
     runtime.listen_candidates =
         BuildLibp2pListenCandidates(libp2p_cfg.listen_multiaddr, ListenBusyPolicy::DesktopFallback);
+    AppendIpv6ListenCandidatesForPreferred(libp2p_cfg.listen_multiaddr, runtime.listen_candidates);
   }
 
   node_runtime_ = std::make_unique<NodeRuntime>();
@@ -178,10 +184,45 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
       }
     }
   }
+  StartMeshServices(role);
   return {};
 }
 
+void MessagingHub::StartMeshServices(Libp2pRole role) {
+  if (!node_runtime_ || !node_runtime_->IsRunning()) {
+    return;
+  }
+
+  dial_back_ = std::make_unique<DialBackService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+  dial_back_->Start();
+
+  if (role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {
+    circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+    circuit_relay_->Start();
+  }
+
+  reachability_.SetOnUpdated([this]() {
+    if (on_reachability_updated_) {
+      on_reachability_updated_();
+    }
+  });
+
+  if (role == Libp2pRole::Node) {
+    const bool try_upnp = !upnp_auto_tried_;
+    upnp_auto_tried_ = true;
+    reachability_.StartProbe(*node_runtime_, *dial_back_, try_upnp);
+  }
+}
+
 void MessagingHub::StopLibp2p() {
+  if (circuit_relay_) {
+    circuit_relay_->Stop();
+    circuit_relay_.reset();
+  }
+  if (dial_back_) {
+    dial_back_->Stop();
+    dial_back_.reset();
+  }
   if (node_runtime_) {
     node_runtime_->Stop();
     node_runtime_.reset();
@@ -383,6 +424,78 @@ void MessagingHub::TickLibp2p() {
   }
   if (p2p_) {
     p2p_->TickLibp2p();
+  }
+  TickReachabilityUx();
+}
+
+ReachabilitySnapshot MessagingHub::Reachability() const {
+  return reachability_.Snapshot();
+}
+
+void MessagingHub::SetOnReachabilityUpdated(std::function<void()> callback) {
+  on_reachability_updated_ = std::move(callback);
+}
+
+void MessagingHub::RunReachabilityProbe(bool try_upnp) {
+  if (!node_runtime_ || !dial_back_) {
+    return;
+  }
+  reachability_.StartProbe(*node_runtime_, *dial_back_, try_upnp);
+}
+
+void MessagingHub::TryUpnpPortMapping() {
+  if (!node_runtime_) {
+    return;
+  }
+  const std::string bound = node_runtime_->BoundListenMultiaddr();
+  if (ShouldSkipUpnpForListen(bound)) {
+    return;
+  }
+  const auto port = TcpPortFromMultiaddr(bound);
+  if (!port) {
+    return;
+  }
+  (void)TryUpnpTcpPortMapping(*port);
+  RunReachabilityProbe(false);
+}
+
+void MessagingHub::TickReachabilityUx() {
+  if (!config_.libp2p.node_enabled || Platform::IsMobile()) {
+    return;
+  }
+  const ReachabilitySnapshot snap = reachability_.Snapshot();
+  if (snap.status != ReachabilityStatus::OutboundOnly && snap.status != ReachabilityStatus::Blocked) {
+    reachability_outbound_since_ms_ = 0;
+    return;
+  }
+  const uint64_t now = SDL_GetTicks();
+  if (reachability_outbound_since_ms_ == 0) {
+    reachability_outbound_since_ms_ = now;
+    return;
+  }
+  if (reachability_banner_shown_ || now - reachability_outbound_since_ms_ < 30000) {
+    return;
+  }
+  reachability_banner_shown_ = true;
+  if (on_reachability_updated_) {
+    on_reachability_updated_();
+  }
+}
+
+void MessagingHub::RefreshMeshCapabilities() {
+  if (!messaging_ready_ || !node_runtime_) {
+    return;
+  }
+  if (SessionStore::Instance().IsInitialized()) {
+    config_.libp2p = SessionStore::Instance().Snapshot().config.libp2p;
+  }
+  if (circuit_relay_) {
+    circuit_relay_->Stop();
+    circuit_relay_.reset();
+  }
+  if (ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {
+    circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+    circuit_relay_->Start();
   }
 }
 
