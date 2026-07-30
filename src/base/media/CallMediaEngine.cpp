@@ -667,9 +667,9 @@ struct CallMediaEngine::Impl {
     }
     auto decoded = video_codec->Decode(reinterpret_cast<const uint8_t*>(data), size);
     if (!decoded) {
-      static bool logged_decode = false;
-      if (!logged_decode) {
-        logged_decode = true;
+      static int logged_decode = 0;
+      if (logged_decode < 5) {
+        ++logged_decode;
         SDL_Log("CallMediaEngine: remote H264 decode failed: %s (size=%zu)",
                 decoded.error().message.c_str(), size);
       }
