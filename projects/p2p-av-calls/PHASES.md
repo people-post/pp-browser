@@ -57,10 +57,12 @@ Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wir
 
 ## a4 — Group calls (≤8), guests, rotate-on-leave
 
-Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media). **True SFU required** (mesh [N017](../p2p-mesh/DECISIONS.md#n017--split-n4-media-sfu-first-message-relay-separate-pricing-later) n4-media). No full-mesh media. SFU choice priority TBD (after docs).
+Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media) + [V021](DECISIONS.md#v021--blind-media-forwarder-11-p2p-soft-migrate-to-group-sfu). **Blind `media_relay` SFU** (mesh [N018](../p2p-mesh/DECISIONS.md#n018--blind-media_relay-bandwidth-budgets-volunteer-default-on)). No full-mesh. SFU choice priority TBD.
 
-- [ ] Mesh gate: volunteer **audio + video SFU** on org `pp-node` + desktop Node checkboxes (n4-media)
-- [ ] Call consumer: N≥3 media via **true SFU** only; enforce engineering cap **8**
+- [ ] Mesh gate: volunteer blind **`media_relay`** on org `pp-node` + desktop Node (default on) — n4-media / N018
+- [ ] Call consumer: N≥3 via blind forwarder; **1:1 stays P2P**; invite→N≥3 **soft-migrates** same `call_id` to SFU; re-pick on failure (V021)
+- [ ] App-layer E2E under call media key on SFU path (relay never holds keys)
+- [ ] Client Camera disabled when relay budget too small; relay limits by **byte volume** only
 - [ ] Multi-invite; mid-call guest invite (signaling largely present)
 - [ ] Rotate media key on leave + overlapping epochs (V003)
 - [ ] In-call roster (mute / camera / speaking if cheap)

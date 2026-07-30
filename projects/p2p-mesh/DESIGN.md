@@ -49,8 +49,7 @@ A **node** is a voluntary **infrastructure element** of the Brief/pp-browser eco
 | **DHT** | Peer and content routing | n2 + checkbox |
 | **Circuit relay** | Hop for NATed peers | n3 + checkbox |
 | **Message relay** | Store-and-forward / inbox assist | **Separate** from n4-media (N017); HTTP Brief default for now |
-| **Audio relay** | **True** voice SFU (selective forward) | **n4-media** + checkbox; pricing later |
-| **Video relay** | **True** video SFU | **n4-media** + checkbox; pricing later |
+| **Media relay** | Blind selective forwarder for calls (`media_relay`) | **n4-media** + checkbox **default on**; bandwidth budget; pricing later (N018) |
 | **Blockchain node** | Chain participation (identity / DA / settlement rails) | n4+ + checkbox |
 | **Accept paid jobs** | Optional **marketplace** for discrete tasks (transcode, fetch, compute) — **not** the primary monetization path | later + checkbox |
 
@@ -77,12 +76,12 @@ flowchart TB
 
 | Mechanism | What it is | Primary use |
 |-----------|------------|-------------|
-| **Per-capability pricing** | Policy on a **billable** hosted service | Message / audio / video **relay** charge consumers; settle on chain |
+| **Per-capability pricing** | Policy on a **billable** hosted service | Message / **media_relay** charge consumers; settle on chain |
 | **Accept paid jobs** | Separate optional **job marketplace** | Discrete one-off tasks, not continuous relay metering |
 
 ### Per-capability pricing (primary)
 
-For billable capabilities (first: message, audio, video relay):
+For billable capabilities (first: message_relay, media_relay):
 
 | Policy | Meaning |
 |--------|---------|
@@ -179,22 +178,25 @@ Shape sketch (names TBD at implement time):
     "dht": false,
     "circuit_relay": false,
     "message_relay": false,
-    "audio_relay": false,
-    "video_relay": false,
+    "media_relay": true,
     "blockchain": false,
     "accept_paid_jobs": false
   },
   "pricing": {
     "message_relay": { "mode": "volunteer", "rate": null },
-    "audio_relay": { "mode": "volunteer", "rate": null },
-    "video_relay": { "mode": "volunteer", "rate": null }
+    "media_relay": { "mode": "volunteer", "rate": null }
+  },
+  "media_relay_budget": {
+    "max_aggregate_bps": null
   }
 }
 ```
 
-- `capabilities.*` = host this service.
+- `capabilities.*` = host this service. **`media_relay` default true** on desktop Node / `pp-node` when Node is on (N018); user may disable.
+- `media_relay_budget.max_aggregate_bps` = advertised byte budget (null = unbounded / ops default). Relay limits by volume; does not classify A/V (N018).
 - `pricing.*` = volunteer | paid (+ rate) for **billable** caps only — not a substitute for the capability flag.
 - `accept_paid_jobs` = marketplace on/off only; job rates live in a later jobs schema.
+- Older sketches’ `audio_relay` / `video_relay` map to **`media_relay`**.
 
 Do **not** ship capability/pricing keys/UI in n1 until the matching protocol works (N005).
 
@@ -232,15 +234,15 @@ Hot-reload: role / capability / pricing changes reconfigure modules (`MessagingH
 | **n1** | Role + listen + bootstrap | Master toggle only |
 | **n2** | DHT | + DHT checkbox (no pricing required) |
 | **n3** | Circuit relay | + checkbox (pricing optional / often volunteer) |
-| **n4-media** | True audio/video SFU (N017) | + checkboxes; **volunteer**; pricing schema stub only |
+| **n4-media** | Blind `media_relay` forwarder (N017/N018) | + checkbox **default on** (volunteer); max_bps / class; pricing stub |
 | **later** | Peer message_relay | Optional; do not hard-cut HTTP Brief |
 | **later** | Paid relay UI / settle (N010) | Nested Free/Paid when metering ships |
 | **n4+ / later** | Blockchain node | + checkbox (settlement rails, not “paid jobs”) |
 | **later** | Accept paid jobs marketplace | + checkbox; job schema separate |
 
-**A/V calls consumer:** [p2p-av-calls](../p2p-av-calls/) **a4 requires true SFU** (V020). Prefer shipping **n4-media** (seed + desktop checkboxes) over peer message_relay or paid UI. Exact SFU choice priority **TBD**.
+**A/V calls consumer:** [p2p-av-calls](../p2p-av-calls/) **a4** needs blind **`media_relay`** (V020/V021). Relay must not know payload contents. Exact SFU choice priority **TBD**.
 
-Until peer-hosted media SFU ships, keep **direct ICE** for 1:1 LAN; group waits on SFU. HTTP Brief remains message offline fallback.
+Until media_relay ships, keep **direct ICE** for 1:1; group waits on forwarder. HTTP Brief remains message offline fallback.
 
 ## Packaging: `pp-node` binary (N011)
 

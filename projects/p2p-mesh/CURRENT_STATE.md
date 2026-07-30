@@ -7,7 +7,7 @@
 | Area | State |
 |------|-------|
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
-| ADRs | N001–N017 in [DECISIONS.md](DECISIONS.md) |
+| ADRs | N001–N018 in [DECISIONS.md](DECISIONS.md) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
 | **np** | Headless `pp-node` + shared `NodeRuntime` + dial-back protocol (see below) |
@@ -88,7 +88,7 @@
 | Area | State |
 |------|-------|
 | Contact-first relay routing | **nf** (not implemented; SFU pick ranking TBD) |
-| True audio/video SFU + desktop checkboxes | **n4-media** (N017) — unblocks calls a4 |
+| Blind `media_relay` + desktop checkbox (default on) | **n4-media** (N017/N018) — unblocks calls a4 |
 | Peer message_relay | Deferred (N017); HTTP Brief remains |
 | Paid pricing UI / settle | Deferred (N017); schema stub with n4-media |
 | DHT | **n2** (later per N015) |
@@ -96,11 +96,11 @@
 ## Next
 
 1. **nf** — thin contact-first for circuit (N014); do not invent final SFU rank yet  
-2. **n4-media** — true SFU on `pp-node` + desktop caps (N017)  
+2. **n4-media** — blind `media_relay` on `pp-node` + desktop (N018)  
 3. Peer message_relay / paid UI / **n2 DHT** later  
 
 ## Follow-ups
 
 See [PHASES.md](PHASES.md) and [DESIGN § Preferred delivery order](DESIGN.md#preferred-delivery-order-n015).
 
-**Calls:** [p2p-av-calls](../p2p-av-calls/) **a4 requires true SFU** (V020). Org seed + desktop Node volunteer `audio_relay` / `video_relay`. Pricing volunteer-only until later.
+**Calls:** [p2p-av-calls](../p2p-av-calls/) **a4** needs blind **`media_relay`** (V020/V021). Relay must not know payload contents. Volunteer default on.

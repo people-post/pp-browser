@@ -6,7 +6,7 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 
 - [x] README, DESIGN, CURRENT_STATE, DECISIONS, PHASES
 - [x] Register in `projects/README.md` + `AGENTS.md`
-- [x] N008–N017 (infra, caps, pricing, `pp-node`, reachability, UPnP/IPv6, contact-first, delivery order, listen **18517** + busy-port, **n4-media split**)
+- [x] N008–N018 (infra, caps, pricing, `pp-node`, reachability, UPnP/IPv6, contact-first, delivery order, listen **18517** + busy-port, **n4-media split**, **blind media_relay**)
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
 
 ## n1 — Role shell + bootstrap + Network UI
@@ -60,14 +60,15 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [ ] Light UI: “Prefer contacts for routing” (default on) if needed
 - [ ] Message path may keep **HTTP Brief** without peer `message_relay`
 
-## n4-media — True audio/video SFU (N017; unblocks a4)
+## n4-media — Blind media forwarder (N017 / N018; unblocks a4)
 
-- [ ] **True SFU** (selective forward) for `audio_relay` + `video_relay` — not TURN-as-mesh, not full-mesh
-- [ ] Org `pp-node` seeds: volunteer audio + video SFU **on** for [p2p-av-calls](../p2p-av-calls/) (V008 / V020)
-- [ ] Desktop Node: Me → Network **checkboxes** for `audio_relay` / `video_relay` (opt-in; default off until ready)
-- [ ] Call consumer coordinates with a4 (group ≤8)
-- [ ] `pricing.*` schema / config hooks for later paid — **volunteer only** in this phase
-- [ ] Still honor N014 when a pick policy is locked
+- [ ] Homegrown **blind** selective forwarder — no media keys, no codec decode, no A/V payload classification
+- [ ] Single **`media_relay`** capability (+ advertised bandwidth / max_bps); rate-limit by **byte volume**
+- [ ] Org `pp-node`: volunteer **`media_relay` on** for [p2p-av-calls](../p2p-av-calls/) (V008 / V020 / V021)
+- [ ] Desktop Node: Me → Network checkbox **default on** (volunteer); user may disable
+- [ ] Call consumer: group path + soft-migrate from 1:1 P2P (V021)
+- [ ] `pricing.*` schema stub — volunteer only in this phase
+- [ ] Honor pick/re-pick policy when ranking is locked (still TBD)
 
 ## n4-message / pricing — deferred (N017)
 

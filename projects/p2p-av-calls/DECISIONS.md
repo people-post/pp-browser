@@ -311,8 +311,9 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 | Topology | **True SFU** — each participant uplinks once; SFU fans out. **Not** TURN-as-SFU (N−1 PCs through relay). **Not** full-mesh. |
 | Audio + video | a4 includes **both** Opus audio and H264 video through the SFU. |
 | Codecs | **Reuse** a3 platform HW path (V017–V019). Do **not** expand encode/decode matrix for newer devices/codecs in a4 — that is a separate later slice. |
-| SFU hosts | Org **`pp-node` seeds** (volunteer) **and** desktop Nodes via Me → Network **`audio_relay` / `video_relay` checkboxes** (mesh N017). Mobile Client never hosts. |
-| Mesh gate | a4 media depends on mesh **n4-media** (volunteer SFU + caps). Exact **SFU choice priority** (who to pick among contacts / seed / …) is **TBD** — design discussion after this ADR; N014 remains the placeholder policy. |
+| SFU hosts | Org **`pp-node`** + desktop **`media_relay`** (blind; volunteer **default on** — N018 / V021). Mobile never hosts. |
+| Mesh gate | a4 media depends on mesh **n4-media**. Exact **SFU choice priority** still **TBD**. |
+| Blindness / migrate | See **V021** (soft-migrate 1:1→group; app-layer E2E; byte budgets). |
 | Pricing | Volunteer-only for a4; paid metering designed for later (mesh N010 / N017) — do not block a4. |
 | Out of a4 “done” | Full-mesh group media; peer `message_relay`; paid SFU UI/settle; network-adaptive / new device codecs. |
 
@@ -326,3 +327,26 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 **Rationale:** Full-mesh uplink and glare cost dominate mobile; V007 already forbids shipping full-mesh at 16. Parallel LAN-mesh (a2/a3 style) would create a throwaway topology. True SFU is the durable product path.  
 **Alternatives:** LAN full-mesh for a4 dogfood then SFU later (rejected — dual media paths); TURN-only (rejected — still N−1 encode/upload); wait for paid pricing before SFU (rejected — N017).  
 **Cross-link:** Mesh [N017](../p2p-mesh/DECISIONS.md#n017--split-n4-media-sfu-first-message-relay-separate-pricing-later).
+
+---
+
+## V021 — Blind media forwarder; 1:1 P2P; soft migrate to group SFU
+
+**Date:** 2026-07-30  
+**Decision:** Refine V020’s “true SFU” into a **homegrown blind selective forwarder** (mesh **n4-media** / N018). The relay **must not** learn media contents: no call media keys on the relay, no codec decode, no audio-vs-video inspection of payloads.
+
+| Topic | Rule |
+|-------|------|
+| **Blindness** | Relay forwards opaque media datagrams / framed blobs. It may use **routing metadata only** (publisher/subscriber ids, stream ids, byte counters, session membership). Payload confidentiality = **app-layer AEAD under the shared call media key** (V004) end-to-end among participants. DTLS/SRTP to the hop (if any) does **not** replace E2E call-key protection on the SFU path. |
+| **One module** | Single **`media_relay`** service (not separate audio/video decode pipelines). Capacity is expressed as **bandwidth / byte budget**, not “this is video.” |
+| **Client camera policy** | If the chosen relay’s advertised budget (or remaining quota) cannot support an extra video uplink, clients **disable Camera** (and stop sending video) rather than overloading the hop. Voice continues when possible. Relay enforces by **dropping / rate-limiting by size**, never by inspecting content. |
+| **1:1** | Stay **direct P2P** when N=2 and ICE works (a2/a3 path). |
+| **Invite → N≥3** | **Same `call_id` / session** — do **not** end-and-restart a new call. Soft-migrate: coordinator picks SFU → all joined peers attach → tear down the 1:1 PC. UX may briefly show reconnecting; product copy must not feel like “call ended.” |
+| **N drops to 2** | **Stay on SFU** until hangup for v1 (avoid P2P↔SFU flip-flop). Optional later: re-P2P when alone-as-pair. |
+| **Who picks SFU** | **Initiator** at start; thereafter **epoch coordinator** (V002) applies the **same pick policy** on invite-to-group, hop failure, or other reestablish events → **re-pick** and reattach. |
+| **Stack** | **Own** forwarder on `pp-node` / desktop Node runtime — relay only; no vendored LiveKit/mediasoup as the product path. |
+| **Hosts** | Org seed + desktop Node; capability **default volunteer on** when Node is on (N018). Mobile never hosts. |
+
+**Rationale:** Aligns confidentiality with V004 (SFU must not need keys); bandwidth-limited friend Nodes are real; soft-migrate preserves history/roster/key epoch continuity better than tear-down; staying on SFU after N→2 keeps one media code path.  
+**Alternatives:** Classic DTLS-terminating media SFU that sees clear RTP (rejected — contents exposure); hard end/restart call on 3rd invite (rejected — worse UX); separate audio/video relay processes that classify codecs (rejected — needs content awareness); return to P2P when N=2 in v1 (deferred — flip-flop risk).  
+**Cross-link:** Mesh [N018](../p2p-mesh/DECISIONS.md#n018--blind-media_relay-bandwidth-budgets-volunteer-default-on).

@@ -120,11 +120,11 @@
 
 | Track | What ships | Blocks |
 |-------|------------|--------|
-| **n4-media** | **True** selective-forwarding SFU for `audio_relay` + `video_relay` on org **`pp-node`** (volunteer on) **and** desktop Node **checkboxes** (opt-in). Call consumer in [p2p-av-calls](../p2p-av-calls/) (V020). | **a4** group calls |
+| **n4-media** | Homegrown **blind** selective forwarder as **`media_relay`** (N018) on org **`pp-node`** (volunteer on) **and** desktop Node checkbox (**default on**). Call consumer in [p2p-av-calls](../p2p-av-calls/) (V020 / V021). | **a4** group calls |
 | **message_relay** | Peer store-and-forward / inbox assist | **Not** an a4 gate. HTTP Brief relay remains the product offline path for now. Peer decentralization may never be the default. |
 | **pricing** | N010 `volunteer \| paid` + settle | **Design / schema only** for n4-media. Ship volunteer SFU; paid UI/metering/chain **later** without redesigning caps. |
 
-**True SFU (not TURN, not full-mesh):** Each participant uploads once; SFU fans media out. Rejected for product path: full-mesh PeerConnections for N≥3; TURN-only that still forces N−1 uploads.
+**Blind forwarder (not TURN, not full-mesh, not media-aware SFU):** Each participant uplinks once; relay fans out **opaque** packets by stream/publisher id. No call keys on relay; no codec decode. Rejected: full-mesh; TURN-only N−1 uploads; classic SFU that needs to see clear media.
 
 **nf:** Still ships contact-first preference (N014) for circuit and (when ready) SFU pick. Exact **SFU choice priority ranking is TBD** — do not invent a final order in implementation before that design discussion. Message hops may keep using HTTP Brief without waiting on peer `message_relay`.
 
@@ -132,3 +132,23 @@
 
 **Rationale:** Offline message relay has different durability/trust/availability properties than realtime media; coupling them delayed calls. Billing must not gate volunteer seed SFU.  
 **Alternatives:** Keep monolithic n4 (rejected); LAN full-mesh for a4 until SFU (rejected — V020); paid-first SFU (rejected).
+
+---
+
+## N018 — Blind `media_relay`; bandwidth budgets; volunteer default on
+
+**Date:** 2026-07-30  
+**Decision:** Implement n4-media as a **homegrown blind selective forwarder** (calls [V021](../p2p-av-calls/DECISIONS.md#v021--blind-media-forwarder-11-p2p-soft-migrate-to-group-sfu)):
+
+| Rule | Detail |
+|------|--------|
+| **Blind** | Relay **does not** hold call media keys, **does not** decode Opus/H264, **does not** classify audio vs video by payload. Forward by publisher/subscriber / stream id + **byte-volume** limits only. |
+| **Capability** | Prefer a single **`media_relay`** checkbox (supersedes shipping separate decode-aware `audio_relay` / `video_relay` pipelines). Legacy dual names in older sketches map to this one service + optional **capacity class / max_bps** advertisement. |
+| **Bandwidth** | Node advertises a budget (e.g. max uplink aggregate bps or class). Clients decide whether Camera is allowed; relay rate-limits/drops by size if exceeded. |
+| **Hosts** | Org **`pp-node`**: volunteer **`media_relay` on**. Desktop Node: checkbox **default on** (volunteer) when Node is enabled — user may turn off. Mobile Client: never hosts. |
+| **Pricing** | Volunteer for ship; `pricing.*` schema stub only (N017). |
+| **Pick / re-pick** | Call coordinator applies pick policy (exact order **still TBD**); on hop failure or group migrate, **re-pick** with the same policy. |
+
+**Rationale:** Matches product privacy (“relay must not know contents”); one module is enough for fan-out; friend Nodes need honest bandwidth limits without deep packet inspection of media.  
+**Alternatives:** Classic media-aware SFU (rejected); separate audio/video services that inspect codecs (rejected); desktop default off until dogfood (superseded — default on volunteer).  
+**Updates N017** host/checkbox wording from dual audio/video to blind `media_relay`.
