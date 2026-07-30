@@ -1,10 +1,14 @@
 #pragma once
 
+#include "base/i18n/LocalizationService.h"
 #include "base/people/ProfileIdentityView.h"
+#include "base/data/SessionStore.h"
 #include "common/Error.h"
+#include "feature/settings/SettingsPortsViews.h"
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -15,9 +19,8 @@ struct RegisterIdentityArgs {
 };
 
 /**
- * Imperative settings ports. Declared here (consumer); Application fills
- * implementations that call messaging / profile lifecycle. Not a singleton.
- * Args are operation-shaped; callers refresh SettingsUiState after success.
+ * Settings ports. Declared here (consumer); Application fills implementations.
+ * Not a singleton. No BindMessaging / held service pointers — clear via BindCommands({}).
  */
 struct SettingsCommands {
   std::function<ProfileIdentityView()> load_profile_identity;
@@ -31,6 +34,20 @@ struct SettingsCommands {
   std::function<Roe<void>()> reset_active_profile;
   /** Display label for a language pref (`system` or BCP-47 tag). App → LocalizationService. */
   std::function<std::string(const std::string& language_pref)> language_display_label;
+  std::function<std::vector<LocaleInfo>()> available_locales;
+  /** Live-apply appearance (`system` / `light` / `dark`). App → Theme. */
+  std::function<void(const std::string& appearance_pref)> apply_appearance;
+
+  /** Live SessionStore for section Flush / Reset (app owns lifetime). */
+  std::function<SessionStore&()> session_store;
+  std::function<Roe<void>()> reload_from_disk;
+
+  /** Messaging status without holding MessagingHub*. */
+  std::function<bool()> messaging_ready;
+  std::function<std::string()> last_libp2p_error;
+  std::function<SettingsReachabilityView()> load_reachability;
+
+  std::function<PinProtectionView()> load_pin_protection;
 };
 
 } // namespace pbr

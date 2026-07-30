@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/data/SessionStore.h"
 #include "feature/settings/SettingsCommands.h"
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"
@@ -25,8 +26,6 @@ class Context;
 
 namespace pbr {
 
-class MessagingHub;
-
 class SettingsController : public Module {
 public:
   struct SectionListRow {
@@ -45,13 +44,10 @@ public:
 
   static SettingsController& Instance();
 
-  void BindMessaging(MessagingHub& messaging);
-  /** App fills imperative ports (register, UPnP, reset, …). Not a process singleton. */
+  /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
   void BindCommands(SettingsCommands commands);
   SettingsCommands& Commands();
   const SettingsCommands& Commands() const;
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
   bool RegisterModel(Rml::Context* context);
   void OnNavTabActivated();
   /** Persist nickname / dirty sections when leaving Me (tab or sheet). */
@@ -66,8 +62,8 @@ public:
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
   void RefreshLocalizedChrome();
-  /** Refresh reachability Connection card from MessagingHub (nr). */
-  void SyncReachabilityFromHub();
+  /** Refresh reachability Connection card via SettingsCommands ports. */
+  void SyncReachability();
 
 private:
   struct SettingsBindings {
@@ -172,7 +168,8 @@ private:
   void PushUiStateToBindings();
   void ReloadFromDisk();
   void SyncBindingsFromSession();
-  void ApplyReachabilityFromHub();
+  void ApplyReachability();
+  SessionStore& Store();
   void FinishPaneResync();
   void OnSelectSection(const std::string& section_id);
   void OpenSettingsDetailPane();
@@ -225,7 +222,6 @@ private:
   uint64_t debounce_deadline_ms_ = 0;
   std::optional<std::string> last_toast_section_;
   uint64_t last_toast_at_ms_ = 0;
-  MessagingHub* messaging_ = nullptr;
   SettingsCommands commands_;
 
 };

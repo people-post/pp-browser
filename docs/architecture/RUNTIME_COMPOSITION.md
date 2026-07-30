@@ -162,7 +162,7 @@ flowchart TB
 |------|-----|----------|
 | Settings section flush | `SessionStore` SaveConfig / SaveProfilePrefs | Yes |
 | Settings UI | `MessagingHub::Apply*` / mesh / invite policy | **No** — go through SessionStore → bridge |
-| Settings UI | register / rotate / UPnP / clear undelivered / reset profile | Via `SettingsCommands` (narrow args; app-filled); UI syncs state after |
+| Settings UI | register / rotate / UPnP / clear undelivered / reset profile / appearance / locales / reachability / PIN status | Via `SettingsCommands` (narrow args + views; app-filled); UI syncs state after — **no** `BindMessaging` / `Hub()` |
 | `ConfigApplyBridge` | nested `Apply` on services | Yes |
 | ChatController | full `AppConfig` listener | **No** — agent slice via bridge |
 | ChatController | `SetOnMessagingReady` / reachability | **No** — Application owns |
@@ -256,8 +256,8 @@ flowchart TB
 | **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices |
 | **ShellHost** | `feature/ui/` | Window shell panes/nav; nested `ChromePrefs` |
 | **LocalizationService** | `base/i18n/` | Locale catalogs; nested `Prefs` |
-| **SettingsController** | `feature/ui/` | Me-tab UI + flush to SessionStore; holds injected `SettingsCommands` |
-| **SettingsCommands** | `feature/settings/` | Imperative ports; app binds implementations |
+| **SettingsController** | `feature/ui/` | Me-tab UI + flush via `session_store` port; holds injected `SettingsCommands` only (no messaging bind) |
+| **SettingsCommands** | `feature/settings/` | Ports for session, identity, locale, appearance, reachability, PIN status, imperative ops; app binds implementations |
 | **ChatSessionPorts** | `feature/ui/` | Chat nav ports for contacts/picker; app-filled from ChatController |
 | **ProfileIdentityView** | `base/people/` | Presentation projection of local identity |
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |

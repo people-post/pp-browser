@@ -89,7 +89,7 @@ Feature module libraries link in acyclic order (each `PUBLIC_LIBS` only lower la
 settings → ai/tools → ai/bindings → ai → messaging → ui → chat
 ```
 
-Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. Settings imperative ops use `SettingsCommands` (declared in `feature/settings/`, bound on `SettingsController` from app). Contacts/people-picker chat navigation uses injected `ChatSessionPorts` (filled from `ChatController` in app) without reversing the link graph.
+Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. Settings uses only `SettingsCommands` (declared in `feature/settings/`, bound on `SettingsController` from app) — no `BindMessaging`. Contacts/people-picker chat navigation uses injected `ChatSessionPorts` (filled from `ChatController` in app) without reversing the link graph.
 
 ## CMake targets
 

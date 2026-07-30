@@ -9,8 +9,8 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/platform/BrowserThread.h"
 #include "base/ui/ContextMenuHost.h"
-#include "feature/messaging/MessagingHub.h"
 #include "feature/settings/AppearanceSettingsSection.h"
+#include "feature/settings/SettingsPortsViews.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/ProfileSettingsSection.h"
@@ -20,7 +20,6 @@
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
 #include "base/error/AppError.h"
-#include "libp2p/integration/host/Reachability.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/DataModelHandle.h>
@@ -41,39 +40,39 @@ Rml::String EventValue(Rml::Event& ev) {
   return ev.GetParameter<Rml::String>("value", Rml::String());
 }
 
-std::string ReachabilityStatusLabel(ReachabilityStatus status) {
+std::string ReachabilityStatusLabel(SettingsReachabilityView::Status status) {
   switch (status) {
-  case ReachabilityStatus::Checking:
+  case SettingsReachabilityView::Status::Checking:
     return Tr("settings.network.reachability.checking");
-  case ReachabilityStatus::Reachable:
+  case SettingsReachabilityView::Status::Reachable:
     return Tr("settings.network.reachability.reachable");
-  case ReachabilityStatus::OutboundOnly:
+  case SettingsReachabilityView::Status::OutboundOnly:
     return Tr("settings.network.reachability.outbound_only");
-  case ReachabilityStatus::Blocked:
+  case SettingsReachabilityView::Status::Blocked:
     return Tr("settings.network.reachability.blocked");
-  case ReachabilityStatus::Unknown:
+  case SettingsReachabilityView::Status::Unknown:
   default:
     return Tr("settings.network.reachability.unknown");
   }
 }
 
-std::string ReachabilitySummary(const ReachabilitySnapshot& snap) {
-  switch (snap.status) {
-  case ReachabilityStatus::Checking:
+std::string ReachabilitySummary(const SettingsReachabilityView& view) {
+  switch (view.status) {
+  case SettingsReachabilityView::Status::Checking:
     return Tr("settings.network.reachability.summary_checking");
-  case ReachabilityStatus::Reachable:
-    if (snap.signals.has_global_ipv6 && snap.signals.dial_back_ok) {
+  case SettingsReachabilityView::Status::Reachable:
+    if (view.has_global_ipv6 && view.dial_back_ok) {
       return Tr("settings.network.reachability.summary_reachable_ipv6");
     }
-    if (snap.signals.upnp_mapped) {
+    if (view.upnp_mapped) {
       return Tr("settings.network.reachability.summary_reachable_upnp");
     }
     return Tr("settings.network.reachability.summary_reachable");
-  case ReachabilityStatus::OutboundOnly:
+  case SettingsReachabilityView::Status::OutboundOnly:
     return Tr("settings.network.reachability.summary_outbound_only");
-  case ReachabilityStatus::Blocked:
+  case SettingsReachabilityView::Status::Blocked:
     return Tr("settings.network.reachability.summary_blocked");
-  case ReachabilityStatus::Unknown:
+  case SettingsReachabilityView::Status::Unknown:
   default:
     return Tr("settings.network.reachability.summary_unknown");
   }
@@ -122,9 +121,6 @@ SettingsController& SettingsController::Instance() {
   static SettingsController controller;
   return controller;
 }
-void SettingsController::BindMessaging(MessagingHub& messaging) {
-  messaging_ = &messaging;
-}
 
 void SettingsController::BindCommands(SettingsCommands commands) {
   commands_ = std::move(commands);
@@ -133,6 +129,9 @@ void SettingsController::BindCommands(SettingsCommands commands) {
   }
   if (auto* appearance = dynamic_cast<AppearanceSettingsSection*>(FindHandler("appearance"))) {
     appearance->BindPorts(&commands_);
+  }
+  if (auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"))) {
+    security->BindPorts(&commands_);
   }
 }
 
@@ -144,18 +143,11 @@ const SettingsCommands& SettingsController::Commands() const {
   return commands_;
 }
 
-MessagingHub& SettingsController::Hub() {
-  if (!messaging_) {
-    throw std::runtime_error("SettingsController messaging not bound");
+SessionStore& SettingsController::Store() {
+  if (!commands_.session_store) {
+    throw std::runtime_error("SettingsController session_store port not bound");
   }
-  return *messaging_;
-}
-
-const MessagingHub& SettingsController::Hub() const {
-  if (!messaging_) {
-    throw std::runtime_error("SettingsController messaging not bound");
-  }
-  return *messaging_;
+  return commands_.session_store();
 }
 
 
@@ -305,28 +297,29 @@ void SettingsController::PushUiStateToBindings() {
 }
 
 void SettingsController::SyncBindingsFromSession() {
-  const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
+  const BootstrapResult& bootstrap = Store().Snapshot();
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     handler->SyncFromSession(bootstrap, ui_state_);
   }
-  if (Instance().Hub().IsInitialized()) {
-    ui_state_.libp2p_status_message = Instance().Hub().LastLibp2pError();
+  if (commands_.last_libp2p_error) {
+    ui_state_.libp2p_status_message = commands_.last_libp2p_error();
   } else {
     ui_state_.libp2p_status_message.clear();
   }
-  ApplyReachabilityFromHub();
+  ApplyReachability();
   // Baseline for blur commit.
   // Sync+DirtyAll would SetValue the input and reset cursor / feel like focus loss.
   auto& edits = UiEditSession::Instance();
   const std::string live = bindings_.profile_nickname.c_str();
-  if (Instance().Hub().IsInitialized() && Instance().Hub().IsMessagingReady()) {
-    if (auto identity = Instance().Hub().Identity().Get()) {
+  if (commands_.load_profile_identity) {
+    const ProfileIdentityView view = commands_.load_profile_identity();
+    if (view.ready) {
       // Resolve against the *previous* baseline first. OnLoaded before Resolve makes an
       // empty binding look mid-edit vs the freshly loaded nickname (keeps nickname blank).
       ui_state_.profile_nickname =
-          edits.ResolveAfterLoad(kUiFieldProfileNickname, identity->nickname, live);
+          edits.ResolveAfterLoad(kUiFieldProfileNickname, view.nickname, live);
       if (!edits.IsMidEdit(kUiFieldProfileNickname, live)) {
-        edits.OnLoaded(kUiFieldProfileNickname, identity->nickname);
+        edits.OnLoaded(kUiFieldProfileNickname, view.nickname);
       }
     }
   } else if (const std::string* baseline = edits.Baseline(kUiFieldProfileNickname)) {
@@ -337,7 +330,11 @@ void SettingsController::SyncBindingsFromSession() {
 }
 
 void SettingsController::ReloadFromDisk() {
-  if (auto reloaded = SessionStore::Instance().ReloadFromDisk(); !reloaded) {
+  if (!commands_.reload_from_disk) {
+    log().warning << "ReloadFromDisk: reload_from_disk port not bound";
+    return;
+  }
+  if (auto reloaded = commands_.reload_from_disk(); !reloaded) {
     log().warning << "ReloadFromDisk failed: " << AppError::Log(reloaded.error());
     ReportFailure(reloaded.error());
     return;
@@ -756,7 +753,7 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   log().info << "FlushSection(" << section_id << ")";
 
   PullBindingsToUiState();
-  if (auto flushed = handler->Flush(ui_state_, SessionStore::Instance()); !flushed) {
+  if (auto flushed = handler->Flush(ui_state_, Store()); !flushed) {
     log().warning << "FlushSection(" << section_id << ") failed: " << AppError::Log(flushed.error());
     ReportFailure(flushed.error());
     return false;
@@ -768,11 +765,11 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   }
 
   status_ = "";
-  if (section_id == "profile" && Instance().Hub().IsInitialized() &&
-      Instance().Hub().IsMessagingReady()) {
-    if (auto identity = Instance().Hub().Identity().Get()) {
-      UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, identity->nickname);
-      ui_state_.profile_nickname = identity->nickname;
+  if (section_id == "profile" && commands_.load_profile_identity) {
+    const ProfileIdentityView view = commands_.load_profile_identity();
+    if (view.ready) {
+      UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, view.nickname);
+      ui_state_.profile_nickname = view.nickname;
     }
   }
   PushUiStateToBindings();
@@ -845,7 +842,7 @@ void SettingsController::PerformResetSection(const std::string& section_id) {
     return;
   }
 
-  handler->ResetToDefaults(ui_state_, SessionStore::Instance());
+  handler->ResetToDefaults(ui_state_, Store());
   PushUiStateToBindings();
   DirtyAll();
   FlushSection(section_id);
@@ -1045,7 +1042,7 @@ void SettingsController::OnLlmPresetChangedCallback(Rml::DataModelHandle /*model
   if (!handler) {
     return;
   }
-  if (handler->IsPersisted(controller.ui_state_, SessionStore::Instance().Snapshot())) {
+  if (handler->IsPersisted(controller.ui_state_, controller.Store().Snapshot())) {
     return;
   }
 
@@ -1090,6 +1087,10 @@ void SettingsController::ApplyThemeChoice(const std::string& appearance_pref) {
   bindings_.appearance = appearance_pref.c_str();
   bindings_.appearance_label = ThemeDisplayLabel(appearance_pref).c_str();
   PullBindingsToUiState();
+  // Live apply via app port; SessionStore → ConfigApplyBridge re-applies after flush.
+  if (commands_.apply_appearance) {
+    commands_.apply_appearance(appearance_pref);
+  }
   MarkSectionDirty("appearance");
   FlushPending();
   DirtyAll();
@@ -1103,13 +1104,14 @@ void SettingsController::OnChooseLanguageCallback(Rml::DataModelHandle /*model*/
 void SettingsController::OnChooseLanguage(Rml::Event& ev) {
   const Rml::Vector2i position = ChoiceRowMenuPosition(ev);
 
-  auto& loc = LocalizationService::Instance();
+  if (!commands_.language_display_label || !commands_.available_locales) {
+    log().warning << "OnChooseLanguage: locale ports not bound";
+    return;
+  }
+
   const std::string current = bindings_.language.empty() ? "system" : std::string(bindings_.language.c_str());
-  const auto label_for = [this, &loc](const std::string& pref) {
-    if (commands_.language_display_label) {
-      return commands_.language_display_label(pref);
-    }
-    return loc.LanguageDisplayLabel(pref);
+  const auto label_for = [this](const std::string& pref) {
+    return commands_.language_display_label(pref);
   };
 
   std::vector<ContextMenuAction> actions;
@@ -1124,7 +1126,7 @@ void SettingsController::OnChooseLanguage(Rml::Event& ev) {
                      .danger = false,
                      .selected = current == "system"});
 
-  for (const LocaleInfo& info : loc.AvailableLocales()) {
+  for (const LocaleInfo& info : commands_.available_locales()) {
     const std::string tag = info.tag;
     actions.push_back({.id = tag,
                        .label = label_for(tag),
@@ -1222,19 +1224,19 @@ void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*mo
   Instance().MarkSectionDirty("network");
 }
 
-void SettingsController::ApplyReachabilityFromHub() {
-  auto& hub = Instance().Hub();
+void SettingsController::ApplyReachability() {
+  const bool messaging_ready = commands_.messaging_ready && commands_.messaging_ready();
   ui_state_.show_connection_card =
-      ui_state_.show_node_toggle && ui_state_.node_enabled == "on" && hub.IsMessagingReady();
+      ui_state_.show_node_toggle && ui_state_.node_enabled == "on" && messaging_ready;
   ui_state_.show_circuit_relay_toggle = ui_state_.show_connection_card;
   ui_state_.show_media_relay_toggle = ui_state_.show_connection_card;
   ui_state_.show_prefer_contacts_toggle = ui_state_.show_connection_card;
 
-  if (ui_state_.show_connection_card) {
-    const ReachabilitySnapshot snap = hub.Reachability();
-    ui_state_.reachability_status_label = ReachabilityStatusLabel(snap.status);
-    ui_state_.reachability_summary = ReachabilitySummary(snap);
-    ui_state_.reachability_help_kind = ReachabilityHelpKey(snap.status);
+  if (ui_state_.show_connection_card && commands_.load_reachability) {
+    const SettingsReachabilityView view = commands_.load_reachability();
+    ui_state_.reachability_status_label = ReachabilityStatusLabel(view.status);
+    ui_state_.reachability_summary = ReachabilitySummary(view);
+    ui_state_.reachability_help_kind = view.help_kind;
   } else {
     ui_state_.reachability_status_label.clear();
     ui_state_.reachability_summary.clear();
@@ -1242,8 +1244,8 @@ void SettingsController::ApplyReachabilityFromHub() {
     ui_state_.show_reachability_help = false;
   }
 
-  if (Instance().Hub().IsInitialized()) {
-    const auto& cfg = SessionStore::Instance().Snapshot().config.libp2p;
+  if (commands_.session_store) {
+    const auto& cfg = Store().Snapshot().config.libp2p;
     ui_state_.circuit_relay_enabled = cfg.capabilities.circuit_relay ? "on" : "off";
     ui_state_.media_relay_enabled = cfg.capabilities.media_relay ? "on" : "off";
     ui_state_.prefer_contacts_for_routing = cfg.prefer_contacts_for_routing ? "on" : "off";
@@ -1251,8 +1253,8 @@ void SettingsController::ApplyReachabilityFromHub() {
   PushUiStateToBindings();
 }
 
-void SettingsController::SyncReachabilityFromHub() {
-  ApplyReachabilityFromHub();
+void SettingsController::SyncReachability() {
+  ApplyReachability();
   DirtyAll();
 }
 
@@ -1273,7 +1275,7 @@ void SettingsController::RetestReachabilityCallback(Rml::DataModelHandle /*model
   if (Instance().Commands().run_reachability_probe) {
     Instance().Commands().run_reachability_probe(false);
   }
-  Instance().SyncReachabilityFromHub();
+  Instance().SyncReachability();
 }
 
 void SettingsController::TryUpnpPortCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1281,7 +1283,7 @@ void SettingsController::TryUpnpPortCallback(Rml::DataModelHandle /*model*/, Rml
   if (Instance().Commands().try_upnp_port_mapping) {
     Instance().Commands().try_upnp_port_mapping();
   }
-  Instance().SyncReachabilityFromHub();
+  Instance().SyncReachability();
 }
 
 void SettingsController::ShowReachabilityHelpCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1425,9 +1427,10 @@ void SettingsController::OnRegisterProfile() {
       ReportFailure(registered.error());
       return;
     }
-    if (Instance().Hub().IsInitialized() && Instance().Hub().IsMessagingReady()) {
-      if (auto identity = Instance().Hub().Identity().Get()) {
-        UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, identity->nickname);
+    if (commands_.load_profile_identity) {
+      const ProfileIdentityView view = commands_.load_profile_identity();
+      if (view.ready) {
+        UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, view.nickname);
       }
     }
     const char* message =
@@ -1642,9 +1645,9 @@ void SettingsController::OnChangePin() {
     return;
   }
 
-  ProfilePreferences prefs = SessionStore::Instance().Snapshot().profile_prefs;
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
   prefs.pin_is_default = false;
-  if (auto saved = SessionStore::Instance().SaveProfilePrefs(prefs); !saved) {
+  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
     ReportFailure(saved.error());
     return;
   }

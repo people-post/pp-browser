@@ -96,8 +96,8 @@ Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& st
   return {};
 }
 
-void ProfileSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& /*store*/) {
-  SyncFromSession(SessionStore::Instance().Snapshot(), state);
+void ProfileSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& store) {
+  SyncFromSession(store.Snapshot(), state);
 }
 
 } // namespace pbr

@@ -328,9 +328,64 @@ bool Application::Initialize(const char* window_title) {
   settings_commands.language_display_label = [](const std::string& pref) {
     return LocalizationService::Instance().LanguageDisplayLabel(pref);
   };
+  settings_commands.available_locales = []() {
+    return LocalizationService::Instance().AvailableLocales();
+  };
+  settings_commands.apply_appearance = [](const std::string& appearance_pref) {
+    if (auto* ctx = Rml::GetContext("main")) {
+      Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance_pref));
+    }
+  };
+  settings_commands.session_store = []() -> SessionStore& { return SessionStore::Instance(); };
+  settings_commands.reload_from_disk = []() { return SessionStore::Instance().ReloadFromDisk(); };
+  settings_commands.messaging_ready = [&messaging]() {
+    return messaging.IsInitialized() && messaging.IsMessagingReady();
+  };
+  settings_commands.last_libp2p_error = [&messaging]() -> std::string {
+    if (!messaging.IsInitialized()) {
+      return {};
+    }
+    return messaging.LastLibp2pError();
+  };
+  settings_commands.load_reachability = [&messaging]() {
+    SettingsReachabilityView view;
+    if (!messaging.IsInitialized()) {
+      return view;
+    }
+    const ReachabilitySnapshot snap = messaging.Reachability();
+    switch (snap.status) {
+    case ReachabilityStatus::Checking:
+      view.status = SettingsReachabilityView::Status::Checking;
+      break;
+    case ReachabilityStatus::Reachable:
+      view.status = SettingsReachabilityView::Status::Reachable;
+      break;
+    case ReachabilityStatus::OutboundOnly:
+      view.status = SettingsReachabilityView::Status::OutboundOnly;
+      break;
+    case ReachabilityStatus::Blocked:
+      view.status = SettingsReachabilityView::Status::Blocked;
+      break;
+    case ReachabilityStatus::Unknown:
+    default:
+      view.status = SettingsReachabilityView::Status::Unknown;
+      break;
+    }
+    view.has_global_ipv6 = snap.signals.has_global_ipv6;
+    view.dial_back_ok = snap.signals.dial_back_ok;
+    view.upnp_mapped = snap.signals.upnp_mapped;
+    view.help_kind = ReachabilityHelpKey(snap.status);
+    return view;
+  };
+  settings_commands.load_pin_protection = []() {
+    PinProtectionView view;
+    auto& secrets = ProfileSecretsService::Instance();
+    view.ready = secrets.IsInitialized() && secrets.HasVault();
+    view.unlocked = view.ready && secrets.IsUnlocked();
+    return view;
+  };
   SettingsController::Instance().BindCommands(std::move(settings_commands));
 
-  SettingsController::Instance().BindMessaging(messaging);
   ContactsController::Instance().BindMessaging(messaging);
   CallController::Instance().BindMessaging(messaging);
   PinGateController::Instance().BindMessaging(messaging);
@@ -376,7 +431,7 @@ bool Application::Initialize(const char* window_title) {
   });
   messaging.SetOnReachabilityUpdated([&messaging]() {
     BrowserThread::PostTask(BrowserThreadId::UI, [&messaging]() {
-      SettingsController::Instance().SyncReachabilityFromHub();
+      SettingsController::Instance().SyncReachability();
       const ReachabilitySnapshot snap = messaging.Reachability();
       if (snap.status == ReachabilityStatus::OutboundOnly || snap.status == ReachabilityStatus::Blocked) {
         ShellFeedback::ShowBanner(ShellHost::Instance().State(), Tr("settings.network.banner_hint"));

@@ -1,6 +1,5 @@
 #include "feature/ui/SecuritySettingsSection.h"
 
-#include "base/crypto/ProfileSecretsService.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
 
@@ -14,6 +13,10 @@ std::string GroupInvitePolicyDisplayLabel(const std::string& policy) {
     return Tr("settings.security.group_invites.nobody");
   }
   return Tr("settings.security.group_invites.contacts_only");
+}
+
+void SecuritySettingsSection::BindPorts(SettingsCommands* commands) {
+  commands_ = commands;
 }
 
 const char* SecuritySettingsSection::Id() const {
@@ -31,7 +34,12 @@ SettingsFlushMode SecuritySettingsSection::FlushMode() const {
 void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.group_invite_policy = bootstrap.profile_prefs.group_invite_policy;
   state.group_invite_policy_label = GroupInvitePolicyDisplayLabel(state.group_invite_policy);
-  if (!ProfileSecretsService::Instance().IsInitialized() || !ProfileSecretsService::Instance().HasVault()) {
+
+  PinProtectionView pin;
+  if (commands_ && commands_->load_pin_protection) {
+    pin = commands_->load_pin_protection();
+  }
+  if (!pin.ready) {
     state.pin_protection_status = "Not set up";
     state.security_can_change_pin = false;
     return;
@@ -41,7 +49,7 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
   } else {
     state.pin_protection_status = "Custom PIN";
   }
-  state.security_can_change_pin = ProfileSecretsService::Instance().IsUnlocked();
+  state.security_can_change_pin = pin.unlocked;
 }
 
 bool SecuritySettingsSection::IsPersisted(const SettingsUiState& state,
