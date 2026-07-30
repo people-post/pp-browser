@@ -17,9 +17,15 @@ class Context;
 
 namespace pbr {
 
+class MessagingHub;
+
 class PeoplePickerController : public Module {
 public:
   static PeoplePickerController& Instance();
+
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
 
   struct PickerRow {
     Rml::String id;
@@ -91,6 +97,8 @@ private:
   Rml::String group_title_help_;
   Rml::String cta_label_;
   bool cta_enabled_ = false;
+  MessagingHub* messaging_ = nullptr;
+
 };
 
 } // namespace pbr

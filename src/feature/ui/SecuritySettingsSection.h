@@ -6,10 +6,15 @@
 
 namespace pbr {
 
+class MessagingHub;
+
 std::string GroupInvitePolicyDisplayLabel(const std::string& policy);
 
 class SecuritySettingsSection final : public SettingsSectionHandler {
 public:
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
   const char* Id() const override;
   SettingsSectionListItem ListItem() const override;
   SettingsFlushMode FlushMode() const override;
@@ -19,6 +24,8 @@ public:
   bool IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const override;
   Roe<void> Flush(SettingsUiState& state, SessionStore& store) override;
   void ResetToDefaults(SettingsUiState& state, const SessionStore& store) override;
+  MessagingHub* messaging_ = nullptr;
+
 };
 
 } // namespace pbr

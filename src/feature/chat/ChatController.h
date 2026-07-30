@@ -30,13 +30,18 @@ class Element;
 
 namespace pbr {
 
+class MessagingHub;
+
 class ChatController : public Module {
 public:
   static ChatController& Instance();
 
   using SessionRow = SessionDisplayRow;
 
-  bool Setup(Rml::Context* context);
+  bool Setup(Rml::Context* context, MessagingHub& messaging);
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
   void Update();
   /** Call after Rml::Context::Update so follow-tail uses fresh layout heights. */
   void AfterLayout();
@@ -207,6 +212,7 @@ private:
   void ApplyRuntimeConfig(const AppConfig& config);
 
   Rml::Context* context_ = nullptr;
+  MessagingHub* messaging_ = nullptr;
   ChatState chat_;
   ShellState shell_;
   std::optional<AgentSession> agent_;
@@ -221,7 +227,7 @@ private:
   bool focus_draft_after_sync_ = false;
 };
 
-bool SetupChatController(Rml::Context* context);
+bool SetupChatController(Rml::Context* context, MessagingHub& messaging);
 void UpdateChatController();
 void AfterLayoutChatController();
 void ShutdownChatController();

@@ -5,9 +5,11 @@
 
 namespace pbr {
 
+class MessagingHub;
+
 class Bootstrap {
 public:
-  static Roe<BootstrapResult> Run(const BootstrapOptions& options);
+  static Roe<BootstrapResult> Run(const BootstrapOptions& options, MessagingHub& messaging);
 };
 
 } // namespace pbr

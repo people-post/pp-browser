@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/ui/CallController.h"
 
 #include "base/media/CallMediaEngine.h"
@@ -90,13 +91,32 @@ CallController& CallController::Instance() {
   static CallController instance;
   return instance;
 }
+void CallController::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+  BindToMessaging();
+}
+
+MessagingHub& CallController::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("CallController messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& CallController::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("CallController messaging not bound");
+  }
+  return *messaging_;
+}
+
 
 void CallController::BindToMessaging() {
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!messaging_ || !Instance().Hub().IsInitialized()) {
     bound_calls_ = nullptr;
     return;
   }
-  auto* calls = MessagingHub::Instance().Calls();
+  auto* calls = Instance().Hub().Calls();
   if (!calls) {
     bound_calls_ = nullptr;
     return;
@@ -114,7 +134,7 @@ void CallController::BindToMessaging() {
 
 void CallController::Tick() {
   BindToMessaging();
-  if (auto* calls = MessagingHub::Instance().Calls()) {
+  if (auto* calls = Instance().Hub().Calls()) {
     calls->SweepExpiredInvites();
   }
   const int64_t now = util::NowUnixMs();
@@ -178,7 +198,7 @@ std::string CallController::DisplayNameForIdentity(const std::string& identity) 
   if (identity.empty()) {
     return {};
   }
-  if (auto contact = MessagingHub::Instance().Contacts().FindByIdentity(identity, ContactIdKind::RelayUser)) {
+  if (auto contact = Instance().Hub().Contacts().FindByIdentity(identity, ContactIdKind::RelayUser)) {
     if (*contact) {
       std::string name =
           (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -204,7 +224,7 @@ std::string CallController::FormatElapsed(const int64_t connected_at_ms) {
 
 void CallController::RefreshPendingRing() {
   BindToMessaging();
-  auto* calls = MessagingHub::Instance().Calls();
+  auto* calls = Instance().Hub().Calls();
   if (!calls) {
     return;
   }
@@ -334,12 +354,12 @@ void CallController::RefreshPendingRing() {
 
 bool CallController::StartCall(const std::string& thread_id, const bool video) {
   BindToMessaging();
-  auto* calls = MessagingHub::Instance().Calls();
+  auto* calls = Instance().Hub().Calls();
   if (!calls) {
     UserFeedback::Fail("Calls unavailable");
     return false;
   }
-  auto thread = MessagingHub::Instance().Store().GetThread(thread_id);
+  auto thread = Instance().Hub().Store().GetThread(thread_id);
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Direct) {
     UserFeedback::Fail("Voice and video calls are available in 1:1 chats");
     return false;
@@ -369,7 +389,7 @@ bool CallController::StartVideoCall(const std::string& thread_id) {
 
 void CallController::AcceptIncoming() {
   BindToMessaging();
-  auto* calls = MessagingHub::Instance().Calls();
+  auto* calls = Instance().Hub().Calls();
   if (!calls || ringing_call_id_.empty()) {
     return;
   }
@@ -391,7 +411,7 @@ void CallController::AcceptIncoming() {
 
 void CallController::DeclineIncoming() {
   BindToMessaging();
-  auto* calls = MessagingHub::Instance().Calls();
+  auto* calls = Instance().Hub().Calls();
   if (!calls || ringing_call_id_.empty()) {
     return;
   }
@@ -402,7 +422,7 @@ void CallController::DeclineIncoming() {
 
 void CallController::LeaveActive() {
   BindToMessaging();
-  auto* calls = MessagingHub::Instance().Calls();
+  auto* calls = Instance().Hub().Calls();
   if (!calls || active_call_id_.empty()) {
     return;
   }
@@ -412,7 +432,7 @@ void CallController::LeaveActive() {
 
 void CallController::ToggleMute() {
   BindToMessaging();
-  auto* calls = MessagingHub::Instance().Calls();
+  auto* calls = Instance().Hub().Calls();
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
@@ -424,7 +444,7 @@ void CallController::ToggleMute() {
 
 void CallController::ToggleCamera() {
   BindToMessaging();
-  auto* calls = MessagingHub::Instance().Calls();
+  auto* calls = Instance().Hub().Calls();
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
@@ -465,7 +485,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;
-  auto* calls = MessagingHub::Instance().Calls();
+  auto* calls = Instance().Hub().Calls();
   if (calls && !active_call_id_.empty()) {
     if (auto peer_video = calls->PeerVideoEnabledForCall(active_call_id_);
         peer_video && peer_video->has_value()) {
@@ -545,7 +565,7 @@ void CallController::RefreshCallLevels() {
   if (active_call_id_.empty()) {
     return;
   }
-  auto* calls = MessagingHub::Instance().Calls();
+  auto* calls = Instance().Hub().Calls();
   if (!calls) {
     return;
   }

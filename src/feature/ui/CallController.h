@@ -15,12 +15,18 @@ class Context;
 
 namespace pbr {
 
+class MessagingHub;
+
 class CallMediaEngine;
 
 /** Shell-level call ring / in-call chrome. */
 class CallController {
 public:
   static CallController& Instance();
+
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
 
   void BindToMessaging();
   void Tick();
@@ -66,6 +72,8 @@ private:
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
   CallRingtone ringtone_;
+  MessagingHub* messaging_ = nullptr;
+
 };
 
 } // namespace pbr

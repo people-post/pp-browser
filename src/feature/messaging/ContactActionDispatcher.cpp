@@ -4,7 +4,7 @@
 #include "base/messaging/MessagingJson.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/people/ContactTypes.h"
-#include "feature/messaging/MessagingHub.h"
+#include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/P2pMessagingService.h"
 
 #include <nlohmann/json.hpp>
@@ -12,14 +12,20 @@
 namespace pbr {
 
 ContactActionDispatcher::ContactActionDispatcher(InboxController& inbox, ContactsStore& contacts,
-                                                 IdentityStore& identity, IRegistrationClient* registration,
+                                                 IdentityStore& identity, IThreadStore& store,
+                                                 GroupMembershipService* groups, IRegistrationClient* registration,
                                                  P2pMessagingService* p2p)
-    : inbox_(inbox), contacts_(contacts), identity_(identity), registration_(registration), p2p_(p2p) {
+    : inbox_(inbox), contacts_(contacts), identity_(identity), store_(store), groups_(groups),
+      registration_(registration), p2p_(p2p) {
   redirectLogger("ContactActionDispatcher");
 }
 
 void ContactActionDispatcher::SetRegistrationClient(IRegistrationClient* registration) {
   registration_ = registration;
+}
+
+void ContactActionDispatcher::SetGroupMembership(GroupMembershipService* groups) {
+  groups_ = groups;
 }
 
 void ContactActionDispatcher::SetOnActionMessage(std::function<void(const std::string& message)> callback) {
@@ -199,10 +205,10 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!payload.contains("invite_nonce") || !payload["invite_nonce"].is_string()) {
       return Error("Missing invite_nonce");
     }
-    if (!MessagingHub::Instance().IsInitialized()) {
+    if (!groups_) {
       return Error("Messaging not initialized");
     }
-    auto thread = MessagingHub::Instance().Groups().AcceptInvite(payload["invite_nonce"].get<std::string>());
+    auto thread = groups_->AcceptInvite(payload["invite_nonce"].get<std::string>());
     if (!thread) {
       return thread.error();
     }
@@ -217,10 +223,10 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!payload.contains("invite_nonce") || !payload["invite_nonce"].is_string()) {
       return Error("Missing invite_nonce");
     }
-    if (!MessagingHub::Instance().IsInitialized()) {
+    if (!groups_) {
       return Error("Messaging not initialized");
     }
-    if (auto declined = MessagingHub::Instance().Groups().DeclineInvite(payload["invite_nonce"].get<std::string>());
+    if (auto declined = groups_->DeclineInvite(payload["invite_nonce"].get<std::string>());
         !declined) {
       return declined.error();
     }
@@ -253,10 +259,10 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
       }
     }
     if (payload.contains("invite_nonce") && payload["invite_nonce"].is_string() &&
-        MessagingHub::Instance().IsInitialized()) {
+        groups_) {
       const std::string invite_nonce = payload["invite_nonce"].get<std::string>();
-      (void)MessagingHub::Instance().Groups().DeclineInvite(invite_nonce);
-      (void)MessagingHub::Instance().Groups().ResolveInviteCard(inviter_identity, invite_nonce,
+      (void)groups_->DeclineInvite(invite_nonce);
+      (void)groups_->ResolveInviteCard(inviter_identity, invite_nonce,
                                                                 InviteStatus::Blocked, "You blocked the inviter");
     }
     if (on_action_message_) {
@@ -291,39 +297,38 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!payload.contains("group_id") || !payload["group_id"].is_string()) {
       return Error("Missing group_id");
     }
-    if (!MessagingHub::Instance().IsInitialized()) {
+    if (!groups_) {
       return Error("Messaging not initialized");
     }
     const std::string group_id = payload["group_id"].get<std::string>();
-    auto roster = MessagingHub::Instance().Groups().ListRoster(group_id);
+    auto roster = groups_->ListRoster(group_id);
     std::string old_title = "Group";
-    if (auto thread = MessagingHub::Instance().Store().FindGroupThread(group_id); thread && *thread) {
+    if (auto thread = store_.FindGroupThread(group_id); thread && *thread) {
       old_title = (*thread)->title.empty() ? old_title : (*thread)->title;
     }
     const std::string new_title = old_title + " (continued)";
     std::vector<std::string> member_contact_ids;
     if (roster) {
-      auto local = MessagingHub::Instance().Identity().Get();
+      auto local = identity_.Get();
       for (const GroupRosterMember& member : *roster) {
         if (local && member.member_identity == local->relay_user_id) {
           continue;
         }
-        if (MessagingHub::Instance().Groups().IsMemberUnreachable(group_id, member.member_identity)) {
+        if (groups_->IsMemberUnreachable(group_id, member.member_identity)) {
           continue;
         }
-        if (auto contact = MessagingHub::Instance().Contacts().FindByIdentity(member.member_identity,
-                                                                             ContactIdKind::RelayUser)) {
+        if (auto contact = contacts_.FindByIdentity(member.member_identity, ContactIdKind::RelayUser)) {
           if (*contact) {
             member_contact_ids.push_back((*contact)->id);
           }
         }
       }
     }
-    auto forked = MessagingHub::Instance().Groups().ForkGroup(group_id, new_title, member_contact_ids);
+    auto forked = groups_->ForkGroup(group_id, new_title, member_contact_ids);
     if (!forked) {
       return forked.error();
     }
-    (void)MessagingHub::Instance().Groups().ResolveOwnerUnreachableAdvisory(group_id);
+    (void)groups_->ResolveOwnerUnreachableAdvisory(group_id);
     (void)inbox_.OpenThread(forked->id);
     if (on_action_message_) {
       on_action_message_("Started " + forked->title + " (fresh history)");
@@ -335,11 +340,10 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!payload.contains("owner_identity") || !payload["owner_identity"].is_string()) {
       return Error("Missing owner_identity");
     }
-    if (!MessagingHub::Instance().IsInitialized()) {
+    if (!groups_) {
       return Error("Messaging not initialized");
     }
-    auto thread =
-        MessagingHub::Instance().Groups().OpenOwnerDirectMessage(payload["owner_identity"].get<std::string>());
+    auto thread = groups_->OpenOwnerDirectMessage(payload["owner_identity"].get<std::string>());
     if (!thread) {
       return thread.error();
     }
@@ -354,12 +358,10 @@ Roe<std::optional<std::string>> ContactActionDispatcher::Dispatch(const std::str
     if (!payload.contains("group_id") || !payload["group_id"].is_string()) {
       return Error("Missing group_id");
     }
-    if (!MessagingHub::Instance().IsInitialized()) {
+    if (!groups_) {
       return Error("Messaging not initialized");
     }
-    if (auto resolved =
-            MessagingHub::Instance().Groups().ResolveOwnerUnreachableAdvisory(payload["group_id"].get<std::string>());
-        !resolved) {
+    if (auto resolved = groups_->ResolveOwnerUnreachableAdvisory(payload["group_id"].get<std::string>()); !resolved) {
       return resolved.error();
     }
     inbox_.NotifyThreadChanged();

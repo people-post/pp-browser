@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/ui/PinGateController.h"
 
 #include "base/crypto/PinDefaults.h"
@@ -18,7 +19,7 @@ Roe<void> UnlockProfileAndMessaging(const std::string& pin) {
   if (auto unlocked = ProfileSecretsService::Instance().Unlock(pin); !unlocked) {
     return unlocked.error();
   }
-  return MessagingHub::Instance().EnsureMessagingReady();
+  return PinGateController::Instance().Hub().EnsureMessagingReady();
 }
 
 void SetUnlockInProgressUi(const bool in_progress) {
@@ -38,6 +39,24 @@ PinGateController& PinGateController::Instance() {
   static PinGateController controller;
   return controller;
 }
+void PinGateController::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+}
+
+MessagingHub& PinGateController::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("PinGateController messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& PinGateController::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("PinGateController messaging not bound");
+  }
+  return *messaging_;
+}
+
 
 void PinGateController::DrainQueue(const bool unlocked) {
   std::vector<std::function<void(bool)>> queued;
@@ -87,7 +106,7 @@ bool PinGateController::TrySilentDefaultUnlock() {
   if (!SessionStore::Instance().Snapshot().profile_prefs.pin_is_default) {
     return false;
   }
-  if (MessagingHub::Instance().IsMessagingReady()) {
+  if (Instance().Hub().IsMessagingReady()) {
     return true;
   }
   if (!ProfileSecretsService::Instance().HasVault()) {
@@ -98,7 +117,7 @@ bool PinGateController::TrySilentDefaultUnlock() {
       return false;
     }
   }
-  return static_cast<bool>(MessagingHub::Instance().EnsureMessagingReady());
+  return static_cast<bool>(Instance().Hub().EnsureMessagingReady());
 }
 
 void PinGateController::ShowChooser(std::function<void(bool)> done) {
@@ -147,13 +166,13 @@ void PinGateController::ShowGate(const bool create_mode, std::function<void(bool
 }
 
 void PinGateController::EnsureUnlocked(std::function<void(bool unlocked)> done) {
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!Instance().Hub().IsInitialized()) {
     if (done) {
       done(false);
     }
     return;
   }
-  if (MessagingHub::Instance().IsMessagingReady()) {
+  if (Instance().Hub().IsMessagingReady()) {
     if (done) {
       done(true);
     }
@@ -167,7 +186,7 @@ void PinGateController::EnsureUnlocked(std::function<void(bool unlocked)> done) 
     return;
   }
   if (ProfileSecretsService::Instance().IsUnlocked()) {
-    if (auto ready = MessagingHub::Instance().EnsureMessagingReady(); ready) {
+    if (auto ready = Instance().Hub().EnsureMessagingReady(); ready) {
       if (done) {
         done(true);
       }
@@ -197,17 +216,17 @@ void PinGateController::BeginDeferredUnlockAfterFirstPresent() {
   }
   deferred_unlock_started_ = true;
 
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!Instance().Hub().IsInitialized()) {
     DrainQueue(false);
     return;
   }
-  if (MessagingHub::Instance().IsMessagingReady()) {
+  if (Instance().Hub().IsMessagingReady()) {
     DrainQueue(true);
     return;
   }
   if (!ProfileSecretsService::Instance().NeedsUnlock()) {
     if (ProfileSecretsService::Instance().IsUnlocked()) {
-      const bool ready = static_cast<bool>(MessagingHub::Instance().EnsureMessagingReady());
+      const bool ready = static_cast<bool>(Instance().Hub().EnsureMessagingReady());
       DrainQueue(ready);
     } else {
       // No vault yet — leave locked until a feature calls EnsureUnlocked (chooser).

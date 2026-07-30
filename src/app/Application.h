@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/Bootstrap.h"
+#include "common/Error.h"
 #include "common/Module.h"
 
 #include <memory>
@@ -10,6 +11,8 @@
 class FontEngineInterfaceHarfBuzz;
 
 namespace pbr {
+
+class MessagingHub;
 
 class Application : public Module {
 public:
@@ -23,10 +26,18 @@ public:
   void Run();
   void Shutdown();
 
+  MessagingHub& Messaging();
+
+  /** Tear down messaging hub + profile secrets when initialized. */
+  void ShutdownMessaging();
+  /** Wipe active profile data dir and reinitialize secrets + hub (app-owned lifecycle). */
+  Roe<void> ResetActiveProfile();
+
   static std::string AssetsPath(const std::string& relative);
 
 private:
   bool initialized_ = false;
+  std::unique_ptr<MessagingHub> messaging_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;
 };
 

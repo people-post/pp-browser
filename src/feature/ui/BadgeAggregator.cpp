@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/ui/BadgeAggregator.h"
 
 #include "feature/messaging/MessagingHub.h"
@@ -15,10 +16,10 @@ int ActiveThreadUnreadDeduction(const InboxController& inbox, const NavTab tab) 
     return 0;
   }
   const std::string& active_id = inbox.ActiveThreadId();
-  if (active_id.empty() || !MessagingHub::Instance().IsInitialized()) {
+  if (active_id.empty() || !BadgeAggregator::Instance().Hub().IsInitialized()) {
     return 0;
   }
-  auto thread = MessagingHub::Instance().Store().GetThread(active_id);
+  auto thread = BadgeAggregator::Instance().Hub().Store().GetThread(active_id);
   if (!thread || !*thread) {
     return 0;
   }
@@ -31,6 +32,24 @@ BadgeAggregator& BadgeAggregator::Instance() {
   static BadgeAggregator aggregator;
   return aggregator;
 }
+void BadgeAggregator::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+}
+
+MessagingHub& BadgeAggregator::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("BadgeAggregator messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& BadgeAggregator::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("BadgeAggregator messaging not bound");
+  }
+  return *messaging_;
+}
+
 
 std::string FormatBadgeCount(const int count) {
   if (count <= 0) {
@@ -44,8 +63,8 @@ std::string FormatBadgeCount(const int count) {
 
 void BadgeAggregator::Refresh() {
   NavBadgeState next;
-  if (MessagingHub::Instance().IsInitialized()) {
-    auto& inbox = MessagingHub::Instance().Inbox();
+  if (Hub().IsInitialized()) {
+    auto& inbox = Hub().Inbox();
     const int total = inbox.SumUnread();
     const NavTab tab = ShellHost::Instance().State().nav_tab;
     const int deduction = ActiveThreadUnreadDeduction(inbox, tab);

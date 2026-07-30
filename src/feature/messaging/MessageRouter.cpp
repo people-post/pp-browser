@@ -5,13 +5,12 @@
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "common/Utilities.h"
-#include "feature/messaging/MessagingHub.h"
 #include "base/messaging/ThreadTypes.h"
 
 namespace pbr {
 
-MessageRouter::MessageRouter(InboxController& inbox, P2pMessagingService& p2p, AgentSession& agent)
-    : inbox_(inbox), p2p_(p2p), agent_(agent) {
+MessageRouter::MessageRouter(InboxController& inbox, P2pMessagingService& p2p, AgentSession& agent, IThreadStore& store)
+    : inbox_(inbox), p2p_(p2p), agent_(agent), store_(store) {
   redirectLogger("MessageRouter");
 }
 
@@ -33,7 +32,7 @@ bool MessageRouter::NeedsSharedAiConfirm(const std::string& thread_id) const {
 }
 
 Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::string& prompt, const AtAiMode mode) {
-  auto thread = MessagingHub::Instance().Store().GetThread(thread_id);
+  auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
     return Error("Thread not found");
   }
@@ -64,7 +63,7 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
     return Error("Empty message");
   }
 
-  auto thread = MessagingHub::Instance().Store().GetThread(thread_id);
+  auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
   }
@@ -131,7 +130,7 @@ bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::st
     return false;
   }
 
-  auto thread = MessagingHub::Instance().Store().GetThread(thread_id);
+  auto thread = store_.GetThread(thread_id);
   if (!thread || !*thread) {
     return true;
   }

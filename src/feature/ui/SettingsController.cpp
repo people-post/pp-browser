@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/ui/SettingsController.h"
 
 #include "base/crypto/ProfileSecretsService.h"
@@ -123,6 +124,30 @@ SettingsController& SettingsController::Instance() {
   static SettingsController controller;
   return controller;
 }
+void SettingsController::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+  if (auto* profile = dynamic_cast<ProfileSettingsSection*>(FindHandler("profile"))) {
+    profile->BindMessaging(messaging);
+  }
+  if (auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"))) {
+    security->BindMessaging(messaging);
+  }
+}
+
+MessagingHub& SettingsController::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("SettingsController messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& SettingsController::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("SettingsController messaging not bound");
+  }
+  return *messaging_;
+}
+
 
 SettingsSectionHandler* SettingsController::FindHandler(const std::string& section_id) {
   const auto it = section_handlers_by_id_.find(section_id);
@@ -274,8 +299,8 @@ void SettingsController::SyncBindingsFromSession() {
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     handler->SyncFromSession(bootstrap, ui_state_);
   }
-  if (MessagingHub::Instance().IsInitialized()) {
-    ui_state_.libp2p_status_message = MessagingHub::Instance().LastLibp2pError();
+  if (Instance().Hub().IsInitialized()) {
+    ui_state_.libp2p_status_message = Instance().Hub().LastLibp2pError();
   } else {
     ui_state_.libp2p_status_message.clear();
   }
@@ -284,8 +309,8 @@ void SettingsController::SyncBindingsFromSession() {
   // Sync+DirtyAll would SetValue the input and reset cursor / feel like focus loss.
   auto& edits = UiEditSession::Instance();
   const std::string live = bindings_.profile_nickname.c_str();
-  if (MessagingHub::Instance().IsInitialized() && MessagingHub::Instance().IsMessagingReady()) {
-    if (auto identity = MessagingHub::Instance().Identity().Get()) {
+  if (Instance().Hub().IsInitialized() && Instance().Hub().IsMessagingReady()) {
+    if (auto identity = Instance().Hub().Identity().Get()) {
       // Resolve against the *previous* baseline first. OnLoaded before Resolve makes an
       // empty binding look mid-edit vs the freshly loaded nickname (keeps nickname blank).
       ui_state_.profile_nickname =
@@ -733,12 +758,12 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   }
 
   status_ = "";
-  if (section_id == "network" && MessagingHub::Instance().IsMessagingReady()) {
-    MessagingHub::Instance().RefreshMeshCapabilities();
+  if (section_id == "network" && Instance().Hub().IsMessagingReady()) {
+    Instance().Hub().RefreshMeshCapabilities();
   }
-  if (section_id == "profile" && MessagingHub::Instance().IsInitialized() &&
-      MessagingHub::Instance().IsMessagingReady()) {
-    if (auto identity = MessagingHub::Instance().Identity().Get()) {
+  if (section_id == "profile" && Instance().Hub().IsInitialized() &&
+      Instance().Hub().IsMessagingReady()) {
+    if (auto identity = Instance().Hub().Identity().Get()) {
       UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, identity->nickname);
       ui_state_.profile_nickname = identity->nickname;
     }
@@ -1181,7 +1206,7 @@ void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*mo
 }
 
 void SettingsController::ApplyReachabilityFromHub() {
-  auto& hub = MessagingHub::Instance();
+  auto& hub = Instance().Hub();
   ui_state_.show_connection_card =
       ui_state_.show_node_toggle && ui_state_.node_enabled == "on" && hub.IsMessagingReady();
   ui_state_.show_circuit_relay_toggle = ui_state_.show_connection_card;
@@ -1200,7 +1225,7 @@ void SettingsController::ApplyReachabilityFromHub() {
     ui_state_.show_reachability_help = false;
   }
 
-  if (MessagingHub::Instance().IsInitialized()) {
+  if (Instance().Hub().IsInitialized()) {
     const auto& cfg = SessionStore::Instance().Snapshot().config.libp2p;
     ui_state_.circuit_relay_enabled = cfg.capabilities.circuit_relay ? "on" : "off";
     ui_state_.media_relay_enabled = cfg.capabilities.media_relay ? "on" : "off";
@@ -1228,13 +1253,13 @@ void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*
 
 void SettingsController::RetestReachabilityCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                     const Rml::VariantList& /*args*/) {
-  MessagingHub::Instance().RunReachabilityProbe(false);
+  Instance().Hub().RunReachabilityProbe(false);
   Instance().SyncReachabilityFromHub();
 }
 
 void SettingsController::TryUpnpPortCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                              const Rml::VariantList& /*args*/) {
-  MessagingHub::Instance().TryUpnpPortMapping();
+  Instance().Hub().TryUpnpPortMapping();
   Instance().SyncReachabilityFromHub();
 }
 
@@ -1371,12 +1396,12 @@ void SettingsController::OnRegisterProfile() {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
       return;
     }
-    if (auto registered = ProfileSettingsSection::RegisterIdentity(ui_state_); !registered) {
+    if (auto registered = ProfileSettingsSection::RegisterIdentity(ui_state_, Instance().Hub()); !registered) {
       ReportFailure(registered.error());
       return;
     }
-    if (MessagingHub::Instance().IsInitialized() && MessagingHub::Instance().IsMessagingReady()) {
-      if (auto identity = MessagingHub::Instance().Identity().Get()) {
+    if (Instance().Hub().IsInitialized() && Instance().Hub().IsMessagingReady()) {
+      if (auto identity = Instance().Hub().Identity().Get()) {
         UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, identity->nickname);
         ui_state_.profile_nickname = identity->nickname;
       }
@@ -1397,7 +1422,7 @@ void SettingsController::OnRotateBriefLlmKey() {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
       return;
     }
-    if (auto rotated = ProfileSettingsSection::RotateBriefLlmKey(ui_state_); !rotated) {
+    if (auto rotated = ProfileSettingsSection::RotateBriefLlmKey(ui_state_, Instance().Hub()); !rotated) {
       ReportFailure(rotated.error());
       return;
     }
@@ -1470,7 +1495,7 @@ void SettingsController::OnClearUndeliveredCallback(Rml::DataModelHandle /*model
 }
 
 void SettingsController::OnClearUndeliveredOlderThan() {
-  if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().IsMessagingReady()) {
+  if (!Instance().Hub().IsInitialized() || !Instance().Hub().IsMessagingReady()) {
     ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.clear_undelivered.not_ready")));
     return;
   }
@@ -1483,7 +1508,7 @@ void SettingsController::OnClearUndeliveredOlderThan() {
           return;
         }
         BrowserThread::PostTask(BrowserThreadId::IO, [this]() {
-          auto result = MessagingHub::Instance().P2p().ClearUndeliveredOlderThan(7);
+          auto result = Instance().Hub().P2p().ClearUndeliveredOlderThan(7);
           BrowserThread::PostTask(BrowserThreadId::UI, [this, result = std::move(result)]() mutable {
             if (!result) {
               ReportFailure(result.error());
@@ -1519,52 +1544,17 @@ void SettingsController::OnResetProfile() {
 }
 
 void SettingsController::PerformResetProfile() {
-  const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
-  const std::string profile_dir = bootstrap.profile_data_dir;
-  const AppConfig config = bootstrap.config;
-
-  if (profile_dir.empty()) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile path unavailable"));
+  if (!ChatSessionActions::Instance().reset_active_profile) {
+    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile reset is not available"));
     return;
   }
 
-  log().info << "Resetting profile data at " << profile_dir;
-
-  MessagingHub::Instance().Shutdown();
-  ProfileSecretsService::Instance().Shutdown();
-
-  std::error_code ec;
-  std::filesystem::remove_all(profile_dir, ec);
-  if (ec) {
-    log().error << "remove_all(" << profile_dir << "): " << ec.message();
-    ReportFailure(AppError::Storage(Err::Storage::Failed, "Failed to delete profile data: " + ec.message()));
+  log().info << "Requesting active profile reset";
+  if (auto reset = ChatSessionActions::Instance().reset_active_profile(); !reset) {
+    ReportFailure(reset.error());
     return;
   }
 
-  AppPaths::EnsureDirs(profile_dir);
-  if (auto manifest = SchemaVersion::EnsureProfileManifest(profile_dir); !manifest) {
-    ReportFailure(manifest.error());
-    return;
-  }
-
-  if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_dir); !secrets) {
-    ReportFailure(secrets.error());
-    return;
-  }
-
-  if (auto hub = MessagingHub::Instance().Initialize(config, profile_dir); !hub) {
-    ReportFailure(hub.error());
-    return;
-  }
-
-  if (auto prefs = SessionStore::Instance().ReloadProfilePrefs(); !prefs) {
-    ReportFailure(prefs.error());
-    return;
-  }
-
-  if (ChatSessionActions::Instance().on_profile_data_reset) {
-    ChatSessionActions::Instance().on_profile_data_reset();
-  }
   ContactsController::Instance().Refresh();
 
   bindings_.pin_change_old = "";

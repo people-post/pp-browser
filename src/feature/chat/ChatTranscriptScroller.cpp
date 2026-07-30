@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/chat/ChatTranscriptScroller.h"
 
 #include "base/i18n/LocalizationService.h"
@@ -14,6 +15,24 @@
 #include <string>
 
 namespace pbr {
+
+void ChatTranscriptScroller::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+}
+
+MessagingHub& ChatTranscriptScroller::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("ChatTranscriptScroller messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& ChatTranscriptScroller::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("ChatTranscriptScroller messaging not bound");
+  }
+  return *messaging_;
+}
 
 ChatTranscriptScroller::ChatTranscriptScroller(Rml::Context*& context, View view, bool& messaging_ready)
     : context_(context), view_(view), messaging_ready_(messaging_ready) {}
@@ -195,13 +214,13 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
   if (loading_older_local_ || !messaging_ready_ || view_.messages.empty()) {
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  const std::string thread_id = Hub().Inbox().ActiveThreadId();
   if (thread_id.empty()) {
     return;
   }
 
   const int64_t oldest = view_.messages.front().display_order;
-  if (!MessagingHub::Instance().Inbox().HasLocalMessagesBefore(thread_id, oldest)) {
+  if (!Hub().Inbox().HasLocalMessagesBefore(thread_id, oldest)) {
     has_more_local_history_ = false;
     return;
   }
@@ -213,7 +232,7 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
   }
 
   loading_older_local_ = true;
-  auto older = MessagingHub::Instance().Store().GetMessagesPage(thread_id, oldest, kDefaultMessagesPageSize);
+  auto older = Hub().Store().GetMessagesPage(thread_id, oldest, kDefaultMessagesPageSize);
   if (!older || older->empty()) {
     has_more_local_history_ = false;
     loading_older_local_ = false;
@@ -223,9 +242,9 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
   }
   loaded_min_display_order_ = older->front().display_order;
   has_more_local_history_ =
-      MessagingHub::Instance().Inbox().HasLocalMessagesBefore(thread_id, *loaded_min_display_order_);
+      Hub().Inbox().HasLocalMessagesBefore(thread_id, *loaded_min_display_order_);
 
-  view_.messages = MessagingHub::Instance().Inbox().BuildDisplayRows(thread_id, loaded_min_display_order_);
+  view_.messages = Hub().Inbox().BuildDisplayRows(thread_id, loaded_min_display_order_);
   view_.has_turns = !view_.messages.empty();
   if (dirty_turns_) {
     dirty_turns_();
@@ -285,9 +304,9 @@ void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::stri
                                             size_t prev_count) {
   if (!view_.messages.empty()) {
     loaded_min_display_order_ = view_.messages.front().display_order;
-    const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+    const std::string thread_id = Hub().Inbox().ActiveThreadId();
     has_more_local_history_ =
-        MessagingHub::Instance().Inbox().HasLocalMessagesBefore(thread_id, view_.messages.front().display_order);
+        Hub().Inbox().HasLocalMessagesBefore(thread_id, view_.messages.front().display_order);
   } else {
     loaded_min_display_order_.reset();
     has_more_local_history_ = false;
@@ -316,7 +335,7 @@ void ChatTranscriptScroller::CaptureScrollBeforePrependIfUnpinned() {
 void ChatTranscriptScroller::ExpandLoadedMinFromOlderPage(const std::string& thread_id,
                                                           int64_t before_display_order) {
   auto older =
-      MessagingHub::Instance().Store().GetMessagesPage(thread_id, before_display_order, kDefaultMessagesPageSize);
+      Hub().Store().GetMessagesPage(thread_id, before_display_order, kDefaultMessagesPageSize);
   if (older && !older->empty()) {
     loaded_min_display_order_ = older->front().display_order;
   }

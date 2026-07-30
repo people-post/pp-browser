@@ -22,6 +22,8 @@ class Element;
 
 namespace pbr {
 
+class MessagingHub;
+
 enum class DismissStyle { Instant, Animated };
 
 enum class DismissTarget {
@@ -42,6 +44,10 @@ struct LocalBackEntry {
 class ShellHost {
 public:
   static ShellHost& Instance();
+
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
 
   void Initialize(Rml::Context* context);
   void SyncLayout();
@@ -201,6 +207,8 @@ private:
   std::function<void(NavTab)> on_nav_tab_changed_;
   std::function<void(LayoutMode)> on_layout_mode_changed_;
   std::function<void()> on_layout_synced_;
+  MessagingHub* messaging_ = nullptr;
+
 };
 
 } // namespace pbr

@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/ui/ProfileSettingsSection.h"
 
 #include "base/data/LlmPreset.h"
@@ -13,6 +14,24 @@
 #include <nlohmann/json.hpp>
 
 namespace pbr {
+
+void ProfileSettingsSection::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+}
+
+MessagingHub& ProfileSettingsSection::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("ProfileSettingsSection messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& ProfileSettingsSection::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("ProfileSettingsSection messaging not bound");
+  }
+  return *messaging_;
+}
 
 namespace {
 
@@ -34,12 +53,12 @@ std::string FormatExpiresDisplay(const std::string& iso) {
   return iso;
 }
 
-void SyncBriefKeyMasked(SettingsUiState& state) {
+void SyncBriefKeyMasked(SettingsUiState& state, MessagingHub& messaging) {
   state.brief_llm_key_masked.clear();
-  if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().IsMessagingReady()) {
+  if (!messaging.IsInitialized() || !messaging.IsMessagingReady()) {
     return;
   }
-  auto identity = MessagingHub::Instance().Identity().Get();
+  auto identity = messaging.Identity().Get();
   if (!identity) {
     return;
   }
@@ -81,10 +100,10 @@ SettingsFlushMode ProfileSettingsSection::FlushMode() const {
 void ProfileSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.auto_renew_registration = bootstrap.profile_prefs.auto_renew_registration ? "auto" : "off";
   state.show_notifications = bootstrap.profile_prefs.show_notifications ? "on" : "off";
-  if (!MessagingHub::Instance().IsInitialized() || !MessagingHub::Instance().IsMessagingReady()) {
+  if (!Hub().IsInitialized() || !Hub().IsMessagingReady()) {
     return;
   }
-  auto identity = MessagingHub::Instance().Identity().Get();
+  auto identity = Hub().Identity().Get();
   if (!identity) {
     return;
   }
@@ -93,7 +112,7 @@ void ProfileSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.profile_relay_id = identity->relay_user_id;
   state.profile_public_key = identity->public_key_b64;
   SyncRegistrationUi(state, *identity);
-  SyncBriefKeyMasked(state);
+  SyncBriefKeyMasked(state, Hub());
 }
 
 bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {
@@ -105,10 +124,10 @@ bool ProfileSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   if (show_notifications != bootstrap.profile_prefs.show_notifications) {
     return false;
   }
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!Hub().IsInitialized()) {
     return true;
   }
-  auto identity = MessagingHub::Instance().Identity().Get();
+  auto identity = const_cast<MessagingHub&>(Hub()).Identity().Get();
   if (!identity) {
     return true;
   }
@@ -133,17 +152,17 @@ Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& st
     if (auto saved = store.SaveProfilePrefs(prefs); !saved) {
       return saved.error();
     }
-    (void)PushDeviceCoordinator::SyncWithPreference(show_notifications);
+    (void)PushDeviceCoordinator::SyncWithPreference(Hub(), show_notifications);
   }
 
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!Hub().IsInitialized()) {
     SyncFromSession(store.Snapshot(), state);
     return {};
   }
 
-  auto identity = MessagingHub::Instance().Identity().Get();
+  auto identity = Hub().Identity().Get();
   if (!identity) {
-    if (!MessagingHub::Instance().IsMessagingReady()) {
+    if (!Hub().IsMessagingReady()) {
       SyncFromSession(store.Snapshot(), state);
       return {};
     }
@@ -155,18 +174,18 @@ Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& st
     return {};
   }
 
-  if (!MessagingHub::Instance().IsMessagingReady()) {
+  if (!Hub().IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to save identity");
   }
 
   LocalIdentity updated = *identity;
   updated.nickname = state.profile_nickname;
-  if (auto saved = MessagingHub::Instance().Identity().Update(updated); !saved) {
+  if (auto saved = Hub().Identity().Update(updated); !saved) {
     return saved.error();
   }
 
   if (identity->registered) {
-    auto result = UpdateRegisteredNickname(MessagingHub::Instance().Registration(), MessagingHub::Instance().Identity(),
+    auto result = UpdateRegisteredNickname(Hub().Registration(), Hub().Identity(),
                                            state.profile_nickname);
     if (!result) {
       return result.error();
@@ -181,15 +200,15 @@ void ProfileSettingsSection::ResetToDefaults(SettingsUiState& state, const Sessi
   SyncFromSession(SessionStore::Instance().Snapshot(), state);
 }
 
-Roe<void> ProfileSettingsSection::RegisterIdentity(SettingsUiState& state) {
-  if (!MessagingHub::Instance().IsInitialized()) {
+Roe<void> ProfileSettingsSection::RegisterIdentity(SettingsUiState& state, MessagingHub& messaging) {
+  if (!messaging.IsInitialized()) {
     return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
-  if (!MessagingHub::Instance().IsMessagingReady()) {
+  if (!messaging.IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to register");
   }
 
-  auto identity = MessagingHub::Instance().Identity().Get();
+  auto identity = messaging.Identity().Get();
   if (!identity) {
     return identity.error();
   }
@@ -197,36 +216,37 @@ Roe<void> ProfileSettingsSection::RegisterIdentity(SettingsUiState& state) {
   if (!state.profile_nickname.empty()) {
     LocalIdentity updated = *identity;
     updated.nickname = state.profile_nickname;
-    if (auto saved = MessagingHub::Instance().Identity().Update(updated); !saved) {
+    if (auto saved = messaging.Identity().Update(updated); !saved) {
       return saved.error();
     }
-    identity = MessagingHub::Instance().Identity().Get();
+    identity = messaging.Identity().Get();
     if (!identity) {
       return identity.error();
     }
   }
 
-  auto applied = FinishAndPersistRegistration(MessagingHub::Instance().Registration(),
-                                              MessagingHub::Instance().Identity(), identity->nickname);
+  auto applied = FinishAndPersistRegistration(messaging.Registration(),
+                                              messaging.Identity(), identity->nickname);
   if (!applied) {
     return applied.error();
   }
 
   ProfileSettingsSection section;
+  section.BindMessaging(messaging);
   section.SyncFromSession(SessionStore::Instance().Snapshot(), state);
   ReconfigureAgentIfNeeded();
   return {};
 }
 
-Roe<void> ProfileSettingsSection::RotateBriefLlmKey(SettingsUiState& state) {
-  if (!MessagingHub::Instance().IsInitialized()) {
+Roe<void> ProfileSettingsSection::RotateBriefLlmKey(SettingsUiState& state, MessagingHub& messaging) {
+  if (!messaging.IsInitialized()) {
     return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
   }
-  if (!MessagingHub::Instance().IsMessagingReady()) {
+  if (!messaging.IsMessagingReady()) {
     return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to rotate API key");
   }
 
-  auto identity = MessagingHub::Instance().Identity().Get();
+  auto identity = messaging.Identity().Get();
   if (!identity) {
     return identity.error();
   }
@@ -253,7 +273,7 @@ Roe<void> ProfileSettingsSection::RotateBriefLlmKey(SettingsUiState& state) {
   if (response->status_code == 401 || response->status_code == 403) {
     LocalIdentity expired = *identity;
     MarkRegistrationExpired(expired);
-    (void)MessagingHub::Instance().Identity().Update(expired);
+    (void)messaging.Identity().Update(expired);
     ProfileSettingsSection section;
     section.SyncFromSession(SessionStore::Instance().Snapshot(), state);
     const char* renew_hint = response->status_code == 403
@@ -290,11 +310,12 @@ Roe<void> ProfileSettingsSection::RotateBriefLlmKey(SettingsUiState& state) {
 
   LocalIdentity updated = *identity;
   updated.brief_llm_api_key = new_key;
-  if (auto saved = MessagingHub::Instance().Identity().Update(updated); !saved) {
+  if (auto saved = messaging.Identity().Update(updated); !saved) {
     return saved.error();
   }
 
   ProfileSettingsSection section;
+  section.BindMessaging(messaging);
   section.SyncFromSession(SessionStore::Instance().Snapshot(), state);
   ReconfigureAgentIfNeeded();
   return {};

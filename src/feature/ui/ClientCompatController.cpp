@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/ui/ClientCompatController.h"
 
 #include "base/i18n/LocalizationService.h"
@@ -75,13 +76,31 @@ ClientCompatController& ClientCompatController::Instance() {
   static ClientCompatController instance;
   return instance;
 }
+void ClientCompatController::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+}
+
+MessagingHub& ClientCompatController::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("ClientCompatController messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& ClientCompatController::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("ClientCompatController messaging not bound");
+  }
+  return *messaging_;
+}
+
 
 void ClientCompatController::CheckAsync() {
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!Instance().Hub().IsInitialized()) {
     return;
   }
-  IClientCompatClient* client = MessagingHub::Instance().ClientCompat();
-  const std::string profile_dir = MessagingHub::Instance().ProfileDataDir();
+  IClientCompatClient* client = Instance().Hub().ClientCompat();
+  const std::string profile_dir = Instance().Hub().ProfileDataDir();
 
   BrowserThread::PostTaskAndReply<CompatResolveResult>(
       [client, profile_dir]() { return ResolveDocumentOnIO(client, profile_dir); },

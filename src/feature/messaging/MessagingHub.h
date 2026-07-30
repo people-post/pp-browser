@@ -46,7 +46,8 @@ class SqlitePskSessionStore;
 
 class MessagingHub : public Module {
 public:
-  static MessagingHub& Instance();
+  MessagingHub();
+  ~MessagingHub();
 
   /** Core store/inbox/AI — profile vault unlock is separate (ProfileSecretsService). */
   Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir);
@@ -112,8 +113,6 @@ public:
   void SetOnMessagingReady(std::function<void()> callback);
 
 private:
-  MessagingHub();
-
   void InstallServiceClients(const AppConfig& config);
   void UpdateServiceClients(const AppConfig& config);
   void WireRelayAuthSigner();

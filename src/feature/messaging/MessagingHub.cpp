@@ -52,13 +52,12 @@ PeerSessionConfig SessionConfigFromApp(const AppConfig& config) {
 
 } // namespace
 
-MessagingHub& MessagingHub::Instance() {
-  static MessagingHub hub;
-  return hub;
-}
-
 MessagingHub::MessagingHub() {
   redirectLogger("MessagingHub");
+}
+
+MessagingHub::~MessagingHub() {
+  Shutdown();
 }
 
 void MessagingHub::WireRelayAuthSigner() {
@@ -363,13 +362,17 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   p2p_ = std::make_unique<P2pMessagingService>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), nullptr, nullptr);
+  p2p_->SetProfileDataDir(data_dir_);
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
+  inbox_->SetGroupMembership(group_membership_.get());
+  p2p_->SetGroupMembership(group_membership_.get());
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
                                                        *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
   p2p_->SetCallSessionManager(call_sessions_.get());
   WireCallMediaRelayDeps();
-  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
+  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
+                                                       group_membership_.get(), registration_, p2p_.get());
 
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
     group_invite_gate_->SetInboundPolicy(GroupInvitePolicyFromString(prefs->group_invite_policy));
@@ -405,21 +408,25 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), Libp2p(),
                                                 Sessions());
+  p2p_->SetProfileDataDir(data_dir_);
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
+  inbox_->SetGroupMembership(group_membership_.get());
+  p2p_->SetGroupMembership(group_membership_.get());
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
                                                        *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
   p2p_->SetCallSessionManager(call_sessions_.get());
   WireCallMediaRelayDeps();
+  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
+                                                       group_membership_.get(), registration_, p2p_.get());
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
     const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
     group_invite_gate_->SetInboundPolicy(policy);
     group_membership_->SetInboundPolicy(policy);
   }
   RegisterContactEndpoints();
-  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, registration_, p2p_.get());
   if (agent_) {
-    router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, *agent_);
+    router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, *agent_, *store_);
   }
   return {};
 }
@@ -472,7 +479,7 @@ Roe<void> MessagingHub::Reinitialize(const AppConfig& config, const std::string&
 void MessagingHub::BindAgent(AgentSession& agent) {
   agent_ = &agent;
   if (p2p_) {
-    router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, agent);
+    router_ = std::make_unique<MessageRouter>(*inbox_, *p2p_, agent, *store_);
   }
 }
 
@@ -632,20 +639,45 @@ void MessagingHub::Shutdown() {
   if (!initialized_) {
     return;
   }
-  router_.reset();
+
+  on_messaging_ready_ = nullptr;
+  on_reachability_updated_ = nullptr;
   agent_ = nullptr;
+
+  if (router_) {
+    router_->SetOnLocalAction(nullptr);
+    router_->SetSharedAiConfirmCallback(nullptr);
+  }
+  if (actions_) {
+    actions_->SetOnActionMessage(nullptr);
+  }
+  if (inbox_) {
+    inbox_->SetOnThreadChanged(nullptr);
+  }
+  if (p2p_) {
+    p2p_->SetOnMessagesChanged(nullptr);
+    p2p_->SetOnDeliveryNotice(nullptr);
+    p2p_->SetOnBackgroundUnread(nullptr);
+    p2p_->SetGroupMembership(nullptr);
+  }
+  if (inbox_) {
+    inbox_->SetGroupMembership(nullptr);
+  }
+  if (call_sessions_) {
+    call_sessions_->ClearMediaCallbacks();
+  }
+
+  router_.reset();
   store_->Flush();
   contacts_->Flush();
   if (messaging_ready_) {
     identity_->Flush();
   }
   actions_.reset();
-  if (call_sessions_) {
-    call_sessions_->ClearMediaCallbacks();
-  }
   call_sessions_.reset();
-  group_membership_.reset();
+  // Destroy P2P before groups — P2P held a non-owning Groups pointer.
   p2p_.reset();
+  group_membership_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();
   StopLibp2p();
@@ -671,7 +703,11 @@ void MessagingHub::Shutdown() {
   http_relay_.reset();
   http_directory_.reset();
   http_registration_.reset();
+  http_push_devices_.reset();
+  http_client_compat_.reset();
   relay_ = nullptr;
+  push_devices_ = nullptr;
+  client_compat_ = nullptr;
   directory_ = nullptr;
   registration_ = nullptr;
   http_relay_url_.clear();

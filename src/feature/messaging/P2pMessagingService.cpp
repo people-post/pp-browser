@@ -1,6 +1,6 @@
 #include "base/people/ContactTypes.h"
+#include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/Libp2pChatHistoryService.h"
-#include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/P2pMessagingService.h"
 
 #include "base/crypto/AutoKeyEstablishment.h"
@@ -131,22 +131,29 @@ void P2pMessagingService::SetCallSessionManager(CallSessionManager* calls) {
   }
 }
 
+void P2pMessagingService::SetGroupMembership(GroupMembershipService* groups) {
+  groups_ = groups;
+}
+
+void P2pMessagingService::SetProfileDataDir(std::string profile_data_dir) {
+  profile_data_dir_ = std::move(profile_data_dir);
+}
+
 void P2pMessagingService::LoadPersistedRelayCursor(const std::string& relay_user_id) {
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (profile_data_dir_.empty()) {
     return;
   }
-  const std::string loaded =
-      LoadRelayInboxCursor(MessagingHub::Instance().ProfileDataDir(), relay_user_id);
+  const std::string loaded = LoadRelayInboxCursor(profile_data_dir_, relay_user_id);
   if (!loaded.empty()) {
     relay_cursor_ = loaded;
   }
 }
 
 void P2pMessagingService::PersistRelayCursor(const std::string& relay_user_id) {
-  if (!MessagingHub::Instance().IsInitialized() || relay_cursor_.empty()) {
+  if (profile_data_dir_.empty() || relay_cursor_.empty()) {
     return;
   }
-  SaveRelayInboxCursor(MessagingHub::Instance().ProfileDataDir(), relay_user_id, relay_cursor_);
+  SaveRelayInboxCursor(profile_data_dir_, relay_user_id, relay_cursor_);
 }
 
 void P2pMessagingService::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
@@ -170,16 +177,16 @@ void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact)
 
 namespace {
 
-void MaybePublishMemberJoinedAfterIngest(const RelayReceiveOutcome& outcome) {
+void MaybePublishMemberJoinedAfterIngest(GroupMembershipService* groups, const RelayReceiveOutcome& outcome) {
   if (!outcome.publish_member_joined_group_id || !outcome.publish_member_joined_member_identity) {
     return;
   }
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!groups) {
     return;
   }
-  (void)MessagingHub::Instance().Groups().PublishMemberJoined(*outcome.publish_member_joined_group_id,
-                                                              *outcome.publish_member_joined_member_identity,
-                                                              outcome.publish_member_joined_epoch);
+  (void)groups->PublishMemberJoined(*outcome.publish_member_joined_group_id,
+                                    *outcome.publish_member_joined_member_identity,
+                                    outcome.publish_member_joined_epoch);
 }
 
 } // namespace
@@ -258,7 +265,7 @@ void P2pMessagingService::HandleDirectInbound(RelayEnvelope envelope) {
   }
   const RelayReceiveOutcome outcome =
       receive_pipeline_->ProcessEnvelope(envelope, identity->relay_user_id, false, MessageTransport::Direct);
-  MaybePublishMemberJoinedAfterIngest(outcome);
+  MaybePublishMemberJoinedAfterIngest(groups_, outcome);
   MaybeSurfaceReceiveFailure(outcome);
   if (outcome.decision == IngestDecision::AcceptGap) {
     auto thread = store_.FindDirectThread(InboundTargetFromEnvelope(envelope));
@@ -1047,17 +1054,17 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
   if (!encrypted) {
     appended->delivery = MessageDelivery::Failed;
     (void)store_.UpdateMessage(*appended);
-    if (MessagingHub::Instance().IsInitialized()) {
+    if (groups_) {
       for (const GroupMemberTarget& target : targets) {
-        MessagingHub::Instance().Groups().MarkMemberUnreachable(group_id, target.member_identity);
+        groups_->MarkMemberUnreachable(group_id, target.member_identity);
       }
     }
     return encrypted.error();
   }
 
-  if (MessagingHub::Instance().IsInitialized()) {
+  if (groups_) {
     for (const std::string& failed_id : encrypted->failed_member_identities) {
-      MessagingHub::Instance().Groups().MarkMemberUnreachable(group_id, failed_id);
+      groups_->MarkMemberUnreachable(group_id, failed_id);
     }
   }
 
@@ -1079,8 +1086,8 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
 
     auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
     if (!sign_bytes) {
-      if (MessagingHub::Instance().IsInitialized()) {
-        MessagingHub::Instance().Groups().MarkMemberUnreachable(group_id, recipient);
+      if (groups_) {
+        groups_->MarkMemberUnreachable(group_id, recipient);
       }
       continue;
     }
@@ -1090,8 +1097,8 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
     if (relay_) {
       (void)relay_->Send(envelope);
     }
-    if (MessagingHub::Instance().IsInitialized()) {
-      MessagingHub::Instance().Groups().ClearMemberUnreachable(group_id, recipient);
+    if (groups_) {
+      groups_->ClearMemberUnreachable(group_id, recipient);
     }
   }
 
@@ -1269,7 +1276,7 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
     const std::string local_relay_id = identity->relay_user_id;
     for (const RelayEnvelope& envelope : poll->messages) {
       const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_relay_id);
-      MaybePublishMemberJoinedAfterIngest(outcome);
+      MaybePublishMemberJoinedAfterIngest(groups_, outcome);
       MaybeSurfaceReceiveFailure(outcome);
       if (outcome.decision == IngestDecision::AcceptGap) {
         const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);

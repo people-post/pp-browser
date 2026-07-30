@@ -12,6 +12,8 @@
 
 namespace pbr {
 
+class MessagingHub;
+
 /** Thread header/banners, PSK setup, peer-link status, and sync/gap handlers. */
 class ChatThreadChrome {
 public:
@@ -55,6 +57,9 @@ public:
   };
 
   ChatThreadChrome(View view, bool& messaging_ready);
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
 
   void SetRefreshFromMessaging(std::function<void()> refresh) { refresh_ = std::move(refresh); }
   void SetWithSecrets(std::function<void(std::function<void()>)> with_secrets) {
@@ -95,6 +100,8 @@ private:
   std::function<void()> capture_scroll_before_prepend_;
   std::function<void(const std::string&, int64_t)> expand_loaded_min_;
   std::chrono::steady_clock::time_point last_peer_link_poll_{};
+  MessagingHub* messaging_ = nullptr;
+
 };
 
 } // namespace pbr

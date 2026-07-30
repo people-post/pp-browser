@@ -15,11 +15,17 @@ class Context;
 
 namespace pbr {
 
+class MessagingHub;
+
 struct Contact;
 
 class ContactsController : public Module {
 public:
   static ContactsController& Instance();
+
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
 
   struct ContactListRow {
     Rml::String id;
@@ -117,6 +123,8 @@ private:
   Rml::Context* context_ = nullptr;
   bool contact_dirty_ = false;
   uint64_t debounce_deadline_ms_ = 0;
+  MessagingHub* messaging_ = nullptr;
+
 };
 
 } // namespace pbr

@@ -1,6 +1,6 @@
 #include "feature/messaging/InboxController.h"
 
-#include "feature/messaging/MessagingHub.h"
+#include "feature/messaging/GroupMembershipService.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/GroupMembershipCodec.h"
@@ -41,6 +41,10 @@ InboxController::InboxController(IThreadStore& store, ContactsStore& contacts, P
                                  DirectoryShadowCache* shadows)
     : store_(store), contacts_(contacts), labels_(labels), shadows_(shadows) {
   redirectLogger("InboxController");
+}
+
+void InboxController::SetGroupMembership(GroupMembershipService* groups) {
+  groups_ = groups;
 }
 
 Roe<std::vector<Thread>> InboxController::ListThreads() {
@@ -112,9 +116,9 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
     return Error("Thread not found");
   }
 
-  if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id && MessagingHub::Instance().IsInitialized()) {
+  if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id && groups_) {
     // Always clear local membership before deleting the thread so inbound traffic cannot resurrect it.
-    (void)MessagingHub::Instance().Groups().DismissLocalGroup(*(*thread)->group_id);
+    (void)groups_->DismissLocalGroup(*(*thread)->group_id);
   }
 
   const bool was_active = active_thread_id_ == thread_id;
@@ -223,10 +227,10 @@ Roe<Thread> InboxController::FindOrCreateDirectThread(const std::string& contact
 
 Roe<Thread> InboxController::CreateGroup(const std::string& title,
                                          const std::vector<std::string>& member_contact_ids) {
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!groups_) {
     return Error("Messaging not initialized");
   }
-  auto created = MessagingHub::Instance().Groups().CreateGroup(title, member_contact_ids);
+  auto created = groups_->CreateGroup(title, member_contact_ids);
   if (!created) {
     return created.error();
   }

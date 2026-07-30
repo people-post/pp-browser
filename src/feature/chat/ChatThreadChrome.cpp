@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/chat/ChatThreadChrome.h"
 
 #include "feature/chat/ChatDataModel.h"
@@ -11,6 +12,24 @@
 #include <RmlUi/Core/SystemInterface.h>
 
 namespace pbr {
+
+void ChatThreadChrome::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+}
+
+MessagingHub& ChatThreadChrome::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("ChatThreadChrome messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& ChatThreadChrome::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("ChatThreadChrome messaging not bound");
+  }
+  return *messaging_;
+}
 
 ChatThreadChrome::ChatThreadChrome(View view, bool& messaging_ready)
     : view_(view), messaging_ready_(messaging_ready) {}
@@ -59,14 +78,14 @@ void ChatThreadChrome::UpdatePeerLink() {
   view_.show_peer_link = false;
   view_.show_peer_link_banner = false;
   view_.show_retry_peer_dial = false;
-  if (!messaging_ready_ || !MessagingHub::Instance().IsMessagingReady()) {
+  if (!messaging_ready_ || !Hub().IsMessagingReady()) {
     return;
   }
-  auto thread = MessagingHub::Instance().Inbox().GetActiveThread();
+  auto thread = Hub().Inbox().GetActiveThread();
   if (!thread || thread->kind != ThreadKind::Direct) {
     return;
   }
-  const ThreadPeerLinkView link = MessagingHub::Instance().P2p().GetThreadPeerLink(thread->id);
+  const ThreadPeerLinkView link = Hub().P2p().GetThreadPeerLink(thread->id);
   view_.show_peer_link = !link.status_label.empty();
   view_.peer_link_status = link.status_label.c_str();
   view_.show_peer_link_banner = link.show_banner && !link.banner_message.empty();
@@ -78,8 +97,8 @@ void ChatThreadChrome::Update() {
   if (!messaging_ready_) {
     return;
   }
-  if (auto thread = MessagingHub::Instance().Inbox().GetActiveThread()) {
-    const PeerDisplayLabel label = MessagingHub::Instance().Inbox().ResolveThreadLabel(*thread);
+  if (auto thread = Hub().Inbox().GetActiveThread()) {
+    const PeerDisplayLabel label = Hub().Inbox().ResolveThreadLabel(*thread);
     view_.thread_title = label.title.c_str();
     view_.thread_encrypted = thread->encrypted;
     const Rml::String visual_kind = SessionVisualKind(*thread);
@@ -102,8 +121,8 @@ void ChatThreadChrome::Update() {
     view_.psk_fingerprint = "";
     view_.psk_export_b64 = "";
     if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2e) {
-      if (auto epoch = MessagingHub::Instance().Store().GetChatTargetSessionEpoch(thread->id)) {
-        if (auto sync_state = MessagingHub::Instance().Store().GetPeerSyncState(thread->id, *epoch)) {
+      if (auto epoch = Hub().Store().GetChatTargetSessionEpoch(thread->id)) {
+        if (auto sync_state = Hub().Store().GetPeerSyncState(thread->id, *epoch)) {
           const bool compromised = sync_state->phase == PeerSyncPhase::Compromised;
           view_.show_compromised_banner = compromised;
           view_.compose_disabled = compromised;
@@ -121,19 +140,19 @@ void ChatThreadChrome::Update() {
       }
 
       if (!view_.show_compromised_banner) {
-        if (!MessagingHub::Instance().IsMessagingReady()) {
+        if (!Hub().IsMessagingReady()) {
           view_.show_psk_setup_banner = true;
           view_.compose_disabled = true;
-        } else if (auto status = MessagingHub::Instance().P2p().GetPskStatus(thread->id)) {
+        } else if (auto status = Hub().P2p().GetPskStatus(thread->id)) {
           view_.psk_has_key = status->has_psk;
           view_.psk_verified = status->verified;
           view_.psk_fingerprint = status->fingerprint.c_str();
           view_.show_psk_setup_banner = !status->has_psk || !status->verified;
           if (status->has_psk) {
-            if (auto exported = MessagingHub::Instance().P2p().GetPskExportView(thread->id)) {
+            if (auto exported = Hub().P2p().GetPskExportView(thread->id)) {
               view_.psk_export_b64 = exported->master_psk_b64.c_str();
             }
-          } else if (auto generated = MessagingHub::Instance().P2p().EnsurePskGenerated(thread->id)) {
+          } else if (auto generated = Hub().P2p().EnsurePskGenerated(thread->id)) {
             view_.psk_has_key = true;
             view_.psk_fingerprint = generated->fingerprint.c_str();
             view_.psk_export_b64 = generated->master_psk_b64.c_str();
@@ -143,9 +162,9 @@ void ChatThreadChrome::Update() {
         }
       }
     } else if (thread->kind == ThreadKind::Direct && thread->channel == ThreadChannel::E2ePublic) {
-      view_.compose_disabled = !MessagingHub::Instance().IsMessagingReady();
+      view_.compose_disabled = !Hub().IsMessagingReady();
     } else if (thread->kind == ThreadKind::Group) {
-      view_.compose_disabled = !MessagingHub::Instance().IsMessagingReady();
+      view_.compose_disabled = !Hub().IsMessagingReady();
     }
     if (thread->kind == ThreadKind::Ai) {
       view_.thread_subtitle = "Local assistant";
@@ -166,11 +185,11 @@ void ChatThreadChrome::Update() {
       }
     } else {
       std::string roster_label = thread->encrypted ? "Group · E2E" : "Group chat";
-      if (MessagingHub::Instance().IsMessagingReady() && thread->group_id) {
-        if (auto roster = MessagingHub::Instance().Groups().ListRoster(*thread->group_id)) {
+      if (Hub().IsMessagingReady() && thread->group_id) {
+        if (auto roster = Hub().Groups().ListRoster(*thread->group_id)) {
           roster_label += " · " + std::to_string(roster->size()) + " members";
         }
-        if (MessagingHub::Instance().Groups().IsOwnerUnreachable(*thread->group_id)) {
+        if (Hub().Groups().IsOwnerUnreachable(*thread->group_id)) {
           roster_label += " · Owner unreachable";
         }
       }
@@ -222,10 +241,10 @@ bool ChatThreadChrome::MaybePollPeerLink(const std::chrono::steady_clock::time_p
     return false;
   }
   last_peer_link_poll_ = now;
-  if (!messaging_ready_ || !MessagingHub::Instance().IsMessagingReady()) {
+  if (!messaging_ready_ || !Hub().IsMessagingReady()) {
     return false;
   }
-  auto thread = MessagingHub::Instance().Inbox().GetActiveThread();
+  auto thread = Hub().Inbox().GetActiveThread();
   if (!thread || thread->kind != ThreadKind::Direct) {
     return false;
   }
@@ -241,14 +260,14 @@ bool ChatThreadChrome::MaybePollPeerLink(const std::chrono::steady_clock::time_p
 }
 
 void ChatThreadChrome::OnRetryPeerDial() {
-  if (!messaging_ready_ || !MessagingHub::Instance().IsMessagingReady()) {
+  if (!messaging_ready_ || !Hub().IsMessagingReady()) {
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  const std::string thread_id = Hub().Inbox().ActiveThreadId();
   if (thread_id.empty()) {
     return;
   }
-  MessagingHub::Instance().P2p().RetryPeerDial(thread_id);
+  Hub().P2p().RetryPeerDial(thread_id);
   UpdatePeerLink();
   DirtyChatHeader();
 }
@@ -257,7 +276,7 @@ void ChatThreadChrome::OnLoadOlderHistory() {
   if (!messaging_ready_ || view_.sync_in_progress) {
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  const std::string thread_id = Hub().Inbox().ActiveThreadId();
   if (thread_id.empty()) {
     return;
   }
@@ -266,7 +285,7 @@ void ChatThreadChrome::OnLoadOlderHistory() {
   view_.status = "Loading older messages…";
   DirtyChatChrome();
 
-  MessagingHub::Instance().P2p().ScrollBackfill(thread_id, [this, thread_id](Roe<ChatSyncResult> result) {
+  Hub().P2p().ScrollBackfill(thread_id, [this, thread_id](Roe<ChatSyncResult> result) {
     view_.sync_in_progress = false;
     view_.status = "";
     if (!result) {
@@ -293,7 +312,7 @@ void ChatThreadChrome::OnSyncWithPeer() {
   if (!messaging_ready_ || view_.sync_in_progress) {
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  const std::string thread_id = Hub().Inbox().ActiveThreadId();
   if (thread_id.empty()) {
     return;
   }
@@ -302,7 +321,7 @@ void ChatThreadChrome::OnSyncWithPeer() {
   view_.status = "Syncing missing messages from peer…";
   DirtyChatChrome();
 
-  MessagingHub::Instance().P2p().SyncWithPeer(thread_id, [this](Roe<ChatSyncResult> result) {
+  Hub().P2p().SyncWithPeer(thread_id, [this](Roe<ChatSyncResult> result) {
     view_.sync_in_progress = false;
     if (result) {
       view_.status = result->ingested > 0 ? "Sync complete." : "Up to date with peer.";
@@ -321,7 +340,7 @@ void ChatThreadChrome::OnRetryGapSync() {
   if (!messaging_ready_ || view_.sync_in_progress) {
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  const std::string thread_id = Hub().Inbox().ActiveThreadId();
   if (thread_id.empty()) {
     return;
   }
@@ -330,7 +349,7 @@ void ChatThreadChrome::OnRetryGapSync() {
   view_.status = "Retrying sync for missing messages…";
   DirtyChatChrome();
 
-  MessagingHub::Instance().P2p().RetryGapSync(thread_id, [this](Roe<ChatSyncResult> result) {
+  Hub().P2p().RetryGapSync(thread_id, [this](Roe<ChatSyncResult> result) {
     view_.sync_in_progress = false;
     if (result) {
       if (result->ingested > 0 || result->empty_gap_closed) {
@@ -354,7 +373,7 @@ void ChatThreadChrome::OnStartNewSecureChat() {
     return;
   }
   with_secrets_([this]() {
-    const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+    const std::string thread_id = Hub().Inbox().ActiveThreadId();
     if (thread_id.empty()) {
       return;
     }
@@ -367,7 +386,7 @@ void ChatThreadChrome::OnStartNewSecureChat() {
           if (!ok) {
             return;
           }
-          auto result = MessagingHub::Instance().P2p().StartNewSecureChat(thread_id);
+          auto result = Hub().P2p().StartNewSecureChat(thread_id);
           if (!result) {
             view_.status = result.error().message.c_str();
           } else {
@@ -386,12 +405,12 @@ void ChatThreadChrome::OnPauseIntegrityOnly() {
   if (!messaging_ready_) {
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  const std::string thread_id = Hub().Inbox().ActiveThreadId();
   if (thread_id.empty()) {
     return;
   }
 
-  if (!MessagingHub::Instance().P2p().PauseIntegrityOnly(thread_id)) {
+  if (!Hub().P2p().PauseIntegrityOnly(thread_id)) {
     return;
   }
   view_.status = "Messaging paused until you rotate the encryption key.";
@@ -407,11 +426,11 @@ void ChatThreadChrome::OnCopyPskKey() {
     return;
   }
   with_secrets_([this]() {
-    const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+    const std::string thread_id = Hub().Inbox().ActiveThreadId();
     if (thread_id.empty()) {
       return;
     }
-    auto exported = MessagingHub::Instance().P2p().EnsurePskGenerated(thread_id);
+    auto exported = Hub().P2p().EnsurePskGenerated(thread_id);
     if (!exported) {
       view_.status = exported.error().message.c_str();
       DirtyChatChrome();
@@ -438,13 +457,13 @@ void ChatThreadChrome::OnImportPsk() {
   if (!messaging_ready_) {
     return;
   }
-  if (!MessagingHub::Instance().IsMessagingReady()) {
+  if (!Hub().IsMessagingReady()) {
     if (with_secrets_) {
       with_secrets_([this]() { OnImportPsk(); });
     }
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  const std::string thread_id = Hub().Inbox().ActiveThreadId();
   if (thread_id.empty()) {
     return;
   }
@@ -456,14 +475,14 @@ void ChatThreadChrome::OnImportPsk() {
   }
 
   if (pasted.find('{') != std::string::npos) {
-    if (auto imported = MessagingHub::Instance().P2p().ImportPskBundleJson(thread_id, pasted); !imported) {
+    if (auto imported = Hub().P2p().ImportPskBundleJson(thread_id, pasted); !imported) {
       view_.status = imported.error().message.c_str();
     } else {
       view_.psk_import_text = "";
       view_.show_psk_import = false;
       view_.status = "Encryption key installed. Verify the fingerprint before sending.";
     }
-  } else if (auto imported = MessagingHub::Instance().P2p().ImportPskRawBase64(thread_id, pasted); !imported) {
+  } else if (auto imported = Hub().P2p().ImportPskRawBase64(thread_id, pasted); !imported) {
     view_.status = imported.error().message.c_str();
   } else {
     view_.psk_import_text = "";
@@ -481,13 +500,13 @@ void ChatThreadChrome::OnVerifyPsk() {
   if (!messaging_ready_) {
     return;
   }
-  if (!MessagingHub::Instance().IsMessagingReady()) {
+  if (!Hub().IsMessagingReady()) {
     if (with_secrets_) {
       with_secrets_([this]() { OnVerifyPsk(); });
     }
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  const std::string thread_id = Hub().Inbox().ActiveThreadId();
   if (thread_id.empty()) {
     return;
   }
@@ -500,7 +519,7 @@ void ChatThreadChrome::OnVerifyPsk() {
         if (!confirmed || !checked) {
           return;
         }
-        auto result = MessagingHub::Instance().P2p().MarkPskVerified(thread_id);
+        auto result = Hub().P2p().MarkPskVerified(thread_id);
         if (!result) {
           view_.status = result.error().message.c_str();
         } else {
@@ -518,13 +537,13 @@ void ChatThreadChrome::OnRotatePskExport() {
   if (!messaging_ready_) {
     return;
   }
-  if (!MessagingHub::Instance().IsMessagingReady()) {
+  if (!Hub().IsMessagingReady()) {
     if (with_secrets_) {
       with_secrets_([this]() { OnRotatePskExport(); });
     }
     return;
   }
-  const std::string thread_id = MessagingHub::Instance().Inbox().ActiveThreadId();
+  const std::string thread_id = Hub().Inbox().ActiveThreadId();
   if (thread_id.empty()) {
     return;
   }
@@ -537,7 +556,7 @@ void ChatThreadChrome::OnRotatePskExport() {
         if (!ok) {
           return;
         }
-        auto bundle = MessagingHub::Instance().P2p().RotatePskAndExportBundle(thread_id);
+        auto bundle = Hub().P2p().RotatePskAndExportBundle(thread_id);
         if (!bundle) {
           view_.status = bundle.error().message.c_str();
           DirtyChatChrome();

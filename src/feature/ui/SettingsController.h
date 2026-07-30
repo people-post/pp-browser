@@ -24,6 +24,8 @@ class Context;
 
 namespace pbr {
 
+class MessagingHub;
+
 class SettingsController : public Module {
 public:
   struct SectionListRow {
@@ -42,6 +44,9 @@ public:
 
   static SettingsController& Instance();
 
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
   bool RegisterModel(Rml::Context* context);
   void OnNavTabActivated();
   /** Persist nickname / dirty sections when leaving Me (tab or sheet). */
@@ -215,6 +220,8 @@ private:
   uint64_t debounce_deadline_ms_ = 0;
   std::optional<std::string> last_toast_section_;
   uint64_t last_toast_at_ms_ = 0;
+  MessagingHub* messaging_ = nullptr;
+
 };
 
 } // namespace pbr

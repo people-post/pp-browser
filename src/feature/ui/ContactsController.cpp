@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/ui/ContactsController.h"
 
 #include "feature/ui/BadgeAggregator.h"
@@ -171,8 +172,8 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact) {
     row.subtitle = contact.server_nickname.c_str();
   }
   row.trust = TrustLevelToString(contact.trust).c_str();
-  if (MessagingHub::Instance().IsInitialized()) {
-    row.unread_count = MessagingHub::Instance().Inbox().SumUnreadForContact(contact.id);
+  if (ContactsController::Instance().Hub().IsInitialized()) {
+    row.unread_count = ContactsController::Instance().Hub().Inbox().SumUnreadForContact(contact.id);
     row.unread_display = FormatBadgeCount(row.unread_count).c_str();
   }
   return row;
@@ -198,10 +199,10 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
     detail.identities.push_back(std::move(row));
   }
 
-  if (MessagingHub::Instance().IsInitialized()) {
+  if (ContactsController::Instance().Hub().IsInitialized()) {
     const std::string relay_id = PrimaryIdOfKind(contact, ContactIdKind::RelayUser);
     if (!relay_id.empty()) {
-      if (auto key = MessagingHub::Instance().SigningKeys().Get(ContactIdKindToString(ContactIdKind::RelayUser),
+      if (auto key = ContactsController::Instance().Hub().SigningKeys().Get(ContactIdKindToString(ContactIdKind::RelayUser),
                                                                 relay_id)) {
         if (auto bytes = Ed25519Signer::FromBase64(key->signing_public_key_b64)) {
           if (auto digest = PskFingerprint::Compute(*bytes)) {
@@ -211,7 +212,7 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
       }
     }
 
-    if (auto threads = MessagingHub::Instance().Inbox().ListThreads()) {
+    if (auto threads = ContactsController::Instance().Hub().Inbox().ListThreads()) {
       for (const Thread& thread : *threads) {
         if (thread.kind != ThreadKind::Direct) {
           continue;
@@ -293,6 +294,24 @@ ContactsController& ContactsController::Instance() {
   static ContactsController controller;
   return controller;
 }
+void ContactsController::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+}
+
+MessagingHub& ContactsController::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("ContactsController messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& ContactsController::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("ContactsController messaging not bound");
+  }
+  return *messaging_;
+}
+
 
 bool ContactsController::RegisterModel(Rml::Context* context) {
   if (!context) {
@@ -413,13 +432,13 @@ void ContactsController::SyncLayoutMode() {
 
 void ContactsController::SyncFromStore() {
   contacts_.clear();
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!Instance().Hub().IsInitialized()) {
     return;
   }
 
   const std::string query = search_query_.c_str();
-  auto stored = query.empty() ? MessagingHub::Instance().Contacts().List()
-                              : MessagingHub::Instance().Contacts().SearchLocal(query);
+  auto stored = query.empty() ? Instance().Hub().Contacts().List()
+                              : Instance().Hub().Contacts().SearchLocal(query);
   if (!stored) {
     return;
   }
@@ -538,11 +557,11 @@ void ContactsController::OnSearchChangedCallback(Rml::DataModelHandle /*model*/,
 }
 
 void ContactsController::LoadSelectedDetail(const std::string& contact_id) {
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!Instance().Hub().IsInitialized()) {
     selected_ = {};
     return;
   }
-  auto contact = MessagingHub::Instance().Contacts().Get(contact_id);
+  auto contact = Instance().Hub().Contacts().Get(contact_id);
   if (!contact || !*contact) {
     selected_ = {};
     return;
@@ -619,8 +638,8 @@ void ContactsController::OnContactFieldChanged() {
   contact_dirty_ = true;
   debounce_deadline_ms_ = SDL_GetTicks() + kContactDebounceMs;
 
-  if (MessagingHub::Instance().IsInitialized()) {
-    if (auto existing = MessagingHub::Instance().Contacts().Get(selected_.id.c_str())) {
+  if (Instance().Hub().IsInitialized()) {
+    if (auto existing = Instance().Hub().Contacts().Get(selected_.id.c_str())) {
       if (*existing) {
         const Contact preview = BuildContactFromDetail(**existing, selected_);
         UpdateMessagingEligibility(preview);
@@ -652,31 +671,31 @@ bool ContactsController::FlushSelectedContact() {
   if (UiEditSession::Instance().RemountBlocking()) {
     return true; // keep dirty; Tick/FlushPending will retry after remount settles
   }
-  if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
+  if (!Instance().Hub().IsInitialized() || selected_.id.empty()) {
     contact_dirty_ = false;
     return true;
   }
 
-  auto existing = MessagingHub::Instance().Contacts().Get(selected_.id.c_str());
+  auto existing = Instance().Hub().Contacts().Get(selected_.id.c_str());
   if (!existing || !*existing) {
     contact_dirty_ = false;
     return false;
   }
 
   Contact updated = BuildContactFromDetail(**existing, selected_);
-  if (!MessagingHub::Instance().Contacts().Upsert(updated)) {
+  if (!Instance().Hub().Contacts().Upsert(updated)) {
     UserFeedback::Fail("Could not save contact");
     ShellHost::Instance().DirtyWindow();
     return false;
   }
 
-  MessagingHub::Instance().P2p().RegisterContactDirectEndpoints(updated);
+  Instance().Hub().P2p().RegisterContactDirectEndpoints(updated);
   UpdateMessagingEligibility(updated);
   contact_dirty_ = false;
   SyncFromStore();
   DataModelHost::Instance().Dirty("contacts", "contacts");
   DataModelHost::Instance().Dirty("contacts", "selected");
-  MessagingHub::Instance().Inbox().NotifyThreadChanged();
+  Instance().Hub().Inbox().NotifyThreadChanged();
   if (context_) {
     context_->Update();
   }
@@ -705,10 +724,10 @@ void ContactsController::OnAddContactMenu(Rml::Event& ev) {
 }
 
 void ContactsController::OnAddContact() {
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!Instance().Hub().IsInitialized()) {
     return;
   }
-  auto created = MessagingHub::Instance().Contacts().AddEmpty();
+  auto created = Instance().Hub().Contacts().AddEmpty();
   if (!created) {
     UserFeedback::Fail("Could not add contact");
     ShellHost::Instance().DirtyWindow();
@@ -723,7 +742,7 @@ void ContactsController::OnAddContact() {
 }
 
 void ContactsController::OnStartChat() {
-  if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
+  if (!Instance().Hub().IsInitialized() || selected_.id.empty()) {
     return;
   }
   if (!selected_.can_message) {
@@ -734,15 +753,15 @@ void ContactsController::OnStartChat() {
   FlushPending();
 
   const std::string contact_id = selected_.id.c_str();
-  auto contact = MessagingHub::Instance().Contacts().Get(contact_id);
+  auto contact = Instance().Hub().Contacts().Get(contact_id);
   if (contact && *contact) {
-    MessagingHub::Instance().P2p().RegisterContactDirectEndpoints(**contact);
+    Instance().Hub().P2p().RegisterContactDirectEndpoints(**contact);
   }
-  auto thread = MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
+  auto thread = Instance().Hub().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
   if (!thread) {
     return;
   }
-  MessagingHub::Instance().P2p().WarmPeerForThread(thread->id);
+  Instance().Hub().P2p().WarmPeerForThread(thread->id);
 
   ShellHost::Instance().SelectNavTab(NavTab::Sessions);
   ShellHost::Instance().SetPrimaryPane("chat");
@@ -750,7 +769,7 @@ void ContactsController::OnStartChat() {
 }
 
 void ContactsController::OnSecureMessage() {
-  if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
+  if (!Instance().Hub().IsInitialized() || selected_.id.empty()) {
     return;
   }
   if (!selected_.can_message) {
@@ -767,16 +786,16 @@ void ContactsController::OnSecureMessage() {
       return;
     }
     const std::string contact_id = selected_.id.c_str();
-    auto contact = MessagingHub::Instance().Contacts().Get(contact_id);
+    auto contact = Instance().Hub().Contacts().Get(contact_id);
     if (contact && *contact) {
-      MessagingHub::Instance().P2p().RegisterContactDirectEndpoints(**contact);
+      Instance().Hub().P2p().RegisterContactDirectEndpoints(**contact);
     }
-    auto thread = MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
+    auto thread = Instance().Hub().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
     if (!thread) {
       return;
     }
-    (void)MessagingHub::Instance().P2p().EnsurePskGenerated(thread->id);
-    MessagingHub::Instance().P2p().WarmPeerForThread(thread->id);
+    (void)Instance().Hub().P2p().EnsurePskGenerated(thread->id);
+    Instance().Hub().P2p().WarmPeerForThread(thread->id);
 
     ShellHost::Instance().SelectNavTab(NavTab::Sessions);
     ShellHost::Instance().SetPrimaryPane("chat");
@@ -851,16 +870,16 @@ void ContactsController::OnShareContact() {
 }
 
 void ContactsController::OnSetTrust(const std::string& trust) {
-  if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
+  if (!Instance().Hub().IsInitialized() || selected_.id.empty()) {
     return;
   }
-  auto contact = MessagingHub::Instance().Contacts().Get(selected_.id.c_str());
+  auto contact = Instance().Hub().Contacts().Get(selected_.id.c_str());
   if (!contact || !*contact) {
     return;
   }
   Contact updated = **contact;
   updated.trust = TrustLevelFromString(trust);
-  if (!MessagingHub::Instance().Contacts().Upsert(updated)) {
+  if (!Instance().Hub().Contacts().Upsert(updated)) {
     UserFeedback::Fail("Could not update trust");
     ShellHost::Instance().DirtyWindow();
     return;
@@ -873,7 +892,7 @@ void ContactsController::OnSetTrust(const std::string& trust) {
 }
 
 void ContactsController::OnRemoveContact() {
-  if (!MessagingHub::Instance().IsInitialized() || selected_.id.empty()) {
+  if (!Instance().Hub().IsInitialized() || selected_.id.empty()) {
     return;
   }
 
@@ -888,7 +907,7 @@ void ContactsController::OnRemoveContact() {
                                if (!ok) {
                                  return;
                                }
-                               auto removed = MessagingHub::Instance().Contacts().Remove(contact_id);
+                               auto removed = Instance().Hub().Contacts().Remove(contact_id);
                                if (!removed) {
                                  UserFeedback::Fail("Could not remove contact");
                                  ShellHost::Instance().DirtyWindow();
@@ -905,7 +924,7 @@ void ContactsController::OnRemoveContact() {
                                SyncFromStore();
                                DirtyAll();
                                ShellFeedback::ShowToast(ShellHost::Instance().State(), "Contact removed");
-                               MessagingHub::Instance().Inbox().NotifyThreadChanged();
+                               Instance().Hub().Inbox().NotifyThreadChanged();
                                ShellHost::Instance().RequestSyncLayout();
                                ShellHost::Instance().DirtyWindow();
                              });

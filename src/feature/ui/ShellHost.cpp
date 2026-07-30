@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/ui/ShellHost.h"
 
 #include "base/i18n/LocalizationService.h"
@@ -76,6 +77,24 @@ ShellHost& ShellHost::Instance() {
   static ShellHost host;
   return host;
 }
+void ShellHost::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+}
+
+MessagingHub& ShellHost::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("ShellHost messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& ShellHost::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("ShellHost messaging not bound");
+  }
+  return *messaging_;
+}
+
 
 bool ShellHost::RegisterWindowModel(Rml::Context* context) {
   return DataModelHost::Instance().Register(context, "window", [](Rml::DataModelConstructor& ctor) {
@@ -900,7 +919,7 @@ void ShellHost::RefreshStatusbarConnection() {
     return;
   }
   Rml::String next;
-  MessagingHub& hub = MessagingHub::Instance();
+  MessagingHub& hub = Instance().Hub();
   if (hub.IsMessagingReady()) {
     if (Libp2pHost* host = hub.Libp2p(); host && host->IsRunning()) {
       next = "Online";

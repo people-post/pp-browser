@@ -7,10 +7,16 @@
 
 namespace pbr {
 
+class MessagingHub;
+
 /** Fetches relay client-compat and surfaces update-required / update-available UX. */
 class ClientCompatController : public Module {
 public:
   static ClientCompatController& Instance();
+
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
 
   /** Non-blocking: IO fetch/cache then UI gate/banner. Safe after MessagingHub init. */
   void CheckAsync();
@@ -30,6 +36,8 @@ private:
   bool soft_banner_shown_ = false;
   bool force_dialog_shown_ = false;
   std::string upgrade_url_;
+  MessagingHub* messaging_ = nullptr;
+
 };
 
 } // namespace pbr

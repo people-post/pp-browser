@@ -1,12 +1,16 @@
 #include "app/Application.h"
 
-#include "base/ui/InputCoordinator.h"
-#include "base/ui/ContextMenuHost.h"
+#include "base/crypto/ProfileSecretsService.h"
+#include "base/data/AppPaths.h"
+#include "base/data/SchemaVersion.h"
 #include "base/data/SessionStore.h"
+#include "base/error/AppError.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/platform/ProductBranding.h"
+#include "base/ui/InputCoordinator.h"
+#include "base/ui/ContextMenuHost.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "base/platform/BrowserThread.h"
@@ -19,10 +23,16 @@
 #include "base/platform/MobileWindowSizing.h"
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
+#include "feature/messaging/MessagingHub.h"
+#include "feature/ui/ChatSessionActions.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/CallController.h"
+#include "feature/ui/BadgeAggregator.h"
+#include "feature/ui/ClientCompatController.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DeferredStartup.h"
+#include "feature/ui/PinGateController.h"
+#include "feature/ui/PeoplePickerController.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellHost.h"
 #include "ElementCallVideoTile.h"
@@ -43,6 +53,8 @@
 #ifdef PPBROWSER_ENABLE_DEBUGGER
 #include <RmlUi/Debugger.h>
 #endif
+
+#include <filesystem>
 
 namespace pbr {
 
@@ -68,10 +80,77 @@ void ApplyUiDocumentLanguage(Rml::Context* context) {
 
 Application::Application() {
   redirectLogger("Application");
+  messaging_ = std::make_unique<MessagingHub>();
 }
 
 Application::~Application() {
   Shutdown();
+  messaging_.reset();
+}
+
+MessagingHub& Application::Messaging() {
+  return *messaging_;
+}
+
+void Application::ShutdownMessaging() {
+  if (!messaging_ || !messaging_->IsInitialized()) {
+    if (ProfileSecretsService::Instance().IsInitialized()) {
+      StartupPhase phase("Shutdown::ProfileSecrets");
+      ProfileSecretsService::Instance().Shutdown();
+    }
+    return;
+  }
+  {
+    StartupPhase phase("Shutdown::MessagingHub");
+    messaging_->Shutdown();
+  }
+  if (ProfileSecretsService::Instance().IsInitialized()) {
+    StartupPhase phase("Shutdown::ProfileSecrets");
+    ProfileSecretsService::Instance().Shutdown();
+  }
+}
+
+Roe<void> Application::ResetActiveProfile() {
+  const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
+  const std::string profile_dir = bootstrap.profile_data_dir;
+  const AppConfig config = bootstrap.config;
+
+  if (profile_dir.empty()) {
+    return AppError::Storage(Err::Storage::Unavailable, "Profile path unavailable");
+  }
+
+  log().info << "Resetting profile data at " << profile_dir;
+
+  ShutdownMessaging();
+
+  std::error_code ec;
+  std::filesystem::remove_all(profile_dir, ec);
+  if (ec) {
+    log().error << "remove_all(" << profile_dir << "): " << ec.message();
+    return AppError::Storage(Err::Storage::Failed, "Failed to delete profile data: " + ec.message());
+  }
+
+  AppPaths::EnsureDirs(profile_dir);
+  if (auto manifest = SchemaVersion::EnsureProfileManifest(profile_dir); !manifest) {
+    return manifest.error();
+  }
+
+  if (auto secrets = ProfileSecretsService::Instance().Initialize(profile_dir); !secrets) {
+    return secrets.error();
+  }
+
+  if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
+    return hub.error();
+  }
+
+  if (auto prefs = SessionStore::Instance().ReloadProfilePrefs(); !prefs) {
+    return prefs.error();
+  }
+
+  if (ChatSessionActions::Instance().on_profile_data_reset) {
+    ChatSessionActions::Instance().on_profile_data_reset();
+  }
+  return {};
 }
 
 std::string Application::AssetsPath(const std::string& relative) {
@@ -229,11 +308,24 @@ bool Application::Initialize(const char* window_title) {
   ActionRouter::Instance().SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
     DataModelHost::Instance().Dirty(model, binding);
   });
+  ChatSessionActions::Instance().reset_active_profile = [this]() { return ResetActiveProfile(); };
+
+  MessagingHub& messaging = Messaging();
+  SettingsController::Instance().BindMessaging(messaging);
+  ContactsController::Instance().BindMessaging(messaging);
+  CallController::Instance().BindMessaging(messaging);
+  PinGateController::Instance().BindMessaging(messaging);
+  PeoplePickerController::Instance().BindMessaging(messaging);
+  ClientCompatController::Instance().BindMessaging(messaging);
+  BadgeAggregator::Instance().BindMessaging(messaging);
+  ShellHost::Instance().BindMessaging(messaging);
+
   if (![&] {
         StartupPhase phase("SetupChatController");
-        return SetupChatController(context);
+        return SetupChatController(context, messaging);
       }()) {
     log().error << "SetupChatController failed";
+    ChatSessionActions::Instance().reset_active_profile = nullptr;
     Rml::RemoveContext("main");
     Rml::Shutdown();
     Backend::Shutdown();
@@ -328,6 +420,8 @@ void Application::Shutdown() {
   StartupMark("shutdown_begin");
   StartupPhase shutdown_total("Application::Shutdown");
 
+  ChatSessionActions::Instance().reset_active_profile = nullptr;
+
   // Join notification watcher first so it cannot PostTask during teardown, and
   // so process exit does not std::terminate on an unjoined std::thread.
   {
@@ -343,6 +437,8 @@ void Application::Shutdown() {
       StartupPhase phase("Shutdown::ChatController");
       ShutdownChatController();
     }
+
+    ShutdownMessaging();
 
     BrowserThread::RunUITasks();
 
@@ -364,6 +460,9 @@ void Application::Shutdown() {
 
     log().info << "Shutdown complete";
     initialized_ = false;
+  } else {
+    // Initialize may have failed after Bootstrap left hub/secrets open.
+    ShutdownMessaging();
   }
 
   // Always tear down runners — Initialize may have started them before failing.

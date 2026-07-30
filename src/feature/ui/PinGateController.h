@@ -8,10 +8,16 @@
 
 namespace pbr {
 
+class MessagingHub;
+
 /** Interactive PIN unlock/create gate — queues callers until secrets are ready. */
 class PinGateController {
 public:
   static PinGateController& Instance();
+
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
 
   /** If secrets already ready, runs done(true) immediately. Otherwise shows PIN UI. */
   void EnsureUnlocked(std::function<void(bool unlocked)> done);
@@ -46,6 +52,8 @@ private:
   bool showing_ = false;
   bool unlock_in_progress_ = false;
   bool deferred_unlock_started_ = false;
+  MessagingHub* messaging_ = nullptr;
+
 };
 
 } // namespace pbr

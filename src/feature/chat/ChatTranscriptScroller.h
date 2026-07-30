@@ -17,6 +17,8 @@ class Element;
 
 namespace pbr {
 
+class MessagingHub;
+
 /** Follow-tail / scroll-up paging for the chat transcript (D031 + viewport policy). */
 class ChatTranscriptScroller {
 public:
@@ -28,6 +30,9 @@ public:
   };
 
   ChatTranscriptScroller(Rml::Context*& context, View view, bool& messaging_ready);
+  void BindMessaging(MessagingHub& messaging);
+  MessagingHub& Hub();
+  const MessagingHub& Hub() const;
 
   void SetDirtyTurns(std::function<void()> dirty_turns) { dirty_turns_ = std::move(dirty_turns); }
 
@@ -79,6 +84,8 @@ private:
   std::optional<float> pending_scroll_top_before_;
   float last_messages_scroll_height_ = 0.f;
   int unread_while_scrolled_ = 0;
+  MessagingHub* messaging_ = nullptr;
+
 };
 
 } // namespace pbr

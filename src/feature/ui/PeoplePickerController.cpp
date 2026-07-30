@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "feature/ui/PeoplePickerController.h"
 
 #include "base/i18n/LocalizationService.h"
@@ -91,6 +92,24 @@ PeoplePickerController& PeoplePickerController::Instance() {
   static PeoplePickerController controller;
   return controller;
 }
+void PeoplePickerController::BindMessaging(MessagingHub& messaging) {
+  messaging_ = &messaging;
+}
+
+MessagingHub& PeoplePickerController::Hub() {
+  if (!messaging_) {
+    throw std::runtime_error("PeoplePickerController messaging not bound");
+  }
+  return *messaging_;
+}
+
+const MessagingHub& PeoplePickerController::Hub() const {
+  if (!messaging_) {
+    throw std::runtime_error("PeoplePickerController messaging not bound");
+  }
+  return *messaging_;
+}
+
 
 bool PeoplePickerController::RegisterModel(Rml::Context* context) {
   if (!context) {
@@ -144,7 +163,7 @@ void PeoplePickerController::OpenFromDm(const std::string& locked_contact_id) {
 }
 
 void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids) {
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!Instance().Hub().IsInitialized()) {
     UserFeedback::Fail("Messaging not ready");
     ShellHost::Instance().DirtyWindow();
     return;
@@ -221,11 +240,11 @@ void PeoplePickerController::ResetState() {
 
 void PeoplePickerController::SyncRows() {
   rows_.clear();
-  if (!MessagingHub::Instance().IsInitialized()) {
+  if (!Instance().Hub().IsInitialized()) {
     return;
   }
 
-  auto stored = MessagingHub::Instance().Contacts().List();
+  auto stored = Instance().Hub().Contacts().List();
   if (!stored) {
     return;
   }
@@ -254,7 +273,7 @@ void PeoplePickerController::SyncRows() {
     if (present) {
       continue;
     }
-    auto contact = MessagingHub::Instance().Contacts().Get(locked_id);
+    auto contact = Instance().Hub().Contacts().Get(locked_id);
     if (contact && *contact) {
       candidates.push_back(**contact);
     }
@@ -336,8 +355,8 @@ std::string PeoplePickerController::TitleForContactId(const std::string& contact
       return row.title.c_str();
     }
   }
-  if (MessagingHub::Instance().IsInitialized()) {
-    if (auto contact = MessagingHub::Instance().Contacts().Get(contact_id)) {
+  if (Instance().Hub().IsInitialized()) {
+    if (auto contact = Instance().Hub().Contacts().Get(contact_id)) {
       if (*contact) {
         const std::string title = FormatContactTitle(**contact);
         return title.empty() ? Tr("people_picker.unnamed") : title;
@@ -514,18 +533,18 @@ void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
       ShellHost::Instance().DirtyWindow();
       return;
     }
-    auto contact = MessagingHub::Instance().Contacts().Get(contact_id);
+    auto contact = Instance().Hub().Contacts().Get(contact_id);
     if (contact && *contact) {
-      MessagingHub::Instance().P2p().RegisterContactDirectEndpoints(**contact);
+      Instance().Hub().P2p().RegisterContactDirectEndpoints(**contact);
     }
-    auto thread = MessagingHub::Instance().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
+    auto thread = Instance().Hub().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
       ShellHost::Instance().DirtyWindow();
       return;
     }
-    (void)MessagingHub::Instance().P2p().EnsurePskGenerated(thread->id);
-    MessagingHub::Instance().P2p().WarmPeerForThread(thread->id);
+    (void)Instance().Hub().P2p().EnsurePskGenerated(thread->id);
+    Instance().Hub().P2p().WarmPeerForThread(thread->id);
     FinishOpenThread();
   });
 }
@@ -539,7 +558,7 @@ void PeoplePickerController::CreateGroupWithTitle(const std::vector<std::string>
       ShellHost::Instance().DirtyWindow();
       return;
     }
-    auto thread = MessagingHub::Instance().Inbox().CreateGroup(title, member_contact_ids);
+    auto thread = Instance().Hub().Inbox().CreateGroup(title, member_contact_ids);
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
       ShellHost::Instance().DirtyWindow();

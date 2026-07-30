@@ -32,6 +32,7 @@
 namespace pbr {
 
 class CallSessionManager;
+class GroupMembershipService;
 
 /** Aggregated peer-link UX for a direct chat thread. */
 struct ThreadPeerLinkView {
@@ -66,6 +67,8 @@ public:
   void RetryFailedOutbound();
   void SetRelayClient(IRelayClient* relay);
   void SetCallSessionManager(CallSessionManager* calls);
+  void SetGroupMembership(GroupMembershipService* groups);
+  void SetProfileDataDir(std::string profile_data_dir);
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetOnDeliveryNotice(std::function<void(const std::string&)> callback);
   /** Fired on UI thread when a background ingest bumps unread (for OS notify). */
@@ -151,6 +154,8 @@ private:
   IPeerKemKeyResolver& kem_key_resolver_;
   IPskSessionStore& psk_store_;
   GroupRosterStore& group_roster_;
+  GroupMembershipService* groups_ = nullptr;
+  std::string profile_data_dir_;
   Libp2pHost* libp2p_host_ = nullptr;
   PeerSessionManager* peer_sessions_ = nullptr;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;

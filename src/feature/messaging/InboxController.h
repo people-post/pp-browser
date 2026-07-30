@@ -15,10 +15,14 @@
 
 namespace pbr {
 
+class GroupMembershipService;
+
 class InboxController : public Module {
 public:
   InboxController(IThreadStore& store, ContactsStore& contacts, PeerDisplayResolver& labels,
                   DirectoryShadowCache* shadows = nullptr);
+
+  void SetGroupMembership(GroupMembershipService* groups);
 
   Roe<std::vector<Thread>> ListThreads();
   Roe<Thread> GetActiveThread() const;
@@ -78,6 +82,7 @@ private:
   ContactsStore& contacts_;
   PeerDisplayResolver& labels_;
   DirectoryShadowCache* shadows_ = nullptr;
+  GroupMembershipService* groups_ = nullptr;
   std::string active_thread_id_;
   ThreadChangedCallback on_thread_changed_;
 };

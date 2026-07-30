@@ -93,9 +93,12 @@ int main(int argc, char** argv) {
   options.profile_override = profile_override;
   options.pin = pin;
 
+  // Construct Application first so MessagingHub is process-owned before Bootstrap initializes it.
+  pbr::Application app;
+
   auto bootstrap_result = [&] {
     pbr::StartupPhase phase("Bootstrap::Run");
-    return pbr::Bootstrap::Run(options);
+    return pbr::Bootstrap::Run(options, app.Messaging());
   }();
   if (!bootstrap_result) {
     root.error << pbr::kProductName << ": " << bootstrap_result.error().message;
@@ -105,7 +108,6 @@ int main(int argc, char** argv) {
   pbr::SessionStore::Instance().Initialize(std::move(bootstrap_result.value()));
   pbr::StartupMark("after_session_store");
 
-  pbr::Application app;
   if (![&] {
         pbr::StartupPhase phase("Application::Initialize");
         return app.Initialize(pbr::kProductName);
