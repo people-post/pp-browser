@@ -14,11 +14,13 @@
 #include <windows.h>
 
 #include <codecapi.h>
+#include <icodecapi.h>
 #include <mfapi.h>
 #include <mferror.h>
 #include <mfidl.h>
 #include <mfobjects.h>
 #include <mftransform.h>
+#include <oleauto.h>
 #include <wrl/client.h>
 
 #include <algorithm>
