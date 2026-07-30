@@ -6,11 +6,9 @@
 
 | Area | State |
 |------|-------|
-| Project docs | `projects/p2p-av-calls/` (v0 → **a3 done**; **a4 gated on blind `media_relay`** — V020–V022) |
-| ADRs | V001–V022 in [DECISIONS.md](DECISIONS.md) |
-| UI | In-call **icon** mute/camera/leave + compact stacked bar; stage/PiP; **`<call-video-tile>` OnRender** + persistent GL tex (V018 letterbox) |
-| Media stack | `CallMediaEngine` — Opus + **always H264 m-line** (V019); **1:1 PeerConnection** today |
-| Platform HW | **Win MF + macOS/iOS VT + Linux VA-API + Android MediaCodec (NDK)** implemented |
+| Project docs | `projects/p2p-av-calls/` (v0 → **a3 done**; **a4 gated on blind `media_relay`** — V020–V023) |
+| ADRs | V001–V023 in [DECISIONS.md](DECISIONS.md) |
+| UI / media / HW | a3 LAN 1:1 path landed (see prior rows in git history / a3 section below) |
 
 ## a2 / a3 closed
 
@@ -20,28 +18,26 @@ LAN 1:1 voice + video OK (Android↔Win bidirectional; Linux receive-only). NAT 
 
 | Area | State |
 |------|-------|
-| Topology | **V020/V021** — blind forwarder; 1:1 P2P; soft-migrate same `call_id` when N→≥3 |
-| Mesh gate | **n4-media** / N018 — `media_relay` on `pp-node` + desktop (default on) |
+| Topology | **V020/V021** — blind forwarder; 1:1 P2P; soft-migrate when N→≥3 |
+| Mesh gate | **n4-media** — `media_relay` on `pp-node` + desktop (default on) |
 | Privacy | Relay never holds call keys / never decodes payloads |
-| Bandwidth / bills | **V022 / N019** — **A↑/A↓**, **B↑/B↓**, **C↑/C↓**; quote + ceiling; initiator pays; volunteer rate 0 |
-| Pick / re-pick | Coordinator applies policy; **exact ranking / scorer still TBD** |
+| Bandwidth / bills | **V022 / N019** — ↑/↓ A/B/C; quote + ceiling; initiator pays |
+| Hop pick | **V023 / N020** — short-term **contacts ∪ org seed** only; risk-aware score; pricing regulates later (not revenue-first) |
 | Signaling | Invite / rotate / roster largely present from a1 |
 
 ## Next agent
 
-1. Do **not** implement full-mesh or a media-aware SFU that needs call keys.  
-2. Coordinate **n4-media** blind forwarder + ↑/↓ quote path with [p2p-mesh](../p2p-mesh/).  
-3. **SFU pick-priority / pricing-scorer** — discuss next (do not invent final rank in code).  
-4. No new video codec/device matrix in a4.
+1. Do **not** implement full-mesh, media-aware SFU, open public media_relay market, or `min(price)` sort.  
+2. Ship n4-media + call consumer per V020–V023 / N018–N020.  
+3. No new video codec/device matrix in a4.
 
 ## Agent traps
 
 | Wrong | Right |
 |-------|-------|
-| Full-mesh for group | Blind forwarder only (V020/V021) |
-| Relay decodes or holds media keys | Opaque forward + call-key AEAD on clients |
-| Single combined bps only | Separate **↑** and **↓** (V022) |
-| Bill without quote / above ceiling | Quote + accept + hard ceiling (V022) |
-| Classify audio vs video on relay | Byte-budget limits; Camera from **A↑** |
-| End call when inviting a 3rd | Soft-migrate same `call_id` to SFU |
-| Invent SFU pick order in code | Wait for priority design discussion |
+| Hardcoded N014 stage list for media | Scorer over closed eligibility (V023) |
+| Open public / ultra-cheap wins | Short-term contacts ∪ seed only |
+| Revenue-first paid SFU | Pricing **regulates** scarcity/abuse later |
+| Full-mesh / decode on relay | Blind forwarder + call-key AEAD |
+| Bill without quote | Quote + ceiling (V022) |
+| Invent public directory in a4 | Mid-term N020 |

@@ -1,6 +1,6 @@
 # P2P A/V calls
 
-**Status:** **a3 done** (LAN 1:1 video); **a4** gated on **blind `media_relay`** (V020/V021) — no full-mesh; NAT unclaimed  
+**Status:** **a3 done** (LAN 1:1 video); **a4** gated on **blind `media_relay`** (V020–V023) — contacts∪seed pick; NAT unclaimed  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [p2p-mesh](../p2p-mesh/) (n4-media blind forwarder), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md)
@@ -36,7 +36,7 @@
 | Prerequisite | Why | Notes |
 |--------------|-----|--------|
 | Mesh **nr → nu → n3** (reachability, UPnP/IPv6, circuit) | NAT’d / Client peers | Mobile is always Client (no listen) |
-| Mesh **n4-media** blind `media_relay` | Group (a4) + NAT media | Org `pp-node` + desktop default on (N018); ↑/↓ + quote (N019 / V022); no payload decode |
+| Mesh **n4-media** blind `media_relay` | Group (a4) + NAT media | Contacts∪seed pick (N020); ↑/↓ quote (N019); desktop default on |
 | Peer `message_relay` | Offline inbox decentralization | **Separate** track — not a4 gate; HTTP Brief remains |
 | Direct E2E + group messaging | Signaling + key wrap to invitees | Guests use direct pairwise only |
 | Push Wave 1 + **`call_wake`** | Background ring | Extends push-notifications |
@@ -51,6 +51,6 @@
 | a1 | Signaling + session + history + ring wake | **Done** |
 | a2 | 1:1 voice (WebRTC + LAN dogfood) | **Done** — LAN Opus OK; NAT unclaimed |
 | a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **Done** — Android↔Win bidirectional; Linux receive-only (no camera); NAT unclaimed |
-| a4 | Group ≤8 via **blind `media_relay`**, guests, rotate | Pending — V020–V022; soft-migrate; ↑/↓ quotes; pick rank TBD |
+| a4 | Group ≤8 via **blind `media_relay`**, guests, rotate | Pending — V020–V023; contacts∪seed pick; ↑/↓ quotes |
 | a5 | Cap decision 8→16, polish | Pending |
 | a6 | Promote contracts to `docs/` | Pending |

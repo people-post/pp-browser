@@ -38,5 +38,5 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [push-notifications](push-notifications/) | **Wave 1 done** | Owned Brief FCM wake + local alerts; alerts ≠ sync — [CURRENT_STATE](push-notifications/CURRENT_STATE.md) |
 | [i18n](i18n/) | **i1–i6 landed** — widen i5 | EN + zh-Hans UI language; Settings picker (sheet on mobile) — [CURRENT_STATE](i18n/CURRENT_STATE.md) |
 | [liquid-glass](liquid-glass/) | **Done** | Floating Chrome on compact shell — [stable docs](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials) |
-| [p2p-mesh](p2p-mesh/) | **n3 done** — nf + n4-media next | Blind `media_relay` for calls (N018); message_relay/pricing deferred — [CURRENT_STATE](p2p-mesh/CURRENT_STATE.md) |
-| [p2p-av-calls](p2p-av-calls/) | **a3 done**; **a4** gated on SFU | Blind forwarder (V021); 1:1 P2P; soft-migrate — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
+| [p2p-mesh](p2p-mesh/) | **n3 done** — nf + n4-media next | Blind `media_relay`; contacts∪seed pick (N020); pricing-as-regulation — [CURRENT_STATE](p2p-mesh/CURRENT_STATE.md) |
+| [p2p-av-calls](p2p-av-calls/) | **a3 done**; **a4** gated on SFU | V020–V023 blind forwarder + closed-set pick — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |

@@ -57,17 +57,17 @@ Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wir
 
 ## a4 — Group calls (≤8), guests, rotate-on-leave
 
-Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media) + [V021](DECISIONS.md#v021--blind-media-forwarder-11-p2p-soft-migrate-to-group-sfu). **Blind `media_relay` SFU** (mesh [N018](../p2p-mesh/DECISIONS.md#n018--blind-media_relay-bandwidth-budgets-volunteer-default-on)). No full-mesh. SFU choice priority TBD.
+Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[V023](DECISIONS.md#v023--media-hop-pick-short-term-closed-set-pricing-regulates-later). Blind `media_relay` (mesh N018–N020). No full-mesh.
 
-- [ ] Mesh gate: volunteer blind **`media_relay`** on org `pp-node` + desktop Node (default on) — n4-media / N018
+- [ ] Mesh gate: volunteer blind **`media_relay`** on org `pp-node` + desktop Node (default on) — n4-media
 - [ ] Call consumer: N≥3 via blind forwarder; **1:1 stays P2P**; invite→N≥3 **soft-migrates** same `call_id` to SFU; re-pick on failure (V021)
 - [ ] App-layer E2E under call media key on SFU path (relay never holds keys)
-- [ ] **↑/↓** budgets (**A/B/C**) + **quote/ceiling** before attach; initiator pays; Camera from **A↑** (V022 / N019)
+- [ ] **↑/↓** budgets + **quote/ceiling**; initiator pays; Camera from **A↑** (V022 / N019)
+- [ ] Hop pick: **contacts ∪ org seed** only; affinity + quality floor + capacity; no open public (V023 / N020)
 - [ ] Multi-invite; mid-call guest invite (signaling largely present)
 - [ ] Rotate media key on leave + overlapping epochs (V003)
 - [ ] In-call roster (mute / camera / speaking if cheap)
 - [ ] Reuse a3 Opus + H264 HW path — **no** new device codec matrix in a4
-- [ ] SFU pick priority / scorer — **TBD** (after bandwidth docs)
 
 ## a5 — Cap, polish, reconnect
 
@@ -89,4 +89,4 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media) + [
 - [ ] Screen share
 - [ ] Recording (explicit user action)
 - [ ] Ambient group Join policy (if ever)
-- [ ] Paid SFU metering (mesh N010) when volunteer capacity is insufficient
+- [ ] Paid SFU metering as **capacity regulation** (N020 mid/long) — not revenue-first

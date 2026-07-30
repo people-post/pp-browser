@@ -89,8 +89,12 @@
 ## N014 — Contact-first relay preference (ask friends; serve friends)
 
 **Date:** 2026-07-26  
-**Decision:** Relay hop selection (circuit / message / media) uses a **priority policy**: prefer **contacts** (and household/trusted tags), then org seed, then public volunteer/paid relays, then HTTP Brief fallback. When **hosting** a relay, prefer capacity for **contacts/friends** before strangers (especially volunteer desktop Nodes). This is policy on capabilities — not a new role. Friends must opt in via Node + capability; never coerce. Phase **nf**, with or right after circuit-relay (**n3**).  
-**Rationale:** Users want to ask people they know for routing and to help those people first; public paid relays are a backstop, not the default social path.
+**Updated:** 2026-07-30 (N020 — media hop algorithm; N014 remains intent / illustrative outcome)  
+**Decision:** Relay hop selection (circuit / message / media) should **prefer contacts** (and household/trusted), then org seed, then (later) curated/public relays, with HTTP Brief as message fallback. When **hosting**, prefer capacity for **contacts/friends** before strangers (especially volunteer desktop Nodes). This is policy on capabilities — not a new role. Friends must opt in via Node + capability; never coerce. Phase **nf**, with or right after circuit-relay (**n3**).
+
+**For `media_relay` (calls):** Do **not** implement N014 as a hardcoded stage list. Use the **risk-aware scorer + eligibility classes** in **N020** / calls **V023**. Short-term feasible set is **contacts ∪ org seed** only (no open public). The classic “friends then seed then public” ordering is the **expected volunteer outcome**, not the algorithm. Circuit (and later message) hops may keep a simpler N014-style preference until they grow similar abuse surface.
+
+**Rationale:** Users want to ask people they know for routing and to help those people first; public paid relays are a backstop, not the default social path. Hardcoding stages fails under abuse, quality variance, and price gaming — see N020.
 
 ## N015 — Delivery order: reachability and circuit before DHT
 
@@ -126,7 +130,7 @@
 
 **Blind forwarder (not TURN, not full-mesh, not media-aware SFU):** Each participant uplinks once; relay fans out **opaque** packets by stream/publisher id. No call keys on relay; no codec decode. Rejected: full-mesh; TURN-only N−1 uploads; classic SFU that needs to see clear media.
 
-**nf:** Still ships contact-first preference (N014) for circuit and (when ready) SFU pick. Exact **SFU choice priority ranking is TBD** — do not invent a final order in implementation before that design discussion. Message hops may keep using HTTP Brief without waiting on peer `message_relay`.
+**nf:** Circuit may keep N014-style preference. **Media hop pick** is **N020** / **V023** (no longer TBD). Message hops may keep using HTTP Brief without waiting on peer `message_relay`.
 
 **N015 update:** Prefer **n4-media** next for calls unblocking over packaging message_relay or paid UI. Order sketch: … → n3 → (thin nf as needed) → **n4-media** → later message_relay / pricing UI / directory → n2 DHT.
 
@@ -147,19 +151,19 @@
 | **Bandwidth** | Node advertises a budget (e.g. max uplink aggregate bps or class). Clients decide whether Camera is allowed; relay rate-limits/drops by size if exceeded. |
 | **Hosts** | Org **`pp-node`**: volunteer **`media_relay` on**. Desktop Node: checkbox **default on** (volunteer) when Node is enabled — user may turn off. Mobile Client: never hosts. |
 | **Pricing** | Volunteer for ship; `pricing.*` schema stub only (N017). |
-| **Pick / re-pick** | Call coordinator applies pick policy (exact order **still TBD**); on hop failure or group migrate, **re-pick** with the same policy. |
-
+| **Pick / re-pick** | Call coordinator applies **N020** / **V023** (contacts ∪ seed short-term; re-pick on failure). |
 **Rationale:** Matches product privacy (“relay must not know contents”); one module is enough for fan-out; friend Nodes need honest bandwidth limits without deep packet inspection of media.  
 **Alternatives:** Classic media-aware SFU (rejected); separate audio/video services that inspect codecs (rejected); desktop default off until dogfood (superseded — default on volunteer).  
 **Updates N017** host/checkbox wording from dual audio/video to blind `media_relay`.  
-**Bandwidth detail:** Split ↑/↓ budgets, quotes, and no-surprise billing are **N019** / calls **V022** (supersedes the single `max_aggregate_bps` sketch).
+**Bandwidth detail:** Split ↑/↓ budgets, quotes, and no-surprise billing are **N019** / calls **V022**.  
+**Pick detail:** **N020** / **V023**.
 
 ---
 
 ## N019 — `media_relay` ↑/↓ budgets, quotes, no surprise bills
 
 **Date:** 2026-07-30  
-**Decision:** `media_relay` capacity and future pricing use **separate upload and download** counters, session grants, and a **quote/accept** flow. Call-side rules: [V022](../p2p-av-calls/DECISIONS.md#v022--media-relay-bandwidth--quote-no-surprise-payer-bills). **SFU pick priority list / scorer is still TBD** — do not encode a hardcoded contacts→seed→public stage machine in this ADR.
+**Decision:** `media_relay` capacity and future pricing use **separate upload and download** counters, session grants, and a **quote/accept** flow. Call-side rules: [V022](../p2p-av-calls/DECISIONS.md#v022--media-relay-bandwidth--quote-no-surprise-payer-bills). Hop pick algorithm: **N020** / **V023** (not a hardcoded N014 stage list).
 
 ### Advertisement / grant shape (names illustrative)
 
@@ -179,9 +183,47 @@
 5. Never charge above accepted ceiling; on pressure, rate-limit/drop / signal clients to disable Camera.  
 6. Material change → **re-quote + re-accept**.
 
-### Relation to pick policy (later)
+### Relation to pick policy
 
-Quotes and ↑/↓ fit will be **inputs** to a future generic scorer (cost, capacity, affinity). Until that discussion lands, implementers may use any temporary hop selection for dogfood but must not treat N014’s illustrative list as final code.
+Quotes and ↑/↓ fit are **inputs** to the hop scorer in **N020** / calls **V023** (closed set short-term; pricing regulates later). Do not treat N014’s illustrative list as executable stage code for `media_relay`.
 
 **Rationale:** Egress (↓) dominates SFU cost; payer protection must exist before paid mode; designing counters now avoids a volunteer→paid rewrite.  
-**Alternatives:** Combined aggregate only (rejected); bill after the fact without ceiling (rejected); bake hardcoded priority tiers into this ADR (rejected — separate round).
+**Alternatives:** Combined aggregate only (rejected); bill after the fact without ceiling (rejected); bake hardcoded priority tiers into this ADR (superseded by N020).
+
+---
+
+## N020 — Media hop pick: short-term closed set; pricing as regulation
+
+**Date:** 2026-07-30  
+**Decision:** `media_relay` hop selection is a **risk-aware scorer over eligibility classes**. **Revenue is not the goal**; the **pricing model regulates** scarcity, strangers, and abuse over time. Call twin: [V023](../p2p-av-calls/DECISIONS.md#v023--media-hop-pick-short-term-closed-set-pricing-regulates-later). Updates **N014** for media (intent retained; algorithm here).
+
+### Thesis
+
+Volunteer + **closed eligibility** first; quote/pricing schema always present (**rate 0**); paid/public classes unlock later to ration capacity and gate untrusted hops. **Abuse / flood / fraud** outrank friend preference and cheapness. Never pure `min(price)`.
+
+### Short term (must-have with n4-media / calls a4)
+
+| Rule | Detail |
+|------|--------|
+| **Feasible set** | **Contacts ∪ household/trusted ∪ org seed** only — **no open public** `media_relay` market |
+| **Auth** | Attach only with authenticated call session (call_id + roster) |
+| **Capacity + quote** | N019 / V022 ↑/↓ fit; quote + ceiling; initiator accept |
+| **Pick** | Filter → score (**affinity + quality floor + residual capacity**; price = 0) → quote/accept |
+| **Friends vs quality** | Affinity is a bonus; below quality floor → skip |
+| **Re-pick** | Failure → cool-down exclude → same policy |
+| **Provider** | Prefer contacts; limit/refuse strangers on volunteer desktop Nodes |
+
+### Mid term
+
+Curated public directory/allowlist; paid rates on public/overflow; free-for-contacts / paid-or-refuse strangers; stronger quality history; soft **concentration** penalty; re-quote when leaving volunteer ceiling.
+
+### Long term
+
+Bonds/stake; receipts/reputation; anti-dumping (outlier cheap = risk); stronger anti-capture; optional multi-homing; optional paid seed overflow for ops — not “sell SFU” as mission.
+
+### Circuit / message
+
+Circuit may keep simpler N014-style preference in **nf**. Peer `message_relay` remains deferred (N017); HTTP Brief stays message offline path.
+
+**Rationale:** Closed set removes sybil/cheap-bait/capture for v1; scorer + rate-0 quotes avoid rewrite when regulation via price turns on.  
+**Alternatives:** Hardcoded N014 stages for media (rejected); open public + min price in v1 (rejected); revenue-first paid SFU (rejected).

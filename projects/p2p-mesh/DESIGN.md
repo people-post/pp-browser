@@ -349,44 +349,29 @@ Manual port-forward (N012) is the fallback. Prefer automatic / zero-config paths
 
 Phase **nu** ships after **nr** has a status card (so success/failure is visible). Do not require UPnP for org `pp-node` on public IPs.
 
-## Relay path preference: contacts first (N014)
+## Relay path preference (N014 / N020)
 
-When choosing a **circuit / message / media hop** (or asking someone to relay for us), use a **priority policy**, not a flat public marketplace.
+**Intent (N014):** Prefer asking/serving **contacts** and trusted Nodes; org seed as reliable backstop; public later.
 
-### Consumer side (who we ask to route us)
+**`media_relay` algorithm (N020 / calls V023):** Risk-aware **filter → score → quote**, not a hardcoded stage list.
 
-Prefer, in order (illustrative; exact weights TBD at implement time):
-
-1. **Contacts** the user already trusts (and who offer the needed capability)  
-2. **Household / explicitly trusted nodes** (same person or tagged “home node”)  
-3. **Org Brief seed / operated `pp-node`**  
-4. **Other volunteer or paid public relays** (directory later)
-
-User intent: “I’d rather ask friends in my contact list for routing than a random paid peer.”
-
-### Provider side (who we prioritize when we host a relay)
-
-When this peer runs a relay capability, prefer serving **contacts / friends** (and optional household) before scarce capacity goes to strangers — especially on volunteer desktop Nodes. Paid public offering can still exist with its own queue/rate limits (N010).
-
-User intent: “I prefer routing **for** my friends.”
-
-### Rules
-
-- Preference is **policy on top of** circuit / media capabilities — not a new role.  
-- Contacts without the capability are skipped; fall through the list.  
-- Never force a friend to relay; they must have Node + capability on (and accept policy).  
-- HTTP Brief relay remains the ultimate **message** fallback; peer `message_relay` is optional later (N017).  
-- Phase **nf** lands with or right after **n3**. **SFU choice priority exact order is TBD** — design discussion before coding final ranking. Circuit can use N014 sketch first.
+| Horizon | Rule |
+|---------|------|
+| **Short term** | Feasible set = **contacts ∪ household ∪ org seed** only; no open public market. Score: affinity + quality floor + residual capacity (price = 0). Auth + ↑/↓ quote required. Provider: prefer contacts; limit strangers. |
+| **Mid term** | Curated public; paid rates to ration overflow; concentration penalty; quality history |
+| **Long term** | Bonds, receipts, anti-dumping, anti-capture — pricing **regulates** ecosystem; revenue is not the mission |
 
 ```mermaid
 flowchart TB
-  need[Need a relay hop]
-  need --> c[Try contact Nodes]
-  c -->|none| h[Household / trusted]
-  h -->|none| s[Org seed pp-node]
-  s -->|none| p[Public volunteer or paid]
-  p -->|none| http[HTTP Brief relay fallback]
+  need[Need media_relay hop]
+  need --> f[Filter: eligible class + auth + up/down fit + not excluded]
+  f --> s[Score: affinity + quality + capacity residual]
+  s --> q[Quote + payer accept]
+  q --> ok[Attach]
+  ok -->|fail| rp[Cool-down exclude + re-pick]
 ```
+
+Circuit hops in **nf** may keep a simpler contacts→seed preference. Message path: HTTP Brief fallback; peer `message_relay` optional later (N017).
 
 ## Preferred delivery order (N015)
 
@@ -409,8 +394,9 @@ Agents: prefer **n4-media** for calls over peer message_relay or paid UI. Prefer
 
 | Idea | Notes |
 |------|-------|
-| **Capability directory** | Find volunteer/paid relays after n4; still respect N014 contact priority |
-| **Node reputation / receipts** | Soft trust before heavy staking |
+| **Capability directory** | Mid-term curated public for media_relay (N020); still respect affinity |
+| **Node reputation / receipts** | Soft trust before heavy staking (N020 long term) |
+| **Bonds / anti-dumping / anti-capture** | Pricing as regulation (N020); revenue not the mission |
 | **Schedules & resource caps** | Node only on AC / idle; bandwidth ceilings |
 | **Home Node pack** | Always-on mini PC + `pp-node` |
 | **Gradual HTTP→peer message_relay** | Dual-run; don’t hard-cut Brief HTTP |

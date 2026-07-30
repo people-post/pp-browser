@@ -32,7 +32,8 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 20 | Call media shape | Always Opus+H264 m-lines; Voice/Video = entry UX only; audio mandatory / video best-effort (V019) |
 | 21 | a4 topology | Blind forwarder for N≥3; 1:1 P2P; soft-migrate on 3rd; pick/re-pick by coordinator (V021) |
 | 22 | Relay privacy | Relay never holds call media keys / never decodes payloads (V021) |
-| 23 | Relay bandwidth / bills | **A↑/A↓**, **B↑/B↓**, **C↑/C↓**; quote + ceiling; initiator pays (V022 / N019); pick rank TBD |
+| 23 | Relay bandwidth / bills | **A↑/A↓**, **B↑/B↓**, **C↑/C↓**; quote + ceiling; initiator pays (V022 / N019) |
+| 24 | Hop pick | Closed set contacts∪seed short-term; risk-aware score; pricing regulates later (V023 / N020) |
 
 ---
 
@@ -203,11 +204,13 @@ Consumes p2p-mesh **n4-media** (N017 / N018):
 |------------|----------|
 | `media_relay` | Blind selective forwarder — one uplink, fan-out; **↑/↓** byte budgets (V022 / N019) |
 | Circuit relay (n3) | Help dial SFU / peers when NATed |
-| Contact-first (N014) | Placeholder for SFU pick; **exact priority / scorer TBD** |
+| Contact-first (N014) | Intent: prefer friends; **media algorithm = N020 / V023** |
 
 **Blindness:** Relay never holds call media keys and never decodes payloads. Clients AEAD frames under the shared call key (V004/V021).
 
-**Bandwidth + payer (V022 / N019):** Separate **A↑/A↓** (per user) and **B↑/B↓** (session) plus node **C↑/C↓**. Camera uses **A↑**. Before attach: **quote** (estimate + billing ceiling) accepted by **session payer** (v1: call initiator). Relay never bills above ceiling; re-quote on material change. Volunteer = rate 0 on the same path. Pick-priority ranking still open.
+**Bandwidth + payer (V022 / N019):** Separate **A↑/A↓**, **B↑/B↓**, **C↑/C↓**. Camera uses **A↑**. Quote + ceiling; initiator pays; volunteer rate 0.
+
+**Hop pick (V023 / N020):** Short-term feasible set = **contacts ∪ org seed** only (no open public). Filter → score (affinity + quality floor + capacity; price 0) → quote. Pricing **regulates** later; revenue is not the goal. Re-pick on failure.
 
 **Mobile Client** never hosts. **Hosts:** org `pp-node` + desktop Node (`media_relay` **default on**, volunteer). Peer **message_relay** is separate — not an a4 dependency.
 
@@ -311,7 +314,7 @@ Honest mobile / group video needs mesh progress roughly:
 
 ### Mesh alignment (a0) — locked guidance
 
-**SFU choice priority:** Exact ranking **TBD** (design discussion). Coordinator applies policy at pick and **re-pick** (V021). N014 is the placeholder — prefer opted-in contacts / trusted, then org seed, then public; never coerce.
+**SFU choice priority:** Locked **V023 / N020** — short-term **contacts ∪ org seed**; score affinity + quality + capacity; no open public; pricing regulates mid/long term.
 
 **SFU host profile (ops + desktop):**
 

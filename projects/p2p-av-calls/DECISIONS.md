@@ -312,9 +312,10 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 | Audio + video | a4 includes **both** Opus audio and H264 video through the SFU. |
 | Codecs | **Reuse** a3 platform HW path (V017–V019). Do **not** expand encode/decode matrix for newer devices/codecs in a4 — that is a separate later slice. |
 | SFU hosts | Org **`pp-node`** + desktop **`media_relay`** (blind; volunteer **default on** — N018 / V021). Mobile never hosts. |
-| Mesh gate | a4 media depends on mesh **n4-media**. Exact **SFU choice priority** still **TBD**. |
-| Blindness / migrate | See **V021** (soft-migrate 1:1→group; app-layer E2E; byte budgets). |
-| Pricing | Volunteer-only for a4; paid metering designed for later (mesh N010 / N017) — do not block a4. |
+| Mesh gate | a4 media depends on mesh **n4-media**. Hop pick: **V023** / **N020**. |
+| Blindness / migrate | See **V021**. |
+| Bandwidth / bills | See **V022**. |
+| Pricing | Schema now (rate 0); **regulates** later — not revenue-first (V023 / N020). |
 | Out of a4 “done” | Full-mesh group media; peer `message_relay`; paid SFU UI/settle; network-adaptive / new device codecs. |
 
 **a4 exit criteria (claimable when mesh SFU exists):**
@@ -388,4 +389,54 @@ Camera / send policy uses **A↑** (and session **B↑**). Receive / subscribe p
 6. Paid settle UI may ship later (N017); **schema and quote flow are designed now** so volunteer=`rate 0` uses the same path.
 
 **Rationale:** Fan-out makes download dominate relay cost; splitting ↑/↓ matches physics. Initiator-as-payer is the simplest hostless rule. Ceilings prevent bill shock when pricing turns on.  
-**Alternatives:** Single combined bps (rejected — hides fan-out); bill without quote (rejected); each participant pays own share in v1 (deferred); coordinator as payer (rejected — initiator is clearer for “who started the call”).
+**Alternatives:** Single combined bps (rejected — hides fan-out); bill without quote (rejected); each participant pays own share in v1 (deferred); coordinator as payer (rejected — initiator is clearer for “who started the call”).  
+**Pick policy:** Locked in **V023** / mesh **N020** (was TBD when V022 shipped).
+
+---
+
+## V023 — Media hop pick: short-term closed set; pricing regulates later
+
+**Date:** 2026-07-30  
+**Decision:** Hop selection for blind `media_relay` is a **risk-aware scorer over eligibility classes**, not a hardcoded contacts→seed→public list. **Making money is not the product goal**; the **pricing model exists to regulate** scarcity, strangers, and abuse over time. Mesh twin: [N020](../p2p-mesh/DECISIONS.md#n020--media-hop-pick-short-term-closed-set-pricing-as-regulation).
+
+### Thesis
+
+> Volunteer + **closed eligibility** first; quote/pricing **schema always present** (rate 0); paid / public classes unlock later to **ration capacity and gate untrusted hops** — revenue is not the success metric. Abuse / flood / fraud outrank friend preference and cheapness.
+
+### Short term (must-have for a4 / n4-media)
+
+| Rule | Detail |
+|------|--------|
+| **Feasible set** | **Contacts ∪ household/trusted ∪ org seed** only. **No open public** media_relay market. |
+| **Auth** | Attach only with authenticated call session (call_id + roster proof from coordinator). |
+| **Capacity** | V022 ↑/↓ fit required; byte enforce on relay. |
+| **Quote** | V022 quote + ceiling; initiator accept; volunteer rate = 0 on same path. |
+| **Pick** | Filter (eligible, auth, ↑/↓ fit, not excluded) → score (**affinity + quality floor + capacity residual**; price = 0) → quote/accept. |
+| **Friends vs quality** | Affinity is a **bonus**, not a veto: contact below quality floor is skipped. |
+| **Re-pick** | On hop failure / cool-down exclude; same policy. |
+| **Provider** | Prefer serving contacts; limit or refuse strangers on volunteer desktop Nodes. |
+
+Expected UX often looks like “friend then seed” — that is an **outcome** of the closed set + score, not a stage machine to hardcode.
+
+### Mid term (pricing as regulation)
+
+| Step | Regulatory effect |
+|------|-------------------|
+| Curated public class (directory / allowlist) | Controlled entry |
+| Paid rate on public / overflow capacity | Ration when free C is scarce |
+| Friends: free for contacts; paid or refuse strangers | Preference without special-case tiers |
+| Stronger quality + failure history in score | Punish bait hops |
+| Soft concentration penalty | Slow single-operator capture |
+| Re-quote when leaving volunteer ceiling | Money only when user opts into more capacity |
+
+### Long term (ecosystem)
+
+Bonds/stake for public relays; receipts / soft reputation; anti-dumping (outlier cheap = higher risk); stronger anti-concentration + optional multi-homing; optional paid seed overflow for ops sustainability — **not** “we sell SFU” as mission.
+
+### Explicit non-goals (short term)
+
+Open public directory; paid settle UI; pure `min(price)` sort; hardcoded N014 stage list as the algorithm.
+
+**Rationale:** Closed set removes sybil/cheap-bait/capture for v1; scorer + quote schema avoid a rewrite when regulation via price turns on; friend preference without guaranteeing flaky home uplinks.  
+**Alternatives:** Hardcoded priority list (rejected — brittle, gameable); open public + min price in v1 (rejected — abuse); revenue-first paid SFU (rejected).  
+**Updates:** Softens “pick TBD” in V020–V022; aligns with N014 as **illustrative outcome** (see N020).

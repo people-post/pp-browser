@@ -1,6 +1,6 @@
 # P2P mesh
 
-**Status:** **nr / nu / n3 done** — next **nf** (thin) + **n4-media** blind `media_relay` (N018); message_relay / paid pricing deferred  
+**Status:** **nr / nu / n3 done** — next **nf** + **n4-media** (N018–N020: blind `media_relay`, ↑/↓ quotes, contacts∪seed pick; pricing regulates later)  
 **Formerly:** `projects/libp2p-node-roles/` (renamed; ADRs remain N001+)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [docs/architecture/P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [docs/architecture/LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
@@ -44,7 +44,7 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 
 | File | Purpose |
 |------|---------|
-| [DESIGN.md](DESIGN.md) | Full model, N010–N019, delivery order |
+| [DESIGN.md](DESIGN.md) | Full model, N010–N020, delivery order |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
 | [PHASES.md](PHASES.md) | Checklists in N015 order |
 | [DECISIONS.md](DECISIONS.md) | ADRs (N001+) |
@@ -60,6 +60,6 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 | nu | IPv6 + UPnP/NAT-PMP | **Done** |
 | n3 | Circuit-relay | **Done** |
 | nf | Contact-first preference (thin; SFU rank TBD) | **Next** |
-| n4-media | Blind `media_relay` (seed + desktop default on) | After nf basics — **unblocks a4** |
+| n4-media | Blind `media_relay` + contacts∪seed pick | After nf basics — **unblocks a4** (N018–N020) |
 | n4-message / pricing | Peer message_relay; paid UI | Deferred (N017) |
 | n2 | DHT | Later than circuit (N015) |

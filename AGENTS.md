@@ -62,8 +62,8 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency (long-term) | [projects/ai-centric-interface/](projects/ai-centric-interface/) — 10 acts, open domains; v1 thin coverage first |
 | P2P messaging | `src/feature/messaging/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
-| P2P mesh | [projects/p2p-mesh/](projects/p2p-mesh/) — Client/Node; `pp-node`; UPnP/IPv6; n3 done; **nf** + **n4-media** blind `media_relay` next (N018) |
-| P2P A/V calls | [projects/p2p-av-calls/](projects/p2p-av-calls/) — **a3** done; **a4** gated on blind forwarder (V021); 1:1 P2P, soft-migrate to group |
+| P2P mesh | [projects/p2p-mesh/](projects/p2p-mesh/) — n3 done; **nf** + **n4-media** next (N018–N020: blind relay, ↑/↓ quotes, contacts∪seed pick; pricing regulates later) |
+| P2P A/V calls | [projects/p2p-av-calls/](projects/p2p-av-calls/) — **a3** done; **a4** gated on blind forwarder (V020–V023) |
 | Contacts UI / store | `src/feature/ui/ContactsController.*`, `src/base/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
 | SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | E2E symmetric crypto (`base/crypto`) | `src/base/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
