@@ -24,13 +24,13 @@ After bootstrap, a single [`SessionStore`](../../src/base/data/SessionStore.h) o
 | Disk DTO | Projector | Service slice | Apply |
 |----------|-----------|---------------|-------|
 | `AppConfig` | `MessagingHub::ProjectNetwork` | `MessagingHub::NetworkConfig` | `MessagingHub::Apply` |
+| `AppConfig` | `ChatController::ProjectAgent` | `ChatController::AgentConfig` | `ChatController::Apply` |
 | `ProfilePreferences` | `MessagingHub::ProjectPolicy` | `MessagingHub::PolicyPrefs` | `MessagingHub::Apply` |
 | `ProfilePreferences` | `MessagingHub::ProjectNotifications` | `MessagingHub::NotificationPrefs` | `MessagingHub::Apply` |
 | `ProfilePreferences` | `ShellHost::ProjectChrome` | `ShellHost::ChromePrefs` | Theme + `ShellHost::Apply` (materials) |
-| `ProfilePreferences` | `LocalizationService::Project` | `LocalizationService::Prefs` | `LocalizationService::Apply` + shell remount |
-| `AppConfig` | (chat still listens to full config) | — | `ChatController::ApplyRuntimeConfig` |
+| `ProfilePreferences` | `LocalizationService::Project` | `LocalizationService::Prefs` | `LocalizationService::Apply` (UI chrome via language listeners) |
 
-Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs.
+Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Imperative actions (register, rotate key, UPnP, clear undelivered, reset profile) and profile identity load/save use [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../src/base/people/ProfileIdentityView.h) — ports filled via `SettingsController::BindCommands` from `Application` (hub methods on [`MessagingHub`](../../src/feature/messaging/MessagingHub.h)); UI re-syncs `SettingsUiState` after commands.
 
 | SessionStore listener | Used by |
 |-----------------------|---------|

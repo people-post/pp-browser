@@ -34,6 +34,39 @@ class MessagingHub;
 
 class ChatController : public Module {
 public:
+  /** Hot-reloadable assistant slice projected from AppConfig (LLM / MCP / search). */
+  struct AgentConfig {
+    LlmConfig llm;
+    std::string llm_api_key_env;
+    McpConfig promoted_mcp;
+    std::vector<McpConfig> mcp_servers;
+    SearchConfig search;
+    ContextBudget context = DefaultContextBudget();
+
+    bool operator==(const AgentConfig& other) const {
+      if (llm.base_url != other.llm.base_url || llm.model != other.llm.model ||
+          llm.api_key != other.llm.api_key || llm.preset != other.llm.preset ||
+          llm.require_api_key != other.llm.require_api_key ||
+          llm_api_key_env != other.llm_api_key_env || promoted_mcp.url != other.promoted_mcp.url ||
+          search.provider != other.search.provider || mcp_servers.size() != other.mcp_servers.size()) {
+        return false;
+      }
+      for (size_t i = 0; i < mcp_servers.size(); ++i) {
+        const McpConfig& a = mcp_servers[i];
+        const McpConfig& b = other.mcp_servers[i];
+        if (a.id != b.id || a.url != b.url || a.command != b.command || a.enabled != b.enabled ||
+            a.args != b.args) {
+          return false;
+        }
+      }
+      return true;
+    }
+    bool operator!=(const AgentConfig& other) const { return !(*this == other); }
+  };
+
+  static AgentConfig ProjectAgent(const AppConfig& config);
+  void Apply(const AgentConfig& config);
+
   static ChatController& Instance();
 
   using SessionRow = SessionDisplayRow;
@@ -54,6 +87,8 @@ public:
   void OnSelectThread(const std::string& thread_id);
   /** Rebind to MessagingHub after a full profile data wipe/reinit. */
   void OnProfileDataReset();
+  /** Called when MessagingHub becomes messaging-ready (app-wired). */
+  void OnMessagingReady();
   /** Re-read agent LLM config (e.g. after Brief API key register/rotate). */
   void ReloadAgentConfig();
 
@@ -209,14 +244,13 @@ private:
   TurnWidgetState* FindWidgetState(const std::string& entry_id);
   const TurnWidgetState* FindWidgetState(const std::string& entry_id) const;
   void ClearFormState();
-  void ApplyRuntimeConfig(const AppConfig& config);
 
   Rml::Context* context_ = nullptr;
   MessagingHub* messaging_ = nullptr;
   ChatState chat_;
   ShellState shell_;
   std::optional<AgentSession> agent_;
-  AppConfig last_agent_runtime_;
+  AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool messaging_ready_ = false;
   ChatTranscriptScroller scroller_;

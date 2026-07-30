@@ -6,6 +6,7 @@
 #include "base/data/SchemaVersion.h"
 #include "base/data/SessionStore.h"
 #include "base/error/AppError.h"
+#include "common/Error.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/MessagingLimits.h"
@@ -25,6 +26,7 @@
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
 #include "feature/messaging/MessagingHub.h"
+#include "feature/settings/SettingsCommands.h"
 #include "feature/ui/ChatSessionActions.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/CallController.h"
@@ -35,10 +37,12 @@
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/PeoplePickerController.h"
 #include "feature/ui/SettingsController.h"
+#include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
 #include "ElementCallVideoTile.h"
 #include "base/ui/Theme.h"
 #include "common/StartupTiming.h"
+#include "libp2p/integration/host/Reachability.h"
 
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Core.h>
@@ -287,9 +291,44 @@ bool Application::Initialize(const char* window_title) {
   ActionRouter::Instance().SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
     DataModelHost::Instance().Dirty(model, binding);
   });
-  ChatSessionActions::Instance().reset_active_profile = [this]() { return ResetActiveProfile(); };
-
   MessagingHub& messaging = Messaging();
+  SettingsCommands settings_commands;
+  settings_commands.load_profile_identity = [&messaging]() {
+    return messaging.LoadProfileIdentityView();
+  };
+  settings_commands.save_profile_nickname = [&messaging](const std::string& nickname) {
+    return messaging.SaveProfileNickname(nickname);
+  };
+  settings_commands.register_identity = [&messaging](const RegisterIdentityArgs& args) {
+    auto result = messaging.RegisterIdentity(args.nickname);
+    if (result && ChatSessionActions::Instance().reload_agent_config) {
+      ChatSessionActions::Instance().reload_agent_config();
+    }
+    return result;
+  };
+  settings_commands.rotate_brief_llm_key = [&messaging]() {
+    auto result = messaging.RotateBriefLlmKey();
+    if (result && ChatSessionActions::Instance().reload_agent_config) {
+      ChatSessionActions::Instance().reload_agent_config();
+    }
+    return result;
+  };
+  settings_commands.clear_undelivered_older_than = [&messaging](int days) -> Roe<void> {
+    if (!messaging.IsInitialized() || !messaging.IsMessagingReady()) {
+      return Error("Messaging is not ready");
+    }
+    if (auto cleared = messaging.P2p().ClearUndeliveredOlderThan(days); !cleared) {
+      return cleared.error();
+    }
+    return {};
+  };
+  settings_commands.run_reachability_probe = [&messaging](bool try_upnp) {
+    messaging.RunReachabilityProbe(try_upnp);
+  };
+  settings_commands.try_upnp_port_mapping = [&messaging]() { messaging.TryUpnpPortMapping(); };
+  settings_commands.reset_active_profile = [this]() { return ResetActiveProfile(); };
+  SettingsController::Instance().BindCommands(std::move(settings_commands));
+
   SettingsController::Instance().BindMessaging(messaging);
   ContactsController::Instance().BindMessaging(messaging);
   CallController::Instance().BindMessaging(messaging);
@@ -300,19 +339,48 @@ bool Application::Initialize(const char* window_title) {
   ShellHost::Instance().BindMessaging(messaging);
 
   config_apply_->Bind(messaging, [](const std::string& relative) { return AssetsPath(relative); });
-  config_apply_->InstallListeners();
 
   if (![&] {
         StartupPhase phase("SetupChatController");
         return SetupChatController(context, messaging);
       }()) {
     log().error << "SetupChatController failed";
-    ChatSessionActions::Instance().reset_active_profile = nullptr;
+    SettingsController::Instance().BindCommands({});
     Rml::RemoveContext("main");
     Rml::Shutdown();
     Backend::Shutdown();
     return false;
   }
+
+  // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
+  config_apply_->InstallListeners();
+
+  messaging.SetOnMessagingReady([]() {
+    ChatController::Instance().OnMessagingReady();
+    ContactsController::Instance().Refresh();
+    if (ShellHost::Instance().State().account_sheet_open) {
+      SettingsController::Instance().OnAccountSheetOpened();
+    } else if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
+      SettingsController::Instance().OnNavTabActivated();
+    }
+  });
+  messaging.SetOnReachabilityUpdated([&messaging]() {
+    BrowserThread::PostTask(BrowserThreadId::UI, [&messaging]() {
+      SettingsController::Instance().SyncReachabilityFromHub();
+      const ReachabilitySnapshot snap = messaging.Reachability();
+      if (snap.status == ReachabilityStatus::OutboundOnly || snap.status == ReachabilityStatus::Blocked) {
+        ShellFeedback::ShowBanner(ShellHost::Instance().State(), Tr("settings.network.banner_hint"));
+      }
+    });
+  });
+
+  LocalizationService::Instance().AddLanguageChangeListener([](const std::string& /*resolved*/) {
+    SettingsController::Instance().RefreshLocalizedChrome();
+    ShellHost::Instance().RequestSyncLayout(true);
+    if (auto* ctx = Rml::GetContext("main")) {
+      ApplyUiDocumentLanguage(ctx);
+    }
+  });
 
   ShellHost::Instance().SetSafeAreaInsetsFromPrefs(bootstrap.machine_prefs.safe_area.top,
                                                    bootstrap.machine_prefs.safe_area.bottom);
@@ -366,6 +434,9 @@ void Application::Run() {
       ContactsController::Instance().Tick();
     }
     CallController::Instance().Tick();
+    if (Messaging().IsMessagingReady()) {
+      Messaging().TickLibp2p();
+    }
     UpdateChatController();
     ContextMenuHost::Instance().Update();
     ShellHost::Instance().Update(context);
@@ -398,7 +469,12 @@ void Application::Shutdown() {
   StartupMark("shutdown_begin");
   StartupPhase shutdown_total("Application::Shutdown");
 
-  ChatSessionActions::Instance().reset_active_profile = nullptr;
+  SettingsController::Instance().BindCommands({});
+
+  if (messaging_) {
+    messaging_->SetOnMessagingReady(nullptr);
+    messaging_->SetOnReachabilityUpdated(nullptr);
+  }
 
   // Join notification watcher first so it cannot PostTask during teardown, and
   // so process exit does not std::terminate on an unjoined std::thread.

@@ -9,12 +9,15 @@
 #include "feature/messaging/PushDeviceCoordinator.h"
 #include "feature/ai/AgentSession.h"
 #include "base/crypto/ProfileSecretsService.h"
+#include "base/data/LlmPreset.h"
 #include "base/error/AppError.h"
 #include "base/data/Libp2pRole.h"
 #include "base/data/SessionStore.h"
 #include "base/data/UserPreferences.h"
 #include "base/messaging/DirectChatTarget.h"
 #include "base/messaging/GroupTypes.h"
+#include "base/net/HttpClient.h"
+#include "base/net/RegistrationClientUtil.h"
 #include "base/people/ContactTypes.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
@@ -27,6 +30,8 @@
 #include "common/StartupTiming.h"
 
 #include <SDL3/SDL_timer.h>
+
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -49,6 +54,37 @@ PeerSessionConfig SessionConfigFromApp(const AppConfig& config) {
     }
   }
   return session;
+}
+
+std::string MaskBriefLlmApiKey(const std::string& key) {
+  constexpr const char kPrefix[] = "brf_llm_";
+  if (key.empty()) {
+    return "";
+  }
+  if (key.size() <= sizeof(kPrefix) - 1 + 4) {
+    return std::string(kPrefix) + "••••";
+  }
+  return key.substr(0, sizeof(kPrefix) - 1 + 4) + "••••";
+}
+
+std::string FormatExpiresDisplay(const std::string& iso) {
+  if (iso.size() >= 10) {
+    return iso.substr(0, 10);
+  }
+  return iso;
+}
+
+void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& identity) {
+  const RegistrationStatus status = ClassifyRegistration(identity);
+  view.registered = identity.registered ? "yes" : "no";
+  view.registration_status = RegistrationStatusLabel(status);
+  view.registration_expires =
+      identity.registration_expires_at.empty() ? "" : FormatExpiresDisplay(identity.registration_expires_at);
+  view.register_label = RegistrationActionLabel(status);
+  view.show_register = true;
+  view.show_rotate = (status == RegistrationStatus::Active || status == RegistrationStatus::ExpiringSoon) &&
+                     !identity.brief_llm_api_key.empty();
+  view.brief_llm_key_masked = MaskBriefLlmApiKey(identity.brief_llm_api_key);
 }
 
 } // namespace
@@ -532,6 +568,165 @@ void MessagingHub::TryUpnpPortMapping() {
   RunReachabilityProbe(false);
 }
 
+ProfileIdentityView MessagingHub::LoadProfileIdentityView() {
+  ProfileIdentityView view;
+  if (!IsInitialized() || !IsMessagingReady()) {
+    return view;
+  }
+  auto identity = Identity().Get();
+  if (!identity) {
+    return view;
+  }
+  view.ready = true;
+  view.nickname = identity->nickname;
+  view.peer_id = identity->peer_id;
+  view.relay_id = identity->relay_user_id;
+  view.public_key_b64 = identity->public_key_b64;
+  FillRegistrationFields(view, *identity);
+  return view;
+}
+
+Roe<void> MessagingHub::SaveProfileNickname(const std::string& nickname) {
+  if (!IsInitialized()) {
+    return {};
+  }
+  auto identity = Identity().Get();
+  if (!identity) {
+    if (!IsMessagingReady()) {
+      return {};
+    }
+    return identity.error();
+  }
+  if (nickname == identity->nickname) {
+    return {};
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to save identity");
+  }
+
+  LocalIdentity updated = *identity;
+  updated.nickname = nickname;
+  if (auto saved = Identity().Update(updated); !saved) {
+    return saved.error();
+  }
+
+  if (identity->registered) {
+    auto result = UpdateRegisteredNickname(Registration(), Identity(), nickname);
+    if (!result) {
+      return result.error();
+    }
+  }
+  return {};
+}
+
+Roe<void> MessagingHub::RegisterIdentity(const std::string& nickname) {
+  if (!IsInitialized()) {
+    return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to register");
+  }
+
+  auto identity = Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+
+  if (!nickname.empty()) {
+    LocalIdentity updated = *identity;
+    updated.nickname = nickname;
+    if (auto saved = Identity().Update(updated); !saved) {
+      return saved.error();
+    }
+    identity = Identity().Get();
+    if (!identity) {
+      return identity.error();
+    }
+  }
+
+  auto applied = FinishAndPersistRegistration(Registration(), Identity(), identity->nickname);
+  if (!applied) {
+    return applied.error();
+  }
+  return {};
+}
+
+Roe<void> MessagingHub::RotateBriefLlmKey() {
+  if (!IsInitialized()) {
+    return AppError::Pin(Err::Pin::Required, "Messaging hub not initialized");
+  }
+  if (!IsMessagingReady()) {
+    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to rotate API key");
+  }
+
+  auto identity = Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (identity->brief_llm_api_key.empty()) {
+    return AppError::Auth(Err::Auth::NotRegistered, "No Brief API key yet")
+        .WithUser("No Brief API key yet — register on the network in Me first.");
+  }
+
+  const AppConfig& config = SessionStore::Instance().Snapshot().config;
+  std::string base_url = config.llm.base_url;
+  if (ResolvePreset(config) != "brief" || base_url.empty()) {
+    base_url = "https://www.brief.global/api/llm/v1";
+  }
+  while (!base_url.empty() && base_url.back() == '/') {
+    base_url.pop_back();
+  }
+  const std::string url = base_url + "/keys/rotate";
+
+  auto response = HttpClient::Post(url, "{}", {{"Authorization", "Bearer " + identity->brief_llm_api_key},
+                                               {"Content-Type", "application/json"}});
+  if (!response) {
+    return response.error();
+  }
+  if (response->status_code == 401 || response->status_code == 403) {
+    LocalIdentity expired = *identity;
+    MarkRegistrationExpired(expired);
+    (void)Identity().Update(expired);
+    const char* renew_hint = response->status_code == 403
+                                 ? "Registration expired — use Renew registration in Me → Profile."
+                                 : "Brief API key rejected — renew registration in Me → Profile.";
+    return AppError::Auth(Err::Auth::Forbidden,
+                          "Brief key rotate HTTP " + std::to_string(response->status_code))
+        .WithUser(renew_hint);
+  }
+  if (response->status_code < 200 || response->status_code >= 300) {
+    auto json = nlohmann::json::parse(response->body, nullptr, false);
+    std::string detail = "Brief API key rotate failed (HTTP " + std::to_string(response->status_code) + ")";
+    if (!json.is_discarded() && json.contains("error")) {
+      const auto& err = json["error"];
+      if (err.is_string()) {
+        detail = err.get<std::string>();
+      } else if (err.is_object() && err.contains("message") && err["message"].is_string()) {
+        detail = err["message"].get<std::string>();
+      }
+    }
+    return AppError::Network(Err::Network::HttpError, detail);
+  }
+
+  auto root = nlohmann::json::parse(response->body, nullptr, false);
+  if (root.is_discarded() || !root.contains("llm_api_key") || !root["llm_api_key"].is_string()) {
+    return AppError::Auth(Err::Auth::Generic, "Brief API key rotate response missing llm_api_key")
+        .WithUser("Couldn't update Brief API key — try Renew registration in Me → Profile.");
+  }
+  const std::string new_key = root["llm_api_key"].get<std::string>();
+  if (new_key.empty()) {
+    return AppError::Auth(Err::Auth::Generic, "Brief API key rotate returned empty key")
+        .WithUser("Couldn't update Brief API key — try Renew registration in Me → Profile.");
+  }
+
+  LocalIdentity updated = *identity;
+  updated.brief_llm_api_key = new_key;
+  if (auto saved = Identity().Update(updated); !saved) {
+    return saved.error();
+  }
+  return {};
+}
+
 void MessagingHub::TickReachabilityUx() {
   if (!config_.libp2p.node_enabled || Platform::IsMobile()) {
     return;
@@ -609,6 +804,15 @@ void MessagingHub::Apply(const NetworkConfig& next) {
 
   if (service_urls_changed) {
     UpdateServiceClients(config_);
+    if (p2p_) {
+      p2p_->SetRelayClient(relay_);
+    }
+    if (actions_) {
+      actions_->SetRegistrationClient(registration_);
+    }
+  }
+  if (PeerSessionManager* sessions = Sessions()) {
+    sessions->SetConfig(SessionConfigFromApp(config_));
   }
   if (mesh_changed && messaging_ready_) {
     RefreshMeshCapabilities();

@@ -120,7 +120,7 @@ flowchart LR
   Hub --> Agent
 
   Shell -.->|layout / Me sheet| Settings
-  Chat -.->|ChatSessionActions| Settings
+  App -->|BindCommands SettingsCommands| Settings
   Pin -.->|unlock gate| Settings
   Contacts -.->|hub-bound| Hub
 ```
@@ -145,14 +145,27 @@ flowchart TB
   Bridge --> Push["MessagingHub::NotificationPrefs<br/><small>from ProfilePreferences</small>"]
   Bridge --> C["ShellHost::ChromePrefs<br/><small>from ProfilePreferences</small>"]
   Bridge --> L["LocalizationService::Prefs<br/><small>from ProfilePreferences</small>"]
-  Store --> AgentCfg["ChatController::ApplyRuntimeConfig<br/><small>full AppConfig still</small>"]
+  Bridge --> A["ChatController::AgentConfig<br/><small>from AppConfig</small>"]
 
   N --> HubA["MessagingHub::Apply"]
   P --> HubA
   Push --> HubA
   C --> ShellA["Theme + ShellHost::Apply"]
   L --> LocA["LocalizationService::Apply"]
+  A --> ChatA["ChatController::Apply"]
 ```
+
+## Allowed edges (hot-reload / settings)
+
+| From | To | Allowed? |
+|------|-----|----------|
+| Settings section flush | `SessionStore` SaveConfig / SaveProfilePrefs | Yes |
+| Settings UI | `MessagingHub::Apply*` / mesh / invite policy | **No** — go through SessionStore → bridge |
+| Settings UI | register / rotate / UPnP / clear undelivered / reset profile | Via `SettingsCommands` (narrow args; app-filled); UI syncs state after |
+| `ConfigApplyBridge` | nested `Apply` on services | Yes |
+| ChatController | full `AppConfig` listener | **No** — agent slice via bridge |
+| ChatController | `SetOnMessagingReady` / reachability | **No** — Application owns |
+| Application Run loop | `MessagingHub::TickLibp2p` | Yes |
 
 ## Threading
 
@@ -164,10 +177,10 @@ flowchart TB
     SDL["Application::Run<br/><small>SDL event loop</small>"]
     UIQ["BrowserThread::UI<br/><small>SequencedTaskRunner — drain via RunUITasks</small>"]
     ShellTick["ShellHost · ChatController<br/><small>feature/ui · feature/chat</small>"]
-    TickLp["MessagingHub::TickLibp2p<br/><small>session policy on UI tick</small>"]
+    TickLp["MessagingHub::TickLibp2p<br/><small>app Run loop when messaging ready</small>"]
     SDL --> UIQ
     SDL --> ShellTick
-    ShellTick --> TickLp
+    SDL --> TickLp
   end
 
   subgraph app_io["App IO thread"]
@@ -229,7 +242,7 @@ flowchart TB
 - **UI** owns RmlUi, shell state, and most controller mutations. Prefer `BrowserThread::PostTask(UI, …)` from IO / workers.
 - **IO** owns blocking Brief HTTP (`HttpClient` / libcurl) and agent network work. `PostTaskAndReply` is IO → UI.
 - **libp2p IO** must stay non-blocking for dials/reads; integration services hop to detached workers, then post results as needed.
-- **`MessagingHub::TickLibp2p`** runs on the UI tick (from `ChatController`) for idle/session policy — not on the asio thread.
+- **`MessagingHub::TickLibp2p`** runs from `Application::Run` when messaging is ready — not from ChatController.
 - Pause/resume: `AgentSession` may `BrowserThread::PauseIO` / `ResumeIO` around sensitive UI transitions.
 
 ## Notable modules
@@ -239,11 +252,13 @@ flowchart TB
 | **Application** | `app/` | Owns hub lifetime, binds controllers, installs `ConfigApplyBridge` |
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
-| **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; nested `NetworkConfig` / `PolicyPrefs` / `NotificationPrefs` |
+| **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices |
 | **ShellHost** | `feature/ui/` | Window shell panes/nav; nested `ChromePrefs` |
 | **LocalizationService** | `base/i18n/` | Locale catalogs; nested `Prefs` |
-| **SettingsController** | `feature/ui/` | Me-tab UI + flush to SessionStore (not service apply) |
-| **ChatController** | `feature/chat/` | Chat UI + agent; still listens to full `AppConfig` for LLM |
+| **SettingsController** | `feature/ui/` | Me-tab UI + flush to SessionStore; holds injected `SettingsCommands` |
+| **SettingsCommands** | `feature/settings/` | Imperative ports; app binds implementations |
+| **ProfileIdentityView** | `base/people/` | Presentation projection of local identity |
+| **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
 | **BrowserThread** | `base/platform/` | UI + IO sequenced runners |
 | **Libp2pHost** | `libp2p/integration/host/` | Vendored host + asio IO thread |

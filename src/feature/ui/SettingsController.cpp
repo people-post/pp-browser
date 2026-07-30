@@ -9,7 +9,6 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/platform/BrowserThread.h"
 #include "base/ui/ContextMenuHost.h"
-#include "feature/ui/ChatSessionActions.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/ui/DataModelHost.h"
@@ -125,9 +124,21 @@ SettingsController& SettingsController::Instance() {
 }
 void SettingsController::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
+}
+
+void SettingsController::BindCommands(SettingsCommands commands) {
+  commands_ = std::move(commands);
   if (auto* profile = dynamic_cast<ProfileSettingsSection*>(FindHandler("profile"))) {
-    profile->BindMessaging(messaging);
+    profile->BindPorts(&commands_);
   }
+}
+
+SettingsCommands& SettingsController::Commands() {
+  return commands_;
+}
+
+const SettingsCommands& SettingsController::Commands() const {
+  return commands_;
 }
 
 MessagingHub& SettingsController::Hub() {
@@ -1246,13 +1257,17 @@ void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*
 
 void SettingsController::RetestReachabilityCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                     const Rml::VariantList& /*args*/) {
-  Instance().Hub().RunReachabilityProbe(false);
+  if (Instance().Commands().run_reachability_probe) {
+    Instance().Commands().run_reachability_probe(false);
+  }
   Instance().SyncReachabilityFromHub();
 }
 
 void SettingsController::TryUpnpPortCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                              const Rml::VariantList& /*args*/) {
-  Instance().Hub().TryUpnpPortMapping();
+  if (Instance().Commands().try_upnp_port_mapping) {
+    Instance().Commands().try_upnp_port_mapping();
+  }
   Instance().SyncReachabilityFromHub();
 }
 
@@ -1389,20 +1404,23 @@ void SettingsController::OnRegisterProfile() {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
       return;
     }
-    if (auto registered = ProfileSettingsSection::RegisterIdentity(ui_state_, Instance().Hub()); !registered) {
+    if (!commands_.register_identity) {
+      ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Registration is not available"));
+      return;
+    }
+    if (auto registered = commands_.register_identity({.nickname = ui_state_.profile_nickname}); !registered) {
       ReportFailure(registered.error());
       return;
     }
     if (Instance().Hub().IsInitialized() && Instance().Hub().IsMessagingReady()) {
       if (auto identity = Instance().Hub().Identity().Get()) {
         UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, identity->nickname);
-        ui_state_.profile_nickname = identity->nickname;
       }
     }
     const char* message =
         renewing ? "Registration renewed — Brief API key updated" : "Registered — Brief API key saved";
     status_ = message;
-    PushUiStateToBindings();
+    SyncBindingsFromSession();
     DirtyAll();
     UserFeedback::Ok(message);
   });
@@ -1415,12 +1433,19 @@ void SettingsController::OnRotateBriefLlmKey() {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
       return;
     }
-    if (auto rotated = ProfileSettingsSection::RotateBriefLlmKey(ui_state_, Instance().Hub()); !rotated) {
+    if (!commands_.rotate_brief_llm_key) {
+      ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Key rotation is not available"));
+      return;
+    }
+    if (auto rotated = commands_.rotate_brief_llm_key(); !rotated) {
+      // Identity may have been marked expired on 401/403.
+      SyncBindingsFromSession();
+      DirtyAll();
       ReportFailure(rotated.error());
       return;
     }
     status_ = "Brief API key rotated";
-    PushUiStateToBindings();
+    SyncBindingsFromSession();
     DirtyAll();
     UserFeedback::Ok("Brief API key rotated");
   });
@@ -1488,7 +1513,7 @@ void SettingsController::OnClearUndeliveredCallback(Rml::DataModelHandle /*model
 }
 
 void SettingsController::OnClearUndeliveredOlderThan() {
-  if (!Instance().Hub().IsInitialized() || !Instance().Hub().IsMessagingReady()) {
+  if (!commands_.clear_undelivered_older_than) {
     ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.clear_undelivered.not_ready")));
     return;
   }
@@ -1501,7 +1526,9 @@ void SettingsController::OnClearUndeliveredOlderThan() {
           return;
         }
         BrowserThread::PostTask(BrowserThreadId::IO, [this]() {
-          auto result = Instance().Hub().P2p().ClearUndeliveredOlderThan(7);
+          auto result = commands_.clear_undelivered_older_than
+                            ? commands_.clear_undelivered_older_than(7)
+                            : Roe<void>{Error("Messaging is not ready")};
           BrowserThread::PostTask(BrowserThreadId::UI, [this, result = std::move(result)]() mutable {
             if (!result) {
               ReportFailure(result.error());
@@ -1537,13 +1564,13 @@ void SettingsController::OnResetProfile() {
 }
 
 void SettingsController::PerformResetProfile() {
-  if (!ChatSessionActions::Instance().reset_active_profile) {
+  if (!commands_.reset_active_profile) {
     ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile reset is not available"));
     return;
   }
 
   log().info << "Requesting active profile reset";
-  if (auto reset = ChatSessionActions::Instance().reset_active_profile(); !reset) {
+  if (auto reset = commands_.reset_active_profile(); !reset) {
     ReportFailure(reset.error());
     return;
   }

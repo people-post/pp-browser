@@ -1,16 +1,15 @@
 #pragma once
 
+#include "feature/settings/SettingsCommands.h"
 #include "feature/settings/SettingsSectionHandler.h"
 
 namespace pbr {
 
-class MessagingHub;
-
+/** Me → Profile section. Identity I/O via SettingsCommands ports — no MessagingHub. */
 class ProfileSettingsSection : public SettingsSectionHandler {
 public:
-  void BindMessaging(MessagingHub& messaging);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
+  void BindPorts(SettingsCommands* commands);
+
   const char* Id() const override;
   SettingsSectionListItem ListItem() const override;
   SettingsFlushMode FlushMode() const override;
@@ -20,10 +19,10 @@ public:
   Roe<void> Flush(SettingsUiState& state, SessionStore& store) override;
   void ResetToDefaults(SettingsUiState& state, const SessionStore& store) override;
 
-  static Roe<void> RegisterIdentity(SettingsUiState& state, MessagingHub& messaging);
-  static Roe<void> RotateBriefLlmKey(SettingsUiState& state, MessagingHub& messaging);
-  MessagingHub* messaging_ = nullptr;
+private:
+  void ApplyIdentityView(const ProfileIdentityView& view, SettingsUiState& state) const;
 
+  SettingsCommands* commands_ = nullptr;
 };
 
 } // namespace pbr

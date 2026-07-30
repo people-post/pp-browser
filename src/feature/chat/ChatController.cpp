@@ -1971,31 +1971,10 @@ bool ChatController::Setup(Rml::Context* context, MessagingHub& messaging) {
 
   if (Instance().Hub().IsInitialized()) {
     WireMessagingBindings();
-    Instance().Hub().SetOnMessagingReady([this]() {
-      WireMessagingBindings();
-      ContactsController::Instance().Refresh();
-      if (ShellHost::Instance().State().account_sheet_open) {
-        SettingsController::Instance().OnAccountSheetOpened();
-      } else if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
-        SettingsController::Instance().OnNavTabActivated();
-      } else if (ShellHost::Instance().State().nav_tab == NavTab::Home) {
-        OnHomeTabActivated();
-      }
-    });
-    Instance().Hub().SetOnReachabilityUpdated([this]() {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-        SettingsController::Instance().SyncReachabilityFromHub();
-        const ReachabilitySnapshot snap = Instance().Hub().Reachability();
-        if (snap.status == ReachabilityStatus::OutboundOnly || snap.status == ReachabilityStatus::Blocked) {
-          ShellFeedback::ShowBanner(ShellHost::Instance().State(), Tr("settings.network.banner_hint"));
-        }
-      });
-    });
   }
 
-  // Must go through ApplyRuntimeConfig so Brief injects identity.brief_llm_api_key.
-  // A raw Configure(SessionStore config) wipes the vault key after WireMessagingBindings.
-  ApplyRuntimeConfig(config);
+  // Must go through Apply so Brief injects identity.brief_llm_api_key.
+  Apply(ProjectAgent(config));
   log().info << "Chat initialized (model: " << config.llm.model << ")";
 
   DataModelHost::Instance().Clear();
@@ -2148,8 +2127,6 @@ bool ChatController::Setup(Rml::Context* context, MessagingHub& messaging) {
     return false;
   }
 
-  SessionStore::Instance().AddConfigListener([this](const AppConfig& updated) { ApplyRuntimeConfig(updated); });
-
   ShellHost::Instance().Initialize(context);
   // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.
   ShellHost::Instance().State().fonts_ready = !UiLanguageNeedsCjkFonts();
@@ -2237,13 +2214,32 @@ bool ChatController::Setup(Rml::Context* context, MessagingHub& messaging) {
   return true;
 }
 
-void ChatController::ApplyRuntimeConfig(const AppConfig& config) {
-  AppConfig runtime = config;
+void ChatController::OnMessagingReady() {
+  WireMessagingBindings();
+  if (ShellHost::Instance().State().nav_tab == NavTab::Home) {
+    OnHomeTabActivated();
+  }
+}
+
+ChatController::AgentConfig ChatController::ProjectAgent(const AppConfig& config) {
+  return {.llm = config.llm,
+          .llm_api_key_env = config.llm_api_key_env,
+          .promoted_mcp = config.promoted_mcp,
+          .mcp_servers = config.mcp_servers,
+          .search = config.search,
+          .context = config.context};
+}
+
+void ChatController::Apply(const AgentConfig& config) {
+  AgentConfig runtime = config;
   use_llm_ = !runtime.llm.base_url.empty();
   if (!agent_) {
     return;
   }
-  if (ResolvePreset(runtime) == "brief") {
+
+  AppConfig preset_probe;
+  preset_probe.llm = runtime.llm;
+  if (ResolvePreset(preset_probe) == "brief") {
     runtime.llm.require_api_key = true;
     std::string brief_key;
     if (Instance().Hub().IsInitialized() && Instance().Hub().IsMessagingReady()) {
@@ -2253,54 +2249,38 @@ void ChatController::ApplyRuntimeConfig(const AppConfig& config) {
     }
     if (!brief_key.empty()) {
       runtime.llm.api_key = brief_key;
-    } else if (ResolvePreset(last_agent_runtime_) == "brief" && !last_agent_runtime_.llm.api_key.empty()) {
-      // Me tab ReloadFromDisk re-notifies config listeners. If identity is briefly
-      // unreadable, keep the last injected Brief key instead of reconfiguring empty.
-      runtime.llm.api_key = last_agent_runtime_.llm.api_key;
-    }
-  }
-
-  // Network / libp2p saves notify config listeners too. Skip full MCP/agent rebuild
-  // when assistant inputs are unchanged — avoids PauseIO races on mesh Reset.
-  const bool reload_agent =
-      !agent_->IsConfigured() || runtime.llm.base_url != last_agent_runtime_.llm.base_url ||
-      runtime.llm.model != last_agent_runtime_.llm.model ||
-      runtime.llm.api_key != last_agent_runtime_.llm.api_key ||
-      runtime.llm.preset != last_agent_runtime_.llm.preset ||
-      runtime.llm_api_key_env != last_agent_runtime_.llm_api_key_env ||
-      runtime.promoted_mcp.url != last_agent_runtime_.promoted_mcp.url ||
-      runtime.search.provider != last_agent_runtime_.search.provider ||
-      runtime.mcp_servers.size() != last_agent_runtime_.mcp_servers.size();
-  bool servers_differ = reload_agent;
-  if (!servers_differ) {
-    for (size_t i = 0; i < runtime.mcp_servers.size(); ++i) {
-      const McpConfig& a = runtime.mcp_servers[i];
-      const McpConfig& b = last_agent_runtime_.mcp_servers[i];
-      if (a.id != b.id || a.url != b.url || a.command != b.command || a.enabled != b.enabled ||
-          a.args != b.args) {
-        servers_differ = true;
-        break;
+    } else {
+      AppConfig last_probe;
+      last_probe.llm = last_agent_runtime_.llm;
+      if (ResolvePreset(last_probe) == "brief" && !last_agent_runtime_.llm.api_key.empty()) {
+        // Me tab ReloadFromDisk may re-notify while identity is briefly unreadable.
+        runtime.llm.api_key = last_agent_runtime_.llm.api_key;
       }
     }
   }
 
-  if (servers_differ) {
+  if (!agent_->IsConfigured() || runtime != last_agent_runtime_) {
     agent_->SetToolRegistrationHook([this](ToolRegistry& tools) {
       if (Instance().Hub().IsInitialized()) {
         RegisterMessagingTools(tools, Instance().Hub());
       }
     });
-    agent_->Configure(runtime);
-    last_agent_runtime_ = runtime;
-  }
-  if (Instance().Hub().IsInitialized()) {
-    const auto& bootstrap = SessionStore::Instance().Snapshot();
-    (void)Instance().Hub().Reinitialize(runtime, bootstrap.profile_data_dir);
+    AppConfig configure = SessionStore::Instance().IsInitialized()
+                              ? SessionStore::Instance().Snapshot().config
+                              : AppConfig{};
+    configure.llm = runtime.llm;
+    configure.llm_api_key_env = runtime.llm_api_key_env;
+    configure.promoted_mcp = runtime.promoted_mcp;
+    configure.mcp_servers = runtime.mcp_servers;
+    configure.search = runtime.search;
+    configure.context = runtime.context;
+    agent_->Configure(configure);
+    last_agent_runtime_ = std::move(runtime);
   }
 }
 
 void ChatController::ReloadAgentConfig() {
-  ApplyRuntimeConfig(SessionStore::Instance().Snapshot().config);
+  Apply(ProjectAgent(SessionStore::Instance().Snapshot().config));
 }
 
 void ChatController::OnApplicationPause() {
@@ -2320,7 +2300,6 @@ void ChatController::Update() {
   }
 
   if (messaging_ready_) {
-    Instance().Hub().TickLibp2p();
     if (Instance().Hub().IsMessagingReady()) {
       BackgroundSyncScheduler::Instance().Tick();
       const auto now = std::chrono::steady_clock::now();

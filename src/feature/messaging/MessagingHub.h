@@ -6,6 +6,7 @@
 #include "base/messaging/GroupTypes.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
+#include "base/people/ProfileIdentityView.h"
 #include "common/Module.h"
 #include "feature/messaging/ContactActionDispatcher.h"
 #include "feature/messaging/DirectoryShadowCache.h"
@@ -128,6 +129,12 @@ public:
   PeerSessionManager* Sessions();
   /** Last libp2p start failure (empty if ok). For Network settings UX. */
   const std::string& LastLibp2pError() const { return libp2p_last_error_; }
+
+  /** Me → Profile projection (no LocalIdentity leak to settings UI). */
+  ProfileIdentityView LoadProfileIdentityView();
+  Roe<void> SaveProfileNickname(const std::string& nickname);
+  Roe<void> RegisterIdentity(const std::string& nickname);
+  Roe<void> RotateBriefLlmKey();
 
   ReachabilitySnapshot Reachability() const;
   void RunReachabilityProbe(bool try_upnp);

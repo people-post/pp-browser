@@ -112,8 +112,10 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 
 | Pattern | Location | Purpose |
 |---------|----------|---------|
-| `ChatSessionActions` | `ui/ChatSessionActions.h` | `std::function` bridge so settings/profile UI can trigger chat actions without `settings` ↔ `chat` include cycles |
-| SessionStore listeners + nested service slices | `SessionStore`, `MessagingHub::{NetworkConfig,PolicyPrefs,NotificationPrefs}`, `ConfigApplyBridge` | Settings flush persists disk DTOs; app projects nested types and calls `Apply` so settings UI does not own service apply |
+| `ChatSessionActions` | `ui/ChatSessionActions.h` | `std::function` bridge so contacts/profile UI can trigger chat actions without include cycles (still a singleton; prefer injected ports where practical) |
+| `SettingsCommands` | `settings/SettingsCommands.h` | Imperative settings ports (member on `SettingsController`); Application binds implementations — no extra singleton |
+| `ProfileIdentityView` | `base/people/ProfileIdentityView.h` | Shared identity presentation DTO (filled by `MessagingHub`) |
+| SessionStore listeners + nested service slices | `SessionStore`, nested `*::Apply` types, `ConfigApplyBridge` | Settings flush persists disk DTOs; app projects slices so settings UI does not own service apply |
 | Hub-and-spoke within messaging | `MessagingHub` referenced from `MessageRouter`, `InboxController`, etc. | Orchestration inside single target `pp_feature_messaging` (compile coupling, not a link-cycle) |
 | App-level wiring | `app/Application.cpp`, `app/ConfigApplyBridge.cpp` | Cross-controller callbacks and SessionStore → slice fan-out stay in `app/` per SRC_LAYOUT |
 

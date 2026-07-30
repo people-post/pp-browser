@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feature/settings/SettingsCommands.h"
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
@@ -45,6 +46,10 @@ public:
   static SettingsController& Instance();
 
   void BindMessaging(MessagingHub& messaging);
+  /** App fills imperative ports (register, UPnP, reset, …). Not a process singleton. */
+  void BindCommands(SettingsCommands commands);
+  SettingsCommands& Commands();
+  const SettingsCommands& Commands() const;
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
   bool RegisterModel(Rml::Context* context);
@@ -221,6 +226,7 @@ private:
   std::optional<std::string> last_toast_section_;
   uint64_t last_toast_at_ms_ = 0;
   MessagingHub* messaging_ = nullptr;
+  SettingsCommands commands_;
 
 };
 

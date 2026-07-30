@@ -65,7 +65,7 @@ integration/host → fork/include (public API only)
 | `base/platform/` | SDL, paths, assets, threading (`BrowserThread`), credentials |
 | `base/net/` | HTTP client, service clients |
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
-| `base/people/` | Identity and contacts stores |
+| `base/people/` | Identity and contacts stores; `ProfileIdentityView` presentation DTO |
 | `base/messaging/` | Thread types, JSON store, parsers |
 | `base/media/` | `CallMediaEngine` — libdatachannel + Opus + SDL voice media (a2) |
 | `base/ai/` | LLM client, turn types, parsers, conversation, MCP client |
@@ -80,7 +80,7 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/settings/` | Settings apply logic (no messaging/chat deps) |
 | `feature/messaging/` | MessagingHub, router, inbox, P2P service |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
-| `feature/ui/` | ShellHost, settings UI, profile/security sections, `ChatSessionActions` bridge |
+| `feature/ui/` | ShellHost, settings UI, profile/security sections, `ChatSessionActions` (chat bridges); settings imperative ports via `SettingsCommands` |
 | `feature/chat/` | Chat UI, agent↔hub wiring, messaging agent tools |
 
 Feature module libraries link in acyclic order (each `PUBLIC_LIBS` only lower layers):
@@ -89,7 +89,7 @@ Feature module libraries link in acyclic order (each `PUBLIC_LIBS` only lower la
 settings → ai/tools → ai/bindings → ai → messaging → ui → chat
 ```
 
-Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. `ChatSessionActions` in `feature/ui/` breaks the former settings/chat/ui include cycles without reversing the link graph.
+Cross-controller wiring (tool registration, tab ticks, `ActionRouter` model dirty callbacks) lives in `src/app/`. Settings imperative ops use `SettingsCommands` (declared in `feature/settings/`, bound on `SettingsController` from app). `ChatSessionActions` still bridges contacts/profile → chat without reversing the link graph.
 
 ## CMake targets
 
