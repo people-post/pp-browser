@@ -79,9 +79,9 @@ Roe<void> IntegrationsSettingsSection::Flush(SettingsUiState& state, SessionStor
   return {};
 }
 
-void IntegrationsSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& /*store*/) {
+void IntegrationsSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& store) {
   state.promoted_mcp_url.clear();
-  state.search_provider = SessionStore::Instance().DefaultConfig().search.provider;
+  state.search_provider = store.DefaultConfig().search.provider;
   state.mcp_servers.clear();
 }
 

@@ -131,6 +131,9 @@ void SettingsController::BindCommands(SettingsCommands commands) {
   if (auto* profile = dynamic_cast<ProfileSettingsSection*>(FindHandler("profile"))) {
     profile->BindPorts(&commands_);
   }
+  if (auto* appearance = dynamic_cast<AppearanceSettingsSection*>(FindHandler("appearance"))) {
+    appearance->BindPorts(&commands_);
+  }
 }
 
 SettingsCommands& SettingsController::Commands() {
@@ -1102,10 +1105,16 @@ void SettingsController::OnChooseLanguage(Rml::Event& ev) {
 
   auto& loc = LocalizationService::Instance();
   const std::string current = bindings_.language.empty() ? "system" : std::string(bindings_.language.c_str());
+  const auto label_for = [this, &loc](const std::string& pref) {
+    if (commands_.language_display_label) {
+      return commands_.language_display_label(pref);
+    }
+    return loc.LanguageDisplayLabel(pref);
+  };
 
   std::vector<ContextMenuAction> actions;
   actions.push_back({.id = "system",
-                     .label = loc.LanguageDisplayLabel("system"),
+                     .label = label_for("system"),
                      .enabled = {},
                      .run =
                          [this]() {
@@ -1118,7 +1127,7 @@ void SettingsController::OnChooseLanguage(Rml::Event& ev) {
   for (const LocaleInfo& info : loc.AvailableLocales()) {
     const std::string tag = info.tag;
     actions.push_back({.id = tag,
-                       .label = loc.LanguageDisplayLabel(tag),
+                       .label = label_for(tag),
                        .enabled = {},
                        .run =
                            [this, tag]() {
@@ -1137,7 +1146,11 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
     return;
   }
   bindings_.language = language_pref.c_str();
-  bindings_.language_label = LocalizationService::Instance().LanguageDisplayLabel(language_pref).c_str();
+  if (commands_.language_display_label) {
+    bindings_.language_label = commands_.language_display_label(language_pref).c_str();
+  } else {
+    bindings_.language_label = language_pref.c_str();
+  }
   PullBindingsToUiState();
   MarkSectionDirty("appearance");
   FlushPending();

@@ -15,6 +15,17 @@ std::string ThemeDisplayLabel(const std::string& appearance_pref) {
   return Tr("settings.theme.system");
 }
 
+void AppearanceSettingsSection::BindPorts(SettingsCommands* commands) {
+  commands_ = commands;
+}
+
+std::string AppearanceSettingsSection::ResolveLanguageLabel(const std::string& language_pref) const {
+  if (commands_ && commands_->language_display_label) {
+    return commands_->language_display_label(language_pref);
+  }
+  return language_pref;
+}
+
 const char* AppearanceSettingsSection::Id() const {
   return "appearance";
 }
@@ -33,7 +44,7 @@ void AppearanceSettingsSection::SyncFromSession(const BootstrapResult& bootstrap
   state.appearance = bootstrap.profile_prefs.appearance;
   state.appearance_label = ThemeDisplayLabel(state.appearance);
   state.language = bootstrap.profile_prefs.language.empty() ? "system" : bootstrap.profile_prefs.language;
-  state.language_label = LocalizationService::Instance().LanguageDisplayLabel(state.language);
+  state.language_label = ResolveLanguageLabel(state.language);
   state.reduce_transparency = bootstrap.profile_prefs.reduce_transparency ? "on" : "off";
 }
 
@@ -63,7 +74,7 @@ void AppearanceSettingsSection::ResetToDefaults(SettingsUiState& state, const Se
   state.appearance = defaults.appearance;
   state.appearance_label = ThemeDisplayLabel(state.appearance);
   state.language = defaults.language;
-  state.language_label = LocalizationService::Instance().LanguageDisplayLabel(state.language);
+  state.language_label = ResolveLanguageLabel(state.language);
   state.reduce_transparency = defaults.reduce_transparency ? "on" : "off";
 }
 

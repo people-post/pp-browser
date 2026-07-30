@@ -325,6 +325,9 @@ bool Application::Initialize(const char* window_title) {
   };
   settings_commands.try_upnp_port_mapping = [&messaging]() { messaging.TryUpnpPortMapping(); };
   settings_commands.reset_active_profile = [this]() { return ResetActiveProfile(); };
+  settings_commands.language_display_label = [](const std::string& pref) {
+    return LocalizationService::Instance().LanguageDisplayLabel(pref);
+  };
   SettingsController::Instance().BindCommands(std::move(settings_commands));
 
   SettingsController::Instance().BindMessaging(messaging);
