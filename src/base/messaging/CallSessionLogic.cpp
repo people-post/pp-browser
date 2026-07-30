@@ -60,6 +60,10 @@ CallSessionState CallSessionLogic::TransitionOnLeave(const CallSessionState curr
   if (remaining_joined == 0) {
     return CallSessionState::Ended;
   }
+  // Active 1:1 (or last-remote leave): do not leave a sole survivor in-call with a dead peer.
+  if (current == CallSessionState::Active && remaining_joined == 1) {
+    return CallSessionState::Ended;
+  }
   return current == CallSessionState::Ringing ? CallSessionState::Ringing : CallSessionState::Active;
 }
 

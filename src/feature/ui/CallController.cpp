@@ -277,6 +277,19 @@ void CallController::RefreshPendingRing() {
   if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
     active_call_id_ = (*active)->call_id;
     ClearRing();
+
+    // Peer vanished without a clean leave — end local session so chrome does not stick.
+    if (calls->Media().IsActive() && calls->Media().ActiveCallId() == active_call_id_) {
+      const std::string media_state = calls->Media().ConnectionState();
+      if (media_state == "failed") {
+        (void)calls->LeaveCall(active_call_id_);
+        ClearInCall();
+        ClearRing();
+        SyncShellState();
+        return;
+      }
+    }
+
     auto& in_call = ShellHost::Instance().State().call_in_progress;
     in_call.active = true;
     in_call.call_id = (*active)->call_id;
@@ -303,6 +316,8 @@ void CallController::RefreshPendingRing() {
       const std::string state = calls->Media().ConnectionState();
       if (state == "connecting" || state.empty()) {
         in_call.subtitle = "Connecting…";
+      } else if (state == "disconnected") {
+        in_call.subtitle = "Reconnecting…";
       } else {
         in_call.subtitle = state;
       }
@@ -441,11 +456,41 @@ void CallController::CameraCallback(Rml::DataModelHandle, Rml::Event&, const Rml
 }
 
 void CallController::ApplyAudioLevels(CallMediaEngine& media) {
+  media.RefreshRemoteVideoHealth();
+
   auto& in_call = ShellHost::Instance().State().call_in_progress;
   const bool muted = media.IsMuted();
   in_call.muted = muted;
   in_call.camera_on = media.IsCameraEnabled();
-  in_call.remote_video = media.HasRemoteVideo();
+
+  bool peer_camera_on = false;
+  bool have_peer_video_flag = false;
+  auto* calls = MessagingHub::Instance().Calls();
+  if (calls && !active_call_id_.empty()) {
+    if (auto peer_video = calls->PeerVideoEnabledForCall(active_call_id_);
+        peer_video && peer_video->has_value()) {
+      peer_camera_on = **peer_video;
+      have_peer_video_flag = true;
+    }
+  }
+  if (have_peer_video_flag && !peer_camera_on) {
+    media.ClearRemoteVideo();
+  }
+
+  const bool stalling = media.IsRemoteVideoStalling();
+  const std::string conn = media.ConnectionState();
+  const bool expect_remote_video = !have_peer_video_flag || peer_camera_on;
+  const bool missing_after_video =
+      media.EverHadRemoteVideo() && expect_remote_video && !media.HasRemoteVideo();
+  const bool media_reconnect =
+      stalling || missing_after_video || conn == "disconnected" || conn == "failed";
+
+  // Live or soft-stall: keep painting the last frame. Hard stall / camera-off clears HasRemoteVideo.
+  in_call.remote_video = media.HasRemoteVideo() && expect_remote_video;
+  if (!in_call.remote_video) {
+    CallVideoTileRenderer::Instance().ClearRemote();
+  }
+
   CallMediaEngine::VideoTileFrame local_tile;
   in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
   if (in_call.local_preview) {
@@ -467,13 +512,28 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
       CallVideoTileRenderer::Instance().SubmitRemoteFrame(std::move(frame));
     }
   }
-  in_call.stage_visible = in_call.camera_on || in_call.remote_video || in_call.local_preview;
-  in_call.remote_placeholder = in_call.remote_video ? "" : "Camera off";
+
+  in_call.stage_visible = in_call.camera_on || in_call.remote_video || in_call.local_preview ||
+                          (have_peer_video_flag && peer_camera_on) || media_reconnect;
+  if (in_call.remote_video) {
+    in_call.remote_placeholder = "";
+  } else if (have_peer_video_flag && !peer_camera_on) {
+    in_call.remote_placeholder = "Camera off";
+  } else if (media_reconnect) {
+    in_call.remote_placeholder = "Reconnecting…";
+  } else {
+    in_call.remote_placeholder = "";
+  }
+
   in_call.mic_level = muted ? 0 : QuantizeAudioLevel(media.LocalInputLevel());
   in_call.peer_level = QuantizeAudioLevel(media.RemoteOutputLevel());
   in_call.mic_hint = LevelHint(in_call.mic_level, false, muted);
   in_call.peer_hint = LevelHint(in_call.peer_level, true, false);
-  if (media.IsConnected()) {
+  if (media_reconnect && !media.IsConnected()) {
+    in_call.subtitle = "Reconnecting…";
+  } else if (stalling) {
+    in_call.subtitle = "Reconnecting…";
+  } else if (media.IsConnected()) {
     in_call.elapsed = FormatElapsed(media.ConnectedAtMs());
     if (!in_call.elapsed.empty()) {
       in_call.subtitle = in_call.elapsed;

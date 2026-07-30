@@ -805,6 +805,23 @@ Roe<std::optional<std::string>> CallSessionManager::PeerIdentityForCall(const st
   return std::optional<std::string>{};
 }
 
+Roe<std::optional<bool>> CallSessionManager::PeerVideoEnabledForCall(const std::string& call_id) const {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    return participants.error();
+  }
+  for (const CallParticipant& row : *participants) {
+    if (row.identity != *local && !row.identity.empty()) {
+      return std::optional<bool>{row.media.video_enabled};
+    }
+  }
+  return std::optional<bool>{};
+}
+
 void CallSessionManager::SweepExpiredInvites() {
   auto local = LocalRelayIdentity();
   if (!local) {

@@ -29,6 +29,12 @@ constexpr int kH264PayloadType = 96;
 constexpr int kDefaultVideoWidth = 640;
 constexpr int kDefaultVideoHeight = 360;
 constexpr int kVideoFps = 20;
+/** Soft stall: keep last frame; UI may show Reconnecting… */
+constexpr int64_t kRemoteVideoStallSoftMs = 2000;
+/** Hard stall: drop last frame so the tile does not freeze forever. */
+constexpr int64_t kRemoteVideoStallHardMs = 5000;
+/** ICE disconnected grace before treating remote video as dead. */
+constexpr int64_t kIceDisconnectedVideoClearMs = 3000;
 
 constexpr rtc::SSRC kOffererAudioSsrc = 1;
 constexpr rtc::SSRC kAnswererAudioSsrc = 2;
@@ -155,7 +161,10 @@ struct CallMediaEngine::Impl {
   std::atomic<bool> muted{false};
   std::atomic<bool> camera_enabled{false};
   std::atomic<bool> has_remote_video{false};
+  std::atomic<bool> ever_had_remote_video{false};
   std::atomic<int64_t> connected_at_ms{0};
+  std::atomic<int64_t> last_remote_video_ms{0};
+  std::atomic<int64_t> disconnected_since_ms{0};
   std::string connection_state = "idle";
 
   LocalDescriptionFn on_local_description;
@@ -227,6 +236,17 @@ struct CallMediaEngine::Impl {
       connected_at_ms.store(0, std::memory_order_relaxed);
     }
     connected = now_connected;
+    if (state == "disconnected") {
+      if (disconnected_since_ms.load(std::memory_order_relaxed) == 0) {
+        disconnected_since_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+      }
+    } else if (state == "connected" || state == "connecting" || state == "new") {
+      disconnected_since_ms.store(0, std::memory_order_relaxed);
+    }
+    if (state == "failed" || state == "closed") {
+      ClearRemoteVideoFrames();
+      disconnected_since_ms.store(0, std::memory_order_relaxed);
+    }
     if (on_state_changed) {
       on_state_changed(state);
     }
@@ -250,6 +270,16 @@ struct CallMediaEngine::Impl {
     remote_video_frame.rgba = std::move(frame.rgba);
     remote_video_frame.seq = ++remote_video_seq;
     has_remote_video.store(true, std::memory_order_relaxed);
+    ever_had_remote_video.store(true, std::memory_order_relaxed);
+    last_remote_video_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+  }
+
+  void ClearRemoteVideoFrames() {
+    std::lock_guard lock(video_frame_mutex);
+    remote_video_frame = {};
+    remote_video_seq = 0;
+    has_remote_video.store(false, std::memory_order_relaxed);
+    last_remote_video_ms.store(0, std::memory_order_relaxed);
   }
 
   void ClearVideoFrames() {
@@ -259,6 +289,8 @@ struct CallMediaEngine::Impl {
     local_video_seq = 0;
     remote_video_seq = 0;
     has_remote_video.store(false, std::memory_order_relaxed);
+    ever_had_remote_video.store(false, std::memory_order_relaxed);
+    last_remote_video_ms.store(0, std::memory_order_relaxed);
   }
 
   void CloseCameraLocked() {
@@ -872,6 +904,9 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
   impl_->muted.store(false, std::memory_order_relaxed);
   impl_->camera_enabled.store(false, std::memory_order_relaxed);
   impl_->connected_at_ms.store(0, std::memory_order_relaxed);
+  impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
+  impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
+  impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
   impl_->SetState("connecting");
   impl_->StartCaptureLoop();
   return {};
@@ -960,6 +995,55 @@ bool CallMediaEngine::IsCameraEnabled() const {
 
 bool CallMediaEngine::HasRemoteVideo() const {
   return impl_->has_remote_video.load(std::memory_order_relaxed);
+}
+
+bool CallMediaEngine::IsRemoteVideoStalling() const {
+  if (!impl_->has_remote_video.load(std::memory_order_relaxed)) {
+    return false;
+  }
+  const int64_t last = impl_->last_remote_video_ms.load(std::memory_order_relaxed);
+  if (last <= 0) {
+    return false;
+  }
+  const int64_t age = util::NowUnixMs() - last;
+  return age >= kRemoteVideoStallSoftMs && age < kRemoteVideoStallHardMs;
+}
+
+bool CallMediaEngine::EverHadRemoteVideo() const {
+  return impl_->ever_had_remote_video.load(std::memory_order_relaxed);
+}
+
+void CallMediaEngine::ClearRemoteVideo() {
+  impl_->ClearRemoteVideoFrames();
+}
+
+void CallMediaEngine::RefreshRemoteVideoHealth() {
+  if (!impl_->active.load()) {
+    return;
+  }
+  const int64_t now = util::NowUnixMs();
+  std::string state;
+  {
+    std::lock_guard lock(impl_->mutex);
+    state = impl_->connection_state;
+  }
+  if (state == "failed" || state == "closed") {
+    impl_->ClearRemoteVideoFrames();
+    return;
+  }
+  if (state == "disconnected") {
+    const int64_t since = impl_->disconnected_since_ms.load(std::memory_order_relaxed);
+    if (since > 0 && (now - since) >= kIceDisconnectedVideoClearMs) {
+      impl_->ClearRemoteVideoFrames();
+    }
+  }
+  if (!impl_->has_remote_video.load(std::memory_order_relaxed)) {
+    return;
+  }
+  const int64_t last = impl_->last_remote_video_ms.load(std::memory_order_relaxed);
+  if (last > 0 && (now - last) >= kRemoteVideoStallHardMs) {
+    impl_->ClearRemoteVideoFrames();
+  }
 }
 
 bool CallMediaEngine::VideoEncoderAvailable() const {

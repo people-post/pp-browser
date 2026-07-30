@@ -38,6 +38,17 @@ void CallVideoTileRenderer::Clear() {
   local_.pending = {};
 }
 
+void CallVideoTileRenderer::ClearRemote() {
+  if (remote_.gl_tex) {
+    glDeleteTextures(1, &remote_.gl_tex);
+  }
+  remote_.gl_tex = 0;
+  remote_.tex_width = 0;
+  remote_.tex_height = 0;
+  remote_.uploaded_seq = 0;
+  remote_.pending = {};
+}
+
 void CallVideoTileRenderer::ReleaseGpuResources() {
   if (remote_.gl_tex) {
     glDeleteTextures(1, &remote_.gl_tex);

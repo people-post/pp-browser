@@ -61,7 +61,22 @@ public:
   /** Open/close SDL camera + encode. Best-effort: fails without killing voice (V019). */
   Roe<void> SetCameraEnabled(bool enabled);
   bool IsCameraEnabled() const;
+  /**
+   * True when a fresh remote decoded frame is available (not stalled / cleared).
+   * Call RefreshRemoteVideoHealth() from the UI tick before reading.
+   */
   bool HasRemoteVideo() const;
+  /** Soft stall: frames aged past soft threshold but not yet cleared. */
+  bool IsRemoteVideoStalling() const;
+  /** True after at least one remote frame this media session (survives hard-stall clear). */
+  bool EverHadRemoteVideo() const;
+  /** Drop last remote frame (camera off, leave, hard stall, PC dead). */
+  void ClearRemoteVideo();
+  /**
+   * UI-tick health: clear remote video on hard frame stall or failed/closed PC;
+   * clear after a short grace when ICE is disconnected.
+   */
+  void RefreshRemoteVideoHealth();
   bool VideoEncoderAvailable() const;
 
   bool IsActive() const;

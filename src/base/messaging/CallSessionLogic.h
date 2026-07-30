@@ -26,7 +26,8 @@ public:
 
   /**
    * After a remote accept while session is ringing → active.
-   * Hostless end: if no joined remain after leave → ended.
+   * Hostless end: Active ends when fewer than 2 joined remain (empty or sole survivor after peer leave).
+   * Ringing stays ringing while at least one joined remains (caller waiting).
    */
   static CallSessionState TransitionOnRemoteJoined(CallSessionState current);
   static CallSessionState TransitionOnLeave(CallSessionState current, size_t remaining_joined);

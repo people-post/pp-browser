@@ -23,8 +23,10 @@ TEST(CallSessionLogicTest, TransitionOnRemoteJoined) {
 
 TEST(CallSessionLogicTest, TransitionOnLeaveHostless) {
   EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Active, 0), CallSessionState::Ended);
+  EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Active, 1), CallSessionState::Ended);
   EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Active, 2), CallSessionState::Active);
   EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Ringing, 1), CallSessionState::Ringing);
+  EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Ringing, 0), CallSessionState::Ended);
   EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Ended, 0), CallSessionState::Ended);
 }
 

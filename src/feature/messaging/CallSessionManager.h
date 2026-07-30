@@ -52,6 +52,9 @@ public:
   /** First non-local participant identity for a call (display / peer label). */
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
 
+  /** Peer (non-local) video_enabled from roster; nullopt if no peer row. */
+  Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
+
   /** Expire stale pending invites; notify UI if any changed. */
   void SweepExpiredInvites();
 

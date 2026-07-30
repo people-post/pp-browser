@@ -32,6 +32,8 @@ public:
   void SubmitRemoteFrame(Frame frame);
   void SubmitLocalFrame(Frame frame);
   void Clear();
+  /** Drop remote tile pixels (peer leave / camera off / stall) without touching local PiP. */
+  void ClearRemote();
 
   /** Upload if needed and letterbox-draw into `element`. UI thread, GL context current. */
   void RenderTile(CallVideoTileKind kind, Rml::Element* element);
