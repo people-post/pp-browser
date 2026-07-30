@@ -233,7 +233,7 @@ Roe<EncodedAccessUnit> AndroidVideoCodec::Encode(const VideoFrameI420& frame, bo
 
   uint32_t flags = 0;
   if (force_keyframe) {
-    flags |= AMEDIACODEC_BUFFER_FLAG_SYNC_FRAME;
+    flags |= AMEDIACODEC_BUFFER_FLAG_KEY_FRAME;
   }
   const int64_t pts_us = (enc_frame_index_ * 1000000LL) / std::max(enc_fps_, 1);
   ++enc_frame_index_;
@@ -256,7 +256,7 @@ Roe<EncodedAccessUnit> AndroidVideoCodec::Encode(const VideoFrameI420& frame, bo
   EncodedAccessUnit unit;
   if (out_buf && info.size > 0) {
     unit.annex_b.assign(out_buf + info.offset, out_buf + info.offset + info.size);
-    unit.keyframe = (info.flags & AMEDIACODEC_BUFFER_FLAG_SYNC_FRAME) != 0;
+    unit.keyframe = (info.flags & AMEDIACODEC_BUFFER_FLAG_KEY_FRAME) != 0;
     // MediaCodec emits AVCC length-prefixed NALs; convert to Annex-B for libdatachannel.
     if (!unit.annex_b.empty() && unit.annex_b[0] != 0) {
       std::vector<uint8_t> annex_b;
