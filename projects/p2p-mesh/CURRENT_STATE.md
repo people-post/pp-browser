@@ -1,6 +1,6 @@
 # P2P mesh — current state
 
-**Last updated:** 2026-07-28
+**Last updated:** 2026-07-30
 
 ## Landed
 
@@ -11,6 +11,9 @@
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
 | **np** | Headless `pp-node` + shared `NodeRuntime` + dial-back protocol (see below) |
+| **nr** | Reachability status + Connection card + guided help + `pp-node --status` (see below) |
+| **nu** | IPv6 listen candidates + UPnP (miniupnpc) + Connection card actions (see below) |
+| **n3** | Custom `/pp-browser/circuit-relay/1.0.0` + `capabilities.circuit_relay` + UI checkbox (see below) |
 
 ## n1 in code
 
@@ -35,10 +38,40 @@
 | Packaging | `packaging/pp-node/` systemd + Dockerfile sketches + config example |
 | Tests | FailLoud candidates; two-host dial-back LAN probe |
 
+## nr in code
+
+| Area | State |
+|------|-------|
+| Probe | `ReachabilityService` — seed dial + dial-back + IP classification |
+| Status | Reachable / Outbound only / Blocked / Unknown / Checking |
+| GUI | Me → Network Connection card; soft shell banner; guided help sheets |
+| Ops | `pp-node --status` JSON |
+| i18n | en + zh-Hans reachability strings |
+| Tests | `reachability_test.cpp` |
+
+## nu in code
+
+| Area | State |
+|------|-------|
+| IPv6 | `EnumerateGlobalIpv6Addresses` + extra listen candidates on Node start |
+| UPnP | Vendored `miniupnpc`; `TryUpnpTcpPortMapping`; auto-try once on Node enable |
+| UI | **Open port on router…** + re-test; skip UPnP on public listen IPs |
+| Fallback | Outbound-only help sheet (N012 manual forward copy) |
+
+## n3 in code
+
+| Area | State |
+|------|-------|
+| Protocol | `/pp-browser/circuit-relay/1.0.0` stream bridge (integration layer, not libp2p v2) |
+| Config | `libp2p.capabilities.circuit_relay` + JSON round-trip |
+| UI | **Circuit relay** checkbox under Node (hot refresh via `RefreshMeshCapabilities`) |
+| Seed | `packaging/pp-node/config.json.example` enables `circuit_relay: true` |
+| Auto-route | Deferred to **nf** (manual bridge API on `CircuitRelayService`) |
+
 ## Agent traps
 
 | Wrong | Right |
-|-------|--------|
+|-------|-------|
 | `accept_paid_jobs` = relay monetization | Per-relay pricing (N010) |
 | Org seed = GUI `--headless` | **`pp-node`** (N011) |
 | “Behind firewall” as hard fact | Reachability status + soft help (N012) |
@@ -48,23 +81,23 @@
 | Always bind 18517 or die silently | Desktop: fallback range + persist (N016); `pp-node`: fail loud |
 | Link `MessagingHub` into `pp-node` | Thin `NodeRuntime` + identity/crypto only |
 | Silent port hop on org seed | Fail loud unless `--listen-fallback` |
+| libp2p circuit-relay v2 in fork | Custom pp-browser circuit-relay protocol (n3) |
 
 ## Still not done
 
 | Area | State |
 |------|-------|
-| Reachability / UPnP / IPv6 prefer / friend routing | **Not implemented** (nr / nu / nf) |
-| Circuit-relay in fork | **Absent** (n3) |
-| Caps / pricing UI | **Not implemented** (n4+) |
-| `pp-node --status` | Deferred to **nr** |
+| Contact-first relay routing | **nf** (not implemented) |
+| Caps / pricing UI (message/audio/video) | **n4+** |
+| DHT | **n2** (later per N015) |
 
 ## Next
 
-1. **nr** — Reachability status + guided help (uses dial-back)  
-2. Then **nu → n3 → nf → n4**; **n2 DHT later** (N015)
+1. **nf** — Contact-first relay preference (N014)  
+2. Then **n4** billable relays; **n2 DHT later** (N015)
 
 ## Follow-ups
 
 See [PHASES.md](PHASES.md) and [DESIGN § Preferred delivery order](DESIGN.md#preferred-delivery-order-n015).
 
-**Calls:** [p2p-av-calls](../p2p-av-calls/) **a0** locked parallel delivery (V010): signaling (a1) proceeds now; NAT’d media needs nr/nu/n3 + seed SFU (n4). N014 applies to media SFU hops. Org `pp-node` seeds should enable volunteer `audio_relay` / `video_relay` when those caps ship.
+**Calls:** [p2p-av-calls](../p2p-av-calls/) signaling can proceed; NAT'd media still needs **nf** + seed SFU (n4). Org `pp-node` seeds should enable volunteer `audio_relay` / `video_relay` when those caps ship.

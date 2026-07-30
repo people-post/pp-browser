@@ -45,7 +45,9 @@
 #include "feature/ui/CallController.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/ShellFeedback.h"
+#include "feature/ui/SettingsController.h"
 #include "feature/ui/UserFeedback.h"
+#include "libp2p/integration/host/Reachability.h"
 #include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
 #include "base/data/SessionStore.h"
@@ -1953,6 +1955,16 @@ bool ChatController::Setup(Rml::Context* context) {
       } else if (ShellHost::Instance().State().nav_tab == NavTab::Home) {
         OnHomeTabActivated();
       }
+    });
+    MessagingHub::Instance().SetOnReachabilityUpdated([]() {
+      BrowserThread::PostTask(BrowserThreadId::UI, []() {
+        SettingsController::Instance().SyncReachabilityFromHub();
+        SettingsController::Instance().DirtyAll();
+        const ReachabilitySnapshot snap = MessagingHub::Instance().Reachability();
+        if (snap.status == ReachabilityStatus::OutboundOnly || snap.status == ReachabilityStatus::Blocked) {
+          ShellFeedback::ShowBanner(ShellHost::Instance().State(), Tr("settings.network.banner_hint"));
+        }
+      });
     });
   }
 

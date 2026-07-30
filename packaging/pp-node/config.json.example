@@ -9,6 +9,9 @@
     "max_concurrent_dials": 16,
     "dial_timeout_ms": 8000,
     "idle_ttl_ms": 300000,
-    "dial_failure_backoff_ms": 30000
+    "dial_failure_backoff_ms": 30000,
+    "capabilities": {
+      "circuit_relay": true
+    }
   }
 }

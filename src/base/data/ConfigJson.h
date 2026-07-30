@@ -20,6 +20,9 @@ void from_json(const nlohmann::json& j, SearchConfig& config);
 void to_json(nlohmann::json& j, const ServiceEndpointConfig& endpoint);
 void from_json(const nlohmann::json& j, ServiceEndpointConfig& endpoint);
 
+void to_json(nlohmann::json& j, const Libp2pCapabilities& caps);
+void from_json(const nlohmann::json& j, Libp2pCapabilities& caps);
+
 void to_json(nlohmann::json& j, const Libp2pConfig& config);
 void from_json(const nlohmann::json& j, Libp2pConfig& config);
 

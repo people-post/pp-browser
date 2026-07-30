@@ -1,6 +1,6 @@
 # P2P mesh
 
-**Status:** **np done** — next **nr** (reachability status + guided help)  
+**Status:** **nr / nu / n3 done** — next **nf** (contact-first relay preference)  
 **Formerly:** `projects/libp2p-node-roles/` (renamed; ADRs remain N001+)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [docs/architecture/P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [docs/architecture/LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
@@ -56,9 +56,9 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 | n0 | Docs + ADRs through N015 | Done |
 | n1 | Role shell, listen, bootstrap, master toggle | **Done** |
 | np | `pp-node` + dial-back | **Done** |
-| nr | Reachability status + manual help | **Next** |
-| nu | IPv6 + UPnP/NAT-PMP | After nr |
-| n3 | Circuit-relay | After nu (approx.) |
-| nf | Contact-first relay preference | With/after n3 |
+| nr | Reachability status + manual help | **Done** |
+| nu | IPv6 + UPnP/NAT-PMP | **Done** |
+| n3 | Circuit-relay | **Done** |
+| nf | Contact-first relay preference | **Next** |
 | n4 | Billable relays + pricing | After nf basics |
 | n2 | DHT | Later than circuit (N015) |

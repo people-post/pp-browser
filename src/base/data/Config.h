@@ -30,6 +30,11 @@ struct SearchConfig {
   std::string api_key;
 };
 
+struct Libp2pCapabilities {
+  /** Host circuit-relay bridge for NAT'd peers (n3). */
+  bool circuit_relay = false;
+};
+
 struct Libp2pConfig {
   /**
    * Preferred listen multiaddr when role is Node (N003).
@@ -45,6 +50,7 @@ struct Libp2pConfig {
   int dial_timeout_ms = 8000;
   int idle_ttl_ms = 180000;
   int dial_failure_backoff_ms = 30000;
+  Libp2pCapabilities capabilities;
 };
 
 struct AppConfig {
