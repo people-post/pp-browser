@@ -162,6 +162,10 @@ struct CallRingState {
 struct CallInProgressState {
   bool active = false;
   bool muted = false;
+  bool camera_on = false;
+  bool stage_visible = false;
+  bool remote_video = false;
+  bool local_preview = false;
   Rml::String call_id;
   Rml::String title;
   Rml::String subtitle;
@@ -173,6 +177,7 @@ struct CallInProgressState {
   int peer_level = 0;
   Rml::String mic_hint;
   Rml::String peer_hint;
+  Rml::String remote_placeholder;
 };
 
 struct PaneVisibility {

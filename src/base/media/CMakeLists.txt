@@ -2,6 +2,13 @@ pp_browser_add_base_library(pp_base_media
   SOURCES
     CallMediaEngine.cpp
     CallRingtone.cpp
+    VideoCodecFactory.cpp
+    VideoCodecUnavailable.cpp
+    VideoCodec_Win32.cpp
+    VideoCodec_Darwin.cpp
+    VideoCodec_Linux.cpp
+    VideoCodec_Android.cpp
+    VideoYuv.cpp
   PUBLIC_LIBS
     pp_base_error
     pp_base_platform

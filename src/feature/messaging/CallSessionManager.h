@@ -60,6 +60,10 @@ public:
 
   CallMediaEngine& Media();
 
+  /** Local mute / camera — updates participant row + roster fan-out (V019 content policy). */
+  Roe<void> SetLocalAudioMuted(bool muted);
+  Roe<void> SetLocalVideoEnabled(bool enabled);
+
   /** Pop last media start failure (for UI toast). Empty if none. */
   std::optional<std::string> TakeLastMediaError();
 

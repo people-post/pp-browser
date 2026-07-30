@@ -1,5 +1,7 @@
 #include "base/media/CallMediaEngine.h"
 
+#include "base/media/IVideoCodec.h"
+#include "base/media/VideoYuv.h"
 #include "common/Utilities.h"
 
 #include <SDL3/SDL.h>
@@ -19,11 +21,17 @@ namespace {
 constexpr int kSampleRate = 48000;
 constexpr int kChannels = 1;
 constexpr int kFrameMs = 20;
-constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000; // 960
+constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
 constexpr int kOpusPayloadType = 111;
-// Each peer must advertise a distinct send SSRC (SDP: local description lists only SSRCs we send).
+constexpr int kH264PayloadType = 96;
+constexpr int kVideoWidth = 640;
+constexpr int kVideoHeight = 360;
+constexpr int kVideoFps = 20;
+
 constexpr rtc::SSRC kOffererAudioSsrc = 1;
 constexpr rtc::SSRC kAnswererAudioSsrc = 2;
+constexpr rtc::SSRC kOffererVideoSsrc = 3;
+constexpr rtc::SSRC kAnswererVideoSsrc = 4;
 
 std::string StateToString(rtc::PeerConnection::State state) {
   switch (state) {
@@ -43,6 +51,10 @@ std::string StateToString(rtc::PeerConnection::State state) {
   return "unknown";
 }
 
+int EvenDimension(int v) {
+  return v > 0 ? (v & ~1) : 0;
+}
+
 } // namespace
 
 struct CallMediaEngine::Impl {
@@ -52,6 +64,8 @@ struct CallMediaEngine::Impl {
   std::atomic<bool> active{false};
   std::atomic<bool> connected{false};
   std::atomic<bool> muted{false};
+  std::atomic<bool> camera_enabled{false};
+  std::atomic<bool> has_remote_video{false};
   std::atomic<int64_t> connected_at_ms{0};
   std::string connection_state = "idle";
 
@@ -60,9 +74,12 @@ struct CallMediaEngine::Impl {
   StateChangedFn on_state_changed;
 
   std::shared_ptr<rtc::PeerConnection> pc;
-  std::shared_ptr<rtc::Track> track;
-  std::shared_ptr<rtc::RtpPacketizationConfig> rtp_config;
-  rtc::SSRC local_ssrc = kOffererAudioSsrc;
+  std::shared_ptr<rtc::Track> audio_track;
+  std::shared_ptr<rtc::Track> video_track;
+  std::shared_ptr<rtc::RtpPacketizationConfig> audio_rtp_config;
+  std::shared_ptr<rtc::RtpPacketizationConfig> video_rtp_config;
+  rtc::SSRC local_audio_ssrc = kOffererAudioSsrc;
+  rtc::SSRC local_video_ssrc = kOffererVideoSsrc;
   bool capture_available = false;
 
   OpusEncoder* encoder = nullptr;
@@ -72,14 +89,26 @@ struct CallMediaEngine::Impl {
   SDL_AudioDeviceID capture_device = 0;
   SDL_AudioDeviceID playback_device = 0;
 
+  std::unique_ptr<IVideoCodec> video_codec;
+  SDL_Camera* camera = nullptr;
+  SDL_CameraID camera_id = 0;
+
   std::thread capture_thread;
+  std::thread video_thread;
   std::atomic<bool> capture_running{false};
+  std::atomic<bool> video_running{false};
   std::atomic<float> local_input_level{0.f};
   std::atomic<float> remote_output_level{0.f};
   std::atomic<int64_t> remote_level_ms{0};
 
   std::mutex playback_mutex;
   std::deque<std::vector<int16_t>> playback_queue;
+
+  mutable std::mutex video_frame_mutex;
+  VideoTileFrame local_video_frame;
+  VideoTileFrame remote_video_frame;
+  uint64_t local_video_seq = 0;
+  uint64_t remote_video_seq = 0;
 
   static float FramePeakLevel(const int16_t* pcm, int samples) {
     int peak = 0;
@@ -91,7 +120,6 @@ struct CallMediaEngine::Impl {
 
   static void SmoothLevel(std::atomic<float>& level, float instant) {
     const float cur = level.load(std::memory_order_relaxed);
-    // Fast attack, slower decay so speaking lights up quickly and fades cleanly.
     const float next = instant >= cur ? instant : (cur * 0.82f + instant * 0.18f);
     level.store(std::clamp(next, 0.f, 1.f), std::memory_order_relaxed);
   }
@@ -111,11 +139,62 @@ struct CallMediaEngine::Impl {
     }
   }
 
+  void PublishLocalPreview(const VideoFrameRgba& frame) {
+    VideoFrameRgba copy = frame;
+    PremultiplyRgbaInPlace(copy.rgba);
+    std::lock_guard lock(video_frame_mutex);
+    local_video_frame.width = copy.width;
+    local_video_frame.height = copy.height;
+    local_video_frame.rgba = std::move(copy.rgba);
+    local_video_frame.seq = ++local_video_seq;
+  }
+
+  void PublishRemoteFrame(VideoFrameRgba&& frame) {
+    PremultiplyRgbaInPlace(frame.rgba);
+    std::lock_guard lock(video_frame_mutex);
+    remote_video_frame.width = frame.width;
+    remote_video_frame.height = frame.height;
+    remote_video_frame.rgba = std::move(frame.rgba);
+    remote_video_frame.seq = ++remote_video_seq;
+    has_remote_video.store(true, std::memory_order_relaxed);
+  }
+
+  void ClearVideoFrames() {
+    std::lock_guard lock(video_frame_mutex);
+    local_video_frame = {};
+    remote_video_frame = {};
+    local_video_seq = 0;
+    remote_video_seq = 0;
+    has_remote_video.store(false, std::memory_order_relaxed);
+  }
+
+  void CloseCameraLocked() {
+    video_running = false;
+    if (video_thread.joinable()) {
+      video_thread.join();
+    }
+    if (camera) {
+      SDL_CloseCamera(camera);
+      camera = nullptr;
+      camera_id = 0;
+    }
+    camera_enabled.store(false, std::memory_order_relaxed);
+    if (video_codec) {
+      video_codec->ResetEncoder();
+    }
+    {
+      std::lock_guard lock(video_frame_mutex);
+      local_video_frame = {};
+      local_video_frame.seq = ++local_video_seq;
+    }
+  }
+
   void TearDownAudioLocked() {
     capture_running = false;
     if (capture_thread.joinable()) {
       capture_thread.join();
     }
+    CloseCameraLocked();
     if (capture_stream) {
       SDL_DestroyAudioStream(capture_stream);
       capture_stream = nullptr;
@@ -140,10 +219,15 @@ struct CallMediaEngine::Impl {
       opus_decoder_destroy(decoder);
       decoder = nullptr;
     }
+    if (video_codec) {
+      video_codec->ResetEncoder();
+      video_codec->ResetDecoder();
+    }
     {
       std::lock_guard lock(playback_mutex);
       playback_queue.clear();
     }
+    ClearVideoFrames();
     local_input_level.store(0.f, std::memory_order_relaxed);
     remote_output_level.store(0.f, std::memory_order_relaxed);
     remote_level_ms.store(0, std::memory_order_relaxed);
@@ -151,11 +235,16 @@ struct CallMediaEngine::Impl {
   }
 
   void TearDownPcLocked() {
-    if (track) {
-      track->onMessage(nullptr);
-      track.reset();
+    if (audio_track) {
+      audio_track->onFrame(nullptr);
+      audio_track.reset();
     }
-    rtp_config.reset();
+    if (video_track) {
+      video_track->onFrame(nullptr);
+      video_track.reset();
+    }
+    audio_rtp_config.reset();
+    video_rtp_config.reset();
     if (pc) {
       pc->close();
       pc.reset();
@@ -166,6 +255,15 @@ struct CallMediaEngine::Impl {
     if (!SDL_WasInit(SDL_INIT_AUDIO)) {
       if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
         return Error(std::string("SDL_InitSubSystem(AUDIO) failed: ") + SDL_GetError());
+      }
+    }
+    return {};
+  }
+
+  Roe<void> EnsureCameraSubsystem() {
+    if (!SDL_WasInit(SDL_INIT_CAMERA)) {
+      if (!SDL_InitSubSystem(SDL_INIT_CAMERA)) {
+        return Error(std::string("SDL_InitSubSystem(CAMERA) failed: ") + SDL_GetError());
       }
     }
     return {};
@@ -192,7 +290,6 @@ struct CallMediaEngine::Impl {
     want.format = SDL_AUDIO_S16;
     want.channels = static_cast<Uint8>(kChannels);
 
-    // Mic is optional: headless / no-capture hosts can still receive and play audio.
     capture_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &want, nullptr, nullptr);
     capture_available = false;
     if (capture_stream) {
@@ -217,26 +314,60 @@ struct CallMediaEngine::Impl {
     return {};
   }
 
-  void BindAudioTrack(const std::shared_ptr<rtc::Track>& audio_track, rtc::SSRC ssrc) {
-    local_ssrc = ssrc;
-    rtp_config = std::make_shared<rtc::RtpPacketizationConfig>(ssrc, "audio", kOpusPayloadType,
-                                                               rtc::OpusRtpPacketizer::DefaultClockRate);
-    auto packetizer = std::make_shared<rtc::OpusRtpPacketizer>(rtp_config);
+  void BindAudioTrack(const std::shared_ptr<rtc::Track>& track, rtc::SSRC ssrc) {
+    local_audio_ssrc = ssrc;
+    audio_rtp_config = std::make_shared<rtc::RtpPacketizationConfig>(
+        ssrc, "audio", kOpusPayloadType, rtc::OpusRtpPacketizer::DefaultClockRate);
+    auto packetizer = std::make_shared<rtc::OpusRtpPacketizer>(audio_rtp_config);
     auto depacketizer = std::make_shared<rtc::OpusRtpDepacketizer>();
     auto rtcp_recv = std::make_shared<rtc::RtcpReceivingSession>();
-    auto sr_reporter = std::make_shared<rtc::RtcpSrReporter>(rtp_config);
-    // Packetizer (out) → depacketizer (in) → RTCP RR/SR for a healthy SendRecv track.
+    auto sr_reporter = std::make_shared<rtc::RtcpSrReporter>(audio_rtp_config);
     packetizer->addToChain(depacketizer);
     packetizer->addToChain(rtcp_recv);
     packetizer->addToChain(sr_reporter);
-    audio_track->setMediaHandler(packetizer);
-    // Depacketizer attaches FrameInfo; Track delivers those via onFrame, not onMessage.
-    audio_track->onFrame([this](rtc::binary data, rtc::FrameInfo) {
+    track->setMediaHandler(packetizer);
+    track->onFrame([this](rtc::binary data, rtc::FrameInfo) {
       if (!data.empty()) {
         OnRemoteOpusFrame(data.data(), data.size());
       }
     });
-    track = audio_track;
+    audio_track = track;
+  }
+
+  void BindVideoTrack(const std::shared_ptr<rtc::Track>& track, rtc::SSRC ssrc) {
+    local_video_ssrc = ssrc;
+    video_rtp_config = std::make_shared<rtc::RtpPacketizationConfig>(
+        ssrc, "video", kH264PayloadType, rtc::H264RtpPacketizer::defaultClockRate);
+    auto packetizer = std::make_shared<rtc::H264RtpPacketizer>(rtc::NalUnit::Separator::StartSequence,
+                                                              video_rtp_config);
+    auto depacketizer = std::make_shared<rtc::H264RtpDepacketizer>(rtc::NalUnit::Separator::StartSequence);
+    auto rtcp_recv = std::make_shared<rtc::RtcpReceivingSession>();
+    auto sr_reporter = std::make_shared<rtc::RtcpSrReporter>(video_rtp_config);
+    packetizer->addToChain(depacketizer);
+    packetizer->addToChain(rtcp_recv);
+    packetizer->addToChain(sr_reporter);
+    track->setMediaHandler(packetizer);
+    track->onFrame([this](rtc::binary data, rtc::FrameInfo) {
+      if (!data.empty()) {
+        OnRemoteH264Frame(data.data(), data.size());
+      }
+    });
+    video_track = track;
+  }
+
+  void AddAudioAndVideoTracks(Role start_role) {
+    local_audio_ssrc = (start_role == Role::Offerer) ? kOffererAudioSsrc : kAnswererAudioSsrc;
+    local_video_ssrc = (start_role == Role::Offerer) ? kOffererVideoSsrc : kAnswererVideoSsrc;
+
+    rtc::Description::Audio audio("audio", rtc::Description::Direction::SendRecv);
+    audio.addOpusCodec(kOpusPayloadType);
+    audio.addSSRC(local_audio_ssrc, "audio");
+    BindAudioTrack(pc->addTrack(audio), local_audio_ssrc);
+
+    rtc::Description::Video video("video", rtc::Description::Direction::SendRecv);
+    video.addH264Codec(kH264PayloadType);
+    video.addSSRC(local_video_ssrc, "video");
+    BindVideoTrack(pc->addTrack(video), local_video_ssrc);
   }
 
   void StartCaptureLoop() {
@@ -247,12 +378,10 @@ struct CallMediaEngine::Impl {
       pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
       std::vector<unsigned char> opus_buf(4000);
       while (capture_running.load()) {
-        const bool can_send = track && track->isOpen() && encoder;
+        const bool can_send = audio_track && audio_track->isOpen() && encoder;
         if (capture_stream) {
-          // WASAPI/Pulse often return partial chunks — accumulate to one Opus frame.
           int16_t chunk[kFrameSamples];
-          const int got = SDL_GetAudioStreamData(capture_stream, chunk,
-                                                 static_cast<int>(sizeof(chunk)));
+          const int got = SDL_GetAudioStreamData(capture_stream, chunk, static_cast<int>(sizeof(chunk)));
           if (got > 0) {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
@@ -279,7 +408,6 @@ struct CallMediaEngine::Impl {
             SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
           }
         } else {
-          // No mic: send silence so the peer track stays alive / comfort noise path.
           std::fill(pcm.begin(), pcm.end(), 0);
           SmoothLevel(local_input_level, 0.f);
           if (!can_send) {
@@ -306,15 +434,88 @@ struct CallMediaEngine::Impl {
           continue;
         }
         try {
-          track->send(reinterpret_cast<const std::byte*>(opus_buf.data()), static_cast<size_t>(encoded));
-          if (rtp_config) {
-            rtp_config->timestamp += static_cast<uint32_t>(kFrameSamples);
+          audio_track->send(reinterpret_cast<const std::byte*>(opus_buf.data()), static_cast<size_t>(encoded));
+          if (audio_rtp_config) {
+            audio_rtp_config->timestamp += static_cast<uint32_t>(kFrameSamples);
           }
         } catch (...) {
-          // Peer may be mid-renegotiation; drop frame.
         }
         if (!capture_stream) {
           std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
+        }
+      }
+    });
+  }
+
+  void StartVideoLoop() {
+    video_running = true;
+    video_thread = std::thread([this]() {
+      const auto frame_period = std::chrono::milliseconds(1000 / kVideoFps);
+      bool need_keyframe = true;
+      while (video_running.load()) {
+        const auto t0 = std::chrono::steady_clock::now();
+        if (!camera || !camera_enabled.load(std::memory_order_relaxed)) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(20));
+          continue;
+        }
+        Uint64 timestamp_ns = 0;
+        SDL_Surface* surface = SDL_AcquireCameraFrame(camera, &timestamp_ns);
+        if (!surface) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(5));
+          continue;
+        }
+
+        SDL_Surface* converted = nullptr;
+        const SDL_Surface* src = surface;
+        if (surface->format != SDL_PIXELFORMAT_RGBA32 && surface->format != SDL_PIXELFORMAT_RGB24) {
+          converted = SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
+          src = converted ? converted : surface;
+        }
+
+        VideoFrameI420 i420;
+        VideoFrameRgba preview;
+        const bool has_alpha = src->format == SDL_PIXELFORMAT_RGBA32;
+        const int w = EvenDimension(std::min(src->w, kVideoWidth));
+        const int h = EvenDimension(std::min(src->h, kVideoHeight));
+        if (w >= 16 && h >= 16 && src->pixels) {
+          // Center-crop to even dims at top-left for a3 defaults (simple path).
+          const int use_w = EvenDimension(src->w) > 0 ? EvenDimension(src->w) : w;
+          const int use_h = EvenDimension(src->h) > 0 ? EvenDimension(src->h) : h;
+          const int enc_w = use_w > kVideoWidth ? kVideoWidth : use_w;
+          const int enc_h = use_h > kVideoHeight ? kVideoHeight : use_h;
+          const int even_w = EvenDimension(enc_w);
+          const int even_h = EvenDimension(enc_h);
+          if (even_w >= 16 && even_h >= 16 &&
+              RgbaToI420(static_cast<const uint8_t*>(src->pixels), even_w, even_h, src->pitch, has_alpha,
+                         i420)) {
+            if (I420ToRgba(i420, preview)) {
+              PublishLocalPreview(preview);
+            }
+            if (video_codec && video_codec->HasEncoder() && video_track && video_track->isOpen()) {
+              auto encoded = video_codec->Encode(i420, need_keyframe);
+              if (encoded) {
+                need_keyframe = false;
+                try {
+                  video_track->send(reinterpret_cast<const std::byte*>(encoded->annex_b.data()),
+                                    encoded->annex_b.size());
+                  if (video_rtp_config) {
+                    video_rtp_config->timestamp += static_cast<uint32_t>(90000 / kVideoFps);
+                  }
+                } catch (...) {
+                }
+              }
+            }
+          }
+        }
+
+        if (converted) {
+          SDL_DestroySurface(converted);
+        }
+        SDL_ReleaseCameraFrame(camera, surface);
+
+        const auto elapsed = std::chrono::steady_clock::now() - t0;
+        if (elapsed < frame_period) {
+          std::this_thread::sleep_for(frame_period - elapsed);
         }
       }
     });
@@ -325,9 +526,8 @@ struct CallMediaEngine::Impl {
       return;
     }
     std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
-    const int decoded =
-        opus_decode(decoder, reinterpret_cast<const unsigned char*>(data), static_cast<int>(size), pcm.data(),
-                    kFrameSamples, 0);
+    const int decoded = opus_decode(decoder, reinterpret_cast<const unsigned char*>(data),
+                                    static_cast<int>(size), pcm.data(), kFrameSamples, 0);
     if (decoded <= 0) {
       return;
     }
@@ -339,19 +539,29 @@ struct CallMediaEngine::Impl {
     (void)SDL_PutAudioStreamData(playback_stream, pcm.data(), decoded * static_cast<int>(sizeof(int16_t)));
   }
 
+  void OnRemoteH264Frame(const std::byte* data, size_t size) {
+    if (!video_codec || size == 0) {
+      return;
+    }
+    if (!video_codec->HasDecoder()) {
+      if (auto configured = video_codec->ConfigureDecoder(); !configured) {
+        return;
+      }
+    }
+    auto decoded = video_codec->Decode(reinterpret_cast<const uint8_t*>(data), size);
+    if (!decoded) {
+      return;
+    }
+    PublishRemoteFrame(std::move(*decoded));
+  }
+
   Roe<void> SetupPeerConnection(Role start_role) {
     rtc::Configuration config;
-    // LAN dogfood: host candidates only (no STUN/TURN until mesh SFU).
     config.enableIceTcp = false;
-    // We create offer/answer explicitly (offerer at Start; answerer after remote offer).
-    // Leaving auto-negotiation on would answer inside setRemoteDescription, then our
-    // second setLocalDescription(Answer) throws "Unexpected local … answer in … stable".
     config.disableAutoNegotiation = true;
-    // Media-only PeerConnection (no DataChannel) still needs DTLS-SRTP.
     config.forceMediaTransport = true;
     pc = std::make_shared<rtc::PeerConnection>(config);
     role = start_role;
-    local_ssrc = (start_role == Role::Offerer) ? kOffererAudioSsrc : kAnswererAudioSsrc;
 
     pc->onStateChange([this](rtc::PeerConnection::State state) { SetState(StateToString(state)); });
 
@@ -378,41 +588,99 @@ struct CallMediaEngine::Impl {
       on_local_description(local);
     });
 
-    // Answerer: SDP answer must list only SSRCs we send. After remote offer, onTrack fires with
-    // the negotiated m-line (remote SSRCs cleared) — re-add our send SSRC before answering.
-    // Offerer: same callback can fire on renegotiation; keep handlers on the negotiated track.
     pc->onTrack([this](std::shared_ptr<rtc::Track> remote_track) {
       if (!remote_track) {
         return;
       }
       auto desc = remote_track->description();
-      desc.addSSRC(local_ssrc, "audio");
-      remote_track->setDescription(desc);
-      BindAudioTrack(remote_track, local_ssrc);
+      const std::string mid = desc.mid();
+      if (mid == "video" || desc.type() == "video") {
+        desc.addSSRC(local_video_ssrc, "video");
+        remote_track->setDescription(desc);
+        BindVideoTrack(remote_track, local_video_ssrc);
+      } else {
+        desc.addSSRC(local_audio_ssrc, "audio");
+        remote_track->setDescription(desc);
+        BindAudioTrack(remote_track, local_audio_ssrc);
+      }
     });
 
+    AddAudioAndVideoTracks(start_role);
     if (start_role == Role::Offerer) {
-      rtc::Description::Audio media("audio", rtc::Description::Direction::SendRecv);
-      media.addOpusCodec(kOpusPayloadType);
-      media.addSSRC(local_ssrc, "audio");
-      auto local_track = pc->addTrack(media);
-      BindAudioTrack(local_track, local_ssrc);
       pc->setLocalDescription();
-    } else {
-      // Answerer: also seed a local SendRecv m-line so mid="audio" exists before the offer.
-      // processLocalDescription prefers this track and keeps our SSRC in the answer.
-      rtc::Description::Audio media("audio", rtc::Description::Direction::SendRecv);
-      media.addOpusCodec(kOpusPayloadType);
-      media.addSSRC(local_ssrc, "audio");
-      auto local_track = pc->addTrack(media);
-      BindAudioTrack(local_track, local_ssrc);
     }
     return {};
   }
+
+  Roe<void> EnableCameraLocked() {
+    if (camera_enabled.load(std::memory_order_relaxed) && camera) {
+      return {};
+    }
+    if (auto ok = EnsureCameraSubsystem(); !ok) {
+      return ok.error();
+    }
+    if (!video_codec) {
+      video_codec = CreatePlatformVideoCodec();
+    }
+    std::string encode_warn;
+    if (video_codec) {
+      if (auto cfg = video_codec->ConfigureEncoder(kVideoWidth, kVideoHeight, kVideoFps); !cfg) {
+        encode_warn = cfg.error().message;
+      }
+    }
+
+    int count = 0;
+    SDL_CameraID* cameras = SDL_GetCameras(&count);
+    if (!cameras || count <= 0) {
+      if (cameras) {
+        SDL_free(cameras);
+      }
+      return Error(std::string("No camera: ") + SDL_GetError());
+    }
+
+    SDL_CameraID chosen = cameras[0];
+    for (int i = 0; i < count; ++i) {
+      const SDL_CameraPosition pos = SDL_GetCameraPosition(cameras[i]);
+      if (pos == SDL_CAMERA_POSITION_FRONT_FACING) {
+        chosen = cameras[i];
+        break;
+      }
+    }
+    SDL_free(cameras);
+
+    SDL_CameraSpec want{};
+    want.format = SDL_PIXELFORMAT_UNKNOWN;
+    want.width = kVideoWidth;
+    want.height = kVideoHeight;
+    want.framerate_numerator = kVideoFps;
+    want.framerate_denominator = 1;
+    camera = SDL_OpenCamera(chosen, &want);
+    if (!camera) {
+      camera = SDL_OpenCamera(chosen, nullptr);
+    }
+    if (!camera) {
+      return Error(std::string("SDL_OpenCamera failed: ") + SDL_GetError());
+    }
+    camera_id = chosen;
+    camera_enabled.store(true, std::memory_order_relaxed);
+    if (!video_running.load()) {
+      StartVideoLoop();
+    }
+    if (!encode_warn.empty()) {
+      // Preview-only path; caller (CallMediaEngine) logs.
+      last_camera_warn = encode_warn;
+    } else {
+      last_camera_warn.clear();
+    }
+    return {};
+  }
+
+  std::string last_camera_warn;
 };
 
 CallMediaEngine::CallMediaEngine() : impl_(std::make_unique<Impl>()) {
   redirectLogger("CallMediaEngine");
+  impl_->video_codec = CreatePlatformVideoCodec();
 }
 
 CallMediaEngine::~CallMediaEngine() {
@@ -445,6 +713,9 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
     }
     return Error("Call media engine already active");
   }
+  if (!impl_->video_codec) {
+    impl_->video_codec = CreatePlatformVideoCodec();
+  }
   if (auto audio = impl_->OpenAudioDevices(); !audio) {
     impl_->TearDownAudioLocked();
     return audio.error();
@@ -459,6 +730,7 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
   impl_->call_id = call_id;
   impl_->active = true;
   impl_->muted.store(false, std::memory_order_relaxed);
+  impl_->camera_enabled.store(false, std::memory_order_relaxed);
   impl_->connected_at_ms.store(0, std::memory_order_relaxed);
   impl_->SetState("connecting");
   impl_->StartCaptureLoop();
@@ -503,6 +775,7 @@ void CallMediaEngine::Stop() {
   }
   impl_->active = false;
   impl_->muted.store(false, std::memory_order_relaxed);
+  impl_->camera_enabled.store(false, std::memory_order_relaxed);
   impl_->connected_at_ms.store(0, std::memory_order_relaxed);
   impl_->TearDownAudioLocked();
   impl_->TearDownPcLocked();
@@ -519,6 +792,38 @@ void CallMediaEngine::SetMuted(bool muted) {
 
 bool CallMediaEngine::IsMuted() const {
   return impl_->muted.load(std::memory_order_relaxed);
+}
+
+Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled) {
+  std::lock_guard lock(impl_->mutex);
+  if (!impl_->active) {
+    return Error("Call media not active");
+  }
+  if (!enabled) {
+    impl_->CloseCameraLocked();
+    return {};
+  }
+  auto opened = impl_->EnableCameraLocked();
+  if (!opened) {
+    return opened.error();
+  }
+  if (!impl_->last_camera_warn.empty()) {
+    log().warning << "Video encode unavailable: " << impl_->last_camera_warn
+                  << " — local preview may still work; voice continues";
+  }
+  return {};
+}
+
+bool CallMediaEngine::IsCameraEnabled() const {
+  return impl_->camera_enabled.load(std::memory_order_relaxed);
+}
+
+bool CallMediaEngine::HasRemoteVideo() const {
+  return impl_->has_remote_video.load(std::memory_order_relaxed);
+}
+
+bool CallMediaEngine::VideoEncoderAvailable() const {
+  return impl_->video_codec && impl_->video_codec->HasEncoder();
 }
 
 bool CallMediaEngine::IsActive() const {
@@ -549,6 +854,24 @@ float CallMediaEngine::LocalInputLevel() const {
 
 float CallMediaEngine::RemoteOutputLevel() const {
   return impl_->remote_output_level.load(std::memory_order_relaxed);
+}
+
+bool CallMediaEngine::CopyLocalVideoFrame(VideoTileFrame& out) const {
+  std::lock_guard lock(impl_->video_frame_mutex);
+  if (impl_->local_video_frame.rgba.empty()) {
+    return false;
+  }
+  out = impl_->local_video_frame;
+  return true;
+}
+
+bool CallMediaEngine::CopyRemoteVideoFrame(VideoTileFrame& out) const {
+  std::lock_guard lock(impl_->video_frame_mutex);
+  if (impl_->remote_video_frame.rgba.empty()) {
+    return false;
+  }
+  out = impl_->remote_video_frame;
+  return true;
 }
 
 } // namespace pbr

@@ -160,7 +160,7 @@ Blob encoding matches chat: `EncryptedPayload::EncodeBlob` → base64 as `wrappe
 ## V016 — a3 delivery slice: LAN video first; SFU / iOS separate
 
 **Date:** 2026-07-28  
-**Decision:** Phase **a3** ships **desktop (and optional Android) 1:1 video on the LAN/same-network ICE path**, with H264 locked (V017), camera-off-by-default (V009), and shell video surfaces (V018). Explicitly **out of a3 “done”**:
+**Decision:** Phase **a3** ships **desktop and Android 1:1 video on the LAN/same-network ICE path**, with H264 locked (V017), camera-off-by-default (V009), shell video surfaces (V018), and unified Opus+H264 / same in-call (V019). Explicitly **out of a3 “done”**:
 
 | Deferred | Where it lands |
 |----------|----------------|
@@ -175,8 +175,8 @@ Same pattern as a2 (V010): LAN dogfood proves media + UI; NAT claims wait for or
 1. Two devices on LAN: video call → accept → remote video visible when peer enables camera; local preview when self enables  
 2. Camera **off** on join until user toggles on; mic defaults on (V009)  
 3. Codec preference **H264** in SDP; encode/decode via **platform HW** (V017)  
-4. Desktop camera permissions / OS privacy prompts exercised; Android `CAMERA` (+ existing `RECORD_AUDIO`) if Android is in the dogfood set  
-5. Docs: CURRENT_STATE marks LAN video OK; NAT/SFU/iOS still unclaimed; Linux without usable HW encoder may fail video send (accepted) 
+4. Desktop camera permissions / OS privacy prompts exercised; Android `CAMERA` (+ existing `RECORD_AUDIO`) in a3 dogfood (V019)  
+5. Docs: CURRENT_STATE marks LAN video OK; NAT/SFU/iOS still unclaimed; Linux without usable HW encoder may fail video send (accepted); voice continues (V019) 
 
 **Rationale:** Mesh SFU is still pre-nr; blocking a3 on it repeats the false “mobile-ready” trap. iOS A/V session work is packaging-heavy and independent of the video pipeline design.  
 **Alternatives:** Full a3 checklist including SFU (rejected — mesh-gated); fold iOS into a3 (rejected — separate bring-up).
@@ -204,7 +204,7 @@ Same pattern as a2 (V010): LAN dogfood proves media + UI; NAT claims wait for or
 |----|-----|----------------|
 | Windows | Media Foundation (prefer); QSV/NVENC later if needed | Primary desktop dogfood target |
 | macOS | VideoToolbox | Primary desktop dogfood target |
-| Android | MediaCodec | Optional a3 dogfood when exercised |
+| Android | MediaCodec | **In a3** dogfood (V019) |
 | iOS | VideoToolbox | Separate mobile-bring-up (V016) |
 | Linux | VA-API (and/or V4L2 M2M) when present | **Best-effort** — no soft-codec product fallback in a3 |
 
@@ -246,8 +246,8 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 
 ### Peer connection
 
-- Add a **video** `Description::Media` track alongside existing Opus audio (renegotiate or include in initial offer when `media_mode == video`).  
-- When camera off: do not send video frames (or send no track / paused track); remote UI shows placeholder — not a black full-screen surprise.  
+- Always add **audio + video** tracks in the initial offer/answer (V019) — not only when `media_mode == video`, and not via mid-call renegotiation for camera toggle.  
+- When camera off: keep the video m-line; do not send frames; remote UI shows placeholder — not a black full-screen surprise.  
 - Signal `video_enabled` on participant media (design entity already has `{ audio_muted, video_enabled }`); reuse roster / lightweight control as needed — no new push type.
 
 ### Render in shell (chosen approach)
@@ -261,14 +261,36 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 | **C. OpenGL blit after `PresentFrame`, ignore RML** | Reject for a3 — breaks hit-testing, safe-area, theme; hard to keep compact bar + PiP consistent |
 | **D. Remount shell when video appears** | **Forbidden** — agent trap: use `data-if` + `DirtyWindow` only ([WINDOW_SHELL](../../docs/ui/WINDOW_SHELL.md)) |
 
-**UI composition (1:1 a3):**
+**UI composition (1:1 a3; V019 — same in-call for Voice/Video start):**
 
-1. Voice calls keep today’s compact bottom bar (mute / meters / elapsed / Leave).  
-2. Video calls expand an in-shell **stage** (still overlay, not a new nav tab): large **remote** tile; small **local PiP** when local camera on; placeholder / avatar when remote camera off.  
-3. Actions: existing mute + Leave; add **Camera** toggle (off → on requests permission + opens SDL camera).  
+1. In-call chrome is unified once connected: mute / meters / elapsed / Leave + **Camera** (allowed on voice-started calls too).  
+2. When remote (or local) video is active, expand an in-shell **stage** (still overlay, not a new nav tab): large **remote** tile; small **local PiP** when local camera on; placeholder / avatar when remote camera off. Compact bar-only when neither side has video frames.  
+3. Camera toggle off → on requests permission + opens SDL camera (encode starts then).  
 4. Chrome gate remains `CallChromeSync` / `DirtyWindow` — frame pixels update without remounting; only layer identity changes remount-class dirty.
 
 **Threading:** decode/upload on media thread → hand RGBA or GPU upload to UI thread before `Context::Render` (same discipline as audio level meters today). Never touch GL from the capture thread without a documented share context (prefer UI-thread upload).
 
 **Rationale:** Reuses SDL camera + GL3 render interface already shipping; avoids Chromium; keeps call chrome in the shell model proven in a2.  
 **Alternatives:** Full-screen native video widget (rejected for a3 shell unity); GStreamer pipeline (rejected — V014).
+
+---
+
+## V019 — Unified call media shape; Voice/Video entry only
+
+**Date:** 2026-07-29  
+**Decision:** Treat **Voice** and **Video** header actions as two familiar entry buttons only. Once the PeerConnection is up, **do not** treat voice-started and video-started calls as different media sessions.
+
+| Rule | Detail |
+|------|--------|
+| Wire / SDP | **Always** negotiate **Opus audio + H264 video** m-lines in the **initial** offer/answer (every 1:1 call). No mid-call renegotiation for mute or camera. |
+| Content policy | Mute / camera change **what is sent** (silence or no frames), not the SDP shape. Open SDL camera + HW encode **only** when Camera is on. |
+| Failure model | **Audio is mandatory** for a connected call; **video is best-effort**. Missing HW encoder → Camera fails/disabled, voice continues. Missing decoder / bad bitstream → placeholder tile, voice continues. Do **not** fail `Start()` / accept solely because video HW is absent. |
+| Voice + Camera | **Allowed** — Camera toggle on voice-started calls. |
+| Remote video | **Show** whenever the peer sends frames (including voice-started calls). |
+| `media_mode` | May remain on invite / history (“started as voice/video”) for copy; **runtime media UX is the same**. |
+| a3 dogfood | **Win** (Media Foundation) + **macOS** (VideoToolbox) primary; **Android** (MediaCodec + `CAMERA`) **in a3**; Linux VA-API best-effort (V017). iOS still separate (V016). |
+| Encode defaults (a3) | Target ~**640×360 @ 15–24 fps**; network-adaptive bitrate/resolution **later** if not cheap. |
+
+**Rationale:** One PC setup path; camera/mute never touch offer/answer; users get the UI they expect from two buttons without maintaining two in-call protocols.  
+**Alternatives:** Audio-only SDP for voice + renegotiate on camera (rejected — glare, second SDP round, dual code paths); keep voice chrome without Camera (rejected — same in-call model).  
+**Supersedes soft language in** V018 peer-connection “renegotiate or include when video mode.”

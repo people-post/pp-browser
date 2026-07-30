@@ -34,11 +34,13 @@ public:
   void DeclineIncoming();
   void LeaveActive();
   void ToggleMute();
+  void ToggleCamera();
 
   static void AcceptCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
   static void DeclineCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
   static void LeaveCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
   static void MuteCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
+  static void CameraCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
 
 private:
   CallController() = default;

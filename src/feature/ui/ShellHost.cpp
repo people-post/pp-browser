@@ -129,8 +129,13 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_mic_hint", &host.state_.call_in_progress.mic_hint);
     ctor.Bind("call_in_progress_peer_hint", &host.state_.call_in_progress.peer_hint);
     ctor.Bind("call_in_progress_muted", &host.state_.call_in_progress.muted);
+    ctor.Bind("call_in_progress_camera_on", &host.state_.call_in_progress.camera_on);
+    ctor.Bind("call_in_progress_stage_visible", &host.state_.call_in_progress.stage_visible);
+    ctor.Bind("call_in_progress_remote_video", &host.state_.call_in_progress.remote_video);
+    ctor.Bind("call_in_progress_local_preview", &host.state_.call_in_progress.local_preview);
     ctor.Bind("call_in_progress_elapsed", &host.state_.call_in_progress.elapsed);
     ctor.Bind("call_in_progress_peer_label", &host.state_.call_in_progress.peer_label);
+    ctor.Bind("call_in_progress_remote_placeholder", &host.state_.call_in_progress.remote_placeholder);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
     ctor.Bind("statusbar_visible", &host.state_.statusbar_visible);
     ctor.Bind("statusbar_connection", &host.state_.statusbar_connection);
@@ -177,6 +182,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("call_decline", &CallController::DeclineCallback);
     ctor.BindEventCallback("call_leave", &CallController::LeaveCallback);
     ctor.BindEventCallback("call_mute", &CallController::MuteCallback);
+    ctor.BindEventCallback("call_camera", &CallController::CameraCallback);
     ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
     ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
     ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
@@ -646,8 +652,13 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_mic_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_peer_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_muted");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_camera_on");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_stage_visible");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_remote_video");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_local_preview");
   DataModelHost::Instance().Dirty("window", "call_in_progress_elapsed");
   DataModelHost::Instance().Dirty("window", "call_in_progress_peer_label");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_remote_placeholder");
   DataModelHost::Instance().Dirty("window", "activity_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_connection");
@@ -1209,9 +1220,16 @@ std::string ShellHost::SerializeCallRing() const {
 }
 
 std::string ShellHost::SerializeCallInProgress() const {
-  // Compact top bar — no full scrim so chat stays usable during the call.
+  // Compact top bar + optional video stage — no remount for frames (V018/V019).
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-call-bar\" data-model=\"window\" data-if=\"call_in_progress_active\">";
+  out << "<div class=\"shell-call-stage\" data-if=\"call_in_progress_stage_visible\">";
+  out << "<div class=\"shell-call-remote\" id=\"call-remote-tile\">";
+  out << "<p class=\"text-sm shell-call-remote-placeholder\" data-if=\"!call_in_progress_remote_video\" "
+         "data-rml=\"call_in_progress_remote_placeholder\"></p>";
+  out << "</div>";
+  out << "<div class=\"shell-call-pip\" id=\"call-local-tile\" data-if=\"call_in_progress_local_preview\"></div>";
+  out << "</div>";
   out << "<div class=\"shell-call-bar\">";
   out << "<div class=\"shell-call-bar-main\">";
   out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\"></p>";
@@ -1243,6 +1261,8 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-bar-actions row\">";
   out << "<button class=\"shell-call-mute\" data-class-shell-call-mute--on=\"call_in_progress_muted\" "
          "data-event-click=\"call_mute()\">Mute</button>";
+  out << "<button class=\"shell-call-camera\" data-class-shell-call-camera--on=\"call_in_progress_camera_on\" "
+         "data-event-click=\"call_camera()\">Camera</button>";
   out << "<button class=\"shell-dialog-cancel shell-call-leave\" data-event-click=\"call_leave()\">Leave</button>";
   out << "</div></div></div>";
   return out.str();

@@ -4,16 +4,18 @@
 #include "common/Module.h"
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
 /**
- * 1:1 voice media via libdatachannel + Opus + SDL (V014).
- * Signaling (SDP/ICE) is emitted via callbacks; CallSessionManager ships them.
+ * 1:1 call media via libdatachannel + Opus + SDL (+ platform HW H264, V014/V017/V019).
+ * Always negotiates Opus + H264 m-lines; mute/camera are content-only.
  */
 class CallMediaEngine : public Module {
 public:
@@ -27,6 +29,14 @@ public:
   struct IceCandidate {
     std::string candidate;
     std::string mid;
+  };
+
+  struct VideoTileFrame {
+    int width = 0;
+    int height = 0;
+    /** Premultiplied RGBA8. */
+    std::vector<uint8_t> rgba;
+    uint64_t seq = 0;
   };
 
   using LocalDescriptionFn = std::function<void(const LocalDescription&)>;
@@ -48,17 +58,24 @@ public:
   void SetMuted(bool muted);
   bool IsMuted() const;
 
+  /** Open/close SDL camera + encode. Best-effort: fails without killing voice (V019). */
+  Roe<void> SetCameraEnabled(bool enabled);
+  bool IsCameraEnabled() const;
+  bool HasRemoteVideo() const;
+  bool VideoEncoderAvailable() const;
+
   bool IsActive() const;
   bool IsConnected() const;
   std::string ActiveCallId() const;
   std::string ConnectionState() const;
-  /** Unix ms when media reached Connected; 0 if not connected yet. */
   int64_t ConnectedAtMs() const;
 
-  /** Smoothed peak level 0..1 from local capture (mic pickup indicator). */
   float LocalInputLevel() const;
-  /** Smoothed peak level 0..1 from decoded remote frames. */
   float RemoteOutputLevel() const;
+
+  /** Copy latest local preview / remote decoded frames (empty if none). */
+  bool CopyLocalVideoFrame(VideoTileFrame& out) const;
+  bool CopyRemoteVideoFrame(VideoTileFrame& out) const;
 
 private:
   struct Impl;

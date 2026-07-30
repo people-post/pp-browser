@@ -26,6 +26,10 @@ CallChromeLayer CaptureCallChrome(const ShellState& state) {
       .in_call_active = state.call_in_progress.active,
       .ring_pulse = state.call_ring.pulse,
       .in_call_muted = state.call_in_progress.muted,
+      .in_call_camera_on = state.call_in_progress.camera_on,
+      .in_call_stage_visible = state.call_in_progress.stage_visible,
+      .in_call_remote_video = state.call_in_progress.remote_video,
+      .in_call_local_preview = state.call_in_progress.local_preview,
       .ring_conflict = state.call_ring.conflict,
       .ring_call_id = state.call_ring.call_id.c_str(),
       .in_call_id = state.call_in_progress.call_id.c_str(),
@@ -43,6 +47,7 @@ CallChromeLayer CaptureCallChrome(const ShellState& state) {
       .in_call_peer_hint = state.call_in_progress.peer_hint.c_str(),
       .in_call_elapsed = state.call_in_progress.elapsed.c_str(),
       .in_call_peer_label = state.call_in_progress.peer_label.c_str(),
+      .in_call_remote_placeholder = state.call_in_progress.remote_placeholder.c_str(),
   };
 }
 
@@ -393,7 +398,22 @@ void CallController::ToggleMute() {
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
-  calls->Media().SetMuted(!calls->Media().IsMuted());
+  if (auto muted = calls->SetLocalAudioMuted(!calls->Media().IsMuted()); !muted) {
+    UserFeedback::Fail(muted.error().message);
+  }
+  RefreshPendingRing();
+}
+
+void CallController::ToggleCamera() {
+  BindToMessaging();
+  auto* calls = MessagingHub::Instance().Calls();
+  if (!calls || !calls->Media().IsActive()) {
+    return;
+  }
+  const bool next = !calls->Media().IsCameraEnabled();
+  if (auto cam = calls->SetLocalVideoEnabled(next); !cam) {
+    UserFeedback::Fail(cam.error().message);
+  }
   RefreshPendingRing();
 }
 
@@ -413,10 +433,20 @@ void CallController::MuteCallback(Rml::DataModelHandle, Rml::Event&, const Rml::
   Instance().ToggleMute();
 }
 
+void CallController::CameraCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
+  Instance().ToggleCamera();
+}
+
 void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   auto& in_call = ShellHost::Instance().State().call_in_progress;
   const bool muted = media.IsMuted();
   in_call.muted = muted;
+  in_call.camera_on = media.IsCameraEnabled();
+  in_call.remote_video = media.HasRemoteVideo();
+  CallMediaEngine::VideoTileFrame local_tile;
+  in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
+  in_call.stage_visible = in_call.camera_on || in_call.remote_video || in_call.local_preview;
+  in_call.remote_placeholder = in_call.remote_video ? "" : "Camera off";
   in_call.mic_level = muted ? 0 : QuantizeAudioLevel(media.LocalInputLevel());
   in_call.peer_level = QuantizeAudioLevel(media.RemoteOutputLevel());
   in_call.mic_hint = LevelHint(in_call.mic_level, false, muted);

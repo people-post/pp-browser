@@ -654,6 +654,33 @@ select selectbox option:hover {
   color: #92400e;
 }
 
+.shell-call-camera {
+  background-color: #e8eaed;
+  color: #1a1a1a;
+}
+
+.shell-call-camera--on {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.shell-call-stage {
+  background-color: #111827;
+}
+
+.shell-call-remote {
+  background-color: #1f2937;
+}
+
+.shell-call-remote-placeholder {
+  color: #6b7280;
+}
+
+.shell-call-pip {
+  background-color: #e5e7eb;
+  border: 1dp #9ca3af;
+}
+
 .shell-call-ring-eyebrow {
   color: #6b7280;
 }

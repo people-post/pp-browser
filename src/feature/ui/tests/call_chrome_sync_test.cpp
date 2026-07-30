@@ -70,6 +70,20 @@ TEST(CallChromeSyncTest, MuteElapsedPulseDirties) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 
+TEST(CallChromeSyncTest, CameraStageDirties) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_camera_on = false;
+  synced.in_call_stage_visible = false;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_camera_on = true;
+  next.in_call_stage_visible = true;
+  next.in_call_local_preview = true;
+  next.in_call_remote_placeholder = "Camera off";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
 TEST(CallChromeSyncTest, ConflictLabelsDirty) {
   pbr::CallChromeLayer synced;
   synced.ring_active = true;

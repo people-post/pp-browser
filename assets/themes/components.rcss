@@ -1531,6 +1531,8 @@ select selectbox option {
   right: 0;
   z-index: 45;
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
 }
 
 .shell-call-bar {
@@ -1579,6 +1581,44 @@ select selectbox option {
   padding: 0 12dp;
   border-radius: 8dp;
   font-size: 14dp;
+}
+
+.shell-call-camera {
+  min-width: 72dp;
+  height: 36dp;
+  padding: 0 12dp;
+  border-radius: 8dp;
+  font-size: 14dp;
+}
+
+.shell-call-stage {
+  pointer-events: none;
+  margin: 8dp 12dp 0 12dp;
+  height: 220dp;
+  border-radius: 10dp;
+  position: relative;
+  overflow: hidden;
+}
+
+.shell-call-remote {
+  width: 100%;
+  height: 100%;
+  border-radius: 10dp;
+}
+
+.shell-call-remote-placeholder {
+  margin: 0;
+  padding: 16dp;
+  text-align: center;
+}
+
+.shell-call-pip {
+  position: absolute;
+  width: 96dp;
+  height: 128dp;
+  right: 10dp;
+  bottom: 10dp;
+  border-radius: 8dp;
 }
 
 .shell-call-leave {

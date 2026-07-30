@@ -10,6 +10,10 @@ struct CallChromeLayer {
   bool in_call_active = false;
   bool ring_pulse = false;
   bool in_call_muted = false;
+  bool in_call_camera_on = false;
+  bool in_call_stage_visible = false;
+  bool in_call_remote_video = false;
+  bool in_call_local_preview = false;
   bool ring_conflict = false;
   std::string ring_call_id;
   std::string in_call_id;
@@ -27,6 +31,7 @@ struct CallChromeLayer {
   std::string in_call_peer_hint;
   std::string in_call_elapsed;
   std::string in_call_peer_label;
+  std::string in_call_remote_placeholder;
 };
 
 enum class CallChromeUpdate {

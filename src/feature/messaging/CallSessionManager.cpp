@@ -25,6 +25,64 @@ CallMediaEngine& CallSessionManager::Media() {
   return media_;
 }
 
+Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const std::string call_id = media_.ActiveCallId();
+  if (call_id.empty()) {
+    return Error("No active call media");
+  }
+  media_.SetMuted(muted);
+  auto participant = sessions_.FindParticipant(call_id, *local);
+  if (participant && participant->has_value()) {
+    (*participant)->media.audio_muted = muted;
+    (void)sessions_.UpsertParticipant(**participant);
+  }
+  auto roster = BuildRosterDetail(call_id);
+  if (roster) {
+    auto roster_json = CallControlCodec::EncodeRoster(*roster);
+    if (roster_json) {
+      (void)FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
+    }
+  }
+  NotifyRingChanged();
+  return {};
+}
+
+Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const std::string call_id = media_.ActiveCallId();
+  if (call_id.empty()) {
+    return Error("No active call media");
+  }
+  if (enabled) {
+    if (auto cam = media_.SetCameraEnabled(true); !cam) {
+      return cam.error();
+    }
+  } else {
+    (void)media_.SetCameraEnabled(false);
+  }
+  auto participant = sessions_.FindParticipant(call_id, *local);
+  if (participant && participant->has_value()) {
+    (*participant)->media.video_enabled = enabled && media_.IsCameraEnabled();
+    (void)sessions_.UpsertParticipant(**participant);
+  }
+  auto roster = BuildRosterDetail(call_id);
+  if (roster) {
+    auto roster_json = CallControlCodec::EncodeRoster(*roster);
+    if (roster_json) {
+      (void)FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
+    }
+  }
+  NotifyRingChanged();
+  return {};
+}
+
 std::optional<std::string> CallSessionManager::TakeLastMediaError() {
   auto out = std::move(last_media_error_);
   last_media_error_.reset();
