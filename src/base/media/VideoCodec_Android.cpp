@@ -79,6 +79,49 @@ void AppendStartCodeAndNal(std::vector<uint8_t>& out, const uint8_t* data, size_
   out.insert(out.end(), data, data + size);
 }
 
+std::vector<uint8_t> ToAnnexB(const uint8_t* data, size_t size) {
+  std::vector<uint8_t> annex_b;
+  if (!data || size == 0) {
+    return annex_b;
+  }
+  // Already start-code prefixed.
+  if (size >= 3 && data[0] == 0 && data[1] == 0 && (data[2] == 1 || (size >= 4 && data[2] == 0 && data[3] == 1))) {
+    annex_b.assign(data, data + size);
+    return annex_b;
+  }
+  size_t offset = 0;
+  while (offset + 4 <= size) {
+    const uint32_t nal_size = (static_cast<uint32_t>(data[offset]) << 24) |
+                              (static_cast<uint32_t>(data[offset + 1]) << 16) |
+                              (static_cast<uint32_t>(data[offset + 2]) << 8) |
+                              static_cast<uint32_t>(data[offset + 3]);
+    offset += 4;
+    if (nal_size == 0 || offset + nal_size > size) {
+      break;
+    }
+    AppendStartCodeAndNal(annex_b, data + offset, nal_size);
+    offset += nal_size;
+  }
+  return annex_b;
+}
+
+// Drain MediaCodec output, ignoring format/buffer-changed notices that otherwise
+// abort the first remote frames on many devices.
+ssize_t DequeueOutputBuffer(AMediaCodec* codec, AMediaCodecBufferInfo* info, int max_attempts) {
+  for (int attempt = 0; attempt < max_attempts; ++attempt) {
+    const ssize_t index = AMediaCodec_dequeueOutputBuffer(codec, info, kCodecTimeoutUs);
+    if (index == AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
+      continue;
+    }
+    if (index == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED ||
+        index == AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
+      continue;
+    }
+    return index;
+  }
+  return AMEDIACODEC_INFO_TRY_AGAIN_LATER;
+}
+
 void I420ToNv12(const VideoFrameI420& frame, std::vector<uint8_t>& out) {
   const int width = frame.width;
   const int height = frame.height;
@@ -159,6 +202,7 @@ private:
   int enc_fps_ = 0;
   int enc_color_format_ = 0;
   int64_t enc_frame_index_ = 0;
+  std::vector<uint8_t> pending_param_sets_;
 
   AMediaCodec* decoder_ = nullptr;
   bool decoder_configured_ = false;
@@ -187,6 +231,15 @@ Roe<void> AndroidVideoCodec::ConfigureEncoder(int width, int height, int fps) {
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_FRAME_RATE, fps);
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_I_FRAME_INTERVAL, 2);
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, enc_color_format_);
+  // Constrained-Baseline-friendly profile for Win/macOS/Linux HW decoders (V017).
+  // AMEDIAFORMAT_KEY_PROFILE / LEVEL exist from API 28; string keys are identical.
+#if __ANDROID_API__ >= 28
+  AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_PROFILE, 1); // AVCProfileBaseline
+  AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_LEVEL, 512);  // AVCLevel3_1
+#else
+  AMediaFormat_setInt32(format, "profile", 1); // AVCProfileBaseline
+  AMediaFormat_setInt32(format, "level", 512);  // AVCLevel3_1
+#endif
 
   media_status_t status = AMediaCodec_configure(encoder_, format, nullptr, nullptr, AMEDIACODEC_CONFIGURE_FLAG_ENCODE);
   AMediaFormat_delete(format);
@@ -225,60 +278,64 @@ Roe<EncodedAccessUnit> AndroidVideoCodec::Encode(const VideoFrameI420& frame, bo
   size_t buf_size = 0;
   uint8_t* buf = AMediaCodec_getInputBuffer(encoder_, static_cast<size_t>(buf_index), &buf_size);
   if (!buf || buf_size < nv12.size()) {
-    AMediaCodec_queueInputBuffer(encoder_, static_cast<size_t>(buf_index), 0, 0, 0,
-                                  AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG);
+    AMediaCodec_queueInputBuffer(encoder_, static_cast<size_t>(buf_index), 0, 0, 0, 0);
     return Error("encoder input buffer too small");
   }
   std::memcpy(buf, nv12.data(), nv12.size());
 
-  uint32_t flags = 0;
   if (force_keyframe) {
-    flags |= AMEDIACODEC_BUFFER_FLAG_KEY_FRAME;
+#if __ANDROID_API__ >= 26
+    AMediaFormat* params = AMediaFormat_new();
+    AMediaFormat_setInt32(params, "request-sync", 1);
+    AMediaCodec_setParameters(encoder_, params);
+    AMediaFormat_delete(params);
+#endif
   }
   const int64_t pts_us = (enc_frame_index_ * 1000000LL) / std::max(enc_fps_, 1);
   ++enc_frame_index_;
-  if (AMediaCodec_queueInputBuffer(encoder_, static_cast<size_t>(buf_index), 0, nv12.size(), pts_us, flags) !=
+  if (AMediaCodec_queueInputBuffer(encoder_, static_cast<size_t>(buf_index), 0, nv12.size(), pts_us, 0) !=
       AMEDIA_OK) {
     return Error("AMediaCodec_queueInputBuffer failed");
   }
 
-  AMediaCodecBufferInfo info{};
-  ssize_t out_index = AMediaCodec_dequeueOutputBuffer(encoder_, &info, kCodecTimeoutUs);
-  while (out_index == AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
-    out_index = AMediaCodec_dequeueOutputBuffer(encoder_, &info, kCodecTimeoutUs);
-  }
-  if (out_index < 0) {
-    return Error("encoder produced no output");
-  }
-
-  size_t out_size = 0;
-  uint8_t* out_buf = AMediaCodec_getOutputBuffer(encoder_, static_cast<size_t>(out_index), &out_size);
   EncodedAccessUnit unit;
-  if (out_buf && info.size > 0) {
-    unit.annex_b.assign(out_buf + info.offset, out_buf + info.offset + info.size);
-    unit.keyframe = (info.flags & AMEDIACODEC_BUFFER_FLAG_KEY_FRAME) != 0;
-    // MediaCodec emits AVCC length-prefixed NALs; convert to Annex-B for libdatachannel.
-    if (!unit.annex_b.empty() && unit.annex_b[0] != 0) {
-      std::vector<uint8_t> annex_b;
-      size_t offset = 0;
-      while (offset + 4 <= unit.annex_b.size()) {
-        uint32_t nal_size = (static_cast<uint32_t>(unit.annex_b[offset]) << 24) |
-                            (static_cast<uint32_t>(unit.annex_b[offset + 1]) << 16) |
-                            (static_cast<uint32_t>(unit.annex_b[offset + 2]) << 8) |
-                            static_cast<uint32_t>(unit.annex_b[offset + 3]);
-        offset += 4;
-        if (offset + nal_size > unit.annex_b.size()) {
-          break;
+  // Drain config buffers (SPS/PPS) then the encoded access unit. Config often
+  // arrives as a separate output before the first IDR on MediaCodec.
+  for (int attempt = 0; attempt < 10 && unit.annex_b.empty(); ++attempt) {
+    AMediaCodecBufferInfo info{};
+    const ssize_t out_index = DequeueOutputBuffer(encoder_, &info, 4);
+    if (out_index < 0) {
+      break;
+    }
+    size_t out_size = 0;
+    uint8_t* out_buf = AMediaCodec_getOutputBuffer(encoder_, static_cast<size_t>(out_index), &out_size);
+    if (out_buf && info.size > 0) {
+      std::vector<uint8_t> chunk = ToAnnexB(out_buf + info.offset, static_cast<size_t>(info.size));
+      if ((info.flags & AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG) != 0) {
+        pending_param_sets_ = std::move(chunk);
+      } else if (!chunk.empty()) {
+        unit.keyframe = (info.flags & AMEDIACODEC_BUFFER_FLAG_KEY_FRAME) != 0;
+        if (unit.keyframe || force_keyframe) {
+          unit.keyframe = true;
+          if (!pending_param_sets_.empty()) {
+            const auto nals = ParseAnnexB(chunk.data(), chunk.size());
+            bool has_sps = false;
+            for (const auto& nal : nals) {
+              if (nal.type == 7) {
+                has_sps = true;
+                break;
+              }
+            }
+            if (!has_sps) {
+              unit.annex_b = pending_param_sets_;
+            }
+          }
         }
-        AppendStartCodeAndNal(annex_b, unit.annex_b.data() + offset, nal_size);
-        offset += nal_size;
-      }
-      if (!annex_b.empty()) {
-        unit.annex_b = std::move(annex_b);
+        unit.annex_b.insert(unit.annex_b.end(), chunk.begin(), chunk.end());
       }
     }
+    AMediaCodec_releaseOutputBuffer(encoder_, static_cast<size_t>(out_index), false);
   }
-  AMediaCodec_releaseOutputBuffer(encoder_, static_cast<size_t>(out_index), false);
   if (unit.annex_b.empty()) {
     return Error("empty H264 encoder output");
   }
@@ -311,21 +368,18 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
     return Error("AMediaCodec_createDecoderByType failed");
   }
 
-  std::vector<uint8_t> csd;
-  csd.push_back(0);
-  csd.push_back(0);
-  csd.push_back(0);
-  csd.push_back(1);
-  csd.insert(csd.end(), sps, sps + sps_size);
-  csd.push_back(0);
-  csd.push_back(0);
-  csd.push_back(0);
-  csd.push_back(1);
-  csd.insert(csd.end(), pps, pps + pps_size);
+  // Byte-stream (Annex-B) CSD: separate SPS / PPS. Input buffers must also be
+  // Annex-B — mixing AVCC length-prefixed NALs with Annex-B CSD fails on many
+  // devices and is the Win→Android remote-black failure mode.
+  std::vector<uint8_t> csd0;
+  AppendStartCodeAndNal(csd0, sps, sps_size);
+  std::vector<uint8_t> csd1;
+  AppendStartCodeAndNal(csd1, pps, pps_size);
 
   AMediaFormat* format = AMediaFormat_new();
   AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "video/avc");
-  AMediaFormat_setBuffer(format, "csd-0", csd.data(), csd.size());
+  AMediaFormat_setBuffer(format, "csd-0", csd0.data(), csd0.size());
+  AMediaFormat_setBuffer(format, "csd-1", csd1.data(), csd1.size());
 
   if (AMediaCodec_configure(decoder_, format, nullptr, nullptr, 0) != AMEDIA_OK) {
     AMediaFormat_delete(format);
@@ -358,7 +412,7 @@ Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t siz
   size_t sps_size = 0;
   const uint8_t* pps = nullptr;
   size_t pps_size = 0;
-  std::vector<uint8_t> avcc;
+  std::vector<uint8_t> slice_annex_b;
   bool has_slice = false;
 
   for (const auto& nal : nals) {
@@ -372,13 +426,12 @@ Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t siz
       pps_size = nal.size;
       continue;
     }
+    if (nal.type == 6) {
+      // SEI — skip
+      continue;
+    }
     has_slice = true;
-    const uint32_t nal_size = static_cast<uint32_t>(nal.size);
-    avcc.push_back(static_cast<uint8_t>((nal_size >> 24) & 0xFF));
-    avcc.push_back(static_cast<uint8_t>((nal_size >> 16) & 0xFF));
-    avcc.push_back(static_cast<uint8_t>((nal_size >> 8) & 0xFF));
-    avcc.push_back(static_cast<uint8_t>(nal_size & 0xFF));
-    avcc.insert(avcc.end(), nal.data, nal.data + nal.size);
+    AppendStartCodeAndNal(slice_annex_b, nal.data, nal.size);
   }
 
   if (sps && pps) {
@@ -389,7 +442,7 @@ Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t siz
   if (!decoder_) {
     return Error("H264 decoder waiting for SPS/PPS");
   }
-  if (!has_slice || avcc.empty()) {
+  if (!has_slice || slice_annex_b.empty()) {
     return Error("access unit contained no slice data");
   }
 
@@ -399,39 +452,63 @@ Roe<VideoFrameRgba> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t siz
   }
   size_t buf_size = 0;
   uint8_t* buf = AMediaCodec_getInputBuffer(decoder_, static_cast<size_t>(buf_index), &buf_size);
-  if (!buf || buf_size < avcc.size()) {
+  if (!buf || buf_size < slice_annex_b.size()) {
     return Error("decoder input buffer too small");
   }
-  std::memcpy(buf, avcc.data(), avcc.size());
-  if (AMediaCodec_queueInputBuffer(decoder_, static_cast<size_t>(buf_index), 0, avcc.size(), 0, 0) != AMEDIA_OK) {
+  std::memcpy(buf, slice_annex_b.data(), slice_annex_b.size());
+  if (AMediaCodec_queueInputBuffer(decoder_, static_cast<size_t>(buf_index), 0, slice_annex_b.size(), 0, 0) !=
+      AMEDIA_OK) {
     return Error("decoder queueInputBuffer failed");
   }
 
   AMediaCodecBufferInfo info{};
-  ssize_t out_index = AMediaCodec_dequeueOutputBuffer(decoder_, &info, kCodecTimeoutUs);
-  while (out_index == AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
-    out_index = AMediaCodec_dequeueOutputBuffer(decoder_, &info, kCodecTimeoutUs);
-  }
+  const ssize_t out_index = DequeueOutputBuffer(decoder_, &info, 10);
   if (out_index < 0) {
     return Error("decoder produced no output");
   }
 
-  VideoFrameRgba result;
-  AMediaFormat* out_format = AMediaCodec_getOutputFormat(decoder_);
   int width = 0;
   int height = 0;
+  int stride = 0;
+  int slice_height = 0;
+  int crop_left = 0;
+  int crop_top = 0;
+  int crop_right = 0;
+  int crop_bottom = 0;
+  AMediaFormat* out_format = AMediaCodec_getOutputFormat(decoder_);
   if (out_format) {
     AMediaFormat_getInt32(out_format, AMEDIAFORMAT_KEY_WIDTH, &width);
     AMediaFormat_getInt32(out_format, AMEDIAFORMAT_KEY_HEIGHT, &height);
+    AMediaFormat_getInt32(out_format, "stride", &stride);
+    AMediaFormat_getInt32(out_format, "slice-height", &slice_height);
+    AMediaFormat_getInt32(out_format, "crop-left", &crop_left);
+    AMediaFormat_getInt32(out_format, "crop-top", &crop_top);
+    AMediaFormat_getInt32(out_format, "crop-right", &crop_right);
+    AMediaFormat_getInt32(out_format, "crop-bottom", &crop_bottom);
     AMediaFormat_delete(out_format);
   }
+  if (crop_right > crop_left && crop_bottom > crop_top) {
+    width = crop_right - crop_left + 1;
+    height = crop_bottom - crop_top + 1;
+  }
+  if (stride < width) {
+    stride = width;
+  }
+  if (slice_height < height) {
+    slice_height = height;
+  }
 
+  VideoFrameRgba result;
   size_t out_size = 0;
   uint8_t* out_buf = AMediaCodec_getOutputBuffer(decoder_, static_cast<size_t>(out_index), &out_size);
   if (out_buf && info.size > 0 && width > 0 && height > 0) {
-    const uint8_t* y = out_buf + info.offset;
-    const uint8_t* uv = y + static_cast<size_t>(width) * static_cast<size_t>(height);
-    if (!Nv12ToRgba(y, uv, width, height, width, width, result)) {
+    const uint8_t* base = out_buf + info.offset;
+    const uint8_t* y = base + static_cast<size_t>(crop_top) * static_cast<size_t>(stride) +
+                       static_cast<size_t>(crop_left);
+    const uint8_t* uv = base + static_cast<size_t>(slice_height) * static_cast<size_t>(stride) +
+                        static_cast<size_t>(crop_top / 2) * static_cast<size_t>(stride) +
+                        static_cast<size_t>(crop_left & ~1);
+    if (!Nv12ToRgba(y, uv, width, height, stride, stride, result)) {
       AMediaCodec_releaseOutputBuffer(decoder_, static_cast<size_t>(out_index), false);
       return Error("failed to convert decoded frame to RGBA");
     }
@@ -454,6 +531,7 @@ void AndroidVideoCodec::ResetEncoder() {
   enc_fps_ = 0;
   enc_color_format_ = 0;
   enc_frame_index_ = 0;
+  pending_param_sets_.clear();
 }
 
 void AndroidVideoCodec::ResetDecoder() {
