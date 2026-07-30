@@ -48,9 +48,9 @@ A **node** is a voluntary **infrastructure element** of the Brief/pp-browser eco
 | **Inbound listen** | Dialable peer for direct messaging / streams | n1 (implied by Node) |
 | **DHT** | Peer and content routing | n2 + checkbox |
 | **Circuit relay** | Hop for NATed peers | n3 + checkbox |
-| **Message relay** | Store-and-forward / inbox assist | n4+ + checkbox + **pricing** |
-| **Audio relay** | Voice media hop / SFU-style | n4+ + checkbox + **pricing** |
-| **Video relay** | Video media hop / SFU-style | n4+ + checkbox + **pricing** |
+| **Message relay** | Store-and-forward / inbox assist | **Separate** from n4-media (N017); HTTP Brief default for now |
+| **Audio relay** | **True** voice SFU (selective forward) | **n4-media** + checkbox; pricing later |
+| **Video relay** | **True** video SFU | **n4-media** + checkbox; pricing later |
 | **Blockchain node** | Chain participation (identity / DA / settlement rails) | n4+ + checkbox |
 | **Accept paid jobs** | Optional **marketplace** for discrete tasks (transcode, fetch, compute) — **not** the primary monetization path | later + checkbox |
 
@@ -232,13 +232,15 @@ Hot-reload: role / capability / pricing changes reconfigure modules (`MessagingH
 | **n1** | Role + listen + bootstrap | Master toggle only |
 | **n2** | DHT | + DHT checkbox (no pricing required) |
 | **n3** | Circuit relay | + checkbox (pricing optional / often volunteer) |
-| **n4+** | Message / audio / video relay | + checkbox + **pricing** (volunteer \| paid) |
-| **n4+** | Blockchain node | + checkbox (settlement rails, not “paid jobs”) |
+| **n4-media** | True audio/video SFU (N017) | + checkboxes; **volunteer**; pricing schema stub only |
+| **later** | Peer message_relay | Optional; do not hard-cut HTTP Brief |
+| **later** | Paid relay UI / settle (N010) | Nested Free/Paid when metering ships |
+| **n4+ / later** | Blockchain node | + checkbox (settlement rails, not “paid jobs”) |
 | **later** | Accept paid jobs marketplace | + checkbox; job schema separate |
 
-**A/V calls consumer:** [p2p-av-calls](../p2p-av-calls/) needs **circuit (n3)** plus org-seed **audio/video SFU** (volunteer `audio_relay` / `video_relay` on `pp-node`) for mobile↔mobile. Prefer shipping seed SFU with or right after n4 media caps rather than treating it as a distant nicety — see call ADRs V001/V008.
+**A/V calls consumer:** [p2p-av-calls](../p2p-av-calls/) **a4 requires true SFU** (V020). Prefer shipping **n4-media** (seed + desktop checkboxes) over peer message_relay or paid UI. Exact SFU choice priority **TBD**.
 
-Until peer-hosted relays ship, keep **direct multiaddr** + **HTTP Brief relay** fallback.
+Until peer-hosted media SFU ships, keep **direct ICE** for 1:1 LAN; group waits on SFU. HTTP Brief remains message offline fallback.
 
 ## Packaging: `pp-node` binary (N011)
 
@@ -362,11 +364,11 @@ User intent: “I prefer routing **for** my friends.”
 
 ### Rules
 
-- Preference is **policy on top of** circuit/message/media capabilities — not a new role.  
+- Preference is **policy on top of** circuit / media capabilities — not a new role.  
 - Contacts without the capability are skipped; fall through the list.  
 - Never force a friend to relay; they must have Node + capability on (and accept policy).  
-- HTTP Brief relay remains the ultimate fallback until peer relays are solid.  
-- Phase **nf** (friend-preferential routing) lands with or right after **n3** circuit-relay (needs a hop protocol). Message/media relays reuse the same preference stack.
+- HTTP Brief relay remains the ultimate **message** fallback; peer `message_relay` is optional later (N017).  
+- Phase **nf** lands with or right after **n3**. **SFU choice priority exact order is TBD** — design discussion before coding final ranking. Circuit can use N014 sketch first.
 
 ```mermaid
 flowchart TB
@@ -387,13 +389,13 @@ Ship value in this sequence unless a later ADR revises it:
 3. **nr** — Reachability status + manual help (uses dial-back)  
 4. **nu** — IPv6 advertise + UPnP/NAT-PMP (N013)  
 5. **n3** — Circuit-relay capability (helps outbound-only users)  
-6. **nf** — Contact-first relay preference (N014)  
-7. **n4** — Message/audio/video relays + pricing (N010)  
-8. Capability directory / soft reputation  
+6. **nf** — Contact-first preference (N014); thin OK — SFU pick ranking TBD  
+7. **n4-media** — True audio/video SFU on `pp-node` + desktop checkboxes (N017); unblocks calls **a4**  
+8. **Later** — Peer message_relay (optional); paid pricing UI (N010); capability directory / soft reputation  
 9. **n2** — DHT (useful, but seed + circuit + directory often cover chat UX earlier)  
 10. Chain settle rails, paid-jobs marketplace, Home Node pack, schedules/caps  
 
-Agents: prefer this order over “implement DHT next because it is n2.”
+Agents: prefer **n4-media** for calls over peer message_relay or paid UI. Prefer this order over “implement DHT next because it is n2.”
 
 ## Horizons (still open)
 

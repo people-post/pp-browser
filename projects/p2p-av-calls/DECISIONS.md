@@ -298,3 +298,31 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 **Rationale:** One PC setup path; camera/mute never touch offer/answer; users get the UI they expect from two buttons without maintaining two in-call protocols.  
 **Alternatives:** Audio-only SDP for voice + renegotiate on camera (rejected — glare, second SDP round, dual code paths); keep voice chrome without Camera (rejected — same in-call model).  
 **Supersedes soft language in** V018 peer-connection “renegotiate or include when video mode.”
+
+---
+
+## V020 — a4 requires true SFU; no full-mesh media
+
+**Date:** 2026-07-30  
+**Decision:** Phase **a4** (group ≤8, guests, rotate-on-leave) **requires a true selective-forwarding SFU** for media when N≥3. Do **not** ship full-mesh PeerConnections as the group product path (even for LAN dogfood).
+
+| Rule | Detail |
+|------|--------|
+| Topology | **True SFU** — each participant uplinks once; SFU fans out. **Not** TURN-as-SFU (N−1 PCs through relay). **Not** full-mesh. |
+| Audio + video | a4 includes **both** Opus audio and H264 video through the SFU. |
+| Codecs | **Reuse** a3 platform HW path (V017–V019). Do **not** expand encode/decode matrix for newer devices/codecs in a4 — that is a separate later slice. |
+| SFU hosts | Org **`pp-node` seeds** (volunteer) **and** desktop Nodes via Me → Network **`audio_relay` / `video_relay` checkboxes** (mesh N017). Mobile Client never hosts. |
+| Mesh gate | a4 media depends on mesh **n4-media** (volunteer SFU + caps). Exact **SFU choice priority** (who to pick among contacts / seed / …) is **TBD** — design discussion after this ADR; N014 remains the placeholder policy. |
+| Pricing | Volunteer-only for a4; paid metering designed for later (mesh N010 / N017) — do not block a4. |
+| Out of a4 “done” | Full-mesh group media; peer `message_relay`; paid SFU UI/settle; network-adaptive / new device codecs. |
+
+**a4 exit criteria (claimable when mesh SFU exists):**
+
+1. N=3…8 on SFU: join/leave, multi-invite + mid-call guest, rotate-on-leave (V003), in-call roster (mute/camera; speaking if cheap)  
+2. Audio mandatory through SFU; video best-effort (same failure model as V019)  
+3. Cap **8** enforced in client until load-tested (V007)  
+4. Docs: CURRENT_STATE marks SFU group path; do not over-claim NAT until seed+desktop dogfood covers the intended matrix  
+
+**Rationale:** Full-mesh uplink and glare cost dominate mobile; V007 already forbids shipping full-mesh at 16. Parallel LAN-mesh (a2/a3 style) would create a throwaway topology. True SFU is the durable product path.  
+**Alternatives:** LAN full-mesh for a4 dogfood then SFU later (rejected — dual media paths); TURN-only (rejected — still N−1 encode/upload); wait for paid pricing before SFU (rejected — N017).  
+**Cross-link:** Mesh [N017](../p2p-mesh/DECISIONS.md#n017--split-n4-media-sfu-first-message-relay-separate-pricing-later).

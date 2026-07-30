@@ -1,10 +1,10 @@
 # P2P mesh
 
-**Status:** **nr / nu / n3 done** — next **nf** (contact-first relay preference)  
+**Status:** **nr / nu / n3 done** — next **nf** (thin) + **n4-media** true SFU (N017); message_relay / paid pricing deferred  
 **Formerly:** `projects/libp2p-node-roles/` (renamed; ADRs remain N001+)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [docs/architecture/P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [docs/architecture/LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
-**Related:** [push-notifications](../push-notifications/) (HTTP Brief relay wake), [p2p-av-calls](../p2p-av-calls/) (voice/video SFU consumer), messaging under `src/feature/messaging/`
+**Related:** [push-notifications](../push-notifications/) (HTTP Brief relay wake), [p2p-av-calls](../p2p-av-calls/) (a4 needs n4-media SFU), messaging under `src/feature/messaging/`
 
 ## One-line goal
 
@@ -16,7 +16,7 @@ GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`
 |-------|---------|
 | **Role** | Client vs Node (`node_enabled`) |
 | **Capabilities** | Checkboxes under Node (DHT, relays, chain, jobs, …) |
-| **Pricing** | Per billable relay: volunteer \| paid + on-chain settle (N010) |
+| **Pricing** | Design now (N010); volunteer SFU first; paid UI later (N017) |
 | **Packaging** | `pp-browser` vs headless **`pp-node`** (N011) |
 | **Reachability** | Status + help (N012); prefer IPv6 + UPnP (N013) |
 | **Listen port** | Preferred **18517**; desktop busy fallback + persist (N016) |
@@ -44,7 +44,7 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 
 | File | Purpose |
 |------|---------|
-| [DESIGN.md](DESIGN.md) | Full model, N010–N015, delivery order |
+| [DESIGN.md](DESIGN.md) | Full model, N010–N017, delivery order |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
 | [PHASES.md](PHASES.md) | Checklists in N015 order |
 | [DECISIONS.md](DECISIONS.md) | ADRs (N001+) |
@@ -59,6 +59,7 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 | nr | Reachability status + manual help | **Done** |
 | nu | IPv6 + UPnP/NAT-PMP | **Done** |
 | n3 | Circuit-relay | **Done** |
-| nf | Contact-first relay preference | **Next** |
-| n4 | Billable relays + pricing | After nf basics |
+| nf | Contact-first preference (thin; SFU rank TBD) | **Next** |
+| n4-media | True audio/video SFU (seed + desktop caps) | After nf basics — **unblocks a4** |
+| n4-message / pricing | Peer message_relay; paid UI | Deferred (N017) |
 | n2 | DHT | Later than circuit (N015) |

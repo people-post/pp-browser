@@ -57,12 +57,14 @@ Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wir
 
 ## a4 — Group calls (≤8), guests, rotate-on-leave
 
-Delivery topology TBD (V020): LAN full-mesh dogfood vs wait on mesh **n4** SFU — same parallel pattern as a2/a3.
+Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media). **True SFU required** (mesh [N017](../p2p-mesh/DECISIONS.md#n017--split-n4-media-sfu-first-message-relay-separate-pricing-later) n4-media). No full-mesh media. SFU choice priority TBD (after docs).
 
-- [ ] Media topology for N≥3 (prefer SFU when available; LAN full-mesh OK for dogfood); enforce engineering cap **8**
-- [ ] Multi-invite; mid-call guest invite
+- [ ] Mesh gate: volunteer **audio + video SFU** on org `pp-node` + desktop Node checkboxes (n4-media)
+- [ ] Call consumer: N≥3 media via **true SFU** only; enforce engineering cap **8**
+- [ ] Multi-invite; mid-call guest invite (signaling largely present)
 - [ ] Rotate media key on leave + overlapping epochs (V003)
 - [ ] In-call roster (mute / camera / speaking if cheap)
+- [ ] Reuse a3 Opus + H264 HW path — **no** new device codec matrix in a4
 
 ## a5 — Cap, polish, reconnect
 

@@ -96,6 +96,7 @@
 
 **Date:** 2026-07-26  
 **Decision:** Preferred ship order is **n1 → np (incl. dial-back) → nr → nu (IPv6/UPnP) → n3 (circuit-relay) → nf (contact-first) → n4 (billable relays + pricing) → directory/reputation → n2 (DHT) → chain/jobs/Home Node**. DHT remains in scope but is not the next feature after n1 by default.  
+**Updated (N017, 2026-07-30):** Prefer **n4-media** (true A/V SFU) over packaging peer `message_relay` or paid UI; see N017.  
 **Rationale:** Users feel “Node works” when they are reachable and can hop via trusted peers; Kademlia helps discovery later but does not unblock NAT or friend routing.
 
 ## N016 — Listen port busy: desktop fallback + persist; `pp-node` fail loud
@@ -109,3 +110,25 @@
 4. Today’s code returns a generic listen failure and continues without libp2p — n1/np must replace that with N016 behavior + clear user/ops errors.
 
 **Rationale:** Fixed preferred port keeps docs and UPnP simple; fallback avoids silent “Node on but dead” when 18517 is taken; ops seeds must not drift off 443 without the operator noticing.
+
+---
+
+## N017 — Split n4: media SFU first; message relay separate; pricing later
+
+**Date:** 2026-07-30  
+**Decision:** Split the former monolithic **n4** (message + audio + video + pricing) into tracks:
+
+| Track | What ships | Blocks |
+|-------|------------|--------|
+| **n4-media** | **True** selective-forwarding SFU for `audio_relay` + `video_relay` on org **`pp-node`** (volunteer on) **and** desktop Node **checkboxes** (opt-in). Call consumer in [p2p-av-calls](../p2p-av-calls/) (V020). | **a4** group calls |
+| **message_relay** | Peer store-and-forward / inbox assist | **Not** an a4 gate. HTTP Brief relay remains the product offline path for now. Peer decentralization may never be the default. |
+| **pricing** | N010 `volunteer \| paid` + settle | **Design / schema only** for n4-media. Ship volunteer SFU; paid UI/metering/chain **later** without redesigning caps. |
+
+**True SFU (not TURN, not full-mesh):** Each participant uploads once; SFU fans media out. Rejected for product path: full-mesh PeerConnections for N≥3; TURN-only that still forces N−1 uploads.
+
+**nf:** Still ships contact-first preference (N014) for circuit and (when ready) SFU pick. Exact **SFU choice priority ranking is TBD** — do not invent a final order in implementation before that design discussion. Message hops may keep using HTTP Brief without waiting on peer `message_relay`.
+
+**N015 update:** Prefer **n4-media** next for calls unblocking over packaging message_relay or paid UI. Order sketch: … → n3 → (thin nf as needed) → **n4-media** → later message_relay / pricing UI / directory → n2 DHT.
+
+**Rationale:** Offline message relay has different durability/trust/availability properties than realtime media; coupling them delayed calls. Billing must not gate volunteer seed SFU.  
+**Alternatives:** Keep monolithic n4 (rejected); LAN full-mesh for a4 until SFU (rejected — V020); paid-first SFU (rejected).

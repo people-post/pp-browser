@@ -21,15 +21,16 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 9 | History | System messages: Call started / ended (missed/declined later) |
 | 10 | Media key | One shared call media key; **rotate on every leave**; overlapping epochs for UX |
 | 11 | Recording | Out of v1 |
-| 12 | SFU seeds | Org `pp-node` seeds run volunteer SFU; more seeds after release (ops) |
-| 13 | Delivery | **Parallel** media vs mesh SFU (V010); a2–a3 LAN done; NAT after seed SFU |
+| 12 | SFU hosts | Org `pp-node` seeds **and** desktop Node `audio_relay` / `video_relay` checkboxes (volunteer); mobile never hosts (V008 / V020 / N017) |
+| 13 | Delivery | a2–a3 LAN 1:1 done; **a4 requires true SFU** (V020) — no full-mesh group media |
 | 14 | Persistence | `call_*` in **profile.db**; keys vault-backed (V011) |
 | 15 | Signaling carrier | Direct E2E `ChatPayload` system controls (V012) |
 | 16 | WebRTC lib | **libdatachannel + libopus + SDL** (V014) |
-| 17 | a3 scope | LAN 1:1 video; SFU deferred; **iOS wiring in a3** (V016, 2026-07-30) |
+| 17 | a3 scope | LAN 1:1 video done; **iOS wiring in a3** (V016, 2026-07-30) |
 | 18 | Video codec | **H264** CBP via **platform HW** (V017); Linux VA-API best-effort |
 | 19 | Video UI path | SDL camera → `CameraCaptureOrientation` → platform HW H264 → persistent GL texture + letterbox tiles (V018) |
 | 20 | Call media shape | Always Opus+H264 m-lines; Voice/Video = entry UX only; audio mandatory / video best-effort (V019) |
+| 21 | a4 topology | **True SFU** for N≥3; audio+video; reuse a3 codecs; SFU pick priority TBD (V020) |
 
 ---
 
@@ -190,20 +191,20 @@ ICE trickle / SDP: embed in signaling `detail` or follow-up system controls as n
 - **SDP shape (V019):** Every call’s initial offer/answer includes **both** audio and video m-lines. Mute/camera change sent content only (no renegotiation). Audio is mandatory; video encode/decode is best-effort and must not tear down voice.  
 - **Voice vs Video start:** Two header buttons for familiar UX; once connected, same in-call model (Camera allowed; show remote video whenever peer sends frames). `media_mode` may remain for invite/history copy.  
 - **Capture / blit:** SDL3 camera on user enable; `CameraCaptureOrientation` uprights mobile sensor buffers (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation); shell RML tiles + persistent GL texture with aspect-correct letterbox (V018); camera off on join (V009). Encode defaults ~640×360 (desktop) / ~360×640 (portrait mobile after rotation) @ 15–24 fps (network adapt later).  
-- **Topology:** 1:1 try P2P; group (N≥3) prefer **SFU**; 1:1 falls back to SFU/TURN when ICE fails. **a3** claims LAN only (V016); dogfood Win/macOS primary + Android + **iOS wiring**; NAT after seed SFU.  
+- **Topology:** 1:1 try P2P (LAN path proven a2/a3); group **N≥3 requires true SFU** (V020) — no full-mesh media. 1:1 may fall back to SFU when ICE fails (same SFU). NAT’d / Client path after seed + desktop SFU dogfood.  
 
 ### SFU and mesh
 
-Consumes p2p-mesh capabilities:
+Consumes p2p-mesh capabilities (N017):
 
 | Capability | Call use |
 |------------|----------|
-| `audio_relay` | Voice SFU / TURN-like hop |
-| `video_relay` | Video SFU hop |
+| `audio_relay` | **True** voice SFU (selective forward) — not TURN-as-mesh |
+| `video_relay` | **True** video SFU hop |
 | Circuit relay (n3) | Help dial SFU / peers when NATed |
-| Contact-first (N014) | Prefer friend Node SFU, then org seed |
+| Contact-first (N014) | Placeholder for SFU pick; **exact priority list TBD** (design discussion) |
 
-**Mobile Client** never hosts SFU. Org **`pp-node` seeds** must offer volunteer audio (and video) SFU for v1 mobile↔mobile. Additional SFU seeds are an ops commitment after release.
+**Mobile Client** never hosts SFU. **Hosts:** org **`pp-node` seeds** (volunteer on) **and** desktop Nodes that opt in via Me → Network checkboxes. Pricing volunteer-only for a4; paid later. Peer **message_relay** is a separate mesh track — not an a4 dependency.
 
 ### Defaults
 
@@ -297,29 +298,29 @@ Not protected in v1: call metadata to SFU (participant count, timing), classical
 
 ## Relation to p2p-mesh delivery
 
-Honest mobile video needs mesh progress roughly:
+Honest mobile / group video needs mesh progress roughly:
 
-`n1` (done) → `np` (`pp-node`) → `nr` / `nu` → `n3` circuit → **SFU audio/video on seeds** (n4 media caps, volunteer first)
+`n1` (done) → `np` (`pp-node`) → `nr` / `nu` → `n3` circuit → **n4-media true SFU** (seed + desktop checkboxes, volunteer) → a4
 
-**Delivery (V010 / V016):** **a1–a3** done on LAN (voice + 1:1 video); NAT’d mobile green path after seed SFU. **iOS** mic/session/camera plist wiring is **in a3** (device dogfood optional).
+**Delivery (V010 / V016 / V020):** **a1–a3** done on LAN (voice + 1:1 video); **a4 requires true SFU** (no full-mesh). NAT’d mobile green path after seed + desktop SFU dogfood. **iOS** wiring in a3 (device dogfood optional).
 
 ### Mesh alignment (a0) — locked guidance
 
-**Contact-first (N014) for media hops:** When choosing SFU/TURN (or circuit toward SFU), use the same priority as message/circuit hops: **contacts / trusted → org seed → public volunteer/paid → HTTP fallback (if any)**. Friend Nodes must opt in with `audio_relay` / `video_relay`; never coerce.
+**SFU choice priority:** Exact ranking **TBD** (design discussion). N014 is the placeholder policy — prefer opted-in contacts / trusted, then org seed, then public; never coerce. Friend Nodes must opt in with `audio_relay` / `video_relay`.
 
-**Org `pp-node` seed profile (ops sketch):**
+**SFU host profile (ops + desktop):**
 
 | Setting | v1 call expectation |
 |---------|---------------------|
-| Role | Always Node |
-| `capabilities.audio_relay` | **on**, pricing `volunteer` initially |
-| `capabilities.video_relay` | **on**, pricing `volunteer` initially |
-| `capabilities.circuit_relay` | **on** when n3 ships (help Clients dial SFU) |
-| Listen | Public multiaddr (e.g. tcp/443) — fail loud if busy (N016) |
-| Scale-out | Add more SFU seeds post-release (V008); clients keep seed list in `bootstrap_peers` / config |
+| Org `pp-node` | Always Node; `audio_relay` + `video_relay` **on**, pricing `volunteer` |
+| Desktop Node | Same caps via Me → Network checkboxes (opt-in; default off until ready) |
+| `capabilities.circuit_relay` | **on** (help Clients dial SFU) |
+| `pricing.*` | Schema ready; volunteer-only until paid ships (N017) |
+| Listen | Seed: public multiaddr (e.g. tcp/443) — fail loud if busy (N016) |
+| Scale-out | More SFU seeds post-release (V008); `bootstrap_peers` / config |
 
-Exact capability JSON keys already sketched in [p2p-mesh DESIGN](../p2p-mesh/DESIGN.md); implement with n4 media caps.
+Exact capability JSON keys sketched in [p2p-mesh DESIGN](../p2p-mesh/DESIGN.md); implement with **n4-media** (N017).
 
-**LAN dogfood (a2 without SFU):** Two desktops (or desktop + emulator) on the same LAN with mutually reachable ICE host candidates. No claim of mobile NAT success. Document in CURRENT_STATE when the dogfood path is proven.
+**LAN dogfood (a2/a3 without SFU):** Two devices on the same LAN with mutually reachable ICE host candidates. Group (a4) does **not** use LAN full-mesh — waits on SFU.
 
 **Push:** Relay should emit **`call_wake`** when storing/forwarding a call-invite class envelope (or on dedicated call-invite accept path). Spec detail with push project at a1 — opaque body only (V006).

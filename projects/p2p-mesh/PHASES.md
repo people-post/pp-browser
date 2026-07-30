@@ -1,12 +1,12 @@
 # P2P mesh — phases
 
-Preferred order is **N015**: n1 → np → nr → nu → n3 → nf → n4 → … → n2 (DHT later).
+Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → n3 → nf (thin) → **n4-media** → later message_relay / pricing UI → … → n2 (DHT later).
 
 ## n0 — Project docs
 
 - [x] README, DESIGN, CURRENT_STATE, DECISIONS, PHASES
 - [x] Register in `projects/README.md` + `AGENTS.md`
-- [x] N008–N016 (infra, caps, pricing, `pp-node`, reachability, UPnP/IPv6, contact-first, delivery order, listen **18517** + busy-port)
+- [x] N008–N017 (infra, caps, pricing, `pp-node`, reachability, UPnP/IPv6, contact-first, delivery order, listen **18517** + busy-port, **n4-media split**)
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
 
 ## n1 — Role shell + bootstrap + Network UI
@@ -53,17 +53,26 @@ Preferred order is **N015**: n1 → np → nr → nu → n3 → nf → n4 → �
 
 ## nf — Contact-first relay preference (N014)
 
-- [ ] Consumer priority: contacts → household/trusted → org seed → public → HTTP fallback
+- [ ] Consumer priority for **circuit** (and later SFU): contacts → household/trusted → org seed → public → HTTP fallback where applicable
 - [ ] Provider priority: prefer serving contacts when hosting relay (esp. volunteer Node)
-- [ ] Wire into circuit (then message/media) hop selection
+- [ ] Wire into circuit hop selection first; **SFU pick ranking TBD** (design discussion — do not invent final order yet)
 - [ ] No coercion — friend must have capability on
 - [ ] Light UI: “Prefer contacts for routing” (default on) if needed
+- [ ] Message path may keep **HTTP Brief** without peer `message_relay`
 
-## n4 — Billable relays + pricing (N010)
+## n4-media — True audio/video SFU (N017; unblocks a4)
 
-- [ ] Message / audio / video relay + `pricing.*` (volunteer \| paid)
-- [ ] Still honor N014 when picking hops
-- [ ] Org `pp-node` seeds: volunteer **audio/video SFU** on for [p2p-av-calls](../p2p-av-calls/) mobile path (V008); pricing may stay volunteer initially
+- [ ] **True SFU** (selective forward) for `audio_relay` + `video_relay` — not TURN-as-mesh, not full-mesh
+- [ ] Org `pp-node` seeds: volunteer audio + video SFU **on** for [p2p-av-calls](../p2p-av-calls/) (V008 / V020)
+- [ ] Desktop Node: Me → Network **checkboxes** for `audio_relay` / `video_relay` (opt-in; default off until ready)
+- [ ] Call consumer coordinates with a4 (group ≤8)
+- [ ] `pricing.*` schema / config hooks for later paid — **volunteer only** in this phase
+- [ ] Still honor N014 when a pick policy is locked
+
+## n4-message / pricing — deferred (N017)
+
+- [ ] Peer `message_relay` (store-and-forward) — separate from media; HTTP Brief remains default offline path
+- [ ] Paid UI / metering / on-chain settle (N010) when volunteer capacity is insufficient
 - [ ] Blockchain rails / accept_paid_jobs later (secondary)
 
 ## n2 — DHT (later per N015)
@@ -77,4 +86,4 @@ Preferred order is **N015**: n1 → np → nr → nu → n3 → nf → n4 → �
 - [ ] Capability directory (still contact-first)
 - [ ] Soft reputation / receipts
 - [ ] Schedules & resource caps; Home Node pack
-- [ ] Gradual HTTP → peer message_relay dual-run
+- [ ] Gradual HTTP → peer message_relay dual-run (only if product wants it)
