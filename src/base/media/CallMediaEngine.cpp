@@ -1,5 +1,6 @@
 #include "base/media/CallMediaEngine.h"
 
+#include "base/media/CallAudioSession.h"
 #include "base/media/IVideoCodec.h"
 #include "base/media/VideoYuv.h"
 #include "common/Utilities.h"
@@ -232,6 +233,7 @@ struct CallMediaEngine::Impl {
     remote_output_level.store(0.f, std::memory_order_relaxed);
     remote_level_ms.store(0, std::memory_order_relaxed);
     capture_available = false;
+    CallAudioSession::Deactivate();
   }
 
   void TearDownPcLocked() {
@@ -273,6 +275,8 @@ struct CallMediaEngine::Impl {
     if (auto ok = EnsureAudioSubsystem(); !ok) {
       return ok.error();
     }
+
+    CallAudioSession::ActivateForVoipCall();
 
     int err = 0;
     encoder = opus_encoder_create(kSampleRate, kChannels, OPUS_APPLICATION_VOIP, &err);

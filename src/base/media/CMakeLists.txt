@@ -2,6 +2,7 @@ pp_browser_add_base_library(pp_base_media
   SOURCES
     CallMediaEngine.cpp
     CallRingtone.cpp
+    CallAudioSession_Default.cpp
     VideoCodecFactory.cpp
     VideoCodecUnavailable.cpp
     VideoCodec_Win32.cpp
@@ -26,6 +27,10 @@ elseif(APPLE)
     "-framework CoreMedia"
     "-framework CoreVideo"
     "-framework CoreFoundation")
+  if(PP_BROWSER_IS_IOS)
+    target_sources(pp_base_media PRIVATE CallAudioSession_Ios.mm)
+    target_link_libraries(pp_base_media PRIVATE "-framework AVFoundation")
+  endif()
 elseif(UNIX AND NOT ANDROID)
   # Linux VA-API (libva + DRM render node) — soft dep; stub builds without it.
   find_package(PkgConfig QUIET)
@@ -44,6 +49,8 @@ elseif(UNIX AND NOT ANDROID)
       "  Debian/Ubuntu: sudo apt install libva-dev\n"
       "  Runtime also needs a VA driver (e.g. intel-media-va-driver / mesa-va-drivers).")
   endif()
+elseif(ANDROID)
+  target_link_libraries(pp_base_media PRIVATE mediandk)
 endif()
 
 if(PP_BROWSER_BUILD_TESTS)

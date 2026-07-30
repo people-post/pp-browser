@@ -25,8 +25,8 @@ Voice/video capture and playback go through **SDL3 audio** (and later camera) in
 | Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev`; video: `libva-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy; VA driver at runtime for H264 |
 | Windows | WASAPI | No | OS microphone privacy |
 | macOS | CoreAudio | No | Mic privacy / usage string for notarized apps |
-| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + runtime permission; a3 dogfood: `CAMERA` + runtime (V019) |
-| iOS | CoreAudio | No | **Separate mobile-bring-up** (not a3 exit, V016): `NSMicrophoneUsageDescription`; `AVAudioSession` VoIP/play-and-record; optional background `audio`; later camera usage |
+| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + runtime permission; a3: `CAMERA` + runtime (V019) |
+| iOS | CoreAudio | No | a3 wiring (V016): `NSMicrophoneUsageDescription` + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio`; device dogfood optional |
 
 **Agent traps**
 
@@ -106,7 +106,7 @@ Mobile builds link curl against vendored BoringSSL (no Secure Transport on iOS).
 
 Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/base/platform/os/OsTlsPlatformCurl_*`).
 
-**A/V (mobile-bring-up task, not a3 exit — [V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-first-sfu--ios-separate)):** add `NSMicrophoneUsageDescription` to [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); configure `AVAudioSession` for play-and-record / VoIP before capture; consider `UIBackgroundModes` → `audio` for in-call background. Camera usage strings when iOS video is dogfooded. See [§ A/V media](#av-media-sdl--calls).
+**A/V (a3 wiring — [V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wiring-included)):** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); `AVAudioSession` play-and-record / VoIP via `CallAudioSession` before capture; `UIBackgroundModes` → `audio` for in-call background. Physical device dogfood optional.
 
 Build and signing placeholders: [IOS_BUILD.md](../ops/IOS_BUILD.md). Scripts: [`scripts/ios_build.sh`](../../scripts/ios_build.sh), [`scripts/ios_sign.sh`](../../scripts/ios_sign.sh).
 
