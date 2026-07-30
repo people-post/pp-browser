@@ -506,7 +506,9 @@ Roe<Thread> JsonThreadStore::FindOrCreateDirectThread(const DirectChatTarget& ta
   thread.channel = target.channel;
   thread.peer_identity_kind = target.peer_identity_kind;
   thread.peer_identity_value = target.peer_identity_value;
-  thread.participant_contact_ids = {participant_contact_id};
+  if (!participant_contact_id.empty()) {
+    thread.participant_contact_ids = {participant_contact_id};
+  }
   thread.title = title;
   thread.encrypted = ThreadChannelIsE2e(target.channel);
   thread.updated_at = util::NowUnixMs();

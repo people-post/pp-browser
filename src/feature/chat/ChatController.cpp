@@ -1154,7 +1154,12 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
     const std::string peer_id = thread->peer_identity_value;
     std::optional<std::string> dm_contact_id = label.contact_id;
     if (!dm_contact_id && !thread->participant_contact_ids.empty()) {
-      dm_contact_id = thread->participant_contact_ids.front();
+      const std::string& candidate = thread->participant_contact_ids.front();
+      if (!candidate.empty()) {
+        if (auto contact = MessagingHub::Instance().Contacts().Get(candidate); contact && *contact) {
+          dm_contact_id = candidate;
+        }
+      }
     }
     if (dm_contact_id) {
       const std::string contact_id = *dm_contact_id;
@@ -1166,13 +1171,13 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           "../icons/group.svg",
       });
       actions.push_back({
-          "edit_contact",
-          "Edit contact",
+          "view_contact",
+          "View contact",
           nullptr,
           [contact_id]() { ContactsController::Instance().OnSelectContact(contact_id); },
           "../icons/contacts.svg",
       });
-    } else {
+    } else if (!peer_id.empty()) {
       actions.push_back({
           "add_contact",
           "Add to contacts",

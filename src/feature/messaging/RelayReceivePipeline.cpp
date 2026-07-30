@@ -549,10 +549,18 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     outcome.thread_changed = true;
   }
 
-  const std::string seq_owner =
-      auto_create ? envelope.sender_contact_id
-                  : ((*thread)->participant_contact_ids.empty() ? envelope.sender_contact_id
-                                                                : (*thread)->participant_contact_ids.front());
+  const std::string seq_owner = [&]() -> std::string {
+    if (auto_create) {
+      return envelope.sender_contact_id;
+    }
+    if (!(*thread)->participant_contact_ids.empty()) {
+      const std::string& participant = (*thread)->participant_contact_ids.front();
+      if (!participant.empty()) {
+        return participant;
+      }
+    }
+    return envelope.sender_contact_id;
+  }();
 
   PeerSyncState sync_state;
   uint32_t chat_target_epoch = envelope.session_epoch;
