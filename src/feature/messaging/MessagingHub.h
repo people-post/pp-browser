@@ -2,6 +2,7 @@
 
 #include "base/data/Config.h"
 #include "base/data/Libp2pRole.h"
+#include "base/data/UserPreferences.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "common/Module.h"
@@ -89,6 +90,13 @@ public:
   void TryUpnpPortMapping();
   void TickReachabilityUx();
   void RefreshMeshCapabilities();
+  /**
+   * Hot-apply persisted AppConfig owned by messaging (HTTP clients + mesh caps).
+   * No-ops unchanged slices so LLM/integrations saves do not rebuild relays.
+   */
+  void ApplyRuntimeConfig(const AppConfig& config);
+  /** Hot-apply profile prefs messaging owns (group invite policy, push preference). */
+  void ApplyProfilePrefs(const ProfilePreferences& prefs);
   DialBackService* DialBack() { return dial_back_.get(); }
   CircuitRelayService* CircuitRelay() { return circuit_relay_.get(); }
   MediaRelayService* MediaRelay() { return media_relay_.get(); }
@@ -176,6 +184,8 @@ private:
   std::function<void()> on_messaging_ready_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
+  bool applied_show_notifications_known_ = false;
+  bool applied_show_notifications_ = true;
 };
 
 } // namespace pbr

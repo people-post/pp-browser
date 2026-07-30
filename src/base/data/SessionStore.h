@@ -29,6 +29,7 @@ public:
   Roe<void> ReloadFromDisk();
 
   void AddConfigListener(std::function<void(const AppConfig&)> listener);
+  void AddProfilePrefsListener(std::function<void(const ProfilePreferences&)> listener);
   void AddThemeListener(std::function<void(const std::string& theme)> listener);
   void AddAppearanceListener(std::function<void(const std::string& appearance)> listener);
   void AddLanguageListener(std::function<void(const std::string& language)> listener);
@@ -39,14 +40,17 @@ private:
   SessionStore() = default;
 
   void NotifyConfigListeners(const AppConfig& config);
+  void NotifyProfilePrefsListeners(const ProfilePreferences& prefs);
   void NotifyThemeListeners(const std::string& theme);
   void NotifyAppearanceListeners(const std::string& appearance);
   void NotifyLanguageListeners(const std::string& language);
   void NotifyChromeMaterialListeners(bool reduce_transparency, bool compact_chrome_frost);
+  void DiffAndNotifyProfilePrefs(const ProfilePreferences& previous, const ProfilePreferences& next);
 
   bool initialized_ = false;
   BootstrapResult bootstrap_;
   std::vector<std::function<void(const AppConfig&)>> config_listeners_;
+  std::vector<std::function<void(const ProfilePreferences&)>> profile_prefs_listeners_;
   std::vector<std::function<void(const std::string&)>> theme_listeners_;
   std::vector<std::function<void(const std::string&)>> appearance_listeners_;
   std::vector<std::function<void(const std::string&)>> language_listeners_;

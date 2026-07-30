@@ -137,3 +137,52 @@ TEST(SessionStoreTest, ReloadConfigSkipsListenerWhenUnchanged) {
   std::filesystem::remove_all(profile_dir);
   std::filesystem::remove_all(data_dir);
 }
+
+TEST(SessionStoreTest, ProfilePrefsListenerFiresOnRelevantChange) {
+  const std::string config_path =
+      UniquePath("pp_browser_session_store_prefs_listener_") + ".json";
+  const std::string profile_dir = UniquePath("pp_browser_session_store_prefs_listener_profile_");
+  const std::string data_dir = UniquePath("pp_browser_session_store_prefs_listener_data_");
+
+  std::filesystem::create_directories(profile_dir);
+  std::filesystem::create_directories(data_dir);
+
+  pbr::BootstrapResult bootstrap{};
+  bootstrap.config = pbr::Config::DefaultAppConfig();
+  bootstrap.config_path = config_path;
+  bootstrap.data_dir = data_dir;
+  bootstrap.profile_data_dir = profile_dir;
+  bootstrap.profile_prefs = pbr::UserPreferences::DefaultProfile();
+  bootstrap.profile_prefs.group_invite_policy = "contacts_only";
+
+  pbr::SessionStore::Instance().Initialize(std::move(bootstrap));
+
+  int prefs_notify = 0;
+  int appearance_notify = 0;
+  std::string last_policy;
+  pbr::SessionStore::Instance().AddProfilePrefsListener([&](const pbr::ProfilePreferences& prefs) {
+    ++prefs_notify;
+    last_policy = prefs.group_invite_policy;
+  });
+  pbr::SessionStore::Instance().AddAppearanceListener(
+      [&](const std::string&) { ++appearance_notify; });
+
+  pbr::ProfilePreferences prefs = pbr::SessionStore::Instance().Snapshot().profile_prefs;
+  EXPECT_TRUE(pbr::SessionStore::Instance().SaveProfilePrefs(prefs));
+  EXPECT_EQ(prefs_notify, 0);
+
+  prefs.group_invite_policy = "everyone";
+  EXPECT_TRUE(pbr::SessionStore::Instance().SaveProfilePrefs(prefs));
+  EXPECT_EQ(prefs_notify, 1);
+  EXPECT_EQ(last_policy, "everyone");
+  EXPECT_EQ(appearance_notify, 0);
+
+  prefs.appearance = "dark";
+  EXPECT_TRUE(pbr::SessionStore::Instance().SaveProfilePrefs(prefs));
+  EXPECT_EQ(prefs_notify, 2);
+  EXPECT_EQ(appearance_notify, 1);
+
+  std::filesystem::remove(config_path);
+  std::filesystem::remove_all(profile_dir);
+  std::filesystem::remove_all(data_dir);
+}

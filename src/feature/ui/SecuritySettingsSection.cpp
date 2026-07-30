@@ -1,31 +1,10 @@
-#include <stdexcept>
 #include "feature/ui/SecuritySettingsSection.h"
 
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
-#include "base/messaging/GroupTypes.h"
-#include "feature/messaging/MessagingHub.h"
 
 namespace pbr {
-
-void SecuritySettingsSection::BindMessaging(MessagingHub& messaging) {
-  messaging_ = &messaging;
-}
-
-MessagingHub& SecuritySettingsSection::Hub() {
-  if (!messaging_) {
-    throw std::runtime_error("SecuritySettingsSection messaging not bound");
-  }
-  return *messaging_;
-}
-
-const MessagingHub& SecuritySettingsSection::Hub() const {
-  if (!messaging_) {
-    throw std::runtime_error("SecuritySettingsSection messaging not bound");
-  }
-  return *messaging_;
-}
 
 std::string GroupInvitePolicyDisplayLabel(const std::string& policy) {
   if (policy == "everyone") {
@@ -79,10 +58,6 @@ Roe<void> SecuritySettingsSection::Flush(SettingsUiState& state, SessionStore& s
   prefs.schema_version = ProfilePreferences::kSchemaVersion;
   if (auto saved = store.SaveProfilePrefs(prefs); !saved) {
     return saved.error();
-  }
-  if (Hub().IsInitialized() && Hub().IsMessagingReady()) {
-    const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs.group_invite_policy);
-    Hub().Groups().SetInboundPolicy(policy);
   }
   SyncFromSession(store.Snapshot(), state);
   return {};

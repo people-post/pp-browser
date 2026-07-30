@@ -12,7 +12,6 @@
 #include "feature/ui/ChatSessionActions.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/AppearanceSettingsSection.h"
-#include "feature/ui/ContactsController.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/ProfileSettingsSection.h"
@@ -128,9 +127,6 @@ void SettingsController::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
   if (auto* profile = dynamic_cast<ProfileSettingsSection*>(FindHandler("profile"))) {
     profile->BindMessaging(messaging);
-  }
-  if (auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"))) {
-    security->BindMessaging(messaging);
   }
 }
 
@@ -758,9 +754,6 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   }
 
   status_ = "";
-  if (section_id == "network" && Instance().Hub().IsMessagingReady()) {
-    Instance().Hub().RefreshMeshCapabilities();
-  }
   if (section_id == "profile" && Instance().Hub().IsInitialized() &&
       Instance().Hub().IsMessagingReady()) {
     if (auto identity = Instance().Hub().Identity().Get()) {
@@ -1554,8 +1547,6 @@ void SettingsController::PerformResetProfile() {
     ReportFailure(reset.error());
     return;
   }
-
-  ContactsController::Instance().Refresh();
 
   bindings_.pin_change_old = "";
   bindings_.pin_change_new = "";

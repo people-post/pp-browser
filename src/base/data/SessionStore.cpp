@@ -62,27 +62,9 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
     return reloaded.error();
   }
 
-  const std::string previous_theme = bootstrap_.profile_prefs.theme;
-  const std::string previous_appearance = bootstrap_.profile_prefs.appearance;
-  const std::string previous_language = bootstrap_.profile_prefs.language;
-  const bool previous_reduce_transparency = bootstrap_.profile_prefs.reduce_transparency;
-  const bool previous_compact_chrome_frost = bootstrap_.profile_prefs.compact_chrome_frost;
+  const ProfilePreferences previous = bootstrap_.profile_prefs;
   bootstrap_.profile_prefs = std::move(*reloaded);
-
-  if (bootstrap_.profile_prefs.theme != previous_theme) {
-    NotifyThemeListeners(bootstrap_.profile_prefs.theme);
-  }
-  if (bootstrap_.profile_prefs.appearance != previous_appearance) {
-    NotifyAppearanceListeners(bootstrap_.profile_prefs.appearance);
-  }
-  if (bootstrap_.profile_prefs.language != previous_language) {
-    NotifyLanguageListeners(bootstrap_.profile_prefs.language);
-  }
-  if (bootstrap_.profile_prefs.reduce_transparency != previous_reduce_transparency ||
-      bootstrap_.profile_prefs.compact_chrome_frost != previous_compact_chrome_frost) {
-    NotifyChromeMaterialListeners(bootstrap_.profile_prefs.reduce_transparency,
-                                  bootstrap_.profile_prefs.compact_chrome_frost);
-  }
+  DiffAndNotifyProfilePrefs(previous, bootstrap_.profile_prefs);
   return {};
 }
 
@@ -120,27 +102,9 @@ Roe<void> SessionStore::ReloadProfilePrefs() {
     return reloaded.error();
   }
 
-  const std::string previous_theme = bootstrap_.profile_prefs.theme;
-  const std::string previous_appearance = bootstrap_.profile_prefs.appearance;
-  const std::string previous_language = bootstrap_.profile_prefs.language;
-  const bool previous_reduce_transparency = bootstrap_.profile_prefs.reduce_transparency;
-  const bool previous_compact_chrome_frost = bootstrap_.profile_prefs.compact_chrome_frost;
+  const ProfilePreferences previous = bootstrap_.profile_prefs;
   bootstrap_.profile_prefs = std::move(*reloaded);
-
-  if (bootstrap_.profile_prefs.theme != previous_theme) {
-    NotifyThemeListeners(bootstrap_.profile_prefs.theme);
-  }
-  if (bootstrap_.profile_prefs.appearance != previous_appearance) {
-    NotifyAppearanceListeners(bootstrap_.profile_prefs.appearance);
-  }
-  if (bootstrap_.profile_prefs.language != previous_language) {
-    NotifyLanguageListeners(bootstrap_.profile_prefs.language);
-  }
-  if (bootstrap_.profile_prefs.reduce_transparency != previous_reduce_transparency ||
-      bootstrap_.profile_prefs.compact_chrome_frost != previous_compact_chrome_frost) {
-    NotifyChromeMaterialListeners(bootstrap_.profile_prefs.reduce_transparency,
-                                  bootstrap_.profile_prefs.compact_chrome_frost);
-  }
+  DiffAndNotifyProfilePrefs(previous, bootstrap_.profile_prefs);
   return {};
 }
 
@@ -160,6 +124,12 @@ void SessionStore::AddConfigListener(std::function<void(const AppConfig&)> liste
   }
 }
 
+void SessionStore::AddProfilePrefsListener(std::function<void(const ProfilePreferences&)> listener) {
+  if (listener) {
+    profile_prefs_listeners_.push_back(std::move(listener));
+  }
+}
+
 void SessionStore::AddThemeListener(std::function<void(const std::string& theme)> listener) {
   if (listener) {
     theme_listeners_.push_back(std::move(listener));
@@ -169,6 +139,33 @@ void SessionStore::AddThemeListener(std::function<void(const std::string& theme)
 void SessionStore::NotifyConfigListeners(const AppConfig& config) {
   for (const auto& listener : config_listeners_) {
     listener(config);
+  }
+}
+
+void SessionStore::NotifyProfilePrefsListeners(const ProfilePreferences& prefs) {
+  for (const auto& listener : profile_prefs_listeners_) {
+    listener(prefs);
+  }
+}
+
+void SessionStore::DiffAndNotifyProfilePrefs(const ProfilePreferences& previous,
+                                             const ProfilePreferences& next) {
+  if (ProfilePrefsToJson(previous) == ProfilePrefsToJson(next)) {
+    return;
+  }
+  NotifyProfilePrefsListeners(next);
+  if (next.theme != previous.theme) {
+    NotifyThemeListeners(next.theme);
+  }
+  if (next.appearance != previous.appearance) {
+    NotifyAppearanceListeners(next.appearance);
+  }
+  if (next.language != previous.language) {
+    NotifyLanguageListeners(next.language);
+  }
+  if (next.reduce_transparency != previous.reduce_transparency ||
+      next.compact_chrome_frost != previous.compact_chrome_frost) {
+    NotifyChromeMaterialListeners(next.reduce_transparency, next.compact_chrome_frost);
   }
 }
 

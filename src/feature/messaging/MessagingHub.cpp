@@ -6,6 +6,7 @@
 #include "feature/messaging/RelayDirectorySigningKeyResolver.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
 
+#include "feature/messaging/PushDeviceCoordinator.h"
 #include "feature/ai/AgentSession.h"
 #include "base/crypto/ProfileSecretsService.h"
 #include "base/error/AppError.h"
@@ -584,6 +585,54 @@ void MessagingHub::RefreshMeshCapabilities() {
   WireCallMediaRelayDeps();
 }
 
+void MessagingHub::ApplyRuntimeConfig(const AppConfig& config) {
+  if (!initialized_) {
+    return;
+  }
+
+  const bool service_urls_changed =
+      config.relay.base_url != config_.relay.base_url ||
+      config.directory.base_url != config_.directory.base_url ||
+      config.registration.base_url != config_.registration.base_url;
+  const bool mesh_changed =
+      config.libp2p.node_enabled != config_.libp2p.node_enabled ||
+      config.libp2p.capabilities.circuit_relay != config_.libp2p.capabilities.circuit_relay ||
+      config.libp2p.capabilities.media_relay != config_.libp2p.capabilities.media_relay ||
+      config.libp2p.prefer_contacts_for_routing != config_.libp2p.prefer_contacts_for_routing;
+
+  config_ = config;
+  if (service_urls_changed) {
+    UpdateServiceClients(config_);
+  }
+  if (mesh_changed && messaging_ready_) {
+    RefreshMeshCapabilities();
+  }
+}
+
+void MessagingHub::ApplyProfilePrefs(const ProfilePreferences& prefs) {
+  if (!initialized_) {
+    return;
+  }
+  if (group_invite_gate_ || group_membership_) {
+    const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs.group_invite_policy);
+    if (group_invite_gate_) {
+      group_invite_gate_->SetInboundPolicy(policy);
+    }
+    if (group_membership_) {
+      group_membership_->SetInboundPolicy(policy);
+    }
+  }
+  if (!messaging_ready_) {
+    return;
+  }
+  if (applied_show_notifications_known_ && applied_show_notifications_ == prefs.show_notifications) {
+    return;
+  }
+  applied_show_notifications_known_ = true;
+  applied_show_notifications_ = prefs.show_notifications;
+  (void)PushDeviceCoordinator::SyncWithPreference(*this, prefs.show_notifications);
+}
+
 Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const std::string& target_multiaddr,
                                                                           int timeout_ms) {
   if (!circuit_relay_ || !node_runtime_ || !node_runtime_->Sessions()) {
@@ -720,6 +769,8 @@ void MessagingHub::Shutdown() {
   kem_key_store_.Clear();
   messaging_ready_ = false;
   initialized_ = false;
+  applied_show_notifications_known_ = false;
+  applied_show_notifications_ = true;
 }
 
 InboxController& MessagingHub::Inbox() {

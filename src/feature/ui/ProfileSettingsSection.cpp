@@ -8,7 +8,6 @@
 #include "base/net/HttpClient.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "feature/ui/ChatSessionActions.h"
-#include "feature/messaging/PushDeviceCoordinator.h"
 #include "feature/messaging/MessagingHub.h"
 
 #include <nlohmann/json.hpp>
@@ -152,7 +151,6 @@ Roe<void> ProfileSettingsSection::Flush(SettingsUiState& state, SessionStore& st
     if (auto saved = store.SaveProfilePrefs(prefs); !saved) {
       return saved.error();
     }
-    (void)PushDeviceCoordinator::SyncWithPreference(Hub(), show_notifications);
   }
 
   if (!Hub().IsInitialized()) {

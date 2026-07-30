@@ -150,6 +150,7 @@ Roe<void> Application::ResetActiveProfile() {
   if (ChatSessionActions::Instance().on_profile_data_reset) {
     ChatSessionActions::Instance().on_profile_data_reset();
   }
+  ContactsController::Instance().Refresh();
   return {};
 }
 
@@ -319,6 +320,13 @@ bool Application::Initialize(const char* window_title) {
   ClientCompatController::Instance().BindMessaging(messaging);
   BadgeAggregator::Instance().BindMessaging(messaging);
   ShellHost::Instance().BindMessaging(messaging);
+
+  SessionStore::Instance().AddConfigListener([&messaging](const AppConfig& updated) {
+    messaging.ApplyRuntimeConfig(updated);
+  });
+  SessionStore::Instance().AddProfilePrefsListener([&messaging](const ProfilePreferences& prefs) {
+    messaging.ApplyProfilePrefs(prefs);
+  });
 
   if (![&] {
         StartupPhase phase("SetupChatController");
