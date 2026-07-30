@@ -122,6 +122,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   result.runtime = std::move(runtime);
   result.dial_back = std::move(dial_back);
   result.circuit_relay = std::move(circuit_relay);
+  result.reachability = std::make_unique<ReachabilityService>();
 
   auto peer_id = result.runtime->Host()->LocalPeerIdBase58();
   log.info << "pp-node listening on " << result.config.libp2p.listen_multiaddr

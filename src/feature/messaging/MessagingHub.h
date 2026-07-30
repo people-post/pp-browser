@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/data/Config.h"
+#include "base/data/Libp2pRole.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "common/Module.h"

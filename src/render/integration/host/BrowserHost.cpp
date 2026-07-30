@@ -394,7 +394,7 @@ void Backend::RecoverAfterDeviceReset(Rml::Context* context)
 	Rml::ReleaseFontResources();
 
 	TextLoupeRenderer::ReleaseGpuResources();
-	CallVideoTileRenderer::Instance().ReleaseGpuResources();
+	pbr::CallVideoTileRenderer::Instance().ReleaseGpuResources();
 	data->render_interface.RecoverGpuResources();
 
 	MobileGlLifecycle::UpdateIosDrawableFromWindow(data->window, data->uikit_framebuffer, data->uikit_renderbuffer);

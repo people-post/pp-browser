@@ -16,6 +16,7 @@
 #include <RmlUi/Core/Context.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
+#include <RmlUi/Core/Mesh.h>
 #include <RmlUi/Core/MeshUtilities.h>
 
 namespace pbr {

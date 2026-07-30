@@ -97,8 +97,8 @@ int main(int argc, char** argv) {
   if (print_status) {
     const std::string bound = boot->runtime->BoundListenMultiaddr();
     const bool try_upnp = !pbr::ShouldSkipUpnpForListen(bound);
-    boot->reachability.RunProbeBlocking(*boot->runtime, *boot->dial_back, try_upnp);
-    std::cout << boot->reachability.FormatOpsStatusJson() << std::endl;
+    boot->reachability->RunProbeBlocking(*boot->runtime, *boot->dial_back, try_upnp);
+    std::cout << boot->reachability->FormatOpsStatusJson() << std::endl;
     if (boot->dial_back) {
       boot->dial_back->Stop();
     }

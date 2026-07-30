@@ -33,7 +33,8 @@ struct NodeBootstrapResult {
   std::unique_ptr<NodeRuntime> runtime;
   std::unique_ptr<DialBackService> dial_back;
   std::unique_ptr<CircuitRelayService> circuit_relay;
-  ReachabilityService reachability;
+  /** Heap-allocated: ReachabilityService is not movable (mutex). */
+  std::unique_ptr<ReachabilityService> reachability;
 };
 
 /** Headless node bootstrap: config + PIN unlock + NodeRuntime + dial-back (N011). */

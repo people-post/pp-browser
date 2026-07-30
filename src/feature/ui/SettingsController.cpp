@@ -271,7 +271,7 @@ void SettingsController::SyncBindingsFromSession() {
   } else {
     ui_state_.libp2p_status_message.clear();
   }
-  SyncReachabilityFromHub();
+  ApplyReachabilityFromHub();
   // Baseline for blur commit.
   // Sync+DirtyAll would SetValue the input and reset cursor / feel like focus loss.
   auto& edits = UiEditSession::Instance();
@@ -1162,7 +1162,7 @@ void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*mo
   Instance().MarkSectionDirty("network");
 }
 
-void SettingsController::SyncReachabilityFromHub() {
+void SettingsController::ApplyReachabilityFromHub() {
   auto& hub = MessagingHub::Instance();
   ui_state_.show_connection_card =
       ui_state_.show_node_toggle && ui_state_.node_enabled == "on" && hub.IsMessagingReady();
@@ -1187,6 +1187,11 @@ void SettingsController::SyncReachabilityFromHub() {
   PushUiStateToBindings();
 }
 
+void SettingsController::SyncReachabilityFromHub() {
+  ApplyReachabilityFromHub();
+  DirtyAll();
+}
+
 void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                    const Rml::VariantList& /*args*/) {
   auto& controller = Instance();
@@ -1203,14 +1208,12 @@ void SettingsController::RetestReachabilityCallback(Rml::DataModelHandle /*model
                                                     const Rml::VariantList& /*args*/) {
   MessagingHub::Instance().RunReachabilityProbe(false);
   Instance().SyncReachabilityFromHub();
-  Instance().DirtyAll();
 }
 
 void SettingsController::TryUpnpPortCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                              const Rml::VariantList& /*args*/) {
   MessagingHub::Instance().TryUpnpPortMapping();
   Instance().SyncReachabilityFromHub();
-  Instance().DirtyAll();
 }
 
 void SettingsController::ShowReachabilityHelpCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

@@ -1959,7 +1959,6 @@ bool ChatController::Setup(Rml::Context* context) {
     MessagingHub::Instance().SetOnReachabilityUpdated([]() {
       BrowserThread::PostTask(BrowserThreadId::UI, []() {
         SettingsController::Instance().SyncReachabilityFromHub();
-        SettingsController::Instance().DirtyAll();
         const ReachabilitySnapshot snap = MessagingHub::Instance().Reachability();
         if (snap.status == ReachabilityStatus::OutboundOnly || snap.status == ReachabilityStatus::Blocked) {
           ShellFeedback::ShowBanner(ShellHost::Instance().State(), Tr("settings.network.banner_hint"));

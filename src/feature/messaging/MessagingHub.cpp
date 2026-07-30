@@ -19,6 +19,7 @@
 #include "base/data/PlatformDefaults.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/NatTraversal.h"
 #include "libp2p/integration/host/Reachability.h"
 #include "common/StartupTiming.h"
 

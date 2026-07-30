@@ -156,6 +156,7 @@ private:
   void PushUiStateToBindings();
   void ReloadFromDisk();
   void SyncBindingsFromSession();
+  void ApplyReachabilityFromHub();
   void FinishPaneResync();
   void OnSelectSection(const std::string& section_id);
   void OpenSettingsDetailPane();
