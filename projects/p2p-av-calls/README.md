@@ -3,7 +3,7 @@
 **Status:** **a4 thin landed** (soft-migrate + V024 adaptation + SFU engine); group chrome / AEAD / ICE-fail auto polish next  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
-**Related:** [p2p-mesh](../p2p-mesh/) (n4-media blind forwarder), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md)
+**Related:** [p2p-mesh](../p2p-mesh/) (n4-media blind forwarder), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CALLS.md](../../docs/architecture/CALLS.md) (code-architecture: planes, topology, target split)
 
 ## One-line goal
 
@@ -27,6 +27,7 @@
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Session model, lifecycle, signaling, media, crypto, mesh deps |
+| [../../docs/architecture/CALLS.md](../../docs/architecture/CALLS.md) | **Code architecture** — system relationships, topology ownership, extraction target |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
 | [PHASES.md](PHASES.md) | Delivery checklist (v0 → a6) |
 | [DECISIONS.md](DECISIONS.md) | ADRs (V001+) |

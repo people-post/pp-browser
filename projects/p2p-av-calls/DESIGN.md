@@ -73,6 +73,8 @@ flowchart TB
 
 **Call roster ≠ chat roster.** Guests appear only on `call_participants`. They do not receive group chat history or group membership events.
 
+**Code map (modules / extraction):** [docs/architecture/CALLS.md](../../docs/architecture/CALLS.md) — keep product rules here; keep layer ownership and target split there.
+
 ---
 
 ## Entities `[v1]`
