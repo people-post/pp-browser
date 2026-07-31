@@ -77,6 +77,99 @@ flowchart TB
 
 ---
 
+## Lifecycle sequences
+
+Module timing across the two planes. Product invite/roster rules stay in [DESIGN.md](../../projects/p2p-av-calls/DESIGN.md). Race mitigations summarized again under [Critical races](#critical-races-keep-documented-next-to-code).
+
+### 1:1 happy path (N=2)
+
+```mermaid
+sequenceDiagram
+  participant UI as CallController
+  participant CSM as CallSessionManager
+  participant P2P as CallP2pSignalingBridge
+  participant Eng as CallMediaEngine
+  participant DM as Direct_DM
+
+  UI->>CSM: StartCall / AcceptInvite
+  CSM->>DM: call_invite / call_accept
+  CSM->>P2P: ScheduleStart as offerer or answerer
+  Note over P2P: Post to UI thread so Accept click does not block
+  P2P->>Eng: Start PC
+  Eng-->>P2P: local SDP / ICE
+  Note over P2P,DM: Encode call_sdp / call_ice deferred off engine lock
+  P2P->>DM: call_sdp / call_ice
+  DM-->>CSM: peer call_sdp / call_ice
+  CSM->>P2P: OnRemoteSdp / OnRemoteIce
+  P2P->>Eng: SetRemoteDescription / AddIce
+  Eng-->>P2P: connected
+  P2P-->>UI: ring/chrome refresh
+```
+
+### Offer before answerer Start (fast offerer race)
+
+Typical Linux dial → Mac: early `call_sdp` must not be dropped. See Critical races “Offer before answerer Start” / “Offer lost”.
+
+```mermaid
+sequenceDiagram
+  participant Off as Offerer_P2P_Eng
+  participant OffDM as Offerer_DM
+  participant AnsDM as Answerer_DM
+  participant AnsP2P as Answerer_P2pBridge
+  participant AnsEng as Answerer_Eng
+
+  Off->>Off: Start offerer
+  Off-->>OffDM: call_sdp offer plus ICE
+  OffDM->>AnsDM: direct E2E
+  AnsDM->>AnsP2P: OnRemoteSdp / OnRemoteIce
+  AnsP2P->>AnsEng: buffer remote SDP/ICE
+  Note over AnsEng: No Start yet — buffer survives PC rebuild until Stop
+  AnsP2P->>AnsEng: Start answerer
+  AnsEng->>AnsEng: flush buffer apply offer
+  Off->>OffDM: re-send local offer once
+  OffDM->>AnsDM: duplicate offer
+  AnsEng->>AnsEng: ignore duplicate once applied
+  AnsEng-->>Off: answer plus ICE then connected
+```
+
+### Soft-migrate 2→3 and ICE-fail fork (V025)
+
+```mermaid
+sequenceDiagram
+  participant UI as CallController
+  participant CSM as CallSessionManager
+  participant P2P as CallP2pSignalingBridge
+  participant Topo as CallTopologyController
+  participant Eng as CallMediaEngine
+  participant DM as Direct_DM
+  participant SFU as MediaRelayService
+
+  Note over UI,SFU: Soft-migrate when joined goes 2 to 3
+  UI->>CSM: Accept / inbound CallAccept
+  CSM->>Topo: OnRemoteAcceptJoined or OnLocalAcceptJoined n=3
+  Topo->>Topo: Rank hops quote
+  Topo->>SFU: AttachLocal
+  Topo->>Eng: StartSfu
+  Topo->>DM: FanOut call_sfu_attach
+  DM-->>CSM: peers CallSfuAttach
+  CSM->>Topo: OnInboundSfuAttach
+  Note over P2P,Eng: Tear down 1:1 PC after SFU attach same call_id
+
+  Note over P2P,Topo: ICE failed fork V025
+  Eng-->>P2P: state failed
+  alt joined >= 3
+    P2P->>Topo: TryRecoverViaSfu
+    Topo->>SFU: soft-migrate or attach-wait
+  else joined == 2
+    P2P->>P2P: MarkP2pConnectFailed
+    Note over UI,P2P: ~15s timeout also marks failed no SFU
+    UI->>CSM: RetryP2pMedia
+    CSM->>P2P: rebuild PC as offerer
+  end
+```
+
+---
+
 ## Layer ownership
 
 Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
@@ -168,7 +261,7 @@ ApplyInboundControl(type)
 
 ## Critical races (keep documented next to code)
 
-These are architectural, not one-off hacks:
+These are architectural, not one-off hacks. Timelines: [Offer before answerer Start](#offer-before-answerer-start-fast-offerer-race), [ICE-fail fork](#soft-migrate-23-and-ice-fail-fork-v025).
 
 | Race | Direction / symptom | Mitigation (home) |
 |------|---------------------|-------------------|
