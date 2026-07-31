@@ -93,6 +93,8 @@ TEST(CallChromeSyncTest, GroupRosterFieldsDirty) {
   next.in_call_participant_count = 3;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
+
+TEST(CallChromeSyncTest, RingConflictDirties) {
   pbr::CallChromeLayer synced;
   synced.ring_active = true;
   synced.ring_call_id = "c1";
