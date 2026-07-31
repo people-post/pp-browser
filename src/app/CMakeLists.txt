@@ -33,8 +33,13 @@ if(PP_BROWSER_IS_IOS)
   include(IosBundle)
   pp_browser_configure_ios_app(${PP_BROWSER_APP_TARGET})
 elseif(APPLE AND PP_BROWSER_PACKAGED_BUILD)
+  set(_macos_info_plist "${CMAKE_SOURCE_DIR}/packaging/macos/Info.plist")
+  if(NOT EXISTS "${_macos_info_plist}")
+    message(FATAL_ERROR "Missing macOS Info.plist: ${_macos_info_plist}")
+  endif()
   set_target_properties(${PP_BROWSER_APP_TARGET} PROPERTIES
     MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_INFO_PLIST "${_macos_info_plist}"
     MACOSX_BUNDLE_GUI_IDENTIFIER "dev.pp-browser.app"
     MACOSX_BUNDLE_BUNDLE_NAME "Frame"
     MACOSX_BUNDLE_ICON_FILE app-icon.png

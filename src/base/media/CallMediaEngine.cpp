@@ -839,14 +839,45 @@ struct CallMediaEngine::Impl {
     config.enableIceTcp = false;
     config.disableAutoNegotiation = true;
     config.forceMediaTransport = true;
-    // Host-only ICE works on LAN; Android↔desktop across NAT needs srflx (and often relay).
-    // Public STUN is enough for many home/Wi‑Fi NATs; symmetric NAT still needs media_relay.
+    // Avoid path-MTU black holes on Wi‑Fi / mobile (common DTLS handshake failure mode).
+    config.mtu = 1200;
+    // Host ICE for LAN; STUN srflx for many home NATs. Symmetric / CGNAT still needs media_relay.
     config.iceServers.emplace_back("stun:stun.l.google.com:19302");
     config.iceServers.emplace_back("stun:stun1.l.google.com:19302");
     pc = std::make_shared<rtc::PeerConnection>(config);
     role = start_role;
 
-    pc->onStateChange([this](rtc::PeerConnection::State state) { SetState(StateToString(state)); });
+    pc->onStateChange([this](rtc::PeerConnection::State state) {
+      SDL_Log("CallMediaEngine: pc state=%s", StateToString(state));
+      SetState(StateToString(state));
+    });
+    pc->onIceStateChange([this](rtc::PeerConnection::IceState state) {
+      const char* name = "unknown";
+      switch (state) {
+        case rtc::PeerConnection::IceState::New:
+          name = "new";
+          break;
+        case rtc::PeerConnection::IceState::Checking:
+          name = "checking";
+          break;
+        case rtc::PeerConnection::IceState::Connected:
+          name = "connected";
+          break;
+        case rtc::PeerConnection::IceState::Completed:
+          name = "completed";
+          break;
+        case rtc::PeerConnection::IceState::Failed:
+          name = "failed";
+          break;
+        case rtc::PeerConnection::IceState::Disconnected:
+          name = "disconnected";
+          break;
+        case rtc::PeerConnection::IceState::Closed:
+          name = "closed";
+          break;
+      }
+      SDL_Log("CallMediaEngine: ice state=%s", name);
+    });
 
     pc->onLocalCandidate([this](rtc::Candidate candidate) {
       if (!on_ice_candidate) {
@@ -858,6 +889,12 @@ struct CallMediaEngine::Impl {
       if (ice.mid.empty()) {
         ice.mid = "audio";
       }
+      // mDNS hostnames are unresolved without Bonjour and trip Local Network prompts on macOS.
+      if (ice.candidate.find(".local") != std::string::npos) {
+        SDL_Log("CallMediaEngine: skipping mDNS ICE candidate mid=%s", ice.mid.c_str());
+        return;
+      }
+      SDL_Log("CallMediaEngine: local ICE mid=%s cand=%s", ice.mid.c_str(), ice.candidate.c_str());
       on_ice_candidate(ice);
     });
 
@@ -1155,6 +1192,8 @@ Roe<void> CallMediaEngine::AddRemoteIceCandidate(const std::string& candidate, c
   try {
     rtc::Candidate ice(candidate, mid.empty() ? "audio" : mid);
     impl_->pc->addRemoteCandidate(ice);
+    SDL_Log("CallMediaEngine: remote ICE mid=%s cand=%s", mid.empty() ? "audio" : mid.c_str(),
+            candidate.c_str());
   } catch (const std::exception& ex) {
     return Error(std::string("addRemoteCandidate failed: ") + ex.what());
   }

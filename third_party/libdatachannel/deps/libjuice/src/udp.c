@@ -525,6 +525,18 @@ int udp_get_addrs(socket_t sock, addr_record_t *records, size_t count) {
 			continue;
 		if (strcmp(ifa->ifa_name, "docker0") == 0)
 			continue;
+		// Skip virtual / overlay ifaces that poison ICE host lists (macOS awdl/utun,
+		// WireGuard, bridges). Peers on plain Wi‑Fi/LAN cannot reach them; advertising
+		// them as high-priority host candidates breaks pairs like Android↔Mac while
+		// desktop↔desktop may still luck into a shared overlay (e.g. both on Tailscale).
+		const char *ifn = ifa->ifa_name;
+		if (strncmp(ifn, "awdl", 4) == 0 || strncmp(ifn, "llw", 3) == 0 ||
+		    strncmp(ifn, "utun", 4) == 0 || strncmp(ifn, "tun", 3) == 0 ||
+		    strncmp(ifn, "tap", 3) == 0 || strncmp(ifn, "wg", 2) == 0 ||
+		    strncmp(ifn, "bridge", 6) == 0 || strncmp(ifn, "veth", 4) == 0 ||
+		    strncmp(ifn, "virbr", 5) == 0 || strncmp(ifn, "cni", 3) == 0 ||
+		    strncmp(ifn, "flannel", 7) == 0 || strncmp(ifn, "tailscale", 9) == 0)
+			continue;
 
 		struct sockaddr *sa = ifa->ifa_addr;
 		socklen_t len;
