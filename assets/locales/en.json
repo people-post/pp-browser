@@ -184,6 +184,7 @@
     "people_picker.title_add": "Add people",
     "people_picker.search_placeholder": "Search contacts",
     "people_picker.empty": "No messageable contacts yet. Add contacts first.",
+    "people_picker.empty_group_call": "No other members in this group yet.",
     "people_picker.no_matches": "No matching contacts.",
     "people_picker.unnamed": "New contact",
     "people_picker.in_chat": "In chat",

@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <optional>
 
 namespace pbr {
 namespace {
@@ -66,25 +67,38 @@ std::string ContactSubtitle(const Contact& contact) {
   return {};
 }
 
+bool ContainsIgnoreCase(const std::string& hay, const std::string& query_lower) {
+  if (query_lower.empty()) {
+    return true;
+  }
+  std::string lower = hay;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return lower.find(query_lower) != std::string::npos;
+}
+
 bool MatchesQuery(const Contact& contact, const std::string& query_lower) {
   if (query_lower.empty()) {
     return true;
   }
-  auto contains = [&](const std::string& hay) {
-    std::string lower = hay;
-    std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return lower.find(query_lower) != std::string::npos;
-  };
-  if (contains(contact.display_name) || contains(contact.server_nickname)) {
+  if (ContainsIgnoreCase(contact.display_name, query_lower) ||
+      ContainsIgnoreCase(contact.server_nickname, query_lower)) {
     return true;
   }
   for (const ContactId& id : contact.ids) {
-    if (contains(id.value)) {
+    if (ContainsIgnoreCase(id.value, query_lower)) {
       return true;
     }
   }
   return false;
+}
+
+bool MatchesIdentityQuery(const std::string& title, const std::string& identity,
+                          const std::string& query_lower) {
+  if (query_lower.empty()) {
+    return true;
+  }
+  return ContainsIgnoreCase(title, query_lower) || ContainsIgnoreCase(identity, query_lower);
 }
 
 } // namespace
@@ -161,6 +175,7 @@ bool PeoplePickerController::RegisterModel(Rml::Context* context) {
     ctor.Bind("group_title_help", &controller.group_title_help_);
     ctor.Bind("cta_label", &controller.cta_label_);
     ctor.Bind("cta_enabled", &controller.cta_enabled_);
+    ctor.Bind("empty_hint", &controller.empty_hint_);
     ctor.BindEventCallback("toggle_contact", &PeoplePickerController::ToggleContactCallback);
     ctor.BindEventCallback("on_search_changed", &PeoplePickerController::OnSearchChangedCallback);
     ctor.BindEventCallback("confirm_picker", &PeoplePickerController::ConfirmCallback);
@@ -205,7 +220,12 @@ void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, cons
   step_ = kStepSelect;
   title_ = call_video_ ? Tr("people_picker.title_group_video_call").c_str()
                        : Tr("people_picker.title_group_voice_call").c_str();
+  empty_hint_ = Tr("people_picker.empty_group_call").c_str();
   SyncGroupCallRows();
+  for (PickerRow& row : rows_) {
+    selected_ids_.insert(row.id.c_str());
+    row.selected = true;
+  }
   UpdateCta();
   DirtyAll();
   PaneSpec spec;
@@ -231,6 +251,7 @@ void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
   search_query_ = "";
   step_ = kStepSelect;
   title_ = Tr("people_picker.title_call_add_guest").c_str();
+  empty_hint_ = Tr("people_picker.empty").c_str();
   SyncCallAddGuestRows();
   UpdateCta();
   DirtyAll();
@@ -265,6 +286,7 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
   member_summary_.clear();
   title_ = mode_ == PeoplePickerMode::FromDm ? Tr("people_picker.title_add").c_str()
                                              : Tr("people_picker.title").c_str();
+  empty_hint_ = Tr("people_picker.empty").c_str();
 
   SyncRows();
   UpdateCta();
@@ -328,6 +350,7 @@ void PeoplePickerController::ResetState() {
   group_title_ = Tr("people_picker.default_group_title").c_str();
   group_title_help_ = Tr("people_picker.group_title_help").c_str();
   cta_enabled_ = false;
+  empty_hint_ = Tr("people_picker.empty").c_str();
 }
 
 void PeoplePickerController::SyncRows() {
@@ -416,57 +439,64 @@ void PeoplePickerController::SyncGroupCallRows() {
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
   struct RowCandidate {
-    Contact contact;
     std::string identity;
+    std::string title;
+    std::string subtitle;
   };
   std::vector<RowCandidate> candidates;
   for (const GroupRosterMember& member : *roster) {
-    if (!member.member_identity.empty() && member.member_identity == local_identity) {
+    if (member.member_identity.empty() || member.member_identity == local_identity) {
       continue;
     }
-    if (member.contact_id.empty()) {
+    const std::string& identity = member.member_identity;
+
+    std::optional<Contact> contact;
+    if (!member.contact_id.empty()) {
+      if (auto loaded = Hub().Contacts().Get(member.contact_id); loaded && *loaded) {
+        contact = **loaded;
+      }
+    }
+    if (!contact) {
+      if (auto found = Hub().Contacts().FindByIdentity(identity, ContactIdKind::RelayUser); found && *found) {
+        contact = **found;
+      }
+    }
+    if (contact && contact->trust == TrustLevel::Blocked) {
       continue;
     }
-    auto contact = Hub().Contacts().Get(member.contact_id);
-    if (!contact || !*contact) {
-      continue;
+
+    RowCandidate candidate;
+    candidate.identity = identity;
+    if (contact) {
+      candidate.title = FormatContactTitle(*contact);
+      candidate.subtitle = ContactSubtitle(*contact);
+      if (!MatchesQuery(*contact, query) && !ContainsIgnoreCase(identity, query)) {
+        continue;
+      }
+    } else {
+      candidate.title = ShortRelayId(identity);
+      if (!MatchesIdentityQuery(candidate.title, identity, query)) {
+        continue;
+      }
     }
-    if (!ContactIsMessageable(**contact)) {
-      continue;
+    if (candidate.title.empty()) {
+      candidate.title = Tr("people_picker.unnamed");
     }
-    const std::string identity =
-        member.member_identity.empty() ? DirectChatTargetFromContact(**contact, ThreadChannel::E2ePublic).peer_identity_value
-                                       : member.member_identity;
-    if (identity.empty()) {
-      continue;
-    }
-    if (!MatchesQuery(**contact, query)) {
-      continue;
-    }
-    candidates.push_back({**contact, identity});
+    candidates.push_back(std::move(candidate));
   }
   std::sort(candidates.begin(), candidates.end(),
-            [](const RowCandidate& a, const RowCandidate& b) {
-              return FormatContactTitle(a.contact) < FormatContactTitle(b.contact);
-            });
+            [](const RowCandidate& a, const RowCandidate& b) { return a.title < b.title; });
 
   rows_.reserve(candidates.size());
   for (const RowCandidate& candidate : candidates) {
     PickerRow row;
-    row.id = candidate.contact.id.c_str();
-    row.title = FormatContactTitle(candidate.contact).c_str();
-    if (row.title.empty()) {
-      row.title = Tr("people_picker.unnamed").c_str();
-    }
-    row.subtitle = ContactSubtitle(candidate.contact).c_str();
+    row.id = candidate.identity.c_str();
+    row.title = candidate.title.c_str();
+    row.subtitle = candidate.subtitle.c_str();
     row.locked = false;
-    row.selected = selected_ids_.count(candidate.contact.id) > 0;
-    identity_for_contact_[candidate.contact.id] = candidate.identity;
+    row.selected = selected_ids_.count(candidate.identity) > 0;
+    identity_for_contact_[candidate.identity] = candidate.identity;
     rows_.push_back(std::move(row));
-  }
-  if (selected_ids_.empty() && rows_.size() == 1) {
-    selected_ids_.insert(rows_.front().id.c_str());
-    rows_.front().selected = true;
   }
 }
 
@@ -641,6 +671,7 @@ void PeoplePickerController::DirtyAll() {
   host.Dirty("people_picker", "group_title_help");
   host.Dirty("people_picker", "cta_label");
   host.Dirty("people_picker", "cta_enabled");
+  host.Dirty("people_picker", "empty_hint");
 }
 
 void PeoplePickerController::ToggleContactCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -773,14 +804,18 @@ void PeoplePickerController::OnStartCall() {
       }
     }
   }
+  // Close()/ResetState clears call_* fields — capture before dismissing the picker.
+  const PeoplePickerMode mode = mode_;
+  const std::string call_thread_id = call_thread_id_;
+  const bool call_video = call_video_;
   Close();
   ShellHost::Instance().DirtyWindow();
-  if (mode_ == PeoplePickerMode::CallAddGuest) {
+  if (mode == PeoplePickerMode::CallAddGuest) {
     call_->InviteIdentitiesToActiveCall(identities);
     return;
   }
-  if (mode_ == PeoplePickerMode::GroupCall) {
-    (void)call_->StartCallWithInvitees(call_thread_id_, call_video_, identities);
+  if (mode == PeoplePickerMode::GroupCall) {
+    (void)call_->StartCallWithInvitees(call_thread_id, call_video, identities);
   }
 }
 

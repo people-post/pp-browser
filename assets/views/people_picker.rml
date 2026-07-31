@@ -25,7 +25,7 @@
         <p class="text muted people-picker-locked-label" data-if="row.locked">{{i18n:people_picker.in_chat}}</p>
       </div>
 
-      <p class="text muted" data-if="rows.size == 0 && search_query == ''">{{i18n:people_picker.empty}}</p>
+      <p class="text muted" data-if="rows.size == 0 && search_query == ''" data-rml="empty_hint"></p>
       <p class="text muted" data-if="rows.size == 0 && search_query != ''">{{i18n:people_picker.no_matches}}</p>
     </div>
 

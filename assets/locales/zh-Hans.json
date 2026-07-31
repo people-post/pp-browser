@@ -184,6 +184,7 @@
     "people_picker.title_add": "添加成员",
     "people_picker.search_placeholder": "搜索联系人",
     "people_picker.empty": "暂无可发消息的联系人。请先添加联系人。",
+    "people_picker.empty_group_call": "此群组暂无其他成员。",
     "people_picker.no_matches": "没有匹配的联系人。",
     "people_picker.unnamed": "新联系人",
     "people_picker.in_chat": "当前聊天",
