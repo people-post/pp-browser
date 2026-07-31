@@ -158,6 +158,14 @@ struct CallRingState {
   Rml::String decline_label;
 };
 
+/** One row in the in-call participant roster strip. */
+struct CallRosterParticipantState {
+  Rml::String name;
+  bool audio_muted = false;
+  bool video_enabled = false;
+  bool is_local = false;
+};
+
 /** Active in-call chrome. */
 struct CallInProgressState {
   bool active = false;
@@ -166,6 +174,12 @@ struct CallInProgressState {
   bool stage_visible = false;
   bool remote_video = false;
   bool local_preview = false;
+  /** True when joined count > 2 or call started from a group thread. */
+  bool show_roster = false;
+  /** Mid-call invite affordance. */
+  bool show_invite = false;
+  int participant_count = 0;
+  std::vector<CallRosterParticipantState> roster;
   Rml::String call_id;
   Rml::String title;
   Rml::String subtitle;

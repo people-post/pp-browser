@@ -196,6 +196,12 @@
     "people_picker.members_label": "Members",
     "people_picker.default_group_title": "Group chat",
     "people_picker.pin_required": "PIN required to continue",
+    "people_picker.title_group_voice_call": "Start group voice call",
+    "people_picker.title_group_video_call": "Start group video call",
+    "people_picker.title_call_add_guest": "Invite to call",
+    "people_picker.cta_start_voice_call": "Start voice call…",
+    "people_picker.cta_start_video_call": "Start video call…",
+    "people_picker.cta_invite_to_call": "Invite…",
 
     "chat.new_chat": "New chat",
     "chat.empty_title": "Start a conversation",

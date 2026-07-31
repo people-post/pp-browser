@@ -107,7 +107,8 @@ void ChatThreadChrome::Update() {
     view_.thread_is_public = visual_kind == "public";
     view_.thread_is_group = visual_kind == "group";
     view_.show_peer_sheet = thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group;
-    view_.show_call_actions = thread->kind == ThreadKind::Direct && messaging_ready_;
+    view_.show_call_actions =
+        (thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group) && messaging_ready_;
     view_.show_thread_actions = true;
     view_.show_forget_memory = thread->kind == ThreadKind::Ai;
     view_.show_sync_with_peer = false;

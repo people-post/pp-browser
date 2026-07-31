@@ -27,6 +27,9 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.in_call_elapsed != next.in_call_elapsed ||
                               synced.in_call_peer_label != next.in_call_peer_label ||
                               synced.in_call_remote_placeholder != next.in_call_remote_placeholder ||
+                              synced.in_call_show_roster != next.in_call_show_roster ||
+                              synced.in_call_show_invite != next.in_call_show_invite ||
+                              synced.in_call_participant_count != next.in_call_participant_count ||
                               synced.ring_pulse != next.ring_pulse ||
                               synced.ring_conflict != next.ring_conflict ||
                               synced.ring_eyebrow != next.ring_eyebrow ||

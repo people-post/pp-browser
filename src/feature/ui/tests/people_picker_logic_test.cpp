@@ -13,8 +13,9 @@ TEST(PeoplePickerLogicTest, FreeModeThresholds) {
   EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::Free, 5), PeoplePickerCta::CreateGroup);
 }
 
-TEST(PeoplePickerLogicTest, FromDmRequiresExtra) {
-  EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::FromDm, 0), PeoplePickerCta::Disabled);
-  EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::FromDm, 1), PeoplePickerCta::CreateGroup);
-  EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::FromDm, 3), PeoplePickerCta::CreateGroup);
+TEST(PeoplePickerLogicTest, CallInviteModesRequireSelection) {
+  EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::GroupCall, 0), PeoplePickerCta::Disabled);
+  EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::GroupCall, 1), PeoplePickerCta::StartCall);
+  EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::CallAddGuest, 0), PeoplePickerCta::Disabled);
+  EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::CallAddGuest, 2), PeoplePickerCta::StartCall);
 }
