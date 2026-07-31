@@ -89,6 +89,7 @@ flowchart LR
     Settings["SettingsController<br/><small>feature/ui/</small>"]
     Chat["ChatController<br/><small>feature/chat/</small>"]
     Contacts["ContactsController<br/><small>feature/ui/</small>"]
+    PeoplePicker["PeoplePickerController<br/><small>feature/ui/</small>"]
     Pin["PinGateController<br/><small>feature/ui/ — presentation</small>"]
     UnlockGate["ProfileUnlockGate<br/><small>base/crypto/</small>"]
   end
@@ -101,6 +102,9 @@ flowchart LR
     ActionRouter["ActionRouter<br/><small>feature/ai/bindings/</small>"]
     ClientCompat["ClientCompatController<br/><small>feature/ui/</small>"]
     Badges["BadgeAggregator<br/><small>feature/ui/</small>"]
+    Input["InputCoordinator<br/><small>base/ui/</small>"]
+    Flow["FlowCoordinator<br/><small>feature/ui/</small>"]
+    Call["CallController<br/><small>feature/ui/</small>"]
   end
 
   App --> Bridge
@@ -109,11 +113,15 @@ flowchart LR
   App --> Chat
   App --> Settings
   App --> Contacts
+  App --> PeoplePicker
   App --> UnlockGate
   App --> Pin
   App --> ActionRouter
   App --> ClientCompat
   App --> Badges
+  App --> Input
+  App --> Flow
+  App --> Call
 
   Bridge --> Store
   Bridge -->|Project + Apply| Hub
@@ -126,6 +134,9 @@ flowchart LR
   Chat --> Hub
   Chat --> Agent
   Chat -->|BindBadgeAggregator| Badges
+  Chat -->|BindInputCoordinator| Input
+  Chat -->|BindCallController| Call
+  App -->|BindCallController| Shell
   Hub --> Agent
   App -->|BindSource| Badges
   App -->|BindPorts| UnlockGate
@@ -135,6 +146,8 @@ flowchart LR
   App -->|BindCommands SettingsCommands| Settings
   App -->|BindChatPorts| Contacts
   App -->|BindPinGate| Shell
+  App -->|BindFlowCoordinator| Shell
+  App -->|BindFlowCoordinator| PeoplePicker
   App -->|BindUnlockGate| Chat
   App -->|BindUnlockGate| Settings
   App -->|BindUnlockGate| Contacts
@@ -268,13 +281,16 @@ flowchart TB
 
 | Class | Location | Role |
 |-------|----------|------|
-| **Application** | `app/` | Owns hub + ActionRouter / ClientCompat / BadgeAggregator / ProfileUnlockGate / PinGate UI; binds controllers; installs `ConfigApplyBridge` |
+| **Application** | `app/` | Owns hub + ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds controllers; installs `ConfigApplyBridge` |
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |
 | **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` from MessagingHub; chat calls Refresh |
+| **InputCoordinator** | `base/ui/` | Key bindings; app-owned; chat registers Enter-to-send |
+| **FlowCoordinator** | `feature/ui/` | Modal overlay dismiss/step-back; app-owned; Shell + PeoplePicker |
+| **CallController** | `feature/ui/` | Call ring / in-call chrome; app-owned; Shell binds for Rml chrome; chat starts/wakes |
 | **PinGateController** | `feature/ui/` | PIN overlay presentation; UI ports for ProfileUnlockGate |
 | **ProfileUnlockGate** | `base/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports |
 | **ShellHost** | `feature/ui/` | Window shell panes/nav; nested `ChromePrefs` |

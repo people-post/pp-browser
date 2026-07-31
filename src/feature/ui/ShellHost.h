@@ -25,6 +25,8 @@ namespace pbr {
 
 class MessagingHub;
 class PinGateController;
+class FlowCoordinator;
+class CallController;
 
 enum class DismissStyle { Instant, Animated };
 
@@ -68,6 +70,8 @@ public:
 
   void BindMessaging(MessagingHub& messaging);
   void BindPinGate(PinGateController& pin_gate);
+  void BindFlowCoordinator(FlowCoordinator& flow);
+  void BindCallController(CallController& call);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -151,6 +155,11 @@ public:
   static void PinGateCancelCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void PinGateSetPinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void PinGateUseDefaultCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallAcceptCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallDeclineCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallLeaveCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallMuteCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallCameraCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarMinimizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarToggleMaximizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarCloseCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -231,6 +240,8 @@ private:
   std::function<void()> on_layout_synced_;
   MessagingHub* messaging_ = nullptr;
   PinGateController* pin_gate_ = nullptr;
+  FlowCoordinator* flow_ = nullptr;
+  CallController* call_ = nullptr;
 
 };
 

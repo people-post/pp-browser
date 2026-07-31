@@ -85,6 +85,14 @@ void ShellHost::BindPinGate(PinGateController& pin_gate) {
   pin_gate_ = &pin_gate;
 }
 
+void ShellHost::BindFlowCoordinator(FlowCoordinator& flow) {
+  flow_ = &flow;
+}
+
+void ShellHost::BindCallController(CallController& call) {
+  call_ = &call;
+}
+
 MessagingHub& ShellHost::Hub() {
   if (!messaging_) {
     throw std::runtime_error("ShellHost messaging not bound");
@@ -201,11 +209,11 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("pin_gate_cancel", &ShellHost::PinGateCancelCallback);
     ctor.BindEventCallback("pin_gate_set_pin", &ShellHost::PinGateSetPinCallback);
     ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
-    ctor.BindEventCallback("call_accept", &CallController::AcceptCallback);
-    ctor.BindEventCallback("call_decline", &CallController::DeclineCallback);
-    ctor.BindEventCallback("call_leave", &CallController::LeaveCallback);
-    ctor.BindEventCallback("call_mute", &CallController::MuteCallback);
-    ctor.BindEventCallback("call_camera", &CallController::CameraCallback);
+    ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
+    ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
+    ctor.BindEventCallback("call_leave", &ShellHost::CallLeaveCallback);
+    ctor.BindEventCallback("call_mute", &ShellHost::CallMuteCallback);
+    ctor.BindEventCallback("call_camera", &ShellHost::CallCameraCallback);
     ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
     ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
     ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
@@ -462,7 +470,9 @@ void ShellHost::CloseLayer(int layer_id) {
     return;
   }
   const int closing_id = layer_id < 0 ? state_.overlay_stack.back().id : layer_id;
-  FlowCoordinator::Instance().NotifyLayerClosing(closing_id);
+  if (flow_) {
+    flow_->NotifyLayerClosing(closing_id);
+  }
   if (layer_id < 0) {
     state_.overlay_stack.pop_back();
   } else {
@@ -581,7 +591,7 @@ bool ShellHost::HandleDismiss() {
     // Unlock: consume Escape without dismissing or quitting.
     return true;
   }
-  if (FlowCoordinator::Instance().HandleDismiss()) {
+  if (flow_ && flow_->HandleDismiss()) {
     RequestSyncLayout();
     DirtyWindow();
     return true;
@@ -925,7 +935,7 @@ void ShellHost::RefreshStatusbarConnection() {
     return;
   }
   Rml::String next;
-  MessagingHub& hub = Instance().Hub();
+  MessagingHub& hub = Hub();
   if (hub.IsMessagingReady()) {
     if (Libp2pHost* host = hub.Libp2p(); host && host->IsRunning()) {
       next = "Online";
@@ -1715,8 +1725,9 @@ void ShellHost::CloseLayerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /
 
 void ShellHost::DismissBannerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  ShellFeedback::DismissBanner(Instance().state_);
-  Instance().DirtyWindow();
+  ShellHost& host = Instance();
+  ShellFeedback::DismissBanner(host.state_);
+  host.DirtyWindow();
 }
 
 void ShellHost::DialogOkCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1738,29 +1749,64 @@ void ShellHost::DialogToggleCheckboxCallback(Rml::DataModelHandle /*model*/, Rml
 
 void ShellHost::PinGateSubmitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (Instance().pin_gate_) {
-    Instance().pin_gate_->OnSubmit();
+  if (auto* pin_gate = Instance().pin_gate_) {
+    pin_gate->OnSubmit();
   }
 }
 
 void ShellHost::PinGateCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (Instance().pin_gate_) {
-    Instance().pin_gate_->OnCancel();
+  if (auto* pin_gate = Instance().pin_gate_) {
+    pin_gate->OnCancel();
   }
 }
 
 void ShellHost::PinGateSetPinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  if (Instance().pin_gate_) {
-    Instance().pin_gate_->OnSetPin();
+  if (auto* pin_gate = Instance().pin_gate_) {
+    pin_gate->OnSetPin();
   }
 }
 
 void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                           const Rml::VariantList& /*args*/) {
-  if (Instance().pin_gate_) {
-    Instance().pin_gate_->OnUseDefaultPin();
+  if (auto* pin_gate = Instance().pin_gate_) {
+    pin_gate->OnUseDefaultPin();
+  }
+}
+
+void ShellHost::CallAcceptCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                   const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->AcceptIncoming();
+  }
+}
+
+void ShellHost::CallDeclineCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                    const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->DeclineIncoming();
+  }
+}
+
+void ShellHost::CallLeaveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                  const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->LeaveActive();
+  }
+}
+
+void ShellHost::CallMuteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                 const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->ToggleMute();
+  }
+}
+
+void ShellHost::CallCameraCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                   const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->ToggleCamera();
   }
 }
 

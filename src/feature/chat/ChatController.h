@@ -33,6 +33,8 @@ class Element;
 namespace pbr {
 
 class BadgeAggregator;
+class CallController;
+class InputCoordinator;
 class ProfileUnlockGate;
 
 class ChatController : public Module {
@@ -78,6 +80,8 @@ public:
   void BindMessaging(MessagingHub& messaging);
   void BindSessionStore(SessionStore& store);
   void BindBadgeAggregator(BadgeAggregator& badges);
+  void BindInputCoordinator(InputCoordinator& input);
+  void BindCallController(CallController& call);
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
@@ -257,6 +261,8 @@ private:
   MessagingHub* messaging_ = nullptr;
   SessionStore* session_store_ = nullptr;
   BadgeAggregator* badges_ = nullptr;
+  InputCoordinator* input_ = nullptr;
+  CallController* call_ = nullptr;
   ProfileUnlockGate* unlock_gate_ = nullptr;
   ChatState chat_;
   ShellState shell_;

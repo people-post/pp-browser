@@ -6,11 +6,6 @@
 
 namespace pbr {
 
-InputCoordinator& InputCoordinator::Instance() {
-  static InputCoordinator coordinator;
-  return coordinator;
-}
-
 void InputCoordinator::Register(KeyBinding binding) {
   bindings_.push_back(std::move(binding));
   std::stable_sort(bindings_.begin(), bindings_.end(),

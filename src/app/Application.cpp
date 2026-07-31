@@ -35,6 +35,7 @@
 #include "feature/ui/ClientCompatController.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DeferredStartup.h"
+#include "feature/ui/FlowCoordinator.h"
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/PeoplePickerController.h"
 #include "feature/ui/SettingsController.h"
@@ -67,9 +68,14 @@ namespace pbr {
 
 namespace {
 
+InputCoordinator* g_input_coordinator = nullptr;
+
 bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier,
                     float /*native_dp_ratio*/, bool priority) {
-  return InputCoordinator::Instance().ProcessKeyDown(context, key, key_modifier, priority);
+  if (!g_input_coordinator) {
+    return true;
+  }
+  return g_input_coordinator->ProcessKeyDown(context, key, key_modifier, priority);
 }
 
 void ApplyUiDocumentLanguage(Rml::Context* context) {
@@ -93,8 +99,12 @@ Application::Application() {
   action_router_ = std::make_unique<ActionRouter>();
   client_compat_ = std::make_unique<ClientCompatController>();
   badges_ = std::make_unique<BadgeAggregator>();
+  input_ = std::make_unique<InputCoordinator>();
+  flow_ = std::make_unique<FlowCoordinator>();
+  call_ = std::make_unique<CallController>();
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
   pin_gate_ = std::make_unique<PinGateController>();
+  g_input_coordinator = input_.get();
 }
 
 Application::~Application() {
@@ -397,7 +407,7 @@ bool Application::Initialize(const char* window_title) {
   ChatController::Instance().BindSessionStore(store_);
 
   ContactsController::Instance().BindMessaging(messaging);
-  CallController::Instance().BindMessaging(messaging);
+  call_->BindMessaging(messaging);
   PeoplePickerController::Instance().BindMessaging(messaging);
   client_compat_->BindMessaging(messaging);
   badges_->BindSource([&messaging]() {
@@ -424,6 +434,8 @@ bool Application::Initialize(const char* window_title) {
     return inputs;
   });
   ChatController::Instance().BindBadgeAggregator(*badges_);
+  ChatController::Instance().BindInputCoordinator(*input_);
+  ChatController::Instance().BindCallController(*call_);
 
   unlock_gate_->BindSecrets(ProfileSecretsService::Instance());
   pin_gate_->BindGate(*unlock_gate_);
@@ -453,9 +465,12 @@ bool Application::Initialize(const char* window_title) {
   ChatController::Instance().BindUnlockGate(*unlock_gate_);
   ShellHost::Instance().BindMessaging(messaging);
   ShellHost::Instance().BindPinGate(*pin_gate_);
+  ShellHost::Instance().BindFlowCoordinator(*flow_);
+  ShellHost::Instance().BindCallController(*call_);
   SettingsController::Instance().BindUnlockGate(*unlock_gate_);
   ContactsController::Instance().BindUnlockGate(*unlock_gate_);
   PeoplePickerController::Instance().BindUnlockGate(*unlock_gate_);
+  PeoplePickerController::Instance().BindFlowCoordinator(*flow_);
 
   config_apply_->Bind(messaging, store_, [](const std::string& relative) { return AssetsPath(relative); });
 
@@ -567,7 +582,7 @@ void Application::Run() {
     if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
       ContactsController::Instance().Tick();
     }
-    CallController::Instance().Tick();
+    call_->Tick();
     if (Messaging().IsMessagingReady()) {
       Messaging().TickLibp2p();
     }
@@ -611,6 +626,7 @@ void Application::Shutdown() {
   if (badges_) {
     badges_->BindSource({});
   }
+  g_input_coordinator = nullptr;
   if (unlock_gate_) {
     unlock_gate_->BindPorts({});
   }

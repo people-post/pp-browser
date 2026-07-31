@@ -22,7 +22,7 @@ struct KeyBinding {
 
 class InputCoordinator {
 public:
-  static InputCoordinator& Instance();
+  InputCoordinator() = default;
 
   void Register(KeyBinding binding);
   void Clear();

@@ -4,11 +4,6 @@
 
 namespace pbr {
 
-FlowCoordinator& FlowCoordinator::Instance() {
-  static FlowCoordinator coordinator;
-  return coordinator;
-}
-
 void FlowCoordinator::BeginModal(int layer_id, StepBackHandler on_step_back, CancelHandler on_cancel) {
   layer_id_ = layer_id;
   on_step_back_ = std::move(on_step_back);

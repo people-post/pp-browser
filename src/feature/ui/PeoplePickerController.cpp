@@ -104,6 +104,10 @@ void PeoplePickerController::BindChatPorts(ChatSessionPorts ports) {
   chat_ports_ = std::move(ports);
 }
 
+void PeoplePickerController::BindFlowCoordinator(FlowCoordinator& flow) {
+  flow_ = &flow;
+}
+
 MessagingHub& PeoplePickerController::Hub() {
   if (!messaging_) {
     throw std::runtime_error("PeoplePickerController messaging not bound");
@@ -171,7 +175,7 @@ void PeoplePickerController::OpenFromDm(const std::string& locked_contact_id) {
 }
 
 void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids) {
-  if (!Instance().Hub().IsInitialized()) {
+  if (!Hub().IsInitialized()) {
     UserFeedback::Fail("Messaging not ready");
     ShellHost::Instance().DirtyWindow();
     return;
@@ -203,7 +207,10 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
 }
 
 void PeoplePickerController::RegisterFlow() {
-  FlowCoordinator::Instance().BeginModal(
+  if (!flow_) {
+    return;
+  }
+  flow_->BeginModal(
       layer_id_,
       [this]() {
         if (step_ == kStepName) {
@@ -216,7 +223,9 @@ void PeoplePickerController::RegisterFlow() {
 }
 
 void PeoplePickerController::Close() {
-  FlowCoordinator::Instance().EndModal();
+  if (flow_) {
+    flow_->EndModal();
+  }
   const int closing_id = layer_id_;
   layer_id_ = -1;
   ResetState();
@@ -248,11 +257,11 @@ void PeoplePickerController::ResetState() {
 
 void PeoplePickerController::SyncRows() {
   rows_.clear();
-  if (!Instance().Hub().IsInitialized()) {
+  if (!Hub().IsInitialized()) {
     return;
   }
 
-  auto stored = Instance().Hub().Contacts().List();
+  auto stored = Hub().Contacts().List();
   if (!stored) {
     return;
   }
@@ -281,7 +290,7 @@ void PeoplePickerController::SyncRows() {
     if (present) {
       continue;
     }
-    auto contact = Instance().Hub().Contacts().Get(locked_id);
+    auto contact = Hub().Contacts().Get(locked_id);
     if (contact && *contact) {
       candidates.push_back(**contact);
     }
@@ -363,8 +372,8 @@ std::string PeoplePickerController::TitleForContactId(const std::string& contact
       return row.title.c_str();
     }
   }
-  if (Instance().Hub().IsInitialized()) {
-    if (auto contact = Instance().Hub().Contacts().Get(contact_id)) {
+  if (messaging_ && messaging_->IsInitialized()) {
+    if (auto contact = messaging_->Contacts().Get(contact_id)) {
       if (*contact) {
         const std::string title = FormatContactTitle(**contact);
         return title.empty() ? Tr("people_picker.unnamed") : title;
@@ -544,18 +553,18 @@ void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
       ShellHost::Instance().DirtyWindow();
       return;
     }
-    auto contact = Instance().Hub().Contacts().Get(contact_id);
+    auto contact = Hub().Contacts().Get(contact_id);
     if (contact && *contact) {
-      Instance().Hub().P2p().RegisterContactDirectEndpoints(**contact);
+      Hub().P2p().RegisterContactDirectEndpoints(**contact);
     }
-    auto thread = Instance().Hub().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
+    auto thread = Hub().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
       ShellHost::Instance().DirtyWindow();
       return;
     }
-    (void)Instance().Hub().P2p().EnsurePskGenerated(thread->id);
-    Instance().Hub().P2p().WarmPeerForThread(thread->id);
+    (void)Hub().P2p().EnsurePskGenerated(thread->id);
+    Hub().P2p().WarmPeerForThread(thread->id);
     FinishOpenThread();
   });
 }
@@ -572,7 +581,7 @@ void PeoplePickerController::CreateGroupWithTitle(const std::vector<std::string>
       ShellHost::Instance().DirtyWindow();
       return;
     }
-    auto thread = Instance().Hub().Inbox().CreateGroup(title, member_contact_ids);
+    auto thread = Hub().Inbox().CreateGroup(title, member_contact_ids);
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
       ShellHost::Instance().DirtyWindow();

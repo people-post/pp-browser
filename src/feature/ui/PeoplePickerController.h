@@ -20,6 +20,7 @@ namespace pbr {
 
 class MessagingHub;
 class ProfileUnlockGate;
+class FlowCoordinator;
 
 class PeoplePickerController : public Module {
 public:
@@ -28,6 +29,7 @@ public:
   void BindMessaging(MessagingHub& messaging);
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindChatPorts(ChatSessionPorts ports);
+  void BindFlowCoordinator(FlowCoordinator& flow);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -103,6 +105,7 @@ private:
   bool cta_enabled_ = false;
   MessagingHub* messaging_ = nullptr;
   ProfileUnlockGate* unlock_gate_ = nullptr;
+  FlowCoordinator* flow_ = nullptr;
   ChatSessionPorts chat_ports_;
 
 };

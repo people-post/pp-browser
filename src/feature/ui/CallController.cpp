@@ -87,10 +87,6 @@ const char* LevelHint(int level, bool remote, bool muted) {
 
 } // namespace
 
-CallController& CallController::Instance() {
-  static CallController instance;
-  return instance;
-}
 void CallController::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
   BindToMessaging();
@@ -112,11 +108,11 @@ const MessagingHub& CallController::Hub() const {
 
 
 void CallController::BindToMessaging() {
-  if (!messaging_ || !Instance().Hub().IsInitialized()) {
+  if (!messaging_ || !Hub().IsInitialized()) {
     bound_calls_ = nullptr;
     return;
   }
-  auto* calls = Instance().Hub().Calls();
+  auto* calls = Hub().Calls();
   if (!calls) {
     bound_calls_ = nullptr;
     return;
@@ -125,16 +121,16 @@ void CallController::BindToMessaging() {
   if (bound_calls_ == calls) {
     return;
   }
-  calls->SetOnRingChanged([]() {
+  calls->SetOnRingChanged([this]() {
     // Ingest may run on IO; shell/RmlUi updates must stay on UI.
-    BrowserThread::PostTask(BrowserThreadId::UI, []() { CallController::Instance().RefreshPendingRing(); });
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { RefreshPendingRing(); });
   });
   bound_calls_ = calls;
 }
 
 void CallController::Tick() {
   BindToMessaging();
-  if (auto* calls = Instance().Hub().Calls()) {
+  if (auto* calls = Hub().Calls()) {
     calls->SweepExpiredInvites();
   }
   const int64_t now = util::NowUnixMs();
@@ -195,10 +191,10 @@ void CallController::SyncRingtone() {
 }
 
 std::string CallController::DisplayNameForIdentity(const std::string& identity) const {
-  if (identity.empty()) {
+  if (identity.empty() || !messaging_) {
     return {};
   }
-  if (auto contact = Instance().Hub().Contacts().FindByIdentity(identity, ContactIdKind::RelayUser)) {
+  if (auto contact = messaging_->Contacts().FindByIdentity(identity, ContactIdKind::RelayUser)) {
     if (*contact) {
       std::string name =
           (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -224,7 +220,7 @@ std::string CallController::FormatElapsed(const int64_t connected_at_ms) {
 
 void CallController::RefreshPendingRing() {
   BindToMessaging();
-  auto* calls = Instance().Hub().Calls();
+  auto* calls = Hub().Calls();
   if (!calls) {
     return;
   }
@@ -354,12 +350,12 @@ void CallController::RefreshPendingRing() {
 
 bool CallController::StartCall(const std::string& thread_id, const bool video) {
   BindToMessaging();
-  auto* calls = Instance().Hub().Calls();
+  auto* calls = Hub().Calls();
   if (!calls) {
     UserFeedback::Fail("Calls unavailable");
     return false;
   }
-  auto thread = Instance().Hub().Store().GetThread(thread_id);
+  auto thread = Hub().Store().GetThread(thread_id);
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Direct) {
     UserFeedback::Fail("Voice and video calls are available in 1:1 chats");
     return false;
@@ -389,7 +385,7 @@ bool CallController::StartVideoCall(const std::string& thread_id) {
 
 void CallController::AcceptIncoming() {
   BindToMessaging();
-  auto* calls = Instance().Hub().Calls();
+  auto* calls = Hub().Calls();
   if (!calls || ringing_call_id_.empty()) {
     return;
   }
@@ -411,7 +407,7 @@ void CallController::AcceptIncoming() {
 
 void CallController::DeclineIncoming() {
   BindToMessaging();
-  auto* calls = Instance().Hub().Calls();
+  auto* calls = Hub().Calls();
   if (!calls || ringing_call_id_.empty()) {
     return;
   }
@@ -422,7 +418,7 @@ void CallController::DeclineIncoming() {
 
 void CallController::LeaveActive() {
   BindToMessaging();
-  auto* calls = Instance().Hub().Calls();
+  auto* calls = Hub().Calls();
   if (!calls || active_call_id_.empty()) {
     return;
   }
@@ -432,7 +428,7 @@ void CallController::LeaveActive() {
 
 void CallController::ToggleMute() {
   BindToMessaging();
-  auto* calls = Instance().Hub().Calls();
+  auto* calls = Hub().Calls();
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
@@ -444,7 +440,7 @@ void CallController::ToggleMute() {
 
 void CallController::ToggleCamera() {
   BindToMessaging();
-  auto* calls = Instance().Hub().Calls();
+  auto* calls = Hub().Calls();
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
@@ -453,26 +449,6 @@ void CallController::ToggleCamera() {
     UserFeedback::Fail(cam.error().message);
   }
   RefreshPendingRing();
-}
-
-void CallController::AcceptCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
-  Instance().AcceptIncoming();
-}
-
-void CallController::DeclineCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
-  Instance().DeclineIncoming();
-}
-
-void CallController::LeaveCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
-  Instance().LeaveActive();
-}
-
-void CallController::MuteCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
-  Instance().ToggleMute();
-}
-
-void CallController::CameraCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
-  Instance().ToggleCamera();
 }
 
 void CallController::ApplyAudioLevels(CallMediaEngine& media) {
@@ -485,7 +461,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;
-  auto* calls = Instance().Hub().Calls();
+  auto* calls = Hub().Calls();
   if (calls && !active_call_id_.empty()) {
     if (auto peer_video = calls->PeerVideoEnabledForCall(active_call_id_);
         peer_video && peer_video->has_value()) {
@@ -565,7 +541,7 @@ void CallController::RefreshCallLevels() {
   if (active_call_id_.empty()) {
     return;
   }
-  auto* calls = Instance().Hub().Calls();
+  auto* calls = Hub().Calls();
   if (!calls) {
     return;
   }

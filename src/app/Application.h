@@ -17,7 +17,10 @@ namespace pbr {
 
 class ActionRouter;
 class BadgeAggregator;
+class CallController;
 class ClientCompatController;
+class FlowCoordinator;
+class InputCoordinator;
 class PinGateController;
 class ProfileUnlockGate;
 
@@ -52,6 +55,9 @@ private:
   std::unique_ptr<ActionRouter> action_router_;
   std::unique_ptr<ClientCompatController> client_compat_;
   std::unique_ptr<BadgeAggregator> badges_;
+  std::unique_ptr<InputCoordinator> input_;
+  std::unique_ptr<FlowCoordinator> flow_;
+  std::unique_ptr<CallController> call_;
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;

@@ -3,15 +3,8 @@
 #include "base/media/CallRingtone.h"
 #include "feature/ui/CallChromeSync.h"
 
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Types.h>
-
 #include <cstdint>
 #include <string>
-
-namespace Rml {
-class Context;
-}
 
 namespace pbr {
 
@@ -22,7 +15,7 @@ class CallMediaEngine;
 /** Shell-level call ring / in-call chrome. */
 class CallController {
 public:
-  static CallController& Instance();
+  CallController() = default;
 
   void BindMessaging(MessagingHub& messaging);
   MessagingHub& Hub();
@@ -42,14 +35,7 @@ public:
   void ToggleMute();
   void ToggleCamera();
 
-  static void AcceptCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
-  static void DeclineCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
-  static void LeaveCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
-  static void MuteCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
-  static void CameraCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
-
 private:
-  CallController() = default;
   bool StartCall(const std::string& thread_id, bool video);
   void SyncShellState();
   void ClearRing();
