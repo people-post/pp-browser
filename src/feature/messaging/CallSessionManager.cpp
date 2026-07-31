@@ -311,11 +311,13 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
     // Must not call locking CallMediaEngine APIs or MaybeSoftMigrateToSfu here when
     // SetState still races with Start/Stop — use the call id we bound at media start.
     const std::string call_id = media_call_id_;
-    // Some stacks go Closed without a Failed transition (common on mobile NAT timeout).
-    const bool ice_dead = (state == "failed" || state == "closed");
-    if (ice_dead && !media_.IsSfuMode() && !call_id.empty()) {
+    // Only `failed` is an ICE failure. `closed` is normal teardown (Stop/Leave) and must
+    // not start SFU attach-wait — that was mis-firing 1:1 P2P into "group needs media_relay".
+    if (state == "failed" && !media_.IsSfuMode() && !call_id.empty()) {
       auto joined = sessions_.CountJoined(call_id);
-      if (joined && CallMediaTopology::ShouldUseMediaRelay(*joined, true)) {
+      // Group (N≥3) must recover onto SFU. Do not auto-SFU plain 1:1 — that path hung on
+      // attach-wait and toasted the group-call error when no hop exists.
+      if (joined && *joined >= 3) {
         awaiting_sfu_recovery_ = true;
         // Quote/dial can take seconds — never run on the media/PC callback stack.
         BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
@@ -335,7 +337,7 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
             awaiting_sfu_recovery_ = false;
             last_media_error_ =
                 migrated.error().message.empty()
-                    ? "Call media failed (NAT) — need a media_relay hop"
+                    ? "No media relay available — group call needs a media_relay hop"
                     : migrated.error().message;
             log().warning << "ICE-fail SFU recovery failed: " << *last_media_error_;
             (void)LeaveCall(call_id);

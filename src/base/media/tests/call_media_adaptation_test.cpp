@@ -49,6 +49,7 @@ TEST(CallMediaAdaptationTest, VideoHiOnlyWhenAllowed) {
 
 TEST(CallMediaTopologyTest, GroupUsesRelay) {
   EXPECT_FALSE(CallMediaTopology::ShouldUseMediaRelay(2, false));
+  // ice_failed_1to1 remains true for topology helpers; CallSessionManager only auto-SFUs N≥3.
   EXPECT_TRUE(CallMediaTopology::ShouldUseMediaRelay(2, true));
   EXPECT_TRUE(CallMediaTopology::ShouldUseMediaRelay(3, false));
   EXPECT_TRUE(CallMediaTopology::ShouldSoftMigrateToSfu(2, 3));
