@@ -167,6 +167,27 @@ std::vector<MeshHopCandidate> ExcludePeerIds(std::vector<MeshHopCandidate> candi
   return out;
 }
 
+std::vector<MeshHopCandidate> PreferInCallMediaHops(
+    std::vector<MeshHopCandidate> ranked, const std::unordered_set<std::string>& in_call_peer_ids) {
+  if (in_call_peer_ids.empty() || ranked.empty()) {
+    return ranked;
+  }
+  std::vector<MeshHopCandidate> in_call;
+  std::vector<MeshHopCandidate> rest;
+  in_call.reserve(ranked.size());
+  rest.reserve(ranked.size());
+  for (MeshHopCandidate& c : ranked) {
+    if (!c.multiaddr.empty() && in_call_peer_ids.count(c.peer_id) > 0) {
+      in_call.push_back(std::move(c));
+    } else {
+      rest.push_back(std::move(c));
+    }
+  }
+  in_call.insert(in_call.end(), std::make_move_iterator(rest.begin()),
+                 std::make_move_iterator(rest.end()));
+  return in_call;
+}
+
 bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& peer_id) {
   if (peer_id.empty()) {
     return false;

@@ -258,7 +258,9 @@ void CallController::RefreshPendingRing() {
   }
 
   if (auto media_err = calls->TakeLastMediaError(); media_err && !media_err->empty()) {
-    UserFeedback::Fail(*media_err);
+    // SoftMigrate / hop failures need a sticky banner — toast (even Long=6s) vanishes before
+    // users can read multi-hop diagnostics.
+    UserFeedback::NeedsSetup(*media_err);
   }
 
   calls->PollPendingSfuAttach();

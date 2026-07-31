@@ -57,9 +57,17 @@ std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candid
 std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
                                              const std::string& local_peer_id);
 
-/** Drop hops whose peer_id is in `excluded` (e.g. current call participants). */
+/** Drop hops whose peer_id is in `excluded`. */
 std::vector<MeshHopCandidate> ExcludePeerIds(std::vector<MeshHopCandidate> candidates,
                                              const std::unordered_set<std::string>& excluded);
+
+/**
+ * Soft-migrate preference: dialable in-call peers first (e.g. Windows already on the call
+ * with Media relay), then remaining ranked hops (out-of-call Linux, org seed, …).
+ * Peers without multiaddr stay in place but SoftMigrate will skip them quickly.
+ */
+std::vector<MeshHopCandidate> PreferInCallMediaHops(std::vector<MeshHopCandidate> ranked,
+                                                   const std::unordered_set<std::string>& in_call_peer_ids);
 
 /** PeerId from a contact row (ContactIdKind::PeerId or multiaddr /p2p/). */
 std::string PeerIdFromContact(const Contact& contact);

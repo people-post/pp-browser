@@ -243,28 +243,39 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
   }
 
   auto ranked = RankedMediaHopCandidates();
-  // Call participants are almost never usable media_relay hosts (mobile Clients; self already
-  // excluded). Skipping them avoids multi-second quote hangs on PeerIds that cannot serve.
-  {
-    std::unordered_set<std::string> participant_peer_ids;
-    for (const std::string& identity : joined_ids) {
-      if (auto hit = contacts_.FindByIdentity(identity); hit && hit->has_value()) {
-        const std::string pid = PeerIdFromContact(**hit);
-        if (!pid.empty()) {
-          participant_peer_ids.insert(pid);
-        }
+  // Prefer dialable in-call Nodes (e.g. Windows already on the call with Media relay) over
+  // out-of-call Linux / org seed. Still exclude self. Do not blanket-exclude participants —
+  // that blocked the preferred member-hop path.
+  std::unordered_set<std::string> in_call_peer_ids;
+  for (const std::string& identity : joined_ids) {
+    if (auto hit = contacts_.FindByIdentity(identity); hit && hit->has_value()) {
+      const std::string pid = PeerIdFromContact(**hit);
+      if (!pid.empty()) {
+        in_call_peer_ids.insert(pid);
       }
     }
-    ranked = ExcludePeerIds(std::move(ranked), participant_peer_ids);
   }
+  ranked = PreferInCallMediaHops(std::move(ranked), in_call_peer_ids);
   if (ranked.empty()) {
     return Error("no media_relay hop candidates");
   }
 
-  std::string last_err = "all hops failed";
+  std::vector<std::string> hop_failures;
+  hop_failures.reserve(ranked.size());
   for (const MeshHopCandidate& hop : ranked) {
+    if (hop.multiaddr.empty()) {
+      const bool in_call = in_call_peer_ids.count(hop.peer_id) > 0;
+      const std::string detail =
+          std::string(in_call ? "in-call peer has no dialable multiaddr (enable Media relay + "
+                                "sync listen addr on contact) (hop="
+                              : "no multiaddr (hop=") +
+          hop.peer_id + ")";
+      hop_failures.push_back(detail);
+      log().warning << "SoftMigrate skip: " << detail;
+      continue;
+    }
     log().info << "SoftMigrate try hop=" << hop.peer_id
-               << " affinity=" << static_cast<int>(hop.affinity);
+               << " affinity=" << static_cast<int>(hop.affinity) << " ma=" << hop.multiaddr;
     CallSfuAttachDetail attach;
     attach.call_id = call_id;
     attach.hop_peer_id = hop.peer_id;
@@ -272,8 +283,12 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
     attach.publisher_stream_id = PublisherStreamIdForLocal();
 
     if (auto attached = AttachLocalToSfu(call_id, attach); !attached) {
-      last_err = attached.error().message + " (hop=" + hop.peer_id + ")";
-      log().warning << "SoftMigrate hop failed: " << last_err;
+      std::string detail = attached.error().message;
+      if (detail.find(hop.peer_id) == std::string::npos) {
+        detail += " (hop=" + hop.peer_id + ")";
+      }
+      hop_failures.push_back(detail);
+      log().warning << "SoftMigrate hop failed: " << detail;
       continue;
     }
 
@@ -290,7 +305,18 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
     }
     return {};
   }
-  return Error(last_err);
+  if (hop_failures.empty()) {
+    return Error("no media_relay hop candidates");
+  }
+  std::string summary = "media_relay SoftMigrate failed (" + std::to_string(hop_failures.size()) +
+                        " hops): ";
+  for (size_t i = 0; i < hop_failures.size(); ++i) {
+    if (i > 0) {
+      summary += " | ";
+    }
+    summary += hop_failures[i];
+  }
+  return Error(summary);
 }
 
 Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,

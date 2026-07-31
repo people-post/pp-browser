@@ -36,7 +36,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | 1:1 hit “group needs media_relay” | SFU attach-wait / `sfu_hint` only for N≥3; do not treat PC `closed` as 1:1→SFU |
 | Soft-migrate fail on 3rd joiner | Eject joiner; keep existing 1:1 P2P; invite preflight when no hop |
 | Mid-call invite from 2nd peer → chrome gone | **Sticky initiator SoftMigrates** on CallRoster (`JoinedCountObserved`); inviter WaitForAttach; attach-wait never LeaveCall while migrate in flight; SoftMigrateLogic unit coverage |
-| Opaque hop dial / prefer_contacts | Prefer contacts OFF → seeds first; ExcludeSelfHop; OpenStream errors include cause; fakes for topology controller tests |
+| Opaque hop dial / prefer_contacts | Prefer contacts OFF → seeds first; PreferInCallMediaHops boosts dialable in-call Nodes (Windows member); ExcludeSelfHop; OpenStream errors include cause |
 
 ## Still open (a4 polish / a5)
 

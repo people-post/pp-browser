@@ -107,17 +107,28 @@ TEST(MeshHopPolicyTest, ExcludeSelfHopDropsLocalPeerId) {
   EXPECT_EQ(ExcludeSelfHop({self_hop, other}, "").size(), 2u);
 }
 
-TEST(MeshHopPolicyTest, ExcludePeerIdsDropsCallParticipants) {
-  MeshHopCandidate android;
-  android.peer_id = "12D3KooWAndroid";
-  android.affinity = MeshHopAffinity::Contact;
+TEST(MeshHopPolicyTest, PreferInCallMediaHopsPutsCallMemberFirst) {
+  MeshHopCandidate linux_out;
+  linux_out.peer_id = "12D3KooWLinux";
+  linux_out.multiaddr = "/ip4/1.1.1.1/tcp/1/p2p/12D3KooWLinux";
+  linux_out.affinity = MeshHopAffinity::Contact;
+
+  MeshHopCandidate windows_in;
+  windows_in.peer_id = "12D3KooWWin";
+  windows_in.multiaddr = "/ip4/2.2.2.2/tcp/1/p2p/12D3KooWWin";
+  windows_in.affinity = MeshHopAffinity::Contact;
+
   MeshHopCandidate seed;
   seed.peer_id = "12D3KooWSeed";
+  seed.multiaddr = "/ip4/3.3.3.3/tcp/1/p2p/12D3KooWSeed";
   seed.affinity = MeshHopAffinity::OrgSeed;
 
-  auto filtered = ExcludePeerIds({android, seed}, {"12D3KooWAndroid"});
-  ASSERT_EQ(filtered.size(), 1u);
-  EXPECT_EQ(filtered[0].peer_id, "12D3KooWSeed");
+  // Seed-first ranking (prefer contacts off), then boost in-call Windows ahead.
+  auto ranked = PreferInCallMediaHops({seed, linux_out, windows_in}, {"12D3KooWWin"});
+  ASSERT_EQ(ranked.size(), 3u);
+  EXPECT_EQ(ranked[0].peer_id, "12D3KooWWin");
+  EXPECT_EQ(ranked[1].peer_id, "12D3KooWSeed");
+  EXPECT_EQ(ranked[2].peer_id, "12D3KooWLinux");
 }
 
 TEST(MediaFrameCodecTest, RoundTripHeaderAndPayload) {
