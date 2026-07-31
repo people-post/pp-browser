@@ -11,13 +11,21 @@
 #include <string>
 #include <thread>
 
+#if defined(_WIN32)
+#include <process.h>
+static int ProcessId() { return _getpid(); }
+#else
+#include <unistd.h>
+static int ProcessId() { return static_cast<int>(getpid()); }
+#endif
+
 namespace pbr {
 namespace {
 
 class MediaRelayServiceTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    static std::atomic<int> port{43000};
+    static std::atomic<int> port{43000 + (ProcessId() % 2000) * 10};
     hop_port_ = port.fetch_add(1);
     a_port_ = port.fetch_add(1);
     b_port_ = port.fetch_add(1);

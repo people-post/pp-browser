@@ -11,6 +11,7 @@
 #include <array>
 #include <chrono>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <thread>
@@ -121,9 +122,14 @@ CircuitRelayBridgeResult RelayBridge(PeerSessionManager& sessions, const nlohman
   const int timeout_ms = root.value("timeout_ms", 8000);
   const auto wait_for = std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 8000);
 
-  std::promise<Roe<void>> dial_promise;
-  auto dial_future = dial_promise.get_future();
-  sessions.EnsureConnection(target_key, [&](Roe<void> result) { dial_promise.set_value(std::move(result)); });
+  auto dial_promise = std::make_shared<std::promise<Roe<void>>>();
+  auto dial_future = dial_promise->get_future();
+  sessions.EnsureConnection(target_key, [dial_promise](Roe<void> result) {
+    try {
+      dial_promise->set_value(std::move(result));
+    } catch (const std::future_error&) {
+    }
+  });
   if (dial_future.wait_for(wait_for) != std::future_status::ready) {
     out.error = "relay dial timed out";
     return out;
@@ -142,10 +148,15 @@ CircuitRelayBridgeResult RelayBridge(PeerSessionManager& sessions, const nlohman
     protocols.push_back(ProtocolName{kCircuitRelayProtocolId});
   }
 
-  std::promise<libp2p::StreamAndProtocolOrError> stream_promise;
-  auto stream_future = stream_promise.get_future();
+  auto stream_promise = std::make_shared<std::promise<libp2p::StreamAndProtocolOrError>>();
+  auto stream_future = stream_promise->get_future();
   sessions.OpenStream(target_key, protocols,
-                      [&](libp2p::StreamAndProtocolOrError res) { stream_promise.set_value(std::move(res)); });
+                      [stream_promise](libp2p::StreamAndProtocolOrError res) {
+                        try {
+                          stream_promise->set_value(std::move(res));
+                        } catch (const std::future_error&) {
+                        }
+                      });
   if (stream_future.wait_for(wait_for) != std::future_status::ready) {
     out.error = "relay target stream timed out";
     return out;
