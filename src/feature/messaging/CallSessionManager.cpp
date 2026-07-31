@@ -14,6 +14,12 @@
 #include <nlohmann/json.hpp>
 
 namespace pbr {
+namespace {
+
+/** How long invitees wait for CallSfuAttach / hop attach before leaving (no relay / migrate fail). */
+constexpr int64_t kSfuAttachWaitMs = 20000;
+
+} // namespace
 
 CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                        CallSessionStore& sessions, CallMediaKeyStore& media_keys,
@@ -410,6 +416,9 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   sfu_attached_ = false;
   awaiting_sfu_recovery_ = false;
   local_publisher_stream_id_ = 0;
+  if (sfu_attach_wait_call_id_ == call_id) {
+    ClearSfuAttachWait();
+  }
   ClearMediaCallbacks();
   media_attempted_calls_.erase(call_id);
 }
@@ -538,6 +547,14 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   if (!CallSessionLogic::CanAcceptJoin(*joined)) {
     return Error("Call is full");
   }
+  // N≥3 requires media_relay soft-migrate (V021). Refuse mid-call guest invites when no hop
+  // exists — otherwise Mac/Linux stay on 1:1 P2P while the invitee hangs on Connecting….
+  const bool already_on_sfu =
+      (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) ||
+      ((*session)->sfu_hint && !(*session)->sfu_hint->empty());
+  if (*joined >= 2 && !already_on_sfu && !HasMediaRelayHopCandidates()) {
+    return Error("Adding a guest needs a media relay hop (enable Media relay on a Node/seed)");
+  }
 
   const int64_t now = util::NowUnixMs();
   CallParticipant participant;
@@ -660,19 +677,29 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
     attach.hop_peer_id = *row.sfu_hint;
     attach.publisher_stream_id = PublisherStreamIdForLocal();
     media_attempted_calls_.insert(call_id);
+    BeginSfuAttachWait(call_id);
     BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, attach]() {
       if (auto ok = AttachLocalToSfu(call_id, attach); !ok) {
         log().warning << "AttachLocalToSfu (invite hint) failed: " << ok.error().message;
         last_media_error_ = ok.error().message;
+        ClearSfuAttachWait();
+        (void)LeaveCall(call_id);
       }
       NotifyRingChanged();
     });
   } else if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
     media_attempted_calls_.insert(call_id);
+    BeginSfuAttachWait(call_id);
     BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
       if (auto mig = MaybeSoftMigrateToSfu(call_id); !mig) {
         log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
         last_media_error_ = mig.error().message;
+        ClearSfuAttachWait();
+        (void)LeaveCall(call_id);
+      } else if (!sfu_attached_) {
+        // Non-coordinator: wait for CallSfuAttach (PollPendingSfuAttach times out).
+      } else {
+        ClearSfuAttachWait();
       }
       NotifyRingChanged();
     });
@@ -959,6 +986,87 @@ Roe<std::vector<CallParticipant>> CallSessionManager::ListJoinedParticipants(con
 
 bool CallSessionManager::IsAwaitingSfuRecovery() const { return awaiting_sfu_recovery_; }
 
+std::vector<MeshHopCandidate> CallSessionManager::RankedMediaHopCandidates() const {
+  std::vector<Contact> contacts;
+  if (auto listed = contacts_.List()) {
+    contacts = std::move(*listed);
+  }
+  auto candidates = CollectContactHopCandidates(contacts);
+  auto seeds = CollectSeedHopCandidates(relay_deps_.bootstrap_peers);
+  candidates.insert(candidates.end(), seeds.begin(), seeds.end());
+  return RankMediaHops(std::move(candidates));
+}
+
+bool CallSessionManager::HasMediaRelayHopCandidates() const {
+  if (!relay_deps_.relay || !relay_deps_.sessions) {
+    return false;
+  }
+  return !RankedMediaHopCandidates().empty();
+}
+
+void CallSessionManager::BeginSfuAttachWait(const std::string& call_id) {
+  sfu_attach_wait_call_id_ = call_id;
+  sfu_attach_wait_deadline_ms_ = util::NowUnixMs() + kSfuAttachWaitMs;
+}
+
+void CallSessionManager::ClearSfuAttachWait() {
+  sfu_attach_wait_call_id_.clear();
+  sfu_attach_wait_deadline_ms_ = 0;
+}
+
+void CallSessionManager::PollPendingSfuAttach() {
+  if (sfu_attach_wait_call_id_.empty()) {
+    return;
+  }
+  const std::string call_id = sfu_attach_wait_call_id_;
+  if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
+    ClearSfuAttachWait();
+    return;
+  }
+  if (util::NowUnixMs() < sfu_attach_wait_deadline_ms_) {
+    return;
+  }
+  ClearSfuAttachWait();
+  last_media_error_ = "No media relay available — group call needs a media_relay hop";
+  log().warning << "SFU attach wait timed out call_id=" << call_id;
+  (void)LeaveCall(call_id);
+}
+
+void CallSessionManager::EjectParticipantAfterMigrateFailure(const std::string& call_id,
+                                                             const std::string& identity,
+                                                             const std::string& reason) {
+  if (identity.empty()) {
+    return;
+  }
+  last_media_error_ = reason;
+  log().warning << "Ejecting " << identity << " after soft-migrate failure: " << reason;
+
+  CallLeaveDetail leave;
+  leave.call_id = call_id;
+  leave.identity = identity;
+  auto detail = CallControlCodec::EncodeLeave(leave);
+  if (detail) {
+    // Notify joiner first while still Joined so they clear chrome.
+    (void)SendCallDirectMessage(identity, CallControlType::CallLeave, *detail, "Left the call");
+  }
+
+  CallParticipant participant;
+  participant.call_id = call_id;
+  participant.identity = identity;
+  participant.state = CallParticipantState::Left;
+  participant.left_at = util::NowUnixMs();
+  (void)sessions_.UpsertParticipant(participant);
+
+  if (detail) {
+    auto local = LocalRelayIdentity();
+    if (local) {
+      // Other peers (ejectee already Left → skipped by FanOut).
+      (void)FanOutToJoined(call_id, CallControlType::CallLeave, *detail, "Left the call", *local);
+    }
+  }
+  NotifyRingChanged();
+}
+
 Roe<std::optional<CallSession>> CallSessionManager::SessionForCall(const std::string& call_id) const {
   return sessions_.LoadSession(call_id);
 }
@@ -1156,10 +1264,15 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       const size_t n_joined = joined_after ? *joined_after : 0;
       if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
         media_attempted_calls_.insert(accept->call_id);
-        BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id = accept->call_id]() {
+        BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id = accept->call_id, identity]() {
           if (auto mig = MaybeSoftMigrateToSfu(call_id); !mig) {
             log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
-            last_media_error_ = mig.error().message;
+            // Keep existing 1:1 P2P; eject the new joiner so they are not stuck Connecting….
+            EjectParticipantAfterMigrateFailure(
+                call_id, identity,
+                mig.error().message.empty()
+                    ? "No media relay available — group call needs a media_relay hop"
+                    : mig.error().message);
           }
           NotifyRingChanged();
         });
@@ -1200,6 +1313,20 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     (void)sessions_.UpsertParticipant(participant);
     auto joined = sessions_.CountJoined(leave->call_id);
     auto session = sessions_.LoadSession(leave->call_id);
+    if (identity == *local) {
+      // Ejected after failed soft-migrate (or remote Leave for us): clear local chrome/media.
+      ClearSfuAttachWait();
+      if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
+        std::optional<int64_t> duration;
+        if ((*session)->created_at > 0) {
+          duration = util::NowUnixMs() - (*session)->created_at;
+        }
+        return EndCallLocal(**session, duration);
+      }
+      StopMediaIfCall(leave->call_id);
+      NotifyRingChanged();
+      return {};
+    }
     if (session && session->has_value()) {
       const size_t remaining = joined ? *joined : 0;
       const CallSessionState next = CallSessionLogic::TransitionOnLeave((*session)->state, remaining);
@@ -1290,6 +1417,11 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (auto ok = AttachLocalToSfu(attach->call_id, *attach); !ok) {
       last_media_error_ = ok.error().message;
       log().warning << "AttachLocalToSfu (inbound) failed: " << ok.error().message;
+      ClearSfuAttachWait();
+      // Joiner waiting on SFU: leave instead of hanging on Connecting….
+      if (!media_.IsActive() || media_.ActiveCallId() != attach->call_id) {
+        (void)LeaveCall(attach->call_id);
+      }
     }
     NotifyRingChanged();
     return {};
@@ -1361,14 +1493,7 @@ Roe<void> CallSessionManager::MaybeSoftMigrateToSfu(const std::string& call_id) 
     return {};
   }
 
-  std::vector<Contact> contacts;
-  if (auto listed = contacts_.List()) {
-    contacts = std::move(*listed);
-  }
-  auto candidates = CollectContactHopCandidates(contacts);
-  auto seeds = CollectSeedHopCandidates(relay_deps_.bootstrap_peers);
-  candidates.insert(candidates.end(), seeds.begin(), seeds.end());
-  auto ranked = RankMediaHops(std::move(candidates));
+  auto ranked = RankedMediaHopCandidates();
   if (ranked.empty()) {
     return Error("no media_relay hop candidates");
   }
@@ -1515,6 +1640,7 @@ Roe<void> CallSessionManager::AttachLocalToSfu(const std::string& call_id, const
   sfu_attached_ = true;
   awaiting_sfu_recovery_ = false;
   media_peer_identity_.clear();
+  ClearSfuAttachWait();
   RefreshAdaptation(call_id);
   return {};
 }

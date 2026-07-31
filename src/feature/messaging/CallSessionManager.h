@@ -74,6 +74,12 @@ public:
   /** True while attempting ICE-fail → SFU recovery (suppress auto-leave). */
   bool IsAwaitingSfuRecovery() const;
 
+  /**
+   * Leave if we accepted into an N≥3 call but never received CallSfuAttach / hop attach
+   * (soft-migrate failed on the coordinator, or no media_relay hop). Call from UI refresh.
+   */
+  void PollPendingSfuAttach();
+
   Roe<std::optional<CallSession>> SessionForCall(const std::string& call_id) const;
 
   /** Expire stale pending invites; notify UI if any changed. */
@@ -134,6 +140,15 @@ private:
   uint32_t PublisherStreamIdForLocal() const;
   void RefreshAdaptation(const std::string& call_id);
 
+  /** Ranked contact∪seed hops available for media_relay (empty ⇒ cannot soft-migrate). */
+  std::vector<MeshHopCandidate> RankedMediaHopCandidates() const;
+  bool HasMediaRelayHopCandidates() const;
+  void BeginSfuAttachWait(const std::string& call_id);
+  void ClearSfuAttachWait();
+  /** Soft-migrate failed after a mid-call accept: keep 1:1 P2P, eject the new joiner. */
+  void EjectParticipantAfterMigrateFailure(const std::string& call_id, const std::string& identity,
+                                           const std::string& reason);
+
   IThreadStore& store_;
   ContactsStore& contacts_;
   IdentityStore& identity_;
@@ -152,6 +167,9 @@ private:
   bool awaiting_sfu_recovery_ = false;
   uint32_t local_publisher_stream_id_ = 0;
   std::unordered_set<std::string> media_attempted_calls_;
+  /** AcceptInvite / SoftMigrate: wait for CallSfuAttach or local attach before giving up. */
+  std::string sfu_attach_wait_call_id_;
+  int64_t sfu_attach_wait_deadline_ms_ = 0;
 };
 
 } // namespace pbr

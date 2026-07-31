@@ -235,6 +235,8 @@ void CallController::RefreshPendingRing() {
     UserFeedback::Fail(*media_err);
   }
 
+  calls->PollPendingSfuAttach();
+
   auto top = calls->TopPendingInvite();
   if (top && top->has_value()) {
     ringing_call_id_ = (*top)->call_id;
@@ -313,8 +315,9 @@ void CallController::RefreshPendingRing() {
     // Peer vanished without a clean leave — end local session so chrome does not stick.
     if (calls->Media().IsActive() && calls->Media().ActiveCallId() == active_call_id_) {
       const std::string media_state = calls->Media().ConnectionState();
-      if (media_state == "failed") {
-        if (calls->IsAwaitingSfuRecovery() || calls->Media().IsSfuMode()) {
+      if (media_state == "failed" || media_state == "closed") {
+        if (media_state == "failed" &&
+            (calls->IsAwaitingSfuRecovery() || calls->Media().IsSfuMode())) {
           // ICE-fail → SFU recovery in flight; keep chrome and show reconnecting.
         } else {
           (void)calls->LeaveCall(active_call_id_);
@@ -389,9 +392,11 @@ void CallController::RefreshPendingRing() {
       const std::string state = calls->Media().ConnectionState();
       if (calls->IsAwaitingSfuRecovery()) {
         in_call.subtitle = "Reconnecting…";
-      } else if (state == "connecting" || state.empty()) {
+      } else if (state == "connecting" || state.empty() || state == "new") {
         in_call.subtitle = "Connecting…";
       } else if (state == "disconnected" || state == "failed") {
+        in_call.subtitle = "Reconnecting…";
+      } else if (state == "closed") {
         in_call.subtitle = "Reconnecting…";
       } else {
         in_call.subtitle = state;
