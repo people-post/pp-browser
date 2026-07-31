@@ -848,7 +848,7 @@ struct CallMediaEngine::Impl {
     role = start_role;
 
     pc->onStateChange([this](rtc::PeerConnection::State state) {
-      SDL_Log("CallMediaEngine: pc state=%s", StateToString(state));
+      SDL_Log("CallMediaEngine: pc state=%s", StateToString(state).c_str());
       SetState(StateToString(state));
     });
     pc->onIceStateChange([this](rtc::PeerConnection::IceState state) {
