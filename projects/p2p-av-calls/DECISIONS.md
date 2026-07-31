@@ -159,7 +159,7 @@ Blob encoding matches chat: `EncryptedPayload::EncodeBlob` → base64 as `wrappe
 
 ## V016 — a3 delivery slice: LAN video; mobile wiring included
 
-**Date:** 2026-07-28 (updated 2026-07-30 — LAN dogfood claimed; a3 closed)  
+**Date:** 2026-07-28 (updated 2026-07-31 — LAN dogfood includes macOS; a3 closed)  
 **Decision:** Phase **a3** ships **desktop + Android + iOS wiring** for 1:1 video on the LAN/same-network ICE path, with H264 locked (V017), camera-off-by-default (V009), shell video surfaces (V018), and unified Opus+H264 / same in-call (V019). Explicitly **out of a3 “done”**:
 
 | Deferred | Where it lands |
@@ -177,7 +177,7 @@ Same pattern as a2 (V010): LAN dogfood proves media + UI; NAT claims wait for or
 4. Desktop camera permissions / OS privacy prompts exercised; Android `CAMERA` (+ `RECORD_AUDIO`); **iOS** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` + `AVAudioSession` play-and-record + `UIBackgroundModes` `audio` (V019) — **wiring complete**; physical iOS device dogfood optional follow-up  
 5. Docs: CURRENT_STATE marks LAN video path + mobile wiring; NAT/SFU still unclaimed; Linux video **send** may fail without camera and/or usable HW encoder (accepted); voice continues (V019)
 
-**Dogfood claimed (2026-07-30):** Android ↔ Windows bidirectional video; Android→Linux and Windows→Linux one-way (Linux dogfood host had no camera; receive/display OK). macOS / iOS device optional. NAT / seed SFU not claimed. 
+**Dogfood claimed (2026-07-31):** Android ↔ Windows and **Android ↔ macOS** bidirectional video; Android→Linux / Windows→Linux / **Mac→Linux** one-way when Linux dogfood host had no camera (receive/display OK). Voice OK on those pairs. **iOS** device dogfood still optional. NAT / seed SFU not claimed. macOS packaged builds need `NSLocalNetworkUsageDescription` for Sequoia LAN ICE.
 
 **Rationale:** Mesh SFU is still pre-nr; blocking a3 on it repeats the false “mobile-ready” trap. iOS A/V session + plist work ships with a3 so mobile shares one codec/UI path; NAT dogfood still mesh-gated.  
 **Alternatives:** Full a3 checklist including SFU (rejected — mesh-gated); defer iOS to separate bring-up (superseded 2026-07-30 — wiring-only iOS exit).
@@ -209,7 +209,7 @@ Same pattern as a2 (V010): LAN dogfood proves media + UI; NAT claims wait for or
 | iOS | VideoToolbox | **In a3** wiring (plist + AVAudioSession); device dogfood optional |
 | Linux | VA-API (and/or V4L2 M2M) when present | **Best-effort** — no soft-codec product fallback in a3 |
 
-**Linux constraint (accepted):** Video **send** requires a capture device **and** a usable H264 encoder. Many Linux hosts (VMs, headless, missing iGPU drivers, no camera) fail one or both. a3 dogfood Linux had **no camera** (receive OK from Android/Windows). Do **not** block a3 on universal Linux soft encode. Receiving/decoding may still work when a HW decoder exists.
+**Linux constraint (accepted):** Video **send** requires a capture device **and** a usable H264 encoder. Many Linux hosts (VMs, headless, missing iGPU drivers, no camera) fail one or both. a3 dogfood Linux had **no camera** (receive OK from Android/Windows/**macOS**). Do **not** block a3 on universal Linux soft encode. Receiving/decoding may still work when a HW decoder exists.
 
 **Rejected for a3 product path:**
 

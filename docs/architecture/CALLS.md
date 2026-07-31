@@ -2,14 +2,15 @@
 
 **Tier:** architecture
 
-How voice/video calls are shaped in the codebase: planes, ownership, topology, and the target split of today’s monolithic `CallSessionManager`.
+**Mature code architecture** for voice/video calls — planes, layer ownership, topology rules that the code must honor, and the target split of today’s monolithic `CallSessionManager`. Change rarely; update when structure lands in tree.
 
-**Product ADRs / phases:** [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/) (DESIGN, DECISIONS V014–V024, CURRENT_STATE).  
+**Open delivery work** (phases, dogfood, new ADRs): [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).  
+**Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (V014–V024).  
 **Wire controls:** [`contracts/WIRE_SCHEMAS.md`](../contracts/WIRE_SCHEMAS.md) (call system `control_type`s).  
 **Messaging carrier:** [`P2P_MESSAGING.md`](P2P_MESSAGING.md).  
 **SFU / mesh hop:** [`projects/p2p-mesh/`](../../projects/p2p-mesh/) (`media_relay`).
 
-This doc is the **code-architecture** map. Normative product rules stay in project DECISIONS; promote wire/disk shapes to `contracts/` when they harden.
+Do **not** restate the full product decision table here — link DECISIONS. Promote wire/disk shapes to `contracts/` when they harden. Dogfood “what works this week” lives only in project [CURRENT_STATE.md](../../projects/p2p-av-calls/CURRENT_STATE.md).
 
 ---
 

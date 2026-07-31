@@ -24,13 +24,15 @@
 
 ## Documents
 
-| File | Purpose |
-|------|---------|
-| [DESIGN.md](DESIGN.md) | Session model, lifecycle, signaling, media, crypto, mesh deps |
-| [../../docs/architecture/CALLS.md](../../docs/architecture/CALLS.md) | **Code architecture** — system relationships, topology ownership, extraction target |
-| [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
-| [PHASES.md](PHASES.md) | Delivery checklist (v0 → a6) |
-| [DECISIONS.md](DECISIONS.md) | ADRs (V001+) |
+| File | Tier | Purpose |
+|------|------|---------|
+| [../../docs/architecture/CALLS.md](../../docs/architecture/CALLS.md) | **Stable** (architecture) | Code map — planes, modules, topology ownership, extraction target |
+| [DESIGN.md](DESIGN.md) | **Active** (project) | Product design — entities, lifecycle, crypto, invite rules |
+| [DECISIONS.md](DECISIONS.md) | **Active** (project) | ADRs (V001+) — rationale; promote wire shapes to `docs/contracts/` when shipped |
+| [CURRENT_STATE.md](CURRENT_STATE.md) | **Active** (project) | Dogfood / codebase board this week |
+| [PHASES.md](PHASES.md) | **Active** (project) | Delivery checklist (v0 → a6) |
+
+Agents: code “where does X live?” → **CALLS**. Product “should we…?” → **DESIGN / DECISIONS**. “What works on devices?” → **CURRENT_STATE**.
 
 ## Dependencies
 
@@ -51,7 +53,7 @@
 | a0 | Mesh/SFU prerequisites alignment | **Done** |
 | a1 | Signaling + session + history + ring wake | **Done** |
 | a2 | 1:1 voice (WebRTC + LAN dogfood) | **Done** — LAN Opus OK; NAT unclaimed |
-| a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **Done** — Android↔Win bidirectional; Linux receive-only (no camera); NAT unclaimed |
+| a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **Done** — Android↔Win / Android↔Mac bidirectional; Linux receive-only (no camera); NAT unclaimed |
 | a4 | Group ≤8 via **`media_relay`**, guests, rotate | **Thin landed** — soft-migrate + V024 + SFU mode; chrome/AEAD polish next |
 | a5 | Cap decision 8→16, polish | Pending |
 | a6 | Promote contracts to `docs/` | Pending |

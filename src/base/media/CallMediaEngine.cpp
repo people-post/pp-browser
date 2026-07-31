@@ -771,7 +771,7 @@ struct CallMediaEngine::Impl {
             }
             if (video_codec && video_codec->HasEncoder()) {
               auto encoded = video_codec->Encode(i420, need_keyframe);
-              if (encoded) {
+              if (encoded && !encoded->annex_b.empty()) {
                 need_keyframe = false;
                 if (sfu_mode && sfu_send) {
                   SfuPacket pkt;

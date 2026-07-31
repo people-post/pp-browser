@@ -291,6 +291,12 @@ Roe<void> VideoToolboxVideoCodec::ConfigureEncoder(int width, int height, int fp
       kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
   CFDictionarySetValue(encoder_spec, kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder,
                        kCFBooleanTrue);
+#if defined(kVTVideoEncoderSpecification_EnableLowLatencyRateControl)
+  // Prefer 1-in-1-out HW encode so CompleteFrames does not flush multi-frame Annex-B blobs
+  // that break Linux's VA-API slice decoder (Android MediaCodec tolerates them).
+  CFDictionarySetValue(encoder_spec, kVTVideoEncoderSpecification_EnableLowLatencyRateControl,
+                       kCFBooleanTrue);
+#endif
 
   CFMutableDictionaryRef source_attrs = CFDictionaryCreateMutable(
       kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
@@ -317,10 +323,26 @@ Roe<void> VideoToolboxVideoCodec::ConfigureEncoder(int width, int height, int fp
     return Error("VTCompressionSessionCreate failed");
   }
 
-  VTSessionSetProperty(session, kVTCompressionPropertyKey_ProfileLevel,
-                       kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel);
+  // Constrained Baseline is required for Linux VA-API CBP hosts and WebRTC interop.
+  // Ignore failures only after trying Baseline as a fallback — never leave the
+  // session on an implicit Main/High default (CABAC breaks the Linux decoder).
+  status = VTSessionSetProperty(session, kVTCompressionPropertyKey_ProfileLevel,
+                                kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel);
+  if (status != noErr) {
+    status = VTSessionSetProperty(session, kVTCompressionPropertyKey_ProfileLevel,
+                                  kVTProfileLevel_H264_Baseline_AutoLevel);
+  }
+  if (status != noErr) {
+    VTCompressionSessionInvalidate(session);
+    CFRelease(session);
+    return Error("VTCompressionSession refused Baseline/Constrained Baseline profile");
+  }
   VTSessionSetProperty(session, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue);
   VTSessionSetProperty(session, kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse);
+  const int32_t max_delay = 0;
+  CFNumberRef max_delay_number = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &max_delay);
+  VTSessionSetProperty(session, kVTCompressionPropertyKey_MaxFrameDelayCount, max_delay_number);
+  CFRelease(max_delay_number);
 
   const int32_t max_keyframe_interval = fps * 2;
   CFNumberRef max_keyframe_number =
@@ -410,10 +432,14 @@ Roe<EncodedAccessUnit> VideoToolboxVideoCodec::Encode(const VideoFrameI420& fram
   if (output.error) {
     return Error("H264 encode callback reported failure");
   }
+  if (!output.got_output || output.annex_b.empty()) {
+    // Encoder may drop/delay under load; do not emit an empty RTP access unit.
+    return Error("H264 encode produced no output");
+  }
 
   EncodedAccessUnit unit;
   unit.annex_b = std::move(output.annex_b);
-  unit.keyframe = output.got_output && output.keyframe;
+  unit.keyframe = output.keyframe;
   return unit;
 }
 
@@ -512,6 +538,10 @@ Roe<VideoFrameRgba> VideoToolboxVideoCodec::Decode(const uint8_t* annex_b, size_
     if (nal.type == 8) {
       pps = nal.data;
       pps_size = nal.size;
+      continue;
+    }
+    // VCL slices only (ignore AUD/SEI/filler). Matches Linux/Android decoders.
+    if (nal.type != 1 && nal.type != 5) {
       continue;
     }
     has_slice = true;
@@ -619,6 +649,11 @@ void VideoToolboxVideoCodec::CompressionOutputCallback(void* output_ref_con, voi
     out.error = true;
     return;
   }
+  // CompleteFrames can flush more than one delayed frame into this Encode() call.
+  // Keep only the latest AU so Linux does not see concatenated multi-frame Annex-B.
+  out.annex_b.clear();
+  out.got_output = false;
+  out.keyframe = false;
   AppendEncodedSample(sample_buffer, out);
 }
 
