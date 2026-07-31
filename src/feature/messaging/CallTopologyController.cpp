@@ -12,7 +12,8 @@
 namespace pbr {
 namespace {
 
-constexpr int64_t kSfuAttachWaitMs = 20000;
+/** Soft-migrate quote/attach can take ~20–30s; wait must outlast initiator IO work. */
+constexpr int64_t kSfuAttachWaitMs = 45000;
 
 } // namespace
 
@@ -54,6 +55,18 @@ bool CallTopologyController::HasMediaRelayHopCandidates() const {
     return false;
   }
   return !RankedMediaHopCandidates().empty();
+}
+
+std::string CallTopologyController::ResolveHopMultiaddr(const std::string& hop_peer_id) const {
+  if (hop_peer_id.empty()) {
+    return {};
+  }
+  for (const MeshHopCandidate& hop : RankedMediaHopCandidates()) {
+    if (hop.peer_id == hop_peer_id && !hop.multiaddr.empty()) {
+      return hop.multiaddr;
+    }
+  }
+  return {};
 }
 
 void CallTopologyController::BeginSfuAttachWait(const std::string& call_id) {
@@ -275,12 +288,16 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
 }
 
 Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
-                                                   const CallSfuAttachDetail& attach) {
+                                                   const CallSfuAttachDetail& attach_in) {
   if (!relay_deps_.relay || !relay_deps_.sessions) {
     return Error("media_relay not available");
   }
+  CallSfuAttachDetail attach = attach_in;
   if (attach.hop_peer_id.empty()) {
     return Error("missing hop_peer_id");
+  }
+  if (attach.hop_multiaddr.empty()) {
+    attach.hop_multiaddr = ResolveHopMultiaddr(attach.hop_peer_id);
   }
   if (!attach.hop_multiaddr.empty()) {
     (void)relay_deps_.sessions->RegisterEndpoint(attach.hop_peer_id, attach.hop_multiaddr);
@@ -296,19 +313,27 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   qreq.participants = joined ? static_cast<int>(*joined) : 2;
   qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
   qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
-  auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 8000);
-  if (!quote || !quote->ok) {
-    return Error(quote ? quote->error : quote.error().message);
+
+  std::string quote_id = attach.quote_id;
+  int64_t a_up_bps = 0;
+  if (quote_id.empty()) {
+    auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 8000);
+    if (!quote || !quote->ok) {
+      return Error(quote ? quote->error : quote.error().message);
+    }
+    quote_id = quote->quote_id;
+    a_up_bps = quote->a_up_bps;
   }
+
   CallAdaptationInput in;
-  in.per_user_up_bps = quote->a_up_bps;
+  in.per_user_up_bps = a_up_bps;
   in.camera_user_wants = false;
   media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
 
   local_publisher_stream_id_ = PublisherStreamIdForLocal();
 
   auto attach_res = relay_deps_.relay->AcceptAndAttach(
-      attach.hop_peer_id, quote->quote_id, call_id, call_id,
+      attach.hop_peer_id, quote_id, call_id, call_id,
       [this](MediaDataFrame frame) {
         CallMediaEngine::SfuPacket pkt;
         pkt.channel_id = frame.channel_id;
@@ -375,33 +400,33 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
 
 void CallTopologyController::TryRecoverViaSfu(const std::string& call_id) {
   awaiting_sfu_recovery_ = true;
-  BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
-    if (sfu_attached_ && media_.IsSfuMode()) {
-      awaiting_sfu_recovery_ = false;
+  BeginSfuAttachWait(call_id);
+  // Quote/attach/StartSfu must not run on UI (Windows mouse freeze).
+  BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id]() {
+    Roe<void> migrated = MaybeSoftMigrateToSfu(call_id);
+    const bool attached = sfu_attached_ && media_.IsSfuMode();
+    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, migrated, attached]() {
+      if (attached || (sfu_attached_ && media_.IsSfuMode())) {
+        awaiting_sfu_recovery_ = false;
+        ClearSfuAttachWait();
+        host_.TopologyNotifyRingChanged();
+        return;
+      }
+      if (!migrated) {
+        awaiting_sfu_recovery_ = false;
+        const std::string msg =
+            migrated.error().message.empty()
+                ? "No media relay available — group call needs a media_relay hop"
+                : migrated.error().message;
+        host_.TopologySetLastMediaError(msg);
+        log().warning << "ICE-fail SFU recovery failed: " << msg;
+        (void)host_.TopologyLeaveCall(call_id);
+        host_.TopologyNotifyRingChanged();
+        return;
+      }
+      // Non-initiator: wait for CallSfuAttach (deadline already set).
       host_.TopologyNotifyRingChanged();
-      return;
-    }
-    auto migrated = MaybeSoftMigrateToSfu(call_id);
-    if (sfu_attached_) {
-      awaiting_sfu_recovery_ = false;
-      ClearSfuAttachWait();
-      host_.TopologyNotifyRingChanged();
-      return;
-    }
-    if (!migrated) {
-      awaiting_sfu_recovery_ = false;
-      const std::string msg =
-          migrated.error().message.empty()
-              ? "No media relay available — group call needs a media_relay hop"
-              : migrated.error().message;
-      host_.TopologySetLastMediaError(msg);
-      log().warning << "ICE-fail SFU recovery failed: " << msg;
-      (void)host_.TopologyLeaveCall(call_id);
-      host_.TopologyNotifyRingChanged();
-      return;
-    }
-    BeginSfuAttachWait(call_id);
-    host_.TopologyNotifyRingChanged();
+    });
   });
 }
 
@@ -411,35 +436,43 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     CallSfuAttachDetail attach;
     attach.call_id = call_id;
     attach.hop_peer_id = *sfu_hint;
+    attach.hop_multiaddr = ResolveHopMultiaddr(*sfu_hint);
     attach.publisher_stream_id = PublisherStreamIdForLocal();
     host_.TopologyNoteMediaAttempted(call_id);
     BeginSfuAttachWait(call_id);
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, attach]() {
-      if (auto ok = AttachLocalToSfu(call_id, attach); !ok) {
-        log().warning << "AttachLocalToSfu (invite hint) failed: " << ok.error().message;
-        host_.TopologySetLastMediaError(ok.error().message);
-        ClearSfuAttachWait();
-        (void)host_.TopologyLeaveCall(call_id);
-      }
-      host_.TopologyNotifyRingChanged();
+    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, attach]() {
+      Roe<void> ok = AttachLocalToSfu(call_id, attach);
+      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, ok]() {
+        if (!ok) {
+          log().warning << "AttachLocalToSfu (invite hint) failed: " << ok.error().message;
+          host_.TopologySetLastMediaError(ok.error().message);
+          ClearSfuAttachWait();
+          (void)host_.TopologyLeaveCall(call_id);
+        }
+        host_.TopologyNotifyRingChanged();
+      });
     });
     return true;
   }
   if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
     host_.TopologyNoteMediaAttempted(call_id);
     BeginSfuAttachWait(call_id);
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
-      if (auto mig = MaybeSoftMigrateToSfu(call_id); !mig) {
-        log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
-        host_.TopologySetLastMediaError(mig.error().message);
-        ClearSfuAttachWait();
-        (void)host_.TopologyLeaveCall(call_id);
-      } else if (!sfu_attached_) {
-        // Non-coordinator: wait for CallSfuAttach.
-      } else {
-        ClearSfuAttachWait();
-      }
-      host_.TopologyNotifyRingChanged();
+    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id]() {
+      Roe<void> mig = MaybeSoftMigrateToSfu(call_id);
+      const bool attached = sfu_attached_;
+      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, mig, attached]() {
+        if (!mig) {
+          log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
+          host_.TopologySetLastMediaError(mig.error().message);
+          ClearSfuAttachWait();
+          (void)host_.TopologyLeaveCall(call_id);
+        } else if (!attached && !sfu_attached_) {
+          // Non-initiator: wait for CallSfuAttach.
+        } else {
+          ClearSfuAttachWait();
+        }
+        host_.TopologyNotifyRingChanged();
+      });
     });
     return true;
   }
@@ -452,16 +485,20 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
                                                   const std::string& joiner_identity) {
   if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
     host_.TopologyNoteMediaAttempted(call_id);
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, joiner_identity]() {
-      if (auto mig = MaybeSoftMigrateToSfu(call_id); !mig) {
-        log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
-        EjectParticipantAfterMigrateFailure(
-            call_id, joiner_identity,
-            mig.error().message.empty()
-                ? "No media relay available — group call needs a media_relay hop"
-                : mig.error().message);
-      }
-      host_.TopologyNotifyRingChanged();
+    BeginSfuAttachWait(call_id);
+    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, joiner_identity]() {
+      Roe<void> mig = MaybeSoftMigrateToSfu(call_id);
+      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, joiner_identity, mig]() {
+        if (!mig) {
+          log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
+          EjectParticipantAfterMigrateFailure(
+              call_id, joiner_identity,
+              mig.error().message.empty()
+                  ? "No media relay available — group call needs a media_relay hop"
+                  : mig.error().message);
+        }
+        host_.TopologyNotifyRingChanged();
+      });
     });
     return true;
   }
@@ -472,15 +509,21 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
 
 Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
                                                      const CallSfuAttachDetail& attach) {
-  if (auto ok = AttachLocalToSfu(call_id, attach); !ok) {
-    host_.TopologySetLastMediaError(ok.error().message);
-    log().warning << "AttachLocalToSfu (inbound) failed: " << ok.error().message;
-    ClearSfuAttachWait();
-    if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
-      (void)host_.TopologyLeaveCall(call_id);
-    }
-    return ok.error();
-  }
+  BeginSfuAttachWait(call_id);
+  BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, attach]() {
+    Roe<void> ok = AttachLocalToSfu(call_id, attach);
+    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, ok]() {
+      if (!ok) {
+        host_.TopologySetLastMediaError(ok.error().message);
+        log().warning << "AttachLocalToSfu (inbound) failed: " << ok.error().message;
+        ClearSfuAttachWait();
+        if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
+          (void)host_.TopologyLeaveCall(call_id);
+        }
+      }
+      host_.TopologyNotifyRingChanged();
+    });
+  });
   return {};
 }
 

@@ -196,12 +196,14 @@ Roe<void> CallSessionManager::FanOutToJoined(const std::string& call_id, const C
   if (!participants) {
     return participants.error();
   }
+  // Best-effort: one peer failure must not block CallSfuAttach / roster to the rest.
   for (const CallParticipant& row : *participants) {
     if (row.identity == skip_identity || row.state != CallParticipantState::Joined) {
       continue;
     }
     if (auto sent = SendCallDirectMessage(row.identity, type, detail_json, display); !sent) {
-      return sent.error();
+      log().warning << "FanOutToJoined send failed peer=" << row.identity << " type="
+                    << CallControlTypeToWire(type) << " err=" << sent.error().message;
     }
   }
   return {};
@@ -223,7 +225,8 @@ Roe<void> CallSessionManager::FanOutToJoinedAndRinging(const std::string& call_i
       continue;
     }
     if (auto sent = SendCallDirectMessage(row.identity, type, detail_json, display); !sent) {
-      return sent.error();
+      log().warning << "FanOutToJoinedAndRinging send failed peer=" << row.identity << " type="
+                    << CallControlTypeToWire(type) << " err=" << sent.error().message;
     }
   }
   return {};
