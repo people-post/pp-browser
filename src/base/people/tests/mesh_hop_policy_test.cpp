@@ -107,6 +107,19 @@ TEST(MeshHopPolicyTest, ExcludeSelfHopDropsLocalPeerId) {
   EXPECT_EQ(ExcludeSelfHop({self_hop, other}, "").size(), 2u);
 }
 
+TEST(MeshHopPolicyTest, ExcludePeerIdsDropsCallParticipants) {
+  MeshHopCandidate android;
+  android.peer_id = "12D3KooWAndroid";
+  android.affinity = MeshHopAffinity::Contact;
+  MeshHopCandidate seed;
+  seed.peer_id = "12D3KooWSeed";
+  seed.affinity = MeshHopAffinity::OrgSeed;
+
+  auto filtered = ExcludePeerIds({android, seed}, {"12D3KooWAndroid"});
+  ASSERT_EQ(filtered.size(), 1u);
+  EXPECT_EQ(filtered[0].peer_id, "12D3KooWSeed");
+}
+
 TEST(MediaFrameCodecTest, RoundTripHeaderAndPayload) {
   MediaDataFrame in;
   in.stream_id = 42;

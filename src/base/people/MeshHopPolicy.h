@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace pbr {
@@ -55,6 +56,13 @@ std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candid
 /** Drop hop whose peer_id equals `local_peer_id` (never dial self as media_relay). */
 std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
                                              const std::string& local_peer_id);
+
+/** Drop hops whose peer_id is in `excluded` (e.g. current call participants). */
+std::vector<MeshHopCandidate> ExcludePeerIds(std::vector<MeshHopCandidate> candidates,
+                                             const std::unordered_set<std::string>& excluded);
+
+/** PeerId from a contact row (ContactIdKind::PeerId or multiaddr /p2p/). */
+std::string PeerIdFromContact(const Contact& contact);
 
 /** True if peer_id appears as ContactIdKind::PeerId on any contact. */
 bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& peer_id);

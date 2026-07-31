@@ -9,6 +9,7 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <unordered_set>
 
 namespace pbr {
 
@@ -242,12 +243,28 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
   }
 
   auto ranked = RankedMediaHopCandidates();
+  // Call participants are almost never usable media_relay hosts (mobile Clients; self already
+  // excluded). Skipping them avoids multi-second quote hangs on PeerIds that cannot serve.
+  {
+    std::unordered_set<std::string> participant_peer_ids;
+    for (const std::string& identity : joined_ids) {
+      if (auto hit = contacts_.FindByIdentity(identity); hit && hit->has_value()) {
+        const std::string pid = PeerIdFromContact(**hit);
+        if (!pid.empty()) {
+          participant_peer_ids.insert(pid);
+        }
+      }
+    }
+    ranked = ExcludePeerIds(std::move(ranked), participant_peer_ids);
+  }
   if (ranked.empty()) {
     return Error("no media_relay hop candidates");
   }
 
   std::string last_err = "all hops failed";
   for (const MeshHopCandidate& hop : ranked) {
+    log().info << "SoftMigrate try hop=" << hop.peer_id
+               << " affinity=" << static_cast<int>(hop.affinity);
     CallSfuAttachDetail attach;
     attach.call_id = call_id;
     attach.hop_peer_id = hop.peer_id;
@@ -255,7 +272,8 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
     attach.publisher_stream_id = PublisherStreamIdForLocal();
 
     if (auto attached = AttachLocalToSfu(call_id, attach); !attached) {
-      last_err = attached.error().message;
+      last_err = attached.error().message + " (hop=" + hop.peer_id + ")";
+      log().warning << "SoftMigrate hop failed: " << last_err;
       continue;
     }
 
@@ -308,7 +326,9 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
 
   // Always RequestQuote locally. Shared quote_ids from fan-out are already consumed.
-  auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 8000);
+  // Soft-migrate tries multiple hops; keep per-hop budget tight so seed/contact failover fits
+  // inside attach-wait.
+  auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 5000);
   if (!quote || !quote->ok) {
     return Error(quote ? quote->error : quote.error().message);
   }

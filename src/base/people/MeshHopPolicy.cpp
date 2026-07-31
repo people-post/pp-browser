@@ -8,21 +8,6 @@
 namespace pbr {
 namespace {
 
-std::string PeerIdFromContact(const Contact& contact) {
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::PeerId && !id.value.empty()) {
-      return id.value;
-    }
-  }
-  for (const std::string& ma : contact.multiaddrs) {
-    const std::string pid = PeerIdFromMultiaddr(ma);
-    if (!pid.empty()) {
-      return pid;
-    }
-  }
-  return {};
-}
-
 std::string FirstMultiaddrForPeer(const Contact& contact, const std::string& peer_id) {
   for (const std::string& ma : contact.multiaddrs) {
     if (PeerIdFromMultiaddr(ma) == peer_id) {
@@ -143,15 +128,38 @@ std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candid
   return filtered;
 }
 
+std::string PeerIdFromContact(const Contact& contact) {
+  for (const ContactId& id : contact.ids) {
+    if (id.kind == ContactIdKind::PeerId && !id.value.empty()) {
+      return id.value;
+    }
+  }
+  for (const std::string& ma : contact.multiaddrs) {
+    const std::string pid = PeerIdFromMultiaddr(ma);
+    if (!pid.empty()) {
+      return pid;
+    }
+  }
+  return {};
+}
+
 std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
                                              const std::string& local_peer_id) {
   if (local_peer_id.empty()) {
     return candidates;
   }
+  return ExcludePeerIds(std::move(candidates), {local_peer_id});
+}
+
+std::vector<MeshHopCandidate> ExcludePeerIds(std::vector<MeshHopCandidate> candidates,
+                                             const std::unordered_set<std::string>& excluded) {
+  if (excluded.empty()) {
+    return candidates;
+  }
   std::vector<MeshHopCandidate> out;
   out.reserve(candidates.size());
   for (MeshHopCandidate& c : candidates) {
-    if (c.peer_id == local_peer_id) {
+    if (excluded.count(c.peer_id) > 0) {
       continue;
     }
     out.push_back(std::move(c));
