@@ -405,23 +405,38 @@ struct CallMediaEngine::Impl {
     return {};
   }
 
+  Roe<void> EnsureOpusCodecs() {
+    if (encoder && decoder) {
+      return {};
+    }
+    int err = 0;
+    if (!encoder) {
+      encoder = opus_encoder_create(kSampleRate, kChannels, OPUS_APPLICATION_VOIP, &err);
+      if (!encoder || err != OPUS_OK) {
+        return Error("opus_encoder_create failed");
+      }
+      opus_encoder_ctl(encoder, OPUS_SET_BITRATE(24000));
+    }
+    if (!decoder) {
+      decoder = opus_decoder_create(kSampleRate, kChannels, &err);
+      if (!decoder || err != OPUS_OK) {
+        return Error("opus_decoder_create failed");
+      }
+    }
+    return {};
+  }
+
+  /**
+   * Open SDL capture/playback. May block for a long time on OS mic permission
+   * (macOS TCC). Call only from the capture worker — never from UI, relay IO,
+   * or the libp2p host thread (that freezes accept + peer signaling).
+   */
   Roe<void> OpenAudioDevices() {
     if (auto ok = EnsureAudioSubsystem(); !ok) {
       return ok.error();
     }
 
     CallAudioSession::ActivateForVoipCall();
-
-    int err = 0;
-    encoder = opus_encoder_create(kSampleRate, kChannels, OPUS_APPLICATION_VOIP, &err);
-    if (!encoder || err != OPUS_OK) {
-      return Error("opus_encoder_create failed");
-    }
-    opus_encoder_ctl(encoder, OPUS_SET_BITRATE(24000));
-    decoder = opus_decoder_create(kSampleRate, kChannels, &err);
-    if (!decoder || err != OPUS_OK) {
-      return Error("opus_decoder_create failed");
-    }
 
     SDL_AudioSpec want{};
     want.freq = kSampleRate;
@@ -511,6 +526,17 @@ struct CallMediaEngine::Impl {
   void StartCaptureLoop() {
     capture_running = true;
     capture_thread = std::thread([this]() {
+      // Device open (and OS mic prompts) stay on this worker so CallAccept /
+      // AcceptInvite can finish signaling without freezing UI or libp2p.
+      if (auto audio = OpenAudioDevices(); !audio) {
+        SDL_Log("CallMediaEngine: OpenAudioDevices failed: %s", audio.error().message.c_str());
+      } else if (!capture_available) {
+        SDL_Log("CallMediaEngine: started without capture device — sending silence; playback still active");
+      }
+      if (!capture_running.load()) {
+        return;
+      }
+
       std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
       std::vector<int16_t> pending;
       pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
@@ -922,12 +948,11 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
   if (!impl_->video_codec) {
     impl_->video_codec = CreatePlatformVideoCodec();
   }
-  if (auto audio = impl_->OpenAudioDevices(); !audio) {
+  // Codecs + PeerConnection first so SDP/ICE can flow while mic permission
+  // blocks OpenAudioDevices on the capture worker (macOS TCC).
+  if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
     impl_->TearDownAudioLocked();
-    return audio.error();
-  }
-  if (!impl_->capture_available) {
-    log().warning << "Call media started without capture device — sending silence; playback still active";
+    return codecs.error();
   }
   if (auto pc = impl_->SetupPeerConnection(role); !pc) {
     impl_->TearDownAudioLocked();
@@ -971,9 +996,9 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
   if (!impl_->video_codec) {
     impl_->video_codec = CreatePlatformVideoCodec();
   }
-  if (auto audio = impl_->OpenAudioDevices(); !audio) {
+  if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
     impl_->TearDownAudioLocked();
-    return audio.error();
+    return codecs.error();
   }
   impl_->sfu_mode = true;
   impl_->sfu_send = std::move(send);
