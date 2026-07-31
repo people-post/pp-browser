@@ -3,6 +3,7 @@
 namespace pbr {
 
 class ClientCompatController;
+class ProfileUnlockGate;
 
 /** True when the resolved UI language needs CJK fallback glyphs for chrome strings. */
 bool UiLanguageNeedsCjkFonts();
@@ -11,6 +12,7 @@ bool UiLanguageNeedsCjkFonts();
  * After the first successful Present: load deferred font faces and start vault unlock.
  * Safe to call once; subsequent calls no-op.
  */
-void OnFirstPresentDeferredStartup(ClientCompatController& client_compat);
+void OnFirstPresentDeferredStartup(ClientCompatController& client_compat,
+                                   ProfileUnlockGate& unlock_gate);
 
 } // namespace pbr

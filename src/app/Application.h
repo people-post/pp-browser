@@ -18,6 +18,8 @@ namespace pbr {
 class ActionRouter;
 class BadgeAggregator;
 class ClientCompatController;
+class PinGateController;
+class ProfileUnlockGate;
 
 class Application : public Module {
 public:
@@ -50,6 +52,8 @@ private:
   std::unique_ptr<ActionRouter> action_router_;
   std::unique_ptr<ClientCompatController> client_compat_;
   std::unique_ptr<BadgeAggregator> badges_;
+  std::unique_ptr<ProfileUnlockGate> unlock_gate_;
+  std::unique_ptr<PinGateController> pin_gate_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;
 };
 

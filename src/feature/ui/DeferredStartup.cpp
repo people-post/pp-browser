@@ -4,8 +4,8 @@
 #include "base/platform/IAssetLocator.h"
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
+#include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ClientCompatController.h"
-#include "feature/ui/PinGateController.h"
 #include "feature/ui/ShellHost.h"
 
 #include <RmlUi/Core/Core.h>
@@ -114,7 +114,8 @@ bool UiLanguageNeedsCjkFonts() {
   return primary == "zh" || primary == "ja" || primary == "ko";
 }
 
-void OnFirstPresentDeferredStartup(ClientCompatController& client_compat) {
+void OnFirstPresentDeferredStartup(ClientCompatController& client_compat,
+                                   ProfileUnlockGate& unlock_gate) {
   if (g_started) {
     return;
   }
@@ -123,7 +124,7 @@ void OnFirstPresentDeferredStartup(ClientCompatController& client_compat) {
 
   // Fonts first so CJK chrome can appear while Argon2 unlock runs.
   LoadDeferredFonts();
-  PinGateController::Instance().BeginDeferredUnlockAfterFirstPresent();
+  unlock_gate.BeginDeferredUnlockAfterFirstPresent();
   client_compat.CheckAsync();
 }
 

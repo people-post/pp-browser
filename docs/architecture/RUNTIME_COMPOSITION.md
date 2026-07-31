@@ -89,7 +89,8 @@ flowchart LR
     Settings["SettingsController<br/><small>feature/ui/</small>"]
     Chat["ChatController<br/><small>feature/chat/</small>"]
     Contacts["ContactsController<br/><small>feature/ui/</small>"]
-    Pin["PinGateController<br/><small>feature/ui/</small>"]
+    Pin["PinGateController<br/><small>feature/ui/ — presentation</small>"]
+    UnlockGate["ProfileUnlockGate<br/><small>base/crypto/</small>"]
   end
 
   subgraph services["Core services"]
@@ -108,6 +109,7 @@ flowchart LR
   App --> Chat
   App --> Settings
   App --> Contacts
+  App --> UnlockGate
   App --> Pin
   App --> ActionRouter
   App --> ClientCompat
@@ -126,12 +128,19 @@ flowchart LR
   Chat -->|BindBadgeAggregator| Badges
   Hub --> Agent
   App -->|BindSource| Badges
+  App -->|BindPorts| UnlockGate
+  UnlockGate -->|UI ports| Pin
 
   Shell -.->|layout / Me sheet| Settings
   App -->|BindCommands SettingsCommands| Settings
   App -->|BindChatPorts| Contacts
+  App -->|BindPinGate| Shell
+  App -->|BindUnlockGate| Chat
+  App -->|BindUnlockGate| Settings
+  App -->|BindUnlockGate| Contacts
   App -->|deferred startup| ClientCompat
-  Pin -.->|unlock gate| Settings
+  App -->|deferred startup| UnlockGate
+  UnlockGate -.->|unlock gate| Settings
   Contacts -.->|hub-bound| Hub
 ```
 
@@ -259,13 +268,15 @@ flowchart TB
 
 | Class | Location | Role |
 |-------|----------|------|
-| **Application** | `app/` | Owns hub + ActionRouter / ClientCompat / BadgeAggregator; binds controllers; installs `ConfigApplyBridge` |
+| **Application** | `app/` | Owns hub + ActionRouter / ClientCompat / BadgeAggregator / ProfileUnlockGate / PinGate UI; binds controllers; installs `ConfigApplyBridge` |
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |
 | **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` from MessagingHub; chat calls Refresh |
+| **PinGateController** | `feature/ui/` | PIN overlay presentation; UI ports for ProfileUnlockGate |
+| **ProfileUnlockGate** | `base/crypto/` | Vault unlock policy + caller queue; messaging/UI via ports |
 | **ShellHost** | `feature/ui/` | Window shell panes/nav; nested `ChromePrefs` |
 | **LocalizationService** | `base/i18n/` | Locale catalogs; nested `Prefs` |
 | **SettingsController** | `feature/ui/` | Me-tab UI + flush via `session_store` port; holds injected `SettingsCommands` only (no messaging bind) |

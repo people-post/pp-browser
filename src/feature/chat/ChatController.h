@@ -33,6 +33,7 @@ class Element;
 namespace pbr {
 
 class BadgeAggregator;
+class ProfileUnlockGate;
 
 class ChatController : public Module {
 public:
@@ -77,6 +78,7 @@ public:
   void BindMessaging(MessagingHub& messaging);
   void BindSessionStore(SessionStore& store);
   void BindBadgeAggregator(BadgeAggregator& badges);
+  void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
   SessionStore& Store();
@@ -255,6 +257,7 @@ private:
   MessagingHub* messaging_ = nullptr;
   SessionStore* session_store_ = nullptr;
   BadgeAggregator* badges_ = nullptr;
+  ProfileUnlockGate* unlock_gate_ = nullptr;
   ChatState chat_;
   ShellState shell_;
   std::optional<AgentSession> agent_;

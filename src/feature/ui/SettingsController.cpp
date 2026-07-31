@@ -12,7 +12,7 @@
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/PinGateController.h"
+#include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ProfileSettingsSection.h"
 #include "feature/ui/SecuritySettingsSection.h"
 #include "feature/ui/ShellFeedback.h"
@@ -133,6 +133,10 @@ void SettingsController::BindCommands(SettingsCommands commands) {
   if (auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"))) {
     security->BindPorts(&commands_);
   }
+}
+
+void SettingsController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
+  unlock_gate_ = &unlock_gate;
 }
 
 SettingsCommands& SettingsController::Commands() {
@@ -1414,7 +1418,11 @@ void SettingsController::OnRegisterProfile() {
   CommitProfileNickname(/*show_toast=*/false);
   PullBindingsToUiState();
   const bool renewing = ui_state_.profile_registered == "yes";
-  PinGateController::Instance().EnsureUnlocked([this, renewing](const bool unlocked) {
+  if (!unlock_gate_) {
+    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
+    return;
+  }
+  unlock_gate_->EnsureUnlocked([this, renewing](const bool unlocked) {
     if (!unlocked) {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to register"));
       return;
@@ -1444,7 +1452,11 @@ void SettingsController::OnRegisterProfile() {
 
 void SettingsController::OnRotateBriefLlmKey() {
   PullBindingsToUiState();
-  PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
+  if (!unlock_gate_) {
+    ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
+    return;
+  }
+  unlock_gate_->EnsureUnlocked([this](const bool unlocked) {
     if (!unlocked) {
       ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required to rotate API key"));
       return;
@@ -1608,7 +1620,11 @@ void SettingsController::OnChangePin() {
     return;
   }
   if (!ProfileSecretsService::Instance().IsUnlocked()) {
-    PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
+    if (!unlock_gate_) {
+      ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
+      return;
+    }
+    unlock_gate_->EnsureUnlocked([this](const bool unlocked) {
       if (!unlocked) {
         ReportFailure(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to change it"));
         return;

@@ -24,6 +24,7 @@ class Element;
 namespace pbr {
 
 class MessagingHub;
+class PinGateController;
 
 enum class DismissStyle { Instant, Animated };
 
@@ -66,6 +67,7 @@ public:
   static ShellHost& Instance();
 
   void BindMessaging(MessagingHub& messaging);
+  void BindPinGate(PinGateController& pin_gate);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -228,6 +230,7 @@ private:
   std::function<void(LayoutMode)> on_layout_mode_changed_;
   std::function<void()> on_layout_synced_;
   MessagingHub* messaging_ = nullptr;
+  PinGateController* pin_gate_ = nullptr;
 
 };
 

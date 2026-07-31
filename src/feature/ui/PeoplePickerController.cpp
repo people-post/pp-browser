@@ -11,7 +11,7 @@
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/FlowCoordinator.h"
-#include "feature/ui/PinGateController.h"
+#include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
@@ -94,6 +94,10 @@ PeoplePickerController& PeoplePickerController::Instance() {
 }
 void PeoplePickerController::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
+}
+
+void PeoplePickerController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
+  unlock_gate_ = &unlock_gate;
 }
 
 void PeoplePickerController::BindChatPorts(ChatSessionPorts ports) {
@@ -531,7 +535,10 @@ void PeoplePickerController::FinishOpenThread() {
 }
 
 void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
-  PinGateController::Instance().EnsureUnlocked([this, contact_id](const bool unlocked) {
+  if (!unlock_gate_) {
+    return;
+  }
+  unlock_gate_->EnsureUnlocked([this, contact_id](const bool unlocked) {
     if (!unlocked) {
       ShellFeedback::ShowToast(ShellHost::Instance().State(), Tr("people_picker.pin_required"));
       ShellHost::Instance().DirtyWindow();
@@ -555,7 +562,10 @@ void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
 
 void PeoplePickerController::CreateGroupWithTitle(const std::vector<std::string>& member_contact_ids,
                                                   std::string title) {
-  PinGateController::Instance().EnsureUnlocked([this, member_contact_ids,
+  if (!unlock_gate_) {
+    return;
+  }
+  unlock_gate_->EnsureUnlocked([this, member_contact_ids,
                                                 title = TrimTitle(std::move(title))](const bool unlocked) {
     if (!unlocked) {
       ShellFeedback::ShowToast(ShellHost::Instance().State(), Tr("people_picker.pin_required"));

@@ -2,6 +2,7 @@
 
 #include "base/crypto/PinResolver.h"
 #include "base/crypto/ProfileSecretsService.h"
+#include "base/crypto/ProfileUnlockGate.h"
 #include "base/data/AppPaths.h"
 #include "base/data/Config.h"
 #include "base/data/SchemaVersion.h"
@@ -17,10 +18,8 @@ namespace {
 
 Roe<void> UnlockProfileForBootstrap(MessagingHub& messaging, const std::string& pin) {
   StartupPhase phase("Bootstrap::Unlock+EnsureMessagingReady");
-  if (auto unlocked = ProfileSecretsService::Instance().Unlock(pin); !unlocked) {
-    return unlocked.error();
-  }
-  return messaging.EnsureMessagingReady();
+  return UnlockProfileSecretsAndReady(ProfileSecretsService::Instance(), pin,
+                                      [&messaging]() { return messaging.EnsureMessagingReady(); });
 }
 
 } // namespace
@@ -84,7 +83,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, MessagingHu
   }
 
   // Optional CLI/env unlock for tests/automation only. Interactive / silent default unlock
-  // is deferred until after first present (see DeferredStartup / PinGateController).
+  // is deferred until after first present (see DeferredStartup / ProfileUnlockGate).
   if (auto pin = PinResolver::Resolve(options.pin); pin) {
     if (auto unlocked = UnlockProfileForBootstrap(messaging, *pin); !unlocked) {
       return unlocked.error();

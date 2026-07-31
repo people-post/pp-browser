@@ -26,6 +26,8 @@ class Context;
 
 namespace pbr {
 
+class ProfileUnlockGate;
+
 class SettingsController : public Module {
 public:
   struct SectionListRow {
@@ -46,6 +48,7 @@ public:
 
   /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
   void BindCommands(SettingsCommands commands);
+  void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   SettingsCommands& Commands();
   const SettingsCommands& Commands() const;
   bool RegisterModel(Rml::Context* context);
@@ -223,6 +226,7 @@ private:
   std::optional<std::string> last_toast_section_;
   uint64_t last_toast_at_ms_ = 0;
   SettingsCommands commands_;
+  ProfileUnlockGate* unlock_gate_ = nullptr;
 
 };
 

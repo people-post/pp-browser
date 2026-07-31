@@ -19,12 +19,14 @@ class Context;
 namespace pbr {
 
 class MessagingHub;
+class ProfileUnlockGate;
 
 class PeoplePickerController : public Module {
 public:
   static PeoplePickerController& Instance();
 
   void BindMessaging(MessagingHub& messaging);
+  void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindChatPorts(ChatSessionPorts ports);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
@@ -100,6 +102,7 @@ private:
   Rml::String cta_label_;
   bool cta_enabled_ = false;
   MessagingHub* messaging_ = nullptr;
+  ProfileUnlockGate* unlock_gate_ = nullptr;
   ChatSessionPorts chat_ports_;
 
 };

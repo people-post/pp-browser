@@ -69,7 +69,7 @@ JSON fields: `public_key_b64`, `private_key_b64`, `kem_*`, `nickname`, `relay_us
 1. App starts without requiring a PIN (local AI/chat works).
 2. **If `vault.bin` exists and `pin_is_default` is true:** silent unlock at bootstrap and after UI load (no modal). If silent unlock fails, fall back to the blocking unlock modal.
 3. **If `vault.bin` exists and custom PIN:** blocking unlock modal after UI load (no cancel).
-4. **If no vault:** defer until first secrets use (Register, Secure message, PSK actions, etc.) via `PinGateController::EnsureUnlocked`. Show a **three-way chooser:**
+4. **If no vault:** defer until first secrets use (Register, Secure message, PSK actions, etc.) via `ProfileUnlockGate::EnsureUnlocked`. Show a **three-way chooser:**
    - **Set a PIN** — create flow with confirm.
    - **Just continue** — create vault with `kDefaultProfilePin` (`123456`), set `pin_is_default`, proceed; toast points to Me → Security.
    - **Not now** — cancel; retry on next secrets action.
@@ -85,10 +85,10 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 
 1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
 2. Register via `ProfileSecretsService::RegisterDekConsumer` during init (typically from the feature that owns the store).
-3. Gate first use with `PinGateController::EnsureUnlocked` (profile unlock + `MessagingHub::EnsureMessagingReady` when messaging is needed), or check `ProfileSecretsService::IsUnlocked()`.
+3. Gate first use with `ProfileUnlockGate::EnsureUnlocked` (profile unlock + messaging-ready port when messaging is needed), or check `ProfileSecretsService::IsUnlocked()`.
 4. Document the on-disk path and AAD purpose here.
 
-**Messaging:** E2E/P2P actions also require `MessagingHub::IsMessagingReady()` after profile unlock.
+**Messaging:** E2E/P2P actions also require `MessagingHub::IsMessagingReady()` after profile unlock. Application fills `ProfileUnlockPorts::ensure_messaging_ready` from the hub; [`PinGateController`](../../src/feature/ui/PinGateController.h) is presentation only (chooser / unlock overlay).
 
 Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vault required).
 

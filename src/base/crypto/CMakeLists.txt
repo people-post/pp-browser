@@ -11,6 +11,7 @@ pp_browser_add_base_library(pp_base_crypto
     PinKeyDeriver.cpp
     PinResolver.cpp
     ProfileSecretsService.cpp
+    ProfileUnlockGate.cpp
     PskBundleCodec.cpp
     PskFingerprint.cpp
     ReplayWindow.cpp

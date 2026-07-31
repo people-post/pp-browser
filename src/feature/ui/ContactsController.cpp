@@ -14,7 +14,7 @@
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/PinGateController.h"
+#include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/UiEditSession.h"
@@ -296,6 +296,10 @@ ContactsController& ContactsController::Instance() {
 }
 void ContactsController::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
+}
+
+void ContactsController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
+  unlock_gate_ = &unlock_gate;
 }
 
 void ContactsController::BindChatPorts(ChatSessionPorts ports) {
@@ -785,7 +789,10 @@ void ContactsController::OnSecureMessage() {
   }
   FlushPending();
 
-  PinGateController::Instance().EnsureUnlocked([this](const bool unlocked) {
+  if (!unlock_gate_) {
+    return;
+  }
+  unlock_gate_->EnsureUnlocked([this](const bool unlocked) {
     if (!unlocked) {
       ShellFeedback::ShowToast(ShellHost::Instance().State(), "PIN required to continue");
       ShellHost::Instance().DirtyWindow();

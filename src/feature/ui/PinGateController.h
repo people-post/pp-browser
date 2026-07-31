@@ -1,36 +1,26 @@
 #pragma once
 
-#include "base/data/SessionStore.h"
-#include "base/ui/ShellTypes.h"
-#include "feature/messaging/MessagingHub.h"
+#include "base/crypto/ProfileUnlockGate.h"
 
-#include <functional>
 #include <string>
-#include <vector>
 
 namespace pbr {
 
-/** Interactive PIN unlock/create gate — queues callers until secrets are ready. */
+/**
+ * Shell PIN overlay — presentation only.
+ * Policy / queue live in ProfileUnlockGate; Application binds UI ports from this controller.
+ */
 class PinGateController {
 public:
-  static PinGateController& Instance();
+  PinGateController() = default;
 
-  void BindMessaging(MessagingHub& messaging);
-  void BindSessionStore(SessionStore& store);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
+  void BindGate(ProfileUnlockGate& gate);
 
-  /** If secrets already ready, runs done(true) immediately. Otherwise shows PIN UI. */
-  void EnsureUnlocked(std::function<void(bool unlocked)> done);
-
-  /**
-   * After first present: async-scheduled silent default unlock or PIN UI when vault exists.
-   * Queues EnsureUnlocked callers while unlock_in_progress.
-   */
-  void BeginDeferredUnlockAfterFirstPresent();
-
-  /** True while deferred silent unlock is running (features must stay gated). */
-  bool IsUnlockInProgress() const { return unlock_in_progress_; }
+  /** Ports filled onto ProfileUnlockPorts::ui by Application. */
+  void ShowChooser();
+  void ShowUnlock();
+  void Dismiss();
+  void SetUnlockInProgressUi(bool in_progress);
 
   void OnSubmit();
   /** Create / chooser modes only — unlock mode ignores cancel. */
@@ -40,22 +30,9 @@ public:
   void DirtyPinFields();
 
 private:
-  PinGateController() = default;
+  void ShowCreate();
 
-  void ShowChooser(std::function<void(bool)> done);
-  void ShowGate(bool create_mode, std::function<void(bool)> done);
-  bool TrySilentDefaultUnlock();
-  void SetPinIsDefault(bool is_default);
-  void Finish(bool unlocked);
-  void DrainQueue(bool unlocked);
-
-  std::vector<std::function<void(bool)>> pending_;
-  bool showing_ = false;
-  bool unlock_in_progress_ = false;
-  bool deferred_unlock_started_ = false;
-  MessagingHub* messaging_ = nullptr;
-  SessionStore* session_store_ = nullptr;
-
+  ProfileUnlockGate* gate_ = nullptr;
 };
 
 } // namespace pbr

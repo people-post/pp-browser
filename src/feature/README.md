@@ -146,7 +146,7 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 | Window shell | `ShellHost`, document loading | [`docs/ui/WINDOW_SHELL.md`](../../docs/ui/WINDOW_SHELL.md) |
 | Chat UI | `ChatController`, messaging tools | `assets/views/chat.rml`, `base/messaging/` stores |
 | Settings | Section handlers, config merge | `assets/views/settings.rml`, `base/data/Config.h` |
-| At-rest PIN gate | `PinGateController` | [`projects/at-rest-crypto/`](../../projects/at-rest-crypto/) |
+| At-rest PIN gate | `ProfileUnlockGate` + `PinGateController` UI | [`projects/at-rest-crypto/`](../../projects/at-rest-crypto/) |
 
 ---
 

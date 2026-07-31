@@ -40,7 +40,7 @@
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/DocumentLoader.h"
 #include "feature/ui/DeferredStartup.h"
-#include "feature/ui/PinGateController.h"
+#include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/CallController.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/ShellFeedback.h"
@@ -299,6 +299,10 @@ void ChatController::BindSessionStore(SessionStore& store) {
 
 void ChatController::BindBadgeAggregator(BadgeAggregator& badges) {
   badges_ = &badges;
+}
+
+void ChatController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
+  unlock_gate_ = &unlock_gate;
 }
 
 MessagingHub& ChatController::Hub() {
@@ -1795,14 +1799,20 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
 }
 
 void ChatController::WithSecrets(std::function<void()> action) {
-  if (PinGateController::Instance().IsUnlockInProgress()) {
+  if (!unlock_gate_) {
+    if (action) {
+      action();
+    }
+    return;
+  }
+  if (unlock_gate_->IsUnlockInProgress()) {
     ShellFeedback::ShowToast(ShellHost::Instance().State(), Tr("startup.still_preparing"));
     ShellHost::Instance().DirtyWindow();
   }
-  PinGateController::Instance().EnsureUnlocked(
+  unlock_gate_->EnsureUnlocked(
       [this, action = std::move(action)](const bool unlocked) {
         if (!unlocked) {
-          if (!PinGateController::Instance().IsUnlockInProgress()) {
+          if (!unlock_gate_->IsUnlockInProgress()) {
             ShellFeedback::ShowToast(ShellHost::Instance().State(), "PIN required to continue");
             ShellHost::Instance().DirtyWindow();
           }

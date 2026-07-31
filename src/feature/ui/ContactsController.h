@@ -17,7 +17,7 @@ class Context;
 namespace pbr {
 
 class MessagingHub;
-
+class ProfileUnlockGate;
 struct Contact;
 
 class ContactsController : public Module {
@@ -25,6 +25,7 @@ public:
   static ContactsController& Instance();
 
   void BindMessaging(MessagingHub& messaging);
+  void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindChatPorts(ChatSessionPorts ports);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
@@ -126,6 +127,7 @@ private:
   bool contact_dirty_ = false;
   uint64_t debounce_deadline_ms_ = 0;
   MessagingHub* messaging_ = nullptr;
+  ProfileUnlockGate* unlock_gate_ = nullptr;
   ChatSessionPorts chat_ports_;
 
 };

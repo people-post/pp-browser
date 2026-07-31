@@ -81,6 +81,10 @@ void ShellHost::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
 }
 
+void ShellHost::BindPinGate(PinGateController& pin_gate) {
+  pin_gate_ = &pin_gate;
+}
+
 MessagingHub& ShellHost::Hub() {
   if (!messaging_) {
     throw std::runtime_error("ShellHost messaging not bound");
@@ -570,7 +574,9 @@ bool ShellHost::HandleDismiss() {
   }
   if (state_.pin_gate.active) {
     if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode) {
-      PinGateController::Instance().OnCancel();
+      if (pin_gate_) {
+        pin_gate_->OnCancel();
+      }
     }
     // Unlock: consume Escape without dismissing or quitting.
     return true;
@@ -1732,22 +1738,30 @@ void ShellHost::DialogToggleCheckboxCallback(Rml::DataModelHandle /*model*/, Rml
 
 void ShellHost::PinGateSubmitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  PinGateController::Instance().OnSubmit();
+  if (Instance().pin_gate_) {
+    Instance().pin_gate_->OnSubmit();
+  }
 }
 
 void ShellHost::PinGateCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  PinGateController::Instance().OnCancel();
+  if (Instance().pin_gate_) {
+    Instance().pin_gate_->OnCancel();
+  }
 }
 
 void ShellHost::PinGateSetPinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
-  PinGateController::Instance().OnSetPin();
+  if (Instance().pin_gate_) {
+    Instance().pin_gate_->OnSetPin();
+  }
 }
 
 void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                           const Rml::VariantList& /*args*/) {
-  PinGateController::Instance().OnUseDefaultPin();
+  if (Instance().pin_gate_) {
+    Instance().pin_gate_->OnUseDefaultPin();
+  }
 }
 
 void ShellHost::TitlebarMinimizeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

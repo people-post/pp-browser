@@ -2,6 +2,7 @@
 #include "app/ConfigApplyBridge.h"
 
 #include "base/crypto/ProfileSecretsService.h"
+#include "base/crypto/ProfileUnlockGate.h"
 #include "base/data/AppPaths.h"
 #include "base/data/SchemaVersion.h"
 #include "base/data/SessionStore.h"
@@ -92,6 +93,8 @@ Application::Application() {
   action_router_ = std::make_unique<ActionRouter>();
   client_compat_ = std::make_unique<ClientCompatController>();
   badges_ = std::make_unique<BadgeAggregator>();
+  unlock_gate_ = std::make_unique<ProfileUnlockGate>();
+  pin_gate_ = std::make_unique<PinGateController>();
 }
 
 Application::~Application() {
@@ -392,11 +395,9 @@ bool Application::Initialize(const char* window_title) {
   SettingsController::Instance().BindCommands(std::move(settings_commands));
 
   ChatController::Instance().BindSessionStore(store_);
-  PinGateController::Instance().BindSessionStore(store_);
 
   ContactsController::Instance().BindMessaging(messaging);
   CallController::Instance().BindMessaging(messaging);
-  PinGateController::Instance().BindMessaging(messaging);
   PeoplePickerController::Instance().BindMessaging(messaging);
   client_compat_->BindMessaging(messaging);
   badges_->BindSource([&messaging]() {
@@ -423,7 +424,38 @@ bool Application::Initialize(const char* window_title) {
     return inputs;
   });
   ChatController::Instance().BindBadgeAggregator(*badges_);
+
+  unlock_gate_->BindSecrets(ProfileSecretsService::Instance());
+  pin_gate_->BindGate(*unlock_gate_);
+  ProfileUnlockPorts unlock_ports;
+  unlock_ports.messaging_initialized = [&messaging]() { return messaging.IsInitialized(); };
+  unlock_ports.messaging_ready = [&messaging]() { return messaging.IsMessagingReady(); };
+  unlock_ports.ensure_messaging_ready = [&messaging]() { return messaging.EnsureMessagingReady(); };
+  unlock_ports.pin_is_default = [this]() {
+    return store_.IsInitialized() && store_.Snapshot().profile_prefs.pin_is_default;
+  };
+  unlock_ports.set_pin_is_default = [this](const bool is_default) {
+    if (!store_.IsInitialized()) {
+      return;
+    }
+    ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+    prefs.pin_is_default = is_default;
+    (void)store_.SaveProfilePrefs(prefs);
+  };
+  unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
+  unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
+  unlock_ports.ui.dismiss = [this]() { pin_gate_->Dismiss(); };
+  unlock_ports.ui.set_unlock_in_progress = [this](const bool in_progress) {
+    pin_gate_->SetUnlockInProgressUi(in_progress);
+  };
+  unlock_gate_->BindPorts(std::move(unlock_ports));
+
+  ChatController::Instance().BindUnlockGate(*unlock_gate_);
   ShellHost::Instance().BindMessaging(messaging);
+  ShellHost::Instance().BindPinGate(*pin_gate_);
+  SettingsController::Instance().BindUnlockGate(*unlock_gate_);
+  ContactsController::Instance().BindUnlockGate(*unlock_gate_);
+  PeoplePickerController::Instance().BindUnlockGate(*unlock_gate_);
 
   config_apply_->Bind(messaging, store_, [](const std::string& relative) { return AssetsPath(relative); });
 
@@ -437,6 +469,9 @@ bool Application::Initialize(const char* window_title) {
     PeoplePickerController::Instance().BindChatPorts({});
     if (badges_) {
       badges_->BindSource({});
+    }
+    if (unlock_gate_) {
+      unlock_gate_->BindPorts({});
     }
     Rml::RemoveContext("main");
     Rml::Shutdown();
@@ -552,7 +587,7 @@ void Application::Run() {
         StartupMark("first_present");
         logged_first_present = true;
         BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-          OnFirstPresentDeferredStartup(*client_compat_);
+          OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_);
         });
       }
       skip_log_countdown = 0;
@@ -575,6 +610,9 @@ void Application::Shutdown() {
   PeoplePickerController::Instance().BindChatPorts({});
   if (badges_) {
     badges_->BindSource({});
+  }
+  if (unlock_gate_) {
+    unlock_gate_->BindPorts({});
   }
 
   if (messaging_) {
