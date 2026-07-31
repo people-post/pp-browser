@@ -46,6 +46,10 @@ struct RelayEnvelope {
   uint64_t order_key = 0;
   /** Delivery target — relay routing only (unsigned). */
   std::optional<std::string> recipient_contact_id;
+  /** Unix ms relay store time from inbox poll (unsigned transport metadata). */
+  std::optional<int64_t> relay_created_at_ms;
+  /** Unix ms relay clock from the poll response that delivered this envelope. */
+  std::optional<int64_t> relay_server_time_ms;
 };
 
 /** Opaque relay HTTP wire record for send (routing + blob). */
@@ -65,6 +69,8 @@ struct RelayInboundRecord {
   std::string stream_id;
   uint64_t index_key = 0;
   std::string blob_b64;
+  /** Unix ms when the relay stored this row (unsigned transport metadata). */
+  std::optional<int64_t> created_at_ms;
 };
 
 } // namespace pbr

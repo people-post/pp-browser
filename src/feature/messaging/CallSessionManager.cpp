@@ -207,6 +207,28 @@ Roe<void> CallSessionManager::FanOutToJoined(const std::string& call_id, const C
   return {};
 }
 
+Roe<void> CallSessionManager::FanOutToJoinedAndRinging(const std::string& call_id, const CallControlType type,
+                                                       const std::string& detail_json, const std::string& display,
+                                                       const std::string& skip_identity) {
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    return participants.error();
+  }
+  for (const CallParticipant& row : *participants) {
+    if (row.identity == skip_identity) {
+      continue;
+    }
+    if (row.state != CallParticipantState::Joined && row.state != CallParticipantState::Ringing &&
+        row.state != CallParticipantState::Invited) {
+      continue;
+    }
+    if (auto sent = SendCallDirectMessage(row.identity, type, detail_json, display); !sent) {
+      return sent.error();
+    }
+  }
+  return {};
+}
+
 Roe<ByteVector> CallSessionManager::ResolvePeerSessionKey(const std::string& peer_identity) const {
   ChatTargetKey target_key;
   target_key.peer_identity_kind = ContactIdKindToString(ContactIdKind::RelayUser);
@@ -695,7 +717,8 @@ Roe<void> CallSessionManager::LeaveCall(const std::string& call_id) {
     ended.duration_ms = duration;
     auto ended_json = CallControlCodec::EncodeEnded(ended);
     if (ended_json) {
-      (void)FanOutToJoined(call_id, CallControlType::CallEnded, *ended_json, "Call ended", *local);
+      // Notify Ringing/Invited invitees as well so offline inbox delivery can clear stale rings.
+      (void)FanOutToJoinedAndRinging(call_id, CallControlType::CallEnded, *ended_json, "Call ended", *local);
     }
     return EndCallLocal(**session, duration);
   }
@@ -919,7 +942,9 @@ void CallSessionManager::ClearMediaCallbacks() {
   p2p_bridge_.ClearMediaCallbacks();
 }
 
-Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity) {
+Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
+                                                  const std::optional<int64_t> relay_created_at_ms,
+                                                  const std::optional<int64_t> relay_server_time_ms) {
   auto type = CallControlCodec::ControlTypeFromMessage(message);
   if (!type) {
     return {};
@@ -940,9 +965,17 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (!invite) {
       return invite.error();
     }
-    // Do not trust caller wall-clock for ring lifetime (clock skew drops live invites while the
-    // system message still persists → unread badge, no Accept UI). Re-arm from local receipt time.
     const int64_t now = util::NowUnixMs();
+    if (CallSessionLogic::ShouldDropStaleInvite(*invite, now, relay_created_at_ms, relay_server_time_ms)) {
+      log().warning << "CallInvite dropped as stale call_id=" << invite->call_id
+                    << " expires_at=" << (invite->expires_at ? std::to_string(*invite->expires_at) : "none")
+                    << " now=" << now
+                    << " relay_created=" << (relay_created_at_ms ? std::to_string(*relay_created_at_ms) : "none")
+                    << " relay_now=" << (relay_server_time_ms ? std::to_string(*relay_server_time_ms) : "none");
+      return {};
+    }
+    // Near-live invite: re-arm ring TTL from local receipt (skew-safe). Relay-age gate already
+    // dropped long-backlogged inbox rows when create/now samples were present.
     if (CallSessionLogic::IsInviteExpired(*invite, now)) {
       log().warning << "CallInvite past wire expires_at; re-arming locally call_id=" << invite->call_id
                     << " expires_at=" << (invite->expires_at ? std::to_string(*invite->expires_at) : "none")
@@ -1160,10 +1193,12 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (!ended) {
       return ended.error();
     }
+    (void)sessions_.UpdateInviteStatus(ended->call_id, *local, "expired");
     auto session = sessions_.LoadSession(ended->call_id);
     if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
       return EndCallLocal(**session, ended->duration_ms);
     }
+    NotifyRingChanged();
     return {};
   }
   case CallControlType::CallStarted:

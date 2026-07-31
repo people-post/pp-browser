@@ -650,7 +650,9 @@ Roe<void> MessagingHub::RegisterIdentity(const std::string& nickname) {
     }
   }
 
-  auto applied = FinishAndPersistRegistration(Registration(), Identity(), identity->nickname);
+  auto applied = FinishAndPersistRegistration(
+      Registration(), Identity(), identity->nickname,
+      Libp2p() ? Libp2p()->ListenMultiaddrs() : std::vector<std::string>{});
   if (!applied) {
     return applied.error();
   }

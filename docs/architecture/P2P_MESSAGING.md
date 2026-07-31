@@ -170,7 +170,9 @@ See [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-ro
   - **Find someone** — new AI thread with draft prefilled for directory discovery
 - Home is a prompt-first landing (no sticky AI thread). First send/suggestion creates a new AI session and switches to Sessions. Home chips are AI intents (find someone, headlines, articles, get started, capabilities); messaging entry points live on Sessions / Contacts.
 - **Contacts tab** header **`+`** opens a menu:
-  - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open editable detail (display name, nickname, optional relay ID, peer ID, multiaddrs); debounced save
+  - **Add contact** — create an empty contact (`ContactsStore::AddEmpty`), open detail (**You**: display name + trust; **Directory**: nickname / relay / peer / multiaddrs as meta text; **Sync from directory…** when a relay id is present, refreshes remote only)
+  - Directory add merges by `relay_user` id (`AddFromDirectoryHit` updates remote, preserves local annotations)
+  - `contacts.json` shape: `{ schema_version: 1, contacts: [{ local, remote, overrides{} }] }` — unversioned/flat legacy migrates on load
   - **Find someone** — same as Sessions find flow
 - Secure / Public on contact detail are enabled when the contact is **routable** (relay ID, or peer ID + multiaddr). Otherwise a short hint is shown.
 - **Peer link status** (direct threads) — chat header shows live link state (`Connecting…` / `Direct` / `Via relay` / backoff countdown). Soft banner + **Retry connection** on dial backoff; toast when a send falls back to relay after a direct attempt.
@@ -206,8 +208,8 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/messaging/MessageRouter.*` | Composer routing |
 | `src/feature/messaging/ContactActionDispatcher.*` | Chip payloads |
 | `src/feature/chat/MessagingTools.*` | Agent tool definitions |
-| `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` / `Upsert` |
-| `src/feature/ui/ContactsController.*` | Contacts list/detail UI, manual add/edit, message gating |
+| `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
+| `src/feature/ui/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
 | `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
 
 ## A/V calls (signaling over messaging)

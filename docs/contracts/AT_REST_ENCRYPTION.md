@@ -61,8 +61,10 @@ AAD examples: `identity|{profile_id}|1`, `psk|{profile_id}|1`.
 
 ### Identity plaintext (inside `identity.enc`)
 
-JSON fields: `public_key_b64`, `private_key_b64`, `kem_*`, `nickname`, `relay_user_id`, `brief_llm_api_key`, `registered`.  
-(`peer_id` remains in-memory only.)
+JSON fields: `schema_version` (**1**), `public_key_b64`, `private_key_b64`, `kem_*`, `nickname`, `relay_user_id`, `brief_llm_api_key`, `registered`, `registration_expires_at`.  
+Unversioned blobs migrate on unlock and are rewritten with `schema_version`. Unsupported **newer** versions fail load.  
+(`peer_id` remains in-memory only.)  
+AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_version` field.
 
 ## Unlock flow
 

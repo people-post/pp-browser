@@ -514,6 +514,9 @@ Roe<RelayInboundRecord> ParseRelayInboundRecord(const nlohmann::json& json) {
   record.stream_id = json["stream_id"].get<std::string>();
   record.index_key = json["index_key"].get<uint64_t>();
   record.blob_b64 = json["blob_b64"].get<std::string>();
+  if (json.contains("created_at") && json["created_at"].is_number_integer()) {
+    record.created_at_ms = json["created_at"].get<int64_t>();
+  }
   return record;
 }
 
@@ -533,6 +536,7 @@ Roe<RelayEnvelope> RelayEnvelopeFromInboundRecord(const RelayInboundRecord& reco
   }
   envelope->stream_key = record.stream_id;
   envelope->order_key = record.index_key;
+  envelope->relay_created_at_ms = record.created_at_ms;
   return *envelope;
 }
 

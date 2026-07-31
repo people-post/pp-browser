@@ -14,6 +14,13 @@ inline constexpr size_t kCallEngineeringMaxJoined = 8;
 inline constexpr size_t kCallProtocolSoftMaxJoined = 16;
 /** Default invite ring TTL. */
 inline constexpr int64_t kDefaultCallInviteTtlMs = 60'000;
+/** Slack added to relay-age gate (clock granularity / brief queue delay). */
+inline constexpr int64_t kCallInviteRelayAgeSlackMs = 5'000;
+/**
+ * Without relay create/now samples (direct delivery / old servers), allow wire expires_at
+ * to be this far past local now before dropping (clock skew). Beyond this, do not re-arm.
+ */
+inline constexpr int64_t kCallInviteWireSkewSlackMs = 120'000;
 
 enum class CallMediaMode : uint8_t { Voice = 0, Video = 1 };
 

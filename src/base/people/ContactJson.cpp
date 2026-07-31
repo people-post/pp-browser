@@ -53,23 +53,6 @@ TrustLevel TrustLevelFromString(const std::string& value) {
   return TrustLevel::Unknown;
 }
 
-nlohmann::json ContactToJson(const Contact& contact) {
-  nlohmann::json ids = nlohmann::json::array();
-  for (const ContactId& id : contact.ids) {
-    ids.push_back({{"kind", ContactIdKindToString(id.kind)}, {"value", id.value}, {"primary", id.primary}});
-  }
-  nlohmann::json multiaddrs = nlohmann::json::array();
-  for (const std::string& ma : contact.multiaddrs) {
-    multiaddrs.push_back(ma);
-  }
-  return {{"id", contact.id},
-          {"display_name", contact.display_name},
-          {"server_nickname", contact.server_nickname},
-          {"ids", std::move(ids)},
-          {"multiaddrs", std::move(multiaddrs)},
-          {"trust", TrustLevelToString(contact.trust)}};
-}
-
 namespace {
 
 bool HasRelayUserId(const std::vector<ContactId>& ids, const std::string& relay_user_id) {
@@ -114,70 +97,128 @@ void AppendContactIdsFromJson(const nlohmann::json& json, std::vector<ContactId>
   }
 }
 
+nlohmann::json IdsToJson(const std::vector<ContactId>& ids) {
+  nlohmann::json out = nlohmann::json::array();
+  for (const ContactId& id : ids) {
+    out.push_back({{"kind", ContactIdKindToString(id.kind)}, {"value", id.value}, {"primary", id.primary}});
+  }
+  return out;
+}
+
+nlohmann::json MultiaddrsToJson(const std::vector<std::string>& multiaddrs) {
+  nlohmann::json out = nlohmann::json::array();
+  for (const std::string& ma : multiaddrs) {
+    out.push_back(ma);
+  }
+  return out;
+}
+
+void ParseMultiaddrsArray(const nlohmann::json& json, std::vector<std::string>& multiaddrs) {
+  if (!json.is_array()) {
+    return;
+  }
+  for (const auto& item : json) {
+    if (item.is_string()) {
+      multiaddrs.push_back(item.get<std::string>());
+    }
+  }
+}
+
 } // namespace
+
+nlohmann::json ContactToJson(const Contact& contact) {
+  Contact mirrored = contact;
+  SyncContactMirrors(mirrored);
+  nlohmann::json remote = {{"nickname", mirrored.remote.nickname},
+                           {"ids", IdsToJson(mirrored.remote.ids)},
+                           {"multiaddrs", MultiaddrsToJson(mirrored.remote.multiaddrs)}};
+  if (mirrored.remote.fetched_at > 0) {
+    remote["fetched_at"] = mirrored.remote.fetched_at;
+  }
+  return {{"id", mirrored.id},
+          {"local",
+           {{"display_name", mirrored.local.display_name}, {"trust", TrustLevelToString(mirrored.local.trust)}}},
+          {"remote", std::move(remote)},
+          {"overrides", nlohmann::json::object()}};
+}
 
 Contact ContactFromJson(const nlohmann::json& json) {
   Contact contact;
   if (json.contains("id") && json["id"].is_string()) {
     contact.id = json["id"].get<std::string>();
   }
+
+  if (json.contains("local") && json["local"].is_object()) {
+    const auto& local = json["local"];
+    if (local.contains("display_name") && local["display_name"].is_string()) {
+      contact.local.display_name = local["display_name"].get<std::string>();
+    }
+    if (local.contains("trust") && local["trust"].is_string()) {
+      contact.local.trust = TrustLevelFromString(local["trust"].get<std::string>());
+    }
+    if (json.contains("remote") && json["remote"].is_object()) {
+      const auto& remote = json["remote"];
+      if (remote.contains("nickname") && remote["nickname"].is_string()) {
+        contact.remote.nickname = remote["nickname"].get<std::string>();
+      }
+      AppendContactIdsFromJson(remote, contact.remote.ids);
+      if (remote.contains("multiaddrs")) {
+        ParseMultiaddrsArray(remote["multiaddrs"], contact.remote.multiaddrs);
+      }
+      if (remote.contains("fetched_at") && remote["fetched_at"].is_number_integer()) {
+        contact.remote.fetched_at = remote["fetched_at"].get<int64_t>();
+      }
+    }
+    SyncContactMirrors(contact);
+    return contact;
+  }
+
+  // Legacy flat contact (pre local/remote split).
   if (json.contains("display_name") && json["display_name"].is_string()) {
-    contact.display_name = json["display_name"].get<std::string>();
+    contact.local.display_name = json["display_name"].get<std::string>();
   }
   if (json.contains("server_nickname") && json["server_nickname"].is_string()) {
-    contact.server_nickname = json["server_nickname"].get<std::string>();
+    contact.remote.nickname = json["server_nickname"].get<std::string>();
   } else if (json.contains("nickname") && json["nickname"].is_string()) {
-    // Legacy flat field used before server_nickname.
-    contact.server_nickname = json["nickname"].get<std::string>();
+    contact.remote.nickname = json["nickname"].get<std::string>();
   }
   if (json.contains("trust") && json["trust"].is_string()) {
-    contact.trust = TrustLevelFromString(json["trust"].get<std::string>());
+    contact.local.trust = TrustLevelFromString(json["trust"].get<std::string>());
   }
-  AppendContactIdsFromJson(json, contact.ids);
-  // Legacy flat identity fields (pre-ids[] address book).
+  AppendContactIdsFromJson(json, contact.remote.ids);
   if (json.contains("relay_user_id") && json["relay_user_id"].is_string()) {
     const std::string relay_user_id = json["relay_user_id"].get<std::string>();
-    if (!relay_user_id.empty() && !HasRelayUserId(contact.ids, relay_user_id)) {
-      contact.ids.push_back({ContactIdKind::RelayUser, relay_user_id, true});
+    if (!relay_user_id.empty() && !HasRelayUserId(contact.remote.ids, relay_user_id)) {
+      contact.remote.ids.push_back({ContactIdKind::RelayUser, relay_user_id, true});
     }
   } else if (json.contains("relay_id") && json["relay_id"].is_string()) {
     const std::string relay_id = json["relay_id"].get<std::string>();
-    if (!relay_id.empty() && !HasRelayUserId(contact.ids, relay_id)) {
-      contact.ids.push_back({ContactIdKind::RelayUser, relay_id, true});
+    if (!relay_id.empty() && !HasRelayUserId(contact.remote.ids, relay_id)) {
+      contact.remote.ids.push_back({ContactIdKind::RelayUser, relay_id, true});
     }
   }
   if (json.contains("peer_id") && json["peer_id"].is_string()) {
     const std::string peer_id = json["peer_id"].get<std::string>();
-    if (!peer_id.empty() && !HasPeerId(contact.ids, peer_id)) {
-      contact.ids.push_back({ContactIdKind::PeerId, peer_id, contact.ids.empty()});
+    if (!peer_id.empty() && !HasPeerId(contact.remote.ids, peer_id)) {
+      contact.remote.ids.push_back({ContactIdKind::PeerId, peer_id, contact.remote.ids.empty()});
     }
   }
   if (json.contains("multiaddrs") && json["multiaddrs"].is_array()) {
-    for (const auto& item : json["multiaddrs"]) {
-      if (item.is_string()) {
-        contact.multiaddrs.push_back(item.get<std::string>());
-      }
-    }
+    ParseMultiaddrsArray(json["multiaddrs"], contact.remote.multiaddrs);
   } else if (json.contains("multiaddr") && json["multiaddr"].is_string()) {
-    contact.multiaddrs.push_back(json["multiaddr"].get<std::string>());
+    contact.remote.multiaddrs.push_back(json["multiaddr"].get<std::string>());
   }
+  contact.remote.fetched_at = 0;
+  SyncContactMirrors(contact);
   return contact;
 }
 
 nlohmann::json DirectoryHitToJson(const DirectoryHit& hit) {
-  nlohmann::json ids = nlohmann::json::array();
-  for (const ContactId& id : hit.ids) {
-    ids.push_back({{"kind", ContactIdKindToString(id.kind)}, {"value", id.value}, {"primary", id.primary}});
-  }
-  nlohmann::json multiaddrs = nlohmann::json::array();
-  for (const std::string& ma : hit.multiaddrs) {
-    multiaddrs.push_back(ma);
-  }
   nlohmann::json out = {{"hit_id", hit.hit_id},
                         {"display_name", hit.display_name},
                         {"nickname", hit.nickname},
-                        {"ids", std::move(ids)},
-                        {"multiaddrs", std::move(multiaddrs)}};
+                        {"ids", IdsToJson(hit.ids)},
+                        {"multiaddrs", MultiaddrsToJson(hit.multiaddrs)}};
   if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
     out["signing_public_key_b64"] = *hit.signing_public_key_b64;
   }
@@ -199,7 +240,6 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
     hit.nickname = json["nickname"].get<std::string>();
   }
   AppendContactIdsFromJson(json, hit.ids);
-  // Wire/API shape from GET /v1/search and GET /v1/users/:id (relay_user_id + nickname).
   if (json.contains("relay_user_id") && json["relay_user_id"].is_string()) {
     const std::string relay_user_id = json["relay_user_id"].get<std::string>();
     if (!relay_user_id.empty()) {
@@ -220,12 +260,14 @@ DirectoryHit DirectoryHitFromJson(const nlohmann::json& json) {
   if (json.contains("kem_public_key_b64") && json["kem_public_key_b64"].is_string()) {
     hit.kem_public_key_b64 = json["kem_public_key_b64"].get<std::string>();
   }
-  if (json.contains("multiaddrs") && json["multiaddrs"].is_array()) {
-    for (const auto& item : json["multiaddrs"]) {
-      if (item.is_string()) {
-        hit.multiaddrs.push_back(item.get<std::string>());
-      }
+  if (json.contains("peer_id") && json["peer_id"].is_string()) {
+    const std::string peer_id = json["peer_id"].get<std::string>();
+    if (!peer_id.empty() && !HasPeerId(hit.ids, peer_id)) {
+      hit.ids.push_back({ContactIdKind::PeerId, peer_id, false});
     }
+  }
+  if (json.contains("multiaddrs") && json["multiaddrs"].is_array()) {
+    ParseMultiaddrsArray(json["multiaddrs"], hit.multiaddrs);
   }
   return hit;
 }

@@ -20,6 +20,18 @@ public:
   static bool IsInviteExpired(const PendingCallInvite& invite, int64_t now_ms);
   static bool IsInviteExpired(const CallInviteDetail& invite, int64_t now_ms);
 
+  /** Relay age of an inbox-delivered invite (T_relay_now - T_relay_create). */
+  static int64_t RelayInviteAgeMs(int64_t relay_created_at_ms, int64_t relay_server_time_ms);
+  /** Receiver local clock minus relay now (Δ_relay_receiver). */
+  static int64_t DeltaRelayReceiverMs(int64_t recv_local_ms, int64_t relay_server_time_ms);
+  /**
+   * True when an inbound invite should be ignored as stale.
+   * Prefer relay age when both samples present; else wire expires_at + skew slack.
+   */
+  static bool ShouldDropStaleInvite(const CallInviteDetail& invite, int64_t now_ms,
+                                    std::optional<int64_t> relay_created_at_ms,
+                                    std::optional<int64_t> relay_server_time_ms);
+
   /** Mark pending invites past expires_at as expired/missed. Returns updated rows. */
   static std::vector<PendingCallInvite> ExpirePendingInvites(std::vector<PendingCallInvite> invites,
                                                              int64_t now_ms);

@@ -32,6 +32,31 @@ bool CallSessionLogic::IsInviteExpired(const CallInviteDetail& invite, const int
   return now_ms >= *invite.expires_at;
 }
 
+int64_t CallSessionLogic::RelayInviteAgeMs(const int64_t relay_created_at_ms,
+                                           const int64_t relay_server_time_ms) {
+  return relay_server_time_ms - relay_created_at_ms;
+}
+
+int64_t CallSessionLogic::DeltaRelayReceiverMs(const int64_t recv_local_ms,
+                                               const int64_t relay_server_time_ms) {
+  return recv_local_ms - relay_server_time_ms;
+}
+
+bool CallSessionLogic::ShouldDropStaleInvite(const CallInviteDetail& invite, const int64_t now_ms,
+                                             const std::optional<int64_t> relay_created_at_ms,
+                                             const std::optional<int64_t> relay_server_time_ms) {
+  if (relay_created_at_ms && relay_server_time_ms && *relay_created_at_ms > 0 &&
+      *relay_server_time_ms > 0) {
+    const int64_t age = RelayInviteAgeMs(*relay_created_at_ms, *relay_server_time_ms);
+    return age > kDefaultCallInviteTtlMs + kCallInviteRelayAgeSlackMs;
+  }
+  if (!invite.expires_at) {
+    return false;
+  }
+  // Wire expiry past local now by more than skew slack → stale backlog, do not re-arm.
+  return now_ms > *invite.expires_at + kCallInviteWireSkewSlackMs;
+}
+
 std::vector<PendingCallInvite> CallSessionLogic::ExpirePendingInvites(std::vector<PendingCallInvite> invites,
                                                                       const int64_t now_ms) {
   for (PendingCallInvite& invite : invites) {

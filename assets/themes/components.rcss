@@ -2460,12 +2460,16 @@ call-video-tile {
 .contacts-header,
 .contacts-detail-header {
   flex-shrink: 0;
-  align-items: center;
   margin-bottom: 8dp;
 }
 
 .contacts-header {
+  align-items: center;
   justify-content: space-between;
+}
+
+.contacts-detail-header {
+  gap: 2dp;
 }
 
 .contacts-header-title {
@@ -2622,6 +2626,16 @@ call-video-tile {
   border-radius: 8dp;
   box-sizing: border-box;
   gap: 6dp;
+}
+
+.contact-detail-section {
+  flex-shrink: 0;
+  gap: 6dp;
+}
+
+.contact-detail-danger {
+  margin-top: 8dp;
+  margin-bottom: 4dp;
 }
 
 .contacts-edit-field {

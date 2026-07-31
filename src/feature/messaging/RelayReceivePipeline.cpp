@@ -74,11 +74,13 @@ RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyR
       group_roster_(group_roster), invite_gate_(invite_gate) {}
 
 Roe<void> RelayReceivePipeline::ApplyInboundCallMessage(ThreadMessage& message,
-                                                        const std::string& actor_identity) const {
+                                                        const std::string& actor_identity,
+                                                        const std::optional<int64_t> relay_created_at_ms,
+                                                        const std::optional<int64_t> relay_server_time_ms) const {
   if (!call_sessions_ || !IsCallControlMessage(message)) {
     return {};
   }
-  return call_sessions_->ApplyInboundControl(message, actor_identity);
+  return call_sessions_->ApplyInboundControl(message, actor_identity, relay_created_at_ms, relay_server_time_ms);
 }
 
 Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message,
@@ -626,7 +628,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                              membership.error().message, resolved_thread_id);
           return outcome;
         }
-        if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id); !call) {
+        if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id, envelope.relay_created_at_ms,
+                                                envelope.relay_server_time_ms);
+            !call) {
           MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply call update", call.error().message,
                              resolved_thread_id);
           return outcome;
@@ -669,7 +673,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                        membership.error().message, resolved_thread_id);
     return outcome;
   }
-  if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id); !call) {
+  if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id, envelope.relay_created_at_ms,
+                                          envelope.relay_server_time_ms);
+      !call) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply call update", call.error().message,
                        resolved_thread_id);

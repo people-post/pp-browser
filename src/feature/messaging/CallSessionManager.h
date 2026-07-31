@@ -66,7 +66,9 @@ public:
   void AbandonOrphanedCallsAfterRestart();
   bool MediaAttemptedThisProcess(const std::string& call_id) const;
 
-  Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity);
+  Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
+                                std::optional<int64_t> relay_created_at_ms = std::nullopt,
+                                std::optional<int64_t> relay_server_time_ms = std::nullopt);
 
   CallMediaEngine& Media();
 
@@ -109,6 +111,10 @@ private:
                                 const std::string& detail_json);
   Roe<void> FanOutToJoined(const std::string& call_id, CallControlType type, const std::string& detail_json,
                            const std::string& display, const std::string& skip_identity);
+  /** Fan-out to Joined and Ringing (and Invited) participants — used when ending so invitees clear. */
+  Roe<void> FanOutToJoinedAndRinging(const std::string& call_id, CallControlType type,
+                                     const std::string& detail_json, const std::string& display,
+                                     const std::string& skip_identity);
   Roe<void> MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity);
   Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms);
   Roe<CallRosterDetail> BuildRosterDetail(const std::string& call_id) const;

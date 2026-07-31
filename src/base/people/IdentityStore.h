@@ -14,6 +14,9 @@ namespace pbr {
 
 class IdentityStore : public Module, public IDekConsumer {
 public:
+  /** Current identity plaintext JSON schema inside identity.enc. Unversioned files migrate on load. */
+  static constexpr int kSchemaVersion = 1;
+
   explicit IdentityStore(std::string data_dir, std::string profile_id = {});
 
   /** Required before LoadOrCreate/Get/Save — DEK from unlocked DataKeyVault. */
