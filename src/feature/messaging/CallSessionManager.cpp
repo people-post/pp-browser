@@ -451,6 +451,9 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   invite.origin_group_id = (*session)->origin_group_id;
   invite.sfu_hint = (*session)->sfu_hint;
   invite.expires_at = pending.expires_at;
+  if (auto roster = BuildRosterDetail(call_id); roster) {
+    invite.participants = std::move(roster->participants);
+  }
   auto detail = CallControlCodec::EncodeInvite(invite);
   if (!detail) {
     return detail.error();
@@ -543,13 +546,14 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
     p2p_bridge_.ScheduleStartMediaAsAnswerer(call_id, (*pending)->inviter_identity);
   }
 
-  // Best-effort roster to inviter; full fan-out when we are coordinator later.
+  // Best-effort roster to inviter + other joined/ringing peers so co-invitees learn N.
   auto roster = BuildRosterDetail(call_id);
   if (roster) {
     auto roster_json = CallControlCodec::EncodeRoster(*roster);
     if (roster_json) {
       (void)SendCallDirectMessage((*pending)->inviter_identity, CallControlType::CallRoster, *roster_json,
                                   "Call roster");
+      (void)FanOutToJoinedAndRinging(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
     }
   }
 
@@ -1008,10 +1012,36 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     session.sfu_hint = invite->sfu_hint;
     (void)sessions_.UpsertSession(session);
 
+    // Seed full roster from invite when present; fall back to inviter+self.
+    if (!invite->participants.empty()) {
+      for (const CallRosterEntry& entry : invite->participants) {
+        if (entry.identity.empty()) {
+          continue;
+        }
+        CallParticipant row;
+        row.call_id = invite->call_id;
+        row.identity = entry.identity;
+        row.state = entry.state;
+        row.media.audio_muted = entry.audio_muted;
+        row.media.video_enabled = entry.video_enabled;
+        if (entry.identity == *local) {
+          row.state = CallParticipantState::Ringing;
+        } else if (entry.identity == pending.inviter_identity &&
+                   row.state != CallParticipantState::Joined) {
+          row.state = CallParticipantState::Joined;
+        }
+        if (row.state == CallParticipantState::Joined) {
+          // Prefer earlier stamp than late acceptors so soft-migrate initiator detection works.
+          row.joined_at = session.created_at > 0 ? session.created_at : 1;
+        }
+        (void)sessions_.UpsertParticipant(row);
+      }
+    }
     CallParticipant inviter;
     inviter.call_id = invite->call_id;
     inviter.identity = pending.inviter_identity;
     inviter.state = CallParticipantState::Joined;
+    inviter.joined_at = session.created_at > 0 ? session.created_at : 1;
     (void)sessions_.UpsertParticipant(inviter);
     CallParticipant self;
     self.call_id = invite->call_id;
@@ -1054,6 +1084,13 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       const size_t n_joined = joined_after ? *joined_after : 0;
       if (!topology_.OnRemoteAcceptJoined(accept->call_id, n_joined, identity)) {
         p2p_bridge_.ScheduleStartMediaAsOfferer(accept->call_id, identity);
+      }
+      // Fan roster so co-invitees / other joined peers see accurate N before SFU/P2P.
+      if (auto roster = BuildRosterDetail(accept->call_id); roster) {
+        if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
+          (void)FanOutToJoinedAndRinging(accept->call_id, CallControlType::CallRoster, *roster_json, "Call roster",
+                                         *local);
+        }
       }
     }
 

@@ -130,6 +130,58 @@ TEST_F(GroupRosterInviteApplyTest, MemberJoinedAddsMemberAndBumpsEpoch) {
   EXPECT_EQ((*meta)->roster_epoch, 2u);
 }
 
+TEST_F(GroupRosterInviteApplyTest, MemberJoinedSnapshotBackfillsPriorMembers) {
+  // Late joiner (carol) only seeded owner+self locally; owner publish includes full roster.
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "relay:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(roster_->UpsertMetadata(metadata));
+  GroupRosterMember alice;
+  alice.member_identity = "relay:alice";
+  alice.role = MemberRole::Owner;
+  alice.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(roster_->UpsertMember("group:hike", alice));
+  GroupRosterMember carol_self;
+  carol_self.member_identity = "relay:carol";
+  carol_self.role = MemberRole::Member;
+  carol_self.joined_at = util::NowUnixMs();
+  ASSERT_TRUE(roster_->UpsertMember("group:hike", carol_self));
+
+  GroupMembershipCodec::MemberJoinedPayload payload;
+  payload.group_id = "group:hike";
+  payload.member_identity = "relay:carol";
+  payload.role = MemberRole::Member;
+  payload.roster_epoch = 3;
+  payload.members = {
+      {"relay:alice", MemberRole::Owner},
+      {"relay:bob", MemberRole::Member},
+      {"relay:carol", MemberRole::Member},
+  };
+  ASSERT_TRUE(ApplyMemberJoinedToRoster(*roster_, payload, "relay:alice"));
+
+  auto members = roster_->ListMembers("group:hike");
+  ASSERT_TRUE(members);
+  ASSERT_EQ(members->size(), 3u);
+  bool saw_bob = false;
+  for (const GroupRosterMember& row : *members) {
+    if (row.member_identity == "relay:bob") {
+      saw_bob = true;
+    }
+  }
+  EXPECT_TRUE(saw_bob);
+  auto meta = roster_->LoadMetadata("group:hike");
+  ASSERT_TRUE(meta && meta->has_value());
+  EXPECT_EQ((*meta)->roster_epoch, 3u);
+
+  auto encoded = GroupMembershipCodec::EncodeMemberJoined(payload);
+  ASSERT_TRUE(encoded);
+  auto decoded = GroupMembershipCodec::DecodeMemberJoined(*encoded);
+  ASSERT_TRUE(decoded);
+  ASSERT_EQ(decoded->members.size(), 3u);
+}
+
 TEST_F(GroupRosterInviteApplyTest, MemberJoinedRejectsNonOwnerAndStaleEpoch) {
   GroupMetadata metadata;
   metadata.group_id = "group:hike";

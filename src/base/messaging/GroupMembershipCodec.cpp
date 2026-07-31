@@ -154,11 +154,28 @@ Roe<GroupMembershipCodec::InviteResponsePayload> GroupMembershipCodec::DecodeInv
 Roe<std::string> GroupMembershipCodec::EncodeMemberJoined(const std::string& group_id,
                                                           const std::string& member_identity, const MemberRole role,
                                                           const uint64_t roster_epoch) {
-  return nlohmann::json({{"group_id", group_id},
-                         {"member_identity", member_identity},
-                         {"role", MemberRoleToString(role)},
-                         {"roster_epoch", roster_epoch}})
-      .dump();
+  MemberJoinedPayload payload;
+  payload.group_id = group_id;
+  payload.member_identity = member_identity;
+  payload.role = role;
+  payload.roster_epoch = roster_epoch;
+  return EncodeMemberJoined(payload);
+}
+
+Roe<std::string> GroupMembershipCodec::EncodeMemberJoined(const MemberJoinedPayload& payload) {
+  nlohmann::json json{{"group_id", payload.group_id},
+                      {"member_identity", payload.member_identity},
+                      {"role", MemberRoleToString(payload.role)},
+                      {"roster_epoch", payload.roster_epoch}};
+  if (!payload.members.empty()) {
+    nlohmann::json members = nlohmann::json::array();
+    for (const MemberJoinedEntry& entry : payload.members) {
+      members.push_back(nlohmann::json{{"member_identity", entry.member_identity},
+                                       {"role", MemberRoleToString(entry.role)}});
+    }
+    json["members"] = std::move(members);
+  }
+  return json.dump();
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeMemberLeft(const std::string& group_id,
@@ -232,6 +249,19 @@ Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMembe
     payload.role = MemberRoleFromString(json["role"].get<std::string>());
   }
   payload.roster_epoch = ReadRosterEpoch(json);
+  if (json.contains("members") && json["members"].is_array()) {
+    for (const nlohmann::json& row : json["members"]) {
+      if (!row.is_object() || !row.contains("member_identity") || !row["member_identity"].is_string()) {
+        continue;
+      }
+      MemberJoinedEntry entry;
+      entry.member_identity = row["member_identity"].get<std::string>();
+      if (row.contains("role") && row["role"].is_string()) {
+        entry.role = MemberRoleFromString(row["role"].get<std::string>());
+      }
+      payload.members.push_back(std::move(entry));
+    }
+  }
   if (payload.group_id.empty() || payload.member_identity.empty()) {
     return Error("member_joined missing group_id or member_identity");
   }

@@ -114,12 +114,28 @@ Roe<void> ApplyMemberJoinedToRoster(GroupRosterStore& roster, const GroupMembers
     return Error("member_joined missing member_identity");
   }
 
-  GroupRosterMember member;
-  member.member_identity = payload.member_identity;
-  member.role = payload.role;
-  member.joined_at = util::NowUnixMs();
-  if (auto upserted = roster.UpsertMember(payload.group_id, member); !upserted) {
+  const int64_t now = util::NowUnixMs();
+  auto upsert_one = [&](const std::string& identity, MemberRole role) -> Roe<void> {
+    if (identity.empty()) {
+      return {};
+    }
+    GroupRosterMember member;
+    member.member_identity = identity;
+    member.role = role;
+    member.joined_at = now;
+    return roster.UpsertMember(payload.group_id, member);
+  };
+
+  if (auto upserted = upsert_one(payload.member_identity, payload.role); !upserted) {
     return upserted.error();
+  }
+  for (const GroupMembershipCodec::MemberJoinedEntry& entry : payload.members) {
+    if (entry.member_identity == payload.member_identity) {
+      continue;
+    }
+    if (auto upserted = upsert_one(entry.member_identity, entry.role); !upserted) {
+      return upserted.error();
+    }
   }
   GroupMetadata updated = *metadata;
   updated.roster_epoch = payload.roster_epoch;

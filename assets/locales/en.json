@@ -227,6 +227,7 @@
     "call.status.connecting": "Connecting…",
     "call.status.reconnecting": "Reconnecting…",
     "call.status.connected": "Connected",
+    "call.hint.group_media": "Group call needs a media relay. Enable Media relay on a Node or org seed, then retry.",
     "call.title.voice": "Voice call",
     "call.title.video": "Video call",
     "call.title.group_voice": "Group voice call",

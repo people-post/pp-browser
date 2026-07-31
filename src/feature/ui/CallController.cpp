@@ -111,6 +111,10 @@ std::string ComposeP2pStatusHint(bool missing_mic) {
   return hint;
 }
 
+std::string ComposeGroupCallStatusHint() {
+  return Tr("call.hint.group_media");
+}
+
 } // namespace
 
 void CallController::BindMessaging(MessagingHub& messaging) {
@@ -402,11 +406,16 @@ void CallController::RefreshPendingRing() {
     in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
 
     const bool p2p_failed = calls->IsP2pConnectFailed();
+    const bool group_call_context = (*active)->origin_group_id.has_value() || joined_count > 2 ||
+                                    calls->IsAwaitingSfuRecovery() || calls->Media().IsSfuMode();
     in_call.show_retry = p2p_failed && !calls->IsAwaitingSfuRecovery() && !calls->Media().IsSfuMode();
-    in_call.status_hint =
-        p2p_failed ? ComposeP2pStatusHint(calls->P2pConnectMissingMic()).c_str() : Rml::String{};
     if (p2p_failed) {
+      in_call.status_hint =
+          group_call_context ? ComposeGroupCallStatusHint().c_str()
+                             : ComposeP2pStatusHint(calls->P2pConnectMissingMic()).c_str();
       in_call.show_invite = false;
+    } else {
+      in_call.status_hint = {};
     }
 
     if (calls->Media().IsConnected()) {

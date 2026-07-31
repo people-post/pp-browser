@@ -183,13 +183,40 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
     return participants.error();
   }
   std::vector<std::string> joined_ids;
+  std::string initiator_identity;
+  int64_t earliest_joined = 0;
+  bool have_earliest = false;
   for (const CallParticipant& p : *participants) {
-    if (p.state == CallParticipantState::Joined) {
-      joined_ids.push_back(p.identity);
+    if (p.state != CallParticipantState::Joined) {
+      continue;
+    }
+    joined_ids.push_back(p.identity);
+    if (p.joined_at) {
+      if (!have_earliest || *p.joined_at < earliest_joined) {
+        earliest_joined = *p.joined_at;
+        initiator_identity = p.identity;
+        have_earliest = true;
+      }
+    } else if (!have_earliest && initiator_identity.empty()) {
+      initiator_identity = p.identity;
     }
   }
+  if (initiator_identity.empty() && !joined_ids.empty()) {
+    initiator_identity = joined_ids.front();
+  }
+
+  auto session = sessions_.LoadSession(call_id);
+  const bool first_attach =
+      !session || !session->has_value() || !(*session)->sfu_hint || (*session)->sfu_hint->empty();
   const auto coordinator = CallSessionLogic::SelectEpochCoordinator(joined_ids);
-  if (!coordinator || *coordinator != *local) {
+  const bool is_coordinator = coordinator && *coordinator == *local;
+  const bool is_initiator = !initiator_identity.empty() && initiator_identity == *local;
+  // V021: initiator picks hop at first soft-migrate; epoch coordinator handles re-pick.
+  if (first_attach) {
+    if (!is_initiator && !is_coordinator) {
+      return {};
+    }
+  } else if (!is_coordinator) {
     return {};
   }
 
@@ -232,7 +259,6 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
       continue;
     }
 
-    auto session = sessions_.LoadSession(call_id);
     if (session && session->has_value()) {
       (*session)->sfu_hint = hop.peer_id;
       (void)sessions_.UpsertSession(**session);

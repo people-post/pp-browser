@@ -94,6 +94,13 @@ struct PendingCallInvite {
   std::string status = "pending";
 };
 
+struct CallRosterEntry {
+  std::string identity;
+  CallParticipantState state = CallParticipantState::Joined;
+  bool audio_muted = false;
+  bool video_enabled = false;
+};
+
 struct CallInviteDetail {
   std::string call_id;
   std::string inviter_identity;
@@ -103,6 +110,8 @@ struct CallInviteDetail {
   std::optional<std::string> origin_group_id;
   std::optional<std::string> sfu_hint;
   std::optional<int64_t> expires_at;
+  /** Full call roster snapshot at invite time (joined + ringing + this invitee). */
+  std::vector<CallRosterEntry> participants;
 };
 
 struct CallAcceptDetail {
@@ -120,13 +129,6 @@ struct CallDeclineDetail {
 struct CallLeaveDetail {
   std::string call_id;
   std::string identity;
-};
-
-struct CallRosterEntry {
-  std::string identity;
-  CallParticipantState state = CallParticipantState::Joined;
-  bool audio_muted = false;
-  bool video_enabled = false;
 };
 
 struct CallRosterDetail {

@@ -227,6 +227,7 @@
     "call.status.connecting": "连接中…",
     "call.status.reconnecting": "重新连接中…",
     "call.status.connected": "已连接",
+    "call.hint.group_media": "群组通话需要媒体中继。请在 Node 或组织种子上启用 Media relay，然后重试。",
     "call.title.voice": "语音通话",
     "call.title.video": "视频通话",
     "call.title.group_voice": "群组语音通话",
