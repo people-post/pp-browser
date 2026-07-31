@@ -18,7 +18,7 @@ using ToolExecutor = std::function<nlohmann::json(const std::string& tool, const
 
 class ActionRouter : public Module {
 public:
-  static ActionRouter& Instance();
+  ActionRouter();
 
   void Attach(Rml::Context* context);
   void Detach();
@@ -31,8 +31,6 @@ public:
   void Invoke(const std::string& action);
 
 private:
-  ActionRouter();
-
   Rml::Context* context_ = nullptr;
   BindingsManifest manifest_;
   ToolExecutor tool_executor_;

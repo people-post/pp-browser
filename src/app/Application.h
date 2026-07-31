@@ -15,6 +15,10 @@ class FontEngineInterfaceHarfBuzz;
 
 namespace pbr {
 
+class ActionRouter;
+class BadgeAggregator;
+class ClientCompatController;
+
 class Application : public Module {
 public:
   Application();
@@ -43,6 +47,9 @@ private:
   SessionStore store_;
   std::unique_ptr<MessagingHub> messaging_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;
+  std::unique_ptr<ActionRouter> action_router_;
+  std::unique_ptr<ClientCompatController> client_compat_;
+  std::unique_ptr<BadgeAggregator> badges_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;
 };
 

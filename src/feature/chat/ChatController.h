@@ -32,6 +32,8 @@ class Element;
 
 namespace pbr {
 
+class BadgeAggregator;
+
 class ChatController : public Module {
 public:
   /** Hot-reloadable assistant slice projected from AppConfig (LLM / MCP / search). */
@@ -74,6 +76,7 @@ public:
   bool Setup(Rml::Context* context, MessagingHub& messaging);
   void BindMessaging(MessagingHub& messaging);
   void BindSessionStore(SessionStore& store);
+  void BindBadgeAggregator(BadgeAggregator& badges);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
   SessionStore& Store();
@@ -251,6 +254,7 @@ private:
   Rml::Context* context_ = nullptr;
   MessagingHub* messaging_ = nullptr;
   SessionStore* session_store_ = nullptr;
+  BadgeAggregator* badges_ = nullptr;
   ChatState chat_;
   ShellState shell_;
   std::optional<AgentSession> agent_;

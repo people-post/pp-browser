@@ -297,6 +297,10 @@ void ChatController::BindSessionStore(SessionStore& store) {
   session_store_ = &store;
 }
 
+void ChatController::BindBadgeAggregator(BadgeAggregator& badges) {
+  badges_ = &badges;
+}
+
 MessagingHub& ChatController::Hub() {
   if (!messaging_) {
     throw std::runtime_error("ChatController messaging not bound");
@@ -842,7 +846,9 @@ void ChatController::RefreshFromMessaging() {
   SyncShellSessions();
   SyncDisplayFromThread();
   chrome_.Update();
-  BadgeAggregator::Instance().Refresh();
+  if (badges_) {
+    badges_->Refresh();
+  }
   // Inbox ingest (incl. call_invite) completes on IO; reconcile ring after messages change.
   CallController::Instance().RefreshPendingRing();
   DirtyChat();
@@ -2140,7 +2146,7 @@ bool ChatController::Setup(Rml::Context* context, MessagingHub& messaging) {
   ShellHost::Instance().Initialize(context);
   // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.
   ShellHost::Instance().State().fonts_ready = !UiLanguageNeedsCjkFonts();
-  ShellHost::Instance().SetOnNavTabChanged([](NavTab tab) {
+  ShellHost::Instance().SetOnNavTabChanged([badges = badges_](NavTab tab) {
     static NavTab previous = NavTab::Home;
     if (previous == NavTab::Me && tab != NavTab::Me) {
       SettingsController::Instance().OnMeSurfaceClosed();
@@ -2159,7 +2165,9 @@ bool ChatController::Setup(Rml::Context* context, MessagingHub& messaging) {
     }
     previous = tab;
     // Active-thread deduction for sessions badge depends on nav_tab.
-    BadgeAggregator::Instance().Refresh();
+    if (badges) {
+      badges->Refresh();
+    }
     ShellHost::Instance().DirtyWindow();
   });
   ShellHost::Instance().SetOnLayoutModeChanged([](LayoutMode mode) {

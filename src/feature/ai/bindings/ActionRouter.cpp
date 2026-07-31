@@ -8,11 +8,6 @@ ActionRouter::ActionRouter() {
   redirectLogger("ActionRouter");
 }
 
-ActionRouter& ActionRouter::Instance() {
-  static ActionRouter router;
-  return router;
-}
-
 void ActionRouter::Attach(Rml::Context* context) {
   context_ = context;
 }

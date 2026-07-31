@@ -114,7 +114,7 @@ bool UiLanguageNeedsCjkFonts() {
   return primary == "zh" || primary == "ja" || primary == "ko";
 }
 
-void OnFirstPresentDeferredStartup() {
+void OnFirstPresentDeferredStartup(ClientCompatController& client_compat) {
   if (g_started) {
     return;
   }
@@ -124,7 +124,7 @@ void OnFirstPresentDeferredStartup() {
   // Fonts first so CJK chrome can appear while Argon2 unlock runs.
   LoadDeferredFonts();
   PinGateController::Instance().BeginDeferredUnlockAfterFirstPresent();
-  ClientCompatController::Instance().CheckAsync();
+  client_compat.CheckAsync();
 }
 
 } // namespace pbr

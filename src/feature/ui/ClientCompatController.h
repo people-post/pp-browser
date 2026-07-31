@@ -12,7 +12,7 @@ class MessagingHub;
 /** Fetches relay client-compat and surfaces update-required / update-available UX. */
 class ClientCompatController : public Module {
 public:
-  static ClientCompatController& Instance();
+  ClientCompatController() = default;
 
   void BindMessaging(MessagingHub& messaging);
   MessagingHub& Hub();
@@ -27,8 +27,6 @@ public:
   CompatUiAction LastAction() const { return last_action_; }
 
 private:
-  ClientCompatController() = default;
-
   void PresentAction(CompatUiAction action, const ClientCompatDocument& doc);
   void ShowUpdateRequired(const ClientCompatDocument& doc);
 

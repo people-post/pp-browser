@@ -72,10 +72,6 @@ CompatResolveResult ResolveDocumentOnIO(IClientCompatClient* client, const std::
 
 } // namespace
 
-ClientCompatController& ClientCompatController::Instance() {
-  static ClientCompatController instance;
-  return instance;
-}
 void ClientCompatController::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
 }
@@ -96,11 +92,11 @@ const MessagingHub& ClientCompatController::Hub() const {
 
 
 void ClientCompatController::CheckAsync() {
-  if (!Instance().Hub().IsInitialized()) {
+  if (!Hub().IsInitialized()) {
     return;
   }
-  IClientCompatClient* client = Instance().Hub().ClientCompat();
-  const std::string profile_dir = Instance().Hub().ProfileDataDir();
+  IClientCompatClient* client = Hub().ClientCompat();
+  const std::string profile_dir = Hub().ProfileDataDir();
 
   BrowserThread::PostTaskAndReply<CompatResolveResult>(
       [client, profile_dir]() { return ResolveDocumentOnIO(client, profile_dir); },

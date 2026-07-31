@@ -60,6 +60,7 @@
 #endif
 
 #include <filesystem>
+#include <algorithm>
 
 namespace pbr {
 
@@ -88,6 +89,9 @@ Application::Application() {
   messaging_ = std::make_unique<MessagingHub>();
   messaging_->BindSessionStore(store_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
+  action_router_ = std::make_unique<ActionRouter>();
+  client_compat_ = std::make_unique<ClientCompatController>();
+  badges_ = std::make_unique<BadgeAggregator>();
 }
 
 Application::~Application() {
@@ -286,8 +290,8 @@ bool Application::Initialize(const char* window_title) {
 
   ContextMenuHost::Instance().Install(context);
 
-  ActionRouter::Instance().Attach(context);
-  ActionRouter::Instance().SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
+  action_router_->Attach(context);
+  action_router_->SetModelDirtyCallback([](const std::string& model, const std::string& binding) {
     DataModelHost::Instance().Dirty(model, binding);
   });
   MessagingHub& messaging = Messaging();
@@ -394,8 +398,31 @@ bool Application::Initialize(const char* window_title) {
   CallController::Instance().BindMessaging(messaging);
   PinGateController::Instance().BindMessaging(messaging);
   PeoplePickerController::Instance().BindMessaging(messaging);
-  ClientCompatController::Instance().BindMessaging(messaging);
-  BadgeAggregator::Instance().BindMessaging(messaging);
+  client_compat_->BindMessaging(messaging);
+  badges_->BindSource([&messaging]() {
+    BadgeUnreadInputs inputs;
+    if (!messaging.IsInitialized()) {
+      return inputs;
+    }
+    auto& inbox = messaging.Inbox();
+    const int total = inbox.SumUnread();
+    int deduction = 0;
+    if (ShellHost::Instance().State().nav_tab == NavTab::Sessions) {
+      const std::string& active_id = inbox.ActiveThreadId();
+      if (!active_id.empty()) {
+        auto thread = messaging.Store().GetThread(active_id);
+        if (thread && *thread) {
+          deduction = (*thread)->unread_count;
+        }
+      }
+    }
+    // Sessions owns aggregate chat unread. Contacts nav stays at 0 until a
+    // contacts-tab queue exists (intro requests, pending invites, etc.).
+    inputs.sessions_unread = std::max(0, total - deduction);
+    inputs.contacts_unread = 0;
+    return inputs;
+  });
+  ChatController::Instance().BindBadgeAggregator(*badges_);
   ShellHost::Instance().BindMessaging(messaging);
 
   config_apply_->Bind(messaging, store_, [](const std::string& relative) { return AssetsPath(relative); });
@@ -408,6 +435,9 @@ bool Application::Initialize(const char* window_title) {
     SettingsController::Instance().BindCommands({});
     ContactsController::Instance().BindChatPorts({});
     PeoplePickerController::Instance().BindChatPorts({});
+    if (badges_) {
+      badges_->BindSource({});
+    }
     Rml::RemoveContext("main");
     Rml::Shutdown();
     Backend::Shutdown();
@@ -521,7 +551,9 @@ void Application::Run() {
       if (!logged_first_present) {
         StartupMark("first_present");
         logged_first_present = true;
-        BrowserThread::PostTask(BrowserThreadId::UI, []() { OnFirstPresentDeferredStartup(); });
+        BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+          OnFirstPresentDeferredStartup(*client_compat_);
+        });
       }
       skip_log_countdown = 0;
     } else if (skip_log_countdown-- <= 0) {
@@ -541,6 +573,9 @@ void Application::Shutdown() {
   SettingsController::Instance().BindCommands({});
   ContactsController::Instance().BindChatPorts({});
   PeoplePickerController::Instance().BindChatPorts({});
+  if (badges_) {
+    badges_->BindSource({});
+  }
 
   if (messaging_) {
     messaging_->SetOnMessagingReady(nullptr);
@@ -569,7 +604,7 @@ void Application::Shutdown() {
 
     {
       StartupPhase phase("Shutdown::RmlUi");
-      ActionRouter::Instance().Detach();
+      action_router_->Detach();
       Rml::RemoveContext("main");
 #ifdef PPBROWSER_ENABLE_DEBUGGER
       Rml::Debugger::Shutdown();

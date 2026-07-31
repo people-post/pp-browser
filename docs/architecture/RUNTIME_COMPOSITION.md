@@ -97,6 +97,9 @@ flowchart LR
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
     ThemeNode["Theme<br/><small>base/ui/</small>"]
+    ActionRouter["ActionRouter<br/><small>feature/ai/bindings/</small>"]
+    ClientCompat["ClientCompatController<br/><small>feature/ui/</small>"]
+    Badges["BadgeAggregator<br/><small>feature/ui/</small>"]
   end
 
   App --> Bridge
@@ -106,6 +109,9 @@ flowchart LR
   App --> Settings
   App --> Contacts
   App --> Pin
+  App --> ActionRouter
+  App --> ClientCompat
+  App --> Badges
 
   Bridge --> Store
   Bridge -->|Project + Apply| Hub
@@ -117,11 +123,14 @@ flowchart LR
   Chat -->|AddConfigListener LLM| Store
   Chat --> Hub
   Chat --> Agent
+  Chat -->|BindBadgeAggregator| Badges
   Hub --> Agent
+  App -->|BindSource| Badges
 
   Shell -.->|layout / Me sheet| Settings
   App -->|BindCommands SettingsCommands| Settings
   App -->|BindChatPorts| Contacts
+  App -->|deferred startup| ClientCompat
   Pin -.->|unlock gate| Settings
   Contacts -.->|hub-bound| Hub
 ```
@@ -250,10 +259,13 @@ flowchart TB
 
 | Class | Location | Role |
 |-------|----------|------|
-| **Application** | `app/` | Owns hub lifetime, binds controllers, installs `ConfigApplyBridge` |
+| **Application** | `app/` | Owns hub + ActionRouter / ClientCompat / BadgeAggregator; binds controllers; installs `ConfigApplyBridge` |
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices |
+| **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
+| **ClientCompatController** | `feature/ui/` | Relay client-compat check; app-owned; deferred startup |
+| **BadgeAggregator** | `feature/ui/` | Nav unread badges; app-owned; `BindSource` from MessagingHub; chat calls Refresh |
 | **ShellHost** | `feature/ui/` | Window shell panes/nav; nested `ChromePrefs` |
 | **LocalizationService** | `base/i18n/` | Locale catalogs; nested `Prefs` |
 | **SettingsController** | `feature/ui/` | Me-tab UI + flush via `session_store` port; holds injected `SettingsCommands` only (no messaging bind) |
