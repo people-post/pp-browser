@@ -10,6 +10,7 @@
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/CallConflictCopy.h"
+#include "feature/ui/PeoplePickerController.h"
 #include "CallVideoTileRenderer.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
@@ -50,6 +51,9 @@ CallChromeLayer CaptureCallChrome(const ShellState& state) {
       .in_call_elapsed = state.call_in_progress.elapsed.c_str(),
       .in_call_peer_label = state.call_in_progress.peer_label.c_str(),
       .in_call_remote_placeholder = state.call_in_progress.remote_placeholder.c_str(),
+      .in_call_show_roster = state.call_in_progress.show_roster,
+      .in_call_show_invite = state.call_in_progress.show_invite,
+      .in_call_participant_count = state.call_in_progress.participant_count,
   };
 }
 
@@ -306,11 +310,64 @@ void CallController::RefreshPendingRing() {
       }
     }
 
+    // Peer vanished without a clean leave — end local session so chrome does not stick.
+    if (calls->Media().IsActive() && calls->Media().ActiveCallId() == active_call_id_) {
+      const std::string media_state = calls->Media().ConnectionState();
+      if (media_state == "failed") {
+        if (calls->IsAwaitingSfuRecovery() || calls->Media().IsSfuMode()) {
+          // ICE-fail → SFU recovery in flight; keep chrome and show reconnecting.
+        } else {
+          (void)calls->LeaveCall(active_call_id_);
+          ClearInCall();
+          ClearRing();
+          SyncShellState();
+          return;
+        }
+      }
+    }
+
     auto& in_call = ShellHost::Instance().State().call_in_progress;
     in_call.active = true;
     in_call.call_id = (*active)->call_id;
-    in_call.title = (*active)->media_mode == CallMediaMode::Video ? "Video call" : "Voice call";
     in_call.muted = calls->Media().IsMuted();
+
+    const bool is_video = (*active)->media_mode == CallMediaMode::Video;
+    int joined_count = 0;
+    std::string local_identity;
+    if (auto identity = Hub().Identity().Get()) {
+      local_identity = identity->relay_user_id;
+    }
+    if (auto participants = calls->ListJoinedParticipants((*active)->call_id); participants) {
+      joined_count = static_cast<int>(participants->size());
+      in_call.participant_count = joined_count;
+      in_call.show_roster = joined_count > 2 || (*active)->origin_group_id.has_value();
+      in_call.show_invite = true;
+      in_call.roster.clear();
+      in_call.roster.reserve(participants->size());
+      for (const CallParticipant& row : *participants) {
+        CallRosterParticipantState entry;
+        entry.is_local = !local_identity.empty() && row.identity == local_identity;
+        std::string name = entry.is_local ? "You" : DisplayNameForIdentity(row.identity);
+        if (!entry.is_local && name.empty()) {
+          name = row.identity;
+        }
+        entry.name = name.c_str();
+        entry.audio_muted = row.media.audio_muted;
+        entry.video_enabled = row.media.video_enabled;
+        in_call.roster.push_back(std::move(entry));
+      }
+    } else {
+      in_call.participant_count = 0;
+      in_call.show_roster = false;
+      in_call.show_invite = true;
+      in_call.roster.clear();
+    }
+
+    if (in_call.show_roster) {
+      in_call.title = is_video ? "Group video call" : "Group voice call";
+    } else {
+      in_call.title = is_video ? "Video call" : "Voice call";
+    }
 
     std::string peer_label = "Them";
     if (auto peer = calls->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
@@ -319,7 +376,7 @@ void CallController::RefreshPendingRing() {
         peer_label = name;
       }
     }
-    in_call.peer_label = peer_label;
+    in_call.peer_label = in_call.show_roster ? "Others" : peer_label;
 
     if (calls->Media().IsConnected()) {
       in_call.elapsed = FormatElapsed(calls->Media().ConnectedAtMs());
@@ -330,13 +387,20 @@ void CallController::RefreshPendingRing() {
     } else {
       in_call.elapsed = {};
       const std::string state = calls->Media().ConnectionState();
-      if (state == "connecting" || state.empty()) {
+      if (calls->IsAwaitingSfuRecovery()) {
+        in_call.subtitle = "Reconnecting…";
+      } else if (state == "connecting" || state.empty()) {
         in_call.subtitle = "Connecting…";
-      } else if (state == "disconnected") {
+      } else if (state == "disconnected" || state == "failed") {
         in_call.subtitle = "Reconnecting…";
       } else {
         in_call.subtitle = state;
       }
+    }
+    if (in_call.show_roster && joined_count > 0 && in_call.subtitle == "Connected") {
+      char buf[64];
+      std::snprintf(buf, sizeof(buf), "%d participants · %s", joined_count, in_call.elapsed.c_str());
+      in_call.subtitle = buf;
     }
     ApplyAudioLevels(calls->Media());
     SyncShellState();
@@ -356,16 +420,39 @@ bool CallController::StartCall(const std::string& thread_id, const bool video) {
     return false;
   }
   auto thread = Hub().Store().GetThread(thread_id);
-  if (!thread || !*thread || (*thread)->kind != ThreadKind::Direct) {
-    UserFeedback::Fail("Voice and video calls are available in 1:1 chats");
+  if (!thread || !*thread) {
+    UserFeedback::Fail("Thread not found");
+    return false;
+  }
+  if ((*thread)->kind == ThreadKind::Group) {
+    OpenGroupCallPicker(thread_id, video);
+    return true;
+  }
+  if ((*thread)->kind != ThreadKind::Direct) {
+    UserFeedback::Fail("Voice and video calls are available in direct and group chats");
     return false;
   }
   if ((*thread)->peer_identity_value.empty()) {
     UserFeedback::Fail("Missing peer identity");
     return false;
   }
+  return StartCallWithInvitees(thread_id, video, {(*thread)->peer_identity_value});
+}
+
+bool CallController::StartCallWithInvitees(const std::string& thread_id, const bool video,
+                                           const std::vector<std::string>& invitee_identities) {
+  BindToMessaging();
+  auto* calls = Hub().Calls();
+  if (!calls) {
+    UserFeedback::Fail("Calls unavailable");
+    return false;
+  }
+  if (invitee_identities.empty()) {
+    UserFeedback::Fail("Select at least one person to call");
+    return false;
+  }
   auto started =
-      calls->StartCall(thread_id, video ? CallMediaMode::Video : CallMediaMode::Voice, {(*thread)->peer_identity_value});
+      calls->StartCall(thread_id, video ? CallMediaMode::Video : CallMediaMode::Voice, invitee_identities);
   if (!started) {
     UserFeedback::Fail(started.error().message);
     return false;
@@ -373,6 +460,42 @@ bool CallController::StartCall(const std::string& thread_id, const bool video) {
   active_call_id_ = started->call_id;
   RefreshPendingRing();
   return true;
+}
+
+void CallController::OpenGroupCallPicker(const std::string& thread_id, const bool video) {
+  PeoplePickerController::Instance().OpenForGroupCall(thread_id, video);
+}
+
+void CallController::OpenMidCallInvitePicker() {
+  if (active_call_id_.empty()) {
+    UserFeedback::Fail("No active call");
+    return;
+  }
+  PeoplePickerController::Instance().OpenForCallAddGuest(active_call_id_);
+}
+
+void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities) {
+  BindToMessaging();
+  auto* calls = Hub().Calls();
+  if (!calls || active_call_id_.empty()) {
+    UserFeedback::Fail("No active call");
+    return;
+  }
+  int invited = 0;
+  for (const std::string& identity : invitee_identities) {
+    if (identity.empty()) {
+      continue;
+    }
+    if (auto ok = calls->InviteParticipant(active_call_id_, identity); ok) {
+      ++invited;
+    } else {
+      UserFeedback::Fail(ok.error().message);
+      break;
+    }
+  }
+  if (invited > 0) {
+    RefreshPendingRing();
+  }
 }
 
 bool CallController::StartVoiceCall(const std::string& thread_id) {

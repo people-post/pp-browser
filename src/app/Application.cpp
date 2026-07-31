@@ -471,6 +471,7 @@ bool Application::Initialize(const char* window_title) {
   ContactsController::Instance().BindUnlockGate(*unlock_gate_);
   PeoplePickerController::Instance().BindUnlockGate(*unlock_gate_);
   PeoplePickerController::Instance().BindFlowCoordinator(*flow_);
+  PeoplePickerController::Instance().BindCallController(*call_);
 
   config_apply_->Bind(messaging, store_, [](const std::string& relative) { return AssetsPath(relative); });
 

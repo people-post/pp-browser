@@ -299,7 +299,35 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
     (void)SendCallDirectMessage(media_peer_identity_, CallControlType::CallIce, *encoded, "Call signaling");
   });
 
-  media_.SetOnStateChanged([this](const std::string&) { NotifyRingChanged(); });
+  media_.SetOnStateChanged([this](const std::string& state) {
+    const std::string call_id = media_.ActiveCallId();
+    if (state == "failed" && !media_.IsSfuMode() && !call_id.empty()) {
+      auto joined = sessions_.CountJoined(call_id);
+      if (joined && CallMediaTopology::ShouldUseMediaRelay(*joined, true)) {
+        awaiting_sfu_recovery_ = true;
+        if (auto migrated = MaybeSoftMigrateToSfu(call_id); !migrated && !sfu_attached_) {
+          auto local = LocalRelayIdentity();
+          auto participants = sessions_.ListParticipants(call_id);
+          if (local && participants) {
+            std::vector<std::string> joined_ids;
+            for (const CallParticipant& p : *participants) {
+              if (p.state == CallParticipantState::Joined) {
+                joined_ids.push_back(p.identity);
+              }
+            }
+            const auto coordinator = CallSessionLogic::SelectEpochCoordinator(joined_ids);
+            if (coordinator && *coordinator == *local) {
+              awaiting_sfu_recovery_ = false;
+            }
+          }
+        }
+      }
+    }
+    if (state == "connected" && media_.IsSfuMode()) {
+      awaiting_sfu_recovery_ = false;
+    }
+    NotifyRingChanged();
+  });
 }
 
 void CallSessionManager::ClearMediaCallbacks() {
@@ -327,6 +355,7 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
     relay_deps_.relay->Detach();
   }
   sfu_attached_ = false;
+  awaiting_sfu_recovery_ = false;
   local_publisher_stream_id_ = 0;
   media_peer_identity_.clear();
 }
@@ -850,6 +879,27 @@ Roe<std::optional<bool>> CallSessionManager::PeerVideoEnabledForCall(const std::
   return std::optional<bool>{};
 }
 
+Roe<std::vector<CallParticipant>> CallSessionManager::ListJoinedParticipants(const std::string& call_id) const {
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    return participants.error();
+  }
+  std::vector<CallParticipant> joined;
+  joined.reserve(participants->size());
+  for (const CallParticipant& row : *participants) {
+    if (row.state == CallParticipantState::Joined) {
+      joined.push_back(row);
+    }
+  }
+  return joined;
+}
+
+bool CallSessionManager::IsAwaitingSfuRecovery() const { return awaiting_sfu_recovery_; }
+
+Roe<std::optional<CallSession>> CallSessionManager::SessionForCall(const std::string& call_id) const {
+  return sessions_.LoadSession(call_id);
+}
+
 void CallSessionManager::SweepExpiredInvites() {
   auto local = LocalRelayIdentity();
   if (!local) {
@@ -1335,6 +1385,7 @@ Roe<void> CallSessionManager::AttachLocalToSfu(const std::string& call_id, const
   }
 
   sfu_attached_ = true;
+  awaiting_sfu_recovery_ = false;
   media_peer_identity_.clear();
   RefreshAdaptation(call_id);
   return {};

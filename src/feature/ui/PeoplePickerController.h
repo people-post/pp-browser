@@ -9,6 +9,7 @@
 #include <RmlUi/Core/Types.h>
 
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -22,6 +23,8 @@ class MessagingHub;
 class ProfileUnlockGate;
 class FlowCoordinator;
 
+class CallController;
+
 class PeoplePickerController : public Module {
 public:
   static PeoplePickerController& Instance();
@@ -30,6 +33,7 @@ public:
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindChatPorts(ChatSessionPorts ports);
   void BindFlowCoordinator(FlowCoordinator& flow);
+  void BindCallController(CallController& call);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -53,6 +57,12 @@ public:
   /** From open DM: peer locked; create group when ≥1 extra selected. */
   void OpenFromDm(const std::string& locked_contact_id);
 
+  /** Group chat: pick members to invite to a new call. */
+  void OpenForGroupCall(const std::string& thread_id, bool video);
+
+  /** Active call: invite additional contacts as guests. */
+  void OpenForCallAddGuest(const std::string& call_id);
+
   void Close();
 
 private:
@@ -67,6 +77,8 @@ private:
 
   void Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids);
   void SyncRows();
+  void SyncGroupCallRows();
+  void SyncCallAddGuestRows();
   void UpdateCta();
   void DirtyAll();
   void OnToggleContact(const std::string& contact_id);
@@ -75,6 +87,7 @@ private:
   void OnCancel();
   void OnBack();
   void OnCreateGroup();
+  void OnStartCall();
   void AdvanceToNameStep(const std::vector<std::string>& member_contact_ids);
   void GoBackToSelect();
   void FinishOpenThread();
@@ -84,6 +97,7 @@ private:
   void OnFlowDismissed();
   void RegisterFlow();
   std::vector<std::string> SelectedContactIds() const;
+  std::vector<std::string> SelectedInviteIdentities() const;
   int FreeSelectedCount() const;
   std::string TitleForContactId(const std::string& contact_id) const;
   std::string TrimTitle(std::string title) const;
@@ -106,7 +120,12 @@ private:
   MessagingHub* messaging_ = nullptr;
   ProfileUnlockGate* unlock_gate_ = nullptr;
   FlowCoordinator* flow_ = nullptr;
+  CallController* call_ = nullptr;
   ChatSessionPorts chat_ports_;
+  std::string call_thread_id_;
+  std::string call_id_;
+  bool call_video_ = false;
+  std::unordered_map<std::string, std::string> identity_for_contact_;
 
 };
 

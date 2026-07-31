@@ -160,6 +160,7 @@ public:
   static void CallLeaveCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallMuteCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallCameraCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallInviteCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarMinimizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarToggleMaximizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarCloseCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);

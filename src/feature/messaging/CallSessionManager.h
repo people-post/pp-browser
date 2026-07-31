@@ -67,6 +67,14 @@ public:
   /** Peer (non-local) video_enabled from roster; nullopt if no peer row. */
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
 
+  /** Joined participant rows for in-call roster UI. */
+  Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
+
+  /** True while attempting ICE-fail → SFU recovery (suppress auto-leave). */
+  bool IsAwaitingSfuRecovery() const;
+
+  Roe<std::optional<CallSession>> SessionForCall(const std::string& call_id) const;
+
   /** Expire stale pending invites; notify UI if any changed. */
   void SweepExpiredInvites();
 
@@ -125,6 +133,7 @@ private:
   std::string media_peer_identity_;
   std::optional<std::string> last_media_error_;
   bool sfu_attached_ = false;
+  bool awaiting_sfu_recovery_ = false;
   uint32_t local_publisher_stream_id_ = 0;
 };
 

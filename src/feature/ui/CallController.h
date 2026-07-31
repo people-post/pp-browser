@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -29,6 +30,12 @@ public:
 
   bool StartVoiceCall(const std::string& thread_id);
   bool StartVideoCall(const std::string& thread_id);
+  /** Start with explicit invitee relay identities (group / picker flow). */
+  bool StartCallWithInvitees(const std::string& thread_id, bool video,
+                             const std::vector<std::string>& invitee_identities);
+  void OpenGroupCallPicker(const std::string& thread_id, bool video);
+  void OpenMidCallInvitePicker();
+  void InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities);
   void AcceptIncoming();
   void DeclineIncoming();
   void LeaveActive();
