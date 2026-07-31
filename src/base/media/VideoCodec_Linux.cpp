@@ -20,8 +20,6 @@
 #include <va/va_drm.h>
 #include <va/va_enc_h264.h>
 
-#include <SDL3/SDL.h>
-
 namespace pbr {
 namespace {
 
@@ -1477,13 +1475,6 @@ bool VaapiVideoCodec::EnsureDecoderContext(const ParsedSps& sps, std::string& er
   dec_height_ = height;
   dec_active_profile_ = profile;
   dec_next_surface_ = 0;
-  static bool logged_ctx = false;
-  if (!logged_ctx) {
-    logged_ctx = true;
-    SDL_Log("VaapiVideoCodec: decode context %dx%d VAProfile=%d (cbp=%d main=%d high=%d)", width,
-            height, static_cast<int>(profile), caps_.decode_cbp ? 1 : 0, caps_.decode_main ? 1 : 0,
-            caps_.decode_high ? 1 : 0);
-  }
   return true;
 }
 
@@ -1715,15 +1706,6 @@ Roe<VideoFrameRgba> VaapiVideoCodec::Decode(const uint8_t* annex_b, size_t size)
       if (!ParseSpsRbsp(rbsp.data(), rbsp.size(), sps)) {
         return Error("failed to parse H264 SPS");
       }
-      static bool logged_sps = false;
-      if (!logged_sps) {
-        logged_sps = true;
-        SDL_Log("VaapiVideoCodec: SPS profile_idc=%d level=%d %dx%d (coded %dx%d) refs=%d "
-                "poc_type=%d crop=%d",
-                sps.profile_idc, sps.level_idc, sps.width, sps.height, sps.coded_width,
-                sps.coded_height, sps.max_num_ref_frames, sps.pic_order_cnt_type,
-                sps.frame_cropping_flag);
-      }
       dec_sps_ = sps;
       dec_have_sps_ = true;
     } else if (nal.type == 8) {
@@ -1731,14 +1713,6 @@ Roe<VideoFrameRgba> VaapiVideoCodec::Decode(const uint8_t* annex_b, size_t size)
       ParsedPps pps{};
       if (!ParsePpsRbsp(rbsp.data(), rbsp.size(), pps)) {
         return Error("failed to parse H264 PPS");
-      }
-      static bool logged_pps = false;
-      if (!logged_pps) {
-        logged_pps = true;
-        SDL_Log("VaapiVideoCodec: PPS entropy_cabac=%d transform8x8=%d deblock_ctrl=%d "
-                "weighted_pred=%d",
-                pps.entropy_coding_mode_flag, pps.transform_8x8_mode_flag,
-                pps.deblocking_filter_control_present_flag, pps.weighted_pred_flag);
       }
       dec_pps_ = pps;
       dec_have_pps_ = true;
