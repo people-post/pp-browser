@@ -263,7 +263,8 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
   media_peer_identity_ = peer_identity;
 
   media_.SetOnLocalDescription([this](const CallMediaEngine::LocalDescription& local) {
-    const std::string call_id = media_.ActiveCallId();
+    // Prefer media_call_id_ — ActiveCallId locks and may run under Start()'s mutex.
+    const std::string call_id = !media_call_id_.empty() ? media_call_id_ : media_.ActiveCallId();
     if (call_id.empty() || media_peer_identity_.empty()) {
       return;
     }
@@ -282,7 +283,7 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
   });
 
   media_.SetOnIceCandidate([this](const CallMediaEngine::IceCandidate& ice) {
-    const std::string call_id = media_.ActiveCallId();
+    const std::string call_id = !media_call_id_.empty() ? media_call_id_ : media_.ActiveCallId();
     if (call_id.empty() || media_peer_identity_.empty()) {
       return;
     }
@@ -301,27 +302,34 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
   });
 
   media_.SetOnStateChanged([this](const std::string& state) {
-    const std::string call_id = media_.ActiveCallId();
+    // Must not call locking CallMediaEngine APIs or MaybeSoftMigrateToSfu here when
+    // SetState still races with Start/Stop — use the call id we bound at media start.
+    const std::string call_id = media_call_id_;
     if (state == "failed" && !media_.IsSfuMode() && !call_id.empty()) {
       auto joined = sessions_.CountJoined(call_id);
       if (joined && CallMediaTopology::ShouldUseMediaRelay(*joined, true)) {
         awaiting_sfu_recovery_ = true;
-        if (auto migrated = MaybeSoftMigrateToSfu(call_id); !migrated && !sfu_attached_) {
-          auto local = LocalRelayIdentity();
-          auto participants = sessions_.ListParticipants(call_id);
-          if (local && participants) {
-            std::vector<std::string> joined_ids;
-            for (const CallParticipant& p : *participants) {
-              if (p.state == CallParticipantState::Joined) {
-                joined_ids.push_back(p.identity);
+        // Quote/dial can take seconds — never run on the media/PC callback stack.
+        BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
+          if (auto migrated = MaybeSoftMigrateToSfu(call_id); !migrated && !sfu_attached_) {
+            auto local = LocalRelayIdentity();
+            auto participants = sessions_.ListParticipants(call_id);
+            if (local && participants) {
+              std::vector<std::string> joined_ids;
+              for (const CallParticipant& p : *participants) {
+                if (p.state == CallParticipantState::Joined) {
+                  joined_ids.push_back(p.identity);
+                }
+              }
+              const auto coordinator = CallSessionLogic::SelectEpochCoordinator(joined_ids);
+              if (coordinator && *coordinator == *local) {
+                awaiting_sfu_recovery_ = false;
               }
             }
-            const auto coordinator = CallSessionLogic::SelectEpochCoordinator(joined_ids);
-            if (coordinator && *coordinator == *local) {
-              awaiting_sfu_recovery_ = false;
-            }
           }
-        }
+          NotifyRingChanged();
+        });
+        return;
       }
     }
     if (state == "connected" && media_.IsSfuMode()) {
@@ -336,16 +344,19 @@ void CallSessionManager::ClearMediaCallbacks() {
   media_.SetOnIceCandidate({});
   media_.SetOnStateChanged({});
   media_peer_identity_.clear();
+  media_call_id_.clear();
 }
 
 Roe<void> CallSessionManager::StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity) {
   media_attempted_calls_.insert(call_id);
+  media_call_id_ = call_id;
   BindMediaCallbacks(peer_identity);
   return media_.Start(call_id, CallMediaEngine::Role::Offerer);
 }
 
 Roe<void> CallSessionManager::StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity) {
   media_attempted_calls_.insert(call_id);
+  media_call_id_ = call_id;
   BindMediaCallbacks(peer_identity);
   return media_.Start(call_id, CallMediaEngine::Role::Answerer);
 }
@@ -399,7 +410,7 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   sfu_attached_ = false;
   awaiting_sfu_recovery_ = false;
   local_publisher_stream_id_ = 0;
-  media_peer_identity_.clear();
+  ClearMediaCallbacks();
   media_attempted_calls_.erase(call_id);
 }
 
@@ -1481,6 +1492,7 @@ Roe<void> CallSessionManager::AttachLocalToSfu(const std::string& call_id, const
 
   const uint32_t pub = local_publisher_stream_id_;
   media_attempted_calls_.insert(call_id);
+  media_call_id_ = call_id;
   auto started = media_.StartSfu(call_id, [this, pub](const CallMediaEngine::SfuPacket& pkt) {
     if (!relay_deps_.relay) {
       return;

@@ -29,9 +29,10 @@ void SequencedTaskRunner::RunTaskSafely(std::function<void()>& task) {
   try {
     task();
   } catch (const std::exception& e) {
-    log().error << "Uncaught exception in task: " << e.what();
+    log().error << "Uncaught exception in " << (uses_dedicated_thread_ ? "IO" : "UI")
+                << " task: " << e.what();
   } catch (...) {
-    log().error << "Uncaught unknown exception in task";
+    log().error << "Uncaught unknown exception in " << (uses_dedicated_thread_ ? "IO" : "UI") << " task";
   }
 }
 

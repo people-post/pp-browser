@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <sstream>
@@ -808,7 +809,15 @@ void ShellHost::FlushPendingSyncLayout() {
     return;
   }
   sync_pending_ = false;
-  SyncLayout();
+  try {
+    SyncLayout();
+  } catch (const std::exception& e) {
+    static auto logger = logging::getLogger("ShellHost");
+    logger.error << "SyncLayout failed: " << e.what();
+  } catch (...) {
+    static auto logger = logging::getLogger("ShellHost");
+    logger.error << "SyncLayout failed with unknown exception";
+  }
   if (restore_focus_after_sync_) {
     restore_focus_after_sync_ = false;
     RestoreFocus();

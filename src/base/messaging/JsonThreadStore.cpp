@@ -497,7 +497,16 @@ Roe<Thread> JsonThreadStore::FindOrCreateDirectThread(const DirectChatTarget& ta
       return existing.error();
     }
     if (*existing) {
-      return **existing;
+      Thread thread = **existing;
+      if (!participant_contact_id.empty() && thread.participant_contact_ids.empty()) {
+        thread.participant_contact_ids = {participant_contact_id};
+        if (!title.empty()) {
+          thread.title = title;
+        }
+        thread.updated_at = util::NowUnixMs();
+        return UpsertThread(thread);
+      }
+      return thread;
     }
   }
   Thread thread;

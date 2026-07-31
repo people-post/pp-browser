@@ -145,6 +145,8 @@ private:
   MediaRelayDeps relay_deps_;
   RingChangedFn on_ring_changed_;
   std::string media_peer_identity_;
+  /** Bound at StartMediaAs* so PC/state callbacks never need ActiveCallId under the engine lock. */
+  std::string media_call_id_;
   std::optional<std::string> last_media_error_;
   bool sfu_attached_ = false;
   bool awaiting_sfu_recovery_ = false;

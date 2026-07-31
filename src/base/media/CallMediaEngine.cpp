@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cstring>
 #include <deque>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -153,7 +154,7 @@ std::string StateToString(rtc::PeerConnection::State state) {
 } // namespace
 
 struct CallMediaEngine::Impl {
-  std::mutex mutex;
+  std::recursive_mutex mutex;
   std::string call_id;
   Role role = Role::Offerer;
   std::atomic<bool> active{false};
@@ -233,7 +234,9 @@ struct CallMediaEngine::Impl {
     level.store(std::clamp(next, 0.f, 1.f), std::memory_order_relaxed);
   }
 
-  void SetState(const std::string& state) {
+  /** Update connection fields only. Never invoke on_state_changed here — callers may
+   *  already hold `mutex`, and callbacks (ActiveCallId / SFU migrate) re-enter the engine. */
+  void ApplyStateLocked(const std::string& state) {
     connection_state = state;
     const bool now_connected = (state == "connected");
     if (now_connected && !connected.load()) {
@@ -254,9 +257,26 @@ struct CallMediaEngine::Impl {
       ClearRemoteVideoFrames();
       disconnected_since_ms.store(0, std::memory_order_relaxed);
     }
-    if (on_state_changed) {
-      on_state_changed(state);
+  }
+
+  void EmitStateChanged(const std::string& state) {
+    StateChangedFn cb;
+    {
+      std::lock_guard lock(mutex);
+      cb = on_state_changed;
     }
+    if (cb) {
+      cb(state);
+    }
+  }
+
+  /** PC / external threads: apply under lock, then notify outside the lock. */
+  void SetState(const std::string& state) {
+    {
+      std::lock_guard lock(mutex);
+      ApplyStateLocked(state);
+    }
+    EmitStateChanged(state);
   }
 
   void PublishLocalPreview(const VideoFrameRgba& frame) {
@@ -935,86 +955,101 @@ void CallMediaEngine::SetOnStateChanged(StateChangedFn callback) {
 }
 
 Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
-  std::lock_guard lock(impl_->mutex);
-  if (call_id.empty()) {
-    return Error("call_id required");
-  }
-  if (impl_->active) {
-    if (impl_->call_id == call_id) {
-      return {};
+  StateChangedFn state_cb;
+  {
+    std::lock_guard lock(impl_->mutex);
+    if (call_id.empty()) {
+      return Error("call_id required");
     }
-    return Error("Call media engine already active");
+    if (impl_->active) {
+      if (impl_->call_id == call_id) {
+        return {};
+      }
+      return Error("Call media engine already active");
+    }
+    if (!impl_->video_codec) {
+      impl_->video_codec = CreatePlatformVideoCodec();
+    }
+    // Codecs + PeerConnection first so SDP/ICE can flow while mic permission
+    // blocks OpenAudioDevices on the capture worker (macOS TCC).
+    if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
+      impl_->TearDownAudioLocked();
+      return codecs.error();
+    }
+    if (auto pc = impl_->SetupPeerConnection(role); !pc) {
+      impl_->TearDownAudioLocked();
+      return pc.error();
+    }
+    impl_->sfu_mode = false;
+    impl_->sfu_send = nullptr;
+    impl_->call_id = call_id;
+    impl_->active = true;
+    impl_->muted.store(false, std::memory_order_relaxed);
+    impl_->camera_enabled.store(false, std::memory_order_relaxed);
+    impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
+    impl_->connected_at_ms.store(0, std::memory_order_relaxed);
+    impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
+    impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
+    impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
+    // Do not invoke on_state_changed under this lock — callbacks call ActiveCallId().
+    impl_->ApplyStateLocked("connecting");
+    impl_->StartCaptureLoop();
+    state_cb = impl_->on_state_changed;
   }
-  if (!impl_->video_codec) {
-    impl_->video_codec = CreatePlatformVideoCodec();
+  if (state_cb) {
+    state_cb("connecting");
   }
-  // Codecs + PeerConnection first so SDP/ICE can flow while mic permission
-  // blocks OpenAudioDevices on the capture worker (macOS TCC).
-  if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
-    impl_->TearDownAudioLocked();
-    return codecs.error();
-  }
-  if (auto pc = impl_->SetupPeerConnection(role); !pc) {
-    impl_->TearDownAudioLocked();
-    return pc.error();
-  }
-  impl_->sfu_mode = false;
-  impl_->sfu_send = nullptr;
-  impl_->call_id = call_id;
-  impl_->active = true;
-  impl_->muted.store(false, std::memory_order_relaxed);
-  impl_->camera_enabled.store(false, std::memory_order_relaxed);
-  impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
-  impl_->connected_at_ms.store(0, std::memory_order_relaxed);
-  impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
-  impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
-  impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
-  impl_->SetState("connecting");
-  impl_->StartCaptureLoop();
   return {};
 }
 
 Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) {
-  std::lock_guard lock(impl_->mutex);
-  if (call_id.empty()) {
-    return Error("call_id required");
-  }
-  if (!send) {
-    return Error("SFU send callback required");
-  }
-  if (impl_->active) {
-    if (impl_->call_id == call_id && impl_->sfu_mode) {
-      impl_->sfu_send = std::move(send);
-      return {};
+  StateChangedFn state_cb;
+  {
+    std::lock_guard lock(impl_->mutex);
+    if (call_id.empty()) {
+      return Error("call_id required");
     }
-    // Soft-migrate: tear down P2P then bring up SFU for same or new call_id.
-    impl_->active = false;
-    impl_->TearDownAudioLocked();
-    impl_->TearDownPcLocked();
-    impl_->call_id.clear();
+    if (!send) {
+      return Error("SFU send callback required");
+    }
+    if (impl_->active) {
+      if (impl_->call_id == call_id && impl_->sfu_mode) {
+        impl_->sfu_send = std::move(send);
+        return {};
+      }
+      // Soft-migrate: tear down P2P then bring up SFU for same or new call_id.
+      impl_->active = false;
+      impl_->TearDownAudioLocked();
+      impl_->TearDownPcLocked();
+      impl_->call_id.clear();
+    }
+    if (!impl_->video_codec) {
+      impl_->video_codec = CreatePlatformVideoCodec();
+    }
+    if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
+      impl_->TearDownAudioLocked();
+      return codecs.error();
+    }
+    impl_->sfu_mode = true;
+    impl_->sfu_send = std::move(send);
+    impl_->sfu_audio_seq.store(0);
+    impl_->sfu_video_seq.store(0);
+    impl_->call_id = call_id;
+    impl_->active = true;
+    impl_->muted.store(false, std::memory_order_relaxed);
+    impl_->camera_enabled.store(false, std::memory_order_relaxed);
+    impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
+    impl_->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+    impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
+    impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
+    impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
+    impl_->ApplyStateLocked("connected");
+    impl_->StartCaptureLoop();
+    state_cb = impl_->on_state_changed;
   }
-  if (!impl_->video_codec) {
-    impl_->video_codec = CreatePlatformVideoCodec();
+  if (state_cb) {
+    state_cb("connected");
   }
-  if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
-    impl_->TearDownAudioLocked();
-    return codecs.error();
-  }
-  impl_->sfu_mode = true;
-  impl_->sfu_send = std::move(send);
-  impl_->sfu_audio_seq.store(0);
-  impl_->sfu_video_seq.store(0);
-  impl_->call_id = call_id;
-  impl_->active = true;
-  impl_->muted.store(false, std::memory_order_relaxed);
-  impl_->camera_enabled.store(false, std::memory_order_relaxed);
-  impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
-  impl_->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-  impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
-  impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
-  impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
-  impl_->SetState("connected");
-  impl_->StartCaptureLoop();
   return {};
 }
 
@@ -1074,20 +1109,27 @@ Roe<void> CallMediaEngine::AddRemoteIceCandidate(const std::string& candidate, c
 }
 
 void CallMediaEngine::Stop() {
-  std::lock_guard lock(impl_->mutex);
-  if (!impl_->active && !impl_->pc && !impl_->sfu_mode) {
-    return;
+  StateChangedFn state_cb;
+  {
+    std::lock_guard lock(impl_->mutex);
+    if (!impl_->active && !impl_->pc && !impl_->sfu_mode) {
+      return;
+    }
+    impl_->active = false;
+    impl_->muted.store(false, std::memory_order_relaxed);
+    impl_->camera_enabled.store(false, std::memory_order_relaxed);
+    impl_->connected_at_ms.store(0, std::memory_order_relaxed);
+    impl_->TearDownAudioLocked();
+    impl_->TearDownPcLocked();
+    impl_->sfu_mode = false;
+    impl_->sfu_send = nullptr;
+    impl_->call_id.clear();
+    impl_->ApplyStateLocked("closed");
+    state_cb = impl_->on_state_changed;
   }
-  impl_->active = false;
-  impl_->muted.store(false, std::memory_order_relaxed);
-  impl_->camera_enabled.store(false, std::memory_order_relaxed);
-  impl_->connected_at_ms.store(0, std::memory_order_relaxed);
-  impl_->TearDownAudioLocked();
-  impl_->TearDownPcLocked();
-  impl_->sfu_mode = false;
-  impl_->sfu_send = nullptr;
-  impl_->call_id.clear();
-  impl_->SetState("closed");
+  if (state_cb) {
+    state_cb("closed");
+  }
 }
 
 void CallMediaEngine::SetMuted(bool muted) {

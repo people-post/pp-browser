@@ -29,6 +29,7 @@
 #include "feature/messaging/MessagingHub.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/people/PeerDisplayLabel.h"
+#include "base/people/ContactJson.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/messaging/ChatPayloadValidator.h"
@@ -1255,6 +1256,22 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
               ShellHost::Instance().DirtyWindow();
               return;
             }
+            if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
+              Hub().P2p().RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), peer_id,
+                                                 *hit.signing_public_key_b64, "directory");
+            }
+            if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
+              Hub().P2p().RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::RelayUser), peer_id,
+                                             *hit.kem_public_key_b64, "directory");
+            }
+            Hub().P2p().RegisterContactDirectEndpoints(*created);
+            // Bind stranger DM (empty participants) to the new contact id.
+            ThreadChannel channel = ThreadChannel::E2ePublic;
+            if (auto active = Hub().Inbox().GetActiveThread();
+                active && active->kind == ThreadKind::Direct) {
+              channel = active->channel;
+            }
+            (void)Hub().Inbox().FindOrCreateDirectThread(created->id, channel);
             ContactsController::Instance().OnSelectContact(created->id);
             Hub().Inbox().NotifyThreadChanged();
           },

@@ -80,6 +80,11 @@ std::optional<std::string> ColumnOptText(sqlite3_stmt* stmt, int index) {
   return text ? std::string(reinterpret_cast<const char*>(text)) : std::string{};
 }
 
+std::string ColumnText(sqlite3_stmt* stmt, int index) {
+  const unsigned char* text = sqlite3_column_text(stmt, index);
+  return text ? std::string(reinterpret_cast<const char*>(text)) : std::string{};
+}
+
 std::optional<int64_t> ColumnOptInt64(sqlite3_stmt* stmt, int index) {
   if (sqlite3_column_type(stmt, index) == SQLITE_NULL) {
     return std::nullopt;
@@ -89,16 +94,15 @@ std::optional<int64_t> ColumnOptInt64(sqlite3_stmt* stmt, int index) {
 
 CallSession SessionFromStmt(sqlite3_stmt* stmt) {
   CallSession session;
-  session.call_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+  session.call_id = ColumnText(stmt, 0);
   session.origin_thread_id = ColumnOptText(stmt, 1);
   session.origin_group_id = ColumnOptText(stmt, 2);
-  session.media_mode = CallMediaModeFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)));
-  session.state = CallSessionStateFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)));
+  session.media_mode = CallMediaModeFromString(ColumnText(stmt, 3));
+  session.state = CallSessionStateFromString(ColumnText(stmt, 4));
   session.created_at = static_cast<int64_t>(sqlite3_column_int64(stmt, 5));
   session.ended_at = ColumnOptInt64(stmt, 6);
   session.media_epoch = static_cast<uint32_t>(sqlite3_column_int64(stmt, 7));
-  const unsigned char* key_id = sqlite3_column_text(stmt, 8);
-  session.media_key_id = key_id ? reinterpret_cast<const char*>(key_id) : "";
+  session.media_key_id = ColumnText(stmt, 8);
   session.sfu_hint = ColumnOptText(stmt, 9);
   return session;
 }
@@ -267,8 +271,8 @@ Roe<std::vector<CallParticipant>> CallSessionStore::ListParticipants(const std::
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     CallParticipant row;
     row.call_id = call_id;
-    row.identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-    row.state = CallParticipantStateFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)));
+    row.identity = ColumnText(stmt, 0);
+    row.state = CallParticipantStateFromString(ColumnText(stmt, 1));
     row.media.audio_muted = sqlite3_column_int(stmt, 2) != 0;
     row.media.video_enabled = sqlite3_column_int(stmt, 3) != 0;
     row.joined_at = ColumnOptInt64(stmt, 4);
@@ -367,16 +371,16 @@ Roe<std::optional<PendingCallInvite>> CallSessionStore::LoadPendingInvite(
   std::optional<PendingCallInvite> result;
   if (sqlite3_step(stmt) == SQLITE_ROW) {
     PendingCallInvite invite;
-    invite.call_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-    invite.invitee_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-    invite.inviter_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-    invite.media_mode = CallMediaModeFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)));
+    invite.call_id = ColumnText(stmt, 0);
+    invite.invitee_identity = ColumnText(stmt, 1);
+    invite.inviter_identity = ColumnText(stmt, 2);
+    invite.media_mode = CallMediaModeFromString(ColumnText(stmt, 3));
     invite.origin_thread_id = ColumnOptText(stmt, 4);
     invite.origin_group_id = ColumnOptText(stmt, 5);
     invite.sfu_hint = ColumnOptText(stmt, 6);
     invite.expires_at = ColumnOptInt64(stmt, 7);
     invite.created_at = static_cast<int64_t>(sqlite3_column_int64(stmt, 8));
-    invite.status = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+    invite.status = ColumnText(stmt, 9);
     result = std::move(invite);
   }
   sqlite3_finalize(stmt);
@@ -403,16 +407,16 @@ Roe<std::vector<PendingCallInvite>> CallSessionStore::ListPendingInvitesForInvit
   std::vector<PendingCallInvite> rows;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     PendingCallInvite invite;
-    invite.call_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-    invite.invitee_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-    invite.inviter_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-    invite.media_mode = CallMediaModeFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)));
+    invite.call_id = ColumnText(stmt, 0);
+    invite.invitee_identity = ColumnText(stmt, 1);
+    invite.inviter_identity = ColumnText(stmt, 2);
+    invite.media_mode = CallMediaModeFromString(ColumnText(stmt, 3));
     invite.origin_thread_id = ColumnOptText(stmt, 4);
     invite.origin_group_id = ColumnOptText(stmt, 5);
     invite.sfu_hint = ColumnOptText(stmt, 6);
     invite.expires_at = ColumnOptInt64(stmt, 7);
     invite.created_at = static_cast<int64_t>(sqlite3_column_int64(stmt, 8));
-    invite.status = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+    invite.status = ColumnText(stmt, 9);
     rows.push_back(std::move(invite));
   }
   sqlite3_finalize(stmt);
