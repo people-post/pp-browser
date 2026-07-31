@@ -684,7 +684,9 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
 
   auto joined_after = sessions_.CountJoined(call_id);
   const size_t n_joined = joined_after ? *joined_after : 0;
-  if (row.sfu_hint && !row.sfu_hint->empty()) {
+  // sfu_hint is only meaningful for group (N≥3) / already-on-SFU calls. A leftover hint on a
+  // 1:1 invite must not divert P2P into AttachLocalToSfu → "group needs media_relay".
+  if (n_joined >= 3 && row.sfu_hint && !row.sfu_hint->empty()) {
     CallSfuAttachDetail attach;
     attach.call_id = call_id;
     attach.hop_peer_id = *row.sfu_hint;
@@ -717,6 +719,13 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
       NotifyRingChanged();
     });
   } else {
+    // 1:1 P2P — drop any stale SFU wait/hint so PollPendingSfuAttach cannot end the call.
+    ClearSfuAttachWait();
+    awaiting_sfu_recovery_ = false;
+    if (row.sfu_hint && !row.sfu_hint->empty()) {
+      row.sfu_hint.reset();
+      (void)sessions_.UpsertSession(row);
+    }
     // Must not Start media inside the Accept click / Rml callback — SDL audio + PC setup
     // can stall the UI so the ring dialog never dismisses.
     ScheduleStartMediaAsAnswerer(call_id, (*pending)->inviter_identity);
@@ -1037,6 +1046,14 @@ void CallSessionManager::PollPendingSfuAttach() {
     awaiting_sfu_recovery_ = false;
     return;
   }
+  // 1:1 P2P may still be connecting — never convert that into a group-relay timeout leave.
+  auto joined = sessions_.CountJoined(call_id);
+  if (joined && *joined < 3 && media_.IsActive() && media_.ActiveCallId() == call_id &&
+      !media_.IsSfuMode()) {
+    ClearSfuAttachWait();
+    awaiting_sfu_recovery_ = false;
+    return;
+  }
   if (util::NowUnixMs() < sfu_attach_wait_deadline_ms_) {
     return;
   }
@@ -1292,6 +1309,9 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
           NotifyRingChanged();
         });
       } else {
+        // Ensure 1:1 accept never inherits a stale SFU attach-wait from an earlier attempt.
+        ClearSfuAttachWait();
+        awaiting_sfu_recovery_ = false;
         ScheduleStartMediaAsOfferer(accept->call_id, identity);
       }
     }

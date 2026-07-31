@@ -313,11 +313,12 @@ void CallController::RefreshPendingRing() {
     }
 
     // Peer vanished without a clean leave — end local session so chrome does not stick.
+    // Only `failed` is terminal here. `closed` is also used during PC teardown/restart and was
+    // wrongly killing healthy 1:1 P2P after today's SFU/chrome fixes.
     if (calls->Media().IsActive() && calls->Media().ActiveCallId() == active_call_id_) {
       const std::string media_state = calls->Media().ConnectionState();
-      if (media_state == "failed" || media_state == "closed") {
-        if (media_state == "failed" &&
-            (calls->IsAwaitingSfuRecovery() || calls->Media().IsSfuMode())) {
+      if (media_state == "failed") {
+        if (calls->IsAwaitingSfuRecovery() || calls->Media().IsSfuMode()) {
           // ICE-fail → SFU recovery in flight; keep chrome and show reconnecting.
         } else {
           (void)calls->LeaveCall(active_call_id_);
