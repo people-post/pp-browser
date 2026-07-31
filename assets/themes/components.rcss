@@ -1576,6 +1576,11 @@ select selectbox option {
   font-size: 12dp;
 }
 
+.shell-call-bar-hint {
+  margin: 4dp 0 0 0;
+  max-width: 280dp;
+}
+
 .shell-call-bar-meters {
   align-items: flex-start;
   justify-content: flex-start;
@@ -1593,7 +1598,8 @@ select selectbox option {
 .shell-call-mute,
 .shell-call-camera,
 .shell-call-leave,
-.shell-call-invite {
+.shell-call-invite,
+.shell-call-retry {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -1611,7 +1617,8 @@ select selectbox option {
 .shell-call-mute svg,
 .shell-call-camera svg,
 .shell-call-leave svg,
-.shell-call-invite svg {
+.shell-call-invite svg,
+.shell-call-retry svg {
   flex-shrink: 0;
   width: 18dp;
   height: 18dp;

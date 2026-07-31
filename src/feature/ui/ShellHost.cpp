@@ -156,6 +156,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
     ctor.Bind("call_in_progress_title", &host.state_.call_in_progress.title);
     ctor.Bind("call_in_progress_subtitle", &host.state_.call_in_progress.subtitle);
+    ctor.Bind("call_in_progress_status_hint", &host.state_.call_in_progress.status_hint);
     ctor.Bind("call_in_progress_mic_level", &host.state_.call_in_progress.mic_level);
     ctor.Bind("call_in_progress_peer_level", &host.state_.call_in_progress.peer_level);
     ctor.Bind("call_in_progress_mic_hint", &host.state_.call_in_progress.mic_hint);
@@ -170,6 +171,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_remote_placeholder", &host.state_.call_in_progress.remote_placeholder);
     ctor.Bind("call_in_progress_show_roster", &host.state_.call_in_progress.show_roster);
     ctor.Bind("call_in_progress_show_invite", &host.state_.call_in_progress.show_invite);
+    ctor.Bind("call_in_progress_show_retry", &host.state_.call_in_progress.show_retry);
     ctor.Bind("call_in_progress_participant_count", &host.state_.call_in_progress.participant_count);
     if (auto roster_handle = ctor.RegisterStruct<CallRosterParticipantState>()) {
       roster_handle.RegisterMember("name", &CallRosterParticipantState::name);
@@ -224,6 +226,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
     ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
     ctor.BindEventCallback("call_leave", &ShellHost::CallLeaveCallback);
+    ctor.BindEventCallback("call_retry", &ShellHost::CallRetryCallback);
     ctor.BindEventCallback("call_mute", &ShellHost::CallMuteCallback);
     ctor.BindEventCallback("call_camera", &ShellHost::CallCameraCallback);
     ctor.BindEventCallback("call_invite", &ShellHost::CallInviteCallback);
@@ -695,6 +698,7 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_status_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_mic_level");
   DataModelHost::Instance().Dirty("window", "call_in_progress_peer_level");
   DataModelHost::Instance().Dirty("window", "call_in_progress_mic_hint");
@@ -709,6 +713,7 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_remote_placeholder");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_roster");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_invite");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_show_retry");
   DataModelHost::Instance().Dirty("window", "call_in_progress_participant_count");
   DataModelHost::Instance().Dirty("window", "call_in_progress_roster");
   DataModelHost::Instance().Dirty("window", "activity_visible");
@@ -1308,8 +1313,14 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-bar-main\">";
   out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\"></p>";
   out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\"></p>";
+  out << "<p class=\"text-xs shell-call-bar-hint\" data-if=\"call_in_progress_show_retry\" "
+         "data-rml=\"call_in_progress_status_hint\"></p>";
   out << "</div>";
   out << "<div class=\"shell-call-bar-actions row\">";
+  out << "<button class=\"shell-call-retry\" type=\"button\" data-if=\"call_in_progress_show_retry\" "
+         "data-event-click=\"call_retry()\">";
+  out << "<svg src=\"../icons/sync.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+  out << "</button>";
   out << "<button class=\"shell-call-invite\" type=\"button\" data-if=\"call_in_progress_show_invite\" "
          "data-event-click=\"call_invite()\">";
   out << "<svg src=\"../icons/plus.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
@@ -1830,6 +1841,13 @@ void ShellHost::CallLeaveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*
                                   const Rml::VariantList& /*args*/) {
   if (auto* call = Instance().call_) {
     call->LeaveActive();
+  }
+}
+
+void ShellHost::CallRetryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                  const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->RetryConnect();
   }
 }
 

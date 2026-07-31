@@ -176,7 +176,8 @@ These are architectural, not one-off hacks:
 | Offer lost (no retransmit) | Same | Offerer re-send once; answerer ignores duplicate offer |
 | Signaling under engine mutex | Answer path during flush | Defer `call_sdp` / `call_ice` send to UI task |
 | 1:1 enters SFU wait | “group needs media_relay” on P2P call | Topology: SFU paths only for N≥3; ignore stale `sfu_hint` on 1:1 |
-| macOS Local Network | Android↔Mac LAN ICE | Packaged `NSLocalNetworkUsageDescription` ([PLATFORMS.md](PLATFORMS.md)) |
+| macOS Local Network | Android↔Mac LAN ICE | Packaged `NSLocalNetworkUsageDescription` ([PLATFORMS.md](PLATFORMS.md)); on 1:1 connect fail UI tips Local Network |
+| Dogfood from Cursor terminal | LAN ICE can fail while normal terminal works | Prefer OS terminal or packaged `.app` for media dogfood |
 
 ---
 

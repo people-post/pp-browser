@@ -17,6 +17,8 @@
 #include <deque>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -166,6 +168,7 @@ struct CallMediaEngine::Impl {
   std::atomic<bool> has_remote_video{false};
   std::atomic<bool> ever_had_remote_video{false};
   std::atomic<int64_t> connected_at_ms{0};
+  std::atomic<int64_t> started_at_ms{0};
   std::atomic<int64_t> last_remote_video_ms{0};
   std::atomic<int64_t> disconnected_since_ms{0};
   std::string connection_state = "idle";
@@ -185,6 +188,27 @@ struct CallMediaEngine::Impl {
   std::optional<LocalDescription> pending_remote_sdp;
   std::vector<IceCandidate> pending_remote_ice;
   bool remote_description_applied = false;
+  /** When true, a new remote offer rebuilds the PC (peer Retry after connect fail/timeout). */
+  bool accept_offer_restart = false;
+  std::string remote_ice_ufrag;
+
+  static std::string ExtractIceUfrag(const std::string& sdp) {
+    constexpr std::string_view kKey = "a=ice-ufrag:";
+    const size_t pos = sdp.find(kKey);
+    if (pos == std::string::npos) {
+      return {};
+    }
+    size_t start = pos + kKey.size();
+    size_t end = sdp.find('\n', start);
+    if (end == std::string::npos) {
+      end = sdp.size();
+    }
+    std::string ufrag = sdp.substr(start, end - start);
+    while (!ufrag.empty() && (ufrag.back() == '\r' || ufrag.back() == ' ')) {
+      ufrag.pop_back();
+    }
+    return ufrag;
+  }
 
   std::shared_ptr<rtc::PeerConnection> pc;
   std::shared_ptr<rtc::Track> audio_track;
@@ -253,6 +277,9 @@ struct CallMediaEngine::Impl {
       connected_at_ms.store(0, std::memory_order_relaxed);
     }
     connected = now_connected;
+    if (now_connected) {
+      accept_offer_restart = false;
+    }
     if (state == "disconnected") {
       if (disconnected_since_ms.load(std::memory_order_relaxed) == 0) {
         disconnected_since_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
@@ -421,6 +448,7 @@ struct CallMediaEngine::Impl {
   void ClearPendingRemoteLocked() {
     pending_remote_sdp.reset();
     pending_remote_ice.clear();
+    remote_ice_ufrag.clear();
   }
 
   static std::string NormalizeSdpType(std::string type) {
@@ -435,15 +463,33 @@ struct CallMediaEngine::Impl {
       return Error("Media peer connection not started");
     }
     const std::string type = NormalizeSdpType(type_in);
-    // Duplicate offer after answerer already applied (offerer resend) — ignore.
-    if (remote_description_applied && role == Role::Answerer && type == "offer") {
-      SDL_Log("CallMediaEngine: ignoring duplicate remote offer");
-      return {};
+    const std::string incoming_ufrag = ExtractIceUfrag(sdp);
+    // Duplicate offer (same ice-ufrag) after apply — ignore (offerer resend for answerer race).
+    // A new ufrag means peer Retry rebuilt as offerer — rebuild as answerer and apply.
+    if (type == "offer" && remote_description_applied) {
+      const bool same_ufrag =
+          !incoming_ufrag.empty() && !remote_ice_ufrag.empty() && incoming_ufrag == remote_ice_ufrag;
+      if (same_ufrag && !accept_offer_restart) {
+        SDL_Log("CallMediaEngine: ignoring duplicate remote offer");
+        return {};
+      }
+      if (!same_ufrag || accept_offer_restart) {
+        SDL_Log("CallMediaEngine: replacing remote offer (new ICE ufrag / armed restart)");
+        accept_offer_restart = false;
+        TearDownPcLocked();
+        pending_remote_ice.clear();
+        if (auto rebuilt = SetupPeerConnection(Role::Answerer); !rebuilt) {
+          return rebuilt.error();
+        }
+      }
     }
     try {
       rtc::Description remote(sdp, type);
       pc->setRemoteDescription(remote);
       remote_description_applied = true;
+      if (!incoming_ufrag.empty()) {
+        remote_ice_ufrag = incoming_ufrag;
+      }
       if (role == Role::Answerer && type == "offer") {
         pc->setLocalDescription(rtc::Description::Type::Answer);
       }
@@ -1103,13 +1149,16 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
     impl_->muted.store(false, std::memory_order_relaxed);
     impl_->camera_enabled.store(false, std::memory_order_relaxed);
     impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
+    impl_->accept_offer_restart = false;
     impl_->connected_at_ms.store(0, std::memory_order_relaxed);
+    impl_->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
     impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
     impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
     impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
     if (auto flushed = impl_->FlushPendingRemoteLocked(); !flushed) {
       impl_->active = false;
       impl_->call_id.clear();
+      impl_->started_at_ms.store(0, std::memory_order_relaxed);
       impl_->TearDownAudioLocked();
       impl_->TearDownPcLocked();
       return flushed.error();
@@ -1163,6 +1212,7 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     impl_->camera_enabled.store(false, std::memory_order_relaxed);
     impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
     impl_->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+    impl_->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
     impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
     impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
     impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
@@ -1263,6 +1313,8 @@ void CallMediaEngine::Stop() {
     impl_->muted.store(false, std::memory_order_relaxed);
     impl_->camera_enabled.store(false, std::memory_order_relaxed);
     impl_->connected_at_ms.store(0, std::memory_order_relaxed);
+    impl_->started_at_ms.store(0, std::memory_order_relaxed);
+    impl_->accept_offer_restart = false;
     impl_->TearDownAudioLocked();
     impl_->TearDownPcLocked();
     impl_->ClearPendingRemoteLocked();
@@ -1392,6 +1444,25 @@ std::string CallMediaEngine::ConnectionState() const {
 
 int64_t CallMediaEngine::ConnectedAtMs() const {
   return impl_->connected_at_ms.load(std::memory_order_relaxed);
+}
+
+int64_t CallMediaEngine::StartedAtMs() const {
+  return impl_->started_at_ms.load(std::memory_order_relaxed);
+}
+
+bool CallMediaEngine::HasLocalCapture() const {
+  std::lock_guard lock(impl_->mutex);
+  return impl_->capture_available;
+}
+
+CallMediaEngine::Role CallMediaEngine::ActiveRole() const {
+  std::lock_guard lock(impl_->mutex);
+  return impl_->role;
+}
+
+void CallMediaEngine::ArmOfferRestart() {
+  std::lock_guard lock(impl_->mutex);
+  impl_->accept_offer_restart = true;
 }
 
 float CallMediaEngine::LocalInputLevel() const {

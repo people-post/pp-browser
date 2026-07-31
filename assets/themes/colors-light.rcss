@@ -644,6 +644,10 @@ select selectbox option:hover {
   color: #6b7280;
 }
 
+.shell-call-bar-hint {
+  color: #b45309;
+}
+
 .shell-call-mute {
   background-color: #e8eaed;
   color: #1a1a1a;
@@ -687,6 +691,15 @@ select selectbox option:hover {
 
 .shell-call-leave svg {
   image-color: #991b1b;
+}
+
+.shell-call-retry {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.shell-call-retry svg {
+  image-color: #1e40af;
 }
 
 .shell-call-stage {

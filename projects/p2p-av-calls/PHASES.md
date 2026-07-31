@@ -77,6 +77,7 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 - [ ] Load-test; raise effective cap toward **16** or keep **8** with product copy
 - [ ] Full **video_lo + video_hi** on **both** P2P and SFU backends (V024 polish) if not in a4
 - [ ] Reconnect / “reconnecting…” after brief network loss
+- [x] 1:1 connect timeout + “Couldn't connect” + Retry + platform permission tip (Local Network / mic)
 - [ ] Missed/declined history hints optional
 - [ ] Document desktop dead-process ring limitation
 

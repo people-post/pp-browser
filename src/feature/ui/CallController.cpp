@@ -53,7 +53,9 @@ CallChromeLayer CaptureCallChrome(const ShellState& state) {
       .in_call_remote_placeholder = state.call_in_progress.remote_placeholder.c_str(),
       .in_call_show_roster = state.call_in_progress.show_roster,
       .in_call_show_invite = state.call_in_progress.show_invite,
+      .in_call_show_retry = state.call_in_progress.show_retry,
       .in_call_participant_count = state.call_in_progress.participant_count,
+      .in_call_status_hint = state.call_in_progress.status_hint.c_str(),
   };
 }
 
@@ -236,6 +238,7 @@ void CallController::RefreshPendingRing() {
   }
 
   calls->PollPendingSfuAttach();
+  calls->PollP2pConnectHealth();
 
   auto top = calls->TopPendingInvite();
   if (top && top->has_value()) {
@@ -312,21 +315,14 @@ void CallController::RefreshPendingRing() {
       return;
     }
 
-    // Peer vanished without a clean leave — end local session so chrome does not stick.
-    // Only `failed` is terminal here. `closed` is also used during PC teardown/restart and was
-    // wrongly killing healthy 1:1 P2P after today's SFU/chrome fixes.
+    // Peer ICE failed: keep chrome for Retry/End on 1:1. Group SFU recovery keeps chrome too.
+    // Do not auto-LeaveCall on `failed` — that erased the session before the user could retry.
     if (calls->Media().IsActive() && calls->Media().ActiveCallId() == active_call_id_) {
       const std::string media_state = calls->Media().ConnectionState();
-      if (media_state == "failed") {
-        if (calls->IsAwaitingSfuRecovery() || calls->Media().IsSfuMode()) {
-          // ICE-fail → SFU recovery in flight; keep chrome and show reconnecting.
-        } else {
-          (void)calls->LeaveCall(active_call_id_);
-          ClearInCall();
-          ClearRing();
-          SyncShellState();
-          return;
-        }
+      if (media_state == "failed" && !calls->IsAwaitingSfuRecovery() && !calls->Media().IsSfuMode() &&
+          !calls->IsP2pConnectFailed()) {
+        // State callback may not have marked yet (ordering); ensure UI can show Retry.
+        calls->PollP2pConnectHealth();
       }
     }
 
@@ -382,9 +378,21 @@ void CallController::RefreshPendingRing() {
     }
     in_call.peer_label = in_call.show_roster ? "Others" : peer_label;
 
+    const bool p2p_failed = calls->IsP2pConnectFailed();
+    in_call.show_retry = p2p_failed && !calls->IsAwaitingSfuRecovery() && !calls->Media().IsSfuMode();
+    in_call.status_hint = p2p_failed ? calls->P2pConnectHint().c_str() : Rml::String{};
+    if (p2p_failed) {
+      in_call.show_invite = false;
+    }
+
     if (calls->Media().IsConnected()) {
       in_call.elapsed = FormatElapsed(calls->Media().ConnectedAtMs());
       in_call.subtitle = in_call.elapsed.empty() ? "Connected" : in_call.elapsed;
+      in_call.show_retry = false;
+      in_call.status_hint = {};
+    } else if (p2p_failed) {
+      in_call.elapsed = {};
+      in_call.subtitle = "Couldn't connect";
     } else if (!calls->Media().IsActive()) {
       in_call.elapsed = {};
       in_call.subtitle = "Calling…";
@@ -395,10 +403,12 @@ void CallController::RefreshPendingRing() {
         in_call.subtitle = "Reconnecting…";
       } else if (state == "connecting" || state.empty() || state == "new") {
         in_call.subtitle = "Connecting…";
-      } else if (state == "disconnected" || state == "failed") {
+      } else if (state == "disconnected") {
         in_call.subtitle = "Reconnecting…";
+      } else if (state == "failed") {
+        in_call.subtitle = "Couldn't connect";
       } else if (state == "closed") {
-        in_call.subtitle = "Reconnecting…";
+        in_call.subtitle = "Connecting…";
       } else {
         in_call.subtitle = state;
       }
@@ -557,6 +567,18 @@ void CallController::LeaveActive() {
   RefreshPendingRing();
 }
 
+void CallController::RetryConnect() {
+  BindToMessaging();
+  auto* calls = Hub().Calls();
+  if (!calls || active_call_id_.empty()) {
+    return;
+  }
+  if (auto retried = calls->RetryP2pMedia(active_call_id_); !retried) {
+    UserFeedback::Fail(retried.error().message);
+  }
+  RefreshPendingRing();
+}
+
 void CallController::ToggleMute() {
   BindToMessaging();
   auto* calls = Hub().Calls();
@@ -609,8 +631,10 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   const bool expect_remote_video = !have_peer_video_flag || peer_camera_on;
   const bool missing_after_video =
       media.EverHadRemoteVideo() && expect_remote_video && !media.HasRemoteVideo();
+  const bool p2p_failed =
+      calls && calls->IsP2pConnectFailed() && !calls->IsAwaitingSfuRecovery() && !media.IsSfuMode();
   const bool media_reconnect =
-      stalling || missing_after_video || conn == "disconnected" || conn == "failed";
+      !p2p_failed && (stalling || missing_after_video || conn == "disconnected");
 
   // Live or soft-stall: keep painting the last frame. Hard stall / camera-off clears HasRemoteVideo.
   in_call.remote_video = media.HasRemoteVideo() && expect_remote_video;
@@ -646,6 +670,8 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     in_call.remote_placeholder = "";
   } else if (have_peer_video_flag && !peer_camera_on) {
     in_call.remote_placeholder = "Camera off";
+  } else if (p2p_failed) {
+    in_call.remote_placeholder = "Couldn't connect";
   } else if (media_reconnect) {
     in_call.remote_placeholder = "Reconnecting…";
   } else {
@@ -656,7 +682,9 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   in_call.peer_level = QuantizeAudioLevel(media.RemoteOutputLevel());
   in_call.mic_hint = LevelHint(in_call.mic_level, false, muted);
   in_call.peer_hint = LevelHint(in_call.peer_level, true, false);
-  if (media_reconnect && !media.IsConnected()) {
+  if (p2p_failed) {
+    in_call.subtitle = "Couldn't connect";
+  } else if (media_reconnect && !media.IsConnected()) {
     in_call.subtitle = "Reconnecting…";
   } else if (stalling) {
     in_call.subtitle = "Reconnecting…";

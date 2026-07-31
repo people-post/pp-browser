@@ -39,6 +39,7 @@ public:
   void AcceptIncoming();
   void DeclineIncoming();
   void LeaveActive();
+  void RetryConnect();
   void ToggleMute();
   void ToggleCamera();
 

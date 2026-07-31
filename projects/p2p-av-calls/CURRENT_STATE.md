@@ -32,6 +32,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 |-------|------------|
 | Android↔Mac LAN ICE | macOS `NSLocalNetworkUsageDescription` in packaged Info.plist |
 | Linux dial → Mac stuck Connecting | Preserve buffered remote SDP/ICE across PC rebuild; offerer SDP re-send; duplicate offer ignored |
+| 1:1 ICE fail / hang on Connecting | 15s timeout + honest “Couldn't connect”; Retry rebuilds P2P as offerer; platform tip (Local Network / mic / firewall); do not auto-leave |
 | 1:1 hit “group needs media_relay” | SFU attach-wait / `sfu_hint` only for N≥3; do not treat PC `closed` as 1:1→SFU |
 | Soft-migrate fail on 3rd joiner | Eject joiner; keep existing 1:1 P2P; invite preflight when no hop |
 

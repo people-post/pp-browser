@@ -36,6 +36,7 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMedia
 | Claim mobile voice without manifest/plist permissions | Add Android/iOS mic (and later camera) entitlements first |
 | Assume LAN ICE proves mobile NAT | Mobile NAT needs mesh seed SFU ([p2p-av-calls](../../projects/p2p-av-calls/)) |
 | Ship macOS Frame.app without Local Network usage string | Add `NSLocalNetworkUsageDescription` (and Bonjour services key); otherwise Sequoia silently blocks ICE host UDP to Android/LAN peers |
+| Dogfood LAN ICE only from Cursor’s integrated terminal | Prefer a normal OS terminal or packaged `.app` — Cursor’s env can break host UDP while signaling still works |
 | Hardcode Android camera rotation | Use `CameraCaptureOrientation` / Camera2 metadata |
 
 `Backend::Initialize` must **not** fail window bring-up on audio — init audio on demand in `CallMediaEngine` (`SDL_InitSubSystem(SDL_INIT_AUDIO)`).

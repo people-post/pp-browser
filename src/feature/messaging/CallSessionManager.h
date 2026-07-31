@@ -75,6 +75,18 @@ public:
   bool IsAwaitingSfuRecovery() const;
 
   /**
+   * 1:1 P2P failed to connect (ICE failed or connect timeout). Session stays up for Retry/End.
+   * Cleared on connect, leave, or successful Retry.
+   */
+  bool IsP2pConnectFailed() const;
+  /** Best-effort platform tip shown under "Couldn't connect". */
+  std::string P2pConnectHint() const;
+  /** Rebuild local PC as offerer and send a fresh offer (peer applies as renegotiate). */
+  Roe<void> RetryP2pMedia(const std::string& call_id);
+  /** Mark timeout / ICE fail for 1:1; no-op when SFU recovery owns the path. */
+  void PollP2pConnectHealth();
+
+  /**
    * Leave if we accepted into an N≥3 call but never received CallSfuAttach / hop attach
    * (soft-migrate failed on the coordinator, or no media_relay hop). Call from UI refresh.
    */
@@ -148,6 +160,8 @@ private:
   /** Soft-migrate failed after a mid-call accept: keep 1:1 P2P, eject the new joiner. */
   void EjectParticipantAfterMigrateFailure(const std::string& call_id, const std::string& identity,
                                            const std::string& reason);
+  void MarkP2pConnectFailed(const std::string& reason);
+  void ClearP2pConnectFailed();
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -165,6 +179,8 @@ private:
   std::optional<std::string> last_media_error_;
   bool sfu_attached_ = false;
   bool awaiting_sfu_recovery_ = false;
+  bool p2p_connect_failed_ = false;
+  std::string p2p_connect_hint_;
   uint32_t local_publisher_stream_id_ = 0;
   std::unordered_set<std::string> media_attempted_calls_;
   /** AcceptInvite / SoftMigrate: wait for CallSfuAttach or local attach before giving up. */

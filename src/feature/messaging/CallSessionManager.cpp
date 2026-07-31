@@ -18,6 +18,32 @@ namespace {
 
 /** How long invitees wait for CallSfuAttach / hop attach before leaving (no relay / migrate fail). */
 constexpr int64_t kSfuAttachWaitMs = 20000;
+/** 1:1 P2P: give up "Connecting…" and show Retry after this. */
+constexpr int64_t kP2pConnectTimeoutMs = 15000;
+
+std::string BuildP2pConnectHint(const bool missing_mic) {
+  std::string hint;
+#if defined(__APPLE__)
+#  if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+  hint = "Allow microphone and local network access for Frame in Settings.";
+#  else
+  hint = "On Mac, allow Local Network for Frame in System Settings → Privacy & Security.";
+#  endif
+#elif defined(__ANDROID__)
+  hint = "Allow microphone (and camera) permission for Frame.";
+#elif defined(_WIN32)
+  hint = "Check Windows microphone privacy and that the firewall allows this app.";
+#else
+  hint = "Check both devices are on the same network and UDP is not blocked.";
+#endif
+  if (missing_mic) {
+    if (!hint.empty()) {
+      hint += " ";
+    }
+    hint += "Microphone access looks blocked — enable it in system privacy settings.";
+  }
+  return hint;
+}
 
 } // namespace
 
@@ -326,6 +352,14 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
     const std::string call_id = media_call_id_;
     // Only `failed` is an ICE failure. `closed` is normal teardown (Stop/Leave) and must
     // not start SFU attach-wait — that was mis-firing 1:1 P2P into "group needs media_relay".
+    if (state == "connected") {
+      ClearP2pConnectFailed();
+      if (media_.IsSfuMode()) {
+        awaiting_sfu_recovery_ = false;
+      }
+      NotifyRingChanged();
+      return;
+    }
     if (state == "failed" && !media_.IsSfuMode() && !call_id.empty()) {
       auto joined = sessions_.CountJoined(call_id);
       // Group (N≥3) must recover onto SFU. Do not auto-SFU plain 1:1 — that path hung on
@@ -363,9 +397,10 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
         });
         return;
       }
-    }
-    if (state == "connected" && media_.IsSfuMode()) {
-      awaiting_sfu_recovery_ = false;
+      // 1:1 — keep session; UI shows Couldn't connect + Retry (not auto-leave).
+      MarkP2pConnectFailed("ice_failed");
+      NotifyRingChanged();
+      return;
     }
     NotifyRingChanged();
   });
@@ -467,6 +502,7 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   }
   sfu_attached_ = false;
   awaiting_sfu_recovery_ = false;
+  ClearP2pConnectFailed();
   local_publisher_stream_id_ = 0;
   if (sfu_attach_wait_call_id_ == call_id) {
     ClearSfuAttachWait();
@@ -1046,6 +1082,83 @@ Roe<std::vector<CallParticipant>> CallSessionManager::ListJoinedParticipants(con
 }
 
 bool CallSessionManager::IsAwaitingSfuRecovery() const { return awaiting_sfu_recovery_; }
+
+bool CallSessionManager::IsP2pConnectFailed() const { return p2p_connect_failed_; }
+
+std::string CallSessionManager::P2pConnectHint() const { return p2p_connect_hint_; }
+
+void CallSessionManager::ClearP2pConnectFailed() {
+  p2p_connect_failed_ = false;
+  p2p_connect_hint_.clear();
+}
+
+void CallSessionManager::MarkP2pConnectFailed(const std::string& /*reason*/) {
+  if (p2p_connect_failed_ || media_.IsSfuMode() || awaiting_sfu_recovery_) {
+    return;
+  }
+  p2p_connect_failed_ = true;
+  const bool missing_mic = media_.IsActive() && !media_.HasLocalCapture();
+  p2p_connect_hint_ = BuildP2pConnectHint(missing_mic);
+  // Peer Retry sends a new offer — accept rebuild even while still "connecting".
+  media_.ArmOfferRestart();
+  log().info << "P2P connect failed call_id=" << media_call_id_ << " hint=" << p2p_connect_hint_;
+}
+
+void CallSessionManager::PollP2pConnectHealth() {
+  if (p2p_connect_failed_ || media_.IsSfuMode() || awaiting_sfu_recovery_ || !media_.IsActive()) {
+    return;
+  }
+  if (media_.IsConnected()) {
+    ClearP2pConnectFailed();
+    return;
+  }
+  const std::string call_id = media_.ActiveCallId();
+  if (call_id.empty()) {
+    return;
+  }
+  auto joined = sessions_.CountJoined(call_id);
+  if (joined && *joined >= 3) {
+    return; // group uses SFU attach-wait / ICE→SFU
+  }
+  if (media_.ConnectionState() == "failed") {
+    MarkP2pConnectFailed("ice_failed");
+    NotifyRingChanged();
+    return;
+  }
+  const int64_t started = media_.StartedAtMs();
+  if (started <= 0) {
+    return;
+  }
+  if (util::NowUnixMs() - started < kP2pConnectTimeoutMs) {
+    return;
+  }
+  MarkP2pConnectFailed("timeout");
+  NotifyRingChanged();
+}
+
+Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
+  if (call_id.empty()) {
+    return Error("call_id required");
+  }
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return Error("Call session not found");
+  }
+  auto peer = PeerIdentityForCall(call_id);
+  if (!peer || !peer->has_value() || (**peer).empty()) {
+    return Error("No peer for call retry");
+  }
+  // Keep session + media_attempted; only rebuild the PeerConnection as offerer.
+  ClearP2pConnectFailed();
+  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+    media_.Stop();
+  }
+  media_attempted_calls_.insert(call_id);
+  media_call_id_ = call_id;
+  BindMediaCallbacks(**peer);
+  log().info << "Retrying P2P media as offerer call_id=" << call_id;
+  return media_.Start(call_id, CallMediaEngine::Role::Offerer);
+}
 
 std::vector<MeshHopCandidate> CallSessionManager::RankedMediaHopCandidates() const {
   std::vector<Contact> contacts;

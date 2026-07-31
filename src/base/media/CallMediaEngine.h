@@ -109,6 +109,16 @@ public:
   std::string ActiveCallId() const;
   std::string ConnectionState() const;
   int64_t ConnectedAtMs() const;
+  /** Wall time when Start/StartSfu succeeded (0 if inactive). */
+  int64_t StartedAtMs() const;
+  /** False when mic open failed (silence sent); used for permission hints. */
+  bool HasLocalCapture() const;
+  Role ActiveRole() const;
+  /**
+   * After 1:1 connect fail/timeout, allow the next remote offer to rebuild the PC
+   * (peer Retry). Cleared on apply, Start, Stop, or successful connect.
+   */
+  void ArmOfferRestart();
 
   float LocalInputLevel() const;
   float RemoteOutputLevel() const;
