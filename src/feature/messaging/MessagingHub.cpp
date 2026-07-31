@@ -407,6 +407,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
                                                        *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
   p2p_->SetCallSessionManager(call_sessions_.get());
+  call_sessions_->AbandonOrphanedCallsAfterRestart();
   WireCallMediaRelayDeps();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, p2p_.get());
@@ -453,6 +454,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
   call_sessions_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *call_session_store_,
                                                        *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
   p2p_->SetCallSessionManager(call_sessions_.get());
+  call_sessions_->AbandonOrphanedCallsAfterRestart();
   WireCallMediaRelayDeps();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, p2p_.get());

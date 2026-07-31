@@ -7,6 +7,7 @@
 #include "base/messaging/SendRelayOptions.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
+#include "base/platform/BrowserThread.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -338,13 +339,54 @@ void CallSessionManager::ClearMediaCallbacks() {
 }
 
 Roe<void> CallSessionManager::StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity) {
+  media_attempted_calls_.insert(call_id);
   BindMediaCallbacks(peer_identity);
   return media_.Start(call_id, CallMediaEngine::Role::Offerer);
 }
 
 Roe<void> CallSessionManager::StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity) {
+  media_attempted_calls_.insert(call_id);
   BindMediaCallbacks(peer_identity);
   return media_.Start(call_id, CallMediaEngine::Role::Answerer);
+}
+
+void CallSessionManager::ScheduleStartMediaAsOfferer(const std::string& call_id,
+                                                     const std::string& peer_identity) {
+  // Mark before PostTask so RefreshPendingRing does not treat the session as a boot orphan.
+  media_attempted_calls_.insert(call_id);
+  BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer_identity]() {
+    auto session = sessions_.LoadSession(call_id);
+    if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+      return;
+    }
+    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+      return;
+    }
+    if (auto started = StartMediaAsOfferer(call_id, peer_identity); !started) {
+      log().warning << "StartMediaAsOfferer failed: " << started.error().message;
+      last_media_error_ = started.error().message;
+    }
+    NotifyRingChanged();
+  });
+}
+
+void CallSessionManager::ScheduleStartMediaAsAnswerer(const std::string& call_id,
+                                                      const std::string& peer_identity) {
+  media_attempted_calls_.insert(call_id);
+  BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer_identity]() {
+    auto session = sessions_.LoadSession(call_id);
+    if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+      return;
+    }
+    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+      return;
+    }
+    if (auto started = StartMediaAsAnswerer(call_id, peer_identity); !started) {
+      log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
+      last_media_error_ = started.error().message;
+    }
+    NotifyRingChanged();
+  });
 }
 
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
@@ -358,6 +400,7 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   awaiting_sfu_recovery_ = false;
   local_publisher_stream_id_ = 0;
   media_peer_identity_.clear();
+  media_attempted_calls_.erase(call_id);
 }
 
 Roe<void> CallSessionManager::LeaveCallIfActiveExcept(const std::string& keep_call_id) {
@@ -605,18 +648,27 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
     attach.call_id = call_id;
     attach.hop_peer_id = *row.sfu_hint;
     attach.publisher_stream_id = PublisherStreamIdForLocal();
-    if (auto ok = AttachLocalToSfu(call_id, attach); !ok) {
-      log().warning << "AttachLocalToSfu (invite hint) failed: " << ok.error().message;
-      last_media_error_ = ok.error().message;
-    }
+    media_attempted_calls_.insert(call_id);
+    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, attach]() {
+      if (auto ok = AttachLocalToSfu(call_id, attach); !ok) {
+        log().warning << "AttachLocalToSfu (invite hint) failed: " << ok.error().message;
+        last_media_error_ = ok.error().message;
+      }
+      NotifyRingChanged();
+    });
   } else if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
-    if (auto mig = MaybeSoftMigrateToSfu(call_id); !mig) {
-      log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
-      last_media_error_ = mig.error().message;
-    }
-  } else if (auto started = StartMediaAsAnswerer(call_id, (*pending)->inviter_identity); !started) {
-    log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
-    return started.error();
+    media_attempted_calls_.insert(call_id);
+    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
+      if (auto mig = MaybeSoftMigrateToSfu(call_id); !mig) {
+        log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
+        last_media_error_ = mig.error().message;
+      }
+      NotifyRingChanged();
+    });
+  } else {
+    // Must not Start media inside the Accept click / Rml callback — SDL audio + PC setup
+    // can stall the UI so the ring dialog never dismisses.
+    ScheduleStartMediaAsAnswerer(call_id, (*pending)->inviter_identity);
   }
 
   // Best-effort roster to inviter; full fan-out when we are coordinator later.
@@ -930,6 +982,67 @@ void CallSessionManager::SweepExpiredInvites() {
   }
 }
 
+void CallSessionManager::AbandonOrphanedCallsAfterRestart() {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return;
+  }
+
+  // Copy ids first — LeaveCall / EndCallLocal mutate the store.
+  std::vector<std::string> joined_calls;
+  std::vector<CallSession> other_live;
+  if (auto active = sessions_.ListActiveSessions(); active) {
+    for (const CallSession& session : *active) {
+      auto participant = sessions_.FindParticipant(session.call_id, *local);
+      if (participant && participant->has_value() &&
+          (*participant)->state == CallParticipantState::Joined) {
+        joined_calls.push_back(session.call_id);
+      } else {
+        other_live.push_back(session);
+      }
+    }
+  }
+
+  for (const std::string& call_id : joined_calls) {
+    if (auto left = LeaveCall(call_id); !left) {
+      auto session = sessions_.LoadSession(call_id);
+      if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
+        (void)EndCallLocal(**session, std::nullopt);
+      }
+    }
+  }
+  for (CallSession& session : other_live) {
+    if (session.state == CallSessionState::Ended) {
+      continue;
+    }
+    (void)EndCallLocal(session, std::nullopt);
+  }
+
+  if (auto pending = sessions_.ListPendingInvitesForInvitee(*local); pending) {
+    for (const PendingCallInvite& invite : *pending) {
+      if (invite.status != "pending") {
+        continue;
+      }
+      (void)sessions_.UpdateInviteStatus(invite.call_id, invite.invitee_identity, "expired");
+      CallParticipant participant;
+      participant.call_id = invite.call_id;
+      participant.identity = invite.invitee_identity;
+      participant.state = CallParticipantState::Missed;
+      (void)sessions_.UpsertParticipant(participant);
+      auto session = sessions_.LoadSession(invite.call_id);
+      if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
+        (void)EndCallLocal(**session, std::nullopt);
+      }
+    }
+  }
+
+  NotifyRingChanged();
+}
+
+bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) const {
+  return media_attempted_calls_.find(call_id) != media_attempted_calls_.end();
+}
+
 Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity) {
   auto type = CallControlCodec::ControlTypeFromMessage(message);
   if (!type) {
@@ -1031,14 +1144,16 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       auto joined_after = sessions_.CountJoined(accept->call_id);
       const size_t n_joined = joined_after ? *joined_after : 0;
       if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
-        if (auto mig = MaybeSoftMigrateToSfu(accept->call_id); !mig) {
-          log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
-          last_media_error_ = mig.error().message;
-        }
-      } else if (auto started = StartMediaAsOfferer(accept->call_id, identity); !started) {
-        log().warning << "StartMediaAsOfferer failed: " << started.error().message;
-        last_media_error_ = started.error().message;
-        NotifyRingChanged();
+        media_attempted_calls_.insert(accept->call_id);
+        BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id = accept->call_id]() {
+          if (auto mig = MaybeSoftMigrateToSfu(call_id); !mig) {
+            log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
+            last_media_error_ = mig.error().message;
+          }
+          NotifyRingChanged();
+        });
+      } else {
+        ScheduleStartMediaAsOfferer(accept->call_id, identity);
       }
     }
 
@@ -1365,6 +1480,7 @@ Roe<void> CallSessionManager::AttachLocalToSfu(const std::string& call_id, const
   }
 
   const uint32_t pub = local_publisher_stream_id_;
+  media_attempted_calls_.insert(call_id);
   auto started = media_.StartSfu(call_id, [this, pub](const CallMediaEngine::SfuPacket& pkt) {
     if (!relay_deps_.relay) {
       return;

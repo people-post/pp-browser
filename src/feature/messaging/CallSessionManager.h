@@ -20,6 +20,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace pbr {
@@ -78,6 +79,16 @@ public:
   /** Expire stale pending invites; notify UI if any changed. */
   void SweepExpiredInvites();
 
+  /**
+   * Media never survives process death. End any Joined/Ringing local call rows and
+   * pending invites left on disk after a force-quit so chrome does not stick on
+   * "Calling…" with no peer.
+   */
+  void AbandonOrphanedCallsAfterRestart();
+
+  /** True if this process already called Start/StartSfu for call_id (even if media later stopped). */
+  bool MediaAttemptedThisProcess(const std::string& call_id) const;
+
   /** Apply inbound pairwise call system control (after DM persist). */
   Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity);
 
@@ -111,6 +122,9 @@ private:
                                uint32_t media_epoch, const std::string& media_key_id, const ByteVector& key_bytes);
   Roe<void> StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity);
   Roe<void> StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
+  /** Post media bring-up to UI so Accept / inbound CallAccept never block the click or ingest path. */
+  void ScheduleStartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity);
+  void ScheduleStartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
   void BindMediaCallbacks(const std::string& peer_identity);
   void StopMediaIfCall(const std::string& call_id);
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
@@ -135,6 +149,7 @@ private:
   bool sfu_attached_ = false;
   bool awaiting_sfu_recovery_ = false;
   uint32_t local_publisher_stream_id_ = 0;
+  std::unordered_set<std::string> media_attempted_calls_;
 };
 
 } // namespace pbr

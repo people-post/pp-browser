@@ -130,6 +130,8 @@ void CallController::BindToMessaging() {
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() { RefreshPendingRing(); });
   });
   bound_calls_ = calls;
+  // Pick up post-restart abandon / pending ring after stack rebuild.
+  RefreshPendingRing();
 }
 
 void CallController::Tick() {
@@ -298,16 +300,14 @@ void CallController::RefreshPendingRing() {
     active_call_id_ = (*active)->call_id;
     ClearRing();
 
-    // Peer vanished without a clean leave — end local session so chrome does not stick.
-    if (calls->Media().IsActive() && calls->Media().ActiveCallId() == active_call_id_) {
-      const std::string media_state = calls->Media().ConnectionState();
-      if (media_state == "failed") {
-        (void)calls->LeaveCall(active_call_id_);
-        ClearInCall();
-        ClearRing();
-        SyncShellState();
-        return;
-      }
+    // Disk session survived force-quit but media did not — drop stuck "Calling…" chrome.
+    if ((*active)->state == CallSessionState::Active && !calls->Media().IsActive() &&
+        !calls->MediaAttemptedThisProcess(active_call_id_)) {
+      (void)calls->LeaveCall(active_call_id_);
+      ClearInCall();
+      ClearRing();
+      SyncShellState();
+      return;
     }
 
     // Peer vanished without a clean leave — end local session so chrome does not stick.
@@ -522,6 +522,8 @@ void CallController::AcceptIncoming() {
     }
     active_call_id_.clear();
   }
+  // AcceptInvite only does signaling; media starts on a later UI task so this
+  // Rml callback can return and dismiss the ring dialog immediately.
   if (auto accepted = calls->AcceptInvite(ringing_call_id_); !accepted) {
     UserFeedback::Fail(accepted.error().message);
   }
