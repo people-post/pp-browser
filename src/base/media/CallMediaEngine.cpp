@@ -15,6 +15,7 @@
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -178,6 +179,11 @@ struct CallMediaEngine::Impl {
   std::atomic<uint32_t> sfu_video_seq{0};
   std::atomic<bool> adaptation_camera_allowed{true};
   int64_t adaptation_target_video_bps = 0;
+
+  /** Early CallSdp / CallIce can beat Start() on fast LAN mesh — buffer until PC is ready. */
+  std::optional<LocalDescription> pending_remote_sdp;
+  std::vector<IceCandidate> pending_remote_ice;
+  bool remote_description_applied = false;
 
   std::shared_ptr<rtc::PeerConnection> pc;
   std::shared_ptr<rtc::Track> audio_track;
@@ -405,6 +411,44 @@ struct CallMediaEngine::Impl {
       pc->close();
       pc.reset();
     }
+    pending_remote_sdp.reset();
+    pending_remote_ice.clear();
+    remote_description_applied = false;
+  }
+
+  Roe<void> ApplyRemoteDescriptionLocked(const std::string& type, const std::string& sdp) {
+    if (!pc) {
+      return Error("Media peer connection not started");
+    }
+    try {
+      rtc::Description remote(sdp, type);
+      pc->setRemoteDescription(remote);
+      remote_description_applied = true;
+      if (role == Role::Answerer && type == "offer") {
+        pc->setLocalDescription(rtc::Description::Type::Answer);
+      }
+    } catch (const std::exception& ex) {
+      return Error(std::string("setRemoteDescription failed: ") + ex.what());
+    }
+    for (const IceCandidate& ice : pending_remote_ice) {
+      try {
+        rtc::Candidate cand(ice.candidate, ice.mid.empty() ? "audio" : ice.mid);
+        pc->addRemoteCandidate(cand);
+      } catch (const std::exception& ex) {
+        SDL_Log("CallMediaEngine: buffered ICE apply failed: %s", ex.what());
+      }
+    }
+    pending_remote_ice.clear();
+    return {};
+  }
+
+  Roe<void> FlushPendingRemoteLocked() {
+    if (!pending_remote_sdp) {
+      return {};
+    }
+    LocalDescription pending = std::move(*pending_remote_sdp);
+    pending_remote_sdp.reset();
+    return ApplyRemoteDescriptionLocked(pending.type, pending.sdp);
   }
 
   Roe<void> EnsureAudioSubsystem() {
@@ -795,6 +839,10 @@ struct CallMediaEngine::Impl {
     config.enableIceTcp = false;
     config.disableAutoNegotiation = true;
     config.forceMediaTransport = true;
+    // Host-only ICE works on LAN; Android↔desktop across NAT needs srflx (and often relay).
+    // Public STUN is enough for many home/Wi‑Fi NATs; symmetric NAT still needs media_relay.
+    config.iceServers.emplace_back("stun:stun.l.google.com:19302");
+    config.iceServers.emplace_back("stun:stun1.l.google.com:19302");
     pc = std::make_shared<rtc::PeerConnection>(config);
     role = start_role;
 
@@ -980,6 +1028,11 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
       impl_->TearDownAudioLocked();
       return pc.error();
     }
+    if (auto flushed = impl_->FlushPendingRemoteLocked(); !flushed) {
+      impl_->TearDownAudioLocked();
+      impl_->TearDownPcLocked();
+      return flushed.error();
+    }
     impl_->sfu_mode = false;
     impl_->sfu_send = nullptr;
     impl_->call_id = call_id;
@@ -1080,24 +1133,24 @@ void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
 Roe<void> CallMediaEngine::SetRemoteDescription(const std::string& type, const std::string& sdp) {
   std::lock_guard lock(impl_->mutex);
   if (!impl_->pc) {
-    return Error("Media peer connection not started");
+    // Offer/answer often arrives before ScheduleStartMedia* finishes on LAN.
+    LocalDescription pending;
+    pending.type = type;
+    pending.sdp = sdp;
+    impl_->pending_remote_sdp = std::move(pending);
+    return {};
   }
-  try {
-    rtc::Description remote(sdp, type);
-    impl_->pc->setRemoteDescription(remote);
-    if (impl_->role == Role::Answerer && type == "offer") {
-      impl_->pc->setLocalDescription(rtc::Description::Type::Answer);
-    }
-  } catch (const std::exception& ex) {
-    return Error(std::string("setRemoteDescription failed: ") + ex.what());
-  }
-  return {};
+  return impl_->ApplyRemoteDescriptionLocked(type, sdp);
 }
 
 Roe<void> CallMediaEngine::AddRemoteIceCandidate(const std::string& candidate, const std::string& mid) {
   std::lock_guard lock(impl_->mutex);
-  if (!impl_->pc) {
-    return Error("Media peer connection not started");
+  if (!impl_->pc || !impl_->remote_description_applied) {
+    IceCandidate ice;
+    ice.candidate = candidate;
+    ice.mid = mid.empty() ? "audio" : mid;
+    impl_->pending_remote_ice.push_back(std::move(ice));
+    return {};
   }
   try {
     rtc::Candidate ice(candidate, mid.empty() ? "audio" : mid);

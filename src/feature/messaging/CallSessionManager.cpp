@@ -311,28 +311,39 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
     // Must not call locking CallMediaEngine APIs or MaybeSoftMigrateToSfu here when
     // SetState still races with Start/Stop — use the call id we bound at media start.
     const std::string call_id = media_call_id_;
-    if (state == "failed" && !media_.IsSfuMode() && !call_id.empty()) {
+    // Some stacks go Closed without a Failed transition (common on mobile NAT timeout).
+    const bool ice_dead = (state == "failed" || state == "closed");
+    if (ice_dead && !media_.IsSfuMode() && !call_id.empty()) {
       auto joined = sessions_.CountJoined(call_id);
       if (joined && CallMediaTopology::ShouldUseMediaRelay(*joined, true)) {
         awaiting_sfu_recovery_ = true;
         // Quote/dial can take seconds — never run on the media/PC callback stack.
         BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
-          if (auto migrated = MaybeSoftMigrateToSfu(call_id); !migrated && !sfu_attached_) {
-            auto local = LocalRelayIdentity();
-            auto participants = sessions_.ListParticipants(call_id);
-            if (local && participants) {
-              std::vector<std::string> joined_ids;
-              for (const CallParticipant& p : *participants) {
-                if (p.state == CallParticipantState::Joined) {
-                  joined_ids.push_back(p.identity);
-                }
-              }
-              const auto coordinator = CallSessionLogic::SelectEpochCoordinator(joined_ids);
-              if (coordinator && *coordinator == *local) {
-                awaiting_sfu_recovery_ = false;
-              }
-            }
+          if (sfu_attached_ && media_.IsSfuMode()) {
+            awaiting_sfu_recovery_ = false;
+            NotifyRingChanged();
+            return;
           }
+          auto migrated = MaybeSoftMigrateToSfu(call_id);
+          if (sfu_attached_) {
+            awaiting_sfu_recovery_ = false;
+            ClearSfuAttachWait();
+            NotifyRingChanged();
+            return;
+          }
+          if (!migrated) {
+            awaiting_sfu_recovery_ = false;
+            last_media_error_ =
+                migrated.error().message.empty()
+                    ? "Call media failed (NAT) — need a media_relay hop"
+                    : migrated.error().message;
+            log().warning << "ICE-fail SFU recovery failed: " << *last_media_error_;
+            (void)LeaveCall(call_id);
+            NotifyRingChanged();
+            return;
+          }
+          // Non-coordinator: SoftMigrate is a no-op until CallSfuAttach arrives.
+          BeginSfuAttachWait(call_id);
           NotifyRingChanged();
         });
         return;
@@ -1021,12 +1032,14 @@ void CallSessionManager::PollPendingSfuAttach() {
   const std::string call_id = sfu_attach_wait_call_id_;
   if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
     ClearSfuAttachWait();
+    awaiting_sfu_recovery_ = false;
     return;
   }
   if (util::NowUnixMs() < sfu_attach_wait_deadline_ms_) {
     return;
   }
   ClearSfuAttachWait();
+  awaiting_sfu_recovery_ = false;
   last_media_error_ = "No media relay available — group call needs a media_relay hop";
   log().warning << "SFU attach wait timed out call_id=" << call_id;
   (void)LeaveCall(call_id);
