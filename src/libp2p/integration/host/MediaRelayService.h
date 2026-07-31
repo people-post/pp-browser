@@ -84,6 +84,9 @@ public:
   void Stop();
   bool IsStarted() const { return started_; }
 
+  /** Local libp2p PeerId (base58); used to skip self when picking media hops. */
+  Roe<std::string> LocalPeerIdBase58() const { return host_.LocalPeerIdBase58(); }
+
   void SetBudget(const MediaRelayBudgetConfig& budget);
   void SetPricing(const RelayPricingConfig& pricing);
   void SetAdmissionPolicy(MediaRelayAdmissionPolicy policy);

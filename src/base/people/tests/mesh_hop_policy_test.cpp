@@ -50,12 +50,39 @@ TEST(MeshHopPolicyTest, MediaRankSkipsFailedAndPrefersCapacityPlusAffinity) {
   stranger.affinity = MeshHopAffinity::Other;
   stranger.residual_capacity = 1.0;
 
-  auto ranked = RankMediaHops({failed, stranger, friend_hop, seed_hop});
+  auto ranked = RankMediaHops({failed, stranger, friend_hop, seed_hop}, true);
   ASSERT_EQ(ranked.size(), 2u);
   // Seed has more residual capacity; affinity bonus should still keep friend competitive,
   // but 0.9*100+10+5=105 vs 0.4*100+25+5=70 → seed first.
   EXPECT_EQ(ranked[0].peer_id, "seed");
   EXPECT_EQ(ranked[1].peer_id, "friend");
+}
+
+TEST(MeshHopPolicyTest, MediaRankPreferContactsOffPutsSeedsFirst) {
+  MeshHopCandidate friend_hop;
+  friend_hop.peer_id = "friend";
+  friend_hop.affinity = MeshHopAffinity::Contact;
+  friend_hop.residual_capacity = 1.0;
+
+  MeshHopCandidate seed_hop;
+  seed_hop.peer_id = "seed";
+  seed_hop.affinity = MeshHopAffinity::OrgSeed;
+  seed_hop.residual_capacity = 1.0;
+
+  auto ranked = RankMediaHops({friend_hop, seed_hop}, false);
+  ASSERT_EQ(ranked.size(), 2u);
+  EXPECT_EQ(ranked[0].peer_id, "seed");
+  EXPECT_EQ(ranked[1].peer_id, "friend");
+}
+
+TEST(MeshHopPolicyTest, CircuitPreferContactsOffPutsSeedsFirst) {
+  auto contacts = CollectContactHopCandidates({MakeContact("12D3KooWFriend")});
+  auto seeds = CollectSeedHopCandidates(
+      {"/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"});
+  auto ordered = OrderCircuitHops(contacts, seeds, false);
+  ASSERT_EQ(ordered.size(), 2u);
+  EXPECT_EQ(ordered[0].affinity, MeshHopAffinity::OrgSeed);
+  EXPECT_EQ(ordered[1].peer_id, "12D3KooWFriend");
 }
 
 TEST(MeshHopPolicyTest, ContactPeerIdHelpers) {

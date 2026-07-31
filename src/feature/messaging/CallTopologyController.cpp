@@ -52,10 +52,11 @@ std::vector<MeshHopCandidate> CallTopologyController::RankedMediaHopCandidates()
   if (auto listed = contacts_.List()) {
     contacts = std::move(*listed);
   }
-  auto candidates = CollectContactHopCandidates(contacts);
-  auto seeds = CollectSeedHopCandidates(relay_deps_.bootstrap_peers);
-  candidates.insert(candidates.end(), seeds.begin(), seeds.end());
-  return RankMediaHops(std::move(candidates));
+  auto contact_hops = CollectContactHopCandidates(contacts);
+  auto seed_hops = CollectSeedHopCandidates(relay_deps_.bootstrap_peers);
+  auto ordered =
+      OrderCircuitHops(std::move(contact_hops), std::move(seed_hops), relay_deps_.prefer_contacts);
+  return RankMediaHops(std::move(ordered), relay_deps_.prefer_contacts);
 }
 
 bool CallTopologyController::HasMediaRelayHopCandidates() const {
@@ -233,9 +234,11 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
   const auto coordinator = CallSessionLogic::SelectEpochCoordinator(joined_ids);
   const bool is_coordinator = coordinator && *coordinator == *local;
   const bool is_initiator = !initiator_identity.empty() && initiator_identity == *local;
-  // V021: initiator picks hop at first soft-migrate; epoch coordinator handles re-pick.
+  // V021: only the initiator picks the hop on first soft-migrate; epoch coordinator handles re-pick.
+  // Allowing coordinator||initiator here caused a second SoftMigrate (e.g. Windows as 3rd joiner)
+  // that dialed Client contacts and failed with opaque stream-open errors.
   if (first_attach) {
-    if (!is_initiator && !is_coordinator) {
+    if (!is_initiator) {
       return {};
     }
   } else if (!is_coordinator) {
@@ -247,25 +250,15 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
     return Error("no media_relay hop candidates");
   }
 
-  MediaRelayQuoteRequest qreq;
-  qreq.call_id = call_id;
-  qreq.participants = static_cast<int>(joined_ids.size());
-  qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
-  qreq.want_down_bps = qreq.want_up_bps * std::max(1, static_cast<int>(joined_ids.size()) - 1);
+  std::string local_peer_id;
+  if (auto pid = relay_deps_.relay->LocalPeerIdBase58()) {
+    local_peer_id = *pid;
+  }
 
   std::string last_err = "all hops failed";
   for (const MeshHopCandidate& hop : ranked) {
-    if (!hop.multiaddr.empty()) {
-      (void)relay_deps_.sessions->RegisterEndpoint(hop.peer_id, hop.multiaddr);
-      relay_deps_.sessions->ClearDialBackoff(hop.peer_id);
-    }
-    if (!relay_deps_.sessions->IsDialable(hop.peer_id)) {
-      last_err = "hop not dialable: " + hop.peer_id;
-      continue;
-    }
-    auto quote = relay_deps_.relay->RequestQuote(hop.peer_id, qreq, 8000);
-    if (!quote || !quote->ok) {
-      last_err = quote ? quote->error : quote.error().message;
+    if (!local_peer_id.empty() && hop.peer_id == local_peer_id) {
+      last_err = "skip self hop: " + hop.peer_id;
       continue;
     }
 
@@ -273,7 +266,6 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
     attach.call_id = call_id;
     attach.hop_peer_id = hop.peer_id;
     attach.hop_multiaddr = hop.multiaddr;
-    attach.quote_id = quote->quote_id;
     attach.publisher_stream_id = PublisherStreamIdForLocal();
 
     if (auto attached = AttachLocalToSfu(call_id, attach); !attached) {
@@ -286,7 +278,10 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
       (void)sessions_.UpsertSession(**session);
     }
 
-    auto encoded = CallControlCodec::EncodeSfuAttach(attach);
+    // Peers RequestQuote themselves; do not fan out a consumed quote_id.
+    CallSfuAttachDetail fanout = attach;
+    fanout.quote_id.clear();
+    auto encoded = CallControlCodec::EncodeSfuAttach(fanout);
     if (encoded) {
       (void)host_.TopologyFanOutToJoined(call_id, CallControlType::CallSfuAttach, *encoded,
                                          "Call SFU attach", *local);
@@ -304,6 +299,11 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   CallSfuAttachDetail attach = attach_in;
   if (attach.hop_peer_id.empty()) {
     return Error("missing hop_peer_id");
+  }
+  if (auto local_pid = relay_deps_.relay->LocalPeerIdBase58()) {
+    if (*local_pid == attach.hop_peer_id) {
+      return Error("cannot attach to self as media_relay hop");
+    }
   }
   if (attach.hop_multiaddr.empty()) {
     attach.hop_multiaddr = ResolveHopMultiaddr(attach.hop_peer_id);
@@ -323,16 +323,14 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
   qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
 
-  std::string quote_id = attach.quote_id;
-  int64_t a_up_bps = 0;
-  if (quote_id.empty()) {
-    auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 8000);
-    if (!quote || !quote->ok) {
-      return Error(quote ? quote->error : quote.error().message);
-    }
-    quote_id = quote->quote_id;
-    a_up_bps = quote->a_up_bps;
+  // Always RequestQuote locally. Shared quote_ids from fan-out are already consumed by the
+  // soft-migrate picker's AcceptAndAttach.
+  auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 8000);
+  if (!quote || !quote->ok) {
+    return Error(quote ? quote->error : quote.error().message);
   }
+  const std::string quote_id = quote->quote_id;
+  const int64_t a_up_bps = quote->a_up_bps;
 
   CallAdaptationInput in;
   in.per_user_up_bps = a_up_bps;

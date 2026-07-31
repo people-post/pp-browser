@@ -47,8 +47,10 @@ std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> con
  * Media hop rank (n4 / N020 short-term): filter → score over contacts ∪ seeds only.
  * Drops Other affinity, undialable, and recently_failed below quality floor.
  * Higher score first. Affinity is a bonus; residual capacity matters.
+ * When `prefer_contacts` is false, OrgSeed outranks Contact at equal capacity (seeds first).
  */
-std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates);
+std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates,
+                                            bool prefer_contacts = true);
 
 /** True if peer_id appears as ContactIdKind::PeerId on any contact. */
 bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& peer_id);

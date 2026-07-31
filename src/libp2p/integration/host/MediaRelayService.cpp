@@ -597,7 +597,9 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
                        [req = std::move(req), result_promise](libp2p::StreamAndProtocolOrError stream_res) {
                          std::thread([req, result_promise, stream_res = std::move(stream_res)]() mutable {
                            if (!stream_res) {
-                             result_promise->set_value(Error("media-relay stream open failed"));
+                             const auto& ec = stream_res.error();
+                             result_promise->set_value(
+                                 Error(std::string("media-relay stream open failed: ") + ec.message()));
                              return;
                            }
                            auto stream = std::move(stream_res.value().stream);
@@ -657,7 +659,9 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
         std::thread([impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise,
                      stream_res = std::move(stream_res)]() mutable {
           if (!stream_res) {
-            result_promise->set_value(Error("media-relay stream open failed"));
+            const auto& ec = stream_res.error();
+            result_promise->set_value(
+                Error(std::string("media-relay stream open failed: ") + ec.message()));
             return;
           }
           auto stream = std::move(stream_res.value().stream);

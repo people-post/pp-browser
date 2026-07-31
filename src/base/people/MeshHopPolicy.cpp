@@ -35,12 +35,22 @@ std::string FirstMultiaddrForPeer(const Contact& contact, const std::string& pee
   return {};
 }
 
-double MediaHopScore(const MeshHopCandidate& c) {
+double MediaHopScore(const MeshHopCandidate& c, bool prefer_contacts) {
   double score = c.residual_capacity * 100.0;
-  if (c.affinity == MeshHopAffinity::Contact) {
-    score += 25.0;
-  } else if (c.affinity == MeshHopAffinity::OrgSeed) {
-    score += 10.0;
+  if (prefer_contacts) {
+    if (c.affinity == MeshHopAffinity::Contact) {
+      score += 25.0;
+    } else if (c.affinity == MeshHopAffinity::OrgSeed) {
+      score += 10.0;
+    }
+  } else {
+    // Prefer contacts OFF: org seeds before contact PeerIds (many contacts are Clients
+    // that do not host media_relay).
+    if (c.affinity == MeshHopAffinity::OrgSeed) {
+      score += 25.0;
+    } else if (c.affinity == MeshHopAffinity::Contact) {
+      score += 10.0;
+    }
   }
   if (c.dialable) {
     score += 5.0;
@@ -110,7 +120,8 @@ std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> con
   return out;
 }
 
-std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates) {
+std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates,
+                                            bool prefer_contacts) {
   std::vector<MeshHopCandidate> filtered;
   filtered.reserve(candidates.size());
   for (MeshHopCandidate& c : candidates) {
@@ -126,8 +137,8 @@ std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candid
     filtered.push_back(std::move(c));
   }
   std::stable_sort(filtered.begin(), filtered.end(),
-                   [](const MeshHopCandidate& a, const MeshHopCandidate& b) {
-                     return MediaHopScore(a) > MediaHopScore(b);
+                   [prefer_contacts](const MeshHopCandidate& a, const MeshHopCandidate& b) {
+                     return MediaHopScore(a, prefer_contacts) > MediaHopScore(b, prefer_contacts);
                    });
   return filtered;
 }
