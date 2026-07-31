@@ -11,8 +11,6 @@ namespace pbr {
 
 class SessionStore {
 public:
-  static SessionStore& Instance();
-
   void Initialize(BootstrapResult bootstrap);
   bool IsInitialized() const { return initialized_; }
 
@@ -36,8 +34,9 @@ public:
   void AddChromeMaterialListener(
       std::function<void(bool reduce_transparency, bool compact_chrome_frost)> listener);
 
-private:
   SessionStore() = default;
+
+private:
 
   void NotifyConfigListeners(const AppConfig& config);
   void NotifyProfilePrefsListeners(const ProfilePreferences& prefs);

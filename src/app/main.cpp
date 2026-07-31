@@ -1,6 +1,5 @@
 #include "app/Application.h"
 #include "app/Bootstrap.h"
-#include "base/data/SessionStore.h"
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
 #include "base/platform/Platform.h"
@@ -105,7 +104,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  pbr::SessionStore::Instance().Initialize(std::move(bootstrap_result.value()));
+  app.Store().Initialize(std::move(bootstrap_result.value()));
   pbr::StartupMark("after_session_store");
 
   if (![&] {

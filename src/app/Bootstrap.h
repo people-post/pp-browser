@@ -2,10 +2,9 @@
 
 #include "base/data/BootstrapTypes.h"
 #include "common/Error.h"
+#include "feature/messaging/MessagingHub.h"
 
 namespace pbr {
-
-class MessagingHub;
 
 class Bootstrap {
 public:

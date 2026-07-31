@@ -1,6 +1,5 @@
 #include "app/ConfigApplyBridge.h"
 
-#include "base/data/SessionStore.h"
 #include "base/ui/Theme.h"
 
 #include <RmlUi/Core/Context.h>
@@ -9,17 +8,18 @@
 
 namespace pbr {
 
-void ConfigApplyBridge::Bind(MessagingHub& messaging, AssetPathResolver resolve_asset) {
+void ConfigApplyBridge::Bind(MessagingHub& messaging, SessionStore& store, AssetPathResolver resolve_asset) {
   messaging_ = &messaging;
+  store_ = &store;
   resolve_asset_ = std::move(resolve_asset);
 }
 
 void ConfigApplyBridge::InstallListeners() {
-  if (!messaging_ || !SessionStore::Instance().IsInitialized()) {
+  if (!messaging_ || !store_ || !store_->IsInitialized()) {
     return;
   }
 
-  const BootstrapResult& snap = SessionStore::Instance().Snapshot();
+  const BootstrapResult& snap = store_->Snapshot();
   last_network_ = MessagingHub::ProjectNetwork(snap.config);
   last_policy_ = MessagingHub::ProjectPolicy(snap.profile_prefs);
   last_notifications_ = MessagingHub::ProjectNotifications(snap.profile_prefs);
@@ -27,9 +27,8 @@ void ConfigApplyBridge::InstallListeners() {
   last_locale_ = LocalizationService::Project(snap.profile_prefs);
   last_agent_ = ChatController::ProjectAgent(snap.config);
 
-  SessionStore::Instance().AddConfigListener([this](const AppConfig& config) { OnConfig(config); });
-  SessionStore::Instance().AddProfilePrefsListener(
-      [this](const ProfilePreferences& prefs) { OnProfilePrefs(prefs); });
+  store_->AddConfigListener([this](const AppConfig& config) { OnConfig(config); });
+  store_->AddProfilePrefsListener([this](const ProfilePreferences& prefs) { OnProfilePrefs(prefs); });
 }
 
 void ConfigApplyBridge::OnConfig(const AppConfig& config) {

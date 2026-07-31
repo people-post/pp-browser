@@ -1,8 +1,11 @@
 #pragma once
 
 #include "app/Bootstrap.h"
+#include "app/ConfigApplyBridge.h"
+#include "base/data/SessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
+#include "feature/messaging/MessagingHub.h"
 
 #include <memory>
 #include <optional>
@@ -11,9 +14,6 @@
 class FontEngineInterfaceHarfBuzz;
 
 namespace pbr {
-
-class ConfigApplyBridge;
-class MessagingHub;
 
 class Application : public Module {
 public:
@@ -28,6 +28,8 @@ public:
   void Shutdown();
 
   MessagingHub& Messaging();
+  SessionStore& Store() { return store_; }
+  const SessionStore& Store() const { return store_; }
 
   /** Tear down messaging hub + profile secrets when initialized. */
   void ShutdownMessaging();
@@ -38,6 +40,7 @@ public:
 
 private:
   bool initialized_ = false;
+  SessionStore store_;
   std::unique_ptr<MessagingHub> messaging_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;

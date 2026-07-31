@@ -15,8 +15,8 @@
 #include "base/error/AppError.h"
 #include "base/ai/mcp/McpClient.h"
 #include "base/ai/mcp/McpRuntime.h"
+#include "base/data/Config.h"
 #include "base/data/LlmPreset.h"
-#include "base/data/SessionStore.h"
 #include "common/Logger.h"
 #include "common/Module.h"
 #include "common/Utilities.h"
@@ -574,7 +574,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     }
     state->llm = std::make_unique<LlmClient>(llm_config);
 
-    const AppConfig defaults = SessionStore::Instance().DefaultConfig();
+    const AppConfig defaults = Config::DefaultAppConfig();
     state->mcp.Start(state->config, defaults);
 
     std::vector<std::string> custom_prefixes;

@@ -1,12 +1,11 @@
 #pragma once
 
 #include "base/data/BootstrapTypes.h"
+#include "base/data/SessionStore.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsUiState.h"
 
 namespace pbr {
-
-class SessionStore;
 
 enum class SettingsFlushMode {
   Debounced,

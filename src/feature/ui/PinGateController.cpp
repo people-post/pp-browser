@@ -43,6 +43,10 @@ void PinGateController::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
 }
 
+void PinGateController::BindSessionStore(SessionStore& store) {
+  session_store_ = &store;
+}
+
 MessagingHub& PinGateController::Hub() {
   if (!messaging_) {
     throw std::runtime_error("PinGateController messaging not bound");
@@ -90,20 +94,20 @@ void PinGateController::DirtyPinFields() {
 }
 
 void PinGateController::SetPinIsDefault(const bool is_default) {
-  if (!SessionStore::Instance().IsInitialized()) {
+  if (!session_store_ || !session_store_->IsInitialized()) {
     return;
   }
-  ProfilePreferences prefs = SessionStore::Instance().Snapshot().profile_prefs;
+  ProfilePreferences prefs = session_store_->Snapshot().profile_prefs;
   prefs.pin_is_default = is_default;
-  (void)SessionStore::Instance().SaveProfilePrefs(prefs);
+  (void)session_store_->SaveProfilePrefs(prefs);
 }
 
 bool PinGateController::TrySilentDefaultUnlock() {
   StartupPhase phase("PinGate::TrySilentDefaultUnlock");
-  if (!SessionStore::Instance().IsInitialized()) {
+  if (!session_store_ || !session_store_->IsInitialized()) {
     return false;
   }
-  if (!SessionStore::Instance().Snapshot().profile_prefs.pin_is_default) {
+  if (!session_store_->Snapshot().profile_prefs.pin_is_default) {
     return false;
   }
   if (Instance().Hub().IsMessagingReady()) {
@@ -199,8 +203,8 @@ void PinGateController::EnsureUnlocked(std::function<void(bool unlocked)> done) 
     ShowChooser(std::move(done));
     return;
   }
-  if (SessionStore::Instance().IsInitialized() &&
-      SessionStore::Instance().Snapshot().profile_prefs.pin_is_default) {
+  if (session_store_ && session_store_->IsInitialized() &&
+      session_store_->Snapshot().profile_prefs.pin_is_default) {
     if (done) {
       pending_.push_back(std::move(done));
     }
@@ -235,8 +239,8 @@ void PinGateController::BeginDeferredUnlockAfterFirstPresent() {
     return;
   }
 
-  if (SessionStore::Instance().IsInitialized() &&
-      SessionStore::Instance().Snapshot().profile_prefs.pin_is_default) {
+  if (session_store_ && session_store_->IsInitialized() &&
+      session_store_->Snapshot().profile_prefs.pin_is_default) {
     unlock_in_progress_ = true;
     SetUnlockInProgressUi(true);
     StartupMark("deferred_silent_unlock_begin");

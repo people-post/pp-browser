@@ -213,8 +213,8 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
     const std::string bound = node_runtime_->BoundListenMultiaddr();
     if (!bound.empty() && bound != config_.libp2p.listen_multiaddr) {
       config_.libp2p.listen_multiaddr = bound;
-      if (SessionStore::Instance().IsInitialized()) {
-        if (auto saved = SessionStore::Instance().SaveConfig(config_); !saved) {
+      if (session_store_ && session_store_->IsInitialized()) {
+        if (auto saved = session_store_->SaveConfig(config_); !saved) {
           log().warning << "Failed to persist libp2p listen multiaddr: " << saved.error().message;
         } else {
           log().info << "libp2p listening on " << bound;
@@ -520,6 +520,10 @@ void MessagingHub::BindAgent(AgentSession& agent) {
   }
 }
 
+void MessagingHub::BindSessionStore(SessionStore& store) {
+  session_store_ = &store;
+}
+
 PeerSigningKeyStore& MessagingHub::SigningKeys() {
   return signing_key_store_;
 }
@@ -668,7 +672,8 @@ Roe<void> MessagingHub::RotateBriefLlmKey() {
         .WithUser("No Brief API key yet — register on the network in Me first.");
   }
 
-  const AppConfig& config = SessionStore::Instance().Snapshot().config;
+  const AppConfig& config =
+      (session_store_ && session_store_->IsInitialized()) ? session_store_->Snapshot().config : config_;
   std::string base_url = config.llm.base_url;
   if (ResolvePreset(config) != "brief" || base_url.empty()) {
     base_url = "https://www.brief.global/api/llm/v1";
@@ -754,8 +759,8 @@ void MessagingHub::RefreshMeshCapabilities() {
   if (!messaging_ready_ || !node_runtime_) {
     return;
   }
-  if (SessionStore::Instance().IsInitialized()) {
-    config_.libp2p = SessionStore::Instance().Snapshot().config.libp2p;
+  if (session_store_ && session_store_->IsInitialized()) {
+    config_.libp2p = session_store_->Snapshot().config.libp2p;
   }
   if (circuit_relay_) {
     circuit_relay_->Stop();

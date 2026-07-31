@@ -2,6 +2,7 @@
 
 #include "base/data/Config.h"
 #include "base/data/Libp2pRole.h"
+#include "base/data/SessionStore.h"
 #include "base/data/UserPreferences.h"
 #include "base/messaging/GroupTypes.h"
 #include "base/people/ContactsStore.h"
@@ -101,6 +102,8 @@ public:
   void Shutdown();
   bool IsInitialized() const { return initialized_; }
 
+  void BindSessionStore(SessionStore& store);
+
   /** libp2p / P2P stack ready after profile unlock + identity load. */
   bool IsMessagingReady() const { return messaging_ready_; }
 
@@ -184,6 +187,7 @@ private:
   std::string profile_id_;
   AppConfig config_;
   AgentSession* agent_ = nullptr;
+  SessionStore* session_store_ = nullptr;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;

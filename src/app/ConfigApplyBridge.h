@@ -3,6 +3,7 @@
 #include "feature/chat/ChatController.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/ShellHost.h"
+#include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
 
 #include <functional>
@@ -19,7 +20,7 @@ class ConfigApplyBridge {
 public:
   using AssetPathResolver = std::function<std::string(const std::string& relative)>;
 
-  void Bind(MessagingHub& messaging, AssetPathResolver resolve_asset);
+  void Bind(MessagingHub& messaging, SessionStore& store, AssetPathResolver resolve_asset);
   /** Seed last-applied slices from live SessionStore (no Apply). Then install listeners. */
   void InstallListeners();
 
@@ -29,6 +30,7 @@ private:
   void ApplyChrome(const ShellHost::ChromePrefs& next, const ShellHost::ChromePrefs* previous);
 
   MessagingHub* messaging_ = nullptr;
+  SessionStore* store_ = nullptr;
   AssetPathResolver resolve_asset_;
   std::optional<MessagingHub::NetworkConfig> last_network_;
   std::optional<MessagingHub::PolicyPrefs> last_policy_;

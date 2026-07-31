@@ -10,11 +10,6 @@
 
 namespace pbr {
 
-SessionStore& SessionStore::Instance() {
-  static SessionStore store;
-  return store;
-}
-
 void SessionStore::Initialize(BootstrapResult bootstrap) {
   bootstrap_ = std::move(bootstrap);
   initialized_ = true;

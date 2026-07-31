@@ -293,6 +293,10 @@ void ChatController::BindMessaging(MessagingHub& messaging) {
   chrome_.BindMessaging(messaging);
 }
 
+void ChatController::BindSessionStore(SessionStore& store) {
+  session_store_ = &store;
+}
+
 MessagingHub& ChatController::Hub() {
   if (!messaging_) {
     throw std::runtime_error("ChatController messaging not bound");
@@ -305,6 +309,20 @@ const MessagingHub& ChatController::Hub() const {
     throw std::runtime_error("ChatController messaging not bound");
   }
   return *messaging_;
+}
+
+SessionStore& ChatController::Store() {
+  if (!session_store_) {
+    throw std::runtime_error("ChatController session store not bound");
+  }
+  return *session_store_;
+}
+
+const SessionStore& ChatController::Store() const {
+  if (!session_store_) {
+    throw std::runtime_error("ChatController session store not bound");
+  }
+  return *session_store_;
 }
 
 
@@ -1794,7 +1812,7 @@ void ChatController::WithSecrets(std::function<void()> action) {
 }
 
 void ChatController::RefreshLlmSetupBanner() {
-  const AppConfig& config = SessionStore::Instance().Snapshot().config;
+  const AppConfig& config = Store().Snapshot().config;
   use_llm_ = !config.llm.base_url.empty();
   constexpr const char* kRegisterBrief =
       "Register your identity in Me → Profile to use Brief assistant (or switch to Cloud/Ollama).";
@@ -1849,7 +1867,7 @@ void ChatController::WireMessagingBindings() {
   });
   Instance().Hub().P2p().SetOnBackgroundUnread(
       [](std::string title, std::string body, std::string thread_id) {
-        if (!SessionStore::Instance().Snapshot().profile_prefs.show_notifications) {
+        if (!ChatController::Instance().Store().Snapshot().profile_prefs.show_notifications) {
           return;
         }
         ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
@@ -1877,11 +1895,11 @@ void ChatController::WireMessagingBindings() {
         return;
       }
       (void)PushDeviceCoordinator::SyncWithPreference(
-          Instance().Hub(), SessionStore::Instance().Snapshot().profile_prefs.show_notifications);
+          Instance().Hub(), Store().Snapshot().profile_prefs.show_notifications);
     });
   });
   (void)PushDeviceCoordinator::SyncWithPreference(
-      Instance().Hub(), SessionStore::Instance().Snapshot().profile_prefs.show_notifications);
+      Instance().Hub(), Store().Snapshot().profile_prefs.show_notifications);
   Instance().Hub().Inbox().SetOnThreadChanged([this]() {
     RefreshFromMessaging();
     ContactsController::Instance().Refresh();
@@ -1915,7 +1933,7 @@ void ChatController::WireMessagingBindings() {
   RefreshFromMessaging();
   Instance().Hub().P2p().TailSyncActiveE2eThread();
 
-  const bool auto_renew = SessionStore::Instance().Snapshot().profile_prefs.auto_renew_registration;
+  const bool auto_renew = Store().Snapshot().profile_prefs.auto_renew_registration;
   auto renew = MaybeAutoRenewRegistration(Instance().Hub().Registration(),
                                           Instance().Hub().Identity(), auto_renew);
   if (!renew) {
@@ -1951,7 +1969,7 @@ bool ChatController::Setup(Rml::Context* context, MessagingHub& messaging) {
       Instance().Hub().P2p().WarmPeerForThread(active);
     }
   });
-  const AppConfig& config = SessionStore::Instance().Snapshot().config;
+  const AppConfig& config = Store().Snapshot().config;
   widgets_.ClearAll();
   chat_ = {};
   shell_ = {};
@@ -2257,8 +2275,8 @@ void ChatController::Apply(const AgentConfig& config) {
         RegisterMessagingTools(tools, Instance().Hub());
       }
     });
-    AppConfig configure = SessionStore::Instance().IsInitialized()
-                              ? SessionStore::Instance().Snapshot().config
+    AppConfig configure = Store().IsInitialized()
+                              ? Store().Snapshot().config
                               : AppConfig{};
     configure.llm = runtime.llm;
     configure.llm_api_key_env = runtime.llm_api_key_env;
@@ -2272,7 +2290,7 @@ void ChatController::Apply(const AgentConfig& config) {
 }
 
 void ChatController::ReloadAgentConfig() {
-  Apply(ProjectAgent(SessionStore::Instance().Snapshot().config));
+  Apply(ProjectAgent(Store().Snapshot().config));
 }
 
 void ChatController::OnApplicationPause() {

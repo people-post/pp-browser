@@ -86,6 +86,7 @@ void ApplyUiDocumentLanguage(Rml::Context* context) {
 Application::Application() {
   redirectLogger("Application");
   messaging_ = std::make_unique<MessagingHub>();
+  messaging_->BindSessionStore(store_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
 }
 
@@ -117,7 +118,7 @@ void Application::ShutdownMessaging() {
 }
 
 Roe<void> Application::ResetActiveProfile() {
-  const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
+  const BootstrapResult& bootstrap = store_.Snapshot();
   const std::string profile_dir = bootstrap.profile_data_dir;
   const AppConfig config = bootstrap.config;
 
@@ -149,7 +150,7 @@ Roe<void> Application::ResetActiveProfile() {
     return hub.error();
   }
 
-  if (auto prefs = SessionStore::Instance().ReloadProfilePrefs(); !prefs) {
+  if (auto prefs = store_.ReloadProfilePrefs(); !prefs) {
     return prefs.error();
   }
 
@@ -167,12 +168,12 @@ bool Application::Initialize(const char* window_title) {
     return true;
   }
 
-  if (!SessionStore::Instance().IsInitialized()) {
+  if (!store_.IsInitialized()) {
     log().error << "SessionStore not initialized";
     return false;
   }
 
-  const BootstrapResult& bootstrap = SessionStore::Instance().Snapshot();
+  const BootstrapResult& bootstrap = store_.Snapshot();
 
   const int width = bootstrap.machine_prefs.window.width;
   const int height = bootstrap.machine_prefs.window.height;
@@ -336,8 +337,8 @@ bool Application::Initialize(const char* window_title) {
       Theme::ApplyAppearance(ctx, Theme::ParseAppearance(appearance_pref));
     }
   };
-  settings_commands.session_store = []() -> SessionStore& { return SessionStore::Instance(); };
-  settings_commands.reload_from_disk = []() { return SessionStore::Instance().ReloadFromDisk(); };
+  settings_commands.session_store = [this]() -> SessionStore& { return store_; };
+  settings_commands.reload_from_disk = [this]() { return store_.ReloadFromDisk(); };
   settings_commands.messaging_ready = [&messaging]() {
     return messaging.IsInitialized() && messaging.IsMessagingReady();
   };
@@ -386,6 +387,9 @@ bool Application::Initialize(const char* window_title) {
   };
   SettingsController::Instance().BindCommands(std::move(settings_commands));
 
+  ChatController::Instance().BindSessionStore(store_);
+  PinGateController::Instance().BindSessionStore(store_);
+
   ContactsController::Instance().BindMessaging(messaging);
   CallController::Instance().BindMessaging(messaging);
   PinGateController::Instance().BindMessaging(messaging);
@@ -394,7 +398,7 @@ bool Application::Initialize(const char* window_title) {
   BadgeAggregator::Instance().BindMessaging(messaging);
   ShellHost::Instance().BindMessaging(messaging);
 
-  config_apply_->Bind(messaging, [](const std::string& relative) { return AssetsPath(relative); });
+  config_apply_->Bind(messaging, store_, [](const std::string& relative) { return AssetsPath(relative); });
 
   if (![&] {
         StartupPhase phase("SetupChatController");

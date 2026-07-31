@@ -1,6 +1,8 @@
 #pragma once
 
+#include "base/data/SessionStore.h"
 #include "base/ui/ShellTypes.h"
+#include "feature/messaging/MessagingHub.h"
 
 #include <functional>
 #include <string>
@@ -8,14 +10,13 @@
 
 namespace pbr {
 
-class MessagingHub;
-
 /** Interactive PIN unlock/create gate — queues callers until secrets are ready. */
 class PinGateController {
 public:
   static PinGateController& Instance();
 
   void BindMessaging(MessagingHub& messaging);
+  void BindSessionStore(SessionStore& store);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -53,6 +54,7 @@ private:
   bool unlock_in_progress_ = false;
   bool deferred_unlock_started_ = false;
   MessagingHub* messaging_ = nullptr;
+  SessionStore* session_store_ = nullptr;
 
 };
 

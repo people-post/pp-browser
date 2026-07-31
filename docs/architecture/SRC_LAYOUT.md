@@ -132,3 +132,17 @@ Single include root: `${CMAKE_SOURCE_DIR}/src`. Use layer-prefixed paths:
 #include "feature/chat/ChatController.h"
 #include "app/Application.h"
 ```
+
+### Prefer include over forward declaration
+
+When a type lives in a **legal dependency** (same layer / lower layer / allowed feature-module edge), **`#include` its header** rather than forward-declaring it. Forward declarations are for cycle-breaking and illegal upward edges — not the default for every pointer or reference member.
+
+| Prefer `#include` when… | Prefer forward declare when… |
+|-------------------------|------------------------------|
+| The type is in a lower layer (`feature` → `base`/`common`, `app` → `feature`/`base`) | Including would create an **upward** or **cyclic** edge |
+| The type is on an **allowed** same-layer / intra-feature edge (see above) | Incomplete type is enough **and** the include would force a forbidden module edge |
+| You need the full definition for members, nested types, or `sizeof` | Breaking a temporary compile cycle while a ports/DTO extraction is planned |
+
+Examples: feature/app headers that hold `SessionStore*` should `#include "base/data/SessionStore.h"`, not `class SessionStore;`. Do **not** forward-declare lower-layer types just to keep a header “lean.”
+
+Still keep headers focused: avoid pulling unrelated heavy trees when a small `*Types.h` / ports header already exists (e.g. `SettingsCommands`, `ChatSessionPorts`).

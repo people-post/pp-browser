@@ -5,10 +5,12 @@
 #include "feature/chat/ChatTranscriptScroller.h"
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/chat/WorkingSetController.h"
+#include "feature/messaging/MessagingHub.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
 #include "base/data/Config.h"
+#include "base/data/SessionStore.h"
 #include "common/Module.h"
 #include "base/ui/ChatWidgetTypes.h"
 
@@ -29,8 +31,6 @@ class Element;
 }
 
 namespace pbr {
-
-class MessagingHub;
 
 class ChatController : public Module {
 public:
@@ -73,8 +73,11 @@ public:
 
   bool Setup(Rml::Context* context, MessagingHub& messaging);
   void BindMessaging(MessagingHub& messaging);
+  void BindSessionStore(SessionStore& store);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
+  SessionStore& Store();
+  const SessionStore& Store() const;
   void Update();
   /** Call after Rml::Context::Update so follow-tail uses fresh layout heights. */
   void AfterLayout();
@@ -247,6 +250,7 @@ private:
 
   Rml::Context* context_ = nullptr;
   MessagingHub* messaging_ = nullptr;
+  SessionStore* session_store_ = nullptr;
   ChatState chat_;
   ShellState shell_;
   std::optional<AgentSession> agent_;
