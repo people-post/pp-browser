@@ -266,6 +266,11 @@ void CallController::RefreshPendingRing() {
 
   auto top = calls->TopPendingInvite();
   if (top && top->has_value()) {
+    // Same-call pending (duplicate invite / inbox race): keep in-call chrome; do not flip to ring.
+    if (auto active = calls->ActiveLocalCall(); active && active->has_value() &&
+        (*active)->call_id == (*top)->call_id) {
+      // Fall through to in-call rendering below.
+    } else {
     ringing_call_id_ = (*top)->call_id;
     if (ring_started_ms_ == 0) {
       ring_started_ms_ = util::NowUnixMs();
@@ -293,14 +298,13 @@ void CallController::RefreshPendingRing() {
         }
         same_peer = (**peer == (*top)->inviter_identity);
       }
-    } else {
-      active_call_id_.clear();
     }
+    // Do not clear active_call_id_ here — only Leave / no-active paths should.
 
     const CallConflictCopy copy =
         MakeCallConflictCopy(has_conflict, same_peer, caller_label, active_peer_label);
 
-    // Hide in-call bar while ringing; keep active_call_id_ when conflicting.
+    // Hide in-call bar while ringing a *different* call; keep active_call_id_ when conflicting.
     HideInCallChrome();
 
     auto& ring = ShellHost::Instance().State().call_ring;
@@ -326,6 +330,7 @@ void CallController::RefreshPendingRing() {
     SyncShellState();
     SyncRingtone();
     return;
+    } // else different-call pending
   }
 
   if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
@@ -333,8 +338,9 @@ void CallController::RefreshPendingRing() {
     ClearRing();
 
     // Disk session survived force-quit but media did not — drop stuck "Calling…" chrome.
+    // Never auto-leave while soft-migrate / SFU attach-wait is in flight.
     if ((*active)->state == CallSessionState::Active && !calls->Media().IsActive() &&
-        !calls->MediaAttemptedThisProcess(active_call_id_)) {
+        !calls->MediaAttemptedThisProcess(active_call_id_) && !calls->IsAwaitingSfuRecovery()) {
       (void)calls->LeaveCall(active_call_id_);
       ClearInCall();
       ClearRing();
@@ -517,6 +523,13 @@ void CallController::OpenGroupCallPicker(const std::string& thread_id, const boo
 }
 
 void CallController::OpenMidCallInvitePicker() {
+  BindToMessaging();
+  auto* calls = Hub().Calls();
+  if (calls && active_call_id_.empty()) {
+    if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
+      active_call_id_ = (*active)->call_id;
+    }
+  }
   if (active_call_id_.empty()) {
     UserFeedback::Fail(Tr("call.error.no_active"));
     return;
@@ -527,6 +540,11 @@ void CallController::OpenMidCallInvitePicker() {
 void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities) {
   BindToMessaging();
   auto* calls = Hub().Calls();
+  if (calls && active_call_id_.empty()) {
+    if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
+      active_call_id_ = (*active)->call_id;
+    }
+  }
   if (!calls || active_call_id_.empty()) {
     UserFeedback::Fail(Tr("call.error.no_active"));
     return;

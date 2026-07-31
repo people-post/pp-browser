@@ -534,6 +534,7 @@ void PeoplePickerController::SyncCallAddGuestRows() {
     if (target.peer_identity_value.empty()) {
       continue;
     }
+    // Joined only — Left/Declined remain selectable for re-invite after eject/drop.
     if (joined_identities.count(target.peer_identity_value) > 0) {
       continue;
     }

@@ -28,7 +28,7 @@ void CallTopologyController::SetMediaRelayDeps(MediaRelayDeps deps) {
 }
 
 bool CallTopologyController::IsAwaitingSfuRecovery() const {
-  return awaiting_sfu_recovery_;
+  return awaiting_sfu_recovery_ || soft_migrate_in_flight_ || !sfu_attach_wait_call_id_.empty();
 }
 
 bool CallTopologyController::IsSfuAttached() const {
@@ -37,6 +37,14 @@ bool CallTopologyController::IsSfuAttached() const {
 
 bool CallTopologyController::IsOnSfuForCall(const std::string& call_id) const {
   return sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id;
+}
+
+bool CallTopologyController::IsSoftMigrateInFlight() const {
+  return soft_migrate_in_flight_;
+}
+
+bool CallTopologyController::IsSfuAttachWaitActive() const {
+  return !sfu_attach_wait_call_id_.empty();
 }
 
 std::vector<MeshHopCandidate> CallTopologyController::RankedMediaHopCandidates() const {
@@ -89,6 +97,7 @@ void CallTopologyController::OnMediaStopped(const std::string& call_id) {
   }
   sfu_attached_ = false;
   awaiting_sfu_recovery_ = false;
+  soft_migrate_in_flight_ = false;
   local_publisher_stream_id_ = 0;
   if (sfu_attach_wait_call_id_ == call_id) {
     ClearSfuAttachWait();
@@ -399,13 +408,25 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
 }
 
 void CallTopologyController::TryRecoverViaSfu(const std::string& call_id) {
+  if (sfu_attached_ && media_.IsSfuMode()) {
+    return;
+  }
+  if (soft_migrate_in_flight_ || (!sfu_attach_wait_call_id_.empty() && sfu_attach_wait_call_id_ == call_id)) {
+    // Already migrating / waiting — do not stack another SoftMigrate (PC teardown ICE race).
+    return;
+  }
   awaiting_sfu_recovery_ = true;
   BeginSfuAttachWait(call_id);
-  // Quote/attach/StartSfu must not run on UI (Windows mouse freeze).
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id]() {
+  const uint64_t gen = ++migrate_generation_;
+  soft_migrate_in_flight_ = true;
+  BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, gen]() {
     Roe<void> migrated = MaybeSoftMigrateToSfu(call_id);
     const bool attached = sfu_attached_ && media_.IsSfuMode();
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, migrated, attached]() {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, migrated, attached, gen]() {
+      if (gen != migrate_generation_) {
+        return; // superseded
+      }
+      soft_migrate_in_flight_ = false;
       if (attached || (sfu_attached_ && media_.IsSfuMode())) {
         awaiting_sfu_recovery_ = false;
         ClearSfuAttachWait();
@@ -424,7 +445,6 @@ void CallTopologyController::TryRecoverViaSfu(const std::string& call_id) {
         host_.TopologyNotifyRingChanged();
         return;
       }
-      // Non-initiator: wait for CallSfuAttach (deadline already set).
       host_.TopologyNotifyRingChanged();
     });
   });
@@ -440,10 +460,20 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     attach.publisher_stream_id = PublisherStreamIdForLocal();
     host_.TopologyNoteMediaAttempted(call_id);
     BeginSfuAttachWait(call_id);
-    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, attach]() {
+    const uint64_t gen = ++migrate_generation_;
+    soft_migrate_in_flight_ = true;
+    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, attach, gen]() {
       Roe<void> ok = AttachLocalToSfu(call_id, attach);
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, ok]() {
+      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, ok, gen]() {
+        if (gen != migrate_generation_) {
+          return;
+        }
+        soft_migrate_in_flight_ = false;
         if (!ok) {
+          if (sfu_attached_ && media_.IsSfuMode()) {
+            host_.TopologyNotifyRingChanged();
+            return;
+          }
           log().warning << "AttachLocalToSfu (invite hint) failed: " << ok.error().message;
           host_.TopologySetLastMediaError(ok.error().message);
           ClearSfuAttachWait();
@@ -457,10 +487,21 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
   if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
     host_.TopologyNoteMediaAttempted(call_id);
     BeginSfuAttachWait(call_id);
-    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id]() {
+    const uint64_t gen = ++migrate_generation_;
+    soft_migrate_in_flight_ = true;
+    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, gen]() {
       Roe<void> mig = MaybeSoftMigrateToSfu(call_id);
       const bool attached = sfu_attached_;
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, mig, attached]() {
+      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, mig, attached, gen]() {
+        if (gen != migrate_generation_) {
+          return;
+        }
+        soft_migrate_in_flight_ = false;
+        if (sfu_attached_ && media_.IsSfuMode()) {
+          ClearSfuAttachWait();
+          host_.TopologyNotifyRingChanged();
+          return;
+        }
         if (!mig) {
           log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
           host_.TopologySetLastMediaError(mig.error().message);
@@ -486,9 +527,20 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
   if (CallMediaTopology::ShouldUseMediaRelay(n_joined)) {
     host_.TopologyNoteMediaAttempted(call_id);
     BeginSfuAttachWait(call_id);
-    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, joiner_identity]() {
+    const uint64_t gen = ++migrate_generation_;
+    soft_migrate_in_flight_ = true;
+    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, joiner_identity, gen]() {
       Roe<void> mig = MaybeSoftMigrateToSfu(call_id);
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, joiner_identity, mig]() {
+      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, joiner_identity, mig, gen]() {
+        if (gen != migrate_generation_) {
+          return;
+        }
+        soft_migrate_in_flight_ = false;
+        if (sfu_attached_ && media_.IsSfuMode()) {
+          ClearSfuAttachWait();
+          host_.TopologyNotifyRingChanged();
+          return;
+        }
         if (!mig) {
           log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
           EjectParticipantAfterMigrateFailure(
@@ -510,10 +562,20 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
 Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
                                                      const CallSfuAttachDetail& attach) {
   BeginSfuAttachWait(call_id);
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, attach]() {
+  const uint64_t gen = ++migrate_generation_;
+  soft_migrate_in_flight_ = true;
+  BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, attach, gen]() {
     Roe<void> ok = AttachLocalToSfu(call_id, attach);
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, ok]() {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, ok, gen]() {
+      if (gen != migrate_generation_) {
+        return;
+      }
+      soft_migrate_in_flight_ = false;
       if (!ok) {
+        if (sfu_attached_ && media_.IsSfuMode()) {
+          host_.TopologyNotifyRingChanged();
+          return;
+        }
         host_.TopologySetLastMediaError(ok.error().message);
         log().warning << "AttachLocalToSfu (inbound) failed: " << ok.error().message;
         ClearSfuAttachWait();

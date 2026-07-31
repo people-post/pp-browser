@@ -972,6 +972,13 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (!invite) {
       return invite.error();
     }
+    // Already joined this call — ignore redelivered / duplicate invites (would demote to Ringing
+    // and flicker ring chrome over the in-call banner).
+    if (auto existing = sessions_.FindParticipant(invite->call_id, *local);
+        existing && existing->has_value() && (*existing)->state == CallParticipantState::Joined) {
+      log().info << "CallInvite ignored; already joined call_id=" << invite->call_id;
+      return {};
+    }
     const int64_t now = util::NowUnixMs();
     if (CallSessionLogic::ShouldDropStaleInvite(*invite, now, relay_created_at_ms, relay_server_time_ms)) {
       log().warning << "CallInvite dropped as stale call_id=" << invite->call_id
@@ -1171,6 +1178,21 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       (void)sessions_.UpsertSession(**session);
     }
     for (const CallRosterEntry& entry : roster->participants) {
+      if (entry.identity.empty()) {
+        continue;
+      }
+      // Do not resurrect Left/Declined peers from a stale roster fan-out (blocks re-invite).
+      if (entry.state == CallParticipantState::Joined || entry.state == CallParticipantState::Ringing ||
+          entry.state == CallParticipantState::Invited) {
+        if (auto existing = sessions_.FindParticipant(roster->call_id, entry.identity);
+            existing && existing->has_value()) {
+          const CallParticipantState prior = (*existing)->state;
+          if (prior == CallParticipantState::Left || prior == CallParticipantState::Declined ||
+              prior == CallParticipantState::Missed) {
+            continue;
+          }
+        }
+      }
       CallParticipant participant;
       participant.call_id = roster->call_id;
       participant.identity = entry.identity;
