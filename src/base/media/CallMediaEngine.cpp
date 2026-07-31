@@ -13,10 +13,12 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -834,8 +836,88 @@ struct CallMediaEngine::Impl {
   }
 
   void OnRemoteH264Frame(const std::byte* data, size_t size) {
-    if (!video_codec || size == 0) {
+    static int recv_log = 0;
+    static int ok_log = 0;
+    static int fail_log = 0;
+    const auto* bytes = reinterpret_cast<const uint8_t*>(data);
+
+    // Summarize Annex-B NAL types for the first few AUs (Mac interop debug).
+    auto nal_summary = [](const uint8_t* p, size_t n) -> std::string {
+      std::string s;
+      size_t i = 0;
+      int count = 0;
+      while (i + 3 < n && count < 12) {
+        size_t sc = 0;
+        if (p[i] == 0 && p[i + 1] == 0 && p[i + 2] == 1) {
+          sc = 3;
+        } else if (i + 4 <= n && p[i] == 0 && p[i + 1] == 0 && p[i + 2] == 0 && p[i + 3] == 1) {
+          sc = 4;
+        }
+        if (sc == 0) {
+          ++i;
+          continue;
+        }
+        const size_t nal = i + sc;
+        size_t next = nal;
+        while (next + 3 < n) {
+          if (p[next] == 0 && p[next + 1] == 0 &&
+              (p[next + 2] == 1 || (next + 4 <= n && p[next + 2] == 0 && p[next + 3] == 1))) {
+            break;
+          }
+          ++next;
+        }
+        if (next > n) {
+          next = n;
+        }
+        const int type = (nal < n) ? (p[nal] & 0x1F) : -1;
+        const size_t len = (nal < next) ? (next - nal) : 0;
+        if (!s.empty()) {
+          s += ',';
+        }
+        s += std::to_string(type) + ':' + std::to_string(len);
+        ++count;
+        i = next;
+      }
+      return s.empty() ? "none" : s;
+    };
+
+    if (!video_codec) {
+      if (recv_log < 3) {
+        ++recv_log;
+        SDL_Log("CallMediaEngine: remote H264 drop — no video_codec (size=%zu)", size);
+      }
       return;
+    }
+    if (size == 0) {
+      if (recv_log < 3) {
+        ++recv_log;
+        SDL_Log("CallMediaEngine: remote H264 drop — empty AU");
+      }
+      return;
+    }
+    if (recv_log < 8) {
+      ++recv_log;
+      SDL_Log("CallMediaEngine: remote H264 AU #%d size=%zu backend=%s has_dec=%d nals=[%s]",
+              recv_log, size, video_codec->BackendName().c_str(),
+              video_codec->HasDecoder() ? 1 : 0, nal_summary(bytes, size).c_str());
+      if (recv_log == 1) {
+        // Hex prefix helps confirm Annex-B vs garbage.
+        char hex[96];
+        const size_t n = std::min(size, static_cast<size_t>(24));
+        size_t off = 0;
+        for (size_t i = 0; i < n && off + 3 < sizeof(hex); ++i) {
+          off += static_cast<size_t>(
+              std::snprintf(hex + off, sizeof(hex) - off, "%02x", bytes[i]));
+        }
+        hex[std::min(off, sizeof(hex) - 1)] = '\0';
+        SDL_Log("CallMediaEngine: remote H264 first24=%s", hex);
+        // Persist first AU for offline inspection.
+        if (FILE* f = std::fopen("/tmp/pp-remote-h264-au0.bin", "wb")) {
+          std::fwrite(bytes, 1, size, f);
+          std::fclose(f);
+          SDL_Log("CallMediaEngine: wrote /tmp/pp-remote-h264-au0.bin (%zu bytes)", size);
+        }
+      }
     }
     if (!video_codec->HasDecoder()) {
       if (auto configured = video_codec->ConfigureDecoder(); !configured) {
@@ -847,15 +929,31 @@ struct CallMediaEngine::Impl {
         return;
       }
     }
-    auto decoded = video_codec->Decode(reinterpret_cast<const uint8_t*>(data), size);
+    auto decoded = video_codec->Decode(bytes, size);
     if (!decoded) {
-      static int logged_decode = 0;
-      if (logged_decode < 5) {
-        ++logged_decode;
-        SDL_Log("CallMediaEngine: remote H264 decode failed: %s (size=%zu)",
-                decoded.error().message.c_str(), size);
+      if (fail_log < 12) {
+        ++fail_log;
+        SDL_Log("CallMediaEngine: remote H264 decode FAILED #%d: %s (size=%zu nals=[%s])", fail_log,
+                decoded.error().message.c_str(), size, nal_summary(bytes, size).c_str());
       }
       return;
+    }
+    // Mean luma of a few samples — all-black success is a common VA bit-offset failure mode.
+    uint32_t luma_sum = 0;
+    size_t luma_n = 0;
+    if (decoded->width > 0 && decoded->height > 0 &&
+        decoded->rgba.size() >= static_cast<size_t>(decoded->width * decoded->height * 4)) {
+      const int step = std::max(1, decoded->width * decoded->height / 64);
+      for (int i = 0; i < decoded->width * decoded->height; i += step) {
+        luma_sum += decoded->rgba[static_cast<size_t>(i) * 4];
+        ++luma_n;
+      }
+    }
+    const int mean_luma = luma_n ? static_cast<int>(luma_sum / luma_n) : -1;
+    if (ok_log < 8) {
+      ++ok_log;
+      SDL_Log("CallMediaEngine: remote H264 decode OK #%d %dx%d mean_luma=%d rgba=%zu", ok_log,
+              decoded->width, decoded->height, mean_luma, decoded->rgba.size());
     }
     PublishRemoteFrame(std::move(*decoded));
   }

@@ -20,6 +20,8 @@
 #include <va/va_drm.h>
 #include <va/va_enc_h264.h>
 
+#include <SDL3/SDL.h>
+
 namespace pbr {
 namespace {
 
@@ -365,11 +367,15 @@ bool ParsePpsRbsp(const uint8_t* rbsp, size_t size, ParsedPps& out) {
   if (!br.Ok()) {
     return false;
   }
-  // Optional High-profile tail; ignore parse failures (often just rbsp_trailing_bits).
+  // Optional High-profile more_rbsp_data() tail. VideoToolbox Baseline PPS is often
+  // 3 payload bytes ending in rbsp_trailing_bits (0x80). Comparing against the full NAL
+  // size (including the header byte) falsely treated that trailing byte as
+  // transform_8x8_mode_flag=1 → VA High profile + black frames with a tiny corner scrap.
   out.transform_8x8_mode_flag = 0;
   out.second_chroma_qp_index_offset = out.chroma_qp_index_offset;
+  const size_t payload_size = size - 1;
   const size_t consumed_bytes = (br.BitsRead() + 7) / 8;
-  if (consumed_bytes + 1 < size) {
+  if (consumed_bytes + 1 < payload_size) {
     out.transform_8x8_mode_flag = static_cast<int>(br.ReadBits(1));
     if (br.Ok() && br.ReadBits(1) == 0) {
       const int32_t second = br.ReadSe();
@@ -609,9 +615,11 @@ struct VaCaps {
 // VideoToolbox (and some MFTs) may emit Main/High even when CBP was requested.
 // Pick the tightest VA profile that can accept the bitstream.
 VAProfile SelectDecodeProfile(const VaCaps& caps, const ParsedSps& sps, const ParsedPps& pps) {
+  // Honor SPS profile_idc. Do not upgrade Baseline solely because PPS more_rbsp_data was
+  // misread (VideoToolbox CBP PPS ends with rbsp_trailing 0x80).
   const bool needs_high = sps.profile_idc == 100 || sps.profile_idc == 110 ||
                           sps.profile_idc == 122 || sps.profile_idc == 244 ||
-                          pps.transform_8x8_mode_flag != 0;
+                          (pps.transform_8x8_mode_flag != 0 && sps.profile_idc >= 100);
   const bool needs_main =
       needs_high || sps.profile_idc == 77 || pps.entropy_coding_mode_flag != 0;
   if (needs_high && caps.decode_high) {
@@ -1469,6 +1477,13 @@ bool VaapiVideoCodec::EnsureDecoderContext(const ParsedSps& sps, std::string& er
   dec_height_ = height;
   dec_active_profile_ = profile;
   dec_next_surface_ = 0;
+  static bool logged_ctx = false;
+  if (!logged_ctx) {
+    logged_ctx = true;
+    SDL_Log("VaapiVideoCodec: decode context %dx%d VAProfile=%d (cbp=%d main=%d high=%d)", width,
+            height, static_cast<int>(profile), caps_.decode_cbp ? 1 : 0, caps_.decode_main ? 1 : 0,
+            caps_.decode_high ? 1 : 0);
+  }
   return true;
 }
 
@@ -1700,6 +1715,15 @@ Roe<VideoFrameRgba> VaapiVideoCodec::Decode(const uint8_t* annex_b, size_t size)
       if (!ParseSpsRbsp(rbsp.data(), rbsp.size(), sps)) {
         return Error("failed to parse H264 SPS");
       }
+      static bool logged_sps = false;
+      if (!logged_sps) {
+        logged_sps = true;
+        SDL_Log("VaapiVideoCodec: SPS profile_idc=%d level=%d %dx%d (coded %dx%d) refs=%d "
+                "poc_type=%d crop=%d",
+                sps.profile_idc, sps.level_idc, sps.width, sps.height, sps.coded_width,
+                sps.coded_height, sps.max_num_ref_frames, sps.pic_order_cnt_type,
+                sps.frame_cropping_flag);
+      }
       dec_sps_ = sps;
       dec_have_sps_ = true;
     } else if (nal.type == 8) {
@@ -1707,6 +1731,14 @@ Roe<VideoFrameRgba> VaapiVideoCodec::Decode(const uint8_t* annex_b, size_t size)
       ParsedPps pps{};
       if (!ParsePpsRbsp(rbsp.data(), rbsp.size(), pps)) {
         return Error("failed to parse H264 PPS");
+      }
+      static bool logged_pps = false;
+      if (!logged_pps) {
+        logged_pps = true;
+        SDL_Log("VaapiVideoCodec: PPS entropy_cabac=%d transform8x8=%d deblock_ctrl=%d "
+                "weighted_pred=%d",
+                pps.entropy_coding_mode_flag, pps.transform_8x8_mode_flag,
+                pps.deblocking_filter_control_present_flag, pps.weighted_pred_flag);
       }
       dec_pps_ = pps;
       dec_have_pps_ = true;

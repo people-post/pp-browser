@@ -17,6 +17,8 @@
 
 #include "common/Utilities.h"
 
+#include <SDL3/SDL.h>
+
 #include <algorithm>
 #include <cstdio>
 
@@ -601,7 +603,24 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     }
   }
   if (have_peer_video_flag && !peer_camera_on) {
+    static int cleared_log = 0;
+    if (cleared_log < 4) {
+      ++cleared_log;
+      SDL_Log("CallController: clearing remote video — peer video_enabled=false (have_flag=1)");
+    }
     media.ClearRemoteVideo();
+  } else if (!have_peer_video_flag) {
+    static bool once = false;
+    if (!once) {
+      once = true;
+      SDL_Log("CallController: no peer video_enabled flag yet — will show frames if decoded");
+    }
+  } else {
+    static bool once_on = false;
+    if (!once_on && peer_camera_on) {
+      once_on = true;
+      SDL_Log("CallController: peer video_enabled=true — expecting remote frames");
+    }
   }
 
   const bool stalling = media.IsRemoteVideoStalling();
