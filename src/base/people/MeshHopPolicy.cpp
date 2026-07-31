@@ -143,6 +143,22 @@ std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candid
   return filtered;
 }
 
+std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
+                                             const std::string& local_peer_id) {
+  if (local_peer_id.empty()) {
+    return candidates;
+  }
+  std::vector<MeshHopCandidate> out;
+  out.reserve(candidates.size());
+  for (MeshHopCandidate& c : candidates) {
+    if (c.peer_id == local_peer_id) {
+      continue;
+    }
+    out.push_back(std::move(c));
+  }
+  return out;
+}
+
 bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& peer_id) {
   if (peer_id.empty()) {
     return false;

@@ -31,6 +31,7 @@
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
 #include "libp2p/integration/host/MediaRelayService.h"
+#include "feature/messaging/CallTopologyRelayDeps.h"
 #include "libp2p/integration/host/Reachability.h"
 #include "libp2p/integration/host/ReachabilityService.h"
 #include "libp2p/integration/host/NodeRuntime.h"
@@ -223,6 +224,8 @@ private:
   std::unique_ptr<DialBackService> dial_back_;
   std::unique_ptr<CircuitRelayService> circuit_relay_;
   std::unique_ptr<MediaRelayService> media_relay_;
+  std::unique_ptr<MediaRelayServiceClient> media_relay_client_;
+  std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
   ReachabilityService reachability_;
   std::string libp2p_last_error_;
   bool upnp_auto_tried_ = false;

@@ -92,6 +92,21 @@ TEST(MeshHopPolicyTest, ContactPeerIdHelpers) {
   EXPECT_EQ(ContactPeerIds(contacts).size(), 1u);
 }
 
+TEST(MeshHopPolicyTest, ExcludeSelfHopDropsLocalPeerId) {
+  MeshHopCandidate self_hop;
+  self_hop.peer_id = "12D3KooWSelf";
+  self_hop.affinity = MeshHopAffinity::Contact;
+  MeshHopCandidate other;
+  other.peer_id = "12D3KooWOther";
+  other.affinity = MeshHopAffinity::OrgSeed;
+
+  auto filtered = ExcludeSelfHop({self_hop, other}, "12D3KooWSelf");
+  ASSERT_EQ(filtered.size(), 1u);
+  EXPECT_EQ(filtered[0].peer_id, "12D3KooWOther");
+
+  EXPECT_EQ(ExcludeSelfHop({self_hop, other}, "").size(), 2u);
+}
+
 TEST(MediaFrameCodecTest, RoundTripHeaderAndPayload) {
   MediaDataFrame in;
   in.stream_id = 42;

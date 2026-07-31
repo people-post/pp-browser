@@ -17,7 +17,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 
 | Area | State |
 |------|-------|
-| Topology | 1:1 P2P when N=2; N≥3 → coordinator `RankMediaHops` → quote/attach → `call_sfu_attach` fan-out (V021) |
+| Topology | 1:1 P2P when N=2; N≥3 → sticky initiator `RankMediaHops` → quote/attach → `call_sfu_attach` fan-out (V021); re-pick = epoch coordinator |
 | Hop pick | Contacts ∪ org seed via mesh `MeshHopPolicy` (V023 / N020) |
 | Budgets | Quote A↑/A↓ applied into adaptation; volunteer rate 0 |
 | Framing | N021 on SFU path — audio ch0 `reliable_ordered`, video ch1 `latest_lossy` |
@@ -35,6 +35,8 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | 1:1 ICE fail / hang on Connecting | 15s timeout + honest “Couldn't connect”; Retry rebuilds P2P as offerer; tip via `PlatformUserHints` keys + `Tr()` (Local Network / mic / firewall); do not auto-leave |
 | 1:1 hit “group needs media_relay” | SFU attach-wait / `sfu_hint` only for N≥3; do not treat PC `closed` as 1:1→SFU |
 | Soft-migrate fail on 3rd joiner | Eject joiner; keep existing 1:1 P2P; invite preflight when no hop |
+| Mid-call invite from 2nd peer → chrome gone | **Sticky initiator SoftMigrates** on CallRoster (`JoinedCountObserved`); inviter WaitForAttach; attach-wait never LeaveCall while migrate in flight; SoftMigrateLogic unit coverage |
+| Opaque hop dial / prefer_contacts | Prefer contacts OFF → seeds first; ExcludeSelfHop; OpenStream errors include cause; fakes for topology controller tests |
 
 ## Still open (a4 polish / a5)
 

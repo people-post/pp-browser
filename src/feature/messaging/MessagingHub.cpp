@@ -269,9 +269,12 @@ void MessagingHub::WireCallMediaRelayDeps() {
   if (!call_sessions_) {
     return;
   }
+  media_relay_client_ = std::make_unique<MediaRelayServiceClient>(media_relay_.get());
+  dial_registry_ = std::make_unique<PeerSessionDialRegistry>(
+      node_runtime_ ? node_runtime_->Sessions() : nullptr);
   CallSessionManager::MediaRelayDeps deps;
-  deps.relay = media_relay_.get();
-  deps.sessions = node_runtime_ ? node_runtime_->Sessions() : nullptr;
+  deps.relay = media_relay_client_.get();
+  deps.dial = dial_registry_.get();
   Libp2pConfig libp2p = config_.libp2p;
   NormalizeLibp2pConfig(libp2p);
   deps.bootstrap_peers = libp2p.bootstrap_peers;
@@ -309,6 +312,11 @@ void MessagingHub::ApplyMeshAdmissionPolicies() {
 }
 
 void MessagingHub::StopLibp2p() {
+  if (call_sessions_) {
+    call_sessions_->SetMediaRelayDeps({});
+  }
+  media_relay_client_.reset();
+  dial_registry_.reset();
   if (media_relay_) {
     media_relay_->Stop();
     media_relay_.reset();
@@ -774,6 +782,8 @@ void MessagingHub::RefreshMeshCapabilities() {
     media_relay_->Stop();
     media_relay_.reset();
   }
+  media_relay_client_.reset();
+  dial_registry_.reset();
   const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);
   circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
   if (role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {

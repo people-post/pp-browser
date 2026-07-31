@@ -52,6 +52,10 @@ std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> con
 std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates,
                                             bool prefer_contacts = true);
 
+/** Drop hop whose peer_id equals `local_peer_id` (never dial self as media_relay). */
+std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,
+                                             const std::string& local_peer_id);
+
 /** True if peer_id appears as ContactIdKind::PeerId on any contact. */
 bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& peer_id);
 

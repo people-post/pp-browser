@@ -1201,6 +1201,11 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       participant.media.video_enabled = entry.video_enabled;
       (void)sessions_.UpsertParticipant(participant);
     }
+    // Mid-call invite: CallAccept only reaches the inviter; initiator SoftMigrates when roster
+    // shows N≥3 (V021 sticky initiator / V022 payer).
+    if (auto joined = sessions_.CountJoined(roster->call_id); joined) {
+      topology_.OnJoinedCountObserved(roster->call_id, *joined);
+    }
     NotifyRingChanged();
     return {};
   }

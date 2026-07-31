@@ -68,7 +68,7 @@ flowchart TB
 |----------|------------|-------|
 | 1 (ringing / solo) | No media PC yet | Invite outstanding |
 | **2** | **1:1 P2P** PeerConnection | Host ICE (+ STUN); no SFU; fail → timeout + Retry (V025) |
-| **≥3** | **SFU** via `media_relay` hop | Soft-migrate same `call_id`; coordinator picks hop |
+| **≥3** | **SFU** via `media_relay` hop | Soft-migrate same `call_id`; sticky initiator picks hop (re-pick: epoch coordinator) |
 
 - Soft-migrate on 2→3: keep session/roster/key epoch; tear down P2P after SFU attach.
 - Mid-call guest without a hop: refuse or eject — do **not** leave invitee on Connecting while existing peers stay on P2P.
@@ -214,7 +214,9 @@ Single media backend for the process:
 Maps ring + in-call chrome to session APIs; polls attach-wait only as a UI tick hook into the topology owner; must not invent topology.
 
 ### media_relay (mesh)
-Desktop/org Node capability. Coordinator ranks contact∪seed hops, quotes, attaches, fans out `call_sfu_attach`. Mobile never hosts.
+Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attaches, fans out `call_sfu_attach`. Mobile never hosts.
+
+**Who picks (V021 / V022):** first soft-migrate is the sticky **call initiator** (earliest `joined_at` = session payer). Mid-call invite: `CallAccept` reaches only the inviter (WaitForAttach); **CallRoster** drives `JoinedCountObserved` so the initiator SoftMigrates. Joiners without hint WaitForAttach. ICE re-pick is epoch coordinator only. Fan-out clears `quote_id` (peers `RequestQuote` locally).
 
 ---
 
@@ -222,16 +224,24 @@ Desktop/org Node capability. Coordinator ranks contact∪seed hops, quotes, atta
 
 Extract without changing the external façade (`MessagingHub::Calls()`, `CallController`).
 
-### 1. `CallTopologyController` (feature)
+### Pure units (`base/messaging`, gtest — no libp2p)
+
+| Unit | Job |
+|------|-----|
+| `SoftMigrateLogic` | Who-picks: initiator first hop (V021/V022); `JoinedCountObserved` / `RemoteAcceptObserved`; ICE → coordinator |
+| `SfuAttachWaitLogic` | Attach-wait poll; **no TimeoutLeave while migrate in flight** |
+| `SfuAttachFanout` | Fan-out detail with empty `quote_id`; publisher stream id |
+| `MeshHopPolicy` | Contact∪seed rank; Prefer contacts; `ExcludeSelfHop` |
+
+### 1. `CallTopologyController` (feature adapter)
 Responsibilities:
 
-- `ShouldUseSfu(joined_count)` / soft-migrate triggers
-- `MaybeSoftMigrateToSfu`, `AttachLocalToSfu`, hop ranking
-- Attach-wait deadline + timeout leave (group only)
+- Apply pure decisions; `MaybeSoftMigrateToSfu(call_id, trigger)`, `AttachLocalToSfu`, hop ranking via `IMediaRelayClient` / `IDialRegistry`
+- Attach-wait deadline + timeout leave (group only) via `SfuAttachWaitLogic`
 - Eject joiner when migrate fails but 1:1 P2P remains
 - ICE `failed` recovery **only** when N≥3
 
-State it owns: `sfu_attached_`, attach-wait call id/deadline, `awaiting_sfu_recovery_` (or equivalent).  
+State it owns: `sfu_attached_`, attach-wait call id/deadline, `awaiting_sfu_recovery_`, `soft_migrate_in_flight_`.  
 Session manager asks: “joined count is now N — what media action?”
 
 ### 2. `CallP2pSignalingBridge` (feature)
@@ -272,6 +282,7 @@ These are architectural, not one-off hacks. Timelines: [Offer before answerer St
 | Signaling under engine mutex | Answer path during flush | Defer `call_sdp` / `call_ice` send to UI task |
 | 1:1 enters SFU wait | “group needs media_relay” on P2P call | Topology: SFU paths only for N≥3; ignore stale `sfu_hint` on 1:1 (V025) |
 | 1:1 ICE fail / hang | Connecting forever or false leave | Mark connect-failed + ~15s timeout; UI Retry rebuilds offerer; tip via `PlatformUserHints` |
+| Mid-call invite from 2nd peer | Chrome gone after 45s | Initiator SoftMigrates on CallRoster (`JoinedCountObserved`); inviter WaitForAttach; attach-wait does not leave while migrate in flight |
 | macOS Local Network | Android↔Mac LAN ICE | Packaged `NSLocalNetworkUsageDescription` ([PLATFORMS.md](PLATFORMS.md)); on 1:1 connect fail UI tips Local Network |
 | Dogfood from Cursor terminal | LAN ICE can fail while normal terminal works | Prefer OS terminal or packaged `.app` for media dogfood |
 
@@ -279,12 +290,13 @@ These are architectural, not one-off hacks. Timelines: [Offer before answerer St
 
 ## Extraction sequence
 
-Landed (behavior-preserving):
+Landed (behavior-preserving + who-picks fix):
 
 1. **Topology extract** — `CallTopologyController` owns soft-migrate / attach / wait / eject / hop helpers.
 2. **P2P bridge extract** — `CallP2pSignalingBridge` owns schedule/bind/resend/stop-media + 1:1 connect-fail / Retry.
 3. **Dispatch cleanup** — thin `ApplyInboundControl` arms call topology or P2P bridge.
-4. **Tests** — `CallMediaTopology` N≥3-only + `DecidePath` (stale hint → IgnoreSfuHint).
+4. **Pure who-picks / wait / fan-out** — `SoftMigrateLogic`, `SfuAttachWaitLogic`, `SfuAttachFanout` + fakes (`IMediaRelayClient` / `IDialRegistry`).
+5. **Tests** — `CallMediaTopology` N≥3-only; SoftMigrate / wait / fan-out / topology controller unit tests; `media_relay_service_test` loopback remains integration.
 
 Do **not** combine engine pending-buffer rewrites with topology moves in one PR.
 
@@ -296,14 +308,19 @@ Do **not** combine engine pending-buffer rewrites with topology moves in one PR.
 |------|------|
 | `src/feature/messaging/CallSessionManager.*` | Façade — session + dispatch |
 | `src/feature/messaging/CallP2pSignalingBridge.*` | P2P media signaling + 1:1 connect-fail / Retry |
-| `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait |
+| `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait adapter |
+| `src/feature/messaging/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
 | `src/feature/messaging/CallMediaKeyStore.*` | Epoch key wrap |
 | `src/feature/ui/CallController.*` | Ring + in-call UI |
 | `src/base/media/CallMediaEngine.*` | PC + SFU media backend |
 | `src/base/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
 | `src/base/messaging/CallSessionStore.*` | Persistence |
 | `src/base/messaging/CallSessionLogic.*` | Pure transitions / expiry / coordinator pick |
+| `src/base/messaging/SoftMigrateLogic.*` | Pure who-picks |
+| `src/base/messaging/SfuAttachWaitLogic.*` | Pure attach-wait poll |
+| `src/base/messaging/SfuAttachFanout.*` | Fan-out shape + publisher stream id |
 | `src/base/messaging/CallControlCodec.*` | Wire JSON for call controls |
+| `src/base/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
 | `src/libp2p/integration/host/MediaRelayService.*` | Blind SFU |
 
 ---
