@@ -2,10 +2,10 @@
 
 **Tier:** architecture
 
-**Mature code architecture** for voice/video calls — planes, layer ownership, topology rules that the code must honor, and the target split of today’s monolithic `CallSessionManager`. Change rarely; update when structure lands in tree.
+**Mature code architecture** for voice/video calls — planes, layer ownership, topology rules that the code must honor, and the split of session façade vs `CallTopologyController` / `CallP2pSignalingBridge`. Change rarely; update when structure changes.
 
 **Open delivery work** (phases, dogfood, new ADRs): [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).  
-**Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (V014–V024).  
+**Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (V014–V025).  
 **Wire controls:** [`contracts/WIRE_SCHEMAS.md`](../contracts/WIRE_SCHEMAS.md) (call system `control_type`s).  
 **Messaging carrier:** [`P2P_MESSAGING.md`](P2P_MESSAGING.md).  
 **SFU / mesh hop:** [`projects/p2p-mesh/`](../../projects/p2p-mesh/) (`media_relay`).
@@ -29,10 +29,10 @@ flowchart TB
     CC[CallController]
     Shell[ShellHost call chrome]
   end
-  subgraph feature [feature/messaging — target]
+  subgraph feature [feature/messaging]
     CSM[CallSessionManager<br/>session + roster + dispatch]
-    P2P[CallP2pSignalingBridge<br/>target]
-    Topo[CallTopologyController<br/>target]
+    P2P[CallP2pSignalingBridge]
+    Topo[CallTopologyController]
   end
   subgraph base [base]
     Store[CallSessionStore]
@@ -60,20 +60,20 @@ flowchart TB
 
 ---
 
-## Topology rules (V021)
+## Topology rules (V021 + V025)
 
 | Joined N | Media path | Notes |
 |----------|------------|-------|
 | 1 (ringing / solo) | No media PC yet | Invite outstanding |
-| **2** | **1:1 P2P** PeerConnection | Host ICE (+ STUN); no SFU required |
+| **2** | **1:1 P2P** PeerConnection | Host ICE (+ STUN); no SFU; fail → timeout + Retry (V025) |
 | **≥3** | **SFU** via `media_relay` hop | Soft-migrate same `call_id`; coordinator picks hop |
 
 - Soft-migrate on 2→3: keep session/roster/key epoch; tear down P2P after SFU attach.
 - Mid-call guest without a hop: refuse or eject — do **not** leave invitee on Connecting while existing peers stay on P2P.
-- ICE-fail → SFU auto-recovery is a **group** path (N≥3). Plain 1:1 must not enter SFU attach-wait or “group needs media_relay” toasts.
+- ICE-fail → SFU auto-recovery is a **group** path (N≥3). Plain 1:1 must not enter SFU attach-wait or “group needs media_relay” toasts (V025).
 - Stale `sfu_hint` on a 1:1 invite must be ignored until N≥3.
 
-`CallMediaTopology` (`base/media/CallMediaAdaptation.*`) encodes the N thresholds; **policy application** should live in one topology owner (target below), not scattered Accept / ICE / UI refresh branches.
+`CallMediaTopology` (`base/media/CallMediaAdaptation.*`) encodes the N thresholds (`ShouldUseMediaRelay` = N≥3 only); **policy application** should live in one topology owner (target below), not scattered Accept / ICE / UI refresh branches.
 
 ---
 
@@ -87,9 +87,9 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | Control encode/decode | `base/messaging` | `CallControlCodec` | Unchanged |
 | PC / Opus / H264 / SDL / pending remote SDP | `base/media` | `CallMediaEngine` | Keep; pending-buffer stays here |
 | Adaptation policy | `base/media` | `CallMediaAdaptation`, `CallMediaTopology` | Unchanged |
-| Session lifecycle + inbound dispatch | `feature/messaging` | **`CallSessionManager` (monolith)** | Thin orchestrator |
-| P2P offer/answer + SDP/ICE send | `feature/messaging` | Inside `CallSessionManager` | **`CallP2pSignalingBridge`** |
-| Soft-migrate / attach-wait / hop pick | `feature/messaging` | Inside `CallSessionManager` | **`CallTopologyController`** |
+| Session lifecycle + inbound dispatch | `feature/messaging` | **`CallSessionManager`** | Thin orchestrator |
+| P2P offer/answer + SDP/ICE send | `feature/messaging` | **`CallP2pSignalingBridge`** | Unchanged |
+| Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** | Unchanged |
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
 | Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync` | Unchanged; talks only to session façade |
 | Blind SFU protocol | `libp2p/integration` | `MediaRelayService` | Unchanged |
@@ -175,32 +175,33 @@ These are architectural, not one-off hacks:
 | Offer before answerer `Start` | Fast offerer (often Linux) → Mac Connecting… | Buffer remote SDP/ICE in `CallMediaEngine`; flush on `Start`; do not clear buffer on PC rebuild except `Stop` |
 | Offer lost (no retransmit) | Same | Offerer re-send once; answerer ignores duplicate offer |
 | Signaling under engine mutex | Answer path during flush | Defer `call_sdp` / `call_ice` send to UI task |
-| 1:1 enters SFU wait | “group needs media_relay” on P2P call | Topology: SFU paths only for N≥3; ignore stale `sfu_hint` on 1:1 |
+| 1:1 enters SFU wait | “group needs media_relay” on P2P call | Topology: SFU paths only for N≥3; ignore stale `sfu_hint` on 1:1 (V025) |
+| 1:1 ICE fail / hang | Connecting forever or false leave | Mark connect-failed + ~15s timeout; UI Retry rebuilds offerer; tip via `PlatformUserHints` |
 | macOS Local Network | Android↔Mac LAN ICE | Packaged `NSLocalNetworkUsageDescription` ([PLATFORMS.md](PLATFORMS.md)); on 1:1 connect fail UI tips Local Network |
 | Dogfood from Cursor terminal | LAN ICE can fail while normal terminal works | Prefer OS terminal or packaged `.app` for media dogfood |
 
 ---
 
-## Extraction sequence (implementation)
+## Extraction sequence
 
-Prefer behavior-preserving moves, tests first where modes already burned dogfood.
+Landed (behavior-preserving):
 
-1. **PR: Topology extract** — move soft-migrate / attach / wait / eject / hop helpers behind `CallTopologyController`; session manager delegates.
-2. **PR: P2P bridge extract** — move schedule/bind/resend/stop-media.
-3. **PR: Dispatch cleanup** — thin `ApplyInboundControl`; no duplicated N≥3 branches.
-4. **Tests** — stale `sfu_hint` + N=2; buffered offer before answerer Start; duplicate offer; N=3 no hop eject; attach-wait must not kill active 1:1 P2P.
+1. **Topology extract** — `CallTopologyController` owns soft-migrate / attach / wait / eject / hop helpers.
+2. **P2P bridge extract** — `CallP2pSignalingBridge` owns schedule/bind/resend/stop-media + 1:1 connect-fail / Retry.
+3. **Dispatch cleanup** — thin `ApplyInboundControl` arms call topology or P2P bridge.
+4. **Tests** — `CallMediaTopology` N≥3-only + `DecidePath` (stale hint → IgnoreSfuHint).
 
 Do **not** combine engine pending-buffer rewrites with topology moves in one PR.
 
 ---
 
-## File map (today → target)
+## File map
 
 | Path | Role |
 |------|------|
-| `src/feature/messaging/CallSessionManager.*` | Façade (shrink over time) |
-| `src/feature/messaging/CallP2pSignalingBridge.*` | **Target** — P2P media signaling |
-| `src/feature/messaging/CallTopologyController.*` | **Target** — SFU / soft-migrate |
+| `src/feature/messaging/CallSessionManager.*` | Façade — session + dispatch |
+| `src/feature/messaging/CallP2pSignalingBridge.*` | P2P media signaling + 1:1 connect-fail / Retry |
+| `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait |
 | `src/feature/messaging/CallMediaKeyStore.*` | Epoch key wrap |
 | `src/feature/ui/CallController.*` | Ring + in-call UI |
 | `src/base/media/CallMediaEngine.*` | PC + SFU media backend |
@@ -220,4 +221,4 @@ Do **not** combine engine pending-buffer rewrites with topology moves in one PR.
 | [P2P_MESSAGING.md](P2P_MESSAGING.md) | Direct/group chat carrier under signaling |
 | [PLATFORMS.md](PLATFORMS.md) | Mic/camera/Local Network per OS |
 | [projects/p2p-av-calls/DESIGN.md](../../projects/p2p-av-calls/DESIGN.md) | Product design + entity model |
-| [projects/p2p-av-calls/DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) | V014–V024 ADRs |
+| [projects/p2p-av-calls/DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) | V014–V025 ADRs |

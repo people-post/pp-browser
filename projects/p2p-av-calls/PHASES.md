@@ -70,7 +70,7 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 - [x] Rotate media key on leave + overlapping epochs (V003) — existing a1 path
 - [ ] In-call roster (mute / camera / speaking if cheap) — mute/camera roster exists; speaking pending
 - [x] Reuse a3 Opus + H264 HW — **no** new device codec matrix in a4
-- [ ] ICE-fail **1:1** → SFU auto path — deferred (N=2 must stay P2P; N≥3 ICE-fail → SFU already wired); see CURRENT_STATE / CALLS.md
+- [x] ICE-fail **1:1** stays P2P (V025) — timeout + Retry; N≥3 ICE-fail → SFU wired; no auto 1:1 SFU
 
 ## a5 — Cap, polish, reconnect
 

@@ -451,7 +451,7 @@ Open public directory; paid settle UI; pure `min(price)` sort; hardcoded N014 st
 
 ### Same policy brain, two backends
 
-| | **1:1 P2P** (ICE OK) | **SFU / group** (N≥3, or 1:1 ICE fail → hop) |
+| | **1:1 P2P** (ICE OK) | **SFU / group** (N≥3 only; see V025) |
 |--|----------------------|--------------------------------------------------|
 | Transport | Existing libdatachannel PeerConnection / RTP | `media_relay` + N021 framing |
 | Fan-out | N/A (one peer) | Subscribe `(stream_id, channel_id)` |
@@ -507,4 +507,22 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 | **a4 polish / a5** | Full **video_lo + video_hi**; focus-only hi; encode-hi-only-when-useful on both backends |
 
 **Rationale:** Users need fluent A/V on volatile links in 1:1 too; duplicating policy only for group causes drift. Shared brain + different pipes matches V021 soft-migrate.  
-**Alternatives:** Adaptation only on SFU (rejected — 1:1 regresses); force all 1:1 via relay (rejected — extra hop when P2P works); always encode hi+lo (rejected on weak mobiles).
+**Alternatives:** Adaptation only on SFU (rejected — 1:1 regresses); force all 1:1 via relay (rejected — extra hop when P2P works); always encode hi+lo (rejected on weak mobiles).  
+**Updates:** SFU column “1:1 ICE fail → hop” superseded by [V025](#v025--no-auto-sfu-for-11-ice-fail-retry-on-p2p).
+
+---
+
+## V025 — No auto-SFU for 1:1 ICE fail; Retry on P2P
+
+**Date:** 2026-07-31  
+**Decision:** Auto `media_relay` attach is **group-only (N≥3)**. Plain 1:1 must not enter SFU attach-wait or “group needs media_relay” UX when ICE fails or the PC closes.
+
+| Path | Rule |
+|------|------|
+| **N=2** | Stay on P2P. On ICE `failed` or connect timeout (~15s): mark connect-failed; keep session; UI shows honest failure + **Retry** (rebuild PC as offerer). Do **not** auto-leave and do **not** start SFU. |
+| **N≥3** | Soft-migrate (V021) + ICE-fail → SFU recovery remain wired. |
+| **Future NAT 1:1** | May use a hop only via an **explicit** product path / ADR — not by binding ICE `failed` to `ShouldUseMediaRelay`. |
+
+**Rationale:** Auto 1:1→SFU misfired attach-wait and group-only toasts when no hop existed; LAN/Local Network failures need Retry + OS tips, not a group path.  
+**Alternatives:** Auto SFU on 1:1 ICE fail when hop exists (deferred — false group UX); leave call on timeout (rejected — Retry is better).  
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) topology rules; `CallMediaTopology::ShouldUseMediaRelay` is N≥3 only.

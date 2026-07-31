@@ -33,7 +33,7 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 18 | Video codec | **H264** CBP via **platform HW** (V017); Linux VA-API best-effort |
 | 19 | Video UI path | SDL camera → `CameraCaptureOrientation` → platform HW H264 → persistent GL texture + letterbox tiles (V018) |
 | 20 | Call media shape | Always Opus+H264 m-lines; Voice/Video = entry UX only; audio mandatory / video best-effort (V019) |
-| 21 | a4 topology | Blind forwarder for N≥3; 1:1 P2P; soft-migrate on 3rd; pick/re-pick by coordinator (V021) |
+| 21 | a4 topology | Blind forwarder for N≥3; 1:1 P2P + Retry on fail (V025); soft-migrate on 3rd (V021) |
 | 22 | Relay privacy | Relay never holds call media keys / never decodes payloads (V021) |
 | 23 | Relay bandwidth / bills | **A↑/A↓**, **B↑/B↓**, **C↑/C↓**; quote + ceiling; initiator pays (V022 / N019) |
 | 24 | Hop pick | Closed set contacts∪seed short-term; risk-aware score; pricing regulates later (V023 / N020) |
@@ -174,7 +174,7 @@ ICE trickle / SDP: embed in signaling `detail` or follow-up system controls as n
 - **SDP shape (V019):** Every call’s initial offer/answer includes **both** audio and video m-lines. Mute/camera change sent content only (no renegotiation). Audio is mandatory; video encode/decode is best-effort and must not tear down voice.  
 - **Voice vs Video start:** Two header buttons for familiar UX; once connected, same in-call model (Camera allowed; show remote video whenever peer sends frames). `media_mode` may remain for invite/history copy.  
 - **Capture / blit:** SDL3 camera on user enable; `CameraCaptureOrientation` uprights mobile sensor buffers (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation); shell RML tiles + persistent GL texture with aspect-correct letterbox (V018); camera off on join (V009). Encode defaults ~640×360 (desktop) / ~360×640 (portrait mobile after rotation) @ 15–24 fps. **All calls** use adaptive priority per **V024** (audio ≫ video_lo ≫ video_hi) — 1:1 P2P and SFU share one policy module, two backends.  
-- **Topology:** 1:1 **P2P** when ICE works; **N≥3** (or 1:1 ICE fail) uses **`media_relay`** (V020/V021). Soft-migrate same `call_id`; stay on SFU if N later drops to 2 (v1).  
+- **Topology:** 1:1 **P2P** when N=2 (ICE fail → timeout + Retry on P2P, not SFU — V025); **N≥3** uses **`media_relay`** (V020/V021). Soft-migrate same `call_id`; stay on SFU if N later drops to 2 (v1).  
 
 ### Adaptive media — shared policy (V024)
 

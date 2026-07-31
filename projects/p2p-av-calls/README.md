@@ -1,6 +1,6 @@
 # P2P A/V calls
 
-**Status:** **a4 thin landed** (soft-migrate + V024 adaptation + SFU engine); group chrome / AEAD / ICE-fail auto polish next  
+**Status:** **a4 thin landed** (soft-migrate + V024 + SFU engine; V025 = no auto 1:1 SFU); group chrome / AEAD / extract polish next  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [p2p-mesh](../p2p-mesh/) (n4-media blind forwarder), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CALLS.md](../../docs/architecture/CALLS.md) (code-architecture: planes, topology, target split)

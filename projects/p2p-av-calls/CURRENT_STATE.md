@@ -9,7 +9,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | Area | State |
 |------|-------|
 | Project docs | **a3 done**; **a4 thin slice landed** — V020–V024; code map in [CALLS.md](../../docs/architecture/CALLS.md) |
-| ADRs | V001–V024 in [DECISIONS.md](DECISIONS.md) |
+| ADRs | V001–V025 in [DECISIONS.md](DECISIONS.md) |
 | a2/a3 media | LAN 1:1 voice + video — **same matrix as Windows for macOS**: Android↔Win / Android↔Mac bidirectional; ↔Linux voice OK, video receive-only when Linux has no camera; Linux↔Mac / Linux↔Win OK 2026-07-31; NAT still unclaimed |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3; shared V024 adaptation; SFU engine mode (see below) |
 
@@ -45,15 +45,14 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | App AEAD on SFU payloads under call media key | Follow-on |
 | Roster proof auth (beyond `auth==call_id`) | Follow-on |
 | Re-pick hop on failure cool-down | Partial (attach retries ranked hops) |
-| ICE-fail **1:1** → SFU when hop exists | Helper exists; auto path intentionally **not** used for N=2 (avoid false group toasts); N≥3 ICE-fail → SFU wired |
-| `CallSessionManager` extract | Target in [CALLS.md](../../docs/architecture/CALLS.md) — TopologyController + P2pSignalingBridge |
+| ICE-fail **1:1** → SFU | **Rejected for auto** (V025); 1:1 uses timeout + Retry on P2P; N≥3 ICE-fail → SFU wired |
+| `CallSessionManager` extract | **Landed** — `CallTopologyController` + `CallP2pSignalingBridge` per [CALLS.md](../../docs/architecture/CALLS.md) |
 
 ## Next agent — start here
 
 1. Group / multi-invite UI + mid-call guest dogfood on seed SFU.  
-2. Optional: extract `CallTopologyController` (behavior-preserving) per CALLS.md.  
-3. Optional AEAD under call media key on SFU frames.  
-4. a5: full lo/hi on both backends.
+2. Optional AEAD under call media key on SFU frames.  
+3. a5: full lo/hi on both backends.
 
 ## Agent traps
 
