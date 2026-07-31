@@ -274,18 +274,25 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
     if (call_id.empty() || media_peer_identity_.empty()) {
       return;
     }
-    CallSdpDetail detail;
-    detail.call_id = call_id;
-    if (auto local_identity = LocalRelayIdentity()) {
-      detail.identity = *local_identity;
-    }
-    detail.sdp_type = local.type;
-    detail.sdp = local.sdp;
-    auto encoded = CallControlCodec::EncodeSdp(detail);
-    if (!encoded) {
-      return;
-    }
-    (void)SendCallDirectMessage(media_peer_identity_, CallControlType::CallSdp, *encoded, "Call signaling");
+    // Hop off the PC/Start stack (media mutex may be held during answerer Flush).
+    const std::string peer = media_peer_identity_;
+    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer, local]() {
+      if (media_call_id_ != call_id && media_.ActiveCallId() != call_id) {
+        return;
+      }
+      CallSdpDetail detail;
+      detail.call_id = call_id;
+      if (auto local_identity = LocalRelayIdentity()) {
+        detail.identity = *local_identity;
+      }
+      detail.sdp_type = local.type;
+      detail.sdp = local.sdp;
+      auto encoded = CallControlCodec::EncodeSdp(detail);
+      if (!encoded) {
+        return;
+      }
+      (void)SendCallDirectMessage(peer, CallControlType::CallSdp, *encoded, "Call signaling");
+    });
   });
 
   media_.SetOnIceCandidate([this](const CallMediaEngine::IceCandidate& ice) {
@@ -293,18 +300,24 @@ void CallSessionManager::BindMediaCallbacks(const std::string& peer_identity) {
     if (call_id.empty() || media_peer_identity_.empty()) {
       return;
     }
-    CallIceDetail detail;
-    detail.call_id = call_id;
-    if (auto local_identity = LocalRelayIdentity()) {
-      detail.identity = *local_identity;
-    }
-    detail.candidate = ice.candidate;
-    detail.mid = ice.mid;
-    auto encoded = CallControlCodec::EncodeIce(detail);
-    if (!encoded) {
-      return;
-    }
-    (void)SendCallDirectMessage(media_peer_identity_, CallControlType::CallIce, *encoded, "Call signaling");
+    const std::string peer = media_peer_identity_;
+    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer, ice]() {
+      if (media_call_id_ != call_id && media_.ActiveCallId() != call_id) {
+        return;
+      }
+      CallIceDetail detail;
+      detail.call_id = call_id;
+      if (auto local_identity = LocalRelayIdentity()) {
+        detail.identity = *local_identity;
+      }
+      detail.candidate = ice.candidate;
+      detail.mid = ice.mid;
+      auto encoded = CallControlCodec::EncodeIce(detail);
+      if (!encoded) {
+        return;
+      }
+      (void)SendCallDirectMessage(peer, CallControlType::CallIce, *encoded, "Call signaling");
+    });
   });
 
   media_.SetOnStateChanged([this](const std::string& state) {
@@ -395,7 +408,35 @@ void CallSessionManager::ScheduleStartMediaAsOfferer(const std::string& call_id,
     if (auto started = StartMediaAsOfferer(call_id, peer_identity); !started) {
       log().warning << "StartMediaAsOfferer failed: " << started.error().message;
       last_media_error_ = started.error().message;
+      NotifyRingChanged();
+      return;
     }
+    // Fast peers (Linux) often deliver the first offer before Mac answerer Start(). If that
+    // buffered offer was dropped, a second copy on the next UI turn recovers the call.
+    // Answerer ignores duplicates once applied. Android→Mac rarely needs this (slower offerer).
+    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer_identity]() {
+      if (!media_.IsActive() || media_.ActiveCallId() != call_id || media_.IsConnected() ||
+          media_.IsSfuMode()) {
+        return;
+      }
+      auto local = media_.CurrentLocalDescription();
+      if (!local || local->sdp.empty()) {
+        return;
+      }
+      CallSdpDetail detail;
+      detail.call_id = call_id;
+      if (auto local_identity = LocalRelayIdentity()) {
+        detail.identity = *local_identity;
+      }
+      detail.sdp_type = local->type;
+      detail.sdp = local->sdp;
+      auto encoded = CallControlCodec::EncodeSdp(detail);
+      if (!encoded) {
+        return;
+      }
+      log().info << "Re-sending local offer for answerer race call_id=" << call_id;
+      (void)SendCallDirectMessage(peer_identity, CallControlType::CallSdp, *encoded, "Call signaling");
+    });
     NotifyRingChanged();
   });
 }
@@ -408,9 +449,7 @@ void CallSessionManager::ScheduleStartMediaAsAnswerer(const std::string& call_id
     if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
       return;
     }
-    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-      return;
-    }
+    // Always call Start — if already active it still flushes a late-buffered offer.
     if (auto started = StartMediaAsAnswerer(call_id, peer_identity); !started) {
       log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
       last_media_error_ = started.error().message;
@@ -1432,7 +1471,16 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (media_.IsSfuMode()) {
       return {};
     }
-    return media_.SetRemoteDescription(sdp->sdp_type, sdp->sdp);
+    auto applied = media_.SetRemoteDescription(sdp->sdp_type, sdp->sdp);
+    // Offer beat answerer Start (common for Linux dial → Mac). Ensure bring-up is scheduled.
+    const bool is_offer = (sdp->sdp_type == "offer" || sdp->sdp_type == "Offer");
+    if (applied && !media_.IsActive() && is_offer) {
+      const std::string call_id = sdp->call_id;
+      if (!call_id.empty() && media_attempted_calls_.count(call_id) > 0) {
+        ScheduleStartMediaAsAnswerer(call_id, sender_identity);
+      }
+    }
+    return applied;
   }
   case CallControlType::CallIce: {
     auto ice = CallControlCodec::DecodeIce(detail_json);

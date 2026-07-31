@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -72,6 +73,8 @@ public:
 
   Roe<void> SetRemoteDescription(const std::string& type, const std::string& sdp);
   Roe<void> AddRemoteIceCandidate(const std::string& candidate, const std::string& mid);
+  /** Snapshot of current local SDP (for offerer re-send after answerer race). */
+  std::optional<LocalDescription> CurrentLocalDescription() const;
   void Stop();
 
   void SetMuted(bool muted);

@@ -11,6 +11,7 @@
 #include <rtc/rtc.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <deque>
@@ -411,14 +412,33 @@ struct CallMediaEngine::Impl {
       pc->close();
       pc.reset();
     }
-    pending_remote_sdp.reset();
-    pending_remote_ice.clear();
+    // Keep pending_remote_sdp / pending_remote_ice across PC rebuilds. Linux offerer often
+    // delivers CallSdp before Mac answerer Start(); a TearDown between buffer and Flush used
+    // to drop the only offer (no retransmission) → stuck Connecting when Linux dials Mac.
     remote_description_applied = false;
   }
 
-  Roe<void> ApplyRemoteDescriptionLocked(const std::string& type, const std::string& sdp) {
+  void ClearPendingRemoteLocked() {
+    pending_remote_sdp.reset();
+    pending_remote_ice.clear();
+  }
+
+  static std::string NormalizeSdpType(std::string type) {
+    for (char& c : type) {
+      c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return type;
+  }
+
+  Roe<void> ApplyRemoteDescriptionLocked(const std::string& type_in, const std::string& sdp) {
     if (!pc) {
       return Error("Media peer connection not started");
+    }
+    const std::string type = NormalizeSdpType(type_in);
+    // Duplicate offer after answerer already applied (offerer resend) — ignore.
+    if (remote_description_applied && role == Role::Answerer && type == "offer") {
+      SDL_Log("CallMediaEngine: ignoring duplicate remote offer");
+      return {};
     }
     try {
       rtc::Description remote(sdp, type);
@@ -448,7 +468,13 @@ struct CallMediaEngine::Impl {
     }
     LocalDescription pending = std::move(*pending_remote_sdp);
     pending_remote_sdp.reset();
-    return ApplyRemoteDescriptionLocked(pending.type, pending.sdp);
+    auto applied = ApplyRemoteDescriptionLocked(pending.type, pending.sdp);
+    if (!applied) {
+      // Put the offer back so a later Start/retry can consume it.
+      pending_remote_sdp = std::move(pending);
+      return applied;
+    }
+    return {};
   }
 
   Roe<void> EnsureAudioSubsystem() {
@@ -1048,6 +1074,10 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
     }
     if (impl_->active) {
       if (impl_->call_id == call_id) {
+        // Already up — still flush a late-buffered offer (Linux dial → Mac answerer race).
+        if (auto flushed = impl_->FlushPendingRemoteLocked(); !flushed) {
+          return flushed.error();
+        }
         return {};
       }
       return Error("Call media engine already active");
@@ -1065,11 +1095,7 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
       impl_->TearDownAudioLocked();
       return pc.error();
     }
-    if (auto flushed = impl_->FlushPendingRemoteLocked(); !flushed) {
-      impl_->TearDownAudioLocked();
-      impl_->TearDownPcLocked();
-      return flushed.error();
-    }
+    // Mark active before Flush so answer/ICE callbacks see a consistent call_id.
     impl_->sfu_mode = false;
     impl_->sfu_send = nullptr;
     impl_->call_id = call_id;
@@ -1081,6 +1107,13 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
     impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
     impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
     impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
+    if (auto flushed = impl_->FlushPendingRemoteLocked(); !flushed) {
+      impl_->active = false;
+      impl_->call_id.clear();
+      impl_->TearDownAudioLocked();
+      impl_->TearDownPcLocked();
+      return flushed.error();
+    }
     // Do not invoke on_state_changed under this lock — callbacks call ActiveCallId().
     impl_->ApplyStateLocked("connecting");
     impl_->StartCaptureLoop();
@@ -1171,10 +1204,13 @@ Roe<void> CallMediaEngine::SetRemoteDescription(const std::string& type, const s
   std::lock_guard lock(impl_->mutex);
   if (!impl_->pc) {
     // Offer/answer often arrives before ScheduleStartMedia* finishes on LAN.
+    // Linux offerer is typically faster than Android — Mac answerer hits this path more.
     LocalDescription pending;
-    pending.type = type;
+    pending.type = Impl::NormalizeSdpType(type);
     pending.sdp = sdp;
     impl_->pending_remote_sdp = std::move(pending);
+    SDL_Log("CallMediaEngine: buffered remote %s (%zu bytes) until PC start",
+            impl_->pending_remote_sdp->type.c_str(), sdp.size());
     return {};
   }
   return impl_->ApplyRemoteDescriptionLocked(type, sdp);
@@ -1200,11 +1236,27 @@ Roe<void> CallMediaEngine::AddRemoteIceCandidate(const std::string& candidate, c
   return {};
 }
 
+std::optional<CallMediaEngine::LocalDescription> CallMediaEngine::CurrentLocalDescription() const {
+  std::lock_guard lock(impl_->mutex);
+  if (!impl_->pc) {
+    return std::nullopt;
+  }
+  auto desc = impl_->pc->localDescription();
+  if (!desc) {
+    return std::nullopt;
+  }
+  LocalDescription local;
+  local.type = desc->typeString();
+  local.sdp = std::string(*desc);
+  return local;
+}
+
 void CallMediaEngine::Stop() {
   StateChangedFn state_cb;
   {
     std::lock_guard lock(impl_->mutex);
-    if (!impl_->active && !impl_->pc && !impl_->sfu_mode) {
+    if (!impl_->active && !impl_->pc && !impl_->sfu_mode && !impl_->pending_remote_sdp &&
+        impl_->pending_remote_ice.empty()) {
       return;
     }
     impl_->active = false;
@@ -1213,6 +1265,7 @@ void CallMediaEngine::Stop() {
     impl_->connected_at_ms.store(0, std::memory_order_relaxed);
     impl_->TearDownAudioLocked();
     impl_->TearDownPcLocked();
+    impl_->ClearPendingRemoteLocked();
     impl_->sfu_mode = false;
     impl_->sfu_send = nullptr;
     impl_->call_id.clear();
