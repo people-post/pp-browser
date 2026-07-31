@@ -10,7 +10,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 |------|-------|
 | Project docs | **a3 done**; **a4 thin slice landed** — V020–V024; code map in [CALLS.md](../../docs/architecture/CALLS.md) |
 | ADRs | V001–V025 in [DECISIONS.md](DECISIONS.md) |
-| a2/a3 media | LAN 1:1 voice + video — **same matrix as Windows for macOS**: Android↔Win / Android↔Mac bidirectional; ↔Linux voice OK, video receive-only when Linux has no camera; Linux↔Mac / Linux↔Win OK 2026-07-31; NAT still unclaimed |
+| a2/a3 media | LAN 1:1 voice + video — Android↔Win / Android↔Mac / **Win↔Mac** bidirectional; ↔Linux voice OK, video receive-only when Linux has no camera; Linux↔Mac / Linux↔Win OK 2026-07-31; NAT still unclaimed |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3; shared V024 adaptation; SFU engine mode (see below) |
 
 ## a4 thin in code

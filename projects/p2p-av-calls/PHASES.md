@@ -48,7 +48,7 @@ Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wir
 - [x] Capture + encode + RTP video track; decode + persistent GL texture tiles (V018); encode ~640×360 desktop / ~360×640 mobile after orientation @ 15–24 fps
 - [x] Shell: unified in-call chrome + **Camera** on voice- and video-started calls; stage/PiP (V019); camera off on join (V009); compact icon mute/camera/leave
 - [x] Mobile capture orientation (`CameraCaptureOrientation`: Android Camera2 sensor + display; iOS interface orientation) + tile letterbox
-- [x] LAN dogfood: Android ↔ Windows / **Android ↔ macOS** bidirectional; Android→Linux / Windows→Linux / **Mac→Linux** one-way video when Linux host has **no camera** (receive/display OK); iOS wiring done — **OK 2026-07-31**; iOS device dogfood optional
+- [x] LAN dogfood: Android ↔ Windows / **Android ↔ macOS** / **Windows ↔ macOS** bidirectional; Android→Linux / Windows→Linux / **Mac→Linux** one-way video when Linux host has **no camera** (receive/display OK); iOS wiring done — **OK 2026-07-31**; iOS device dogfood optional
 - [x] Document LAN video OK + Linux no-camera / no-encoder send limits; **do not** claim NAT / seed SFU
 - [x] iOS mic / `AVAudioSession` / camera usage + background `audio` — **wiring done**; device dogfood optional
 - [x] macOS Local Network usage string (`NSLocalNetworkUsageDescription`) for Sequoia LAN ICE — packaged Info.plist

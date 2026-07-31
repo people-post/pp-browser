@@ -53,7 +53,7 @@ Agents: code “where does X live?” → **CALLS**. Product “should we…?”
 | a0 | Mesh/SFU prerequisites alignment | **Done** |
 | a1 | Signaling + session + history + ring wake | **Done** |
 | a2 | 1:1 voice (WebRTC + LAN dogfood) | **Done** — LAN Opus OK; NAT unclaimed |
-| a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **Done** — Android↔Win / Android↔Mac bidirectional; Linux receive-only (no camera); NAT unclaimed |
+| a3 | 1:1 video (LAN; H264 platform HW; unified in-call) | **Done** — Android↔Win / Android↔Mac / **Win↔Mac** bidirectional; Linux receive-only (no camera); NAT unclaimed |
 | a4 | Group ≤8 via **`media_relay`**, guests, rotate | **Thin landed** — soft-migrate + V024 + SFU mode; chrome/AEAD polish next |
 | a5 | Cap decision 8→16, polish | Pending |
 | a6 | Promote contracts to `docs/` | Pending |

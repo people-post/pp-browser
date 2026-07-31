@@ -23,8 +23,8 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMedia
 | Platform | SDL audio backend | Extra build packages? | Product checklist (not all done) |
 |----------|-------------------|----------------------|----------------------------------|
 | Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev`; video: `libva-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy; VA driver at runtime for H264; LAN video **receive** from Android/Win/Mac OK 2026-07-31 (camera-less dogfood host) |
-| Windows | WASAPI | No | OS microphone privacy; LAN 1:1 dogfood vs Android/Linux |
-| macOS | CoreAudio | No | Mic / camera + **macOS 15+ Local Network** (`NSLocalNetworkUsageDescription` in [`packaging/macos/Info.plist`](../../packaging/macos/Info.plist)); LAN 1:1 dogfood **same matrix as Windows** vs Android/Linux 2026-07-31 |
+| Windows | WASAPI | No | OS microphone privacy; LAN 1:1 dogfood vs Android/Linux/**macOS** (Win↔Mac bidirectional OK 2026-07-31) |
+| macOS | CoreAudio | No | Mic / camera + **macOS 15+ Local Network** (`NSLocalNetworkUsageDescription` in [`packaging/macos/Info.plist`](../../packaging/macos/Info.plist)); LAN 1:1 dogfood vs Android/Linux/**Windows** (Win↔Mac bidirectional OK 2026-07-31) |
 | Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + `CAMERA` + runtime; link `mediandk` + `camera2ndk`; LAN bidirectional vs Win/Mac OK 2026-07-31 |
 | iOS | CoreAudio | No | a3 wiring (V016): `NSMicrophoneUsageDescription` + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio`; device dogfood optional |
 

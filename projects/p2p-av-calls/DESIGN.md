@@ -29,7 +29,7 @@ Cross-project: [p2p-mesh](../p2p-mesh/), [group-chat](../group-chat/), [e2e-mess
 | 14 | Persistence | `call_*` in **profile.db**; keys vault-backed (V011) |
 | 15 | Signaling carrier | Direct E2E `ChatPayload` system controls (V012) |
 | 16 | WebRTC lib | **libdatachannel + libopus + SDL** (V014) |
-| 17 | a3 scope | LAN 1:1 video done (Win + **macOS** + Android dogfood; **iOS** wiring); **iOS** device optional (V016, 2026-07-31) |
+| 17 | a3 scope | LAN 1:1 video done (Win + **macOS** + Android dogfood incl. **Win↔Mac**; **iOS** wiring); **iOS** device optional (V016, 2026-07-31) |
 | 18 | Video codec | **H264** CBP via **platform HW** (V017); Linux VA-API best-effort |
 | 19 | Video UI path | SDL camera → `CameraCaptureOrientation` → platform HW H264 → persistent GL texture + letterbox tiles (V018) |
 | 20 | Call media shape | Always Opus+H264 m-lines; Voice/Video = entry UX only; audio mandatory / video best-effort (V019) |
@@ -309,7 +309,7 @@ Honest mobile / group video needs mesh progress roughly:
 
 `n1` (done) → `np` (`pp-node`) → `nr` / `nu` → `n3` circuit → **n4-media true SFU** (seed + desktop checkboxes, volunteer) → a4
 
-**Delivery (V010 / V016 / V020):** **a1–a3** done on LAN (voice + 1:1 video; Win/macOS/Android matrix). **a4 requires true SFU** (no full-mesh). NAT’d mobile green path after seed + desktop SFU dogfood. **iOS** wiring in a3 (device dogfood optional).
+**Delivery (V010 / V016 / V020):** **a1–a3** done on LAN (voice + 1:1 video; Win/macOS/Android matrix incl. **Win↔Mac**). **a4 requires true SFU** (no full-mesh). NAT’d mobile green path after seed + desktop SFU dogfood. **iOS** wiring in a3 (device dogfood optional).
 
 ### Mesh alignment (a0) — locked guidance
 
