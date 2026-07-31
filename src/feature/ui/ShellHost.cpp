@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <sstream>
@@ -155,6 +156,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
     ctor.Bind("call_in_progress_title", &host.state_.call_in_progress.title);
     ctor.Bind("call_in_progress_subtitle", &host.state_.call_in_progress.subtitle);
+    ctor.Bind("call_in_progress_status_hint", &host.state_.call_in_progress.status_hint);
     ctor.Bind("call_in_progress_mic_level", &host.state_.call_in_progress.mic_level);
     ctor.Bind("call_in_progress_peer_level", &host.state_.call_in_progress.peer_level);
     ctor.Bind("call_in_progress_mic_hint", &host.state_.call_in_progress.mic_hint);
@@ -167,6 +169,18 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_elapsed", &host.state_.call_in_progress.elapsed);
     ctor.Bind("call_in_progress_peer_label", &host.state_.call_in_progress.peer_label);
     ctor.Bind("call_in_progress_remote_placeholder", &host.state_.call_in_progress.remote_placeholder);
+    ctor.Bind("call_in_progress_show_roster", &host.state_.call_in_progress.show_roster);
+    ctor.Bind("call_in_progress_show_invite", &host.state_.call_in_progress.show_invite);
+    ctor.Bind("call_in_progress_show_retry", &host.state_.call_in_progress.show_retry);
+    ctor.Bind("call_in_progress_participant_count", &host.state_.call_in_progress.participant_count);
+    if (auto roster_handle = ctor.RegisterStruct<CallRosterParticipantState>()) {
+      roster_handle.RegisterMember("name", &CallRosterParticipantState::name);
+      roster_handle.RegisterMember("audio_muted", &CallRosterParticipantState::audio_muted);
+      roster_handle.RegisterMember("video_enabled", &CallRosterParticipantState::video_enabled);
+      roster_handle.RegisterMember("is_local", &CallRosterParticipantState::is_local);
+    }
+    ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
+    ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
     ctor.Bind("statusbar_visible", &host.state_.statusbar_visible);
     ctor.Bind("statusbar_connection", &host.state_.statusbar_connection);
@@ -212,8 +226,10 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
     ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
     ctor.BindEventCallback("call_leave", &ShellHost::CallLeaveCallback);
+    ctor.BindEventCallback("call_retry", &ShellHost::CallRetryCallback);
     ctor.BindEventCallback("call_mute", &ShellHost::CallMuteCallback);
     ctor.BindEventCallback("call_camera", &ShellHost::CallCameraCallback);
+    ctor.BindEventCallback("call_invite", &ShellHost::CallInviteCallback);
     ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
     ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
     ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
@@ -682,6 +698,7 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_status_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_mic_level");
   DataModelHost::Instance().Dirty("window", "call_in_progress_peer_level");
   DataModelHost::Instance().Dirty("window", "call_in_progress_mic_hint");
@@ -694,6 +711,11 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_elapsed");
   DataModelHost::Instance().Dirty("window", "call_in_progress_peer_label");
   DataModelHost::Instance().Dirty("window", "call_in_progress_remote_placeholder");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_show_roster");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_show_invite");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_show_retry");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_participant_count");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_roster");
   DataModelHost::Instance().Dirty("window", "activity_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_connection");
@@ -792,7 +814,15 @@ void ShellHost::FlushPendingSyncLayout() {
     return;
   }
   sync_pending_ = false;
-  SyncLayout();
+  try {
+    SyncLayout();
+  } catch (const std::exception& e) {
+    static auto logger = logging::getLogger("ShellHost");
+    logger.error << "SyncLayout failed: " << e.what();
+  } catch (...) {
+    static auto logger = logging::getLogger("ShellHost");
+    logger.error << "SyncLayout failed with unknown exception";
+  }
   if (restore_focus_after_sync_) {
     restore_focus_after_sync_ = false;
     RestoreFocus();
@@ -1283,8 +1313,18 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-bar-main\">";
   out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\"></p>";
   out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\"></p>";
+  out << "<p class=\"text-xs shell-call-bar-hint\" data-if=\"call_in_progress_show_retry\" "
+         "data-rml=\"call_in_progress_status_hint\"></p>";
   out << "</div>";
   out << "<div class=\"shell-call-bar-actions row\">";
+  out << "<button class=\"shell-call-retry\" type=\"button\" data-if=\"call_in_progress_show_retry\" "
+         "data-event-click=\"call_retry()\">";
+  out << "<svg src=\"../icons/sync.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+  out << "</button>";
+  out << "<button class=\"shell-call-invite\" type=\"button\" data-if=\"call_in_progress_show_invite\" "
+         "data-event-click=\"call_invite()\">";
+  out << "<svg src=\"../icons/plus.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+  out << "</button>";
   out << "<button class=\"shell-call-mute\" type=\"button\" "
          "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
   out << "<svg data-if=\"!call_in_progress_muted\" src=\"../icons/mic.svg\" width=\"18\" height=\"18\" "
@@ -1303,7 +1343,15 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<svg src=\"../icons/phone-hangup.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
   out << "</button>";
   out << "</div></div>";
-  out << "<div class=\"shell-call-bar-meters row\">";
+  out << "<div class=\"shell-call-roster row\" data-if=\"call_in_progress_show_roster\">";
+  out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-roster-chip row\">";
+  out << "<span class=\"text-xs shell-call-roster-name\" data-rml=\"p.name\"></span>";
+  out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"12\" height=\"12\" "
+         "crop-to-content=\"true\"></svg>";
+  out << "<svg data-if=\"p.video_enabled\" src=\"../icons/video.svg\" width=\"12\" height=\"12\" "
+         "crop-to-content=\"true\"></svg>";
+  out << "</div></div>";
+  out << "<div class=\"shell-call-bar-meters row\" data-if=\"!call_in_progress_show_roster\">";
   out << "<div class=\"shell-call-meter shell-call-meter--compact\">";
   out << "<span class=\"text-xs shell-call-meter-label\">You</span>";
   out << "<div class=\"shell-call-meter-track row\">";
@@ -1796,6 +1844,13 @@ void ShellHost::CallLeaveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*
   }
 }
 
+void ShellHost::CallRetryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                  const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->RetryConnect();
+  }
+}
+
 void ShellHost::CallMuteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                  const Rml::VariantList& /*args*/) {
   if (auto* call = Instance().call_) {
@@ -1807,6 +1862,13 @@ void ShellHost::CallCameraCallback(Rml::DataModelHandle /*model*/, Rml::Event& /
                                    const Rml::VariantList& /*args*/) {
   if (auto* call = Instance().call_) {
     call->ToggleCamera();
+  }
+}
+
+void ShellHost::CallInviteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                   const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->OpenMidCallInvitePicker();
   }
 }
 

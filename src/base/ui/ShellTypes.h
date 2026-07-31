@@ -158,6 +158,14 @@ struct CallRingState {
   Rml::String decline_label;
 };
 
+/** One row in the in-call participant roster strip. */
+struct CallRosterParticipantState {
+  Rml::String name;
+  bool audio_muted = false;
+  bool video_enabled = false;
+  bool is_local = false;
+};
+
 /** Active in-call chrome. */
 struct CallInProgressState {
   bool active = false;
@@ -166,9 +174,19 @@ struct CallInProgressState {
   bool stage_visible = false;
   bool remote_video = false;
   bool local_preview = false;
+  /** True when joined count > 2 or call started from a group thread. */
+  bool show_roster = false;
+  /** Mid-call invite affordance. */
+  bool show_invite = false;
+  /** Show Retry after 1:1 P2P connect fail/timeout. */
+  bool show_retry = false;
+  int participant_count = 0;
+  std::vector<CallRosterParticipantState> roster;
   Rml::String call_id;
   Rml::String title;
   Rml::String subtitle;
+  /** Secondary tip under subtitle (Local Network / mic / firewall). */
+  Rml::String status_hint;
   Rml::String elapsed;
   Rml::String peer_label;
   /** Quantized mic level 0..5 for speaking meter bars. */

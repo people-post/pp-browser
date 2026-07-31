@@ -19,10 +19,12 @@ public:
   CallRingtone& operator=(const CallRingtone&) = delete;
 
   void Start();
+  /** Async by default (safe from UI/Accept). Destructor joins. */
   void Stop();
   bool IsPlaying() const { return playing_.load(); }
 
 private:
+  void Stop(bool wait);
   void RunLoop();
 
   std::mutex mutex_;

@@ -471,9 +471,9 @@ void ContactsController::Refresh() {
     LoadSelectedDetail(selected_.id.c_str());
   }
   DirtyAll();
-  if (context_) {
-    context_->Update();
-  }
+  // Do not call context_->Update() here: Refresh runs from UI PostTasks (thread/message
+  // notify, directory shadow reply) that can interleave with SyncLayout remounts.
+  ShellHost::Instance().DirtyWindow();
 }
 
 void ContactsController::OnNavTabActivated() {
@@ -485,9 +485,7 @@ void ContactsController::OnNavTabActivated() {
   compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
   SyncFromStore();
   DirtyAll();
-  if (context_) {
-    context_->Update();
-  }
+  ShellHost::Instance().DirtyWindow();
 }
 
 void ContactsController::SelectContactCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -704,9 +702,7 @@ bool ContactsController::FlushSelectedContact() {
   DataModelHost::Instance().Dirty("contacts", "contacts");
   DataModelHost::Instance().Dirty("contacts", "selected");
   Hub().Inbox().NotifyThreadChanged();
-  if (context_) {
-    context_->Update();
-  }
+  ShellHost::Instance().DirtyWindow();
   return true;
 }
 
@@ -744,9 +740,7 @@ void ContactsController::OnAddContact() {
   SyncFromStore();
   OnSelectContact(created->id);
   DirtyAll();
-  if (context_) {
-    context_->Update();
-  }
+  ShellHost::Instance().DirtyWindow();
 }
 
 void ContactsController::OnStartChat() {

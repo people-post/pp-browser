@@ -60,15 +60,22 @@ const char* CallMediaAdaptation::ChannelTypeName(CallMediaRole role) {
   return "best_effort";
 }
 
-bool CallMediaTopology::ShouldUseMediaRelay(size_t joined_count, bool ice_failed_1to1) {
-  if (joined_count >= 3) {
-    return true;
-  }
-  return ice_failed_1to1 && joined_count == 2;
+bool CallMediaTopology::ShouldUseMediaRelay(size_t joined_count) {
+  return joined_count >= 3;
 }
 
 bool CallMediaTopology::ShouldSoftMigrateToSfu(size_t previous_joined, size_t new_joined) {
   return previous_joined < 3 && new_joined >= 3;
+}
+
+CallMediaPathAction CallMediaTopology::DecidePath(size_t joined_count, bool has_sfu_hint) {
+  if (joined_count >= 3) {
+    return CallMediaPathAction::UseSfu;
+  }
+  if (has_sfu_hint) {
+    return CallMediaPathAction::IgnoreSfuHint;
+  }
+  return CallMediaPathAction::StayP2p;
 }
 
 } // namespace pbr

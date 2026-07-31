@@ -12,6 +12,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
   }
 
   const bool labels_changed = synced.in_call_subtitle != next.in_call_subtitle ||
+                              synced.in_call_status_hint != next.in_call_status_hint ||
                               synced.ring_caller_label != next.ring_caller_label ||
                               synced.ring_media_label != next.ring_media_label ||
                               synced.in_call_title != next.in_call_title ||
@@ -27,6 +28,10 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.in_call_elapsed != next.in_call_elapsed ||
                               synced.in_call_peer_label != next.in_call_peer_label ||
                               synced.in_call_remote_placeholder != next.in_call_remote_placeholder ||
+                              synced.in_call_show_roster != next.in_call_show_roster ||
+                              synced.in_call_show_invite != next.in_call_show_invite ||
+                              synced.in_call_show_retry != next.in_call_show_retry ||
+                              synced.in_call_participant_count != next.in_call_participant_count ||
                               synced.ring_pulse != next.ring_pulse ||
                               synced.ring_conflict != next.ring_conflict ||
                               synced.ring_eyebrow != next.ring_eyebrow ||

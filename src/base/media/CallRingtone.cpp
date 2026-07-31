@@ -58,13 +58,18 @@ bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
 CallRingtone::CallRingtone() = default;
 
 CallRingtone::~CallRingtone() {
-  Stop();
+  Stop(/*wait=*/true);
 }
 
 void CallRingtone::Start() {
   std::lock_guard lock(mutex_);
   if (playing_.load()) {
     return;
+  }
+  // A prior async Stop() may still be joining — finish it before opening audio again.
+  if (thread_.joinable()) {
+    stop_ = true;
+    thread_.join();
   }
   if (wav_pcm_.empty()) {
     if (!LoadRingWav(wav_pcm_, wav_freq_, wav_channels_)) {
@@ -76,13 +81,34 @@ void CallRingtone::Start() {
   thread_ = std::thread([this]() { RunLoop(); });
 }
 
-void CallRingtone::Stop() {
+void CallRingtone::Stop(const bool wait) {
   stop_ = true;
-  if (thread_.joinable()) {
-    thread_.join();
+  std::thread finishing;
+  {
+    std::lock_guard lock(mutex_);
+    playing_ = false;
+    if (thread_.joinable()) {
+      finishing = std::move(thread_);
+    }
   }
-  std::lock_guard lock(mutex_);
-  playing_ = false;
+  if (!finishing.joinable()) {
+    return;
+  }
+  if (wait) {
+    finishing.join();
+    return;
+  }
+  // Never join the ringtone worker on the Accept/UI click path: that runs inside
+  // SDL/Rml event dispatch, and device close on the worker can wait on that thread.
+  std::thread([t = std::move(finishing)]() mutable {
+    if (t.joinable()) {
+      t.join();
+    }
+  }).detach();
+}
+
+void CallRingtone::Stop() {
+  Stop(/*wait=*/false);
 }
 
 void CallRingtone::RunLoop() {

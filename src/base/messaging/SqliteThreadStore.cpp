@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <nlohmann/json.hpp>
 
 namespace pbr {
@@ -23,6 +24,19 @@ namespace {
 
 constexpr int kProfileUserVersion = 2;
 constexpr int kThreadUserVersion = 1;
+
+/** sqlite3_column_text NULL → empty; never construct std::string from nullptr. */
+std::string SqlText(sqlite3_stmt* stmt, const int index) {
+  const unsigned char* text = sqlite3_column_text(stmt, index);
+  return text ? reinterpret_cast<const char*>(text) : std::string{};
+}
+
+std::optional<std::string> SqlTextOpt(sqlite3_stmt* stmt, const int index) {
+  if (sqlite3_column_type(stmt, index) == SQLITE_NULL) {
+    return std::nullopt;
+  }
+  return SqlText(stmt, index);
+}
 
 constexpr const char* kProfileSchemaV1 = R"sql(
 CREATE TABLE IF NOT EXISTS threads (
@@ -390,31 +404,32 @@ void SqliteThreadStore::EvictThreadDbsIfNeeded() const {
 
 Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(sqlite3_stmt* stmt) const {
   ThreadMessage message;
-  message.id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+  message.id = SqlText(stmt, 0);
   message.display_order = sqlite3_column_int64(stmt, 1);
-  message.sender_contact_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+  message.sender_contact_id = SqlText(stmt, 2);
   const void* blob = sqlite3_column_blob(stmt, 3);
   const int blob_size = sqlite3_column_bytes(stmt, 3);
-  std::vector<uint8_t> chat_payload(static_cast<const uint8_t*>(blob),
-                                    static_cast<const uint8_t*>(blob) + blob_size);
-  message.content_type = ContentTypeFromDb(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)));
-  if (sqlite3_column_text(stmt, 5)) {
-    message.payload_json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+  std::vector<uint8_t> chat_payload;
+  if (blob && blob_size > 0) {
+    const auto* bytes = static_cast<const uint8_t*>(blob);
+    chat_payload.assign(bytes, bytes + blob_size);
   }
-  if (sqlite3_column_text(stmt, 6)) {
-    message.text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+  message.content_type = ContentTypeFromDb(SqlText(stmt, 4));
+  if (sqlite3_column_type(stmt, 5) != SQLITE_NULL) {
+    message.payload_json = SqlText(stmt, 5);
   }
-  if (sqlite3_column_text(stmt, 7)) {
-    message.content_rml = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+  if (sqlite3_column_type(stmt, 6) != SQLITE_NULL) {
+    message.text = SqlText(stmt, 6);
   }
-  if (sqlite3_column_text(stmt, 9)) {
-    message.chat_actions = ChatActionsFromJsonString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9)));
+  message.content_rml = SqlTextOpt(stmt, 7);
+  if (sqlite3_column_type(stmt, 9) != SQLITE_NULL) {
+    message.chat_actions = ChatActionsFromJsonString(SqlText(stmt, 9));
   }
   message.timestamp = sqlite3_column_int64(stmt, 10);
   message.relay_visible = sqlite3_column_int(stmt, 11) != 0;
-  message.delivery = MessageDeliveryFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12)));
+  message.delivery = MessageDeliveryFromString(SqlText(stmt, 12));
   if (sqlite3_column_type(stmt, 13) != SQLITE_NULL) {
-    message.transport = MessageTransportFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13)));
+    message.transport = MessageTransportFromString(SqlText(stmt, 13));
   }
   if (sqlite3_column_type(stmt, 14) != SQLITE_NULL) {
     message.sender_seq = static_cast<uint64_t>(sqlite3_column_int64(stmt, 14));
@@ -422,18 +437,10 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(sqlite3_stmt* stmt) const {
   if (sqlite3_column_type(stmt, 15) != SQLITE_NULL) {
     message.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 15));
   }
-  if (sqlite3_column_type(stmt, 16) != SQLITE_NULL) {
-    message.target_message_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 16));
-  }
-  if (sqlite3_column_type(stmt, 17) != SQLITE_NULL) {
-    message.generation = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 17));
-  }
-  if (sqlite3_column_type(stmt, 18) != SQLITE_NULL) {
-    message.seq_owner_contact_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 18));
-  }
-  if (sqlite3_column_type(stmt, 19) != SQLITE_NULL) {
-    message.ai_invoke_mode = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 19));
-  }
+  message.target_message_id = SqlTextOpt(stmt, 16);
+  message.generation = SqlTextOpt(stmt, 17);
+  message.seq_owner_contact_id = SqlTextOpt(stmt, 18);
+  message.ai_invoke_mode = SqlTextOpt(stmt, 19);
   (void)ChatPayloadCodec::ApplyRowToMessage(chat_payload, message);
   return message;
 }
@@ -550,14 +557,13 @@ Roe<std::vector<Thread>> SqliteThreadStore::ListThreads() const {
 
 Thread SqliteThreadStore::ReadThreadRow(sqlite3_stmt* stmt) const {
   Thread thread;
-  thread.id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-  thread.kind = ThreadKindFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)));
-  if (sqlite3_column_text(stmt, 2)) {
-    thread.channel = ThreadChannelFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)));
+  thread.id = SqlText(stmt, 0);
+  thread.kind = ThreadKindFromString(SqlText(stmt, 1));
+  if (sqlite3_column_type(stmt, 2) != SQLITE_NULL) {
+    thread.channel = ThreadChannelFromString(SqlText(stmt, 2));
   }
-  thread.title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-  const nlohmann::json participants =
-      nlohmann::json::parse(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)), nullptr, false);
+  thread.title = SqlText(stmt, 3);
+  const nlohmann::json participants = nlohmann::json::parse(SqlText(stmt, 4), nullptr, false);
   if (participants.is_array()) {
     for (const auto& item : participants) {
       if (item.is_string()) {
@@ -567,21 +573,13 @@ Thread SqliteThreadStore::ReadThreadRow(sqlite3_stmt* stmt) const {
   }
   thread.updated_at = sqlite3_column_int64(stmt, 5);
   thread.unread_count = sqlite3_column_int(stmt, 6);
-  if (sqlite3_column_text(stmt, 7)) {
-    thread.preview = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+  thread.preview = SqlText(stmt, 7);
+  thread.peer_identity_kind = SqlText(stmt, 8);
+  thread.peer_identity_value = SqlText(stmt, 9);
+  if (auto group_id = SqlTextOpt(stmt, 10)) {
+    thread.group_id = std::move(*group_id);
   }
-  if (sqlite3_column_text(stmt, 8)) {
-    thread.peer_identity_kind = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
-  }
-  if (sqlite3_column_text(stmt, 9)) {
-    thread.peer_identity_value = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
-  }
-  if (sqlite3_column_text(stmt, 10)) {
-    thread.group_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
-  }
-  if (sqlite3_column_text(stmt, 11)) {
-    thread.local_title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
-  }
+  thread.local_title = SqlText(stmt, 11);
   thread.encrypted = thread.kind == ThreadKind::Group || ThreadChannelIsE2e(thread.channel);
   return thread;
 }
@@ -1316,12 +1314,27 @@ Roe<Thread> SqliteThreadStore::FindOrCreateDirectThread(const DirectChatTarget& 
       return existing.error();
     }
     if (*existing) {
-      if (ThreadChannelIsE2e(target.channel)) {
-        if (auto epoch = GetChatTargetSessionEpoch((*existing)->id)) {
-          (void)EnsurePeerSyncState((*existing)->id, target, *epoch);
+      Thread thread = **existing;
+      // Stranger DMs are created with empty participants; bind contact when one is provided later.
+      if (!participant_contact_id.empty() && thread.participant_contact_ids.empty()) {
+        thread.participant_contact_ids = {participant_contact_id};
+        if (!title.empty()) {
+          thread.title = title;
+        }
+        thread.updated_at = util::NowUnixMs();
+        if (auto saved = UpsertThread(thread)) {
+          thread = *saved;
         }
       }
-      return **existing;
+      if (!participant_contact_id.empty()) {
+        (void)UpsertChatTarget(target, participant_contact_id, thread.id);
+      }
+      if (ThreadChannelIsE2e(target.channel)) {
+        if (auto epoch = GetChatTargetSessionEpoch(thread.id)) {
+          (void)EnsurePeerSyncState(thread.id, target, *epoch);
+        }
+      }
+      return thread;
     }
   }
 

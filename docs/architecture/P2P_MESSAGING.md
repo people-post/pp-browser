@@ -210,6 +210,10 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/ui/ContactsController.*` | Contacts list/detail UI, manual add/edit, message gating |
 | `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
 
+## A/V calls (signaling over messaging)
+
+Call invite/accept/SDP/ICE/SFU controls are **system** direct messages on the same carrier. Media is a separate plane (PeerConnection or `media_relay`). Code ownership and target split: [CALLS.md](CALLS.md). Product ADRs: [projects/p2p-av-calls/](../../projects/p2p-av-calls/).
+
 ## Group chat (future)
 
 `ThreadKind::Group` and `participant_contact_ids[]` are reserved. Wire shape open (O008). Adding groups does not require a new local message schema.

@@ -22,10 +22,10 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMedia
 
 | Platform | SDL audio backend | Extra build packages? | Product checklist (not all done) |
 |----------|-------------------|----------------------|----------------------------------|
-| Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev`; video: `libva-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy; VA driver at runtime for H264; **Android→Linux LAN video receive OK 2026-07-30** |
-| Windows | WASAPI | No | OS microphone privacy |
-| macOS | CoreAudio | No | Mic privacy / usage string for notarized apps |
-| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + `CAMERA` + runtime; link `mediandk` + `camera2ndk`; LAN send dogfood OK 2026-07-30 |
+| Linux | PulseAudio + ALSA | **Yes** — `libpulse-dev` + `libasound2-dev`; video: `libva-dev` ([BUILD.md](../ops/BUILD.md)) | Dev packages + reconfigure if stuck on dummy; VA driver at runtime for H264; LAN video **receive** from Android/Win/Mac OK 2026-07-31 (camera-less dogfood host) |
+| Windows | WASAPI | No | OS microphone privacy; LAN 1:1 dogfood vs Android/Linux/**macOS** (Win↔Mac bidirectional OK 2026-07-31) |
+| macOS | CoreAudio | No | Mic / camera + **macOS 15+ Local Network** (`NSLocalNetworkUsageDescription` in [`packaging/macos/Info.plist`](../../packaging/macos/Info.plist)); LAN 1:1 dogfood vs Android/Linux/**Windows** (Win↔Mac bidirectional OK 2026-07-31) |
+| Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` + `CAMERA` + runtime; link `mediandk` + `camera2ndk`; LAN bidirectional vs Win/Mac OK 2026-07-31 |
 | iOS | CoreAudio | No | a3 wiring (V016): `NSMicrophoneUsageDescription` + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio`; device dogfood optional |
 
 **Agent traps**
@@ -35,6 +35,8 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMedia
 | Require Pulse/ALSA on Windows/macOS/mobile | Only Linux needs those `-dev` packages |
 | Claim mobile voice without manifest/plist permissions | Add Android/iOS mic (and later camera) entitlements first |
 | Assume LAN ICE proves mobile NAT | Mobile NAT needs mesh seed SFU ([p2p-av-calls](../../projects/p2p-av-calls/)) |
+| Ship macOS Frame.app without Local Network usage string | Add `NSLocalNetworkUsageDescription` (and Bonjour services key); otherwise Sequoia silently blocks ICE host UDP to Android/LAN peers |
+| Dogfood LAN ICE only from Cursor’s integrated terminal | Prefer a normal OS terminal or packaged `.app` — Cursor’s env can break host UDP while signaling still works |
 | Hardcode Android camera rotation | Use `CameraCaptureOrientation` / Camera2 metadata |
 
 `Backend::Initialize` must **not** fail window bring-up on audio — init audio on demand in `CallMediaEngine` (`SDL_InitSubSystem(SDL_INIT_AUDIO)`).

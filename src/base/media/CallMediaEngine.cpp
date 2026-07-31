@@ -11,9 +11,14 @@
 #include <rtc/rtc.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <deque>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -153,7 +158,7 @@ std::string StateToString(rtc::PeerConnection::State state) {
 } // namespace
 
 struct CallMediaEngine::Impl {
-  std::mutex mutex;
+  std::recursive_mutex mutex;
   std::string call_id;
   Role role = Role::Offerer;
   std::atomic<bool> active{false};
@@ -163,6 +168,7 @@ struct CallMediaEngine::Impl {
   std::atomic<bool> has_remote_video{false};
   std::atomic<bool> ever_had_remote_video{false};
   std::atomic<int64_t> connected_at_ms{0};
+  std::atomic<int64_t> started_at_ms{0};
   std::atomic<int64_t> last_remote_video_ms{0};
   std::atomic<int64_t> disconnected_since_ms{0};
   std::string connection_state = "idle";
@@ -177,6 +183,32 @@ struct CallMediaEngine::Impl {
   std::atomic<uint32_t> sfu_video_seq{0};
   std::atomic<bool> adaptation_camera_allowed{true};
   int64_t adaptation_target_video_bps = 0;
+
+  /** Early CallSdp / CallIce can beat Start() on fast LAN mesh — buffer until PC is ready. */
+  std::optional<LocalDescription> pending_remote_sdp;
+  std::vector<IceCandidate> pending_remote_ice;
+  bool remote_description_applied = false;
+  /** When true, a new remote offer rebuilds the PC (peer Retry after connect fail/timeout). */
+  bool accept_offer_restart = false;
+  std::string remote_ice_ufrag;
+
+  static std::string ExtractIceUfrag(const std::string& sdp) {
+    constexpr std::string_view kKey = "a=ice-ufrag:";
+    const size_t pos = sdp.find(kKey);
+    if (pos == std::string::npos) {
+      return {};
+    }
+    size_t start = pos + kKey.size();
+    size_t end = sdp.find('\n', start);
+    if (end == std::string::npos) {
+      end = sdp.size();
+    }
+    std::string ufrag = sdp.substr(start, end - start);
+    while (!ufrag.empty() && (ufrag.back() == '\r' || ufrag.back() == ' ')) {
+      ufrag.pop_back();
+    }
+    return ufrag;
+  }
 
   std::shared_ptr<rtc::PeerConnection> pc;
   std::shared_ptr<rtc::Track> audio_track;
@@ -233,7 +265,9 @@ struct CallMediaEngine::Impl {
     level.store(std::clamp(next, 0.f, 1.f), std::memory_order_relaxed);
   }
 
-  void SetState(const std::string& state) {
+  /** Update connection fields only. Never invoke on_state_changed here — callers may
+   *  already hold `mutex`, and callbacks (ActiveCallId / SFU migrate) re-enter the engine. */
+  void ApplyStateLocked(const std::string& state) {
     connection_state = state;
     const bool now_connected = (state == "connected");
     if (now_connected && !connected.load()) {
@@ -243,6 +277,9 @@ struct CallMediaEngine::Impl {
       connected_at_ms.store(0, std::memory_order_relaxed);
     }
     connected = now_connected;
+    if (now_connected) {
+      accept_offer_restart = false;
+    }
     if (state == "disconnected") {
       if (disconnected_since_ms.load(std::memory_order_relaxed) == 0) {
         disconnected_since_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
@@ -254,9 +291,26 @@ struct CallMediaEngine::Impl {
       ClearRemoteVideoFrames();
       disconnected_since_ms.store(0, std::memory_order_relaxed);
     }
-    if (on_state_changed) {
-      on_state_changed(state);
+  }
+
+  void EmitStateChanged(const std::string& state) {
+    StateChangedFn cb;
+    {
+      std::lock_guard lock(mutex);
+      cb = on_state_changed;
     }
+    if (cb) {
+      cb(state);
+    }
+  }
+
+  /** PC / external threads: apply under lock, then notify outside the lock. */
+  void SetState(const std::string& state) {
+    {
+      std::lock_guard lock(mutex);
+      ApplyStateLocked(state);
+    }
+    EmitStateChanged(state);
   }
 
   void PublishLocalPreview(const VideoFrameRgba& frame) {
@@ -385,6 +439,88 @@ struct CallMediaEngine::Impl {
       pc->close();
       pc.reset();
     }
+    // Keep pending_remote_sdp / pending_remote_ice across PC rebuilds. Linux offerer often
+    // delivers CallSdp before Mac answerer Start(); a TearDown between buffer and Flush used
+    // to drop the only offer (no retransmission) → stuck Connecting when Linux dials Mac.
+    remote_description_applied = false;
+  }
+
+  void ClearPendingRemoteLocked() {
+    pending_remote_sdp.reset();
+    pending_remote_ice.clear();
+    remote_ice_ufrag.clear();
+  }
+
+  static std::string NormalizeSdpType(std::string type) {
+    for (char& c : type) {
+      c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return type;
+  }
+
+  Roe<void> ApplyRemoteDescriptionLocked(const std::string& type_in, const std::string& sdp) {
+    if (!pc) {
+      return Error("Media peer connection not started");
+    }
+    const std::string type = NormalizeSdpType(type_in);
+    const std::string incoming_ufrag = ExtractIceUfrag(sdp);
+    // Duplicate offer (same ice-ufrag) after apply — ignore (offerer resend for answerer race).
+    // A new ufrag means peer Retry rebuilt as offerer — rebuild as answerer and apply.
+    if (type == "offer" && remote_description_applied) {
+      const bool same_ufrag =
+          !incoming_ufrag.empty() && !remote_ice_ufrag.empty() && incoming_ufrag == remote_ice_ufrag;
+      if (same_ufrag && !accept_offer_restart) {
+        SDL_Log("CallMediaEngine: ignoring duplicate remote offer");
+        return {};
+      }
+      if (!same_ufrag || accept_offer_restart) {
+        SDL_Log("CallMediaEngine: replacing remote offer (new ICE ufrag / armed restart)");
+        accept_offer_restart = false;
+        TearDownPcLocked();
+        pending_remote_ice.clear();
+        if (auto rebuilt = SetupPeerConnection(Role::Answerer); !rebuilt) {
+          return rebuilt.error();
+        }
+      }
+    }
+    try {
+      rtc::Description remote(sdp, type);
+      pc->setRemoteDescription(remote);
+      remote_description_applied = true;
+      if (!incoming_ufrag.empty()) {
+        remote_ice_ufrag = incoming_ufrag;
+      }
+      if (role == Role::Answerer && type == "offer") {
+        pc->setLocalDescription(rtc::Description::Type::Answer);
+      }
+    } catch (const std::exception& ex) {
+      return Error(std::string("setRemoteDescription failed: ") + ex.what());
+    }
+    for (const IceCandidate& ice : pending_remote_ice) {
+      try {
+        rtc::Candidate cand(ice.candidate, ice.mid.empty() ? "audio" : ice.mid);
+        pc->addRemoteCandidate(cand);
+      } catch (const std::exception& ex) {
+        SDL_Log("CallMediaEngine: buffered ICE apply failed: %s", ex.what());
+      }
+    }
+    pending_remote_ice.clear();
+    return {};
+  }
+
+  Roe<void> FlushPendingRemoteLocked() {
+    if (!pending_remote_sdp) {
+      return {};
+    }
+    LocalDescription pending = std::move(*pending_remote_sdp);
+    pending_remote_sdp.reset();
+    auto applied = ApplyRemoteDescriptionLocked(pending.type, pending.sdp);
+    if (!applied) {
+      // Put the offer back so a later Start/retry can consume it.
+      pending_remote_sdp = std::move(pending);
+      return applied;
+    }
+    return {};
   }
 
   Roe<void> EnsureAudioSubsystem() {
@@ -405,23 +541,38 @@ struct CallMediaEngine::Impl {
     return {};
   }
 
+  Roe<void> EnsureOpusCodecs() {
+    if (encoder && decoder) {
+      return {};
+    }
+    int err = 0;
+    if (!encoder) {
+      encoder = opus_encoder_create(kSampleRate, kChannels, OPUS_APPLICATION_VOIP, &err);
+      if (!encoder || err != OPUS_OK) {
+        return Error("opus_encoder_create failed");
+      }
+      opus_encoder_ctl(encoder, OPUS_SET_BITRATE(24000));
+    }
+    if (!decoder) {
+      decoder = opus_decoder_create(kSampleRate, kChannels, &err);
+      if (!decoder || err != OPUS_OK) {
+        return Error("opus_decoder_create failed");
+      }
+    }
+    return {};
+  }
+
+  /**
+   * Open SDL capture/playback. May block for a long time on OS mic permission
+   * (macOS TCC). Call only from the capture worker — never from UI, relay IO,
+   * or the libp2p host thread (that freezes accept + peer signaling).
+   */
   Roe<void> OpenAudioDevices() {
     if (auto ok = EnsureAudioSubsystem(); !ok) {
       return ok.error();
     }
 
     CallAudioSession::ActivateForVoipCall();
-
-    int err = 0;
-    encoder = opus_encoder_create(kSampleRate, kChannels, OPUS_APPLICATION_VOIP, &err);
-    if (!encoder || err != OPUS_OK) {
-      return Error("opus_encoder_create failed");
-    }
-    opus_encoder_ctl(encoder, OPUS_SET_BITRATE(24000));
-    decoder = opus_decoder_create(kSampleRate, kChannels, &err);
-    if (!decoder || err != OPUS_OK) {
-      return Error("opus_decoder_create failed");
-    }
 
     SDL_AudioSpec want{};
     want.freq = kSampleRate;
@@ -511,6 +662,17 @@ struct CallMediaEngine::Impl {
   void StartCaptureLoop() {
     capture_running = true;
     capture_thread = std::thread([this]() {
+      // Device open (and OS mic prompts) stay on this worker so CallAccept /
+      // AcceptInvite can finish signaling without freezing UI or libp2p.
+      if (auto audio = OpenAudioDevices(); !audio) {
+        SDL_Log("CallMediaEngine: OpenAudioDevices failed: %s", audio.error().message.c_str());
+      } else if (!capture_available) {
+        SDL_Log("CallMediaEngine: started without capture device — sending silence; playback still active");
+      }
+      if (!capture_running.load()) {
+        return;
+      }
+
       std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
       std::vector<int16_t> pending;
       pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
@@ -655,7 +817,7 @@ struct CallMediaEngine::Impl {
             }
             if (video_codec && video_codec->HasEncoder()) {
               auto encoded = video_codec->Encode(i420, need_keyframe);
-              if (encoded) {
+              if (encoded && !encoded->annex_b.empty()) {
                 need_keyframe = false;
                 if (sfu_mode && sfu_send) {
                   SfuPacket pkt;
@@ -749,10 +911,45 @@ struct CallMediaEngine::Impl {
     config.enableIceTcp = false;
     config.disableAutoNegotiation = true;
     config.forceMediaTransport = true;
+    // Avoid path-MTU black holes on Wi‑Fi / mobile (common DTLS handshake failure mode).
+    config.mtu = 1200;
+    // Host ICE for LAN; STUN srflx for many home NATs. Symmetric / CGNAT still needs media_relay.
+    config.iceServers.emplace_back("stun:stun.l.google.com:19302");
+    config.iceServers.emplace_back("stun:stun1.l.google.com:19302");
     pc = std::make_shared<rtc::PeerConnection>(config);
     role = start_role;
 
-    pc->onStateChange([this](rtc::PeerConnection::State state) { SetState(StateToString(state)); });
+    pc->onStateChange([this](rtc::PeerConnection::State state) {
+      SDL_Log("CallMediaEngine: pc state=%s", StateToString(state).c_str());
+      SetState(StateToString(state));
+    });
+    pc->onIceStateChange([this](rtc::PeerConnection::IceState state) {
+      const char* name = "unknown";
+      switch (state) {
+        case rtc::PeerConnection::IceState::New:
+          name = "new";
+          break;
+        case rtc::PeerConnection::IceState::Checking:
+          name = "checking";
+          break;
+        case rtc::PeerConnection::IceState::Connected:
+          name = "connected";
+          break;
+        case rtc::PeerConnection::IceState::Completed:
+          name = "completed";
+          break;
+        case rtc::PeerConnection::IceState::Failed:
+          name = "failed";
+          break;
+        case rtc::PeerConnection::IceState::Disconnected:
+          name = "disconnected";
+          break;
+        case rtc::PeerConnection::IceState::Closed:
+          name = "closed";
+          break;
+      }
+      SDL_Log("CallMediaEngine: ice state=%s", name);
+    });
 
     pc->onLocalCandidate([this](rtc::Candidate candidate) {
       if (!on_ice_candidate) {
@@ -764,6 +961,12 @@ struct CallMediaEngine::Impl {
       if (ice.mid.empty()) {
         ice.mid = "audio";
       }
+      // mDNS hostnames are unresolved without Bonjour and trip Local Network prompts on macOS.
+      if (ice.candidate.find(".local") != std::string::npos) {
+        SDL_Log("CallMediaEngine: skipping mDNS ICE candidate mid=%s", ice.mid.c_str());
+        return;
+      }
+      SDL_Log("CallMediaEngine: local ICE mid=%s cand=%s", ice.mid.c_str(), ice.candidate.c_str());
       on_ice_candidate(ice);
     });
 
@@ -909,87 +1112,117 @@ void CallMediaEngine::SetOnStateChanged(StateChangedFn callback) {
 }
 
 Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
-  std::lock_guard lock(impl_->mutex);
-  if (call_id.empty()) {
-    return Error("call_id required");
-  }
-  if (impl_->active) {
-    if (impl_->call_id == call_id) {
-      return {};
+  StateChangedFn state_cb;
+  {
+    std::lock_guard lock(impl_->mutex);
+    if (call_id.empty()) {
+      return Error("call_id required");
     }
-    return Error("Call media engine already active");
+    if (impl_->active) {
+      if (impl_->call_id == call_id) {
+        // Already up — still flush a late-buffered offer (Linux dial → Mac answerer race).
+        if (auto flushed = impl_->FlushPendingRemoteLocked(); !flushed) {
+          return flushed.error();
+        }
+        return {};
+      }
+      return Error("Call media engine already active");
+    }
+    if (!impl_->video_codec) {
+      impl_->video_codec = CreatePlatformVideoCodec();
+    }
+    // Codecs + PeerConnection first so SDP/ICE can flow while mic permission
+    // blocks OpenAudioDevices on the capture worker (macOS TCC).
+    if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
+      impl_->TearDownAudioLocked();
+      return codecs.error();
+    }
+    if (auto pc = impl_->SetupPeerConnection(role); !pc) {
+      impl_->TearDownAudioLocked();
+      return pc.error();
+    }
+    // Mark active before Flush so answer/ICE callbacks see a consistent call_id.
+    impl_->sfu_mode = false;
+    impl_->sfu_send = nullptr;
+    impl_->call_id = call_id;
+    impl_->active = true;
+    impl_->muted.store(false, std::memory_order_relaxed);
+    impl_->camera_enabled.store(false, std::memory_order_relaxed);
+    impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
+    impl_->accept_offer_restart = false;
+    impl_->connected_at_ms.store(0, std::memory_order_relaxed);
+    impl_->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+    impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
+    impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
+    impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
+    if (auto flushed = impl_->FlushPendingRemoteLocked(); !flushed) {
+      impl_->active = false;
+      impl_->call_id.clear();
+      impl_->started_at_ms.store(0, std::memory_order_relaxed);
+      impl_->TearDownAudioLocked();
+      impl_->TearDownPcLocked();
+      return flushed.error();
+    }
+    // Do not invoke on_state_changed under this lock — callbacks call ActiveCallId().
+    impl_->ApplyStateLocked("connecting");
+    impl_->StartCaptureLoop();
+    state_cb = impl_->on_state_changed;
   }
-  if (!impl_->video_codec) {
-    impl_->video_codec = CreatePlatformVideoCodec();
+  if (state_cb) {
+    state_cb("connecting");
   }
-  if (auto audio = impl_->OpenAudioDevices(); !audio) {
-    impl_->TearDownAudioLocked();
-    return audio.error();
-  }
-  if (!impl_->capture_available) {
-    log().warning << "Call media started without capture device — sending silence; playback still active";
-  }
-  if (auto pc = impl_->SetupPeerConnection(role); !pc) {
-    impl_->TearDownAudioLocked();
-    return pc.error();
-  }
-  impl_->sfu_mode = false;
-  impl_->sfu_send = nullptr;
-  impl_->call_id = call_id;
-  impl_->active = true;
-  impl_->muted.store(false, std::memory_order_relaxed);
-  impl_->camera_enabled.store(false, std::memory_order_relaxed);
-  impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
-  impl_->connected_at_ms.store(0, std::memory_order_relaxed);
-  impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
-  impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
-  impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
-  impl_->SetState("connecting");
-  impl_->StartCaptureLoop();
   return {};
 }
 
 Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) {
-  std::lock_guard lock(impl_->mutex);
-  if (call_id.empty()) {
-    return Error("call_id required");
-  }
-  if (!send) {
-    return Error("SFU send callback required");
-  }
-  if (impl_->active) {
-    if (impl_->call_id == call_id && impl_->sfu_mode) {
-      impl_->sfu_send = std::move(send);
-      return {};
+  StateChangedFn state_cb;
+  {
+    std::lock_guard lock(impl_->mutex);
+    if (call_id.empty()) {
+      return Error("call_id required");
     }
-    // Soft-migrate: tear down P2P then bring up SFU for same or new call_id.
-    impl_->active = false;
-    impl_->TearDownAudioLocked();
-    impl_->TearDownPcLocked();
-    impl_->call_id.clear();
+    if (!send) {
+      return Error("SFU send callback required");
+    }
+    if (impl_->active) {
+      if (impl_->call_id == call_id && impl_->sfu_mode) {
+        impl_->sfu_send = std::move(send);
+        return {};
+      }
+      // Soft-migrate: tear down P2P then bring up SFU for same or new call_id.
+      impl_->active = false;
+      impl_->TearDownAudioLocked();
+      impl_->TearDownPcLocked();
+      impl_->call_id.clear();
+    }
+    if (!impl_->video_codec) {
+      impl_->video_codec = CreatePlatformVideoCodec();
+    }
+    if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
+      impl_->TearDownAudioLocked();
+      return codecs.error();
+    }
+    impl_->sfu_mode = true;
+    impl_->sfu_send = std::move(send);
+    impl_->sfu_audio_seq.store(0);
+    impl_->sfu_video_seq.store(0);
+    impl_->call_id = call_id;
+    impl_->active = true;
+    impl_->muted.store(false, std::memory_order_relaxed);
+    impl_->camera_enabled.store(false, std::memory_order_relaxed);
+    impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
+    impl_->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+    impl_->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+    impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
+    impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
+    impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
+    impl_->ApplyStateLocked("connected");
+    impl_->StartCaptureLoop();
+    state_cb = impl_->on_state_changed;
   }
-  if (!impl_->video_codec) {
-    impl_->video_codec = CreatePlatformVideoCodec();
+  if (state_cb) {
+    state_cb("connected");
   }
-  if (auto audio = impl_->OpenAudioDevices(); !audio) {
-    impl_->TearDownAudioLocked();
-    return audio.error();
-  }
-  impl_->sfu_mode = true;
-  impl_->sfu_send = std::move(send);
-  impl_->sfu_audio_seq.store(0);
-  impl_->sfu_video_seq.store(0);
-  impl_->call_id = call_id;
-  impl_->active = true;
-  impl_->muted.store(false, std::memory_order_relaxed);
-  impl_->camera_enabled.store(false, std::memory_order_relaxed);
-  impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
-  impl_->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-  impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
-  impl_->disconnected_since_ms.store(0, std::memory_order_relaxed);
-  impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
-  impl_->SetState("connected");
-  impl_->StartCaptureLoop();
   return {};
 }
 
@@ -1020,49 +1253,80 @@ void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
 Roe<void> CallMediaEngine::SetRemoteDescription(const std::string& type, const std::string& sdp) {
   std::lock_guard lock(impl_->mutex);
   if (!impl_->pc) {
-    return Error("Media peer connection not started");
+    // Offer/answer often arrives before ScheduleStartMedia* finishes on LAN.
+    // Linux offerer is typically faster than Android — Mac answerer hits this path more.
+    LocalDescription pending;
+    pending.type = Impl::NormalizeSdpType(type);
+    pending.sdp = sdp;
+    impl_->pending_remote_sdp = std::move(pending);
+    SDL_Log("CallMediaEngine: buffered remote %s (%zu bytes) until PC start",
+            impl_->pending_remote_sdp->type.c_str(), sdp.size());
+    return {};
   }
-  try {
-    rtc::Description remote(sdp, type);
-    impl_->pc->setRemoteDescription(remote);
-    if (impl_->role == Role::Answerer && type == "offer") {
-      impl_->pc->setLocalDescription(rtc::Description::Type::Answer);
-    }
-  } catch (const std::exception& ex) {
-    return Error(std::string("setRemoteDescription failed: ") + ex.what());
-  }
-  return {};
+  return impl_->ApplyRemoteDescriptionLocked(type, sdp);
 }
 
 Roe<void> CallMediaEngine::AddRemoteIceCandidate(const std::string& candidate, const std::string& mid) {
   std::lock_guard lock(impl_->mutex);
-  if (!impl_->pc) {
-    return Error("Media peer connection not started");
+  if (!impl_->pc || !impl_->remote_description_applied) {
+    IceCandidate ice;
+    ice.candidate = candidate;
+    ice.mid = mid.empty() ? "audio" : mid;
+    impl_->pending_remote_ice.push_back(std::move(ice));
+    return {};
   }
   try {
     rtc::Candidate ice(candidate, mid.empty() ? "audio" : mid);
     impl_->pc->addRemoteCandidate(ice);
+    SDL_Log("CallMediaEngine: remote ICE mid=%s cand=%s", mid.empty() ? "audio" : mid.c_str(),
+            candidate.c_str());
   } catch (const std::exception& ex) {
     return Error(std::string("addRemoteCandidate failed: ") + ex.what());
   }
   return {};
 }
 
-void CallMediaEngine::Stop() {
+std::optional<CallMediaEngine::LocalDescription> CallMediaEngine::CurrentLocalDescription() const {
   std::lock_guard lock(impl_->mutex);
-  if (!impl_->active && !impl_->pc && !impl_->sfu_mode) {
-    return;
+  if (!impl_->pc) {
+    return std::nullopt;
   }
-  impl_->active = false;
-  impl_->muted.store(false, std::memory_order_relaxed);
-  impl_->camera_enabled.store(false, std::memory_order_relaxed);
-  impl_->connected_at_ms.store(0, std::memory_order_relaxed);
-  impl_->TearDownAudioLocked();
-  impl_->TearDownPcLocked();
-  impl_->sfu_mode = false;
-  impl_->sfu_send = nullptr;
-  impl_->call_id.clear();
-  impl_->SetState("closed");
+  auto desc = impl_->pc->localDescription();
+  if (!desc) {
+    return std::nullopt;
+  }
+  LocalDescription local;
+  local.type = desc->typeString();
+  local.sdp = std::string(*desc);
+  return local;
+}
+
+void CallMediaEngine::Stop() {
+  StateChangedFn state_cb;
+  {
+    std::lock_guard lock(impl_->mutex);
+    if (!impl_->active && !impl_->pc && !impl_->sfu_mode && !impl_->pending_remote_sdp &&
+        impl_->pending_remote_ice.empty()) {
+      return;
+    }
+    impl_->active = false;
+    impl_->muted.store(false, std::memory_order_relaxed);
+    impl_->camera_enabled.store(false, std::memory_order_relaxed);
+    impl_->connected_at_ms.store(0, std::memory_order_relaxed);
+    impl_->started_at_ms.store(0, std::memory_order_relaxed);
+    impl_->accept_offer_restart = false;
+    impl_->TearDownAudioLocked();
+    impl_->TearDownPcLocked();
+    impl_->ClearPendingRemoteLocked();
+    impl_->sfu_mode = false;
+    impl_->sfu_send = nullptr;
+    impl_->call_id.clear();
+    impl_->ApplyStateLocked("closed");
+    state_cb = impl_->on_state_changed;
+  }
+  if (state_cb) {
+    state_cb("closed");
+  }
 }
 
 void CallMediaEngine::SetMuted(bool muted) {
@@ -1180,6 +1444,25 @@ std::string CallMediaEngine::ConnectionState() const {
 
 int64_t CallMediaEngine::ConnectedAtMs() const {
   return impl_->connected_at_ms.load(std::memory_order_relaxed);
+}
+
+int64_t CallMediaEngine::StartedAtMs() const {
+  return impl_->started_at_ms.load(std::memory_order_relaxed);
+}
+
+bool CallMediaEngine::HasLocalCapture() const {
+  std::lock_guard lock(impl_->mutex);
+  return impl_->capture_available;
+}
+
+CallMediaEngine::Role CallMediaEngine::ActiveRole() const {
+  std::lock_guard lock(impl_->mutex);
+  return impl_->role;
+}
+
+void CallMediaEngine::ArmOfferRestart() {
+  std::lock_guard lock(impl_->mutex);
+  impl_->accept_offer_restart = true;
 }
 
 float CallMediaEngine::LocalInputLevel() const {

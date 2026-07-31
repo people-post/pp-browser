@@ -48,9 +48,10 @@ Delivery slice: [V016](DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wir
 - [x] Capture + encode + RTP video track; decode + persistent GL texture tiles (V018); encode ~640×360 desktop / ~360×640 mobile after orientation @ 15–24 fps
 - [x] Shell: unified in-call chrome + **Camera** on voice- and video-started calls; stage/PiP (V019); camera off on join (V009); compact icon mute/camera/leave
 - [x] Mobile capture orientation (`CameraCaptureOrientation`: Android Camera2 sensor + display; iOS interface orientation) + tile letterbox
-- [x] LAN dogfood: Android ↔ Windows bidirectional; Android→Linux / Windows→Linux one-way (Linux dogfood host **no camera**); iOS wiring done — **OK 2026-07-30**; macOS/iOS device optional
+- [x] LAN dogfood: Android ↔ Windows / **Android ↔ macOS** / **Windows ↔ macOS** bidirectional; Android→Linux / Windows→Linux / **Mac→Linux** one-way video when Linux host has **no camera** (receive/display OK); iOS wiring done — **OK 2026-07-31**; iOS device dogfood optional
 - [x] Document LAN video OK + Linux no-camera / no-encoder send limits; **do not** claim NAT / seed SFU
 - [x] iOS mic / `AVAudioSession` / camera usage + background `audio` — **wiring done**; device dogfood optional
+- [x] macOS Local Network usage string (`NSLocalNetworkUsageDescription`) for Sequoia LAN ICE — packaged Info.plist
 
 **Deferred (mesh-gated, not a3 exit):** Mobile Client ↔ desktop / mobile↔mobile via seed SFU (V008 / n4); network-adaptive encode.  
 **Accepted:** Linux video **send** needs camera + usable HW H264 encoder (V017); dogfood Linux was camera-less (receive OK). Voice must continue (V019).
@@ -69,13 +70,14 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 - [x] Rotate media key on leave + overlapping epochs (V003) — existing a1 path
 - [ ] In-call roster (mute / camera / speaking if cheap) — mute/camera roster exists; speaking pending
 - [x] Reuse a3 Opus + H264 HW — **no** new device codec matrix in a4
-- [ ] ICE-fail 1:1 → SFU auto path — topology helper ready; wire from PC failed pending
+- [x] ICE-fail **1:1** stays P2P (V025) — timeout + Retry; N≥3 ICE-fail → SFU wired; no auto 1:1 SFU
 
 ## a5 — Cap, polish, reconnect
 
 - [ ] Load-test; raise effective cap toward **16** or keep **8** with product copy
 - [ ] Full **video_lo + video_hi** on **both** P2P and SFU backends (V024 polish) if not in a4
 - [ ] Reconnect / “reconnecting…” after brief network loss
+- [x] 1:1 connect timeout + “Couldn't connect” + Retry + platform permission tip (Local Network / mic)
 - [ ] Missed/declined history hints optional
 - [ ] Document desktop dead-process ring limitation
 

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>Frame</string>
+  <key>CFBundleExecutable</key>
+  <string>Frame</string>
+  <key>CFBundleIdentifier</key>
+  <string>dev.pp-browser.app</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>Frame</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>CFBundleVersion</key>
+  <string>0.1.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Frame uses the microphone for voice and video calls.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Frame uses the camera for video calls.</string>
+  <!-- macOS 15+: without this key, LAN UDP (ICE host candidates) is denied silently
+       and Frame never appears under System Settings → Privacy → Local Network.
+       That breaks Android↔Mac on the same Wi‑Fi while Linux↔Mac can still succeed via
+       srflx/hairpin or a peer that is not treated as local-only. -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Frame uses the local network for peer-to-peer calls and messaging with nearby devices.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_pp-browser._udp</string>
+  </array>
+</dict>
+</plist>

@@ -9,13 +9,23 @@
 #include <string>
 #include <thread>
 
+#if defined(_WIN32)
+#include <process.h>
+static int ProcessId() { return _getpid(); }
+#else
+#include <unistd.h>
+static int ProcessId() { return static_cast<int>(getpid()); }
+#endif
+
 namespace pbr {
 namespace {
 
 class DialBackServiceTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    static std::atomic<int> port{42000};
+    // Per-process base avoids TIME_WAIT collisions when ctest runs each case in a new
+    // process that would otherwise all start at the same fixed port.
+    static std::atomic<int> port{41000 + (ProcessId() % 2000) * 10};
     seed_port_ = port.fetch_add(1);
     client_port_ = port.fetch_add(1);
 

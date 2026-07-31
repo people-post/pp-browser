@@ -36,6 +36,7 @@ set(_pp_platform_gui_sources
   PlatformOpenUrl.cpp
   PlatformServices.cpp
   PlatformStartupHints.cpp
+  PlatformUserHints.cpp
   PushWakeJni.cpp
   SdlAppEvents.cpp
   SdlAssetFileInterface.cpp

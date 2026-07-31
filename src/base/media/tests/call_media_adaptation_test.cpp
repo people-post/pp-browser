@@ -48,11 +48,18 @@ TEST(CallMediaAdaptationTest, VideoHiOnlyWhenAllowed) {
 }
 
 TEST(CallMediaTopologyTest, GroupUsesRelay) {
-  EXPECT_FALSE(CallMediaTopology::ShouldUseMediaRelay(2, false));
-  EXPECT_TRUE(CallMediaTopology::ShouldUseMediaRelay(2, true));
-  EXPECT_TRUE(CallMediaTopology::ShouldUseMediaRelay(3, false));
+  EXPECT_FALSE(CallMediaTopology::ShouldUseMediaRelay(1));
+  EXPECT_FALSE(CallMediaTopology::ShouldUseMediaRelay(2));
+  EXPECT_TRUE(CallMediaTopology::ShouldUseMediaRelay(3));
+  EXPECT_TRUE(CallMediaTopology::ShouldUseMediaRelay(8));
   EXPECT_TRUE(CallMediaTopology::ShouldSoftMigrateToSfu(2, 3));
   EXPECT_FALSE(CallMediaTopology::ShouldSoftMigrateToSfu(3, 4));
+  EXPECT_FALSE(CallMediaTopology::ShouldSoftMigrateToSfu(1, 2));
+  // V025: stale sfu_hint on 1:1 must not select SFU.
+  EXPECT_EQ(CallMediaTopology::DecidePath(2, true), CallMediaPathAction::IgnoreSfuHint);
+  EXPECT_EQ(CallMediaTopology::DecidePath(2, false), CallMediaPathAction::StayP2p);
+  EXPECT_EQ(CallMediaTopology::DecidePath(3, false), CallMediaPathAction::UseSfu);
+  EXPECT_EQ(CallMediaTopology::DecidePath(3, true), CallMediaPathAction::UseSfu);
 }
 
 } // namespace

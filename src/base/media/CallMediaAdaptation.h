@@ -56,14 +56,24 @@ public:
   static const char* ChannelTypeName(CallMediaRole role);
 };
 
-/** Soft-migrate / hop topology helpers (V021). */
+/** Soft-migrate / hop topology helpers (V021 + V025). */
+enum class CallMediaPathAction {
+  StayP2p,
+  SoftMigrateSfu,
+  UseSfu,
+  IgnoreSfuHint,
+};
+
 class CallMediaTopology {
 public:
-  /** Prefer media_relay when joined count ≥ 3 (group) or ICE failed on 1:1. */
-  static bool ShouldUseMediaRelay(size_t joined_count, bool ice_failed_1to1 = false);
+  /** Prefer media_relay only when joined count ≥ 3 (V025 — never auto-SFU plain 1:1). */
+  static bool ShouldUseMediaRelay(size_t joined_count);
 
   /** Soft-migrate when growing from P2P (N=2) onto SFU (N≥3). */
   static bool ShouldSoftMigrateToSfu(size_t previous_joined, size_t new_joined);
+
+  /** Pure path decision for roster N (and optional invite sfu_hint). */
+  static CallMediaPathAction DecidePath(size_t joined_count, bool has_sfu_hint);
 };
 
 } // namespace pbr

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <thread>
@@ -112,9 +113,18 @@ DialBackProbeResult DialTargets(PeerSessionManager& sessions,
     }
     sessions.ClearDialBackoff(key);
 
-    std::promise<Roe<void>> dial_promise;
-    auto dial_future = dial_promise.get_future();
-    sessions.EnsureConnection(key, [&](Roe<void> result) { dial_promise.set_value(std::move(result)); });
+    // shared_ptr: wait_for may time out while EnsureConnection is still in flight; a stack
+    // promise would be destroyed and the completion callback would UAF (Windows often hits
+    // this on slow connect-fail paths such as probing 127.0.0.1:1).
+    auto dial_promise = std::make_shared<std::promise<Roe<void>>>();
+    auto dial_future = dial_promise->get_future();
+    sessions.EnsureConnection(key, [dial_promise](Roe<void> result) {
+      try {
+        dial_promise->set_value(std::move(result));
+      } catch (const std::future_error&) {
+        // Already satisfied (should not happen) or abandoned after move.
+      }
+    });
 
     if (dial_future.wait_for(std::chrono::milliseconds(timeout)) != std::future_status::ready) {
       out.error = "dial-back timed out";

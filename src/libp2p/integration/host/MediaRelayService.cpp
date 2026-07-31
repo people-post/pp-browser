@@ -14,10 +14,12 @@
 #include <chrono>
 #include <cstring>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace pbr {
 
@@ -147,6 +149,7 @@ uint64_t SubKey(uint32_t stream_id, uint16_t channel_id) {
 struct HostParticipant {
   std::string peer_id;
   std::shared_ptr<Stream> stream;
+  std::mutex write_mu; // serializes hop→client writes (fanout vs control acks)
   std::unordered_set<uint64_t> subscriptions;
   std::unordered_map<uint64_t, uint32_t> last_lossy_seq;
   int64_t a_up_bps = 0;
@@ -221,7 +224,7 @@ Roe<MediaDataFrame> DecodeMediaDataFrame(const std::vector<uint8_t>& body) {
   return frame;
 }
 
-struct MediaRelayService::Impl {
+struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::mutex mu;
   PeerSessionManager* sessions = nullptr;
   MediaRelayBudgetConfig budget;
@@ -234,6 +237,7 @@ struct MediaRelayService::Impl {
 
   // Client attach state
   std::shared_ptr<Stream> client_stream;
+  std::mutex client_write_mu; // Subscribe/SendFrame/Detach vs each other
   std::string client_session_token;
   std::function<void(MediaDataFrame)> client_on_frame;
   std::atomic<bool> client_reader_running{false};
@@ -288,6 +292,7 @@ struct MediaRelayService::Impl {
       if (session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes) {
         continue;
       }
+      std::lock_guard<std::mutex> wlock(part->write_mu);
       (void)WriteExactBody(part->stream, body);
     }
   }
@@ -311,13 +316,18 @@ struct MediaRelayService::Impl {
         if (op == "subscribe") {
           part->subscriptions.insert(SubKey(root.value("stream_id", 0u),
                                             static_cast<uint16_t>(root.value("channel_id", 0))));
+          std::lock_guard<std::mutex> wlock(part->write_mu);
           (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "subscribe"}});
         } else if (op == "unsubscribe") {
           part->subscriptions.erase(SubKey(root.value("stream_id", 0u),
                                            static_cast<uint16_t>(root.value("channel_id", 0))));
+          std::lock_guard<std::mutex> wlock(part->write_mu);
           (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "unsubscribe"}});
         } else if (op == "detach") {
-          (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "detach"}});
+          {
+            std::lock_guard<std::mutex> wlock(part->write_mu);
+            (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "detach"}});
+          }
           break;
         }
         continue;
@@ -343,27 +353,28 @@ struct MediaRelayService::Impl {
 
   void HandleInbound(libp2p::StreamAndProtocol stream_and_protocol) {
     auto stream = std::move(stream_and_protocol.stream);
-    std::thread([this, stream = std::move(stream)]() mutable {
+    auto self = shared_from_this();
+    std::thread([self, stream = std::move(stream)]() mutable {
+      self->HandleInboundBody(std::move(stream));
+    }).detach();
+  }
+
+  void HandleInboundBody(std::shared_ptr<Stream> stream) {
       std::string remote;
       if (auto peer = stream->remotePeerId()) {
         remote = peer.value().toBase58();
       }
 
       MediaRelayAdmissionPolicy policy;
-      MediaRelayBudgetConfig bud;
-      RelayPricingConfig price;
       {
         std::lock_guard<std::mutex> lock(mu);
         policy = admission;
-        bud = budget;
-        price = pricing;
       }
-      // Temporarily apply for AdmitPeer
-      admission = policy;
-      budget = bud;
-      pricing = price;
 
-      if (!AdmitPeer(remote)) {
+      const bool admitted =
+          !policy.prefer_contacts_only || policy.contact_peer_ids.empty() ||
+          (!remote.empty() && policy.contact_peer_ids.count(remote) > 0);
+      if (!admitted) {
         (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
         stream->close([](auto&&) {});
         return;
@@ -480,21 +491,20 @@ struct MediaRelayService::Impl {
           return;
         }
       }
-    }).detach();
   }
 
-  void StartClientReader() {
+  void StartClientReader(const std::shared_ptr<Impl>& self) {
     if (client_reader_running.exchange(true)) {
       return;
     }
-    std::thread([this]() {
-      while (client_reader_running.load()) {
+    std::thread([self]() {
+      while (self->client_reader_running.load()) {
         std::shared_ptr<Stream> stream;
         std::function<void(MediaDataFrame)> cb;
         {
-          std::lock_guard<std::mutex> lock(mu);
-          stream = client_stream;
-          cb = client_on_frame;
+          std::lock_guard<std::mutex> lock(self->mu);
+          stream = self->client_stream;
+          cb = self->client_on_frame;
         }
         if (!stream) {
           break;
@@ -517,13 +527,13 @@ struct MediaRelayService::Impl {
           cb(*frame);
         }
       }
-      client_reader_running = false;
+      self->client_reader_running = false;
     }).detach();
   }
 };
 
 MediaRelayService::MediaRelayService(Libp2pHost& host, PeerSessionManager& sessions)
-    : impl_(std::make_unique<Impl>()), host_(host), sessions_(sessions) {
+    : impl_(std::make_shared<Impl>()), host_(host), sessions_(sessions) {
   impl_->sessions = &sessions_;
 }
 
@@ -536,8 +546,9 @@ void MediaRelayService::Start() {
     return;
   }
   started_ = true;
+  auto impl = impl_;
   host_.GetHost().setProtocolHandler({ProtocolName{kMediaRelayProtocolId}},
-                                     [impl = impl_.get()](libp2p::StreamAndProtocol stream) {
+                                     [impl](libp2p::StreamAndProtocol stream) {
                                        impl->HandleInbound(std::move(stream));
                                      });
 }
@@ -637,7 +648,7 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
 
   auto result_promise = std::make_shared<std::promise<Roe<MediaRelayAttachResult>>>();
   auto result_future = result_promise->get_future();
-  auto impl = impl_.get();
+  auto impl = impl_;
 
   sessions_.OpenStream(
       hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
@@ -686,7 +697,7 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
             impl->client_session_token = token;
             impl->client_on_frame = std::move(on_frame);
           }
-          impl->StartClientReader();
+          impl->StartClientReader(impl);
 
           MediaRelayAttachResult out;
           out.ok = true;
@@ -711,6 +722,7 @@ Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) 
   if (!stream) {
     return Error("not attached");
   }
+  std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
   return WriteJson(stream, {{"v", 1}, {"op", "subscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}});
 }
 
@@ -723,6 +735,7 @@ Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id
   if (!stream) {
     return Error("not attached");
   }
+  std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
   return WriteJson(stream,
                    {{"v", 1}, {"op", "unsubscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}});
 }
@@ -736,6 +749,7 @@ Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
   if (!stream) {
     return Error("not attached");
   }
+  std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
   return WriteExactBody(stream, EncodeMediaDataFrame(frame));
 }
 
@@ -750,7 +764,10 @@ void MediaRelayService::Detach() {
   }
   impl_->client_reader_running = false;
   if (stream) {
-    (void)WriteJson(stream, {{"v", 1}, {"op", "detach"}});
+    {
+      std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
+      (void)WriteJson(stream, {{"v", 1}, {"op", "detach"}});
+    }
     stream->close([](auto&&) {});
   }
 }

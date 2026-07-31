@@ -84,7 +84,17 @@ TEST(CallChromeSyncTest, CameraStageDirties) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 
-TEST(CallChromeSyncTest, ConflictLabelsDirty) {
+TEST(CallChromeSyncTest, GroupRosterFieldsDirty) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_show_roster = true;
+  next.in_call_participant_count = 3;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
+TEST(CallChromeSyncTest, RingConflictDirties) {
   pbr::CallChromeLayer synced;
   synced.ring_active = true;
   synced.ring_call_id = "c1";

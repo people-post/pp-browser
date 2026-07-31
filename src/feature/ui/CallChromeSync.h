@@ -32,6 +32,11 @@ struct CallChromeLayer {
   std::string in_call_elapsed;
   std::string in_call_peer_label;
   std::string in_call_remote_placeholder;
+  bool in_call_show_roster = false;
+  bool in_call_show_invite = false;
+  bool in_call_show_retry = false;
+  int in_call_participant_count = 0;
+  std::string in_call_status_hint;
 };
 
 enum class CallChromeUpdate {
