@@ -1,11 +1,14 @@
 #include <stdexcept>
 #include "feature/ui/CallController.h"
 
+#include "base/i18n/LocalizationService.h"
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallTypes.h"
 #include "base/people/ContactTypes.h"
 #include "base/platform/BrowserThread.h"
 #include "base/platform/ILocalNotifier.h"
+#include "base/platform/PlatformUserHints.h"
+#include "base/platform/ProductBranding.h"
 #include "base/ui/ShellTypes.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/CallChromeSync.h"
@@ -19,6 +22,8 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <map>
+#include <string>
 
 namespace pbr {
 namespace {
@@ -78,17 +83,32 @@ int QuantizeAudioLevel(float level) {
   return 5;
 }
 
-const char* LevelHint(int level, bool remote, bool muted) {
+std::string LevelHint(int level, bool remote, bool muted) {
   if (muted && !remote) {
-    return "Muted";
+    return Tr("call.level.muted");
   }
   if (level <= 0) {
-    return remote ? "Quiet" : "Silent";
+    return remote ? Tr("call.level.quiet") : Tr("call.level.silent");
   }
   if (level <= 2) {
-    return "Speaking";
+    return Tr("call.level.speaking");
   }
-  return "Loud";
+  return Tr("call.level.loud");
+}
+
+std::string ComposeP2pStatusHint(bool missing_mic) {
+  const std::map<std::string, std::string> product{{"product", kProductName}};
+  std::string hint = Tr(PlatformUserHints::P2pNetworkHintKey(), product);
+  if (missing_mic) {
+    const std::string mic = Tr(PlatformUserHints::MicBlockedHintKey());
+    if (!mic.empty()) {
+      if (!hint.empty()) {
+        hint += " ";
+      }
+      hint += mic;
+    }
+  }
+  return hint;
 }
 
 } // namespace
@@ -284,8 +304,9 @@ void CallController::RefreshPendingRing() {
     ring.conflict = has_conflict;
     ring.call_id = (*top)->call_id;
     ring.caller_label = caller_label;
-    ring.media_label =
-        (*top)->media_mode == CallMediaMode::Video ? "Incoming video call" : "Incoming voice call";
+    ring.media_label = (*top)->media_mode == CallMediaMode::Video
+                           ? Tr("call.ring.incoming_video").c_str()
+                           : Tr("call.ring.incoming_voice").c_str();
     ring.eyebrow = copy.eyebrow;
     ring.conflict_hint = copy.hint;
     ring.accept_label = copy.accept_label;
@@ -293,8 +314,10 @@ void CallController::RefreshPendingRing() {
     if (pending_call_wake_notify_) {
       pending_call_wake_notify_ = false;
       const std::string body =
-          caller_label.empty() ? "Someone is calling you" : (caller_label + " is calling");
-      ILocalNotifier::Instance().NotifyIncoming("Incoming call", body, "");
+          caller_label.empty()
+              ? Tr("call.notify.body_unknown")
+              : Tr("call.notify.body_named", {{"name", caller_label}});
+      ILocalNotifier::Instance().NotifyIncoming(Tr("call.notify.title"), body, "");
     }
     SyncShellState();
     SyncRingtone();
@@ -347,7 +370,7 @@ void CallController::RefreshPendingRing() {
       for (const CallParticipant& row : *participants) {
         CallRosterParticipantState entry;
         entry.is_local = !local_identity.empty() && row.identity == local_identity;
-        std::string name = entry.is_local ? "You" : DisplayNameForIdentity(row.identity);
+        std::string name = entry.is_local ? Tr("call.label.you") : DisplayNameForIdentity(row.identity);
         if (!entry.is_local && name.empty()) {
           name = row.identity;
         }
@@ -364,59 +387,61 @@ void CallController::RefreshPendingRing() {
     }
 
     if (in_call.show_roster) {
-      in_call.title = is_video ? "Group video call" : "Group voice call";
+      in_call.title = is_video ? Tr("call.title.group_video").c_str() : Tr("call.title.group_voice").c_str();
     } else {
-      in_call.title = is_video ? "Video call" : "Voice call";
+      in_call.title = is_video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
     }
 
-    std::string peer_label = "Them";
+    std::string peer_label = Tr("call.label.them");
     if (auto peer = calls->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
       const std::string name = DisplayNameForIdentity(**peer);
       if (!name.empty()) {
         peer_label = name;
       }
     }
-    in_call.peer_label = in_call.show_roster ? "Others" : peer_label;
+    in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
 
     const bool p2p_failed = calls->IsP2pConnectFailed();
     in_call.show_retry = p2p_failed && !calls->IsAwaitingSfuRecovery() && !calls->Media().IsSfuMode();
-    in_call.status_hint = p2p_failed ? calls->P2pConnectHint().c_str() : Rml::String{};
+    in_call.status_hint =
+        p2p_failed ? ComposeP2pStatusHint(calls->P2pConnectMissingMic()).c_str() : Rml::String{};
     if (p2p_failed) {
       in_call.show_invite = false;
     }
 
     if (calls->Media().IsConnected()) {
       in_call.elapsed = FormatElapsed(calls->Media().ConnectedAtMs());
-      in_call.subtitle = in_call.elapsed.empty() ? "Connected" : in_call.elapsed;
+      in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
       in_call.show_retry = false;
       in_call.status_hint = {};
     } else if (p2p_failed) {
       in_call.elapsed = {};
-      in_call.subtitle = "Couldn't connect";
+      in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
     } else if (!calls->Media().IsActive()) {
       in_call.elapsed = {};
-      in_call.subtitle = "Calling…";
+      in_call.subtitle = Tr("call.status.calling").c_str();
     } else {
       in_call.elapsed = {};
       const std::string state = calls->Media().ConnectionState();
       if (calls->IsAwaitingSfuRecovery()) {
-        in_call.subtitle = "Reconnecting…";
+        in_call.subtitle = Tr("call.status.reconnecting").c_str();
       } else if (state == "connecting" || state.empty() || state == "new") {
-        in_call.subtitle = "Connecting…";
+        in_call.subtitle = Tr("call.status.connecting").c_str();
       } else if (state == "disconnected") {
-        in_call.subtitle = "Reconnecting…";
+        in_call.subtitle = Tr("call.status.reconnecting").c_str();
       } else if (state == "failed") {
-        in_call.subtitle = "Couldn't connect";
+        in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
       } else if (state == "closed") {
-        in_call.subtitle = "Connecting…";
+        in_call.subtitle = Tr("call.status.connecting").c_str();
       } else {
         in_call.subtitle = state;
       }
     }
-    if (in_call.show_roster && joined_count > 0 && in_call.subtitle == "Connected") {
-      char buf[64];
-      std::snprintf(buf, sizeof(buf), "%d participants · %s", joined_count, in_call.elapsed.c_str());
-      in_call.subtitle = buf;
+    if (in_call.show_roster && joined_count > 0 && calls->Media().IsConnected()) {
+      in_call.subtitle =
+          Tr("call.participants_elapsed",
+             {{"count", std::to_string(joined_count)}, {"elapsed", std::string(in_call.elapsed.c_str())}})
+              .c_str();
     }
     ApplyAudioLevels(calls->Media());
     SyncShellState();
@@ -432,12 +457,12 @@ bool CallController::StartCall(const std::string& thread_id, const bool video) {
   BindToMessaging();
   auto* calls = Hub().Calls();
   if (!calls) {
-    UserFeedback::Fail("Calls unavailable");
+    UserFeedback::Fail(Tr("call.error.unavailable"));
     return false;
   }
   auto thread = Hub().Store().GetThread(thread_id);
   if (!thread || !*thread) {
-    UserFeedback::Fail("Thread not found");
+    UserFeedback::Fail(Tr("call.error.thread_not_found"));
     return false;
   }
   if ((*thread)->kind == ThreadKind::Group) {
@@ -445,11 +470,11 @@ bool CallController::StartCall(const std::string& thread_id, const bool video) {
     return true;
   }
   if ((*thread)->kind != ThreadKind::Direct) {
-    UserFeedback::Fail("Voice and video calls are available in direct and group chats");
+    UserFeedback::Fail(Tr("call.error.wrong_thread_type"));
     return false;
   }
   if ((*thread)->peer_identity_value.empty()) {
-    UserFeedback::Fail("Missing peer identity");
+    UserFeedback::Fail(Tr("call.error.missing_peer"));
     return false;
   }
   return StartCallWithInvitees(thread_id, video, {(*thread)->peer_identity_value});
@@ -460,11 +485,11 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
   BindToMessaging();
   auto* calls = Hub().Calls();
   if (!calls) {
-    UserFeedback::Fail("Calls unavailable");
+    UserFeedback::Fail(Tr("call.error.unavailable"));
     return false;
   }
   if (invitee_identities.empty()) {
-    UserFeedback::Fail("Select at least one person to call");
+    UserFeedback::Fail(Tr("call.error.select_person"));
     return false;
   }
   auto started =
@@ -484,7 +509,7 @@ void CallController::OpenGroupCallPicker(const std::string& thread_id, const boo
 
 void CallController::OpenMidCallInvitePicker() {
   if (active_call_id_.empty()) {
-    UserFeedback::Fail("No active call");
+    UserFeedback::Fail(Tr("call.error.no_active"));
     return;
   }
   PeoplePickerController::Instance().OpenForCallAddGuest(active_call_id_);
@@ -494,7 +519,7 @@ void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>
   BindToMessaging();
   auto* calls = Hub().Calls();
   if (!calls || active_call_id_.empty()) {
-    UserFeedback::Fail("No active call");
+    UserFeedback::Fail(Tr("call.error.no_active"));
     return;
   }
   int invited = 0;
@@ -669,25 +694,25 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   if (in_call.remote_video) {
     in_call.remote_placeholder = "";
   } else if (have_peer_video_flag && !peer_camera_on) {
-    in_call.remote_placeholder = "Camera off";
+    in_call.remote_placeholder = Tr("call.placeholder.camera_off").c_str();
   } else if (p2p_failed) {
-    in_call.remote_placeholder = "Couldn't connect";
+    in_call.remote_placeholder = Tr("call.status.couldnt_connect").c_str();
   } else if (media_reconnect) {
-    in_call.remote_placeholder = "Reconnecting…";
+    in_call.remote_placeholder = Tr("call.status.reconnecting").c_str();
   } else {
     in_call.remote_placeholder = "";
   }
 
   in_call.mic_level = muted ? 0 : QuantizeAudioLevel(media.LocalInputLevel());
   in_call.peer_level = QuantizeAudioLevel(media.RemoteOutputLevel());
-  in_call.mic_hint = LevelHint(in_call.mic_level, false, muted);
-  in_call.peer_hint = LevelHint(in_call.peer_level, true, false);
+  in_call.mic_hint = LevelHint(in_call.mic_level, false, muted).c_str();
+  in_call.peer_hint = LevelHint(in_call.peer_level, true, false).c_str();
   if (p2p_failed) {
-    in_call.subtitle = "Couldn't connect";
+    in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
   } else if (media_reconnect && !media.IsConnected()) {
-    in_call.subtitle = "Reconnecting…";
+    in_call.subtitle = Tr("call.status.reconnecting").c_str();
   } else if (stalling) {
-    in_call.subtitle = "Reconnecting…";
+    in_call.subtitle = Tr("call.status.reconnecting").c_str();
   } else if (media.IsConnected()) {
     in_call.elapsed = FormatElapsed(media.ConnectedAtMs());
     if (!in_call.elapsed.empty()) {

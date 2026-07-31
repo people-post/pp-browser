@@ -18,32 +18,8 @@ namespace {
 
 /** How long invitees wait for CallSfuAttach / hop attach before leaving (no relay / migrate fail). */
 constexpr int64_t kSfuAttachWaitMs = 20000;
-/** 1:1 P2P: give up "Connecting…" and show Retry after this. */
+/** 1:1 P2P: give up connecting chrome and show Retry after this. */
 constexpr int64_t kP2pConnectTimeoutMs = 15000;
-
-std::string BuildP2pConnectHint(const bool missing_mic) {
-  std::string hint;
-#if defined(__APPLE__)
-#  if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
-  hint = "Allow microphone and local network access for Frame in Settings.";
-#  else
-  hint = "On Mac, allow Local Network for Frame in System Settings → Privacy & Security.";
-#  endif
-#elif defined(__ANDROID__)
-  hint = "Allow microphone (and camera) permission for Frame.";
-#elif defined(_WIN32)
-  hint = "Check Windows microphone privacy and that the firewall allows this app.";
-#else
-  hint = "Check both devices are on the same network and UDP is not blocked.";
-#endif
-  if (missing_mic) {
-    if (!hint.empty()) {
-      hint += " ";
-    }
-    hint += "Microphone access looks blocked — enable it in system privacy settings.";
-  }
-  return hint;
-}
 
 } // namespace
 
@@ -1085,11 +1061,11 @@ bool CallSessionManager::IsAwaitingSfuRecovery() const { return awaiting_sfu_rec
 
 bool CallSessionManager::IsP2pConnectFailed() const { return p2p_connect_failed_; }
 
-std::string CallSessionManager::P2pConnectHint() const { return p2p_connect_hint_; }
+bool CallSessionManager::P2pConnectMissingMic() const { return p2p_connect_missing_mic_; }
 
 void CallSessionManager::ClearP2pConnectFailed() {
   p2p_connect_failed_ = false;
-  p2p_connect_hint_.clear();
+  p2p_connect_missing_mic_ = false;
 }
 
 void CallSessionManager::MarkP2pConnectFailed(const std::string& /*reason*/) {
@@ -1097,11 +1073,11 @@ void CallSessionManager::MarkP2pConnectFailed(const std::string& /*reason*/) {
     return;
   }
   p2p_connect_failed_ = true;
-  const bool missing_mic = media_.IsActive() && !media_.HasLocalCapture();
-  p2p_connect_hint_ = BuildP2pConnectHint(missing_mic);
+  p2p_connect_missing_mic_ = media_.IsActive() && !media_.HasLocalCapture();
   // Peer Retry sends a new offer — accept rebuild even while still "connecting".
   media_.ArmOfferRestart();
-  log().info << "P2P connect failed call_id=" << media_call_id_ << " hint=" << p2p_connect_hint_;
+  log().info << "P2P connect failed call_id=" << media_call_id_
+             << " missing_mic=" << (p2p_connect_missing_mic_ ? "1" : "0");
 }
 
 void CallSessionManager::PollP2pConnectHealth() {

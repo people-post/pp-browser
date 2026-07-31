@@ -79,8 +79,8 @@ public:
    * Cleared on connect, leave, or successful Retry.
    */
   bool IsP2pConnectFailed() const;
-  /** Best-effort platform tip shown under "Couldn't connect". */
-  std::string P2pConnectHint() const;
+  /** True when connect fail coincided with missing local mic capture (UI appends mic hint). */
+  bool P2pConnectMissingMic() const;
   /** Rebuild local PC as offerer and send a fresh offer (peer applies as renegotiate). */
   Roe<void> RetryP2pMedia(const std::string& call_id);
   /** Mark timeout / ICE fail for 1:1; no-op when SFU recovery owns the path. */
@@ -180,7 +180,7 @@ private:
   bool sfu_attached_ = false;
   bool awaiting_sfu_recovery_ = false;
   bool p2p_connect_failed_ = false;
-  std::string p2p_connect_hint_;
+  bool p2p_connect_missing_mic_ = false;
   uint32_t local_publisher_stream_id_ = 0;
   std::unordered_set<std::string> media_attempted_calls_;
   /** AcceptInvite / SoftMigrate: wait for CallSfuAttach or local attach before giving up. */

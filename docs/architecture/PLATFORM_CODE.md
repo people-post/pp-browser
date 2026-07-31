@@ -24,9 +24,23 @@ See also: [PLATFORMS.md](PLATFORMS.md) (runtime matrix), [SRC_LAYOUT.md](SRC_LAY
 | `base/platform/Android*`, `Ios*`, `Desktop*` | Facades implementing `IPathProvider`, `ILocalNotifier`, etc. |
 | `base/platform/MobileWindowSizing.*` | SDL display-mode sizing for mobile windows |
 | `base/platform/PlatformLogDefaults.*` | Startup log level defaults per platform |
-| `base/platform/PlatformStartupHints.*` | User-facing init failure hints |
+| `base/platform/PlatformStartupHints.*` | User-facing init failure hints (legacy English string_view) |
+| `base/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()` |
 | `render/integration/platform/GlBackend.h` | GLES vs desktop GL selection |
 | `render/integration/platform/MobileGlLifecycle.*` | iOS/Android GL surface and drawable handling |
+
+## User-facing OS tips (i18n)
+
+Do **not** embed English Settings paths or `#ifdef` string catalogs in `feature/` or `app/`.
+
+```text
+1. Add catalog key under hints.* (en + zh-Hans); use {product} when naming the app
+2. Map OS → key only in PlatformUserHints.cpp (allowlisted #ifdef)
+3. UI: Tr(PlatformUserHints::…Key(), {{"product", kProductName}})
+4. Domain code passes facts (bools/enums), never finished copy
+```
+
+New product tips use keys. `InitFailureHint()` remains a rare English string_view for early startup before catalogs load; migrate later if needed.
 
 ## File naming
 
