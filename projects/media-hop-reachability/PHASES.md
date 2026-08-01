@@ -1,5 +1,7 @@
 # Media hop reachability — phases
 
+**[DESIGN.md](DESIGN.md) is the authoritative specification** (stack model, consume API). **This file orders work only** — checklists and traceability. Rationale: [DECISIONS.md](DECISIONS.md). Implementation truth: [CURRENT_STATE.md](CURRENT_STATE.md).
+
 Implement **in libp2p** ([H001](DECISIONS.md#h001--separate-project-implementation-in-libp2p)). SoftMigrate consume comes last.
 
 ## L0 — Docs + ownership

@@ -40,4 +40,4 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [liquid-glass](liquid-glass/) | **Done** | Floating Chrome on compact shell — [stable docs](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials) |
 | [p2p-mesh](p2p-mesh/) | **nf + n4-media done** — N022 invest; **N023 relay scope** spec | Libp2p deepen; scope escalation; HTTP settle preferred — [RELAY_SCOPE](p2p-mesh/RELAY_SCOPE.md) |
 | [p2p-av-calls](p2p-av-calls/) | **V026** libp2p media — **m1** next | Voice-first on libp2p; WebRTC legacy teardown after m1 — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
-| [media-hop-reachability](media-hop-reachability/) | **L0 docs** — L1 peerstore next | Reachability **inside** libp2p; SoftMigrate consumes — [CURRENT_STATE](media-hop-reachability/CURRENT_STATE.md) |
+| [media-hop-reachability](media-hop-reachability/) | **L1–L3 shipped** — L4 consume next; L3.5 multi-hop planned | In-libp2p dial-by-PeerId; SoftMigrate consumes — [DESIGN](media-hop-reachability/DESIGN.md) |

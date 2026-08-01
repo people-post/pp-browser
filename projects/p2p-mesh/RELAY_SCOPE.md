@@ -197,6 +197,6 @@ See [PHASES.md § ns](PHASES.md#ns--relay-scope-and-domain-bridging-n023). Depen
 
 ## Related
 
-- [DESIGN.md § Relay path preference](DESIGN.md#relay-path-preference-n014--n020)
+- [DESIGN.md § Relay selection and scope](DESIGN.md#relay-selection-and-scope)
 - [DECISIONS.md N023](DECISIONS.md#n023--relay-scope-and-domain-bridging-not-geography-tiers)
 - [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md) — HTTP Brief fallback
