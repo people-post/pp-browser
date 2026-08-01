@@ -10,9 +10,9 @@ Implement **in libp2p** ([H001](DECISIONS.md#h001--separate-project-implementati
 
 ## L1 — Peer address book in stack
 
-- [ ] Host/peerstore: remember multiaddrs per PeerId (Identify, successful dial, bootstrap)
-- [ ] TTL / replace stale; expose to `PeerSessionManager` / dial helpers
-- [ ] Document in [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)
+- [x] Host/peerstore: remember multiaddrs per PeerId (Identify, successful dial, bootstrap)
+- [x] TTL / replace stale; expose to `PeerSessionManager` / dial helpers
+- [x] Document in [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)
 
 ## L2 — Advertise Reachable listen set
 

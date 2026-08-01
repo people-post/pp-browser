@@ -58,6 +58,16 @@ std::vector<MeshHopCandidate> CallTopologyController::RankedMediaHopCandidates()
       ranked = ExcludeSelfHop(std::move(ranked), *pid);
     }
   }
+  if (relay_deps_.dial) {
+    for (MeshHopCandidate& hop : ranked) {
+      if (!hop.multiaddr.empty()) {
+        continue;
+      }
+      if (auto ma = relay_deps_.dial->PreferredMultiaddr(hop.peer_id)) {
+        hop.multiaddr = *ma;
+      }
+    }
+  }
   return ranked;
 }
 
@@ -75,6 +85,11 @@ std::string CallTopologyController::ResolveHopMultiaddr(const std::string& hop_p
   for (const MeshHopCandidate& hop : RankedMediaHopCandidates()) {
     if (hop.peer_id == hop_peer_id && !hop.multiaddr.empty()) {
       return hop.multiaddr;
+    }
+  }
+  if (relay_deps_.dial) {
+    if (auto ma = relay_deps_.dial->PreferredMultiaddr(hop_peer_id)) {
+      return *ma;
     }
   }
   return {};

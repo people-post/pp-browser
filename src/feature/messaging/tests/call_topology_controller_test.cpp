@@ -82,6 +82,14 @@ public:
     return endpoints.find(peer_key) != endpoints.end() || force_dialable.count(peer_key) > 0;
   }
 
+  std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
+    const auto it = endpoints.find(peer_key);
+    if (it != endpoints.end()) {
+      return it->second;
+    }
+    return std::nullopt;
+  }
+
   void ClearDialBackoff(const std::string& /*peer_key*/) override {}
 
   std::unordered_map<std::string, std::string> endpoints;

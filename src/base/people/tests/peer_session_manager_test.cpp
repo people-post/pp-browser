@@ -118,5 +118,20 @@ TEST_F(PeerSessionManagerTest, HostExposesLocalPeerId) {
   EXPECT_TRUE(host_.IsRunning());
 }
 
+TEST_F(PeerSessionManagerTest, RawPeerIdHydratesFromAddressBook) {
+  auto remote = host_.LocalPeerIdBase58();
+  ASSERT_TRUE(remote);
+  const std::string ma = "/ip4/203.0.113.20/tcp/4001/p2p/" + *remote;
+
+  ASSERT_TRUE(sessions_->RegisterEndpoint("relay:remote", ma));
+  EXPECT_TRUE(sessions_->IsDialable("relay:remote"));
+  EXPECT_TRUE(sessions_->PreferredPeerMultiaddr("relay:remote"));
+  EXPECT_EQ(*sessions_->PreferredPeerMultiaddr("relay:remote"), ma);
+
+  EXPECT_TRUE(sessions_->IsDialable(*remote));
+  ASSERT_TRUE(sessions_->PreferredPeerMultiaddr(*remote));
+  EXPECT_EQ(*sessions_->PreferredPeerMultiaddr(*remote), ma);
+}
+
 } // namespace
 } // namespace pbr

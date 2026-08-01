@@ -63,9 +63,87 @@ std::string PeerDialErrorUserCopy(const std::string& technical_message) {
 }
 
 PeerSessionManager::PeerSessionManager(Libp2pHost& host, PeerSessionConfig config)
-    : host_(host), config_(std::move(config)), last_sweep_(std::chrono::steady_clock::now()) {}
+    : host_(host), config_(std::move(config)), last_sweep_(std::chrono::steady_clock::now()) {
+  InstallConnectionHandler();
+}
 
 PeerSessionManager::~PeerSessionManager() = default;
+
+PeerAddrSource PeerSessionManager::SourceForEndpointKey(const std::string& peer_relay_user_id) const {
+  if (peer_relay_user_id.rfind("bootstrap:", 0) == 0) {
+    return PeerAddrSource::Bootstrap;
+  }
+  if (peer_relay_user_id.rfind("relay:", 0) == 0) {
+    return PeerAddrSource::Contact;
+  }
+  return PeerAddrSource::Manual;
+}
+
+void PeerSessionManager::InstallConnectionHandler() {
+  if (!host_.IsRunning() || connection_handler_) {
+    return;
+  }
+  connection_handler_ = host_.GetHost().setOnNewConnectionHandler(
+      [this](libp2p::peer::PeerInfo&& info) { OnInboundConnection(std::move(info)); });
+}
+
+void PeerSessionManager::OnInboundConnection(libp2p::peer::PeerInfo info) {
+  address_book_.IngestPeerInfo(info, PeerAddrSource::Connection);
+  const std::string peer_id = info.id.toBase58();
+  std::lock_guard lock(mutex_);
+  for (auto& [key, state] : endpoints_) {
+    if (state.info && state.info->id == info.id) {
+      state.info = info;
+      state.last_touch = std::chrono::steady_clock::now();
+    }
+  }
+  MaybeHydrateEndpointFromBookLocked(peer_id);
+}
+
+std::optional<std::string> PeerSessionManager::PeerIdBase58ForKeyLocked(
+    const std::string& peer_relay_user_id) const {
+  const auto it = endpoints_.find(peer_relay_user_id);
+  if (it != endpoints_.end() && it->second.info) {
+    return it->second.info->id.toBase58();
+  }
+  if (libp2p::peer::PeerId::fromBase58(peer_relay_user_id)) {
+    return peer_relay_user_id;
+  }
+  return std::nullopt;
+}
+
+void PeerSessionManager::MaybeHydrateEndpointFromBookLocked(const std::string& peer_relay_user_id) {
+  auto it = endpoints_.find(peer_relay_user_id);
+  if (it != endpoints_.end() && it->second.info && !it->second.info->addresses.empty()) {
+    return;
+  }
+  const std::optional<std::string> peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id);
+  if (!peer_id) {
+    return;
+  }
+  auto ma = address_book_.PreferredMultiaddr(*peer_id);
+  if (!ma) {
+    return;
+  }
+  auto parsed = libp2p::multi::Multiaddress::create(*ma);
+  if (!parsed) {
+    return;
+  }
+  auto peer = libp2p::peer::PeerId::fromBase58(*peer_id);
+  if (!peer) {
+    return;
+  }
+  libp2p::peer::PeerInfo info{peer.value(), {parsed.value()}};
+  if (it == endpoints_.end()) {
+    EndpointState state;
+    state.info = std::move(info);
+    state.last_touch = std::chrono::steady_clock::now();
+    endpoints_.emplace(peer_relay_user_id, std::move(state));
+    return;
+  }
+  it->second.info = std::move(info);
+  it->second.last_touch = std::chrono::steady_clock::now();
+}
 
 void PeerSessionManager::SetConfig(PeerSessionConfig config) {
   std::lock_guard lock(mutex_);
@@ -99,6 +177,7 @@ Roe<void> PeerSessionManager::RegisterEndpoint(const std::string& peer_relay_use
         peer_id.value(), std::span<const libp2p::multi::Multiaddress>(info.addresses),
         std::chrono::hours(24));
   }
+  (void)address_book_.Upsert(*peer_id_str, multiaddr, SourceForEndpointKey(peer_relay_user_id));
 
   std::lock_guard lock(mutex_);
   auto it = endpoints_.find(peer_relay_user_id);
@@ -119,14 +198,19 @@ Roe<void> PeerSessionManager::RegisterEndpoint(const std::string& peer_relay_use
 bool PeerSessionManager::IsDialable(const std::string& peer_relay_user_id) const {
   std::lock_guard lock(mutex_);
   const auto it = endpoints_.find(peer_relay_user_id);
-  if (it == endpoints_.end()) {
-    return false;
+  if (it != endpoints_.end()) {
+    const auto now = std::chrono::steady_clock::now();
+    if (it->second.dial_failed_until > now) {
+      return false;
+    }
+    if (it->second.info && !it->second.info->addresses.empty()) {
+      return true;
+    }
   }
-  const auto now = std::chrono::steady_clock::now();
-  if (it->second.dial_failed_until > now) {
-    return false;
+  if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+    return address_book_.IsDialable(*peer_id);
   }
-  return it->second.info && !it->second.info->addresses.empty();
+  return false;
 }
 
 bool PeerSessionManager::IsConnected(const std::string& peer_relay_user_id) const {
@@ -165,6 +249,13 @@ PeerLinkSnapshot PeerSessionManager::GetLinkSnapshot(const std::string& peer_rel
     std::lock_guard lock(mutex_);
     const auto it = endpoints_.find(peer_relay_user_id);
     if (it == endpoints_.end() || !it->second.info || it->second.info->addresses.empty()) {
+      if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+        if (address_book_.IsDialable(*peer_id)) {
+          snap.has_endpoint = true;
+          snap.phase = PeerLinkPhase::Idle;
+          return snap;
+        }
+      }
       snap.phase = PeerLinkPhase::Unavailable;
       snap.has_endpoint = false;
       if (it != endpoints_.end()) {
@@ -205,10 +296,31 @@ std::optional<libp2p::peer::PeerInfo> PeerSessionManager::ResolvePeerInfo(
     const std::string& peer_relay_user_id) const {
   std::lock_guard lock(mutex_);
   const auto it = endpoints_.find(peer_relay_user_id);
-  if (it == endpoints_.end()) {
-    return std::nullopt;
+  if (it != endpoints_.end() && it->second.info) {
+    return it->second.info;
   }
-  return it->second.info;
+  if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+    return address_book_.ResolvePeerInfo(*peer_id);
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> PeerSessionManager::PreferredPeerMultiaddr(
+    const std::string& peer_relay_user_id) const {
+  if (auto info = ResolvePeerInfo(peer_relay_user_id)) {
+    if (!info->addresses.empty()) {
+      return info->addresses.front().getStringAddress();
+    }
+  }
+  if (const auto peer_id = libp2p::peer::PeerId::fromBase58(peer_relay_user_id)) {
+    (void)peer_id;
+    return address_book_.PreferredMultiaddr(peer_relay_user_id);
+  }
+  std::lock_guard lock(mutex_);
+  if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+    return address_book_.PreferredMultiaddr(*peer_id);
+  }
+  return std::nullopt;
 }
 
 void PeerSessionManager::MarkWarm(const std::string& peer_relay_user_id) {
@@ -317,6 +429,14 @@ void PeerSessionManager::FinishDial(const std::string& peer_relay_user_id, Roe<v
       if (ep != endpoints_.end()) {
         ep->second.last_error.clear();
         ep->second.dial_failed_until = {};
+        if (ep->second.info) {
+          const std::string peer_id = ep->second.info->id.toBase58();
+          address_book_.SyncFromHost(host_, peer_id);
+          if (!ep->second.info->addresses.empty()) {
+            (void)address_book_.Upsert(peer_id, ep->second.info->addresses.front().getStringAddress(),
+                                       PeerAddrSource::DialSuccess);
+          }
+        }
       }
       TouchPeerLocked(peer_relay_user_id);
       EvictIfOverCapLocked();
@@ -339,6 +459,7 @@ void PeerSessionManager::EnsureConnectionOnIo(const std::string& peer_relay_user
   bool start_dial = false;
   {
     std::lock_guard lock(mutex_);
+    MaybeHydrateEndpointFromBookLocked(peer_relay_user_id);
     auto it = endpoints_.find(peer_relay_user_id);
     if (it == endpoints_.end()) {
       if (on_complete) {
@@ -441,6 +562,7 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
   std::optional<libp2p::peer::PeerInfo> info;
   {
     std::lock_guard lock(mutex_);
+    MaybeHydrateEndpointFromBookLocked(peer_relay_user_id);
     auto it = endpoints_.find(peer_relay_user_id);
     if (it == endpoints_.end()) {
       if (cb) {
@@ -558,6 +680,7 @@ void PeerSessionManager::SuspendColdPeers() {
 
 void PeerSessionManager::Tick() {
   const auto now = std::chrono::steady_clock::now();
+  address_book_.PruneExpired();
   if (now - last_sweep_ < std::chrono::seconds(15)) {
     return;
   }
