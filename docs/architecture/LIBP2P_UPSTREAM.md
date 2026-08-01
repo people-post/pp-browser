@@ -91,6 +91,7 @@ libp2p is built in-tree via `add_subdirectory(src/libp2p)` and linked into the `
 - `PeerAddressBook.*` — integration-layer peer address book (media-hop **L1**): TTL’d multiaddrs per PeerId (base58); fed by bootstrap/register, inbound connections, dial success, and libp2p `AddressRepository`; exposed via `PeerSessionManager::PreferredPeerMultiaddr` for hop/circuit dial.
 - `IdentifyIntegrationService.*` — wires fork **Identify** + **Identify-Push** on `BasicHost`; remote Identify refreshes L1 book; self ads via `PublishSelfAdvertisedAddrs` (media-hop **L2**).
 - `BuildAdvertisedListenSet` / `AdvertisedAddrPublisher.*` — unify bound listen, UPnP external, global IPv6, and dial-back-confirmed addrs; `MessagingHub` publishes when **Node + media_relay** after reachability probe.
+- `CircuitBridgeTarget.*` / `CircuitRelayService` — media-hop **L3** PeerId-friendly circuit bridge (`target_peer_id` + relay-side resolve); `PeerSessionManager::TryEnsureHopViaCircuit` for circuit-backed media-relay streams; SoftMigrate fallback via `ICircuitHopReach`.
 - `PeerIdUtil.*` — derive base58 Peer ID from the app Ed25519 signing public key (network identity / Me settings; see [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route))
 
 Feature protocols on the shared host:

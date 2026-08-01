@@ -156,7 +156,8 @@ public:
    * nf: try circuit bridge via preferred hops (contacts then seed when prefer_contacts).
    * Registers hop endpoints as needed; returns first successful bridge.
    */
-  Roe<CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_multiaddr,
+  Roe<CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_peer_id,
+                                                              const std::string& target_multiaddr,
                                                               int timeout_ms = 8000);
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
@@ -181,6 +182,7 @@ private:
   void ApplyMeshAdmissionPolicies();
   void WireCallMediaRelayDeps();
   void PublishNodeAdvertisedAddrs();
+  Roe<void> TryEnsureCircuitHopReachable(const std::string& hop_peer_id);
   void RegisterContactEndpoints();
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
@@ -227,6 +229,7 @@ private:
   std::unique_ptr<MediaRelayService> media_relay_;
   std::unique_ptr<MediaRelayServiceClient> media_relay_client_;
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
+  std::unique_ptr<CircuitHopReachClient> circuit_hop_reach_;
   ReachabilityService reachability_;
   std::string libp2p_last_error_;
   bool upnp_auto_tried_ = false;

@@ -4,6 +4,7 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerAddressBook.h"
 
+#include <libp2p/connection/stream.hpp>
 #include <libp2p/connection/stream_and_protocol.hpp>
 #include <libp2p/event/bus.hpp>
 #include <libp2p/peer/peer_info.hpp>
@@ -22,6 +23,8 @@
 #include <vector>
 
 namespace pbr {
+
+class CircuitRelayService;
 
 struct PeerSessionConfig {
   size_t max_connections = 48;
@@ -88,6 +91,13 @@ public:
   Roe<void> UpsertBookEntry(const std::string& peer_id_base58, const std::string& multiaddr,
                            PeerAddrSource source);
 
+  /** L3: try circuit bridge via candidate relays when direct dial is unavailable. */
+  Roe<void> TryEnsureHopViaCircuit(const std::string& target_peer_id, CircuitRelayService& circuit,
+                                   const std::vector<std::string>& relay_peer_ids, int timeout_ms = 8000);
+
+  bool IsCircuitBacked(const std::string& peer_relay_user_id) const;
+  void ClearCircuitHop(const std::string& peer_relay_user_id);
+
   /** Mark peer as warm (kept across idle eviction / background suspend of cold peers). */
   void MarkWarm(const std::string& peer_relay_user_id);
   void ClearWarm(const std::string& peer_relay_user_id);
@@ -128,6 +138,11 @@ private:
     std::function<void(Roe<void>)> on_complete;
   };
 
+  struct CircuitHopLink {
+    std::shared_ptr<libp2p::connection::Stream> stream;
+    std::string relay_peer_id;
+  };
+
   void TouchPeerLocked(const std::string& peer_relay_user_id);
   void EvictIfOverCapLocked();
   void DisconnectPeer(const libp2p::peer::PeerId& peer_id);
@@ -145,6 +160,7 @@ private:
   mutable std::mutex mutex_;
   std::unordered_map<std::string, EndpointState> endpoints_;
   std::unordered_map<std::string, std::vector<DialWaiter>> inflight_dials_;
+  std::unordered_map<std::string, CircuitHopLink> circuit_hops_;
   std::atomic<size_t> concurrent_dials_{0};
   std::chrono::steady_clock::time_point last_sweep_{};
   libp2p::event::Handle connection_handler_;

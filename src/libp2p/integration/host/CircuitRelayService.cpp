@@ -1,6 +1,7 @@
 #include "libp2p/integration/host/CircuitRelayService.h"
 
 #include "base/people/RelayScope.h"
+#include "libp2p/integration/host/CircuitBridgeTarget.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/basic/read.hpp>
@@ -89,7 +90,7 @@ void BridgeStreams(const std::shared_ptr<Stream>& a, const std::shared_ptr<Strea
   pump(b, a);
 }
 
-CircuitRelayBridgeResult RelayBridge(PeerSessionManager& sessions, const nlohmann::json& root,
+CircuitRelayBridgeResult RelayBridge(Libp2pHost& host, PeerSessionManager& sessions, const nlohmann::json& root,
                                      const std::shared_ptr<Stream>& client_stream,
                                      const CircuitRelayAdmissionPolicy& admission) {
   CircuitRelayBridgeResult out;
@@ -105,13 +106,22 @@ CircuitRelayBridgeResult RelayBridge(PeerSessionManager& sessions, const nlohman
     out.error = "relay scope: stranger refused";
     return out;
   }
-  const std::string target = root.value("target_multiaddr", "");
-  if (target.empty()) {
-    out.error = "missing target_multiaddr";
+
+  CircuitBridgeTarget target;
+  target.target_peer_id = root.value("target_peer_id", "");
+  target.target_multiaddr = root.value("target_multiaddr", "");
+  target.target_protocol = root.value("target_protocol", "");
+
+  auto normalized = NormalizeCircuitBridgeTarget(sessions, host, target);
+  if (!normalized) {
+    out.error = normalized.error().message;
     return out;
   }
+  const std::string& target_peer_id = normalized->first;
+  const std::string& target = normalized->second;
+  out.resolved_multiaddr = target;
 
-  const std::string target_key = "circuit-relay:" + target;
+  const std::string target_key = target_peer_id;
   if (auto registered = sessions.RegisterEndpoint(target_key, target); !registered) {
     out.error = registered.error().message;
     return out;
@@ -166,7 +176,7 @@ CircuitRelayBridgeResult RelayBridge(PeerSessionManager& sessions, const nlohman
     return out;
   }
 
-  nlohmann::json response = {{"v", 1}, {"ok", true}};
+  nlohmann::json response = {{"v", 1}, {"ok", true}, {"resolved_multiaddr", target}};
   if (auto encoded = EncodeStreamJsonFrame(response.dump())) {
     if (!WriteExactFrame(client_stream, *encoded)) {
       out.error = "failed to ack bridge";
@@ -183,6 +193,7 @@ CircuitRelayBridgeResult RelayBridge(PeerSessionManager& sessions, const nlohman
 
 struct CircuitRelayService::Impl {
   std::mutex handler_mutex;
+  Libp2pHost* host = nullptr;
   PeerSessionManager* sessions = nullptr;
   CircuitRelayAdmissionPolicy admission;
 
@@ -190,9 +201,13 @@ struct CircuitRelayService::Impl {
     auto stream = std::move(stream_and_protocol.stream);
     std::thread([this, stream = std::move(stream)]() mutable {
       CircuitRelayAdmissionPolicy policy;
+      Libp2pHost* host_ptr = nullptr;
+      PeerSessionManager* sessions_ptr = nullptr;
       {
         std::lock_guard<std::mutex> lock(handler_mutex);
         policy = admission;
+        host_ptr = host;
+        sessions_ptr = sessions;
       }
       CircuitRelayBridgeResult result;
       auto frame = ReadExactFrame(stream);
@@ -202,10 +217,10 @@ struct CircuitRelayService::Impl {
         nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
         if (root.is_discarded() || !root.is_object()) {
           result.error = "invalid circuit-relay json";
-        } else if (!sessions) {
+        } else if (!host_ptr || !sessions_ptr) {
           result.error = "circuit-relay service not ready";
         } else {
-          result = RelayBridge(*sessions, root, stream, policy);
+          result = RelayBridge(*host_ptr, *sessions_ptr, root, stream, policy);
           if (result.ok) {
             return;
           }
@@ -225,6 +240,7 @@ struct CircuitRelayService::Impl {
 
 CircuitRelayService::CircuitRelayService(Libp2pHost& host, PeerSessionManager& sessions)
     : impl_(std::make_unique<Impl>()), host_(host), sessions_(sessions) {
+  impl_->host = &host_;
   impl_->sessions = &sessions_;
 }
 
@@ -255,22 +271,45 @@ void CircuitRelayService::SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy)
 Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::string& relay_peer_key,
                                                                  const std::string& target_multiaddr,
                                                                  int timeout_ms) {
+  CircuitBridgeTarget target;
+  target.target_multiaddr = target_multiaddr;
+  return RequestBridge(relay_peer_key, target, timeout_ms);
+}
+
+Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::string& relay_peer_key,
+                                                                 const CircuitBridgeTarget& target_in,
+                                                                 int timeout_ms) {
   if (!host_.IsRunning()) {
     return Error("circuit-relay host not running");
   }
   if (!sessions_.IsDialable(relay_peer_key)) {
     return Error("relay peer endpoint not registered");
   }
-  if (target_multiaddr.empty()) {
-    return Error("missing target_multiaddr");
+
+  CircuitBridgeTarget target = target_in;
+  if (target.target_multiaddr.empty() && target.target_peer_id.empty()) {
+    return Error("missing circuit bridge target");
   }
 
-  nlohmann::json request = {
-      {"v", 1},
-      {"op", "bridge"},
-      {"target_multiaddr", target_multiaddr},
-      {"timeout_ms", timeout_ms > 0 ? timeout_ms : 8000},
-  };
+  if (target.target_multiaddr.empty()) {
+    if (auto resolved = ResolveCircuitTargetMultiaddr(sessions_, host_, target.target_peer_id)) {
+      target.target_multiaddr = *resolved;
+    }
+  }
+
+  nlohmann::json request = {{"v", 1},
+                            {"op", "bridge"},
+                            {"timeout_ms", timeout_ms > 0 ? timeout_ms : 8000}};
+  if (!target.target_peer_id.empty()) {
+    request["target_peer_id"] = target.target_peer_id;
+  }
+  if (!target.target_multiaddr.empty()) {
+    request["target_multiaddr"] = target.target_multiaddr;
+  }
+  if (!target.target_protocol.empty()) {
+    request["target_protocol"] = target.target_protocol;
+  }
+
   auto frame = EncodeStreamJsonFrame(request.dump());
   if (!frame) {
     return frame.error();
@@ -313,9 +352,13 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
                            CircuitRelayBridgeResult parsed;
                            parsed.ok = root.value("ok", false);
                            parsed.error = root.value("error", "");
+                           parsed.resolved_multiaddr = root.value("resolved_multiaddr", "");
                            if (!parsed.ok) {
                              stream->close([](auto&&) {});
+                             result_promise->set_value(parsed);
+                             return;
                            }
+                           parsed.stream = stream;
                            result_promise->set_value(parsed);
                          }).detach();
                        });

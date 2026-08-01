@@ -355,6 +355,9 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     (void)relay_deps_.dial->RegisterEndpoint(attach.hop_peer_id, attach.hop_multiaddr);
     relay_deps_.dial->ClearDialBackoff(attach.hop_peer_id);
   }
+  if (!relay_deps_.dial->IsDialable(attach.hop_peer_id) && relay_deps_.circuit_reach) {
+    (void)relay_deps_.circuit_reach->TryEnsureHopReachable(attach.hop_peer_id);
+  }
   if (!relay_deps_.dial->IsDialable(attach.hop_peer_id)) {
     return Error("hop not dialable");
   }
