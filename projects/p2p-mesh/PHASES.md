@@ -117,5 +117,5 @@ Pairs with stack [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circu
 - [ ] R1 retail quote to A (bundled circuit + media + latency tier); R1↔B wholesale quote
 - [ ] Consumer bridge score: `r1_reaches_target` incl. subcontract hints (Identify / probe cache)
 - [ ] Inter-relay settlement (R1 pays R2, B — HTTP preferred N022)
-- [ ] SoftMigrate brokered attach mode vs direct attach ([H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop))
-- [ ] Per-hop admission unchanged; loop detection
+- [ ] SoftMigrate brokered attach mode vs direct attach ([H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop)); broker quote scoped to **call-agreed B**
+- [ ] Re-pick policy: R1 = path only; B′ = coordinator SoftMigrate (V023)

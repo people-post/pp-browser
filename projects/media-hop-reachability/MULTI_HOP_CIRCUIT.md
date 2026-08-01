@@ -86,9 +86,24 @@ When R1 accepts A’s session toward target B:
 1. **Circuit:** direct-dial B if possible; else pick R2+ (scope, margin, capacity) and nested circuit.
 2. **Media (brokered calls):** request **wholesale quote** from B (or pick alternate SFU); fold into retail quote to A.
 3. **Margin:** reject or re-quote if wholesale (R2 + B + ops) ≥ retail to A.
-4. **SLA:** R1 owns re-pick (alternate R2 or B) on failure within quoted tier.
+4. **SLA / re-pick bounds** — R1 re-picks **upstream circuit** (R2+) to reach the agreed target; R1 does **not** unilaterally swap **call-agreed `media_relay` B** (see below).
 
 R1 is a **service broker**: one retail relationship with A; wholesale with R2 and B.
+
+### Re-pick bounds (calls — B is roster-bound)
+
+**B** is the group’s agreed blind SFU for a **`call_id`** (coordinator pick + authenticated attach per V023/N020). Participants exchange media **via that B**; it is not an opaque subcontract R1 may replace without call context.
+
+| Failure | Who re-picks | What may change |
+|---------|--------------|-----------------|
+| Upstream circuit leg (R2+, path) | **R1** (within retail SLA / quote) | Alternate R2, alternate route — **same B** |
+| R1↔B wholesale attach / circuit to B | **R1** first (retry, alternate path) | Still **same B** |
+| **B** unavailable / hop failed | **Call coordinator** (SoftMigrate re-pick) | New hop PeerId — **call-level**; exclude failed B; roster + `call_id` auth |
+| New B chosen | Coordinator + participants | A may need **new broker quote** if still using R1, or **direct attach** if dialable to new B |
+
+R1’s bundled quote is “deliver A to **this call’s B** at tier T,” not “R1 picks any SFU.” If the group migrates to **B′**, hop selection runs again at the **call layer**; R1 is not a substitute coordinator.
+
+**Messaging / non-call circuit:** target PeerId may still be fixed by app intent; same rule — R1 re-picks **path**, not the agreed destination identity, unless the app session explicitly delegates hop choice to R1.
 
 ## Hop limit (config, not hardcoded)
 

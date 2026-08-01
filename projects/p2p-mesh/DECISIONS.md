@@ -329,11 +329,11 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 | **Consumer UX** | A does not quote or pay R2 or B directly on the brokered path; R1’s rate may differ from B’s wholesale rate |
 | **Upstream circuit** | R1 chooses R2+; R1 pays upstream circuit cost; must keep **positive margin** when paid |
 | **Downstream media (brokered calls)** | R1 subcontracts **`media_relay`** on B (or alternate SFU R1 selects); **R1 absorbs B’s cost** in its quote to A and may add markup for path + **latency / delivery guarantee** |
-| **SLA owner** | R1 owns end-to-end delivery promise to A (path + attach + media fan-out quality class advertised in quote) |
+| **SLA owner** | R1 owns **path + attach delivery** to the **call-agreed** target; see **re-pick bounds** below |
 | **Direct attach (unchanged)** | When A **direct-dials B** without a broker, **A pays B** per N019 / [H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop) — friend volunteer SFU, no R1 markup |
 | **Volunteer R1** | May bundle volunteer upstream (R2, B) at rate 0 to A; still one relationship with R1 |
 
-**Rationale:** One payer and one SLA owner matches “R1 feels like the real B at a different price”; enables latency guarantees only the orchestrator can offer; R1 optimizes subcontract mix for margin. Aligns circuit multi-hop with call economics.  
-**Alternatives:** A pays B separately while using R1 for circuit only (rejected — splits SLA, confuses UX); pay-each-hop (rejected); R1 forbidden from marking up B (rejected — no incentive to broker).  
+**Rationale:** One payer and one SLA owner matches “R1 feels like the real B at a different price”; enables latency guarantees only the orchestrator can offer on **path to** the agreed SFU; R1 optimizes subcontract mix for margin. **B** remains call-scoped — SFU re-pick is coordinator policy (V023), not broker discretion.  
+**Alternatives:** A pays B separately while using R1 for circuit only (rejected — splits SLA, confuses UX); pay-each-hop (rejected); R1 forbidden from marking up B (rejected — no incentive to broker); **R1 unilateral B swap** (rejected — breaks roster / group-agreed media hub).  
 **Implementation notes (later):** R1↔B wholesale quote/attach protocol; inter-relay settlement (HTTP preferred per N022); SoftMigrate **brokered** vs **direct** attach modes.  
 **Spec:** [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). **Stack phase:** [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). **Policy phase:** [ns3](PHASES.md#ns3--multi-hop-circuit-policy).
