@@ -1,5 +1,6 @@
 #include "feature/messaging/MessagingHub.h"
 
+#include "feature/messaging/ContactReachability.h"
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/GroupMembershipService.h"
 #include "feature/messaging/MobileEphemeralListenGate.h"
@@ -285,6 +286,7 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
   reachability_.SetOnUpdated([this]() {
     ApplyMeshAdmissionPolicies();
     PublishNodeAdvertisedAddrs();
+    RegisterContactEndpoints();
     if (on_reachability_updated_) {
       on_reachability_updated_();
     }
@@ -542,16 +544,73 @@ void MessagingHub::RegisterContactEndpoints() {
   if (!listed) {
     return;
   }
+  PeerSessionManager* sessions = Sessions();
   for (const Contact& contact : *listed) {
+    p2p_->RegisterContactDirectEndpoints(contact);
     const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
-    if (target.peer_identity_value.empty() || contact.multiaddrs.empty()) {
+    if (target.peer_identity_value.empty()) {
       continue;
     }
     for (const std::string& ma : contact.multiaddrs) {
       p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
     }
+    const std::string peer_id = PeerIdFromContact(contact);
+    if (peer_id.empty() || sessions == nullptr) {
+      continue;
+    }
+    if (auto ma = sessions->PreferredPeerMultiaddr(peer_id)) {
+      p2p_->RegisterPeerDirectEndpoint(peer_id, *ma);
+      if (target.peer_identity_value != peer_id) {
+        p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+      }
+    }
   }
   ApplyMeshAdmissionPolicies();
+}
+
+bool MessagingHub::IsContactReachable(const Contact& contact) const {
+  return IsContactReachableForMessaging(contact, Sessions(), relay_ != nullptr);
+}
+
+void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
+  if (!messaging_ready_ || identity.empty() || !node_runtime_) {
+    return;
+  }
+  PeerSessionManager* sessions = node_runtime_->Sessions();
+  if (sessions == nullptr) {
+    return;
+  }
+
+  std::string peer_id;
+  if (contacts_) {
+    if (auto hit = contacts_->FindByIdentity(identity, ContactIdKind::RelayUser)) {
+      if (hit->has_value()) {
+        peer_id = PeerIdFromContact(**hit);
+      }
+    }
+    if (peer_id.empty()) {
+      if (auto hit = contacts_->FindByIdentity(identity, ContactIdKind::PeerId)) {
+        if (hit->has_value()) {
+          peer_id = PeerIdFromContact(**hit);
+        }
+      }
+    }
+  }
+  if (peer_id.empty()) {
+    peer_id = identity;
+  }
+
+  (void)sessions->ResolvePeerInfo(peer_id);
+  if (auto ma = sessions->PreferredPeerMultiaddr(peer_id)) {
+    (void)sessions->RegisterEndpoint(peer_id, *ma);
+    sessions->ClearDialBackoff(peer_id);
+  }
+  if (!sessions->IsDialable(peer_id)) {
+    (void)TryEnsureCircuitHopReachable(peer_id);
+  }
+  if (sessions->IsDialable(peer_id)) {
+    (void)sessions->EnsureConnection(peer_id);
+  }
 }
 
 Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
@@ -616,6 +675,9 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   p2p_->SetCallSessionManager(call_sessions_.get());
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChanged([this]() { SyncMobileEphemeralListen(); });
+  call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
+    PrefetchPeerReachability(identity);
+  });
   WireCallMediaRelayDeps();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, p2p_.get());
@@ -664,6 +726,9 @@ Roe<void> MessagingHub::BuildMessagingStack() {
   p2p_->SetCallSessionManager(call_sessions_.get());
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChanged([this]() { SyncMobileEphemeralListen(); });
+  call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
+    PrefetchPeerReachability(identity);
+  });
   WireCallMediaRelayDeps();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, p2p_.get());
@@ -1116,10 +1181,14 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
     if (!target.target_peer_id.empty() && key == target.target_peer_id) {
       continue;
     }
-    if (!hop.multiaddr.empty()) {
+    if (hop.multiaddr.empty()) {
+      if (auto ma = sessions.PreferredPeerMultiaddr(key)) {
+        (void)sessions.RegisterEndpoint(key, *ma);
+      }
+    } else {
       (void)sessions.RegisterEndpoint(key, hop.multiaddr);
-      sessions.ClearDialBackoff(key);
     }
+    sessions.ClearDialBackoff(key);
     if (!sessions.IsDialable(key)) {
       last.error = "hop not dialable: " + key;
       continue;
@@ -1161,10 +1230,14 @@ Roe<void> MessagingHub::TryEnsureCircuitHopReachable(const std::string& hop_peer
     if (hop.peer_id.empty() || hop.peer_id == hop_peer_id) {
       continue;
     }
-    if (!hop.multiaddr.empty()) {
+    if (hop.multiaddr.empty()) {
+      if (auto ma = sessions.PreferredPeerMultiaddr(hop.peer_id)) {
+        (void)sessions.RegisterEndpoint(hop.peer_id, *ma);
+      }
+    } else {
       (void)sessions.RegisterEndpoint(hop.peer_id, hop.multiaddr);
-      sessions.ClearDialBackoff(hop.peer_id);
     }
+    sessions.ClearDialBackoff(hop.peer_id);
     if (sessions.IsDialable(hop.peer_id)) {
       relay_ids.push_back(hop.peer_id);
     }

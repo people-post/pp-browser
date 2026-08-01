@@ -172,6 +172,9 @@ public:
 
   void SetOnMessagingReady(std::function<void()> callback);
 
+  /** L4: PeerId-only OK when stack address book has a dial path (or relay / pasted ma). */
+  bool IsContactReachable(const Contact& contact) const;
+
 private:
   void InstallServiceClients(const AppConfig& config);
   void UpdateServiceClients(const AppConfig& config);
@@ -189,6 +192,7 @@ private:
 
   void SyncMobileEphemeralListen();
   void PublishMobileCallScopedAddrs();
+  void PrefetchPeerReachability(const std::string& identity);
   bool HasActiveLocalCall();
 
   std::string data_dir_;

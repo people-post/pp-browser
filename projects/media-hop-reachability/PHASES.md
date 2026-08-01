@@ -40,10 +40,11 @@ Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--mu
 
 ## L4 — SoftMigrate consume stack only
 
-- [ ] Rank hops as today; skip if stack says undialable
-- [ ] Drop reliance on empty contact ma as the only signal (contacts optional cache — H003)
+- [x] Rank hops; skip when stack says undialable (after circuit attempt)
+- [x] Drop reliance on empty contact ma as the only signal (contacts optional cache — H003)
 - [ ] Dogfood: Android SoftMigrate → Windows Node without pasted multiaddr
-- [ ] Mobile ephemeral listen (N025): addrs published during Wi‑Fi foreground call for PeerId dial
+- [x] Mobile ephemeral listen (N025): addrs published during Wi‑Fi foreground call for PeerId dial
+- [x] UI + `RegisterContactEndpoints` consume address book; call-time prefetch via seed/circuit
 
 ## L5 — Directory / DHT (later)
 

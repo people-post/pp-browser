@@ -14,6 +14,7 @@
 #include "base/ui/ContextMenuHost.h"
 #include "common/Utilities.h"
 #include "feature/ui/ChatSessionPorts.h"
+#include "feature/messaging/ContactReachability.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
 #include "base/crypto/ProfileUnlockGate.h"
@@ -250,13 +251,30 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
   return detail;
 }
 
-void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const Contact& contact) {
+void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const Contact& contact,
+                               const MessagingHub* messaging) {
   detail.multiaddrs_text = MultiaddrsToText(contact.multiaddrs).c_str();
   detail.multiaddrs_summary = MultiaddrsSummary(contact.multiaddrs).c_str();
   const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
   if (target.peer_identity_value.empty()) {
     detail.can_message = false;
     detail.message_hint = "Add a relay ID, or a peer ID with multiaddr, to message.";
+    return;
+  }
+  if (messaging != nullptr && messaging->IsMessagingReady()) {
+    detail.can_message = messaging->IsContactReachable(contact);
+    if (!detail.can_message) {
+      detail.message_hint =
+          "Add a relay ID or multiaddr, or connect on the same network so this PeerId becomes dialable.";
+      return;
+    }
+    if (contact.multiaddrs.empty() && IsContactStackDialable(contact, messaging->Sessions())) {
+      detail.message_hint = "Direct link via address book (no pasted multiaddr).";
+    } else if (contact.multiaddrs.empty()) {
+      detail.message_hint = "Relay messaging available. Add a multiaddr for a pinned direct link.";
+    } else {
+      detail.message_hint = "";
+    }
     return;
   }
   if (target.peer_identity_kind == ContactIdKindToString(ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
@@ -581,11 +599,11 @@ void ContactsController::LoadSelectedDetail(const std::string& contact_id) {
     return;
   }
   selected_ = ToContactDetail(**contact);
-  ApplyMessagingEligibility(selected_, **contact);
+  ApplyMessagingEligibility(selected_, **contact, messaging_);
 }
 
 void ContactsController::UpdateMessagingEligibility(const Contact& contact) {
-  ApplyMessagingEligibility(selected_, contact);
+  ApplyMessagingEligibility(selected_, contact, messaging_);
 }
 
 void ContactsController::OnSelectContact(const std::string& contact_id) {

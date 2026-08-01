@@ -7,6 +7,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/people/MeshHopPolicy.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/E2eIntegrityUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
@@ -172,6 +173,19 @@ void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact)
   }
   for (const std::string& ma : contact.multiaddrs) {
     RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
+  }
+  if (peer_sessions_ == nullptr) {
+    return;
+  }
+  const std::string peer_id = PeerIdFromContact(contact);
+  if (peer_id.empty()) {
+    return;
+  }
+  if (auto ma = peer_sessions_->PreferredPeerMultiaddr(peer_id)) {
+    RegisterPeerDirectEndpoint(peer_id, *ma);
+    if (target.peer_identity_value != peer_id) {
+      RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+    }
   }
 }
 
@@ -354,6 +368,10 @@ ThreadPeerLinkView P2pMessagingService::GetThreadPeerLink(const std::string& thr
       view.status_label = "Can't connect";
       view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
       view.show_banner = true;
+    } else if (peer_sessions_->IsDialable(peer)) {
+      view.status_label = "Direct";
+      view.has_direct_endpoint = true;
+      view.phase = PeerLinkPhase::Idle;
     } else {
       view.status_label = "Offline";
       view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
