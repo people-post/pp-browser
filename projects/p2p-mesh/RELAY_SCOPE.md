@@ -141,7 +141,7 @@ See [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). Summ
 | **Consumer (A)** | Escalate scope → score **R1** → quote/accept with R1 → opaque tunnel to B |
 | **Provider (R1)** | If no direct dial to B, inner pick **R2** (scope, margin, capacity) → nested circuit |
 
-**Pricing:** A pays **R1 only** for circuit; R1 optimizes upstream so margin stays positive when paid.
+**Pricing:** A pays **R1 only** on the brokered path (bundled circuit + media + SLA — [N024](DECISIONS.md#n024--immediate-relay-as-service-broker)). R1 optimizes upstream so margin stays positive when paid.
 
 ### Ecosystem health by scope
 

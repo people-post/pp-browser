@@ -109,10 +109,13 @@ Docs-first; implement after n4-media stable. See [RELAY_SCOPE.md](RELAY_SCOPE.md
 
 ## ns3 — Multi-hop circuit policy
 
-Pairs with stack [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). Spec: [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). ADR: [N024](DECISIONS.md#n024--circuit-pricing-pay-immediate-relay-only).
+Pairs with stack [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). Spec: [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). ADR: [N024](DECISIONS.md#n024--immediate-relay-as-service-broker).
 
-- [x] ADR: immediate-relay pricing (A pays R1; R1 subcontracts R2+)
+- [x] ADR: R1 as service broker (A pays R1; R1 subcontracts R2 + B; bundled media + SLA)
+- [ ] Config: `circuit_relay.max_hops` (default 3; no hardcoded protocol max)
 - [ ] R1 upstream relay scorer (margin-aware; scope + N014 preference)
-- [ ] Circuit quote/ceiling for paid R1 (mirror N019 pattern when `circuit_relay` paid)
+- [ ] R1 retail quote to A (bundled circuit + media + latency tier); R1↔B wholesale quote
 - [ ] Consumer bridge score: `r1_reaches_target` incl. subcontract hints (Identify / probe cache)
-- [ ] Abuse caps: max 2 relays, per-hop admission unchanged
+- [ ] Inter-relay settlement (R1 pays R2, B — HTTP preferred N022)
+- [ ] SoftMigrate brokered attach mode vs direct attach ([H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop))
+- [ ] Per-hop admission unchanged; loop detection

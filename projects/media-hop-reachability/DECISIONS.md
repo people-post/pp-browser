@@ -42,10 +42,20 @@ Call: [V026](../p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--lib
 
 ## H005 — Circuit last resort; bill media hop
 
-**Status:** Accepted  
-**Decision:** Circuit may enable dial to hop PeerId; quote/billing stay on **media_relay hop PeerId**. Prefer contact then seed bridges (N014). Evolve custom circuit toward PeerId-friendly semantics (L3). **Circuit-chain pricing** (multi-hop) is separate: consumer pays **immediate relay R1 only** ([N024](../p2p-mesh/DECISIONS.md#n024--circuit-pricing-pay-immediate-relay-only)); see [H008](#h008--multi-hop-circuit-chains-planned).  
-**Rationale:** Clients need a path without target public IP.  
-**Alternatives:** Fail without circuit.
+**Status:** Accepted (updated 2026-08-01 — brokered path via N024)  
+**Decision:** Circuit may enable dial to hop PeerId. Prefer contact then seed bridges (N014). Evolve custom circuit toward PeerId-friendly semantics (L3).
+
+**Billing — two attach modes:**
+
+| Mode | When | Payer / quote |
+|------|------|----------------|
+| **Direct attach** | A dials **`media_relay` hop B** directly (stack dialable; no broker) | **A pays B** — N019 quote/ceiling on B ([V022](../p2p-av-calls/DECISIONS.md)) |
+| **Brokered attach** | A uses **immediate relay R1** for path and/or media (multi-hop, partition, or R1-as-service) | **A pays R1 only** — bundled circuit + subcontracted media + SLA ([N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker)) |
+
+Direct attach remains the simple volunteer / friend-SFU path. Brokered attach is the unified commercial face when R1 orchestrates reachability and downstream `media_relay` capacity.
+
+**Rationale:** Clients need a path without target public IP; friend hops should stay one quote with B; brokered paths need one payer and one SLA owner.  
+**Alternatives:** Fail without circuit; always bill B even through R1 (rejected for broker UX — see N024).
 
 ---
 
@@ -72,7 +82,11 @@ Call: [V026](../p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--lib
 
 **Status:** Accepted (plan only — **not implemented**)  
 **Date:** 2026-08-01  
-**Decision:** Custom circuit (`/pp-browser/circuit-relay`) must evolve from **single-hop** (consumer → one relay → direct target dial) to **multi-hop transitive paths** (consumer → immediate relay R1 → optional upstream R2+ → target B) for partition escape. Consumer **selects and contracts with R1 only**; R1 chooses upstream relays and downstream completion. **Pricing:** [N024](../p2p-mesh/DECISIONS.md#n024--circuit-pricing-pay-immediate-relay-only) — A pays R1 only for circuit; R1 manages margin on subcontracted hops. **Media attach billing** on hop B is unchanged ([H005](#h005--circuit-last-resort-bill-media-hop) / N019). v1 hop cap: **two relays** on path (illustrative A→R1→R2→B).  
-**Rationale:** L3 landed single-hop bridge; real meshes need transitive reachability when no one relay direct-dials the target. Aligns product mental model with [N023](../p2p-mesh/DECISIONS.md#n023--relay-scope-and-domain-bridging-not-geography-tiers) bridge score without forcing consumers to manage hop lists.  
-**Alternatives:** Retry only alternate single relays (rejected — fails when only transitive path exists); consumer pays every hop (rejected — UX and quote complexity); libp2p circuit v2 as v1 product path (deferred — own fork evolution first).  
+**Updated:** 2026-08-01 (hop cap config; brokered pricing N024)  
+**Decision:** Custom circuit (`/pp-browser/circuit-relay`) must evolve from **single-hop** to **multi-hop transitive paths** (A → immediate relay **R1** → optional upstream **R2+** → target **B**). Consumer **selects and contracts with R1 only** ([N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker)). R1 chooses upstream relays and (when brokered) subcontracted **`media_relay`** capacity on B.
+
+**Hop limit:** Configurable **`circuit_relay.max_hops`** (default **3** relay legs on path). The stack must **not** hardcode a protocol maximum — honor whatever limit ops/config sets (including &gt; 3). Loop detection and per-hop admission still apply.
+
+**Rationale:** L3 landed single-hop bridge; real meshes need transitive reachability. Broker model lets R1 own path + media economics and SLA.  
+**Alternatives:** Retry only alternate single relays (rejected); consumer pays every hop (rejected); fixed compile-time hop max (rejected).  
 **Spec:** [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md). **Phase:** [L3.5](PHASES.md#l35--multi-hop-circuit-v2).

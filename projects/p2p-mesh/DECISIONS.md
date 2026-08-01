@@ -316,20 +316,24 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 
 ---
 
-## N024 — Circuit pricing: pay immediate relay only
+## N024 — Immediate relay as service broker
 
 **Date:** 2026-08-01  
+**Updated:** 2026-08-01 (bundled media + SLA; supersedes circuit-only wording)  
 **Status:** Accepted (plan — pairs with [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned))  
-**Decision:** For multi-hop **circuit** connectivity (A uses R1, then R2, …, to reach B):
+**Decision:** When consumer **A** uses immediate relay **R1** (circuit path and/or brokered call attach), **A pays R1 only**. R1 is the **single commercial and SLA face** — priced and experienced like “the hop,” even when R1 subcontracted upstream **`circuit_relay`** (R2+) and **`media_relay`** (B) capacity behind the scenes.
 
 | Rule | Detail |
 |------|--------|
-| **Consumer payer** | **A pays R1 only** — the **immediate relay** A selected and quoted with |
-| **Upstream hops** | **R1** chooses R2+ and bears subcontract cost / risk; R1 must keep **positive margin** when `circuit_relay` is paid |
-| **Consumer UX** | One quote + billing ceiling with R1; A does not quote or pay R2 directly |
-| **Media hop B** | Unchanged — `media_relay` quote/settle on **B** per [H008/H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop) and **N019** (circuit is reachability; SFU is separate SKU) |
-| **Volunteer** | R1 may subcontract volunteer upstream relays at zero marginal quote to A |
+| **Consumer payer** | **A pays R1 only** — one quote + billing ceiling with R1 |
+| **Consumer UX** | A does not quote or pay R2 or B directly on the brokered path; R1’s rate may differ from B’s wholesale rate |
+| **Upstream circuit** | R1 chooses R2+; R1 pays upstream circuit cost; must keep **positive margin** when paid |
+| **Downstream media (brokered calls)** | R1 subcontracts **`media_relay`** on B (or alternate SFU R1 selects); **R1 absorbs B’s cost** in its quote to A and may add markup for path + **latency / delivery guarantee** |
+| **SLA owner** | R1 owns end-to-end delivery promise to A (path + attach + media fan-out quality class advertised in quote) |
+| **Direct attach (unchanged)** | When A **direct-dials B** without a broker, **A pays B** per N019 / [H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop) — friend volunteer SFU, no R1 markup |
+| **Volunteer R1** | May bundle volunteer upstream (R2, B) at rate 0 to A; still one relationship with R1 |
 
-**Rationale:** Keeps consumer UX simple (one commercial relationship for circuit); pushes path economics to operators who can optimize upstream selection; matches aggregator model for paid infra.  
-**Alternatives:** Pay-each-hop (rejected — multi-quote UX, payer disputes); fold circuit cost into media hop quote (rejected — blurs capabilities and H005); R1 must not use paid R2 (rejected — blocks org-seed subcontract paths).  
+**Rationale:** One payer and one SLA owner matches “R1 feels like the real B at a different price”; enables latency guarantees only the orchestrator can offer; R1 optimizes subcontract mix for margin. Aligns circuit multi-hop with call economics.  
+**Alternatives:** A pays B separately while using R1 for circuit only (rejected — splits SLA, confuses UX); pay-each-hop (rejected); R1 forbidden from marking up B (rejected — no incentive to broker).  
+**Implementation notes (later):** R1↔B wholesale quote/attach protocol; inter-relay settlement (HTTP preferred per N022); SoftMigrate **brokered** vs **direct** attach modes.  
 **Spec:** [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). **Stack phase:** [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). **Policy phase:** [ns3](PHASES.md#ns3--multi-hop-circuit-policy).

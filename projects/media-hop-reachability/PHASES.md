@@ -30,7 +30,7 @@ Implement **in libp2p** ([H001](DECISIONS.md#h001--separate-project-implementati
 Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned), mesh [N024](../p2p-mesh/DECISIONS.md#n024--circuit-pricing-pay-immediate-relay-only). **Not started.**
 
 - [ ] ADR + spec (H008, N024, MULTI_HOP_CIRCUIT) — **done**
-- [ ] Protocol v2: `bridge_path`, nested `sub_bridge`, max 2 relays, loop detection
+- [ ] Protocol v2: `bridge_path`, nested `sub_bridge`, `circuit_relay.max_hops` (default 3, config-only limit), loop detection
 - [ ] R1 upstream relay selection (provider inner loop); consumer still picks R1 only
 - [ ] Session model: opaque end-to-end tunnel handle (replace single `CircuitHopLink` assumption)
 - [ ] Integrate with ns3 bridge score (“R1 can reach B” incl. subcontract)
