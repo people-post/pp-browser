@@ -44,6 +44,8 @@ int SourceRank(PeerAddrSource source) {
     return 6;
   case PeerAddrSource::Connection:
     return 5;
+  case PeerAddrSource::Identify:
+    return 5;
   case PeerAddrSource::AddressRepository:
     return 4;
   case PeerAddrSource::Bootstrap:

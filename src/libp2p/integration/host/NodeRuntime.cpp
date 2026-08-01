@@ -134,11 +134,17 @@ Roe<void> NodeRuntime::Start(const NodeRuntimeConfig& config) {
   }
 
   sessions_ = std::make_unique<PeerSessionManager>(*host_, config.sessions);
+  identify_ = std::make_unique<IdentifyIntegrationService>();
+  (void)identify_->Start(*host_, sessions_.get());
   RegisterBootstrapPeers(config.bootstrap_peers);
   return {};
 }
 
 void NodeRuntime::Stop() {
+  if (identify_) {
+    identify_->Stop();
+    identify_.reset();
+  }
   sessions_.reset();
   if (host_) {
     host_->Stop();
@@ -157,6 +163,10 @@ Libp2pHost* NodeRuntime::Host() {
 
 PeerSessionManager* NodeRuntime::Sessions() {
   return sessions_.get();
+}
+
+IdentifyIntegrationService* NodeRuntime::Identify() {
+  return identify_.get();
 }
 
 void NodeRuntime::Tick() {

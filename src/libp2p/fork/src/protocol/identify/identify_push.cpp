@@ -51,6 +51,10 @@ namespace libp2p::protocol {
             std::move(send_push)));
   }
 
+  void IdentifyPush::pushUpdates() {
+    sendPush();
+  }
+
   void IdentifyPush::sendPush() {
     detail::streamToEachConnectedPeer(
         msg_processor_->getHost(),

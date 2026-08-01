@@ -81,6 +81,13 @@ public:
   /** Best dial multiaddr for a peer key (endpoint, then L1 address book). */
   std::optional<std::string> PreferredPeerMultiaddr(const std::string& peer_relay_user_id) const;
 
+  /** L2: refresh book/endpoints after remote Identify completes. */
+  void NoteRemoteIdentify(const std::string& peer_id_base58);
+
+  /** L2: upsert a book entry (e.g. self advertised addrs). */
+  Roe<void> UpsertBookEntry(const std::string& peer_id_base58, const std::string& multiaddr,
+                           PeerAddrSource source);
+
   /** Mark peer as warm (kept across idle eviction / background suspend of cold peers). */
   void MarkWarm(const std::string& peer_relay_user_id);
   void ClearWarm(const std::string& peer_relay_user_id);

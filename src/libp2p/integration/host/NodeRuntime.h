@@ -2,6 +2,7 @@
 
 #include "common/Error.h"
 #include "libp2p/integration/host/Libp2pHost.h"
+#include "libp2p/integration/host/IdentifyIntegrationService.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
 #include <memory>
@@ -39,6 +40,7 @@ public:
   bool IsRunning() const;
   Libp2pHost* Host();
   PeerSessionManager* Sessions();
+  IdentifyIntegrationService* Identify();
 
   /** Bound listen multiaddr after a successful Node start (may differ from requested). */
   const std::string& BoundListenMultiaddr() const { return bound_listen_; }
@@ -52,6 +54,7 @@ private:
 
   std::unique_ptr<Libp2pHost> host_;
   std::unique_ptr<PeerSessionManager> sessions_;
+  std::unique_ptr<IdentifyIntegrationService> identify_;
   std::string bound_listen_;
   std::string last_error_;
 };
