@@ -290,3 +290,26 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 
 **Rationale:** One peer stack to deepen; HTTP optimizes backend and payment UX; chain avoids hard-fail when Brief HTTP is blocked.  
 **Alternatives:** WebRTC for peer media forever (rejected — V026); chain-first payments for every hop (rejected — UX/ops); HTTP-only peers (rejected — mesh product).
+
+---
+
+## N023 — Relay scope and domain bridging (not geography tiers)
+
+**Date:** 2026-08-01  
+**Decision:** Model relay routing with **connectivity domains** and **relay scope tags** (`link` → `site` → `social` → `org` → `public`), not user-selected “local / country / global” tiers.
+
+| Rule | Detail |
+|------|--------|
+| **Problem framing** | Nested **partitions** (LAN, egress/firewall, global). Relay value = useful **boundary crossings**. |
+| **Consumer** | **Escalate scope** narrow→wide: filter → score (affinity + **bridge score** + capacity + price + reputation) → quote (N019) → attach → re-pick. Prefer narrowest working scope. |
+| **Provider** | **Auto-cap scope** from reachability + capability + pricing — no tier picker. Volunteer default: `link \| site \| social`; `public` requires paid + opt-in. |
+| **Partition escape** | When seed/global fails, use **bridge score** within social graph — not geo IP. |
+| **Roles** | Gateway / island store / infrastructure are **topology outcomes**, not user job titles. |
+| **Ownership** | Policy in **p2p-mesh** ([RELAY_SCOPE.md](RELAY_SCOPE.md)); dialability in [media-hop-reachability](../media-hop-reachability/) (H001). |
+| **Messages** | HTTP Brief remains org/global durability fallback; peer `message_relay` may add link/site/island queues later. |
+| **Short term** | Consumer mask stops at **`org`**; `public` ineligible. `link`/`site` order eligible **contacts** only — no LAN strangers. |
+| **Algorithm** | Outer scope bands + inner N020 scorer — not the rejected hardcoded N014 stage list. |
+
+**Rationale:** Local relays stay high-value for small groups without forcing users to configure tiers; global relays scale audience for reachable ops nodes; minimal UX via inference from existing `ReachabilitySignals` and contact graph. Extends N014/N020 without replacing closed-set short-term policy.  
+**Alternatives:** Rename or expand media-hop-reachability to own scope (rejected — blurs H001 stack vs policy); new top-level project for routing only (rejected — p2p-mesh already owns hop policy); explicit geo/country tier picker (rejected — privacy + wrong abstraction).  
+**Spec:** [RELAY_SCOPE.md](RELAY_SCOPE.md). **Phase:** [ns](PHASES.md#ns--relay-scope-and-domain-bridging-n023).

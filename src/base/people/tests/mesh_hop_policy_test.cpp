@@ -1,4 +1,5 @@
 #include "base/people/MeshHopPolicy.h"
+#include "base/people/RelayScope.h"
 #include "libp2p/integration/host/MediaRelayService.h"
 
 #include <gtest/gtest.h>
@@ -15,6 +16,51 @@ Contact MakeContact(const std::string& peer_id, const std::string& ma = {}) {
     c.multiaddrs.push_back(ma);
   }
   return c;
+}
+
+TEST(MeshHopPolicyTest, RelayAdmissionAllowsContactOrPublicStrangers) {
+  const std::unordered_set<std::string> contacts = {"friend"};
+  EXPECT_TRUE(RelayAdmissionAllowsDialer(kRelayScopeVolunteerServe, "friend", contacts));
+  EXPECT_FALSE(RelayAdmissionAllowsDialer(kRelayScopeVolunteerServe, "stranger", contacts));
+  EXPECT_TRUE(RelayAdmissionAllowsDialer(kRelayScopeVolunteerServe, "stranger", {}));
+  const RelayScopeMask with_public =
+      kRelayScopeVolunteerServe | static_cast<RelayScopeMask>(RelayScope::Public);
+  EXPECT_TRUE(RelayAdmissionAllowsDialer(with_public, "stranger", contacts));
+}
+
+TEST(MeshHopPolicyTest, ProviderServeScopeMaskRequiresNode) {
+  EXPECT_EQ(ProviderServeScopeMask(MeshReachabilityClass::OutboundOnly, false), 0u);
+  EXPECT_EQ(ProviderServeScopeMask(MeshReachabilityClass::Reachable, true), kRelayScopeVolunteerServe);
+}
+
+TEST(MeshHopPolicyTest, EscalatingPrefersSameSubnetContactBeforeSeed) {
+  MeshHopCandidate lan_friend;
+  lan_friend.peer_id = "friend";
+  lan_friend.multiaddr = "/ip4/192.168.1.50/tcp/18517/p2p/friend";
+  lan_friend.affinity = MeshHopAffinity::Contact;
+  lan_friend.residual_capacity = 0.5;
+
+  MeshHopCandidate seed_hop;
+  seed_hop.peer_id = "seed";
+  seed_hop.multiaddr = "/ip4/1.2.3.4/tcp/443/p2p/seed";
+  seed_hop.affinity = MeshHopAffinity::OrgSeed;
+  seed_hop.residual_capacity = 1.0;
+
+  const std::string listen = "/ip4/192.168.1.10/tcp/18517";
+  auto ranked = RankMediaHopsEscalating({seed_hop, lan_friend}, true, listen);
+  ASSERT_EQ(ranked.size(), 2u);
+  EXPECT_EQ(ranked[0].peer_id, "friend");
+  EXPECT_EQ(ranked[1].peer_id, "seed");
+}
+
+TEST(MeshHopPolicyTest, CandidateRelayScopesLinkOnSameSubnet) {
+  MeshHopCandidate c;
+  c.affinity = MeshHopAffinity::Contact;
+  c.multiaddr = "/ip4/10.0.0.5/tcp/1/p2p/x";
+  const auto scopes = CandidateRelayScopes(c, "/ip4/10.0.0.1/tcp/18517");
+  EXPECT_TRUE(RelayScopeMaskHas(scopes, RelayScope::Link));
+  EXPECT_TRUE(RelayScopeMaskHas(scopes, RelayScope::Site));
+  EXPECT_TRUE(RelayScopeMaskHas(scopes, RelayScope::Social));
 }
 
 TEST(MeshHopPolicyTest, CircuitOrdersContactsBeforeSeeds) {

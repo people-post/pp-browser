@@ -252,6 +252,7 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
   ApplyMeshAdmissionPolicies();
 
   reachability_.SetOnUpdated([this]() {
+    ApplyMeshAdmissionPolicies();
     if (on_reachability_updated_) {
       on_reachability_updated_();
     }
@@ -279,6 +280,15 @@ void MessagingHub::WireCallMediaRelayDeps() {
   NormalizeLibp2pConfig(libp2p);
   deps.bootstrap_peers = libp2p.bootstrap_peers;
   deps.prefer_contacts = libp2p.prefer_contacts_for_routing;
+  if (node_runtime_ && !node_runtime_->BoundListenMultiaddr().empty()) {
+    deps.local_listen_multiaddr = node_runtime_->BoundListenMultiaddr();
+  } else {
+    deps.local_listen_multiaddr = libp2p.listen_multiaddr;
+  }
+  // Wildcard bind does not identify a LAN subnet for link-scope inference (N023 ns1).
+  if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos) {
+    deps.local_listen_multiaddr.clear();
+  }
   call_sessions_->SetMediaRelayDeps(std::move(deps));
 }
 
@@ -294,18 +304,46 @@ void MessagingHub::ApplyMeshAdmissionPolicies() {
     }
   }
 
+  MeshReachabilityClass reach_class = MeshReachabilityClass::Unknown;
+  switch (reachability_.Snapshot().status) {
+  case ReachabilityStatus::Reachable:
+    reach_class = MeshReachabilityClass::Reachable;
+    break;
+  case ReachabilityStatus::OutboundOnly:
+    reach_class = MeshReachabilityClass::OutboundOnly;
+    break;
+  case ReachabilityStatus::Blocked:
+    reach_class = MeshReachabilityClass::Blocked;
+    break;
+  case ReachabilityStatus::Unknown:
+  case ReachabilityStatus::Checking:
+  default:
+    reach_class = MeshReachabilityClass::Unknown;
+    break;
+  }
+
+  RelayScopeMask serve_mask = ProviderServeScopeMask(reach_class, node);
   // Org-style: if Node with no contacts loaded, do not refuse strangers.
-  const bool limit_strangers = prefer && node && !contact_ids.empty();
+  const bool force_limit_strangers =
+      node && (reach_class == MeshReachabilityClass::OutboundOnly ||
+               reach_class == MeshReachabilityClass::Blocked);
+  const bool limit_strangers =
+      (prefer && node && !contact_ids.empty()) || force_limit_strangers;
+  if (!limit_strangers && node) {
+    serve_mask |= static_cast<RelayScopeMask>(RelayScope::Public);
+  }
 
   if (circuit_relay_) {
     CircuitRelayAdmissionPolicy policy;
     policy.prefer_contacts_only = limit_strangers;
+    policy.serve_scope_mask = serve_mask;
     policy.contact_peer_ids = contact_ids;
     circuit_relay_->SetAdmissionPolicy(std::move(policy));
   }
   if (media_relay_) {
     MediaRelayAdmissionPolicy policy;
     policy.prefer_contacts_only = limit_strangers;
+    policy.serve_scope_mask = serve_mask;
     policy.contact_peer_ids = contact_ids;
     media_relay_->SetAdmissionPolicy(std::move(policy));
   }

@@ -399,7 +399,7 @@ Camera / send policy uses **A↑** (and session **B↑**). Receive / subscribe p
 ## V023 — Media hop pick: short-term closed set; pricing regulates later
 
 **Date:** 2026-07-30  
-**Decision:** Hop selection for blind `media_relay` is a **risk-aware scorer over eligibility classes**, not a hardcoded contacts→seed→public list. **Making money is not the product goal**; the **pricing model exists to regulate** scarcity, strangers, and abuse over time. Mesh twin: [N020](../p2p-mesh/DECISIONS.md#n020--media-hop-pick-short-term-closed-set-pricing-as-regulation).
+**Decision:** Hop selection for blind `media_relay` is a **risk-aware scorer over eligibility classes**, not a hardcoded contacts→seed→public list. **Making money is not the product goal**; the **pricing model exists to regulate** scarcity, strangers, and abuse over time. Mesh twin: [N020](../p2p-mesh/DECISIONS.md#n020--media-hop-pick-short-term-closed-set-pricing-as-regulation). **Scope escalation (outer loop):** [N023](../p2p-mesh/DECISIONS.md#n023--relay-scope-and-domain-bridging-not-geography-tiers) / [RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md) — short term still closed set; `link`/`site` boost same-LAN contacts only.
 
 ### Thesis
 

@@ -1,5 +1,6 @@
 #include "libp2p/integration/host/MediaRelayService.h"
 
+#include "base/people/RelayScope.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/basic/read.hpp>
@@ -243,10 +244,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::atomic<bool> client_reader_running{false};
 
   bool AdmitPeer(const std::string& peer_id) {
-    if (!admission.prefer_contacts_only || admission.contact_peer_ids.empty()) {
-      return true;
-    }
-    return !peer_id.empty() && admission.contact_peer_ids.count(peer_id) > 0;
+    return RelayAdmissionAllowsDialer(admission.serve_scope_mask, peer_id, admission.contact_peer_ids);
   }
 
   MediaRelayQuote BuildQuote(const MediaRelayQuoteRequest& req) {
@@ -371,9 +369,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         policy = admission;
       }
 
-      const bool admitted =
-          !policy.prefer_contacts_only || policy.contact_peer_ids.empty() ||
-          (!remote.empty() && policy.contact_peer_ids.count(remote) > 0);
+      const bool admitted = RelayAdmissionAllowsDialer(policy.serve_scope_mask, remote, policy.contact_peer_ids);
       if (!admitted) {
         (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
         stream->close([](auto&&) {});

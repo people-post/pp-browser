@@ -1,13 +1,13 @@
 # P2P mesh — current state
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-08-01
 
 ## Landed
 
 | Area | State |
 |------|-------|
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
-| ADRs | N001–**N022** in [DECISIONS.md](DECISIONS.md) (N022 = libp2p invest; HTTP settle preferred; chain backup) |
+| ADRs | N001–**N023** in [DECISIONS.md](DECISIONS.md) (N023 = relay scope / domain bridging — [RELAY_SCOPE.md](RELAY_SCOPE.md)) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
 | Networking doctrine | [NETWORKING.md](../../docs/architecture/NETWORKING.md) — HTTP + libp2p; calls consume fabric (V026) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
@@ -91,7 +91,7 @@
 | Session | quote → accept → attach; subscribe `(stream_id, channel_id)`; ↑/↓ budget defaults; volunteer rate 0 |
 | Auth stub | `auth` must equal `call_id` (a4 will supply roster proof) |
 | Config | `capabilities.media_relay` **default on**; `pricing.media_relay`; `media_relay_budget` |
-| Pick helpers | `RankMediaHops` — contacts ∪ seed closed set (N020); call coordinator wires a4 |
+| Pick helpers | `RankMediaHopsEscalating` (N023 ns1) — contacts ∪ seed; call coordinator wires a4 |
 | Hosts | `pp-node` + desktop Node checkbox default on |
 | Tests | frame codec; hop policy; two-host quote/attach/fan-out |
 
@@ -103,14 +103,23 @@
 | Org seed = GUI `--headless` | **`pp-node`** (N011) |
 | “Behind firewall” as hard fact | Reachability status + soft help (N012) |
 | Manual port-forward only | Prefer **IPv6 + UPnP**, then manual (N013) |
-| Pick random public relay first | **Contacts first**, then seed, then public (N014) |
-| Hardcoded N014 stages for media | **N020** / **V023** scorer over closed set |
+| Pick random public relay first | **N023** scope escalate + **N020** / **V023** scorer (contacts∪seed short term) |
+| Hardcoded N014 stages for media | Outer scope bands + inner N020 scorer — not fixed stage list |
 | Implement DHT right after n1 | Follow **N015** order (circuit/reachability before DHT) |
 | Always bind 18517 or die silently | Desktop: fallback range + persist (N016); `pp-node`: fail loud |
 | Link `MessagingHub` into `pp-node` | Thin `NodeRuntime` + identity/crypto only |
 | Silent port hop on org seed | Fail loud unless `--listen-fallback` |
 | libp2p circuit-relay v2 in fork | Custom pp-browser circuit-relay protocol (n3) |
 | Relay decodes Opus/H264 | Blind forward + `channel_type` only (N021) |
+
+## ns in code (N023 — partial)
+
+| Area | State |
+|------|-------|
+| `RelayScope` + escalate ranker | `RelayScope.h`, `RankMediaHopsEscalating` in `MeshHopPolicy` |
+| Provider cap from reachability | `ApplyMeshAdmissionPolicies` → `serve_scope_mask` |
+| Bridge score / LAN mDNS | Deferred (ns2) |
+| Household contact tag | Deferred |
 
 ## Still not done
 

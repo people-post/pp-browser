@@ -372,6 +372,8 @@ flowchart TB
 
 Circuit hops in **nf** may keep a simpler contacts→seed preference. Message path: HTTP Brief fallback; peer `message_relay` optional later (N017).
 
+**Scope & domains (N023):** Human “local / country / global” maps to nested **connectivity domains** and machine **relay scope** tags — see [RELAY_SCOPE.md](RELAY_SCOPE.md). Consumers escalate narrow→wide; providers auto-cap scope from reachability. Dialability remains [media-hop-reachability](../media-hop-reachability/).
+
 ## Preferred delivery order (N015)
 
 Ship value in this sequence unless a later ADR revises it:
@@ -395,6 +397,7 @@ Agents: prefer **n4-media** for calls over peer message_relay or paid UI. Prefer
 
 | Idea | Notes |
 |------|-------|
+| **Relay scope / domain bridging** | N023 — [RELAY_SCOPE.md](RELAY_SCOPE.md); escalate link→public; bridge score for partitions |
 | **Capability directory** | Mid-term curated public for media_relay (N020); still respect affinity |
 | **Node reputation / receipts** | Soft trust before heavy staking (N020 long term) |
 | **Bonds / anti-dumping / anti-capture** | Pricing as regulation (N020); revenue not the mission |

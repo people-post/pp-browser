@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/people/ContactTypes.h"
+#include "base/people/RelayScope.h"
 
 #include <cstdint>
 #include <string>
@@ -14,6 +15,14 @@ enum class MeshHopAffinity {
   Contact = 0,
   OrgSeed = 1,
   Other = 2,
+};
+
+/** Mirrors ReachabilityStatus for provider caps without requiring libp2p headers in callers. */
+enum class MeshReachabilityClass {
+  Unknown,
+  Reachable,
+  OutboundOnly,
+  Blocked,
 };
 
 struct MeshHopCandidate {
@@ -52,6 +61,26 @@ std::vector<MeshHopCandidate> OrderCircuitHops(std::vector<MeshHopCandidate> con
  */
 std::vector<MeshHopCandidate> RankMediaHops(std::vector<MeshHopCandidate> candidates,
                                             bool prefer_contacts = true);
+
+/**
+ * N023 ns1: escalate scope bands (link→site→social→org), rank within each via RankMediaHops.
+ * `local_listen_multiaddr` enables same-/24 link boost among eligible contacts only.
+ * `consumer_scopes` defaults to short-term mask (no public).
+ */
+std::vector<MeshHopCandidate> RankMediaHopsEscalating(
+    std::vector<MeshHopCandidate> candidates, bool prefer_contacts,
+    const std::string& local_listen_multiaddr = {},
+    RelayScopeMask consumer_scopes = kRelayScopeShortTerm);
+
+/** Scope tags for a candidate (eligible closed-set peers only). */
+RelayScopeMask CandidateRelayScopes(const MeshHopCandidate& candidate,
+                                    const std::string& local_listen_multiaddr = {});
+
+/** Provider advertisement cap from reachability (N023). */
+RelayScopeMask ProviderServeScopeMask(MeshReachabilityClass reachability, bool node_enabled);
+
+/** True when both multiaddrs share the same IPv4 /24 (v1 link scope inference). */
+bool IsSameIpv4Subnet24(const std::string& multiaddr_a, const std::string& multiaddr_b);
 
 /** Drop hop whose peer_id equals `local_peer_id` (never dial self as media_relay). */
 std::vector<MeshHopCandidate> ExcludeSelfHop(std::vector<MeshHopCandidate> candidates,

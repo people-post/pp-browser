@@ -20,7 +20,7 @@ GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`
 | **Packaging** | `pp-browser` vs headless **`pp-node`** (N011) |
 | **Reachability** | Status + help (N012); prefer IPv6 + UPnP (N013) |
 | **Listen port** | Preferred **18517**; desktop busy fallback + persist (N016) |
-| **Relay preference** | Ask/serve **contacts first**, then seed, then public (N014) |
+| **Relay preference** | Ask/serve **contacts first**, then seed, then public (N014); **scope escalation** link→public (N023) |
 | **Delivery order** | Reachability + circuit before DHT (N015) |
 
 ## Release scope (n1)
@@ -45,6 +45,7 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Full model, N010–N021, delivery order |
+| [RELAY_SCOPE.md](RELAY_SCOPE.md) | Connectivity domains, scope escalation, bridge score (N023) |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
 | [PHASES.md](PHASES.md) | Checklists in N015 order |
 | [DECISIONS.md](DECISIONS.md) | ADRs (N001+) |
