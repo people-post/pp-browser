@@ -46,6 +46,11 @@ public:
   const std::string& BoundListenMultiaddr() const { return bound_listen_; }
   const std::string& LastError() const { return last_error_; }
 
+  /** Ephemeral listen while Client (mobile call-scoped — N025). */
+  bool EphemeralListenActive() const { return ephemeral_listen_active_; }
+  Roe<void> StartEphemeralListen();
+  void StopEphemeralListen();
+
   void Tick();
   void SuspendColdPeers();
 
@@ -57,6 +62,7 @@ private:
   std::unique_ptr<IdentifyIntegrationService> identify_;
   std::string bound_listen_;
   std::string last_error_;
+  bool ephemeral_listen_active_ = false;
 };
 
 /** Prefer a concrete TCP listen multiaddr from the host, else `requested`. */

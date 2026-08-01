@@ -8,6 +8,9 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -220,6 +223,31 @@ public class MainActivity extends SDLActivity {
     protected void pauseNativeThread() {
         captureRecentsThumbnailOnce();
         super.pauseNativeThread();
+    }
+
+    /** Called from native NetworkConnectivity (N025 Wi‑Fi gate). */
+    public boolean isActiveNetworkWifi() {
+        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        if (cm == null) {
+            return false;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Network network = cm.getActiveNetwork();
+            if (network == null) {
+                return false;
+            }
+            NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+            if (caps == null) {
+                return false;
+            }
+            return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI);
+        }
+        @SuppressWarnings("deprecation")
+        android.net.NetworkInfo info = cm.getActiveNetworkInfo();
+        if (info == null || !info.isConnected()) {
+            return false;
+        }
+        return info.getType() == ConnectivityManager.TYPE_WIFI;
     }
 
     /** Called from native AndroidLocalNotifier. */

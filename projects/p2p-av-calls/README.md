@@ -38,7 +38,7 @@ Agents: code “where does X live?” → **CALLS**. Product “should we…?”
 
 | Prerequisite | Why | Notes |
 |--------------|-----|--------|
-| Mesh **nr → nu → n3** + **N022** | NAT / Client dial; libp2p invest | Mobile always Client |
+| Mesh **nr → nu → n3** + **N022** | NAT / Client dial; libp2p invest | Mobile default Client; **V027** call-scoped Wi‑Fi listen |
 | Mesh **n4-media** `media_relay` | Group + undialable 1:1 hop | N021; hop-reachability **in-libp2p** (L1+) |
 | HTTP Brief backend | Preferred org APIs / settle UX | Chain settle backup (N022) |
 | Direct E2E messaging | Signaling + key wrap | Guests pairwise |

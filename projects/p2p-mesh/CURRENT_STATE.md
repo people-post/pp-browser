@@ -7,7 +7,7 @@
 | Area | State |
 |------|-------|
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
-| ADRs | N001–**N023** in [DECISIONS.md](DECISIONS.md) (N023 = relay scope / domain bridging — [RELAY_SCOPE.md](RELAY_SCOPE.md)) |
+| ADRs | N001–**N025** in [DECISIONS.md](DECISIONS.md) (N025 = mobile call-scoped listen — planned) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
 | Networking doctrine | [NETWORKING.md](../../docs/architecture/NETWORKING.md) — HTTP + libp2p; calls consume fabric (V026) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
@@ -130,6 +130,7 @@
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
 | DHT | **n2** (later per N015) |
+| Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code; LAN manual QA pending |
 
 ## Next
 

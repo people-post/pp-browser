@@ -9,7 +9,7 @@
 
 ## One-line goal
 
-GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`** for org seeds; **reachability** (IPv6/UPnP + guides); **contact-first** relay preference with **scope escalation**. HTTP settle preferred; chain settle backup. Billable relays may settle on chain.
+GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`** for org seeds; **reachability** (IPv6/UPnP + guides); **contact-first** relay preference with **scope escalation**; mobile **call-scoped listen on Wi‑Fi** (N025). HTTP settle preferred; chain settle backup. Billable relays may settle on chain.
 
 ## How the pieces fit
 

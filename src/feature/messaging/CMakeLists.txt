@@ -15,6 +15,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     Libp2pDirectChatService.cpp
     MessageRouter.cpp
     MessagingHub.cpp
+    MobileEphemeralListenGate.cpp
     P2pMessagingService.cpp
     PeerDisplayResolver.cpp
     PskSessionCoordinator.cpp

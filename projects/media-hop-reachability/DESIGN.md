@@ -178,7 +178,7 @@ Detail and checkboxes: [PHASES.md](PHASES.md), [CURRENT_STATE.md](CURRENT_STATE.
 | Contacts as cache only | H003 |
 | No WebRTC / app STUN | H004 |
 | Circuit + billing modes | H005 |
-| Mobile never hosts | H006 |
+| Mobile never hosts | H006 (updated — default Client; N025 call-scoped listen) |
 | No `call_hop_addrs` product path | H007 |
 | Multi-hop circuit chains | H008 |
 

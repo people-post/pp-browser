@@ -123,3 +123,16 @@ Pairs with stack [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circu
 - [x] Re-pick bounds: R1 = path only; B′ = coordinator SoftMigrate (V023)
 - [x] Quote renewal: auto-extend path-only (same B); re-accept when B′ or rate/ceiling changes
 - [ ] Per-hop admission unchanged; loop detection
+
+## nm — Mobile call-scoped listen (N025)
+
+**In progress.** Spec: [N025](DECISIONS.md#n025--mobile-call-scoped-listen-on-wi-fi-not-full-node). Call consumer: [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi).
+
+- [x] ADR + DESIGN (N025 / V027)
+- [x] Wi‑Fi + foreground-call gating; start/stop ephemeral `host->listen`
+- [x] Publish advertised LAN addrs via Identify during eligible session
+- [x] Optional in-call `media_relay` (N≥3) — contacts-only admission; off on cellular
+- [x] Integrate with call bring-up / teardown (CallSessionManager ↔ NodeRuntime)
+- [ ] Later: opt-in **Help on Wi‑Fi** toggle (mode 3); no full Node UI on mobile
+- [ ] Tests: two phones same LAN, PeerId-only contact, foreground call dial (manual)
+- [x] Docs: [PLATFORMS.md](../../docs/architecture/PLATFORMS.md), hop L4 consume notes

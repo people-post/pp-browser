@@ -1,10 +1,12 @@
 # P2P mesh — decisions
 
-## N001 — Desktop node default / mobile always client
+## N001 — Desktop node default / mobile default client
 
 **Date:** 2026-07-26  
-**Decision:** Exactly two **roles**: **client** and **node**. Desktop effective role is **node** when `node_enabled` is true (default). Mobile is always **client**; `node_enabled` is ignored on mobile.  
-**Rationale:** Desktops can host infrastructure; mobiles must stay outbound-only for battery and OS limits.
+**Updated:** 2026-08-01 (mobile **default** stays Client; scoped listen — **N025**)  
+**Decision:** Exactly two **roles**: **client** and **node**. Desktop effective role is **node** when `node_enabled` is true (default). Mobile **`node_enabled` is ignored**; effective role is **Client by default** (no always-on listen, no Me → Network Node UI).  
+**Exception (planned):** **Call-scoped / Wi‑Fi-scoped listen** on mobile — **N025** — not a third role; ephemeral listen while eligible, not full Node.  
+**Rationale:** Desktops can host infrastructure; mobiles default outbound-only for battery and OS limits. LAN direct dial and in-call hops need a narrow listen path without turning every phone into an always-on mesh node.
 
 ## N002 — Seed multiaddr IP + 443 + PeerId (no DNS)
 
@@ -149,7 +151,7 @@
 | **Blind** | Relay **does not** hold call media keys, **does not** decode Opus/H264, **does not** classify audio vs video by payload. Forward by publisher/subscriber / stream id + **byte-volume** limits only. |
 | **Capability** | Prefer a single **`media_relay`** checkbox (supersedes shipping separate decode-aware `audio_relay` / `video_relay` pipelines). Legacy dual names in older sketches map to this one service + optional **capacity class / max_bps** advertisement. |
 | **Bandwidth** | Node advertises a budget (e.g. max uplink aggregate bps or class). Clients decide whether Camera is allowed; relay rate-limits/drops by size if exceeded. |
-| **Hosts** | Org **`pp-node`**: volunteer **`media_relay` on**. Desktop Node: checkbox **default on** (volunteer) when Node is enabled — user may turn off. Mobile Client: never hosts. |
+| **Hosts** | Org **`pp-node`**: volunteer **`media_relay` on**. Desktop Node: checkbox **default on** (volunteer) when Node is enabled — user may turn off. Mobile: **default Client, no host**; optional in-call / Wi‑Fi-scoped relay per **N025**. |
 | **Pricing** | Volunteer for ship; `pricing.*` schema stub only (N017). |
 | **Pick / re-pick** | Call coordinator applies **N020** / **V023** (contacts ∪ seed short-term; re-pick on failure). |
 **Rationale:** Matches product privacy (“relay must not know contents”); one module is enough for fan-out; friend Nodes need honest bandwidth limits without deep packet inspection of media.  
@@ -358,3 +360,39 @@ Paid mode: never exceed the **accepted ceiling** without explicit re-accept (sam
 **Alternatives:** A pays B separately while using R1 for circuit only (rejected — splits SLA, confuses UX); pay-each-hop (rejected); R1 forbidden from marking up B (rejected — no incentive to broker); **R1 unilateral B swap** (rejected — breaks roster / group-agreed media hub).  
 **Implementation notes (later):** R1↔B wholesale quote/attach protocol; inter-relay settlement (HTTP preferred per N022); SoftMigrate **brokered** vs **direct** attach modes.  
 **Spec:** [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). **Stack phase:** [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). **Policy phase:** [ns3](PHASES.md#ns3--multi-hop-circuit-policy).
+
+---
+
+## N025 — Mobile call-scoped listen on Wi‑Fi (not full Node)
+
+**Date:** 2026-08-01  
+**Status:** Accepted (**implemented** — gating in `MessagingHub` / `MobileEphemeralListenGate`; LAN QA pending)  
+**Decision:** Mobile stays **Client by default** (N001). Add **narrow, gated listen** so phones can be **dialed by PeerId on LAN** and serve as **in-call hops** without always-on Node behavior.
+
+### Participation modes (mobile)
+
+| Mode | Listen | Host `media_relay` | When |
+|------|--------|-------------------|------|
+| **Client (default)** | No | No | Always — current behavior |
+| **Call participant** | Ephemeral | Optional — **contacts / in-call only**, capped | Foreground **active call** while on **Wi‑Fi**; publish listen addrs via Identify for direct libp2p / in-call hop pick |
+| **Wi‑Fi helper (opt-in, later)** | While enabled | Volunteer, **social scope only**, strict ↑/↓ caps | User toggle **Help on Wi‑Fi**; **off on cellular**; no Me → Network capability matrix |
+
+Desktop **Node** (`node_enabled`) is unchanged. Mobile does **not** gain a master **Help the network** toggle in v1 of this feature.
+
+### Rules
+
+1. **No always-on mobile Node** — listen starts/stops with eligibility (call foreground + Wi‑Fi, or explicit Wi‑Fi helper).  
+2. **Cellular** — do not listen or host `media_relay` for strangers by default; seed / desktop / circuit paths remain primary off-LAN (V008).  
+3. **Background / killed app** — **does not** rely on idle listen. Incoming ring stays **`call_wake` → fetch → UI → outbound dial** (V006). Ephemeral listen supplements **active-session** reachability only.  
+4. **Scope** — mobile `media_relay` (when enabled) uses **`social` / in-call admission only** — no `public`, no paid overflow on phone (N023 provider caps).  
+5. **Battery / data** — prefer **listen without relay** for 1:1 callee; relay only when N≥3 or explicit in-call hop policy needs it.  
+6. **Implementation** — same stack as desktop (Identify, address book, `IsPeerDialable`); gating in app/mesh policy, not a second libp2p integration.
+
+### Call impact
+
+See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi). Unblocks LAN **PeerId-only** direct paths when combined with discovery (mDNS or seed-mediated Identify) and hop **L4**.
+
+**Rationale:** “Mobile never listens” blocked LAN 1:1 libp2p and in-call mobile hops; full Node on mobile is wrong for battery and OS background limits. Scoped listen gets most LAN benefit with bounded cost.  
+**Alternatives:** Full mobile Node (rejected); forever Client-only (rejected for LAN PeerId goal); app `call_hop_addrs` (rejected — H007); listen on cellular always (rejected).  
+**Supersedes:** Absolute “never listen” wording in **N018** / **H006** — default remains no listen.  
+**Phase:** [nm](PHASES.md#nm--mobile-call-scoped-listen-n025).

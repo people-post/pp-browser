@@ -211,7 +211,7 @@ Consumes p2p-mesh **n4-media** (N017–N021):
 
 **Hop pick (V023 / N020):** Short-term **contacts ∪ org seed** only. Filter → score → quote. Pricing regulates later.
 
-**Mobile Client** never hosts. **Hosts:** org `pp-node` + desktop Node (`media_relay` **default on**, volunteer).
+**Mobile Client** default: does not host. **Call-scoped listen on Wi‑Fi** (N025 / V027): during a foreground call, mobile may listen ephemerally and optionally act as an **in-call** hop — contacts-only, not a full Node. **Always-on hosts:** org `pp-node` + desktop Node (`media_relay` **default on**, volunteer).
 
 ### Defaults
 

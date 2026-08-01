@@ -313,7 +313,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 | Topology | **True SFU** — each participant uplinks once; SFU fans out. **Not** TURN-as-SFU (N−1 PCs through relay). **Not** full-mesh. |
 | Audio + video | a4 includes **both** Opus audio and H264 video through the SFU. |
 | Codecs | **Reuse** a3 platform HW path (V017–V019). Do **not** expand encode/decode matrix for newer devices/codecs in a4 — that is a separate later slice. |
-| SFU hosts | Org **`pp-node`** + desktop **`media_relay`** (blind; volunteer **default on** — N018 / V021). Mobile never hosts. |
+| SFU hosts | Org **`pp-node`** + desktop **`media_relay`** (blind; volunteer **default on** — N018 / V021). Mobile default Client; call-scoped listen / in-call hop — **V027** / **N025**. |
 | Mesh gate | a4 media depends on mesh **n4-media**. Hop pick: **V023** / **N020**. |
 | Blindness / migrate | See **V021**. |
 | Bandwidth / bills | See **V022**. |
@@ -348,7 +348,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 | **N drops to 2** | **Stay on SFU** until hangup for v1 (avoid P2P↔SFU flip-flop). Optional later: re-P2P when alone-as-pair. |
 | **Who picks SFU** | **Initiator** at start; thereafter **epoch coordinator** (V002) applies the **same pick policy** on invite-to-group, hop failure, or other reestablish events → **re-pick** and reattach. |
 | **Stack** | **Own** forwarder on `pp-node` / desktop Node runtime — relay only; no vendored LiveKit/mediasoup as the product path. |
-| **Hosts** | Org seed + desktop Node; capability **default volunteer on** when Node is on (N018). Mobile never hosts. |
+| **Hosts** | Org seed + desktop Node; capability **default volunteer on** when Node is on (N018). Mobile: default Client; **V027** call-scoped listen on Wi‑Fi. |
 
 **Rationale:** Aligns confidentiality with V004 (SFU must not need keys); bandwidth-limited friend Nodes are real; soft-migrate preserves history/roster/key epoch continuity better than tear-down; staying on SFU after N→2 keeps one media code path.  
 **Alternatives:** Classic DTLS-terminating media SFU that sees clear RTP (rejected — contents exposure); hard end/restart call on 3rd invite (rejected — worse UX); separate audio/video relay processes that classify codecs (rejected — needs content awareness); return to P2P when N=2 in v1 (deferred — flip-flop risk).  
@@ -553,4 +553,28 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 **Alternatives:** Keep WebRTC 1:1 + libp2p SFU (prior V001 — rejected going forward); WebRTC star with inner E2E (deferred — second SFU shape); full video on libp2p before voice green (rejected — scope).
 
 **Cross-link:** [media-hop-reachability](../media-hop-reachability/) (dialability); mesh N018–N022.
+
+---
+
+## V027 — Mobile call-scoped listen on Wi‑Fi
+
+**Date:** 2026-08-01  
+**Status:** Accepted (**implemented** — see mesh N025 / `MessagingHub::SyncMobileEphemeralListen`)  
+**Decision:** Mobile does **not** become a full mesh **Node**. During an **active foreground call on Wi‑Fi**, the app may **listen ephemerally** and publish dialable addrs (mesh **N025**) so that:
+
+| Scenario | Benefit |
+|----------|---------|
+| **LAN 1:1 libp2p (m1)** | Callee reachable **by PeerId** without pasted multiaddr or desktop in the middle |
+| **LAN group (N≥3)** | Phone on the call may act as **in-call `media_relay` hop** (`PreferInCallMediaHops`) when policy allows |
+| **Address book** | Identify ads populate peerstore for contacts — helps **L4** PeerId-only messaging |
+
+**Does not replace:** **`call_wake`** for incoming when app is background/killed (V006). **Does not replace:** org seed / desktop hop on **cellular** or when not in an eligible call session (V008 still applies off-LAN).
+
+**Optional later:** user opt-in **Help on Wi‑Fi** (N025 mode 3) outside a call — separate from call-scoped listen; strict caps.
+
+**Gating (product):** Wi‑Fi detected + foreground call (or explicit Wi‑Fi helper); **contacts-only** relay admission on mobile; no public/paid relay surface on phone.
+
+**Rationale:** Client-only mobile blocked LAN PeerId call goals; full Node wrong for OS/battery. Call-scoped listen aligns with when the user already expects realtime media and the app is foreground.  
+**Alternatives:** Require desktop/seed for all mobile LAN (rejected for UX); full mobile Node (rejected); ICE-only LAN forever (superseded by V026).  
+**Mesh ADR:** [N025](../p2p-mesh/DECISIONS.md#n025--mobile-call-scoped-listen-on-wi-fi-not-full-node). **Phase:** [m1](PHASES.md#m1--libp2p-only-voice-v026) + mesh [nm](../p2p-mesh/PHASES.md#nm--mobile-call-scoped-listen-n025).
 

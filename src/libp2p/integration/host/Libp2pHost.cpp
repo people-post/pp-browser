@@ -211,4 +211,45 @@ Roe<void> Libp2pHost::PostAndWait(std::function<void()> fn) {
   return {};
 }
 
+Roe<void> Libp2pHost::ListenOn(const std::string& multiaddr_str) {
+  if (!running_ || !host_ || !io_context_) {
+    return Error("libp2p host not running");
+  }
+  auto ma_res = libp2p::multi::Multiaddress::create(multiaddr_str);
+  if (!ma_res) {
+    return Error("invalid libp2p listen multiaddr: " + multiaddr_str);
+  }
+  const libp2p::multi::Multiaddress ma = ma_res.value();
+
+  std::promise<Roe<void>> listen_promise;
+  auto listen_future = listen_promise.get_future();
+  boost::asio::post(*io_context_, [this, ma, addr = multiaddr_str, listen_promise = std::move(listen_promise)]() mutable {
+    auto listen_res = host_->listen(ma);
+    if (!listen_res) {
+      listen_promise.set_value(Error("libp2p listen failed on " + addr));
+      return;
+    }
+    listen_promise.set_value({});
+  });
+  return listen_future.get();
+}
+
+Roe<void> Libp2pHost::StopListening() {
+  // Closes every listener on the host — used for mobile Client ephemeral bind (N025) only.
+  if (!running_ || !host_ || !io_context_) {
+    return {};
+  }
+  std::promise<Roe<void>> done_promise;
+  auto done_future = done_promise.get_future();
+  boost::asio::post(*io_context_, [this, done_promise = std::move(done_promise)]() mutable {
+    const auto addrs = host_->getAddresses();
+    for (const auto& ma : addrs) {
+      (void)host_->closeListener(ma);
+      (void)host_->removeListener(ma);
+    }
+    done_promise.set_value({});
+  });
+  return done_future.get();
+}
+
 } // namespace pbr
