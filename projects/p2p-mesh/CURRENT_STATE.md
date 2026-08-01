@@ -138,6 +138,6 @@
 
 ## Follow-ups
 
-See [PHASES.md](PHASES.md) and [DESIGN § Relay path preference](DESIGN.md#relay-path-preference-n014--n020).
+See [PHASES.md](PHASES.md) and [DESIGN § Relay selection and scope](DESIGN.md#relay-selection-and-scope).
 
 **Calls:** [p2p-av-calls](../p2p-av-calls/) **a4** — V020–V024. Shared adaptive policy (1:1 P2P + SFU); N021 framing on hop only.

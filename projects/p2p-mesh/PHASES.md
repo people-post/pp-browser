@@ -1,5 +1,7 @@
 # P2P mesh — phases
 
+**[DESIGN.md](DESIGN.md) is the authoritative specification** (concept-first, present tense). **This file orders work only** — checklists, delivery sequence, and traceability. Rationale: [DECISIONS.md](DECISIONS.md). Implementation truth: [CURRENT_STATE.md](CURRENT_STATE.md).
+
 Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → n3 → nf (thin) → **n4-media** → later message_relay / pricing UI → … → n2 (DHT later).
 
 ## n0 — Project docs

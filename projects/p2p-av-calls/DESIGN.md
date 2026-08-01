@@ -329,7 +329,7 @@ Honest mobile / group video needs mesh progress roughly:
 | Listen | Seed: public multiaddr (e.g. tcp/443) — fail loud if busy (N016) |
 | Scale-out | More SFU seeds post-release (V008); `bootstrap_peers` / config |
 
-Exact capability JSON keys in [p2p-mesh DESIGN](../p2p-mesh/DESIGN.md); implement with **n4-media** (N017–N021).
+Exact capability JSON keys in [p2p-mesh DESIGN § Configuration](../p2p-mesh/DESIGN.md#configuration); media relay behavior in [§ Services — Media relay](../p2p-mesh/DESIGN.md#media-relay).
 
 **LAN dogfood (a2/a3 without SFU):** Two devices on the same LAN with mutually reachable ICE host candidates. Group (a4) does **not** use LAN full-mesh — waits on SFU.
 
