@@ -313,3 +313,48 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 **Rationale:** Local relays stay high-value for small groups without forcing users to configure tiers; global relays scale audience for reachable ops nodes; minimal UX via inference from existing `ReachabilitySignals` and contact graph. Extends N014/N020 without replacing closed-set short-term policy.  
 **Alternatives:** Rename or expand media-hop-reachability to own scope (rejected — blurs H001 stack vs policy); new top-level project for routing only (rejected — p2p-mesh already owns hop policy); explicit geo/country tier picker (rejected — privacy + wrong abstraction).  
 **Spec:** [RELAY_SCOPE.md](RELAY_SCOPE.md). **Phase:** [ns](PHASES.md#ns--relay-scope-and-domain-bridging-n023).
+
+---
+
+## N024 — Immediate relay as service broker
+
+**Date:** 2026-08-01  
+**Updated:** 2026-08-01 (bundled media + SLA; supersedes circuit-only wording)  
+**Status:** Accepted (plan — pairs with [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned))  
+**Decision:** When consumer **A** uses immediate relay **R1** (circuit path and/or brokered call attach), **A pays R1 only**. R1 is the **single commercial and SLA face** — priced and experienced like “the hop,” even when R1 subcontracted upstream **`circuit_relay`** (R2+) and **`media_relay`** (B) capacity behind the scenes.
+
+| Rule | Detail |
+|------|--------|
+| **Consumer payer** | **A pays R1 only** — one quote + billing ceiling with R1 |
+| **Consumer UX** | A does not quote or pay R2 or B directly on the brokered path; R1’s rate may differ from B’s wholesale rate |
+| **Upstream circuit** | R1 chooses R2+; R1 pays upstream circuit cost; must keep **positive margin** when paid |
+| **Downstream media (brokered calls)** | R1 subcontracts **`media_relay`** on **call-agreed B**; **R1 absorbs B’s wholesale** in its retail quote to A and may add markup for path + **latency / delivery guarantee** |
+| **SLA owner** | R1 owns **path + attach delivery** to the **call-agreed** target; see **re-pick bounds** below |
+| **Direct attach (unchanged)** | When A **direct-dials B** without a broker, **A pays B** per N019 / [H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop) — friend volunteer SFU, no R1 markup |
+| **Volunteer R1** | May bundle volunteer upstream (R2, B) at rate 0 to A; still one relationship with R1 |
+
+### Re-pick bounds (calls — B is roster-bound)
+
+**B** is the group’s agreed blind SFU for a **`call_id`** (coordinator pick + authenticated attach per V023/N020). R1 does **not** unilaterally replace B.
+
+| Failure | Who acts | What may change |
+|---------|----------|-----------------|
+| Upstream circuit (R2+, path) | **R1** | Alternate route — **same B** |
+| R1↔B attach / path to B | **R1** (retry) | **Same B** |
+| **B** unavailable | **Call coordinator** (SoftMigrate) | **B′** — call-level; roster + `call_id` auth |
+
+### Quote renewal (brokered attach)
+
+| Situation | Consumer (A) action |
+|-----------|---------------------|
+| **Path-only retry** to **same B** (R2′, same tier T, same retail rate/ceiling) | **Auto-extend** — no re-accept; original R1 quote remains in force |
+| Coordinator picks **B′** (new SFU PeerId) | **Re-accept** with R1 when retail **rate or billing ceiling** changes; new quote scoped to B′ |
+| B′ but **unchanged** retail rate/ceiling and tier T | May **auto-extend** if R1 and policy confirm equivalent wholesale — product may still show lightweight ack |
+| A can **direct-dial B′** | **Direct attach** to B′ (H005); skip broker |
+
+Paid mode: never exceed the **accepted ceiling** without explicit re-accept (same rule as N019/V022).
+
+**Rationale:** One payer and one SLA owner matches “R1 feels like the real B at a different price”; enables latency guarantees only the orchestrator can offer on **path to** the agreed SFU; R1 optimizes subcontract mix for margin. **B** remains call-scoped — SFU re-pick is coordinator policy (V023), not broker discretion.  
+**Alternatives:** A pays B separately while using R1 for circuit only (rejected — splits SLA, confuses UX); pay-each-hop (rejected); R1 forbidden from marking up B (rejected — no incentive to broker); **R1 unilateral B swap** (rejected — breaks roster / group-agreed media hub).  
+**Implementation notes (later):** R1↔B wholesale quote/attach protocol; inter-relay settlement (HTTP preferred per N022); SoftMigrate **brokered** vs **direct** attach modes.  
+**Spec:** [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). **Stack phase:** [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). **Policy phase:** [ns3](PHASES.md#ns3--multi-hop-circuit-policy).

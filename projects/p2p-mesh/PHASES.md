@@ -103,6 +103,21 @@ Docs-first; implement after n4-media stable. See [RELAY_SCOPE.md](RELAY_SCOPE.md
 - [x] `RelayScope` enum + scope mask; `RankMediaHopsEscalating`; provider serve mask (ns1)
 - [x] Provider: reachability-aware stranger limit in `ApplyMeshAdmissionPolicies`
 - [ ] Consumer: wire escalate ranker in circuit path; capability ads on Identify
-- [ ] Bridge score when `seed_dial_ok == false` or target undialable direct
+- [ ] Bridge score when `seed_dial_ok == false` or target undialable direct (incl. multi-hop reach signals — [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned))
 - [ ] Optional Me → Network scope preset (auto default; contacts / wider)
 - [ ] Island / Bluetooth store-and-forward sketch (message_relay track; no hard dependency)
+
+## ns3 — Multi-hop circuit policy
+
+Pairs with stack [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). Spec: [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). ADR: [N024](DECISIONS.md#n024--immediate-relay-as-service-broker).
+
+- [x] ADR: R1 as service broker (A pays R1; R1 subcontracts R2 + B; bundled media + SLA)
+- [ ] Config: `circuit_relay.max_hops` (default 3; no hardcoded protocol max)
+- [ ] R1 upstream relay scorer (margin-aware; scope + N014 preference)
+- [ ] R1 retail quote to A (bundled circuit + media + latency tier); R1↔B wholesale quote
+- [ ] Consumer bridge score: `r1_reaches_target` incl. subcontract hints (Identify / probe cache)
+- [ ] Inter-relay settlement (R1 pays R2, B — HTTP preferred N022)
+- [ ] SoftMigrate brokered attach mode vs direct attach ([H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop)); broker quote scoped to **call-agreed B**
+- [x] Re-pick bounds: R1 = path only; B′ = coordinator SoftMigrate (V023)
+- [x] Quote renewal: auto-extend path-only (same B); re-accept when B′ or rate/ceiling changes
+- [ ] Per-hop admission unchanged; loop detection

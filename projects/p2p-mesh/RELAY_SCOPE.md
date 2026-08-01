@@ -116,16 +116,32 @@ Extend admission policies: **`serve_scope_mask`** is authoritative for stranger 
 
 ### Bridge score (partition escape)
 
-When global path fails, rank candidates by:
+When global path fails, rank **immediate relay R1** candidates by:
 
 ```text
 bridge_score = dialable_from_me
-             × (dialable_to_target ∨ seed_dial_ok_from_candidate)
+             × r1_reaches_target
              × recent_bridge_success
              × affinity_bonus
 ```
 
-No user selects “country tier.” The client discovers: *seed unreachable; contact Alice still bridges.*
+Where **`r1_reaches_target`** is true when R1 can complete a path to B:
+
+- **Today (single-hop):** R1 can **direct-dial** B (or seed reachable from R1 when B is org-scoped).
+- **Planned (multi-hop, [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned)):** R1 advertises or proves reachability to B **directly or via subcontract** (upstream R2 within hop cap). Consumer A still scores **R1 only** — not R2 ([N024](DECISIONS.md#n024--immediate-relay-as-service-broker)).
+
+No user selects “country tier.” The client discovers: *seed unreachable from me; contact Alice (R1) still reaches the target.*
+
+### Multi-hop bridge score
+
+See [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). Summary:
+
+| Side | Algorithm |
+|------|-----------|
+| **Consumer (A)** | Escalate scope → score **R1** → quote/accept with R1 → opaque tunnel to B |
+| **Provider (R1)** | If no direct dial to B, inner pick **R2** (scope, margin, capacity) → nested circuit |
+
+**Pricing:** A pays **R1 only** on the brokered path (bundled circuit + media + SLA — [N024](DECISIONS.md#n024--immediate-relay-as-service-broker)). R1 optimizes upstream so margin stays positive when paid.
 
 ### Ecosystem health by scope
 
@@ -156,7 +172,8 @@ Do **not** expand media-hop-reachability to cover scope routing or incentives �
 | `RelayScope.h` | Scope bit flags + `RelayAdmissionAllowsDialer` (header-only; libp2p-safe) |
 | `CandidateRelayScopes` | Contact → social/site/link; OrgSeed → org; same-/24 v1 (needs **bound** listen, not `0.0.0.0`) |
 | `RankMediaHopsEscalating` | Media consumer pick in `CallTopologyController` |
-| `OrderCircuitHops` | Circuit path unchanged (ns2: escalate) |
+| `OrderCircuitHops` | Circuit immediate-relay order (nf); ns2: escalate + bridge score |
+| Multi-hop circuit v2 | **Not implemented** — [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md), [N024](DECISIONS.md#n024--immediate-relay-as-service-broker) |
 | `ProviderServeScopeMask` + `serve_scope_mask` | Admission on circuit + media relay |
 | `ApplyMeshAdmissionPolicies` | Reachability-aware stranger limit; re-run on probe update |
 | `prefer_contacts_only` on admission structs | Legacy field; **admission uses `serve_scope_mask`** |

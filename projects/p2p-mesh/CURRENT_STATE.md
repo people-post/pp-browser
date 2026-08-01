@@ -65,7 +65,7 @@
 
 | Area | State |
 |------|-------|
-| Protocol | `/pp-browser/circuit-relay/1.0.0` stream bridge (integration layer, not libp2p v2) |
+| Protocol | `/pp-browser/circuit-relay/1.0.0` stream bridge — **single-hop today**; multi-hop v2 planned ([MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)) |
 | Config | `libp2p.capabilities.circuit_relay` + JSON round-trip |
 | UI | **Circuit relay** checkbox under Node (hot refresh via `RefreshMeshCapabilities`) |
 | Seed | `packaging/pp-node/config.json.example` enables `circuit_relay: true` |
@@ -118,7 +118,7 @@
 |------|-------|
 | `RelayScope` + escalate ranker | `RelayScope.h`, `RankMediaHopsEscalating` in `MeshHopPolicy` |
 | Provider cap from reachability | `ApplyMeshAdmissionPolicies` → `serve_scope_mask` |
-| Bridge score / LAN mDNS | Deferred (ns2) |
+| Bridge score / LAN mDNS | Deferred (ns2); multi-hop circuit plan [ns3](PHASES.md#ns3--multi-hop-circuit-policy) / [N024](DECISIONS.md#n024--immediate-relay-as-service-broker) |
 | Household contact tag | Deferred |
 
 ## Still not done

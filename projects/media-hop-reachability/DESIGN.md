@@ -58,7 +58,7 @@ flowchart TB
 |------------|-----------|
 | **Address book** | Store multiaddrs per PeerId from Identify, dial success, bootstrap; TTL / replace stale |
 | **Advertise** | Node listen + UPnP external + DialBack-observed pushed via Identify |
-| **Circuit** | Evolve custom `/pp-browser/circuit-relay` toward **PeerId-first** dial (relay already connected to target, or reservation) so Clients need not know target LAN ma |
+| **Circuit** | Evolve custom `/pp-browser/circuit-relay` toward **PeerId-first** dial; **multi-hop v2** for transitive paths ([MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), L3.5) so one relay need not direct-dial target |
 | **Hole punch** | Later (DCUtR-class) when fork allows — document gap, don’t fake in app |
 
 ### Consume API (tentative — L4)

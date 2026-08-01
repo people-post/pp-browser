@@ -23,6 +23,18 @@ Implement **in libp2p** ([H001](DECISIONS.md#h001--separate-project-implementati
 
 - [x] Evolve custom circuit toward dial-by-PeerId when relay already has target (or reservation)
 - [x] SoftMigrate may use circuit when direct `IsDialable` fails (H005)
+- **Gap:** L3 is **single-hop only** (one relay must direct-dial target). Multi-hop plan: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md) / [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned).
+
+## L3.5 — Multi-hop circuit v2
+
+Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned), mesh [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker). **Not started.**
+
+- [ ] ADR + spec (H008, N024, MULTI_HOP_CIRCUIT) — **done**
+- [ ] Protocol v2: `bridge_path`, nested `sub_bridge`, `circuit_relay.max_hops` (default 3, config-only limit), loop detection
+- [ ] R1 upstream relay selection (provider inner loop); consumer still picks R1 only
+- [ ] Session model: opaque end-to-end tunnel handle (replace single `CircuitHopLink` assumption)
+- [ ] Integrate with ns3 bridge score (“R1 can reach B” incl. subcontract)
+- [ ] Tests + [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md) fork notes
 
 ## L4 — SoftMigrate consume stack only
 

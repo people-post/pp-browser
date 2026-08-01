@@ -46,6 +46,7 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Full model, N010–N021, delivery order |
 | [RELAY_SCOPE.md](RELAY_SCOPE.md) | Connectivity domains, scope escalation, bridge score (N023) |
+| [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md) | Multi-hop circuit plan (H008, N024) — today single-hop |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
 | [PHASES.md](PHASES.md) | Checklists in N015 order |
 | [DECISIONS.md](DECISIONS.md) | ADRs (N001+) |
