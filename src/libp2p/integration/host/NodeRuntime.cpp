@@ -195,7 +195,8 @@ Roe<void> NodeRuntime::StartEphemeralListen() {
 
   Error last_error("mobile ephemeral listen failed");
   for (const std::string& candidate : candidates) {
-    if (auto listened = host_->ListenOn(candidate); listened) {
+    auto listened = host_->ListenOn(candidate);
+    if (listened) {
       ephemeral_listen_active_ = true;
       bound_listen_ = ResolveBoundListenMultiaddr(*host_, candidate);
       last_error_.clear();

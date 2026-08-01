@@ -101,7 +101,7 @@ bool MobileInCallRelayEligible(const CallSessionManager* call_sessions) {
   if (!active || !active->has_value()) {
     return false;
   }
-  auto joined = call_sessions->ListJoinedParticipants(active->call_id);
+  auto joined = call_sessions->ListJoinedParticipants((*active)->call_id);
   return joined && joined->size() >= 3;
 }
 
