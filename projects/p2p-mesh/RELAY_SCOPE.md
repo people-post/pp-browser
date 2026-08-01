@@ -52,6 +52,10 @@ Scopes are **machine tags** on relay advertisements — inferred automatically; 
 
 **Not geo tiers:** “Country” is modeled as an **egress partition** — peers who share bootstrap failure but can still reach each other. Selection uses **bridge score**, not country IP databases.
 
+**`link` / `site` vs closed set (N020 short term):** Scope tags are **ordering and score dimensions among already-eligible peers**, not permission to hop via arbitrary LAN strangers. For `media_relay` / circuit short term, eligible peers remain **contacts ∪ household ∪ org seed** only (household tag deferred — v1 treats “contact on same LAN/subnet” as `link`/`site`). mDNS may inform inference later; it must not widen the feasible set until mid-term policy says so.
+
+**Household / trusted:** Named in N014/N020 feasible set; maps to **`site`** (+ social). No household field on contacts yet — ship v1 as contacts-on-same-subnet only.
+
 ### Topology roles (emergent, not user job titles)
 
 | Role | Behavior | Who becomes one |
@@ -63,7 +67,14 @@ Scopes are **machine tags** on relay advertisements — inferred automatically; 
 
 ### Consumer algorithm: escalate scope
 
-Generalizes N020 **filter → score → quote → attach → re-pick** for all relay kinds:
+**Two loops (do not confuse with rejected N014 stage machine):**
+
+1. **Outer:** scope bands `link → site → social → org` (short term; **`public` empty** until N020 mid-term directory/paid class).
+2. **Inner:** N020 **filter → score → quote → attach → re-pick** within each band.
+
+Hardcoded contacts→seed→public **without** scoring/re-pick remains rejected (N020/V023). Scope escalation adds a narrow→wide **eligibility band**, not a fixed winner per band.
+
+Generalizes N020 for all relay kinds:
 
 ```mermaid
 flowchart TB
@@ -79,10 +90,12 @@ flowchart TB
   cd --> fb[Fallback: HTTP Brief messages / clear UX for calls]
 ```
 
+**Short-term consumer mask (N020):** `link | site | social | org` only — skip `public` until curated directory ships.
+
 **Rules:**
 
 - Prefer **narrowest scope that works** — same-LAN contact before org seed.
-- On partition (`Blocked` / seed unreachable), boost **bridge score** within `social` before widening to `org`.
+- On partition (`Blocked` / seed unreachable), boost **bridge score** within `social` before widening to `org` (alternate org relays / directory mid-term — not blind retry of the same unreachable seed).
 - Never pure `min(price)` (N020).
 - Messages: HTTP Brief inbox remains final durability fallback (N017).
 
@@ -99,7 +112,7 @@ Minimal UX: **Help the network** + capability checkboxes + nested pricing (N009/
 | `Reachability == OutboundOnly` | Refuse strangers; serve `social` / `link` aggressively |
 | `Reachability == Blocked` | Do not promise wide scope; island queue only if implemented |
 
-Extend admission policies (`CircuitRelayAdmissionPolicy`, `MediaRelayAdmissionPolicy`) from boolean **prefer_contacts_only** toward a **scope mask** over time.
+Extend admission policies: **`serve_scope_mask`** is authoritative for stranger dialers; `prefer_contacts_only` retained for config/UI sync only (ns1).
 
 ### Bridge score (partition escape)
 
@@ -136,17 +149,18 @@ No user selects “country tier.” The client discovers: *seed unreachable; con
 
 Do **not** expand media-hop-reachability to cover scope routing or incentives — that splits ownership locked in [H001](../media-hop-reachability/DECISIONS.md#h001--separate-project-implementation-in-libp2p).
 
-## Code anchors (today → target)
+## Code anchors (ns1 landed → ns2 open)
 
-| Today | Target |
-|-------|--------|
-| `MeshHopAffinity` (Contact / OrgSeed / Other) | Add scope tags; map Contact → `social`, OrgSeed → `org` |
-| `RankMediaHops` / `OrderCircuitHops` | Scope-aware escalate + bridge score |
-| `ReachabilitySignals` / `ClassifyReachability` | Feed provider scope caps |
-| `CircuitRelayAdmissionPolicy.prefer_contacts_only` | Generalize to scope mask |
-| `MeshHopCandidate.residual_capacity` | Unchanged; still input to scorer |
-
-Implementation lives in `src/base/people/MeshHopPolicy.*` and relay admission in `src/libp2p/integration/host/*RelayService.*` — not in the libp2p fork unless dialability requires it.
+| Area | State |
+|------|-------|
+| `RelayScope.h` | Scope bit flags + `RelayAdmissionAllowsDialer` (header-only; libp2p-safe) |
+| `CandidateRelayScopes` | Contact → social/site/link; OrgSeed → org; same-/24 v1 (needs **bound** listen, not `0.0.0.0`) |
+| `RankMediaHopsEscalating` | Media consumer pick in `CallTopologyController` |
+| `OrderCircuitHops` | Circuit path unchanged (ns2: escalate) |
+| `ProviderServeScopeMask` + `serve_scope_mask` | Admission on circuit + media relay |
+| `ApplyMeshAdmissionPolicies` | Reachability-aware stranger limit; re-run on probe update |
+| `prefer_contacts_only` on admission structs | Legacy field; **admission uses `serve_scope_mask`** |
+| Bridge score / Identify ads / Me → Network preset | ns2+ |
 
 ## Optional advanced setting (not required for v1)
 
@@ -154,9 +168,9 @@ Single Me → Network control maps to scope mask:
 
 | Label | Mask |
 |-------|------|
-| Contacts only (default auto) | `link \| site \| social` |
-| My network | + `site` emphasis |
-| Wider network | + `org`; `public` only with paid |
+| Auto (recommended) | Inferred from reachability + capabilities |
+| Contacts & nearby | `link \| site \| social` |
+| Wider network | + `org`; `public` only with paid (mid-term) |
 
 Default is **auto** from reachability + capabilities.
 

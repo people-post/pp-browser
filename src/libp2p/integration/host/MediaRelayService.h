@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/data/Config.h"
+#include "base/people/RelayScope.h"
 #include "common/Error.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
@@ -52,6 +53,7 @@ struct MediaRelayAttachResult {
 
 struct MediaRelayAdmissionPolicy {
   bool prefer_contacts_only = false;
+  RelayScopeMask serve_scope_mask = kRelayScopeVolunteerServe;
   std::unordered_set<std::string> contact_peer_ids;
 };
 

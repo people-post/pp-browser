@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/people/RelayScope.h"
 #include "common/Error.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
@@ -17,10 +18,11 @@ struct CircuitRelayBridgeResult {
   std::string error;
 };
 
-/** Provider admission (nf): volunteer desktop may prefer contacts. */
+/** Provider admission (nf / N023): scope mask + contact PeerIds. */
 struct CircuitRelayAdmissionPolicy {
-  /** When true and contact_peer_ids non-empty, refuse non-contact dialers. */
+  /** When true and contact_peer_ids non-empty, refuse non-contact dialers (legacy; see serve_scope_mask). */
   bool prefer_contacts_only = false;
+  RelayScopeMask serve_scope_mask = kRelayScopeVolunteerServe;
   std::unordered_set<std::string> contact_peer_ids;
 };
 

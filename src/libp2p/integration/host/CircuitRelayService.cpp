@@ -1,5 +1,6 @@
 #include "libp2p/integration/host/CircuitRelayService.h"
 
+#include "base/people/RelayScope.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/basic/read.hpp>
@@ -96,15 +97,13 @@ CircuitRelayBridgeResult RelayBridge(PeerSessionManager& sessions, const nlohman
     out.error = "unsupported op";
     return out;
   }
-  if (admission.prefer_contacts_only && !admission.contact_peer_ids.empty()) {
-    std::string remote;
-    if (auto peer = client_stream->remotePeerId()) {
-      remote = peer.value().toBase58();
-    }
-    if (remote.empty() || admission.contact_peer_ids.find(remote) == admission.contact_peer_ids.end()) {
-      out.error = "prefer contacts: stranger refused";
-      return out;
-    }
+  std::string remote;
+  if (auto peer = client_stream->remotePeerId()) {
+    remote = peer.value().toBase58();
+  }
+  if (!RelayAdmissionAllowsDialer(admission.serve_scope_mask, remote, admission.contact_peer_ids)) {
+    out.error = "relay scope: stranger refused";
+    return out;
   }
   const std::string target = root.value("target_multiaddr", "");
   if (target.empty()) {

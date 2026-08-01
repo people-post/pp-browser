@@ -48,6 +48,7 @@ public:
     IDialRegistry* dial = nullptr;
     std::vector<std::string> bootstrap_peers;
     bool prefer_contacts = true;
+    std::string local_listen_multiaddr;
   };
 
   CallTopologyController(CallTopologyHost& host, CallSessionStore& sessions, ContactsStore& contacts,

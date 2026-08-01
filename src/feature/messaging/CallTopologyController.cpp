@@ -50,9 +50,9 @@ std::vector<MeshHopCandidate> CallTopologyController::RankedMediaHopCandidates()
   }
   auto contact_hops = CollectContactHopCandidates(contacts);
   auto seed_hops = CollectSeedHopCandidates(relay_deps_.bootstrap_peers);
-  auto ordered =
-      OrderCircuitHops(std::move(contact_hops), std::move(seed_hops), relay_deps_.prefer_contacts);
-  auto ranked = RankMediaHops(std::move(ordered), relay_deps_.prefer_contacts);
+  auto merged = OrderCircuitHops(std::move(contact_hops), std::move(seed_hops), relay_deps_.prefer_contacts);
+  auto ranked = RankMediaHopsEscalating(std::move(merged), relay_deps_.prefer_contacts,
+                                        relay_deps_.local_listen_multiaddr);
   if (relay_deps_.relay) {
     if (auto pid = relay_deps_.relay->LocalPeerIdBase58()) {
       ranked = ExcludeSelfHop(std::move(ranked), *pid);

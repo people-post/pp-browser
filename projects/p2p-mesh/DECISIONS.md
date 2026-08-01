@@ -307,6 +307,8 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 | **Roles** | Gateway / island store / infrastructure are **topology outcomes**, not user job titles. |
 | **Ownership** | Policy in **p2p-mesh** ([RELAY_SCOPE.md](RELAY_SCOPE.md)); dialability in [media-hop-reachability](../media-hop-reachability/) (H001). |
 | **Messages** | HTTP Brief remains org/global durability fallback; peer `message_relay` may add link/site/island queues later. |
+| **Short term** | Consumer mask stops at **`org`**; `public` ineligible. `link`/`site` order eligible **contacts** only — no LAN strangers. |
+| **Algorithm** | Outer scope bands + inner N020 scorer — not the rejected hardcoded N014 stage list. |
 
 **Rationale:** Local relays stay high-value for small groups without forcing users to configure tiers; global relays scale audience for reachable ops nodes; minimal UX via inference from existing `ReachabilitySignals` and contact graph. Extends N014/N020 without replacing closed-set short-term policy.  
 **Alternatives:** Rename or expand media-hop-reachability to own scope (rejected — blurs H001 stack vs policy); new top-level project for routing only (rejected — p2p-mesh already owns hop policy); explicit geo/country tier picker (rejected — privacy + wrong abstraction).  

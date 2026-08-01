@@ -8,6 +8,7 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [x] Register in `projects/README.md` + `AGENTS.md`
 - [x] N008–N021 (through hop pick, ↑/↓ quotes, **generic framing / QoS channel types**)
 - [x] **N022** — libp2p investment; HTTP settle preferred; chain backup
+- [x] **N023** — relay scope / domain bridging spec ([RELAY_SCOPE.md](RELAY_SCOPE.md))
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
 
 ## n1 — Role shell + bootstrap + Network UI
@@ -89,7 +90,6 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 
 ## Later horizons
 
-- [ ] **ns** — Relay scope + domain bridging ([RELAY_SCOPE.md](RELAY_SCOPE.md), N023)
 - [ ] Capability directory / curated public (N020 mid)
 - [ ] Soft reputation / receipts; bonds; anti-dumping / anti-capture (N020 long)
 - [ ] Schedules & resource caps; Home Node pack
@@ -100,9 +100,9 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 Docs-first; implement after n4-media stable. See [RELAY_SCOPE.md](RELAY_SCOPE.md).
 
 - [x] ADR **N023** + RELAY_SCOPE design doc
-- [ ] `RelayScope` enum + scope mask on hop candidates / capability ads
-- [ ] Consumer: escalate scope in ranker (extend `RankMediaHops` / circuit order)
-- [ ] Provider: scope cap from `ReachabilitySignals` + pricing (generalize admission policies)
+- [x] `RelayScope` enum + scope mask; `RankMediaHopsEscalating`; provider serve mask (ns1)
+- [x] Provider: reachability-aware stranger limit in `ApplyMeshAdmissionPolicies`
+- [ ] Consumer: wire escalate ranker in circuit path; capability ads on Identify
 - [ ] Bridge score when `seed_dial_ok == false` or target undialable direct
 - [ ] Optional Me → Network scope preset (auto default; contacts / wider)
 - [ ] Island / Bluetooth store-and-forward sketch (message_relay track; no hard dependency)
