@@ -16,8 +16,8 @@ Implement **in libp2p** ([H001](DECISIONS.md#h001--separate-project-implementati
 
 ## L2 — Advertise Reachable listen set
 
-- [ ] Unify listen + UPnP external + DialBack-observed into advertised Identify addrs
-- [ ] Node + `media_relay` on ⇒ hop candidates get fresh ads when peers connect
+- [x] Unify listen + UPnP external + DialBack-observed into advertised Identify addrs
+- [x] Node + `media_relay` on ⇒ hop candidates get fresh ads when peers connect
 
 ## L3 — Circuit PeerId-friendly dial
 

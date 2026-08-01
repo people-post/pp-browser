@@ -323,6 +323,28 @@ std::optional<std::string> PeerSessionManager::PreferredPeerMultiaddr(
   return std::nullopt;
 }
 
+void PeerSessionManager::NoteRemoteIdentify(const std::string& peer_id_base58) {
+  if (peer_id_base58.empty()) {
+    return;
+  }
+  address_book_.SyncFromHost(host_, peer_id_base58);
+  std::lock_guard lock(mutex_);
+  if (auto resolved = address_book_.ResolvePeerInfo(peer_id_base58)) {
+    for (auto& [key, state] : endpoints_) {
+      if (state.info && state.info->id.toBase58() == peer_id_base58) {
+        state.info = resolved;
+        state.last_touch = std::chrono::steady_clock::now();
+      }
+    }
+  }
+  MaybeHydrateEndpointFromBookLocked(peer_id_base58);
+}
+
+Roe<void> PeerSessionManager::UpsertBookEntry(const std::string& peer_id_base58,
+                                              const std::string& multiaddr, PeerAddrSource source) {
+  return address_book_.Upsert(peer_id_base58, multiaddr, source);
+}
+
 void PeerSessionManager::MarkWarm(const std::string& peer_relay_user_id) {
   std::lock_guard lock(mutex_);
   auto it = endpoints_.find(peer_relay_user_id);

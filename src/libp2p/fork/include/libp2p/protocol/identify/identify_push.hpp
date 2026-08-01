@@ -40,6 +40,9 @@ namespace libp2p::protocol {
      */
     void start();
 
+    /** Push current self Identify to all connected peers (pp-browser L2). */
+    void pushUpdates();
+
    private:
     /**
      * Send an Identify message to all peers we are connected to

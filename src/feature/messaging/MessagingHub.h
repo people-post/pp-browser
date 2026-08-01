@@ -180,6 +180,7 @@ private:
   void StartMeshServices(Libp2pRole role);
   void ApplyMeshAdmissionPolicies();
   void WireCallMediaRelayDeps();
+  void PublishNodeAdvertisedAddrs();
   void RegisterContactEndpoints();
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();

@@ -21,6 +21,7 @@
 #include "base/people/ContactTypes.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
+#include "libp2p/integration/host/AdvertisedAddrPublisher.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
 #include "libp2p/integration/host/MediaRelayService.h"
@@ -253,6 +254,7 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
 
   reachability_.SetOnUpdated([this]() {
     ApplyMeshAdmissionPolicies();
+    PublishNodeAdvertisedAddrs();
     if (on_reachability_updated_) {
       on_reachability_updated_();
     }
@@ -264,6 +266,25 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
     reachability_.StartProbe(*node_runtime_, *dial_back_, try_upnp);
   }
   WireCallMediaRelayDeps();
+  PublishNodeAdvertisedAddrs();
+}
+
+void MessagingHub::PublishNodeAdvertisedAddrs() {
+  if (!node_runtime_ || !node_runtime_->Host() || !node_runtime_->Identify()) {
+    return;
+  }
+  const bool node = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
+  const bool publish = node && config_.libp2p.capabilities.media_relay;
+  if (!publish) {
+    return;
+  }
+  std::string peer_id;
+  if (auto local = node_runtime_->Host()->LocalPeerIdBase58()) {
+    peer_id = *local;
+  }
+  PublishAdvertisedListenSet(*node_runtime_->Host(), *node_runtime_->Identify(),
+                             reachability_.Snapshot(), node_runtime_->BoundListenMultiaddr(), peer_id,
+                             publish);
 }
 
 void MessagingHub::WireCallMediaRelayDeps() {

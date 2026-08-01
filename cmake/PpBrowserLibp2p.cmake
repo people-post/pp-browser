@@ -32,6 +32,8 @@ function(pp_browser_add_libp2p_integration)
   add_library(pp_libp2p_integration STATIC
     host/Libp2pHost.cpp
     host/PeerAddressBook.cpp
+    host/IdentifyIntegrationService.cpp
+    host/AdvertisedAddrPublisher.cpp
     host/PeerSessionManager.cpp
     host/PeerIdUtil.cpp
     host/NodeRuntime.cpp
@@ -49,6 +51,7 @@ function(pp_browser_add_libp2p_integration)
   target_link_libraries(pp_libp2p_integration PUBLIC
     pp_common
     p2p
+    p2p_identify
     p2p_peer_id
     p2p_keys_proto
     nlohmann_json::nlohmann_json)

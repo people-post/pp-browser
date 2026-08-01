@@ -75,6 +75,9 @@ namespace libp2p::host {
 
     peer::PeerRepository &getPeerRepository() override;
 
+    /** Identity manager (pp-browser L2 Identify integration). */
+    const std::shared_ptr<peer::IdentityManager> &getIdentityManager() const { return idmgr_; }
+
     network::Router &getRouter() override;
 
     event::Bus &getBus() override;

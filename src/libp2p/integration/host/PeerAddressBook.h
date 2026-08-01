@@ -21,6 +21,7 @@ enum class PeerAddrSource {
   Contact,
   Connection,
   DialSuccess,
+  Identify,
   AddressRepository,
   Manual,
 };
