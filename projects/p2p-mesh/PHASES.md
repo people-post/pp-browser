@@ -103,6 +103,16 @@ Docs-first; implement after n4-media stable. See [RELAY_SCOPE.md](RELAY_SCOPE.md
 - [x] `RelayScope` enum + scope mask; `RankMediaHopsEscalating`; provider serve mask (ns1)
 - [x] Provider: reachability-aware stranger limit in `ApplyMeshAdmissionPolicies`
 - [ ] Consumer: wire escalate ranker in circuit path; capability ads on Identify
-- [ ] Bridge score when `seed_dial_ok == false` or target undialable direct
+- [ ] Bridge score when `seed_dial_ok == false` or target undialable direct (incl. multi-hop reach signals — [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned))
 - [ ] Optional Me → Network scope preset (auto default; contacts / wider)
 - [ ] Island / Bluetooth store-and-forward sketch (message_relay track; no hard dependency)
+
+## ns3 — Multi-hop circuit policy
+
+Pairs with stack [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). Spec: [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). ADR: [N024](DECISIONS.md#n024--circuit-pricing-pay-immediate-relay-only).
+
+- [x] ADR: immediate-relay pricing (A pays R1; R1 subcontracts R2+)
+- [ ] R1 upstream relay scorer (margin-aware; scope + N014 preference)
+- [ ] Circuit quote/ceiling for paid R1 (mirror N019 pattern when `circuit_relay` paid)
+- [ ] Consumer bridge score: `r1_reaches_target` incl. subcontract hints (Identify / probe cache)
+- [ ] Abuse caps: max 2 relays, per-hop admission unchanged

@@ -313,3 +313,23 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 **Rationale:** Local relays stay high-value for small groups without forcing users to configure tiers; global relays scale audience for reachable ops nodes; minimal UX via inference from existing `ReachabilitySignals` and contact graph. Extends N014/N020 without replacing closed-set short-term policy.  
 **Alternatives:** Rename or expand media-hop-reachability to own scope (rejected — blurs H001 stack vs policy); new top-level project for routing only (rejected — p2p-mesh already owns hop policy); explicit geo/country tier picker (rejected — privacy + wrong abstraction).  
 **Spec:** [RELAY_SCOPE.md](RELAY_SCOPE.md). **Phase:** [ns](PHASES.md#ns--relay-scope-and-domain-bridging-n023).
+
+---
+
+## N024 — Circuit pricing: pay immediate relay only
+
+**Date:** 2026-08-01  
+**Status:** Accepted (plan — pairs with [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned))  
+**Decision:** For multi-hop **circuit** connectivity (A uses R1, then R2, …, to reach B):
+
+| Rule | Detail |
+|------|--------|
+| **Consumer payer** | **A pays R1 only** — the **immediate relay** A selected and quoted with |
+| **Upstream hops** | **R1** chooses R2+ and bears subcontract cost / risk; R1 must keep **positive margin** when `circuit_relay` is paid |
+| **Consumer UX** | One quote + billing ceiling with R1; A does not quote or pay R2 directly |
+| **Media hop B** | Unchanged — `media_relay` quote/settle on **B** per [H008/H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop) and **N019** (circuit is reachability; SFU is separate SKU) |
+| **Volunteer** | R1 may subcontract volunteer upstream relays at zero marginal quote to A |
+
+**Rationale:** Keeps consumer UX simple (one commercial relationship for circuit); pushes path economics to operators who can optimize upstream selection; matches aggregator model for paid infra.  
+**Alternatives:** Pay-each-hop (rejected — multi-quote UX, payer disputes); fold circuit cost into media hop quote (rejected — blurs capabilities and H005); R1 must not use paid R2 (rejected — blocks org-seed subcontract paths).  
+**Spec:** [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). **Stack phase:** [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). **Policy phase:** [ns3](PHASES.md#ns3--multi-hop-circuit-policy).

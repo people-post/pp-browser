@@ -23,6 +23,7 @@ Peers (and SoftMigrate) can **dial a media hop by PeerId** because the **libp2p 
 
 | File | Purpose |
 |------|---------|
+| [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md) | Multi-hop circuit plan (H008, N024); today single-hop |
 | [DESIGN.md](DESIGN.md) | In-stack model, consume API, phases |
 | [DECISIONS.md](DECISIONS.md) | ADRs (H001+) |
 | [PHASES.md](PHASES.md) | L0–L5 checklists (libp2p-first) |
@@ -35,6 +36,6 @@ Peers (and SoftMigrate) can **dial a media hop by PeerId** because the **libp2p 
 | L0 | Docs + ownership (this project) | **In progress** |
 | L1 | Address book / Identify / persist known mas in host | Not started |
 | L2 | Reachability + UPnP wired into advertised addrs | Partial in mesh; not unified |
-| L3 | Circuit → PeerId-friendly dial (evolve custom bridge) | Custom n3 exists; not v2 |
+| L3 | Circuit → PeerId-friendly dial (evolve custom bridge) | **Single-hop landed**; multi-hop [L3.5](PHASES.md#l35--multi-hop-circuit-v2) planned |
 | L4 | SoftMigrate consumes stack dialability only | Not started |
 | L5 | Directory / DHT when N015 allows | Later |

@@ -11,7 +11,7 @@ Hop **reachability** = **libp2p stack work** (H001/H007). App-layer `call_hop_ad
 | Area | State |
 |------|-------|
 | Project docs | Ownership: fork implements; SoftMigrate consumes |
-| ADRs | H001–H007 |
+| ADRs | H001–H008; circuit multi-hop plan [N024](../p2p-mesh/DECISIONS.md#n024--circuit-pricing-pay-immediate-relay-only) |
 
 ## Code today (elsewhere)
 
@@ -23,7 +23,7 @@ Hop **reachability** = **libp2p stack work** (H001/H007). App-layer `call_hop_ad
 | Identify | cpp fork | Present; not fully driving SoftMigrate dial |
 | **L1 peer address book** | `PeerAddressBook`, `PeerSessionManager` | Upsert on bootstrap/register/connect/dial-success; `PreferredPeerMultiaddr` for hop dial |
 | **L2 advertised listen set** | `BuildAdvertisedListenSet`, `IdentifyIntegrationService`, `AdvertisedAddrPublisher` | Identify wired; Node+media_relay publishes probe-derived addrs |
-| **L3 circuit PeerId dial** | `CircuitBridgeTarget`, `PeerSessionManager::TryEnsureHopViaCircuit` | Bridge by `target_peer_id`; SoftMigrate circuit fallback via `ICircuitHopReach` |
+| **L3 circuit PeerId dial** | `CircuitBridgeTarget`, `PeerSessionManager::TryEnsureHopViaCircuit` | Bridge by `target_peer_id`; SoftMigrate circuit fallback via `ICircuitHopReach` — **single-hop only** ([MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md)) |
 
 ## Next
 
