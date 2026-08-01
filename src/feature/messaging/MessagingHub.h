@@ -187,6 +187,10 @@ private:
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();
 
+  void SyncMobileEphemeralListen();
+  void PublishMobileCallScopedAddrs();
+  bool HasActiveLocalCall();
+
   std::string data_dir_;
   std::string profile_id_;
   AppConfig config_;
@@ -242,6 +246,8 @@ private:
   std::function<void()> on_messaging_ready_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
+  bool mobile_ephemeral_relay_started_ = false;
+  std::string mobile_ephemeral_last_start_error_;
 };
 
 } // namespace pbr

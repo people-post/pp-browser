@@ -130,7 +130,7 @@
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
 | DHT | **n2** (later per N015) |
-| Mobile call-scoped listen | **nm** — N025 planned, not in code |
+| Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code; LAN manual QA pending |
 
 ## Next
 

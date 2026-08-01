@@ -87,7 +87,7 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 
 - [ ] 1:1 Opus over libp2p direct (LAN dialable PeerId+ma)
 - [ ] 1:1 undialable → hop / circuit (explicit; not ICE Retry)
-- [ ] Mobile callee on Wi‑Fi: ephemeral listen during foreground call (V027 / nm)
+- [x] Mobile callee on Wi‑Fi: ephemeral listen during foreground call (V027 / nm)
 - [ ] N≥3 remains `media_relay`; unify engine on libp2p send/recv (N021)
 - [ ] App AEAD under call media key on media frames (blind hop)
 - [ ] Stop extending `CallP2pSignalingBridge` / PC; mark UI copy for libp2p connect fail

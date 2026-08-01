@@ -68,6 +68,12 @@ public:
   /** Block until fn completes on the io thread (or return error if not running). */
   Roe<void> PostAndWait(std::function<void()> fn);
 
+  /** Add a listen address on a running host (ephemeral mobile listen — N025). */
+  Roe<void> ListenOn(const std::string& multiaddr);
+
+  /** Close and remove all listeners; host keeps running for outbound dials. */
+  Roe<void> StopListening();
+
 private:
   void EnsureLogging();
 

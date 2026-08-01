@@ -559,7 +559,7 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 ## V027 — Mobile call-scoped listen on Wi‑Fi
 
 **Date:** 2026-08-01  
-**Status:** Accepted (plan — **not implemented**)  
+**Status:** Accepted (**implemented** — see mesh N025 / `MessagingHub::SyncMobileEphemeralListen`)  
 **Decision:** Mobile does **not** become a full mesh **Node**. During an **active foreground call on Wi‑Fi**, the app may **listen ephemerally** and publish dialable addrs (mesh **N025**) so that:
 
 | Scenario | Benefit |

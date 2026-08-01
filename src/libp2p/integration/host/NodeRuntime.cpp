@@ -141,6 +141,7 @@ Roe<void> NodeRuntime::Start(const NodeRuntimeConfig& config) {
 }
 
 void NodeRuntime::Stop() {
+  StopEphemeralListen();
   if (identify_) {
     identify_->Stop();
     identify_.reset();
@@ -179,6 +180,42 @@ void NodeRuntime::SuspendColdPeers() {
   if (sessions_) {
     sessions_->SuspendColdPeers();
   }
+}
+
+Roe<void> NodeRuntime::StartEphemeralListen() {
+  if (ephemeral_listen_active_) {
+    return {};
+  }
+  if (!host_ || !host_->IsRunning()) {
+    return Error("libp2p host not running");
+  }
+
+  std::vector<std::string> candidates;
+  candidates.push_back("/ip4/0.0.0.0/tcp/0");
+
+  Error last_error("mobile ephemeral listen failed");
+  for (const std::string& candidate : candidates) {
+    if (auto listened = host_->ListenOn(candidate); listened) {
+      ephemeral_listen_active_ = true;
+      bound_listen_ = ResolveBoundListenMultiaddr(*host_, candidate);
+      last_error_.clear();
+      return {};
+    }
+    last_error = listened.error();
+  }
+  last_error_ = last_error.message;
+  return last_error;
+}
+
+void NodeRuntime::StopEphemeralListen() {
+  if (!ephemeral_listen_active_) {
+    return;
+  }
+  if (host_ && host_->IsRunning()) {
+    (void)host_->StopListening();
+  }
+  ephemeral_listen_active_ = false;
+  bound_listen_.clear();
 }
 
 } // namespace pbr

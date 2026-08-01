@@ -2,6 +2,7 @@
 
 #include "feature/messaging/GroupInviteGate.h"
 #include "feature/messaging/GroupMembershipService.h"
+#include "feature/messaging/MobileEphemeralListenGate.h"
 #include "feature/messaging/RelayDirectoryKemKeyResolver.h"
 #include "feature/messaging/RelayDirectorySigningKeyResolver.h"
 #include "feature/messaging/SqlitePskSessionStore.h"
@@ -19,12 +20,15 @@
 #include "base/net/HttpClient.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/people/ContactTypes.h"
+#include "base/platform/AppLifecycle.h"
+#include "base/platform/NetworkConnectivity.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
 #include "libp2p/integration/host/AdvertisedAddrPublisher.h"
 #include "libp2p/integration/host/CircuitBridgeTarget.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/IdentifyIntegrationService.h"
 #include "libp2p/integration/host/MediaRelayService.h"
 #include "base/people/MeshHopPolicy.h"
 #include "libp2p/integration/host/NatTraversal.h"
@@ -87,6 +91,31 @@ void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& iden
   view.show_rotate = (status == RegistrationStatus::Active || status == RegistrationStatus::ExpiringSoon) &&
                      !identity.brief_llm_api_key.empty();
   view.brief_llm_key_masked = MaskBriefLlmApiKey(identity.brief_llm_api_key);
+}
+
+bool MobileInCallRelayEligible(const CallSessionManager* call_sessions) {
+  if (call_sessions == nullptr) {
+    return false;
+  }
+  auto active = call_sessions->ActiveLocalCall();
+  if (!active || !active->has_value()) {
+    return false;
+  }
+  auto joined = call_sessions->ListJoinedParticipants(active->call_id);
+  return joined && joined->size() >= 3;
+}
+
+MobileEphemeralListenInput BuildMobileEphemeralListenInput(bool messaging_ready, bool node_runtime_running,
+                                                           bool ephemeral_active, bool active_local_call) {
+  MobileEphemeralListenInput in;
+  in.is_mobile = Platform::IsMobile();
+  in.messaging_ready = messaging_ready;
+  in.node_runtime_running = node_runtime_running;
+  in.on_wifi = IsOnWifi();
+  in.foreground = AppLifecycle::IsForeground();
+  in.active_local_call = active_local_call;
+  in.ephemeral_active = ephemeral_active;
+  return in;
 }
 
 } // namespace
@@ -288,6 +317,99 @@ void MessagingHub::PublishNodeAdvertisedAddrs() {
                              publish);
 }
 
+bool MessagingHub::HasActiveLocalCall() {
+  if (!call_sessions_) {
+    return false;
+  }
+  if (auto active = call_sessions_->ActiveLocalCall(); active && active->has_value()) {
+    return true;
+  }
+  // Foreground incoming ring before Accept — LAN callee reachability (N025 / V027).
+  if (auto pending = call_sessions_->TopPendingInvite(); pending && pending->has_value()) {
+    return true;
+  }
+  return false;
+}
+
+void MessagingHub::PublishMobileCallScopedAddrs() {
+  if (!node_runtime_ || !node_runtime_->EphemeralListenActive() || !node_runtime_->Host() ||
+      !node_runtime_->Identify()) {
+    return;
+  }
+  std::string peer_id;
+  if (auto local = node_runtime_->Host()->LocalPeerIdBase58()) {
+    peer_id = *local;
+  }
+  if (peer_id.empty()) {
+    return;
+  }
+  const std::vector<std::string> advertised =
+      BuildMobileCallScopedAdvertisedAddrs(node_runtime_->BoundListenMultiaddr(), peer_id);
+  if (advertised.empty()) {
+    return;
+  }
+  IdentifyIntegrationService* identify = node_runtime_->Identify();
+  node_runtime_->Host()->Post([advertised, identify]() { (void)identify->PublishSelfAdvertisedAddrs(advertised); });
+}
+
+void MessagingHub::SyncMobileEphemeralListen() {
+  if (!Platform::IsMobile() || !messaging_ready_ || !node_runtime_) {
+    return;
+  }
+
+  const bool active_call = HasActiveLocalCall();
+  const MobileEphemeralListenInput gate = BuildMobileEphemeralListenInput(
+      messaging_ready_, node_runtime_->IsRunning(), node_runtime_->EphemeralListenActive(), active_call);
+
+  if (ShouldStartMobileEphemeralListen(gate)) {
+    if (auto started = node_runtime_->StartEphemeralListen(); started) {
+      mobile_ephemeral_last_start_error_.clear();
+      ApplyMeshAdmissionPolicies();
+      WireCallMediaRelayDeps();
+      PublishMobileCallScopedAddrs();
+      if (media_relay_ && !mobile_ephemeral_relay_started_ && MobileInCallRelayEligible(call_sessions_.get())) {
+        media_relay_->Start();
+        mobile_ephemeral_relay_started_ = true;
+      }
+      log().info << "Mobile ephemeral listen started (N025)";
+    } else if (started.error().message != mobile_ephemeral_last_start_error_) {
+      mobile_ephemeral_last_start_error_ = started.error().message;
+      log().warning << "Mobile ephemeral listen failed: " << mobile_ephemeral_last_start_error_;
+    }
+    return;
+  }
+
+  if (ShouldStopMobileEphemeralListen(gate)) {
+    if (mobile_ephemeral_relay_started_ && media_relay_) {
+      media_relay_->Stop();
+      mobile_ephemeral_relay_started_ = false;
+    }
+    if (node_runtime_->EphemeralListenActive()) {
+      node_runtime_->StopEphemeralListen();
+    }
+    mobile_ephemeral_last_start_error_.clear();
+    ApplyMeshAdmissionPolicies();
+    WireCallMediaRelayDeps();
+    log().info << "Mobile ephemeral listen stopped";
+    return;
+  }
+
+  if (!node_runtime_->EphemeralListenActive()) {
+    return;
+  }
+
+  const bool want_relay = MobileInCallRelayEligible(call_sessions_.get());
+  if (want_relay && media_relay_ && !mobile_ephemeral_relay_started_) {
+    media_relay_->Start();
+    mobile_ephemeral_relay_started_ = true;
+    ApplyMeshAdmissionPolicies();
+  } else if (!want_relay && mobile_ephemeral_relay_started_ && media_relay_) {
+    media_relay_->Stop();
+    mobile_ephemeral_relay_started_ = false;
+    ApplyMeshAdmissionPolicies();
+  }
+}
+
 void MessagingHub::WireCallMediaRelayDeps() {
   if (!call_sessions_) {
     return;
@@ -324,6 +446,8 @@ void MessagingHub::WireCallMediaRelayDeps() {
 void MessagingHub::ApplyMeshAdmissionPolicies() {
   const bool prefer = config_.libp2p.prefer_contacts_for_routing;
   const bool node = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
+  const bool mobile_ephemeral =
+      Platform::IsMobile() && node_runtime_ && node_runtime_->EphemeralListenActive();
   std::unordered_set<std::string> contact_ids;
   if (contacts_) {
     if (auto listed = contacts_->List()) {
@@ -371,14 +495,22 @@ void MessagingHub::ApplyMeshAdmissionPolicies() {
   }
   if (media_relay_) {
     MediaRelayAdmissionPolicy policy;
-    policy.prefer_contacts_only = limit_strangers;
-    policy.serve_scope_mask = serve_mask;
-    policy.contact_peer_ids = contact_ids;
+    if (mobile_ephemeral) {
+      policy.prefer_contacts_only = true;
+      policy.serve_scope_mask = kRelayScopeLinkSiteSocial;
+      policy.contact_peer_ids = contact_ids;
+    } else {
+      policy.prefer_contacts_only = limit_strangers;
+      policy.serve_scope_mask = serve_mask;
+      policy.contact_peer_ids = contact_ids;
+    }
     media_relay_->SetAdmissionPolicy(std::move(policy));
   }
 }
 
 void MessagingHub::StopLibp2p() {
+  mobile_ephemeral_relay_started_ = false;
+  mobile_ephemeral_last_start_error_.clear();
   if (call_sessions_) {
     call_sessions_->SetMediaRelayDeps({});
   }
@@ -483,6 +615,7 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
                                                        *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
   p2p_->SetCallSessionManager(call_sessions_.get());
   call_sessions_->AbandonOrphanedCallsAfterRestart();
+  call_sessions_->SetOnRingChanged([this]() { SyncMobileEphemeralListen(); });
   WireCallMediaRelayDeps();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, p2p_.get());
@@ -530,6 +663,7 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                        *call_media_keys_, *p2p_, *psk_store_, *call_media_engine_);
   p2p_->SetCallSessionManager(call_sessions_.get());
   call_sessions_->AbandonOrphanedCallsAfterRestart();
+  call_sessions_->SetOnRingChanged([this]() { SyncMobileEphemeralListen(); });
   WireCallMediaRelayDeps();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, p2p_.get());
@@ -615,6 +749,7 @@ void MessagingHub::TickLibp2p() {
   if (p2p_) {
     p2p_->TickLibp2p();
   }
+  SyncMobileEphemeralListen();
   TickReachabilityUx();
 }
 
@@ -849,6 +984,7 @@ void MessagingHub::RefreshMeshCapabilities() {
     media_relay_->Stop();
     media_relay_.reset();
   }
+  mobile_ephemeral_relay_started_ = false;
   media_relay_client_.reset();
   dial_registry_.reset();
   const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);
@@ -864,6 +1000,7 @@ void MessagingHub::RefreshMeshCapabilities() {
   }
   ApplyMeshAdmissionPolicies();
   WireCallMediaRelayDeps();
+  SyncMobileEphemeralListen();
 }
 
 void MessagingHub::Apply(const NetworkConfig& next) {
@@ -1039,6 +1176,7 @@ Roe<void> MessagingHub::TryEnsureCircuitHopReachable(const std::string& hop_peer
 }
 
 void MessagingHub::SuspendLibp2pColdPeers() {
+  SyncMobileEphemeralListen();
   if (node_runtime_) {
     node_runtime_->SuspendColdPeers();
   }
