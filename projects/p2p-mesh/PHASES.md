@@ -89,7 +89,20 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 
 ## Later horizons
 
+- [ ] **ns** — Relay scope + domain bridging ([RELAY_SCOPE.md](RELAY_SCOPE.md), N023)
 - [ ] Capability directory / curated public (N020 mid)
 - [ ] Soft reputation / receipts; bonds; anti-dumping / anti-capture (N020 long)
 - [ ] Schedules & resource caps; Home Node pack
 - [ ] Gradual HTTP → peer message_relay dual-run (only if product wants it)
+
+## ns — Relay scope & domain bridging (N023)
+
+Docs-first; implement after n4-media stable. See [RELAY_SCOPE.md](RELAY_SCOPE.md).
+
+- [x] ADR **N023** + RELAY_SCOPE design doc
+- [ ] `RelayScope` enum + scope mask on hop candidates / capability ads
+- [ ] Consumer: escalate scope in ranker (extend `RankMediaHops` / circuit order)
+- [ ] Provider: scope cap from `ReachabilitySignals` + pricing (generalize admission policies)
+- [ ] Bridge score when `seed_dial_ok == false` or target undialable direct
+- [ ] Optional Me → Network scope preset (auto default; contacts / wider)
+- [ ] Island / Bluetooth store-and-forward sketch (message_relay track; no hard dependency)

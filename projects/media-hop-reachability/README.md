@@ -13,11 +13,11 @@ Peers (and SoftMigrate) can **dial a media hop by PeerId** because the **libp2p 
 | Layer | Owns |
 |-------|------|
 | **Vendored libp2p + `libp2p/integration`** | Discovery, listen/observed addrs, reachability probes, circuit, dial |
-| **p2p-mesh policy** | Who may be a hop (contacts ∪ seed), budgets, incentives, settle |
+| **p2p-mesh policy** | Who may be a hop (contacts ∪ seed), **relay scope / domain bridging** ([RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md)), budgets, incentives, settle |
 | **p2p-av-calls** | SoftMigrate / attach **consume** “is dialable?” |
 | **This project** | Spec + phases for the **in-stack** program; thin consume notes — **not** a forever app protocol |
 
-**Out of scope here:** App-only `call_hop_addrs` / ICE-like gather over chat (removed from product direction; do not reintroduce).
+**Out of scope here:** App-only `call_hop_addrs` / ICE-like gather over chat (removed from product direction; do not reintroduce). **Relay scope, bridge score, and scope escalation** — [p2p-mesh RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md) (N023); not this project.
 
 ## Documents
 
