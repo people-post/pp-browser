@@ -38,5 +38,6 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [push-notifications](push-notifications/) | **Wave 1 done** | Owned Brief FCM wake + local alerts; alerts ≠ sync — [CURRENT_STATE](push-notifications/CURRENT_STATE.md) |
 | [i18n](i18n/) | **i1–i6 landed** — widen i5 | EN + zh-Hans UI language; Settings picker (sheet on mobile) — [CURRENT_STATE](i18n/CURRENT_STATE.md) |
 | [liquid-glass](liquid-glass/) | **Done** | Floating Chrome on compact shell — [stable docs](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials) |
-| [p2p-mesh](p2p-mesh/) | **nf + n4-media done** — a4 next | N021 framing/QoS; N020 pick; pricing-as-regulation — [CURRENT_STATE](p2p-mesh/CURRENT_STATE.md) |
-| [p2p-av-calls](p2p-av-calls/) | **a4 thin landed** — polish next | V024 adaptation + SFU soft-migrate; group chrome / AEAD follow-on — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
+| [p2p-mesh](p2p-mesh/) | **nf + n4-media done** — N022 invest | Libp2p deepen; HTTP settle preferred; chain backup — [CURRENT_STATE](p2p-mesh/CURRENT_STATE.md) |
+| [p2p-av-calls](p2p-av-calls/) | **V026** libp2p media — **m1** next | Voice-first on libp2p; WebRTC legacy teardown after m1 — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
+| [media-hop-reachability](media-hop-reachability/) | **L0 docs** — L1 peerstore next | Reachability **inside** libp2p; SoftMigrate consumes — [CURRENT_STATE](media-hop-reachability/CURRENT_STATE.md) |

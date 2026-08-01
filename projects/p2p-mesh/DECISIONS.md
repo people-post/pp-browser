@@ -272,3 +272,21 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 
 **Rationale:** Separates transport QoS from app codecs; enables stale-video drop without decrypt; keeps n4-media reusable.  
 **Alternatives:** A/V-specific SFU API (rejected — couples hop to calls); fully opaque pipe with no seq/type (rejected — cannot implement latest-lossy safely); relay named `keyframe` as media concept (rejected — use generic **`mark`**).
+
+---
+
+## N022 — Libp2p investment; HTTP settle preferred; chain backup
+
+**Date:** 2026-07-31  
+**Decision:** Networking north star is **HTTP + libp2p** ([NETWORKING.md](../../docs/architecture/NETWORKING.md)). Continue **investing in the vendored libp2p fork** so it can serve peer discovery, dial/routing, transmission QoS, and price incentives under real network conditions. **HTTP backend** is preferred for org services and **pricing/settle UX** when reachable. **Direct blockchain settle** is a **backup** when HTTP is unavailable (or policy requires trust-minimized pay). Call media consumes this fabric ([V026](../p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)); WebRTC is not a mesh substitute.
+
+| Track | Direction |
+|-------|-----------|
+| Reachability | Listen, UPnP, dial-back, strengthen circuit (toward PeerId-friendly paths); hole punch later as fork allows — program: [media-hop-reachability](../media-hop-reachability/) (**in-stack**, not app gather) |
+| Discovery | Contacts ∪ bootstrap now; directory; DHT per N015 timing |
+| Transmission | N021 framing/QoS; lossy audio-friendly paths; budgets N019 |
+| Incentives | Quotes/ceilings; volunteer → paid as regulation (N020); contact-first admission |
+| Settle | HTTP ledger/receipts preferred; chain settle ADR/detail when backup path ships |
+
+**Rationale:** One peer stack to deepen; HTTP optimizes backend and payment UX; chain avoids hard-fail when Brief HTTP is blocked.  
+**Alternatives:** WebRTC for peer media forever (rejected — V026); chain-first payments for every hop (rejected — UX/ops); HTTP-only peers (rejected — mesh product).

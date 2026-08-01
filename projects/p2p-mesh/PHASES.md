@@ -7,6 +7,7 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [x] README, DESIGN, CURRENT_STATE, DECISIONS, PHASES
 - [x] Register in `projects/README.md` + `AGENTS.md`
 - [x] N008–N021 (through hop pick, ↑/↓ quotes, **generic framing / QoS channel types**)
+- [x] **N022** — libp2p investment; HTTP settle preferred; chain backup
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
 
 ## n1 — Role shell + bootstrap + Network UI

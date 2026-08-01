@@ -7,6 +7,7 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V001 — Hybrid media stack (Option C)
 
 **Date:** 2026-07-28  
+**Status:** **Superseded by [V026](#v026--libp2p-only-call-media-http--libp2p-networking)**  
 **Decision:** **Signaling and call state** ride the Brief mesh / E2E messaging path. **Media** uses a **WebRTC-shaped** stack (ICE + encrypted realtime media). **Fallback** is mesh Node **`audio_relay` / `video_relay`** SFU (or TURN-like), preferring contact-first then org seed (N014). Do **not** implement a long-lived custom Opus-over-libp2p media stack as the product path.  
 **Rationale:** Mobile is always Client (no listen); NAT makes pure full-mesh unreliable; WebRTC delivers expected call quality and congestion control; mesh keeps discovery, SFU ops, and product crypto under Brief.  
 **Alternatives:** (A) Full WebRTC including third-party SaaS SFU only — rejected as default (ops may still use extra seeds). (B) Custom A/V solely on libp2p streams — rejected for v1 product quality/time.
@@ -125,6 +126,7 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V014 — Media stack: libdatachannel + libopus + SDL
 
 **Date:** 2026-07-28  
+**Status:** **Transport superseded by [V026](#v026--libp2p-only-call-media-http--libp2p-networking)** (libdatachannel PeerConnection no longer product path). Opus + SDL capture/playback remain useful.  
 **Decision:** Ship a2+ voice media with:
 
 | Layer | Choice |
@@ -525,4 +527,30 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 
 **Rationale:** Auto 1:1→SFU misfired attach-wait and group-only toasts when no hop existed; LAN/Local Network failures need Retry + OS tips, not a group path.  
 **Alternatives:** Auto SFU on 1:1 ICE fail when hop exists (deferred — false group UX); leave call on timeout (rejected — Retry is better).  
-**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) topology rules; `CallMediaTopology::ShouldUseMediaRelay` is N≥3 only.
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) topology rules; `CallMediaTopology::ShouldUseMediaRelay` is N≥3 only.  
+**Status:** Partially superseded by [V026](#v026--libp2p-only-call-media-http--libp2p-networking) — ICE Retry is legacy; 1:1 undialable peers use libp2p hop / circuit (mesh), not PeerConnection rebuild.
+
+---
+
+## V026 — Libp2p-only call media; HTTP + libp2p networking
+
+**Date:** 2026-07-31  
+**Decision:** Product networking is **HTTP + libp2p only** ([NETWORKING.md](../../docs/architecture/NETWORKING.md)). Call **media** (1:1 and group) uses **libp2p** — direct streams and/or blind `media_relay` — with **app-layer E2E** under the shared call media key (V004). **Voice-first**; video on libp2p is deferred. Do **not** extend WebRTC/libdatachannel/ICE as the product path.
+
+| Topic | Rule |
+|-------|------|
+| **N=2** | Prefer **direct libp2p** media between dialable peers; if undialable, use mesh hop / circuit (explicit path — not ICE Retry). |
+| **N≥3** | Blind `media_relay` star (V020/V021 topology intent retained; transport is libp2p only). |
+| **Signaling** | Keep system `call_*` controls; `call_sdp` / `call_ice` are **legacy** (remove with teardown). Hop reachability is **in-libp2p** ([media-hop-reachability](../media-hop-reachability/) H007 — no app addr gather). |
+| **HTTP** | Preferred for org backend (Brief, billing UX) when reachable. |
+| **Settle** | HTTP backend preferred for price/settle; **chain settle backup** when HTTP unavailable ([N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)). |
+| **Teardown** | Remove libdatachannel PeerConnection path from product on a dedicated phase after voice-on-libp2p dogfood; until then treat PC code as legacy. |
+
+**Supersedes / updates:** [V001](#v001--hybrid-media-stack-option-c) (hybrid WebRTC); product intent of [V014](#v014--media-stack-libdatachannel--libopus--sdl) (libdatachannel transport); [V021](#v021--blind-media-forwarder-11-p2p-soft-migrate-to-group-sfu) “1:1 stay on ICE P2P”; [V024](#v024--adaptive-call-media-11-p2p-and-sfu-generic-relay-channels) dual WebRTC/SFU backends → one libp2p media backend family; [V025](#v025--no-auto-sfu-for-11-ice-fail-retry-on-p2p) ICE Retry as product recovery.
+
+**Rationale:** One peer stack to deepen (NAT, discovery, QoS, incentives); HTTP for backends; accept realtime/NAT tradeoffs for **audio-first**; avoid maintaining ICE and multiaddr dial in parallel.
+
+**Alternatives:** Keep WebRTC 1:1 + libp2p SFU (prior V001 — rejected going forward); WebRTC star with inner E2E (deferred — second SFU shape); full video on libp2p before voice green (rejected — scope).
+
+**Cross-link:** [media-hop-reachability](../media-hop-reachability/) (dialability); mesh N018–N022.
+

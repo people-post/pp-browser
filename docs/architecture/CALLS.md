@@ -2,13 +2,16 @@
 
 **Tier:** architecture
 
-**Mature code architecture** for voice/video calls — planes, layer ownership, topology rules that the code must honor, and the split of session façade vs `CallTopologyController` / `CallP2pSignalingBridge`. Change rarely; update when structure changes.
+**Product north star:** [NETWORKING.md](NETWORKING.md) — **HTTP + libp2p only**. Call media → **libp2p** ([V026](../../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)). WebRTC/libdatachannel/`call_sdp`/`call_ice` = **legacy in tree** (do not extend).
 
-**Open delivery work** (phases, dogfood, new ADRs): [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).  
-**Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (V014–V025).  
-**Wire controls:** [`contracts/WIRE_SCHEMAS.md`](../contracts/WIRE_SCHEMAS.md) (call system `control_type`s).  
+**Mature code map** — planes, layer ownership, topology rules, session façade vs `CallTopologyController` / `CallP2pSignalingBridge` (legacy P2P bridge until teardown).
+
+**Open delivery work:** [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).  
+**Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (through **V026**).  
+**Wire controls:** [`contracts/WIRE_SCHEMAS.md`](../contracts/WIRE_SCHEMAS.md).  
 **Messaging carrier:** [`P2P_MESSAGING.md`](P2P_MESSAGING.md).  
-**SFU / mesh hop:** [`projects/p2p-mesh/`](../../projects/p2p-mesh/) (`media_relay`).
+**SFU / mesh hop:** [`projects/p2p-mesh/`](../../projects/p2p-mesh/) (`media_relay`).  
+**Hop dialability:** [`projects/media-hop-reachability/`](../../projects/media-hop-reachability/).
 
 Do **not** restate the full product decision table here — link DECISIONS. Promote wire/disk shapes to `contracts/` when they harden. Dogfood “what works this week” lives only in project [CURRENT_STATE.md](../../projects/p2p-av-calls/CURRENT_STATE.md).
 
@@ -18,8 +21,9 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 
 | Plane | Carrier | Job |
 |-------|---------|-----|
-| **Signaling** | Direct E2E system `ChatPayload` controls (`call_invite`, `call_accept`, `call_sdp`, `call_ice`, `call_sfu_attach`, …) | Roster, invite/accept/leave, SDP/ICE trickle, media-key epochs, SFU attach hints |
-| **Media** | libdatachannel PeerConnection (1:1) or blind `media_relay` (N≥3) | Opus + H264; capture/playback via SDL; platform HW encode/decode |
+| **Signaling** | Direct E2E system `ChatPayload` (`call_invite`, `call_accept`, `call_sfu_attach`, …; legacy `call_sdp` / `call_ice`) | Roster, invite/accept/leave, media-key epochs, SFU attach hints |
+| **Media (target)** | libp2p direct and/or blind `media_relay` | Opus voice-first; app E2E under call media key; SDL I/O |
+| **Media (legacy)** | libdatachannel PeerConnection | Do not extend; teardown after voice-on-libp2p |
 
 Signaling rides the same P2P/messaging stack as chat. Media never goes through the chat relay as RTP; the SFU is a **blind forwarder** (no call media keys).
 
@@ -62,20 +66,20 @@ flowchart TB
 
 ---
 
-## Topology rules (V021 + V025)
+## Topology rules (V021 + V026)
 
-| Joined N | Media path | Notes |
-|----------|------------|-------|
-| 1 (ringing / solo) | No media PC yet | Invite outstanding |
-| **2** | **1:1 P2P** PeerConnection | Host ICE (+ STUN); no SFU; fail → timeout + Retry (V025) |
+| Joined N | Media path (target) | Notes |
+|----------|---------------------|-------|
+| 1 (ringing / solo) | No media yet | Invite outstanding |
+| **2** | **Direct libp2p** when dialable; else mesh hop / circuit | No WebRTC product path (V026); legacy PC may still run until teardown |
 | **≥3** | **SFU** via `media_relay` hop | Soft-migrate same `call_id`; sticky initiator picks hop (re-pick: epoch coordinator) |
 
-- Soft-migrate on 2→3: keep session/roster/key epoch; tear down P2P after SFU attach.
-- Mid-call guest without a hop: refuse or eject — do **not** leave invitee on Connecting while existing peers stay on P2P.
-- ICE-fail → SFU auto-recovery is a **group** path (N≥3). Plain 1:1 must not enter SFU attach-wait or “group needs media_relay” toasts (V025).
-- Stale `sfu_hint` on a 1:1 invite must be ignored until N≥3.
+- Soft-migrate on 2→3: keep session/roster/key epoch; tear down legacy P2P after SFU attach.
+- Mid-call guest without a hop: refuse or eject — do **not** leave invitee on Connecting while existing peers stay on direct media.
+- Legacy ICE-fail → SFU auto-recovery remains group-only until PC teardown; 1:1 recovery becomes libp2p dial/hop Retry (mesh).
+- **Hop dial:** SoftMigrate uses contact/seed multiaddrs today; **target** is stack peerstore dialability — [media-hop-reachability](../../projects/media-hop-reachability/) (in-libp2p, H001/H007).
 
-`CallMediaTopology` (`base/media/CallMediaAdaptation.*`) encodes the N thresholds (`ShouldUseMediaRelay` = N≥3 only); **policy application** should live in one topology owner (target below), not scattered Accept / ICE / UI refresh branches.
+`CallMediaTopology` (`base/media/CallMediaAdaptation.*`) encodes N thresholds (`ShouldUseMediaRelay` = N≥3 only) until 1:1 hop policy is retargeted under V026.
 
 ---
 
@@ -149,6 +153,7 @@ sequenceDiagram
   Note over UI,SFU: Soft-migrate when joined goes 2 to 3
   UI->>CSM: Accept / inbound CallAccept
   CSM->>Topo: OnRemoteAcceptJoined or OnLocalAcceptJoined n=3
+  Note over Topo,DM: SoftMigrate ranks hops; dial via libp2p peerstore or circuit
   Topo->>Topo: Rank hops quote
   Topo->>SFU: AttachLocal
   Topo->>Eng: StartSfu
@@ -308,7 +313,7 @@ Do **not** combine engine pending-buffer rewrites with topology moves in one PR.
 |------|------|
 | `src/feature/messaging/CallSessionManager.*` | Façade — session + dispatch |
 | `src/feature/messaging/CallP2pSignalingBridge.*` | P2P media signaling + 1:1 connect-fail / Retry |
-| `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait adapter |
+| `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
 | `src/feature/messaging/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
 | `src/feature/messaging/CallMediaKeyStore.*` | Epoch key wrap |
 | `src/feature/ui/CallController.*` | Ring + in-call UI |

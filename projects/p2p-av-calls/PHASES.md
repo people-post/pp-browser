@@ -75,11 +75,29 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 ## a5 — Cap, polish, reconnect
 
 - [ ] Load-test; raise effective cap toward **16** or keep **8** with product copy
-- [ ] Full **video_lo + video_hi** on **both** P2P and SFU backends (V024 polish) if not in a4
+- [ ] Full **video_lo + video_hi** — **deferred** until libp2p video (V026 voice-first)
 - [ ] Reconnect / “reconnecting…” after brief network loss
-- [x] 1:1 connect timeout + “Couldn't connect” + Retry + platform permission tip (Local Network / mic)
+- [x] 1:1 connect timeout + Retry (legacy PC path)
 - [ ] Missed/declined history hints optional
 - [ ] Document desktop dead-process ring limitation
+
+## m1 — Libp2p-only voice (V026)
+
+North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking), mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup).
+
+- [ ] 1:1 Opus over libp2p direct (LAN dialable PeerId+ma)
+- [ ] 1:1 undialable → hop / circuit (explicit; not ICE Retry)
+- [ ] N≥3 remains `media_relay`; unify engine on libp2p send/recv (N021)
+- [ ] App AEAD under call media key on media frames (blind hop)
+- [ ] Stop extending `CallP2pSignalingBridge` / PC; mark UI copy for libp2p connect fail
+- [ ] Dogfood: Android ↔ desktop voice without WebRTC
+
+## m2 — Teardown WebRTC product path
+
+- [ ] Remove libdatachannel PeerConnection from call bring-up
+- [ ] Drop product use of `call_sdp` / `call_ice` (compat: ignore unknown)
+- [ ] Delete or quarantine unused ICE UI tips that only apply to PC
+- [ ] Update CALLS.md lifecycle diagrams to libp2p-only
 
 ## a6 — Promote contracts
 
@@ -89,7 +107,8 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 
 ## Later horizons
 
-- [ ] Free device rotation on mobile (EGL + live `CameraCaptureOrientation` + encoder reconfig)
+- [ ] Video on libp2p (after voice green)
+- [ ] Free device rotation on mobile
 - [ ] CallKit / ConnectionService-class OS call UI
 - [ ] Screen share
 - [ ] Recording (explicit user action)

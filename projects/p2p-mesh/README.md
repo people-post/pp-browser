@@ -1,14 +1,14 @@
 # P2P mesh
 
-**Status:** **nf + n4-media done** — next calls **a4** (V024 adaptive + SFU consumer); message_relay / pricing UI / DHT later  
+**Status:** **nf + n4-media done** — deepen libp2p (N022); calls **V026** libp2p media; message_relay / pricing UI / DHT later  
 **Formerly:** `projects/libp2p-node-roles/` (renamed; ADRs remain N001+)  
 **Owner:** Hongwei + agents  
-**Stable refs:** [docs/architecture/P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [docs/architecture/LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
-**Related:** [push-notifications](../push-notifications/) (HTTP Brief relay wake), [p2p-av-calls](../p2p-av-calls/) (a4 needs n4-media SFU), messaging under `src/feature/messaging/`
+**Stable refs:** [docs/architecture/NETWORKING.md](../../docs/architecture/NETWORKING.md), [docs/architecture/P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [docs/architecture/LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
+**Related:** [push-notifications](../push-notifications/), [p2p-av-calls](../p2p-av-calls/) (V026), [media-hop-reachability](../media-hop-reachability/), messaging under `src/feature/messaging/`
 
 ## One-line goal
 
-GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`** for org seeds; **reachability** (IPv6/UPnP + guides); **contact-first** relay preference. Billable relays may settle on chain.
+GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`** for org seeds; **reachability** (IPv6/UPnP + guides); **contact-first** relay preference. **HTTP settle preferred**; chain settle backup (N022). Billable relays may settle on chain.
 
 ## Model (N009–N016)
 

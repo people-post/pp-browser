@@ -1,14 +1,15 @@
 # P2P mesh — current state
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-07-31
 
 ## Landed
 
 | Area | State |
 |------|-------|
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
-| ADRs | N001–N021 in [DECISIONS.md](DECISIONS.md) |
+| ADRs | N001–**N022** in [DECISIONS.md](DECISIONS.md) (N022 = libp2p invest; HTTP settle preferred; chain backup) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
+| Networking doctrine | [NETWORKING.md](../../docs/architecture/NETWORKING.md) — HTTP + libp2p; calls consume fabric (V026) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
 | **np** | Headless `pp-node` + shared `NodeRuntime` + dial-back protocol (see below) |
 | **nr** | Reachability status + Connection card + guided help + `pp-node --status` (see below) |

@@ -2,69 +2,49 @@
 
 **Last updated:** 2026-07-31
 
+**North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). WebRTC/libdatachannel = **legacy in tree**.
+
 Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/CALLS.md](../../docs/architecture/CALLS.md). Product rules: [DESIGN.md](DESIGN.md) / [DECISIONS.md](DECISIONS.md).
 
 ## Landed
 
 | Area | State |
 |------|-------|
-| Project docs | **a3 done**; **a4 thin slice landed** — V020–V024; code map in [CALLS.md](../../docs/architecture/CALLS.md) |
-| ADRs | V001–V025 in [DECISIONS.md](DECISIONS.md) |
-| a2/a3 media | LAN 1:1 voice + video — Android↔Win / Android↔Mac / **Win↔Mac** bidirectional; ↔Linux voice OK, video receive-only when Linux has no camera; Linux↔Mac / Linux↔Win OK 2026-07-31; NAT still unclaimed |
-| **a4 thin** | Soft-migrate to `media_relay` when N≥3; shared V024 adaptation; SFU engine mode (see below) |
+| Project docs | a3 done; **a4 thin**; **V026** libp2p-only media |
+| ADRs | V001–V026 |
+| a2/a3 media | Historical LAN WebRTC dogfood — **not** ongoing path |
+| **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
+| Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **in-libp2p** (L1+); app `call_hop_addrs` **not** product |
 
-## a4 thin in code
-
-| Area | State |
-|------|-------|
-| Topology | 1:1 P2P when N=2; N≥3 → sticky initiator `RankMediaHops` → quote/attach → `call_sfu_attach` fan-out (V021); re-pick = epoch coordinator |
-| Hop pick | Contacts ∪ org seed via mesh `MeshHopPolicy` (V023 / N020) |
-| Budgets | Quote A↑/A↓ applied into adaptation; volunteer rate 0 |
-| Framing | N021 on SFU path — audio ch0 `reliable_ordered`, video ch1 `latest_lossy` |
-| Adaptive A/V | `CallMediaAdaptation` (audio ≫ video_lo); `CallMediaEngine::ApplyAdaptation` / `StartSfu` |
-| Codecs | Reuse a3 Opus + H264 |
-| Signaling | `CallControlType::CallSfuAttach` + codec; early `call_sdp`/`call_ice` buffered until PC `Start` |
-| UI | Group call chrome / roster / mid-call invite API; full multi-party polish still open |
-
-## Recent hardening (2026-07-31)
-
-| Issue | Mitigation |
-|-------|------------|
-| Android↔Mac LAN ICE | macOS `NSLocalNetworkUsageDescription` in packaged Info.plist |
-| Linux dial → Mac stuck Connecting | Preserve buffered remote SDP/ICE across PC rebuild; offerer SDP re-send; duplicate offer ignored |
-| 1:1 ICE fail / hang on Connecting | 15s timeout + honest “Couldn't connect”; Retry rebuilds P2P as offerer; tip via `PlatformUserHints` keys + `Tr()` (Local Network / mic / firewall); do not auto-leave |
-| 1:1 hit “group needs media_relay” | SFU attach-wait / `sfu_hint` only for N≥3; do not treat PC `closed` as 1:1→SFU |
-| Soft-migrate fail on 3rd joiner | Eject joiner; keep existing 1:1 P2P; invite preflight when no hop |
-| Mid-call invite from 2nd peer → chrome gone | **Sticky initiator SoftMigrates** on CallRoster (`JoinedCountObserved`); inviter WaitForAttach; attach-wait never LeaveCall while migrate in flight; SoftMigrateLogic unit coverage |
-| Opaque hop dial / prefer_contacts | Prefer contacts OFF → seeds first; PreferInCallMediaHops boosts dialable in-call Nodes (Windows member); ExcludeSelfHop; OpenStream errors include cause |
-
-## Still open (a4 polish / a5)
+## a4 thin in code (still relevant under V026)
 
 | Area | State |
 |------|-------|
-| Full multi-invite / group chrome dogfood on seed SFU | Pending |
-| Dual `video_lo` + `video_hi` | a5 / V024 polish |
-| App AEAD on SFU payloads under call media key | Follow-on |
-| Roster proof auth (beyond `auth==call_id`) | Follow-on |
-| Re-pick hop on failure cool-down | Partial (attach retries ranked hops) |
-| ICE-fail **1:1** → SFU | **Rejected for auto** (V025); 1:1 uses timeout + Retry on P2P; N≥3 ICE-fail → SFU wired |
-| `CallSessionManager` extract | **Landed** — `CallTopologyController` + `CallP2pSignalingBridge` per [CALLS.md](../../docs/architecture/CALLS.md) |
+| Topology | N≥3 → sticky initiator `RankMediaHops` → quote/attach → `call_sfu_attach` |
+| Hop pick | Contacts ∪ org seed via `MeshHopPolicy`; PreferInCall; needs dialable **multiaddr** until L1 peerstore |
+| Budgets / framing | N019 / N021 on SFU path |
+| Legacy 1:1 | PeerConnection + ICE until m2 teardown |
+
+## Still open
+
+| Area | State |
+|------|-------|
+| **m1** 1:1 voice on libp2p | Next — [PHASES.md](PHASES.md) |
+| Hop peerstore / circuit PeerId dial | media-hop **L1–L3** |
+| App AEAD on media frames | Follow-on |
+| Teardown libdatachannel | After m1 (**m2**) |
+| Video on libp2p | Deferred |
 
 ## Next agent — start here
 
-1. Group / multi-invite UI + mid-call guest dogfood on seed SFU.  
-2. Optional AEAD under call media key on SFU frames.  
-3. a5: full lo/hi on both backends.
+1. **m1:** Opus voice over libp2p — do not extend ICE.  
+2. **media-hop L1:** peer address book in vendored libp2p / `PeerSessionManager`.  
+3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.  
 
 ## Agent traps
 
 | Wrong | Right |
 |-------|-------|
-| Adaptation only for group/SFU | Same V024 policy on **1:1 P2P** too |
-| Force 1:1 via `media_relay` when ICE works | P2P backend; SFU when N≥3 (or explicit future NAT path) |
-| 1:1 ICE fail / `closed` → SFU attach-wait | N≥3 only; else leave or stay P2P |
-| Duplicate unrelated bitrate logic per path | One policy module, two backends |
-| Relay assumes Opus/H264 | QoS `channel_type` only (N021) |
-| Name relay API `keyframe` | Generic **`mark`** |
-| Hardcoded N014 stages | Scorer + closed set (V023) |
-| Edit product rules only in CALLS.md | Product → DESIGN/DECISIONS; code map → CALLS; dogfood → this file |
+| Reintroduce `call_hop_addrs` / app ICE gather | H007 — reachability **in** libp2p |
+| Extend libdatachannel for 1:1 | V026 — libp2p media |
+| SoftMigrate invents NAT | Stack dialable? then quote |
