@@ -22,6 +22,7 @@
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
 #include "libp2p/integration/host/AdvertisedAddrPublisher.h"
+#include "libp2p/integration/host/CircuitBridgeTarget.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
 #include "libp2p/integration/host/MediaRelayService.h"
@@ -294,9 +295,16 @@ void MessagingHub::WireCallMediaRelayDeps() {
   media_relay_client_ = std::make_unique<MediaRelayServiceClient>(media_relay_.get());
   dial_registry_ = std::make_unique<PeerSessionDialRegistry>(
       node_runtime_ ? node_runtime_->Sessions() : nullptr);
+  if (node_runtime_ && node_runtime_->Sessions() && config_.libp2p.capabilities.circuit_relay) {
+    circuit_hop_reach_ = std::make_unique<CircuitHopReachClient>(
+        [this](const std::string& hop_peer_id) { return TryEnsureCircuitHopReachable(hop_peer_id); });
+  } else {
+    circuit_hop_reach_.reset();
+  }
   CallSessionManager::MediaRelayDeps deps;
   deps.relay = media_relay_client_.get();
   deps.dial = dial_registry_.get();
+  deps.circuit_reach = circuit_hop_reach_.get();
   Libp2pConfig libp2p = config_.libp2p;
   NormalizeLibp2pConfig(libp2p);
   deps.bootstrap_peers = libp2p.bootstrap_peers;
@@ -936,10 +944,14 @@ MessagingHub::NotificationPrefs MessagingHub::ProjectNotifications(const Profile
   return {.show_notifications = prefs.show_notifications};
 }
 
-Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const std::string& target_multiaddr,
+Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const std::string& target_peer_id,
+                                                                          const std::string& target_multiaddr,
                                                                           int timeout_ms) {
   if (!circuit_relay_ || !node_runtime_ || !node_runtime_->Sessions()) {
     return Error("circuit-relay not available");
+  }
+  if (target_peer_id.empty() && target_multiaddr.empty()) {
+    return Error("missing circuit bridge target");
   }
   std::vector<Contact> contacts;
   if (contacts_) {
@@ -955,11 +967,18 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
     return Error("no circuit hop candidates");
   }
 
+  CircuitBridgeTarget target;
+  target.target_peer_id = target_peer_id;
+  target.target_multiaddr = target_multiaddr;
+
   CircuitRelayBridgeResult last;
   last.error = "all hops failed";
   PeerSessionManager& sessions = *node_runtime_->Sessions();
   for (const MeshHopCandidate& hop : hops) {
     const std::string key = hop.peer_id;
+    if (!target.target_peer_id.empty() && key == target.target_peer_id) {
+      continue;
+    }
     if (!hop.multiaddr.empty()) {
       (void)sessions.RegisterEndpoint(key, hop.multiaddr);
       sessions.ClearDialBackoff(key);
@@ -968,7 +987,7 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
       last.error = "hop not dialable: " + key;
       continue;
     }
-    auto bridged = circuit_relay_->RequestBridge(key, target_multiaddr, timeout_ms);
+    auto bridged = circuit_relay_->RequestBridge(key, target, timeout_ms);
     if (!bridged) {
       last.error = bridged.error().message;
       continue;
@@ -979,6 +998,44 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
     last = *bridged;
   }
   return last;
+}
+
+Roe<void> MessagingHub::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
+  if (!circuit_relay_ || !node_runtime_ || !node_runtime_->Sessions()) {
+    return Error("circuit-relay not available");
+  }
+  if (!config_.libp2p.capabilities.circuit_relay) {
+    return Error("circuit-relay disabled");
+  }
+  std::vector<Contact> contacts;
+  if (contacts_) {
+    if (auto listed = contacts_->List()) {
+      contacts = std::move(*listed);
+    }
+  }
+  Libp2pConfig libp2p = config_.libp2p;
+  NormalizeLibp2pConfig(libp2p);
+  auto hops = OrderCircuitHops(CollectContactHopCandidates(contacts), CollectSeedHopCandidates(libp2p.bootstrap_peers),
+                               libp2p.prefer_contacts_for_routing);
+  std::vector<std::string> relay_ids;
+  relay_ids.reserve(hops.size());
+  PeerSessionManager& sessions = *node_runtime_->Sessions();
+  for (const MeshHopCandidate& hop : hops) {
+    if (hop.peer_id.empty() || hop.peer_id == hop_peer_id) {
+      continue;
+    }
+    if (!hop.multiaddr.empty()) {
+      (void)sessions.RegisterEndpoint(hop.peer_id, hop.multiaddr);
+      sessions.ClearDialBackoff(hop.peer_id);
+    }
+    if (sessions.IsDialable(hop.peer_id)) {
+      relay_ids.push_back(hop.peer_id);
+    }
+  }
+  if (relay_ids.empty()) {
+    return Error("no dialable circuit relays");
+  }
+  return sessions.TryEnsureHopViaCircuit(hop_peer_id, *circuit_relay_, relay_ids, 8000);
 }
 
 void MessagingHub::SuspendLibp2pColdPeers() {

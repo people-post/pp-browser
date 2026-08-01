@@ -32,6 +32,7 @@ function(pp_browser_add_libp2p_integration)
   add_library(pp_libp2p_integration STATIC
     host/Libp2pHost.cpp
     host/PeerAddressBook.cpp
+    host/CircuitBridgeTarget.cpp
     host/IdentifyIntegrationService.cpp
     host/AdvertisedAddrPublisher.cpp
     host/PeerSessionManager.cpp

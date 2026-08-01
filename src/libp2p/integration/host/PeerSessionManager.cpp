@@ -1,5 +1,8 @@
 #include "libp2p/integration/host/PeerSessionManager.h"
 
+#include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/MediaRelayService.h"
+
 #include <libp2p/host/host.hpp>
 #include <libp2p/multi/multiaddress.hpp>
 #include <libp2p/network/connection_manager.hpp>
@@ -197,6 +200,9 @@ Roe<void> PeerSessionManager::RegisterEndpoint(const std::string& peer_relay_use
 
 bool PeerSessionManager::IsDialable(const std::string& peer_relay_user_id) const {
   std::lock_guard lock(mutex_);
+  if (circuit_hops_.find(peer_relay_user_id) != circuit_hops_.end()) {
+    return true;
+  }
   const auto it = endpoints_.find(peer_relay_user_id);
   if (it != endpoints_.end()) {
     const auto now = std::chrono::steady_clock::now();
@@ -345,6 +351,60 @@ Roe<void> PeerSessionManager::UpsertBookEntry(const std::string& peer_id_base58,
   return address_book_.Upsert(peer_id_base58, multiaddr, source);
 }
 
+Roe<void> PeerSessionManager::TryEnsureHopViaCircuit(const std::string& target_peer_id,
+                                                   CircuitRelayService& circuit,
+                                                   const std::vector<std::string>& relay_peer_ids,
+                                                   int timeout_ms) {
+  if (target_peer_id.empty()) {
+    return Error("missing circuit target peer");
+  }
+  if (IsDialable(target_peer_id)) {
+    return {};
+  }
+
+  CircuitBridgeTarget bridge_target;
+  bridge_target.target_peer_id = target_peer_id;
+  bridge_target.target_protocol = kMediaRelayProtocolId;
+
+  for (const std::string& relay_key : relay_peer_ids) {
+    if (relay_key == target_peer_id || !IsDialable(relay_key)) {
+      continue;
+    }
+    auto bridged = circuit.RequestBridge(relay_key, bridge_target, timeout_ms);
+    if (!bridged || !bridged->ok || !bridged->stream) {
+      continue;
+    }
+    if (!bridged->resolved_multiaddr.empty()) {
+      (void)UpsertBookEntry(target_peer_id, bridged->resolved_multiaddr, PeerAddrSource::AddressRepository);
+      (void)RegisterEndpoint(target_peer_id, bridged->resolved_multiaddr);
+      ClearDialBackoff(target_peer_id);
+    }
+    {
+      std::lock_guard lock(mutex_);
+      circuit_hops_[target_peer_id] = CircuitHopLink{bridged->stream, relay_key};
+    }
+    return {};
+  }
+  return Error("circuit hop reach failed");
+}
+
+bool PeerSessionManager::IsCircuitBacked(const std::string& peer_relay_user_id) const {
+  std::lock_guard lock(mutex_);
+  return circuit_hops_.find(peer_relay_user_id) != circuit_hops_.end();
+}
+
+void PeerSessionManager::ClearCircuitHop(const std::string& peer_relay_user_id) {
+  std::lock_guard lock(mutex_);
+  auto it = circuit_hops_.find(peer_relay_user_id);
+  if (it == circuit_hops_.end()) {
+    return;
+  }
+  if (it->second.stream) {
+    it->second.stream->close([](auto&&) {});
+  }
+  circuit_hops_.erase(it);
+}
+
 void PeerSessionManager::MarkWarm(const std::string& peer_relay_user_id) {
   std::lock_guard lock(mutex_);
   auto it = endpoints_.find(peer_relay_user_id);
@@ -476,6 +536,16 @@ void PeerSessionManager::FinishDial(const std::string& peer_relay_user_id, Roe<v
 
 void PeerSessionManager::EnsureConnectionOnIo(const std::string& peer_relay_user_id,
                                               std::function<void(Roe<void>)> on_complete) {
+  {
+    std::lock_guard lock(mutex_);
+    if (circuit_hops_.find(peer_relay_user_id) != circuit_hops_.end()) {
+      if (on_complete) {
+        on_complete({});
+      }
+      return;
+    }
+  }
+
   std::optional<libp2p::peer::PeerInfo> info;
   std::vector<DialWaiter> rejected;
   bool start_dial = false;
@@ -579,6 +649,25 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
       cb(std::make_error_code(std::errc::not_connected));
     }
     return;
+  }
+
+  {
+    std::lock_guard lock(mutex_);
+    const auto circuit_it = circuit_hops_.find(peer_relay_user_id);
+    if (circuit_it != circuit_hops_.end() && circuit_it->second.stream) {
+      libp2p::StreamAndProtocol bridged;
+      bridged.stream = circuit_it->second.stream;
+      if (!protocols.empty()) {
+        bridged.protocol = protocols.front();
+      }
+      TouchPeerLocked(peer_relay_user_id);
+      host_.Post([cb = std::move(cb), bridged = std::move(bridged)]() mutable {
+        if (cb) {
+          cb(bridged);
+        }
+      });
+      return;
+    }
   }
 
   std::optional<libp2p::peer::PeerInfo> info;

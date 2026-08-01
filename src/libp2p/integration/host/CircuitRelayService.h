@@ -4,7 +4,9 @@
 #include "common/Error.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
+#include "libp2p/integration/host/CircuitBridgeTarget.h"
 
+#include <libp2p/connection/stream.hpp>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -16,6 +18,10 @@ inline constexpr const char* kCircuitRelayProtocolId = "/pp-browser/circuit-rela
 struct CircuitRelayBridgeResult {
   bool ok = false;
   std::string error;
+  /** Populated when relay resolved target_peer_id (L3). */
+  std::string resolved_multiaddr;
+  /** Client-side stream after successful bridge (may be null). */
+  std::shared_ptr<libp2p::connection::Stream> stream;
 };
 
 /** Provider admission (nf / N023): scope mask + contact PeerIds. */
@@ -47,9 +53,13 @@ public:
   void SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy);
 
   /**
-   * Client: ask relay peer to bridge this stream to `target_multiaddr`.
+   * Client: ask relay peer to bridge this stream to a target (multiaddr and/or PeerId).
    * Returns after relay accepts or rejects (stream stays open on success for app use).
    */
+  Roe<CircuitRelayBridgeResult> RequestBridge(const std::string& relay_peer_key,
+                                              const CircuitBridgeTarget& target, int timeout_ms = 8000);
+
+  /** Legacy: bridge to explicit multiaddr. */
   Roe<CircuitRelayBridgeResult> RequestBridge(const std::string& relay_peer_key,
                                               const std::string& target_multiaddr,
                                               int timeout_ms = 8000);

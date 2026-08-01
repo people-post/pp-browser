@@ -21,8 +21,8 @@ Implement **in libp2p** ([H001](DECISIONS.md#h001--separate-project-implementati
 
 ## L3 — Circuit PeerId-friendly dial
 
-- [ ] Evolve custom circuit toward dial-by-PeerId when relay already has target (or reservation)
-- [ ] SoftMigrate may use circuit when direct `IsDialable` fails (H005)
+- [x] Evolve custom circuit toward dial-by-PeerId when relay already has target (or reservation)
+- [x] SoftMigrate may use circuit when direct `IsDialable` fails (H005)
 
 ## L4 — SoftMigrate consume stack only
 

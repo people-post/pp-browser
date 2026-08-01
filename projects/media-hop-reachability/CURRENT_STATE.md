@@ -23,10 +23,10 @@ Hop **reachability** = **libp2p stack work** (H001/H007). App-layer `call_hop_ad
 | Identify | cpp fork | Present; not fully driving SoftMigrate dial |
 | **L1 peer address book** | `PeerAddressBook`, `PeerSessionManager` | Upsert on bootstrap/register/connect/dial-success; `PreferredPeerMultiaddr` for hop dial |
 | **L2 advertised listen set** | `BuildAdvertisedListenSet`, `IdentifyIntegrationService`, `AdvertisedAddrPublisher` | Identify wired; Node+media_relay publishes probe-derived addrs |
+| **L3 circuit PeerId dial** | `CircuitBridgeTarget`, `PeerSessionManager::TryEnsureHopViaCircuit` | Bridge by `target_peer_id`; SoftMigrate circuit fallback via `ICircuitHopReach` |
 
 ## Next
 
-1. **L3** circuit PeerId-friendly path  
-2. **L4** SoftMigrate consume  
+1. **L4** SoftMigrate consume  
 
 Track mesh invest: [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup).

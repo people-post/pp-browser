@@ -590,9 +590,13 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
   auto result_future = result_promise->get_future();
   auto settled = std::make_shared<std::atomic<bool>>(false);
 
+  const bool circuit_backed = sessions_.IsCircuitBacked(hop_peer_key);
+
   sessions_.OpenStream(hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
-                       [req = std::move(req), result_promise, settled](libp2p::StreamAndProtocolOrError stream_res) {
-                         std::thread([req, result_promise, settled, stream_res = std::move(stream_res)]() mutable {
+                       [req = std::move(req), result_promise, settled, circuit_backed](
+                           libp2p::StreamAndProtocolOrError stream_res) {
+                         std::thread([req, result_promise, settled, circuit_backed,
+                                      stream_res = std::move(stream_res)]() mutable {
                            auto finish = [&](Roe<MediaRelayQuote> value) {
                              if (!settled->exchange(true)) {
                                result_promise->set_value(std::move(value));
@@ -606,11 +610,15 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
                            auto stream = std::move(stream_res.value().stream);
                            if (!WriteJson(stream, req)) {
                              finish(Error("Failed to send quote"));
-                             stream->close([](auto&&) {});
+                             if (!circuit_backed) {
+                               stream->close([](auto&&) {});
+                             }
                              return;
                            }
                            auto root = ReadJson(stream);
-                           stream->close([](auto&&) {});
+                           if (!circuit_backed) {
+                             stream->close([](auto&&) {});
+                           }
                            if (!root) {
                              finish(root.error());
                              return;

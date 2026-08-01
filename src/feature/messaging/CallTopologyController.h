@@ -46,6 +46,7 @@ public:
   struct MediaRelayDeps {
     IMediaRelayClient* relay = nullptr;
     IDialRegistry* dial = nullptr;
+    ICircuitHopReach* circuit_reach = nullptr;
     std::vector<std::string> bootstrap_peers;
     bool prefer_contacts = true;
     std::string local_listen_multiaddr;
