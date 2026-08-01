@@ -118,11 +118,11 @@ CircuitRelayBridgeResult RelayBridge(Libp2pHost& host, PeerSessionManager& sessi
     return out;
   }
   const std::string& target_peer_id = normalized->first;
-  const std::string& target = normalized->second;
-  out.resolved_multiaddr = target;
+  const std::string& resolved_multiaddr = normalized->second;
+  out.resolved_multiaddr = resolved_multiaddr;
 
   const std::string target_key = target_peer_id;
-  if (auto registered = sessions.RegisterEndpoint(target_key, target); !registered) {
+  if (auto registered = sessions.RegisterEndpoint(target_key, resolved_multiaddr); !registered) {
     out.error = registered.error().message;
     return out;
   }
@@ -176,7 +176,7 @@ CircuitRelayBridgeResult RelayBridge(Libp2pHost& host, PeerSessionManager& sessi
     return out;
   }
 
-  nlohmann::json response = {{"v", 1}, {"ok", true}, {"resolved_multiaddr", target}};
+  nlohmann::json response = {{"v", 1}, {"ok", true}, {"resolved_multiaddr", resolved_multiaddr}};
   if (auto encoded = EncodeStreamJsonFrame(response.dump())) {
     if (!WriteExactFrame(client_stream, *encoded)) {
       out.error = "failed to ack bridge";

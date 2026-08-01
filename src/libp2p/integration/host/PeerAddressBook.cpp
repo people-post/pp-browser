@@ -28,14 +28,14 @@ std::string PeerIdFromMultiaddrString(const std::string& multiaddr) {
 std::string MultiaddrWithPeerId(const libp2p::multi::Multiaddress& address,
                                 const std::string& peer_id_base58) {
   if (const auto embedded = address.getPeerId(); embedded && *embedded == peer_id_base58) {
-    return address.getStringAddress();
+    return std::string{address.getStringAddress()};
   }
-  auto with_peer = libp2p::multi::Multiaddress::create(address.getStringAddress() + "/p2p/" +
-                                                         peer_id_base58);
+  auto with_peer = libp2p::multi::Multiaddress::create(
+      std::string{address.getStringAddress()} + "/p2p/" + peer_id_base58);
   if (with_peer) {
-    return with_peer->getStringAddress();
+    return std::string{with_peer.value().getStringAddress()};
   }
-  return address.getStringAddress();
+  return std::string{address.getStringAddress()};
 }
 
 int SourceRank(PeerAddrSource source) {

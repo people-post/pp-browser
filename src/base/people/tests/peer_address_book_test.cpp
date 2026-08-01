@@ -1,6 +1,7 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerAddressBook.h"
 
+#include <libp2p/host/host.hpp>
 #include <libp2p/multi/multiaddress.hpp>
 #include <libp2p/peer/peer_id.hpp>
 

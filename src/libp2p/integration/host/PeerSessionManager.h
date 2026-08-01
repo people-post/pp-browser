@@ -163,7 +163,7 @@ private:
   std::unordered_map<std::string, CircuitHopLink> circuit_hops_;
   std::atomic<size_t> concurrent_dials_{0};
   std::chrono::steady_clock::time_point last_sweep_{};
-  libp2p::event::Handle connection_handler_;
+  std::optional<libp2p::event::Handle> connection_handler_;
 };
 
 } // namespace pbr

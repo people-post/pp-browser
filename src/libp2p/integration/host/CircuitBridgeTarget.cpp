@@ -36,7 +36,7 @@ std::optional<std::string> ResolveCircuitTargetMultiaddr(PeerSessionManager& ses
   }
   if (auto info = sessions.ResolvePeerInfo(target_peer_id)) {
     if (!info->addresses.empty()) {
-      return info->addresses.front().getStringAddress();
+      return std::string{info->addresses.front().getStringAddress()};
     }
   }
   if (!host.IsRunning()) {
@@ -50,7 +50,7 @@ std::optional<std::string> ResolveCircuitTargetMultiaddr(PeerSessionManager& ses
   if (!addrs || addrs.value().empty()) {
     return std::nullopt;
   }
-  return addrs.value().front().getStringAddress();
+  return std::string{addrs.value().front().getStringAddress()};
 }
 
 Roe<std::pair<std::string, std::string>> NormalizeCircuitBridgeTarget(PeerSessionManager& sessions,

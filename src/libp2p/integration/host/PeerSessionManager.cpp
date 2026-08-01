@@ -83,7 +83,7 @@ PeerAddrSource PeerSessionManager::SourceForEndpointKey(const std::string& peer_
 }
 
 void PeerSessionManager::InstallConnectionHandler() {
-  if (!host_.IsRunning() || connection_handler_) {
+  if (!host_.IsRunning() || connection_handler_.has_value()) {
     return;
   }
   connection_handler_ = host_.GetHost().setOnNewConnectionHandler(
@@ -315,7 +315,7 @@ std::optional<std::string> PeerSessionManager::PreferredPeerMultiaddr(
     const std::string& peer_relay_user_id) const {
   if (auto info = ResolvePeerInfo(peer_relay_user_id)) {
     if (!info->addresses.empty()) {
-      return info->addresses.front().getStringAddress();
+      return std::string{info->addresses.front().getStringAddress()};
     }
   }
   if (const auto peer_id = libp2p::peer::PeerId::fromBase58(peer_relay_user_id)) {
@@ -515,8 +515,9 @@ void PeerSessionManager::FinishDial(const std::string& peer_relay_user_id, Roe<v
           const std::string peer_id = ep->second.info->id.toBase58();
           address_book_.SyncFromHost(host_, peer_id);
           if (!ep->second.info->addresses.empty()) {
-            (void)address_book_.Upsert(peer_id, ep->second.info->addresses.front().getStringAddress(),
-                                       PeerAddrSource::DialSuccess);
+            (void)address_book_.Upsert(
+                peer_id, std::string{ep->second.info->addresses.front().getStringAddress()},
+                PeerAddrSource::DialSuccess);
           }
         }
       }
