@@ -84,7 +84,7 @@ If A can **direct-dial B**, prefer **direct attach** (simpler, no broker markup)
 When R1 accepts A’s session toward target B:
 
 1. **Circuit:** direct-dial B if possible; else pick R2+ (scope, margin, capacity) and nested circuit.
-2. **Media (brokered calls):** request **wholesale quote** from B (or pick alternate SFU); fold into retail quote to A.
+2. **Media (brokered calls):** request **wholesale quote** from **call-agreed B**; fold into retail quote to A.
 3. **Margin:** reject or re-quote if wholesale (R2 + B + ops) ≥ retail to A.
 4. **SLA / re-pick bounds** — R1 re-picks **upstream circuit** (R2+) to reach the agreed target; R1 does **not** unilaterally swap **call-agreed `media_relay` B** (see below).
 
@@ -99,9 +99,20 @@ R1 is a **service broker**: one retail relationship with A; wholesale with R2 an
 | Upstream circuit leg (R2+, path) | **R1** (within retail SLA / quote) | Alternate R2, alternate route — **same B** |
 | R1↔B wholesale attach / circuit to B | **R1** first (retry, alternate path) | Still **same B** |
 | **B** unavailable / hop failed | **Call coordinator** (SoftMigrate re-pick) | New hop PeerId — **call-level**; exclude failed B; roster + `call_id` auth |
-| New B chosen | Coordinator + participants | A may need **new broker quote** if still using R1, or **direct attach** if dialable to new B |
+| New B chosen | Coordinator + participants | See **quote renewal** below |
 
 R1’s bundled quote is “deliver A to **this call’s B** at tier T,” not “R1 picks any SFU.” If the group migrates to **B′**, hop selection runs again at the **call layer**; R1 is not a substitute coordinator.
+
+### Quote renewal (brokered attach)
+
+| Situation | Consumer (A) |
+|-----------|--------------|
+| **Path-only retry** — same **B**, same tier T, same retail rate/ceiling (e.g. R2′) | **Auto-extend** — no re-accept |
+| Coordinator picks **B′** and retail **rate or ceiling** changes | **Re-accept** new R1 quote (scoped to B′) |
+| B′ with **unchanged** retail rate/ceiling and tier T | May **auto-extend** if wholesale equivalent; optional lightweight ack in UI |
+| A can **direct-dial B′** | **Direct attach** (H005); no broker |
+
+Paid: must not exceed accepted **billing ceiling** without re-accept ([N019](../p2p-mesh/DECISIONS.md#n019--media_relay-updown-budgets-quotes-no-surprise-bills) / V022).
 
 **Messaging / non-call circuit:** target PeerId may still be fixed by app intent; same rule — R1 re-picks **path**, not the agreed destination identity, unless the app session explicitly delegates hop choice to R1.
 
