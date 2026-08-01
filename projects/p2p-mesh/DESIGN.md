@@ -7,7 +7,7 @@
 
 ## Overview
 
-The mesh lets Brief/pp-browser peers help each other: desktop users may **host** infrastructure; mobile and opted-out desktops **consume** only. Hosting is expressed as a **role** plus optional **capabilities** (DHT, relays, chain, jobs). Relay paths prefer **contacts and org seed** before wider pools; **reachability** (NAT, UPnP, dial-back) determines who can be dialed; **media-hop-reachability** owns dial-by-PeerId inside libp2p.
+The mesh lets Brief/pp-browser peers help each other: desktop users may **host** infrastructure; mobile defaults to **consume-only**, with **call-scoped listen on Wi‑Fi** when in an active call (N025). Hosting on desktop is a **role** plus optional **capabilities** (DHT, relays, chain, jobs). Relay paths prefer **contacts and org seed** before wider pools; **reachability** (NAT, UPnP, dial-back) determines who can be dialed; **media-hop-reachability** owns dial-by-PeerId inside libp2p.
 
 ```mermaid
 flowchart TB
@@ -50,8 +50,10 @@ flowchart TB
 
 | Role | Who | Meaning |
 |------|-----|---------|
-| **Client** | Mobile always; desktop when user opts out | Consume services; outbound dial; do not host |
+| **Client** | Mobile default; desktop when user opts out | Consume services; outbound dial; **no always-on listen** |
 | **Node** | Desktop default (`node_enabled`) | May host; listen + user-chosen **capabilities** |
+
+Mobile is **not** a third role. **Call-scoped listen** (N025) is gated policy on top of Client — ephemeral listen on Wi‑Fi during an active call (and optional later **Help on Wi‑Fi**), not full Node.
 
 **Capabilities** are independent checkboxes **under Node** (what I host). They do not create new roles.
 
@@ -63,7 +65,7 @@ flowchart TB
 
 Turning role **off** → Client: ignore/disable all capability flags at runtime (flags may remain on disk for when the user re-enables Node).
 
-Mobile: always Client — no role toggle, no capability UI (may **pay** nodes later as a consumer).
+Mobile: **Client by default** — no master **Help the network** toggle. During a **foreground call on Wi‑Fi**, ephemeral listen may start (N025) so peers can dial by PeerId on LAN; optional in-call **`media_relay`** for contacts only. Background incoming calls still use **`call_wake`** + outbound dial, not idle listen.
 
 ```mermaid
 flowchart TB
@@ -90,9 +92,19 @@ Resolver: e.g. `ResolveLibp2pRole`.
 
 | Platform | `node_enabled` | Effective role | Listen | Capability / pricing UI |
 |----------|----------------|----------------|--------|-------------------------|
-| Mobile | ignored | Client | no | hidden (consumer pay UX later) |
-| Desktop | true (default) | Node | yes | shown when Node; pricing nested under billable caps |
+| Mobile | ignored | Client | **Default no**; **ephemeral on Wi‑Fi during active call** (N025) | hidden; no Node matrix |
+| Desktop | true (default) | Node | yes (always when Node) | shown when Node; pricing nested under billable caps |
 | Desktop | false | Client | no | hidden / inert |
+
+### Mobile participation (N025)
+
+| Mode | Listen | `media_relay` | When |
+|------|--------|---------------|------|
+| **Client (default)** | No | No | Normal use |
+| **Call participant** | Ephemeral | Optional — contacts / in-call only | Foreground call + Wi‑Fi |
+| **Wi‑Fi helper (planned)** | While toggle on | Volunteer, social scope, capped | User opt-in; **off on cellular** |
+
+**Not in scope for mobile:** always-on Node, public/paid relay, listen on cellular by default, background idle listen for ring.
 
 ---
 
@@ -509,3 +521,4 @@ Concept → ADR index. Full rationale in [DECISIONS.md](DECISIONS.md).
 | libp2p investment / settle rails | N022 |
 | Relay scope / domains | N023 |
 | Brokered multi-hop relay | N024 |
+| Mobile call-scoped listen | N025 |

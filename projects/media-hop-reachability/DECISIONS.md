@@ -59,12 +59,17 @@ Direct attach remains the simple volunteer / friend-SFU path. Brokered attach is
 
 ---
 
-## H006 — Mobile Client never hosts
+## H006 — Mobile default Client; call-scoped listen on Wi‑Fi
 
-**Status:** Accepted  
-**Decision:** Mobile never listens / never hosts `media_relay` / never publishes hop listen addrs as a Node.  
-**Rationale:** Role model.  
-**Alternatives:** Mobile temporary hop (rejected).
+**Status:** Accepted (updated 2026-08-01 — **N025**)  
+**Decision:** Mobile **defaults** to Client: no always-on listen, no always-on `media_relay`, no Node capability UI.
+
+**Planned exception ([N025](../p2p-mesh/DECISIONS.md#n025--mobile-call-scoped-listen-on-wi-fi-not-full-node)):** **Ephemeral listen** on **Wi‑Fi** during a **foreground call** (and optional later **Wi‑Fi helper** toggle) so peers can dial by PeerId on LAN and in-call mobile hops can attach. Scope and relay admission remain **contacts / in-call only** — not public infrastructure.
+
+Idle background reachability still uses **outbound dial + circuit**, not persistent mobile listen.
+
+**Rationale:** Role model + battery; scoped listen fixes LAN PeerId dial without full Node.  
+**Alternatives:** Mobile temporary hop with no listen gating (rejected — battery/abuse); full mobile Node (rejected).
 
 ---
 

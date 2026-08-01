@@ -11,7 +11,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | Area | State |
 |------|-------|
 | Project docs | a3 done; **a4 thin**; **V026** libp2p-only media |
-| ADRs | V001–V026 |
+| ADRs | V001–**V027** |
 | a2/a3 media | Historical LAN WebRTC dogfood — **not** ongoing path |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **in-libp2p** (L1+); app `call_hop_addrs` **not** product |
@@ -29,7 +29,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 
 | Area | State |
 |------|-------|
-| **m1** 1:1 voice on libp2p | Next — [PHASES.md](PHASES.md) |
+| **m1** 1:1 voice on libp2p | Next — [PHASES.md](PHASES.md); mobile LAN: **V027** / mesh **nm** |
 | Hop peerstore / circuit PeerId dial | media-hop **L1–L3** |
 | App AEAD on media frames | Follow-on |
 | Teardown libdatachannel | After m1 (**m2**) |
