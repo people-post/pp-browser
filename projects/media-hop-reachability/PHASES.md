@@ -27,7 +27,7 @@ Implement **in libp2p** ([H001](DECISIONS.md#h001--separate-project-implementati
 
 ## L3.5 — Multi-hop circuit v2
 
-Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned), mesh [N024](../p2p-mesh/DECISIONS.md#n024--circuit-pricing-pay-immediate-relay-only). **Not started.**
+Docs: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md), [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned), mesh [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker). **Not started.**
 
 - [ ] ADR + spec (H008, N024, MULTI_HOP_CIRCUIT) — **done**
 - [ ] Protocol v2: `bridge_path`, nested `sub_bridge`, `circuit_relay.max_hops` (default 3, config-only limit), loop detection

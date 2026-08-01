@@ -128,7 +128,7 @@ bridge_score = dialable_from_me
 Where **`r1_reaches_target`** is true when R1 can complete a path to B:
 
 - **Today (single-hop):** R1 can **direct-dial** B (or seed reachable from R1 when B is org-scoped).
-- **Planned (multi-hop, [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned)):** R1 advertises or proves reachability to B **directly or via subcontract** (upstream R2 within hop cap). Consumer A still scores **R1 only** — not R2 ([N024](DECISIONS.md#n024--circuit-pricing-pay-immediate-relay-only)).
+- **Planned (multi-hop, [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned)):** R1 advertises or proves reachability to B **directly or via subcontract** (upstream R2 within hop cap). Consumer A still scores **R1 only** — not R2 ([N024](DECISIONS.md#n024--immediate-relay-as-service-broker)).
 
 No user selects “country tier.” The client discovers: *seed unreachable from me; contact Alice (R1) still reaches the target.*
 
@@ -173,7 +173,7 @@ Do **not** expand media-hop-reachability to cover scope routing or incentives �
 | `CandidateRelayScopes` | Contact → social/site/link; OrgSeed → org; same-/24 v1 (needs **bound** listen, not `0.0.0.0`) |
 | `RankMediaHopsEscalating` | Media consumer pick in `CallTopologyController` |
 | `OrderCircuitHops` | Circuit immediate-relay order (nf); ns2: escalate + bridge score |
-| Multi-hop circuit v2 | **Not implemented** — [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md), [N024](DECISIONS.md#n024--circuit-pricing-pay-immediate-relay-only) |
+| Multi-hop circuit v2 | **Not implemented** — [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md), [N024](DECISIONS.md#n024--immediate-relay-as-service-broker) |
 | `ProviderServeScopeMask` + `serve_scope_mask` | Admission on circuit + media relay |
 | `ApplyMeshAdmissionPolicies` | Reachability-aware stranger limit; re-run on probe update |
 | `prefer_contacts_only` on admission structs | Legacy field; **admission uses `serve_scope_mask`** |

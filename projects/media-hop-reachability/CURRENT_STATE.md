@@ -11,7 +11,7 @@ Hop **reachability** = **libp2p stack work** (H001/H007). App-layer `call_hop_ad
 | Area | State |
 |------|-------|
 | Project docs | Ownership: fork implements; SoftMigrate consumes |
-| ADRs | H001–H008; circuit multi-hop plan [N024](../p2p-mesh/DECISIONS.md#n024--circuit-pricing-pay-immediate-relay-only) |
+| ADRs | H001–H008; circuit multi-hop plan [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker) |
 
 ## Code today (elsewhere)
 
