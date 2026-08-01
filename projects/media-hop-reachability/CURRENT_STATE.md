@@ -1,6 +1,6 @@
 # Media hop reachability — current state
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-08-01
 
 ## Direction
 
@@ -21,12 +21,12 @@ Hop **reachability** = **libp2p stack work** (H001/H007). App-layer `call_hop_ad
 | Custom circuit | `CircuitRelayService` | Still requires **target_multiaddr** |
 | DialBack / Reachability / UPnP | mesh integration | Not yet a unified peerstore for arbitrary hop PeerIds |
 | Identify | cpp fork | Present; not fully driving SoftMigrate dial |
+| **L1 peer address book** | `PeerAddressBook`, `PeerSessionManager` | Upsert on bootstrap/register/connect/dial-success; `PreferredPeerMultiaddr` for hop dial |
 
 ## Next
 
-1. **L1** peer address book in host / `PeerSessionManager`  
-2. **L2** advertise Reachable listen set  
-3. **L3** circuit PeerId-friendly path  
-4. **L4** SoftMigrate consume  
+1. **L2** advertise Reachable listen set  
+2. **L3** circuit PeerId-friendly path  
+3. **L4** SoftMigrate consume  
 
 Track mesh invest: [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup).

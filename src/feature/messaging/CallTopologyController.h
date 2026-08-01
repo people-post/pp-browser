@@ -65,7 +65,7 @@ public:
 
   bool HasMediaRelayHopCandidates() const;
   std::vector<MeshHopCandidate> RankedMediaHopCandidates() const;
-  /** Resolve dialable multiaddr for a hop PeerId from contacts ∪ bootstrap seeds. */
+  /** Resolve dialable multiaddr for a hop PeerId (contacts ∪ seeds ∪ L1 address book). */
   std::string ResolveHopMultiaddr(const std::string& hop_peer_id) const;
 
   void BeginSfuAttachWait(const std::string& call_id);

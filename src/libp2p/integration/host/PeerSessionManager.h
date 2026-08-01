@@ -2,8 +2,10 @@
 
 #include "common/Error.h"
 #include "libp2p/integration/host/Libp2pHost.h"
+#include "libp2p/integration/host/PeerAddressBook.h"
 
 #include <libp2p/connection/stream_and_protocol.hpp>
+#include <libp2p/event/bus.hpp>
 #include <libp2p/peer/peer_info.hpp>
 #include <libp2p/peer/stream_protocols.hpp>
 
@@ -76,6 +78,9 @@ public:
 
   std::optional<libp2p::peer::PeerInfo> ResolvePeerInfo(const std::string& peer_relay_user_id) const;
 
+  /** Best dial multiaddr for a peer key (endpoint, then L1 address book). */
+  std::optional<std::string> PreferredPeerMultiaddr(const std::string& peer_relay_user_id) const;
+
   /** Mark peer as warm (kept across idle eviction / background suspend of cold peers). */
   void MarkWarm(const std::string& peer_relay_user_id);
   void ClearWarm(const std::string& peer_relay_user_id);
@@ -121,14 +126,21 @@ private:
   void DisconnectPeer(const libp2p::peer::PeerId& peer_id);
   void FinishDial(const std::string& peer_relay_user_id, Roe<void> result);
   void EnsureConnectionOnIo(const std::string& peer_relay_user_id, std::function<void(Roe<void>)> on_complete);
+  void InstallConnectionHandler();
+  void OnInboundConnection(libp2p::peer::PeerInfo info);
+  void MaybeHydrateEndpointFromBookLocked(const std::string& peer_relay_user_id);
+  PeerAddrSource SourceForEndpointKey(const std::string& peer_relay_user_id) const;
+  std::optional<std::string> PeerIdBase58ForKeyLocked(const std::string& peer_relay_user_id) const;
 
   Libp2pHost& host_;
   PeerSessionConfig config_;
+  PeerAddressBook address_book_;
   mutable std::mutex mutex_;
   std::unordered_map<std::string, EndpointState> endpoints_;
   std::unordered_map<std::string, std::vector<DialWaiter>> inflight_dials_;
   std::atomic<size_t> concurrent_dials_{0};
   std::chrono::steady_clock::time_point last_sweep_{};
+  libp2p::event::Handle connection_handler_;
 };
 
 } // namespace pbr
