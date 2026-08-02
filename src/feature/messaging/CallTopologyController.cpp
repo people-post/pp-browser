@@ -60,12 +60,12 @@ std::vector<MeshHopCandidate> CallTopologyController::RankedMediaHopCandidates()
   }
   if (relay_deps_.dial) {
     for (MeshHopCandidate& hop : ranked) {
-      if (!hop.multiaddr.empty()) {
-        continue;
+      if (hop.multiaddr.empty()) {
+        if (auto ma = relay_deps_.dial->PreferredMultiaddr(hop.peer_id)) {
+          hop.multiaddr = *ma;
+        }
       }
-      if (auto ma = relay_deps_.dial->PreferredMultiaddr(hop.peer_id)) {
-        hop.multiaddr = *ma;
-      }
+      hop.dialable = relay_deps_.dial->IsDialable(hop.peer_id);
     }
   }
   return ranked;
@@ -75,7 +75,12 @@ bool CallTopologyController::HasMediaRelayHopCandidates() const {
   if (!relay_deps_.relay || !relay_deps_.dial) {
     return false;
   }
-  return !RankedMediaHopCandidates().empty();
+  for (const MeshHopCandidate& hop : RankedMediaHopCandidates()) {
+    if (hop.dialable) {
+      return true;
+    }
+  }
+  return false;
 }
 
 std::string CallTopologyController::ResolveHopMultiaddr(const std::string& hop_peer_id) const {
@@ -278,23 +283,28 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
   std::vector<std::string> hop_failures;
   hop_failures.reserve(ranked.size());
   for (const MeshHopCandidate& hop : ranked) {
-    if (hop.multiaddr.empty()) {
-      const bool in_call = in_call_peer_ids.count(hop.peer_id) > 0;
-      const std::string detail =
-          std::string(in_call ? "in-call peer has no dialable multiaddr (enable Media relay + "
-                                "sync listen addr on contact) (hop="
-                              : "no multiaddr (hop=") +
-          hop.peer_id + ")";
+    if (relay_deps_.circuit_reach && relay_deps_.dial && !relay_deps_.dial->IsDialable(hop.peer_id)) {
+      (void)relay_deps_.circuit_reach->TryEnsureHopReachable(hop.peer_id);
+    }
+    if (!relay_deps_.dial || !relay_deps_.dial->IsDialable(hop.peer_id)) {
+      const std::string detail = "hop not dialable (hop=" + hop.peer_id + ")";
       hop_failures.push_back(detail);
       log().warning << "SoftMigrate skip: " << detail;
       continue;
     }
+    std::string hop_ma = hop.multiaddr;
+    if (hop_ma.empty() && relay_deps_.dial) {
+      if (auto ma = relay_deps_.dial->PreferredMultiaddr(hop.peer_id)) {
+        hop_ma = *ma;
+      }
+    }
     log().info << "SoftMigrate try hop=" << hop.peer_id
-               << " affinity=" << static_cast<int>(hop.affinity) << " ma=" << hop.multiaddr;
+               << " affinity=" << static_cast<int>(hop.affinity)
+               << " ma=" << (hop_ma.empty() ? "(circuit)" : hop_ma);
     CallSfuAttachDetail attach;
     attach.call_id = call_id;
     attach.hop_peer_id = hop.peer_id;
-    attach.hop_multiaddr = hop.multiaddr;
+    attach.hop_multiaddr = hop_ma;
     attach.publisher_stream_id = PublisherStreamIdForLocal();
 
     if (auto attached = AttachLocalToSfu(call_id, attach); !attached) {

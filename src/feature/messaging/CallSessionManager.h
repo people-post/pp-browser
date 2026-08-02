@@ -35,6 +35,8 @@ public:
                      IPskSessionStore& psk_store, CallMediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
+  using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
+  void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
   void SetMediaRelayDeps(MediaRelayDeps deps);
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, CallMediaMode mode,
@@ -137,6 +139,7 @@ private:
   CallTopologyController topology_;
   CallP2pSignalingBridge p2p_bridge_;
   RingChangedFn on_ring_changed_;
+  PrefetchPeerReachFn prefetch_reach_;
   std::optional<std::string> last_media_error_;
 };
 

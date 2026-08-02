@@ -13,6 +13,28 @@
 #include <nlohmann/json.hpp>
 
 namespace pbr {
+
+namespace {
+
+void PrefetchReachForIdentities(const CallSessionManager::PrefetchPeerReachFn& fn,
+                                const std::vector<std::string>& identities) {
+  if (!fn) {
+    return;
+  }
+  for (const std::string& id : identities) {
+    if (!id.empty()) {
+      fn(id);
+    }
+  }
+}
+
+void PrefetchReachForIdentity(const CallSessionManager::PrefetchPeerReachFn& fn, const std::string& identity) {
+  if (!identity.empty() && fn) {
+    fn(identity);
+  }
+}
+
+} // namespace
 CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                        CallSessionStore& sessions, CallMediaKeyStore& media_keys,
                                        P2pMessagingService& p2p, IPskSessionStore& psk_store, CallMediaEngine& media)
@@ -97,6 +119,10 @@ std::optional<std::string> CallSessionManager::TakeLastMediaError() {
 
 void CallSessionManager::SetOnRingChanged(RingChangedFn callback) {
   on_ring_changed_ = std::move(callback);
+}
+
+void CallSessionManager::SetPrefetchPeerReachability(PrefetchPeerReachFn callback) {
+  prefetch_reach_ = std::move(callback);
 }
 
 void CallSessionManager::NotifyRingChanged() {
@@ -389,6 +415,8 @@ Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_
     }
   }
 
+  PrefetchReachForIdentities(prefetch_reach_, invitee_identities);
+
   NotifyRingChanged();
   return session;
 }
@@ -463,6 +491,7 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   }
   const std::string display =
       (*session)->media_mode == CallMediaMode::Video ? "Incoming video call" : "Incoming voice call";
+  PrefetchReachForIdentity(prefetch_reach_, invitee_identity);
   return SendCallDirectMessage(invitee_identity, CallControlType::CallInvite, *detail, display);
 }
 
@@ -559,6 +588,8 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
       (void)FanOutToJoinedAndRinging(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
     }
   }
+
+  PrefetchReachForIdentity(prefetch_reach_, (*pending)->inviter_identity);
 
   NotifyRingChanged();
   return {};
@@ -1058,6 +1089,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     self.identity = *local;
     self.state = CallParticipantState::Ringing;
     (void)sessions_.UpsertParticipant(self);
+    PrefetchReachForIdentity(prefetch_reach_, pending.inviter_identity);
     NotifyRingChanged();
     return {};
   }
@@ -1095,6 +1127,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       if (!topology_.OnRemoteAcceptJoined(accept->call_id, n_joined, identity)) {
         p2p_bridge_.ScheduleStartMediaAsOfferer(accept->call_id, identity);
       }
+      PrefetchReachForIdentity(prefetch_reach_, identity);
       // Fan roster so co-invitees / other joined peers see accurate N before SFU/P2P.
       if (auto roster = BuildRosterDetail(accept->call_id); roster) {
         if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {

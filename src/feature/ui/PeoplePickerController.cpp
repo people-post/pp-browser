@@ -11,6 +11,7 @@
 #include "base/people/ContactTypes.h"
 #include "base/people/PeerDisplayLabel.h"
 #include "base/ui/ShellTypes.h"
+#include "feature/messaging/ContactReachability.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/CallController.h"
 #include "feature/ui/ChatSessionPorts.h"
@@ -31,13 +32,16 @@ namespace {
 constexpr const char* kStepSelect = "select";
 constexpr const char* kStepName = "name";
 
-bool ContactIsMessageable(const Contact& contact) {
+bool ContactIsSelectable(const Contact& contact, const MessagingHub* hub) {
   if (contact.trust == TrustLevel::Blocked) {
     return false;
   }
   const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
   if (target.peer_identity_value.empty()) {
     return false;
+  }
+  if (hub != nullptr && hub->IsMessagingReady()) {
+    return hub->IsContactReachable(contact);
   }
   if (target.peer_identity_kind == ContactIdKindToString(ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
     return false;
@@ -372,7 +376,7 @@ void PeoplePickerController::SyncRows() {
   candidates.reserve(stored->size());
   for (const Contact& contact : *stored) {
     const bool locked = locked_ids_.count(contact.id) > 0;
-    if (!locked && !ContactIsMessageable(contact)) {
+    if (!locked && !ContactIsSelectable(contact, Hub().IsMessagingReady() ? &Hub() : nullptr)) {
       continue;
     }
     if (!MatchesQuery(contact, query)) {
@@ -527,7 +531,7 @@ void PeoplePickerController::SyncCallAddGuestRows() {
 
   std::vector<Contact> candidates;
   for (const Contact& contact : *stored) {
-    if (!ContactIsMessageable(contact)) {
+    if (!ContactIsSelectable(contact, Hub().IsMessagingReady() ? &Hub() : nullptr)) {
       continue;
     }
     const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
