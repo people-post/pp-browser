@@ -12,8 +12,10 @@ constexpr int64_t kLibp2pConnectTimeoutMs = 15000;
 
 CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSessionStore& sessions,
                                              CallMediaKeyStore& media_keys, CallMediaEngine& media,
-                                             CallMediaDirectService& direct, IDialRegistry* dial)
-    : host_(host), sessions_(sessions), media_keys_(media_keys), media_(media), direct_(direct), dial_(dial) {
+                                             CallMediaDirectService& direct, IDialRegistry* dial,
+                                             ICircuitHopReach* circuit_reach)
+    : host_(host), sessions_(sessions), media_keys_(media_keys), media_(media), direct_(direct), dial_(dial),
+      circuit_reach_(circuit_reach) {
   redirectLogger("CallLibp2pMediaBridge");
 
   direct_.SetInboundHandler([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
@@ -97,8 +99,21 @@ void CallLibp2pMediaBridge::PollLibp2pConnectHealth() {
   host_.P2pNotifyRingChanged();
 }
 
-bool CallLibp2pMediaBridge::ShouldUseLibp2pForPeer(const std::string& peer_identity) const {
-  return dial_ && dial_->IsDialable(peer_identity);
+bool CallLibp2pMediaBridge::ShouldUseLibp2pForPeer(const std::string& /*peer_identity*/) const {
+  return dial_ != nullptr;
+}
+
+Roe<void> CallLibp2pMediaBridge::EnsurePeerReachableOnIo(const std::string& peer_identity) {
+  if (!dial_) {
+    return Error("dial registry not available");
+  }
+  if (dial_->IsDialable(peer_identity)) {
+    return {};
+  }
+  if (!circuit_reach_) {
+    return Error("call peer not dialable");
+  }
+  return circuit_reach_->TryEnsureCallMediaReachable(peer_identity);
 }
 
 Roe<ByteVector> CallLibp2pMediaBridge::LoadActiveMediaKey(const std::string& call_id) const {
@@ -203,6 +218,15 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
 
   if (offerer) {
     BrowserThread::PostTask(BrowserThreadId::IO, [this, params, cbs]() {
+      Roe<void> ready = EnsurePeerReachableOnIo(params.peer_key);
+      if (!ready) {
+        BrowserThread::PostTask(BrowserThreadId::UI, [this, ready, call_id = params.call_id]() {
+          libp2p_connect_failed_ = true;
+          host_.P2pSetLastMediaError(ready.error().message);
+          host_.P2pNotifyRingChanged();
+        });
+        return;
+      }
       Roe<void> connected = direct_.Connect(params, cbs);
       BrowserThread::PostTask(BrowserThreadId::UI, [this, connected, call_id = params.call_id]() {
         if (!connected) {
@@ -261,14 +285,47 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call
 }
 
 void CallLibp2pMediaBridge::StopLibp2pMedia(const std::string& call_id) {
+  const std::string peer = media_peer_identity_;
   if (media_.IsActive() && media_.ActiveCallId() == call_id) {
     media_.Stop();
   }
   direct_.Detach();
+  if (dial_ && !peer.empty()) {
+    dial_->ClearCallMediaCircuitHop(peer);
+  }
   media_peer_identity_.clear();
   media_call_id_.clear();
   ClearLibp2pConnectFailed();
   media_attempted_calls_.erase(call_id);
+}
+
+Roe<void> CallLibp2pMediaBridge::RetryLibp2pMedia(const std::string& call_id) {
+  if (call_id.empty()) {
+    return Error("call_id required");
+  }
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return Error("Call session not found");
+  }
+  std::string peer = media_peer_identity_;
+  if (peer.empty()) {
+    if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
+      peer = **resolved;
+    }
+  }
+  if (peer.empty()) {
+    return Error("No peer for call retry");
+  }
+  ClearLibp2pConnectFailed();
+  if (dial_) {
+    dial_->ClearCallMediaCircuitHop(peer);
+    dial_->ClearDialBackoff(peer);
+  }
+  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+    media_.Stop();
+  }
+  direct_.Detach();
+  return BeginSession(call_id, peer, true);
 }
 
 void CallLibp2pMediaBridge::NoteMediaAttempted(const std::string& call_id) {

@@ -23,14 +23,18 @@ namespace pbr {
 class CallLibp2pMediaBridge : public Module {
 public:
   CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
-                        CallMediaEngine& media, CallMediaDirectService& direct, IDialRegistry* dial);
+                        CallMediaEngine& media, CallMediaDirectService& direct, IDialRegistry* dial,
+                        ICircuitHopReach* circuit_reach);
 
   bool IsLibp2pConnectFailed() const;
   bool Libp2pConnectMissingMic() const;
   void ClearLibp2pConnectFailed();
   void PollLibp2pConnectHealth();
 
+  /** True when libp2p call-media path is available (direct or circuit-brokered). */
   bool ShouldUseLibp2pForPeer(const std::string& peer_identity) const;
+
+  Roe<void> RetryLibp2pMedia(const std::string& call_id);
 
   Roe<void> StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity);
   Roe<void> StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
@@ -44,6 +48,7 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
+  Roe<void> EnsurePeerReachableOnIo(const std::string& peer_identity);
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
 
   CallP2pSignalingHost& host_;
@@ -52,6 +57,7 @@ private:
   CallMediaEngine& media_;
   CallMediaDirectService& direct_;
   IDialRegistry* dial_ = nullptr;
+  ICircuitHopReach* circuit_reach_ = nullptr;
 
   std::string media_peer_identity_;
   std::string media_call_id_;

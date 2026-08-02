@@ -496,7 +496,8 @@ void MessagingHub::WireCallMediaRelayDeps() {
       node_runtime_ ? node_runtime_->Sessions() : nullptr);
   if (node_runtime_ && node_runtime_->Sessions() && config_.libp2p.capabilities.circuit_relay) {
     circuit_hop_reach_ = std::make_unique<CircuitHopReachClient>(
-        [this](const std::string& hop_peer_id) { return TryEnsureCircuitHopReachable(hop_peer_id); });
+        [this](const std::string& hop_peer_id) { return TryEnsureCircuitHopReachable(hop_peer_id); },
+        [this](const std::string& peer_key) { return TryEnsureCallMediaReachable(peer_key); });
   } else {
     circuit_hop_reach_.reset();
   }
@@ -520,9 +521,9 @@ void MessagingHub::WireCallMediaRelayDeps() {
   call_sessions_->SetMediaRelayDeps(std::move(deps));
 
   if (call_media_direct_ && dial_registry_) {
-    call_libp2p_bridge_ = std::make_unique<CallLibp2pMediaBridge>(*call_sessions_, *call_session_store_,
-                                                                   *call_media_keys_, *call_media_engine_,
-                                                                   *call_media_direct_, dial_registry_.get());
+    call_libp2p_bridge_ = std::make_unique<CallLibp2pMediaBridge>(
+        *call_sessions_, *call_session_store_, *call_media_keys_, *call_media_engine_, *call_media_direct_,
+        dial_registry_.get(), circuit_hop_reach_.get());
     call_sessions_->SetLibp2pMediaBridge(call_libp2p_bridge_.get());
   } else {
     call_libp2p_bridge_.reset();
@@ -707,6 +708,7 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   if (!sessions->IsDialable(peer_id)) {
     (void)TryEnsureCircuitHopReachable(peer_id);
   }
+  (void)TryEnsureCallMediaReachable(identity.empty() ? peer_id : identity);
   if (sessions->IsDialable(peer_id)) {
     (void)sessions->EnsureConnection(peer_id);
   }
@@ -1306,13 +1308,12 @@ Roe<CircuitRelayBridgeResult> MessagingHub::RequestCircuitBridgePreferred(const 
   return last;
 }
 
-Roe<void> MessagingHub::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
-  if (!circuit_relay_ || !node_runtime_ || !node_runtime_->Sessions()) {
-    return Error("circuit-relay not available");
+std::vector<std::string> MessagingHub::CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const {
+  std::vector<std::string> relay_ids;
+  if (!node_runtime_ || !node_runtime_->Sessions()) {
+    return relay_ids;
   }
-  if (!config_.libp2p.capabilities.circuit_relay) {
-    return Error("circuit-relay disabled");
-  }
+  PeerSessionManager& sessions = *node_runtime_->Sessions();
   std::vector<Contact> contacts;
   if (contacts_) {
     if (auto listed = contacts_->List()) {
@@ -1323,11 +1324,9 @@ Roe<void> MessagingHub::TryEnsureCircuitHopReachable(const std::string& hop_peer
   NormalizeLibp2pConfig(libp2p);
   auto hops = OrderCircuitHops(CollectContactHopCandidates(contacts), CollectSeedHopCandidates(libp2p.bootstrap_peers),
                                libp2p.prefer_contacts_for_routing);
-  std::vector<std::string> relay_ids;
   relay_ids.reserve(hops.size());
-  PeerSessionManager& sessions = *node_runtime_->Sessions();
   for (const MeshHopCandidate& hop : hops) {
-    if (hop.peer_id.empty() || hop.peer_id == hop_peer_id) {
+    if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id) {
       continue;
     }
     if (hop.multiaddr.empty()) {
@@ -1342,10 +1341,70 @@ Roe<void> MessagingHub::TryEnsureCircuitHopReachable(const std::string& hop_peer
       relay_ids.push_back(hop.peer_id);
     }
   }
+  return relay_ids;
+}
+
+Roe<void> MessagingHub::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
+  if (!circuit_relay_ || !node_runtime_ || !node_runtime_->Sessions()) {
+    return Error("circuit-relay not available");
+  }
+  if (!config_.libp2p.capabilities.circuit_relay) {
+    return Error("circuit-relay disabled");
+  }
+  PeerSessionManager& sessions = *node_runtime_->Sessions();
+  const std::vector<std::string> relay_ids = CollectDialableCircuitRelayIds(hop_peer_id);
   if (relay_ids.empty()) {
     return Error("no dialable circuit relays");
   }
-  return sessions.TryEnsureHopViaCircuit(hop_peer_id, *circuit_relay_, relay_ids, 8000);
+  return sessions.TryEnsureHopViaCircuit(hop_peer_id, *circuit_relay_, relay_ids, kMediaRelayProtocolId, 8000);
+}
+
+Roe<void> MessagingHub::TryEnsureCallMediaReachable(const std::string& peer_key) {
+  if (!circuit_relay_ || !node_runtime_ || !node_runtime_->Sessions()) {
+    return Error("circuit-relay not available");
+  }
+  if (!config_.libp2p.capabilities.circuit_relay) {
+    return Error("circuit-relay disabled");
+  }
+  if (peer_key.empty()) {
+    return Error("missing call peer");
+  }
+
+  PeerSessionManager& sessions = *node_runtime_->Sessions();
+  std::string target = peer_key;
+  if (contacts_) {
+    if (auto hit = contacts_->FindByIdentity(peer_key, ContactIdKind::RelayUser)) {
+      if (hit->has_value()) {
+        const std::string peer_id = PeerIdFromContact(**hit);
+        if (!peer_id.empty()) {
+          target = peer_id;
+        }
+      }
+    }
+    if (target == peer_key) {
+      if (auto hit = contacts_->FindByIdentity(peer_key, ContactIdKind::PeerId)) {
+        if (hit->has_value()) {
+          const std::string peer_id = PeerIdFromContact(**hit);
+          if (!peer_id.empty()) {
+            target = peer_id;
+          }
+        }
+      }
+    }
+  }
+
+  const std::vector<std::string> relay_ids = CollectDialableCircuitRelayIds(target);
+  if (relay_ids.empty()) {
+    return Error("no dialable circuit relays");
+  }
+  auto reached =
+      sessions.TryEnsureHopViaCircuit(target, *circuit_relay_, relay_ids, kCallMediaDirectProtocolId, 8000);
+  if (reached && target != peer_key) {
+    if (auto ma = sessions.PreferredPeerMultiaddr(target)) {
+      (void)sessions.RegisterEndpoint(peer_key, *ma);
+    }
+  }
+  return reached;
 }
 
 void MessagingHub::SuspendLibp2pColdPeers() {

@@ -190,6 +190,8 @@ private:
   void WireCallMediaRelayDeps();
   void PublishNodeAdvertisedAddrs();
   Roe<void> TryEnsureCircuitHopReachable(const std::string& hop_peer_id);
+  Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key);
+  std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
   void RegisterContactEndpoints();
   Roe<void> BuildMessagingStack();
   void NotifyMessagingReady();

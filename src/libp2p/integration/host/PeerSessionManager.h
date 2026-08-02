@@ -91,12 +91,21 @@ public:
   Roe<void> UpsertBookEntry(const std::string& peer_id_base58, const std::string& multiaddr,
                            PeerAddrSource source);
 
-  /** L3: try circuit bridge via candidate relays when direct dial is unavailable. */
+  /**
+   * L3: try circuit bridge via candidate relays when direct dial is unavailable.
+   * `target_protocol` is the stream protocol opened on the remote peer after bridge (e.g. call-media).
+   */
   Roe<void> TryEnsureHopViaCircuit(const std::string& target_peer_id, CircuitRelayService& circuit,
-                                   const std::vector<std::string>& relay_peer_ids, int timeout_ms = 8000);
+                                   const std::vector<std::string>& relay_peer_ids,
+                                   const std::string& target_protocol, int timeout_ms = 8000);
 
   bool IsCircuitBacked(const std::string& peer_relay_user_id) const;
+  bool IsCircuitBacked(const std::string& peer_relay_user_id, const std::string& target_protocol) const;
   void ClearCircuitHop(const std::string& peer_relay_user_id);
+  void ClearCircuitHop(const std::string& peer_relay_user_id, const std::string& target_protocol);
+
+  /** Composite storage key for protocol-scoped circuit hops. */
+  static std::string CircuitHopKey(const std::string& peer_key, const std::string& target_protocol);
 
   /** Mark peer as warm (kept across idle eviction / background suspend of cold peers). */
   void MarkWarm(const std::string& peer_relay_user_id);
@@ -141,7 +150,14 @@ private:
   struct CircuitHopLink {
     std::shared_ptr<libp2p::connection::Stream> stream;
     std::string relay_peer_id;
+    std::string target_protocol;
   };
+
+  std::optional<CircuitHopLink> FindCircuitHopLocked(const std::string& peer_relay_user_id,
+                                                     const std::string& target_protocol) const;
+  void StoreCircuitHopLocked(const std::string& peer_relay_user_id, CircuitHopLink link);
+  bool HasAnyCircuitHopLocked(const std::string& peer_relay_user_id) const;
+  bool HasDirectDialPathLocked(const std::string& peer_relay_user_id) const;
 
   void TouchPeerLocked(const std::string& peer_relay_user_id);
   void EvictIfOverCapLocked();

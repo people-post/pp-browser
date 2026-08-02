@@ -20,7 +20,19 @@ Error DialError(const std::string& technical, const std::string& user) {
   return Error(technical).WithUser(user);
 }
 
+std::string ProtocolForCircuitLookup(const libp2p::StreamProtocols& protocols) {
+  if (protocols.empty()) {
+    return {};
+  }
+  return std::string{protocols.front()};
+}
+
 } // namespace
+
+std::string PeerSessionManager::CircuitHopKey(const std::string& peer_key,
+                                              const std::string& target_protocol) {
+  return peer_key + "\x1f" + target_protocol;
+}
 
 std::string PeerDialErrorUserCopy(const std::string& technical_message) {
   if (technical_message.empty()) {
@@ -153,6 +165,77 @@ void PeerSessionManager::SetConfig(PeerSessionConfig config) {
   config_ = std::move(config);
 }
 
+std::optional<PeerSessionManager::CircuitHopLink> PeerSessionManager::FindCircuitHopLocked(
+    const std::string& peer_relay_user_id, const std::string& target_protocol) const {
+  if (target_protocol.empty()) {
+    return std::nullopt;
+  }
+  const auto lookup = [&](const std::string& key) -> std::optional<CircuitHopLink> {
+    const auto it = circuit_hops_.find(CircuitHopKey(key, target_protocol));
+    if (it != circuit_hops_.end()) {
+      return it->second;
+    }
+    return std::nullopt;
+  };
+  if (auto hit = lookup(peer_relay_user_id)) {
+    return hit;
+  }
+  if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+    if (*peer_id != peer_relay_user_id) {
+      return lookup(*peer_id);
+    }
+  }
+  return std::nullopt;
+}
+
+void PeerSessionManager::StoreCircuitHopLocked(const std::string& peer_relay_user_id, CircuitHopLink link) {
+  if (link.target_protocol.empty()) {
+    return;
+  }
+  circuit_hops_[CircuitHopKey(peer_relay_user_id, link.target_protocol)] = link;
+  if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+    if (*peer_id != peer_relay_user_id) {
+      circuit_hops_[CircuitHopKey(*peer_id, link.target_protocol)] = link;
+    }
+  }
+}
+
+bool PeerSessionManager::HasAnyCircuitHopLocked(const std::string& peer_relay_user_id) const {
+  for (const auto& [key, _] : circuit_hops_) {
+    const auto sep = key.find('\x1f');
+    if (sep == std::string::npos) {
+      continue;
+    }
+    const std::string stored_peer = key.substr(0, sep);
+    if (stored_peer == peer_relay_user_id) {
+      return true;
+    }
+    if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+      if (stored_peer == *peer_id) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool PeerSessionManager::HasDirectDialPathLocked(const std::string& peer_relay_user_id) const {
+  const auto it = endpoints_.find(peer_relay_user_id);
+  if (it != endpoints_.end()) {
+    const auto now = std::chrono::steady_clock::now();
+    if (it->second.dial_failed_until > now) {
+      return false;
+    }
+    if (it->second.info && !it->second.info->addresses.empty()) {
+      return true;
+    }
+  }
+  if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+    return address_book_.IsDialable(*peer_id);
+  }
+  return false;
+}
+
 Roe<void> PeerSessionManager::RegisterEndpoint(const std::string& peer_relay_user_id,
                                                const std::string& multiaddr) {
   if (peer_relay_user_id.empty() || multiaddr.empty()) {
@@ -200,23 +283,10 @@ Roe<void> PeerSessionManager::RegisterEndpoint(const std::string& peer_relay_use
 
 bool PeerSessionManager::IsDialable(const std::string& peer_relay_user_id) const {
   std::lock_guard lock(mutex_);
-  if (circuit_hops_.find(peer_relay_user_id) != circuit_hops_.end()) {
+  if (HasAnyCircuitHopLocked(peer_relay_user_id)) {
     return true;
   }
-  const auto it = endpoints_.find(peer_relay_user_id);
-  if (it != endpoints_.end()) {
-    const auto now = std::chrono::steady_clock::now();
-    if (it->second.dial_failed_until > now) {
-      return false;
-    }
-    if (it->second.info && !it->second.info->addresses.empty()) {
-      return true;
-    }
-  }
-  if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
-    return address_book_.IsDialable(*peer_id);
-  }
-  return false;
+  return HasDirectDialPathLocked(peer_relay_user_id);
 }
 
 bool PeerSessionManager::IsConnected(const std::string& peer_relay_user_id) const {
@@ -354,17 +424,26 @@ Roe<void> PeerSessionManager::UpsertBookEntry(const std::string& peer_id_base58,
 Roe<void> PeerSessionManager::TryEnsureHopViaCircuit(const std::string& target_peer_id,
                                                    CircuitRelayService& circuit,
                                                    const std::vector<std::string>& relay_peer_ids,
-                                                   int timeout_ms) {
+                                                   const std::string& target_protocol, int timeout_ms) {
   if (target_peer_id.empty()) {
     return Error("missing circuit target peer");
   }
-  if (IsDialable(target_peer_id)) {
-    return {};
+  if (target_protocol.empty()) {
+    return Error("missing circuit target protocol");
+  }
+  {
+    std::lock_guard lock(mutex_);
+    if (FindCircuitHopLocked(target_peer_id, target_protocol)) {
+      return {};
+    }
+    if (HasDirectDialPathLocked(target_peer_id)) {
+      return {};
+    }
   }
 
   CircuitBridgeTarget bridge_target;
   bridge_target.target_peer_id = target_peer_id;
-  bridge_target.target_protocol = kMediaRelayProtocolId;
+  bridge_target.target_protocol = target_protocol;
 
   for (const std::string& relay_key : relay_peer_ids) {
     if (relay_key == target_peer_id || !IsDialable(relay_key)) {
@@ -379,9 +458,13 @@ Roe<void> PeerSessionManager::TryEnsureHopViaCircuit(const std::string& target_p
       (void)RegisterEndpoint(target_peer_id, bridged->resolved_multiaddr);
       ClearDialBackoff(target_peer_id);
     }
+    CircuitHopLink link;
+    link.stream = bridged->stream;
+    link.relay_peer_id = relay_key;
+    link.target_protocol = target_protocol;
     {
       std::lock_guard lock(mutex_);
-      circuit_hops_[target_peer_id] = CircuitHopLink{bridged->stream, relay_key};
+      StoreCircuitHopLocked(target_peer_id, link);
     }
     return {};
   }
@@ -390,19 +473,68 @@ Roe<void> PeerSessionManager::TryEnsureHopViaCircuit(const std::string& target_p
 
 bool PeerSessionManager::IsCircuitBacked(const std::string& peer_relay_user_id) const {
   std::lock_guard lock(mutex_);
-  return circuit_hops_.find(peer_relay_user_id) != circuit_hops_.end();
+  return HasAnyCircuitHopLocked(peer_relay_user_id);
+}
+
+bool PeerSessionManager::IsCircuitBacked(const std::string& peer_relay_user_id,
+                                         const std::string& target_protocol) const {
+  std::lock_guard lock(mutex_);
+  return FindCircuitHopLocked(peer_relay_user_id, target_protocol).has_value();
 }
 
 void PeerSessionManager::ClearCircuitHop(const std::string& peer_relay_user_id) {
   std::lock_guard lock(mutex_);
-  auto it = circuit_hops_.find(peer_relay_user_id);
-  if (it == circuit_hops_.end()) {
+  for (auto it = circuit_hops_.begin(); it != circuit_hops_.end();) {
+    const auto sep = it->first.find('\x1f');
+    if (sep == std::string::npos) {
+      ++it;
+      continue;
+    }
+    const std::string stored_peer = it->first.substr(0, sep);
+    bool matches = stored_peer == peer_relay_user_id;
+    if (!matches) {
+      if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+        matches = stored_peer == *peer_id;
+      }
+    }
+    if (!matches) {
+      ++it;
+      continue;
+    }
+    if (it->second.stream) {
+      it->second.stream->close([](auto&&) {});
+    }
+    it = circuit_hops_.erase(it);
+  }
+}
+
+void PeerSessionManager::ClearCircuitHop(const std::string& peer_relay_user_id,
+                                         const std::string& target_protocol) {
+  if (target_protocol.empty()) {
+    ClearCircuitHop(peer_relay_user_id);
     return;
   }
-  if (it->second.stream) {
-    it->second.stream->close([](auto&&) {});
+  std::vector<std::string> keys;
+  keys.push_back(CircuitHopKey(peer_relay_user_id, target_protocol));
+  {
+    std::lock_guard lock(mutex_);
+    if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+      if (*peer_id != peer_relay_user_id) {
+        keys.push_back(CircuitHopKey(*peer_id, target_protocol));
+      }
+    }
   }
-  circuit_hops_.erase(it);
+  std::lock_guard lock(mutex_);
+  for (const std::string& key : keys) {
+    const auto it = circuit_hops_.find(key);
+    if (it == circuit_hops_.end()) {
+      continue;
+    }
+    if (it->second.stream) {
+      it->second.stream->close([](auto&&) {});
+    }
+    circuit_hops_.erase(it);
+  }
 }
 
 void PeerSessionManager::MarkWarm(const std::string& peer_relay_user_id) {
@@ -539,7 +671,7 @@ void PeerSessionManager::EnsureConnectionOnIo(const std::string& peer_relay_user
                                               std::function<void(Roe<void>)> on_complete) {
   {
     std::lock_guard lock(mutex_);
-    if (circuit_hops_.find(peer_relay_user_id) != circuit_hops_.end()) {
+    if (HasAnyCircuitHopLocked(peer_relay_user_id)) {
       if (on_complete) {
         on_complete({});
       }
@@ -652,22 +784,24 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
     return;
   }
 
+  const std::string lookup_protocol = ProtocolForCircuitLookup(protocols);
   {
     std::lock_guard lock(mutex_);
-    const auto circuit_it = circuit_hops_.find(peer_relay_user_id);
-    if (circuit_it != circuit_hops_.end() && circuit_it->second.stream) {
-      libp2p::StreamAndProtocol bridged;
-      bridged.stream = circuit_it->second.stream;
-      if (!protocols.empty()) {
-        bridged.protocol = protocols.front();
-      }
-      TouchPeerLocked(peer_relay_user_id);
-      host_.Post([cb = std::move(cb), bridged = std::move(bridged)]() mutable {
-        if (cb) {
-          cb(bridged);
+    if (const auto circuit = FindCircuitHopLocked(peer_relay_user_id, lookup_protocol)) {
+      if (circuit->stream) {
+        libp2p::StreamAndProtocol bridged;
+        bridged.stream = circuit->stream;
+        if (!protocols.empty()) {
+          bridged.protocol = protocols.front();
         }
-      });
-      return;
+        TouchPeerLocked(peer_relay_user_id);
+        host_.Post([cb = std::move(cb), bridged = std::move(bridged)]() mutable {
+          if (cb) {
+            cb(bridged);
+          }
+        });
+        return;
+      }
     }
   }
 
