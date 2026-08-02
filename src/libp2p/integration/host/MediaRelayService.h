@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/data/Config.h"
+#include "base/people/RelayScope.h"
 #include "common/Error.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
@@ -52,6 +53,7 @@ struct MediaRelayAttachResult {
 
 struct MediaRelayAdmissionPolicy {
   bool prefer_contacts_only = false;
+  RelayScopeMask serve_scope_mask = kRelayScopeVolunteerServe;
   std::unordered_set<std::string> contact_peer_ids;
 };
 
@@ -83,6 +85,9 @@ public:
   void Start();
   void Stop();
   bool IsStarted() const { return started_; }
+
+  /** Local libp2p PeerId (base58); used to skip self when picking media hops. */
+  Roe<std::string> LocalPeerIdBase58() const { return host_.LocalPeerIdBase58(); }
 
   void SetBudget(const MediaRelayBudgetConfig& budget);
   void SetPricing(const RelayPricingConfig& pricing);

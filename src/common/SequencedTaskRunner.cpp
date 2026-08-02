@@ -2,13 +2,22 @@
 
 #include <exception>
 
+#if defined(__ANDROID__) || defined(__linux__)
+#include <pthread.h>
+#endif
+
 namespace pbr {
 
 SequencedTaskRunner::SequencedTaskRunner(const bool uses_dedicated_thread)
     : uses_dedicated_thread_(uses_dedicated_thread) {
   redirectLogger("SequencedTaskRunner");
   if (uses_dedicated_thread_) {
-    thread_ = std::thread([this]() { IOThreadMain(); });
+    thread_ = std::thread([this]() {
+#if defined(__ANDROID__) || defined(__linux__)
+      pthread_setname_np(pthread_self(), "pp-browser-io");
+#endif
+      IOThreadMain();
+    });
     {
       std::lock_guard lock(mutex_);
       thread_id_ = thread_.get_id();
@@ -41,9 +50,11 @@ void SequencedTaskRunner::PostTask(std::function<void()> task) {
     return;
   }
 
+  // Pause defers execution; it must not drop work. Posts while paused stay queued until Resume.
+  // (Historically dropping here left unlock_in_progress stuck on Android.)
   if (!uses_dedicated_thread_) {
     std::lock_guard lock(mutex_);
-    if (stopped_ || paused_) {
+    if (stopped_) {
       return;
     }
     EnqueueLocked(std::move(task));
@@ -52,10 +63,32 @@ void SequencedTaskRunner::PostTask(std::function<void()> task) {
 
   {
     std::lock_guard lock(mutex_);
-    if (stopped_ || paused_) {
+    if (stopped_) {
       return;
     }
     EnqueueLocked(std::move(task));
+  }
+  cv_.notify_one();
+}
+
+void SequencedTaskRunner::PostTaskFront(std::function<void()> task) {
+  if (!task) {
+    return;
+  }
+  if (!uses_dedicated_thread_) {
+    std::lock_guard lock(mutex_);
+    if (stopped_) {
+      return;
+    }
+    EnqueueFrontLocked(std::move(task));
+    return;
+  }
+  {
+    std::lock_guard lock(mutex_);
+    if (stopped_) {
+      return;
+    }
+    EnqueueFrontLocked(std::move(task));
   }
   cv_.notify_one();
 }
@@ -137,6 +170,10 @@ void SequencedTaskRunner::IOThreadMain() {
 
 void SequencedTaskRunner::EnqueueLocked(std::function<void()> task) {
   tasks_.push_back(std::move(task));
+}
+
+void SequencedTaskRunner::EnqueueFrontLocked(std::function<void()> task) {
+  tasks_.push_front(std::move(task));
 }
 
 bool SequencedTaskRunner::DequeueOne(std::function<void()>* out) {

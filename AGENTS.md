@@ -12,7 +12,7 @@ pp-browser is a native AI-oriented UI shell:
 - **Third-party libs** — FreeType, nlohmann/json, curl, SDL3, SDL3_image, and libp2p deps in [`third_party/`](third_party/)
 - **Four-layer source tree** — `src/common/`, `src/base/`, `src/feature/`, `src/app/` — see [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
 
-See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. Doc tiers (architecture / contracts / ops): [docs/README.md](docs/README.md). Compatibility (dirty disk, newer peers): [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
+See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + libp2p; call media on libp2p — V026). Doc tiers: [docs/README.md](docs/README.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
 
 ## RmlUi is maintained in-tree
 
@@ -62,8 +62,9 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | Turn planning pipeline | `src/base/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency (long-term) | [projects/ai-centric-interface/](projects/ai-centric-interface/) — 10 acts, open domains; v1 thin coverage first |
 | P2P messaging | `src/feature/messaging/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
-| P2P mesh | [projects/p2p-mesh/](projects/p2p-mesh/) — **nf** + **n4-media** done |
-| P2P A/V calls | [projects/p2p-av-calls/](projects/p2p-av-calls/) — **a4 thin** landed; polish next; **code map** [docs/architecture/CALLS.md](docs/architecture/CALLS.md) |
+| P2P mesh | [projects/p2p-mesh/](projects/p2p-mesh/) — **nf** + **n4-media** done; **N023** relay scope ([RELAY_SCOPE.md](projects/p2p-mesh/RELAY_SCOPE.md)); **N022** invest libp2p |
+| P2P A/V calls | [projects/p2p-av-calls/](projects/p2p-av-calls/) — **V026** libp2p media (**m1** mobile LAN dogfood OK; **m2** teardown next); **code map** [docs/architecture/CALLS.md](docs/architecture/CALLS.md) |
+| Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) — **in-libp2p** (L0 docs; L1 next) |
 | Contacts UI / store | `src/feature/ui/ContactsController.*`, `src/base/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
 | SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | E2E symmetric crypto (`base/crypto`) | `src/base/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |

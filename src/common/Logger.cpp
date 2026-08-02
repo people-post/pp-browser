@@ -200,13 +200,13 @@ std::string LoggerNode::formatMessage(Level level, const std::string &message, c
 
 std::string LoggerNode::levelToString(Level level) {
   switch (level) {
-  case Level::DEBUG:
+  case kLevelDebug:
     return "DEBUG";
   case Level::INFO:
     return "INFO";
   case Level::WARNING:
     return "WARNING";
-  case Level::ERROR:
+  case kLevelError:
     return "ERROR";
   case Level::CRITICAL:
     return "CRITICAL";
@@ -277,10 +277,10 @@ static std::shared_ptr<LoggerNode> g_spRoot = initRootLogger();
 
 Logger::Logger(std::shared_ptr<LoggerNode> node)
     : spNode_(std::move(node)),
-      debug(this, Level::DEBUG),
+      debug(this, kLevelDebug),
       info(this, Level::INFO),
       warning(this, Level::WARNING),
-      error(this, Level::ERROR),
+      error(this, kLevelError),
       critical(this, Level::CRITICAL) {
 }
 
@@ -290,8 +290,9 @@ void Logger::redirectTo(const std::string &targetLoggerName) {
     throw std::invalid_argument("Cannot redirect to null logger");
   }
 
+  // Idempotent: already bound to this logger (e.g. Module::Bind called again).
   if (targetLogger.getNode() == spNode_) {
-    throw std::invalid_argument("Cannot redirect logger to itself");
+    return;
   }
 
   auto targetNode = targetLogger.getNode();

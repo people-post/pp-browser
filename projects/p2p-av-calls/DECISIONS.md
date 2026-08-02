@@ -7,6 +7,7 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V001 — Hybrid media stack (Option C)
 
 **Date:** 2026-07-28  
+**Status:** **Superseded by [V026](#v026--libp2p-only-call-media-http--libp2p-networking)**  
 **Decision:** **Signaling and call state** ride the Brief mesh / E2E messaging path. **Media** uses a **WebRTC-shaped** stack (ICE + encrypted realtime media). **Fallback** is mesh Node **`audio_relay` / `video_relay`** SFU (or TURN-like), preferring contact-first then org seed (N014). Do **not** implement a long-lived custom Opus-over-libp2p media stack as the product path.  
 **Rationale:** Mobile is always Client (no listen); NAT makes pure full-mesh unreliable; WebRTC delivers expected call quality and congestion control; mesh keeps discovery, SFU ops, and product crypto under Brief.  
 **Alternatives:** (A) Full WebRTC including third-party SaaS SFU only — rejected as default (ops may still use extra seeds). (B) Custom A/V solely on libp2p streams — rejected for v1 product quality/time.
@@ -125,6 +126,7 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V014 — Media stack: libdatachannel + libopus + SDL
 
 **Date:** 2026-07-28  
+**Status:** **Transport superseded by [V026](#v026--libp2p-only-call-media-http--libp2p-networking)** (libdatachannel PeerConnection no longer product path). Opus + SDL capture/playback remain useful.  
 **Decision:** Ship a2+ voice media with:
 
 | Layer | Choice |
@@ -311,7 +313,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 | Topology | **True SFU** — each participant uplinks once; SFU fans out. **Not** TURN-as-SFU (N−1 PCs through relay). **Not** full-mesh. |
 | Audio + video | a4 includes **both** Opus audio and H264 video through the SFU. |
 | Codecs | **Reuse** a3 platform HW path (V017–V019). Do **not** expand encode/decode matrix for newer devices/codecs in a4 — that is a separate later slice. |
-| SFU hosts | Org **`pp-node`** + desktop **`media_relay`** (blind; volunteer **default on** — N018 / V021). Mobile never hosts. |
+| SFU hosts | Org **`pp-node`** + desktop **`media_relay`** (blind; volunteer **default on** — N018 / V021). Mobile default Client; call-scoped listen / in-call hop — **V027** / **N025**. |
 | Mesh gate | a4 media depends on mesh **n4-media**. Hop pick: **V023** / **N020**. |
 | Blindness / migrate | See **V021**. |
 | Bandwidth / bills | See **V022**. |
@@ -346,7 +348,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 | **N drops to 2** | **Stay on SFU** until hangup for v1 (avoid P2P↔SFU flip-flop). Optional later: re-P2P when alone-as-pair. |
 | **Who picks SFU** | **Initiator** at start; thereafter **epoch coordinator** (V002) applies the **same pick policy** on invite-to-group, hop failure, or other reestablish events → **re-pick** and reattach. |
 | **Stack** | **Own** forwarder on `pp-node` / desktop Node runtime — relay only; no vendored LiveKit/mediasoup as the product path. |
-| **Hosts** | Org seed + desktop Node; capability **default volunteer on** when Node is on (N018). Mobile never hosts. |
+| **Hosts** | Org seed + desktop Node; capability **default volunteer on** when Node is on (N018). Mobile: default Client; **V027** call-scoped listen on Wi‑Fi. |
 
 **Rationale:** Aligns confidentiality with V004 (SFU must not need keys); bandwidth-limited friend Nodes are real; soft-migrate preserves history/roster/key epoch continuity better than tear-down; staying on SFU after N→2 keeps one media code path.  
 **Alternatives:** Classic DTLS-terminating media SFU that sees clear RTP (rejected — contents exposure); hard end/restart call on 3rd invite (rejected — worse UX); separate audio/video relay processes that classify codecs (rejected — needs content awareness); return to P2P when N=2 in v1 (deferred — flip-flop risk).  
@@ -397,7 +399,7 @@ Camera / send policy uses **A↑** (and session **B↑**). Receive / subscribe p
 ## V023 — Media hop pick: short-term closed set; pricing regulates later
 
 **Date:** 2026-07-30  
-**Decision:** Hop selection for blind `media_relay` is a **risk-aware scorer over eligibility classes**, not a hardcoded contacts→seed→public list. **Making money is not the product goal**; the **pricing model exists to regulate** scarcity, strangers, and abuse over time. Mesh twin: [N020](../p2p-mesh/DECISIONS.md#n020--media-hop-pick-short-term-closed-set-pricing-as-regulation).
+**Decision:** Hop selection for blind `media_relay` is a **risk-aware scorer over eligibility classes**, not a hardcoded contacts→seed→public list. **Making money is not the product goal**; the **pricing model exists to regulate** scarcity, strangers, and abuse over time. Mesh twin: [N020](../p2p-mesh/DECISIONS.md#n020--media-hop-pick-short-term-closed-set-pricing-as-regulation). **Scope escalation (outer loop):** [N023](../p2p-mesh/DECISIONS.md#n023--relay-scope-and-domain-bridging-not-geography-tiers) / [RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md) — short term still closed set; `link`/`site` boost same-LAN contacts only.
 
 ### Thesis
 
@@ -525,4 +527,58 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 
 **Rationale:** Auto 1:1→SFU misfired attach-wait and group-only toasts when no hop existed; LAN/Local Network failures need Retry + OS tips, not a group path.  
 **Alternatives:** Auto SFU on 1:1 ICE fail when hop exists (deferred — false group UX); leave call on timeout (rejected — Retry is better).  
-**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) topology rules; `CallMediaTopology::ShouldUseMediaRelay` is N≥3 only.
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) topology rules; `CallMediaTopology::ShouldUseMediaRelay` is N≥3 only.  
+**Status:** Partially superseded by [V026](#v026--libp2p-only-call-media-http--libp2p-networking) — ICE Retry is legacy; 1:1 undialable peers use libp2p hop / circuit (mesh), not PeerConnection rebuild.
+
+---
+
+## V026 — Libp2p-only call media; HTTP + libp2p networking
+
+**Date:** 2026-07-31  
+**Decision:** Product networking is **HTTP + libp2p only** ([NETWORKING.md](../../docs/architecture/NETWORKING.md)). Call **media** (1:1 and group) uses **libp2p** — direct streams and/or blind `media_relay` — with **app-layer E2E** under the shared call media key (V004). **Voice-first**; video on libp2p is deferred. Do **not** extend WebRTC/libdatachannel/ICE as the product path.
+
+| Topic | Rule |
+|-------|------|
+| **N=2** | Prefer **direct libp2p** media between dialable peers; if undialable, use mesh hop / circuit (explicit path — not ICE Retry). |
+| **N≥3** | Blind `media_relay` star (V020/V021 topology intent retained; transport is libp2p only). |
+| **Signaling** | Keep system `call_*` controls; `call_sdp` / `call_ice` are **legacy** (remove with teardown). Hop reachability is **in-libp2p** ([media-hop-reachability](../media-hop-reachability/) H007 — no app addr gather). |
+| **HTTP** | Preferred for org backend (Brief, billing UX) when reachable. |
+| **Settle** | HTTP backend preferred for price/settle; **chain settle backup** when HTTP unavailable ([N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)). |
+| **Teardown** | Remove libdatachannel PeerConnection path from product on a dedicated phase after voice-on-libp2p dogfood; until then treat PC code as legacy. |
+
+**Supersedes / updates:** [V001](#v001--hybrid-media-stack-option-c) (hybrid WebRTC); product intent of [V014](#v014--media-stack-libdatachannel--libopus--sdl) (libdatachannel transport); [V021](#v021--blind-media-forwarder-11-p2p-soft-migrate-to-group-sfu) “1:1 stay on ICE P2P”; [V024](#v024--adaptive-call-media-11-p2p-and-sfu-generic-relay-channels) dual WebRTC/SFU backends → one libp2p media backend family; [V025](#v025--no-auto-sfu-for-11-ice-fail-retry-on-p2p) ICE Retry as product recovery.
+
+**Rationale:** One peer stack to deepen (NAT, discovery, QoS, incentives); HTTP for backends; accept realtime/NAT tradeoffs for **audio-first**; avoid maintaining ICE and multiaddr dial in parallel.
+
+**Alternatives:** Keep WebRTC 1:1 + libp2p SFU (prior V001 — rejected going forward); WebRTC star with inner E2E (deferred — second SFU shape); full video on libp2p before voice green (rejected — scope).
+
+**Dogfood claimed (2026-08-02):** Android ↔ Android LAN 1:1 bidirectional voice on libp2p `call-media` (moto g7 play ↔ Samsung SM-T380). Desktop matrix and NAT/hop not claimed. Details: [CURRENT_STATE.md](CURRENT_STATE.md).
+
+**Cross-link:** [media-hop-reachability](../media-hop-reachability/) (dialability); mesh N018–N022.
+
+---
+
+## V027 — Mobile call-scoped listen on Wi‑Fi
+
+**Date:** 2026-08-01  
+**Status:** Accepted (**implemented** — see mesh N025 / `MessagingHub::SyncMobileEphemeralListen`)  
+**Decision:** Mobile does **not** become a full mesh **Node**. During an **active foreground call on Wi‑Fi**, the app may **listen ephemerally** and publish dialable addrs (mesh **N025**) so that:
+
+| Scenario | Benefit |
+|----------|---------|
+| **LAN 1:1 libp2p (m1)** | Callee reachable **by PeerId** without pasted multiaddr or desktop in the middle |
+| **LAN group (N≥3)** | Phone on the call may act as **in-call `media_relay` hop** (`PreferInCallMediaHops`) when policy allows |
+| **Address book** | Identify ads populate peerstore for contacts — helps **L4** PeerId-only messaging |
+
+**Does not replace:** **`call_wake`** for incoming when app is background/killed (V006). **Does not replace:** org seed / desktop hop on **cellular** or when not in an eligible call session (V008 still applies off-LAN).
+
+**Optional later:** user opt-in **Help on Wi‑Fi** (N025 mode 3) outside a call — separate from call-scoped listen; strict caps.
+
+**Gating (product):** Wi‑Fi detected + foreground call (or explicit Wi‑Fi helper); **contacts-only** relay admission on mobile; no public/paid relay surface on phone.
+
+**Rationale:** Client-only mobile blocked LAN PeerId call goals; full Node wrong for OS/battery. Call-scoped listen aligns with when the user already expects realtime media and the app is foreground.  
+**Alternatives:** Require desktop/seed for all mobile LAN (rejected for UX); full mobile Node (rejected); ICE-only LAN forever (superseded by V026).  
+**Mesh ADR:** [N025](../p2p-mesh/DECISIONS.md#n025--mobile-call-scoped-listen-on-wi-fi-not-full-node). **Phase:** [m1](PHASES.md#m1--libp2p-only-voice-v026) + mesh [nm](../p2p-mesh/PHASES.md#nm--mobile-call-scoped-listen-n025).
+
+**Dogfood:** Mobile LAN 1:1 path exercised with call-scoped listen (2026-08-02) — see V026 dogfood note / [CURRENT_STATE.md](CURRENT_STATE.md).
+

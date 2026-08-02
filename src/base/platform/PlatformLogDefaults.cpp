@@ -6,9 +6,9 @@ namespace pbr {
 
 logging::Level DefaultRootLogLevel(bool debug_mode) {
   if (Platform::Detect() == PlatformKind::IOS) {
-    return debug_mode ? logging::Level::DEBUG : logging::Level::INFO;
+    return debug_mode ? logging::kLevelDebug : logging::Level::INFO;
   }
-  return debug_mode ? logging::Level::DEBUG : logging::Level::WARNING;
+  return debug_mode ? logging::kLevelDebug : logging::Level::WARNING;
 }
 
 } // namespace pbr

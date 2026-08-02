@@ -1,5 +1,7 @@
 # P2P mesh — phases
 
+**[DESIGN.md](DESIGN.md) is the authoritative specification** (concept-first, present tense). **This file orders work only** — checklists, delivery sequence, and traceability. Rationale: [DECISIONS.md](DECISIONS.md). Implementation truth: [CURRENT_STATE.md](CURRENT_STATE.md).
+
 Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → n3 → nf (thin) → **n4-media** → later message_relay / pricing UI → … → n2 (DHT later).
 
 ## n0 — Project docs
@@ -7,6 +9,8 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [x] README, DESIGN, CURRENT_STATE, DECISIONS, PHASES
 - [x] Register in `projects/README.md` + `AGENTS.md`
 - [x] N008–N021 (through hop pick, ↑/↓ quotes, **generic framing / QoS channel types**)
+- [x] **N022** — libp2p investment; HTTP settle preferred; chain backup
+- [x] **N023** — relay scope / domain bridging spec ([RELAY_SCOPE.md](RELAY_SCOPE.md))
 - [x] Renamed project folder `libp2p-node-roles` → **`p2p-mesh`**
 
 ## n1 — Role shell + bootstrap + Network UI
@@ -92,3 +96,53 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [ ] Soft reputation / receipts; bonds; anti-dumping / anti-capture (N020 long)
 - [ ] Schedules & resource caps; Home Node pack
 - [ ] Gradual HTTP → peer message_relay dual-run (only if product wants it)
+
+## ns — Relay scope & domain bridging (N023)
+
+Docs-first; implement after n4-media stable. See [RELAY_SCOPE.md](RELAY_SCOPE.md).
+
+- [x] ADR **N023** + RELAY_SCOPE design doc
+- [x] `RelayScope` enum + scope mask; `RankMediaHopsEscalating`; provider serve mask (ns1)
+- [x] Provider: reachability-aware stranger limit in `ApplyMeshAdmissionPolicies`
+- [ ] Consumer: wire escalate ranker in circuit path; capability ads on Identify
+- [ ] Bridge score when `seed_dial_ok == false` or target undialable direct (incl. multi-hop reach signals — [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned))
+- [ ] Optional Me → Network scope preset (auto default; contacts / wider)
+- [ ] Island / Bluetooth store-and-forward sketch (message_relay track; no hard dependency)
+
+## ns3 — Multi-hop circuit policy
+
+Pairs with stack [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). Spec: [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). ADR: [N024](DECISIONS.md#n024--immediate-relay-as-service-broker).
+
+- [x] ADR: R1 as service broker (A pays R1; R1 subcontracts R2 + B; bundled media + SLA)
+- [ ] Config: `circuit_relay.max_hops` (default 3; no hardcoded protocol max)
+- [ ] R1 upstream relay scorer (margin-aware; scope + N014 preference)
+- [ ] R1 retail quote to A (bundled circuit + media + latency tier); R1↔B wholesale quote
+- [ ] Consumer bridge score: `r1_reaches_target` incl. subcontract hints (Identify / probe cache)
+- [ ] Inter-relay settlement (R1 pays R2, B — HTTP preferred N022)
+- [ ] SoftMigrate brokered attach mode vs direct attach ([H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop)); broker quote scoped to **call-agreed B**
+- [x] Re-pick bounds: R1 = path only; B′ = coordinator SoftMigrate (V023)
+- [x] Quote renewal: auto-extend path-only (same B); re-accept when B′ or rate/ceiling changes
+- [ ] Per-hop admission unchanged; loop detection
+
+## nm — Mobile call-scoped listen (N025)
+
+**In progress.** Spec: [N025](DECISIONS.md#n025--mobile-call-scoped-listen-on-wi-fi-not-full-node). Call consumer: [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi).
+
+- [x] ADR + DESIGN (N025 / V027)
+- [x] Wi‑Fi + foreground-call gating; start/stop ephemeral `host->listen`
+- [x] Publish advertised LAN addrs via Identify during eligible session
+- [x] Optional in-call `media_relay` (N≥3) — contacts-only admission; off on cellular
+- [x] Integrate with call bring-up / teardown (CallSessionManager ↔ NodeRuntime)
+- [ ] Later: opt-in **Help on Wi‑Fi** toggle (mode 3); no full Node UI on mobile
+- [ ] Tests: two phones same LAN, PeerId-only contact, foreground call dial (manual)
+- [x] Docs: [PLATFORMS.md](../../docs/architecture/PLATFORMS.md), hop L4 consume notes
+
+## ns2 — LAN mDNS (contacts-only)
+
+Pairs with hop L4 PeerId-only reachability. Spec: [RELAY_SCOPE.md](RELAY_SCOPE.md) (`link` scope).
+
+- [x] `_pp-browser._tcp` mDNS announce when Node or mobile ephemeral listen active
+- [x] Browse → upsert `PeerAddressBook` / endpoints for **known contact PeerIds only** (N020 closed set)
+- [x] Wire `MessagingHub::TickLibp2p` + contact list refresh
+- [ ] Bridge score uses mDNS / same-subnet signals (consumer circuit path)
+- [ ] Manual QA: two devices same LAN, PeerId-only contact discovers dial addr

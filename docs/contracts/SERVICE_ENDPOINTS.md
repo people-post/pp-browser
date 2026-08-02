@@ -56,13 +56,22 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 
 Inbox is a **delivery queue**: poll advances a cursor; clients may `ack` through that cursor to delete consumed rows. `clear` deletes recipient rows older than a timestamp (recovery). Messenger also applies a 14-day TTL on `created_at`. Chat history remains local + stream/P2P sync — not the inbox.
 
+Poll response extras (unix ms, relay clock):
+
+- each inbound record may include `created_at` (when the relay stored the row)
+- poll body includes `server_time` (relay clock at response build; present on empty polls too)
+
+Call invite age uses `server_time - created_at` when both are present (caller create ≈ relay store).
+
 ## Directory and profile
 
 | HTTP | Purpose |
 |------|---------|
-| `GET /v1/search?q=` | Search relay users (`hits[]` with `signing_public_key_b64`, `kem_public_key_b64`, `relay_user_id`, `nickname`) |
-| `GET /v1/users/:relay_user_id` | Public lookup (`signing_public_key_b64`, `kem_public_key_b64`, nickname, expires_at) |
+| `GET /v1/search?q=` | Search relay users (`hits[]` with `signing_public_key_b64`, `kem_public_key_b64`, `relay_user_id`, `nickname`, optional `peer_id` in `ids[]`, optional `multiaddrs`) |
+| `GET /v1/users/:relay_user_id` | Public lookup (`signing_public_key_b64`, `kem_public_key_b64`, nickname, expires_at, optional `peer_id`, `multiaddrs`) |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
+| `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`) |
+| `POST /v1/register/finish` | Finish/renew registration (same optional reachability fields; unsigned advisory) |
 
 Peer protocol / app-version capability is **not** a directory concern. Peers discover mismatch via messaging / libp2p (soft-skip, protocol ids); the relay stays format-blind for that.
 

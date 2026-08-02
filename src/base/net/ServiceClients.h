@@ -5,6 +5,7 @@
 #include "base/messaging/ThreadTypes.h"
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,8 @@ namespace pbr {
 struct RelayPollResult {
   std::vector<RelayEnvelope> messages;
   std::string next_cursor;
+  /** Unix ms relay clock at poll response (absent on older servers). */
+  std::optional<int64_t> server_time_ms;
 };
 
 struct RelayDeleteResult {
@@ -67,12 +70,16 @@ public:
   virtual Roe<RegistrationStartResult> StartRegistration(const std::string& public_key_b64,
                                                          const std::string& nickname,
                                                          const std::string& signature_alg = "ed25519",
-                                                         const std::string& kem_public_key_b64 = "") = 0;
+                                                         const std::string& kem_public_key_b64 = "",
+                                                         const std::string& peer_id = "",
+                                                         const std::vector<std::string>& multiaddrs = {}) = 0;
   virtual Roe<RegistrationResult> FinishRegistration(const std::string& challenge,
                                                      const std::string& public_key_b64, const std::string& nickname,
                                                      const std::string& signature, int64_t timestamp,
                                                      const std::string& signature_alg = "ed25519",
-                                                     const std::string& kem_public_key_b64 = "") = 0;
+                                                     const std::string& kem_public_key_b64 = "",
+                                                     const std::string& peer_id = "",
+                                                     const std::vector<std::string>& multiaddrs = {}) = 0;
   virtual Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                                  int64_t timestamp, const std::string& relay_user_id) = 0;
 };

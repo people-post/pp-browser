@@ -8,6 +8,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
+#include "feature/messaging/CallLibp2pMediaBridge.h"
 #include "feature/messaging/CallP2pSignalingBridge.h"
 #include "feature/messaging/CallTopologyController.h"
 #include "feature/messaging/P2pMessagingService.h"
@@ -35,7 +36,14 @@ public:
                      IPskSessionStore& psk_store, CallMediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
+  /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */
+  void SetOnRingChangedMesh(RingChangedFn callback);
+  using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
+  void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
   void SetMediaRelayDeps(MediaRelayDeps deps);
+  void SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge);
+  /** Expose private CallP2pSignalingHost base for bridge construction (MSVC-safe). */
+  CallP2pSignalingHost& AsP2pSignalingHost() { return *this; }
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, CallMediaMode mode,
                              const std::vector<std::string>& invitee_identities);
@@ -66,7 +74,9 @@ public:
   void AbandonOrphanedCallsAfterRestart();
   bool MediaAttemptedThisProcess(const std::string& call_id) const;
 
-  Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity);
+  Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
+                                std::optional<int64_t> relay_created_at_ms = std::nullopt,
+                                std::optional<int64_t> relay_server_time_ms = std::nullopt);
 
   CallMediaEngine& Media();
 
@@ -101,6 +111,8 @@ private:
   bool P2pIsAwaitingSfuRecovery() const override;
   void P2pOnGroupIceFailed(const std::string& call_id) override;
   void P2pClearAwaitingSfuRecovery() override;
+  void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
+  void P2pRequestInboxSync() override;
 
   Roe<std::string> LocalRelayIdentity() const;
   Roe<void> SendCallDirectMessage(const std::string& peer_identity, CallControlType type,
@@ -109,6 +121,10 @@ private:
                                 const std::string& detail_json);
   Roe<void> FanOutToJoined(const std::string& call_id, CallControlType type, const std::string& detail_json,
                            const std::string& display, const std::string& skip_identity);
+  /** Fan-out to Joined and Ringing (and Invited) participants — used when ending so invitees clear. */
+  Roe<void> FanOutToJoinedAndRinging(const std::string& call_id, CallControlType type,
+                                     const std::string& detail_json, const std::string& display,
+                                     const std::string& skip_identity);
   Roe<void> MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity);
   Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms);
   Roe<CallRosterDetail> BuildRosterDetail(const std::string& call_id) const;
@@ -119,6 +135,7 @@ private:
                                uint32_t media_epoch, const std::string& media_key_id, const ByteVector& key_bytes);
   void StopMediaIfCall(const std::string& call_id);
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
+  void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -130,7 +147,10 @@ private:
   CallMediaEngine& media_;
   CallTopologyController topology_;
   CallP2pSignalingBridge p2p_bridge_;
+  CallLibp2pMediaBridge* libp2p_bridge_ = nullptr;
   RingChangedFn on_ring_changed_;
+  RingChangedFn on_ring_changed_mesh_;
+  PrefetchPeerReachFn prefetch_reach_;
   std::optional<std::string> last_media_error_;
 };
 

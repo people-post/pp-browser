@@ -5,6 +5,7 @@
 #include "base/crypto/FileCipher.h"
 #include "base/crypto/HybridKem.h"
 #include "base/data/AtomicFileWrite.h"
+#include "base/data/SchemaVersion.h"
 #include "base/error/AppError.h"
 #include "base/people/Ed25519Signer.h"
 #include "libp2p/integration/host/PeerIdUtil.h"
@@ -78,7 +79,8 @@ LocalIdentity IdentityFromJson(const nlohmann::json& root) {
 }
 
 nlohmann::json IdentityToJson(const LocalIdentity& identity) {
-  return {{"public_key_b64", identity.public_key_b64},
+  return {{"schema_version", IdentityStore::kSchemaVersion},
+          {"public_key_b64", identity.public_key_b64},
           {"private_key_b64", identity.private_key_b64},
           {"kem_public_key_b64", identity.kem_public_key_b64},
           {"kem_private_key_b64", identity.kem_private_key_b64},
@@ -183,8 +185,19 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   }
   const nlohmann::json root =
       nlohmann::json::parse(plaintext->begin(), plaintext->end(), nullptr, false);
-  if (root.is_discarded()) {
+  if (root.is_discarded() || !root.is_object()) {
     return Error("Failed to parse decrypted identity");
+  }
+
+  int version = 0;
+  if (root.contains("schema_version")) {
+    if (!root["schema_version"].is_number_integer()) {
+      return Error("Invalid schema_version in identity.enc");
+    }
+    version = root["schema_version"].get<int>();
+    if (auto checked = SchemaVersion::Validate(root, kSchemaVersion, "identity.enc"); !checked) {
+      return checked.error();
+    }
   }
 
   identity_ = IdentityFromJson(root);
@@ -201,6 +214,9 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     return kem.error();
   }
   loaded_ = true;
+  if (version < kSchemaVersion) {
+    dirty_ = true;
+  }
   return {};
 }
 

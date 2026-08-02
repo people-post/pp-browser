@@ -10,6 +10,9 @@ pp_browser_add_base_library(pp_base_messaging
     CallSessionLogic.cpp
     CallSessionStore.cpp
     CallTypes.cpp
+    SoftMigrateLogic.cpp
+    SfuAttachFanout.cpp
+    SfuAttachWaitLogic.cpp
     ChatPayloadValidator.cpp
     ConversationSummaryCodec.cpp
     DirectChatTarget.cpp

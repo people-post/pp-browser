@@ -116,6 +116,7 @@ private:
   Rml::String group_title_;
   Rml::String group_title_help_;
   Rml::String cta_label_;
+  Rml::String empty_hint_;
   bool cta_enabled_ = false;
   MessagingHub* messaging_ = nullptr;
   ProfileUnlockGate* unlock_gate_ = nullptr;

@@ -1,6 +1,8 @@
 pp_browser_add_feature_library(pp_feature_messaging
   SOURCES
     CallMediaKeyStore.cpp
+    CallLibp2pMediaBridge.cpp
+    CallLifecycle.cpp
     CallP2pSignalingBridge.cpp
     CallSessionManager.cpp
     CallTopologyController.cpp
@@ -15,6 +17,8 @@ pp_browser_add_feature_library(pp_feature_messaging
     Libp2pDirectChatService.cpp
     MessageRouter.cpp
     MessagingHub.cpp
+    MobileEphemeralListenGate.cpp
+    ContactReachability.cpp
     P2pMessagingService.cpp
     PeerDisplayResolver.cpp
     PskSessionCoordinator.cpp
@@ -27,6 +31,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_feature_ai
     pp_base_crypto
     pp_base_media
+    pp_libp2p_integration
     p2p
     nlohmann_json::nlohmann_json
     CURL::libcurl)

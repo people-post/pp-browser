@@ -31,6 +31,10 @@ endfunction()
 function(pp_browser_add_libp2p_integration)
   add_library(pp_libp2p_integration STATIC
     host/Libp2pHost.cpp
+    host/PeerAddressBook.cpp
+    host/CircuitBridgeTarget.cpp
+    host/IdentifyIntegrationService.cpp
+    host/AdvertisedAddrPublisher.cpp
     host/PeerSessionManager.cpp
     host/PeerIdUtil.cpp
     host/NodeRuntime.cpp
@@ -41,6 +45,9 @@ function(pp_browser_add_libp2p_integration)
     host/NatTraversal.cpp
     host/CircuitRelayService.cpp
     host/MediaRelayService.cpp
+    host/LanMdnsDiscovery.cpp
+    host/CallMediaDirectService.cpp
+    host/CallMediaFrameCrypto.cpp
   )
   target_include_directories(pp_libp2p_integration PUBLIC
     ${CMAKE_SOURCE_DIR}/src
@@ -48,6 +55,7 @@ function(pp_browser_add_libp2p_integration)
   target_link_libraries(pp_libp2p_integration PUBLIC
     pp_common
     p2p
+    p2p_identify
     p2p_peer_id
     p2p_keys_proto
     nlohmann_json::nlohmann_json)

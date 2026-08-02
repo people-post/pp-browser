@@ -7,17 +7,21 @@
 #include "base/people/ContactTypes.h"
 #include "base/platform/BrowserThread.h"
 #include "base/platform/ILocalNotifier.h"
+#include "base/platform/Platform.h"
 #include "base/platform/PlatformUserHints.h"
 #include "base/platform/ProductBranding.h"
 #include "base/ui/ShellTypes.h"
 #include "feature/messaging/MessagingHub.h"
+#include "feature/messaging/CallLifecycle.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/CallConflictCopy.h"
+#include "feature/ui/DataModelHost.h"
 #include "feature/ui/PeoplePickerController.h"
 #include "CallVideoTileRenderer.h"
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
 
+#include "common/Logger.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -111,6 +115,10 @@ std::string ComposeP2pStatusHint(bool missing_mic) {
   return hint;
 }
 
+std::string ComposeGroupCallStatusHint() {
+  return Tr("call.hint.group_media");
+}
+
 } // namespace
 
 void CallController::BindMessaging(MessagingHub& messaging) {
@@ -151,6 +159,9 @@ void CallController::BindToMessaging() {
     // Ingest may run on IO; shell/RmlUi updates must stay on UI.
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() { RefreshPendingRing(); });
   });
+  if (auto* life = Hub().Lifecycle()) {
+    life->SetOnChromeRefresh([this]() { RefreshPendingRing(); });
+  }
   bound_calls_ = calls;
   // Pick up post-restart abandon / pending ring after stack rebuild.
   RefreshPendingRing();
@@ -168,6 +179,14 @@ void CallController::Tick() {
       ring.pulse = !ring.pulse;
       last_pulse_toggle_ms_ = now;
       SyncShellState();
+    }
+    // Dogfood: prove SDL tick is alive while Accept hangs (no AcceptClicked log).
+    if (now - last_ring_heartbeat_ms_ >= 2000) {
+      last_ring_heartbeat_ms_ = now;
+      logging::getLogger("CallController").warning
+          << "ring tick alive call_id=" << ringing_call_id_
+          << " phase="
+          << (Hub().Lifecycle() ? CallPhaseName(Hub().Lifecycle()->Phase()) : "?");
     }
   }
   RefreshCallLevels();
@@ -206,10 +225,23 @@ void CallController::SyncShellState() {
   if (update == CallChromeUpdate::None) {
     return;
   }
+  // Match WebRTC-era call chrome: DirtyWindow only. SyncLayout remount on Accept/ring
+  // broke hit-testing on Samsung (Accept clicks never reached call_accept).
   ShellHost::Instance().DirtyWindow();
+  if (update == CallChromeUpdate::Remount) {
+    DataModelHost::Instance().DirtyAll("window");
+  }
 }
 
 void CallController::SyncRingtone() {
+  // Mobile: SDL playback teardown from a worker can stall the SDL thread during Accept.
+  // Skip ringtone until that path is safe; signaling/listen dogfood does not need it.
+  if (Platform::IsMobile()) {
+    if (ringtone_.IsPlaying()) {
+      ringtone_.Stop();
+    }
+    return;
+  }
   const bool should_ring = ShellHost::Instance().State().call_ring.active;
   if (should_ring && !ringtone_.IsPlaying()) {
     ringtone_.Start();
@@ -253,8 +285,15 @@ void CallController::RefreshPendingRing() {
     return;
   }
 
+  if (auto* life = Hub().Lifecycle(); life && !life->LastError().empty()) {
+    UserFeedback::Fail(life->LastError());
+    life->ClearLastError();
+  }
+
   if (auto media_err = calls->TakeLastMediaError(); media_err && !media_err->empty()) {
-    UserFeedback::Fail(*media_err);
+    // SoftMigrate / hop failures need a sticky banner — toast (even Long=6s) vanishes before
+    // users can read multi-hop diagnostics.
+    UserFeedback::NeedsSetup(*media_err);
   }
 
   calls->PollPendingSfuAttach();
@@ -262,81 +301,111 @@ void CallController::RefreshPendingRing() {
 
   auto top = calls->TopPendingInvite();
   if (top && top->has_value()) {
-    ringing_call_id_ = (*top)->call_id;
-    if (ring_started_ms_ == 0) {
-      ring_started_ms_ = util::NowUnixMs();
+    CallLifecycle* life = Hub().Lifecycle();
+    const bool accept_in_flight = life && life->ShouldSuppressRing((*top)->call_id);
+    auto active = calls->ActiveLocalCall();
+    const bool same_call_active =
+        active && active->has_value() && (*active)->call_id == (*top)->call_id;
+
+    // Accept in flight on IO — keep ring chrome visible (label can stay); only stop ringtone.
+    // Clearing here left a blank pre-call panel when AcceptInvite never ran (Samsung).
+    if (accept_in_flight && !same_call_active) {
+      ringing_call_id_ = (*top)->call_id;
+      SyncRingtone();
+      return;
     }
 
-    const std::string caller_label = [&]() {
-      std::string name = DisplayNameForIdentity((*top)->inviter_identity);
-      if (name.empty()) {
-        name = (*top)->inviter_identity;
-      }
-      return name;
-    }();
-
-    bool has_conflict = false;
-    bool same_peer = false;
-    std::string active_peer_label;
-    if (auto active = calls->ActiveLocalCall(); active && active->has_value() &&
-        (*active)->call_id != (*top)->call_id) {
-      has_conflict = true;
-      active_call_id_ = (*active)->call_id;
-      if (auto peer = calls->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
-        active_peer_label = DisplayNameForIdentity(**peer);
-        if (active_peer_label.empty()) {
-          active_peer_label = **peer;
-        }
-        same_peer = (**peer == (*top)->inviter_identity);
-      }
+    // Same-call pending (duplicate invite / inbox race): keep in-call chrome; do not flip to ring.
+    if (same_call_active) {
+      // Fall through to in-call rendering below.
     } else {
-      active_call_id_.clear();
+      ringing_call_id_ = (*top)->call_id;
+      last_ring_call_id_ = ringing_call_id_;
+      if (life) {
+        life->NoteRingCallId(ringing_call_id_);
+        if (life->Phase() == CallPhase::Idle) {
+          life->Apply(CallLifecycleEvent::InviteSeen, ringing_call_id_);
+        }
+      }
+      if (ring_started_ms_ == 0) {
+        ring_started_ms_ = util::NowUnixMs();
+      }
+
+      const std::string caller_label = [&]() {
+        std::string name = DisplayNameForIdentity((*top)->inviter_identity);
+        if (name.empty()) {
+          name = (*top)->inviter_identity;
+        }
+        return name;
+      }();
+
+      bool has_conflict = false;
+      bool same_peer = false;
+      std::string active_peer_label;
+      if (active && active->has_value() && (*active)->call_id != (*top)->call_id) {
+        has_conflict = true;
+        active_call_id_ = (*active)->call_id;
+        if (auto peer = calls->PeerIdentityForCall((*active)->call_id); peer && peer->has_value()) {
+          active_peer_label = DisplayNameForIdentity(**peer);
+          if (active_peer_label.empty()) {
+            active_peer_label = **peer;
+          }
+          same_peer = (**peer == (*top)->inviter_identity);
+        }
+      }
+      // Do not clear active_call_id_ here — only Leave / no-active paths should.
+
+      const CallConflictCopy copy =
+          MakeCallConflictCopy(has_conflict, same_peer, caller_label, active_peer_label);
+
+      // Hide in-call bar while ringing a *different* call; keep active_call_id_ when conflicting.
+      HideInCallChrome();
+
+      auto& ring = ShellHost::Instance().State().call_ring;
+      ring.active = true;
+      ring.conflict = has_conflict;
+      ring.call_id = (*top)->call_id;
+      ring.caller_label = caller_label;
+      ring.media_label = (*top)->media_mode == CallMediaMode::Video
+                             ? Tr("call.ring.incoming_video").c_str()
+                             : Tr("call.ring.incoming_voice").c_str();
+      ring.eyebrow = copy.eyebrow;
+      ring.conflict_hint = copy.hint;
+      ring.accept_label = copy.accept_label;
+      ring.decline_label = copy.decline_label;
+      if (pending_call_wake_notify_) {
+        pending_call_wake_notify_ = false;
+        const std::string body =
+            caller_label.empty()
+                ? Tr("call.notify.body_unknown")
+                : Tr("call.notify.body_named", {{"name", caller_label}});
+        ILocalNotifier::Instance().NotifyIncoming(Tr("call.notify.title"), body, "");
+      }
+      SyncShellState();
+      SyncRingtone();
+      return;
     }
-
-    const CallConflictCopy copy =
-        MakeCallConflictCopy(has_conflict, same_peer, caller_label, active_peer_label);
-
-    // Hide in-call bar while ringing; keep active_call_id_ when conflicting.
-    HideInCallChrome();
-
-    auto& ring = ShellHost::Instance().State().call_ring;
-    ring.active = true;
-    ring.conflict = has_conflict;
-    ring.call_id = (*top)->call_id;
-    ring.caller_label = caller_label;
-    ring.media_label = (*top)->media_mode == CallMediaMode::Video
-                           ? Tr("call.ring.incoming_video").c_str()
-                           : Tr("call.ring.incoming_voice").c_str();
-    ring.eyebrow = copy.eyebrow;
-    ring.conflict_hint = copy.hint;
-    ring.accept_label = copy.accept_label;
-    ring.decline_label = copy.decline_label;
-    if (pending_call_wake_notify_) {
-      pending_call_wake_notify_ = false;
-      const std::string body =
-          caller_label.empty()
-              ? Tr("call.notify.body_unknown")
-              : Tr("call.notify.body_named", {{"name", caller_label}});
-      ILocalNotifier::Instance().NotifyIncoming(Tr("call.notify.title"), body, "");
-    }
-    SyncShellState();
-    SyncRingtone();
-    return;
   }
 
   if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
-    active_call_id_ = (*active)->call_id;
-    ClearRing();
-
-    // Disk session survived force-quit but media did not — drop stuck "Calling…" chrome.
-    if ((*active)->state == CallSessionState::Active && !calls->Media().IsActive() &&
-        !calls->MediaAttemptedThisProcess(active_call_id_)) {
-      (void)calls->LeaveCall(active_call_id_);
+    CallLifecycle* life = Hub().Lifecycle();
+    // LeaveClicked sets Idle before LeaveCall IO finishes — do not resurrect the panel from the
+    // still-Active disk row (Samsung: End looked hung / "couldn't connect" stuck).
+    if (life && life->Phase() == CallPhase::Idle) {
+      if ((*active)->state == CallSessionState::Active && !calls->Media().IsActive() &&
+          !calls->MediaAttemptedThisProcess((*active)->call_id) && !calls->IsAwaitingSfuRecovery()) {
+        // True orphan after force-quit / process restart.
+        (void)calls->LeaveCall((*active)->call_id);
+      }
+      active_call_id_.clear();
       ClearInCall();
       ClearRing();
       SyncShellState();
       return;
     }
+
+    active_call_id_ = (*active)->call_id;
+    ClearRing();
 
     // Peer ICE failed: keep chrome for Retry/End on 1:1. Group SFU recovery keeps chrome too.
     // Do not auto-LeaveCall on `failed` — that erased the session before the user could retry.
@@ -402,11 +471,16 @@ void CallController::RefreshPendingRing() {
     in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
 
     const bool p2p_failed = calls->IsP2pConnectFailed();
+    const bool group_call_context = (*active)->origin_group_id.has_value() || joined_count > 2 ||
+                                    calls->IsAwaitingSfuRecovery() || calls->Media().IsSfuMode();
     in_call.show_retry = p2p_failed && !calls->IsAwaitingSfuRecovery() && !calls->Media().IsSfuMode();
-    in_call.status_hint =
-        p2p_failed ? ComposeP2pStatusHint(calls->P2pConnectMissingMic()).c_str() : Rml::String{};
     if (p2p_failed) {
+      in_call.status_hint =
+          group_call_context ? ComposeGroupCallStatusHint().c_str()
+                             : ComposeP2pStatusHint(calls->P2pConnectMissingMic()).c_str();
       in_call.show_invite = false;
+    } else {
+      in_call.status_hint = {};
     }
 
     if (calls->Media().IsConnected()) {
@@ -450,6 +524,9 @@ void CallController::RefreshPendingRing() {
 
   ClearInCall();
   ClearRing();
+  if (auto* life = Hub().Lifecycle(); life && life->Phase() == CallPhase::Ringing) {
+    life->Apply(CallLifecycleEvent::InviteCleared, {});
+  }
   SyncShellState();
 }
 
@@ -499,6 +576,9 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     return false;
   }
   active_call_id_ = started->call_id;
+  if (auto* life = Hub().Lifecycle()) {
+    life->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
+  }
   RefreshPendingRing();
   return true;
 }
@@ -508,6 +588,13 @@ void CallController::OpenGroupCallPicker(const std::string& thread_id, const boo
 }
 
 void CallController::OpenMidCallInvitePicker() {
+  BindToMessaging();
+  auto* calls = Hub().Calls();
+  if (calls && active_call_id_.empty()) {
+    if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
+      active_call_id_ = (*active)->call_id;
+    }
+  }
   if (active_call_id_.empty()) {
     UserFeedback::Fail(Tr("call.error.no_active"));
     return;
@@ -518,6 +605,11 @@ void CallController::OpenMidCallInvitePicker() {
 void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities) {
   BindToMessaging();
   auto* calls = Hub().Calls();
+  if (calls && active_call_id_.empty()) {
+    if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
+      active_call_id_ = (*active)->call_id;
+    }
+  }
   if (!calls || active_call_id_.empty()) {
     UserFeedback::Fail(Tr("call.error.no_active"));
     return;
@@ -549,57 +641,88 @@ bool CallController::StartVideoCall(const std::string& thread_id) {
 
 void CallController::AcceptIncoming() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
-  if (!calls || ringing_call_id_.empty()) {
+  auto* life = Hub().Lifecycle();
+  if (!life) {
     return;
   }
+  std::string call_id = ringing_call_id_;
+  if (call_id.empty()) {
+    call_id = ShellHost::Instance().State().call_ring.call_id;
+  }
+  if (call_id.empty()) {
+    call_id = last_ring_call_id_;
+  }
+  if (call_id.empty()) {
+    call_id = life->LastRingCallId();
+  }
+  if (call_id.empty()) {
+    logging::getLogger("CallController").warning << "AcceptIncoming ignored (no call_id)";
+    return;
+  }
+  // Stop ringtone off the click path; keep ring chrome until AcceptSucceeded/Failed so a
+  // dropped AcceptInvite does not leave a blank pre-call panel (Samsung dogfood).
   ringtone_.Stop();
-  // End conflicting outbound/in-call first; AcceptInvite also enforces this.
-  if (!active_call_id_.empty() && active_call_id_ != ringing_call_id_) {
-    if (auto left = calls->LeaveCall(active_call_id_); !left) {
-      UserFeedback::Fail(left.error().message);
-      RefreshPendingRing();
-      return;
-    }
-    active_call_id_.clear();
-  }
-  // AcceptInvite only does signaling; media starts on a later UI task so this
-  // Rml callback can return and dismiss the ring dialog immediately.
-  if (auto accepted = calls->AcceptInvite(ringing_call_id_); !accepted) {
-    UserFeedback::Fail(accepted.error().message);
-  }
-  RefreshPendingRing();
+  logging::getLogger("CallController").warning
+      << "AcceptIncoming → lifecycle AcceptClicked call_id=" << call_id;
+  life->Apply(CallLifecycleEvent::AcceptClicked, call_id);
 }
 
 void CallController::DeclineIncoming() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
-  if (!calls || ringing_call_id_.empty()) {
+  auto* life = Hub().Lifecycle();
+  std::string call_id = ringing_call_id_;
+  if (call_id.empty() && life) {
+    call_id = life->LastRingCallId();
+  }
+  if (call_id.empty()) {
     return;
   }
   ringtone_.Stop();
-  (void)calls->DeclineInvite(ringing_call_id_);
-  RefreshPendingRing();
+  ringing_call_id_.clear();
+  ClearRing();
+  SyncShellState();
+  if (life) {
+    life->Apply(CallLifecycleEvent::DeclineClicked, call_id);
+  }
 }
 
 void CallController::LeaveActive() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
-  if (!calls || active_call_id_.empty()) {
+  auto* life = Hub().Lifecycle();
+  std::string call_id = active_call_id_;
+  if (call_id.empty() && life) {
+    call_id = life->ActiveCallId();
+  }
+  if (call_id.empty()) {
+    // Stale End button after Idle — force-clear chrome so Samsung does not look hung.
+    ClearInCall();
+    ClearRing();
+    SyncShellState();
     return;
   }
-  (void)calls->LeaveCall(active_call_id_);
-  RefreshPendingRing();
+  active_call_id_.clear();
+  ClearInCall();
+  ClearRing();
+  SyncShellState();
+  if (life) {
+    life->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  }
 }
 
 void CallController::RetryConnect() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
-  if (!calls || active_call_id_.empty()) {
+  auto* life = Hub().Lifecycle();
+  std::string call_id = active_call_id_;
+  if (call_id.empty() && life) {
+    call_id = life->ActiveCallId();
+  }
+  if (call_id.empty() || !life) {
     return;
   }
-  if (auto retried = calls->RetryP2pMedia(active_call_id_); !retried) {
-    UserFeedback::Fail(retried.error().message);
+  life->Apply(CallLifecycleEvent::RetryClicked, call_id);
+  if (!life->LastError().empty()) {
+    UserFeedback::Fail(life->LastError());
+    life->ClearLastError();
   }
   RefreshPendingRing();
 }

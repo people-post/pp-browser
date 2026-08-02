@@ -1,14 +1,15 @@
 # P2P mesh — current state
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-08-01
 
 ## Landed
 
 | Area | State |
 |------|-------|
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
-| ADRs | N001–N021 in [DECISIONS.md](DECISIONS.md) |
+| ADRs | N001–**N025** in [DECISIONS.md](DECISIONS.md) (N025 = mobile call-scoped listen — planned) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
+| Networking doctrine | [NETWORKING.md](../../docs/architecture/NETWORKING.md) — HTTP + libp2p; calls consume fabric (V026) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
 | **np** | Headless `pp-node` + shared `NodeRuntime` + dial-back protocol (see below) |
 | **nr** | Reachability status + Connection card + guided help + `pp-node --status` (see below) |
@@ -64,7 +65,7 @@
 
 | Area | State |
 |------|-------|
-| Protocol | `/pp-browser/circuit-relay/1.0.0` stream bridge (integration layer, not libp2p v2) |
+| Protocol | `/pp-browser/circuit-relay/1.0.0` stream bridge — **single-hop today**; multi-hop v2 planned ([MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)) |
 | Config | `libp2p.capabilities.circuit_relay` + JSON round-trip |
 | UI | **Circuit relay** checkbox under Node (hot refresh via `RefreshMeshCapabilities`) |
 | Seed | `packaging/pp-node/config.json.example` enables `circuit_relay: true` |
@@ -90,7 +91,7 @@
 | Session | quote → accept → attach; subscribe `(stream_id, channel_id)`; ↑/↓ budget defaults; volunteer rate 0 |
 | Auth stub | `auth` must equal `call_id` (a4 will supply roster proof) |
 | Config | `capabilities.media_relay` **default on**; `pricing.media_relay`; `media_relay_budget` |
-| Pick helpers | `RankMediaHops` — contacts ∪ seed closed set (N020); call coordinator wires a4 |
+| Pick helpers | `RankMediaHopsEscalating` (N023 ns1) — contacts ∪ seed; call coordinator wires a4 |
 | Hosts | `pp-node` + desktop Node checkbox default on |
 | Tests | frame codec; hop policy; two-host quote/attach/fan-out |
 
@@ -102,14 +103,23 @@
 | Org seed = GUI `--headless` | **`pp-node`** (N011) |
 | “Behind firewall” as hard fact | Reachability status + soft help (N012) |
 | Manual port-forward only | Prefer **IPv6 + UPnP**, then manual (N013) |
-| Pick random public relay first | **Contacts first**, then seed, then public (N014) |
-| Hardcoded N014 stages for media | **N020** / **V023** scorer over closed set |
+| Pick random public relay first | **N023** scope escalate + **N020** / **V023** scorer (contacts∪seed short term) |
+| Hardcoded N014 stages for media | Outer scope bands + inner N020 scorer — not fixed stage list |
 | Implement DHT right after n1 | Follow **N015** order (circuit/reachability before DHT) |
 | Always bind 18517 or die silently | Desktop: fallback range + persist (N016); `pp-node`: fail loud |
 | Link `MessagingHub` into `pp-node` | Thin `NodeRuntime` + identity/crypto only |
 | Silent port hop on org seed | Fail loud unless `--listen-fallback` |
 | libp2p circuit-relay v2 in fork | Custom pp-browser circuit-relay protocol (n3) |
 | Relay decodes Opus/H264 | Blind forward + `channel_type` only (N021) |
+
+## ns in code (N023 — partial)
+
+| Area | State |
+|------|-------|
+| `RelayScope` + escalate ranker | `RelayScope.h`, `RankMediaHopsEscalating` in `MeshHopPolicy` |
+| Provider cap from reachability | `ApplyMeshAdmissionPolicies` → `serve_scope_mask` |
+| Bridge score / LAN mDNS | mDNS browse + contacts-only book upsert landed (ns2); bridge score still open — [ns3](PHASES.md#ns3--multi-hop-circuit-policy) / [N024](DECISIONS.md#n024--immediate-relay-as-service-broker) |
+| Household contact tag | Deferred |
 
 ## Still not done
 
@@ -120,6 +130,7 @@
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
 | DHT | **n2** (later per N015) |
+| Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code; LAN manual QA pending |
 
 ## Next
 
@@ -128,6 +139,6 @@
 
 ## Follow-ups
 
-See [PHASES.md](PHASES.md) and [DESIGN § Relay path preference](DESIGN.md#relay-path-preference-n014--n020).
+See [PHASES.md](PHASES.md) and [DESIGN § Relay selection and scope](DESIGN.md#relay-selection-and-scope).
 
 **Calls:** [p2p-av-calls](../p2p-av-calls/) **a4** — V020–V024. Shared adaptive policy (1:1 P2P + SFU); N021 framing on hop only.

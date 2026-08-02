@@ -174,7 +174,13 @@ namespace libp2p::basic {
 
     auto &f = fragments_.front();
 
-    assert(f.size() > first_byte_offset_);
+    // Soft-fail instead of assert/abort: off-strand stream reads can leave
+    // first_byte_offset_ inconsistent (moto call-media dogfood SIGABRT).
+    if (f.size() <= first_byte_offset_) {
+      first_byte_offset_ = 0;
+      fragments_.pop_front();
+      return 0;
+    }
 
     auto fragment_size = f.size() - first_byte_offset_;
     if (n > fragment_size) {

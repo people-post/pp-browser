@@ -7,6 +7,7 @@
 #include "base/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/people/MeshHopPolicy.h"
 #include "base/messaging/ChatPayloadCodec.h"
 #include "base/messaging/E2eIntegrityUtil.h"
 #include "base/messaging/E2eRelayPayloadCodec.h"
@@ -23,6 +24,7 @@
 #include "base/net/RelayInboxCursor.h"
 #include "base/platform/AppLifecycle.h"
 #include "base/platform/BrowserThread.h"
+#include "common/Logger.h"
 
 #include <algorithm>
 #include <atomic>
@@ -32,6 +34,7 @@
 #include <mutex>
 #include <optional>
 #include <sstream>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -110,6 +113,7 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
   relay_ = relay;
   relay_cursor_.clear();
   poll_pending_ = false;
+  poll_again_ = false;
   if (auto identity = identity_.Get()) {
     LoadPersistedRelayCursor(identity->relay_user_id);
   }
@@ -172,6 +176,19 @@ void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact)
   }
   for (const std::string& ma : contact.multiaddrs) {
     RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
+  }
+  if (peer_sessions_ == nullptr) {
+    return;
+  }
+  const std::string peer_id = PeerIdFromContact(contact);
+  if (peer_id.empty()) {
+    return;
+  }
+  if (auto ma = peer_sessions_->PreferredPeerMultiaddr(peer_id)) {
+    RegisterPeerDirectEndpoint(peer_id, *ma);
+    if (target.peer_identity_value != peer_id) {
+      RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
+    }
   }
 }
 
@@ -354,6 +371,10 @@ ThreadPeerLinkView P2pMessagingService::GetThreadPeerLink(const std::string& thr
       view.status_label = "Can't connect";
       view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
       view.show_banner = true;
+    } else if (peer_sessions_->IsDialable(peer)) {
+      view.status_label = "Direct";
+      view.has_direct_endpoint = true;
+      view.phase = PeerLinkPhase::Idle;
     } else {
       view.status_label = "Offline";
       view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
@@ -946,34 +967,46 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     RegisterMockPeerKeyForReply((*thread)->peer_identity_value);
   }
 
-  BrowserThread::PostTask(
-      BrowserThreadId::IO, [this, thread_id, envelope, message_id = message.id, peer_relay_id = *peer_relay_id]() mutable {
-        bool tried_direct = false;
-        if (direct_chat_ && direct_chat_->IsPeerReachable(peer_relay_id)) {
-          tried_direct = true;
-          if (peer_sessions_) {
-            peer_sessions_->MarkWarm(peer_relay_id);
-          }
-          const auto direct = direct_chat_->SendEnvelope(peer_relay_id, envelope);
-          if (direct) {
-            ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Direct);
-            return;
-          }
-        }
-        if (!relay_) {
-          ApplySendResult(thread_id, message_id, false,
-                          tried_direct ? "libp2p dial failed" : "Relay client not configured");
-          return;
-        }
-        const auto result = relay_->Send(envelope);
-        if (!result) {
-          EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .thread_id = thread_id,
-                                        .attempt_count = 1});
-          ApplySendResult(thread_id, message_id, false, result.error().message);
-          return;
-        }
-        ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay, tried_direct);
-      });
+  auto send_work = [this, thread_id, envelope, message_id = message.id, peer_relay_id = *peer_relay_id,
+                    prefer_relay = options.prefer_relay]() mutable {
+    bool tried_direct = false;
+    if (!prefer_relay && direct_chat_ && direct_chat_->IsPeerReachable(peer_relay_id)) {
+      tried_direct = true;
+      if (peer_sessions_) {
+        peer_sessions_->MarkWarm(peer_relay_id);
+      }
+      const auto direct = direct_chat_->SendEnvelope(peer_relay_id, envelope);
+      if (direct) {
+        ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Direct);
+        return;
+      }
+    }
+    if (!relay_) {
+      ApplySendResult(thread_id, message_id, false,
+                      tried_direct ? "libp2p dial failed" : "Relay client not configured");
+      return;
+    }
+    const auto result = relay_->Send(envelope);
+    if (!result) {
+      log().warning << "Relay Send failed message_id=" << message_id
+                    << " peer=" << peer_relay_id << " err=" << result.error().message;
+      EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .thread_id = thread_id,
+                                    .attempt_count = 1});
+      ApplySendResult(thread_id, message_id, false, result.error().message);
+      return;
+    }
+    if (prefer_relay) {
+      log().warning << "Relay Send ok (call-control) message_id=" << message_id
+                    << " peer=" << peer_relay_id;
+    }
+    ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay, tried_direct);
+  };
+  if (options.prefer_relay) {
+    // Call-control (MediaKey/Accept) must not sit behind PollInbox on Browser IO.
+    std::thread(std::move(send_work)).detach();
+  } else {
+    BrowserThread::PostTask(BrowserThreadId::IO, std::move(send_work));
+  }
 
   // Always hop to UI — SendUserMessage runs on IO during membership fan-out (PublishMemberJoined).
   if (on_messages_changed_) {
@@ -1230,10 +1263,13 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
   RetryFailedOutbound();
 
   last_relay_poll_ms_ = util::NowUnixMs();
+  // Always mark a poll request. If HTTP is already in flight (Accept Sync before MediaKey
+  // lands), coalesced callers used to no-op and drop — tablet then never saw CallMediaKey.
+  poll_again_.store(true);
 
-  // Take poll_pending_ only on the IO thread after the task is queued. Setting it on the UI
-  // thread before PostTask left it stuck forever when IO was paused (PostTask drops work).
-  BrowserThread::PostTask(BrowserThreadId::IO, [this]() {
+  // HTTP PollInbox must NOT run on Browser IO — a 30s curl wait starved AcceptInvite / N025
+  // Wire / MediaKey ingest on Samsung (PostAcceptInvite queued, never entered).
+  std::thread([this]() {
     bool expected = false;
     if (!poll_pending_.compare_exchange_strong(expected, true)) {
       return;
@@ -1243,98 +1279,127 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
       ~PollGuard() { pending = false; }
     } guard{poll_pending_};
 
-    if (!relay_) {
-      return;
-    }
-    auto identity = identity_.Get();
-    if (!identity) {
-      return;
-    }
-    if (relay_cursor_.empty()) {
-      LoadPersistedRelayCursor(identity->relay_user_id);
-    }
-    auto poll = relay_->PollInbox(identity->relay_user_id, relay_cursor_);
-    if (!poll) {
-      return;
-    }
-    // Never wipe progress on an empty next_cursor (drained/empty poll pages).
-    if (!poll->next_cursor.empty()) {
-      relay_cursor_ = poll->next_cursor;
-      PersistRelayCursor(identity->relay_user_id);
-    }
-    if (poll->messages.size() > kMaxPollBatchMessages) {
-      return;
-    }
+    while (poll_again_.exchange(false)) {
+      if (!relay_) {
+        return;
+      }
+      auto identity = identity_.Get();
+      if (!identity) {
+        return;
+      }
+      std::string cursor = relay_cursor_;
+      if (cursor.empty()) {
+        LoadPersistedRelayCursor(identity->relay_user_id);
+        cursor = relay_cursor_;
+      }
+      auto poll = relay_->PollInbox(identity->relay_user_id, cursor);
+      if (!poll) {
+        log().warning << "PollInbox failed: " << poll.error().message;
+        continue;
+      }
+      std::string next_cursor = poll->next_cursor;
+      if (poll->messages.size() > kMaxPollBatchMessages) {
+        log().warning << "PollInbox batch too large n=" << poll->messages.size() << " — skip advance";
+        continue;
+      }
+      // Advance cursor on the poll worker before re-poll so a follow-up HTTP does not
+      // re-fetch the same batch while ingest is still queued on Browser IO.
+      if (!next_cursor.empty()) {
+        relay_cursor_ = next_cursor;
+        PersistRelayCursor(identity->relay_user_id);
+      }
+      auto messages = std::move(poll->messages);
+      const std::string local_relay_id = identity->relay_user_id;
+      if (!messages.empty()) {
+        log().warning << "PollInbox ok n=" << messages.size() << " cursor_advanced="
+                      << (next_cursor.empty() ? 0 : 1);
+      }
 
-    bool changed = false;
-    struct UnreadNotice {
-      std::string title;
-      std::string body;
-      std::string thread_id;
-    };
-    std::vector<UnreadNotice> background_notices;
-    const std::string local_relay_id = identity->relay_user_id;
-    for (const RelayEnvelope& envelope : poll->messages) {
-      const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_relay_id);
-      MaybePublishMemberJoinedAfterIngest(groups_, outcome);
-      MaybeSurfaceReceiveFailure(outcome);
-      if (outcome.decision == IngestDecision::AcceptGap) {
-        const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
-        auto thread = store_.FindDirectThread(inbound_target);
-        if (thread && *thread) {
-          MaybeRepairGap((*thread)->id, envelope);
-        }
-      }
-      if (!outcome.persisted) {
-        continue;
-      }
-      changed = true;
-      if (outcome.thread_id.empty()) {
-        continue;
-      }
-      const std::string& resolved_thread_id = outcome.thread_id;
-      std::optional<std::string> preview;
-      if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
-        preview = decoded->text;
-      }
-      inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
-      if (!AppLifecycle::IsUserAttentive() && inbox_.ActiveThreadId() != resolved_thread_id) {
-        std::string notice_title = "New message";
-        if (auto thread = store_.GetThread(resolved_thread_id)) {
-          if (*thread) {
-            notice_title = inbox_.ResolveThreadLabel(**thread).title;
-            if (notice_title.empty()) {
-              notice_title = "New message";
+      // Front of IO so ingest is not stuck behind other long work; HTTP already finished.
+      BrowserThread::PostTaskFront(BrowserThreadId::IO, [this, local_relay_id,
+                                                         messages = std::move(messages)]() mutable {
+        bool changed = false;
+        struct UnreadNotice {
+          std::string title;
+          std::string body;
+          std::string thread_id;
+        };
+        std::vector<UnreadNotice> background_notices;
+        for (const RelayEnvelope& envelope : messages) {
+          const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_relay_id);
+          MaybePublishMemberJoinedAfterIngest(groups_, outcome);
+          MaybeSurfaceReceiveFailure(outcome);
+          if (outcome.decision == IngestDecision::AcceptGap) {
+            const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
+            auto thread = store_.FindDirectThread(inbound_target);
+            if (thread && *thread) {
+              MaybeRepairGap((*thread)->id, envelope);
             }
           }
+          if (!outcome.persisted) {
+            continue;
+          }
+          changed = true;
+          if (outcome.thread_id.empty()) {
+            continue;
+          }
+          const std::string& resolved_thread_id = outcome.thread_id;
+          std::optional<std::string> preview;
+          if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
+            preview = decoded->text;
+          }
+          inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
+          if (!AppLifecycle::IsUserAttentive() && inbox_.ActiveThreadId() != resolved_thread_id) {
+            std::string notice_title = "New message";
+            if (auto thread = store_.GetThread(resolved_thread_id)) {
+              if (*thread) {
+                notice_title = inbox_.ResolveThreadLabel(**thread).title;
+                if (notice_title.empty()) {
+                  notice_title = "New message";
+                }
+              }
+            }
+            background_notices.push_back(UnreadNotice{
+                .title = std::move(notice_title),
+                .body = preview && !preview->empty() ? *preview : "You have a new message",
+                .thread_id = resolved_thread_id,
+            });
+          }
         }
-        background_notices.push_back(UnreadNotice{
-            .title = std::move(notice_title),
-            .body = preview && !preview->empty() ? *preview : "You have a new message",
-            .thread_id = resolved_thread_id,
-        });
-      }
-    }
 
-    // Auto-ack consumed watermark so another device / restart does not replay rejects.
-    if (!relay_cursor_.empty()) {
-      auto ack = relay_->AckInbox(local_relay_id, relay_cursor_);
-      if (!ack) {
-        log().warning << "Relay inbox ack failed: " << ack.error().message;
-      }
-    }
+        if (!relay_cursor_.empty() && relay_) {
+          // Ack off Browser IO — another HTTP round-trip must not stall the queue.
+          const std::string ack_cursor = relay_cursor_;
+          const std::string ack_user = local_relay_id;
+          IRelayClient* relay = relay_;
+          std::thread([relay, ack_user, ack_cursor]() {
+            if (!relay) {
+              return;
+            }
+            auto ack = relay->AckInbox(ack_user, ack_cursor);
+            if (!ack) {
+              logging::getLogger("P2pMessagingService").warning
+                  << "Relay inbox ack failed: " << ack.error().message;
+            }
+          }).detach();
+        }
 
-    if (changed && on_messages_changed_) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
-    }
-    if (!background_notices.empty() && on_background_unread_) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, notices = std::move(background_notices)]() mutable {
-        for (auto& notice : notices) {
-          on_background_unread_(std::move(notice.title), std::move(notice.body), std::move(notice.thread_id));
+        if (changed && on_messages_changed_) {
+          BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+        }
+        if (!background_notices.empty() && on_background_unread_) {
+          BrowserThread::PostTask(BrowserThreadId::UI,
+                                  [this, notices = std::move(background_notices)]() mutable {
+                                    for (auto& notice : notices) {
+                                      on_background_unread_(std::move(notice.title),
+                                                            std::move(notice.body),
+                                                            std::move(notice.thread_id));
+                                    }
+                                  });
         }
       });
     }
-  });
+  }).detach();
 }
 
 void P2pMessagingService::SetOnMessagesChanged(std::function<void()> callback) {

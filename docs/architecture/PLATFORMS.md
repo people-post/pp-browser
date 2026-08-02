@@ -122,7 +122,7 @@ Build and signing placeholders: [IOS_BUILD.md](../ops/IOS_BUILD.md). Scripts: [`
 
 ## libp2p background
 
-Desktop may run as a mesh **Node** (listen preferred on TCP **18517**, busy-port fallback per [p2p-mesh N016](../../projects/p2p-mesh/DECISIONS.md)) or **Client** (`node_enabled` off). Mobile is always Client — outbound dials only, no listen UI. See [p2p-mesh](../../projects/p2p-mesh/) and [CONFIGURATION.md](../ops/CONFIGURATION.md).
+Desktop may run as a mesh **Node** (listen preferred on TCP **18517**, busy-port fallback per [p2p-mesh N016](../../projects/p2p-mesh/DECISIONS.md)) or **Client** (`node_enabled` off). Mobile defaults to **Client** (no always-on listen). During a **foreground call on Wi‑Fi**, ephemeral listen may run per [N025](../../projects/p2p-mesh/DECISIONS.md#n025--mobile-call-scoped-listen-on-wi-fi-not-full-node) / [V027](../../projects/p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi) — not full Node. See [p2p-mesh](../../projects/p2p-mesh/) and [CONFIGURATION.md](../ops/CONFIGURATION.md).
 
 On `AppLifecycle::OnWillEnterBackground`, messaging suspends cold peer connections (`PeerSessionManager::SuspendColdPeers`) while keeping the warm (active-thread) set. Foreground resume may re-warm the open thread.
 

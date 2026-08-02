@@ -13,6 +13,9 @@ namespace pbr {
 
 class ContactsStore : public Module {
 public:
+  /** Nested local/remote contact rows (+ empty overrides). Unversioned files migrate on load. */
+  static constexpr int kSchemaVersion = 1;
+
   explicit ContactsStore(std::string data_dir);
 
   Roe<std::vector<Contact>> List() const;
@@ -24,6 +27,8 @@ public:
   Roe<bool> Remove(const std::string& contact_id);
   Roe<std::vector<Contact>> SearchLocal(const std::string& query) const;
   Roe<Contact> AddFromDirectoryHit(const DirectoryHit& hit);
+  /** Refresh remote snapshot from a directory hit; preserves local annotations. */
+  Roe<Contact> ApplyRemoteSnapshot(const std::string& contact_id, const DirectoryHit& hit, int64_t fetched_at_ms);
   Roe<Contact> AddEmpty();
   void Flush();
 

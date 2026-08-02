@@ -1,10 +1,12 @@
 # P2P mesh — decisions
 
-## N001 — Desktop node default / mobile always client
+## N001 — Desktop node default / mobile default client
 
 **Date:** 2026-07-26  
-**Decision:** Exactly two **roles**: **client** and **node**. Desktop effective role is **node** when `node_enabled` is true (default). Mobile is always **client**; `node_enabled` is ignored on mobile.  
-**Rationale:** Desktops can host infrastructure; mobiles must stay outbound-only for battery and OS limits.
+**Updated:** 2026-08-01 (mobile **default** stays Client; scoped listen — **N025**)  
+**Decision:** Exactly two **roles**: **client** and **node**. Desktop effective role is **node** when `node_enabled` is true (default). Mobile **`node_enabled` is ignored**; effective role is **Client by default** (no always-on listen, no Me → Network Node UI).  
+**Exception (planned):** **Call-scoped / Wi‑Fi-scoped listen** on mobile — **N025** — not a third role; ephemeral listen while eligible, not full Node.  
+**Rationale:** Desktops can host infrastructure; mobiles default outbound-only for battery and OS limits. LAN direct dial and in-call hops need a narrow listen path without turning every phone into an always-on mesh node.
 
 ## N002 — Seed multiaddr IP + 443 + PeerId (no DNS)
 
@@ -149,7 +151,7 @@
 | **Blind** | Relay **does not** hold call media keys, **does not** decode Opus/H264, **does not** classify audio vs video by payload. Forward by publisher/subscriber / stream id + **byte-volume** limits only. |
 | **Capability** | Prefer a single **`media_relay`** checkbox (supersedes shipping separate decode-aware `audio_relay` / `video_relay` pipelines). Legacy dual names in older sketches map to this one service + optional **capacity class / max_bps** advertisement. |
 | **Bandwidth** | Node advertises a budget (e.g. max uplink aggregate bps or class). Clients decide whether Camera is allowed; relay rate-limits/drops by size if exceeded. |
-| **Hosts** | Org **`pp-node`**: volunteer **`media_relay` on**. Desktop Node: checkbox **default on** (volunteer) when Node is enabled — user may turn off. Mobile Client: never hosts. |
+| **Hosts** | Org **`pp-node`**: volunteer **`media_relay` on**. Desktop Node: checkbox **default on** (volunteer) when Node is enabled — user may turn off. Mobile: **default Client, no host**; optional in-call / Wi‑Fi-scoped relay per **N025**. |
 | **Pricing** | Volunteer for ship; `pricing.*` schema stub only (N017). |
 | **Pick / re-pick** | Call coordinator applies **N020** / **V023** (contacts ∪ seed short-term; re-pick on failure). |
 **Rationale:** Matches product privacy (“relay must not know contents”); one module is enough for fan-out; friend Nodes need honest bandwidth limits without deep packet inspection of media.  
@@ -272,3 +274,125 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 
 **Rationale:** Separates transport QoS from app codecs; enables stale-video drop without decrypt; keeps n4-media reusable.  
 **Alternatives:** A/V-specific SFU API (rejected — couples hop to calls); fully opaque pipe with no seq/type (rejected — cannot implement latest-lossy safely); relay named `keyframe` as media concept (rejected — use generic **`mark`**).
+
+---
+
+## N022 — Libp2p investment; HTTP settle preferred; chain backup
+
+**Date:** 2026-07-31  
+**Decision:** Networking north star is **HTTP + libp2p** ([NETWORKING.md](../../docs/architecture/NETWORKING.md)). Continue **investing in the vendored libp2p fork** so it can serve peer discovery, dial/routing, transmission QoS, and price incentives under real network conditions. **HTTP backend** is preferred for org services and **pricing/settle UX** when reachable. **Direct blockchain settle** is a **backup** when HTTP is unavailable (or policy requires trust-minimized pay). Call media consumes this fabric ([V026](../p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)); WebRTC is not a mesh substitute.
+
+| Track | Direction |
+|-------|-----------|
+| Reachability | Listen, UPnP, dial-back, strengthen circuit (toward PeerId-friendly paths); hole punch later as fork allows — program: [media-hop-reachability](../media-hop-reachability/) (**in-stack**, not app gather) |
+| Discovery | Contacts ∪ bootstrap now; directory; DHT per N015 timing |
+| Transmission | N021 framing/QoS; lossy audio-friendly paths; budgets N019 |
+| Incentives | Quotes/ceilings; volunteer → paid as regulation (N020); contact-first admission |
+| Settle | HTTP ledger/receipts preferred; chain settle ADR/detail when backup path ships |
+
+**Rationale:** One peer stack to deepen; HTTP optimizes backend and payment UX; chain avoids hard-fail when Brief HTTP is blocked.  
+**Alternatives:** WebRTC for peer media forever (rejected — V026); chain-first payments for every hop (rejected — UX/ops); HTTP-only peers (rejected — mesh product).
+
+---
+
+## N023 — Relay scope and domain bridging (not geography tiers)
+
+**Date:** 2026-08-01  
+**Decision:** Model relay routing with **connectivity domains** and **relay scope tags** (`link` → `site` → `social` → `org` → `public`), not user-selected “local / country / global” tiers.
+
+| Rule | Detail |
+|------|--------|
+| **Problem framing** | Nested **partitions** (LAN, egress/firewall, global). Relay value = useful **boundary crossings**. |
+| **Consumer** | **Escalate scope** narrow→wide: filter → score (affinity + **bridge score** + capacity + price + reputation) → quote (N019) → attach → re-pick. Prefer narrowest working scope. |
+| **Provider** | **Auto-cap scope** from reachability + capability + pricing — no tier picker. Volunteer default: `link \| site \| social`; `public` requires paid + opt-in. |
+| **Partition escape** | When seed/global fails, use **bridge score** within social graph — not geo IP. |
+| **Roles** | Gateway / island store / infrastructure are **topology outcomes**, not user job titles. |
+| **Ownership** | Policy in **p2p-mesh** ([RELAY_SCOPE.md](RELAY_SCOPE.md)); dialability in [media-hop-reachability](../media-hop-reachability/) (H001). |
+| **Messages** | HTTP Brief remains org/global durability fallback; peer `message_relay` may add link/site/island queues later. |
+| **Short term** | Consumer mask stops at **`org`**; `public` ineligible. `link`/`site` order eligible **contacts** only — no LAN strangers. |
+| **Algorithm** | Outer scope bands + inner N020 scorer — not the rejected hardcoded N014 stage list. |
+
+**Rationale:** Local relays stay high-value for small groups without forcing users to configure tiers; global relays scale audience for reachable ops nodes; minimal UX via inference from existing `ReachabilitySignals` and contact graph. Extends N014/N020 without replacing closed-set short-term policy.  
+**Alternatives:** Rename or expand media-hop-reachability to own scope (rejected — blurs H001 stack vs policy); new top-level project for routing only (rejected — p2p-mesh already owns hop policy); explicit geo/country tier picker (rejected — privacy + wrong abstraction).  
+**Spec:** [RELAY_SCOPE.md](RELAY_SCOPE.md). **Phase:** [ns](PHASES.md#ns--relay-scope-and-domain-bridging-n023).
+
+---
+
+## N024 — Immediate relay as service broker
+
+**Date:** 2026-08-01  
+**Updated:** 2026-08-01 (bundled media + SLA; supersedes circuit-only wording)  
+**Status:** Accepted (plan — pairs with [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned))  
+**Decision:** When consumer **A** uses immediate relay **R1** (circuit path and/or brokered call attach), **A pays R1 only**. R1 is the **single commercial and SLA face** — priced and experienced like “the hop,” even when R1 subcontracted upstream **`circuit_relay`** (R2+) and **`media_relay`** (B) capacity behind the scenes.
+
+| Rule | Detail |
+|------|--------|
+| **Consumer payer** | **A pays R1 only** — one quote + billing ceiling with R1 |
+| **Consumer UX** | A does not quote or pay R2 or B directly on the brokered path; R1’s rate may differ from B’s wholesale rate |
+| **Upstream circuit** | R1 chooses R2+; R1 pays upstream circuit cost; must keep **positive margin** when paid |
+| **Downstream media (brokered calls)** | R1 subcontracts **`media_relay`** on **call-agreed B**; **R1 absorbs B’s wholesale** in its retail quote to A and may add markup for path + **latency / delivery guarantee** |
+| **SLA owner** | R1 owns **path + attach delivery** to the **call-agreed** target; see **re-pick bounds** below |
+| **Direct attach (unchanged)** | When A **direct-dials B** without a broker, **A pays B** per N019 / [H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop) — friend volunteer SFU, no R1 markup |
+| **Volunteer R1** | May bundle volunteer upstream (R2, B) at rate 0 to A; still one relationship with R1 |
+
+### Re-pick bounds (calls — B is roster-bound)
+
+**B** is the group’s agreed blind SFU for a **`call_id`** (coordinator pick + authenticated attach per V023/N020). R1 does **not** unilaterally replace B.
+
+| Failure | Who acts | What may change |
+|---------|----------|-----------------|
+| Upstream circuit (R2+, path) | **R1** | Alternate route — **same B** |
+| R1↔B attach / path to B | **R1** (retry) | **Same B** |
+| **B** unavailable | **Call coordinator** (SoftMigrate) | **B′** — call-level; roster + `call_id` auth |
+
+### Quote renewal (brokered attach)
+
+| Situation | Consumer (A) action |
+|-----------|---------------------|
+| **Path-only retry** to **same B** (R2′, same tier T, same retail rate/ceiling) | **Auto-extend** — no re-accept; original R1 quote remains in force |
+| Coordinator picks **B′** (new SFU PeerId) | **Re-accept** with R1 when retail **rate or billing ceiling** changes; new quote scoped to B′ |
+| B′ but **unchanged** retail rate/ceiling and tier T | May **auto-extend** if R1 and policy confirm equivalent wholesale — product may still show lightweight ack |
+| A can **direct-dial B′** | **Direct attach** to B′ (H005); skip broker |
+
+Paid mode: never exceed the **accepted ceiling** without explicit re-accept (same rule as N019/V022).
+
+**Rationale:** One payer and one SLA owner matches “R1 feels like the real B at a different price”; enables latency guarantees only the orchestrator can offer on **path to** the agreed SFU; R1 optimizes subcontract mix for margin. **B** remains call-scoped — SFU re-pick is coordinator policy (V023), not broker discretion.  
+**Alternatives:** A pays B separately while using R1 for circuit only (rejected — splits SLA, confuses UX); pay-each-hop (rejected); R1 forbidden from marking up B (rejected — no incentive to broker); **R1 unilateral B swap** (rejected — breaks roster / group-agreed media hub).  
+**Implementation notes (later):** R1↔B wholesale quote/attach protocol; inter-relay settlement (HTTP preferred per N022); SoftMigrate **brokered** vs **direct** attach modes.  
+**Spec:** [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). **Stack phase:** [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). **Policy phase:** [ns3](PHASES.md#ns3--multi-hop-circuit-policy).
+
+---
+
+## N025 — Mobile call-scoped listen on Wi‑Fi (not full Node)
+
+**Date:** 2026-08-01  
+**Status:** Accepted (**implemented** — gating in `MessagingHub` / `MobileEphemeralListenGate`; LAN QA pending)  
+**Decision:** Mobile stays **Client by default** (N001). Add **narrow, gated listen** so phones can be **dialed by PeerId on LAN** and serve as **in-call hops** without always-on Node behavior.
+
+### Participation modes (mobile)
+
+| Mode | Listen | Host `media_relay` | When |
+|------|--------|-------------------|------|
+| **Client (default)** | No | No | Always — current behavior |
+| **Call participant** | Ephemeral | Optional — **contacts / in-call only**, capped | Foreground **active call** while on **Wi‑Fi**; publish listen addrs via Identify for direct libp2p / in-call hop pick |
+| **Wi‑Fi helper (opt-in, later)** | While enabled | Volunteer, **social scope only**, strict ↑/↓ caps | User toggle **Help on Wi‑Fi**; **off on cellular**; no Me → Network capability matrix |
+
+Desktop **Node** (`node_enabled`) is unchanged. Mobile does **not** gain a master **Help the network** toggle in v1 of this feature.
+
+### Rules
+
+1. **No always-on mobile Node** — listen starts/stops with eligibility (call foreground + Wi‑Fi, or explicit Wi‑Fi helper).  
+2. **Cellular** — do not listen or host `media_relay` for strangers by default; seed / desktop / circuit paths remain primary off-LAN (V008).  
+3. **Background / killed app** — **does not** rely on idle listen. Incoming ring stays **`call_wake` → fetch → UI → outbound dial** (V006). Ephemeral listen supplements **active-session** reachability only.  
+4. **Scope** — mobile `media_relay` (when enabled) uses **`social` / in-call admission only** — no `public`, no paid overflow on phone (N023 provider caps).  
+5. **Battery / data** — prefer **listen without relay** for 1:1 callee; relay only when N≥3 or explicit in-call hop policy needs it.  
+6. **Implementation** — same stack as desktop (Identify, address book, `IsPeerDialable`); gating in app/mesh policy, not a second libp2p integration.
+
+### Call impact
+
+See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi). Unblocks LAN **PeerId-only** direct paths when combined with discovery (mDNS or seed-mediated Identify) and hop **L4**.
+
+**Rationale:** “Mobile never listens” blocked LAN 1:1 libp2p and in-call mobile hops; full Node on mobile is wrong for battery and OS background limits. Scoped listen gets most LAN benefit with bounded cost.  
+**Alternatives:** Full mobile Node (rejected); forever Client-only (rejected for LAN PeerId goal); app `call_hop_addrs` (rejected — H007); listen on cellular always (rejected).  
+**Supersedes:** Absolute “never listen” wording in **N018** / **H006** — default remains no listen.  
+**Phase:** [nm](PHASES.md#nm--mobile-call-scoped-listen-n025).

@@ -1,6 +1,7 @@
 #include "base/people/ContactsStore.h"
 
 #include "base/data/AtomicFileWrite.h"
+#include "base/data/SchemaVersion.h"
 #include "base/people/ContactJson.h"
 #include "common/Utilities.h"
 
@@ -44,17 +45,47 @@ Roe<void> ContactsStore::EnsureLoaded() const {
   std::filesystem::create_directories(data_dir_, ec);
 
   contacts_.clear();
-  std::ifstream in(StorePath());
-  if (in) {
-    const nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
-    if (!root.is_discarded() && root.contains("contacts") && root["contacts"].is_array()) {
-      for (const auto& item : root["contacts"]) {
-        contacts_.push_back(ContactFromJson(item));
+  bool needs_rewrite = false;
+  {
+    // Close the read handle before Save() — Windows cannot rename over an open file.
+    std::ifstream in(StorePath());
+    if (in) {
+      nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
+      if (root.is_discarded() || !root.is_object()) {
+        return Error("Invalid contacts.json");
+      }
+
+      int version = 0;
+      if (root.contains("schema_version")) {
+        if (!root["schema_version"].is_number_integer()) {
+          return Error("Invalid schema_version in contacts.json");
+        }
+        version = root["schema_version"].get<int>();
+        if (auto checked = SchemaVersion::Validate(root, kSchemaVersion, "contacts.json"); !checked) {
+          return checked.error();
+        }
+      }
+
+      if (root.contains("contacts") && root["contacts"].is_array()) {
+        for (const auto& item : root["contacts"]) {
+          contacts_.push_back(ContactFromJson(item));
+        }
+      }
+
+      if (version < kSchemaVersion) {
+        needs_rewrite = true;
       }
     }
   }
 
   loaded_ = true;
+  if (needs_rewrite) {
+    dirty_ = true;
+    if (auto saved = Save(); !saved) {
+      return saved.error();
+    }
+    dirty_ = false;
+  }
   return {};
 }
 
@@ -63,7 +94,7 @@ Roe<void> ContactsStore::Save() const {
   for (const Contact& contact : contacts_) {
     contacts.push_back(ContactToJson(contact));
   }
-  const nlohmann::json root = {{"contacts", std::move(contacts)}};
+  const nlohmann::json root = {{"schema_version", kSchemaVersion}, {"contacts", std::move(contacts)}};
 
   return AtomicFileWrite::Write(StorePath(), root.dump(2));
 }
@@ -132,21 +163,25 @@ Roe<Contact> ContactsStore::Upsert(const Contact& contact) {
     return load.error();
   }
 
+  Contact stored = contact;
+  PromoteFlatFieldsToNested(stored);
+  SyncContactMirrors(stored);
+
   for (Contact& existing : contacts_) {
-    if (existing.id == contact.id) {
-      existing = contact;
+    if (existing.id == stored.id) {
+      existing = stored;
       dirty_ = true;
       if (Save()) {
-        return contact;
+        return stored;
       }
       return Error("Failed to save contacts");
     }
   }
 
-  contacts_.push_back(contact);
+  contacts_.push_back(stored);
   dirty_ = true;
   if (Save()) {
-    return contact;
+    return stored;
   }
   return Error("Failed to save contacts");
 }
@@ -200,20 +235,65 @@ Roe<std::vector<Contact>> ContactsStore::SearchLocal(const std::string& query) c
 }
 
 Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
+  std::string relay_user_id;
+  for (const ContactId& id : hit.ids) {
+    if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+      relay_user_id = id.value;
+      if (id.primary) {
+        break;
+      }
+    }
+  }
+  if (relay_user_id.empty() && !hit.hit_id.empty() && hit.hit_id.rfind("relay:", 0) == 0) {
+    relay_user_id = hit.hit_id;
+  }
+
+  if (!relay_user_id.empty()) {
+    auto existing = FindByIdentity(relay_user_id, ContactIdKind::RelayUser);
+    if (!existing) {
+      return existing.error();
+    }
+    if (existing->has_value()) {
+      return ApplyRemoteSnapshot((*existing)->id, hit, util::NowUnixMs());
+    }
+  }
+
   Contact contact;
   contact.id = util::GenerateUuid();
-  contact.display_name = hit.display_name.empty() ? hit.nickname : hit.display_name;
-  contact.server_nickname = hit.nickname;
-  contact.ids = hit.ids;
-  contact.multiaddrs = hit.multiaddrs;
-  contact.trust = TrustLevel::Unknown;
+  const std::string seed = hit.display_name.empty() ? hit.nickname : hit.display_name;
+  contact.local.display_name = seed;
+  contact.local.trust = TrustLevel::Unknown;
+  contact.remote.nickname = hit.nickname;
+  contact.remote.ids = hit.ids;
+  contact.remote.multiaddrs = hit.multiaddrs;
+  contact.remote.fetched_at = util::NowUnixMs();
+  SyncContactMirrors(contact);
+  return Upsert(contact);
+}
+
+Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, const DirectoryHit& hit,
+                                                const int64_t fetched_at_ms) {
+  auto loaded = Get(contact_id);
+  if (!loaded) {
+    return loaded.error();
+  }
+  if (!loaded->has_value()) {
+    return Error("Contact not found");
+  }
+  Contact contact = **loaded;
+  contact.remote.nickname = hit.nickname;
+  contact.remote.ids = hit.ids;
+  contact.remote.multiaddrs = hit.multiaddrs;
+  contact.remote.fetched_at = fetched_at_ms > 0 ? fetched_at_ms : util::NowUnixMs();
+  SyncContactMirrors(contact);
   return Upsert(contact);
 }
 
 Roe<Contact> ContactsStore::AddEmpty() {
   Contact contact;
   contact.id = util::GenerateUuid();
-  contact.trust = TrustLevel::Unknown;
+  contact.local.trust = TrustLevel::Unknown;
+  SyncContactMirrors(contact);
   return Upsert(contact);
 }
 

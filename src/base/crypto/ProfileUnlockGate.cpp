@@ -1,6 +1,7 @@
 #include "base/crypto/ProfileUnlockGate.h"
 
 #include "base/crypto/PinDefaults.h"
+#include "common/Logger.h"
 #include "common/StartupTiming.h"
 
 #include <stdexcept>
@@ -10,8 +11,11 @@ namespace pbr {
 
 Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsService& secrets, const std::string& pin,
                                        const std::function<Roe<void>()>& ensure_messaging_ready) {
-  if (auto unlocked = secrets.Unlock(pin); !unlocked) {
-    return unlocked.error();
+  {
+    StartupPhase phase("ProfileUnlockGate::VaultUnlock");
+    if (auto unlocked = secrets.Unlock(pin); !unlocked) {
+      return unlocked.error();
+    }
   }
   if (!ensure_messaging_ready) {
     return {};
@@ -64,6 +68,18 @@ void ProfileUnlockGate::Finish(const bool unlocked) {
   DrainQueue(unlocked);
 }
 
+void ProfileUnlockGate::ReportError(const std::string& message) {
+  logging::getLogger("ProfileUnlockGate").warning << "Unlock failed: " << message;
+  SetUnlockInProgress(false);
+  if (!showing_) {
+    // Silent unlock failed with no modal yet — open unlock so the user can retry.
+    RequestShowUnlock(nullptr);
+  }
+  if (ports_.ui.show_error) {
+    ports_.ui.show_error(message);
+  }
+}
+
 void ProfileUnlockGate::RequestShowChooser(std::function<void(bool)> done) {
   if (done) {
     pending_.push_back(std::move(done));
@@ -90,26 +106,39 @@ void ProfileUnlockGate::RequestShowUnlock(std::function<void(bool)> done) {
   }
 }
 
-bool ProfileUnlockGate::TrySilentDefaultUnlock() {
-  StartupPhase phase("ProfileUnlockGate::TrySilentDefaultUnlock");
-  if (!ports_.pin_is_default || !ports_.pin_is_default()) {
-    return false;
+void ProfileUnlockGate::RunUnlockAndReadyAsync(std::string pin, const bool set_default_pin,
+                                               const bool clear_default_pin) {
+  if (unlock_in_progress_) {
+    return;
   }
-  if (ports_.messaging_ready && ports_.messaging_ready()) {
-    return true;
-  }
-  if (!Secrets().HasVault()) {
-    return false;
-  }
-  if (!Secrets().IsUnlocked()) {
-    if (!Secrets().Unlock(kDefaultProfilePin)) {
-      return false;
+  SetUnlockInProgress(true);
+  StartupMark("unlock_and_ready_begin");
+
+  auto work = [this, pin = std::move(pin)]() -> Roe<void> { return UnlockAndReady(pin); };
+  auto on_done = [this, set_default_pin, clear_default_pin](Roe<void> result) {
+    if (!result) {
+      StartupMark("unlock_and_ready_fail");
+      ReportError(result.error().message);
+      return;
     }
+    if (set_default_pin && ports_.set_pin_is_default) {
+      ports_.set_pin_is_default(true);
+    }
+    if (clear_default_pin && ports_.set_pin_is_default) {
+      ports_.set_pin_is_default(false);
+    }
+    StartupMark("unlock_and_ready_ok");
+    if (set_default_pin && ports_.ui.on_default_provisioned) {
+      ports_.ui.on_default_provisioned();
+    }
+    Finish(true);
+  };
+
+  if (ports_.run_heavy) {
+    ports_.run_heavy(std::move(work), std::move(on_done));
+    return;
   }
-  if (!ports_.ensure_messaging_ready) {
-    return Secrets().IsUnlocked();
-  }
-  return static_cast<bool>(ports_.ensure_messaging_ready());
+  on_done(work());
 }
 
 void ProfileUnlockGate::EnsureUnlocked(std::function<void(bool unlocked)> done) {
@@ -138,12 +167,26 @@ void ProfileUnlockGate::EnsureUnlocked(std::function<void(bool unlocked)> done) 
       }
       return;
     }
-    if (auto ready = ports_.ensure_messaging_ready(); ready) {
-      if (done) {
-        done(true);
+    if (done) {
+      pending_.push_back(std::move(done));
+    }
+    // Vault already open — still need messaging stack (may block); keep UI responsive.
+    SetUnlockInProgress(true);
+    StartupMark("ensure_messaging_ready_begin");
+    auto work = [this]() -> Roe<void> {
+      if (!ports_.ensure_messaging_ready) {
+        return Error("ensure_messaging_ready unavailable");
       }
-    } else if (done) {
-      done(false);
+      return ports_.ensure_messaging_ready();
+    };
+    auto on_done = [this](Roe<void> result) {
+      StartupMark(result ? "ensure_messaging_ready_ok" : "ensure_messaging_ready_fail");
+      Finish(static_cast<bool>(result));
+    };
+    if (ports_.run_heavy) {
+      ports_.run_heavy(std::move(work), std::move(on_done));
+    } else {
+      on_done(work());
     }
     return;
   }
@@ -177,9 +220,22 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
   }
   if (!Secrets().NeedsUnlock()) {
     if (Secrets().IsUnlocked()) {
-      const bool ready =
-          ports_.ensure_messaging_ready ? static_cast<bool>(ports_.ensure_messaging_ready()) : false;
-      DrainQueue(ready);
+      if (!ports_.ensure_messaging_ready) {
+        DrainQueue(false);
+        return;
+      }
+      SetUnlockInProgress(true);
+      StartupMark("deferred_ensure_messaging_begin");
+      auto work = [this]() -> Roe<void> { return ports_.ensure_messaging_ready(); };
+      auto on_done = [this](Roe<void> result) {
+        StartupMark(result ? "deferred_ensure_messaging_ok" : "deferred_ensure_messaging_fail");
+        Finish(static_cast<bool>(result));
+      };
+      if (ports_.run_heavy) {
+        ports_.run_heavy(std::move(work), std::move(on_done));
+      } else {
+        on_done(work());
+      }
     } else {
       // No vault yet — leave locked until a feature calls EnsureUnlocked (chooser).
       DrainQueue(false);
@@ -188,40 +244,22 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
   }
 
   if (ports_.pin_is_default && ports_.pin_is_default()) {
-    SetUnlockInProgress(true);
     StartupMark("deferred_silent_unlock_begin");
-    const bool ok = TrySilentDefaultUnlock();
-    SetUnlockInProgress(false);
-    StartupMark(ok ? "deferred_silent_unlock_ok" : "deferred_silent_unlock_fail");
-    if (ok) {
-      DrainQueue(true);
-      return;
-    }
+    RunUnlockAndReadyAsync(std::string(kDefaultProfilePin), /*set_default_pin=*/false,
+                           /*clear_default_pin=*/false);
+    return;
   }
 
   RequestShowUnlock(nullptr);
 }
 
-Roe<void> ProfileUnlockGate::CompleteWithPin(const std::string& pin, const bool create_mode) {
-  if (auto unlocked = UnlockAndReady(pin); !unlocked) {
-    return unlocked.error();
-  }
-  if (create_mode && ports_.set_pin_is_default) {
-    ports_.set_pin_is_default(false);
-  }
-  Finish(true);
-  return {};
+void ProfileUnlockGate::CompleteWithPin(const std::string& pin, const bool create_mode) {
+  RunUnlockAndReadyAsync(pin, /*set_default_pin=*/false, /*clear_default_pin=*/create_mode);
 }
 
-Roe<void> ProfileUnlockGate::CompleteWithDefaultPin() {
-  if (auto unlocked = UnlockAndReady(kDefaultProfilePin); !unlocked) {
-    return unlocked.error();
-  }
-  if (ports_.set_pin_is_default) {
-    ports_.set_pin_is_default(true);
-  }
-  Finish(true);
-  return {};
+void ProfileUnlockGate::CompleteWithDefaultPin() {
+  RunUnlockAndReadyAsync(std::string(kDefaultProfilePin), /*set_default_pin=*/true,
+                         /*clear_default_pin=*/false);
 }
 
 void ProfileUnlockGate::Cancel() {

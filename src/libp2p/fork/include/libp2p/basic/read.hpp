@@ -28,11 +28,10 @@ namespace libp2p {
             // successfully read last bytes
             return cb(outcome::success());
           }
-          if (n == 0) {
-            throw std::logic_error{"libp2p::read zero bytes read"};
-          }
-          if (n > out.size()) {
-            throw std::logic_error{"libp2p::read too much bytes read"};
+          // Never throw from asio/libp2p callbacks — uncaught logic_error aborts the
+          // process (moto dogfood: call-media audio read → SIGABRT on pp-browser-io).
+          if (n == 0 || n > out.size()) {
+            return cb(make_error_code(boost::asio::error::invalid_argument));
           }
           // read remaining bytes
           auto reader = weak.lock();

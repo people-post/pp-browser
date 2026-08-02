@@ -271,7 +271,9 @@ Roe<ChatHistoryResponse> MockChatHistoryPeerClient::FetchChatHistory(const ChatH
 Roe<RegistrationStartResult> MockRegistrationClient::StartRegistration(const std::string& /*public_key_b64*/,
                                                                        const std::string& /*nickname*/,
                                                                        const std::string& signature_alg,
-                                                                       const std::string& /*kem_public_key_b64*/) {
+                                                                       const std::string& /*kem_public_key_b64*/,
+                                                                       const std::string& /*peer_id*/,
+                                                                       const std::vector<std::string>& /*multiaddrs*/) {
   return RegistrationStartResult{.challenge = "mock-challenge", .signature_alg = signature_alg,
                                  .expires_at = "2099-01-01T00:00:00.000Z"};
 }
@@ -282,7 +284,9 @@ Roe<RegistrationResult> MockRegistrationClient::FinishRegistration(const std::st
                                                                    const std::string& /*signature*/,
                                                                    int64_t /*timestamp*/,
                                                                    const std::string& /*signature_alg*/,
-                                                                   const std::string& /*kem_public_key_b64*/) {
+                                                                   const std::string& /*kem_public_key_b64*/,
+                                                                   const std::string& /*peer_id*/,
+                                                                   const std::vector<std::string>& /*multiaddrs*/) {
   return RegistrationResult{.success = true,
                             .relay_user_id = "relay:" + public_key_b64.substr(0, 12),
                             .message = "Registered as " + nickname,
@@ -380,6 +384,9 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
   if (root.contains("next_cursor") && root["next_cursor"].is_string()) {
     result.next_cursor = root["next_cursor"].get<std::string>();
   }
+  if (root.contains("server_time") && root["server_time"].is_number_integer()) {
+    result.server_time_ms = root["server_time"].get<int64_t>();
+  }
   if (root.contains("messages") && root["messages"].is_array()) {
     for (const auto& item : root["messages"]) {
       if (item.contains("blob_b64")) {
@@ -389,11 +396,17 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
         }
         auto envelope = RelayEnvelopeFromInboundRecord(*inbound);
         if (envelope) {
+          if (result.server_time_ms) {
+            envelope->relay_server_time_ms = result.server_time_ms;
+          }
           result.messages.push_back(*envelope);
         }
       } else {
         auto envelope = ParseRelayEnvelope(item);
         if (envelope) {
+          if (result.server_time_ms) {
+            envelope->relay_server_time_ms = result.server_time_ms;
+          }
           result.messages.push_back(*envelope);
         }
       }
@@ -648,7 +661,9 @@ HttpRegistrationClient::HttpRegistrationClient(std::string base_url) : base_url_
 Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(const std::string& public_key_b64,
                                                                      const std::string& nickname,
                                                                      const std::string& signature_alg,
-                                                                     const std::string& kem_public_key_b64) {
+                                                                     const std::string& kem_public_key_b64,
+                                                                     const std::string& peer_id,
+                                                                     const std::vector<std::string>& multiaddrs) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -656,6 +671,12 @@ Roe<RegistrationStartResult> HttpRegistrationClient::StartRegistration(const std
                          {"signature_alg", signature_alg}, {"kem_public_key_b64", kem_public_key_b64}};
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");
+  }
+  if (!peer_id.empty()) {
+    body["peer_id"] = peer_id;
+  }
+  if (!multiaddrs.empty()) {
+    body["multiaddrs"] = multiaddrs;
   }
   const auto response = HttpClient::Post(base_url_ + "/v1/register/start", body.dump(),
                                          {{"Content-Type", "application/json"}});
@@ -690,7 +711,9 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
                                                                    const std::string& signature,
                                                                    int64_t timestamp,
                                                                    const std::string& signature_alg,
-                                                                   const std::string& kem_public_key_b64) {
+                                                                   const std::string& kem_public_key_b64,
+                                                                   const std::string& peer_id,
+                                                                   const std::vector<std::string>& multiaddrs) {
   if (base_url_.empty()) {
     return Error("Registration base_url not configured");
   }
@@ -703,6 +726,12 @@ Roe<RegistrationResult> HttpRegistrationClient::FinishRegistration(const std::st
                          {"kem_public_key_b64", kem_public_key_b64}};
   if (kem_public_key_b64.empty()) {
     return Error("kem_public_key_b64 is required");
+  }
+  if (!peer_id.empty()) {
+    body["peer_id"] = peer_id;
+  }
+  if (!multiaddrs.empty()) {
+    body["multiaddrs"] = multiaddrs;
   }
   const auto response = HttpClient::Post(base_url_ + "/v1/register/finish", body.dump(),
                                          {{"Content-Type", "application/json"}});

@@ -25,7 +25,8 @@ namespace libp2p::basic {
     assert(canEnqueue(data_sz));
 
     total_unsent_size_ += data_sz;
-    queue_.push_back({data, 0, 0, data_sz, std::move(cb)});
+    Bytes owned(data.begin(), data.end());
+    queue_.push_back({std::move(owned), 0, 0, data_sz, std::move(cb)});
   }
 
   size_t WriteQueue::dequeue(size_t window_size, DataRef &out) {
@@ -43,7 +44,7 @@ namespace libp2p::basic {
            == static_cast<size_t>(item.data.size()));
     assert(item.unsent > 0);
 
-    out = item.data.subspan(item.acknowledged + item.unacknowledged);
+    out = DataRef{item.data}.subspan(item.acknowledged + item.unacknowledged);
     auto sz = static_cast<size_t>(out.size());
 
     assert(sz == item.unsent);

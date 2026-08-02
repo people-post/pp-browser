@@ -84,7 +84,9 @@ private:
   ReplayWindow& ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch);
   Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message, const std::string& actor_identity,
                                           RelayReceiveOutcome* outcome) const;
-  Roe<void> ApplyInboundCallMessage(ThreadMessage& message, const std::string& actor_identity) const;
+  Roe<void> ApplyInboundCallMessage(ThreadMessage& message, const std::string& actor_identity,
+                                    std::optional<int64_t> relay_created_at_ms = std::nullopt,
+                                    std::optional<int64_t> relay_server_time_ms = std::nullopt) const;
 
   IThreadStore& store_;
   IPeerSigningKeyResolver& signing_keys_;

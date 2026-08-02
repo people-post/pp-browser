@@ -140,7 +140,8 @@ void MarkRegistrationExpired(LocalIdentity& identity) {
 }
 
 Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity,
-                                                       const std::string& nickname) {
+                                                       const std::string& nickname,
+                                                       const std::vector<std::string>& multiaddrs) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
@@ -150,7 +151,7 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
   }
 
   auto start = registration.StartRegistration(loaded->public_key_b64, nickname, "ed25519",
-                                              loaded->kem_public_key_b64);
+                                              loaded->kem_public_key_b64, loaded->peer_id, multiaddrs);
   if (!start) {
     return start.error();
   }
@@ -168,17 +169,19 @@ Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& regi
   }
 
   return registration.FinishRegistration(start->challenge, loaded->public_key_b64, nickname, *signature, timestamp,
-                                         start->signature_alg, loaded->kem_public_key_b64);
+                                         start->signature_alg, loaded->kem_public_key_b64, loaded->peer_id,
+                                         multiaddrs);
 }
 
 Roe<LocalIdentity> FinishAndPersistRegistration(IRegistrationClient& registration, IdentityStore& identity,
-                                                const std::string& nickname) {
+                                                const std::string& nickname,
+                                                const std::vector<std::string>& multiaddrs) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
   }
 
-  auto result = FinishRegistrationWithIdentity(registration, identity, nickname);
+  auto result = FinishRegistrationWithIdentity(registration, identity, nickname, multiaddrs);
   if (!result) {
     return result.error();
   }

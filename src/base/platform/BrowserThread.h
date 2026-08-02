@@ -20,6 +20,7 @@ public:
   static bool CurrentlyOn(BrowserThreadId id);
 
   static void PostTask(BrowserThreadId id, std::function<void()> task);
+  static void PostTaskFront(BrowserThreadId id, std::function<void()> task);
 
   // Optional hook (typically Backend::WakeEventLoop) so UI posts break power-save waits.
   static void SetUIWakeCallback(std::function<void()> callback);
@@ -30,6 +31,17 @@ public:
   template <typename Result>
   static void PostTaskAndReply(std::function<Result()> work, std::function<void(Result)> reply) {
     PostTask(BrowserThreadId::IO, [work = std::move(work), reply = std::move(reply)]() mutable {
+      Result result = work();
+      PostTask(BrowserThreadId::UI, [reply = std::move(reply), result = std::move(result)]() mutable {
+        reply(std::move(result));
+      });
+    });
+  }
+
+  /** Like PostTaskAndReply but IO work jumps the FIFO (Samsung: AcceptInvite behind Prefetch). */
+  template <typename Result>
+  static void PostTaskFrontAndReply(std::function<Result()> work, std::function<void(Result)> reply) {
+    PostTaskFront(BrowserThreadId::IO, [work = std::move(work), reply = std::move(reply)]() mutable {
       Result result = work();
       PostTask(BrowserThreadId::UI, [reply = std::move(reply), result = std::move(result)]() mutable {
         reply(std::move(result));

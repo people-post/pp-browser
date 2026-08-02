@@ -14,6 +14,13 @@ inline constexpr size_t kCallEngineeringMaxJoined = 8;
 inline constexpr size_t kCallProtocolSoftMaxJoined = 16;
 /** Default invite ring TTL. */
 inline constexpr int64_t kDefaultCallInviteTtlMs = 60'000;
+/** Slack added to relay-age gate (clock granularity / brief queue delay). */
+inline constexpr int64_t kCallInviteRelayAgeSlackMs = 5'000;
+/**
+ * Without relay create/now samples (direct delivery / old servers), allow wire expires_at
+ * to be this far past local now before dropping (clock skew). Beyond this, do not re-arm.
+ */
+inline constexpr int64_t kCallInviteWireSkewSlackMs = 120'000;
 
 enum class CallMediaMode : uint8_t { Voice = 0, Video = 1 };
 
@@ -87,6 +94,13 @@ struct PendingCallInvite {
   std::string status = "pending";
 };
 
+struct CallRosterEntry {
+  std::string identity;
+  CallParticipantState state = CallParticipantState::Joined;
+  bool audio_muted = false;
+  bool video_enabled = false;
+};
+
 struct CallInviteDetail {
   std::string call_id;
   std::string inviter_identity;
@@ -96,6 +110,12 @@ struct CallInviteDetail {
   std::optional<std::string> origin_group_id;
   std::optional<std::string> sfu_hint;
   std::optional<int64_t> expires_at;
+  /** Full call roster snapshot at invite time (joined + ringing + this invitee). */
+  std::vector<CallRosterEntry> participants;
+  /** Optional epoch-1 media key (same fields as CallMediaKey) so Accept need not wait on a second inbox row. */
+  uint32_t media_epoch = 1;
+  std::string media_key_id;
+  std::string wrapped_key_b64;
 };
 
 struct CallAcceptDetail {
@@ -113,13 +133,6 @@ struct CallDeclineDetail {
 struct CallLeaveDetail {
   std::string call_id;
   std::string identity;
-};
-
-struct CallRosterEntry {
-  std::string identity;
-  CallParticipantState state = CallParticipantState::Joined;
-  bool audio_muted = false;
-  bool video_enabled = false;
 };
 
 struct CallRosterDetail {

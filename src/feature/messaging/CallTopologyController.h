@@ -3,10 +3,10 @@
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/CallSessionStore.h"
+#include "base/messaging/SoftMigrateLogic.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/MeshHopPolicy.h"
-#include "libp2p/integration/host/MediaRelayService.h"
-#include "libp2p/integration/host/PeerSessionManager.h"
+#include "feature/messaging/CallTopologyRelayDeps.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -38,15 +38,18 @@ public:
 
 /**
  * SFU soft-migrate / attach-wait / hop pick (V021 + V025).
- * Does not decide 1:1 P2P offer/answer — that lives in CallP2pSignalingBridge.
+ * Pure who-picks / wait / fan-out live in base SoftMigrateLogic / SfuAttachWaitLogic /
+ * SfuAttachFanout; this adapter owns IO + BrowserThread posting.
  */
 class CallTopologyController : public Module {
 public:
   struct MediaRelayDeps {
-    MediaRelayService* relay = nullptr;
-    PeerSessionManager* sessions = nullptr;
+    IMediaRelayClient* relay = nullptr;
+    IDialRegistry* dial = nullptr;
+    ICircuitHopReach* circuit_reach = nullptr;
     std::vector<std::string> bootstrap_peers;
     bool prefer_contacts = true;
+    std::string local_listen_multiaddr;
   };
 
   CallTopologyController(CallTopologyHost& host, CallSessionStore& sessions, ContactsStore& contacts,
@@ -57,9 +60,14 @@ public:
   bool IsAwaitingSfuRecovery() const;
   bool IsSfuAttached() const;
   bool IsOnSfuForCall(const std::string& call_id) const;
+  /** Soft-migrate / attach-wait in flight (suppress ICE→SFU re-entry + stale LeaveCall). */
+  bool IsSoftMigrateInFlight() const;
+  bool IsSfuAttachWaitActive() const;
 
   bool HasMediaRelayHopCandidates() const;
   std::vector<MeshHopCandidate> RankedMediaHopCandidates() const;
+  /** Resolve dialable multiaddr for a hop PeerId (contacts ∪ seeds ∪ L1 address book). */
+  std::string ResolveHopMultiaddr(const std::string& hop_peer_id) const;
 
   void BeginSfuAttachWait(const std::string& call_id);
   void ClearSfuAttachWait();
@@ -71,7 +79,7 @@ public:
   void EjectParticipantAfterMigrateFailure(const std::string& call_id, const std::string& identity,
                                            const std::string& reason);
 
-  Roe<void> MaybeSoftMigrateToSfu(const std::string& call_id);
+  Roe<void> MaybeSoftMigrateToSfu(const std::string& call_id, SoftMigrateTrigger trigger);
   Roe<void> AttachLocalToSfu(const std::string& call_id, const CallSfuAttachDetail& attach);
 
   /** Group (N≥3) ICE failed — recover via soft-migrate (posted to UI by caller if needed). */
@@ -91,6 +99,11 @@ public:
   bool OnRemoteAcceptJoined(const std::string& call_id, size_t n_joined,
                             const std::string& joiner_identity);
 
+  /**
+   * After CallRoster updated local joined count (mid-call invite path): initiator may SoftMigrate.
+   */
+  void OnJoinedCountObserved(const std::string& call_id, size_t n_joined);
+
   Roe<void> OnInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach);
 
   void RefreshAdaptation(const std::string& call_id);
@@ -104,6 +117,8 @@ private:
   MediaRelayDeps relay_deps_;
   bool sfu_attached_ = false;
   bool awaiting_sfu_recovery_ = false;
+  bool soft_migrate_in_flight_ = false;
+  uint64_t migrate_generation_ = 0;
   uint32_t local_publisher_stream_id_ = 0;
   std::string sfu_attach_wait_call_id_;
   int64_t sfu_attach_wait_deadline_ms_ = 0;

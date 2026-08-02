@@ -60,9 +60,11 @@ private:
   /** Last CallSessionManager we installed OnRingChanged on (recreated across unlock). */
   const void* bound_calls_ = nullptr;
   std::string ringing_call_id_;
+  std::string last_ring_call_id_;
   std::string active_call_id_;
   int64_t ring_started_ms_ = 0;
   int64_t last_pulse_toggle_ms_ = 0;
+  int64_t last_ring_heartbeat_ms_ = 0;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
   CallRingtone ringtone_;

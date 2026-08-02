@@ -48,6 +48,25 @@ TEST(CallSessionLogicTest, InviteExpiry) {
   EXPECT_EQ(expired[1].status, "pending");
 }
 
+TEST(CallSessionLogicTest, RelayAgeAndStaleDrop) {
+  EXPECT_EQ(CallSessionLogic::RelayInviteAgeMs(1000, 1060'000), 1059'000);
+  EXPECT_EQ(CallSessionLogic::DeltaRelayReceiverMs(2000, 1500), 500);
+
+  CallInviteDetail invite;
+  invite.expires_at = 1000;
+  // Relay age beyond TTL + slack → drop.
+  EXPECT_TRUE(CallSessionLogic::ShouldDropStaleInvite(invite, 999999, 1000, 1000 + kDefaultCallInviteTtlMs +
+                                                                             kCallInviteRelayAgeSlackMs + 1));
+  EXPECT_FALSE(CallSessionLogic::ShouldDropStaleInvite(invite, 999999, 1000,
+                                                       1000 + kDefaultCallInviteTtlMs));
+
+  // Direct path: within skew slack of wire expiry → keep; far past → drop.
+  EXPECT_FALSE(CallSessionLogic::ShouldDropStaleInvite(invite, 1000 + kCallInviteWireSkewSlackMs, std::nullopt,
+                                                       std::nullopt));
+  EXPECT_TRUE(CallSessionLogic::ShouldDropStaleInvite(
+      invite, 1000 + kCallInviteWireSkewSlackMs + 1, std::nullopt, std::nullopt));
+}
+
 TEST(CallSessionLogicTest, CanAcceptJoinRespectsCap) {
   EXPECT_TRUE(CallSessionLogic::CanAcceptJoin(0));
   EXPECT_TRUE(CallSessionLogic::CanAcceptJoin(kCallEngineeringMaxJoined - 1));

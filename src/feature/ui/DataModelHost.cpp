@@ -38,6 +38,13 @@ void DataModelHost::Dirty(const std::string& model, const std::string& key) {
   }
 }
 
+void DataModelHost::DirtyAll(const std::string& model) {
+  auto handle = Get(model);
+  if (handle) {
+    handle.DirtyAllVariables();
+  }
+}
+
 void DataModelHost::Clear() {
   models_.clear();
 }

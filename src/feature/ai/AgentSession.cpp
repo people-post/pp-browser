@@ -565,8 +565,9 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   // Cancel() means "abort the active turn", not "abort agent configure". OnNewChat /
   // find-someone calls Cancel while Me→ReloadFromDisk may still be reconfiguring; tearing
   // down llm here left the session unconfigured and the next send showed MissingKey.
-  BrowserThread::PauseIO();
-
+  // Do not PauseIO here: this already runs on the sequenced IO thread. Pausing blocked
+  // concurrent posts (profile unlock, inbox) until Resume — and a missed Resume left
+  // unlock_in_progress stuck on Android.
   try {
     LlmConfig llm_config = state->config.llm;
     if (ResolvePreset(state->config) == "brief") {
@@ -603,7 +604,6 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     RefreshCompactionService(state);
     state->Log().error << "Agent configure failed: " << e.what();
     PushError(state, std::string("Agent configure failed: ") + e.what());
-    BrowserThread::ResumeIO();
     return;
   } catch (...) {
     state->configured = false;
@@ -613,11 +613,8 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     RefreshCompactionService(state);
     state->Log().error << "Agent configure failed: unknown exception";
     PushError(state, "Agent configure failed");
-    BrowserThread::ResumeIO();
     return;
   }
-
-  BrowserThread::ResumeIO();
 
   if (state->submit_when_ready && !state->pending_user_text.empty()) {
     state->submit_when_ready = false;

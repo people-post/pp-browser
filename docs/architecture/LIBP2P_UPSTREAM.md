@@ -57,6 +57,13 @@ Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/
 - `Noise` — take `IdentityManager` and copy `getKeyPair()` instead of a DI-bound `KeyPair` by value (MSVC/Boost.DI moved the same KeyPair into IdentityManager and Noise)
 - `network_injector.hpp` — `bindSharedKeyPair()` returns a fresh KeyPair copy per injection from a shared store
 - `host/explicit_host.*` — preferred Host factory (no Boost.DI); used by `Libp2pChatHistoryService` and `muxers_and_streams_test`. Boost.DI injectors remain for upstream-shaped examples/injector unit tests only
+- `host/basic_host/basic_host.hpp` — `getIdentityManager()` for pp-browser Identify integration (L2)
+- `network/impl/listener_manager_impl.cpp` — if the host is already `start()`ed, `listen()` binds the transport immediately (needed for mobile N025 ephemeral `/tcp/0` after Client non-listen start; upstream only binds inside `start()`)
+- `basic/read.hpp` / `basic/write.hpp` — return `invalid_argument` instead of throwing `std::logic_error` on zero/oversize `readSome`/`writeSome` results (uncaught throw aborted Android host io during call-media)
+- `basic/write_queue.*` — enqueue copies bytes into owned `Bytes` (upstream stored `BytesIn` spans; temporaries / early buffer free → wire corruption / `too much bytes read`)
+- `basic/read_buffer.cpp` — `consumePart` soft-fails when `first_byte_offset_` is past fragment size (off-strand stream IO race aborted moto `pp-browser-io`)
+- `security/noise/noise_connection.cpp` — `readSome` with empty `out` returns 0 without pulling another Noise frame
+- `protocol/identify/identify_push.*` — `pushUpdates()` to re-push self Identify after address-repo changes (L2)
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
 - `cmake/dependencies.cmake` — vendored mode verifies parent-provided targets; explicit `Protobuf_INCLUDE_DIR`; GTest when testing/coverage
 - `test/CMakeLists.txt` — vendored `link_libraries` for acceptance/helper test targets (qtils, gmock, secp256k1)
@@ -86,6 +93,10 @@ libp2p is built in-tree via `add_subdirectory(src/libp2p)` and linked into the `
 
 - `Libp2pHost.*` — shared ExplicitHost (Yamux + Noise over TCP); owned by `MessagingHub`; binds app Ed25519 identity when available
 - `PeerSessionManager.*` — on-demand dial + warm-active session policy (reuse ConnectionManager; idle TTL; caps; dial backoff). Not an app-level socket pool.
+- `PeerAddressBook.*` — integration-layer peer address book (media-hop **L1**): TTL’d multiaddrs per PeerId (base58); fed by bootstrap/register, inbound connections, dial success, and libp2p `AddressRepository`; exposed via `PeerSessionManager::PreferredPeerMultiaddr` for hop/circuit dial.
+- `IdentifyIntegrationService.*` — wires fork **Identify** + **Identify-Push** on `BasicHost`; remote Identify refreshes L1 book; self ads via `PublishSelfAdvertisedAddrs` (media-hop **L2**).
+- `BuildAdvertisedListenSet` / `AdvertisedAddrPublisher.*` — unify bound listen, UPnP external, global IPv6, and dial-back-confirmed addrs; `MessagingHub` publishes when **Node + media_relay** after reachability probe.
+- `CircuitBridgeTarget.*` / `CircuitRelayService` — media-hop **L3** PeerId-friendly circuit bridge (`target_peer_id` + relay-side resolve); `PeerSessionManager::TryEnsureHopViaCircuit` for circuit-backed media-relay streams; SoftMigrate fallback via `ICircuitHopReach`.
 - `PeerIdUtil.*` — derive base58 Peer ID from the app Ed25519 signing public key (network identity / Me settings; see [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-roles-peer-id-who-caip-10-find-relay-route))
 
 Feature protocols on the shared host:

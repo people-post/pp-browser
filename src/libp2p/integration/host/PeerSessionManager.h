@@ -2,8 +2,11 @@
 
 #include "common/Error.h"
 #include "libp2p/integration/host/Libp2pHost.h"
+#include "libp2p/integration/host/PeerAddressBook.h"
 
+#include <libp2p/connection/stream.hpp>
 #include <libp2p/connection/stream_and_protocol.hpp>
+#include <libp2p/event/bus.hpp>
 #include <libp2p/peer/peer_info.hpp>
 #include <libp2p/peer/stream_protocols.hpp>
 
@@ -20,6 +23,8 @@
 #include <vector>
 
 namespace pbr {
+
+class CircuitRelayService;
 
 struct PeerSessionConfig {
   size_t max_connections = 48;
@@ -76,6 +81,32 @@ public:
 
   std::optional<libp2p::peer::PeerInfo> ResolvePeerInfo(const std::string& peer_relay_user_id) const;
 
+  /** Best dial multiaddr for a peer key (endpoint, then L1 address book). */
+  std::optional<std::string> PreferredPeerMultiaddr(const std::string& peer_relay_user_id) const;
+
+  /** L2: refresh book/endpoints after remote Identify completes. */
+  void NoteRemoteIdentify(const std::string& peer_id_base58);
+
+  /** L2: upsert a book entry (e.g. self advertised addrs). */
+  Roe<void> UpsertBookEntry(const std::string& peer_id_base58, const std::string& multiaddr,
+                           PeerAddrSource source);
+
+  /**
+   * L3: try circuit bridge via candidate relays when direct dial is unavailable.
+   * `target_protocol` is the stream protocol opened on the remote peer after bridge (e.g. call-media).
+   */
+  Roe<void> TryEnsureHopViaCircuit(const std::string& target_peer_id, CircuitRelayService& circuit,
+                                   const std::vector<std::string>& relay_peer_ids,
+                                   const std::string& target_protocol, int timeout_ms = 8000);
+
+  bool IsCircuitBacked(const std::string& peer_relay_user_id) const;
+  bool IsCircuitBacked(const std::string& peer_relay_user_id, const std::string& target_protocol) const;
+  void ClearCircuitHop(const std::string& peer_relay_user_id);
+  void ClearCircuitHop(const std::string& peer_relay_user_id, const std::string& target_protocol);
+
+  /** Composite storage key for protocol-scoped circuit hops. */
+  static std::string CircuitHopKey(const std::string& peer_key, const std::string& target_protocol);
+
   /** Mark peer as warm (kept across idle eviction / background suspend of cold peers). */
   void MarkWarm(const std::string& peer_relay_user_id);
   void ClearWarm(const std::string& peer_relay_user_id);
@@ -83,6 +114,8 @@ public:
 
   /** Clear dial failure backoff so the next EnsureConnection may dial immediately. */
   void ClearDialBackoff(const std::string& peer_relay_user_id);
+  /** Fail waiters and drop inflight dial tracking (stuck host.connect / retry). */
+  void AbortInflightDial(const std::string& peer_relay_user_id);
 
   /** Dial if needed; coalesce concurrent dials; enforce caps. */
   void EnsureConnection(const std::string& peer_relay_user_id,
@@ -116,19 +149,39 @@ private:
     std::function<void(Roe<void>)> on_complete;
   };
 
+  struct CircuitHopLink {
+    std::shared_ptr<libp2p::connection::Stream> stream;
+    std::string relay_peer_id;
+    std::string target_protocol;
+  };
+
+  std::optional<CircuitHopLink> FindCircuitHopLocked(const std::string& peer_relay_user_id,
+                                                     const std::string& target_protocol) const;
+  void StoreCircuitHopLocked(const std::string& peer_relay_user_id, CircuitHopLink link);
+  bool HasAnyCircuitHopLocked(const std::string& peer_relay_user_id) const;
+  bool HasDirectDialPathLocked(const std::string& peer_relay_user_id) const;
+
   void TouchPeerLocked(const std::string& peer_relay_user_id);
   void EvictIfOverCapLocked();
   void DisconnectPeer(const libp2p::peer::PeerId& peer_id);
   void FinishDial(const std::string& peer_relay_user_id, Roe<void> result);
   void EnsureConnectionOnIo(const std::string& peer_relay_user_id, std::function<void(Roe<void>)> on_complete);
+  void InstallConnectionHandler();
+  void OnInboundConnection(libp2p::peer::PeerInfo info);
+  void MaybeHydrateEndpointFromBookLocked(const std::string& peer_relay_user_id);
+  PeerAddrSource SourceForEndpointKey(const std::string& peer_relay_user_id) const;
+  std::optional<std::string> PeerIdBase58ForKeyLocked(const std::string& peer_relay_user_id) const;
 
   Libp2pHost& host_;
   PeerSessionConfig config_;
+  PeerAddressBook address_book_;
   mutable std::mutex mutex_;
   std::unordered_map<std::string, EndpointState> endpoints_;
   std::unordered_map<std::string, std::vector<DialWaiter>> inflight_dials_;
+  std::unordered_map<std::string, CircuitHopLink> circuit_hops_;
   std::atomic<size_t> concurrent_dials_{0};
   std::chrono::steady_clock::time_point last_sweep_{};
+  std::optional<libp2p::event::Handle> connection_handler_;
 };
 
 } // namespace pbr

@@ -1,5 +1,7 @@
 #include "base/platform/BrowserThread.h"
 
+#include <mutex>
+
 namespace pbr {
 
 std::unique_ptr<SequencedTaskRunner> BrowserThread::ui_runner_;
@@ -7,6 +9,8 @@ std::unique_ptr<SequencedTaskRunner> BrowserThread::io_runner_;
 std::function<void()> BrowserThread::ui_wake_callback_;
 
 void BrowserThread::Initialize() {
+  static std::mutex init_mutex;
+  std::lock_guard lock(init_mutex);
   if (!ui_runner_) {
     ui_runner_ = std::make_unique<SequencedTaskRunner>(false);
   }
@@ -44,6 +48,13 @@ bool BrowserThread::CurrentlyOn(const BrowserThreadId id) {
 
 void BrowserThread::PostTask(const BrowserThreadId id, std::function<void()> task) {
   Get(id).PostTask(std::move(task));
+  if (id == BrowserThreadId::UI && ui_wake_callback_) {
+    ui_wake_callback_();
+  }
+}
+
+void BrowserThread::PostTaskFront(const BrowserThreadId id, std::function<void()> task) {
+  Get(id).PostTaskFront(std::move(task));
   if (id == BrowserThreadId::UI && ui_wake_callback_) {
     ui_wake_callback_();
   }

@@ -1,50 +1,23 @@
 <div class="contact-detail-panel stack" data-model="contacts">
-  <div class="contacts-detail-header row">
-    <p class="contacts-header-title">Contact</p>
+  <div class="contacts-detail-header stack">
+    <div class="contacts-row-title-line row">
+      <p class="contacts-header-title" data-rml="selected.title"></p>
+      <span class="contacts-trust-badge contacts-trust-badge--friendly"
+            data-if="selected.trust_key == 'friendly'">Friendly</span>
+      <span class="contacts-trust-badge contacts-trust-badge--blocked"
+            data-if="selected.trust_key == 'blocked'">Blocked</span>
+    </div>
+    <p class="contacts-row-subtitle text muted" data-if="selected.subtitle != ''" data-rml="selected.subtitle"></p>
   </div>
 
   <div class="contacts-detail-body stack">
-    <div class="contact-profile-card stack">
+    <div class="contact-detail-section stack">
+      <p class="settings-section-title">You</p>
       <label class="settings-field contacts-edit-field">
         <span class="text muted">Display name</span>
         <input class="field" type="text" data-value="selected.display_name"
                data-event-change="on_contact_field_changed()" placeholder="Name"/>
       </label>
-      <label class="settings-field contacts-edit-field">
-        <span class="text muted">Nickname</span>
-        <input class="field" type="text" data-value="selected.nickname"
-               data-event-change="on_contact_field_changed()" placeholder="Optional nickname"/>
-      </label>
-      <label class="settings-field contacts-edit-field">
-        <span class="text muted">Relay ID</span>
-        <input class="field" type="text" data-value="selected.relay_id"
-               data-event-change="on_contact_field_changed()" placeholder="Optional — offline relay"/>
-      </label>
-      <label class="settings-field contacts-edit-field">
-        <span class="text muted">Peer ID</span>
-        <input class="field" type="text" data-value="selected.peer_id"
-               data-event-change="on_contact_field_changed()" placeholder="libp2p Peer ID"/>
-      </label>
-      <label class="settings-field contacts-edit-field">
-        <span class="text muted">Multiaddrs</span>
-        <textarea class="field contacts-multiaddrs-field" rows="3" data-value="selected.multiaddrs_text"
-                  data-event-change="on_contact_field_changed()"
-                  placeholder="One multiaddr per line (for direct messaging)"></textarea>
-      </label>
-      <p class="text muted me-profile-meta" data-if="selected.signing_fingerprint != ''">
-        Signing fingerprint: <span data-rml="selected.signing_fingerprint"></span>
-      </p>
-      <p class="text muted">Trust: <span data-rml="selected.trust"></span></p>
-      <div class="me-profile-actions row">
-        <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_contact_id()">
-          <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
-          Copy ID
-        </button>
-        <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_contact()">
-          <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
-          Share
-        </button>
-      </div>
       <div class="contacts-trust-actions row">
         <button class="btn btn-secondary contacts-trust-btn"
                 data-class-contacts-trust-btn--active="selected.trust_key == 'friendly'"
@@ -56,10 +29,43 @@
                 data-class-contacts-trust-btn--active="selected.trust_key == 'blocked'"
                 type="button" data-event-click="set_trust('blocked')">Blocked</button>
       </div>
+    </div>
+
+    <div class="contact-detail-section stack">
+      <p class="settings-section-title">Directory</p>
+      <p class="text muted me-profile-meta" data-if="selected.nickname != ''">
+        Nickname: <span data-rml="selected.nickname"></span>
+      </p>
+      <p class="text muted me-profile-meta" data-if="selected.relay_id != ''">
+        Relay ID: <span data-rml="selected.relay_id"></span>
+      </p>
+      <p class="text muted me-profile-meta" data-if="selected.relay_id == ''">
+        Relay ID: not linked yet
+      </p>
+      <p class="text muted me-profile-meta" data-if="selected.peer_id != ''">
+        Peer ID: <span data-rml="selected.peer_id"></span>
+      </p>
+      <p class="text muted me-profile-meta" data-if="selected.multiaddrs_summary != ''">
+        Multiaddrs: <span data-rml="selected.multiaddrs_summary"></span>
+      </p>
+      <p class="text muted me-profile-meta" data-if="selected.signing_fingerprint != ''">
+        Signing fingerprint: <span data-rml="selected.signing_fingerprint"></span>
+      </p>
+      <p class="text muted me-profile-meta" data-rml="selected.remote_updated"></p>
       <div class="me-profile-actions row">
-        <button class="btn btn-secondary btn-icon" type="button" data-event-click="remove_contact()">
-          <svg src="../icons/trash.svg" width="14" height="14" crop-to-content="true"></svg>
-          Remove contact
+        <div data-if="selected.has_relay_id">
+          <button class="btn btn-secondary btn-icon" type="button" data-event-click="sync_contact_remote()">
+            <svg src="../icons/sync.svg" width="14" height="14" crop-to-content="true"></svg>
+            Sync from directory…
+          </button>
+        </div>
+        <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_contact_id()">
+          <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
+          Copy ID
+        </button>
+        <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_contact()">
+          <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
+          Share
         </button>
       </div>
     </div>
@@ -79,6 +85,13 @@
           <p class="contacts-row-subtitle text muted" data-rml="thread.channel_label"></p>
         </div>
       </div>
+    </div>
+
+    <div class="contact-detail-danger me-profile-actions row">
+      <button class="btn btn-secondary btn-icon" type="button" data-event-click="remove_contact()">
+        <svg src="../icons/trash.svg" width="14" height="14" crop-to-content="true"></svg>
+        Remove contact
+      </button>
     </div>
   </div>
 

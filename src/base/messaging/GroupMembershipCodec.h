@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -25,8 +26,23 @@ public:
   };
   static Roe<InviteResponsePayload> DecodeInviteResponseFromMessage(const ThreadMessage& message);
 
+  struct MemberJoinedEntry {
+    std::string member_identity;
+    MemberRole role = MemberRole::Member;
+  };
+  struct MemberJoinedPayload {
+    std::string group_id;
+    std::string member_identity;
+    MemberRole role = MemberRole::Member;
+    uint64_t roster_epoch = 0;
+    /** Optional full roster snapshot (G006 late-joiner backfill). Empty = primary member only. */
+    std::vector<MemberJoinedEntry> members;
+  };
+
   static Roe<std::string> EncodeMemberJoined(const std::string& group_id, const std::string& member_identity,
                                              MemberRole role, uint64_t roster_epoch);
+  /** Encode member_joined; optional `members` is a full active-roster snapshot for late joiners. */
+  static Roe<std::string> EncodeMemberJoined(const MemberJoinedPayload& payload);
   static Roe<std::string> EncodeMemberLeft(const std::string& group_id, const std::string& member_identity,
                                            uint64_t roster_epoch);
   static Roe<std::string> EncodeMemberRemoved(const std::string& group_id, const std::string& member_identity,
@@ -34,12 +50,6 @@ public:
   static Roe<std::string> EncodeOwnerTransferred(const std::string& group_id, const std::string& new_owner_identity,
                                                  uint64_t roster_epoch, bool leave_previous = false);
 
-  struct MemberJoinedPayload {
-    std::string group_id;
-    std::string member_identity;
-    MemberRole role = MemberRole::Member;
-    uint64_t roster_epoch = 0;
-  };
   struct MemberLeftPayload {
     std::string group_id;
     std::string member_identity;

@@ -10,6 +10,7 @@
 #include <libp2p/host/host.hpp>
 #include <libp2p/peer/protocol.hpp>
 
+#include <chrono>
 #include <future>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -55,7 +56,8 @@ Roe<std::vector<uint8_t>> ReadExactFrame(const std::shared_ptr<Stream>& stream) 
 Roe<void> WriteExactFrame(const std::shared_ptr<Stream>& stream, const std::vector<uint8_t>& frame) {
   std::promise<outcome::result<void>> write_promise;
   auto write_future = write_promise.get_future();
-  libp2p::write(stream, libp2p::Bytes(frame), [&](outcome::result<void> result) { write_promise.set_value(result); });
+  // Yamux WriteQueue stores BytesIn (span) — never pass a temporary Bytes(...).
+  libp2p::write(stream, frame, [&](outcome::result<void> result) { write_promise.set_value(result); });
   if (!write_future.get()) {
     return Error("Failed to write chat frame");
   }
@@ -171,30 +173,50 @@ Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_us
                          // newStream callbacks run on the host io thread — hop off before blocking I/O.
                          std::thread([frame, result_promise, stream_res = std::move(stream_res)]() mutable {
                            if (!stream_res) {
-                             result_promise->set_value(
-                                 Error("libp2p chat stream open failed")
-                                     .WithUser("Reached the peer but chat handshake failed."));
+                             try {
+                               result_promise->set_value(
+                                   Error("libp2p chat stream open failed")
+                                       .WithUser("Reached the peer but chat handshake failed."));
+                             } catch (const std::future_error&) {
+                             }
                              return;
                            }
                            auto stream = std::move(stream_res.value().stream);
                            if (!WriteExactFrame(stream, frame)) {
-                             result_promise->set_value(
-                                 Error("Failed to send direct chat envelope")
-                                     .WithUser("Direct send didn't confirm — will use relay if available."));
+                             try {
+                               result_promise->set_value(
+                                   Error("Failed to send direct chat envelope")
+                                       .WithUser("Direct send didn't confirm — will use relay if available."));
+                             } catch (const std::future_error&) {
+                             }
                              return;
                            }
                            auto ack_frame = ReadExactFrame(stream);
                            stream->close([](auto&&) {});
                            if (!ack_frame) {
-                             result_promise->set_value(
-                                 Error("Failed to read direct chat ack")
-                                     .WithUser("Direct send didn't confirm — will use relay if available."));
+                             try {
+                               result_promise->set_value(
+                                   Error("Failed to read direct chat ack")
+                                       .WithUser("Direct send didn't confirm — will use relay if available."));
+                             } catch (const std::future_error&) {
+                             }
                              return;
                            }
-                           result_promise->set_value({});
+                           try {
+                             result_promise->set_value({});
+                           } catch (const std::future_error&) {
+                           }
                          }).detach();
                        });
 
+  // Must not block Browser IO forever — call MediaKey/roster used to stall Accept/Connect
+  // when mDNS marked the peer dialable but chat open/ack never completed.
+  constexpr int kDirectChatSendTimeoutMs = 4000;
+  if (result_future.wait_for(std::chrono::milliseconds(kDirectChatSendTimeoutMs)) !=
+      std::future_status::ready) {
+    return Error("libp2p chat send timed out")
+        .WithUser("Direct send didn't confirm — will use relay if available.");
+  }
   return result_future.get();
 }
 

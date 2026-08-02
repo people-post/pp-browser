@@ -982,8 +982,21 @@ Roe<void> GroupMembershipService::PublishMemberJoined(const std::string& group_i
   if (!local) {
     return local.error();
   }
-  auto detail =
-      GroupMembershipCodec::EncodeMemberJoined(group_id, member_identity, MemberRole::Member, roster_epoch);
+  GroupMembershipCodec::MemberJoinedPayload payload;
+  payload.group_id = group_id;
+  payload.member_identity = member_identity;
+  payload.role = MemberRole::Member;
+  payload.roster_epoch = roster_epoch;
+  if (auto roster = roster_.ListMembers(group_id); roster) {
+    payload.members.reserve(roster->size());
+    for (const GroupRosterMember& row : *roster) {
+      GroupMembershipCodec::MemberJoinedEntry entry;
+      entry.member_identity = row.member_identity;
+      entry.role = row.role;
+      payload.members.push_back(std::move(entry));
+    }
+  }
+  auto detail = GroupMembershipCodec::EncodeMemberJoined(payload);
   if (!detail) {
     return detail.error();
   }
@@ -993,6 +1006,7 @@ Roe<void> GroupMembershipService::PublishMemberJoined(const std::string& group_i
                                       "Member joined the group", *detail, *local);
   }
   // Fan out to every other active member (including the new member). Best-effort.
+  // Snapshot in detail backfills prior co-invitees for late joiners.
   (void)FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberJoined, *detail, "Member joined the group",
                               *local, member_identity);
   return {};

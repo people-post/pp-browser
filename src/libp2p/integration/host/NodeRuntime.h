@@ -2,8 +2,10 @@
 
 #include "common/Error.h"
 #include "libp2p/integration/host/Libp2pHost.h"
+#include "libp2p/integration/host/IdentifyIntegrationService.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -38,11 +40,21 @@ public:
 
   bool IsRunning() const;
   Libp2pHost* Host();
-  PeerSessionManager* Sessions();
+  PeerSessionManager* Sessions() const;
+  IdentifyIntegrationService* Identify();
 
   /** Bound listen multiaddr after a successful Node start (may differ from requested). */
   const std::string& BoundListenMultiaddr() const { return bound_listen_; }
   const std::string& LastError() const { return last_error_; }
+
+  /** Ephemeral listen while Client (mobile call-scoped — N025). */
+  bool EphemeralListenActive() const { return ephemeral_listen_active_; }
+  Roe<void> StartEphemeralListen();
+  /** Non-blocking N025 start; `cb` is invoked on BrowserThread IO when finished. */
+  void StartEphemeralListenAsync(std::function<void(Roe<void>)> cb);
+  void StopEphemeralListen();
+  /** Non-blocking N025 stop; `cb` is invoked on BrowserThread IO when finished. */
+  void StopEphemeralListenAsync(std::function<void()> cb);
 
   void Tick();
   void SuspendColdPeers();
@@ -52,8 +64,10 @@ private:
 
   std::unique_ptr<Libp2pHost> host_;
   std::unique_ptr<PeerSessionManager> sessions_;
+  std::unique_ptr<IdentifyIntegrationService> identify_;
   std::string bound_listen_;
   std::string last_error_;
+  bool ephemeral_listen_active_ = false;
 };
 
 /** Prefer a concrete TCP listen multiaddr from the host, else `requested`. */

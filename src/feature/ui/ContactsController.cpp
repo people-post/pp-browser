@@ -10,8 +10,11 @@
 #include "base/messaging/ThreadTypes.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/Ed25519Signer.h"
+#include "base/people/PeerDisplayLabel.h"
 #include "base/ui/ContextMenuHost.h"
+#include "common/Utilities.h"
 #include "feature/ui/ChatSessionPorts.h"
+#include "feature/messaging/ContactReachability.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/ui/DataModelHost.h"
 #include "base/crypto/ProfileUnlockGate.h"
@@ -49,19 +52,6 @@ std::string TrimCopy(std::string text) {
   return text;
 }
 
-std::vector<std::string> ParseMultiaddrsFromText(const std::string& text) {
-  std::vector<std::string> out;
-  std::istringstream stream(text);
-  std::string line;
-  while (std::getline(stream, line)) {
-    line = TrimCopy(std::move(line));
-    if (!line.empty()) {
-      out.push_back(std::move(line));
-    }
-  }
-  return out;
-}
-
 std::string MultiaddrsToText(const std::vector<std::string>& multiaddrs) {
   std::ostringstream out;
   for (size_t i = 0; i < multiaddrs.size(); ++i) {
@@ -71,6 +61,16 @@ std::string MultiaddrsToText(const std::vector<std::string>& multiaddrs) {
     out << multiaddrs[i];
   }
   return out.str();
+}
+
+std::string MultiaddrsSummary(const std::vector<std::string>& multiaddrs) {
+  if (multiaddrs.empty()) {
+    return {};
+  }
+  if (multiaddrs.size() == 1) {
+    return "1 address";
+  }
+  return std::to_string(multiaddrs.size()) + " addresses";
 }
 
 bool IsContactDetailTransientActive(const ShellState& state) {
@@ -162,10 +162,8 @@ std::string ThreadKindClass(const ThreadChannel channel) {
 ContactsController::ContactListRow ToContactListRow(const Contact& contact) {
   ContactsController::ContactListRow row;
   row.id = contact.id.c_str();
-  row.title = contact.display_name.empty() ? contact.server_nickname.c_str() : contact.display_name.c_str();
-  if (row.title.empty()) {
-    row.title = "New contact";
-  }
+  const std::string title = ContactEffectiveTitle(contact);
+  row.title = title.empty() ? "New contact" : title.c_str();
   row.subtitle = PrimaryIdentityValue(contact).c_str();
   if (row.subtitle.empty() && !contact.server_nickname.empty() &&
       contact.server_nickname != contact.display_name) {
@@ -182,12 +180,25 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact) {
 ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
   ContactsController::ContactDetail detail;
   detail.id = contact.id.c_str();
-  detail.display_name = contact.display_name.c_str();
-  detail.nickname = contact.server_nickname.c_str();
+  const std::string title = ContactEffectiveTitle(contact);
+  detail.title = title.empty() ? "New contact" : title.c_str();
+  detail.display_name = contact.local.display_name.c_str();
+  detail.nickname = contact.remote.nickname.c_str();
   detail.relay_id = PrimaryIdOfKind(contact, ContactIdKind::RelayUser).c_str();
   detail.peer_id = PrimaryIdOfKind(contact, ContactIdKind::PeerId).c_str();
+  detail.has_relay_id = !detail.relay_id.empty();
+  if (!detail.relay_id.empty()) {
+    detail.subtitle = ShortRelayId(detail.relay_id.c_str()).c_str();
+  } else if (!detail.peer_id.empty()) {
+    detail.subtitle = ShortRelayId(detail.peer_id.c_str()).c_str();
+  }
   detail.trust = TrustDisplayLabel(contact.trust).c_str();
   detail.trust_key = TrustLevelToString(contact.trust).c_str();
+  if (contact.remote.fetched_at > 0) {
+    detail.remote_updated = "From directory";
+  } else {
+    detail.remote_updated = "Not synced yet";
+  }
 
   detail.identities.reserve(contact.ids.size());
   for (const ContactId& id : contact.ids) {
@@ -240,12 +251,30 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
   return detail;
 }
 
-void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const Contact& contact) {
+void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const Contact& contact,
+                               const MessagingHub* messaging) {
   detail.multiaddrs_text = MultiaddrsToText(contact.multiaddrs).c_str();
+  detail.multiaddrs_summary = MultiaddrsSummary(contact.multiaddrs).c_str();
   const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
   if (target.peer_identity_value.empty()) {
     detail.can_message = false;
     detail.message_hint = "Add a relay ID, or a peer ID with multiaddr, to message.";
+    return;
+  }
+  if (messaging != nullptr && messaging->IsMessagingReady()) {
+    detail.can_message = messaging->IsContactReachable(contact);
+    if (!detail.can_message) {
+      detail.message_hint =
+          "Add a relay ID or multiaddr, or connect on the same network so this PeerId becomes dialable.";
+      return;
+    }
+    if (contact.multiaddrs.empty() && IsContactStackDialable(contact, messaging->Sessions())) {
+      detail.message_hint = "Direct link via address book (no pasted multiaddr).";
+    } else if (contact.multiaddrs.empty()) {
+      detail.message_hint = "Relay messaging available. Add a multiaddr for a pinned direct link.";
+    } else {
+      detail.message_hint = "";
+    }
     return;
   }
   if (target.peer_identity_kind == ContactIdKindToString(ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
@@ -263,24 +292,9 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
 
 Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail) {
   Contact contact = existing;
-  contact.display_name = detail.display_name.c_str();
-  contact.server_nickname = detail.nickname.c_str();
-  contact.ids.clear();
-  for (const ContactId& id : existing.ids) {
-    if (id.kind != ContactIdKind::RelayUser && id.kind != ContactIdKind::PeerId) {
-      contact.ids.push_back(id);
-    }
-  }
-  const std::string relay = detail.relay_id.c_str();
-  const std::string peer = detail.peer_id.c_str();
-  const bool has_relay = !relay.empty();
-  if (has_relay) {
-    contact.ids.push_back({ContactIdKind::RelayUser, relay, true});
-  }
-  if (!peer.empty()) {
-    contact.ids.push_back({ContactIdKind::PeerId, peer, !has_relay});
-  }
-  contact.multiaddrs = ParseMultiaddrsFromText(detail.multiaddrs_text.c_str());
+  // Only local annotations are editable from the detail form.
+  contact.local.display_name = detail.display_name.c_str();
+  SyncContactMirrors(contact);
   return contact;
 }
 
@@ -351,24 +365,30 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
       thread_handle.RegisterMember("unread_count", &ContactThreadRow::unread_count);
       thread_handle.RegisterMember("unread_display", &ContactThreadRow::unread_display);
     }
+    // Arrays must be registered before they are used as struct members.
+    ctor.RegisterArray<std::vector<ContactListRow>>();
+    ctor.RegisterArray<std::vector<ContactIdentityRow>>();
+    ctor.RegisterArray<std::vector<ContactThreadRow>>();
     if (auto detail_handle = ctor.RegisterStruct<ContactDetail>()) {
       detail_handle.RegisterMember("id", &ContactDetail::id);
+      detail_handle.RegisterMember("title", &ContactDetail::title);
+      detail_handle.RegisterMember("subtitle", &ContactDetail::subtitle);
       detail_handle.RegisterMember("display_name", &ContactDetail::display_name);
       detail_handle.RegisterMember("nickname", &ContactDetail::nickname);
       detail_handle.RegisterMember("relay_id", &ContactDetail::relay_id);
       detail_handle.RegisterMember("peer_id", &ContactDetail::peer_id);
       detail_handle.RegisterMember("multiaddrs_text", &ContactDetail::multiaddrs_text);
+      detail_handle.RegisterMember("multiaddrs_summary", &ContactDetail::multiaddrs_summary);
       detail_handle.RegisterMember("trust", &ContactDetail::trust);
       detail_handle.RegisterMember("trust_key", &ContactDetail::trust_key);
       detail_handle.RegisterMember("signing_fingerprint", &ContactDetail::signing_fingerprint);
       detail_handle.RegisterMember("message_hint", &ContactDetail::message_hint);
+      detail_handle.RegisterMember("remote_updated", &ContactDetail::remote_updated);
       detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
+      detail_handle.RegisterMember("has_relay_id", &ContactDetail::has_relay_id);
       detail_handle.RegisterMember("identities", &ContactDetail::identities);
       detail_handle.RegisterMember("threads", &ContactDetail::threads);
     }
-    ctor.RegisterArray<std::vector<ContactListRow>>();
-    ctor.RegisterArray<std::vector<ContactIdentityRow>>();
-    ctor.RegisterArray<std::vector<ContactThreadRow>>();
     ctor.Bind("contacts", &controller.contacts_);
     ctor.Bind("search_query", &controller.search_query_);
     ctor.Bind("compact_layout", &controller.compact_layout_);
@@ -386,6 +406,7 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("open_thread", &ContactsController::OpenThreadCallback);
     ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
     ctor.BindEventCallback("on_contact_field_changed", &ContactsController::OnContactFieldChangedCallback);
+    ctor.BindEventCallback("sync_contact_remote", &ContactsController::SyncRemoteCallback);
   });
 
   if (registered) {
@@ -526,6 +547,11 @@ void ContactsController::OnContactFieldChangedCallback(Rml::DataModelHandle /*mo
   Instance().OnContactFieldChanged();
 }
 
+void ContactsController::SyncRemoteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& /*args*/) {
+  Instance().OnSyncRemote();
+}
+
 void ContactsController::CopyIdCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                         const Rml::VariantList& /*args*/) {
   Instance().OnCopyId();
@@ -573,11 +599,11 @@ void ContactsController::LoadSelectedDetail(const std::string& contact_id) {
     return;
   }
   selected_ = ToContactDetail(**contact);
-  ApplyMessagingEligibility(selected_, **contact);
+  ApplyMessagingEligibility(selected_, **contact, messaging_);
 }
 
 void ContactsController::UpdateMessagingEligibility(const Contact& contact) {
-  ApplyMessagingEligibility(selected_, contact);
+  ApplyMessagingEligibility(selected_, contact, messaging_);
 }
 
 void ContactsController::OnSelectContact(const std::string& contact_id) {
@@ -887,7 +913,8 @@ void ContactsController::OnSetTrust(const std::string& trust) {
     return;
   }
   Contact updated = **contact;
-  updated.trust = TrustLevelFromString(trust);
+  updated.local.trust = TrustLevelFromString(trust);
+  SyncContactMirrors(updated);
   if (!Hub().Contacts().Upsert(updated)) {
     UserFeedback::Fail("Could not update trust");
     ShellHost::Instance().DirtyWindow();
@@ -897,6 +924,46 @@ void ContactsController::OnSetTrust(const std::string& trust) {
   SyncFromStore();
   DirtyAll();
   ShellFeedback::ShowToast(ShellHost::Instance().State(), "Trust updated");
+  ShellHost::Instance().DirtyWindow();
+}
+
+void ContactsController::OnSyncRemote() {
+  if (!Hub().IsInitialized() || selected_.id.empty()) {
+    return;
+  }
+  FlushPending();
+  const std::string relay_id = selected_.relay_id.c_str();
+  if (relay_id.empty()) {
+    UserFeedback::Fail("No relay ID to sync");
+    ShellHost::Instance().DirtyWindow();
+    return;
+  }
+  auto hit = Hub().Directory().LookupRelayUser(relay_id);
+  if (!hit) {
+    UserFeedback::Fail(hit.error().message.empty() ? "Could not sync contact" : hit.error().message);
+    ShellHost::Instance().DirtyWindow();
+    return;
+  }
+  if (hit->signing_public_key_b64 && !hit->signing_public_key_b64->empty()) {
+    Hub().P2p().RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), relay_id,
+                                       *hit->signing_public_key_b64, "directory");
+  }
+  if (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty()) {
+    Hub().P2p().RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::RelayUser), relay_id,
+                                   *hit->kem_public_key_b64, "directory");
+  }
+  auto applied = Hub().Contacts().ApplyRemoteSnapshot(selected_.id.c_str(), *hit, util::NowUnixMs());
+  if (!applied) {
+    UserFeedback::Fail(applied.error().message.empty() ? "Could not save synced contact"
+                                                       : applied.error().message);
+    ShellHost::Instance().DirtyWindow();
+    return;
+  }
+  Hub().P2p().RegisterContactDirectEndpoints(*applied);
+  LoadSelectedDetail(selected_.id.c_str());
+  SyncFromStore();
+  DirtyAll();
+  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Contact synced");
   ShellHost::Instance().DirtyWindow();
 }
 

@@ -230,7 +230,8 @@ Roe<void> CallSessionStore::UpsertParticipant(const CallParticipant& participant
       "INSERT INTO call_participants (call_id, identity, state, audio_muted, video_enabled, joined_at, left_at) "
       "VALUES (?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(call_id, identity) DO UPDATE SET state=excluded.state, audio_muted=excluded.audio_muted, "
-      "video_enabled=excluded.video_enabled, joined_at=excluded.joined_at, left_at=excluded.left_at;";
+      "video_enabled=excluded.video_enabled, "
+      "joined_at=COALESCE(excluded.joined_at, call_participants.joined_at), left_at=excluded.left_at;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare call participant upsert");

@@ -181,6 +181,10 @@ void CallP2pSignalingBridge::BindMediaCallbacks(const std::string& peer_identity
     if (state == "failed" && !media_.IsSfuMode() && !call_id.empty()) {
       auto joined = sessions_.CountJoined(call_id);
       if (joined && *joined >= 3) {
+        if (host_.P2pIsAwaitingSfuRecovery()) {
+          // Soft-migrate / StartSfu PC teardown often emits failed — do not re-enter.
+          return;
+        }
         host_.P2pOnGroupIceFailed(call_id);
         return;
       }

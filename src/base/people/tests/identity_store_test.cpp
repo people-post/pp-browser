@@ -2,10 +2,13 @@
 #include "base/people/IdentityStore.h"
 #include "base/crypto/CryptoConstants.h"
 #include "base/crypto/CryptoUtil.h"
+#include "base/crypto/FileCipher.h"
 #include "libp2p/integration/host/PeerIdUtil.h"
 
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 #include <sodium.h>
 
 namespace {
@@ -107,6 +110,85 @@ TEST_F(IdentityStoreTest, RequiresDek) {
   IdentityStore store(data_dir_.string(), "test-profile");
   auto identity = store.LoadOrCreate();
   ASSERT_FALSE(static_cast<bool>(identity));
+}
+
+TEST_F(IdentityStoreTest, WritesSchemaVersionAndMigratesLegacy) {
+  const ByteVector dek = MakeTestDek();
+  auto keys = Ed25519Signer::GenerateKeyPair();
+  ASSERT_TRUE(static_cast<bool>(keys));
+
+  std::filesystem::create_directories(data_dir_);
+  const nlohmann::json legacy = {{"public_key_b64", Ed25519Signer::ToBase64(keys->public_key)},
+                                 {"private_key_b64", Ed25519Signer::ToBase64(keys->private_key)},
+                                 {"nickname", "legacy"},
+                                 {"relay_user_id", ""},
+                                 {"brief_llm_api_key", ""},
+                                 {"registered", false},
+                                 {"registration_expires_at", ""}};
+  const std::string json = legacy.dump(2);
+  const ByteVector plaintext(json.begin(), json.end());
+  const std::string aad = FileCipher::BuildAad("identity", "test-profile");
+  auto ciphertext = FileCipher::Encrypt(dek, plaintext, aad);
+  ASSERT_TRUE(static_cast<bool>(ciphertext)) << ciphertext.error().message;
+  {
+    std::ofstream out(data_dir_ / "identity.enc", std::ios::binary);
+    ASSERT_TRUE(static_cast<bool>(out));
+    out.write(reinterpret_cast<const char*>(ciphertext->data()),
+              static_cast<std::streamsize>(ciphertext->size()));
+  }
+
+  IdentityStore store(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(store.SetDek(dek));
+  auto identity = store.LoadOrCreate();
+  ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
+  EXPECT_EQ(identity->nickname, "legacy");
+
+  // Reload should decrypt the rewritten schema_version payload.
+  IdentityStore reloaded(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(reloaded.SetDek(dek));
+  auto again = reloaded.Get();
+  ASSERT_TRUE(static_cast<bool>(again)) << again.error().message;
+  EXPECT_EQ(again->nickname, "legacy");
+
+  std::ifstream in(data_dir_ / "identity.enc", std::ios::binary);
+  ASSERT_TRUE(static_cast<bool>(in));
+  ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto plain = FileCipher::Decrypt(dek, blob, aad);
+  ASSERT_TRUE(static_cast<bool>(plain)) << plain.error().message;
+  const nlohmann::json root = nlohmann::json::parse(plain->begin(), plain->end(), nullptr, false);
+  ASSERT_FALSE(root.is_discarded());
+  ASSERT_TRUE(root.contains("schema_version"));
+  EXPECT_EQ(root["schema_version"].get<int>(), IdentityStore::kSchemaVersion);
+}
+
+TEST_F(IdentityStoreTest, RejectsNewerSchemaVersion) {
+  const ByteVector dek = MakeTestDek();
+  auto keys = Ed25519Signer::GenerateKeyPair();
+  ASSERT_TRUE(static_cast<bool>(keys));
+
+  std::filesystem::create_directories(data_dir_);
+  const nlohmann::json newer = {{"schema_version", IdentityStore::kSchemaVersion + 1},
+                                {"public_key_b64", Ed25519Signer::ToBase64(keys->public_key)},
+                                {"private_key_b64", Ed25519Signer::ToBase64(keys->private_key)},
+                                {"nickname", "future"},
+                                {"registered", false}};
+  const std::string json = newer.dump(2);
+  const ByteVector plaintext(json.begin(), json.end());
+  const std::string aad = FileCipher::BuildAad("identity", "test-profile");
+  auto ciphertext = FileCipher::Encrypt(dek, plaintext, aad);
+  ASSERT_TRUE(static_cast<bool>(ciphertext));
+  {
+    std::ofstream out(data_dir_ / "identity.enc", std::ios::binary);
+    ASSERT_TRUE(static_cast<bool>(out));
+    out.write(reinterpret_cast<const char*>(ciphertext->data()),
+              static_cast<std::streamsize>(ciphertext->size()));
+  }
+
+  IdentityStore store(data_dir_.string(), "test-profile");
+  ASSERT_TRUE(store.SetDek(dek));
+  auto identity = store.Get();
+  ASSERT_FALSE(static_cast<bool>(identity));
+  EXPECT_NE(identity.error().message.find("schema"), std::string::npos);
 }
 
 } // namespace

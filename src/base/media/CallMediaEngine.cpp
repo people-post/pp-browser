@@ -1432,6 +1432,10 @@ bool CallMediaEngine::IsConnected() const {
   return impl_->connected.load();
 }
 
+void CallMediaEngine::SetConnectionState(const std::string& state) {
+  impl_->SetState(state);
+}
+
 std::string CallMediaEngine::ActiveCallId() const {
   std::lock_guard lock(impl_->mutex);
   return impl_->call_id;

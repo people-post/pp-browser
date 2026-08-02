@@ -1,36 +1,52 @@
 # P2P mesh
 
-**Status:** **nf + n4-media done** — next calls **a4** (V024 adaptive + SFU consumer); message_relay / pricing UI / DHT later  
+**Status:** Core mesh shipped (role, reachability, circuit, contact-first, media relay). Next: libp2p deepen, call consumer (a4), DHT, peer message_relay, paid UI.  
 **Formerly:** `projects/libp2p-node-roles/` (renamed; ADRs remain N001+)  
 **Owner:** Hongwei + agents  
-**Stable refs:** [docs/architecture/P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [docs/ops/CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [docs/architecture/PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [docs/architecture/LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
-**Related:** [push-notifications](../push-notifications/) (HTTP Brief relay wake), [p2p-av-calls](../p2p-av-calls/) (a4 needs n4-media SFU), messaging under `src/feature/messaging/`
+
+**Stable refs:** [NETWORKING.md](../../docs/architecture/NETWORKING.md), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
+**Related:** [media-hop-reachability](../media-hop-reachability/) (dial-by-PeerId in libp2p), [p2p-av-calls](../p2p-av-calls/) (V026), [push-notifications](../push-notifications/), messaging under `src/feature/messaging/`
 
 ## One-line goal
 
-GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`** for org seeds; **reachability** (IPv6/UPnP + guides); **contact-first** relay preference. Billable relays may settle on chain.
+GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`** for org seeds; **reachability** (IPv6/UPnP + guides); **contact-first** relay preference with **scope escalation**; mobile **call-scoped listen on Wi‑Fi** (N025). HTTP settle preferred; chain settle backup. Billable relays may settle on chain.
 
-## Model (N009–N016)
+## How the pieces fit
 
-| Layer | Meaning |
-|-------|---------|
-| **Role** | Client vs Node (`node_enabled`) |
-| **Capabilities** | Checkboxes under Node (DHT, relays, chain, jobs, …) |
-| **Pricing** | Design now (N010); volunteer SFU first; paid UI later (N017) |
-| **Packaging** | `pp-browser` vs headless **`pp-node`** (N011) |
-| **Reachability** | Status + help (N012); prefer IPv6 + UPnP (N013) |
-| **Listen port** | Preferred **18517**; desktop busy fallback + persist (N016) |
-| **Relay preference** | Ask/serve **contacts first**, then seed, then public (N014) |
-| **Delivery order** | Reachability + circuit before DHT (N015) |
+Read [DESIGN.md](DESIGN.md) for the full spec. At a glance:
 
-## Release scope (n1)
+```mermaid
+flowchart TB
+  subgraph product [Product policy — p2p-mesh]
+    Role[Client / Node + capabilities]
+    Pick[Hop selection + scope + pricing]
+    ReachUX[Reachability status + help UI]
+  end
+  subgraph stack [Dialability — media-hop-reachability]
+    Book[Peer address book]
+    NAT[NAT / UPnP / DialBack]
+    Circuit[Circuit bridge]
+  end
+  subgraph consume [Consumers]
+    Calls[p2p-av-calls / SoftMigrate]
+    Msg[Messaging / HTTP Brief]
+  end
+  Role --> Pick
+  Book --> Circuit
+  NAT --> Book
+  Pick -->|"eligible PeerId"| Circuit
+  Circuit --> Calls
+  Role --> Msg
+```
 
-| In | Out |
-|----|-----|
-| `bootstrap_peers` + `node_enabled` | Caps / pricing / UPnP / friend routing |
-| Client skips listen; bootstrap seed | DHT, circuit, media, chain, jobs |
-| Me → Network master toggle | **np / nr / nu / nf** phases |
-| Docs + unit tests | DNS multiaddrs; public IPFS bootstrap |
+| Question | Where to read |
+|----------|----------------|
+| How does the mesh work? | [DESIGN.md](DESIGN.md) |
+| Scope tags and bridge score | [RELAY_SCOPE.md](RELAY_SCOPE.md) |
+| Can we dial this hop PeerId? | [media-hop-reachability](../media-hop-reachability/DESIGN.md) |
+| What's in the repo today? | [CURRENT_STATE.md](CURRENT_STATE.md) |
+| What to build next, in what order? | [PHASES.md](PHASES.md) |
+| Why we chose X | [DECISIONS.md](DECISIONS.md) |
 
 ## Seed (locked)
 
@@ -38,28 +54,15 @@ GUI **Client/Node** mesh with capabilities and optional paid relays; **`pp-node`
 /ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR
 ```
 
-Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/18517` (busy → fallback range + persist — N016).
+Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/18517` (busy → fallback range + persist).
 
 ## Documents
 
 | File | Purpose |
 |------|---------|
-| [DESIGN.md](DESIGN.md) | Full model, N010–N021, delivery order |
+| [DESIGN.md](DESIGN.md) | **Authoritative spec** — roles, capabilities, services, reachability, relay policy, config, packaging |
+| [RELAY_SCOPE.md](RELAY_SCOPE.md) | Connectivity domains, scope escalation, bridge score |
+| [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md) | Multi-hop circuit plan — today single-hop |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
-| [PHASES.md](PHASES.md) | Checklists in N015 order |
+| [PHASES.md](PHASES.md) | Checklists and delivery order |
 | [DECISIONS.md](DECISIONS.md) | ADRs (N001+) |
-
-## Progress snapshot (N015 order)
-
-| Phase | Name | Status |
-|-------|------|--------|
-| n0 | Docs + ADRs through N015 | Done |
-| n1 | Role shell, listen, bootstrap, master toggle | **Done** |
-| np | `pp-node` + dial-back | **Done** |
-| nr | Reachability status + manual help | **Done** |
-| nu | IPv6 + UPnP/NAT-PMP | **Done** |
-| n3 | Circuit-relay | **Done** |
-| nf | Contact-first preference | **Done** |
-| n4-media | Framing/QoS + contacts∪seed pick | **Done** — unblocks a4 |
-| n4-message / pricing | Peer message_relay; paid UI | Deferred (N017) |
-| n2 | DHT | Later than circuit (N015) |

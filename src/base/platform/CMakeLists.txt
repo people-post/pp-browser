@@ -30,6 +30,7 @@ set(_pp_platform_gui_sources
   IosPathProvider.cpp
   IPushDeviceRegistrar.cpp
   MobileWindowSizing.cpp
+  NetworkConnectivity.cpp
   PlatformEarlyInit.cpp
   PlatformLogSink.cpp
   PlatformNavigation.cpp
@@ -117,7 +118,12 @@ endif()
 
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
 if(PP_BROWSER_IS_ANDROID)
+  target_sources(pp_base_platform PRIVATE NetworkConnectivity_Android.cpp)
   target_link_libraries(pp_base_platform PUBLIC CURL::libcurl)
+endif()
+
+if(PP_BROWSER_IS_IOS)
+  target_sources(pp_base_platform PRIVATE NetworkConnectivity_Ios.mm)
 endif()
 
 # Desktop macOS: UNUserNotificationCenter for local banners.

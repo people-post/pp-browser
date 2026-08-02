@@ -3,6 +3,10 @@
 namespace pbr {
 
 std::string FormatContactTitle(const Contact& contact) {
+  const std::string title = ContactEffectiveTitle(contact);
+  if (!title.empty()) {
+    return title;
+  }
   if (!contact.display_name.empty()) {
     return contact.display_name;
   }

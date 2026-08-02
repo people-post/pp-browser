@@ -1,5 +1,6 @@
 #include "libp2p/integration/host/MediaRelayService.h"
 
+#include "base/people/RelayScope.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/basic/read.hpp>
@@ -75,7 +76,8 @@ Roe<void> WriteExactBody(const std::shared_ptr<Stream>& stream, const std::vecto
   std::memcpy(frame.data() + 8, body.data(), body.size());
   std::promise<outcome::result<void>> write_promise;
   auto write_future = write_promise.get_future();
-  libp2p::write(stream, libp2p::Bytes(frame), [&](outcome::result<void> result) { write_promise.set_value(result); });
+  // Yamux WriteQueue stores BytesIn (span) — never pass a temporary Bytes(...).
+  libp2p::write(stream, frame, [&](outcome::result<void> result) { write_promise.set_value(result); });
   if (!write_future.get()) {
     return Error("Failed to write media-relay frame");
   }
@@ -90,8 +92,7 @@ Roe<void> WriteJson(const std::shared_ptr<Stream>& stream, const nlohmann::json&
   // EncodeStreamJsonFrame already includes length prefix — write raw.
   std::promise<outcome::result<void>> write_promise;
   auto write_future = write_promise.get_future();
-  libp2p::write(stream, libp2p::Bytes(*encoded),
-                [&](outcome::result<void> result) { write_promise.set_value(result); });
+  libp2p::write(stream, *encoded, [&](outcome::result<void> result) { write_promise.set_value(result); });
   if (!write_future.get()) {
     return Error("Failed to write media-relay json");
   }
@@ -243,10 +244,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::atomic<bool> client_reader_running{false};
 
   bool AdmitPeer(const std::string& peer_id) {
-    if (!admission.prefer_contacts_only || admission.contact_peer_ids.empty()) {
-      return true;
-    }
-    return !peer_id.empty() && admission.contact_peer_ids.count(peer_id) > 0;
+    return RelayAdmissionAllowsDialer(admission.serve_scope_mask, peer_id, admission.contact_peer_ids);
   }
 
   MediaRelayQuote BuildQuote(const MediaRelayQuoteRequest& req) {
@@ -371,9 +369,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         policy = admission;
       }
 
-      const bool admitted =
-          !policy.prefer_contacts_only || policy.contact_peer_ids.empty() ||
-          (!remote.empty() && policy.contact_peer_ids.count(remote) > 0);
+      const bool admitted = RelayAdmissionAllowsDialer(policy.serve_scope_mask, remote, policy.contact_peer_ids);
       if (!admitted) {
         (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
         stream->close([](auto&&) {});
@@ -592,24 +588,39 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
 
   auto result_promise = std::make_shared<std::promise<Roe<MediaRelayQuote>>>();
   auto result_future = result_promise->get_future();
+  auto settled = std::make_shared<std::atomic<bool>>(false);
+
+  const bool circuit_backed = sessions_.IsCircuitBacked(hop_peer_key);
 
   sessions_.OpenStream(hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
-                       [req = std::move(req), result_promise](libp2p::StreamAndProtocolOrError stream_res) {
-                         std::thread([req, result_promise, stream_res = std::move(stream_res)]() mutable {
+                       [req = std::move(req), result_promise, settled, circuit_backed](
+                           libp2p::StreamAndProtocolOrError stream_res) {
+                         std::thread([req, result_promise, settled, circuit_backed,
+                                      stream_res = std::move(stream_res)]() mutable {
+                           auto finish = [&](Roe<MediaRelayQuote> value) {
+                             if (!settled->exchange(true)) {
+                               result_promise->set_value(std::move(value));
+                             }
+                           };
                            if (!stream_res) {
-                             result_promise->set_value(Error("media-relay stream open failed"));
+                             const auto& ec = stream_res.error();
+                             finish(Error(std::string("media-relay stream open failed: ") + ec.message()));
                              return;
                            }
                            auto stream = std::move(stream_res.value().stream);
                            if (!WriteJson(stream, req)) {
-                             result_promise->set_value(Error("Failed to send quote"));
-                             stream->close([](auto&&) {});
+                             finish(Error("Failed to send quote"));
+                             if (!circuit_backed) {
+                               stream->close([](auto&&) {});
+                             }
                              return;
                            }
                            auto root = ReadJson(stream);
-                           stream->close([](auto&&) {});
+                           if (!circuit_backed) {
+                             stream->close([](auto&&) {});
+                           }
                            if (!root) {
-                             result_promise->set_value(root.error());
+                             finish(root.error());
                              return;
                            }
                            MediaRelayQuote q;
@@ -624,13 +635,14 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
                            q.rate = root->value("rate", 0.0);
                            q.ceiling_bytes = root->value("ceiling_bytes", static_cast<int64_t>(0));
                            q.ceiling_amount = root->value("ceiling_amount", 0.0);
-                           result_promise->set_value(q);
+                           finish(q);
                          }).detach();
                        });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;
   if (result_future.wait_for(std::chrono::milliseconds(wait_ms)) != std::future_status::ready) {
-    return Error("media-relay quote timed out");
+    settled->exchange(true);
+    return Error(std::string("media-relay quote timed out (hop=") + hop_peer_key + ")");
   }
   return result_future.get();
 }
@@ -648,28 +660,35 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
 
   auto result_promise = std::make_shared<std::promise<Roe<MediaRelayAttachResult>>>();
   auto result_future = result_promise->get_future();
+  auto settled = std::make_shared<std::atomic<bool>>(false);
   auto impl = impl_;
 
   sessions_.OpenStream(
       hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
-      [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise](
+      [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise, settled](
           libp2p::StreamAndProtocolOrError stream_res) mutable {
-        std::thread([impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise,
+        std::thread([impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise, settled,
                      stream_res = std::move(stream_res)]() mutable {
+          auto finish = [&](Roe<MediaRelayAttachResult> value) {
+            if (!settled->exchange(true)) {
+              result_promise->set_value(std::move(value));
+            }
+          };
           if (!stream_res) {
-            result_promise->set_value(Error("media-relay stream open failed"));
+            const auto& ec = stream_res.error();
+            finish(Error(std::string("media-relay stream open failed: ") + ec.message()));
             return;
           }
           auto stream = std::move(stream_res.value().stream);
           if (!WriteJson(stream, {{"v", 1}, {"op", "accept"}, {"quote_id", quote_id}})) {
-            result_promise->set_value(Error("Failed to send accept"));
+            finish(Error("Failed to send accept"));
             stream->close([](auto&&) {});
             return;
           }
           auto accept_root = ReadJson(stream);
           if (!accept_root || !accept_root->value("ok", false)) {
-            result_promise->set_value(Error(accept_root ? accept_root->value("error", "accept failed")
-                                                        : accept_root.error().message));
+            finish(Error(accept_root ? accept_root->value("error", "accept failed")
+                                     : accept_root.error().message));
             stream->close([](auto&&) {});
             return;
           }
@@ -679,14 +698,14 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
                                   {"session_token", token},
                                   {"call_id", call_id},
                                   {"auth", auth_stub}})) {
-            result_promise->set_value(Error("Failed to send attach"));
+            finish(Error("Failed to send attach"));
             stream->close([](auto&&) {});
             return;
           }
           auto attach_root = ReadJson(stream);
           if (!attach_root || !attach_root->value("ok", false)) {
-            result_promise->set_value(Error(attach_root ? attach_root->value("error", "attach failed")
-                                                        : attach_root.error().message));
+            finish(Error(attach_root ? attach_root->value("error", "attach failed")
+                                     : attach_root.error().message));
             stream->close([](auto&&) {});
             return;
           }
@@ -702,13 +721,14 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
           MediaRelayAttachResult out;
           out.ok = true;
           out.session_token = token;
-          result_promise->set_value(out);
+          finish(out);
         }).detach();
       });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;
   if (result_future.wait_for(std::chrono::milliseconds(wait_ms)) != std::future_status::ready) {
-    return Error("media-relay attach timed out");
+    settled->exchange(true);
+    return Error(std::string("media-relay attach timed out (hop=") + hop_peer_key + ")");
   }
   return result_future.get();
 }

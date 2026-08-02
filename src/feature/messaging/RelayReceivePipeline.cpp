@@ -19,6 +19,7 @@
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/GroupInviteGate.h"
 
+#include "common/Logger.h"
 #include "common/Utilities.h"
 
 #include <nlohmann/json.hpp>
@@ -74,11 +75,13 @@ RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyR
       group_roster_(group_roster), invite_gate_(invite_gate) {}
 
 Roe<void> RelayReceivePipeline::ApplyInboundCallMessage(ThreadMessage& message,
-                                                        const std::string& actor_identity) const {
+                                                        const std::string& actor_identity,
+                                                        const std::optional<int64_t> relay_created_at_ms,
+                                                        const std::optional<int64_t> relay_server_time_ms) const {
   if (!call_sessions_ || !IsCallControlMessage(message)) {
     return {};
   }
-  return call_sessions_->ApplyInboundControl(message, actor_identity);
+  return call_sessions_->ApplyInboundControl(message, actor_identity, relay_created_at_ms, relay_server_time_ms);
 }
 
 Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message,
@@ -442,6 +445,40 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     }
     if (*has_message_id) {
       outcome.decision = IngestDecision::BenignDuplicate;
+      // Message body may never have run call-control (history sync / prior drop). Decrypt and
+      // apply idempotent CallMediaKey/Accept side effects before returning.
+      auto verified_dup = VerifySignature(envelope, inbound_target);
+      if (verified_dup && *verified_dup && E2eRelayPayloadCodec::RequiresEncryption(envelope.route.channel)) {
+        ChatTargetKey target_key;
+        target_key.peer_identity_kind = inbound_target.peer_identity_kind;
+        target_key.peer_identity_value = inbound_target.peer_identity_value;
+        target_key.channel = E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel);
+        std::optional<ByteVector> local_kem_private_key;
+        if (envelope.route.channel == ThreadChannel::E2ePublic) {
+          if (auto kem_private = identity_.GetOrCreateHybridKemPrivateKey()) {
+            local_kem_private_key = std::move(*kem_private);
+          }
+        }
+        if (auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key,
+                                                                   psk_store_, local_kem_private_key)) {
+          if (IsCallControlMessage(*decrypted)) {
+            logging::getLogger("RelayReceivePipeline").warning
+                << "Apply call-control on BenignDuplicate message_id=" << envelope.message_id;
+            ThreadMessage side = std::move(*decrypted);
+            side.id = envelope.message_id;
+            side.thread_id = resolved_thread_id;
+            side.sender_contact_id = envelope.sender_contact_id;
+            side.timestamp = envelope.timestamp;
+            side.delivery = MessageDelivery::Relayed;
+            side.relay_visible = true;
+            side.transport = transport;
+            side.sender_seq = envelope.sender_seq;
+            side.session_epoch = envelope.session_epoch;
+            (void)ApplyInboundCallMessage(side, envelope.sender_contact_id, envelope.relay_created_at_ms,
+                                          envelope.relay_server_time_ms);
+          }
+        }
+      }
       return outcome;
     }
   }
@@ -598,7 +635,39 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   const IngestClassifierResult classified = E2eIngestClassifier::Classify(classifier_input, replay_window);
   outcome.decision = classified.decision;
 
+  auto apply_call_control_side_effects = [&](IngestDecision decision_label) {
+    if (!IsCallControlMessage(message) && !IsGroupMembershipControlMessage(message)) {
+      return;
+    }
+    ThreadMessage side = message;
+    side.id = envelope.message_id;
+    side.thread_id = resolved_thread_id;
+    side.sender_contact_id = seq_owner;
+    side.timestamp = envelope.timestamp;
+    side.delivery = MessageDelivery::Relayed;
+    side.relay_visible = true;
+    side.transport = transport;
+    side.sender_seq = envelope.sender_seq;
+    side.session_epoch = envelope.session_epoch;
+    if (IsGroupMembershipControlMessage(side)) {
+      (void)ApplyInboundMembershipMessage(side, envelope.sender_contact_id, &outcome);
+    }
+    if (IsCallControlMessage(side)) {
+      logging::getLogger("RelayReceivePipeline").warning
+          << "Apply call-control on " << static_cast<int>(decision_label)
+          << " message_id=" << envelope.message_id;
+      if (auto call = ApplyInboundCallMessage(side, envelope.sender_contact_id, envelope.relay_created_at_ms,
+                                              envelope.relay_server_time_ms);
+          !call) {
+        logging::getLogger("RelayReceivePipeline").warning
+            << "Call-control side-effect failed: " << call.error().message;
+      }
+    }
+  };
+
   if (classified.decision == IngestDecision::SilentDiscard || classified.decision == IngestDecision::BenignDuplicate) {
+    // MediaKey/Accept are idempotent — do not skip when classifier drops a resent seq/id.
+    apply_call_control_side_effects(classified.decision);
     return outcome;
   }
   const bool strict_channel = envelope.route.channel == ThreadChannel::E2e;
@@ -626,7 +695,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                              membership.error().message, resolved_thread_id);
           return outcome;
         }
-        if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id); !call) {
+        if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id, envelope.relay_created_at_ms,
+                                                envelope.relay_server_time_ms);
+            !call) {
           MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply call update", call.error().message,
                              resolved_thread_id);
           return outcome;
@@ -644,7 +715,10 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       outcome.decision = IngestDecision::SoftCompromised;
       return outcome;
     }
-    // SoftCompromised on e2e_public should be rare after D046 classifier; HardReject stays drop.
+    // e2e_public SoftCompromised/HardReject: still apply call-control (MediaKey) when decoded.
+    if (classified.decision == IngestDecision::SoftCompromised || IsCallControlMessage(message)) {
+      apply_call_control_side_effects(classified.decision);
+    }
     return outcome;
   }
   if (!classified.persist_message) {
@@ -669,7 +743,9 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                        membership.error().message, resolved_thread_id);
     return outcome;
   }
-  if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id); !call) {
+  if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id, envelope.relay_created_at_ms,
+                                          envelope.relay_server_time_ms);
+      !call) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply call update", call.error().message,
                        resolved_thread_id);

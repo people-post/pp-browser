@@ -57,18 +57,23 @@ public:
 
   struct ContactDetail {
     Rml::String id;
+    Rml::String title;
+    Rml::String subtitle;
     Rml::String display_name;
     Rml::String nickname;
     Rml::String relay_id;
     Rml::String peer_id;
     Rml::String multiaddrs_text;
+    Rml::String multiaddrs_summary;
     Rml::String trust;
     Rml::String trust_key;
     Rml::String signing_fingerprint;
     Rml::String message_hint;
+    Rml::String remote_updated;
     std::vector<ContactIdentityRow> identities;
     std::vector<ContactThreadRow> threads;
     bool can_message = false;
+    bool has_relay_id = false;
   };
 
   bool RegisterModel(Rml::Context* context);
@@ -97,6 +102,7 @@ private:
   static void OpenThreadCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnSearchChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnContactFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void SyncRemoteCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
   void SyncFromStore();
   void LoadSelectedDetail(const std::string& contact_id);
@@ -115,6 +121,7 @@ private:
   void OnOpenThread(const std::string& thread_id);
   void OnSearchChanged();
   void OnContactFieldChanged();
+  void OnSyncRemote();
   bool FlushSelectedContact();
   void UpdateMessagingEligibility(const Contact& contact);
   void DirtyAll();

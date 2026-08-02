@@ -47,7 +47,7 @@ void WriteIosLog(logging::Level level, const std::string& message) {
   const char* tag = "I";
   os_log_type_t os_type = OS_LOG_TYPE_INFO;
   switch (level) {
-  case logging::Level::DEBUG:
+  case logging::kLevelDebug:
     tag = "D";
     os_type = OS_LOG_TYPE_DEBUG;
     break;
@@ -59,7 +59,7 @@ void WriteIosLog(logging::Level level, const std::string& message) {
     tag = "W";
     os_type = OS_LOG_TYPE_DEFAULT;
     break;
-  case logging::Level::ERROR:
+  case logging::kLevelError:
   case logging::Level::CRITICAL:
     tag = "E";
     os_type = OS_LOG_TYPE_ERROR;
@@ -84,7 +84,7 @@ public:
 #if defined(__ANDROID__)
     int priority = ANDROID_LOG_INFO;
     switch (level) {
-    case logging::Level::DEBUG:
+    case logging::kLevelDebug:
       priority = ANDROID_LOG_DEBUG;
       break;
     case logging::Level::INFO:
@@ -93,7 +93,7 @@ public:
     case logging::Level::WARNING:
       priority = ANDROID_LOG_WARN;
       break;
-    case logging::Level::ERROR:
+    case logging::kLevelError:
       priority = ANDROID_LOG_ERROR;
       break;
     case logging::Level::CRITICAL:

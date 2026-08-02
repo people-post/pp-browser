@@ -1825,6 +1825,7 @@ void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::E
 
 void ShellHost::CallAcceptCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
+  logging::getLogger("ShellHost").warning << "call_accept click";
   if (auto* call = Instance().call_) {
     call->AcceptIncoming();
   }

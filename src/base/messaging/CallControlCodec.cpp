@@ -44,6 +44,21 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
   if (detail.expires_at) {
     json["expires_at"] = *detail.expires_at;
   }
+  if (!detail.participants.empty()) {
+    nlohmann::json participants = nlohmann::json::array();
+    for (const CallRosterEntry& entry : detail.participants) {
+      participants.push_back(nlohmann::json{{"identity", entry.identity},
+                                            {"state", CallParticipantStateToString(entry.state)},
+                                            {"audio_muted", entry.audio_muted},
+                                            {"video_enabled", entry.video_enabled}});
+    }
+    json["participants"] = std::move(participants);
+  }
+  if (!detail.wrapped_key_b64.empty()) {
+    json["media_epoch"] = detail.media_epoch;
+    json["media_key_id"] = detail.media_key_id;
+    json["wrapped_key_b64"] = detail.wrapped_key_b64;
+  }
   return json.dump();
 }
 
@@ -61,6 +76,22 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.origin_group_id = OptString(json, "origin_group_id");
   detail.sfu_hint = OptString(json, "sfu_hint");
   detail.expires_at = OptInt64(json, "expires_at");
+  if (json.contains("participants") && json["participants"].is_array()) {
+    for (const nlohmann::json& row : json["participants"]) {
+      if (!row.is_object() || !row.contains("identity") || !row["identity"].is_string()) {
+        continue;
+      }
+      CallRosterEntry entry;
+      entry.identity = row["identity"].get<std::string>();
+      entry.state = CallParticipantStateFromString(row.value("state", "joined"));
+      entry.audio_muted = row.value("audio_muted", false);
+      entry.video_enabled = row.value("video_enabled", false);
+      detail.participants.push_back(std::move(entry));
+    }
+  }
+  detail.media_epoch = static_cast<uint32_t>(json.value("media_epoch", 1));
+  detail.media_key_id = OptString(json, "media_key_id").value_or("");
+  detail.wrapped_key_b64 = OptString(json, "wrapped_key_b64").value_or("");
   return detail;
 }
 
