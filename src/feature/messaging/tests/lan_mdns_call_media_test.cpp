@@ -1,5 +1,6 @@
 #include "libp2p/integration/host/CallMediaFrameCrypto.h"
 #include "libp2p/integration/host/LanMdnsDiscovery.h"
+#include "libp2p/integration/host/PeerSessionManager.h"
 
 #include <gtest/gtest.h>
 
@@ -37,6 +38,13 @@ TEST(CallMediaFrameCryptoTest, RoundTripAudioFrame) {
   auto decrypted = DecryptCallMediaAudioFrame(key, call_id, epoch, *encrypted);
   ASSERT_TRUE(decrypted);
   EXPECT_EQ(*decrypted, opus);
+}
+
+TEST(PeerSessionManagerCircuitTest, CircuitHopKeyIncludesProtocol) {
+  EXPECT_EQ(PeerSessionManager::CircuitHopKey("QmA", "/pp-browser/call-media/1.0.0"),
+            "QmA\x1f/pp-browser/call-media/1.0.0");
+  EXPECT_NE(PeerSessionManager::CircuitHopKey("QmA", "/pp-browser/media-relay/1.0.0"),
+            PeerSessionManager::CircuitHopKey("QmA", "/pp-browser/call-media/1.0.0"));
 }
 
 } // namespace

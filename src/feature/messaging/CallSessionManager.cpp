@@ -54,7 +54,7 @@ void CallSessionManager::SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge) {
 
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
-  if (libp2p_bridge_ && libp2p_bridge_->ShouldUseLibp2pForPeer(peer_identity)) {
+  if (libp2p_bridge_) {
     if (offerer) {
       libp2p_bridge_->ScheduleStartMediaAsOfferer(call_id, peer_identity);
     } else {
@@ -907,6 +907,9 @@ void CallSessionManager::PollP2pConnectHealth() {
 }
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
+  if (libp2p_bridge_ && libp2p_bridge_->MediaAttempted(call_id)) {
+    return libp2p_bridge_->RetryLibp2pMedia(call_id);
+  }
   return p2p_bridge_.RetryP2pMedia(call_id);
 }
 

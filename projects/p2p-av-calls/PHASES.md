@@ -85,8 +85,8 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 
 North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking), mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup). Mobile LAN: [V027](DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi) + mesh [N025](../p2p-mesh/DECISIONS.md#n025--mobile-call-scoped-listen-on-wi-fi-not-full-node) / [nm](../p2p-mesh/PHASES.md#nm--mobile-call-scoped-listen-n025).
 
-- [x] 1:1 Opus over libp2p direct (LAN dialable PeerId+ma) — `CallMediaDirectService` + `CallLibp2pMediaBridge`; legacy WebRTC fallback when undialable
-- [ ] 1:1 undialable → hop / circuit (explicit; not ICE Retry)
+- [x] 1:1 Opus over libp2p direct (LAN dialable PeerId+ma) — `CallMediaDirectService` + `CallLibp2pMediaBridge`; legacy WebRTC fallback when libp2p stack unavailable
+- [x] 1:1 undialable → hop / circuit (explicit; not ICE Retry) — `TryEnsureCallMediaReachable` + protocol-scoped circuit hops
 - [x] Mobile callee on Wi‑Fi: ephemeral listen during foreground call (V027 / nm)
 - [ ] N≥3 remains `media_relay`; unify engine on libp2p send/recv (N021)
 - [x] App AEAD under call media key on media frames (direct 1:1 path)
