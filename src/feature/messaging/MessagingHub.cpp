@@ -522,8 +522,8 @@ void MessagingHub::WireCallMediaRelayDeps() {
 
   if (call_media_direct_ && dial_registry_) {
     call_libp2p_bridge_ = std::make_unique<CallLibp2pMediaBridge>(
-        *call_sessions_, *call_session_store_, *call_media_keys_, *call_media_engine_, *call_media_direct_,
-        dial_registry_.get(), circuit_hop_reach_.get());
+        call_sessions_->AsP2pSignalingHost(), *call_session_store_, *call_media_keys_, *call_media_engine_,
+        *call_media_direct_, dial_registry_.get(), circuit_hop_reach_.get());
     call_sessions_->SetLibp2pMediaBridge(call_libp2p_bridge_.get());
   } else {
     call_libp2p_bridge_.reset();
@@ -1565,7 +1565,7 @@ Libp2pHost* MessagingHub::Libp2p() {
   return node_runtime_ ? node_runtime_->Host() : nullptr;
 }
 
-PeerSessionManager* MessagingHub::Sessions() {
+PeerSessionManager* MessagingHub::Sessions() const {
   return node_runtime_ ? node_runtime_->Sessions() : nullptr;
 }
 

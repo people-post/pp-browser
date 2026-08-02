@@ -1,6 +1,7 @@
 #include "feature/messaging/ContactReachability.h"
 
 #include "base/messaging/DirectChatTarget.h"
+#include "base/people/ContactJson.h"
 #include "base/people/MeshHopPolicy.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 

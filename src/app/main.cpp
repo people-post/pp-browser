@@ -26,13 +26,13 @@ bool EnvTruthy(const char* name) {
 
 const char* LevelName(pbr::logging::Level level) {
   switch (level) {
-  case pbr::logging::Level::DEBUG:
+  case pbr::logging::kLevelDebug:
     return "DEBUG";
   case pbr::logging::Level::INFO:
     return "INFO";
   case pbr::logging::Level::WARNING:
     return "WARNING";
-  case pbr::logging::Level::ERROR:
+  case pbr::logging::kLevelError:
     return "ERROR";
   case pbr::logging::Level::CRITICAL:
     return "CRITICAL";

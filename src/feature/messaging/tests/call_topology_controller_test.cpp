@@ -91,6 +91,7 @@ public:
   }
 
   void ClearDialBackoff(const std::string& /*peer_key*/) override {}
+  void ClearCallMediaCircuitHop(const std::string& /*peer_key*/) override {}
 
   std::unordered_map<std::string, std::string> endpoints;
   std::unordered_map<std::string, bool> force_dialable;

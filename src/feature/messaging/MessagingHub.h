@@ -134,7 +134,7 @@ public:
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
   Libp2pHost* Libp2p();
-  PeerSessionManager* Sessions();
+  PeerSessionManager* Sessions() const;
   /** Last libp2p start failure (empty if ok). For Network settings UX. */
   const std::string& LastLibp2pError() const { return libp2p_last_error_; }
 

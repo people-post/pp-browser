@@ -162,7 +162,7 @@ Libp2pHost* NodeRuntime::Host() {
   return host_.get();
 }
 
-PeerSessionManager* NodeRuntime::Sessions() {
+PeerSessionManager* NodeRuntime::Sessions() const {
   return sessions_.get();
 }
 

@@ -200,13 +200,13 @@ std::string LoggerNode::formatMessage(Level level, const std::string &message, c
 
 std::string LoggerNode::levelToString(Level level) {
   switch (level) {
-  case Level::DEBUG:
+  case kLevelDebug:
     return "DEBUG";
   case Level::INFO:
     return "INFO";
   case Level::WARNING:
     return "WARNING";
-  case Level::ERROR:
+  case kLevelError:
     return "ERROR";
   case Level::CRITICAL:
     return "CRITICAL";
@@ -277,10 +277,10 @@ static std::shared_ptr<LoggerNode> g_spRoot = initRootLogger();
 
 Logger::Logger(std::shared_ptr<LoggerNode> node)
     : spNode_(std::move(node)),
-      debug(this, Level::DEBUG),
+      debug(this, kLevelDebug),
       info(this, Level::INFO),
       warning(this, Level::WARNING),
-      error(this, Level::ERROR),
+      error(this, kLevelError),
       critical(this, Level::CRITICAL) {
 }
 

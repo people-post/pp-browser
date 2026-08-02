@@ -9,10 +9,25 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+// windows.h / wingdi.h define ERROR/DEBUG and collide with enum members (same as
+// soralog/level.hpp). c-ares/Boost often include windows.h before this header.
+#ifdef ERROR
+#undef ERROR
+#endif
+#ifdef DEBUG
+#undef DEBUG
+#endif
+#endif
+
 namespace pbr {
 namespace logging {
 
 enum class Level { DEBUG = 0, INFO = 1, WARNING = 2, ERROR = 3, CRITICAL = 4 };
+
+// Named constants for call sites: Windows headers may redefine ERROR/DEBUG later.
+inline constexpr Level kLevelDebug = Level::DEBUG;
+inline constexpr Level kLevelError = Level::ERROR;
 
 class Handler {
 public:

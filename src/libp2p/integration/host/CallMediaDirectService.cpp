@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstring>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <thread>
@@ -275,17 +276,20 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
   }
 
   auto settled = std::make_shared<std::atomic<bool>>(false);
-  std::promise<Roe<void>> result_promise;
-  auto result_future = result_promise.get_future();
+  auto result_promise = std::make_shared<std::promise<Roe<void>>>();
+  auto result_future = result_promise->get_future();
 
   sessions_.OpenStream(params.peer_key, {ProtocolName{kCallMediaDirectProtocolId}},
-                       [this, params, callbacks = std::move(callbacks), settled, result_promise = std::move(result_promise),
+                       [this, params, callbacks = std::move(callbacks), settled, result_promise,
                         timeout_ms](outcome::result<libp2p::StreamAndProtocol> stream_res) mutable {
                          if (settled->exchange(true)) {
                            return;
                          }
                          if (!stream_res) {
-                           result_promise.set_value(Error("call-media dial failed"));
+                           try {
+                             result_promise->set_value(Error("call-media dial failed"));
+                           } catch (const std::future_error&) {
+                           }
                            return;
                          }
                          auto stream = std::move(stream_res.value().stream);
@@ -295,14 +299,20 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                                                   {"call_id", params.call_id},
                                                   {"media_epoch", params.media_epoch},
                                                   {"role", role}}))) {
-                           result_promise.set_value(Error("call-media hello write failed"));
+                           try {
+                             result_promise->set_value(Error("call-media hello write failed"));
+                           } catch (const std::future_error&) {
+                           }
                            stream->close([](auto&&) {});
                            return;
                          }
                          auto ack = ReadJson(stream);
                          if (!ack || !ack->value("ok", false)) {
-                           result_promise.set_value(Error(ack ? ack->value("error", "hello rejected")
-                                                              : ack.error().message));
+                           try {
+                             result_promise->set_value(Error(ack ? ack->value("error", "hello rejected")
+                                                                 : ack.error().message));
+                           } catch (const std::future_error&) {
+                           }
                            stream->close([](auto&&) {});
                            return;
                          }
@@ -316,7 +326,10 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                            callbacks.on_connected();
                          }
                          impl_->StartReader(impl_);
-                         result_promise.set_value({});
+                         try {
+                           result_promise->set_value({});
+                         } catch (const std::future_error&) {
+                         }
                        });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 15000) + 1000;

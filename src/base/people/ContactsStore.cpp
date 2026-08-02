@@ -46,32 +46,35 @@ Roe<void> ContactsStore::EnsureLoaded() const {
 
   contacts_.clear();
   bool needs_rewrite = false;
-  std::ifstream in(StorePath());
-  if (in) {
-    nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
-    if (root.is_discarded() || !root.is_object()) {
-      return Error("Invalid contacts.json");
-    }
-
-    int version = 0;
-    if (root.contains("schema_version")) {
-      if (!root["schema_version"].is_number_integer()) {
-        return Error("Invalid schema_version in contacts.json");
+  {
+    // Close the read handle before Save() — Windows cannot rename over an open file.
+    std::ifstream in(StorePath());
+    if (in) {
+      nlohmann::json root = nlohmann::json::parse(in, nullptr, false);
+      if (root.is_discarded() || !root.is_object()) {
+        return Error("Invalid contacts.json");
       }
-      version = root["schema_version"].get<int>();
-      if (auto checked = SchemaVersion::Validate(root, kSchemaVersion, "contacts.json"); !checked) {
-        return checked.error();
-      }
-    }
 
-    if (root.contains("contacts") && root["contacts"].is_array()) {
-      for (const auto& item : root["contacts"]) {
-        contacts_.push_back(ContactFromJson(item));
+      int version = 0;
+      if (root.contains("schema_version")) {
+        if (!root["schema_version"].is_number_integer()) {
+          return Error("Invalid schema_version in contacts.json");
+        }
+        version = root["schema_version"].get<int>();
+        if (auto checked = SchemaVersion::Validate(root, kSchemaVersion, "contacts.json"); !checked) {
+          return checked.error();
+        }
       }
-    }
 
-    if (version < kSchemaVersion) {
-      needs_rewrite = true;
+      if (root.contains("contacts") && root["contacts"].is_array()) {
+        for (const auto& item : root["contacts"]) {
+          contacts_.push_back(ContactFromJson(item));
+        }
+      }
+
+      if (version < kSchemaVersion) {
+        needs_rewrite = true;
+      }
     }
   }
 

@@ -39,7 +39,7 @@ public:
 
   bool IsRunning() const;
   Libp2pHost* Host();
-  PeerSessionManager* Sessions();
+  PeerSessionManager* Sessions() const;
   IdentifyIntegrationService* Identify();
 
   /** Bound listen multiaddr after a successful Node start (may differ from requested). */

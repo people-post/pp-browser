@@ -40,6 +40,8 @@ public:
   void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
   void SetMediaRelayDeps(MediaRelayDeps deps);
   void SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge);
+  /** Expose private CallP2pSignalingHost base for bridge construction (MSVC-safe). */
+  CallP2pSignalingHost& AsP2pSignalingHost() { return *this; }
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, CallMediaMode mode,
                              const std::vector<std::string>& invitee_identities);
