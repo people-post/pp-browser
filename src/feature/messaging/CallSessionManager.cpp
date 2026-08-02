@@ -48,6 +48,27 @@ void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
   topology_.SetMediaRelayDeps(std::move(deps));
 }
 
+void CallSessionManager::SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge) {
+  libp2p_bridge_ = bridge;
+}
+
+void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
+                                                  bool offerer) {
+  if (libp2p_bridge_ && libp2p_bridge_->ShouldUseLibp2pForPeer(peer_identity)) {
+    if (offerer) {
+      libp2p_bridge_->ScheduleStartMediaAsOfferer(call_id, peer_identity);
+    } else {
+      libp2p_bridge_->ScheduleStartMediaAsAnswerer(call_id, peer_identity);
+    }
+    return;
+  }
+  if (offerer) {
+    p2p_bridge_.ScheduleStartMediaAsOfferer(call_id, peer_identity);
+  } else {
+    p2p_bridge_.ScheduleStartMediaAsAnswerer(call_id, peer_identity);
+  }
+}
+
 CallMediaEngine& CallSessionManager::Media() {
   return media_;
 }
@@ -310,6 +331,9 @@ Roe<void> CallSessionManager::SendMediaKeyToPeer(const std::string& call_id, con
 }
 
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
+  if (libp2p_bridge_) {
+    libp2p_bridge_->StopLibp2pMedia(call_id);
+  }
   p2p_bridge_.StopP2pMedia(call_id);
   topology_.OnMediaStopped(call_id);
 }
@@ -575,7 +599,7 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
     }
     // Must not Start media inside the Accept click / Rml callback — SDL audio + PC setup
     // can stall the UI so the ring dialog never dismisses.
-    p2p_bridge_.ScheduleStartMediaAsAnswerer(call_id, (*pending)->inviter_identity);
+    ScheduleStartDirectMedia(call_id, (*pending)->inviter_identity, false);
   }
 
   // Best-effort roster to inviter + other joined/ringing peers so co-invitees learn N.
@@ -862,14 +886,23 @@ bool CallSessionManager::IsAwaitingSfuRecovery() const {
 }
 
 bool CallSessionManager::IsP2pConnectFailed() const {
+  if (libp2p_bridge_ && libp2p_bridge_->IsLibp2pConnectFailed()) {
+    return true;
+  }
   return p2p_bridge_.IsP2pConnectFailed();
 }
 
 bool CallSessionManager::P2pConnectMissingMic() const {
+  if (libp2p_bridge_ && libp2p_bridge_->IsLibp2pConnectFailed() && libp2p_bridge_->Libp2pConnectMissingMic()) {
+    return true;
+  }
   return p2p_bridge_.P2pConnectMissingMic();
 }
 
 void CallSessionManager::PollP2pConnectHealth() {
+  if (libp2p_bridge_) {
+    libp2p_bridge_->PollLibp2pConnectHealth();
+  }
   p2p_bridge_.PollP2pConnectHealth();
 }
 
@@ -973,6 +1006,9 @@ void CallSessionManager::AbandonOrphanedCallsAfterRestart() {
 }
 
 bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) const {
+  if (libp2p_bridge_ && libp2p_bridge_->MediaAttempted(call_id)) {
+    return true;
+  }
   return p2p_bridge_.MediaAttempted(call_id);
 }
 
@@ -1125,7 +1161,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       auto joined_after = sessions_.CountJoined(accept->call_id);
       const size_t n_joined = joined_after ? *joined_after : 0;
       if (!topology_.OnRemoteAcceptJoined(accept->call_id, n_joined, identity)) {
-        p2p_bridge_.ScheduleStartMediaAsOfferer(accept->call_id, identity);
+        ScheduleStartDirectMedia(accept->call_id, identity, true);
       }
       PrefetchReachForIdentity(prefetch_reach_, identity);
       // Fan roster so co-invitees / other joined peers see accurate N before SFU/P2P.
@@ -1336,6 +1372,9 @@ void CallSessionManager::TopologySetLastMediaError(std::string message) {
 }
 
 void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) {
+  if (libp2p_bridge_) {
+    libp2p_bridge_->NoteMediaAttempted(call_id);
+  }
   p2p_bridge_.NoteMediaAttempted(call_id);
 }
 

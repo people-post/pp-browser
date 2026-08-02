@@ -22,6 +22,7 @@ enum class PeerAddrSource {
   Connection,
   DialSuccess,
   Identify,
+  Mdns,
   AddressRepository,
   Manual,
 };

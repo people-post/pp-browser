@@ -8,6 +8,7 @@
 #include "base/people/ContactsStore.h"
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
+#include "feature/messaging/CallLibp2pMediaBridge.h"
 #include "feature/messaging/CallP2pSignalingBridge.h"
 #include "feature/messaging/CallTopologyController.h"
 #include "feature/messaging/P2pMessagingService.h"
@@ -38,6 +39,7 @@ public:
   using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
   void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
   void SetMediaRelayDeps(MediaRelayDeps deps);
+  void SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge);
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, CallMediaMode mode,
                              const std::vector<std::string>& invitee_identities);
@@ -127,6 +129,7 @@ private:
                                uint32_t media_epoch, const std::string& media_key_id, const ByteVector& key_bytes);
   void StopMediaIfCall(const std::string& call_id);
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
+  void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -138,6 +141,7 @@ private:
   CallMediaEngine& media_;
   CallTopologyController topology_;
   CallP2pSignalingBridge p2p_bridge_;
+  CallLibp2pMediaBridge* libp2p_bridge_ = nullptr;
   RingChangedFn on_ring_changed_;
   PrefetchPeerReachFn prefetch_reach_;
   std::optional<std::string> last_media_error_;

@@ -118,7 +118,7 @@
 |------|-------|
 | `RelayScope` + escalate ranker | `RelayScope.h`, `RankMediaHopsEscalating` in `MeshHopPolicy` |
 | Provider cap from reachability | `ApplyMeshAdmissionPolicies` → `serve_scope_mask` |
-| Bridge score / LAN mDNS | Deferred (ns2); multi-hop circuit plan [ns3](PHASES.md#ns3--multi-hop-circuit-policy) / [N024](DECISIONS.md#n024--immediate-relay-as-service-broker) |
+| Bridge score / LAN mDNS | mDNS browse + contacts-only book upsert landed (ns2); bridge score still open — [ns3](PHASES.md#ns3--multi-hop-circuit-policy) / [N024](DECISIONS.md#n024--immediate-relay-as-service-broker) |
 | Household contact tag | Deferred |
 
 ## Still not done
