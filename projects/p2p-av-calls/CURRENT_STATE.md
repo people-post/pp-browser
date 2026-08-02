@@ -16,6 +16,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **in-libp2p** (L1+); app `call_hop_addrs` **not** product |
 | **CallLifecycle orchestrator** | Phase machine owns ring/accept/media/listen desire; thin `CallController`; N025 from `WantEphemeralListen`; bridge reports MediaDeferred / DirectConnected / ConnectFailed |
+| **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp-browser/call-media/1.0.0` — **dogfood OK 2026-08-02** |
 
 ## a4 thin in code (still relevant under V026)
 
@@ -24,40 +25,45 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | Topology | N≥3 → sticky initiator `RankMediaHops` → quote/attach → `call_sfu_attach` |
 | Hop pick | Contacts ∪ org seed via `MeshHopPolicy`; PreferInCall; needs dialable **multiaddr** until L1 peerstore |
 | Budgets / framing | N019 / N021 on SFU path |
-| Legacy 1:1 | PeerConnection + ICE until m2 teardown |
+| Legacy 1:1 | PeerConnection + ICE until m2 teardown (not used when libp2p media connects) |
 
-## m1 mobile LAN (2026-08-02)
+## m1 mobile LAN — dogfood claimed (2026-08-02)
 
 **Devices:** moto g7 play (`ZY323QRNJ9`) + Samsung SM-T380 (`dc07955772d54e6c`), same Wi‑Fi; package `dev.pp_browser.app`.
 
-**Installed:** debug APK with `CallLifecycle` orchestrator.
+**Path:** Invite-embedded MediaKey → N025 ephemeral listen → answerer-only `call-media` dial → hello/ack → `DirectConnected` / `InCall` → bidirectional Opus (AEAD under call media key).
 
-**Dogfood matrix:**
+**Matrix:**
 
-- [ ] Accept click logs `phase=…->Accepting event=AcceptClicked` (proves orchestrator got the click)
-- [ ] Dialog dismisses without SyncLayout remount; in-call chrome appears
-- [ ] Log: `WantEphemeralListen=1` then `Mobile ephemeral listen started … bound=.../tcp/<nonzero>`
-- [ ] Log: `MediaDeferred` / `Defer answerer` then `MediaKeyReady` / `BeginSession`
-- [ ] Log: `DirectConnected` or `Call-media Connect ok`
-- [ ] Decline → `Idle`; Leave → `Idle`; Retry from `ConnectFailed` re-enters connecting
-- [ ] Timer advances; mic levels move
+- [x] Accept click → `Accepting` / `AcceptInvite` off Browser IO
+- [x] N025 `WantEphemeralListen` + bound `/tcp/<nonzero>`
+- [x] `DirectConnected` / `Call-media Connect ok` → `InCall`
+- [x] Bidirectional voice (no connect banner; audible both ways)
+- [x] Leave → `Idle` (process stays up)
 
-Filter: `adb logcat -s pp-browser:W` — `CallLifecycle`, `AcceptIncoming`, `Mobile ephemeral listen`, `Defer answerer`, `Call-media Connect`.
+Filter: `adb logcat -s pp-browser:W` — `CallLifecycle`, `CallLibp2pMediaBridge`, `CallMediaDirect`, `Mobile ephemeral listen`.
+
+**Implementation notes (call-media):**
+
+- Answerer dials; offerer keeps inbound stream (`keep_inbound`) — no simultaneous `newStream`
+- Capture enqueues frames; **host IO thread** owns Yamux read/write (async pump) — do not block `read`/`write` on a worker while IO delivers
+- Yamux `WriteQueue` copies on enqueue; `ReadBuffer::consumePart` soft-fails bad offsets (see [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md))
+- Keep Accept / MediaKey-send / Connect / Poll HTTP **off** Browser IO
 
 ## Still open
 
 | Area | State |
 |------|-------|
-| **m1** 1:1 voice on libp2p | Orchestrator in tree; **complete dual-device matrix** above |
+| **m1** desktop matrix | Android ↔ desktop voice without WebRTC |
 | Hop peerstore / circuit PeerId dial | media-hop **L1–L3** |
-| App AEAD on media frames | Follow-on |
-| Teardown libdatachannel | After m1 (**m2**) |
+| Teardown libdatachannel | **m2** next |
 | Video on libp2p | Deferred |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
+| N≥3 unify engine on libp2p send/recv | N021 follow-on |
 
 ## Next agent — start here
 
-1. **Live dogfood:** run the matrix on both Android devices; tick boxes in this file.  
+1. **m2** or finish m1 desktop dogfood (Android ↔ desktop libp2p voice).  
 2. **media-hop L1:** peer address book in vendored libp2p / `PeerSessionManager`.  
 3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.  
 
@@ -71,3 +77,6 @@ Filter: `adb logcat -s pp-browser:W` — `CallLifecycle`, `AcceptIncoming`, `Mob
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
 | `SyncLayout` remount for Accept chrome | DirtyWindow / DirtyAll only |
 | Recreate `CallLibp2pMediaBridge` on N025 sync | Only when `CallSessionManager*` changes |
+| Call-media `read`/`write` from a non-IO worker while pump runs | `Libp2pHost::Post` async pump only |
+| Hold a mutex across blocking stream read from capture | Enqueue + IO-thread write |
+| Put Accept / Connect / PollInbox on Browser IO | Dedicated workers / hop off IO |

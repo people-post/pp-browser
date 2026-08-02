@@ -91,6 +91,7 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 - [ ] N≥3 remains `media_relay`; unify engine on libp2p send/recv (N021)
 - [x] App AEAD under call media key on media frames (direct 1:1 path)
 - [ ] Stop extending `CallP2pSignalingBridge` / PC; mark UI copy for libp2p connect fail
+- [x] Dogfood: Android ↔ Android bidirectional voice on Wi‑Fi (moto g7 play ↔ SM-T380) — **OK 2026-08-02**; see [CURRENT_STATE.md](CURRENT_STATE.md)
 - [ ] Dogfood: Android ↔ desktop voice without WebRTC
 
 ## m2 — Teardown WebRTC product path

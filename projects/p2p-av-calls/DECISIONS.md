@@ -552,6 +552,8 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 
 **Alternatives:** Keep WebRTC 1:1 + libp2p SFU (prior V001 — rejected going forward); WebRTC star with inner E2E (deferred — second SFU shape); full video on libp2p before voice green (rejected — scope).
 
+**Dogfood claimed (2026-08-02):** Android ↔ Android LAN 1:1 bidirectional voice on libp2p `call-media` (moto g7 play ↔ Samsung SM-T380). Desktop matrix and NAT/hop not claimed. Details: [CURRENT_STATE.md](CURRENT_STATE.md).
+
 **Cross-link:** [media-hop-reachability](../media-hop-reachability/) (dialability); mesh N018–N022.
 
 ---
@@ -577,4 +579,6 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 **Rationale:** Client-only mobile blocked LAN PeerId call goals; full Node wrong for OS/battery. Call-scoped listen aligns with when the user already expects realtime media and the app is foreground.  
 **Alternatives:** Require desktop/seed for all mobile LAN (rejected for UX); full mobile Node (rejected); ICE-only LAN forever (superseded by V026).  
 **Mesh ADR:** [N025](../p2p-mesh/DECISIONS.md#n025--mobile-call-scoped-listen-on-wi-fi-not-full-node). **Phase:** [m1](PHASES.md#m1--libp2p-only-voice-v026) + mesh [nm](../p2p-mesh/PHASES.md#nm--mobile-call-scoped-listen-n025).
+
+**Dogfood:** Mobile LAN 1:1 path exercised with call-scoped listen (2026-08-02) — see V026 dogfood note / [CURRENT_STATE.md](CURRENT_STATE.md).
 

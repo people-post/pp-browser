@@ -1,6 +1,6 @@
 # P2P A/V calls
 
-**Status:** **a4 thin landed**; **V026** = libp2p-only call media (voice-first); WebRTC teardown after m1  
+**Status:** **a4 thin landed**; **V026 / m1** = libp2p-only voice (Android↔Android LAN dogfood OK 2026-08-02); **m2** = WebRTC teardown next  
 **Owner:** Hongwei + agents  
 **Stable refs:** (promote after ship) wire / wake / media-key contracts  
 **Related:** [NETWORKING.md](../../docs/architecture/NETWORKING.md), [p2p-mesh](../p2p-mesh/) (N022), [media-hop-reachability](../media-hop-reachability/), [group-chat](../group-chat/), [e2e-message-crypto](../e2e-message-crypto/), [push-notifications](../push-notifications/), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CALLS.md](../../docs/architecture/CALLS.md)
@@ -50,6 +50,6 @@ Agents: code “where does X live?” → **CALLS**. Product “should we…?”
 | Phase | Name | Status |
 |-------|------|--------|
 | v0–a4 | Docs → signaling → WebRTC LAN → group SFU thin | **Done** (historical); WebRTC not ongoing path |
-| **V026 / m1** | Libp2p-only **voice** | **Next** |
-| m2 | Teardown WebRTC product path | After m1 |
+| **V026 / m1** | Libp2p-only **voice** | **Mobile LAN done**; desktop matrix open |
+| m2 | Teardown WebRTC product path | **Next** |
 | a5–a6 | Cap / polish / promote contracts | Pending |
