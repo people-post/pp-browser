@@ -28,11 +28,9 @@ namespace libp2p {
             // successfully wrote last bytes
             return cb(outcome::success());
           }
-          if (n == 0) {
-            throw std::logic_error{"libp2p::write zero bytes written"};
-          }
-          if (n > in.size()) {
-            throw std::logic_error{"libp2p::write too much bytes written"};
+          // Never throw from asio/libp2p callbacks (same as libp2p::read).
+          if (n == 0 || n > in.size()) {
+            return cb(make_error_code(boost::asio::error::invalid_argument));
           }
           // write remaining bytes
           auto writer = weak.lock();

@@ -54,6 +54,11 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
     }
     json["participants"] = std::move(participants);
   }
+  if (!detail.wrapped_key_b64.empty()) {
+    json["media_epoch"] = detail.media_epoch;
+    json["media_key_id"] = detail.media_key_id;
+    json["wrapped_key_b64"] = detail.wrapped_key_b64;
+  }
   return json.dump();
 }
 
@@ -84,6 +89,9 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
       detail.participants.push_back(std::move(entry));
     }
   }
+  detail.media_epoch = static_cast<uint32_t>(json.value("media_epoch", 1));
+  detail.media_key_id = OptString(json, "media_key_id").value_or("");
+  detail.wrapped_key_b64 = OptString(json, "wrapped_key_b64").value_or("");
   return detail;
 }
 

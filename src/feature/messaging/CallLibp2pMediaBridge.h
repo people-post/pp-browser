@@ -3,6 +3,7 @@
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallSessionStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
+#include "feature/messaging/CallLifecycle.h"
 #include "feature/messaging/CallP2pSignalingBridge.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
 #include "libp2p/integration/host/CallMediaDirectService.h"
@@ -41,14 +42,24 @@ public:
   void ScheduleStartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity);
   void ScheduleStartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
 
+  /** Answerer media waits for CallMediaKey (V015 epoch-1-on-accept); kick Start when key lands. */
+  void OnMediaKeyReady(const std::string& call_id);
+
   void StopLibp2pMedia(const std::string& call_id);
 
   void NoteMediaAttempted(const std::string& call_id);
   bool MediaAttempted(const std::string& call_id) const;
 
+  /** Keep dial/circuit pointers valid when MessagingHub rewires deps (N025 listen sync). */
+  void SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach);
+
+  void SetLifecycle(CallLifecycle* lifecycle);
+
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
   Roe<void> EnsurePeerReachableOnIo(const std::string& peer_identity);
+  Roe<void> ConnectOffererWithRetry(const CallMediaDirectConnectParams& params,
+                                    const CallMediaDirectCallbacks& cbs);
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
 
   CallP2pSignalingHost& host_;
@@ -58,11 +69,16 @@ private:
   CallMediaDirectService& direct_;
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;
+  CallLifecycle* lifecycle_ = nullptr;
 
   std::string media_peer_identity_;
   std::string media_call_id_;
+  std::string pending_answerer_call_id_;
+  std::string pending_answerer_peer_;
   bool libp2p_connect_failed_ = false;
   bool libp2p_connect_missing_mic_ = false;
+  /** Offerer Connect runs off Browser IO so PollInbox cannot starve it. */
+  std::atomic<bool> connect_worker_inflight_{false};
   std::unordered_set<std::string> media_attempted_calls_;
   std::atomic<uint32_t> audio_seq_{0};
 };

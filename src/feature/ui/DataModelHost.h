@@ -23,6 +23,7 @@ public:
   bool Register(Rml::Context* context, const std::string& name, DataModelSetupFn setup);
   Rml::DataModelHandle Get(const std::string& name) const;
   void Dirty(const std::string& model, const std::string& key);
+  void DirtyAll(const std::string& model);
   void Clear();
 
 private:

@@ -17,6 +17,8 @@ struct SendRelayOptions {
   /** When set (e.g. System + payload_json), encrypt full ChatPayload instead of text-only. */
   std::optional<ChatContentType> content_type;
   std::optional<std::string> payload_json;
+  /** Skip libp2p direct chat (call-control must not block IO on OpenStream). */
+  bool prefer_relay = false;
 };
 
 } // namespace pbr

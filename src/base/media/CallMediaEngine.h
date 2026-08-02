@@ -106,6 +106,8 @@ public:
 
   bool IsActive() const;
   bool IsConnected() const;
+  /** Update chrome-facing PC/SFU connection state (e.g. libp2p pending direct stream). */
+  void SetConnectionState(const std::string& state);
   std::string ActiveCallId() const;
   std::string ConnectionState() const;
   int64_t ConnectedAtMs() const;

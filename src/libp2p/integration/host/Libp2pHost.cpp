@@ -12,6 +12,7 @@
 #include <boost/asio/post.hpp>
 
 #include <condition_variable>
+#include <cstdlib>
 #include <future>
 #include <mutex>
 
@@ -182,11 +183,13 @@ std::vector<std::string> Libp2pHost::ListenMultiaddrs() const {
   if (!host_) {
     return out;
   }
-  for (const auto& ma : host_->getAddresses()) {
+  // Prefer interface (actual bound) addresses over listen-request keys so tcp/0
+  // resolves to the OS-assigned port for mDNS / Identify publish.
+  for (const auto& ma : host_->getAddressesInterfaces()) {
     out.emplace_back(ma.getStringAddress());
   }
   if (out.empty()) {
-    for (const auto& ma : host_->getAddressesInterfaces()) {
+    for (const auto& ma : host_->getAddresses()) {
       out.emplace_back(ma.getStringAddress());
     }
   }
@@ -230,14 +233,53 @@ Roe<void> Libp2pHost::ListenOn(const std::string& multiaddr_str) {
   std::promise<Roe<void>> listen_promise;
   auto listen_future = listen_promise.get_future();
   boost::asio::post(*io_context_, [this, ma, addr = multiaddr_str, listen_promise = std::move(listen_promise)]() mutable {
-    auto listen_res = host_->listen(ma);
-    if (!listen_res) {
-      listen_promise.set_value(Error("libp2p listen failed on " + addr));
-      return;
-    }
-    listen_promise.set_value({});
+    listen_promise.set_value(ListenOnIoThread(ma, addr));
   });
   return listen_future.get();
+}
+
+void Libp2pHost::ListenOnAsync(const std::string& multiaddr_str, std::function<void(Roe<void>)> cb) {
+  if (!cb) {
+    return;
+  }
+  if (!running_ || !host_ || !io_context_) {
+    cb(Error("libp2p host not running"));
+    return;
+  }
+  auto ma_res = libp2p::multi::Multiaddress::create(multiaddr_str);
+  if (!ma_res) {
+    cb(Error("invalid libp2p listen multiaddr: " + multiaddr_str));
+    return;
+  }
+  const libp2p::multi::Multiaddress ma = ma_res.value();
+  boost::asio::post(*io_context_, [this, ma, addr = multiaddr_str, cb = std::move(cb)]() mutable {
+    cb(ListenOnIoThread(ma, addr));
+  });
+}
+
+Roe<void> Libp2pHost::ListenOnIoThread(const libp2p::multi::Multiaddress& ma, const std::string& addr) {
+  auto listen_res = host_->listen(ma);
+  if (!listen_res) {
+    return Error("libp2p listen failed on " + addr);
+  }
+  // Confirm an OS-assigned port exists when the request used tcp/0 (N025).
+  bool have_port = false;
+  for (const auto& bound : host_->getAddressesInterfaces()) {
+    const std::string s(bound.getStringAddress());
+    const auto pos = s.find("/tcp/");
+    if (pos == std::string::npos) {
+      continue;
+    }
+    const long port = std::strtol(s.c_str() + static_cast<std::ptrdiff_t>(pos + 5), nullptr, 10);
+    if (port > 0) {
+      have_port = true;
+      break;
+    }
+  }
+  if (!have_port) {
+    return Error("libp2p listen produced no bound tcp port for " + addr);
+  }
+  return {};
 }
 
 Roe<void> Libp2pHost::StopListening() {
@@ -248,14 +290,36 @@ Roe<void> Libp2pHost::StopListening() {
   std::promise<Roe<void>> done_promise;
   auto done_future = done_promise.get_future();
   boost::asio::post(*io_context_, [this, done_promise = std::move(done_promise)]() mutable {
-    const auto addrs = host_->getAddresses();
-    for (const auto& ma : addrs) {
-      (void)host_->closeListener(ma);
-      (void)host_->removeListener(ma);
-    }
+    StopListeningIoThread();
     done_promise.set_value({});
   });
   return done_future.get();
+}
+
+void Libp2pHost::StopListeningAsync(std::function<void()> cb) {
+  if (!running_ || !host_ || !io_context_) {
+    if (cb) {
+      cb();
+    }
+    return;
+  }
+  boost::asio::post(*io_context_, [this, cb = std::move(cb)]() mutable {
+    StopListeningIoThread();
+    if (cb) {
+      cb();
+    }
+  });
+}
+
+void Libp2pHost::StopListeningIoThread() {
+  if (!host_) {
+    return;
+  }
+  const auto addrs = host_->getAddresses();
+  for (const auto& ma : addrs) {
+    (void)host_->closeListener(ma);
+    (void)host_->removeListener(ma);
+  }
 }
 
 } // namespace pbr

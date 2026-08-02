@@ -36,6 +36,8 @@ public:
                      IPskSessionStore& psk_store, CallMediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
+  /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */
+  void SetOnRingChangedMesh(RingChangedFn callback);
   using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
   void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
   void SetMediaRelayDeps(MediaRelayDeps deps);
@@ -109,6 +111,8 @@ private:
   bool P2pIsAwaitingSfuRecovery() const override;
   void P2pOnGroupIceFailed(const std::string& call_id) override;
   void P2pClearAwaitingSfuRecovery() override;
+  void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
+  void P2pRequestInboxSync() override;
 
   Roe<std::string> LocalRelayIdentity() const;
   Roe<void> SendCallDirectMessage(const std::string& peer_identity, CallControlType type,
@@ -145,6 +149,7 @@ private:
   CallP2pSignalingBridge p2p_bridge_;
   CallLibp2pMediaBridge* libp2p_bridge_ = nullptr;
   RingChangedFn on_ring_changed_;
+  RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;
   std::optional<std::string> last_media_error_;
 };

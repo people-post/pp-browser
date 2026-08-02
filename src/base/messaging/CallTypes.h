@@ -112,6 +112,10 @@ struct CallInviteDetail {
   std::optional<int64_t> expires_at;
   /** Full call roster snapshot at invite time (joined + ringing + this invitee). */
   std::vector<CallRosterEntry> participants;
+  /** Optional epoch-1 media key (same fields as CallMediaKey) so Accept need not wait on a second inbox row. */
+  uint32_t media_epoch = 1;
+  std::string media_key_id;
+  std::string wrapped_key_b64;
 };
 
 struct CallAcceptDetail {

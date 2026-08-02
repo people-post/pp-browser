@@ -40,13 +40,16 @@ std::string MultiaddrWithPeerId(const libp2p::multi::Multiaddress& address,
 
 int SourceRank(PeerAddrSource source) {
   switch (source) {
+  // LAN mDNS advertises the real listen port. Connection/Identify often record the peer's
+  // ephemeral TCP source port from an outbound dial (moto dogfood dialed :41688 while mDNS
+  // had :33279/p2p/...) — those must not outrank mDNS.
+  case PeerAddrSource::Mdns:
+    return 8;
   case PeerAddrSource::DialSuccess:
     return 6;
   case PeerAddrSource::Connection:
     return 5;
   case PeerAddrSource::Identify:
-    return 5;
-  case PeerAddrSource::Mdns:
     return 5;
   case PeerAddrSource::AddressRepository:
     return 4;

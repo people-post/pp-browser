@@ -114,6 +114,8 @@ public:
 
   /** Clear dial failure backoff so the next EnsureConnection may dial immediately. */
   void ClearDialBackoff(const std::string& peer_relay_user_id);
+  /** Fail waiters and drop inflight dial tracking (stuck host.connect / retry). */
+  void AbortInflightDial(const std::string& peer_relay_user_id);
 
   /** Dial if needed; coalesce concurrent dials; enforce caps. */
   void EnsureConnection(const std::string& peer_relay_user_id,

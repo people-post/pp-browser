@@ -466,15 +466,17 @@ Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage&
   const char* sql =
       "UPDATE threads SET updated_at = ?, preview = ?, unread_count = unread_count + ? WHERE id = ?;";
   if (sqlite3_prepare_v2(profile_db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-    return Error("Failed to prepare catalog update");
+    return Error(std::string("Failed to prepare catalog update: ") + sqlite3_errmsg(profile_db_));
   }
   sqlite3_bind_int64(stmt, 1, message.timestamp);
   sqlite3_bind_text(stmt, 2, message.text.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, 3, increment_unread ? 1 : 0);
   sqlite3_bind_text(stmt, 4, message.thread_id.c_str(), -1, SQLITE_TRANSIENT);
-  if (sqlite3_step(stmt) != SQLITE_DONE) {
+  const int rc = sqlite3_step(stmt);
+  if (rc != SQLITE_DONE) {
+    const std::string err = sqlite3_errmsg(profile_db_);
     sqlite3_finalize(stmt);
-    return Error("Failed to update thread catalog");
+    return Error("Failed to update thread catalog: " + err);
   }
   sqlite3_finalize(stmt);
   return {};
@@ -979,8 +981,10 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
   }
   sqlite3_finalize(stmt);
 
+  // Catalog is UX-only; never fail call-control / E2E sends on a busy/missing catalog row
+  // (Samsung↔moto dogfood: FanOut roster / CallMediaKey aborted with catalog errors).
   if (auto catalog = UpdateThreadCatalogFromMessage(stored, false); !catalog) {
-    return catalog.error();
+    // Keep going — message row is durable.
   }
   if (stored.delivery == MessageDelivery::Pending && stored.relay_visible) {
     if (auto outbox = UpsertOutboxRow(stored.id, stored.thread_id); !outbox) {
@@ -1895,7 +1899,7 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const T
   }
 
   if (auto catalog = UpdateThreadCatalogFromMessage(stored, false); !catalog) {
-    return catalog.error();
+    // Best-effort — same as AppendMessage.
   }
   return stored;
 }

@@ -85,7 +85,8 @@ Roe<std::vector<uint8_t>> ReadExactFrame(const std::shared_ptr<Stream>& stream) 
 Roe<void> WriteExactFrame(const std::shared_ptr<Stream>& stream, const std::vector<uint8_t>& frame) {
   std::promise<outcome::result<void>> write_promise;
   auto write_future = write_promise.get_future();
-  libp2p::write(stream, libp2p::Bytes(frame), [&](outcome::result<void> result) { write_promise.set_value(result); });
+  // Yamux WriteQueue stores BytesIn (span) — never pass a temporary Bytes(...).
+  libp2p::write(stream, frame, [&](outcome::result<void> result) { write_promise.set_value(result); });
   if (!write_future.get()) {
     return Error("Failed to write dial-back frame");
   }

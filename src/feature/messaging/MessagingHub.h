@@ -23,6 +23,7 @@
 #include "base/messaging/CallSessionStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallLibp2pMediaBridge.h"
+#include "feature/messaging/CallLifecycle.h"
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
@@ -41,6 +42,7 @@
 #include "libp2p/integration/host/PeerSessionManager.h"
 #include "base/people/MeshHopPolicy.h"
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -119,6 +121,7 @@ public:
   P2pMessagingService& P2p();
   GroupMembershipService& Groups();
   CallSessionManager* Calls();
+  CallLifecycle* Lifecycle();
   MessageRouter& Router();
   ContactActionDispatcher& Actions();
   bool HasRouter() const { return router_ != nullptr; }
@@ -202,6 +205,9 @@ private:
   void PublishMobileCallScopedAddrs();
   void PrefetchPeerReachability(const std::string& identity);
   bool HasActiveLocalCall();
+  /** N025: lifecycle sets desire; Hub executes start/stop on IO only. */
+  void SetEphemeralListenDesire(bool want);
+  void EnsureCallLifecycleBound();
 
   std::string data_dir_;
   std::string profile_id_;
@@ -246,6 +252,9 @@ private:
   std::unique_ptr<CallMediaDirectService> call_media_direct_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
   std::unique_ptr<CallLibp2pMediaBridge> call_libp2p_bridge_;
+  std::unique_ptr<CallLifecycle> call_lifecycle_;
+  /** CallSessionManager the bridge was last built against (detect stack rebuild). */
+  CallSessionManager* libp2p_bridge_bound_sessions_ = nullptr;
   std::unique_ptr<MediaRelayServiceClient> media_relay_client_;
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
   std::unique_ptr<CircuitHopReachClient> circuit_hop_reach_;
@@ -262,6 +271,13 @@ private:
   bool initialized_ = false;
   bool messaging_ready_ = false;
   bool mobile_ephemeral_relay_started_ = false;
+  /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
+  bool mobile_ephemeral_start_inflight_ = false;
+  int64_t mobile_ephemeral_start_inflight_at_ms_ = 0;
+  /** True while StopEphemeralListen runs on IO (ListenOn/StopListening PostAndWait). */
+  bool mobile_ephemeral_stop_inflight_ = false;
+  /** Lifecycle-driven N025 desire (not inventing policy from TopPendingInvite alone). */
+  bool ephemeral_listen_desired_ = false;
   std::unordered_set<std::string> lan_mdns_contact_peer_ids_;
   std::string mobile_ephemeral_last_start_error_;
 };

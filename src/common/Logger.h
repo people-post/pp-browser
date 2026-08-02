@@ -166,6 +166,7 @@ public:
   void setPropagate(bool propagate) { spNode_->setPropagate(propagate); }
   bool getPropagate() const { return spNode_->getPropagate(); }
 
+  /** Re-parent this logger under `targetLoggerName`. No-op if already that node. */
   void redirectTo(const std::string &targetLoggerName);
 
   const std::string &getName() const { return spNode_->getName(); }

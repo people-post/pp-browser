@@ -5,6 +5,7 @@
 #include "libp2p/integration/host/IdentifyIntegrationService.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -49,7 +50,11 @@ public:
   /** Ephemeral listen while Client (mobile call-scoped — N025). */
   bool EphemeralListenActive() const { return ephemeral_listen_active_; }
   Roe<void> StartEphemeralListen();
+  /** Non-blocking N025 start; `cb` is invoked on BrowserThread IO when finished. */
+  void StartEphemeralListenAsync(std::function<void(Roe<void>)> cb);
   void StopEphemeralListen();
+  /** Non-blocking N025 stop; `cb` is invoked on BrowserThread IO when finished. */
+  void StopEphemeralListenAsync(std::function<void()> cb);
 
   void Tick();
   void SuspendColdPeers();

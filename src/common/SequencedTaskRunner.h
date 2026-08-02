@@ -20,6 +20,8 @@ public:
   SequencedTaskRunner& operator=(const SequencedTaskRunner&) = delete;
 
   void PostTask(std::function<void()> task);
+  /** Run ahead of FIFO backlog (AcceptInvite must not wait behind Prefetch/circuit). */
+  void PostTaskFront(std::function<void()> task);
   void RunPendingTasks();
   void Stop();
   /** Defer execution of queued/new tasks until Resume. Does not drop posted work. */
@@ -31,6 +33,7 @@ public:
 private:
   void IOThreadMain();
   void EnqueueLocked(std::function<void()> task);
+  void EnqueueFrontLocked(std::function<void()> task);
   bool DequeueOne(std::function<void()>* out);
   void RunTaskSafely(std::function<void()>& task);
 

@@ -44,16 +44,18 @@ std::optional<int> TcpPortFromMultiaddrLocal(const std::string& multiaddr) {
 } // namespace
 
 std::string ResolveBoundListenMultiaddr(Libp2pHost& host, const std::string& requested) {
+  // ListenMultiaddrs prefers interface (actual bound) addresses over listen-request
+  // keys so /tcp/0 resolves to the OS-assigned port.
   const auto listened = host.ListenMultiaddrs();
-  if (listened.empty()) {
-    return requested;
-  }
   for (const std::string& ma : listened) {
     if (const auto port = TcpPortFromMultiaddrLocal(ma); port && *port > 0) {
       return ma;
     }
   }
-  return listened.front();
+  if (!listened.empty()) {
+    return listened.front();
+  }
+  return requested;
 }
 
 PeerSessionConfig MakePeerSessionConfig(size_t max_connections, size_t max_concurrent_dials,
@@ -208,6 +210,33 @@ Roe<void> NodeRuntime::StartEphemeralListen() {
   return last_error;
 }
 
+void NodeRuntime::StartEphemeralListenAsync(std::function<void(Roe<void>)> cb) {
+  if (!cb) {
+    return;
+  }
+  if (ephemeral_listen_active_) {
+    cb({});
+    return;
+  }
+  if (!host_ || !host_->IsRunning()) {
+    cb(Error("libp2p host not running"));
+    return;
+  }
+  const std::string candidate = "/ip4/0.0.0.0/tcp/0";
+  // cb runs on the libp2p io thread — callers that touch BrowserThread state must hop.
+  host_->ListenOnAsync(candidate, [this, candidate, cb = std::move(cb)](Roe<void> listened) mutable {
+    if (listened) {
+      ephemeral_listen_active_ = true;
+      bound_listen_ = ResolveBoundListenMultiaddr(*host_, candidate);
+      last_error_.clear();
+      cb({});
+      return;
+    }
+    last_error_ = listened.error().message;
+    cb(listened.error());
+  });
+}
+
 void NodeRuntime::StopEphemeralListen() {
   if (!ephemeral_listen_active_) {
     return;
@@ -217,6 +246,31 @@ void NodeRuntime::StopEphemeralListen() {
   }
   ephemeral_listen_active_ = false;
   bound_listen_.clear();
+}
+
+void NodeRuntime::StopEphemeralListenAsync(std::function<void()> cb) {
+  if (!ephemeral_listen_active_) {
+    if (cb) {
+      cb();
+    }
+    return;
+  }
+  if (!host_ || !host_->IsRunning()) {
+    ephemeral_listen_active_ = false;
+    bound_listen_.clear();
+    if (cb) {
+      cb();
+    }
+    return;
+  }
+  // cb runs on the libp2p io thread after listeners are closed.
+  host_->StopListeningAsync([this, cb = std::move(cb)]() mutable {
+    ephemeral_listen_active_ = false;
+    bound_listen_.clear();
+    if (cb) {
+      cb();
+    }
+  });
 }
 
 } // namespace pbr

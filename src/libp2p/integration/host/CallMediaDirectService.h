@@ -56,11 +56,11 @@ public:
   bool IsActive() const;
   void Detach();
 
-  /** Client: dial peer and run hello handshake; starts reader thread. */
+  /** Client: dial peer and run hello handshake; starts async IO-thread pump. */
   Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     int timeout_ms = 15000);
 
-  /** Send encrypted Opus frame on active stream. */
+  /** Encrypt and enqueue Opus frame; IO thread owns stream write (non-blocking). */
   Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0);
 
 private:

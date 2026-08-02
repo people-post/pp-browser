@@ -1,5 +1,6 @@
 #include "libp2p/integration/host/PeerSessionManager.h"
 
+#include "common/Logger.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
 #include "libp2p/integration/host/MediaRelayService.h"
 
@@ -129,9 +130,6 @@ std::optional<std::string> PeerSessionManager::PeerIdBase58ForKeyLocked(
 
 void PeerSessionManager::MaybeHydrateEndpointFromBookLocked(const std::string& peer_relay_user_id) {
   auto it = endpoints_.find(peer_relay_user_id);
-  if (it != endpoints_.end() && it->second.info && !it->second.info->addresses.empty()) {
-    return;
-  }
   const std::optional<std::string> peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id);
   if (!peer_id) {
     return;
@@ -149,6 +147,8 @@ void PeerSessionManager::MaybeHydrateEndpointFromBookLocked(const std::string& p
     return;
   }
   libp2p::peer::PeerInfo info{peer.value(), {parsed.value()}};
+  // Always refresh from the book when a preferred addr exists — stale Connection/Identify
+  // ports in endpoints_ must not win over a fresher mDNS listen (N025 dogfood).
   if (it == endpoints_.end()) {
     EndpointState state;
     state.info = std::move(info);
@@ -371,30 +371,44 @@ PeerLinkSnapshot PeerSessionManager::GetLinkSnapshot(const std::string& peer_rel
 std::optional<libp2p::peer::PeerInfo> PeerSessionManager::ResolvePeerInfo(
     const std::string& peer_relay_user_id) const {
   std::lock_guard lock(mutex_);
+  if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+    if (auto from_book = address_book_.ResolvePeerInfo(*peer_id)) {
+      return from_book;
+    }
+  }
   const auto it = endpoints_.find(peer_relay_user_id);
   if (it != endpoints_.end() && it->second.info) {
     return it->second.info;
-  }
-  if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
-    return address_book_.ResolvePeerInfo(*peer_id);
   }
   return std::nullopt;
 }
 
 std::optional<std::string> PeerSessionManager::PreferredPeerMultiaddr(
     const std::string& peer_relay_user_id) const {
+  auto with_peer_id = [](std::string ma, const std::string& peer_id) {
+    if (!peer_id.empty() && ma.find("/p2p/") == std::string::npos) {
+      ma += "/p2p/" + peer_id;
+    }
+    return ma;
+  };
+  // Prefer address-book (mDNS-ranked) over raw endpoint PeerInfo — Identify/connection
+  // updates can leave endpoints_ pointing at a stale ephemeral port.
+  {
+    std::lock_guard lock(mutex_);
+    if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
+      if (auto ma = address_book_.PreferredMultiaddr(*peer_id)) {
+        return with_peer_id(*ma, *peer_id);
+      }
+    }
+  }
   if (auto info = ResolvePeerInfo(peer_relay_user_id)) {
     if (!info->addresses.empty()) {
-      return std::string{info->addresses.front().getStringAddress()};
+      return with_peer_id(std::string{info->addresses.front().getStringAddress()}, info->id.toBase58());
     }
   }
   if (const auto peer_id = libp2p::peer::PeerId::fromBase58(peer_relay_user_id)) {
     (void)peer_id;
     return address_book_.PreferredMultiaddr(peer_relay_user_id);
-  }
-  std::lock_guard lock(mutex_);
-  if (const auto peer_id = PeerIdBase58ForKeyLocked(peer_relay_user_id)) {
-    return address_book_.PreferredMultiaddr(*peer_id);
   }
   return std::nullopt;
 }
@@ -573,6 +587,10 @@ void PeerSessionManager::ClearDialBackoff(const std::string& peer_relay_user_id)
   it->second.last_error.clear();
 }
 
+void PeerSessionManager::AbortInflightDial(const std::string& peer_relay_user_id) {
+  FinishDial(peer_relay_user_id, Error("dial aborted"));
+}
+
 void PeerSessionManager::TouchPeerLocked(const std::string& peer_relay_user_id) {
   auto it = endpoints_.find(peer_relay_user_id);
   if (it != endpoints_.end()) {
@@ -628,10 +646,12 @@ void PeerSessionManager::FinishDial(const std::string& peer_relay_user_id, Roe<v
   {
     std::lock_guard lock(mutex_);
     auto it = inflight_dials_.find(peer_relay_user_id);
-    if (it != inflight_dials_.end()) {
-      waiters = std::move(it->second);
-      inflight_dials_.erase(it);
+    if (it == inflight_dials_.end()) {
+      // AbortInflightDial / double-complete — do not touch concurrent_dials_.
+      return;
     }
+    waiters = std::move(it->second);
+    inflight_dials_.erase(it);
     if (!result) {
       auto ep = endpoints_.find(peer_relay_user_id);
       if (ep != endpoints_.end()) {
@@ -784,6 +804,11 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
     return;
   }
 
+  const std::string proto_log =
+      protocols.empty() ? std::string{} : std::string{protocols.front()};
+  logging::getLogger("PeerSessionManager").warning
+      << "OpenStream enter peer=" << peer_relay_user_id << " proto=" << proto_log;
+
   const std::string lookup_protocol = ProtocolForCircuitLookup(protocols);
   {
     std::lock_guard lock(mutex_);
@@ -841,13 +866,15 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
   }
 
   host_.Post([this, peer_relay_user_id, info = *info, protocols = std::move(protocols),
-              cb = std::move(cb)]() mutable {
+              cb = std::move(cb), proto_log]() mutable {
     {
       std::lock_guard lock(mutex_);
       EvictIfOverCapLocked();
     }
+    logging::getLogger("PeerSessionManager").warning
+        << "OpenStream newStream peer=" << peer_relay_user_id << " proto=" << proto_log;
     host_.GetHost().newStream(info, std::move(protocols),
-                              [this, peer_relay_user_id, cb = std::move(cb)](
+                              [this, peer_relay_user_id, cb = std::move(cb), proto_log](
                                   libp2p::StreamAndProtocolOrError stream_res) mutable {
                                 {
                                   std::lock_guard lock(mutex_);
@@ -865,6 +892,21 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
                                     }
                                     TouchPeerLocked(peer_relay_user_id);
                                   }
+                                }
+                                if (!stream_res) {
+                                  std::string detail;
+                                  try {
+                                    detail = stream_res.error().message();
+                                  } catch (...) {
+                                    detail = "unknown";
+                                  }
+                                  logging::getLogger("PeerSessionManager").warning
+                                      << "OpenStream newStream cb fail peer=" << peer_relay_user_id
+                                      << " proto=" << proto_log << " err=" << detail;
+                                } else {
+                                  logging::getLogger("PeerSessionManager").warning
+                                      << "OpenStream newStream cb ok peer=" << peer_relay_user_id
+                                      << " proto=" << proto_log;
                                 }
                                 if (cb) {
                                   cb(std::move(stream_res));

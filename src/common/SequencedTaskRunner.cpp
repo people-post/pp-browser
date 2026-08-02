@@ -71,6 +71,28 @@ void SequencedTaskRunner::PostTask(std::function<void()> task) {
   cv_.notify_one();
 }
 
+void SequencedTaskRunner::PostTaskFront(std::function<void()> task) {
+  if (!task) {
+    return;
+  }
+  if (!uses_dedicated_thread_) {
+    std::lock_guard lock(mutex_);
+    if (stopped_) {
+      return;
+    }
+    EnqueueFrontLocked(std::move(task));
+    return;
+  }
+  {
+    std::lock_guard lock(mutex_);
+    if (stopped_) {
+      return;
+    }
+    EnqueueFrontLocked(std::move(task));
+  }
+  cv_.notify_one();
+}
+
 void SequencedTaskRunner::RunPendingTasks() {
   if (uses_dedicated_thread_) {
     return;
@@ -148,6 +170,10 @@ void SequencedTaskRunner::IOThreadMain() {
 
 void SequencedTaskRunner::EnqueueLocked(std::function<void()> task) {
   tasks_.push_back(std::move(task));
+}
+
+void SequencedTaskRunner::EnqueueFrontLocked(std::function<void()> task) {
+  tasks_.push_front(std::move(task));
 }
 
 bool SequencedTaskRunner::DequeueOne(std::function<void()>* out) {

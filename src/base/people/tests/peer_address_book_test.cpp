@@ -80,6 +80,18 @@ TEST_F(PeerAddressBookTest, DialSuccessOutranksBootstrap) {
   EXPECT_EQ(*book.PreferredMultiaddr(local_peer_id_), dial_ma);
 }
 
+TEST_F(PeerAddressBookTest, MdnsOutranksConnectionEphemeralPort) {
+  PeerAddressBook book;
+  const std::string connection_ma = MakeMultiaddr("192.168.1.119", 41688);
+  const std::string mdns_ma = MakeMultiaddr("192.168.1.119", 33279);
+
+  ASSERT_TRUE(book.Upsert(local_peer_id_, connection_ma, PeerAddrSource::Connection));
+  ASSERT_TRUE(book.Upsert(local_peer_id_, mdns_ma, PeerAddrSource::Mdns));
+
+  ASSERT_TRUE(book.PreferredMultiaddr(local_peer_id_));
+  EXPECT_EQ(*book.PreferredMultiaddr(local_peer_id_), mdns_ma);
+}
+
 TEST_F(PeerAddressBookTest, PruneExpiredRemovesStalePeers) {
   PeerAddressBookConfig config;
   config.default_ttl = std::chrono::milliseconds(1);

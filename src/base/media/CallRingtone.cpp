@@ -62,14 +62,29 @@ CallRingtone::~CallRingtone() {
 }
 
 void CallRingtone::Start() {
+  std::thread finishing;
+  {
+    std::lock_guard lock(mutex_);
+    if (playing_.load()) {
+      return;
+    }
+    // A prior worker may still be tearing down audio. Never join it on the UI/SDL
+    // thread — device close can wait on that thread (Samsung Accept hang).
+    if (thread_.joinable()) {
+      stop_ = true;
+      finishing = std::move(thread_);
+    }
+  }
+  if (finishing.joinable()) {
+    std::thread([t = std::move(finishing)]() mutable {
+      if (t.joinable()) {
+        t.join();
+      }
+    }).detach();
+  }
   std::lock_guard lock(mutex_);
   if (playing_.load()) {
     return;
-  }
-  // A prior async Stop() may still be joining — finish it before opening audio again.
-  if (thread_.joinable()) {
-    stop_ = true;
-    thread_.join();
   }
   if (wav_pcm_.empty()) {
     if (!LoadRingWav(wav_pcm_, wav_freq_, wav_channels_)) {

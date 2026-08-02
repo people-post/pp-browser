@@ -145,6 +145,15 @@ namespace libp2p::network {
     auto listener = tr->createListener(
         [this](auto &&r) { this->onConnection(std::forward<decltype(r)>(r)); });
 
+    // Host may already be started (mobile Client → ephemeral N025 listen). In that
+    // case start() will not run again, so bind immediately.
+    if (started) {
+      auto bound = listener->listen(ma);
+      if (!bound) {
+        return bound.as_failure();
+      }
+    }
+
     listeners_.insert({ma, std::move(listener)});
 
     return outcome::success();

@@ -58,8 +58,9 @@ namespace libp2p::basic {
    private:
     /// Data item w/callback
     struct Data {
-      // data reference
-      BytesIn data;
+      // Owned copy — callers often pass temporaries / stack buffers; storing a
+      // BytesIn span alone is a use-after-free (pp-browser call-media dogfood).
+      Bytes data;
 
       // allow to send large messages partially
       size_t acknowledged;

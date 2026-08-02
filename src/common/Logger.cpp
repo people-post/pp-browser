@@ -290,8 +290,9 @@ void Logger::redirectTo(const std::string &targetLoggerName) {
     throw std::invalid_argument("Cannot redirect to null logger");
   }
 
+  // Idempotent: already bound to this logger (e.g. Module::Bind called again).
   if (targetLogger.getNode() == spNode_) {
-    throw std::invalid_argument("Cannot redirect logger to itself");
+    return;
   }
 
   auto targetNode = targetLogger.getNode();

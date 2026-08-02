@@ -58,6 +58,11 @@ Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/
 - `network_injector.hpp` — `bindSharedKeyPair()` returns a fresh KeyPair copy per injection from a shared store
 - `host/explicit_host.*` — preferred Host factory (no Boost.DI); used by `Libp2pChatHistoryService` and `muxers_and_streams_test`. Boost.DI injectors remain for upstream-shaped examples/injector unit tests only
 - `host/basic_host/basic_host.hpp` — `getIdentityManager()` for pp-browser Identify integration (L2)
+- `network/impl/listener_manager_impl.cpp` — if the host is already `start()`ed, `listen()` binds the transport immediately (needed for mobile N025 ephemeral `/tcp/0` after Client non-listen start; upstream only binds inside `start()`)
+- `basic/read.hpp` / `basic/write.hpp` — return `invalid_argument` instead of throwing `std::logic_error` on zero/oversize `readSome`/`writeSome` results (uncaught throw aborted Android host io during call-media)
+- `basic/write_queue.*` — enqueue copies bytes into owned `Bytes` (upstream stored `BytesIn` spans; temporaries / early buffer free → wire corruption / `too much bytes read`)
+- `basic/read_buffer.cpp` — `consumePart` soft-fails when `first_byte_offset_` is past fragment size (off-strand stream IO race aborted moto `pp-browser-io`)
+- `security/noise/noise_connection.cpp` — `readSome` with empty `out` returns 0 without pulling another Noise frame
 - `protocol/identify/identify_push.*` — `pushUpdates()` to re-push self Identify after address-repo changes (L2)
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
 - `cmake/dependencies.cmake` — vendored mode verifies parent-provided targets; explicit `Protobuf_INCLUDE_DIR`; GTest when testing/coverage

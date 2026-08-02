@@ -53,6 +53,13 @@ void BrowserThread::PostTask(const BrowserThreadId id, std::function<void()> tas
   }
 }
 
+void BrowserThread::PostTaskFront(const BrowserThreadId id, std::function<void()> task) {
+  Get(id).PostTaskFront(std::move(task));
+  if (id == BrowserThreadId::UI && ui_wake_callback_) {
+    ui_wake_callback_();
+  }
+}
+
 void BrowserThread::SetUIWakeCallback(std::function<void()> callback) {
   ui_wake_callback_ = std::move(callback);
 }

@@ -76,7 +76,8 @@ Roe<void> WriteExactBody(const std::shared_ptr<Stream>& stream, const std::vecto
   std::memcpy(frame.data() + 8, body.data(), body.size());
   std::promise<outcome::result<void>> write_promise;
   auto write_future = write_promise.get_future();
-  libp2p::write(stream, libp2p::Bytes(frame), [&](outcome::result<void> result) { write_promise.set_value(result); });
+  // Yamux WriteQueue stores BytesIn (span) — never pass a temporary Bytes(...).
+  libp2p::write(stream, frame, [&](outcome::result<void> result) { write_promise.set_value(result); });
   if (!write_future.get()) {
     return Error("Failed to write media-relay frame");
   }
@@ -91,8 +92,7 @@ Roe<void> WriteJson(const std::shared_ptr<Stream>& stream, const nlohmann::json&
   // EncodeStreamJsonFrame already includes length prefix — write raw.
   std::promise<outcome::result<void>> write_promise;
   auto write_future = write_promise.get_future();
-  libp2p::write(stream, libp2p::Bytes(*encoded),
-                [&](outcome::result<void> result) { write_promise.set_value(result); });
+  libp2p::write(stream, *encoded, [&](outcome::result<void> result) { write_promise.set_value(result); });
   if (!write_future.get()) {
     return Error("Failed to write media-relay json");
   }

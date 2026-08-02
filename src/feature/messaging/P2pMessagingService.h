@@ -177,6 +177,8 @@ private:
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   uint64_t last_relay_poll_ms_ = 0;
   std::atomic<bool> poll_pending_{false};
+  /** Set when SyncInbox is requested while a poll is already in flight — worker re-polls. */
+  std::atomic<bool> poll_again_{false};
   std::atomic<bool> sync_pending_{false};
 };
 

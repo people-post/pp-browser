@@ -27,6 +27,10 @@ public:
   /** Group ICE fail — topology recovers via SFU (V025: never for N=2). */
   virtual void P2pOnGroupIceFailed(const std::string& call_id) = 0;
   virtual void P2pClearAwaitingSfuRecovery() = 0;
+  /** Offerer Connect retries — resend epoch media key (answerer often Defers waiting on relay). */
+  virtual void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) = 0;
+  /** Answerer MediaPending — force relay inbox poll for CallMediaKey. */
+  virtual void P2pRequestInboxSync() = 0;
 };
 
 /**

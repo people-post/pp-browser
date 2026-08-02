@@ -91,6 +91,7 @@ public:
   }
 
   void ClearDialBackoff(const std::string& /*peer_key*/) override {}
+  void AbortInflightDial(const std::string& /*peer_key*/) override {}
   void ClearCallMediaCircuitHop(const std::string& /*peer_key*/) override {}
 
   std::unordered_map<std::string, std::string> endpoints;

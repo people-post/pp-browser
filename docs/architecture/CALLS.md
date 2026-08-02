@@ -17,6 +17,112 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 
 ---
 
+## Call lifecycle
+
+1:1 call phases are owned by [`CallLifecycle`](../../src/feature/messaging/CallLifecycle.h) (`Idle` → `Ringing` / `OutboundCalling` → `Accepting` → `JoinedLocal` → `MediaPending` / `MediaConnecting` → `InCall` / `ConnectFailed`). `CallController` only posts clicks and paints chrome; session/media/listen report outcomes into `Apply(event)`.
+
+| Owner | Responsibility |
+|-------|----------------|
+| **CallLifecycle** | Phase enum, transitions, thread policy, listen desire, `ShouldSuppressRing` |
+| **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `DirtyWindow` / `DirtyAll` only |
+| **CallSessionManager** | Persist session/invite/roster; encode/send controls; notify lifecycle |
+| **CallLibp2pMediaBridge** | Media-key defer, dial/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
+| **MessagingHub** | N025 listen + mDNS as **lifecycle-driven** commands (`WantEphemeralListen`), not tick side effects |
+
+```mermaid
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Ringing: InviteSeen
+  Idle --> OutboundCalling: OutboundStarted
+  Ringing --> Accepting: AcceptClicked
+  Ringing --> Idle: DeclineOrExpire
+  Accepting --> JoinedLocal: AcceptSucceeded
+  Accepting --> Ringing: AcceptFailed
+  JoinedLocal --> MediaPending: MediaDeferred
+  JoinedLocal --> MediaConnecting: MediaKeyReady
+  MediaPending --> MediaConnecting: MediaKeyReady
+  MediaConnecting --> InCall: DirectConnected
+  MediaConnecting --> ConnectFailed: ConnectFailed
+  ConnectFailed --> MediaConnecting: Retry
+  OutboundCalling --> MediaConnecting: peer media
+  InCall --> Idle: LeaveOrRemoteEnd
+```
+
+### Ringing handling
+
+Ring chrome is a **lifecycle phase**, not a free-standing UI poll of `TopPendingInvite`. The controller may observe pending invites to paint labels, but phase / listen / Accept sequencing go through `CallLifecycle`.
+
+```mermaid
+sequenceDiagram
+  participant CSM as CallSessionManager
+  participant Life as CallLifecycle
+  participant Hub as MessagingHub
+  participant Ctrl as CallController
+  participant UI as Shell_DirtyWindow
+
+  CSM-->>Ctrl: NotifyRingChanged / pending invite
+  Ctrl->>Life: InviteSeen(call_id)
+  Life->>Life: phase=Ringing WantEphemeralListen=1
+  Life->>Hub: listen desire on (IO only)
+  Life->>Ctrl: chrome refresh
+  Ctrl->>UI: paint ring DirtyWindow only
+  Note over Ctrl,UI: Never SyncLayout for ring/Accept overlays
+  UI->>Ctrl: Accept / Decline click
+  Ctrl->>Life: AcceptClicked / DeclineClicked
+  alt Accept
+    Life->>Life: phase=Accepting suppress ring
+    Life->>Ctrl: ClearRing DirtyWindow
+    Life->>CSM: Post AcceptInvite on IO
+  else Decline or expire
+    Life->>Life: phase=Idle listen off if idle
+    Life->>CSM: Post DeclineInvite on IO
+  end
+```
+
+| Rule | Why |
+|------|-----|
+| `InviteSeen` → `Ringing` | Sole entry for inbound ring; arms N025 via `WantEphemeralListen` on IO |
+| Chrome = `DirtyWindow` / `DirtyAll` only | WebRTC-proven path; `SyncLayout` remount breaks Samsung hit-testing (“click never reaches Accept”) |
+| Accept → `Accepting` **before** IO work | Dismiss dialog on the next frame; never run `AcceptInvite` / listen / encrypt on the click thread |
+| `ShouldSuppressRing(call_id)` while Accept in flight | `RefreshPendingRing` must not resurrect the dialog for the same invite |
+| Accept fail → back to `Ringing` | Restore pending ring if invite still valid; clear `accepting_call_id_` |
+| Decline / TTL expire / `call_ended` → `Idle` | Clear ring; stop listen when no other call need |
+| Conflict (2nd invite while outbound/in-call) | Conflict copy (`End & Accept` / `Ignore`); Accept implies leave-other-except; single active call |
+| Same-call duplicate pending | Keep in-call chrome; do not flip back to ring |
+
+Instrument: WARNING `phase=… event=…` and `WantEphemeralListen=` so “no AcceptIncoming” vs “Accept ok, media stuck” is obvious on Android.
+
+Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Two planes](#two-planes).
+
+### Thread policy
+
+| Work | Thread | Why |
+|------|--------|-----|
+| Rml click / `DirtyWindow` / `DirtyAll` | UI only | Return immediately; **never** `SyncLayout` for call overlays (Samsung hit-test) |
+| `AcceptInvite` / `DeclineInvite` / `LeaveCall` / send prep | IO | Posted by lifecycle |
+| Prefetch / circuit / dial wait / `Connect` | IO | Seconds-scale waits |
+| N025 `ListenOn` / Wire / mDNS | IO → asio | Driven by lifecycle `WantEphemeralListen`, not inventing policy from tick alone |
+| `CallMediaEngine::StartSfu` / SDL capture | UI | Posted by bridge |
+| Chrome refresh | Always hop to UI | Safe from IO |
+
+### Scenario matrix (v1)
+
+| Scenario | Behavior |
+|----------|----------|
+| Incoming ring | `InviteSeen` → `Ringing`; Dirty-only chrome; listen desire on |
+| Accept | Immediate `Accepting` + dismiss chrome; IO AcceptInvite; suppress ring for accepting id |
+| Decline / expire | Idle; listen desire off when no call |
+| Conflict (2nd invite) | Conflict copy; Accept leaves other local call first; single active call |
+| Leave / remote end | Idle; stop media via session |
+| Answerer before key | `MediaDeferred` → `MediaPending` until `MediaKeyReady` |
+| Offerer dial fail | `ConnectFailed`; Retry re-enters `MediaConnecting` |
+| Listen fail / no bound port | Surface error; stay `MediaPending` / `ConnectFailed`; Retry re-arms listen |
+| Stack rebuild | Bridge recreate only when `CallSessionManager*` changes |
+
+**1:1 libp2p chrome:** connected only when the direct stream is active (not `StartSfu` alone).
+
+---
+
 ## Two planes
 
 | Plane | Carrier | Job |
@@ -188,20 +294,21 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | PC / Opus / H264 / SDL / pending remote SDP | `base/media` | `CallMediaEngine` | Keep; pending-buffer stays here |
 | Adaptation policy | `base/media` | `CallMediaAdaptation`, `CallMediaTopology` | Unchanged |
 | Session lifecycle + inbound dispatch | `feature/messaging` | **`CallSessionManager`** | Thin orchestrator |
-| P2P offer/answer + SDP/ICE send | `feature/messaging` | **`CallP2pSignalingBridge`** | Unchanged |
+| 1:1 phase / ring / listen desire | `feature/messaging` | **`CallLifecycle`** | Sole phase owner; see [Ringing handling](#ringing-handling) |
+| P2P offer/answer + SDP/ICE send | `feature/messaging` | **`CallP2pSignalingBridge`** | Legacy until teardown |
 | Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** | Unchanged |
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
-| Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync` | Unchanged; talks only to session façade |
+| Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync` | Clicks → lifecycle; Dirty-only paint |
 | Blind SFU protocol | `libp2p/integration` | `MediaRelayService` | Unchanged |
 
-UI must not choose P2P vs SFU. It observes session + `CallMediaEngine` connection state and calls session APIs (`StartCall`, `AcceptInvite`, `LeaveCall`, …).
+UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints from session + phase; it does not invent listen or media policy.
 
 ---
 
 ## Major systems (relationships)
 
 ### MessagingHub
-Owns `CallSessionManager`, wires `MediaRelayDeps` (relay service, peer sessions, bootstrap seeds), and routes inbound call controls via `RelayReceivePipeline` → `ApplyInboundControl`.
+Owns `CallSessionManager` + `CallLifecycle`, wires `MediaRelayDeps` (relay service, peer sessions, bootstrap seeds), executes N025 listen from lifecycle desire, and routes inbound call controls via `RelayReceivePipeline` → `ApplyInboundControl`.
 
 ### CallSessionManager (façade)
 **Should own:** create/end session, invite/accept/decline/leave, roster fan-out, media-key rotate-on-leave, orphan cleanup after restart, inbound control **dispatch**.
@@ -216,7 +323,7 @@ Single media backend for the process:
 - Capture/playback and camera stay off the libp2p IO thread (mic TCC can block).
 
 ### CallController / shell
-Maps ring + in-call chrome to session APIs; polls attach-wait only as a UI tick hook into the topology owner; must not invent topology.
+Maps ring + in-call chrome from lifecycle phase + session snapshot (`DirtyWindow` only). Clicks → `CallLifecycle::Apply`; polls attach-wait only as a UI tick hook into the topology owner; must not invent topology or listen policy.
 
 ### media_relay (mesh)
 Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attaches, fans out `call_sfu_attach`. Mobile never hosts.
@@ -290,6 +397,9 @@ These are architectural, not one-off hacks. Timelines: [Offer before answerer St
 | Mid-call invite from 2nd peer | Chrome gone after 45s | Initiator SoftMigrates on CallRoster (`JoinedCountObserved`); inviter WaitForAttach; attach-wait does not leave while migrate in flight |
 | macOS Local Network | Android↔Mac LAN ICE | Packaged `NSLocalNetworkUsageDescription` ([PLATFORMS.md](PLATFORMS.md)); on 1:1 connect fail UI tips Local Network |
 | Dogfood from Cursor terminal | LAN ICE can fail while normal terminal works | Prefer OS terminal or packaged `.app` for media dogfood |
+| Accept on UI / ring stuck | Samsung frozen Accept dialog | CallLifecycle AcceptClicked + Dirty-only chrome; see [Ringing handling](#ringing-handling) |
+| Answerer media before `CallMediaKey` | Hello rejected / silent call | `MediaDeferred` → key → `MediaConnecting`; offerer dial retry |
+| N025 listen on UI tick | UI hitch; `/tcp/0` advertised | Late bind in fork; lifecycle desire; start listen on IO; mDNS after bound port |
 
 ---
 
@@ -311,12 +421,14 @@ Do **not** combine engine pending-buffer rewrites with topology moves in one PR.
 
 | Path | Role |
 |------|------|
+| `src/feature/messaging/CallLifecycle.*` | 1:1 phase machine — ring/accept/listen/media sequencing |
 | `src/feature/messaging/CallSessionManager.*` | Façade — session + dispatch |
-| `src/feature/messaging/CallP2pSignalingBridge.*` | P2P media signaling + 1:1 connect-fail / Retry |
+| `src/feature/messaging/CallLibp2pMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, phase outcomes |
+| `src/feature/messaging/CallP2pSignalingBridge.*` | Legacy P2P media signaling + 1:1 connect-fail / Retry |
 | `src/feature/messaging/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
 | `src/feature/messaging/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
 | `src/feature/messaging/CallMediaKeyStore.*` | Epoch key wrap |
-| `src/feature/ui/CallController.*` | Ring + in-call UI |
+| `src/feature/ui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
 | `src/base/media/CallMediaEngine.*` | PC + SFU media backend |
 | `src/base/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
 | `src/base/messaging/CallSessionStore.*` | Persistence |
