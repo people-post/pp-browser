@@ -22,6 +22,7 @@
 #include "base/net/RegistrationClientUtil.h"
 #include "base/people/ContactTypes.h"
 #include "base/platform/AppLifecycle.h"
+#include "base/platform/BrowserThread.h"
 #include "base/platform/NetworkConnectivity.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
@@ -29,7 +30,9 @@
 #include "libp2p/integration/host/CircuitBridgeTarget.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/CallMediaDirectService.h"
 #include "libp2p/integration/host/IdentifyIntegrationService.h"
+#include "libp2p/integration/host/LanMdnsDiscovery.h"
 #include "libp2p/integration/host/MediaRelayService.h"
 #include "base/people/MeshHopPolicy.h"
 #include "libp2p/integration/host/NatTraversal.h"
@@ -281,6 +284,15 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
     media_relay_->Start();
   }
 
+  call_media_direct_ = std::make_unique<CallMediaDirectService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+  call_media_direct_->Start();
+
+  lan_mdns_ = std::make_unique<LanMdnsDiscovery>();
+  lan_mdns_->SetOnDiscovered([this](const LanMdnsDiscoveredPeer& peer) { OnLanMdnsPeerDiscovered(peer); });
+  if (auto started = lan_mdns_->Start(); !started) {
+    log().warning << "LAN mDNS discovery unavailable: " << started.error().message;
+  }
+
   ApplyMeshAdmissionPolicies();
 
   reachability_.SetOnUpdated([this]() {
@@ -412,6 +424,69 @@ void MessagingHub::SyncMobileEphemeralListen() {
   }
 }
 
+void MessagingHub::SyncLanMdnsAdvertisement() {
+  if (!lan_mdns_ || !lan_mdns_->IsRunning() || !node_runtime_ || !node_runtime_->Host()) {
+    return;
+  }
+
+  const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);
+  const bool node_listen = role == Libp2pRole::Node && node_runtime_->IsRunning();
+  const bool ephemeral = node_runtime_->EphemeralListenActive();
+  if (!node_listen && !ephemeral) {
+    lan_mdns_->SetAdvertisement({}, 0, {});
+    return;
+  }
+
+  std::string peer_id;
+  if (auto local = node_runtime_->Host()->LocalPeerIdBase58()) {
+    peer_id = *local;
+  }
+  const std::string bound = node_runtime_->BoundListenMultiaddr();
+  const auto port = TcpPortFromMultiaddr(bound);
+  if (peer_id.empty() || !port || *port <= 0) {
+    lan_mdns_->SetAdvertisement({}, 0, {});
+    return;
+  }
+
+  std::vector<std::string> ips;
+  if (ephemeral) {
+    ips = BuildMobileCallScopedAdvertisedAddrs(bound, peer_id);
+  } else {
+    ips = BuildMobileCallScopedAdvertisedAddrs(bound, peer_id);
+  }
+  std::vector<std::string> host_ips;
+  for (const std::string& ma : ips) {
+    const std::string ip = IpHostFromMultiaddrPrefix(ma);
+    if (!ip.empty()) {
+      host_ips.push_back(ip);
+    }
+  }
+  lan_mdns_->SetAdvertisement(peer_id, *port, host_ips);
+}
+
+void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
+  if (peer.peer_id_base58.empty()) {
+    return;
+  }
+  if (lan_mdns_contact_peer_ids_.find(peer.peer_id_base58) == lan_mdns_contact_peer_ids_.end()) {
+    return;
+  }
+  auto ma = LanMdnsDiscovery::BuildMultiaddr(peer);
+  if (!ma) {
+    return;
+  }
+  PeerSessionManager* sessions = Sessions();
+  if (sessions == nullptr) {
+    return;
+  }
+  (void)sessions->UpsertBookEntry(peer.peer_id_base58, *ma, PeerAddrSource::Mdns);
+  (void)sessions->RegisterEndpoint(peer.peer_id_base58, *ma);
+  if (p2p_) {
+    p2p_->RegisterPeerDirectEndpoint(peer.peer_id_base58, *ma);
+  }
+  BrowserThread::PostTask(BrowserThreadId::UI, [this]() { RegisterContactEndpoints(); });
+}
+
 void MessagingHub::WireCallMediaRelayDeps() {
   if (!call_sessions_) {
     return;
@@ -443,6 +518,16 @@ void MessagingHub::WireCallMediaRelayDeps() {
     deps.local_listen_multiaddr.clear();
   }
   call_sessions_->SetMediaRelayDeps(std::move(deps));
+
+  if (call_media_direct_ && dial_registry_) {
+    call_libp2p_bridge_ = std::make_unique<CallLibp2pMediaBridge>(*call_sessions_, *call_session_store_,
+                                                                   *call_media_keys_, *call_media_engine_,
+                                                                   *call_media_direct_, dial_registry_.get());
+    call_sessions_->SetLibp2pMediaBridge(call_libp2p_bridge_.get());
+  } else {
+    call_libp2p_bridge_.reset();
+    call_sessions_->SetLibp2pMediaBridge(nullptr);
+  }
 }
 
 void MessagingHub::ApplyMeshAdmissionPolicies() {
@@ -514,7 +599,17 @@ void MessagingHub::StopLibp2p() {
   mobile_ephemeral_relay_started_ = false;
   mobile_ephemeral_last_start_error_.clear();
   if (call_sessions_) {
+    call_sessions_->SetLibp2pMediaBridge(nullptr);
     call_sessions_->SetMediaRelayDeps({});
+  }
+  call_libp2p_bridge_.reset();
+  if (lan_mdns_) {
+    lan_mdns_->Stop();
+    lan_mdns_.reset();
+  }
+  if (call_media_direct_) {
+    call_media_direct_->Stop();
+    call_media_direct_.reset();
   }
   media_relay_client_.reset();
   dial_registry_.reset();
@@ -545,6 +640,7 @@ void MessagingHub::RegisterContactEndpoints() {
     return;
   }
   PeerSessionManager* sessions = Sessions();
+  lan_mdns_contact_peer_ids_.clear();
   for (const Contact& contact : *listed) {
     p2p_->RegisterContactDirectEndpoints(contact);
     const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
@@ -555,6 +651,9 @@ void MessagingHub::RegisterContactEndpoints() {
       p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
     }
     const std::string peer_id = PeerIdFromContact(contact);
+    if (!peer_id.empty()) {
+      lan_mdns_contact_peer_ids_.insert(peer_id);
+    }
     if (peer_id.empty() || sessions == nullptr) {
       continue;
     }
@@ -815,6 +914,7 @@ void MessagingHub::TickLibp2p() {
     p2p_->TickLibp2p();
   }
   SyncMobileEphemeralListen();
+  SyncLanMdnsAdvertisement();
   TickReachabilityUx();
 }
 

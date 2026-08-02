@@ -22,6 +22,7 @@
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/messaging/CallSessionStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
+#include "feature/messaging/CallLibp2pMediaBridge.h"
 #include "feature/messaging/CallSessionManager.h"
 #include "feature/messaging/MessageRouter.h"
 #include "feature/messaging/P2pMessagingService.h"
@@ -30,6 +31,8 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
+#include "libp2p/integration/host/CallMediaDirectService.h"
+#include "libp2p/integration/host/LanMdnsDiscovery.h"
 #include "libp2p/integration/host/MediaRelayService.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
 #include "libp2p/integration/host/Reachability.h"
@@ -41,6 +44,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_set>
 
 namespace pbr {
 
@@ -191,6 +195,8 @@ private:
   void NotifyMessagingReady();
 
   void SyncMobileEphemeralListen();
+  void SyncLanMdnsAdvertisement();
+  void OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer);
   void PublishMobileCallScopedAddrs();
   void PrefetchPeerReachability(const std::string& identity);
   bool HasActiveLocalCall();
@@ -235,6 +241,9 @@ private:
   std::unique_ptr<DialBackService> dial_back_;
   std::unique_ptr<CircuitRelayService> circuit_relay_;
   std::unique_ptr<MediaRelayService> media_relay_;
+  std::unique_ptr<CallMediaDirectService> call_media_direct_;
+  std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
+  std::unique_ptr<CallLibp2pMediaBridge> call_libp2p_bridge_;
   std::unique_ptr<MediaRelayServiceClient> media_relay_client_;
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
   std::unique_ptr<CircuitHopReachClient> circuit_hop_reach_;
@@ -251,6 +260,7 @@ private:
   bool initialized_ = false;
   bool messaging_ready_ = false;
   bool mobile_ephemeral_relay_started_ = false;
+  std::unordered_set<std::string> lan_mdns_contact_peer_ids_;
   std::string mobile_ephemeral_last_start_error_;
 };
 
