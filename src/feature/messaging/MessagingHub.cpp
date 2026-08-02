@@ -800,9 +800,19 @@ void MessagingHub::SetOnMessagingReady(std::function<void()> callback) {
 }
 
 void MessagingHub::NotifyMessagingReady() {
-  if (on_messaging_ready_) {
-    on_messaging_ready_();
+  if (!on_messaging_ready_) {
+    return;
   }
+  // EnsureMessagingReady may run on the IO thread (PIN unlock); UI bindings must run on UI.
+  if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+    on_messaging_ready_();
+    return;
+  }
+  BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+    if (on_messaging_ready_) {
+      on_messaging_ready_();
+    }
+  });
 }
 
 Roe<void> MessagingHub::BuildMessagingStack() {

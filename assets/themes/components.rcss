@@ -805,6 +805,14 @@ select selectbox option {
 .shell-chrome {
   position: relative;
   z-index: 100;
+  /* Banner/toasts sit above content; the chrome box itself must not steal taps. */
+  pointer-events: none;
+}
+
+.shell-chrome .shell-banner,
+.shell-chrome .shell-toast,
+.shell-chrome .shell-banner-dismiss {
+  pointer-events: auto;
 }
 
 .shell-root {

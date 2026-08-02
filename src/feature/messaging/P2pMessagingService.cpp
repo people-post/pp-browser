@@ -1250,7 +1250,8 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
   last_relay_poll_ms_ = util::NowUnixMs();
 
   // Take poll_pending_ only on the IO thread after the task is queued. Setting it on the UI
-  // thread before PostTask left it stuck forever when IO was paused (PostTask drops work).
+  // thread before PostTask left it stuck forever when IO was paused (historically PostTask
+  // dropped work; pause now queues — still set the flag only after the task runs).
   BrowserThread::PostTask(BrowserThreadId::IO, [this]() {
     bool expected = false;
     if (!poll_pending_.compare_exchange_strong(expected, true)) {

@@ -2,7 +2,6 @@
 
 #include "base/i18n/LocalizationService.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellHost.h"
 
 namespace pbr {
@@ -30,6 +29,16 @@ void PinGateController::SetUnlockInProgressUi(const bool in_progress) {
     ShellHost::Instance().SetActivity(false);
   }
   DataModelHost::Instance().Dirty("window", "unlock_in_progress");
+  ShellHost::Instance().DirtyWindow();
+}
+
+void PinGateController::ShowError(const std::string& message) {
+  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!gate.active) {
+    ShowUnlock();
+  }
+  gate.error = message.c_str();
+  DirtyPinFields();
   ShellHost::Instance().DirtyWindow();
 }
 
@@ -91,15 +100,9 @@ void PinGateController::OnUseDefaultPin() {
     return;
   }
 
-  if (auto unlocked = gate_->CompleteWithDefaultPin(); !unlocked) {
-    gate.error = unlocked.error().message.c_str();
-    DirtyPinFields();
-    return;
-  }
-
-  ShellFeedback::ShowToast(ShellHost::Instance().State(),
-                           "Using the app default. Change anytime in Me → Security.");
-  ShellHost::Instance().DirtyWindow();
+  gate.error = "";
+  DirtyPinFields();
+  gate_->CompleteWithDefaultPin();
 }
 
 void PinGateController::OnSubmit() {
@@ -128,13 +131,9 @@ void PinGateController::OnSubmit() {
     }
   }
 
-  if (auto unlocked = gate_->CompleteWithPin(pin, gate.create_mode); !unlocked) {
-    gate.error = unlocked.error().message.c_str();
-    gate.pin = "";
-    gate.pin_confirm = "";
-    DirtyPinFields();
-    return;
-  }
+  gate.error = "";
+  DirtyPinFields();
+  gate_->CompleteWithPin(pin, gate.create_mode);
 }
 
 void PinGateController::OnCancel() {

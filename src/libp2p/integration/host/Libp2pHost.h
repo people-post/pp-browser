@@ -12,9 +12,8 @@
 #include <thread>
 #include <vector>
 
-namespace boost::asio {
-class io_context;
-}
+#include <boost/asio/executor_work_guard.hpp>
+#include <boost/asio/io_context.hpp>
 
 namespace libp2p {
 struct Host;
@@ -80,6 +79,8 @@ private:
   bool available_ = false;
   std::atomic<bool> running_{false};
   std::shared_ptr<boost::asio::io_context> io_context_;
+  /** Keeps io_context::run() alive when the host has no pending handlers (Client / idle). */
+  std::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work_guard_;
   std::shared_ptr<libp2p::Host> host_;
   std::thread io_thread_;
   mutable std::mutex mutex_;

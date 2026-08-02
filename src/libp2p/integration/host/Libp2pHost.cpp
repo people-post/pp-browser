@@ -7,6 +7,7 @@
 #include <libp2p/log/logger.hpp>
 #include <libp2p/multi/multiaddress.hpp>
 
+#include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
 
@@ -82,6 +83,9 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
   config_ = config;
 
   io_context_ = std::make_shared<boost::asio::io_context>(1);
+  // Keep run() alive after the startup post: an idle Client host otherwise drains
+  // immediately and Identify PostAndWait hangs forever.
+  work_guard_.emplace(boost::asio::make_work_guard(*io_context_));
   auto key_pair = BuildKeyPair(config_);
   host_ = libp2p::createExplicitHost(io_context_, libp2p::HostMuxerKind::Yamux, libp2p::HostSecurityKind::Noise,
                                      key_pair);
@@ -107,6 +111,7 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
 
   auto ma_res = libp2p::multi::Multiaddress::create(config_.listen_multiaddr);
   if (!ma_res) {
+    work_guard_.reset();
     running_ = false;
     host_.reset();
     io_context_.reset();
@@ -142,6 +147,7 @@ void Libp2pHost::Stop() {
     }
     return;
   }
+  work_guard_.reset();
   if (io_context_) {
     io_context_->stop();
   }

@@ -22,6 +22,7 @@ public:
   void PostTask(std::function<void()> task);
   void RunPendingTasks();
   void Stop();
+  /** Defer execution of queued/new tasks until Resume. Does not drop posted work. */
   void Pause();
   void Resume();
 

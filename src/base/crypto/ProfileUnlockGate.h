@@ -22,6 +22,10 @@ struct ProfileUnlockUiPorts {
   std::function<void()> dismiss;
   /** Silent unlock / preparing indicator. */
   std::function<void(bool in_progress)> set_unlock_in_progress;
+  /** Report unlock/create failure while the PIN overlay is still up. */
+  std::function<void(const std::string& message)> show_error;
+  /** After chooser "Just continue" provisions the default PIN successfully. */
+  std::function<void()> on_default_provisioned;
 };
 
 /**
@@ -35,6 +39,13 @@ struct ProfileUnlockPorts {
 
   std::function<bool()> pin_is_default;
   std::function<void(bool is_default)> set_pin_is_default;
+
+  /**
+   * Run Argon2 unlock + EnsureMessagingReady off the UI thread.
+   * work() may block; on_done is invoked on the UI thread.
+   * When unset (tests), work runs synchronously on the caller thread.
+   */
+  std::function<void(std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done)> run_heavy;
 
   ProfileUnlockUiPorts ui;
 };
@@ -56,30 +67,32 @@ public:
   /**
    * After first present: silent default unlock when pin_is_default, else unlock UI when vault exists.
    * Queues EnsureUnlocked callers while unlock_in_progress.
+   * Heavy work runs via ports.run_heavy when set (keeps first paint interactive).
    */
   void BeginDeferredUnlockAfterFirstPresent();
 
   bool IsUnlockInProgress() const { return unlock_in_progress_; }
 
   /**
-   * UI: unlock or create with the given PIN.
+   * UI: unlock or create with the given PIN (async when run_heavy is set).
    * create_mode clears pin_is_default on success.
    */
-  Roe<void> CompleteWithPin(const std::string& pin, bool create_mode);
-  /** UI: chooser "use default PIN". */
-  Roe<void> CompleteWithDefaultPin();
+  void CompleteWithPin(const std::string& pin, bool create_mode);
+  /** UI: chooser "use default PIN" (async when run_heavy is set). */
+  void CompleteWithDefaultPin();
   /** UI: cancel chooser / create only. */
   void Cancel();
 
 private:
   ProfileSecretsService& Secrets();
   Roe<void> UnlockAndReady(const std::string& pin);
-  bool TrySilentDefaultUnlock();
+  void RunUnlockAndReadyAsync(std::string pin, bool set_default_pin, bool clear_default_pin);
   void RequestShowChooser(std::function<void(bool)> done);
   void RequestShowUnlock(std::function<void(bool)> done);
   void SetUnlockInProgress(bool in_progress);
   void Finish(bool unlocked);
   void DrainQueue(bool unlocked);
+  void ReportError(const std::string& message);
 
   ProfileSecretsService* secrets_ = nullptr;
   ProfileUnlockPorts ports_;

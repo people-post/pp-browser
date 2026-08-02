@@ -122,10 +122,11 @@ void OnFirstPresentDeferredStartup(ClientCompatController& client_compat,
   g_started = true;
   StartupMark("deferred_startup_begin");
 
-  // Fonts first so CJK chrome can appear while Argon2 unlock runs.
-  LoadDeferredFonts();
+  // Kick vault unlock first (runs off-UI via ProfileUnlockPorts::run_heavy). Loading CJK
+  // fallbacks on the UI thread used to serialize behind Argon2 and freeze first paint.
   unlock_gate.BeginDeferredUnlockAfterFirstPresent();
   client_compat.CheckAsync();
+  LoadDeferredFonts();
 }
 
 } // namespace pbr

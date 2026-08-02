@@ -460,6 +460,19 @@ bool Application::Initialize(const char* window_title) {
   unlock_ports.ui.set_unlock_in_progress = [this](const bool in_progress) {
     pin_gate_->SetUnlockInProgressUi(in_progress);
   };
+  unlock_ports.ui.show_error = [this](const std::string& message) { pin_gate_->ShowError(message); };
+  unlock_ports.ui.on_default_provisioned = []() {
+    ShellFeedback::ShowToast(ShellHost::Instance().State(),
+                             "Using the app default. Change anytime in Me → Security.");
+    ShellHost::Instance().DirtyWindow();
+  };
+  // Argon2 + libp2p stack init must not block the UI thread (Android / iOS first unlock).
+  unlock_ports.run_heavy = [](std::function<Roe<void>()> work,
+                              std::function<void(Roe<void>)> on_done) {
+    // Cold-start surface blips can PauseIO without Resume; unlock must still run.
+    BrowserThread::ResumeIO();
+    BrowserThread::PostTaskAndReply<Roe<void>>(std::move(work), std::move(on_done));
+  };
   unlock_gate_->BindPorts(std::move(unlock_ports));
 
   ChatController::Instance().BindUnlockGate(*unlock_gate_);

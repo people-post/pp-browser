@@ -67,11 +67,15 @@ void AppLifecycle::OnWillEnterBackground() {
 }
 
 void AppLifecycle::OnDidEnterForeground() {
-  if (g_state == AppLifecycleState::Foreground) {
-    return;
-  }
+  // Always ResumeIO: Android can deliver WILL_ENTER_BACKGROUND without a matching
+  // DID_ENTER_FOREGROUND after a surface blip, or the reverse order at cold start.
+  // Resume is idempotent; skipping it when g_state was already Foreground left IO paused.
+  const bool was_background = g_state == AppLifecycleState::Background;
   g_state = AppLifecycleState::Foreground;
   BrowserThread::ResumeIO();
+  if (!was_background) {
+    return;
+  }
   for (const auto& listener : g_foreground_listeners) {
     listener();
   }

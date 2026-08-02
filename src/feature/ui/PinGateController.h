@@ -21,6 +21,7 @@ public:
   void ShowUnlock();
   void Dismiss();
   void SetUnlockInProgressUi(bool in_progress);
+  void ShowError(const std::string& message);
 
   void OnSubmit();
   /** Create / chooser modes only — unlock mode ignores cancel. */
