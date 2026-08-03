@@ -31,6 +31,23 @@
 
 namespace pbr {
 
+SettingsController* SettingsController::installed_instance_ = nullptr;
+
+void SettingsController::InstallInstance(SettingsController& controller) {
+  installed_instance_ = &controller;
+}
+
+void SettingsController::ClearInstance() {
+  installed_instance_ = nullptr;
+}
+
+SettingsController& SettingsController::Instance() {
+  if (!installed_instance_) {
+    throw std::runtime_error("SettingsController not installed");
+  }
+  return *installed_instance_;
+}
+
 namespace {
 
 constexpr uint64_t kDebounceMs = 500;
@@ -115,11 +132,6 @@ SettingsController::SettingsController() {
     section_handlers_by_id_[handler->Id()] = handler.get();
   }
   InitSections();
-}
-
-SettingsController& SettingsController::Instance() {
-  static SettingsController controller;
-  return controller;
 }
 
 void SettingsController::BindCommands(SettingsCommands commands) {
@@ -368,8 +380,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
   }
   context_ = context;
 
-  return DataModelHost::Instance().Register(context, "settings", [](Rml::DataModelConstructor& ctor) {
-    auto& controller = SettingsController::Instance();
+  return DataModelHost::Instance().Register(context, "settings", [this](Rml::DataModelConstructor& ctor) {
+    auto& controller = *this;
     if (auto section_handle = ctor.RegisterStruct<SectionListRow>()) {
       section_handle.RegisterMember("id", &SectionListRow::id);
       section_handle.RegisterMember("title", &SectionListRow::title);

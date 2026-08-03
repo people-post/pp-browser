@@ -85,11 +85,11 @@ namespace {
 
 InputCoordinator* g_input_coordinator = nullptr;
 
-void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges) {
-  shell.SetOnNavTabChanged([badges, &shell](NavTab tab) {
+void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, SettingsController& settings) {
+  shell.SetOnNavTabChanged([badges, &shell, &settings](NavTab tab) {
     static NavTab previous = NavTab::Home;
     if (previous == NavTab::Me && tab != NavTab::Me) {
-      SettingsController::Instance().OnMeSurfaceClosed();
+      settings.OnMeSurfaceClosed();
     }
     if (tab == NavTab::Home) {
       ChatController::Instance().OnHomeTabActivated();
@@ -101,7 +101,7 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges) {
       ContactsController::Instance().OnNavTabActivated();
     }
     if (tab == NavTab::Me) {
-      SettingsController::Instance().OnNavTabActivated();
+      settings.OnNavTabActivated();
     }
     previous = tab;
     if (badges) {
@@ -110,33 +110,33 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges) {
     shell.DirtyWindow();
   });
 
-  shell.SetOnLayoutModeChanged([&shell](LayoutMode mode) {
+  shell.SetOnLayoutModeChanged([&shell, &settings](LayoutMode mode) {
     const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(shell.State());
     if (chrome.nav_tab == NavTab::Contacts) {
       ContactsController::Instance().SyncLayoutMode();
     }
-    SettingsController::Instance().SyncLayoutMode();
+    settings.SyncLayoutMode();
     if (mode == LayoutMode::Compact && chrome.nav_tab == NavTab::Home) {
       ChatController::Instance().OnHomeTabActivated();
     }
   });
 
-  shell.SetOnLayoutSynced([]() {
-    SettingsController::Instance().OnShellLayoutSynced();
+  shell.SetOnLayoutSynced([&settings]() {
+    settings.OnShellLayoutSynced();
     ChatController::Instance().OnShellLayoutSynced();
   });
 
-  shell.SetOnTransientPopped([](const std::string& key) {
+  shell.SetOnTransientPopped([&settings](const std::string& key) {
     if (key == "contact_detail") {
       ContactsController::Instance().OnDetailDismissed();
     }
     if (key == "settings_detail") {
-      SettingsController::Instance().OnDetailDismissed();
+      settings.OnDetailDismissed();
     }
   });
 
-  shell.SetOnAccountSheetOpened([]() { SettingsController::Instance().OnAccountSheetOpened(); });
-  shell.SetOnAccountSheetClosed([]() { SettingsController::Instance().OnAccountSheetClosed(); });
+  shell.SetOnAccountSheetOpened([&settings]() { settings.OnAccountSheetOpened(); });
+  shell.SetOnAccountSheetClosed([&settings]() { settings.OnAccountSheetClosed(); });
 }
 
 bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier,
@@ -171,6 +171,8 @@ Application::Application() {
   input_ = std::make_unique<InputCoordinator>();
   flow_ = std::make_unique<FlowCoordinator>();
   call_ = std::make_unique<CallController>();
+  settings_ = std::make_unique<SettingsController>();
+  SettingsController::InstallInstance(*settings_);
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
   pin_gate_ = std::make_unique<PinGateController>();
   g_input_coordinator = input_.get();
@@ -471,13 +473,13 @@ bool Application::Initialize(const char* window_title) {
     view.unlocked = view.ready && secrets.IsUnlocked();
     return view;
   };
-  SettingsController::Instance().BindCommands(std::move(settings_commands));
+  settings_->BindCommands(std::move(settings_commands));
 
   ShellHost& shell = ShellHost::Instance();
   const ShellNavigationPorts shell_navigation = MakeShellNavigationPorts(shell);
   const ShellFeedbackPorts shared_feedback = BindSharedShellFeedback(shell);
-  SettingsController::Instance().BindShellFeedback(shared_feedback);
-  SettingsController::Instance().BindShellNavigation(shell_navigation);
+  settings_->BindShellFeedback(shared_feedback);
+  settings_->BindShellNavigation(shell_navigation);
 
   ChatController::Instance().BindSessionStore(store_);
 
@@ -576,7 +578,7 @@ bool Application::Initialize(const char* window_title) {
   ShellHost::Instance().BindPinGate(*pin_gate_);
   ShellHost::Instance().BindFlowCoordinator(*flow_);
   ShellHost::Instance().BindCallController(*call_);
-  SettingsController::Instance().BindUnlockGate(*unlock_gate_);
+  settings_->BindUnlockGate(*unlock_gate_);
   ContactsController::Instance().BindUnlockGate(*unlock_gate_);
   PeoplePickerController::Instance().BindUnlockGate(*unlock_gate_);
   PeoplePickerController::Instance().BindFlowCoordinator(*flow_);
@@ -587,14 +589,19 @@ bool Application::Initialize(const char* window_title) {
   agent_session_.emplace();
   ChatController::Instance().BindAgentPorts(MakeAgentUiPorts(*agent_session_));
 
+  if (!settings_->RegisterModel(context)) {
+    log().error << "SettingsController RegisterModel failed";
+    return false;
+  }
+
   if (![&] {
         StartupPhase phase("SetupChatController");
         return SetupChatController(context);
       }()) {
     log().error << "SetupChatController failed";
-    SettingsController::Instance().BindCommands({});
-    SettingsController::Instance().BindShellNavigation({});
-    SettingsController::Instance().BindShellFeedback({});
+    settings_->BindCommands({});
+    settings_->BindShellNavigation({});
+    settings_->BindShellFeedback({});
     ContactsController::Instance().BindShellNavigation({});
     ContactsController::Instance().BindShellFeedback({});
     ContactsController::Instance().BindContactsPorts({});
@@ -647,33 +654,33 @@ bool Application::Initialize(const char* window_title) {
   ContactsController::Instance().BindChatPorts(chat_ports);
   PeoplePickerController::Instance().BindChatPorts(std::move(chat_ports));
 
-  WireShellPresentationEvents(shell, badges_.get());
+  WireShellPresentationEvents(shell, badges_.get(), *settings_);
 
   // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
   config_apply_->InstallListeners();
 
-  messaging.SetOnMessagingReady([]() {
+  messaging.SetOnMessagingReady([this]() {
     ChatController::Instance().OnMessagingReady();
     ContactsController::Instance().Refresh();
     const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(ShellHost::Instance().State());
     if (chrome.account_sheet_open) {
-      SettingsController::Instance().OnAccountSheetOpened();
+      settings_->OnAccountSheetOpened();
     } else if (chrome.nav_tab == NavTab::Me) {
-      SettingsController::Instance().OnNavTabActivated();
+      settings_->OnNavTabActivated();
     }
   });
-  messaging.SetOnReachabilityUpdated([&messaging]() {
-    BrowserThread::PostTask(BrowserThreadId::UI, [&messaging]() {
-      SettingsController::Instance().SyncReachability();
-      const ReachabilitySnapshot snap = messaging.Reachability();
+  messaging.SetOnReachabilityUpdated([this]() {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+      settings_->SyncReachability();
+      const ReachabilitySnapshot snap = Messaging().Reachability();
       if (snap.status == ReachabilityStatus::OutboundOnly || snap.status == ReachabilityStatus::Blocked) {
         UserFeedback::NeedsSetup(Tr("settings.network.banner_hint"));
       }
     });
   });
 
-  LocalizationService::Instance().AddLanguageChangeListener([](const std::string& /*resolved*/) {
-    SettingsController::Instance().RefreshLocalizedChrome();
+  LocalizationService::Instance().AddLanguageChangeListener([this](const std::string& /*resolved*/) {
+    settings_->RefreshLocalizedChrome();
     ShellHost::Instance().RequestSyncLayout(true);
     if (auto* ctx = Rml::GetContext("main")) {
       ApplyUiDocumentLanguage(ctx);
@@ -726,7 +733,7 @@ void Application::Run() {
     BrowserThread::RunUITasks();
     if (ShellHost::Instance().State().account_sheet_open ||
         ShellHost::Instance().State().nav_tab == NavTab::Me) {
-      SettingsController::Instance().Tick();
+      settings_->Tick();
     }
     if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
       ContactsController::Instance().Tick();
@@ -770,9 +777,9 @@ void Application::Shutdown() {
   StartupMark("shutdown_begin");
   StartupPhase shutdown_total("Application::Shutdown");
 
-  SettingsController::Instance().BindCommands({});
-  SettingsController::Instance().BindShellNavigation({});
-  SettingsController::Instance().BindShellFeedback({});
+  settings_->BindCommands({});
+  settings_->BindShellNavigation({});
+  settings_->BindShellFeedback({});
   ContactsController::Instance().BindShellNavigation({});
   ContactsController::Instance().BindShellFeedback({});
   ContactsController::Instance().BindContactsPorts({});
@@ -809,6 +816,7 @@ void Application::Shutdown() {
     call_->BindShellCallChrome({});
   }
   ShellHost::Instance().BindShellMessaging({});
+  SettingsController::ClearInstance();
   g_input_coordinator = nullptr;
   if (unlock_gate_) {
     unlock_gate_->BindPorts({});

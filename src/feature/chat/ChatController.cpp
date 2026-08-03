@@ -2304,10 +2304,6 @@ bool ChatController::Setup(Rml::Context* context) {
     return false;
   }
 
-  if (!SettingsController::Instance().RegisterModel(context)) {
-    return false;
-  }
-
   if (!ContactsController::Instance().RegisterModel(context)) {
     return false;
   }

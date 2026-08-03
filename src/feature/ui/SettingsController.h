@@ -46,6 +46,12 @@ public:
     bool enabled = true;
   };
 
+  SettingsController();
+  ~SettingsController() override = default;
+
+  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
+  static void InstallInstance(SettingsController& controller);
+  static void ClearInstance();
   static SettingsController& Instance();
 
   /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
@@ -135,8 +141,6 @@ private:
     Rml::String app_name;
     Rml::String app_version;
   };
-
-  SettingsController();
 
   static void SelectSectionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void BackToListCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -238,6 +242,7 @@ private:
   ShellFeedbackPorts shell_feedback_;
   ProfileUnlockGate* unlock_gate_ = nullptr;
 
+  static SettingsController* installed_instance_;
 };
 
 } // namespace pbr

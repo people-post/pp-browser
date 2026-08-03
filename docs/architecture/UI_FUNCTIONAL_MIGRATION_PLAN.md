@@ -5,7 +5,7 @@
 > **Architecture reference (permanent):** [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)
 
 **Last updated:** 2026-08-03  
-**Status:** Phase 5–6 complete; Phase 7 complete (AgentUiPorts wired); Phase 8 not started
+**Status:** Phase 5–7 complete; Phase 8 started (SettingsController app-owned)
 
 ---
 
@@ -189,14 +189,16 @@
 
 **Primary files:** `Application.*`, `ShellHost.*`, `ChatController.*`, `SettingsController.*`, `DataModelHost.*`
 
-- [ ] `Application` holds `unique_ptr` (or members) for each presenter
-- [ ] Pass presenter reference into RmlUi registration lambdas (app phase after context create)
-- [ ] Deprecate `::Instance()`; grep until zero non-test call sites
+- [x] `Application` holds `unique_ptr` for **SettingsController** (first presenter)
+- [x] Settings RmlUi registration uses `[this]` capture; model registration moved to Application
+- [x] `InstallInstance` / `ClearInstance` shim for static RmlUi callbacks (Settings)
+- [ ] Repeat for Contacts, PeoplePicker, ShellHost, ChatController
+- [ ] Deprecate Settings `::Instance()` for non-callback call sites — **Application done** (3 callback-only uses remain)
 - [ ] Keep `DataModelHost` as registry singleton **or** move registry to Application — decide in implementation
 
-**Exit check:** `grep -r '::Instance()' src/feature src/app | wc -l` → 0 (excluding tests and explicit migration shims).
+**Exit check:** `grep -r '::Instance()' src/feature src/app | wc -l` → 0 (excluding tests and explicit migration shims). **Settings: Application has 0 `SettingsController::Instance()` calls.**
 
-**Notes:**
+**Notes:** `SettingsController` constructed in `Application`; `WireShellPresentationEvents` takes `SettingsController&`; `RegisterModel` called from Application before `SetupChatController`.
 
 ---
 
