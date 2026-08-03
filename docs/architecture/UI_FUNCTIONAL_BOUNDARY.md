@@ -5,7 +5,7 @@
 
 How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with **functional systems** (messaging, agent, vault, session prefs). Features should be able to run without UI; UI binds only through explicit interfaces.
 
-**Migration tracker (temporary):** [UI_FUNCTIONAL_MIGRATION_PLAN.md](UI_FUNCTIONAL_MIGRATION_PLAN.md) — delete that file when migration is complete.
+**Migration complete (2026-08):** UI presenters and `ShellHost` are app-owned (`unique_ptr` in `Application`). RmlUi static callbacks use `InstallInstance` / `Instance()` shims on the installed pointer — not process-wide singletons. Cross-presenter calls use notify ports or `Application::WireShellPresentationEvents`.
 
 ---
 
@@ -198,7 +198,7 @@ struct MessagingActions {
 - Wires event callbacks (messaging ready → refresh presenters)
 - Runs the main loop: UI tick, `TickLibp2p`, drain `BrowserThread::UI`
 
-Presenters may still exist as process singletons **during migration**; new code should prefer app-injected instances. See migration plan.
+Presenters are **app-owned instances** (`Application` holds `unique_ptr` and calls `InstallInstance` for RmlUi static callbacks). New code must not add presenter `::Instance()` call sites outside static RmlUi handlers and SDL function-pointer constraints.
 
 ---
 
@@ -226,6 +226,9 @@ Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOS
 | Persisted config slices | `ConfigApplyBridge`, `MessagingHub::Apply` | Config |
 | Settings imperative ops | `SettingsCommands` | Actions |
 | Chat navigation | `ChatSessionPorts` | Actions |
+| Contacts notify | `ContactsNotifyPorts` | Actions + Events |
+| People picker notify | `PeoplePickerNotifyPorts` | Actions |
+| App-owned presenters | `Application` + `InstallInstance` / `ClearInstance` | Composition root |
 | Shell navigation (settings / chat / contacts) | `ShellNavigationPorts`, `MakeShellNavigationPorts` | Actions + State snapshot |
 | Shell feedback | `ShellFeedbackPorts`, `BindSharedShellFeedback`, `UserFeedback::BindPorts` | Actions + Events |
 | Messaging read snapshot | `MessagingUiPorts`, `MessagingView` | State |
@@ -235,7 +238,21 @@ Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOS
 | Unread badges | `BadgeAggregator` | State (app-computed) |
 | RmlUi registry | `DataModelHost` | UI infrastructure |
 
-**Direction of travel:** Generalize ports + slices from “cross-module exceptions” to the **default**. Demote `::Instance()` controllers to thin RmlUi adapters over injected `{ StateSource, Actions, Events }`.
+**Direction of travel:** Generalize ports + slices from “cross-module exceptions” to the **default**. Presenters remain RmlUi adapters; functional logic stays behind ports and facades.
+
+---
+
+## RmlUi static callbacks
+
+RmlUi event handlers must be static function pointers. Presenters therefore expose:
+
+```cpp
+static void InstallInstance(Presenter& instance);  // Application calls at startup
+static void ClearInstance();                       // Application calls at shutdown
+static Presenter& Instance();                      // static callbacks only
+```
+
+`Application` owns `std::unique_ptr<Presenter>` and installs the pointer before model registration. **Do not** call `Presenter::Instance()` from feature code or from `Application` — use injected references (`chat_`, `settings_`, …) or notify ports.
 
 ---
 
@@ -277,7 +294,6 @@ RmlUi model registration stays in the presenter (or a dedicated binding helper).
 
 | Doc | Why |
 |-----|-----|
-| [UI_FUNCTIONAL_MIGRATION_PLAN.md](UI_FUNCTIONAL_MIGRATION_PLAN.md) | Phased migration checklist (temporary) |
 | [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md) | Ownership, threading, bridge diagram |
 | [CONFIGURATION.md](../ops/CONFIGURATION.md) | Disk DTO → slice field mapping |
 | [WINDOW_SHELL.md](../ui/WINDOW_SHELL.md) | Shell chrome behavior |
