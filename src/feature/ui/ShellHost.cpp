@@ -1381,11 +1381,12 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<svg data-if=\"call_in_progress_muted\" src=\"../icons/mic-off.svg\" width=\"18\" height=\"18\" "
          "crop-to-content=\"true\"></svg>";
   out << "</button>";
+  // Route toggle: loudspeaker vs earpiece (not output mute — system volume covers that).
   out << "<button class=\"shell-call-speaker\" type=\"button\" data-if=\"call_in_progress_show_speaker\" "
          "data-class-shell-call-speaker--on=\"call_in_progress_speaker_on\" data-event-click=\"call_speaker()\">";
   out << "<svg data-if=\"call_in_progress_speaker_on\" src=\"../icons/speaker.svg\" width=\"18\" height=\"18\" "
          "crop-to-content=\"true\"></svg>";
-  out << "<svg data-if=\"!call_in_progress_speaker_on\" src=\"../icons/speaker-off.svg\" width=\"18\" height=\"18\" "
+  out << "<svg data-if=\"!call_in_progress_speaker_on\" src=\"../icons/earpiece.svg\" width=\"18\" height=\"18\" "
          "crop-to-content=\"true\"></svg>";
   out << "</button>";
   out << "<button class=\"shell-call-camera\" type=\"button\" "
