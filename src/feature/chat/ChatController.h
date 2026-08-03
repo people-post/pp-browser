@@ -2,6 +2,7 @@
 
 #include "feature/messaging/AgentUiPorts.h"
 #include "feature/ui/ContactsNotifyPorts.h"
+#include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "feature/messaging/MessagingChatPorts.h"
 #include "feature/chat/ChatThreadChrome.h"
 #include "feature/chat/ChatTranscriptScroller.h"
@@ -85,6 +86,7 @@ public:
   void BindChatPorts(MessagingChatPorts ports);
   void BindAgentPorts(AgentUiPorts ports);
   void BindContactsNotify(ContactsNotifyPorts ports);
+  void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
   void BindShellSetup(ShellSetupPorts ports);
   void BindSessionStore(SessionStore& store);
   void BindBadgeAggregator(BadgeAggregator& badges);
@@ -294,6 +296,7 @@ private:
   MessagingChatPorts chat_ports_;
   AgentUiPorts agent_ports_;
   ContactsNotifyPorts contacts_notify_;
+  PeoplePickerNotifyPorts people_picker_notify_;
   ShellSetupPorts shell_setup_;
   SessionStore* session_store_ = nullptr;
   BadgeAggregator* badges_ = nullptr;

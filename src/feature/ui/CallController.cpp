@@ -17,7 +17,7 @@
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/CallConflictCopy.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/PeoplePickerController.h"
+#include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "CallVideoTileRenderer.h"
 #include "feature/ui/UserFeedback.h"
 
@@ -128,6 +128,10 @@ void CallController::BindCallPorts(MessagingCallPorts ports) {
 
 void CallController::BindShellCallChrome(ShellCallChromePorts ports) {
   shell_call_chrome_ = std::move(ports);
+}
+
+void CallController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
+  people_picker_notify_ = std::move(ports);
 }
 
 bool CallController::MessagingInitialized() const {
@@ -601,7 +605,9 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
 }
 
 void CallController::OpenGroupCallPicker(const std::string& thread_id, const bool video) {
-  PeoplePickerController::Instance().OpenForGroupCall(thread_id, video);
+  if (people_picker_notify_.open_for_group_call) {
+    people_picker_notify_.open_for_group_call(thread_id, video);
+  }
 }
 
 void CallController::OpenMidCallInvitePicker() {
@@ -616,7 +622,9 @@ void CallController::OpenMidCallInvitePicker() {
     UserFeedback::Fail(Tr("call.error.no_active"));
     return;
   }
-  PeoplePickerController::Instance().OpenForCallAddGuest(active_call_id_);
+  if (people_picker_notify_.open_for_call_add_guest) {
+    people_picker_notify_.open_for_call_add_guest(active_call_id_);
+  }
 }
 
 void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities) {

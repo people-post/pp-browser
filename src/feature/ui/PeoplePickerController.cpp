@@ -104,13 +104,25 @@ bool MatchesIdentityQuery(const std::string& title, const std::string& identity,
 
 } // namespace
 
-PeoplePickerController::PeoplePickerController() {
-  redirectLogger("PeoplePickerController");
+PeoplePickerController* PeoplePickerController::installed_instance_ = nullptr;
+
+void PeoplePickerController::InstallInstance(PeoplePickerController& controller) {
+  installed_instance_ = &controller;
+}
+
+void PeoplePickerController::ClearInstance() {
+  installed_instance_ = nullptr;
 }
 
 PeoplePickerController& PeoplePickerController::Instance() {
-  static PeoplePickerController controller;
-  return controller;
+  if (!installed_instance_) {
+    throw std::runtime_error("PeoplePickerController not installed");
+  }
+  return *installed_instance_;
+}
+
+PeoplePickerController::PeoplePickerController() {
+  redirectLogger("PeoplePickerController");
 }
 void PeoplePickerController::BindContactsPorts(MessagingContactsPorts ports) {
   contacts_ports_ = std::move(ports);
@@ -170,8 +182,8 @@ bool PeoplePickerController::RegisterModel(Rml::Context* context) {
   }
   context_ = context;
 
-  return DataModelHost::Instance().Register(context, "people_picker", [](Rml::DataModelConstructor& ctor) {
-    auto& controller = PeoplePickerController::Instance();
+  return DataModelHost::Instance().Register(context, "people_picker", [this](Rml::DataModelConstructor& ctor) {
+    auto& controller = *this;
     if (auto row_handle = ctor.RegisterStruct<PickerRow>()) {
       row_handle.RegisterMember("id", &PickerRow::id);
       row_handle.RegisterMember("title", &PickerRow::title);

@@ -3,6 +3,7 @@
 #include "base/media/CallRingtone.h"
 #include "feature/messaging/MessagingCallPorts.h"
 #include "feature/ui/CallChromeSync.h"
+#include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "feature/ui/ShellCallChromePorts.h"
 
 #include <cstdint>
@@ -21,6 +22,8 @@ public:
   CallController() = default;
 
   void BindCallPorts(MessagingCallPorts ports);
+  /** Open people-picker flows without PeoplePickerController::Instance(). Clear via BindPeoplePickerNotify({}). */
+  void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
   /** Call ring / in-call chrome without ShellHost::Instance(). Clear via BindShellCallChrome({}). */
   void BindShellCallChrome(ShellCallChromePorts ports);
 
@@ -75,6 +78,7 @@ private:
   CallChromeLayer synced_chrome_;
   CallRingtone ringtone_;
   MessagingCallPorts call_ports_;
+  PeoplePickerNotifyPorts people_picker_notify_;
   ShellCallChromePorts shell_call_chrome_;
 };
 

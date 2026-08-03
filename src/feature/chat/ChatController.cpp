@@ -51,7 +51,7 @@
 #include "base/data/SessionStore.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ui/ContactsController.h"
-#include "feature/ui/PeoplePickerController.h"
+#include "feature/ui/PeoplePickerNotifyPorts.h"
 
 #include <RmlUi/Core/SystemInterface.h>
 #include "feature/ui/SettingsController.h"
@@ -299,6 +299,10 @@ void ChatController::BindAgentPorts(AgentUiPorts ports) {
 
 void ChatController::BindContactsNotify(ContactsNotifyPorts ports) {
   contacts_notify_ = std::move(ports);
+}
+
+void ChatController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
+  people_picker_notify_ = std::move(ports);
 }
 
 bool ChatController::AgentReady() const {
@@ -1259,7 +1263,9 @@ void ChatController::OnNewChat() {
 }
 
 void ChatController::OnNewMessage() {
-  PeoplePickerController::Instance().OpenFree();
+  if (people_picker_notify_.open_free) {
+    people_picker_notify_.open_free();
+  }
 }
 
 void ChatController::OnOpenNewSessionMenu(Rml::Event& ev) {
@@ -1360,7 +1366,11 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           "add_people",
           "Add people…",
           nullptr,
-          [contact_id]() { PeoplePickerController::Instance().OpenFromDm(contact_id); },
+          [this, contact_id]() {
+            if (people_picker_notify_.open_from_dm) {
+              people_picker_notify_.open_from_dm(contact_id);
+            }
+          },
           "../icons/group.svg",
       });
       actions.push_back({
@@ -2319,10 +2329,6 @@ bool ChatController::Setup(Rml::Context* context) {
   }
 
   if (!ShellHost::RegisterWindowModel(context)) {
-    return false;
-  }
-
-  if (!PeoplePickerController::Instance().RegisterModel(context)) {
     return false;
   }
 

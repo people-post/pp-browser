@@ -43,6 +43,7 @@
 #include "feature/ui/FlowCoordinator.h"
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/PeoplePickerController.h"
+#include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellFeedbackPorts.h"
@@ -177,12 +178,15 @@ Application::Application() {
   SettingsController::InstallInstance(*settings_);
   contacts_ = std::make_unique<ContactsController>();
   ContactsController::InstallInstance(*contacts_);
+  people_picker_ = std::make_unique<PeoplePickerController>();
+  PeoplePickerController::InstallInstance(*people_picker_);
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
   pin_gate_ = std::make_unique<PinGateController>();
   g_input_coordinator = input_.get();
 }
 
 Application::~Application() {
+  PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
   SettingsController::ClearInstance();
   Shutdown();
@@ -509,10 +513,10 @@ bool Application::Initialize(const char* window_title) {
   call_->BindShellCallChrome(MakeShellCallChromePorts(shell));
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   flow_->BindShellNavigation(shell_navigation);
-  PeoplePickerController::Instance().BindContactsPorts(MakeMessagingContactsPorts(messaging));
-  PeoplePickerController::Instance().BindPickerPorts(MakeMessagingPeoplePickerPorts(messaging));
-  PeoplePickerController::Instance().BindShellNavigation(shell_navigation);
-  PeoplePickerController::Instance().BindShellFeedback(shared_feedback);
+  people_picker_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
+  people_picker_->BindPickerPorts(MakeMessagingPeoplePickerPorts(messaging));
+  people_picker_->BindShellNavigation(shell_navigation);
+  people_picker_->BindShellFeedback(shared_feedback);
   client_compat_->BindCompatPorts(MakeMessagingCompatPorts(messaging));
   client_compat_->BindShellFeedback(shared_feedback);
   badges_->BindShellNavigation(shell_navigation);
@@ -586,9 +590,9 @@ bool Application::Initialize(const char* window_title) {
   ShellHost::Instance().BindCallController(*call_);
   settings_->BindUnlockGate(*unlock_gate_);
   contacts_->BindUnlockGate(*unlock_gate_);
-  PeoplePickerController::Instance().BindUnlockGate(*unlock_gate_);
-  PeoplePickerController::Instance().BindFlowCoordinator(*flow_);
-  PeoplePickerController::Instance().BindCallController(*call_);
+  people_picker_->BindUnlockGate(*unlock_gate_);
+  people_picker_->BindFlowCoordinator(*flow_);
+  people_picker_->BindCallController(*call_);
 
   config_apply_->Bind(messaging, store_, [](const std::string& relative) { return AssetsPath(relative); });
 
@@ -605,10 +609,29 @@ bool Application::Initialize(const char* window_title) {
     return false;
   }
 
+  if (!people_picker_->RegisterModel(context)) {
+    log().error << "PeoplePickerController RegisterModel failed";
+    return false;
+  }
+
   ContactsNotifyPorts contacts_notify;
   contacts_notify.refresh = [this]() { contacts_->Refresh(); };
   contacts_notify.select_contact = [this](const std::string& id) { contacts_->OnSelectContact(id); };
   ChatController::Instance().BindContactsNotify(std::move(contacts_notify));
+
+  PeoplePickerNotifyPorts chat_people_picker_notify;
+  chat_people_picker_notify.open_free = [this]() { people_picker_->OpenFree(); };
+  chat_people_picker_notify.open_from_dm = [this](const std::string& id) { people_picker_->OpenFromDm(id); };
+  ChatController::Instance().BindPeoplePickerNotify(std::move(chat_people_picker_notify));
+
+  PeoplePickerNotifyPorts call_people_picker_notify;
+  call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id, bool video) {
+    people_picker_->OpenForGroupCall(thread_id, video);
+  };
+  call_people_picker_notify.open_for_call_add_guest = [this](const std::string& call_id) {
+    people_picker_->OpenForCallAddGuest(call_id);
+  };
+  call_->BindPeoplePickerNotify(std::move(call_people_picker_notify));
 
   if (![&] {
         StartupPhase phase("SetupChatController");
@@ -627,15 +650,16 @@ bool Application::Initialize(const char* window_title) {
     ChatController::Instance().BindChatPorts({});
     ChatController::Instance().BindAgentPorts({});
     ChatController::Instance().BindContactsNotify({});
+    ChatController::Instance().BindPeoplePickerNotify({});
     ChatController::Instance().BindMessagingUi({});
     UserFeedback::BindPorts({});
     ShellFeedback::BindChromePorts({});
     contacts_->BindChatPorts({});
-    PeoplePickerController::Instance().BindChatPorts({});
-    PeoplePickerController::Instance().BindShellNavigation({});
-    PeoplePickerController::Instance().BindShellFeedback({});
-    PeoplePickerController::Instance().BindContactsPorts({});
-    PeoplePickerController::Instance().BindPickerPorts({});
+    people_picker_->BindChatPorts({});
+    people_picker_->BindShellNavigation({});
+    people_picker_->BindShellFeedback({});
+    people_picker_->BindContactsPorts({});
+    people_picker_->BindPickerPorts({});
     if (client_compat_) {
       client_compat_->BindCompatPorts({});
       client_compat_->BindShellFeedback({});
@@ -653,6 +677,7 @@ bool Application::Initialize(const char* window_title) {
     if (call_) {
       call_->BindCallPorts({});
       call_->BindShellCallChrome({});
+      call_->BindPeoplePickerNotify({});
     }
     if (unlock_gate_) {
       unlock_gate_->BindPorts({});
@@ -669,7 +694,7 @@ bool Application::Initialize(const char* window_title) {
   chat_ports.select_thread = [](const std::string& id) { ChatController::Instance().OnSelectThread(id); };
   chat_ports.on_find_someone = [] { ChatController::Instance().OnFindSomeone(); };
   contacts_->BindChatPorts(chat_ports);
-  PeoplePickerController::Instance().BindChatPorts(std::move(chat_ports));
+  people_picker_->BindChatPorts(std::move(chat_ports));
 
   WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_);
 
@@ -806,15 +831,16 @@ void Application::Shutdown() {
   ChatController::Instance().BindChatPorts({});
   ChatController::Instance().BindAgentPorts({});
   ChatController::Instance().BindContactsNotify({});
+  ChatController::Instance().BindPeoplePickerNotify({});
   ChatController::Instance().BindMessagingUi({});
   UserFeedback::BindPorts({});
   ShellFeedback::BindChromePorts({});
   contacts_->BindChatPorts({});
-  PeoplePickerController::Instance().BindChatPorts({});
-  PeoplePickerController::Instance().BindShellNavigation({});
-  PeoplePickerController::Instance().BindShellFeedback({});
-  PeoplePickerController::Instance().BindContactsPorts({});
-  PeoplePickerController::Instance().BindPickerPorts({});
+  people_picker_->BindChatPorts({});
+  people_picker_->BindShellNavigation({});
+  people_picker_->BindShellFeedback({});
+  people_picker_->BindContactsPorts({});
+  people_picker_->BindPickerPorts({});
   if (client_compat_) {
     client_compat_->BindCompatPorts({});
     client_compat_->BindShellFeedback({});
@@ -832,8 +858,10 @@ void Application::Shutdown() {
   if (call_) {
     call_->BindCallPorts({});
     call_->BindShellCallChrome({});
+    call_->BindPeoplePickerNotify({});
   }
   ShellHost::Instance().BindShellMessaging({});
+  PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
   SettingsController::ClearInstance();
   g_input_coordinator = nullptr;

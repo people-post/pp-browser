@@ -5,7 +5,7 @@
 > **Architecture reference (permanent):** [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)
 
 **Last updated:** 2026-08-03  
-**Status:** Phase 5–7 complete; Phase 8 started (SettingsController app-owned)
+**Status:** Phase 5–7 complete; Phase 8 in progress (Settings + Contacts + PeoplePicker app-owned)
 
 ---
 
@@ -189,16 +189,19 @@
 
 **Primary files:** `Application.*`, `ShellHost.*`, `ChatController.*`, `SettingsController.*`, `DataModelHost.*`
 
-- [x] `Application` holds `unique_ptr` for **SettingsController** (first presenter)
+- [x] `Application` holds `unique_ptr` for **SettingsController**, **ContactsController**, and **PeoplePickerController**
 - [x] Settings RmlUi registration uses `[this]` capture; model registration moved to Application
-- [x] `InstallInstance` / `ClearInstance` shim for static RmlUi callbacks (Settings)
-- [ ] Repeat for Contacts, PeoplePicker, ShellHost, ChatController
-- [ ] Deprecate Settings `::Instance()` for non-callback call sites — **Application done** (3 callback-only uses remain)
+- [x] Contacts RmlUi registration uses `[this]` capture; model registration moved to Application
+- [x] PeoplePicker RmlUi registration uses `[this]` capture; model registration moved to Application
+- [x] `ContactsNotifyPorts` decouples ChatController from `ContactsController::Instance()`
+- [x] `PeoplePickerNotifyPorts` decouples ChatController and CallController from `PeoplePickerController::Instance()`
+- [x] `InstallInstance` / `ClearInstance` shim for static RmlUi callbacks (Settings, Contacts, PeoplePicker)
+- [ ] Repeat for ShellHost, ChatController
 - [ ] Keep `DataModelHost` as registry singleton **or** move registry to Application — decide in implementation
 
-**Exit check:** `grep -r '::Instance()' src/feature src/app | wc -l` → 0 (excluding tests and explicit migration shims). **Settings: Application has 0 `SettingsController::Instance()` calls.**
+**Exit check:** `grep -r '::Instance()' src/feature src/app | wc -l` → 0 (excluding tests and explicit migration shims). **Settings/Contacts/PeoplePicker: Application has 0 `::Instance()` calls; Chat uses `ContactsNotifyPorts` + `PeoplePickerNotifyPorts`; Call uses `PeoplePickerNotifyPorts`.**
 
-**Notes:** `SettingsController` constructed in `Application`; `WireShellPresentationEvents` takes `SettingsController&`; `RegisterModel` called from Application before `SetupChatController`.
+**Notes:** `SettingsController` + `ContactsController` + `PeoplePickerController` constructed in `Application`; `WireShellPresentationEvents` takes settings/contacts refs; `ContactsNotifyPorts.h` + `PeoplePickerNotifyPorts.h` for cross-presenter notify.
 
 ---
 

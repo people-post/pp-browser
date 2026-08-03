@@ -30,6 +30,12 @@ class CallController;
 
 class PeoplePickerController : public Module {
 public:
+  PeoplePickerController();
+  ~PeoplePickerController() override = default;
+
+  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
+  static void InstallInstance(PeoplePickerController& controller);
+  static void ClearInstance();
   static PeoplePickerController& Instance();
 
   void BindContactsPorts(MessagingContactsPorts ports);
@@ -72,8 +78,6 @@ public:
   void Close();
 
 private:
-  PeoplePickerController();
-
   static void ToggleContactCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void OnSearchChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ConfirmCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -141,6 +145,7 @@ private:
   bool call_video_ = false;
   std::unordered_map<std::string, std::string> identity_for_contact_;
 
+  static PeoplePickerController* installed_instance_;
 };
 
 } // namespace pbr
