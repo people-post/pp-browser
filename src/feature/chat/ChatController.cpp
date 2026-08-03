@@ -2099,8 +2099,13 @@ void ChatController::WireMessagingBindings() {
     }
     const bool call_wake = BackgroundSyncScheduler::Instance().ConsumeCallWake();
     // SyncInboxFromWake only queues IO; ring UI refreshes via OnRingChanged after ingest.
+    // Handler runs on the coordinator — hop call chrome to UI (CALLS.md / THREADING.md).
     if (call_wake && call_) {
-      call_->OnCallWake();
+      BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+        if (call_) {
+          call_->OnCallWake();
+        }
+      });
     }
     chat_ports_.sync_inbox_from_wake(force);
   });

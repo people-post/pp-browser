@@ -203,6 +203,11 @@ void CallController::Tick() {
 
 void CallController::OnCallWake() {
   // Inbox sync is async; notify once RefreshPendingRing sees the invite.
+  // Coordinator / wake sync must not mutate shell chrome here (CALLS.md thread policy).
+  if (!BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { OnCallWake(); });
+    return;
+  }
   pending_call_wake_notify_ = true;
   RefreshPendingRing();
 }
@@ -232,6 +237,10 @@ void CallController::HideInCallChrome() {
 }
 
 void CallController::SyncShellState() {
+  if (!BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { SyncShellState(); });
+    return;
+  }
   if (!shell_call_chrome_.call_ring || !shell_call_chrome_.call_in_progress) {
     return;
   }
@@ -254,6 +263,10 @@ void CallController::SyncShellState() {
 }
 
 void CallController::SyncRingtone() {
+  if (!BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { SyncRingtone(); });
+    return;
+  }
   // Mobile: SDL playback teardown from a worker can stall the SDL thread during Accept.
   // Skip ringtone until that path is safe; signaling/listen dogfood does not need it.
   if (Platform::IsMobile()) {
@@ -299,6 +312,10 @@ std::string CallController::FormatElapsed(const int64_t connected_at_ms) {
 }
 
 void CallController::RefreshPendingRing() {
+  if (!BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { RefreshPendingRing(); });
+    return;
+  }
   BindToMessaging();
   auto* calls = Calls();
   if (!calls) {
@@ -327,10 +344,16 @@ void CallController::RefreshPendingRing() {
     const bool same_call_active =
         active && active->has_value() && (*active)->call_id == (*top)->call_id;
 
-    // Accept in flight on IO — keep ring chrome visible (label can stay); only stop ringtone.
-    // Clearing here left a blank pre-call panel when AcceptInvite never ran (Samsung).
+    // Accept in flight — keep ring chrome visible; only stop ringtone once Accepting suppresses it.
+    // If chrome was cleared while Accept hung, restore the dialog (do not SyncRingtone-only).
     if (accept_in_flight && !same_call_active) {
       ringing_call_id_ = (*top)->call_id;
+      if (shell_call_chrome_.call_ring && !shell_call_chrome_.call_ring().active) {
+        auto& ring = shell_call_chrome_.call_ring();
+        ring.active = true;
+        ring.call_id = (*top)->call_id;
+        SyncShellState();
+      }
       SyncRingtone();
       return;
     }
@@ -426,6 +449,17 @@ void CallController::RefreshPendingRing() {
 
     active_call_id_ = (*active)->call_id;
     ClearRing();
+
+    // Unanswered outbound: offerer stays Joined until Leave — without a TTL the Calling bar
+    // sticks forever and masks a reverse inbound ring as "previous or new call?".
+    if (life && life->Phase() == CallPhase::OutboundCalling && !calls->Media().IsActive() &&
+        (*active)->created_at > 0 &&
+        util::NowUnixMs() - (*active)->created_at >= kDefaultCallInviteTtlMs) {
+      logging::getLogger("CallController").warning
+          << "outbound unanswered timeout call_id=" << (*active)->call_id;
+      life->Apply(CallLifecycleEvent::LeaveClicked, (*active)->call_id);
+      return;
+    }
 
     // Peer ICE failed: keep chrome for Retry/End on 1:1. Group SFU recovery keeps chrome too.
     // Do not auto-LeaveCall on `failed` — that erased the session before the user could retry.

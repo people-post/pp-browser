@@ -100,11 +100,11 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 | Work | Thread | Why |
 |------|--------|-----|
 | Rml click / `DirtyWindow` / `DirtyAll` | UI only | Return immediately; **never** `SyncLayout` for call overlays (Samsung hit-test) |
-| `AcceptInvite` / `DeclineInvite` / `LeaveCall` / send prep | IO | Posted by lifecycle |
-| Prefetch / circuit / dial wait / `Connect` | IO | Seconds-scale waits |
-| N025 `ListenOn` / Wire / mDNS | IO → asio | Driven by lifecycle `WantEphemeralListen`, not inventing policy from tick alone |
+| `AcceptInvite` / `DeclineInvite` / `LeaveCall` / send prep | Worker Critical/Normal | Posted by lifecycle |
+| Prefetch / circuit / dial wait / `Connect` | Worker | Seconds-scale waits |
+| N025 `ListenOn` / Wire / mDNS | Worker → asio | Driven by lifecycle `WantEphemeralListen`, not inventing policy from tick alone |
 | `CallMediaEngine::StartSfu` / SDL capture | UI | Posted by bridge |
-| Chrome refresh | Always hop to UI | Safe from IO |
+| Chrome refresh (`RefreshPendingRing` / `SyncShellState` / ringtone) | **Always hop to UI** | Safe from worker **and coordinator** (`OnCallWake` / relay poll must not mutate shell) |
 
 ### Scenario matrix (v1)
 
@@ -113,6 +113,7 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 | Incoming ring | `InviteSeen` → `Ringing`; Dirty-only chrome; listen desire on |
 | Accept | Immediate `Accepting` + dismiss chrome; IO AcceptInvite; suppress ring for accepting id |
 | Decline / expire | Idle; listen desire off when no call |
+| Outbound unanswered | Offerer `OutboundCalling` with no media past invite TTL (`kDefaultCallInviteTtlMs`) → auto-Leave; clears sticky Calling bar |
 | Conflict (2nd invite) | Conflict copy; Accept leaves other local call first; single active call |
 | Leave / remote end | Idle; stop media via session |
 | Answerer before key | `MediaDeferred` → `MediaPending` until `MediaKeyReady` |

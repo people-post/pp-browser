@@ -166,6 +166,7 @@ Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** 
 
 | Date | Change |
 |------|--------|
+| 2026-08-03 | Call chrome: hop `OnCallWake` / `RefreshPendingRing` to UI from coordinator relay poll; unanswered outbound TTL clears sticky Calling bar |
 | 2026-08-03 | **Shipped:** coordinator + worker pool model live; `pp-browser-io` retired; project folder archived |
 | 2026-08-03 | Phase t5: `BrowserThread::IO` → worker pool |
 | 2026-08-03 | Phase t4: `CoordinatorThread` + timer wheel |
