@@ -15,8 +15,8 @@ namespace pbr {
 namespace CallAudioSession {
 namespace {
 
-/** Match historical iOS DefaultToSpeaker: start loud unless the user turns it off. */
-std::atomic<bool> g_speakerphone{true};
+/** Default earpiece; user opts into speakerphone. Reset each call on Deactivate. */
+std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
 
 void ApplySpeakerphoneLocked(bool on) {
@@ -69,6 +69,7 @@ void ActivateForVoipCall() {
 
 void Deactivate() {
   g_session_active.store(false);
+  g_speakerphone.store(false);
   ApplySpeakerphoneLocked(false);
   ApplyVoipModeLocked(false);
 }

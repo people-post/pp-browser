@@ -685,21 +685,23 @@ select selectbox option:hover {
 }
 
 .shell-call-speaker {
-  background-color: #e5e7eb;
+  background-color: #e8eaed;
   color: #1a1a1a;
 }
 
 .shell-call-speaker svg {
-  image-color: #1a1a1a;
+  /* Earpiece / speaker off — lower contrast status */
+  image-color: #9ca3af;
 }
 
 .shell-call-speaker--on {
-  background-color: #dbeafe;
-  color: #1e40af;
+  background-color: #e8eaed;
+  color: #1a1a1a;
 }
 
 .shell-call-speaker--on svg {
-  image-color: #1e40af;
+  /* Speakerphone on — full contrast status */
+  image-color: #1a1a1a;
 }
 
 .shell-call-leave {

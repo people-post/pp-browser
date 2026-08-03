@@ -1397,12 +1397,12 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<svg id=\"shell-call-mute-icon\" width=\"18\" height=\"18\" crop-to-content=\"true\" "
          "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
   out << "</button>";
-  // Route toggle: loudspeaker vs earpiece (not output mute — system volume covers that).
+  // Route status: same speaker icon; --on = speakerphone (full contrast), off = earpiece (low contrast).
   out << "<button id=\"shell-call-speaker-btn\" class=\"shell-call-speaker\" type=\"button\" "
          "data-if=\"call_in_progress_show_speaker\" "
          "data-class-shell-call-speaker--on=\"call_in_progress_speaker_on\" data-event-click=\"call_speaker()\">";
-  out << "<svg id=\"shell-call-speaker-icon\" width=\"18\" height=\"18\" crop-to-content=\"true\" "
-         "data-attr-src=\"call_in_progress_speaker_on ? '../icons/speaker.svg' : '../icons/earpiece.svg'\"></svg>";
+  out << "<svg id=\"shell-call-speaker-icon\" src=\"../icons/speaker.svg\" width=\"18\" height=\"18\" "
+         "crop-to-content=\"true\"></svg>";
   out << "</button>";
   out << "<button class=\"shell-call-camera\" type=\"button\" "
          "data-class-shell-call-camera--on=\"call_in_progress_camera_on\" data-event-click=\"call_camera()\">";

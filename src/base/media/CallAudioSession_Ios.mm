@@ -10,7 +10,8 @@ namespace pbr {
 namespace CallAudioSession {
 namespace {
 
-std::atomic<bool> g_speakerphone{true};
+/** Default earpiece; user opts into speakerphone. Reset each call on Deactivate. */
+std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
 
 void ApplyRoute(bool speaker_on) {
@@ -42,6 +43,7 @@ void ActivateForVoipCall() {
 
 void Deactivate() {
   g_session_active.store(false);
+  g_speakerphone.store(false);
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
   [session overrideOutputAudioPort:AVAudioSessionPortOverrideNone error:&error];

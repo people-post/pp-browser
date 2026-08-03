@@ -6,6 +6,7 @@ namespace pbr {
  * Platform audio session for in-call capture/playback.
  * Speakerphone toggle is meaningful on phone-like devices (Android / iOS);
  * desktop stubs return SupportsSpeakerToggle() == false.
+ * Default route is earpiece; speakerphone is opt-in per call.
  */
 namespace CallAudioSession {
 

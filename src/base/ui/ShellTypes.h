@@ -171,7 +171,7 @@ struct CallInProgressState {
   bool active = false;
   bool muted = false;
   bool camera_on = false;
-  /** Loudspeaker (true) vs earpiece (false) — only meaningful when show_speaker. Not output mute. */
+  /** Speakerphone on (true) vs earpiece (false). UI: same icon, contrast encodes status. */
   bool speaker_on = false;
   bool stage_visible = false;
   bool remote_video = false;
