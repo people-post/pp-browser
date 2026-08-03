@@ -3,7 +3,7 @@
 #include "base/messaging/ChatHistoryStreamCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/AppRuntime.h"
 
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
@@ -76,7 +76,7 @@ struct Libp2pDirectChatService::Impl {
     // reads and before ApplyInboundControl (call media / mic open must not
     // stall libp2p for both peers).
     auto stream = std::move(stream_and_protocol.stream);
-    PlatformRuntime::PostWorkerNormal([this, stream = std::move(stream)]() mutable {
+    AppRuntime::PostWorkerNormal([this, stream = std::move(stream)]() mutable {
       auto frame = ReadExactFrame(stream);
       if (!frame) {
         stream->close([](auto&&) {});
@@ -172,7 +172,7 @@ Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_us
   sessions_.OpenStream(peer_relay_user_id, {ProtocolName{kDirectChatProtocolId}},
                        [frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
                          // newStream callbacks run on the host io thread — hop off before blocking I/O.
-                         PlatformRuntime::PostWorkerNormal([frame, result_promise, stream_res = std::move(stream_res)]() mutable {
+                         AppRuntime::PostWorkerNormal([frame, result_promise, stream_res = std::move(stream_res)]() mutable {
                            if (!stream_res) {
                              try {
                                result_promise->set_value(

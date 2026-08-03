@@ -1,6 +1,6 @@
 #include "feature/messaging/CallP2pSignalingBridge.h"
 
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/BrowserThread.h"
 #include "common/Utilities.h"
 
 namespace pbr {

@@ -7,9 +7,6 @@ set(_pp_platform_core_sources
   ICredentialStore.cpp
   EnvCredentialStore.cpp
   ExecutablePath.cpp
-  ThreadRuntime.cpp
-  CoordinatorThread.cpp
-  PlatformRuntime.cpp
   os/OsFile_Posix.cpp
   os/OsTime_Posix.cpp
   os/OsProcess_Posix.cpp
@@ -19,10 +16,7 @@ set(_pp_platform_gui_sources
   AndroidAssetLocator.cpp
   AndroidPathProvider.cpp
   AppEventHooks.cpp
-  AppLifecycle.cpp
   AssetIO.cpp
-  BackgroundSyncScheduler.cpp
-  BrowserThread.cpp
   DesktopAssetLocator.cpp
   DesktopLocalNotifier.cpp
   DesktopWindowChrome.cpp
@@ -39,7 +33,6 @@ set(_pp_platform_gui_sources
   PlatformNavigation.cpp
   PlatformOpenUrl.cpp
   PlatformServices.cpp
-  PlatformRuntimeGui.cpp
   PlatformStartupHints.cpp
   PlatformUserHints.cpp
   PushWakeJni.cpp
@@ -93,10 +86,6 @@ pp_browser_add_base_library(pp_base_platform_core
     ${_pp_platform_core_sources}
 )
 
-target_compile_definitions(pp_base_platform_core PUBLIC
-  "PP_BROWSER_RELEASE_VERSION=\"${PP_BROWSER_RELEASE_VERSION}\""
-  "PP_BROWSER_VERSION=\"${PP_BROWSER_VERSION}\"")
-
 # OBJCXX is enabled in the top-level project() for desktop Darwin (required so
 # CMAKE_OBJCXX_COMPILE_OBJECT is set at generate time).
 
@@ -105,6 +94,7 @@ pp_browser_add_base_library(pp_base_platform
     ${_pp_platform_gui_sources}
   PUBLIC_LIBS
     pp_base_platform_core
+    pp_base_runtime
     pp_rmlui_backend
     RmlUi::Core
     ${PP_BROWSER_SDL3_TARGET}

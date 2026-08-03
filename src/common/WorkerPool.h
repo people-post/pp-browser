@@ -17,9 +17,10 @@ enum class WorkerLane { Critical, Normal, Background };
 /** Fixed-size pool with three priority lanes. Only pool threads may run long blocking work. */
 class WorkerPool : public Module {
 public:
-  static constexpr size_t kMinThreadCount = 2;
-  static constexpr size_t kMaxThreadCount = 4;
-  static constexpr size_t kDefaultThreadCount = 2;
+  /** Floor matches call-media needs: Connect wait + hello/ack + inbound must not share 2 threads. */
+  static constexpr size_t kMinThreadCount = 4;
+  static constexpr size_t kMaxThreadCount = 8;
+  static constexpr size_t kDefaultThreadCount = 4;
 
   explicit WorkerPool(size_t thread_count = kDefaultThreadCount);
   ~WorkerPool();

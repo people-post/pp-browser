@@ -14,7 +14,7 @@ public:
   /**
    * True when the user is actively attending to the app UI.
    * Desktop: input-focused and not minimized (clicking another app counts as inattentive).
-   * Mobile: same as IsForeground().
+   * Mobile: same as IsForeground() (desktop focus/minimize hooks are unused).
    */
   static bool IsUserAttentive();
 

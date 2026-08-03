@@ -1,5 +1,5 @@
 #include "base/net/ClientCompat.h"
-#include "base/platform/AppVersion.h"
+#include "base/runtime/AppVersion.h"
 
 #include <gtest/gtest.h>
 

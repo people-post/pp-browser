@@ -1,6 +1,6 @@
 #include "feature/messaging/DirectoryShadowCache.h"
 
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/BrowserThread.h"
 
 namespace pbr {
 

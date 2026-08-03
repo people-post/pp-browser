@@ -1,9 +1,9 @@
-#include "base/platform/BackgroundSyncScheduler.h"
+#include "base/runtime/BackgroundSyncScheduler.h"
 
 #include "base/messaging/MessagingLimits.h"
-#include "base/platform/AppLifecycle.h"
-#include "base/platform/BrowserThread.h"
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/AppLifecycle.h"
+#include "base/runtime/AppRuntime.h"
+#include "base/runtime/BrowserThread.h"
 #include "common/Logger.h"
 #include "common/Utilities.h"
 
@@ -37,7 +37,7 @@ void BackgroundSyncScheduler::EnsureRelayPollTimer() {
     return;
   }
   const auto cadence = std::chrono::milliseconds(kForegroundRelayPollIntervalMs);
-  relay_poll_timer_id_ = PlatformRuntime::ScheduleCoordinatorRepeating(cadence, [this]() {
+  relay_poll_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(cadence, [this]() {
     RunScheduledSync(false);
   });
   if (relay_poll_timer_id_ == 0) {
@@ -49,7 +49,7 @@ void BackgroundSyncScheduler::StopRelayPollTimer() {
   if (relay_poll_timer_id_ == 0) {
     return;
   }
-  PlatformRuntime::CancelCoordinatorTimer(relay_poll_timer_id_);
+  AppRuntime::CancelCoordinatorTimer(relay_poll_timer_id_);
   relay_poll_timer_id_ = 0;
 }
 
@@ -57,7 +57,7 @@ void BackgroundSyncScheduler::RequestWakeSync() {
   if (!handler_) {
     return;
   }
-  PlatformRuntime::PostCoordinatorCritical([this]() { RunScheduledSync(true); });
+  AppRuntime::PostCoordinatorCritical([this]() { RunScheduledSync(true); });
 }
 
 void BackgroundSyncScheduler::RequestCallWakeSync() {

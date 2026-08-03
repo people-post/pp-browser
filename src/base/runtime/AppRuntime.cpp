@@ -1,6 +1,6 @@
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/AppRuntime.h"
 
-#include "base/platform/ThreadRuntime.h"
+#include "base/runtime/ThreadRuntime.h"
 #include "common/WorkerDispatch.h"
 
 namespace pbr {
@@ -12,7 +12,7 @@ bool g_testing_worker_override = false;
 
 } // namespace
 
-void PlatformRuntime::Initialize(const PlatformRuntimeConfig& config) {
+void AppRuntime::Initialize(const AppRuntimeConfig& config) {
   if (IsRunning()) {
     return;
   }
@@ -25,7 +25,7 @@ void PlatformRuntime::Initialize(const PlatformRuntimeConfig& config) {
   }
 }
 
-void PlatformRuntime::Shutdown() {
+void AppRuntime::Shutdown() {
   if (!IsRunning()) {
     return;
   }
@@ -36,108 +36,108 @@ void PlatformRuntime::Shutdown() {
   g_thread_runtime.reset();
 }
 
-bool PlatformRuntime::IsRunning() {
+bool AppRuntime::IsRunning() {
   return g_thread_runtime != nullptr && g_thread_runtime->IsRunning();
 }
 
-void PlatformRuntime::PostWorker(WorkerLane lane, std::function<void()> task) {
+void AppRuntime::PostWorker(WorkerLane lane, std::function<void()> task) {
   WorkerDispatch::Post(lane, std::move(task));
 }
 
-void PlatformRuntime::PostWorkerCritical(std::function<void()> task) {
+void AppRuntime::PostWorkerCritical(std::function<void()> task) {
   PostWorker(WorkerLane::Critical, std::move(task));
 }
 
-void PlatformRuntime::PostWorkerNormal(std::function<void()> task) {
+void AppRuntime::PostWorkerNormal(std::function<void()> task) {
   PostWorker(WorkerLane::Normal, std::move(task));
 }
 
-void PlatformRuntime::PostWorkerBackground(std::function<void()> task) {
+void AppRuntime::PostWorkerBackground(std::function<void()> task) {
   PostWorker(WorkerLane::Background, std::move(task));
 }
 
-void PlatformRuntime::PauseWorkers() {
+void AppRuntime::PauseWorkers() {
   if (g_thread_runtime) {
     g_thread_runtime->PauseWorkers();
   }
 }
 
-void PlatformRuntime::ResumeWorkers() {
+void AppRuntime::ResumeWorkers() {
   if (g_thread_runtime) {
     g_thread_runtime->ResumeWorkers();
   }
 }
 
-void PlatformRuntime::PauseCoordinator() {
+void AppRuntime::PauseCoordinator() {
   if (g_thread_runtime) {
     g_thread_runtime->Coordinator().Pause();
   }
 }
 
-void PlatformRuntime::ResumeCoordinator() {
+void AppRuntime::ResumeCoordinator() {
   if (g_thread_runtime) {
     g_thread_runtime->Coordinator().Resume();
   }
 }
 
-void PlatformRuntime::PauseBackgroundWork() {
+void AppRuntime::PauseBackgroundWork() {
   PauseCoordinator();
   PauseWorkers();
 }
 
-void PlatformRuntime::ResumeBackgroundWork() {
+void AppRuntime::ResumeBackgroundWork() {
   ResumeWorkers();
   ResumeCoordinator();
 }
 
-void PlatformRuntime::PostCoordinator(CoordinatorPriority priority, std::function<void()> task) {
+void AppRuntime::PostCoordinator(CoordinatorPriority priority, std::function<void()> task) {
   if (!g_thread_runtime || !task) {
     return;
   }
   g_thread_runtime->Coordinator().Post(priority, std::move(task));
 }
 
-void PlatformRuntime::PostCoordinatorCritical(std::function<void()> task) {
+void AppRuntime::PostCoordinatorCritical(std::function<void()> task) {
   PostCoordinator(CoordinatorPriority::Critical, std::move(task));
 }
 
-void PlatformRuntime::PostCoordinatorNormal(std::function<void()> task) {
+void AppRuntime::PostCoordinatorNormal(std::function<void()> task) {
   PostCoordinator(CoordinatorPriority::Normal, std::move(task));
 }
 
-void PlatformRuntime::PostCoordinatorBackground(std::function<void()> task) {
+void AppRuntime::PostCoordinatorBackground(std::function<void()> task) {
   PostCoordinator(CoordinatorPriority::Background, std::move(task));
 }
 
-uint64_t PlatformRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds interval,
-                                                         std::function<void()> fn) {
+uint64_t AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds interval,
+                                                  std::function<void()> fn) {
   if (!g_thread_runtime) {
     return 0;
   }
   return g_thread_runtime->Coordinator().ScheduleRepeating(interval, std::move(fn));
 }
 
-uint64_t PlatformRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds delay,
-                                                     std::function<void()> fn) {
+uint64_t AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds delay,
+                                                std::function<void()> fn) {
   if (!g_thread_runtime) {
     return 0;
   }
   return g_thread_runtime->Coordinator().ScheduleOneShot(delay, std::move(fn));
 }
 
-void PlatformRuntime::CancelCoordinatorTimer(uint64_t timer_id) {
+void AppRuntime::CancelCoordinatorTimer(uint64_t timer_id) {
   if (!g_thread_runtime || timer_id == 0) {
     return;
   }
   g_thread_runtime->Coordinator().CancelTimer(timer_id);
 }
 
-void PlatformRuntime::InstallWorkerPoolForTesting(WorkerPool* pool) {
+void AppRuntime::InstallWorkerPoolForTesting(WorkerPool* pool) {
   g_testing_worker_override = true;
   WorkerDispatch::Install(pool);
 }
 
-void PlatformRuntime::ClearWorkerPoolForTesting() {
+void AppRuntime::ClearWorkerPoolForTesting() {
   WorkerDispatch::Uninstall();
   g_testing_worker_override = false;
 }

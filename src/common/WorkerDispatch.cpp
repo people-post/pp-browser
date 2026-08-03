@@ -27,7 +27,7 @@ void WorkerDispatch::Post(WorkerLane lane, std::function<void()> task) {
     return;
   }
   if (!g_pool) {
-    assert(false && "WorkerDispatch not installed (PlatformRuntime::Initialize)");
+    assert(false && "WorkerDispatch not installed (AppRuntime::Initialize)");
     return;
   }
   g_pool->Post(lane, std::move(task));

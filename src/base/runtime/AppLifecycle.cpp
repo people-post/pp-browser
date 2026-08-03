@@ -1,8 +1,7 @@
-#include "base/platform/AppLifecycle.h"
+#include "base/runtime/AppLifecycle.h"
 
+#include "base/runtime/BrowserThread.h"
 #include "common/Logger.h"
-#include "base/platform/BrowserThread.h"
-#include "base/platform/Platform.h"
 
 #include <atomic>
 #include <vector>
@@ -16,6 +15,7 @@ std::vector<std::function<void()>> g_background_listeners;
 std::vector<std::function<void()>> g_foreground_listeners;
 
 // Updated only on the UI/SDL thread. Read from any thread for alert gating.
+// Mobile never touches these; defaults keep IsUserAttentive() == IsForeground().
 std::atomic<bool> g_desktop_input_focused{true};
 std::atomic<bool> g_desktop_minimized{false};
 
@@ -32,9 +32,6 @@ bool AppLifecycle::IsForeground() {
 bool AppLifecycle::IsUserAttentive() {
   if (!IsForeground()) {
     return false;
-  }
-  if (!Platform::IsDesktop()) {
-    return true;
   }
   if (g_desktop_minimized.load(std::memory_order_relaxed)) {
     return false;

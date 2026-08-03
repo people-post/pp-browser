@@ -4,7 +4,7 @@
 #include "base/messaging/ChatHistoryStreamCodec.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/MessagingJson.h"
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/AppRuntime.h"
 
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
@@ -80,7 +80,7 @@ struct Libp2pChatHistoryService::Impl {
     // (dogfood: chat-history sync during Accept deadlocked both peers' io_context; call-media
     // OpenStream never reached newStream and phone listen sat with unread Recv-Q).
     auto stream = std::move(stream_and_protocol.stream);
-    PlatformRuntime::PostWorkerNormal([this, stream = std::move(stream)]() mutable {
+    AppRuntime::PostWorkerNormal([this, stream = std::move(stream)]() mutable {
       auto frame = ReadExactFrame(stream);
       if (!frame) {
         stream->close([](auto&&) {});
@@ -176,7 +176,7 @@ Roe<ChatHistoryResponse> Libp2pChatHistoryService::FetchChatHistory(const ChatHi
   sessions_.OpenStream(request.peer_identity_value, {ProtocolName{kChatHistoryProtocolId}},
                        [request, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
                          // newStream callbacks run on the host io thread — hop off before blocking I/O.
-                         PlatformRuntime::PostWorkerNormal([request, result_promise, stream_res = std::move(stream_res)]() mutable {
+                         AppRuntime::PostWorkerNormal([request, result_promise, stream_res = std::move(stream_res)]() mutable {
                            auto finish = [&](Roe<ChatHistoryResponse> value) {
                              try {
                                result_promise->set_value(std::move(value));

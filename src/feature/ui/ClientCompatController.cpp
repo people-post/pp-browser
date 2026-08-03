@@ -3,8 +3,8 @@
 
 #include "base/i18n/LocalizationService.h"
 #include "base/net/ClientCompat.h"
-#include "base/platform/AppVersion.h"
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/AppVersion.h"
+#include "base/runtime/BrowserThread.h"
 #include "base/platform/PlatformOpenUrl.h"
 #include "common/Logger.h"
 #include "feature/ui/UserFeedback.h"

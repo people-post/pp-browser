@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/platform/CoordinatorThread.h"
+#include "base/runtime/CoordinatorThread.h"
 #include "common/WorkerDispatch.h"
 #include "common/WorkerPool.h"
 
@@ -10,33 +10,24 @@
 #include <functional>
 #include <memory>
 
-namespace Rml {
-class FileInterface;
-}
-
 namespace pbr {
 
-class IAssetLocator;
-class ILocalNotifier;
-class IPathProvider;
 class ThreadRuntime;
 
-struct PlatformRuntimeConfig {
+struct AppRuntimeConfig {
   size_t worker_pool_threads = WorkerPool::kDefaultThreadCount;
 };
 
 /**
- * Unified process-wide platform facade: worker scheduling, platform service access.
+ * Process-wide application runtime: worker pool, coordinator, UI mailbox.
  * Initialize from the composition root (Application ctor, pp-node bootstrap).
+ * OS adapters live in base/platform/; call PlatformServices directly when needed.
  */
-class PlatformRuntime {
+class AppRuntime {
 public:
-  static void Initialize(const PlatformRuntimeConfig& config = {});
+  static void Initialize(const AppRuntimeConfig& config = {});
   static void Shutdown();
   static bool IsRunning();
-
-  /** Idempotent; safe from Bootstrap before messaging init. */
-  static void EnsurePlatformServices();
 
   // --- Scheduling ---
   static void PostUI(std::function<void()> task);
@@ -80,12 +71,6 @@ public:
                                                std::function<void()> fn);
   static uint64_t ScheduleCoordinatorOneShot(std::chrono::milliseconds delay, std::function<void()> fn);
   static void CancelCoordinatorTimer(uint64_t timer_id);
-
-  // --- Platform capabilities ---
-  static IPathProvider& Paths();
-  static IAssetLocator& Assets();
-  static ILocalNotifier& Notifier();
-  static Rml::FileInterface* PackagedFileInterface();
 
   /** Override worker dispatch for unit tests (does not start a full runtime). */
   static void InstallWorkerPoolForTesting(WorkerPool* pool);

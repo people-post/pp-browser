@@ -22,7 +22,7 @@
 #include "common/Utilities.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/BrowserThread.h"
 
 #include <atomic>
 #include <chrono>

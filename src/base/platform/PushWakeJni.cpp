@@ -1,4 +1,4 @@
-#include "base/platform/BackgroundSyncScheduler.h"
+#include "base/runtime/BackgroundSyncScheduler.h"
 
 #if defined(__ANDROID__)
 #include <jni.h>

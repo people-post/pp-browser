@@ -7,7 +7,7 @@
 #include "base/data/SchemaVersion.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/BrowserThread.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/SettingsPortsViews.h"

@@ -1,5 +1,5 @@
-#include "base/platform/BrowserThread.h"
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 
 #include <gtest/gtest.h>
 
@@ -26,7 +26,7 @@ void WaitUntil(const std::function<bool()>& predicate, const std::chrono::millis
 } // namespace
 
 TEST(BrowserThreadTest, PostTaskIORoutesToWorkerPool) {
-  pbr::PlatformRuntime::Initialize();
+  pbr::AppRuntime::Initialize();
   pbr::BrowserThread::Initialize();
 
   std::atomic<bool> ran{false};
@@ -36,11 +36,11 @@ TEST(BrowserThreadTest, PostTaskIORoutesToWorkerPool) {
   EXPECT_TRUE(ran.load());
 
   pbr::BrowserThread::Shutdown();
-  pbr::PlatformRuntime::Shutdown();
+  pbr::AppRuntime::Shutdown();
 }
 
 TEST(BrowserThreadTest, PostTaskFrontIOUsesCriticalLane) {
-  pbr::PlatformRuntime::Initialize();
+  pbr::AppRuntime::Initialize();
   pbr::BrowserThread::Initialize();
 
   std::mutex mu;
@@ -71,11 +71,11 @@ TEST(BrowserThreadTest, PostTaskFrontIOUsesCriticalLane) {
   EXPECT_EQ(order[1], "normal");
 
   pbr::BrowserThread::Shutdown();
-  pbr::PlatformRuntime::Shutdown();
+  pbr::AppRuntime::Shutdown();
 }
 
 TEST(BrowserThreadTest, PauseIOPausesWorkerPool) {
-  pbr::PlatformRuntime::Initialize();
+  pbr::AppRuntime::Initialize();
   pbr::BrowserThread::Initialize();
 
   std::atomic<bool> ran{false};
@@ -91,5 +91,5 @@ TEST(BrowserThreadTest, PauseIOPausesWorkerPool) {
   EXPECT_TRUE(ran.load());
 
   pbr::BrowserThread::Shutdown();
-  pbr::PlatformRuntime::Shutdown();
+  pbr::AppRuntime::Shutdown();
 }

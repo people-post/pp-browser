@@ -9,7 +9,7 @@
 | Layer | Path | Role |
 |-------|------|------|
 | Common | [`src/common/`](../../src/common/) | App-independent utilities (logger, `ResultOrError`, `SequencedTaskRunner`) |
-| Base | [`src/base/`](../../src/base/) | pp-browser primitives: platform, data, people, messaging/ai/ui building blocks |
+| Base | [`src/base/`](../../src/base/) | pp-browser primitives: runtime, platform, data, people, messaging/ai/ui building blocks |
 | Feature | [`src/feature/`](../../src/feature/) | Composed capabilities: chat, agent session, shell, messaging hub |
 | App | [`src/app/`](../../src/app/) | Composition root: `main`, `Application`, `Bootstrap` |
 
@@ -62,7 +62,8 @@ integration/host → fork/include (public API only)
 
 | Path | Contents |
 |------|----------|
-| `base/platform/` | SDL, paths, assets, threading (`BrowserThread`), credentials |
+| `base/runtime/` | Process runtime: `AppRuntime`, `BrowserThread`, coordinator, lifecycle, branding/version |
+| `base/platform/` | OS adapters: SDL glue, paths, assets, credentials, notifications |
 | `base/net/` | HTTP client, service clients |
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |
 | `base/people/` | Identity and contacts stores; `ProfileIdentityView` presentation DTO |

@@ -1,7 +1,7 @@
 #include "feature/messaging/CallLibp2pMediaBridge.h"
 
-#include "base/platform/BrowserThread.h"
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <chrono>
@@ -12,6 +12,7 @@ namespace {
 
 /** Answerer waits for offerer dial; offerer retries can take ~60s — keep chrome aligned. */
 constexpr int64_t kLibp2pConnectTimeoutMs = 75000;
+/** Must stay ≤ offerer inbound grace so answerer reverse-dial usually wins first. */
 constexpr int64_t kDialWaitBudgetMs = 12000;
 constexpr int kDialPollMs = 250;
 constexpr int kConnectAttempts = 5;
@@ -21,12 +22,11 @@ constexpr int kConnectAttemptTimeoutMs = 15000;
 constexpr int kMediaKeyInboxPollRounds = 90;
 constexpr int kInboundMediaKeyWaitMs = 8000;
 /**
- * Offerer prefers inbound (answerer reverse-dial). After this grace, dial the answerer if
- * dialable — covers asymmetric LAN (e.g. Windows announce missing, Linux still reachable).
- * Keep long enough that a successful answerer dial usually wins first; avoid overlapping
- * newStream when both peers are dialable (simultaneous dial hangs on some LAN paths).
+ * Offerer prefers inbound (answerer reverse-dial). Grace must cover answerer dial reachability
+ * (kDialWaitBudgetMs) plus a short MediaKey/settle margin — shorter grace caused fallback dial
+ * while Windows was still in EnsurePeerReachable → dual-stream hello deadlock.
  */
-constexpr int64_t kOffererInboundGraceMs = 8000;
+constexpr int64_t kOffererInboundGraceMs = 15000;
 
 } // namespace
 
@@ -250,14 +250,15 @@ Roe<void> CallLibp2pMediaBridge::ConnectOffererWithRetry(const CallMediaDirectCo
     return ready;
   }
 
-  // Offerer: peer Accept/N025 often lag CallAccept. Answerer reverse-dial can start sooner.
-  if (params.offerer) {
-    for (int i = 0; i < 200; ++i) {
-      if (connect_generation_.load(std::memory_order_acquire) != gen) {
-        return Error("call-media aborted");
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  // Brief settle after reachability; long sleeps here stacked with grace and caused dual dial.
+  for (int i = 0; i < 20; ++i) {
+    if (connect_generation_.load(std::memory_order_acquire) != gen) {
+      return Error("call-media aborted");
     }
+    if (direct_.IsActive()) {
+      return {};
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   Error last_error("call-media connect failed");
@@ -457,9 +458,8 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   };
 
   // Prefer answerer reverse-dial (inbound on offerer). Simultaneous offerer↔answerer newStream
-  // hangs on some LAN paths (dogfood: both timed out with no OpenStream callback).
-  // Offerer: wait briefly for inbound, then dial if the answerer is reachable (asymmetric LAN).
-  // Must not use Browser IO — PollInbox starvation (moto dogfood).
+  // used to hang (Critical-pool hello/ack deadlock); CallMediaDirect now claims one stream and
+  // runs handshake on Normal. Offerer still waits briefly for inbound before fallback dial.
   if (params.offerer) {
     // Drop any Prefetch/warm dial toward the answerer so the host can accept inbound first.
     if (dial_) {
@@ -470,7 +470,8 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   connect_worker_inflight_.store(true);
   const uint64_t gen = connect_generation_.load(std::memory_order_acquire);
   const char* role = params.offerer ? "offerer" : "answerer";
-  PlatformRuntime::PostWorkerCritical([this, params, cbs, gen, role]() {
+  // Normal lane — must not occupy Critical for grace/dial waits (inbox + hello need workers).
+  AppRuntime::PostWorkerNormal([this, params, cbs, gen, role]() {
     if (connect_generation_.load(std::memory_order_acquire) != gen) {
       connect_worker_inflight_.store(false);
       log().info << "Connect worker aborted before dial call_id=" << params.call_id;
@@ -493,14 +494,14 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
           log().info << "Offerer got inbound call-media during grace call_id=" << params.call_id;
           connect_worker_inflight_.store(false);
           // Inbound on_connected may have run before StartSfu — re-commit once capture is live.
-          PlatformRuntime::PostUI([this, call_id = params.call_id]() { CommitDirectConnected(call_id); });
+          AppRuntime::PostUI([this, call_id = params.call_id]() { CommitDirectConnected(call_id); });
           return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
       if (direct_.IsActive()) {
         connect_worker_inflight_.store(false);
-        PlatformRuntime::PostUI([this, call_id = params.call_id]() { CommitDirectConnected(call_id); });
+        AppRuntime::PostUI([this, call_id = params.call_id]() { CommitDirectConnected(call_id); });
         return;
       }
       log().info << "Offerer fallback dial call_id=" << params.call_id << " peer=" << params.peer_key;
@@ -514,7 +515,7 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
       log().info << "Connect worker aborted after dial call_id=" << params.call_id;
       return;
     }
-    PlatformRuntime::PostUI([this, connected, call_id = params.call_id, role = std::string(role)]() {
+    AppRuntime::PostUI([this, connected, call_id = params.call_id, role = std::string(role)]() {
       // Dial may have lost the race to inbound; stream up always wins for chrome.
       if (direct_.IsActive()) {
         CommitDirectConnected(call_id);
@@ -599,7 +600,7 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call
       }
       // Accept-time SyncInbox often races the offerer's MediaKey send — keep polling.
       // SyncInbox coalesces via poll_again_; do not assume each Request starts HTTP.
-      PlatformRuntime::PostWorkerBackground([this, call_id]() {
+      AppRuntime::PostWorkerBackground([this, call_id]() {
         for (int i = 0; i < kMediaKeyInboxPollRounds; ++i) {
           if (pending_answerer_call_id_ != call_id) {
             return;
@@ -697,6 +698,8 @@ void CallLibp2pMediaBridge::PrepareForTeardown(int timeout_ms) {
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();
   pending_answerer_peer_.clear();
+  // Drop raw `this` inbound handler before Detach so late streams cannot UAF the bridge.
+  direct_.ClearInboundHandler();
   if (dial_ && !peer.empty()) {
     dial_->AbortInflightDial(peer);
     dial_->ClearCallMediaCircuitHop(peer);
@@ -709,7 +712,7 @@ void CallLibp2pMediaBridge::PrepareForTeardown(int timeout_ms) {
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::milliseconds(std::max(0, timeout_ms));
   while (connect_worker_inflight_.load(std::memory_order_acquire)) {
-    if (!PlatformRuntime::IsRunning()) {
+    if (!AppRuntime::IsRunning()) {
       // Pool already joined (or never started) — queued Connect tasks were dropped.
       connect_worker_inflight_.store(false, std::memory_order_release);
       break;

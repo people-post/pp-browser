@@ -21,10 +21,10 @@
 #include "base/net/HttpClient.h"
 #include "base/net/RegistrationClientUtil.h"
 #include "base/people/ContactTypes.h"
-#include "base/platform/AppLifecycle.h"
-#include "base/platform/BackgroundSyncScheduler.h"
-#include "base/platform/BrowserThread.h"
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/AppLifecycle.h"
+#include "base/runtime/BackgroundSyncScheduler.h"
+#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "base/platform/NetworkConnectivity.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
@@ -437,7 +437,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
         return;
       }
       // Wire / mDNS on a worker — must not sit behind PollInbox on Browser IO.
-      PlatformRuntime::PostWorkerCritical([this]() {
+      AppRuntime::PostWorkerCritical([this]() {
         if (!messaging_ready_ || !node_runtime_) {
           return;
         }
@@ -451,7 +451,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
         if (!still_want) {
           if (node_runtime_->EphemeralListenActive()) {
             node_runtime_->StopEphemeralListenAsync([this]() {
-              PlatformRuntime::PostWorkerCritical([this]() {
+              AppRuntime::PostWorkerCritical([this]() {
                 if (messaging_ready_) {
                   ApplyMeshAdmissionPolicies();
                   WireCallMediaRelayDeps();
@@ -792,7 +792,7 @@ void MessagingHub::StopLibp2p() {
     circuit_relay_->AbortInflightRequests();
   }
   if (call_media_direct_) {
-    call_media_direct_->SetInboundHandler(nullptr);
+    call_media_direct_->ClearInboundHandler();
     call_media_direct_->Stop();
   }
   if (lan_mdns_) {
@@ -1256,7 +1256,7 @@ constexpr auto kHubPolicyTimerInterval = std::chrono::seconds(1);
 
 void MessagingHub::StartCoordinatorTimers() {
   if (hub_policy_timer_id_ == 0) {
-    hub_policy_timer_id_ = PlatformRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
+    hub_policy_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
       TickLibp2p();
     });
   }
@@ -1280,7 +1280,7 @@ void MessagingHub::StartCoordinatorTimers() {
 
 void MessagingHub::StopCoordinatorTimers() {
   if (hub_policy_timer_id_ != 0) {
-    PlatformRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
+    AppRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
     hub_policy_timer_id_ = 0;
   }
   BackgroundSyncScheduler::Instance().SetSyncHandler(nullptr);

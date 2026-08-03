@@ -1,6 +1,6 @@
 #include "base/platform/AndroidLocalNotifier.h"
 
-#include "base/platform/AppLifecycle.h"
+#include "base/runtime/AppLifecycle.h"
 
 #if defined(__ANDROID__)
 #include <jni.h>

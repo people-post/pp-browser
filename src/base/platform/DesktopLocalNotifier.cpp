@@ -1,7 +1,7 @@
 #include "base/platform/DesktopLocalNotifier.h"
 
-#include "base/platform/AppLifecycle.h"
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/AppLifecycle.h"
+#include "base/runtime/BrowserThread.h"
 #include "base/platform/desktop/LocalNotifierImpl.h"
 #include "common/Logger.h"
 

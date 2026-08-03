@@ -7,7 +7,7 @@
 #include "base/messaging/SendRelayOptions.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/BrowserThread.h"
 #include "common/Utilities.h"
 
 #include <algorithm>

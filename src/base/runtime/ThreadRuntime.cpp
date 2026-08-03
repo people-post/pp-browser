@@ -1,6 +1,6 @@
-#include "base/platform/ThreadRuntime.h"
+#include "base/runtime/ThreadRuntime.h"
 
-#include "base/platform/CoordinatorThread.h"
+#include "base/runtime/CoordinatorThread.h"
 
 #include <cassert>
 

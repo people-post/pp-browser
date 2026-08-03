@@ -11,14 +11,17 @@ See also: [PLATFORMS.md](PLATFORMS.md) (runtime matrix), [SRC_LAYOUT.md](SRC_LAY
 1. **OS `#ifdef`s belong in dedicated files** under [`src/base/platform/os/`](../../src/base/platform/os/) (primitives) or [`src/base/platform/desktop/`](../../src/base/platform/desktop/) (desktop Win/macOS/Linux). Mobile uses top-level `Android*` / `Ios*` types.
 2. **Other layers call portable APIs** — `Platform::`, `IPathProvider`, `OsFile`, `OsTime`, etc. No Win32 or POSIX headers outside the platform layer (except render GL integration; see below).
 3. **Runtime dispatch preferred over `#ifdef` in business logic** — use `Platform::Detect()` / `Platform::IsMobile()` when behavior differs by mobile vs desktop, not by OS family.
-4. **Render GL / GLES** stays in [`src/render/integration/platform/`](../../src/render/integration/platform/) per SRC_LAYOUT; do not move GL lifecycle into `base/platform`.
+4. **Process runtime** (threads, lifecycle, branding) lives in [`src/base/runtime/`](../../src/base/runtime/) — not here.
+5. **Render GL / GLES** stays in [`src/render/integration/platform/`](../../src/render/integration/platform/) per SRC_LAYOUT; do not move GL lifecycle into `base/platform`.
 
 ## Directory layout
 
 | Path | Role |
 |------|------|
+| `base/runtime/` | `AppRuntime`, `BrowserThread`, coordinator, `AppLifecycle`, `BackgroundSyncScheduler`, product branding/version |
 | `base/platform/Platform.{h,cpp}` | `PlatformKind` detection, capability flags |
 | `base/platform/PlatformServices.*` | Registers Android/iOS/desktop implementations at startup |
+| `base/platform/SdlAppEvents.*`, `AppEventHooks.*` | SDL lifecycle / input pre-process → `AppLifecycle` |
 | `base/platform/os/` | Low-level OS primitives (`OsFile`, `OsTime`, `OsProcess`, `OsTlsCaPath` / `OsTlsPlatformCurl`, executable path) |
 | `base/platform/desktop/` | Per-OS desktop path and **native** notification implementations (Linux Freedesktop Notifications via linked `libdbus-1`, macOS `UNUserNotificationCenter`, Windows WinRT toasts) — not shell helpers |
 | `base/platform/Android*`, `Ios*`, `Desktop*` | Facades implementing `IPathProvider`, `ILocalNotifier`, etc. |
@@ -67,7 +70,8 @@ Allowed paths for OS preprocessor branches:
 
 ## Adding new platform behavior
 
-1. If it is a path, notification, credential, or lifecycle concern → extend or add an `I*` interface implementation under `base/platform/`.
-2. If it is a syscall (file sync, subprocess, time) → add to `base/platform/os/`.
-3. If it is GL/GLES or SDL window backend → `render/integration/platform/`.
-4. Wire registration in `PlatformServices::Register()` for mobile overrides; desktop defaults stay in interface singletons.
+1. If it is a path, notification, credential, or OS tip → extend or add an `I*` interface implementation under `base/platform/`.
+2. If it is process threading / lifecycle / scheduling → `base/runtime/` (`AppRuntime`, `AppLifecycle`).
+3. If it is a syscall (file sync, subprocess, time) → add to `base/platform/os/`.
+4. If it is GL/GLES or SDL window backend → `render/integration/platform/`.
+5. Wire registration in `PlatformServices::Register()` for mobile overrides; desktop defaults stay in interface singletons.

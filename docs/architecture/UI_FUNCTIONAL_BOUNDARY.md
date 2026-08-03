@@ -127,7 +127,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 - Declare narrow **ports structs** (`SettingsCommands`, `ChatSessionPorts`) or facade methods — app fills implementations in `Application`.
 - **Sync / quick:** return `Roe<void>` or a small result; safe on UI thread when work is trivial.
-- **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or `PlatformRuntime::PostWorker` / `BrowserThread::PostTask(IO, …)` and reply on UI ([THREADING.md](THREADING.md)).
+- **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or `AppRuntime::PostWorker` / `BrowserThread::PostTask(IO, …)` and reply on UI ([THREADING.md](THREADING.md)).
 - Long-running actions should support **progress** and **cancel** when user-visible (agent turns, UPnP probe, profile reset).
 - RmlUi static callbacks are thin: `→ presenter method → action port` — not `SomeController::Instance().Hub()->…`.
 

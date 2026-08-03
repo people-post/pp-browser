@@ -2,7 +2,7 @@
 
 #include "base/platform/desktop/LocalNotifierImpl.h"
 
-#include "base/platform/ProductBranding.h"
+#include "base/runtime/ProductBranding.h"
 #include "common/Logger.h"
 
 #include <dbus/dbus.h>

@@ -48,12 +48,15 @@ public:
   void Stop();
   bool IsStarted() const { return started_; }
 
-  /** Register handler for inbound streams (answerer side). */
+  /** Register handler for inbound streams (answerer / offerer reverse-dial). */
   void SetInboundHandler(
       std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler);
+  /** Drop handler so late protocol deliveries cannot touch a destroyed bridge. */
+  void ClearInboundHandler();
 
   /** Active outbound/inbound session. */
   bool IsActive() const;
+  /** Close stream / unblock Connect; does not clear inbound handler (retry uses Detach). */
   void Detach();
 
   /** Client: dial peer and run hello handshake; starts async IO-thread pump. */

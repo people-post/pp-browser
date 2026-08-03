@@ -26,7 +26,7 @@ User-facing product identity for the AI-centric browsing shell.
 
 Pre-release: installs signed or registered as `dev.frame.*` are not migrated — re-register App IDs and reinstall.
 
-Constants live in [`src/base/platform/ProductBranding.h`](../../src/base/platform/ProductBranding.h).
+Constants live in [`src/base/runtime/ProductBranding.h`](../../src/base/runtime/ProductBranding.h).
 
 ---
 

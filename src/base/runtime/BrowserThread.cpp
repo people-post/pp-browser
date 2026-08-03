@@ -1,6 +1,6 @@
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/BrowserThread.h"
 
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/AppRuntime.h"
 
 #include <cassert>
 #include <mutex>
@@ -61,7 +61,7 @@ void BrowserThread::PostTask(const BrowserThreadId id, std::function<void()> tas
     }
     return;
   }
-  PlatformRuntime::PostWorkerNormal(std::move(task));
+  AppRuntime::PostWorkerNormal(std::move(task));
 }
 
 void BrowserThread::PostTaskFront(const BrowserThreadId id, std::function<void()> task) {
@@ -75,7 +75,7 @@ void BrowserThread::PostTaskFront(const BrowserThreadId id, std::function<void()
     }
     return;
   }
-  PlatformRuntime::PostWorkerCritical(std::move(task));
+  AppRuntime::PostWorkerCritical(std::move(task));
 }
 
 void BrowserThread::SetUIWakeCallback(std::function<void()> callback) {
@@ -83,11 +83,11 @@ void BrowserThread::SetUIWakeCallback(std::function<void()> callback) {
 }
 
 void BrowserThread::PauseIO() {
-  PlatformRuntime::PauseBackgroundWork();
+  AppRuntime::PauseBackgroundWork();
 }
 
 void BrowserThread::ResumeIO() {
-  PlatformRuntime::ResumeBackgroundWork();
+  AppRuntime::ResumeBackgroundWork();
 }
 
 } // namespace pbr

@@ -1,7 +1,7 @@
 #include "base/platform/SdlAppEvents.h"
 
 #include "base/platform/AppEventHooks.h"
-#include "base/platform/AppLifecycle.h"
+#include "base/runtime/AppLifecycle.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformNavigation.h"
 

@@ -2,7 +2,7 @@
 
 #include "base/data/Config.h"
 #include "base/people/IdentityStore.h"
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/AppRuntime.h"
 #include "common/Error.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"

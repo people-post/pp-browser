@@ -217,9 +217,9 @@ flowchart TB
 
 ## Threading
 
-**Canonical doc:** [THREADING.md](THREADING.md) — coordinator + worker pool model, `PlatformRuntime` API.
+**Canonical doc:** [THREADING.md](THREADING.md) — coordinator + worker pool model, `AppRuntime` API.
 
-UI on main thread; blocking work on **worker pool** via `BrowserThread::IO` API or `PlatformRuntime::PostWorker`; **coordinator** owns timer-driven policy. libp2p and call media run their own loops.
+UI on main thread; blocking work on **worker pool** via `BrowserThread::IO` API or `AppRuntime::PostWorker`; **coordinator** owns timer-driven policy. libp2p and call media run their own loops.
 
 ```mermaid
 flowchart TB
@@ -269,9 +269,9 @@ flowchart TB
 
 | Thread / queue | Owner class | Location | Role |
 |----------------|-------------|----------|------|
-| **Main / UI** | `Application` + `BrowserThread::UI` | `app/` · `base/platform/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
-| **Coordinator** | `CoordinatorThread` | `base/platform/` | Mailbox + timer wheel; relay poll + hub policy |
-| **Worker pool** | `WorkerPool` via `PlatformRuntime` | `common/` · `base/platform/` | HTTP, LLM/tools, relay sync/send (legacy `BrowserThread::IO` API) |
+| **Main / UI** | `Application` + `BrowserThread::UI` | `app/` · `base/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
+| **Coordinator** | `CoordinatorThread` | `base/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
+| **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `base/runtime/` | HTTP, LLM/tools, relay sync/send (legacy `BrowserThread::IO` API) |
 | **libp2p IO** | `Libp2pHost` | `libp2p/integration/host/` | `boost::asio::io_context` run loop |
 | **Media capture / video** | `CallMediaEngine` | `base/media/` | Dedicated capture + video encode loops |
 | **Ringtone** | `CallRingtone` | `base/media/` | Playback loop thread |
@@ -313,6 +313,6 @@ Full model: [THREADING.md](THREADING.md).
 | **ProfileIdentityView** | `base/people/` | Presentation projection of local identity |
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
-| **BrowserThread** | `base/platform/` | UI + IO sequenced runners |
+| **BrowserThread** | `base/runtime/` | UI + IO sequenced runners |
 | **Libp2pHost** | `libp2p/integration/host/` | Vendored host + asio IO thread |
 | **CallMediaEngine** | `base/media/` | A/V capture threads over libdatachannel |

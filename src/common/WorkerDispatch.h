@@ -6,7 +6,7 @@
 
 namespace pbr {
 
-/** Process-wide worker pool dispatch; installed by PlatformRuntime at bootstrap. */
+/** Process-wide worker pool dispatch; installed by AppRuntime at bootstrap. */
 class WorkerDispatch {
 public:
   static void Install(WorkerPool* pool);

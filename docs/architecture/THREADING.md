@@ -5,7 +5,7 @@
 
 How pp-browser schedules work across threads: fixed roles, coordinator mailbox, and bounded worker pool.
 
-**Code map:** `PlatformRuntime`, `CoordinatorThread`, `WorkerPool` — `src/base/platform/`, `src/common/`.
+**Code map:** `AppRuntime`, `CoordinatorThread`, `WorkerPool` — `src/base/runtime/`, `src/common/`.
 
 ---
 
@@ -67,14 +67,14 @@ See [RUNTIME_COMPOSITION.md § Threading](RUNTIME_COMPOSITION.md#threading) for 
 
 ## Scheduling API
 
-Composition root: `PlatformRuntime::Initialize()` / `Shutdown()` (from `Application` or `pp-node`).
+Composition root: `AppRuntime::Initialize()` / `Shutdown()` (from `Application` or `pp-node`).
 
 | API | Runs on |
 |-----|---------|
-| `PlatformRuntime::PostUI` / `BrowserThread::PostTask(UI, …)` | UI (sequenced, drained each frame) |
-| `PlatformRuntime::PostWorker(Critical/Normal/Background, …)` | Worker pool |
-| `PlatformRuntime::PostCoordinator(Critical/Normal/Background, …)` | Coordinator mailbox |
-| `PlatformRuntime::ScheduleCoordinatorRepeating` / `OneShot` | Coordinator timer wheel |
+| `AppRuntime::PostUI` / `BrowserThread::PostTask(UI, …)` | UI (sequenced, drained each frame) |
+| `AppRuntime::PostWorker(Critical/Normal/Background, …)` | Worker pool |
+| `AppRuntime::PostCoordinator(Critical/Normal/Background, …)` | Coordinator mailbox |
+| `AppRuntime::ScheduleCoordinatorRepeating` / `OneShot` | Coordinator timer wheel |
 | `BrowserThread::PostTask(IO, …)` | Worker pool **Normal** (compat alias) |
 | `BrowserThread::PostTaskFront(IO, …)` | Worker pool **Critical** (compat alias) |
 | `BrowserThread::PostTaskAndReply` | Pool Normal → UI |
@@ -195,6 +195,6 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | 2026-08-03 | **Shipped:** coordinator + worker pool model live; `pp-browser-io` retired; project folder archived |
 | 2026-08-03 | Phase t5: `BrowserThread::IO` → worker pool |
 | 2026-08-03 | Phase t4: `CoordinatorThread` + timer wheel |
-| 2026-08-03 | Phase t3/t3.5: messaging hop-offs + `PlatformRuntime` |
+| 2026-08-03 | Phase t3/t3.5: messaging hop-offs + `AppRuntime` |
 | 2026-08-03 | Phase t2: libp2p integration hop-offs |
 | 2026-08-03 | Phase t1: `WorkerPool` in `src/common/` |

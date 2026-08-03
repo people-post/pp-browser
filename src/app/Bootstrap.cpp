@@ -8,9 +8,8 @@
 #include "base/data/SchemaVersion.h"
 #include "common/StartupTiming.h"
 #include "feature/messaging/MessagingHub.h"
-#include "base/platform/PlatformRuntime.h"
-
 #include "base/platform/PlatformLogSink.h"
+#include "base/platform/PlatformServices.h"
 
 namespace pbr {
 
@@ -25,7 +24,7 @@ Roe<void> UnlockProfileForBootstrap(MessagingHub& messaging, const std::string& 
 } // namespace
 
 Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, MessagingHub& messaging) {
-  PlatformRuntime::EnsurePlatformServices();
+  PlatformServices::Register();
   InstallPlatformLogSink();
 
   auto config = Config::Load(options.argc, options.argv);

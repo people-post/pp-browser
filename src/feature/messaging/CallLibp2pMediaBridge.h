@@ -88,7 +88,7 @@ private:
   std::string pending_answerer_peer_;
   bool libp2p_connect_failed_ = false;
   bool libp2p_connect_missing_mic_ = false;
-  /** Offerer Connect runs off Browser IO so PollInbox cannot starve it. */
+  /** Connect worker runs on Normal (not Critical) so hello/inbound are not starved. */
   std::atomic<bool> connect_worker_inflight_{false};
   /** Bumped in StopLibp2pMedia so in-flight Connect workers abort instead of racing Detach/Stop. */
   std::atomic<uint64_t> connect_generation_{0};

@@ -15,7 +15,7 @@ struct ThreadRuntimeConfig {
 
 /**
  * Application-owned thread budget: worker pool + coordinator thread.
- * Start from the composition root (Application, pp-node); subsystems borrow via PlatformRuntime.
+ * Start from the composition root (Application, pp-node); subsystems borrow via AppRuntime.
  */
 class ThreadRuntime {
 public:

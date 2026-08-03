@@ -18,6 +18,7 @@ target_link_libraries(pp-node PRIVATE
   pp_base_crypto
   pp_base_data
   pp_base_platform_core
+  pp_base_runtime_core
   pp_base_error
   pp_common
   nlohmann_json::nlohmann_json

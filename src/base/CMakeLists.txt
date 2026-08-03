@@ -1,6 +1,8 @@
 include(PpBrowserBase)
 
 # Acyclic module order: each library links only lower layers.
+# runtime before platform: OS adapters may use AppLifecycle / BrowserThread.
+add_subdirectory(runtime)
 add_subdirectory(platform)
 add_subdirectory(i18n)
 add_subdirectory(error)
@@ -15,6 +17,8 @@ add_subdirectory(ui)
 
 set(PP_BASE_MODULE_LIBS
   pp_base_error
+  pp_base_runtime_core
+  pp_base_runtime
   pp_base_platform_core
   pp_base_platform
   pp_base_data

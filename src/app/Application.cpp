@@ -11,14 +11,14 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/ChatPayloadValidator.h"
 #include "base/messaging/MessagingLimits.h"
-#include "base/platform/ProductBranding.h"
+#include "base/runtime/ProductBranding.h"
 #include "base/ui/InputCoordinator.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "feature/chat/MessagingTools.h"
-#include "base/platform/BrowserThread.h"
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "base/platform/IAssetLocator.h"
 #include "base/platform/ILocalNotifier.h"
 #include "base/platform/IPathProvider.h"
@@ -166,7 +166,7 @@ void ApplyUiDocumentLanguage(Rml::Context* context) {
 
 Application::Application() {
   redirectLogger("Application");
-  PlatformRuntime::Initialize();
+  AppRuntime::Initialize();
   messaging_ = std::make_unique<MessagingHub>();
   messaging_->BindSessionStore(store_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
@@ -316,7 +316,7 @@ bool Application::Initialize(const char* window_title) {
   Rml::SetSystemInterface(Backend::GetSystemInterface());
   Rml::SetRenderInterface(Backend::GetRenderInterface());
 
-  if (Rml::FileInterface* packaged_files = PlatformRuntime::PackagedFileInterface()) {
+  if (Rml::FileInterface* packaged_files = PlatformServices::PackagedFileInterface()) {
     Rml::SetFileInterface(packaged_files);
   }
 
@@ -919,14 +919,14 @@ void Application::Shutdown() {
     agent_session_.reset();
 
     // Abort Connect / circuit waits, then join workers while MessagingHub still owns the bridge.
-    // Destroying the hub first left PlatformRuntime::Shutdown joining a UAF Connect worker.
+    // Destroying the hub first left AppRuntime::Shutdown joining a UAF Connect worker.
     if (messaging_) {
       StartupPhase phase("Shutdown::AbortCallMedia");
       messaging_->AbortCallMediaForShutdown();
     }
-    if (PlatformRuntime::IsRunning()) {
-      StartupPhase phase("Shutdown::PlatformRuntime");
-      PlatformRuntime::Shutdown();
+    if (AppRuntime::IsRunning()) {
+      StartupPhase phase("Shutdown::AppRuntime");
+      AppRuntime::Shutdown();
     }
 
     ShutdownMessaging();
@@ -956,9 +956,9 @@ void Application::Shutdown() {
     if (messaging_) {
       messaging_->AbortCallMediaForShutdown();
     }
-    if (PlatformRuntime::IsRunning()) {
-      StartupPhase phase("Shutdown::PlatformRuntime");
-      PlatformRuntime::Shutdown();
+    if (AppRuntime::IsRunning()) {
+      StartupPhase phase("Shutdown::AppRuntime");
+      AppRuntime::Shutdown();
     }
     ShutdownMessaging();
   }
@@ -968,9 +968,9 @@ void Application::Shutdown() {
     StartupPhase phase("Shutdown::BrowserThread");
     BrowserThread::Shutdown();
   }
-  if (PlatformRuntime::IsRunning()) {
-    StartupPhase phase("Shutdown::PlatformRuntime");
-    PlatformRuntime::Shutdown();
+  if (AppRuntime::IsRunning()) {
+    StartupPhase phase("Shutdown::AppRuntime");
+    AppRuntime::Shutdown();
   }
 }
 

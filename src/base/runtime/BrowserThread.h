@@ -1,6 +1,6 @@
 #pragma once
 
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/AppRuntime.h"
 #include "common/SequencedTaskRunner.h"
 
 #include <functional>
@@ -47,7 +47,7 @@ private:
   template <typename Result>
   static void PostWorkerAndReplyOnUI(WorkerLane lane, std::function<Result()> work,
                                      std::function<void(Result)> reply) {
-    PlatformRuntime::PostWorker(lane, [work = std::move(work), reply = std::move(reply)]() mutable {
+    AppRuntime::PostWorker(lane, [work = std::move(work), reply = std::move(reply)]() mutable {
       Result result = work();
       PostTask(BrowserThreadId::UI, [reply = std::move(reply), result = std::move(result)]() mutable {
         reply(std::move(result));

@@ -3,7 +3,7 @@
 #include "base/ai/LlmClient.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/ThreadTypes.h"
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/BrowserThread.h"
 #include "common/Utilities.h"
 
 #include <sstream>

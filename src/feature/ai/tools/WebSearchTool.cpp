@@ -3,8 +3,8 @@
 #include "common/Logger.h"
 #include "common/Utilities.h"
 #include "base/net/CurlSsl.h"
-#include "base/platform/AppVersion.h"
-#include "base/platform/ProductBranding.h"
+#include "base/runtime/AppVersion.h"
+#include "base/runtime/ProductBranding.h"
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>

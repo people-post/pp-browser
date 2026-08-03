@@ -5,7 +5,7 @@
 #include "base/messaging/SfuAttachWaitLogic.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/MeshHopPolicy.h"
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/BrowserThread.h"
 #include "common/Utilities.h"
 
 #include <algorithm>

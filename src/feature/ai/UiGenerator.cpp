@@ -2,7 +2,7 @@
 
 #include "base/ai/PromptBuilder.h"
 #include "base/ai/RmlValidator.h"
-#include "base/platform/BrowserThread.h"
+#include "base/runtime/BrowserThread.h"
 #include "feature/ai/bindings/BindingsManifest.h"
 
 #include <regex>

@@ -22,9 +22,9 @@
 #include "base/messaging/SyncStateTypes.h"
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/RelayInboxCursor.h"
-#include "base/platform/AppLifecycle.h"
-#include "base/platform/BrowserThread.h"
-#include "base/platform/PlatformRuntime.h"
+#include "base/runtime/AppLifecycle.h"
+#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
 #include <algorithm>
@@ -1003,7 +1003,7 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
   };
   if (options.prefer_relay) {
     // Call-control (MediaKey/Accept) must not sit behind PollInbox on Browser IO.
-    PlatformRuntime::PostWorkerCritical(std::move(send_work));
+    AppRuntime::PostWorkerCritical(std::move(send_work));
   } else {
     BrowserThread::PostTask(BrowserThreadId::IO, std::move(send_work));
   }
@@ -1269,7 +1269,7 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
 
   // HTTP PollInbox must NOT run on Browser IO — a 30s curl wait starved AcceptInvite / N025
   // Wire / MediaKey ingest on Samsung (PostAcceptInvite queued, never entered).
-  PlatformRuntime::PostWorkerBackground([this]() {
+  AppRuntime::PostWorkerBackground([this]() {
     bool expected = false;
     if (!poll_pending_.compare_exchange_strong(expected, true)) {
       return;
@@ -1372,7 +1372,7 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
           const std::string ack_cursor = relay_cursor_;
           const std::string ack_user = local_relay_id;
           IRelayClient* relay = relay_;
-          PlatformRuntime::PostWorkerNormal([relay, ack_user, ack_cursor]() {
+          AppRuntime::PostWorkerNormal([relay, ack_user, ack_cursor]() {
             if (!relay) {
               return;
             }

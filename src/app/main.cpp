@@ -6,7 +6,7 @@
 #include "base/platform/PlatformLogDefaults.h"
 #include "base/platform/PlatformLogSink.h"
 #include "base/platform/PlatformStartupHints.h"
-#include "base/platform/ProductBranding.h"
+#include "base/runtime/ProductBranding.h"
 
 #include <SDL3/SDL_main.h>
 
