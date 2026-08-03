@@ -264,7 +264,7 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
 
   auto ranked = RankedMediaHopCandidates();
   // Prefer dialable in-call Nodes (e.g. Windows already on the call with Media relay) over
-  // out-of-call Linux / org seed. Still exclude self. Do not blanket-exclude participants —
+  // out-of-call Linux / org seed. Do not blanket-exclude participants —
   // that blocked the preferred member-hop path.
   std::unordered_set<std::string> in_call_peer_ids;
   for (const std::string& identity : joined_ids) {
@@ -276,6 +276,14 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
     }
   }
   ranked = PreferInCallMediaHops(std::move(ranked), in_call_peer_ids);
+  // Owner Node with media_relay started: host locally (AttachAsLocalHop) ahead of in-call phones.
+  std::string local_peer_id;
+  if (auto pid = relay_deps_.relay->LocalPeerIdBase58()) {
+    local_peer_id = *pid;
+  }
+  if (relay_deps_.relay->IsStarted() && !local_peer_id.empty()) {
+    ranked = PreferLocalMediaHop(std::move(ranked), local_peer_id);
+  }
   if (ranked.empty()) {
     return Error("no media_relay hop candidates");
   }
@@ -283,10 +291,12 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
   std::vector<std::string> hop_failures;
   hop_failures.reserve(ranked.size());
   for (const MeshHopCandidate& hop : ranked) {
-    if (relay_deps_.circuit_reach && relay_deps_.dial && !relay_deps_.dial->IsDialable(hop.peer_id)) {
+    const bool self_hop = !local_peer_id.empty() && hop.peer_id == local_peer_id;
+    if (!self_hop && relay_deps_.circuit_reach && relay_deps_.dial &&
+        !relay_deps_.dial->IsDialable(hop.peer_id)) {
       (void)relay_deps_.circuit_reach->TryEnsureHopReachable(hop.peer_id);
     }
-    if (!relay_deps_.dial || !relay_deps_.dial->IsDialable(hop.peer_id)) {
+    if (!self_hop && (!relay_deps_.dial || !relay_deps_.dial->IsDialable(hop.peer_id))) {
       const std::string detail = "hop not dialable (hop=" + hop.peer_id + ")";
       hop_failures.push_back(detail);
       log().warning << "SoftMigrate skip: " << detail;
@@ -353,41 +363,69 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   if (attach.hop_peer_id.empty()) {
     return Error("missing hop_peer_id");
   }
-  if (auto local_pid = relay_deps_.relay->LocalPeerIdBase58()) {
-    if (*local_pid == attach.hop_peer_id) {
-      return Error("cannot attach to self as media_relay hop");
+
+  auto on_sfu_frame = [this](MediaDataFrame frame) {
+    CallMediaEngine::SfuPacket pkt;
+    pkt.channel_id = frame.channel_id;
+    pkt.seq = frame.seq;
+    pkt.mark = frame.mark;
+    pkt.payload = std::move(frame.payload);
+    media_.OnSfuPacket(pkt);
+  };
+
+  const bool self_hop = [&]() {
+    if (auto local_pid = relay_deps_.relay->LocalPeerIdBase58()) {
+      return *local_pid == attach.hop_peer_id;
+    }
+    return false;
+  }();
+
+  int64_t a_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
+  if (self_hop) {
+    // PreferInCallMediaHops selected this Node; fan-out CallSfuAttach has hop=local.
+    // Join the host session as a local publisher — never dial self.
+    log().info << "AttachLocalToSfu as local media_relay hop call_id=" << call_id;
+    auto attach_res = relay_deps_.relay->AttachAsLocalHop(call_id, on_sfu_frame);
+    if (!attach_res || !attach_res->ok) {
+      return Error(attach_res ? attach_res->error : attach_res.error().message);
+    }
+  } else {
+    if (attach.hop_multiaddr.empty()) {
+      attach.hop_multiaddr = ResolveHopMultiaddr(attach.hop_peer_id);
+    }
+    if (!attach.hop_multiaddr.empty()) {
+      (void)relay_deps_.dial->RegisterEndpoint(attach.hop_peer_id, attach.hop_multiaddr);
+      relay_deps_.dial->ClearDialBackoff(attach.hop_peer_id);
+    }
+    if (!relay_deps_.dial->IsDialable(attach.hop_peer_id) && relay_deps_.circuit_reach) {
+      (void)relay_deps_.circuit_reach->TryEnsureHopReachable(attach.hop_peer_id);
+    }
+    if (!relay_deps_.dial->IsDialable(attach.hop_peer_id)) {
+      return Error("hop not dialable");
+    }
+
+    MediaRelayQuoteRequest qreq;
+    qreq.call_id = call_id;
+    auto joined = sessions_.CountJoined(call_id);
+    qreq.participants = joined ? static_cast<int>(*joined) : 2;
+    qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
+    qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
+
+    // Always RequestQuote locally. Shared quote_ids from fan-out are already consumed.
+    // Soft-migrate tries multiple hops; keep per-hop budget tight so seed/contact failover fits
+    // inside attach-wait.
+    auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 5000);
+    if (!quote || !quote->ok) {
+      return Error(quote ? quote->error : quote.error().message);
+    }
+    a_up_bps = quote->a_up_bps;
+
+    auto attach_res = relay_deps_.relay->AcceptAndAttach(
+        attach.hop_peer_id, quote->quote_id, call_id, call_id, on_sfu_frame, 8000);
+    if (!attach_res || !attach_res->ok) {
+      return Error(attach_res ? attach_res->error : attach_res.error().message);
     }
   }
-  if (attach.hop_multiaddr.empty()) {
-    attach.hop_multiaddr = ResolveHopMultiaddr(attach.hop_peer_id);
-  }
-  if (!attach.hop_multiaddr.empty()) {
-    (void)relay_deps_.dial->RegisterEndpoint(attach.hop_peer_id, attach.hop_multiaddr);
-    relay_deps_.dial->ClearDialBackoff(attach.hop_peer_id);
-  }
-  if (!relay_deps_.dial->IsDialable(attach.hop_peer_id) && relay_deps_.circuit_reach) {
-    (void)relay_deps_.circuit_reach->TryEnsureHopReachable(attach.hop_peer_id);
-  }
-  if (!relay_deps_.dial->IsDialable(attach.hop_peer_id)) {
-    return Error("hop not dialable");
-  }
-
-  MediaRelayQuoteRequest qreq;
-  qreq.call_id = call_id;
-  auto joined = sessions_.CountJoined(call_id);
-  qreq.participants = joined ? static_cast<int>(*joined) : 2;
-  qreq.want_up_bps = CallMediaAdaptation::kDefaultAudioBps + CallMediaAdaptation::kDefaultVideoLoBps;
-  qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
-
-  // Always RequestQuote locally. Shared quote_ids from fan-out are already consumed.
-  // Soft-migrate tries multiple hops; keep per-hop budget tight so seed/contact failover fits
-  // inside attach-wait.
-  auto quote = relay_deps_.relay->RequestQuote(attach.hop_peer_id, qreq, 5000);
-  if (!quote || !quote->ok) {
-    return Error(quote ? quote->error : quote.error().message);
-  }
-  const std::string quote_id = quote->quote_id;
-  const int64_t a_up_bps = quote->a_up_bps;
 
   CallAdaptationInput in;
   in.per_user_up_bps = a_up_bps;
@@ -395,21 +433,6 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
 
   local_publisher_stream_id_ = PublisherStreamIdForLocal();
-
-  auto attach_res = relay_deps_.relay->AcceptAndAttach(
-      attach.hop_peer_id, quote_id, call_id, call_id,
-      [this](MediaDataFrame frame) {
-        CallMediaEngine::SfuPacket pkt;
-        pkt.channel_id = frame.channel_id;
-        pkt.seq = frame.seq;
-        pkt.mark = frame.mark;
-        pkt.payload = std::move(frame.payload);
-        media_.OnSfuPacket(pkt);
-      },
-      8000);
-  if (!attach_res || !attach_res->ok) {
-    return Error(attach_res ? attach_res->error : attach_res.error().message);
-  }
 
   auto participants = sessions_.ListParticipants(call_id);
   if (participants) {

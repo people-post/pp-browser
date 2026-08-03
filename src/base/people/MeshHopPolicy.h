@@ -98,6 +98,13 @@ std::vector<MeshHopCandidate> ExcludePeerIds(std::vector<MeshHopCandidate> candi
 std::vector<MeshHopCandidate> PreferInCallMediaHops(std::vector<MeshHopCandidate> ranked,
                                                    const std::unordered_set<std::string>& in_call_peer_ids);
 
+/**
+ * Soft-migrate: prepend local PeerId as dialable hop (empty multiaddr → AttachAsLocalHop).
+ * No-op when local_peer_id empty. Dedupes if already present.
+ */
+std::vector<MeshHopCandidate> PreferLocalMediaHop(std::vector<MeshHopCandidate> ranked,
+                                                  const std::string& local_peer_id);
+
 /** PeerId from a contact row (ContactIdKind::PeerId or multiaddr /p2p/). */
 std::string PeerIdFromContact(const Contact& contact);
 

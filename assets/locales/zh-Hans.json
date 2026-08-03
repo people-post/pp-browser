@@ -201,9 +201,9 @@
     "people_picker.title_group_voice_call": "发起群组语音通话",
     "people_picker.title_group_video_call": "发起群组视频通话",
     "people_picker.title_call_add_guest": "邀请加入通话",
-    "people_picker.cta_start_voice_call": "发起语音通话…",
-    "people_picker.cta_start_video_call": "发起视频通话…",
-    "people_picker.cta_invite_to_call": "邀请…",
+    "people_picker.cta_start_voice_call": "发起语音通话",
+    "people_picker.cta_start_video_call": "发起视频通话",
+    "people_picker.cta_invite_to_call": "邀请",
 
     "chat.new_chat": "新对话",
     "chat.empty_title": "开始对话",

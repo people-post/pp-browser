@@ -582,3 +582,20 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 
 **Dogfood:** Mobile LAN 1:1 path exercised with call-scoped listen (2026-08-02) — see V026 dogfood note / [CURRENT_STATE.md](CURRENT_STATE.md).
 
+---
+
+## V028 — Call-scoped media_relay admission + prefer owner hop
+
+**Date:** 2026-08-03  
+**Status:** Accepted (**implemented**)  
+**Decision:** For N≥3 SoftMigrate:
+
+1. **Owner picks the hop** (sticky initiator SoftMigrate, unchanged V021/V022).
+2. **Admission:** the first dialer (or `AttachAsLocalHop`) that opens a `media_relay` session for `call_id` must pass normal contact/scope admission. **After** that session exists, further attaches to the same `call_id` are admitted even if the dialer is not in the hop’s contact set — including mid-call stranger joiners. Mobile remains non-Public for *new* sessions (V027); only join-to-existing-call is the exception.
+3. **Ranking:** when the initiator’s local `media_relay` is started, prefer **self** as hop (`PreferLocalMediaHop` → `AttachAsLocalHop`) ahead of PreferInCall phones / seeds.
+
+**Rationale:** Guests need not be mutual contacts of each other or of an in-call phone hop. Owner-sponsored call semantics match signaling (owner can reach each invitee). PreferLocal keeps the owner Node as the default host when available.
+
+**Alternatives:** Require mutual contacts among all participants (rejected — UX); open mobile Public for new sessions (rejected — V027); signed owner attach tokens (deferred — same product rule, stronger crypto later).
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) media_relay; mesh N025 / V027.

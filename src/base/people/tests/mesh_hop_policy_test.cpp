@@ -177,6 +177,27 @@ TEST(MeshHopPolicyTest, PreferInCallMediaHopsPutsCallMemberFirst) {
   EXPECT_EQ(ranked[2].peer_id, "12D3KooWLinux");
 }
 
+TEST(MeshHopPolicyTest, PreferLocalMediaHopPrependsAndDedupes) {
+  MeshHopCandidate seed;
+  seed.peer_id = "12D3KooWSeed";
+  seed.multiaddr = "/ip4/3.3.3.3/tcp/1/p2p/12D3KooWSeed";
+  seed.affinity = MeshHopAffinity::OrgSeed;
+
+  MeshHopCandidate self_dup;
+  self_dup.peer_id = "12D3KooWSelf";
+  self_dup.multiaddr = "/ip4/1.1.1.1/tcp/1/p2p/12D3KooWSelf";
+  self_dup.affinity = MeshHopAffinity::Contact;
+
+  EXPECT_EQ(PreferLocalMediaHop({seed}, "").size(), 1u);
+
+  auto ranked = PreferLocalMediaHop({seed, self_dup}, "12D3KooWSelf");
+  ASSERT_EQ(ranked.size(), 2u);
+  EXPECT_EQ(ranked[0].peer_id, "12D3KooWSelf");
+  EXPECT_TRUE(ranked[0].dialable);
+  EXPECT_TRUE(ranked[0].multiaddr.empty());
+  EXPECT_EQ(ranked[1].peer_id, "12D3KooWSeed");
+}
+
 TEST(MediaFrameCodecTest, RoundTripHeaderAndPayload) {
   MediaDataFrame in;
   in.stream_id = 42;

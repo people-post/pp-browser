@@ -86,7 +86,7 @@ public:
   void Stop();
   bool IsStarted() const { return started_; }
 
-  /** Local libp2p PeerId (base58); used to skip self when picking media hops. */
+  /** Local libp2p PeerId (base58); SoftMigrate PreferLocalMediaHop / AttachAsLocalHop. */
   Roe<std::string> LocalPeerIdBase58() const { return host_.LocalPeerIdBase58(); }
 
   void SetBudget(const MediaRelayBudgetConfig& budget);
@@ -104,6 +104,14 @@ public:
   Roe<MediaRelayAttachResult> AcceptAndAttach(
       const std::string& hop_peer_key, const std::string& quote_id, const std::string& call_id,
       const std::string& auth_stub, std::function<void(MediaDataFrame)> on_frame, int timeout_ms = 8000);
+
+  /**
+   * In-call hop: join the local HostSession as a publisher without dialing self.
+   * SoftMigrate PreferLocalMediaHop (or PreferInCall when hop=local) uses this path;
+   * opening the session also unlocks call-scoped admission for stranger joiners.
+   */
+  Roe<MediaRelayAttachResult> AttachAsLocalHop(const std::string& call_id,
+                                               std::function<void(MediaDataFrame)> on_frame);
 
   Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id);
   Roe<void> Unsubscribe(uint32_t stream_id, uint16_t channel_id);

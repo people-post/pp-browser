@@ -321,6 +321,27 @@ std::vector<MeshHopCandidate> PreferInCallMediaHops(
   return in_call;
 }
 
+std::vector<MeshHopCandidate> PreferLocalMediaHop(std::vector<MeshHopCandidate> ranked,
+                                                  const std::string& local_peer_id) {
+  if (local_peer_id.empty()) {
+    return ranked;
+  }
+  std::vector<MeshHopCandidate> out;
+  out.reserve(ranked.size() + 1);
+  MeshHopCandidate local;
+  local.peer_id = local_peer_id;
+  local.affinity = MeshHopAffinity::Contact;
+  local.dialable = true;
+  out.push_back(std::move(local));
+  for (MeshHopCandidate& c : ranked) {
+    if (c.peer_id == local_peer_id) {
+      continue;
+    }
+    out.push_back(std::move(c));
+  }
+  return out;
+}
+
 bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& peer_id) {
   if (peer_id.empty()) {
     return false;

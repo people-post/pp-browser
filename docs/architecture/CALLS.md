@@ -332,9 +332,13 @@ Maps ring + in-call chrome from lifecycle phase + session snapshot. **Layer appe
 **Do not** rely on always-mounted `data-if="call_ring_active"` alone to show Accept — dogfood showed C++ `active=true` + Present alive while the overlay stayed `display:none`. **Do not** full-shell `SyncLayout` for call chrome (Samsung Accept hit-test).
 
 ### media_relay (mesh)
-Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attaches, fans out `call_sfu_attach`. Mobile never hosts.
+Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attaches, fans out `call_sfu_attach`. Mobile may host ephemerally on Wi‑Fi (V027) with contacts-only *new* sessions.
 
 **Who picks (V021 / V022):** first soft-migrate is the sticky **call initiator** (earliest `joined_at` = session payer). Mid-call invite: `CallAccept` reaches only the inviter (WaitForAttach); **CallRoster** drives `JoinedCountObserved` so the initiator SoftMigrates. Joiners without hint WaitForAttach. ICE re-pick is epoch coordinator only. Fan-out clears `quote_id` (peers `RequestQuote` locally).
+
+**Hop preference:** when the initiator’s local `media_relay` is started, SoftMigrate prefers **self** (`AttachAsLocalHop`) ahead of PreferInCall / seeds. Then PreferInCall dialable members, then ranked contact∪seed hops.
+
+**Call-scoped admission:** the first dialer (or local hop) that opens a `HostSession` for `call_id` must pass contact/scope admission. After that session exists, further dialers for the same `call_id` are admitted even if strangers to the hop (owner-picked hop serves the whole call, including mid-call joiners). Mobile stays non-Public for *new* sessions.
 
 ---
 
@@ -349,7 +353,7 @@ Extract without changing the external façade (`MessagingHub::Calls()`, `CallCon
 | `SoftMigrateLogic` | Who-picks: initiator first hop (V021/V022); `JoinedCountObserved` / `RemoteAcceptObserved`; ICE → coordinator |
 | `SfuAttachWaitLogic` | Attach-wait poll; **no TimeoutLeave while migrate in flight** |
 | `SfuAttachFanout` | Fan-out detail with empty `quote_id`; publisher stream id |
-| `MeshHopPolicy` | Contact∪seed rank; Prefer contacts; `ExcludeSelfHop` |
+| `MeshHopPolicy` | Contact∪seed rank; Prefer contacts; `ExcludeSelfHop`; `PreferLocalMediaHop` / `PreferInCallMediaHops` |
 
 ### 1. `CallTopologyController` (feature adapter)
 Responsibilities:

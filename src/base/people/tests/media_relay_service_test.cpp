@@ -2,6 +2,8 @@
 #include "libp2p/integration/host/MediaRelayService.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
+#include "base/people/RelayScope.h"
+
 #include <gtest/gtest.h>
 
 #include <atomic>
@@ -143,6 +145,92 @@ TEST_F(MediaRelayServiceTest, QuoteAcceptAttachFanout) {
   EXPECT_EQ(received.payload, sent.payload);
 
   a_relay_->Detach();
+  b_relay_->Detach();
+}
+
+TEST_F(MediaRelayServiceTest, CallScopedAdmissionAllowsStrangerAfterSponsor) {
+  auto hop_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(hop_id);
+  auto a_id = a_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(a_id);
+  auto b_id = b_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(b_id);
+
+  const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint("hop", hop_ma));
+  ASSERT_TRUE(b_sessions_->RegisterEndpoint("hop", hop_ma));
+
+  MediaRelayAdmissionPolicy policy;
+  policy.prefer_contacts_only = true;
+  policy.serve_scope_mask = kRelayScopeLinkSiteSocial; // no Public
+  policy.contact_peer_ids = {*a_id};
+  hop_relay_->SetAdmissionPolicy(std::move(policy));
+
+  const std::string call_id = "call-scoped-1";
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+
+  // Stranger-first: B alone must be refused.
+  auto qb_early = b_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qb_early) << qb_early.error().message;
+  EXPECT_FALSE(qb_early->ok);
+  EXPECT_NE(qb_early->error.find("stranger refused"), std::string::npos);
+
+  // Sponsor A opens the session.
+  auto qa = a_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qa) << qa.error().message;
+  ASSERT_TRUE(qa->ok) << qa->error;
+  auto attach_a = a_relay_->AcceptAndAttach("hop", qa->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000);
+  ASSERT_TRUE(attach_a) << attach_a.error().message;
+  ASSERT_TRUE(attach_a->ok) << attach_a->error;
+
+  // Stranger B may join the same call_id after sponsor attached.
+  auto qb = b_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qb) << qb.error().message;
+  ASSERT_TRUE(qb->ok) << qb->error;
+  auto attach_b = b_relay_->AcceptAndAttach("hop", qb->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000);
+  ASSERT_TRUE(attach_b) << attach_b.error().message;
+  ASSERT_TRUE(attach_b->ok) << attach_b->error;
+
+  (void)b_id;
+  a_relay_->Detach();
+  b_relay_->Detach();
+}
+
+TEST_F(MediaRelayServiceTest, CallScopedAdmissionLocalHopUnlocksStranger) {
+  auto hop_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(hop_id);
+  auto b_id = b_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(b_id);
+
+  const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
+  ASSERT_TRUE(b_sessions_->RegisterEndpoint("hop", hop_ma));
+
+  MediaRelayAdmissionPolicy policy;
+  policy.prefer_contacts_only = true;
+  policy.serve_scope_mask = kRelayScopeLinkSiteSocial;
+  // Empty contacts would admit everyone; use a dummy contact so B is a stranger.
+  policy.contact_peer_ids = {"12D3KooWNotB"};
+  hop_relay_->SetAdmissionPolicy(std::move(policy));
+
+  const std::string call_id = "call-local-sponsor";
+  auto local = hop_relay_->AttachAsLocalHop(call_id, [](MediaDataFrame) {});
+  ASSERT_TRUE(local) << local.error().message;
+  ASSERT_TRUE(local->ok) << local->error;
+
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+  auto qb = b_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qb) << qb.error().message;
+  ASSERT_TRUE(qb->ok) << qb->error;
+  auto attach_b = b_relay_->AcceptAndAttach("hop", qb->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000);
+  ASSERT_TRUE(attach_b) << attach_b.error().message;
+  ASSERT_TRUE(attach_b->ok) << attach_b->error;
+
+  (void)b_id;
+  hop_relay_->Detach();
   b_relay_->Detach();
 }
 

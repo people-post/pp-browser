@@ -150,6 +150,8 @@ uint64_t SubKey(uint32_t stream_id, uint16_t channel_id) {
 struct HostParticipant {
   std::string peer_id;
   std::shared_ptr<Stream> stream;
+  /** Set for in-call hop local publisher (no network stream). */
+  std::function<void(MediaDataFrame)> local_on_frame;
   std::mutex write_mu; // serializes hop→client writes (fanout vs control acks)
   std::unordered_set<uint64_t> subscriptions;
   std::unordered_map<uint64_t, uint32_t> last_lossy_seq;
@@ -237,15 +239,32 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::unordered_map<std::string, std::shared_ptr<HostSession>> sessions_by_token;
   std::unordered_map<std::string, std::shared_ptr<HostSession>> sessions_by_call;
 
-  // Client attach state
+  // Client attach state (remote hop dial)
   std::shared_ptr<Stream> client_stream;
   std::mutex client_write_mu; // Subscribe/SendFrame/Detach vs each other
   std::string client_session_token;
   std::function<void(MediaDataFrame)> client_on_frame;
   std::atomic<bool> client_reader_running{false};
 
+  // In-call hop: local publisher joined into HostSession without dialing self
+  std::shared_ptr<HostParticipant> local_hop_part;
+  std::shared_ptr<HostSession> local_hop_session;
+  std::string local_hop_peer_id;
+
   bool AdmitPeer(const std::string& peer_id) {
     return RelayAdmissionAllowsDialer(admission.serve_scope_mask, peer_id, admission.contact_peer_ids);
+  }
+
+  /**
+   * Call-scoped admission: first dialer for call_id must pass contact/scope admission.
+   * Once a HostSession exists for call_id (sponsor or local hop attached), further dialers
+   * for that call are admitted even if strangers to this hop.
+   */
+  bool AdmitPeerForCall(const std::string& peer_id, const std::string& call_id) {
+    if (!call_id.empty() && sessions_by_call.find(call_id) != sessions_by_call.end()) {
+      return true;
+    }
+    return AdmitPeer(peer_id);
   }
 
   MediaRelayQuote BuildQuote(const MediaRelayQuoteRequest& req) {
@@ -273,7 +292,11 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
               const MediaDataFrame& frame, const std::vector<uint8_t>& body) {
     const uint64_t key = SubKey(frame.stream_id, frame.channel_id);
     for (const auto& part : session->participants) {
-      if (!part || !part->stream || part->peer_id == from_peer) {
+      if (!part || part->peer_id == from_peer) {
+        continue;
+      }
+      const bool local = static_cast<bool>(part->local_on_frame);
+      if (!local && !part->stream) {
         continue;
       }
       if (part->subscriptions.find(key) == part->subscriptions.end()) {
@@ -289,6 +312,10 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
       part->bytes_down += static_cast<int64_t>(body.size());
       session->bytes_total += static_cast<int64_t>(body.size());
       if (session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes) {
+        continue;
+      }
+      if (local) {
+        part->local_on_frame(frame);
         continue;
       }
       std::lock_guard<std::mutex> wlock(part->write_mu);
@@ -367,20 +394,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         remote = peer.value().toBase58();
       }
 
-      MediaRelayAdmissionPolicy policy;
-      {
-        std::lock_guard<std::mutex> lock(mu);
-        policy = admission;
-      }
-
-      const bool admitted = RelayAdmissionAllowsDialer(policy.serve_scope_mask, remote, policy.contact_peer_ids);
-      if (!admitted) {
-        (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
-        stream->close([](auto&&) {});
-        return;
-      }
-
-      // Control handshake: quote → accept → attach (may be multi-message)
+      // Admission runs per control op (quote/accept/attach) with call_id so joiners can
+      // attach on a fresh stream after an admitted sponsor opened the session.
+      // Control handshake: quote → accept → attach (may be multi-message / multi-stream)
       std::string accepted_quote_id;
       std::string session_token;
       std::shared_ptr<HostSession> session;
@@ -398,6 +414,15 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           req.participants = root->value("participants", 1);
           req.want_up_bps = root->value("want_up_bps", static_cast<int64_t>(0));
           req.want_down_bps = root->value("want_down_bps", static_cast<int64_t>(0));
+          {
+            std::lock_guard<std::mutex> lock(mu);
+            if (!AdmitPeerForCall(remote, req.call_id)) {
+              (void)WriteJson(stream,
+                              {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
+              stream->close([](auto&&) {});
+              return;
+            }
+          }
           MediaRelayQuote q = BuildQuote(req);
           {
             std::lock_guard<std::mutex> lock(mu);
@@ -427,6 +452,12 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
               return;
             }
             pending = it->second;
+            if (!AdmitPeerForCall(remote, pending.call_id)) {
+              (void)WriteJson(stream,
+                              {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
+              stream->close([](auto&&) {});
+              return;
+            }
             quotes_by_id.erase(it);
           }
           accepted_quote_id = quote_id;
@@ -450,6 +481,15 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
             (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "auth failed"}});
             stream->close([](auto&&) {});
             return;
+          }
+          {
+            std::lock_guard<std::mutex> lock(mu);
+            if (!AdmitPeerForCall(remote, call_id)) {
+              (void)WriteJson(stream,
+                              {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
+              stream->close([](auto&&) {});
+              return;
+            }
           }
 
           auto part = std::make_shared<HostParticipant>();
@@ -744,11 +784,76 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
   return result_future.get();
 }
 
+Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
+    const std::string& call_id, std::function<void(MediaDataFrame)> on_frame) {
+  if (call_id.empty()) {
+    return Error("missing call_id");
+  }
+  if (!started_) {
+    return Error("media_relay not started");
+  }
+  auto local_pid = LocalPeerIdBase58();
+  if (!local_pid) {
+    return local_pid.error();
+  }
+  Detach();
+
+  auto part = std::make_shared<HostParticipant>();
+  part->peer_id = *local_pid;
+  part->local_on_frame = std::move(on_frame);
+  part->a_up_bps = OrDefault(impl_->budget.default_per_user_up_bps, kDefaultUserUpBps);
+  part->a_down_bps = OrDefault(impl_->budget.default_per_user_down_bps, kDefaultUserDownBps);
+
+  std::shared_ptr<HostSession> session;
+  std::string token;
+  {
+    std::lock_guard<std::mutex> lock(impl_->mu);
+    auto it = impl_->sessions_by_call.find(call_id);
+    if (it != impl_->sessions_by_call.end()) {
+      session = it->second;
+      token = session->session_token;
+    } else {
+      session = std::make_shared<HostSession>();
+      session->call_id = call_id;
+      session->session_token = MakeId("s");
+      session->b_up_bps = OrDefault(impl_->budget.max_session_up_bps, kDefaultSessionUpBps);
+      session->b_down_bps = OrDefault(impl_->budget.max_session_down_bps, kDefaultSessionDownBps);
+      session->ceiling_bytes = kDefaultCeilingBytes;
+      token = session->session_token;
+      impl_->sessions_by_call[call_id] = session;
+      impl_->sessions_by_token[token] = session;
+    }
+    // Replace a prior local hop participant for this peer (re-attach).
+    session->participants.erase(
+        std::remove_if(session->participants.begin(), session->participants.end(),
+                       [&](const std::shared_ptr<HostParticipant>& p) {
+                         return p && p->peer_id == part->peer_id && p->local_on_frame;
+                       }),
+        session->participants.end());
+    session->participants.push_back(part);
+    impl_->local_hop_part = part;
+    impl_->local_hop_session = session;
+    impl_->local_hop_peer_id = part->peer_id;
+    impl_->client_session_token = token;
+  }
+
+  MediaRelayAttachResult out;
+  out.ok = true;
+  out.session_token = token;
+  return out;
+}
+
 Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) {
   std::shared_ptr<Stream> stream;
+  std::shared_ptr<HostParticipant> local;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
     stream = impl_->client_stream;
+    local = impl_->local_hop_part;
+  }
+  if (local) {
+    local->subscriptions.insert(SubKey(stream_id, channel_id));
+    return {};
   }
   if (!stream) {
     return Error("not attached");
@@ -759,9 +864,15 @@ Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) 
 
 Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id) {
   std::shared_ptr<Stream> stream;
+  std::shared_ptr<HostParticipant> local;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
     stream = impl_->client_stream;
+    local = impl_->local_hop_part;
+  }
+  if (local) {
+    local->subscriptions.erase(SubKey(stream_id, channel_id));
+    return {};
   }
   if (!stream) {
     return Error("not attached");
@@ -773,9 +884,27 @@ Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id
 
 Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
   std::shared_ptr<Stream> stream;
+  std::shared_ptr<HostSession> session;
+  std::string from_peer;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
     stream = impl_->client_stream;
+    if (impl_->local_hop_part) {
+      session = impl_->local_hop_session;
+      from_peer = impl_->local_hop_peer_id;
+    }
+  }
+  if (session) {
+    const std::vector<uint8_t> body = EncodeMediaDataFrame(frame);
+    {
+      std::lock_guard<std::mutex> lock(impl_->mu);
+      if (impl_->local_hop_part) {
+        impl_->local_hop_part->bytes_up += static_cast<int64_t>(body.size());
+        session->bytes_total += static_cast<int64_t>(body.size());
+      }
+    }
+    impl_->Fanout(session, from_peer, frame, body);
+    return {};
   }
   if (!stream) {
     return Error("not attached");
@@ -786,12 +915,25 @@ Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
 
 void MediaRelayService::Detach() {
   std::shared_ptr<Stream> stream;
+  std::shared_ptr<HostParticipant> local;
+  std::shared_ptr<HostSession> local_session;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
     stream = impl_->client_stream;
     impl_->client_stream.reset();
     impl_->client_session_token.clear();
     impl_->client_on_frame = nullptr;
+    local = impl_->local_hop_part;
+    local_session = impl_->local_hop_session;
+    impl_->local_hop_part.reset();
+    impl_->local_hop_session.reset();
+    impl_->local_hop_peer_id.clear();
+    if (local && local_session) {
+      local_session->participants.erase(
+          std::remove_if(local_session->participants.begin(), local_session->participants.end(),
+                         [&](const std::shared_ptr<HostParticipant>& p) { return p.get() == local.get(); }),
+          local_session->participants.end());
+    }
   }
   impl_->client_reader_running = false;
   if (stream) {
@@ -805,7 +947,7 @@ void MediaRelayService::Detach() {
 
 bool MediaRelayService::IsAttached() const {
   std::lock_guard<std::mutex> lock(impl_->mu);
-  return impl_->client_stream != nullptr;
+  return impl_->client_stream != nullptr || impl_->local_hop_part != nullptr;
 }
 
 } // namespace pbr

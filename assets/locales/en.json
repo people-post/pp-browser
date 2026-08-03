@@ -201,9 +201,9 @@
     "people_picker.title_group_voice_call": "Start group voice call",
     "people_picker.title_group_video_call": "Start group video call",
     "people_picker.title_call_add_guest": "Invite to call",
-    "people_picker.cta_start_voice_call": "Start voice call…",
-    "people_picker.cta_start_video_call": "Start video call…",
-    "people_picker.cta_invite_to_call": "Invite…",
+    "people_picker.cta_start_voice_call": "Start voice call",
+    "people_picker.cta_start_video_call": "Start video call",
+    "people_picker.cta_invite_to_call": "Invite",
 
     "chat.new_chat": "New chat",
     "chat.empty_title": "Start a conversation",

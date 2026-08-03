@@ -104,6 +104,8 @@ public:
     return local_peer_id;
   }
 
+  bool IsStarted() const override { return started; }
+
   Roe<MediaRelayQuote> RequestQuote(const std::string& hop_peer_key,
                                     const MediaRelayQuoteRequest& request,
                                     int /*timeout_ms*/) override {
@@ -137,18 +139,35 @@ public:
     return r;
   }
 
+  Roe<MediaRelayAttachResult> AttachAsLocalHop(
+      const std::string& /*call_id*/, std::function<void(MediaDataFrame)> /*on_frame*/) override {
+    ++local_hop_calls;
+    if (!local_hop_ok) {
+      return Error(local_hop_error);
+    }
+    attached_ = true;
+    MediaRelayAttachResult r;
+    r.ok = true;
+    r.session_token = "local-tok";
+    return r;
+  }
+
   Roe<void> Subscribe(uint32_t /*stream_id*/, uint16_t /*channel_id*/) override { return {}; }
   Roe<void> SendFrame(const MediaDataFrame& /*frame*/) override { return {}; }
   void Detach() override { attached_ = false; }
   bool IsAttached() const override { return attached_; }
 
   std::string local_peer_id = "12D3KooWLocal";
+  bool started = true;
   bool quote_ok = true;
   bool attach_ok = true;
+  bool local_hop_ok = true;
   std::string quote_error = "media-relay stream open failed: protocol not supported";
   std::string attach_error = "attach failed";
+  std::string local_hop_error = "local hop failed";
   int quote_calls = 0;
   int attach_calls = 0;
+  int local_hop_calls = 0;
   std::string last_quote_hop;
   std::string last_quote_call_id;
 
@@ -250,6 +269,8 @@ TEST_F(CallTopologyControllerTest, MidCallInitiatorPicksAndQuotes) {
   // A earliest (sticky initiator / payer); picks on roster or accept.
   SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
   host_->local_identity = "relay:A";
+  // Exercise remote hop path (PreferLocal would short-circuit to AttachAsLocalHop).
+  relay_->started = false;
 
   auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
   EXPECT_GE(relay_->quote_calls, 1);
@@ -268,6 +289,7 @@ TEST_F(CallTopologyControllerTest, PickFailsSurfacesStreamOpenError) {
   const std::string call_id = "call:fail";
   SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
   host_->local_identity = "relay:A";
+  relay_->started = false;
   relay_->quote_ok = false;
   relay_->quote_error = "media-relay stream open failed: protocol not supported";
 
@@ -277,15 +299,45 @@ TEST_F(CallTopologyControllerTest, PickFailsSurfacesStreamOpenError) {
   EXPECT_TRUE(host_->fanouts.empty());
 }
 
-TEST_F(CallTopologyControllerTest, AttachRejectsSelfHop) {
+TEST_F(CallTopologyControllerTest, PreferLocalOwnerHopOverInCallContact) {
+  const std::string call_id = "call:local-hop";
+  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
+  host_->local_identity = "relay:A";
+  relay_->started = true;
+
+  // In-call contact B is dialable — PreferInCall would pick B without PreferLocal.
+  Contact b;
+  b.id = "contact-b";
+  b.display_name = "B";
+  b.ids = {{ContactIdKind::RelayUser, "relay:B", true},
+           {ContactIdKind::PeerId, "12D3KooWInCallB", false}};
+  b.multiaddrs = {"/ip4/10.0.0.2/tcp/1/p2p/12D3KooWInCallB"};
+  PromoteFlatFieldsToNested(b);
+  SyncContactMirrors(b);
+  ASSERT_TRUE(contacts_->Upsert(b));
+  dial_->endpoints["12D3KooWInCallB"] = b.multiaddrs.front();
+
+  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  ASSERT_TRUE(ok) << ok.error().message;
+  EXPECT_EQ(relay_->local_hop_calls, 1);
+  EXPECT_EQ(relay_->quote_calls, 0);
+  ASSERT_FALSE(host_->fanouts.empty());
+  auto decoded = CallControlCodec::DecodeSfuAttach(host_->fanouts.back().detail_json);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->hop_peer_id, relay_->local_peer_id);
+}
+
+TEST_F(CallTopologyControllerTest, AttachSelfHopUsesLocalPublisher) {
   CallSfuAttachDetail attach;
   attach.call_id = "call:self";
   attach.hop_peer_id = relay_->local_peer_id;
   attach.hop_multiaddr = "/ip4/127.0.0.1/tcp/1/p2p/" + relay_->local_peer_id;
   auto ok = topo_->AttachLocalToSfu(attach.call_id, attach);
-  ASSERT_FALSE(ok);
-  EXPECT_NE(ok.error().message.find("self"), std::string::npos);
+  ASSERT_TRUE(ok) << ok.error().message;
+  EXPECT_EQ(relay_->local_hop_calls, 1);
   EXPECT_EQ(relay_->quote_calls, 0);
+  EXPECT_EQ(relay_->attach_calls, 0);
+  EXPECT_TRUE(topo_->IsSfuAttached());
 }
 
 TEST_F(CallTopologyControllerTest, IceRecoverNonCoordinatorDoesNotQuote) {
