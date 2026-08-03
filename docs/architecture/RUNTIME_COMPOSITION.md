@@ -217,7 +217,12 @@ flowchart TB
 
 ## Threading
 
-pp-browser uses a small set of **owned** threads plus short-lived **hop-off** workers. UI work is sequenced on the main thread; blocking network/LLM work goes to `BrowserThread::IO`. libp2p and call media run their own loops.
+**Canonical doc:** [THREADING.md](THREADING.md) — today's inventory, **target** coordinator + worker pool model, migration principles.  
+**Implementation plan:** [`projects/thread-coordinator/PHASES.md`](../../projects/thread-coordinator/PHASES.md) (short-lived; delete when shipped).
+
+**Today:** a small set of **owned** threads plus short-lived **hop-off** workers (`~25` detached sites). UI work is sequenced on the main thread; blocking network/LLM work goes to `BrowserThread::IO`. libp2p and call media run their own loops.
+
+**Target:** UI + libp2p reactor + **coordinator** (mailbox + timer wheel) + **worker pool** (2–4 threads, Critical / Normal / Background). See [THREADING.md § Target architecture](THREADING.md#target-architecture).
 
 ```mermaid
 flowchart TB
@@ -285,13 +290,15 @@ flowchart TB
 | **WebRTC pool** | libdatachannel `ThreadPool` (+ optional poll/ICE loops) | `third_party/libdatachannel/` | Vendored pool sized from `hardware_concurrency` |
 | **Notification watch** | `ILocalNotifier` (Linux) | `base/platform/desktop/` | D-Bus ActionInvoked watcher; joined in `Shutdown` |
 
-### Cross-thread rules of thumb
+### Cross-thread rules of thumb (today)
 
 - **UI** owns RmlUi, shell state, and most controller mutations. Prefer `BrowserThread::PostTask(UI, …)` from IO / workers.
 - **IO** owns blocking Brief HTTP (`HttpClient` / libcurl) and agent network work. `PostTaskAndReply` is IO → UI.
 - **libp2p IO** must stay non-blocking for dials/reads; integration services hop to detached workers, then post results as needed.
 - **`MessagingHub::TickLibp2p`** runs from `Application::Run` when messaging is ready — not from ChatController.
 - Pause/resume: `AgentSession` may `BrowserThread::PauseIO` / `ResumeIO` around sensitive UI transitions.
+
+Target rules (coordinator + pool): [THREADING.md § Design principles](THREADING.md#design-principles).
 
 ## Notable modules
 

@@ -127,7 +127,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 - Declare narrow **ports structs** (`SettingsCommands`, `ChatSessionPorts`) or facade methods — app fills implementations in `Application`.
 - **Sync / quick:** return `Roe<void>` or a small result; safe on UI thread when work is trivial.
-- **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or post to `BrowserThread::IO` and reply on UI.
+- **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or post to `BrowserThread::IO` and reply on UI. Target: coordinator + worker pool ([THREADING.md](THREADING.md)).
 - Long-running actions should support **progress** and **cancel** when user-visible (agent turns, UPnP probe, profile reset).
 - RmlUi static callbacks are thin: `→ presenter method → action port` — not `SomeController::Instance().Hub()->…`.
 
@@ -164,7 +164,7 @@ struct MessagingActions {
 
 - Prefer callbacks, small listener interfaces, or app-owned coordinators — not polling hidden flags every frame.
 - Events may be one-shot; do not mirror every event as permanent state on a facade.
-- UI thread delivery: post via `BrowserThread::PostTask(UI, …)` from IO / workers.
+- UI thread delivery: post via `BrowserThread::PostTask(UI, …)` from IO / workers / coordinator.
 
 **Existing examples:**
 
@@ -294,6 +294,7 @@ RmlUi model registration stays in the presenter (or a dedicated binding helper).
 
 | Doc | Why |
 |-----|-----|
-| [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md) | Ownership, threading, bridge diagram |
+| [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md) | Ownership, runtime wiring, bridge diagram |
+| [THREADING.md](THREADING.md) | Thread roles, coordinator target, affinity rules |
 | [CONFIGURATION.md](../ops/CONFIGURATION.md) | Disk DTO → slice field mapping |
 | [WINDOW_SHELL.md](../ui/WINDOW_SHELL.md) | Shell chrome behavior |

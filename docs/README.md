@@ -22,6 +22,7 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md), this map.
 | [architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) | Overall system shape |
 | [architecture/SRC_LAYOUT.md](architecture/SRC_LAYOUT.md) | `app → feature → base → common` |
 | [architecture/RUNTIME_COMPOSITION.md](architecture/RUNTIME_COMPOSITION.md) | App ↔ messaging / shell / chat / settings wiring + threads |
+| [architecture/THREADING.md](architecture/THREADING.md) | Thread roles (today + target coordinator / worker pool) |
 | [architecture/UI_FUNCTIONAL_BOUNDARY.md](architecture/UI_FUNCTIONAL_BOUNDARY.md) | UI vs functional systems; state / config / actions / events; app-owned presenters |
 | [architecture/PLATFORMS.md](architecture/PLATFORMS.md) | Desktop / Android / path providers |
 | [architecture/PLATFORM_CODE.md](architecture/PLATFORM_CODE.md) | OS code layout, `#ifdef` policy |
