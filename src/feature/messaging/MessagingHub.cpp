@@ -243,6 +243,10 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
   }
 
   node_runtime_ = std::make_unique<NodeRuntime>();
+  if (!worker_pool_) {
+    return Error("MessagingHub worker pool not set (Application must call SetWorkerPool)");
+  }
+  runtime.worker_pool = worker_pool_;
   auto started = node_runtime_->Start(runtime);
   if (!started) {
     libp2p_last_error_ = node_runtime_->LastError().empty() ? started.error().message : node_runtime_->LastError();
@@ -1109,6 +1113,10 @@ void MessagingHub::BindAgent(AgentSession& agent) {
 
 void MessagingHub::BindSessionStore(SessionStore& store) {
   session_store_ = &store;
+}
+
+void MessagingHub::SetWorkerPool(WorkerPool& workers) {
+  worker_pool_ = &workers;
 }
 
 PeerSigningKeyStore& MessagingHub::SigningKeys() {

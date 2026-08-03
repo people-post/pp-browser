@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/WorkerPool.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/IdentifyIntegrationService.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
@@ -20,6 +21,8 @@ struct NodeRuntimeConfig {
   Libp2pHostConfig host;
   PeerSessionConfig sessions;
   std::vector<std::string> bootstrap_peers;
+  /** Required — typically ThreadRuntime::Workers() from the composition root. */
+  WorkerPool* worker_pool = nullptr;
   /**
    * When host.listen_enabled, try these multiaddrs in order.
    * Empty → use host.listen_multiaddr only (fail-loud single attempt).

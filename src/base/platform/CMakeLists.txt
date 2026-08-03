@@ -7,6 +7,7 @@ set(_pp_platform_core_sources
   ICredentialStore.cpp
   EnvCredentialStore.cpp
   ExecutablePath.cpp
+  ThreadRuntime.cpp
   os/OsFile_Posix.cpp
   os/OsTime_Posix.cpp
   os/OsProcess_Posix.cpp

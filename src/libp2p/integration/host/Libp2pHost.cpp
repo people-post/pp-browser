@@ -13,6 +13,7 @@
 
 #include <condition_variable>
 #include <cstdlib>
+#include <cassert>
 #include <future>
 #include <mutex>
 
@@ -75,14 +76,19 @@ void Libp2pHost::EnsureLogging() {
   EnsureLibp2pLoggingInitialized();
 }
 
-Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
+Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config, WorkerPool* workers) {
   if (running_.exchange(true)) {
     return {};
   }
 
   EnsureLogging();
   config_ = config;
-  worker_pool_ = std::make_unique<WorkerPool>();
+  if (workers) {
+    worker_pool_ = workers;
+  } else {
+    owned_worker_pool_ = std::make_unique<WorkerPool>();
+    worker_pool_ = owned_worker_pool_.get();
+  }
 
   io_context_ = std::make_shared<boost::asio::io_context>(1);
   // Keep run() alive after the startup post: an idle Client host otherwise drains
@@ -113,8 +119,8 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
 
   auto ma_res = libp2p::multi::Multiaddress::create(config_.listen_multiaddr);
   if (!ma_res) {
-    worker_pool_->Shutdown();
-    worker_pool_.reset();
+    owned_worker_pool_.reset();
+    worker_pool_ = nullptr;
     work_guard_.reset();
     running_ = false;
     host_.reset();
@@ -149,15 +155,16 @@ void Libp2pHost::Stop() {
     if (io_thread_.joinable()) {
       io_thread_.join();
     }
-    if (worker_pool_) {
-      worker_pool_->Shutdown();
-      worker_pool_.reset();
+    if (owned_worker_pool_) {
+      owned_worker_pool_->Shutdown();
+      owned_worker_pool_.reset();
     }
+    worker_pool_ = nullptr;
     return;
   }
-  if (worker_pool_) {
-    worker_pool_->Shutdown();
-    worker_pool_.reset();
+  if (owned_worker_pool_) {
+    owned_worker_pool_->Shutdown();
+    owned_worker_pool_.reset();
   }
   work_guard_.reset();
   if (io_context_) {
@@ -168,6 +175,7 @@ void Libp2pHost::Stop() {
   }
   host_.reset();
   io_context_.reset();
+  worker_pool_ = nullptr;
 }
 
 libp2p::Host& Libp2pHost::GetHost() {
@@ -215,9 +223,7 @@ void Libp2pHost::Post(std::function<void()> fn) {
 }
 
 WorkerPool& Libp2pHost::GetWorkerPool() {
-  if (!worker_pool_) {
-    worker_pool_ = std::make_unique<WorkerPool>();
-  }
+  assert(worker_pool_ != nullptr && "Libp2pHost::Start requires WorkerPool&");
   return *worker_pool_;
 }
 

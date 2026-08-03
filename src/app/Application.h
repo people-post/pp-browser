@@ -29,6 +29,7 @@ class ContactsController;
 class ShellHost;
 class PeoplePickerController;
 class ChatController;
+class ThreadRuntime;
 
 class Application : public Module {
 public:
@@ -55,6 +56,7 @@ public:
 
 private:
   bool initialized_ = false;
+  std::unique_ptr<ThreadRuntime> thread_runtime_;
   SessionStore store_;
   std::unique_ptr<MessagingHub> messaging_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;

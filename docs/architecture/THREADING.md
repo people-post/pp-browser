@@ -30,7 +30,7 @@ Two sequenced task runners plus separate libp2p IO and many hop-off threads:
 | **UI queue** | `BrowserThread::UI` → `SequencedTaskRunner(false)` | No — drained on main via `RunUITasks()` |
 | **App IO queue** | `BrowserThread::IO` → `SequencedTaskRunner(true)`, name `pp-browser-io` | Yes |
 | **libp2p reactor** | `Libp2pHost` → `boost::asio::io_context::run()` | Yes |
-| **Hop-offs** | `WorkerPool` on `Libp2pHost` + remaining `.detach()` in messaging/calls | Integration layer migrated (t2); ~13 detach sites remain in `feature/messaging/` |
+| **Hop-offs** | `WorkerPool` on `ThreadRuntime` (app) + remaining `.detach()` in messaging/calls | Integration layer migrated (t2); ~13 detach sites remain in `feature/messaging/` |
 | **UI tick policy** | `MessagingHub::TickLibp2p`, `BackgroundSyncScheduler::Tick` | Main thread, not a dedicated watcher |
 
 ### Steady-state thread budget (typical desktop, messaging on, no call)
@@ -160,7 +160,7 @@ Keep stable call sites during migration:
 | `Libp2pHost::Post()` | Unchanged |
 | `run_heavy(work, on_done)` | Pool Background or Normal + UI reply |
 
-Target location: `src/common/WorkerPool` (implemented, t1); coordinator in `src/base/platform/` (t4).
+Target location: `src/common/WorkerPool` (implemented, t1); `ThreadRuntime` in `src/base/platform/` (t3.5, owns pool); coordinator in `src/base/platform/` (t4).
 
 ### Steady-state budget (target)
 
@@ -201,4 +201,5 @@ No unbounded detach; libdatachannel pool removed when WebRTC legacy path is reti
 |------|--------|
 | 2026-08-03 | Target coordinator + worker pool model; timer wheel on coordinator; migration plan in `projects/thread-coordinator/` |
 | 2026-08-03 | Phase t2: libp2p integration hop-offs use `Libp2pHost::GetWorkerPool()` |
+| 2026-08-03 | Phase t3.5: `ThreadRuntime` at composition root; `Libp2pHost` borrows app `WorkerPool` |
 | 2026-08-03 | Phase t1: `WorkerPool` in `src/common/` with unit tests |

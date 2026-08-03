@@ -111,6 +111,9 @@ int main(int argc, char** argv) {
     if (boot->runtime) {
       boot->runtime->Stop();
     }
+    if (boot->thread_runtime) {
+      boot->thread_runtime->Shutdown();
+    }
     if (boot->identity) {
       boot->identity->Flush();
       pbr::ProfileSecretsService::Instance().UnregisterDekConsumer(boot->identity.get());
@@ -137,6 +140,9 @@ int main(int argc, char** argv) {
   }
   if (boot->runtime) {
     boot->runtime->Stop();
+  }
+  if (boot->thread_runtime) {
+    boot->thread_runtime->Shutdown();
   }
   if (boot->identity) {
     boot->identity->Flush();

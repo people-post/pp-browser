@@ -99,12 +99,16 @@ Roe<void> NodeRuntime::Start(const NodeRuntimeConfig& config) {
   last_error_.clear();
   bound_listen_.clear();
 
+  if (!config.worker_pool) {
+    return Error("NodeRuntime requires WorkerPool (ThreadRuntime::Workers())");
+  }
+
   Error last_error("libp2p host start failed");
 
   if (!config.host.listen_enabled) {
     host_ = std::make_unique<Libp2pHost>();
     Libp2pHostConfig host_config = config.host;
-    auto started = host_->Start(host_config);
+    auto started = host_->Start(host_config, config.worker_pool);
     if (!started) {
       last_error_ = started.error().message;
       host_.reset();
@@ -120,7 +124,7 @@ Roe<void> NodeRuntime::Start(const NodeRuntimeConfig& config) {
       host_ = std::make_unique<Libp2pHost>();
       Libp2pHostConfig host_config = config.host;
       host_config.listen_multiaddr = candidate;
-      auto started = host_->Start(host_config);
+      auto started = host_->Start(host_config, config.worker_pool);
       if (started) {
         started_ok = true;
         bound_listen_ = ResolveBoundListenMultiaddr(*host_, candidate);

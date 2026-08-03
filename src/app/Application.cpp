@@ -18,6 +18,7 @@
 #include "feature/chat/ChatController.h"
 #include "feature/chat/MessagingTools.h"
 #include "base/platform/BrowserThread.h"
+#include "base/platform/ThreadRuntime.h"
 #include "base/platform/IAssetLocator.h"
 #include "base/platform/ILocalNotifier.h"
 #include "base/platform/IPathProvider.h"
@@ -165,7 +166,10 @@ void ApplyUiDocumentLanguage(Rml::Context* context) {
 
 Application::Application() {
   redirectLogger("Application");
+  thread_runtime_ = std::make_unique<ThreadRuntime>();
+  thread_runtime_->Start();
   messaging_ = std::make_unique<MessagingHub>();
+  messaging_->SetWorkerPool(thread_runtime_->Workers());
   messaging_->BindSessionStore(store_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
   action_router_ = std::make_unique<ActionRouter>();
@@ -931,6 +935,10 @@ void Application::Shutdown() {
   {
     StartupPhase phase("Shutdown::BrowserThread");
     BrowserThread::Shutdown();
+  }
+  if (thread_runtime_) {
+    StartupPhase phase("Shutdown::ThreadRuntime");
+    thread_runtime_->Shutdown();
   }
 }
 

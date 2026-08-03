@@ -9,6 +9,7 @@
 #include "base/people/IdentityStore.h"
 #include "base/people/ProfileIdentityView.h"
 #include "common/Module.h"
+#include "common/WorkerPool.h"
 #include "feature/messaging/ContactActionDispatcher.h"
 #include "feature/messaging/DirectoryShadowCache.h"
 #include "feature/messaging/InboxController.h"
@@ -110,6 +111,9 @@ public:
   bool IsInitialized() const { return initialized_; }
 
   void BindSessionStore(SessionStore& store);
+
+  /** Composition root injects ThreadRuntime::Workers() before Initialize / EnsureMessagingReady. */
+  void SetWorkerPool(WorkerPool& workers);
 
   /** libp2p / P2P stack ready after profile unlock + identity load. */
   bool IsMessagingReady() const { return messaging_ready_; }
@@ -270,6 +274,7 @@ private:
   std::function<void()> on_messaging_ready_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
+  WorkerPool* worker_pool_ = nullptr;
   bool mobile_ephemeral_relay_started_ = false;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
   bool mobile_ephemeral_start_inflight_ = false;

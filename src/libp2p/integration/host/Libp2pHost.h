@@ -49,7 +49,8 @@ public:
   Libp2pHost(const Libp2pHost&) = delete;
   Libp2pHost& operator=(const Libp2pHost&) = delete;
 
-  Roe<void> Start(const Libp2pHostConfig& config = {});
+  /** When workers is null, host creates a private pool (tests); app passes ThreadRuntime::Workers(). */
+  Roe<void> Start(const Libp2pHostConfig& config, WorkerPool* workers = nullptr);
   void Stop();
 
   bool IsAvailable() const { return available_; }
@@ -102,7 +103,8 @@ private:
   /** Keeps io_context::run() alive when the host has no pending handlers (Client / idle). */
   std::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work_guard_;
   std::shared_ptr<libp2p::Host> host_;
-  std::unique_ptr<WorkerPool> worker_pool_;
+  std::unique_ptr<WorkerPool> owned_worker_pool_;
+  WorkerPool* worker_pool_ = nullptr;
   std::thread io_thread_;
   mutable std::mutex mutex_;
   Libp2pHostConfig config_;

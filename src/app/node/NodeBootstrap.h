@@ -2,6 +2,7 @@
 
 #include "base/data/Config.h"
 #include "base/people/IdentityStore.h"
+#include "base/platform/ThreadRuntime.h"
 #include "common/Error.h"
 #include "libp2p/integration/host/DialBackService.h"
 #include "libp2p/integration/host/CircuitRelayService.h"
@@ -30,6 +31,7 @@ struct NodeBootstrapResult {
   std::string profile_data_dir;
   std::string profile_id;
   std::string config_path;
+  std::unique_ptr<ThreadRuntime> thread_runtime;
   std::unique_ptr<IdentityStore> identity;
   std::unique_ptr<NodeRuntime> runtime;
   std::unique_ptr<DialBackService> dial_back;
