@@ -27,6 +27,7 @@
 #include "base/platform/MobileWindowSizing.h"
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
+#include "feature/messaging/AgentUiPorts.h"
 #include "feature/messaging/MessagingCallPorts.h"
 #include "feature/messaging/MessagingChatPorts.h"
 #include "feature/messaging/MessagingHub.h"
@@ -583,6 +584,9 @@ bool Application::Initialize(const char* window_title) {
 
   config_apply_->Bind(messaging, store_, [](const std::string& relative) { return AssetsPath(relative); });
 
+  agent_session_.emplace();
+  ChatController::Instance().BindAgentPorts(MakeAgentUiPorts(*agent_session_));
+
   if (![&] {
         StartupPhase phase("SetupChatController");
         return SetupChatController(context);
@@ -598,6 +602,7 @@ bool Application::Initialize(const char* window_title) {
     ChatController::Instance().BindShellFeedback({});
     ChatController::Instance().BindShellSetup({});
     ChatController::Instance().BindChatPorts({});
+    ChatController::Instance().BindAgentPorts({});
     ChatController::Instance().BindMessagingUi({});
     UserFeedback::BindPorts({});
     ShellFeedback::BindChromePorts({});
@@ -628,6 +633,7 @@ bool Application::Initialize(const char* window_title) {
     if (unlock_gate_) {
       unlock_gate_->BindPorts({});
     }
+    agent_session_.reset();
     Rml::RemoveContext("main");
     Rml::Shutdown();
     Backend::Shutdown();
@@ -774,6 +780,7 @@ void Application::Shutdown() {
   ChatController::Instance().BindShellFeedback({});
   ChatController::Instance().BindShellSetup({});
   ChatController::Instance().BindChatPorts({});
+  ChatController::Instance().BindAgentPorts({});
   ChatController::Instance().BindMessagingUi({});
   UserFeedback::BindPorts({});
   ShellFeedback::BindChromePorts({});
@@ -827,6 +834,7 @@ void Application::Shutdown() {
       StartupPhase phase("Shutdown::ChatController");
       ShutdownChatController();
     }
+    agent_session_.reset();
 
     ShutdownMessaging();
 

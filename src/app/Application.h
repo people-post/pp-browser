@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feature/ai/AgentSession.h"
 #include "app/Bootstrap.h"
 #include "app/ConfigApplyBridge.h"
 #include "base/data/SessionStore.h"
@@ -60,6 +61,7 @@ private:
   std::unique_ptr<CallController> call_;
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;
+  std::optional<AgentSession> agent_session_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;
 };
 

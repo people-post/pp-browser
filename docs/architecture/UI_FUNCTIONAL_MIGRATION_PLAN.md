@@ -5,7 +5,7 @@
 > **Architecture reference (permanent):** [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)
 
 **Last updated:** 2026-08-03  
-**Status:** Phase 5 complete; Phase 6 partial (chat off Hub via MessagingChatPorts; call/shell remain)
+**Status:** Phase 5 complete; Phase 6 complete for presenters (chat/call/shell off Hub); Phase 7 partial
 
 ---
 
@@ -22,7 +22,7 @@
 
 - [ ] No functional module writes `ShellHost::State()` or calls another presenter `::Instance()`.
 - [x] Settings, contacts, people-picker, client-compat, and **chat** have no `BindMessaging` / `Hub()` on controllers.
-- [ ] Chat and shell reach messaging only via facades or app-wired ports. — **chat done**; shell/call still bind hub directly
+- [x] Chat and shell reach messaging only via facades or app-wired ports.
 - [ ] New features follow State / Config / Actions / Events from [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md).
 - [ ] `scripts/check_feature_includes.sh` and existing tests pass after each phase.
 - [ ] This file deleted.
@@ -156,12 +156,13 @@
 - [x] Remove `BindMessaging` / `Hub()` from **people-picker** controller
 - [x] Remove `BindMessaging` / `Hub()` from **client-compat** controller
 - [x] Remove `BindMessaging` / `Hub()` from **chat** controller (+ `ChatThreadChrome`, `ChatTranscriptScroller`)
-- [ ] Remove `BindMessaging` / `Hub()` from shell, call
-- [ ] Migrate call sites incrementally (call next, then shell reachability badges)
+- [x] Remove `BindMessaging` / `Hub()` from **call** controller
+- [x] Remove `BindMessaging` / `Hub()` from **shell** (`ShellHost` statusbar via `MessagingShellPorts`)
+- [ ] Optional: consolidate port structs into `MessagingFacade`
 
-**Exit check:** No `MessagingHub& Hub()` on **ContactsController**, **PeoplePickerController**, **ClientCompatController**, **ChatController** — **done**.
+**Exit check:** No `MessagingHub& Hub()` on **ContactsController**, **PeoplePickerController**, **ClientCompatController**, **ChatController**, **CallController**, or **ShellHost** — **done**.
 
-**Notes:** `MessagingContactsPorts.h`, `MessagingPeoplePickerPorts.h`, `MessagingCompatPorts.h`, `MessagingChatPorts.h`, `ShellSetupPorts.h` in feature layer; `RegisterMessagingTools` wired from `Application.cpp` (composition root).
+**Notes:** `MessagingContactsPorts`, `MessagingPeoplePickerPorts`, `MessagingCompatPorts`, `MessagingChatPorts`, `MessagingCallPorts`, `MessagingShellPorts`, `ShellSetupPorts`; `RegisterMessagingTools` wired from `Application.cpp`.
 
 ---
 
@@ -172,9 +173,9 @@
 **Primary files:** `AgentSession.*`, `ChatController.*`, `ActionRouter.*`, `Application.cpp`
 
 - [x] `AgentView` + `AgentUiPorts` header (read snapshot scaffold)
-- [ ] Wire `AgentUiPorts` in Application / ChatController Tick
-- [ ] `AgentActions` — start turn, cancel, configure slice already via bridge
-- [ ] Chat presenter uses facade; `ActionRouter` remains app-owned
+- [x] Wire `AgentUiPorts` in Application / ChatController Tick
+- [x] `AgentActions` — configure, submit, cancel, poll events, bind hub via ports
+- [x] Chat presenter uses facade; `AgentSession` owned by Application
 
 **Exit check:** Chat does not call `AgentSession` methods directly except through facade.
 
@@ -233,7 +234,7 @@ Record before/after when starting each phase:
 | `ShellHost::Instance` in `FlowCoordinator.cpp` | 1 | **0** |
 | `ShellHost::Instance` in `DeferredStartup.cpp` | 4 | **0** |
 | `ShellHost::Instance` in `ClientCompatController.cpp` | 2 | **0** |
-| Controllers with `Hub()` / `BindMessaging` | Shell, Chat, Contacts, Call, … | Contacts, PeoplePicker, ClientCompat, **Chat removed**; Call/Shell remain |
+| Controllers with `Hub()` / `BindMessaging` | Shell, Chat, Contacts, Call, … | **All presenters removed**; hub only in `Application` / `MessagingHub` |
 | ShellHost ↔ SettingsController cross-calls | yes (bidirectional) | **no** |
 
 Refresh with:

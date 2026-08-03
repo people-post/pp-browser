@@ -293,6 +293,21 @@ void ChatController::BindChatPorts(MessagingChatPorts ports) {
   chrome_.BindChatPorts(chat_ports_);
 }
 
+void ChatController::BindAgentPorts(AgentUiPorts ports) {
+  agent_ports_ = std::move(ports);
+}
+
+bool ChatController::AgentReady() const {
+  return agent_ports_.has_session && agent_ports_.has_session();
+}
+
+bool ChatController::AgentConfigured() const {
+  if (agent_ports_.snapshot) {
+    return agent_ports_.snapshot().configured;
+  }
+  return false;
+}
+
 void ChatController::BindShellSetup(ShellSetupPorts ports) {
   shell_setup_ = std::move(ports);
 }
@@ -1224,8 +1239,8 @@ void ChatController::OnNewChat() {
   chat_.loading = false;
   chat_.compose_disabled = false;
   pending_reply_.reset();
-  if (agent_) {
-    agent_->Cancel();
+  if (AgentReady() && agent_ports_.cancel) {
+    agent_ports_.cancel();
   }
   working_set_.ClearAll();
   widgets_.ClearAll();
@@ -1729,7 +1744,9 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
 
   log().info << "Submitting message to agent session";
-  agent_->Submit(trimmed, std::move(user_payload));
+  if (agent_ports_.submit) {
+    agent_ports_.submit(trimmed, std::move(user_payload));
+  }
 }
 
 void ChatController::SendChatAction(const std::string& entry_id, int action_index) {
@@ -1917,10 +1934,13 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;
     UserFeedback::NeedsSetup(event.message);
-    if (agent_ && !agent_->conversation().Entries().empty()) {
-      const TranscriptEntry& entry = agent_->conversation().Entries().back();
-      agent_->CompleteAssistantMessage(entry.id, event.message);
-      agent_->SetAssistantDisplay(entry.id, event.message, {});
+    if (AgentReady() && agent_ports_.has_conversation_entries && agent_ports_.has_conversation_entries() &&
+        agent_ports_.last_conversation_entry_id && agent_ports_.complete_assistant_message &&
+        agent_ports_.set_assistant_display_plain) {
+      if (auto entry_id = agent_ports_.last_conversation_entry_id()) {
+        agent_ports_.complete_assistant_message(*entry_id, event.message);
+        agent_ports_.set_assistant_display_plain(*entry_id, event.message);
+      }
       SyncDisplayFromThread();
       DirtyChatTurns();
     }
@@ -1995,7 +2015,7 @@ void ChatController::RefreshLlmSetupBanner() {
 }
 
 void ChatController::WireMessagingBindings() {
-  if (!MessagingInitialized() || !agent_) {
+  if (!MessagingInitialized() || !AgentReady()) {
     return;
   }
   // Identity / Brief key / push registration are only valid after vault unlock.
@@ -2004,9 +2024,13 @@ void ChatController::WireMessagingBindings() {
   }
   messaging_ready_ = true;
   if (IThreadStore* store = chat_ports_.thread_store ? chat_ports_.thread_store() : nullptr) {
-    agent_->SetThreadStore(store);
+    if (agent_ports_.set_thread_store) {
+      agent_ports_.set_thread_store(store);
+    }
   }
-  chat_ports_.bind_agent(*agent_);
+  if (chat_ports_.bind_agent && agent_ports_.with_session) {
+    agent_ports_.with_session([&](AgentSession& agent) { chat_ports_.bind_agent(agent); });
+  }
   chat_.compose_disabled = false;
   DirtyChatChrome();
   chat_ports_.set_on_messages_changed([this]() {
@@ -2129,8 +2153,7 @@ bool ChatController::Setup(Rml::Context* context) {
   shell_.sessions = {{Rml::String("Chat"), Rml::String("Ask anything...")}};
   pending_reply_.reset();
   use_llm_ = !config.llm.base_url.empty();
-  agent_.emplace();
-  StartupMark("chat_after_agent_emplace");
+  StartupMark("chat_after_agent_ports");
 
   if (MessagingInitialized()) {
     WireMessagingBindings();
@@ -2377,7 +2400,7 @@ ChatController::AgentConfig ChatController::ProjectAgent(const AppConfig& config
 void ChatController::Apply(const AgentConfig& config) {
   AgentConfig runtime = config;
   use_llm_ = !runtime.llm.base_url.empty();
-  if (!agent_) {
+  if (!AgentReady()) {
     return;
   }
 
@@ -2403,12 +2426,14 @@ void ChatController::Apply(const AgentConfig& config) {
     }
   }
 
-  if (!agent_->IsConfigured() || runtime != last_agent_runtime_) {
-    agent_->SetToolRegistrationHook([this](ToolRegistry& tools) {
-      if (MessagingInitialized() && chat_ports_.register_messaging_tools) {
-        chat_ports_.register_messaging_tools(tools);
-      }
-    });
+  if (!AgentConfigured() || runtime != last_agent_runtime_) {
+    if (agent_ports_.set_tool_registration_hook) {
+      agent_ports_.set_tool_registration_hook([this](ToolRegistry& tools) {
+        if (MessagingInitialized() && chat_ports_.register_messaging_tools) {
+          chat_ports_.register_messaging_tools(tools);
+        }
+      });
+    }
     AppConfig configure = Store().IsInitialized()
                               ? Store().Snapshot().config
                               : AppConfig{};
@@ -2418,7 +2443,9 @@ void ChatController::Apply(const AgentConfig& config) {
     configure.mcp_servers = runtime.mcp_servers;
     configure.search = runtime.search;
     configure.context = runtime.context;
-    agent_->Configure(configure);
+    if (agent_ports_.configure) {
+      agent_ports_.configure(configure);
+    }
     last_agent_runtime_ = std::move(runtime);
   }
 }
@@ -2428,8 +2455,8 @@ void ChatController::ReloadAgentConfig() {
 }
 
 void ChatController::OnApplicationPause() {
-  if (agent_) {
-    agent_->Cancel();
+  if (AgentReady() && agent_ports_.cancel) {
+    agent_ports_.cancel();
   }
   if (messaging_ready_) {
     chat_ports_.suspend_libp2p_cold_peers();
@@ -2453,9 +2480,9 @@ void ChatController::Update() {
     }
   }
 
-  if (agent_) {
+  if (AgentReady() && agent_ports_.poll_events) {
     std::vector<AgentEvent> events;
-    agent_->PollEvents(events);
+    agent_ports_.poll_events(events);
     for (const AgentEvent& event : events) {
       HandleAgentEvent(event);
     }
@@ -2494,13 +2521,16 @@ void ChatController::Shutdown() {
       chat_ports_.set_shared_ai_confirm_callback(nullptr);
     }
   }
-  if (agent_) {
+  if (AgentReady()) {
     StartupPhase phase("Shutdown::AgentSession");
-    agent_->Cancel();
+    if (agent_ports_.cancel) {
+      agent_ports_.cancel();
+    }
     // ConfigureOnIO may still be running (and used to touch MessagingHub via the
     // tool hook). Wait before Application tears the hub down.
-    agent_->WaitForConfigureIdle();
-    agent_.reset();
+    if (agent_ports_.wait_for_configure_idle) {
+      agent_ports_.wait_for_configure_idle();
+    }
   }
   // Hub + ProfileSecrets lifetime is owned by Application::ShutdownMessaging.
   messaging_ready_ = false;

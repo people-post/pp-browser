@@ -1,11 +1,11 @@
 #pragma once
 
-#include "feature/ai/AgentSession.h"
+#include "feature/messaging/AgentUiPorts.h"
+#include "feature/messaging/MessagingChatPorts.h"
 #include "feature/chat/ChatThreadChrome.h"
 #include "feature/chat/ChatTranscriptScroller.h"
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/chat/WorkingSetController.h"
-#include "feature/messaging/MessagingChatPorts.h"
 #include "feature/messaging/MessagingUiPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
@@ -82,6 +82,7 @@ public:
 
   bool Setup(Rml::Context* context);
   void BindChatPorts(MessagingChatPorts ports);
+  void BindAgentPorts(AgentUiPorts ports);
   void BindShellSetup(ShellSetupPorts ports);
   void BindSessionStore(SessionStore& store);
   void BindBadgeAggregator(BadgeAggregator& badges);
@@ -284,8 +285,12 @@ private:
   const TurnWidgetState* FindWidgetState(const std::string& entry_id) const;
   void ClearFormState();
 
+  bool AgentReady() const;
+  bool AgentConfigured() const;
+
   Rml::Context* context_ = nullptr;
   MessagingChatPorts chat_ports_;
+  AgentUiPorts agent_ports_;
   ShellSetupPorts shell_setup_;
   SessionStore* session_store_ = nullptr;
   BadgeAggregator* badges_ = nullptr;
@@ -297,7 +302,6 @@ private:
   MessagingUiPorts messaging_ui_;
   ChatState chat_;
   ShellState shell_;
-  std::optional<AgentSession> agent_;
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool messaging_ready_ = false;
