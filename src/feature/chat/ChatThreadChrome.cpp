@@ -24,9 +24,9 @@ void ChatThreadChrome::BindShellFeedback(ShellFeedbackPorts ports) {
 
 namespace {
 
-void ShellDirty(const ShellNavigationPorts& ports) {
-  if (ports.dirty_nav_chrome) {
-    ports.dirty_nav_chrome();
+void NotifySurfaceChanged(const std::function<void()>& notify) {
+  if (notify) {
+    notify();
   }
 }
 
@@ -407,7 +407,7 @@ void ChatThreadChrome::OnSyncWithPeer() {
       refresh_();
     }
     DirtyChatChrome();
-    ShellDirty(shell_navigation_);
+    NotifySurfaceChanged(notify_surface_changed_);
   });
 }
 
@@ -442,7 +442,7 @@ void ChatThreadChrome::OnRetryGapSync() {
       refresh_();
     }
     DirtyChatChrome();
-    ShellDirty(shell_navigation_);
+    NotifySurfaceChanged(notify_surface_changed_);
   });
 }
 
@@ -477,7 +477,7 @@ void ChatThreadChrome::OnStartNewSecureChat() {
             refresh_();
           }
           DirtyChatChrome();
-          ShellDirty(shell_navigation_);
+          NotifySurfaceChanged(notify_surface_changed_);
         });
   });
 }
@@ -502,7 +502,7 @@ void ChatThreadChrome::OnPauseIntegrityOnly() {
     refresh_();
   }
   DirtyChatHeader();
-  ShellDirty(shell_navigation_);
+  NotifySurfaceChanged(notify_surface_changed_);
 }
 
 void ChatThreadChrome::OnCopyPskKey() {
@@ -530,14 +530,14 @@ void ChatThreadChrome::OnCopyPskKey() {
     }
     view_.status = "Encryption key copied.";
     DirtyChatHeader();
-    ShellDirty(shell_navigation_);
+    NotifySurfaceChanged(notify_surface_changed_);
   });
 }
 
 void ChatThreadChrome::OnTogglePskImport() {
   view_.show_psk_import = !view_.show_psk_import;
   DirtyChatHeader();
-  ShellDirty(shell_navigation_);
+  NotifySurfaceChanged(notify_surface_changed_);
 }
 
 void ChatThreadChrome::OnImportPsk() {
@@ -584,7 +584,7 @@ void ChatThreadChrome::OnImportPsk() {
     refresh_();
   }
   DirtyChatHeader();
-  ShellDirty(shell_navigation_);
+  NotifySurfaceChanged(notify_surface_changed_);
 }
 
 void ChatThreadChrome::OnVerifyPsk() {
@@ -623,7 +623,7 @@ void ChatThreadChrome::OnVerifyPsk() {
           refresh_();
         }
         DirtyChatHeader();
-        ShellDirty(shell_navigation_);
+        NotifySurfaceChanged(notify_surface_changed_);
       });
 }
 
@@ -657,7 +657,7 @@ void ChatThreadChrome::OnRotatePskExport() {
         if (!bundle) {
           view_.status = bundle.error().message.c_str();
           DirtyChatChrome();
-          ShellDirty(shell_navigation_);
+          NotifySurfaceChanged(notify_surface_changed_);
           return;
         }
         if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
@@ -672,7 +672,7 @@ void ChatThreadChrome::OnRotatePskExport() {
           refresh_();
         }
         DirtyChatHeader();
-        ShellDirty(shell_navigation_);
+        NotifySurfaceChanged(notify_surface_changed_);
       });
 }
 

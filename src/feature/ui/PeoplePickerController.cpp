@@ -156,9 +156,19 @@ void PeoplePickerController::BindShellFeedback(ShellFeedbackPorts ports) {
   shell_feedback_ = std::move(ports);
 }
 
-void PeoplePickerController::ShellDirty() {
-  if (shell_navigation_.dirty_nav_chrome) {
-    shell_navigation_.dirty_nav_chrome();
+void PeoplePickerController::BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts ports) {
+  surface_notify_ = std::move(ports);
+}
+
+PeoplePickerSurfaceSnapshot PeoplePickerController::BuildSurfaceSnapshot() const {
+  PeoplePickerSurfaceSnapshot snap;
+  snap.overlay_open = layer_id_ >= 0;
+  return snap;
+}
+
+void PeoplePickerController::NotifySurfaceChanged() {
+  if (surface_notify_.push_surface) {
+    surface_notify_.push_surface(BuildSurfaceSnapshot());
   }
 }
 
@@ -222,7 +232,7 @@ void PeoplePickerController::OpenFree() {
 void PeoplePickerController::OpenFromDm(const std::string& locked_contact_id) {
   if (locked_contact_id.empty()) {
     UserFeedback::Fail("No contact for this chat");
-    ShellDirty();
+    NotifySurfaceChanged();
     return;
   }
   Open(PeoplePickerMode::FromDm, {locked_contact_id});
@@ -262,7 +272,7 @@ void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, cons
   spec.key = "people_picker";
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
@@ -289,13 +299,13 @@ void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
   spec.key = "people_picker";
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids) {
   if (!MessagingInitialized()) {
     UserFeedback::Fail("Messaging not ready");
-    ShellDirty();
+    NotifySurfaceChanged();
     return;
   }
 
@@ -326,7 +336,7 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
   spec.key = "people_picker";
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void PeoplePickerController::RegisterFlow() {
@@ -362,7 +372,7 @@ void PeoplePickerController::OnFlowDismissed() {
   layer_id_ = -1;
   ResetState();
   DirtyAll();
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void PeoplePickerController::ResetState() {
@@ -773,13 +783,13 @@ void PeoplePickerController::OnSearchChanged() {
 
 void PeoplePickerController::OnCancel() {
   Close();
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void PeoplePickerController::OnBack() {
   if (step_ == kStepName) {
     GoBackToSelect();
-    ShellDirty();
+    NotifySurfaceChanged();
   }
 }
 
@@ -805,7 +815,7 @@ void PeoplePickerController::OnConfirm() {
       return;
     }
     AdvanceToNameStep(ids);
-    ShellDirty();
+    NotifySurfaceChanged();
   }
 }
 
@@ -841,7 +851,7 @@ void PeoplePickerController::OnStartCall() {
   const std::string call_thread_id = call_thread_id_;
   const bool call_video = call_video_;
   Close();
-  ShellDirty();
+  NotifySurfaceChanged();
   if (mode == PeoplePickerMode::CallAddGuest) {
     call_->InviteIdentitiesToActiveCall(identities);
     return;
@@ -894,7 +904,7 @@ void PeoplePickerController::FinishOpenThread() {
   if (chat_ports_.finalize_thread_display) {
     chat_ports_.finalize_thread_display();
   }
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
@@ -904,7 +914,7 @@ void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
   unlock_gate_->EnsureUnlocked([this, contact_id](const bool unlocked) {
     if (!unlocked) {
       ShowToast(Tr("people_picker.pin_required"));
-      ShellDirty();
+      NotifySurfaceChanged();
       return;
     }
     auto contact = contacts_ports_.get_contact
@@ -918,7 +928,7 @@ void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
                       : Roe<Thread>::error(Error("contacts port unavailable"));
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
-      ShellDirty();
+      NotifySurfaceChanged();
       return;
     }
     if (contacts_ports_.ensure_psk_generated) {
@@ -940,14 +950,14 @@ void PeoplePickerController::CreateGroupWithTitle(const std::vector<std::string>
                                                 title = TrimTitle(std::move(title))](const bool unlocked) {
     if (!unlocked) {
       ShowToast(Tr("people_picker.pin_required"));
-      ShellDirty();
+      NotifySurfaceChanged();
       return;
     }
     auto thread = picker_ports_.create_group ? picker_ports_.create_group(title, member_contact_ids)
                                              : Roe<Thread>::error(Error("picker port unavailable"));
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
-      ShellDirty();
+      NotifySurfaceChanged();
       return;
     }
     FinishOpenThread();

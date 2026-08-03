@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/ui/ContactsSurfaceSnapshot.h"
+#include "feature/ui/ShellChromeOp.h"
 
 namespace pbr {
 
@@ -13,17 +14,11 @@ struct ContactsShellProjection {
   int contacts_unread = 0;
 };
 
-enum class ContactsChromeUpdate {
-  None,      // projection unchanged
-  DirtyNav,  // unread / nav-relevant binding change
-  SyncLayout // detail open/close structural chrome
-};
-
 /** Surface snapshot → shell projection (no ShellHost). */
 ContactsShellProjection ProjectContactsShell(const ContactsSurfaceSnapshot& surface);
 
 /** Pure gate: structural detail → SyncLayout; unread → DirtyNav. */
-ContactsChromeUpdate ClassifyContactsChromeUpdate(const ContactsShellProjection& synced,
-                                                  const ContactsShellProjection& next);
+ShellChromeOp ClassifyContactsChromeUpdate(const ContactsShellProjection& synced,
+                                           const ContactsShellProjection& next);
 
 } // namespace pbr

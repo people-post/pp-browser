@@ -13,7 +13,9 @@ pp_browser_add_feature_library(pp_feature_ui
     PinGateController.cpp
     ShellPinGatePorts.cpp
     ShellCallChromePorts.cpp
-    ShellContactsChromePorts.cpp
+    ShellChromeApplyPorts.cpp
+    ChatChromeSync.cpp
+    PeoplePickerChromeSync.cpp
     DeferredStartup.cpp
     ClientCompatController.cpp
     ProfileSettingsSection.cpp

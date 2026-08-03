@@ -10,7 +10,7 @@ namespace pbr {
 /** Unread totals for nav badges. Application computes from MessagingHub + shell. */
 struct BadgeUnreadInputs {
   int sessions_unread = 0;
-  /** Reserved for contacts-tab queues; always 0 until those exist. */
+/** Reserved for contacts-tab queues; fed from ContactsShellBridge when present. */
   int contacts_unread = 0;
 };
 

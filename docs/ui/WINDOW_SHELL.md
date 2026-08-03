@@ -102,11 +102,11 @@ Choose the lightest primitive that fits the user task:
 
 Do **not** pair `RequestSyncLayout` with an extra domain dirty — `SyncLayout` already calls `DirtyWindow()`.
 
-### Surface vs shell projection (contacts)
+### Surface vs shell projection
 
-Presenters keep **surface** state and **push a surface snapshot** upward (`ContactsSurfaceNotifyPorts`). An **app-owned bridge** (`ContactsShellBridge`) knows both the snapshot and `ShellHost`: it projects → classifies → applies `DirtyNav` / `SyncLayout`. Controllers must not call grab-bag `dirty_nav_chrome` / `DirtyWindow`. Toast/banner still use `ShellFeedbackPorts` (already `DirtyFeedback`).
+Presenters push a **surface snapshot** upward (`*SurfaceNotifyPorts`). An **app-owned bridge** (`ContactsShellBridge` / `ChatShellBridge` / `PeoplePickerShellBridge`) knows both the snapshot and `ShellHost`: it projects → classifies → applies `DirtyNav` / `SyncLayout` via `ShellChromeApplyPorts`. Controllers must not call grab-bag nav dirty. Toast/banner use `ShellFeedbackPorts` (already `DirtyFeedback`).
 
-Call chrome stays special-cased (`CallController` + `CallChromeSync`). Chat / people-picker still use `dirty_nav_chrome` in places — see [SHELL_CHROME_PROJECTION.md](../architecture/SHELL_CHROME_PROJECTION.md).
+Call chrome stays special-cased (`CallController` + `CallChromeSync`). See [SHELL_CHROME_PROJECTION.md](../architecture/SHELL_CHROME_PROJECTION.md).
 
 Call ring / in-call overlays live in `#shell-call-ring-mount` / `#shell-call-in-progress-mount`. `CallController` classifies changes and notifies ShellHost via `apply_chrome_update` — it does **not** call grab-bag `DirtyWindow`. Show/hide remounts **only those mounts** via `RemountCallChrome` — never remount the full shell tree for call chrome (that destroyed chat panes and broke Accept hit-testing on Samsung). Control *presence* (stage / retry / invite / speaker button / roster) also remounts. Mute / speaker / camera icon toggles use `DirtyCallChrome` + single SVG `data-attr-src` (and `--on` class) — not remount/bake, and not dual `data-if` SVGs. Meter/pulse/elapsed ticks use `DirtyCallChrome` only.
 

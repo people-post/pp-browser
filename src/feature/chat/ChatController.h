@@ -9,6 +9,7 @@
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/chat/WorkingSetController.h"
 #include "feature/messaging/MessagingUiPorts.h"
+#include "feature/ui/ChatSurfaceNotifyPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/ShellSetupPorts.h"
@@ -101,6 +102,8 @@ public:
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
+  /** Push surface snapshot to app ChatShellBridge. Clear via BindSurfaceNotify({}). */
+  void BindSurfaceNotify(ChatSurfaceNotifyPorts ports);
   void BindMessagingUi(MessagingUiPorts ports);
   SessionStore& Store();
   const SessionStore& Store() const;
@@ -270,7 +273,8 @@ private:
   const std::string& ActiveThreadId() const;
 
   ShellChromeSnapshot ChromeSnapshot() const;
-  void ShellDirty();
+  ChatSurfaceSnapshot BuildSurfaceSnapshot() const;
+  void NotifySurfaceChanged();
   void ShellSyncLayout(bool restore_focus_after = false);
   void ShellSelectNavTab(NavTab tab);
   void ShellSetPrimaryPane(const std::string& key);
@@ -309,6 +313,7 @@ private:
   ProfileUnlockGate* unlock_gate_ = nullptr;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
+  ChatSurfaceNotifyPorts surface_notify_;
   MessagingUiPorts messaging_ui_;
   ChatState chat_;
   ShellState shell_;

@@ -62,6 +62,8 @@ public:
   void BindChatPorts(MessagingChatPorts ports);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
+  /** App/chat controller fills: surface→shell notify (not dirty_nav). */
+  void SetNotifySurfaceChanged(std::function<void()> notify) { notify_surface_changed_ = std::move(notify); }
 
   void SetRefreshFromMessaging(std::function<void()> refresh) { refresh_ = std::move(refresh); }
   void SetWithSecrets(std::function<void(std::function<void()>)> with_secrets) {
@@ -104,6 +106,7 @@ public:
   MessagingChatPorts chat_ports_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
+  std::function<void()> notify_surface_changed_;
 
 };
 

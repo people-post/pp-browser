@@ -5,7 +5,7 @@
 TEST(ContactsChromeSyncTest, UnchangedIsNone) {
   const pbr::ContactsSurfaceSnapshot surface = {.detail_open = false, .contacts_unread = 0};
   const pbr::ContactsShellProjection layer = pbr::ProjectContactsShell(surface);
-  EXPECT_EQ(pbr::ClassifyContactsChromeUpdate(layer, layer), pbr::ContactsChromeUpdate::None);
+  EXPECT_EQ(pbr::ClassifyContactsChromeUpdate(layer, layer), pbr::ShellChromeOp::None);
 }
 
 TEST(ContactsChromeSyncTest, DetailOpenSyncsLayout) {
@@ -13,7 +13,7 @@ TEST(ContactsChromeSyncTest, DetailOpenSyncsLayout) {
       pbr::ProjectContactsShell({.detail_open = false, .contacts_unread = 0});
   const pbr::ContactsShellProjection next =
       pbr::ProjectContactsShell({.detail_open = true, .contacts_unread = 0});
-  EXPECT_EQ(pbr::ClassifyContactsChromeUpdate(synced, next), pbr::ContactsChromeUpdate::SyncLayout);
+  EXPECT_EQ(pbr::ClassifyContactsChromeUpdate(synced, next), pbr::ShellChromeOp::SyncLayout);
 }
 
 TEST(ContactsChromeSyncTest, DetailCloseSyncsLayout) {
@@ -21,7 +21,7 @@ TEST(ContactsChromeSyncTest, DetailCloseSyncsLayout) {
       pbr::ProjectContactsShell({.detail_open = true, .contacts_unread = 2});
   const pbr::ContactsShellProjection next =
       pbr::ProjectContactsShell({.detail_open = false, .contacts_unread = 2});
-  EXPECT_EQ(pbr::ClassifyContactsChromeUpdate(synced, next), pbr::ContactsChromeUpdate::SyncLayout);
+  EXPECT_EQ(pbr::ClassifyContactsChromeUpdate(synced, next), pbr::ShellChromeOp::SyncLayout);
 }
 
 TEST(ContactsChromeSyncTest, UnreadChangeDirtiesNav) {
@@ -29,7 +29,7 @@ TEST(ContactsChromeSyncTest, UnreadChangeDirtiesNav) {
       pbr::ProjectContactsShell({.detail_open = true, .contacts_unread = 0});
   const pbr::ContactsShellProjection next =
       pbr::ProjectContactsShell({.detail_open = true, .contacts_unread = 3});
-  EXPECT_EQ(pbr::ClassifyContactsChromeUpdate(synced, next), pbr::ContactsChromeUpdate::DirtyNav);
+  EXPECT_EQ(pbr::ClassifyContactsChromeUpdate(synced, next), pbr::ShellChromeOp::DirtyNav);
 }
 
 TEST(ContactsChromeSyncTest, DetailChangeWinsOverUnread) {
@@ -37,7 +37,7 @@ TEST(ContactsChromeSyncTest, DetailChangeWinsOverUnread) {
       pbr::ProjectContactsShell({.detail_open = false, .contacts_unread = 0});
   const pbr::ContactsShellProjection next =
       pbr::ProjectContactsShell({.detail_open = true, .contacts_unread = 5});
-  EXPECT_EQ(pbr::ClassifyContactsChromeUpdate(synced, next), pbr::ContactsChromeUpdate::SyncLayout);
+  EXPECT_EQ(pbr::ClassifyContactsChromeUpdate(synced, next), pbr::ShellChromeOp::SyncLayout);
 }
 
 TEST(ContactsChromeSyncTest, ProjectClampsNegativeUnread) {

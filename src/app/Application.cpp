@@ -33,9 +33,14 @@
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/SettingsCommands.h"
 #include "feature/ui/ChatSessionPorts.h"
+#include "app/ChatShellBridge.h"
 #include "app/ContactsShellBridge.h"
+#include "app/PeoplePickerShellBridge.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/ContactsNotifyPorts.h"
+#include "feature/ui/ChatSurfaceNotifyPorts.h"
+#include "feature/ui/PeoplePickerSurfaceNotifyPorts.h"
+#include "feature/ui/ShellChromeApplyPorts.h"
 #include "feature/ui/CallController.h"
 #include "feature/ui/BadgeAggregator.h"
 #include "feature/ui/ClientCompatController.h"
@@ -58,7 +63,6 @@
 #include "feature/messaging/MessagingPeoplePickerPorts.h"
 #include "feature/messaging/MessagingUiPorts.h"
 #include "feature/ui/ShellCallChromePorts.h"
-#include "feature/ui/ShellContactsChromePorts.h"
 #include "feature/ui/ShellPinGatePorts.h"
 #include "ElementCallVideoTile.h"
 #include "base/ui/Theme.h"
@@ -184,6 +188,8 @@ Application::Application() {
   contacts_ = std::make_unique<ContactsController>();
   ContactsController::InstallInstance(*contacts_);
   contacts_shell_bridge_ = std::make_unique<ContactsShellBridge>();
+  chat_shell_bridge_ = std::make_unique<ChatShellBridge>();
+  people_picker_shell_bridge_ = std::make_unique<PeoplePickerShellBridge>();
   people_picker_ = std::make_unique<PeoplePickerController>();
   PeoplePickerController::InstallInstance(*people_picker_);
   chat_ = std::make_unique<ChatController>();
@@ -507,7 +513,7 @@ bool Application::Initialize(const char* window_title) {
 
   contacts_->BindShellNavigation(shell_navigation);
   contacts_->BindShellFeedback(shared_feedback);
-  contacts_shell_bridge_->BindApply(MakeShellContactsChromePorts(shell));
+  contacts_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "contacts_chrome"));
   contacts_->BindSurfaceNotify(ContactsSurfaceNotifyPorts{
       .push_surface = [this](const ContactsSurfaceSnapshot& snap) {
         contacts_shell_bridge_->OnSurface(snap);
@@ -516,6 +522,10 @@ bool Application::Initialize(const char* window_title) {
 
   chat_->BindShellNavigation(shell_navigation);
   chat_->BindShellFeedback(shared_feedback);
+  chat_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "chat_chrome"));
+  chat_->BindSurfaceNotify(ChatSurfaceNotifyPorts{
+      .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
+  });
   chat_->BindShellSetup(MakeShellSetupPorts(shell));
   MessagingChatPorts messaging_chat_ports = MakeMessagingChatPorts(messaging);
   messaging_chat_ports.register_messaging_tools = [&messaging](ToolRegistry& tools) {
@@ -535,10 +545,16 @@ bool Application::Initialize(const char* window_title) {
   people_picker_->BindPickerPorts(MakeMessagingPeoplePickerPorts(messaging));
   people_picker_->BindShellNavigation(shell_navigation);
   people_picker_->BindShellFeedback(shared_feedback);
+  people_picker_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "people_picker_chrome"));
+  people_picker_->BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts{
+      .push_surface = [this](const PeoplePickerSurfaceSnapshot& snap) {
+        people_picker_shell_bridge_->OnSurface(snap);
+      },
+  });
   client_compat_->BindCompatPorts(MakeMessagingCompatPorts(messaging));
   client_compat_->BindShellFeedback(shared_feedback);
   badges_->BindShellNavigation(shell_navigation);
-  badges_->BindSource([&messaging, &shell]() {
+  badges_->BindSource([this, &messaging, &shell]() {
     BadgeUnreadInputs inputs;
     if (!messaging.IsInitialized()) {
       return inputs;
@@ -555,10 +571,10 @@ bool Application::Initialize(const char* window_title) {
         }
       }
     }
-    // Sessions owns aggregate chat unread. Contacts nav stays at 0 until a
-    // contacts-tab queue exists (intro requests, pending invites, etc.).
     inputs.sessions_unread = std::max(0, total - deduction);
-    inputs.contacts_unread = 0;
+    if (contacts_shell_bridge_) {
+      inputs.contacts_unread = std::max(0, contacts_shell_bridge_->LastSurface().contacts_unread);
+    }
     return inputs;
   });
   chat_->BindBadgeAggregator(*badges_);
@@ -673,6 +689,10 @@ bool Application::Initialize(const char* window_title) {
     contacts_->BindContactsPorts({});
     chat_->BindShellNavigation({});
     chat_->BindShellFeedback({});
+    chat_->BindSurfaceNotify({});
+    if (chat_shell_bridge_) {
+      chat_shell_bridge_->Clear();
+    }
     chat_->BindShellSetup({});
     chat_->BindChatPorts({});
     chat_->BindAgentPorts({});
@@ -685,6 +705,10 @@ bool Application::Initialize(const char* window_title) {
     people_picker_->BindChatPorts({});
     people_picker_->BindShellNavigation({});
     people_picker_->BindShellFeedback({});
+    people_picker_->BindSurfaceNotify({});
+    if (people_picker_shell_bridge_) {
+      people_picker_shell_bridge_->Clear();
+    }
     people_picker_->BindContactsPorts({});
     people_picker_->BindPickerPorts({});
     if (client_compat_) {
@@ -867,6 +891,10 @@ void Application::Shutdown() {
   contacts_->BindContactsPorts({});
   chat_->BindShellNavigation({});
   chat_->BindShellFeedback({});
+  chat_->BindSurfaceNotify({});
+  if (chat_shell_bridge_) {
+    chat_shell_bridge_->Clear();
+  }
   chat_->BindShellSetup({});
   chat_->BindChatPorts({});
   chat_->BindAgentPorts({});
@@ -879,6 +907,10 @@ void Application::Shutdown() {
   people_picker_->BindChatPorts({});
   people_picker_->BindShellNavigation({});
   people_picker_->BindShellFeedback({});
+  people_picker_->BindSurfaceNotify({});
+  if (people_picker_shell_bridge_) {
+    people_picker_shell_bridge_->Clear();
+  }
   people_picker_->BindContactsPorts({});
   people_picker_->BindPickerPorts({});
   if (client_compat_) {

@@ -5,6 +5,7 @@
 #include "feature/messaging/MessagingPeoplePickerPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/PeoplePickerLogic.h"
+#include "feature/ui/PeoplePickerSurfaceNotifyPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
 
@@ -48,6 +49,8 @@ public:
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
+  /** Push surface snapshot to app PeoplePickerShellBridge. */
+  void BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts ports);
 
   struct PickerRow {
     Rml::String id;
@@ -111,7 +114,8 @@ private:
   int FreeSelectedCount() const;
   std::string TitleForContactId(const std::string& contact_id) const;
   std::string TrimTitle(std::string title) const;
-  void ShellDirty();
+  PeoplePickerSurfaceSnapshot BuildSurfaceSnapshot() const;
+  void NotifySurfaceChanged();
   void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
   bool MessagingInitialized() const;
   bool MessagingReady() const;
@@ -140,6 +144,7 @@ private:
   ChatSessionPorts chat_ports_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
+  PeoplePickerSurfaceNotifyPorts surface_notify_;
   std::string call_thread_id_;
   std::string call_id_;
   bool call_video_ = false;

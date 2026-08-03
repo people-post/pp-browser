@@ -4,6 +4,8 @@ set(PP_BROWSER_APP_SOURCES
   Bootstrap.cpp
   ConfigApplyBridge.cpp
   ContactsShellBridge.cpp
+  ChatShellBridge.cpp
+  PeoplePickerShellBridge.cpp
 )
 
 if(ANDROID)

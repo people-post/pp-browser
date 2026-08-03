@@ -27,7 +27,6 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.set_activity = [&shell](const bool visible, const Rml::String& message) {
     shell.SetActivity(visible, message);
   };
-  navigation.dirty_nav_chrome = [&shell]() { shell.DirtyNavChrome(); };
   navigation.request_sync_layout = [&shell](const bool restore, const char* reason) {
     shell.RequestSyncLayout(restore, reason);
   };

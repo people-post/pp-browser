@@ -391,6 +391,15 @@ void ChatController::BindShellFeedback(ShellFeedbackPorts ports) {
   chrome_.BindShellFeedback(shell_feedback_);
 }
 
+void ChatController::BindSurfaceNotify(ChatSurfaceNotifyPorts ports) {
+  surface_notify_ = std::move(ports);
+  if (surface_notify_.push_surface) {
+    chrome_.SetNotifySurfaceChanged([this]() { NotifySurfaceChanged(); });
+  } else {
+    chrome_.SetNotifySurfaceChanged({});
+  }
+}
+
 void ChatController::BindMessagingUi(MessagingUiPorts ports) {
   messaging_ui_ = std::move(ports);
 }
@@ -399,9 +408,18 @@ ShellChromeSnapshot ChatController::ChromeSnapshot() const {
   return shell_navigation_.snapshot ? shell_navigation_.snapshot() : ShellChromeSnapshot{};
 }
 
-void ChatController::ShellDirty() {
-  if (shell_navigation_.dirty_nav_chrome) {
-    shell_navigation_.dirty_nav_chrome();
+ChatSurfaceSnapshot ChatController::BuildSurfaceSnapshot() const {
+  ChatSurfaceSnapshot snap;
+  snap.has_active_thread = !ActiveThreadId().empty();
+  if (badges_) {
+    snap.sessions_unread = badges_->State().sessions_unread;
+  }
+  return snap;
+}
+
+void ChatController::NotifySurfaceChanged() {
+  if (surface_notify_.push_surface) {
+    surface_notify_.push_surface(BuildSurfaceSnapshot());
   }
 }
 
@@ -695,7 +713,7 @@ void ChatController::OnHomeTabActivated() {
   ShellSetPrimaryPane("home");
   RefreshFromMessaging();
   ShellSyncLayout();
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void ChatController::OnSessionsTabActivated() {
@@ -722,7 +740,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
   auto finish_close = [this, thread_id]() {
     if (!chat_ports_.close_thread(thread_id)) {
       UserFeedback::Fail("Could not delete conversation");
-      ShellDirty();
+      NotifySurfaceChanged();
       return;
     }
     chat_.draft = "";
@@ -738,7 +756,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
       ShellCloseCompactChat();
     }
     ShellSyncLayout();
-    ShellDirty();
+    NotifySurfaceChanged();
   };
 
   auto dismiss_and_close = [this, finish_close](const std::string& group_id) {
@@ -858,7 +876,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                 [this, finish_close, group_id, successor]() {
                   if (auto left = chat_ports_.leave_as_owner(group_id, successor); !left) {
                     UserFeedback::Fail(left.error().message);
-                    ShellDirty();
+                    NotifySurfaceChanged();
                     return;
                   }
                   finish_close();
@@ -875,7 +893,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
               true,
           });
           ContextMenuHost::Instance().ShowActions(Rml::Vector2i(120, 120), std::move(actions));
-          ShellDirty();
+          NotifySurfaceChanged();
         });
     return;
   }
@@ -924,7 +942,7 @@ void ChatController::OnClearHistory() {
           pending_reply_.reset();
           widgets_.ClearAll();
           RefreshFromMessaging();
-          ShellDirty();
+          NotifySurfaceChanged();
         });
   } else {
     ShowConfirm(Tr("chat.clear_history"), message,
@@ -941,7 +959,7 @@ void ChatController::OnClearHistory() {
                                  pending_reply_.reset();
                                  widgets_.ClearAll();
                                  RefreshFromMessaging();
-                                 ShellDirty();
+                                 NotifySurfaceChanged();
                                });
   }
 }
@@ -964,7 +982,7 @@ void ChatController::OnForgetMemory() {
         if (!chat_ports_.forget_thread_memory(thread_id)) {
           return;
         }
-        ShellDirty();
+        NotifySurfaceChanged();
       });
 }
 
@@ -1014,7 +1032,7 @@ void ChatController::RefreshFromMessaging() {
   }
   DirtyChat();
   DirtyShell();
-  ShellDirty();
+  NotifySurfaceChanged();
   const NavBadgeState& badges = ChromeSnapshot().nav_badges;
   if (badges.sessions_unread != prev_sessions || badges.contacts_unread != prev_contacts) {
     ShellRemountNavRail();
@@ -1180,7 +1198,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
             if (!result) {
               log().warning << "Local action failed: " << result.error().message;
               ShowToast(result.error().message);
-              ShellDirty();
+              NotifySurfaceChanged();
               return;
             }
             if (*result) {
@@ -1198,7 +1216,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
                 ShellOpenCompactChat();
               }
             }
-            ShellDirty();
+            NotifySurfaceChanged();
           });
       return;
     }
@@ -1208,7 +1226,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       // HandleLocalAction → SendUserText → Route → HandleLocalAction until stack overflow.
       log().warning << "Local action failed: " << result.error().message;
       ShowToast(result.error().message);
-      ShellDirty();
+      NotifySurfaceChanged();
       return;
     }
     if (*result) {
@@ -1271,7 +1289,7 @@ void ChatController::OnNewChat() {
   ShellSetPrimaryPane("chat");
   focus_draft_after_sync_ = true;
   FinalizeThreadDisplay();
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void ChatController::OnNewMessage() {
@@ -1412,7 +1430,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
             auto created = chat_ports_.add_contact_from_directory_hit(hit);
             if (!created) {
               UserFeedback::Fail("Could not add contact");
-              ShellDirty();
+              NotifySurfaceChanged();
               return;
             }
             if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
@@ -1449,7 +1467,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
               system->SetClipboardText(peer_id.c_str());
             }
             ShowToast("ID copied");
-            ShellDirty();
+            NotifySurfaceChanged();
           },
           "../icons/copy.svg",
       });
@@ -1475,7 +1493,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                 if (auto saved = chat_ports_.set_thread_local_title(thread_id, value); !saved) {
                   UserFeedback::Fail(saved.error().message);
                 }
-                ShellDirty();
+                NotifySurfaceChanged();
               });
         },
         "../icons/message.svg",
@@ -1487,7 +1505,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           nullptr,
           [this, thread_id]() {
             (void)chat_ports_.set_thread_local_title(thread_id, "");
-            ShellDirty();
+            NotifySurfaceChanged();
           },
           "../icons/trash.svg",
       });
@@ -1520,7 +1538,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                   }
                   if (value.empty()) {
                     UserFeedback::Fail("Title required");
-                    ShellDirty();
+                    NotifySurfaceChanged();
                     return;
                   }
                   if (auto renamed = chat_ports_.rename_group_shared(group_id, value); !renamed) {
@@ -1528,7 +1546,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                   } else {
                     chat_ports_.notify_thread_changed();
                   }
-                  ShellDirty();
+                  NotifySurfaceChanged();
                 });
           },
           "../icons/group.svg",
@@ -1565,7 +1583,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                     } else {
                       chat_ports_.notify_thread_changed();
                     }
-                    ShellDirty();
+                    NotifySurfaceChanged();
                   });
             },
             "../icons/trash.svg",
@@ -1579,7 +1597,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           nullptr,
           [this]() {
             ShowToast("Only the owner can do that — see the note in the chat");
-            ShellDirty();
+            NotifySurfaceChanged();
           },
           "../icons/group.svg",
       });
@@ -1709,7 +1727,7 @@ bool ChatController::EnsureHomeOutboundSession() {
   ShellSelectNavTab(NavTab::Sessions);
   ShellSetPrimaryPane("chat");
   FinalizeThreadDisplay();
-  ShellDirty();
+  NotifySurfaceChanged();
   return true;
 }
 
@@ -1997,14 +2015,14 @@ void ChatController::WithSecrets(std::function<void()> action) {
   }
   if (unlock_gate_->IsUnlockInProgress()) {
     ShowToast(Tr("startup.still_preparing"));
-    ShellDirty();
+    NotifySurfaceChanged();
   }
   unlock_gate_->EnsureUnlocked(
       [this, action = std::move(action)](const bool unlocked) {
         if (!unlocked) {
           if (!unlock_gate_->IsUnlockInProgress()) {
             ShowToast("PIN required to continue");
-            ShellDirty();
+            NotifySurfaceChanged();
           }
           return;
         }
@@ -2077,7 +2095,7 @@ void ChatController::WireMessagingBindings() {
   });
   chat_ports_.set_on_delivery_notice([this](const std::string& message) {
     ShowToast(message);
-    ShellDirty();
+    NotifySurfaceChanged();
   });
   chat_ports_.set_on_background_unread(
       [this](std::string title, std::string body, std::string thread_id) {
@@ -2136,7 +2154,7 @@ void ChatController::WireMessagingBindings() {
   }
   chat_ports_.set_on_action_message([this](const std::string& message) {
     ShowToast(message);
-    ShellDirty();
+    NotifySurfaceChanged();
   });
   RefreshFromMessaging();
   chat_ports_.tail_sync_active_e2e_thread();
