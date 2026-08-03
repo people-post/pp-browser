@@ -1077,6 +1077,7 @@ Roe<void> MessagingHub::EnsureMessagingReady() {
   }
 
   messaging_ready_ = true;
+  StartCoordinatorTimers();
   NotifyMessagingReady();
   return {};
 }
@@ -1128,6 +1129,29 @@ void MessagingHub::TickLibp2p() {
   SyncMobileEphemeralListen();
   SyncLanMdnsAdvertisement();
   TickReachabilityUx();
+}
+
+namespace {
+
+constexpr auto kHubPolicyTimerInterval = std::chrono::seconds(1);
+
+} // namespace
+
+void MessagingHub::StartCoordinatorTimers() {
+  if (hub_policy_timer_id_ != 0) {
+    return;
+  }
+  hub_policy_timer_id_ = PlatformRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
+    TickLibp2p();
+  });
+}
+
+void MessagingHub::StopCoordinatorTimers() {
+  if (hub_policy_timer_id_ == 0) {
+    return;
+  }
+  PlatformRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
+  hub_policy_timer_id_ = 0;
 }
 
 ReachabilitySnapshot MessagingHub::Reachability() const {
@@ -1668,6 +1692,7 @@ void MessagingHub::Shutdown() {
   router_.reset();
   store_->Flush();
   contacts_->Flush();
+  StopCoordinatorTimers();
   if (messaging_ready_) {
     identity_->Flush();
   }

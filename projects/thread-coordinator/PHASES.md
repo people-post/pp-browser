@@ -88,18 +88,17 @@ Can proceed **in parallel** with [p2p-av-calls m2](../p2p-av-calls/PHASES.md) (W
 
 **Goal:** Single orchestration mailbox; move periodic policy off UI tick.
 
-- [ ] Add `CoordinatorThread` with mailbox (`CoordinatorMessage`: source, priority, fn)
-- [ ] Timer wheel: schedule relay poll (2s / 45s), peer idle sweep (~15s), deferred retries
-- [ ] Wire sources:
-  - UI intents → coordinator (thin posts from controllers / ports)
-  - libp2p stream events → coordinator (via existing service callbacks)
-  - `PushWakeJni` / `RequestWakeSync` → coordinator immediate message
-  - Linux notifier activations → coordinator
-  - Worker pool completions → coordinator
-- [ ] Move policy from `MessagingHub::TickLibp2p` into coordinator handlers (UI tick calls thin `Coordinator::PumpTimers` or coordinator owns wall clock)
-- [ ] Remove or gut `BackgroundSyncScheduler::Tick` from UI frame path
+- [x] Add `CoordinatorThread` with mailbox (`CoordinatorPriority`: Critical / Normal / Background)
+- [x] Timer wheel: `ScheduleRepeating` / `ScheduleOneShot` / `CancelTimer`
+- [x] Expose via `PlatformRuntime`: `PostCoordinator`, `ScheduleCoordinatorRepeating`, etc.
+- [x] `ThreadRuntime` starts/stops coordinator with worker pool
+- [x] Relay poll (2s / 45s) on coordinator via `BackgroundSyncScheduler` (wake → `PostCoordinatorCritical`)
+- [x] `MessagingHub` hub policy (peer sweep, mDNS, reachability) on 1s coordinator timer
+- [x] Remove `BackgroundSyncScheduler::Tick` from UI frame; remove `MessagingHub::TickLibp2p` from `Application::Run`
+- [ ] Wire all sources (notifier activations, worker completions → coordinator) — partial; push wake done
+- [ ] Linux notifier activations → coordinator — deferred
 
-**Exit criteria:** Relay poll and peer sweep run from coordinator timer wheel; UI frame no longer drives sync policy.
+**Exit criteria:** Relay poll and peer sweep run from coordinator timer wheel; UI frame no longer drives sync policy. **Done** (notifier → coordinator deferred).
 
 ---
 
@@ -137,6 +136,7 @@ Can proceed **in parallel** with [p2p-av-calls m2](../p2p-av-calls/PHASES.md) (W
 
 | Date | Change |
 |------|--------|
+| 2026-08-03 | Phase t4: `CoordinatorThread` + timer wheel; relay poll + hub policy off UI tick |
 | 2026-08-03 | Phase t3: messaging hop-offs on `PlatformRuntime::PostWorker` |
 | 2026-08-03 | Phase t2: libp2p integration hop-offs on `WorkerPool` |
 | 2026-08-03 | Phase t1: `WorkerPool` in `src/common/` with unit tests |

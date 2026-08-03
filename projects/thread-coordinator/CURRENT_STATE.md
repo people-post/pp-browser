@@ -8,24 +8,25 @@
 |-----------|----------|-------|
 | UI sequenced runner | `BrowserThread::UI`, `SequencedTaskRunner(false)` | Inline drain on main |
 | App IO thread | `BrowserThread::IO`, `SequencedTaskRunner(true)` | Named `pp-browser-io` on Linux/Android |
-| **PlatformRuntime (t3.5)** | `src/base/platform/PlatformRuntime.*` | Unified facade: `PostWorker`, `PostUI`, `Paths()`, `EnsurePlatformServices`; owns `ThreadRuntime` + `WorkerDispatch` |
-| **Worker pool (t1–t2)** | `WorkerPool` via `PlatformRuntime` | libp2p integration hop-offs via `PostLibp2pWorker`; **0** `.detach()` in `libp2p/integration/host/` |
+| **PlatformRuntime (t3.5)** | `src/base/platform/PlatformRuntime.*` | Unified facade: `PostWorker`, `PostUI`, `PostCoordinator`, timer APIs |
+| **Worker pool (t1–t3)** | `WorkerPool` via `PlatformRuntime` | libp2p + messaging hop-offs; **0** `.detach()` in integration + messaging |
+| **Coordinator (t4)** | `CoordinatorThread` via `PlatformRuntime` | Priority mailbox + timer wheel; relay poll + hub policy |
 | libp2p reactor | `Libp2pHost::io_thread_` | asio `io_context::run()`; borrows app pool (private pool in unit tests) |
+| Relay poll | `BackgroundSyncScheduler` | 2s / 45s on coordinator timer; wake → `PostCoordinatorCritical` |
+| Hub periodic policy | `MessagingHub` | 1s coordinator timer: peer sweep, mDNS, reachability UX |
 | UI wake | `Backend::WakeEventLoop`, `BrowserThread::SetUIWakeCallback` | SDL user event |
 | IO pause/resume | `BrowserThread::PauseIO` / `ResumeIO` | AppLifecycle, AgentSession, BackgroundSyncScheduler |
 | Hop-off threads | **0** `.detach()` in `feature/messaging/` (t3) | libp2p fork `cares.cpp` still detached |
-| UI-tick polling | `BackgroundSyncScheduler::Tick`, `MessagingHub::TickLibp2p` | Not yet on coordinator timer wheel |
-| Linux notifier watch | `LocalNotifier_Linux.cpp` | Dedicated joinable thread |
+| Linux notifier watch | `LocalNotifier_Linux.cpp` | Dedicated joinable thread (not yet posting to coordinator) |
 
 ## Not started
 
-- `CoordinatorThread` / mailbox / timer wheel
-- Migration of messaging/call hop-offs to shared pool (t3)
-- Coordinator-owned relay poll / peer idle scheduling
-- Deprecation of `BrowserThread::IO` dedicated thread (merged into coordinator + pool)
+- Linux notifier activations → coordinator mailbox
+- Worker pool completions → coordinator (optional orchestration)
+- Deprecation of `BrowserThread::IO` dedicated thread (t5)
 
 ## Next agent — start here
 
 1. Read [THREADING.md](../../docs/architecture/THREADING.md) target section.
-2. Pick [PHASES.md § Phase t4](PHASES.md#phase-t4--coordinatorthread--timer-wheel).
-3. Do not remove Browser IO until t5; app pool is live in production via `ThreadRuntime`.
+2. Pick [PHASES.md § Phase t5](PHASES.md#phase-t5--merge-browserthreadio-into-coordinator--pool).
+3. Do not remove Browser IO until t5; coordinator + pool are live in production via `ThreadRuntime`.

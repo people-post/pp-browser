@@ -31,7 +31,8 @@ Two sequenced task runners plus separate libp2p IO and many hop-off threads:
 | **App IO queue** | `BrowserThread::IO` → `SequencedTaskRunner(true)`, name `pp-browser-io` | Yes |
 | **libp2p reactor** | `Libp2pHost` → `boost::asio::io_context::run()` | Yes |
 | **Hop-offs** | `PlatformRuntime::PostWorker` | Integration + messaging migrated (t2–t3); libp2p fork `cares.cpp` still detached |
-| **UI tick policy** | `MessagingHub::TickLibp2p`, `BackgroundSyncScheduler::Tick` | Main thread, not a dedicated watcher |
+| **Coordinator** | `CoordinatorThread` via `PlatformRuntime` | Priority mailbox + timer wheel (t4); relay poll + hub policy |
+| **Periodic policy** | Coordinator timer wheel | Relay poll 2s/45s; hub policy 1s; peer idle sweep ~15s (internal) |
 
 ### Steady-state thread budget (typical desktop, messaging on, no call)
 
@@ -43,8 +44,8 @@ During an active call on the legacy WebRTC path, add capture/video/ringtone thre
 
 - **UI** owns RmlUi and controller mutations. Post via `BrowserThread::PostTask(UI, …)`; `WakeEventLoop()` breaks power-save waits.
 - **Browser IO** runs sync libcurl (30s timeout), LLM/tools, most relay orchestration. `PostTaskAndReply` / `PostTaskFront` for IO → UI.
-- **libp2p IO** stays non-blocking; integration services hop to detached workers, then post results.
-- **`MessagingHub::TickLibp2p`** runs from `Application::Run` when messaging is ready.
+- **libp2p IO** stays non-blocking; integration services hop to worker pool, then post results.
+- **Coordinator** owns relay poll cadence and hub periodic policy (peer sweep, mDNS, reachability UX).
 - **Pause/resume:** `AppLifecycle` and `AgentSession` may `BrowserThread::PauseIO` / `ResumeIO`.
 
 ### Known debt
@@ -88,8 +89,8 @@ flowchart TB
 |---|------|----------------|-------------------|----------------|
 | **1** | **UI thread** | `Application` main loop | No | SDL events, RmlUi layout/render, presenter binding updates, drain UI mailbox |
 | **2** | **libp2p reactor** | `Libp2pHost` | No | `io_context::run()`, inbound streams, outbound posts via `Libp2pHost::Post()`, host-native timers |
-| **3** | **Coordinator** | `CoordinatorThread` (TBD) | **No** — dispatcher only | Single FIFO/priority mailbox; timer wheel; messaging/call/sync **policy**; posts work to pool; posts UI updates |
-| **4** | **Worker pool** | `WorkerPool` (TBD) | **Yes** — only here | libcurl HTTP, UPnP, Argon2, long SQLite writes, protocol stream copy loops, LLM HTTP |
+| **3** | **Coordinator** | `CoordinatorThread` | **No** — dispatcher only | Single FIFO/priority mailbox; timer wheel; messaging/call/sync **policy**; posts work to pool; posts UI updates |
+| **4** | **Worker pool** | `WorkerPool` | **Yes** — only here | libcurl HTTP, UPnP, Argon2, long SQLite writes, protocol stream copy loops, LLM HTTP |
 | **5** | **Platform I/O** | `ILocalNotifier` impls | Platform-specific | Linux: D-Bus watch thread (unchanged pattern). Android: JNI callbacks → coordinator mailbox |
 
 **Call media** stays **outside** the general pool: 1–2 dedicated threads per active call (capture / video encode) — jitter-sensitive, real-time.

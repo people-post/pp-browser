@@ -7,13 +7,15 @@
 
 namespace pbr {
 
+class CoordinatorThread;
+
 struct ThreadRuntimeConfig {
   size_t worker_pool_threads = WorkerPool::kDefaultThreadCount;
 };
 
 /**
- * Application-owned thread budget: worker pool today; coordinator thread in t4.
- * Start from the composition root (Application, pp-node); subsystems borrow Workers().
+ * Application-owned thread budget: worker pool + coordinator thread.
+ * Start from the composition root (Application, pp-node); subsystems borrow via PlatformRuntime.
  */
 class ThreadRuntime {
 public:
@@ -31,12 +33,16 @@ public:
   WorkerPool& Workers();
   const WorkerPool& Workers() const;
 
+  CoordinatorThread& Coordinator();
+  const CoordinatorThread& Coordinator() const;
+
   void PauseWorkers();
   void ResumeWorkers();
 
 private:
   bool running_ = false;
   std::unique_ptr<WorkerPool> worker_pool_;
+  std::unique_ptr<CoordinatorThread> coordinator_;
 };
 
 } // namespace pbr

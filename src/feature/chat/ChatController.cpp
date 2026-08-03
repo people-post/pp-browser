@@ -2499,7 +2499,6 @@ void ChatController::Update() {
 
   if (messaging_ready_) {
     if (MessagingReady()) {
-      BackgroundSyncScheduler::Instance().Tick();
       const auto now = std::chrono::steady_clock::now();
       if (chrome_.MaybePollPeerLink(now)) {
         DirtyChatHeader();

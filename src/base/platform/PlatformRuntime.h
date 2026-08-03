@@ -1,9 +1,12 @@
 #pragma once
 
+#include "base/platform/CoordinatorThread.h"
 #include "common/WorkerDispatch.h"
 #include "common/WorkerPool.h"
 
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 
@@ -61,6 +64,16 @@ public:
 
   static void PauseWorkers();
   static void ResumeWorkers();
+
+  // --- Coordinator (orchestration mailbox + timer wheel) ---
+  static void PostCoordinator(CoordinatorPriority priority, std::function<void()> task);
+  static void PostCoordinatorCritical(std::function<void()> task);
+  static void PostCoordinatorNormal(std::function<void()> task);
+  static void PostCoordinatorBackground(std::function<void()> task);
+  static uint64_t ScheduleCoordinatorRepeating(std::chrono::milliseconds interval,
+                                               std::function<void()> fn);
+  static uint64_t ScheduleCoordinatorOneShot(std::chrono::milliseconds delay, std::function<void()> fn);
+  static void CancelCoordinatorTimer(uint64_t timer_id);
 
   // --- Platform capabilities ---
   static IPathProvider& Paths();

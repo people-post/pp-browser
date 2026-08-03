@@ -791,9 +791,6 @@ void Application::Run() {
       contacts_->Tick();
     }
     call_->Tick();
-    if (Messaging().IsMessagingReady()) {
-      Messaging().TickLibp2p();
-    }
     chat_->Update();
     ContextMenuHost::Instance().Update();
     shell_->Update(context);

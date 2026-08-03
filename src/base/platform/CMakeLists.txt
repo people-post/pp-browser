@@ -8,6 +8,7 @@ set(_pp_platform_core_sources
   EnvCredentialStore.cpp
   ExecutablePath.cpp
   ThreadRuntime.cpp
+  CoordinatorThread.cpp
   PlatformRuntime.cpp
   os/OsFile_Posix.cpp
   os/OsTime_Posix.cpp
