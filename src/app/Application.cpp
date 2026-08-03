@@ -16,6 +16,7 @@
 #include "base/ui/ContextMenuHost.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
+#include "feature/chat/MessagingTools.h"
 #include "base/platform/BrowserThread.h"
 #include "base/platform/IAssetLocator.h"
 #include "base/platform/ILocalNotifier.h"
@@ -26,6 +27,7 @@
 #include "base/platform/MobileWindowSizing.h"
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
+#include "feature/messaging/MessagingChatPorts.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/SettingsCommands.h"
 #include "feature/ui/ChatSessionPorts.h"
@@ -42,6 +44,7 @@
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellHost.h"
+#include "feature/ui/ShellSetupPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/UserFeedback.h"
 #include "feature/messaging/MessagingCompatPorts.h"
@@ -480,6 +483,12 @@ bool Application::Initialize(const char* window_title) {
 
   ChatController::Instance().BindShellNavigation(shell_navigation);
   ChatController::Instance().BindShellFeedback(shared_feedback);
+  ChatController::Instance().BindShellSetup(MakeShellSetupPorts(shell));
+  MessagingChatPorts messaging_chat_ports = MakeMessagingChatPorts(messaging);
+  messaging_chat_ports.register_messaging_tools = [&messaging](ToolRegistry& tools) {
+    RegisterMessagingTools(tools, messaging);
+  };
+  ChatController::Instance().BindChatPorts(std::move(messaging_chat_ports));
   MessagingUiPorts messaging_ui;
   messaging_ui.snapshot = [&messaging]() { return ProjectMessagingView(messaging); };
   ChatController::Instance().BindMessagingUi(std::move(messaging_ui));
@@ -574,7 +583,7 @@ bool Application::Initialize(const char* window_title) {
 
   if (![&] {
         StartupPhase phase("SetupChatController");
-        return SetupChatController(context, messaging);
+        return SetupChatController(context);
       }()) {
     log().error << "SetupChatController failed";
     SettingsController::Instance().BindCommands({});
@@ -585,6 +594,8 @@ bool Application::Initialize(const char* window_title) {
     ContactsController::Instance().BindContactsPorts({});
     ChatController::Instance().BindShellNavigation({});
     ChatController::Instance().BindShellFeedback({});
+    ChatController::Instance().BindShellSetup({});
+    ChatController::Instance().BindChatPorts({});
     ChatController::Instance().BindMessagingUi({});
     UserFeedback::BindPorts({});
     ShellFeedback::BindChromePorts({});
@@ -731,7 +742,8 @@ void Application::Run() {
         StartupMark("first_present");
         logged_first_present = true;
         BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-          OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_, shell_navigation);
+          OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_,
+                                        MakeShellNavigationPorts(ShellHost::Instance()));
         });
       }
       skip_log_countdown = 0;
@@ -757,6 +769,8 @@ void Application::Shutdown() {
   ContactsController::Instance().BindContactsPorts({});
   ChatController::Instance().BindShellNavigation({});
   ChatController::Instance().BindShellFeedback({});
+  ChatController::Instance().BindShellSetup({});
+  ChatController::Instance().BindChatPorts({});
   ChatController::Instance().BindMessagingUi({});
   UserFeedback::BindPorts({});
   ShellFeedback::BindChromePorts({});

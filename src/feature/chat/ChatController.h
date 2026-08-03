@@ -5,10 +5,11 @@
 #include "feature/chat/ChatTranscriptScroller.h"
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/chat/WorkingSetController.h"
-#include "feature/messaging/MessagingHub.h"
+#include "feature/messaging/MessagingChatPorts.h"
 #include "feature/messaging/MessagingUiPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
+#include "feature/ui/ShellSetupPorts.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
@@ -79,8 +80,9 @@ public:
 
   using SessionRow = SessionDisplayRow;
 
-  bool Setup(Rml::Context* context, MessagingHub& messaging);
-  void BindMessaging(MessagingHub& messaging);
+  bool Setup(Rml::Context* context);
+  void BindChatPorts(MessagingChatPorts ports);
+  void BindShellSetup(ShellSetupPorts ports);
   void BindSessionStore(SessionStore& store);
   void BindBadgeAggregator(BadgeAggregator& badges);
   void BindInputCoordinator(InputCoordinator& input);
@@ -89,8 +91,6 @@ public:
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
   void BindMessagingUi(MessagingUiPorts ports);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
   SessionStore& Store();
   const SessionStore& Store() const;
   void Update();
@@ -103,12 +103,14 @@ public:
   void OnSessionsTabActivated();
   void OnFindSomeone();
   void OnSelectThread(const std::string& thread_id);
-  /** Rebind to MessagingHub after a full profile data wipe/reinit. */
+  /** Rebind messaging ports after a full profile data wipe/reinit. */
   void OnProfileDataReset();
-  /** Called when MessagingHub becomes messaging-ready (app-wired). */
+  /** Called when messaging becomes ready (app-wired). */
   void OnMessagingReady();
   /** Re-read agent LLM config (e.g. after Brief API key register/rotate). */
   void ReloadAgentConfig();
+  /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
+  void OnShellLayoutSynced();
 
 private:
   struct ChatState {
@@ -243,7 +245,6 @@ private:
   void HandleAgentEvent(const AgentEvent& event);
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload);
   void RefreshFromMessaging();
-  void OnShellLayoutSynced();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
   void OnMessagesScroll();
@@ -254,6 +255,10 @@ private:
   /** Show/clear LLM setup banners once identity is readable (after unlock). */
   void RefreshLlmSetupBanner();
   void WithSecrets(std::function<void()> action);
+
+  bool MessagingInitialized() const;
+  bool MessagingReady() const;
+  const std::string& ActiveThreadId() const;
 
   ShellChromeSnapshot ChromeSnapshot() const;
   void ShellDirty();
@@ -280,7 +285,8 @@ private:
   void ClearFormState();
 
   Rml::Context* context_ = nullptr;
-  MessagingHub* messaging_ = nullptr;
+  MessagingChatPorts chat_ports_;
+  ShellSetupPorts shell_setup_;
   SessionStore* session_store_ = nullptr;
   BadgeAggregator* badges_ = nullptr;
   InputCoordinator* input_ = nullptr;
@@ -303,7 +309,7 @@ private:
   bool focus_draft_after_sync_ = false;
 };
 
-bool SetupChatController(Rml::Context* context, MessagingHub& messaging);
+bool SetupChatController(Rml::Context* context);
 void UpdateChatController();
 void AfterLayoutChatController();
 void ShutdownChatController();

@@ -23,6 +23,7 @@
 #include "base/ui/ShellTypes.h"
 
 #include <RmlUi/Core/Context.h>
+#include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/SystemInterface.h>
@@ -492,10 +493,11 @@ void ContactsController::SyncFromStore() {
   const std::string query = search_query_.c_str();
   Roe<std::vector<Contact>> stored = query.empty()
                                           ? (contacts_ports_.list_contacts ? contacts_ports_.list_contacts()
-                                                                           : Roe<std::vector<Contact>>())
+                                                                           : Roe<std::vector<Contact>>::error(
+                                                                                 Error("contacts port unavailable")))
                                           : (contacts_ports_.search_contacts
                                                  ? contacts_ports_.search_contacts(query)
-                                                 : Roe<std::vector<Contact>>());
+                                                 : Roe<std::vector<Contact>>::error(Error("contacts port unavailable")));
   if (!stored) {
     return;
   }

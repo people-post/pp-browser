@@ -29,6 +29,7 @@ struct ShellFeedback {
   static void DialogCancel(ShellState& state);
 
 private:
+  static void SyncDialogChrome(const char* reason);
   static ShellFeedbackChromePorts chrome_ports_;
 };
 

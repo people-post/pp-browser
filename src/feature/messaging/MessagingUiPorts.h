@@ -12,7 +12,7 @@ struct MessagingView {
   std::string active_thread_id;
 };
 
-inline MessagingView ProjectMessagingView(const MessagingHub& hub) {
+inline MessagingView ProjectMessagingView(MessagingHub& hub) {
   MessagingView view;
   view.initialized = hub.IsInitialized();
   view.messaging_ready = hub.IsMessagingReady();

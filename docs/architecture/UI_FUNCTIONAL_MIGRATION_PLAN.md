@@ -5,7 +5,7 @@
 > **Architecture reference (permanent):** [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)
 
 **Last updated:** 2026-08-03  
-**Status:** Phase 5 complete; Phase 6 partial (contacts + people-picker + client-compat off Hub); Phase 7 partial
+**Status:** Phase 5 complete; Phase 6 partial (chat off Hub via MessagingChatPorts; call/shell remain)
 
 ---
 
@@ -21,8 +21,8 @@
 ## Success criteria (global)
 
 - [ ] No functional module writes `ShellHost::State()` or calls another presenter `::Instance()`.
-- [x] Settings, contacts, people-picker, and client-compat have no `BindMessaging` / `Hub()` on controllers.
-- [ ] Chat and shell reach messaging only via facades or app-wired ports.
+- [x] Settings, contacts, people-picker, client-compat, and **chat** have no `BindMessaging` / `Hub()` on controllers.
+- [ ] Chat and shell reach messaging only via facades or app-wired ports. — **chat done**; shell/call still bind hub directly
 - [ ] New features follow State / Config / Actions / Events from [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md).
 - [ ] `scripts/check_feature_includes.sh` and existing tests pass after each phase.
 - [ ] This file deleted.
@@ -71,14 +71,14 @@
 
 - [ ] Define `ChatActions` (hub imperative ops without `Hub()` on presenter surface) — deferred to Phase 6 facade
 - [x] `ContactsController` uses `ShellNavigationPorts` + `ShellFeedbackPorts` (zero `ShellHost::Instance()`)
-- [x] `ChatController` + `ChatThreadChrome` use shell ports for nav/feedback (Setup bootstrap only still touches `ShellHost`)
+- [x] `ChatController` + sub-presenters use shell ports for nav/feedback; Setup bootstrap uses `ShellSetupPorts`
 - [x] Define `ShellFeedbackPorts` + `ShellFeedbackChromePorts` — toast, banner, dismiss, confirm, prompt
 - [x] Wire feedback + navigation ports in `Application.cpp`; clear via `Bind*({})` on shutdown
 - [x] Settings / contacts / chat confirm dialogs use `ShellFeedbackPorts`
 - [x] `PeoplePickerController` shell nav + feedback ports (layers via extended `ShellNavigationPorts`)
 - [ ] RmlUi callbacks → presenter method → port (no `Hub()` in callback path) — hub still used for messaging ops on chat/call/picker
 
-**Exit check:** Feedback helpers do not call `ShellHost::Instance()` — **done**. Contacts shell decoupling — **done**. Chat shell/feedback — **done** (except Setup bootstrap).
+**Exit check:** Feedback helpers do not call `ShellHost::Instance()` — **done**. Contacts shell decoupling — **done**. Chat shell/feedback + Setup bootstrap — **done** (`ShellSetupPorts`).
 
 ---
 
@@ -131,10 +131,10 @@
 - [x] `WorkingSetController` auxiliary pane via `ShellNavigationPorts`
 - [x] `PeoplePickerController` layers/nav/toast via shell ports
 - [x] Remaining: ~~`FlowCoordinator`, `DeferredStartup`, `ClientCompatController`~~ — done via shell ports
-- [ ] ChatController Setup bootstrap still touches `ShellHost` (RegisterPane, fonts_ready) — accept until ShellSetupPorts
+- [x] ChatController Setup bootstrap — `ShellSetupPorts` (Initialize, fonts_ready, RegisterPane, Update, SyncLayout)
 - [ ] Document remaining **UI-owned** fields in `ShellState` vs presenter-private state
 
-**Exit check:** Grep `ShellHost::Instance()` from `feature/chat/ChatController.cpp` — **Setup bootstrap only** (~10 lines). All other feature presenters decoupled.
+**Exit check:** Grep `ShellHost::Instance()` from `feature/chat/ChatController.cpp` — **0**. All feature presenters decoupled from shell singleton.
 
 **Notes:** `ShellPinGatePorts`, `ShellCallChromePorts`; extended `ShellNavigationPorts` with badges, auxiliary, layers, `fonts_ready`. `FlowCoordinator` uses `close_layer` port; `DeferredStartup` receives navigation ports from Application.
 
@@ -148,17 +148,20 @@
 
 - [x] Introduce `MessagingContactsPorts` + `MakeMessagingContactsPorts` (contacts State + Actions)
 - [x] Introduce `MessagingPeoplePickerPorts` + `MessagingCompatPorts` (narrow hub slices)
-- [ ] Introduce full `MessagingFacade` / `MessagingChatPorts` for chat / shell / call
-- [ ] `Application` owns hub; facade holds reference or pointer to hub internals
+- [x] Introduce `MessagingChatPorts` + `MakeMessagingChatPorts` for chat / inbox / P2P / groups / router
+- [x] Introduce `ShellSetupPorts` for chat Setup bootstrap (pane registration, initial layout)
+- [ ] Introduce full `MessagingFacade` umbrella (optional consolidation of port structs)
+- [ ] `Application` owns hub; facade holds reference or pointer to hub internals — **partial** (ports wired in Application)
 - [x] Remove `BindMessaging` / `Hub()` from **contacts** controller
 - [x] Remove `BindMessaging` / `Hub()` from **people-picker** controller
 - [x] Remove `BindMessaging` / `Hub()` from **client-compat** controller
-- [ ] Remove `BindMessaging` / `Hub()` from chat, shell, call
-- [ ] Migrate call sites incrementally (chat first, then shell reachability badges)
+- [x] Remove `BindMessaging` / `Hub()` from **chat** controller (+ `ChatThreadChrome`, `ChatTranscriptScroller`)
+- [ ] Remove `BindMessaging` / `Hub()` from shell, call
+- [ ] Migrate call sites incrementally (call next, then shell reachability badges)
 
-**Exit check:** No `MessagingHub& Hub()` on **ContactsController**, **PeoplePickerController**, **ClientCompatController** — **done**.
+**Exit check:** No `MessagingHub& Hub()` on **ContactsController**, **PeoplePickerController**, **ClientCompatController**, **ChatController** — **done**.
 
-**Notes:** `MessagingContactsPorts.h`, `MessagingPeoplePickerPorts.h`, `MessagingCompatPorts.h` in `feature/messaging/`.
+**Notes:** `MessagingContactsPorts.h`, `MessagingPeoplePickerPorts.h`, `MessagingCompatPorts.h`, `MessagingChatPorts.h`, `ShellSetupPorts.h` in feature layer; `RegisterMessagingTools` wired from `Application.cpp` (composition root).
 
 ---
 
@@ -215,13 +218,13 @@ Record before/after when starting each phase:
 
 | Metric | Baseline | Current |
 |--------|----------|---------|
-| `ShellHost::Instance` call sites (src, non-test) | ~290 | **~43** (app root + Chat Setup bootstrap + ShellHost internals) |
+| `ShellHost::Instance` call sites (src, non-test) | ~290 | **~32** (app root + ShellHost internals) |
 | `ChatController::Instance` call sites | ~70 | ~70 |
 | `SettingsController::Instance` in `ShellHost.cpp` | 3 | **0** |
 | `ShellHost::Instance` in `SettingsController.cpp` | ~34 | **0** |
 | `ShellHost::Instance` in `ContactsController.cpp` | ~30 | **0** |
-| `ShellHost::Instance` in `ChatController.cpp` (non-Setup) | ~99 | **0** |
-| `ShellHost::Instance` in `ChatController.cpp` (Setup bootstrap) | — | ~10 |
+| `ShellHost::Instance` in `ChatController.cpp` | ~99 | **0** |
+| `ShellHost::Instance` in `ChatController.cpp` (Setup bootstrap) | ~10 | **0** (`ShellSetupPorts`) |
 | `ShellHost::Instance` in `PinGateController.cpp` | ~15 | **0** |
 | `ShellHost::Instance` in `CallController.cpp` | ~12 | **0** |
 | `ShellHost::Instance` in `BadgeAggregator.cpp` | 1 | **0** |
@@ -230,7 +233,7 @@ Record before/after when starting each phase:
 | `ShellHost::Instance` in `FlowCoordinator.cpp` | 1 | **0** |
 | `ShellHost::Instance` in `DeferredStartup.cpp` | 4 | **0** |
 | `ShellHost::Instance` in `ClientCompatController.cpp` | 2 | **0** |
-| Controllers with `Hub()` / `BindMessaging` | Shell, Chat, Contacts, Call, … | Contacts, PeoplePicker, ClientCompat **removed**; Chat/Call/Shell remain |
+| Controllers with `Hub()` / `BindMessaging` | Shell, Chat, Contacts, Call, … | Contacts, PeoplePicker, ClientCompat, **Chat removed**; Call/Shell remain |
 | ShellHost ↔ SettingsController cross-calls | yes (bidirectional) | **no** |
 
 Refresh with:

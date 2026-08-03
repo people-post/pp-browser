@@ -895,13 +895,15 @@ void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
       ShellDirty();
       return;
     }
-    auto contact = contacts_ports_.get_contact ? contacts_ports_.get_contact(contact_id) : Roe<std::optional<Contact>>();
+    auto contact = contacts_ports_.get_contact
+                       ? contacts_ports_.get_contact(contact_id)
+                       : Roe<std::optional<Contact>>::error(Error("contacts port unavailable"));
     if (contact && *contact && contacts_ports_.register_contact_direct_endpoints) {
       contacts_ports_.register_contact_direct_endpoints(**contact);
     }
     auto thread = contacts_ports_.find_or_create_direct_thread
                       ? contacts_ports_.find_or_create_direct_thread(contact_id, ThreadChannel::E2e)
-                      : Roe<Thread>();
+                      : Roe<Thread>::error(Error("contacts port unavailable"));
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
       ShellDirty();
@@ -929,7 +931,8 @@ void PeoplePickerController::CreateGroupWithTitle(const std::vector<std::string>
       ShellDirty();
       return;
     }
-    auto thread = picker_ports_.create_group ? picker_ports_.create_group(title, member_contact_ids) : Roe<Thread>();
+    auto thread = picker_ports_.create_group ? picker_ports_.create_group(title, member_contact_ids)
+                                             : Roe<Thread>::error(Error("picker port unavailable"));
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
       ShellDirty();
