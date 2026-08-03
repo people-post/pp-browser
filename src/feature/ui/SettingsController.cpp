@@ -131,7 +131,8 @@ SettingsController::SettingsController() {
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     section_handlers_by_id_[handler->Id()] = handler.get();
   }
-  InitSections();
+  // Section titles use Tr(); catalogs load later in Application::Initialize.
+  // Application calls RefreshLocalizedChrome() after LoadFromAssets + BindCommands.
 }
 
 void SettingsController::BindCommands(SettingsCommands commands) {

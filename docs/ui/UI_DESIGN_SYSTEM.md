@@ -64,12 +64,16 @@ Font family: `LatoLatin` everywhere.
 
 ## Touch targets
 
-Minimum **44dp** height/width on compact layout for:
+Minimum **44dp** height/width for:
 
 - `.shell-toolbar-btn`
-- `.sidebar-session` (increased from 36dp)
-- `.sidebar-new-chat` (44dp); `.prompt-send-btn` (32dp)
+- `.sidebar-new-chat` / `.contacts-find-btn` (32dp); `.prompt-send-btn` (32dp)
 - Primary action buttons in composer and forms
+
+List rows used as primary navigation use a larger **56dp** min-height (finger-friendly on phones and tablets):
+
+- `.sidebar-session`
+- `.contacts-row` / `.contacts-thread-row`
 
 ## Semantic color tokens
 

@@ -490,6 +490,9 @@ bool Application::Initialize(const char* window_title) {
     return view;
   };
   settings_->BindCommands(std::move(settings_commands));
+  // SettingsController is constructed before locale catalogs load; rebuild Tr()-backed
+  // preference row titles/subtitles (and other localized labels) now that catalogs exist.
+  settings_->RefreshLocalizedChrome();
 
   ShellHost& shell = *shell_;
   const ShellNavigationPorts shell_navigation = MakeShellNavigationPorts(shell);

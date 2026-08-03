@@ -1935,13 +1935,13 @@ call-video-tile {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
+  width: 32dp;
+  height: 32dp;
+  min-width: 32dp;
   margin-bottom: 0;
   padding: 0;
   border: 0;
-  border-radius: 22dp;
+  border-radius: 16dp;
   font-family: LatoLatin;
   cursor: pointer;
 }
@@ -1960,9 +1960,9 @@ call-video-tile {
   display: flex;
   flex-direction: row;
   align-items: center;
-  min-height: 44dp;
+  min-height: 56dp;
   margin-bottom: 4dp;
-  padding: 0 4dp 0 8dp;
+  padding: 8dp 4dp 8dp 8dp;
   border-radius: 6dp;
   box-sizing: border-box;
   cursor: pointer;
@@ -2498,13 +2498,13 @@ call-video-tile {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
+  width: 32dp;
+  height: 32dp;
+  min-width: 32dp;
   margin-bottom: 0;
   padding: 0;
   border: 0;
-  border-radius: 22dp;
+  border-radius: 16dp;
   font-family: LatoLatin;
   cursor: pointer;
 }
@@ -2533,9 +2533,9 @@ call-video-tile {
   display: flex;
   flex-direction: row;
   align-items: center;
-  min-height: 44dp;
+  min-height: 56dp;
   margin-bottom: 4dp;
-  padding: 6dp 8dp;
+  padding: 10dp 8dp;
   border-radius: 6dp;
   box-sizing: border-box;
   cursor: pointer;

@@ -3,7 +3,7 @@
     <p class="sidebar-header-title">Sessions</p>
     <div class="sidebar-header-actions row">
       <button class="sidebar-new-chat" type="button" data-event-click="open_new_session_menu()">
-        <svg src="../icons/plus.svg" width="18" height="18" crop-to-content="true"></svg>
+        <svg src="../icons/plus.svg" width="14" height="14" crop-to-content="true"></svg>
       </button>
     </div>
   </div>

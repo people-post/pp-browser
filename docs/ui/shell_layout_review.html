@@ -487,9 +487,9 @@
       color: var(--text-heading);
     }
     .fab {
-      width: 44px;
-      height: 44px;
-      border-radius: 22px;
+      width: 32px;
+      height: 32px;
+      border-radius: 16px;
       background: var(--accent);
       color: #fff;
       display: flex;
@@ -500,9 +500,9 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      min-height: 44px;
+      min-height: 56px;
       margin-bottom: 4px;
-      padding: 0 8px;
+      padding: 8px;
       border-radius: 6px;
       background: var(--surface-elevated);
       border: 1px solid var(--border-subtle);
@@ -554,9 +554,11 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      min-height: 56px;
       padding: 10px 8px;
       border-radius: 8px;
       margin-bottom: 2px;
+      box-sizing: border-box;
     }
     .contact-row.active {
       background: #eef2ff;
@@ -1529,7 +1531,7 @@
       if (el.classList.contains("icon-14")) return "icon icon-14";
       if (el.classList.contains("prompt-send") || el.classList.contains("more-btn")) return "icon icon-14";
       if (el.classList.contains("fab") || el.classList.contains("back-btn") || el.classList.contains("profile-btn")) {
-        return "icon icon-18";
+        return "icon icon-14";
       }
       return "icon icon-18";
     }
@@ -1581,7 +1583,7 @@
       return `<div class="list-panel">
         <div class="list-header">
           <p class="list-header-title">Sessions</p>
-          <button class="fab">${iconHtml("plus", "icon icon-18")}</button>
+          <button class="fab">${iconHtml("plus", "icon icon-14")}</button>
         </div>
         <div class="grow" style="overflow:auto">
           ${rows.map((r) => `
@@ -1603,7 +1605,7 @@
       return `<div class="list-panel">
         <div class="list-header">
           <p class="list-header-title">Contacts</p>
-          <button class="fab">${iconHtml("plus", "icon icon-18")}</button>
+          <button class="fab">${iconHtml("plus", "icon icon-14")}</button>
         </div>
         <div class="search-field">Search contacts</div>
         <div class="grow" style="overflow:auto">
