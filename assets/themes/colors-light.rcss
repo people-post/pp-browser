@@ -658,12 +658,12 @@ select selectbox option:hover {
 }
 
 .shell-call-mute--on {
-  background-color: #fef3c7;
-  color: #92400e;
+  background-color: #e8eaed;
+  color: #1a1a1a;
 }
 
 .shell-call-mute--on svg {
-  image-color: #92400e;
+  image-color: #1a1a1a;
 }
 
 .shell-call-camera {
@@ -676,12 +676,12 @@ select selectbox option:hover {
 }
 
 .shell-call-camera--on {
-  background-color: #dbeafe;
-  color: #1e40af;
+  background-color: #e8eaed;
+  color: #1a1a1a;
 }
 
 .shell-call-camera--on svg {
-  image-color: #1e40af;
+  image-color: #1a1a1a;
 }
 
 .shell-call-speaker {
