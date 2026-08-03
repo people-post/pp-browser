@@ -694,7 +694,14 @@ select selectbox option {
   bottom: 0;
   padding: 0;
   margin: 0;
+  box-sizing: border-box;
   /* Corner rounding is macOS-native (CALayer), not RCSS — see WINDOW_SHELL.md. */
+}
+
+/* Desktop borderless window: draw a 1dp frame so the OS chrome is not missed.
+   Hidden while maximized (edge-to-edge). */
+.shell-body--framed {
+  border-width: 1dp;
 }
 
 .shell-titlebar {

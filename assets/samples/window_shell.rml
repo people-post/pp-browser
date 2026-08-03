@@ -6,7 +6,7 @@
   <link type="text/rcss" href="../themes/colors-light.rcss"/>
   <link type="text/rcss" href="../themes/colors-dark.rcss"/>
 </head>
-<body data-model="window" class="shell-body">
+<body data-model="window" class="shell-body" data-class-shell-body--framed="titlebar_visible && !window_maximized">
   <div id="shell-titlebar" class="shell-titlebar" data-if="titlebar_visible">
     <div id="shell-titlebar-controls" class="shell-titlebar-controls shell-titlebar-controls--traffic" data-if="titlebar_traffic_lights">
       <button class="shell-titlebar-btn shell-titlebar-btn--traffic shell-titlebar-btn--traffic-close" type="button" data-event-click="titlebar_close()">

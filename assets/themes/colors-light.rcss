@@ -282,6 +282,10 @@ select selectbox option:hover {
   color: #888888;
 }
 
+.shell-body--framed {
+  border-color: #d1d5db;
+}
+
 .shell-titlebar {
   background-color: #f8f9fb;
   border-bottom-color: #e5e7eb;
