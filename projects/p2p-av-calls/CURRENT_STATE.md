@@ -41,7 +41,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 - [x] Bidirectional voice (no connect banner; audible both ways)
 - [x] Leave → `Idle` (process stays up)
 
-Filter: `adb logcat -s pp-browser:W` — `CallLifecycle`, `CallLibp2pMediaBridge`, `CallMediaDirect`, `Mobile ephemeral listen`.
+Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARNING, so lifecycle / call-media / ephemeral-listen **info** traces still appear.
 
 **Implementation notes (call-media):**
 

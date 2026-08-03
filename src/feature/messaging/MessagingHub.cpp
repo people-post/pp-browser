@@ -399,7 +399,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
         mobile_ephemeral_start_inflight_ = false;
         mobile_ephemeral_start_inflight_at_ms_ = 0;
       } else {
-        log().warning << "Mobile ephemeral listen start deferred (inflight start="
+        log().info << "Mobile ephemeral listen start deferred (inflight start="
                       << (mobile_ephemeral_start_inflight_ ? 1 : 0)
                       << " stop=" << (mobile_ephemeral_stop_inflight_ ? 1 : 0) << ")";
         return;
@@ -413,7 +413,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
     }
     mobile_ephemeral_start_inflight_ = true;
     mobile_ephemeral_start_inflight_at_ms_ = util::NowUnixMs();
-    log().warning << "Mobile ephemeral listen begin (async N025)";
+    log().info << "Mobile ephemeral listen begin (async N025)";
     node_runtime_->StartEphemeralListenAsync([this](Roe<void> started) {
       // Libp2p io thread. Clear inflight on UI immediately — never wait for Browser IO Wire
       // (Samsung: listen succeeded but "started" never logged while PollInbox held IO).
@@ -431,7 +431,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
           return;
         }
         mobile_ephemeral_last_start_error_.clear();
-        log().warning << "Mobile ephemeral listen started (N025) bound=" << bound;
+        log().info << "Mobile ephemeral listen started (N025) bound=" << bound;
       });
       if (!started) {
         return;
@@ -485,7 +485,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
                        " node=" + (gate.node_runtime_running ? "1" : "0");
     if (skip != last_skip) {
       last_skip = skip;
-      log().warning << "Mobile ephemeral listen not started (" << skip << ")";
+      log().info << "Mobile ephemeral listen not started (" << skip << ")";
     }
   }
 
@@ -510,7 +510,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
         BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
           mobile_ephemeral_stop_inflight_ = false;
           mobile_ephemeral_last_start_error_.clear();
-          log().warning << "Mobile ephemeral listen stopped";
+          log().info << "Mobile ephemeral listen stopped";
         });
       };
       if (node_runtime_ && node_runtime_->EphemeralListenActive()) {
@@ -597,7 +597,7 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
     if (sessions == nullptr) {
       return;
     }
-    log().warning << "LAN mDNS discovered peer=" << peer.peer_id_base58 << " ma=" << *ma;
+    log().info << "LAN mDNS discovered peer=" << peer.peer_id_base58 << " ma=" << *ma;
     (void)sessions->UpsertBookEntry(peer.peer_id_base58, *ma, PeerAddrSource::Mdns);
     (void)sessions->RegisterEndpoint(peer.peer_id_base58, *ma);
     sessions->ClearDialBackoff(peer.peer_id_base58);
@@ -623,7 +623,7 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
           if (p2p_) {
             p2p_->RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
           }
-          log().warning << "LAN mDNS dial alias peer=" << peer.peer_id_base58
+          log().info << "LAN mDNS dial alias peer=" << peer.peer_id_base58
                         << " dial_key=" << target.peer_identity_value;
         }
       }
@@ -686,7 +686,7 @@ void MessagingHub::WireCallMediaRelayDeps() {
       libp2p_bridge_bound_sessions_ = call_sessions_.get();
       EnsureCallLifecycleBound();
       call_libp2p_bridge_->SetLifecycle(call_lifecycle_.get());
-      log().warning << "CallLibp2pMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0) << ")";
+      log().info << "CallLibp2pMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0) << ")";
     } else {
       call_libp2p_bridge_->SetReachDeps(dial_registry_.get(), circuit_hop_reach_.get());
       if (call_lifecycle_) {

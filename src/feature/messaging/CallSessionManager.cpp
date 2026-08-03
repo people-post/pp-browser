@@ -56,7 +56,7 @@ void CallSessionManager::SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge) {
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
   if (libp2p_bridge_) {
-    log().warning << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
+    log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
                   << " call_id=" << call_id << " peer=" << peer_identity;
     if (offerer) {
       libp2p_bridge_->ScheduleStartMediaAsOfferer(call_id, peer_identity);
@@ -65,7 +65,7 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
     }
     return;
   }
-  log().warning << "ScheduleStartDirectMedia legacy-webrtc role=" << (offerer ? "offerer" : "answerer")
+  log().info << "ScheduleStartDirectMedia legacy-webrtc role=" << (offerer ? "offerer" : "answerer")
                 << " call_id=" << call_id;
   if (offerer) {
     p2p_bridge_.ScheduleStartMediaAsOfferer(call_id, peer_identity);
@@ -551,13 +551,13 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   if (auto sent = SendCallDirectMessage(invitee_identity, CallControlType::CallInvite, *detail, display); !sent) {
     return sent;
   }
-  log().warning << "CallInvite sent call_id=" << call_id << " peer=" << invitee_identity
+  log().info << "CallInvite sent call_id=" << call_id << " peer=" << invitee_identity
                 << " media_key_embedded=" << (invite.wrapped_key_b64.empty() ? 0 : 1);
   return {};
 }
 
 Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
-  log().warning << "AcceptInvite start call_id=" << call_id;
+  log().info << "AcceptInvite start call_id=" << call_id;
   auto local = LocalRelayIdentity();
   if (!local) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << local.error().message;
@@ -669,7 +669,7 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
     PrefetchReachForIdentity(prefetch_reach_, accept_inviter);
   });
 
-  log().warning << "AcceptInvite end call_id=" << call_id << " ok";
+  log().info << "AcceptInvite end call_id=" << call_id << " ok";
   return {};
 }
 
@@ -1115,7 +1115,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     // Near-live invite: re-arm ring TTL from local receipt (skew-safe). Relay-age gate already
     // dropped long-backlogged inbox rows when create/now samples were present.
     if (CallSessionLogic::IsInviteExpired(*invite, now)) {
-      log().warning << "CallInvite past wire expires_at; re-arming locally call_id=" << invite->call_id
+      log().info << "CallInvite past wire expires_at; re-arming locally call_id=" << invite->call_id
                     << " expires_at=" << (invite->expires_at ? std::to_string(*invite->expires_at) : "none")
                     << " now=" << now;
     }
@@ -1154,7 +1154,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
                                                          session.media_epoch, invite->media_key_id);
         if (unwrapped) {
           if (auto put = media_keys_.PutEpochKey(invite->call_id, session.media_epoch, *unwrapped); put) {
-            log().warning << "CallInvite embedded media key stored call_id=" << invite->call_id
+            log().info << "CallInvite embedded media key stored call_id=" << invite->call_id
                           << " epoch=" << session.media_epoch;
             if (libp2p_bridge_) {
               libp2p_bridge_->OnMediaKeyReady(invite->call_id);
@@ -1216,7 +1216,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       return accept.error();
     }
     const std::string identity = accept->identity.empty() ? sender_identity : accept->identity;
-    log().warning << "Inbound CallAccept call_id=" << accept->call_id << " from=" << identity;
+    log().info << "Inbound CallAccept call_id=" << accept->call_id << " from=" << identity;
     CallParticipant participant;
     participant.call_id = accept->call_id;
     participant.identity = identity;
@@ -1243,7 +1243,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
           log().warning << "CallMediaKey send failed call_id=" << accept->call_id
                         << " peer=" << identity << " err=" << keyed.error().message;
         } else {
-          log().warning << "CallMediaKey sent call_id=" << accept->call_id << " peer=" << identity
+          log().info << "CallMediaKey sent call_id=" << accept->call_id << " peer=" << identity
                         << " epoch=" << epoch;
         }
       } else {
@@ -1379,7 +1379,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (!key) {
       return key.error();
     }
-    log().warning << "Inbound CallMediaKey call_id=" << key->call_id << " epoch=" << key->media_epoch
+    log().info << "Inbound CallMediaKey call_id=" << key->call_id << " epoch=" << key->media_epoch
                   << " from=" << sender_identity;
     auto session = sessions_.LoadSession(key->call_id);
     if (session && session->has_value()) {
@@ -1536,7 +1536,7 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
     log().warning << "P2pResendMediaKey send failed call_id=" << call_id << " err=" << sent.error().message;
     return;
   }
-  log().warning << "P2pResendMediaKey sent call_id=" << call_id << " peer=" << peer_identity
+  log().info << "P2pResendMediaKey sent call_id=" << call_id << " peer=" << peer_identity
                 << " epoch=" << epoch;
 }
 

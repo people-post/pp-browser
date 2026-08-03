@@ -121,7 +121,7 @@ void CallLifecycle::SetPhase(const CallPhase next, const std::string& call_id, c
     call_id_.clear();
     accepting_call_id_.clear();
   }
-  log().warning << "phase=" << CallPhaseName(prev) << "->" << CallPhaseName(next)
+  log().info << "phase=" << CallPhaseName(prev) << "->" << CallPhaseName(next)
                 << " event=" << CallLifecycleEventName(ev) << " call_id=" << call_id_;
   UpdateListenDesire();
 }
@@ -135,7 +135,7 @@ void CallLifecycle::UpdateListenDesire() {
     return;
   }
   want_ephemeral_listen_ = want;
-  log().warning << "WantEphemeralListen=" << (want ? 1 : 0) << " phase=" << CallPhaseName(phase_);
+  log().info << "WantEphemeralListen=" << (want ? 1 : 0) << " phase=" << CallPhaseName(phase_);
   if (on_listen_desire_) {
     on_listen_desire_(want);
   }
@@ -162,7 +162,7 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
   // Never Browser IO — AcceptInvite was starved behind PollInbox on Samsung (queued, no IO enter).
   // Same escape hatch as offerer Connect worker / call-control MediaKey send.
   PlatformRuntime::PostWorkerCritical([this, sessions, call_id]() {
-    logging::getLogger("CallLifecycle").warning << "AcceptInvite worker enter call_id=" << call_id;
+    logging::getLogger("CallLifecycle").info << "AcceptInvite worker enter call_id=" << call_id;
     Roe<void> accepted = Error("Calls unavailable");
     if (sessions) {
       accepted = sessions->AcceptInvite(call_id);
@@ -174,7 +174,7 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
         Apply(CallLifecycleEvent::AcceptFailed, call_id);
         return;
       }
-      log().warning << "AcceptInvite ok call_id=" << call_id;
+      log().info << "AcceptInvite ok call_id=" << call_id;
       Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
     });
   });
@@ -273,11 +273,11 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
       call_id = last_ring_call_id_;
     }
     if (call_id.empty()) {
-      log().warning << "AcceptClicked ignored (no call_id)";
+      log().info << "AcceptClicked ignored (no call_id)";
       return;
     }
     if (!accepting_call_id_.empty() && accepting_call_id_ == call_id) {
-      log().warning << "AcceptClicked already in flight call_id=" << call_id;
+      log().info << "AcceptClicked already in flight call_id=" << call_id;
       NotifyChrome();
       return;
     }
@@ -286,7 +286,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
     SetPhase(CallPhase::Accepting, call_id, ev);
     // Queue AcceptInvite on IO before chrome refresh — NotifyChrome/RefreshPendingRing
     // must not gate session work (Samsung: mDNS advertise lock hung UI before this ran).
-    log().warning << "PostAcceptInvite queued call_id=" << call_id;
+    log().info << "PostAcceptInvite queued call_id=" << call_id;
     PostAcceptInvite(call_id);
     // Defer chrome refresh so the Accept click returns before ring teardown / DirtyWindow.
     if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
@@ -302,7 +302,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
       call_id = last_ring_call_id_;
     }
     if (call_id.empty()) {
-      log().warning << "DeclineClicked ignored (no call_id)";
+      log().info << "DeclineClicked ignored (no call_id)";
       return;
     }
     SetPhase(CallPhase::Idle, {}, ev);
@@ -312,7 +312,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
 
   case CallLifecycleEvent::LeaveClicked:
     if (call_id.empty()) {
-      log().warning << "LeaveClicked ignored (no call_id)";
+      log().info << "LeaveClicked ignored (no call_id)";
       return;
     }
     SetPhase(CallPhase::Idle, {}, ev);
@@ -322,7 +322,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
 
   case CallLifecycleEvent::RetryClicked:
     if (call_id.empty() || phase_ != CallPhase::ConnectFailed) {
-      log().warning << "RetryClicked ignored phase=" << CallPhaseName(phase_);
+      log().info << "RetryClicked ignored phase=" << CallPhaseName(phase_);
       return;
     }
     PostRetryMedia(call_id);

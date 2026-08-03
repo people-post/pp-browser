@@ -996,7 +996,7 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
       return;
     }
     if (prefer_relay) {
-      log().warning << "Relay Send ok (call-control) message_id=" << message_id
+      log().info << "Relay Send ok (call-control) message_id=" << message_id
                     << " peer=" << peer_relay_id;
     }
     ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay, tried_direct);
@@ -1311,7 +1311,7 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
       auto messages = std::move(poll->messages);
       const std::string local_relay_id = identity->relay_user_id;
       if (!messages.empty()) {
-        log().warning << "PollInbox ok n=" << messages.size()
+        log().info << "PollInbox ok n=" << messages.size()
                       << " cursor_advanced=" << (next_cursor.empty() ? 0 : 1);
       }
 

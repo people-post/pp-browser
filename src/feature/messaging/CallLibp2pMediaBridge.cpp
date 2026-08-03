@@ -32,7 +32,7 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSes
   redirectLogger("CallLibp2pMediaBridge");
 
   direct_.SetInboundHandler([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
-    log().warning << "Inbound call-media hello call_id=" << params.call_id
+    log().info << "Inbound call-media hello call_id=" << params.call_id
                   << " epoch=" << params.media_epoch;
     auto session = sessions_.LoadSession(params.call_id);
     if (!session || !session->has_value()) {
@@ -58,12 +58,12 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSes
       std::this_thread::sleep_for(std::chrono::milliseconds(250));
     }
     if (params.media_key.empty()) {
-      log().warning << "Inbound call-media hello before media key call_id=" << params.call_id;
+      log().info << "Inbound call-media hello before media key call_id=" << params.call_id;
     }
     const std::string call_id = params.call_id;
     cbs.on_connected = [this, call_id]() {
       BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
-        log().warning << "Inbound call-media connected call_id=" << call_id;
+        log().info << "Inbound call-media connected call_id=" << call_id;
         if (media_.IsActive() && media_.ActiveCallId() == call_id) {
           media_.SetConnectionState("connected");
           ClearLibp2pConnectFailed();
@@ -181,7 +181,7 @@ Roe<void> CallLibp2pMediaBridge::EnsurePeerReachableOnIo(const std::string& peer
       return Error("call-media aborted");
     }
     if (dial_->IsDialable(peer_identity)) {
-      log().warning << "Call-media peer dialable peer=" << peer_identity;
+      log().info << "Call-media peer dialable peer=" << peer_identity;
       return {};
     }
     if (circuit_reach_) {
@@ -191,7 +191,7 @@ Roe<void> CallLibp2pMediaBridge::EnsurePeerReachableOnIo(const std::string& peer
         return Error("call-media aborted");
       }
       if (via_circuit) {
-        log().warning << "Call-media peer reachable via circuit peer=" << peer_identity;
+        log().info << "Call-media peer reachable via circuit peer=" << peer_identity;
         return {};
       }
       last_error = via_circuit.error();
@@ -215,7 +215,7 @@ Roe<void> CallLibp2pMediaBridge::ConnectOffererWithRetry(const CallMediaDirectCo
                                                          const CallMediaDirectCallbacks& cbs) {
   const uint64_t gen = connect_generation_.load(std::memory_order_acquire);
   if (direct_.IsActive()) {
-    log().warning << "Call-media already active (peer dialed us) call_id=" << params.call_id;
+    log().info << "Call-media already active (peer dialed us) call_id=" << params.call_id;
     return {};
   }
 
@@ -237,18 +237,18 @@ Roe<void> CallLibp2pMediaBridge::ConnectOffererWithRetry(const CallMediaDirectCo
   Error last_error("call-media connect failed");
   for (int attempt = 1; attempt <= kConnectAttempts; ++attempt) {
     if (connect_generation_.load(std::memory_order_acquire) != gen) {
-      log().warning << "Call-media Connect aborted call_id=" << params.call_id;
+      log().info << "Call-media Connect aborted call_id=" << params.call_id;
       return Error("call-media aborted");
     }
     if (direct_.IsActive()) {
-      log().warning << "Call-media already active mid-retry call_id=" << params.call_id;
+      log().info << "Call-media already active mid-retry call_id=" << params.call_id;
       return {};
     }
     if (dial_) {
       dial_->AbortInflightDial(params.peer_key);
       dial_->ClearDialBackoff(params.peer_key);
       if (auto ma = dial_->PreferredMultiaddr(params.peer_key)) {
-        log().warning << "Call-media dial ma=" << *ma << " peer=" << params.peer_key
+        log().info << "Call-media dial ma=" << *ma << " peer=" << params.peer_key
                       << " role=" << (params.offerer ? "offerer" : "answerer");
       }
     }
@@ -260,23 +260,23 @@ Roe<void> CallLibp2pMediaBridge::ConnectOffererWithRetry(const CallMediaDirectCo
     if (!direct_.IsActive()) {
       direct_.Detach();
     }
-    log().warning << "Call-media Connect attempt=" << attempt << "/" << kConnectAttempts
-                  << " call_id=" << params.call_id << " peer=" << params.peer_key
-                  << " role=" << (params.offerer ? "offerer" : "answerer")
-                  << " timeout_ms=" << kConnectAttemptTimeoutMs;
+    log().info << "Call-media Connect attempt=" << attempt << "/" << kConnectAttempts
+               << " call_id=" << params.call_id << " peer=" << params.peer_key
+               << " role=" << (params.offerer ? "offerer" : "answerer")
+               << " timeout_ms=" << kConnectAttemptTimeoutMs;
     Roe<void> connected = direct_.Connect(params, cbs, kConnectAttemptTimeoutMs);
     if (connect_generation_.load(std::memory_order_acquire) != gen) {
       direct_.Detach();
-      log().warning << "Call-media Connect aborted after attempt call_id=" << params.call_id;
+      log().info << "Call-media Connect aborted after attempt call_id=" << params.call_id;
       return Error("call-media aborted");
     }
     if (connected) {
-      log().warning << "Call-media Connect ok call_id=" << params.call_id
+      log().info << "Call-media Connect ok call_id=" << params.call_id
                     << " role=" << (params.offerer ? "offerer" : "answerer");
       return {};
     }
     if (direct_.IsActive()) {
-      log().warning << "Call-media peer connected us during attempt call_id=" << params.call_id;
+      log().info << "Call-media peer connected us during attempt call_id=" << params.call_id;
       return {};
     }
     last_error = connected.error();
@@ -347,7 +347,7 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   const uint32_t media_epoch = (*session)->media_epoch;
   const ByteVector media_key = *key;
 
-  log().warning << "BeginSession role=" << (offerer ? "offerer" : "answerer") << " call_id=" << call_id
+  log().info << "BeginSession role=" << (offerer ? "offerer" : "answerer") << " call_id=" << call_id
                 << " peer=" << peer_identity << " epoch=" << media_epoch
                 << " keep_inbound=" << (keep_inbound ? 1 : 0);
 
@@ -380,7 +380,7 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   }
 
   if (keep_inbound) {
-    log().warning << "Media started with existing inbound stream call_id=" << call_id
+    log().info << "Media started with existing inbound stream call_id=" << call_id
                   << " role=" << (offerer ? "offerer" : "answerer");
     media_.SetConnectionState("connected");
     host_.P2pNotifyRingChanged();
@@ -397,7 +397,7 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   CallMediaDirectCallbacks cbs;
   cbs.on_connected = [this]() {
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-      log().warning << "Call-media connected call_id=" << media_call_id_;
+      log().info << "Call-media connected call_id=" << media_call_id_;
       if (media_.IsActive() && media_.ActiveCallId() == media_call_id_) {
         media_.SetConnectionState("connected");
       }
@@ -446,22 +446,22 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
     if (dial_) {
       dial_->AbortInflightDial(params.peer_key);
     }
-    log().warning << "Offerer waiting for inbound call-media call_id=" << call_id;
+    log().info << "Offerer waiting for inbound call-media call_id=" << call_id;
   } else {
     connect_worker_inflight_.store(true);
     const uint64_t gen = connect_generation_.load(std::memory_order_acquire);
     PlatformRuntime::PostWorkerCritical([this, params, cbs, gen]() {
       if (connect_generation_.load(std::memory_order_acquire) != gen) {
         connect_worker_inflight_.store(false);
-        log().warning << "Connect worker aborted before dial call_id=" << params.call_id;
+        log().info << "Connect worker aborted before dial call_id=" << params.call_id;
         return;
       }
-      log().warning << "Connect worker enter call_id=" << params.call_id << " peer=" << params.peer_key
+      log().info << "Connect worker enter call_id=" << params.call_id << " peer=" << params.peer_key
                     << " role=answerer";
       Roe<void> connected = ConnectOffererWithRetry(params, cbs);
       connect_worker_inflight_.store(false);
       if (connect_generation_.load(std::memory_order_acquire) != gen) {
-        log().warning << "Connect worker aborted after dial call_id=" << params.call_id;
+        log().info << "Connect worker aborted after dial call_id=" << params.call_id;
         return;
       }
       PlatformRuntime::PostUI([this, connected, call_id = params.call_id]() {
@@ -504,18 +504,18 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_
   BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer_identity]() {
     auto session = sessions_.LoadSession(call_id);
     if (!session || !session->has_value()) {
-      log().warning << "StartMediaAsOfferer skip: no session call_id=" << call_id;
+      log().info << "StartMediaAsOfferer skip: no session call_id=" << call_id;
       return;
     }
     if ((*session)->state == CallSessionState::Ended) {
-      log().warning << "StartMediaAsOfferer skip: session ended call_id=" << call_id;
+      log().info << "StartMediaAsOfferer skip: session ended call_id=" << call_id;
       return;
     }
     if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-      log().warning << "StartMediaAsOfferer skip: media already active call_id=" << call_id;
+      log().info << "StartMediaAsOfferer skip: media already active call_id=" << call_id;
       return;
     }
-    log().warning << "StartMediaAsOfferer UI enter call_id=" << call_id << " peer=" << peer_identity;
+    log().info << "StartMediaAsOfferer UI enter call_id=" << call_id << " peer=" << peer_identity;
     if (auto started = StartMediaAsOfferer(call_id, peer_identity); !started) {
       log().warning << "StartMediaAsOfferer failed: " << started.error().message;
       host_.P2pSetLastMediaError(started.error().message);
@@ -538,7 +538,7 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call
     auto key = LoadActiveMediaKey(call_id);
     if (!key) {
       // V015: epoch-1 key is sent by offerer on CallAccept — defer until it lands.
-      log().warning << "Defer answerer media until CallMediaKey call_id=" << call_id
+      log().info << "Defer answerer media until CallMediaKey call_id=" << call_id
                     << " reason=" << key.error().message;
       pending_answerer_call_id_ = call_id;
       pending_answerer_peer_ = peer_identity;
@@ -558,7 +558,7 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call
           // Belt-and-suspenders if OnMediaKeyReady raced / was missed.
           if (pending_answerer_call_id_ == call_id) {
             if (auto key = LoadActiveMediaKey(call_id); key) {
-              log().warning << "Deferred MediaKey found in store — kick start call_id=" << call_id;
+              log().info << "Deferred MediaKey found in store — kick start call_id=" << call_id;
               OnMediaKeyReady(call_id);
               return;
             }
@@ -587,7 +587,7 @@ void CallLibp2pMediaBridge::OnMediaKeyReady(const std::string& call_id) {
     if (!pending) {
       // Key stored for later Accept LoadActiveMediaKey — do NOT auto-start. Late keys from a
       // prior call were starting answerer media on the wrong call_id (Samsung dogfood).
-      log().warning << "CallMediaKey stored (not deferred yet) call_id=" << call_id;
+      log().info << "CallMediaKey stored (not deferred yet) call_id=" << call_id;
       return;
     }
     if (peer.empty()) {
@@ -595,7 +595,7 @@ void CallLibp2pMediaBridge::OnMediaKeyReady(const std::string& call_id) {
         peer = **resolved;
       }
     }
-    log().warning << "CallMediaKey ready — starting deferred answerer media call_id=" << call_id;
+    log().info << "CallMediaKey ready — starting deferred answerer media call_id=" << call_id;
     pending_answerer_call_id_.clear();
     pending_answerer_peer_.clear();
     if (lifecycle_) {

@@ -353,7 +353,7 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void HandleInbound(libp2p::StreamAndProtocol stream_in) {
-    logging::getLogger("CallMediaDirect").warning << "Inbound call-media stream (protocol negotiated)";
+    logging::getLogger("CallMediaDirect").info << "Inbound call-media stream (protocol negotiated)";
     if (!host) {
       return;
     }
