@@ -921,6 +921,69 @@ void MessagingHub::PrefetchPeerReachability(const std::string& identity) {
   // Circuit hops stay on the call-media Connect path (EnsurePeerReachableOnIo).
 }
 
+std::vector<std::string> MessagingHub::LocalCallListenMultiaddrs() const {
+  if (!node_runtime_ || !node_runtime_->Host() || !node_runtime_->IsRunning()) {
+    return {};
+  }
+  const bool listening =
+      node_runtime_->EphemeralListenActive() ||
+      ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
+  if (!listening) {
+    return {};
+  }
+  std::string peer_id;
+  if (auto local = node_runtime_->Host()->LocalPeerIdBase58()) {
+    peer_id = *local;
+  }
+  const std::string bound = node_runtime_->BoundListenMultiaddr();
+  if (peer_id.empty() || bound.empty()) {
+    return {};
+  }
+  return BuildMobileCallScopedAdvertisedAddrs(bound, peer_id);
+}
+
+void MessagingHub::RegisterCallPeerListenMultiaddrs(const std::string& identity,
+                                                    const std::vector<std::string>& multiaddrs) {
+  if (identity.empty() || multiaddrs.empty()) {
+    return;
+  }
+  PeerSessionManager* sessions = Sessions();
+  for (const std::string& ma : multiaddrs) {
+    if (ma.empty()) {
+      continue;
+    }
+    std::string peer_id;
+    const auto p2p_pos = ma.rfind("/p2p/");
+    if (p2p_pos != std::string::npos) {
+      peer_id = ma.substr(p2p_pos + 5);
+      const auto slash = peer_id.find('/');
+      if (slash != std::string::npos) {
+        peer_id.resize(slash);
+      }
+    }
+    if (sessions) {
+      (void)sessions->RegisterEndpoint(identity, ma);
+      sessions->ClearDialBackoff(identity);
+      if (!peer_id.empty()) {
+        (void)sessions->UpsertBookEntry(peer_id, ma, PeerAddrSource::Manual);
+        (void)sessions->RegisterEndpoint(peer_id, ma);
+        sessions->ClearDialBackoff(peer_id);
+        if (peer_id != identity) {
+          (void)sessions->RegisterEndpoint(identity, ma);
+        }
+        lan_mdns_contact_peer_ids_.insert(peer_id);
+      }
+    }
+    if (p2p_) {
+      p2p_->RegisterPeerDirectEndpoint(identity, ma);
+      if (!peer_id.empty() && peer_id != identity) {
+        p2p_->RegisterPeerDirectEndpoint(peer_id, ma);
+      }
+    }
+    log().info << "Call listen addr registered dial_key=" << identity << " ma=" << ma;
+  }
+}
+
 Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& profile_data_dir) {
   if (initialized_) {
     return {};
@@ -995,6 +1058,11 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     // Warm only; must not run RequestBridge on Browser IO ahead of AcceptInvite.
     BrowserThread::PostTask(BrowserThreadId::IO, [this, identity]() { PrefetchPeerReachability(identity); });
   });
+  call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetRegisterPeerListenMultiaddrs(
+      [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
+        RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
+      });
   EnsureCallLifecycleBound();
   WireCallMediaRelayDeps();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
@@ -1068,6 +1136,11 @@ Roe<void> MessagingHub::BuildMessagingStack() {
   call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
     BrowserThread::PostTask(BrowserThreadId::IO, [this, identity]() { PrefetchPeerReachability(identity); });
   });
+  call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetRegisterPeerListenMultiaddrs(
+      [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
+        RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
+      });
   EnsureCallLifecycleBound();
   WireCallMediaRelayDeps();
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,

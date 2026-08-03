@@ -116,6 +116,11 @@ struct CallInviteDetail {
   uint32_t media_epoch = 1;
   std::string media_key_id;
   std::string wrapped_key_b64;
+  /**
+   * Inviter LAN listen multiaddrs (`/ip4/…/tcp/…/p2p/…`) for answerer reverse-dial when mDNS
+   * has not populated the dial registry yet (desktop cross-OS dogfood).
+   */
+  std::vector<std::string> listen_multiaddrs;
 };
 
 struct CallAcceptDetail {
@@ -123,6 +128,8 @@ struct CallAcceptDetail {
   std::string identity;
   bool audio_muted = false;
   bool video_enabled = false;
+  /** Answerer listen multiaddrs so offerer can fallback-dial when inbound never arrives. */
+  std::vector<std::string> listen_multiaddrs;
 };
 
 struct CallDeclineDetail {

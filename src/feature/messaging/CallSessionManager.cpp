@@ -155,6 +155,14 @@ void CallSessionManager::SetPrefetchPeerReachability(PrefetchPeerReachFn callbac
   prefetch_reach_ = std::move(callback);
 }
 
+void CallSessionManager::SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback) {
+  local_listen_multiaddrs_ = std::move(callback);
+}
+
+void CallSessionManager::SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback) {
+  register_peer_listen_multiaddrs_ = std::move(callback);
+}
+
 void CallSessionManager::NotifyRingChanged() {
   if (on_ring_changed_mesh_) {
     on_ring_changed_mesh_();
@@ -541,6 +549,9 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
       log().warning << "CallInvite media key skip; no peer session key peer=" << invitee_identity;
     }
   }
+  if (local_listen_multiaddrs_) {
+    invite.listen_multiaddrs = local_listen_multiaddrs_();
+  }
   auto detail = CallControlCodec::EncodeInvite(invite);
   if (!detail) {
     return detail.error();
@@ -552,7 +563,8 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
     return sent;
   }
   log().info << "CallInvite sent call_id=" << call_id << " peer=" << invitee_identity
-                << " media_key_embedded=" << (invite.wrapped_key_b64.empty() ? 0 : 1);
+             << " media_key_embedded=" << (invite.wrapped_key_b64.empty() ? 0 : 1)
+             << " listen_addrs=" << invite.listen_multiaddrs.size();
   return {};
 }
 
@@ -640,6 +652,9 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
   accept.call_id = call_id;
   accept.identity = *local;
   accept.video_enabled = false;
+  if (local_listen_multiaddrs_) {
+    accept.listen_multiaddrs = local_listen_multiaddrs_();
+  }
   auto detail = CallControlCodec::EncodeAccept(accept);
   if (!detail) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << detail.error().message;
@@ -1206,6 +1221,9 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     self.identity = *local;
     self.state = CallParticipantState::Ringing;
     (void)sessions_.UpsertParticipant(self);
+    if (register_peer_listen_multiaddrs_ && !invite->listen_multiaddrs.empty()) {
+      register_peer_listen_multiaddrs_(pending.inviter_identity, invite->listen_multiaddrs);
+    }
     PrefetchReachForIdentity(prefetch_reach_, pending.inviter_identity);
     NotifyRingChanged();
     return {};
@@ -1217,6 +1235,9 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     }
     const std::string identity = accept->identity.empty() ? sender_identity : accept->identity;
     log().info << "Inbound CallAccept call_id=" << accept->call_id << " from=" << identity;
+    if (register_peer_listen_multiaddrs_ && !accept->listen_multiaddrs.empty()) {
+      register_peer_listen_multiaddrs_(identity, accept->listen_multiaddrs);
+    }
     CallParticipant participant;
     participant.call_id = accept->call_id;
     participant.identity = identity;

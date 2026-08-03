@@ -212,6 +212,9 @@ private:
   void OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer);
   void PublishMobileCallScopedAddrs();
   void PrefetchPeerReachability(const std::string& identity);
+  std::vector<std::string> LocalCallListenMultiaddrs() const;
+  void RegisterCallPeerListenMultiaddrs(const std::string& identity,
+                                        const std::vector<std::string>& multiaddrs);
   bool HasActiveLocalCall();
   /** N025: lifecycle sets desire; Hub executes start/stop on IO only. */
   void SetEphemeralListenDesire(bool want);

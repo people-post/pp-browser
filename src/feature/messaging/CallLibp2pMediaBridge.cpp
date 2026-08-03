@@ -20,6 +20,13 @@ constexpr int kConnectAttemptTimeoutMs = 15000;
 /** Cover long PollInbox HTTP + offerer MediaKey send/resend window. */
 constexpr int kMediaKeyInboxPollRounds = 90;
 constexpr int kInboundMediaKeyWaitMs = 8000;
+/**
+ * Offerer prefers inbound (answerer reverse-dial). After this grace, dial the answerer if
+ * dialable — covers asymmetric LAN (e.g. Windows announce missing, Linux still reachable).
+ * Keep long enough that a successful answerer dial usually wins first; avoid overlapping
+ * newStream when both peers are dialable (simultaneous dial hangs on some LAN paths).
+ */
+constexpr int64_t kOffererInboundGraceMs = 8000;
 
 } // namespace
 
@@ -438,49 +445,77 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
     });
   };
 
-  // Answerer reverse-dials only. Simultaneous offerer↔answerer newStream hangs on this LAN
-  // (dogfood: both timed out with no OpenStream callback; tablet→phone TCP is the working path).
+  // Prefer answerer reverse-dial (inbound on offerer). Simultaneous offerer↔answerer newStream
+  // hangs on some LAN paths (dogfood: both timed out with no OpenStream callback).
+  // Offerer: wait briefly for inbound, then dial if the answerer is reachable (asymmetric LAN).
   // Must not use Browser IO — PollInbox starvation (moto dogfood).
   if (params.offerer) {
-    // Drop any Prefetch/warm dial toward the answerer so the host can accept inbound.
+    // Drop any Prefetch/warm dial toward the answerer so the host can accept inbound first.
     if (dial_) {
       dial_->AbortInflightDial(params.peer_key);
     }
-    log().info << "Offerer waiting for inbound call-media call_id=" << call_id;
-  } else {
-    connect_worker_inflight_.store(true);
-    const uint64_t gen = connect_generation_.load(std::memory_order_acquire);
-    PlatformRuntime::PostWorkerCritical([this, params, cbs, gen]() {
-      if (connect_generation_.load(std::memory_order_acquire) != gen) {
-        connect_worker_inflight_.store(false);
-        log().info << "Connect worker aborted before dial call_id=" << params.call_id;
-        return;
-      }
-      log().info << "Connect worker enter call_id=" << params.call_id << " peer=" << params.peer_key
-                    << " role=answerer";
-      Roe<void> connected = ConnectOffererWithRetry(params, cbs);
+  }
+
+  connect_worker_inflight_.store(true);
+  const uint64_t gen = connect_generation_.load(std::memory_order_acquire);
+  const char* role = params.offerer ? "offerer" : "answerer";
+  PlatformRuntime::PostWorkerCritical([this, params, cbs, gen, role]() {
+    if (connect_generation_.load(std::memory_order_acquire) != gen) {
       connect_worker_inflight_.store(false);
-      if (connect_generation_.load(std::memory_order_acquire) != gen) {
-        log().info << "Connect worker aborted after dial call_id=" << params.call_id;
-        return;
-      }
-      PlatformRuntime::PostUI([this, connected, call_id = params.call_id]() {
-        if (direct_.IsActive() && media_.IsConnected()) {
+      log().info << "Connect worker aborted before dial call_id=" << params.call_id;
+      return;
+    }
+
+    Roe<void> connected = {};
+    if (params.offerer) {
+      log().info << "Offerer waiting for inbound call-media call_id=" << params.call_id
+                 << " grace_ms=" << kOffererInboundGraceMs;
+      const int64_t grace_deadline = util::NowUnixMs() + kOffererInboundGraceMs;
+      while (util::NowUnixMs() < grace_deadline) {
+        if (connect_generation_.load(std::memory_order_acquire) != gen ||
+            stopping_.load(std::memory_order_acquire)) {
+          connect_worker_inflight_.store(false);
+          log().info << "Connect worker aborted during inbound grace call_id=" << params.call_id;
           return;
         }
-        if (!connected) {
-          log().warning << "Call-media give up call_id=" << call_id << " role=answerer"
-                        << " err=" << connected.error().message;
-          libp2p_connect_failed_ = true;
-          host_.P2pSetLastMediaError(connected.error().message);
-          if (lifecycle_) {
-            lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
-          }
-          host_.P2pNotifyRingChanged();
+        if (direct_.IsActive()) {
+          log().info << "Offerer got inbound call-media during grace call_id=" << params.call_id;
+          connect_worker_inflight_.store(false);
+          return;
         }
-      });
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      if (direct_.IsActive()) {
+        connect_worker_inflight_.store(false);
+        return;
+      }
+      log().info << "Offerer fallback dial call_id=" << params.call_id << " peer=" << params.peer_key;
+    }
+
+    log().info << "Connect worker enter call_id=" << params.call_id << " peer=" << params.peer_key
+               << " role=" << role;
+    connected = ConnectOffererWithRetry(params, cbs);
+    connect_worker_inflight_.store(false);
+    if (connect_generation_.load(std::memory_order_acquire) != gen) {
+      log().info << "Connect worker aborted after dial call_id=" << params.call_id;
+      return;
+    }
+    PlatformRuntime::PostUI([this, connected, call_id = params.call_id, role = std::string(role)]() {
+      if (direct_.IsActive() && media_.IsConnected()) {
+        return;
+      }
+      if (!connected) {
+        log().warning << "Call-media give up call_id=" << call_id << " role=" << role
+                      << " err=" << connected.error().message;
+        libp2p_connect_failed_ = true;
+        host_.P2pSetLastMediaError(connected.error().message);
+        if (lifecycle_) {
+          lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+        }
+        host_.P2pNotifyRingChanged();
+      }
     });
-  }
+  });
 
   libp2p_connect_missing_mic_ = false;
   host_.P2pNotifyRingChanged();

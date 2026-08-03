@@ -31,7 +31,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 
 **Devices:** moto g7 play (`ZY323QRNJ9`) + Samsung SM-T380 (`dc07955772d54e6c`), same Wi‑Fi; package `dev.pp_browser.app`.
 
-**Path:** Invite-embedded MediaKey → N025 ephemeral listen → answerer-only `call-media` dial → hello/ack → `DirectConnected` / `InCall` → bidirectional Opus (AEAD under call media key).
+**Path:** Invite-embedded MediaKey → N025 ephemeral listen → answerer reverse-dial (primary) / offerer dial after inbound grace if answerer dialable (asymmetric LAN) → hello/ack → `DirectConnected` / `InCall` → bidirectional Opus (AEAD under call media key).
 
 **Matrix:**
 
@@ -45,7 +45,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 
 **Implementation notes (call-media):**
 
-- Answerer dials; offerer keeps inbound stream (`keep_inbound`) — no simultaneous `newStream`
+- Answerer reverse-dials first; offerer waits ~8s for inbound then falls back to dial if the answerer is reachable (asymmetric LAN) — still one `newStream` at a time (`keep_inbound` if the other side wins the race)
 - Capture enqueues frames; **host IO thread** owns Yamux read/write (async pump) — do not block `read`/`write` on a worker while IO delivers
 - Yamux `WriteQueue` copies on enqueue; `ReadBuffer::consumePart` soft-fails bad offsets (see [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md))
 - Keep Accept / MediaKey-send / Connect / Poll HTTP **off** Browser IO
@@ -54,7 +54,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 
 | Area | State |
 |------|-------|
-| **m1** desktop matrix | Android ↔ desktop voice without WebRTC; **Windows LAN mDNS announce/browse landed** (was stub — Win↔Linux undialable) — rebuild Windows + confirm contact has PeerId |
+| **m1** desktop matrix | Android ↔ desktop voice without WebRTC; **Windows LAN mDNS** + **call-control `listen_multiaddrs`** on invite/accept for dial when mDNS misses — rebuild **both** ends |
 | Hop peerstore / circuit PeerId dial | media-hop **L1–L3** |
 | Teardown libdatachannel | **m2** next |
 | Video on libp2p | Deferred |

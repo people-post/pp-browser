@@ -110,23 +110,30 @@ TEST(CallControlCodecTest, SdpDetailRoundTrip) {
   EXPECT_FALSE(CallControlCodec::DecodeSdp(R"({"call_id":"call:abc"})"));
 }
 
-TEST(CallControlCodecTest, IceDetailRoundTrip) {
-  CallIceDetail detail;
-  detail.call_id = "call:abc";
-  detail.identity = "relay:bob";
-  detail.candidate = "candidate:1 1 UDP 2130706431 10.0.0.1 5000 typ host";
-  detail.mid = "audio";
+TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
+  CallInviteDetail invite;
+  invite.call_id = "call:abc";
+  invite.inviter_identity = "relay:alice";
+  invite.invitee_identity = "relay:bob";
+  invite.listen_multiaddrs = {"/ip4/192.168.1.10/tcp/18517/p2p/12D3KooWAlice"};
 
-  auto encoded = CallControlCodec::EncodeIce(detail);
-  ASSERT_TRUE(encoded);
-  auto decoded = CallControlCodec::DecodeIce(*encoded);
-  ASSERT_TRUE(decoded);
-  EXPECT_EQ(decoded->call_id, detail.call_id);
-  EXPECT_EQ(decoded->identity, detail.identity);
-  EXPECT_EQ(decoded->candidate, detail.candidate);
-  EXPECT_EQ(decoded->mid, detail.mid);
+  auto encoded_invite = CallControlCodec::EncodeInvite(invite);
+  ASSERT_TRUE(encoded_invite);
+  auto decoded_invite = CallControlCodec::DecodeInvite(*encoded_invite);
+  ASSERT_TRUE(decoded_invite);
+  ASSERT_EQ(decoded_invite->listen_multiaddrs.size(), 1u);
+  EXPECT_EQ(decoded_invite->listen_multiaddrs[0], invite.listen_multiaddrs[0]);
 
-  EXPECT_FALSE(CallControlCodec::DecodeIce(R"({"call_id":"call:abc"})"));
+  CallAcceptDetail accept;
+  accept.call_id = "call:abc";
+  accept.identity = "relay:bob";
+  accept.listen_multiaddrs = {"/ip4/192.168.1.20/tcp/18517/p2p/12D3KooWBob"};
+  auto encoded_accept = CallControlCodec::EncodeAccept(accept);
+  ASSERT_TRUE(encoded_accept);
+  auto decoded_accept = CallControlCodec::DecodeAccept(*encoded_accept);
+  ASSERT_TRUE(decoded_accept);
+  ASSERT_EQ(decoded_accept->listen_multiaddrs.size(), 1u);
+  EXPECT_EQ(decoded_accept->listen_multiaddrs[0], accept.listen_multiaddrs[0]);
 }
 
 } // namespace

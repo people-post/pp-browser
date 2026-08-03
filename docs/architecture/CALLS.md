@@ -429,7 +429,7 @@ Do **not** combine engine pending-buffer rewrites with topology moves in one PR.
 |------|------|
 | `src/feature/messaging/CallLifecycle.*` | 1:1 phase machine — ring/accept/listen/media sequencing |
 | `src/feature/messaging/CallSessionManager.*` | Façade — session + dispatch |
-| `src/feature/messaging/CallLibp2pMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, phase outcomes |
+| `src/feature/messaging/CallLibp2pMediaBridge.*` | libp2p 1:1 media — key defer, answerer dial + offerer inbound-grace fallback dial, phase outcomes |
 | `src/libp2p/integration/host/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
 | `src/libp2p/integration/host/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
 | `src/feature/messaging/CallP2pSignalingBridge.*` | Legacy P2P media signaling + 1:1 connect-fail / Retry |

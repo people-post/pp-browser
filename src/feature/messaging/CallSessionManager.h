@@ -40,6 +40,13 @@ public:
   void SetOnRingChangedMesh(RingChangedFn callback);
   using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
   void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
+  /** Local `/ip4/…/tcp/…/p2p/…` listen set for call-control dial bootstrap. */
+  using LocalListenMultiaddrsFn = std::function<std::vector<std::string>()>;
+  void SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback);
+  /** Register peer listen multiaddrs from invite/accept into the dial registry. */
+  using RegisterPeerListenMultiaddrsFn =
+      std::function<void(const std::string& identity, const std::vector<std::string>& multiaddrs)>;
+  void SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback);
   void SetMediaRelayDeps(MediaRelayDeps deps);
   void SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge);
   /** Expose private CallP2pSignalingHost base for bridge construction (MSVC-safe). */
@@ -151,6 +158,8 @@ private:
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;
+  LocalListenMultiaddrsFn local_listen_multiaddrs_;
+  RegisterPeerListenMultiaddrsFn register_peer_listen_multiaddrs_;
   std::optional<std::string> last_media_error_;
 };
 

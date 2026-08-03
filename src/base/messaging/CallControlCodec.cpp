@@ -25,6 +25,37 @@ std::optional<int64_t> OptInt64(const nlohmann::json& json, const char* key) {
   return json[key].get<int64_t>();
 }
 
+std::vector<std::string> ReadStringArray(const nlohmann::json& json, const char* key) {
+  std::vector<std::string> out;
+  if (!json.contains(key) || !json[key].is_array()) {
+    return out;
+  }
+  for (const nlohmann::json& row : json[key]) {
+    if (row.is_string()) {
+      const std::string value = row.get<std::string>();
+      if (!value.empty()) {
+        out.push_back(value);
+      }
+    }
+  }
+  return out;
+}
+
+void WriteStringArray(nlohmann::json& json, const char* key, const std::vector<std::string>& values) {
+  if (values.empty()) {
+    return;
+  }
+  nlohmann::json arr = nlohmann::json::array();
+  for (const std::string& value : values) {
+    if (!value.empty()) {
+      arr.push_back(value);
+    }
+  }
+  if (!arr.empty()) {
+    json[key] = std::move(arr);
+  }
+}
+
 } // namespace
 
 Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) {
@@ -59,6 +90,7 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
     json["media_key_id"] = detail.media_key_id;
     json["wrapped_key_b64"] = detail.wrapped_key_b64;
   }
+  WriteStringArray(json, "listen_multiaddrs", detail.listen_multiaddrs);
   return json.dump();
 }
 
@@ -92,15 +124,17 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.media_epoch = static_cast<uint32_t>(json.value("media_epoch", 1));
   detail.media_key_id = OptString(json, "media_key_id").value_or("");
   detail.wrapped_key_b64 = OptString(json, "wrapped_key_b64").value_or("");
+  detail.listen_multiaddrs = ReadStringArray(json, "listen_multiaddrs");
   return detail;
 }
 
 Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) {
-  return nlohmann::json({{"call_id", detail.call_id},
-                         {"identity", detail.identity},
-                         {"audio_muted", detail.audio_muted},
-                         {"video_enabled", detail.video_enabled}})
-      .dump();
+  nlohmann::json json{{"call_id", detail.call_id},
+                      {"identity", detail.identity},
+                      {"audio_muted", detail.audio_muted},
+                      {"video_enabled", detail.video_enabled}};
+  WriteStringArray(json, "listen_multiaddrs", detail.listen_multiaddrs);
+  return json.dump();
 }
 
 Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_json) {
@@ -113,6 +147,7 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.identity = OptString(json, "identity").value_or("");
   detail.audio_muted = json.value("audio_muted", false);
   detail.video_enabled = json.value("video_enabled", false);
+  detail.listen_multiaddrs = ReadStringArray(json, "listen_multiaddrs");
   return detail;
 }
 
