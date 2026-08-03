@@ -779,6 +779,10 @@ void MessagingHub::StopLibp2p() {
     call_sessions_->SetLibp2pMediaBridge(nullptr);
     call_sessions_->SetMediaRelayDeps({});
   }
+  // Abort circuit waiters before joining/destroying Connect workers (same as AbortCallMediaForShutdown).
+  if (circuit_relay_) {
+    circuit_relay_->AbortInflightRequests();
+  }
   // Connect worker holds `this` on the bridge — abort + wait before delete (shutdown segfault).
   // Detach completes in-flight Connect() immediately; dial/reachability loops check generation.
   if (call_libp2p_bridge_) {
@@ -821,12 +825,23 @@ void MessagingHub::StopLibp2p() {
 }
 
 void MessagingHub::AbortCallMediaForShutdown() {
-  if (call_libp2p_bridge_) {
-    // Short wait: Application joins the worker pool next while this hub is still alive.
-    call_libp2p_bridge_->PrepareForTeardown(250);
-  }
+  // Unblock Connect workers stuck in circuit RequestBridge (~8–10s) BEFORE waiting/joining.
+  // Old order waited 250ms then aborted circuit — WorkerPool::Shutdown joined a still-blocked
+  // Critical task and both peers looked hung until force-quit.
   if (circuit_relay_) {
     circuit_relay_->AbortInflightRequests();
+  }
+  // Tell the peer the call ended (fire-and-forget relay Critical send) so they StopMedia /
+  // leave Connecting instead of sitting on a half-open stream after we detach.
+  if (call_sessions_) {
+    if (auto active = call_sessions_->ActiveLocalCall(); active && active->has_value()) {
+      log().info << "AbortCallMediaForShutdown LeaveCall call_id=" << (*active)->call_id;
+      (void)call_sessions_->LeaveCall((*active)->call_id);
+    }
+  }
+  if (call_libp2p_bridge_) {
+    // LeaveCall already bumps connect_generation_; wait for the worker to observe abort.
+    call_libp2p_bridge_->PrepareForTeardown(2000);
   }
   if (call_media_direct_) {
     call_media_direct_->Detach();

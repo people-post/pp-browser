@@ -105,7 +105,7 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 | Prefetch / circuit / dial wait / `Connect` | Worker | Seconds-scale waits; aborted via `connect_generation_` on Leave |
 | N025 `ListenOn` / Wire / mDNS | Worker → asio | Driven by lifecycle `WantEphemeralListen`, not inventing policy from tick alone |
 | `CallMediaEngine::StartSfu` / `Stop` / SDL capture | **UI only** | Bridge posts Stop to UI when LeaveCall runs off-UI; never TearDown SDL on a worker |
-| Hub / process shutdown | UI | `CallLibp2pMediaBridge::PrepareForTeardown` aborts Connect + waits before destroying the bridge |
+| Hub / process shutdown | UI | Abort circuit inflight → `LeaveCall` (CallEnded to peer) → `PrepareForTeardown` waits for Connect worker; then join pool |
 | Chrome refresh (`RefreshPendingRing` / `SyncShellState` / ringtone) | **Always hop to UI** + RemountCallChrome / DirtyWindow + `RequestForceFrame` | Safe from worker **and coordinator**; Present depends on [THREADING.md UI delivery](THREADING.md#ui-delivery-pipeline) (mailbox liveness), not user input |
 
 ### Scenario matrix (v1)

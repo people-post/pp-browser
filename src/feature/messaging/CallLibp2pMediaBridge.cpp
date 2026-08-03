@@ -205,6 +205,11 @@ Roe<void> CallLibp2pMediaBridge::EnsurePeerReachableOnIo(const std::string& peer
       log().info << "Call-media peer dialable peer=" << peer_identity;
       return {};
     }
+    // Do not enter a multi-second circuit RequestBridge once shutdown/Leave has begun —
+    // AbortInflightRequests only helps after the wait starts; skipping avoids new hangs.
+    if (stopping_.load(std::memory_order_acquire)) {
+      return Error("call-media aborted");
+    }
     if (circuit_reach_) {
       auto via_circuit = circuit_reach_->TryEnsureCallMediaReachable(peer_identity);
       if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
@@ -711,7 +716,7 @@ void CallLibp2pMediaBridge::PrepareForTeardown(int timeout_ms) {
     }
     if (std::chrono::steady_clock::now() >= deadline) {
       log().warning << "PrepareForTeardown: Connect worker still inflight after " << timeout_ms
-                    << "ms";
+                    << "ms — proceeding (WorkerPool join may still wait on the task)";
       break;
     }
     // Keep poking the dial/stream so a blocked Connect returns and sees the generation bump.
