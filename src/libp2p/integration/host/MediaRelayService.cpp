@@ -1,7 +1,7 @@
 #include "libp2p/integration/host/MediaRelayService.h"
 
 #include "base/people/RelayScope.h"
-#include "common/WorkerPool.h"
+#include "libp2p/integration/host/Libp2pWorker.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/basic/read.hpp>
@@ -356,7 +356,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     }
     auto stream = std::move(stream_and_protocol.stream);
     auto self = shared_from_this();
-    host->GetWorkerPool().Post(WorkerLane::Normal, [self, stream = std::move(stream)]() mutable {
+    PostLibp2pWorker(*host, WorkerLane::Normal, [self, stream = std::move(stream)]() mutable {
       self->HandleInboundBody(std::move(stream));
     });
   }
@@ -501,7 +501,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
       client_reader_running = false;
       return;
     }
-    host->GetWorkerPool().Post(WorkerLane::Normal, [self]() {
+    PostLibp2pWorker(*host, WorkerLane::Normal, [self]() {
       while (self->client_reader_running.load()) {
         std::shared_ptr<Stream> stream;
         std::function<void(MediaDataFrame)> cb;
@@ -604,7 +604,7 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
   sessions_.OpenStream(hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
                        [req = std::move(req), result_promise, settled, circuit_backed, &host = host_](
                            libp2p::StreamAndProtocolOrError stream_res) {
-                         host.GetWorkerPool().Post(WorkerLane::Normal,
+                         PostLibp2pWorker(host, WorkerLane::Normal,
                                                    [req, result_promise, settled, circuit_backed,
                                                     stream_res = std::move(stream_res)]() mutable {
                            auto finish = [&](Roe<MediaRelayQuote> value) {
@@ -677,7 +677,7 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
       hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
       [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise, settled, &host = host_](
           libp2p::StreamAndProtocolOrError stream_res) mutable {
-        host.GetWorkerPool().Post(WorkerLane::Normal,
+        PostLibp2pWorker(host, WorkerLane::Normal,
                                   [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise,
                                    settled, stream_res = std::move(stream_res)]() mutable {
           auto finish = [&](Roe<MediaRelayAttachResult> value) {

@@ -1,8 +1,8 @@
 #include "libp2p/integration/host/ReachabilityService.h"
 
 #include "base/data/Libp2pRole.h"
-#include "common/WorkerPool.h"
 #include "libp2p/integration/host/DialBackService.h"
+#include "libp2p/integration/host/Libp2pWorker.h"
 #include "libp2p/integration/host/NatTraversal.h"
 #include "libp2p/integration/host/NodeRuntime.h"
 
@@ -70,7 +70,7 @@ void ReachabilityService::StartProbe(NodeRuntime& runtime, DialBackService& dial
     probing_.store(false);
     return;
   }
-  host->GetWorkerPool().Post(WorkerLane::Background, [this, &runtime, &dial_back, try_upnp_first]() {
+  PostLibp2pWorker(*host, WorkerLane::Background, [this, &runtime, &dial_back, try_upnp_first]() {
     RunProbe(runtime, dial_back, try_upnp_first);
     probing_.store(false);
   });

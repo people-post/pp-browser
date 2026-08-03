@@ -1,5 +1,7 @@
 #include "libp2p/integration/host/DialBackService.h"
 
+#include "libp2p/integration/host/Libp2pWorker.h"
+
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/connection/stream.hpp>
@@ -157,7 +159,7 @@ struct DialBackService::Impl {
       return;
     }
     auto stream = std::move(stream_and_protocol.stream);
-    host->GetWorkerPool().Post(WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
+    PostLibp2pWorker(*host, WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
       auto frame = ReadExactFrame(stream);
       if (!frame) {
         stream->close([](auto&&) {});
@@ -262,7 +264,7 @@ Roe<DialBackProbeResult> DialBackService::Probe(const std::string& seed_peer_key
   sessions_.OpenStream(seed_peer_key, {ProtocolName{kDialBackProtocolId}},
                        [&host = host_, frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
                          // newStream callbacks run on the host io thread — hop off before blocking I/O.
-                         host.GetWorkerPool().Post(WorkerLane::Normal,
+                         PostLibp2pWorker(host, WorkerLane::Normal,
                                                    [frame, result_promise, stream_res = std::move(stream_res)]() mutable {
                            if (!stream_res) {
                              result_promise->set_value(Error("dial-back stream open failed"));

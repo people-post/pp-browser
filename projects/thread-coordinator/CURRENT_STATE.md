@@ -8,8 +8,8 @@
 |-----------|----------|-------|
 | UI sequenced runner | `BrowserThread::UI`, `SequencedTaskRunner(false)` | Inline drain on main |
 | App IO thread | `BrowserThread::IO`, `SequencedTaskRunner(true)` | Named `pp-browser-io` on Linux/Android |
-| **ThreadRuntime (t3.5)** | `src/base/platform/ThreadRuntime.*` | App / pp-node owns `WorkerPool`; `PauseWorkers` / `ResumeWorkers` |
-| **Worker pool (t1–t2)** | `WorkerPool` via `ThreadRuntime` | libp2p integration hop-offs; **0** `.detach()` in `libp2p/integration/host/` |
+| **PlatformRuntime (t3.5)** | `src/base/platform/PlatformRuntime.*` | Unified facade: `PostWorker`, `PostUI`, `Paths()`, `EnsurePlatformServices`; owns `ThreadRuntime` + `WorkerDispatch` |
+| **Worker pool (t1–t2)** | `WorkerPool` via `PlatformRuntime` | libp2p integration hop-offs via `PostLibp2pWorker`; **0** `.detach()` in `libp2p/integration/host/` |
 | libp2p reactor | `Libp2pHost::io_thread_` | asio `io_context::run()`; borrows app pool (private pool in unit tests) |
 | UI wake | `Backend::WakeEventLoop`, `BrowserThread::SetUIWakeCallback` | SDL user event |
 | IO pause/resume | `BrowserThread::PauseIO` / `ResumeIO` | AppLifecycle, AgentSession, BackgroundSyncScheduler |

@@ -49,8 +49,7 @@ public:
   Libp2pHost(const Libp2pHost&) = delete;
   Libp2pHost& operator=(const Libp2pHost&) = delete;
 
-  /** When workers is null, host creates a private pool (tests); app passes ThreadRuntime::Workers(). */
-  Roe<void> Start(const Libp2pHostConfig& config, WorkerPool* workers = nullptr);
+  Roe<void> Start(const Libp2pHostConfig& config = {});
   void Stop();
 
   bool IsAvailable() const { return available_; }

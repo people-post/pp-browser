@@ -1,6 +1,7 @@
 #include "app/node/NodeBootstrap.h"
 
 #include "base/crypto/ProfileSecretsService.h"
+#include "base/platform/PlatformRuntime.h"
 #include "base/platform/PlatformLogDefaults.h"
 #include "common/Logger.h"
 
@@ -111,8 +112,8 @@ int main(int argc, char** argv) {
     if (boot->runtime) {
       boot->runtime->Stop();
     }
-    if (boot->thread_runtime) {
-      boot->thread_runtime->Shutdown();
+    if (pbr::PlatformRuntime::IsRunning()) {
+      pbr::PlatformRuntime::Shutdown();
     }
     if (boot->identity) {
       boot->identity->Flush();
@@ -141,8 +142,8 @@ int main(int argc, char** argv) {
   if (boot->runtime) {
     boot->runtime->Stop();
   }
-  if (boot->thread_runtime) {
-    boot->thread_runtime->Shutdown();
+  if (pbr::PlatformRuntime::IsRunning()) {
+    pbr::PlatformRuntime::Shutdown();
   }
   if (boot->identity) {
     boot->identity->Flush();

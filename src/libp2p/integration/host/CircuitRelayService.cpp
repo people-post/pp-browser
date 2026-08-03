@@ -1,6 +1,6 @@
 #include "libp2p/integration/host/CircuitRelayService.h"
 
-#include "common/WorkerPool.h"
+#include "libp2p/integration/host/Libp2pWorker.h"
 
 #include "base/people/RelayScope.h"
 #include "libp2p/integration/host/CircuitBridgeTarget.h"
@@ -67,7 +67,7 @@ Roe<void> WriteExactFrame(const std::shared_ptr<Stream>& stream, const std::vect
 
 void BridgeStreams(Libp2pHost& host, const std::shared_ptr<Stream>& a, const std::shared_ptr<Stream>& b) {
   auto pump = [&host](std::shared_ptr<Stream> from, std::shared_ptr<Stream> to) {
-    host.GetWorkerPool().Post(WorkerLane::Normal, [from = std::move(from), to = std::move(to)]() mutable {
+    PostLibp2pWorker(host, WorkerLane::Normal, [from = std::move(from), to = std::move(to)]() mutable {
       while (true) {
         Bytes chunk(16 * 1024);
         std::promise<outcome::result<void>> read_promise;
@@ -209,7 +209,7 @@ struct CircuitRelayService::Impl {
     if (!host_for_post) {
       return;
     }
-    host_for_post->GetWorkerPool().Post(WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
+    PostLibp2pWorker(*host_for_post, WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
       CircuitRelayAdmissionPolicy policy;
       Libp2pHost* host_ptr = nullptr;
       PeerSessionManager* sessions_ptr = nullptr;
@@ -331,7 +331,7 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
 
   sessions_.OpenStream(relay_peer_key, {ProtocolName{kCircuitRelayProtocolId}},
                        [&host = host_, frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
-                         host.GetWorkerPool().Post(WorkerLane::Normal,
+                         PostLibp2pWorker(host, WorkerLane::Normal,
                                                    [frame, result_promise, stream_res = std::move(stream_res)]() mutable {
                            if (!stream_res) {
                              result_promise->set_value(Error("circuit-relay stream open failed"));

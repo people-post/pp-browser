@@ -52,21 +52,19 @@ Can proceed **in parallel** with [p2p-av-calls m2](../p2p-av-calls/PHASES.md) (W
 
 ---
 
-## Phase t3.5 — ThreadRuntime (app-owned pool)
+## Phase t3.5 — PlatformRuntime (app-owned pool)
 
-**Goal:** Composition root owns worker pool; subsystems borrow `WorkerPool*`.
+**Goal:** Composition root owns worker pool; call sites use `PlatformRuntime::PostWorker` (no `WorkerPool&` plumbing).
 
-- [x] Add `ThreadRuntime` in `src/base/platform/` (`ThreadRuntime.h`, `ThreadRuntime.cpp`)
-  - Owns `WorkerPool`; `Start` / `Shutdown`; `PauseWorkers` / `ResumeWorkers`
-  - `ThreadRuntime::Instance()` for transitional global access
-- [x] `Application` owns `std::unique_ptr<ThreadRuntime>`; `MessagingHub::SetWorkerPool`
-- [x] `pp-node` bootstrap creates `ThreadRuntime`; shutdown on exit
-- [x] `Libp2pHost::Start(config, WorkerPool* workers = nullptr)` — app passes pool; tests use private pool
-- [x] `NodeRuntime` requires `WorkerPool*` in config
-- [ ] Wire `AppLifecycle` background → `ThreadRuntime::PauseWorkers()` — deferred
-- [ ] Register libp2p io / notifier / mDNS in `ThreadRuntime` — deferred (t4+)
+- [x] `ThreadRuntime` owns `WorkerPool` (internal to platform)
+- [x] `WorkerDispatch` in `common/` — installed by `PlatformRuntime::Initialize`
+- [x] `PlatformRuntime` — `PostUI`, `PostWorker`, `PostWorkerAndReplyOnUI`, `EnsurePlatformServices`, `Paths()` / `Assets()` / `Notifier()`
+- [x] `Application` / `pp-node` call `PlatformRuntime::Initialize` / `Shutdown`
+- [x] libp2p integration uses `PostLibp2pWorker` (dispatch when installed; private host pool in unit tests)
+- [ ] Wire `AppLifecycle` background → `PlatformRuntime::PauseWorkers()` — deferred
+- [ ] Register libp2p io / notifier / mDNS on runtime — deferred (t4+)
 
-**Exit criteria:** Single app-owned pool in production; libp2p integration borrows it; tests unchanged behavior. **Done** (pause/lifecycle deferred).
+**Exit criteria:** Single schedule API in production; no `SetWorkerPool` / `WorkerPool*` through NodeRuntime. **Done** (pause/lifecycle deferred).
 
 ---
 
@@ -139,7 +137,7 @@ Can proceed **in parallel** with [p2p-av-calls m2](../p2p-av-calls/PHASES.md) (W
 
 | Date | Change |
 |------|--------|
-| 2026-08-03 | Phase t3.5: `ThreadRuntime` at app root; `Libp2pHost` borrows app pool |
+| 2026-08-03 | Phase t3.5: `PlatformRuntime` facade + `WorkerDispatch`; no pool injection |
 | 2026-08-03 | Phase t2: libp2p integration hop-offs on `WorkerPool` |
 | 2026-08-03 | Phase t1: `WorkerPool` in `src/common/` with unit tests |
 | 2026-08-03 | Project created; t0 design complete; t1–t6 planned |

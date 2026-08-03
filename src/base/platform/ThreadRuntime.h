@@ -34,9 +34,6 @@ public:
   void PauseWorkers();
   void ResumeWorkers();
 
-  /** Process-wide instance while subsystems migrate to explicit injection (t3.5). */
-  static ThreadRuntime* Instance();
-
 private:
   bool running_ = false;
   std::unique_ptr<WorkerPool> worker_pool_;

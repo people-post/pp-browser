@@ -1,8 +1,8 @@
 #include "libp2p/integration/host/CallMediaDirectService.h"
 
 #include "common/Logger.h"
-#include "common/WorkerPool.h"
 #include "libp2p/integration/host/CallMediaFrameCrypto.h"
+#include "libp2p/integration/host/Libp2pWorker.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/basic/read.hpp>
@@ -341,7 +341,7 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
       return;
     }
     auto stream = std::move(stream_in.stream);
-    host->GetWorkerPool().Post(WorkerLane::Critical, [self = shared_from_this(), stream = std::move(stream)]() mutable {
+    PostLibp2pWorker(*host, WorkerLane::Critical, [self = shared_from_this(), stream = std::move(stream)]() mutable {
       auto hello = ReadJson(stream);
       if (!hello || hello->value("type", "") != "hello") {
         logging::getLogger("CallMediaDirect").warning
@@ -453,7 +453,7 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
   sessions_.OpenStream(params.peer_key, {ProtocolName{kCallMediaDirectProtocolId}},
                        [this, params, callbacks = std::move(callbacks), settled, result_promise](
                            outcome::result<libp2p::StreamAndProtocol> stream_res) mutable {
-                         host_.GetWorkerPool().Post(WorkerLane::Critical,
+                         PostLibp2pWorker(host_, WorkerLane::Critical,
                                                     [this, params, callbacks = std::move(callbacks), settled,
                                                      result_promise, stream_res = std::move(stream_res)]() mutable {
                            auto finish = [&](Roe<void> value) {

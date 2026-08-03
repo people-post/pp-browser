@@ -3,6 +3,7 @@ set(PP_BROWSER_COMMON_SOURCES
   Logger.cpp
   Utilities.cpp
   WorkerPool.cpp
+  WorkerDispatch.cpp
 )
 
 add_library(pp_common STATIC ${PP_BROWSER_COMMON_SOURCES})

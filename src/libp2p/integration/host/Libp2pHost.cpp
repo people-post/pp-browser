@@ -1,5 +1,7 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 
+#include "common/WorkerDispatch.h"
+
 #include <libp2p/crypto/key.hpp>
 #include <libp2p/host/explicit_host.hpp>
 #include <libp2p/host/host.hpp>
@@ -76,15 +78,16 @@ void Libp2pHost::EnsureLogging() {
   EnsureLibp2pLoggingInitialized();
 }
 
-Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config, WorkerPool* workers) {
+Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
   if (running_.exchange(true)) {
     return {};
   }
 
   EnsureLogging();
   config_ = config;
-  if (workers) {
-    worker_pool_ = workers;
+  if (WorkerDispatch::IsInstalled()) {
+    owned_worker_pool_.reset();
+    worker_pool_ = nullptr;
   } else {
     owned_worker_pool_ = std::make_unique<WorkerPool>();
     worker_pool_ = owned_worker_pool_.get();
@@ -223,7 +226,7 @@ void Libp2pHost::Post(std::function<void()> fn) {
 }
 
 WorkerPool& Libp2pHost::GetWorkerPool() {
-  assert(worker_pool_ != nullptr && "Libp2pHost::Start requires WorkerPool&");
+  assert(worker_pool_ != nullptr && "Libp2pHost::GetWorkerPool requires a private test pool");
   return *worker_pool_;
 }
 

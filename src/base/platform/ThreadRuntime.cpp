@@ -4,12 +4,6 @@
 
 namespace pbr {
 
-namespace {
-
-ThreadRuntime* g_instance = nullptr;
-
-} // namespace
-
 ThreadRuntime::ThreadRuntime() = default;
 
 ThreadRuntime::~ThreadRuntime() {
@@ -22,7 +16,6 @@ void ThreadRuntime::Start(const ThreadRuntimeConfig& config) {
   }
   worker_pool_ = std::make_unique<WorkerPool>(config.worker_pool_threads);
   running_ = true;
-  g_instance = this;
 }
 
 void ThreadRuntime::Shutdown() {
@@ -30,9 +23,6 @@ void ThreadRuntime::Shutdown() {
     return;
   }
   running_ = false;
-  if (g_instance == this) {
-    g_instance = nullptr;
-  }
   if (worker_pool_) {
     worker_pool_->Shutdown();
     worker_pool_.reset();
@@ -59,10 +49,6 @@ void ThreadRuntime::ResumeWorkers() {
   if (worker_pool_) {
     worker_pool_->Resume();
   }
-}
-
-ThreadRuntime* ThreadRuntime::Instance() {
-  return g_instance;
 }
 
 } // namespace pbr
