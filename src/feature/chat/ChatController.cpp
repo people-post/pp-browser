@@ -213,6 +213,23 @@ std::string MockAssistantRespond(const std::string& query) {
 
 } // namespace
 
+ChatController* ChatController::installed_instance_ = nullptr;
+
+void ChatController::InstallInstance(ChatController& controller) {
+  installed_instance_ = &controller;
+}
+
+void ChatController::ClearInstance() {
+  installed_instance_ = nullptr;
+}
+
+ChatController& ChatController::Instance() {
+  if (!installed_instance_) {
+    throw std::runtime_error("ChatController not installed");
+  }
+  return *installed_instance_;
+}
+
 ChatController::ChatController()
     : scroller_(context_,
                 ChatTranscriptScroller::View{
@@ -283,10 +300,6 @@ ChatController::ChatController()
       });
 }
 
-ChatController& ChatController::Instance() {
-  static ChatController controller;
-  return controller;
-}
 void ChatController::BindChatPorts(MessagingChatPorts ports) {
   chat_ports_ = std::move(ports);
   scroller_.BindChatPorts(chat_ports_);
@@ -2068,16 +2081,16 @@ void ChatController::WireMessagingBindings() {
     ShellDirty();
   });
   chat_ports_.set_on_background_unread(
-      [](std::string title, std::string body, std::string thread_id) {
-        if (!ChatController::Instance().Store().Snapshot().profile_prefs.show_notifications) {
+      [this](std::string title, std::string body, std::string thread_id) {
+        if (!Store().Snapshot().profile_prefs.show_notifications) {
           return;
         }
         ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
       });
-  ILocalNotifier::Instance().SetActivationHandler([](std::string thread_id) {
+  ILocalNotifier::Instance().SetActivationHandler([this](std::string thread_id) {
     DesktopWindowChrome::RaiseAndFocus();
     if (!thread_id.empty()) {
-      ChatController::Instance().OnSelectThread(thread_id);
+      OnSelectThread(thread_id);
     }
   });
   BackgroundSyncScheduler::Instance().SetSyncHandler([this](bool force) {
@@ -2214,48 +2227,49 @@ bool ChatController::Setup(Rml::Context* context) {
   register_enter_send(Rml::Input::KI_RETURN);
   register_enter_send(Rml::Input::KI_NUMPADENTER);
 
-  if (!DataModelHost::Instance().Register(context, "chat", [](Rml::DataModelConstructor& ctor) {
+  if (!DataModelHost::Instance().Register(context, "chat", [this](Rml::DataModelConstructor& ctor) {
+        auto& controller = *this;
         RegisterChatWidgetDataTypes(ctor);
-        ctor.Bind("draft", &ChatController::Instance().chat_.draft);
-        ctor.Bind("draft_placeholder", &ChatController::Instance().chat_.draft_placeholder);
-        ctor.Bind("status", &ChatController::Instance().chat_.status);
-        ctor.Bind("loading", &ChatController::Instance().chat_.loading);
-        ctor.Bind("has_turns", &ChatController::Instance().chat_.has_turns);
-        ctor.Bind("turns", &ChatController::Instance().chat_.turns);
-        ctor.Bind("messages", &ChatController::Instance().chat_.messages);
-        ctor.Bind("use_messages_layout", &ChatController::Instance().chat_.use_messages_layout);
-        ctor.Bind("thread_title", &ChatController::Instance().chat_.thread_title);
-        ctor.Bind("thread_subtitle", &ChatController::Instance().chat_.thread_subtitle);
-        ctor.Bind("peer_link_status", &ChatController::Instance().chat_.peer_link_status);
-        ctor.Bind("peer_link_banner", &ChatController::Instance().chat_.peer_link_banner);
-        ctor.Bind("show_peer_link", &ChatController::Instance().chat_.show_peer_link);
-        ctor.Bind("show_peer_link_banner", &ChatController::Instance().chat_.show_peer_link_banner);
-        ctor.Bind("show_retry_peer_dial", &ChatController::Instance().chat_.show_retry_peer_dial);
-        ctor.Bind("thread_encrypted", &ChatController::Instance().chat_.thread_encrypted);
-        ctor.Bind("thread_is_ai", &ChatController::Instance().chat_.thread_is_ai);
-        ctor.Bind("thread_is_private", &ChatController::Instance().chat_.thread_is_private);
-        ctor.Bind("thread_is_public", &ChatController::Instance().chat_.thread_is_public);
-        ctor.Bind("thread_is_group", &ChatController::Instance().chat_.thread_is_group);
-        ctor.Bind("compose_disabled", &ChatController::Instance().chat_.compose_disabled);
-        ctor.Bind("show_thread_actions", &ChatController::Instance().chat_.show_thread_actions);
-        ctor.Bind("show_peer_sheet", &ChatController::Instance().chat_.show_peer_sheet);
-        ctor.Bind("show_call_actions", &ChatController::Instance().chat_.show_call_actions);
-        ctor.Bind("show_forget_memory", &ChatController::Instance().chat_.show_forget_memory);
-        ctor.Bind("show_sync_with_peer", &ChatController::Instance().chat_.show_sync_with_peer);
-        ctor.Bind("show_thread_menu", &ChatController::Instance().chat_.show_thread_menu);
-        ctor.Bind("show_gap_banner", &ChatController::Instance().chat_.show_gap_banner);
-        ctor.Bind("show_compromised_banner", &ChatController::Instance().chat_.show_compromised_banner);
-        ctor.Bind("show_psk_setup_banner", &ChatController::Instance().chat_.show_psk_setup_banner);
-        ctor.Bind("show_psk_import", &ChatController::Instance().chat_.show_psk_import);
-        ctor.Bind("psk_has_key", &ChatController::Instance().chat_.psk_has_key);
-        ctor.Bind("psk_verified", &ChatController::Instance().chat_.psk_verified);
-        ctor.Bind("psk_fingerprint", &ChatController::Instance().chat_.psk_fingerprint);
-        ctor.Bind("psk_export_b64", &ChatController::Instance().chat_.psk_export_b64);
-        ctor.Bind("psk_import_text", &ChatController::Instance().chat_.psk_import_text);
-        ctor.Bind("sync_in_progress", &ChatController::Instance().chat_.sync_in_progress);
-        ctor.Bind("show_older_history_hint", &ChatController::Instance().chat_.show_older_history_hint);
-        ctor.Bind("show_jump_to_latest", &ChatController::Instance().chat_.show_jump_to_latest);
-        ctor.Bind("jump_to_latest_label", &ChatController::Instance().chat_.jump_to_latest_label);
+        ctor.Bind("draft", &controller.chat_.draft);
+        ctor.Bind("draft_placeholder", &controller.chat_.draft_placeholder);
+        ctor.Bind("status", &controller.chat_.status);
+        ctor.Bind("loading", &controller.chat_.loading);
+        ctor.Bind("has_turns", &controller.chat_.has_turns);
+        ctor.Bind("turns", &controller.chat_.turns);
+        ctor.Bind("messages", &controller.chat_.messages);
+        ctor.Bind("use_messages_layout", &controller.chat_.use_messages_layout);
+        ctor.Bind("thread_title", &controller.chat_.thread_title);
+        ctor.Bind("thread_subtitle", &controller.chat_.thread_subtitle);
+        ctor.Bind("peer_link_status", &controller.chat_.peer_link_status);
+        ctor.Bind("peer_link_banner", &controller.chat_.peer_link_banner);
+        ctor.Bind("show_peer_link", &controller.chat_.show_peer_link);
+        ctor.Bind("show_peer_link_banner", &controller.chat_.show_peer_link_banner);
+        ctor.Bind("show_retry_peer_dial", &controller.chat_.show_retry_peer_dial);
+        ctor.Bind("thread_encrypted", &controller.chat_.thread_encrypted);
+        ctor.Bind("thread_is_ai", &controller.chat_.thread_is_ai);
+        ctor.Bind("thread_is_private", &controller.chat_.thread_is_private);
+        ctor.Bind("thread_is_public", &controller.chat_.thread_is_public);
+        ctor.Bind("thread_is_group", &controller.chat_.thread_is_group);
+        ctor.Bind("compose_disabled", &controller.chat_.compose_disabled);
+        ctor.Bind("show_thread_actions", &controller.chat_.show_thread_actions);
+        ctor.Bind("show_peer_sheet", &controller.chat_.show_peer_sheet);
+        ctor.Bind("show_call_actions", &controller.chat_.show_call_actions);
+        ctor.Bind("show_forget_memory", &controller.chat_.show_forget_memory);
+        ctor.Bind("show_sync_with_peer", &controller.chat_.show_sync_with_peer);
+        ctor.Bind("show_thread_menu", &controller.chat_.show_thread_menu);
+        ctor.Bind("show_gap_banner", &controller.chat_.show_gap_banner);
+        ctor.Bind("show_compromised_banner", &controller.chat_.show_compromised_banner);
+        ctor.Bind("show_psk_setup_banner", &controller.chat_.show_psk_setup_banner);
+        ctor.Bind("show_psk_import", &controller.chat_.show_psk_import);
+        ctor.Bind("psk_has_key", &controller.chat_.psk_has_key);
+        ctor.Bind("psk_verified", &controller.chat_.psk_verified);
+        ctor.Bind("psk_fingerprint", &controller.chat_.psk_fingerprint);
+        ctor.Bind("psk_export_b64", &controller.chat_.psk_export_b64);
+        ctor.Bind("psk_import_text", &controller.chat_.psk_import_text);
+        ctor.Bind("sync_in_progress", &controller.chat_.sync_in_progress);
+        ctor.Bind("show_older_history_hint", &controller.chat_.show_older_history_hint);
+        ctor.Bind("show_jump_to_latest", &controller.chat_.show_jump_to_latest);
+        ctor.Bind("jump_to_latest_label", &controller.chat_.jump_to_latest_label);
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
@@ -2288,7 +2302,8 @@ bool ChatController::Setup(Rml::Context* context) {
     return false;
   }
 
-  if (!DataModelHost::Instance().Register(context, "shell", [](Rml::DataModelConstructor& ctor) {
+  if (!DataModelHost::Instance().Register(context, "shell", [this](Rml::DataModelConstructor& ctor) {
+        auto& controller = *this;
         RegisterChatWidgetDataTypes(ctor);
         if (auto working_set_handle = ctor.RegisterStruct<TurnWidgetState>()) {
           working_set_handle.RegisterMember("has_form", &TurnWidgetState::has_form);
@@ -2307,12 +2322,12 @@ bool ChatController::Setup(Rml::Context* context) {
           session_handle.RegisterMember("closable", &ChatController::SessionRow::closable);
         }
         ctor.RegisterArray<std::vector<ChatController::SessionRow>>();
-        ctor.Bind("sessions", &ChatController::Instance().shell_.sessions);
-        ctor.Bind("working_set_active", &ChatController::Instance().shell_.working_set_active);
-        ctor.Bind("working_set_title", &ChatController::Instance().shell_.working_set_title);
-        ctor.Bind("working_set_subtitle", &ChatController::Instance().shell_.working_set_subtitle);
-        ctor.Bind("working_set_rml", &ChatController::Instance().shell_.working_set_rml);
-        ctor.Bind("working_set", &ChatController::Instance().shell_.working_set);
+        ctor.Bind("sessions", &controller.shell_.sessions);
+        ctor.Bind("working_set_active", &controller.shell_.working_set_active);
+        ctor.Bind("working_set_title", &controller.shell_.working_set_title);
+        ctor.Bind("working_set_subtitle", &controller.shell_.working_set_subtitle);
+        ctor.Bind("working_set_rml", &controller.shell_.working_set_rml);
+        ctor.Bind("working_set", &controller.shell_.working_set);
         ctor.BindEventCallback("new_chat", &ChatController::NewChatCallback);
         ctor.BindEventCallback("new_message", &ChatController::NewMessageCallback);
         ctor.BindEventCallback("open_new_session_menu", &ChatController::OpenNewSessionMenuCallback);
@@ -2552,22 +2567,6 @@ void ChatController::Shutdown() {
   chat_ = {};
   shell_ = {};
   use_llm_ = false;
-}
-
-bool SetupChatController(Rml::Context* context) {
-  return ChatController::Instance().Setup(context);
-}
-
-void UpdateChatController() {
-  ChatController::Instance().Update();
-}
-
-void AfterLayoutChatController() {
-  ChatController::Instance().AfterLayout();
-}
-
-void ShutdownChatController() {
-  ChatController::Instance().Shutdown();
 }
 
 } // namespace pbr

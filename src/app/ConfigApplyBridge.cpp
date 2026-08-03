@@ -8,11 +8,12 @@
 
 namespace pbr {
 
-void ConfigApplyBridge::Bind(MessagingHub& messaging, SessionStore& store, ShellHost& shell,
+void ConfigApplyBridge::Bind(MessagingHub& messaging, SessionStore& store, ShellHost& shell, ChatController& chat,
                              AssetPathResolver resolve_asset) {
   messaging_ = &messaging;
   store_ = &store;
   shell_ = &shell;
+  chat_ = &chat;
   resolve_asset_ = std::move(resolve_asset);
 }
 
@@ -46,7 +47,9 @@ void ConfigApplyBridge::OnConfig(const AppConfig& config) {
   const ChatController::AgentConfig agent = ChatController::ProjectAgent(config);
   if (!last_agent_ || agent != *last_agent_) {
     last_agent_ = agent;
-    ChatController::Instance().Apply(agent);
+    if (chat_) {
+      chat_->Apply(agent);
+    }
   }
 }
 

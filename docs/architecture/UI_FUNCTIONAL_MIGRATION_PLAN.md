@@ -5,7 +5,7 @@
 > **Architecture reference (permanent):** [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)
 
 **Last updated:** 2026-08-03  
-**Status:** Phase 5–7 complete; Phase 8 in progress (Settings + Contacts + PeoplePicker + ShellHost app-owned)
+**Status:** Phase 8 complete (all presenters + ShellHost app-owned)
 
 ---
 
@@ -189,21 +189,22 @@
 
 **Primary files:** `Application.*`, `ShellHost.*`, `ChatController.*`, `SettingsController.*`, `DataModelHost.*`
 
-- [x] `Application` holds `unique_ptr` for **SettingsController**, **ContactsController**, **PeoplePickerController**, and **ShellHost**
+- [x] `Application` holds `unique_ptr` for **SettingsController**, **ContactsController**, **PeoplePickerController**, **ShellHost**, and **ChatController**
 - [x] Settings RmlUi registration uses `[this]` capture; model registration moved to Application
 - [x] Contacts RmlUi registration uses `[this]` capture; model registration moved to Application
 - [x] PeoplePicker RmlUi registration uses `[this]` capture; model registration moved to Application
 - [x] ShellHost window model registration uses `[this]` capture; registration moved to Application
+- [x] ChatController chat/shell model registration uses `[this]` capture (Setup clears DataModelHost map first)
 - [x] `ContactsNotifyPorts` decouples ChatController from `ContactsController::Instance()`
 - [x] `PeoplePickerNotifyPorts` decouples ChatController and CallController from `PeoplePickerController::Instance()`
-- [x] `InstallInstance` / `ClearInstance` shim for static RmlUi callbacks (Settings, Contacts, PeoplePicker, ShellHost)
-- [x] `ConfigApplyBridge` receives `ShellHost&` (no `ShellHost::Instance()` in app bridge)
-- [ ] Repeat for ChatController
+- [x] `InstallInstance` / `ClearInstance` shim for static RmlUi callbacks (all presenters + ShellHost)
+- [x] `ConfigApplyBridge` receives `ShellHost&` and `ChatController&` (no presenter `::Instance()` in app bridge)
+- [x] `WireShellPresentationEvents` takes `ChatController&` (no `ChatController::Instance()` in shell wiring)
 - [ ] Keep `DataModelHost` as registry singleton **or** move registry to Application — decide in implementation
 
-**Exit check:** `grep -r '::Instance()' src/feature src/app | wc -l` → 0 (excluding tests and explicit migration shims). **Settings/Contacts/PeoplePicker/ShellHost: Application has 0 `::Instance()` calls; Chat uses notify ports; ConfigApplyBridge uses injected `ShellHost&`.**
+**Exit check:** Application has **0** presenter `::Instance()` calls (except SDL live-resize function-pointer handlers). Static RmlUi callbacks retain `InstallInstance` shims until Phase 9.
 
-**Notes:** Presenters + `ShellHost` constructed in `Application`; window model registration before `SetupChatController`; `WireShellPresentationEvents` takes settings/contacts refs.
+**Notes:** All presenters + `ShellHost` + `ChatController` constructed in `Application`; `WireShellPresentationEvents` takes settings/contacts/chat refs; notify ports for cross-presenter calls.
 
 ---
 
@@ -227,7 +228,7 @@ Record before/after when starting each phase:
 | Metric | Baseline | Current |
 |--------|----------|---------|
 | `ShellHost::Instance` call sites (src, non-test) | ~290 | **~3** (ShellHost.cpp shim + posted tasks) |
-| `ChatController::Instance` call sites | ~70 | ~70 |
+| `ChatController::Instance` call sites | ~70 | **1** (SDL live-resize AfterLayout) |
 | `SettingsController::Instance` in `ShellHost.cpp` | 3 | **0** |
 | `ShellHost::Instance` in `SettingsController.cpp` | ~34 | **0** |
 | `ShellHost::Instance` in `ContactsController.cpp` | ~30 | **0** |

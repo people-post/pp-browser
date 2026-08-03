@@ -78,6 +78,12 @@ public:
   static AgentConfig ProjectAgent(const AppConfig& config);
   void Apply(const AgentConfig& config);
 
+  ChatController();
+  ~ChatController() override = default;
+
+  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
+  static void InstallInstance(ChatController& controller);
+  static void ClearInstance();
   static ChatController& Instance();
 
   using SessionRow = SessionDisplayRow;
@@ -176,8 +182,6 @@ private:
     std::string output;
     bool from_llm = false;
   };
-
-  ChatController();
 
   static void SendMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SendSuggestionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -317,11 +321,8 @@ private:
   ChatWidgetHost widgets_;
   std::optional<PendingReply> pending_reply_;
   bool focus_draft_after_sync_ = false;
-};
 
-bool SetupChatController(Rml::Context* context);
-void UpdateChatController();
-void AfterLayoutChatController();
-void ShutdownChatController();
+  static ChatController* installed_instance_;
+};
 
 } // namespace pbr
