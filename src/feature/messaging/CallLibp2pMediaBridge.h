@@ -47,6 +47,15 @@ public:
 
   void StopLibp2pMedia(const std::string& call_id);
 
+  /**
+   * Abort in-flight Connect and wait until the worker exits (or timeout).
+   * Must run before destroying this bridge / CallMediaDirectService / libp2p host.
+   */
+  void PrepareForTeardown(int timeout_ms = 2000);
+
+  /** True after PrepareForTeardown / StopLibp2pMedia — inbound hello wait must exit. */
+  bool IsStopping() const { return stopping_.load(std::memory_order_acquire); }
+
   void NoteMediaAttempted(const std::string& call_id);
   bool MediaAttempted(const std::string& call_id) const;
 
@@ -57,7 +66,7 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
-  Roe<void> EnsurePeerReachableOnIo(const std::string& peer_identity);
+  Roe<void> EnsurePeerReachableOnIo(const std::string& peer_identity, uint64_t connect_gen);
   Roe<void> ConnectOffererWithRetry(const CallMediaDirectConnectParams& params,
                                     const CallMediaDirectCallbacks& cbs);
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
@@ -79,6 +88,9 @@ private:
   bool libp2p_connect_missing_mic_ = false;
   /** Offerer Connect runs off Browser IO so PollInbox cannot starve it. */
   std::atomic<bool> connect_worker_inflight_{false};
+  /** Bumped in StopLibp2pMedia so in-flight Connect workers abort instead of racing Detach/Stop. */
+  std::atomic<uint64_t> connect_generation_{0};
+  std::atomic<bool> stopping_{false};
   std::unordered_set<std::string> media_attempted_calls_;
   std::atomic<uint32_t> audio_seq_{0};
 };

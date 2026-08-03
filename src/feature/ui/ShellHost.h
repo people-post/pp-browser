@@ -81,7 +81,8 @@ public:
   void Initialize(Rml::Context* context);
   void SyncLayout();
   void RequestSyncLayout(bool restore_focus_after = false, const char* reason = nullptr);
-  /** Mount/clear call ring + in-call overlays without remounting the full shell tree. */
+  /** Mount/clear call ring + in-call overlays without remounting the full shell tree.
+   *  Defers to the next UI turn so Rml click handlers are not mid-dispatch on destroyed nodes. */
   void RemountCallChrome();
   void Update(Rml::Context* context);
   /** Call after Rml::Context::Update so RequestNextUpdate is not cleared by it. Arms power-save. */
@@ -205,6 +206,8 @@ private:
   void SaveFocus();
   void RestoreFocus();
   void FlushPendingSyncLayout();
+  void RemountCallChromeNow();
+  void FlushRemountCallChrome();
   DismissTarget ResolveDismissTarget() const;
   void BeginAnimatedDismiss(DismissTarget target);
   void CommitDismiss(DismissTarget target);
@@ -236,6 +239,7 @@ private:
   std::vector<LocalBackEntry> local_back_stack_;
   Rml::String saved_focus_id_;
   bool sync_pending_ = false;
+  bool remount_call_chrome_pending_ = false;
   bool restore_focus_after_sync_ = false;
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;

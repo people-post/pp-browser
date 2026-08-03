@@ -281,12 +281,20 @@ void CallP2pSignalingBridge::ScheduleStartMediaAsAnswerer(const std::string& cal
 }
 
 void CallP2pSignalingBridge::StopP2pMedia(const std::string& call_id) {
-  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-    media_.Stop();
-  }
   ClearP2pConnectFailed();
   ClearMediaCallbacks();
   media_attempted_calls_.erase(call_id);
+  // SDL / PC teardown is UI-only (same rule as libp2p StopLibp2pMedia).
+  auto stop_engine = [this, call_id]() {
+    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+      media_.Stop();
+    }
+  };
+  if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+    stop_engine();
+  } else {
+    BrowserThread::PostTask(BrowserThreadId::UI, std::move(stop_engine));
+  }
 }
 
 Roe<void> CallP2pSignalingBridge::OnRemoteSdp(const CallSdpDetail& sdp, const std::string& sender_identity) {

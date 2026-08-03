@@ -101,10 +101,11 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 | Work | Thread | Why |
 |------|--------|-----|
 | Rml click / `DirtyWindow` / `RemountCallChrome` | UI only | Return immediately; **never** full-shell `SyncLayout` for call overlays (Samsung hit-test) |
-| `AcceptInvite` / `DeclineInvite` / `LeaveCall` / send prep | Worker Critical/Normal | Posted by lifecycle |
-| Prefetch / circuit / dial wait / `Connect` | Worker | Seconds-scale waits |
+| `AcceptInvite` / `DeclineInvite` / `LeaveCall` / send prep | Worker Critical/Normal | Posted by lifecycle; Leave uses Critical |
+| Prefetch / circuit / dial wait / `Connect` | Worker | Seconds-scale waits; aborted via `connect_generation_` on Leave |
 | N025 `ListenOn` / Wire / mDNS | Worker → asio | Driven by lifecycle `WantEphemeralListen`, not inventing policy from tick alone |
-| `CallMediaEngine::StartSfu` / SDL capture | UI | Posted by bridge |
+| `CallMediaEngine::StartSfu` / `Stop` / SDL capture | **UI only** | Bridge posts Stop to UI when LeaveCall runs off-UI; never TearDown SDL on a worker |
+| Hub / process shutdown | UI | `CallLibp2pMediaBridge::PrepareForTeardown` aborts Connect + waits before destroying the bridge |
 | Chrome refresh (`RefreshPendingRing` / `SyncShellState` / ringtone) | **Always hop to UI** + RemountCallChrome / DirtyWindow + `RequestForceFrame` | Safe from worker **and coordinator**; Present depends on [THREADING.md UI delivery](THREADING.md#ui-delivery-pipeline) (mailbox liveness), not user input |
 
 ### Scenario matrix (v1)
@@ -116,7 +117,7 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 | Decline / expire | Idle; listen desire off when no call |
 | Outbound unanswered | Offerer `OutboundCalling` with no media past invite TTL (`kDefaultCallInviteTtlMs`) → auto-Leave; clears sticky Calling bar |
 | Conflict (2nd invite) | Conflict copy; Accept leaves other local call first; single active call |
-| Leave / remote end | Idle; stop media via session |
+| Leave / remote end | Idle; stop media on UI; abort Connect worker; LeaveCall on Critical |
 | Answerer before key | `MediaDeferred` → `MediaPending` until `MediaKeyReady` |
 | Offerer dial fail | `ConnectFailed`; Retry re-enters `MediaConnecting` |
 | Listen fail / no bound port | Surface error; stay `MediaPending` / `ConnectFailed`; Retry re-arms listen |

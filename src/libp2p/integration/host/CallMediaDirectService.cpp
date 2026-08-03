@@ -120,6 +120,10 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
   std::atomic<uint32_t> decrypt_fail_log_{0};
   std::atomic<uint32_t> drop_log_{0};
 
+  // Active Connect() waiter — Detach completes it so Leave/shutdown do not block 15s+.
+  std::shared_ptr<std::atomic<bool>> connect_settled;
+  std::shared_ptr<std::promise<Roe<void>>> connect_promise;
+
   // IO-thread-only media pump state (Yamux/Noise are not cross-thread safe).
   enum class ReadPhase { Idle, Header, Body };
   ReadPhase read_phase = ReadPhase::Idle;
@@ -140,6 +144,19 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void DetachLocked() {
+    // Unblock CallMediaDirectService::Connect waiters immediately (Leave / hub shutdown).
+    if (connect_settled) {
+      if (!connect_settled->exchange(true)) {
+        try {
+          if (connect_promise) {
+            connect_promise->set_value(Error("call-media aborted"));
+          }
+        } catch (const std::future_error&) {
+        }
+      }
+      connect_settled.reset();
+      connect_promise.reset();
+    }
     pump_running.store(false);
     {
       std::lock_guard ol(outbound_mu);
@@ -449,13 +466,34 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
   auto settled = std::make_shared<std::atomic<bool>>(false);
   auto result_promise = std::make_shared<std::promise<Roe<void>>>();
   auto result_future = result_promise->get_future();
+  {
+    std::lock_guard lock(impl_->mu);
+    // Replace any prior waiter (should not overlap; Detach clears).
+    if (impl_->connect_settled && !impl_->connect_settled->exchange(true)) {
+      try {
+        if (impl_->connect_promise) {
+          impl_->connect_promise->set_value(Error("call-media superseded"));
+        }
+      } catch (const std::future_error&) {
+      }
+    }
+    impl_->connect_settled = settled;
+    impl_->connect_promise = result_promise;
+  }
 
   sessions_.OpenStream(params.peer_key, {ProtocolName{kCallMediaDirectProtocolId}},
-                       [this, params, callbacks = std::move(callbacks), settled, result_promise](
+                       [impl = impl_, params, callbacks = std::move(callbacks), settled, result_promise](
                            outcome::result<libp2p::StreamAndProtocol> stream_res) mutable {
-                         PostLibp2pWorker(host_, WorkerLane::Critical,
-                                                    [this, params, callbacks = std::move(callbacks), settled,
-                                                     result_promise, stream_res = std::move(stream_res)]() mutable {
+                         if (settled->load(std::memory_order_acquire)) {
+                           return; // Connect already aborted / timed out
+                         }
+                         auto* host = impl->host;
+                         if (!host) {
+                           return;
+                         }
+                         PostLibp2pWorker(*host, WorkerLane::Critical,
+                                          [impl, params, callbacks = std::move(callbacks), settled,
+                                           result_promise, stream_res = std::move(stream_res)]() mutable {
                            auto finish = [&](Roe<void> value) {
                              if (!settled->exchange(true)) {
                                try {
@@ -463,7 +501,15 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                                } catch (const std::future_error&) {
                                }
                              }
+                             std::lock_guard lock(impl->mu);
+                             if (impl->connect_settled == settled) {
+                               impl->connect_settled.reset();
+                               impl->connect_promise.reset();
+                             }
                            };
+                           if (settled->load(std::memory_order_acquire)) {
+                             return;
+                           }
                            if (!stream_res) {
                              std::string detail = "call-media dial failed";
                              try {
@@ -506,25 +552,47 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                              stream->close([](auto&&) {});
                              return;
                            }
-                           {
-                             std::lock_guard lock(impl_->mu);
-                             impl_->stream = stream;
-                             impl_->active_params = params;
-                             impl_->callbacks = std::move(callbacks);
+                           if (settled->load(std::memory_order_acquire)) {
+                             stream->close([](auto&&) {});
+                             finish(Error("call-media aborted"));
+                             return;
                            }
-                           impl_->StartIoPump();
-                           if (impl_->callbacks.on_connected) {
-                             impl_->callbacks.on_connected();
+                           {
+                             std::lock_guard lock(impl->mu);
+                             impl->stream = stream;
+                             impl->active_params = params;
+                             impl->callbacks = std::move(callbacks);
+                           }
+                           impl->StartIoPump();
+                           if (impl->callbacks.on_connected) {
+                             impl->callbacks.on_connected();
                            }
                            finish({});
                          });
                        });
 
-  if (result_future.wait_for(std::chrono::milliseconds(wait_ms)) != std::future_status::ready) {
-    settled->exchange(true);
-    return Error("call-media connect timed out");
+  // Slice the wait so Detach can complete the promise without blocking Leave/shutdown for 15s+.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_ms);
+  for (;;) {
+    const auto status = result_future.wait_for(std::chrono::milliseconds(50));
+    if (status == std::future_status::ready) {
+      std::lock_guard lock(impl_->mu);
+      if (impl_->connect_settled == settled) {
+        impl_->connect_settled.reset();
+        impl_->connect_promise.reset();
+      }
+      return result_future.get();
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      settled->exchange(true);
+      std::lock_guard lock(impl_->mu);
+      if (impl_->connect_settled == settled) {
+        impl_->connect_settled.reset();
+        impl_->connect_promise.reset();
+      }
+      return Error("call-media connect timed out");
+    }
   }
-  return result_future.get();
 }
 
 Roe<void> CallMediaDirectService::SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark) {

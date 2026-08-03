@@ -97,6 +97,8 @@ Choose the lightest primitive that fits the user task:
 
 Call ring / in-call overlays live in `#shell-call-ring-mount` / `#shell-call-in-progress-mount`. Show/hide remounts **only those mounts** via `RemountCallChrome` — never remount the full shell tree for call chrome (that destroyed chat panes and broke Accept hit-testing on Samsung). Label/pulse updates while a layer is already mounted use `DirtyWindow` only.
 
+`RemountCallChrome` **defers** `MountInner` to the next UI turn (same reason as deferred `SyncLayout`): doing it inside an Rml Leave/Accept click destroys the event target mid-dispatch and can segfault. `SyncLayout` still fills mounts synchronously after the shell remount.
+
 **Why not always-mounted `data-if` for the Accept layer?** Binding state can be true and the frame loop can Present while Rml `data-if` leaves the overlay at `display:none`. Dialogs already use presence-based mount (`SerializeDialog` empty vs HTML). Call chrome follows that pattern scoped to dedicated mounts so chat panes stay intact. Inner `data-if` (conflict copy, video stage/PiP) remains fine for fields *inside* an already-mounted layer.
 
 Dialog open/close remount is owned by `ShellFeedback` (`dialog_open` / `dialog_close`). Callers of `ShowConfirm*` / `ShowAlert` / `ShowPrompt` must not also call `RequestSyncLayout` solely to show the dialog.

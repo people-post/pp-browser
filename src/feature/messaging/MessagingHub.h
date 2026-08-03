@@ -109,6 +109,12 @@ public:
   void Shutdown();
   bool IsInitialized() const { return initialized_; }
 
+  /**
+   * Abort in-flight call-media Connect before joining the worker pool / destroying the hub.
+   * Safe to call multiple times; no-op if libp2p media is not up.
+   */
+  void AbortCallMediaForShutdown();
+
   void BindSessionStore(SessionStore& store);
 
   /** libp2p / P2P stack ready after profile unlock + identity load. */

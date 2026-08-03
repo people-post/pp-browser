@@ -765,6 +765,13 @@ void CallController::LeaveActive() {
     SyncShellState();
     return;
   }
+  // Stop SDL/media on UI before LeaveCall worker (which must not CallMediaEngine::Stop off-UI)
+  // and before remounting away the Leave button.
+  if (auto* calls = Calls()) {
+    if (calls->Media().IsActive() && calls->Media().ActiveCallId() == call_id) {
+      calls->Media().Stop();
+    }
+  }
   active_call_id_.clear();
   ClearInCall();
   ClearRing();

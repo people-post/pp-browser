@@ -779,18 +779,23 @@ void MessagingHub::StopLibp2p() {
     call_sessions_->SetLibp2pMediaBridge(nullptr);
     call_sessions_->SetMediaRelayDeps({});
   }
-  call_libp2p_bridge_.reset();
-  libp2p_bridge_bound_sessions_ = nullptr;
+  // Connect worker holds `this` on the bridge — abort + wait before delete (shutdown segfault).
+  // Detach completes in-flight Connect() immediately; dial/reachability loops check generation.
+  if (call_libp2p_bridge_) {
+    call_libp2p_bridge_->PrepareForTeardown(2000);
+  }
+  if (circuit_relay_) {
+    circuit_relay_->AbortInflightRequests();
+  }
+  if (call_media_direct_) {
+    call_media_direct_->SetInboundHandler(nullptr);
+    call_media_direct_->Stop();
+  }
   if (lan_mdns_) {
     lan_mdns_->Stop();
     lan_mdns_.reset();
   }
-  if (call_media_direct_) {
-    call_media_direct_->Stop();
-    call_media_direct_.reset();
-  }
   media_relay_client_.reset();
-  dial_registry_.reset();
   if (media_relay_) {
     media_relay_->Stop();
     media_relay_.reset();
@@ -803,9 +808,28 @@ void MessagingHub::StopLibp2p() {
     dial_back_->Stop();
     dial_back_.reset();
   }
+  // Keep bridge + dial registry alive until the libp2p host joins its workers — inbound
+  // CallMediaKey wait and OpenStream completions may still touch them.
   if (node_runtime_) {
     node_runtime_->Stop();
     node_runtime_.reset();
+  }
+  call_libp2p_bridge_.reset();
+  libp2p_bridge_bound_sessions_ = nullptr;
+  call_media_direct_.reset();
+  dial_registry_.reset();
+}
+
+void MessagingHub::AbortCallMediaForShutdown() {
+  if (call_libp2p_bridge_) {
+    // Short wait: Application joins the worker pool next while this hub is still alive.
+    call_libp2p_bridge_->PrepareForTeardown(250);
+  }
+  if (circuit_relay_) {
+    circuit_relay_->AbortInflightRequests();
+  }
+  if (call_media_direct_) {
+    call_media_direct_->Detach();
   }
 }
 
@@ -1719,13 +1743,14 @@ void MessagingHub::Shutdown() {
     identity_->Flush();
   }
   actions_.reset();
+  // Stop libp2p / Connect workers before dropping session façade (Leave may still be dialing).
+  StopLibp2p();
   call_sessions_.reset();
   // Destroy P2P before groups — P2P held a non-owning Groups pointer.
   p2p_.reset();
   group_membership_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();
-  StopLibp2p();
   signing_resolver_.reset();
   kem_resolver_.reset();
   ProfileSecretsService& secrets = ProfileSecretsService::Instance();

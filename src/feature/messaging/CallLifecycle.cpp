@@ -199,7 +199,9 @@ void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
 
 void CallLifecycle::PostLeaveCall(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
-  BrowserThread::PostTaskAndReply<Roe<void>>(
+  // Critical: must not sit behind Normal work while Connect (also Critical) still dials —
+  // StopLibp2pMedia aborts Connect via connect_generation_.
+  BrowserThread::PostTaskFrontAndReply<Roe<void>>(
       [sessions, call_id]() -> Roe<void> {
         if (!sessions) {
           return Error("Calls unavailable");

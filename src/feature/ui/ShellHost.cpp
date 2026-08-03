@@ -1661,7 +1661,8 @@ void ShellHost::SyncLayout() {
   RmlMount::MountInner(root, SerializeShellRoot());
   last_synced_mode_ = mode;
   MountPaneBodies();
-  RemountCallChrome();
+  remount_call_chrome_pending_ = false;
+  RemountCallChromeNow();
   DirtyWindow();
   if (state_.auxiliary_open) {
     DataModelHost::Instance().Dirty("shell", "working_set_active");
@@ -1680,6 +1681,26 @@ void ShellHost::SyncLayout() {
 }
 
 void ShellHost::RemountCallChrome() {
+  // Never MountInner from inside an Rml click (Leave/Accept) — that destroys the event target
+  // mid-dispatch (same class of crash as sync SyncLayout from a button).
+  if (remount_call_chrome_pending_) {
+    Backend::RequestForceFrame();
+    return;
+  }
+  remount_call_chrome_pending_ = true;
+  BrowserThread::PostTask(BrowserThreadId::UI, []() { ShellHost::Instance().FlushRemountCallChrome(); });
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::FlushRemountCallChrome() {
+  if (!remount_call_chrome_pending_) {
+    return;
+  }
+  remount_call_chrome_pending_ = false;
+  RemountCallChromeNow();
+}
+
+void ShellHost::RemountCallChromeNow() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }

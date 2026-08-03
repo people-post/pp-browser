@@ -52,6 +52,9 @@ public:
   /** Hot-update provider admission (MessagingHub feeds contact PeerIds). */
   void SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy);
 
+  /** Unblock in-flight RequestBridge waiters (Leave / hub shutdown). */
+  void AbortInflightRequests();
+
   /**
    * Client: ask relay peer to bridge this stream to a target (multiaddr and/or PeerId).
    * Returns after relay accepts or rejects (stream stays open on success for app use).

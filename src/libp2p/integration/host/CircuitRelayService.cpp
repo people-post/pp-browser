@@ -12,12 +12,15 @@
 #include <libp2p/host/host.hpp>
 #include <libp2p/peer/protocol.hpp>
 
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <vector>
 
 namespace pbr {
 
@@ -199,6 +202,25 @@ struct CircuitRelayService::Impl {
   PeerSessionManager* sessions = nullptr;
   CircuitRelayAdmissionPolicy admission;
 
+  struct InflightBridge {
+    std::shared_ptr<std::atomic<bool>> settled;
+    std::shared_ptr<std::promise<Roe<CircuitRelayBridgeResult>>> promise;
+  };
+  std::mutex bridge_mu;
+  std::vector<InflightBridge> inflight_bridges;
+
+  void AbortInflightLocked() {
+    for (auto& entry : inflight_bridges) {
+      if (entry.settled && !entry.settled->exchange(true) && entry.promise) {
+        try {
+          entry.promise->set_value(Error("circuit-relay aborted"));
+        } catch (const std::future_error&) {
+        }
+      }
+    }
+    inflight_bridges.clear();
+  }
+
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol) {
     auto stream = std::move(stream_and_protocol.stream);
     Libp2pHost* host_for_post = nullptr;
@@ -271,6 +293,12 @@ void CircuitRelayService::Start() {
 
 void CircuitRelayService::Stop() {
   started_ = false;
+  AbortInflightRequests();
+}
+
+void CircuitRelayService::AbortInflightRequests() {
+  std::lock_guard lock(impl_->bridge_mu);
+  impl_->AbortInflightLocked();
 }
 
 void CircuitRelayService::SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy) {
@@ -325,38 +353,65 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
     return frame.error();
   }
 
-  std::shared_ptr<std::promise<Roe<CircuitRelayBridgeResult>>> result_promise =
-      std::make_shared<std::promise<Roe<CircuitRelayBridgeResult>>>();
+  auto settled = std::make_shared<std::atomic<bool>>(false);
+  auto result_promise = std::make_shared<std::promise<Roe<CircuitRelayBridgeResult>>>();
   auto result_future = result_promise->get_future();
+  {
+    std::lock_guard lock(impl_->bridge_mu);
+    impl_->inflight_bridges.push_back(Impl::InflightBridge{settled, result_promise});
+  }
+
+  auto finish = [settled, result_promise](Roe<CircuitRelayBridgeResult> value) {
+    if (!settled->exchange(true)) {
+      try {
+        result_promise->set_value(std::move(value));
+      } catch (const std::future_error&) {
+      }
+    }
+  };
 
   sessions_.OpenStream(relay_peer_key, {ProtocolName{kCircuitRelayProtocolId}},
-                       [&host = host_, frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
+                       [&host = host_, frame = *frame, settled, finish](libp2p::StreamAndProtocolOrError stream_res) {
+                         if (settled->load(std::memory_order_acquire)) {
+                           return;
+                         }
                          PostLibp2pWorker(host, WorkerLane::Normal,
-                                                   [frame, result_promise, stream_res = std::move(stream_res)]() mutable {
+                                                   [frame, settled, finish, stream_res = std::move(stream_res)]() mutable {
+                           if (settled->load(std::memory_order_acquire)) {
+                             return;
+                           }
                            if (!stream_res) {
-                             result_promise->set_value(Error("circuit-relay stream open failed"));
+                             finish(Error("circuit-relay stream open failed"));
                              return;
                            }
                            auto stream = std::move(stream_res.value().stream);
                            if (!WriteExactFrame(stream, frame)) {
-                             result_promise->set_value(Error("Failed to send circuit-relay request"));
+                             finish(Error("Failed to send circuit-relay request"));
+                             return;
+                           }
+                           if (settled->load(std::memory_order_acquire)) {
+                             stream->close([](auto&&) {});
                              return;
                            }
                            auto response_frame = ReadExactFrame(stream);
+                           if (settled->load(std::memory_order_acquire)) {
+                             stream->close([](auto&&) {});
+                             return;
+                           }
                            if (!response_frame) {
-                             result_promise->set_value(Error("Failed to read circuit-relay response"));
+                             finish(Error("Failed to read circuit-relay response"));
                              stream->close([](auto&&) {});
                              return;
                            }
                            auto json_utf8 = DecodeStreamJsonFrame(*response_frame);
                            if (!json_utf8) {
-                             result_promise->set_value(json_utf8.error());
+                             finish(json_utf8.error());
                              stream->close([](auto&&) {});
                              return;
                            }
                            nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
                            if (root.is_discarded() || !root.is_object()) {
-                             result_promise->set_value(Error("invalid circuit-relay response"));
+                             finish(Error("invalid circuit-relay response"));
                              stream->close([](auto&&) {});
                              return;
                            }
@@ -366,19 +421,36 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
                            parsed.resolved_multiaddr = root.value("resolved_multiaddr", "");
                            if (!parsed.ok) {
                              stream->close([](auto&&) {});
-                             result_promise->set_value(parsed);
+                             finish(parsed);
                              return;
                            }
                            parsed.stream = stream;
-                           result_promise->set_value(parsed);
+                           finish(parsed);
                          });
                        });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;
-  if (result_future.wait_for(std::chrono::milliseconds(wait_ms)) != std::future_status::ready) {
-    return Error("circuit-relay bridge timed out");
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_ms);
+  for (;;) {
+    const auto status = result_future.wait_for(std::chrono::milliseconds(50));
+    if (status == std::future_status::ready) {
+      std::lock_guard lock(impl_->bridge_mu);
+      impl_->inflight_bridges.erase(
+          std::remove_if(impl_->inflight_bridges.begin(), impl_->inflight_bridges.end(),
+                         [&](const Impl::InflightBridge& e) { return e.settled == settled; }),
+          impl_->inflight_bridges.end());
+      return result_future.get();
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      finish(Error("circuit-relay bridge timed out"));
+      std::lock_guard lock(impl_->bridge_mu);
+      impl_->inflight_bridges.erase(
+          std::remove_if(impl_->inflight_bridges.begin(), impl_->inflight_bridges.end(),
+                         [&](const Impl::InflightBridge& e) { return e.settled == settled; }),
+          impl_->inflight_bridges.end());
+      return result_future.get();
+    }
   }
-  return result_future.get();
 }
 
 } // namespace pbr

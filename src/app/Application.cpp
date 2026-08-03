@@ -918,6 +918,17 @@ void Application::Shutdown() {
     }
     agent_session_.reset();
 
+    // Abort Connect / circuit waits, then join workers while MessagingHub still owns the bridge.
+    // Destroying the hub first left PlatformRuntime::Shutdown joining a UAF Connect worker.
+    if (messaging_) {
+      StartupPhase phase("Shutdown::AbortCallMedia");
+      messaging_->AbortCallMediaForShutdown();
+    }
+    if (PlatformRuntime::IsRunning()) {
+      StartupPhase phase("Shutdown::PlatformRuntime");
+      PlatformRuntime::Shutdown();
+    }
+
     ShutdownMessaging();
 
     BrowserThread::RunUITasks();
@@ -942,6 +953,13 @@ void Application::Shutdown() {
     initialized_ = false;
   } else {
     // Initialize may have failed after Bootstrap left hub/secrets open.
+    if (messaging_) {
+      messaging_->AbortCallMediaForShutdown();
+    }
+    if (PlatformRuntime::IsRunning()) {
+      StartupPhase phase("Shutdown::PlatformRuntime");
+      PlatformRuntime::Shutdown();
+    }
     ShutdownMessaging();
   }
 
