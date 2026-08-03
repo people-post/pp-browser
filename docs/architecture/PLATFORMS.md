@@ -70,7 +70,7 @@ Android still keeps the activity alive across other config changes (`configChang
 | Event | App response |
 |-------|----------------|
 | `SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED` / display scale / safe area | `Backend::SyncContext` updates RmlUi dimensions, DP ratio, and GL viewport; next frame is forced (no long power-save wait) |
-| UI task posted (`BrowserThread::PostTask(UI)`) | `SetUIWakeCallback` → `Backend::RequestForceFrame` (force next poll + always-push wake event). `Application::Run` also forces when `HasPendingUITasks()`. Do **not** use `WakeEventLoop` alone — that left SyncLayout/call chrome pending until mouse move when WaitEventTimeout lied |
+| UI task posted (`AppRuntime::PostUI`) | `SetUIWakeCallback` → `Backend::RequestForceFrame` (force next poll + always-push wake event). `Application::Run` also forces when `HasPendingUITasks()`. Do **not** use `WakeEventLoop` alone — that left SyncLayout/call chrome pending until mouse move when WaitEventTimeout lied |
 | Call chrome dirty (`Backend::RequestForceFrame`) | Skips the next idle wait so ring/accept overlays Present without waiting for input (also implied by PostTask(UI)) |
 | `ShellHost::RequestSyncLayout` | Posts flush + `RequestForceFrame` so deferred remounts do not stall behind idle wait |
 | Shell timers (gesture dismiss slide-out, toast expiry) | `ShellHost::NotifyFrameEnd` calls `Context::RequestNextUpdate` **after** `Context::Update` so power-save wakes for the next deadline without waiting for input |

@@ -50,7 +50,7 @@ void RequestExit();
 // Thread-safe: push an SDL user event (always push; do not coalesce-drop).
 void WakeEventLoop();
 // Thread-safe UI delivery: skip the next power-save idle wait + WakeEventLoop.
-// BrowserThread::PostTask(UI) should call this (via SetUIWakeCallback), not WakeEventLoop alone.
+// AppRuntime::PostUI should call this (via SetUIWakeCallback), not WakeEventLoop alone.
 void RequestForceFrame();
 
 void BeginFrame();

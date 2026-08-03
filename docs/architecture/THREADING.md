@@ -48,7 +48,7 @@ flowchart TB
 | **1** | **UI thread** | `Application` main loop | No | SDL events, RmlUi, controllers; drain UI mailbox via `RunUITasks()` |
 | **2** | **libp2p reactor** | `Libp2pHost` | No | `io_context::run()`, inbound streams, host-native timers |
 | **3** | **Coordinator** | `CoordinatorThread` | No — dispatcher only | Priority mailbox; timer wheel; relay poll + hub policy; posts blocking work to pool |
-| **4** | **Worker pool** | `WorkerPool` (2–4 threads) | Yes — only here | libcurl HTTP, UPnP, Argon2, SQLite writes, stream copy loops, LLM HTTP, legacy `BrowserThread::IO` posts |
+| **4** | **Worker pool** | `WorkerPool` (2–4 threads) | Yes — only here | libcurl HTTP, UPnP, Argon2, SQLite writes, stream copy loops, LLM HTTP |
 | **5** | **Platform I/O** | `ILocalNotifier` impls | Platform-specific | Linux: D-Bus watch thread. Android: JNI → coordinator wake |
 
 **Call media** stays outside the general pool: 1–2 dedicated threads per active call (capture / video encode).
@@ -71,15 +71,13 @@ Composition root: `AppRuntime::Initialize()` / `Shutdown()` (from `Application` 
 
 | API | Runs on |
 |-----|---------|
-| `AppRuntime::PostUI` / `BrowserThread::PostTask(UI, …)` | UI (sequenced, drained each frame) |
+| `AppRuntime::PostUI` | UI (sequenced, drained each frame) |
 | `AppRuntime::PostWorker(Critical/Normal/Background, …)` | Worker pool |
 | `AppRuntime::PostCoordinator(Critical/Normal/Background, …)` | Coordinator mailbox |
 | `AppRuntime::ScheduleCoordinatorRepeating` / `OneShot` | Coordinator timer wheel |
-| `BrowserThread::PostTask(IO, …)` | Worker pool **Normal** (compat alias) |
-| `BrowserThread::PostTaskFront(IO, …)` | Worker pool **Critical** (compat alias) |
-| `BrowserThread::PostTaskAndReply` | Pool Normal → UI |
-| `BrowserThread::PostTaskFrontAndReply` | Pool Critical → UI |
-| `BrowserThread::PauseIO` / `ResumeIO` | Coordinator + pool pause/resume |
+| `AppRuntime::PostWorkerNormal` / `Critical` / `Background` | Worker pool lanes |
+| `AppRuntime::PostWorkerAndReplyOnUI` | Pool → UI |
+| `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` | Coordinator + pool pause/resume |
 | `PostLibp2pWorker` (integration) | Worker pool via `WorkerDispatch` |
 
 Libp2p integration uses `PostLibp2pWorker`; unit tests fall back to a private per-host pool when dispatch is not installed.
@@ -104,12 +102,12 @@ Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** 
 
 ### Cross-thread rules
 
-- **UI** owns RmlUi and controller mutations. Post via `BrowserThread::PostTask(UI, …)`.
+- **UI** owns RmlUi and controller mutations. Post via `AppRuntime::PostUI`.
 - **UI delivery (hard):** a non-empty UI mailbox must be drained and Presentable soon — power-save must not starve it. `PostTask(UI)` → `SetUIWakeCallback` → `Backend::RequestForceFrame` (force next poll + `WakeEventLoop`). Idle wait is **Poll + ≤50ms Delay slices** (never `SDL_WaitEventTimeout`). See [PLATFORMS.md](PLATFORMS.md).
 - **Worker pool** runs sync libcurl (30s timeout), LLM/tools, relay orchestration.
 - **Coordinator** runs fast policy only; must not block — enqueue to pool.
 - **libp2p IO** stays non-blocking; integration services hop to pool via `PostLibp2pWorker`.
-- **Pause/resume:** `AppLifecycle` uses `BrowserThread::PauseIO` / `ResumeIO` on background/foreground.
+- **Pause/resume:** `AppLifecycle` uses `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` on background/foreground.
 
 ### UI delivery pipeline
 
@@ -125,7 +123,7 @@ Produce (coordinator / worker)
 | Stage | Contract |
 |-------|----------|
 | Produce | May run off UI; do not mutate RmlUi / shell chrome here |
-| Mailbox | `BrowserThread` sequenced queue; `HasPendingUITasks()` is observable |
+| Mailbox | `AppRuntime` sequenced UI queue; `HasPendingUITasks()` is observable |
 | Drain | Idle wait must return within ≤50ms when forced / woken; cap idle ≤2s always |
 | Observe | Call ring visibility = `RemountCallChrome` into mounts; SyncLayout / toasts are also mailbox citizens — same SLA. Logs that prove state (`call_ring.active`) do **not** prove paint |
 
@@ -194,6 +192,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | 2026-08-03 | Call chrome + UI mailbox: hop ring refresh to UI; `RequestForceFrame` when UI tasks pending / SyncLayout; WakeEventLoop always pushes (no coalesce-drop); unanswered outbound TTL |
 | 2026-08-03 | **Shipped:** coordinator + worker pool model live; `pp-browser-io` retired; project folder archived |
 | 2026-08-03 | Phase t5: `BrowserThread::IO` → worker pool |
+| 2026-08-03 | Retire `BrowserThread`; UI mailbox lives on `AppRuntime` |
 | 2026-08-03 | Phase t4: `CoordinatorThread` + timer wheel |
 | 2026-08-03 | Phase t3/t3.5: messaging hop-offs + `AppRuntime` |
 | 2026-08-03 | Phase t2: libp2p integration hop-offs |

@@ -6,7 +6,7 @@
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallTypes.h"
 #include "base/people/ContactTypes.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "base/platform/ILocalNotifier.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformUserHints.h"
@@ -164,7 +164,7 @@ void CallController::BindToMessaging() {
   }
   calls->SetOnRingChanged([this]() {
     // Ingest may run on IO; shell/RmlUi updates must stay on UI.
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { RefreshPendingRing(); });
+    AppRuntime::PostUI([this]() { RefreshPendingRing(); });
   });
   if (auto* life = Lifecycle()) {
     life->SetOnChromeRefresh([this]() { RefreshPendingRing(); });
@@ -198,8 +198,8 @@ void CallController::Tick() {
 void CallController::OnCallWake() {
   // Inbox sync is async; notify once RefreshPendingRing sees the invite.
   // Coordinator / wake sync must not mutate shell chrome here (CALLS.md thread policy).
-  if (!BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { OnCallWake(); });
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this]() { OnCallWake(); });
     return;
   }
   pending_call_wake_notify_ = true;
@@ -231,8 +231,8 @@ void CallController::HideInCallChrome() {
 }
 
 void CallController::SyncShellState() {
-  if (!BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { SyncShellState(); });
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this]() { SyncShellState(); });
     return;
   }
   if (!shell_call_chrome_.call_ring || !shell_call_chrome_.call_in_progress) {
@@ -253,8 +253,8 @@ void CallController::SyncShellState() {
 }
 
 void CallController::SyncRingtone() {
-  if (!BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { SyncRingtone(); });
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this]() { SyncRingtone(); });
     return;
   }
   // Mobile: SDL playback teardown from a worker can stall the SDL thread during Accept.
@@ -302,8 +302,8 @@ std::string CallController::FormatElapsed(const int64_t connected_at_ms) {
 }
 
 void CallController::RefreshPendingRing() {
-  if (!BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { RefreshPendingRing(); });
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this]() { RefreshPendingRing(); });
     return;
   }
   BindToMessaging();

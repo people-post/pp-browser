@@ -1,7 +1,7 @@
 #include "base/platform/DesktopLocalNotifier.h"
 
 #include "base/runtime/AppLifecycle.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "base/platform/desktop/LocalNotifierImpl.h"
 #include "common/Logger.h"
 
@@ -33,7 +33,7 @@ void DesktopLocalNotifier::SetActivationHandler(
           logging::getLogger("LocalNotifier").warning << "Activation ignored: no handler";
           return;
         }
-        BrowserThread::PostTask(BrowserThreadId::UI, [handler, thread_id]() mutable {
+        AppRuntime::PostUI([handler, thread_id]() mutable {
           logging::getLogger("LocalNotifier").info
               << "Activation on UI thread thread=" << thread_id;
           handler(thread_id);

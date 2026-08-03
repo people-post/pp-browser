@@ -127,7 +127,7 @@ void Subscribe(MessagingListener* listener);  // optional push refresh
 
 - Declare narrow **ports structs** (`SettingsCommands`, `ChatSessionPorts`) or facade methods — app fills implementations in `Application`.
 - **Sync / quick:** return `Roe<void>` or a small result; safe on UI thread when work is trivial.
-- **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or `AppRuntime::PostWorker` / `BrowserThread::PostTask(IO, …)` and reply on UI ([THREADING.md](THREADING.md)).
+- **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or `AppRuntime::PostWorker` / `PostWorkerAndReplyOnUI` ([THREADING.md](THREADING.md)).
 - Long-running actions should support **progress** and **cancel** when user-visible (agent turns, UPnP probe, profile reset).
 - RmlUi static callbacks are thin: `→ presenter method → action port` — not `SomeController::Instance().Hub()->…`.
 
@@ -164,7 +164,7 @@ struct MessagingActions {
 
 - Prefer callbacks, small listener interfaces, or app-owned coordinators — not polling hidden flags every frame.
 - Events may be one-shot; do not mirror every event as permanent state on a facade.
-- UI thread delivery: post via `BrowserThread::PostTask(UI, …)` from IO / workers / coordinator.
+- UI thread delivery: post via `AppRuntime::PostUI` from workers / coordinator.
 
 **Existing examples:**
 
@@ -196,7 +196,7 @@ struct MessagingActions {
 - Binds ports (`SettingsCommands`, `ChatSessionPorts`, `ProfileUnlockPorts`)
 - Installs `ConfigApplyBridge` and SessionStore listeners
 - Wires event callbacks (messaging ready → refresh presenters)
-- Runs the main loop: UI tick, `TickLibp2p`, drain `BrowserThread::UI`
+- Runs the main loop: UI tick, `TickLibp2p`, drain `AppRuntime` UI mailbox
 
 Presenters are **app-owned instances** (`Application` holds `unique_ptr` and calls `InstallInstance` for RmlUi static callbacks). New code must not add presenter `::Instance()` call sites outside static RmlUi handlers and SDL function-pointer constraints.
 

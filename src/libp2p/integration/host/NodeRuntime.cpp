@@ -223,7 +223,7 @@ void NodeRuntime::StartEphemeralListenAsync(std::function<void(Roe<void>)> cb) {
     return;
   }
   const std::string candidate = "/ip4/0.0.0.0/tcp/0";
-  // cb runs on the libp2p io thread — callers that touch BrowserThread state must hop.
+  // cb runs on the libp2p io thread — callers that touch AppRuntime / UI state must hop.
   host_->ListenOnAsync(candidate, [this, candidate, cb = std::move(cb)](Roe<void> listened) mutable {
     if (listened) {
       ephemeral_listen_active_ = true;

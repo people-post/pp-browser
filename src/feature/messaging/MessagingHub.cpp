@@ -23,7 +23,6 @@
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppLifecycle.h"
 #include "base/runtime/BackgroundSyncScheduler.h"
-#include "base/runtime/BrowserThread.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/NetworkConnectivity.h"
 #include "base/platform/Platform.h"
@@ -405,7 +404,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
         return;
       }
     }
-    BrowserThread::ResumeIO();
+    AppRuntime::ResumeBackgroundWork();
     // StartEphemeralListenAsync only posts onto the libp2p io thread — do NOT queue it behind
     // Browser IO Prefetch/RequestBridge (Samsung: AcceptInvite never reached IO enter).
     if (!messaging_ready_ || !node_runtime_ || !node_runtime_->Host()) {
@@ -420,7 +419,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
       const std::string bound =
           (started && node_runtime_) ? node_runtime_->BoundListenMultiaddr() : std::string{};
       const std::string err = started ? std::string{} : started.error().message;
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, bound, err]() {
+      AppRuntime::PostUI([this, bound, err]() {
         mobile_ephemeral_start_inflight_ = false;
         mobile_ephemeral_start_inflight_at_ms_ = 0;
         if (!err.empty()) {
@@ -496,7 +495,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
     // StopListening PostAndWaits on the libp2p io thread — never block the UI tick
     // (Samsung: UI stuck in futex → Accept clicks never reach call_accept).
     mobile_ephemeral_stop_inflight_ = true;
-    BrowserThread::PostTask(BrowserThreadId::IO, [this]() {
+    AppRuntime::PostWorkerNormal([this]() {
       if (mobile_ephemeral_relay_started_ && media_relay_) {
         media_relay_->Stop();
         mobile_ephemeral_relay_started_ = false;
@@ -507,7 +506,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
           WireCallMediaRelayDeps();
           SyncLanMdnsAdvertisement();
         }
-        BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+        AppRuntime::PostUI([this]() {
           mobile_ephemeral_stop_inflight_ = false;
           mobile_ephemeral_last_start_error_.clear();
           log().info << "Mobile ephemeral listen stopped";
@@ -515,7 +514,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
       };
       if (node_runtime_ && node_runtime_->EphemeralListenActive()) {
         node_runtime_->StopEphemeralListenAsync([this, finish = std::move(finish)]() mutable {
-          BrowserThread::PostTask(BrowserThreadId::IO, std::move(finish));
+          AppRuntime::PostWorkerNormal( std::move(finish));
         });
         return;
       }
@@ -582,7 +581,7 @@ void MessagingHub::SyncLanMdnsAdvertisement() {
 
 void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
   // mDNS thread — hop to Browser IO before touching sessions / host repos.
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, peer]() {
+  AppRuntime::PostWorkerNormal([this, peer]() {
     if (peer.peer_id_base58.empty()) {
       return;
     }
@@ -1063,15 +1062,15 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
   call_sessions_->SetOnRingChangedMesh([this]() {
     EnsureCallLifecycleBound();
     // Invite ingest runs on IO — never Sync N025 on the IO thread itself.
-    if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+    if (AppRuntime::CurrentlyOnUI()) {
       SyncMobileEphemeralListen();
     } else {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { SyncMobileEphemeralListen(); });
+      AppRuntime::PostUI([this]() { SyncMobileEphemeralListen(); });
     }
   });
   call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
     // Warm only; must not run RequestBridge on Browser IO ahead of AcceptInvite.
-    BrowserThread::PostTask(BrowserThreadId::IO, [this, identity]() { PrefetchPeerReachability(identity); });
+    AppRuntime::PostWorkerNormal([this, identity]() { PrefetchPeerReachability(identity); });
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
@@ -1108,11 +1107,11 @@ void MessagingHub::NotifyMessagingReady() {
     return;
   }
   // EnsureMessagingReady may run on the IO thread (PIN unlock); UI bindings must run on UI.
-  if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+  if (AppRuntime::CurrentlyOnUI()) {
     on_messaging_ready_();
     return;
   }
-  BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+  AppRuntime::PostUI([this]() {
     if (on_messaging_ready_) {
       on_messaging_ready_();
     }
@@ -1142,14 +1141,14 @@ Roe<void> MessagingHub::BuildMessagingStack() {
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChangedMesh([this]() {
     EnsureCallLifecycleBound();
-    if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+    if (AppRuntime::CurrentlyOnUI()) {
       SyncMobileEphemeralListen();
     } else {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { SyncMobileEphemeralListen(); });
+      AppRuntime::PostUI([this]() { SyncMobileEphemeralListen(); });
     }
   });
   call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
-    BrowserThread::PostTask(BrowserThreadId::IO, [this, identity]() { PrefetchPeerReachability(identity); });
+    AppRuntime::PostWorkerNormal([this, identity]() { PrefetchPeerReachability(identity); });
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
@@ -1265,7 +1264,7 @@ void MessagingHub::StartCoordinatorTimers() {
   BackgroundSyncScheduler::Instance().SetSyncHandler([this](bool force) {
     const bool call_wake = BackgroundSyncScheduler::Instance().ConsumeCallWake();
     if (call_wake && on_call_wake_) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+      AppRuntime::PostUI([this]() {
         if (on_call_wake_) {
           on_call_wake_();
         }

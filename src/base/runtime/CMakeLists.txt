@@ -16,7 +16,6 @@ pp_browser_add_base_library(pp_base_runtime
     AppLifecycle.cpp
     AppRuntimeGui.cpp
     BackgroundSyncScheduler.cpp
-    BrowserThread.cpp
   PUBLIC_LIBS
     pp_base_runtime_core)
 

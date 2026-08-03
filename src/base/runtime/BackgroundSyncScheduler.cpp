@@ -3,7 +3,6 @@
 #include "base/messaging/MessagingLimits.h"
 #include "base/runtime/AppLifecycle.h"
 #include "base/runtime/AppRuntime.h"
-#include "base/runtime/BrowserThread.h"
 #include "common/Logger.h"
 #include "common/Utilities.h"
 
@@ -94,7 +93,7 @@ void BackgroundSyncScheduler::RunScheduledSync(bool force) {
     last_poll_ms_ = util::NowUnixMs();
   }
   if (!AppLifecycle::IsForeground()) {
-    BrowserThread::ResumeIO();
+    AppRuntime::ResumeBackgroundWork();
     bg_io_held_ = true;
   }
   handler_(force);

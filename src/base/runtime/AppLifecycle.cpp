@@ -1,6 +1,6 @@
 #include "base/runtime/AppLifecycle.h"
 
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
 #include <atomic>
@@ -56,7 +56,7 @@ void AppLifecycle::OnWillEnterBackground() {
     return;
   }
   g_state = AppLifecycleState::Background;
-  BrowserThread::PauseIO();
+  AppRuntime::PauseBackgroundWork();
   for (const auto& listener : g_background_listeners) {
     listener();
   }
@@ -64,12 +64,12 @@ void AppLifecycle::OnWillEnterBackground() {
 }
 
 void AppLifecycle::OnDidEnterForeground() {
-  // Always ResumeIO: Android can deliver WILL_ENTER_BACKGROUND without a matching
+  // Always ResumeBackgroundWork: Android can deliver WILL_ENTER_BACKGROUND without a matching
   // DID_ENTER_FOREGROUND after a surface blip, or the reverse order at cold start.
-  // Resume is idempotent; skipping it when g_state was already Foreground left IO paused.
+  // Resume is idempotent; skipping it when g_state was already Foreground left workers paused.
   const bool was_background = g_state == AppLifecycleState::Background;
   g_state = AppLifecycleState::Foreground;
-  BrowserThread::ResumeIO();
+  AppRuntime::ResumeBackgroundWork();
   if (!was_background) {
     return;
   }

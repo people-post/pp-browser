@@ -4,7 +4,7 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/net/ClientCompat.h"
 #include "base/runtime/AppVersion.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "base/platform/PlatformOpenUrl.h"
 #include "common/Logger.h"
 #include "feature/ui/UserFeedback.h"
@@ -84,7 +84,7 @@ void ClientCompatController::CheckAsync() {
   IClientCompatClient* client = compat_ports_.client_compat ? compat_ports_.client_compat() : nullptr;
   const std::string profile_dir = compat_ports_.profile_data_dir ? compat_ports_.profile_data_dir() : std::string{};
 
-  BrowserThread::PostTaskAndReply<CompatResolveResult>(
+  AppRuntime::PostWorkerAndReplyOnUI<CompatResolveResult>(WorkerLane::Normal,
       [client, profile_dir]() { return ResolveDocumentOnIO(client, profile_dir); },
       [this](CompatResolveResult result) {
         if (!result.document) {

@@ -7,7 +7,7 @@
 #include "base/data/SchemaVersion.h"
 #include "base/data/SessionStore.h"
 #include "base/i18n/LocalizationService.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/settings/AppearanceSettingsSection.h"
 #include "feature/settings/SettingsPortsViews.h"
@@ -576,7 +576,7 @@ void SettingsController::FinishPaneResync() {
     context_->Update();
   }
   // Select widgets can emit a spurious change on the frame after remount.
-  BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+  AppRuntime::PostUI([this]() {
     const ShellChromeSnapshot chrome = ChromeSnapshot();
     if (chrome.nav_tab != NavTab::Me && !chrome.account_sheet_open) {
       suppress_auto_save_ = false;
@@ -931,7 +931,7 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
     if (shell_navigation_.push_local_back) {
       shell_navigation_.push_local_back("settings_detail", [this] { ApplyBackToListUi(); });
     }
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+    AppRuntime::PostUI([this]() {
       suppress_auto_save_ = true;
       UiEditSession::Instance().BeginRemount();
       FinishPaneResync();
@@ -949,7 +949,7 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   if (context_) {
     context_->Update();
   }
-  BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+  AppRuntime::PostUI([this]() {
     suppress_auto_save_ = true;
     UiEditSession::Instance().BeginRemount();
     FinishPaneResync();
@@ -1007,7 +1007,7 @@ void SettingsController::ApplyBackToListUi() {
   selected_id_.clear();
   selected_title_.clear();
   status_ = "";
-  BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+  AppRuntime::PostUI([this]() {
     suppress_auto_save_ = true;
     UiEditSession::Instance().BeginRemount();
     DirtyAll();
@@ -1619,11 +1619,11 @@ void SettingsController::OnClearUndeliveredOlderThan() {
         if (!ok) {
           return;
         }
-        BrowserThread::PostTask(BrowserThreadId::IO, [this]() {
+        AppRuntime::PostWorkerNormal([this]() {
           auto result = commands_.clear_undelivered_older_than
                             ? commands_.clear_undelivered_older_than(7)
                             : Roe<void>{Error("Messaging is not ready")};
-          BrowserThread::PostTask(BrowserThreadId::UI, [this, result = std::move(result)]() mutable {
+          AppRuntime::PostUI([this, result = std::move(result)]() mutable {
             if (!result) {
               ReportFailure(result.error());
               return;

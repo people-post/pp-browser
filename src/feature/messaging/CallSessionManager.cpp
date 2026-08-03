@@ -7,7 +7,7 @@
 #include "base/messaging/SendRelayOptions.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -673,7 +673,7 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
   const std::string accept_call_id = call_id;
   const std::string accept_inviter = inviter;
   const std::string accept_local = *local;
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, accept_call_id, accept_inviter, accept_local]() {
+  AppRuntime::PostWorkerNormal([this, accept_call_id, accept_inviter, accept_local]() {
     if (auto roster = BuildRosterDetail(accept_call_id); roster) {
       if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
         (void)SendCallDirectMessage(accept_inviter, CallControlType::CallRoster, *roster_json, "Call roster");
@@ -1279,7 +1279,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       // Prefetch + roster fan-out after media kickoff — avoid starving MediaKey/Connect on IO.
       const std::string accept_call_id = accept->call_id;
       const std::string accept_peer = identity;
-      BrowserThread::PostTask(BrowserThreadId::IO, [this, accept_call_id, accept_peer, local = *local]() {
+      AppRuntime::PostWorkerNormal([this, accept_call_id, accept_peer, local = *local]() {
         PrefetchReachForIdentity(prefetch_reach_, accept_peer);
         if (auto roster = BuildRosterDetail(accept_call_id); roster) {
           if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {

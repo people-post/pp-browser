@@ -5,7 +5,7 @@
 #include "base/messaging/SfuAttachWaitLogic.h"
 #include "base/people/ContactTypes.h"
 #include "base/people/MeshHopPolicy.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -468,10 +468,10 @@ void CallTopologyController::TryRecoverViaSfu(const std::string& call_id) {
   BeginSfuAttachWait(call_id);
   const uint64_t gen = ++migrate_generation_;
   soft_migrate_in_flight_ = true;
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, gen]() {
+  AppRuntime::PostWorkerNormal([this, call_id, gen]() {
     Roe<void> migrated = MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::IceRecover);
     const bool attached = sfu_attached_ && media_.IsSfuMode();
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, migrated, attached, gen]() {
+    AppRuntime::PostUI([this, call_id, migrated, attached, gen]() {
       if (gen != migrate_generation_) {
         return;
       }
@@ -511,9 +511,9 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     BeginSfuAttachWait(call_id);
     const uint64_t gen = ++migrate_generation_;
     soft_migrate_in_flight_ = true;
-    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, attach, gen]() {
+    AppRuntime::PostWorkerNormal([this, call_id, attach, gen]() {
       Roe<void> ok = AttachLocalToSfu(call_id, attach);
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, ok, gen]() {
+      AppRuntime::PostUI([this, call_id, ok, gen]() {
         if (gen != migrate_generation_) {
           return;
         }
@@ -538,11 +538,11 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     BeginSfuAttachWait(call_id);
     const uint64_t gen = ++migrate_generation_;
     soft_migrate_in_flight_ = true;
-    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, gen]() {
+    AppRuntime::PostWorkerNormal([this, call_id, gen]() {
       Roe<void> mig =
           MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::LocalJoinedWithoutHint);
       const bool attached = sfu_attached_;
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, mig, attached, gen]() {
+      AppRuntime::PostUI([this, call_id, mig, attached, gen]() {
         if (gen != migrate_generation_) {
           return;
         }
@@ -579,10 +579,10 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     BeginSfuAttachWait(call_id);
     const uint64_t gen = ++migrate_generation_;
     soft_migrate_in_flight_ = true;
-    BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, joiner_identity, gen]() {
+    AppRuntime::PostWorkerNormal([this, call_id, joiner_identity, gen]() {
       Roe<void> mig =
           MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::RemoteAcceptObserved);
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, joiner_identity, mig, gen]() {
+      AppRuntime::PostUI([this, call_id, joiner_identity, mig, gen]() {
         if (gen != migrate_generation_) {
           return;
         }
@@ -633,9 +633,9 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   BeginSfuAttachWait(call_id);
   const uint64_t gen = ++migrate_generation_;
   soft_migrate_in_flight_ = true;
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, gen]() {
+  AppRuntime::PostWorkerNormal([this, call_id, gen]() {
     Roe<void> mig = MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, mig, gen]() {
+    AppRuntime::PostUI([this, call_id, mig, gen]() {
       if (gen != migrate_generation_) {
         return;
       }
@@ -660,9 +660,9 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   BeginSfuAttachWait(call_id);
   const uint64_t gen = ++migrate_generation_;
   soft_migrate_in_flight_ = true;
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, call_id, attach, gen]() {
+  AppRuntime::PostWorkerNormal([this, call_id, attach, gen]() {
     Roe<void> ok = AttachLocalToSfu(call_id, attach);
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, ok, gen]() {
+    AppRuntime::PostUI([this, call_id, ok, gen]() {
       if (gen != migrate_generation_) {
         return;
       }

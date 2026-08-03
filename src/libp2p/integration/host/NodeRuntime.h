@@ -50,10 +50,10 @@ public:
   /** Ephemeral listen while Client (mobile call-scoped — N025). */
   bool EphemeralListenActive() const { return ephemeral_listen_active_; }
   Roe<void> StartEphemeralListen();
-  /** Non-blocking N025 start; `cb` is invoked on BrowserThread IO when finished. */
+  /** Non-blocking N025 start; `cb` is invoked on worker pool when finished. */
   void StartEphemeralListenAsync(std::function<void(Roe<void>)> cb);
   void StopEphemeralListen();
-  /** Non-blocking N025 stop; `cb` is invoked on BrowserThread IO when finished. */
+  /** Non-blocking N025 stop; `cb` is invoked on worker pool when finished. */
   void StopEphemeralListenAsync(std::function<void()> cb);
 
   void Tick();

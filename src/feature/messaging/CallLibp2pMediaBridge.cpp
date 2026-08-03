@@ -1,6 +1,5 @@
 #include "feature/messaging/CallLibp2pMediaBridge.h"
 
-#include "base/runtime/BrowserThread.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
@@ -69,13 +68,13 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSes
     }
     const std::string call_id = params.call_id;
     cbs.on_connected = [this, call_id]() {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
+      AppRuntime::PostUI([this, call_id]() {
         log().info << "Inbound call-media connected call_id=" << call_id;
         CommitDirectConnected(call_id);
       });
     };
     cbs.on_audio = [this, call_id](const std::vector<uint8_t>& opus) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, opus]() {
+      AppRuntime::PostUI([this, call_id, opus]() {
         if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
           return;
         }
@@ -86,7 +85,7 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSes
       });
     };
     cbs.on_failed = [this, call_id](const std::string& reason) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, reason]() {
+      AppRuntime::PostUI([this, call_id, reason]() {
         if (media_.ActiveCallId() != call_id) {
           return;
         }
@@ -422,13 +421,13 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
 
   CallMediaDirectCallbacks cbs;
   cbs.on_connected = [this]() {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+    AppRuntime::PostUI([this]() {
       log().info << "Call-media connected call_id=" << media_call_id_;
       CommitDirectConnected(media_call_id_);
     });
   };
   cbs.on_audio = [this, captured_call_id](const std::vector<uint8_t>& opus) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, captured_call_id, opus]() {
+    AppRuntime::PostUI([this, captured_call_id, opus]() {
       if (!media_.IsActive() || media_.ActiveCallId() != captured_call_id) {
         return;
       }
@@ -439,7 +438,7 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
     });
   };
   cbs.on_failed = [this, captured_call_id](const std::string& reason) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, captured_call_id, reason]() {
+    AppRuntime::PostUI([this, captured_call_id, reason]() {
       if (media_.ActiveCallId() != captured_call_id) {
         return;
       }
@@ -553,7 +552,7 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_
                                                         const std::string& peer_identity) {
   // Mark before UI hop so CallController orphan auto-Leave cannot race CallAccept→Active.
   media_attempted_calls_.insert(call_id);
-  BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer_identity]() {
+  AppRuntime::PostUI([this, call_id, peer_identity]() {
     auto session = sessions_.LoadSession(call_id);
     if (!session || !session->has_value()) {
       log().info << "StartMediaAsOfferer skip: no session call_id=" << call_id;
@@ -579,7 +578,7 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_
 void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                                                          const std::string& peer_identity) {
   media_attempted_calls_.insert(call_id);
-  BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer_identity]() {
+  AppRuntime::PostUI([this, call_id, peer_identity]() {
     auto session = sessions_.LoadSession(call_id);
     if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
       return;
@@ -633,7 +632,7 @@ void CallLibp2pMediaBridge::OnMediaKeyReady(const std::string& call_id) {
     return;
   }
   // Hop to UI — inbound CallMediaKey is processed on Browser IO (inside PollInbox).
-  BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
+  AppRuntime::PostUI([this, call_id]() {
     std::string peer = pending_answerer_peer_;
     const bool pending = (pending_answerer_call_id_ == call_id);
     if (!pending) {
@@ -684,10 +683,10 @@ void CallLibp2pMediaBridge::StopLibp2pMedia(const std::string& call_id) {
       media_.Stop();
     }
   };
-  if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+  if (AppRuntime::CurrentlyOnUI()) {
     stop_engine();
   } else {
-    BrowserThread::PostTask(BrowserThreadId::UI, std::move(stop_engine));
+    AppRuntime::PostUI( std::move(stop_engine));
   }
 }
 
@@ -731,10 +730,10 @@ void CallLibp2pMediaBridge::PrepareForTeardown(int timeout_ms) {
   }
 
   if (!call_id.empty() && media_.IsActive() && media_.ActiveCallId() == call_id) {
-    if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+    if (AppRuntime::CurrentlyOnUI()) {
       media_.Stop();
     } else {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
+      AppRuntime::PostUI([this, call_id]() {
         if (media_.IsActive() && media_.ActiveCallId() == call_id) {
           media_.Stop();
         }

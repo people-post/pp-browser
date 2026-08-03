@@ -219,13 +219,13 @@ flowchart TB
 
 **Canonical doc:** [THREADING.md](THREADING.md) — coordinator + worker pool model, `AppRuntime` API.
 
-UI on main thread; blocking work on **worker pool** via `BrowserThread::IO` API or `AppRuntime::PostWorker`; **coordinator** owns timer-driven policy. libp2p and call media run their own loops.
+UI on main thread; blocking work on **worker pool** via `AppRuntime::PostWorker`; **coordinator** owns timer-driven policy. libp2p and call media run their own loops.
 
 ```mermaid
 flowchart TB
   subgraph main["Main / UI thread"]
     SDL["Application::Run<br/><small>SDL event loop</small>"]
-    UIQ["BrowserThread::UI<br/><small>SequencedTaskRunner — RunUITasks</small>"]
+    UIQ["AppRuntime UI mailbox<br/><small>SequencedTaskRunner — RunUITasks</small>"]
     ShellTick["ShellHost · ChatController<br/><small>feature/ui · feature/chat</small>"]
     SDL --> UIQ
     SDL --> ShellTick
@@ -269,9 +269,9 @@ flowchart TB
 
 | Thread / queue | Owner class | Location | Role |
 |----------------|-------------|----------|------|
-| **Main / UI** | `Application` + `BrowserThread::UI` | `app/` · `base/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
+| **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `base/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
 | **Coordinator** | `CoordinatorThread` | `base/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
-| **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `base/runtime/` | HTTP, LLM/tools, relay sync/send (legacy `BrowserThread::IO` API) |
+| **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `base/runtime/` | HTTP, LLM/tools, relay sync/send |
 | **libp2p IO** | `Libp2pHost` | `libp2p/integration/host/` | `boost::asio::io_context` run loop |
 | **Media capture / video** | `CallMediaEngine` | `base/media/` | Dedicated capture + video encode loops |
 | **Ringtone** | `CallRingtone` | `base/media/` | Playback loop thread |
@@ -279,11 +279,11 @@ flowchart TB
 
 ### Cross-thread rules of thumb
 
-- **UI** owns RmlUi and controller mutations. `BrowserThread::PostTask(UI, …)` from pool/coordinator.
+- **UI** owns RmlUi and controller mutations. `AppRuntime::PostUI` from pool/coordinator.
 - **Worker pool** runs blocking HTTP, LLM, relay orchestration. `PostTaskAndReply` is pool → UI.
 - **Coordinator** runs fast policy only; posts blocking steps to pool.
 - **libp2p IO** stays non-blocking; integration hops to pool via `PostLibp2pWorker`.
-- **Pause/resume:** `BrowserThread::PauseIO` / `ResumeIO` pauses coordinator + pool.
+- **Pause/resume:** `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` pauses coordinator + pool.
 
 Full model: [THREADING.md](THREADING.md).
 
@@ -313,6 +313,6 @@ Full model: [THREADING.md](THREADING.md).
 | **ProfileIdentityView** | `base/people/` | Presentation projection of local identity |
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
-| **BrowserThread** | `base/runtime/` | UI + IO sequenced runners |
+| **AppRuntime** | `base/runtime/` | UI mailbox + worker pool + coordinator |
 | **Libp2pHost** | `libp2p/integration/host/` | Vendored host + asio IO thread |
 | **CallMediaEngine** | `base/media/` | A/V capture threads over libdatachannel |

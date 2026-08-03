@@ -2,7 +2,7 @@
 #include "feature/ui/ShellHost.h"
 
 #include "base/i18n/LocalizationService.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "base/platform/DesktopWindowChrome.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformNavigation.h"
@@ -752,7 +752,7 @@ void ShellHost::ApplyCallChromeUpdate(CallChromeUpdate update) {
 }
 
 void ShellHost::RequestRemountNavRail() {
-  BrowserThread::PostTask(BrowserThreadId::UI, []() {
+  AppRuntime::PostUI([]() {
     ShellHost& host = ShellHost::Instance();
     // Compact chat overlay omits the rail from the DOM.
     if (host.state_.layout_mode == LayoutMode::Compact && host.state_.compact_chat_open) {
@@ -833,7 +833,7 @@ void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason) 
   sync_pending_ = true;
   // Always defer: SyncLayout remounts the shell DOM. Flushing synchronously from a click
   // handler (e.g. compact_chat_back) destroys the target element mid-dispatch and crashes.
-  BrowserThread::PostTask(BrowserThreadId::UI, []() { ShellHost::Instance().FlushPendingSyncLayout(); });
+  AppRuntime::PostUI([]() { ShellHost::Instance().FlushPendingSyncLayout(); });
   Backend::RequestForceFrame();
 }
 
@@ -1731,7 +1731,7 @@ void ShellHost::SyncLayout() {
   }
   ApplySafeAreaLayout();
   // Spurious change/blur can land on the next UI turn after remount.
-  BrowserThread::PostTask(BrowserThreadId::UI, []() { UiEditSession::Instance().EndRemount(); });
+  AppRuntime::PostUI([]() { UiEditSession::Instance().EndRemount(); });
 }
 
 void ShellHost::RemountCallChrome() {
@@ -1742,7 +1742,7 @@ void ShellHost::RemountCallChrome() {
     return;
   }
   remount_call_chrome_pending_ = true;
-  BrowserThread::PostTask(BrowserThreadId::UI, []() { ShellHost::Instance().FlushRemountCallChrome(); });
+  AppRuntime::PostUI([]() { ShellHost::Instance().FlushRemountCallChrome(); });
   Backend::RequestForceFrame();
 }
 
@@ -1754,7 +1754,7 @@ void ShellHost::FlushRemountCallChrome() {
   RemountCallChromeNow();
   // MountInner binds data views after any Dirty applied while remount was pending — dirty again
   // next UI turn so Connected/elapsed replace baked Connecting… text via data-rml.
-  BrowserThread::PostTask(BrowserThreadId::UI, []() {
+  AppRuntime::PostUI([]() {
     ShellHost::Instance().DirtyCallChrome();
     Backend::RequestForceFrame();
   });

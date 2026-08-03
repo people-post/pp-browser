@@ -23,7 +23,6 @@
 #include "base/net/ServiceClientsImpl.h"
 #include "base/net/RelayInboxCursor.h"
 #include "base/runtime/AppLifecycle.h"
-#include "base/runtime/BrowserThread.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
@@ -81,7 +80,7 @@ P2pMessagingService::P2pMessagingService(IThreadStore& store, ContactsStore& con
                                                  peer_history_.get());
   chat_sync_->SetOnMessagesChanged([this]() {
     if (on_messages_changed_) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+      AppRuntime::PostUI([this]() { on_messages_changed_(); });
     }
   });
 }
@@ -122,7 +121,7 @@ void P2pMessagingService::SetRelayClient(IRelayClient* relay) {
                                                  peer_history_.get());
     chat_sync_->SetOnMessagesChanged([this]() {
       if (on_messages_changed_) {
-        BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
       }
     });
   }
@@ -264,14 +263,14 @@ void P2pMessagingService::MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& 
   }
 
   if (on_delivery_notice_) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, notice]() {
+    AppRuntime::PostUI([this, notice]() {
       if (on_delivery_notice_) {
         on_delivery_notice_(notice);
       }
     });
   }
   if (on_messages_changed_) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
 }
 
@@ -299,7 +298,7 @@ void P2pMessagingService::HandleDirectInbound(RelayEnvelope envelope) {
   }
   if (outcome.persisted || outcome.thread_changed) {
     if (on_messages_changed_) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+      AppRuntime::PostUI([this]() { on_messages_changed_(); });
     }
   }
 }
@@ -517,7 +516,7 @@ Roe<uint32_t> P2pMessagingService::StartNewSecureChat(const std::string& thread_
   }
   PurgeRetryQueueForThread(thread_id);
   if (on_messages_changed_) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   return *new_epoch;
 }
@@ -540,7 +539,7 @@ Roe<std::string> P2pMessagingService::RotatePskAndExportBundle(const std::string
   }
   PurgeRetryQueueForThread(thread_id);
   if (on_messages_changed_) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   return bundle;
 }
@@ -592,7 +591,7 @@ void P2pMessagingService::RunSyncOnIo(const std::string& thread_id,
                                       std::function<void(Roe<ChatSyncResult>)> on_complete) {
   if (!chat_sync_ || !IsE2ePrivateThread(thread_id)) {
     if (on_complete) {
-      BrowserThread::PostTask(BrowserThreadId::UI,
+      AppRuntime::PostUI(
                               [on_complete = std::move(on_complete)]() { on_complete(Error("Sync not available")); });
     }
     return;
@@ -601,14 +600,14 @@ void P2pMessagingService::RunSyncOnIo(const std::string& thread_id,
   bool expected = false;
   if (!sync_pending_.compare_exchange_strong(expected, true)) {
     if (on_complete) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [on_complete = std::move(on_complete)]() {
+      AppRuntime::PostUI([on_complete = std::move(on_complete)]() {
         on_complete(Error("Sync already in progress"));
       });
     }
     return;
   }
 
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, thread_id, task = std::move(task),
+  AppRuntime::PostWorkerNormal([this, thread_id, task = std::move(task),
                                                   on_complete = std::move(on_complete)]() mutable {
     struct SyncGuard {
       std::atomic<bool>& pending;
@@ -617,10 +616,10 @@ void P2pMessagingService::RunSyncOnIo(const std::string& thread_id,
 
     Roe<ChatSyncResult> result = task();
     if (result && on_messages_changed_) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+      AppRuntime::PostUI([this]() { on_messages_changed_(); });
     }
     if (on_complete) {
-      BrowserThread::PostTask(BrowserThreadId::UI,
+      AppRuntime::PostUI(
                               [on_complete = std::move(on_complete), result = std::move(result)]() mutable {
                                 on_complete(std::move(result));
                               });
@@ -690,7 +689,7 @@ void P2pMessagingService::NotifyDeliveryIssue(const Thread& thread, const std::s
       notice = "Relay rate limit — slow down messaging with new contacts.";
     }
   }
-  BrowserThread::PostTask(BrowserThreadId::UI, [this, notice]() {
+  AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
     }
@@ -707,7 +706,7 @@ void P2pMessagingService::NotifyRelayFallback(const std::string& thread_id) {
   if (!on_delivery_notice_) {
     return;
   }
-  BrowserThread::PostTask(BrowserThreadId::UI, [this, notice]() {
+  AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
     }
@@ -719,7 +718,7 @@ void P2pMessagingService::MaybeTailSync(const std::string& thread_id) {
   if (!chat_sync_) {
     return;
   }
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, thread_id]() { (void)chat_sync_->TailSync(thread_id); });
+  AppRuntime::PostWorkerNormal([this, thread_id]() { (void)chat_sync_->TailSync(thread_id); });
 }
 
 void P2pMessagingService::MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope) {
@@ -765,7 +764,7 @@ void P2pMessagingService::ApplySendResult(const std::string& thread_id, const st
     }
   }
   if (on_messages_changed_) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
 }
 
@@ -1005,12 +1004,12 @@ Roe<ThreadMessage> P2pMessagingService::SendUserMessage(const std::string& threa
     // Call-control (MediaKey/Accept) must not sit behind PollInbox on Browser IO.
     AppRuntime::PostWorkerCritical(std::move(send_work));
   } else {
-    BrowserThread::PostTask(BrowserThreadId::IO, std::move(send_work));
+    AppRuntime::PostWorkerNormal( std::move(send_work));
   }
 
   // Always hop to UI — SendUserMessage runs on IO during membership fan-out (PublishMemberJoined).
   if (on_messages_changed_) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   return *appended;
 }
@@ -1136,7 +1135,7 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
   }
 
   if (!encrypted->failed_member_identities.empty() && on_delivery_notice_) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+    AppRuntime::PostUI([this]() {
       if (on_delivery_notice_) {
         on_delivery_notice_("Some group members couldn’t receive this message");
       }
@@ -1146,7 +1145,7 @@ Roe<ThreadMessage> P2pMessagingService::SendGroupMessage(const std::string& thre
   appended->delivery = MessageDelivery::Relayed;
   (void)store_.UpdateMessage(*appended);
   if (on_messages_changed_) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   return *appended;
 }
@@ -1168,7 +1167,7 @@ void P2pMessagingService::RetryFailedOutbound() {
     return;
   }
 
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, pending = std::move(pending)]() mutable {
+  AppRuntime::PostWorkerNormal([this, pending = std::move(pending)]() mutable {
     if (!relay_) {
       std::lock_guard lock(retry_mutex_);
       retry_queue_.insert(retry_queue_.end(), std::make_move_iterator(pending.begin()),
@@ -1316,7 +1315,7 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
       }
 
       // Front of IO so ingest is not stuck behind other long work; HTTP already finished.
-      BrowserThread::PostTaskFront(BrowserThreadId::IO, [this, local_relay_id,
+      AppRuntime::PostWorkerCritical( [this, local_relay_id,
                                                          messages = std::move(messages)]() mutable {
         bool changed = false;
         struct UnreadNotice {
@@ -1385,10 +1384,10 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
         }
 
         if (changed && on_messages_changed_) {
-          BrowserThread::PostTask(BrowserThreadId::UI, [this]() { on_messages_changed_(); });
+          AppRuntime::PostUI([this]() { on_messages_changed_(); });
         }
         if (!background_notices.empty() && on_background_unread_) {
-          BrowserThread::PostTask(BrowserThreadId::UI,
+          AppRuntime::PostUI(
                                   [this, notices = std::move(background_notices)]() mutable {
                                     for (auto& notice : notices) {
                                       on_background_unread_(std::move(notice.title),

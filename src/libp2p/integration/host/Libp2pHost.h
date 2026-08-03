@@ -80,7 +80,7 @@ public:
 
   /**
    * Same as ListenOn but never blocks the caller: work runs on the libp2p io thread,
-   * then `cb` is invoked on that same thread. Prefer this from BrowserThread IO so
+   * then `cb` is invoked on that same thread. Prefer this from worker pool so
    * AcceptInvite / chat are not stuck behind a hung bind (Samsung N025 dogfood).
    */
   void ListenOnAsync(const std::string& multiaddr, std::function<void(Roe<void>)> cb);

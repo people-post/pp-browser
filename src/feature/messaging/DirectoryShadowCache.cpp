@@ -1,6 +1,6 @@
 #include "feature/messaging/DirectoryShadowCache.h"
 
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 
 namespace pbr {
 
@@ -60,7 +60,7 @@ void DirectoryShadowCache::EnsureLookup(const std::string& relay_user_id) {
     inflight_.insert(relay_user_id);
   }
 
-  BrowserThread::PostTaskAndReply<Roe<DirectoryHit>>(
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<DirectoryHit>>(WorkerLane::Normal, 
       [this, relay_user_id]() { return directory_.LookupRelayUser(relay_user_id); },
       [this, relay_user_id](Roe<DirectoryHit> result) {
         std::function<void()> notify;

@@ -29,8 +29,19 @@ public:
   static void Shutdown();
   static bool IsRunning();
 
-  // --- Scheduling ---
+  // --- UI mailbox (GUI; drained by Application each frame) ---
+  static void InitializeUI();
+  static void ShutdownUI();
   static void PostUI(std::function<void()> task);
+  static void PostUIFront(std::function<void()> task);
+  static void RunUITasks();
+  /** True when the UI mailbox has work — ProcessEvents must not power-save-wait. */
+  static bool HasPendingUITasks();
+  static bool CurrentlyOnUI();
+  // Prefer Backend::RequestForceFrame (force_next_frame + WakeEventLoop) — not WakeEventLoop alone.
+  static void SetUIWakeCallback(std::function<void()> callback);
+
+  // --- Worker pool ---
   static void PostWorker(WorkerLane lane, std::function<void()> task);
   static void PostWorkerCritical(std::function<void()> task);
   static void PostWorkerNormal(std::function<void()> task);
@@ -57,9 +68,9 @@ public:
   static void ResumeWorkers();
   static void PauseCoordinator();
   static void ResumeCoordinator();
-  /** Pauses coordinator + worker pool (replaces legacy BrowserThread::PauseIO). */
+  /** Pauses coordinator + worker pool (background / low-power). */
   static void PauseBackgroundWork();
-  /** Resumes coordinator + worker pool (replaces legacy BrowserThread::ResumeIO). */
+  /** Resumes coordinator + worker pool. */
   static void ResumeBackgroundWork();
 
   // --- Coordinator (orchestration mailbox + timer wheel) ---

@@ -2,7 +2,7 @@
 
 #include "base/ai/PromptBuilder.h"
 #include "base/ai/RmlValidator.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "feature/ai/bindings/BindingsManifest.h"
 
 #include <regex>
@@ -63,7 +63,7 @@ void UiGenerator::GenerateAsync(const std::string& tools_context,
                                 std::function<void(Roe<GeneratedUi>)> callback) {
   LlmClient client = llm_;
   const std::string profile = rml_profile_;
-  BrowserThread::PostTaskAndReply<Roe<GeneratedUi>>(
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<GeneratedUi>>(WorkerLane::Normal, 
       [client, profile, tools_context]() {
         UiGenerator generator(client, profile);
         return generator.Generate(tools_context);

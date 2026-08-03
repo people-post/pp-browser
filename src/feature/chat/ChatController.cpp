@@ -8,7 +8,7 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/i18n/ScriptLanguageDetector.h"
 #include "base/runtime/AppLifecycle.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "base/platform/DesktopWindowChrome.h"
 #include "base/platform/ILocalNotifier.h"
 #include "base/platform/IPushDeviceRegistrar.h"
@@ -1810,7 +1810,7 @@ void ChatController::SendChatAction(const std::string& entry_id, int action_inde
     const std::string action_message = action.message;
     const std::optional<std::string> action_payload = action.payload;
     const bool close_working_set = working_set_.ShouldCloseForAction(action_payload);
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, action_message, action_payload, close_working_set]() {
+    AppRuntime::PostUI([this, action_message, action_payload, close_working_set]() {
       if (close_working_set) {
         working_set_.Clear();
       }
@@ -2095,7 +2095,7 @@ void ChatController::WireMessagingBindings() {
   // Relay poll is armed by MessagingHub::StartCoordinatorTimers (not here). Call-wake UI
   // refresh is wired via MessagingHub::SetOnCallWake from Application.
   IPushDeviceRegistrar::SetTokenChangedHandler([this](const std::string& /*token*/) {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+    AppRuntime::PostUI([this]() {
       if (!MessagingReady()) {
         return;
       }

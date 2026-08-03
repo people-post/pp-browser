@@ -18,7 +18,7 @@ See also: [PLATFORMS.md](PLATFORMS.md) (runtime matrix), [SRC_LAYOUT.md](SRC_LAY
 
 | Path | Role |
 |------|------|
-| `base/runtime/` | `AppRuntime`, `BrowserThread`, coordinator, `AppLifecycle`, `BackgroundSyncScheduler`, product branding/version |
+| `base/runtime/` | `AppRuntime`, coordinator, `AppLifecycle`, `BackgroundSyncScheduler`, product branding/version |
 | `base/platform/Platform.{h,cpp}` | `PlatformKind` detection, capability flags |
 | `base/platform/PlatformServices.*` | Registers Android/iOS/desktop implementations at startup |
 | `base/platform/SdlAppEvents.*`, `AppEventHooks.*` | SDL lifecycle / input pre-process → `AppLifecycle` |

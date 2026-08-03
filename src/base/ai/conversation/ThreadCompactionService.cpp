@@ -3,7 +3,7 @@
 #include "base/ai/LlmClient.h"
 #include "base/messaging/MessagingLimits.h"
 #include "base/messaging/ThreadTypes.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 #include <sstream>
@@ -51,7 +51,7 @@ void ThreadCompactionService::MaybeCompactAsync(const std::string& thread_id) {
     pending_threads_.insert(thread_id);
   }
 
-  BrowserThread::PostTask(BrowserThreadId::IO, [this, thread_id]() {
+  AppRuntime::PostWorkerNormal([this, thread_id]() {
     RunCompaction(thread_id);
     {
       std::lock_guard lock(pending_mutex_);

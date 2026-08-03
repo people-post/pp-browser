@@ -17,7 +17,6 @@
 #include "feature/ai/bindings/ActionRouter.h"
 #include "feature/chat/ChatController.h"
 #include "feature/chat/MessagingTools.h"
-#include "base/runtime/BrowserThread.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/IAssetLocator.h"
 #include "base/platform/ILocalNotifier.h"
@@ -290,7 +289,7 @@ bool Application::Initialize(const char* window_title) {
 
   log().info << "Initializing (" << window_width << "x" << window_height << ")";
 
-  BrowserThread::Initialize();
+  AppRuntime::InitializeUI();
 
   if (![&] {
         StartupPhase phase("Backend::Initialize");
@@ -299,9 +298,9 @@ bool Application::Initialize(const char* window_title) {
     log().error << "Backend::Initialize failed (SDL/OpenGL window could not be created)";
     return false;
   }
-  // PostTask(UI) must imply RequestForceFrame: skip idle wait and Present soon (THREADING.md
+  // PostUI must imply RequestForceFrame: skip idle wait and Present soon (THREADING.md
   // UI delivery). WakeEventLoop alone is not enough on platforms where WaitEventTimeout lied.
-  BrowserThread::SetUIWakeCallback([]() { Backend::RequestForceFrame(); });
+  AppRuntime::SetUIWakeCallback([]() { Backend::RequestForceFrame(); });
 
 #if RMLUI_SDL_VERSION_MAJOR >= 3
   if (!Platform::IsMobile()) {
@@ -587,9 +586,9 @@ bool Application::Initialize(const char* window_title) {
   // Argon2 + libp2p stack init must not block the UI thread (Android / iOS first unlock).
   unlock_ports.run_heavy = [](std::function<Roe<void>()> work,
                               std::function<void(Roe<void>)> on_done) {
-    // Cold-start surface blips can PauseIO without Resume; unlock must still run.
-    BrowserThread::ResumeIO();
-    BrowserThread::PostTaskAndReply<Roe<void>>(std::move(work), std::move(on_done));
+    // Cold-start surface blips can PauseBackgroundWork without Resume; unlock must still run.
+    AppRuntime::ResumeBackgroundWork();
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, std::move(work), std::move(on_done));
   };
   unlock_gate_->BindPorts(std::move(unlock_ports));
 
@@ -732,7 +731,7 @@ bool Application::Initialize(const char* window_title) {
     }
   });
   messaging.SetOnReachabilityUpdated([this]() {
-    BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+    AppRuntime::PostUI([this]() {
       settings_->SyncReachability();
       const ReachabilitySnapshot snap = Messaging().Reachability();
       if (snap.status == ReachabilityStatus::OutboundOnly || snap.status == ReachabilityStatus::Blocked) {
@@ -793,14 +792,14 @@ void Application::Run() {
 #endif
   while (true) {
     // Belt-and-suspenders: tasks already queued before this iteration (or wake missed).
-    // Primary path is SetUIWakeCallback → RequestForceFrame on every PostTask(UI).
-    if (BrowserThread::HasPendingUITasks()) {
+    // Primary path is SetUIWakeCallback → RequestForceFrame on every PostUI.
+    if (AppRuntime::HasPendingUITasks()) {
       Backend::RequestForceFrame();
     }
     if (!Backend::ProcessEvents(context, ProcessKeyDown, true)) {
       break;
     }
-    BrowserThread::RunUITasks();
+    AppRuntime::RunUITasks();
 
     if (shell_->State().account_sheet_open || shell_->State().nav_tab == NavTab::Me) {
       settings_->Tick();
@@ -824,7 +823,7 @@ void Application::Run() {
       if (!logged_first_present) {
         StartupMark("first_present");
         logged_first_present = true;
-        BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+        AppRuntime::PostUI([this]() {
           OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_, MakeShellNavigationPorts(*shell_));
         });
       }
@@ -931,7 +930,7 @@ void Application::Shutdown() {
 
     ShutdownMessaging();
 
-    BrowserThread::RunUITasks();
+    AppRuntime::RunUITasks();
 
     {
       StartupPhase phase("Shutdown::RmlUi");
@@ -943,7 +942,7 @@ void Application::Shutdown() {
       Rml::Shutdown();
       harfbuzz_font_engine_.reset();
     }
-    BrowserThread::SetUIWakeCallback(nullptr);
+    AppRuntime::SetUIWakeCallback(nullptr);
     {
       StartupPhase phase("Shutdown::Backend");
       Backend::Shutdown();
@@ -965,8 +964,8 @@ void Application::Shutdown() {
 
   // Always tear down runners — Initialize may have started them before failing.
   {
-    StartupPhase phase("Shutdown::BrowserThread");
-    BrowserThread::Shutdown();
+    StartupPhase phase("Shutdown::AppRuntimeUI");
+    AppRuntime::ShutdownUI();
   }
   if (AppRuntime::IsRunning()) {
     StartupPhase phase("Shutdown::AppRuntime");

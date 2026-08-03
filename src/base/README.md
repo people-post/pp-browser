@@ -31,11 +31,12 @@ If you are unsure, ask: *“Could another feature import this without pulling in
 
 ## Module map
 
-Ten top-level folders. Two sub-trees under `ai/`.
+Eleven top-level folders. Two sub-trees under `ai/`.
 
 ```
 src/base/
-├── platform/     OS & runtime — SDL, paths, assets, BrowserThread, credentials, notifications
+├── runtime/      Process runtime — AppRuntime, coordinator, lifecycle, branding/version
+├── platform/     OS adapters — SDL glue, paths, assets, credentials, notifications
 ├── data/         Config, profiles, session, schema version, atomic file writes
 ├── error/        App error categories on top of common/Error.h
 ├── i18n/         Localization catalogs (JSON assets)

@@ -1,6 +1,6 @@
 #include "feature/messaging/CallP2pSignalingBridge.h"
 
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
 namespace pbr {
@@ -124,7 +124,7 @@ void CallP2pSignalingBridge::BindMediaCallbacks(const std::string& peer_identity
       return;
     }
     const std::string peer = media_peer_identity_;
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer, local]() {
+    AppRuntime::PostUI([this, call_id, peer, local]() {
       if (media_call_id_ != call_id && media_.ActiveCallId() != call_id) {
         return;
       }
@@ -149,7 +149,7 @@ void CallP2pSignalingBridge::BindMediaCallbacks(const std::string& peer_identity
       return;
     }
     const std::string peer = media_peer_identity_;
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer, ice]() {
+    AppRuntime::PostUI([this, call_id, peer, ice]() {
       if (media_call_id_ != call_id && media_.ActiveCallId() != call_id) {
         return;
       }
@@ -223,7 +223,7 @@ Roe<void> CallP2pSignalingBridge::StartMediaAsAnswerer(const std::string& call_i
 void CallP2pSignalingBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
                                                          const std::string& peer_identity) {
   media_attempted_calls_.insert(call_id);
-  BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer_identity]() {
+  AppRuntime::PostUI([this, call_id, peer_identity]() {
     auto session = sessions_.LoadSession(call_id);
     if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
       return;
@@ -237,7 +237,7 @@ void CallP2pSignalingBridge::ScheduleStartMediaAsOfferer(const std::string& call
       host_.P2pNotifyRingChanged();
       return;
     }
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer_identity]() {
+    AppRuntime::PostUI([this, call_id, peer_identity]() {
       if (!media_.IsActive() || media_.ActiveCallId() != call_id || media_.IsConnected() ||
           media_.IsSfuMode()) {
         return;
@@ -267,7 +267,7 @@ void CallP2pSignalingBridge::ScheduleStartMediaAsOfferer(const std::string& call
 void CallP2pSignalingBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                                                           const std::string& peer_identity) {
   media_attempted_calls_.insert(call_id);
-  BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, peer_identity]() {
+  AppRuntime::PostUI([this, call_id, peer_identity]() {
     auto session = sessions_.LoadSession(call_id);
     if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
       return;
@@ -290,10 +290,10 @@ void CallP2pSignalingBridge::StopP2pMedia(const std::string& call_id) {
       media_.Stop();
     }
   };
-  if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+  if (AppRuntime::CurrentlyOnUI()) {
     stop_engine();
   } else {
-    BrowserThread::PostTask(BrowserThreadId::UI, std::move(stop_engine));
+    AppRuntime::PostUI( std::move(stop_engine));
   }
 }
 

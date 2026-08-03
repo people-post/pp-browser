@@ -1,7 +1,7 @@
 include(PpBrowserBase)
 
 # Acyclic module order: each library links only lower layers.
-# runtime before platform: OS adapters may use AppLifecycle / BrowserThread.
+# runtime before platform: OS adapters may use AppLifecycle / AppRuntime.
 add_subdirectory(runtime)
 add_subdirectory(platform)
 add_subdirectory(i18n)

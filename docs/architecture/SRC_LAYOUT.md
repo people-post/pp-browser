@@ -62,7 +62,7 @@ integration/host → fork/include (public API only)
 
 | Path | Contents |
 |------|----------|
-| `base/runtime/` | Process runtime: `AppRuntime`, `BrowserThread`, coordinator, lifecycle, branding/version |
+| `base/runtime/` | Process runtime: `AppRuntime`, coordinator, lifecycle, branding/version |
 | `base/platform/` | OS adapters: SDL glue, paths, assets, credentials, notifications |
 | `base/net/` | HTTP client, service clients |
 | `base/data/` | Config, session, profiles, schema (`BootstrapTypes.h`) |

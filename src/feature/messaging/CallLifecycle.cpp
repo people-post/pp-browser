@@ -1,7 +1,6 @@
 #include "feature/messaging/CallLifecycle.h"
 
 #include "feature/messaging/CallSessionManager.h"
-#include "base/runtime/BrowserThread.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
@@ -145,11 +144,11 @@ void CallLifecycle::NotifyChrome() {
   if (!on_chrome_refresh_) {
     return;
   }
-  if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
+  if (AppRuntime::CurrentlyOnUI()) {
     on_chrome_refresh_();
     return;
   }
-  BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+  AppRuntime::PostUI([this]() {
     if (on_chrome_refresh_) {
       on_chrome_refresh_();
     }
@@ -158,7 +157,7 @@ void CallLifecycle::NotifyChrome() {
 
 void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
-  BrowserThread::ResumeIO();
+  AppRuntime::ResumeBackgroundWork();
   // Never Browser IO — AcceptInvite was starved behind PollInbox on Samsung (queued, no IO enter).
   // Same escape hatch as offerer Connect worker / call-control MediaKey send.
   AppRuntime::PostWorkerCritical([this, sessions, call_id]() {
@@ -182,7 +181,7 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
 
 void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
-  BrowserThread::PostTaskAndReply<Roe<void>>(
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, 
       [sessions, call_id]() -> Roe<void> {
         if (!sessions) {
           return Error("Calls unavailable");
@@ -201,7 +200,7 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
   // Critical: must not sit behind Normal work while Connect (also Critical) still dials —
   // StopLibp2pMedia aborts Connect via connect_generation_.
-  BrowserThread::PostTaskFrontAndReply<Roe<void>>(
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Critical, 
       [sessions, call_id]() -> Roe<void> {
         if (!sessions) {
           return Error("Calls unavailable");
@@ -218,7 +217,7 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
 
 void CallLifecycle::PostRetryMedia(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
-  BrowserThread::PostTaskAndReply<Roe<void>>(
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, 
       [sessions, call_id]() -> Roe<void> {
         if (!sessions) {
           return Error("Calls unavailable");
@@ -289,8 +288,8 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
     log().info << "PostAcceptInvite queued call_id=" << call_id;
     PostAcceptInvite(call_id);
     // Defer chrome refresh so the Accept click returns before ring teardown / DirtyWindow.
-    if (BrowserThread::CurrentlyOn(BrowserThreadId::UI)) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() { NotifyChrome(); });
+    if (AppRuntime::CurrentlyOnUI()) {
+      AppRuntime::PostUI([this]() { NotifyChrome(); });
     } else {
       NotifyChrome();
     }

@@ -39,7 +39,7 @@ public:
 /**
  * SFU soft-migrate / attach-wait / hop pick (V021 + V025).
  * Pure who-picks / wait / fan-out live in base SoftMigrateLogic / SfuAttachWaitLogic /
- * SfuAttachFanout; this adapter owns IO + BrowserThread posting.
+ * SfuAttachFanout; this adapter owns IO + AppRuntime posting.
  */
 class CallTopologyController : public Module {
 public:

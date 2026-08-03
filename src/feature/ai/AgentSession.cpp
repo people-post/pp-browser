@@ -22,7 +22,7 @@
 #include "common/Utilities.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
-#include "base/runtime/BrowserThread.h"
+#include "base/runtime/AppRuntime.h"
 
 #include <atomic>
 #include <chrono>
@@ -99,7 +99,7 @@ struct AgentSession::Impl : public Module {
 };
 
 void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event) {
-  BrowserThread::PostTask(BrowserThreadId::UI, [state, event = std::move(event)]() mutable {
+  AppRuntime::PostUI([state, event = std::move(event)]() mutable {
     std::lock_guard lock(state->event_mutex);
     state->pending_events.push_back(std::move(event));
   });
@@ -278,7 +278,7 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
   assistant_message.tool_calls = ToolCallsToJson(tool_calls);
   state->turn_scratch.push_back(std::move(assistant_message));
 
-  BrowserThread::PostTask(BrowserThreadId::IO, [state, tool_calls]() {
+  AppRuntime::PostWorkerNormal([state, tool_calls]() {
     if (state->cancelled) {
       AgentSession::FinishTurn(state);
       return;
@@ -565,7 +565,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   // Cancel() means "abort the active turn", not "abort agent configure". OnNewChat /
   // find-someone calls Cancel while Me→ReloadFromDisk may still be reconfiguring; tearing
   // down llm here left the session unconfigured and the next send showed MissingKey.
-  // Do not PauseIO here: this already runs on a worker pool thread. Pausing blocked
+  // Do not PauseBackgroundWork here: this already runs on a worker pool thread. Pausing blocked
   // concurrent posts (profile unlock, inbox) until Resume — and a missed Resume left
   // unlock_in_progress stuck on Android.
   try {
@@ -640,7 +640,7 @@ void AgentSession::Configure(const AppConfig& config) {
   impl_->configured = false;
   impl_->cancelled = false;
 
-  BrowserThread::PostTask(BrowserThreadId::IO, [impl = impl_]() { ConfigureOnIO(impl); });
+  AppRuntime::PostWorkerNormal([impl = impl_]() { ConfigureOnIO(impl); });
 }
 
 void AgentSession::SetToolRegistrationHook(ToolRegistrationHook hook) {
@@ -689,7 +689,7 @@ void AgentSession::Submit(const std::string& user_text, std::optional<std::strin
   impl_->turn_mode = AgentTurnMode::Conversation;
   impl_->pending_thread_id.clear();
 
-  BrowserThread::PostTask(BrowserThreadId::IO, [impl = impl_]() {
+  AppRuntime::PostWorkerNormal([impl = impl_]() {
     if (!impl->configured) {
       impl->submit_when_ready = true;
       return;
@@ -710,7 +710,7 @@ void AgentSession::SubmitToThread(const std::string& thread_id, const std::strin
   impl_->pending_thread_id = thread_id;
   impl_->turn_mode = AgentTurnMode::Thread;
 
-  BrowserThread::PostTask(BrowserThreadId::IO, [impl = impl_]() {
+  AppRuntime::PostWorkerNormal([impl = impl_]() {
     if (!impl->configured) {
       impl->submit_when_ready = true;
       return;
@@ -732,7 +732,7 @@ void AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::s
   impl_->turn_mode = AgentTurnMode::ScopedAssist;
   impl_->assist_mode = mode;
 
-  BrowserThread::PostTask(BrowserThreadId::IO, [impl = impl_]() {
+  AppRuntime::PostWorkerNormal([impl = impl_]() {
     if (!impl->configured) {
       impl->submit_when_ready = true;
       return;
@@ -759,7 +759,7 @@ void AgentSession::WaitForConfigureIdle() {
 }
 
 void AgentSession::StartNewConversation() {
-  BrowserThread::PostTask(BrowserThreadId::IO, [impl = impl_]() {
+  AppRuntime::PostWorkerNormal([impl = impl_]() {
     impl->conversation.StartNewConversation();
     impl->turn_scratch.clear();
     impl->pending_entry_id.clear();
