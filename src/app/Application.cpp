@@ -173,6 +173,8 @@ Application::Application() {
   badges_ = std::make_unique<BadgeAggregator>();
   input_ = std::make_unique<InputCoordinator>();
   flow_ = std::make_unique<FlowCoordinator>();
+  shell_ = std::make_unique<ShellHost>();
+  ShellHost::InstallInstance(*shell_);
   call_ = std::make_unique<CallController>();
   settings_ = std::make_unique<SettingsController>();
   SettingsController::InstallInstance(*settings_);
@@ -485,7 +487,7 @@ bool Application::Initialize(const char* window_title) {
   };
   settings_->BindCommands(std::move(settings_commands));
 
-  ShellHost& shell = ShellHost::Instance();
+  ShellHost& shell = *shell_;
   const ShellNavigationPorts shell_navigation = MakeShellNavigationPorts(shell);
   const ShellFeedbackPorts shared_feedback = BindSharedShellFeedback(shell);
   settings_->BindShellFeedback(shared_feedback);
@@ -584,17 +586,17 @@ bool Application::Initialize(const char* window_title) {
   unlock_gate_->BindPorts(std::move(unlock_ports));
 
   ChatController::Instance().BindUnlockGate(*unlock_gate_);
-  ShellHost::Instance().BindShellMessaging(MakeMessagingShellPorts(messaging));
-  ShellHost::Instance().BindPinGate(*pin_gate_);
-  ShellHost::Instance().BindFlowCoordinator(*flow_);
-  ShellHost::Instance().BindCallController(*call_);
+  shell_->BindShellMessaging(MakeMessagingShellPorts(messaging));
+  shell_->BindPinGate(*pin_gate_);
+  shell_->BindFlowCoordinator(*flow_);
+  shell_->BindCallController(*call_);
   settings_->BindUnlockGate(*unlock_gate_);
   contacts_->BindUnlockGate(*unlock_gate_);
   people_picker_->BindUnlockGate(*unlock_gate_);
   people_picker_->BindFlowCoordinator(*flow_);
   people_picker_->BindCallController(*call_);
 
-  config_apply_->Bind(messaging, store_, [](const std::string& relative) { return AssetsPath(relative); });
+  config_apply_->Bind(messaging, store_, *shell_, [](const std::string& relative) { return AssetsPath(relative); });
 
   agent_session_.emplace();
   ChatController::Instance().BindAgentPorts(MakeAgentUiPorts(*agent_session_));
@@ -611,6 +613,11 @@ bool Application::Initialize(const char* window_title) {
 
   if (!people_picker_->RegisterModel(context)) {
     log().error << "PeoplePickerController RegisterModel failed";
+    return false;
+  }
+
+  if (!shell_->RegisterWindowModel(context)) {
+    log().error << "ShellHost RegisterWindowModel failed";
     return false;
   }
 
@@ -704,7 +711,7 @@ bool Application::Initialize(const char* window_title) {
   messaging.SetOnMessagingReady([this]() {
     ChatController::Instance().OnMessagingReady();
     contacts_->Refresh();
-    const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(ShellHost::Instance().State());
+    const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(shell_->State());
     if (chrome.account_sheet_open) {
       settings_->OnAccountSheetOpened();
     } else if (chrome.nav_tab == NavTab::Me) {
@@ -723,17 +730,17 @@ bool Application::Initialize(const char* window_title) {
 
   LocalizationService::Instance().AddLanguageChangeListener([this](const std::string& /*resolved*/) {
     settings_->RefreshLocalizedChrome();
-    ShellHost::Instance().RequestSyncLayout(true);
+    shell_->RequestSyncLayout(true);
     if (auto* ctx = Rml::GetContext("main")) {
       ApplyUiDocumentLanguage(ctx);
     }
   });
 
-  ShellHost::Instance().SetSafeAreaInsetsFromPrefs(bootstrap.machine_prefs.safe_area.top,
-                                                   bootstrap.machine_prefs.safe_area.bottom);
-  ShellHost::Instance().RefreshSafeAreaInsets(context);
-  ShellHost::Instance().SyncChromeMaterialPrefs(bootstrap.profile_prefs.reduce_transparency,
-                                                bootstrap.profile_prefs.compact_chrome_frost);
+  shell_->SetSafeAreaInsetsFromPrefs(bootstrap.machine_prefs.safe_area.top,
+                                    bootstrap.machine_prefs.safe_area.bottom);
+  shell_->RefreshSafeAreaInsets(context);
+  shell_->SyncChromeMaterialPrefs(bootstrap.profile_prefs.reduce_transparency,
+                                  bootstrap.profile_prefs.compact_chrome_frost);
 
   ApplyUiDocumentLanguage(context);
 
@@ -773,11 +780,10 @@ void Application::Run() {
 #endif
   while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
     BrowserThread::RunUITasks();
-    if (ShellHost::Instance().State().account_sheet_open ||
-        ShellHost::Instance().State().nav_tab == NavTab::Me) {
+    if (shell_->State().account_sheet_open || shell_->State().nav_tab == NavTab::Me) {
       settings_->Tick();
     }
-    if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
+    if (shell_->State().nav_tab == NavTab::Contacts) {
       contacts_->Tick();
     }
     call_->Tick();
@@ -786,11 +792,11 @@ void Application::Run() {
     }
     UpdateChatController();
     ContextMenuHost::Instance().Update();
-    ShellHost::Instance().Update(context);
+    shell_->Update(context);
     context->Update();
     AfterLayoutChatController();
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
-    ShellHost::Instance().NotifyFrameEnd(context);
+    shell_->NotifyFrameEnd(context);
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
     if (Backend::CanRender()) {
       Backend::BeginFrame();
@@ -800,8 +806,7 @@ void Application::Run() {
         StartupMark("first_present");
         logged_first_present = true;
         BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-          OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_,
-                                        MakeShellNavigationPorts(ShellHost::Instance()));
+          OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_, MakeShellNavigationPorts(*shell_));
         });
       }
       skip_log_countdown = 0;
@@ -860,7 +865,8 @@ void Application::Shutdown() {
     call_->BindShellCallChrome({});
     call_->BindPeoplePickerNotify({});
   }
-  ShellHost::Instance().BindShellMessaging({});
+  shell_->BindShellMessaging({});
+  ShellHost::ClearInstance();
   PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
   SettingsController::ClearInstance();

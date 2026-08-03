@@ -8,9 +8,11 @@
 
 namespace pbr {
 
-void ConfigApplyBridge::Bind(MessagingHub& messaging, SessionStore& store, AssetPathResolver resolve_asset) {
+void ConfigApplyBridge::Bind(MessagingHub& messaging, SessionStore& store, ShellHost& shell,
+                             AssetPathResolver resolve_asset) {
   messaging_ = &messaging;
   store_ = &store;
+  shell_ = &shell;
   resolve_asset_ = std::move(resolve_asset);
 }
 
@@ -100,8 +102,8 @@ void ConfigApplyBridge::ApplyChrome(const ShellHost::ChromePrefs& next,
       Theme::ApplyAppearance(ctx, Theme::ParseAppearance(next.appearance));
     }
   }
-  if (material_changed) {
-    ShellHost::Instance().Apply(next);
+  if (material_changed && shell_) {
+    shell_->Apply(next);
   }
 }
 

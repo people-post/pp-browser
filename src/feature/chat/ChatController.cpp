@@ -2328,10 +2328,6 @@ bool ChatController::Setup(Rml::Context* context) {
     return false;
   }
 
-  if (!ShellHost::RegisterWindowModel(context)) {
-    return false;
-  }
-
   if (shell_setup_.initialize) {
     shell_setup_.initialize(context);
   }

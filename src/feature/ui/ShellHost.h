@@ -66,6 +66,11 @@ public:
   /** Apply material fields only (theme/appearance are Theme-owned). */
   void Apply(const ChromePrefs& prefs);
 
+  ShellHost() = default;
+
+  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
+  static void InstallInstance(ShellHost& host);
+  static void ClearInstance();
   static ShellHost& Instance();
 
   void BindShellMessaging(MessagingShellPorts ports);
@@ -166,10 +171,9 @@ public:
   static void TitlebarToggleMaximizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarCloseCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
-  static bool RegisterWindowModel(Rml::Context* context);
+  bool RegisterWindowModel(Rml::Context* context);
 
 private:
-  ShellHost() = default;
 
   Rml::Element* ShellRoot() const;
   std::string SerializeShellRoot() const;
@@ -247,6 +251,7 @@ private:
   FlowCoordinator* flow_ = nullptr;
   CallController* call_ = nullptr;
 
+  static ShellHost* installed_instance_;
 };
 
 } // namespace pbr

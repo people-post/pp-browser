@@ -73,9 +73,21 @@ std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeF
 
 } // namespace
 
+ShellHost* ShellHost::installed_instance_ = nullptr;
+
+void ShellHost::InstallInstance(ShellHost& host) {
+  installed_instance_ = &host;
+}
+
+void ShellHost::ClearInstance() {
+  installed_instance_ = nullptr;
+}
+
 ShellHost& ShellHost::Instance() {
-  static ShellHost host;
-  return host;
+  if (!installed_instance_) {
+    throw std::runtime_error("ShellHost not installed");
+  }
+  return *installed_instance_;
 }
 void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
   shell_messaging_ports_ = std::move(ports);
@@ -95,8 +107,8 @@ void ShellHost::BindCallController(CallController& call) {
 
 
 bool ShellHost::RegisterWindowModel(Rml::Context* context) {
-  return DataModelHost::Instance().Register(context, "window", [](Rml::DataModelConstructor& ctor) {
-    ShellHost& host = ShellHost::Instance();
+  return DataModelHost::Instance().Register(context, "window", [this](Rml::DataModelConstructor& ctor) {
+    ShellHost& host = *this;
     if (auto toast_handle = ctor.RegisterStruct<ToastEntry>()) {
       toast_handle.RegisterMember("id", &ToastEntry::id);
       toast_handle.RegisterMember("message", &ToastEntry::message);
