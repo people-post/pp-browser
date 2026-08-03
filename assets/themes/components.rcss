@@ -2069,6 +2069,12 @@ call-video-tile {
   right: -4dp;
 }
 
+.badge-dot--settings {
+  flex-shrink: 0;
+  margin-left: 6dp;
+  margin-right: 2dp;
+}
+
 .sidebar-session-close {
   flex-shrink: 0;
   display: flex;

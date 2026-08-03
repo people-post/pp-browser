@@ -46,6 +46,8 @@ struct SettingsCommands {
   std::function<bool()> messaging_ready;
   std::function<std::string()> last_libp2p_error;
   std::function<SettingsReachabilityView()> load_reachability;
+  /** Refresh Me / Network attention dots after reachability nudge ack. */
+  std::function<void()> refresh_nav_badges;
 
   std::function<PinProtectionView()> load_pin_protection;
 };

@@ -40,6 +40,7 @@
           <p class="settings-row-title" data-rml="section.title"></p>
           <p class="settings-row-subtitle text muted" data-if="section.subtitle != ''" data-rml="section.subtitle"></p>
         </div>
+        <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
         <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="14" height="14"></svg>
       </button>
     </div>

@@ -33,7 +33,7 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 8;
+  static constexpr int kSchemaVersion = 9;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
@@ -52,6 +52,11 @@ struct ProfilePreferences {
   bool reduce_transparency = false;
   /** When false, disables the single-surface frost tier (dogfood / perf); opaque chrome remains. */
   bool compact_chrome_frost = true;
+  /**
+   * Last acked Me → Network reachability nudge (`outbound_only` / `blocked`, or empty).
+   * Cleared when status becomes reachable so a later regression can nudge again.
+   */
+  std::string reachability_nudge_acked_status;
 };
 
 class UserPreferences {

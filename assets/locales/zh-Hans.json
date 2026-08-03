@@ -116,6 +116,7 @@
     "settings.network.help.blocked": "请在系统防火墙中允许 pp-browser，或尝试其他网络。VPN 可能阻止对等连接。",
     "settings.network.help.reachable": "可直接连接到你。感谢帮助网络。",
     "settings.network.help.skip_relay": "可以跳过端口转发 — 消息仍可通过中继工作。",
+    "settings.network.help.ack_relay": "知道了 — 先用中继",
     "settings.network.banner_hint": "入站可用前，直连可能走中继。见 我 → 网络。",
     "settings.network.circuit_relay": "电路中继",
     "settings.network.circuit_relay_hint": "帮助 NAT 后的节点通过此节点连接（自愿）。",

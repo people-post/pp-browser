@@ -461,7 +461,8 @@ void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
                      {"show_notifications", prefs.show_notifications},
                      {"group_invite_policy", prefs.group_invite_policy},
                      {"reduce_transparency", prefs.reduce_transparency},
-                     {"compact_chrome_frost", prefs.compact_chrome_frost}};
+                     {"compact_chrome_frost", prefs.compact_chrome_frost},
+                     {"reachability_nudge_acked_status", prefs.reachability_nudge_acked_status}};
 }
 
 void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
@@ -506,6 +507,11 @@ void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
     prefs.compact_chrome_frost = j["compact_chrome_frost"].get<bool>();
   } else {
     prefs.compact_chrome_frost = true;
+  }
+  if (j.contains("reachability_nudge_acked_status") && j["reachability_nudge_acked_status"].is_string()) {
+    prefs.reachability_nudge_acked_status = j["reachability_nudge_acked_status"].get<std::string>();
+  } else {
+    prefs.reachability_nudge_acked_status.clear();
   }
 }
 

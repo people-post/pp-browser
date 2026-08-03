@@ -116,6 +116,7 @@
     "settings.network.help.blocked": "Allow pp-browser in your OS firewall or try another network. VPNs can block peer connections.",
     "settings.network.help.reachable": "Direct connections to you should work. Thank you for helping the network.",
     "settings.network.help.skip_relay": "You can skip port forwarding — messaging still works via relay.",
+    "settings.network.help.ack_relay": "Got it — use relay",
     "settings.network.banner_hint": "Direct connections may use relay until inbound works. See Me → Network.",
     "settings.network.circuit_relay": "Circuit relay",
     "settings.network.circuit_relay_hint": "Help NAT'd peers connect through this Node (volunteer).",

@@ -75,5 +75,6 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `show_notifications` | `preferences.json` | boolean; alerts ≠ sync |
 | `reduce_transparency` | `preferences.json` | boolean, schema v8; opaque compact chrome |
 | `compact_chrome_frost` | `preferences.json` | boolean, schema v8; default true; dogfood off in JSON |
+| `reachability_nudge_acked_status` | `preferences.json` | string, schema v9; empty / `outbound_only` / `blocked` — Me → Network attention ack |
 
 Stylesheet entry points (`foundation.rcss`, `components.rcss`, `colors-*.rcss`) and theme UX: [ui/UI_DESIGN_SYSTEM.md](../ui/UI_DESIGN_SYSTEM.md). The legacy `theme` path field in config remains for compatibility.

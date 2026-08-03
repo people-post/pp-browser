@@ -87,6 +87,8 @@ struct SettingsSectionListItem {
   std::string id;
   std::string title;
   std::string subtitle;
+  /** Non-count attention on the section row (e.g. Network reachability nudge). */
+  bool attention = false;
 };
 
 } // namespace pbr

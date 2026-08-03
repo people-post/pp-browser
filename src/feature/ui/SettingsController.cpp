@@ -10,6 +10,7 @@
 #include "base/runtime/AppRuntime.h"
 #include "base/ui/ContextMenuHost.h"
 #include "feature/settings/AppearanceSettingsSection.h"
+#include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsPortsViews.h"
 #include "feature/ui/DataModelHost.h"
 #include "base/crypto/ProfileUnlockGate.h"
@@ -197,8 +198,12 @@ void SettingsController::InitSections() {
   sections_.clear();
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     const SettingsSectionListItem item = handler->ListItem();
-    sections_.push_back({.id = item.id.c_str(), .title = item.title.c_str(), .subtitle = item.subtitle.c_str()});
+    sections_.push_back({.id = item.id.c_str(),
+                         .title = item.title.c_str(),
+                         .subtitle = item.subtitle.c_str(),
+                         .attention = false});
   }
+  ApplySectionAttention();
 }
 
 void SettingsController::PullBindingsToUiState() {
@@ -387,6 +392,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
       section_handle.RegisterMember("id", &SectionListRow::id);
       section_handle.RegisterMember("title", &SectionListRow::title);
       section_handle.RegisterMember("subtitle", &SectionListRow::subtitle);
+      section_handle.RegisterMember("attention", &SectionListRow::attention);
     }
     if (auto mcp_handle = ctor.RegisterStruct<McpServerRow>()) {
       mcp_handle.RegisterMember("id", &McpServerRow::id);
@@ -1315,11 +1321,60 @@ void SettingsController::ApplyReachability() {
     ui_state_.prefer_contacts_for_routing = cfg.prefer_contacts_for_routing ? "on" : "off";
   }
   PushUiStateToBindings();
+  ApplySectionAttention();
+}
+
+bool SettingsController::ComputeNetworkAttention() const {
+  if (!ui_state_.show_node_toggle || ui_state_.node_enabled != "on") {
+    return false;
+  }
+  if (!commands_.session_store || !commands_.load_reachability) {
+    return false;
+  }
+  if (!commands_.messaging_ready || !commands_.messaging_ready()) {
+    return false;
+  }
+  const SettingsReachabilityView view = commands_.load_reachability();
+  const std::string status_key = ReachabilityNudgeStatusKey(view.status);
+  const std::string& acked =
+      commands_.session_store().Snapshot().profile_prefs.reachability_nudge_acked_status;
+  return ReachabilityNudgeActive(true, status_key, acked);
+}
+
+void SettingsController::ApplySectionAttention() {
+  const bool network_attention = ComputeNetworkAttention();
+  for (SectionListRow& section : sections_) {
+    section.attention = section.id == "network" && network_attention;
+  }
 }
 
 void SettingsController::SyncReachability() {
   ApplyReachability();
   DirtyAll();
+}
+
+void SettingsController::AckReachabilityNudge(const std::string& status_key) {
+  if (status_key != kReachabilityNudgeOutboundOnly && status_key != kReachabilityNudgeBlocked) {
+    return;
+  }
+  if (!commands_.session_store) {
+    return;
+  }
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  const int new_sev = ReachabilityNudgeSeverity(status_key);
+  if (new_sev <= ReachabilityNudgeSeverity(prefs.reachability_nudge_acked_status)) {
+    return;
+  }
+  prefs.reachability_nudge_acked_status = status_key;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
+    ReportFailure(saved.error());
+    return;
+  }
+  ApplySectionAttention();
+  if (commands_.refresh_nav_badges) {
+    commands_.refresh_nav_badges();
+  }
 }
 
 void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1331,6 +1386,10 @@ void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*
   controller.bindings_.node_enabled = controller.bindings_.node_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("network");
+  controller.ApplyReachability();
+  if (controller.commands_.refresh_nav_badges) {
+    controller.commands_.refresh_nav_badges();
+  }
   controller.DirtyAll();
 }
 
@@ -1361,8 +1420,12 @@ void SettingsController::ShowReachabilityHelpCallback(Rml::DataModelHandle /*mod
 void SettingsController::DismissReachabilityHelpCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                          const Rml::VariantList& /*args*/) {
   auto& controller = Instance();
+  const std::string help_kind = controller.bindings_.reachability_help_kind.c_str();
   controller.bindings_.show_reachability_help = false;
   controller.PullBindingsToUiState();
+  if (help_kind == kReachabilityNudgeOutboundOnly || help_kind == kReachabilityNudgeBlocked) {
+    controller.AckReachabilityNudge(help_kind);
+  }
   controller.DirtyAll();
 }
 

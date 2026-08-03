@@ -5,6 +5,7 @@ pp_browser_add_feature_library(pp_feature_settings
     IntegrationsSettingsSection.cpp
     LlmSettingsSection.cpp
     NetworkSettingsSection.cpp
+    ReachabilityNudge.cpp
     SettingsLogic.cpp
     SettingsSections.cpp
     StorageSettingsSection.cpp

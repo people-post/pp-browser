@@ -36,6 +36,7 @@ public:
     Rml::String id;
     Rml::String title;
     Rml::String subtitle;
+    bool attention = false;
   };
 
   struct McpServerRow {
@@ -79,6 +80,8 @@ public:
   void RefreshLocalizedChrome();
   /** Refresh reachability Connection card via SettingsCommands ports. */
   void SyncReachability();
+  /** Persist skip/ack for the Me → Network reachability nudge (condition-keyed). */
+  void AckReachabilityNudge(const std::string& status_key);
 
 private:
   struct SettingsBindings {
@@ -182,6 +185,8 @@ private:
   void ReloadFromDisk();
   void SyncBindingsFromSession();
   void ApplyReachability();
+  void ApplySectionAttention();
+  bool ComputeNetworkAttention() const;
   SessionStore& Store();
   void FinishPaneResync();
   void OnSelectSection(const std::string& section_id);

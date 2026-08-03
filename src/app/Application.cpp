@@ -31,6 +31,7 @@
 #include "feature/messaging/MessagingCallPorts.h"
 #include "feature/messaging/MessagingChatPorts.h"
 #include "feature/messaging/MessagingHub.h"
+#include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "app/ChatShellBridge.h"
@@ -491,6 +492,11 @@ bool Application::Initialize(const char* window_title) {
     view.help_kind = ReachabilityHelpKey(snap.status);
     return view;
   };
+  settings_commands.refresh_nav_badges = [this]() {
+    if (badges_) {
+      badges_->Refresh();
+    }
+  };
   settings_commands.load_pin_protection = []() {
     PinProtectionView view;
     auto& secrets = ProfileSecretsService::Instance();
@@ -574,6 +580,12 @@ bool Application::Initialize(const char* window_title) {
     inputs.sessions_unread = std::max(0, total - deduction);
     if (contacts_shell_bridge_) {
       inputs.contacts_unread = std::max(0, contacts_shell_bridge_->LastSurface().contacts_unread);
+    }
+    if (Platform::IsDesktop() && store_.Snapshot().config.libp2p.node_enabled) {
+      const ReachabilitySnapshot snap = messaging.Reachability();
+      const std::string status_key = ReachabilityStatusKey(snap.status);
+      inputs.me_attention = ReachabilityNudgeActive(
+          true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
     }
     return inputs;
   });
@@ -769,10 +781,18 @@ bool Application::Initialize(const char* window_title) {
   });
   messaging.SetOnReachabilityUpdated([this]() {
     AppRuntime::PostUI([this]() {
-      settings_->SyncReachability();
       const ReachabilitySnapshot snap = Messaging().Reachability();
-      if (snap.status == ReachabilityStatus::OutboundOnly || snap.status == ReachabilityStatus::Blocked) {
-        UserFeedback::NeedsSetup(Tr("settings.network.banner_hint"));
+      if (snap.status == ReachabilityStatus::Reachable) {
+        ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+        if (!prefs.reachability_nudge_acked_status.empty()) {
+          prefs.reachability_nudge_acked_status.clear();
+          prefs.schema_version = ProfilePreferences::kSchemaVersion;
+          (void)store_.SaveProfilePrefs(prefs);
+        }
+      }
+      settings_->SyncReachability();
+      if (badges_) {
+        badges_->Refresh();
       }
     });
   });

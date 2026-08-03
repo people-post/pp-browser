@@ -28,6 +28,7 @@ void BadgeAggregator::Refresh() {
     const BadgeUnreadInputs inputs = source_();
     next.sessions_unread = inputs.sessions_unread;
     next.contacts_unread = inputs.contacts_unread;
+    next.me_attention = inputs.me_attention;
     next.sessions_unread_display = FormatBadgeCount(next.sessions_unread).c_str();
     next.contacts_unread_display = FormatBadgeCount(next.contacts_unread).c_str();
   }

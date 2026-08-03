@@ -162,14 +162,14 @@
             <p class="text muted">{{i18n:settings.network.help.outbound_only}}</p>
             <p class="text muted">{{i18n:settings.network.help.skip_relay}}</p>
             <button class="btn btn-secondary" type="button" data-event-click="dismiss_reachability_help()">
-              {{i18n:common.not_now}}
+              {{i18n:settings.network.help.ack_relay}}
             </button>
           </div>
           <div class="stack" data-if="show_reachability_help && reachability_help_kind == 'blocked'">
             <p class="text muted">{{i18n:settings.network.help.blocked}}</p>
             <p class="text muted">{{i18n:settings.network.help.skip_relay}}</p>
             <button class="btn btn-secondary" type="button" data-event-click="dismiss_reachability_help()">
-              {{i18n:common.not_now}}
+              {{i18n:settings.network.help.ack_relay}}
             </button>
           </div>
           <div class="stack" data-if="show_reachability_help && reachability_help_kind == 'reachable'">
