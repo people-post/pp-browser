@@ -1,6 +1,6 @@
 # P2P A/V calls — current state
 
-**Last updated:** 2026-08-02
+**Last updated:** 2026-08-03
 
 **North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). WebRTC/libdatachannel = **legacy in tree**.
 
@@ -54,7 +54,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 
 | Area | State |
 |------|-------|
-| **m1** desktop matrix | Android ↔ desktop voice without WebRTC |
+| **m1** desktop matrix | Android ↔ desktop voice without WebRTC; **Windows LAN mDNS announce/browse landed** (was stub — Win↔Linux undialable) — rebuild Windows + confirm contact has PeerId |
 | Hop peerstore / circuit PeerId dial | media-hop **L1–L3** |
 | Teardown libdatachannel | **m2** next |
 | Video on libp2p | Deferred |
