@@ -39,6 +39,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     pp_base_crypto
     pp_base_media
     pp_libp2p_integration
+    pp_base_platform_core
     p2p
     nlohmann_json::nlohmann_json
     CURL::libcurl)

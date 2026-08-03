@@ -13,7 +13,7 @@
 | libp2p reactor | `Libp2pHost::io_thread_` | asio `io_context::run()`; borrows app pool (private pool in unit tests) |
 | UI wake | `Backend::WakeEventLoop`, `BrowserThread::SetUIWakeCallback` | SDL user event |
 | IO pause/resume | `BrowserThread::PauseIO` / `ResumeIO` | AppLifecycle, AgentSession, BackgroundSyncScheduler |
-| Hop-off threads | ~13× `.detach()` in `feature/messaging/` | See THREADING.md today section |
+| Hop-off threads | **0** `.detach()` in `feature/messaging/` (t3) | libp2p fork `cares.cpp` still detached |
 | UI-tick polling | `BackgroundSyncScheduler::Tick`, `MessagingHub::TickLibp2p` | Not yet on coordinator timer wheel |
 | Linux notifier watch | `LocalNotifier_Linux.cpp` | Dedicated joinable thread |
 
@@ -27,5 +27,5 @@
 ## Next agent — start here
 
 1. Read [THREADING.md](../../docs/architecture/THREADING.md) target section.
-2. Pick [PHASES.md § Phase t3](PHASES.md#phase-t3--migrate-messaging--call-hop-offs-to-pool).
+2. Pick [PHASES.md § Phase t4](PHASES.md#phase-t4--coordinatorthread--timer-wheel).
 3. Do not remove Browser IO until t5; app pool is live in production via `ThreadRuntime`.

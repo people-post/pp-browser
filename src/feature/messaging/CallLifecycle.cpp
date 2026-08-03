@@ -2,9 +2,8 @@
 
 #include "feature/messaging/CallSessionManager.h"
 #include "base/platform/BrowserThread.h"
+#include "base/platform/PlatformRuntime.h"
 #include "common/Logger.h"
-
-#include <thread>
 
 namespace pbr {
 
@@ -162,13 +161,13 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
   BrowserThread::ResumeIO();
   // Never Browser IO — AcceptInvite was starved behind PollInbox on Samsung (queued, no IO enter).
   // Same escape hatch as offerer Connect worker / call-control MediaKey send.
-  std::thread([this, sessions, call_id]() {
+  PlatformRuntime::PostWorkerCritical([this, sessions, call_id]() {
     logging::getLogger("CallLifecycle").warning << "AcceptInvite worker enter call_id=" << call_id;
     Roe<void> accepted = Error("Calls unavailable");
     if (sessions) {
       accepted = sessions->AcceptInvite(call_id);
     }
-    BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id, accepted = std::move(accepted)]() mutable {
+    PlatformRuntime::PostUI([this, call_id, accepted = std::move(accepted)]() mutable {
       if (!accepted) {
         log().warning << "AcceptInvite failed call_id=" << call_id << " err=" << accepted.error().message;
         last_error_ = accepted.error().message;
@@ -178,7 +177,7 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
       log().warning << "AcceptInvite ok call_id=" << call_id;
       Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
     });
-  }).detach();
+  });
 }
 
 void CallLifecycle::PostDeclineInvite(const std::string& call_id) {

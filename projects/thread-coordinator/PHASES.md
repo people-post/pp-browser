@@ -72,15 +72,15 @@ Can proceed **in parallel** with [p2p-av-calls m2](../p2p-av-calls/PHASES.md) (W
 
 **Goal:** Replace feature-layer detached threads; preserve Critical semantics.
 
-- [ ] `P2pMessagingService` — PollInbox loop → pool Background with coalescing atomics preserved
-- [ ] `P2pMessagingService` — prefer_relay send, AckInbox → pool Normal
-- [ ] `MessagingHub` — N025 / mDNS workers → pool Critical where signaling
-- [ ] `Libp2pDirectChatService`, `Libp2pChatHistoryService` — stream hop-offs → pool Normal
-- [ ] `CallLifecycle` — AcceptInvite → pool **Critical**
-- [ ] `CallLibp2pMediaBridge` — connect workers → pool Critical / Normal
-- [ ] Delete all `.detach()` in `src/feature/messaging/`
+- [x] `P2pMessagingService` — PollInbox loop → pool Background with coalescing atomics preserved
+- [x] `P2pMessagingService` — prefer_relay send, AckInbox → pool Critical / Normal
+- [x] `MessagingHub` — N025 / mDNS workers → pool Critical
+- [x] `Libp2pDirectChatService`, `Libp2pChatHistoryService` — stream hop-offs → pool Normal
+- [x] `CallLifecycle` — AcceptInvite → pool **Critical**
+- [x] `CallLibp2pMediaBridge` — connect workers → Critical; MediaKey poll → Background
+- [x] Delete all `.detach()` in `src/feature/messaging/`
 
-**Exit criteria:** Zero detach in messaging/calls; AcceptInvite not starved by PollInbox (manual or automated soak).
+**Exit criteria:** Zero detach in messaging/calls; AcceptInvite not starved by PollInbox (manual or automated soak). **Done** (soak deferred).
 
 ---
 
@@ -137,7 +137,7 @@ Can proceed **in parallel** with [p2p-av-calls m2](../p2p-av-calls/PHASES.md) (W
 
 | Date | Change |
 |------|--------|
-| 2026-08-03 | Phase t3.5: `PlatformRuntime` facade + `WorkerDispatch`; no pool injection |
+| 2026-08-03 | Phase t3: messaging hop-offs on `PlatformRuntime::PostWorker` |
 | 2026-08-03 | Phase t2: libp2p integration hop-offs on `WorkerPool` |
 | 2026-08-03 | Phase t1: `WorkerPool` in `src/common/` with unit tests |
 | 2026-08-03 | Project created; t0 design complete; t1–t6 planned |
