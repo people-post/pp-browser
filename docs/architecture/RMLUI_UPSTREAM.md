@@ -54,6 +54,8 @@ Edit files under `src/render/fork/` directly in pp-browser commits (except `src/
 - `WidgetTextInput` — composer selection handles with the same visual and drag semantics (`OnRenderOverlays` after text children); `SetValue` no-ops when the displayed string is unchanged (avoids IME/cursor reset from data-model write-back while typing)
 - `Element::Render` — virtual so form controls and selectable text can draw ink above descendants
 - `ElementSelectableText` / `WidgetTextInput` — hidden `selection` style-probe child; theme via descendant `selection { background-color; color; }` in author RCSS
+- `DataViewIf` / `DataViewVisible` — treat only `display:none` / `visibility:hidden` as data-bound hidden (not any local display/visibility); fixes Dirty toggles when layout set `display:flex|block`
+- `DataModelHandle::Update` — flush dirty variables and newly attached views (used by `RmlMount::MountInner` after `SetInnerRML`)
 - `DataViewFor` — clone inner markup from template children when `rmlui-inner-rml` is absent (fixes empty `data-for` buttons with `{{expr}}` text)
 - `DataView` / `DataViews` — evict stale views in `OnElementRemove` via `IsValid()` (avoids warning spam during pane remounts); `GetElement()` returns null silently like `DataController`
 - `UserAgentStyleSheet` / `WidgetScroll` — scrollbar cross-axis sizing so layout boxes match painted thumbs (fixes full-width invisible hit targets)

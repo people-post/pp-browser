@@ -47,7 +47,7 @@ enum class CallChromeUpdate {
   Remount,   // layer appear / disappear / switch call_id → RemountCallChrome mounts
 };
 
-/** Pure gate: remount only on layer identity change; never remount on timer alone. */
+/** Pure gate: remount on layer identity / control presence / status kind; Dirty for icon toggles + meters. */
 CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const CallChromeLayer& next);
 
 } // namespace pbr

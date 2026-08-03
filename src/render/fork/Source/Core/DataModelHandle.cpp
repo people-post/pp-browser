@@ -20,6 +20,11 @@ void DataModelHandle::DirtyAllVariables()
 	model->DirtyAllVariables();
 }
 
+bool DataModelHandle::Update(bool clear_dirty_variables)
+{
+	return model->Update(clear_dirty_variables);
+}
+
 DataModelConstructor::DataModelConstructor() : model(nullptr), type_register(nullptr) {}
 
 DataModelConstructor::DataModelConstructor(DataModel* model) : model(model), type_register(model->GetDataTypeRegister())

@@ -95,7 +95,7 @@ Choose the lightest primitive that fits the user task:
 | Call ring / in-call layer appear or disappear | `RemountCallChrome()` into dedicated mounts (not full `SyncLayout`) |
 | Periodic poll / tick | Reconcile state only; remount **iff** structure changed |
 
-Call ring / in-call overlays live in `#shell-call-ring-mount` / `#shell-call-in-progress-mount`. Show/hide remounts **only those mounts** via `RemountCallChrome` — never remount the full shell tree for call chrome (that destroyed chat panes and broke Accept hit-testing on Samsung). Label/pulse updates while a layer is already mounted use `DirtyWindow` only.
+Call ring / in-call overlays live in `#shell-call-ring-mount` / `#shell-call-in-progress-mount`. Show/hide remounts **only those mounts** via `RemountCallChrome` — never remount the full shell tree for call chrome (that destroyed chat panes and broke Accept hit-testing on Samsung). Control *presence* (stage / retry / invite / speaker button / roster) also remounts. Mute / speaker / camera icon toggles use DirtyWindow + `data-if` (fork `DataViewIf` + `RmlMount` model flush). Meter/pulse/elapsed ticks use `DirtyWindow` only.
 
 `RemountCallChrome` **defers** `MountInner` to the next UI turn (same reason as deferred `SyncLayout`): doing it inside an Rml Leave/Accept click destroys the event target mid-dispatch and can segfault. `SyncLayout` still fills mounts synchronously after the shell remount.
 

@@ -64,44 +64,39 @@ TEST(CallChromeSyncTest, SwitchCallIdRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
-TEST(CallChromeSyncTest, MuteElapsedPulseDirties) {
+TEST(CallChromeSyncTest, MuteSpeakerCameraDirties) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
   synced.in_call_muted = false;
-  synced.in_call_elapsed = "0:01";
-  synced.in_call_peer_label = "Them";
-  synced.ring_pulse = false;
+  synced.in_call_speaker_on = true;
+  synced.in_call_camera_on = false;
   pbr::CallChromeLayer next = synced;
   next.in_call_muted = true;
-  next.in_call_elapsed = "0:02";
-  next.in_call_peer_label = "Alice";
-  next.ring_pulse = true;
+  next.in_call_speaker_on = false;
+  next.in_call_camera_on = true;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 
-TEST(CallChromeSyncTest, CameraStageDirties) {
+TEST(CallChromeSyncTest, StagePresenceRemounts) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
-  synced.in_call_camera_on = false;
   synced.in_call_stage_visible = false;
   pbr::CallChromeLayer next = synced;
-  next.in_call_camera_on = true;
   next.in_call_stage_visible = true;
   next.in_call_local_preview = true;
-  next.in_call_remote_placeholder = "Camera off";
-  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
-TEST(CallChromeSyncTest, GroupRosterFieldsDirty) {
+TEST(CallChromeSyncTest, GroupRosterPresenceRemounts) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
   pbr::CallChromeLayer next = synced;
   next.in_call_show_roster = true;
   next.in_call_participant_count = 3;
-  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
 TEST(CallChromeSyncTest, RingConflictDirties) {

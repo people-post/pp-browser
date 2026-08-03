@@ -231,7 +231,13 @@ bool DataViewIf::Update(DataModel& model)
 	if (element && GetExpression().Run(expr_interface, variant))
 	{
 		const bool value = variant.Get<bool>();
-		const bool is_visible = (element->GetLocalStyleProperties().count(PropertyId::Display) == 0);
+		// Only Display::None counts as data-if-hidden. Treating *any* local display as hidden
+		// broke toggles when layout had set display:flex/block (mute/speaker icons stuck).
+		const auto& local = element->GetLocalStyleProperties();
+		const auto it_display = local.find(PropertyId::Display);
+		const bool is_data_if_hidden =
+			it_display != local.end() && it_display->second.Get<int>() == static_cast<int>(Style::Display::None);
+		const bool is_visible = !is_data_if_hidden;
 		if (is_visible != value)
 		{
 			if (value)
@@ -256,7 +262,11 @@ bool DataViewVisible::Update(DataModel& model)
 	if (element && GetExpression().Run(expr_interface, variant))
 	{
 		const bool value = variant.Get<bool>();
-		const bool is_visible = (element->GetLocalStyleProperties().count(PropertyId::Visibility) == 0);
+		const auto& local = element->GetLocalStyleProperties();
+		const auto it_visibility = local.find(PropertyId::Visibility);
+		const bool is_data_visible_hidden = it_visibility != local.end() &&
+			it_visibility->second.Get<int>() == static_cast<int>(Style::Visibility::Hidden);
+		const bool is_visible = !is_data_visible_hidden;
 		if (is_visible != value)
 		{
 			if (value)

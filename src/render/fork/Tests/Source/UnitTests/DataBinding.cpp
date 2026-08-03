@@ -763,3 +763,59 @@ TEST_CASE("data_binding.data_model_on_body")
 	document->Close();
 	TestsShell::ShutdownShell();
 }
+
+static bool LocalDisplayIsNone(Element* element)
+{
+	const Property* display = element->GetLocalProperty(PropertyId::Display);
+	return display && display->Get<int>() == static_cast<int>(Style::Display::None);
+}
+
+TEST_CASE("data_binding.data_if_dirty_with_local_flex")
+{
+	// Regression: DataViewIf treated any local `display` as hidden, so a flex/block local
+	// display blocked Dirty toggles (call mute/speaker icons stuck on).
+	Context* context = TestsShell::GetContext();
+	REQUIRE(context);
+
+	bool show = true;
+	DataModelConstructor constructor = context->CreateDataModel("data_if_test");
+	REQUIRE(constructor);
+	constructor.Bind("show", &show);
+
+	ElementDocument* document = context->LoadDocumentFromMemory(R"(
+<rml>
+<head><title>data-if</title></head>
+<body data-model="data_if_test">
+	<div id="mount"></div>
+</body>
+</rml>
+)");
+	REQUIRE(document);
+	document->Show();
+	context->Update();
+
+	Element* mount = document->GetElementById("mount");
+	REQUIRE(mount);
+	mount->SetInnerRML(R"(<div id="panel" data-if="show" style="display: flex;">visible</div>)");
+	document->UpdateDocument();
+	// Flush newly attached views without a full Context::Update (MountInner path).
+	(void)context->GetDataModel("data_if_test").GetModelHandle().Update(true);
+
+	Element* panel = document->GetElementById("panel");
+	REQUIRE(panel);
+	CHECK_FALSE(LocalDisplayIsNone(panel));
+
+	show = false;
+	context->GetDataModel("data_if_test").GetModelHandle().DirtyVariable("show");
+	(void)context->GetDataModel("data_if_test").GetModelHandle().Update(true);
+	CHECK(LocalDisplayIsNone(panel));
+
+	show = true;
+	context->GetDataModel("data_if_test").GetModelHandle().DirtyVariable("show");
+	(void)context->GetDataModel("data_if_test").GetModelHandle().Update(true);
+	CHECK_FALSE(LocalDisplayIsNone(panel));
+
+	document->Close();
+	context->RemoveDataModel("data_if_test");
+	TestsShell::ShutdownShell();
+}

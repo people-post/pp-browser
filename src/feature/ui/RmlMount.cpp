@@ -4,6 +4,7 @@
 #include "common/Logger.h"
 
 #include <RmlUi/Core/Context.h>
+#include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/ElementDocument.h>
 #include <RmlUi/Core/StreamMemory.h>
@@ -149,6 +150,17 @@ bool RmlMount::MountInner(Rml::Element* target, const std::string& rml, MountOpt
 
   if (Rml::ElementDocument* document = target->GetOwnerDocument()) {
     document->UpdateDocument();
+  }
+
+  // SetInnerRML attaches data views into views_to_add; they only apply on DataModel::Update.
+  // Flush now so data-if / data-rml match C++ state in this turn (Dirty alone after remount
+  // used to race: Present / idle could paint before the next Context::Update).
+  if (Rml::Context* context = target->GetContext()) {
+    for (auto& entry : context->GetDataModels()) {
+      if (Rml::DataModelHandle handle = entry.second.GetModelHandle()) {
+        handle.Update(true);
+      }
+    }
   }
 
   return true;

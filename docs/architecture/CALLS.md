@@ -302,7 +302,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | P2P offer/answer + SDP/ICE send | `feature/messaging` | **`CallP2pSignalingBridge`** | Legacy until teardown |
 | Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** | Unchanged |
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
-| Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellHost::RemountCallChrome` | Layer identity → mount remount; labels/pulse → DirtyWindow; mobile speaker toggle via `CallAudioSession` |
+| Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellHost::RemountCallChrome` | Layer identity / control *presence* / status kind → remount; mute/speaker/camera icons → DirtyWindow (`DataViewIf`); meters/pulse → DirtyWindow; mobile speaker via `CallAudioSession` |
 | Blind SFU protocol | `libp2p/integration` | `MediaRelayService` | Unchanged |
 
 UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints from session + phase; it does not invent listen or media policy.

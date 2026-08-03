@@ -18,6 +18,8 @@ public:
 	bool IsVariableDirty(const String& variable_name);
 	void DirtyVariable(const String& variable_name);
 	void DirtyAllVariables();
+	/** Apply dirty variables and newly attached views (e.g. after SetInnerRML / MountInner). */
+	bool Update(bool clear_dirty_variables = true);
 
 	explicit operator bool() { return model; }
 
