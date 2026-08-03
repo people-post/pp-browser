@@ -111,9 +111,27 @@ void CoordinatorThread::CancelTimer(uint64_t timer_id) {
   }
 }
 
+void CoordinatorThread::Pause() {
+  std::lock_guard lock(mutex_);
+  paused_ = true;
+}
+
+void CoordinatorThread::Resume() {
+  {
+    std::lock_guard lock(mutex_);
+    paused_ = false;
+  }
+  cv_.notify_all();
+}
+
 void CoordinatorThread::ThreadMain() {
   std::unique_lock lock(mutex_);
   while (!stopped_) {
+    if (paused_) {
+      cv_.wait(lock, [this]() { return stopped_ || !paused_; });
+      continue;
+    }
+
     std::function<void()> task;
     while (DequeueOneLocked(&task)) {
       lock.unlock();

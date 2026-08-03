@@ -34,6 +34,10 @@ public:
   uint64_t ScheduleOneShot(std::chrono::milliseconds delay, std::function<void()> fn);
   void CancelTimer(uint64_t timer_id);
 
+  /** Defer mailbox + timer dispatch until Resume (posted work is retained). */
+  void Pause();
+  void Resume();
+
 private:
   struct TimerEntry {
     uint64_t id = 0;
@@ -63,6 +67,7 @@ private:
   uint64_t next_timer_id_ = 1;
   bool started_ = false;
   bool stopped_ = false;
+  bool paused_ = false;
 };
 
 } // namespace pbr

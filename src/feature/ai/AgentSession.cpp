@@ -565,7 +565,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   // Cancel() means "abort the active turn", not "abort agent configure". OnNewChat /
   // find-someone calls Cancel while Me→ReloadFromDisk may still be reconfiguring; tearing
   // down llm here left the session unconfigured and the next send showed MissingKey.
-  // Do not PauseIO here: this already runs on the sequenced IO thread. Pausing blocked
+  // Do not PauseIO here: this already runs on a worker pool thread. Pausing blocked
   // concurrent posts (profile unlock, inbox) until Resume — and a missed Resume left
   // unlock_in_progress stuck on Android.
   try {

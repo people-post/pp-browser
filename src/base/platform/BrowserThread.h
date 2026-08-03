@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/platform/PlatformRuntime.h"
 #include "common/SequencedTaskRunner.h"
 
 #include <functional>
@@ -30,28 +31,28 @@ public:
 
   template <typename Result>
   static void PostTaskAndReply(std::function<Result()> work, std::function<void(Result)> reply) {
-    PostTask(BrowserThreadId::IO, [work = std::move(work), reply = std::move(reply)]() mutable {
-      Result result = work();
-      PostTask(BrowserThreadId::UI, [reply = std::move(reply), result = std::move(result)]() mutable {
-        reply(std::move(result));
-      });
-    });
+    PostWorkerAndReplyOnUI(WorkerLane::Normal, std::move(work), std::move(reply));
   }
 
-  /** Like PostTaskAndReply but IO work jumps the FIFO (Samsung: AcceptInvite behind Prefetch). */
+  /** Like PostTaskAndReply but work jumps the Normal lane queue (AcceptInvite behind Prefetch). */
   template <typename Result>
   static void PostTaskFrontAndReply(std::function<Result()> work, std::function<void(Result)> reply) {
-    PostTaskFront(BrowserThreadId::IO, [work = std::move(work), reply = std::move(reply)]() mutable {
-      Result result = work();
-      PostTask(BrowserThreadId::UI, [reply = std::move(reply), result = std::move(result)]() mutable {
-        reply(std::move(result));
-      });
-    });
+    PostWorkerAndReplyOnUI(WorkerLane::Critical, std::move(work), std::move(reply));
   }
 
 private:
+  template <typename Result>
+  static void PostWorkerAndReplyOnUI(WorkerLane lane, std::function<Result()> work,
+                                     std::function<void(Result)> reply) {
+    PlatformRuntime::PostWorker(lane, [work = std::move(work), reply = std::move(reply)]() mutable {
+      Result result = work();
+      PostTask(BrowserThreadId::UI, [reply = std::move(reply), result = std::move(result)]() mutable {
+        reply(std::move(result));
+      });
+    });
+  }
+
   static std::unique_ptr<SequencedTaskRunner> ui_runner_;
-  static std::unique_ptr<SequencedTaskRunner> io_runner_;
   static std::function<void()> ui_wake_callback_;
 };
 

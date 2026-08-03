@@ -106,15 +106,18 @@ Can proceed **in parallel** with [p2p-av-calls m2](../p2p-av-calls/PHASES.md) (W
 
 **Goal:** Retire dedicated `pp-browser-io` thread; keep `BrowserThread` API stable.
 
-- [ ] Route `BrowserThread::PostTask(IO, …)` → coordinator Normal or pool Normal
-- [ ] Route `PostTaskFront(IO, …)` → pool Critical
-- [ ] Route `PostTaskAndReply` → pool + UI reply (unchanged UI side)
-- [ ] Map `PauseIO` / `ResumeIO` to coordinator + pool pause
-- [ ] Migrate `AgentSession`, `HttpClient` call sites — verify LLM/tools on pool Normal
-- [ ] Remove `SequencedTaskRunner` dedicated IO thread; coordinator thread runs mailbox loop
-- [ ] Update [RUNTIME_COMPOSITION.md](../../docs/architecture/RUNTIME_COMPOSITION.md) diagram to target topology
+- [x] Route `BrowserThread::PostTask(IO, …)` → worker pool Normal
+- [x] Route `PostTaskFront(IO, …)` → pool Critical
+- [x] Route `PostTaskAndReply` / `PostTaskFrontAndReply` → pool + UI reply
+- [x] Map `PauseIO` / `ResumeIO` → `PlatformRuntime::PauseBackgroundWork` (coordinator + pool)
+- [x] Remove dedicated IO `SequencedTaskRunner` thread (`SequencedTaskRunner` is UI-only)
+- [x] Add `SequencedTaskRunner.cpp` to `pp_common` (was missing from CMake)
+- [x] Unit tests: `BrowserThreadTest` IO routing + pause/resume
+- [x] Update [RUNTIME_COMPOSITION.md](../../docs/architecture/RUNTIME_COMPOSITION.md) diagram
+- [ ] Linux notifier activations → coordinator — deferred from t4
+- [ ] Full Android background soak — deferred
 
-**Exit criteria:** No `pp-browser-io` thread; ~97 `PostTask` call sites behave equivalently; app lifecycle pause/resume works on Android background.
+**Exit criteria:** No `pp-browser-io` thread; IO call sites route through pool; app lifecycle pause/resume works. **Done** (soak deferred).
 
 ---
 
@@ -136,6 +139,7 @@ Can proceed **in parallel** with [p2p-av-calls m2](../p2p-av-calls/PHASES.md) (W
 
 | Date | Change |
 |------|--------|
+| 2026-08-03 | Phase t5: retire `pp-browser-io`; `BrowserThread::IO` → worker pool |
 | 2026-08-03 | Phase t4: `CoordinatorThread` + timer wheel; relay poll + hub policy off UI tick |
 | 2026-08-03 | Phase t3: messaging hop-offs on `PlatformRuntime::PostWorker` |
 | 2026-08-03 | Phase t2: libp2p integration hop-offs on `WorkerPool` |

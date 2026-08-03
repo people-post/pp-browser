@@ -64,6 +64,12 @@ public:
 
   static void PauseWorkers();
   static void ResumeWorkers();
+  static void PauseCoordinator();
+  static void ResumeCoordinator();
+  /** Pauses coordinator + worker pool (replaces legacy BrowserThread::PauseIO). */
+  static void PauseBackgroundWork();
+  /** Resumes coordinator + worker pool (replaces legacy BrowserThread::ResumeIO). */
+  static void ResumeBackgroundWork();
 
   // --- Coordinator (orchestration mailbox + timer wheel) ---
   static void PostCoordinator(CoordinatorPriority priority, std::function<void()> task);

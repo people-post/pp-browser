@@ -1,30 +1,25 @@
 #include "base/platform/BrowserThread.h"
 
+#include "base/platform/PlatformRuntime.h"
+
+#include <cassert>
 #include <mutex>
 
 namespace pbr {
 
 std::unique_ptr<SequencedTaskRunner> BrowserThread::ui_runner_;
-std::unique_ptr<SequencedTaskRunner> BrowserThread::io_runner_;
 std::function<void()> BrowserThread::ui_wake_callback_;
 
 void BrowserThread::Initialize() {
   static std::mutex init_mutex;
   std::lock_guard lock(init_mutex);
   if (!ui_runner_) {
-    ui_runner_ = std::make_unique<SequencedTaskRunner>(false);
-  }
-  if (!io_runner_) {
-    io_runner_ = std::make_unique<SequencedTaskRunner>(true);
+    ui_runner_ = std::make_unique<SequencedTaskRunner>();
   }
 }
 
 void BrowserThread::Shutdown() {
   ui_wake_callback_ = nullptr;
-  if (io_runner_) {
-    io_runner_->Stop();
-    io_runner_.reset();
-  }
   if (ui_runner_) {
     ui_runner_->Stop();
     ui_runner_.reset();
@@ -33,7 +28,8 @@ void BrowserThread::Shutdown() {
 
 SequencedTaskRunner& BrowserThread::Get(const BrowserThreadId id) {
   Initialize();
-  return id == BrowserThreadId::IO ? *io_runner_ : *ui_runner_;
+  assert(id == BrowserThreadId::UI && "BrowserThread::IO retired — use worker pool via PostTask(IO)");
+  return *ui_runner_;
 }
 
 void BrowserThread::RunUITasks() {
@@ -43,21 +39,38 @@ void BrowserThread::RunUITasks() {
 }
 
 bool BrowserThread::CurrentlyOn(const BrowserThreadId id) {
+  if (id == BrowserThreadId::IO) {
+    return false;
+  }
   return Get(id).IsRunningOnThisThread();
 }
 
 void BrowserThread::PostTask(const BrowserThreadId id, std::function<void()> task) {
-  Get(id).PostTask(std::move(task));
-  if (id == BrowserThreadId::UI && ui_wake_callback_) {
-    ui_wake_callback_();
+  if (!task) {
+    return;
   }
+  if (id == BrowserThreadId::UI) {
+    Get(BrowserThreadId::UI).PostTask(std::move(task));
+    if (ui_wake_callback_) {
+      ui_wake_callback_();
+    }
+    return;
+  }
+  PlatformRuntime::PostWorkerNormal(std::move(task));
 }
 
 void BrowserThread::PostTaskFront(const BrowserThreadId id, std::function<void()> task) {
-  Get(id).PostTaskFront(std::move(task));
-  if (id == BrowserThreadId::UI && ui_wake_callback_) {
-    ui_wake_callback_();
+  if (!task) {
+    return;
   }
+  if (id == BrowserThreadId::UI) {
+    Get(BrowserThreadId::UI).PostTaskFront(std::move(task));
+    if (ui_wake_callback_) {
+      ui_wake_callback_();
+    }
+    return;
+  }
+  PlatformRuntime::PostWorkerCritical(std::move(task));
 }
 
 void BrowserThread::SetUIWakeCallback(std::function<void()> callback) {
@@ -65,15 +78,11 @@ void BrowserThread::SetUIWakeCallback(std::function<void()> callback) {
 }
 
 void BrowserThread::PauseIO() {
-  if (io_runner_) {
-    io_runner_->Pause();
-  }
+  PlatformRuntime::PauseBackgroundWork();
 }
 
 void BrowserThread::ResumeIO() {
-  if (io_runner_) {
-    io_runner_->Resume();
-  }
+  PlatformRuntime::ResumeBackgroundWork();
 }
 
 } // namespace pbr

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <condition_variable>
 #include <deque>
 #include <functional>
 #include <mutex>
@@ -10,10 +9,10 @@
 
 namespace pbr {
 
-// FIFO task queue. IO runner uses a dedicated thread; UI runner drains on the main thread.
+/** FIFO task queue drained inline on the UI thread via RunPendingTasks(). */
 class SequencedTaskRunner : public Module {
 public:
-  explicit SequencedTaskRunner(bool uses_dedicated_thread);
+  SequencedTaskRunner();
   ~SequencedTaskRunner();
 
   SequencedTaskRunner(const SequencedTaskRunner&) = delete;
@@ -31,16 +30,12 @@ public:
   bool IsRunningOnThisThread() const;
 
 private:
-  void IOThreadMain();
   void EnqueueLocked(std::function<void()> task);
   void EnqueueFrontLocked(std::function<void()> task);
   bool DequeueOne(std::function<void()>* out);
   void RunTaskSafely(std::function<void()>& task);
 
-  const bool uses_dedicated_thread_;
-  std::thread thread_;
   std::mutex mutex_;
-  std::condition_variable cv_;
   std::deque<std::function<void()>> tasks_;
   bool stopped_ = false;
   bool paused_ = false;

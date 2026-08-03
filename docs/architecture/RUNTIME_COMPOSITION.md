@@ -211,7 +211,7 @@ flowchart TB
 | `ConfigApplyBridge` | nested `Apply` on services | Yes |
 | ChatController | full `AppConfig` listener | **No** — agent slice via bridge |
 | ChatController | `SetOnMessagingReady` / reachability | **No** — Application owns |
-| Application Run loop | `MessagingHub::TickLibp2p` | Yes |
+| Application Run loop | `MessagingHub::TickLibp2p` | **Removed** — hub policy on coordinator timer (t4) |
 | UI presenter | Another controller `::Instance()` | **No** — coordinator or ports ([UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)) |
 | Functional system | `ShellHost::State()` mutation | **No** — UI ports / events |
 
@@ -220,85 +220,73 @@ flowchart TB
 **Canonical doc:** [THREADING.md](THREADING.md) — today's inventory, **target** coordinator + worker pool model, migration principles.  
 **Implementation plan:** [`projects/thread-coordinator/PHASES.md`](../../projects/thread-coordinator/PHASES.md) (short-lived; delete when shipped).
 
-**Today:** a small set of **owned** threads plus short-lived **hop-off** workers (`~25` detached sites). UI work is sequenced on the main thread; blocking network/LLM work goes to `BrowserThread::IO`. libp2p and call media run their own loops.
-
-**Target:** UI + libp2p reactor + **coordinator** (mailbox + timer wheel) + **worker pool** (2–4 threads, Critical / Normal / Background). See [THREADING.md § Target architecture](THREADING.md#target-architecture).
+**Today (2026-08):** UI on main thread; blocking work on **worker pool** via `BrowserThread::IO` API; **coordinator** owns timer-driven policy. libp2p and call media run their own loops. See [THREADING.md § Today](THREADING.md#today-2026-08).
 
 ```mermaid
 flowchart TB
   subgraph main["Main / UI thread"]
     SDL["Application::Run<br/><small>SDL event loop</small>"]
-    UIQ["BrowserThread::UI<br/><small>SequencedTaskRunner — drain via RunUITasks</small>"]
+    UIQ["BrowserThread::UI<br/><small>SequencedTaskRunner — RunUITasks</small>"]
     ShellTick["ShellHost · ChatController<br/><small>feature/ui · feature/chat</small>"]
-    TickLp["MessagingHub::TickLibp2p<br/><small>app Run loop when messaging ready</small>"]
     SDL --> UIQ
     SDL --> ShellTick
-    SDL --> TickLp
   end
 
-  subgraph app_io["App IO thread"]
-    IOQ["BrowserThread::IO<br/><small>SequencedTaskRunner dedicated thread</small>"]
-    Http["HttpClient<br/><small>base/net — sync libcurl on caller</small>"]
-    AgentIO["AgentSession<br/><small>feature/ai — LLM / tools on IO</small>"]
-    P2pIO["P2pMessagingService<br/><small>feature/messaging — relay poll / sync / send</small>"]
-    IOQ --> Http
-    IOQ --> AgentIO
-    IOQ --> P2pIO
+  subgraph coord["Coordinator thread"]
+    Coord["CoordinatorThread<br/><small>mailbox + timer wheel</small>"]
+    RelayPoll["BackgroundSyncScheduler<br/><small>relay poll 2s/45s</small>"]
+    HubPolicy["MessagingHub policy<br/><small>peer sweep · mDNS · reachability</small>"]
+    Coord --> RelayPoll
+    Coord --> HubPolicy
+  end
+
+  subgraph pool["Worker pool 2–4"]
+    Pool["WorkerPool<br/><small>Critical · Normal · Background</small>"]
+    Http["HttpClient · AgentSession<br/><small>LLM / tools / libcurl</small>"]
+    P2pWork["P2pMessagingService · MessagingHub<br/><small>relay sync / send</small>"]
+    Pool --> Http
+    Pool --> P2pWork
   end
 
   subgraph libp2p_stack["libp2p host"]
     LpIo["Libp2pHost io_thread_<br/><small>boost::asio::io_context::run</small>"]
     Host["libp2p::Host<br/><small>libp2p/fork — Yamux + Noise</small>"]
-    Hop["Protocol hop-off threads<br/><small>DialBack · CircuitRelay · MediaRelay · Reachability</small>"]
     LpIo --> Host
-    Host -.->|handlers must not block| Hop
   end
 
   subgraph media_stack["Call media"]
-    Cap["CallMediaEngine capture_thread<br/><small>base/media — mic / encode</small>"]
-    Vid["CallMediaEngine video_thread<br/><small>base/media — camera / encode</small>"]
-    Ring["CallRingtone thread_<br/><small>base/media</small>"]
-    RtcPool["libdatachannel ThreadPool<br/><small>third_party — ~hardware_concurrency</small>"]
-    Cap --> RtcPool
-    Vid --> RtcPool
+    Cap["CallMediaEngine capture_thread"]
+    Vid["CallMediaEngine video_thread"]
+    Ring["CallRingtone thread_"]
   end
 
-  subgraph platform_extra["Platform extras"]
-    Notif["ILocalNotifier watch thread<br/><small>Linux D-Bus Freedesktop; join on Shutdown</small>"]
-  end
-
-  UIQ -->|"PostTask(UI)"| UIQ
-  IOQ -->|"PostTask(UI) replies"| UIQ
-  AgentIO -->|"PostTask(UI) events"| UIQ
-  P2pIO -->|"PostTask(UI) inbox / notices"| UIQ
-  Hop -->|"optional UI refresh"| UIQ
-  TickLp -->|"PeerSessionManager on UI"| Host
-  P2pIO -.->|"async dial / streams"| LpIo
-  Cap -.->|"WebRTC"| RtcPool
+  UIQ -->|"PostTask(IO) → pool"| Pool
+  Pool -->|"PostTask(UI) replies"| UIQ
+  Coord -->|"PostWorker blocking steps"| Pool
+  HubPolicy -.->|"async dial / streams"| LpIo
 ```
 
 ### Thread inventory
 
 | Thread / queue | Owner class | Location | Role |
 |----------------|-------------|----------|------|
-| **Main / UI** | `Application` + `BrowserThread::UI` | `app/` · `base/platform/` | SDL loop, RmlUi, shell/chat; UI runner has **no** dedicated thread — drained by `RunUITasks()` |
-| **App IO** | `BrowserThread::IO` | `base/platform/` · `common/SequencedTaskRunner` | Dedicated thread: HTTP (libcurl), LLM/tool work, relay poll/sync/send |
-| **libp2p IO** | `Libp2pHost` | `libp2p/integration/host/` | `boost::asio::io_context` run loop for the vendored host |
-| **Protocol hop-offs** | `DialBackService`, `CircuitRelayService`, `MediaRelayService`, `ReachabilityService` | `libp2p/integration/host/` | Short-lived `std::thread`s so protocol handlers do not block the host IO thread |
+| **Main / UI** | `Application` + `BrowserThread::UI` | `app/` · `base/platform/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
+| **Coordinator** | `CoordinatorThread` | `base/platform/` | Mailbox + timer wheel; relay poll + hub policy |
+| **Worker pool** | `WorkerPool` via `PlatformRuntime` | `common/` · `base/platform/` | HTTP, LLM/tools, relay sync/send (legacy `BrowserThread::IO` API) |
+| **libp2p IO** | `Libp2pHost` | `libp2p/integration/host/` | `boost::asio::io_context` run loop |
 | **Media capture / video** | `CallMediaEngine` | `base/media/` | Dedicated capture + video encode loops |
 | **Ringtone** | `CallRingtone` | `base/media/` | Playback loop thread |
-| **WebRTC pool** | libdatachannel `ThreadPool` (+ optional poll/ICE loops) | `third_party/libdatachannel/` | Vendored pool sized from `hardware_concurrency` |
-| **Notification watch** | `ILocalNotifier` (Linux) | `base/platform/desktop/` | D-Bus ActionInvoked watcher; joined in `Shutdown` |
+| **Notification watch** | `ILocalNotifier` (Linux) | `base/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
 
-### Cross-thread rules of thumb (today)
+### Cross-thread rules of thumb
 
-- **UI** owns RmlUi, shell state, and most controller mutations. Prefer `BrowserThread::PostTask(UI, …)` from IO / workers.
-- **IO** owns blocking Brief HTTP (`HttpClient` / libcurl) and agent network work. `PostTaskAndReply` is IO → UI.
-- **libp2p IO** must stay non-blocking for dials/reads; integration services hop to detached workers, then post results as needed.
-- **`MessagingHub::TickLibp2p`** runs from `Application::Run` when messaging is ready — not from ChatController.
-- Pause/resume: `AgentSession` may `BrowserThread::PauseIO` / `ResumeIO` around sensitive UI transitions.
+- **UI** owns RmlUi and controller mutations. `BrowserThread::PostTask(UI, …)` from pool/coordinator.
+- **Worker pool** runs blocking HTTP, LLM, relay orchestration. `PostTaskAndReply` is pool → UI.
+- **Coordinator** runs fast policy only; posts blocking steps to pool.
+- **libp2p IO** stays non-blocking; integration hops to pool via `PostLibp2pWorker`.
+- **Pause/resume:** `BrowserThread::PauseIO` / `ResumeIO` pauses coordinator + pool.
 
-Target rules (coordinator + pool): [THREADING.md § Design principles](THREADING.md#design-principles).
+Full model: [THREADING.md](THREADING.md).
 
 ## Notable modules
 

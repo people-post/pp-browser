@@ -68,6 +68,28 @@ void PlatformRuntime::ResumeWorkers() {
   }
 }
 
+void PlatformRuntime::PauseCoordinator() {
+  if (g_thread_runtime) {
+    g_thread_runtime->Coordinator().Pause();
+  }
+}
+
+void PlatformRuntime::ResumeCoordinator() {
+  if (g_thread_runtime) {
+    g_thread_runtime->Coordinator().Resume();
+  }
+}
+
+void PlatformRuntime::PauseBackgroundWork() {
+  PauseCoordinator();
+  PauseWorkers();
+}
+
+void PlatformRuntime::ResumeBackgroundWork() {
+  ResumeWorkers();
+  ResumeCoordinator();
+}
+
 void PlatformRuntime::PostCoordinator(CoordinatorPriority priority, std::function<void()> task) {
   if (!g_thread_runtime || !task) {
     return;

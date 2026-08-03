@@ -27,30 +27,29 @@ Two sequenced task runners plus separate libp2p IO and many hop-off threads:
 
 | Role | Mechanism | Thread? |
 |------|-----------|---------|
-| **UI queue** | `BrowserThread::UI` → `SequencedTaskRunner(false)` | No — drained on main via `RunUITasks()` |
-| **App IO queue** | `BrowserThread::IO` → `SequencedTaskRunner(true)`, name `pp-browser-io` | Yes |
+| **UI queue** | `BrowserThread::UI` → `SequencedTaskRunner` | No — drained on main via `RunUITasks()` |
+| **Blocking app work** | `BrowserThread::IO` posts → `PlatformRuntime::PostWorker` | Worker pool (2–4 threads) |
+| **Orchestration** | `CoordinatorThread` via `PlatformRuntime` | Yes — `pp-coordinator` |
 | **libp2p reactor** | `Libp2pHost` → `boost::asio::io_context::run()` | Yes |
-| **Hop-offs** | `PlatformRuntime::PostWorker` | Integration + messaging migrated (t2–t3); libp2p fork `cares.cpp` still detached |
-| **Coordinator** | `CoordinatorThread` via `PlatformRuntime` | Priority mailbox + timer wheel (t4); relay poll + hub policy |
-| **Periodic policy** | Coordinator timer wheel | Relay poll 2s/45s; hub policy 1s; peer idle sweep ~15s (internal) |
+| **Hop-offs** | `PlatformRuntime::PostWorker` | Integration + messaging; libp2p fork `cares.cpp` still detached |
 
 ### Steady-state thread budget (typical desktop, messaging on, no call)
 
-~**3–5** app-owned OS threads: main + `pp-browser-io` + libp2p IO + optional LAN mDNS + optional Linux D-Bus notifier watch (+ SDL audio internals).
+~**3–5** app-owned OS threads: main + coordinator + worker pool (2–4) + libp2p IO + optional LAN mDNS + optional Linux D-Bus notifier watch (+ SDL audio internals).
 
 During an active call on the legacy WebRTC path, add capture/video/ringtone threads and libdatachannel's global pool (`max(hardware_concurrency, 4)`).
 
 ### Cross-thread rules (current)
 
 - **UI** owns RmlUi and controller mutations. Post via `BrowserThread::PostTask(UI, …)`; `WakeEventLoop()` breaks power-save waits.
-- **Browser IO** runs sync libcurl (30s timeout), LLM/tools, most relay orchestration. `PostTaskAndReply` / `PostTaskFront` for IO → UI.
-- **libp2p IO** stays non-blocking; integration services hop to worker pool, then post results.
+- **Worker pool** runs sync libcurl (30s timeout), LLM/tools, relay orchestration. `PostTaskAndReply` / `PostTaskFrontAndReply` hop pool → UI.
 - **Coordinator** owns relay poll cadence and hub periodic policy (peer sweep, mDNS, reachability UX).
-- **Pause/resume:** `AppLifecycle` and `AgentSession` may `BrowserThread::PauseIO` / `ResumeIO`.
+- **libp2p IO** stays non-blocking; integration services hop to worker pool, then post results.
+- **Pause/resume:** `AppLifecycle` and `AgentSession` use `BrowserThread::PauseIO` / `ResumeIO` → coordinator + pool pause.
 
 ### Known debt
 
-- Three parallel “IO” concepts (Browser IO, libp2p IO, detached hop-offs) — easy to pick the wrong one.
+- Three parallel “IO” concepts (Browser IO, libp2p IO, detached hop-offs) — **Browser IO merged into pool (t5)**; libp2p fork `cares.cpp` still detached.
 - No central worker pool; starvation fixes are per-site hop-offs.
 - SQLite + mutex rather than a dedicated DB thread — safe if conventions hold.
 - libdatachannel hidden pool on legacy call path.

@@ -2,6 +2,7 @@ set(PP_BROWSER_COMMON_SOURCES
   Module.cpp
   Logger.cpp
   Utilities.cpp
+  SequencedTaskRunner.cpp
   WorkerPool.cpp
   WorkerDispatch.cpp
 )
