@@ -15,7 +15,10 @@ struct ShellFeedbackPorts {
   std::function<void(const std::string& message, ToastDuration duration)> show_toast;
   std::function<void(const std::string& message)> show_banner;
   std::function<void()> dismiss_banner;
-  std::function<void(const std::string& title, const std::string& message, std::function<void()> on_ok)> show_alert;
+  std::function<void(const std::string& title, const std::string& message, std::function<void()> on_ok,
+                     const std::string& ok_label)>
+      show_alert;
+  std::function<bool()> dialog_active;
   std::function<void(const std::string& title, const std::string& message, std::function<void(bool)> on_result)>
       show_confirm;
   std::function<void(const std::string& title, const std::string& message, const std::string& checkbox_label,

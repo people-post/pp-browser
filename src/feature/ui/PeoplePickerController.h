@@ -1,6 +1,8 @@
 #pragma once
 
 #include "common/Module.h"
+#include "feature/messaging/MessagingContactsPorts.h"
+#include "feature/messaging/MessagingPeoplePickerPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/PeoplePickerLogic.h"
 #include "feature/ui/ShellFeedbackPorts.h"
@@ -21,7 +23,6 @@ class Context;
 
 namespace pbr {
 
-class MessagingHub;
 class ProfileUnlockGate;
 class FlowCoordinator;
 
@@ -31,7 +32,8 @@ class PeoplePickerController : public Module {
 public:
   static PeoplePickerController& Instance();
 
-  void BindMessaging(MessagingHub& messaging);
+  void BindContactsPorts(MessagingContactsPorts ports);
+  void BindPickerPorts(MessagingPeoplePickerPorts ports);
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindChatPorts(ChatSessionPorts ports);
   void BindFlowCoordinator(FlowCoordinator& flow);
@@ -40,8 +42,6 @@ public:
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
 
   struct PickerRow {
     Rml::String id;
@@ -109,6 +109,8 @@ private:
   std::string TrimTitle(std::string title) const;
   void ShellDirty();
   void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
+  bool MessagingInitialized() const;
+  bool MessagingReady() const;
 
   Rml::Context* context_ = nullptr;
   int layer_id_ = -1;
@@ -126,7 +128,8 @@ private:
   Rml::String cta_label_;
   Rml::String empty_hint_;
   bool cta_enabled_ = false;
-  MessagingHub* messaging_ = nullptr;
+  MessagingContactsPorts contacts_ports_;
+  MessagingPeoplePickerPorts picker_ports_;
   ProfileUnlockGate* unlock_gate_ = nullptr;
   FlowCoordinator* flow_ = nullptr;
   CallController* call_ = nullptr;

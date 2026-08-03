@@ -1,5 +1,7 @@
 #pragma once
 
+#include "feature/ui/ShellNavigationPorts.h"
+
 #include <functional>
 
 namespace pbr {
@@ -11,6 +13,9 @@ public:
 
   using StepBackHandler = std::function<bool()>;
   using CancelHandler = std::function<void()>;
+
+  /** Layer close without ShellHost::Instance(). Clear via BindShellNavigation({}). */
+  void BindShellNavigation(ShellNavigationPorts ports);
 
   /** Begin a modal flow tied to an overlay layer. */
   void BeginModal(int layer_id, StepBackHandler on_step_back, CancelHandler on_cancel);
@@ -29,6 +34,7 @@ private:
   int layer_id_ = -1;
   StepBackHandler on_step_back_;
   CancelHandler on_cancel_;
+  ShellNavigationPorts shell_navigation_;
 };
 
 } // namespace pbr

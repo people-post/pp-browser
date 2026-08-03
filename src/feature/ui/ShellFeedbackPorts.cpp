@@ -29,9 +29,10 @@ ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell) {
     shell.DirtyWindow();
   };
   feedback.show_alert = [&shell](const std::string& title, const std::string& message,
-                                   std::function<void()> on_ok) {
-    ShellFeedback::ShowAlert(shell.State(), title, message, std::move(on_ok));
+                                   std::function<void()> on_ok, const std::string& ok_label) {
+    ShellFeedback::ShowAlert(shell.State(), title, message, std::move(on_ok), ok_label);
   };
+  feedback.dialog_active = [&shell]() { return shell.State().dialog.active; };
   feedback.show_confirm = [&shell](const std::string& title, const std::string& message,
                                      std::function<void(bool)> on_result) {
     ShellFeedback::ShowConfirm(shell.State(), title, message, std::move(on_result));

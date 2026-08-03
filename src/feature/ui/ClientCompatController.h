@@ -2,21 +2,21 @@
 
 #include "base/net/ClientCompat.h"
 #include "common/Module.h"
+#include "feature/messaging/MessagingCompatPorts.h"
+#include "feature/ui/ShellFeedbackPorts.h"
 
 #include <string>
 
 namespace pbr {
-
-class MessagingHub;
 
 /** Fetches relay client-compat and surfaces update-required / update-available UX. */
 class ClientCompatController : public Module {
 public:
   ClientCompatController() = default;
 
-  void BindMessaging(MessagingHub& messaging);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
+  void BindCompatPorts(MessagingCompatPorts ports);
+  /** Dialog / banner feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
+  void BindShellFeedback(ShellFeedbackPorts ports);
 
   /** Non-blocking: IO fetch/cache then UI gate/banner. Safe after MessagingHub init. */
   void CheckAsync();
@@ -34,8 +34,8 @@ private:
   bool soft_banner_shown_ = false;
   bool force_dialog_shown_ = false;
   std::string upgrade_url_;
-  MessagingHub* messaging_ = nullptr;
-
+  MessagingCompatPorts compat_ports_;
+  ShellFeedbackPorts shell_feedback_;
 };
 
 } // namespace pbr

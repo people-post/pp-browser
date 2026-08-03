@@ -55,7 +55,7 @@ void ShowConfirmWithCheckbox(const ShellFeedbackPorts& ports, const std::string&
 void ShowAlert(const ShellFeedbackPorts& ports, const std::string& title, const std::string& message,
                std::function<void()> on_ok) {
   if (ports.show_alert) {
-    ports.show_alert(title, message, std::move(on_ok));
+    ports.show_alert(title, message, std::move(on_ok), {});
   }
 }
 

@@ -12,7 +12,6 @@
 #include "base/people/PeerDisplayLabel.h"
 #include "base/ui/ShellTypes.h"
 #include "feature/messaging/ContactReachability.h"
-#include "feature/messaging/MessagingHub.h"
 #include "feature/ui/CallController.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/DataModelHost.h"
@@ -30,7 +29,7 @@ namespace {
 constexpr const char* kStepSelect = "select";
 constexpr const char* kStepName = "name";
 
-bool ContactIsSelectable(const Contact& contact, const MessagingHub* hub) {
+bool ContactIsSelectable(const Contact& contact, const MessagingContactsPorts* ports) {
   if (contact.trust == TrustLevel::Blocked) {
     return false;
   }
@@ -38,8 +37,8 @@ bool ContactIsSelectable(const Contact& contact, const MessagingHub* hub) {
   if (target.peer_identity_value.empty()) {
     return false;
   }
-  if (hub != nullptr && hub->IsMessagingReady()) {
-    return hub->IsContactReachable(contact);
+  if (ports != nullptr && ports->snapshot && ports->snapshot().messaging_ready && ports->is_contact_reachable) {
+    return ports->is_contact_reachable(contact);
   }
   if (target.peer_identity_kind == ContactIdKindToString(ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
     return false;
@@ -113,8 +112,12 @@ PeoplePickerController& PeoplePickerController::Instance() {
   static PeoplePickerController controller;
   return controller;
 }
-void PeoplePickerController::BindMessaging(MessagingHub& messaging) {
-  messaging_ = &messaging;
+void PeoplePickerController::BindContactsPorts(MessagingContactsPorts ports) {
+  contacts_ports_ = std::move(ports);
+}
+
+void PeoplePickerController::BindPickerPorts(MessagingPeoplePickerPorts ports) {
+  picker_ports_ = std::move(ports);
 }
 
 void PeoplePickerController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
@@ -153,20 +156,13 @@ void PeoplePickerController::ShowToast(const std::string& message, const ToastDu
   }
 }
 
-MessagingHub& PeoplePickerController::Hub() {
-  if (!messaging_) {
-    throw std::runtime_error("PeoplePickerController messaging not bound");
-  }
-  return *messaging_;
+bool PeoplePickerController::MessagingInitialized() const {
+  return contacts_ports_.snapshot && contacts_ports_.snapshot().initialized;
 }
 
-const MessagingHub& PeoplePickerController::Hub() const {
-  if (!messaging_) {
-    throw std::runtime_error("PeoplePickerController messaging not bound");
-  }
-  return *messaging_;
+bool PeoplePickerController::MessagingReady() const {
+  return contacts_ports_.snapshot && contacts_ports_.snapshot().messaging_ready;
 }
-
 
 bool PeoplePickerController::RegisterModel(Rml::Context* context) {
   if (!context) {
@@ -221,11 +217,11 @@ void PeoplePickerController::OpenFromDm(const std::string& locked_contact_id) {
 }
 
 void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, const bool video) {
-  if (!Hub().IsInitialized()) {
+  if (!MessagingInitialized() || !picker_ports_.get_thread) {
     UserFeedback::Fail("Messaging not ready");
     return;
   }
-  auto thread = Hub().Store().GetThread(thread_id);
+  auto thread = picker_ports_.get_thread(thread_id);
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
     UserFeedback::Fail("Group chat required");
     return;
@@ -258,7 +254,7 @@ void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, cons
 }
 
 void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
-  if (!Hub().IsInitialized() || call_id.empty()) {
+  if (!MessagingInitialized() || call_id.empty()) {
     UserFeedback::Fail("Calls unavailable");
     return;
   }
@@ -285,7 +281,7 @@ void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
 }
 
 void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids) {
-  if (!Hub().IsInitialized()) {
+  if (!MessagingInitialized()) {
     UserFeedback::Fail("Messaging not ready");
     ShellDirty();
     return;
@@ -377,11 +373,11 @@ void PeoplePickerController::ResetState() {
 
 void PeoplePickerController::SyncRows() {
   rows_.clear();
-  if (!Hub().IsInitialized()) {
+  if (!MessagingInitialized() || !contacts_ports_.list_contacts) {
     return;
   }
 
-  auto stored = Hub().Contacts().List();
+  auto stored = contacts_ports_.list_contacts();
   if (!stored) {
     return;
   }
@@ -394,7 +390,7 @@ void PeoplePickerController::SyncRows() {
   candidates.reserve(stored->size());
   for (const Contact& contact : *stored) {
     const bool locked = locked_ids_.count(contact.id) > 0;
-    if (!locked && !ContactIsSelectable(contact, Hub().IsMessagingReady() ? &Hub() : nullptr)) {
+    if (!locked && !ContactIsSelectable(contact, MessagingReady() ? &contacts_ports_ : nullptr)) {
       continue;
     }
     if (!MatchesQuery(contact, query)) {
@@ -410,9 +406,11 @@ void PeoplePickerController::SyncRows() {
     if (present) {
       continue;
     }
-    auto contact = Hub().Contacts().Get(locked_id);
-    if (contact && *contact) {
-      candidates.push_back(**contact);
+    if (contacts_ports_.get_contact) {
+      auto contact = contacts_ports_.get_contact(locked_id);
+      if (contact && *contact) {
+        candidates.push_back(**contact);
+      }
     }
   }
 
@@ -441,20 +439,23 @@ void PeoplePickerController::SyncRows() {
 void PeoplePickerController::SyncGroupCallRows() {
   rows_.clear();
   identity_for_contact_.clear();
-  if (!Hub().IsInitialized() || call_thread_id_.empty()) {
+  if (!MessagingInitialized() || call_thread_id_.empty() || !picker_ports_.get_thread ||
+      !picker_ports_.list_group_roster) {
     return;
   }
-  auto thread = Hub().Store().GetThread(call_thread_id_);
+  auto thread = picker_ports_.get_thread(call_thread_id_);
   if (!thread || !*thread || !(*thread)->group_id) {
     return;
   }
-  auto roster = Hub().Groups().ListRoster(*(*thread)->group_id);
+  auto roster = picker_ports_.list_group_roster(*(*thread)->group_id);
   if (!roster) {
     return;
   }
   std::string local_identity;
-  if (auto identity = Hub().Identity().Get()) {
-    local_identity = identity->relay_user_id;
+  if (picker_ports_.local_relay_identity) {
+    if (auto identity = picker_ports_.local_relay_identity()) {
+      local_identity = *identity;
+    }
   }
   std::string query = search_query_.c_str();
   std::transform(query.begin(), query.end(), query.begin(),
@@ -473,13 +474,13 @@ void PeoplePickerController::SyncGroupCallRows() {
     const std::string& identity = member.member_identity;
 
     std::optional<Contact> contact;
-    if (!member.contact_id.empty()) {
-      if (auto loaded = Hub().Contacts().Get(member.contact_id); loaded && *loaded) {
+    if (!member.contact_id.empty() && contacts_ports_.get_contact) {
+      if (auto loaded = contacts_ports_.get_contact(member.contact_id); loaded && *loaded) {
         contact = **loaded;
       }
     }
-    if (!contact) {
-      if (auto found = Hub().Contacts().FindByIdentity(identity, ContactIdKind::RelayUser); found && *found) {
+    if (!contact && picker_ports_.find_contact_by_identity) {
+      if (auto found = picker_ports_.find_contact_by_identity(identity, ContactIdKind::RelayUser); found && *found) {
         contact = **found;
       }
     }
@@ -525,21 +526,18 @@ void PeoplePickerController::SyncGroupCallRows() {
 void PeoplePickerController::SyncCallAddGuestRows() {
   rows_.clear();
   identity_for_contact_.clear();
-  if (!Hub().IsInitialized() || call_id_.empty() || !call_) {
-    return;
-  }
-  auto* calls = Hub().Calls();
-  if (!calls) {
+  if (!MessagingInitialized() || call_id_.empty() || !call_ || !contacts_ports_.list_contacts ||
+      !picker_ports_.list_call_participants) {
     return;
   }
   std::unordered_set<std::string> joined_identities;
-  if (auto participants = calls->ListJoinedParticipants(call_id_)) {
+  if (auto participants = picker_ports_.list_call_participants(call_id_)) {
     for (const CallParticipant& row : *participants) {
       joined_identities.insert(row.identity);
     }
   }
 
-  auto stored = Hub().Contacts().List();
+  auto stored = contacts_ports_.list_contacts();
   if (!stored) {
     return;
   }
@@ -549,7 +547,7 @@ void PeoplePickerController::SyncCallAddGuestRows() {
 
   std::vector<Contact> candidates;
   for (const Contact& contact : *stored) {
-    if (!ContactIsSelectable(contact, Hub().IsMessagingReady() ? &Hub() : nullptr)) {
+    if (!ContactIsSelectable(contact, MessagingReady() ? &contacts_ports_ : nullptr)) {
       continue;
     }
     const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
@@ -659,8 +657,8 @@ std::string PeoplePickerController::TitleForContactId(const std::string& contact
       return row.title.c_str();
     }
   }
-  if (messaging_ && messaging_->IsInitialized()) {
-    if (auto contact = messaging_->Contacts().Get(contact_id)) {
+  if (contacts_ports_.snapshot && contacts_ports_.snapshot().initialized && contacts_ports_.get_contact) {
+    if (auto contact = contacts_ports_.get_contact(contact_id)) {
       if (*contact) {
         const std::string title = FormatContactTitle(**contact);
         return title.empty() ? Tr("people_picker.unnamed") : title;
@@ -809,11 +807,10 @@ void PeoplePickerController::OnStartCall() {
     UserFeedback::Fail("Select at least one person");
     return;
   }
-  auto* calls = Hub().Calls();
-  if (calls) {
+  if (picker_ports_.list_call_participants) {
     size_t joined = 1;
     if (mode_ == PeoplePickerMode::CallAddGuest && !call_id_.empty()) {
-      if (auto count = calls->ListJoinedParticipants(call_id_)) {
+      if (auto count = picker_ports_.list_call_participants(call_id_)) {
         joined = count->size();
       }
       if (!CallSessionLogic::CanAcceptJoin(joined + identities.size() - 1)) {
@@ -898,18 +895,24 @@ void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
       ShellDirty();
       return;
     }
-    auto contact = Hub().Contacts().Get(contact_id);
-    if (contact && *contact) {
-      Hub().P2p().RegisterContactDirectEndpoints(**contact);
+    auto contact = contacts_ports_.get_contact ? contacts_ports_.get_contact(contact_id) : Roe<std::optional<Contact>>();
+    if (contact && *contact && contacts_ports_.register_contact_direct_endpoints) {
+      contacts_ports_.register_contact_direct_endpoints(**contact);
     }
-    auto thread = Hub().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
+    auto thread = contacts_ports_.find_or_create_direct_thread
+                      ? contacts_ports_.find_or_create_direct_thread(contact_id, ThreadChannel::E2e)
+                      : Roe<Thread>();
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
       ShellDirty();
       return;
     }
-    (void)Hub().P2p().EnsurePskGenerated(thread->id);
-    Hub().P2p().WarmPeerForThread(thread->id);
+    if (contacts_ports_.ensure_psk_generated) {
+      (void)contacts_ports_.ensure_psk_generated(thread->id);
+    }
+    if (contacts_ports_.warm_peer_for_thread) {
+      contacts_ports_.warm_peer_for_thread(thread->id);
+    }
     FinishOpenThread();
   });
 }
@@ -926,7 +929,7 @@ void PeoplePickerController::CreateGroupWithTitle(const std::vector<std::string>
       ShellDirty();
       return;
     }
-    auto thread = Hub().Inbox().CreateGroup(title, member_contact_ids);
+    auto thread = picker_ports_.create_group ? picker_ports_.create_group(title, member_contact_ids) : Roe<Thread>();
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
       ShellDirty();

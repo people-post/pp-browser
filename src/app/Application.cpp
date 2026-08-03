@@ -44,7 +44,9 @@
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/UserFeedback.h"
+#include "feature/messaging/MessagingCompatPorts.h"
 #include "feature/messaging/MessagingContactsPorts.h"
+#include "feature/messaging/MessagingPeoplePickerPorts.h"
 #include "feature/messaging/MessagingUiPorts.h"
 #include "feature/ui/ShellCallChromePorts.h"
 #include "feature/ui/ShellPinGatePorts.h"
@@ -486,10 +488,13 @@ bool Application::Initialize(const char* window_title) {
   call_->BindMessaging(messaging);
   call_->BindShellCallChrome(MakeShellCallChromePorts(shell));
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
-  PeoplePickerController::Instance().BindMessaging(messaging);
+  flow_->BindShellNavigation(shell_navigation);
+  PeoplePickerController::Instance().BindContactsPorts(MakeMessagingContactsPorts(messaging));
+  PeoplePickerController::Instance().BindPickerPorts(MakeMessagingPeoplePickerPorts(messaging));
   PeoplePickerController::Instance().BindShellNavigation(shell_navigation);
   PeoplePickerController::Instance().BindShellFeedback(shared_feedback);
-  client_compat_->BindMessaging(messaging);
+  client_compat_->BindCompatPorts(MakeMessagingCompatPorts(messaging));
+  client_compat_->BindShellFeedback(shared_feedback);
   badges_->BindShellNavigation(shell_navigation);
   badges_->BindSource([&messaging, &shell]() {
     BadgeUnreadInputs inputs;
@@ -587,6 +592,15 @@ bool Application::Initialize(const char* window_title) {
     PeoplePickerController::Instance().BindChatPorts({});
     PeoplePickerController::Instance().BindShellNavigation({});
     PeoplePickerController::Instance().BindShellFeedback({});
+    PeoplePickerController::Instance().BindContactsPorts({});
+    PeoplePickerController::Instance().BindPickerPorts({});
+    if (client_compat_) {
+      client_compat_->BindCompatPorts({});
+      client_compat_->BindShellFeedback({});
+    }
+    if (flow_) {
+      flow_->BindShellNavigation({});
+    }
     if (badges_) {
       badges_->BindSource({});
       badges_->BindShellNavigation({});
@@ -717,7 +731,7 @@ void Application::Run() {
         StartupMark("first_present");
         logged_first_present = true;
         BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-          OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_);
+          OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_, shell_navigation);
         });
       }
       skip_log_countdown = 0;
@@ -750,6 +764,15 @@ void Application::Shutdown() {
   PeoplePickerController::Instance().BindChatPorts({});
   PeoplePickerController::Instance().BindShellNavigation({});
   PeoplePickerController::Instance().BindShellFeedback({});
+  PeoplePickerController::Instance().BindContactsPorts({});
+  PeoplePickerController::Instance().BindPickerPorts({});
+  if (client_compat_) {
+    client_compat_->BindCompatPorts({});
+    client_compat_->BindShellFeedback({});
+  }
+  if (flow_) {
+    flow_->BindShellNavigation({});
+  }
   if (badges_) {
     badges_->BindSource({});
     badges_->BindShellNavigation({});

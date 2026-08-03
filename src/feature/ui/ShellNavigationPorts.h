@@ -71,6 +71,8 @@ struct ShellNavigationPorts {
   std::function<void(bool visible, const Rml::String& message)> set_activity;
   std::function<void()> dirty_window;
   std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
+  /** Bootstrap / deferred font load — UI-owned chrome readiness flag. */
+  std::function<bool&()> fonts_ready;
   std::function<void(const NavBadgeState& badges)> set_nav_badges;
   std::function<void(bool available)> set_auxiliary_available;
   std::function<void()> open_auxiliary;
