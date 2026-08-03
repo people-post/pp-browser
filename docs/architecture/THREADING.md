@@ -160,7 +160,7 @@ Keep stable call sites during migration:
 | `Libp2pHost::Post()` | Unchanged |
 | `run_heavy(work, on_done)` | Pool Background or Normal + UI reply |
 
-Target location: `src/base/platform/` (coordinator + pool) and `src/common/` (shared message types if needed).
+Target location: `src/common/WorkerPool` (implemented, t1); coordinator in `src/base/platform/` (t4).
 
 ### Steady-state budget (target)
 
@@ -200,3 +200,4 @@ No unbounded detach; libdatachannel pool removed when WebRTC legacy path is reti
 | Date | Change |
 |------|--------|
 | 2026-08-03 | Target coordinator + worker pool model; timer wheel on coordinator; migration plan in `projects/thread-coordinator/` |
+| 2026-08-03 | Phase t1: `WorkerPool` in `src/common/` with unit tests |

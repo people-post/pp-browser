@@ -22,15 +22,16 @@ Can proceed **in parallel** with [p2p-av-calls m2](../p2p-av-calls/PHASES.md) (W
 
 **Goal:** Bounded pool with Critical / Normal / Background lanes; test harness only.
 
-- [ ] Add `WorkerPool` in `src/base/platform/` (or `src/common/`)
-  - Fixed size 2–4 (constant for now)
-  - Three queues or single queue with lane bias (Critical dequeued first)
-  - `Post(lane, fn)` and `PostAndReply(lane, work, on_done)` on coordinator or UI thread
-  - Join on shutdown; drop queued work when stopped (match IO thread Stop semantics)
-- [ ] Unit tests: priority ordering, pool size cap, shutdown does not hang
-- [ ] Logging: queue depth per lane (debug)
+- [x] Add `WorkerPool` in `src/common/` (`WorkerPool.h`, `WorkerPool.cpp`)
+  - Fixed size 2–4 (clamped at init)
+  - Three lane queues (Critical dequeued first)
+  - `Post(lane, fn)` and `PostAndReply(lane, work, on_done)` (`on_done` runs on pool thread)
+  - `Pause` / `Resume` / `Shutdown` (drop queued on shutdown; join workers)
+- [x] Unit tests: priority ordering, pause, shutdown, clamp — `src/common/tests/worker_pool_test.cpp`
+- [ ] Logging: queue depth per lane (debug) — deferred
+- [ ] Production call sites — phase t2+
 
-**Exit criteria:** Pool usable from tests; no production call sites yet.
+**Exit criteria:** Pool usable from tests; no production call sites yet. **Done (except debug queue metrics).**
 
 ---
 

@@ -23,13 +23,13 @@ Full target architecture, affinity table, and API mapping: **[docs/architecture/
 
 ## Key types (planned)
 
-Location TBD under `src/base/platform/`:
+Location: `src/common/WorkerPool.{h,cpp}` (shared with `SequencedTaskRunner`; no SDL dependency).
 
 ```
-CoordinatorThread   — owns std::thread, mailbox, timer wheel
-WorkerPool          — fixed N threads, 3 dequeues or 1 heap with lane bias
+WorkerPool          — fixed 2–4 threads, Critical / Normal / Background lanes
+CoordinatorThread   — owns std::thread, mailbox, timer wheel (t4)
 CoordinatorMessage  — source, priority, deadline, std::function<void()>
-BrowserThread       — façade; IO posts become coordinator/pool routes
+BrowserThread       — façade; IO posts become coordinator/pool routes (t5)
 ```
 
 ## Non-goals
