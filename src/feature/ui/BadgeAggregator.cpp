@@ -1,13 +1,15 @@
 #include "feature/ui/BadgeAggregator.h"
 
-#include "feature/ui/ShellHost.h"
-
 #include <string>
 
 namespace pbr {
 
 void BadgeAggregator::BindSource(std::function<BadgeUnreadInputs()> source) {
   source_ = std::move(source);
+}
+
+void BadgeAggregator::BindShellNavigation(ShellNavigationPorts ports) {
+  shell_navigation_ = std::move(ports);
 }
 
 std::string FormatBadgeCount(const int count) {
@@ -30,7 +32,9 @@ void BadgeAggregator::Refresh() {
     next.contacts_unread_display = FormatBadgeCount(next.contacts_unread).c_str();
   }
   state_ = std::move(next);
-  ShellHost::Instance().State().nav_badges = state_;
+  if (shell_navigation_.set_nav_badges) {
+    shell_navigation_.set_nav_badges(state_);
+  }
 }
 
 } // namespace pbr

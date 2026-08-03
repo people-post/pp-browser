@@ -18,8 +18,6 @@
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/FlowCoordinator.h"
 #include "base/crypto/ProfileUnlockGate.h"
-#include "feature/ui/ShellFeedback.h"
-#include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
 
 #include <algorithm>
@@ -135,6 +133,26 @@ void PeoplePickerController::BindCallController(CallController& call) {
   call_ = &call;
 }
 
+void PeoplePickerController::BindShellNavigation(ShellNavigationPorts ports) {
+  shell_navigation_ = std::move(ports);
+}
+
+void PeoplePickerController::BindShellFeedback(ShellFeedbackPorts ports) {
+  shell_feedback_ = std::move(ports);
+}
+
+void PeoplePickerController::ShellDirty() {
+  if (shell_navigation_.dirty_window) {
+    shell_navigation_.dirty_window();
+  }
+}
+
+void PeoplePickerController::ShowToast(const std::string& message, const ToastDuration duration) {
+  if (shell_feedback_.show_toast) {
+    shell_feedback_.show_toast(message, duration);
+  }
+}
+
 MessagingHub& PeoplePickerController::Hub() {
   if (!messaging_) {
     throw std::runtime_error("PeoplePickerController messaging not bound");
@@ -196,7 +214,7 @@ void PeoplePickerController::OpenFree() {
 void PeoplePickerController::OpenFromDm(const std::string& locked_contact_id) {
   if (locked_contact_id.empty()) {
     UserFeedback::Fail("No contact for this chat");
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty();
     return;
   }
   Open(PeoplePickerMode::FromDm, {locked_contact_id});
@@ -234,9 +252,9 @@ void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, cons
   DirtyAll();
   PaneSpec spec;
   spec.key = "people_picker";
-  layer_id_ = ShellHost::Instance().PushLayer(spec);
+  layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
 }
 
 void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
@@ -261,15 +279,15 @@ void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
   DirtyAll();
   PaneSpec spec;
   spec.key = "people_picker";
-  layer_id_ = ShellHost::Instance().PushLayer(spec);
+  layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
 }
 
 void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids) {
   if (!Hub().IsInitialized()) {
     UserFeedback::Fail("Messaging not ready");
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty();
     return;
   }
 
@@ -298,9 +316,9 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
 
   PaneSpec spec;
   spec.key = "people_picker";
-  layer_id_ = ShellHost::Instance().PushLayer(spec);
+  layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
 }
 
 void PeoplePickerController::RegisterFlow() {
@@ -327,7 +345,7 @@ void PeoplePickerController::Close() {
   layer_id_ = -1;
   ResetState();
   if (closing_id >= 0) {
-    ShellHost::Instance().CloseLayer(closing_id);
+    shell_navigation_.close_layer(closing_id);
   }
   DirtyAll();
 }
@@ -336,7 +354,7 @@ void PeoplePickerController::OnFlowDismissed() {
   layer_id_ = -1;
   ResetState();
   DirtyAll();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
 }
 
 void PeoplePickerController::ResetState() {
@@ -745,13 +763,13 @@ void PeoplePickerController::OnSearchChanged() {
 
 void PeoplePickerController::OnCancel() {
   Close();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
 }
 
 void PeoplePickerController::OnBack() {
   if (step_ == kStepName) {
     GoBackToSelect();
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty();
   }
 }
 
@@ -777,7 +795,7 @@ void PeoplePickerController::OnConfirm() {
       return;
     }
     AdvanceToNameStep(ids);
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty();
   }
 }
 
@@ -814,7 +832,7 @@ void PeoplePickerController::OnStartCall() {
   const std::string call_thread_id = call_thread_id_;
   const bool call_video = call_video_;
   Close();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
   if (mode == PeoplePickerMode::CallAddGuest) {
     call_->InviteIdentitiesToActiveCall(identities);
     return;
@@ -858,12 +876,16 @@ void PeoplePickerController::OnCreateGroup() {
 
 void PeoplePickerController::FinishOpenThread() {
   Close();
-  ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-  ShellHost::Instance().SetPrimaryPane("chat");
+  if (shell_navigation_.select_nav_tab) {
+    shell_navigation_.select_nav_tab(NavTab::Sessions);
+  }
+  if (shell_navigation_.set_primary_pane) {
+    shell_navigation_.set_primary_pane("chat");
+  }
   if (chat_ports_.finalize_thread_display) {
     chat_ports_.finalize_thread_display();
   }
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
 }
 
 void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
@@ -872,8 +894,8 @@ void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
   }
   unlock_gate_->EnsureUnlocked([this, contact_id](const bool unlocked) {
     if (!unlocked) {
-      ShellFeedback::ShowToast(ShellHost::Instance().State(), Tr("people_picker.pin_required"));
-      ShellHost::Instance().DirtyWindow();
+      ShowToast(Tr("people_picker.pin_required"));
+      ShellDirty();
       return;
     }
     auto contact = Hub().Contacts().Get(contact_id);
@@ -883,7 +905,7 @@ void PeoplePickerController::StartDirectMessage(const std::string& contact_id) {
     auto thread = Hub().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
-      ShellHost::Instance().DirtyWindow();
+      ShellDirty();
       return;
     }
     (void)Hub().P2p().EnsurePskGenerated(thread->id);
@@ -900,14 +922,14 @@ void PeoplePickerController::CreateGroupWithTitle(const std::vector<std::string>
   unlock_gate_->EnsureUnlocked([this, member_contact_ids,
                                                 title = TrimTitle(std::move(title))](const bool unlocked) {
     if (!unlocked) {
-      ShellFeedback::ShowToast(ShellHost::Instance().State(), Tr("people_picker.pin_required"));
-      ShellHost::Instance().DirtyWindow();
+      ShowToast(Tr("people_picker.pin_required"));
+      ShellDirty();
       return;
     }
     auto thread = Hub().Inbox().CreateGroup(title, member_contact_ids);
     if (!thread) {
       UserFeedback::Fail(thread.error().message);
-      ShellHost::Instance().DirtyWindow();
+      ShellDirty();
       return;
     }
     FinishOpenThread();

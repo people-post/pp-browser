@@ -316,6 +316,7 @@ void ChatController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
 void ChatController::BindShellNavigation(ShellNavigationPorts ports) {
   shell_navigation_ = std::move(ports);
   chrome_.BindShellNavigation(shell_navigation_);
+  working_set_.BindShellNavigation(shell_navigation_);
 }
 
 void ChatController::BindShellFeedback(ShellFeedbackPorts ports) {

@@ -3,6 +3,8 @@
 #include "common/Module.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/PeoplePickerLogic.h"
+#include "feature/ui/ShellFeedbackPorts.h"
+#include "feature/ui/ShellNavigationPorts.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
@@ -34,6 +36,10 @@ public:
   void BindChatPorts(ChatSessionPorts ports);
   void BindFlowCoordinator(FlowCoordinator& flow);
   void BindCallController(CallController& call);
+  /** Shell navigation / layers without ShellHost::Instance(). Clear via BindShellNavigation({}). */
+  void BindShellNavigation(ShellNavigationPorts ports);
+  /** Toast feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
+  void BindShellFeedback(ShellFeedbackPorts ports);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -101,6 +107,8 @@ private:
   int FreeSelectedCount() const;
   std::string TitleForContactId(const std::string& contact_id) const;
   std::string TrimTitle(std::string title) const;
+  void ShellDirty();
+  void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
 
   Rml::Context* context_ = nullptr;
   int layer_id_ = -1;
@@ -123,6 +131,8 @@ private:
   FlowCoordinator* flow_ = nullptr;
   CallController* call_ = nullptr;
   ChatSessionPorts chat_ports_;
+  ShellNavigationPorts shell_navigation_;
+  ShellFeedbackPorts shell_feedback_;
   std::string call_thread_id_;
   std::string call_id_;
   bool call_video_ = false;

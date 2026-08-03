@@ -2,13 +2,16 @@
 
 #include "base/ui/ChatFormHelper.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/ShellHost.h"
 
 #include <nlohmann/json.hpp>
 
 namespace pbr {
 
 WorkingSetController::WorkingSetController(ShellView shell) : shell_(shell) {}
+
+void WorkingSetController::BindShellNavigation(ShellNavigationPorts ports) {
+  shell_navigation_ = std::move(ports);
+}
 
 void WorkingSetController::Dirty() {
   DataModelHost::Instance().Dirty("shell", "working_set_active");
@@ -48,8 +51,12 @@ void WorkingSetController::Clear() {
   shell_.working_set = {};
   active_affinity_ = WorkingSetAffinity::None;
   active_entry_id_.clear();
-  ShellHost::Instance().SetAuxiliaryAvailable(false);
-  ShellHost::Instance().CloseAuxiliary();
+  if (shell_navigation_.set_auxiliary_available) {
+    shell_navigation_.set_auxiliary_available(false);
+  }
+  if (shell_navigation_.close_auxiliary) {
+    shell_navigation_.close_auxiliary();
+  }
   Dirty();
 }
 
@@ -83,8 +90,12 @@ void WorkingSetController::Open(const std::string& entry_id, const int block_ind
   active_entry_id_ = entry_id;
   SyncWidgetBindings(entry_id);
 
-  ShellHost::Instance().SetAuxiliaryAvailable(true);
-  ShellHost::Instance().OpenAuxiliary();
+  if (shell_navigation_.set_auxiliary_available) {
+    shell_navigation_.set_auxiliary_available(true);
+  }
+  if (shell_navigation_.open_auxiliary) {
+    shell_navigation_.open_auxiliary();
+  }
   Dirty();
 }
 
@@ -122,9 +133,15 @@ void WorkingSetController::ApplyFromParse(const std::string& entry_id,
   active_entry_id_ = entry_id;
   SyncWidgetBindings(entry_id);
 
-  ShellHost::Instance().SetAuxiliaryAvailable(true);
-  if (!same_task || !ShellHost::Instance().State().auxiliary_open) {
-    ShellHost::Instance().OpenAuxiliary();
+  if (shell_navigation_.set_auxiliary_available) {
+    shell_navigation_.set_auxiliary_available(true);
+  }
+  const bool auxiliary_open =
+      shell_navigation_.snapshot ? shell_navigation_.snapshot().auxiliary_open : false;
+  if (!same_task || !auxiliary_open) {
+    if (shell_navigation_.open_auxiliary) {
+      shell_navigation_.open_auxiliary();
+    }
   }
   Dirty();
 }

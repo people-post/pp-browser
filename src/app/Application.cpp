@@ -44,7 +44,10 @@
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/UserFeedback.h"
+#include "feature/messaging/MessagingContactsPorts.h"
 #include "feature/messaging/MessagingUiPorts.h"
+#include "feature/ui/ShellCallChromePorts.h"
+#include "feature/ui/ShellPinGatePorts.h"
 #include "ElementCallVideoTile.h"
 #include "base/ui/Theme.h"
 #include "common/StartupTiming.h"
@@ -463,26 +466,32 @@ bool Application::Initialize(const char* window_title) {
   SettingsController::Instance().BindCommands(std::move(settings_commands));
 
   ShellHost& shell = ShellHost::Instance();
+  const ShellNavigationPorts shell_navigation = MakeShellNavigationPorts(shell);
   const ShellFeedbackPorts shared_feedback = BindSharedShellFeedback(shell);
   SettingsController::Instance().BindShellFeedback(shared_feedback);
-  SettingsController::Instance().BindShellNavigation(MakeShellNavigationPorts(shell));
+  SettingsController::Instance().BindShellNavigation(shell_navigation);
 
   ChatController::Instance().BindSessionStore(store_);
 
-  ContactsController::Instance().BindShellNavigation(MakeShellNavigationPorts(shell));
+  ContactsController::Instance().BindShellNavigation(shell_navigation);
   ContactsController::Instance().BindShellFeedback(shared_feedback);
 
-  ChatController::Instance().BindShellNavigation(MakeShellNavigationPorts(shell));
+  ChatController::Instance().BindShellNavigation(shell_navigation);
   ChatController::Instance().BindShellFeedback(shared_feedback);
   MessagingUiPorts messaging_ui;
   messaging_ui.snapshot = [&messaging]() { return ProjectMessagingView(messaging); };
   ChatController::Instance().BindMessagingUi(std::move(messaging_ui));
 
-  ContactsController::Instance().BindMessaging(messaging);
+  ContactsController::Instance().BindContactsPorts(MakeMessagingContactsPorts(messaging));
   call_->BindMessaging(messaging);
+  call_->BindShellCallChrome(MakeShellCallChromePorts(shell));
+  pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   PeoplePickerController::Instance().BindMessaging(messaging);
+  PeoplePickerController::Instance().BindShellNavigation(shell_navigation);
+  PeoplePickerController::Instance().BindShellFeedback(shared_feedback);
   client_compat_->BindMessaging(messaging);
-  badges_->BindSource([&messaging]() {
+  badges_->BindShellNavigation(shell_navigation);
+  badges_->BindSource([&messaging, &shell]() {
     BadgeUnreadInputs inputs;
     if (!messaging.IsInitialized()) {
       return inputs;
@@ -490,7 +499,7 @@ bool Application::Initialize(const char* window_title) {
     auto& inbox = messaging.Inbox();
     const int total = inbox.SumUnread();
     int deduction = 0;
-    if (ShellHost::Instance().State().nav_tab == NavTab::Sessions) {
+    if (shell.State().nav_tab == NavTab::Sessions) {
       const std::string& active_id = inbox.ActiveThreadId();
       if (!active_id.empty()) {
         auto thread = messaging.Store().GetThread(active_id);
@@ -568,6 +577,7 @@ bool Application::Initialize(const char* window_title) {
     SettingsController::Instance().BindShellFeedback({});
     ContactsController::Instance().BindShellNavigation({});
     ContactsController::Instance().BindShellFeedback({});
+    ContactsController::Instance().BindContactsPorts({});
     ChatController::Instance().BindShellNavigation({});
     ChatController::Instance().BindShellFeedback({});
     ChatController::Instance().BindMessagingUi({});
@@ -575,8 +585,17 @@ bool Application::Initialize(const char* window_title) {
     ShellFeedback::BindChromePorts({});
     ContactsController::Instance().BindChatPorts({});
     PeoplePickerController::Instance().BindChatPorts({});
+    PeoplePickerController::Instance().BindShellNavigation({});
+    PeoplePickerController::Instance().BindShellFeedback({});
     if (badges_) {
       badges_->BindSource({});
+      badges_->BindShellNavigation({});
+    }
+    if (pin_gate_) {
+      pin_gate_->BindShellPinGate({});
+    }
+    if (call_) {
+      call_->BindShellCallChrome({});
     }
     if (unlock_gate_) {
       unlock_gate_->BindPorts({});
@@ -721,6 +740,7 @@ void Application::Shutdown() {
   SettingsController::Instance().BindShellFeedback({});
   ContactsController::Instance().BindShellNavigation({});
   ContactsController::Instance().BindShellFeedback({});
+  ContactsController::Instance().BindContactsPorts({});
   ChatController::Instance().BindShellNavigation({});
   ChatController::Instance().BindShellFeedback({});
   ChatController::Instance().BindMessagingUi({});
@@ -728,8 +748,17 @@ void Application::Shutdown() {
   ShellFeedback::BindChromePorts({});
   ContactsController::Instance().BindChatPorts({});
   PeoplePickerController::Instance().BindChatPorts({});
+  PeoplePickerController::Instance().BindShellNavigation({});
+  PeoplePickerController::Instance().BindShellFeedback({});
   if (badges_) {
     badges_->BindSource({});
+    badges_->BindShellNavigation({});
+  }
+  if (pin_gate_) {
+    pin_gate_->BindShellPinGate({});
+  }
+  if (call_) {
+    call_->BindShellCallChrome({});
   }
   g_input_coordinator = nullptr;
   if (unlock_gate_) {

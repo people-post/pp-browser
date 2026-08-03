@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/crypto/ProfileUnlockGate.h"
+#include "feature/ui/ShellPinGatePorts.h"
 
 #include <string>
 
@@ -15,6 +16,8 @@ public:
   PinGateController() = default;
 
   void BindGate(ProfileUnlockGate& gate);
+  /** Shell PIN chrome without ShellHost::Instance(). Clear via BindShellPinGate({}). */
+  void BindShellPinGate(ShellPinGatePorts ports);
 
   /** Ports filled onto ProfileUnlockPorts::ui by Application. */
   void ShowChooser();
@@ -34,6 +37,7 @@ private:
   void ShowCreate();
 
   ProfileUnlockGate* gate_ = nullptr;
+  ShellPinGatePorts shell_pin_gate_;
 };
 
 } // namespace pbr

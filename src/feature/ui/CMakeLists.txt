@@ -10,6 +10,8 @@ pp_browser_add_feature_library(pp_feature_ui
     DocumentLoader.cpp
     FlowCoordinator.cpp
     PinGateController.cpp
+    ShellPinGatePorts.cpp
+    ShellCallChromePorts.cpp
     DeferredStartup.cpp
     ClientCompatController.cpp
     ProfileSettingsSection.cpp

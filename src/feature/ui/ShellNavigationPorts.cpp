@@ -31,6 +31,12 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.request_sync_layout = [&shell](const bool restore, const char* reason) {
     shell.RequestSyncLayout(restore, reason);
   };
+  navigation.set_nav_badges = [&shell](const NavBadgeState& badges) { shell.State().nav_badges = badges; };
+  navigation.set_auxiliary_available = [&shell](const bool available) { shell.SetAuxiliaryAvailable(available); };
+  navigation.open_auxiliary = [&shell]() { shell.OpenAuxiliary(); };
+  navigation.close_auxiliary = [&shell]() { shell.CloseAuxiliary(); };
+  navigation.push_layer = [&shell](const PaneSpec& spec) { return shell.PushLayer(spec); };
+  navigation.close_layer = [&shell](const int layer_id) { shell.CloseLayer(layer_id); };
   return navigation;
 }
 

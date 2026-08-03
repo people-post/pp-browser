@@ -2,6 +2,7 @@
 
 #include "base/media/CallRingtone.h"
 #include "feature/ui/CallChromeSync.h"
+#include "feature/ui/ShellCallChromePorts.h"
 
 #include <cstdint>
 #include <string>
@@ -19,6 +20,8 @@ public:
   CallController() = default;
 
   void BindMessaging(MessagingHub& messaging);
+  /** Call ring / in-call chrome without ShellHost::Instance(). Clear via BindShellCallChrome({}). */
+  void BindShellCallChrome(ShellCallChromePorts ports);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -69,7 +72,7 @@ private:
   CallChromeLayer synced_chrome_;
   CallRingtone ringtone_;
   MessagingHub* messaging_ = nullptr;
-
+  ShellCallChromePorts shell_call_chrome_;
 };
 
 } // namespace pbr

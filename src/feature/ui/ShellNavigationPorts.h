@@ -23,6 +23,7 @@ struct ShellChromeSnapshot {
   std::string primary_pane_key;
   NavBadgeState nav_badges{};
   std::string banner_message;
+  bool auxiliary_open = false;
 };
 
 inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
@@ -39,6 +40,7 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   snap.primary_pane_key = state.primary_pane_key.c_str();
   snap.nav_badges = state.nav_badges;
   snap.banner_message = state.banner_message.c_str();
+  snap.auxiliary_open = state.auxiliary_open;
   return snap;
 }
 
@@ -69,6 +71,12 @@ struct ShellNavigationPorts {
   std::function<void(bool visible, const Rml::String& message)> set_activity;
   std::function<void()> dirty_window;
   std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
+  std::function<void(const NavBadgeState& badges)> set_nav_badges;
+  std::function<void(bool available)> set_auxiliary_available;
+  std::function<void()> open_auxiliary;
+  std::function<void()> close_auxiliary;
+  std::function<int(const PaneSpec& spec)> push_layer;
+  std::function<void(int layer_id)> close_layer;
 };
 
 class ShellHost;

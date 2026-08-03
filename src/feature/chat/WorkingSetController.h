@@ -2,6 +2,7 @@
 
 #include "base/ui/ChatWidgetTypes.h"
 #include "base/ui/WorkingSetTypes.h"
+#include "feature/ui/ShellNavigationPorts.h"
 
 #include <RmlUi/Core/Types.h>
 
@@ -28,6 +29,7 @@ public:
 
   explicit WorkingSetController(ShellView shell);
 
+  void BindShellNavigation(ShellNavigationPorts ports);
   void SetWidgetLookup(WidgetLookup lookup) { widget_lookup_ = std::move(lookup); }
 
   void Clear();
@@ -46,6 +48,7 @@ private:
 
   ShellView shell_;
   WidgetLookup widget_lookup_;
+  ShellNavigationPorts shell_navigation_;
   std::map<std::string, std::vector<WorkingSetCandidate>> by_entry_;
   WorkingSetAffinity active_affinity_ = WorkingSetAffinity::None;
   std::string active_entry_id_;

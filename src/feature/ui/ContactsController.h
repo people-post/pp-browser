@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
+#include "feature/messaging/MessagingContactsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
@@ -18,7 +19,6 @@ class Context;
 
 namespace pbr {
 
-class MessagingHub;
 class ProfileUnlockGate;
 struct Contact;
 
@@ -26,13 +26,11 @@ class ContactsController : public Module {
 public:
   static ContactsController& Instance();
 
-  void BindMessaging(MessagingHub& messaging);
+  void BindContactsPorts(MessagingContactsPorts ports);
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindChatPorts(ChatSessionPorts ports);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
 
   struct ContactListRow {
     Rml::String id;
@@ -144,7 +142,7 @@ private:
   Rml::Context* context_ = nullptr;
   bool contact_dirty_ = false;
   uint64_t debounce_deadline_ms_ = 0;
-  MessagingHub* messaging_ = nullptr;
+  MessagingContactsPorts contacts_ports_;
   ProfileUnlockGate* unlock_gate_ = nullptr;
   ChatSessionPorts chat_ports_;
   ShellNavigationPorts shell_navigation_;

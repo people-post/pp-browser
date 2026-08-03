@@ -19,6 +19,7 @@ pp_browser_add_feature_library(pp_feature_messaging
     MessagingHub.cpp
     MobileEphemeralListenGate.cpp
     ContactReachability.cpp
+    MessagingContactsPorts.cpp
     P2pMessagingService.cpp
     PeerDisplayResolver.cpp
     PskSessionCoordinator.cpp

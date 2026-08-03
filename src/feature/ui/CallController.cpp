@@ -18,7 +18,6 @@
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PeoplePickerController.h"
 #include "CallVideoTileRenderer.h"
-#include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
 
 #include "common/Logger.h"
@@ -32,39 +31,39 @@
 namespace pbr {
 namespace {
 
-CallChromeLayer CaptureCallChrome(const ShellState& state) {
+CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgressState& in_call) {
   return {
-      .ring_active = state.call_ring.active,
-      .in_call_active = state.call_in_progress.active,
-      .ring_pulse = state.call_ring.pulse,
-      .in_call_muted = state.call_in_progress.muted,
-      .in_call_camera_on = state.call_in_progress.camera_on,
-      .in_call_stage_visible = state.call_in_progress.stage_visible,
-      .in_call_remote_video = state.call_in_progress.remote_video,
-      .in_call_local_preview = state.call_in_progress.local_preview,
-      .ring_conflict = state.call_ring.conflict,
-      .ring_call_id = state.call_ring.call_id.c_str(),
-      .in_call_id = state.call_in_progress.call_id.c_str(),
-      .in_call_subtitle = state.call_in_progress.subtitle.c_str(),
-      .ring_caller_label = state.call_ring.caller_label.c_str(),
-      .ring_media_label = state.call_ring.media_label.c_str(),
-      .ring_eyebrow = state.call_ring.eyebrow.c_str(),
-      .ring_conflict_hint = state.call_ring.conflict_hint.c_str(),
-      .ring_accept_label = state.call_ring.accept_label.c_str(),
-      .ring_decline_label = state.call_ring.decline_label.c_str(),
-      .in_call_title = state.call_in_progress.title.c_str(),
-      .in_call_mic_level = state.call_in_progress.mic_level,
-      .in_call_peer_level = state.call_in_progress.peer_level,
-      .in_call_mic_hint = state.call_in_progress.mic_hint.c_str(),
-      .in_call_peer_hint = state.call_in_progress.peer_hint.c_str(),
-      .in_call_elapsed = state.call_in_progress.elapsed.c_str(),
-      .in_call_peer_label = state.call_in_progress.peer_label.c_str(),
-      .in_call_remote_placeholder = state.call_in_progress.remote_placeholder.c_str(),
-      .in_call_show_roster = state.call_in_progress.show_roster,
-      .in_call_show_invite = state.call_in_progress.show_invite,
-      .in_call_show_retry = state.call_in_progress.show_retry,
-      .in_call_participant_count = state.call_in_progress.participant_count,
-      .in_call_status_hint = state.call_in_progress.status_hint.c_str(),
+      .ring_active = ring.active,
+      .in_call_active = in_call.active,
+      .ring_pulse = ring.pulse,
+      .in_call_muted = in_call.muted,
+      .in_call_camera_on = in_call.camera_on,
+      .in_call_stage_visible = in_call.stage_visible,
+      .in_call_remote_video = in_call.remote_video,
+      .in_call_local_preview = in_call.local_preview,
+      .ring_conflict = ring.conflict,
+      .ring_call_id = ring.call_id.c_str(),
+      .in_call_id = in_call.call_id.c_str(),
+      .in_call_subtitle = in_call.subtitle.c_str(),
+      .ring_caller_label = ring.caller_label.c_str(),
+      .ring_media_label = ring.media_label.c_str(),
+      .ring_eyebrow = ring.eyebrow.c_str(),
+      .ring_conflict_hint = ring.conflict_hint.c_str(),
+      .ring_accept_label = ring.accept_label.c_str(),
+      .ring_decline_label = ring.decline_label.c_str(),
+      .in_call_title = in_call.title.c_str(),
+      .in_call_mic_level = in_call.mic_level,
+      .in_call_peer_level = in_call.peer_level,
+      .in_call_mic_hint = in_call.mic_hint.c_str(),
+      .in_call_peer_hint = in_call.peer_hint.c_str(),
+      .in_call_elapsed = in_call.elapsed.c_str(),
+      .in_call_peer_label = in_call.peer_label.c_str(),
+      .in_call_remote_placeholder = in_call.remote_placeholder.c_str(),
+      .in_call_show_roster = in_call.show_roster,
+      .in_call_show_invite = in_call.show_invite,
+      .in_call_show_retry = in_call.show_retry,
+      .in_call_participant_count = in_call.participant_count,
+      .in_call_status_hint = in_call.status_hint.c_str(),
   };
 }
 
@@ -126,6 +125,10 @@ void CallController::BindMessaging(MessagingHub& messaging) {
   BindToMessaging();
 }
 
+void CallController::BindShellCallChrome(ShellCallChromePorts ports) {
+  shell_call_chrome_ = std::move(ports);
+}
+
 MessagingHub& CallController::Hub() {
   if (!messaging_) {
     throw std::runtime_error("CallController messaging not bound");
@@ -173,7 +176,10 @@ void CallController::Tick() {
     calls->SweepExpiredInvites();
   }
   const int64_t now = util::NowUnixMs();
-  auto& ring = ShellHost::Instance().State().call_ring;
+  if (!shell_call_chrome_.call_ring) {
+    return;
+  }
+  auto& ring = shell_call_chrome_.call_ring();
   if (ring.active) {
     if (now - last_pulse_toggle_ms_ >= 600) {
       ring.pulse = !ring.pulse;
@@ -202,23 +208,33 @@ void CallController::OnCallWake() {
 void CallController::ClearRing() {
   ringing_call_id_.clear();
   ring_started_ms_ = 0;
-  ShellHost::Instance().State().call_ring = {};
+  if (shell_call_chrome_.call_ring) {
+    shell_call_chrome_.call_ring() = {};
+  }
   ringtone_.Stop();
 }
 
 void CallController::ClearInCall() {
   active_call_id_.clear();
-  ShellHost::Instance().State().call_in_progress = {};
+  if (shell_call_chrome_.call_in_progress) {
+    shell_call_chrome_.call_in_progress() = {};
+  }
   CallVideoTileRenderer::Instance().Clear();
 }
 
 void CallController::HideInCallChrome() {
-  ShellHost::Instance().State().call_in_progress = {};
+  if (shell_call_chrome_.call_in_progress) {
+    shell_call_chrome_.call_in_progress() = {};
+  }
   CallVideoTileRenderer::Instance().Clear();
 }
 
 void CallController::SyncShellState() {
-  const CallChromeLayer next = CaptureCallChrome(ShellHost::Instance().State());
+  if (!shell_call_chrome_.call_ring || !shell_call_chrome_.call_in_progress) {
+    return;
+  }
+  const CallChromeLayer next =
+      CaptureCallChrome(shell_call_chrome_.call_ring(), shell_call_chrome_.call_in_progress());
   const CallChromeUpdate update = ClassifyCallChromeUpdate(synced_chrome_, next);
   synced_chrome_ = next;
 
@@ -227,7 +243,9 @@ void CallController::SyncShellState() {
   }
   // Match WebRTC-era call chrome: DirtyWindow only. SyncLayout remount on Accept/ring
   // broke hit-testing on Samsung (Accept clicks never reached call_accept).
-  ShellHost::Instance().DirtyWindow();
+  if (shell_call_chrome_.dirty_window) {
+    shell_call_chrome_.dirty_window();
+  }
   if (update == CallChromeUpdate::Remount) {
     DataModelHost::Instance().DirtyAll("window");
   }
@@ -242,7 +260,7 @@ void CallController::SyncRingtone() {
     }
     return;
   }
-  const bool should_ring = ShellHost::Instance().State().call_ring.active;
+  const bool should_ring = shell_call_chrome_.call_ring && shell_call_chrome_.call_ring().active;
   if (should_ring && !ringtone_.IsPlaying()) {
     ringtone_.Start();
   } else if (!should_ring && ringtone_.IsPlaying()) {
@@ -361,7 +379,7 @@ void CallController::RefreshPendingRing() {
       // Hide in-call bar while ringing a *different* call; keep active_call_id_ when conflicting.
       HideInCallChrome();
 
-      auto& ring = ShellHost::Instance().State().call_ring;
+      auto& ring = shell_call_chrome_.call_ring();
       ring.active = true;
       ring.conflict = has_conflict;
       ring.call_id = (*top)->call_id;
@@ -418,7 +436,7 @@ void CallController::RefreshPendingRing() {
       }
     }
 
-    auto& in_call = ShellHost::Instance().State().call_in_progress;
+    auto& in_call = shell_call_chrome_.call_in_progress();
     in_call.active = true;
     in_call.call_id = (*active)->call_id;
     in_call.muted = calls->Media().IsMuted();
@@ -646,8 +664,8 @@ void CallController::AcceptIncoming() {
     return;
   }
   std::string call_id = ringing_call_id_;
-  if (call_id.empty()) {
-    call_id = ShellHost::Instance().State().call_ring.call_id;
+  if (call_id.empty() && shell_call_chrome_.call_ring) {
+    call_id = shell_call_chrome_.call_ring().call_id;
   }
   if (call_id.empty()) {
     call_id = last_ring_call_id_;
@@ -755,7 +773,10 @@ void CallController::ToggleCamera() {
 void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   media.RefreshRemoteVideoHealth();
 
-  auto& in_call = ShellHost::Instance().State().call_in_progress;
+  if (!shell_call_chrome_.call_in_progress) {
+    return;
+  }
+  auto& in_call = shell_call_chrome_.call_in_progress();
   const bool muted = media.IsMuted();
   in_call.muted = muted;
   in_call.camera_on = media.IsCameraEnabled();
