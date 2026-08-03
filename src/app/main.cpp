@@ -65,6 +65,7 @@ int main(int argc, char** argv) {
   auto root = pbr::logging::getRootLogger();
   const auto default_level = pbr::DefaultRootLogLevel(debug_mode);
   root.setLevel(default_level);
+  pbr::logging::setEmitFloor(pbr::DefaultEmitFloor(debug_mode));
   // Install early so [startup] marks reach logcat before Bootstrap.
   pbr::InstallPlatformLogSink();
   if (startup_timing) {
@@ -73,6 +74,7 @@ int main(int argc, char** argv) {
   (void)pbr::StartupEpoch();
   pbr::StartupMark("main_enter");
   root.info << "Logging level set to " << LevelName(root.getLevel())
+            << " emit_floor=" << LevelName(pbr::logging::getEmitFloor())
             << (startup_timing ? " (startup timing enabled)" : "");
 
   if (!pbr::Platform::EarlyInit()) {

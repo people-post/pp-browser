@@ -23,7 +23,7 @@ See also: [PLATFORMS.md](PLATFORMS.md) (runtime matrix), [SRC_LAYOUT.md](SRC_LAY
 | `base/platform/desktop/` | Per-OS desktop path and **native** notification implementations (Linux Freedesktop Notifications via linked `libdbus-1`, macOS `UNUserNotificationCenter`, Windows WinRT toasts) — not shell helpers |
 | `base/platform/Android*`, `Ios*`, `Desktop*` | Facades implementing `IPathProvider`, `ILocalNotifier`, etc. |
 | `base/platform/MobileWindowSizing.*` | SDL display-mode sizing for mobile windows |
-| `base/platform/PlatformLogDefaults.*` | Startup log level defaults per platform |
+| `base/platform/PlatformLogDefaults.*` | Startup root log level + emit floor defaults per platform |
 | `base/platform/PlatformStartupHints.*` | User-facing init failure hints (legacy English string_view) |
 | `base/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()` |
 | `render/integration/platform/GlBackend.h` | GLES vs desktop GL selection |

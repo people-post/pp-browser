@@ -34,6 +34,13 @@ std::string getCurrentTimestamp() {
 
 } // namespace
 
+// DEBUG = no boost (max with any call-site level leaves it unchanged).
+static Level g_emit_floor = kLevelDebug;
+
+static Level ApplyEmitFloor(Level level) {
+  return level < g_emit_floor ? g_emit_floor : level;
+}
+
 void ConsoleHandler::emit(Level level, const std::string &loggerName,
                           const std::string &message) {
   if (level < level_) {
@@ -145,8 +152,10 @@ void LoggerNode::log(Level level, const std::string &message) {
 }
 
 void LoggerNode::logWithOriginatingName(Level level, const std::string &message, const std::string &originatingLoggerName) {
+  // Filter on the original call-site level so emit_floor cannot sneak DEBUG past
+  // an INFO/WARNING threshold. Boost only for format + handler priority.
   if (level >= level_) {
-    logToHandlersWithOriginatingName(level, message, originatingLoggerName);
+    logToHandlersWithOriginatingName(ApplyEmitFloor(level), message, originatingLoggerName);
   }
 
   if (propagate_) {
@@ -342,6 +351,14 @@ Level getLevel() {
 
 void setLevel(Level level) {
   g_spRoot->setLevel(level);
+}
+
+Level getEmitFloor() {
+  return g_emit_floor;
+}
+
+void setEmitFloor(Level floor) {
+  g_emit_floor = floor;
 }
 
 } // namespace logging

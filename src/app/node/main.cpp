@@ -77,6 +77,7 @@ int main(int argc, char** argv) {
 
   auto root = pbr::logging::getRootLogger();
   root.setLevel(pbr::DefaultRootLogLevel(debug_mode));
+  pbr::logging::setEmitFloor(pbr::DefaultEmitFloor(debug_mode));
 
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);

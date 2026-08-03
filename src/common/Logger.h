@@ -197,6 +197,13 @@ Logger getRootLogger();
 Level getLevel();
 void setLevel(Level level);
 
+/** Minimum emitted level after a message passes the logger filter.
+ *  Call-site levels below the floor are raised (e.g. INFO → WARNING) for
+ *  formatting and handlers. Default is DEBUG (no boost). Filter checks still
+ *  use the original call-site level. */
+Level getEmitFloor();
+void setEmitFloor(Level floor);
+
 } // namespace logging
 } // namespace pbr
 
