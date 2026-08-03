@@ -11,8 +11,9 @@
 #include "base/platform/PlatformUserHints.h"
 #include "base/platform/ProductBranding.h"
 #include "base/ui/ShellTypes.h"
-#include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/CallLifecycle.h"
+#include "feature/messaging/CallSessionManager.h"
+#include "feature/messaging/MessagingCallPorts.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/CallConflictCopy.h"
 #include "feature/ui/DataModelHost.h"
@@ -120,8 +121,8 @@ std::string ComposeGroupCallStatusHint() {
 
 } // namespace
 
-void CallController::BindMessaging(MessagingHub& messaging) {
-  messaging_ = &messaging;
+void CallController::BindCallPorts(MessagingCallPorts ports) {
+  call_ports_ = std::move(ports);
   BindToMessaging();
 }
 
@@ -129,27 +130,24 @@ void CallController::BindShellCallChrome(ShellCallChromePorts ports) {
   shell_call_chrome_ = std::move(ports);
 }
 
-MessagingHub& CallController::Hub() {
-  if (!messaging_) {
-    throw std::runtime_error("CallController messaging not bound");
-  }
-  return *messaging_;
+bool CallController::MessagingInitialized() const {
+  return call_ports_.initialized && call_ports_.initialized();
 }
 
-const MessagingHub& CallController::Hub() const {
-  if (!messaging_) {
-    throw std::runtime_error("CallController messaging not bound");
-  }
-  return *messaging_;
+CallSessionManager* CallController::Calls() {
+  return call_ports_.calls ? call_ports_.calls() : nullptr;
 }
 
+CallLifecycle* CallController::Lifecycle() {
+  return call_ports_.lifecycle ? call_ports_.lifecycle() : nullptr;
+}
 
 void CallController::BindToMessaging() {
-  if (!messaging_ || !Hub().IsInitialized()) {
+  if (!MessagingInitialized()) {
     bound_calls_ = nullptr;
     return;
   }
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls) {
     bound_calls_ = nullptr;
     return;
@@ -162,7 +160,7 @@ void CallController::BindToMessaging() {
     // Ingest may run on IO; shell/RmlUi updates must stay on UI.
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() { RefreshPendingRing(); });
   });
-  if (auto* life = Hub().Lifecycle()) {
+  if (auto* life = Lifecycle()) {
     life->SetOnChromeRefresh([this]() { RefreshPendingRing(); });
   }
   bound_calls_ = calls;
@@ -172,7 +170,7 @@ void CallController::BindToMessaging() {
 
 void CallController::Tick() {
   BindToMessaging();
-  if (auto* calls = Hub().Calls()) {
+  if (auto* calls = Calls()) {
     calls->SweepExpiredInvites();
   }
   const int64_t now = util::NowUnixMs();
@@ -192,7 +190,7 @@ void CallController::Tick() {
       logging::getLogger("CallController").warning
           << "ring tick alive call_id=" << ringing_call_id_
           << " phase="
-          << (Hub().Lifecycle() ? CallPhaseName(Hub().Lifecycle()->Phase()) : "?");
+          << (Lifecycle() ? CallPhaseName(Lifecycle()->Phase()) : "?");
     }
   }
   RefreshCallLevels();
@@ -269,10 +267,10 @@ void CallController::SyncRingtone() {
 }
 
 std::string CallController::DisplayNameForIdentity(const std::string& identity) const {
-  if (identity.empty() || !messaging_) {
+  if (identity.empty() || !call_ports_.find_contact_by_identity) {
     return {};
   }
-  if (auto contact = messaging_->Contacts().FindByIdentity(identity, ContactIdKind::RelayUser)) {
+  if (auto contact = call_ports_.find_contact_by_identity(identity, ContactIdKind::RelayUser)) {
     if (*contact) {
       std::string name =
           (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -298,12 +296,12 @@ std::string CallController::FormatElapsed(const int64_t connected_at_ms) {
 
 void CallController::RefreshPendingRing() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls) {
     return;
   }
 
-  if (auto* life = Hub().Lifecycle(); life && !life->LastError().empty()) {
+  if (auto* life = Lifecycle(); life && !life->LastError().empty()) {
     UserFeedback::Fail(life->LastError());
     life->ClearLastError();
   }
@@ -319,7 +317,7 @@ void CallController::RefreshPendingRing() {
 
   auto top = calls->TopPendingInvite();
   if (top && top->has_value()) {
-    CallLifecycle* life = Hub().Lifecycle();
+    CallLifecycle* life = Lifecycle();
     const bool accept_in_flight = life && life->ShouldSuppressRing((*top)->call_id);
     auto active = calls->ActiveLocalCall();
     const bool same_call_active =
@@ -406,7 +404,7 @@ void CallController::RefreshPendingRing() {
   }
 
   if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
-    CallLifecycle* life = Hub().Lifecycle();
+    CallLifecycle* life = Lifecycle();
     // LeaveClicked sets Idle before LeaveCall IO finishes — do not resurrect the panel from the
     // still-Active disk row (Samsung: End looked hung / "couldn't connect" stuck).
     if (life && life->Phase() == CallPhase::Idle) {
@@ -444,8 +442,8 @@ void CallController::RefreshPendingRing() {
     const bool is_video = (*active)->media_mode == CallMediaMode::Video;
     int joined_count = 0;
     std::string local_identity;
-    if (auto identity = Hub().Identity().Get()) {
-      local_identity = identity->relay_user_id;
+    if (call_ports_.local_relay_identity) {
+      local_identity = call_ports_.local_relay_identity().value_or(std::string{});
     }
     if (auto participants = calls->ListJoinedParticipants((*active)->call_id); participants) {
       joined_count = static_cast<int>(participants->size());
@@ -542,7 +540,7 @@ void CallController::RefreshPendingRing() {
 
   ClearInCall();
   ClearRing();
-  if (auto* life = Hub().Lifecycle(); life && life->Phase() == CallPhase::Ringing) {
+  if (auto* life = Lifecycle(); life && life->Phase() == CallPhase::Ringing) {
     life->Apply(CallLifecycleEvent::InviteCleared, {});
   }
   SyncShellState();
@@ -550,12 +548,13 @@ void CallController::RefreshPendingRing() {
 
 bool CallController::StartCall(const std::string& thread_id, const bool video) {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls) {
     UserFeedback::Fail(Tr("call.error.unavailable"));
     return false;
   }
-  auto thread = Hub().Store().GetThread(thread_id);
+  auto thread = call_ports_.get_thread ? call_ports_.get_thread(thread_id)
+                                       : Roe<std::optional<Thread>>::error(Error("call port unavailable"));
   if (!thread || !*thread) {
     UserFeedback::Fail(Tr("call.error.thread_not_found"));
     return false;
@@ -578,7 +577,7 @@ bool CallController::StartCall(const std::string& thread_id, const bool video) {
 bool CallController::StartCallWithInvitees(const std::string& thread_id, const bool video,
                                            const std::vector<std::string>& invitee_identities) {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls) {
     UserFeedback::Fail(Tr("call.error.unavailable"));
     return false;
@@ -594,7 +593,7 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     return false;
   }
   active_call_id_ = started->call_id;
-  if (auto* life = Hub().Lifecycle()) {
+  if (auto* life = Lifecycle()) {
     life->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
   }
   RefreshPendingRing();
@@ -607,7 +606,7 @@ void CallController::OpenGroupCallPicker(const std::string& thread_id, const boo
 
 void CallController::OpenMidCallInvitePicker() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (calls && active_call_id_.empty()) {
     if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
       active_call_id_ = (*active)->call_id;
@@ -622,7 +621,7 @@ void CallController::OpenMidCallInvitePicker() {
 
 void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities) {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (calls && active_call_id_.empty()) {
     if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
       active_call_id_ = (*active)->call_id;
@@ -659,7 +658,7 @@ bool CallController::StartVideoCall(const std::string& thread_id) {
 
 void CallController::AcceptIncoming() {
   BindToMessaging();
-  auto* life = Hub().Lifecycle();
+  auto* life = Lifecycle();
   if (!life) {
     return;
   }
@@ -687,7 +686,7 @@ void CallController::AcceptIncoming() {
 
 void CallController::DeclineIncoming() {
   BindToMessaging();
-  auto* life = Hub().Lifecycle();
+  auto* life = Lifecycle();
   std::string call_id = ringing_call_id_;
   if (call_id.empty() && life) {
     call_id = life->LastRingCallId();
@@ -706,7 +705,7 @@ void CallController::DeclineIncoming() {
 
 void CallController::LeaveActive() {
   BindToMessaging();
-  auto* life = Hub().Lifecycle();
+  auto* life = Lifecycle();
   std::string call_id = active_call_id_;
   if (call_id.empty() && life) {
     call_id = life->ActiveCallId();
@@ -729,7 +728,7 @@ void CallController::LeaveActive() {
 
 void CallController::RetryConnect() {
   BindToMessaging();
-  auto* life = Hub().Lifecycle();
+  auto* life = Lifecycle();
   std::string call_id = active_call_id_;
   if (call_id.empty() && life) {
     call_id = life->ActiveCallId();
@@ -747,7 +746,7 @@ void CallController::RetryConnect() {
 
 void CallController::ToggleMute() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
@@ -759,7 +758,7 @@ void CallController::ToggleMute() {
 
 void CallController::ToggleCamera() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
@@ -783,7 +782,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (calls && !active_call_id_.empty()) {
     if (auto peer_video = calls->PeerVideoEnabledForCall(active_call_id_);
         peer_video && peer_video->has_value()) {
@@ -869,7 +868,7 @@ void CallController::RefreshCallLevels() {
   if (active_call_id_.empty()) {
     return;
   }
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls) {
     return;
   }

@@ -8,7 +8,7 @@
 #include "base/platform/PlatformNavigation.h"
 #include "base/ui/ContextMenuHost.h"
 #include "base/ui/RmlVariantHelpers.h"
-#include "feature/messaging/MessagingHub.h"
+#include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/CallController.h"
@@ -77,8 +77,8 @@ ShellHost& ShellHost::Instance() {
   static ShellHost host;
   return host;
 }
-void ShellHost::BindMessaging(MessagingHub& messaging) {
-  messaging_ = &messaging;
+void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
+  shell_messaging_ports_ = std::move(ports);
 }
 
 void ShellHost::BindPinGate(PinGateController& pin_gate) {
@@ -91,20 +91,6 @@ void ShellHost::BindFlowCoordinator(FlowCoordinator& flow) {
 
 void ShellHost::BindCallController(CallController& call) {
   call_ = &call;
-}
-
-MessagingHub& ShellHost::Hub() {
-  if (!messaging_) {
-    throw std::runtime_error("ShellHost messaging not bound");
-  }
-  return *messaging_;
-}
-
-const MessagingHub& ShellHost::Hub() const {
-  if (!messaging_) {
-    throw std::runtime_error("ShellHost messaging not bound");
-  }
-  return *messaging_;
 }
 
 
@@ -978,13 +964,8 @@ void ShellHost::RefreshStatusbarConnection() {
     return;
   }
   Rml::String next;
-  MessagingHub& hub = Hub();
-  if (hub.IsMessagingReady()) {
-    if (Libp2pHost* host = hub.Libp2p(); host && host->IsRunning()) {
-      next = "Online";
-    } else {
-      next = "Direct off";
-    }
+  if (shell_messaging_ports_.statusbar_connection) {
+    next = shell_messaging_ports_.statusbar_connection().c_str();
   }
   if (next != state_.statusbar_connection) {
     state_.statusbar_connection = std::move(next);

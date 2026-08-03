@@ -2,6 +2,7 @@
 
 #include "base/ui/ShellTypes.h"
 #include "base/data/UserPreferences.h"
+#include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
 #include "feature/ui/ShellGestureAxis.h"
 #include "feature/ui/ShellSwipeBackGesture.h"
@@ -23,7 +24,6 @@ class Element;
 
 namespace pbr {
 
-class MessagingHub;
 class PinGateController;
 class FlowCoordinator;
 class CallController;
@@ -68,12 +68,10 @@ public:
 
   static ShellHost& Instance();
 
-  void BindMessaging(MessagingHub& messaging);
+  void BindShellMessaging(MessagingShellPorts ports);
   void BindPinGate(PinGateController& pin_gate);
   void BindFlowCoordinator(FlowCoordinator& flow);
   void BindCallController(CallController& call);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
 
   void Initialize(Rml::Context* context);
   void SyncLayout();
@@ -244,7 +242,7 @@ private:
   std::function<void()> on_layout_synced_;
   std::function<void()> on_account_sheet_opened_;
   std::function<void()> on_account_sheet_closed_;
-  MessagingHub* messaging_ = nullptr;
+  MessagingShellPorts shell_messaging_ports_;
   PinGateController* pin_gate_ = nullptr;
   FlowCoordinator* flow_ = nullptr;
   CallController* call_ = nullptr;

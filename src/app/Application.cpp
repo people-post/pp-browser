@@ -27,6 +27,7 @@
 #include "base/platform/MobileWindowSizing.h"
 #include "base/platform/SdlAppEvents.h"
 #include "base/platform/WindowIcon.h"
+#include "feature/messaging/MessagingCallPorts.h"
 #include "feature/messaging/MessagingChatPorts.h"
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/SettingsCommands.h"
@@ -49,6 +50,7 @@
 #include "feature/ui/UserFeedback.h"
 #include "feature/messaging/MessagingCompatPorts.h"
 #include "feature/messaging/MessagingContactsPorts.h"
+#include "feature/messaging/MessagingShellPorts.h"
 #include "feature/messaging/MessagingPeoplePickerPorts.h"
 #include "feature/messaging/MessagingUiPorts.h"
 #include "feature/ui/ShellCallChromePorts.h"
@@ -494,7 +496,7 @@ bool Application::Initialize(const char* window_title) {
   ChatController::Instance().BindMessagingUi(std::move(messaging_ui));
 
   ContactsController::Instance().BindContactsPorts(MakeMessagingContactsPorts(messaging));
-  call_->BindMessaging(messaging);
+  call_->BindCallPorts(MakeMessagingCallPorts(messaging));
   call_->BindShellCallChrome(MakeShellCallChromePorts(shell));
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   flow_->BindShellNavigation(shell_navigation);
@@ -569,7 +571,7 @@ bool Application::Initialize(const char* window_title) {
   unlock_gate_->BindPorts(std::move(unlock_ports));
 
   ChatController::Instance().BindUnlockGate(*unlock_gate_);
-  ShellHost::Instance().BindMessaging(messaging);
+  ShellHost::Instance().BindShellMessaging(MakeMessagingShellPorts(messaging));
   ShellHost::Instance().BindPinGate(*pin_gate_);
   ShellHost::Instance().BindFlowCoordinator(*flow_);
   ShellHost::Instance().BindCallController(*call_);
@@ -620,6 +622,7 @@ bool Application::Initialize(const char* window_title) {
       pin_gate_->BindShellPinGate({});
     }
     if (call_) {
+      call_->BindCallPorts({});
       call_->BindShellCallChrome({});
     }
     if (unlock_gate_) {
@@ -795,8 +798,10 @@ void Application::Shutdown() {
     pin_gate_->BindShellPinGate({});
   }
   if (call_) {
+    call_->BindCallPorts({});
     call_->BindShellCallChrome({});
   }
+  ShellHost::Instance().BindShellMessaging({});
   g_input_coordinator = nullptr;
   if (unlock_gate_) {
     unlock_gate_->BindPorts({});
