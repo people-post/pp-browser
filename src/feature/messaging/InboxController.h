@@ -77,7 +77,6 @@ private:
   std::string BuildCallHistoryRml(const ThreadMessage& message, CallControlType type) const;
   std::string BuildContactCardRml(const ThreadMessage& message) const;
   std::string BuildCryptoTxRml(const ThreadMessage& message) const;
-  std::string BuildTransportBadgeHtml(const ThreadMessage& message) const;
   std::string BuildSharedBadgeHtml(const ThreadMessage& message) const;
   std::string FormatCallPeerLabel(const std::string& identity) const;
 

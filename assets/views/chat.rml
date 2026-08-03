@@ -87,9 +87,8 @@
     </div>
     <div data-if="use_messages_layout">
       <div data-for="row : messages" data-class="row.row_class">
-        <p class="sender-label muted" data-if="row.sender_label != ''" data-rml="row.sender_label"></p>
-        <p class="text-xs muted chat-transport-line" data-if="row.transport_badge != ''">
-          <span data-rml="row.transport_badge"></span>
+        <p class="sender-label muted" data-if="row.sender_label != ''">
+          <span data-rml="row.sender_label"></span><span class="chat-transport-inline muted" data-if="row.transport_badge != ''"> · <span data-rml="row.transport_badge"></span></span>
         </p>
         <div selectable="text" data-model="chat" data-rml="row.content_rml"></div>
       </div>

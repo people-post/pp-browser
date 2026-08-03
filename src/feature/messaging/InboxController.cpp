@@ -475,14 +475,6 @@ std::string InboxController::ResolveRowClass(const std::string& sender_contact_i
   return "message-row-peer";
 }
 
-std::string InboxController::BuildTransportBadgeHtml(const ThreadMessage& message) const {
-  if (!message.transport) {
-    return "";
-  }
-  const std::string label = MessageTransportBadgeLabel(*message.transport);
-  return "<span class=\"chat-transport-badge muted\">" + StructuredTextParser::EscapeText(label) + "</span>";
-}
-
 std::string InboxController::BuildSharedBadgeHtml(const ThreadMessage& message) const {
   if (!message.ai_invoke_mode ||
       (message.ai_invoke_mode != "shared_reply" && message.ai_invoke_mode != "shared_full")) {
@@ -728,7 +720,7 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   const std::string bubble_class = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
   const std::string paragraph =
       message.sender_contact_id == kLocalSelfContactId ? "<p class=\"bubble-text\">" : "<p>";
-  std::string badges = BuildTransportBadgeHtml(message) + BuildSharedBadgeHtml(message);
+  std::string badges = BuildSharedBadgeHtml(message);
   if (!badges.empty()) {
     badges = "<div class=\"chat-message-meta\">" + badges + "</div>";
   }
@@ -815,7 +807,9 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
       continue;
     }
     row.row_class = ResolveRowClass(message.sender_contact_id).c_str();
-    if (!CallControlCodec::IsCallControlMessage(message) && message.transport) {
+    // Local is expected for AI/system-local rows — skip it to keep meta quiet.
+    if (!CallControlCodec::IsCallControlMessage(message) && message.transport &&
+        *message.transport != MessageTransport::Local) {
       row.transport_badge = MessageTransportBadgeLabel(*message.transport).c_str();
     }
     row.has_content = true;

@@ -1896,11 +1896,11 @@ call-video-tile {
   min-height: 0;
 }
 
-.chat-transport-line {
-  margin: 0 0 4dp 0;
+.chat-transport-inline {
+  font-size: 11dp;
+  opacity: 0.85;
 }
 
-.chat-transport-badge,
 .chat-shared-badge,
 .chat-annotation-badge {
   display: inline-block;
