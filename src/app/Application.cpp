@@ -40,7 +40,10 @@
 #include "feature/ui/PeoplePickerController.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellFeedback.h"
+#include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellHost.h"
+#include "feature/ui/ShellNavigationPorts.h"
+#include "feature/ui/UserFeedback.h"
 #include "ElementCallVideoTile.h"
 #include "base/ui/Theme.h"
 #include "common/StartupTiming.h"
@@ -404,6 +407,69 @@ bool Application::Initialize(const char* window_title) {
   };
   SettingsController::Instance().BindCommands(std::move(settings_commands));
 
+  auto bind_shell_presentation_ports = []() {
+    ShellHost& shell = ShellHost::Instance();
+
+    ShellFeedbackChromePorts feedback_chrome;
+    feedback_chrome.shell_state = [&shell]() -> ShellState& { return shell.State(); };
+    feedback_chrome.request_sync_layout = [&shell](const bool restore, const char* reason) {
+      shell.RequestSyncLayout(restore, reason);
+    };
+    feedback_chrome.dirty_window = [&shell]() { shell.DirtyWindow(); };
+    ShellFeedback::BindChromePorts(std::move(feedback_chrome));
+
+    ShellFeedbackPorts feedback;
+    feedback.show_toast = [&shell](const std::string& message, const ToastDuration duration) {
+      ShellFeedback::ShowToast(shell.State(), message, duration);
+      shell.DirtyWindow();
+    };
+    feedback.show_banner = [&shell](const std::string& message) {
+      ShellFeedback::ShowBanner(shell.State(), message);
+      shell.DirtyWindow();
+    };
+    feedback.show_alert = [&shell](const std::string& title, const std::string& message,
+                                   std::function<void()> on_ok) {
+      ShellFeedback::ShowAlert(shell.State(), title, message, std::move(on_ok));
+    };
+    feedback.show_confirm = [&shell](const std::string& title, const std::string& message,
+                                     std::function<void(bool)> on_result) {
+      ShellFeedback::ShowConfirm(shell.State(), title, message, std::move(on_result));
+    };
+    feedback.show_confirm_with_checkbox =
+        [&shell](const std::string& title, const std::string& message, const std::string& checkbox_label,
+                 const bool checkbox_default, std::function<void(bool, bool)> on_result) {
+          ShellFeedback::ShowConfirmWithCheckbox(shell.State(), title, message, checkbox_label, checkbox_default,
+                                               std::move(on_result));
+        };
+    UserFeedback::BindPorts(feedback);
+    SettingsController::Instance().BindShellFeedback(std::move(feedback));
+
+    ShellNavigationPorts navigation;
+    navigation.snapshot = [&shell]() { return ProjectShellChromeSnapshot(shell.State()); };
+    navigation.clear_local_back = [&shell](const std::string& id) { shell.ClearLocalBack(id); };
+    navigation.push_local_back = [&shell](const std::string& id, std::function<void()> commit) {
+      shell.PushLocalBack(id, std::move(commit));
+    };
+    navigation.has_local_back = [&shell](const std::string& id) { return shell.HasLocalBack(id); };
+    navigation.select_nav_tab = [&shell](const NavTab tab) { shell.SelectNavTab(tab); };
+    navigation.open_account_sheet = [&shell]() { shell.OpenAccountSheet(); };
+    navigation.close_account_sheet = [&shell]() { shell.CloseAccountSheet(); };
+    navigation.clear_primary_pane = [&shell]() { shell.ClearPrimaryPane(); };
+    navigation.set_primary_pane = [&shell](const std::string& key) { shell.SetPrimaryPane(key); };
+    navigation.pop_transient = [&shell]() { shell.PopTransient(); };
+    navigation.request_dismiss_instant = [&shell]() { return shell.RequestDismiss(DismissStyle::Instant); };
+    navigation.refresh_dismiss_gestures = [&shell]() { shell.RefreshDismissGestures(); };
+    navigation.dirty_window = [&shell]() { shell.DirtyWindow(); };
+    navigation.request_sync_layout = [&shell](const bool restore, const char* reason) {
+      shell.RequestSyncLayout(restore, reason);
+    };
+    SettingsController::Instance().BindShellNavigation(std::move(navigation));
+
+    shell.SetOnAccountSheetOpened([]() { SettingsController::Instance().OnAccountSheetOpened(); });
+    shell.SetOnAccountSheetClosed([]() { SettingsController::Instance().OnAccountSheetClosed(); });
+  };
+  bind_shell_presentation_ports();
+
   ChatController::Instance().BindSessionStore(store_);
 
   ContactsController::Instance().BindMessaging(messaging);
@@ -462,9 +528,7 @@ bool Application::Initialize(const char* window_title) {
   };
   unlock_ports.ui.show_error = [this](const std::string& message) { pin_gate_->ShowError(message); };
   unlock_ports.ui.on_default_provisioned = []() {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(),
-                             "Using the app default. Change anytime in Me → Security.");
-    ShellHost::Instance().DirtyWindow();
+    UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
   };
   // Argon2 + libp2p stack init must not block the UI thread (Android / iOS first unlock).
   unlock_ports.run_heavy = [](std::function<Roe<void>()> work,
@@ -494,6 +558,10 @@ bool Application::Initialize(const char* window_title) {
       }()) {
     log().error << "SetupChatController failed";
     SettingsController::Instance().BindCommands({});
+    SettingsController::Instance().BindShellNavigation({});
+    SettingsController::Instance().BindShellFeedback({});
+    UserFeedback::BindPorts({});
+    ShellFeedback::BindChromePorts({});
     ContactsController::Instance().BindChatPorts({});
     PeoplePickerController::Instance().BindChatPorts({});
     if (badges_) {
@@ -532,7 +600,7 @@ bool Application::Initialize(const char* window_title) {
       SettingsController::Instance().SyncReachability();
       const ReachabilitySnapshot snap = messaging.Reachability();
       if (snap.status == ReachabilityStatus::OutboundOnly || snap.status == ReachabilityStatus::Blocked) {
-        ShellFeedback::ShowBanner(ShellHost::Instance().State(), Tr("settings.network.banner_hint"));
+        UserFeedback::NeedsSetup(Tr("settings.network.banner_hint"));
       }
     });
   });
@@ -635,6 +703,10 @@ void Application::Shutdown() {
   StartupPhase shutdown_total("Application::Shutdown");
 
   SettingsController::Instance().BindCommands({});
+  SettingsController::Instance().BindShellNavigation({});
+  SettingsController::Instance().BindShellFeedback({});
+  UserFeedback::BindPorts({});
+  ShellFeedback::BindChromePorts({});
   ContactsController::Instance().BindChatPorts({});
   PeoplePickerController::Instance().BindChatPorts({});
   if (badges_) {

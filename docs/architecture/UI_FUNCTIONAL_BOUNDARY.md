@@ -1,0 +1,282 @@
+# UI ↔ functional boundary
+
+**Tier:** architecture  
+**Related:** [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md) (runtime wiring), [SRC_LAYOUT.md](SRC_LAYOUT.md) (layers), [CONFIGURATION.md](../ops/CONFIGURATION.md) (persisted prefs → slices).
+
+How the **UI system** (RmlUi surfaces, shell chrome, presenters) interacts with **functional systems** (messaging, agent, vault, session prefs). Features should be able to run without UI; UI binds only through explicit interfaces.
+
+**Migration tracker (temporary):** [UI_FUNCTIONAL_MIGRATION_PLAN.md](UI_FUNCTIONAL_MIGRATION_PLAN.md) — delete that file when migration is complete.
+
+---
+
+## Principles
+
+1. **Two self-contained systems.** Functional components (messaging hub, agent session, vault gate, …) and the UI shell are separate. In theory, features run headless; UI is a client of functional facades.
+2. **Explicit interfaces for UI-visible behavior.** Every state, config, and action the UI needs is declared by the owning system (or a narrow facade). UI never reaches into subsystems or internal singletons.
+3. **Limited top-level exposure.** UI sees a small set of top-level systems. Everything else (libp2p host, thread stores, turn executor, …) stays internal.
+4. **Four interaction channels** (see below). State, Config, Actions, and Events — each with clear semantics and thread rules.
+
+---
+
+## Top-level systems vs UI surfaces
+
+**Functional systems** (business logic, may outlive any one screen):
+
+| System | Primary module | UI sees (facade) | Hidden subsystems |
+|--------|----------------|------------------|-------------------|
+| **Messaging** | `feature/messaging/` | threads, send/receive, reachability, calls | libp2p, relay, mesh, SQLite stores |
+| **Agent** | `feature/ai/` | turn status, tool results, generation | LLM client, MCP executor, turn pipeline |
+| **Profile / vault** | `base/crypto/` | unlock status, PIN policy | Argon2, secrets store |
+| **Session / prefs** | `base/data/` + `app/ConfigApplyBridge` | flush, reload, disk DTOs | projection, slice fan-out |
+| **Localization / theme** | `base/i18n/`, `base/ui/` | labels, appearance | catalogs, asset resolution |
+| **Shell / navigation** | `feature/ui/` | tabs, panes, overlays, dialog stack | flow coordinator, input routing |
+
+**UI surfaces** (presenters + RmlUi binding — *not* functional systems):
+
+| Surface | Module | Role |
+|---------|--------|------|
+| `ShellHost` | `feature/ui/` | Window chrome, pane layout, global feedback |
+| `ChatController` | `feature/chat/` | Chat screen presenter |
+| `SettingsController` | `feature/ui/` | Me tab / settings presenter |
+| `ContactsController` | `feature/ui/` | Contacts tab presenter |
+| `PeoplePickerController` | `feature/ui/` | People picker presenter |
+| `PinGateController` | `feature/ui/` | PIN overlay presentation |
+| `CallController` | `feature/ui/` | In-call / ring chrome |
+
+Surfaces **present** functional state and **dispatch** actions. They must not hold direct pointers to subsystems the UI contract does not name (e.g. no `Libp2pHost*` in a controller header).
+
+---
+
+## Four interaction channels
+
+```mermaid
+flowchart LR
+  subgraph functional["Functional system"]
+    Core["Core logic + subsystems"]
+    Facade["Facade: State · Config · Actions · Events"]
+    Core --> Facade
+  end
+
+  subgraph ui["UI system"]
+    Presenter["Presenter / controller"]
+    Rml["RmlUi data models"]
+    Presenter --> Rml
+  end
+
+  Facade -->|"State (read)"| Presenter
+  Facade -->|"Events (push)"| Presenter
+  Presenter -->|"Config (persist)"| Facade
+  Presenter -->|"Actions (invoke)"| Facade
+```
+
+### 1. State (read-only)
+
+**Purpose:** Snapshots the UI can bind. Functional systems own truth; UI reads, never mutates functional state in place.
+
+**Rules:**
+
+- Expose **immutable view DTOs** or `Snapshot()` methods, not shared mutable structs.
+- Prefer small, purpose-built views (`ProfileIdentityView`, `SettingsReachabilityView`) over leaking service internals.
+- Presenters poll on `Tick()` or subscribe; then call `DataModelHost::Dirty(model, key)`.
+- **UI chrome state** (nav tab, pane open, overlay stack, scroll/focus) is owned by the **UI system** (`ShellState`, presenter-private structs). Functional code must not write `ShellHost::State()` directly.
+
+**Existing examples:**
+
+- `ProfileIdentityView`, `SettingsReachabilityView`, `PinProtectionView`
+- `ShellState` (UI-owned chrome — keep functional code out)
+- Per-controller private state inside `ChatController`, `SettingsController`
+
+**Target pattern:**
+
+```cpp
+struct MessagingView {
+  bool ready;
+  std::string last_error;
+  SettingsReachabilityView reachability;
+};
+
+MessagingView Snapshot() const;
+void Subscribe(MessagingListener* listener);  // optional push refresh
+```
+
+### 2. Config (persisted preferences)
+
+**Purpose:** User preferences that survive restarts and hot-reload into services.
+
+**Rules:**
+
+- Disk DTOs live in `SessionStore` (`AppConfig`, `ProfilePreferences`).
+- Services expose **nested slice types** with `operator==` and `Apply(slice)` (equality-gated).
+- `ConfigApplyBridge` projects disk → slices; only the bridge calls `Apply`.
+- Settings UI **flushes** via `SessionStore` only — never `MessagingHub::Apply*` directly.
+- Ephemeral UI config (pane width, draft text, last scroll) stays in presenters; do not persist unless product requires it.
+
+**Existing examples:**
+
+- `MessagingHub::NetworkConfig`, `PolicyPrefs`, `NotificationPrefs`
+- `ShellHost::ChromePrefs`, `ChatController::AgentConfig`, `LocalizationService::Prefs`
+- [RUNTIME_COMPOSITION.md — Settings / prefs hot-reload](RUNTIME_COMPOSITION.md#settings--prefs-hot-reload)
+
+**Quick blocking set:** Section flush in settings is synchronous on the UI thread but only touches `SessionStore`; heavy apply work stays inside service `Apply` implementations (must not block the UI thread for long — post to IO if needed).
+
+### 3. Actions (commands)
+
+**Purpose:** User intents and imperative operations initiated from UI.
+
+**Rules:**
+
+- Declare narrow **ports structs** (`SettingsCommands`, `ChatSessionPorts`) or facade methods — app fills implementations in `Application`.
+- **Sync / quick:** return `Roe<void>` or a small result; safe on UI thread when work is trivial.
+- **Async / long:** use `run_heavy(work, on_done)` (see `ProfileUnlockPorts`) or post to `BrowserThread::IO` and reply on UI.
+- Long-running actions should support **progress** and **cancel** when user-visible (agent turns, UPnP probe, profile reset).
+- RmlUi static callbacks are thin: `→ presenter method → action port` — not `SomeController::Instance().Hub()->…`.
+
+**Existing examples:**
+
+- `SettingsCommands` — register, UPnP, reset profile, appearance, locales
+- `ChatSessionPorts` — select thread, finalize display, find someone
+- `ProfileUnlockPorts` — ensure unlocked, complete with PIN (async heavy work)
+- `ActionRouter` — declarative Rml action → MCP tool map
+
+**Target pattern:**
+
+```cpp
+struct MessagingActions {
+  Roe<void> SendMessage(const SendMessageArgs& args);
+  void RunReachabilityProbe(std::function<void()> on_done);
+  Roe<void> CancelCall(const std::string& call_id);
+};
+```
+
+### 4. Events (push notifications)
+
+**Purpose:** Functional-initiated updates that are not stable “state” and are not user “actions”.
+
+**Examples:**
+
+- Messaging became ready / failed
+- New inbound message
+- Call ended
+- Toast / banner requests
+- Unlock gate dismissed
+
+**Rules:**
+
+- Prefer callbacks, small listener interfaces, or app-owned coordinators — not polling hidden flags every frame.
+- Events may be one-shot; do not mirror every event as permanent state on a facade.
+- UI thread delivery: post via `BrowserThread::PostTask(UI, …)` from IO / workers.
+
+**Existing examples:**
+
+- `BadgeAggregator::BindSource` — app computes unread from hub + shell tab
+- Hub readiness callbacks wired in `Application` (not in controllers)
+- `ProfileUnlockUiPorts` — gate pushes presentation hooks to PIN UI
+
+---
+
+## UI chrome vs functional state
+
+| Kind | Owner | Examples | Who may mutate |
+|------|-------|----------|----------------|
+| **Functional state** | Functional system | messaging ready, call phase, vault locked | Functional system only; UI reads via facade |
+| **UI chrome state** | UI system | nav tab, pane visibility, overlay stack, pin overlay layout | Presenters / shell only |
+| **View projection** | Presenter | RmlUi-bound fields derived from functional + chrome | Presenter writes binding; sources are read-only snapshots |
+
+**Anti-pattern (current debt):** `PinGateController` mutating `ShellHost::State().pin_gate`, or `ChatController` opening shell panes via `ShellHost::Instance()` — functional/presenter logic reaching into global shell mutable state.
+
+**Target:** Functional systems expose state; presenters **project** into chrome. Cross-surface navigation uses a **coordinator** (`FlowCoordinator`, future `ShellCoordinator`), not controller-to-controller `::Instance()` calls.
+
+---
+
+## Composition root responsibilities
+
+`Application` (`src/app/`) is the only place that:
+
+- Owns service lifetimes (`MessagingHub`, `AgentSession`, `ProfileUnlockGate`, …)
+- Binds ports (`SettingsCommands`, `ChatSessionPorts`, `ProfileUnlockPorts`)
+- Installs `ConfigApplyBridge` and SessionStore listeners
+- Wires event callbacks (messaging ready → refresh presenters)
+- Runs the main loop: UI tick, `TickLibp2p`, drain `BrowserThread::UI`
+
+Presenters may still exist as process singletons **during migration**; new code should prefer app-injected instances. See migration plan.
+
+---
+
+## Allowed edges (summary)
+
+| From | To | Allowed? |
+|------|-----|----------|
+| UI presenter | Functional facade **State** | Read / subscribe |
+| UI presenter | Functional facade **Actions** | Via ports or injected facade |
+| UI presenter | `SessionStore` flush (settings) | Yes — persisted config only |
+| UI presenter | `MessagingHub::Apply*` / internal APIs | **No** |
+| UI presenter | Another controller `::Instance()` | **No** — use coordinator or ports |
+| Functional system | `ShellHost::State()` | **No** — use `ProfileUnlockUiPorts`-style hooks |
+| `ConfigApplyBridge` | Service `Apply(slice)` | Yes |
+| `Application` | Bind all ports + event wiring | Yes |
+
+Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOSITION.md#allowed-edges-hot-reload--settings).
+
+---
+
+## Reference patterns in the repo
+
+| Pattern | Location | Channel |
+|---------|----------|---------|
+| Persisted config slices | `ConfigApplyBridge`, `MessagingHub::Apply` | Config |
+| Settings imperative ops | `SettingsCommands` | Actions |
+| Chat navigation | `ChatSessionPorts` | Actions |
+| Shell navigation (settings) | `ShellNavigationPorts` | Actions + State snapshot |
+| Shell feedback | `ShellFeedbackPorts`, `ShellFeedbackChromePorts`, `UserFeedback::BindPorts` | Actions + Events |
+| Vault unlock | `ProfileUnlockGate` + `ProfileUnlockPorts` / `ProfileUnlockUiPorts` | Actions + Events |
+| Identity / reachability views | `ProfileIdentityView`, `SettingsReachabilityView` | State |
+| Modal flow | `FlowCoordinator` | UI chrome / navigation |
+| Unread badges | `BadgeAggregator` | State (app-computed) |
+| RmlUi registry | `DataModelHost` | UI infrastructure |
+
+**Direction of travel:** Generalize ports + slices from “cross-module exceptions” to the **default**. Demote `::Instance()` controllers to thin RmlUi adapters over injected `{ StateSource, Actions, Events }`.
+
+---
+
+## Presenter template (target)
+
+```cpp
+// Functional — no RmlUi
+class MessagingFacade {
+public:
+  MessagingView Snapshot() const;
+  void Subscribe(MessagingListener* listener);
+  MessagingActions& Actions();
+  // Config: SessionStore + bridge only — no Apply from UI
+};
+
+// UI — RmlUi only here
+class ChatPresenter {
+public:
+  ChatPresenter(MessagingFacade&, AgentFacade&, ChatSessionPorts ports);
+
+  void Tick(Rml::Context* ctx);       // Snapshot → Dirty()
+  void OnSendMessage(std::string text);  // → Actions().SendMessage(...)
+};
+```
+
+RmlUi model registration stays in the presenter (or a dedicated binding helper). Functional facades do not include RmlUi headers.
+
+---
+
+## Testing implications
+
+- **Functional tests:** Drive facades and ports without RmlUi or `ShellHost::Instance()`.
+- **UI tests:** Mock facades; verify presenter projects snapshots and dispatches actions.
+- **Headless / deferred startup:** Already supported for vault gate and client compat — boundary makes this the norm.
+
+---
+
+## Further reading
+
+| Doc | Why |
+|-----|-----|
+| [UI_FUNCTIONAL_MIGRATION_PLAN.md](UI_FUNCTIONAL_MIGRATION_PLAN.md) | Phased migration checklist (temporary) |
+| [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md) | Ownership, threading, bridge diagram |
+| [CONFIGURATION.md](../ops/CONFIGURATION.md) | Disk DTO → slice field mapping |
+| [WINDOW_SHELL.md](../ui/WINDOW_SHELL.md) | Shell chrome behavior |

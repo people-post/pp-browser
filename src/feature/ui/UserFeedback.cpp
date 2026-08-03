@@ -2,22 +2,29 @@
 
 #include "base/error/AppError.h"
 #include "feature/ui/ShellFeedback.h"
-#include "feature/ui/ShellHost.h"
 
 namespace pbr {
+
+ShellFeedbackPorts UserFeedback::ports_;
+
+void UserFeedback::BindPorts(ShellFeedbackPorts ports) {
+  ports_ = std::move(ports);
+}
 
 std::string UserFeedback::UserMessage(const Error& err) {
   return AppError::Display(err);
 }
 
 void UserFeedback::Ok(const std::string& message) {
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
-  ShellHost::Instance().DirtyWindow();
+  if (ports_.show_toast) {
+    ports_.show_toast(message, ToastDuration::Short);
+  }
 }
 
 void UserFeedback::Fail(const std::string& message) {
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), message, ToastDuration::Long);
-  ShellHost::Instance().DirtyWindow();
+  if (ports_.show_toast) {
+    ports_.show_toast(message, ToastDuration::Long);
+  }
 }
 
 std::string UserFeedback::FailFrom(const Error& err) {
@@ -27,8 +34,9 @@ std::string UserFeedback::FailFrom(const Error& err) {
 }
 
 void UserFeedback::NeedsSetup(const std::string& message) {
-  ShellFeedback::ShowBanner(ShellHost::Instance().State(), message);
-  ShellHost::Instance().DirtyWindow();
+  if (ports_.show_banner) {
+    ports_.show_banner(message);
+  }
 }
 
 } // namespace pbr

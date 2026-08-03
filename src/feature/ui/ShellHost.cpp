@@ -15,7 +15,6 @@
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/FlowCoordinator.h"
-#include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
 #include "feature/ui/UiEditSession.h"
@@ -342,7 +341,9 @@ void ShellHost::ClearTabContext() {
   DetachDismissGestures();
   if (state_.account_sheet_open) {
     state_.account_sheet_open = false;
-    SettingsController::Instance().OnAccountSheetClosed();
+    if (on_account_sheet_closed_) {
+      on_account_sheet_closed_();
+    }
   }
 }
 
@@ -419,7 +420,9 @@ void ShellHost::OpenAccountSheet() {
   if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::AccountSheet) {
     pending_dismiss_.reset();
   }
-  SettingsController::Instance().OnAccountSheetOpened();
+  if (on_account_sheet_opened_) {
+    on_account_sheet_opened_();
+  }
   RequestSyncLayout();
   DirtyWindow();
 }
@@ -434,7 +437,9 @@ void ShellHost::CloseAccountSheet() {
   }
   local_back_stack_.clear();
   DetachDismissGestures();
-  SettingsController::Instance().OnAccountSheetClosed();
+  if (on_account_sheet_closed_) {
+    on_account_sheet_closed_();
+  }
   RequestSyncLayout();
   DirtyWindow();
 }
@@ -847,6 +852,14 @@ void ShellHost::SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> call
 
 void ShellHost::SetOnLayoutSynced(std::function<void()> callback) {
   on_layout_synced_ = std::move(callback);
+}
+
+void ShellHost::SetOnAccountSheetOpened(std::function<void()> callback) {
+  on_account_sheet_opened_ = std::move(callback);
+}
+
+void ShellHost::SetOnAccountSheetClosed(std::function<void()> callback) {
+  on_account_sheet_closed_ = std::move(callback);
 }
 
 void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {

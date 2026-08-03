@@ -1,10 +1,14 @@
 #pragma once
 
 #include "base/ui/ShellTypes.h"
+#include "feature/ui/ShellFeedbackPorts.h"
 
 namespace pbr {
 
 struct ShellFeedback {
+  /** App fills chrome sync for dialog open/close. Clear via BindChromePorts({}). */
+  static void BindChromePorts(ShellFeedbackChromePorts ports);
+
   static void ShowToast(ShellState& state, const std::string& message, ToastDuration duration = ToastDuration::Short,
                         float now_ms = 0.f);
   static void ExpireToasts(ShellState& state, float now_ms);
@@ -23,6 +27,9 @@ struct ShellFeedback {
                          const std::string& default_value, std::function<void(bool confirmed, std::string value)> on_result);
   static void DialogOk(ShellState& state);
   static void DialogCancel(ShellState& state);
+
+private:
+  static ShellFeedbackChromePorts chrome_ports_;
 };
 
 } // namespace pbr

@@ -1,11 +1,15 @@
 #include "feature/ui/ShellFeedback.h"
 
-#include "feature/ui/ShellHost.h"
-
 #include <algorithm>
 #include <chrono>
 
 namespace pbr {
+
+ShellFeedbackChromePorts ShellFeedback::chrome_ports_;
+
+void ShellFeedback::BindChromePorts(ShellFeedbackChromePorts ports) {
+  chrome_ports_ = std::move(ports);
+}
 
 namespace {
 
@@ -33,8 +37,12 @@ float ResolveNowMs(float now_ms) {
 }
 
 void SyncDialogChrome(const char* reason) {
-  ShellHost::Instance().RequestSyncLayout(/*restore_focus_after=*/false, reason);
-  ShellHost::Instance().DirtyWindow();
+  if (chrome_ports_.request_sync_layout) {
+    chrome_ports_.request_sync_layout(/*restore_focus_after=*/false, reason);
+  }
+  if (chrome_ports_.dirty_window) {
+    chrome_ports_.dirty_window();
+  }
 }
 
 } // namespace

@@ -1,6 +1,7 @@
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
+#include "feature/ui/ShellNavigationPorts.h"
 #include "base/ui/ShellTypes.h"
 
 #include <gtest/gtest.h>
@@ -184,4 +185,25 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
       ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 36.f);
   EXPECT_FLOAT_EQ(titlebar_and_safe.content_top_dp, 83.f);
   EXPECT_FLOAT_EQ(titlebar_and_safe.shell_bottom_dp, 34.f);
+}
+
+TEST(ShellHostTest, ProjectShellChromeSnapshot) {
+  using namespace pbr;
+
+  ShellState state{};
+  state.layout_mode = LayoutMode::Compact;
+  state.nav_tab = NavTab::Me;
+  state.account_sheet_open = true;
+  state.primary_pane_key = "settings_detail";
+
+  PaneState detail_pane;
+  detail_pane.spec.key = "settings_detail";
+  state.transient_stack.push_back(detail_pane);
+
+  const ShellChromeSnapshot snap = ProjectShellChromeSnapshot(state);
+  EXPECT_EQ(snap.layout_mode, LayoutMode::Compact);
+  EXPECT_EQ(snap.nav_tab, NavTab::Me);
+  EXPECT_TRUE(snap.account_sheet_open);
+  EXPECT_TRUE(snap.settings_detail_transient);
+  EXPECT_TRUE(snap.settings_detail_primary);
 }

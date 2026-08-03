@@ -1,9 +1,11 @@
 # Runtime composition
 
 **Tier:** architecture  
-**Related:** [ARCHITECTURE.md](ARCHITECTURE.md) (system overview), [SRC_LAYOUT.md](SRC_LAYOUT.md) (layers / includes), [ops/CONFIGURATION.md](../ops/CONFIGURATION.md) (disk DTOs → service slices).
+**Related:** [ARCHITECTURE.md](ARCHITECTURE.md) (system overview), [SRC_LAYOUT.md](SRC_LAYOUT.md) (layers / includes), [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md) (UI vs functional contracts), [ops/CONFIGURATION.md](../ops/CONFIGURATION.md) (disk DTOs → service slices).
 
 How **Application** relates to the main service modules at runtime: ownership, feature-link order, settings hot-reload, and **threading** (UI / IO / libp2p / media).
+
+For **what UI may call** (state / config / actions / events, facades vs singleton controllers), see [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md). Active decoupling checklist: [UI_FUNCTIONAL_MIGRATION_PLAN.md](UI_FUNCTIONAL_MIGRATION_PLAN.md) (temporary — remove when migration completes).
 
 ## Layers (link / include direction)
 
@@ -198,6 +200,8 @@ flowchart TB
 | ChatController | full `AppConfig` listener | **No** — agent slice via bridge |
 | ChatController | `SetOnMessagingReady` / reachability | **No** — Application owns |
 | Application Run loop | `MessagingHub::TickLibp2p` | Yes |
+| UI presenter | Another controller `::Instance()` | **No** — coordinator or ports ([UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)) |
+| Functional system | `ShellHost::State()` mutation | **No** — UI ports / events |
 
 ## Threading
 

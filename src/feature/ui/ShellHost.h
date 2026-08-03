@@ -131,6 +131,8 @@ public:
   void SetOnNavTabChanged(std::function<void(NavTab tab)> callback);
   void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
   void SetOnLayoutSynced(std::function<void()> callback);
+  void SetOnAccountSheetOpened(std::function<void()> callback);
+  void SetOnAccountSheetClosed(std::function<void()> callback);
 
   /** Seed safe-area insets from machine.json (used when SDL reports zero). */
   void SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp);
@@ -240,6 +242,8 @@ private:
   std::function<void(NavTab)> on_nav_tab_changed_;
   std::function<void(LayoutMode)> on_layout_mode_changed_;
   std::function<void()> on_layout_synced_;
+  std::function<void()> on_account_sheet_opened_;
+  std::function<void()> on_account_sheet_closed_;
   MessagingHub* messaging_ = nullptr;
   PinGateController* pin_gate_ = nullptr;
   FlowCoordinator* flow_ = nullptr;

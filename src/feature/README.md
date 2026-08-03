@@ -114,6 +114,10 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 |---------|----------|---------|
 | `ChatSessionPorts` | `ui/ChatSessionPorts.h` | Injected chat nav ports for contacts/people-picker; Application fills from `ChatController` — no singleton |
 | `SettingsCommands` | `settings/SettingsCommands.h` | All settings cross-module ports (member on `SettingsController`); Application binds — no messaging bind / no extra singleton |
+| `ShellNavigationPorts` | `ui/ShellNavigationPorts.h` | Settings shell layout/nav without `ShellHost::Instance()`; app fills from `ShellHost` |
+| `ShellFeedbackPorts` | `ui/ShellFeedbackPorts.h` | Toast/banner/dialog + `UserFeedback::BindPorts`; app fills from `ShellHost` + `ShellFeedback` |
+| UI ↔ functional boundary | [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | State / Config / Actions / Events; facades vs presenter singletons — target architecture |
+| Migration plan (temporary) | [`docs/architecture/UI_FUNCTIONAL_MIGRATION_PLAN.md`](../../docs/architecture/UI_FUNCTIONAL_MIGRATION_PLAN.md) | Phased decoupling checklist; delete when done |
 | `ProfileIdentityView` | `base/people/ProfileIdentityView.h` | Shared identity presentation DTO (filled by `MessagingHub`) |
 | SessionStore listeners + nested service slices | `SessionStore`, nested `*::Apply` types, `ConfigApplyBridge` | Settings flush persists disk DTOs; app projects slices so settings UI does not own service apply |
 | Hub-and-spoke within messaging | `MessagingHub` referenced from `MessageRouter`, `InboxController`, etc. | Orchestration inside single target `pp_feature_messaging` (compile coupling, not a link-cycle) |
@@ -165,6 +169,8 @@ Place tests at the **highest layer they include or link** (see SRC_LAYOUT). Base
 | Doc | Why |
 |-----|-----|
 | [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md) | Full four-layer layout, fork sidecars, test placement |
+| [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | UI vs functional systems; state, config, actions, events |
+| [`docs/architecture/UI_FUNCTIONAL_MIGRATION_PLAN.md`](../../docs/architecture/UI_FUNCTIONAL_MIGRATION_PLAN.md) | Temporary migration phases (delete when complete) |
 | [`docs/architecture/ARCHITECTURE.md`](../../docs/architecture/ARCHITECTURE.md) | System overview (SDL, RmlUi, agent, shell) |
 | [`docs/architecture/P2P_MESSAGING.md`](../../docs/architecture/P2P_MESSAGING.md) | Messaging hub and P2P orchestration |
 | [`docs/ui/WINDOW_SHELL.md`](../../docs/ui/WINDOW_SHELL.md) | Shell layout and document hosting |

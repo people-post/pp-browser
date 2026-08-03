@@ -1,0 +1,56 @@
+#pragma once
+
+#include "base/ui/ShellTypes.h"
+
+#include <functional>
+#include <string>
+
+namespace pbr {
+
+/** Read-only shell chrome fields settings (and other surfaces) need without ShellHost. */
+struct ShellChromeSnapshot {
+  LayoutMode layout_mode = LayoutMode::Expanded;
+  NavTab nav_tab = NavTab::Home;
+  bool account_sheet_open = false;
+  /** Top transient pane is `settings_detail`. */
+  bool settings_detail_transient = false;
+  /** Expanded Me primary pane shows settings detail. */
+  bool settings_detail_primary = false;
+};
+
+inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
+  ShellChromeSnapshot snap;
+  snap.layout_mode = state.layout_mode;
+  snap.nav_tab = state.nav_tab;
+  snap.account_sheet_open = state.account_sheet_open;
+  snap.settings_detail_transient =
+      !state.transient_stack.empty() && state.transient_stack.back().spec.key == "settings_detail";
+  snap.settings_detail_primary = state.primary_pane_key == "settings_detail";
+  return snap;
+}
+
+/**
+ * Shell navigation / layout ports for settings and other UI surfaces.
+ * Declared here (consumer); Application fills from ShellHost. Not a singleton.
+ */
+struct ShellNavigationPorts {
+  std::function<ShellChromeSnapshot()> snapshot;
+
+  std::function<void(const std::string& id)> clear_local_back;
+  std::function<void(const std::string& id, std::function<void()> commit)> push_local_back;
+  std::function<bool(const std::string& id)> has_local_back;
+
+  std::function<void(NavTab tab)> select_nav_tab;
+  std::function<void()> open_account_sheet;
+  std::function<void()> close_account_sheet;
+  std::function<void()> clear_primary_pane;
+  std::function<void(const std::string& key)> set_primary_pane;
+  std::function<void()> pop_transient;
+  /** Instant dismiss (Escape / local-back commit). Returns true when consumed. */
+  std::function<bool()> request_dismiss_instant;
+  std::function<void()> refresh_dismiss_gestures;
+  std::function<void()> dirty_window;
+  std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
+};
+
+} // namespace pbr
