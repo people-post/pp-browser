@@ -14,9 +14,14 @@
 
 namespace pbr {
 
+ClientCompatController::ClientCompatController() {
+  redirectLogger("ClientCompat");
+}
+
 namespace {
 
-auto& Log() {
+auto& CompatIoLog() {
+  // Free IO helper (no Module instance) — named logger matches redirectLogger.
   static auto logger = logging::getLogger("ClientCompat");
   return logger;
 }
@@ -61,7 +66,7 @@ CompatResolveResult ResolveDocumentOnIO(IClientCompatClient* client, const std::
   entry.fetched_at_unix = now;
   entry.document = *fetched;
   if (auto saved = SaveClientCompatCache(profile_dir, entry); !saved) {
-    Log().warning << "Failed to cache client-compat: " << saved.error().message;
+    CompatIoLog().warning << "Failed to cache client-compat: " << saved.error().message;
   }
   out.document = std::move(*fetched);
   return out;
@@ -89,7 +94,7 @@ void ClientCompatController::CheckAsync() {
       [this](CompatResolveResult result) {
         if (!result.document) {
           if (!result.error.empty()) {
-            Log().info << "client-compat unavailable (fail open): " << result.error;
+            log().info << "client-compat unavailable (fail open): " << result.error;
           }
           last_action_ = CompatUiAction::None;
           return;

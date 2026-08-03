@@ -3,17 +3,13 @@
 #include "base/messaging/MessagingLimits.h"
 #include "base/runtime/AppLifecycle.h"
 #include "base/runtime/AppRuntime.h"
-#include "common/Logger.h"
 #include "common/Utilities.h"
 
 namespace pbr {
 
-namespace {
-auto& sync_log() {
-  static auto logger = logging::getLogger("BackgroundSync");
-  return logger;
+BackgroundSyncScheduler::BackgroundSyncScheduler() {
+  redirectLogger("BackgroundSync");
 }
-} // namespace
 
 BackgroundSyncScheduler& BackgroundSyncScheduler::Instance() {
   static BackgroundSyncScheduler instance;
@@ -23,8 +19,8 @@ BackgroundSyncScheduler& BackgroundSyncScheduler::Instance() {
 void BackgroundSyncScheduler::SetSyncHandler(SyncFn handler) {
   handler_ = std::move(handler);
   EnsureRelayPollTimer();
-  sync_log().warning << "SetSyncHandler armed=" << (handler_ ? 1 : 0)
-                     << " timer_id=" << relay_poll_timer_id_;
+  log().warning << "SetSyncHandler armed=" << (handler_ ? 1 : 0)
+                << " timer_id=" << relay_poll_timer_id_;
 }
 
 void BackgroundSyncScheduler::EnsureRelayPollTimer() {
@@ -40,7 +36,7 @@ void BackgroundSyncScheduler::EnsureRelayPollTimer() {
     RunScheduledSync(false);
   });
   if (relay_poll_timer_id_ == 0) {
-    sync_log().error << "EnsureRelayPollTimer failed (ScheduleCoordinatorRepeating returned 0)";
+    log().error << "EnsureRelayPollTimer failed (ScheduleCoordinatorRepeating returned 0)";
   }
 }
 

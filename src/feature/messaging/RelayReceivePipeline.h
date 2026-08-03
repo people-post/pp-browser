@@ -9,6 +9,7 @@
 #include "base/messaging/PeerSigningKeyStore.h"
 #include "base/messaging/ThreadTypes.h"
 #include "base/people/IdentityStore.h"
+#include "common/Module.h"
 
 #include <optional>
 #include <string>
@@ -43,7 +44,7 @@ struct RelayReceiveOutcome {
 };
 
 /** v6 receive pipeline steps 0–12 (feature layer orchestration). */
-class RelayReceivePipeline {
+class RelayReceivePipeline : public Module {
 public:
   RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys, IPskSessionStore& psk_store,
                        IdentityStore& identity, GroupRosterStore& group_roster,

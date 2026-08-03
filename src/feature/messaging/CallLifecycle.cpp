@@ -161,7 +161,7 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
   // Never Browser IO — AcceptInvite was starved behind PollInbox on Samsung (queued, no IO enter).
   // Same escape hatch as offerer Connect worker / call-control MediaKey send.
   AppRuntime::PostWorkerCritical([this, sessions, call_id]() {
-    logging::getLogger("CallLifecycle").info << "AcceptInvite worker enter call_id=" << call_id;
+    log().info << "AcceptInvite worker enter call_id=" << call_id;
     Roe<void> accepted = Error("Calls unavailable");
     if (sessions) {
       accepted = sessions->AcceptInvite(call_id);

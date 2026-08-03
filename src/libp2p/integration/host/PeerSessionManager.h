@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/Module.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerAddressBook.h"
 
@@ -58,7 +59,7 @@ std::string PeerDialErrorUserCopy(const std::string& technical_message);
  * On-demand dial + warm-active session policy over a shared Libp2pHost.
  * Does not pool sockets separately — reuses ConnectionManager via Host::newStream/connect.
  */
-class PeerSessionManager {
+class PeerSessionManager : public Module {
 public:
   using StreamCb = libp2p::StreamAndProtocolOrErrorCb;
 

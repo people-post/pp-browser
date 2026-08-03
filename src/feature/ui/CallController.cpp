@@ -21,7 +21,6 @@
 #include "CallVideoTileRenderer.h"
 #include "feature/ui/UserFeedback.h"
 
-#include "common/Logger.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -30,6 +29,11 @@
 #include <string>
 
 namespace pbr {
+
+CallController::CallController() {
+  redirectLogger("CallController");
+}
+
 namespace {
 
 CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgressState& in_call) {
@@ -410,7 +414,7 @@ void CallController::RefreshPendingRing() {
                              ? Tr("call.ring.incoming_video").c_str()
                              : Tr("call.ring.incoming_voice").c_str();
       if (!was_active) {
-        logging::getLogger("CallController").warning
+        log().warning
             << "RefreshPendingRing activate call_id=" << ringing_call_id_;
       }
       ring.eyebrow = copy.eyebrow;
@@ -456,7 +460,7 @@ void CallController::RefreshPendingRing() {
     if (life && life->Phase() == CallPhase::OutboundCalling && !calls->Media().IsActive() &&
         (*active)->created_at > 0 &&
         util::NowUnixMs() - (*active)->created_at >= kDefaultCallInviteTtlMs) {
-      logging::getLogger("CallController").warning
+      log().warning
           << "outbound unanswered timeout call_id=" << (*active)->call_id;
       life->Apply(CallLifecycleEvent::LeaveClicked, (*active)->call_id);
       return;
@@ -585,7 +589,7 @@ void CallController::RefreshPendingRing() {
       const std::string sub = in_call.subtitle.c_str();
       if (sub != last_sub_log) {
         last_sub_log = sub;
-        logging::getLogger("CallController").info
+        log().info
             << "in-call subtitle=\"" << sub << "\" phase="
             << (life ? CallPhaseName(life->Phase()) : "?")
             << " media_connected=" << (calls->Media().IsConnected() ? 1 : 0)
@@ -736,7 +740,7 @@ void CallController::AcceptIncoming() {
     call_id = life->LastRingCallId();
   }
   if (call_id.empty()) {
-    logging::getLogger("CallController").warning << "AcceptIncoming ignored (no call_id)";
+    log().warning << "AcceptIncoming ignored (no call_id)";
     return;
   }
   // Dismiss ring on the click frame (CALLS.md Accept → Accepting dismisses chrome). Leaving the
@@ -744,7 +748,7 @@ void CallController::AcceptIncoming() {
   ringtone_.Stop();
   ClearRing();
   SyncShellState();
-  logging::getLogger("CallController").warning
+  log().warning
       << "AcceptIncoming → lifecycle AcceptClicked call_id=" << call_id;
   life->Apply(CallLifecycleEvent::AcceptClicked, call_id);
 }

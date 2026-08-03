@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Module.h"
+
 #include <cstdint>
 #include <functional>
 
@@ -9,7 +11,7 @@ namespace pbr {
  * Owns foreground/background relay poll cadence (P006).
  * Poll runs on the coordinator timer wheel; wake paths post immediate coordinator messages.
  */
-class BackgroundSyncScheduler {
+class BackgroundSyncScheduler : public Module {
 public:
   using SyncFn = std::function<void(bool force)>;
 
@@ -26,6 +28,8 @@ public:
   bool ConsumeCallWake();
 
 private:
+  BackgroundSyncScheduler();
+
   void EnsureRelayPollTimer();
   void StopRelayPollTimer();
   void RunScheduledSync(bool force);

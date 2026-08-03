@@ -1,13 +1,16 @@
 #include "base/crypto/ProfileUnlockGate.h"
 
 #include "base/crypto/PinDefaults.h"
-#include "common/Logger.h"
 #include "common/StartupTiming.h"
 
 #include <stdexcept>
 #include <utility>
 
 namespace pbr {
+
+ProfileUnlockGate::ProfileUnlockGate() {
+  redirectLogger("ProfileUnlockGate");
+}
 
 Roe<void> UnlockProfileSecretsAndReady(ProfileSecretsService& secrets, const std::string& pin,
                                        const std::function<Roe<void>()>& ensure_messaging_ready) {
@@ -69,7 +72,7 @@ void ProfileUnlockGate::Finish(const bool unlocked) {
 }
 
 void ProfileUnlockGate::ReportError(const std::string& message) {
-  logging::getLogger("ProfileUnlockGate").warning << "Unlock failed: " << message;
+  log().warning << "Unlock failed: " << message;
   SetUnlockInProgress(false);
   if (!showing_) {
     // Silent unlock failed with no modal yet — open unlock so the user can retry.

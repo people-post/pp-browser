@@ -19,7 +19,6 @@
 #include "feature/ui/ShellLayout.h"
 #include "feature/ui/UiEditSession.h"
 #include "base/ui/ViewCatalog.h"
-#include "common/Logger.h"
 
 #include "RmlUi_Backend.h"
 
@@ -75,6 +74,10 @@ std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeF
 
 ShellHost* ShellHost::installed_instance_ = nullptr;
 
+ShellHost::ShellHost() {
+  redirectLogger("ShellHost");
+}
+
 void ShellHost::InstallInstance(ShellHost& host) {
   installed_instance_ = &host;
 }
@@ -89,6 +92,7 @@ ShellHost& ShellHost::Instance() {
   }
   return *installed_instance_;
 }
+
 void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
   shell_messaging_ports_ = std::move(ports);
 }
@@ -817,10 +821,9 @@ void ShellHost::RestoreFocus() {
 }
 
 void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason) {
-  static auto logger = logging::getLogger("ShellHost");
-  logger.debug << "RequestSyncLayout reason=" << (reason && reason[0] ? reason : "?")
-               << " pending=" << (sync_pending_ ? 1 : 0)
-               << " restore_focus=" << (restore_focus_after ? 1 : 0);
+  log().debug << "RequestSyncLayout reason=" << (reason && reason[0] ? reason : "?")
+              << " pending=" << (sync_pending_ ? 1 : 0)
+              << " restore_focus=" << (restore_focus_after ? 1 : 0);
   if (restore_focus_after) {
     restore_focus_after_sync_ = true;
   }
@@ -838,7 +841,6 @@ void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason) 
 }
 
 void ShellHost::FlushPendingSyncLayout() {
-  static auto logger = logging::getLogger("ShellHost");
   if (!sync_pending_) {
     return;
   }
@@ -846,9 +848,9 @@ void ShellHost::FlushPendingSyncLayout() {
   try {
     SyncLayout();
   } catch (const std::exception& e) {
-    logger.error << "SyncLayout failed: " << e.what();
+    log().error << "SyncLayout failed: " << e.what();
   } catch (...) {
-    logger.error << "SyncLayout failed with unknown exception";
+    log().error << "SyncLayout failed with unknown exception";
   }
   if (restore_focus_after_sync_) {
     restore_focus_after_sync_ = false;
@@ -1947,7 +1949,7 @@ void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::E
 
 void ShellHost::CallAcceptCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                    const Rml::VariantList& /*args*/) {
-  logging::getLogger("ShellHost").warning << "call_accept click";
+  Instance().log().warning << "call_accept click";
   if (auto* call = Instance().call_) {
     call->AcceptIncoming();
   }

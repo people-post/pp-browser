@@ -72,7 +72,9 @@ RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyR
                                            IPskSessionStore& psk_store, IdentityStore& identity,
                                            GroupRosterStore& group_roster, GroupInviteGate* invite_gate)
     : store_(store), signing_keys_(signing_keys), psk_store_(psk_store), identity_(identity),
-      group_roster_(group_roster), invite_gate_(invite_gate) {}
+      group_roster_(group_roster), invite_gate_(invite_gate) {
+  redirectLogger("RelayReceivePipeline");
+}
 
 Roe<void> RelayReceivePipeline::ApplyInboundCallMessage(ThreadMessage& message,
                                                         const std::string& actor_identity,
@@ -462,7 +464,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         if (auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key,
                                                                    psk_store_, local_kem_private_key)) {
           if (IsCallControlMessage(*decrypted)) {
-            logging::getLogger("RelayReceivePipeline").warning
+            log().warning
                 << "Apply call-control on BenignDuplicate message_id=" << envelope.message_id;
             ThreadMessage side = std::move(*decrypted);
             side.id = envelope.message_id;
@@ -653,13 +655,13 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       (void)ApplyInboundMembershipMessage(side, envelope.sender_contact_id, &outcome);
     }
     if (IsCallControlMessage(side)) {
-      logging::getLogger("RelayReceivePipeline").warning
+      log().warning
           << "Apply call-control on " << static_cast<int>(decision_label)
           << " message_id=" << envelope.message_id;
       if (auto call = ApplyInboundCallMessage(side, envelope.sender_contact_id, envelope.relay_created_at_ms,
                                               envelope.relay_server_time_ms);
           !call) {
-        logging::getLogger("RelayReceivePipeline").warning
+        log().warning
             << "Call-control side-effect failed: " << call.error().message;
       }
     }

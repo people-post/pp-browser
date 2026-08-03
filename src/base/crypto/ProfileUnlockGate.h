@@ -2,6 +2,7 @@
 
 #include "base/crypto/ProfileSecretsService.h"
 #include "common/Error.h"
+#include "common/Module.h"
 
 #include <functional>
 #include <string>
@@ -54,9 +55,9 @@ struct ProfileUnlockPorts {
  * Profile vault unlock policy + caller queue.
  * Feature UI presents modals via ProfileUnlockUiPorts; submit/cancel call back into the gate.
  */
-class ProfileUnlockGate {
+class ProfileUnlockGate : public Module {
 public:
-  ProfileUnlockGate() = default;
+  ProfileUnlockGate();
 
   void BindSecrets(ProfileSecretsService& secrets);
   void BindPorts(ProfileUnlockPorts ports);

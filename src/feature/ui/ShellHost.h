@@ -2,6 +2,7 @@
 
 #include "base/ui/ShellTypes.h"
 #include "base/data/UserPreferences.h"
+#include "common/Module.h"
 #include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
@@ -46,7 +47,7 @@ struct LocalBackEntry {
   std::function<void()> commit;
 };
 
-class ShellHost {
+class ShellHost : public Module {
 public:
   /** Theme / appearance / chrome materials projected from ProfilePreferences. */
   struct ChromePrefs {
@@ -67,7 +68,7 @@ public:
   /** Apply material fields only (theme/appearance are Theme-owned). */
   void Apply(const ChromePrefs& prefs);
 
-  ShellHost() = default;
+  ShellHost();
 
   /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
   static void InstallInstance(ShellHost& host);

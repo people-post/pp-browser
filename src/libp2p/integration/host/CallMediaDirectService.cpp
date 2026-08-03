@@ -1,6 +1,6 @@
 #include "libp2p/integration/host/CallMediaDirectService.h"
 
-#include "common/Logger.h"
+#include "common/Module.h"
 #include "libp2p/integration/host/CallMediaFrameCrypto.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
@@ -110,7 +110,12 @@ void CloseQuiet(const std::shared_ptr<Stream>& stream) {
 
 } // namespace
 
-struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
+struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl> {
+  Impl() { redirectLogger("CallMediaDirect"); }
+
+  /** Public for CallMediaDirectService::Connect (outer class cannot see Module::log). */
+  logging::Logger& Log() const { return log(); }
+
   Libp2pHost* host = nullptr;
 
   std::mutex mu;
@@ -210,7 +215,7 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
       if (outbound_.size() >= kMaxOutboundFrames) {
         outbound_.pop_front();
         if ((drop_log_.fetch_add(1) % 50) == 0) {
-          logging::getLogger("CallMediaDirect").warning << "Call-media outbound queue full; dropping oldest";
+          log().warning << "Call-media outbound queue full; dropping oldest";
         }
       }
       outbound_.push_back(std::move(body));
@@ -367,7 +372,7 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
               DecryptCallMediaAudioFrame(params.media_key, params.call_id, params.media_epoch, frame_bytes);
           if (!opus) {
             if ((self->decrypt_fail_log_.fetch_add(1) % 25) == 0) {
-              logging::getLogger("CallMediaDirect").warning
+              self->log().warning
                   << "Call-media decrypt failed call_id=" << params.call_id
                   << " epoch=" << params.media_epoch << " err=" << opus.error().message;
             }
@@ -382,7 +387,7 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void HandleInbound(libp2p::StreamAndProtocol stream_in) {
-    logging::getLogger("CallMediaDirect").info << "Inbound call-media stream (protocol negotiated)";
+    log().info << "Inbound call-media stream (protocol negotiated)";
     if (!host) {
       CloseQuiet(stream_in.stream);
       return;
@@ -394,13 +399,13 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
       {
         std::lock_guard lock(self->mu);
         if (!self->inbound_handler) {
-          logging::getLogger("CallMediaDirect").info
+          self->log().info
               << "Inbound call-media ignored (handler cleared)";
           CloseQuiet(stream);
           return;
         }
         if (self->stream) {
-          logging::getLogger("CallMediaDirect").info
+          self->log().info
               << "Inbound call-media rejected (session already active)";
           CloseQuiet(stream);
           return;
@@ -408,7 +413,7 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
         if (self->outbound_hello_inflight.load(std::memory_order_acquire)) {
           // Offerer fallback dial in hello/ack — late reverse-dial is the glare loser.
           // Answerer never sets this flag so offerer→answerer inbound still completes.
-          logging::getLogger("CallMediaDirect").info
+          self->log().info
               << "Inbound call-media rejected (outbound hello in flight)";
           CloseQuiet(stream);
           return;
@@ -417,7 +422,7 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
 
       auto hello = ReadJson(stream);
       if (!hello || hello->value("type", "") != "hello") {
-        logging::getLogger("CallMediaDirect").warning
+        self->log().warning
             << "Inbound call-media hello read failed err="
             << (hello ? "bad type" : hello.error().message);
         CloseQuiet(stream);
@@ -433,7 +438,7 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
         std::lock_guard lock(self->mu);
         handler = self->inbound_handler;
         if (self->stream) {
-          logging::getLogger("CallMediaDirect").info
+          self->log().info
               << "Inbound call-media lost race after hello call_id=" << params.call_id;
           CloseQuiet(stream);
           return;
@@ -441,14 +446,14 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
       }
       CallMediaDirectCallbacks cbs;
       if (!handler) {
-        logging::getLogger("CallMediaDirect").info << "Inbound call-media handler cleared mid-hello";
+        self->log().info << "Inbound call-media handler cleared mid-hello";
         (void)WriteJson(stream, {{"v", 1}, {"type", "hello_ack"}, {"ok", false}, {"error", "unavailable"}});
         CloseQuiet(stream);
         return;
       }
       handler(params, cbs);
       if (params.media_key.empty() || params.call_id.empty()) {
-        logging::getLogger("CallMediaDirect").warning
+        self->log().warning
             << "Inbound call-media hello rejected call_id=" << params.call_id
             << " key_empty=" << (params.media_key.empty() ? 1 : 0);
         (void)WriteJson(stream, {{"v", 1}, {"type", "hello_ack"}, {"ok", false}, {"error", "rejected"}});
@@ -470,7 +475,7 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
         }
       }
       if (!adopted) {
-        logging::getLogger("CallMediaDirect").info
+        self->log().info
             << "Inbound call-media lost adopt race call_id=" << params.call_id;
         CloseQuiet(stream);
         return;
@@ -624,14 +629,14 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                                detail += stream_res.error().message();
                              } catch (...) {
                              }
-                             logging::getLogger("CallMediaDirect").warning
+                             impl->Log().warning
                                  << "Call-media OpenStream failed peer=" << params.peer_key
                                  << " role=" << (params.offerer ? "offerer" : "answerer")
                                  << " err=" << detail;
                              finish(Error(detail));
                              return;
                            }
-                           logging::getLogger("CallMediaDirect").warning
+                           impl->Log().warning
                                << "Call-media OpenStream ok peer=" << params.peer_key
                                << " role=" << (params.offerer ? "offerer" : "answerer")
                                << " call_id=" << params.call_id;
@@ -665,7 +670,7 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                                                     {"call_id", params.call_id},
                                                     {"media_epoch", params.media_epoch},
                                                     {"role", role}}))) {
-                             logging::getLogger("CallMediaDirect").warning
+                             impl->Log().warning
                                  << "Call-media hello write failed peer=" << params.peer_key;
                              finish(Error("call-media hello write failed"));
                              CloseQuiet(stream);
@@ -698,7 +703,7 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                            if (!ack || !ack->value("ok", false)) {
                              const std::string why =
                                  ack ? ack->value("error", "hello rejected") : ack.error().message;
-                             logging::getLogger("CallMediaDirect").warning
+                             impl->Log().warning
                                  << "Call-media hello rejected peer=" << params.peer_key
                                  << " err=" << why;
                              finish(Error(why));
@@ -715,7 +720,7 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                              }
                            }
                            if (!adopted) {
-                             logging::getLogger("CallMediaDirect").info
+                             impl->Log().info
                                  << "Call-media outbound lost adopt race call_id=" << params.call_id;
                              CloseQuiet(stream);
                              finish({});

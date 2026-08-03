@@ -12,7 +12,7 @@ namespace pbr {
 /** Fetches relay client-compat and surfaces update-required / update-available UX. */
 class ClientCompatController : public Module {
 public:
-  ClientCompatController() = default;
+  ClientCompatController();
 
   void BindCompatPorts(MessagingCompatPorts ports);
   /** Dialog / banner feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */

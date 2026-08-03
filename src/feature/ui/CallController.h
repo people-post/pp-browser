@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/media/CallRingtone.h"
+#include "common/Module.h"
 #include "feature/messaging/MessagingCallPorts.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
@@ -17,9 +18,9 @@ class CallLifecycle;
 class CallSessionManager;
 
 /** Shell-level call ring / in-call chrome. */
-class CallController {
+class CallController : public Module {
 public:
-  CallController() = default;
+  CallController();
 
   void BindCallPorts(MessagingCallPorts ports);
   /** Open people-picker flows without PeoplePickerController::Instance(). Clear via BindPeoplePickerNotify({}). */

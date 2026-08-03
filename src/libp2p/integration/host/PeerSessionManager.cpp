@@ -80,6 +80,7 @@ std::string PeerDialErrorUserCopy(const std::string& technical_message) {
 
 PeerSessionManager::PeerSessionManager(Libp2pHost& host, PeerSessionConfig config)
     : host_(host), config_(std::move(config)), last_sweep_(std::chrono::steady_clock::now()) {
+  redirectLogger("PeerSessionManager");
   InstallConnectionHandler();
 }
 
@@ -806,7 +807,7 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
 
   const std::string proto_log =
       protocols.empty() ? std::string{} : std::string{protocols.front()};
-  logging::getLogger("PeerSessionManager").warning
+  log().warning
       << "OpenStream enter peer=" << peer_relay_user_id << " proto=" << proto_log;
 
   const std::string lookup_protocol = ProtocolForCircuitLookup(protocols);
@@ -871,7 +872,7 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
       std::lock_guard lock(mutex_);
       EvictIfOverCapLocked();
     }
-    logging::getLogger("PeerSessionManager").warning
+    log().warning
         << "OpenStream newStream peer=" << peer_relay_user_id << " proto=" << proto_log;
     host_.GetHost().newStream(info, std::move(protocols),
                               [this, peer_relay_user_id, cb = std::move(cb), proto_log](
@@ -900,11 +901,11 @@ void PeerSessionManager::OpenStream(const std::string& peer_relay_user_id, libp2
                                   } catch (...) {
                                     detail = "unknown";
                                   }
-                                  logging::getLogger("PeerSessionManager").warning
+                                  log().warning
                                       << "OpenStream newStream cb fail peer=" << peer_relay_user_id
                                       << " proto=" << proto_log << " err=" << detail;
                                 } else {
-                                  logging::getLogger("PeerSessionManager").warning
+                                  log().warning
                                       << "OpenStream newStream cb ok peer=" << peer_relay_user_id
                                       << " proto=" << proto_log;
                                 }
