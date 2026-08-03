@@ -3,6 +3,7 @@
 #include "base/ui/ShellTypes.h"
 #include "base/data/UserPreferences.h"
 #include "feature/messaging/MessagingShellPorts.h"
+#include "feature/ui/CallChromeSync.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
 #include "feature/ui/ShellGestureAxis.h"
 #include "feature/ui/ShellSwipeBackGesture.h"
@@ -125,6 +126,10 @@ public:
   void RefreshDismissGestures();
 
   void DirtyWindow();
+  /** Dirty only call ring / in-progress window model keys (not nav/dialog/pin). */
+  void DirtyCallChrome();
+  /** ShellHost applies Remount or DirtyCallChrome + force-frame for call chrome updates. */
+  void ApplyCallChromeUpdate(CallChromeUpdate update);
   // Deferred remount of the nav rail (safe from click handlers). Use when badge counts change
   // and DirtyVariable alone may not refresh data-if views.
   void RequestRemountNavRail();

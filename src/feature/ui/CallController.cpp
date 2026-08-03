@@ -20,7 +20,6 @@
 #include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "CallVideoTileRenderer.h"
 #include "feature/ui/UserFeedback.h"
-#include "RmlUi_Backend.h"
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
@@ -247,15 +246,10 @@ void CallController::SyncShellState() {
   if (update == CallChromeUpdate::None) {
     return;
   }
-  // Layer appear/disappear: mount into #shell-call-*-mount only (never full SyncLayout —
-  // that remounts chat panes and broke Samsung Accept hit-testing).
-  if (update == CallChromeUpdate::Remount && shell_call_chrome_.remount_call_chrome) {
-    shell_call_chrome_.remount_call_chrome();
-  } else if (shell_call_chrome_.dirty_window) {
-    shell_call_chrome_.dirty_window();
+  // ShellHost owns remount / DirtyCallChrome / force-frame (not grab-bag DirtyWindow).
+  if (shell_call_chrome_.apply_chrome_update) {
+    shell_call_chrome_.apply_chrome_update(update);
   }
-  // Force Present so ring/accept chrome is not held behind idle wait (THREADING.md UI delivery).
-  Backend::RequestForceFrame();
 }
 
 void CallController::SyncRingtone() {

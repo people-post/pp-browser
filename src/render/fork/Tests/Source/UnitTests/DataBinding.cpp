@@ -804,18 +804,275 @@ TEST_CASE("data_binding.data_if_dirty_with_local_flex")
 	Element* panel = document->GetElementById("panel");
 	REQUIRE(panel);
 	CHECK_FALSE(LocalDisplayIsNone(panel));
+	CHECK(panel->IsVisible());
 
 	show = false;
 	context->GetDataModel("data_if_test").GetModelHandle().DirtyVariable("show");
 	(void)context->GetDataModel("data_if_test").GetModelHandle().Update(true);
 	CHECK(LocalDisplayIsNone(panel));
+	// Eager visibility: hidden before Element::UpdateProperties.
+	CHECK_FALSE(panel->IsVisible());
 
 	show = true;
 	context->GetDataModel("data_if_test").GetModelHandle().DirtyVariable("show");
 	(void)context->GetDataModel("data_if_test").GetModelHandle().Update(true);
 	CHECK_FALSE(LocalDisplayIsNone(panel));
+	CHECK(panel->IsVisible());
 
 	document->Close();
 	context->RemoveDataModel("data_if_test");
+	TestsShell::ShutdownShell();
+}
+
+TEST_CASE("data_binding.data_attr_src_dirty")
+{
+	Context* context = TestsShell::GetContext();
+	REQUIRE(context);
+
+	bool muted = false;
+	DataModelConstructor constructor = context->CreateDataModel("attr_src_test");
+	REQUIRE(constructor);
+	constructor.Bind("muted", &muted);
+
+	ElementDocument* document = context->LoadDocumentFromMemory(R"(
+<rml>
+<head><title>data-attr-src</title></head>
+<body data-model="attr_src_test">
+	<div id="icon" data-attr-src="muted ? 'off.svg' : 'on.svg'"></div>
+</body>
+</rml>
+)");
+	REQUIRE(document);
+	document->Show();
+	(void)context->GetDataModel("attr_src_test").GetModelHandle().Update(true);
+	context->Update();
+
+	Element* icon = document->GetElementById("icon");
+	REQUIRE(icon);
+	const Variant* src = icon->GetAttribute("src");
+	REQUIRE(src);
+	CHECK(src->Get<String>() == "on.svg");
+
+	muted = true;
+	context->GetDataModel("attr_src_test").GetModelHandle().DirtyVariable("muted");
+	(void)context->GetDataModel("attr_src_test").GetModelHandle().Update(true);
+	src = icon->GetAttribute("src");
+	REQUIRE(src);
+	CHECK(src->Get<String>() == "off.svg");
+
+	document->Close();
+	context->RemoveDataModel("attr_src_test");
+	TestsShell::ShutdownShell();
+}
+
+TEST_CASE("data_binding.data_class_dirty")
+{
+	Context* context = TestsShell::GetContext();
+	REQUIRE(context);
+
+	bool muted = false;
+	DataModelConstructor constructor = context->CreateDataModel("data_class_test");
+	REQUIRE(constructor);
+	constructor.Bind("muted", &muted);
+
+	ElementDocument* document = context->LoadDocumentFromMemory(R"(
+<rml>
+<head>
+	<title>data-class</title>
+	<style>body { font-family: LatoLatin; }</style>
+</head>
+<body data-model="data_class_test">
+	<button id="btn" class="shell-call-mute" data-class-shell-call-mute--on="muted">mute</button>
+</body>
+</rml>
+)");
+	REQUIRE(document);
+	document->Show();
+	(void)context->GetDataModel("data_class_test").GetModelHandle().Update(true);
+	context->Update();
+
+	Element* btn = document->GetElementById("btn");
+	REQUIRE(btn);
+	CHECK_FALSE(btn->IsClassSet("shell-call-mute--on"));
+
+	muted = true;
+	context->GetDataModel("data_class_test").GetModelHandle().DirtyVariable("muted");
+	(void)context->GetDataModel("data_class_test").GetModelHandle().Update(true);
+	CHECK(btn->IsClassSet("shell-call-mute--on"));
+
+	muted = false;
+	context->GetDataModel("data_class_test").GetModelHandle().DirtyVariable("muted");
+	(void)context->GetDataModel("data_class_test").GetModelHandle().Update(true);
+	CHECK_FALSE(btn->IsClassSet("shell-call-mute--on"));
+
+	document->Close();
+	context->RemoveDataModel("data_class_test");
+	TestsShell::ShutdownShell();
+}
+
+TEST_CASE("data_binding.call_chrome_icon_pattern")
+{
+	// Supported call-bar pattern: button data-class + single SVG data-attr-src (not dual data-if).
+	Context* context = TestsShell::GetContext();
+	REQUIRE(context);
+
+	bool muted = false;
+	DataModelConstructor constructor = context->CreateDataModel("call_chrome_icon");
+	REQUIRE(constructor);
+	constructor.Bind("muted", &muted);
+
+	ElementDocument* document = context->LoadDocumentFromMemory(R"(
+<rml>
+<head>
+	<title>call-chrome-icon</title>
+	<style>body { font-family: LatoLatin; }</style>
+</head>
+<body data-model="call_chrome_icon">
+	<button id="mute" class="shell-call-mute" data-class-shell-call-mute--on="muted">
+		<svg id="icon" width="18" height="18" crop-to-content="true"
+			data-attr-src="muted ? 'icon_b.svg' : 'icon_a.svg'"></svg>
+	</button>
+</body>
+</rml>
+)",
+		"assets/");
+	REQUIRE(document);
+	document->Show();
+	(void)context->GetDataModel("call_chrome_icon").GetModelHandle().Update(true);
+	context->Update();
+
+	Element* btn = document->GetElementById("mute");
+	Element* icon = document->GetElementById("icon");
+	REQUIRE(btn);
+	REQUIRE(icon);
+	CHECK_FALSE(btn->IsClassSet("shell-call-mute--on"));
+	const Variant* src = icon->GetAttribute("src");
+	REQUIRE(src);
+	CHECK(src->Get<String>() == "icon_a.svg");
+
+	muted = true;
+	context->GetDataModel("call_chrome_icon").GetModelHandle().DirtyVariable("muted");
+	(void)context->GetDataModel("call_chrome_icon").GetModelHandle().Update(true);
+	context->Update();
+
+	CHECK(btn->IsClassSet("shell-call-mute--on"));
+	src = icon->GetAttribute("src");
+	REQUIRE(src);
+	CHECK(src->Get<String>() == "icon_b.svg");
+
+	document->Close();
+	context->RemoveDataModel("call_chrome_icon");
+	TestsShell::ShutdownShell();
+}
+
+TEST_CASE("data_binding.svg_data_attr_src_reloads")
+{
+	// src Dirty must reload SVG (attribute-only checks are insufficient).
+	Context* context = TestsShell::GetContext();
+	REQUIRE(context);
+
+	bool use_b = false;
+	DataModelConstructor constructor = context->CreateDataModel("svg_reload");
+	REQUIRE(constructor);
+	constructor.Bind("use_b", &use_b);
+
+	ElementDocument* document = context->LoadDocumentFromMemory(R"(
+<rml>
+<head><title>svg-reload</title></head>
+<body data-model="svg_reload">
+	<svg id="icon" crop-to-content="true" data-attr-src="use_b ? 'icon_b.svg' : 'icon_a.svg'"></svg>
+</body>
+</rml>
+)",
+		"assets/");
+	REQUIRE(document);
+	document->Show();
+	(void)context->GetDataModel("svg_reload").GetModelHandle().Update(true);
+	context->Update();
+
+	Element* icon = document->GetElementById("icon");
+	REQUIRE(icon);
+	const Variant* src = icon->GetAttribute("src");
+	REQUIRE(src);
+	CHECK(src->Get<String>() == "icon_a.svg");
+
+	Vector2f dim_a;
+	float ratio_a = 0.f;
+	CHECK(icon->GetIntrinsicDimensions(dim_a, ratio_a));
+	CHECK(dim_a.x > 0);
+	CHECK(dim_a.y > 0);
+
+	use_b = true;
+	context->GetDataModel("svg_reload").GetModelHandle().DirtyVariable("use_b");
+	(void)context->GetDataModel("svg_reload").GetModelHandle().Update(true);
+	context->Update();
+
+	src = icon->GetAttribute("src");
+	REQUIRE(src);
+	CHECK(src->Get<String>() == "icon_b.svg");
+
+	Vector2f dim_b;
+	float ratio_b = 0.f;
+	CHECK(icon->GetIntrinsicDimensions(dim_b, ratio_b));
+	CHECK(dim_b.x > 0);
+	CHECK(dim_b.y > 0);
+	// icon_a is 10x10, icon_b is 24x24 — reload must pick up the new intrinsic size.
+	CHECK(dim_b.x != dim_a.x);
+	CHECK(dim_b.y != dim_a.y);
+
+	document->Close();
+	context->RemoveDataModel("svg_reload");
+	TestsShell::ShutdownShell();
+}
+
+TEST_CASE("data_binding.mount_inner_model_flush")
+{
+	// MountInner path: SetInnerRML + UpdateDocument + DataModelHandle::Update (no Context::Update first).
+	Context* context = TestsShell::GetContext();
+	REQUIRE(context);
+
+	bool muted = true;
+	bool show = true;
+	DataModelConstructor constructor = context->CreateDataModel("mount_flush");
+	REQUIRE(constructor);
+	constructor.Bind("muted", &muted);
+	constructor.Bind("show", &show);
+
+	ElementDocument* document = context->LoadDocumentFromMemory(R"(
+<rml>
+<head>
+	<title>mount-flush</title>
+	<style>body { font-family: LatoLatin; }</style>
+</head>
+<body data-model="mount_flush">
+	<div id="mount"></div>
+</body>
+</rml>
+)");
+	REQUIRE(document);
+	document->Show();
+	context->Update();
+
+	Element* mount = document->GetElementById("mount");
+	REQUIRE(mount);
+	mount->SetInnerRML(R"(
+		<div id="panel" data-if="show">shown</div>
+		<div id="label" data-attr-title="muted ? 'muted' : 'live'"></div>
+	)");
+	document->UpdateDocument();
+	(void)context->GetDataModel("mount_flush").GetModelHandle().Update(true);
+
+	Element* panel = document->GetElementById("panel");
+	Element* label = document->GetElementById("label");
+	REQUIRE(panel);
+	REQUIRE(label);
+	CHECK_FALSE(LocalDisplayIsNone(panel));
+	CHECK(panel->IsVisible());
+	const Variant* title = label->GetAttribute("title");
+	REQUIRE(title);
+	CHECK(title->Get<String>() == "muted");
+
+	document->Close();
+	context->RemoveDataModel("mount_flush");
 	TestsShell::ShutdownShell();
 }

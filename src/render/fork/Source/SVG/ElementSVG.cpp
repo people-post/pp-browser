@@ -39,6 +39,8 @@ bool ElementSVG::GetIntrinsicDimensions(Vector2f& dimensions, float& ratio)
 
 void ElementSVG::OnRender()
 {
+	if (!IsVisible(true))
+		return;
 	EnsureSourceLoaded();
 	if (handle)
 		handle->geometry.Render(GetAbsoluteOffset(BoxArea::Content), handle->texture);

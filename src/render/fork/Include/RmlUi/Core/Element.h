@@ -161,6 +161,8 @@ public:
 	/// @param[in] include_ancestors Check parent elements for visibility
 	/// @return True if the element is visible, false otherwise.
 	bool IsVisible(bool include_ancestors = false) const;
+	/// Eagerly sync cached visibility from local display/visibility (for data-if during DataModel::Update).
+	void ApplyLocalVisibilityOverrides();
 	/// Returns the z-index of the element.
 	/// @return The element's z-index.
 	float GetZIndex() const;

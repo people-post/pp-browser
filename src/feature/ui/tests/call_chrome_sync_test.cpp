@@ -1,6 +1,9 @@
 #include "feature/ui/CallChromeSync.h"
+#include "feature/ui/ShellCallChromePorts.h"
 
 #include <gtest/gtest.h>
+
+#include <vector>
 
 TEST(CallChromeSyncTest, IdlePollUnchangedIsNone) {
   pbr::CallChromeLayer layer;
@@ -113,4 +116,25 @@ TEST(CallChromeSyncTest, RingConflictDirties) {
   next.ring_accept_label = "End & Accept";
   next.ring_decline_label = "Ignore";
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
+TEST(CallChromePortsTest, MuteClassifyNotifiesDirtyOnly) {
+  // CallController path: classify mute → apply_chrome_update(DirtyOnly), never DirtyWindow.
+  std::vector<pbr::CallChromeUpdate> applied;
+  pbr::ShellCallChromePorts ports;
+  ports.apply_chrome_update = [&](pbr::CallChromeUpdate u) { applied.push_back(u); };
+
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_muted = false;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_muted = true;
+
+  const pbr::CallChromeUpdate update = pbr::ClassifyCallChromeUpdate(synced, next);
+  ASSERT_EQ(update, pbr::CallChromeUpdate::DirtyOnly);
+  ASSERT_TRUE(ports.apply_chrome_update);
+  ports.apply_chrome_update(update);
+  ASSERT_EQ(applied.size(), 1u);
+  EXPECT_EQ(applied[0], pbr::CallChromeUpdate::DirtyOnly);
 }

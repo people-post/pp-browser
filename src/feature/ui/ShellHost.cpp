@@ -692,6 +692,19 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
+  DirtyCallChrome();
+  DataModelHost::Instance().Dirty("window", "activity_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_connection");
+  DataModelHost::Instance().Dirty("window", "statusbar_activity");
+  DataModelHost::Instance().Dirty("window", "titlebar_visible");
+  DataModelHost::Instance().Dirty("window", "titlebar_traffic_lights");
+  DataModelHost::Instance().Dirty("window", "window_maximized");
+  DataModelHost::Instance().Dirty("window", "fonts_ready");
+  DataModelHost::Instance().Dirty("window", "unlock_in_progress");
+}
+
+void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_ring_active");
   DataModelHost::Instance().Dirty("window", "call_ring_pulse");
   DataModelHost::Instance().Dirty("window", "call_ring_conflict");
@@ -724,15 +737,18 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_speaker");
   DataModelHost::Instance().Dirty("window", "call_in_progress_participant_count");
   DataModelHost::Instance().Dirty("window", "call_in_progress_roster");
-  DataModelHost::Instance().Dirty("window", "activity_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_connection");
-  DataModelHost::Instance().Dirty("window", "statusbar_activity");
-  DataModelHost::Instance().Dirty("window", "titlebar_visible");
-  DataModelHost::Instance().Dirty("window", "titlebar_traffic_lights");
-  DataModelHost::Instance().Dirty("window", "window_maximized");
-  DataModelHost::Instance().Dirty("window", "fonts_ready");
-  DataModelHost::Instance().Dirty("window", "unlock_in_progress");
+}
+
+void ShellHost::ApplyCallChromeUpdate(CallChromeUpdate update) {
+  // Layer appear/disappear: mount into #shell-call-*-mount only (never full SyncLayout —
+  // that remounts chat panes and broke Samsung Accept hit-testing).
+  if (update == CallChromeUpdate::Remount) {
+    RemountCallChrome();
+  } else if (update == CallChromeUpdate::DirtyOnly) {
+    DirtyCallChrome();
+  }
+  // Force Present so ring/accept chrome is not held behind idle wait (THREADING.md UI delivery).
+  Backend::RequestForceFrame();
 }
 
 void ShellHost::RequestRemountNavRail() {
@@ -1376,25 +1392,21 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "</button>";
   out << "<button class=\"shell-call-mute\" type=\"button\" "
          "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
-  out << "<svg data-if=\"!call_in_progress_muted\" src=\"../icons/mic.svg\" width=\"18\" height=\"18\" "
-         "crop-to-content=\"true\"></svg>";
-  out << "<svg data-if=\"call_in_progress_muted\" src=\"../icons/mic-off.svg\" width=\"18\" height=\"18\" "
-         "crop-to-content=\"true\"></svg>";
+  // Single SVG + data-attr-src: Dirty swaps the file. Dual data-if SVGs raced eager visibility
+  // on replaced elements (icons looked stuck while mute/speaker still worked).
+  out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
+         "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
   out << "</button>";
   // Route toggle: loudspeaker vs earpiece (not output mute — system volume covers that).
   out << "<button class=\"shell-call-speaker\" type=\"button\" data-if=\"call_in_progress_show_speaker\" "
          "data-class-shell-call-speaker--on=\"call_in_progress_speaker_on\" data-event-click=\"call_speaker()\">";
-  out << "<svg data-if=\"call_in_progress_speaker_on\" src=\"../icons/speaker.svg\" width=\"18\" height=\"18\" "
-         "crop-to-content=\"true\"></svg>";
-  out << "<svg data-if=\"!call_in_progress_speaker_on\" src=\"../icons/earpiece.svg\" width=\"18\" height=\"18\" "
-         "crop-to-content=\"true\"></svg>";
+  out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
+         "data-attr-src=\"call_in_progress_speaker_on ? '../icons/speaker.svg' : '../icons/earpiece.svg'\"></svg>";
   out << "</button>";
   out << "<button class=\"shell-call-camera\" type=\"button\" "
          "data-class-shell-call-camera--on=\"call_in_progress_camera_on\" data-event-click=\"call_camera()\">";
-  out << "<svg data-if=\"call_in_progress_camera_on\" src=\"../icons/video.svg\" width=\"18\" height=\"18\" "
-         "crop-to-content=\"true\"></svg>";
-  out << "<svg data-if=\"!call_in_progress_camera_on\" src=\"../icons/video-off.svg\" width=\"18\" height=\"18\" "
-         "crop-to-content=\"true\"></svg>";
+  out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
+         "data-attr-src=\"call_in_progress_camera_on ? '../icons/video.svg' : '../icons/video-off.svg'\"></svg>";
   out << "</button>";
   out << "<button class=\"shell-call-leave\" type=\"button\" data-event-click=\"call_leave()\">";
   out << "<svg src=\"../icons/phone-hangup.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
@@ -1742,7 +1754,7 @@ void ShellHost::FlushRemountCallChrome() {
   // MountInner binds data views after any Dirty applied while remount was pending — dirty again
   // next UI turn so Connected/elapsed replace baked Connecting… text via data-rml.
   BrowserThread::PostTask(BrowserThreadId::UI, []() {
-    ShellHost::Instance().DirtyWindow();
+    ShellHost::Instance().DirtyCallChrome();
     Backend::RequestForceFrame();
   });
 }
@@ -1761,7 +1773,7 @@ void ShellHost::RemountCallChromeNow() {
   if (Rml::Element* bar_mount = doc->GetElementById("shell-call-in-progress-mount")) {
     RmlMount::MountInner(bar_mount, SerializeCallInProgress());
   }
-  DirtyWindow();
+  DirtyCallChrome();
 }
 
 void ShellHost::Update(Rml::Context* context) {

@@ -289,6 +289,9 @@ bool ElementStyle::SetProperty(PropertyId id, const Property& property)
 	inline_properties.SetProperty(id, new_property);
 	DirtyProperty(id);
 
+	if (id == PropertyId::Display || id == PropertyId::Visibility)
+		element->ApplyLocalVisibilityOverrides();
+
 	return true;
 }
 
@@ -298,7 +301,11 @@ void ElementStyle::RemoveProperty(PropertyId id)
 	inline_properties.RemoveProperty(id);
 
 	if (inline_properties.GetNumProperties() != size_before)
+	{
 		DirtyProperty(id);
+		if (id == PropertyId::Display || id == PropertyId::Visibility)
+			element->ApplyLocalVisibilityOverrides();
+	}
 }
 
 const Property* ElementStyle::GetProperty(PropertyId id) const

@@ -571,6 +571,37 @@ bool Element::IsVisible(bool include_ancestors) const
 	return true;
 }
 
+void Element::ApplyLocalVisibilityOverrides()
+{
+	// DataViewIf / DataViewVisible mutate display/visibility during DataModel::Update, which runs
+	// before Element::UpdateProperties. Without an eager sync, `visible` and stacking stay stale for
+	// the rest of the frame (SVG icons keep painting after data-if hides them).
+	bool new_visibility = true;
+	if (const Property* display = GetLocalProperty(PropertyId::Display))
+	{
+		if (display->Get<int>() == static_cast<int>(Style::Display::None))
+			new_visibility = false;
+	}
+	if (new_visibility)
+	{
+		if (const Property* visibility = GetLocalProperty(PropertyId::Visibility))
+		{
+			if (visibility->Get<int>() == static_cast<int>(Style::Visibility::Hidden))
+				new_visibility = false;
+		}
+	}
+
+	if (visible == new_visibility)
+		return;
+
+	visible = new_visibility;
+	if (parent)
+		parent->DirtyStackingContext();
+	DirtyLayout();
+	if (!visible)
+		Blur();
+}
+
 float Element::GetZIndex() const
 {
 	return z_index;

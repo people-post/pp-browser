@@ -36,6 +36,22 @@ ctest --test-dir build -R rmlui_unit_tests --output-on-failure
 ctest --test-dir build -R ClickRouting --output-on-failure
 ```
 
+## Data binding contract
+
+Guaranteed after `DirtyVariable` + `DataModel::Update` (or the MountInner flush: `UpdateDocument` then `DataModelHandle::Update`). Covered by `Tests/Source/UnitTests/DataBinding.cpp`.
+
+| Mechanism | Contract |
+|-----------|----------|
+| `data-if` | Only local `display:none` counts as data-if-hidden. Local `display:flex\|block` must not block Dirty toggles. After Update, `IsVisible` matches (eager visibility via `ApplyLocalVisibilityOverrides`). |
+| `data-attr-X` | Attribute `X` equals the expression string when it changes. |
+| `data-class-C` | Class `C` is set iff the expression is true. |
+| SVG + `data-attr-src` | `src` updates and the SVG reloads for the new path (`EnsureSourceLoaded` via layout/render). |
+| `SetInnerRML` + model flush | Newly attached views apply in the same flush used by app `RmlMount::MountInner` — without waiting for a later full `Context::Update`. |
+
+**Call-bar icons (intended pattern):** one `<svg>` with `data-attr-src` plus button `data-class-*-–on`. Dual `data-if` SVGs are not the supported icon pattern.
+
+Do not land speculative fork data-binding patches without a failing unit test under this contract.
+
 ## Patching
 
 Edit files under `src/render/fork/` directly in pp-browser commits (except `src/render/integration/`, which is pp-browser-owned SDL/GL glue).
@@ -55,6 +71,7 @@ Edit files under `src/render/fork/` directly in pp-browser commits (except `src/
 - `Element::Render` — virtual so form controls and selectable text can draw ink above descendants
 - `ElementSelectableText` / `WidgetTextInput` — hidden `selection` style-probe child; theme via descendant `selection { background-color; color; }` in author RCSS
 - `DataViewIf` / `DataViewVisible` — treat only `display:none` / `visibility:hidden` as data-bound hidden (not any local display/visibility); fixes Dirty toggles when layout set `display:flex|block`
+- `Element::ApplyLocalVisibilityOverrides` — eager `visible`/stacking sync when Display/Visibility inline style changes during `DataModel::Update` (before `Element::UpdateProperties`); `ElementSVG::OnRender` skips when not visible
 - `DataModelHandle::Update` — flush dirty variables and newly attached views (used by `RmlMount::MountInner` after `SetInnerRML`)
 - `DataViewFor` — clone inner markup from template children when `rmlui-inner-rml` is absent (fixes empty `data-for` buttons with `{{expr}}` text)
 - `DataView` / `DataViews` — evict stale views in `OnElementRemove` via `IsValid()` (avoids warning spam during pane remounts); `GetElement()` returns null silently like `DataController`
