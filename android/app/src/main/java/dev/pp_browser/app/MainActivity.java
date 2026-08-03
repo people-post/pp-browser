@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.media.AudioManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -223,6 +224,36 @@ public class MainActivity extends SDLActivity {
     protected void pauseNativeThread() {
         captureRecentsThumbnailOnce();
         super.pauseNativeThread();
+    }
+
+    /**
+     * Called from native {@code CallAudioSession} when a VoIP call starts/ends.
+     * Puts the device in communication mode so earpiece vs speakerphone routing works.
+     */
+    public void setCallAudioSessionActive(boolean active) {
+        runOnUiThread(() -> {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am == null) {
+                return;
+            }
+            if (active) {
+                am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            } else {
+                am.setSpeakerphoneOn(false);
+                am.setMode(AudioManager.MODE_NORMAL);
+            }
+        });
+    }
+
+    /** Called from native {@code CallAudioSession} for in-call speaker / earpiece. */
+    public void setCallSpeakerphoneOn(boolean on) {
+        runOnUiThread(() -> {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am == null) {
+                return;
+            }
+            am.setSpeakerphoneOn(on);
+        });
     }
 
     /** Called from native NetworkConnectivity (N025 Wi‑Fi gate). */

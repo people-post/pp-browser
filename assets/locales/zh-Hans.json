@@ -250,6 +250,8 @@
     "call.label.them": "对方",
     "call.label.others": "其他人",
     "call.label.someone": "某人",
+    "call.action.speaker": "扬声器",
+    "call.action.speaker_off": "听筒",
     "call.level.muted": "已静音",
     "call.level.silent": "无声",
     "call.level.quiet": "轻声",

@@ -1627,6 +1627,7 @@ select selectbox option {
 
 .shell-call-mute,
 .shell-call-camera,
+.shell-call-speaker,
 .shell-call-leave,
 .shell-call-invite,
 .shell-call-retry {
@@ -1646,6 +1647,7 @@ select selectbox option {
 
 .shell-call-mute svg,
 .shell-call-camera svg,
+.shell-call-speaker svg,
 .shell-call-leave svg,
 .shell-call-invite svg,
 .shell-call-retry svg {

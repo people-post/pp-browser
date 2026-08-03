@@ -684,6 +684,24 @@ select selectbox option:hover {
   image-color: #1e40af;
 }
 
+.shell-call-speaker {
+  background-color: #e5e7eb;
+  color: #1a1a1a;
+}
+
+.shell-call-speaker svg {
+  image-color: #1a1a1a;
+}
+
+.shell-call-speaker--on {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.shell-call-speaker--on svg {
+  image-color: #1e40af;
+}
+
 .shell-call-leave {
   background-color: #fee2e2;
   color: #991b1b;

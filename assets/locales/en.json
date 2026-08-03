@@ -250,6 +250,8 @@
     "call.label.them": "Them",
     "call.label.others": "Others",
     "call.label.someone": "Someone",
+    "call.action.speaker": "Speaker",
+    "call.action.speaker_off": "Earpiece",
     "call.level.muted": "Muted",
     "call.level.silent": "Silent",
     "call.level.quiet": "Quiet",

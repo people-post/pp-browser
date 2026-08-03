@@ -39,6 +39,11 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
     return CallChromeUpdate::Remount;
   }
 
+  // data-if for speaker button needs a remount (same class of issue as ring data-if).
+  if (synced.in_call_show_speaker != next.in_call_show_speaker) {
+    return CallChromeUpdate::Remount;
+  }
+
   // Status subtitle must remount: deferred RemountCallChrome + DirtyOnly can leave data-rml on a
   // pre-bind element while synced_chrome_ already advanced (dogfood: stuck Connecting…).
   if (CallChromeStatusLabelChanged(synced.in_call_subtitle, next.in_call_subtitle)) {
@@ -56,6 +61,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.in_call_peer_hint != next.in_call_peer_hint ||
                               synced.in_call_muted != next.in_call_muted ||
                               synced.in_call_camera_on != next.in_call_camera_on ||
+                              synced.in_call_speaker_on != next.in_call_speaker_on ||
                               synced.in_call_stage_visible != next.in_call_stage_visible ||
                               synced.in_call_remote_video != next.in_call_remote_video ||
                               synced.in_call_local_preview != next.in_call_local_preview ||
@@ -65,6 +71,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.in_call_show_roster != next.in_call_show_roster ||
                               synced.in_call_show_invite != next.in_call_show_invite ||
                               synced.in_call_show_retry != next.in_call_show_retry ||
+                              synced.in_call_show_speaker != next.in_call_show_speaker ||
                               synced.in_call_participant_count != next.in_call_participant_count ||
                               synced.ring_pulse != next.ring_pulse ||
                               synced.ring_conflict != next.ring_conflict ||

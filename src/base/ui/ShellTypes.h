@@ -171,6 +171,8 @@ struct CallInProgressState {
   bool active = false;
   bool muted = false;
   bool camera_on = false;
+  /** Loudspeaker vs earpiece — only meaningful when show_speaker. */
+  bool speaker_on = false;
   bool stage_visible = false;
   bool remote_video = false;
   bool local_preview = false;
@@ -180,6 +182,8 @@ struct CallInProgressState {
   bool show_invite = false;
   /** Show Retry after 1:1 P2P connect fail/timeout. */
   bool show_retry = false;
+  /** Phone-like devices: earpiece / speakerphone toggle. */
+  bool show_speaker = false;
   int participant_count = 0;
   std::vector<CallRosterParticipantState> roster;
   Rml::String call_id;

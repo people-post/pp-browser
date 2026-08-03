@@ -47,6 +47,7 @@ public:
   void RetryConnect();
   void ToggleMute();
   void ToggleCamera();
+  void ToggleSpeaker();
 
 private:
   bool StartCall(const std::string& thread_id, bool video);

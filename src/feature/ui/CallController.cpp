@@ -2,6 +2,7 @@
 #include "feature/ui/CallController.h"
 
 #include "base/i18n/LocalizationService.h"
+#include "base/media/CallAudioSession.h"
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallTypes.h"
 #include "base/people/ContactTypes.h"
@@ -39,6 +40,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_pulse = ring.pulse,
       .in_call_muted = in_call.muted,
       .in_call_camera_on = in_call.camera_on,
+      .in_call_speaker_on = in_call.speaker_on,
       .in_call_stage_visible = in_call.stage_visible,
       .in_call_remote_video = in_call.remote_video,
       .in_call_local_preview = in_call.local_preview,
@@ -63,6 +65,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_roster = in_call.show_roster,
       .in_call_show_invite = in_call.show_invite,
       .in_call_show_retry = in_call.show_retry,
+      .in_call_show_speaker = in_call.show_speaker,
       .in_call_participant_count = in_call.participant_count,
       .in_call_status_hint = in_call.status_hint.c_str(),
   };
@@ -480,6 +483,8 @@ void CallController::RefreshPendingRing() {
     in_call.active = true;
     in_call.call_id = (*active)->call_id;
     in_call.muted = calls->Media().IsMuted();
+    in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
+    in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
 
     const bool is_video = (*active)->media_mode == CallMediaMode::Video;
     int joined_count = 0;
@@ -842,6 +847,19 @@ void CallController::ToggleCamera() {
   RefreshPendingRing();
 }
 
+void CallController::ToggleSpeaker() {
+  if (!CallAudioSession::SupportsSpeakerToggle()) {
+    return;
+  }
+  BindToMessaging();
+  auto* calls = Calls();
+  if (!calls || !calls->Media().IsActive()) {
+    return;
+  }
+  CallAudioSession::SetSpeakerphoneOn(!CallAudioSession::IsSpeakerphoneOn());
+  RefreshPendingRing();
+}
+
 void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   media.RefreshRemoteVideoHealth();
 
@@ -852,6 +870,8 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   const bool muted = media.IsMuted();
   in_call.muted = muted;
   in_call.camera_on = media.IsCameraEnabled();
+  in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
+  in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;

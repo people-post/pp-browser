@@ -11,6 +11,7 @@ struct CallChromeLayer {
   bool ring_pulse = false;
   bool in_call_muted = false;
   bool in_call_camera_on = false;
+  bool in_call_speaker_on = false;
   bool in_call_stage_visible = false;
   bool in_call_remote_video = false;
   bool in_call_local_preview = false;
@@ -35,6 +36,7 @@ struct CallChromeLayer {
   bool in_call_show_roster = false;
   bool in_call_show_invite = false;
   bool in_call_show_retry = false;
+  bool in_call_show_speaker = false;
   int in_call_participant_count = 0;
   std::string in_call_status_hint;
 };
