@@ -822,7 +822,8 @@ void CallController::ToggleMute() {
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
-  if (auto muted = calls->SetLocalAudioMuted(!calls->Media().IsMuted()); !muted) {
+  const bool before = calls->Media().IsMuted();
+  if (auto muted = calls->SetLocalAudioMuted(!before); !muted) {
     UserFeedback::Fail(muted.error().message);
   }
   RefreshPendingRing();
@@ -850,7 +851,8 @@ void CallController::ToggleSpeaker() {
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
-  CallAudioSession::SetSpeakerphoneOn(!CallAudioSession::IsSpeakerphoneOn());
+  const bool before = CallAudioSession::IsSpeakerphoneOn();
+  CallAudioSession::SetSpeakerphoneOn(!before);
   RefreshPendingRing();
 }
 

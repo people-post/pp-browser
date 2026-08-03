@@ -1390,17 +1390,18 @@ std::string ShellHost::SerializeCallInProgress() const {
          "data-event-click=\"call_invite()\">";
   out << "<svg src=\"../icons/plus.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
   out << "</button>";
-  out << "<button class=\"shell-call-mute\" type=\"button\" "
+  out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute\" type=\"button\" "
          "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
   // Single SVG + data-attr-src: Dirty swaps the file. Dual data-if SVGs raced eager visibility
   // on replaced elements (icons looked stuck while mute/speaker still worked).
-  out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
+  out << "<svg id=\"shell-call-mute-icon\" width=\"18\" height=\"18\" crop-to-content=\"true\" "
          "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
   out << "</button>";
   // Route toggle: loudspeaker vs earpiece (not output mute — system volume covers that).
-  out << "<button class=\"shell-call-speaker\" type=\"button\" data-if=\"call_in_progress_show_speaker\" "
+  out << "<button id=\"shell-call-speaker-btn\" class=\"shell-call-speaker\" type=\"button\" "
+         "data-if=\"call_in_progress_show_speaker\" "
          "data-class-shell-call-speaker--on=\"call_in_progress_speaker_on\" data-event-click=\"call_speaker()\">";
-  out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
+  out << "<svg id=\"shell-call-speaker-icon\" width=\"18\" height=\"18\" crop-to-content=\"true\" "
          "data-attr-src=\"call_in_progress_speaker_on ? '../icons/speaker.svg' : '../icons/earpiece.svg'\"></svg>";
   out << "</button>";
   out << "<button class=\"shell-call-camera\" type=\"button\" "
@@ -1821,6 +1822,7 @@ void ShellHost::NotifyFrameEnd(Rml::Context* context) {
   if (!context) {
     return;
   }
+
   using clock = std::chrono::steady_clock;
   const auto now = clock::now();
   double delay_sec = std::numeric_limits<double>::infinity();
