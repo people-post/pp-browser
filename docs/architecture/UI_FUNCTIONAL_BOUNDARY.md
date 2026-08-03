@@ -226,8 +226,9 @@ Full hot-reload table: [RUNTIME_COMPOSITION.md — Allowed edges](RUNTIME_COMPOS
 | Persisted config slices | `ConfigApplyBridge`, `MessagingHub::Apply` | Config |
 | Settings imperative ops | `SettingsCommands` | Actions |
 | Chat navigation | `ChatSessionPorts` | Actions |
-| Shell navigation (settings) | `ShellNavigationPorts` | Actions + State snapshot |
-| Shell feedback | `ShellFeedbackPorts`, `ShellFeedbackChromePorts`, `UserFeedback::BindPorts` | Actions + Events |
+| Shell navigation (settings / chat / contacts) | `ShellNavigationPorts`, `MakeShellNavigationPorts` | Actions + State snapshot |
+| Shell feedback | `ShellFeedbackPorts`, `BindSharedShellFeedback`, `UserFeedback::BindPorts` | Actions + Events |
+| Messaging read snapshot | `MessagingUiPorts`, `MessagingView` | State |
 | Vault unlock | `ProfileUnlockGate` + `ProfileUnlockPorts` / `ProfileUnlockUiPorts` | Actions + Events |
 | Identity / reachability views | `ProfileIdentityView`, `SettingsReachabilityView` | State |
 | Modal flow | `FlowCoordinator` | UI chrome / navigation |

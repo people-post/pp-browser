@@ -10,6 +10,9 @@
 #include <string>
 #include <vector>
 
+#include "feature/ui/ShellFeedbackPorts.h"
+#include "feature/ui/ShellNavigationPorts.h"
+
 namespace pbr {
 
 class MessagingHub;
@@ -58,6 +61,8 @@ public:
 
   ChatThreadChrome(View view, bool& messaging_ready);
   void BindMessaging(MessagingHub& messaging);
+  void BindShellNavigation(ShellNavigationPorts ports);
+  void BindShellFeedback(ShellFeedbackPorts ports);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -101,6 +106,8 @@ private:
   std::function<void(const std::string&, int64_t)> expand_loaded_min_;
   std::chrono::steady_clock::time_point last_peer_link_poll_{};
   MessagingHub* messaging_ = nullptr;
+  ShellNavigationPorts shell_navigation_;
+  ShellFeedbackPorts shell_feedback_;
 
 };
 

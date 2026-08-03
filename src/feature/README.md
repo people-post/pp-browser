@@ -114,8 +114,9 @@ The dependency hierarchy above is **enforced at the header level** for upward fe
 |---------|----------|---------|
 | `ChatSessionPorts` | `ui/ChatSessionPorts.h` | Injected chat nav ports for contacts/people-picker; Application fills from `ChatController` — no singleton |
 | `SettingsCommands` | `settings/SettingsCommands.h` | All settings cross-module ports (member on `SettingsController`); Application binds — no messaging bind / no extra singleton |
-| `ShellNavigationPorts` | `ui/ShellNavigationPorts.h` | Settings shell layout/nav without `ShellHost::Instance()`; app fills from `ShellHost` |
-| `ShellFeedbackPorts` | `ui/ShellFeedbackPorts.h` | Toast/banner/dialog + `UserFeedback::BindPorts`; app fills from `ShellHost` + `ShellFeedback` |
+| `ShellNavigationPorts` | `ui/ShellNavigationPorts.h` | Shell layout/nav for settings, chat, contacts; app fills via `MakeShellNavigationPorts` |
+| `ShellFeedbackPorts` | `ui/ShellFeedbackPorts.h` | Toast/banner/dialog; app fills via `BindSharedShellFeedback` |
+| `MessagingUiPorts` | `messaging/MessagingUiPorts.h` | Read-only `MessagingView` for chat presenter |
 | UI ↔ functional boundary | [`docs/architecture/UI_FUNCTIONAL_BOUNDARY.md`](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) | State / Config / Actions / Events; facades vs presenter singletons — target architecture |
 | Migration plan (temporary) | [`docs/architecture/UI_FUNCTIONAL_MIGRATION_PLAN.md`](../../docs/architecture/UI_FUNCTIONAL_MIGRATION_PLAN.md) | Phased decoupling checklist; delete when done |
 | `ProfileIdentityView` | `base/people/ProfileIdentityView.h` | Shared identity presentation DTO (filled by `MessagingHub`) |

@@ -16,6 +16,13 @@ struct ShellChromeSnapshot {
   bool settings_detail_transient = false;
   /** Expanded Me primary pane shows settings detail. */
   bool settings_detail_primary = false;
+  /** Top transient pane is `contact_detail`. */
+  bool contact_detail_transient = false;
+  /** Expanded Contacts primary pane shows contact detail. */
+  bool contact_detail_primary = false;
+  std::string primary_pane_key;
+  NavBadgeState nav_badges{};
+  std::string banner_message;
 };
 
 inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
@@ -26,6 +33,12 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   snap.settings_detail_transient =
       !state.transient_stack.empty() && state.transient_stack.back().spec.key == "settings_detail";
   snap.settings_detail_primary = state.primary_pane_key == "settings_detail";
+  snap.contact_detail_transient =
+      !state.transient_stack.empty() && state.transient_stack.back().spec.key == "contact_detail";
+  snap.contact_detail_primary = state.primary_pane_key == "contact_detail";
+  snap.primary_pane_key = state.primary_pane_key.c_str();
+  snap.nav_badges = state.nav_badges;
+  snap.banner_message = state.banner_message.c_str();
   return snap;
 }
 
@@ -45,12 +58,22 @@ struct ShellNavigationPorts {
   std::function<void()> close_account_sheet;
   std::function<void()> clear_primary_pane;
   std::function<void(const std::string& key)> set_primary_pane;
+  std::function<void(const PaneSpec& spec)> push_transient;
   std::function<void()> pop_transient;
+  std::function<void()> open_compact_chat;
+  std::function<void()> close_compact_chat;
   /** Instant dismiss (Escape / local-back commit). Returns true when consumed. */
   std::function<bool()> request_dismiss_instant;
   std::function<void()> refresh_dismiss_gestures;
+  std::function<void()> request_remount_nav_rail;
+  std::function<void(bool visible, const Rml::String& message)> set_activity;
   std::function<void()> dirty_window;
   std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
 };
+
+class ShellHost;
+
+/** App composition helper — fills all navigation ports from ShellHost. */
+ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell);
 
 } // namespace pbr

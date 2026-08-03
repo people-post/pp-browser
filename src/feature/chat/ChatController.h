@@ -6,6 +6,9 @@
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/chat/WorkingSetController.h"
 #include "feature/messaging/MessagingHub.h"
+#include "feature/messaging/MessagingUiPorts.h"
+#include "feature/ui/ShellFeedbackPorts.h"
+#include "feature/ui/ShellNavigationPorts.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
@@ -83,6 +86,9 @@ public:
   void BindInputCoordinator(InputCoordinator& input);
   void BindCallController(CallController& call);
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
+  void BindShellNavigation(ShellNavigationPorts ports);
+  void BindShellFeedback(ShellFeedbackPorts ports);
+  void BindMessagingUi(MessagingUiPorts ports);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
   SessionStore& Store();
@@ -249,6 +255,22 @@ private:
   void RefreshLlmSetupBanner();
   void WithSecrets(std::function<void()> action);
 
+  ShellChromeSnapshot ChromeSnapshot() const;
+  void ShellDirty();
+  void ShellSyncLayout(bool restore_focus_after = false);
+  void ShellSelectNavTab(NavTab tab);
+  void ShellSetPrimaryPane(const std::string& key);
+  void ShellOpenCompactChat();
+  void ShellCloseCompactChat();
+  void ShellSetActivity(bool visible, const Rml::String& message = {});
+  void ShellRemountNavRail();
+  void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
+  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result);
+  void ShowConfirmWithCheckbox(const std::string& title, const std::string& message, const std::string& checkbox_label,
+                               bool checkbox_default, std::function<void(bool, bool)> on_result);
+  void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
+                  std::function<void(bool, std::string)> on_result);
+
   std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
   bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;
   void InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits);
@@ -264,6 +286,9 @@ private:
   InputCoordinator* input_ = nullptr;
   CallController* call_ = nullptr;
   ProfileUnlockGate* unlock_gate_ = nullptr;
+  ShellNavigationPorts shell_navigation_;
+  ShellFeedbackPorts shell_feedback_;
+  MessagingUiPorts messaging_ui_;
   ChatState chat_;
   ShellState shell_;
   std::optional<AgentSession> agent_;

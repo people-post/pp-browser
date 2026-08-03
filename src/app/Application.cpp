@@ -44,6 +44,7 @@
 #include "feature/ui/ShellHost.h"
 #include "feature/ui/ShellNavigationPorts.h"
 #include "feature/ui/UserFeedback.h"
+#include "feature/messaging/MessagingUiPorts.h"
 #include "ElementCallVideoTile.h"
 #include "base/ui/Theme.h"
 #include "common/StartupTiming.h"
@@ -72,6 +73,60 @@ namespace pbr {
 namespace {
 
 InputCoordinator* g_input_coordinator = nullptr;
+
+void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges) {
+  shell.SetOnNavTabChanged([badges, &shell](NavTab tab) {
+    static NavTab previous = NavTab::Home;
+    if (previous == NavTab::Me && tab != NavTab::Me) {
+      SettingsController::Instance().OnMeSurfaceClosed();
+    }
+    if (tab == NavTab::Home) {
+      ChatController::Instance().OnHomeTabActivated();
+    }
+    if (tab == NavTab::Sessions) {
+      ChatController::Instance().OnSessionsTabActivated();
+    }
+    if (tab == NavTab::Contacts) {
+      ContactsController::Instance().OnNavTabActivated();
+    }
+    if (tab == NavTab::Me) {
+      SettingsController::Instance().OnNavTabActivated();
+    }
+    previous = tab;
+    if (badges) {
+      badges->Refresh();
+    }
+    shell.DirtyWindow();
+  });
+
+  shell.SetOnLayoutModeChanged([&shell](LayoutMode mode) {
+    const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(shell.State());
+    if (chrome.nav_tab == NavTab::Contacts) {
+      ContactsController::Instance().SyncLayoutMode();
+    }
+    SettingsController::Instance().SyncLayoutMode();
+    if (mode == LayoutMode::Compact && chrome.nav_tab == NavTab::Home) {
+      ChatController::Instance().OnHomeTabActivated();
+    }
+  });
+
+  shell.SetOnLayoutSynced([]() {
+    SettingsController::Instance().OnShellLayoutSynced();
+    ChatController::Instance().OnShellLayoutSynced();
+  });
+
+  shell.SetOnTransientPopped([](const std::string& key) {
+    if (key == "contact_detail") {
+      ContactsController::Instance().OnDetailDismissed();
+    }
+    if (key == "settings_detail") {
+      SettingsController::Instance().OnDetailDismissed();
+    }
+  });
+
+  shell.SetOnAccountSheetOpened([]() { SettingsController::Instance().OnAccountSheetOpened(); });
+  shell.SetOnAccountSheetClosed([]() { SettingsController::Instance().OnAccountSheetClosed(); });
+}
 
 bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier,
                     float /*native_dp_ratio*/, bool priority) {
@@ -407,70 +462,21 @@ bool Application::Initialize(const char* window_title) {
   };
   SettingsController::Instance().BindCommands(std::move(settings_commands));
 
-  auto bind_shell_presentation_ports = []() {
-    ShellHost& shell = ShellHost::Instance();
-
-    ShellFeedbackChromePorts feedback_chrome;
-    feedback_chrome.shell_state = [&shell]() -> ShellState& { return shell.State(); };
-    feedback_chrome.request_sync_layout = [&shell](const bool restore, const char* reason) {
-      shell.RequestSyncLayout(restore, reason);
-    };
-    feedback_chrome.dirty_window = [&shell]() { shell.DirtyWindow(); };
-    ShellFeedback::BindChromePorts(std::move(feedback_chrome));
-
-    ShellFeedbackPorts feedback;
-    feedback.show_toast = [&shell](const std::string& message, const ToastDuration duration) {
-      ShellFeedback::ShowToast(shell.State(), message, duration);
-      shell.DirtyWindow();
-    };
-    feedback.show_banner = [&shell](const std::string& message) {
-      ShellFeedback::ShowBanner(shell.State(), message);
-      shell.DirtyWindow();
-    };
-    feedback.show_alert = [&shell](const std::string& title, const std::string& message,
-                                   std::function<void()> on_ok) {
-      ShellFeedback::ShowAlert(shell.State(), title, message, std::move(on_ok));
-    };
-    feedback.show_confirm = [&shell](const std::string& title, const std::string& message,
-                                     std::function<void(bool)> on_result) {
-      ShellFeedback::ShowConfirm(shell.State(), title, message, std::move(on_result));
-    };
-    feedback.show_confirm_with_checkbox =
-        [&shell](const std::string& title, const std::string& message, const std::string& checkbox_label,
-                 const bool checkbox_default, std::function<void(bool, bool)> on_result) {
-          ShellFeedback::ShowConfirmWithCheckbox(shell.State(), title, message, checkbox_label, checkbox_default,
-                                               std::move(on_result));
-        };
-    UserFeedback::BindPorts(feedback);
-    SettingsController::Instance().BindShellFeedback(std::move(feedback));
-
-    ShellNavigationPorts navigation;
-    navigation.snapshot = [&shell]() { return ProjectShellChromeSnapshot(shell.State()); };
-    navigation.clear_local_back = [&shell](const std::string& id) { shell.ClearLocalBack(id); };
-    navigation.push_local_back = [&shell](const std::string& id, std::function<void()> commit) {
-      shell.PushLocalBack(id, std::move(commit));
-    };
-    navigation.has_local_back = [&shell](const std::string& id) { return shell.HasLocalBack(id); };
-    navigation.select_nav_tab = [&shell](const NavTab tab) { shell.SelectNavTab(tab); };
-    navigation.open_account_sheet = [&shell]() { shell.OpenAccountSheet(); };
-    navigation.close_account_sheet = [&shell]() { shell.CloseAccountSheet(); };
-    navigation.clear_primary_pane = [&shell]() { shell.ClearPrimaryPane(); };
-    navigation.set_primary_pane = [&shell](const std::string& key) { shell.SetPrimaryPane(key); };
-    navigation.pop_transient = [&shell]() { shell.PopTransient(); };
-    navigation.request_dismiss_instant = [&shell]() { return shell.RequestDismiss(DismissStyle::Instant); };
-    navigation.refresh_dismiss_gestures = [&shell]() { shell.RefreshDismissGestures(); };
-    navigation.dirty_window = [&shell]() { shell.DirtyWindow(); };
-    navigation.request_sync_layout = [&shell](const bool restore, const char* reason) {
-      shell.RequestSyncLayout(restore, reason);
-    };
-    SettingsController::Instance().BindShellNavigation(std::move(navigation));
-
-    shell.SetOnAccountSheetOpened([]() { SettingsController::Instance().OnAccountSheetOpened(); });
-    shell.SetOnAccountSheetClosed([]() { SettingsController::Instance().OnAccountSheetClosed(); });
-  };
-  bind_shell_presentation_ports();
+  ShellHost& shell = ShellHost::Instance();
+  const ShellFeedbackPorts shared_feedback = BindSharedShellFeedback(shell);
+  SettingsController::Instance().BindShellFeedback(shared_feedback);
+  SettingsController::Instance().BindShellNavigation(MakeShellNavigationPorts(shell));
 
   ChatController::Instance().BindSessionStore(store_);
+
+  ContactsController::Instance().BindShellNavigation(MakeShellNavigationPorts(shell));
+  ContactsController::Instance().BindShellFeedback(shared_feedback);
+
+  ChatController::Instance().BindShellNavigation(MakeShellNavigationPorts(shell));
+  ChatController::Instance().BindShellFeedback(shared_feedback);
+  MessagingUiPorts messaging_ui;
+  messaging_ui.snapshot = [&messaging]() { return ProjectMessagingView(messaging); };
+  ChatController::Instance().BindMessagingUi(std::move(messaging_ui));
 
   ContactsController::Instance().BindMessaging(messaging);
   call_->BindMessaging(messaging);
@@ -560,6 +566,11 @@ bool Application::Initialize(const char* window_title) {
     SettingsController::Instance().BindCommands({});
     SettingsController::Instance().BindShellNavigation({});
     SettingsController::Instance().BindShellFeedback({});
+    ContactsController::Instance().BindShellNavigation({});
+    ContactsController::Instance().BindShellFeedback({});
+    ChatController::Instance().BindShellNavigation({});
+    ChatController::Instance().BindShellFeedback({});
+    ChatController::Instance().BindMessagingUi({});
     UserFeedback::BindPorts({});
     ShellFeedback::BindChromePorts({});
     ContactsController::Instance().BindChatPorts({});
@@ -583,15 +594,18 @@ bool Application::Initialize(const char* window_title) {
   ContactsController::Instance().BindChatPorts(chat_ports);
   PeoplePickerController::Instance().BindChatPorts(std::move(chat_ports));
 
+  WireShellPresentationEvents(shell, badges_.get());
+
   // After chat exists: fan-out config/prefs, then own hub lifecycle callbacks (not ChatController).
   config_apply_->InstallListeners();
 
   messaging.SetOnMessagingReady([]() {
     ChatController::Instance().OnMessagingReady();
     ContactsController::Instance().Refresh();
-    if (ShellHost::Instance().State().account_sheet_open) {
+    const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(ShellHost::Instance().State());
+    if (chrome.account_sheet_open) {
       SettingsController::Instance().OnAccountSheetOpened();
-    } else if (ShellHost::Instance().State().nav_tab == NavTab::Me) {
+    } else if (chrome.nav_tab == NavTab::Me) {
       SettingsController::Instance().OnNavTabActivated();
     }
   });
@@ -705,6 +719,11 @@ void Application::Shutdown() {
   SettingsController::Instance().BindCommands({});
   SettingsController::Instance().BindShellNavigation({});
   SettingsController::Instance().BindShellFeedback({});
+  ContactsController::Instance().BindShellNavigation({});
+  ContactsController::Instance().BindShellFeedback({});
+  ChatController::Instance().BindShellNavigation({});
+  ChatController::Instance().BindShellFeedback({});
+  ChatController::Instance().BindMessagingUi({});
   UserFeedback::BindPorts({});
   ShellFeedback::BindChromePorts({});
   ContactsController::Instance().BindChatPorts({});

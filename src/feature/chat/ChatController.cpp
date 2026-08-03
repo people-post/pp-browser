@@ -44,7 +44,6 @@
 #include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/CallController.h"
 #include "feature/ui/ShellHost.h"
-#include "feature/ui/ShellFeedback.h"
 #include "feature/ui/SettingsController.h"
 #include "feature/ui/UserFeedback.h"
 #include "libp2p/integration/host/Reachability.h"
@@ -314,6 +313,100 @@ void ChatController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
   unlock_gate_ = &unlock_gate;
 }
 
+void ChatController::BindShellNavigation(ShellNavigationPorts ports) {
+  shell_navigation_ = std::move(ports);
+  chrome_.BindShellNavigation(shell_navigation_);
+}
+
+void ChatController::BindShellFeedback(ShellFeedbackPorts ports) {
+  shell_feedback_ = std::move(ports);
+  chrome_.BindShellFeedback(shell_feedback_);
+}
+
+void ChatController::BindMessagingUi(MessagingUiPorts ports) {
+  messaging_ui_ = std::move(ports);
+}
+
+ShellChromeSnapshot ChatController::ChromeSnapshot() const {
+  return shell_navigation_.snapshot ? shell_navigation_.snapshot() : ShellChromeSnapshot{};
+}
+
+void ChatController::ShellDirty() {
+  if (shell_navigation_.dirty_window) {
+    shell_navigation_.dirty_window();
+  }
+}
+
+void ChatController::ShellSyncLayout(const bool restore_focus_after) {
+  if (shell_navigation_.request_sync_layout) {
+    shell_navigation_.request_sync_layout(restore_focus_after, nullptr);
+  }
+}
+
+void ChatController::ShellSelectNavTab(const NavTab tab) {
+  if (shell_navigation_.select_nav_tab) {
+    shell_navigation_.select_nav_tab(tab);
+  }
+}
+
+void ChatController::ShellSetPrimaryPane(const std::string& key) {
+  if (shell_navigation_.set_primary_pane) {
+    shell_navigation_.set_primary_pane(key);
+  }
+}
+
+void ChatController::ShellOpenCompactChat() {
+  if (shell_navigation_.open_compact_chat) {
+    shell_navigation_.open_compact_chat();
+  }
+}
+
+void ChatController::ShellCloseCompactChat() {
+  if (shell_navigation_.close_compact_chat) {
+    shell_navigation_.close_compact_chat();
+  }
+}
+
+void ChatController::ShellSetActivity(const bool visible, const Rml::String& message) {
+  if (shell_navigation_.set_activity) {
+    shell_navigation_.set_activity(visible, message);
+  }
+}
+
+void ChatController::ShellRemountNavRail() {
+  if (shell_navigation_.request_remount_nav_rail) {
+    shell_navigation_.request_remount_nav_rail();
+  }
+}
+
+void ChatController::ShowToast(const std::string& message, const ToastDuration duration) {
+  if (shell_feedback_.show_toast) {
+    shell_feedback_.show_toast(message, duration);
+  }
+}
+
+void ChatController::ShowConfirm(const std::string& title, const std::string& message,
+                                 std::function<void(bool)> on_result) {
+  if (shell_feedback_.show_confirm) {
+    shell_feedback_.show_confirm(title, message, std::move(on_result));
+  }
+}
+
+void ChatController::ShowConfirmWithCheckbox(const std::string& title, const std::string& message,
+                                             const std::string& checkbox_label, const bool checkbox_default,
+                                             std::function<void(bool, bool)> on_result) {
+  if (shell_feedback_.show_confirm_with_checkbox) {
+    shell_feedback_.show_confirm_with_checkbox(title, message, checkbox_label, checkbox_default, std::move(on_result));
+  }
+}
+
+void ChatController::ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
+                              std::function<void(bool, std::string)> on_result) {
+  if (shell_feedback_.show_prompt) {
+    shell_feedback_.show_prompt(title, message, default_value, std::move(on_result));
+  }
+}
+
 MessagingHub& ChatController::Hub() {
   if (!messaging_) {
     throw std::runtime_error("ChatController messaging not bound");
@@ -533,9 +626,9 @@ void ChatController::FinalizeThreadDisplay() {
   RefreshFromMessaging();
   // Always land on latest when opening/showing a thread (incl. re-open same id).
   scroller_.RequestScrollToLatest();
-  if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact &&
-      ShellHost::Instance().State().nav_tab == NavTab::Sessions) {
-    ShellHost::Instance().OpenCompactChat();
+  if (ChromeSnapshot().layout_mode == LayoutMode::Compact &&
+      ChromeSnapshot().nav_tab == NavTab::Sessions) {
+    ShellOpenCompactChat();
   }
 }
 
@@ -545,10 +638,10 @@ void ChatController::OnHomeTabActivated() {
   }
   Hub().Inbox().ClearActiveThread();
   working_set_.ClearAll();
-  ShellHost::Instance().SetPrimaryPane("home");
+  ShellSetPrimaryPane("home");
   RefreshFromMessaging();
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
+  ShellSyncLayout();
+  ShellDirty();
 }
 
 void ChatController::OnSessionsTabActivated() {
@@ -562,7 +655,7 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   if (Hub().Inbox().OpenThread(thread_id)) {
     ILocalNotifier::Instance().ClearForThread(thread_id);
     Hub().P2p().MaybeTailSync(thread_id);
-    ShellHost::Instance().SetPrimaryPane("chat");
+    ShellSetPrimaryPane("chat");
     FinalizeThreadDisplay();
   }
 }
@@ -575,7 +668,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
   auto finish_close = [this, thread_id]() {
     if (!Hub().Inbox().CloseThread(thread_id)) {
       UserFeedback::Fail("Could not delete conversation");
-      ShellHost::Instance().DirtyWindow();
+      ShellDirty();
       return;
     }
     chat_.draft = "";
@@ -587,11 +680,11 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     chat_.turns.clear();
     RefreshFromMessaging();
     if (shell_.sessions.empty()) {
-      ShellHost::Instance().SelectNavTab(NavTab::Home);
-      ShellHost::Instance().CloseCompactChat();
+      ShellSelectNavTab(NavTab::Home);
+      ShellCloseCompactChat();
     }
-    ShellHost::Instance().RequestSyncLayout();
-    ShellHost::Instance().DirtyWindow();
+    ShellSyncLayout();
+    ShellDirty();
   };
 
   auto dismiss_and_close = [this, finish_close](const std::string& group_id) {
@@ -650,7 +743,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     if (!is_owner) {
       const bool orphaned_shell = successors.empty() || !owner_on_roster;
       if (orphaned_shell) {
-        ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.group.dismiss_title"),
+        ShowConfirm(Tr("chat.group.dismiss_title"),
                                    Tr("chat.group.dismiss_confirm"), [dismiss_and_close, group_id](bool ok) {
                                      if (!ok) {
                                        return;
@@ -658,7 +751,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                                      dismiss_and_close(group_id);
                                    });
       } else {
-        ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.group.leave_title"),
+        ShowConfirm(Tr("chat.group.leave_title"),
                                    Tr("chat.group.leave_confirm"),
                                    [this, finish_close, dismiss_and_close, group_id](bool ok) {
                                      if (!ok) {
@@ -676,7 +769,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
 
     // Solo or only-unreachable peers: local dismiss — no transfer into a ghost roster.
     if (successors.empty()) {
-      ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.group.dismiss_title"),
+      ShowConfirm(Tr("chat.group.dismiss_title"),
                                  Tr("chat.group.dismiss_confirm"), [dismiss_and_close, group_id](bool ok) {
                                    if (!ok) {
                                      return;
@@ -686,8 +779,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
       return;
     }
 
-    ShellFeedback::ShowConfirm(
-        ShellHost::Instance().State(), Tr("chat.group.leave_title"), Tr("chat.group.leave_owner_confirm"),
+    ShowConfirm(Tr("chat.group.leave_title"), Tr("chat.group.leave_owner_confirm"),
         [this, finish_close, dismiss_and_close, group_id, successors](bool ok) {
           if (!ok) {
             return;
@@ -712,7 +804,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                 [this, finish_close, group_id, successor]() {
                   if (auto left = Hub().Groups().LeaveAsOwner(group_id, successor); !left) {
                     UserFeedback::Fail(left.error().message);
-                    ShellHost::Instance().DirtyWindow();
+                    ShellDirty();
                     return;
                   }
                   finish_close();
@@ -729,12 +821,12 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
               true,
           });
           ContextMenuHost::Instance().ShowActions(Rml::Vector2i(120, 120), std::move(actions));
-          ShellHost::Instance().DirtyWindow();
+          ShellDirty();
         });
     return;
   }
 
-  ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.delete_conversation"),
+  ShowConfirm(Tr("chat.delete_conversation"),
                              Tr("chat.delete_confirm"), [finish_close](bool ok) {
                                if (!ok) {
                                  return;
@@ -764,8 +856,7 @@ void ChatController::OnClearHistory() {
   }
 
   if (is_ai) {
-    ShellFeedback::ShowConfirmWithCheckbox(
-        ShellHost::Instance().State(), Tr("chat.clear_history"), message, "Also forget what AI learned", false,
+    ShowConfirmWithCheckbox(Tr("chat.clear_history"), message, "Also forget what AI learned", false,
         [this, thread_id](bool ok, bool forget_memory) {
           if (!ok) {
             return;
@@ -779,10 +870,10 @@ void ChatController::OnClearHistory() {
           pending_reply_.reset();
           widgets_.ClearAll();
           RefreshFromMessaging();
-          ShellHost::Instance().DirtyWindow();
+          ShellDirty();
         });
   } else {
-    ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("chat.clear_history"), message,
+    ShowConfirm(Tr("chat.clear_history"), message,
                                [this, thread_id](bool ok) {
                                  if (!ok) {
                                    return;
@@ -796,7 +887,7 @@ void ChatController::OnClearHistory() {
                                  pending_reply_.reset();
                                  widgets_.ClearAll();
                                  RefreshFromMessaging();
-                                 ShellHost::Instance().DirtyWindow();
+                                 ShellDirty();
                                });
   }
 }
@@ -810,8 +901,7 @@ void ChatController::OnForgetMemory() {
     return;
   }
 
-  ShellFeedback::ShowConfirm(
-      ShellHost::Instance().State(), "Forget what AI learned?",
+  ShowConfirm("Forget what AI learned?",
       "Delete the durable conversation summary? Your message transcript stays on this device.",
       [this, thread_id](bool ok) {
         if (!ok) {
@@ -820,7 +910,7 @@ void ChatController::OnForgetMemory() {
         if (!Hub().Inbox().ForgetThreadMemory(thread_id)) {
           return;
         }
-        ShellHost::Instance().DirtyWindow();
+        ShellDirty();
       });
 }
 
@@ -856,8 +946,8 @@ void ChatController::SendSharedAssistantRelay(const std::string& thread_id, cons
 }
 
 void ChatController::RefreshFromMessaging() {
-  const int prev_sessions = ShellHost::Instance().State().nav_badges.sessions_unread;
-  const int prev_contacts = ShellHost::Instance().State().nav_badges.contacts_unread;
+  const int prev_sessions = ChromeSnapshot().nav_badges.sessions_unread;
+  const int prev_contacts = ChromeSnapshot().nav_badges.contacts_unread;
   SyncShellSessions();
   SyncDisplayFromThread();
   chrome_.Update();
@@ -870,10 +960,10 @@ void ChatController::RefreshFromMessaging() {
   }
   DirtyChat();
   DirtyShell();
-  ShellHost::Instance().DirtyWindow();
-  const NavBadgeState& badges = ShellHost::Instance().State().nav_badges;
+  ShellDirty();
+  const NavBadgeState& badges = ChromeSnapshot().nav_badges;
   if (badges.sessions_unread != prev_sessions || badges.contacts_unread != prev_contacts) {
-    ShellHost::Instance().RequestRemountNavRail();
+    ShellRemountNavRail();
   }
 }
 
@@ -1024,8 +1114,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
     if (action_json.is_object() && action_json.contains("type") && action_json["type"].is_string() &&
         action_json["type"].get<std::string>() == "fork_group") {
       const std::string confirmed_payload = *payload;
-      ShellFeedback::ShowConfirm(
-          ShellHost::Instance().State(), "Start a new group?",
+      ShowConfirm("Start a new group?",
           "This creates a new group with a fresh history. People who are still reachable can be invited again.",
           [this, message, confirmed_payload](bool ok) {
             if (!ok) {
@@ -1034,8 +1123,8 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
             auto result = Hub().Actions().Dispatch(confirmed_payload);
             if (!result) {
               log().warning << "Local action failed: " << result.error().message;
-              ShellFeedback::ShowToast(ShellHost::Instance().State(), result.error().message);
-              ShellHost::Instance().DirtyWindow();
+              ShowToast(result.error().message);
+              ShellDirty();
               return;
             }
             if (*result) {
@@ -1045,13 +1134,13 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
             RefreshFromMessaging();
             ContactsController::Instance().Refresh();
             if (!Hub().Inbox().ActiveThreadId().empty()) {
-              ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-              ShellHost::Instance().SetPrimaryPane("chat");
-              if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
-                ShellHost::Instance().OpenCompactChat();
+              ShellSelectNavTab(NavTab::Sessions);
+              ShellSetPrimaryPane("chat");
+              if (ChromeSnapshot().layout_mode == LayoutMode::Compact) {
+                ShellOpenCompactChat();
               }
             }
-            ShellHost::Instance().DirtyWindow();
+            ShellDirty();
           });
       return;
     }
@@ -1060,8 +1149,8 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       // Never re-route the same action payload through MessageRouter — that loops
       // HandleLocalAction → SendUserText → Route → HandleLocalAction until stack overflow.
       log().warning << "Local action failed: " << result.error().message;
-      ShellFeedback::ShowToast(ShellHost::Instance().State(), result.error().message);
-      ShellHost::Instance().DirtyWindow();
+      ShowToast(result.error().message);
+      ShellDirty();
       return;
     }
     if (*result) {
@@ -1071,10 +1160,10 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
     RefreshFromMessaging();
     ContactsController::Instance().Refresh();
     if (!Hub().Inbox().ActiveThreadId().empty()) {
-      ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-      ShellHost::Instance().SetPrimaryPane("chat");
-      if (ShellHost::Instance().State().layout_mode == LayoutMode::Compact) {
-        ShellHost::Instance().OpenCompactChat();
+      ShellSelectNavTab(NavTab::Sessions);
+      ShellSetPrimaryPane("chat");
+      if (ChromeSnapshot().layout_mode == LayoutMode::Compact) {
+        ShellOpenCompactChat();
       }
     }
     return;
@@ -1093,7 +1182,7 @@ void ChatController::OnSendMessage() {
   }
 
   if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "Message is too long to send.");
+    ShowToast("Message is too long to send.");
     return;
   }
 
@@ -1119,10 +1208,10 @@ void ChatController::OnNewChat() {
   }
   working_set_.ClearAll();
   widgets_.ClearAll();
-  ShellHost::Instance().SetPrimaryPane("chat");
+  ShellSetPrimaryPane("chat");
   focus_draft_after_sync_ = true;
   FinalizeThreadDisplay();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
 }
 
 void ChatController::OnNewMessage() {
@@ -1253,7 +1342,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
             auto created = Hub().Contacts().AddFromDirectoryHit(hit);
             if (!created) {
               UserFeedback::Fail("Could not add contact");
-              ShellHost::Instance().DirtyWindow();
+              ShellDirty();
               return;
             }
             if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
@@ -1287,8 +1376,8 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
             if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
               system->SetClipboardText(peer_id.c_str());
             }
-            ShellFeedback::ShowToast(ShellHost::Instance().State(), "ID copied");
-            ShellHost::Instance().DirtyWindow();
+            ShowToast("ID copied");
+            ShellDirty();
           },
           "../icons/copy.svg",
       });
@@ -1305,8 +1394,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
         "Rename for me",
         nullptr,
         [this, thread_id, current_local, shared_default]() {
-          ShellFeedback::ShowPrompt(
-              ShellHost::Instance().State(), "Rename for me", "Local nickname for this group",
+          ShowPrompt("Rename for me", "Local nickname for this group",
               current_local.empty() ? shared_default : current_local,
               [this, thread_id](bool ok, std::string value) {
                 if (!ok) {
@@ -1315,7 +1403,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                 if (auto saved = Hub().Inbox().SetThreadLocalTitle(thread_id, value); !saved) {
                   UserFeedback::Fail(saved.error().message);
                 }
-                ShellHost::Instance().DirtyWindow();
+                ShellDirty();
               });
         },
         "../icons/message.svg",
@@ -1327,7 +1415,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           nullptr,
           [this, thread_id]() {
             (void)Hub().Inbox().SetThreadLocalTitle(thread_id, "");
-            ShellHost::Instance().DirtyWindow();
+            ShellDirty();
           },
           "../icons/trash.svg",
       });
@@ -1353,15 +1441,14 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           "Rename for everyone",
           nullptr,
           [this, group_id, shared_default]() {
-            ShellFeedback::ShowPrompt(
-                ShellHost::Instance().State(), "Rename for everyone", "Shared group name for all members",
+            ShowPrompt("Rename for everyone", "Shared group name for all members",
                 shared_default, [this, group_id](bool ok, std::string value) {
                   if (!ok) {
                     return;
                   }
                   if (value.empty()) {
                     UserFeedback::Fail("Title required");
-                    ShellHost::Instance().DirtyWindow();
+                    ShellDirty();
                     return;
                   }
                   if (auto renamed = Hub().Groups().RenameGroupShared(group_id, value); !renamed) {
@@ -1369,7 +1456,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                   } else {
                     Hub().Inbox().NotifyThreadChanged();
                   }
-                  ShellHost::Instance().DirtyWindow();
+                  ShellDirty();
                 });
           },
           "../icons/group.svg",
@@ -1393,8 +1480,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
             "Remove unreachable: " + name,
             nullptr,
             [this, group_id, unreachable_id, name]() {
-              ShellFeedback::ShowConfirm(
-                  ShellHost::Instance().State(), "Remove member",
+              ShowConfirm("Remove member",
                   "Remove " + name + " from this group? Others will be notified.",
                   [this, group_id, unreachable_id](bool ok) {
                     if (!ok) {
@@ -1407,7 +1493,7 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
                     } else {
                       Hub().Inbox().NotifyThreadChanged();
                     }
-                    ShellHost::Instance().DirtyWindow();
+                    ShellDirty();
                   });
             },
             "../icons/trash.svg",
@@ -1420,9 +1506,8 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           "Rename for everyone",
           nullptr,
           []() {
-            ShellFeedback::ShowToast(ShellHost::Instance().State(),
-                                     "Only the owner can do that — see the note in the chat");
-            ShellHost::Instance().DirtyWindow();
+            ShowToast("Only the owner can do that — see the note in the chat");
+            ShellDirty();
           },
           "../icons/group.svg",
       });
@@ -1549,10 +1634,10 @@ bool ChatController::EnsureHomeOutboundSession() {
   if (!Hub().Inbox().CreateNewAiThread()) {
     return false;
   }
-  ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-  ShellHost::Instance().SetPrimaryPane("chat");
+  ShellSelectNavTab(NavTab::Sessions);
+  ShellSetPrimaryPane("chat");
   FinalizeThreadDisplay();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
   return true;
 }
 
@@ -1571,7 +1656,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     return;
   }
 
-  if (ShellHost::Instance().State().nav_tab == NavTab::Home) {
+  if (ChromeSnapshot().nav_tab == NavTab::Home) {
     if (!EnsureHomeOutboundSession()) {
       return;
     }
@@ -1777,7 +1862,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
   SyncShellSessions();
   chat_.loading = false;
   chat_.status = "";
-  ShellHost::Instance().SetActivity(false);
+  ShellSetActivity(false);
   DirtyChat();
   DirtyShell();
 }
@@ -1788,9 +1873,9 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     chat_.loading = event.loading;
     if (!event.loading) {
       chat_.status = "";
-      ShellHost::Instance().SetActivity(false);
+      ShellSetActivity(false);
     } else {
-      ShellHost::Instance().SetActivity(true);
+      ShellSetActivity(true);
       if (messaging_ready_) {
         SyncDisplayFromThread();
         DirtyChatTurns();
@@ -1800,7 +1885,7 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     break;
   case AgentEventType::ToolActivity:
     chat_.status = Rml::String(ToolActivityLabel(event.tool_name, event.status).c_str());
-    ShellHost::Instance().SetActivity(true, chat_.status);
+    ShellSetActivity(true, chat_.status);
     DirtyChatChrome();
     break;
   case AgentEventType::AssistantReady:
@@ -1820,7 +1905,7 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     }
     chat_.loading = false;
     chat_.status = "";
-    ShellHost::Instance().SetActivity(false);
+    ShellSetActivity(false);
     DirtyChatChrome();
     break;
   }
@@ -1834,15 +1919,15 @@ void ChatController::WithSecrets(std::function<void()> action) {
     return;
   }
   if (unlock_gate_->IsUnlockInProgress()) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), Tr("startup.still_preparing"));
-    ShellHost::Instance().DirtyWindow();
+    ShowToast(Tr("startup.still_preparing"));
+    ShellDirty();
   }
   unlock_gate_->EnsureUnlocked(
       [this, action = std::move(action)](const bool unlocked) {
         if (!unlocked) {
           if (!unlock_gate_->IsUnlockInProgress()) {
-            ShellFeedback::ShowToast(ShellHost::Instance().State(), "PIN required to continue");
-            ShellHost::Instance().DirtyWindow();
+            ShowToast("PIN required to continue");
+            ShellDirty();
           }
           return;
         }
@@ -1876,10 +1961,10 @@ void ChatController::RefreshLlmSetupBanner() {
       UserFeedback::NeedsSetup(kRegisterBrief);
       return;
     }
-    auto& shell = ShellHost::Instance().State();
-    if (shell.banner_message == kRegisterBrief) {
-      ShellFeedback::DismissBanner(shell);
-      ShellHost::Instance().DirtyWindow();
+    if (ChromeSnapshot().banner_message == kRegisterBrief) {
+      if (shell_feedback_.dismiss_banner) {
+        shell_feedback_.dismiss_banner();
+      }
     }
     return;
   }
@@ -1906,8 +1991,8 @@ void ChatController::WireMessagingBindings() {
     ContactsController::Instance().Refresh();
   });
   Hub().P2p().SetOnDeliveryNotice([this](const std::string& message) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
-    ShellHost::Instance().DirtyWindow();
+    ShowToast(message);
+    ShellDirty();
   });
   Hub().P2p().SetOnBackgroundUnread(
       [](std::string title, std::string body, std::string thread_id) {
@@ -1957,8 +2042,7 @@ void ChatController::WireMessagingBindings() {
         [this](const std::string& thread_id, const AtAiMode mode, const std::string& prompt,
                std::function<void(bool confirmed, bool dont_ask_again)> done) {
           const char* mode_label = mode == AtAiMode::SharedFull ? "share the prompt and reply" : "share the AI reply";
-          ShellFeedback::ShowConfirmWithCheckbox(
-              ShellHost::Instance().State(), "Share with peer?",
+          ShowConfirmWithCheckbox("Share with peer?",
               std::string("This will ") + mode_label +
                   " on the encrypted thread. Your local @ai assist stays private.",
               "Don't ask again for this conversation", false,
@@ -1971,8 +2055,8 @@ void ChatController::WireMessagingBindings() {
         });
   }
   Hub().Actions().SetOnActionMessage([this](const std::string& message) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), message);
-    ShellHost::Instance().DirtyWindow();
+    ShowToast(message);
+    ShellDirty();
   });
   RefreshFromMessaging();
   Hub().P2p().TailSyncActiveE2eThread();
@@ -2187,43 +2271,7 @@ bool ChatController::Setup(Rml::Context* context, MessagingHub& messaging) {
   ShellHost::Instance().Initialize(context);
   // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.
   ShellHost::Instance().State().fonts_ready = !UiLanguageNeedsCjkFonts();
-  ShellHost::Instance().SetOnNavTabChanged([badges = badges_](NavTab tab) {
-    static NavTab previous = NavTab::Home;
-    if (previous == NavTab::Me && tab != NavTab::Me) {
-      SettingsController::Instance().OnMeSurfaceClosed();
-    }
-    if (tab == NavTab::Home) {
-      ChatController::Instance().OnHomeTabActivated();
-    }
-    if (tab == NavTab::Sessions) {
-      ChatController::Instance().OnSessionsTabActivated();
-    }
-    if (tab == NavTab::Contacts) {
-      ContactsController::Instance().OnNavTabActivated();
-    }
-    if (tab == NavTab::Me) {
-      SettingsController::Instance().OnNavTabActivated();
-    }
-    previous = tab;
-    // Active-thread deduction for sessions badge depends on nav_tab.
-    if (badges) {
-      badges->Refresh();
-    }
-    ShellHost::Instance().DirtyWindow();
-  });
-  ShellHost::Instance().SetOnLayoutModeChanged([](LayoutMode mode) {
-    if (ShellHost::Instance().State().nav_tab == NavTab::Contacts) {
-      ContactsController::Instance().SyncLayoutMode();
-    }
-    SettingsController::Instance().SyncLayoutMode();
-    if (mode == LayoutMode::Compact && ShellHost::Instance().State().nav_tab == NavTab::Home) {
-      ChatController::Instance().OnHomeTabActivated();
-    }
-  });
-  ShellHost::Instance().SetOnLayoutSynced([]() {
-    SettingsController::Instance().OnShellLayoutSynced();
-    ChatController::Instance().OnShellLayoutSynced();
-  });
+
   ShellHost::Instance().RegisterPane(
       {.key = "sidebar", .rml_path = "views/sidebar.rml", .role = PaneRole::Secondary});
   ShellHost::Instance().RegisterPane(
@@ -2255,7 +2303,11 @@ bool ChatController::Setup(Rml::Context* context, MessagingHub& messaging) {
   }
 
   // Vault unlock + deferred fonts run after first present (DeferredStartup).
-  chat_.compose_disabled = !Hub().IsMessagingReady();
+  if (messaging_ui_.snapshot) {
+    chat_.compose_disabled = !messaging_ui_.snapshot().messaging_ready;
+  } else {
+    chat_.compose_disabled = !Hub().IsMessagingReady();
+  }
   DirtyChatChrome();
 
   if (messaging_ready_) {
@@ -2275,7 +2327,7 @@ bool ChatController::Setup(Rml::Context* context, MessagingHub& messaging) {
 
 void ChatController::OnMessagingReady() {
   WireMessagingBindings();
-  if (ShellHost::Instance().State().nav_tab == NavTab::Home) {
+  if (ChromeSnapshot().nav_tab == NavTab::Home) {
     OnHomeTabActivated();
   }
 }

@@ -5,7 +5,7 @@
 > **Architecture reference (permanent):** [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)
 
 **Last updated:** 2026-08-03  
-**Status:** Phase 1 complete; Phase 2 partial (feedback ports)
+**Status:** Phase 1 done; Phase 2–4 partial; Phase 5 partial (chat shell nav decoupled)
 
 ---
 
@@ -59,7 +59,7 @@
 
 **Exit check:** Zero `SettingsController::Instance()` in `ShellHost.cpp` and zero `ShellHost::Instance()` in `SettingsController.cpp` — **done**.
 
-**Notes:** Application fills ports via `bind_shell_presentation_ports()` in `Application.cpp`.
+**Notes:** `MakeShellNavigationPorts`, `BindSharedShellFeedback` in `src/feature/ui/`; shell lifecycle wiring in `Application.cpp` (`WireShellPresentationEvents`).
 
 ---
 
@@ -69,14 +69,15 @@
 
 **Primary files:** `ChatController.*`, `ContactsController.*`, `PeoplePickerController.*`, `UserFeedback.cpp`, `ShellFeedback.cpp`, `Application.cpp`
 
-- [ ] Define `ChatActions` (or extend ports): send message, select thread internals, agent invoke — narrow args, `Roe<void>` where sync
-- [ ] Define `ContactsActions` / extend `ChatSessionPorts` for remaining contacts → chat flows
-- [x] Define `ShellFeedbackPorts` + `ShellFeedbackChromePorts` — toast, banner, confirm; `ShellFeedback` / `UserFeedback` no longer call `ShellHost::Instance()` internally
+- [ ] Define `ChatActions` (hub imperative ops without `Hub()` on presenter surface) — deferred to Phase 6 facade
+- [x] `ContactsController` uses `ShellNavigationPorts` + `ShellFeedbackPorts` (zero `ShellHost::Instance()`)
+- [x] `ChatController` + `ChatThreadChrome` use shell ports for nav/feedback (Setup bootstrap only still touches `ShellHost`)
+- [x] Define `ShellFeedbackPorts` + `ShellFeedbackChromePorts` — toast, banner, dismiss, confirm, prompt
 - [x] Wire feedback + navigation ports in `Application.cpp`; clear via `Bind*({})` on shutdown
-- [x] Settings confirm/reset dialogs use `ShellFeedbackPorts` (not `ShellHost::State()`)
-- [ ] RmlUi callbacks → presenter method → port (no `Hub()` in callback path) — chat/contacts remain
+- [x] Settings / contacts / chat confirm dialogs use `ShellFeedbackPorts`
+- [ ] RmlUi callbacks → presenter method → port (no `Hub()` in callback path) — hub still used for messaging ops
 
-**Exit check:** Feedback helpers (`UserFeedback`, `ShellFeedback` chrome sync) do not call `ShellHost::Instance()` — **done**. Contacts picker / chat callbacks — pending.
+**Exit check:** Feedback helpers do not call `ShellHost::Instance()` — **done**. Contacts shell decoupling — **done**. Chat shell/feedback — **done** (except Setup bootstrap).
 
 ---
 
@@ -86,15 +87,15 @@
 
 **Primary files:** `MessagingHub.*`, `ChatController.*`, `ShellHost.*`, `BadgeAggregator.*`, new `*View.h` in `base/` or feature as appropriate
 
-- [ ] `MessagingView` — ready, last error, reachability summary (reuse `SettingsReachabilityView` fields where overlap)
-- [ ] `ChatView` — active thread id, unread for thread, composer state (UI-owned draft stays in presenter)
-- [ ] `ShellChromeView` — derived chrome for badges (tab unread inputs already partially via `BadgeUnreadInputs`)
-- [ ] Presenter `Tick()`: `Snapshot()` → diff → `DataModelHost::Dirty`
+- [x] `MessagingView` + `MessagingUiPorts` — initialized, ready, has_router, active_thread_id (`ProjectMessagingView`)
+- [x] Extended `ShellChromeSnapshot` — nav badges, primary pane, contact/settings detail flags, banner_message
+- [ ] `ChatView` — thread list summary, composer state (UI-owned draft stays in presenter)
+- [ ] Presenter `Tick()`: full `Snapshot()` → diff → `DataModelHost::Dirty` pattern
 - [ ] Stop exposing raw mutable hub state to RmlUi bind paths
 
-**Exit check:** Chat tick does not read messaging internals except through `MessagingView` / facade.
+**Exit check:** Chat tick does not read messaging internals except through `MessagingView` / facade — **partial** (ports bound; hub still primary).
 
-**Notes:**
+**Notes:** Chat `compose_disabled` can use `MessagingUiPorts` snapshot at Setup.
 
 ---
 
@@ -104,12 +105,13 @@
 
 **Primary files:** `Application.cpp`, `MessagingHub.*`, presenters, `BadgeAggregator.*`
 
-- [ ] List one-shot events: messaging ready/failed, inbound message, call state, unlock dismissed
-- [ ] Add small listener interfaces or app-wired `std::function` hooks on facades
-- [ ] Move hub `SetOnMessagingReady`-style wiring entirely into `Application`; presenters refresh via event
-- [ ] `BadgeAggregator` uses event-driven refresh where possible instead of every-frame recompute
+- [x] Shell lifecycle events moved to `Application::WireShellPresentationEvents` (nav tab, layout mode/sync, transient pop, account sheet)
+- [ ] List remaining one-shot events: inbound message, call state, unlock dismissed
+- [ ] Add small listener interfaces or app-wired hooks on facades
+- [x] Hub `SetOnMessagingReady` / reachability remain in `Application` (not ChatController::Setup)
+- [ ] `BadgeAggregator` event-driven refresh
 
-**Exit check:** No new `SetOn*` on controllers from feature code; callbacks terminate in Application and post to UI thread.
+**Exit check:** No `SetOnNavTabChanged` / layout hooks in `ChatController::Setup` — **done**.
 
 **Notes:**
 
@@ -123,10 +125,10 @@
 
 - [ ] PIN gate: all chrome via `ProfileUnlockUiPorts` (already partial) — remove direct `ShellHost::State().pin_gate` writes from non-shell code
 - [ ] Call chrome: `CallController` exposes presentation hooks; shell subscribes
-- [ ] Chat pane open/close: navigation intents to shell coordinator, not `ShellHost::Instance()` from chat
+- [x] Chat navigation: `ShellNavigationPorts` instead of `ShellHost::Instance()` for pane/tab/compact chat/activity
 - [ ] Document remaining **UI-owned** fields in `ShellState` vs presenter-private state
 
-**Exit check:** Grep `ShellHost::Instance().State()` from `feature/chat`, `base/crypto` presentation paths → zero mutation sites outside `feature/ui` shell.
+**Exit check:** Grep `ShellHost::Instance()` from `feature/chat/ChatController.cpp` — **Setup bootstrap only** (~10 lines: Initialize, RegisterPane, SyncLayout, fonts_ready).
 
 **Notes:**
 
@@ -205,6 +207,9 @@ Record before/after when starting each phase:
 | `ChatController::Instance` call sites | ~70 | ~70 |
 | `SettingsController::Instance` in `ShellHost.cpp` | 3 | **0** |
 | `ShellHost::Instance` in `SettingsController.cpp` | ~34 | **0** |
+| `ShellHost::Instance` in `ContactsController.cpp` | ~30 | **0** |
+| `ShellHost::Instance` in `ChatController.cpp` (non-Setup) | ~99 | **0** |
+| `ShellHost::Instance` in `ChatController.cpp` (Setup bootstrap) | — | ~10 |
 | Controllers with `Hub()` / `BindMessaging` | Shell, Chat, Contacts, Call, … | unchanged |
 | ShellHost ↔ SettingsController cross-calls | yes (bidirectional) | **no** |
 

@@ -2,6 +2,8 @@
 
 #include "common/Module.h"
 #include "feature/ui/ChatSessionPorts.h"
+#include "feature/ui/ShellFeedbackPorts.h"
+#include "feature/ui/ShellNavigationPorts.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
@@ -27,6 +29,8 @@ public:
   void BindMessaging(MessagingHub& messaging);
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindChatPorts(ChatSessionPorts ports);
+  void BindShellNavigation(ShellNavigationPorts ports);
+  void BindShellFeedback(ShellFeedbackPorts ports);
   MessagingHub& Hub();
   const MessagingHub& Hub() const;
 
@@ -126,6 +130,13 @@ private:
   void UpdateMessagingEligibility(const Contact& contact);
   void DirtyAll();
 
+  ShellChromeSnapshot ChromeSnapshot() const;
+  void ShellDirty();
+  void ShellSyncLayout(bool restore_focus_after = false);
+  void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
+  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result);
+  void NavigateToChatSession();
+
   std::vector<ContactListRow> contacts_;
   Rml::String search_query_;
   bool compact_layout_ = false;
@@ -136,6 +147,8 @@ private:
   MessagingHub* messaging_ = nullptr;
   ProfileUnlockGate* unlock_gate_ = nullptr;
   ChatSessionPorts chat_ports_;
+  ShellNavigationPorts shell_navigation_;
+  ShellFeedbackPorts shell_feedback_;
 
 };
 

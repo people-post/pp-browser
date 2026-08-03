@@ -6,8 +6,6 @@
 #include "base/messaging/ThreadTypes.h"
 #include "base/people/PeerDisplayLabel.h"
 #include "feature/messaging/MessagingHub.h"
-#include "feature/ui/ShellFeedback.h"
-#include "feature/ui/ShellHost.h"
 
 #include <RmlUi/Core/SystemInterface.h>
 
@@ -16,6 +14,52 @@ namespace pbr {
 void ChatThreadChrome::BindMessaging(MessagingHub& messaging) {
   messaging_ = &messaging;
 }
+
+void ChatThreadChrome::BindShellNavigation(ShellNavigationPorts ports) {
+  shell_navigation_ = std::move(ports);
+}
+
+void ChatThreadChrome::BindShellFeedback(ShellFeedbackPorts ports) {
+  shell_feedback_ = std::move(ports);
+}
+
+namespace {
+
+void ShellDirty(const ShellNavigationPorts& ports) {
+  if (ports.dirty_window) {
+    ports.dirty_window();
+  }
+}
+
+void ShowToast(const ShellFeedbackPorts& ports, const std::string& message) {
+  if (ports.show_toast) {
+    ports.show_toast(message, ToastDuration::Short);
+  }
+}
+
+void ShowConfirm(const ShellFeedbackPorts& ports, const std::string& title, const std::string& message,
+                 std::function<void(bool)> on_result) {
+  if (ports.show_confirm) {
+    ports.show_confirm(title, message, std::move(on_result));
+  }
+}
+
+void ShowConfirmWithCheckbox(const ShellFeedbackPorts& ports, const std::string& title, const std::string& message,
+                             const std::string& checkbox_label, const bool checkbox_default,
+                             std::function<void(bool, bool)> on_result) {
+  if (ports.show_confirm_with_checkbox) {
+    ports.show_confirm_with_checkbox(title, message, checkbox_label, checkbox_default, std::move(on_result));
+  }
+}
+
+void ShowAlert(const ShellFeedbackPorts& ports, const std::string& title, const std::string& message,
+               std::function<void()> on_ok) {
+  if (ports.show_alert) {
+    ports.show_alert(title, message, std::move(on_ok));
+  }
+}
+
+} // namespace
 
 MessagingHub& ChatThreadChrome::Hub() {
   if (!messaging_) {
@@ -333,7 +377,7 @@ void ChatThreadChrome::OnSyncWithPeer() {
       refresh_();
     }
     DirtyChatChrome();
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty(shell_navigation_);
   });
 }
 
@@ -365,7 +409,7 @@ void ChatThreadChrome::OnRetryGapSync() {
       refresh_();
     }
     DirtyChatChrome();
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty(shell_navigation_);
   });
 }
 
@@ -380,7 +424,7 @@ void ChatThreadChrome::OnStartNewSecureChat() {
     }
 
     ShellFeedback::ShowConfirm(
-        ShellHost::Instance().State(), "Start new secure chat?",
+        "Start new secure chat?",
         "This bumps the session epoch and cancels unsent messages from the previous epoch. "
         "Your saved transcript stays on this device.",
         [this, thread_id](bool ok) {
@@ -397,7 +441,7 @@ void ChatThreadChrome::OnStartNewSecureChat() {
             refresh_();
           }
           DirtyChatChrome();
-          ShellHost::Instance().DirtyWindow();
+          ShellDirty(shell_navigation_);
         });
   });
 }
@@ -419,7 +463,7 @@ void ChatThreadChrome::OnPauseIntegrityOnly() {
     refresh_();
   }
   DirtyChatHeader();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty(shell_navigation_);
 }
 
 void ChatThreadChrome::OnCopyPskKey() {
@@ -444,14 +488,14 @@ void ChatThreadChrome::OnCopyPskKey() {
     }
     view_.status = "Encryption key copied.";
     DirtyChatHeader();
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty(shell_navigation_);
   });
 }
 
 void ChatThreadChrome::OnTogglePskImport() {
   view_.show_psk_import = !view_.show_psk_import;
   DirtyChatHeader();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty(shell_navigation_);
 }
 
 void ChatThreadChrome::OnImportPsk() {
@@ -494,7 +538,7 @@ void ChatThreadChrome::OnImportPsk() {
     refresh_();
   }
   DirtyChatHeader();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty(shell_navigation_);
 }
 
 void ChatThreadChrome::OnVerifyPsk() {
@@ -513,7 +557,7 @@ void ChatThreadChrome::OnVerifyPsk() {
   }
 
   ShellFeedback::ShowConfirmWithCheckbox(
-      ShellHost::Instance().State(), "Verify encryption fingerprint",
+      "Verify encryption fingerprint",
       "Only confirm after you compared this fingerprint with your contact out of band.",
       "I've verified this fingerprint with my contact", false,
       [this, thread_id](const bool confirmed, const bool checked) {
@@ -530,7 +574,7 @@ void ChatThreadChrome::OnVerifyPsk() {
           refresh_();
         }
         DirtyChatHeader();
-        ShellHost::Instance().DirtyWindow();
+        ShellDirty(shell_navigation_);
       });
 }
 
@@ -550,7 +594,7 @@ void ChatThreadChrome::OnRotatePskExport() {
   }
 
   ShellFeedback::ShowConfirm(
-      ShellHost::Instance().State(), "Rotate encryption key?",
+      "Rotate encryption key?",
       "This generates a new key, bumps the session epoch, and cancels unsent messages from the previous epoch. "
       "Share the exported bundle with your contact out of band.",
       [this, thread_id](const bool ok) {
@@ -561,21 +605,21 @@ void ChatThreadChrome::OnRotatePskExport() {
         if (!bundle) {
           view_.status = bundle.error().message.c_str();
           DirtyChatChrome();
-          ShellHost::Instance().DirtyWindow();
+          ShellDirty(shell_navigation_);
           return;
         }
         if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
           system->SetClipboardText(*bundle);
         }
         ShellFeedback::ShowAlert(
-            ShellHost::Instance().State(), "Rotation bundle exported",
+            "Rotation bundle exported",
             "The pp-browser-psk-bundle-v1 JSON was copied to your clipboard. Send it to your contact securely.");
         view_.status = "Encryption key rotated. Share the bundle with your contact.";
         if (refresh_) {
           refresh_();
         }
         DirtyChatHeader();
-        ShellHost::Instance().DirtyWindow();
+        ShellDirty(shell_navigation_);
       });
 }
 

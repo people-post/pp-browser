@@ -14,13 +14,22 @@ namespace pbr {
 struct ShellFeedbackPorts {
   std::function<void(const std::string& message, ToastDuration duration)> show_toast;
   std::function<void(const std::string& message)> show_banner;
+  std::function<void()> dismiss_banner;
   std::function<void(const std::string& title, const std::string& message, std::function<void()> on_ok)> show_alert;
   std::function<void(const std::string& title, const std::string& message, std::function<void(bool)> on_result)>
       show_confirm;
   std::function<void(const std::string& title, const std::string& message, const std::string& checkbox_label,
                      bool checkbox_default, std::function<void(bool confirmed, bool checkbox_checked)> on_result)>
       show_confirm_with_checkbox;
+  std::function<void(const std::string& title, const std::string& message, const std::string& default_value,
+                     std::function<void(bool confirmed, std::string value)> on_result)>
+      show_prompt;
 };
+
+class ShellHost;
+
+/** Bind global feedback chrome + shared toast/banner/dialog ports from ShellHost. */
+ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell);
 
 /** Low-level chrome sync for ShellFeedback static helpers (dialog open/close). App-filled. */
 struct ShellFeedbackChromePorts {
