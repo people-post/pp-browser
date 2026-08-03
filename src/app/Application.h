@@ -25,6 +25,7 @@ class InputCoordinator;
 class PinGateController;
 class ProfileUnlockGate;
 class SettingsController;
+class ContactsController;
 
 class Application : public Module {
 public:
@@ -61,6 +62,7 @@ private:
   std::unique_ptr<FlowCoordinator> flow_;
   std::unique_ptr<CallController> call_;
   std::unique_ptr<SettingsController> settings_;
+  std::unique_ptr<ContactsController> contacts_;
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;
   std::optional<AgentSession> agent_session_;

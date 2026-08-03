@@ -300,14 +300,27 @@ Contact BuildContactFromDetail(const Contact& existing, const ContactsController
 
 } // namespace
 
+ContactsController* ContactsController::installed_instance_ = nullptr;
+
+void ContactsController::InstallInstance(ContactsController& controller) {
+  installed_instance_ = &controller;
+}
+
+void ContactsController::ClearInstance() {
+  installed_instance_ = nullptr;
+}
+
+ContactsController& ContactsController::Instance() {
+  if (!installed_instance_) {
+    throw std::runtime_error("ContactsController not installed");
+  }
+  return *installed_instance_;
+}
+
 ContactsController::ContactsController() {
   redirectLogger("ContactsController");
 }
 
-ContactsController& ContactsController::Instance() {
-  static ContactsController controller;
-  return controller;
-}
 void ContactsController::BindContactsPorts(MessagingContactsPorts ports) {
   contacts_ports_ = std::move(ports);
 }
@@ -375,8 +388,8 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
   }
   context_ = context;
 
-  const bool registered = DataModelHost::Instance().Register(context, "contacts", [](Rml::DataModelConstructor& ctor) {
-    auto& controller = ContactsController::Instance();
+  const bool registered = DataModelHost::Instance().Register(context, "contacts", [this](Rml::DataModelConstructor& ctor) {
+    auto& controller = *this;
     if (auto list_handle = ctor.RegisterStruct<ContactListRow>()) {
       list_handle.RegisterMember("id", &ContactListRow::id);
       list_handle.RegisterMember("title", &ContactListRow::title);

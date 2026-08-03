@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/messaging/AgentUiPorts.h"
+#include "feature/ui/ContactsNotifyPorts.h"
 #include "feature/messaging/MessagingChatPorts.h"
 #include "feature/chat/ChatThreadChrome.h"
 #include "feature/chat/ChatTranscriptScroller.h"
@@ -83,6 +84,7 @@ public:
   bool Setup(Rml::Context* context);
   void BindChatPorts(MessagingChatPorts ports);
   void BindAgentPorts(AgentUiPorts ports);
+  void BindContactsNotify(ContactsNotifyPorts ports);
   void BindShellSetup(ShellSetupPorts ports);
   void BindSessionStore(SessionStore& store);
   void BindBadgeAggregator(BadgeAggregator& badges);
@@ -291,6 +293,7 @@ private:
   Rml::Context* context_ = nullptr;
   MessagingChatPorts chat_ports_;
   AgentUiPorts agent_ports_;
+  ContactsNotifyPorts contacts_notify_;
   ShellSetupPorts shell_setup_;
   SessionStore* session_store_ = nullptr;
   BadgeAggregator* badges_ = nullptr;

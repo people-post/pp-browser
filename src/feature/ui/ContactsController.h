@@ -24,6 +24,12 @@ struct Contact;
 
 class ContactsController : public Module {
 public:
+  ContactsController();
+  ~ContactsController() override = default;
+
+  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
+  static void InstallInstance(ContactsController& controller);
+  static void ClearInstance();
   static ContactsController& Instance();
 
   void BindContactsPorts(MessagingContactsPorts ports);
@@ -89,8 +95,6 @@ public:
   void OnDetailDismissed();
 
 private:
-  ContactsController();
-
   static void SelectContactCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void BackToListCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void StartChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -148,6 +152,7 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
 
+  static ContactsController* installed_instance_;
 };
 
 } // namespace pbr

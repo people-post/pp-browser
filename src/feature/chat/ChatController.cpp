@@ -297,6 +297,10 @@ void ChatController::BindAgentPorts(AgentUiPorts ports) {
   agent_ports_ = std::move(ports);
 }
 
+void ChatController::BindContactsNotify(ContactsNotifyPorts ports) {
+  contacts_notify_ = std::move(ports);
+}
+
 bool ChatController::AgentReady() const {
   return agent_ports_.has_session && agent_ports_.has_session();
 }
@@ -1168,7 +1172,9 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
               return;
             }
             RefreshFromMessaging();
-            ContactsController::Instance().Refresh();
+            if (contacts_notify_.refresh) {
+              contacts_notify_.refresh();
+            }
             if (!ActiveThreadId().empty()) {
               ShellSelectNavTab(NavTab::Sessions);
               ShellSetPrimaryPane("chat");
@@ -1194,7 +1200,9 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       return;
     }
     RefreshFromMessaging();
-    ContactsController::Instance().Refresh();
+    if (contacts_notify_.refresh) {
+      contacts_notify_.refresh();
+    }
     if (!ActiveThreadId().empty()) {
       ShellSelectNavTab(NavTab::Sessions);
       ShellSetPrimaryPane("chat");
@@ -1359,7 +1367,11 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
           "view_contact",
           "View contact",
           nullptr,
-          [contact_id]() { ContactsController::Instance().OnSelectContact(contact_id); },
+          [this, contact_id]() {
+            if (contacts_notify_.select_contact) {
+              contacts_notify_.select_contact(contact_id);
+            }
+          },
           "../icons/contacts.svg",
       });
     } else if (!peer_id.empty()) {
@@ -1397,7 +1409,9 @@ void ChatController::OnOpenPeerSheet(Rml::Event& ev) {
               channel = active->channel;
             }
             (void)chat_ports_.find_or_create_direct_thread(created->id, channel);
-            ContactsController::Instance().OnSelectContact(created->id);
+            if (contacts_notify_.select_contact) {
+              contacts_notify_.select_contact(created->id);
+            }
             chat_ports_.notify_thread_changed();
           },
           "../icons/contacts.svg",
@@ -2035,7 +2049,9 @@ void ChatController::WireMessagingBindings() {
   DirtyChatChrome();
   chat_ports_.set_on_messages_changed([this]() {
     RefreshFromMessaging();
-    ContactsController::Instance().Refresh();
+    if (contacts_notify_.refresh) {
+      contacts_notify_.refresh();
+    }
   });
   chat_ports_.set_on_delivery_notice([this](const std::string& message) {
     ShowToast(message);
@@ -2080,7 +2096,9 @@ void ChatController::WireMessagingBindings() {
   }
   chat_ports_.set_on_thread_changed([this]() {
     RefreshFromMessaging();
-    ContactsController::Instance().Refresh();
+    if (contacts_notify_.refresh) {
+      contacts_notify_.refresh();
+    }
   });
   if (chat_ports_.has_router && chat_ports_.has_router()) {
     chat_ports_.set_on_local_action(
@@ -2301,10 +2319,6 @@ bool ChatController::Setup(Rml::Context* context) {
   }
 
   if (!ShellHost::RegisterWindowModel(context)) {
-    return false;
-  }
-
-  if (!ContactsController::Instance().RegisterModel(context)) {
     return false;
   }
 
