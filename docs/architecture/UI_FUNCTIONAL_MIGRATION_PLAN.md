@@ -5,7 +5,7 @@
 > **Architecture reference (permanent):** [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)
 
 **Last updated:** 2026-08-03  
-**Status:** Phase 5 complete; Phase 6 complete for presenters (chat/call/shell off Hub); Phase 7 partial
+**Status:** Phase 5–6 complete; Phase 7 complete (AgentUiPorts wired); Phase 8 not started
 
 ---
 
@@ -177,9 +177,9 @@
 - [x] `AgentActions` — configure, submit, cancel, poll events, bind hub via ports
 - [x] Chat presenter uses facade; `AgentSession` owned by Application
 
-**Exit check:** Chat does not call `AgentSession` methods directly except through facade.
+**Exit check:** Chat does not call `AgentSession` methods directly except through `AgentUiPorts` — **done**.
 
-**Notes:** `AgentUiPorts.h` added; wiring deferred.
+**Notes:** `AgentUiPorts` + `MakeAgentUiPorts`; `Application` owns `AgentSession`; `ChatController` binds ports only.
 
 ---
 
