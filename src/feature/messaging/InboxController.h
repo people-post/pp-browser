@@ -3,6 +3,7 @@
 #include "common/Module.h"
 #include "base/people/ContactsStore.h"
 #include "base/ui/ChatWidgetTypes.h"
+#include "base/messaging/CallTypes.h"
 #include "base/messaging/IThreadStore.h"
 #include "base/messaging/ThreadTypes.h"
 #include "feature/messaging/DirectoryShadowCache.h"
@@ -73,10 +74,12 @@ private:
   std::string ResolveRowClass(const std::string& sender_contact_id) const;
   std::string BuildMessageRml(const ThreadMessage& message) const;
   std::string BuildSystemRml(const ThreadMessage& message) const;
+  std::string BuildCallHistoryRml(const ThreadMessage& message, CallControlType type) const;
   std::string BuildContactCardRml(const ThreadMessage& message) const;
   std::string BuildCryptoTxRml(const ThreadMessage& message) const;
   std::string BuildTransportBadgeHtml(const ThreadMessage& message) const;
   std::string BuildSharedBadgeHtml(const ThreadMessage& message) const;
+  std::string FormatCallPeerLabel(const std::string& identity) const;
 
   IThreadStore& store_;
   ContactsStore& contacts_;
