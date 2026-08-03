@@ -7,6 +7,9 @@ set(_pp_platform_core_sources
   ICredentialStore.cpp
   EnvCredentialStore.cpp
   ExecutablePath.cpp
+  ThreadRuntime.cpp
+  CoordinatorThread.cpp
+  PlatformRuntime.cpp
   os/OsFile_Posix.cpp
   os/OsTime_Posix.cpp
   os/OsProcess_Posix.cpp
@@ -36,6 +39,7 @@ set(_pp_platform_gui_sources
   PlatformNavigation.cpp
   PlatformOpenUrl.cpp
   PlatformServices.cpp
+  PlatformRuntimeGui.cpp
   PlatformStartupHints.cpp
   PlatformUserHints.cpp
   PushWakeJni.cpp

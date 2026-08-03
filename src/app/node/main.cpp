@@ -1,6 +1,7 @@
 #include "app/node/NodeBootstrap.h"
 
 #include "base/crypto/ProfileSecretsService.h"
+#include "base/platform/PlatformRuntime.h"
 #include "base/platform/PlatformLogDefaults.h"
 #include "common/Logger.h"
 
@@ -111,6 +112,9 @@ int main(int argc, char** argv) {
     if (boot->runtime) {
       boot->runtime->Stop();
     }
+    if (pbr::PlatformRuntime::IsRunning()) {
+      pbr::PlatformRuntime::Shutdown();
+    }
     if (boot->identity) {
       boot->identity->Flush();
       pbr::ProfileSecretsService::Instance().UnregisterDekConsumer(boot->identity.get());
@@ -137,6 +141,9 @@ int main(int argc, char** argv) {
   }
   if (boot->runtime) {
     boot->runtime->Stop();
+  }
+  if (pbr::PlatformRuntime::IsRunning()) {
+    pbr::PlatformRuntime::Shutdown();
   }
   if (boot->identity) {
     boot->identity->Flush();

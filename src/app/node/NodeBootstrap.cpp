@@ -9,6 +9,7 @@
 #include "libp2p/integration/host/CircuitRelayService.h"
 #include "libp2p/integration/host/MediaRelayService.h"
 #include "libp2p/integration/host/Reachability.h"
+#include "base/platform/PlatformRuntime.h"
 #include "common/Logger.h"
 
 #include <utility>
@@ -84,6 +85,9 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
       config->libp2p.max_connections, config->libp2p.max_concurrent_dials, config->libp2p.dial_timeout_ms,
       config->libp2p.idle_ttl_ms, config->libp2p.dial_failure_backoff_ms);
   runtime_cfg.bootstrap_peers = config->libp2p.bootstrap_peers;
+  PlatformRuntimeConfig platform_cfg;
+  PlatformRuntime::Initialize(platform_cfg);
+
   const ListenBusyPolicy busy =
       options.listen_fallback ? ListenBusyPolicy::DesktopFallback : ListenBusyPolicy::FailLoud;
   runtime_cfg.listen_candidates = BuildLibp2pListenCandidates(config->libp2p.listen_multiaddr, busy);
@@ -93,6 +97,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   if (auto started = runtime->Start(runtime_cfg); !started) {
     log.error << "libp2p listen failed: "
               << (runtime->LastError().empty() ? started.error().message : runtime->LastError());
+    PlatformRuntime::Shutdown();
     ProfileSecretsService::Instance().UnregisterDekConsumer(identity.get());
     return started.error();
   }

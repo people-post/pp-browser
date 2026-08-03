@@ -1,6 +1,7 @@
 #include "feature/messaging/CallLibp2pMediaBridge.h"
 
 #include "base/platform/BrowserThread.h"
+#include "base/platform/PlatformRuntime.h"
 #include "common/Utilities.h"
 
 #include <chrono>
@@ -405,12 +406,12 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
     log().warning << "Offerer waiting for inbound call-media call_id=" << call_id;
   } else {
     connect_worker_inflight_.store(true);
-    std::thread([this, params, cbs]() {
+    PlatformRuntime::PostWorkerCritical([this, params, cbs]() {
       log().warning << "Connect worker enter call_id=" << params.call_id << " peer=" << params.peer_key
                     << " role=answerer";
       Roe<void> connected = ConnectOffererWithRetry(params, cbs);
       connect_worker_inflight_.store(false);
-      BrowserThread::PostTask(BrowserThreadId::UI, [this, connected, call_id = params.call_id]() {
+      PlatformRuntime::PostUI([this, connected, call_id = params.call_id]() {
         if (direct_.IsActive() && media_.IsConnected()) {
           return;
         }
@@ -425,7 +426,7 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
           host_.P2pNotifyRingChanged();
         }
       });
-    }).detach();
+    });
   }
 
   libp2p_connect_missing_mic_ = false;
@@ -494,7 +495,7 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call
       }
       // Accept-time SyncInbox often races the offerer's MediaKey send — keep polling.
       // SyncInbox coalesces via poll_again_; do not assume each Request starts HTTP.
-      std::thread([this, call_id]() {
+      PlatformRuntime::PostWorkerBackground([this, call_id]() {
         for (int i = 0; i < kMediaKeyInboxPollRounds; ++i) {
           if (pending_answerer_call_id_ != call_id) {
             return;
@@ -511,7 +512,7 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call
           }
         }
         log().warning << "Deferred MediaKey wait exhausted call_id=" << call_id;
-      }).detach();
+      });
       return;
     }
     if (auto started = StartMediaAsAnswerer(call_id, peer_identity); !started) {

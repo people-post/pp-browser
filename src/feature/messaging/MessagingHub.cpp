@@ -23,6 +23,7 @@
 #include "base/people/ContactTypes.h"
 #include "base/platform/AppLifecycle.h"
 #include "base/platform/BrowserThread.h"
+#include "base/platform/PlatformRuntime.h"
 #include "base/platform/NetworkConnectivity.h"
 #include "base/platform/Platform.h"
 #include "base/data/PlatformDefaults.h"
@@ -47,7 +48,6 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
-#include <thread>
 #include <unordered_set>
 
 namespace pbr {
@@ -436,7 +436,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
         return;
       }
       // Wire / mDNS on a worker — must not sit behind PollInbox on Browser IO.
-      std::thread([this]() {
+      PlatformRuntime::PostWorkerCritical([this]() {
         if (!messaging_ready_ || !node_runtime_) {
           return;
         }
@@ -450,13 +450,13 @@ void MessagingHub::SyncMobileEphemeralListen() {
         if (!still_want) {
           if (node_runtime_->EphemeralListenActive()) {
             node_runtime_->StopEphemeralListenAsync([this]() {
-              std::thread([this]() {
+              PlatformRuntime::PostWorkerCritical([this]() {
                 if (messaging_ready_) {
                   ApplyMeshAdmissionPolicies();
                   WireCallMediaRelayDeps();
                   SyncLanMdnsAdvertisement();
                 }
-              }).detach();
+              });
             });
           }
           return;
@@ -470,7 +470,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
           media_relay_->Start();
           mobile_ephemeral_relay_started_ = true;
         }
-      }).detach();
+      });
     });
     return;
   }
@@ -1077,6 +1077,7 @@ Roe<void> MessagingHub::EnsureMessagingReady() {
   }
 
   messaging_ready_ = true;
+  StartCoordinatorTimers();
   NotifyMessagingReady();
   return {};
 }
@@ -1128,6 +1129,29 @@ void MessagingHub::TickLibp2p() {
   SyncMobileEphemeralListen();
   SyncLanMdnsAdvertisement();
   TickReachabilityUx();
+}
+
+namespace {
+
+constexpr auto kHubPolicyTimerInterval = std::chrono::seconds(1);
+
+} // namespace
+
+void MessagingHub::StartCoordinatorTimers() {
+  if (hub_policy_timer_id_ != 0) {
+    return;
+  }
+  hub_policy_timer_id_ = PlatformRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
+    TickLibp2p();
+  });
+}
+
+void MessagingHub::StopCoordinatorTimers() {
+  if (hub_policy_timer_id_ == 0) {
+    return;
+  }
+  PlatformRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
+  hub_policy_timer_id_ = 0;
 }
 
 ReachabilitySnapshot MessagingHub::Reachability() const {
@@ -1668,6 +1692,7 @@ void MessagingHub::Shutdown() {
   router_.reset();
   store_->Flush();
   contacts_->Flush();
+  StopCoordinatorTimers();
   if (messaging_ready_) {
     identity_->Flush();
   }

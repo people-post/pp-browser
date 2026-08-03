@@ -208,6 +208,8 @@ private:
   /** N025: lifecycle sets desire; Hub executes start/stop on IO only. */
   void SetEphemeralListenDesire(bool want);
   void EnsureCallLifecycleBound();
+  void StartCoordinatorTimers();
+  void StopCoordinatorTimers();
 
   std::string data_dir_;
   std::string profile_id_;
@@ -270,6 +272,7 @@ private:
   std::function<void()> on_messaging_ready_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
+  uint64_t hub_policy_timer_id_ = 0;
   bool mobile_ephemeral_relay_started_ = false;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
   bool mobile_ephemeral_start_inflight_ = false;

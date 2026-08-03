@@ -18,6 +18,7 @@
 #include "feature/chat/ChatController.h"
 #include "feature/chat/MessagingTools.h"
 #include "base/platform/BrowserThread.h"
+#include "base/platform/PlatformRuntime.h"
 #include "base/platform/IAssetLocator.h"
 #include "base/platform/ILocalNotifier.h"
 #include "base/platform/IPathProvider.h"
@@ -165,6 +166,7 @@ void ApplyUiDocumentLanguage(Rml::Context* context) {
 
 Application::Application() {
   redirectLogger("Application");
+  PlatformRuntime::Initialize();
   messaging_ = std::make_unique<MessagingHub>();
   messaging_->BindSessionStore(store_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
@@ -313,7 +315,7 @@ bool Application::Initialize(const char* window_title) {
   Rml::SetSystemInterface(Backend::GetSystemInterface());
   Rml::SetRenderInterface(Backend::GetRenderInterface());
 
-  if (Rml::FileInterface* packaged_files = PlatformServices::PackagedFileInterface()) {
+  if (Rml::FileInterface* packaged_files = PlatformRuntime::PackagedFileInterface()) {
     Rml::SetFileInterface(packaged_files);
   }
 
@@ -789,9 +791,6 @@ void Application::Run() {
       contacts_->Tick();
     }
     call_->Tick();
-    if (Messaging().IsMessagingReady()) {
-      Messaging().TickLibp2p();
-    }
     chat_->Update();
     ContextMenuHost::Instance().Update();
     shell_->Update(context);
@@ -931,6 +930,10 @@ void Application::Shutdown() {
   {
     StartupPhase phase("Shutdown::BrowserThread");
     BrowserThread::Shutdown();
+  }
+  if (PlatformRuntime::IsRunning()) {
+    StartupPhase phase("Shutdown::PlatformRuntime");
+    PlatformRuntime::Shutdown();
   }
 }
 

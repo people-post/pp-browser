@@ -1,5 +1,7 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 
+#include "common/WorkerDispatch.h"
+
 #include <libp2p/crypto/key.hpp>
 #include <libp2p/host/explicit_host.hpp>
 #include <libp2p/host/host.hpp>
@@ -13,6 +15,7 @@
 
 #include <condition_variable>
 #include <cstdlib>
+#include <cassert>
 #include <future>
 #include <mutex>
 
@@ -82,6 +85,13 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
 
   EnsureLogging();
   config_ = config;
+  if (WorkerDispatch::IsInstalled()) {
+    owned_worker_pool_.reset();
+    worker_pool_ = nullptr;
+  } else {
+    owned_worker_pool_ = std::make_unique<WorkerPool>();
+    worker_pool_ = owned_worker_pool_.get();
+  }
 
   io_context_ = std::make_shared<boost::asio::io_context>(1);
   // Keep run() alive after the startup post: an idle Client host otherwise drains
@@ -112,6 +122,8 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
 
   auto ma_res = libp2p::multi::Multiaddress::create(config_.listen_multiaddr);
   if (!ma_res) {
+    owned_worker_pool_.reset();
+    worker_pool_ = nullptr;
     work_guard_.reset();
     running_ = false;
     host_.reset();
@@ -146,7 +158,16 @@ void Libp2pHost::Stop() {
     if (io_thread_.joinable()) {
       io_thread_.join();
     }
+    if (owned_worker_pool_) {
+      owned_worker_pool_->Shutdown();
+      owned_worker_pool_.reset();
+    }
+    worker_pool_ = nullptr;
     return;
+  }
+  if (owned_worker_pool_) {
+    owned_worker_pool_->Shutdown();
+    owned_worker_pool_.reset();
   }
   work_guard_.reset();
   if (io_context_) {
@@ -157,6 +178,7 @@ void Libp2pHost::Stop() {
   }
   host_.reset();
   io_context_.reset();
+  worker_pool_ = nullptr;
 }
 
 libp2p::Host& Libp2pHost::GetHost() {
@@ -201,6 +223,15 @@ void Libp2pHost::Post(std::function<void()> fn) {
     return;
   }
   boost::asio::post(*io_context_, std::move(fn));
+}
+
+WorkerPool& Libp2pHost::GetWorkerPool() {
+  assert(worker_pool_ != nullptr && "Libp2pHost::GetWorkerPool requires a private test pool");
+  return *worker_pool_;
+}
+
+const WorkerPool& Libp2pHost::GetWorkerPool() const {
+  return const_cast<Libp2pHost*>(this)->GetWorkerPool();
 }
 
 Roe<void> Libp2pHost::PostAndWait(std::function<void()> fn) {
