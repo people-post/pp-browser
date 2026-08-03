@@ -312,7 +312,7 @@ void ShellHost::SetAuxiliaryAvailable(bool available) {
   if (!available) {
     state_.auxiliary_open = false;
   }
-  DirtyWindow();
+  DirtyNavChrome();
   // Compact: callers open the sheet via OpenAuxiliary() when appropriate. Do not toast
   // "tap Preview" here — that message stuck on mobile when the fake frame clock stalled,
   // and it conflicts with auto-open. Expanded still opens the side pane immediately.
@@ -355,7 +355,6 @@ void ShellHost::ClearTabContext() {
 void ShellHost::SetPrimaryPane(const std::string& key) {
   state_.primary_pane_key = key.c_str();
   RequestSyncLayout();
-  DirtyWindow();
 }
 
 void ShellHost::ClearPrimaryPane() {
@@ -365,7 +364,7 @@ void ShellHost::ClearPrimaryPane() {
 void ShellHost::SelectNavTab(NavTab tab) {
   if (state_.unlock_in_progress && tab != NavTab::Home) {
     ShellFeedback::ShowToast(state_, Tr("startup.still_preparing"));
-    DirtyWindow();
+    DirtyFeedback();
     return;
   }
   // Compact Me stays an account bottom sheet (same as before), not a list/detail tab.
@@ -386,7 +385,6 @@ void ShellHost::SelectNavTab(NavTab tab) {
     on_nav_tab_changed_(tab);
   }
   RequestSyncLayout();
-  DirtyWindow();
 }
 
 void ShellHost::OpenCompactChat() {
@@ -415,7 +413,7 @@ void ShellHost::CloseCompactChat() {
 void ShellHost::OpenAccountSheet() {
   if (state_.unlock_in_progress) {
     ShellFeedback::ShowToast(state_, Tr("startup.still_preparing"));
-    DirtyWindow();
+    DirtyFeedback();
     return;
   }
   if (state_.account_sheet_open) {
@@ -429,7 +427,6 @@ void ShellHost::OpenAccountSheet() {
     on_account_sheet_opened_();
   }
   RequestSyncLayout();
-  DirtyWindow();
 }
 
 void ShellHost::CloseAccountSheet() {
@@ -446,7 +443,6 @@ void ShellHost::CloseAccountSheet() {
     on_account_sheet_closed_();
   }
   RequestSyncLayout();
-  DirtyWindow();
 }
 
 void ShellHost::ToggleAuxiliary() {
@@ -555,27 +551,23 @@ void ShellHost::CommitDismiss(DismissTarget target) {
       entry.commit();
     }
     // commit schedules RefreshDismissGestures after the detail DOM updates.
-    DirtyWindow();
+    DirtyNavChrome();
     return;
   }
   case DismissTarget::CompactChatOverlay:
     CloseCompactChat();
-    DirtyWindow();
     return;
   case DismissTarget::AuxiliarySheet:
     CloseAuxiliary();
-    DirtyWindow();
     return;
   case DismissTarget::AccountSheet:
     CloseAccountSheet();
     return;
   case DismissTarget::Transient:
     PopTransient();
-    DirtyWindow();
     return;
   case DismissTarget::OverlayLayer:
     CloseLayer();
-    DirtyWindow();
     return;
   }
 }
@@ -619,7 +611,6 @@ bool ShellHost::HandleDismiss() {
   }
   if (flow_ && flow_->HandleDismiss()) {
     RequestSyncLayout();
-    DirtyWindow();
     return true;
   }
   return RequestDismiss(DismissStyle::Instant);
@@ -663,7 +654,7 @@ void ShellHost::RefreshDismissGestures() {
   AttachSwipeBackGesture();
 }
 
-void ShellHost::DirtyWindow() {
+void ShellHost::DirtyNavChrome() {
   DataModelHost::Instance().Dirty("window", "layout_mode");
   DataModelHost::Instance().Dirty("window", "nav_tab");
   DataModelHost::Instance().Dirty("window", "nav_badges");
@@ -677,6 +668,9 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "auxiliary_open");
   DataModelHost::Instance().Dirty("window", "auxiliary_available");
   DataModelHost::Instance().Dirty("window", "transient_active");
+}
+
+void ShellHost::DirtyFeedback() {
   DataModelHost::Instance().Dirty("window", "banner_message");
   DataModelHost::Instance().Dirty("window", "toasts");
   DataModelHost::Instance().Dirty("window", "dialog_active");
@@ -688,6 +682,9 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "dialog_checkbox_checked");
   DataModelHost::Instance().Dirty("window", "dialog_show_prompt");
   DataModelHost::Instance().Dirty("window", "dialog_prompt_value");
+}
+
+void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_active");
   DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
@@ -696,7 +693,10 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin");
   DataModelHost::Instance().Dirty("window", "pin_gate_pin_confirm");
-  DirtyCallChrome();
+  DataModelHost::Instance().Dirty("window", "unlock_in_progress");
+}
+
+void ShellHost::DirtyStatusChrome() {
   DataModelHost::Instance().Dirty("window", "activity_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_connection");
@@ -705,7 +705,14 @@ void ShellHost::DirtyWindow() {
   DataModelHost::Instance().Dirty("window", "titlebar_traffic_lights");
   DataModelHost::Instance().Dirty("window", "window_maximized");
   DataModelHost::Instance().Dirty("window", "fonts_ready");
-  DataModelHost::Instance().Dirty("window", "unlock_in_progress");
+}
+
+void ShellHost::DirtyWindow() {
+  DirtyNavChrome();
+  DirtyFeedback();
+  DirtyPinGate();
+  DirtyCallChrome();
+  DirtyStatusChrome();
 }
 
 void ShellHost::DirtyCallChrome() {
@@ -763,7 +770,7 @@ void ShellHost::RequestRemountNavRail() {
       return;
     }
     host.MountNavRail();
-    host.DirtyWindow();
+    host.DirtyNavChrome();
   });
 }
 
@@ -780,7 +787,7 @@ void ShellHost::SetActivity(bool visible, const Rml::String& message) {
   } else {
     state_.statusbar_activity = "Thinking...";
   }
-  DirtyWindow();
+  DirtyStatusChrome();
 }
 
 void ShellHost::SetOnBeforeTransientMount(std::function<void(const std::string& key)> callback) {
@@ -991,6 +998,7 @@ void ShellHost::RefreshStatusbarVisibility() {
     return;
   }
   state_.statusbar_visible = visible;
+  DirtyStatusChrome();
   ApplySafeAreaLayout();
 }
 
@@ -998,6 +1006,7 @@ void ShellHost::RefreshStatusbarConnection() {
   if (!state_.statusbar_visible) {
     if (!state_.statusbar_connection.empty()) {
       state_.statusbar_connection.clear();
+      DirtyStatusChrome();
     }
     return;
   }
@@ -1007,6 +1016,7 @@ void ShellHost::RefreshStatusbarConnection() {
   }
   if (next != state_.statusbar_connection) {
     state_.statusbar_connection = std::move(next);
+    DirtyStatusChrome();
   }
 }
 
@@ -1333,7 +1343,7 @@ std::string ShellHost::SerializeCallRing() const {
 
 std::string ShellHost::SerializeCallInProgress() const {
   // Compact-friendly: stage + stacked bar (title/actions row, meters row). Icon controls.
-  // Mounted into #shell-call-in-progress-mount when active; video tiles still DirtyWindow-only.
+  // Mounted into #shell-call-in-progress-mount when active; video tiles still DirtyCallChrome-only.
   if (!state_.call_in_progress.active) {
     return {};
   }
@@ -1790,7 +1800,7 @@ void ShellHost::Update(Rml::Context* context) {
   const size_t toast_count_before = state_.toasts.size();
   ShellFeedback::ExpireToasts(state_, elapsed_ms_);
   if (state_.toasts.size() != toast_count_before) {
-    DirtyWindow();
+    DirtyFeedback();
   }
 
   if (pending_dismiss_ && now >= pending_dismiss_->at) {
@@ -1815,9 +1825,9 @@ void ShellHost::Update(Rml::Context* context) {
     if (maximized != state_.window_maximized) {
       state_.window_maximized = maximized;
       DesktopWindowChrome::RefreshAppearance();
+      DirtyStatusChrome();
     }
   }
-  DirtyWindow();
 }
 
 void ShellHost::NotifyFrameEnd(Rml::Context* context) {
@@ -1899,7 +1909,7 @@ void ShellHost::DismissBannerCallback(Rml::DataModelHandle /*model*/, Rml::Event
                                       const Rml::VariantList& /*args*/) {
   ShellHost& host = Instance();
   ShellFeedback::DismissBanner(host.state_);
-  host.DirtyWindow();
+  host.DirtyFeedback();
 }
 
 void ShellHost::DialogOkCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -1916,7 +1926,7 @@ void ShellHost::DialogToggleCheckboxCallback(Rml::DataModelHandle /*model*/, Rml
                                              const Rml::VariantList& /*args*/) {
   ShellHost& host = Instance();
   host.state_.dialog.checkbox_checked = !host.state_.dialog.checkbox_checked;
-  host.DirtyWindow();
+  host.DirtyFeedback();
 }
 
 void ShellHost::PinGateSubmitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -2014,7 +2024,7 @@ void ShellHost::TitlebarToggleMaximizeCallback(Rml::DataModelHandle /*model*/, R
   DesktopWindowChrome::ToggleMaximize();
   ShellHost& host = Instance();
   host.state_.window_maximized = DesktopWindowChrome::IsMaximized();
-  host.DirtyWindow();
+  host.DirtyStatusChrome();
 }
 
 void ShellHost::TitlebarCloseCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,

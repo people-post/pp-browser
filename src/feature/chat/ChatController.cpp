@@ -400,8 +400,8 @@ ShellChromeSnapshot ChatController::ChromeSnapshot() const {
 }
 
 void ChatController::ShellDirty() {
-  if (shell_navigation_.dirty_window) {
-    shell_navigation_.dirty_window();
+  if (shell_navigation_.dirty_nav_chrome) {
+    shell_navigation_.dirty_nav_chrome();
   }
 }
 
@@ -2195,7 +2195,7 @@ bool ChatController::Setup(Rml::Context* context) {
   log().info << "Chat initialized (model: " << config.llm.model << ")";
 
   // Do NOT DataModelHost::Clear() here. Application already registered window/settings/contacts/
-  // people_picker handles; a full Clear made DirtyWindow/DirtyCallChrome no-ops (handle=0) while
+  // people_picker handles; a full Clear made DirtyNavChrome/DirtyCallChrome no-ops (handle=0) while
   // MountInner still updated live Context models — mute/speaker icons stuck until remount.
 
   const auto register_enter_send = [this](Rml::Input::KeyIdentifier key) {

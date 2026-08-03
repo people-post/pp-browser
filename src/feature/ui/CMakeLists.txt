@@ -4,6 +4,7 @@ pp_browser_add_feature_library(pp_feature_ui
     CallChromeSync.cpp
     CallConflictCopy.cpp
     CallController.cpp
+    ContactsChromeSync.cpp
     ContactsController.cpp
     PeoplePickerController.cpp
     DataModelHost.cpp
@@ -12,6 +13,7 @@ pp_browser_add_feature_library(pp_feature_ui
     PinGateController.cpp
     ShellPinGatePorts.cpp
     ShellCallChromePorts.cpp
+    ShellContactsChromePorts.cpp
     DeferredStartup.cpp
     ClientCompatController.cpp
     ProfileSettingsSection.cpp

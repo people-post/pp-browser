@@ -69,7 +69,8 @@ struct ShellNavigationPorts {
   std::function<void()> refresh_dismiss_gestures;
   std::function<void()> request_remount_nav_rail;
   std::function<void(bool visible, const Rml::String& message)> set_activity;
-  std::function<void()> dirty_window;
+  /** Nav / badge / sheet / auxiliary bindings (not grab-bag DirtyWindow). */
+  std::function<void()> dirty_nav_chrome;
   std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
   /** Bootstrap / deferred font load — UI-owned chrome readiness flag. */
   std::function<bool&()> fonts_ready;

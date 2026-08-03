@@ -11,7 +11,7 @@ ShellPinGatePorts MakeShellPinGatePorts(ShellHost& shell) {
   ports.set_activity = [&shell](const bool visible, const Rml::String& message) {
     shell.SetActivity(visible, message);
   };
-  ports.dirty_window = [&shell]() { shell.DirtyWindow(); };
+  ports.dirty_pin_gate = [&shell]() { shell.DirtyPinGate(); };
   ports.request_sync_layout = [&shell](const bool restore, const char* reason) {
     shell.RequestSyncLayout(restore, reason);
   };

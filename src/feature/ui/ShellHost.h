@@ -126,8 +126,17 @@ public:
   bool HasLocalBack(const std::string& id) const;
   void RefreshDismissGestures();
 
+  /** Full window-model refresh (e.g. after SyncLayout remount). Prefer domain helpers. */
   void DirtyWindow();
-  /** Dirty only call ring / in-progress window model keys (not nav/dialog/pin). */
+  /** Nav / layout / sheet / auxiliary / transient binding keys. */
+  void DirtyNavChrome();
+  /** Banner / toast / dialog binding keys. */
+  void DirtyFeedback();
+  /** PIN gate + unlock_in_progress binding keys. */
+  void DirtyPinGate();
+  /** Activity / statusbar / titlebar / fonts_ready binding keys. */
+  void DirtyStatusChrome();
+  /** Call ring / in-progress window model keys (not nav/dialog/pin). */
   void DirtyCallChrome();
   /** ShellHost applies Remount or DirtyCallChrome + force-frame for call chrome updates. */
   void ApplyCallChromeUpdate(CallChromeUpdate update);

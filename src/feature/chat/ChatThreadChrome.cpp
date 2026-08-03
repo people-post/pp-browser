@@ -25,8 +25,8 @@ void ChatThreadChrome::BindShellFeedback(ShellFeedbackPorts ports) {
 namespace {
 
 void ShellDirty(const ShellNavigationPorts& ports) {
-  if (ports.dirty_window) {
-    ports.dirty_window();
+  if (ports.dirty_nav_chrome) {
+    ports.dirty_nav_chrome();
   }
 }
 

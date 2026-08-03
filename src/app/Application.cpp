@@ -33,6 +33,7 @@
 #include "feature/messaging/MessagingHub.h"
 #include "feature/settings/SettingsCommands.h"
 #include "feature/ui/ChatSessionPorts.h"
+#include "app/ContactsShellBridge.h"
 #include "feature/ui/ContactsController.h"
 #include "feature/ui/ContactsNotifyPorts.h"
 #include "feature/ui/CallController.h"
@@ -57,6 +58,7 @@
 #include "feature/messaging/MessagingPeoplePickerPorts.h"
 #include "feature/messaging/MessagingUiPorts.h"
 #include "feature/ui/ShellCallChromePorts.h"
+#include "feature/ui/ShellContactsChromePorts.h"
 #include "feature/ui/ShellPinGatePorts.h"
 #include "ElementCallVideoTile.h"
 #include "base/ui/Theme.h"
@@ -110,7 +112,7 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     if (badges) {
       badges->Refresh();
     }
-    shell.DirtyWindow();
+    shell.DirtyNavChrome();
   });
 
   shell.SetOnLayoutModeChanged([&shell, &settings, &contacts, &chat](LayoutMode mode) {
@@ -181,6 +183,7 @@ Application::Application() {
   SettingsController::InstallInstance(*settings_);
   contacts_ = std::make_unique<ContactsController>();
   ContactsController::InstallInstance(*contacts_);
+  contacts_shell_bridge_ = std::make_unique<ContactsShellBridge>();
   people_picker_ = std::make_unique<PeoplePickerController>();
   PeoplePickerController::InstallInstance(*people_picker_);
   chat_ = std::make_unique<ChatController>();
@@ -504,6 +507,12 @@ bool Application::Initialize(const char* window_title) {
 
   contacts_->BindShellNavigation(shell_navigation);
   contacts_->BindShellFeedback(shared_feedback);
+  contacts_shell_bridge_->BindApply(MakeShellContactsChromePorts(shell));
+  contacts_->BindSurfaceNotify(ContactsSurfaceNotifyPorts{
+      .push_surface = [this](const ContactsSurfaceSnapshot& snap) {
+        contacts_shell_bridge_->OnSurface(snap);
+      },
+  });
 
   chat_->BindShellNavigation(shell_navigation);
   chat_->BindShellFeedback(shared_feedback);
@@ -657,6 +666,10 @@ bool Application::Initialize(const char* window_title) {
     settings_->BindShellFeedback({});
     contacts_->BindShellNavigation({});
     contacts_->BindShellFeedback({});
+    contacts_->BindSurfaceNotify({});
+    if (contacts_shell_bridge_) {
+      contacts_shell_bridge_->Clear();
+    }
     contacts_->BindContactsPorts({});
     chat_->BindShellNavigation({});
     chat_->BindShellFeedback({});
@@ -847,6 +860,10 @@ void Application::Shutdown() {
   settings_->BindShellFeedback({});
   contacts_->BindShellNavigation({});
   contacts_->BindShellFeedback({});
+  contacts_->BindSurfaceNotify({});
+  if (contacts_shell_bridge_) {
+    contacts_shell_bridge_->Clear();
+  }
   contacts_->BindContactsPorts({});
   chat_->BindShellNavigation({});
   chat_->BindShellFeedback({});

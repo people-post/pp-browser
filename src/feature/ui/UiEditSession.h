@@ -13,7 +13,7 @@ inline constexpr const char kUiFieldProfileNickname[] = "settings.profile_nickna
  * Same-thread guard for data-value text fields (blur / leave-surface commit).
  *
  * The UI loop is single-threaded, but remount + Dirty + Context::Update re-enter:
- *   change → Dirty → SetValue → blur → Flush → DirtyAll/DirtyWindow → remount → …
+ *   change → Dirty → SetValue → blur → Flush → DirtyAll/DirtyNavChrome → remount → …
  *
  * Policy:
  * - BeginRemount / EndRemount: nestable; commits ignored while remount_depth_ > 0

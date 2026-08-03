@@ -3,6 +3,7 @@ set(PP_BROWSER_APP_SOURCES
   Application.cpp
   Bootstrap.cpp
   ConfigApplyBridge.cpp
+  ContactsShellBridge.cpp
 )
 
 if(ANDROID)

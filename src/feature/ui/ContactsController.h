@@ -3,6 +3,7 @@
 #include "common/Module.h"
 #include "feature/messaging/MessagingContactsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
+#include "feature/ui/ContactsSurfaceNotifyPorts.h"
 #include "feature/ui/ShellFeedbackPorts.h"
 #include "feature/ui/ShellNavigationPorts.h"
 
@@ -11,6 +12,7 @@
 #include <RmlUi/Core/Types.h>
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace Rml {
@@ -37,6 +39,8 @@ public:
   void BindChatPorts(ChatSessionPorts ports);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
+  /** Push surface snapshot to composition-root bridge. Clear via BindSurfaceNotify({}). */
+  void BindSurfaceNotify(ContactsSurfaceNotifyPorts ports);
 
   struct ContactListRow {
     Rml::String id;
@@ -133,8 +137,9 @@ private:
   void DirtyAll();
 
   ShellChromeSnapshot ChromeSnapshot() const;
-  void ShellDirty();
-  void ShellSyncLayout(bool restore_focus_after = false);
+  ContactsSurfaceSnapshot BuildSurfaceSnapshot() const;
+  /** Push surface snapshot to app bridge (no shell chrome knowledge). */
+  void NotifySurfaceChanged();
   void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
   void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result);
   void NavigateToChatSession();
@@ -151,6 +156,7 @@ private:
   ChatSessionPorts chat_ports_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
+  ContactsSurfaceNotifyPorts surface_notify_;
 
   static ContactsController* installed_instance_;
 };

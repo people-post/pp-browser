@@ -38,7 +38,8 @@ ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell);
 struct ShellFeedbackChromePorts {
   std::function<ShellState&()> shell_state;
   std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
-  std::function<void()> dirty_window;
+  /** Binding-only toast/banner/dialog field refresh (not grab-bag DirtyWindow). */
+  std::function<void()> dirty_feedback;
 };
 
 } // namespace pbr

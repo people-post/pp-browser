@@ -64,10 +64,7 @@ void MarkFontsReadyAndRefresh(const ShellNavigationPorts& shell) {
     return;
   }
   shell.fonts_ready() = true;
-  if (shell.dirty_window) {
-    shell.dirty_window();
-  }
-  // Remount so previously hidden CJK labels / localized chrome reshape with fallbacks.
+  // SyncLayout remounts + DirtyWindow (includes fonts_ready); no separate dirty.
   if (shell.request_sync_layout) {
     shell.request_sync_layout(true, "deferred_fonts_ready");
   }

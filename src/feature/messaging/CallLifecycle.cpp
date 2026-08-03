@@ -287,7 +287,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
     // must not gate session work (Samsung: mDNS advertise lock hung UI before this ran).
     log().info << "PostAcceptInvite queued call_id=" << call_id;
     PostAcceptInvite(call_id);
-    // Defer chrome refresh so the Accept click returns before ring teardown / DirtyWindow.
+    // Defer chrome refresh so the Accept click returns before ring teardown / DirtyCallChrome.
     if (AppRuntime::CurrentlyOnUI()) {
       AppRuntime::PostUI([this]() { NotifyChrome(); });
     } else {

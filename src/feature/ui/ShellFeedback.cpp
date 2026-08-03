@@ -15,9 +15,7 @@ void ShellFeedback::SyncDialogChrome(const char* reason) {
   if (chrome_ports_.request_sync_layout) {
     chrome_ports_.request_sync_layout(/*restore_focus_after=*/false, reason);
   }
-  if (chrome_ports_.dirty_window) {
-    chrome_ports_.dirty_window();
-  }
+  // SyncLayout remounts dialog presence and DirtyWindow(); no extra dirty_feedback.
 }
 
 namespace {

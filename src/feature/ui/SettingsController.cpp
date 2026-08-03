@@ -824,8 +824,8 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   }
   PushUiStateToBindings();
 
-  // Field commits must not DirtyAll/DirtyWindow: SetValue/remount re-enters blur and
-  // looks like per-keystroke focus loss. Toast paths still refresh chrome.
+  // Field commits must not DirtyAll/DirtyNavChrome: SetValue/remount re-enters blur and
+  // looks like per-keystroke focus loss. Toast paths refresh via DirtyFeedback in show_toast.
   if (section_id == "profile" && !show_toast) {
     return true;
   }
@@ -833,9 +833,6 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   DirtyAll();
   if (show_toast) {
     MaybeShowSaveToast(section_id);
-  }
-  if (shell_navigation_.dirty_window) {
-    shell_navigation_.dirty_window();
   }
   return true;
 }

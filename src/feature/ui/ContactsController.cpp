@@ -341,19 +341,26 @@ void ContactsController::BindShellFeedback(ShellFeedbackPorts ports) {
   shell_feedback_ = std::move(ports);
 }
 
+void ContactsController::BindSurfaceNotify(ContactsSurfaceNotifyPorts ports) {
+  surface_notify_ = std::move(ports);
+}
+
 ShellChromeSnapshot ContactsController::ChromeSnapshot() const {
   return shell_navigation_.snapshot ? shell_navigation_.snapshot() : ShellChromeSnapshot{};
 }
 
-void ContactsController::ShellDirty() {
-  if (shell_navigation_.dirty_window) {
-    shell_navigation_.dirty_window();
+ContactsSurfaceSnapshot ContactsController::BuildSurfaceSnapshot() const {
+  ContactsSurfaceSnapshot snap;
+  snap.detail_open = !selected_.id.empty();
+  for (const ContactListRow& row : contacts_) {
+    snap.contacts_unread += row.unread_count;
   }
+  return snap;
 }
 
-void ContactsController::ShellSyncLayout(bool restore_focus_after) {
-  if (shell_navigation_.request_sync_layout) {
-    shell_navigation_.request_sync_layout(restore_focus_after, nullptr);
+void ContactsController::NotifySurfaceChanged() {
+  if (surface_notify_.push_surface) {
+    surface_notify_.push_surface(BuildSurfaceSnapshot());
   }
 }
 
@@ -537,7 +544,7 @@ void ContactsController::Refresh() {
   DirtyAll();
   // Do not call context_->Update() here: Refresh runs from UI PostTasks (thread/message
   // notify, directory shadow reply) that can interleave with SyncLayout remounts.
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void ContactsController::OnNavTabActivated() {
@@ -549,7 +556,7 @@ void ContactsController::OnNavTabActivated() {
   compact_layout_ = ChromeSnapshot().layout_mode == LayoutMode::Compact;
   SyncFromStore();
   DirtyAll();
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void ContactsController::SelectContactCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -658,6 +665,7 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
 
   OpenContactDetailPane();
   DirtyAll();
+  NotifySurfaceChanged();
 }
 
 void ContactsController::OpenContactDetailPane() {
@@ -701,6 +709,7 @@ void ContactsController::OnDetailDismissed() {
   contact_dirty_ = false;
   debounce_deadline_ms_ = 0;
   DirtyAll();
+  NotifySurfaceChanged();
 }
 
 void ContactsController::OnBackToList() {
@@ -765,7 +774,6 @@ bool ContactsController::FlushSelectedContact() {
   Contact updated = BuildContactFromDetail(**existing, selected_);
   if (!contacts_ports_.upsert_contact(updated)) {
     UserFeedback::Fail("Could not save contact");
-    ShellDirty();
     return false;
   }
 
@@ -780,7 +788,7 @@ bool ContactsController::FlushSelectedContact() {
   if (contacts_ports_.notify_thread_changed) {
     contacts_ports_.notify_thread_changed();
   }
-  ShellDirty();
+  NotifySurfaceChanged();
   return true;
 }
 
@@ -812,13 +820,12 @@ void ContactsController::OnAddContact() {
   auto created = contacts_ports_.add_empty_contact();
   if (!created) {
     UserFeedback::Fail("Could not add contact");
-    ShellDirty();
     return;
   }
   SyncFromStore();
   OnSelectContact(created->id);
   DirtyAll();
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void ContactsController::OnStartChat() {
@@ -907,14 +914,12 @@ void ContactsController::OnCopyId() {
   }
   if (value.empty()) {
     ShowToast("No ID to copy");
-    ShellDirty();
     return;
   }
   if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
     system->SetClipboardText(value.c_str());
   }
   ShowToast(std::string(label) + " copied");
-  ShellDirty();
 }
 
 void ContactsController::OnShareContact() {
@@ -943,14 +948,12 @@ void ContactsController::OnShareContact() {
   }
   if (invite.empty()) {
     ShowToast("Nothing to share");
-    ShellDirty();
     return;
   }
   if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
     system->SetClipboardText(invite.c_str());
   }
   ShowToast("Contact copied");
-  ShellDirty();
 }
 
 void ContactsController::OnSetTrust(const std::string& trust) {
@@ -967,14 +970,13 @@ void ContactsController::OnSetTrust(const std::string& trust) {
   SyncContactMirrors(updated);
   if (!contacts_ports_.upsert_contact(updated)) {
     UserFeedback::Fail("Could not update trust");
-    ShellDirty();
     return;
   }
   LoadSelectedDetail(selected_.id.c_str());
   SyncFromStore();
   DirtyAll();
   ShowToast("Trust updated");
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void ContactsController::OnSyncRemote() {
@@ -986,13 +988,11 @@ void ContactsController::OnSyncRemote() {
   const std::string relay_id = selected_.relay_id.c_str();
   if (relay_id.empty()) {
     UserFeedback::Fail("No relay ID to sync");
-    ShellDirty();
     return;
   }
   auto hit = contacts_ports_.lookup_relay_user(relay_id);
   if (!hit) {
     UserFeedback::Fail(hit.error().message.empty() ? "Could not sync contact" : hit.error().message);
-    ShellDirty();
     return;
   }
   if (hit->signing_public_key_b64 && !hit->signing_public_key_b64->empty() && contacts_ports_.register_peer_signing_key) {
@@ -1007,7 +1007,6 @@ void ContactsController::OnSyncRemote() {
   if (!applied) {
     UserFeedback::Fail(applied.error().message.empty() ? "Could not save synced contact"
                                                        : applied.error().message);
-    ShellDirty();
     return;
   }
   if (contacts_ports_.register_contact_direct_endpoints) {
@@ -1017,7 +1016,7 @@ void ContactsController::OnSyncRemote() {
   SyncFromStore();
   DirtyAll();
   ShowToast("Contact synced");
-  ShellDirty();
+  NotifySurfaceChanged();
 }
 
 void ContactsController::OnRemoveContact() {
@@ -1039,7 +1038,6 @@ void ContactsController::OnRemoveContact() {
     auto removed = contacts_ports_.remove_contact(contact_id);
     if (!removed) {
       UserFeedback::Fail("Could not remove contact");
-      ShellDirty();
       return;
     }
     if (!*removed) {
@@ -1055,8 +1053,7 @@ void ContactsController::OnRemoveContact() {
     if (contacts_ports_.notify_thread_changed) {
       contacts_ports_.notify_thread_changed();
     }
-    ShellSyncLayout();
-    ShellDirty();
+    NotifySurfaceChanged();
   });
 }
 

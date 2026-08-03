@@ -157,8 +157,8 @@ void PeoplePickerController::BindShellFeedback(ShellFeedbackPorts ports) {
 }
 
 void PeoplePickerController::ShellDirty() {
-  if (shell_navigation_.dirty_window) {
-    shell_navigation_.dirty_window();
+  if (shell_navigation_.dirty_nav_chrome) {
+    shell_navigation_.dirty_nav_chrome();
   }
 }
 

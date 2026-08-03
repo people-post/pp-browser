@@ -14,7 +14,8 @@ struct ShellPinGatePorts {
   std::function<PinGateState&()> pin_gate;
   std::function<bool&()> unlock_in_progress;
   std::function<void(bool visible, const Rml::String& message)> set_activity;
-  std::function<void()> dirty_window;
+  /** PIN gate + unlock_in_progress bindings (not grab-bag DirtyWindow). */
+  std::function<void()> dirty_pin_gate;
   std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
 };
 

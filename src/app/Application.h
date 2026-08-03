@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/ai/AgentSession.h"
+#include "app/ContactsShellBridge.h"
 #include "app/Bootstrap.h"
 #include "app/ConfigApplyBridge.h"
 #include "base/data/SessionStore.h"
@@ -68,6 +69,7 @@ private:
   std::unique_ptr<CallController> call_;
   std::unique_ptr<SettingsController> settings_;
   std::unique_ptr<ContactsController> contacts_;
+  std::unique_ptr<ContactsShellBridge> contacts_shell_bridge_;
   std::unique_ptr<PeoplePickerController> people_picker_;
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;

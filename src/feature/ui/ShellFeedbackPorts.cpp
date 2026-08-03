@@ -12,21 +12,21 @@ ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell) {
   feedback_chrome.request_sync_layout = [&shell](const bool restore, const char* reason) {
     shell.RequestSyncLayout(restore, reason);
   };
-  feedback_chrome.dirty_window = [&shell]() { shell.DirtyWindow(); };
+  feedback_chrome.dirty_feedback = [&shell]() { shell.DirtyFeedback(); };
   ShellFeedback::BindChromePorts(std::move(feedback_chrome));
 
   ShellFeedbackPorts feedback;
   feedback.show_toast = [&shell](const std::string& message, const ToastDuration duration) {
     ShellFeedback::ShowToast(shell.State(), message, duration);
-    shell.DirtyWindow();
+    shell.DirtyFeedback();
   };
   feedback.show_banner = [&shell](const std::string& message) {
     ShellFeedback::ShowBanner(shell.State(), message);
-    shell.DirtyWindow();
+    shell.DirtyFeedback();
   };
   feedback.dismiss_banner = [&shell]() {
     ShellFeedback::DismissBanner(shell.State());
-    shell.DirtyWindow();
+    shell.DirtyFeedback();
   };
   feedback.show_alert = [&shell](const std::string& title, const std::string& message,
                                    std::function<void()> on_ok, const std::string& ok_label) {
