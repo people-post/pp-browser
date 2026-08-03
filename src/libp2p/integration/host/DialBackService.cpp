@@ -12,7 +12,6 @@
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
-#include <thread>
 
 namespace pbr {
 
@@ -149,12 +148,16 @@ DialBackProbeResult DialTargets(PeerSessionManager& sessions,
 
 struct DialBackService::Impl {
   std::mutex handler_mutex;
+  Libp2pHost* host = nullptr;
   PeerSessionManager* sessions = nullptr;
 
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol) {
     // Protocol handlers run on the host io thread — do not block it (dial would deadlock).
+    if (!host) {
+      return;
+    }
     auto stream = std::move(stream_and_protocol.stream);
-    std::thread([this, stream = std::move(stream)]() mutable {
+    host->GetWorkerPool().Post(WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
       auto frame = ReadExactFrame(stream);
       if (!frame) {
         stream->close([](auto&&) {});
@@ -199,12 +202,13 @@ struct DialBackService::Impl {
         (void)WriteExactFrame(stream, *encoded);
       }
       stream->close([](auto&&) {});
-    }).detach();
+    });
   }
 };
 
 DialBackService::DialBackService(Libp2pHost& host, PeerSessionManager& sessions)
     : impl_(std::make_unique<Impl>()), host_(host), sessions_(sessions) {
+  impl_->host = &host_;
   impl_->sessions = &sessions_;
 }
 
@@ -256,9 +260,10 @@ Roe<DialBackProbeResult> DialBackService::Probe(const std::string& seed_peer_key
   auto result_future = result_promise->get_future();
 
   sessions_.OpenStream(seed_peer_key, {ProtocolName{kDialBackProtocolId}},
-                       [frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
+                       [&host = host_, frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
                          // newStream callbacks run on the host io thread — hop off before blocking I/O.
-                         std::thread([frame, result_promise, stream_res = std::move(stream_res)]() mutable {
+                         host.GetWorkerPool().Post(WorkerLane::Normal,
+                                                   [frame, result_promise, stream_res = std::move(stream_res)]() mutable {
                            if (!stream_res) {
                              result_promise->set_value(Error("dial-back stream open failed"));
                              return;
@@ -289,7 +294,7 @@ Roe<DialBackProbeResult> DialBackService::Probe(const std::string& seed_peer_key
                            parsed.dialed = root.value("dialed", "");
                            parsed.error = root.value("error", "");
                            result_promise->set_value(parsed);
-                         }).detach();
+                         });
                        });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;

@@ -82,6 +82,7 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
 
   EnsureLogging();
   config_ = config;
+  worker_pool_ = std::make_unique<WorkerPool>();
 
   io_context_ = std::make_shared<boost::asio::io_context>(1);
   // Keep run() alive after the startup post: an idle Client host otherwise drains
@@ -112,6 +113,8 @@ Roe<void> Libp2pHost::Start(const Libp2pHostConfig& config) {
 
   auto ma_res = libp2p::multi::Multiaddress::create(config_.listen_multiaddr);
   if (!ma_res) {
+    worker_pool_->Shutdown();
+    worker_pool_.reset();
     work_guard_.reset();
     running_ = false;
     host_.reset();
@@ -146,7 +149,15 @@ void Libp2pHost::Stop() {
     if (io_thread_.joinable()) {
       io_thread_.join();
     }
+    if (worker_pool_) {
+      worker_pool_->Shutdown();
+      worker_pool_.reset();
+    }
     return;
+  }
+  if (worker_pool_) {
+    worker_pool_->Shutdown();
+    worker_pool_.reset();
   }
   work_guard_.reset();
   if (io_context_) {
@@ -201,6 +212,17 @@ void Libp2pHost::Post(std::function<void()> fn) {
     return;
   }
   boost::asio::post(*io_context_, std::move(fn));
+}
+
+WorkerPool& Libp2pHost::GetWorkerPool() {
+  if (!worker_pool_) {
+    worker_pool_ = std::make_unique<WorkerPool>();
+  }
+  return *worker_pool_;
+}
+
+const WorkerPool& Libp2pHost::GetWorkerPool() const {
+  return const_cast<Libp2pHost*>(this)->GetWorkerPool();
 }
 
 Roe<void> Libp2pHost::PostAndWait(std::function<void()> fn) {

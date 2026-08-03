@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/WorkerPool.h"
 
 #include <atomic>
 #include <chrono>
@@ -67,6 +68,10 @@ public:
   /** Dispatch work onto the host io_context thread. */
   void Post(std::function<void()> fn);
 
+  /** Bounded worker pool for blocking protocol / HTTP hop-offs (not the io thread). */
+  WorkerPool& GetWorkerPool();
+  const WorkerPool& GetWorkerPool() const;
+
   /** Block until fn completes on the io thread (or return error if not running). */
   Roe<void> PostAndWait(std::function<void()> fn);
 
@@ -97,6 +102,7 @@ private:
   /** Keeps io_context::run() alive when the host has no pending handlers (Client / idle). */
   std::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work_guard_;
   std::shared_ptr<libp2p::Host> host_;
+  std::unique_ptr<WorkerPool> worker_pool_;
   std::thread io_thread_;
   mutable std::mutex mutex_;
   Libp2pHostConfig config_;

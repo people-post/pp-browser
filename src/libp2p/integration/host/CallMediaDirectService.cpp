@@ -1,6 +1,7 @@
 #include "libp2p/integration/host/CallMediaDirectService.h"
 
 #include "common/Logger.h"
+#include "common/WorkerPool.h"
 #include "libp2p/integration/host/CallMediaFrameCrypto.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
@@ -18,7 +19,6 @@
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
-#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -337,8 +337,11 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
 
   void HandleInbound(libp2p::StreamAndProtocol stream_in) {
     logging::getLogger("CallMediaDirect").warning << "Inbound call-media stream (protocol negotiated)";
+    if (!host) {
+      return;
+    }
     auto stream = std::move(stream_in.stream);
-    std::thread([self = shared_from_this(), stream = std::move(stream)]() mutable {
+    host->GetWorkerPool().Post(WorkerLane::Critical, [self = shared_from_this(), stream = std::move(stream)]() mutable {
       auto hello = ReadJson(stream);
       if (!hello || hello->value("type", "") != "hello") {
         logging::getLogger("CallMediaDirect").warning
@@ -383,7 +386,7 @@ struct CallMediaDirectService::Impl : std::enable_shared_from_this<Impl> {
       if (cbs.on_connected) {
         cbs.on_connected();
       }
-    }).detach();
+    });
   }
 };
 
@@ -450,8 +453,9 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
   sessions_.OpenStream(params.peer_key, {ProtocolName{kCallMediaDirectProtocolId}},
                        [this, params, callbacks = std::move(callbacks), settled, result_promise](
                            outcome::result<libp2p::StreamAndProtocol> stream_res) mutable {
-                         std::thread([this, params, callbacks = std::move(callbacks), settled, result_promise,
-                                      stream_res = std::move(stream_res)]() mutable {
+                         host_.GetWorkerPool().Post(WorkerLane::Critical,
+                                                    [this, params, callbacks = std::move(callbacks), settled,
+                                                     result_promise, stream_res = std::move(stream_res)]() mutable {
                            auto finish = [&](Roe<void> value) {
                              if (!settled->exchange(true)) {
                                try {
@@ -513,7 +517,7 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                              impl_->callbacks.on_connected();
                            }
                            finish({});
-                         }).detach();
+                         });
                        });
 
   if (result_future.wait_for(std::chrono::milliseconds(wait_ms)) != std::future_status::ready) {

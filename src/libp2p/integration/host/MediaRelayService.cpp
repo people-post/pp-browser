@@ -1,6 +1,7 @@
 #include "libp2p/integration/host/MediaRelayService.h"
 
 #include "base/people/RelayScope.h"
+#include "common/WorkerPool.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/basic/read.hpp>
@@ -18,7 +19,6 @@
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -227,6 +227,7 @@ Roe<MediaDataFrame> DecodeMediaDataFrame(const std::vector<uint8_t>& body) {
 
 struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::mutex mu;
+  Libp2pHost* host = nullptr;
   PeerSessionManager* sessions = nullptr;
   MediaRelayBudgetConfig budget;
   RelayPricingConfig pricing;
@@ -350,11 +351,14 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void HandleInbound(libp2p::StreamAndProtocol stream_and_protocol) {
+    if (!host) {
+      return;
+    }
     auto stream = std::move(stream_and_protocol.stream);
     auto self = shared_from_this();
-    std::thread([self, stream = std::move(stream)]() mutable {
+    host->GetWorkerPool().Post(WorkerLane::Normal, [self, stream = std::move(stream)]() mutable {
       self->HandleInboundBody(std::move(stream));
-    }).detach();
+    });
   }
 
   void HandleInboundBody(std::shared_ptr<Stream> stream) {
@@ -493,7 +497,11 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     if (client_reader_running.exchange(true)) {
       return;
     }
-    std::thread([self]() {
+    if (!host) {
+      client_reader_running = false;
+      return;
+    }
+    host->GetWorkerPool().Post(WorkerLane::Normal, [self]() {
       while (self->client_reader_running.load()) {
         std::shared_ptr<Stream> stream;
         std::function<void(MediaDataFrame)> cb;
@@ -524,12 +532,13 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         }
       }
       self->client_reader_running = false;
-    }).detach();
+    });
   }
 };
 
 MediaRelayService::MediaRelayService(Libp2pHost& host, PeerSessionManager& sessions)
     : impl_(std::make_shared<Impl>()), host_(host), sessions_(sessions) {
+  impl_->host = &host_;
   impl_->sessions = &sessions_;
 }
 
@@ -593,10 +602,11 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
   const bool circuit_backed = sessions_.IsCircuitBacked(hop_peer_key);
 
   sessions_.OpenStream(hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
-                       [req = std::move(req), result_promise, settled, circuit_backed](
+                       [req = std::move(req), result_promise, settled, circuit_backed, &host = host_](
                            libp2p::StreamAndProtocolOrError stream_res) {
-                         std::thread([req, result_promise, settled, circuit_backed,
-                                      stream_res = std::move(stream_res)]() mutable {
+                         host.GetWorkerPool().Post(WorkerLane::Normal,
+                                                   [req, result_promise, settled, circuit_backed,
+                                                    stream_res = std::move(stream_res)]() mutable {
                            auto finish = [&](Roe<MediaRelayQuote> value) {
                              if (!settled->exchange(true)) {
                                result_promise->set_value(std::move(value));
@@ -636,7 +646,7 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
                            q.ceiling_bytes = root->value("ceiling_bytes", static_cast<int64_t>(0));
                            q.ceiling_amount = root->value("ceiling_amount", 0.0);
                            finish(q);
-                         }).detach();
+                         });
                        });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;
@@ -665,10 +675,11 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
 
   sessions_.OpenStream(
       hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
-      [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise, settled](
+      [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise, settled, &host = host_](
           libp2p::StreamAndProtocolOrError stream_res) mutable {
-        std::thread([impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise, settled,
-                     stream_res = std::move(stream_res)]() mutable {
+        host.GetWorkerPool().Post(WorkerLane::Normal,
+                                  [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise,
+                                   settled, stream_res = std::move(stream_res)]() mutable {
           auto finish = [&](Roe<MediaRelayAttachResult> value) {
             if (!settled->exchange(true)) {
               result_promise->set_value(std::move(value));
@@ -722,7 +733,7 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
           out.ok = true;
           out.session_token = token;
           finish(out);
-        }).detach();
+        });
       });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;

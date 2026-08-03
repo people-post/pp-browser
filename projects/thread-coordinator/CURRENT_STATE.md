@@ -8,7 +8,7 @@
 |-----------|----------|-------|
 | UI sequenced runner | `BrowserThread::UI`, `SequencedTaskRunner(false)` | Inline drain on main |
 | App IO thread | `BrowserThread::IO`, `SequencedTaskRunner(true)` | Named `pp-browser-io` on Linux/Android |
-| **Worker pool (t1)** | `WorkerPool` in `src/common/` | 2–4 threads, Critical/Normal/Background; tests only — no production wiring yet |
+| **Worker pool (t1–t2)** | `WorkerPool` on `Libp2pHost` | Integration hop-offs use pool; **0** `.detach()` in `libp2p/integration/host/` |
 | libp2p reactor | `Libp2pHost::io_thread_` | asio `io_context::run()` |
 | UI wake | `Backend::WakeEventLoop`, `BrowserThread::SetUIWakeCallback` | SDL user event |
 | IO pause/resume | `BrowserThread::PauseIO` / `ResumeIO` | AppLifecycle, AgentSession, BackgroundSyncScheduler |
@@ -27,5 +27,5 @@
 ## Next agent — start here
 
 1. Read [THREADING.md](../../docs/architecture/THREADING.md) target section.
-2. Pick [PHASES.md § Phase t2](PHASES.md#phase-t2--migrate-libp2p-hop-offs-to-pool) — migrate libp2p integration `.detach()` sites to `WorkerPool`.
+2. Pick [PHASES.md § Phase t3](PHASES.md#phase-t3--migrate-messaging--call-hop-offs-to-pool).
 3. Do not remove Browser IO until t5; pool is test-only until t2 lands.

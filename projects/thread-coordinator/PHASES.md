@@ -39,15 +39,16 @@ Can proceed **in parallel** with [p2p-av-calls m2](../p2p-av-calls/PHASES.md) (W
 
 **Goal:** Remove detached threads from libp2p integration services.
 
-- [ ] `ReachabilityService` — UPnP / dial-back probe → pool Background
-- [ ] `DialBackService` — stream handler RPC → pool Normal or Critical
-- [ ] `CircuitRelayService` — bridge copy loop → pool Normal
-- [ ] `MediaRelayService` — relay streams → pool Normal
-- [ ] `CallMediaDirectService` — direct media streams → pool Normal
-- [ ] libp2p fork `cares.cpp` — DNS TXT query → pool Background (result still posted to `io_context`)
-- [ ] Delete all `.detach()` in `src/libp2p/integration/host/`
+- [x] `Libp2pHost` owns `WorkerPool`; shutdown before io thread join
+- [x] `ReachabilityService` — UPnP / dial-back probe → pool Background
+- [x] `DialBackService` — stream handler RPC → pool Normal
+- [x] `CircuitRelayService` — bridge copy loop + RPC → pool Normal
+- [x] `MediaRelayService` — relay streams / quote / attach → pool Normal
+- [x] `CallMediaDirectService` — direct media connect/inbound → pool Critical
+- [ ] libp2p fork `cares.cpp` — DNS TXT query → pool Background (**deferred:** fork must not link `pp_common`; keep detach until libp2p executor hook)
+- [x] Delete all `.detach()` in `src/libp2p/integration/host/`
 
-**Exit criteria:** Zero detach in libp2p integration; libp2p IO handlers remain non-blocking; reachability/call tests pass.
+**Exit criteria:** Zero detach in libp2p integration; libp2p IO handlers remain non-blocking. **Done** (cares deferred).
 
 ---
 

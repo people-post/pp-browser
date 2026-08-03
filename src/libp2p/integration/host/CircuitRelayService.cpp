@@ -1,5 +1,7 @@
 #include "libp2p/integration/host/CircuitRelayService.h"
 
+#include "common/WorkerPool.h"
+
 #include "base/people/RelayScope.h"
 #include "libp2p/integration/host/CircuitBridgeTarget.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
@@ -16,7 +18,6 @@
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
-#include <thread>
 
 namespace pbr {
 
@@ -64,9 +65,9 @@ Roe<void> WriteExactFrame(const std::shared_ptr<Stream>& stream, const std::vect
   return {};
 }
 
-void BridgeStreams(const std::shared_ptr<Stream>& a, const std::shared_ptr<Stream>& b) {
-  auto pump = [](std::shared_ptr<Stream> from, std::shared_ptr<Stream> to) {
-    std::thread([from = std::move(from), to = std::move(to)]() mutable {
+void BridgeStreams(Libp2pHost& host, const std::shared_ptr<Stream>& a, const std::shared_ptr<Stream>& b) {
+  auto pump = [&host](std::shared_ptr<Stream> from, std::shared_ptr<Stream> to) {
+    host.GetWorkerPool().Post(WorkerLane::Normal, [from = std::move(from), to = std::move(to)]() mutable {
       while (true) {
         Bytes chunk(16 * 1024);
         std::promise<outcome::result<void>> read_promise;
@@ -85,7 +86,7 @@ void BridgeStreams(const std::shared_ptr<Stream>& a, const std::shared_ptr<Strea
       }
       from->close([](auto&&) {});
       to->close([](auto&&) {});
-    }).detach();
+    });
   };
   pump(a, b);
   pump(b, a);
@@ -185,7 +186,7 @@ CircuitRelayBridgeResult RelayBridge(Libp2pHost& host, PeerSessionManager& sessi
     }
   }
 
-  BridgeStreams(client_stream, target_stream_res.value().stream);
+  BridgeStreams(host, client_stream, target_stream_res.value().stream);
   out.ok = true;
   return out;
 }
@@ -200,7 +201,15 @@ struct CircuitRelayService::Impl {
 
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol) {
     auto stream = std::move(stream_and_protocol.stream);
-    std::thread([this, stream = std::move(stream)]() mutable {
+    Libp2pHost* host_for_post = nullptr;
+    {
+      std::lock_guard<std::mutex> lock(handler_mutex);
+      host_for_post = host;
+    }
+    if (!host_for_post) {
+      return;
+    }
+    host_for_post->GetWorkerPool().Post(WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
       CircuitRelayAdmissionPolicy policy;
       Libp2pHost* host_ptr = nullptr;
       PeerSessionManager* sessions_ptr = nullptr;
@@ -235,7 +244,7 @@ struct CircuitRelayService::Impl {
         (void)WriteExactFrame(stream, *encoded);
       }
       stream->close([](auto&&) {});
-    }).detach();
+    });
   }
 };
 
@@ -321,8 +330,9 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
   auto result_future = result_promise->get_future();
 
   sessions_.OpenStream(relay_peer_key, {ProtocolName{kCircuitRelayProtocolId}},
-                       [frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
-                         std::thread([frame, result_promise, stream_res = std::move(stream_res)]() mutable {
+                       [&host = host_, frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
+                         host.GetWorkerPool().Post(WorkerLane::Normal,
+                                                   [frame, result_promise, stream_res = std::move(stream_res)]() mutable {
                            if (!stream_res) {
                              result_promise->set_value(Error("circuit-relay stream open failed"));
                              return;
@@ -361,7 +371,7 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
                            }
                            parsed.stream = stream;
                            result_promise->set_value(parsed);
-                         }).detach();
+                         });
                        });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;

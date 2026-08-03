@@ -1,6 +1,6 @@
 # Thread coordinator and worker pool
 
-**Status:** **t0 design** — phase 1 next  
+**Status:** **t2 done** — t3 next (messaging hop-offs) (libp2p hop-offs)  
 **Normative design:** [`docs/architecture/THREADING.md`](../../docs/architecture/THREADING.md)
 
 Consolidate pp-browser threading from `BrowserThread::IO` + ~25 detached hop-offs into a **coordinator mailbox** (with **timer wheel**) and a **bounded priority worker pool**.
