@@ -1,8 +1,10 @@
 #include "feature/ui/FlowCoordinator.h"
 
-#include "feature/ui/ShellHost.h"
-
 namespace pbr {
+
+void FlowCoordinator::BindShellNavigation(ShellNavigationPorts ports) {
+  shell_navigation_ = std::move(ports);
+}
 
 void FlowCoordinator::BeginModal(int layer_id, StepBackHandler on_step_back, CancelHandler on_cancel) {
   layer_id_ = layer_id;
@@ -33,8 +35,8 @@ bool FlowCoordinator::HandleDismiss() {
   if (cancel) {
     cancel();
   }
-  if (closing_id >= 0) {
-    ShellHost::Instance().CloseLayer(closing_id);
+  if (closing_id >= 0 && shell_navigation_.close_layer) {
+    shell_navigation_.close_layer(closing_id);
   }
   return true;
 }

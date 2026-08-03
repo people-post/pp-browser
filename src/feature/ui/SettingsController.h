@@ -5,6 +5,8 @@
 #include "feature/settings/SettingsSectionHandler.h"
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
+#include "feature/ui/ShellFeedbackPorts.h"
+#include "feature/ui/ShellNavigationPorts.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
@@ -44,10 +46,20 @@ public:
     bool enabled = true;
   };
 
+  SettingsController();
+  ~SettingsController() override = default;
+
+  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
+  static void InstallInstance(SettingsController& controller);
+  static void ClearInstance();
   static SettingsController& Instance();
 
   /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
   void BindCommands(SettingsCommands commands);
+  /** Shell layout / navigation without ShellHost::Instance(). Clear via BindShellNavigation({}). */
+  void BindShellNavigation(ShellNavigationPorts ports);
+  /** Toast / dialog feedback without ShellHost::Instance(). Clear via BindShellFeedback({}). */
+  void BindShellFeedback(ShellFeedbackPorts ports);
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   SettingsCommands& Commands();
   const SettingsCommands& Commands() const;
@@ -130,8 +142,6 @@ private:
     Rml::String app_version;
   };
 
-  SettingsController();
-
   static void SelectSectionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void BackToListCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void ResetSectionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -207,6 +217,8 @@ private:
   void OnChooseGroupInvitePolicy(Rml::Event& ev);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
 
+  ShellChromeSnapshot ChromeSnapshot() const;
+
   std::vector<std::unique_ptr<SettingsSectionHandler>> section_handlers_;
   std::unordered_map<std::string, SettingsSectionHandler*> section_handlers_by_id_;
   std::vector<SectionListRow> sections_;
@@ -226,8 +238,11 @@ private:
   std::optional<std::string> last_toast_section_;
   uint64_t last_toast_at_ms_ = 0;
   SettingsCommands commands_;
+  ShellNavigationPorts shell_navigation_;
+  ShellFeedbackPorts shell_feedback_;
   ProfileUnlockGate* unlock_gate_ = nullptr;
 
+  static SettingsController* installed_instance_;
 };
 
 } // namespace pbr

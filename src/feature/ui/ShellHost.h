@@ -2,6 +2,7 @@
 
 #include "base/ui/ShellTypes.h"
 #include "base/data/UserPreferences.h"
+#include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
 #include "feature/ui/ShellGestureAxis.h"
 #include "feature/ui/ShellSwipeBackGesture.h"
@@ -23,7 +24,6 @@ class Element;
 
 namespace pbr {
 
-class MessagingHub;
 class PinGateController;
 class FlowCoordinator;
 class CallController;
@@ -66,14 +66,17 @@ public:
   /** Apply material fields only (theme/appearance are Theme-owned). */
   void Apply(const ChromePrefs& prefs);
 
+  ShellHost() = default;
+
+  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
+  static void InstallInstance(ShellHost& host);
+  static void ClearInstance();
   static ShellHost& Instance();
 
-  void BindMessaging(MessagingHub& messaging);
+  void BindShellMessaging(MessagingShellPorts ports);
   void BindPinGate(PinGateController& pin_gate);
   void BindFlowCoordinator(FlowCoordinator& flow);
   void BindCallController(CallController& call);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
 
   void Initialize(Rml::Context* context);
   void SyncLayout();
@@ -131,6 +134,8 @@ public:
   void SetOnNavTabChanged(std::function<void(NavTab tab)> callback);
   void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
   void SetOnLayoutSynced(std::function<void()> callback);
+  void SetOnAccountSheetOpened(std::function<void()> callback);
+  void SetOnAccountSheetClosed(std::function<void()> callback);
 
   /** Seed safe-area insets from machine.json (used when SDL reports zero). */
   void SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp);
@@ -166,10 +171,9 @@ public:
   static void TitlebarToggleMaximizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarCloseCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
 
-  static bool RegisterWindowModel(Rml::Context* context);
+  bool RegisterWindowModel(Rml::Context* context);
 
 private:
-  ShellHost() = default;
 
   Rml::Element* ShellRoot() const;
   std::string SerializeShellRoot() const;
@@ -240,11 +244,14 @@ private:
   std::function<void(NavTab)> on_nav_tab_changed_;
   std::function<void(LayoutMode)> on_layout_mode_changed_;
   std::function<void()> on_layout_synced_;
-  MessagingHub* messaging_ = nullptr;
+  std::function<void()> on_account_sheet_opened_;
+  std::function<void()> on_account_sheet_closed_;
+  MessagingShellPorts shell_messaging_ports_;
   PinGateController* pin_gate_ = nullptr;
   FlowCoordinator* flow_ = nullptr;
   CallController* call_ = nullptr;
 
+  static ShellHost* installed_instance_;
 };
 
 } // namespace pbr

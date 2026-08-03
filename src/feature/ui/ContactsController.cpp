@@ -2,7 +2,6 @@
 #include "feature/ui/ContactsController.h"
 
 #include "feature/ui/BadgeAggregator.h"
-#include "feature/ui/SettingsController.h"
 #include "base/crypto/PskFingerprint.h"
 #include "base/i18n/LocalizationService.h"
 #include "base/messaging/DirectChatTarget.h"
@@ -15,17 +14,16 @@
 #include "common/Utilities.h"
 #include "feature/ui/ChatSessionPorts.h"
 #include "feature/messaging/ContactReachability.h"
-#include "feature/messaging/MessagingHub.h"
+#include "feature/messaging/MessagingContactsPorts.h"
 #include "feature/ui/DataModelHost.h"
 #include "base/crypto/ProfileUnlockGate.h"
-#include "feature/ui/ShellFeedback.h"
-#include "feature/ui/ShellHost.h"
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
 
 #include "base/ui/ShellTypes.h"
 
 #include <RmlUi/Core/Context.h>
+#include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/SystemInterface.h>
@@ -73,8 +71,8 @@ std::string MultiaddrsSummary(const std::vector<std::string>& multiaddrs) {
   return std::to_string(multiaddrs.size()) + " addresses";
 }
 
-bool IsContactDetailTransientActive(const ShellState& state) {
-  return !state.transient_stack.empty() && state.transient_stack.back().spec.key == "contact_detail";
+bool IsContactDetailTransientActive(const ShellChromeSnapshot& chrome) {
+  return chrome.contact_detail_transient;
 }
 
 std::string IdentityKindLabel(const ContactIdKind kind) {
@@ -159,7 +157,7 @@ std::string ThreadKindClass(const ThreadChannel channel) {
   return "ai";
 }
 
-ContactsController::ContactListRow ToContactListRow(const Contact& contact) {
+ContactsController::ContactListRow ToContactListRow(const Contact& contact, const MessagingContactsPorts& ports) {
   ContactsController::ContactListRow row;
   row.id = contact.id.c_str();
   const std::string title = ContactEffectiveTitle(contact);
@@ -170,14 +168,14 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact) {
     row.subtitle = contact.server_nickname.c_str();
   }
   row.trust = TrustLevelToString(contact.trust).c_str();
-  if (ContactsController::Instance().Hub().IsInitialized()) {
-    row.unread_count = ContactsController::Instance().Hub().Inbox().SumUnreadForContact(contact.id);
+  if (ports.snapshot && ports.snapshot().initialized && ports.sum_unread_for_contact) {
+    row.unread_count = ports.sum_unread_for_contact(contact.id);
     row.unread_display = FormatBadgeCount(row.unread_count).c_str();
   }
   return row;
 }
 
-ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
+ContactsController::ContactDetail ToContactDetail(const Contact& contact, const MessagingContactsPorts& ports) {
   ContactsController::ContactDetail detail;
   detail.id = contact.id.c_str();
   const std::string title = ContactEffectiveTitle(contact);
@@ -210,11 +208,10 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
     detail.identities.push_back(std::move(row));
   }
 
-  if (ContactsController::Instance().Hub().IsInitialized()) {
+  if (ports.snapshot && ports.snapshot().initialized) {
     const std::string relay_id = PrimaryIdOfKind(contact, ContactIdKind::RelayUser);
-    if (!relay_id.empty()) {
-      if (auto key = ContactsController::Instance().Hub().SigningKeys().Get(ContactIdKindToString(ContactIdKind::RelayUser),
-                                                                relay_id)) {
+    if (!relay_id.empty() && ports.get_signing_key) {
+      if (auto key = ports.get_signing_key(ContactIdKindToString(ContactIdKind::RelayUser), relay_id)) {
         if (auto bytes = Ed25519Signer::FromBase64(key->signing_public_key_b64)) {
           if (auto digest = PskFingerprint::Compute(*bytes)) {
             detail.signing_fingerprint = PskFingerprint::FormatDisplay(*digest).c_str();
@@ -223,36 +220,38 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact) {
       }
     }
 
-    if (auto threads = ContactsController::Instance().Hub().Inbox().ListThreads()) {
-      for (const Thread& thread : *threads) {
-        if (thread.kind != ThreadKind::Direct) {
-          continue;
+    if (ports.list_threads) {
+      if (auto threads = ports.list_threads()) {
+        for (const Thread& thread : *threads) {
+          if (thread.kind != ThreadKind::Direct) {
+            continue;
+          }
+          const bool matches = std::find(thread.participant_contact_ids.begin(), thread.participant_contact_ids.end(),
+                                         contact.id) != thread.participant_contact_ids.end();
+          if (!matches) {
+            continue;
+          }
+          ContactsController::ContactThreadRow row;
+          row.id = thread.id.c_str();
+          row.title = thread.title.empty() ? ChannelLabel(thread.channel).c_str() : thread.title.c_str();
+          row.channel_label = ChannelLabel(thread.channel).c_str();
+          row.kind = ThreadKindClass(thread.channel).c_str();
+          row.unread_count = thread.unread_count;
+          row.unread_display = FormatBadgeCount(thread.unread_count).c_str();
+          detail.threads.push_back(std::move(row));
         }
-        const bool matches = std::find(thread.participant_contact_ids.begin(), thread.participant_contact_ids.end(),
-                                       contact.id) != thread.participant_contact_ids.end();
-        if (!matches) {
-          continue;
-        }
-        ContactsController::ContactThreadRow row;
-        row.id = thread.id.c_str();
-        row.title = thread.title.empty() ? ChannelLabel(thread.channel).c_str() : thread.title.c_str();
-        row.channel_label = ChannelLabel(thread.channel).c_str();
-        row.kind = ThreadKindClass(thread.channel).c_str();
-        row.unread_count = thread.unread_count;
-        row.unread_display = FormatBadgeCount(thread.unread_count).c_str();
-        detail.threads.push_back(std::move(row));
+        std::sort(detail.threads.begin(), detail.threads.end(),
+                  [](const ContactsController::ContactThreadRow& a, const ContactsController::ContactThreadRow& b) {
+                    return a.channel_label < b.channel_label;
+                  });
       }
-      std::sort(detail.threads.begin(), detail.threads.end(),
-                [](const ContactsController::ContactThreadRow& a, const ContactsController::ContactThreadRow& b) {
-                  return a.channel_label < b.channel_label;
-                });
     }
   }
   return detail;
 }
 
 void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const Contact& contact,
-                               const MessagingHub* messaging) {
+                               const MessagingContactsPorts& ports) {
   detail.multiaddrs_text = MultiaddrsToText(contact.multiaddrs).c_str();
   detail.multiaddrs_summary = MultiaddrsSummary(contact.multiaddrs).c_str();
   const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
@@ -261,14 +260,15 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
     detail.message_hint = "Add a relay ID, or a peer ID with multiaddr, to message.";
     return;
   }
-  if (messaging != nullptr && messaging->IsMessagingReady()) {
-    detail.can_message = messaging->IsContactReachable(contact);
+  if (ports.snapshot && ports.snapshot().messaging_ready && ports.is_contact_reachable) {
+    detail.can_message = ports.is_contact_reachable(contact);
     if (!detail.can_message) {
       detail.message_hint =
           "Add a relay ID or multiaddr, or connect on the same network so this PeerId becomes dialable.";
       return;
     }
-    if (contact.multiaddrs.empty() && IsContactStackDialable(contact, messaging->Sessions())) {
+    if (contact.multiaddrs.empty() && ports.sessions &&
+        IsContactStackDialable(contact, ports.sessions())) {
       detail.message_hint = "Direct link via address book (no pasted multiaddr).";
     } else if (contact.multiaddrs.empty()) {
       detail.message_hint = "Relay messaging available. Add a multiaddr for a pinned direct link.";
@@ -300,16 +300,29 @@ Contact BuildContactFromDetail(const Contact& existing, const ContactsController
 
 } // namespace
 
+ContactsController* ContactsController::installed_instance_ = nullptr;
+
+void ContactsController::InstallInstance(ContactsController& controller) {
+  installed_instance_ = &controller;
+}
+
+void ContactsController::ClearInstance() {
+  installed_instance_ = nullptr;
+}
+
+ContactsController& ContactsController::Instance() {
+  if (!installed_instance_) {
+    throw std::runtime_error("ContactsController not installed");
+  }
+  return *installed_instance_;
+}
+
 ContactsController::ContactsController() {
   redirectLogger("ContactsController");
 }
 
-ContactsController& ContactsController::Instance() {
-  static ContactsController controller;
-  return controller;
-}
-void ContactsController::BindMessaging(MessagingHub& messaging) {
-  messaging_ = &messaging;
+void ContactsController::BindContactsPorts(MessagingContactsPorts ports) {
+  contacts_ports_ = std::move(ports);
 }
 
 void ContactsController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
@@ -320,20 +333,54 @@ void ContactsController::BindChatPorts(ChatSessionPorts ports) {
   chat_ports_ = std::move(ports);
 }
 
-MessagingHub& ContactsController::Hub() {
-  if (!messaging_) {
-    throw std::runtime_error("ContactsController messaging not bound");
-  }
-  return *messaging_;
+void ContactsController::BindShellNavigation(ShellNavigationPorts ports) {
+  shell_navigation_ = std::move(ports);
 }
 
-const MessagingHub& ContactsController::Hub() const {
-  if (!messaging_) {
-    throw std::runtime_error("ContactsController messaging not bound");
-  }
-  return *messaging_;
+void ContactsController::BindShellFeedback(ShellFeedbackPorts ports) {
+  shell_feedback_ = std::move(ports);
 }
 
+ShellChromeSnapshot ContactsController::ChromeSnapshot() const {
+  return shell_navigation_.snapshot ? shell_navigation_.snapshot() : ShellChromeSnapshot{};
+}
+
+void ContactsController::ShellDirty() {
+  if (shell_navigation_.dirty_window) {
+    shell_navigation_.dirty_window();
+  }
+}
+
+void ContactsController::ShellSyncLayout(bool restore_focus_after) {
+  if (shell_navigation_.request_sync_layout) {
+    shell_navigation_.request_sync_layout(restore_focus_after, nullptr);
+  }
+}
+
+void ContactsController::ShowToast(const std::string& message, const ToastDuration duration) {
+  if (shell_feedback_.show_toast) {
+    shell_feedback_.show_toast(message, duration);
+  }
+}
+
+void ContactsController::ShowConfirm(const std::string& title, const std::string& message,
+                                     std::function<void(bool)> on_result) {
+  if (shell_feedback_.show_confirm) {
+    shell_feedback_.show_confirm(title, message, std::move(on_result));
+  }
+}
+
+void ContactsController::NavigateToChatSession() {
+  if (shell_navigation_.select_nav_tab) {
+    shell_navigation_.select_nav_tab(NavTab::Sessions);
+  }
+  if (shell_navigation_.set_primary_pane) {
+    shell_navigation_.set_primary_pane("chat");
+  }
+  if (chat_ports_.finalize_thread_display) {
+    chat_ports_.finalize_thread_display();
+  }
+}
 
 bool ContactsController::RegisterModel(Rml::Context* context) {
   if (!context) {
@@ -341,8 +388,8 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
   }
   context_ = context;
 
-  const bool registered = DataModelHost::Instance().Register(context, "contacts", [](Rml::DataModelConstructor& ctor) {
-    auto& controller = ContactsController::Instance();
+  const bool registered = DataModelHost::Instance().Register(context, "contacts", [this](Rml::DataModelConstructor& ctor) {
+    auto& controller = *this;
     if (auto list_handle = ctor.RegisterStruct<ContactListRow>()) {
       list_handle.RegisterMember("id", &ContactListRow::id);
       list_handle.RegisterMember("title", &ContactListRow::title);
@@ -409,17 +456,6 @@ bool ContactsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("sync_contact_remote", &ContactsController::SyncRemoteCallback);
   });
 
-  if (registered) {
-    ShellHost::Instance().SetOnTransientPopped([](const std::string& key) {
-      if (key == "contact_detail") {
-        ContactsController::Instance().OnDetailDismissed();
-      }
-      if (key == "settings_detail") {
-        SettingsController::Instance().OnDetailDismissed();
-      }
-    });
-  }
-
   return registered;
 }
 
@@ -432,42 +468,49 @@ void ContactsController::DirtyAll() {
 }
 
 void ContactsController::SyncLayoutMode() {
-  const bool compact = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  const bool compact = chrome.layout_mode == LayoutMode::Compact;
   if (compact_layout_ == compact) {
     return;
   }
 
   compact_layout_ = compact;
-  ShellState& state = ShellHost::Instance().State();
   if (!compact) {
-    if (IsContactDetailTransientActive(state)) {
-      ShellHost::Instance().PopTransient();
+    if (IsContactDetailTransientActive(chrome) && shell_navigation_.pop_transient) {
+      shell_navigation_.pop_transient();
     }
-    if (!selected_.id.empty()) {
-      ShellHost::Instance().SetPrimaryPane("contact_detail");
+    if (!selected_.id.empty() && shell_navigation_.set_primary_pane) {
+      shell_navigation_.set_primary_pane("contact_detail");
     }
   } else if (!selected_.id.empty()) {
-    ShellHost::Instance().ClearPrimaryPane();
-    if (!IsContactDetailTransientActive(state)) {
+    if (shell_navigation_.clear_primary_pane) {
+      shell_navigation_.clear_primary_pane();
+    }
+    if (!IsContactDetailTransientActive(chrome) && shell_navigation_.push_transient) {
       PaneSpec spec;
       spec.key = "contact_detail";
-      ShellHost::Instance().PushTransient(spec);
+      shell_navigation_.push_transient(spec);
     }
-  } else if (IsContactDetailTransientActive(state)) {
-    ShellHost::Instance().PopTransient();
+  } else if (IsContactDetailTransientActive(chrome) && shell_navigation_.pop_transient) {
+    shell_navigation_.pop_transient();
   }
   DirtyAll();
 }
 
 void ContactsController::SyncFromStore() {
   contacts_.clear();
-  if (!Hub().IsInitialized()) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized) {
     return;
   }
 
   const std::string query = search_query_.c_str();
-  auto stored = query.empty() ? Hub().Contacts().List()
-                              : Hub().Contacts().SearchLocal(query);
+  Roe<std::vector<Contact>> stored = query.empty()
+                                          ? (contacts_ports_.list_contacts ? contacts_ports_.list_contacts()
+                                                                           : Roe<std::vector<Contact>>::error(
+                                                                                 Error("contacts port unavailable")))
+                                          : (contacts_ports_.search_contacts
+                                                 ? contacts_ports_.search_contacts(query)
+                                                 : Roe<std::vector<Contact>>::error(Error("contacts port unavailable")));
   if (!stored) {
     return;
   }
@@ -481,7 +524,7 @@ void ContactsController::SyncFromStore() {
 
   contacts_.reserve(sorted.size());
   for (const Contact& contact : sorted) {
-    contacts_.push_back(ToContactListRow(contact));
+    contacts_.push_back(ToContactListRow(contact, contacts_ports_));
   }
 }
 
@@ -494,7 +537,7 @@ void ContactsController::Refresh() {
   DirtyAll();
   // Do not call context_->Update() here: Refresh runs from UI PostTasks (thread/message
   // notify, directory shadow reply) that can interleave with SyncLayout remounts.
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
 }
 
 void ContactsController::OnNavTabActivated() {
@@ -503,10 +546,10 @@ void ContactsController::OnNavTabActivated() {
   contact_dirty_ = false;
   debounce_deadline_ms_ = 0;
   search_query_ = "";
-  compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  compact_layout_ = ChromeSnapshot().layout_mode == LayoutMode::Compact;
   SyncFromStore();
   DirtyAll();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
 }
 
 void ContactsController::SelectContactCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
@@ -589,21 +632,21 @@ void ContactsController::OnSearchChangedCallback(Rml::DataModelHandle /*model*/,
 }
 
 void ContactsController::LoadSelectedDetail(const std::string& contact_id) {
-  if (!Hub().IsInitialized()) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.get_contact) {
     selected_ = {};
     return;
   }
-  auto contact = Hub().Contacts().Get(contact_id);
+  auto contact = contacts_ports_.get_contact(contact_id);
   if (!contact || !*contact) {
     selected_ = {};
     return;
   }
-  selected_ = ToContactDetail(**contact);
-  ApplyMessagingEligibility(selected_, **contact, messaging_);
+  selected_ = ToContactDetail(**contact, contacts_ports_);
+  ApplyMessagingEligibility(selected_, **contact, contacts_ports_);
 }
 
 void ContactsController::UpdateMessagingEligibility(const Contact& contact) {
-  ApplyMessagingEligibility(selected_, contact, messaging_);
+  ApplyMessagingEligibility(selected_, contact, contacts_ports_);
 }
 
 void ContactsController::OnSelectContact(const std::string& contact_id) {
@@ -618,32 +661,36 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
 }
 
 void ContactsController::OpenContactDetailPane() {
-  compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
-  ShellState& state = ShellHost::Instance().State();
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  compact_layout_ = chrome.layout_mode == LayoutMode::Compact;
   if (compact_layout_) {
-    ShellHost::Instance().ClearPrimaryPane();
-    if (!IsContactDetailTransientActive(state)) {
+    if (shell_navigation_.clear_primary_pane) {
+      shell_navigation_.clear_primary_pane();
+    }
+    if (!IsContactDetailTransientActive(chrome) && shell_navigation_.push_transient) {
       PaneSpec spec;
       spec.key = "contact_detail";
-      ShellHost::Instance().PushTransient(spec);
+      shell_navigation_.push_transient(spec);
     }
     return;
   }
 
-  if (IsContactDetailTransientActive(state)) {
-    ShellHost::Instance().PopTransient();
+  if (IsContactDetailTransientActive(chrome) && shell_navigation_.pop_transient) {
+    shell_navigation_.pop_transient();
   }
-  ShellHost::Instance().SetPrimaryPane("contact_detail");
+  if (shell_navigation_.set_primary_pane) {
+    shell_navigation_.set_primary_pane("contact_detail");
+  }
 }
 
 bool ContactsController::CloseContactDetailPane() {
-  ShellState& state = ShellHost::Instance().State();
-  if (IsContactDetailTransientActive(state)) {
-    ShellHost::Instance().PopTransient();
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  if (IsContactDetailTransientActive(chrome) && shell_navigation_.pop_transient) {
+    shell_navigation_.pop_transient();
     return true;
   }
-  if (state.layout_mode != LayoutMode::Compact) {
-    ShellHost::Instance().ClearPrimaryPane();
+  if (chrome.layout_mode != LayoutMode::Compact && shell_navigation_.clear_primary_pane) {
+    shell_navigation_.clear_primary_pane();
   }
   return false;
 }
@@ -670,8 +717,8 @@ void ContactsController::OnContactFieldChanged() {
   contact_dirty_ = true;
   debounce_deadline_ms_ = SDL_GetTicks() + kContactDebounceMs;
 
-  if (Hub().IsInitialized()) {
-    if (auto existing = Hub().Contacts().Get(selected_.id.c_str())) {
+  if (contacts_ports_.snapshot && contacts_ports_.snapshot().initialized && contacts_ports_.get_contact) {
+    if (auto existing = contacts_ports_.get_contact(selected_.id.c_str())) {
       if (*existing) {
         const Contact preview = BuildContactFromDetail(**existing, selected_);
         UpdateMessagingEligibility(preview);
@@ -703,32 +750,37 @@ bool ContactsController::FlushSelectedContact() {
   if (UiEditSession::Instance().RemountBlocking()) {
     return true; // keep dirty; Tick/FlushPending will retry after remount settles
   }
-  if (!Hub().IsInitialized() || selected_.id.empty()) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
+      !contacts_ports_.get_contact || !contacts_ports_.upsert_contact) {
     contact_dirty_ = false;
     return true;
   }
 
-  auto existing = Hub().Contacts().Get(selected_.id.c_str());
+  auto existing = contacts_ports_.get_contact(selected_.id.c_str());
   if (!existing || !*existing) {
     contact_dirty_ = false;
     return false;
   }
 
   Contact updated = BuildContactFromDetail(**existing, selected_);
-  if (!Hub().Contacts().Upsert(updated)) {
+  if (!contacts_ports_.upsert_contact(updated)) {
     UserFeedback::Fail("Could not save contact");
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty();
     return false;
   }
 
-  Hub().P2p().RegisterContactDirectEndpoints(updated);
+  if (contacts_ports_.register_contact_direct_endpoints) {
+    contacts_ports_.register_contact_direct_endpoints(updated);
+  }
   UpdateMessagingEligibility(updated);
   contact_dirty_ = false;
   SyncFromStore();
   DataModelHost::Instance().Dirty("contacts", "contacts");
   DataModelHost::Instance().Dirty("contacts", "selected");
-  Hub().Inbox().NotifyThreadChanged();
-  ShellHost::Instance().DirtyWindow();
+  if (contacts_ports_.notify_thread_changed) {
+    contacts_ports_.notify_thread_changed();
+  }
+  ShellDirty();
   return true;
 }
 
@@ -754,57 +806,54 @@ void ContactsController::OnAddContactMenu(Rml::Event& ev) {
 }
 
 void ContactsController::OnAddContact() {
-  if (!Hub().IsInitialized()) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.add_empty_contact) {
     return;
   }
-  auto created = Hub().Contacts().AddEmpty();
+  auto created = contacts_ports_.add_empty_contact();
   if (!created) {
     UserFeedback::Fail("Could not add contact");
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty();
     return;
   }
   SyncFromStore();
   OnSelectContact(created->id);
   DirtyAll();
-  ShellHost::Instance().DirtyWindow();
+  ShellDirty();
 }
 
 void ContactsController::OnStartChat() {
-  if (!Hub().IsInitialized() || selected_.id.empty()) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
+      !contacts_ports_.get_contact || !contacts_ports_.find_or_create_direct_thread) {
     return;
   }
   if (!selected_.can_message) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), selected_.message_hint.c_str());
-    ShellHost::Instance().DirtyWindow();
+    ShowToast(selected_.message_hint.c_str());
     return;
   }
   FlushPending();
 
   const std::string contact_id = selected_.id.c_str();
-  auto contact = Hub().Contacts().Get(contact_id);
-  if (contact && *contact) {
-    Hub().P2p().RegisterContactDirectEndpoints(**contact);
+  auto contact = contacts_ports_.get_contact(contact_id);
+  if (contact && *contact && contacts_ports_.register_contact_direct_endpoints) {
+    contacts_ports_.register_contact_direct_endpoints(**contact);
   }
-  auto thread = Hub().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
+  auto thread = contacts_ports_.find_or_create_direct_thread(contact_id, ThreadChannel::E2ePublic);
   if (!thread) {
     return;
   }
-  Hub().P2p().WarmPeerForThread(thread->id);
-
-  ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-  ShellHost::Instance().SetPrimaryPane("chat");
-  if (chat_ports_.finalize_thread_display) {
-    chat_ports_.finalize_thread_display();
+  if (contacts_ports_.warm_peer_for_thread) {
+    contacts_ports_.warm_peer_for_thread(thread->id);
   }
+  NavigateToChatSession();
 }
 
 void ContactsController::OnSecureMessage() {
-  if (!Hub().IsInitialized() || selected_.id.empty()) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
+      !contacts_ports_.get_contact || !contacts_ports_.find_or_create_direct_thread) {
     return;
   }
   if (!selected_.can_message) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), selected_.message_hint.c_str());
-    ShellHost::Instance().DirtyWindow();
+    ShowToast(selected_.message_hint.c_str());
     return;
   }
   FlushPending();
@@ -814,32 +863,32 @@ void ContactsController::OnSecureMessage() {
   }
   unlock_gate_->EnsureUnlocked([this](const bool unlocked) {
     if (!unlocked) {
-      ShellFeedback::ShowToast(ShellHost::Instance().State(), "PIN required to continue");
-      ShellHost::Instance().DirtyWindow();
+      ShowToast("PIN required to continue");
       return;
     }
     const std::string contact_id = selected_.id.c_str();
-    auto contact = Hub().Contacts().Get(contact_id);
-    if (contact && *contact) {
-      Hub().P2p().RegisterContactDirectEndpoints(**contact);
+    auto contact = contacts_ports_.get_contact(contact_id);
+    if (contact && *contact && contacts_ports_.register_contact_direct_endpoints) {
+      contacts_ports_.register_contact_direct_endpoints(**contact);
     }
-    auto thread = Hub().Inbox().FindOrCreateDirectThread(contact_id, ThreadChannel::E2e);
+    auto thread = contacts_ports_.find_or_create_direct_thread(contact_id, ThreadChannel::E2e);
     if (!thread) {
       return;
     }
-    (void)Hub().P2p().EnsurePskGenerated(thread->id);
-    Hub().P2p().WarmPeerForThread(thread->id);
-
-    ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-    ShellHost::Instance().SetPrimaryPane("chat");
-    if (chat_ports_.finalize_thread_display) {
-      chat_ports_.finalize_thread_display();
+    if (contacts_ports_.ensure_psk_generated) {
+      (void)contacts_ports_.ensure_psk_generated(thread->id);
     }
+    if (contacts_ports_.warm_peer_for_thread) {
+      contacts_ports_.warm_peer_for_thread(thread->id);
+    }
+    NavigateToChatSession();
   });
 }
 
 void ContactsController::OnFindSomeone() {
-  ShellHost::Instance().SelectNavTab(NavTab::Sessions);
+  if (shell_navigation_.select_nav_tab) {
+    shell_navigation_.select_nav_tab(NavTab::Sessions);
+  }
   if (chat_ports_.on_find_someone) {
     chat_ports_.on_find_someone();
   }
@@ -857,15 +906,15 @@ void ContactsController::OnCopyId() {
     label = "ID";
   }
   if (value.empty()) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "No ID to copy");
-    ShellHost::Instance().DirtyWindow();
+    ShowToast("No ID to copy");
+    ShellDirty();
     return;
   }
   if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
     system->SetClipboardText(value.c_str());
   }
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), std::string(label) + " copied");
-  ShellHost::Instance().DirtyWindow();
+  ShowToast(std::string(label) + " copied");
+  ShellDirty();
 }
 
 void ContactsController::OnShareContact() {
@@ -893,82 +942,87 @@ void ContactsController::OnShareContact() {
     }
   }
   if (invite.empty()) {
-    ShellFeedback::ShowToast(ShellHost::Instance().State(), "Nothing to share");
-    ShellHost::Instance().DirtyWindow();
+    ShowToast("Nothing to share");
+    ShellDirty();
     return;
   }
   if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
     system->SetClipboardText(invite.c_str());
   }
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Contact copied");
-  ShellHost::Instance().DirtyWindow();
+  ShowToast("Contact copied");
+  ShellDirty();
 }
 
 void ContactsController::OnSetTrust(const std::string& trust) {
-  if (!Hub().IsInitialized() || selected_.id.empty()) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
+      !contacts_ports_.get_contact || !contacts_ports_.upsert_contact) {
     return;
   }
-  auto contact = Hub().Contacts().Get(selected_.id.c_str());
+  auto contact = contacts_ports_.get_contact(selected_.id.c_str());
   if (!contact || !*contact) {
     return;
   }
   Contact updated = **contact;
   updated.local.trust = TrustLevelFromString(trust);
   SyncContactMirrors(updated);
-  if (!Hub().Contacts().Upsert(updated)) {
+  if (!contacts_ports_.upsert_contact(updated)) {
     UserFeedback::Fail("Could not update trust");
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty();
     return;
   }
   LoadSelectedDetail(selected_.id.c_str());
   SyncFromStore();
   DirtyAll();
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Trust updated");
-  ShellHost::Instance().DirtyWindow();
+  ShowToast("Trust updated");
+  ShellDirty();
 }
 
 void ContactsController::OnSyncRemote() {
-  if (!Hub().IsInitialized() || selected_.id.empty()) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
+      !contacts_ports_.lookup_relay_user || !contacts_ports_.apply_remote_snapshot) {
     return;
   }
   FlushPending();
   const std::string relay_id = selected_.relay_id.c_str();
   if (relay_id.empty()) {
     UserFeedback::Fail("No relay ID to sync");
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty();
     return;
   }
-  auto hit = Hub().Directory().LookupRelayUser(relay_id);
+  auto hit = contacts_ports_.lookup_relay_user(relay_id);
   if (!hit) {
     UserFeedback::Fail(hit.error().message.empty() ? "Could not sync contact" : hit.error().message);
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty();
     return;
   }
-  if (hit->signing_public_key_b64 && !hit->signing_public_key_b64->empty()) {
-    Hub().P2p().RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::RelayUser), relay_id,
-                                       *hit->signing_public_key_b64, "directory");
+  if (hit->signing_public_key_b64 && !hit->signing_public_key_b64->empty() && contacts_ports_.register_peer_signing_key) {
+    contacts_ports_.register_peer_signing_key(ContactIdKindToString(ContactIdKind::RelayUser), relay_id,
+                                              *hit->signing_public_key_b64, "directory");
   }
-  if (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty()) {
-    Hub().P2p().RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::RelayUser), relay_id,
-                                   *hit->kem_public_key_b64, "directory");
+  if (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty() && contacts_ports_.register_peer_kem_key) {
+    contacts_ports_.register_peer_kem_key(ContactIdKindToString(ContactIdKind::RelayUser), relay_id,
+                                          *hit->kem_public_key_b64, "directory");
   }
-  auto applied = Hub().Contacts().ApplyRemoteSnapshot(selected_.id.c_str(), *hit, util::NowUnixMs());
+  auto applied = contacts_ports_.apply_remote_snapshot(selected_.id.c_str(), *hit, util::NowUnixMs());
   if (!applied) {
     UserFeedback::Fail(applied.error().message.empty() ? "Could not save synced contact"
                                                        : applied.error().message);
-    ShellHost::Instance().DirtyWindow();
+    ShellDirty();
     return;
   }
-  Hub().P2p().RegisterContactDirectEndpoints(*applied);
+  if (contacts_ports_.register_contact_direct_endpoints) {
+    contacts_ports_.register_contact_direct_endpoints(*applied);
+  }
   LoadSelectedDetail(selected_.id.c_str());
   SyncFromStore();
   DirtyAll();
-  ShellFeedback::ShowToast(ShellHost::Instance().State(), "Contact synced");
-  ShellHost::Instance().DirtyWindow();
+  ShowToast("Contact synced");
+  ShellDirty();
 }
 
 void ContactsController::OnRemoveContact() {
-  if (!Hub().IsInitialized() || selected_.id.empty()) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
+      !contacts_ports_.remove_contact) {
     return;
   }
 
@@ -978,40 +1032,44 @@ void ContactsController::OnRemoveContact() {
                               " from contacts? Conversations stay on this device. "
                               "You can add them again later from Find.";
 
-  ShellFeedback::ShowConfirm(ShellHost::Instance().State(), Tr("contacts.remove"), message,
-                             [this, contact_id](bool ok) {
-                               if (!ok) {
-                                 return;
-                               }
-                               auto removed = Hub().Contacts().Remove(contact_id);
-                               if (!removed) {
-                                 UserFeedback::Fail("Could not remove contact");
-                                 ShellHost::Instance().DirtyWindow();
-                                 return;
-                               }
-                               if (!*removed) {
-                                 ShellFeedback::ShowToast(ShellHost::Instance().State(), "Contact not found");
-                                 ShellHost::Instance().DirtyWindow();
-                                 return;
-                               }
-                               if (!CloseContactDetailPane()) {
-                                 OnDetailDismissed();
-                               }
-                               SyncFromStore();
-                               DirtyAll();
-                               ShellFeedback::ShowToast(ShellHost::Instance().State(), "Contact removed");
-                               Hub().Inbox().NotifyThreadChanged();
-                               ShellHost::Instance().RequestSyncLayout();
-                               ShellHost::Instance().DirtyWindow();
-                             });
+  ShowConfirm(Tr("contacts.remove"), message, [this, contact_id](const bool ok) {
+    if (!ok) {
+      return;
+    }
+    auto removed = contacts_ports_.remove_contact(contact_id);
+    if (!removed) {
+      UserFeedback::Fail("Could not remove contact");
+      ShellDirty();
+      return;
+    }
+    if (!*removed) {
+      ShowToast("Contact not found");
+      return;
+    }
+    if (!CloseContactDetailPane()) {
+      OnDetailDismissed();
+    }
+    SyncFromStore();
+    DirtyAll();
+    ShowToast("Contact removed");
+    if (contacts_ports_.notify_thread_changed) {
+      contacts_ports_.notify_thread_changed();
+    }
+    ShellSyncLayout();
+    ShellDirty();
+  });
 }
 
 void ContactsController::OnOpenThread(const std::string& thread_id) {
   if (thread_id.empty()) {
     return;
   }
-  ShellHost::Instance().SelectNavTab(NavTab::Sessions);
-  ShellHost::Instance().SetPrimaryPane("chat");
+  if (shell_navigation_.select_nav_tab) {
+    shell_navigation_.select_nav_tab(NavTab::Sessions);
+  }
+  if (shell_navigation_.set_primary_pane) {
+    shell_navigation_.set_primary_pane("chat");
+  }
   if (chat_ports_.select_thread) {
     chat_ports_.select_thread(thread_id);
   }

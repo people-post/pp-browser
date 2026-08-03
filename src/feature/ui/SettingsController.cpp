@@ -15,14 +15,14 @@
 #include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ProfileSettingsSection.h"
 #include "feature/ui/SecuritySettingsSection.h"
-#include "feature/ui/ShellFeedback.h"
-#include "feature/ui/ShellHost.h"
 #include "feature/ui/UiEditSession.h"
 #include "feature/ui/UserFeedback.h"
 #include "base/error/AppError.h"
 
 #include <RmlUi/Core/Context.h>
+#include <RmlUi/Core/Core.h>
 #include <RmlUi/Core/DataModelHandle.h>
+#include <RmlUi/Core/Element.h>
 #include <RmlUi/Core/Event.h>
 #include <RmlUi/Core/SystemInterface.h>
 #include <SDL3/SDL.h>
@@ -30,6 +30,23 @@
 #include <filesystem>
 
 namespace pbr {
+
+SettingsController* SettingsController::installed_instance_ = nullptr;
+
+void SettingsController::InstallInstance(SettingsController& controller) {
+  installed_instance_ = &controller;
+}
+
+void SettingsController::ClearInstance() {
+  installed_instance_ = nullptr;
+}
+
+SettingsController& SettingsController::Instance() {
+  if (!installed_instance_) {
+    throw std::runtime_error("SettingsController not installed");
+  }
+  return *installed_instance_;
+}
 
 namespace {
 
@@ -117,11 +134,6 @@ SettingsController::SettingsController() {
   InitSections();
 }
 
-SettingsController& SettingsController::Instance() {
-  static SettingsController controller;
-  return controller;
-}
-
 void SettingsController::BindCommands(SettingsCommands commands) {
   commands_ = std::move(commands);
   if (auto* profile = dynamic_cast<ProfileSettingsSection*>(FindHandler("profile"))) {
@@ -133,6 +145,21 @@ void SettingsController::BindCommands(SettingsCommands commands) {
   if (auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"))) {
     security->BindPorts(&commands_);
   }
+}
+
+void SettingsController::BindShellNavigation(ShellNavigationPorts ports) {
+  shell_navigation_ = std::move(ports);
+}
+
+void SettingsController::BindShellFeedback(ShellFeedbackPorts ports) {
+  shell_feedback_ = std::move(ports);
+}
+
+ShellChromeSnapshot SettingsController::ChromeSnapshot() const {
+  if (shell_navigation_.snapshot) {
+    return shell_navigation_.snapshot();
+  }
+  return {};
 }
 
 void SettingsController::BindUnlockGate(ProfileUnlockGate& unlock_gate) {
@@ -353,8 +380,8 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
   }
   context_ = context;
 
-  return DataModelHost::Instance().Register(context, "settings", [](Rml::DataModelConstructor& ctor) {
-    auto& controller = SettingsController::Instance();
+  return DataModelHost::Instance().Register(context, "settings", [this](Rml::DataModelConstructor& ctor) {
+    auto& controller = *this;
     if (auto section_handle = ctor.RegisterStruct<SectionListRow>()) {
       section_handle.RegisterMember("id", &SectionListRow::id);
       section_handle.RegisterMember("title", &SectionListRow::title);
@@ -549,8 +576,8 @@ void SettingsController::FinishPaneResync() {
   }
   // Select widgets can emit a spurious change on the frame after remount.
   BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-    const ShellState& state = ShellHost::Instance().State();
-    if (state.nav_tab != NavTab::Me && !state.account_sheet_open) {
+    const ShellChromeSnapshot chrome = ChromeSnapshot();
+    if (chrome.nav_tab != NavTab::Me && !chrome.account_sheet_open) {
       suppress_auto_save_ = false;
       UiEditSession::Instance().EndRemount();
       return;
@@ -569,8 +596,8 @@ void SettingsController::OnShellLayoutSynced() {
   if (!suppress_auto_save_) {
     return;
   }
-  const ShellState& state = ShellHost::Instance().State();
-  if (state.nav_tab == NavTab::Me || state.account_sheet_open) {
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  if (chrome.nav_tab == NavTab::Me || chrome.account_sheet_open) {
     FinishPaneResync();
   } else {
     suppress_auto_save_ = false;
@@ -587,8 +614,10 @@ void SettingsController::OnNavTabActivated() {
   selected_id_.clear();
   selected_title_.clear();
   in_account_sheet_ = false;
-  ShellHost::Instance().ClearLocalBack("settings_detail");
-  compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  if (shell_navigation_.clear_local_back) {
+    shell_navigation_.clear_local_back("settings_detail");
+  }
+  compact_layout_ = ChromeSnapshot().layout_mode == LayoutMode::Compact;
   // Remount gate must wrap Reload/Sync: an empty nickname binding vs a prior baseline
   // would otherwise look mid-edit and keep the field blank (then blur-commit wipes it).
   suppress_auto_save_ = true;
@@ -607,7 +636,9 @@ void SettingsController::OnAccountSheetOpened() {
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
-  ShellHost::Instance().ClearLocalBack("settings_detail");
+  if (shell_navigation_.clear_local_back) {
+    shell_navigation_.clear_local_back("settings_detail");
+  }
   in_account_sheet_ = true;
   suppress_auto_save_ = true;
   UiEditSession::Instance().BeginRemount();
@@ -625,50 +656,64 @@ void SettingsController::OnAccountSheetClosed() {
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
-  ShellHost::Instance().ClearLocalBack("settings_detail");
+  if (shell_navigation_.clear_local_back) {
+    shell_navigation_.clear_local_back("settings_detail");
+  }
 }
 
 void SettingsController::SyncLayoutMode() {
-  const bool compact = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  const bool compact = chrome.layout_mode == LayoutMode::Compact;
   if (compact_layout_ == compact) {
     return;
   }
   compact_layout_ = compact;
 
-  ShellState& state = ShellHost::Instance().State();
   const Rml::String saved_id = selected_id_;
   const Rml::String saved_title = selected_title_;
   const bool had_detail = !saved_id.empty() || show_detail_;
 
   if (compact) {
-    if (state.nav_tab == NavTab::Me) {
-      ShellHost::Instance().ClearPrimaryPane();
-      ShellHost::Instance().SelectNavTab(NavTab::Home);
+    if (chrome.nav_tab == NavTab::Me) {
+      if (shell_navigation_.clear_primary_pane) {
+        shell_navigation_.clear_primary_pane();
+      }
+      if (shell_navigation_.select_nav_tab) {
+        shell_navigation_.select_nav_tab(NavTab::Home);
+      }
       selected_id_ = saved_id;
       selected_title_ = saved_title;
       show_detail_ = had_detail;
-      ShellHost::Instance().OpenAccountSheet();
+      if (shell_navigation_.open_account_sheet) {
+        shell_navigation_.open_account_sheet();
+      }
       // OpenAccountSheet resets selection; restore sheet detail state.
       selected_id_ = saved_id;
       selected_title_ = saved_title;
       show_detail_ = had_detail;
       in_account_sheet_ = true;
       if (had_detail) {
-        ShellHost::Instance().ClearLocalBack("settings_detail");
-        ShellHost::Instance().PushLocalBack("settings_detail", [] {
-          SettingsController::Instance().ApplyBackToListUi();
-        });
+        if (shell_navigation_.clear_local_back) {
+          shell_navigation_.clear_local_back("settings_detail");
+        }
+        if (shell_navigation_.push_local_back) {
+          shell_navigation_.push_local_back("settings_detail", [this] { ApplyBackToListUi(); });
+        }
       }
       DirtyAll();
       return;
     }
-  } else if (state.account_sheet_open) {
-    ShellHost::Instance().CloseAccountSheet();
+  } else if (chrome.account_sheet_open) {
+    if (shell_navigation_.close_account_sheet) {
+      shell_navigation_.close_account_sheet();
+    }
     selected_id_ = saved_id;
     selected_title_ = saved_title;
     show_detail_ = false;
     in_account_sheet_ = false;
-    ShellHost::Instance().SelectNavTab(NavTab::Me);
+    if (shell_navigation_.select_nav_tab) {
+      shell_navigation_.select_nav_tab(NavTab::Me);
+    }
     // SelectNavTab activates Me and clears selection; restore for primary pane.
     selected_id_ = saved_id;
     selected_title_ = saved_title;
@@ -788,7 +833,9 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   if (show_toast) {
     MaybeShowSaveToast(section_id);
   }
-  ShellHost::Instance().DirtyWindow();
+  if (shell_navigation_.dirty_window) {
+    shell_navigation_.dirty_window();
+  }
   return true;
 }
 
@@ -829,9 +876,11 @@ void SettingsController::OnResetSection(const std::string& section_id) {
     return;
   }
 
-  ShellFeedback::ShowConfirm(
-      ShellHost::Instance().State(), Tr("settings.reset_defaults_confirm_title"),
-      Tr("settings.reset_defaults_confirm_message"),
+  if (!shell_feedback_.show_confirm) {
+    return;
+  }
+  shell_feedback_.show_confirm(
+      Tr("settings.reset_defaults_confirm_title"), Tr("settings.reset_defaults_confirm_message"),
       [this, section_id](const bool ok) {
         if (!ok) {
           return;
@@ -870,21 +919,24 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
 
   status_ = "";
-  const bool sheet = ShellHost::Instance().State().account_sheet_open || in_account_sheet_;
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  const bool sheet = chrome.account_sheet_open || in_account_sheet_;
   if (sheet) {
     show_detail_ = true;
     DirtyAll();
     if (context_) {
       context_->Update();
     }
-    ShellHost::Instance().PushLocalBack("settings_detail", [] {
-      SettingsController::Instance().ApplyBackToListUi();
-    });
+    if (shell_navigation_.push_local_back) {
+      shell_navigation_.push_local_back("settings_detail", [this] { ApplyBackToListUi(); });
+    }
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
       suppress_auto_save_ = true;
       UiEditSession::Instance().BeginRemount();
       FinishPaneResync();
-      ShellHost::Instance().RefreshDismissGestures();
+      if (shell_navigation_.refresh_dismiss_gestures) {
+        shell_navigation_.refresh_dismiss_gestures();
+      }
       log().info << "OnSelectSection (sheet) complete id=" << selected_id_.c_str();
     });
     return;
@@ -905,30 +957,35 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
 }
 
 void SettingsController::OpenSettingsDetailPane() {
-  compact_layout_ = ShellHost::Instance().State().layout_mode == LayoutMode::Compact;
-  ShellState& state = ShellHost::Instance().State();
-  auto is_settings_detail_transient = [](const ShellState& s) {
-    return !s.transient_stack.empty() && s.transient_stack.back().spec.key == "settings_detail";
-  };
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  compact_layout_ = chrome.layout_mode == LayoutMode::Compact;
   // Compact Me uses the account sheet, not transient panes.
-  if (compact_layout_ || state.account_sheet_open) {
+  if (compact_layout_ || chrome.account_sheet_open) {
     return;
   }
 
-  if (is_settings_detail_transient(state)) {
-    ShellHost::Instance().PopTransient();
+  if (chrome.settings_detail_transient) {
+    if (shell_navigation_.pop_transient) {
+      shell_navigation_.pop_transient();
+    }
   }
-  ShellHost::Instance().SetPrimaryPane("settings_detail");
+  if (shell_navigation_.set_primary_pane) {
+    shell_navigation_.set_primary_pane("settings_detail");
+  }
 }
 
 bool SettingsController::CloseSettingsDetailPane() {
-  ShellState& state = ShellHost::Instance().State();
-  if (!state.transient_stack.empty() && state.transient_stack.back().spec.key == "settings_detail") {
-    ShellHost::Instance().PopTransient();
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  if (chrome.settings_detail_transient) {
+    if (shell_navigation_.pop_transient) {
+      shell_navigation_.pop_transient();
+    }
     return true;
   }
-  if (state.layout_mode != LayoutMode::Compact && state.nav_tab == NavTab::Me) {
-    ShellHost::Instance().ClearPrimaryPane();
+  if (chrome.layout_mode != LayoutMode::Compact && chrome.nav_tab == NavTab::Me) {
+    if (shell_navigation_.clear_primary_pane) {
+      shell_navigation_.clear_primary_pane();
+    }
     return true;
   }
   return false;
@@ -958,18 +1015,23 @@ void SettingsController::ApplyBackToListUi() {
     }
     suppress_auto_save_ = false;
     UiEditSession::Instance().EndRemount();
-    ShellHost::Instance().RefreshDismissGestures();
+    if (shell_navigation_.refresh_dismiss_gestures) {
+      shell_navigation_.refresh_dismiss_gestures();
+    }
   });
 }
 
 void SettingsController::OnBackToList() {
   log().info << "OnBackToList";
   FlushPending();
-  if (ShellHost::Instance().HasLocalBack("settings_detail")) {
-    ShellHost::Instance().RequestDismiss(DismissStyle::Instant);
+  if (shell_navigation_.has_local_back && shell_navigation_.has_local_back("settings_detail")) {
+    if (shell_navigation_.request_dismiss_instant) {
+      shell_navigation_.request_dismiss_instant();
+    }
     return;
   }
-  if (in_account_sheet_ || ShellHost::Instance().State().account_sheet_open) {
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  if (in_account_sheet_ || chrome.account_sheet_open) {
     ApplyBackToListUi();
     return;
   }
@@ -1546,8 +1608,11 @@ void SettingsController::OnClearUndeliveredOlderThan() {
     return;
   }
 
-  ShellFeedback::ShowConfirm(
-      ShellHost::Instance().State(), Tr("settings.security.clear_undelivered_confirm_title"),
+  if (!shell_feedback_.show_confirm) {
+    return;
+  }
+  shell_feedback_.show_confirm(
+      Tr("settings.security.clear_undelivered_confirm_title"),
       Tr("settings.security.clear_undelivered_confirm_message"),
       [this](const bool ok) {
         if (!ok) {
@@ -1576,9 +1641,12 @@ void SettingsController::OnResetProfileCallback(Rml::DataModelHandle /*model*/, 
 }
 
 void SettingsController::OnResetProfile() {
-  ShellFeedback::ShowConfirmWithCheckbox(
-      ShellHost::Instance().State(), Tr("settings.storage.reset_confirm_title"),
-      Tr("settings.storage.reset_confirm_message"), Tr("settings.storage.reset_confirm_check"), false,
+  if (!shell_feedback_.show_confirm_with_checkbox) {
+    return;
+  }
+  shell_feedback_.show_confirm_with_checkbox(
+      Tr("settings.storage.reset_confirm_title"), Tr("settings.storage.reset_confirm_message"),
+      Tr("settings.storage.reset_confirm_check"), false,
       [this](const bool confirmed, const bool checked) {
         if (!confirmed) {
           return;
@@ -1610,7 +1678,9 @@ void SettingsController::PerformResetProfile() {
   SyncBindingsFromSession();
   DirtyAll();
   UserFeedback::Ok(Tr("settings.storage.profile_reset"));
-  ShellHost::Instance().RequestSyncLayout();
+  if (shell_navigation_.request_sync_layout) {
+    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, nullptr);
+  }
 }
 
 void SettingsController::OnChangePin() {

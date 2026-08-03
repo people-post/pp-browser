@@ -8,14 +8,13 @@
 #include "base/platform/PlatformNavigation.h"
 #include "base/ui/ContextMenuHost.h"
 #include "base/ui/RmlVariantHelpers.h"
-#include "feature/messaging/MessagingHub.h"
+#include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/DataModelHost.h"
 #include "feature/ui/PinGateController.h"
 #include "feature/ui/CallController.h"
 #include "feature/ui/RmlMount.h"
 #include "feature/ui/ShellFeedback.h"
 #include "feature/ui/FlowCoordinator.h"
-#include "feature/ui/SettingsController.h"
 #include "feature/ui/ShellInterruption.h"
 #include "feature/ui/ShellLayout.h"
 #include "feature/ui/UiEditSession.h"
@@ -74,12 +73,24 @@ std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeF
 
 } // namespace
 
-ShellHost& ShellHost::Instance() {
-  static ShellHost host;
-  return host;
+ShellHost* ShellHost::installed_instance_ = nullptr;
+
+void ShellHost::InstallInstance(ShellHost& host) {
+  installed_instance_ = &host;
 }
-void ShellHost::BindMessaging(MessagingHub& messaging) {
-  messaging_ = &messaging;
+
+void ShellHost::ClearInstance() {
+  installed_instance_ = nullptr;
+}
+
+ShellHost& ShellHost::Instance() {
+  if (!installed_instance_) {
+    throw std::runtime_error("ShellHost not installed");
+  }
+  return *installed_instance_;
+}
+void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
+  shell_messaging_ports_ = std::move(ports);
 }
 
 void ShellHost::BindPinGate(PinGateController& pin_gate) {
@@ -94,24 +105,10 @@ void ShellHost::BindCallController(CallController& call) {
   call_ = &call;
 }
 
-MessagingHub& ShellHost::Hub() {
-  if (!messaging_) {
-    throw std::runtime_error("ShellHost messaging not bound");
-  }
-  return *messaging_;
-}
-
-const MessagingHub& ShellHost::Hub() const {
-  if (!messaging_) {
-    throw std::runtime_error("ShellHost messaging not bound");
-  }
-  return *messaging_;
-}
-
 
 bool ShellHost::RegisterWindowModel(Rml::Context* context) {
-  return DataModelHost::Instance().Register(context, "window", [](Rml::DataModelConstructor& ctor) {
-    ShellHost& host = ShellHost::Instance();
+  return DataModelHost::Instance().Register(context, "window", [this](Rml::DataModelConstructor& ctor) {
+    ShellHost& host = *this;
     if (auto toast_handle = ctor.RegisterStruct<ToastEntry>()) {
       toast_handle.RegisterMember("id", &ToastEntry::id);
       toast_handle.RegisterMember("message", &ToastEntry::message);
@@ -342,7 +339,9 @@ void ShellHost::ClearTabContext() {
   DetachDismissGestures();
   if (state_.account_sheet_open) {
     state_.account_sheet_open = false;
-    SettingsController::Instance().OnAccountSheetClosed();
+    if (on_account_sheet_closed_) {
+      on_account_sheet_closed_();
+    }
   }
 }
 
@@ -419,7 +418,9 @@ void ShellHost::OpenAccountSheet() {
   if (pending_dismiss_ && pending_dismiss_->target == DismissTarget::AccountSheet) {
     pending_dismiss_.reset();
   }
-  SettingsController::Instance().OnAccountSheetOpened();
+  if (on_account_sheet_opened_) {
+    on_account_sheet_opened_();
+  }
   RequestSyncLayout();
   DirtyWindow();
 }
@@ -434,7 +435,9 @@ void ShellHost::CloseAccountSheet() {
   }
   local_back_stack_.clear();
   DetachDismissGestures();
-  SettingsController::Instance().OnAccountSheetClosed();
+  if (on_account_sheet_closed_) {
+    on_account_sheet_closed_();
+  }
   RequestSyncLayout();
   DirtyWindow();
 }
@@ -849,6 +852,14 @@ void ShellHost::SetOnLayoutSynced(std::function<void()> callback) {
   on_layout_synced_ = std::move(callback);
 }
 
+void ShellHost::SetOnAccountSheetOpened(std::function<void()> callback) {
+  on_account_sheet_opened_ = std::move(callback);
+}
+
+void ShellHost::SetOnAccountSheetClosed(std::function<void()> callback) {
+  on_account_sheet_closed_ = std::move(callback);
+}
+
 void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {
   safe_area_top_from_prefs_dp_ = std::max(0, top_dp);
   safe_area_bottom_from_prefs_dp_ = std::max(0, bottom_dp);
@@ -965,13 +976,8 @@ void ShellHost::RefreshStatusbarConnection() {
     return;
   }
   Rml::String next;
-  MessagingHub& hub = Hub();
-  if (hub.IsMessagingReady()) {
-    if (Libp2pHost* host = hub.Libp2p(); host && host->IsRunning()) {
-      next = "Online";
-    } else {
-      next = "Direct off";
-    }
+  if (shell_messaging_ports_.statusbar_connection) {
+    next = shell_messaging_ports_.statusbar_connection().c_str();
   }
   if (next != state_.statusbar_connection) {
     state_.statusbar_connection = std::move(next);

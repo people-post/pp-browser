@@ -1,7 +1,10 @@
 #pragma once
 
 #include "base/media/CallRingtone.h"
+#include "feature/messaging/MessagingCallPorts.h"
 #include "feature/ui/CallChromeSync.h"
+#include "feature/ui/PeoplePickerNotifyPorts.h"
+#include "feature/ui/ShellCallChromePorts.h"
 
 #include <cstdint>
 #include <string>
@@ -9,18 +12,20 @@
 
 namespace pbr {
 
-class MessagingHub;
-
 class CallMediaEngine;
+class CallLifecycle;
+class CallSessionManager;
 
 /** Shell-level call ring / in-call chrome. */
 class CallController {
 public:
   CallController() = default;
 
-  void BindMessaging(MessagingHub& messaging);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
+  void BindCallPorts(MessagingCallPorts ports);
+  /** Open people-picker flows without PeoplePickerController::Instance(). Clear via BindPeoplePickerNotify({}). */
+  void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
+  /** Call ring / in-call chrome without ShellHost::Instance(). Clear via BindShellCallChrome({}). */
+  void BindShellCallChrome(ShellCallChromePorts ports);
 
   void BindToMessaging();
   void Tick();
@@ -56,6 +61,10 @@ private:
   std::string DisplayNameForIdentity(const std::string& identity) const;
   static std::string FormatElapsed(int64_t connected_at_ms);
 
+  bool MessagingInitialized() const;
+  CallSessionManager* Calls();
+  CallLifecycle* Lifecycle();
+
   bool pending_call_wake_notify_ = false;
   /** Last CallSessionManager we installed OnRingChanged on (recreated across unlock). */
   const void* bound_calls_ = nullptr;
@@ -68,8 +77,9 @@ private:
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
   CallRingtone ringtone_;
-  MessagingHub* messaging_ = nullptr;
-
+  MessagingCallPorts call_ports_;
+  PeoplePickerNotifyPorts people_picker_notify_;
+  ShellCallChromePorts shell_call_chrome_;
 };
 
 } // namespace pbr

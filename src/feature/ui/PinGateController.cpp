@@ -2,12 +2,15 @@
 
 #include "base/i18n/LocalizationService.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/ShellHost.h"
 
 namespace pbr {
 
 void PinGateController::BindGate(ProfileUnlockGate& gate) {
   gate_ = &gate;
+}
+
+void PinGateController::BindShellPinGate(ShellPinGatePorts ports) {
+  shell_pin_gate_ = std::move(ports);
 }
 
 void PinGateController::DirtyPinFields() {
@@ -22,58 +25,92 @@ void PinGateController::DirtyPinFields() {
 }
 
 void PinGateController::SetUnlockInProgressUi(const bool in_progress) {
-  ShellHost::Instance().State().unlock_in_progress = in_progress;
+  if (shell_pin_gate_.unlock_in_progress) {
+    shell_pin_gate_.unlock_in_progress() = in_progress;
+  }
   if (in_progress) {
-    ShellHost::Instance().SetActivity(true, "Preparing...");
-  } else {
-    ShellHost::Instance().SetActivity(false);
+    if (shell_pin_gate_.set_activity) {
+      shell_pin_gate_.set_activity(true, "Preparing...");
+    }
+  } else if (shell_pin_gate_.set_activity) {
+    shell_pin_gate_.set_activity(false, {});
   }
   DataModelHost::Instance().Dirty("window", "unlock_in_progress");
-  ShellHost::Instance().DirtyWindow();
+  if (shell_pin_gate_.dirty_window) {
+    shell_pin_gate_.dirty_window();
+  }
 }
 
 void PinGateController::ShowError(const std::string& message) {
-  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!shell_pin_gate_.pin_gate) {
+    return;
+  }
+  PinGateState& gate = shell_pin_gate_.pin_gate();
   if (!gate.active) {
     ShowUnlock();
   }
   gate.error = message.c_str();
   DirtyPinFields();
-  ShellHost::Instance().DirtyWindow();
+  if (shell_pin_gate_.dirty_window) {
+    shell_pin_gate_.dirty_window();
+  }
 }
 
 void PinGateController::Dismiss() {
-  ShellHost::Instance().State().pin_gate = {};
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
+  if (shell_pin_gate_.pin_gate) {
+    shell_pin_gate_.pin_gate() = {};
+  }
+  if (shell_pin_gate_.request_sync_layout) {
+    shell_pin_gate_.request_sync_layout(false, nullptr);
+  }
+  if (shell_pin_gate_.dirty_window) {
+    shell_pin_gate_.dirty_window();
+  }
 }
 
 void PinGateController::ShowChooser() {
-  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!shell_pin_gate_.pin_gate) {
+    return;
+  }
+  PinGateState& gate = shell_pin_gate_.pin_gate();
   gate = {};
   gate.active = true;
   gate.chooser_mode = true;
   gate.title = Tr("pin.chooser_title").c_str();
   gate.message = Tr("pin.chooser_message").c_str();
-  ShellHost::Instance().RequestSyncLayout();
+  if (shell_pin_gate_.request_sync_layout) {
+    shell_pin_gate_.request_sync_layout(false, nullptr);
+  }
   DirtyPinFields();
-  ShellHost::Instance().DirtyWindow();
+  if (shell_pin_gate_.dirty_window) {
+    shell_pin_gate_.dirty_window();
+  }
 }
 
 void PinGateController::ShowUnlock() {
-  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!shell_pin_gate_.pin_gate) {
+    return;
+  }
+  PinGateState& gate = shell_pin_gate_.pin_gate();
   gate = {};
   gate.active = true;
   gate.create_mode = false;
   gate.title = Tr("pin.unlock_title").c_str();
   gate.message = Tr("pin.unlock_message").c_str();
-  ShellHost::Instance().RequestSyncLayout();
+  if (shell_pin_gate_.request_sync_layout) {
+    shell_pin_gate_.request_sync_layout(false, nullptr);
+  }
   DirtyPinFields();
-  ShellHost::Instance().DirtyWindow();
+  if (shell_pin_gate_.dirty_window) {
+    shell_pin_gate_.dirty_window();
+  }
 }
 
 void PinGateController::ShowCreate() {
-  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!shell_pin_gate_.pin_gate) {
+    return;
+  }
+  PinGateState& gate = shell_pin_gate_.pin_gate();
   gate.chooser_mode = false;
   gate.create_mode = true;
   gate.error = "";
@@ -82,12 +119,19 @@ void PinGateController::ShowCreate() {
   gate.title = Tr("pin.create_title").c_str();
   gate.message = Tr("pin.create_message").c_str();
   DirtyPinFields();
-  ShellHost::Instance().RequestSyncLayout();
-  ShellHost::Instance().DirtyWindow();
+  if (shell_pin_gate_.request_sync_layout) {
+    shell_pin_gate_.request_sync_layout(false, nullptr);
+  }
+  if (shell_pin_gate_.dirty_window) {
+    shell_pin_gate_.dirty_window();
+  }
 }
 
 void PinGateController::OnSetPin() {
-  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!shell_pin_gate_.pin_gate) {
+    return;
+  }
+  PinGateState& gate = shell_pin_gate_.pin_gate();
   if (!gate.active || !gate.chooser_mode) {
     return;
   }
@@ -95,7 +139,10 @@ void PinGateController::OnSetPin() {
 }
 
 void PinGateController::OnUseDefaultPin() {
-  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!shell_pin_gate_.pin_gate) {
+    return;
+  }
+  PinGateState& gate = shell_pin_gate_.pin_gate();
   if (!gate.active || !gate.chooser_mode || !gate_) {
     return;
   }
@@ -106,7 +153,10 @@ void PinGateController::OnUseDefaultPin() {
 }
 
 void PinGateController::OnSubmit() {
-  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!shell_pin_gate_.pin_gate) {
+    return;
+  }
+  PinGateState& gate = shell_pin_gate_.pin_gate();
   if (!gate.active || gate.chooser_mode || !gate_) {
     return;
   }
@@ -137,7 +187,10 @@ void PinGateController::OnSubmit() {
 }
 
 void PinGateController::OnCancel() {
-  PinGateState& gate = ShellHost::Instance().State().pin_gate;
+  if (!shell_pin_gate_.pin_gate) {
+    return;
+  }
+  PinGateState& gate = shell_pin_gate_.pin_gate();
   if (!gate.active || (!gate.create_mode && !gate.chooser_mode) || !gate_) {
     return;
   }

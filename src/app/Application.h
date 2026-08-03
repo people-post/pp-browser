@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feature/ai/AgentSession.h"
 #include "app/Bootstrap.h"
 #include "app/ConfigApplyBridge.h"
 #include "base/data/SessionStore.h"
@@ -23,6 +24,11 @@ class FlowCoordinator;
 class InputCoordinator;
 class PinGateController;
 class ProfileUnlockGate;
+class SettingsController;
+class ContactsController;
+class ShellHost;
+class PeoplePickerController;
+class ChatController;
 
 class Application : public Module {
 public:
@@ -57,9 +63,15 @@ private:
   std::unique_ptr<BadgeAggregator> badges_;
   std::unique_ptr<InputCoordinator> input_;
   std::unique_ptr<FlowCoordinator> flow_;
+  std::unique_ptr<ShellHost> shell_;
+  std::unique_ptr<ChatController> chat_;
   std::unique_ptr<CallController> call_;
+  std::unique_ptr<SettingsController> settings_;
+  std::unique_ptr<ContactsController> contacts_;
+  std::unique_ptr<PeoplePickerController> people_picker_;
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;
+  std::optional<AgentSession> agent_session_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;
 };
 

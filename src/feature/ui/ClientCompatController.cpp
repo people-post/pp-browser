@@ -7,9 +7,6 @@
 #include "base/platform/BrowserThread.h"
 #include "base/platform/PlatformOpenUrl.h"
 #include "common/Logger.h"
-#include "feature/messaging/MessagingHub.h"
-#include "feature/ui/ShellFeedback.h"
-#include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
 
 #include <chrono>
@@ -72,31 +69,20 @@ CompatResolveResult ResolveDocumentOnIO(IClientCompatClient* client, const std::
 
 } // namespace
 
-void ClientCompatController::BindMessaging(MessagingHub& messaging) {
-  messaging_ = &messaging;
+void ClientCompatController::BindCompatPorts(MessagingCompatPorts ports) {
+  compat_ports_ = std::move(ports);
 }
 
-MessagingHub& ClientCompatController::Hub() {
-  if (!messaging_) {
-    throw std::runtime_error("ClientCompatController messaging not bound");
-  }
-  return *messaging_;
+void ClientCompatController::BindShellFeedback(ShellFeedbackPorts ports) {
+  shell_feedback_ = std::move(ports);
 }
-
-const MessagingHub& ClientCompatController::Hub() const {
-  if (!messaging_) {
-    throw std::runtime_error("ClientCompatController messaging not bound");
-  }
-  return *messaging_;
-}
-
 
 void ClientCompatController::CheckAsync() {
-  if (!Hub().IsInitialized()) {
+  if (!compat_ports_.messaging_initialized || !compat_ports_.messaging_initialized()) {
     return;
   }
-  IClientCompatClient* client = Hub().ClientCompat();
-  const std::string profile_dir = Hub().ProfileDataDir();
+  IClientCompatClient* client = compat_ports_.client_compat ? compat_ports_.client_compat() : nullptr;
+  const std::string profile_dir = compat_ports_.profile_data_dir ? compat_ports_.profile_data_dir() : std::string{};
 
   BrowserThread::PostTaskAndReply<CompatResolveResult>(
       [client, profile_dir]() { return ResolveDocumentOnIO(client, profile_dir); },
@@ -132,7 +118,7 @@ void ClientCompatController::PresentAction(CompatUiAction action, const ClientCo
 }
 
 void ClientCompatController::ShowUpdateRequired(const ClientCompatDocument& doc) {
-  if (force_dialog_shown_ && ShellHost::Instance().State().dialog.active) {
+  if (force_dialog_shown_ && shell_feedback_.dialog_active && shell_feedback_.dialog_active()) {
     return;
   }
   force_dialog_shown_ = true;
@@ -140,9 +126,10 @@ void ClientCompatController::ShowUpdateRequired(const ClientCompatDocument& doc)
   const std::string message =
       doc.message.empty() ? Tr("compat.update_required.message") : doc.message;
   const std::string url = upgrade_url_;
-  ShellFeedback::ShowAlert(
-      ShellHost::Instance().State(), title, message,
-      [url]() { PlatformOpenUrl(url); }, Tr("compat.update_required.action"));
+  if (shell_feedback_.show_alert) {
+    shell_feedback_.show_alert(title, message, [url]() { PlatformOpenUrl(url); },
+                               Tr("compat.update_required.action"));
+  }
 }
 
 } // namespace pbr

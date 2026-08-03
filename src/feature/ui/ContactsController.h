@@ -1,7 +1,10 @@
 #pragma once
 
 #include "common/Module.h"
+#include "feature/messaging/MessagingContactsPorts.h"
 #include "feature/ui/ChatSessionPorts.h"
+#include "feature/ui/ShellFeedbackPorts.h"
+#include "feature/ui/ShellNavigationPorts.h"
 
 #include <RmlUi/Core/DataModelHandle.h>
 #include <RmlUi/Core/Event.h>
@@ -16,19 +19,24 @@ class Context;
 
 namespace pbr {
 
-class MessagingHub;
 class ProfileUnlockGate;
 struct Contact;
 
 class ContactsController : public Module {
 public:
+  ContactsController();
+  ~ContactsController() override = default;
+
+  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
+  static void InstallInstance(ContactsController& controller);
+  static void ClearInstance();
   static ContactsController& Instance();
 
-  void BindMessaging(MessagingHub& messaging);
+  void BindContactsPorts(MessagingContactsPorts ports);
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
   void BindChatPorts(ChatSessionPorts ports);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
+  void BindShellNavigation(ShellNavigationPorts ports);
+  void BindShellFeedback(ShellFeedbackPorts ports);
 
   struct ContactListRow {
     Rml::String id;
@@ -87,8 +95,6 @@ public:
   void OnDetailDismissed();
 
 private:
-  ContactsController();
-
   static void SelectContactCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void BackToListCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void StartChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -126,6 +132,13 @@ private:
   void UpdateMessagingEligibility(const Contact& contact);
   void DirtyAll();
 
+  ShellChromeSnapshot ChromeSnapshot() const;
+  void ShellDirty();
+  void ShellSyncLayout(bool restore_focus_after = false);
+  void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
+  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result);
+  void NavigateToChatSession();
+
   std::vector<ContactListRow> contacts_;
   Rml::String search_query_;
   bool compact_layout_ = false;
@@ -133,10 +146,13 @@ private:
   Rml::Context* context_ = nullptr;
   bool contact_dirty_ = false;
   uint64_t debounce_deadline_ms_ = 0;
-  MessagingHub* messaging_ = nullptr;
+  MessagingContactsPorts contacts_ports_;
   ProfileUnlockGate* unlock_gate_ = nullptr;
   ChatSessionPorts chat_ports_;
+  ShellNavigationPorts shell_navigation_;
+  ShellFeedbackPorts shell_feedback_;
 
+  static ContactsController* installed_instance_;
 };
 
 } // namespace pbr

@@ -20,7 +20,8 @@ class ConfigApplyBridge {
 public:
   using AssetPathResolver = std::function<std::string(const std::string& relative)>;
 
-  void Bind(MessagingHub& messaging, SessionStore& store, AssetPathResolver resolve_asset);
+  void Bind(MessagingHub& messaging, SessionStore& store, ShellHost& shell, ChatController& chat,
+            AssetPathResolver resolve_asset);
   /** Seed last-applied slices from live SessionStore (no Apply). Then install listeners. */
   void InstallListeners();
 
@@ -31,6 +32,8 @@ private:
 
   MessagingHub* messaging_ = nullptr;
   SessionStore* store_ = nullptr;
+  ShellHost* shell_ = nullptr;
+  ChatController* chat_ = nullptr;
   AssetPathResolver resolve_asset_;
   std::optional<MessagingHub::NetworkConfig> last_network_;
   std::optional<MessagingHub::PolicyPrefs> last_policy_;

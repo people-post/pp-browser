@@ -6,7 +6,7 @@
 #include "common/StartupTiming.h"
 #include "base/crypto/ProfileUnlockGate.h"
 #include "feature/ui/ClientCompatController.h"
-#include "feature/ui/ShellHost.h"
+#include "feature/ui/ShellNavigationPorts.h"
 
 #include <RmlUi/Core/Core.h>
 
@@ -56,19 +56,25 @@ void LoadFallbackFace(const std::string& relative, const char* phase_name) {
   }
 }
 
-void MarkFontsReadyAndRefresh() {
-  ShellState& state = ShellHost::Instance().State();
-  if (state.fonts_ready) {
+void MarkFontsReadyAndRefresh(const ShellNavigationPorts& shell) {
+  if (!shell.fonts_ready) {
     return;
   }
-  state.fonts_ready = true;
-  ShellHost::Instance().DirtyWindow();
+  if (shell.fonts_ready()) {
+    return;
+  }
+  shell.fonts_ready() = true;
+  if (shell.dirty_window) {
+    shell.dirty_window();
+  }
   // Remount so previously hidden CJK labels / localized chrome reshape with fallbacks.
-  ShellHost::Instance().RequestSyncLayout(true);
+  if (shell.request_sync_layout) {
+    shell.request_sync_layout(true, "deferred_fonts_ready");
+  }
   StartupMark("fonts_ready");
 }
 
-void LoadDeferredFonts() {
+void LoadDeferredFonts(const ShellNavigationPorts& shell) {
   StartupPhase phase("DeferredStartup::LoadFonts");
   const bool need_cjk_for_ui = UiLanguageNeedsCjkFonts();
   const std::string primary = PrimaryCjkFontRelative();
@@ -94,14 +100,14 @@ void LoadDeferredFonts() {
   for (size_t i = 0; i < faces.size(); ++i) {
     LoadFallbackFace(faces[i].first, faces[i].second);
     if (need_cjk_for_ui && i == 0) {
-      MarkFontsReadyAndRefresh();
+      MarkFontsReadyAndRefresh(shell);
     }
   }
 
   if (!need_cjk_for_ui) {
     StartupMark("deferred_fonts_complete");
-  } else if (!ShellHost::Instance().State().fonts_ready) {
-    MarkFontsReadyAndRefresh();
+  } else if (!shell.fonts_ready || !shell.fonts_ready()) {
+    MarkFontsReadyAndRefresh(shell);
   } else {
     StartupMark("deferred_fonts_complete");
   }
@@ -114,8 +120,8 @@ bool UiLanguageNeedsCjkFonts() {
   return primary == "zh" || primary == "ja" || primary == "ko";
 }
 
-void OnFirstPresentDeferredStartup(ClientCompatController& client_compat,
-                                   ProfileUnlockGate& unlock_gate) {
+void OnFirstPresentDeferredStartup(ClientCompatController& client_compat, ProfileUnlockGate& unlock_gate,
+                                   const ShellNavigationPorts& shell) {
   if (g_started) {
     return;
   }
@@ -126,7 +132,7 @@ void OnFirstPresentDeferredStartup(ClientCompatController& client_compat,
   // fallbacks on the UI thread used to serialize behind Argon2 and freeze first paint.
   unlock_gate.BeginDeferredUnlockAfterFirstPresent();
   client_compat.CheckAsync();
-  LoadDeferredFonts();
+  LoadDeferredFonts(shell);
 }
 
 } // namespace pbr

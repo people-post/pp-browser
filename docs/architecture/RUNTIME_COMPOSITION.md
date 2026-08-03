@@ -1,9 +1,11 @@
 # Runtime composition
 
 **Tier:** architecture  
-**Related:** [ARCHITECTURE.md](ARCHITECTURE.md) (system overview), [SRC_LAYOUT.md](SRC_LAYOUT.md) (layers / includes), [ops/CONFIGURATION.md](../ops/CONFIGURATION.md) (disk DTOs → service slices).
+**Related:** [ARCHITECTURE.md](ARCHITECTURE.md) (system overview), [SRC_LAYOUT.md](SRC_LAYOUT.md) (layers / includes), [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md) (UI vs functional contracts), [ops/CONFIGURATION.md](../ops/CONFIGURATION.md) (disk DTOs → service slices).
 
 How **Application** relates to the main service modules at runtime: ownership, feature-link order, settings hot-reload, and **threading** (UI / IO / libp2p / media).
+
+For **what UI may call** (state / config / actions / events, facades vs ports), see [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md). UI ↔ functional decoupling is **complete** (Phase 8, 2026-08): all presenters and `ShellHost` are app-owned; cross-presenter calls use notify ports or `Application` wiring.
 
 ## Layers (link / include direction)
 
@@ -126,35 +128,47 @@ flowchart LR
   Bridge --> Store
   Bridge -->|Project + Apply| Hub
   Bridge -->|ChromePrefs| Shell
+  Bridge -->|AgentConfig| Chat
   Bridge -->|Prefs| Locale
   Bridge -->|theme / appearance| ThemeNode
 
   Settings -->|flush disk DTOs only| Store
   Chat -->|AddConfigListener LLM| Store
-  Chat --> Hub
-  Chat --> Agent
+  Chat -->|MessagingChatPorts| Hub
+  App --> Agent
+  App -->|BindAgentPorts| Chat
   Chat -->|BindBadgeAggregator| Badges
   Chat -->|BindInputCoordinator| Input
   Chat -->|BindCallController| Call
   App -->|BindCallController| Shell
-  Hub --> Agent
   App -->|BindSource| Badges
   App -->|BindPorts| UnlockGate
   UnlockGate -->|UI ports| Pin
 
-  Shell -.->|layout / Me sheet| Settings
+  App -->|WireShellPresentationEvents| Shell
   App -->|BindCommands SettingsCommands| Settings
-  App -->|BindChatPorts| Contacts
+  App -->|BindChatPorts / ContactsNotifyPorts| Contacts
+  App -->|BindChatPorts| PeoplePicker
+  App -->|BindPeoplePickerNotify| Chat
+  App -->|BindPeoplePickerNotify| Call
   App -->|BindPinGate| Shell
   App -->|BindFlowCoordinator| Shell
   App -->|BindFlowCoordinator| PeoplePicker
   App -->|BindUnlockGate| Chat
   App -->|BindUnlockGate| Settings
   App -->|BindUnlockGate| Contacts
+  App -->|BindUnlockGate| PeoplePicker
   App -->|deferred startup| ClientCompat
   App -->|deferred startup| UnlockGate
   UnlockGate -.->|unlock gate| Settings
-  Contacts -.->|hub-bound| Hub
+  Contacts -->|MessagingContactsPorts| Hub
+  PeoplePicker -->|MessagingContactsPorts / MessagingPeoplePickerPorts| Hub
+  Shell -->|MessagingShellPorts| Hub
+  Call -->|MessagingCallPorts| Hub
+  Settings -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
+  Chat -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
+  Contacts -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
+  PeoplePicker -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
 ```
 
 ## Settings / prefs hot-reload
@@ -198,6 +212,8 @@ flowchart TB
 | ChatController | full `AppConfig` listener | **No** — agent slice via bridge |
 | ChatController | `SetOnMessagingReady` / reachability | **No** — Application owns |
 | Application Run loop | `MessagingHub::TickLibp2p` | Yes |
+| UI presenter | Another controller `::Instance()` | **No** — coordinator or ports ([UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md)) |
+| Functional system | `ShellHost::State()` mutation | **No** — UI ports / events |
 
 ## Threading
 
@@ -281,7 +297,7 @@ flowchart TB
 
 | Class | Location | Role |
 |-------|----------|------|
-| **Application** | `app/` | Owns hub + ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds controllers; installs `ConfigApplyBridge` |
+| **Application** | `app/` | Owns hub, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
 | **SessionStore** | `base/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **MessagingHub** | `feature/messaging/` | P2P / inbox / identity / mesh; `LoadProfileIdentityView`, register, rotate; nested network/policy slices |
@@ -297,7 +313,9 @@ flowchart TB
 | **LocalizationService** | `base/i18n/` | Locale catalogs; nested `Prefs` |
 | **SettingsController** | `feature/ui/` | Me-tab UI + flush via `session_store` port; holds injected `SettingsCommands` only (no messaging bind) |
 | **SettingsCommands** | `feature/settings/` | Ports for session, identity, locale, appearance, reachability, PIN status, imperative ops; app binds implementations |
-| **ChatSessionPorts** | `feature/ui/` | Chat nav ports for contacts/picker; app-filled from ChatController |
+| **ChatSessionPorts** | `feature/ui/` | Chat nav ports for contacts/people-picker; app-filled from `ChatController` |
+| **ContactsNotifyPorts** | `feature/ui/` | Contacts refresh/select for chat; app-filled from `ContactsController` |
+| **PeoplePickerNotifyPorts** | `feature/ui/` | Open-picker hooks for chat/call; app-filled from `PeoplePickerController` |
 | **ProfileIdentityView** | `base/people/` | Presentation projection of local identity |
 | **ChatController** | `feature/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |

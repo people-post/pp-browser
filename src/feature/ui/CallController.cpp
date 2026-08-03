@@ -11,14 +11,14 @@
 #include "base/platform/PlatformUserHints.h"
 #include "base/platform/ProductBranding.h"
 #include "base/ui/ShellTypes.h"
-#include "feature/messaging/MessagingHub.h"
 #include "feature/messaging/CallLifecycle.h"
+#include "feature/messaging/CallSessionManager.h"
+#include "feature/messaging/MessagingCallPorts.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/CallConflictCopy.h"
 #include "feature/ui/DataModelHost.h"
-#include "feature/ui/PeoplePickerController.h"
+#include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "CallVideoTileRenderer.h"
-#include "feature/ui/ShellHost.h"
 #include "feature/ui/UserFeedback.h"
 
 #include "common/Logger.h"
@@ -32,39 +32,39 @@
 namespace pbr {
 namespace {
 
-CallChromeLayer CaptureCallChrome(const ShellState& state) {
+CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgressState& in_call) {
   return {
-      .ring_active = state.call_ring.active,
-      .in_call_active = state.call_in_progress.active,
-      .ring_pulse = state.call_ring.pulse,
-      .in_call_muted = state.call_in_progress.muted,
-      .in_call_camera_on = state.call_in_progress.camera_on,
-      .in_call_stage_visible = state.call_in_progress.stage_visible,
-      .in_call_remote_video = state.call_in_progress.remote_video,
-      .in_call_local_preview = state.call_in_progress.local_preview,
-      .ring_conflict = state.call_ring.conflict,
-      .ring_call_id = state.call_ring.call_id.c_str(),
-      .in_call_id = state.call_in_progress.call_id.c_str(),
-      .in_call_subtitle = state.call_in_progress.subtitle.c_str(),
-      .ring_caller_label = state.call_ring.caller_label.c_str(),
-      .ring_media_label = state.call_ring.media_label.c_str(),
-      .ring_eyebrow = state.call_ring.eyebrow.c_str(),
-      .ring_conflict_hint = state.call_ring.conflict_hint.c_str(),
-      .ring_accept_label = state.call_ring.accept_label.c_str(),
-      .ring_decline_label = state.call_ring.decline_label.c_str(),
-      .in_call_title = state.call_in_progress.title.c_str(),
-      .in_call_mic_level = state.call_in_progress.mic_level,
-      .in_call_peer_level = state.call_in_progress.peer_level,
-      .in_call_mic_hint = state.call_in_progress.mic_hint.c_str(),
-      .in_call_peer_hint = state.call_in_progress.peer_hint.c_str(),
-      .in_call_elapsed = state.call_in_progress.elapsed.c_str(),
-      .in_call_peer_label = state.call_in_progress.peer_label.c_str(),
-      .in_call_remote_placeholder = state.call_in_progress.remote_placeholder.c_str(),
-      .in_call_show_roster = state.call_in_progress.show_roster,
-      .in_call_show_invite = state.call_in_progress.show_invite,
-      .in_call_show_retry = state.call_in_progress.show_retry,
-      .in_call_participant_count = state.call_in_progress.participant_count,
-      .in_call_status_hint = state.call_in_progress.status_hint.c_str(),
+      .ring_active = ring.active,
+      .in_call_active = in_call.active,
+      .ring_pulse = ring.pulse,
+      .in_call_muted = in_call.muted,
+      .in_call_camera_on = in_call.camera_on,
+      .in_call_stage_visible = in_call.stage_visible,
+      .in_call_remote_video = in_call.remote_video,
+      .in_call_local_preview = in_call.local_preview,
+      .ring_conflict = ring.conflict,
+      .ring_call_id = ring.call_id.c_str(),
+      .in_call_id = in_call.call_id.c_str(),
+      .in_call_subtitle = in_call.subtitle.c_str(),
+      .ring_caller_label = ring.caller_label.c_str(),
+      .ring_media_label = ring.media_label.c_str(),
+      .ring_eyebrow = ring.eyebrow.c_str(),
+      .ring_conflict_hint = ring.conflict_hint.c_str(),
+      .ring_accept_label = ring.accept_label.c_str(),
+      .ring_decline_label = ring.decline_label.c_str(),
+      .in_call_title = in_call.title.c_str(),
+      .in_call_mic_level = in_call.mic_level,
+      .in_call_peer_level = in_call.peer_level,
+      .in_call_mic_hint = in_call.mic_hint.c_str(),
+      .in_call_peer_hint = in_call.peer_hint.c_str(),
+      .in_call_elapsed = in_call.elapsed.c_str(),
+      .in_call_peer_label = in_call.peer_label.c_str(),
+      .in_call_remote_placeholder = in_call.remote_placeholder.c_str(),
+      .in_call_show_roster = in_call.show_roster,
+      .in_call_show_invite = in_call.show_invite,
+      .in_call_show_retry = in_call.show_retry,
+      .in_call_participant_count = in_call.participant_count,
+      .in_call_status_hint = in_call.status_hint.c_str(),
   };
 }
 
@@ -121,32 +121,37 @@ std::string ComposeGroupCallStatusHint() {
 
 } // namespace
 
-void CallController::BindMessaging(MessagingHub& messaging) {
-  messaging_ = &messaging;
+void CallController::BindCallPorts(MessagingCallPorts ports) {
+  call_ports_ = std::move(ports);
   BindToMessaging();
 }
 
-MessagingHub& CallController::Hub() {
-  if (!messaging_) {
-    throw std::runtime_error("CallController messaging not bound");
-  }
-  return *messaging_;
+void CallController::BindShellCallChrome(ShellCallChromePorts ports) {
+  shell_call_chrome_ = std::move(ports);
 }
 
-const MessagingHub& CallController::Hub() const {
-  if (!messaging_) {
-    throw std::runtime_error("CallController messaging not bound");
-  }
-  return *messaging_;
+void CallController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
+  people_picker_notify_ = std::move(ports);
 }
 
+bool CallController::MessagingInitialized() const {
+  return call_ports_.initialized && call_ports_.initialized();
+}
+
+CallSessionManager* CallController::Calls() {
+  return call_ports_.calls ? call_ports_.calls() : nullptr;
+}
+
+CallLifecycle* CallController::Lifecycle() {
+  return call_ports_.lifecycle ? call_ports_.lifecycle() : nullptr;
+}
 
 void CallController::BindToMessaging() {
-  if (!messaging_ || !Hub().IsInitialized()) {
+  if (!MessagingInitialized()) {
     bound_calls_ = nullptr;
     return;
   }
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls) {
     bound_calls_ = nullptr;
     return;
@@ -159,7 +164,7 @@ void CallController::BindToMessaging() {
     // Ingest may run on IO; shell/RmlUi updates must stay on UI.
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() { RefreshPendingRing(); });
   });
-  if (auto* life = Hub().Lifecycle()) {
+  if (auto* life = Lifecycle()) {
     life->SetOnChromeRefresh([this]() { RefreshPendingRing(); });
   }
   bound_calls_ = calls;
@@ -169,11 +174,14 @@ void CallController::BindToMessaging() {
 
 void CallController::Tick() {
   BindToMessaging();
-  if (auto* calls = Hub().Calls()) {
+  if (auto* calls = Calls()) {
     calls->SweepExpiredInvites();
   }
   const int64_t now = util::NowUnixMs();
-  auto& ring = ShellHost::Instance().State().call_ring;
+  if (!shell_call_chrome_.call_ring) {
+    return;
+  }
+  auto& ring = shell_call_chrome_.call_ring();
   if (ring.active) {
     if (now - last_pulse_toggle_ms_ >= 600) {
       ring.pulse = !ring.pulse;
@@ -186,7 +194,7 @@ void CallController::Tick() {
       logging::getLogger("CallController").warning
           << "ring tick alive call_id=" << ringing_call_id_
           << " phase="
-          << (Hub().Lifecycle() ? CallPhaseName(Hub().Lifecycle()->Phase()) : "?");
+          << (Lifecycle() ? CallPhaseName(Lifecycle()->Phase()) : "?");
     }
   }
   RefreshCallLevels();
@@ -202,23 +210,33 @@ void CallController::OnCallWake() {
 void CallController::ClearRing() {
   ringing_call_id_.clear();
   ring_started_ms_ = 0;
-  ShellHost::Instance().State().call_ring = {};
+  if (shell_call_chrome_.call_ring) {
+    shell_call_chrome_.call_ring() = {};
+  }
   ringtone_.Stop();
 }
 
 void CallController::ClearInCall() {
   active_call_id_.clear();
-  ShellHost::Instance().State().call_in_progress = {};
+  if (shell_call_chrome_.call_in_progress) {
+    shell_call_chrome_.call_in_progress() = {};
+  }
   CallVideoTileRenderer::Instance().Clear();
 }
 
 void CallController::HideInCallChrome() {
-  ShellHost::Instance().State().call_in_progress = {};
+  if (shell_call_chrome_.call_in_progress) {
+    shell_call_chrome_.call_in_progress() = {};
+  }
   CallVideoTileRenderer::Instance().Clear();
 }
 
 void CallController::SyncShellState() {
-  const CallChromeLayer next = CaptureCallChrome(ShellHost::Instance().State());
+  if (!shell_call_chrome_.call_ring || !shell_call_chrome_.call_in_progress) {
+    return;
+  }
+  const CallChromeLayer next =
+      CaptureCallChrome(shell_call_chrome_.call_ring(), shell_call_chrome_.call_in_progress());
   const CallChromeUpdate update = ClassifyCallChromeUpdate(synced_chrome_, next);
   synced_chrome_ = next;
 
@@ -227,7 +245,9 @@ void CallController::SyncShellState() {
   }
   // Match WebRTC-era call chrome: DirtyWindow only. SyncLayout remount on Accept/ring
   // broke hit-testing on Samsung (Accept clicks never reached call_accept).
-  ShellHost::Instance().DirtyWindow();
+  if (shell_call_chrome_.dirty_window) {
+    shell_call_chrome_.dirty_window();
+  }
   if (update == CallChromeUpdate::Remount) {
     DataModelHost::Instance().DirtyAll("window");
   }
@@ -242,7 +262,7 @@ void CallController::SyncRingtone() {
     }
     return;
   }
-  const bool should_ring = ShellHost::Instance().State().call_ring.active;
+  const bool should_ring = shell_call_chrome_.call_ring && shell_call_chrome_.call_ring().active;
   if (should_ring && !ringtone_.IsPlaying()) {
     ringtone_.Start();
   } else if (!should_ring && ringtone_.IsPlaying()) {
@@ -251,10 +271,10 @@ void CallController::SyncRingtone() {
 }
 
 std::string CallController::DisplayNameForIdentity(const std::string& identity) const {
-  if (identity.empty() || !messaging_) {
+  if (identity.empty() || !call_ports_.find_contact_by_identity) {
     return {};
   }
-  if (auto contact = messaging_->Contacts().FindByIdentity(identity, ContactIdKind::RelayUser)) {
+  if (auto contact = call_ports_.find_contact_by_identity(identity, ContactIdKind::RelayUser)) {
     if (*contact) {
       std::string name =
           (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -280,12 +300,12 @@ std::string CallController::FormatElapsed(const int64_t connected_at_ms) {
 
 void CallController::RefreshPendingRing() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls) {
     return;
   }
 
-  if (auto* life = Hub().Lifecycle(); life && !life->LastError().empty()) {
+  if (auto* life = Lifecycle(); life && !life->LastError().empty()) {
     UserFeedback::Fail(life->LastError());
     life->ClearLastError();
   }
@@ -301,7 +321,7 @@ void CallController::RefreshPendingRing() {
 
   auto top = calls->TopPendingInvite();
   if (top && top->has_value()) {
-    CallLifecycle* life = Hub().Lifecycle();
+    CallLifecycle* life = Lifecycle();
     const bool accept_in_flight = life && life->ShouldSuppressRing((*top)->call_id);
     auto active = calls->ActiveLocalCall();
     const bool same_call_active =
@@ -361,7 +381,7 @@ void CallController::RefreshPendingRing() {
       // Hide in-call bar while ringing a *different* call; keep active_call_id_ when conflicting.
       HideInCallChrome();
 
-      auto& ring = ShellHost::Instance().State().call_ring;
+      auto& ring = shell_call_chrome_.call_ring();
       ring.active = true;
       ring.conflict = has_conflict;
       ring.call_id = (*top)->call_id;
@@ -388,7 +408,7 @@ void CallController::RefreshPendingRing() {
   }
 
   if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
-    CallLifecycle* life = Hub().Lifecycle();
+    CallLifecycle* life = Lifecycle();
     // LeaveClicked sets Idle before LeaveCall IO finishes — do not resurrect the panel from the
     // still-Active disk row (Samsung: End looked hung / "couldn't connect" stuck).
     if (life && life->Phase() == CallPhase::Idle) {
@@ -418,7 +438,7 @@ void CallController::RefreshPendingRing() {
       }
     }
 
-    auto& in_call = ShellHost::Instance().State().call_in_progress;
+    auto& in_call = shell_call_chrome_.call_in_progress();
     in_call.active = true;
     in_call.call_id = (*active)->call_id;
     in_call.muted = calls->Media().IsMuted();
@@ -426,8 +446,8 @@ void CallController::RefreshPendingRing() {
     const bool is_video = (*active)->media_mode == CallMediaMode::Video;
     int joined_count = 0;
     std::string local_identity;
-    if (auto identity = Hub().Identity().Get()) {
-      local_identity = identity->relay_user_id;
+    if (call_ports_.local_relay_identity) {
+      local_identity = call_ports_.local_relay_identity().value_or(std::string{});
     }
     if (auto participants = calls->ListJoinedParticipants((*active)->call_id); participants) {
       joined_count = static_cast<int>(participants->size());
@@ -524,7 +544,7 @@ void CallController::RefreshPendingRing() {
 
   ClearInCall();
   ClearRing();
-  if (auto* life = Hub().Lifecycle(); life && life->Phase() == CallPhase::Ringing) {
+  if (auto* life = Lifecycle(); life && life->Phase() == CallPhase::Ringing) {
     life->Apply(CallLifecycleEvent::InviteCleared, {});
   }
   SyncShellState();
@@ -532,12 +552,13 @@ void CallController::RefreshPendingRing() {
 
 bool CallController::StartCall(const std::string& thread_id, const bool video) {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls) {
     UserFeedback::Fail(Tr("call.error.unavailable"));
     return false;
   }
-  auto thread = Hub().Store().GetThread(thread_id);
+  auto thread = call_ports_.get_thread ? call_ports_.get_thread(thread_id)
+                                       : Roe<std::optional<Thread>>::error(Error("call port unavailable"));
   if (!thread || !*thread) {
     UserFeedback::Fail(Tr("call.error.thread_not_found"));
     return false;
@@ -560,7 +581,7 @@ bool CallController::StartCall(const std::string& thread_id, const bool video) {
 bool CallController::StartCallWithInvitees(const std::string& thread_id, const bool video,
                                            const std::vector<std::string>& invitee_identities) {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls) {
     UserFeedback::Fail(Tr("call.error.unavailable"));
     return false;
@@ -576,7 +597,7 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     return false;
   }
   active_call_id_ = started->call_id;
-  if (auto* life = Hub().Lifecycle()) {
+  if (auto* life = Lifecycle()) {
     life->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
   }
   RefreshPendingRing();
@@ -584,12 +605,14 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
 }
 
 void CallController::OpenGroupCallPicker(const std::string& thread_id, const bool video) {
-  PeoplePickerController::Instance().OpenForGroupCall(thread_id, video);
+  if (people_picker_notify_.open_for_group_call) {
+    people_picker_notify_.open_for_group_call(thread_id, video);
+  }
 }
 
 void CallController::OpenMidCallInvitePicker() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (calls && active_call_id_.empty()) {
     if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
       active_call_id_ = (*active)->call_id;
@@ -599,12 +622,14 @@ void CallController::OpenMidCallInvitePicker() {
     UserFeedback::Fail(Tr("call.error.no_active"));
     return;
   }
-  PeoplePickerController::Instance().OpenForCallAddGuest(active_call_id_);
+  if (people_picker_notify_.open_for_call_add_guest) {
+    people_picker_notify_.open_for_call_add_guest(active_call_id_);
+  }
 }
 
 void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities) {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (calls && active_call_id_.empty()) {
     if (auto active = calls->ActiveLocalCall(); active && active->has_value()) {
       active_call_id_ = (*active)->call_id;
@@ -641,13 +666,13 @@ bool CallController::StartVideoCall(const std::string& thread_id) {
 
 void CallController::AcceptIncoming() {
   BindToMessaging();
-  auto* life = Hub().Lifecycle();
+  auto* life = Lifecycle();
   if (!life) {
     return;
   }
   std::string call_id = ringing_call_id_;
-  if (call_id.empty()) {
-    call_id = ShellHost::Instance().State().call_ring.call_id;
+  if (call_id.empty() && shell_call_chrome_.call_ring) {
+    call_id = shell_call_chrome_.call_ring().call_id;
   }
   if (call_id.empty()) {
     call_id = last_ring_call_id_;
@@ -669,7 +694,7 @@ void CallController::AcceptIncoming() {
 
 void CallController::DeclineIncoming() {
   BindToMessaging();
-  auto* life = Hub().Lifecycle();
+  auto* life = Lifecycle();
   std::string call_id = ringing_call_id_;
   if (call_id.empty() && life) {
     call_id = life->LastRingCallId();
@@ -688,7 +713,7 @@ void CallController::DeclineIncoming() {
 
 void CallController::LeaveActive() {
   BindToMessaging();
-  auto* life = Hub().Lifecycle();
+  auto* life = Lifecycle();
   std::string call_id = active_call_id_;
   if (call_id.empty() && life) {
     call_id = life->ActiveCallId();
@@ -711,7 +736,7 @@ void CallController::LeaveActive() {
 
 void CallController::RetryConnect() {
   BindToMessaging();
-  auto* life = Hub().Lifecycle();
+  auto* life = Lifecycle();
   std::string call_id = active_call_id_;
   if (call_id.empty() && life) {
     call_id = life->ActiveCallId();
@@ -729,7 +754,7 @@ void CallController::RetryConnect() {
 
 void CallController::ToggleMute() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
@@ -741,7 +766,7 @@ void CallController::ToggleMute() {
 
 void CallController::ToggleCamera() {
   BindToMessaging();
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls || !calls->Media().IsActive()) {
     return;
   }
@@ -755,14 +780,17 @@ void CallController::ToggleCamera() {
 void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   media.RefreshRemoteVideoHealth();
 
-  auto& in_call = ShellHost::Instance().State().call_in_progress;
+  if (!shell_call_chrome_.call_in_progress) {
+    return;
+  }
+  auto& in_call = shell_call_chrome_.call_in_progress();
   const bool muted = media.IsMuted();
   in_call.muted = muted;
   in_call.camera_on = media.IsCameraEnabled();
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (calls && !active_call_id_.empty()) {
     if (auto peer_video = calls->PeerVideoEnabledForCall(active_call_id_);
         peer_video && peer_video->has_value()) {
@@ -848,7 +876,7 @@ void CallController::RefreshCallLevels() {
   if (active_call_id_.empty()) {
     return;
   }
-  auto* calls = Hub().Calls();
+  auto* calls = Calls();
   if (!calls) {
     return;
   }

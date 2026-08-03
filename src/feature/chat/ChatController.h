@@ -1,11 +1,17 @@
 #pragma once
 
-#include "feature/ai/AgentSession.h"
+#include "feature/messaging/AgentUiPorts.h"
+#include "feature/ui/ContactsNotifyPorts.h"
+#include "feature/ui/PeoplePickerNotifyPorts.h"
+#include "feature/messaging/MessagingChatPorts.h"
 #include "feature/chat/ChatThreadChrome.h"
 #include "feature/chat/ChatTranscriptScroller.h"
 #include "feature/chat/ChatWidgetHost.h"
 #include "feature/chat/WorkingSetController.h"
-#include "feature/messaging/MessagingHub.h"
+#include "feature/messaging/MessagingUiPorts.h"
+#include "feature/ui/ShellFeedbackPorts.h"
+#include "feature/ui/ShellNavigationPorts.h"
+#include "feature/ui/ShellSetupPorts.h"
 #include "base/messaging/AtAiParser.h"
 #include "base/ai/StructuredTextParser.h"
 #include "base/ai/TurnPlan.h"
@@ -72,19 +78,30 @@ public:
   static AgentConfig ProjectAgent(const AppConfig& config);
   void Apply(const AgentConfig& config);
 
+  ChatController();
+  ~ChatController() override = default;
+
+  /** App-owned instance; set via InstallInstance from Application. Static callbacks use Instance(). */
+  static void InstallInstance(ChatController& controller);
+  static void ClearInstance();
   static ChatController& Instance();
 
   using SessionRow = SessionDisplayRow;
 
-  bool Setup(Rml::Context* context, MessagingHub& messaging);
-  void BindMessaging(MessagingHub& messaging);
+  bool Setup(Rml::Context* context);
+  void BindChatPorts(MessagingChatPorts ports);
+  void BindAgentPorts(AgentUiPorts ports);
+  void BindContactsNotify(ContactsNotifyPorts ports);
+  void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
+  void BindShellSetup(ShellSetupPorts ports);
   void BindSessionStore(SessionStore& store);
   void BindBadgeAggregator(BadgeAggregator& badges);
   void BindInputCoordinator(InputCoordinator& input);
   void BindCallController(CallController& call);
   void BindUnlockGate(ProfileUnlockGate& unlock_gate);
-  MessagingHub& Hub();
-  const MessagingHub& Hub() const;
+  void BindShellNavigation(ShellNavigationPorts ports);
+  void BindShellFeedback(ShellFeedbackPorts ports);
+  void BindMessagingUi(MessagingUiPorts ports);
   SessionStore& Store();
   const SessionStore& Store() const;
   void Update();
@@ -97,12 +114,14 @@ public:
   void OnSessionsTabActivated();
   void OnFindSomeone();
   void OnSelectThread(const std::string& thread_id);
-  /** Rebind to MessagingHub after a full profile data wipe/reinit. */
+  /** Rebind messaging ports after a full profile data wipe/reinit. */
   void OnProfileDataReset();
-  /** Called when MessagingHub becomes messaging-ready (app-wired). */
+  /** Called when messaging becomes ready (app-wired). */
   void OnMessagingReady();
   /** Re-read agent LLM config (e.g. after Brief API key register/rotate). */
   void ReloadAgentConfig();
+  /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
+  void OnShellLayoutSynced();
 
 private:
   struct ChatState {
@@ -163,8 +182,6 @@ private:
     std::string output;
     bool from_llm = false;
   };
-
-  ChatController();
 
   static void SendMessageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void SendSuggestionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -237,7 +254,6 @@ private:
   void HandleAgentEvent(const AgentEvent& event);
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload);
   void RefreshFromMessaging();
-  void OnShellLayoutSynced();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
   void OnMessagesScroll();
@@ -249,6 +265,26 @@ private:
   void RefreshLlmSetupBanner();
   void WithSecrets(std::function<void()> action);
 
+  bool MessagingInitialized() const;
+  bool MessagingReady() const;
+  const std::string& ActiveThreadId() const;
+
+  ShellChromeSnapshot ChromeSnapshot() const;
+  void ShellDirty();
+  void ShellSyncLayout(bool restore_focus_after = false);
+  void ShellSelectNavTab(NavTab tab);
+  void ShellSetPrimaryPane(const std::string& key);
+  void ShellOpenCompactChat();
+  void ShellCloseCompactChat();
+  void ShellSetActivity(bool visible, const Rml::String& message = {});
+  void ShellRemountNavRail();
+  void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
+  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result);
+  void ShowConfirmWithCheckbox(const std::string& title, const std::string& message, const std::string& checkbox_label,
+                               bool checkbox_default, std::function<void(bool, bool)> on_result);
+  void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
+                  std::function<void(bool, std::string)> on_result);
+
   std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
   bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;
   void InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits);
@@ -257,16 +293,25 @@ private:
   const TurnWidgetState* FindWidgetState(const std::string& entry_id) const;
   void ClearFormState();
 
+  bool AgentReady() const;
+  bool AgentConfigured() const;
+
   Rml::Context* context_ = nullptr;
-  MessagingHub* messaging_ = nullptr;
+  MessagingChatPorts chat_ports_;
+  AgentUiPorts agent_ports_;
+  ContactsNotifyPorts contacts_notify_;
+  PeoplePickerNotifyPorts people_picker_notify_;
+  ShellSetupPorts shell_setup_;
   SessionStore* session_store_ = nullptr;
   BadgeAggregator* badges_ = nullptr;
   InputCoordinator* input_ = nullptr;
   CallController* call_ = nullptr;
   ProfileUnlockGate* unlock_gate_ = nullptr;
+  ShellNavigationPorts shell_navigation_;
+  ShellFeedbackPorts shell_feedback_;
+  MessagingUiPorts messaging_ui_;
   ChatState chat_;
   ShellState shell_;
-  std::optional<AgentSession> agent_;
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool messaging_ready_ = false;
@@ -276,11 +321,8 @@ private:
   ChatWidgetHost widgets_;
   std::optional<PendingReply> pending_reply_;
   bool focus_draft_after_sync_ = false;
-};
 
-bool SetupChatController(Rml::Context* context, MessagingHub& messaging);
-void UpdateChatController();
-void AfterLayoutChatController();
-void ShutdownChatController();
+  static ChatController* installed_instance_;
+};
 
 } // namespace pbr
