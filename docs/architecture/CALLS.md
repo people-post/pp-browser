@@ -24,7 +24,7 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 | Owner | Responsibility |
 |-------|----------------|
 | **CallLifecycle** | Phase enum, transitions, thread policy, listen desire, `ShouldSuppressRing` |
-| **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `DirtyWindow` / `DirtyAll` only |
+| **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `RemountCallChrome` (layer) + `DirtyWindow` (labels) |
 | **CallSessionManager** | Persist session/invite/roster; encode/send controls; notify lifecycle |
 | **CallLibp2pMediaBridge** | Media-key defer, dial/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
 | **CallMediaDirectService** | 1:1 `/pp-browser/call-media/1.0.0` — hello, AEAD Opus frames; capture enqueues, **host IO thread** owns Yamux R/W |
@@ -59,20 +59,20 @@ sequenceDiagram
   participant Life as CallLifecycle
   participant Hub as MessagingHub
   participant Ctrl as CallController
-  participant UI as Shell_DirtyWindow
+  participant UI as Shell_RemountCallChrome
 
   CSM-->>Ctrl: NotifyRingChanged / pending invite
   Ctrl->>Life: InviteSeen(call_id)
   Life->>Life: phase=Ringing WantEphemeralListen=1
   Life->>Hub: listen desire on (IO only)
   Life->>Ctrl: chrome refresh
-  Ctrl->>UI: paint ring DirtyWindow only
-  Note over Ctrl,UI: Never SyncLayout for ring/Accept overlays
+  Ctrl->>UI: RemountCallChrome (mount only)
+  Note over Ctrl,UI: Never full SyncLayout for ring/Accept overlays
   UI->>Ctrl: Accept / Decline click
   Ctrl->>Life: AcceptClicked / DeclineClicked
   alt Accept
     Life->>Life: phase=Accepting suppress ring
-    Life->>Ctrl: ClearRing DirtyWindow
+    Life->>Ctrl: ClearRing RemountCallChrome
     Life->>CSM: Post AcceptInvite on IO
   else Decline or expire
     Life->>Life: phase=Idle listen off if idle
@@ -83,7 +83,8 @@ sequenceDiagram
 | Rule | Why |
 |------|-----|
 | `InviteSeen` → `Ringing` | Sole entry for inbound ring; arms N025 via `WantEphemeralListen` on IO |
-| Chrome = `DirtyWindow` / `DirtyAll` only | WebRTC-proven path; `SyncLayout` remount breaks Samsung hit-testing (“click never reaches Accept”) |
+| Chrome layer = `RemountCallChrome` | Mount into `#shell-call-*-mount` only. Full-shell `SyncLayout` breaks Samsung hit-testing. Always-mounted `data-if` + Dirty alone failed to reveal Accept despite idle Present |
+| Labels/pulse = `DirtyWindow` | While layer already mounted; does not create the overlay |
 | Accept → `Accepting` **before** IO work | Dismiss dialog on the next frame; never run `AcceptInvite` / listen / encrypt on the click thread |
 | `ShouldSuppressRing(call_id)` while Accept in flight | `RefreshPendingRing` must not resurrect the dialog for the same invite |
 | Accept fail → back to `Ringing` | Restore pending ring if invite still valid; clear `accepting_call_id_` |
@@ -99,19 +100,19 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 
 | Work | Thread | Why |
 |------|--------|-----|
-| Rml click / `DirtyWindow` / `DirtyAll` | UI only | Return immediately; **never** `SyncLayout` for call overlays (Samsung hit-test) |
+| Rml click / `DirtyWindow` / `RemountCallChrome` | UI only | Return immediately; **never** full-shell `SyncLayout` for call overlays (Samsung hit-test) |
 | `AcceptInvite` / `DeclineInvite` / `LeaveCall` / send prep | Worker Critical/Normal | Posted by lifecycle |
 | Prefetch / circuit / dial wait / `Connect` | Worker | Seconds-scale waits |
 | N025 `ListenOn` / Wire / mDNS | Worker → asio | Driven by lifecycle `WantEphemeralListen`, not inventing policy from tick alone |
 | `CallMediaEngine::StartSfu` / SDL capture | UI | Posted by bridge |
-| Chrome refresh (`RefreshPendingRing` / `SyncShellState` / ringtone) | **Always hop to UI** | Safe from worker **and coordinator** (`OnCallWake` / relay poll must not mutate shell) |
+| Chrome refresh (`RefreshPendingRing` / `SyncShellState` / ringtone) | **Always hop to UI** + RemountCallChrome / DirtyWindow + `RequestForceFrame` | Safe from worker **and coordinator**; Present depends on [THREADING.md UI delivery](THREADING.md#ui-delivery-pipeline) (mailbox liveness), not user input |
 
 ### Scenario matrix (v1)
 
 | Scenario | Behavior |
 |----------|----------|
 | Incoming ring | `InviteSeen` → `Ringing`; Dirty-only chrome; listen desire on |
-| Accept | Immediate `Accepting` + dismiss chrome; IO AcceptInvite; suppress ring for accepting id |
+| Accept | Immediate `Accepting` + dismiss ring chrome + Connecting bar; worker AcceptInvite; suppress ring for accepting id |
 | Decline / expire | Idle; listen desire off when no call |
 | Outbound unanswered | Offerer `OutboundCalling` with no media past invite TTL (`kDefaultCallInviteTtlMs`) → auto-Leave; clears sticky Calling bar |
 | Conflict (2nd invite) | Conflict copy; Accept leaves other local call first; single active call |
@@ -300,7 +301,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | P2P offer/answer + SDP/ICE send | `feature/messaging` | **`CallP2pSignalingBridge`** | Legacy until teardown |
 | Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** | Unchanged |
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
-| Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync` | Clicks → lifecycle; Dirty-only paint |
+| Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellHost::RemountCallChrome` | Layer identity → mount remount; labels/pulse → DirtyWindow |
 | Blind SFU protocol | `libp2p/integration` | `MediaRelayService` | Unchanged |
 
 UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints from session + phase; it does not invent listen or media policy.
@@ -325,7 +326,9 @@ Single media backend for the process:
 - Capture/playback and camera stay off the libp2p IO thread (mic TCC can block).
 
 ### CallController / shell
-Maps ring + in-call chrome from lifecycle phase + session snapshot (`DirtyWindow` only). Clicks → `CallLifecycle::Apply`; polls attach-wait only as a UI tick hook into the topology owner; must not invent topology or listen policy.
+Maps ring + in-call chrome from lifecycle phase + session snapshot. **Layer appear/disappear** uses `ShellHost::RemountCallChrome` (dedicated mounts only). **Labels / pulse / meters** use `DirtyWindow` while a layer is already mounted. Clicks → `CallLifecycle::Apply`; polls attach-wait only as a UI tick hook into the topology owner; must not invent topology or listen policy.
+
+**Do not** rely on always-mounted `data-if="call_ring_active"` alone to show Accept — dogfood showed C++ `active=true` + Present alive while the overlay stayed `display:none`. **Do not** full-shell `SyncLayout` for call chrome (Samsung Accept hit-test).
 
 ### media_relay (mesh)
 Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attaches, fans out `call_sfu_attach`. Mobile never hosts.

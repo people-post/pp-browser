@@ -8,7 +8,6 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/i18n/ScriptLanguageDetector.h"
 #include "base/platform/AppLifecycle.h"
-#include "base/platform/BackgroundSyncScheduler.h"
 #include "base/platform/BrowserThread.h"
 #include "base/platform/DesktopWindowChrome.h"
 #include "base/platform/ILocalNotifier.h"
@@ -2093,22 +2092,8 @@ void ChatController::WireMessagingBindings() {
       OnSelectThread(thread_id);
     }
   });
-  BackgroundSyncScheduler::Instance().SetSyncHandler([this](bool force) {
-    if (!MessagingReady()) {
-      return;
-    }
-    const bool call_wake = BackgroundSyncScheduler::Instance().ConsumeCallWake();
-    // SyncInboxFromWake only queues IO; ring UI refreshes via OnRingChanged after ingest.
-    // Handler runs on the coordinator — hop call chrome to UI (CALLS.md / THREADING.md).
-    if (call_wake && call_) {
-      BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
-        if (call_) {
-          call_->OnCallWake();
-        }
-      });
-    }
-    chat_ports_.sync_inbox_from_wake(force);
-  });
+  // Relay poll is armed by MessagingHub::StartCoordinatorTimers (not here). Call-wake UI
+  // refresh is wired via MessagingHub::SetOnCallWake from Application.
   IPushDeviceRegistrar::SetTokenChangedHandler([this](const std::string& /*token*/) {
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
       if (!MessagingReady()) {

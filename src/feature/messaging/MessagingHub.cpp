@@ -22,6 +22,7 @@
 #include "base/net/RegistrationClientUtil.h"
 #include "base/people/ContactTypes.h"
 #include "base/platform/AppLifecycle.h"
+#include "base/platform/BackgroundSyncScheduler.h"
 #include "base/platform/BrowserThread.h"
 #include "base/platform/PlatformRuntime.h"
 #include "base/platform/NetworkConnectivity.h"
@@ -991,6 +992,10 @@ void MessagingHub::SetOnMessagingReady(std::function<void()> callback) {
   on_messaging_ready_ = std::move(callback);
 }
 
+void MessagingHub::SetOnCallWake(std::function<void()> callback) {
+  on_call_wake_ = std::move(callback);
+}
+
 void MessagingHub::NotifyMessagingReady() {
   if (!on_messaging_ready_) {
     return;
@@ -1138,20 +1143,35 @@ constexpr auto kHubPolicyTimerInterval = std::chrono::seconds(1);
 } // namespace
 
 void MessagingHub::StartCoordinatorTimers() {
-  if (hub_policy_timer_id_ != 0) {
-    return;
+  if (hub_policy_timer_id_ == 0) {
+    hub_policy_timer_id_ = PlatformRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
+      TickLibp2p();
+    });
   }
-  hub_policy_timer_id_ = PlatformRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
-    TickLibp2p();
+  // Relay poll must not depend on ChatController::WireMessagingBindings (can skip if UI
+  // wiring races unlock). Own the sync handler here as soon as messaging is ready.
+  BackgroundSyncScheduler::Instance().SetSyncHandler([this](bool force) {
+    const bool call_wake = BackgroundSyncScheduler::Instance().ConsumeCallWake();
+    if (call_wake && on_call_wake_) {
+      BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
+        if (on_call_wake_) {
+          on_call_wake_();
+        }
+      });
+    }
+    if (p2p_) {
+      p2p_->SyncInboxFromWake(force);
+    }
   });
+  BackgroundSyncScheduler::Instance().RequestWakeSync();
 }
 
 void MessagingHub::StopCoordinatorTimers() {
-  if (hub_policy_timer_id_ == 0) {
-    return;
+  if (hub_policy_timer_id_ != 0) {
+    PlatformRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
+    hub_policy_timer_id_ = 0;
   }
-  PlatformRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
-  hub_policy_timer_id_ = 0;
+  BackgroundSyncScheduler::Instance().SetSyncHandler(nullptr);
 }
 
 ReachabilitySnapshot MessagingHub::Reachability() const {
@@ -1693,6 +1713,8 @@ void MessagingHub::Shutdown() {
   store_->Flush();
   contacts_->Flush();
   StopCoordinatorTimers();
+  on_call_wake_ = nullptr;
+  on_messaging_ready_ = nullptr;
   if (messaging_ready_) {
     identity_->Flush();
   }

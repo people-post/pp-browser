@@ -38,6 +38,11 @@ void BrowserThread::RunUITasks() {
   }
 }
 
+bool BrowserThread::HasPendingUITasks() {
+  Initialize();
+  return ui_runner_ && ui_runner_->HasPendingTasks();
+}
+
 bool BrowserThread::CurrentlyOn(const BrowserThreadId id) {
   if (id == BrowserThreadId::IO) {
     return false;

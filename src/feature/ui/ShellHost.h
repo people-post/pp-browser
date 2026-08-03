@@ -81,6 +81,8 @@ public:
   void Initialize(Rml::Context* context);
   void SyncLayout();
   void RequestSyncLayout(bool restore_focus_after = false, const char* reason = nullptr);
+  /** Mount/clear call ring + in-call overlays without remounting the full shell tree. */
+  void RemountCallChrome();
   void Update(Rml::Context* context);
   /** Call after Rml::Context::Update so RequestNextUpdate is not cleared by it. Arms power-save. */
   void NotifyFrameEnd(Rml::Context* context);

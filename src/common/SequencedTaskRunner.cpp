@@ -81,6 +81,11 @@ bool SequencedTaskRunner::IsRunningOnThisThread() const {
   return std::this_thread::get_id() == thread_id_;
 }
 
+bool SequencedTaskRunner::HasPendingTasks() const {
+  std::lock_guard lock(mutex_);
+  return !tasks_.empty() && !stopped_ && !paused_;
+}
+
 void SequencedTaskRunner::EnqueueLocked(std::function<void()> task) {
   tasks_.push_back(std::move(task));
 }

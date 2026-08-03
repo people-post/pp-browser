@@ -16,10 +16,10 @@
 #include "feature/messaging/MessagingCallPorts.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/CallConflictCopy.h"
-#include "feature/ui/DataModelHost.h"
 #include "feature/ui/PeoplePickerNotifyPorts.h"
 #include "CallVideoTileRenderer.h"
 #include "feature/ui/UserFeedback.h"
+#include "RmlUi_Backend.h"
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
@@ -188,14 +188,6 @@ void CallController::Tick() {
       last_pulse_toggle_ms_ = now;
       SyncShellState();
     }
-    // Dogfood: prove SDL tick is alive while Accept hangs (no AcceptClicked log).
-    if (now - last_ring_heartbeat_ms_ >= 2000) {
-      last_ring_heartbeat_ms_ = now;
-      logging::getLogger("CallController").warning
-          << "ring tick alive call_id=" << ringing_call_id_
-          << " phase="
-          << (Lifecycle() ? CallPhaseName(Lifecycle()->Phase()) : "?");
-    }
   }
   RefreshCallLevels();
   SyncRingtone();
@@ -252,14 +244,15 @@ void CallController::SyncShellState() {
   if (update == CallChromeUpdate::None) {
     return;
   }
-  // Match WebRTC-era call chrome: DirtyWindow only. SyncLayout remount on Accept/ring
-  // broke hit-testing on Samsung (Accept clicks never reached call_accept).
-  if (shell_call_chrome_.dirty_window) {
+  // Layer appear/disappear: mount into #shell-call-*-mount only (never full SyncLayout —
+  // that remounts chat panes and broke Samsung Accept hit-testing).
+  if (update == CallChromeUpdate::Remount && shell_call_chrome_.remount_call_chrome) {
+    shell_call_chrome_.remount_call_chrome();
+  } else if (shell_call_chrome_.dirty_window) {
     shell_call_chrome_.dirty_window();
   }
-  if (update == CallChromeUpdate::Remount) {
-    DataModelHost::Instance().DirtyAll("window");
-  }
+  // Force Present so ring/accept chrome is not held behind idle wait (THREADING.md UI delivery).
+  Backend::RequestForceFrame();
 }
 
 void CallController::SyncRingtone() {
@@ -344,16 +337,22 @@ void CallController::RefreshPendingRing() {
     const bool same_call_active =
         active && active->has_value() && (*active)->call_id == (*top)->call_id;
 
-    // Accept in flight — keep ring chrome visible; only stop ringtone once Accepting suppresses it.
-    // If chrome was cleared while Accept hung, restore the dialog (do not SyncRingtone-only).
+    // Accept in flight (CALLS.md): dismiss ring immediately; show Connecting bar so Accept
+    // does not look hung while AcceptInvite runs on the worker.
     if (accept_in_flight && !same_call_active) {
       ringing_call_id_ = (*top)->call_id;
-      if (shell_call_chrome_.call_ring && !shell_call_chrome_.call_ring().active) {
-        auto& ring = shell_call_chrome_.call_ring();
-        ring.active = true;
-        ring.call_id = (*top)->call_id;
-        SyncShellState();
+      ClearRing();
+      if (shell_call_chrome_.call_in_progress) {
+        auto& in_call = shell_call_chrome_.call_in_progress();
+        in_call.active = true;
+        in_call.call_id = (*top)->call_id;
+        in_call.subtitle = Tr("call.status.connecting").c_str();
+        in_call.title = (*top)->media_mode == CallMediaMode::Video ? Tr("call.title.video").c_str()
+                                                                   : Tr("call.title.voice").c_str();
+        const std::string caller = DisplayNameForIdentity((*top)->inviter_identity);
+        in_call.peer_label = caller.empty() ? (*top)->inviter_identity.c_str() : caller.c_str();
       }
+      SyncShellState();
       SyncRingtone();
       return;
     }
@@ -405,6 +404,7 @@ void CallController::RefreshPendingRing() {
       HideInCallChrome();
 
       auto& ring = shell_call_chrome_.call_ring();
+      const bool was_active = ring.active;
       ring.active = true;
       ring.conflict = has_conflict;
       ring.call_id = (*top)->call_id;
@@ -412,6 +412,10 @@ void CallController::RefreshPendingRing() {
       ring.media_label = (*top)->media_mode == CallMediaMode::Video
                              ? Tr("call.ring.incoming_video").c_str()
                              : Tr("call.ring.incoming_voice").c_str();
+      if (!was_active) {
+        logging::getLogger("CallController").warning
+            << "RefreshPendingRing activate call_id=" << ringing_call_id_;
+      }
       ring.eyebrow = copy.eyebrow;
       ring.conflict_hint = copy.hint;
       ring.accept_label = copy.accept_label;
@@ -718,9 +722,11 @@ void CallController::AcceptIncoming() {
     logging::getLogger("CallController").warning << "AcceptIncoming ignored (no call_id)";
     return;
   }
-  // Stop ringtone off the click path; keep ring chrome until AcceptSucceeded/Failed so a
-  // dropped AcceptInvite does not leave a blank pre-call panel (Samsung dogfood).
+  // Dismiss ring on the click frame (CALLS.md Accept → Accepting dismisses chrome). Leaving the
+  // dialog up until AcceptInvite finishes made Accept look hung.
   ringtone_.Stop();
+  ClearRing();
+  SyncShellState();
   logging::getLogger("CallController").warning
       << "AcceptIncoming → lifecycle AcceptClicked call_id=" << call_id;
   life->Apply(CallLifecycleEvent::AcceptClicked, call_id);

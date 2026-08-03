@@ -47,8 +47,11 @@ void RecoverAfterDeviceReset(Rml::Context* context);
 bool ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback = nullptr, bool power_save = false);
 void RequestExit();
 
-// Thread-safe: breaks SDL_WaitEventTimeout so posted UI work can run without waiting for input.
+// Thread-safe: push an SDL user event (always push; do not coalesce-drop).
 void WakeEventLoop();
+// Thread-safe UI delivery: skip the next power-save idle wait + WakeEventLoop.
+// BrowserThread::PostTask(UI) should call this (via SetUIWakeCallback), not WakeEventLoop alone.
+void RequestForceFrame();
 
 void BeginFrame();
 void PresentFrame();

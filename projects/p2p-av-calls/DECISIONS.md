@@ -264,7 +264,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 | **A. Shell RML placeholders** (`data-if` video stage) + **persistent `TextureHandle`** updated with `glTexSubImage2D` / `CallbackTextureInterface::SetTextureHandle` | Optional — Rml `CallbackTexture` release calls `ReleaseTexture`/`glDeleteTextures`, so app-owned handles need careful lifetime transfer |
 | **B. Custom `<call-video-tile>` element `OnRender` + app-owned persistent GL tex** (`glTexSubImage2D`, letterbox `RenderGeometry`) | **Adopt** — paints in document stacking (below banner/dialogs); app keeps texture ownership; DirtyWindow only |
 | **C. OpenGL blit after `Context::Render` / `PresentFrame`** | Reject — breaks stacking (video over banner), hit-testing, safe-area |
-| **D. Remount shell when video appears** | **Forbidden** — agent trap: use `data-if` + `DirtyWindow` only ([WINDOW_SHELL](../../docs/ui/WINDOW_SHELL.md)) |
+| **D. Remount full shell when video / Accept appears** | **Forbidden** — destroys chat panes / broke Samsung Accept hit-test. Layer identity uses `RemountCallChrome` (dedicated mounts only); video stage/PiP inside an already-mounted bar stays `data-if` + `DirtyWindow` ([WINDOW_SHELL](../../docs/ui/WINDOW_SHELL.md)) |
 | **E. `GenerateTexture` every frame** (full reallocate) | Reject for steady state — GC/alloc cost at 15–30 fps |
 
 **UI composition (1:1 a3; V019 — same in-call for Voice/Video start):**
@@ -272,7 +272,7 @@ SDL3 camera (capture) → YUV/RGBA convert → platform HW H264 encode (V017)
 1. In-call chrome is unified once connected: icon mute / camera / leave + meters / elapsed (allowed on voice-started calls too). Compact layout uses a stacked bar so controls stay on-screen.  
 2. When remote (or local) video is active, expand an in-shell **stage** (still overlay, not a new nav tab): large **remote** tile; small **local PiP** when local camera on; placeholder / avatar when remote camera off. Compact bar-only when neither side has video frames.  
 3. Camera toggle off → on requests permission + opens SDL camera (encode starts then).  
-4. Chrome gate remains `CallChromeSync` / `DirtyWindow` — frame pixels update without remounting; only layer identity changes remount-class dirty.
+4. Chrome gate: `CallChromeSync` — **layer identity** → `RemountCallChrome`; **labels / pulse / meters / video flags** → `DirtyWindow` without remounting the in-call mount (frame pixels update in place).
 
 **Threading:** decode/upload on media thread → hand RGBA or GPU upload to UI thread before `Context::Render` (same discipline as audio level meters today). Never touch GL from the capture thread without a documented share context (prefer UI-thread upload).
 

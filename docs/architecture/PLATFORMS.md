@@ -70,9 +70,11 @@ Android still keeps the activity alive across other config changes (`configChang
 | Event | App response |
 |-------|----------------|
 | `SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED` / display scale / safe area | `Backend::SyncContext` updates RmlUi dimensions, DP ratio, and GL viewport; next frame is forced (no long power-save wait) |
-| UI task posted (`BrowserThread::PostTask(UI)`) | `Backend::WakeEventLoop` pushes a coalesced SDL user event so `SDL_WaitEventTimeout` returns promptly |
+| UI task posted (`BrowserThread::PostTask(UI)`) | `SetUIWakeCallback` → `Backend::RequestForceFrame` (force next poll + always-push wake event). `Application::Run` also forces when `HasPendingUITasks()`. Do **not** use `WakeEventLoop` alone — that left SyncLayout/call chrome pending until mouse move when WaitEventTimeout lied |
+| Call chrome dirty (`Backend::RequestForceFrame`) | Skips the next idle wait so ring/accept overlays Present without waiting for input (also implied by PostTask(UI)) |
+| `ShellHost::RequestSyncLayout` | Posts flush + `RequestForceFrame` so deferred remounts do not stall behind idle wait |
 | Shell timers (gesture dismiss slide-out, toast expiry) | `ShellHost::NotifyFrameEnd` calls `Context::RequestNextUpdate` **after** `Context::Update` so power-save wakes for the next deadline without waiting for input |
-| Idle power-save wait | Capped at **2s** (foreground relay poll cadence). A 10s cap starved `BackgroundSyncScheduler` / badge refresh on touch-idle Android until the user tapped |
+| Idle power-save wait | **Poll + ≤50ms Delay slices** capped at **2s**. Mid-idle abort if `force_next_frame` / wake pending. **Forbidden:** `SDL_WaitEventTimeout` for idle — some X11/SDL builds ignored the timeout until real input (Sessions tab), freezing Present while coordinator poll still advanced |
 | `SDL_EVENT_RENDER_DEVICE_RESET` | Rebuild GL3 shaders/FBOs, release TextLoupe GPU state, `Rml::ReleaseTextures` / `ReleaseCompiledGeometry` / `ReleaseFontResources`, then `SyncContext` |
 | `SDL_EVENT_DID_ENTER_FOREGROUND` | `SyncContext` + theme sync (size may have changed while backgrounded) |
 | Invalid surface / zero pixel size | Skip `BeginFrame` / `PresentFrame` (avoids clearing into a dead surface) |

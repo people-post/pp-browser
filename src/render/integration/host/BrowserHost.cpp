@@ -13,6 +13,7 @@
 #include <RmlUi/Core/Profiling.h>
 
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <string>
 
@@ -123,7 +124,8 @@ struct BackendData {
 	unsigned int uikit_renderbuffer = 0;
 
 	bool running = true;
-	bool force_next_frame = false;
+	/** Cross-thread: RequestForceFrame / SyncContext may set from any thread. */
+	std::atomic<bool> force_next_frame{false};
 };
 static Rml::UniquePtr<BackendData> data;
 #if SDL_MAJOR_VERSION >= 3
@@ -355,7 +357,7 @@ void Backend::SyncContext(Rml::Context* context)
 	context->SetDimensions(Rml::Vector2i(pixel_w, pixel_h));
 	context->SetDensityIndependentPixelRatio(SDL_GetWindowDisplayScale(data->window));
 	data->render_interface.SetViewport(pixel_w, pixel_h);
-	data->force_next_frame = true;
+	data->force_next_frame.store(true, std::memory_order_release);
 	Rml::Log::Message(Rml::Log::LT_DEBUG, "SyncContext: %dx%d scale=%.3f", pixel_w, pixel_h,
 		SDL_GetWindowDisplayScale(data->window));
 #else
@@ -412,7 +414,7 @@ void Backend::RecoverAfterDeviceReset(Rml::Context* context)
 	if (context)
 		SyncContext(context);
 
-	data->force_next_frame = true;
+	data->force_next_frame.store(true, std::memory_order_release);
 }
 #endif
 
@@ -529,19 +531,45 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 
 	bool result = true;
 
-	const bool force_frame = data->force_next_frame;
-	data->force_next_frame = false;
+	// Never use SDL_WaitEventTimeout for idle — on some X11/SDL builds it ignored the timeout
+	// until real input, so SyncLayout / call ring stayed invisible until Sessions was opened.
+	const bool force_frame = data->force_next_frame.exchange(false, std::memory_order_acq_rel);
 
 	SDL_Event ev;
 	if (force_frame)
 		has_event = SDL_PollEvent(&ev);
 	else if (power_save) {
-		// Cap idle wait so main-loop work (relay poll tick, libp2p tick, badge refresh) is not
-		// starved until the next touch. Foreground inbox poll is 2s; the old 10s cap made Android
-		// (and idle desktop) feel like notifications only appear after interaction.
 		constexpr double k_max_power_save_wait_sec = 2.0;
-		const double delay_sec = Rml::Math::Min(context->GetNextUpdateDelay(), k_max_power_save_wait_sec);
-		has_event = SDL_WaitEventTimeout(&ev, static_cast<int>(delay_sec * 1000));
+		double delay_sec = context->GetNextUpdateDelay();
+		if (!std::isfinite(delay_sec) || delay_sec > k_max_power_save_wait_sec) {
+			delay_sec = k_max_power_save_wait_sec;
+		}
+		if (delay_sec < 0.0) {
+			delay_sec = 0.0;
+		}
+		const int timeout_ms = static_cast<int>(delay_sec * 1000.0);
+		const Uint64 deadline = SDL_GetTicks() + static_cast<Uint64>(timeout_ms);
+		SDL_PumpEvents();
+		has_event = SDL_PollEvent(&ev);
+		while (!has_event) {
+			// Mid-idle ForceFrame from another thread — exit without waiting out the slice.
+			if (data->force_next_frame.exchange(false, std::memory_order_acq_rel)) {
+				SDL_PumpEvents();
+				has_event = SDL_PollEvent(&ev);
+				break;
+			}
+			const Uint64 now = SDL_GetTicks();
+			if (now >= deadline) {
+				break;
+			}
+			Uint64 remaining = deadline - now;
+			if (remaining > 50) {
+				remaining = 50; // ≤50ms slices so PushEvent / ForceFrame are observed promptly
+			}
+			SDL_Delay(static_cast<Uint32>(remaining));
+			SDL_PumpEvents();
+			has_event = SDL_PollEvent(&ev);
+		}
 	} else
 		has_event = SDL_PollEvent(&ev);
 
@@ -650,10 +678,10 @@ void Backend::WakeEventLoop()
 	if (!data || g_wake_event_type == 0)
 		return;
 
-	// Coalesce: one pending wake is enough to drain any number of queued UI tasks.
-	bool expected = false;
-	if (!g_wake_pending.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
-		return;
+	// Always push a wake event. Coalescing via g_wake_pending alone dropped wakes when the
+	// flag was still set from a prior push that SDL had not yet delivered, leaving UI tasks
+	// (SyncLayout, call ring) queued until the next real input.
+	g_wake_pending.store(true, std::memory_order_release);
 
 	SDL_Event ev{};
 	ev.type = g_wake_event_type;
@@ -665,6 +693,14 @@ void Backend::WakeEventLoop()
 	{
 		g_wake_pending.store(false, std::memory_order_relaxed);
 	}
+}
+
+void Backend::RequestForceFrame()
+{
+	if (!data)
+		return;
+	data->force_next_frame.store(true, std::memory_order_release);
+	WakeEventLoop();
 }
 
 void Backend::BeginFrame()

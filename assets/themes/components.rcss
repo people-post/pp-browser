@@ -1420,6 +1420,28 @@ select selectbox option {
   z-index: 50;
 }
 
+/* Call chrome: empty mounts must not steal hits; children re-enable pointer-events. */
+.shell-call-chrome-mount {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.shell-call-chrome-mount--bar {
+  z-index: 45;
+}
+
+.shell-call-chrome-mount--ring {
+  z-index: 50;
+}
+
+.shell-call-chrome-mount .shell-layer {
+  pointer-events: auto;
+}
+
 .shell-scrim {
   position: absolute;
   top: 0;

@@ -804,15 +804,20 @@ void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason) 
     restore_focus_after_sync_ = true;
   }
   if (sync_pending_) {
+    // Flush already queued — still poke the event loop (X11 WaitEventTimeout could ignore
+    // timeout; Sessions-tab click was previously the only unblock).
+    Backend::RequestForceFrame();
     return;
   }
   sync_pending_ = true;
   // Always defer: SyncLayout remounts the shell DOM. Flushing synchronously from a click
   // handler (e.g. compact_chat_back) destroys the target element mid-dispatch and crashes.
   BrowserThread::PostTask(BrowserThreadId::UI, []() { ShellHost::Instance().FlushPendingSyncLayout(); });
+  Backend::RequestForceFrame();
 }
 
 void ShellHost::FlushPendingSyncLayout() {
+  static auto logger = logging::getLogger("ShellHost");
   if (!sync_pending_) {
     return;
   }
@@ -820,10 +825,8 @@ void ShellHost::FlushPendingSyncLayout() {
   try {
     SyncLayout();
   } catch (const std::exception& e) {
-    static auto logger = logging::getLogger("ShellHost");
     logger.error << "SyncLayout failed: " << e.what();
   } catch (...) {
-    static auto logger = logging::getLogger("ShellHost");
     logger.error << "SyncLayout failed with unknown exception";
   }
   if (restore_focus_after_sync_) {
@@ -1283,9 +1286,13 @@ std::string ShellHost::SerializePinGate() const {
 }
 
 std::string ShellHost::SerializeCallRing() const {
-  // Always present with data-if so show/hide is DirtyWindow-only (no shell remount).
+  // Mounted into #shell-call-ring-mount when active (RemountCallChrome). Presence = visibility;
+  // data-if alone was not flipping Display on idle Present (accept dialog stayed gone).
+  if (!state_.call_ring.active) {
+    return {};
+  }
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\" data-if=\"call_ring_active\">";
+  out << "<div class=\"shell-layer shell-layer-dialog\" data-model=\"window\">";
   out << "<div class=\"shell-scrim\"></div>";
   out << "<div class=\"shell-dialog shell-call-ring\" data-class-shell-call-ring--pulse=\"call_ring_pulse\">";
   out << "<p class=\"text-sm shell-call-ring-eyebrow\" data-rml=\"call_ring_eyebrow\"></p>";
@@ -1303,9 +1310,12 @@ std::string ShellHost::SerializeCallRing() const {
 
 std::string ShellHost::SerializeCallInProgress() const {
   // Compact-friendly: stage + stacked bar (title/actions row, meters row). Icon controls.
-  // Frames update via DirtyWindow only (V018/V019) — never remount for video.
+  // Mounted into #shell-call-in-progress-mount when active; video tiles still DirtyWindow-only.
+  if (!state_.call_in_progress.active) {
+    return {};
+  }
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-call-bar\" data-model=\"window\" data-if=\"call_in_progress_active\">";
+  out << "<div class=\"shell-layer shell-layer-call-bar\" data-model=\"window\">";
   out << "<div class=\"shell-call-stage\" data-if=\"call_in_progress_stage_visible\">";
   out << "<call-video-tile class=\"shell-call-remote\" id=\"call-remote-tile\" tile=\"remote\">";
   out << "<p class=\"text-sm shell-call-remote-placeholder\" data-if=\"!call_in_progress_remote_video\" "
@@ -1393,8 +1403,9 @@ std::string ShellHost::SerializeShellRoot() const {
   out << SerializeTransientLayer();
   out << SerializeOverlays();
   out << SerializeDialog();
-  out << SerializeCallInProgress();
-  out << SerializeCallRing();
+  // Call chrome mounts stay empty here; RemountCallChrome fills them (avoids full-shell remount).
+  out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--bar\"></div>";
+  out << "<div id=\"shell-call-ring-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--ring\"></div>";
   out << SerializePinGate();
   return out.str();
 }
@@ -1650,6 +1661,7 @@ void ShellHost::SyncLayout() {
   RmlMount::MountInner(root, SerializeShellRoot());
   last_synced_mode_ = mode;
   MountPaneBodies();
+  RemountCallChrome();
   DirtyWindow();
   if (state_.auxiliary_open) {
     DataModelHost::Instance().Dirty("shell", "working_set_active");
@@ -1665,6 +1677,23 @@ void ShellHost::SyncLayout() {
   ApplySafeAreaLayout();
   // Spurious change/blur can land on the next UI turn after remount.
   BrowserThread::PostTask(BrowserThreadId::UI, []() { UiEditSession::Instance().EndRemount(); });
+}
+
+void ShellHost::RemountCallChrome() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  if (Rml::Element* ring_mount = doc->GetElementById("shell-call-ring-mount")) {
+    RmlMount::MountInner(ring_mount, SerializeCallRing());
+  }
+  if (Rml::Element* bar_mount = doc->GetElementById("shell-call-in-progress-mount")) {
+    RmlMount::MountInner(bar_mount, SerializeCallInProgress());
+  }
+  DirtyWindow();
 }
 
 void ShellHost::Update(Rml::Context* context) {
@@ -1724,6 +1753,11 @@ void ShellHost::NotifyFrameEnd(Rml::Context* context) {
   const double toast_delay = ShellFeedback::SecondsUntilNextToastExpiry(state_, elapsed_ms_);
   if (toast_delay >= 0.0) {
     delay_sec = std::min(delay_sec, toast_delay);
+  }
+
+  // Call ring pulse / in-call meters need sub-second frames while overlays are active.
+  if (state_.call_ring.active || state_.call_in_progress.active) {
+    delay_sec = std::min(delay_sec, 0.55);
   }
 
   if (std::isfinite(delay_sec)) {

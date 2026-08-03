@@ -28,6 +28,7 @@ public:
   void Resume();
 
   bool IsRunningOnThisThread() const;
+  bool HasPendingTasks() const;
 
 private:
   void EnqueueLocked(std::function<void()> task);
@@ -35,7 +36,7 @@ private:
   bool DequeueOne(std::function<void()>* out);
   void RunTaskSafely(std::function<void()>& task);
 
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::deque<std::function<void()>> tasks_;
   bool stopped_ = false;
   bool paused_ = false;

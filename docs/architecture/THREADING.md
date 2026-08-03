@@ -96,7 +96,7 @@ Libp2p integration uses `PostLibp2pWorker`; unit tests fall back to a private pe
 
 Drives periodic policy (not UI frame ticks):
 
-- Relay poll: foreground ~2s, background ~45s (`MessagingLimits.h`) — `BackgroundSyncScheduler`
+- Relay poll: foreground ~2s, background ~45s (`MessagingLimits.h`) — `BackgroundSyncScheduler`, armed from `MessagingHub::StartCoordinatorTimers`
 - Hub policy: peer sweep, mDNS, reachability UX — `MessagingHub` (~1s)
 - Peer idle sweep: ~15s internal to `PeerSessionManager::Tick`
 
@@ -104,11 +104,32 @@ Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** 
 
 ### Cross-thread rules
 
-- **UI** owns RmlUi and controller mutations. Post via `BrowserThread::PostTask(UI, …)`; `WakeEventLoop()` breaks power-save waits.
+- **UI** owns RmlUi and controller mutations. Post via `BrowserThread::PostTask(UI, …)`.
+- **UI delivery (hard):** a non-empty UI mailbox must be drained and Presentable soon — power-save must not starve it. `PostTask(UI)` → `SetUIWakeCallback` → `Backend::RequestForceFrame` (force next poll + `WakeEventLoop`). Idle wait is **Poll + ≤50ms Delay slices** (never `SDL_WaitEventTimeout`). See [PLATFORMS.md](PLATFORMS.md).
 - **Worker pool** runs sync libcurl (30s timeout), LLM/tools, relay orchestration.
 - **Coordinator** runs fast policy only; must not block — enqueue to pool.
 - **libp2p IO** stays non-blocking; integration services hop to pool via `PostLibp2pWorker`.
 - **Pause/resume:** `AppLifecycle` uses `BrowserThread::PauseIO` / `ResumeIO` on background/foreground.
+
+### UI delivery pipeline
+
+Coordinator / workers push deltas; they must not assume paint. Four stages:
+
+```text
+Produce (coordinator / worker)
+  → PostTask(UI) + RequestForceFrame
+  → Frame drain (ProcessEvents returns → RunUITasks → Update → Present)
+  → Chrome observation (mounted DOM + hit targets — not “bool dirty” alone)
+```
+
+| Stage | Contract |
+|-------|----------|
+| Produce | May run off UI; do not mutate RmlUi / shell chrome here |
+| Mailbox | `BrowserThread` sequenced queue; `HasPendingUITasks()` is observable |
+| Drain | Idle wait must return within ≤50ms when forced / woken; cap idle ≤2s always |
+| Observe | Call ring visibility = `RemountCallChrome` into mounts; SyncLayout / toasts are also mailbox citizens — same SLA. Logs that prove state (`call_ring.active`) do **not** prove paint |
+
+Do **not** couple relay poll cadence back to `ChatController::Update` for liveness. Poll stays on the coordinator (`MessagingHub::StartCoordinatorTimers`); UI liveness is the frame loop’s job. Call-wake UI refresh is `MessagingHub::SetOnCallWake` → `CallController::OnCallWake` (hopped to UI).
 
 ### Thread affinity
 
@@ -132,8 +153,9 @@ Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** 
 3. **Priority is explicit** — three lanes, not ad hoc hop-off threads.
 4. **Bounded concurrency** — fixed pool (2–4 threads at init).
 5. **UI is pull** — workers/coordinator push UI deltas; UI never waits on network.
-6. **Media is special** — do not run Opus/H264 in the general pool.
-7. **Join on shutdown** — pool and coordinator stop accepting work and join.
+6. **UI mailbox liveness** — power-save is an optimization; it must not defer `RunUITasks` / Present until user input.
+7. **Media is special** — do not run Opus/H264 in the general pool.
+8. **Join on shutdown** — pool and coordinator stop accepting work and join.
 
 ---
 
@@ -166,7 +188,10 @@ Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** 
 
 | Date | Change |
 |------|--------|
-| 2026-08-03 | Call chrome: hop `OnCallWake` / `RefreshPendingRing` to UI from coordinator relay poll; unanswered outbound TTL clears sticky Calling bar |
+| 2026-08-03 | Call Accept layer: `RemountCallChrome` (dedicated mounts); not always-mounted `data-if` + Dirty alone |
+| 2026-08-03 | Relay poll owned by `MessagingHub::StartCoordinatorTimers` (not ChatController WireMessagingBindings); immediate wake sync on arm; `SetOnCallWake` from Application |
+| 2026-08-03 | **UI delivery:** `PostTask(UI)` → `RequestForceFrame`; idle = Poll+≤50ms Delay (no WaitEventTimeout); mid-idle abort on ForceFrame/wake; liveness contract in Cross-thread rules |
+| 2026-08-03 | Call chrome + UI mailbox: hop ring refresh to UI; `RequestForceFrame` when UI tasks pending / SyncLayout; WakeEventLoop always pushes (no coalesce-drop); unanswered outbound TTL |
 | 2026-08-03 | **Shipped:** coordinator + worker pool model live; `pp-browser-io` retired; project folder archived |
 | 2026-08-03 | Phase t5: `BrowserThread::IO` → worker pool |
 | 2026-08-03 | Phase t4: `CoordinatorThread` + timer wheel |

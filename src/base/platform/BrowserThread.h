@@ -17,13 +17,16 @@ public:
 
   static SequencedTaskRunner& Get(BrowserThreadId id);
   static void RunUITasks();
+  /** True when the UI mailbox has work — ProcessEvents must not power-save-wait. */
+  static bool HasPendingUITasks();
 
   static bool CurrentlyOn(BrowserThreadId id);
 
   static void PostTask(BrowserThreadId id, std::function<void()> task);
   static void PostTaskFront(BrowserThreadId id, std::function<void()> task);
 
-  // Optional hook (typically Backend::WakeEventLoop) so UI posts break power-save waits.
+  // Optional hook so UI posts break idle waits. Prefer Backend::RequestForceFrame (sets
+  // force_next_frame + WakeEventLoop) — not WakeEventLoop alone — so the mailbox drains soon.
   static void SetUIWakeCallback(std::function<void()> callback);
 
   static void PauseIO();

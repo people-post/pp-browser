@@ -178,6 +178,8 @@ public:
   void SuspendLibp2pColdPeers();
 
   void SetOnMessagingReady(std::function<void()> callback);
+  /** FCM/opaque call_wake — hop to UI (CallController::OnCallWake). Set from Application. */
+  void SetOnCallWake(std::function<void()> callback);
 
   /** L4: PeerId-only OK when stack address book has a dial path (or relay / pasted ma). */
   bool IsContactReachable(const Contact& contact) const;
@@ -270,6 +272,7 @@ private:
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
   std::function<void()> on_messaging_ready_;
+  std::function<void()> on_call_wake_;
   bool initialized_ = false;
   bool messaging_ready_ = false;
   uint64_t hub_policy_timer_id_ = 0;

@@ -1311,8 +1311,8 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
       auto messages = std::move(poll->messages);
       const std::string local_relay_id = identity->relay_user_id;
       if (!messages.empty()) {
-        log().warning << "PollInbox ok n=" << messages.size() << " cursor_advanced="
-                      << (next_cursor.empty() ? 0 : 1);
+        log().warning << "PollInbox ok n=" << messages.size()
+                      << " cursor_advanced=" << (next_cursor.empty() ? 0 : 1);
       }
 
       // Front of IO so ingest is not stuck behind other long work; HTTP already finished.

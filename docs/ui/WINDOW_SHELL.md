@@ -91,10 +91,13 @@ Choose the lightest primitive that fits the user task:
 | Need | API |
 |------|-----|
 | Binding / text / badge / toast update | `DirtyWindow()` or model `Dirty` |
-| Shell tree change (nav, panes, overlays, dialog, call ring/in-call layer, layout mode) | `RequestSyncLayout(reason)` |
+| Shell tree change (nav, panes, overlays, dialog, layout mode) | `RequestSyncLayout(reason)` |
+| Call ring / in-call layer appear or disappear | `RemountCallChrome()` into dedicated mounts (not full `SyncLayout`) |
 | Periodic poll / tick | Reconcile state only; remount **iff** structure changed |
 
-Call ring / in-call overlays are always mounted with `data-if` and updated via `DirtyWindow` — never remount the shell to show or hide them (that destroyed chat panes and caused crashes).
+Call ring / in-call overlays live in `#shell-call-ring-mount` / `#shell-call-in-progress-mount`. Show/hide remounts **only those mounts** via `RemountCallChrome` — never remount the full shell tree for call chrome (that destroyed chat panes and broke Accept hit-testing on Samsung). Label/pulse updates while a layer is already mounted use `DirtyWindow` only.
+
+**Why not always-mounted `data-if` for the Accept layer?** Binding state can be true and the frame loop can Present while Rml `data-if` leaves the overlay at `display:none`. Dialogs already use presence-based mount (`SerializeDialog` empty vs HTML). Call chrome follows that pattern scoped to dedicated mounts so chat panes stay intact. Inner `data-if` (conflict copy, video stage/PiP) remains fine for fields *inside* an already-mounted layer.
 
 Dialog open/close remount is owned by `ShellFeedback` (`dialog_open` / `dialog_close`). Callers of `ShowConfirm*` / `ShowAlert` / `ShowPrompt` must not also call `RequestSyncLayout` solely to show the dialog.
 

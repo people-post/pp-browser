@@ -79,8 +79,8 @@
 #include <RmlUi/Debugger.h>
 #endif
 
-#include <filesystem>
 #include <algorithm>
+#include <filesystem>
 
 namespace pbr {
 
@@ -299,8 +299,9 @@ bool Application::Initialize(const char* window_title) {
     log().error << "Backend::Initialize failed (SDL/OpenGL window could not be created)";
     return false;
   }
-  // Power-save WaitEventTimeout otherwise holds UI posts (toasts, OS notify, inbox) until input.
-  BrowserThread::SetUIWakeCallback([]() { Backend::WakeEventLoop(); });
+  // PostTask(UI) must imply RequestForceFrame: skip idle wait and Present soon (THREADING.md
+  // UI delivery). WakeEventLoop alone is not enough on platforms where WaitEventTimeout lied.
+  BrowserThread::SetUIWakeCallback([]() { Backend::RequestForceFrame(); });
 
 #if RMLUI_SDL_VERSION_MAJOR >= 3
   if (!Platform::IsMobile()) {
@@ -725,6 +726,11 @@ bool Application::Initialize(const char* window_title) {
       settings_->OnNavTabActivated();
     }
   });
+  messaging.SetOnCallWake([this]() {
+    if (call_) {
+      call_->OnCallWake();
+    }
+  });
   messaging.SetOnReachabilityUpdated([this]() {
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
       settings_->SyncReachability();
@@ -785,8 +791,17 @@ void Application::Run() {
     Backend::PresentFrame();
   });
 #endif
-  while (Backend::ProcessEvents(context, ProcessKeyDown, true)) {
+  while (true) {
+    // Belt-and-suspenders: tasks already queued before this iteration (or wake missed).
+    // Primary path is SetUIWakeCallback → RequestForceFrame on every PostTask(UI).
+    if (BrowserThread::HasPendingUITasks()) {
+      Backend::RequestForceFrame();
+    }
+    if (!Backend::ProcessEvents(context, ProcessKeyDown, true)) {
+      break;
+    }
     BrowserThread::RunUITasks();
+
     if (shell_->State().account_sheet_open || shell_->State().nav_tab == NavTab::Me) {
       settings_->Tick();
     }
@@ -883,6 +898,7 @@ void Application::Shutdown() {
   if (messaging_) {
     messaging_->SetOnMessagingReady(nullptr);
     messaging_->SetOnReachabilityUpdated(nullptr);
+    messaging_->SetOnCallWake(nullptr);
   }
 
   // Join notification watcher first so it cannot PostTask during teardown, and

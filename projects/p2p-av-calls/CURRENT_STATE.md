@@ -75,7 +75,8 @@ Filter: `adb logcat -s pp-browser:W` — `CallLifecycle`, `CallLibp2pMediaBridge
 | Extend libdatachannel for 1:1 | V026 — libp2p media |
 | SoftMigrate invents NAT | Stack dialable? then quote |
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
-| `SyncLayout` remount for Accept chrome | DirtyWindow / DirtyAll only |
+| Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |
+| Always-mounted `data-if` + Dirty for Accept layer | Presence mount via `RemountCallChrome`; Dirty only for labels/pulse inside a mounted layer |
 | Recreate `CallLibp2pMediaBridge` on N025 sync | Only when `CallSessionManager*` changes |
 | Call-media `read`/`write` from a non-IO worker while pump runs | `Libp2pHost::Post` async pump only |
 | Hold a mutex across blocking stream read from capture | Enqueue + IO-thread write |
