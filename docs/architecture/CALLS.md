@@ -123,7 +123,7 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 | Listen fail / no bound port | Surface error; stay `MediaPending` / `ConnectFailed`; Retry re-arms listen |
 | Stack rebuild | Bridge recreate only when `CallSessionManager*` changes |
 
-**1:1 libp2p chrome:** connected only when the direct stream is active (not `StartSfu` alone).
+**1:1 libp2p chrome:** connected when lifecycle is `InCall` (after `DirectConnected`) and media capture is active — not `StartSfu` alone. Bridge `CommitDirectConnected` sets engine `connected` whenever the direct stream is up.
 
 ---
 

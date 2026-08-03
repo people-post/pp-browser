@@ -1,6 +1,34 @@
 #include "feature/ui/CallChromeSync.h"
 
+#include <cctype>
+
 namespace pbr {
+namespace {
+
+/** Calling/Connecting/Connected vs elapsed timer — remount when status kind flips (Dirty can miss). */
+bool CallChromeStatusLabelChanged(const std::string& synced, const std::string& next) {
+  if (synced == next) {
+    return false;
+  }
+  auto kind = [](const std::string& s) {
+    if (s.empty()) {
+      return 0;
+    }
+    // Elapsed "0:05" / "12:34"
+    if (std::isdigit(static_cast<unsigned char>(s[0]))) {
+      return 1;
+    }
+    return 2; // localized status
+  };
+  const int a = kind(synced);
+  const int b = kind(next);
+  if (a != b) {
+    return true;
+  }
+  return a == 2; // status string changed (Connecting… → Connected)
+}
+
+} // namespace
 
 CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const CallChromeLayer& next) {
   const bool layer_changed = synced.ring_active != next.ring_active ||
@@ -8,6 +36,12 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                              synced.ring_call_id != next.ring_call_id ||
                              synced.in_call_id != next.in_call_id;
   if (layer_changed) {
+    return CallChromeUpdate::Remount;
+  }
+
+  // Status subtitle must remount: deferred RemountCallChrome + DirtyOnly can leave data-rml on a
+  // pre-bind element while synced_chrome_ already advanced (dogfood: stuck Connecting…).
+  if (CallChromeStatusLabelChanged(synced.in_call_subtitle, next.in_call_subtitle)) {
     return CallChromeUpdate::Remount;
   }
 

@@ -1314,6 +1314,30 @@ std::string ShellHost::SerializeCallInProgress() const {
   if (!state_.call_in_progress.active) {
     return {};
   }
+  auto escape = [](const Rml::String& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : std::string(s.c_str())) {
+      switch (c) {
+      case '&':
+        out += "&amp;";
+        break;
+      case '<':
+        out += "&lt;";
+        break;
+      case '>':
+        out += "&gt;";
+        break;
+      case '"':
+        out += "&quot;";
+        break;
+      default:
+        out += c;
+        break;
+      }
+    }
+    return out;
+  };
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-call-bar\" data-model=\"window\">";
   out << "<div class=\"shell-call-stage\" data-if=\"call_in_progress_stage_visible\">";
@@ -1327,8 +1351,12 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-bar\">";
   out << "<div class=\"shell-call-bar-row row\">";
   out << "<div class=\"shell-call-bar-main\">";
-  out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\"></p>";
-  out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\"></p>";
+  // Bake title/subtitle into markup so deferred remount shows current labels even if data-rml
+  // Dirty raced before the new views were bound.
+  out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\">"
+      << escape(state_.call_in_progress.title) << "</p>";
+  out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\">"
+      << escape(state_.call_in_progress.subtitle) << "</p>";
   out << "<p class=\"text-xs shell-call-bar-hint\" data-if=\"call_in_progress_show_retry\" "
          "data-rml=\"call_in_progress_status_hint\"></p>";
   out << "</div>";
@@ -1698,6 +1726,12 @@ void ShellHost::FlushRemountCallChrome() {
   }
   remount_call_chrome_pending_ = false;
   RemountCallChromeNow();
+  // MountInner binds data views after any Dirty applied while remount was pending — dirty again
+  // next UI turn so Connected/elapsed replace baked Connecting… text via data-rml.
+  BrowserThread::PostTask(BrowserThreadId::UI, []() {
+    ShellHost::Instance().DirtyWindow();
+    Backend::RequestForceFrame();
+  });
 }
 
 void ShellHost::RemountCallChromeNow() {

@@ -70,6 +70,8 @@ private:
   Roe<void> ConnectOffererWithRetry(const CallMediaDirectConnectParams& params,
                                     const CallMediaDirectCallbacks& cbs);
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
+  /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
+  void CommitDirectConnected(const std::string& call_id);
 
   CallP2pSignalingHost& host_;
   CallSessionStore& sessions_;

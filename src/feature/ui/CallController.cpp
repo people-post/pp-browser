@@ -541,7 +541,10 @@ void CallController::RefreshPendingRing() {
       in_call.status_hint = {};
     }
 
-    if (calls->Media().IsConnected()) {
+    // Prefer media IsConnected; also trust lifecycle InCall once DirectConnected fired so
+    // chrome cannot stick on Connecting while Opus already flows (connection_state lag).
+    if (calls->Media().IsConnected() ||
+        (life && life->Phase() == CallPhase::InCall && calls->Media().IsActive())) {
       in_call.elapsed = FormatElapsed(calls->Media().ConnectedAtMs());
       in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
       in_call.show_retry = false;
@@ -569,13 +572,28 @@ void CallController::RefreshPendingRing() {
         in_call.subtitle = state;
       }
     }
-    if (in_call.show_roster && joined_count > 0 && calls->Media().IsConnected()) {
+    if (in_call.show_roster && joined_count > 0 &&
+        (calls->Media().IsConnected() ||
+         (life && life->Phase() == CallPhase::InCall && calls->Media().IsActive()))) {
       in_call.subtitle =
           Tr("call.participants_elapsed",
              {{"count", std::to_string(joined_count)}, {"elapsed", std::string(in_call.elapsed.c_str())}})
               .c_str();
     }
     ApplyAudioLevels(calls->Media());
+    {
+      static std::string last_sub_log;
+      const std::string sub = in_call.subtitle.c_str();
+      if (sub != last_sub_log) {
+        last_sub_log = sub;
+        logging::getLogger("CallController").info
+            << "in-call subtitle=\"" << sub << "\" phase="
+            << (life ? CallPhaseName(life->Phase()) : "?")
+            << " media_connected=" << (calls->Media().IsConnected() ? 1 : 0)
+            << " media_active=" << (calls->Media().IsActive() ? 1 : 0)
+            << " media_state=" << calls->Media().ConnectionState();
+      }
+    }
     SyncShellState();
     return;
   }
@@ -911,10 +929,13 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
   } else if (stalling) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
-  } else if (media.IsConnected()) {
+  } else if (media.IsConnected() ||
+             (Lifecycle() && Lifecycle()->Phase() == CallPhase::InCall && media.IsActive())) {
     in_call.elapsed = FormatElapsed(media.ConnectedAtMs());
     if (!in_call.elapsed.empty()) {
       in_call.subtitle = in_call.elapsed;
+    } else {
+      in_call.subtitle = Tr("call.status.connected").c_str();
     }
   }
 }

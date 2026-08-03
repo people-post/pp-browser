@@ -23,13 +23,23 @@ TEST(CallChromeSyncTest, RingDisappearRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
-TEST(CallChromeSyncTest, SubtitleOnlyDirties) {
+TEST(CallChromeSyncTest, StatusSubtitleRemounts) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
   synced.in_call_subtitle = "Connecting…";
   pbr::CallChromeLayer next = synced;
   next.in_call_subtitle = "Connected";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+}
+
+TEST(CallChromeSyncTest, ElapsedSubtitleTicksDirtyOnly) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_subtitle = "0:01";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_subtitle = "0:02";
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 

@@ -71,14 +71,7 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSes
     cbs.on_connected = [this, call_id]() {
       BrowserThread::PostTask(BrowserThreadId::UI, [this, call_id]() {
         log().info << "Inbound call-media connected call_id=" << call_id;
-        if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-          media_.SetConnectionState("connected");
-          ClearLibp2pConnectFailed();
-          if (lifecycle_) {
-            lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
-          }
-          host_.P2pNotifyRingChanged();
-        }
+        CommitDirectConnected(call_id);
       });
     };
     cbs.on_audio = [this, call_id](const std::vector<uint8_t>& opus) {
@@ -118,6 +111,22 @@ void CallLibp2pMediaBridge::SetLifecycle(CallLifecycle* lifecycle) {
   lifecycle_ = lifecycle;
 }
 
+void CallLibp2pMediaBridge::CommitDirectConnected(const std::string& call_id) {
+  if (call_id.empty()) {
+    return;
+  }
+  // Capture may lag the stream (inbound before BeginSession). Still advance phase so chrome
+  // can leave Calling/Connecting once StartSfu runs; keep_inbound / on_connected re-enter.
+  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+    media_.SetConnectionState("connected");
+  }
+  ClearLibp2pConnectFailed();
+  if (lifecycle_) {
+    lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
+  }
+  host_.P2pNotifyRingChanged();
+}
+
 bool CallLibp2pMediaBridge::IsLibp2pConnectFailed() const {
   return libp2p_connect_failed_;
 }
@@ -147,6 +156,15 @@ void CallLibp2pMediaBridge::PollLibp2pConnectHealth() {
   if (call_id.empty()) {
     return;
   }
+  // Stream can be up while StartSfu→"connecting" left IsConnected false (chrome stuck).
+  if (direct_.IsActive()) {
+    ClearLibp2pConnectFailed();
+    if (media_.IsActive() && !media_.IsConnected()) {
+      log().info << "Heal call-media connected from direct stream call_id=" << call_id;
+      CommitDirectConnected(call_id);
+    }
+    return;
+  }
   auto joined = sessions_.CountJoined(call_id);
   if (joined && *joined >= 3) {
     return;
@@ -156,10 +174,6 @@ void CallLibp2pMediaBridge::PollLibp2pConnectHealth() {
     return;
   }
   if (util::NowUnixMs() - started < kLibp2pConnectTimeoutMs) {
-    return;
-  }
-  if (direct_.IsActive()) {
-    ClearLibp2pConnectFailed();
     return;
   }
   log().warning << "Libp2p connect timeout call_id=" << call_id;
@@ -389,8 +403,7 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   if (keep_inbound) {
     log().info << "Media started with existing inbound stream call_id=" << call_id
                   << " role=" << (offerer ? "offerer" : "answerer");
-    media_.SetConnectionState("connected");
-    host_.P2pNotifyRingChanged();
+    CommitDirectConnected(call_id);
     return {};
   }
 
@@ -405,14 +418,7 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   cbs.on_connected = [this]() {
     BrowserThread::PostTask(BrowserThreadId::UI, [this]() {
       log().info << "Call-media connected call_id=" << media_call_id_;
-      if (media_.IsActive() && media_.ActiveCallId() == media_call_id_) {
-        media_.SetConnectionState("connected");
-      }
-      ClearLibp2pConnectFailed();
-      if (lifecycle_) {
-        lifecycle_->Apply(CallLifecycleEvent::DirectConnected, media_call_id_);
-      }
-      host_.P2pNotifyRingChanged();
+      CommitDirectConnected(media_call_id_);
     });
   };
   cbs.on_audio = [this, captured_call_id](const std::vector<uint8_t>& opus) {
@@ -481,12 +487,15 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
         if (direct_.IsActive()) {
           log().info << "Offerer got inbound call-media during grace call_id=" << params.call_id;
           connect_worker_inflight_.store(false);
+          // Inbound on_connected may have run before StartSfu — re-commit once capture is live.
+          PlatformRuntime::PostUI([this, call_id = params.call_id]() { CommitDirectConnected(call_id); });
           return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
       if (direct_.IsActive()) {
         connect_worker_inflight_.store(false);
+        PlatformRuntime::PostUI([this, call_id = params.call_id]() { CommitDirectConnected(call_id); });
         return;
       }
       log().info << "Offerer fallback dial call_id=" << params.call_id << " peer=" << params.peer_key;
@@ -501,7 +510,9 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
       return;
     }
     PlatformRuntime::PostUI([this, connected, call_id = params.call_id, role = std::string(role)]() {
-      if (direct_.IsActive() && media_.IsConnected()) {
+      // Dial may have lost the race to inbound; stream up always wins for chrome.
+      if (direct_.IsActive()) {
+        CommitDirectConnected(call_id);
         return;
       }
       if (!connected) {
