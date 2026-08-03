@@ -217,10 +217,9 @@ flowchart TB
 
 ## Threading
 
-**Canonical doc:** [THREADING.md](THREADING.md) — today's inventory, **target** coordinator + worker pool model, migration principles.  
-**Implementation plan:** [`projects/thread-coordinator/PHASES.md`](../../projects/thread-coordinator/PHASES.md) (short-lived; delete when shipped).
+**Canonical doc:** [THREADING.md](THREADING.md) — coordinator + worker pool model, `PlatformRuntime` API.
 
-**Today (2026-08):** UI on main thread; blocking work on **worker pool** via `BrowserThread::IO` API; **coordinator** owns timer-driven policy. libp2p and call media run their own loops. See [THREADING.md § Today](THREADING.md#today-2026-08).
+UI on main thread; blocking work on **worker pool** via `BrowserThread::IO` API or `PlatformRuntime::PostWorker`; **coordinator** owns timer-driven policy. libp2p and call media run their own loops.
 
 ```mermaid
 flowchart TB

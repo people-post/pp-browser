@@ -16,7 +16,7 @@ public:
   static BackgroundSyncScheduler& Instance();
 
   void SetSyncHandler(SyncFn handler);
-  /** Legacy no-op — relay poll is coordinator-driven (phase t4). */
+  /** Legacy no-op — relay poll is coordinator-driven. */
   void Tick();
   /** FCM / WorkManager wake — force a sync even if interval not elapsed. */
   void RequestWakeSync();

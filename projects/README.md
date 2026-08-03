@@ -33,7 +33,6 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 |---------|--------|---------|
 | [ai-centric-interface](ai-centric-interface/) | **d0 design** — v1 next | Intent taxonomy (10 acts), agency, planner/tools — thin path for every act first — [CURRENT_STATE](ai-centric-interface/CURRENT_STATE.md) |
 | [chat-storage-and-memory](chat-storage-and-memory/) | **Waves 1–2 + v3 core done** — v4 next | SQLite, v1 relay, tier shells, memory/compaction — see [CURRENT_STATE § Next agent](chat-storage-and-memory/CURRENT_STATE.md#next-agent--start-here) |
-| [thread-coordinator](thread-coordinator/) | **t2 done** — t3 next | Coordinator + worker pool — [PHASES](thread-coordinator/PHASES.md) |
 | [platform-safety-limits](platform-safety-limits/) | Planning | LLM HTTP, profile JSON, MCP, parser output — non-chat limits |
 | [e2e-message-crypto](e2e-message-crypto/) | **c1 done** — c2 after chat v6 | `base/crypto` + vectors; AEAD on wire in c2 — [CURRENT_STATE](e2e-message-crypto/CURRENT_STATE.md) |
 | [push-notifications](push-notifications/) | **Wave 1 done** | Owned Brief FCM wake + local alerts; alerts ≠ sync — [CURRENT_STATE](push-notifications/CURRENT_STATE.md) |

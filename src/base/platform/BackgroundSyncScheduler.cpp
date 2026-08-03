@@ -59,7 +59,7 @@ bool BackgroundSyncScheduler::ConsumeCallWake() {
 }
 
 void BackgroundSyncScheduler::Tick() {
-  // Relay poll cadence is driven by the coordinator timer wheel (phase t4).
+  // Relay poll cadence is driven by the coordinator timer wheel.
 }
 
 void BackgroundSyncScheduler::RunScheduledSync(bool force) {

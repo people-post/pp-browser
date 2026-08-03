@@ -3,9 +3,9 @@
 **Tier:** architecture  
 **Related:** [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md) (runtime wiring), [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md) (cross-thread UI rules), [CALLS.md](CALLS.md) (call media thread policy), [PLATFORMS.md](PLATFORMS.md) (wake / background sync).
 
-How pp-browser schedules work across threads: **today's inventory**, **target fixed-role model**, and **migration principles**.
+How pp-browser schedules work across threads: fixed roles, coordinator mailbox, and bounded worker pool.
 
-Implementation tracking: [`projects/thread-coordinator/PHASES.md`](../../projects/thread-coordinator/PHASES.md) (delete project folder when all phases ship).
+**Code map:** `PlatformRuntime`, `CoordinatorThread`, `WorkerPool` — `src/base/platform/`, `src/common/`.
 
 ---
 
@@ -13,54 +13,15 @@ Implementation tracking: [`projects/thread-coordinator/PHASES.md`](../../project
 
 1. **Predictable thread budget** — fixed roles instead of unbounded detached workers.
 2. **Non-blocking network reactor** — libp2p `io_context` never waits on curl, UPnP, or Argon2.
-3. **Explicit priorities** — call control and signaling must not sit behind 30s PollInbox (learned on Samsung / N025 starvation).
+3. **Explicit priorities** — call control and signaling must not sit behind 30s PollInbox.
 4. **Single orchestration front door** — coordinator owns policy; handlers post events, not ad hoc cross-calls.
-5. **Clean shutdown** — joinable workers with cancel tokens; no `.detach()` sprawl.
+5. **Clean shutdown** — joinable workers; minimal `.detach()` (documented exceptions only).
 
 ---
 
-## Today (2026-08)
+## Architecture
 
-### Model
-
-Two sequenced task runners plus separate libp2p IO and many hop-off threads:
-
-| Role | Mechanism | Thread? |
-|------|-----------|---------|
-| **UI queue** | `BrowserThread::UI` → `SequencedTaskRunner` | No — drained on main via `RunUITasks()` |
-| **Blocking app work** | `BrowserThread::IO` posts → `PlatformRuntime::PostWorker` | Worker pool (2–4 threads) |
-| **Orchestration** | `CoordinatorThread` via `PlatformRuntime` | Yes — `pp-coordinator` |
-| **libp2p reactor** | `Libp2pHost` → `boost::asio::io_context::run()` | Yes |
-| **Hop-offs** | `PlatformRuntime::PostWorker` | Integration + messaging; libp2p fork `cares.cpp` still detached |
-
-### Steady-state thread budget (typical desktop, messaging on, no call)
-
-~**3–5** app-owned OS threads: main + coordinator + worker pool (2–4) + libp2p IO + optional LAN mDNS + optional Linux D-Bus notifier watch (+ SDL audio internals).
-
-During an active call on the legacy WebRTC path, add capture/video/ringtone threads and libdatachannel's global pool (`max(hardware_concurrency, 4)`).
-
-### Cross-thread rules (current)
-
-- **UI** owns RmlUi and controller mutations. Post via `BrowserThread::PostTask(UI, …)`; `WakeEventLoop()` breaks power-save waits.
-- **Worker pool** runs sync libcurl (30s timeout), LLM/tools, relay orchestration. `PostTaskAndReply` / `PostTaskFrontAndReply` hop pool → UI.
-- **Coordinator** owns relay poll cadence and hub periodic policy (peer sweep, mDNS, reachability UX).
-- **libp2p IO** stays non-blocking; integration services hop to worker pool, then post results.
-- **Pause/resume:** `AppLifecycle` and `AgentSession` use `BrowserThread::PauseIO` / `ResumeIO` → coordinator + pool pause.
-
-### Known debt
-
-- Three parallel “IO” concepts (Browser IO, libp2p IO, detached hop-offs) — **Browser IO merged into pool (t5)**; libp2p fork `cares.cpp` still detached.
-- No central worker pool; starvation fixes are per-site hop-offs.
-- SQLite + mutex rather than a dedicated DB thread — safe if conventions hold.
-- libdatachannel hidden pool on legacy call path.
-
-See [RUNTIME_COMPOSITION.md § Threading (today diagram)](RUNTIME_COMPOSITION.md#threading) for the current mermaid topology.
-
----
-
-## Target architecture
-
-Fixed **roles** with a **coordinator mailbox** and **bounded worker pool**. Thread count is capped; concurrency within the pool is bounded.
+Fixed **roles** with a **coordinator mailbox** and **bounded worker pool**.
 
 ```mermaid
 flowchart TB
@@ -72,124 +33,130 @@ flowchart TB
   Media["Call media 0–2<br/>per active call only"]
 
   UI -->|"user intents"| Coord
-  Lp -->|"stream / dial events"| Coord
-  Plat -->|"notification actions"| Coord
-  Coord -->|"short state updates"| Coord
+  Lp -->|"stream / dial events"| Pool
+  Plat -->|"notification actions"| UI
   Coord -->|"blocking work"| Pool
-  Pool -->|"completions"| Coord
-  Coord -->|"UI deltas"| UI
+  Pool -->|"UI deltas"| UI
   Lp -.->|"never block"| Pool
   Media -.->|"encode / capture"| Lp
 ```
 
-### Role definitions
+### Role inventory
 
-| # | Role | Owner (target) | Blocking allowed? | Responsibility |
-|---|------|----------------|-------------------|----------------|
-| **1** | **UI thread** | `Application` main loop | No | SDL events, RmlUi layout/render, presenter binding updates, drain UI mailbox |
-| **2** | **libp2p reactor** | `Libp2pHost` | No | `io_context::run()`, inbound streams, outbound posts via `Libp2pHost::Post()`, host-native timers |
-| **3** | **Coordinator** | `CoordinatorThread` | **No** — dispatcher only | Single FIFO/priority mailbox; timer wheel; messaging/call/sync **policy**; posts work to pool; posts UI updates |
-| **4** | **Worker pool** | `WorkerPool` | **Yes** — only here | libcurl HTTP, UPnP, Argon2, long SQLite writes, protocol stream copy loops, LLM HTTP |
-| **5** | **Platform I/O** | `ILocalNotifier` impls | Platform-specific | Linux: D-Bus watch thread (unchanged pattern). Android: JNI callbacks → coordinator mailbox |
+| # | Role | Owner | Blocking? | Responsibility |
+|---|------|-------|-----------|----------------|
+| **1** | **UI thread** | `Application` main loop | No | SDL events, RmlUi, controllers; drain UI mailbox via `RunUITasks()` |
+| **2** | **libp2p reactor** | `Libp2pHost` | No | `io_context::run()`, inbound streams, host-native timers |
+| **3** | **Coordinator** | `CoordinatorThread` | No — dispatcher only | Priority mailbox; timer wheel; relay poll + hub policy; posts blocking work to pool |
+| **4** | **Worker pool** | `WorkerPool` (2–4 threads) | Yes — only here | libcurl HTTP, UPnP, Argon2, SQLite writes, stream copy loops, LLM HTTP, legacy `BrowserThread::IO` posts |
+| **5** | **Platform I/O** | `ILocalNotifier` impls | Platform-specific | Linux: D-Bus watch thread. Android: JNI → coordinator wake |
 
-**Call media** stays **outside** the general pool: 1–2 dedicated threads per active call (capture / video encode) — jitter-sensitive, real-time.
+**Call media** stays outside the general pool: 1–2 dedicated threads per active call (capture / video encode).
 
 **Headless node** (`app/node/`): no UI thread; coordinator + libp2p + pool only.
 
-### Coordinator mailbox
+### Steady-state thread budget (typical desktop, messaging on, no call)
 
-All non-UI threads **post messages** to the coordinator; the coordinator **does not** call blocking APIs.
+~**6–9** OS threads: main + coordinator + worker pool (2–4) + libp2p IO + optional LAN mDNS + optional Linux D-Bus notifier (+ SDL audio internals).
 
-Message shape (conceptual):
+During an active call on the legacy WebRTC path, add capture/video/ringtone threads and libdatachannel's global pool.
 
-```
-CoordinatorMessage {
-  source:   UI | Libp2p | PushWake | Notifier | Timer | WorkerDone
-  priority: Critical | Normal | Background
-  deadline: optional monotonic time
-  fn:       void()   // fast: update state, enqueue pool work, schedule timer, PostTask(UI)
-}
-```
+See [RUNTIME_COMPOSITION.md § Threading](RUNTIME_COMPOSITION.md#threading) for the wiring diagram.
 
-**Timer wheel** on the coordinator replaces UI-tick polling for:
+---
 
-- Relay poll intervals (foreground ~2s, background ~45s — see `MessagingLimits.h`)
-- Peer session idle sweep (~15s)
-- Deferred retries, probe backoff, coalesced wake
+## Scheduling API
 
-Push wake (`PushWakeJni` → `RequestWakeSync`) and app foreground/background inject **immediate** coordinator messages instead of calling `BackgroundSyncScheduler::Tick` on the UI frame.
+Composition root: `PlatformRuntime::Initialize()` / `Shutdown()` (from `Application` or `pp-node`).
+
+| API | Runs on |
+|-----|---------|
+| `PlatformRuntime::PostUI` / `BrowserThread::PostTask(UI, …)` | UI (sequenced, drained each frame) |
+| `PlatformRuntime::PostWorker(Critical/Normal/Background, …)` | Worker pool |
+| `PlatformRuntime::PostCoordinator(Critical/Normal/Background, …)` | Coordinator mailbox |
+| `PlatformRuntime::ScheduleCoordinatorRepeating` / `OneShot` | Coordinator timer wheel |
+| `BrowserThread::PostTask(IO, …)` | Worker pool **Normal** (compat alias) |
+| `BrowserThread::PostTaskFront(IO, …)` | Worker pool **Critical** (compat alias) |
+| `BrowserThread::PostTaskAndReply` | Pool Normal → UI |
+| `BrowserThread::PostTaskFrontAndReply` | Pool Critical → UI |
+| `BrowserThread::PauseIO` / `ResumeIO` | Coordinator + pool pause/resume |
+| `PostLibp2pWorker` (integration) | Worker pool via `WorkerDispatch` |
+
+Libp2p integration uses `PostLibp2pWorker`; unit tests fall back to a private per-host pool when dispatch is not installed.
 
 ### Worker pool priorities
 
-Three lanes replace `PostTaskFront` and detached hop-offs:
+| Lane | Examples |
+|------|----------|
+| **Critical** | `AcceptInvite`, call control, N025 / signaling RPC, `PostTaskFront(IO)` |
+| **Normal** | relay send/sync, chat history, directory fetch, agent tool HTTP, `PostTask(IO)` |
+| **Background** | UPnP probe, reachability, compaction, prefetch, PollInbox |
 
-| Lane | Examples | Must not block |
-|------|----------|----------------|
-| **Critical** | `AcceptInvite`, call control, N025 / signaling RPC | Normal + Background |
-| **Normal** | relay send/sync, chat history, directory fetch, agent tool HTTP | Background only |
-| **Background** | UPnP probe, reachability, compaction, prefetch, PollInbox (long curl) | — |
+### Coordinator timer wheel
 
-Pool size: **2–4 threads** (fixed at init; tunable via config later). Queue depth exposed for diagnostics; coalesce duplicate work (PollInbox already uses atomics).
+Drives periodic policy (not UI frame ticks):
 
-Worker completions post `WorkerDone` messages back to the coordinator — not directly to UI except via coordinator → `PostTask(UI)`.
+- Relay poll: foreground ~2s, background ~45s (`MessagingLimits.h`) — `BackgroundSyncScheduler`
+- Hub policy: peer sweep, mDNS, reachability UX — `MessagingHub` (~1s)
+- Peer idle sweep: ~15s internal to `PeerSessionManager::Tick`
 
-### Thread affinity rules (target)
+Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** coordinator message.
+
+### Cross-thread rules
+
+- **UI** owns RmlUi and controller mutations. Post via `BrowserThread::PostTask(UI, …)`; `WakeEventLoop()` breaks power-save waits.
+- **Worker pool** runs sync libcurl (30s timeout), LLM/tools, relay orchestration.
+- **Coordinator** runs fast policy only; must not block — enqueue to pool.
+- **libp2p IO** stays non-blocking; integration services hop to pool via `PostLibp2pWorker`.
+- **Pause/resume:** `AppLifecycle` uses `BrowserThread::PauseIO` / `ResumeIO` on background/foreground.
+
+### Thread affinity
 
 | Work kind | Run on |
 |-----------|--------|
 | RmlUi / shell / input | UI |
 | libp2p dial, read handler setup, asio timer | libp2p reactor |
-| “What should we do next?” policy | Coordinator |
+| Periodic sync / hub policy | Coordinator timers |
 | libcurl, UPnP, Argon2, long DB, stream copy | Worker pool |
 | Mic/camera encode | Call media threads |
-| Linux D-Bus read/write | Notifier watch → coordinator mailbox |
+| Linux D-Bus | Notifier watch thread → UI activation handler |
 
 **Hard rule:** only worker pool threads may block on network or disk for longer than a few milliseconds.
-
-### API compatibility (migration)
-
-Keep stable call sites during migration:
-
-| Today | Target |
-|-------|--------|
-| `BrowserThread::PostTask(UI, …)` | Unchanged |
-| `BrowserThread::PostTask(IO, …)` | Coordinator enqueue Normal, or pool directly for known-blocking work |
-| `BrowserThread::PostTaskFront(IO, …)` | Coordinator or pool **Critical** lane |
-| `BrowserThread::PostTaskAndReply` | Pool work + coordinator → UI reply |
-| `BrowserThread::PauseIO` / `ResumeIO` | Pause coordinator + pool (drain policy TBD in phase 1) |
-| `Libp2pHost::Post()` | Unchanged |
-| `run_heavy(work, on_done)` | Pool Background or Normal + UI reply |
-
-Target location: `src/common/WorkerPool` + `WorkerDispatch` (impl); `PlatformRuntime` in `src/base/platform/` (public schedule + platform services); coordinator in t4.
-
-### Steady-state budget (target)
-
-~**6–9** OS threads typical: UI + libp2p + coordinator + 2–4 workers + optional Linux notifier (+ call media when active).
-
-No unbounded detach; libdatachannel pool removed when WebRTC legacy path is retired ([p2p-av-calls V026](../../projects/p2p-av-calls/CURRENT_STATE.md)).
 
 ---
 
 ## Design principles
 
 1. **Coordinator is a dispatcher, not a worker** — if it might block, enqueue to the pool.
-2. **One policy front door** — libp2p handlers and UI post intents; coordinator decides dial/poll/send.
+2. **One policy front door** — timer wheel + wake paths; avoid UI-tick polling for sync.
 3. **Priority is explicit** — three lanes, not ad hoc hop-off threads.
-4. **Bounded concurrency** — fixed pool; metrics on queue depth and lane starvation.
-5. **UI is pull** — coordinator pushes UI deltas; UI never waits on network.
+4. **Bounded concurrency** — fixed pool (2–4 threads at init).
+5. **UI is pull** — workers/coordinator push UI deltas; UI never waits on network.
 6. **Media is special** — do not run Opus/H264 in the general pool.
-7. **Join on shutdown** — pool and coordinator stop accepting work, cancel in-flight with tokens, join threads.
+7. **Join on shutdown** — pool and coordinator stop accepting work and join.
+
+---
+
+## Known debt
+
+| Item | Location | Notes |
+|------|----------|-------|
+| c-ares DNS TXT | `src/libp2p/fork/.../cares.cpp` | `.detach()` per query — fork cannot link `pp_common`; defer until libp2p executor hook |
+| Call ringtone playback | `src/base/media/CallRingtone.cpp` | `.detach()` for SDL audio loop — media-specific |
+| Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
+| SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
+| libdatachannel pool | legacy WebRTC path | Retire with [p2p-av-calls V026](../../projects/p2p-av-calls/CURRENT_STATE.md) |
 
 ---
 
 ## Related third-party threading
 
-| Library | Model | Action |
+| Library | Model | Policy |
 |---------|-------|--------|
-| boost::asio / libp2p fork | Single `io_context` per host | Keep on role 2 |
-| c-ares (libp2p fork) | Detached per DNS query | Migrate to pool Background |
+| boost::asio / libp2p fork | Single `io_context` per host | libp2p reactor only |
+| c-ares (libp2p fork) | Detached per DNS query | Migrate to pool when fork allows |
 | libcurl | Sync on caller | Pool only |
-| SQLite | Caller + mutex | Pool for long writes; keep mutex discipline |
+| SQLite | Caller + mutex | Pool for long writes |
 | libdatachannel | Global thread pool | Retire with WebRTC path |
 | SDL3 | Internal audio/camera | Unchanged |
 
@@ -199,8 +166,9 @@ No unbounded detach; libdatachannel pool removed when WebRTC legacy path is reti
 
 | Date | Change |
 |------|--------|
-| 2026-08-03 | Target coordinator + worker pool model; timer wheel on coordinator; migration plan in `projects/thread-coordinator/` |
-| 2026-08-03 | Phase t2: libp2p integration hop-offs use `Libp2pHost::GetWorkerPool()` |
-| 2026-08-03 | Phase t3: messaging/call hop-offs use `PlatformRuntime::PostWorker`; zero detach in `feature/messaging/` |
-| 2026-08-03 | Phase t3.5: app-owned pool via `PlatformRuntime`; libp2p uses `PostLibp2pWorker` |
-| 2026-08-03 | Phase t1: `WorkerPool` in `src/common/` with unit tests |
+| 2026-08-03 | **Shipped:** coordinator + worker pool model live; `pp-browser-io` retired; project folder archived |
+| 2026-08-03 | Phase t5: `BrowserThread::IO` → worker pool |
+| 2026-08-03 | Phase t4: `CoordinatorThread` + timer wheel |
+| 2026-08-03 | Phase t3/t3.5: messaging hop-offs + `PlatformRuntime` |
+| 2026-08-03 | Phase t2: libp2p integration hop-offs |
+| 2026-08-03 | Phase t1: `WorkerPool` in `src/common/` |
