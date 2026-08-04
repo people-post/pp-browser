@@ -305,7 +305,7 @@ TEST_F(MediaRelayServiceTest, CallScopedAdmissionLocalHopUnlocksStranger) {
   b_relay_->Detach();
 }
 
-TEST_F(MediaRelayServiceTest, DISABLED_AsyncDataPlaneQuoteAcceptAttachFanout) {
+TEST_F(MediaRelayServiceTest, AsyncDataPlaneQuoteAcceptAttachFanout) {
   EnableAsyncDataPlane();
 
   auto hop_id = hop_host_.LocalPeerIdBase58();

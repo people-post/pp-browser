@@ -319,4 +319,171 @@ void StreamBridge::PumpRead() {
   });
 }
 
+void DuplexFrameSession::Start(std::shared_ptr<Stream> stream, FrameHandler on_frame,
+                               StreamCancelCheck is_cancelled, LengthPrefixedFrameConfig config,
+                               ClosedCallback on_closed) {
+  if (!stream || !on_frame) {
+    return;
+  }
+  stream_ = std::move(stream);
+  on_frame_ = std::move(on_frame);
+  is_cancelled_ = std::move(is_cancelled);
+  on_closed_ = std::move(on_closed);
+  config_ = config;
+  running_.store(true, std::memory_order_release);
+  BeginRead();
+}
+
+void DuplexFrameSession::Stop() {
+  running_.store(false, std::memory_order_release);
+  read_inflight_ = false;
+  write_inflight_ = false;
+  outbound_.clear();
+  stream_.reset();
+  on_frame_ = {};
+  is_cancelled_ = {};
+  on_closed_ = {};
+}
+
+bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body) {
+  if (!running_.load(std::memory_order_acquire) || !stream_) {
+    return false;
+  }
+  outbound_.push_back(std::make_shared<std::vector<uint8_t>>(EncodeLengthPrefixedFrame(body)));
+  if (!read_inflight_ && !write_inflight_) {
+    PumpWrite();
+  }
+  return true;
+}
+
+void DuplexFrameSession::BeginRead() {
+  if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_) || !stream_) {
+    CloseSession();
+    return;
+  }
+  if (read_inflight_ || write_inflight_ || !outbound_.empty()) {
+    return;
+  }
+  read_inflight_ = true;
+  header_buf_.assign(8, 0);
+  auto self = shared_from_this();
+  libp2p::read(stream_, header_buf_, [self](outcome::result<void> result) { self->OnReadHeader(result); });
+}
+
+void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
+  if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_)) {
+    read_inflight_ = false;
+    CloseSession();
+    return;
+  }
+  if (!result) {
+    read_inflight_ = false;
+    CloseSession();
+    return;
+  }
+  const uint64_t payload_len =
+      DecodeLengthPrefixedHeader(std::vector<uint8_t>(header_buf_.begin(), header_buf_.end()));
+  if (payload_len == 0 && !config_.allow_empty_body) {
+    read_inflight_ = false;
+    if (on_frame_) {
+      on_frame_(Error("length-prefixed frame empty"));
+    }
+    CloseSession();
+    return;
+  }
+  if (payload_len > config_.max_frame_bytes) {
+    read_inflight_ = false;
+    if (on_frame_) {
+      on_frame_(Error("length-prefixed frame too large"));
+    }
+    CloseSession();
+    return;
+  }
+  if (payload_len == 0) {
+    DeliverFrame({});
+    return;
+  }
+  payload_buf_.resize(static_cast<size_t>(payload_len));
+  auto self = shared_from_this();
+  libp2p::read(stream_, payload_buf_, [self](outcome::result<void> body_result) { self->OnReadBody(body_result); });
+}
+
+void DuplexFrameSession::OnReadBody(outcome::result<void> result) {
+  if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_)) {
+    read_inflight_ = false;
+    CloseSession();
+    return;
+  }
+  if (!result) {
+    read_inflight_ = false;
+    CloseSession();
+    return;
+  }
+  DeliverFrame(std::vector<uint8_t>(payload_buf_.begin(), payload_buf_.end()));
+}
+
+void DuplexFrameSession::DeliverFrame(std::vector<uint8_t> body) {
+  read_inflight_ = false;
+  bool keep_open = true;
+  if (on_frame_) {
+    keep_open = on_frame_(std::move(body));
+  }
+  if (!keep_open || !running_.load(std::memory_order_acquire)) {
+    CloseSession();
+    return;
+  }
+  PumpWrite();
+  MaybeResumeRead();
+}
+
+void DuplexFrameSession::PumpWrite() {
+  if (!running_.load(std::memory_order_acquire) || write_inflight_ || !stream_) {
+    MaybeResumeRead();
+    return;
+  }
+  if (outbound_.empty()) {
+    MaybeResumeRead();
+    return;
+  }
+  auto frame = outbound_.front();
+  outbound_.erase(outbound_.begin());
+  write_inflight_ = true;
+  auto self = shared_from_this();
+  libp2p::write(stream_, *frame, [self, frame](outcome::result<void> result) {
+    self->write_inflight_ = false;
+    if (!self->running_.load(std::memory_order_acquire)) {
+      return;
+    }
+    if (!result) {
+      self->CloseSession();
+      return;
+    }
+    self->PumpWrite();
+  });
+}
+
+void DuplexFrameSession::MaybeResumeRead() {
+  if (!running_.load(std::memory_order_acquire) || read_inflight_ || write_inflight_ ||
+      !outbound_.empty() || IsCancelled(is_cancelled_) || !stream_) {
+    return;
+  }
+  BeginRead();
+}
+
+void DuplexFrameSession::CloseSession() {
+  if (!running_.exchange(false, std::memory_order_acq_rel)) {
+    return;
+  }
+  read_inflight_ = false;
+  write_inflight_ = false;
+  outbound_.clear();
+  stream_.reset();
+  on_frame_ = {};
+  is_cancelled_ = {};
+  if (on_closed_) {
+    on_closed_();
+  }
+  on_closed_ = {};
+}
+
 } // namespace pbr

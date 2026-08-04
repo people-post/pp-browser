@@ -101,4 +101,44 @@ private:
   libp2p::Bytes chunk_buf_;
 };
 
+/**
+ * Serialized length-prefixed duplex on one Yamux stream (host io thread).
+ * Never overlaps read and write — inbound frames invoke handler; outbound bodies queue.
+ */
+class DuplexFrameSession : public std::enable_shared_from_this<DuplexFrameSession> {
+public:
+  /** Return false to close the session. */
+  using FrameHandler = std::function<bool(Roe<std::vector<uint8_t>> body)>;
+  using ClosedCallback = std::function<void()>;
+
+  void Start(std::shared_ptr<libp2p::connection::Stream> stream, FrameHandler on_frame,
+             StreamCancelCheck is_cancelled, LengthPrefixedFrameConfig config = {},
+             ClosedCallback on_closed = {});
+  void Stop();
+
+  /** Queue a frame body (length prefix added on write). Io-thread safe after Start. */
+  bool EnqueueOutbound(std::vector<uint8_t> body);
+
+private:
+  void BeginRead();
+  void OnReadHeader(outcome::result<void> result);
+  void OnReadBody(outcome::result<void> result);
+  void DeliverFrame(std::vector<uint8_t> body);
+  void PumpWrite();
+  void MaybeResumeRead();
+  void CloseSession();
+
+  std::shared_ptr<libp2p::connection::Stream> stream_;
+  FrameHandler on_frame_;
+  StreamCancelCheck is_cancelled_;
+  ClosedCallback on_closed_;
+  LengthPrefixedFrameConfig config_;
+  std::atomic<bool> running_{false};
+  bool read_inflight_ = false;
+  bool write_inflight_ = false;
+  libp2p::Bytes header_buf_;
+  libp2p::Bytes payload_buf_;
+  std::vector<std::shared_ptr<std::vector<uint8_t>>> outbound_;
+};
+
 } // namespace pbr

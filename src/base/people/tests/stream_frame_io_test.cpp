@@ -296,6 +296,64 @@ TEST_F(StreamFrameIoTest, StreamBridgeCopiesBytes) {
   bridge_cancelled.store(true, std::memory_order_release);
 }
 
+TEST_F(StreamFrameIoTest, DuplexSessionEchoesOnSameStream) {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool got = false;
+  std::vector<uint8_t> received;
+
+  b_host_.GetHost().setProtocolHandler(
+      {ProtocolName{kStreamFrameIoTestProtocol}},
+      [&](libp2p::StreamAndProtocol stream_in) {
+        auto stream = std::move(stream_in.stream);
+        b_host_.Post([&, stream = std::move(stream)]() mutable {
+          auto duplex = std::make_shared<DuplexFrameSession>();
+          duplex->Start(
+              stream,
+              [&, duplex](Roe<std::vector<uint8_t>> frame) {
+                if (!frame) {
+                  return false;
+                }
+                duplex->EnqueueOutbound(*frame);
+                {
+                  std::lock_guard lock(mu);
+                  received = *frame;
+                  got = true;
+                }
+                cv.notify_one();
+                return true;
+              },
+              [] { return false; });
+        });
+      });
+
+  std::promise<outcome::result<libp2p::StreamAndProtocol>> open_promise;
+  auto open_future = open_promise.get_future();
+  a_sessions_->OpenStream("b", {ProtocolName{kStreamFrameIoTestProtocol}},
+                          [&](outcome::result<libp2p::StreamAndProtocol> result) {
+                            open_promise.set_value(std::move(result));
+                          });
+  auto open_res = open_future.get();
+  ASSERT_TRUE(open_res);
+  auto client_stream = open_res.value().stream;
+
+  const std::vector<uint8_t> payload = {'d', 'u', 'p', 'l', 'e', 'x'};
+  auto write_result =
+      RunOnWorker<Roe<void>>(a_host_, [&] { return BlockingWriteLengthPrefixedFrame(client_stream, payload); });
+  ASSERT_TRUE(write_result) << write_result.error().message;
+
+  {
+    std::unique_lock lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got; }));
+  }
+  EXPECT_EQ(received, payload);
+
+  auto echo = RunOnWorker<Roe<std::vector<uint8_t>>>(
+      a_host_, [&] { return BlockingReadLengthPrefixedFrame(client_stream); });
+  ASSERT_TRUE(echo) << echo.error().message;
+  EXPECT_EQ(*echo, payload);
+}
+
 TEST(Libp2pSchedulerTest, PostsControlToWorkerPool) {
   Libp2pHost host;
   Libp2pHostConfig cfg;

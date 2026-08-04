@@ -74,21 +74,6 @@ Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
   return root;
 }
 
-void PostWriteBody(Libp2pHost& host, const std::shared_ptr<Stream>& stream, std::vector<uint8_t> body) {
-  if (!stream) {
-    return;
-  }
-  host.Post([stream, body = std::move(body)]() { (void)BlockingWriteLengthPrefixedFrame(stream, body); });
-}
-
-void PostWriteJson(Libp2pHost& host, const std::shared_ptr<Stream>& stream, const nlohmann::json& root) {
-  if (!stream) {
-    return;
-  }
-  const std::string json = root.dump();
-  host.Post([stream, json]() { (void)BlockingWriteStreamJson(stream, json); });
-}
-
 int64_t OrDefault(int64_t configured, int64_t fallback) {
   return configured > 0 ? configured : fallback;
 }
@@ -102,18 +87,14 @@ uint64_t SubKey(uint32_t stream_id, uint16_t channel_id) {
   return (static_cast<uint64_t>(stream_id) << 16) | channel_id;
 }
 
-struct ParticipantAsyncIo {
-  std::shared_ptr<std::atomic<bool>> cancelled;
-  std::shared_ptr<AsyncLengthPrefixedReader> reader;
-};
-
 struct HostParticipant {
   std::string peer_id;
   std::shared_ptr<Stream> stream;
   /** Set for in-call hop local publisher (no network stream). */
   std::function<void(MediaDataFrame)> local_on_frame;
   std::mutex write_mu; // serializes hop→client writes (fanout vs control acks) — sync path only
-  std::shared_ptr<ParticipantAsyncIo> async_io;
+  std::shared_ptr<DuplexFrameSession> duplex;
+  std::shared_ptr<std::atomic<bool>> duplex_cancelled;
   std::unordered_set<uint64_t> subscriptions;
   std::unordered_map<uint64_t, uint32_t> last_lossy_seq;
   int64_t a_up_bps = 0;
@@ -307,8 +288,11 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         }
         continue;
       }
-      if (out_stream) {
-        (void)BlockingWriteLengthPrefixedFrame(out_stream, body);
+      if (out_stream && host) {
+        // Cross-participant fanout: worker write while target duplex reads on io (sync-path pattern).
+        PostLibp2pWorker(*host, WorkerLane::Normal, [out_stream, body]() {
+          (void)BlockingWriteLengthPrefixedFrame(out_stream, body);
+        });
       }
     }
   }
@@ -400,8 +384,10 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
             << "hop subscribe peer=" << part->peer_id << " stream=" << root.value("stream_id", 0u)
             << " ch=" << root.value("channel_id", 0) << " call=" << session->call_id
             << " parts=" << session->participants.size();
-        if (async && part->stream && host) {
-          PostWriteJson(*host, part->stream, {{"v", 1}, {"ok", true}, {"op", "subscribe"}});
+        if (async && part->duplex) {
+          const std::string json =
+              nlohmann::json({{"v", 1}, {"ok", true}, {"op", "subscribe"}}).dump();
+          part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
         } else {
           std::lock_guard<std::mutex> wlock(part->write_mu);
           (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "subscribe"}});
@@ -412,15 +398,18 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           part->subscriptions.erase(SubKey(root.value("stream_id", 0u),
                                              static_cast<uint16_t>(root.value("channel_id", 0))));
         }
-        if (async && part->stream && host) {
-          PostWriteJson(*host, part->stream, {{"v", 1}, {"ok", true}, {"op", "unsubscribe"}});
+        if (async && part->duplex) {
+          const std::string json =
+              nlohmann::json({{"v", 1}, {"ok", true}, {"op", "unsubscribe"}}).dump();
+          part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
         } else {
           std::lock_guard<std::mutex> wlock(part->write_mu);
           (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "unsubscribe"}});
         }
       } else if (op == "detach") {
-        if (async && part->stream && host) {
-          PostWriteJson(*host, part->stream, {{"v", 1}, {"ok", true}, {"op", "detach"}});
+        if (async && part->duplex) {
+          const std::string json = nlohmann::json({{"v", 1}, {"ok", true}, {"op", "detach"}}).dump();
+          part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
         } else {
           std::lock_guard<std::mutex> wlock(part->write_mu);
           (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "detach"}});
@@ -446,14 +435,12 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
 
   void CleanupParticipant(const std::shared_ptr<HostSession>& session,
                           const std::shared_ptr<HostParticipant>& part) {
-    if (part->async_io) {
-      if (part->async_io->cancelled) {
-        part->async_io->cancelled->store(true, std::memory_order_release);
-      }
-      if (part->async_io->reader) {
-        part->async_io->reader->Stop();
-      }
-      part->async_io.reset();
+    if (part->duplex_cancelled) {
+      part->duplex_cancelled->store(true, std::memory_order_release);
+    }
+    if (part->duplex) {
+      part->duplex->Stop();
+      part->duplex.reset();
     }
     std::lock_guard<std::mutex> lock(mu);
     session->participants.erase(std::remove_if(session->participants.begin(), session->participants.end(),
@@ -471,30 +458,32 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     if (!host || !part->stream) {
       return;
     }
-    part->async_io = std::make_shared<ParticipantAsyncIo>();
-    part->async_io->cancelled = std::make_shared<std::atomic<bool>>(false);
+    part->duplex = std::make_shared<DuplexFrameSession>();
+    part->duplex_cancelled = std::make_shared<std::atomic<bool>>(false);
+    auto done = std::make_shared<std::promise<void>>();
+    auto fut = done->get_future();
     auto self = shared_from_this();
-    host->Post([self, session, part]() {
-      if (!part->async_io || !part->stream) {
+    host->Post([self, session, part, done]() {
+      if (!part->duplex || !part->stream) {
+        done->set_value();
         return;
       }
-      part->async_io->reader = std::make_shared<AsyncLengthPrefixedReader>();
-      const auto cancel_check = [cancelled = part->async_io->cancelled]() {
-        return cancelled->load(std::memory_order_acquire);
+      const auto cancel_check = [cancelled = part->duplex_cancelled]() {
+        return cancelled && cancelled->load(std::memory_order_acquire);
       };
-      part->async_io->reader->Start(
+      part->duplex->Start(
           part->stream,
           [self, session, part](Roe<std::vector<uint8_t>> frame_res) {
             if (!frame_res) {
-              self->CleanupParticipant(session, part);
-              return;
+              return false;
             }
-            if (!self->ProcessParticipantFrame(session, part, *frame_res)) {
-              self->CleanupParticipant(session, part);
-            }
+            return self->ProcessParticipantFrame(session, part, *frame_res);
           },
-          cancel_check, MediaDataFrameConfig());
+          cancel_check, MediaDataFrameConfig(),
+          [self, session, part]() { self->CleanupParticipant(session, part); });
+      done->set_value();
     });
+    fut.wait();
   }
 
   void StartParticipantAsync(const std::shared_ptr<HostSession>& session,
@@ -1053,7 +1042,6 @@ Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) 
 
 Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id) {
   std::shared_ptr<Stream> stream;
-  std::shared_ptr<ParticipantAsyncIo> async_io;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
     if (impl_->local_hop_part) {

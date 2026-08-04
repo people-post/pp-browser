@@ -21,6 +21,7 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 | **2** | Concurrent dial-back test | done |
 | **3** | Media relay structural split | done |
 | **3** | Media relay async + tests | done |
+| **3** | `DuplexFrameSession` per-stream serializer | done |
 | **3** | Wire `SetExecutorConfig` in hub/node | done |
 | **4** | Call-media uses shared primitives | pending |
 | **5** | Direct chat services | pending |
@@ -40,5 +41,5 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 ## Flags (`Libp2pExecutorConfig`)
 
 - `async_data_plane_circuit_relay` — default **true** (legacy path removed)
-- `async_data_plane_media_relay` — default **false**; hop inbound uses host-io async reader when true (client stays sync). Multi-participant fanout under Yamux needs follow-up.
+- `async_data_plane_media_relay` — default **false**; hop inbound uses `DuplexFrameSession` on host io when true
 - `async_data_plane_dial_back` — default false (control-only; no long-lived pump)
