@@ -225,6 +225,13 @@ void Libp2pHost::Post(std::function<void()> fn) {
   boost::asio::post(*io_context_, std::move(fn));
 }
 
+boost::asio::any_io_executor Libp2pHost::IoExecutor() const {
+  if (!io_context_) {
+    return boost::asio::any_io_executor{};
+  }
+  return io_context_->get_executor();
+}
+
 WorkerPool& Libp2pHost::GetWorkerPool() {
   assert(worker_pool_ != nullptr && "Libp2pHost::GetWorkerPool requires a private test pool");
   return *worker_pool_;

@@ -40,6 +40,8 @@ function(pp_browser_add_libp2p_integration)
     host/NodeRuntime.cpp
     host/DialBackService.cpp
     host/StreamJsonFrame.cpp
+    host/StreamFrameIo.cpp
+    host/Libp2pScheduler.cpp
     host/Reachability.cpp
     host/ReachabilityService.cpp
     host/NatTraversal.cpp

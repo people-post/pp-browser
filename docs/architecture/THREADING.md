@@ -136,11 +136,27 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | RmlUi / shell / input | UI |
 | libp2p dial, read handler setup, asio timer | libp2p reactor |
 | Periodic sync / hub policy | Coordinator timers |
-| libcurl, UPnP, Argon2, long DB, stream copy | Worker pool |
+| libcurl, UPnP, Argon2, long DB | Worker pool |
+| libp2p control RPC (short) | Worker pool |
+| libp2p data-plane stream pumps | Host io_context (async) |
 | Mic/camera encode | Call media threads |
 | Linux D-Bus | Notifier watch thread → UI activation handler |
 
-**Hard rule:** only worker pool threads may block on network or disk for longer than a few milliseconds.
+**Hard rule:** only worker pool threads may block on network or disk for longer than a few milliseconds — **except** libp2p **data-plane** stream pumps, which must run as non-blocking async chains on the host `io_context` (see below).
+
+### Libp2p integration executors
+
+Integration services under `src/libp2p/integration/host/` use three executor classes via `Libp2pScheduler`:
+
+| Class | Dispatch | Examples |
+|-------|----------|------------|
+| **Control** | App `WorkerPool` (`PostLibp2pWorker`) | dial waits, quote/attach handshake, `RequestBridge` RPC |
+| **Data** | `Libp2pHost::Post` (host io_context) | circuit byte pumps, media-relay frame read/fanout, call-media pump |
+| **Compute** | Optional service pool (headless) | blockchain batch verify (future) |
+
+Shared helpers: `StreamFrameIo` (`Blocking*` for control, `AsyncLengthPrefixedReader` / `StreamBridge` for data). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`.
+
+Migration tracker (temporary): [`tmp/libp2p-executor-migration.md`](../../tmp/libp2p-executor-migration.md).
 
 ---
 
