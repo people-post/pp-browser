@@ -2,9 +2,9 @@
 
 #include "base/people/RelayScope.h"
 #include "common/Error.h"
+#include "libp2p/integration/host/CircuitBridgeTarget.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
-#include "libp2p/integration/host/CircuitBridgeTarget.h"
 
 #include <libp2p/connection/stream.hpp>
 #include <memory>

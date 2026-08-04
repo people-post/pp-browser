@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 
+#include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 
@@ -67,6 +68,9 @@ public:
 
   /** Dispatch work onto the host io_context thread. */
   void Post(std::function<void()> fn);
+
+  /** Executor for host io_context (async pumps, strands). */
+  boost::asio::any_io_executor IoExecutor() const;
 
   /** Bounded worker pool for blocking protocol / HTTP hop-offs (not the io thread). */
   WorkerPool& GetWorkerPool();

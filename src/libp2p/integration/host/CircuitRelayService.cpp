@@ -1,6 +1,7 @@
 #include "libp2p/integration/host/CircuitRelayService.h"
 
 #include "libp2p/integration/host/Libp2pWorker.h"
+#include "libp2p/integration/host/StreamFrameIo.h"
 
 #include "base/people/RelayScope.h"
 #include "libp2p/integration/host/CircuitBridgeTarget.h"
@@ -13,7 +14,6 @@
 #include <libp2p/peer/protocol.hpp>
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -68,132 +68,6 @@ Roe<void> WriteExactFrame(const std::shared_ptr<Stream>& stream, const std::vect
   return {};
 }
 
-void BridgeStreams(Libp2pHost& host, const std::shared_ptr<Stream>& a, const std::shared_ptr<Stream>& b) {
-  auto pump = [&host](std::shared_ptr<Stream> from, std::shared_ptr<Stream> to) {
-    PostLibp2pWorker(host, WorkerLane::Normal, [from = std::move(from), to = std::move(to)]() mutable {
-      while (true) {
-        Bytes chunk(16 * 1024);
-        std::promise<outcome::result<void>> read_promise;
-        auto read_future = read_promise.get_future();
-        libp2p::read(from, chunk,
-                     [&](outcome::result<void> result) { read_promise.set_value(result); });
-        if (!read_future.get()) {
-          break;
-        }
-        std::promise<outcome::result<void>> write_promise;
-        auto write_future = write_promise.get_future();
-        libp2p::write(to, chunk, [&](outcome::result<void> result) { write_promise.set_value(result); });
-        if (!write_future.get()) {
-          break;
-        }
-      }
-      from->close([](auto&&) {});
-      to->close([](auto&&) {});
-    });
-  };
-  pump(a, b);
-  pump(b, a);
-}
-
-CircuitRelayBridgeResult RelayBridge(Libp2pHost& host, PeerSessionManager& sessions, const nlohmann::json& root,
-                                     const std::shared_ptr<Stream>& client_stream,
-                                     const CircuitRelayAdmissionPolicy& admission) {
-  CircuitRelayBridgeResult out;
-  if (root.value("op", "") != "bridge") {
-    out.error = "unsupported op";
-    return out;
-  }
-  std::string remote;
-  if (auto peer = client_stream->remotePeerId()) {
-    remote = peer.value().toBase58();
-  }
-  if (!RelayAdmissionAllowsDialer(admission.serve_scope_mask, remote, admission.contact_peer_ids)) {
-    out.error = "relay scope: stranger refused";
-    return out;
-  }
-
-  CircuitBridgeTarget target;
-  target.target_peer_id = root.value("target_peer_id", "");
-  target.target_multiaddr = root.value("target_multiaddr", "");
-  target.target_protocol = root.value("target_protocol", "");
-
-  auto normalized = NormalizeCircuitBridgeTarget(sessions, host, target);
-  if (!normalized) {
-    out.error = normalized.error().message;
-    return out;
-  }
-  const std::string& target_peer_id = normalized->first;
-  const std::string& resolved_multiaddr = normalized->second;
-  out.resolved_multiaddr = resolved_multiaddr;
-
-  const std::string target_key = target_peer_id;
-  if (auto registered = sessions.RegisterEndpoint(target_key, resolved_multiaddr); !registered) {
-    out.error = registered.error().message;
-    return out;
-  }
-  sessions.ClearDialBackoff(target_key);
-
-  const int timeout_ms = root.value("timeout_ms", 8000);
-  const auto wait_for = std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 8000);
-
-  auto dial_promise = std::make_shared<std::promise<Roe<void>>>();
-  auto dial_future = dial_promise->get_future();
-  sessions.EnsureConnection(target_key, [dial_promise](Roe<void> result) {
-    try {
-      dial_promise->set_value(std::move(result));
-    } catch (const std::future_error&) {
-    }
-  });
-  if (dial_future.wait_for(wait_for) != std::future_status::ready) {
-    out.error = "relay dial timed out";
-    return out;
-  }
-  auto dialed = dial_future.get();
-  if (!dialed) {
-    out.error = dialed.error().message;
-    return out;
-  }
-
-  libp2p::StreamProtocols protocols;
-  const std::string target_protocol = root.value("target_protocol", "");
-  if (!target_protocol.empty()) {
-    protocols.push_back(ProtocolName{target_protocol});
-  } else {
-    protocols.push_back(ProtocolName{kCircuitRelayProtocolId});
-  }
-
-  auto stream_promise = std::make_shared<std::promise<libp2p::StreamAndProtocolOrError>>();
-  auto stream_future = stream_promise->get_future();
-  sessions.OpenStream(target_key, protocols,
-                      [stream_promise](libp2p::StreamAndProtocolOrError res) {
-                        try {
-                          stream_promise->set_value(std::move(res));
-                        } catch (const std::future_error&) {
-                        }
-                      });
-  if (stream_future.wait_for(wait_for) != std::future_status::ready) {
-    out.error = "relay target stream timed out";
-    return out;
-  }
-  auto target_stream_res = stream_future.get();
-  if (!target_stream_res) {
-    out.error = "relay target stream failed";
-    return out;
-  }
-
-  nlohmann::json response = {{"v", 1}, {"ok", true}, {"resolved_multiaddr", resolved_multiaddr}};
-  if (auto encoded = EncodeStreamJsonFrame(response.dump())) {
-    if (!WriteExactFrame(client_stream, *encoded)) {
-      out.error = "failed to ack bridge";
-      return out;
-    }
-  }
-
-  BridgeStreams(host, client_stream, target_stream_res.value().stream);
-  out.ok = true;
-  return out;
-}
-
 } // namespace
 
 struct CircuitRelayService::Impl {
@@ -201,6 +75,14 @@ struct CircuitRelayService::Impl {
   Libp2pHost* host = nullptr;
   PeerSessionManager* sessions = nullptr;
   CircuitRelayAdmissionPolicy admission;
+
+  struct ActiveBridgeSession {
+    std::shared_ptr<std::atomic<bool>> cancelled;
+    std::shared_ptr<StreamBridge> to_target;
+    std::shared_ptr<StreamBridge> to_client;
+  };
+  std::mutex bridges_mu;
+  std::vector<std::shared_ptr<ActiveBridgeSession>> active_bridges;
 
   struct InflightBridge {
     std::shared_ptr<std::atomic<bool>> settled;
@@ -221,6 +103,141 @@ struct CircuitRelayService::Impl {
     inflight_bridges.clear();
   }
 
+  void CancelAllBridgesLocked() {
+    for (auto& session : active_bridges) {
+      if (session && session->cancelled) {
+        session->cancelled->store(true, std::memory_order_release);
+      }
+    }
+    active_bridges.clear();
+  }
+
+  void StartBridgeSession(const std::shared_ptr<Stream>& client, const std::shared_ptr<Stream>& target) {
+    if (!host) {
+      return;
+    }
+    auto session = std::make_shared<ActiveBridgeSession>();
+    session->cancelled = std::make_shared<std::atomic<bool>>(false);
+    const auto cancel_check = [cancelled = session->cancelled]() {
+      return cancelled->load(std::memory_order_acquire);
+    };
+    host->Post([this, session, client, target, cancel_check]() {
+      session->to_target = std::make_shared<StreamBridge>();
+      session->to_client = std::make_shared<StreamBridge>();
+      session->to_target->Start(client, target, cancel_check, [] {});
+      session->to_client->Start(target, client, cancel_check, [] {});
+      std::lock_guard lock(bridges_mu);
+      active_bridges.push_back(session);
+    });
+  }
+
+  CircuitRelayBridgeResult RelayBridge(const nlohmann::json& root, const std::shared_ptr<Stream>& client_stream) {
+    CircuitRelayBridgeResult out;
+    if (root.value("op", "") != "bridge") {
+      out.error = "unsupported op";
+      return out;
+    }
+    if (!host || !sessions) {
+      out.error = "circuit-relay service not ready";
+      return out;
+    }
+
+    std::string remote;
+    if (auto peer = client_stream->remotePeerId()) {
+      remote = peer.value().toBase58();
+    }
+    CircuitRelayAdmissionPolicy policy;
+    {
+      std::lock_guard lock(handler_mutex);
+      policy = admission;
+    }
+    if (!RelayAdmissionAllowsDialer(policy.serve_scope_mask, remote, policy.contact_peer_ids)) {
+      out.error = "relay scope: stranger refused";
+      return out;
+    }
+
+    CircuitBridgeTarget target;
+    target.target_peer_id = root.value("target_peer_id", "");
+    target.target_multiaddr = root.value("target_multiaddr", "");
+    target.target_protocol = root.value("target_protocol", "");
+
+    auto normalized = NormalizeCircuitBridgeTarget(*sessions, *host, target);
+    if (!normalized) {
+      out.error = normalized.error().message;
+      return out;
+    }
+    const std::string& target_peer_id = normalized->first;
+    const std::string& resolved_multiaddr = normalized->second;
+    out.resolved_multiaddr = resolved_multiaddr;
+
+    const std::string target_key = target_peer_id;
+    if (auto registered = sessions->RegisterEndpoint(target_key, resolved_multiaddr); !registered) {
+      out.error = registered.error().message;
+      return out;
+    }
+    sessions->ClearDialBackoff(target_key);
+
+    const int timeout_ms = root.value("timeout_ms", 8000);
+    const auto wait_for = std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 8000);
+
+    auto dial_promise = std::make_shared<std::promise<Roe<void>>>();
+    auto dial_future = dial_promise->get_future();
+    sessions->EnsureConnection(target_key, [dial_promise](Roe<void> result) {
+      try {
+        dial_promise->set_value(std::move(result));
+      } catch (const std::future_error&) {
+      }
+    });
+    if (dial_future.wait_for(wait_for) != std::future_status::ready) {
+      out.error = "relay dial timed out";
+      return out;
+    }
+    auto dialed = dial_future.get();
+    if (!dialed) {
+      out.error = dialed.error().message;
+      return out;
+    }
+
+    libp2p::StreamProtocols protocols;
+    const std::string target_protocol = root.value("target_protocol", "");
+    if (!target_protocol.empty()) {
+      protocols.push_back(ProtocolName{target_protocol});
+    } else {
+      protocols.push_back(ProtocolName{kCircuitRelayProtocolId});
+    }
+
+    auto stream_promise = std::make_shared<std::promise<libp2p::StreamAndProtocolOrError>>();
+    auto stream_future = stream_promise->get_future();
+    sessions->OpenStream(target_key, protocols,
+                        [stream_promise](libp2p::StreamAndProtocolOrError res) {
+                          try {
+                            stream_promise->set_value(std::move(res));
+                          } catch (const std::future_error&) {
+                          }
+                        });
+    if (stream_future.wait_for(wait_for) != std::future_status::ready) {
+      out.error = "relay target stream timed out";
+      return out;
+    }
+    auto target_stream_res = stream_future.get();
+    if (!target_stream_res) {
+      out.error = "relay target stream failed";
+      return out;
+    }
+
+    nlohmann::json response = {{"v", 1}, {"ok", true}, {"resolved_multiaddr", resolved_multiaddr}};
+    if (auto encoded = EncodeStreamJsonFrame(response.dump())) {
+      if (!WriteExactFrame(client_stream, *encoded)) {
+        out.error = "failed to ack bridge";
+        return out;
+      }
+    }
+
+    StartBridgeSession(client_stream, target_stream_res.value().stream);
+    out.ok = true;
+    return out;
+  }
+
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol) {
     auto stream = std::move(stream_and_protocol.stream);
     Libp2pHost* host_for_post = nullptr;
@@ -232,15 +249,6 @@ struct CircuitRelayService::Impl {
       return;
     }
     PostLibp2pWorker(*host_for_post, WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
-      CircuitRelayAdmissionPolicy policy;
-      Libp2pHost* host_ptr = nullptr;
-      PeerSessionManager* sessions_ptr = nullptr;
-      {
-        std::lock_guard<std::mutex> lock(handler_mutex);
-        policy = admission;
-        host_ptr = host;
-        sessions_ptr = sessions;
-      }
       CircuitRelayBridgeResult result;
       auto frame = ReadExactFrame(stream);
       if (!frame) {
@@ -249,10 +257,8 @@ struct CircuitRelayService::Impl {
         nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
         if (root.is_discarded() || !root.is_object()) {
           result.error = "invalid circuit-relay json";
-        } else if (!host_ptr || !sessions_ptr) {
-          result.error = "circuit-relay service not ready";
         } else {
-          result = RelayBridge(*host_ptr, *sessions_ptr, root, stream, policy);
+          result = RelayBridge(root, stream);
           if (result.ok) {
             return;
           }
@@ -294,6 +300,8 @@ void CircuitRelayService::Start() {
 void CircuitRelayService::Stop() {
   started_ = false;
   AbortInflightRequests();
+  std::lock_guard lock(impl_->bridges_mu);
+  impl_->CancelAllBridgesLocked();
 }
 
 void CircuitRelayService::AbortInflightRequests() {
@@ -376,57 +384,57 @@ Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::stri
                            return;
                          }
                          PostLibp2pWorker(host, WorkerLane::Normal,
-                                                   [frame, settled, finish, stream_res = std::move(stream_res)]() mutable {
-                           if (settled->load(std::memory_order_acquire)) {
-                             return;
-                           }
-                           if (!stream_res) {
-                             finish(Error("circuit-relay stream open failed"));
-                             return;
-                           }
-                           auto stream = std::move(stream_res.value().stream);
-                           if (!WriteExactFrame(stream, frame)) {
-                             finish(Error("Failed to send circuit-relay request"));
-                             return;
-                           }
-                           if (settled->load(std::memory_order_acquire)) {
-                             stream->close([](auto&&) {});
-                             return;
-                           }
-                           auto response_frame = ReadExactFrame(stream);
-                           if (settled->load(std::memory_order_acquire)) {
-                             stream->close([](auto&&) {});
-                             return;
-                           }
-                           if (!response_frame) {
-                             finish(Error("Failed to read circuit-relay response"));
-                             stream->close([](auto&&) {});
-                             return;
-                           }
-                           auto json_utf8 = DecodeStreamJsonFrame(*response_frame);
-                           if (!json_utf8) {
-                             finish(json_utf8.error());
-                             stream->close([](auto&&) {});
-                             return;
-                           }
-                           nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
-                           if (root.is_discarded() || !root.is_object()) {
-                             finish(Error("invalid circuit-relay response"));
-                             stream->close([](auto&&) {});
-                             return;
-                           }
-                           CircuitRelayBridgeResult parsed;
-                           parsed.ok = root.value("ok", false);
-                           parsed.error = root.value("error", "");
-                           parsed.resolved_multiaddr = root.value("resolved_multiaddr", "");
-                           if (!parsed.ok) {
-                             stream->close([](auto&&) {});
-                             finish(parsed);
-                             return;
-                           }
-                           parsed.stream = stream;
-                           finish(parsed);
-                         });
+                                          [frame, settled, finish, stream_res = std::move(stream_res)]() mutable {
+                                            if (settled->load(std::memory_order_acquire)) {
+                                              return;
+                                            }
+                                            if (!stream_res) {
+                                              finish(Error("circuit-relay stream open failed"));
+                                              return;
+                                            }
+                                            auto stream = std::move(stream_res.value().stream);
+                                            if (!WriteExactFrame(stream, frame)) {
+                                              finish(Error("Failed to send circuit-relay request"));
+                                              return;
+                                            }
+                                            if (settled->load(std::memory_order_acquire)) {
+                                              stream->close([](auto&&) {});
+                                              return;
+                                            }
+                                            auto response_frame = ReadExactFrame(stream);
+                                            if (settled->load(std::memory_order_acquire)) {
+                                              stream->close([](auto&&) {});
+                                              return;
+                                            }
+                                            if (!response_frame) {
+                                              finish(Error("Failed to read circuit-relay response"));
+                                              stream->close([](auto&&) {});
+                                              return;
+                                            }
+                                            auto json_utf8 = DecodeStreamJsonFrame(*response_frame);
+                                            if (!json_utf8) {
+                                              finish(json_utf8.error());
+                                              stream->close([](auto&&) {});
+                                              return;
+                                            }
+                                            nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
+                                            if (root.is_discarded() || !root.is_object()) {
+                                              finish(Error("invalid circuit-relay response"));
+                                              stream->close([](auto&&) {});
+                                              return;
+                                            }
+                                            CircuitRelayBridgeResult parsed;
+                                            parsed.ok = root.value("ok", false);
+                                            parsed.error = root.value("error", "");
+                                            parsed.resolved_multiaddr = root.value("resolved_multiaddr", "");
+                                            if (!parsed.ok) {
+                                              stream->close([](auto&&) {});
+                                              finish(parsed);
+                                              return;
+                                            }
+                                            parsed.stream = stream;
+                                            finish(parsed);
+                                          });
                        });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;

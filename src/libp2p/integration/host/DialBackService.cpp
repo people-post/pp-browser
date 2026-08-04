@@ -1,14 +1,12 @@
 #include "libp2p/integration/host/DialBackService.h"
 
 #include "libp2p/integration/host/Libp2pWorker.h"
+#include "libp2p/integration/host/StreamJsonFrame.h"
 
-#include <libp2p/basic/read.hpp>
-#include <libp2p/basic/write.hpp>
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/host/host.hpp>
 #include <libp2p/peer/protocol.hpp>
 
-#include <algorithm>
 #include <chrono>
 #include <future>
 #include <memory>
@@ -19,80 +17,8 @@ namespace pbr {
 
 namespace {
 
-using libp2p::Bytes;
 using libp2p::connection::Stream;
 using libp2p::peer::ProtocolName;
-
-constexpr size_t kMaxDialBackJsonBytes = 64 * 1024;
-
-Roe<std::vector<uint8_t>> EncodeJsonFrame(const std::string& json_utf8) {
-  if (json_utf8.size() > kMaxDialBackJsonBytes) {
-    return Error("dial-back frame too large");
-  }
-  std::vector<uint8_t> frame(8 + json_utf8.size());
-  uint64_t len = json_utf8.size();
-  for (int i = 7; i >= 0; --i) {
-    frame[static_cast<size_t>(i)] = static_cast<uint8_t>(len & 0xff);
-    len >>= 8;
-  }
-  std::copy(json_utf8.begin(), json_utf8.end(), frame.begin() + 8);
-  return frame;
-}
-
-Roe<std::string> DecodeJsonFrame(const std::vector<uint8_t>& frame_bytes) {
-  if (frame_bytes.size() < 8) {
-    return Error("dial-back frame truncated");
-  }
-  uint64_t payload_len = 0;
-  for (size_t i = 0; i < 8; ++i) {
-    payload_len = (payload_len << 8) | frame_bytes[i];
-  }
-  if (payload_len > kMaxDialBackJsonBytes || frame_bytes.size() != 8 + payload_len) {
-    return Error("dial-back frame length mismatch");
-  }
-  return std::string(frame_bytes.begin() + 8, frame_bytes.end());
-}
-
-Roe<std::vector<uint8_t>> ReadExactFrame(const std::shared_ptr<Stream>& stream) {
-  Bytes header(8);
-  std::promise<outcome::result<void>> header_promise;
-  auto header_future = header_promise.get_future();
-  libp2p::read(stream, header, [&](outcome::result<void> result) { header_promise.set_value(result); });
-  if (!header_future.get()) {
-    return Error("Failed to read dial-back frame header");
-  }
-
-  std::vector<uint8_t> frame(header.begin(), header.end());
-  uint64_t payload_len = 0;
-  for (size_t i = 0; i < 8; ++i) {
-    payload_len = (payload_len << 8) | frame[i];
-  }
-  if (payload_len > kMaxDialBackJsonBytes) {
-    return Error("dial-back frame too large");
-  }
-
-  Bytes payload(payload_len);
-  std::promise<outcome::result<void>> body_promise;
-  auto body_future = body_promise.get_future();
-  libp2p::read(stream, payload, [&](outcome::result<void> result) { body_promise.set_value(result); });
-  if (!body_future.get()) {
-    return Error("Failed to read dial-back frame body");
-  }
-
-  frame.insert(frame.end(), payload.begin(), payload.end());
-  return frame;
-}
-
-Roe<void> WriteExactFrame(const std::shared_ptr<Stream>& stream, const std::vector<uint8_t>& frame) {
-  std::promise<outcome::result<void>> write_promise;
-  auto write_future = write_promise.get_future();
-  // Yamux WriteQueue stores BytesIn (span) — never pass a temporary Bytes(...).
-  libp2p::write(stream, frame, [&](outcome::result<void> result) { write_promise.set_value(result); });
-  if (!write_future.get()) {
-    return Error("Failed to write dial-back frame");
-  }
-  return {};
-}
 
 DialBackProbeResult DialTargets(PeerSessionManager& sessions,
                                 const std::vector<std::string>& targets,
@@ -154,18 +80,13 @@ struct DialBackService::Impl {
   PeerSessionManager* sessions = nullptr;
 
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol) {
-    // Protocol handlers run on the host io thread — do not block it (dial would deadlock).
+    // Protocol handlers run on the host io thread — hop to control worker before blocking I/O.
     if (!host) {
       return;
     }
     auto stream = std::move(stream_and_protocol.stream);
     PostLibp2pWorker(*host, WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
-      auto frame = ReadExactFrame(stream);
-      if (!frame) {
-        stream->close([](auto&&) {});
-        return;
-      }
-      auto json_utf8 = DecodeJsonFrame(*frame);
+      auto json_utf8 = BlockingReadStreamJson(stream);
       if (!json_utf8) {
         stream->close([](auto&&) {});
         return;
@@ -200,9 +121,7 @@ struct DialBackService::Impl {
           {"dialed", result.dialed},
           {"error", result.error},
       };
-      if (auto encoded = EncodeJsonFrame(response.dump())) {
-        (void)WriteExactFrame(stream, *encoded);
-      }
+      (void)BlockingWriteStreamJson(stream, response.dump());
       stream->close([](auto&&) {});
     });
   }
@@ -252,51 +171,46 @@ Roe<DialBackProbeResult> DialBackService::Probe(const std::string& seed_peer_key
       {"target_multiaddrs", target_multiaddrs},
       {"timeout_ms", timeout_ms > 0 ? timeout_ms : 8000},
   };
-  auto frame = EncodeJsonFrame(request.dump());
-  if (!frame) {
-    return frame.error();
-  }
 
   std::shared_ptr<std::promise<Roe<DialBackProbeResult>>> result_promise =
       std::make_shared<std::promise<Roe<DialBackProbeResult>>>();
   auto result_future = result_promise->get_future();
 
   sessions_.OpenStream(seed_peer_key, {ProtocolName{kDialBackProtocolId}},
-                       [&host = host_, frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
+                       [&host = host_, request = request.dump(), result_promise](
+                           libp2p::StreamAndProtocolOrError stream_res) {
                          // newStream callbacks run on the host io thread — hop off before blocking I/O.
                          PostLibp2pWorker(host, WorkerLane::Normal,
-                                                   [frame, result_promise, stream_res = std::move(stream_res)]() mutable {
-                           if (!stream_res) {
-                             result_promise->set_value(Error("dial-back stream open failed"));
-                             return;
-                           }
-                           auto stream = std::move(stream_res.value().stream);
-                           if (!WriteExactFrame(stream, frame)) {
-                             result_promise->set_value(Error("Failed to send dial-back probe"));
-                             return;
-                           }
-                           auto response_frame = ReadExactFrame(stream);
-                           stream->close([](auto&&) {});
-                           if (!response_frame) {
-                             result_promise->set_value(Error("Failed to read dial-back response"));
-                             return;
-                           }
-                           auto json_utf8 = DecodeJsonFrame(*response_frame);
-                           if (!json_utf8) {
-                             result_promise->set_value(json_utf8.error());
-                             return;
-                           }
-                           nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
-                           if (root.is_discarded() || !root.is_object()) {
-                             result_promise->set_value(Error("invalid dial-back response"));
-                             return;
-                           }
-                           DialBackProbeResult parsed;
-                           parsed.ok = root.value("ok", false);
-                           parsed.dialed = root.value("dialed", "");
-                           parsed.error = root.value("error", "");
-                           result_promise->set_value(parsed);
-                         });
+                                          [request, result_promise,
+                                           stream_res = std::move(stream_res)]() mutable {
+                                            if (!stream_res) {
+                                              result_promise->set_value(Error("dial-back stream open failed"));
+                                              return;
+                                            }
+                                            auto stream = std::move(stream_res.value().stream);
+                                            if (!BlockingWriteStreamJson(stream, request)) {
+                                              result_promise->set_value(Error("Failed to send dial-back probe"));
+                                              return;
+                                            }
+                                            auto response_json = BlockingReadStreamJson(stream);
+                                            stream->close([](auto&&) {});
+                                            if (!response_json) {
+                                              result_promise->set_value(
+                                                  Error("Failed to read dial-back response"));
+                                              return;
+                                            }
+                                            nlohmann::json root =
+                                                nlohmann::json::parse(*response_json, nullptr, false);
+                                            if (root.is_discarded() || !root.is_object()) {
+                                              result_promise->set_value(Error("invalid dial-back response"));
+                                              return;
+                                            }
+                                            DialBackProbeResult parsed;
+                                            parsed.ok = root.value("ok", false);
+                                            parsed.dialed = root.value("dialed", "");
+                                            parsed.error = root.value("error", "");
+                                            result_promise->set_value(parsed);
+                                          });
                        });
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;

@@ -3,6 +3,7 @@
 #include "common/Module.h"
 #include "libp2p/integration/host/CallMediaFrameCrypto.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
+#include "libp2p/integration/host/StreamFrameIo.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/basic/read.hpp>
@@ -32,70 +33,24 @@ using libp2p::peer::ProtocolName;
 constexpr size_t kMaxCallMediaFrameBytes = 16 * 1024;
 constexpr size_t kMaxOutboundFrames = 64;
 
-std::vector<uint8_t> MakeLengthPrefixedFrame(const std::vector<uint8_t>& body) {
-  std::vector<uint8_t> frame(8 + body.size());
-  uint64_t len = body.size();
-  for (int i = 7; i >= 0; --i) {
-    frame[static_cast<size_t>(i)] = static_cast<uint8_t>(len & 0xff);
-    len >>= 8;
-  }
-  std::memcpy(frame.data() + 8, body.data(), body.size());
-  return frame;
-}
-
-Roe<std::vector<uint8_t>> ReadExactFrame(const std::shared_ptr<Stream>& stream) {
-  Bytes header(8);
-  std::promise<outcome::result<void>> header_promise;
-  auto header_future = header_promise.get_future();
-  libp2p::read(stream, header, [&](outcome::result<void> result) { header_promise.set_value(result); });
-  auto header_res = header_future.get();
-  if (!header_res) {
-    return Error(std::string("Failed to read call-media frame header: ") + header_res.error().message());
-  }
-  uint64_t payload_len = 0;
-  for (size_t i = 0; i < 8; ++i) {
-    payload_len = (payload_len << 8) | header[i];
-  }
-  if (payload_len == 0) {
-    return Error("call-media frame empty");
-  }
-  if (payload_len > kMaxCallMediaFrameBytes) {
-    return Error("call-media frame too large len=" + std::to_string(payload_len));
-  }
-  Bytes payload(static_cast<size_t>(payload_len));
-  std::promise<outcome::result<void>> body_promise;
-  auto body_future = body_promise.get_future();
-  libp2p::read(stream, payload, [&](outcome::result<void> result) { body_promise.set_value(result); });
-  auto body_res = body_future.get();
-  if (!body_res) {
-    return Error(std::string("Failed to read call-media frame body len=") + std::to_string(payload_len) +
-                 ": " + body_res.error().message());
-  }
-  return std::vector<uint8_t>(payload.begin(), payload.end());
+LengthPrefixedFrameConfig CallMediaFrameConfig() {
+  LengthPrefixedFrameConfig config;
+  config.max_frame_bytes = kMaxCallMediaFrameBytes;
+  config.allow_empty_body = false;
+  return config;
 }
 
 Roe<void> WriteJson(const std::shared_ptr<Stream>& stream, const nlohmann::json& root) {
-  auto encoded = EncodeStreamJsonFrame(root.dump());
-  if (!encoded) {
-    return encoded.error();
-  }
-  std::promise<outcome::result<void>> write_promise;
-  auto write_future = write_promise.get_future();
-  libp2p::write(stream, *encoded, [&](outcome::result<void> result) { write_promise.set_value(result); });
-  if (!write_future.get()) {
-    return Error("Failed to write call-media json");
-  }
-  return {};
+  return BlockingWriteStreamJson(stream, root.dump());
 }
 
 Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
-  // ReadExactFrame already strips the 8-byte length prefix — payload is raw UTF-8 JSON.
-  auto payload = ReadExactFrame(stream);
-  if (!payload) {
-    return payload.error();
+  auto json_utf8 = BlockingReadStreamJson(stream);
+  if (!json_utf8) {
+    return json_utf8.error();
   }
   nlohmann::json root =
-      nlohmann::json::parse(std::string(payload->begin(), payload->end()), nullptr, false);
+      nlohmann::json::parse(*json_utf8, nullptr, false);
   if (root.is_discarded() || !root.is_object()) {
     return Error("invalid call-media json");
   }
@@ -123,11 +78,11 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
   CallMediaDirectConnectParams active_params;
   CallMediaDirectCallbacks callbacks;
   std::atomic<bool> pump_running{false};
+  std::atomic<bool> session_ready{false};
   std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound_handler;
 
-  std::mutex outbound_mu;
-  std::deque<std::vector<uint8_t>> outbound_;
-  std::atomic<bool> kick_pending{false};
+  std::shared_ptr<DuplexFrameSession> duplex;
+  std::shared_ptr<std::atomic<bool>> duplex_cancelled;
   std::atomic<uint32_t> decrypt_fail_log_{0};
   std::atomic<uint32_t> drop_log_{0};
 
@@ -137,13 +92,56 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
   /** True while outbound hello/ack runs — reject glare inbound (dual-dial deadlock). */
   std::atomic<bool> outbound_hello_inflight{false};
 
-  // IO-thread-only media pump state (Yamux/Noise are not cross-thread safe).
-  enum class ReadPhase { Idle, Header, Body };
-  ReadPhase read_phase = ReadPhase::Idle;
-  bool write_inflight = false;
-  Bytes header_buf;
-  Bytes payload_buf;
+  bool HandleMediaFrame(Roe<std::vector<uint8_t>> frame_res) {
+    if (!frame_res || frame_res->empty()) {
+      return false;
+    }
+    if ((*frame_res)[0] == '{') {
+      return true;
+    }
+    CallMediaDirectConnectParams params;
+    CallMediaDirectCallbacks cbs;
+    {
+      std::lock_guard lock(mu);
+      params = active_params;
+      cbs = callbacks;
+    }
+    auto opus = DecryptCallMediaAudioFrame(params.media_key, params.call_id, params.media_epoch, *frame_res);
+    if (!opus) {
+      if ((decrypt_fail_log_.fetch_add(1) % 25) == 0) {
+        log().warning << "Call-media decrypt failed call_id=" << params.call_id
+                      << " epoch=" << params.media_epoch << " err=" << opus.error().message;
+      }
+      return true;
+    }
+    if (cbs.on_audio) {
+      cbs.on_audio(*opus);
+    }
+    return true;
+  }
 
+  void DetachLocked(bool abort_connect = true) {
+    outbound_hello_inflight.store(false, std::memory_order_release);
+    if (abort_connect) {
+      CompleteConnectLocked(Error("call-media aborted"));
+    }
+    pump_running.store(false);
+    session_ready.store(false, std::memory_order_release);
+    if (duplex_cancelled) {
+      duplex_cancelled->store(true, std::memory_order_release);
+    }
+    if (duplex) {
+      duplex->Stop();
+      duplex.reset();
+    }
+    duplex_cancelled.reset();
+    if (stream) {
+      CloseQuiet(stream);
+      stream.reset();
+    }
+    callbacks = {};
+    active_params = {};
+  }
   void Fail(const std::string& message) {
     CallMediaDirectCallbacks cbs;
     {
@@ -172,27 +170,7 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     connect_promise.reset();
   }
 
-  void DetachLocked(bool abort_connect = true) {
-    outbound_hello_inflight.store(false, std::memory_order_release);
-    if (abort_connect) {
-      CompleteConnectLocked(Error("call-media aborted"));
-    }
-    pump_running.store(false);
-    {
-      std::lock_guard ol(outbound_mu);
-      outbound_.clear();
-    }
-    read_phase = ReadPhase::Idle;
-    write_inflight = false;
-    if (stream) {
-      CloseQuiet(stream);
-      stream.reset();
-    }
-    callbacks = {};
-    active_params = {};
-  }
-
-  /** First successful hello wins; loser closes. Completes pending Connect as success. */
+  /** First successful hello wins; loser closes. */
   bool TryAdoptStreamLocked(std::shared_ptr<Stream> s, CallMediaDirectConnectParams params,
                             CallMediaDirectCallbacks cbs) {
     if (stream) {
@@ -201,189 +179,59 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     stream = std::move(s);
     active_params = std::move(params);
     callbacks = std::move(cbs);
-    // Inbound (or racing outbound) won — unblock Connect waiter as success.
-    CompleteConnectLocked({});
     return true;
+  }
+
+  void StartMediaDuplex(std::function<void()> on_ready = {}) {
+    pump_running.store(true, std::memory_order_release);
+    std::shared_ptr<Stream> s;
+    {
+      std::lock_guard lock(mu);
+      s = stream;
+    }
+    if (!s || !host) {
+      return;
+    }
+    duplex = std::make_shared<DuplexFrameSession>();
+    duplex_cancelled = std::make_shared<std::atomic<bool>>(false);
+    auto self = shared_from_this();
+    host->Post([self, s, on_ready = std::move(on_ready)]() mutable {
+      if (!self->duplex || !self->pump_running.load()) {
+        return;
+      }
+      const auto on_drop = [self]() {
+        if ((self->drop_log_.fetch_add(1) % 50) == 0) {
+          self->log().warning << "Call-media outbound queue full; dropping oldest";
+        }
+      };
+      self->duplex->Start(
+          s,
+          [self](Roe<std::vector<uint8_t>> frame) { return self->HandleMediaFrame(std::move(frame)); },
+          [cancelled = self->duplex_cancelled]() {
+            return cancelled && cancelled->load(std::memory_order_acquire);
+          },
+          CallMediaFrameConfig(),
+          [self]() { self->Fail("call-media stream closed"); }, kMaxOutboundFrames, on_drop,
+          /*write_preferred=*/true);
+      self->session_ready.store(true, std::memory_order_release);
+      if (on_ready) {
+        on_ready();
+      }
+    });
   }
 
   bool EnqueueOutbound(std::vector<uint8_t> body) {
-    {
-      std::lock_guard ol(outbound_mu);
-      if (!pump_running.load()) {
-        return false;
-      }
-      if (outbound_.size() >= kMaxOutboundFrames) {
-        outbound_.pop_front();
-        if ((drop_log_.fetch_add(1) % 50) == 0) {
-          log().warning << "Call-media outbound queue full; dropping oldest";
-        }
-      }
-      outbound_.push_back(std::move(body));
-    }
-    Kick();
-    return true;
-  }
-
-  void Kick() {
     if (!host || !pump_running.load()) {
-      return;
-    }
-    bool expected = false;
-    if (!kick_pending.compare_exchange_strong(expected, true)) {
-      return;
+      return false;
     }
     auto self = shared_from_this();
-    host->Post([self]() {
-      self->kick_pending.store(false);
-      if (!self->pump_running.load()) {
+    host->Post([self, body = std::move(body)]() mutable {
+      if (!self->duplex || !self->pump_running.load()) {
         return;
       }
-      self->PumpIo();
+      self->duplex->EnqueueOutbound(std::move(body));
     });
-  }
-
-  void StartIoPump() {
-    if (pump_running.exchange(true)) {
-      Kick();
-      return;
-    }
-    Kick();
-  }
-
-  /** Runs only on host io_context thread. */
-  void PumpIo() {
-    TryWriteIo();
-    TryReadIo();
-  }
-
-  void TryWriteIo() {
-    if (!pump_running.load() || write_inflight) {
-      return;
-    }
-    std::shared_ptr<Stream> s;
-    {
-      std::lock_guard lock(mu);
-      s = stream;
-    }
-    if (!s) {
-      return;
-    }
-
-    std::vector<uint8_t> body;
-    {
-      std::lock_guard ol(outbound_mu);
-      if (outbound_.empty()) {
-        return;
-      }
-      body = std::move(outbound_.front());
-      outbound_.pop_front();
-    }
-
-    auto frame = std::make_shared<std::vector<uint8_t>>(MakeLengthPrefixedFrame(body));
-    write_inflight = true;
-    auto self = shared_from_this();
-    libp2p::write(s, *frame, [self, frame](outcome::result<void> result) {
-      self->write_inflight = false;
-      if (!self->pump_running.load()) {
-        return;
-      }
-      if (!result) {
-        self->Fail("Failed to write call-media frame");
-        return;
-      }
-      self->PumpIo();
-    });
-  }
-
-  void TryReadIo() {
-    if (!pump_running.load() || read_phase != ReadPhase::Idle) {
-      return;
-    }
-    std::shared_ptr<Stream> s;
-    {
-      std::lock_guard lock(mu);
-      s = stream;
-    }
-    if (!s) {
-      return;
-    }
-
-    header_buf.assign(8, 0);
-    read_phase = ReadPhase::Header;
-    auto self = shared_from_this();
-    libp2p::read(s, header_buf, [self](outcome::result<void> result) {
-      if (!self->pump_running.load()) {
-        self->read_phase = ReadPhase::Idle;
-        return;
-      }
-      if (!result) {
-        self->read_phase = ReadPhase::Idle;
-        self->Fail(std::string("Failed to read call-media frame header: ") + result.error().message());
-        return;
-      }
-
-      uint64_t payload_len = 0;
-      for (size_t i = 0; i < 8; ++i) {
-        payload_len = (payload_len << 8) | self->header_buf[i];
-      }
-      if (payload_len == 0 || payload_len > kMaxCallMediaFrameBytes) {
-        self->read_phase = ReadPhase::Idle;
-        self->Fail(payload_len == 0 ? "call-media frame empty"
-                                    : "call-media frame too large len=" + std::to_string(payload_len));
-        return;
-      }
-
-      std::shared_ptr<Stream> stream2;
-      {
-        std::lock_guard lock(self->mu);
-        stream2 = self->stream;
-      }
-      if (!stream2) {
-        self->read_phase = ReadPhase::Idle;
-        return;
-      }
-
-      // Prefer draining uplink before waiting on body (keeps duplex moving).
-      self->TryWriteIo();
-
-      self->payload_buf.resize(static_cast<size_t>(payload_len));
-      self->read_phase = ReadPhase::Body;
-      libp2p::read(stream2, self->payload_buf, [self](outcome::result<void> body_res) {
-        self->read_phase = ReadPhase::Idle;
-        if (!self->pump_running.load()) {
-          return;
-        }
-        if (!body_res) {
-          self->Fail(std::string("Failed to read call-media frame body: ") + body_res.error().message());
-          return;
-        }
-
-        CallMediaDirectConnectParams params;
-        CallMediaDirectCallbacks cbs;
-        {
-          std::lock_guard lock(self->mu);
-          params = self->active_params;
-          cbs = self->callbacks;
-        }
-
-        std::vector<uint8_t> frame_bytes(self->payload_buf.begin(), self->payload_buf.end());
-        if (!frame_bytes.empty() && frame_bytes[0] != '{') {
-          auto opus =
-              DecryptCallMediaAudioFrame(params.media_key, params.call_id, params.media_epoch, frame_bytes);
-          if (!opus) {
-            if ((self->decrypt_fail_log_.fetch_add(1) % 25) == 0) {
-              self->log().warning
-                  << "Call-media decrypt failed call_id=" << params.call_id
-                  << " epoch=" << params.media_epoch << " err=" << opus.error().message;
-            }
-          } else if (cbs.on_audio) {
-            cbs.on_audio(*opus);
-          }
-        }
-
-        self->PumpIo();
-      });
-    });
+    return true;
   }
 
   void HandleInbound(libp2p::StreamAndProtocol stream_in) {
@@ -480,10 +328,12 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
         CloseQuiet(stream);
         return;
       }
-      self->StartIoPump();
-      if (adopted_cbs.on_connected) {
-        adopted_cbs.on_connected();
-      }
+      self->StartMediaDuplex([self, adopted_cbs = std::move(adopted_cbs)]() {
+        self->CompleteConnectLocked({});
+        if (adopted_cbs.on_connected) {
+          adopted_cbs.on_connected();
+        }
+      });
     });
   }
 };
@@ -726,20 +576,24 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                              finish({});
                              return;
                            }
-                           impl->StartIoPump();
-                           if (adopted_cbs.on_connected) {
-                             adopted_cbs.on_connected();
-                           }
-                           // TryAdoptStreamLocked already completed the promise on success.
-                           if (!settled->load(std::memory_order_acquire)) {
-                             finish({});
-                           } else {
+                           impl->StartMediaDuplex([impl, adopted_cbs = std::move(adopted_cbs), settled,
+                                                   result_promise]() mutable {
+                             if (adopted_cbs.on_connected) {
+                               adopted_cbs.on_connected();
+                             }
+                             impl->outbound_hello_inflight.store(false, std::memory_order_release);
+                             if (!settled->exchange(true)) {
+                               try {
+                                 result_promise->set_value(Roe<void>{});
+                               } catch (const std::future_error&) {
+                               }
+                             }
                              std::lock_guard lock(impl->mu);
                              if (impl->connect_settled == settled) {
                                impl->connect_settled.reset();
                                impl->connect_promise.reset();
                              }
-                           }
+                           });
                          });
                        });
 
@@ -757,8 +611,7 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
     }
     {
       std::lock_guard lock(impl_->mu);
-      if (impl_->stream != nullptr) {
-        // Inbound adopted — succeed even if promise handshake raced.
+      if (impl_->stream != nullptr && impl_->session_ready.load(std::memory_order_acquire)) {
         settled->store(true, std::memory_order_release);
         if (impl_->connect_settled == settled) {
           impl_->connect_settled.reset();
@@ -779,7 +632,7 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
         }
         active = impl_->stream != nullptr;
       }
-      if (active) {
+      if (active && impl_->session_ready.load(std::memory_order_acquire)) {
         return {};
       }
       return Error("call-media connect timed out");
