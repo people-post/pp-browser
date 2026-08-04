@@ -40,6 +40,10 @@ std::string MultiaddrWithPeerId(const libp2p::multi::Multiaddress& address,
 
 int SourceRank(PeerAddrSource source) {
   switch (source) {
+  // Explicit SoftMigrate / CallSfuAttach hop multiaddr — wins over mDNS so a libvirt
+  // virbr advertisement cannot redirect media-relay dials off the LAN hop.
+  case PeerAddrSource::CallHop:
+    return 9;
   // LAN mDNS advertises the real listen port. Connection/Identify often record the peer's
   // ephemeral TCP source port from an outbound dial (moto dogfood dialed :41688 while mDNS
   // had :33279/p2p/...) — those must not outrank mDNS.

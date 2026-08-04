@@ -23,6 +23,8 @@ enum class PeerAddrSource {
   DialSuccess,
   Identify,
   Mdns,
+  /** CallSfuAttach / SoftMigrate hop — must outrank mDNS (virbr poison dogfood). */
+  CallHop,
   AddressRepository,
   Manual,
 };

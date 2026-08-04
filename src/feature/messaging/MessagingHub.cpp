@@ -566,6 +566,11 @@ void MessagingHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
     if (!ma) {
       return;
     }
+    const std::string mdns_ip = IpHostFromMultiaddrPrefix(*ma);
+    if (IsLikelyUndialableLanIpv4(mdns_ip)) {
+      log().info << "LAN mDNS skip undialable peer=" << peer.peer_id_base58 << " ma=" << *ma;
+      return;
+    }
     PeerSessionManager* sessions = Sessions();
     if (sessions == nullptr) {
       return;
@@ -954,6 +959,11 @@ void MessagingHub::RegisterCallPeerListenMultiaddrs(const std::string& identity,
   PeerSessionManager* sessions = Sessions();
   for (const std::string& ma : multiaddrs) {
     if (ma.empty()) {
+      continue;
+    }
+    const std::string ip = IpHostFromMultiaddrPrefix(ma);
+    if (IsLikelyUndialableLanIpv4(ip)) {
+      log().info << "Call listen addr skipped undialable dial_key=" << identity << " ma=" << ma;
       continue;
     }
     std::string peer_id;

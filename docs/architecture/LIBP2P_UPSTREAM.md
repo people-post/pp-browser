@@ -62,6 +62,7 @@ Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/
 - `basic/read.hpp` / `basic/write.hpp` — return `invalid_argument` instead of throwing `std::logic_error` on zero/oversize `readSome`/`writeSome` results (uncaught throw aborted Android host io during call-media)
 - `basic/write_queue.*` — enqueue copies bytes into owned `Bytes` (upstream stored `BytesIn` spans; temporaries / early buffer free → wire corruption / `too much bytes read`)
 - `basic/read_buffer.cpp` — `consumePart` soft-fails when `first_byte_offset_` is past fragment size (off-strand stream IO race aborted moto `pp-browser-io`)
+- `muxer/yamux/yamuxed_connection.*` — mutex around write queue / `is_writing_` (media-relay capture-thread `SendFrame` raced IO window-updates into `assert(!is_writing_)`)
 - `security/noise/noise_connection.cpp` — `readSome` with empty `out` returns 0 without pulling another Noise frame
 - `protocol/identify/identify_push.*` — `pushUpdates()` to re-push self Identify after address-repo changes (L2)
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded

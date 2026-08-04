@@ -80,6 +80,18 @@ TEST_F(PeerAddressBookTest, DialSuccessOutranksBootstrap) {
   EXPECT_EQ(*book.PreferredMultiaddr(local_peer_id_), dial_ma);
 }
 
+TEST_F(PeerAddressBookTest, CallHopOutranksMdnsVirbrPoison) {
+  PeerAddressBook book;
+  const std::string virbr_ma = MakeMultiaddr("192.168.122.1", 18517);
+  const std::string lan_ma = MakeMultiaddr("192.168.1.152", 18517);
+
+  ASSERT_TRUE(book.Upsert(local_peer_id_, virbr_ma, PeerAddrSource::Mdns));
+  ASSERT_TRUE(book.Upsert(local_peer_id_, lan_ma, PeerAddrSource::CallHop));
+
+  ASSERT_TRUE(book.PreferredMultiaddr(local_peer_id_));
+  EXPECT_EQ(*book.PreferredMultiaddr(local_peer_id_), lan_ma);
+}
+
 TEST_F(PeerAddressBookTest, MdnsOutranksConnectionEphemeralPort) {
   PeerAddressBook book;
   const std::string connection_ma = MakeMultiaddr("192.168.1.119", 41688);

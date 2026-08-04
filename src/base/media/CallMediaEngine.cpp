@@ -181,6 +181,12 @@ struct CallMediaEngine::Impl {
   bool sfu_mode = false;
   /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
   std::shared_ptr<SfuSendFn> sfu_send;
+  /**
+   * Held around (*sfu_send)(...) in capture/video threads. StartSfu takes this after swapping the
+   * callback so SoftMigrate ReleaseDirectTransport cannot Detach while an old 1:1 send is mid-write
+   * (Linux: malloc unaligned tcache / Aborted right after 2nd join).
+   */
+  std::mutex sfu_send_call_mu;
   std::atomic<uint32_t> sfu_audio_seq{0};
   std::atomic<uint32_t> sfu_video_seq{0};
   std::atomic<bool> adaptation_camera_allowed{true};
@@ -765,6 +771,7 @@ struct CallMediaEngine::Impl {
           pkt.seq = sfu_audio_seq.fetch_add(1) + 1;
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
           try {
+            std::lock_guard send_lock(sfu_send_call_mu);
             (*send_fn)(pkt);
           } catch (...) {
           }
@@ -862,6 +869,7 @@ struct CallMediaEngine::Impl {
                   pkt.mark = encoded->keyframe ? 1 : 0;
                   pkt.payload = encoded->annex_b;
                   try {
+                    std::lock_guard send_lock(sfu_send_call_mu);
                     (*send_fn)(pkt);
                   } catch (...) {
                   }
@@ -1242,10 +1250,14 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
       }
     }
   }
-  abandoned_send = nullptr;
   if (send_replaced_only) {
+    // Drain any capture/video thread still inside the old send (1:1 call-media write) before
+    // the caller Detach's that stream — otherwise SoftMigrate races into heap corruption.
+    std::lock_guard drain(impl_->sfu_send_call_mu);
+    abandoned_send = nullptr;
     return {};
   }
+  abandoned_send = nullptr;
   if (need_rebuild) {
     impl_->JoinCaptureThread();
     std::lock_guard lock(impl_->mutex);

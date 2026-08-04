@@ -598,6 +598,7 @@ namespace libp2p::connection {
   }
 
   void YamuxedConnection::enqueue(Buffer packet, StreamId stream_id) {
+    std::lock_guard lock(write_mutex_);
     if (is_writing_) {
       write_queue_.push_back(WriteQueueItem{std::move(packet), stream_id});
     } else {
@@ -606,6 +607,7 @@ namespace libp2p::connection {
   }
 
   void YamuxedConnection::doWrite(WriteQueueItem packet) {
+    // Caller holds write_mutex_.
     assert(!is_writing_);
 
     writing_buf_->assign(packet.packet.begin(), packet.packet.end());
@@ -624,7 +626,11 @@ namespace libp2p::connection {
   void YamuxedConnection::onDataWritten(outcome::result<void> res,
                                         WriteQueueItem &&packet) {
     if (!res) {
-      write_queue_.clear();
+      {
+        std::lock_guard lock(write_mutex_);
+        write_queue_.clear();
+        is_writing_ = false;
+      }
       std::ignore = connection_->close();
       // write error
       close(res.error(), boost::none);
@@ -634,6 +640,9 @@ namespace libp2p::connection {
     // this instance may be killed inside further callback
     auto self = shared_from_this();
 
+    // Keep is_writing_ true while notifying the stream so a nested enqueue
+    // (same or other thread) queues instead of racing doWrite. Do not hold
+    // write_mutex_ across onDataWritten — stream callbacks may enqueue.
     if (packet.stream_id != 0) {
       // pass write ack to stream about data size written except header size
 
@@ -658,6 +667,7 @@ namespace libp2p::connection {
       }
     }
 
+    std::lock_guard lock(write_mutex_);
     is_writing_ = false;
 
     if (not write_queue_.empty()) {

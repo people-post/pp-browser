@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <mutex>
 #include <unordered_map>
 
 #include <libp2p/basic/read_buffer.hpp>
@@ -204,6 +205,12 @@ namespace libp2p::connection {
 
     /// Write queue
     std::deque<WriteQueueItem> write_queue_;
+
+    /// Serializes is_writing_ / write_queue_ / doWrite start.
+    /// pp-browser: media-relay SendFrame runs off the connection strand (capture
+    /// thread) while IO also enqueues window-updates/pings — without this,
+    /// enqueue races into assert(!is_writing_).
+    std::mutex write_mutex_;
 
     /// Active streams
     Streams streams_;

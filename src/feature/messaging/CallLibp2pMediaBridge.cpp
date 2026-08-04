@@ -401,9 +401,14 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
 
   const std::string captured_call_id = call_id;
   const std::string captured_peer = peer_identity;
-  if (auto started = media_.StartSfu(call_id, [this, captured_call_id, captured_peer, media_epoch, media_key](
-                                                  const CallMediaEngine::SfuPacket& pkt) {
+  const uint64_t send_gen = connect_generation_.load(std::memory_order_acquire);
+  if (auto started = media_.StartSfu(call_id, [this, captured_call_id, captured_peer, media_epoch, media_key,
+                                               send_gen](const CallMediaEngine::SfuPacket& pkt) {
         if (pkt.channel_id != 0) {
+          return;
+        }
+        // SoftMigrate ReleaseDirectTransport bumps connect_generation_ before Detach.
+        if (connect_generation_.load(std::memory_order_acquire) != send_gen) {
           return;
         }
         const uint32_t seq = audio_seq_.fetch_add(1) + 1;
