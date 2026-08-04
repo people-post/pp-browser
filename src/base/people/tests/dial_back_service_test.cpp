@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <string>
 #include <thread>
 
@@ -98,6 +99,59 @@ TEST_F(DialBackServiceTest, ProbeFailsForUnreachableTarget) {
   auto probed = client_dial_back_->Probe("seed", {bad}, 2000);
   ASSERT_TRUE(probed) << probed.error().message;
   EXPECT_FALSE(probed->ok);
+}
+
+TEST_F(DialBackServiceTest, ConcurrentProbesFromTwoClients) {
+  static std::atomic<int> port{42000 + (ProcessId() % 2000) * 10};
+  const int client_b_port = port.fetch_add(1);
+
+  PeerSessionConfig config;
+  config.dial_timeout = std::chrono::milliseconds(3000);
+  config.dial_failure_backoff = std::chrono::milliseconds(100);
+
+  Libp2pHost client_b_host;
+  Libp2pHostConfig client_b_cfg;
+  client_b_cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/" + std::to_string(client_b_port);
+  ASSERT_TRUE(client_b_host.Start(client_b_cfg));
+  auto client_b_sessions = std::make_unique<PeerSessionManager>(client_b_host, config);
+  auto client_b_dial_back = std::make_unique<DialBackService>(client_b_host, *client_b_sessions);
+  client_b_dial_back->Start();
+
+  auto seed_id = seed_host_.LocalPeerIdBase58();
+  auto client_a_id = client_host_.LocalPeerIdBase58();
+  auto client_b_id = client_b_host.LocalPeerIdBase58();
+  ASSERT_TRUE(seed_id);
+  ASSERT_TRUE(client_a_id);
+  ASSERT_TRUE(client_b_id);
+
+  const std::string seed_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(seed_port_) + "/p2p/" + *seed_id;
+  const std::string client_a_ma =
+      "/ip4/127.0.0.1/tcp/" + std::to_string(client_port_) + "/p2p/" + *client_a_id;
+  const std::string client_b_ma =
+      "/ip4/127.0.0.1/tcp/" + std::to_string(client_b_port) + "/p2p/" + *client_b_id;
+
+  ASSERT_TRUE(client_sessions_->RegisterEndpoint("seed", seed_ma));
+  ASSERT_TRUE(client_b_sessions->RegisterEndpoint("seed", seed_ma));
+
+  auto probe_a = std::async(std::launch::async, [&] {
+    return client_dial_back_->Probe("seed", {client_a_ma}, 5000);
+  });
+  auto probe_b = std::async(std::launch::async, [&] {
+    return client_b_dial_back->Probe("seed", {client_b_ma}, 5000);
+  });
+
+  auto result_a = probe_a.get();
+  auto result_b = probe_b.get();
+  ASSERT_TRUE(result_a) << result_a.error().message;
+  ASSERT_TRUE(result_b) << result_b.error().message;
+  EXPECT_TRUE(result_a->ok) << result_a->error;
+  EXPECT_TRUE(result_b->ok) << result_b->error;
+  EXPECT_EQ(result_a->dialed, client_a_ma);
+  EXPECT_EQ(result_b->dialed, client_b_ma);
+
+  client_b_dial_back.reset();
+  client_b_sessions.reset();
+  client_b_host.Stop();
 }
 
 } // namespace

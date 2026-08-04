@@ -16,7 +16,9 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 | **1** | `circuit_relay_service_test` | done |
 | **1** | Async `StreamBridge` (legacy worker pumps removed) | done |
 | **1** | Wire `SetExecutorConfig` in hub/node | done |
-| **2** | DialBack dedupe / optional io inbound | pending |
+| **2** | DialBack dedupe onto `StreamFrameIo` / `StreamJsonFrame` | done |
+| **2** | `BlockingReadStreamJson` / `BlockingWriteStreamJson` helpers | done |
+| **2** | Concurrent dial-back test | done |
 | **3** | Media relay structural split | pending |
 | **3** | Media relay async + tests | pending |
 | **4** | Call-media uses shared primitives | pending |

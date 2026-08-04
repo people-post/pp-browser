@@ -106,6 +106,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   }
 
   auto dial_back = std::make_unique<DialBackService>(*runtime->Host(), *runtime->Sessions());
+  dial_back->SetExecutorConfig(runtime->ExecutorConfig());
   dial_back->Start();
 
   std::unique_ptr<CircuitRelayService> circuit_relay;

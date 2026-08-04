@@ -1,5 +1,7 @@
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
+#include "libp2p/integration/host/StreamFrameIo.h"
+
 #include <algorithm>
 
 namespace pbr {
@@ -30,6 +32,25 @@ Roe<std::string> DecodeStreamJsonFrame(const std::vector<uint8_t>& frame_bytes) 
     return Error("json frame length mismatch");
   }
   return std::string(frame_bytes.begin() + 8, frame_bytes.end());
+}
+
+Roe<std::string> BlockingReadStreamJson(const std::shared_ptr<libp2p::connection::Stream>& stream) {
+  LengthPrefixedFrameConfig config;
+  config.max_frame_bytes = kMaxStreamJsonFrameBytes;
+  auto body = BlockingReadLengthPrefixedFrame(stream, config);
+  if (!body) {
+    return body.error();
+  }
+  return std::string(body->begin(), body->end());
+}
+
+Roe<void> BlockingWriteStreamJson(const std::shared_ptr<libp2p::connection::Stream>& stream,
+                                  const std::string& json_utf8) {
+  if (json_utf8.size() > kMaxStreamJsonFrameBytes) {
+    return Error("json frame too large");
+  }
+  std::vector<uint8_t> body(json_utf8.begin(), json_utf8.end());
+  return BlockingWriteLengthPrefixedFrame(stream, body);
 }
 
 } // namespace pbr

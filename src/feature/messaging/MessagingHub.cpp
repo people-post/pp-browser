@@ -263,6 +263,7 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
   }
 
   dial_back_ = std::make_unique<DialBackService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+  dial_back_->SetExecutorConfig(node_runtime_->ExecutorConfig());
   dial_back_->Start();
 
   circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
