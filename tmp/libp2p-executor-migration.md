@@ -23,7 +23,7 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 | **3** | Media relay async + tests | done |
 | **3** | `DuplexFrameSession` per-stream serializer | done |
 | **3** | Wire `SetExecutorConfig` in hub/node | done |
-| **4** | Call-media uses shared primitives | pending |
+| **4** | Call-media uses shared primitives + DuplexFrameSession | done |
 | **5** | Direct chat services | pending |
 | **6** | Compute stub + limits + flag removal | pending |
 
@@ -31,7 +31,7 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 
 | PR | Branch | Notes |
 |----|--------|-------|
-| 1 | `cursor/libp2p-executor-migration-771d` | Phase 0–2 + Phase 3 media relay async |
+| 1 | `cursor/libp2p-executor-migration-771d` | Phase 0–4 (call-media DuplexFrameSession) |
 
 ## Notes
 

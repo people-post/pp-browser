@@ -103,7 +103,8 @@ private:
 
 /**
  * Serialized length-prefixed duplex on one Yamux stream (host io thread).
- * Never overlaps read and write — inbound frames invoke handler; outbound bodies queue.
+ * Default: never overlaps read and write. write_preferred=true (call-media) drains
+ * outbound even during an in-flight read, matching legacy PumpIo scheduling.
  */
 class DuplexFrameSession : public std::enable_shared_from_this<DuplexFrameSession> {
 public:
@@ -113,7 +114,8 @@ public:
 
   void Start(std::shared_ptr<libp2p::connection::Stream> stream, FrameHandler on_frame,
              StreamCancelCheck is_cancelled, LengthPrefixedFrameConfig config = {},
-             ClosedCallback on_closed = {});
+             ClosedCallback on_closed = {}, size_t max_outbound_frames = 0,
+             std::function<void()> on_outbound_drop = {}, bool write_preferred = false);
   void Stop();
 
   /** Queue a frame body (length prefix added on write). Io-thread safe after Start. */
@@ -133,6 +135,9 @@ private:
   StreamCancelCheck is_cancelled_;
   ClosedCallback on_closed_;
   LengthPrefixedFrameConfig config_;
+  size_t max_outbound_frames_ = 0;
+  std::function<void()> on_outbound_drop_;
+  bool write_preferred_ = false;
   std::atomic<bool> running_{false};
   bool read_inflight_ = false;
   bool write_inflight_ = false;

@@ -321,7 +321,8 @@ void StreamBridge::PumpRead() {
 
 void DuplexFrameSession::Start(std::shared_ptr<Stream> stream, FrameHandler on_frame,
                                StreamCancelCheck is_cancelled, LengthPrefixedFrameConfig config,
-                               ClosedCallback on_closed) {
+                               ClosedCallback on_closed, size_t max_outbound_frames,
+                               std::function<void()> on_outbound_drop, bool write_preferred) {
   if (!stream || !on_frame) {
     return;
   }
@@ -330,8 +331,12 @@ void DuplexFrameSession::Start(std::shared_ptr<Stream> stream, FrameHandler on_f
   is_cancelled_ = std::move(is_cancelled);
   on_closed_ = std::move(on_closed);
   config_ = config;
+  max_outbound_frames_ = max_outbound_frames;
+  on_outbound_drop_ = std::move(on_outbound_drop);
+  write_preferred_ = write_preferred;
   running_.store(true, std::memory_order_release);
-  BeginRead();
+  PumpWrite();
+  MaybeResumeRead();
 }
 
 void DuplexFrameSession::Stop() {
@@ -349,8 +354,14 @@ bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body) {
   if (!running_.load(std::memory_order_acquire) || !stream_) {
     return false;
   }
+  if (max_outbound_frames_ > 0 && outbound_.size() >= max_outbound_frames_) {
+    outbound_.erase(outbound_.begin());
+    if (on_outbound_drop_) {
+      on_outbound_drop_();
+    }
+  }
   outbound_.push_back(std::make_shared<std::vector<uint8_t>>(EncodeLengthPrefixedFrame(body)));
-  if (!read_inflight_ && !write_inflight_) {
+  if (write_preferred_ || (!read_inflight_ && !write_inflight_)) {
     PumpWrite();
   }
   return true;
@@ -402,6 +413,9 @@ void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
   if (payload_len == 0) {
     DeliverFrame({});
     return;
+  }
+  if (write_preferred_) {
+    PumpWrite();
   }
   payload_buf_.resize(static_cast<size_t>(payload_len));
   auto self = shared_from_this();
