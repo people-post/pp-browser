@@ -50,6 +50,8 @@ bool IsPlumbingCallControl(const CallControlType type) {
   case CallControlType::CallSdp:
   case CallControlType::CallIce:
   case CallControlType::CallSfuAttach:
+  case CallControlType::CallSfuAttachFailed:
+  case CallControlType::CallHopRefuse:
     return true;
   default:
     return false;
@@ -618,6 +620,8 @@ std::string InboxController::BuildCallHistoryRml(const ThreadMessage& message,
   case CallControlType::CallSdp:
   case CallControlType::CallIce:
   case CallControlType::CallSfuAttach:
+  case CallControlType::CallSfuAttachFailed:
+  case CallControlType::CallHopRefuse:
     return {};
   }
 

@@ -89,6 +89,19 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSes
         if (media_.ActiveCallId() != call_id) {
           return;
         }
+        // SoftMigrate StartSfu swaps send to media_relay but leaves the 1:1 stream until
+        // ReleaseDirectTransport; peer teardown must not flip ConnectFailed over live SFU.
+        if (media_.IsSfuMode() && media_.IsConnected()) {
+          log().info << "Ignoring inbound call-media fail after SoftMigrate/SFU call_id=" << call_id
+                     << " reason=" << reason;
+          direct_.Detach();
+          ClearLibp2pConnectFailed();
+          if (lifecycle_) {
+            lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
+          }
+          host_.P2pNotifyRingChanged();
+          return;
+        }
         log().warning << "Inbound call-media failed call_id=" << call_id << " reason=" << reason;
         libp2p_connect_failed_ = true;
         host_.P2pSetLastMediaError(reason);
@@ -446,6 +459,18 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
       if (direct_.IsActive() && media_.IsConnected()) {
         return;
       }
+      // SoftMigrate → media_relay: 1:1 stream reset is expected; keep InCall on SFU.
+      if (media_.IsSfuMode() && media_.IsConnected()) {
+        log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << captured_call_id
+                   << " reason=" << reason;
+        direct_.Detach();
+        ClearLibp2pConnectFailed();
+        if (lifecycle_) {
+          lifecycle_->Apply(CallLifecycleEvent::DirectConnected, captured_call_id);
+        }
+        host_.P2pNotifyRingChanged();
+        return;
+      }
       log().warning << "Call-media failed call_id=" << captured_call_id << " reason=" << reason;
       libp2p_connect_failed_ = true;
       host_.P2pSetLastMediaError(reason);
@@ -688,6 +713,23 @@ void CallLibp2pMediaBridge::StopLibp2pMedia(const std::string& call_id) {
   } else {
     AppRuntime::PostUI( std::move(stop_engine));
   }
+}
+
+void CallLibp2pMediaBridge::ReleaseDirectTransport() {
+  // SoftMigrate: drop 1:1 transport; keep CallMediaEngine capture feeding media_relay.
+  connect_generation_.fetch_add(1, std::memory_order_acq_rel);
+  const std::string peer = media_peer_identity_;
+  if (dial_ && !peer.empty()) {
+    dial_->AbortInflightDial(peer);
+    dial_->ClearCallMediaCircuitHop(peer);
+  }
+  direct_.Detach();
+  media_peer_identity_.clear();
+  ClearLibp2pConnectFailed();
+  if (lifecycle_ && media_.IsActive() && media_.IsSfuMode()) {
+    lifecycle_->Apply(CallLifecycleEvent::DirectConnected, media_.ActiveCallId());
+  }
+  host_.P2pNotifyRingChanged();
 }
 
 void CallLibp2pMediaBridge::PrepareForTeardown(int timeout_ms) {

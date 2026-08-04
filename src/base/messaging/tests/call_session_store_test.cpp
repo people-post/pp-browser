@@ -83,5 +83,61 @@ TEST_F(CallSessionStoreTest, UpsertSessionAndParticipants) {
   EXPECT_EQ((*after)->status, "accepted");
 }
 
+TEST_F(CallSessionStoreTest, UpsertPreservesFirstJoinedAt) {
+  CallSession session;
+  session.call_id = "call:joined-at";
+  session.origin_thread_id = "thread-1";
+  session.media_mode = CallMediaMode::Voice;
+  session.state = CallSessionState::Active;
+  session.created_at = 1000;
+  session.media_epoch = 1;
+  session.media_key_id = "mk:1";
+  ASSERT_TRUE(calls_->UpsertSession(session));
+
+  CallParticipant moto;
+  moto.call_id = session.call_id;
+  moto.identity = "relay:moto";
+  moto.state = CallParticipantState::Joined;
+  moto.joined_at = 1000;
+  ASSERT_TRUE(calls_->UpsertParticipant(moto));
+
+  // CallRoster restamps with "now" on accept fan-out — must not steal SoftMigrate initiator.
+  moto.joined_at = 9999;
+  ASSERT_TRUE(calls_->UpsertParticipant(moto));
+
+  auto parts = calls_->ListParticipants(session.call_id);
+  ASSERT_TRUE(parts);
+  ASSERT_EQ(parts->size(), 1u);
+  ASSERT_TRUE(parts->front().joined_at);
+  EXPECT_EQ(*parts->front().joined_at, 1000);
+}
+
+TEST_F(CallSessionStoreTest, UpsertTakesEarlierJoinedAtFromRoster) {
+  CallSession session;
+  session.call_id = "call:earlier-stamp";
+  session.origin_thread_id = "thread-1";
+  session.media_mode = CallMediaMode::Voice;
+  session.state = CallSessionState::Active;
+  session.created_at = 1000;
+  session.media_epoch = 1;
+  session.media_key_id = "mk:1";
+  ASSERT_TRUE(calls_->UpsertSession(session));
+
+  CallParticipant owner;
+  owner.call_id = session.call_id;
+  owner.identity = "relay:linux";
+  owner.state = CallParticipantState::Joined;
+  owner.joined_at = 5000; // wrong/late local stamp
+  ASSERT_TRUE(calls_->UpsertParticipant(owner));
+
+  owner.joined_at = 1000; // owner's CallRoster earliest stamp
+  ASSERT_TRUE(calls_->UpsertParticipant(owner));
+
+  auto parts = calls_->ListParticipants(session.call_id);
+  ASSERT_TRUE(parts);
+  ASSERT_TRUE(parts->front().joined_at);
+  EXPECT_EQ(*parts->front().joined_at, 1000);
+}
+
 } // namespace
 } // namespace pbr

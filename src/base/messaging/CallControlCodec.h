@@ -46,6 +46,12 @@ public:
   static Roe<std::string> EncodeSfuAttach(const CallSfuAttachDetail& detail);
   static Roe<CallSfuAttachDetail> DecodeSfuAttach(const std::string& detail_json);
 
+  static Roe<std::string> EncodeSfuAttachFailed(const CallSfuAttachFailedDetail& detail);
+  static Roe<CallSfuAttachFailedDetail> DecodeSfuAttachFailed(const std::string& detail_json);
+
+  static Roe<std::string> EncodeHopRefuse(const CallHopRefuseDetail& detail);
+  static Roe<CallHopRefuseDetail> DecodeHopRefuse(const std::string& detail_json);
+
   static Roe<ThreadMessage> BuildSystemMessage(const std::string& thread_id, CallControlType type,
                                                const std::string& display_text, const std::string& detail_json,
                                                const std::string& sender_contact_id);

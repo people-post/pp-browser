@@ -13,6 +13,8 @@ pp_browser_add_base_library(pp_base_messaging
     SoftMigrateLogic.cpp
     SfuAttachFanout.cpp
     SfuAttachWaitLogic.cpp
+    HopHintLogic.cpp
+    PeerCapsLogic.cpp
     ChatPayloadValidator.cpp
     ConversationSummaryCodec.cpp
     DirectChatTarget.cpp

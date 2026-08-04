@@ -104,7 +104,7 @@ Docs-first; implement after n4-media stable. See [RELAY_SCOPE.md](RELAY_SCOPE.md
 - [x] ADR **N023** + RELAY_SCOPE design doc
 - [x] `RelayScope` enum + scope mask; `RankMediaHopsEscalating`; provider serve mask (ns1)
 - [x] Provider: reachability-aware stranger limit in `ApplyMeshAdmissionPolicies`
-- [ ] Consumer: wire escalate ranker in circuit path; capability ads on Identify
+- [ ] Consumer: wire escalate ranker in circuit path; capability ads on Identify (call-control `caps` on invite/accept — V030; Identify still open)
 - [ ] Bridge score when `seed_dial_ok == false` or target undialable direct (incl. multi-hop reach signals — [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned))
 - [ ] Optional Me → Network scope preset (auto default; contacts / wider)
 - [ ] Island / Bluetooth store-and-forward sketch (message_relay track; no hard dependency)

@@ -89,6 +89,10 @@ TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
   EXPECT_EQ(CallControlTypeFromWire("call_ice"), CallControlType::CallIce);
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallSfuAttach), "call_sfu_attach");
   EXPECT_EQ(CallControlTypeFromWire("call_sfu_attach"), CallControlType::CallSfuAttach);
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallSfuAttachFailed), "call_sfu_attach_failed");
+  EXPECT_EQ(CallControlTypeFromWire("call_sfu_attach_failed"), CallControlType::CallSfuAttachFailed);
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallHopRefuse), "call_hop_refuse");
+  EXPECT_EQ(CallControlTypeFromWire("call_hop_refuse"), CallControlType::CallHopRefuse);
 }
 
 TEST(CallControlCodecTest, SdpDetailRoundTrip) {
@@ -116,24 +120,39 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   invite.inviter_identity = "relay:alice";
   invite.invitee_identity = "relay:bob";
   invite.listen_multiaddrs = {"/ip4/192.168.1.10/tcp/18517/p2p/12D3KooWAlice"};
+  invite.caps.present = true;
+  invite.caps.media_relay = true;
 
   auto encoded_invite = CallControlCodec::EncodeInvite(invite);
   ASSERT_TRUE(encoded_invite);
+  EXPECT_NE(encoded_invite->find("\"caps\""), std::string::npos);
   auto decoded_invite = CallControlCodec::DecodeInvite(*encoded_invite);
   ASSERT_TRUE(decoded_invite);
   ASSERT_EQ(decoded_invite->listen_multiaddrs.size(), 1u);
   EXPECT_EQ(decoded_invite->listen_multiaddrs[0], invite.listen_multiaddrs[0]);
+  EXPECT_TRUE(decoded_invite->caps.present);
+  EXPECT_TRUE(decoded_invite->caps.media_relay);
 
   CallAcceptDetail accept;
   accept.call_id = "call:abc";
   accept.identity = "relay:bob";
   accept.listen_multiaddrs = {"/ip4/192.168.1.20/tcp/18517/p2p/12D3KooWBob"};
+  accept.caps.present = true;
+  accept.caps.media_relay = false;
   auto encoded_accept = CallControlCodec::EncodeAccept(accept);
   ASSERT_TRUE(encoded_accept);
   auto decoded_accept = CallControlCodec::DecodeAccept(*encoded_accept);
   ASSERT_TRUE(decoded_accept);
   ASSERT_EQ(decoded_accept->listen_multiaddrs.size(), 1u);
   EXPECT_EQ(decoded_accept->listen_multiaddrs[0], accept.listen_multiaddrs[0]);
+  EXPECT_TRUE(decoded_accept->caps.present);
+  EXPECT_FALSE(decoded_accept->caps.media_relay);
+
+  auto old_invite = CallControlCodec::DecodeInvite(
+      R"({"call_id":"call:x","inviter_identity":"a","invitee_identity":"b","media_mode":"voice"})");
+  ASSERT_TRUE(old_invite);
+  EXPECT_FALSE(old_invite->caps.present);
+  EXPECT_FALSE(old_invite->caps.media_relay);
 }
 
 } // namespace

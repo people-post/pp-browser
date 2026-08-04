@@ -231,7 +231,13 @@ Roe<void> CallSessionStore::UpsertParticipant(const CallParticipant& participant
       "VALUES (?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(call_id, identity) DO UPDATE SET state=excluded.state, audio_muted=excluded.audio_muted, "
       "video_enabled=excluded.video_enabled, "
-      "joined_at=COALESCE(excluded.joined_at, call_participants.joined_at), left_at=excluded.left_at;";
+      // Sticky SoftMigrate initiator: keep the earliest non-null joined_at.
+      "joined_at=CASE "
+      "WHEN excluded.joined_at IS NULL THEN call_participants.joined_at "
+      "WHEN call_participants.joined_at IS NULL THEN excluded.joined_at "
+      "WHEN excluded.joined_at < call_participants.joined_at THEN excluded.joined_at "
+      "ELSE call_participants.joined_at END, "
+      "left_at=excluded.left_at;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare call participant upsert");

@@ -18,6 +18,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace pbr {
@@ -43,10 +44,17 @@ public:
   /** Local `/ip4/…/tcp/…/p2p/…` listen set for call-control dial bootstrap. */
   using LocalListenMultiaddrsFn = std::function<std::vector<std::string>()>;
   void SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback);
+  /** Local capability ads for invite/accept (V030). */
+  using LocalPeerCapsFn = std::function<CallPeerCaps()>;
+  void SetLocalPeerCapsProvider(LocalPeerCapsFn callback);
   /** Register peer listen multiaddrs from invite/accept into the dial registry. */
   using RegisterPeerListenMultiaddrsFn =
       std::function<void(const std::string& identity, const std::vector<std::string>& multiaddrs)>;
   void SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback);
+  /** Cache media_relay ads from invite/accept caps (keyed by libp2p PeerId). */
+  void NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay);
+  bool PeerHasMediaRelayCap(const std::string& peer_id) const;
+  std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
   void SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge);
   /** Expose private CallP2pSignalingHost base for bridge construction (MSVC-safe). */
@@ -70,11 +78,18 @@ public:
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
 
   bool IsAwaitingSfuRecovery() const;
+  bool IsSoftMigrateInFlight() const;
+  bool IsSfuAttachWaitActive() const;
   bool IsP2pConnectFailed() const;
   bool P2pConnectMissingMic() const;
   Roe<void> RetryP2pMedia(const std::string& call_id);
   void PollP2pConnectHealth();
   void PollPendingSfuAttach();
+
+  std::optional<std::string> TakeLastMediaError();
+  /** Latest hop/setup progress line for in-call chrome (empty when idle/connected). */
+  std::string PeekMediaActivity() const;
+  void ClearMediaActivity();
 
   Roe<std::optional<CallSession>> SessionForCall(const std::string& call_id) const;
   void SweepExpiredInvites();
@@ -90,7 +105,6 @@ public:
   Roe<void> SetLocalAudioMuted(bool muted);
   Roe<void> SetLocalVideoEnabled(bool enabled);
 
-  std::optional<std::string> TakeLastMediaError();
   void ClearMediaCallbacks();
 
 private:
@@ -104,9 +118,12 @@ private:
                                const std::string& detail_json, const std::string& display) override;
   void TopologyNotifyRingChanged() override;
   void TopologySetLastMediaError(std::string message) override;
+  void TopologySetMediaActivity(std::string message) override;
+  void TopologyClearMediaActivity() override;
   void TopologyNoteMediaAttempted(const std::string& call_id) override;
   void TopologyBindMediaCallId(const std::string& call_id) override;
   void TopologyClearMediaPeerIdentity() override;
+  void TopologyReleaseDirectMedia() override;
 
   // CallP2pSignalingHost
   Roe<std::string> P2pLocalIdentity() const override;
@@ -159,8 +176,12 @@ private:
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
+  LocalPeerCapsFn local_peer_caps_;
   RegisterPeerListenMultiaddrsFn register_peer_listen_multiaddrs_;
+  /** PeerId → advertised media_relay (V030). Absent key = unknown / fail closed. */
+  std::unordered_map<std::string, bool> peer_media_relay_caps_;
   std::optional<std::string> last_media_error_;
+  std::string media_activity_;
 };
 
 } // namespace pbr

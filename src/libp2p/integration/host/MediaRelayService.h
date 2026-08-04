@@ -99,11 +99,15 @@ public:
 
   /**
    * Client: accept quote + attach session. Keeps control stream open for data/subscribe.
-   * `on_frame` receives fan-in frames from the hop.
+   * Does **not** start the inbound frame reader — call `StartClientFrameReader()` after the
+   * app media engine is ready (StartSfu) so SoftMigrate TearDown cannot race decode.
    */
   Roe<MediaRelayAttachResult> AcceptAndAttach(
       const std::string& hop_peer_key, const std::string& quote_id, const std::string& call_id,
       const std::string& auth_stub, std::function<void(MediaDataFrame)> on_frame, int timeout_ms = 8000);
+
+  /** Begin reading fan-in frames after AcceptAndAttach + media StartSfu. Idempotent. */
+  void StartClientFrameReader();
 
   /**
    * In-call hop: join the local HostSession as a publisher without dialing self.
@@ -119,6 +123,8 @@ public:
   void Detach();
 
   bool IsAttached() const;
+  /** True while SoftMigrate PreferLocal is publishing into the local HostSession. */
+  bool IsLocalHopAttached() const;
 
 private:
   struct Impl;

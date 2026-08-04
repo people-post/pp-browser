@@ -99,18 +99,6 @@ void FillRegistrationFields(ProfileIdentityView& view, const LocalIdentity& iden
   view.brief_llm_key_masked = MaskBriefLlmApiKey(identity.brief_llm_api_key);
 }
 
-bool MobileInCallRelayEligible(const CallSessionManager* call_sessions) {
-  if (call_sessions == nullptr) {
-    return false;
-  }
-  auto active = call_sessions->ActiveLocalCall();
-  if (!active || !active->has_value()) {
-    return false;
-  }
-  auto joined = call_sessions->ListJoinedParticipants((*active)->call_id);
-  return joined && joined->size() >= 3;
-}
-
 MobileEphemeralListenInput BuildMobileEphemeralListenInput(bool messaging_ready, bool node_runtime_running,
                                                            bool ephemeral_active, bool active_local_call) {
   MobileEphemeralListenInput in;
@@ -465,11 +453,8 @@ void MessagingHub::SyncMobileEphemeralListen() {
         WireCallMediaRelayDeps();
         PublishMobileCallScopedAddrs();
         SyncLanMdnsAdvertisement();
-        if (media_relay_ && !mobile_ephemeral_relay_started_ &&
-            MobileInCallRelayEligible(call_sessions_.get())) {
-          media_relay_->Start();
-          mobile_ephemeral_relay_started_ = true;
-        }
+        // V029/V030: phones must not host media_relay. Guest SoftMigrate only dials a Node;
+        // Start()/Stop() here raced Detach on the client attach stream (Android crash).
       });
     });
     return;
@@ -496,10 +481,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
     // (Samsung: UI stuck in futex → Accept clicks never reach call_accept).
     mobile_ephemeral_stop_inflight_ = true;
     AppRuntime::PostWorkerNormal([this]() {
-      if (mobile_ephemeral_relay_started_ && media_relay_) {
-        media_relay_->Stop();
-        mobile_ephemeral_relay_started_ = false;
-      }
+      // Do not media_relay_->Stop() here — that Detach()s any in-flight guest SFU client.
       auto finish = [this]() {
         if (messaging_ready_) {
           ApplyMeshAdmissionPolicies();
@@ -514,7 +496,7 @@ void MessagingHub::SyncMobileEphemeralListen() {
       };
       if (node_runtime_ && node_runtime_->EphemeralListenActive()) {
         node_runtime_->StopEphemeralListenAsync([this, finish = std::move(finish)]() mutable {
-          AppRuntime::PostWorkerNormal( std::move(finish));
+          AppRuntime::PostWorkerNormal(std::move(finish));
         });
         return;
       }
@@ -527,16 +509,8 @@ void MessagingHub::SyncMobileEphemeralListen() {
     return;
   }
 
-  const bool want_relay = MobileInCallRelayEligible(call_sessions_.get());
-  if (want_relay && media_relay_ && !mobile_ephemeral_relay_started_) {
-    media_relay_->Start();
-    mobile_ephemeral_relay_started_ = true;
-    ApplyMeshAdmissionPolicies();
-  } else if (!want_relay && mobile_ephemeral_relay_started_ && media_relay_) {
-    media_relay_->Stop();
-    mobile_ephemeral_relay_started_ = false;
-    ApplyMeshAdmissionPolicies();
-  }
+  // V029: do not Start/Stop media_relay host on mobile for N≥3 — PreferLocal is durable Node only.
+  // Guest attach uses media_relay as a client without Start().
 }
 
 void MessagingHub::SyncLanMdnsAdvertisement() {
@@ -662,11 +636,28 @@ void MessagingHub::WireCallMediaRelayDeps() {
   NormalizeLibp2pConfig(libp2p);
   deps.bootstrap_peers = libp2p.bootstrap_peers;
   deps.prefer_contacts = libp2p.prefer_contacts_for_routing;
+  // PreferLocal = durable Node hosting only. Mobile ephemeral Start() must not SoftMigrate-self
+  // into the SFU hop (V028 / dogfood: Android hop crash → peer Connection reset).
+  deps.prefer_local_as_hop = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node &&
+                            libp2p.capabilities.media_relay && media_relay_ &&
+                            media_relay_->IsStarted();
   if (node_runtime_ && !node_runtime_->BoundListenMultiaddr().empty()) {
     deps.local_listen_multiaddr = node_runtime_->BoundListenMultiaddr();
   } else {
     deps.local_listen_multiaddr = libp2p.listen_multiaddr;
   }
+  // PreferLocal CallSfuAttach fan-out needs dialable LAN addrs (same as invite listen_multiaddrs).
+  deps.local_advertise_multiaddrs = LocalCallListenMultiaddrs();
+  deps.resolve_local_advertise = [this]() { return LocalCallListenMultiaddrs(); };
+  deps.peer_has_media_relay = [this](const std::string& peer_id) {
+    return call_sessions_ && call_sessions_->PeerHasMediaRelayCap(peer_id);
+  };
+  deps.list_media_relay_peers = [this]() {
+    if (!call_sessions_) {
+      return std::vector<std::string>{};
+    }
+    return call_sessions_->ListMediaRelayCapablePeerIds();
+  };
   // Wildcard bind does not identify a LAN subnet for link-scope inference (N023 ns1).
   if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos) {
     deps.local_listen_multiaddr.clear();
@@ -765,7 +756,6 @@ void MessagingHub::ApplyMeshAdmissionPolicies() {
 }
 
 void MessagingHub::StopLibp2p() {
-  mobile_ephemeral_relay_started_ = false;
   mobile_ephemeral_start_inflight_ = false;
   mobile_ephemeral_start_inflight_at_ms_ = 0;
   mobile_ephemeral_stop_inflight_ = false;
@@ -1073,6 +1063,16 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     AppRuntime::PostWorkerNormal([this, identity]() { PrefetchPeerReachability(identity); });
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetLocalPeerCapsProvider([this]() {
+    CallPeerCaps caps;
+    caps.v = kCallPeerCapsVersion;
+    caps.present = true;
+    // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
+    caps.media_relay = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node &&
+                       config_.libp2p.capabilities.media_relay && media_relay_ &&
+                       media_relay_->IsStarted();
+    return caps;
+  });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
       [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
         RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
@@ -1151,6 +1151,16 @@ Roe<void> MessagingHub::BuildMessagingStack() {
     AppRuntime::PostWorkerNormal([this, identity]() { PrefetchPeerReachability(identity); });
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetLocalPeerCapsProvider([this]() {
+    CallPeerCaps caps;
+    caps.v = kCallPeerCapsVersion;
+    caps.present = true;
+    // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
+    caps.media_relay = ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node &&
+                       config_.libp2p.capabilities.media_relay && media_relay_ &&
+                       media_relay_->IsStarted();
+    return caps;
+  });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
       [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
         RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
@@ -1516,7 +1526,6 @@ void MessagingHub::RefreshMeshCapabilities() {
     media_relay_->Stop();
     media_relay_.reset();
   }
-  mobile_ephemeral_relay_started_ = false;
   media_relay_client_.reset();
   dial_registry_.reset();
   const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);

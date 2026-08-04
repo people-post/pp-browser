@@ -1,6 +1,7 @@
 #include "libp2p/integration/host/MediaRelayService.h"
 
 #include "base/people/RelayScope.h"
+#include "common/Logger.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
@@ -244,7 +245,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::mutex client_write_mu; // Subscribe/SendFrame/Detach vs each other
   std::string client_session_token;
   std::function<void(MediaDataFrame)> client_on_frame;
-  std::atomic<bool> client_reader_running{false};
+  /** Bumped on Detach — stale readers exit without clearing a newer attach's epoch. */
+  std::atomic<uint64_t> client_reader_epoch{0};
+  std::atomic<uint64_t> client_reader_started_for{0};
 
   // In-call hop: local publisher joined into HostSession without dialing self
   std::shared_ptr<HostParticipant> local_hop_part;
@@ -291,35 +294,62 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   void Fanout(const std::shared_ptr<HostSession>& session, const std::string& from_peer,
               const MediaDataFrame& frame, const std::vector<uint8_t>& body) {
     const uint64_t key = SubKey(frame.stream_id, frame.channel_id);
-    for (const auto& part : session->participants) {
+    // Snapshot under lock — Detach / AttachAsLocalHop may erase participants concurrently.
+    std::vector<std::shared_ptr<HostParticipant>> parts;
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      parts = session->participants;
+    }
+    for (const auto& part : parts) {
       if (!part || part->peer_id == from_peer) {
         continue;
       }
-      const bool local = static_cast<bool>(part->local_on_frame);
-      if (!local && !part->stream) {
-        continue;
-      }
-      if (part->subscriptions.find(key) == part->subscriptions.end()) {
-        continue;
-      }
-      if (frame.channel_type == MediaChannelType::LatestLossy) {
-        auto it = part->last_lossy_seq.find(key);
-        if (it != part->last_lossy_seq.end() && frame.seq < it->second && frame.mark == 0) {
-          continue; // stale under lossy policy
+      bool local = false;
+      bool subscribed = false;
+      bool over_ceiling = false;
+      std::function<void(MediaDataFrame)> on_frame;
+      {
+        std::lock_guard<std::mutex> lock(mu);
+        local = static_cast<bool>(part->local_on_frame);
+        if (!local && !part->stream) {
+          continue;
         }
-        part->last_lossy_seq[key] = frame.seq;
+        subscribed = part->subscriptions.find(key) != part->subscriptions.end();
+        if (!subscribed) {
+          continue;
+        }
+        if (frame.channel_type == MediaChannelType::LatestLossy) {
+          auto it = part->last_lossy_seq.find(key);
+          if (it != part->last_lossy_seq.end() && frame.seq < it->second && frame.mark == 0) {
+            continue; // stale under lossy policy
+          }
+          part->last_lossy_seq[key] = frame.seq;
+        }
+        part->bytes_down += static_cast<int64_t>(body.size());
+        session->bytes_total += static_cast<int64_t>(body.size());
+        over_ceiling = session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes;
+        if (local) {
+          on_frame = part->local_on_frame;
+        }
       }
-      part->bytes_down += static_cast<int64_t>(body.size());
-      session->bytes_total += static_cast<int64_t>(body.size());
-      if (session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes) {
+      if (over_ceiling) {
         continue;
       }
       if (local) {
-        part->local_on_frame(frame);
+        if (on_frame) {
+          on_frame(frame);
+        }
         continue;
       }
       std::lock_guard<std::mutex> wlock(part->write_mu);
-      (void)WriteExactBody(part->stream, body);
+      if (auto written = WriteExactBody(part->stream, body); !written) {
+        static std::atomic<int> fanout_fail_log{0};
+        if (fanout_fail_log.fetch_add(1, std::memory_order_relaxed) < 8) {
+          logging::getLogger("MediaRelayService").warning
+              << "fanout write failed peer=" << part->peer_id << " stream=" << frame.stream_id
+              << " ch=" << frame.channel_id << " err=" << written.error().message;
+        }
+      }
     }
   }
 
@@ -340,13 +370,23 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         }
         const std::string op = root.value("op", "");
         if (op == "subscribe") {
-          part->subscriptions.insert(SubKey(root.value("stream_id", 0u),
-                                            static_cast<uint16_t>(root.value("channel_id", 0))));
+          {
+            std::lock_guard<std::mutex> lock(mu);
+            part->subscriptions.insert(SubKey(root.value("stream_id", 0u),
+                                              static_cast<uint16_t>(root.value("channel_id", 0))));
+          }
+          logging::getLogger("MediaRelayService").info
+              << "hop subscribe peer=" << part->peer_id << " stream=" << root.value("stream_id", 0u)
+              << " ch=" << root.value("channel_id", 0) << " call=" << session->call_id
+              << " parts=" << session->participants.size();
           std::lock_guard<std::mutex> wlock(part->write_mu);
           (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "subscribe"}});
         } else if (op == "unsubscribe") {
-          part->subscriptions.erase(SubKey(root.value("stream_id", 0u),
-                                           static_cast<uint16_t>(root.value("channel_id", 0))));
+          {
+            std::lock_guard<std::mutex> lock(mu);
+            part->subscriptions.erase(SubKey(root.value("stream_id", 0u),
+                                             static_cast<uint16_t>(root.value("channel_id", 0))));
+          }
           std::lock_guard<std::mutex> wlock(part->write_mu);
           (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "unsubscribe"}});
         } else if (op == "detach") {
@@ -534,45 +574,62 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void StartClientReader(const std::shared_ptr<Impl>& self) {
-    if (client_reader_running.exchange(true)) {
-      return;
-    }
     if (!host) {
-      client_reader_running = false;
       return;
     }
-    PostLibp2pWorker(*host, WorkerLane::Normal, [self]() {
-      while (self->client_reader_running.load()) {
-        std::shared_ptr<Stream> stream;
-        std::function<void(MediaDataFrame)> cb;
-        {
-          std::lock_guard<std::mutex> lock(self->mu);
-          stream = self->client_stream;
-          cb = self->client_on_frame;
-        }
-        if (!stream) {
-          break;
-        }
-        auto body = ReadExactFrame(stream);
-        if (!body) {
-          break;
-        }
-        if (body->empty()) {
-          break;
-        }
-        if ((*body)[0] == '{') {
-          continue; // control ack noise
-        }
-        auto frame = DecodeMediaDataFrame(*body);
-        if (!frame) {
-          break;
-        }
-        if (cb) {
-          cb(*frame);
-        }
+    const uint64_t epoch = client_reader_epoch.load(std::memory_order_acquire);
+    uint64_t started = client_reader_started_for.load(std::memory_order_acquire);
+    while (started != epoch) {
+      if (client_reader_started_for.compare_exchange_weak(started, epoch,
+                                                         std::memory_order_acq_rel,
+                                                         std::memory_order_acquire)) {
+        PostLibp2pWorker(*host, WorkerLane::Normal,
+                         [self, epoch]() { self->RunClientReader(epoch); });
+        return;
       }
-      self->client_reader_running = false;
-    });
+      // CAS failed: either another Start won for this epoch, or Detach bumped epoch.
+      if (started == epoch) {
+        return;
+      }
+      if (client_reader_epoch.load(std::memory_order_acquire) != epoch) {
+        return; // detached before reader started; caller must Start after re-attach
+      }
+    }
+  }
+
+  void RunClientReader(uint64_t epoch) {
+    while (client_reader_epoch.load(std::memory_order_acquire) == epoch) {
+      std::shared_ptr<Stream> stream;
+      std::function<void(MediaDataFrame)> cb;
+      {
+        std::lock_guard<std::mutex> lock(mu);
+        stream = client_stream;
+        cb = client_on_frame;
+      }
+      if (!stream) {
+        break;
+      }
+      auto body = ReadExactFrame(stream);
+      if (client_reader_epoch.load(std::memory_order_acquire) != epoch) {
+        break;
+      }
+      if (!body) {
+        break;
+      }
+      if (body->empty()) {
+        break;
+      }
+      if ((*body)[0] == '{') {
+        continue; // control ack noise
+      }
+      auto frame = DecodeMediaDataFrame(*body);
+      if (!frame) {
+        break;
+      }
+      if (cb) {
+        cb(*frame);
+      }
+    }
   }
 };
 
@@ -767,7 +824,7 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
             impl->client_session_token = token;
             impl->client_on_frame = std::move(on_frame);
           }
-          impl->StartClientReader(impl);
+          // Reader starts later via StartClientFrameReader() after StartSfu.
 
           MediaRelayAttachResult out;
           out.ok = true;
@@ -784,6 +841,13 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
   return result_future.get();
 }
 
+void MediaRelayService::StartClientFrameReader() {
+  if (!impl_) {
+    return;
+  }
+  impl_->StartClientReader(impl_);
+}
+
 Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
     const std::string& call_id, std::function<void(MediaDataFrame)> on_frame) {
   if (call_id.empty()) {
@@ -796,6 +860,22 @@ Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
   if (!local_pid) {
     return local_pid.error();
   }
+
+  // Same call already PreferLocal — refresh callback only (guest hop-hint thrash).
+  {
+    std::lock_guard<std::mutex> lock(impl_->mu);
+    if (impl_->local_hop_part && impl_->local_hop_session &&
+        impl_->local_hop_session->call_id == call_id && impl_->local_hop_peer_id == *local_pid) {
+      impl_->local_hop_part->local_on_frame = std::move(on_frame);
+      MediaRelayAttachResult out;
+      out.ok = true;
+      out.session_token = impl_->local_hop_session->session_token;
+      logging::getLogger("MediaRelayService").info
+          << "AttachAsLocalHop refresh call=" << call_id;
+      return out;
+    }
+  }
+
   Detach();
 
   auto part = std::make_shared<HostParticipant>();
@@ -845,34 +925,35 @@ Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
 
 Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) {
   std::shared_ptr<Stream> stream;
-  std::shared_ptr<HostParticipant> local;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
+    if (impl_->local_hop_part) {
+      impl_->local_hop_part->subscriptions.insert(SubKey(stream_id, channel_id));
+      logging::getLogger("MediaRelayService").info
+          << "local-hop subscribe stream=" << stream_id << " ch=" << channel_id
+          << " call=" << (impl_->local_hop_session ? impl_->local_hop_session->call_id : "");
+      return {};
+    }
     stream = impl_->client_stream;
-    local = impl_->local_hop_part;
-  }
-  if (local) {
-    local->subscriptions.insert(SubKey(stream_id, channel_id));
-    return {};
   }
   if (!stream) {
     return Error("not attached");
   }
+  logging::getLogger("MediaRelayService").info
+      << "client subscribe stream=" << stream_id << " ch=" << channel_id;
   std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
   return WriteJson(stream, {{"v", 1}, {"op", "subscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}});
 }
 
 Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id) {
   std::shared_ptr<Stream> stream;
-  std::shared_ptr<HostParticipant> local;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
+    if (impl_->local_hop_part) {
+      impl_->local_hop_part->subscriptions.erase(SubKey(stream_id, channel_id));
+      return {};
+    }
     stream = impl_->client_stream;
-    local = impl_->local_hop_part;
-  }
-  if (local) {
-    local->subscriptions.erase(SubKey(stream_id, channel_id));
-    return {};
   }
   if (!stream) {
     return Error("not attached");
@@ -928,6 +1009,10 @@ void MediaRelayService::Detach() {
     impl_->local_hop_part.reset();
     impl_->local_hop_session.reset();
     impl_->local_hop_peer_id.clear();
+    if (local) {
+      // Drop callback before Fanout can invoke into a tearing-down CallMediaEngine.
+      local->local_on_frame = nullptr;
+    }
     if (local && local_session) {
       local_session->participants.erase(
           std::remove_if(local_session->participants.begin(), local_session->participants.end(),
@@ -935,7 +1020,8 @@ void MediaRelayService::Detach() {
           local_session->participants.end());
     }
   }
-  impl_->client_reader_running = false;
+  // Invalidate any in-flight reader before closing the stream (unblocks ReadExactFrame).
+  impl_->client_reader_epoch.fetch_add(1, std::memory_order_acq_rel);
   if (stream) {
     {
       std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
@@ -948,6 +1034,11 @@ void MediaRelayService::Detach() {
 bool MediaRelayService::IsAttached() const {
   std::lock_guard<std::mutex> lock(impl_->mu);
   return impl_->client_stream != nullptr || impl_->local_hop_part != nullptr;
+}
+
+bool MediaRelayService::IsLocalHopAttached() const {
+  std::lock_guard<std::mutex> lock(impl_->mu);
+  return impl_->local_hop_part != nullptr;
 }
 
 } // namespace pbr

@@ -592,10 +592,46 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 
 1. **Owner picks the hop** (sticky initiator SoftMigrate, unchanged V021/V022).
 2. **Admission:** the first dialer (or `AttachAsLocalHop`) that opens a `media_relay` session for `call_id` must pass normal contact/scope admission. **After** that session exists, further attaches to the same `call_id` are admitted even if the dialer is not in the hop’s contact set — including mid-call stranger joiners. Mobile remains non-Public for *new* sessions (V027); only join-to-existing-call is the exception.
-3. **Ranking:** when the initiator’s local `media_relay` is started, prefer **self** as hop (`PreferLocalMediaHop` → `AttachAsLocalHop`) ahead of PreferInCall phones / seeds.
+3. **Ranking:** when the initiator is a **durable Node** with `media_relay` started, prefer **self** as hop (`PreferLocalMediaHop` → `AttachAsLocalHop`) ahead of PreferInCall phones / seeds. **Not** for mobile ephemeral `media_relay` (V027) — phones must not SoftMigrate themselves into the SFU host role.
 
-**Rationale:** Guests need not be mutual contacts of each other or of an in-call phone hop. Owner-sponsored call semantics match signaling (owner can reach each invitee). PreferLocal keeps the owner Node as the default host when available.
+**Rationale:** Guests need not be mutual contacts of each other or of an in-call phone hop. Owner-sponsored call semantics match signaling (owner can reach each invitee). PreferLocal keeps the owner **Node** as the default host when available; ephemeral mobile Start() alone must not claim PreferLocal (dogfood: Android hop crash → peer `Connection reset`).
 
 **Alternatives:** Require mutual contacts among all participants (rejected — UX); open mobile Public for new sessions (rejected — V027); signed owner attach tokens (deferred — same product rule, stronger crypto later).
 
-**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) media_relay; mesh N025 / V027.
+## V029 — Durable hop rank + guest hop hints
+
+**Date:** 2026-08-03  
+**Status:** Accepted (**implemented**)  
+**Decision:** For N≥3 SoftMigrate / attach:
+
+1. **Owner picks + broadcasts** (`CallSfuAttach`) remains the sole attach authority (V021/V028).
+2. **Ranking:** PreferLocal only for **durable Node** (`prefer_local_as_hop`). Do **not** PreferInCall phones as SFU host (amends V027 “in-call hop” for group SFU). Then ranked contact∪seed hops.
+3. **Guest attach failure:** guest sends `call_sfu_attach_failed` with ordered `preferred_hop_peer_ids` (dialable hops, capped). Owner intersects with its dialable rank (excluding the failed hop):
+   - Intersection non-empty → SoftMigrate re-pick (preferred hop first) + new `CallSfuAttach` fan-out.
+   - Empty → `call_hop_refuse` to guest + eject; friendly copy for guest and owner toast.
+4. **Mid-call add/remove:** same SoftMigrate / hint / refuse loop when hop must change.
+
+**Rationale:** Owner cannot know guest↛hop a priori; guest prefs turn attach failure into switch-or-refuse instead of blind thrash or silent leave. Phones must not PreferLocal/PreferInCall into the SFU host role (dogfood crash).
+
+**Cross-link:** V023 / V027 / V028; [CALLS.md](../../docs/architecture/CALLS.md) media_relay.
+
+---
+
+## V030 — Call capability ads (`caps`) for SoftMigrate hop eligibility
+
+**Date:** 2026-08-03  
+**Status:** Accepted (**implemented**)  
+**Decision:** SoftMigrate must not treat “dialable listen addr” as “hosts `media_relay`.”
+
+1. **Wire (additive):** `call_invite` / `call_accept` may include `"caps": { "v": 1, "media_relay": bool }`. Old peers ignore unknown keys. Missing `caps` = old peer.
+2. **Advertise `media_relay` only** when durable **Node** + capability + service started. Ephemeral mobile listen-only must send `media_relay: false` (or omit hosting).
+3. **Ranking:** PreferLocal (durable) + org seeds always eligible; **contact** hops only if cached `media_relay` ad is true (fail closed). PreferLocal self is prepended after this filter.
+4. **Versioning:** bump `caps.v` only on semantic break; newer unknown `v` → treat as unusable for hop pick (do not fail invite parse).
+5. **UX:** SoftMigrate / attach failures surface friendly copy (`call.error.no_media_relay_hop`, `call.error.local_media_relay_unavailable`) — not raw `media_relay not started`.
+6. **Follow-up:** Identify capability ads (mesh PHASES ns) so hops are known before a call.
+
+**Rationale:** Dogfood: tablets publish listen addrs (N025) and were wrongly SoftMigrated into SFU host → `media_relay not started` / Couldn't connect.
+
+**Cross-link:** V029; [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) additive wire; mesh [PHASES ns](../p2p-mesh/PHASES.md).
+
+---

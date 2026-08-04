@@ -99,11 +99,14 @@ std::vector<MeshHopCandidate> PreferInCallMediaHops(std::vector<MeshHopCandidate
                                                    const std::unordered_set<std::string>& in_call_peer_ids);
 
 /**
- * Soft-migrate: prepend local PeerId as dialable hop (empty multiaddr → AttachAsLocalHop).
+ * Soft-migrate: prepend local PeerId as hop (AttachAsLocalHop locally).
+ * `local_multiaddr` is advertised in CallSfuAttach so remotes can dial this Node — leave empty
+ * only in unit tests; production SoftMigrate must pass a LAN/advertise multiaddr.
  * No-op when local_peer_id empty. Dedupes if already present.
  */
 std::vector<MeshHopCandidate> PreferLocalMediaHop(std::vector<MeshHopCandidate> ranked,
-                                                  const std::string& local_peer_id);
+                                                  const std::string& local_peer_id,
+                                                  const std::string& local_multiaddr = {});
 
 /** PeerId from a contact row (ContactIdKind::PeerId or multiaddr /p2p/). */
 std::string PeerIdFromContact(const Contact& contact);

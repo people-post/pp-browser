@@ -4,9 +4,11 @@
 #include "base/crypto/SessionKeyDeriver.h"
 #include "base/messaging/CallSessionLogic.h"
 #include "base/messaging/DirectChatTarget.h"
+#include "base/messaging/PeerCapsLogic.h"
 #include "base/messaging/SendRelayOptions.h"
 #include "base/people/ContactJson.h"
 #include "base/people/ContactTypes.h"
+#include "base/people/MeshHopPolicy.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
@@ -29,13 +31,35 @@ void PrefetchReachForIdentities(const CallSessionManager::PrefetchPeerReachFn& f
   }
 }
 
+void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
+                         const std::string& identity, const CallPeerCaps& caps,
+                         const std::vector<std::string>& listen_multiaddrs) {
+  if (!caps.present) {
+    return;
+  }
+  std::vector<std::string> peer_ids = PeerIdsFromListenMultiaddrs(listen_multiaddrs);
+  if (peer_ids.empty() && !identity.empty()) {
+    if (auto found = contacts.FindByIdentity(identity, ContactIdKind::RelayUser);
+        found && found->has_value()) {
+      const std::string peer_id = PeerIdFromContact(**found);
+      if (!peer_id.empty()) {
+        peer_ids.push_back(peer_id);
+      }
+    }
+  }
+  for (const std::string& peer_id : peer_ids) {
+    sessions.NotePeerMediaRelayCap(peer_id, caps.media_relay);
+  }
+}
+
+} // namespace
+
 void PrefetchReachForIdentity(const CallSessionManager::PrefetchPeerReachFn& fn, const std::string& identity) {
   if (!identity.empty() && fn) {
     fn(identity);
   }
 }
 
-} // namespace
 CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                        CallSessionStore& sessions, CallMediaKeyStore& media_keys,
                                        P2pMessagingService& p2p, IPskSessionStore& psk_store, CallMediaEngine& media)
@@ -159,8 +183,54 @@ void CallSessionManager::SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsF
   local_listen_multiaddrs_ = std::move(callback);
 }
 
+void CallSessionManager::SetLocalPeerCapsProvider(LocalPeerCapsFn callback) {
+  local_peer_caps_ = std::move(callback);
+}
+
 void CallSessionManager::SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback) {
   register_peer_listen_multiaddrs_ = std::move(callback);
+}
+
+void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay) {
+  if (peer_id.empty()) {
+    return;
+  }
+  const bool was = PeerHasMediaRelayCap(peer_id);
+  peer_media_relay_caps_[peer_id] = media_relay;
+  // Phone initiator SoftMigrate may have run before this desktop Accept — nudge re-pick.
+  if (media_relay && !was) {
+    if (auto active = ActiveLocalCall(); active && active->has_value()) {
+      if (topology_.IsSfuAttachWaitActive() || !topology_.IsSfuAttached()) {
+        const std::string call_id = (*active)->call_id;
+        AppRuntime::PostWorkerNormal([this, call_id]() {
+          if (topology_.IsOnSfuForCall(call_id)) {
+            return;
+          }
+          (void)topology_.MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+          NotifyRingChanged();
+        });
+      }
+    }
+  }
+}
+
+bool CallSessionManager::PeerHasMediaRelayCap(const std::string& peer_id) const {
+  if (peer_id.empty()) {
+    return false;
+  }
+  const auto it = peer_media_relay_caps_.find(peer_id);
+  return it != peer_media_relay_caps_.end() && it->second;
+}
+
+std::vector<std::string> CallSessionManager::ListMediaRelayCapablePeerIds() const {
+  std::vector<std::string> out;
+  out.reserve(peer_media_relay_caps_.size());
+  for (const auto& [peer_id, enabled] : peer_media_relay_caps_) {
+    if (enabled && !peer_id.empty()) {
+      out.push_back(peer_id);
+    }
+  }
+  return out;
 }
 
 void CallSessionManager::NotifyRingChanged() {
@@ -253,6 +323,7 @@ Roe<CallRosterDetail> CallSessionManager::BuildRosterDetail(const std::string& c
     entry.state = row.state;
     entry.audio_muted = row.media.audio_muted;
     entry.video_enabled = row.media.video_enabled;
+    entry.joined_at = row.joined_at;
     detail.participants.push_back(std::move(entry));
   }
   return detail;
@@ -552,6 +623,10 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   if (local_listen_multiaddrs_) {
     invite.listen_multiaddrs = local_listen_multiaddrs_();
   }
+  if (local_peer_caps_) {
+    invite.caps = local_peer_caps_();
+    invite.caps.present = true;
+  }
   auto detail = CallControlCodec::EncodeInvite(invite);
   if (!detail) {
     return detail.error();
@@ -654,6 +729,10 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
   accept.video_enabled = false;
   if (local_listen_multiaddrs_) {
     accept.listen_multiaddrs = local_listen_multiaddrs_();
+  }
+  if (local_peer_caps_) {
+    accept.caps = local_peer_caps_();
+    accept.caps.present = true;
   }
   auto detail = CallControlCodec::EncodeAccept(accept);
   if (!detail) {
@@ -954,6 +1033,14 @@ bool CallSessionManager::IsAwaitingSfuRecovery() const {
   return topology_.IsAwaitingSfuRecovery();
 }
 
+bool CallSessionManager::IsSoftMigrateInFlight() const {
+  return topology_.IsSoftMigrateInFlight();
+}
+
+bool CallSessionManager::IsSfuAttachWaitActive() const {
+  return topology_.IsSfuAttachWaitActive();
+}
+
 bool CallSessionManager::IsP2pConnectFailed() const {
   if (libp2p_bridge_ && libp2p_bridge_->IsLibp2pConnectFailed()) {
     return true;
@@ -1224,6 +1311,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (register_peer_listen_multiaddrs_ && !invite->listen_multiaddrs.empty()) {
       register_peer_listen_multiaddrs_(pending.inviter_identity, invite->listen_multiaddrs);
     }
+    NoteCapsForIdentity(*this, contacts_, pending.inviter_identity, invite->caps,
+                        invite->listen_multiaddrs);
     PrefetchReachForIdentity(prefetch_reach_, pending.inviter_identity);
     NotifyRingChanged();
     return {};
@@ -1238,6 +1327,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (register_peer_listen_multiaddrs_ && !accept->listen_multiaddrs.empty()) {
       register_peer_listen_multiaddrs_(identity, accept->listen_multiaddrs);
     }
+    NoteCapsForIdentity(*this, contacts_, identity, accept->caps, accept->listen_multiaddrs);
     CallParticipant participant;
     participant.call_id = accept->call_id;
     participant.identity = identity;
@@ -1385,6 +1475,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       participant.state = entry.state;
       participant.media.audio_muted = entry.audio_muted;
       participant.media.video_enabled = entry.video_enabled;
+      participant.joined_at = entry.joined_at;
       (void)sessions_.UpsertParticipant(participant);
     }
     // Mid-call invite: CallAccept only reaches the inviter; initiator SoftMigrates when roster
@@ -1456,6 +1547,27 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     NotifyRingChanged();
     return {};
   }
+  case CallControlType::CallSfuAttachFailed: {
+    auto failed = CallControlCodec::DecodeSfuAttachFailed(detail_json);
+    if (!failed) {
+      return failed.error();
+    }
+    if (failed->identity.empty()) {
+      failed->identity = sender_identity;
+    }
+    topology_.OnInboundSfuAttachFailed(*failed);
+    NotifyRingChanged();
+    return {};
+  }
+  case CallControlType::CallHopRefuse: {
+    auto refused = CallControlCodec::DecodeHopRefuse(detail_json);
+    if (!refused) {
+      return refused.error();
+    }
+    topology_.OnInboundHopRefuse(*refused);
+    NotifyRingChanged();
+    return {};
+  }
   case CallControlType::CallEnded: {
     auto ended = CallControlCodec::DecodeEnded(detail_json);
     if (!ended) {
@@ -1503,6 +1615,22 @@ void CallSessionManager::TopologySetLastMediaError(std::string message) {
   last_media_error_ = std::move(message);
 }
 
+void CallSessionManager::TopologySetMediaActivity(std::string message) {
+  media_activity_ = std::move(message);
+}
+
+void CallSessionManager::TopologyClearMediaActivity() {
+  media_activity_.clear();
+}
+
+std::string CallSessionManager::PeekMediaActivity() const {
+  return media_activity_;
+}
+
+void CallSessionManager::ClearMediaActivity() {
+  media_activity_.clear();
+}
+
 void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) {
   if (libp2p_bridge_) {
     libp2p_bridge_->NoteMediaAttempted(call_id);
@@ -1516,6 +1644,12 @@ void CallSessionManager::TopologyBindMediaCallId(const std::string& call_id) {
 
 void CallSessionManager::TopologyClearMediaPeerIdentity() {
   p2p_bridge_.ClearMediaPeerIdentity();
+}
+
+void CallSessionManager::TopologyReleaseDirectMedia() {
+  if (libp2p_bridge_) {
+    libp2p_bridge_->ReleaseDirectTransport();
+  }
 }
 
 Roe<std::string> CallSessionManager::P2pLocalIdentity() const {

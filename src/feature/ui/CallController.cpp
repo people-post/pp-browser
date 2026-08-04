@@ -535,49 +535,63 @@ void CallController::RefreshPendingRing() {
     const bool group_call_context = (*active)->origin_group_id.has_value() || joined_count > 2 ||
                                     calls->IsAwaitingSfuRecovery() || calls->Media().IsSfuMode();
     in_call.show_retry = p2p_failed && !calls->IsAwaitingSfuRecovery() && !calls->Media().IsSfuMode();
+
+    // Prefer media IsConnected; also trust lifecycle InCall once DirectConnected fired so
+    // chrome cannot stick on Connecting while Opus already flows (connection_state lag).
+    // Media activity (hop find/switch) wins over Connected so SoftMigrate progress stays visible
+    // while the old path is still up.
+    const bool media_connected = calls->Media().IsConnected() ||
+                                 (life && life->Phase() == CallPhase::InCall && calls->Media().IsActive());
+    const std::string activity = calls->PeekMediaActivity();
     if (p2p_failed) {
+      in_call.elapsed = {};
+      in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
       in_call.status_hint =
           group_call_context ? ComposeGroupCallStatusHint().c_str()
                              : ComposeP2pStatusHint(calls->P2pConnectMissingMic()).c_str();
       in_call.show_invite = false;
-    } else {
+    } else if (!activity.empty()) {
+      in_call.elapsed = {};
+      in_call.subtitle = activity.c_str();
       in_call.status_hint = {};
-    }
-
-    // Prefer media IsConnected; also trust lifecycle InCall once DirectConnected fired so
-    // chrome cannot stick on Connecting while Opus already flows (connection_state lag).
-    if (calls->Media().IsConnected() ||
-        (life && life->Phase() == CallPhase::InCall && calls->Media().IsActive())) {
+      if (activity == Tr("call.status.switching_media_path")) {
+        in_call.status_hint = Tr("call.hint.switching_media_path").c_str();
+      } else if (activity == Tr("call.status.looking_for_another_path")) {
+        in_call.status_hint = Tr("call.hint.looking_for_another_path").c_str();
+      }
+    } else if (media_connected) {
+      calls->ClearMediaActivity();
       in_call.elapsed = FormatElapsed(calls->Media().ConnectedAtMs());
       in_call.subtitle = in_call.elapsed.empty() ? Tr("call.status.connected").c_str() : in_call.elapsed;
       in_call.show_retry = false;
       in_call.status_hint = {};
-    } else if (p2p_failed) {
-      in_call.elapsed = {};
-      in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
-    } else if (!calls->Media().IsActive()) {
-      in_call.elapsed = {};
-      in_call.subtitle = Tr("call.status.calling").c_str();
     } else {
       in_call.elapsed = {};
-      const std::string state = calls->Media().ConnectionState();
-      if (calls->IsAwaitingSfuRecovery()) {
-        in_call.subtitle = Tr("call.status.reconnecting").c_str();
-      } else if (state == "connecting" || state.empty() || state == "new") {
-        in_call.subtitle = Tr("call.status.connecting").c_str();
-      } else if (state == "disconnected") {
-        in_call.subtitle = Tr("call.status.reconnecting").c_str();
-      } else if (state == "failed") {
-        in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
-      } else if (state == "closed") {
-        in_call.subtitle = Tr("call.status.connecting").c_str();
+      in_call.status_hint = {};
+      if (!calls->Media().IsActive()) {
+        in_call.subtitle = Tr("call.status.calling").c_str();
+      } else if (calls->IsSoftMigrateInFlight()) {
+        in_call.subtitle = Tr("call.status.setting_up_group").c_str();
+      } else if (calls->IsSfuAttachWaitActive()) {
+        in_call.subtitle = Tr("call.status.waiting_for_media_path").c_str();
       } else {
-        in_call.subtitle = state;
+        const std::string state = calls->Media().ConnectionState();
+        if (calls->IsAwaitingSfuRecovery()) {
+          in_call.subtitle = Tr("call.status.reconnecting").c_str();
+        } else if (state == "connecting" || state.empty() || state == "new") {
+          in_call.subtitle = Tr("call.status.connecting").c_str();
+        } else if (state == "disconnected") {
+          in_call.subtitle = Tr("call.status.reconnecting").c_str();
+        } else if (state == "failed") {
+          in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
+        } else if (state == "closed") {
+          in_call.subtitle = Tr("call.status.connecting").c_str();
+        } else {
+          in_call.subtitle = state;
+        }
       }
     }
-    if (in_call.show_roster && joined_count > 0 &&
-        (calls->Media().IsConnected() ||
-         (life && life->Phase() == CallPhase::InCall && calls->Media().IsActive()))) {
+    if (in_call.show_roster && joined_count > 0 && media_connected && activity.empty()) {
       in_call.subtitle =
           Tr("call.participants_elapsed",
              {{"count", std::to_string(joined_count)}, {"elapsed", std::string(in_call.elapsed.c_str())}})

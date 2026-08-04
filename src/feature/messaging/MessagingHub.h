@@ -285,7 +285,6 @@ private:
   bool initialized_ = false;
   bool messaging_ready_ = false;
   uint64_t hub_policy_timer_id_ = 0;
-  bool mobile_ephemeral_relay_started_ = false;
   /** True while StartEphemeralListenAsync is in flight (avoid duplicate starts from UI tick). */
   bool mobile_ephemeral_start_inflight_ = false;
   int64_t mobile_ephemeral_start_inflight_at_ms_ = 0;

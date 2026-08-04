@@ -48,6 +48,11 @@ public:
   void StopLibp2pMedia(const std::string& call_id);
 
   /**
+   * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
+   */
+  void ReleaseDirectTransport();
+
+  /**
    * Abort in-flight Connect and wait until the worker exits (or timeout).
    * Must run before destroying this bridge / CallMediaDirectService / libp2p host.
    */

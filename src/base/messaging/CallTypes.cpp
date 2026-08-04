@@ -108,6 +108,10 @@ std::string CallControlTypeToWire(const CallControlType type) {
     return "call_ice";
   case CallControlType::CallSfuAttach:
     return "call_sfu_attach";
+  case CallControlType::CallSfuAttachFailed:
+    return "call_sfu_attach_failed";
+  case CallControlType::CallHopRefuse:
+    return "call_hop_refuse";
   }
   return "call_invite";
 }
@@ -145,6 +149,12 @@ std::optional<CallControlType> CallControlTypeFromWire(const std::string& value)
   }
   if (value == "call_sfu_attach") {
     return CallControlType::CallSfuAttach;
+  }
+  if (value == "call_sfu_attach_failed") {
+    return CallControlType::CallSfuAttachFailed;
+  }
+  if (value == "call_hop_refuse") {
+    return CallControlType::CallHopRefuse;
   }
   return std::nullopt;
 }

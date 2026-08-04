@@ -125,6 +125,9 @@ TEST_F(MediaRelayServiceTest, QuoteAcceptAttachFanout) {
   ASSERT_TRUE(attach_b) << attach_b.error().message;
   ASSERT_TRUE(attach_b->ok) << attach_b->error;
 
+  a_relay_->StartClientFrameReader();
+  b_relay_->StartClientFrameReader();
+
   ASSERT_TRUE(b_relay_->Subscribe(1, 0));
   // Give subscribe a moment to land on hop.
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -196,6 +199,65 @@ TEST_F(MediaRelayServiceTest, CallScopedAdmissionAllowsStrangerAfterSponsor) {
   (void)b_id;
   a_relay_->Detach();
   b_relay_->Detach();
+}
+
+TEST_F(MediaRelayServiceTest, PreferLocalHopFanoutToGuest) {
+  auto hop_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(hop_id);
+  const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint("hop", hop_ma));
+
+  const std::string call_id = "call-local-hop-fanout";
+  auto local = hop_relay_->AttachAsLocalHop(call_id, [](MediaDataFrame) {});
+  ASSERT_TRUE(local) << local.error().message;
+  ASSERT_TRUE(local->ok) << local->error;
+  EXPECT_TRUE(hop_relay_->IsLocalHopAttached());
+
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+  auto qa = a_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qa) << qa.error().message;
+  ASSERT_TRUE(qa->ok) << qa->error;
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool got = false;
+  MediaDataFrame received;
+  auto attach_a = a_relay_->AcceptAndAttach(
+      "hop", qa->quote_id, call_id, call_id,
+      [&](MediaDataFrame frame) {
+        std::lock_guard<std::mutex> lock(mu);
+        received = std::move(frame);
+        got = true;
+        cv.notify_one();
+      },
+      5000);
+  ASSERT_TRUE(attach_a) << attach_a.error().message;
+  ASSERT_TRUE(attach_a->ok) << attach_a->error;
+  a_relay_->StartClientFrameReader();
+  ASSERT_TRUE(a_relay_->Subscribe(42, 0));
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  MediaDataFrame sent;
+  sent.stream_id = 42;
+  sent.channel_id = 0;
+  sent.channel_type = MediaChannelType::ReliableOrdered;
+  sent.seq = 7;
+  sent.payload = {'p', 'c', 'm'};
+  ASSERT_TRUE(hop_relay_->SendFrame(sent));
+
+  {
+    std::unique_lock<std::mutex> lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got; }))
+        << "guest must receive PreferLocal hop frames";
+  }
+  EXPECT_EQ(received.stream_id, 42u);
+  EXPECT_EQ(received.seq, 7u);
+  EXPECT_EQ(received.payload, sent.payload);
+
+  hop_relay_->Detach();
+  a_relay_->Detach();
 }
 
 TEST_F(MediaRelayServiceTest, CallScopedAdmissionLocalHopUnlocksStranger) {

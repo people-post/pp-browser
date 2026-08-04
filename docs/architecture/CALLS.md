@@ -336,7 +336,7 @@ Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attach
 
 **Who picks (V021 / V022):** first soft-migrate is the sticky **call initiator** (earliest `joined_at` = session payer). Mid-call invite: `CallAccept` reaches only the inviter (WaitForAttach); **CallRoster** drives `JoinedCountObserved` so the initiator SoftMigrates. Joiners without hint WaitForAttach. ICE re-pick is epoch coordinator only. Fan-out clears `quote_id` (peers `RequestQuote` locally).
 
-**Hop preference:** when the initiator’s local `media_relay` is started, SoftMigrate prefers **self** (`AttachAsLocalHop`) ahead of PreferInCall / seeds. Then PreferInCall dialable members, then ranked contact∪seed hops.
+**Hop preference:** durable Node PreferLocal (`AttachAsLocalHop`) when `prefer_local_as_hop`; then org seeds + contacts that advertised `caps.media_relay` on invite/accept (V030 — fail closed if missing). **Do not** PreferInCall phones as SFU host (V029). Guest attach failure → `call_sfu_attach_failed` with hop prefs; owner re-picks or `call_hop_refuse` with friendly copy.
 
 **Call-scoped admission:** the first dialer (or local hop) that opens a `HostSession` for `call_id` must pass contact/scope admission. After that session exists, further dialers for the same `call_id` are admitted even if strangers to the hop (owner-picked hop serves the whole call, including mid-call joiners). Mobile stays non-Public for *new* sessions.
 

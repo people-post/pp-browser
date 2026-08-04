@@ -51,6 +51,10 @@ enum class CallControlType {
   CallIce,
   /** Soft-migrate onto media_relay hop (a4): hop peer id + stream map hint. */
   CallSfuAttach,
+  /** Guest → owner: SFU attach failed; optional preferred durable hops (V029). */
+  CallSfuAttachFailed,
+  /** Owner → guest: cannot place guest on a shared hop; leave with friendly copy (V029). */
+  CallHopRefuse,
 };
 
 struct CallParticipantMedia {
@@ -99,6 +103,23 @@ struct CallRosterEntry {
   CallParticipantState state = CallParticipantState::Joined;
   bool audio_muted = false;
   bool video_enabled = false;
+  /** Sticky SoftMigrate initiator (earliest wins). Optional for wire compat with older peers. */
+  std::optional<int64_t> joined_at;
+};
+
+/**
+ * Additive peer capability advertisement on call invite/accept (V030).
+ * `v` bumps only on semantic break; unknown newer `v` → treat as unusable for hop pick.
+ * Missing `caps` on wire → old peer (present=false); SoftMigrate fail-closed for contacts.
+ */
+inline constexpr int kCallPeerCapsVersion = 1;
+
+struct CallPeerCaps {
+  int v = kCallPeerCapsVersion;
+  /** Durable media_relay host (Node + capability + started) — not ephemeral listen-only. */
+  bool media_relay = false;
+  /** True when the `caps` object was present on wire. */
+  bool present = false;
 };
 
 struct CallInviteDetail {
@@ -121,6 +142,8 @@ struct CallInviteDetail {
    * has not populated the dial registry yet (desktop cross-OS dogfood).
    */
   std::vector<std::string> listen_multiaddrs;
+  /** Optional capability ads (additive; old peers ignore). */
+  CallPeerCaps caps;
 };
 
 struct CallAcceptDetail {
@@ -130,6 +153,8 @@ struct CallAcceptDetail {
   bool video_enabled = false;
   /** Answerer listen multiaddrs so offerer can fallback-dial when inbound never arrives. */
   std::vector<std::string> listen_multiaddrs;
+  /** Optional capability ads (additive; old peers ignore). */
+  CallPeerCaps caps;
 };
 
 struct CallDeclineDetail {
@@ -190,6 +215,26 @@ struct CallSfuAttachDetail {
   std::string quote_id;
   /** Local publisher stream_id for this sender (others subscribe). */
   uint32_t publisher_stream_id = 0;
+};
+
+/** Guest could not attach to owner-picked hop (V029). */
+struct CallSfuAttachFailedDetail {
+  std::string call_id;
+  std::string identity;
+  std::string failed_hop_peer_id;
+  std::string error;
+  /** Ordered PeerIds the guest can dial (durable/seed); owner intersects with its rank. */
+  std::vector<std::string> preferred_hop_peer_ids;
+};
+
+/** Owner refuses guest after hop-hint intersection empty (V029). */
+struct CallHopRefuseDetail {
+  std::string call_id;
+  std::string identity;
+  /** Stable reason id for logs (`no_shared_hop`). */
+  std::string reason;
+  /** User-facing sentence (already localized by sender). */
+  std::string message;
 };
 
 std::string GenerateCallId();

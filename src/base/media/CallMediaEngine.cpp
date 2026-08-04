@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cstring>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -178,7 +179,8 @@ struct CallMediaEngine::Impl {
   StateChangedFn on_state_changed;
 
   bool sfu_mode = false;
-  SfuSendFn sfu_send;
+  /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
+  std::shared_ptr<SfuSendFn> sfu_send;
   std::atomic<uint32_t> sfu_audio_seq{0};
   std::atomic<uint32_t> sfu_video_seq{0};
   std::atomic<bool> adaptation_camera_allowed{true};
@@ -379,10 +381,9 @@ struct CallMediaEngine::Impl {
   }
 
   void TearDownAudioLocked() {
+    // Caller must not hold mutex across JoinCaptureThread — capture may call sfu_send /
+    // OnSfuPacket which need the same mutex (deadlock + SDL double-free on quit).
     capture_running = false;
-    if (capture_thread.joinable()) {
-      capture_thread.join();
-    }
     CloseCameraLocked();
     if (capture_stream) {
       SDL_DestroyAudioStream(capture_stream);
@@ -422,6 +423,13 @@ struct CallMediaEngine::Impl {
     remote_level_ms.store(0, std::memory_order_relaxed);
     capture_available = false;
     CallAudioSession::Deactivate();
+  }
+
+  void JoinCaptureThread() {
+    capture_running = false;
+    if (capture_thread.joinable()) {
+      capture_thread.join();
+    }
   }
 
   void TearDownPcLocked() {
@@ -660,6 +668,7 @@ struct CallMediaEngine::Impl {
   }
 
   void StartCaptureLoop() {
+    // Precondition: capture_thread not joinable (JoinCaptureThread outside media mutex).
     capture_running = true;
     capture_thread = std::thread([this]() {
       // Device open (and OS mic prompts) stay on this worker so CallAccept /
@@ -678,9 +687,24 @@ struct CallMediaEngine::Impl {
       pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
       std::vector<unsigned char> opus_buf(4000);
       while (capture_running.load()) {
-        const bool can_send_p2p = audio_track && audio_track->isOpen() && encoder;
-        const bool can_send_sfu = sfu_mode && static_cast<bool>(sfu_send) && encoder;
-        const bool can_send = can_send_p2p || can_send_sfu;
+        std::shared_ptr<SfuSendFn> send_fn;
+        std::shared_ptr<rtc::Track> p2p_track;
+        OpusEncoder* enc = nullptr;
+        bool do_sfu = false;
+        bool do_p2p = false;
+        {
+          std::lock_guard lock(mutex);
+          enc = encoder;
+          do_sfu = sfu_mode && static_cast<bool>(sfu_send) && enc;
+          if (do_sfu) {
+            send_fn = sfu_send;
+          }
+          do_p2p = audio_track && audio_track->isOpen() && enc;
+          if (do_p2p) {
+            p2p_track = audio_track;
+          }
+        }
+        const bool can_send = do_sfu || do_p2p;
         if (capture_stream) {
           int16_t chunk[kFrameSamples];
           const int got = SDL_GetAudioStreamData(capture_stream, chunk, static_cast<int>(sizeof(chunk)));
@@ -727,27 +751,28 @@ struct CallMediaEngine::Impl {
             SmoothLevel(remote_output_level, 0.f);
           }
         }
-        if (!can_send) {
+        if (!can_send || !enc) {
           continue;
         }
         const int encoded =
-            opus_encode(encoder, pcm.data(), kFrameSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
+            opus_encode(enc, pcm.data(), kFrameSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
         if (encoded <= 0) {
           continue;
         }
-        if (can_send_sfu) {
+        if (do_sfu && send_fn) {
           SfuPacket pkt;
           pkt.channel_id = 0;
           pkt.seq = sfu_audio_seq.fetch_add(1) + 1;
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
           try {
-            sfu_send(pkt);
+            (*send_fn)(pkt);
           } catch (...) {
           }
         }
-        if (can_send_p2p) {
+        if (do_p2p && p2p_track) {
           try {
-            audio_track->send(reinterpret_cast<const std::byte*>(opus_buf.data()), static_cast<size_t>(encoded));
+            p2p_track->send(reinterpret_cast<const std::byte*>(opus_buf.data()),
+                            static_cast<size_t>(encoded));
             if (audio_rtp_config) {
               audio_rtp_config->timestamp += static_cast<uint32_t>(kFrameSamples);
             }
@@ -819,21 +844,32 @@ struct CallMediaEngine::Impl {
               auto encoded = video_codec->Encode(i420, need_keyframe);
               if (encoded && !encoded->annex_b.empty()) {
                 need_keyframe = false;
-                if (sfu_mode && sfu_send) {
+                std::shared_ptr<SfuSendFn> send_fn;
+                std::shared_ptr<rtc::Track> vtrack;
+                {
+                  std::lock_guard lock(mutex);
+                  if (sfu_mode && sfu_send) {
+                    send_fn = sfu_send;
+                  }
+                  if (video_track && video_track->isOpen()) {
+                    vtrack = video_track;
+                  }
+                }
+                if (send_fn) {
                   SfuPacket pkt;
                   pkt.channel_id = 1;
                   pkt.seq = sfu_video_seq.fetch_add(1) + 1;
                   pkt.mark = encoded->keyframe ? 1 : 0;
                   pkt.payload = encoded->annex_b;
                   try {
-                    sfu_send(pkt);
+                    (*send_fn)(pkt);
                   } catch (...) {
                   }
                 }
-                if (video_track && video_track->isOpen()) {
+                if (vtrack) {
                   try {
-                    video_track->send(reinterpret_cast<const std::byte*>(encoded->annex_b.data()),
-                                      encoded->annex_b.size());
+                    vtrack->send(reinterpret_cast<const std::byte*>(encoded->annex_b.data()),
+                                 encoded->annex_b.size());
                     if (video_rtp_config) {
                       video_rtp_config->timestamp += static_cast<uint32_t>(90000 / kVideoFps);
                     }
@@ -1159,8 +1195,8 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
       impl_->active = false;
       impl_->call_id.clear();
       impl_->started_at_ms.store(0, std::memory_order_relaxed);
-      impl_->TearDownAudioLocked();
       impl_->TearDownPcLocked();
+      impl_->TearDownAudioLocked();
       return flushed.error();
     }
     // Do not invoke on_state_changed under this lock — callbacks call ActiveCallId().
@@ -1176,25 +1212,47 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const Role role) {
 
 Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) {
   StateChangedFn state_cb;
+  std::shared_ptr<SfuSendFn> abandoned_send;
+  bool need_rebuild = false;
+  bool send_replaced_only = false;
+  auto next_send = std::make_shared<SfuSendFn>(std::move(send));
   {
     std::lock_guard lock(impl_->mutex);
     if (call_id.empty()) {
       return Error("call_id required");
     }
-    if (!send) {
+    if (!*next_send) {
       return Error("SFU send callback required");
     }
     if (impl_->active) {
       if (impl_->call_id == call_id && impl_->sfu_mode) {
-        impl_->sfu_send = std::move(send);
-        return {};
+        // SoftMigrate from libp2p→media_relay: swap callback; capture may still hold old shared_ptr.
+        abandoned_send = std::move(impl_->sfu_send);
+        impl_->sfu_send = std::move(next_send);
+        send_replaced_only = true;
+      } else {
+        // Soft-migrate: clear send + P2P track callbacks BEFORE destroying opus/SDL.
+        impl_->active = false;
+        abandoned_send = std::move(impl_->sfu_send);
+        impl_->sfu_send = nullptr;
+        impl_->TearDownPcLocked();
+        impl_->capture_running = false;
+        need_rebuild = true;
+        impl_->call_id.clear();
       }
-      // Soft-migrate: tear down P2P then bring up SFU for same or new call_id.
-      impl_->active = false;
-      impl_->TearDownAudioLocked();
-      impl_->TearDownPcLocked();
-      impl_->call_id.clear();
     }
+  }
+  abandoned_send = nullptr;
+  if (send_replaced_only) {
+    return {};
+  }
+  if (need_rebuild) {
+    impl_->JoinCaptureThread();
+    std::lock_guard lock(impl_->mutex);
+    impl_->TearDownAudioLocked();
+  }
+  {
+    std::lock_guard lock(impl_->mutex);
     if (!impl_->video_codec) {
       impl_->video_codec = CreatePlatformVideoCodec();
     }
@@ -1203,7 +1261,7 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
       return codecs.error();
     }
     impl_->sfu_mode = true;
-    impl_->sfu_send = std::move(send);
+    impl_->sfu_send = std::move(next_send);
     impl_->sfu_audio_seq.store(0);
     impl_->sfu_video_seq.store(0);
     impl_->call_id = call_id;
@@ -1227,8 +1285,19 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
 }
 
 void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
+  // Must hold mutex: SoftMigrate StartSfu TearDownAudioLocked destroys opus/SDL while the
+  // media_relay client reader can already deliver frames (guest attach dogfood crash).
+  std::lock_guard lock(impl_->mutex);
   if (!impl_->active || !impl_->sfu_mode || packet.payload.empty()) {
     return;
+  }
+  {
+    static std::atomic<int> sfu_rx_log{0};
+    const int n = sfu_rx_log.fetch_add(1, std::memory_order_relaxed);
+    if (n < 8) {
+      log().info << "OnSfuPacket #" << n << " ch=" << packet.channel_id << " seq=" << packet.seq
+                 << " bytes=" << packet.payload.size() << " call=" << impl_->call_id;
+    }
   }
   if (packet.channel_id == 0) {
     impl_->OnRemoteOpusFrame(reinterpret_cast<const std::byte*>(packet.payload.data()), packet.payload.size());
@@ -1303,6 +1372,7 @@ std::optional<CallMediaEngine::LocalDescription> CallMediaEngine::CurrentLocalDe
 
 void CallMediaEngine::Stop() {
   StateChangedFn state_cb;
+  std::shared_ptr<SfuSendFn> abandoned_send;
   {
     std::lock_guard lock(impl_->mutex);
     if (!impl_->active && !impl_->pc && !impl_->sfu_mode && !impl_->pending_remote_sdp &&
@@ -1315,11 +1385,18 @@ void CallMediaEngine::Stop() {
     impl_->connected_at_ms.store(0, std::memory_order_relaxed);
     impl_->started_at_ms.store(0, std::memory_order_relaxed);
     impl_->accept_offer_restart = false;
-    impl_->TearDownAudioLocked();
-    impl_->TearDownPcLocked();
-    impl_->ClearPendingRemoteLocked();
-    impl_->sfu_mode = false;
+    abandoned_send = std::move(impl_->sfu_send);
     impl_->sfu_send = nullptr;
+    impl_->sfu_mode = false;
+    impl_->capture_running = false;
+    impl_->TearDownPcLocked();
+  }
+  abandoned_send = nullptr;
+  impl_->JoinCaptureThread();
+  {
+    std::lock_guard lock(impl_->mutex);
+    impl_->TearDownAudioLocked();
+    impl_->ClearPendingRemoteLocked();
     impl_->call_id.clear();
     impl_->ApplyStateLocked("closed");
     state_cb = impl_->on_state_changed;

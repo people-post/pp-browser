@@ -190,11 +190,12 @@ TEST(MeshHopPolicyTest, PreferLocalMediaHopPrependsAndDedupes) {
 
   EXPECT_EQ(PreferLocalMediaHop({seed}, "").size(), 1u);
 
-  auto ranked = PreferLocalMediaHop({seed, self_dup}, "12D3KooWSelf");
+  const std::string self_ma = "/ip4/10.0.0.1/tcp/18517/p2p/12D3KooWSelf";
+  auto ranked = PreferLocalMediaHop({seed, self_dup}, "12D3KooWSelf", self_ma);
   ASSERT_EQ(ranked.size(), 2u);
   EXPECT_EQ(ranked[0].peer_id, "12D3KooWSelf");
   EXPECT_TRUE(ranked[0].dialable);
-  EXPECT_TRUE(ranked[0].multiaddr.empty());
+  EXPECT_EQ(ranked[0].multiaddr, self_ma);
   EXPECT_EQ(ranked[1].peer_id, "12D3KooWSeed");
 }
 
