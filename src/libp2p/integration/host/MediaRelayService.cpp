@@ -92,7 +92,6 @@ struct HostParticipant {
   std::shared_ptr<Stream> stream;
   /** Set for in-call hop local publisher (no network stream). */
   std::function<void(MediaDataFrame)> local_on_frame;
-  std::mutex write_mu; // serializes hop→client writes (fanout vs control acks) — sync path only
   std::shared_ptr<DuplexFrameSession> duplex;
   std::shared_ptr<std::atomic<bool>> duplex_cancelled;
   std::unordered_set<uint64_t> subscriptions;
@@ -176,7 +175,6 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   MediaRelayBudgetConfig budget;
   RelayPricingConfig pricing;
   MediaRelayAdmissionPolicy admission;
-  Libp2pExecutorConfig executor_config;
 
   std::unordered_map<std::string, PendingQuote> quotes_by_id;
   std::unordered_map<std::string, std::shared_ptr<HostSession>> sessions_by_token;
@@ -233,8 +231,8 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     return q;
   }
 
-  void FanoutAsync(const std::shared_ptr<HostSession>& session, const std::string& from_peer,
-                   const MediaDataFrame& frame, const std::vector<uint8_t>& body) {
+  void Fanout(const std::shared_ptr<HostSession>& session, const std::string& from_peer,
+              const MediaDataFrame& frame, const std::vector<uint8_t>& body) {
     if (!host) {
       return;
     }
@@ -289,72 +287,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         continue;
       }
       if (out_stream && host) {
-        // Cross-participant fanout: worker write while target duplex reads on io (sync-path pattern).
         PostLibp2pWorker(*host, WorkerLane::Normal, [out_stream, body]() {
           (void)BlockingWriteLengthPrefixedFrame(out_stream, body);
         });
-      }
-    }
-  }
-
-  void Fanout(const std::shared_ptr<HostSession>& session, const std::string& from_peer,
-              const MediaDataFrame& frame, const std::vector<uint8_t>& body) {
-    const uint64_t key = SubKey(frame.stream_id, frame.channel_id);
-    // Snapshot under lock — Detach / AttachAsLocalHop may erase participants concurrently.
-    std::vector<std::shared_ptr<HostParticipant>> parts;
-    {
-      std::lock_guard<std::mutex> lock(mu);
-      parts = session->participants;
-    }
-    for (const auto& part : parts) {
-      if (!part || part->peer_id == from_peer) {
-        continue;
-      }
-      bool local = false;
-      bool subscribed = false;
-      bool over_ceiling = false;
-      std::function<void(MediaDataFrame)> on_frame;
-      {
-        std::lock_guard<std::mutex> lock(mu);
-        local = static_cast<bool>(part->local_on_frame);
-        if (!local && !part->stream) {
-          continue;
-        }
-        subscribed = part->subscriptions.find(key) != part->subscriptions.end();
-        if (!subscribed) {
-          continue;
-        }
-        if (frame.channel_type == MediaChannelType::LatestLossy) {
-          auto it = part->last_lossy_seq.find(key);
-          if (it != part->last_lossy_seq.end() && frame.seq < it->second && frame.mark == 0) {
-            continue; // stale under lossy policy
-          }
-          part->last_lossy_seq[key] = frame.seq;
-        }
-        part->bytes_down += static_cast<int64_t>(body.size());
-        session->bytes_total += static_cast<int64_t>(body.size());
-        over_ceiling = session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes;
-        if (local) {
-          on_frame = part->local_on_frame;
-        }
-      }
-      if (over_ceiling) {
-        continue;
-      }
-      if (local) {
-        if (on_frame) {
-          on_frame(frame);
-        }
-        continue;
-      }
-      std::lock_guard<std::mutex> wlock(part->write_mu);
-      if (auto written = WriteExactBody(part->stream, body); !written) {
-        static std::atomic<int> fanout_fail_log{0};
-        if (fanout_fail_log.fetch_add(1, std::memory_order_relaxed) < 8) {
-          logging::getLogger("MediaRelayService").warning
-              << "fanout write failed peer=" << part->peer_id << " stream=" << frame.stream_id
-              << " ch=" << frame.channel_id << " err=" << written.error().message;
-        }
       }
     }
   }
@@ -373,7 +308,6 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         return false;
       }
       const std::string op = root.value("op", "");
-      const bool async = executor_config.async_data_plane_media_relay;
       if (op == "subscribe") {
         {
           std::lock_guard<std::mutex> lock(mu);
@@ -384,13 +318,10 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
             << "hop subscribe peer=" << part->peer_id << " stream=" << root.value("stream_id", 0u)
             << " ch=" << root.value("channel_id", 0) << " call=" << session->call_id
             << " parts=" << session->participants.size();
-        if (async && part->duplex) {
+        if (part->duplex) {
           const std::string json =
               nlohmann::json({{"v", 1}, {"ok", true}, {"op", "subscribe"}}).dump();
           part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
-        } else {
-          std::lock_guard<std::mutex> wlock(part->write_mu);
-          (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "subscribe"}});
         }
       } else if (op == "unsubscribe") {
         {
@@ -398,21 +329,15 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           part->subscriptions.erase(SubKey(root.value("stream_id", 0u),
                                              static_cast<uint16_t>(root.value("channel_id", 0))));
         }
-        if (async && part->duplex) {
+        if (part->duplex) {
           const std::string json =
               nlohmann::json({{"v", 1}, {"ok", true}, {"op", "unsubscribe"}}).dump();
           part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
-        } else {
-          std::lock_guard<std::mutex> wlock(part->write_mu);
-          (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "unsubscribe"}});
         }
       } else if (op == "detach") {
-        if (async && part->duplex) {
+        if (part->duplex) {
           const std::string json = nlohmann::json({{"v", 1}, {"ok", true}, {"op", "detach"}}).dump();
           part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
-        } else {
-          std::lock_guard<std::mutex> wlock(part->write_mu);
-          (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "detach"}});
         }
         return false;
       }
@@ -425,11 +350,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     }
     part->bytes_up += static_cast<int64_t>(body.size());
     session->bytes_total += static_cast<int64_t>(body.size());
-    if (executor_config.async_data_plane_media_relay) {
-      FanoutAsync(session, part->peer_id, *frame, body);
-    } else {
-      Fanout(session, part->peer_id, *frame, body);
-    }
+    Fanout(session, part->peer_id, *frame, body);
     return true;
   }
 
@@ -489,20 +410,6 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   void StartParticipantAsync(const std::shared_ptr<HostSession>& session,
                              const std::shared_ptr<HostParticipant>& part) {
     InitParticipantAsyncSync(session, part);
-  }
-
-  void HandleParticipantLoop(std::shared_ptr<HostSession> session, std::shared_ptr<HostParticipant> part) {
-    while (true) {
-      auto body = ReadExactFrame(part->stream);
-      if (!body) {
-        break;
-      }
-      if (!ProcessParticipantFrame(session, part, *body)) {
-        break;
-      }
-    }
-
-    CleanupParticipant(session, part);
   }
 
   void HandleInbound(libp2p::StreamAndProtocol stream_and_protocol) {
@@ -651,11 +558,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           }
 
           (void)WriteJson(stream, {{"v", 1}, {"ok", true}, {"op", "attach"}});
-          if (executor_config.async_data_plane_media_relay) {
-            StartParticipantAsync(session, part);
-          } else {
-            HandleParticipantLoop(session, part);
-          }
+          StartParticipantAsync(session, part);
           return;
         } else {
           (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "unsupported op"}});
@@ -763,11 +666,6 @@ void MediaRelayService::SetPricing(const RelayPricingConfig& pricing) {
 void MediaRelayService::SetAdmissionPolicy(MediaRelayAdmissionPolicy policy) {
   std::lock_guard<std::mutex> lock(impl_->mu);
   impl_->admission = std::move(policy);
-}
-
-void MediaRelayService::SetExecutorConfig(Libp2pExecutorConfig config) {
-  std::lock_guard<std::mutex> lock(impl_->mu);
-  impl_->executor_config = config;
 }
 
 Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer_key,
@@ -1079,11 +977,7 @@ Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
         session->bytes_total += static_cast<int64_t>(body.size());
       }
     }
-    if (impl_->executor_config.async_data_plane_media_relay) {
-      impl_->FanoutAsync(session, from_peer, frame, body);
-    } else {
-      impl_->Fanout(session, from_peer, frame, body);
-    }
+    impl_->Fanout(session, from_peer, frame, body);
     return {};
   }
   if (!stream) {

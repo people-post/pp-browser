@@ -2,7 +2,6 @@
 
 #include "common/Error.h"
 #include "libp2p/integration/host/IdentifyIntegrationService.h"
-#include "libp2p/integration/host/Libp2pExecutorConfig.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/Libp2pScheduler.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
@@ -21,7 +20,6 @@ namespace pbr {
 struct NodeRuntimeConfig {
   Libp2pHostConfig host;
   PeerSessionConfig sessions;
-  Libp2pExecutorConfig executors;
   std::vector<std::string> bootstrap_peers;
   /**
    * When host.listen_enabled, try these multiaddrs in order.
@@ -46,7 +44,6 @@ public:
   PeerSessionManager* Sessions() const;
   IdentifyIntegrationService* Identify();
   Libp2pScheduler* Scheduler();
-  const Libp2pExecutorConfig& ExecutorConfig() const { return executor_config_; }
 
   /** Bound listen multiaddr after a successful Node start (may differ from requested). */
   const std::string& BoundListenMultiaddr() const { return bound_listen_; }
@@ -71,7 +68,6 @@ private:
   std::unique_ptr<PeerSessionManager> sessions_;
   std::unique_ptr<IdentifyIntegrationService> identify_;
   std::unique_ptr<Libp2pScheduler> scheduler_;
-  Libp2pExecutorConfig executor_config_;
   std::string bound_listen_;
   std::string last_error_;
   bool ephemeral_listen_active_ = false;

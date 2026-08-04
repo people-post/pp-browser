@@ -3,7 +3,6 @@
 #include "base/people/RelayScope.h"
 #include "common/Error.h"
 #include "libp2p/integration/host/CircuitBridgeTarget.h"
-#include "libp2p/integration/host/Libp2pExecutorConfig.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
@@ -52,9 +51,6 @@ public:
 
   /** Hot-update provider admission (MessagingHub feeds contact PeerIds). */
   void SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy);
-
-  /** Data-plane executor toggles (async bridge migration). */
-  void SetExecutorConfig(Libp2pExecutorConfig config);
 
   /** Unblock in-flight RequestBridge waiters (Leave / hub shutdown). */
   void AbortInflightRequests();

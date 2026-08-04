@@ -106,13 +106,11 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   }
 
   auto dial_back = std::make_unique<DialBackService>(*runtime->Host(), *runtime->Sessions());
-  dial_back->SetExecutorConfig(runtime->ExecutorConfig());
   dial_back->Start();
 
   std::unique_ptr<CircuitRelayService> circuit_relay;
   if (config->libp2p.capabilities.circuit_relay) {
     circuit_relay = std::make_unique<CircuitRelayService>(*runtime->Host(), *runtime->Sessions());
-    circuit_relay->SetExecutorConfig(runtime->ExecutorConfig());
     circuit_relay->Start();
   }
 
@@ -122,7 +120,6 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     media_relay = std::make_unique<MediaRelayService>(*runtime->Host(), *runtime->Sessions());
     media_relay->SetBudget(config->libp2p.media_relay_budget);
     media_relay->SetPricing(config->libp2p.pricing.media_relay);
-    media_relay->SetExecutorConfig(runtime->ExecutorConfig());
     media_relay->Start();
   }
 

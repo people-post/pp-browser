@@ -32,7 +32,6 @@ void CloseQuiet(const std::shared_ptr<Stream>& stream) {
 struct Libp2pDirectChatService::Impl {
   std::mutex handler_mutex;
   Libp2pHost* host = nullptr;
-  Libp2pExecutorConfig executor_config;
   InboundHandler inbound;
 
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol) {
@@ -97,11 +96,6 @@ void Libp2pDirectChatService::Stop() {
   started_ = false;
   std::lock_guard lock(impl_->handler_mutex);
   impl_->inbound = nullptr;
-}
-
-void Libp2pDirectChatService::SetExecutorConfig(Libp2pExecutorConfig config) {
-  std::lock_guard lock(impl_->handler_mutex);
-  impl_->executor_config = config;
 }
 
 void Libp2pDirectChatService::SetInboundHandler(InboundHandler handler) {

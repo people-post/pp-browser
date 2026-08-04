@@ -1,4 +1,3 @@
-#include "libp2p/integration/host/Libp2pExecutorConfig.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/MediaRelayService.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
@@ -81,14 +80,6 @@ protected:
   std::unique_ptr<MediaRelayService> hop_relay_;
   std::unique_ptr<MediaRelayService> a_relay_;
   std::unique_ptr<MediaRelayService> b_relay_;
-
-  void EnableAsyncDataPlane() {
-    Libp2pExecutorConfig cfg;
-    cfg.async_data_plane_media_relay = true;
-    hop_relay_->SetExecutorConfig(cfg);
-    a_relay_->SetExecutorConfig(cfg);
-    b_relay_->SetExecutorConfig(cfg);
-  }
 };
 
 TEST_F(MediaRelayServiceTest, QuoteAcceptAttachFanout) {
@@ -306,8 +297,6 @@ TEST_F(MediaRelayServiceTest, CallScopedAdmissionLocalHopUnlocksStranger) {
 }
 
 TEST_F(MediaRelayServiceTest, AsyncDataPlaneQuoteAcceptAttachFanout) {
-  EnableAsyncDataPlane();
-
   auto hop_id = hop_host_.LocalPeerIdBase58();
   ASSERT_TRUE(hop_id);
   const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
@@ -375,8 +364,6 @@ TEST_F(MediaRelayServiceTest, AsyncDataPlaneQuoteAcceptAttachFanout) {
 }
 
 TEST_F(MediaRelayServiceTest, AsyncDataPlaneDetachUnblocksAttachedClient) {
-  EnableAsyncDataPlane();
-
   auto hop_id = hop_host_.LocalPeerIdBase58();
   ASSERT_TRUE(hop_id);
   const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;

@@ -37,7 +37,6 @@ struct Libp2pChatHistoryService::Impl {
   IdentityStore& identity;
   IPskSessionStore& psk_store;
   Libp2pHost* host = nullptr;
-  Libp2pExecutorConfig executor_config;
 
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol) {
     if (!host) {
@@ -106,10 +105,6 @@ void Libp2pChatHistoryService::Start() {
 
 void Libp2pChatHistoryService::Stop() {
   started_ = false;
-}
-
-void Libp2pChatHistoryService::SetExecutorConfig(Libp2pExecutorConfig config) {
-  impl_->executor_config = config;
 }
 
 void Libp2pChatHistoryService::RegisterPeerEndpoint(const std::string& peer_relay_user_id,

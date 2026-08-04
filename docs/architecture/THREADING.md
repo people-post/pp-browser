@@ -154,9 +154,7 @@ Integration services under `src/libp2p/integration/host/` use three executor cla
 | **Data** | `Libp2pHost::Post` (host io_context) | circuit byte pumps, media-relay frame read/fanout, call-media pump |
 | **Compute** | Optional service pool (headless) | blockchain batch verify (future) |
 
-Shared helpers: `StreamFrameIo` (`Blocking*` for control, `AsyncLengthPrefixedReader` / `StreamBridge` for data). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`.
-
-Migration tracker (temporary): [`tmp/libp2p-executor-migration.md`](../../tmp/libp2p-executor-migration.md).
+Shared helpers: `StreamFrameIo` (`Blocking*` for control, `AsyncLengthPrefixedReader` / `StreamBridge` / `DuplexFrameSession` for data). Per-session ordering uses `asio::strand` through `Libp2pScheduler::PostToSession`. Frame size caps: `Libp2pExecutorLimits`.
 
 ---
 

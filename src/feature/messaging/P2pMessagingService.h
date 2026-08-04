@@ -19,7 +19,6 @@
 #include "feature/messaging/GroupInviteGate.h"
 #include "base/net/ServiceClients.h"
 #include "libp2p/integration/host/Libp2pHost.h"
-#include "libp2p/integration/host/Libp2pExecutorConfig.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
 #include <atomic>
@@ -99,7 +98,6 @@ public:
   Roe<void> ImportPskBundleJson(const std::string& thread_id, const std::string& bundle_json);
   Roe<void> MarkPskVerified(const std::string& thread_id);
   void RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
-  void SetExecutorConfig(Libp2pExecutorConfig config);
   /** Register all multiaddrs from a contact (keyed by relay id). */
   void RegisterContactDirectEndpoints(const Contact& contact);
   /** D052 — fetch one older-history page when scrolled to top. */

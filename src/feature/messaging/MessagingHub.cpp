@@ -254,9 +254,6 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
     }
   }
   StartMeshServices(role);
-  if (p2p_) {
-    p2p_->SetExecutorConfig(node_runtime_->ExecutorConfig());
-  }
   return {};
 }
 
@@ -266,11 +263,9 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
   }
 
   dial_back_ = std::make_unique<DialBackService>(*node_runtime_->Host(), *node_runtime_->Sessions());
-  dial_back_->SetExecutorConfig(node_runtime_->ExecutorConfig());
   dial_back_->Start();
 
   circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
-  circuit_relay_->SetExecutorConfig(node_runtime_->ExecutorConfig());
   if (role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {
     circuit_relay_->Start();
   }
@@ -279,7 +274,6 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
   media_relay_ = std::make_unique<MediaRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
   media_relay_->SetBudget(config_.libp2p.media_relay_budget);
   media_relay_->SetPricing(config_.libp2p.pricing.media_relay);
-  media_relay_->SetExecutorConfig(node_runtime_->ExecutorConfig());
   if (role == Libp2pRole::Node && config_.libp2p.capabilities.media_relay) {
     media_relay_->Start();
   }
@@ -1146,9 +1140,6 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), Libp2p(),
                                                 Sessions());
-  if (node_runtime_) {
-    p2p_->SetExecutorConfig(node_runtime_->ExecutorConfig());
-  }
   p2p_->SetProfileDataDir(data_dir_);
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);
@@ -1549,14 +1540,12 @@ void MessagingHub::RefreshMeshCapabilities() {
   dial_registry_.reset();
   const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);
   circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
-  circuit_relay_->SetExecutorConfig(node_runtime_->ExecutorConfig());
   if (role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {
     circuit_relay_->Start();
   }
   media_relay_ = std::make_unique<MediaRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
   media_relay_->SetBudget(config_.libp2p.media_relay_budget);
   media_relay_->SetPricing(config_.libp2p.pricing.media_relay);
-  media_relay_->SetExecutorConfig(node_runtime_->ExecutorConfig());
   if (role == Libp2pRole::Node && config_.libp2p.capabilities.media_relay) {
     media_relay_->Start();
   }

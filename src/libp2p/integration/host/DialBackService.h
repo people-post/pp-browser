@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/Error.h"
-#include "libp2p/integration/host/Libp2pExecutorConfig.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
@@ -39,8 +38,6 @@ public:
   void Start();
   void Stop();
   bool IsStarted() const { return started_; }
-
-  void SetExecutorConfig(Libp2pExecutorConfig config);
 
   /**
    * Client: open dial-back stream to `seed_peer_key` (must be RegisterEndpoint'd),

@@ -75,7 +75,6 @@ struct CircuitRelayService::Impl {
   Libp2pHost* host = nullptr;
   PeerSessionManager* sessions = nullptr;
   CircuitRelayAdmissionPolicy admission;
-  Libp2pExecutorConfig executor_config;
 
   struct ActiveBridgeSession {
     std::shared_ptr<std::atomic<bool>> cancelled;
@@ -117,7 +116,6 @@ struct CircuitRelayService::Impl {
     if (!host) {
       return;
     }
-    (void)executor_config;
     auto session = std::make_shared<ActiveBridgeSession>();
     session->cancelled = std::make_shared<std::atomic<bool>>(false);
     const auto cancel_check = [cancelled = session->cancelled]() {
@@ -314,11 +312,6 @@ void CircuitRelayService::AbortInflightRequests() {
 void CircuitRelayService::SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy) {
   std::lock_guard<std::mutex> lock(impl_->handler_mutex);
   impl_->admission = std::move(policy);
-}
-
-void CircuitRelayService::SetExecutorConfig(Libp2pExecutorConfig config) {
-  std::lock_guard<std::mutex> lock(impl_->handler_mutex);
-  impl_->executor_config = config;
 }
 
 Roe<CircuitRelayBridgeResult> CircuitRelayService::RequestBridge(const std::string& relay_peer_key,

@@ -78,7 +78,6 @@ struct DialBackService::Impl {
   std::mutex handler_mutex;
   Libp2pHost* host = nullptr;
   PeerSessionManager* sessions = nullptr;
-  Libp2pExecutorConfig executor_config;
 
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol) {
     // Protocol handlers run on the host io thread — hop to control worker before blocking I/O.
@@ -151,11 +150,6 @@ void DialBackService::Start() {
 
 void DialBackService::Stop() {
   started_ = false;
-}
-
-void DialBackService::SetExecutorConfig(Libp2pExecutorConfig config) {
-  std::lock_guard lock(impl_->handler_mutex);
-  impl_->executor_config = config;
 }
 
 Roe<DialBackProbeResult> DialBackService::Probe(const std::string& seed_peer_key,

@@ -137,7 +137,6 @@ Roe<void> NodeRuntime::Start(const NodeRuntimeConfig& config) {
 
   sessions_ = std::make_unique<PeerSessionManager>(*host_, config.sessions);
   scheduler_ = std::make_unique<Libp2pScheduler>(*host_);
-  executor_config_ = config.executors;
   identify_ = std::make_unique<IdentifyIntegrationService>();
   (void)identify_->Start(*host_, sessions_.get());
   RegisterBootstrapPeers(config.bootstrap_peers);
@@ -159,7 +158,6 @@ void NodeRuntime::Stop() {
     host_->Stop();
     host_.reset();
   }
-  executor_config_ = {};
   bound_listen_.clear();
 }
 

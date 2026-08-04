@@ -4,6 +4,8 @@
 #include "libp2p/integration/host/PeerSessionManager.h"
 #include "libp2p/integration/host/StreamFrameIo.h"
 
+#include "common/WorkerPool.h"
+
 #include <gtest/gtest.h>
 
 #include <libp2p/connection/stream.hpp>
@@ -369,6 +371,30 @@ TEST(Libp2pSchedulerTest, PostsControlToWorkerPool) {
   }
   EXPECT_TRUE(ran.load());
   host.Stop();
+}
+
+TEST(Libp2pSchedulerTest, PostComputeUsesOptionalPool) {
+  WorkerPool compute_pool(1);
+
+  Libp2pHost host;
+  Libp2pHostConfig cfg;
+  cfg.listen_multiaddr = "/ip4/127.0.0.1/tcp/0";
+  ASSERT_TRUE(host.Start(cfg));
+
+  Libp2pScheduler scheduler(host);
+  EXPECT_FALSE(scheduler.PostCompute([] {}));
+
+  scheduler.SetComputePool(&compute_pool);
+  std::atomic<bool> ran{false};
+  ASSERT_TRUE(scheduler.PostCompute([&] { ran.store(true); }));
+
+  for (int i = 0; i < 100 && !ran.load(); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_TRUE(ran.load());
+
+  host.Stop();
+  compute_pool.Shutdown();
 }
 
 } // namespace

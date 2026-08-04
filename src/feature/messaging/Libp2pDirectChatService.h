@@ -2,7 +2,6 @@
 
 #include "base/messaging/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
-#include "libp2p/integration/host/Libp2pExecutorConfig.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
@@ -40,7 +39,6 @@ public:
   void Start();
   void Stop();
 
-  void SetExecutorConfig(Libp2pExecutorConfig config);
   void SetInboundHandler(InboundHandler handler);
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
