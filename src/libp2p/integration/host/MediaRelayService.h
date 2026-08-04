@@ -3,6 +3,7 @@
 #include "base/data/Config.h"
 #include "base/people/RelayScope.h"
 #include "common/Error.h"
+#include "libp2p/integration/host/Libp2pExecutorConfig.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
@@ -92,6 +93,7 @@ public:
   void SetBudget(const MediaRelayBudgetConfig& budget);
   void SetPricing(const RelayPricingConfig& pricing);
   void SetAdmissionPolicy(MediaRelayAdmissionPolicy policy);
+  void SetExecutorConfig(Libp2pExecutorConfig config);
 
   /** Client: request ↑/↓ quote from hop. */
   Roe<MediaRelayQuote> RequestQuote(const std::string& hop_peer_key, const MediaRelayQuoteRequest& request,

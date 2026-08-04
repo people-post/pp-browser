@@ -1,3 +1,4 @@
+#include "libp2p/integration/host/Libp2pExecutorConfig.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/MediaRelayService.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
@@ -80,6 +81,14 @@ protected:
   std::unique_ptr<MediaRelayService> hop_relay_;
   std::unique_ptr<MediaRelayService> a_relay_;
   std::unique_ptr<MediaRelayService> b_relay_;
+
+  void EnableAsyncDataPlane() {
+    Libp2pExecutorConfig cfg;
+    cfg.async_data_plane_media_relay = true;
+    hop_relay_->SetExecutorConfig(cfg);
+    a_relay_->SetExecutorConfig(cfg);
+    b_relay_->SetExecutorConfig(cfg);
+  }
 };
 
 TEST_F(MediaRelayServiceTest, QuoteAcceptAttachFanout) {
@@ -294,6 +303,103 @@ TEST_F(MediaRelayServiceTest, CallScopedAdmissionLocalHopUnlocksStranger) {
   (void)b_id;
   hop_relay_->Detach();
   b_relay_->Detach();
+}
+
+TEST_F(MediaRelayServiceTest, DISABLED_AsyncDataPlaneQuoteAcceptAttachFanout) {
+  EnableAsyncDataPlane();
+
+  auto hop_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(hop_id);
+  const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint("hop", hop_ma));
+  ASSERT_TRUE(b_sessions_->RegisterEndpoint("hop", hop_ma));
+
+  const std::string call_id = "call-async-1";
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+
+  auto qa = a_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qa) << qa.error().message;
+  ASSERT_TRUE(qa->ok) << qa->error;
+
+  auto qb = b_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qb) << qb.error().message;
+  ASSERT_TRUE(qb->ok) << qb->error;
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool got = false;
+  MediaDataFrame received;
+
+  auto attach_a = a_relay_->AcceptAndAttach(
+      "hop", qa->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000);
+  ASSERT_TRUE(attach_a) << attach_a.error().message;
+  ASSERT_TRUE(attach_a->ok) << attach_a->error;
+
+  auto attach_b = b_relay_->AcceptAndAttach(
+      "hop", qb->quote_id, call_id, call_id,
+      [&](MediaDataFrame frame) {
+        std::lock_guard<std::mutex> lock(mu);
+        received = std::move(frame);
+        got = true;
+        cv.notify_one();
+      },
+      5000);
+  ASSERT_TRUE(attach_b) << attach_b.error().message;
+  ASSERT_TRUE(attach_b->ok) << attach_b->error;
+
+  a_relay_->StartClientFrameReader();
+  b_relay_->StartClientFrameReader();
+
+  ASSERT_TRUE(b_relay_->Subscribe(1, 0));
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+  MediaDataFrame sent;
+  sent.stream_id = 1;
+  sent.channel_id = 0;
+  sent.channel_type = MediaChannelType::LatestLossy;
+  sent.seq = 1;
+  sent.payload = {'a', 's', 'y', 'n', 'c'};
+  ASSERT_TRUE(a_relay_->SendFrame(sent));
+
+  {
+    std::unique_lock<std::mutex> lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got; }));
+  }
+  EXPECT_EQ(received.stream_id, 1u);
+  EXPECT_EQ(received.payload, sent.payload);
+
+  a_relay_->Detach();
+  b_relay_->Detach();
+}
+
+TEST_F(MediaRelayServiceTest, AsyncDataPlaneDetachUnblocksAttachedClient) {
+  EnableAsyncDataPlane();
+
+  auto hop_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(hop_id);
+  const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint("hop", hop_ma));
+
+  const std::string call_id = "call-async-detach";
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 1;
+
+  auto qa = a_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qa) << qa.error().message;
+  ASSERT_TRUE(qa->ok) << qa->error;
+
+  auto attach_a = a_relay_->AcceptAndAttach(
+      "hop", qa->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000);
+  ASSERT_TRUE(attach_a) << attach_a.error().message;
+  ASSERT_TRUE(attach_a->ok) << attach_a->error;
+  EXPECT_TRUE(a_relay_->IsAttached());
+
+  a_relay_->StartClientFrameReader();
+  a_relay_->Detach();
+  EXPECT_FALSE(a_relay_->IsAttached());
 }
 
 } // namespace

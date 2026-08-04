@@ -276,6 +276,7 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
   media_relay_ = std::make_unique<MediaRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
   media_relay_->SetBudget(config_.libp2p.media_relay_budget);
   media_relay_->SetPricing(config_.libp2p.pricing.media_relay);
+  media_relay_->SetExecutorConfig(node_runtime_->ExecutorConfig());
   if (role == Libp2pRole::Node && config_.libp2p.capabilities.media_relay) {
     media_relay_->Start();
   }
@@ -1549,6 +1550,7 @@ void MessagingHub::RefreshMeshCapabilities() {
   media_relay_ = std::make_unique<MediaRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
   media_relay_->SetBudget(config_.libp2p.media_relay_budget);
   media_relay_->SetPricing(config_.libp2p.pricing.media_relay);
+  media_relay_->SetExecutorConfig(node_runtime_->ExecutorConfig());
   if (role == Libp2pRole::Node && config_.libp2p.capabilities.media_relay) {
     media_relay_->Start();
   }

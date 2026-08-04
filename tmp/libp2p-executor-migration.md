@@ -19,8 +19,9 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 | **2** | DialBack dedupe onto `StreamFrameIo` / `StreamJsonFrame` | done |
 | **2** | `BlockingReadStreamJson` / `BlockingWriteStreamJson` helpers | done |
 | **2** | Concurrent dial-back test | done |
-| **3** | Media relay structural split | pending |
-| **3** | Media relay async + tests | pending |
+| **3** | Media relay structural split | done |
+| **3** | Media relay async + tests | done |
+| **3** | Wire `SetExecutorConfig` in hub/node | done |
 | **4** | Call-media uses shared primitives | pending |
 | **5** | Direct chat services | pending |
 | **6** | Compute stub + limits + flag removal | pending |
@@ -29,7 +30,7 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 
 | PR | Branch | Notes |
 |----|--------|-------|
-| 1 | `cursor/libp2p-executor-migration-771d` | Phase 0 foundation + Phase 1 circuit relay |
+| 1 | `cursor/libp2p-executor-migration-771d` | Phase 0–2 + Phase 3 media relay async |
 
 ## Notes
 
@@ -39,5 +40,5 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 ## Flags (`Libp2pExecutorConfig`)
 
 - `async_data_plane_circuit_relay` — default **true** (legacy path removed)
-- `async_data_plane_media_relay` — default false until phase 3
-- `async_data_plane_dial_back` — default false until phase 2
+- `async_data_plane_media_relay` — default **false**; hop inbound uses host-io async reader when true (client stays sync). Multi-participant fanout under Yamux needs follow-up.
+- `async_data_plane_dial_back` — default false (control-only; no long-lived pump)

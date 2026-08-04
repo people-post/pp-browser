@@ -122,6 +122,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     media_relay = std::make_unique<MediaRelayService>(*runtime->Host(), *runtime->Sessions());
     media_relay->SetBudget(config->libp2p.media_relay_budget);
     media_relay->SetPricing(config->libp2p.pricing.media_relay);
+    media_relay->SetExecutorConfig(runtime->ExecutorConfig());
     media_relay->Start();
   }
 

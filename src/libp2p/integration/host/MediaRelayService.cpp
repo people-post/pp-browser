@@ -3,6 +3,7 @@
 #include "base/people/RelayScope.h"
 #include "common/Logger.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
+#include "libp2p/integration/host/StreamFrameIo.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
 #include <libp2p/basic/read.hpp>
@@ -42,89 +43,27 @@ constexpr int64_t kDefaultSessionUpBps = 4'000'000;
 constexpr int64_t kDefaultSessionDownBps = 16'000'000;
 constexpr int64_t kDefaultCeilingBytes = 50'000'000;
 
+LengthPrefixedFrameConfig MediaDataFrameConfig() {
+  LengthPrefixedFrameConfig config;
+  config.max_frame_bytes = kMaxMediaFrameBytes;
+  config.allow_empty_body = true;
+  return config;
+}
+
 Roe<std::vector<uint8_t>> ReadExactFrame(const std::shared_ptr<Stream>& stream) {
-  Bytes header(8);
-  std::promise<outcome::result<void>> header_promise;
-  auto header_future = header_promise.get_future();
-  libp2p::read(stream, header, [&](outcome::result<void> result) { header_promise.set_value(result); });
-  if (!header_future.get()) {
-    return Error("Failed to read media-relay frame header");
-  }
-  uint64_t payload_len = 0;
-  for (size_t i = 0; i < 8; ++i) {
-    payload_len = (payload_len << 8) | header[i];
-  }
-  if (payload_len > kMaxMediaFrameBytes) {
-    return Error("media-relay frame too large");
-  }
-  Bytes payload(payload_len);
-  std::promise<outcome::result<void>> body_promise;
-  auto body_future = body_promise.get_future();
-  libp2p::read(stream, payload, [&](outcome::result<void> result) { body_promise.set_value(result); });
-  if (!body_future.get()) {
-    return Error("Failed to read media-relay frame body");
-  }
-  return std::vector<uint8_t>(payload.begin(), payload.end());
+  return BlockingReadLengthPrefixedFrame(stream, MediaDataFrameConfig());
 }
 
 Roe<void> WriteExactBody(const std::shared_ptr<Stream>& stream, const std::vector<uint8_t>& body) {
-  std::vector<uint8_t> frame(8 + body.size());
-  uint64_t len = body.size();
-  for (int i = 7; i >= 0; --i) {
-    frame[static_cast<size_t>(i)] = static_cast<uint8_t>(len & 0xff);
-    len >>= 8;
-  }
-  std::memcpy(frame.data() + 8, body.data(), body.size());
-  std::promise<outcome::result<void>> write_promise;
-  auto write_future = write_promise.get_future();
-  // Yamux WriteQueue stores BytesIn (span) — never pass a temporary Bytes(...).
-  libp2p::write(stream, frame, [&](outcome::result<void> result) { write_promise.set_value(result); });
-  if (!write_future.get()) {
-    return Error("Failed to write media-relay frame");
-  }
-  return {};
+  return BlockingWriteLengthPrefixedFrame(stream, body);
 }
 
 Roe<void> WriteJson(const std::shared_ptr<Stream>& stream, const nlohmann::json& root) {
-  auto encoded = EncodeStreamJsonFrame(root.dump());
-  if (!encoded) {
-    return encoded.error();
-  }
-  // EncodeStreamJsonFrame already includes length prefix — write raw.
-  std::promise<outcome::result<void>> write_promise;
-  auto write_future = write_promise.get_future();
-  libp2p::write(stream, *encoded, [&](outcome::result<void> result) { write_promise.set_value(result); });
-  if (!write_future.get()) {
-    return Error("Failed to write media-relay json");
-  }
-  return {};
+  return BlockingWriteStreamJson(stream, root.dump());
 }
 
 Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
-  Bytes header(8);
-  std::promise<outcome::result<void>> header_promise;
-  auto header_future = header_promise.get_future();
-  libp2p::read(stream, header, [&](outcome::result<void> result) { header_promise.set_value(result); });
-  if (!header_future.get()) {
-    return Error("Failed to read media-relay json header");
-  }
-  std::vector<uint8_t> frame(header.begin(), header.end());
-  uint64_t payload_len = 0;
-  for (size_t i = 0; i < 8; ++i) {
-    payload_len = (payload_len << 8) | frame[i];
-  }
-  if (payload_len > kMaxStreamJsonFrameBytes) {
-    return Error("media-relay json too large");
-  }
-  Bytes payload(payload_len);
-  std::promise<outcome::result<void>> body_promise;
-  auto body_future = body_promise.get_future();
-  libp2p::read(stream, payload, [&](outcome::result<void> result) { body_promise.set_value(result); });
-  if (!body_future.get()) {
-    return Error("Failed to read media-relay json body");
-  }
-  frame.insert(frame.end(), payload.begin(), payload.end());
-  auto json_utf8 = DecodeStreamJsonFrame(frame);
+  auto json_utf8 = BlockingReadStreamJson(stream);
   if (!json_utf8) {
     return json_utf8.error();
   }
@@ -133,6 +72,21 @@ Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
     return Error("invalid media-relay json");
   }
   return root;
+}
+
+void PostWriteBody(Libp2pHost& host, const std::shared_ptr<Stream>& stream, std::vector<uint8_t> body) {
+  if (!stream) {
+    return;
+  }
+  host.Post([stream, body = std::move(body)]() { (void)BlockingWriteLengthPrefixedFrame(stream, body); });
+}
+
+void PostWriteJson(Libp2pHost& host, const std::shared_ptr<Stream>& stream, const nlohmann::json& root) {
+  if (!stream) {
+    return;
+  }
+  const std::string json = root.dump();
+  host.Post([stream, json]() { (void)BlockingWriteStreamJson(stream, json); });
 }
 
 int64_t OrDefault(int64_t configured, int64_t fallback) {
@@ -148,12 +102,18 @@ uint64_t SubKey(uint32_t stream_id, uint16_t channel_id) {
   return (static_cast<uint64_t>(stream_id) << 16) | channel_id;
 }
 
+struct ParticipantAsyncIo {
+  std::shared_ptr<std::atomic<bool>> cancelled;
+  std::shared_ptr<AsyncLengthPrefixedReader> reader;
+};
+
 struct HostParticipant {
   std::string peer_id;
   std::shared_ptr<Stream> stream;
   /** Set for in-call hop local publisher (no network stream). */
   std::function<void(MediaDataFrame)> local_on_frame;
-  std::mutex write_mu; // serializes hop→client writes (fanout vs control acks)
+  std::mutex write_mu; // serializes hop→client writes (fanout vs control acks) — sync path only
+  std::shared_ptr<ParticipantAsyncIo> async_io;
   std::unordered_set<uint64_t> subscriptions;
   std::unordered_map<uint64_t, uint32_t> last_lossy_seq;
   int64_t a_up_bps = 0;
@@ -235,6 +195,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   MediaRelayBudgetConfig budget;
   RelayPricingConfig pricing;
   MediaRelayAdmissionPolicy admission;
+  Libp2pExecutorConfig executor_config;
 
   std::unordered_map<std::string, PendingQuote> quotes_by_id;
   std::unordered_map<std::string, std::shared_ptr<HostSession>> sessions_by_token;
@@ -242,7 +203,7 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
 
   // Client attach state (remote hop dial)
   std::shared_ptr<Stream> client_stream;
-  std::mutex client_write_mu; // Subscribe/SendFrame/Detach vs each other
+  std::mutex client_write_mu; // Subscribe/SendFrame/Detach vs each other — sync path only
   std::string client_session_token;
   std::function<void(MediaDataFrame)> client_on_frame;
   /** Bumped on Detach — stale readers exit without clearing a newer attach's epoch. */
@@ -289,6 +250,67 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     q.ceiling_bytes = kDefaultCeilingBytes;
     q.ceiling_amount = 0.0;
     return q;
+  }
+
+  void FanoutAsync(const std::shared_ptr<HostSession>& session, const std::string& from_peer,
+                   const MediaDataFrame& frame, const std::vector<uint8_t>& body) {
+    if (!host) {
+      return;
+    }
+    const uint64_t key = SubKey(frame.stream_id, frame.channel_id);
+    std::vector<std::shared_ptr<HostParticipant>> parts;
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      parts = session->participants;
+    }
+    for (const auto& part : parts) {
+      if (!part || part->peer_id == from_peer) {
+        continue;
+      }
+      bool local = false;
+      bool subscribed = false;
+      bool over_ceiling = false;
+      std::function<void(MediaDataFrame)> on_frame;
+      std::shared_ptr<Stream> out_stream;
+      {
+        std::lock_guard<std::mutex> lock(mu);
+        local = static_cast<bool>(part->local_on_frame);
+        if (!local && !part->stream) {
+          continue;
+        }
+        subscribed = part->subscriptions.find(key) != part->subscriptions.end();
+        if (!subscribed) {
+          continue;
+        }
+        if (frame.channel_type == MediaChannelType::LatestLossy) {
+          auto it = part->last_lossy_seq.find(key);
+          if (it != part->last_lossy_seq.end() && frame.seq < it->second && frame.mark == 0) {
+            continue;
+          }
+          part->last_lossy_seq[key] = frame.seq;
+        }
+        part->bytes_down += static_cast<int64_t>(body.size());
+        session->bytes_total += static_cast<int64_t>(body.size());
+        over_ceiling = session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes;
+        if (local) {
+          on_frame = part->local_on_frame;
+        } else {
+          out_stream = part->stream;
+        }
+      }
+      if (over_ceiling) {
+        continue;
+      }
+      if (local) {
+        if (on_frame) {
+          on_frame(frame);
+        }
+        continue;
+      }
+      if (out_stream) {
+        (void)BlockingWriteLengthPrefixedFrame(out_stream, body);
+      }
+    }
   }
 
   void Fanout(const std::shared_ptr<HostSession>& session, const std::string& from_peer,
@@ -353,68 +375,145 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     }
   }
 
-  void HandleParticipantLoop(std::shared_ptr<HostSession> session, std::shared_ptr<HostParticipant> part) {
-    while (true) {
-      auto body = ReadExactFrame(part->stream);
-      if (!body) {
-        break;
+  /** Returns false when the participant session should end. */
+  bool ProcessParticipantFrame(const std::shared_ptr<HostSession>& session,
+                               const std::shared_ptr<HostParticipant>& part,
+                               const std::vector<uint8_t>& body) {
+    if (body.empty()) {
+      return false;
+    }
+    if (body[0] == '{') {
+      nlohmann::json root =
+          nlohmann::json::parse(std::string(body.begin(), body.end()), nullptr, false);
+      if (root.is_discarded() || !root.is_object()) {
+        return false;
       }
-      if (body->empty()) {
-        break;
-      }
-      if ((*body)[0] == '{') {
-        nlohmann::json root =
-            nlohmann::json::parse(std::string(body->begin(), body->end()), nullptr, false);
-        if (root.is_discarded() || !root.is_object()) {
-          break;
+      const std::string op = root.value("op", "");
+      const bool async = executor_config.async_data_plane_media_relay;
+      if (op == "subscribe") {
+        {
+          std::lock_guard<std::mutex> lock(mu);
+          part->subscriptions.insert(SubKey(root.value("stream_id", 0u),
+                                            static_cast<uint16_t>(root.value("channel_id", 0))));
         }
-        const std::string op = root.value("op", "");
-        if (op == "subscribe") {
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            part->subscriptions.insert(SubKey(root.value("stream_id", 0u),
-                                              static_cast<uint16_t>(root.value("channel_id", 0))));
-          }
-          logging::getLogger("MediaRelayService").info
-              << "hop subscribe peer=" << part->peer_id << " stream=" << root.value("stream_id", 0u)
-              << " ch=" << root.value("channel_id", 0) << " call=" << session->call_id
-              << " parts=" << session->participants.size();
+        logging::getLogger("MediaRelayService").info
+            << "hop subscribe peer=" << part->peer_id << " stream=" << root.value("stream_id", 0u)
+            << " ch=" << root.value("channel_id", 0) << " call=" << session->call_id
+            << " parts=" << session->participants.size();
+        if (async && part->stream && host) {
+          PostWriteJson(*host, part->stream, {{"v", 1}, {"ok", true}, {"op", "subscribe"}});
+        } else {
           std::lock_guard<std::mutex> wlock(part->write_mu);
           (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "subscribe"}});
-        } else if (op == "unsubscribe") {
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            part->subscriptions.erase(SubKey(root.value("stream_id", 0u),
+        }
+      } else if (op == "unsubscribe") {
+        {
+          std::lock_guard<std::mutex> lock(mu);
+          part->subscriptions.erase(SubKey(root.value("stream_id", 0u),
                                              static_cast<uint16_t>(root.value("channel_id", 0))));
-          }
+        }
+        if (async && part->stream && host) {
+          PostWriteJson(*host, part->stream, {{"v", 1}, {"ok", true}, {"op", "unsubscribe"}});
+        } else {
           std::lock_guard<std::mutex> wlock(part->write_mu);
           (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "unsubscribe"}});
-        } else if (op == "detach") {
-          {
-            std::lock_guard<std::mutex> wlock(part->write_mu);
-            (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "detach"}});
-          }
-          break;
         }
-        continue;
+      } else if (op == "detach") {
+        if (async && part->stream && host) {
+          PostWriteJson(*host, part->stream, {{"v", 1}, {"ok", true}, {"op", "detach"}});
+        } else {
+          std::lock_guard<std::mutex> wlock(part->write_mu);
+          (void)WriteJson(part->stream, {{"v", 1}, {"ok", true}, {"op", "detach"}});
+        }
+        return false;
       }
-
-      auto frame = DecodeMediaDataFrame(*body);
-      if (!frame) {
-        break;
-      }
-      part->bytes_up += static_cast<int64_t>(body->size());
-      session->bytes_total += static_cast<int64_t>(body->size());
-      Fanout(session, part->peer_id, *frame, *body);
+      return true;
     }
 
+    auto frame = DecodeMediaDataFrame(body);
+    if (!frame) {
+      return false;
+    }
+    part->bytes_up += static_cast<int64_t>(body.size());
+    session->bytes_total += static_cast<int64_t>(body.size());
+    if (executor_config.async_data_plane_media_relay) {
+      FanoutAsync(session, part->peer_id, *frame, body);
+    } else {
+      Fanout(session, part->peer_id, *frame, body);
+    }
+    return true;
+  }
+
+  void CleanupParticipant(const std::shared_ptr<HostSession>& session,
+                          const std::shared_ptr<HostParticipant>& part) {
+    if (part->async_io) {
+      if (part->async_io->cancelled) {
+        part->async_io->cancelled->store(true, std::memory_order_release);
+      }
+      if (part->async_io->reader) {
+        part->async_io->reader->Stop();
+      }
+      part->async_io.reset();
+    }
     std::lock_guard<std::mutex> lock(mu);
     session->participants.erase(std::remove_if(session->participants.begin(), session->participants.end(),
                                                [&](const std::shared_ptr<HostParticipant>& p) {
                                                  return p.get() == part.get();
                                                }),
                                 session->participants.end());
-    part->stream->close([](auto&&) {});
+    if (part->stream) {
+      part->stream->close([](auto&&) {});
+    }
+  }
+
+  void InitParticipantAsyncSync(const std::shared_ptr<HostSession>& session,
+                                const std::shared_ptr<HostParticipant>& part) {
+    if (!host || !part->stream) {
+      return;
+    }
+    part->async_io = std::make_shared<ParticipantAsyncIo>();
+    part->async_io->cancelled = std::make_shared<std::atomic<bool>>(false);
+    auto self = shared_from_this();
+    host->Post([self, session, part]() {
+      if (!part->async_io || !part->stream) {
+        return;
+      }
+      part->async_io->reader = std::make_shared<AsyncLengthPrefixedReader>();
+      const auto cancel_check = [cancelled = part->async_io->cancelled]() {
+        return cancelled->load(std::memory_order_acquire);
+      };
+      part->async_io->reader->Start(
+          part->stream,
+          [self, session, part](Roe<std::vector<uint8_t>> frame_res) {
+            if (!frame_res) {
+              self->CleanupParticipant(session, part);
+              return;
+            }
+            if (!self->ProcessParticipantFrame(session, part, *frame_res)) {
+              self->CleanupParticipant(session, part);
+            }
+          },
+          cancel_check, MediaDataFrameConfig());
+    });
+  }
+
+  void StartParticipantAsync(const std::shared_ptr<HostSession>& session,
+                             const std::shared_ptr<HostParticipant>& part) {
+    InitParticipantAsyncSync(session, part);
+  }
+
+  void HandleParticipantLoop(std::shared_ptr<HostSession> session, std::shared_ptr<HostParticipant> part) {
+    while (true) {
+      auto body = ReadExactFrame(part->stream);
+      if (!body) {
+        break;
+      }
+      if (!ProcessParticipantFrame(session, part, *body)) {
+        break;
+      }
+    }
+
+    CleanupParticipant(session, part);
   }
 
   void HandleInbound(libp2p::StreamAndProtocol stream_and_protocol) {
@@ -563,7 +662,11 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           }
 
           (void)WriteJson(stream, {{"v", 1}, {"ok", true}, {"op", "attach"}});
-          HandleParticipantLoop(session, part);
+          if (executor_config.async_data_plane_media_relay) {
+            StartParticipantAsync(session, part);
+          } else {
+            HandleParticipantLoop(session, part);
+          }
           return;
         } else {
           (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "unsupported op"}});
@@ -583,16 +686,17 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
       if (client_reader_started_for.compare_exchange_weak(started, epoch,
                                                          std::memory_order_acq_rel,
                                                          std::memory_order_acquire)) {
+        // Client inbound stays on worker (sync) — async hop pump only; avoids same-stream
+        // concurrent read/write on Yamux when SendFrame/Subscribe post from app threads.
         PostLibp2pWorker(*host, WorkerLane::Normal,
                          [self, epoch]() { self->RunClientReader(epoch); });
         return;
       }
-      // CAS failed: either another Start won for this epoch, or Detach bumped epoch.
       if (started == epoch) {
         return;
       }
       if (client_reader_epoch.load(std::memory_order_acquire) != epoch) {
-        return; // detached before reader started; caller must Start after re-attach
+        return;
       }
     }
   }
@@ -613,14 +717,11 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
       if (client_reader_epoch.load(std::memory_order_acquire) != epoch) {
         break;
       }
-      if (!body) {
-        break;
-      }
-      if (body->empty()) {
+      if (!body || body->empty()) {
         break;
       }
       if ((*body)[0] == '{') {
-        continue; // control ack noise
+        continue;
       }
       auto frame = DecodeMediaDataFrame(*body);
       if (!frame) {
@@ -673,6 +774,11 @@ void MediaRelayService::SetPricing(const RelayPricingConfig& pricing) {
 void MediaRelayService::SetAdmissionPolicy(MediaRelayAdmissionPolicy policy) {
   std::lock_guard<std::mutex> lock(impl_->mu);
   impl_->admission = std::move(policy);
+}
+
+void MediaRelayService::SetExecutorConfig(Libp2pExecutorConfig config) {
+  std::lock_guard<std::mutex> lock(impl_->mu);
+  impl_->executor_config = config;
 }
 
 Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer_key,
@@ -824,7 +930,7 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
             impl->client_session_token = token;
             impl->client_on_frame = std::move(on_frame);
           }
-          // Reader starts later via StartClientFrameReader() after StartSfu.
+          // Inbound reader starts later via StartClientFrameReader() after StartSfu.
 
           MediaRelayAttachResult out;
           out.ok = true;
@@ -947,6 +1053,7 @@ Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) 
 
 Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id) {
   std::shared_ptr<Stream> stream;
+  std::shared_ptr<ParticipantAsyncIo> async_io;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
     if (impl_->local_hop_part) {
@@ -984,14 +1091,19 @@ Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
         session->bytes_total += static_cast<int64_t>(body.size());
       }
     }
-    impl_->Fanout(session, from_peer, frame, body);
+    if (impl_->executor_config.async_data_plane_media_relay) {
+      impl_->FanoutAsync(session, from_peer, frame, body);
+    } else {
+      impl_->Fanout(session, from_peer, frame, body);
+    }
     return {};
   }
   if (!stream) {
     return Error("not attached");
   }
+  const std::vector<uint8_t> encoded = EncodeMediaDataFrame(frame);
   std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
-  return WriteExactBody(stream, EncodeMediaDataFrame(frame));
+  return WriteExactBody(stream, encoded);
 }
 
 void MediaRelayService::Detach() {
@@ -1010,7 +1122,6 @@ void MediaRelayService::Detach() {
     impl_->local_hop_session.reset();
     impl_->local_hop_peer_id.clear();
     if (local) {
-      // Drop callback before Fanout can invoke into a tearing-down CallMediaEngine.
       local->local_on_frame = nullptr;
     }
     if (local && local_session) {
@@ -1020,7 +1131,6 @@ void MediaRelayService::Detach() {
           local_session->participants.end());
     }
   }
-  // Invalidate any in-flight reader before closing the stream (unblocks ReadExactFrame).
   impl_->client_reader_epoch.fetch_add(1, std::memory_order_acq_rel);
   if (stream) {
     {
