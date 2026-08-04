@@ -24,14 +24,14 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 | **3** | `DuplexFrameSession` per-stream serializer | done |
 | **3** | Wire `SetExecutorConfig` in hub/node | done |
 | **4** | Call-media uses shared primitives + DuplexFrameSession | done |
-| **5** | Direct chat services | pending |
+| **5** | Direct chat services | done |
 | **6** | Compute stub + limits + flag removal | pending |
 
 ## PR log
 
 | PR | Branch | Notes |
 |----|--------|-------|
-| 1 | `cursor/libp2p-executor-migration-771d` | Phase 0–4 (call-media DuplexFrameSession) |
+| 1 | `cursor/libp2p-executor-migration-771d` | Phase 0–5 (direct chat dedupe) |
 
 ## Notes
 

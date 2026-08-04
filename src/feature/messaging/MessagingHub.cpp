@@ -254,6 +254,9 @@ Roe<void> MessagingHub::StartLibp2p(const AppConfig& config) {
     }
   }
   StartMeshServices(role);
+  if (p2p_) {
+    p2p_->SetExecutorConfig(node_runtime_->ExecutorConfig());
+  }
   return {};
 }
 
@@ -1143,6 +1146,9 @@ Roe<void> MessagingHub::BuildMessagingStack() {
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get(), Libp2p(),
                                                 Sessions());
+  if (node_runtime_) {
+    p2p_->SetExecutorConfig(node_runtime_->ExecutorConfig());
+  }
   p2p_->SetProfileDataDir(data_dir_);
   group_membership_ = std::make_unique<GroupMembershipService>(*store_, *contacts_, *identity_, *group_roster_,
                                                                *group_invite_gate_, *p2p_);

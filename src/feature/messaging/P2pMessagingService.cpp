@@ -168,6 +168,15 @@ void P2pMessagingService::RegisterPeerDirectEndpoint(const std::string& peer_rel
   }
 }
 
+void P2pMessagingService::SetExecutorConfig(Libp2pExecutorConfig config) {
+  if (direct_chat_) {
+    direct_chat_->SetExecutorConfig(config);
+  }
+  if (peer_history_) {
+    peer_history_->SetExecutorConfig(config);
+  }
+}
+
 void P2pMessagingService::RegisterContactDirectEndpoints(const Contact& contact) {
   const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
   if (target.peer_identity_value.empty()) {

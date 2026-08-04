@@ -34,9 +34,10 @@ Roe<std::string> DecodeStreamJsonFrame(const std::vector<uint8_t>& frame_bytes) 
   return std::string(frame_bytes.begin() + 8, frame_bytes.end());
 }
 
-Roe<std::string> BlockingReadStreamJson(const std::shared_ptr<libp2p::connection::Stream>& stream) {
+Roe<std::string> BlockingReadStreamJson(const std::shared_ptr<libp2p::connection::Stream>& stream,
+                                        const size_t max_frame_bytes) {
   LengthPrefixedFrameConfig config;
-  config.max_frame_bytes = kMaxStreamJsonFrameBytes;
+  config.max_frame_bytes = max_frame_bytes;
   auto body = BlockingReadLengthPrefixedFrame(stream, config);
   if (!body) {
     return body.error();
@@ -45,8 +46,8 @@ Roe<std::string> BlockingReadStreamJson(const std::shared_ptr<libp2p::connection
 }
 
 Roe<void> BlockingWriteStreamJson(const std::shared_ptr<libp2p::connection::Stream>& stream,
-                                  const std::string& json_utf8) {
-  if (json_utf8.size() > kMaxStreamJsonFrameBytes) {
+                                  const std::string& json_utf8, const size_t max_frame_bytes) {
+  if (json_utf8.size() > max_frame_bytes) {
     return Error("json frame too large");
   }
   std::vector<uint8_t> body(json_utf8.begin(), json_utf8.end());

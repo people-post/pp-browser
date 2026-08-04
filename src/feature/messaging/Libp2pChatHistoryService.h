@@ -5,6 +5,7 @@
 #include "base/messaging/ThreadTypes.h"
 #include "base/net/ServiceClients.h"
 #include "base/people/IdentityStore.h"
+#include "libp2p/integration/host/Libp2pExecutorConfig.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
@@ -28,6 +29,8 @@ public:
   /** Register protocol handler on the shared host. */
   void Start();
   void Stop();
+
+  void SetExecutorConfig(Libp2pExecutorConfig config);
 
   /** Map relay communicating identity → dialable multiaddr (must include `/p2p/`). */
   void RegisterPeerEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);

@@ -18,8 +18,10 @@ Roe<std::vector<uint8_t>> EncodeStreamJsonFrame(const std::string& json_utf8);
 Roe<std::string> DecodeStreamJsonFrame(const std::vector<uint8_t>& frame_bytes);
 
 /** Blocking JSON read/write for control-plane worker threads. */
-Roe<std::string> BlockingReadStreamJson(const std::shared_ptr<libp2p::connection::Stream>& stream);
+Roe<std::string> BlockingReadStreamJson(const std::shared_ptr<libp2p::connection::Stream>& stream,
+                                        size_t max_frame_bytes = kMaxStreamJsonFrameBytes);
 Roe<void> BlockingWriteStreamJson(const std::shared_ptr<libp2p::connection::Stream>& stream,
-                                  const std::string& json_utf8);
+                                  const std::string& json_utf8,
+                                  size_t max_frame_bytes = kMaxStreamJsonFrameBytes);
 
 } // namespace pbr

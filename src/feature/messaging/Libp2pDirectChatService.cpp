@@ -1,12 +1,10 @@
 #include "feature/messaging/Libp2pDirectChatService.h"
 
-#include "base/messaging/ChatHistoryStreamCodec.h"
 #include "base/messaging/MessagingJson.h"
 #include "base/messaging/MessagingLimits.h"
-#include "base/runtime/AppRuntime.h"
+#include "libp2p/integration/host/Libp2pWorker.h"
+#include "libp2p/integration/host/StreamJsonFrame.h"
 
-#include <libp2p/basic/read.hpp>
-#include <libp2p/basic/write.hpp>
 #include <libp2p/connection/stream.hpp>
 #include <libp2p/host/host.hpp>
 #include <libp2p/peer/protocol.hpp>
@@ -20,90 +18,48 @@ namespace pbr {
 
 namespace {
 
-using libp2p::Bytes;
 using libp2p::connection::Stream;
 using libp2p::peer::ProtocolName;
 
-Roe<std::vector<uint8_t>> ReadExactFrame(const std::shared_ptr<Stream>& stream) {
-  Bytes header(8);
-  std::promise<outcome::result<void>> header_promise;
-  auto header_future = header_promise.get_future();
-  libp2p::read(stream, header, [&](outcome::result<void> result) { header_promise.set_value(result); });
-  if (!header_future.get()) {
-    return Error("Failed to read chat frame header");
+void CloseQuiet(const std::shared_ptr<Stream>& stream) {
+  if (stream) {
+    stream->close([](auto&&) {});
   }
-
-  std::vector<uint8_t> frame(header.begin(), header.end());
-  uint64_t payload_len = 0;
-  for (size_t i = 0; i < 8; ++i) {
-    payload_len = (payload_len << 8) | frame[i];
-  }
-  if (payload_len > kMaxRelayEnvelopeJsonBytes) {
-    return Error("Chat frame too large");
-  }
-
-  Bytes payload(payload_len);
-  std::promise<outcome::result<void>> body_promise;
-  auto body_future = body_promise.get_future();
-  libp2p::read(stream, payload, [&](outcome::result<void> result) { body_promise.set_value(result); });
-  if (!body_future.get()) {
-    return Error("Failed to read chat frame body");
-  }
-
-  frame.insert(frame.end(), payload.begin(), payload.end());
-  return frame;
-}
-
-Roe<void> WriteExactFrame(const std::shared_ptr<Stream>& stream, const std::vector<uint8_t>& frame) {
-  std::promise<outcome::result<void>> write_promise;
-  auto write_future = write_promise.get_future();
-  // Yamux WriteQueue stores BytesIn (span) — never pass a temporary Bytes(...).
-  libp2p::write(stream, frame, [&](outcome::result<void> result) { write_promise.set_value(result); });
-  if (!write_future.get()) {
-    return Error("Failed to write chat frame");
-  }
-  return {};
 }
 
 } // namespace
 
 struct Libp2pDirectChatService::Impl {
   std::mutex handler_mutex;
+  Libp2pHost* host = nullptr;
+  Libp2pExecutorConfig executor_config;
   InboundHandler inbound;
 
   void HandleStream(libp2p::StreamAndProtocol stream_and_protocol) {
-    // Protocol handlers run on the host io thread — hop off before blocking
-    // reads and before ApplyInboundControl (call media / mic open must not
-    // stall libp2p for both peers).
+    if (!host) {
+      return;
+    }
     auto stream = std::move(stream_and_protocol.stream);
-    AppRuntime::PostWorkerNormal([this, stream = std::move(stream)]() mutable {
-      auto frame = ReadExactFrame(stream);
-      if (!frame) {
-        stream->close([](auto&&) {});
-        return;
-      }
-      auto json_utf8 = ChatHistoryStreamCodec::DecodeFrame(*frame);
+    PostLibp2pWorker(*host, WorkerLane::Normal, [this, stream = std::move(stream)]() mutable {
+      auto json_utf8 = BlockingReadStreamJson(stream, kMaxRelayEnvelopeJsonBytes);
       if (!json_utf8) {
-        stream->close([](auto&&) {});
+        CloseQuiet(stream);
         return;
       }
       nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
       if (root.is_discarded()) {
-        stream->close([](auto&&) {});
+        CloseQuiet(stream);
         return;
       }
       auto envelope = ParseRelayEnvelope(root);
       if (!envelope) {
-        stream->close([](auto&&) {});
+        CloseQuiet(stream);
         return;
       }
 
-      // Tiny ack so sender can treat write+read as success.
       static const std::string kAck = R"({"ok":true})";
-      if (auto encoded = ChatHistoryStreamCodec::EncodeFrame(kAck)) {
-        (void)WriteExactFrame(stream, *encoded);
-      }
-      stream->close([](auto&&) {});
+      (void)BlockingWriteStreamJson(stream, kAck, kMaxRelayEnvelopeJsonBytes);
+      CloseQuiet(stream);
 
       InboundHandler handler;
       {
@@ -118,7 +74,9 @@ struct Libp2pDirectChatService::Impl {
 };
 
 Libp2pDirectChatService::Libp2pDirectChatService(Libp2pHost& host, PeerSessionManager& sessions)
-    : impl_(std::make_unique<Impl>()), host_(host), sessions_(sessions) {}
+    : impl_(std::make_unique<Impl>()), host_(host), sessions_(sessions) {
+  impl_->host = &host_;
+}
 
 Libp2pDirectChatService::~Libp2pDirectChatService() {
   Stop();
@@ -141,6 +99,11 @@ void Libp2pDirectChatService::Stop() {
   impl_->inbound = nullptr;
 }
 
+void Libp2pDirectChatService::SetExecutorConfig(Libp2pExecutorConfig config) {
+  std::lock_guard lock(impl_->handler_mutex);
+  impl_->executor_config = config;
+}
+
 void Libp2pDirectChatService::SetInboundHandler(InboundHandler handler) {
   std::lock_guard lock(impl_->handler_mutex);
   impl_->inbound = std::move(handler);
@@ -161,57 +124,45 @@ Roe<void> Libp2pDirectChatService::SendEnvelope(const std::string& peer_relay_us
   }
 
   const std::string envelope_json = RelayEnvelopeToJson(envelope).dump();
-  auto frame = ChatHistoryStreamCodec::EncodeFrame(envelope_json);
-  if (!frame) {
-    return frame.error();
-  }
 
-  std::shared_ptr<std::promise<Roe<void>>> result_promise = std::make_shared<std::promise<Roe<void>>>();
+  auto result_promise = std::make_shared<std::promise<Roe<void>>>();
   auto result_future = result_promise->get_future();
 
   sessions_.OpenStream(peer_relay_user_id, {ProtocolName{kDirectChatProtocolId}},
-                       [frame = *frame, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
-                         // newStream callbacks run on the host io thread — hop off before blocking I/O.
-                         AppRuntime::PostWorkerNormal([frame, result_promise, stream_res = std::move(stream_res)]() mutable {
-                           if (!stream_res) {
+                       [host = &host_, envelope_json, result_promise](
+                           libp2p::StreamAndProtocolOrError stream_res) mutable {
+                         PostLibp2pWorker(*host, WorkerLane::Normal,
+                                          [envelope_json, result_promise,
+                                           stream_res = std::move(stream_res)]() mutable {
+                           auto finish = [&](Roe<void> value) {
                              try {
-                               result_promise->set_value(
-                                   Error("libp2p chat stream open failed")
-                                       .WithUser("Reached the peer but chat handshake failed."));
+                               result_promise->set_value(std::move(value));
                              } catch (const std::future_error&) {
                              }
+                           };
+                           if (!stream_res) {
+                             finish(Error("libp2p chat stream open failed")
+                                        .WithUser("Reached the peer but chat handshake failed."));
                              return;
                            }
                            auto stream = std::move(stream_res.value().stream);
-                           if (!WriteExactFrame(stream, frame)) {
-                             try {
-                               result_promise->set_value(
-                                   Error("Failed to send direct chat envelope")
-                                       .WithUser("Direct send didn't confirm — will use relay if available."));
-                             } catch (const std::future_error&) {
-                             }
+                           if (!BlockingWriteStreamJson(stream, envelope_json, kMaxRelayEnvelopeJsonBytes)) {
+                             CloseQuiet(stream);
+                             finish(Error("Failed to send direct chat envelope")
+                                        .WithUser("Direct send didn't confirm — will use relay if available."));
                              return;
                            }
-                           auto ack_frame = ReadExactFrame(stream);
-                           stream->close([](auto&&) {});
-                           if (!ack_frame) {
-                             try {
-                               result_promise->set_value(
-                                   Error("Failed to read direct chat ack")
-                                       .WithUser("Direct send didn't confirm — will use relay if available."));
-                             } catch (const std::future_error&) {
-                             }
+                           auto ack = BlockingReadStreamJson(stream, kMaxRelayEnvelopeJsonBytes);
+                           CloseQuiet(stream);
+                           if (!ack) {
+                             finish(Error("Failed to read direct chat ack")
+                                        .WithUser("Direct send didn't confirm — will use relay if available."));
                              return;
                            }
-                           try {
-                             result_promise->set_value({});
-                           } catch (const std::future_error&) {
-                           }
+                           finish({});
                          });
                        });
 
-  // Must not block Browser IO forever — call MediaKey/roster used to stall Accept/Connect
-  // when mDNS marked the peer dialable but chat open/ack never completed.
   constexpr int kDirectChatSendTimeoutMs = 4000;
   if (result_future.wait_for(std::chrono::milliseconds(kDirectChatSendTimeoutMs)) !=
       std::future_status::ready) {
