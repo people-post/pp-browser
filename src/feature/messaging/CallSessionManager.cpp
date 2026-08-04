@@ -344,6 +344,9 @@ Roe<void> CallSessionManager::FanOutToJoined(const std::string& call_id, const C
     if (auto sent = SendCallDirectMessage(row.identity, type, detail_json, display); !sent) {
       log().warning << "FanOutToJoined send failed peer=" << row.identity << " type="
                     << CallControlTypeToWire(type) << " err=" << sent.error().message;
+    } else {
+      log().info << "FanOutToJoined queued peer=" << row.identity
+                 << " type=" << CallControlTypeToWire(type);
     }
   }
   return {};
@@ -1652,6 +1655,10 @@ void CallSessionManager::TopologyReleaseDirectMedia() {
   }
 }
 
+void CallSessionManager::TopologyRequestInboxSync() {
+  p2p_.SyncInboxFromWake(true);
+}
+
 Roe<std::string> CallSessionManager::P2pLocalIdentity() const {
   return LocalRelayIdentity();
 }
@@ -1701,6 +1708,10 @@ void CallSessionManager::P2pRequestInboxSync() {
 
 bool CallSessionManager::P2pIsAwaitingSfuRecovery() const {
   return topology_.IsAwaitingSfuRecovery();
+}
+
+bool CallSessionManager::P2pIsSfuAttached() const {
+  return topology_.IsSfuAttached();
 }
 
 void CallSessionManager::P2pOnGroupIceFailed(const std::string& call_id) {

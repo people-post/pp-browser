@@ -91,11 +91,25 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSes
         }
         // SoftMigrate StartSfu swaps send to media_relay but leaves the 1:1 stream until
         // ReleaseDirectTransport; peer teardown must not flip ConnectFailed over live SFU.
-        if (media_.IsSfuMode() && media_.IsConnected()) {
+        // IsSfuMode() is also true for 1:1 libp2p capture — require media_relay attach.
+        if (host_.P2pIsSfuAttached() && media_.IsConnected()) {
           log().info << "Ignoring inbound call-media fail after SoftMigrate/SFU call_id=" << call_id
                      << " reason=" << reason;
           direct_.Detach();
           ClearLibp2pConnectFailed();
+          if (lifecycle_) {
+            lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
+          }
+          host_.P2pNotifyRingChanged();
+          return;
+        }
+        if (host_.P2pIsAwaitingSfuRecovery()) {
+          // Lost 1:1 while waiting for CallSfuAttach — keep InCall chrome and poll inbox hard.
+          log().info << "Ignoring inbound call-media fail while awaiting SFU attach call_id="
+                     << call_id << " reason=" << reason;
+          direct_.Detach();
+          ClearLibp2pConnectFailed();
+          host_.P2pRequestInboxSync();
           if (lifecycle_) {
             lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
           }
@@ -465,11 +479,24 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
         return;
       }
       // SoftMigrate → media_relay: 1:1 stream reset is expected; keep InCall on SFU.
-      if (media_.IsSfuMode() && media_.IsConnected()) {
+      // IsSfuMode() is also true for 1:1 libp2p capture — require media_relay attach.
+      if (host_.P2pIsSfuAttached() && media_.IsConnected()) {
         log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << captured_call_id
                    << " reason=" << reason;
         direct_.Detach();
         ClearLibp2pConnectFailed();
+        if (lifecycle_) {
+          lifecycle_->Apply(CallLifecycleEvent::DirectConnected, captured_call_id);
+        }
+        host_.P2pNotifyRingChanged();
+        return;
+      }
+      if (host_.P2pIsAwaitingSfuRecovery()) {
+        log().info << "Ignoring call-media fail while awaiting SFU attach call_id=" << captured_call_id
+                   << " reason=" << reason;
+        direct_.Detach();
+        ClearLibp2pConnectFailed();
+        host_.P2pRequestInboxSync();
         if (lifecycle_) {
           lifecycle_->Apply(CallLifecycleEvent::DirectConnected, captured_call_id);
         }

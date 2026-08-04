@@ -169,62 +169,53 @@ Roe<ChatHistoryResponse> Libp2pChatHistoryService::FetchChatHistory(const ChatHi
     return Error("Peer-direct endpoint not registered");
   }
 
-  std::shared_ptr<std::promise<Roe<ChatHistoryResponse>>> result_promise =
-      std::make_shared<std::promise<Roe<ChatHistoryResponse>>>();
-  auto result_future = result_promise->get_future();
+  // OpenStream callback only delivers the stream; blocking read/write stays on THIS worker.
+  // Posting I/O to a second pool thread while we wait_for() occupied 2 of 4 workers per TailSync
+  // (dogfood: two concurrent TailSyncs starved PollInbox → CallSfuAttach never reached Moto).
+  using StreamOpenResult = libp2p::StreamAndProtocolOrError;
+  auto open_promise = std::make_shared<std::promise<StreamOpenResult>>();
+  auto open_future = open_promise->get_future();
 
   sessions_.OpenStream(request.peer_identity_value, {ProtocolName{kChatHistoryProtocolId}},
-                       [request, result_promise](libp2p::StreamAndProtocolOrError stream_res) {
-                         // newStream callbacks run on the host io thread — hop off before blocking I/O.
-                         AppRuntime::PostWorkerNormal([request, result_promise, stream_res = std::move(stream_res)]() mutable {
-                           auto finish = [&](Roe<ChatHistoryResponse> value) {
-                             try {
-                               result_promise->set_value(std::move(value));
-                             } catch (const std::future_error&) {
-                             }
-                           };
-                           if (!stream_res) {
-                             finish(Error("libp2p stream open failed"));
-                             return;
-                           }
-                           auto stream = std::move(stream_res.value().stream);
-                           const std::string request_json = ChatHistoryRequestToJson(request).dump();
-                           auto frame = ChatHistoryStreamCodec::EncodeFrame(request_json);
-                           if (!frame) {
-                             finish(frame.error());
-                             return;
-                           }
-                           if (!WriteExactFrame(stream, *frame)) {
-                             finish(Error("Failed to send chat-history request"));
-                             return;
-                           }
-                           auto response_frame = ReadExactFrame(stream);
-                           stream->close([](auto&&) {});
-                           if (!response_frame) {
-                             finish(response_frame.error());
-                             return;
-                           }
-                           auto response_json = ChatHistoryStreamCodec::DecodeFrame(*response_frame);
-                           if (!response_json) {
-                             finish(response_json.error());
-                             return;
-                           }
-                           nlohmann::json root = nlohmann::json::parse(*response_json, nullptr, false);
-                           if (root.is_discarded()) {
-                             finish(Error("Invalid chat-history response JSON"));
-                             return;
-                           }
-                           finish(ChatHistoryResponseFromJson(root));
-                         });
+                       [open_promise](StreamOpenResult stream_res) {
+                         try {
+                           open_promise->set_value(std::move(stream_res));
+                         } catch (const std::future_error&) {
+                         }
                        });
 
-  // Must not block forever if the peer's host io is wedged / never answers.
   constexpr int kChatHistoryFetchTimeoutMs = 8000;
-  if (result_future.wait_for(std::chrono::milliseconds(kChatHistoryFetchTimeoutMs)) !=
+  if (open_future.wait_for(std::chrono::milliseconds(kChatHistoryFetchTimeoutMs)) !=
       std::future_status::ready) {
     return Error("libp2p chat-history fetch timed out");
   }
-  return result_future.get();
+  auto stream_res = open_future.get();
+  if (!stream_res) {
+    return Error("libp2p stream open failed");
+  }
+  auto stream = std::move(stream_res.value().stream);
+  const std::string request_json = ChatHistoryRequestToJson(request).dump();
+  auto frame = ChatHistoryStreamCodec::EncodeFrame(request_json);
+  if (!frame) {
+    return frame.error();
+  }
+  if (!WriteExactFrame(stream, *frame)) {
+    return Error("Failed to send chat-history request");
+  }
+  auto response_frame = ReadExactFrame(stream);
+  stream->close([](auto&&) {});
+  if (!response_frame) {
+    return response_frame.error();
+  }
+  auto response_json = ChatHistoryStreamCodec::DecodeFrame(*response_frame);
+  if (!response_json) {
+    return response_json.error();
+  }
+  nlohmann::json root = nlohmann::json::parse(*response_json, nullptr, false);
+  if (root.is_discarded()) {
+    return Error("Invalid chat-history response JSON");
+  }
+  return ChatHistoryResponseFromJson(root);
 }
 
 } // namespace pbr

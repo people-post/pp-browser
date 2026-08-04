@@ -66,6 +66,7 @@ public:
   void TopologyBindMediaCallId(const std::string& /*call_id*/) override {}
   void TopologyClearMediaPeerIdentity() override {}
   void TopologyReleaseDirectMedia() override { ++direct_media_releases; }
+  void TopologyRequestInboxSync() override { ++inbox_sync_requests; }
 
   struct FanOut {
     std::string call_id;
@@ -87,6 +88,7 @@ public:
   std::string media_activity;
   int ring_notifies = 0;
   int direct_media_releases = 0;
+  int inbox_sync_requests = 0;
 };
 
 class FakeDialRegistry final : public IDialRegistry {

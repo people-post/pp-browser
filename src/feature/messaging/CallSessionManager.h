@@ -124,6 +124,7 @@ private:
   void TopologyBindMediaCallId(const std::string& call_id) override;
   void TopologyClearMediaPeerIdentity() override;
   void TopologyReleaseDirectMedia() override;
+  void TopologyRequestInboxSync() override;
 
   // CallP2pSignalingHost
   Roe<std::string> P2pLocalIdentity() const override;
@@ -133,6 +134,7 @@ private:
   void P2pSetLastMediaError(std::string message) override;
   Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const override;
   bool P2pIsAwaitingSfuRecovery() const override;
+  bool P2pIsSfuAttached() const override;
   void P2pOnGroupIceFailed(const std::string& call_id) override;
   void P2pClearAwaitingSfuRecovery() override;
   void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;

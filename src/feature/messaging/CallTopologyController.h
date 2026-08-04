@@ -46,6 +46,8 @@ public:
    * (capture must keep running into SFU send).
    */
   virtual void TopologyReleaseDirectMedia() = 0;
+  /** Guest WaitForAttach — force relay inbox poll for CallSfuAttach. */
+  virtual void TopologyRequestInboxSync() = 0;
 };
 
 /**
@@ -167,6 +169,8 @@ private:
   bool sfu_attached_ = false;
   bool awaiting_sfu_recovery_ = false;
   bool soft_migrate_in_flight_ = false;
+  /** Generation that currently owns soft_migrate_in_flight_ (stale workers must not clear newer). */
+  uint64_t soft_migrate_flight_gen_ = 0;
   std::atomic<uint64_t> migrate_generation_{0};
   /** Serializes AttachLocalToSfu (concurrent SoftMigrate + inbound CallSfuAttach). */
   std::mutex sfu_attach_mu_;
