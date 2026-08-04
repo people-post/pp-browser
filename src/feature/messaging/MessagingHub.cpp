@@ -266,6 +266,7 @@ void MessagingHub::StartMeshServices(Libp2pRole role) {
   dial_back_->Start();
 
   circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+  circuit_relay_->SetExecutorConfig(node_runtime_->ExecutorConfig());
   if (role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {
     circuit_relay_->Start();
   }
@@ -1540,6 +1541,7 @@ void MessagingHub::RefreshMeshCapabilities() {
   dial_registry_.reset();
   const Libp2pRole role = ResolveLibp2pRole(config_.libp2p);
   circuit_relay_ = std::make_unique<CircuitRelayService>(*node_runtime_->Host(), *node_runtime_->Sessions());
+  circuit_relay_->SetExecutorConfig(node_runtime_->ExecutorConfig());
   if (role == Libp2pRole::Node && config_.libp2p.capabilities.circuit_relay) {
     circuit_relay_->Start();
   }

@@ -11,11 +11,11 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 | **0** | `StreamFrameIo` sync + async primitives | done |
 | **0** | `Libp2pHost::IoExecutor()` accessor | done |
 | **0** | `NodeRuntime` owns scheduler | done |
-| **6** | `stream_frame_io_test` | done |
+| **0** | `stream_frame_io_test` | done |
 | **0** | THREADING.md executor section | done |
-| **1** | `circuit_relay_service_test` (legacy) | pending |
-| **1** | Async `StreamBridge` + flag | pending |
-| **1** | Circuit default async + remove legacy | pending |
+| **1** | `circuit_relay_service_test` | done |
+| **1** | Async `StreamBridge` (legacy worker pumps removed) | done |
+| **1** | Wire `SetExecutorConfig` in hub/node | done |
 | **2** | DialBack dedupe / optional io inbound | pending |
 | **3** | Media relay structural split | pending |
 | **3** | Media relay async + tests | pending |
@@ -27,10 +27,15 @@ Three executor classes: **Control** (app WorkerPool), **Data** (host io_context)
 
 | PR | Branch | Notes |
 |----|--------|-------|
-| 1 | `cursor/libp2p-executor-migration-771d` | Phase 0 foundation — landed |
+| 1 | `cursor/libp2p-executor-migration-771d` | Phase 0 foundation + Phase 1 circuit relay |
+
+## Notes
+
+- Circuit relay **data plane** now always uses host-io `StreamBridge` (legacy worker pumps removed — they deadlocked on Yamux).
+- `async_data_plane_circuit_relay` flag retained for config compat; bridge path ignores false.
 
 ## Flags (`Libp2pExecutorConfig`)
 
-- `async_data_plane_circuit_relay` — default false until phase 1 validated
-- `async_data_plane_media_relay` — default false until phase 3 validated
-- `async_data_plane_dial_back` — default false until phase 2 validated
+- `async_data_plane_circuit_relay` — default **true** (legacy path removed)
+- `async_data_plane_media_relay` — default false until phase 3
+- `async_data_plane_dial_back` — default false until phase 2

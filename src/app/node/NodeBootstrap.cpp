@@ -111,6 +111,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   std::unique_ptr<CircuitRelayService> circuit_relay;
   if (config->libp2p.capabilities.circuit_relay) {
     circuit_relay = std::make_unique<CircuitRelayService>(*runtime->Host(), *runtime->Sessions());
+    circuit_relay->SetExecutorConfig(runtime->ExecutorConfig());
     circuit_relay->Start();
   }
 
