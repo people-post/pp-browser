@@ -60,9 +60,11 @@ Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/
 - `host/basic_host/basic_host.hpp` — `getIdentityManager()` for pp-browser Identify integration (L2)
 - `network/impl/listener_manager_impl.cpp` — if the host is already `start()`ed, `listen()` binds the transport immediately (needed for mobile N025 ephemeral `/tcp/0` after Client non-listen start; upstream only binds inside `start()`)
 - `basic/read.hpp` / `basic/write.hpp` — return `invalid_argument` instead of throwing `std::logic_error` on zero/oversize `readSome`/`writeSome` results (uncaught throw aborted Android host io during call-media)
-- `basic/write_queue.*` — enqueue copies bytes into owned `Bytes` (upstream stored `BytesIn` spans; temporaries / early buffer free → wire corruption / `too much bytes read`)
-- `basic/read_buffer.cpp` — `consumePart` soft-fails when `first_byte_offset_` is past fragment size (off-strand stream IO race aborted moto `pp-browser-io`)
+- `basic/write_queue.*` — enqueue copies bytes into owned `Bytes` (upstream stored `BytesIn` spans; temporaries / early buffer free → wire corruption / `too much bytes read`); soft-heal `dequeue` when `unsent` drifts from buffer layout (media_relay capture vs IO race aborted moto `assert(sz == item.unsent)`)
+- `muxer/yamux/yamux_stream.*` — `stream_write_mu_` serializes stream `WriteQueue` / window / doWrite against off-strand MediaRelay `SendFrame` (capture) and connection acks/window updates
 - `muxer/yamux/yamuxed_connection.*` — mutex around write queue / `is_writing_` (media-relay capture-thread `SendFrame` raced IO window-updates into `assert(!is_writing_)`)
+- `basic/read_buffer.cpp` — `consumePart` soft-fails when `first_byte_offset_` is past fragment size (off-strand stream IO race aborted moto `pp-browser-io`); clear `capacity_remains_` when the last fragment is popped so `add()` does not assert `!fragments_.empty()` (Samsung media_relay dogfood SIGABRT on `pp-worker`); heal/clear on inconsistent consume; guard `consumeAll` against `first_byte_offset_` underflow (Linux PreferLocal dogfood: `free(): invalid next size`)
+- `muxer/yamux/yamux_stream.cpp` — soft-fail when `consume()` returns 0 despite `size()>0` and clear buffer before arming `reading_`; `onDataReceived` drains/clears leftover buffer instead of asserting empty (moto media_relay `pp-worker` SIGABRT)
 - `security/noise/noise_connection.cpp` — `readSome` with empty `out` returns 0 without pulling another Noise frame
 - `protocol/identify/identify_push.*` — `pushUpdates()` to re-push self Identify after address-repo changes (L2)
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded

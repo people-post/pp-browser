@@ -716,7 +716,21 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
   // Runs on Accept worker thread (never Browser IO). Do not wait on ListenOn / PollInbox here.
   // ScheduleStart* only posts StartSfu onto UI — never run the engine on this thread.
   auto joined_after = sessions_.CountJoined(call_id);
-  const size_t n_joined = joined_after ? *joined_after : 0;
+  size_t n_joined = joined_after ? *joined_after : 0;
+  // Group invite seeds other callees as Ringing. CountJoined alone stays at 2 until they Accept,
+  // so we SoftMigrate/WaitForAttach when Joined+Ringing+Invited already implies N≥3.
+  if (auto all = sessions_.ListParticipants(call_id); all) {
+    size_t n_active = 0;
+    for (const CallParticipant& p : *all) {
+      if (p.state == CallParticipantState::Joined || p.state == CallParticipantState::Ringing ||
+          p.state == CallParticipantState::Invited) {
+        ++n_active;
+      }
+    }
+    if (n_active > n_joined) {
+      n_joined = n_active;
+    }
+  }
   if (!topology_.OnLocalAcceptJoined(call_id, n_joined, row.sfu_hint)) {
     if (row.sfu_hint && !row.sfu_hint->empty()) {
       row.sfu_hint.reset();
@@ -1468,6 +1482,17 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
           const CallParticipantState prior = (*existing)->state;
           if (prior == CallParticipantState::Left || prior == CallParticipantState::Declined ||
               prior == CallParticipantState::Missed) {
+            continue;
+          }
+          // Joiner BuildRoster still lists earlier invitees as Ringing. Applying that must not
+          // demote peers who already Accepted (SoftMigrate N≥3 / in-call UI depend on Joined).
+          if (prior == CallParticipantState::Joined &&
+              (entry.state == CallParticipantState::Ringing ||
+               entry.state == CallParticipantState::Invited)) {
+            CallParticipant keep = **existing;
+            keep.media.audio_muted = entry.audio_muted;
+            keep.media.video_enabled = entry.video_enabled;
+            (void)sessions_.UpsertParticipant(keep);
             continue;
           }
         }

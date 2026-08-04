@@ -8,6 +8,8 @@
 
 #include <optional>
 
+#include <mutex>
+
 #include <libp2p/basic/read_buffer.hpp>
 #include <libp2p/basic/write_queue.hpp>
 #include <libp2p/common/metrics/instance_count.hpp>
@@ -124,6 +126,10 @@ namespace libp2p::connection {
     /// Dequeues data from write queue and sends to the wire in async manner
     void doWrite();
 
+    /// Caller must hold stream_write_mu_.
+    /// @return true if caller should unlock then doClose(STREAM_CLOSED_BY_HOST).
+    bool doWriteUnlocked();
+
     /// Called by write*() functions
     void doWrite(BytesIn in, WriteCallbackFunc cb);
 
@@ -163,6 +169,10 @@ namespace libp2p::connection {
 
     /// Write queue with callbacks
     basic::WriteQueue write_queue_;
+
+    /// Serializes write_queue_ / window_size_ / doWrite vs capture-thread
+    /// MediaRelay SendFrame (off-strand) and connection IO acks/window updates.
+    std::mutex stream_write_mu_;
 
     /// Internal read buffer, stores bytes received between read()s
     basic::ReadBuffer internal_read_buffer_;

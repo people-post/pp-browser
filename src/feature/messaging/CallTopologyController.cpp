@@ -862,9 +862,28 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     log().info << "OnRemoteAcceptJoined call_id=" << call_id << " n=" << n_joined
                << " joiner=" << joiner_identity << " sfu=" << (sfu_attached_ ? 1 : 0)
                << " inflight=" << (soft_migrate_in_flight_ ? 1 : 0);
-    // Already on SFU (2nd concurrent accept): only refresh subscriptions — do not re-SoftMigrate.
+    // Already on SFU (2nd concurrent accept): refresh subscriptions and re-fan-out attach so the
+    // late joiner (missed SoftMigrate fan-out while still Ringing) can WaitForAttach → attach.
     if (sfu_attached_ && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
       SyncSfuSubscriptions(call_id);
+      if (relay_deps_.relay && relay_deps_.relay->IsLocalHopAttached()) {
+        if (auto hop = relay_deps_.relay->LocalPeerIdBase58(); hop) {
+          CallSfuAttachDetail attach;
+          attach.call_id = call_id;
+          attach.hop_peer_id = *hop;
+          attach.hop_multiaddr = ResolveHopMultiaddr(*hop);
+          attach.publisher_stream_id = PublisherStreamIdForLocal();
+          CallSfuAttachDetail fanout = BuildSfuAttachFanout(attach);
+          if (auto encoded = CallControlCodec::EncodeSfuAttach(fanout); encoded) {
+            if (auto local = host_.TopologyLocalIdentity(); local) {
+              log().info << "OnRemoteAcceptJoined re-fan-out CallSfuAttach joiner="
+                         << joiner_identity;
+              (void)host_.TopologyFanOutToJoined(call_id, CallControlType::CallSfuAttach, *encoded,
+                                                 "Call SFU attach", *local);
+            }
+          }
+        }
+      }
       ClearSfuAttachWait();
       host_.TopologyNotifyRingChanged();
       return true;
@@ -916,6 +935,8 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     });
     return true;
   }
+  log().info << "OnRemoteAcceptJoined stay P2P call_id=" << call_id << " n=" << n_joined
+             << " joiner=" << joiner_identity;
   ClearSfuAttachWait();
   awaiting_sfu_recovery_ = false;
   return false;

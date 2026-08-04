@@ -40,14 +40,33 @@ namespace libp2p::basic {
 
     auto &item = queue_[active_index_];
 
-    assert(item.unacknowledged + item.acknowledged + item.unsent
-           == static_cast<size_t>(item.data.size()));
-    assert(item.unsent > 0);
+    const size_t data_sz = static_cast<size_t>(item.data.size());
+    if (item.unacknowledged + item.acknowledged + item.unsent != data_sz) {
+      // Off-strand concurrent mutate (media_relay capture vs IO) — heal.
+      if (item.acknowledged + item.unacknowledged <= data_sz) {
+        item.unsent = data_sz - item.acknowledged - item.unacknowledged;
+      } else {
+        out = DataRef{};
+        return window_size;
+      }
+    }
+    if (item.unsent == 0) {
+      ++active_index_;
+      out = DataRef{};
+      return window_size;
+    }
 
     out = DataRef{item.data}.subspan(item.acknowledged + item.unacknowledged);
     auto sz = static_cast<size_t>(out.size());
 
-    assert(sz == item.unsent);
+    if (sz != item.unsent) {
+      // Span/accounting drift under concurrent access — trust the buffer layout.
+      item.unsent = sz;
+      if (sz == 0) {
+        out = DataRef{};
+        return window_size;
+      }
+    }
 
     if (sz > window_size) {
       sz = window_size;

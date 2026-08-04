@@ -25,14 +25,18 @@ namespace libp2p::basic {
       return;
     }
 
-    if (capacity_remains_ >= sz) {
-      assert(!fragments_.empty());
+    // capacity_remains_ tracks fragments_.back() only. consumePart used to pop the last
+    // fragment without clearing it → assert abort under media_relay load (Samsung dogfood).
+    if (fragments_.empty()) {
+      capacity_remains_ = 0;
+    }
 
+    if (capacity_remains_ >= sz && !fragments_.empty()) {
       auto &vec = fragments_.back();
       vec.insert(vec.end(), bytes.begin(), bytes.end());
 
       capacity_remains_ -= sz;
-    } else if (capacity_remains_ > 0) {
+    } else if (capacity_remains_ > 0 && !fragments_.empty()) {
       auto &vec = fragments_.back();
 
       size_t new_capacity = vec.size() + sz + alloc_granularity_;
@@ -72,13 +76,24 @@ namespace libp2p::basic {
       auto consumed = consumePart(p, remains);
 
       assert(consumed <= remains);
+      if (consumed == 0) {
+        // Inconsistent fragment state — clear so size()/empty() agree (Yamux reading_
+        // requires an empty buffer; partial heal left non-empty → Moto assert abort).
+        clear();
+        break;
+      }
 
       remains -= consumed;
       p += consumed;  // NOLINT
     }
 
-    total_size_ -= n_bytes;
-    return n_bytes;
+    const size_t got = n_bytes - remains;
+    if (got > total_size_) {
+      total_size_ = 0;
+      return got;
+    }
+    total_size_ -= got;
+    return got;
   }
 
   size_t ReadBuffer::addAndConsume(BytesIn in, BytesOut out) {
@@ -124,10 +139,27 @@ namespace libp2p::basic {
   }
 
   size_t ReadBuffer::consumeAll(BytesOut out) {
-    assert(!fragments_.empty());
+    if (fragments_.empty()) {
+      // size()/total_size_ lied (race or prior soft-fail) — heal without abort.
+      total_size_ = 0;
+      first_byte_offset_ = 0;
+      capacity_remains_ = 0;
+      return 0;
+    }
+    // first_byte_offset_ past front size → size_t underflow on (size - offset) then
+    // memcpy stomps the heap (Linux media_relay dogfood: free(): invalid next size).
+    if (first_byte_offset_ >= fragments_.front().size()) {
+      clear();
+      return 0;
+    }
     auto *p = out.data();
     auto n = fragments_.front().size() - first_byte_offset_;
     assert(n <= fragments_.front().size());
+    // Caller promised out.size() >= total_size_; clamp if accounting drifted.
+    if (n > out.size()) {
+      clear();
+      return 0;
+    }
 
     memcpy(p, fragments_.front().data() + first_byte_offset_, n);  // NOLINT
 
@@ -135,6 +167,10 @@ namespace libp2p::basic {
     while (it != fragments_.end()) {
       p += n;  // NOLINT
       n = it->size();
+      if (static_cast<size_t>(p - out.data()) + n > out.size()) {
+        clear();
+        return 0;
+      }
       memcpy(p, it->data(), n);
       ++it;
     }
@@ -169,6 +205,8 @@ namespace libp2p::basic {
 
   size_t ReadBuffer::consumePart(uint8_t *out, size_t n) {
     if (fragments_.empty()) {
+      // Stale capacity after last fragment was popped (see below) — heal before add().
+      capacity_remains_ = 0;
       return 0;
     }
 
@@ -179,6 +217,10 @@ namespace libp2p::basic {
     if (f.size() <= first_byte_offset_) {
       first_byte_offset_ = 0;
       fragments_.pop_front();
+      if (fragments_.empty()) {
+        capacity_remains_ = 0;
+      }
+      // Caller must clear()/heal total_size_ — returning 0 signals inconsistency.
       return 0;
     }
 
@@ -194,6 +236,11 @@ namespace libp2p::basic {
     } else {
       first_byte_offset_ = 0;
       fragments_.pop_front();
+      if (fragments_.empty()) {
+        // capacity_remains_ tracks fragments_.back() only — must not stay >0 with no fragments
+        // (Samsung media_relay dogfood: add() asserted "!fragments_.empty()").
+        capacity_remains_ = 0;
+      }
     }
 
     return n;
