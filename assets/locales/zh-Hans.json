@@ -23,6 +23,8 @@
     "nav.contacts": "联系人",
     "nav.me": "我",
 
+    "shell.statusbar.direct_off": "直连关闭",
+
     "settings.saved": "设置已保存",
     "settings.preferences": "偏好设置",
     "settings.profile.title": "个人资料",

@@ -216,7 +216,7 @@ Counts cap at **99+** in C++ (`FormatBadgeCount`). Home stays badge-free. **Sess
 
 **Desktop title bar** (desktop only — see [WINDOW_SHELL.md](WINDOW_SHELL.md#desktop-custom-title-bar)): `.shell-titlebar`, `.shell-titlebar-drag`, `.shell-titlebar-title`, `.shell-titlebar-controls`, `.shell-titlebar-btn`, `.shell-titlebar-btn--close`
 
-**Desktop expanded status bar** (desktop + expanded — see [WINDOW_SHELL.md](WINDOW_SHELL.md#desktop-expanded-status-bar)): `.shell-statusbar`, `.shell-statusbar-connection`, `.shell-statusbar-activity`
+**Desktop expanded status bar** (desktop + expanded — see [WINDOW_SHELL.md](WINDOW_SHELL.md#desktop-expanded-status-bar)): `.shell-statusbar`, `.shell-statusbar-cluster`, `.shell-statusbar-mesh`, `.shell-statusbar-reach`, `.shell-statusbar-help`, `.shell-statusbar-label`, `.shell-statusbar-activity`; icon `status-help.svg`
 
 **Compact floating chrome** (theme-only — see [Materials](#compact-floating-chrome-materials)): `.surface-chrome`, `.surface-chrome--frost`, `.surface-chrome--solid`, `.shell-bottom-chrome--frost`
 
