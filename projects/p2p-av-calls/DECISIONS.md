@@ -635,3 +635,46 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 **Cross-link:** V029; [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) additive wire; mesh [PHASES ns](../p2p-mesh/PHASES.md).
 
 ---
+
+## V031 — Call chrome modes (Minimized / Expanded / Immersive)
+
+**Date:** 2026-08-05  
+**Status:** Accepted (implementing)  
+**Decision:** In-call UI has **three modes** with clear jobs — not arbitrary window sizes.
+
+| Mode | Job | Default |
+|------|-----|---------|
+| **Expanded** | Top call bar (+ stage when video); multitask under it | 1:1 on join |
+| **Immersive** | Call is primary surface; full participant grid (voice avatars now, video tiles later) | Group / `show_roster` on join |
+| **Minimized** | Ambient presence while using the app | Explicit collapse only |
+
+### Mode ladder
+
+```text
+Immersive  ↔  Expanded  ↔  Minimized
+```
+
+One-step transitions only (no Immersive → Minimized in one fling). Restore from Minimized returns to the last non-minimized mode.
+
+### Gestures (top-anchored chrome)
+
+| Mode | Gesture | Result |
+|------|---------|--------|
+| **Expanded** | Swipe **down** on call chrome (not on a button) | → Immersive |
+| **Expanded** | Swipe **up** on call chrome (not on a button) | → Minimized |
+| **Immersive** | Swipe / pull **down** on non-button chrome, **or** pull **down** starting in the people list when `scrollTop == 0` | → Expanded |
+| **Minimized** | **Tap** chip | Restore last Expanded/Immersive |
+| **Minimized** | **Drag** chip | Reposition; snap to corner |
+| **Minimized** | Swipe | **None** (avoids fighting drag) |
+
+**Hit-test model (Immersive):** button → control; scroll region (when not at top / not pulling down) → scroll; everything else → mode swipe. Same idea as `ShellBottomSheetGesture` (ignore buttons; scroll-at-top handoff).
+
+**Hard rules:** Ring stays modal. No gesture ends the call. Escape/back still does not hang up. Visible controls always mirror gestures (collapse / people / minimize). Mode changes remount `#shell-call-in-progress-mount` only (`RemountCallChrome`); re-attach gestures after remount.
+
+**Rationale:** Multitasking needs a true minimize; group voice needs everyone visible — Expanded cannot honestly show 8–16 peers. Three jobs beat three decorative sizes. Pull-down to leave Immersive matches list overscroll-at-top and reuses sheet gesture patterns.
+
+**Alternatives rejected:** Three free-floating resizable windows; pinch-to-mode-change; swipe-to-end; side-pad-only Immersive swipes as v1 layout; OS PiP / post-Present overlay (still V018).
+
+**Cross-link:** V018 (in-shell tiles); V019 (unified in-call); [WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md); [DESIGN.md](DESIGN.md) UI sketch.
+
+---

@@ -267,7 +267,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | 1:1 libp2p dial + connect-fail / Retry | `feature/messaging` | **`CallLibp2pMediaBridge`** | Primary 1:1 media path |
 | Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** | Unchanged |
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
-| Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellHost::ApplyCallChromeUpdate` | Layer identity / control *presence* / status kind → remount; mute/speaker/camera icons → DirtyCallChrome (`data-attr-src` + `data-class-*--on`); meters/pulse → DirtyCallChrome; mobile speaker via `CallAudioSession` |
+| Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellCallChromeGesture`, `ShellHost::ApplyCallChromeUpdate` | Layer identity / control *presence* / **mode** (Expanded/Immersive/Minimized — V031) / status kind → remount; mute/speaker/camera icons → DirtyCallChrome (`data-attr-src` + `data-class-*--on`); meters/pulse → DirtyCallChrome; mobile speaker via `CallAudioSession` |
 | Blind SFU protocol | `libp2p/integration` | `MediaRelayService` | Unchanged |
 
 UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints from session + phase; it does not invent listen or media policy.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/media/CallRingtone.h"
+#include "base/ui/ShellTypes.h"
 #include "common/Module.h"
 #include "feature/messaging/MessagingCallPorts.h"
 #include "feature/ui/CallChromeSync.h"
@@ -50,6 +51,15 @@ public:
   void ToggleCamera();
   void ToggleSpeaker();
 
+  /** V031 mode controls — remount call chrome mount only. */
+  void SetChromeMode(CallChromeMode mode);
+  void MinimizeChrome();
+  void ExpandChrome();
+  void ImmersiveChrome();
+  void RestoreChromeFromMinimized();
+  void SetMinimizedCorner(int corner);
+  CallChromeMode ChromeMode() const { return chrome_mode_; }
+
 private:
   bool StartCall(const std::string& thread_id, bool video);
   void SyncShellState();
@@ -57,6 +67,7 @@ private:
   void ClearInCall();
   /** Hide in-call bar without clearing active_call_id_ (conflict ring). */
   void HideInCallChrome();
+  void ApplyChromeModeToState(CallInProgressState& in_call);
   void ApplyAudioLevels(CallMediaEngine& media);
   void RefreshCallLevels();
   void SyncRingtone();
@@ -77,6 +88,12 @@ private:
   int64_t last_pulse_toggle_ms_ = 0;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
+  CallChromeMode chrome_mode_ = CallChromeMode::Expanded;
+  /** Mode to restore when leaving Minimized (Expanded or Immersive). */
+  CallChromeMode restore_mode_ = CallChromeMode::Expanded;
+  int minimized_corner_ = 0;
+  /** Call id the current chrome_mode_ was chosen for (reset defaults on switch). */
+  std::string chrome_mode_call_id_;
   CallRingtone ringtone_;
   MessagingCallPorts call_ports_;
   PeoplePickerNotifyPorts people_picker_notify_;

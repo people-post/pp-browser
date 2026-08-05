@@ -1787,6 +1787,189 @@ call-video-tile {
   min-width: 44dp;
 }
 
+.shell-call-minimize,
+.shell-call-immersive-btn,
+.shell-call-expand {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 22dp;
+  cursor: pointer;
+}
+
+.shell-call-minimize svg,
+.shell-call-immersive-btn svg,
+.shell-call-expand svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
+}
+
+.shell-call-chrome--dragging {
+  transition: none;
+}
+
+/* Minimized chip: mount layer must not steal hits; only the chip is interactive.
+   More specific than `.shell-call-chrome-mount .shell-layer { pointer-events: auto }`. */
+.shell-call-chrome-mount .shell-layer-call-minimized {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  pointer-events: none;
+}
+
+.shell-call-minimized-chip {
+  position: absolute;
+  pointer-events: auto;
+  align-items: center;
+  gap: 8dp;
+  min-width: 160dp;
+  max-width: 240dp;
+  padding: 10dp 12dp;
+  border-radius: 14dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.shell-call-minimized-chip--tr {
+  top: 12dp;
+  right: 12dp;
+}
+
+.shell-call-minimized-chip--tl {
+  top: 12dp;
+  left: 12dp;
+}
+
+.shell-call-minimized-chip--br {
+  bottom: 72dp;
+  right: 12dp;
+}
+
+.shell-call-minimized-chip--bl {
+  bottom: 72dp;
+  left: 12dp;
+}
+
+.shell-call-minimized-main {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.shell-call-minimized-title {
+  margin: 0;
+  font-size: 13dp;
+  font-weight: bold;
+}
+
+.shell-call-minimized-subtitle {
+  margin: 2dp 0 0 0;
+  font-size: 11dp;
+}
+
+.shell-call-mute--compact,
+.shell-call-leave--compact {
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  border-radius: 18dp;
+}
+
+/* Immersive: call is the primary surface (V031). */
+.shell-layer-call-immersive {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  pointer-events: auto;
+}
+
+.shell-call-immersive {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12dp 12dp 16dp 12dp;
+}
+
+.shell-call-immersive-header {
+  flex-shrink: 0;
+  padding-bottom: 8dp;
+}
+
+.shell-call-immersive-grabber {
+  width: 36dp;
+  height: 4dp;
+  border-radius: 2dp;
+  margin: 4dp auto 10dp auto;
+}
+
+.shell-call-immersive-roster {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 10dp;
+  padding: 4dp 0 12dp 0;
+}
+
+.shell-call-peer-card {
+  width: 46%;
+  min-width: 140dp;
+  flex-grow: 1;
+  padding: 16dp 12dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+  align-items: center;
+}
+
+.shell-call-peer-avatar {
+  width: 56dp;
+  height: 56dp;
+  border-radius: 28dp;
+  margin: 0 auto 10dp auto;
+}
+
+.shell-call-peer-name {
+  margin: 0;
+  text-align: center;
+  font-size: 14dp;
+  font-weight: bold;
+}
+
+.shell-call-peer-badges {
+  justify-content: center;
+  gap: 6dp;
+  margin-top: 8dp;
+  min-height: 16dp;
+}
+
+.shell-call-immersive-controls {
+  flex-shrink: 0;
+  padding-top: 8dp;
+}
+
+.shell-call-immersive-controls .shell-call-bar-actions {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
 .shell-call-ring-eyebrow {
   margin: 0 0 4dp 0;
   font-size: 12dp;

@@ -6,6 +6,7 @@
 #include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
+#include "feature/ui/ShellCallChromeGesture.h"
 #include "feature/ui/ShellGestureAxis.h"
 #include "feature/ui/ShellSwipeBackGesture.h"
 
@@ -186,6 +187,10 @@ public:
   static void CallCameraCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallSpeakerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallInviteCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallMinimizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallExpandCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallImmersiveCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallRestoreCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarMinimizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarToggleMaximizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarCloseCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
@@ -214,6 +219,8 @@ private:
   void DetachDismissGestures();
   void AttachSwipeBackGesture();
   void AttachAccountSheetGesture();
+  void DetachCallChromeGesture();
+  void AttachCallChromeGesture();
   void ApplyLayoutModeFromContext(Rml::Context* context);
   void OnLayoutModeChanged();
   int AllocatePaneId();
@@ -262,6 +269,7 @@ private:
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;
   ShellBottomSheetGesture account_sheet_gesture_;
+  ShellCallChromeGesture call_chrome_gesture_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(const std::string&)> on_transient_popped_;

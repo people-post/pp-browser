@@ -27,6 +27,7 @@ pp_browser_add_feature_library(pp_feature_ui
     ShellFeedbackPorts.cpp
     ShellSwipeBackGesture.cpp
     ShellBottomSheetGesture.cpp
+    ShellCallChromeGesture.cpp
     ShellFeedback.cpp
     ShellHost.cpp
     ShellInterruption.cpp

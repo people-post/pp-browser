@@ -68,7 +68,7 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 - [x] Hop pick: **contacts ∪ org seed** only (V023 / N020)
 - [ ] Multi-invite; mid-call guest invite — API yes; chrome polish pending
 - [x] Rotate media key on leave + overlapping epochs (V003) — existing a1 path
-- [ ] In-call roster (mute / camera / speaking if cheap) — mute/camera roster exists; speaking pending
+- [ ] In-call roster (mute / camera / speaking if cheap) — mute/camera roster exists; speaking pending; **Immersive people grid** (V031) landed for voice presence
 - [x] Reuse a3 Opus + H264 HW — **no** new device codec matrix in a4
 - [x] ICE-fail **1:1** stays P2P (V025) — timeout + Retry; N≥3 ICE-fail → SFU wired; no auto 1:1 SFU
 
