@@ -6,10 +6,8 @@
 
 #include <libp2p/wire/wire_codec.hpp>
 
-namespace libp2p::wire {
-
 OUTCOME_CPP_DEFINE_CATEGORY(libp2p::wire, DecodeError, e) {
-  using E = DecodeError;
+  using E = libp2p::wire::DecodeError;
   switch (e) {
     case E::TRUNCATED:
       return "truncated protobuf wire data";
@@ -24,6 +22,8 @@ OUTCOME_CPP_DEFINE_CATEGORY(libp2p::wire, DecodeError, e) {
   }
   return "unknown wire decode error";
 }
+
+namespace libp2p::wire {
 
 void Writer::writeVarint(uint64_t value) {
   while (value >= 0x80) {
