@@ -41,4 +41,4 @@ Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs.
 | [p2p-mesh](p2p-mesh/) | **nf + n4-media done** — N022 invest; **N023 relay scope** spec | Libp2p deepen; scope escalation; HTTP settle preferred — [RELAY_SCOPE](p2p-mesh/RELAY_SCOPE.md) |
 | [p2p-av-calls](p2p-av-calls/) | **V026** libp2p media — **m1** next | Voice-first on libp2p; WebRTC legacy teardown after m1 — [CURRENT_STATE](p2p-av-calls/CURRENT_STATE.md) |
 | [media-hop-reachability](media-hop-reachability/) | **L1–L3 shipped** — L4 consume next; L3.5 multi-hop planned | In-libp2p dial-by-PeerId; SoftMigrate consumes — [DESIGN](media-hop-reachability/DESIGN.md) |
-| [network-status-chrome](network-status-chrome/) | **s0 design** — open questions | Desktop status bar cluster + click→detail (mesh/reach/help/load) — [OPEN_QUESTIONS](network-status-chrome/OPEN_QUESTIONS.md) |
+| [network-status-chrome](network-status-chrome/) | **s0 done** — s1 next | Desktop status bar cluster + hybrid popover (mesh/reach/help/load) — [DESIGN](network-status-chrome/DESIGN.md) |

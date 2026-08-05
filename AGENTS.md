@@ -65,7 +65,7 @@ Prompt text for LLMs is built in [`src/base/ai/PromptBuilder.cpp`](src/base/ai/P
 | P2P mesh | [projects/p2p-mesh/](projects/p2p-mesh/) — **nf** + **n4-media** done; **N023** relay scope ([RELAY_SCOPE.md](projects/p2p-mesh/RELAY_SCOPE.md)); **N022** invest libp2p |
 | P2P A/V calls | [projects/p2p-av-calls/](projects/p2p-av-calls/) — **V026** libp2p media (**m1** mobile LAN dogfood OK; **m2** teardown next); **code map** [docs/architecture/CALLS.md](docs/architecture/CALLS.md) |
 | Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) — **in-libp2p** (L0 docs; L1 next) |
-| Network status chrome | [projects/network-status-chrome/](projects/network-status-chrome/) — **s0 design**; status bar cluster + click→detail — [OPEN_QUESTIONS](projects/network-status-chrome/OPEN_QUESTIONS.md) |
+| Network status chrome | [projects/network-status-chrome/](projects/network-status-chrome/) — **s0 done**; s1 ambient cluster next — [DESIGN](projects/network-status-chrome/DESIGN.md) |
 | Contacts UI / store | `src/feature/ui/ContactsController.*`, `src/base/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
 | SQLite thread store | `src/base/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*` — [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
 | E2E symmetric crypto (`base/crypto`) | `src/base/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md) — [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
