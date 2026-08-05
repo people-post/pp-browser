@@ -9,30 +9,17 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <vector>
 
 namespace pbr {
 
 /**
- * 1:1 call media via libdatachannel + Opus + SDL (+ platform HW H264, V014/V017/V019).
- * Always negotiates Opus + H264 m-lines; mute/camera are content-only.
+ * 1:1 call media via libp2p/SFU packet transport + Opus + SDL (+ platform HW H264, V014/V017/V019).
+ * Always encodes Opus + H264; mute/camera are content-only.
  */
 class CallMediaEngine : public Module {
 public:
-  enum class Role { Offerer, Answerer };
-
-  struct LocalDescription {
-    std::string type; // "offer" | "answer"
-    std::string sdp;
-  };
-
-  struct IceCandidate {
-    std::string candidate;
-    std::string mid;
-  };
-
   struct VideoTileFrame {
     int width = 0;
     int height = 0;
@@ -41,15 +28,11 @@ public:
     uint64_t seq = 0;
   };
 
-  using LocalDescriptionFn = std::function<void(const LocalDescription&)>;
-  using IceCandidateFn = std::function<void(const IceCandidate&)>;
   using StateChangedFn = std::function<void(const std::string& state)>;
 
   CallMediaEngine();
   ~CallMediaEngine() override;
 
-  void SetOnLocalDescription(LocalDescriptionFn callback);
-  void SetOnIceCandidate(IceCandidateFn callback);
   void SetOnStateChanged(StateChangedFn callback);
 
   /**
@@ -64,17 +47,11 @@ public:
   };
   using SfuSendFn = std::function<void(const SfuPacket&)>;
 
-  Roe<void> Start(const std::string& call_id, Role role);
-  /** Blind SFU backend: no PeerConnection; capture/encode → SfuSendFn (V021/V024). */
+  /** Blind SFU backend: capture/encode → SfuSendFn (V021/V024). */
   Roe<void> StartSfu(const std::string& call_id, SfuSendFn send);
   /** Inbound SFU payload (already demuxed to local subscribe). */
   void OnSfuPacket(const SfuPacket& packet);
   bool IsSfuMode() const;
-
-  Roe<void> SetRemoteDescription(const std::string& type, const std::string& sdp);
-  Roe<void> AddRemoteIceCandidate(const std::string& candidate, const std::string& mid);
-  /** Snapshot of current local SDP (for offerer re-send after answerer race). */
-  std::optional<LocalDescription> CurrentLocalDescription() const;
   void Stop();
 
   void SetMuted(bool muted);
@@ -95,32 +72,25 @@ public:
   bool IsRemoteVideoStalling() const;
   /** True after at least one remote frame this media session (survives hard-stall clear). */
   bool EverHadRemoteVideo() const;
-  /** Drop last remote frame (camera off, leave, hard stall, PC dead). */
+  /** Drop last remote frame (camera off, leave, hard stall, connection dead). */
   void ClearRemoteVideo();
   /**
-   * UI-tick health: clear remote video on hard frame stall or failed/closed PC;
-   * clear after a short grace when ICE is disconnected.
+   * UI-tick health: clear remote video on hard frame stall or failed/closed connection.
    */
   void RefreshRemoteVideoHealth();
   bool VideoEncoderAvailable() const;
 
   bool IsActive() const;
   bool IsConnected() const;
-  /** Update chrome-facing PC/SFU connection state (e.g. libp2p pending direct stream). */
+  /** Update chrome-facing SFU connection state (e.g. libp2p pending direct stream). */
   void SetConnectionState(const std::string& state);
   std::string ActiveCallId() const;
   std::string ConnectionState() const;
   int64_t ConnectedAtMs() const;
-  /** Wall time when Start/StartSfu succeeded (0 if inactive). */
+  /** Wall time when StartSfu succeeded (0 if inactive). */
   int64_t StartedAtMs() const;
   /** False when mic open failed (silence sent); used for permission hints. */
   bool HasLocalCapture() const;
-  Role ActiveRole() const;
-  /**
-   * After 1:1 connect fail/timeout, allow the next remote offer to rebuild the PC
-   * (peer Retry). Cleared on apply, Start, Stop, or successful connect.
-   */
-  void ArmOfferRestart();
 
   float LocalInputLevel() const;
   float RemoteOutputLevel() const;
