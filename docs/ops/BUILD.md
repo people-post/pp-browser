@@ -133,6 +133,15 @@ cmake --build build -j --target pp-node
 - PIN via `--pin` or `PP_BROWSER_PIN` (required).
 - Default listen is fail-loud on the configured port (often **443** for ops). Pass `--listen-fallback` only for local dogfood.
 - Dial-back protocol `/pp-browser/dial-back/1.0.0` is enabled for reachability probes (feeds phase **nr**).
+- **Loopback status HTTP** (long-running mode): default `127.0.0.1:18518` with `GET /healthz` and `GET /status` (JSON). Not on the libp2p listen port; do not publish this port on a Service/Ingress. Query from the host/container via `curl` or `kubectl exec`:
+  ```bash
+  curl -sS http://127.0.0.1:18518/status
+  kubectl exec deploy/pp-node -- curl -sS http://127.0.0.1:18518/healthz
+  ```
+  - `--status-addr host:port` or `PP_NODE_STATUS_ADDR` (empty disables)
+  - `--status-token` / `PP_NODE_STATUS_TOKEN` optional Bearer auth
+  - Non-loopback bind requires `--status-allow-non-loopback` (off by default)
+  - One-shot `pp-node --status` still prints reachability JSON and exits (unchanged)
 - Sketches: [`packaging/pp-node/`](../../packaging/pp-node/).
 
 ### Simulated touch (optional dev)

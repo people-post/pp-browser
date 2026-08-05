@@ -5,6 +5,8 @@ endif()
 add_executable(pp-node
   main.cpp
   NodeBootstrap.cpp
+  StatusHttpProtocol.cpp
+  StatusHttpServer.cpp
 )
 
 target_include_directories(pp-node PRIVATE
@@ -30,3 +32,21 @@ if(TARGET OpenSSL::Crypto)
 endif()
 
 install(TARGETS pp-node RUNTIME DESTINATION bin)
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_executable(pp_browser_pp_node_test
+    tests/status_http_protocol_test.cpp
+    StatusHttpProtocol.cpp
+  )
+  target_include_directories(pp_browser_pp_node_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+  )
+  target_link_libraries(pp_browser_pp_node_test PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    nlohmann_json::nlohmann_json
+    pp_common
+  )
+  include(PpBrowserTesting)
+  pp_browser_add_gtest(pp_browser_pp_node_test)
+endif()
