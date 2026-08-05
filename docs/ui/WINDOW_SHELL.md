@@ -164,7 +164,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
 | `titlebar_minimize()` / `titlebar_toggle_maximize()` / `titlebar_close()` | Desktop custom title bar window controls (macOS traffic lights or Win/Linux icon strip) |
 
-Desktop expanded status bar binds `statusbar_visible`, `statusbar_connection`, and `statusbar_activity` (no click callbacks — display-only).
+Desktop expanded status bar binds `statusbar_visible`, cluster fields (`statusbar_mesh_*`, `statusbar_reach_*`, `statusbar_help_visible`, `statusbar_label*`), and `statusbar_activity` (no click callbacks — display-only). Product work: [network-status-chrome](../../projects/network-status-chrome/).
 
 Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). `sessions_unread` is aggregate chat unread; `contacts_unread` is reserved for future contacts-tab queues (not chat unread — currently always 0). `me_attention` is a non-count dot for Me setup nudges (today: desktop Node outbound-only/blocked reachability until the user acks **Got it — use relay** in Me → Network, or inbound becomes reachable). On expanded, the Me attention dot is on the Me nav-rail tab; on compact, it is on the Home profile button. The Network settings row mirrors the same attention via `section.attention`. Refreshed by `BadgeAggregator` on messaging / reachability events.
 
@@ -239,12 +239,14 @@ Zoom / maximize both call `DesktopWindowChrome::ToggleMaximize()`. RML binds `ti
 
 ## Desktop expanded status bar
 
-On **desktop + expanded** layout (`Platform::IsDesktop() && layout_mode == Expanded`), `#shell-statusbar` is a thin (24dp) read-only bar at the bottom of the document (sibling of `#shell-root`):
+On **desktop + expanded** layout (`Platform::IsDesktop() && layout_mode == Expanded`), `#shell-statusbar` is a thin (24dp) read-only bar at the bottom of the document (sibling of `#shell-root`). Spec: [network-status-chrome](../../projects/network-status-chrome/).
 
-| Side | Field | Content |
-|------|--------|---------|
-| Left | `statusbar_connection` | Host readiness: **Online** / **Direct off** (empty while messaging not ready) |
-| Right | `statusbar_activity` | Ephemeral busy text (Thinking…, tool labels, Preparing…) via `ShellHost::SetActivity` |
+| Side | Content |
+|------|---------|
+| Left cluster | **Mesh** (dot: on/off/error) · **Reach** (3-bar strength from `ReachabilitySnapshot`) · **Help** (teal icon when Node / Help the network on) · sparse label for off/degraded (`Direct off`, `Outbound only`, `Blocked`) |
+| Right | `statusbar_activity` — ephemeral busy text (Thinking…, tool labels, Preparing…) via `ShellHost::SetActivity` |
+
+Data comes from `MessagingShellPorts::statusbar_cluster` (polled in `ShellHost::RefreshStatusbarCluster`). Adaptive: Client shows Mesh+Reach; Node adds Help. Load counts are deferred (s3). Still **display-only** (click → popover is s2).
 
 `#shell-root` is inset with `bottom = statusbar_height_dp` while visible. Compact layout and mobile/tablet platforms omit the bar.
 

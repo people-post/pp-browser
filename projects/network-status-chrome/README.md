@@ -1,6 +1,6 @@
 # Network status chrome
 
-**Status:** **s0 done** — decisions locked; **s1** ambient cluster next  
+**Status:** **s1 landed** — ambient cluster in tree; dogfood then **s2** popover  
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md), [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md), [NETWORKING.md](../../docs/architecture/NETWORKING.md)  

@@ -186,7 +186,20 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
     ctor.Bind("statusbar_visible", &host.state_.statusbar_visible);
-    ctor.Bind("statusbar_connection", &host.state_.statusbar_connection);
+    ctor.Bind("statusbar_mesh_visible", &host.state_.statusbar_mesh_visible);
+    ctor.Bind("statusbar_mesh_ok", &host.state_.statusbar_mesh_ok);
+    ctor.Bind("statusbar_mesh_off", &host.state_.statusbar_mesh_off);
+    ctor.Bind("statusbar_mesh_error", &host.state_.statusbar_mesh_error);
+    ctor.Bind("statusbar_reach_visible", &host.state_.statusbar_reach_visible);
+    ctor.Bind("statusbar_reach_ok", &host.state_.statusbar_reach_ok);
+    ctor.Bind("statusbar_reach_warn", &host.state_.statusbar_reach_warn);
+    ctor.Bind("statusbar_reach_error", &host.state_.statusbar_reach_error);
+    ctor.Bind("statusbar_reach_checking", &host.state_.statusbar_reach_checking);
+    ctor.Bind("statusbar_reach_level", &host.state_.statusbar_reach_level);
+    ctor.Bind("statusbar_help_visible", &host.state_.statusbar_help_visible);
+    ctor.Bind("statusbar_label", &host.state_.statusbar_label);
+    ctor.Bind("statusbar_label_warn", &host.state_.statusbar_label_warn);
+    ctor.Bind("statusbar_label_error", &host.state_.statusbar_label_error);
     ctor.Bind("statusbar_activity", &host.state_.statusbar_activity);
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
     ctor.Bind("titlebar_traffic_lights", &host.state_.titlebar_traffic_lights);
@@ -699,7 +712,20 @@ void ShellHost::DirtyPinGate() {
 void ShellHost::DirtyStatusChrome() {
   DataModelHost::Instance().Dirty("window", "activity_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_connection");
+  DataModelHost::Instance().Dirty("window", "statusbar_mesh_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_mesh_ok");
+  DataModelHost::Instance().Dirty("window", "statusbar_mesh_off");
+  DataModelHost::Instance().Dirty("window", "statusbar_mesh_error");
+  DataModelHost::Instance().Dirty("window", "statusbar_reach_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_reach_ok");
+  DataModelHost::Instance().Dirty("window", "statusbar_reach_warn");
+  DataModelHost::Instance().Dirty("window", "statusbar_reach_error");
+  DataModelHost::Instance().Dirty("window", "statusbar_reach_checking");
+  DataModelHost::Instance().Dirty("window", "statusbar_reach_level");
+  DataModelHost::Instance().Dirty("window", "statusbar_help_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_label");
+  DataModelHost::Instance().Dirty("window", "statusbar_label_warn");
+  DataModelHost::Instance().Dirty("window", "statusbar_label_error");
   DataModelHost::Instance().Dirty("window", "statusbar_activity");
   DataModelHost::Instance().Dirty("window", "titlebar_visible");
   DataModelHost::Instance().Dirty("window", "titlebar_traffic_lights");
@@ -1002,20 +1028,107 @@ void ShellHost::RefreshStatusbarVisibility() {
   ApplySafeAreaLayout();
 }
 
-void ShellHost::RefreshStatusbarConnection() {
+void ShellHost::ClearStatusbarCluster() {
+  state_.statusbar_mesh_visible = false;
+  state_.statusbar_mesh_ok = false;
+  state_.statusbar_mesh_off = false;
+  state_.statusbar_mesh_error = false;
+  state_.statusbar_reach_visible = false;
+  state_.statusbar_reach_ok = false;
+  state_.statusbar_reach_warn = false;
+  state_.statusbar_reach_error = false;
+  state_.statusbar_reach_checking = false;
+  state_.statusbar_reach_level = 0;
+  state_.statusbar_help_visible = false;
+  state_.statusbar_label.clear();
+  state_.statusbar_label_warn = false;
+  state_.statusbar_label_error = false;
+}
+
+bool ShellHost::ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap) {
+  const bool mesh_visible = snap.mesh != StatusbarClusterSnapshot::MeshState::Hidden;
+  const bool mesh_ok = snap.mesh == StatusbarClusterSnapshot::MeshState::On;
+  const bool mesh_off = snap.mesh == StatusbarClusterSnapshot::MeshState::Off;
+  const bool mesh_error = snap.mesh == StatusbarClusterSnapshot::MeshState::Error;
+
+  const bool reach_visible = snap.reach != StatusbarClusterSnapshot::ReachState::Hidden;
+  bool reach_ok = false;
+  bool reach_warn = false;
+  bool reach_error = false;
+  bool reach_checking = false;
+  int reach_level = 0;
+  switch (snap.reach) {
+  case StatusbarClusterSnapshot::ReachState::Reachable:
+    reach_ok = true;
+    reach_level = 3;
+    break;
+  case StatusbarClusterSnapshot::ReachState::OutboundOnly:
+    reach_warn = true;
+    reach_level = 1;
+    break;
+  case StatusbarClusterSnapshot::ReachState::Blocked:
+    reach_error = true;
+    reach_level = 0;
+    break;
+  case StatusbarClusterSnapshot::ReachState::Checking:
+    reach_checking = true;
+    reach_level = 1;
+    break;
+  case StatusbarClusterSnapshot::ReachState::Unknown:
+    reach_level = 1;
+    break;
+  case StatusbarClusterSnapshot::ReachState::Hidden:
+  default:
+    break;
+  }
+
+  const Rml::String label = snap.label.c_str();
+  const bool label_warn = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Warn;
+  const bool label_error = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Error;
+
+  if (state_.statusbar_mesh_visible == mesh_visible && state_.statusbar_mesh_ok == mesh_ok &&
+      state_.statusbar_mesh_off == mesh_off && state_.statusbar_mesh_error == mesh_error &&
+      state_.statusbar_reach_visible == reach_visible && state_.statusbar_reach_ok == reach_ok &&
+      state_.statusbar_reach_warn == reach_warn && state_.statusbar_reach_error == reach_error &&
+      state_.statusbar_reach_checking == reach_checking &&
+      state_.statusbar_reach_level == reach_level &&
+      state_.statusbar_help_visible == snap.help_visible && state_.statusbar_label == label &&
+      state_.statusbar_label_warn == label_warn && state_.statusbar_label_error == label_error) {
+    return false;
+  }
+
+  state_.statusbar_mesh_visible = mesh_visible;
+  state_.statusbar_mesh_ok = mesh_ok;
+  state_.statusbar_mesh_off = mesh_off;
+  state_.statusbar_mesh_error = mesh_error;
+  state_.statusbar_reach_visible = reach_visible;
+  state_.statusbar_reach_ok = reach_ok;
+  state_.statusbar_reach_warn = reach_warn;
+  state_.statusbar_reach_error = reach_error;
+  state_.statusbar_reach_checking = reach_checking;
+  state_.statusbar_reach_level = reach_level;
+  state_.statusbar_help_visible = snap.help_visible;
+  state_.statusbar_label = label;
+  state_.statusbar_label_warn = label_warn;
+  state_.statusbar_label_error = label_error;
+  return true;
+}
+
+void ShellHost::RefreshStatusbarCluster() {
   if (!state_.statusbar_visible) {
-    if (!state_.statusbar_connection.empty()) {
-      state_.statusbar_connection.clear();
+    const bool had_cluster = state_.statusbar_mesh_visible || state_.statusbar_reach_visible ||
+                             state_.statusbar_help_visible || !state_.statusbar_label.empty();
+    if (had_cluster) {
+      ClearStatusbarCluster();
       DirtyStatusChrome();
     }
     return;
   }
-  Rml::String next;
-  if (shell_messaging_ports_.statusbar_connection) {
-    next = shell_messaging_ports_.statusbar_connection().c_str();
+  StatusbarClusterSnapshot snap;
+  if (shell_messaging_ports_.statusbar_cluster) {
+    snap = shell_messaging_ports_.statusbar_cluster();
   }
-  if (next != state_.statusbar_connection) {
-    state_.statusbar_connection = std::move(next);
+  if (ApplyStatusbarCluster(snap)) {
     DirtyStatusChrome();
   }
 }
@@ -1819,7 +1932,7 @@ void ShellHost::Update(Rml::Context* context) {
     RestoreFocus();
     return;
   }
-  RefreshStatusbarConnection();
+  RefreshStatusbarCluster();
   if (state_.titlebar_visible) {
     const bool maximized = DesktopWindowChrome::IsMaximized();
     if (maximized != state_.window_maximized) {

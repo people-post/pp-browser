@@ -13,14 +13,16 @@
 
 ## s1 — Ambient cluster (display-only)
 
-- [ ] Status cluster RML/RCSS in `#shell-statusbar` (A+B; C when help on; D when counts > 0 — may stub D until s3)
-- [ ] Wire Mesh from host running / error
-- [ ] Wire Reach from `ReachabilitySnapshot` only ([S007](DECISIONS.md#s007--reach-uses-reachability-first-hop-relay-available-later-q5-db))
-- [ ] Wire Help on/off (+ idle vs active when counts exist)
-- [ ] New status SVGs + semantic colors; i18n keys; settings string parity
-- [ ] Ambient recolor for OutboundOnly/Blocked even after nudge ack
-- [ ] Update WINDOW_SHELL + design-system inventory
-- [ ] Keep display-only (click in s2)
+- [x] Status cluster RML/RCSS in `#shell-statusbar` (A+B; C when help on; D deferred to s3)
+- [x] Wire Mesh from host running / error
+- [x] Wire Reach from `ReachabilitySnapshot` only ([S007](DECISIONS.md#s007--reach-uses-reachability-first-hop-relay-available-later-q5-db))
+- [x] Wire Help visible when Node / Help the network on (idle vs active with counts → s3)
+- [x] Help SVG + semantic colors; i18n keys; settings string parity for reach labels
+- [x] Ambient recolor for OutboundOnly/Blocked (independent of nudge ack)
+- [x] Update WINDOW_SHELL + design-system inventory
+- [x] Unit tests for `BuildStatusbarClusterSnapshot`
+- [x] Keep display-only (click in s2)
+- [ ] Desktop Node dogfood (Reachable + Helping icon; Outbound/Blocked labels)
 
 ## s2 — Click → hybrid popover
 

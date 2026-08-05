@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
+  <!-- Center node (helper) with two outbound links  Help the network -->
+  <circle cx="20" cy="20" r="6" fill="#FFFFFF"/>
+  <circle cx="8" cy="10" r="4" stroke="#FFFFFF" stroke-width="3"/>
+  <circle cx="32" cy="10" r="4" stroke="#FFFFFF" stroke-width="3"/>
+  <path d="M 15 16 L 11 13 M 25 16 L 29 13" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+</svg>

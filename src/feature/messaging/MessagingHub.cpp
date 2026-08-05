@@ -1309,6 +1309,10 @@ ReachabilitySnapshot MessagingHub::Reachability() const {
   return reachability_.Snapshot();
 }
 
+bool MessagingHub::IsHelpNetworkEnabled() const {
+  return ResolveLibp2pRole(config_.libp2p) == Libp2pRole::Node;
+}
+
 void MessagingHub::SetOnReachabilityUpdated(std::function<void()> callback) {
   on_reachability_updated_ = std::move(callback);
 }
