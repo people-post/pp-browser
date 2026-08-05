@@ -4,7 +4,7 @@
 #include "base/messaging/CallSessionStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallLifecycle.h"
-#include "feature/messaging/CallP2pSignalingBridge.h"
+#include "feature/messaging/CallMediaHost.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
 #include "libp2p/integration/host/CallMediaDirectService.h"
 
@@ -23,7 +23,7 @@ namespace pbr {
  */
 class CallLibp2pMediaBridge : public Module {
 public:
-  CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
+  CallLibp2pMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
                         CallMediaEngine& media, CallMediaDirectService& direct, IDialRegistry* dial,
                         ICircuitHopReach* circuit_reach);
 
@@ -78,7 +78,7 @@ private:
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);
 
-  CallP2pSignalingHost& host_;
+  CallMediaHost& host_;
   CallSessionStore& sessions_;
   CallMediaKeyStore& media_keys_;
   CallMediaEngine& media_;

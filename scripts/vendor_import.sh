@@ -20,10 +20,9 @@ declare -A REPOS=(
   [libsodium]="https://github.com/jedisct1/libsodium.git|1.0.20-RELEASE"
   [harfbuzz]="https://github.com/harfbuzz/harfbuzz.git|9.0.0"
   [opus]="https://github.com/xiph/opus.git|v1.5.2"
-  [libdatachannel]="https://github.com/paullouisageneau/libdatachannel.git|v0.22.4"
 )
 
-DEFAULT_ORDER=(freetype nlohmann_json curl sdl3 sdl3_image lunasvg libsodium harfbuzz opus libdatachannel sqlite)
+DEFAULT_ORDER=(freetype nlohmann_json curl sdl3 sdl3_image lunasvg libsodium harfbuzz opus sqlite)
 
 import_sdl3_image_externals() {
   local image_root="${THIRD_PARTY}/sdl3_image"
@@ -158,7 +157,7 @@ for name in "${ORDER[@]}"; do
   echo "==> ${name} @ ${tag}"
   preserve_pp_cmake "${name}"
 
-  if [[ "${name}" == "lunasvg" || "${name}" == "libdatachannel" ]]; then
+  if [[ "${name}" == "lunasvg" ]]; then
     git clone --depth 1 --branch "${tag}" --recursive "${url}" "${clone_dir}"
   else
     git clone --depth 1 --branch "${tag}" "${url}" "${clone_dir}"

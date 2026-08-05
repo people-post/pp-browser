@@ -65,7 +65,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
                                        P2pMessagingService& p2p, IPskSessionStore& psk_store, CallMediaEngine& media)
     : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
       p2p_(p2p), psk_store_(psk_store), media_(media),
-      topology_(*this, sessions, contacts, media), p2p_bridge_(*this, sessions, media) {
+      topology_(*this, sessions, contacts, media) {
   redirectLogger("CallSessionManager");
 }
 
@@ -79,22 +79,18 @@ void CallSessionManager::SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge) {
 
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
-  if (libp2p_bridge_) {
-    log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
-                  << " call_id=" << call_id << " peer=" << peer_identity;
-    if (offerer) {
-      libp2p_bridge_->ScheduleStartMediaAsOfferer(call_id, peer_identity);
-    } else {
-      libp2p_bridge_->ScheduleStartMediaAsAnswerer(call_id, peer_identity);
-    }
+  if (!libp2p_bridge_) {
+    log().error << "ScheduleStartDirectMedia: libp2p media bridge not configured call_id=" << call_id;
+    last_media_error_ = "Call media unavailable";
+    NotifyRingChanged();
     return;
   }
-  log().info << "ScheduleStartDirectMedia legacy-webrtc role=" << (offerer ? "offerer" : "answerer")
-                << " call_id=" << call_id;
+  log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
+                << " call_id=" << call_id << " peer=" << peer_identity;
   if (offerer) {
-    p2p_bridge_.ScheduleStartMediaAsOfferer(call_id, peer_identity);
+    libp2p_bridge_->ScheduleStartMediaAsOfferer(call_id, peer_identity);
   } else {
-    p2p_bridge_.ScheduleStartMediaAsAnswerer(call_id, peer_identity);
+    libp2p_bridge_->ScheduleStartMediaAsAnswerer(call_id, peer_identity);
   }
 }
 
@@ -430,7 +426,6 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   if (libp2p_bridge_) {
     libp2p_bridge_->StopLibp2pMedia(call_id);
   }
-  p2p_bridge_.StopP2pMedia(call_id);
   topology_.OnMediaStopped(call_id);
 }
 
@@ -1059,31 +1054,24 @@ bool CallSessionManager::IsSfuAttachWaitActive() const {
 }
 
 bool CallSessionManager::IsP2pConnectFailed() const {
-  if (libp2p_bridge_ && libp2p_bridge_->IsLibp2pConnectFailed()) {
-    return true;
-  }
-  return p2p_bridge_.IsP2pConnectFailed();
+  return libp2p_bridge_ && libp2p_bridge_->IsLibp2pConnectFailed();
 }
 
 bool CallSessionManager::P2pConnectMissingMic() const {
-  if (libp2p_bridge_ && libp2p_bridge_->IsLibp2pConnectFailed() && libp2p_bridge_->Libp2pConnectMissingMic()) {
-    return true;
-  }
-  return p2p_bridge_.P2pConnectMissingMic();
+  return libp2p_bridge_ && libp2p_bridge_->IsLibp2pConnectFailed() && libp2p_bridge_->Libp2pConnectMissingMic();
 }
 
 void CallSessionManager::PollP2pConnectHealth() {
   if (libp2p_bridge_) {
     libp2p_bridge_->PollLibp2pConnectHealth();
   }
-  p2p_bridge_.PollP2pConnectHealth();
 }
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
   if (libp2p_bridge_ && libp2p_bridge_->MediaAttempted(call_id)) {
     return libp2p_bridge_->RetryLibp2pMedia(call_id);
   }
-  return p2p_bridge_.RetryP2pMedia(call_id);
+  return Error("Call media retry unavailable");
 }
 
 void CallSessionManager::PollPendingSfuAttach() {
@@ -1182,14 +1170,10 @@ void CallSessionManager::AbandonOrphanedCallsAfterRestart() {
 }
 
 bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) const {
-  if (libp2p_bridge_ && libp2p_bridge_->MediaAttempted(call_id)) {
-    return true;
-  }
-  return p2p_bridge_.MediaAttempted(call_id);
+  return libp2p_bridge_ && libp2p_bridge_->MediaAttempted(call_id);
 }
 
 void CallSessionManager::ClearMediaCallbacks() {
-  p2p_bridge_.ClearMediaCallbacks();
 }
 
 Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
@@ -1552,20 +1536,10 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     }
     return {};
   }
-  case CallControlType::CallSdp: {
-    auto sdp = CallControlCodec::DecodeSdp(detail_json);
-    if (!sdp) {
-      return sdp.error();
-    }
-    return p2p_bridge_.OnRemoteSdp(*sdp, sender_identity);
-  }
-  case CallControlType::CallIce: {
-    auto ice = CallControlCodec::DecodeIce(detail_json);
-    if (!ice) {
-      return ice.error();
-    }
-    return p2p_bridge_.OnRemoteIce(*ice);
-  }
+  case CallControlType::CallSdp:
+  case CallControlType::CallIce:
+    log().debug << "Ignoring legacy call_sdp/call_ice from " << sender_identity;
+    return {};
   case CallControlType::CallSfuAttach: {
     auto attach = CallControlCodec::DecodeSfuAttach(detail_json);
     if (!attach) {
@@ -1663,15 +1637,12 @@ void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) 
   if (libp2p_bridge_) {
     libp2p_bridge_->NoteMediaAttempted(call_id);
   }
-  p2p_bridge_.NoteMediaAttempted(call_id);
 }
 
-void CallSessionManager::TopologyBindMediaCallId(const std::string& call_id) {
-  p2p_bridge_.BindMediaCallId(call_id);
+void CallSessionManager::TopologyBindMediaCallId(const std::string& /*call_id*/) {
 }
 
 void CallSessionManager::TopologyClearMediaPeerIdentity() {
-  p2p_bridge_.ClearMediaPeerIdentity();
 }
 
 void CallSessionManager::TopologyReleaseDirectMedia() {
@@ -1737,10 +1708,6 @@ bool CallSessionManager::P2pIsAwaitingSfuRecovery() const {
 
 bool CallSessionManager::P2pIsSfuAttached() const {
   return topology_.IsSfuAttached();
-}
-
-void CallSessionManager::P2pOnGroupIceFailed(const std::string& call_id) {
-  topology_.TryRecoverViaSfu(call_id);
 }
 
 void CallSessionManager::P2pClearAwaitingSfuRecovery() {

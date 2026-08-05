@@ -18,7 +18,8 @@ libp2p itself is a hard fork under [`src/libp2p/fork/`](../src/libp2p/fork/), no
 | `sqlite/` | [SQLite amalgamation](https://www.sqlite.org/download.html) | `3.53.3` (`3530300`) | Public domain |
 | `libsodium/` | [jedisct1/libsodium](https://github.com/jedisct1/libsodium) | `1.0.20-RELEASE` | ISC |
 | `opus/` | [xiph/opus](https://github.com/xiph/opus) | `v1.5.2` | BSD |
-| `libdatachannel/` | [paullouisageneau/libdatachannel](https://github.com/paullouisageneau/libdatachannel) | `v0.22.4` | MPL-2.0 |
+
+**Removed from build (m2):** `libdatachannel/` may remain on disk from older imports but is no longer linked — call media is libp2p-only ([V026](../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)).
 
 ### libp2p dependencies (when enabled)
 
