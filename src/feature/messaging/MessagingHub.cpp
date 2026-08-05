@@ -675,7 +675,7 @@ void MessagingHub::WireCallMediaRelayDeps() {
     const bool sessions_changed = (libp2p_bridge_bound_sessions_ != call_sessions_.get());
     if (!call_libp2p_bridge_ || sessions_changed) {
       call_libp2p_bridge_ = std::make_unique<CallLibp2pMediaBridge>(
-          call_sessions_->AsP2pSignalingHost(), *call_session_store_, *call_media_keys_, *call_media_engine_,
+          call_sessions_->AsMediaHost(), *call_session_store_, *call_media_keys_, *call_media_engine_,
           *call_media_direct_, dial_registry_.get(), circuit_hop_reach_.get());
       call_sessions_->SetLibp2pMediaBridge(call_libp2p_bridge_.get());
       libp2p_bridge_bound_sessions_ = call_sessions_.get();

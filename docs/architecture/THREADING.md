@@ -59,7 +59,7 @@ flowchart TB
 
 ~**6–9** OS threads: main + coordinator + worker pool (2–4) + libp2p IO + optional LAN mDNS + optional Linux D-Bus notifier (+ SDL audio internals).
 
-During an active call on the legacy WebRTC path, add capture/video/ringtone threads and libdatachannel's global pool.
+During an active call, add SDL capture/video/ringtone threads and libp2p call-media IO on the host thread.
 
 See [RUNTIME_COMPOSITION.md § Threading](RUNTIME_COMPOSITION.md#threading) for the wiring diagram.
 
@@ -165,7 +165,6 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | Call ringtone playback | `src/base/media/CallRingtone.cpp` | `.detach()` for SDL audio loop — media-specific |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
-| libdatachannel pool | legacy WebRTC path | Retire with [p2p-av-calls V026](../../projects/p2p-av-calls/CURRENT_STATE.md) |
 
 ---
 
@@ -177,7 +176,6 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | c-ares (libp2p fork) | Detached per DNS query | Migrate to pool when fork allows |
 | libcurl | Sync on caller | Pool only |
 | SQLite | Caller + mutex | Pool for long writes |
-| libdatachannel | Global thread pool | Retire with WebRTC path |
 | SDL3 | Internal audio/camera | Unchanged |
 
 ---

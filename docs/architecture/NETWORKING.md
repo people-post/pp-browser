@@ -36,7 +36,7 @@ See [p2p-mesh](../../projects/p2p-mesh/) (N022+).
 
 ## Calls
 
-Call **media** product path is **libp2p-only** (voice-first): direct peer streams and/or blind `media_relay`. WebRTC/ICE is **legacy in tree** — do not extend; remove on the teardown phase. Product ADR: [V026](../../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking). Code map: [CALLS.md](CALLS.md).
+Call **media** product path is **libp2p-only** (voice-first): direct peer streams and/or blind `media_relay`. Wire-compat `call_sdp` / `call_ice` controls are ignored inbound; product does not send them. Product ADR: [V026](../../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking). Code map: [CALLS.md](CALLS.md).
 
 ## Related
 

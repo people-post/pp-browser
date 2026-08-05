@@ -29,7 +29,7 @@ constexpr int64_t kOffererInboundGraceMs = 15000;
 
 } // namespace
 
-CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallP2pSignalingHost& host, CallSessionStore& sessions,
+CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionStore& sessions,
                                              CallMediaKeyStore& media_keys, CallMediaEngine& media,
                                              CallMediaDirectService& direct, IDialRegistry* dial,
                                              ICircuitHopReach* circuit_reach)

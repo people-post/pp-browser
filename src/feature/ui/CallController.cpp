@@ -466,7 +466,7 @@ void CallController::RefreshPendingRing() {
       return;
     }
 
-    // Peer ICE failed: keep chrome for Retry/End on 1:1. Group SFU recovery keeps chrome too.
+    // Direct connect failed: keep chrome for Retry/End on 1:1. Group SFU recovery keeps chrome too.
     // Do not auto-LeaveCall on `failed` — that erased the session before the user could retry.
     if (calls->Media().IsActive() && calls->Media().ActiveCallId() == active_call_id_) {
       const std::string media_state = calls->Media().ConnectionState();

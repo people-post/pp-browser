@@ -85,21 +85,21 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 
 North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking), mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup). Mobile LAN: [V027](DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi) + mesh [N025](../p2p-mesh/DECISIONS.md#n025--mobile-call-scoped-listen-on-wi-fi-not-full-node) / [nm](../p2p-mesh/PHASES.md#nm--mobile-call-scoped-listen-n025).
 
-- [x] 1:1 Opus over libp2p direct (LAN dialable PeerId+ma) — `CallMediaDirectService` + `CallLibp2pMediaBridge`; legacy WebRTC fallback when libp2p stack unavailable
+- [x] 1:1 Opus over libp2p direct (LAN dialable PeerId+ma) — `CallMediaDirectService` + `CallLibp2pMediaBridge`
 - [x] 1:1 undialable → hop / circuit (explicit; not ICE Retry) — `TryEnsureCallMediaReachable` + protocol-scoped circuit hops
 - [x] Mobile callee on Wi‑Fi: ephemeral listen during foreground call (V027 / nm)
 - [ ] N≥3 remains `media_relay`; unify engine on libp2p send/recv (N021)
 - [x] App AEAD under call media key on media frames (direct 1:1 path)
-- [ ] Stop extending `CallP2pSignalingBridge` / PC; mark UI copy for libp2p connect fail
+- [x] Stop extending legacy WebRTC bridge; libp2p connect-fail UI hints via `PlatformUserHints`
 - [x] Dogfood: Android ↔ Android bidirectional voice on Wi‑Fi (moto g7 play ↔ SM-T380) — **OK 2026-08-02**; see [CURRENT_STATE.md](CURRENT_STATE.md)
 - [ ] Dogfood: Android ↔ desktop voice without WebRTC
 
 ## m2 — Teardown WebRTC product path
 
-- [ ] Remove libdatachannel PeerConnection from call bring-up
-- [ ] Drop product use of `call_sdp` / `call_ice` (compat: ignore unknown)
-- [ ] Delete or quarantine unused ICE UI tips that only apply to PC
-- [ ] Update CALLS.md lifecycle diagrams to libp2p-only
+- [x] Remove libdatachannel PeerConnection from call bring-up
+- [x] Drop product use of `call_sdp` / `call_ice` (compat: ignore unknown)
+- [x] Delete legacy `CallP2pSignalingBridge`; unlink libdatachannel from build
+- [x] Update CALLS.md lifecycle diagrams to libp2p-only
 
 ## a6 — Promote contracts
 

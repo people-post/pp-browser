@@ -9,7 +9,7 @@
 #include "base/people/IdentityStore.h"
 #include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallLibp2pMediaBridge.h"
-#include "feature/messaging/CallP2pSignalingBridge.h"
+#include "feature/messaging/CallMediaHost.h"
 #include "feature/messaging/CallTopologyController.h"
 #include "feature/messaging/P2pMessagingService.h"
 
@@ -25,9 +25,9 @@ namespace pbr {
 
 /**
  * Call session lifecycle façade (a2 / V014 / a4).
- * Topology + P2P signaling live in CallTopologyController / CallP2pSignalingBridge.
+ * Topology + libp2p media live in CallTopologyController / CallLibp2pMediaBridge.
  */
-class CallSessionManager : public Module, private CallTopologyHost, private CallP2pSignalingHost {
+class CallSessionManager : public Module, private CallTopologyHost, private CallMediaHost {
 public:
   using RingChangedFn = std::function<void()>;
   using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
@@ -57,8 +57,8 @@ public:
   std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
   void SetLibp2pMediaBridge(CallLibp2pMediaBridge* bridge);
-  /** Expose private CallP2pSignalingHost base for bridge construction (MSVC-safe). */
-  CallP2pSignalingHost& AsP2pSignalingHost() { return *this; }
+  /** Expose private CallMediaHost base for bridge construction (MSVC-safe). */
+  CallMediaHost& AsMediaHost() { return *this; }
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, CallMediaMode mode,
                              const std::vector<std::string>& invitee_identities);
@@ -126,7 +126,7 @@ private:
   void TopologyReleaseDirectMedia() override;
   void TopologyRequestInboxSync() override;
 
-  // CallP2pSignalingHost
+  // CallMediaHost
   Roe<std::string> P2pLocalIdentity() const override;
   Roe<void> P2pSendDirect(const std::string& peer_identity, CallControlType type,
                           const std::string& detail_json, const std::string& display) override;
@@ -135,7 +135,6 @@ private:
   Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const override;
   bool P2pIsAwaitingSfuRecovery() const override;
   bool P2pIsSfuAttached() const override;
-  void P2pOnGroupIceFailed(const std::string& call_id) override;
   void P2pClearAwaitingSfuRecovery() override;
   void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
   void P2pRequestInboxSync() override;
@@ -172,7 +171,6 @@ private:
   IPskSessionStore& psk_store_;
   CallMediaEngine& media_;
   CallTopologyController topology_;
-  CallP2pSignalingBridge p2p_bridge_;
   CallLibp2pMediaBridge* libp2p_bridge_ = nullptr;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;

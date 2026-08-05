@@ -315,4 +315,4 @@ Full model: [THREADING.md](THREADING.md).
 | **AgentSession** | `feature/ai/` | Turn plan/execute; bound from hub/chat |
 | **AppRuntime** | `base/runtime/` | UI mailbox + worker pool + coordinator |
 | **Libp2pHost** | `libp2p/integration/host/` | Vendored host + asio IO thread |
-| **CallMediaEngine** | `base/media/` | A/V capture threads over libdatachannel |
+| **CallMediaEngine** | `base/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |
