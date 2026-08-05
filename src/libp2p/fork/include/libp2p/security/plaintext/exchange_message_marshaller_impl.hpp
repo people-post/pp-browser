@@ -6,44 +6,34 @@
 
 #pragma once
 
-#include <vector>
-
 #include <libp2p/crypto/key_marshaller.hpp>
-#include <libp2p/security/plaintext/exchange_message.hpp>
 #include <libp2p/security/plaintext/exchange_message_marshaller.hpp>
-
-namespace libp2p::crypto::protobuf {
-  class PublicKey;
-}
 
 namespace libp2p::security::plaintext {
 
   class ExchangeMessageMarshallerImpl : public ExchangeMessageMarshaller {
    public:
-    /**
-     * Protobuf serialization errors
-     */
     enum class Error {
       PUBLIC_KEY_SERIALIZING_ERROR = 1,
-      MESSAGE_SERIALIZING_ERROR,
-      PUBLIC_KEY_DESERIALIZING_ERROR,
-      MESSAGE_DESERIALIZING_ERROR,
+      MESSAGE_SERIALIZING_ERROR = 2,
+      PUBLIC_KEY_DESERIALIZING_ERROR = 3,
+      MESSAGE_DESERIALIZING_ERROR = 4,
     };
 
     explicit ExchangeMessageMarshallerImpl(
         std::shared_ptr<crypto::marshaller::KeyMarshaller> marshaller);
 
-    outcome::result<protobuf::Exchange> handyToProto(
+    outcome::result<wire::PlaintextExchangeWire> handyToWire(
         const ExchangeMessage &msg) const override;
 
     outcome::result<std::pair<ExchangeMessage, crypto::ProtobufKey>>
-    protoToHandy(const protobuf::Exchange &proto_msg) const override;
+    wireToHandy(const wire::PlaintextExchangeWire &wire_msg) const override;
 
     outcome::result<std::vector<uint8_t>> marshal(
         const ExchangeMessage &msg) const override;
 
-    outcome::result<std::pair<ExchangeMessage, crypto::ProtobufKey>> unmarshal(
-        BytesIn msg_bytes) const override;
+    outcome::result<std::pair<ExchangeMessage, crypto::ProtobufKey>>
+    unmarshal(BytesIn msg_bytes) const override;
 
    private:
     std::shared_ptr<crypto::marshaller::KeyMarshaller> marshaller_;

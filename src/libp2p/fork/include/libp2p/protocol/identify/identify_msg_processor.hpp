@@ -20,9 +20,7 @@
 #include <libp2p/peer/peer_id.hpp>
 #include <libp2p/protocol/identify/observed_addresses.hpp>
 
-namespace identify::pb {
-  class Identify;
-}
+#include <libp2p/wire/identify_wire.hpp>
 
 namespace libp2p::protocol {
   /**
@@ -88,7 +86,7 @@ namespace libp2p::protocol {
      * @param msg, which was read
      * @param stream, over which it was received
      */
-    void identifyReceived(outcome::result<identify::pb::Identify> msg,
+    void identifyReceived(outcome::result<wire::IdentifyWire> msg,
                           const StreamSPtr &stream);
 
     /**

@@ -4,8 +4,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-add_subdirectory(protobuf)
-
 libp2p_add_library(p2p_noise
     noise.cpp
     noise_connection.cpp
@@ -31,6 +29,6 @@ libp2p_add_library(p2p_noise_handshake_message_marshaller
     )
 target_link_libraries(p2p_noise_handshake_message_marshaller
     Boost::boost
-    p2p_noise_proto
+    p2p_wire
     p2p_key_marshaller
     )

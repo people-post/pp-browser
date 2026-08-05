@@ -35,7 +35,7 @@ target_link_libraries(p2p_message_read_writer
     )
 
 libp2p_add_library(p2p_protobuf_message_read_writer
-    protobuf_message_read_writer.cpp
+    wire_message_read_writer.cpp
     )
 target_link_libraries(p2p_protobuf_message_read_writer
     p2p_message_read_writer

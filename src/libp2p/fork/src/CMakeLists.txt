@@ -5,6 +5,7 @@
 #
 
 add_subdirectory(basic)
+add_subdirectory(wire)
 add_subdirectory(common)
 add_subdirectory(connection)
 add_subdirectory(crypto)

@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <generated/security/plaintext/protobuf/plaintext.pb.h>
 #include <gtest/gtest.h>
 #include <libp2p/crypto/key.hpp>
 #include <libp2p/peer/peer_id.hpp>
 #include <libp2p/security/plaintext/exchange_message_marshaller_impl.hpp>
+#include <libp2p/wire/keys_wire.hpp>
 #include <qtils/test/outcome.hpp>
 #include "mock/libp2p/crypto/key_marshaller_mock.hpp"
 
@@ -16,24 +16,25 @@ using libp2p::crypto::Key;
 using libp2p::crypto::ProtobufKey;
 using libp2p::crypto::PublicKey;
 using libp2p::crypto::marshaller::KeyMarshallerMock;
-using libp2p::crypto::protobuf::KeyType;
 using libp2p::peer::PeerId;
 using libp2p::security::plaintext::ExchangeMessage;
 using libp2p::security::plaintext::ExchangeMessageMarshaller;
 using libp2p::security::plaintext::ExchangeMessageMarshallerImpl;
+using libp2p::wire::KeyTypeWire;
+using libp2p::wire::PublicKeyWire;
 using testing::_;
 using testing::Return;
-using ProbufPubKey = libp2p::crypto::protobuf::PublicKey;
 
 class ExchangeMessageMarshallerTest : public testing::Test {
  public:
   void SetUp() {
     key_marshaller = std::make_shared<KeyMarshallerMock>();
-    ProbufPubKey pbpk;
-    pbpk.set_type(KeyType::Ed25519);
-    pbpk.set_data(pk.data.data(), pk.data.size());
-    pubkey_bytes.resize(pbpk.ByteSizeLong());
-    pbpk.SerializeToArray(pubkey_bytes.data(), pubkey_bytes.size());
+    PublicKeyWire wire_pk;
+    wire_pk.type = KeyTypeWire::kEd25519;
+    wire_pk.data = pk.data;
+    auto encoded = wire_pk.encode();
+    ASSERT_TRUE(encoded);
+    pubkey_bytes = std::move(encoded.value());
     marshaller =
         std::make_shared<ExchangeMessageMarshallerImpl>(key_marshaller);
   }
@@ -44,12 +45,7 @@ class ExchangeMessageMarshallerTest : public testing::Test {
   std::vector<uint8_t> pubkey_bytes;
 };
 
-/**
- * @given a peer id and a public key
- * @when serializing an exchange message with them to protobuf and back
- * @then the decoded message matches the original one
- */
-TEST_F(ExchangeMessageMarshallerTest, ToProtobufAndBack) {
+TEST_F(ExchangeMessageMarshallerTest, ToWireAndBack) {
   EXPECT_CALL(*key_marshaller, marshal(pk))
       .WillOnce(Return(ProtobufKey{pubkey_bytes}));
   EXPECT_CALL(*key_marshaller, unmarshalPublicKey(_)).WillOnce(Return(pk));
@@ -61,12 +57,6 @@ TEST_F(ExchangeMessageMarshallerTest, ToProtobufAndBack) {
   ASSERT_EQ(msg.pubkey, dec_msg.first.pubkey);
 }
 
-/**
- * @given a peer id and a public key
- * @when serializing an exchange message with them to protobuf and key
- * marshaller gives invalid output
- * @then the message marshaller yields an error
- */
 TEST_F(ExchangeMessageMarshallerTest, MarshalError) {
   EXPECT_CALL(*key_marshaller, marshal(pk))
       .WillOnce(Return(ProtobufKey{std::vector<uint8_t>(32, 1)}));
@@ -75,12 +65,6 @@ TEST_F(ExchangeMessageMarshallerTest, MarshalError) {
   EXPECT_OUTCOME_ERROR(marshaller->marshal(msg));
 }
 
-/**
- * @given a peer id and a public key
- * @when deserializing an exchange message with them from protobuf and key
- * marshaller yields an error
- * @then the message marshaller yields an error
- */
 TEST_F(ExchangeMessageMarshallerTest, UnmarshalError) {
   EXPECT_CALL(*key_marshaller, marshal(pk))
       .WillOnce(Return(ProtobufKey{pubkey_bytes}));

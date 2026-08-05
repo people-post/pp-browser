@@ -6,15 +6,12 @@
 
 #pragma once
 
+#include <libp2p/basic/wire_message_read_writer.hpp>
 #include <libp2p/crypto/key_marshaller.hpp>
 #include <libp2p/log/logger.hpp>
 #include <libp2p/peer/identity_manager.hpp>
 #include <libp2p/security/plaintext/exchange_message_marshaller.hpp>
 #include <libp2p/security/security_adaptor.hpp>
-
-namespace libp2p::basic {
-  class ProtobufMessageReadWriter;
-}
 
 namespace libp2p::security {
   /**

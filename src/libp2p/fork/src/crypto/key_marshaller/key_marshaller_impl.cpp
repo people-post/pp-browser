@@ -6,27 +6,22 @@
 
 #include <libp2p/crypto/key_marshaller/key_marshaller_impl.hpp>
 
-#include <generated/crypto/protobuf/keys.pb.h>
 #include <libp2p/crypto/common.hpp>
 #include <libp2p/crypto/crypto_provider.hpp>
+#include <libp2p/wire/keys_wire.hpp>
 
 namespace libp2p::crypto::marshaller {
   namespace {
-    /**
-     * @brief converts Key::Type to protobuf::KeyType
-     * @param type common key type value
-     * @return protobuf key type value
-     */
-    outcome::result<protobuf::KeyType> marshalKeyType(Key::Type type) {
+    outcome::result<wire::KeyTypeWire> marshalKeyType(Key::Type type) {
       switch (type) {
         case Key::Type::RSA:
-          return protobuf::KeyType::RSA;
+          return wire::KeyTypeWire::kRsa;
         case Key::Type::Ed25519:
-          return protobuf::KeyType::Ed25519;
+          return wire::KeyTypeWire::kEd25519;
         case Key::Type::Secp256k1:
-          return protobuf::KeyType::Secp256k1;
+          return wire::KeyTypeWire::kSecp256k1;
         case Key::Type::ECDSA:
-          return protobuf::KeyType::ECDSA;
+          return wire::KeyTypeWire::kEcdsa;
         case Key::Type::UNSPECIFIED:
           return CryptoProviderError::INVALID_KEY_TYPE;
       }
@@ -34,24 +29,18 @@ namespace libp2p::crypto::marshaller {
       return CryptoProviderError::UNKNOWN_KEY_TYPE;
     }
 
-    /**
-     * @brief converts protobuf::KeyType to Key::Type
-     * @param type protobuf key type value
-     * @return common key type value
-     */
-    outcome::result<Key::Type> unmarshalKeyType(protobuf::KeyType type) {
+    outcome::result<Key::Type> unmarshalKeyType(wire::KeyTypeWire type) {
       switch (type) {
-        case protobuf::KeyType::RSA:
+        case wire::KeyTypeWire::kRsa:
           return Key::Type::RSA;
-        case protobuf::KeyType::Ed25519:
+        case wire::KeyTypeWire::kEd25519:
           return Key::Type::Ed25519;
-        case protobuf::KeyType::Secp256k1:
+        case wire::KeyTypeWire::kSecp256k1:
           return Key::Type::Secp256k1;
-        case protobuf::KeyType::ECDSA:
+        case wire::KeyTypeWire::kEcdsa:
           return Key::Type::ECDSA;
-        default:
-          return CryptoProviderError::UNKNOWN_KEY_TYPE;
       }
+      return CryptoProviderError::UNKNOWN_KEY_TYPE;
     }
   }  // namespace
 
@@ -61,49 +50,52 @@ namespace libp2p::crypto::marshaller {
 
   outcome::result<ProtobufKey> KeyMarshallerImpl::marshal(
       const PublicKey &key) const {
-    protobuf::PublicKey protobuf_key;
+    wire::PublicKeyWire wire_key;
     auto type_res = marshalKeyType(key.type);
     if (not type_res) {
       return std::move(type_res).as_failure();
     }
-    auto type = std::move(type_res).value();
-    protobuf_key.set_type(type);
-    protobuf_key.set_data(key.data.data(), key.data.size());
+    wire_key.type = std::move(type_res).value();
+    wire_key.data.assign(key.data.begin(), key.data.end());
 
-    auto string = protobuf_key.SerializeAsString();
-    return ProtobufKey{{string.begin(), string.end()}};
+    auto encoded = wire_key.encode();
+    if (not encoded) {
+      return CryptoProviderError::FAILED_UNMARSHAL_DATA;
+    }
+    return ProtobufKey{std::move(encoded.value())};
   }
 
   outcome::result<ProtobufKey> KeyMarshallerImpl::marshal(
       const PrivateKey &key) const {
-    protobuf::PrivateKey protobuf_key;
+    wire::PrivateKeyWire wire_key;
     auto type_res = marshalKeyType(key.type);
     if (not type_res) {
       return std::move(type_res).as_failure();
     }
-    auto type = std::move(type_res).value();
-    protobuf_key.set_type(type);
-    protobuf_key.set_data(key.data.data(), key.data.size());
+    wire_key.type = std::move(type_res).value();
+    wire_key.data.assign(key.data.begin(), key.data.end());
 
-    auto string = protobuf_key.SerializeAsString();
-    return ProtobufKey{{string.begin(), string.end()}};
+    auto encoded = wire_key.encode();
+    if (not encoded) {
+      return CryptoProviderError::FAILED_UNMARSHAL_DATA;
+    }
+    return ProtobufKey{std::move(encoded.value())};
   }
 
   outcome::result<PublicKey> KeyMarshallerImpl::unmarshalPublicKey(
       const ProtobufKey &proto_key) const {
-    protobuf::PublicKey protobuf_key;
-    if (!protobuf_key.ParseFromArray(proto_key.key.data(),
-                                     static_cast<int>(proto_key.key.size()))) {
+    auto wire_key_res = wire::PublicKeyWire::decode(proto_key.key);
+    if (!wire_key_res) {
       return CryptoProviderError::FAILED_UNMARSHAL_DATA;
     }
+    auto &&wire_key = wire_key_res.value();
 
-    auto type_res = unmarshalKeyType(protobuf_key.type());
+    auto type_res = unmarshalKeyType(wire_key.type);
     if (not type_res) {
       return std::move(type_res).as_failure();
     }
     auto type = std::move(type_res).value();
-    auto key = PublicKey{
-        {type, {protobuf_key.data().begin(), protobuf_key.data().end()}}};
+    auto key = PublicKey{{type, {wire_key.data.begin(), wire_key.data.end()}}};
 
     auto validate_res = key_validator_->validate(key);
     if (not validate_res) {
@@ -115,19 +107,18 @@ namespace libp2p::crypto::marshaller {
 
   outcome::result<PrivateKey> KeyMarshallerImpl::unmarshalPrivateKey(
       const ProtobufKey &proto_key) const {
-    protobuf::PublicKey protobuf_key;
-    if (!protobuf_key.ParseFromArray(proto_key.key.data(),
-                                     static_cast<int>(proto_key.key.size()))) {
+    auto wire_key_res = wire::PrivateKeyWire::decode(proto_key.key);
+    if (!wire_key_res) {
       return CryptoProviderError::FAILED_UNMARSHAL_DATA;
     }
+    auto &&wire_key = wire_key_res.value();
 
-    auto type_res = unmarshalKeyType(protobuf_key.type());
+    auto type_res = unmarshalKeyType(wire_key.type);
     if (not type_res) {
       return std::move(type_res).as_failure();
     }
     auto type = std::move(type_res).value();
-    auto key = PrivateKey{
-        {type, {protobuf_key.data().begin(), protobuf_key.data().end()}}};
+    auto key = PrivateKey{{type, {wire_key.data.begin(), wire_key.data.end()}}};
 
     auto validate_res = key_validator_->validate(key);
     if (not validate_res) {
