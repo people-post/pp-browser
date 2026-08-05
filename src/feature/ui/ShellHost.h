@@ -229,7 +229,9 @@ private:
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
   void RefreshStatusbarVisibility();
-  void RefreshStatusbarConnection();
+  void RefreshStatusbarCluster();
+  void ClearStatusbarCluster();
+  bool ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap);
   bool ChromeFrostEnabled() const;
   struct SafeAreaFromSdl {
     int top_dp = 0;

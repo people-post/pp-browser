@@ -23,6 +23,8 @@
     "nav.contacts": "Contacts",
     "nav.me": "Me",
 
+    "shell.statusbar.direct_off": "Direct off",
+
     "settings.saved": "Settings saved",
     "settings.preferences": "Preferences",
     "settings.profile.title": "Profile",

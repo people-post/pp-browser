@@ -147,6 +147,9 @@ public:
   /** Last libp2p start failure (empty if ok). For Network settings UX. */
   const std::string& LastLibp2pError() const { return libp2p_last_error_; }
 
+  /** Desktop Node "Help the network" posture (node_enabled → Libp2pRole::Node). */
+  bool IsHelpNetworkEnabled() const;
+
   /** Me → Profile projection (no LocalIdentity leak to settings UI). */
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);

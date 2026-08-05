@@ -899,7 +899,62 @@ select selectbox option {
   z-index: 50;
 }
 
-.shell-statusbar-connection,
+.shell-statusbar-cluster {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.shell-statusbar-slot {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.shell-statusbar-mesh-dot {
+  width: 8dp;
+  height: 8dp;
+  border-width: 1.5dp;
+  border-style: solid;
+  border-radius: 4dp;
+  box-sizing: border-box;
+}
+
+.shell-statusbar-reach-bars {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 2dp;
+  height: 12dp;
+}
+
+.shell-statusbar-reach-bar {
+  width: 3dp;
+  border-radius: 1dp;
+}
+
+.shell-statusbar-reach-bar--1 {
+  height: 5dp;
+}
+
+.shell-statusbar-reach-bar--2 {
+  height: 8dp;
+}
+
+.shell-statusbar-reach-bar--3 {
+  height: 12dp;
+}
+
+.shell-statusbar-help svg {
+  width: 12dp;
+  height: 12dp;
+}
+
+.shell-statusbar-label,
 .shell-statusbar-activity {
   margin-top: 0;
   margin-bottom: 0;
@@ -907,8 +962,14 @@ select selectbox option {
   overflow: hidden;
 }
 
+.shell-statusbar-label {
+  margin-left: 2dp;
+}
+
 .shell-statusbar-activity {
   text-align: right;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .shell-layer {

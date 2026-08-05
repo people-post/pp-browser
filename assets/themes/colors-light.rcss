@@ -382,6 +382,62 @@ select selectbox option:hover {
   border-top-color: #e5e7eb;
 }
 
+.shell-statusbar-mesh-dot {
+  border-color: #9ca3af;
+  background-color: transparent;
+}
+
+.shell-statusbar-mesh--ok .shell-statusbar-mesh-dot {
+  border-color: #6b7280;
+  background-color: #6b7280;
+}
+
+.shell-statusbar-mesh--off .shell-statusbar-mesh-dot {
+  border-color: #9ca3af;
+  background-color: transparent;
+}
+
+.shell-statusbar-mesh--error .shell-statusbar-mesh-dot {
+  border-color: #dc2626;
+  background-color: #dc2626;
+}
+
+.shell-statusbar-reach-bar {
+  background-color: #d1d5db;
+}
+
+.shell-statusbar-reach-bar--on {
+  background-color: #6b7280;
+}
+
+.shell-statusbar-reach--ok .shell-statusbar-reach-bar--on {
+  background-color: #6b7280;
+}
+
+.shell-statusbar-reach--warn .shell-statusbar-reach-bar--on {
+  background-color: #d97706;
+}
+
+.shell-statusbar-reach--error .shell-statusbar-reach-bar {
+  background-color: #fecaca;
+}
+
+.shell-statusbar-reach--checking .shell-statusbar-reach-bar--on {
+  background-color: #9ca3af;
+}
+
+.shell-statusbar-help svg {
+  image-color: #0d9488;
+}
+
+.shell-statusbar-label--warn {
+  color: #b45309;
+}
+
+.shell-statusbar-label--error {
+  color: #dc2626;
+}
+
 .shell-pane {
   background-color: #f8f9fb;
 }
