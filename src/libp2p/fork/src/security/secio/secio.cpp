@@ -6,8 +6,8 @@
 
 #include <libp2p/security/secio/secio.hpp>
 
-#include <generated/security/secio/protobuf/secio.pb.h>
-#include <libp2p/basic/protobuf_message_read_writer.hpp>
+#include <libp2p/basic/wire_message_read_writer.hpp>
+#include <libp2p/wire/secio_wire.hpp>
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 #include <libp2p/crypto/sha/sha256.hpp>
@@ -92,10 +92,10 @@ namespace libp2p::security {
       const std::shared_ptr<connection::LayerConnection> &conn,
       const std::shared_ptr<secio::Dialer> &dialer,
       SecurityAdaptor::SecConnCallbackFunc cb) const {
-    auto proto_propose{propose_marshaller_->handyToProto(propose_message_)};
+    auto wire_propose{propose_marshaller_->handyToWire(propose_message_)};
     auto own_proposal_bytes = std::make_shared<std::vector<uint8_t>>();
-    dialer->rw->write<secio::protobuf::Propose>(
-        proto_propose,
+    dialer->rw->write<wire::SecioProposeWire>(
+        wire_propose,
         [self{shared_from_this()}, conn, cb{std::move(cb)}](
             auto &&res) mutable {
           if (res.has_error()) {
@@ -114,7 +114,7 @@ namespace libp2p::security {
       const std::shared_ptr<secio::Dialer> &dialer,
       SecurityAdaptor::SecConnCallbackFunc cb) const {
     auto remote_peer_proposal_bytes = std::make_shared<std::vector<uint8_t>>();
-    dialer->rw->read<secio::protobuf::Propose>(
+    dialer->rw->read<wire::SecioProposeWire>(
         [self{shared_from_this()},
          conn,
          dialer,
@@ -125,9 +125,9 @@ namespace libp2p::security {
             cb(res.error());
             return;
           }
-          auto other_peer_proto_propose = std::move(res).value();
-          auto remote_peer_propose{self->propose_marshaller_->protoToHandy(
-              other_peer_proto_propose)};
+          auto other_peer_wire_propose = std::move(res).value();
+          auto remote_peer_propose{self->propose_marshaller_->wireToHandy(
+              other_peer_wire_propose)};
           auto determine_algo_res =
               dialer->determineCommonAlgorithm(self->propose_message_,
                                                remote_peer_propose);
@@ -183,9 +183,9 @@ namespace libp2p::security {
     secio::ExchangeMessage local_exchange{
         .epubkey = ephemeral_key.ephemeral_public_key,
         .signature = std::move(local_corpus_signature)};
-    auto proto_exchange{exchange_marshaller_->handyToProto(local_exchange)};
-    dialer->rw->write<secio::protobuf::Exchange>(
-        proto_exchange,
+    auto wire_exchange{exchange_marshaller_->handyToWire(local_exchange)};
+    dialer->rw->write<wire::SecioExchangeWire>(
+        wire_exchange,
         [self{shared_from_this()}, conn, dialer, cb{std::move(cb)}](
             auto &&res) {
           if (res.has_error()) {
@@ -202,7 +202,7 @@ namespace libp2p::security {
       const std::shared_ptr<connection::LayerConnection> &conn,
       const std::shared_ptr<secio::Dialer> &dialer,
       SecurityAdaptor::SecConnCallbackFunc cb) const {
-    dialer->rw->read<secio::protobuf::Exchange>(
+    dialer->rw->read<wire::SecioExchangeWire>(
         [self{shared_from_this()}, conn, dialer, cb{std::move(cb)}](
             auto &&res) {
           if (res.has_error()) {
@@ -210,9 +210,9 @@ namespace libp2p::security {
             cb(res.error());
             return;
           }
-          auto remote_proto_exchange = std::move(res).value();
+          auto remote_wire_exchange = std::move(res).value();
           auto remote_exchange{
-              self->exchange_marshaller_->protoToHandy(remote_proto_exchange)};
+              self->exchange_marshaller_->wireToHandy(remote_wire_exchange)};
           SL_TRACE(self->log_, "remote exchange message received");
           auto remote_corpus_res =
               dialer->getCorpus(false, remote_exchange.epubkey);

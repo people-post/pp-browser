@@ -6,7 +6,7 @@
 
 #include <libp2p/security/plaintext/exchange_message_marshaller_impl.hpp>
 
-#include <generated/security/plaintext/protobuf/plaintext.pb.h>
+#include <libp2p/wire/keys_wire.hpp>
 
 OUTCOME_CPP_DEFINE_CATEGORY(libp2p::security::plaintext,
                             ExchangeMessageMarshallerImpl::Error,
@@ -14,15 +14,13 @@ OUTCOME_CPP_DEFINE_CATEGORY(libp2p::security::plaintext,
   using E = libp2p::security::plaintext::ExchangeMessageMarshallerImpl::Error;
   switch (e) {
     case E::PUBLIC_KEY_SERIALIZING_ERROR:
-      return "Error while encoding the public key to Protobuf format";
+      return "Error while encoding the public key";
     case E::MESSAGE_SERIALIZING_ERROR:
-      return "Error while encoding the plaintext exchange message to Protobuf "
-             "format";
+      return "Error while encoding the plaintext exchange message";
     case E::PUBLIC_KEY_DESERIALIZING_ERROR:
-      return "Error while decoding the public key from Protobuf format";
+      return "Error while decoding the public key";
     case E::MESSAGE_DESERIALIZING_ERROR:
-      return "Error while decoding the plaintext exchange message from "
-             "Protobuf format";
+      return "Error while decoding the plaintext exchange message";
   }
   return "Unknown error";
 }
@@ -33,46 +31,50 @@ namespace libp2p::security::plaintext {
       std::shared_ptr<crypto::marshaller::KeyMarshaller> marshaller)
       : marshaller_{std::move(marshaller)} {};
 
-  outcome::result<protobuf::Exchange>
-  ExchangeMessageMarshallerImpl::handyToProto(
+  outcome::result<wire::PlaintextExchangeWire>
+  ExchangeMessageMarshallerImpl::handyToWire(
       const ExchangeMessage &msg) const {
-    plaintext::protobuf::Exchange exchange_msg;
+    wire::PlaintextExchangeWire exchange_msg;
 
     auto proto_pubkey_bytes_res = marshaller_->marshal(msg.pubkey);
     if (!proto_pubkey_bytes_res) {
       return proto_pubkey_bytes_res.as_failure();
     }
     auto proto_pubkey_bytes = std::move(proto_pubkey_bytes_res).value();
-    if (!exchange_msg.mutable_pubkey()->ParseFromArray(
-            proto_pubkey_bytes.key.data(), proto_pubkey_bytes.key.size())) {
+    auto pubkey_wire_res =
+        wire::PublicKeyWire::decode(proto_pubkey_bytes.key);
+    if (!pubkey_wire_res) {
       return Error::PUBLIC_KEY_SERIALIZING_ERROR;
     }
+    exchange_msg.pubkey = std::move(pubkey_wire_res.value());
 
     auto id = msg.peer_id.toMultihash().toBuffer();
-    exchange_msg.set_id(id.data(), id.size());
+    exchange_msg.id = id;
 
     return outcome::success(std::move(exchange_msg));
   }
 
   outcome::result<std::pair<ExchangeMessage, crypto::ProtobufKey>>
-  ExchangeMessageMarshallerImpl::protoToHandy(
-      const protobuf::Exchange &proto_msg) const {
-    std::vector<uint8_t> pubkey_message_bytes(
-        proto_msg.pubkey().ByteSizeLong());
-    if (!proto_msg.pubkey().SerializeToArray(pubkey_message_bytes.data(),
-                                             pubkey_message_bytes.size())) {
+  ExchangeMessageMarshallerImpl::wireToHandy(
+      const wire::PlaintextExchangeWire &wire_msg) const {
+    if (!wire_msg.pubkey) {
+      return Error::PUBLIC_KEY_DESERIALIZING_ERROR;
+    }
+    auto encoded_key_res = wire_msg.pubkey->encode();
+    if (!encoded_key_res) {
       return Error::PUBLIC_KEY_SERIALIZING_ERROR;
     }
-    crypto::ProtobufKey proto_pubkey{pubkey_message_bytes};
+    crypto::ProtobufKey proto_pubkey{std::move(encoded_key_res.value())};
     auto pubkey_res = marshaller_->unmarshalPublicKey(proto_pubkey);
     if (!pubkey_res) {
       return pubkey_res.as_failure();
     }
     auto pubkey = std::move(pubkey_res).value();
 
-    std::vector<uint8_t> peer_id_bytes(proto_msg.id().begin(),
-                                       proto_msg.id().end());
-    auto peer_id_res = peer::PeerId::fromBytes(peer_id_bytes);
+    if (!wire_msg.id) {
+      return Error::MESSAGE_DESERIALIZING_ERROR;
+    }
+    auto peer_id_res = peer::PeerId::fromBytes(*wire_msg.id);
     if (!peer_id_res) {
       return peer_id_res.as_failure();
     }
@@ -84,27 +86,25 @@ namespace libp2p::security::plaintext {
 
   outcome::result<std::vector<uint8_t>> ExchangeMessageMarshallerImpl::marshal(
       const ExchangeMessage &msg) const {
-    auto exchange_msg_res = handyToProto(msg);
+    auto exchange_msg_res = handyToWire(msg);
     if (!exchange_msg_res) {
       return exchange_msg_res.as_failure();
     }
-    auto exchange_msg = std::move(exchange_msg_res).value();
-
-    std::vector<uint8_t> out_msg(exchange_msg.ByteSizeLong());
-    if (!exchange_msg.SerializeToArray(out_msg.data(), out_msg.size())) {
+    auto encoded = exchange_msg_res.value().encode();
+    if (!encoded) {
       return Error::MESSAGE_SERIALIZING_ERROR;
     }
-    return out_msg;
+    return std::move(encoded.value());
   }
 
   outcome::result<std::pair<ExchangeMessage, crypto::ProtobufKey>>
   ExchangeMessageMarshallerImpl::unmarshal(BytesIn msg_bytes) const {
-    plaintext::protobuf::Exchange exchange_msg;
-    if (!exchange_msg.ParseFromArray(msg_bytes.data(), msg_bytes.size())) {
+    auto exchange_msg_res = wire::PlaintextExchangeWire::decode(msg_bytes);
+    if (!exchange_msg_res) {
       return Error::PUBLIC_KEY_DESERIALIZING_ERROR;
     }
 
-    return protoToHandy(exchange_msg);
+    return wireToHandy(exchange_msg_res.value());
   }
 
 }  // namespace libp2p::security::plaintext

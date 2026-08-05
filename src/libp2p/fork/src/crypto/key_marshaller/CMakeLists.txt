@@ -10,5 +10,5 @@ libp2p_add_library(p2p_key_marshaller
 target_link_libraries(p2p_key_marshaller
     p2p_crypto_error
     p2p_crypto_key
-    p2p_keys_proto
+    p2p_wire
     )

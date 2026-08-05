@@ -17,9 +17,7 @@
 #include <libp2p/peer/protocol_repository.hpp>
 #include <libp2p/protocol/base_protocol.hpp>
 
-namespace identify::pb {
-  class Identify;
-}
+#include <libp2p/wire/identify_wire.hpp>
 
 namespace libp2p::protocol {
   /**
@@ -60,7 +58,7 @@ namespace libp2p::protocol {
      * @param msg_res - result to the received message
      * @param stream, over which the message or error was received
      */
-    void deltaReceived(outcome::result<identify::pb::Identify> msg_res,
+    void deltaReceived(outcome::result<wire::IdentifyWire> msg_res,
                        const std::shared_ptr<connection::Stream> &stream);
 
     /**
@@ -77,7 +75,7 @@ namespace libp2p::protocol {
      * @param msg to be sent
      */
     void sendDelta(std::shared_ptr<connection::Stream> stream,
-                   const std::shared_ptr<identify::pb::Identify> &msg) const;
+                   const std::shared_ptr<wire::IdentifyWire> &msg) const;
 
     Host &host_;
     network::ConnectionManager &conn_manager_;

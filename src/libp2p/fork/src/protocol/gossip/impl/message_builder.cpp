@@ -7,36 +7,24 @@
 #include "message_builder.hpp"
 
 #include <libp2p/multi/uvarint.hpp>
-
-#include <generated/protocol/gossip/protobuf/rpc.pb.h>
+#include <libp2p/wire/gossip_wire.hpp>
 
 namespace libp2p::protocol::gossip {
-
-  namespace {
-    // helper needed since protobuf doesn't have a blob type
-    inline const char *toString(const Bytes &bytes) {
-      // NOLINTNEXTLINE
-      return reinterpret_cast<const char *>(bytes.data());
-    }
-  }  // namespace
 
   MessageBuilder::MessageBuilder() : empty_(true), control_not_empty_(false) {}
 
   MessageBuilder::~MessageBuilder() = default;
 
   void MessageBuilder::clear() {
-    pb_msg_->Clear();
-    control_pb_msg_->Clear();
+    wire_msg_.clear();
     empty_ = true;
     control_not_empty_ = false;
     ihaves_.clear();
     iwant_.clear();
-    messages_added_.clear();
   }
 
   void MessageBuilder::reset() {
-    pb_msg_.reset();
-    control_pb_msg_.reset();
+    wire_msg_ = wire::GossipRpcWire{};
     empty_ = true;
     control_not_empty_ = false;
     decltype(ihaves_){}.swap(ihaves_);
@@ -44,10 +32,9 @@ namespace libp2p::protocol::gossip {
     decltype(messages_added_){}.swap(messages_added_);
   }
 
-  void MessageBuilder::create_protobuf_structures() {
-    if (pb_msg_ == nullptr) {
-      pb_msg_ = std::make_unique<pubsub::pb::RPC>();
-      control_pb_msg_ = std::make_unique<pubsub::pb::ControlMessage>();
+  void MessageBuilder::ensureWireMessage() {
+    if (!wire_msg_.control && control_not_empty_) {
+      wire_msg_.control.emplace();
     }
   }
 
@@ -56,28 +43,32 @@ namespace libp2p::protocol::gossip {
   }
 
   outcome::result<SharedBuffer> MessageBuilder::serialize() {
-    create_protobuf_structures();
+    ensureWireMessage();
+    if (wire_msg_.control) {
+      auto &control = *wire_msg_.control;
+      control.ihave.clear();
+      control.iwant.clear();
 
-    for (auto &[topic, message_ids] : ihaves_) {
-      auto *ih = control_pb_msg_->add_ihave();
-      ih->set_topicid(topic);
-      for (auto &mid : message_ids) {
-        ih->add_messageids(toString(mid), mid.size());
+      for (auto &[topic, message_ids] : ihaves_) {
+        wire::GossipControlIHaveWire ih;
+        ih.topic_id = topic;
+        ih.message_ids = message_ids;
+        control.ihave.push_back(std::move(ih));
+      }
+
+      if (!iwant_.empty()) {
+        wire::GossipControlIWantWire iw;
+        iw.message_ids = iwant_;
+        control.iwant.push_back(std::move(iw));
       }
     }
 
-    if (!iwant_.empty()) {
-      auto *iw = control_pb_msg_->add_iwant();
-      for (auto &mid : iwant_) {
-        iw->add_messageids(toString(mid), mid.size());
-      }
+    auto encoded_res = wire_msg_.encode();
+    if (!encoded_res) {
+      return Error::MESSAGE_SERIALIZE_ERROR;
     }
-
-    if (control_not_empty_) {
-      pb_msg_->set_allocated_control(control_pb_msg_.get());
-    }
-
-    size_t msg_sz = pb_msg_->ByteSizeLong();
+    const auto &encoded = encoded_res.value();
+    size_t msg_sz = encoded.size();
 
     auto varint_len = multi::UVarint{msg_sz};
     auto varint_vec = varint_len.toVector();
@@ -86,14 +77,7 @@ namespace libp2p::protocol::gossip {
     auto buffer = std::make_shared<Bytes>();
     buffer->resize(prefix_sz + msg_sz);
     memcpy(buffer->data(), varint_vec.data(), prefix_sz);
-
-    bool success =
-        // NOLINTNEXTLINE
-        pb_msg_->SerializeToArray(buffer->data() + prefix_sz, msg_sz);
-
-    if (control_not_empty_) {
-      std::ignore = pb_msg_->release_control();
-    }
+    memcpy(buffer->data() + prefix_sz, encoded.data(), msg_sz);
 
     static constexpr size_t kSizeThreshold = 8192;
     if (msg_sz > kSizeThreshold) {
@@ -102,18 +86,14 @@ namespace libp2p::protocol::gossip {
       clear();
     }
 
-    if (success) {
-      return buffer;
-    }
-    return Error::MESSAGE_SERIALIZE_ERROR;
+    return buffer;
   }
 
   void MessageBuilder::addSubscription(bool subscribe, const TopicId &topic) {
-    create_protobuf_structures();
-
-    auto *dst = pb_msg_->add_subscriptions();
-    dst->set_subscribe(subscribe);
-    dst->set_topicid(topic);
+    wire::GossipSubOptsWire sub;
+    sub.subscribe = subscribe;
+    sub.topic_id = topic;
+    wire_msg_.subscriptions.push_back(std::move(sub));
     empty_ = false;
   }
 
@@ -130,62 +110,62 @@ namespace libp2p::protocol::gossip {
   }
 
   void MessageBuilder::addGraft(const TopicId &topic) {
-    create_protobuf_structures();
-
-    control_pb_msg_->add_graft()->set_topicid(topic);
+    ensureWireMessage();
+    wire::GossipControlGraftWire graft;
+    graft.topic_id = topic;
+    wire_msg_.control->graft.push_back(std::move(graft));
     control_not_empty_ = true;
     empty_ = false;
   }
 
   void MessageBuilder::addPrune(const TopicId &topic) {
-    create_protobuf_structures();
-
-    control_pb_msg_->add_prune()->set_topicid(topic);
+    ensureWireMessage();
+    wire::GossipControlPruneWire prune;
+    prune.topic_id = topic;
+    wire_msg_.control->prune.push_back(std::move(prune));
     control_not_empty_ = true;
     empty_ = false;
   }
 
   void MessageBuilder::addMessage(const TopicMessage &msg,
                                   const MessageId &msg_id) {
-    create_protobuf_structures();
-
     if (messages_added_.count(msg_id) != 0) {
-      // prevent duplicates
       return;
     }
     messages_added_.insert(msg_id);
 
-    auto *dst = pb_msg_->add_publish();
-    dst->set_from(msg.from.data(), msg.from.size());
-    dst->set_data(msg.data.data(), msg.data.size());
-    dst->set_seqno(msg.seq_no.data(), msg.seq_no.size());
-    dst->set_topic(msg.topic);
+    wire::GossipMessageWire dst;
+    dst.from = msg.from;
+    dst.data = msg.data;
+    dst.seqno = msg.seq_no;
+    dst.topic = msg.topic;
     if (msg.signature) {
-      dst->set_signature(msg.signature.value().data(),
-                         msg.signature.value().size());
+      dst.signature = msg.signature.value();
     }
     if (msg.key) {
-      dst->set_key(msg.key.value().data(), msg.key.value().size());
+      dst.key = msg.key.value();
     }
+    wire_msg_.publish.push_back(std::move(dst));
     empty_ = false;
   }
 
   outcome::result<Bytes> MessageBuilder::signableMessage(
       const TopicMessage &msg) {
-    pubsub::pb::Message pb_msg;
-    pb_msg.set_from(msg.from.data(), msg.from.size());
-    pb_msg.set_data(msg.data.data(), msg.data.size());
-    pb_msg.set_seqno(msg.seq_no.data(), msg.seq_no.size());
-    pb_msg.set_topic(msg.topic);
-    constexpr std::string_view kPrefix{"libp2p-pubsub:"};
-    auto size = pb_msg.ByteSizeLong();
-    Bytes signable;
-    signable.resize(kPrefix.size() + size);
-    std::copy(kPrefix.begin(), kPrefix.end(), signable.begin());
-    if (!pb_msg.SerializeToArray(&signable[kPrefix.size()],
-                                 static_cast<int>(size))) {
+    wire::GossipMessageWire wire_msg;
+    wire_msg.from = msg.from;
+    wire_msg.data = msg.data;
+    wire_msg.seqno = msg.seq_no;
+    wire_msg.topic = msg.topic;
+    auto encoded_res = wire_msg.encode();
+    if (!encoded_res) {
       return Error::MESSAGE_SERIALIZE_ERROR;
     }
+    constexpr std::string_view kPrefix{"libp2p-pubsub:"};
+    const auto &encoded = encoded_res.value();
+    Bytes signable;
+    signable.resize(kPrefix.size() + encoded.size());
+    std::copy(kPrefix.begin(), kPrefix.end(), signable.begin());
+    std::copy(encoded.begin(), encoded.end(), signable.begin() + kPrefix.size());
     return signable;
   }
 }  // namespace libp2p::protocol::gossip

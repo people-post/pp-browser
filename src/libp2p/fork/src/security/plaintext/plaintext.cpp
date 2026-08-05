@@ -8,8 +8,8 @@
 
 #include <functional>
 
-#include <generated/security/plaintext/protobuf/plaintext.pb.h>
-#include <libp2p/basic/protobuf_message_read_writer.hpp>
+#include <libp2p/basic/wire_message_read_writer.hpp>
+#include <libp2p/wire/plaintext_wire.hpp>
 #include <libp2p/peer/peer_id.hpp>
 #include <libp2p/security/error.hpp>
 #include <libp2p/security/plaintext/plaintext_connection.hpp>
@@ -79,16 +79,16 @@ namespace libp2p::security {
         .pubkey = idmgr_->getKeyPair().publicKey, .peer_id = idmgr_->getId()};
 
     // TODO(107): Reentrancy
-    auto proto_exchange_msg_res = marshaller_->handyToProto(exchange_msg);
-    if (proto_exchange_msg_res.has_error()) {
-      closeConnection(conn, proto_exchange_msg_res.error());
-      cb(proto_exchange_msg_res.error());
+    auto wire_exchange_msg_res = marshaller_->handyToWire(exchange_msg);
+    if (wire_exchange_msg_res.has_error()) {
+      closeConnection(conn, wire_exchange_msg_res.error());
+      cb(wire_exchange_msg_res.error());
       return;
     }
-    auto proto_exchange_msg = std::move(proto_exchange_msg_res).value();
+    auto wire_exchange_msg = std::move(wire_exchange_msg_res).value();
 
-    rw->write<plaintext::protobuf::Exchange>(
-        proto_exchange_msg,
+    rw->write<wire::PlaintextExchangeWire>(
+        wire_exchange_msg,
         [self{shared_from_this()}, cb{std::move(cb)}, conn](auto &&res) {
           if (res.has_error()) {
             self->closeConnection(conn, Error::EXCHANGE_SEND_ERROR);
@@ -103,7 +103,7 @@ namespace libp2p::security {
       const MaybePeerId &p,
       SecConnCallbackFunc cb) const {
     auto remote_peer_exchange_bytes = std::make_shared<std::vector<uint8_t>>();
-    rw->read<plaintext::protobuf::Exchange>(
+    rw->read<wire::PlaintextExchangeWire>(
         [self{shared_from_this()},
          conn,
          p,

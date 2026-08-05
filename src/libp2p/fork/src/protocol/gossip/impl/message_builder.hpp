@@ -11,16 +11,10 @@
 
 #include "common.hpp"
 
-namespace pubsub::pb {
-  // protobuf entities forward declaration
-  class RPC;
-  class ControlMessage;
-}  // namespace pubsub::pb
+#include <libp2p/wire/gossip_wire.hpp>
 
 namespace libp2p::protocol::gossip {
 
-  /// Constructs RPC message as new fields added and serializes it
-  /// into bytes before sending into wire
   class MessageBuilder {
    public:
     MessageBuilder(MessageBuilder &&) = default;
@@ -32,55 +26,37 @@ namespace libp2p::protocol::gossip {
 
     ~MessageBuilder();
 
-    /// Deep memory cleanup
     void reset();
 
-    /// Returns true if nothing added
     bool empty() const;
 
-    /// Serializes into byte buffer and clears internal state
     outcome::result<SharedBuffer> serialize();
 
-    /// Adds subscription notification
     void addSubscription(bool subscribe, const TopicId &topic);
 
-    /// Adds "I have" notification
     void addIHave(const TopicId &topic, const MessageId &msg_id);
 
-    /// Adds "I want" request
     void addIWant(const MessageId &msg_id);
 
-    /// Adds graft request
     void addGraft(const TopicId &topic);
 
-    /// Adds prune request
     void addPrune(const TopicId &topic);
 
-    /// Adds message to be forwarded
     void addMessage(const TopicMessage &msg, const MessageId &msg_id);
 
     static outcome::result<Bytes> signableMessage(const TopicMessage &msg);
 
    private:
-    /// Creates protobuf structures if needed
-    void create_protobuf_structures();
+    void ensureWireMessage();
 
-    /// Clears constructed message
     void clear();
 
-    /// Protobuf message being constructed
-    std::unique_ptr<pubsub::pb::RPC> pb_msg_;
-    std::unique_ptr<pubsub::pb::ControlMessage> control_pb_msg_;
+    wire::GossipRpcWire wire_msg_;
     bool empty_;
     bool control_not_empty_;
 
-    /// Intermediate struct for building IHave messages
     std::map<TopicId, std::vector<MessageId>> ihaves_;
-
-    /// Intermediate struct for building IWant request
     std::vector<MessageId> iwant_;
-
-    /// Used to prevent duplicate forwarding
     std::unordered_set<MessageId> messages_added_;
   };
 }  // namespace libp2p::protocol::gossip

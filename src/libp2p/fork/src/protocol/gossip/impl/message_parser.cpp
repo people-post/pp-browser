@@ -7,10 +7,9 @@
 #include "message_parser.hpp"
 
 #include <libp2p/log/logger.hpp>
+#include <libp2p/wire/gossip_wire.hpp>
 
 #include "message_receiver.hpp"
-
-#include <generated/protocol/gossip/protobuf/rpc.pb.h>
 
 namespace libp2p::protocol::gossip {
 
@@ -21,102 +20,92 @@ namespace libp2p::protocol::gossip {
     }
   }  // namespace
 
-  // need to define default ctor/dtor here in translation unit due to unique_ptr
-  // to type which is incomplete in header
   MessageParser::MessageParser() = default;
   MessageParser::~MessageParser() = default;
 
   bool MessageParser::parse(BytesIn bytes) {
-    if (!pb_msg_) {
-      pb_msg_ = std::make_unique<pubsub::pb::RPC>();
-    } else {
-      pb_msg_->Clear();
+    wire_msg_.clear();
+    auto decoded = wire::GossipRpcWire::decode(bytes);
+    if (!decoded) {
+      return false;
     }
-    return pb_msg_->ParseFromArray(bytes.data(),
-                                   static_cast<int>(bytes.size()));
+    wire_msg_ = std::move(decoded.value());
+    return true;
   }
 
   void MessageParser::dispatch(const PeerContextPtr &from,
                                MessageReceiver &receiver) {
-    if (!pb_msg_) {
-      return;
-    }
-
-    for (const auto &s : pb_msg_->subscriptions()) {
-      if (!s.has_subscribe() || !s.has_topicid()) {
+    for (const auto &s : wire_msg_.subscriptions) {
+      if (!s.subscribe || !s.topic_id) {
         continue;
       }
-      receiver.onSubscription(from, s.subscribe(), s.topicid());
+      receiver.onSubscription(from, *s.subscribe, *s.topic_id);
     }
 
-    if (pb_msg_->has_control()) {
-      const auto &c = pb_msg_->control();
+    if (wire_msg_.control) {
+      const auto &c = *wire_msg_.control;
 
-      for (const auto &h : c.ihave()) {
-        if (!h.has_topicid() || h.messageids_size() == 0) {
+      for (const auto &h : c.ihave) {
+        if (!h.topic_id || h.message_ids.empty()) {
           continue;
         }
-        const TopicId &topic = h.topicid();
-        for (const auto &msg_id : h.messageids()) {
+        const TopicId &topic = *h.topic_id;
+        for (const auto &msg_id : h.message_ids) {
           if (msg_id.empty()) {
             continue;
           }
-          receiver.onIHave(from, topic, fromString(msg_id));
+          receiver.onIHave(from, topic, msg_id);
         }
       }
 
-      for (const auto &w : c.iwant()) {
-        if (w.messageids_size() == 0) {
+      for (const auto &w : c.iwant) {
+        if (w.message_ids.empty()) {
           continue;
         }
-        for (const auto &msg_id : w.messageids()) {
+        for (const auto &msg_id : w.message_ids) {
           if (msg_id.empty()) {
             continue;
           }
-          receiver.onIWant(from, fromString(msg_id));
+          receiver.onIWant(from, msg_id);
         }
       }
 
-      for (const auto &gr : c.graft()) {
-        if (!gr.has_topicid()) {
+      for (const auto &gr : c.graft) {
+        if (!gr.topic_id) {
           continue;
         }
-        receiver.onGraft(from, gr.topicid());
+        receiver.onGraft(from, *gr.topic_id);
       }
 
-      for (const auto &pr : c.prune()) {
-        if (!pr.has_topicid()) {
+      for (const auto &pr : c.prune) {
+        if (!pr.topic_id) {
           continue;
         }
-        uint64_t backoff_time = 60;
-        if (pr.has_backoff()) {
-          backoff_time = pr.backoff();
-        }
+        uint64_t backoff_time = pr.backoff.value_or(60);
         log()->debug(
-            "prune backoff={}, {} peers", backoff_time, pr.peers_size());
-        for (const auto &peer : pr.peers()) {
-          // TODO(artem): meshsub 1.1.0 + signed peer records NYI
-
+            "prune backoff={}, {} peers", backoff_time, pr.peers.size());
+        for (const auto &peer : pr.peers) {
           log()->debug("peer id size={}, signed peer record size={}",
-                       peer.peerid().size(),
-                       peer.signedpeerrecord().size());
+                       peer.peer_id ? peer.peer_id->size() : 0,
+                       peer.signed_peer_record ? peer.signed_peer_record->size()
+                                               : 0);
         }
-        receiver.onPrune(from, pr.topicid(), backoff_time);
+        receiver.onPrune(from, *pr.topic_id, backoff_time);
       }
     }
 
-    for (const auto &m : pb_msg_->publish()) {
-      if (!m.has_from() || !m.has_data() || !m.has_seqno() || !m.has_topic()) {
+    for (const auto &m : wire_msg_.publish) {
+      if (!m.from || !m.data || !m.seqno || !m.topic) {
         continue;
       }
       auto message = std::make_shared<TopicMessage>(
-          fromString(m.from()), fromString(m.seqno()), fromString(m.data()));
-      message->topic = m.topic();
-      if (m.has_signature()) {
-        message->signature = fromString(m.signature());
+          *m.from, *m.seqno, *m.data);
+      message->topic = *m.topic;
+      if (m.signature) {
+        message->signature = *m.signature;
       }
-      if (m.has_key()) {
-        message->key = fromString(m.key());
+      if (m.key) {
+        message->key = *m.key;
       }
       receiver.onTopicMessage(from, std::move(message));
     }

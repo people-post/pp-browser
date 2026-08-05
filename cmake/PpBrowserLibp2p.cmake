@@ -59,7 +59,7 @@ function(pp_browser_add_libp2p_integration)
     p2p
     p2p_identify
     p2p_peer_id
-    p2p_keys_proto
+    p2p_wire
     nlohmann_json::nlohmann_json)
   if(WIN32)
     target_link_libraries(pp_libp2p_integration PUBLIC ws2_32 iphlpapi)

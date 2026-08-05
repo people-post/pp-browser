@@ -12,18 +12,16 @@ namespace libp2p::security::secio {
 
   class ProposeMessageMarshallerImpl : public ProposeMessageMarshaller {
    public:
-    /**
-     * Protobuf serialization errors
-     */
     enum class Error {
       MESSAGE_SERIALIZING_ERROR = 1,
-      MESSAGE_DESERIALIZING_ERROR,
+      MESSAGE_DESERIALIZING_ERROR = 2,
     };
 
-    protobuf::Propose handyToProto(const ProposeMessage &msg) const override;
+    wire::SecioProposeWire handyToWire(
+        const ProposeMessage &msg) const override;
 
-    ProposeMessage protoToHandy(
-        const protobuf::Propose &proto_msg) const override;
+    ProposeMessage wireToHandy(
+        const wire::SecioProposeWire &wire_msg) const override;
 
     outcome::result<std::vector<uint8_t>> marshal(
         const ProposeMessage &msg) const override;

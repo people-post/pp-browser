@@ -7,6 +7,7 @@
 #pragma once
 
 #include <boost/optional.hpp>
+#include <libp2p/basic/wire_message_read_writer.hpp>
 #include <libp2p/connection/raw_connection.hpp>
 #include <libp2p/crypto/common.hpp>
 #include <libp2p/crypto/key.hpp>
@@ -14,10 +15,6 @@
 #include <libp2p/security/secio/exchange_message.hpp>
 #include <libp2p/security/secio/propose_message.hpp>
 #include <libp2p/security/secio/propose_message_marshaller.hpp>
-
-namespace libp2p::basic {
-  class ProtobufMessageReadWriter;
-}
 
 namespace libp2p::security::secio {
 

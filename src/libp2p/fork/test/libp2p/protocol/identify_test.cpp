@@ -6,7 +6,7 @@
 
 #include <libp2p/protocol/identify.hpp>
 
-#include <generated/protocol/identify/protobuf/identify.pb.h>
+#include <libp2p/wire/identify_wire.hpp>
 #include <gtest/gtest.h>
 #include <libp2p/common/literals.hpp>
 #include <libp2p/multi/uvarint.hpp>
@@ -51,34 +51,32 @@ class IdentifyTest : public testing::Test {
   void SetUp() override {
     testutil::prepareLoggers();
 
-    // create a Protobuf message, which is to be "read" or written
+    wire::IdentifyWire identify_wire_msg_;
     for (const auto &proto : protocols_) {
-      identify_pb_msg_.add_protocols(proto);
+      identify_wire_msg_.protocols.push_back(proto);
     }
-    identify_pb_msg_.set_observedaddr(
-        std::string(remote_multiaddr_.getBytesAddress().begin(),
-                    remote_multiaddr_.getBytesAddress().end()));
+    identify_wire_msg_.observed_addr = Bytes(
+        remote_multiaddr_.getBytesAddress().begin(),
+        remote_multiaddr_.getBytesAddress().end());
     for (const auto &addr : listen_addresses_) {
-      identify_pb_msg_.add_listenaddrs(std::string(
-          addr.getBytesAddress().begin(), addr.getBytesAddress().end()));
+      const auto &bytes = addr.getBytesAddress();
+      identify_wire_msg_.listen_addrs.emplace_back(bytes.begin(), bytes.end());
     }
-    identify_pb_msg_.set_publickey(marshalled_pubkey_.data(),
-                                   marshalled_pubkey_.size());
-    identify_pb_msg_.set_protocolversion(kLibp2pVersion);
-    identify_pb_msg_.set_agentversion(kClientVersion);
+    identify_wire_msg_.public_key = marshalled_pubkey_;
+    identify_wire_msg_.protocol_version = kLibp2pVersion;
+    identify_wire_msg_.agent_version = kClientVersion;
 
-    pb_msg_len_varint_ =
-        std::make_shared<UVarint>(identify_pb_msg_.ByteSizeLong());
+    auto encoded_res = identify_wire_msg_.encode();
+    ASSERT_TRUE(encoded_res);
+    pb_msg_len_varint_ = std::make_shared<UVarint>(encoded_res.value().size());
 
     identify_pb_msg_bytes_.insert(
         identify_pb_msg_bytes_.end(),
         std::make_move_iterator(pb_msg_len_varint_->toVector().begin()),
         std::make_move_iterator(pb_msg_len_varint_->toVector().end()));
-    identify_pb_msg_bytes_.insert(
-        identify_pb_msg_bytes_.end(), identify_pb_msg_.ByteSizeLong(), 0);
-    identify_pb_msg_.SerializeToArray(
-        identify_pb_msg_bytes_.data() + pb_msg_len_varint_->size(),
-        identify_pb_msg_.ByteSizeLong());
+    identify_pb_msg_bytes_.insert(identify_pb_msg_bytes_.end(),
+                                  encoded_res.value().begin(),
+                                  encoded_res.value().end());
 
     id_msg_processor_ = std::make_shared<IdentifyMessageProcessor>(
         host_, conn_manager_, id_manager_, key_marshaller_);
@@ -105,8 +103,8 @@ class IdentifyTest : public testing::Test {
   // mocked host's components
   RouterMock router_;
 
-  // Identify Protobuf message and its components
-  identify::pb::Identify identify_pb_msg_;
+  // Identify wire message and its encoded bytes
+  wire::IdentifyWire identify_wire_msg_;
   std::vector<uint8_t> identify_pb_msg_bytes_;
   std::shared_ptr<UVarint> pb_msg_len_varint_;
 

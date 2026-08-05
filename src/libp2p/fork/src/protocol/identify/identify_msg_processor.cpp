@@ -8,10 +8,8 @@
 
 #include <tuple>
 
-#include <generated/protocol/identify/protobuf/identify.pb.h>
-#include <boost/assert.hpp>
-
-#include <libp2p/basic/protobuf_message_read_writer.hpp>
+#include <libp2p/basic/wire_message_read_writer.hpp>
+#include <libp2p/wire/identify_wire.hpp>
 #include <libp2p/common/types.hpp>
 #include <libp2p/network/network.hpp>
 #include <libp2p/peer/address_repository.hpp>
@@ -20,12 +18,6 @@
 using libp2p::BytesIn;
 
 namespace {
-
-  inline std::string fromMultiaddrToString(
-      const libp2p::multi::Multiaddress &ma) {
-    const auto &addr = ma.getBytesAddress();
-    return {addr.begin(), addr.end()};
-  }
 
   inline outcome::result<libp2p::multi::Multiaddress> fromStringToMultiaddr(
       const std::string &addr) {
@@ -55,25 +47,23 @@ namespace libp2p::protocol {
   }
 
   void IdentifyMessageProcessor::sendIdentify(StreamSPtr stream) {
-    identify::pb::Identify msg;
+    wire::IdentifyWire msg;
 
-    // set the protocols we speak on
     for (const auto &proto : host_.getRouter().getSupportedProtocols()) {
-      msg.add_protocols(proto);
+      msg.protocols.push_back(proto);
     }
 
-    // set an address of the other side, so that it knows, which address we used
-    // to connect to it
     if (auto remote_addr = stream->remoteMultiaddr()) {
-      msg.set_observedaddr(fromMultiaddrToString(remote_addr.value()));
+      const auto &addr_bytes = remote_addr.value().getBytesAddress();
+      msg.observed_addr =
+          Bytes(addr_bytes.begin(), addr_bytes.end());
     }
 
-    // set addresses we are available on
     for (const auto &addr : host_.getPeerInfo().addresses) {
-      msg.add_listenaddrs(fromMultiaddrToString(addr));
+      const auto &addr_bytes = addr.getBytesAddress();
+      msg.listen_addrs.emplace_back(addr_bytes.begin(), addr_bytes.end());
     }
 
-    // set our public key
     auto marshalled_pubkey_res =
         key_marshaller_->marshal(identity_manager_.getKeyPair().publicKey);
     if (!marshalled_pubkey_res) {
@@ -83,17 +73,14 @@ namespace libp2p::protocol {
           marshalled_pubkey_res.error());
     } else {
       auto &&marshalled_pubkey = marshalled_pubkey_res.value();
-      msg.set_publickey(marshalled_pubkey.key.data(),
-                        marshalled_pubkey.key.size());
+      msg.public_key = marshalled_pubkey.key;
     }
 
-    // set versions of Libp2p and our implementation
-    msg.set_protocolversion(std::string{host_.getLibp2pVersion()});
-    msg.set_agentversion(std::string{host_.getLibp2pClientVersion()});
+    msg.protocol_version = std::string{host_.getLibp2pVersion()};
+    msg.agent_version = std::string{host_.getLibp2pClientVersion()};
 
-    // write the resulting Protobuf message
-    auto rw = std::make_shared<basic::ProtobufMessageReadWriter>(stream);
-    rw->write<identify::pb::Identify>(
+    auto rw = std::make_shared<basic::WireMessageReadWriter>(stream);
+    rw->write<wire::IdentifyWire>(
         msg,
         [self{shared_from_this()},
          stream = std::move(stream)](outcome::result<void> result) mutable {
@@ -127,8 +114,8 @@ namespace libp2p::protocol {
   }
 
   void IdentifyMessageProcessor::receiveIdentify(StreamSPtr stream) {
-    auto rw = std::make_shared<basic::ProtobufMessageReadWriter>(stream);
-    rw->read<identify::pb::Identify>(
+    auto rw = std::make_shared<basic::WireMessageReadWriter>(stream);
+    rw->read<wire::IdentifyWire>(
         [self{shared_from_this()}, s = std::move(stream)](auto &&res) {
           self->identifyReceived(std::forward<decltype(res)>(res), s);
         });
@@ -149,7 +136,7 @@ namespace libp2p::protocol {
   }
 
   void IdentifyMessageProcessor::identifyReceived(
-      outcome::result<identify::pb::Identify> msg_res,
+      outcome::result<wire::IdentifyWire> msg_res,
       const StreamSPtr &stream) {
     auto [peer_id_str, peer_addr_str] = detail::getPeerIdentity(stream);
     if (!msg_res) {
@@ -175,7 +162,12 @@ namespace libp2p::protocol {
     auto &&msg = std::move(msg_res.value());
 
     // process a received public key and retrieve an ID of the other peer
-    auto received_pubkey_str = msg.has_publickey() ? msg.publickey() : "";
+    auto received_pubkey_str = msg.public_key
+                                   ? std::string_view(
+                                         reinterpret_cast<const char *>(
+                                             msg.public_key->data()),
+                                         msg.public_key->size())
+                                   : std::string_view{};
     auto peer_id_opt = consumePublicKey(stream, received_pubkey_str);
     if (!peer_id_opt) {
       // something bad happened during key processing - we can't continue
@@ -185,7 +177,7 @@ namespace libp2p::protocol {
 
     // store the received protocols
     std::vector<peer::ProtocolName> protocols;
-    for (const auto &proto : msg.protocols()) {
+    for (const auto &proto : msg.protocols) {
       protocols.push_back(proto);
     }
     auto add_res =
@@ -197,13 +189,16 @@ namespace libp2p::protocol {
                   add_res.error());
     }
 
-    if (msg.has_observedaddr()) {
-      consumeObservedAddresses(msg.observedaddr(), peer_id, stream);
+    if (msg.observed_addr) {
+      consumeObservedAddresses(
+          std::string(msg.observed_addr->begin(), msg.observed_addr->end()),
+          peer_id,
+          stream);
     }
 
     std::vector<std::string> addresses;
-    for (const auto &addr : msg.listenaddrs()) {
-      addresses.push_back(addr);
+    for (const auto &addr : msg.listen_addrs) {
+      addresses.emplace_back(addr.begin(), addr.end());
     }
     consumeListenAddresses(addresses, peer_id);
 

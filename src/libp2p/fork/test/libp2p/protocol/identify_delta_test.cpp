@@ -8,7 +8,7 @@
 
 #include <libp2p/protocol/identify/identify_delta.hpp>
 
-#include <generated/protocol/identify/protobuf/identify.pb.h>
+#include <libp2p/wire/identify_wire.hpp>
 
 #include <libp2p/common/literals.hpp>
 #include <libp2p/multi/uvarint.hpp>
@@ -48,34 +48,37 @@ class IdentifyDeltaTest : public testing::Test {
 
     id_delta_ = std::make_shared<IdentifyDelta>(host_, conn_manager_, bus_);
 
+    wire::IdentifyWire msg_added_protos_;
+    wire::IdentifyWire msg_added_rm_protos_;
+    msg_added_protos_.delta.emplace();
+    msg_added_rm_protos_.delta.emplace();
     for (const auto &proto : added_protos_) {
-      msg_added_protos_.mutable_delta()->add_added_protocols(proto);
-      msg_added_rm_protos_.mutable_delta()->add_added_protocols(proto);
+      msg_added_protos_.delta->added_protocols.push_back(proto);
+      msg_added_rm_protos_.delta->added_protocols.push_back(proto);
     }
     for (const auto &proto : removed_protos_) {
-      msg_added_rm_protos_.mutable_delta()->add_rm_protocols(proto);
+      msg_added_rm_protos_.delta->rm_protocols.push_back(proto);
     }
 
-    added_proto_len_ = UVarint{msg_added_protos_.ByteSizeLong()};
+    auto added_encoded = msg_added_protos_.encode();
+    ASSERT_TRUE(added_encoded);
+    added_proto_len_ = UVarint{added_encoded.value().size()};
     msg_added_protos_bytes_.insert(msg_added_protos_bytes_.end(),
                                    added_proto_len_.toVector().begin(),
                                    added_proto_len_.toVector().end());
-    msg_added_protos_bytes_.insert(
-        msg_added_protos_bytes_.end(), msg_added_protos_.ByteSizeLong(), 0);
-    msg_added_protos_.SerializeToArray(
-        msg_added_protos_bytes_.data() + added_proto_len_.size(),
-        msg_added_protos_.ByteSizeLong());
+    msg_added_protos_bytes_.insert(msg_added_protos_bytes_.end(),
+                                   added_encoded.value().begin(),
+                                   added_encoded.value().end());
 
-    added_rm_proto_len_ = UVarint{msg_added_rm_protos_.ByteSizeLong()};
+    auto added_rm_encoded = msg_added_rm_protos_.encode();
+    ASSERT_TRUE(added_rm_encoded);
+    added_rm_proto_len_ = UVarint{added_rm_encoded.value().size()};
     msg_added_rm_protos_bytes_.insert(msg_added_rm_protos_bytes_.end(),
                                       added_rm_proto_len_.toVector().begin(),
                                       added_rm_proto_len_.toVector().end());
     msg_added_rm_protos_bytes_.insert(msg_added_rm_protos_bytes_.end(),
-                                      msg_added_rm_protos_.ByteSizeLong(),
-                                      0);
-    msg_added_rm_protos_.SerializeToArray(
-        msg_added_rm_protos_bytes_.data() + added_rm_proto_len_.size(),
-        msg_added_rm_protos_.ByteSizeLong());
+                                      added_rm_encoded.value().begin(),
+                                      added_rm_encoded.value().end());
   }
 
   HostMock host_;
@@ -86,11 +89,11 @@ class IdentifyDeltaTest : public testing::Test {
   std::vector<peer::ProtocolName> added_protos_{"/ping/1.0.0", "/ping/1.5.0"};
   std::vector<peer::ProtocolName> removed_protos_{"/http/5.2.8"};
 
-  identify::pb::Identify msg_added_protos_;
+  wire::IdentifyWire msg_added_protos_;
   std::vector<uint8_t> msg_added_protos_bytes_;
   UVarint added_proto_len_{0};
 
-  identify::pb::Identify msg_added_rm_protos_;
+  wire::IdentifyWire msg_added_rm_protos_;
   std::vector<uint8_t> msg_added_rm_protos_bytes_;
   UVarint added_rm_proto_len_{0};
 

@@ -9,8 +9,8 @@
 #include <string>
 #include <unordered_set>
 
-#include <generated/protocol/identify/protobuf/identify.pb.h>
-#include <libp2p/basic/protobuf_message_read_writer.hpp>
+#include <libp2p/basic/wire_message_read_writer.hpp>
+#include <libp2p/wire/identify_wire.hpp>
 #include <libp2p/protocol/identify/utils.hpp>
 
 namespace {
@@ -29,8 +29,8 @@ namespace libp2p::protocol {
 
   void IdentifyDelta::handle(StreamAndProtocol stream) {
     // receive a Delta message
-    auto rw = std::make_shared<basic::ProtobufMessageReadWriter>(stream.stream);
-    rw->read<identify::pb::Identify>(
+    auto rw = std::make_shared<basic::WireMessageReadWriter>(stream.stream);
+    rw->read<wire::IdentifyWire>(
         [self{shared_from_this()},
          s = std::move(stream.stream)](auto &&msg_res) {
           self->deltaReceived(std::forward<decltype(msg_res)>(msg_res), s);
@@ -59,7 +59,7 @@ namespace libp2p::protocol {
   }
 
   void IdentifyDelta::deltaReceived(
-      outcome::result<identify::pb::Identify> msg_res,
+      outcome::result<wire::IdentifyWire> msg_res,
       const std::shared_ptr<connection::Stream> &stream) {
     auto [peer_id_str, peer_addr_str] = detail::getPeerIdentity(stream);
     if (!msg_res) {
@@ -71,7 +71,7 @@ namespace libp2p::protocol {
     }
 
     auto &&id_msg = std::move(msg_res.value());
-    if (!id_msg.has_delta()) {
+    if (!id_msg.delta) {
       log_->error(
           "peer initiated a stream with IdentifyDelta, but sent something "
           "else; peer {}, {}",
@@ -101,13 +101,13 @@ namespace libp2p::protocol {
     }
     auto &&peer_id = peer_id_res.value();
 
-    auto &&delta_msg = id_msg.delta();
+    auto &&delta_msg = *id_msg.delta;
     auto &proto_repo = host_.getPeerRepository().getProtocolRepository();
 
     // more beautiful ways cause compile errors :(
     std::vector<peer::ProtocolName> added_protocols;
-    added_protocols.reserve(delta_msg.added_protocols().size());
-    for (const auto &proto : delta_msg.added_protocols()) {
+    added_protocols.reserve(delta_msg.added_protocols.size());
+    for (const auto &proto : delta_msg.added_protocols) {
       added_protocols.push_back(proto);
     }
     auto add_res = proto_repo.addProtocols(peer_id, added_protocols);
@@ -119,8 +119,8 @@ namespace libp2p::protocol {
     }
 
     std::vector<peer::ProtocolName> rm_protocols;
-    rm_protocols.reserve(delta_msg.rm_protocols().size());
-    for (const auto &proto : delta_msg.rm_protocols()) {
+    rm_protocols.reserve(delta_msg.rm_protocols.size());
+    for (const auto &proto : delta_msg.rm_protocols) {
       rm_protocols.push_back(proto);
     }
     auto rm_res = proto_repo.removeProtocols(peer_id, rm_protocols);
@@ -134,12 +134,15 @@ namespace libp2p::protocol {
 
   void IdentifyDelta::sendDelta(std::span<const peer::ProtocolName> added,
                                 std::span<const peer::ProtocolName> removed) {
-    auto msg = std::make_shared<identify::pb::Identify>();
+    auto msg = std::make_shared<wire::IdentifyWire>();
+    if (!added.empty() || !removed.empty()) {
+      msg->delta.emplace();
+    }
     for (const auto &proto : added) {
-      msg->mutable_delta()->add_added_protocols(proto);
+      msg->delta->added_protocols.push_back(proto);
     }
     for (const auto &proto : removed) {
-      msg->mutable_delta()->add_rm_protocols(proto);
+      msg->delta->rm_protocols.push_back(proto);
     }
 
     detail::streamToEachConnectedPeer(
@@ -156,9 +159,9 @@ namespace libp2p::protocol {
 
   void IdentifyDelta::sendDelta(
       std::shared_ptr<connection::Stream> stream,
-      const std::shared_ptr<identify::pb::Identify> &msg) const {
-    auto rw = std::make_shared<basic::ProtobufMessageReadWriter>(stream);
-    rw->write<identify::pb::Identify>(
+      const std::shared_ptr<wire::IdentifyWire> &msg) const {
+    auto rw = std::make_shared<basic::WireMessageReadWriter>(stream);
+    rw->write<wire::IdentifyWire>(
         *msg, [self{shared_from_this()}, s = std::move(stream)](auto &&res) {
           if (!res) {
             self->log_->error("cannot write Identify-Delta to peer {}, {}: {}",

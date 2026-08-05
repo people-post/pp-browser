@@ -10,48 +10,25 @@
 
 #include <libp2p/crypto/protobuf/protobuf_key.hpp>
 #include <libp2p/security/noise/handshake_message.hpp>
+#include <libp2p/wire/noise_wire.hpp>
 
 namespace libp2p::security::noise {
-
-  namespace protobuf {
-    class NoiseHandshakePayload;
-  }
-
   /**
-   * Serializes and deserializes protobuf NoiseHandshakePayload message in Noise
-   * protocol
+   * Serializes and deserializes Noise handshake payload messages.
    */
   class HandshakeMessageMarshaller {
    public:
     virtual ~HandshakeMessageMarshaller() = default;
 
-    /**
-     * Converts handy handshake message to its protobuf counterpart
-     * @param msg handy handshake message
-     * @return protobuf handshake message
-     */
-    virtual outcome::result<protobuf::NoiseHandshakePayload> handyToProto(
+    virtual outcome::result<wire::NoiseHandshakePayloadWire> handyToWire(
         const HandshakeMessage &msg) const = 0;
 
-    /**
-     * Converts protobuf handshake message to its handy counterpart
-     * @param proto_msg protobuf handshake message
-     * @return handy handshake message
-     */
     virtual outcome::result<std::pair<HandshakeMessage, crypto::ProtobufKey>>
-    protoToHandy(const protobuf::NoiseHandshakePayload &proto_msg) const = 0;
+    wireToHandy(const wire::NoiseHandshakePayloadWire &wire_msg) const = 0;
 
-    /**
-     * @param msg handy handshake message to be serialized
-     * @return a byte array with protobuf representation of the message
-     */
     virtual outcome::result<Bytes> marshal(
         const HandshakeMessage &msg) const = 0;
 
-    /**
-     * @param msg_bytes of protobuf representation of the message
-     * @return deserialized handy handshake message
-     */
     virtual outcome::result<std::pair<HandshakeMessage, crypto::ProtobufKey>>
     unmarshal(BytesIn msg_bytes) const = 0;
   };
