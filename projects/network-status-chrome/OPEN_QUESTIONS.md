@@ -1,168 +1,56 @@
 # Open questions — network status chrome
 
-**Purpose:** Clarifications that reshape implementation (layout, APIs, click target, metrics).  
-**Process:** Answer here or in chat → record ADR in [DECISIONS.md](DECISIONS.md) → check the box.  
-**Do not implement** status-cluster / detail UI until the **blocking** set below is resolved (or explicitly deferred with an ADR).
+**Status:** Blocking + important sets **resolved 2026-08-05** (product accepted agent recommendations).  
+**ADRs:** [DECISIONS.md](DECISIONS.md) S003–S010.  
+**Normative summary:** [DESIGN.md](DESIGN.md).
+
+New questions should be added below **Still open**; do not reopen resolved rows without a superseding ADR.
 
 ---
 
-## Blocking (decide before s1 code)
+## Resolved — blocking
 
-### Q1 — Audience & platforms
-
-Who is the status cluster for in v1?
-
-| Option | Meaning |
-|--------|---------|
-| **A** | Desktop expanded only (today’s visibility) |
-| **B** | Desktop expanded + compact desktop (taller or overflow menu) |
-| **C** | Also mobile/tablet (needs new compact placement — conflict with activity strip) |
-
-**Impacts:** RML visibility, hit targets, whether detail is popover vs sheet.
-
-### Q2 — Primary persona
-
-Is the bar mainly for:
-
-| Option | Emphasis |
-|--------|----------|
-| **A** | Everyday users (“am I online / can people reach me?”) — fewer glyphs, more plain language |
-| **B** | Node helpers / power users (“am I helping / load”) — Help + Load first-class |
-| **C** | Both, adaptive — Client sees A+B; Node adds C+D |
-
-**Impacts:** Which slots are mandatory; copy tone; whether Client ever sees Help/Load.
-
-### Q3 — Click target & detail primitive
-
-When the user clicks the left cluster, what opens?
-
-| Option | Primitive |
-|--------|-----------|
-| **A** | Anchored popover above the status bar (new) |
-| **B** | Existing Me account/settings path → Network section (deep-link only) |
-| **C** | Hybrid: lightweight popover + “Open Network settings…” |
-| **D** | Dedicated overlay layer / sheet |
-
-**Impacts:** Shell APIs, presentation taxonomy, how much live stats UI we build vs reuse settings.
-
-### Q4 — Relationship to Me → Network
-
-Should the detail surface:
-
-| Option | Rule |
-|--------|------|
-| **A** | **Inspect-only** + link to settings for all toggles |
-| **B** | **Inspect + a few actions** (Retest, maybe UPnP) but not capability toggles |
-| **C** | **Full twin** of Connection / Help controls (risk of two sources of truth) |
-
-**Impacts:** Ports, duplication, nudge-ack ownership.
-
-### Q5 — “Relay server availability” definition
-
-What should Reach’s relay sub-signal mean?
-
-| Option | Definition |
-|--------|------------|
-| **A** | Org/HTTP Brief relay reachable (durability inbox) |
-| **B** | At least one dialable circuit and/or media hop in policy set |
-| **C** | Separate consumer signal: “I can use relays” vs provider “I am a relay” |
-| **D** | Defer relay-availability glyph; Reach = `ReachabilitySnapshot` only until hop inventory is solid |
-
-**Impacts:** New probes vs reuse peer/hop APIs; honesty of “Relayed” state.
-
-### Q6 — Load metrics MVP
-
-Minimum Load (slot D) for first ship:
-
-| Option | Includes |
-|--------|----------|
-| **A** | Active counts only (circuit bridges, media sessions/participants) |
-| **B** | A + aggregate throughput (needs rate windows) |
-| **C** | B + delay/RTT |
-| **D** | No Load in bar until counts API exists; detail can say “stats coming” |
-
-**Impacts:** Instrumentation phase order; whether s2 UI waits on s3 stats.
-
-### Q7 — Privacy / disclosure when helping
-
-When Help is on, may the bar/detail show:
-
-| Option | Disclosure |
-|--------|------------|
-| **A** | Aggregates only (counts, rates) — no peer identities |
-| **B** | Aggregates + contact display names for active clients (if known) |
-| **C** | Aggregates + PeerIds (power-user / debug) |
-
-**Impacts:** Detail table columns; contact resolution; screenshot sensitivity.
+| Q | Resolution | ADR |
+|---|------------|-----|
+| Q1 Platforms | **A** — desktop expanded only | [S003](DECISIONS.md#s003--platforms-desktop-expanded-only-q1-a) |
+| Q2 Persona | **C** — adaptive Client A+B / Node+help A–D | [S004](DECISIONS.md#s004--adaptive-persona--slots-q2-c) |
+| Q3 Click | **C** — hybrid popover + Open Network settings… | [S005](DECISIONS.md#s005--click--hybrid-popover--settings-link-q3-c) |
+| Q4 Detail vs Me | **B** — inspect + Retest; no capability toggles | [S006](DECISIONS.md#s006--detail-inspect--retest-no-capability-toggles-q4-b) |
+| Q5 Relay available | **D→B** — reachability in s1; dialable-hop signal later | [S007](DECISIONS.md#s007--reach-uses-reachability-first-hop-relay-available-later-q5-db) |
+| Q6 Load MVP | **A** — active counts only | [S008](DECISIONS.md#s008--load-mvp-is-active-counts-only-q6-a) |
+| Q7 Privacy | **A** — aggregates only | [S009](DECISIONS.md#s009--helper-privacy-aggregates-only-q7-a) |
 
 ---
 
-## Important (decide before click-detail / polish)
+## Resolved — important
 
-### Q8 — Bar height & layout budget
-
-Keep **24dp** single line, or allow a slightly taller bar / two-row cluster when Load is active?
-
-**Impacts:** `ShellConfig::statusbar_height_dp`, content inset, truncation strategy.
-
-### Q9 — Iconography
-
-Ship new SVGs (mesh / reach-bars / help / circuit / media) vs reuse/tint existing (`sync`, `share`, etc.) for v1?
-
-**Impacts:** Asset work, recognizability, design-system inventory.
-
-### Q10 — Right-side activity vs Load
-
-If agent is `Thinking…` and media relay is hot, who wins the right side? Options: activity always wins · Load moves under Help on the left · combine with priority rules · temporary dual-line.
-
-### Q11 — Severity & Me attention
-
-Should Blocked / OutboundOnly **recolor** the bar cluster even when the Me nudge was already acked?
-
-**Impacts:** Trust in ambient color vs “I dismissed the nudge.”
-
-### Q12 — Words vs icons default
-
-Prefer icon-only healthy states (tooltip/accessible name later) or always a short text label beside Mesh/Reach?
-
-**Impacts:** Width, i18n, a11y story (tooltips not free in RmlUi).
-
-### Q13 — pp-node / headless
-
-Does `pp-node` need a parallel text/JSON status story aligned with the same slot model, or is GUI-only in scope?
-
-### Q14 — Localization & tone
-
-Short technical labels (`Outbound only`, `Helping`) vs friendlier (`Hard to reach`, `Sharing connection`)? Keep parity with existing settings strings?
-
-### Q15 — Animation budget
-
-Allow continuous pulse for active Help/Load, or only transitional motion (Checking → result) for perf/battery on integrated GPUs?
-
-### Q16 — Failure copy
-
-When libp2p fails to start, show last error snippet in the bar, only in detail, or only in Me → Network?
-
-### Q17 — Testing / dogfood gate
-
-What is “good enough” to ship s1 (e.g. Node desktop: Reachable + Helping idle visible; click opens hybrid detail with Retest)? Any must-dogfood topology (two NATs, helper under load)?
+| Q | Resolution | ADR |
+|---|------------|-----|
+| Q8 Height | Keep 24dp | [S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17) |
+| Q9 Icons | New monochrome SVGs | S010 |
+| Q10 Activity vs Load | Activity right; Load left under Help | S010 |
+| Q11 Severity after ack | Still recolor ambient Reach | S010 |
+| Q12 Words vs icons | Icons healthy; words for bad/off | S010 |
+| Q13 pp-node | GUI only | S010 |
+| Q14 Tone | Settings string parity | S010 |
+| Q15 Motion | Transitional only | S010 |
+| Q16 Errors | Popover + Me; bar glyph/color only | S010 |
+| Q17 Dogfood | Node helper + counts under load | S010 |
 
 ---
 
-## Deferred unless you pull them in
+## Deferred (explicit)
 
 - Compact/mobile status cluster placement  
 - Public/paid relay status  
 - Per-peer path in the global bar  
 - Historical graphs (rates over time)  
 - User-configurable status bar modules  
+- Contact names / PeerIds in helper detail (supersedes would need new ADR vs S009)  
+- Throughput / delay in bar (post-MVP vs S008)  
 
 ---
 
-## Suggested answer format
+## Still open
 
-For each Qi, reply with option letter + any caveats. Example:
-
-> Q1 A · Q2 C · Q3 C · Q4 B · Q5 D then B later · Q6 A · Q7 A · Q8 keep 24dp · …
-
-Partial answers are fine; mark “defer” explicitly so ADRs can freeze scope.
+_None for s1. Implementation discoveries go here or as new ADRs._

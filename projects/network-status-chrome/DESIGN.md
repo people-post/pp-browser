@@ -1,7 +1,7 @@
 # Network status chrome — design
 
-**Status:** Draft pending [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).  
-**Execution order:** [PHASES.md](PHASES.md). **Today:** [CURRENT_STATE.md](CURRENT_STATE.md). **Rationale:** [DECISIONS.md](DECISIONS.md).
+**Status:** Product decisions locked ([DECISIONS.md](DECISIONS.md) S003–S010).  
+**Execution order:** [PHASES.md](PHASES.md). **Today:** [CURRENT_STATE.md](CURRENT_STATE.md).
 
 **Stable refs:** [WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md), [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md), [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md)
 
@@ -9,7 +9,7 @@
 
 ## Overview
 
-The desktop expanded status bar is ambient chrome for **device/network posture**. Today it shows only host readiness (`Online` / `Direct off`) plus right-side activity text. This project evolves it into a **scannable status cluster** and a **click → details** surface for inspection and actions (retest, open settings, inspect relay load).
+The desktop expanded status bar is ambient chrome for **device/network posture**. Today it shows only host readiness (`Online` / `Direct off`) plus right-side activity text. This project evolves it into a **scannable status cluster** and a **click → hybrid popover** for inspection (Retest, load aggregates) with a deep-link into Me → Network for configuration.
 
 Per-peer path (`Via relay`) stays in chat; in-call media path stays in call chrome. The bar answers: *Is my mesh up? How reachable am I? Am I helping? How hard am I working as a helper?*
 
@@ -17,20 +17,22 @@ Per-peer path (`Via relay`) stays in chat; in-call media path stays in call chro
 
 ## Goals
 
-1. **Ambient truth** — Mesh, reach/path quality, helping mode, and (when relevant) live load are visible at a glance on desktop expanded layout.
+1. **Ambient truth** — Mesh, reachability, helping mode, and (when relevant) live load counts are visible at a glance on desktop expanded layout.
 2. **Scannable visuals** — Prefer icons, color, strength segments, and short words over dense prose in 24dp.
-3. **Progressive disclosure** — Bar = summary; click = detail (stats, actions, links into Me → Network).
-4. **One severity vocabulary** — Align with Me attention / reachability nudge (no conflicting “healthy” vs “problem” stories).
-5. **Honest instrumentation** — Do not invent rates/RTT in UI before services publish them.
-6. **i18n** — All user-visible strings go through locales (status bar today is hardcoded English).
+3. **Progressive disclosure** — Bar = summary; click = popover; settings = configuration.
+4. **One severity vocabulary** — Align with Me attention / reachability nudge; ambient color still reflects condition after nudge ack ([S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17)).
+5. **Honest instrumentation** — Reachability-only in s1 for slot B; counts before rates/RTT ([S007](DECISIONS.md#s007--reach-uses-reachability-first-hop-relay-available-later-q5-db), [S008](DECISIONS.md#s008--load-mvp-is-active-counts-only-q6-a)).
+6. **i18n** — All user-visible strings through locales; tone parity with settings ([S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17)).
 
 ## Non-goals
 
-- Replacing Me → Network configuration UI.
-- Showing chat peer-link or SoftMigrate hop PeerIds in the global bar.
-- Compact/mobile status bar in v1 (visibility rules may stay desktop+expanded unless OPEN_QUESTIONS change this).
+- Replacing Me → Network configuration UI ([S006](DECISIONS.md#s006--detail-inspect--retest-no-capability-toggles-q4-b)).
+- Compact/mobile status bar in v1 ([S003](DECISIONS.md#s003--platforms-desktop-expanded-only-q1-a)).
+- Chat peer-link or SoftMigrate hop PeerIds in the global bar.
+- Helper client identities in chrome ([S009](DECISIONS.md#s009--helper-privacy-aggregates-only-q7-a)).
+- `pp-node` CLI redesign ([S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17)).
 - Public relay marketplace / paid relay UX.
-- Turning the 24dp bar into a full metrics dashboard.
+- Growing the bar above 24dp ([S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17)).
 
 ---
 
@@ -38,68 +40,67 @@ Per-peer path (`Via relay`) stays in chat; in-call media path stays in call chro
 
 Left→right by stability (least → most volatile):
 
-| Slot | Name | Question | Sources (candidate) |
-|------|------|----------|---------------------|
+| Slot | Name | Question | Sources |
+|------|------|----------|---------|
 | **A** | Mesh | Is local libp2p up? | `Libp2pHost::IsRunning`, last error, starting |
-| **B** | Reach | Path quality / inbound vs relayed | `ReachabilitySnapshot` + consumer-relay availability signals |
+| **B** | Reach | Inbound / outbound posture | `ReachabilitySnapshot` in s1; later + dialable hop in policy set ([S007](DECISIONS.md#s007--reach-uses-reachability-first-hop-relay-available-later-q5-db)) |
 | **C** | Help | Am I offering help? | `node_enabled`, circuit/media service started |
-| **D** | Load | How hard am I working as helper? | New `RelayRuntimeStats` (counts → rates → delay) |
+| **D** | Load | Active helper load | `RelayRuntimeStats` counts ([S008](DECISIONS.md#s008--load-mvp-is-active-counts-only-q6-a)) |
 
-Right side remains **ephemeral activity** (agent tools, PIN prep; optionally call media activity later). Load (D) must not fight activity for the same pixels — see open questions.
+**Adaptive visibility ([S004](DECISIONS.md#s004--adaptive-persona--slots-q2-c)):**
 
-### Slot semantics (draft)
+| Role | Slots shown |
+|------|-------------|
+| Client / help off | A + B |
+| Node / help on | A + B + C; D only when count > 0 |
+
+Right side remains **ephemeral activity** (agent tools, PIN prep). Load never moves to the right ([S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17)).
+
+### Slot semantics
 
 **A — Mesh:** off · starting · on · error  
 
-**B — Reach (fused path quality):**  
-Direct / Reachable · Outbound · Relayed (outbound/blocked but usable relay path) · Blocked · Checking  
+**B — Reach (s1):** Checking · Reachable · Outbound only · Blocked · Unknown  
 
-“Relay server availability” is a **sub-signal of Reach**, not a fifth peer glyph.
+**B — Reach (later):** may add Relayed / path-quality when dialable hop inventory is solid ([S007](DECISIONS.md#s007--reach-uses-reachability-first-hop-relay-available-later-q5-db)). Still a sub-signal of Reach, not a separate slot. HTTP Brief is not this signal.
 
-**C — Help:** off · on idle · on active  
+**C — Help:** off (hidden for Client) · on idle · on active  
 
-**D — Load:** shown only when Help is on and load > 0 (default). Circuit clients, media sessions/participants; rates/delay when instrumented. Hide zeros.
+**D — Load:** circuit active count · media active count; hide zeros. Rates/delay post-MVP.
 
 ---
 
-## Visual language (draft)
+## Visual language
 
-Constrained by 24dp height, `text-xs`, design-system tokens, white SVG icons + `image-color`.
+Constrained by **24dp** height ([S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17)), `text-xs`, design-system tokens, **new** white SVG icons + `image-color`.
 
 | Element | Role |
 |---------|------|
 | Mesh dot/ring | Filled = on, hollow = off, dashed/spin = starting, red = error |
-| Reach segments (3) | Strength metaphor (reuse call-meter visual idea): 3 Direct, 2 Relayed/path, 1 Outbound, 0 Blocked |
-| Help glyph | Outline off · solid teal/accent on · pulse when actively relaying |
-| Load pills | Icon + small integer (and optional rate) only when > 0 |
-| Color | Muted = healthy; `semantic-warning-*` = degraded; `semantic-error` = blocked/error; teal = helping |
-| Motion | One subtle pulse for Checking / active help — not decorative noise |
-| Words | Spare: `Direct off`, `Blocked`, maybe `Helping` — prefer glyphs otherwise |
+| Reach segments (3) | Strength metaphor: 3 Reachable, 1 Outbound only, 0 Blocked; Checking = transitional motion |
+| Help glyph | Outline/absent when off · solid teal/accent on · brief tick when becoming active |
+| Load pills | Icon + integer only when > 0 |
+| Color | Muted = healthy; warning = Outbound only / degraded; error = Blocked / mesh error; teal = helping |
+| Motion | **Transitional only** — no continuous pulse ([S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17)) |
+| Words | Sparse: `Direct off`, `Blocked` when unhealthy; icons when healthy ([S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17)) |
 
-Density: always A+B; C when Node/help UI exists; D only when active (or user pins detail mode later). Truncation drops numbers → Help label → keep glyphs.
+Truncation: drop numbers → Help label → keep glyphs.
 
 ---
 
-## Click → details (draft)
+## Click → details ([S005](DECISIONS.md#s005--click--hybrid-popover--settings-link-q3-c), [S006](DECISIONS.md#s006--detail-inspect--retest-no-capability-toggles-q4-b))
 
-Bar becomes a hit target (whole cluster or left segment). Detail surface options (unresolved — see OPEN_QUESTIONS):
+Left cluster is a hit target (s2). Opens an **anchored popover** above the bar.
 
-| Option | Pattern | Pros |
-|--------|---------|------|
-| **Popover / anchored panel** | New light chrome above bar | Fast inspect without leaving context |
-| **Bottom/side sheet** | Existing sheet primitives | Familiar on compact if we expand later |
-| **Deep-link only** | Navigate to Me → Network | Least new UI; weaker live stats home |
-| **Hybrid** | Popover summary + “Open Network settings…” | Likely best of both |
+### Popover content
 
-### Detail content (candidate inventory)
+- Reach chip + summary + **Retest**
+- Help posture echo (not toggles)
+- Load aggregates when helping (counts; later rates) — **no peer identities** ([S009](DECISIONS.md#s009--helper-privacy-aggregates-only-q7-a))
+- Last libp2p error when present ([S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17))
+- **Open Network settings…** → Me → Network (capability toggles, UPnP controls, listen multiaddr)
 
-- Reach chip + summary + Retest (reuse settings ports)
-- Help posture: node on/off echo; circuit/media capability state
-- Live load tables: circuit active clients; media sessions/participants; up/down rate; delay; budget headroom
-- Last libp2p error (when present)
-- Link/button → Me → Network for toggles (UPnP, capabilities, listen multiaddr)
-
-Actions in the detail surface (vs settings-only) are an open question.
+May **display** UPnP/mapped state; do not toggle capabilities here.
 
 ---
 
@@ -107,38 +108,35 @@ Actions in the detail surface (vs settings-only) are an open question.
 
 | Layer | Owns |
 |-------|------|
-| **This project** | Status cluster UX, detail surface, shell bindings, visual tokens/icons for status chrome |
-| **feature/messaging + libp2p/integration** | Host/reachability/help signals; new relay runtime stats snapshot API |
+| **This project** | Status cluster UX, popover, shell bindings, status icons |
+| **feature/messaging + libp2p/integration** | Host/reachability/help signals; `RelayRuntimeStats` snapshot API |
 | **Me → Network (settings)** | Configuration toggles, full connection card, nudge ack |
-| **Chat / Calls** | Peer-scoped and call-scoped status (stay out of global bar except optional right-side activity) |
-| **ShellHost** | Visibility, dirty chrome, click routing into detail primitive |
+| **Chat / Calls** | Peer-scoped and call-scoped status |
+| **ShellHost** | Visibility, dirty chrome, click → popover |
 
-Respect [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md): no new `::Instance()` coupling; prefer ports + app-owned projection (extend `MessagingShellPorts` / add a small status presenter bridge).
-
----
-
-## Instrumentation (needed for Load)
-
-| Metric | Today | Needed |
-|--------|-------|--------|
-| Circuit active bridges/clients | Private `active_bridges` | Snapshot count API |
-| Media sessions / participants | Private maps | Snapshot count API |
-| Media byte totals | Private cumulatives | Publish + windowed rate |
-| Circuit byte/rate | None | Counters on `StreamBridge` |
-| Delay / RTT | None | Session-level measurement |
-
-UI must degrade gracefully: show counts before rates; omit delay until real.
+Respect [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md): ports + app-owned projection; no new `::Instance()` coupling.
 
 ---
 
-## Coexistence rules (draft)
+## Instrumentation
+
+| Metric | s1 / s3 plan |
+|--------|----------------|
+| Mesh / reach / help flags | Existing APIs — s1 |
+| Circuit active bridges/clients | Snapshot count — s3 ([S008](DECISIONS.md#s008--load-mvp-is-active-counts-only-q6-a)) |
+| Media sessions / participants | Snapshot count — s3 |
+| Throughput / delay | Post-MVP after counts |
+
+---
+
+## Coexistence
 
 | Surface | Owns |
 |---------|------|
-| Status bar left | Global device posture A–D |
-| Status bar right | Ephemeral activity (agent / PIN; maybe call) |
+| Status bar left | Global posture A–D |
+| Status bar right | Ephemeral activity (wins over Load) |
 | Compact activity strip | Unchanged when status bar hidden |
-| Me attention dot | Same severity as Reach problem states |
+| Me attention dot | Nudge UX; ambient Reach color still reflects condition after ack |
 | Chat header peer link | Per-thread path |
 | Call chrome | In-call media path |
 
@@ -146,10 +144,10 @@ UI must degrade gracefully: show counts before rates; omit delay until real.
 
 ## i18n
 
-New keys under something like `shell.statusbar.*` and `shell.network_status.*` (names TBD). Reuse `settings.network.reachability.*` where the same words appear. No hardcoded English in ports (today’s `Online` / `Direct off` migrate here).
+Keys under `shell.statusbar.*` / `shell.network_status.*` (names TBD). Reuse `settings.network.reachability.*` where the same words appear. Migrate hardcoded `Online` / `Direct off` out of ports.
 
 ---
 
-## Open work
+## Dogfood gate ([S010](DECISIONS.md#s010--chrome-polish-defaults-q8q17))
 
-Resolve [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) → record ADRs in [DECISIONS.md](DECISIONS.md) → implement per [PHASES.md](PHASES.md).
+Node desktop: Reachable + Helping idle visible; click → popover with Retest; under load show count pills. One LAN helper + one client is enough for s1/s2.

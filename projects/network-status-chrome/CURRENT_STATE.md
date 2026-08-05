@@ -1,29 +1,31 @@
 # Network status chrome — current state
 
 **As of:** 2026-08-05  
-**Phase:** s0 (docs only — no UI implementation yet)
+**Phase:** s0 **done** (decisions locked) — no UI implementation yet; **s1** next
 
-## What ships today
+## Decisions
+
+Product answers accepted and recorded as [S003–S010](DECISIONS.md). See [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) for the resolution table.
+
+## What ships today (pre-s1)
 
 | Piece | Behavior |
 |-------|----------|
 | Desktop status bar | 24dp, desktop + expanded only; display-only |
-| Left text | `Online` / `Direct off` / empty — from `MessagingShellPorts::statusbar_connection` (`Libp2pHost::IsRunning` only) |
-| Right text | Activity via `ShellHost::SetActivity` (agent tools, PIN “Preparing…”) |
-| Compact | Activity strip when status bar hidden; no status cluster |
-| Me → Network | Reachability chip/summary, Help the network, circuit/media toggles, Retest, UPnP, nudge |
-| Chat header | Per-peer link labels (`Direct`, `Via relay`, …) |
-| Call chrome | In-call media path copy |
-| Relay stats | **Not** exposed — circuit/media keep private session maps / bridges |
+| Left text | `Online` / `Direct off` / empty — host running only |
+| Right text | Activity via `ShellHost::SetActivity` |
+| Compact | Activity strip when status bar hidden |
+| Me → Network | Reachability, Help the network, circuit/media toggles, Retest, UPnP, nudge |
+| Relay stats | Not exposed to UI |
 
-## Gaps this project fills
+## Gaps for s1+
 
-1. Reachability (and path quality) not reflected in the status bar  
-2. Helping / relay load invisible ambiently  
-3. No click → inspect surface from the bar  
-4. Hardcoded English status bar strings  
-5. No public relay runtime stats API for UI  
+1. Cluster UI (Mesh / Reach / Help) + icons/colors/i18n  
+2. Adaptive Help/Load slots for Node  
+3. Hybrid popover + Retest + settings deep-link  
+4. `RelayRuntimeStats` counts API  
+5. Hardcoded English status bar strings  
 
 ## Next
 
-Answer [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) (blocking Q1–Q7), then ADRs → **s1**.
+**s1** — ambient cluster, display-only ([PHASES.md](PHASES.md)).
