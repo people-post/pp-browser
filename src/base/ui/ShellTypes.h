@@ -166,6 +166,25 @@ struct CallRosterParticipantState {
   bool is_local = false;
 };
 
+/** In-call chrome presentation mode (V031). */
+enum class CallChromeMode {
+  Expanded = 0,
+  Minimized = 1,
+  Immersive = 2,
+};
+
+inline const char* CallChromeModeName(CallChromeMode mode) {
+  switch (mode) {
+  case CallChromeMode::Minimized:
+    return "minimized";
+  case CallChromeMode::Immersive:
+    return "immersive";
+  case CallChromeMode::Expanded:
+  default:
+    return "expanded";
+  }
+}
+
 /** Active in-call chrome. */
 struct CallInProgressState {
   bool active = false;
@@ -184,6 +203,13 @@ struct CallInProgressState {
   bool show_retry = false;
   /** Phone-like devices: earpiece / speakerphone toggle. */
   bool show_speaker = false;
+  /** Expanded (top bar), Immersive (people grid), or Minimized (corner chip). */
+  CallChromeMode mode = CallChromeMode::Expanded;
+  /**
+   * Minimized chip corner: 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left.
+   * Applied when mode == Minimized.
+   */
+  int minimized_corner = 0;
   int participant_count = 0;
   std::vector<CallRosterParticipantState> roster;
   Rml::String call_id;
@@ -200,6 +226,8 @@ struct CallInProgressState {
   Rml::String mic_hint;
   Rml::String peer_hint;
   Rml::String remote_placeholder;
+  /** Bound mode name for data-model / tests (`expanded` / `minimized` / `immersive`). */
+  Rml::String mode_str = "expanded";
 };
 
 struct PaneVisibility {

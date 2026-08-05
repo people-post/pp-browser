@@ -30,6 +30,10 @@ bool CallChromeStatusLabelChanged(const std::string& synced, const std::string& 
 
 } // namespace
 
+CallChromeMode DefaultCallChromeMode(bool show_roster) {
+  return show_roster ? CallChromeMode::Immersive : CallChromeMode::Expanded;
+}
+
 CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const CallChromeLayer& next) {
   const bool layer_changed = synced.ring_active != next.ring_active ||
                              synced.in_call_active != next.in_call_active ||
@@ -42,11 +46,14 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
   // Button *presence* via data-if still remounts (same class of issue as ring layer appear).
   // Icon toggles (muted / speaker_on / camera_on) use DirtyOnly — DataViewIf + MountInner
   // model flush keep those in sync.
+  // Mode / minimized corner change the markup tree → Remount (V031).
   if (synced.in_call_show_speaker != next.in_call_show_speaker ||
       synced.in_call_show_invite != next.in_call_show_invite ||
       synced.in_call_show_retry != next.in_call_show_retry ||
       synced.in_call_show_roster != next.in_call_show_roster ||
-      synced.in_call_stage_visible != next.in_call_stage_visible) {
+      synced.in_call_stage_visible != next.in_call_stage_visible ||
+      synced.in_call_mode != next.in_call_mode ||
+      synced.in_call_minimized_corner != next.in_call_minimized_corner) {
     return CallChromeUpdate::Remount;
   }
 

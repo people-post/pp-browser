@@ -176,6 +176,8 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_show_retry", &host.state_.call_in_progress.show_retry);
     ctor.Bind("call_in_progress_show_speaker", &host.state_.call_in_progress.show_speaker);
     ctor.Bind("call_in_progress_participant_count", &host.state_.call_in_progress.participant_count);
+    ctor.Bind("call_in_progress_mode", &host.state_.call_in_progress.mode_str);
+    ctor.Bind("call_in_progress_minimized_corner", &host.state_.call_in_progress.minimized_corner);
     if (auto roster_handle = ctor.RegisterStruct<CallRosterParticipantState>()) {
       roster_handle.RegisterMember("name", &CallRosterParticipantState::name);
       roster_handle.RegisterMember("audio_muted", &CallRosterParticipantState::audio_muted);
@@ -247,6 +249,10 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("call_camera", &ShellHost::CallCameraCallback);
     ctor.BindEventCallback("call_speaker", &ShellHost::CallSpeakerCallback);
     ctor.BindEventCallback("call_invite", &ShellHost::CallInviteCallback);
+    ctor.BindEventCallback("call_minimize", &ShellHost::CallMinimizeCallback);
+    ctor.BindEventCallback("call_expand", &ShellHost::CallExpandCallback);
+    ctor.BindEventCallback("call_immersive", &ShellHost::CallImmersiveCallback);
+    ctor.BindEventCallback("call_restore", &ShellHost::CallRestoreCallback);
     ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
     ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
     ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
@@ -1455,7 +1461,7 @@ std::string ShellHost::SerializeCallRing() const {
 }
 
 std::string ShellHost::SerializeCallInProgress() const {
-  // Compact-friendly: stage + stacked bar (title/actions row, meters row). Icon controls.
+  // V031 modes: Expanded (top bar), Immersive (people grid), Minimized (corner chip).
   // Mounted into #shell-call-in-progress-mount when active; video tiles still DirtyCallChrome-only.
   if (!state_.call_in_progress.active) {
     return {};
@@ -1484,8 +1490,119 @@ std::string ShellHost::SerializeCallInProgress() const {
     }
     return out;
   };
+  auto append_core_actions = [](std::ostringstream& out) {
+    out << "<button class=\"shell-call-retry\" type=\"button\" data-if=\"call_in_progress_show_retry\" "
+           "data-event-click=\"call_retry()\">";
+    out << "<svg src=\"../icons/sync.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+    out << "</button>";
+    out << "<button class=\"shell-call-invite\" type=\"button\" data-if=\"call_in_progress_show_invite\" "
+           "data-event-click=\"call_invite()\">";
+    out << "<svg src=\"../icons/plus.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+    out << "</button>";
+    out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute\" type=\"button\" "
+           "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
+    out << "<svg id=\"shell-call-mute-icon\" width=\"18\" height=\"18\" crop-to-content=\"true\" "
+           "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
+    out << "</button>";
+    out << "<button id=\"shell-call-speaker-btn\" class=\"shell-call-speaker\" type=\"button\" "
+           "data-if=\"call_in_progress_show_speaker\" "
+           "data-class-shell-call-speaker--on=\"call_in_progress_speaker_on\" data-event-click=\"call_speaker()\">";
+    out << "<svg id=\"shell-call-speaker-icon\" src=\"../icons/speaker.svg\" width=\"18\" height=\"18\" "
+           "crop-to-content=\"true\"></svg>";
+    out << "</button>";
+    out << "<button class=\"shell-call-camera\" type=\"button\" "
+           "data-class-shell-call-camera--on=\"call_in_progress_camera_on\" data-event-click=\"call_camera()\">";
+    out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
+           "data-attr-src=\"call_in_progress_camera_on ? '../icons/video.svg' : '../icons/video-off.svg'\"></svg>";
+    out << "</button>";
+    out << "<button class=\"shell-call-leave\" type=\"button\" data-event-click=\"call_leave()\">";
+    out << "<svg src=\"../icons/phone-hangup.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+    out << "</button>";
+  };
+
+  const auto& call = state_.call_in_progress;
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-call-bar\" data-model=\"window\">";
+
+  if (call.mode == CallChromeMode::Minimized) {
+    const char* corner_class = "shell-call-minimized-chip--tr";
+    switch (call.minimized_corner) {
+    case 1:
+      corner_class = "shell-call-minimized-chip--tl";
+      break;
+    case 2:
+      corner_class = "shell-call-minimized-chip--br";
+      break;
+    case 3:
+      corner_class = "shell-call-minimized-chip--bl";
+      break;
+    default:
+      break;
+    }
+    out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-minimized\" "
+           "data-model=\"window\">";
+    out << "<div id=\"shell-call-minimized-chip\" class=\"shell-call-minimized-chip row " << corner_class
+        << "\">";
+    out << "<div class=\"shell-call-minimized-main\">";
+    out << "<p class=\"text-sm shell-call-minimized-title\" data-rml=\"call_in_progress_title\">"
+        << escape(call.title) << "</p>";
+    out << "<p class=\"text-xs shell-call-minimized-subtitle\" data-rml=\"call_in_progress_subtitle\">"
+        << escape(call.subtitle) << "</p>";
+    out << "</div>";
+    out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute shell-call-mute--compact\" type=\"button\" "
+           "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
+    out << "<svg id=\"shell-call-mute-icon\" width=\"16\" height=\"16\" crop-to-content=\"true\" "
+           "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
+    out << "</button>";
+    out << "<button class=\"shell-call-leave shell-call-leave--compact\" type=\"button\" "
+           "data-event-click=\"call_leave()\">";
+    out << "<svg src=\"../icons/phone-hangup.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
+    out << "</button>";
+    out << "</div></div>";
+    return out.str();
+  }
+
+  if (call.mode == CallChromeMode::Immersive) {
+    out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-immersive\" "
+           "data-model=\"window\">";
+    out << "<div class=\"shell-call-immersive\">";
+    out << "<div class=\"shell-call-immersive-header\">";
+    out << "<div class=\"shell-call-immersive-grabber\"></div>";
+    out << "<div class=\"shell-call-bar-row row\">";
+    out << "<div class=\"shell-call-bar-main\">";
+    out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\">"
+        << escape(call.title) << "</p>";
+    out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\">"
+        << escape(call.subtitle) << "</p>";
+    out << "</div>";
+    out << "<button class=\"shell-call-expand\" type=\"button\" data-event-click=\"call_expand()\">";
+    out << "<svg src=\"../icons/chevron-down.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+    out << "</button>";
+    out << "</div></div>";
+    out << "<div class=\"shell-call-immersive-roster\">";
+    out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-peer-card\">";
+    out << "<div class=\"shell-call-peer-avatar\"></div>";
+    out << "<p class=\"text-sm shell-call-peer-name\" data-rml=\"p.name\"></p>";
+    out << "<div class=\"shell-call-peer-badges row\">";
+    out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"14\" height=\"14\" "
+           "crop-to-content=\"true\"></svg>";
+    out << "<svg data-if=\"p.video_enabled\" src=\"../icons/video.svg\" width=\"14\" height=\"14\" "
+           "crop-to-content=\"true\"></svg>";
+    out << "</div></div>";
+    // 1:1 / empty roster: still show a single presence card from title/peer.
+    out << "<div class=\"shell-call-peer-card\" data-if=\"call_in_progress_participant_count == 0\">";
+    out << "<div class=\"shell-call-peer-avatar\"></div>";
+    out << "<p class=\"text-sm shell-call-peer-name\" data-rml=\"call_in_progress_peer_label\"></p>";
+    out << "</div>";
+    out << "</div>";
+    out << "<div class=\"shell-call-immersive-controls\">";
+    out << "<div class=\"shell-call-bar-actions row\">";
+    append_core_actions(out);
+    out << "</div></div></div></div>";
+    return out.str();
+  }
+
+  // Expanded (default): top stage + stacked bar.
+  out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-bar\" data-model=\"window\">";
   out << "<div class=\"shell-call-stage\" data-if=\"call_in_progress_stage_visible\">";
   out << "<call-video-tile class=\"shell-call-remote\" id=\"call-remote-tile\" tile=\"remote\">";
   out << "<p class=\"text-sm shell-call-remote-placeholder\" data-if=\"!call_in_progress_remote_video\" "
@@ -1497,46 +1614,21 @@ std::string ShellHost::SerializeCallInProgress() const {
   out << "<div class=\"shell-call-bar\">";
   out << "<div class=\"shell-call-bar-row row\">";
   out << "<div class=\"shell-call-bar-main\">";
-  // Bake title/subtitle into markup so deferred remount shows current labels even if data-rml
-  // Dirty raced before the new views were bound.
   out << "<p class=\"text-sm shell-call-bar-title\" data-rml=\"call_in_progress_title\">"
-      << escape(state_.call_in_progress.title) << "</p>";
+      << escape(call.title) << "</p>";
   out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\">"
-      << escape(state_.call_in_progress.subtitle) << "</p>";
+      << escape(call.subtitle) << "</p>";
   out << "<p class=\"text-xs shell-call-bar-hint\" data-if=\"call_in_progress_show_retry\" "
          "data-rml=\"call_in_progress_status_hint\"></p>";
   out << "</div>";
   out << "<div class=\"shell-call-bar-actions row\">";
-  out << "<button class=\"shell-call-retry\" type=\"button\" data-if=\"call_in_progress_show_retry\" "
-         "data-event-click=\"call_retry()\">";
-  out << "<svg src=\"../icons/sync.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+  out << "<button class=\"shell-call-minimize\" type=\"button\" data-event-click=\"call_minimize()\">";
+  out << "<svg src=\"../icons/chevron-up.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
   out << "</button>";
-  out << "<button class=\"shell-call-invite\" type=\"button\" data-if=\"call_in_progress_show_invite\" "
-         "data-event-click=\"call_invite()\">";
-  out << "<svg src=\"../icons/plus.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+  out << "<button class=\"shell-call-immersive-btn\" type=\"button\" data-event-click=\"call_immersive()\">";
+  out << "<svg src=\"../icons/group.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
   out << "</button>";
-  out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute\" type=\"button\" "
-         "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
-  // Single SVG + data-attr-src: Dirty swaps the file. Dual data-if SVGs raced eager visibility
-  // on replaced elements (icons looked stuck while mute/speaker still worked).
-  out << "<svg id=\"shell-call-mute-icon\" width=\"18\" height=\"18\" crop-to-content=\"true\" "
-         "data-attr-src=\"call_in_progress_muted ? '../icons/mic-off.svg' : '../icons/mic.svg'\"></svg>";
-  out << "</button>";
-  // Route status: same speaker icon; --on = speakerphone (full contrast), off = earpiece (low contrast).
-  out << "<button id=\"shell-call-speaker-btn\" class=\"shell-call-speaker\" type=\"button\" "
-         "data-if=\"call_in_progress_show_speaker\" "
-         "data-class-shell-call-speaker--on=\"call_in_progress_speaker_on\" data-event-click=\"call_speaker()\">";
-  out << "<svg id=\"shell-call-speaker-icon\" src=\"../icons/speaker.svg\" width=\"18\" height=\"18\" "
-         "crop-to-content=\"true\"></svg>";
-  out << "</button>";
-  out << "<button class=\"shell-call-camera\" type=\"button\" "
-         "data-class-shell-call-camera--on=\"call_in_progress_camera_on\" data-event-click=\"call_camera()\">";
-  out << "<svg width=\"18\" height=\"18\" crop-to-content=\"true\" "
-         "data-attr-src=\"call_in_progress_camera_on ? '../icons/video.svg' : '../icons/video-off.svg'\"></svg>";
-  out << "</button>";
-  out << "<button class=\"shell-call-leave\" type=\"button\" data-event-click=\"call_leave()\">";
-  out << "<svg src=\"../icons/phone-hangup.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
-  out << "</button>";
+  append_core_actions(out);
   out << "</div></div>";
   out << "<div class=\"shell-call-roster row\" data-if=\"call_in_progress_show_roster\">";
   out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-roster-chip row\">";
@@ -1885,6 +1977,62 @@ void ShellHost::FlushRemountCallChrome() {
   });
 }
 
+void ShellHost::DetachCallChromeGesture() {
+  call_chrome_gesture_.Detach();
+}
+
+void ShellHost::AttachCallChromeGesture() {
+  DetachCallChromeGesture();
+  if (!context_ || context_->GetNumDocuments() == 0 || !state_.call_in_progress.active) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  Rml::Element* root = doc->GetElementById("shell-call-chrome-root");
+  if (!root && state_.call_in_progress.mode == CallChromeMode::Minimized) {
+    root = doc->GetElementById("shell-call-minimized-chip");
+  }
+  if (!root) {
+    return;
+  }
+  // Minimized: attach to the chip so drag/tap don't require the full-screen layer.
+  if (state_.call_in_progress.mode == CallChromeMode::Minimized) {
+    if (Rml::Element* chip = doc->GetElementById("shell-call-minimized-chip")) {
+      root = chip;
+    }
+  }
+  ShellCallChromeGesture::Callbacks callbacks;
+  callbacks.on_minimize = [this]() {
+    if (call_) {
+      call_->MinimizeChrome();
+    }
+  };
+  callbacks.on_immersive = [this]() {
+    if (call_) {
+      call_->ImmersiveChrome();
+    }
+  };
+  callbacks.on_expand = [this]() {
+    if (call_) {
+      call_->ExpandChrome();
+    }
+  };
+  callbacks.on_restore = [this]() {
+    if (call_) {
+      call_->RestoreChromeFromMinimized();
+    }
+  };
+  callbacks.on_chip_corner = [this](int corner) {
+    if (call_) {
+      call_->SetMinimizedCorner(corner);
+    }
+  };
+  call_chrome_gesture_.Attach(root, context_, state_.call_in_progress.mode, std::move(callbacks),
+                              &gesture_axis_lock_);
+}
+
 void ShellHost::RemountCallChromeNow() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
@@ -1893,6 +2041,7 @@ void ShellHost::RemountCallChromeNow() {
   if (!doc) {
     return;
   }
+  DetachCallChromeGesture();
   if (Rml::Element* ring_mount = doc->GetElementById("shell-call-ring-mount")) {
     RmlMount::MountInner(ring_mount, SerializeCallRing());
   }
@@ -1900,6 +2049,7 @@ void ShellHost::RemountCallChromeNow() {
     RmlMount::MountInner(bar_mount, SerializeCallInProgress());
   }
   DirtyCallChrome();
+  AttachCallChromeGesture();
 }
 
 void ShellHost::Update(Rml::Context* context) {
@@ -2124,6 +2274,34 @@ void ShellHost::CallInviteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /
                                    const Rml::VariantList& /*args*/) {
   if (auto* call = Instance().call_) {
     call->OpenMidCallInvitePicker();
+  }
+}
+
+void ShellHost::CallMinimizeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                     const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->MinimizeChrome();
+  }
+}
+
+void ShellHost::CallExpandCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                   const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->ExpandChrome();
+  }
+}
+
+void ShellHost::CallImmersiveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                      const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->ImmersiveChrome();
+  }
+}
+
+void ShellHost::CallRestoreCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                    const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->RestoreChromeFromMinimized();
   }
 }
 

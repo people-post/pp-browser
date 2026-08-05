@@ -17,6 +17,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **in-libp2p** (L1+); app `call_hop_addrs` **not** product |
 | **CallLifecycle orchestrator** | Phase machine owns ring/accept/media/listen desire; thin `CallController`; N025 from `WantEphemeralListen`; bridge reports MediaDeferred / DirectConnected / ConnectFailed |
 | **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp-browser/call-media/1.0.0` — **dogfood OK 2026-08-02** |
+| **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |
 
 ## a4 thin in code (still relevant under V026)
 

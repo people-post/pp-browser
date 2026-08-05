@@ -71,6 +71,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_speaker = in_call.show_speaker,
       .in_call_participant_count = in_call.participant_count,
       .in_call_status_hint = in_call.status_hint.c_str(),
+      .in_call_mode = in_call.mode,
+      .in_call_minimized_corner = in_call.minimized_corner,
   };
 }
 
@@ -221,6 +223,10 @@ void CallController::ClearRing() {
 
 void CallController::ClearInCall() {
   active_call_id_.clear();
+  chrome_mode_ = CallChromeMode::Expanded;
+  restore_mode_ = CallChromeMode::Expanded;
+  minimized_corner_ = 0;
+  chrome_mode_call_id_.clear();
   if (shell_call_chrome_.call_in_progress) {
     shell_call_chrome_.call_in_progress() = {};
   }
@@ -232,6 +238,69 @@ void CallController::HideInCallChrome() {
     shell_call_chrome_.call_in_progress() = {};
   }
   CallVideoTileRenderer::Instance().Clear();
+}
+
+void CallController::ApplyChromeModeToState(CallInProgressState& in_call) {
+  in_call.mode = chrome_mode_;
+  in_call.mode_str = CallChromeModeName(chrome_mode_);
+  in_call.minimized_corner = minimized_corner_;
+}
+
+void CallController::SetChromeMode(CallChromeMode mode) {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this, mode]() { SetChromeMode(mode); });
+    return;
+  }
+  if (mode == CallChromeMode::Minimized) {
+    if (chrome_mode_ != CallChromeMode::Minimized) {
+      restore_mode_ = chrome_mode_ == CallChromeMode::Immersive ? CallChromeMode::Immersive
+                                                               : CallChromeMode::Expanded;
+    }
+  } else {
+    restore_mode_ = mode;
+  }
+  if (chrome_mode_ == mode) {
+    return;
+  }
+  chrome_mode_ = mode;
+  if (shell_call_chrome_.call_in_progress && shell_call_chrome_.call_in_progress().active) {
+    chrome_mode_call_id_ = shell_call_chrome_.call_in_progress().call_id.c_str();
+    ApplyChromeModeToState(shell_call_chrome_.call_in_progress());
+    SyncShellState();
+  }
+}
+
+void CallController::MinimizeChrome() {
+  SetChromeMode(CallChromeMode::Minimized);
+}
+
+void CallController::ExpandChrome() {
+  SetChromeMode(CallChromeMode::Expanded);
+}
+
+void CallController::ImmersiveChrome() {
+  SetChromeMode(CallChromeMode::Immersive);
+}
+
+void CallController::RestoreChromeFromMinimized() {
+  SetChromeMode(restore_mode_ == CallChromeMode::Immersive ? CallChromeMode::Immersive
+                                                          : CallChromeMode::Expanded);
+}
+
+void CallController::SetMinimizedCorner(int corner) {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this, corner]() { SetMinimizedCorner(corner); });
+    return;
+  }
+  const int clamped = std::clamp(corner, 0, 3);
+  if (minimized_corner_ == clamped) {
+    return;
+  }
+  minimized_corner_ = clamped;
+  if (shell_call_chrome_.call_in_progress && shell_call_chrome_.call_in_progress().active) {
+    shell_call_chrome_.call_in_progress().minimized_corner = minimized_corner_;
+    SyncShellState();
+  }
 }
 
 void CallController::SyncShellState() {
@@ -515,6 +584,14 @@ void CallController::RefreshPendingRing() {
       in_call.show_invite = true;
       in_call.roster.clear();
     }
+
+    // V031: pick default once per call; preserve user mode across ticks.
+    if (chrome_mode_call_id_ != (*active)->call_id) {
+      chrome_mode_ = DefaultCallChromeMode(in_call.show_roster);
+      restore_mode_ = chrome_mode_;
+      chrome_mode_call_id_ = (*active)->call_id;
+    }
+    ApplyChromeModeToState(in_call);
 
     if (in_call.show_roster) {
       in_call.title = is_video ? Tr("call.title.group_video").c_str() : Tr("call.title.group_voice").c_str();

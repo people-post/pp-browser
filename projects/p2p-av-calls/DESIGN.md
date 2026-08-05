@@ -269,10 +269,18 @@ CallKit / ConnectionService full OS integration: `[v1.1]` / platform follow-up; 
 | Surface | Behavior |
 |---------|----------|
 | 1:1 / group chat header | Voice / Video call actions |
-| Incoming | Full-screen or modal ring; Accept / Decline |
-| In-call | Unified once connected (V019): icon mute / camera / leave + meters / duration; stage + PiP when any side has video frames; compact stacked bar (icons stay on-screen) |
+| Incoming | Full-screen or modal ring; Accept / Decline (blocking; no collapse) |
+| In-call modes | **Expanded** / **Immersive** / **Minimized** (V031) — see below |
 | Origin thread | `call_started` / `call_ended` bubbles |
 | Invite | Share invite into a DM (guest) or pick member |
+
+### In-call modes `[v1]` (V031)
+
+| Mode | Behavior |
+|------|----------|
+| **Expanded** | Top-anchored bar (today’s chrome): title / mute / camera / speaker / leave; stage + local PiP when video frames exist; short roster chips optional. Swipe down → Immersive; swipe up → Minimized. |
+| **Immersive** | Full call surface: participant grid (every joined peer — voice avatars / mute badges; video tiles later), controls at bottom. Default on join when group / `show_roster`. Pull down (chrome or list at scroll top) → Expanded. |
+| **Minimized** | Corner chip: identity or participant count, mute, leave; tap restores last mode; drag to reposition. No swipe-to-mode. |
 
 No ambient Join chip for uninvited group members in v1.
 

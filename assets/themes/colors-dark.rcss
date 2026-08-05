@@ -773,6 +773,53 @@ select selectbox option:hover {
   image-color: #fecaca;
 }
 
+.shell-call-minimize,
+.shell-call-immersive-btn,
+.shell-call-expand {
+  background-color: #374151;
+  color: #f9fafb;
+}
+
+.shell-call-minimize svg,
+.shell-call-immersive-btn svg,
+.shell-call-expand svg {
+  image-color: #f9fafb;
+}
+
+.shell-call-minimized-chip {
+  background-color: #1f2937;
+  border: 1dp #374151;
+}
+
+.shell-call-minimized-title {
+  color: #f9fafb;
+}
+
+.shell-call-minimized-subtitle {
+  color: #9ca3af;
+}
+
+.shell-call-immersive {
+  background-color: #111827;
+}
+
+.shell-call-immersive-grabber {
+  background-color: #4b5563;
+}
+
+.shell-call-peer-card {
+  background-color: #1f2937;
+  border: 1dp #374151;
+}
+
+.shell-call-peer-avatar {
+  background-color: #374151;
+}
+
+.shell-call-peer-name {
+  color: #f9fafb;
+}
+
 .shell-call-retry {
   background-color: #1e3a5f;
   color: #93c5fd;
