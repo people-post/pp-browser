@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/media/CallMediaAdaptation.h"
+#include "base/media/CallMediaHealth.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
@@ -66,6 +67,8 @@ public:
   double PathPressure() const;
   /** Hop/send path observed a drop — raises pressure (V032). */
   void NoteOutboundDrop();
+  /** Snapshot for chrome / logs (V032 instrumentation). */
+  CallMediaEngineHealth HealthSnapshot() const;
 
   /** Open/close SDL camera + encode. Best-effort: fails without killing voice (V019). */
   Roe<void> SetCameraEnabled(bool enabled);

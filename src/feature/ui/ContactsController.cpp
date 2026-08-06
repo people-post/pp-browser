@@ -373,7 +373,7 @@ void ContactsController::ShowToast(const std::string& message, const ToastDurati
 void ContactsController::ShowConfirm(const std::string& title, const std::string& message,
                                      std::function<void(bool)> on_result) {
   if (shell_feedback_.show_confirm) {
-    shell_feedback_.show_confirm(title, message, std::move(on_result));
+    shell_feedback_.show_confirm(title, message, std::move(on_result), {});
   }
 }
 

@@ -83,6 +83,17 @@ Hop stays **blind** (no decode, no call keys).
 
 ---
 
+## Observability (health UI)
+
+| Surface | Who | Source |
+|---------|-----|--------|
+| Quality bars + Fair/Poor/NoAudio | Everyone | `EvaluateCallMediaHealth` ← engine + hop snapshots |
+| Call details sheet | Everyone (thin); debug extras when gated | Same + clipboard copy |
+| Debug subtitle / rich numbers | `call_diagnostics` pref **or** `--debug` | `CallDiagnosticsEnabled` |
+| `media_health` INFO line (~2s) | Logs | `FormatMediaHealthLogLine` |
+
+---
+
 ## Out of scope (this policy)
 
 - Paid pricing / C↑ node capacity auction  

@@ -1,10 +1,12 @@
 #include "feature/messaging/MessagingCallPorts.h"
 
+#include "base/data/SessionStore.h"
+#include "base/media/CallMediaHealth.h"
 #include "feature/messaging/MessagingHub.h"
 
 namespace pbr {
 
-MessagingCallPorts MakeMessagingCallPorts(MessagingHub& hub) {
+MessagingCallPorts MakeMessagingCallPorts(MessagingHub& hub, SessionStore* session_store) {
   MessagingCallPorts ports;
   ports.initialized = [&hub]() { return hub.IsInitialized(); };
   ports.calls = [&hub]() -> CallSessionManager* { return hub.Calls(); };
@@ -18,6 +20,11 @@ MessagingCallPorts MakeMessagingCallPorts(MessagingHub& hub) {
       return identity->relay_user_id;
     }
     return std::nullopt;
+  };
+  ports.call_diagnostics_enabled = [session_store]() {
+    const bool pref =
+        session_store && session_store->IsInitialized() && session_store->Snapshot().profile_prefs.call_diagnostics;
+    return CallDiagnosticsEnabled(pref);
   };
   return ports;
 }

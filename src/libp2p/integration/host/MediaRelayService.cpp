@@ -124,6 +124,9 @@ struct HostSession {
   ByteRateLimiter session_down_limiter;
   std::vector<std::shared_ptr<HostParticipant>> participants;
   uint64_t drops_total = 0;
+  uint64_t drops_rate = 0;
+  uint64_t drops_queue = 0;
+  uint64_t drops_ceiling = 0;
 };
 
 struct PendingQuote {
@@ -290,18 +293,21 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         over_ceiling = session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes;
         if (over_ceiling) {
           ++session->drops_total;
+          ++session->drops_ceiling;
           continue;
         }
         if (!part->down_limiter.TryConsume(nbytes, now_ms) ||
             !session->session_down_limiter.TryConsume(nbytes, now_ms)) {
           ++part->drops_rate;
           ++session->drops_total;
+          ++session->drops_rate;
           rate_limited = true;
           continue;
         }
         if (!local && part->outbound_pending.load(std::memory_order_relaxed) >= kMaxOutboundPendingFrames) {
           ++part->drops_queue;
           ++session->drops_total;
+          ++session->drops_queue;
           queue_full = true;
           continue;
         }
@@ -400,10 +406,12 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           !session->session_up_limiter.TryConsume(nbytes, now_ms)) {
         ++part->drops_rate;
         ++session->drops_total;
+        ++session->drops_rate;
         return true; // drop excess uplink; keep session
       }
       if (session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes) {
         ++session->drops_total;
+        ++session->drops_ceiling;
         return true;
       }
       part->bytes_up += nbytes;
@@ -1078,10 +1086,12 @@ Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
             !session->session_up_limiter.TryConsume(nbytes, now_ms)) {
           ++impl_->local_hop_part->drops_rate;
           ++session->drops_total;
+          ++session->drops_rate;
           return {}; // drop excess uplink; keep session
         }
         if (session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes) {
           ++session->drops_total;
+          ++session->drops_ceiling;
           return {};
         }
         impl_->local_hop_part->bytes_up += nbytes;
@@ -1146,13 +1156,25 @@ bool MediaRelayService::IsLocalHopAttached() const {
 }
 
 double MediaRelayService::PathPressure() const {
+  return HealthSnapshot().path_pressure;
+}
+
+CallHopHealth MediaRelayService::HealthSnapshot() const {
+  CallHopHealth h;
   std::lock_guard<std::mutex> lock(impl_->mu);
-  uint64_t drops = 0;
+  h.attached = impl_->local_hop_part != nullptr || impl_->client_stream != nullptr;
+  const HostSession* session = nullptr;
   if (impl_->local_hop_session) {
-    drops = impl_->local_hop_session->drops_total;
+    session = impl_->local_hop_session.get();
   }
-  // Soft map: 0 drops → 0; ~40 drops → ~1.
-  return std::clamp(static_cast<double>(drops) / 40.0, 0.0, 1.0);
+  if (session) {
+    h.drops_total = session->drops_total;
+    h.drops_rate = session->drops_rate;
+    h.drops_queue = session->drops_queue;
+    h.drops_ceiling = session->drops_ceiling;
+  }
+  h.path_pressure = std::clamp(static_cast<double>(h.drops_total) / 40.0, 0.0, 1.0);
+  return h;
 }
 
 } // namespace pbr

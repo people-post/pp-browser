@@ -422,6 +422,43 @@ select selectbox option:hover {
   background-color: #7f1d1d;
 }
 
+.shell-call-quality-bar {
+  background-color: #374151;
+}
+
+.shell-call-quality-bar--on {
+  background-color: #9ca3af;
+}
+
+.shell-call-quality--ok .shell-call-quality-bar--on {
+  background-color: #9ca3af;
+}
+
+.shell-call-quality--warn .shell-call-quality-bar--on {
+  background-color: #fbbf24;
+}
+
+.shell-call-quality--error .shell-call-quality-bar {
+  background-color: #7f1d1d;
+}
+
+.shell-call-quality--error .shell-call-quality-bar--on {
+  background-color: #f87171;
+}
+
+.shell-call-quality--warn .shell-call-quality-label,
+.shell-call-quality-hint {
+  color: #fbbf24;
+}
+
+.shell-call-quality--error .shell-call-quality-label {
+  color: #f87171;
+}
+
+.shell-call-debug-subtitle {
+  color: #9ca3af;
+}
+
 .shell-statusbar-reach--checking .shell-statusbar-reach-bar--on {
   background-color: #6b7280;
 }

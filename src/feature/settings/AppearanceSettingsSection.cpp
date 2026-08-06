@@ -46,13 +46,16 @@ void AppearanceSettingsSection::SyncFromSession(const BootstrapResult& bootstrap
   state.language = bootstrap.profile_prefs.language.empty() ? "system" : bootstrap.profile_prefs.language;
   state.language_label = ResolveLanguageLabel(state.language);
   state.reduce_transparency = bootstrap.profile_prefs.reduce_transparency ? "on" : "off";
+  state.call_diagnostics = bootstrap.profile_prefs.call_diagnostics ? "on" : "off";
 }
 
 bool AppearanceSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {
   const bool reduce = state.reduce_transparency == "on";
+  const bool diagnostics = state.call_diagnostics == "on";
   return state.appearance == bootstrap.profile_prefs.appearance &&
          state.language == bootstrap.profile_prefs.language &&
-         reduce == bootstrap.profile_prefs.reduce_transparency;
+         reduce == bootstrap.profile_prefs.reduce_transparency &&
+         diagnostics == bootstrap.profile_prefs.call_diagnostics;
 }
 
 Roe<void> AppearanceSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
@@ -61,6 +64,7 @@ Roe<void> AppearanceSettingsSection::Flush(SettingsUiState& state, SessionStore&
   profile_prefs.appearance = state.appearance;
   profile_prefs.language = state.language.empty() ? "system" : state.language;
   profile_prefs.reduce_transparency = state.reduce_transparency == "on";
+  profile_prefs.call_diagnostics = state.call_diagnostics == "on";
   if (auto saved = store.SaveProfilePrefs(profile_prefs); !saved) {
     return saved.error();
   }
@@ -76,6 +80,7 @@ void AppearanceSettingsSection::ResetToDefaults(SettingsUiState& state, const Se
   state.language = defaults.language;
   state.language_label = ResolveLanguageLabel(state.language);
   state.reduce_transparency = defaults.reduce_transparency ? "on" : "off";
+  state.call_diagnostics = defaults.call_diagnostics ? "on" : "off";
 }
 
 } // namespace pbr

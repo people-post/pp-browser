@@ -284,6 +284,13 @@ void CallTopologyController::RefreshAdaptation(const std::string& /*call_id*/) {
   media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
 }
 
+CallHopHealth CallTopologyController::HopHealth() const {
+  if (!relay_deps_.relay || !sfu_attached_) {
+    return {};
+  }
+  return relay_deps_.relay->HealthSnapshot();
+}
+
 bool CallTopologyController::IsMigrateGenerationCurrent(uint64_t gen) const {
   return gen == 0 || gen == migrate_generation_.load(std::memory_order_acquire);
 }

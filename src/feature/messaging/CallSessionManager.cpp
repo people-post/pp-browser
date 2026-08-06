@@ -95,6 +95,18 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
   }
 }
 
+CallHopHealth CallSessionManager::HopHealth() const {
+  if (!topology_.IsSfuAttached()) {
+    return {};
+  }
+  // Topology holds relay deps; sample via public IsSfuAttached + Media PathPressure elsewhere.
+  return topology_.HopHealth();
+}
+
+bool CallSessionManager::IsSfuAttached() const {
+  return topology_.IsSfuAttached();
+}
+
 CallMediaEngine& CallSessionManager::Media() {
   return media_;
 }

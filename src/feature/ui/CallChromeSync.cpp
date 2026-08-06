@@ -81,6 +81,14 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.in_call_peer_label != next.in_call_peer_label ||
                               synced.in_call_remote_placeholder != next.in_call_remote_placeholder ||
                               synced.in_call_participant_count != next.in_call_participant_count ||
+                              synced.in_call_quality_bars != next.in_call_quality_bars ||
+                              synced.in_call_quality_ok != next.in_call_quality_ok ||
+                              synced.in_call_quality_warn != next.in_call_quality_warn ||
+                              synced.in_call_quality_error != next.in_call_quality_error ||
+                              synced.in_call_quality_label != next.in_call_quality_label ||
+                              synced.in_call_quality_hint != next.in_call_quality_hint ||
+                              synced.in_call_show_debug_subtitle != next.in_call_show_debug_subtitle ||
+                              synced.in_call_debug_subtitle != next.in_call_debug_subtitle ||
                               synced.ring_pulse != next.ring_pulse ||
                               synced.ring_conflict != next.ring_conflict ||
                               synced.ring_eyebrow != next.ring_eyebrow ||

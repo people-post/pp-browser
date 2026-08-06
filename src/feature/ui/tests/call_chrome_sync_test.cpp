@@ -157,6 +157,20 @@ TEST(CallChromeSyncTest, RingConflictDirties) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 
+TEST(CallChromeSyncTest, QualityChipDirties) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_quality_bars = 4;
+  synced.in_call_quality_ok = true;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_quality_bars = 1;
+  next.in_call_quality_ok = false;
+  next.in_call_quality_error = true;
+  next.in_call_quality_label = "Poor";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
 TEST(CallChromePortsTest, MuteClassifyNotifiesDirtyOnly) {
   // CallController path: classify mute → apply_chrome_update(DirtyOnly), never DirtyWindow.
   std::vector<pbr::CallChromeUpdate> applied;

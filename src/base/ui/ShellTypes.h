@@ -228,6 +228,19 @@ struct CallInProgressState {
   Rml::String remote_placeholder;
   /** Bound mode name for data-model / tests (`expanded` / `minimized` / `immersive`). */
   Rml::String mode_str = "expanded";
+  /**
+   * Path quality bars 0..4 (statusbar reach language). Label omitted when good
+   * (`quality_label` empty); Fair/Poor/NoAudio set a short status string.
+   */
+  int quality_bars = 4;
+  bool quality_ok = true;
+  bool quality_warn = false;
+  bool quality_error = false;
+  Rml::String quality_label;
+  Rml::String quality_hint;
+  /** Debug-only subtitle under elapsed (`SFU · 24k · …`). */
+  bool show_debug_subtitle = false;
+  Rml::String debug_subtitle;
 };
 
 struct PaneVisibility {

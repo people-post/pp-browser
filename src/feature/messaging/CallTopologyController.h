@@ -154,6 +154,8 @@ public:
   /** Re-Subscribe hop streams for all currently Joined peers (late join / roster). */
   void SyncSfuSubscriptions(const std::string& call_id);
   uint32_t PublisherStreamIdForLocal() const;
+  /** Hop health when SFU attached (V032). */
+  CallHopHealth HopHealth() const;
 
 private:
   void ReportSfuAttachFailedToInitiator(const std::string& call_id, const std::string& failed_hop,

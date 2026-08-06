@@ -163,6 +163,12 @@ struct CallMediaEngine::Impl {
   std::atomic<double> path_pressure{0.0};
   std::atomic<uint64_t> outbound_drops{0};
   std::atomic<uint64_t> playout_ticks{0};
+  std::atomic<uint64_t> rx_audio_frames{0};
+  std::atomic<uint64_t> tx_audio_frames{0};
+  std::atomic<uint64_t> playout_underruns_total{0};
+  std::atomic<uint64_t> plc_frames_total{0};
+  std::atomic<int64_t> last_rx_audio_ms{0};
+  std::atomic<int64_t> last_tx_audio_ms{0};
 
   bool capture_available = false;
 
@@ -367,6 +373,12 @@ struct CallMediaEngine::Impl {
     path_pressure.store(0.0, std::memory_order_relaxed);
     outbound_drops.store(0, std::memory_order_relaxed);
     playout_ticks.store(0, std::memory_order_relaxed);
+    rx_audio_frames.store(0, std::memory_order_relaxed);
+    tx_audio_frames.store(0, std::memory_order_relaxed);
+    playout_underruns_total.store(0, std::memory_order_relaxed);
+    plc_frames_total.store(0, std::memory_order_relaxed);
+    last_rx_audio_ms.store(0, std::memory_order_relaxed);
+    last_tx_audio_ms.store(0, std::memory_order_relaxed);
     capture_available = false;
     CallAudioSession::Deactivate();
   }
@@ -408,6 +420,7 @@ struct CallMediaEngine::Impl {
               MixPcmSat(mix, frame->pcm);
               any = true;
             } else {
+              playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
               // PLC: opus_decode with null packet into a temp buffer, then mix.
               if (track->decoder) {
                 std::vector<int16_t> plc(static_cast<size_t>(kFrameSamples), 0);
@@ -417,6 +430,7 @@ struct CallMediaEngine::Impl {
                   plc.resize(static_cast<size_t>(decoded));
                   MixPcmSat(mix, plc);
                   any = true;
+                  plc_frames_total.fetch_add(1, std::memory_order_relaxed);
                 }
               }
             }
@@ -629,6 +643,8 @@ struct CallMediaEngine::Impl {
           try {
             std::lock_guard send_lock(sfu_send_call_mu);
             (*send_fn)(pkt);
+            tx_audio_frames.fetch_add(1, std::memory_order_relaxed);
+            last_tx_audio_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
           } catch (...) {
           }
         }
@@ -752,11 +768,14 @@ struct CallMediaEngine::Impl {
       return;
     }
     pcm.resize(static_cast<size_t>(decoded));
+    const int64_t recv_ms = util::NowUnixMs();
     PlayoutPcmFrame frame;
     frame.seq = seq;
-    frame.recv_ms = util::NowUnixMs();
+    frame.recv_ms = recv_ms;
     frame.pcm = std::move(pcm);
     track->jitter.Push(std::move(frame));
+    rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
+    last_rx_audio_ms.store(recv_ms, std::memory_order_relaxed);
   }
 
   void OnRemoteH264Frame(const std::byte* data, size_t size) {
@@ -1020,6 +1039,31 @@ double CallMediaEngine::PathPressure() const {
 
 void CallMediaEngine::NoteOutboundDrop() {
   impl_->outbound_drops.fetch_add(1, std::memory_order_relaxed);
+}
+
+CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
+  CallMediaEngineHealth h;
+  h.active = impl_->active.load(std::memory_order_relaxed);
+  h.connected = impl_->connected.load(std::memory_order_relaxed);
+  h.sfu_mode = impl_->sfu_mode;
+  h.muted = impl_->muted.load(std::memory_order_relaxed);
+  h.path_pressure = impl_->path_pressure.load(std::memory_order_relaxed);
+  h.opus_target_bps = impl_->adaptation_target_audio_bps.load(std::memory_order_relaxed);
+  h.outbound_drops = impl_->outbound_drops.load(std::memory_order_relaxed);
+  h.playout_underruns = impl_->playout_underruns_total.load(std::memory_order_relaxed);
+  h.plc_frames = impl_->plc_frames_total.load(std::memory_order_relaxed);
+  h.rx_audio_frames = impl_->rx_audio_frames.load(std::memory_order_relaxed);
+  h.tx_audio_frames = impl_->tx_audio_frames.load(std::memory_order_relaxed);
+  h.last_rx_audio_ms = impl_->last_rx_audio_ms.load(std::memory_order_relaxed);
+  h.last_tx_audio_ms = impl_->last_tx_audio_ms.load(std::memory_order_relaxed);
+  h.local_level = impl_->local_input_level.load(std::memory_order_relaxed);
+  h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
+  {
+    std::lock_guard lock(impl_->mutex);
+    h.stream_count = impl_->audio_tracks.size();
+    h.sfu_mode = impl_->sfu_mode;
+  }
+  return h;
 }
 
 void CallMediaEngine::Stop() {

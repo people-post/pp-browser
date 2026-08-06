@@ -178,6 +178,14 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_participant_count", &host.state_.call_in_progress.participant_count);
     ctor.Bind("call_in_progress_mode", &host.state_.call_in_progress.mode_str);
     ctor.Bind("call_in_progress_minimized_corner", &host.state_.call_in_progress.minimized_corner);
+    ctor.Bind("call_in_progress_quality_bars", &host.state_.call_in_progress.quality_bars);
+    ctor.Bind("call_in_progress_quality_ok", &host.state_.call_in_progress.quality_ok);
+    ctor.Bind("call_in_progress_quality_warn", &host.state_.call_in_progress.quality_warn);
+    ctor.Bind("call_in_progress_quality_error", &host.state_.call_in_progress.quality_error);
+    ctor.Bind("call_in_progress_quality_label", &host.state_.call_in_progress.quality_label);
+    ctor.Bind("call_in_progress_quality_hint", &host.state_.call_in_progress.quality_hint);
+    ctor.Bind("call_in_progress_show_debug_subtitle", &host.state_.call_in_progress.show_debug_subtitle);
+    ctor.Bind("call_in_progress_debug_subtitle", &host.state_.call_in_progress.debug_subtitle);
     if (auto roster_handle = ctor.RegisterStruct<CallRosterParticipantState>()) {
       roster_handle.RegisterMember("name", &CallRosterParticipantState::name);
       roster_handle.RegisterMember("audio_muted", &CallRosterParticipantState::audio_muted);
@@ -253,6 +261,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("call_expand", &ShellHost::CallExpandCallback);
     ctor.BindEventCallback("call_immersive", &ShellHost::CallImmersiveCallback);
     ctor.BindEventCallback("call_restore", &ShellHost::CallRestoreCallback);
+    ctor.BindEventCallback("call_details", &ShellHost::CallDetailsCallback);
     ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
     ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
     ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
@@ -780,6 +789,14 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_speaker");
   DataModelHost::Instance().Dirty("window", "call_in_progress_participant_count");
   DataModelHost::Instance().Dirty("window", "call_in_progress_roster");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_quality_bars");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_quality_ok");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_quality_warn");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_quality_error");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_quality_label");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_quality_hint");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_show_debug_subtitle");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_debug_subtitle");
 }
 
 void ShellHost::ApplyCallChromeUpdate(CallChromeUpdate update) {
@@ -1490,6 +1507,27 @@ std::string ShellHost::SerializeCallInProgress() const {
     }
     return out;
   };
+  auto append_quality_chip = [](std::ostringstream& out, const char* extra_class) {
+    out << "<button class=\"shell-call-quality " << extra_class
+        << "\" type=\"button\" data-event-click=\"call_details()\" "
+           "data-class-shell-call-quality--ok=\"call_in_progress_quality_ok\" "
+           "data-class-shell-call-quality--warn=\"call_in_progress_quality_warn\" "
+           "data-class-shell-call-quality--error=\"call_in_progress_quality_error\">";
+    out << "<div class=\"shell-call-quality-bars row\">";
+    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--1\" "
+           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 1\"></div>";
+    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--2\" "
+           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 2\"></div>";
+    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--3\" "
+           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 3\"></div>";
+    out << "<div class=\"shell-call-quality-bar shell-call-quality-bar--4\" "
+           "data-class-shell-call-quality-bar--on=\"call_in_progress_quality_bars >= 4\"></div>";
+    out << "</div>";
+    out << "<span class=\"text-xs shell-call-quality-label\" data-if=\"call_in_progress_quality_label != ''\" "
+           "data-rml=\"call_in_progress_quality_label\"></span>";
+    out << "</button>";
+  };
+
   auto append_core_actions = [](std::ostringstream& out) {
     out << "<button class=\"shell-call-retry\" type=\"button\" data-if=\"call_in_progress_show_retry\" "
            "data-event-click=\"call_retry()\">";
@@ -1548,6 +1586,7 @@ std::string ShellHost::SerializeCallInProgress() const {
     out << "<p class=\"text-xs shell-call-minimized-subtitle\" data-rml=\"call_in_progress_subtitle\">"
         << escape(call.subtitle) << "</p>";
     out << "</div>";
+    append_quality_chip(out, "shell-call-quality--compact");
     out << "<button id=\"shell-call-mute-btn\" class=\"shell-call-mute shell-call-mute--compact\" type=\"button\" "
            "data-class-shell-call-mute--on=\"call_in_progress_muted\" data-event-click=\"call_mute()\">";
     out << "<svg id=\"shell-call-mute-icon\" width=\"16\" height=\"16\" crop-to-content=\"true\" "
@@ -1573,7 +1612,12 @@ std::string ShellHost::SerializeCallInProgress() const {
         << escape(call.title) << "</p>";
     out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\">"
         << escape(call.subtitle) << "</p>";
+    out << "<p class=\"text-xs shell-call-debug-subtitle\" data-if=\"call_in_progress_show_debug_subtitle\" "
+           "data-rml=\"call_in_progress_debug_subtitle\"></p>";
+    out << "<p class=\"text-xs shell-call-quality-hint\" data-if=\"call_in_progress_quality_hint != ''\" "
+           "data-rml=\"call_in_progress_quality_hint\"></p>";
     out << "</div>";
+    append_quality_chip(out, "");
     out << "<button class=\"shell-call-expand\" type=\"button\" data-event-click=\"call_expand()\">";
     out << "<svg src=\"../icons/chevron-down.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
     out << "</button>";
@@ -1618,9 +1662,14 @@ std::string ShellHost::SerializeCallInProgress() const {
       << escape(call.title) << "</p>";
   out << "<p class=\"text-sm shell-call-bar-subtitle\" data-rml=\"call_in_progress_subtitle\">"
       << escape(call.subtitle) << "</p>";
+  out << "<p class=\"text-xs shell-call-debug-subtitle\" data-if=\"call_in_progress_show_debug_subtitle\" "
+         "data-rml=\"call_in_progress_debug_subtitle\"></p>";
+  out << "<p class=\"text-xs shell-call-quality-hint\" data-if=\"call_in_progress_quality_hint != ''\" "
+         "data-rml=\"call_in_progress_quality_hint\"></p>";
   out << "<p class=\"text-xs shell-call-bar-hint\" data-if=\"call_in_progress_show_retry\" "
          "data-rml=\"call_in_progress_status_hint\"></p>";
   out << "</div>";
+  append_quality_chip(out, "");
   out << "<div class=\"shell-call-bar-actions row\">";
   out << "<button class=\"shell-call-minimize\" type=\"button\" data-event-click=\"call_minimize()\">";
   out << "<svg src=\"../icons/chevron-up.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
@@ -2302,6 +2351,13 @@ void ShellHost::CallRestoreCallback(Rml::DataModelHandle /*model*/, Rml::Event& 
                                     const Rml::VariantList& /*args*/) {
   if (auto* call = Instance().call_) {
     call->RestoreChromeFromMinimized();
+  }
+}
+
+void ShellHost::CallDetailsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                    const Rml::VariantList& /*args*/) {
+  if (auto* call = Instance().call_) {
+    call->ShowCallDetails();
   }
 }
 

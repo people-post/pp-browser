@@ -33,7 +33,7 @@ struct MachinePreferences {
 };
 
 struct ProfilePreferences {
-  static constexpr int kSchemaVersion = 9;
+  static constexpr int kSchemaVersion = 10;
 
   int schema_version = kSchemaVersion;
   std::string theme = "themes/base.rcss";
@@ -46,6 +46,11 @@ struct ProfilePreferences {
   bool auto_renew_registration = true;
   /** P005 — OS banners + FCM registration; sync continues when false. */
   bool show_notifications = true;
+  /**
+   * V032 — show call media diagnostics (debug subtitle + rich Call details).
+   * OR'd with CLI `--debug` via CallDiagnosticsEnabled().
+   */
+  bool call_diagnostics = false;
   /** G007 — inbound group invite policy: everyone | contacts_only | nobody */
   std::string group_invite_policy = "contacts_only";
   /** When true, compact shell chrome uses opaque surfaces only (no backdrop frost). */

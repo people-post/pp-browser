@@ -19,7 +19,8 @@ struct ShellFeedbackPorts {
                      const std::string& ok_label)>
       show_alert;
   std::function<bool()> dialog_active;
-  std::function<void(const std::string& title, const std::string& message, std::function<void(bool)> on_result)>
+  std::function<void(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
+                     const std::string& ok_label)>
       show_confirm;
   std::function<void(const std::string& title, const std::string& message, const std::string& checkbox_label,
                      bool checkbox_default, std::function<void(bool confirmed, bool checkbox_checked)> on_result)>

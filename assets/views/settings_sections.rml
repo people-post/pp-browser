@@ -262,6 +262,15 @@
           </button>
         </div>
         <p class="text muted settings-help">{{i18n:settings.reduce_transparency.help}}</p>
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.call_diagnostics.label}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="call_diagnostics == 'on'"
+                  data-event-click="toggle_call_diagnostics()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help">{{i18n:settings.call_diagnostics.help}}</p>
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="reset_section('appearance')">{{i18n:common.reset_defaults}}</button>

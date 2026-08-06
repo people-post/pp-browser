@@ -101,6 +101,9 @@ public:
                                 std::optional<int64_t> relay_server_time_ms = std::nullopt);
 
   CallMediaEngine& Media();
+  /** Combined hop health when SFU attached (empty otherwise). */
+  CallHopHealth HopHealth() const;
+  bool IsSfuAttached() const;
 
   Roe<void> SetLocalAudioMuted(bool muted);
   Roe<void> SetLocalVideoEnabled(bool enabled);
