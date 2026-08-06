@@ -63,8 +63,8 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 - [x] Mesh gate: volunteer **`media_relay`** on org `pp-node` + desktop (default on) — n4-media / N021 framing
 - [x] Call consumer: N≥3 via forwarder; **1:1 stays P2P**; soft-migrate same `call_id`; re-pick (V021) — thin path
 - [x] **V024 adaptation:** shared policy module for **1:1 P2P and SFU** (audio ≫ lo ≫ hi; producer first); backends differ; a4 ships single video layer
-- [ ] App-layer E2E under call media key (relay never holds keys) — follow-on
-- [x] **↑/↓** budgets + **quote/ceiling** when hop used; initiator pays (V022 / N019) — volunteer quote path
+- [x] App-layer E2E under call media key on SFU path (V032; relay never holds keys)
+- [x] **↑/↓** budgets + **quote/ceiling** when hop used; initiator pays (V022 / N019) — volunteer quote path + **V032 hop token-bucket enforce**
 - [x] Hop pick: **contacts ∪ org seed** only (V023 / N020)
 - [ ] Multi-invite; mid-call guest invite — API yes; chrome polish pending
 - [x] Rotate media key on leave + overlapping epochs (V003) — existing a1 path
@@ -89,7 +89,8 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 - [x] 1:1 undialable → hop / circuit (explicit; not ICE Retry) — `TryEnsureCallMediaReachable` + protocol-scoped circuit hops
 - [x] Mobile callee on Wi‑Fi: ephemeral listen during foreground call (V027 / nm)
 - [ ] N≥3 remains `media_relay`; unify engine on libp2p send/recv (N021)
-- [x] App AEAD under call media key on media frames (direct 1:1 path)
+- [x] App AEAD under call media key on media frames (direct 1:1 path + SFU V032)
+- [x] Receiver per-stream playout + hop load admission / A↑A↓ enforce (V032)
 - [x] Stop extending legacy WebRTC bridge; libp2p connect-fail UI hints via `PlatformUserHints`
 - [x] Dogfood: Android ↔ Android bidirectional voice on Wi‑Fi (moto g7 play ↔ SM-T380) — **OK 2026-08-02**; see [CURRENT_STATE.md](CURRENT_STATE.md)
 - [ ] Dogfood: Android ↔ desktop voice without WebRTC

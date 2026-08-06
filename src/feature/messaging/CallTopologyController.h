@@ -7,6 +7,7 @@
 #include "base/messaging/SoftMigrateLogic.h"
 #include "base/people/ContactsStore.h"
 #include "base/people/MeshHopPolicy.h"
+#include "feature/messaging/CallMediaKeyStore.h"
 #include "feature/messaging/CallTopologyRelayDeps.h"
 
 #include "common/Error.h"
@@ -91,6 +92,8 @@ public:
                          CallMediaEngine& media);
 
   void SetMediaRelayDeps(MediaRelayDeps deps);
+  /** Required for SFU E2E AEAD (V032). */
+  void SetMediaKeyStore(CallMediaKeyStore* keys);
 
   bool IsAwaitingSfuRecovery() const;
   bool IsSfuAttached() const;
@@ -165,7 +168,9 @@ private:
   CallSessionStore& sessions_;
   ContactsStore& contacts_;
   CallMediaEngine& media_;
+  CallMediaKeyStore* media_keys_ = nullptr;
   MediaRelayDeps relay_deps_;
+  int64_t last_quote_a_up_bps_ = 0;
   bool sfu_attached_ = false;
   bool awaiting_sfu_recovery_ = false;
   bool soft_migrate_in_flight_ = false;

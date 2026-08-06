@@ -31,6 +31,7 @@
 | [DECISIONS.md](DECISIONS.md) | **Active** (project) | ADRs (V001+) — rationale; promote wire shapes to `docs/contracts/` when shipped |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | **Active** (project) | Dogfood / codebase board this week |
 | [PHASES.md](PHASES.md) | **Active** (project) | Delivery checklist (v0 → a6) |
+| [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md) | **Active** (project) | Host admit / queue / drop / meter matrix (V032) |
 
 Agents: code “where does X live?” → **CALLS**. Product “should we…?” → **DESIGN / DECISIONS**. “What works on devices?” → **CURRENT_STATE**.
 

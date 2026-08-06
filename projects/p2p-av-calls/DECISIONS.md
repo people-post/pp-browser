@@ -678,3 +678,28 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Cross-link:** V018 (in-shell tiles); V019 (unified in-call); [WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md); [DESIGN.md](DESIGN.md) UI sketch.
 
 ---
+
+## V032 — Media QoS enforcement, playout, SFU E2E
+
+**Date:** 2026-08-06  
+**Status:** Accepted (implementing)  
+**Decision:** Close the structural gaps between N019/N021/V024 **docs** and host/receiver **code** before further quality tuning. Policy matrix: [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md).
+
+| Area | Rule |
+|------|------|
+| **A↑ / A↓ enforcement** | Hop enforces with token buckets on Fanout ingress (publisher A↑) and egress (subscriber A↓). Sender also paces via Opus `target_audio_bps`. Quote fields are not decorative. |
+| **B↑ / B↓ + ceiling** | Session totals soft-cap fan-out; hard stop when `bytes_total > ceiling_bytes` (unchanged intent, still enforced). |
+| **Audio under pressure** | Never use LatestLossy skip-to-latest on audio. Extreme hop outbound backlog: **drop-oldest** (live preference). Receiver never skip-to-latest. |
+| **Host load admission** | Max **4** concurrent `HostSession`s; max **8** participants per session (matches eng call cap). Refuse quote/attach over limit. |
+| **Receiver delay** | Per-`stream_id` Opus decoder + jitter target **60 ms**, max **200 ms**, PLC on gap; mix to one playback device. Hop stays blind (no jitter buffering on hop). |
+| **Adaptation actuators** | `path_pressure` (playout underruns / hop drops) drives Opus bitrate within V024 ladder (`kMinAudioBps`…`kDefaultAudioBps`) and continues to gate video. |
+| **SFU E2E** | Encrypt/decrypt SFU payloads with the call media key (same AEAD family as 1:1). AAD includes `stream_id`. Hop never holds keys. |
+| **1:1** | Unchanged wire; already AEAD. Shares engine playout path (`stream_id` 0). |
+
+**Rationale:** Group voice degraded without per-stream decode/playout and without real ↑/↓ enforcement — budgets and adaptation existed as schema/policy only. Structure must land before constant-tuning the “goes silent” dogfood bug.
+
+**Alternatives rejected:** MCU mix on hop (breaks blindness); hop-side jitter buffer (wrong layer); shared single OpusDecoder for all publishers; defer SFU E2E indefinitely.
+
+**Cross-link:** V022 / V024; mesh N019 / N021; [CALLS.md](../../docs/architecture/CALLS.md); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md).
+
+---
