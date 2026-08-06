@@ -344,10 +344,16 @@ void DuplexFrameSession::Stop() {
   read_inflight_ = false;
   write_inflight_ = false;
   outbound_.clear();
+  outbound_backlog_.store(0, std::memory_order_relaxed);
   stream_.reset();
   on_frame_ = {};
   is_cancelled_ = {};
   on_closed_ = {};
+}
+
+void DuplexFrameSession::PublishBacklog() {
+  const size_t n = outbound_.size() + (write_inflight_ ? 1u : 0u);
+  outbound_backlog_.store(n, std::memory_order_relaxed);
 }
 
 bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body) {
@@ -361,6 +367,7 @@ bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body) {
     }
   }
   outbound_.push_back(std::make_shared<std::vector<uint8_t>>(EncodeLengthPrefixedFrame(body)));
+  PublishBacklog();
   if (write_preferred_ || (!read_inflight_ && !write_inflight_)) {
     PumpWrite();
   }
@@ -372,7 +379,12 @@ void DuplexFrameSession::BeginRead() {
     CloseSession();
     return;
   }
-  if (read_inflight_ || write_inflight_ || !outbound_.empty()) {
+  if (read_inflight_) {
+    return;
+  }
+  // Half-duplex mode: wait for writes to finish. write_preferred = full duplex so a
+  // stuck/slow peer write cannot stop reading their uplink (hop fan-in).
+  if (!write_preferred_ && (write_inflight_ || !outbound_.empty())) {
     return;
   }
   read_inflight_ = true;
@@ -452,19 +464,23 @@ void DuplexFrameSession::DeliverFrame(std::vector<uint8_t> body) {
 
 void DuplexFrameSession::PumpWrite() {
   if (!running_.load(std::memory_order_acquire) || write_inflight_ || !stream_) {
+    PublishBacklog();
     MaybeResumeRead();
     return;
   }
   if (outbound_.empty()) {
+    PublishBacklog();
     MaybeResumeRead();
     return;
   }
   auto frame = outbound_.front();
   outbound_.erase(outbound_.begin());
   write_inflight_ = true;
+  PublishBacklog();
   auto self = shared_from_this();
   libp2p::write(stream_, *frame, [self, frame](outcome::result<void> result) {
     self->write_inflight_ = false;
+    self->PublishBacklog();
     if (!self->running_.load(std::memory_order_acquire)) {
       return;
     }
@@ -477,8 +493,11 @@ void DuplexFrameSession::PumpWrite() {
 }
 
 void DuplexFrameSession::MaybeResumeRead() {
-  if (!running_.load(std::memory_order_acquire) || read_inflight_ || write_inflight_ ||
-      !outbound_.empty() || IsCancelled(is_cancelled_) || !stream_) {
+  if (!running_.load(std::memory_order_acquire) || read_inflight_ || IsCancelled(is_cancelled_) ||
+      !stream_) {
+    return;
+  }
+  if (!write_preferred_ && (write_inflight_ || !outbound_.empty())) {
     return;
   }
   BeginRead();
@@ -497,6 +516,7 @@ void DuplexFrameSession::CloseSession() {
   read_inflight_ = false;
   write_inflight_ = false;
   outbound_.clear();
+  outbound_backlog_.store(0, std::memory_order_relaxed);
   stream_.reset();
   on_frame_ = {};
   is_cancelled_ = {};

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -42,6 +43,15 @@ struct CallMediaEngineHealth {
   float remote_level = 0.f;
 };
 
+struct CallHopPeerHealth {
+  std::string peer_id;
+  int64_t bytes_up = 0;
+  int64_t bytes_down = 0;
+  uint64_t drops_rate = 0;
+  uint64_t drops_queue = 0;
+  size_t outbound_backlog = 0;
+};
+
 struct CallHopHealth {
   bool attached = false;
   double path_pressure = 0.0;
@@ -49,6 +59,8 @@ struct CallHopHealth {
   uint64_t drops_queue = 0;
   uint64_t drops_ceiling = 0;
   uint64_t drops_total = 0;
+  /** Remote (non-local) hop participants — for dogfood / media_health. */
+  std::vector<CallHopPeerHealth> peers;
 };
 
 struct CallMediaHealthInput {

@@ -135,5 +135,20 @@ TEST(CallMediaHealthTest, LogLineHasMediaHealthPrefix) {
   EXPECT_NE(line.find("call=abc"), std::string::npos);
 }
 
+TEST(CallMediaHealthTest, LogLineIncludesHopPeers) {
+  auto in = BaseHealthyInput();
+  CallHopPeerHealth peer;
+  peer.peer_id = "12D3KooWTestPeerABCDEFGH";
+  peer.bytes_up = 100;
+  peer.bytes_down = 200;
+  peer.drops_queue = 3;
+  peer.outbound_backlog = 1;
+  in.hop.peers.push_back(peer);
+  const auto v = EvaluateCallMediaHealth(in);
+  const std::string line = FormatMediaHealthLogLine(v, 10'000, "abc");
+  EXPECT_NE(line.find("hop_peers="), std::string::npos);
+  EXPECT_NE(line.find("ABCDEFGH:up=100/dn=200/dq=3/bl=1"), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr

@@ -5,6 +5,7 @@
 #include "common/Logger.h"
 #include "common/Utilities.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
+#include "libp2p/integration/host/Libp2pExecutorLimits.h"
 #include "libp2p/integration/host/StreamFrameIo.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
 
@@ -45,8 +46,8 @@ constexpr int64_t kDefaultUserDownBps = 2'000'000;
 constexpr int64_t kDefaultSessionUpBps = 4'000'000;
 constexpr int64_t kDefaultSessionDownBps = 16'000'000;
 constexpr int64_t kDefaultCeilingBytes = 50'000'000;
-/** Per-subscriber: one in-flight write; newer frames coalesce (V032 drop-oldest). */
-constexpr size_t kMaxOutboundPendingFrames = 1;
+/** path_pressure denominator: queued(1) + in-flight(1) on DuplexFrameSession. */
+constexpr size_t kMaxOutboundBacklog = Libp2pExecutorLimits::kMaxMediaRelayOutboundFrames + 1;
 
 LengthPrefixedFrameConfig MediaDataFrameConfig() {
   LengthPrefixedFrameConfig config;
@@ -107,13 +108,6 @@ struct HostParticipant {
   int64_t bytes_down = 0;
   ByteRateLimiter up_limiter;
   ByteRateLimiter down_limiter;
-  /** At most one BlockingWrite per peer on the worker pool (avoids Normal-lane starvation). */
-  std::atomic<bool> write_in_flight{false};
-  /** 0 idle, 1 congested (in-flight and/or coalesced) — for hop path_pressure. */
-  std::atomic<size_t> outbound_pending{0};
-  /** When a write is in flight, keep only the newest body; flushed on completion. */
-  std::mutex coalesce_mu;
-  std::optional<std::vector<uint8_t>> coalesce_body;
   uint64_t drops_rate = 0;
   uint64_t drops_queue = 0;
 };
@@ -206,14 +200,14 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
 
   // Client attach state (remote hop dial)
   std::shared_ptr<Stream> client_stream;
-  std::mutex client_write_mu; // Subscribe/SendFrame/Detach vs each other — sync path only
+  std::shared_ptr<DuplexFrameSession> client_duplex;
+  std::shared_ptr<std::atomic<bool>> client_duplex_cancelled;
   std::string client_session_token;
   std::function<void(MediaDataFrame)> client_on_frame;
   /** Local mirror of subscribe ops already sent on client_stream (dedupe wire spam). */
   std::unordered_set<uint64_t> client_subscriptions;
-  /** Bumped on Detach — stale readers exit without clearing a newer attach's epoch. */
+  /** Bumped on Detach — stale duplex handlers exit. */
   std::atomic<uint64_t> client_reader_epoch{0};
-  std::atomic<uint64_t> client_reader_started_for{0};
 
   // In-call hop: local publisher joined into HostSession without dialing self
   std::shared_ptr<HostParticipant> local_hop_part;
@@ -257,61 +251,116 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     return q;
   }
 
-  void PostFanoutWrite(const std::shared_ptr<HostParticipant>& part,
-                       const std::shared_ptr<Stream>& out_stream, std::vector<uint8_t> body) {
-    if (!part) {
-      return;
+  /** Post a client→hop frame on the duplex (io_context). */
+  bool EnqueueClientBody(std::vector<uint8_t> body) {
+    if (!host) {
+      return false;
     }
-    if (!host || !out_stream) {
-      part->write_in_flight.store(false, std::memory_order_relaxed);
-      part->outbound_pending.store(0, std::memory_order_relaxed);
-      return;
+    std::shared_ptr<DuplexFrameSession> duplex;
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      duplex = client_duplex;
     }
-    std::weak_ptr<HostParticipant> weak_part = part;
-    std::weak_ptr<Impl> weak_impl = shared_from_this();
-    PostLibp2pWorker(*host, WorkerLane::Normal,
-                     [out_stream, body = std::move(body), weak_part, weak_impl]() mutable {
-                       (void)BlockingWriteLengthPrefixedFrame(out_stream, body);
-                       auto p = weak_part.lock();
-                       if (!p) {
-                         return;
-                       }
-                       std::vector<uint8_t> next;
-                       {
-                         std::lock_guard<std::mutex> clock(p->coalesce_mu);
-                         if (p->coalesce_body) {
-                           next = std::move(*p->coalesce_body);
-                           p->coalesce_body.reset();
-                         } else {
-                           p->write_in_flight.store(false, std::memory_order_relaxed);
-                           p->outbound_pending.store(0, std::memory_order_relaxed);
-                         }
-                       }
-                       if (next.empty()) {
-                         return;
-                       }
-                       if (auto impl = weak_impl.lock()) {
-                         impl->PostFanoutWrite(p, out_stream, std::move(next));
-                       } else {
-                         p->write_in_flight.store(false, std::memory_order_relaxed);
-                         p->outbound_pending.store(0, std::memory_order_relaxed);
-                       }
-                     });
+    if (!duplex) {
+      return false;
+    }
+    host->Post([duplex = std::move(duplex), body = std::move(body)]() mutable {
+      (void)duplex->EnqueueOutbound(std::move(body));
+    });
+    return true;
   }
 
-  /** Start a write or coalesce onto the in-flight one. Returns true if coalesced (dropped older). */
-  bool OfferFanoutBody(const std::shared_ptr<HostParticipant>& part,
-                       const std::shared_ptr<Stream>& out_stream, std::vector<uint8_t> body) {
-    bool expected = false;
-    if (!part->write_in_flight.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-      std::lock_guard<std::mutex> clock(part->coalesce_mu);
-      part->coalesce_body = std::move(body);
-      part->outbound_pending.store(1, std::memory_order_relaxed);
-      return true; // coalesced
+  void StopClientDuplexLocked() {
+    if (client_duplex_cancelled) {
+      client_duplex_cancelled->store(true, std::memory_order_release);
     }
-    part->outbound_pending.store(1, std::memory_order_relaxed);
-    PostFanoutWrite(part, out_stream, std::move(body));
-    return false;
+    std::shared_ptr<DuplexFrameSession> duplex = std::move(client_duplex);
+    client_duplex_cancelled.reset();
+    if (duplex) {
+      duplex->Stop();
+      if (host) {
+        host->Post([duplex = std::move(duplex)]() mutable { duplex.reset(); });
+      }
+    }
+  }
+
+  void StartClientDuplex(const std::shared_ptr<Impl>& self) {
+    if (!host) {
+      return;
+    }
+    std::shared_ptr<Stream> stream;
+    std::shared_ptr<DuplexFrameSession> duplex;
+    std::shared_ptr<std::atomic<bool>> cancelled;
+    uint64_t epoch = 0;
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      stream = client_stream;
+      if (!stream) {
+        return;
+      }
+      StopClientDuplexLocked();
+      epoch = client_reader_epoch.fetch_add(1, std::memory_order_acq_rel) + 1;
+      duplex = std::make_shared<DuplexFrameSession>();
+      cancelled = std::make_shared<std::atomic<bool>>(false);
+      client_duplex = duplex;
+      client_duplex_cancelled = cancelled;
+    }
+    auto done = std::make_shared<std::promise<void>>();
+    auto fut = done->get_future();
+    host->Post([self, duplex, stream, cancelled, epoch, done]() {
+      if (!duplex || !stream) {
+        done->set_value();
+        return;
+      }
+      duplex->Start(
+          stream,
+          [self, epoch](Roe<std::vector<uint8_t>> frame_res) {
+            if (self->client_reader_epoch.load(std::memory_order_acquire) != epoch) {
+              return false;
+            }
+            if (!frame_res) {
+              return false;
+            }
+            if (frame_res->empty() || (*frame_res)[0] == '{') {
+              return true; // keep reading past empty / hop JSON acks
+            }
+            auto frame = DecodeMediaDataFrame(*frame_res);
+            if (!frame) {
+              // Skip corrupt frame; do not tear down the duplex (old BlockingRead exited).
+              return true;
+            }
+            std::function<void(MediaDataFrame)> cb;
+            {
+              std::lock_guard<std::mutex> lock(self->mu);
+              cb = self->client_on_frame;
+            }
+            if (cb) {
+              cb(*frame);
+            }
+            return true;
+          },
+          [cancelled]() { return cancelled && cancelled->load(std::memory_order_acquire); },
+          MediaDataFrameConfig(),
+          []() {}, Libp2pExecutorLimits::kMaxMediaRelayClientOutboundFrames,
+          []() {},
+          /*write_preferred=*/true);
+      done->set_value();
+    });
+    fut.wait();
+  }
+
+  /** Enqueue a fanout body on the peer's duplex (host io_context). */
+  void EnqueueFanoutBody(const std::shared_ptr<HostParticipant>& part, std::vector<uint8_t> body) {
+    if (!host || !part) {
+      return;
+    }
+    auto duplex = part->duplex;
+    if (!duplex) {
+      return;
+    }
+    host->Post([duplex = std::move(duplex), body = std::move(body)]() mutable {
+      (void)duplex->EnqueueOutbound(std::move(body));
+    });
   }
 
   void Fanout(const std::shared_ptr<HostSession>& session, const std::string& from_peer,
@@ -332,20 +381,17 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         continue;
       }
       bool local = false;
-      bool subscribed = false;
       bool over_ceiling = false;
       bool rate_limited = false;
-      bool coalesced = false;
       std::function<void(MediaDataFrame)> on_frame;
-      std::shared_ptr<Stream> out_stream;
+      std::shared_ptr<DuplexFrameSession> duplex;
       {
         std::lock_guard<std::mutex> lock(mu);
         local = static_cast<bool>(part->local_on_frame);
-        if (!local && !part->stream) {
+        if (!local && !part->duplex) {
           continue;
         }
-        subscribed = part->subscriptions.find(key) != part->subscriptions.end();
-        if (!subscribed) {
+        if (part->subscriptions.find(key) == part->subscriptions.end()) {
           continue;
         }
         if (frame.channel_type == MediaChannelType::LatestLossy) {
@@ -359,22 +405,6 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         if (over_ceiling) {
           ++session->drops_total;
           ++session->drops_ceiling;
-          continue;
-        }
-        // If a write is already in flight, coalesce under the same lock used by write
-        // completion so we never orphan a body after in_flight clears.
-        if (!local) {
-          std::lock_guard<std::mutex> clock(part->coalesce_mu);
-          if (part->write_in_flight.load(std::memory_order_acquire)) {
-            part->coalesce_body = body;
-            part->outbound_pending.store(1, std::memory_order_relaxed);
-            ++part->drops_queue;
-            ++session->drops_total;
-            ++session->drops_queue;
-            coalesced = true;
-          }
-        }
-        if (coalesced) {
           continue;
         }
         if (!part->down_limiter.TryConsume(nbytes, now_ms) ||
@@ -391,10 +421,10 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         if (local) {
           on_frame = part->local_on_frame;
         } else {
-          out_stream = part->stream;
+          duplex = part->duplex;
         }
       }
-      if (over_ceiling || rate_limited || coalesced) {
+      if (over_ceiling || rate_limited) {
         continue;
       }
       if (local) {
@@ -403,13 +433,8 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         }
         continue;
       }
-      if (out_stream) {
-        if (OfferFanoutBody(part, out_stream, body)) {
-          std::lock_guard<std::mutex> lock(mu);
-          ++part->drops_queue;
-          ++session->drops_total;
-          ++session->drops_queue;
-        }
+      if (duplex) {
+        EnqueueFanoutBody(part, body);
       }
     }
   }
@@ -562,7 +587,15 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
             return self->ProcessParticipantFrame(session, part, *frame_res);
           },
           cancel_check, MediaDataFrameConfig(),
-          [self, session, part]() { self->CleanupParticipant(session, part); });
+          [self, session, part]() { self->CleanupParticipant(session, part); },
+          Libp2pExecutorLimits::kMaxMediaRelayOutboundFrames,
+          [self, session, part]() {
+            std::lock_guard<std::mutex> lock(self->mu);
+            ++part->drops_queue;
+            ++session->drops_total;
+            ++session->drops_queue;
+          },
+          /*write_preferred=*/true);
       done->set_value();
     });
     fut.wait();
@@ -733,63 +766,6 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           return;
         }
       }
-  }
-
-  void StartClientReader(const std::shared_ptr<Impl>& self) {
-    if (!host) {
-      return;
-    }
-    const uint64_t epoch = client_reader_epoch.load(std::memory_order_acquire);
-    uint64_t started = client_reader_started_for.load(std::memory_order_acquire);
-    while (started != epoch) {
-      if (client_reader_started_for.compare_exchange_weak(started, epoch,
-                                                         std::memory_order_acq_rel,
-                                                         std::memory_order_acquire)) {
-        // Client inbound stays on worker (sync) — async hop pump only; avoids same-stream
-        // concurrent read/write on Yamux when SendFrame/Subscribe post from app threads.
-        PostLibp2pWorker(*host, WorkerLane::Normal,
-                         [self, epoch]() { self->RunClientReader(epoch); });
-        return;
-      }
-      if (started == epoch) {
-        return;
-      }
-      if (client_reader_epoch.load(std::memory_order_acquire) != epoch) {
-        return;
-      }
-    }
-  }
-
-  void RunClientReader(uint64_t epoch) {
-    while (client_reader_epoch.load(std::memory_order_acquire) == epoch) {
-      std::shared_ptr<Stream> stream;
-      std::function<void(MediaDataFrame)> cb;
-      {
-        std::lock_guard<std::mutex> lock(mu);
-        stream = client_stream;
-        cb = client_on_frame;
-      }
-      if (!stream) {
-        break;
-      }
-      auto body = ReadExactFrame(stream);
-      if (client_reader_epoch.load(std::memory_order_acquire) != epoch) {
-        break;
-      }
-      if (!body || body->empty()) {
-        break;
-      }
-      if ((*body)[0] == '{') {
-        continue;
-      }
-      auto frame = DecodeMediaDataFrame(*body);
-      if (!frame) {
-        break;
-      }
-      if (cb) {
-        cb(*frame);
-      }
-    }
   }
 };
 
@@ -1006,7 +982,7 @@ void MediaRelayService::StartClientFrameReader() {
   if (!impl_) {
     return;
   }
-  impl_->StartClientReader(impl_);
+  impl_->StartClientDuplex(impl_);
 }
 
 Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
@@ -1100,7 +1076,6 @@ Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
 }
 
 Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) {
-  std::shared_ptr<Stream> stream;
   const uint64_t key = SubKey(stream_id, channel_id);
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
@@ -1116,20 +1091,25 @@ Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) 
     if (impl_->client_subscriptions.count(key) != 0) {
       return {}; // already sent on this attach
     }
-    stream = impl_->client_stream;
-    if (!stream) {
+    if (!impl_->client_duplex) {
       return Error("not attached");
     }
     impl_->client_subscriptions.insert(key);
   }
   logging::getLogger("MediaRelayService").info
       << "client subscribe stream=" << stream_id << " ch=" << channel_id;
-  std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
-  return WriteJson(stream, {{"v", 1}, {"op", "subscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}});
+  const std::string json =
+      nlohmann::json({{"v", 1}, {"op", "subscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}})
+          .dump();
+  if (!impl_->EnqueueClientBody(std::vector<uint8_t>(json.begin(), json.end()))) {
+    std::lock_guard<std::mutex> lock(impl_->mu);
+    impl_->client_subscriptions.erase(key);
+    return Error("not attached");
+  }
+  return {};
 }
 
 Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id) {
-  std::shared_ptr<Stream> stream;
   const uint64_t key = SubKey(stream_id, channel_id);
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
@@ -1138,14 +1118,17 @@ Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id
       return {};
     }
     impl_->client_subscriptions.erase(key);
-    stream = impl_->client_stream;
+    if (!impl_->client_duplex) {
+      return Error("not attached");
+    }
   }
-  if (!stream) {
+  const std::string json =
+      nlohmann::json({{"v", 1}, {"op", "unsubscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}})
+          .dump();
+  if (!impl_->EnqueueClientBody(std::vector<uint8_t>(json.begin(), json.end()))) {
     return Error("not attached");
   }
-  std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
-  return WriteJson(stream,
-                   {{"v", 1}, {"op", "unsubscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}});
+  return {};
 }
 
 Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
@@ -1190,9 +1173,10 @@ Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
   if (!stream) {
     return Error("not attached");
   }
-  const std::vector<uint8_t> encoded = EncodeMediaDataFrame(frame);
-  std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
-  return WriteExactBody(stream, encoded);
+  if (!impl_->EnqueueClientBody(EncodeMediaDataFrame(frame))) {
+    return Error("not attached");
+  }
+  return {};
 }
 
 void MediaRelayService::Detach() {
@@ -1201,6 +1185,7 @@ void MediaRelayService::Detach() {
   std::shared_ptr<HostSession> local_session;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
+    impl_->StopClientDuplexLocked();
     stream = impl_->client_stream;
     impl_->client_stream.reset();
     impl_->client_session_token.clear();
@@ -1213,10 +1198,6 @@ void MediaRelayService::Detach() {
     impl_->local_hop_peer_id.clear();
     if (local) {
       local->local_on_frame = nullptr;
-      {
-        std::lock_guard<std::mutex> clock(local->coalesce_mu);
-        local->coalesce_body.reset();
-      }
     }
     if (local && local_session) {
       local_session->participants.erase(
@@ -1227,9 +1208,7 @@ void MediaRelayService::Detach() {
   }
   impl_->client_reader_epoch.fetch_add(1, std::memory_order_acq_rel);
   if (stream) {
-    // Close without taking client_write_mu — capture may be blocked in BlockingWrite holding
-    // that lock; closing completes write callbacks so Leave/quit can JoinCaptureThread.
-    // Skip detach JSON: FIN cleanup is enough (and WriteJson-under-lock before close deadlocks).
+    // Close so in-flight async read/write complete and Leave can join capture.
     stream->close([](auto&&) {});
   }
 }
@@ -1266,16 +1245,22 @@ CallHopHealth MediaRelayService::HealthSnapshot() const {
       if (!part || part->local_on_frame) {
         continue;
       }
-      const double fill = static_cast<double>(part->outbound_pending.load(std::memory_order_relaxed)) /
-                          static_cast<double>(kMaxOutboundPendingFrames);
-      max_fill = std::max(max_fill, fill);
-      std::lock_guard<std::mutex> clock(part->coalesce_mu);
-      if (part->coalesce_body) {
-        max_fill = 1.0;
+      CallHopPeerHealth peer;
+      peer.peer_id = part->peer_id;
+      peer.bytes_up = part->bytes_up;
+      peer.bytes_down = part->bytes_down;
+      peer.drops_queue = part->drops_queue;
+      peer.drops_rate = part->drops_rate;
+      if (part->duplex) {
+        peer.outbound_backlog = part->duplex->OutboundBacklog();
       }
+      const double fill =
+          static_cast<double>(peer.outbound_backlog) / static_cast<double>(kMaxOutboundBacklog);
+      max_fill = std::max(max_fill, fill);
+      h.peers.push_back(std::move(peer));
     }
   }
-  // Instantaneous backlog fill — not lifetime drops_total/N (that stuck Poor forever).
+  // Instantaneous duplex backlog fill — not lifetime drops_total/N.
   h.path_pressure = std::clamp(max_fill, 0.0, 1.0);
   return h;
 }

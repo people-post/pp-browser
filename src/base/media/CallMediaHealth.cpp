@@ -181,6 +181,21 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       << " tx_drops=" << v.engine.outbound_drops << " hop_drops_rate=" << v.hop.drops_rate
       << " hop_drops_queue=" << v.hop.drops_queue << " hop_drops_ceiling=" << v.hop.drops_ceiling
       << " rx_age_ms=" << rx_age;
+  if (!v.hop.peers.empty()) {
+    out << " hop_peers=";
+    for (size_t i = 0; i < v.hop.peers.size(); ++i) {
+      const auto& p = v.hop.peers[i];
+      if (i > 0) {
+        out << ',';
+      }
+      // Short peer id suffix for log scanability.
+      const std::string& id = p.peer_id;
+      const std::string short_id =
+          id.size() > 8 ? id.substr(id.size() - 8) : id;
+      out << short_id << ":up=" << p.bytes_up << "/dn=" << p.bytes_down << "/dq=" << p.drops_queue
+          << "/bl=" << p.outbound_backlog;
+    }
+  }
   return out.str();
 }
 

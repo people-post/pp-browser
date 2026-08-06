@@ -534,6 +534,39 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
     attach.hop_multiaddr = hop_ma;
     attach.publisher_stream_id = PublisherStreamIdForLocal();
 
+    // PreferLocal self-hop: fan-out CallSfuAttach before AttachLocalToSfu so guests arm
+    // attach-wait before 1:1 ReleaseDirect (avoids Moto "Call-media failed" mid-migrate).
+    auto fanout_attach = [&]() {
+      CallSfuAttachDetail fanout = BuildSfuAttachFanout(attach);
+      auto encoded = CallControlCodec::EncodeSfuAttach(fanout);
+      if (!encoded) {
+        return;
+      }
+      log().info << "SoftMigrate fan-out CallSfuAttach hop=" << hop.peer_id
+                 << " ma=" << (hop_ma.empty() ? "(empty)" : hop_ma) << " call_id=" << call_id;
+      (void)host_.TopologyFanOutToJoined(call_id, CallControlType::CallSfuAttach, *encoded,
+                                         "Call SFU attach", *local);
+      const std::string encoded_copy = *encoded;
+      const std::string local_copy = *local;
+      AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(2000), [this, call_id, encoded_copy,
+                                                                       local_copy]() {
+        if (!sfu_attached_ || media_.ActiveCallId() != call_id) {
+          return;
+        }
+        log().info << "SoftMigrate re-fan-out CallSfuAttach call_id=" << call_id;
+        (void)host_.TopologyFanOutToJoined(call_id, CallControlType::CallSfuAttach, encoded_copy,
+                                           "Call SFU attach", local_copy);
+      });
+    };
+
+    if (self_hop) {
+      if (session && session->has_value()) {
+        (*session)->sfu_hint = hop.peer_id;
+        (void)sessions_.UpsertSession(**session);
+      }
+      fanout_attach();
+    }
+
     if (auto attached = AttachLocalToSfu(call_id, attach); !attached) {
       std::string detail = attached.error().message;
       if (detail.find(hop.peer_id) == std::string::npos) {
@@ -549,26 +582,8 @@ Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_
       (void)sessions_.UpsertSession(**session);
     }
 
-    CallSfuAttachDetail fanout = BuildSfuAttachFanout(attach);
-    auto encoded = CallControlCodec::EncodeSfuAttach(fanout);
-    if (encoded) {
-      log().info << "SoftMigrate fan-out CallSfuAttach hop=" << hop.peer_id
-                 << " ma=" << (hop_ma.empty() ? "(empty)" : hop_ma) << " call_id=" << call_id;
-      (void)host_.TopologyFanOutToJoined(call_id, CallControlType::CallSfuAttach, *encoded,
-                                         "Call SFU attach", *local);
-      // Guests may miss the first relay delivery while TailSync occupies the worker pool —
-      // re-fanout once after a short delay while we remain the PreferLocal hop.
-      const std::string encoded_copy = *encoded;
-      const std::string local_copy = *local;
-      AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(2000), [this, call_id, encoded_copy,
-                                                                       local_copy]() {
-        if (!sfu_attached_ || media_.ActiveCallId() != call_id) {
-          return;
-        }
-        log().info << "SoftMigrate re-fan-out CallSfuAttach call_id=" << call_id;
-        (void)host_.TopologyFanOutToJoined(call_id, CallControlType::CallSfuAttach, encoded_copy,
-                                           "Call SFU attach", local_copy);
-      });
+    if (!self_hop) {
+      fanout_attach();
     }
     return {};
   }
@@ -724,6 +739,12 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     relay_deps_.relay->Detach();
     return Error("attach aborted");
   }
+  // Client duplex must be up before StartSfu — capture SendFrame enqueues on it.
+  // Inbound delivery stays gated by sfu_frames_ready until after StartSfu.
+  if (!self_hop) {
+    relay_deps_.relay->StartClientFrameReader();
+    log().info << "AttachLocalToSfu StartClientFrameReader call_id=" << call_id;
+  }
   log().info << "AttachLocalToSfu StartSfu call_id=" << call_id << " pub_stream=" << pub;
   auto started = media_.StartSfu(
       call_id, [this, pub, captured_call, media_epoch, media_key](const CallMediaEngine::SfuPacket& pkt) {
@@ -765,10 +786,6 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   }
 
   sfu_frames_ready->store(true, std::memory_order_release);
-  if (!self_hop) {
-    relay_deps_.relay->StartClientFrameReader();
-    log().info << "AttachLocalToSfu StartClientFrameReader call_id=" << call_id;
-  }
 
   sfu_attached_ = true;
   awaiting_sfu_recovery_ = false;
@@ -777,7 +794,7 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   ClearSfuAttachWait();
   RefreshAdaptation(call_id);
   // Delay 1:1 teardown so CallSfuAttach can arm guests before stream close (dogfood race).
-  // If no coordinator (unit tests), release immediately.
+  // 2s matches SoftMigrate re-fan-out; 350ms was too short (Moto saw ConnectFailed mid-AcceptAndAttach).
   const uint64_t release_gen = gen_at_start;
   auto do_release = [this, call_id, release_gen]() {
     if (!IsMigrateGenerationCurrent(release_gen)) {
@@ -790,7 +807,7 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     host_.TopologyClearMediaActivity();
   };
   const uint64_t timer = AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(350), [do_release]() { AppRuntime::PostUI(do_release); });
+      std::chrono::milliseconds(2000), [do_release]() { AppRuntime::PostUI(do_release); });
   if (timer == 0) {
     do_release();
   }
