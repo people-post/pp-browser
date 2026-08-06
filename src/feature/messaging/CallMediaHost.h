@@ -20,6 +20,13 @@ public:
   virtual void P2pSetLastMediaError(std::string message) = 0;
   virtual Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const = 0;
   virtual bool P2pIsAwaitingSfuRecovery() const = 0;
+  /**
+   * True when 1:1 call-media close is expected during SoftMigrate (N≥3, sfu_hint, or attach-wait).
+   * Guests must not flip ConnectFailed before AttachLocalToSfu completes.
+   */
+  virtual bool P2pExpectGroupSfuMigration(const std::string& call_id) const = 0;
+  /** Arm attach-wait chrome / ignore window when 1:1 drops ahead of CallSfuAttach. */
+  virtual void P2pNoteExpectSfuAttach(const std::string& call_id) = 0;
   /** True after AttachLocalToSfu / media_relay SoftMigrate — not 1:1 libp2p SFU-mode capture. */
   virtual bool P2pIsSfuAttached() const = 0;
   virtual void P2pClearAwaitingSfuRecovery() = 0;

@@ -41,7 +41,7 @@ No call-control-specific rate limit beyond general messaging / HTTP relay limits
 |---------|-------|--------------|-------|
 | Inbound stream | Reject if session already active; reject while outbound hello in flight (glare) | One duplex | — |
 | Hello | Local session + media key (wait ≤8s) | Reject → close | — |
-| Audio frame | AEAD under call media key | Decrypt fail → **drop**; outbound queue **64**, drop-oldest | — |
+| Audio frame | AEAD under call media key | Decrypt fail → **drop**; **1** in-flight write/peer + latest-wins coalesce | — |
 
 ---
 
@@ -53,7 +53,7 @@ No call-control-specific rate limit beyond general messaging / HTTP relay limits
 | `accept` | Known quote; same admission | — | — |
 | `attach` | Auth stub `auth == call_id`; max **8** participants/session; call-scoped strangers OK after session exists | — | Bind per-peer A↑/A↓ |
 | subscribe / unsub / detach | Attached participant | — | — |
-| Data frame (audio = `ReliableOrdered`) | Attached + subscribed peers | **A↑** on publisher: over budget → drop frame (no fan-out). **A↓** on subscriber: over → skip that peer. Session **ceiling_bytes**: skip all fan-out. Outbound write backlog: drop-oldest (live). **Never** LatestLossy skip-to-latest on audio | `bytes_up` / `bytes_down` / `bytes_total` |
+| Data frame (audio = `ReliableOrdered`) | Attached + subscribed peers | **A↑** on publisher: over budget → drop frame (no fan-out). **A↓** on subscriber: over → skip that peer. Session **ceiling_bytes**: skip all fan-out. Outbound: **one BlockingWrite per peer**; while in flight, **latest-wins coalesce** (no Normal-lane pile-up). **Never** LatestLossy skip-to-latest on audio | `bytes_up` / `bytes_down` / `bytes_total` |
 | Data frame (video = `LatestLossy`) | Same | Stale `seq` (mark=0) → drop; same bps/ceiling rules | Same |
 
 Hop stays **blind** (no decode, no call keys).

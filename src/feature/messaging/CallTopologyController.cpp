@@ -774,11 +774,26 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   awaiting_sfu_recovery_ = false;
   SyncSfuSubscriptions(call_id);
   host_.TopologyClearMediaPeerIdentity();
-  // Drop leftover 1:1 call-media so peer teardown cannot ConnectFailed over live SFU audio.
-  host_.TopologyReleaseDirectMedia();
-  host_.TopologyClearMediaActivity();
   ClearSfuAttachWait();
   RefreshAdaptation(call_id);
+  // Delay 1:1 teardown so CallSfuAttach can arm guests before stream close (dogfood race).
+  // If no coordinator (unit tests), release immediately.
+  const uint64_t release_gen = gen_at_start;
+  auto do_release = [this, call_id, release_gen]() {
+    if (!IsMigrateGenerationCurrent(release_gen)) {
+      return;
+    }
+    if (!sfu_attached_ || media_.ActiveCallId() != call_id) {
+      return;
+    }
+    host_.TopologyReleaseDirectMedia();
+    host_.TopologyClearMediaActivity();
+  };
+  const uint64_t timer = AppRuntime::ScheduleCoordinatorOneShot(
+      std::chrono::milliseconds(350), [do_release]() { AppRuntime::PostUI(do_release); });
+  if (timer == 0) {
+    do_release();
+  }
   log().info << "AttachLocalToSfu done call_id=" << call_id << " hop=" << attach.hop_peer_id;
   return {};
 }

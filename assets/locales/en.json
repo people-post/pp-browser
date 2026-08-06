@@ -278,7 +278,7 @@
     "call.quality.fair": "Fair",
     "call.quality.poor": "Poor",
     "call.quality.no_audio": "No audio",
-    "call.quality.hint.sending_only": "They're not receiving your audio",
+    "call.quality.hint.sending_only": "You're not receiving their audio",
     "call.quality.hint.receiving_only": "Your mic isn't sending",
     "call.details.title": "Call details",
     "call.details.copy": "Copy diagnostics",

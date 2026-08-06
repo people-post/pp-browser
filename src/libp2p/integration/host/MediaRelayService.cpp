@@ -23,6 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -44,8 +45,8 @@ constexpr int64_t kDefaultUserDownBps = 2'000'000;
 constexpr int64_t kDefaultSessionUpBps = 4'000'000;
 constexpr int64_t kDefaultSessionDownBps = 16'000'000;
 constexpr int64_t kDefaultCeilingBytes = 50'000'000;
-/** Per-subscriber outbound write backlog (frames); drop-oldest when full (V032). */
-constexpr size_t kMaxOutboundPendingFrames = 48;
+/** Per-subscriber: one in-flight write; newer frames coalesce (V032 drop-oldest). */
+constexpr size_t kMaxOutboundPendingFrames = 1;
 
 LengthPrefixedFrameConfig MediaDataFrameConfig() {
   LengthPrefixedFrameConfig config;
@@ -106,7 +107,13 @@ struct HostParticipant {
   int64_t bytes_down = 0;
   ByteRateLimiter up_limiter;
   ByteRateLimiter down_limiter;
+  /** At most one BlockingWrite per peer on the worker pool (avoids Normal-lane starvation). */
+  std::atomic<bool> write_in_flight{false};
+  /** 0 idle, 1 congested (in-flight and/or coalesced) — for hop path_pressure. */
   std::atomic<size_t> outbound_pending{0};
+  /** When a write is in flight, keep only the newest body; flushed on completion. */
+  std::mutex coalesce_mu;
+  std::optional<std::vector<uint8_t>> coalesce_body;
   uint64_t drops_rate = 0;
   uint64_t drops_queue = 0;
 };
@@ -202,6 +209,8 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::mutex client_write_mu; // Subscribe/SendFrame/Detach vs each other — sync path only
   std::string client_session_token;
   std::function<void(MediaDataFrame)> client_on_frame;
+  /** Local mirror of subscribe ops already sent on client_stream (dedupe wire spam). */
+  std::unordered_set<uint64_t> client_subscriptions;
   /** Bumped on Detach — stale readers exit without clearing a newer attach's epoch. */
   std::atomic<uint64_t> client_reader_epoch{0};
   std::atomic<uint64_t> client_reader_started_for{0};
@@ -248,6 +257,63 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     return q;
   }
 
+  void PostFanoutWrite(const std::shared_ptr<HostParticipant>& part,
+                       const std::shared_ptr<Stream>& out_stream, std::vector<uint8_t> body) {
+    if (!part) {
+      return;
+    }
+    if (!host || !out_stream) {
+      part->write_in_flight.store(false, std::memory_order_relaxed);
+      part->outbound_pending.store(0, std::memory_order_relaxed);
+      return;
+    }
+    std::weak_ptr<HostParticipant> weak_part = part;
+    std::weak_ptr<Impl> weak_impl = shared_from_this();
+    PostLibp2pWorker(*host, WorkerLane::Normal,
+                     [out_stream, body = std::move(body), weak_part, weak_impl]() mutable {
+                       (void)BlockingWriteLengthPrefixedFrame(out_stream, body);
+                       auto p = weak_part.lock();
+                       if (!p) {
+                         return;
+                       }
+                       std::vector<uint8_t> next;
+                       {
+                         std::lock_guard<std::mutex> clock(p->coalesce_mu);
+                         if (p->coalesce_body) {
+                           next = std::move(*p->coalesce_body);
+                           p->coalesce_body.reset();
+                         } else {
+                           p->write_in_flight.store(false, std::memory_order_relaxed);
+                           p->outbound_pending.store(0, std::memory_order_relaxed);
+                         }
+                       }
+                       if (next.empty()) {
+                         return;
+                       }
+                       if (auto impl = weak_impl.lock()) {
+                         impl->PostFanoutWrite(p, out_stream, std::move(next));
+                       } else {
+                         p->write_in_flight.store(false, std::memory_order_relaxed);
+                         p->outbound_pending.store(0, std::memory_order_relaxed);
+                       }
+                     });
+  }
+
+  /** Start a write or coalesce onto the in-flight one. Returns true if coalesced (dropped older). */
+  bool OfferFanoutBody(const std::shared_ptr<HostParticipant>& part,
+                       const std::shared_ptr<Stream>& out_stream, std::vector<uint8_t> body) {
+    bool expected = false;
+    if (!part->write_in_flight.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+      std::lock_guard<std::mutex> clock(part->coalesce_mu);
+      part->coalesce_body = std::move(body);
+      part->outbound_pending.store(1, std::memory_order_relaxed);
+      return true; // coalesced
+    }
+    part->outbound_pending.store(1, std::memory_order_relaxed);
+    PostFanoutWrite(part, out_stream, std::move(body));
+    return false;
+  }
+
   void Fanout(const std::shared_ptr<HostSession>& session, const std::string& from_peer,
               const MediaDataFrame& frame, const std::vector<uint8_t>& body) {
     if (!host) {
@@ -269,10 +335,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
       bool subscribed = false;
       bool over_ceiling = false;
       bool rate_limited = false;
-      bool queue_full = false;
+      bool coalesced = false;
       std::function<void(MediaDataFrame)> on_frame;
       std::shared_ptr<Stream> out_stream;
-      std::weak_ptr<HostParticipant> weak_part = part;
       {
         std::lock_guard<std::mutex> lock(mu);
         local = static_cast<bool>(part->local_on_frame);
@@ -296,19 +361,28 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           ++session->drops_ceiling;
           continue;
         }
+        // If a write is already in flight, coalesce under the same lock used by write
+        // completion so we never orphan a body after in_flight clears.
+        if (!local) {
+          std::lock_guard<std::mutex> clock(part->coalesce_mu);
+          if (part->write_in_flight.load(std::memory_order_acquire)) {
+            part->coalesce_body = body;
+            part->outbound_pending.store(1, std::memory_order_relaxed);
+            ++part->drops_queue;
+            ++session->drops_total;
+            ++session->drops_queue;
+            coalesced = true;
+          }
+        }
+        if (coalesced) {
+          continue;
+        }
         if (!part->down_limiter.TryConsume(nbytes, now_ms) ||
             !session->session_down_limiter.TryConsume(nbytes, now_ms)) {
           ++part->drops_rate;
           ++session->drops_total;
           ++session->drops_rate;
           rate_limited = true;
-          continue;
-        }
-        if (!local && part->outbound_pending.load(std::memory_order_relaxed) >= kMaxOutboundPendingFrames) {
-          ++part->drops_queue;
-          ++session->drops_total;
-          ++session->drops_queue;
-          queue_full = true;
           continue;
         }
         part->bytes_down += nbytes;
@@ -318,10 +392,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           on_frame = part->local_on_frame;
         } else {
           out_stream = part->stream;
-          part->outbound_pending.fetch_add(1, std::memory_order_relaxed);
         }
       }
-      if (over_ceiling || rate_limited || queue_full) {
+      if (over_ceiling || rate_limited || coalesced) {
         continue;
       }
       if (local) {
@@ -330,16 +403,13 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         }
         continue;
       }
-      if (out_stream && host) {
-        PostLibp2pWorker(*host, WorkerLane::Normal, [out_stream, body, weak_part]() {
-          (void)BlockingWriteLengthPrefixedFrame(out_stream, body);
-          if (auto p = weak_part.lock()) {
-            auto cur = p->outbound_pending.load(std::memory_order_relaxed);
-            while (cur > 0 &&
-                   !p->outbound_pending.compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed)) {
-            }
-          }
-        });
+      if (out_stream) {
+        if (OfferFanoutBody(part, out_stream, body)) {
+          std::lock_guard<std::mutex> lock(mu);
+          ++part->drops_queue;
+          ++session->drops_total;
+          ++session->drops_queue;
+        }
       }
     }
   }
@@ -913,6 +983,7 @@ Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
             impl->client_stream = stream;
             impl->client_session_token = token;
             impl->client_on_frame = std::move(on_frame);
+            impl->client_subscriptions.clear();
           }
           // Inbound reader starts later via StartClientFrameReader() after StartSfu.
 
@@ -1030,19 +1101,26 @@ Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
 
 Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) {
   std::shared_ptr<Stream> stream;
+  const uint64_t key = SubKey(stream_id, channel_id);
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
     if (impl_->local_hop_part) {
-      impl_->local_hop_part->subscriptions.insert(SubKey(stream_id, channel_id));
+      if (!impl_->local_hop_part->subscriptions.insert(key).second) {
+        return {}; // already subscribed — avoid log/control spam
+      }
       logging::getLogger("MediaRelayService").info
           << "local-hop subscribe stream=" << stream_id << " ch=" << channel_id
           << " call=" << (impl_->local_hop_session ? impl_->local_hop_session->call_id : "");
       return {};
     }
+    if (impl_->client_subscriptions.count(key) != 0) {
+      return {}; // already sent on this attach
+    }
     stream = impl_->client_stream;
-  }
-  if (!stream) {
-    return Error("not attached");
+    if (!stream) {
+      return Error("not attached");
+    }
+    impl_->client_subscriptions.insert(key);
   }
   logging::getLogger("MediaRelayService").info
       << "client subscribe stream=" << stream_id << " ch=" << channel_id;
@@ -1052,12 +1130,14 @@ Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) 
 
 Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id) {
   std::shared_ptr<Stream> stream;
+  const uint64_t key = SubKey(stream_id, channel_id);
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
     if (impl_->local_hop_part) {
-      impl_->local_hop_part->subscriptions.erase(SubKey(stream_id, channel_id));
+      impl_->local_hop_part->subscriptions.erase(key);
       return {};
     }
+    impl_->client_subscriptions.erase(key);
     stream = impl_->client_stream;
   }
   if (!stream) {
@@ -1125,6 +1205,7 @@ void MediaRelayService::Detach() {
     impl_->client_stream.reset();
     impl_->client_session_token.clear();
     impl_->client_on_frame = nullptr;
+    impl_->client_subscriptions.clear();
     local = impl_->local_hop_part;
     local_session = impl_->local_hop_session;
     impl_->local_hop_part.reset();
@@ -1132,6 +1213,10 @@ void MediaRelayService::Detach() {
     impl_->local_hop_peer_id.clear();
     if (local) {
       local->local_on_frame = nullptr;
+      {
+        std::lock_guard<std::mutex> clock(local->coalesce_mu);
+        local->coalesce_body.reset();
+      }
     }
     if (local && local_session) {
       local_session->participants.erase(
@@ -1171,13 +1256,27 @@ CallHopHealth MediaRelayService::HealthSnapshot() const {
   if (impl_->local_hop_session) {
     session = impl_->local_hop_session.get();
   }
+  double max_fill = 0.0;
   if (session) {
     h.drops_total = session->drops_total;
     h.drops_rate = session->drops_rate;
     h.drops_queue = session->drops_queue;
     h.drops_ceiling = session->drops_ceiling;
+    for (const auto& part : session->participants) {
+      if (!part || part->local_on_frame) {
+        continue;
+      }
+      const double fill = static_cast<double>(part->outbound_pending.load(std::memory_order_relaxed)) /
+                          static_cast<double>(kMaxOutboundPendingFrames);
+      max_fill = std::max(max_fill, fill);
+      std::lock_guard<std::mutex> clock(part->coalesce_mu);
+      if (part->coalesce_body) {
+        max_fill = 1.0;
+      }
+    }
   }
-  h.path_pressure = std::clamp(static_cast<double>(h.drops_total) / 40.0, 0.0, 1.0);
+  // Instantaneous backlog fill — not lifetime drops_total/N (that stuck Poor forever).
+  h.path_pressure = std::clamp(max_fill, 0.0, 1.0);
   return h;
 }
 

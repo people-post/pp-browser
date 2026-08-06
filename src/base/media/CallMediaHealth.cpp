@@ -57,10 +57,10 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
     out.quality = CallPathQuality::Poor;
     out.asymmetry = CallAudioAsymmetry::ReceivingOnly;
     out.quality_bars = 1;
-  } else if (pressure >= 0.75 || in.hop.drops_total > 20) {
+  } else if (pressure >= 0.75) {
     out.quality = CallPathQuality::Poor;
     out.quality_bars = 1;
-  } else if (pressure >= 0.4 || in.engine.playout_underruns > 10) {
+  } else if (pressure >= 0.4) {
     out.quality = CallPathQuality::Fair;
     out.quality_bars = 2;
   } else if (pressure >= 0.15) {

@@ -1725,6 +1725,30 @@ bool CallSessionManager::P2pIsAwaitingSfuRecovery() const {
   return topology_.IsAwaitingSfuRecovery();
 }
 
+bool CallSessionManager::P2pExpectGroupSfuMigration(const std::string& call_id) const {
+  if (call_id.empty()) {
+    return false;
+  }
+  if (topology_.IsAwaitingSfuRecovery() || topology_.IsSfuAttached()) {
+    return true;
+  }
+  if (auto n = sessions_.CountJoined(call_id); n && *n >= 3) {
+    return true;
+  }
+  if (auto session = sessions_.LoadSession(call_id);
+      session && *session && (*session)->sfu_hint && !(*session)->sfu_hint->empty()) {
+    return true;
+  }
+  return false;
+}
+
+void CallSessionManager::P2pNoteExpectSfuAttach(const std::string& call_id) {
+  if (call_id.empty()) {
+    return;
+  }
+  topology_.BeginSfuAttachWait(call_id);
+}
+
 bool CallSessionManager::P2pIsSfuAttached() const {
   return topology_.IsSfuAttached();
 }

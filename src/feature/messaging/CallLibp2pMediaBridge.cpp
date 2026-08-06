@@ -103,10 +103,11 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionSto
           host_.P2pNotifyRingChanged();
           return;
         }
-        if (host_.P2pIsAwaitingSfuRecovery()) {
-          // Lost 1:1 while waiting for CallSfuAttach — keep InCall chrome and poll inbox hard.
+        if (host_.P2pIsAwaitingSfuRecovery() || host_.P2pExpectGroupSfuMigration(call_id)) {
+          // Lost 1:1 while SoftMigrate/CallSfuAttach in flight (often before attach-wait arms).
           log().info << "Ignoring inbound call-media fail while awaiting SFU attach call_id="
                      << call_id << " reason=" << reason;
+          host_.P2pNoteExpectSfuAttach(call_id);
           direct_.Detach();
           ClearLibp2pConnectFailed();
           host_.P2pRequestInboxSync();
@@ -491,9 +492,10 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
         host_.P2pNotifyRingChanged();
         return;
       }
-      if (host_.P2pIsAwaitingSfuRecovery()) {
+      if (host_.P2pIsAwaitingSfuRecovery() || host_.P2pExpectGroupSfuMigration(captured_call_id)) {
         log().info << "Ignoring call-media fail while awaiting SFU attach call_id=" << captured_call_id
                    << " reason=" << reason;
+        host_.P2pNoteExpectSfuAttach(captured_call_id);
         direct_.Detach();
         ClearLibp2pConnectFailed();
         host_.P2pRequestInboxSync();

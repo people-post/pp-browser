@@ -35,6 +35,27 @@ TEST(CallMediaHealthTest, FairWhenModeratePressure) {
   EXPECT_STREQ(CallPathQualityLabelKey(v.quality), "call.quality.fair");
 }
 
+TEST(CallMediaHealthTest, LifetimeUnderrunsDoNotForceFair) {
+  auto in = BaseHealthyInput();
+  in.engine.playout_underruns = 5000;
+  in.engine.path_pressure = 0.0;
+  EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Excellent);
+}
+
+TEST(CallMediaHealthTest, LifetimeHopDropsDoNotForcePoor) {
+  auto in = BaseHealthyInput();
+  in.hop.drops_total = 9000;
+  in.hop.path_pressure = 0.0;
+  EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Excellent);
+}
+
+TEST(CallMediaHealthTest, HighHopPressureIsPoor) {
+  auto in = BaseHealthyInput();
+  in.hop.path_pressure = 0.8;
+  EXPECT_EQ(EvaluateCallMediaHealth(in).quality, CallPathQuality::Poor);
+  EXPECT_EQ(EvaluateCallMediaHealth(in).quality_bars, 1);
+}
+
 TEST(CallMediaHealthTest, NoAudioWhenSendingOnly) {
   auto in = BaseHealthyInput();
   in.engine.rx_audio_frames = 0;
