@@ -12,7 +12,6 @@ PATCHES="${ROOT}/cmake/patches/libp2p"
 declare -A LIBP2P_REPOS=(
   [boringssl]="https://github.com/qdrvm/boringssl/archive/refs/tags/qdrvm1.zip|tarball"
   [boost]="https://archives.boost.io/release/1.87.0/source/boost_1_87_0.tar.gz|tarball"
-  [protobuf]="https://github.com/cpp-pm/protobuf/archive/refs/tags/v3.19.4-p0.tar.gz|tarball"
   [lsquic]="https://github.com/qdrvm/lsquic/archive/refs/tags/v4.0.9-qdrvm-1.zip|tarball"
   [libsecp256k1]="https://github.com/qdrvm/libsecp256k1/archive/refs/tags/0.5.1.zip|tarball"
   [c-ares]="https://github.com/hunter-packages/c-ares/archive/v1.14.0-p0.tar.gz|tarball"

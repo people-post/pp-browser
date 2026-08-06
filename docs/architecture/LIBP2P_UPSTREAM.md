@@ -68,7 +68,7 @@ Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/
 - `security/noise/noise_connection.cpp` — `readSome` with empty `out` returns 0 without pulling another Noise frame
 - `protocol/identify/identify_push.*` — `pushUpdates()` to re-push self Identify after address-repo changes (L2)
 - `protocol/identify/identify_delta.cpp` — create `IdentifyDeltaWire` once when sending multiple added/removed protocols (was resetting delta each loop iteration)
-- **Handwritten protobuf wire** — `src/libp2p/fork/src/wire/` (`p2p_wire`): length-delimited messages encoded/decoded without `libprotobuf` or `protoc` (keys, Noise, Identify, SECIO, Plaintext, Kademlia, Gossip). `WireMessageReadWriter` replaces protobuf parse/serialize; `ProtobufMessageReadWriter` is a type alias. Vendored protobuf removed from `cmake/libp2p_dependencies.cmake`.
+- **Handwritten protobuf wire** — `src/libp2p/fork/src/wire/` (`p2p_wire`): length-delimited messages encoded/decoded without `libprotobuf` or `protoc` (keys, Noise, Identify, SECIO, Plaintext, Kademlia, Gossip). `WireMessageReadWriter` replaces protobuf parse/serialize; `ProtobufMessageReadWriter` is a type alias. Vendored `third_party/protobuf` removed; `.proto` files under `*/protobuf/` remain as wire-schema docs only.
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
 - `cmake/dependencies.cmake` — vendored mode verifies parent-provided targets; GTest when testing/coverage
 - `test/CMakeLists.txt` — vendored `link_libraries` for acceptance/helper test targets (qtils, gmock, secp256k1)

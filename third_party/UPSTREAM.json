@@ -89,10 +89,5 @@
     "repository": "https://github.com/xiph/opus.git",
     "tag": "v1.5.2",
     "commit": "ddbe48383984d56acd9e1ab6a090c54ca6b735a6"
-  },
-  "libdatachannel": {
-    "repository": "https://github.com/paullouisageneau/libdatachannel.git",
-    "tag": "v0.22.4",
-    "commit": "20bf658a60881854984f8ffb1586a4722bf590ec"
   }
 }

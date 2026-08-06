@@ -19,8 +19,6 @@ libp2p itself is a hard fork under [`src/libp2p/fork/`](../src/libp2p/fork/), no
 | `libsodium/` | [jedisct1/libsodium](https://github.com/jedisct1/libsodium) | `1.0.20-RELEASE` | ISC |
 | `opus/` | [xiph/opus](https://github.com/xiph/opus) | `v1.5.2` | BSD |
 
-**Removed from build (m2):** `libdatachannel/` may remain on disk from older imports but is no longer linked — call media is libp2p-only ([V026](../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)).
-
 ### libp2p dependencies (when enabled)
 
 Imported by [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.sh). See `libp2p_dependencies` in [`UPSTREAM.json`](UPSTREAM.json).
@@ -29,7 +27,6 @@ Imported by [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.
 |-----------|----------|-------|
 | `boringssl/` | [qdrvm/boringssl](https://github.com/qdrvm/boringssl) `qdrvm1` | TLS for libp2p + curl |
 | `boost/` | Boost 1.87.0 | Wrapper `CMakeLists.txt` added |
-| `protobuf/` | cpp-pm/protobuf 3.19.4-p0 | Hunter stripped |
 | `lsquic/` | [qdrvm/lsquic](https://github.com/qdrvm/lsquic) 4.0.9-qdrvm-1 | Patched at import |
 | `libsecp256k1/` | qdrvm/libsecp256k1 0.5.1 | |
 | `c-ares/` | hunter-packages/c-ares 1.14.0-p0 | |
@@ -39,7 +36,9 @@ Imported by [`scripts/libp2p_vendor_import.sh`](../scripts/libp2p_vendor_import.
 | `qtils/` | qdrvm/qtils 0.1.1 | |
 | `tsl_hat_trie/` | masterjedy/hat-trie | |
 | `boost_di/` | qdrvm/boost-di | |
-| `zlib/` | qdrvm/zlib 1.3.0-p1 | For lsquic / protobuf |
+| `zlib/` | qdrvm/zlib 1.3.0-p1 | For lsquic |
+
+libp2p wire codecs are handwritten (`src/libp2p/fork/src/wire/`) — no vendored protobuf. Call media is libp2p-only ([V026](../projects/p2p-av-calls/DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)); libdatachannel is not vendored.
 
 | Directory | Upstream | Tag | License |
 |-----------|----------|-----|---------|
