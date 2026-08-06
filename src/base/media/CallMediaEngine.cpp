@@ -1,6 +1,7 @@
 #include "base/media/CallMediaEngine.h"
 
 #include "base/media/CallAudioSession.h"
+#include "base/media/CallMediaPlayout.h"
 #include "base/media/CameraCaptureOrientation.h"
 #include "base/media/IVideoCodec.h"
 #include "base/media/VideoYuv.h"
@@ -18,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace pbr {
@@ -157,15 +159,31 @@ struct CallMediaEngine::Impl {
   std::atomic<uint32_t> sfu_video_seq{0};
   std::atomic<bool> adaptation_camera_allowed{true};
   int64_t adaptation_target_video_bps = 0;
+  std::atomic<int64_t> adaptation_target_audio_bps{CallMediaAdaptation::kComfortAudioBps};
+  std::atomic<double> path_pressure{0.0};
+  std::atomic<uint64_t> outbound_drops{0};
+  std::atomic<uint64_t> playout_ticks{0};
 
   bool capture_available = false;
 
   OpusEncoder* encoder = nullptr;
-  OpusDecoder* decoder = nullptr;
   SDL_AudioStream* capture_stream = nullptr;
   SDL_AudioStream* playback_stream = nullptr;
   SDL_AudioDeviceID capture_device = 0;
   SDL_AudioDeviceID playback_device = 0;
+
+  struct RemoteAudioTrack {
+    OpusDecoder* decoder = nullptr;
+    AudioJitterBuffer jitter;
+    ~RemoteAudioTrack() {
+      if (decoder) {
+        opus_decoder_destroy(decoder);
+        decoder = nullptr;
+      }
+    }
+  };
+  /** Per publisher stream_id (V032). Guarded by mutex (decode + playout mix). */
+  std::unordered_map<uint32_t, std::unique_ptr<RemoteAudioTrack>> audio_tracks;
 
   std::unique_ptr<IVideoCodec> video_codec;
   SDL_Camera* camera = nullptr;
@@ -177,14 +195,13 @@ struct CallMediaEngine::Impl {
 
   std::thread capture_thread;
   std::thread video_thread;
+  std::thread playout_thread;
   std::atomic<bool> capture_running{false};
   std::atomic<bool> video_running{false};
+  std::atomic<bool> playout_running{false};
   std::atomic<float> local_input_level{0.f};
   std::atomic<float> remote_output_level{0.f};
   std::atomic<int64_t> remote_level_ms{0};
-
-  std::mutex playback_mutex;
-  std::deque<std::vector<int16_t>> playback_queue;
 
   mutable std::mutex video_frame_mutex;
   VideoTileFrame local_video_frame;
@@ -308,10 +325,15 @@ struct CallMediaEngine::Impl {
     }
   }
 
+  void ClearAudioTracksLocked() {
+    audio_tracks.clear();
+  }
+
   void TearDownAudioLocked() {
     // Caller must not hold mutex across JoinCaptureThread — capture may call sfu_send /
     // OnSfuPacket which need the same mutex (deadlock + SDL double-free on quit).
     capture_running = false;
+    playout_running = false;
     CloseCameraLocked();
     if (capture_stream) {
       SDL_DestroyAudioStream(capture_stream);
@@ -333,22 +355,18 @@ struct CallMediaEngine::Impl {
       opus_encoder_destroy(encoder);
       encoder = nullptr;
     }
-    if (decoder) {
-      opus_decoder_destroy(decoder);
-      decoder = nullptr;
-    }
+    ClearAudioTracksLocked();
     if (video_codec) {
       video_codec->ResetEncoder();
       video_codec->ResetDecoder();
-    }
-    {
-      std::lock_guard lock(playback_mutex);
-      playback_queue.clear();
     }
     ClearVideoFrames();
     local_input_level.store(0.f, std::memory_order_relaxed);
     remote_output_level.store(0.f, std::memory_order_relaxed);
     remote_level_ms.store(0, std::memory_order_relaxed);
+    path_pressure.store(0.0, std::memory_order_relaxed);
+    outbound_drops.store(0, std::memory_order_relaxed);
+    playout_ticks.store(0, std::memory_order_relaxed);
     capture_available = false;
     CallAudioSession::Deactivate();
   }
@@ -358,6 +376,75 @@ struct CallMediaEngine::Impl {
     if (capture_thread.joinable()) {
       capture_thread.join();
     }
+  }
+
+  void JoinPlayoutThread() {
+    playout_running = false;
+    if (playout_thread.joinable()) {
+      playout_thread.join();
+    }
+  }
+
+  void StartPlayoutLoop() {
+    playout_running = true;
+    playout_thread = std::thread([this]() {
+      std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
+      while (playout_running.load(std::memory_order_relaxed)) {
+        const auto t0 = std::chrono::steady_clock::now();
+        std::fill(mix.begin(), mix.end(), 0);
+        bool any = false;
+        double pressure = 0.0;
+        uint64_t ticks = 0;
+        {
+          std::lock_guard lock(mutex);
+          ticks = playout_ticks.fetch_add(1, std::memory_order_relaxed) + 1;
+          for (auto& [id, track] : audio_tracks) {
+            (void)id;
+            if (!track) {
+              continue;
+            }
+            auto frame = track->jitter.PopForPlayout(true);
+            if (frame) {
+              MixPcmSat(mix, frame->pcm);
+              any = true;
+            } else {
+              // PLC: opus_decode with null packet into a temp buffer, then mix.
+              if (track->decoder) {
+                std::vector<int16_t> plc(static_cast<size_t>(kFrameSamples), 0);
+                const int decoded =
+                    opus_decode(track->decoder, nullptr, 0, plc.data(), kFrameSamples, 0);
+                if (decoded > 0) {
+                  plc.resize(static_cast<size_t>(decoded));
+                  MixPcmSat(mix, plc);
+                  any = true;
+                }
+              }
+            }
+            pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
+          }
+          SDL_AudioStream* out = playback_stream;
+          if (out && any) {
+            SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
+            remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+            (void)SDL_PutAudioStreamData(out, mix.data(),
+                                         kFrameSamples * static_cast<int>(sizeof(int16_t)));
+          } else if (out && !audio_tracks.empty()) {
+            // Silent frame keeps SDL clock alive when all streams priming.
+            (void)SDL_PutAudioStreamData(out, mix.data(),
+                                         kFrameSamples * static_cast<int>(sizeof(int16_t)));
+          }
+        }
+        const double drop_p =
+            std::min(1.0, static_cast<double>(outbound_drops.load(std::memory_order_relaxed)) / 50.0);
+        path_pressure.store(std::clamp(std::max(pressure, drop_p * 0.5), 0.0, 1.0),
+                            std::memory_order_relaxed);
+        const auto elapsed = std::chrono::steady_clock::now() - t0;
+        const auto period = std::chrono::milliseconds(kFrameMs);
+        if (elapsed < period) {
+          std::this_thread::sleep_for(period - elapsed);
+        }
+      }
+    });
   }
 
   Roe<void> EnsureAudioSubsystem() {
@@ -379,24 +466,33 @@ struct CallMediaEngine::Impl {
   }
 
   Roe<void> EnsureOpusCodecs() {
-    if (encoder && decoder) {
+    if (encoder) {
       return {};
     }
     int err = 0;
-    if (!encoder) {
-      encoder = opus_encoder_create(kSampleRate, kChannels, OPUS_APPLICATION_VOIP, &err);
-      if (!encoder || err != OPUS_OK) {
-        return Error("opus_encoder_create failed");
-      }
-      opus_encoder_ctl(encoder, OPUS_SET_BITRATE(24000));
+    encoder = opus_encoder_create(kSampleRate, kChannels, OPUS_APPLICATION_VOIP, &err);
+    if (!encoder || err != OPUS_OK) {
+      return Error("opus_encoder_create failed");
     }
-    if (!decoder) {
-      decoder = opus_decoder_create(kSampleRate, kChannels, &err);
-      if (!decoder || err != OPUS_OK) {
-        return Error("opus_decoder_create failed");
-      }
-    }
+    const int64_t bps = adaptation_target_audio_bps.load(std::memory_order_relaxed);
+    opus_encoder_ctl(encoder, OPUS_SET_BITRATE(static_cast<int>(bps > 0 ? bps : 24000)));
     return {};
+  }
+
+  RemoteAudioTrack* EnsureRemoteTrackLocked(uint32_t stream_id) {
+    auto it = audio_tracks.find(stream_id);
+    if (it != audio_tracks.end() && it->second) {
+      return it->second.get();
+    }
+    auto track = std::make_unique<RemoteAudioTrack>();
+    int err = 0;
+    track->decoder = opus_decoder_create(kSampleRate, kChannels, &err);
+    if (!track->decoder || err != OPUS_OK) {
+      return nullptr;
+    }
+    RemoteAudioTrack* raw = track.get();
+    audio_tracks[stream_id] = std::move(track);
+    return raw;
   }
 
   /**
@@ -641,22 +737,26 @@ struct CallMediaEngine::Impl {
     });
   }
 
-  void OnRemoteOpusFrame(const std::byte* data, size_t size) {
-    if (!decoder || size == 0) {
+  void OnRemoteOpusFrame(uint32_t stream_id, uint32_t seq, const std::byte* data, size_t size) {
+    if (size == 0) {
+      return;
+    }
+    RemoteAudioTrack* track = EnsureRemoteTrackLocked(stream_id);
+    if (!track || !track->decoder) {
       return;
     }
     std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
-    const int decoded = opus_decode(decoder, reinterpret_cast<const unsigned char*>(data),
+    const int decoded = opus_decode(track->decoder, reinterpret_cast<const unsigned char*>(data),
                                     static_cast<int>(size), pcm.data(), kFrameSamples, 0);
     if (decoded <= 0) {
       return;
     }
-    SmoothLevel(remote_output_level, FramePeakLevel(pcm.data(), decoded));
-    remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-    if (!playback_stream) {
-      return;
-    }
-    (void)SDL_PutAudioStreamData(playback_stream, pcm.data(), decoded * static_cast<int>(sizeof(int16_t)));
+    pcm.resize(static_cast<size_t>(decoded));
+    PlayoutPcmFrame frame;
+    frame.seq = seq;
+    frame.recv_ms = util::NowUnixMs();
+    frame.pcm = std::move(pcm);
+    track->jitter.Push(std::move(frame));
   }
 
   void OnRemoteH264Frame(const std::byte* data, size_t size) {
@@ -823,7 +923,9 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
   }
   abandoned_send = nullptr;
   if (need_rebuild) {
+    impl_->playout_running = false;
     impl_->JoinCaptureThread();
+    impl_->JoinPlayoutThread();
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
   }
@@ -845,12 +947,19 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     impl_->muted.store(false, std::memory_order_relaxed);
     impl_->camera_enabled.store(false, std::memory_order_relaxed);
     impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
+    impl_->outbound_drops.store(0, std::memory_order_relaxed);
+    impl_->playout_ticks.store(0, std::memory_order_relaxed);
+    impl_->path_pressure.store(0.0, std::memory_order_relaxed);
+    impl_->ClearAudioTracksLocked();
     impl_->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
     impl_->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
     impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
     impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
     impl_->ApplyStateLocked("connected");
     impl_->StartCaptureLoop();
+    if (!impl_->playout_thread.joinable()) {
+      impl_->StartPlayoutLoop();
+    }
     state_cb = impl_->on_state_changed;
   }
   if (state_cb) {
@@ -870,12 +979,15 @@ void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
     static std::atomic<int> sfu_rx_log{0};
     const int n = sfu_rx_log.fetch_add(1, std::memory_order_relaxed);
     if (n < 8) {
-      log().info << "OnSfuPacket #" << n << " ch=" << packet.channel_id << " seq=" << packet.seq
-                 << " bytes=" << packet.payload.size() << " call=" << impl_->call_id;
+      log().info << "OnSfuPacket #" << n << " stream=" << packet.stream_id << " ch=" << packet.channel_id
+                 << " seq=" << packet.seq << " bytes=" << packet.payload.size()
+                 << " call=" << impl_->call_id;
     }
   }
   if (packet.channel_id == 0) {
-    impl_->OnRemoteOpusFrame(reinterpret_cast<const std::byte*>(packet.payload.data()), packet.payload.size());
+    impl_->OnRemoteOpusFrame(packet.stream_id, packet.seq,
+                             reinterpret_cast<const std::byte*>(packet.payload.data()),
+                             packet.payload.size());
   } else if (packet.channel_id == 1) {
     impl_->OnRemoteH264Frame(reinterpret_cast<const std::byte*>(packet.payload.data()), packet.payload.size());
   }
@@ -888,10 +1000,26 @@ bool CallMediaEngine::IsSfuMode() const {
 void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
   impl_->adaptation_camera_allowed.store(decision.camera_allowed, std::memory_order_relaxed);
   impl_->adaptation_target_video_bps = decision.target_video_lo_bps;
-  if (!decision.camera_allowed && impl_->camera_enabled.load(std::memory_order_relaxed)) {
+  const int64_t audio_bps =
+      decision.target_audio_bps > 0 ? decision.target_audio_bps : CallMediaAdaptation::kComfortAudioBps;
+  impl_->adaptation_target_audio_bps.store(audio_bps, std::memory_order_relaxed);
+  {
     std::lock_guard lock(impl_->mutex);
-    impl_->CloseCameraLocked();
+    if (impl_->encoder) {
+      opus_encoder_ctl(impl_->encoder, OPUS_SET_BITRATE(static_cast<int>(audio_bps)));
+    }
+    if (!decision.camera_allowed && impl_->camera_enabled.load(std::memory_order_relaxed)) {
+      impl_->CloseCameraLocked();
+    }
   }
+}
+
+double CallMediaEngine::PathPressure() const {
+  return impl_->path_pressure.load(std::memory_order_relaxed);
+}
+
+void CallMediaEngine::NoteOutboundDrop() {
+  impl_->outbound_drops.fetch_add(1, std::memory_order_relaxed);
 }
 
 void CallMediaEngine::Stop() {
@@ -911,9 +1039,11 @@ void CallMediaEngine::Stop() {
     impl_->sfu_send = nullptr;
     impl_->sfu_mode = false;
     impl_->capture_running = false;
+    impl_->playout_running = false;
   }
   abandoned_send = nullptr;
   impl_->JoinCaptureThread();
+  impl_->JoinPlayoutThread();
   {
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();

@@ -1,7 +1,9 @@
 #include "libp2p/integration/host/MediaRelayService.h"
 
+#include "base/media/ByteRateLimiter.h"
 #include "base/people/RelayScope.h"
 #include "common/Logger.h"
+#include "common/Utilities.h"
 #include "libp2p/integration/host/Libp2pWorker.h"
 #include "libp2p/integration/host/StreamFrameIo.h"
 #include "libp2p/integration/host/StreamJsonFrame.h"
@@ -42,6 +44,8 @@ constexpr int64_t kDefaultUserDownBps = 2'000'000;
 constexpr int64_t kDefaultSessionUpBps = 4'000'000;
 constexpr int64_t kDefaultSessionDownBps = 16'000'000;
 constexpr int64_t kDefaultCeilingBytes = 50'000'000;
+/** Per-subscriber outbound write backlog (frames); drop-oldest when full (V032). */
+constexpr size_t kMaxOutboundPendingFrames = 48;
 
 LengthPrefixedFrameConfig MediaDataFrameConfig() {
   LengthPrefixedFrameConfig config;
@@ -100,6 +104,11 @@ struct HostParticipant {
   int64_t a_down_bps = 0;
   int64_t bytes_up = 0;
   int64_t bytes_down = 0;
+  ByteRateLimiter up_limiter;
+  ByteRateLimiter down_limiter;
+  std::atomic<size_t> outbound_pending{0};
+  uint64_t drops_rate = 0;
+  uint64_t drops_queue = 0;
 };
 
 struct HostSession {
@@ -109,7 +118,12 @@ struct HostSession {
   int64_t b_down_bps = 0;
   int64_t ceiling_bytes = 0;
   int64_t bytes_total = 0;
+  int64_t bytes_up_window = 0;
+  int64_t bytes_down_window = 0;
+  ByteRateLimiter session_up_limiter;
+  ByteRateLimiter session_down_limiter;
   std::vector<std::shared_ptr<HostParticipant>> participants;
+  uint64_t drops_total = 0;
 };
 
 struct PendingQuote {
@@ -237,6 +251,8 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
       return;
     }
     const uint64_t key = SubKey(frame.stream_id, frame.channel_id);
+    const int64_t now_ms = util::NowUnixMs();
+    const int64_t nbytes = static_cast<int64_t>(body.size());
     std::vector<std::shared_ptr<HostParticipant>> parts;
     {
       std::lock_guard<std::mutex> lock(mu);
@@ -249,8 +265,11 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
       bool local = false;
       bool subscribed = false;
       bool over_ceiling = false;
+      bool rate_limited = false;
+      bool queue_full = false;
       std::function<void(MediaDataFrame)> on_frame;
       std::shared_ptr<Stream> out_stream;
+      std::weak_ptr<HostParticipant> weak_part = part;
       {
         std::lock_guard<std::mutex> lock(mu);
         local = static_cast<bool>(part->local_on_frame);
@@ -268,16 +287,35 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           }
           part->last_lossy_seq[key] = frame.seq;
         }
-        part->bytes_down += static_cast<int64_t>(body.size());
-        session->bytes_total += static_cast<int64_t>(body.size());
         over_ceiling = session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes;
+        if (over_ceiling) {
+          ++session->drops_total;
+          continue;
+        }
+        if (!part->down_limiter.TryConsume(nbytes, now_ms) ||
+            !session->session_down_limiter.TryConsume(nbytes, now_ms)) {
+          ++part->drops_rate;
+          ++session->drops_total;
+          rate_limited = true;
+          continue;
+        }
+        if (!local && part->outbound_pending.load(std::memory_order_relaxed) >= kMaxOutboundPendingFrames) {
+          ++part->drops_queue;
+          ++session->drops_total;
+          queue_full = true;
+          continue;
+        }
+        part->bytes_down += nbytes;
+        session->bytes_total += nbytes;
+        session->bytes_down_window += nbytes;
         if (local) {
           on_frame = part->local_on_frame;
         } else {
           out_stream = part->stream;
+          part->outbound_pending.fetch_add(1, std::memory_order_relaxed);
         }
       }
-      if (over_ceiling) {
+      if (over_ceiling || rate_limited || queue_full) {
         continue;
       }
       if (local) {
@@ -287,8 +325,14 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
         continue;
       }
       if (out_stream && host) {
-        PostLibp2pWorker(*host, WorkerLane::Normal, [out_stream, body]() {
+        PostLibp2pWorker(*host, WorkerLane::Normal, [out_stream, body, weak_part]() {
           (void)BlockingWriteLengthPrefixedFrame(out_stream, body);
+          if (auto p = weak_part.lock()) {
+            auto cur = p->outbound_pending.load(std::memory_order_relaxed);
+            while (cur > 0 &&
+                   !p->outbound_pending.compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed)) {
+            }
+          }
         });
       }
     }
@@ -348,10 +392,44 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     if (!frame) {
       return false;
     }
-    part->bytes_up += static_cast<int64_t>(body.size());
-    session->bytes_total += static_cast<int64_t>(body.size());
+    const int64_t nbytes = static_cast<int64_t>(body.size());
+    const int64_t now_ms = util::NowUnixMs();
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      if (!part->up_limiter.TryConsume(nbytes, now_ms) ||
+          !session->session_up_limiter.TryConsume(nbytes, now_ms)) {
+        ++part->drops_rate;
+        ++session->drops_total;
+        return true; // drop excess uplink; keep session
+      }
+      if (session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes) {
+        ++session->drops_total;
+        return true;
+      }
+      part->bytes_up += nbytes;
+      session->bytes_total += nbytes;
+      session->bytes_up_window += nbytes;
+    }
     Fanout(session, part->peer_id, *frame, body);
     return true;
+  }
+
+  static void ConfigureParticipantLimiters(HostParticipant& part) {
+    part.up_limiter.Configure(part.a_up_bps);
+    part.down_limiter.Configure(part.a_down_bps);
+  }
+
+  static void ConfigureSessionLimiters(HostSession& session) {
+    session.session_up_limiter.Configure(session.b_up_bps);
+    session.session_down_limiter.Configure(session.b_down_bps);
+  }
+
+  bool CanOpenNewHostSessionLocked() const {
+    return sessions_by_call.size() < MediaRelayService::kMaxHostSessions;
+  }
+
+  static bool CanAddParticipantLocked(const HostSession& session) {
+    return session.participants.size() < MediaRelayService::kMaxParticipantsPerSession;
   }
 
   void CleanupParticipant(const std::shared_ptr<HostSession>& session,
@@ -536,24 +614,30 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
             auto it = sessions_by_call.find(call_id);
             if (it != sessions_by_call.end()) {
               session = it->second;
+              if (!CanAddParticipantLocked(*session)) {
+                (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "session participant limit"}});
+                stream->close([](auto&&) {});
+                return;
+              }
             } else {
+              if (!CanOpenNewHostSessionLocked()) {
+                (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "host session limit"}});
+                stream->close([](auto&&) {});
+                return;
+              }
               session = std::make_shared<HostSession>();
               session->call_id = call_id;
               session->session_token = token;
-              PendingQuote pending;
-              auto qit = quotes_by_id.find(accepted_quote_id);
-              if (!accepted_quote_id.empty()) {
-                // budgets from last accept path stored on session below
-              }
-              (void)qit;
               session->b_up_bps = OrDefault(budget.max_session_up_bps, kDefaultSessionUpBps);
               session->b_down_bps = OrDefault(budget.max_session_down_bps, kDefaultSessionDownBps);
               session->ceiling_bytes = kDefaultCeilingBytes;
+              ConfigureSessionLimiters(*session);
               sessions_by_call[call_id] = session;
               sessions_by_token[token] = session;
             }
             part->a_up_bps = OrDefault(budget.default_per_user_up_bps, kDefaultUserUpBps);
             part->a_down_bps = OrDefault(budget.default_per_user_down_bps, kDefaultUserDownBps);
+            ConfigureParticipantLimiters(*part);
             session->participants.push_back(part);
           }
 
@@ -876,6 +960,7 @@ Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
   part->local_on_frame = std::move(on_frame);
   part->a_up_bps = OrDefault(impl_->budget.default_per_user_up_bps, kDefaultUserUpBps);
   part->a_down_bps = OrDefault(impl_->budget.default_per_user_down_bps, kDefaultUserDownBps);
+  MediaRelayService::Impl::ConfigureParticipantLimiters(*part);
 
   std::shared_ptr<HostSession> session;
   std::string token;
@@ -885,13 +970,27 @@ Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
     if (it != impl_->sessions_by_call.end()) {
       session = it->second;
       token = session->session_token;
+      // Count after replacing prior local hop for same peer.
+      size_t others = 0;
+      for (const auto& p : session->participants) {
+        if (p && !(p->peer_id == part->peer_id && p->local_on_frame)) {
+          ++others;
+        }
+      }
+      if (others >= MediaRelayService::kMaxParticipantsPerSession) {
+        return Error("session participant limit");
+      }
     } else {
+      if (!impl_->CanOpenNewHostSessionLocked()) {
+        return Error("host session limit");
+      }
       session = std::make_shared<HostSession>();
       session->call_id = call_id;
       session->session_token = MakeId("s");
       session->b_up_bps = OrDefault(impl_->budget.max_session_up_bps, kDefaultSessionUpBps);
       session->b_down_bps = OrDefault(impl_->budget.max_session_down_bps, kDefaultSessionDownBps);
       session->ceiling_bytes = kDefaultCeilingBytes;
+      MediaRelayService::Impl::ConfigureSessionLimiters(*session);
       token = session->session_token;
       impl_->sessions_by_call[call_id] = session;
       impl_->sessions_by_token[token] = session;
@@ -970,11 +1069,24 @@ Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
   }
   if (session) {
     const std::vector<uint8_t> body = EncodeMediaDataFrame(frame);
+    const int64_t nbytes = static_cast<int64_t>(body.size());
+    const int64_t now_ms = util::NowUnixMs();
     {
       std::lock_guard<std::mutex> lock(impl_->mu);
       if (impl_->local_hop_part) {
-        impl_->local_hop_part->bytes_up += static_cast<int64_t>(body.size());
-        session->bytes_total += static_cast<int64_t>(body.size());
+        if (!impl_->local_hop_part->up_limiter.TryConsume(nbytes, now_ms) ||
+            !session->session_up_limiter.TryConsume(nbytes, now_ms)) {
+          ++impl_->local_hop_part->drops_rate;
+          ++session->drops_total;
+          return {}; // drop excess uplink; keep session
+        }
+        if (session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes) {
+          ++session->drops_total;
+          return {};
+        }
+        impl_->local_hop_part->bytes_up += nbytes;
+        session->bytes_total += nbytes;
+        session->bytes_up_window += nbytes;
       }
     }
     impl_->Fanout(session, from_peer, frame, body);
@@ -1031,6 +1143,16 @@ bool MediaRelayService::IsAttached() const {
 bool MediaRelayService::IsLocalHopAttached() const {
   std::lock_guard<std::mutex> lock(impl_->mu);
   return impl_->local_hop_part != nullptr;
+}
+
+double MediaRelayService::PathPressure() const {
+  std::lock_guard<std::mutex> lock(impl_->mu);
+  uint64_t drops = 0;
+  if (impl_->local_hop_session) {
+    drops = impl_->local_hop_session->drops_total;
+  }
+  // Soft map: 0 drops → 0; ~40 drops → ~1.
+  return std::clamp(static_cast<double>(drops) / 40.0, 0.0, 1.0);
 }
 
 } // namespace pbr

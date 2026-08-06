@@ -10,6 +10,7 @@
 #include "base/people/PeerDisplayLabel.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
+#include "libp2p/integration/host/CallMediaFrameCrypto.h"
 
 #include <algorithm>
 #include <atomic>
@@ -49,6 +50,10 @@ CallTopologyController::CallTopologyController(CallTopologyHost& host, CallSessi
 
 void CallTopologyController::SetMediaRelayDeps(MediaRelayDeps deps) {
   relay_deps_ = std::move(deps);
+}
+
+void CallTopologyController::SetMediaKeyStore(CallMediaKeyStore* keys) {
+  media_keys_ = keys;
 }
 
 bool CallTopologyController::IsAwaitingSfuRecovery() const {
@@ -269,8 +274,13 @@ void CallTopologyController::RefreshAdaptation(const std::string& /*call_id*/) {
   CallAdaptationInput in;
   in.camera_user_wants = true;
   in.muted = media_.IsMuted();
-  in.per_user_up_bps = 0;
+  in.per_user_up_bps = last_quote_a_up_bps_;
   in.allow_video_hi = false;
+  double pressure = media_.PathPressure();
+  if (relay_deps_.relay) {
+    pressure = std::max(pressure, relay_deps_.relay->PathPressure());
+  }
+  in.path_pressure = pressure;
   media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
 }
 
@@ -588,15 +598,44 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
 
   // AcceptAndAttach keeps the control stream open; frame reader starts after StartSfu.
   auto sfu_frames_ready = std::make_shared<std::atomic<bool>>(false);
-  auto on_sfu_frame = [this, sfu_frames_ready](MediaDataFrame frame) {
+  const std::string captured_call = call_id;
+  uint32_t media_epoch = 1;
+  ByteVector media_key;
+  if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+    media_epoch = session->value().media_epoch;
+  }
+  if (media_keys_) {
+    if (auto key = media_keys_->LoadEpochKey(call_id, media_epoch); key && key->has_value()) {
+      media_key = **key;
+    }
+    if (media_key.empty()) {
+      log().warning << "AttachLocalToSfu missing media key call_id=" << call_id
+                    << " epoch=" << media_epoch;
+      return Error("call media key required for SFU");
+    }
+  } else {
+    log().warning << "AttachLocalToSfu without media key store — plaintext SFU (test/incomplete wiring)";
+  }
+  auto on_sfu_frame = [this, sfu_frames_ready, captured_call, media_epoch,
+                       media_key](MediaDataFrame frame) {
     if (!sfu_frames_ready->load(std::memory_order_acquire)) {
       return;
     }
     CallMediaEngine::SfuPacket pkt;
+    pkt.stream_id = frame.stream_id;
     pkt.channel_id = frame.channel_id;
     pkt.seq = frame.seq;
     pkt.mark = frame.mark;
-    pkt.payload = std::move(frame.payload);
+    if (frame.channel_id == 0 && !media_key.empty()) {
+      auto plain = DecryptCallMediaSfuAudioFrame(media_key, captured_call, media_epoch, frame.stream_id,
+                                                 frame.payload);
+      if (!plain) {
+        return;
+      }
+      pkt.payload = std::move(*plain);
+    } else {
+      pkt.payload = std::move(frame.payload);
+    }
     media_.OnSfuPacket(pkt);
   };
 
@@ -661,9 +700,11 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
                << " quote=" << quote->quote_id;
   }
 
+  last_quote_a_up_bps_ = a_up_bps;
   CallAdaptationInput in;
   in.per_user_up_bps = a_up_bps;
   in.camera_user_wants = false;
+  in.path_pressure = media_.PathPressure();
   media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
 
   local_publisher_stream_id_ = PublisherStreamIdForLocal();
@@ -677,20 +718,33 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
     return Error("attach aborted");
   }
   log().info << "AttachLocalToSfu StartSfu call_id=" << call_id << " pub_stream=" << pub;
-  auto started = media_.StartSfu(call_id, [this, pub](const CallMediaEngine::SfuPacket& pkt) {
-    if (!relay_deps_.relay) {
-      return;
-    }
-    MediaDataFrame frame;
-    frame.stream_id = pub;
-    frame.channel_id = pkt.channel_id;
-    frame.channel_type =
-        pkt.channel_id == 0 ? MediaChannelType::ReliableOrdered : MediaChannelType::LatestLossy;
-    frame.seq = pkt.seq;
-    frame.mark = pkt.mark;
-    frame.payload = pkt.payload;
-    (void)relay_deps_.relay->SendFrame(frame);
-  });
+  auto started = media_.StartSfu(
+      call_id, [this, pub, captured_call, media_epoch, media_key](const CallMediaEngine::SfuPacket& pkt) {
+        if (!relay_deps_.relay) {
+          return;
+        }
+        MediaDataFrame frame;
+        frame.stream_id = pub;
+        frame.channel_id = pkt.channel_id;
+        frame.channel_type =
+            pkt.channel_id == 0 ? MediaChannelType::ReliableOrdered : MediaChannelType::LatestLossy;
+        frame.seq = pkt.seq;
+        frame.mark = pkt.mark;
+        if (pkt.channel_id == 0 && !media_key.empty()) {
+          auto sealed = EncryptCallMediaSfuAudioFrame(media_key, captured_call, media_epoch, pub, pkt.seq,
+                                                      pkt.mark, pkt.payload);
+          if (!sealed) {
+            media_.NoteOutboundDrop();
+            return;
+          }
+          frame.payload = std::move(*sealed);
+        } else {
+          frame.payload = pkt.payload;
+        }
+        if (!relay_deps_.relay->SendFrame(frame)) {
+          media_.NoteOutboundDrop();
+        }
+      });
   if (!started) {
     relay_deps_.relay->Detach();
     return started.error();

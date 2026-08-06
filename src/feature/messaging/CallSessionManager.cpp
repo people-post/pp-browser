@@ -67,6 +67,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
       p2p_(p2p), psk_store_(psk_store), media_(media),
       topology_(*this, sessions, contacts, media) {
   redirectLogger("CallSessionManager");
+  topology_.SetMediaKeyStore(&media_keys_);
 }
 
 void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {

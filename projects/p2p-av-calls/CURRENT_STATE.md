@@ -1,6 +1,6 @@
 # P2P A/V calls — current state
 
-**Last updated:** 2026-08-05
+**Last updated:** 2026-08-06
 
 **North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). **m2 done:** libdatachannel removed from build; wire-compat `call_sdp`/`call_ice` ignored.
 
@@ -18,6 +18,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **CallLifecycle orchestrator** | Phase machine owns ring/accept/media/listen desire; thin `CallController`; N025 from `WantEphemeralListen`; bridge reports MediaDeferred / DirectConnected / ConnectFailed |
 | **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp-browser/call-media/1.0.0` — **dogfood OK 2026-08-02** |
 | **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |
+| **V032 media QoS structure** | Host receive policy doc; hop A↑/A↓ token buckets + session/participant caps; per-`stream_id` Opus + jitter playout; path_pressure → Opus bps; SFU AEAD under call media key |
 
 ## a4 thin in code (still relevant under V026)
 

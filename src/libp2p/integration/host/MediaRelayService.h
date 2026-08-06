@@ -126,6 +126,16 @@ public:
   /** True while SoftMigrate PreferLocal is publishing into the local HostSession. */
   bool IsLocalHopAttached() const;
 
+  /**
+   * Path pressure 0..1 from recent hop drops (V032). Clients may feed CallMediaAdaptation.
+   * Meaningful while attached (local hop or remote client).
+   */
+  double PathPressure() const;
+
+  /** V032 host load limits (also documented in HOST_RECEIVE_POLICY). */
+  static constexpr size_t kMaxHostSessions = 4;
+  static constexpr size_t kMaxParticipantsPerSession = 8;
+
 private:
   struct Impl;
   std::shared_ptr<Impl> impl_;

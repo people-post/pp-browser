@@ -40,6 +40,8 @@ public:
    * channel: 0 = audio (reliable_ordered), 1 = video_lo (latest_lossy).
    */
   struct SfuPacket {
+    /** Publisher stream id (N021); 0 for 1:1 direct. */
+    uint32_t stream_id = 0;
     uint16_t channel_id = 0;
     uint32_t seq = 0;
     uint8_t mark = 0;
@@ -49,7 +51,7 @@ public:
 
   /** Blind SFU backend: capture/encode → SfuSendFn (V021/V024). */
   Roe<void> StartSfu(const std::string& call_id, SfuSendFn send);
-  /** Inbound SFU payload (already demuxed to local subscribe). */
+  /** Inbound SFU payload (already demuxed to local subscribe; plaintext Opus). */
   void OnSfuPacket(const SfuPacket& packet);
   bool IsSfuMode() const;
   void Stop();
@@ -57,8 +59,13 @@ public:
   void SetMuted(bool muted);
   bool IsMuted() const;
 
-  /** Apply V024 producer decision (camera gate + stored target bps). */
+  /** Apply V024 producer decision (camera gate + Opus target bps). */
   void ApplyAdaptation(const CallAdaptationDecision& decision);
+
+  /** 0..1 receiver/path pressure for adaptation (V032). */
+  double PathPressure() const;
+  /** Hop/send path observed a drop — raises pressure (V032). */
+  void NoteOutboundDrop();
 
   /** Open/close SDL camera + encode. Best-effort: fails without killing voice (V019). */
   Roe<void> SetCameraEnabled(bool enabled);
