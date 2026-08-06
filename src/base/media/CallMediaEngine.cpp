@@ -1086,6 +1086,10 @@ void CallMediaEngine::Stop() {
     impl_->playout_running = false;
   }
   abandoned_send = nullptr;
+  // Drain capture/video still inside (*sfu_send) after Detach unblocked BlockingWrite.
+  {
+    std::lock_guard drain(impl_->sfu_send_call_mu);
+  }
   impl_->JoinCaptureThread();
   impl_->JoinPlayoutThread();
   {

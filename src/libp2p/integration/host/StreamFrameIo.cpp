@@ -485,6 +485,12 @@ void DuplexFrameSession::MaybeResumeRead() {
 }
 
 void DuplexFrameSession::CloseSession() {
+  // Keep alive across on_closed_ — CleanupParticipant may reset the last owning shared_ptr.
+  std::shared_ptr<DuplexFrameSession> keep;
+  try {
+    keep = shared_from_this();
+  } catch (const std::bad_weak_ptr&) {
+  }
   if (!running_.exchange(false, std::memory_order_acq_rel)) {
     return;
   }
@@ -494,10 +500,11 @@ void DuplexFrameSession::CloseSession() {
   stream_.reset();
   on_frame_ = {};
   is_cancelled_ = {};
-  if (on_closed_) {
-    on_closed_();
+  ClosedCallback cb;
+  std::swap(cb, on_closed_);
+  if (cb) {
+    cb();
   }
-  on_closed_ = {};
 }
 
 } // namespace pbr

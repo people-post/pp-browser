@@ -825,6 +825,10 @@ void MessagingHub::AbortCallMediaForShutdown() {
   if (circuit_relay_) {
     circuit_relay_->AbortInflightRequests();
   }
+  // Group SFU: close media_relay before LeaveCall joins capture (BlockingWrite hang on quit).
+  if (media_relay_) {
+    media_relay_->Detach();
+  }
   // Tell the peer the call ended (fire-and-forget relay Critical send) so they StopMedia /
   // leave Connecting instead of sitting on a half-open stream after we detach.
   if (call_sessions_) {

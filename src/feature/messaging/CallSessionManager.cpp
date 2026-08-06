@@ -435,11 +435,17 @@ Roe<void> CallSessionManager::SendMediaKeyToPeer(const std::string& call_id, con
   return SendCallDirectMessage(peer_identity, CallControlType::CallMediaKey, *key_json, "Call media key");
 }
 
+void CallSessionManager::StopCallMedia(const std::string& call_id) {
+  StopMediaIfCall(call_id);
+}
+
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
+  // Detach media_relay BEFORE JoinCaptureThread. Capture may be blocked in BlockingWrite on the
+  // SFU stream; OnMediaStopped closes it so Stop/quit can finish (group-call hang).
+  topology_.OnMediaStopped(call_id);
   if (libp2p_bridge_) {
     libp2p_bridge_->StopLibp2pMedia(call_id);
   }
-  topology_.OnMediaStopped(call_id);
 }
 
 Roe<void> CallSessionManager::LeaveCallIfActiveExcept(const std::string& keep_call_id) {

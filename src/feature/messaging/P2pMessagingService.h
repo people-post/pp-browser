@@ -62,6 +62,15 @@ public:
   void PollAndMerge();
   /** Same ingest as PollAndMerge; `force` bypasses foreground rate limit. */
   void SyncInboxFromWake(bool force = true);
+  /** Last HTTP Brief/relay poll outcome for ambient status chrome. */
+  enum class BriefRelayHealthState {
+    Unknown = 0,
+    Ok = 1,
+    Failed = 2,
+  };
+  BriefRelayHealthState BriefRelayHealth() const {
+    return static_cast<BriefRelayHealthState>(brief_relay_health_.load(std::memory_order_relaxed));
+  }
   /** Me recovery: delete undelivered relay rows older than `older_than_days` (does not clear local chat). */
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
@@ -176,6 +185,8 @@ private:
   mutable std::mutex receive_failure_mutex_;
   std::unordered_map<std::string, int64_t> receive_failure_last_ms_;
   uint64_t last_relay_poll_ms_ = 0;
+  /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
+  std::atomic<int> brief_relay_health_{0};
   std::atomic<bool> poll_pending_{false};
   /** Set when SyncInbox is requested while a poll is already in flight — worker re-polls. */
   std::atomic<bool> poll_again_{false};

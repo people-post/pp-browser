@@ -891,12 +891,10 @@ void CallController::LeaveActive() {
     SyncShellState();
     return;
   }
-  // Stop SDL/media on UI before LeaveCall worker (which must not CallMediaEngine::Stop off-UI)
-  // and before remounting away the Leave button.
+  // Detach SFU then stop SDL on UI before LeaveCall worker (must not Stop off-UI) and before
+  // remounting away the Leave button. Media().Stop alone deadlocks if capture is in BlockingWrite.
   if (auto* calls = Calls()) {
-    if (calls->Media().IsActive() && calls->Media().ActiveCallId() == call_id) {
-      calls->Media().Stop();
-    }
+    calls->StopCallMedia(call_id);
   }
   active_call_id_.clear();
   ClearInCall();

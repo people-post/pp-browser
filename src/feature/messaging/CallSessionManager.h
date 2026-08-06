@@ -66,6 +66,8 @@ public:
   Roe<void> AcceptInvite(const std::string& call_id);
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id);
+  /** Detach SFU + stop SDL. UI thread only — call before LeaveCall worker / app quit. */
+  void StopCallMedia(const std::string& call_id);
 
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
 

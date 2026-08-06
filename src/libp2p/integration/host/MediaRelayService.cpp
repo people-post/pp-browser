@@ -445,9 +445,10 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     if (part->duplex_cancelled) {
       part->duplex_cancelled->store(true, std::memory_order_release);
     }
-    if (part->duplex) {
-      part->duplex->Stop();
-      part->duplex.reset();
+    // Move duplex out before Stop — CloseSession may be on the call stack (FIN path).
+    std::shared_ptr<DuplexFrameSession> duplex = std::move(part->duplex);
+    if (duplex) {
+      duplex->Stop();
     }
     std::lock_guard<std::mutex> lock(mu);
     session->participants.erase(std::remove_if(session->participants.begin(), session->participants.end(),
@@ -457,6 +458,10 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
                                 session->participants.end());
     if (part->stream) {
       part->stream->close([](auto&&) {});
+    }
+    // Defer destroy so we are not inside DuplexFrameSession::CloseSession.
+    if (duplex && host) {
+      host->Post([duplex = std::move(duplex)]() mutable { duplex.reset(); });
     }
   }
 
@@ -1137,10 +1142,9 @@ void MediaRelayService::Detach() {
   }
   impl_->client_reader_epoch.fetch_add(1, std::memory_order_acq_rel);
   if (stream) {
-    {
-      std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
-      (void)WriteJson(stream, {{"v", 1}, {"op", "detach"}});
-    }
+    // Close without taking client_write_mu — capture may be blocked in BlockingWrite holding
+    // that lock; closing completes write callbacks so Leave/quit can JoinCaptureThread.
+    // Skip detach JSON: FIN cleanup is enough (and WriteJson-under-lock before close deadlocks).
     stream->close([](auto&&) {});
   }
 }

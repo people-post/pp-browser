@@ -758,8 +758,8 @@ Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
   }
   if (!IsMigrateGenerationCurrent(gen_at_start)) {
     log().info << "AttachLocalToSfu aborted after StartSfu (media stopped) call_id=" << call_id;
-    media_.Stop();
     relay_deps_.relay->Detach();
+    media_.Stop();
     sfu_attached_ = false;
     return Error("attach aborted");
   }
