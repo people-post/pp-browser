@@ -164,7 +164,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
 | `titlebar_minimize()` / `titlebar_toggle_maximize()` / `titlebar_close()` | Desktop custom title bar window controls (macOS traffic lights or Win/Linux icon strip) |
 
-Desktop expanded status bar binds `statusbar_visible`, cluster fields (`statusbar_mesh_*`, `statusbar_reach_*`, `statusbar_help_visible`, `statusbar_label*`), and `statusbar_activity` (no click callbacks — display-only). Product work: [network-status-chrome](../../projects/network-status-chrome/).
+Desktop expanded status bar binds `statusbar_visible`, cluster fields (`statusbar_brief_*`, `statusbar_direct_*`, `statusbar_help_visible`, `statusbar_inbound_*`, `statusbar_label*`), and `statusbar_activity` (no click callbacks — display-only). Product work: [network-status-chrome](../../projects/network-status-chrome/).
 
 Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). `sessions_unread` is aggregate chat unread; `contacts_unread` is reserved for future contacts-tab queues (not chat unread — currently always 0). `me_attention` is a non-count dot for Me setup nudges (today: desktop Node outbound-only/blocked reachability until the user acks **Got it — use relay** in Me → Network, or inbound becomes reachable). On expanded, the Me attention dot is on the Me nav-rail tab; on compact, it is on the Home profile button. The Network settings row mirrors the same attention via `section.attention`. Refreshed by `BadgeAggregator` on messaging / reachability events.
 
@@ -243,10 +243,10 @@ On **desktop + expanded** layout (`Platform::IsDesktop() && layout_mode == Expan
 
 | Side | Content |
 |------|---------|
-| Left cluster | **Mesh** (dot: on/off/error) · **Reach** (3-bar strength from `ReachabilitySnapshot`) · **Help** (teal icon when Node / Help the network on) · sparse label for off/degraded (`Direct off`, `Outbound only`, `Blocked`) |
+| Left cluster | **Brief** (cloud: HTTP relay poll) · **Direct** (link: libp2p dial-out) · divider · **Help** (teal when Node) · **Inbound** (target on/off when helping) · sparse label (`Brief offline`, `Direct off`, `Outbound only`, `Blocked`). Cluster has hover affordance (popover is s2). |
 | Right | `statusbar_activity` — ephemeral busy text (Thinking…, tool labels, Preparing…) via `ShellHost::SetActivity` |
 
-Data comes from `MessagingShellPorts::statusbar_cluster` (polled in `ShellHost::RefreshStatusbarCluster`). Adaptive: Client shows Mesh+Reach; Node adds Help. Load counts are deferred (s3). Still **display-only** (click → popover is s2).
+Data comes from `MessagingShellPorts::statusbar_cluster` (polled in `ShellHost::RefreshStatusbarCluster`). Adaptive: Client shows Brief+Direct; Node adds Help+Inbound. Load counts are deferred (s3). Still **display-only** (click → popover is s2).
 
 `#shell-root` is inset with `bottom = statusbar_height_dp` while visible. Compact layout and mobile/tablet platforms omit the bar.
 

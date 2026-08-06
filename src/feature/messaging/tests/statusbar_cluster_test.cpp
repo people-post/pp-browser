@@ -18,63 +18,82 @@ protected:
 } // namespace
 
 TEST_F(StatusbarClusterTest, HiddenWhenMessagingNotReady) {
-  const auto snap = pbr::BuildStatusbarClusterSnapshot(false, false, false,
-                                                       pbr::ReachabilityStatus::Reachable, true);
-  EXPECT_EQ(snap.mesh, pbr::StatusbarClusterSnapshot::MeshState::Hidden);
-  EXPECT_EQ(snap.reach, pbr::StatusbarClusterSnapshot::ReachState::Hidden);
+  const auto snap =
+      pbr::BuildStatusbarClusterSnapshot(false, pbr::BriefRelayHealth::Ok, false, false,
+                                         pbr::ReachabilityStatus::Reachable, true);
+  EXPECT_EQ(snap.brief, pbr::StatusbarClusterSnapshot::BriefState::Hidden);
+  EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Hidden);
+  EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Hidden);
   EXPECT_FALSE(snap.help_visible);
   EXPECT_TRUE(snap.label.empty());
 }
 
-TEST_F(StatusbarClusterTest, DirectOffWhenHostDown) {
-  const auto snap = pbr::BuildStatusbarClusterSnapshot(true, false, false,
-                                                       pbr::ReachabilityStatus::Unknown, false);
-  EXPECT_EQ(snap.mesh, pbr::StatusbarClusterSnapshot::MeshState::Off);
-  EXPECT_EQ(snap.reach, pbr::StatusbarClusterSnapshot::ReachState::Hidden);
+TEST_F(StatusbarClusterTest, ClientShowsBriefAndDirectOff) {
+  const auto snap =
+      pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Unknown, false, false,
+                                         pbr::ReachabilityStatus::Unknown, false);
+  EXPECT_EQ(snap.brief, pbr::StatusbarClusterSnapshot::BriefState::Unknown);
+  EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Off);
+  EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Hidden);
   EXPECT_FALSE(snap.help_visible);
   EXPECT_FALSE(snap.label.empty());
-  EXPECT_EQ(snap.label_tone, pbr::StatusbarClusterSnapshot::LabelTone::Muted);
+  EXPECT_EQ(snap.label_tone, pbr::StatusbarClusterSnapshot::LabelTone::Warn);
 }
 
-TEST_F(StatusbarClusterTest, MeshErrorWhenLibp2pFailed) {
-  const auto snap = pbr::BuildStatusbarClusterSnapshot(true, false, true,
-                                                       pbr::ReachabilityStatus::Unknown, true);
-  EXPECT_EQ(snap.mesh, pbr::StatusbarClusterSnapshot::MeshState::Error);
-  EXPECT_TRUE(snap.help_visible);
-  EXPECT_TRUE(snap.label.empty());
-  EXPECT_EQ(snap.label_tone, pbr::StatusbarClusterSnapshot::LabelTone::Error);
-}
-
-TEST_F(StatusbarClusterTest, ReachableHealthyHasNoLabel) {
-  const auto snap = pbr::BuildStatusbarClusterSnapshot(true, true, false,
-                                                       pbr::ReachabilityStatus::Reachable, true);
-  EXPECT_EQ(snap.mesh, pbr::StatusbarClusterSnapshot::MeshState::On);
-  EXPECT_EQ(snap.reach, pbr::StatusbarClusterSnapshot::ReachState::Reachable);
-  EXPECT_TRUE(snap.help_visible);
-  EXPECT_TRUE(snap.label.empty());
-}
-
-TEST_F(StatusbarClusterTest, OutboundOnlyWarnsWithSettingsParityLabel) {
+TEST_F(StatusbarClusterTest, BriefFailedTakesLabelPriority) {
   const auto snap =
-      pbr::BuildStatusbarClusterSnapshot(true, true, false, pbr::ReachabilityStatus::OutboundOnly,
-                                         false);
-  EXPECT_EQ(snap.reach, pbr::StatusbarClusterSnapshot::ReachState::OutboundOnly);
-  EXPECT_FALSE(snap.help_visible);
+      pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Failed, false, false,
+                                         pbr::ReachabilityStatus::Unknown, false);
+  EXPECT_EQ(snap.brief, pbr::StatusbarClusterSnapshot::BriefState::Failed);
+  EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Off);
+  EXPECT_EQ(snap.label_tone, pbr::StatusbarClusterSnapshot::LabelTone::Error);
+  EXPECT_FALSE(snap.label.empty());
+}
+
+TEST_F(StatusbarClusterTest, DirectOnWhenSeedDialOk) {
+  const auto snap =
+      pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Ok, true, false,
+                                         pbr::ReachabilityStatus::OutboundOnly, false);
+  EXPECT_EQ(snap.brief, pbr::StatusbarClusterSnapshot::BriefState::Ok);
+  EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::On);
+  EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Hidden);
+  EXPECT_TRUE(snap.label.empty());
+}
+
+TEST_F(StatusbarClusterTest, NodeShowsInboundOffWhenOutboundOnly) {
+  const auto snap =
+      pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Ok, true, false,
+                                         pbr::ReachabilityStatus::OutboundOnly, true);
+  EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::On);
+  EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Off);
+  EXPECT_TRUE(snap.help_visible);
   EXPECT_EQ(snap.label_tone, pbr::StatusbarClusterSnapshot::LabelTone::Warn);
   EXPECT_FALSE(snap.label.empty());
 }
 
-TEST_F(StatusbarClusterTest, BlockedUsesErrorTone) {
-  const auto snap = pbr::BuildStatusbarClusterSnapshot(true, true, false,
-                                                       pbr::ReachabilityStatus::Blocked, true);
-  EXPECT_EQ(snap.reach, pbr::StatusbarClusterSnapshot::ReachState::Blocked);
-  EXPECT_EQ(snap.label_tone, pbr::StatusbarClusterSnapshot::LabelTone::Error);
-  EXPECT_FALSE(snap.label.empty());
+TEST_F(StatusbarClusterTest, NodeShowsInboundOnWhenReachable) {
+  const auto snap =
+      pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Ok, true, false,
+                                         pbr::ReachabilityStatus::Reachable, true);
+  EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::On);
+  EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::On);
+  EXPECT_TRUE(snap.label.empty());
 }
 
-TEST_F(StatusbarClusterTest, CheckingMapsWithoutSparseLabel) {
-  const auto snap = pbr::BuildStatusbarClusterSnapshot(true, true, false,
-                                                       pbr::ReachabilityStatus::Checking, true);
-  EXPECT_EQ(snap.reach, pbr::StatusbarClusterSnapshot::ReachState::Checking);
+TEST_F(StatusbarClusterTest, BlockedMarksDirectError) {
+  const auto snap =
+      pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Ok, true, false,
+                                         pbr::ReachabilityStatus::Blocked, true);
+  EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Error);
+  EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Off);
+  EXPECT_EQ(snap.label_tone, pbr::StatusbarClusterSnapshot::LabelTone::Error);
+}
+
+TEST_F(StatusbarClusterTest, CheckingMapsDirectChecking) {
+  const auto snap =
+      pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Ok, true, false,
+                                         pbr::ReachabilityStatus::Checking, false);
+  EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Checking);
+  EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Hidden);
   EXPECT_TRUE(snap.label.empty());
 }

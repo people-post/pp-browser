@@ -56,36 +56,42 @@
   <div id="shell-root" class="shell-root"></div>
   <div id="shell-statusbar" class="shell-statusbar" data-if="statusbar_visible">
     <div class="shell-statusbar-cluster">
-      <div class="shell-statusbar-slot shell-statusbar-mesh"
-           data-if="statusbar_mesh_visible"
-           data-class-shell-statusbar-mesh--ok="statusbar_mesh_ok"
-           data-class-shell-statusbar-mesh--off="statusbar_mesh_off"
-           data-class-shell-statusbar-mesh--error="statusbar_mesh_error">
-        <div class="shell-statusbar-mesh-dot"></div>
-      </div>
-      <div class="shell-statusbar-slot shell-statusbar-reach"
-           data-if="statusbar_reach_visible"
-           data-class-shell-statusbar-reach--ok="statusbar_reach_ok"
-           data-class-shell-statusbar-reach--warn="statusbar_reach_warn"
-           data-class-shell-statusbar-reach--error="statusbar_reach_error"
-           data-class-shell-statusbar-reach--checking="statusbar_reach_checking">
-        <div class="shell-statusbar-reach-bars">
-          <div class="shell-statusbar-reach-bar shell-statusbar-reach-bar--1"
-               data-class-shell-statusbar-reach-bar--on="statusbar_reach_level >= 1"></div>
-          <div class="shell-statusbar-reach-bar shell-statusbar-reach-bar--2"
-               data-class-shell-statusbar-reach-bar--on="statusbar_reach_level >= 2"></div>
-          <div class="shell-statusbar-reach-bar shell-statusbar-reach-bar--3"
-               data-class-shell-statusbar-reach-bar--on="statusbar_reach_level >= 3"></div>
+      <div class="shell-statusbar-group">
+        <div class="shell-statusbar-slot shell-statusbar-brief"
+             data-if="statusbar_brief_visible"
+             data-class-shell-statusbar-brief--ok="statusbar_brief_ok"
+             data-class-shell-statusbar-brief--failed="statusbar_brief_failed"
+             data-class-shell-statusbar-brief--unknown="statusbar_brief_unknown">
+          <svg src="../icons/status-brief.svg" width="12" height="12" crop-to-content="true"></svg>
+        </div>
+        <div class="shell-statusbar-slot shell-statusbar-direct"
+             data-if="statusbar_direct_visible"
+             data-class-shell-statusbar-direct--ok="statusbar_direct_ok"
+             data-class-shell-statusbar-direct--off="statusbar_direct_off"
+             data-class-shell-statusbar-direct--error="statusbar_direct_error"
+             data-class-shell-statusbar-direct--checking="statusbar_direct_checking">
+          <svg src="../icons/status-direct.svg" width="12" height="12" crop-to-content="true"></svg>
         </div>
       </div>
-      <div class="shell-statusbar-slot shell-statusbar-help" data-if="statusbar_help_visible">
-        <svg src="../icons/status-help.svg" width="12" height="12" crop-to-content="true"></svg>
+      <div class="shell-statusbar-divider"
+           data-if="statusbar_help_visible || statusbar_inbound_visible || statusbar_label != ''"></div>
+      <div class="shell-statusbar-group"
+           data-if="statusbar_help_visible || statusbar_inbound_visible || statusbar_label != ''">
+        <div class="shell-statusbar-slot shell-statusbar-help" data-if="statusbar_help_visible">
+          <svg src="../icons/status-help.svg" width="12" height="12" crop-to-content="true"></svg>
+        </div>
+        <div class="shell-statusbar-slot shell-statusbar-inbound"
+             data-if="statusbar_inbound_visible"
+             data-class-shell-statusbar-inbound--ok="statusbar_inbound_ok"
+             data-class-shell-statusbar-inbound--off="statusbar_inbound_off">
+          <svg src="../icons/status-inbound.svg" width="12" height="12" crop-to-content="true"></svg>
+        </div>
+        <p class="shell-statusbar-label text-xs muted"
+           data-if="statusbar_label != ''"
+           data-class-shell-statusbar-label--warn="statusbar_label_warn"
+           data-class-shell-statusbar-label--error="statusbar_label_error"
+           data-rml="statusbar_label"></p>
       </div>
-      <p class="shell-statusbar-label text-xs muted"
-         data-if="statusbar_label != ''"
-         data-class-shell-statusbar-label--warn="statusbar_label_warn"
-         data-class-shell-statusbar-label--error="statusbar_label_error"
-         data-rml="statusbar_label"></p>
     </div>
     <p class="shell-statusbar-activity text-xs muted" data-rml="statusbar_activity"></p>
   </div>

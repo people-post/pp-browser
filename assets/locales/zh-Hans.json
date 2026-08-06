@@ -24,6 +24,7 @@
     "nav.me": "我",
 
     "shell.statusbar.direct_off": "直连关闭",
+    "shell.statusbar.brief_offline": "Brief 离线",
 
     "settings.saved": "设置已保存",
     "settings.preferences": "偏好设置",

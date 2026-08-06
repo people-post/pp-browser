@@ -24,6 +24,7 @@
     "nav.me": "Me",
 
     "shell.statusbar.direct_off": "Direct off",
+    "shell.statusbar.brief_offline": "Brief offline",
 
     "settings.saved": "Settings saved",
     "settings.preferences": "Preferences",

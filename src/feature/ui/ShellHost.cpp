@@ -196,17 +196,19 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
     ctor.Bind("statusbar_visible", &host.state_.statusbar_visible);
-    ctor.Bind("statusbar_mesh_visible", &host.state_.statusbar_mesh_visible);
-    ctor.Bind("statusbar_mesh_ok", &host.state_.statusbar_mesh_ok);
-    ctor.Bind("statusbar_mesh_off", &host.state_.statusbar_mesh_off);
-    ctor.Bind("statusbar_mesh_error", &host.state_.statusbar_mesh_error);
-    ctor.Bind("statusbar_reach_visible", &host.state_.statusbar_reach_visible);
-    ctor.Bind("statusbar_reach_ok", &host.state_.statusbar_reach_ok);
-    ctor.Bind("statusbar_reach_warn", &host.state_.statusbar_reach_warn);
-    ctor.Bind("statusbar_reach_error", &host.state_.statusbar_reach_error);
-    ctor.Bind("statusbar_reach_checking", &host.state_.statusbar_reach_checking);
-    ctor.Bind("statusbar_reach_level", &host.state_.statusbar_reach_level);
+    ctor.Bind("statusbar_brief_visible", &host.state_.statusbar_brief_visible);
+    ctor.Bind("statusbar_brief_ok", &host.state_.statusbar_brief_ok);
+    ctor.Bind("statusbar_brief_failed", &host.state_.statusbar_brief_failed);
+    ctor.Bind("statusbar_brief_unknown", &host.state_.statusbar_brief_unknown);
+    ctor.Bind("statusbar_direct_visible", &host.state_.statusbar_direct_visible);
+    ctor.Bind("statusbar_direct_ok", &host.state_.statusbar_direct_ok);
+    ctor.Bind("statusbar_direct_off", &host.state_.statusbar_direct_off);
+    ctor.Bind("statusbar_direct_error", &host.state_.statusbar_direct_error);
+    ctor.Bind("statusbar_direct_checking", &host.state_.statusbar_direct_checking);
     ctor.Bind("statusbar_help_visible", &host.state_.statusbar_help_visible);
+    ctor.Bind("statusbar_inbound_visible", &host.state_.statusbar_inbound_visible);
+    ctor.Bind("statusbar_inbound_ok", &host.state_.statusbar_inbound_ok);
+    ctor.Bind("statusbar_inbound_off", &host.state_.statusbar_inbound_off);
     ctor.Bind("statusbar_label", &host.state_.statusbar_label);
     ctor.Bind("statusbar_label_warn", &host.state_.statusbar_label_warn);
     ctor.Bind("statusbar_label_error", &host.state_.statusbar_label_error);
@@ -727,17 +729,19 @@ void ShellHost::DirtyPinGate() {
 void ShellHost::DirtyStatusChrome() {
   DataModelHost::Instance().Dirty("window", "activity_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_mesh_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_mesh_ok");
-  DataModelHost::Instance().Dirty("window", "statusbar_mesh_off");
-  DataModelHost::Instance().Dirty("window", "statusbar_mesh_error");
-  DataModelHost::Instance().Dirty("window", "statusbar_reach_visible");
-  DataModelHost::Instance().Dirty("window", "statusbar_reach_ok");
-  DataModelHost::Instance().Dirty("window", "statusbar_reach_warn");
-  DataModelHost::Instance().Dirty("window", "statusbar_reach_error");
-  DataModelHost::Instance().Dirty("window", "statusbar_reach_checking");
-  DataModelHost::Instance().Dirty("window", "statusbar_reach_level");
+  DataModelHost::Instance().Dirty("window", "statusbar_brief_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_brief_ok");
+  DataModelHost::Instance().Dirty("window", "statusbar_brief_failed");
+  DataModelHost::Instance().Dirty("window", "statusbar_brief_unknown");
+  DataModelHost::Instance().Dirty("window", "statusbar_direct_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_direct_ok");
+  DataModelHost::Instance().Dirty("window", "statusbar_direct_off");
+  DataModelHost::Instance().Dirty("window", "statusbar_direct_error");
+  DataModelHost::Instance().Dirty("window", "statusbar_direct_checking");
   DataModelHost::Instance().Dirty("window", "statusbar_help_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_inbound_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_inbound_ok");
+  DataModelHost::Instance().Dirty("window", "statusbar_inbound_off");
   DataModelHost::Instance().Dirty("window", "statusbar_label");
   DataModelHost::Instance().Dirty("window", "statusbar_label_warn");
   DataModelHost::Instance().Dirty("window", "statusbar_label_error");
@@ -1052,85 +1056,71 @@ void ShellHost::RefreshStatusbarVisibility() {
 }
 
 void ShellHost::ClearStatusbarCluster() {
-  state_.statusbar_mesh_visible = false;
-  state_.statusbar_mesh_ok = false;
-  state_.statusbar_mesh_off = false;
-  state_.statusbar_mesh_error = false;
-  state_.statusbar_reach_visible = false;
-  state_.statusbar_reach_ok = false;
-  state_.statusbar_reach_warn = false;
-  state_.statusbar_reach_error = false;
-  state_.statusbar_reach_checking = false;
-  state_.statusbar_reach_level = 0;
+  state_.statusbar_brief_visible = false;
+  state_.statusbar_brief_ok = false;
+  state_.statusbar_brief_failed = false;
+  state_.statusbar_brief_unknown = false;
+  state_.statusbar_direct_visible = false;
+  state_.statusbar_direct_ok = false;
+  state_.statusbar_direct_off = false;
+  state_.statusbar_direct_error = false;
+  state_.statusbar_direct_checking = false;
   state_.statusbar_help_visible = false;
+  state_.statusbar_inbound_visible = false;
+  state_.statusbar_inbound_ok = false;
+  state_.statusbar_inbound_off = false;
   state_.statusbar_label.clear();
   state_.statusbar_label_warn = false;
   state_.statusbar_label_error = false;
 }
 
 bool ShellHost::ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap) {
-  const bool mesh_visible = snap.mesh != StatusbarClusterSnapshot::MeshState::Hidden;
-  const bool mesh_ok = snap.mesh == StatusbarClusterSnapshot::MeshState::On;
-  const bool mesh_off = snap.mesh == StatusbarClusterSnapshot::MeshState::Off;
-  const bool mesh_error = snap.mesh == StatusbarClusterSnapshot::MeshState::Error;
+  const bool brief_visible = snap.brief != StatusbarClusterSnapshot::BriefState::Hidden;
+  const bool brief_ok = snap.brief == StatusbarClusterSnapshot::BriefState::Ok;
+  const bool brief_failed = snap.brief == StatusbarClusterSnapshot::BriefState::Failed;
+  const bool brief_unknown = snap.brief == StatusbarClusterSnapshot::BriefState::Unknown;
 
-  const bool reach_visible = snap.reach != StatusbarClusterSnapshot::ReachState::Hidden;
-  bool reach_ok = false;
-  bool reach_warn = false;
-  bool reach_error = false;
-  bool reach_checking = false;
-  int reach_level = 0;
-  switch (snap.reach) {
-  case StatusbarClusterSnapshot::ReachState::Reachable:
-    reach_ok = true;
-    reach_level = 3;
-    break;
-  case StatusbarClusterSnapshot::ReachState::OutboundOnly:
-    reach_warn = true;
-    reach_level = 1;
-    break;
-  case StatusbarClusterSnapshot::ReachState::Blocked:
-    reach_error = true;
-    reach_level = 0;
-    break;
-  case StatusbarClusterSnapshot::ReachState::Checking:
-    reach_checking = true;
-    reach_level = 1;
-    break;
-  case StatusbarClusterSnapshot::ReachState::Unknown:
-    reach_level = 1;
-    break;
-  case StatusbarClusterSnapshot::ReachState::Hidden:
-  default:
-    break;
-  }
+  const bool direct_visible = snap.direct != StatusbarClusterSnapshot::DirectState::Hidden;
+  const bool direct_ok = snap.direct == StatusbarClusterSnapshot::DirectState::On;
+  const bool direct_off = snap.direct == StatusbarClusterSnapshot::DirectState::Off;
+  const bool direct_error = snap.direct == StatusbarClusterSnapshot::DirectState::Error;
+  const bool direct_checking = snap.direct == StatusbarClusterSnapshot::DirectState::Checking;
+
+  const bool inbound_visible = snap.inbound != StatusbarClusterSnapshot::InboundState::Hidden;
+  const bool inbound_ok = snap.inbound == StatusbarClusterSnapshot::InboundState::On;
+  const bool inbound_off = snap.inbound == StatusbarClusterSnapshot::InboundState::Off;
 
   const Rml::String label = snap.label.c_str();
   const bool label_warn = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Warn;
   const bool label_error = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Error;
 
-  if (state_.statusbar_mesh_visible == mesh_visible && state_.statusbar_mesh_ok == mesh_ok &&
-      state_.statusbar_mesh_off == mesh_off && state_.statusbar_mesh_error == mesh_error &&
-      state_.statusbar_reach_visible == reach_visible && state_.statusbar_reach_ok == reach_ok &&
-      state_.statusbar_reach_warn == reach_warn && state_.statusbar_reach_error == reach_error &&
-      state_.statusbar_reach_checking == reach_checking &&
-      state_.statusbar_reach_level == reach_level &&
-      state_.statusbar_help_visible == snap.help_visible && state_.statusbar_label == label &&
-      state_.statusbar_label_warn == label_warn && state_.statusbar_label_error == label_error) {
+  if (state_.statusbar_brief_visible == brief_visible && state_.statusbar_brief_ok == brief_ok &&
+      state_.statusbar_brief_failed == brief_failed &&
+      state_.statusbar_brief_unknown == brief_unknown &&
+      state_.statusbar_direct_visible == direct_visible && state_.statusbar_direct_ok == direct_ok &&
+      state_.statusbar_direct_off == direct_off && state_.statusbar_direct_error == direct_error &&
+      state_.statusbar_direct_checking == direct_checking &&
+      state_.statusbar_help_visible == snap.help_visible &&
+      state_.statusbar_inbound_visible == inbound_visible &&
+      state_.statusbar_inbound_ok == inbound_ok && state_.statusbar_inbound_off == inbound_off &&
+      state_.statusbar_label == label && state_.statusbar_label_warn == label_warn &&
+      state_.statusbar_label_error == label_error) {
     return false;
   }
 
-  state_.statusbar_mesh_visible = mesh_visible;
-  state_.statusbar_mesh_ok = mesh_ok;
-  state_.statusbar_mesh_off = mesh_off;
-  state_.statusbar_mesh_error = mesh_error;
-  state_.statusbar_reach_visible = reach_visible;
-  state_.statusbar_reach_ok = reach_ok;
-  state_.statusbar_reach_warn = reach_warn;
-  state_.statusbar_reach_error = reach_error;
-  state_.statusbar_reach_checking = reach_checking;
-  state_.statusbar_reach_level = reach_level;
+  state_.statusbar_brief_visible = brief_visible;
+  state_.statusbar_brief_ok = brief_ok;
+  state_.statusbar_brief_failed = brief_failed;
+  state_.statusbar_brief_unknown = brief_unknown;
+  state_.statusbar_direct_visible = direct_visible;
+  state_.statusbar_direct_ok = direct_ok;
+  state_.statusbar_direct_off = direct_off;
+  state_.statusbar_direct_error = direct_error;
+  state_.statusbar_direct_checking = direct_checking;
   state_.statusbar_help_visible = snap.help_visible;
+  state_.statusbar_inbound_visible = inbound_visible;
+  state_.statusbar_inbound_ok = inbound_ok;
+  state_.statusbar_inbound_off = inbound_off;
   state_.statusbar_label = label;
   state_.statusbar_label_warn = label_warn;
   state_.statusbar_label_error = label_error;
@@ -1139,8 +1129,9 @@ bool ShellHost::ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap) {
 
 void ShellHost::RefreshStatusbarCluster() {
   if (!state_.statusbar_visible) {
-    const bool had_cluster = state_.statusbar_mesh_visible || state_.statusbar_reach_visible ||
-                             state_.statusbar_help_visible || !state_.statusbar_label.empty();
+    const bool had_cluster = state_.statusbar_brief_visible || state_.statusbar_direct_visible ||
+                             state_.statusbar_help_visible || state_.statusbar_inbound_visible ||
+                             !state_.statusbar_label.empty();
     if (had_cluster) {
       ClearStatusbarCluster();
       DirtyStatusChrome();

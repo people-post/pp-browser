@@ -382,44 +382,48 @@ select selectbox option:hover {
   border-top-color: #e5e7eb;
 }
 
-.shell-statusbar-mesh-dot {
-  border-color: #9ca3af;
-  background-color: transparent;
+.shell-statusbar-cluster:hover {
+  background-color: #e2e8f0;
 }
 
-.shell-statusbar-mesh--ok .shell-statusbar-mesh-dot {
-  border-color: #6b7280;
-  background-color: #6b7280;
+.shell-statusbar-divider {
+  background-color: #cbd5e1;
 }
 
-.shell-statusbar-mesh--off .shell-statusbar-mesh-dot {
-  border-color: #9ca3af;
-  background-color: transparent;
+.shell-statusbar-brief--ok svg {
+  image-color: #15803d;
 }
 
-.shell-statusbar-mesh--error .shell-statusbar-mesh-dot {
-  border-color: #dc2626;
-  background-color: #dc2626;
+.shell-statusbar-brief--failed svg {
+  image-color: #dc2626;
 }
 
-.shell-statusbar-reach-bar {
-  background-color: #d1d5db;
+.shell-statusbar-brief--unknown svg {
+  image-color: #9ca3af;
 }
 
-.shell-statusbar-reach-bar--on {
-  background-color: #6b7280;
+.shell-statusbar-direct--ok svg {
+  image-color: #15803d;
 }
 
-.shell-statusbar-reach--ok .shell-statusbar-reach-bar--on {
-  background-color: #6b7280;
+.shell-statusbar-direct--off svg {
+  image-color: #d97706;
 }
 
-.shell-statusbar-reach--warn .shell-statusbar-reach-bar--on {
-  background-color: #d97706;
+.shell-statusbar-direct--error svg {
+  image-color: #dc2626;
 }
 
-.shell-statusbar-reach--error .shell-statusbar-reach-bar {
-  background-color: #fecaca;
+.shell-statusbar-direct--checking svg {
+  image-color: #9ca3af;
+}
+
+.shell-statusbar-inbound--ok svg {
+  image-color: #15803d;
+}
+
+.shell-statusbar-inbound--off svg {
+  image-color: #d97706;
 }
 
 .shell-call-quality-bar {
@@ -457,10 +461,6 @@ select selectbox option:hover {
 
 .shell-call-debug-subtitle {
   color: #6b7280;
-}
-
-.shell-statusbar-reach--checking .shell-statusbar-reach-bar--on {
-  background-color: #9ca3af;
 }
 
 .shell-statusbar-help svg {

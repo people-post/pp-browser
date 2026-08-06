@@ -290,22 +290,23 @@ struct ShellState {
   /**
    * Desktop + expanded bottom status bar (read-only ambient chrome).
    * Hidden on compact layout and on mobile/tablet platforms.
-   * Left cluster: Mesh · Reach · Help (+ sparse label). Right: activity.
+   * Left cluster: Brief · Direct · [divider · Help · Inbound] (+ sparse label). Right: activity.
    * See projects/network-status-chrome/.
    */
   bool statusbar_visible = false;
-  bool statusbar_mesh_visible = false;
-  bool statusbar_mesh_ok = false;
-  bool statusbar_mesh_off = false;
-  bool statusbar_mesh_error = false;
-  bool statusbar_reach_visible = false;
-  bool statusbar_reach_ok = false;
-  bool statusbar_reach_warn = false;
-  bool statusbar_reach_error = false;
-  bool statusbar_reach_checking = false;
-  /** Reach strength bars 0–3 (call-meter style). */
-  int statusbar_reach_level = 0;
+  bool statusbar_brief_visible = false;
+  bool statusbar_brief_ok = false;
+  bool statusbar_brief_failed = false;
+  bool statusbar_brief_unknown = false;
+  bool statusbar_direct_visible = false;
+  bool statusbar_direct_ok = false;
+  bool statusbar_direct_off = false;
+  bool statusbar_direct_error = false;
+  bool statusbar_direct_checking = false;
   bool statusbar_help_visible = false;
+  bool statusbar_inbound_visible = false;
+  bool statusbar_inbound_ok = false;
+  bool statusbar_inbound_off = false;
   /** Sparse word for off/degraded states; empty when healthy. */
   Rml::String statusbar_label;
   bool statusbar_label_warn = false;

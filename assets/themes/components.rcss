@@ -906,6 +906,25 @@ select selectbox option {
   gap: 8dp;
   min-width: 0;
   overflow: hidden;
+  padding: 2dp 6dp;
+  margin-left: -6dp;
+  border-radius: 4dp;
+  cursor: pointer;
+}
+
+.shell-statusbar-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.shell-statusbar-divider {
+  width: 1dp;
+  height: 12dp;
+  flex-shrink: 0;
 }
 
 .shell-statusbar-slot {
@@ -915,41 +934,10 @@ select selectbox option {
   flex-shrink: 0;
 }
 
-.shell-statusbar-mesh-dot {
-  width: 8dp;
-  height: 8dp;
-  border-width: 1.5dp;
-  border-style: solid;
-  border-radius: 4dp;
-  box-sizing: border-box;
-}
-
-.shell-statusbar-reach-bars {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 2dp;
-  height: 12dp;
-}
-
-.shell-statusbar-reach-bar {
-  width: 3dp;
-  border-radius: 1dp;
-}
-
-.shell-statusbar-reach-bar--1 {
-  height: 5dp;
-}
-
-.shell-statusbar-reach-bar--2 {
-  height: 8dp;
-}
-
-.shell-statusbar-reach-bar--3 {
-  height: 12dp;
-}
-
-.shell-statusbar-help svg {
+.shell-statusbar-brief svg,
+.shell-statusbar-direct svg,
+.shell-statusbar-help svg,
+.shell-statusbar-inbound svg {
   width: 12dp;
   height: 12dp;
 }
@@ -963,7 +951,7 @@ select selectbox option {
 }
 
 .shell-statusbar-label {
-  margin-left: 2dp;
+  margin-left: 0;
 }
 
 .shell-statusbar-activity {
