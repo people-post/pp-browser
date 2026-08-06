@@ -39,7 +39,7 @@ void ShowToast(const ShellFeedbackPorts& ports, const std::string& message) {
 void ShowConfirm(const ShellFeedbackPorts& ports, const std::string& title, const std::string& message,
                  std::function<void(bool)> on_result) {
   if (ports.show_confirm) {
-    ports.show_confirm(title, message, std::move(on_result));
+    ports.show_confirm(title, message, std::move(on_result), {});
   }
 }
 

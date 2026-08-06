@@ -19,6 +19,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp-browser/call-media/1.0.0` — **dogfood OK 2026-08-02** |
 | **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |
 | **V032 media QoS structure** | Host receive policy doc; hop A↑/A↓ token buckets + session/participant caps; per-`stream_id` Opus + jitter playout; path_pressure → Opus bps; SFU AEAD under call media key |
+| **Call media health UI** | Quality bars + Fair/Poor/NoAudio labels on call chrome; Call details sheet; debug subtitle + rich diagnostics behind `call_diagnostics` pref / `--debug`; periodic `media_health` INFO logs |
 
 ## a4 thin in code (still relevant under V026)
 

@@ -1679,6 +1679,62 @@ select selectbox option {
   max-width: 280dp;
 }
 
+.shell-call-debug-subtitle,
+.shell-call-quality-hint {
+  margin: 2dp 0 0 0;
+  max-width: 280dp;
+}
+
+.shell-call-quality {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6dp;
+  height: 32dp;
+  min-width: 0;
+  padding: 0 8dp;
+  border-width: 0;
+  background-color: transparent;
+  flex-shrink: 0;
+}
+
+.shell-call-quality--compact {
+  height: 28dp;
+  padding: 0 4dp;
+}
+
+.shell-call-quality-bars {
+  align-items: flex-end;
+  gap: 2dp;
+  height: 12dp;
+}
+
+.shell-call-quality-bar {
+  width: 3dp;
+  border-radius: 1dp;
+}
+
+.shell-call-quality-bar--1 {
+  height: 4dp;
+}
+
+.shell-call-quality-bar--2 {
+  height: 7dp;
+}
+
+.shell-call-quality-bar--3 {
+  height: 10dp;
+}
+
+.shell-call-quality-bar--4 {
+  height: 12dp;
+}
+
+.shell-call-quality-label {
+  margin: 0;
+  white-space: nowrap;
+}
+
 .shell-call-bar-meters {
   align-items: flex-start;
   justify-content: flex-start;

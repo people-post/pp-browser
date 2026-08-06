@@ -39,4 +39,18 @@ void UserFeedback::NeedsSetup(const std::string& message) {
   }
 }
 
+void UserFeedback::Alert(const std::string& title, const std::string& message, std::function<void()> on_ok,
+                         const std::string& ok_label) {
+  if (ports_.show_alert) {
+    ports_.show_alert(title, message, std::move(on_ok), ok_label);
+  }
+}
+
+void UserFeedback::Confirm(const std::string& title, const std::string& message,
+                           std::function<void(bool)> on_result, const std::string& ok_label) {
+  if (ports_.show_confirm) {
+    ports_.show_confirm(title, message, std::move(on_result), ok_label);
+  }
+}
+
 } // namespace pbr

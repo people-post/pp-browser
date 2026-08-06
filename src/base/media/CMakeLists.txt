@@ -1,6 +1,7 @@
 pp_browser_add_base_library(pp_base_media
   SOURCES
     CallMediaAdaptation.cpp
+    CallMediaHealth.cpp
     CallMediaEngine.cpp
     CallRingtone.cpp
     CallAudioSession_Default.cpp

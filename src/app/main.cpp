@@ -2,6 +2,7 @@
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
+#include "base/media/CallMediaHealth.h"
 #include "base/platform/Platform.h"
 #include "base/platform/PlatformLogDefaults.h"
 #include "base/platform/PlatformLogSink.h"
@@ -66,6 +67,7 @@ int main(int argc, char** argv) {
   const auto default_level = pbr::DefaultRootLogLevel(debug_mode);
   root.setLevel(default_level);
   pbr::logging::setEmitFloor(pbr::DefaultEmitFloor(debug_mode));
+  pbr::SetCallDiagnosticsCliOverride(debug_mode);
   // Install early so [startup] marks reach logcat before Bootstrap.
   pbr::InstallPlatformLogSink();
   if (startup_timing) {

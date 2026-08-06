@@ -43,6 +43,14 @@ struct CallChromeLayer {
   std::string in_call_status_hint;
   CallChromeMode in_call_mode = CallChromeMode::Expanded;
   int in_call_minimized_corner = 0;
+  int in_call_quality_bars = 4;
+  bool in_call_quality_ok = true;
+  bool in_call_quality_warn = false;
+  bool in_call_quality_error = false;
+  std::string in_call_quality_label;
+  std::string in_call_quality_hint;
+  bool in_call_show_debug_subtitle = false;
+  std::string in_call_debug_subtitle;
 };
 
 enum class CallChromeUpdate {

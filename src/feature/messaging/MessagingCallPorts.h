@@ -25,10 +25,14 @@ struct MessagingCallPorts {
   std::function<Roe<std::optional<Contact>>(const std::string& identity, ContactIdKind kind)>
       find_contact_by_identity;
   std::function<std::optional<std::string>()> local_relay_identity;
+  /** Profile pref OR `--debug` CLI override (V032 call diagnostics). */
+  std::function<bool()> call_diagnostics_enabled;
 };
 
 class MessagingHub;
+class SessionStore;
 
-MessagingCallPorts MakeMessagingCallPorts(MessagingHub& hub);
+/** Optional session_store wires profile `call_diagnostics` (CLI `--debug` still ORs in). */
+MessagingCallPorts MakeMessagingCallPorts(MessagingHub& hub, SessionStore* session_store = nullptr);
 
 } // namespace pbr

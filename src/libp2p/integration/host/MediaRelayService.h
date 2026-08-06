@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/data/Config.h"
+#include "base/media/CallMediaHealth.h"
 #include "base/people/RelayScope.h"
 #include "common/Error.h"
 #include "libp2p/integration/host/Libp2pHost.h"
@@ -131,6 +132,8 @@ public:
    * Meaningful while attached (local hop or remote client).
    */
   double PathPressure() const;
+  /** Hop drop counters for chrome / logs (V032). */
+  CallHopHealth HealthSnapshot() const;
 
   /** V032 host load limits (also documented in HOST_RECEIVE_POLICY). */
   static constexpr size_t kMaxHostSessions = 4;

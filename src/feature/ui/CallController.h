@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/media/CallMediaHealth.h"
 #include "base/media/CallRingtone.h"
 #include "base/ui/ShellTypes.h"
 #include "common/Module.h"
@@ -59,6 +60,8 @@ public:
   void RestoreChromeFromMinimized();
   void SetMinimizedCorner(int corner);
   CallChromeMode ChromeMode() const { return chrome_mode_; }
+  /** Thin Call details sheet (debug numbers when diagnostics enabled). */
+  void ShowCallDetails();
 
 private:
   bool StartCall(const std::string& thread_id, bool video);
@@ -71,6 +74,9 @@ private:
   void ApplyAudioLevels(CallMediaEngine& media);
   void RefreshCallLevels();
   void SyncRingtone();
+  void ApplyMediaHealth(CallMediaEngine& media, CallSessionManager* calls, bool media_reconnect);
+  CallMediaHealthView BuildMediaHealthView(CallMediaEngine& media, CallSessionManager* calls,
+                                           bool media_reconnect) const;
   std::string DisplayNameForIdentity(const std::string& identity) const;
   static std::string FormatElapsed(int64_t connected_at_ms);
 
@@ -86,6 +92,8 @@ private:
   std::string active_call_id_;
   int64_t ring_started_ms_ = 0;
   int64_t last_pulse_toggle_ms_ = 0;
+  int64_t last_media_health_log_ms_ = 0;
+  int last_warned_quality_ = -1;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
   CallChromeMode chrome_mode_ = CallChromeMode::Expanded;
