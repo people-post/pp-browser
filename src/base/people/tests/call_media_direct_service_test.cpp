@@ -143,6 +143,56 @@ TEST_F(CallMediaDirectServiceTest, HelloAndEncryptedAudioRoundTrip) {
     ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got_audio; }));
   }
   EXPECT_EQ(received, opus);
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  a_call_media_->Detach();
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  EXPECT_FALSE(a_call_media_->IsActive());
+}
+
+TEST_F(CallMediaDirectServiceTest, DetachUnblocksConnectWait) {
+  // B stalls inside inbound hello handler so A's Connect blocks in hello_ack read.
+  const std::string call_id = "call-detach-wait";
+  ByteVector media_key(32, 0x11);
+  std::atomic<bool> release_b{false};
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    while (!release_b.load(std::memory_order_acquire)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  std::atomic<bool> connect_done{false};
+  Roe<void> connect_result = Error("not run");
+  std::thread th([&] {
+    connect_result = a_call_media_->Connect(params, {}, 15000);
+    connect_done.store(true, std::memory_order_release);
+  });
+
+  for (int i = 0; i < 100 && a_call_media_->Phase() != CallMediaSessionPhase::HelloOutbound; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  ASSERT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::HelloOutbound);
+  ASSERT_FALSE(connect_done.load(std::memory_order_acquire));
+
+  a_call_media_->Detach();
+  th.join();
+  release_b.store(true, std::memory_order_release);
+
+  ASSERT_TRUE(connect_done.load(std::memory_order_acquire));
+  EXPECT_FALSE(connect_result);
+  EXPECT_EQ(connect_result.error().message, "call-media aborted");
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
 }
 
 } // namespace

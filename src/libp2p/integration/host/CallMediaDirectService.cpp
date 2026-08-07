@@ -15,7 +15,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstring>
-#include <deque>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -49,8 +48,7 @@ Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
   if (!json_utf8) {
     return json_utf8.error();
   }
-  nlohmann::json root =
-      nlohmann::json::parse(*json_utf8, nullptr, false);
+  nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
   if (root.is_discarded() || !root.is_object()) {
     return Error("invalid call-media json");
   }
@@ -65,6 +63,62 @@ void CloseQuiet(const std::shared_ptr<Stream>& stream) {
 
 } // namespace
 
+const char* CallMediaSessionPhaseName(const CallMediaSessionPhase phase) {
+  switch (phase) {
+  case CallMediaSessionPhase::Idle:
+    return "Idle";
+  case CallMediaSessionPhase::Dialing:
+    return "Dialing";
+  case CallMediaSessionPhase::HelloOutbound:
+    return "HelloOutbound";
+  case CallMediaSessionPhase::HelloInbound:
+    return "HelloInbound";
+  case CallMediaSessionPhase::Adopting:
+    return "Adopting";
+  case CallMediaSessionPhase::MediaReady:
+    return "MediaReady";
+  case CallMediaSessionPhase::Detaching:
+    return "Detaching";
+  }
+  return "?";
+}
+
+const char* CallMediaSessionEventName(const CallMediaSessionEvent ev) {
+  switch (ev) {
+  case CallMediaSessionEvent::ConnectRequested:
+    return "ConnectRequested";
+  case CallMediaSessionEvent::OpenStreamOk:
+    return "OpenStreamOk";
+  case CallMediaSessionEvent::OpenStreamFail:
+    return "OpenStreamFail";
+  case CallMediaSessionEvent::InboundStream:
+    return "InboundStream";
+  case CallMediaSessionEvent::HelloOk:
+    return "HelloOk";
+  case CallMediaSessionEvent::HelloFail:
+    return "HelloFail";
+  case CallMediaSessionEvent::AdoptWon:
+    return "AdoptWon";
+  case CallMediaSessionEvent::AdoptLost:
+    return "AdoptLost";
+  case CallMediaSessionEvent::DuplexStarted:
+    return "DuplexStarted";
+  case CallMediaSessionEvent::DuplexEof:
+    return "DuplexEof";
+  case CallMediaSessionEvent::DuplexError:
+    return "DuplexError";
+  case CallMediaSessionEvent::DetachRequested:
+    return "DetachRequested";
+  case CallMediaSessionEvent::ConnectTimeout:
+    return "ConnectTimeout";
+  case CallMediaSessionEvent::HandlerCleared:
+    return "HandlerCleared";
+  case CallMediaSessionEvent::ConnectSuperseded:
+    return "ConnectSuperseded";
+  }
+  return "?";
+}
+
 struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl> {
   Impl() { redirectLogger("CallMediaDirect"); }
 
@@ -74,11 +128,14 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
   Libp2pHost* host = nullptr;
 
   std::mutex mu;
+  std::atomic<CallMediaSessionPhase> phase{CallMediaSessionPhase::Idle};
+  std::string phase_call_id;
+  /** Offerer outbound hello — inbound is glare loser (dogfood dual-dial). */
+  bool offerer_glare = false;
+
   std::shared_ptr<Stream> stream;
   CallMediaDirectConnectParams active_params;
   CallMediaDirectCallbacks callbacks;
-  std::atomic<bool> pump_running{false};
-  std::atomic<bool> session_ready{false};
   std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound_handler;
 
   std::shared_ptr<DuplexFrameSession> duplex;
@@ -86,11 +143,63 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
   std::atomic<uint32_t> decrypt_fail_log_{0};
   std::atomic<uint32_t> drop_log_{0};
 
-  // Active Connect() waiter — Detach completes it so Leave/shutdown do not block 15s+.
+  // Connect() waiter owned by the session machine (Detach / timeout / MediaReady complete it).
   std::shared_ptr<std::atomic<bool>> connect_settled;
   std::shared_ptr<std::promise<Roe<void>>> connect_promise;
-  /** True while outbound hello/ack runs — reject glare inbound (dual-dial deadlock). */
-  std::atomic<bool> outbound_hello_inflight{false};
+
+  CallMediaSessionPhase Phase() const {
+    return phase.load(std::memory_order_acquire);
+  }
+
+  void SetPhaseLocked(CallMediaSessionPhase next, CallMediaSessionEvent ev,
+                      const std::string& call_id = {}) {
+    const CallMediaSessionPhase prev = phase.load(std::memory_order_relaxed);
+    if (!call_id.empty()) {
+      phase_call_id = call_id;
+    }
+    if (next == CallMediaSessionPhase::Idle || next == CallMediaSessionPhase::Detaching) {
+      offerer_glare = false;
+    }
+    if (next == CallMediaSessionPhase::Idle) {
+      phase_call_id.clear();
+    }
+    if (prev == next) {
+      log().info << "phase=" << CallMediaSessionPhaseName(prev)
+                 << " event=" << CallMediaSessionEventName(ev) << " call_id=" << phase_call_id;
+      return;
+    }
+    phase.store(next, std::memory_order_release);
+    log().info << "phase=" << CallMediaSessionPhaseName(prev) << "->"
+               << CallMediaSessionPhaseName(next) << " event=" << CallMediaSessionEventName(ev)
+               << " call_id=" << phase_call_id;
+  }
+
+  void IgnoreEventLocked(CallMediaSessionEvent ev, const char* reason) {
+    log().warning << "call_media_session ignore event=" << CallMediaSessionEventName(ev)
+                  << " phase=" << CallMediaSessionPhaseName(Phase()) << " reason="
+                  << (reason ? reason : "");
+  }
+
+  /** True while Connect() waiter is still outstanding (not yet settled). */
+  bool ConnectWaiterActiveLocked() const {
+    return connect_settled && !connect_settled->load(std::memory_order_acquire);
+  }
+
+  /**
+   * Inbound hello failed / lost race while an outbound Connect may still be in flight.
+   * Restore Dialing so OpenStream/hello can proceed instead of hanging until timeout.
+   */
+  void AfterInboundFailureLocked(CallMediaSessionEvent ev, const std::string& call_id = {}) {
+    if (ConnectWaiterActiveLocked() && !stream) {
+      SetPhaseLocked(CallMediaSessionPhase::Dialing, ev, call_id);
+      return;
+    }
+    SetPhaseLocked(CallMediaSessionPhase::Idle, ev, call_id);
+  }
+
+  bool MediaReady() const {
+    return Phase() == CallMediaSessionPhase::MediaReady;
+  }
 
   bool HandleMediaFrame(Roe<std::vector<uint8_t>> frame_res) {
     if (!frame_res || frame_res->empty()) {
@@ -120,40 +229,6 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     return true;
   }
 
-  void DetachLocked(bool abort_connect = true) {
-    outbound_hello_inflight.store(false, std::memory_order_release);
-    if (abort_connect) {
-      CompleteConnectLocked(Error("call-media aborted"));
-    }
-    pump_running.store(false);
-    session_ready.store(false, std::memory_order_release);
-    if (duplex_cancelled) {
-      duplex_cancelled->store(true, std::memory_order_release);
-    }
-    if (duplex) {
-      duplex->Stop();
-      duplex.reset();
-    }
-    duplex_cancelled.reset();
-    if (stream) {
-      CloseQuiet(stream);
-      stream.reset();
-    }
-    callbacks = {};
-    active_params = {};
-  }
-  void Fail(const std::string& message) {
-    CallMediaDirectCallbacks cbs;
-    {
-      std::lock_guard lock(mu);
-      cbs = callbacks;
-      DetachLocked(/*abort_connect=*/true);
-    }
-    if (cbs.on_failed) {
-      cbs.on_failed(message);
-    }
-  }
-
   void CompleteConnectLocked(Roe<void> value) {
     if (!connect_settled) {
       return;
@@ -170,20 +245,67 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     connect_promise.reset();
   }
 
+  void TeardownTransportLocked() {
+    offerer_glare = false;
+    if (duplex_cancelled) {
+      duplex_cancelled->store(true, std::memory_order_release);
+    }
+    if (duplex) {
+      duplex->Stop();
+      duplex.reset();
+    }
+    duplex_cancelled.reset();
+    if (stream) {
+      CloseQuiet(stream);
+      stream.reset();
+    }
+    callbacks = {};
+    active_params = {};
+  }
+
+  /** DetachRequested — abort waiter, tear down, Idle. */
+  void DetachLocked(bool abort_connect, CallMediaSessionEvent ev = CallMediaSessionEvent::DetachRequested) {
+    const CallMediaSessionPhase prev = Phase();
+    if (prev != CallMediaSessionPhase::Idle) {
+      SetPhaseLocked(CallMediaSessionPhase::Detaching, ev, phase_call_id);
+    }
+    if (abort_connect) {
+      CompleteConnectLocked(Error("call-media aborted"));
+    }
+    TeardownTransportLocked();
+    if (prev != CallMediaSessionPhase::Idle) {
+      SetPhaseLocked(CallMediaSessionPhase::Idle, ev);
+    }
+  }
+
+  void Fail(const std::string& message, CallMediaSessionEvent ev = CallMediaSessionEvent::DuplexError) {
+    CallMediaDirectCallbacks cbs;
+    {
+      std::lock_guard lock(mu);
+      cbs = callbacks;
+      // Instant Failed → Idle (s1 freeze): log via SetPhase path inside DetachLocked.
+      DetachLocked(/*abort_connect=*/true, ev);
+    }
+    if (cbs.on_failed) {
+      cbs.on_failed(message);
+    }
+  }
+
   /** First successful hello wins; loser closes. */
   bool TryAdoptStreamLocked(std::shared_ptr<Stream> s, CallMediaDirectConnectParams params,
                             CallMediaDirectCallbacks cbs) {
     if (stream) {
       return false;
     }
+    SetPhaseLocked(CallMediaSessionPhase::Adopting, CallMediaSessionEvent::AdoptWon, params.call_id);
     stream = std::move(s);
     active_params = std::move(params);
     callbacks = std::move(cbs);
+    offerer_glare = false;
     return true;
   }
 
   void StartMediaDuplex(std::function<void()> on_ready = {}) {
-    pump_running.store(true, std::memory_order_release);
     std::shared_ptr<Stream> s;
     {
       std::lock_guard lock(mu);
@@ -196,7 +318,8 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     duplex_cancelled = std::make_shared<std::atomic<bool>>(false);
     auto self = shared_from_this();
     host->Post([self, s, on_ready = std::move(on_ready)]() mutable {
-      if (!self->duplex || !self->pump_running.load()) {
+      if (!self->duplex || self->Phase() == CallMediaSessionPhase::Idle ||
+          self->Phase() == CallMediaSessionPhase::Detaching) {
         return;
       }
       const auto on_drop = [self]() {
@@ -213,10 +336,23 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
           CallMediaFrameConfig(),
           [self](const char* reason) {
             self->Fail(std::string("call-media stream closed (") +
-                       (reason && reason[0] ? reason : "unknown") + ")");
-          }, kMaxOutboundFrames, on_drop,
+                           (reason && reason[0] ? reason : "unknown") + ")",
+                       CallMediaSessionEvent::DuplexEof);
+          },
+          kMaxOutboundFrames, on_drop,
           /*write_preferred=*/true);
-      self->session_ready.store(true, std::memory_order_release);
+      {
+        std::lock_guard lock(self->mu);
+        if (self->Phase() == CallMediaSessionPhase::Adopting ||
+            self->Phase() == CallMediaSessionPhase::HelloOutbound ||
+            self->Phase() == CallMediaSessionPhase::HelloInbound) {
+          self->SetPhaseLocked(CallMediaSessionPhase::MediaReady, CallMediaSessionEvent::DuplexStarted,
+                               self->active_params.call_id);
+        } else if (self->Phase() != CallMediaSessionPhase::MediaReady) {
+          // Detach raced the io post — do not claim ready.
+          return;
+        }
+      }
       if (on_ready) {
         on_ready();
       }
@@ -224,17 +360,36 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
   }
 
   bool EnqueueOutbound(std::vector<uint8_t> body) {
-    if (!host || !pump_running.load()) {
+    if (!host || !MediaReady()) {
       return false;
     }
     auto self = shared_from_this();
     host->Post([self, body = std::move(body)]() mutable {
-      if (!self->duplex || !self->pump_running.load()) {
+      if (!self->duplex || !self->MediaReady()) {
         return;
       }
       self->duplex->EnqueueOutbound(std::move(body));
     });
     return true;
+  }
+
+  /** Guard for inbound admit (HOST_RECEIVE_POLICY / V033 glare note). */
+  enum class InboundAdmit { Accept, RejectNoHandler, RejectActive, RejectGlare };
+
+  InboundAdmit AdmitInboundLocked() {
+    if (!inbound_handler) {
+      return InboundAdmit::RejectNoHandler;
+    }
+    if (stream || Phase() == CallMediaSessionPhase::MediaReady ||
+        Phase() == CallMediaSessionPhase::Adopting || Phase() == CallMediaSessionPhase::Detaching ||
+        Phase() == CallMediaSessionPhase::HelloInbound) {
+      return InboundAdmit::RejectActive;
+    }
+    // Glare: only offerer HelloOutbound rejects inbound. Dialing must still accept reverse-dial.
+    if (Phase() == CallMediaSessionPhase::HelloOutbound && offerer_glare) {
+      return InboundAdmit::RejectGlare;
+    }
+    return InboundAdmit::Accept;
   }
 
   void HandleInbound(libp2p::StreamAndProtocol stream_in) {
@@ -249,33 +404,35 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     PostLibp2pWorker(*host, WorkerLane::Normal, [self = shared_from_this(), stream = std::move(stream)]() mutable {
       {
         std::lock_guard lock(self->mu);
-        if (!self->inbound_handler) {
-          self->log().info
-              << "Inbound call-media ignored (handler cleared)";
+        const auto admit = self->AdmitInboundLocked();
+        if (admit == InboundAdmit::RejectNoHandler) {
+          self->IgnoreEventLocked(CallMediaSessionEvent::InboundStream, "handler cleared");
           CloseQuiet(stream);
           return;
         }
-        if (self->stream) {
-          self->log().info
-              << "Inbound call-media rejected (session already active)";
+        if (admit == InboundAdmit::RejectActive) {
+          self->IgnoreEventLocked(CallMediaSessionEvent::InboundStream, "session already active");
           CloseQuiet(stream);
           return;
         }
-        if (self->outbound_hello_inflight.load(std::memory_order_acquire)) {
-          // Offerer fallback dial in hello/ack — late reverse-dial is the glare loser.
-          // Answerer never sets this flag so offerer→answerer inbound still completes.
-          self->log().info
-              << "Inbound call-media rejected (outbound hello in flight)";
+        if (admit == InboundAdmit::RejectGlare) {
+          self->IgnoreEventLocked(CallMediaSessionEvent::InboundStream, "glare outbound hello");
           CloseQuiet(stream);
           return;
         }
+        self->SetPhaseLocked(CallMediaSessionPhase::HelloInbound, CallMediaSessionEvent::InboundStream);
       }
 
       auto hello = ReadJson(stream);
       if (!hello || hello->value("type", "") != "hello") {
-        self->log().warning
-            << "Inbound call-media hello read failed err="
-            << (hello ? "bad type" : hello.error().message);
+        self->log().warning << "Inbound call-media hello read failed err="
+                            << (hello ? "bad type" : hello.error().message);
+        {
+          std::lock_guard lock(self->mu);
+          if (self->Phase() == CallMediaSessionPhase::HelloInbound) {
+            self->AfterInboundFailureLocked(CallMediaSessionEvent::HelloFail);
+          }
+        }
         CloseQuiet(stream);
         return;
       }
@@ -291,30 +448,55 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
       {
         std::lock_guard lock(self->mu);
         handler = self->inbound_handler;
-        if (self->stream) {
-          self->log().info
-              << "Inbound call-media lost race after hello call_id=" << params.call_id;
+        if (self->stream || self->Phase() == CallMediaSessionPhase::MediaReady ||
+            self->Phase() == CallMediaSessionPhase::Adopting) {
+          self->IgnoreEventLocked(CallMediaSessionEvent::HelloOk, "lost race after hello");
+          if (self->Phase() == CallMediaSessionPhase::HelloInbound) {
+            self->AfterInboundFailureLocked(CallMediaSessionEvent::AdoptLost, params.call_id);
+          }
+          CloseQuiet(stream);
+          return;
+        }
+        if (self->Phase() != CallMediaSessionPhase::HelloInbound) {
+          // Detach during hello read.
           CloseQuiet(stream);
           return;
         }
       }
       CallMediaDirectCallbacks cbs;
       if (!handler) {
-        self->log().info << "Inbound call-media handler cleared mid-hello";
+        self->IgnoreEventLocked(CallMediaSessionEvent::HelloOk, "handler cleared mid-hello");
         (void)WriteJson(stream, {{"v", 1}, {"type", "hello_ack"}, {"ok", false}, {"error", "unavailable"}});
+        {
+          std::lock_guard lock(self->mu);
+          if (self->Phase() == CallMediaSessionPhase::HelloInbound) {
+            self->AfterInboundFailureLocked(CallMediaSessionEvent::HelloFail, params.call_id);
+          }
+        }
         CloseQuiet(stream);
         return;
       }
       handler(params, cbs);
       if (params.media_key.empty() || params.call_id.empty()) {
-        self->log().warning
-            << "Inbound call-media hello rejected call_id=" << params.call_id
-            << " key_empty=" << (params.media_key.empty() ? 1 : 0);
+        self->log().warning << "Inbound call-media hello rejected call_id=" << params.call_id
+                            << " key_empty=" << (params.media_key.empty() ? 1 : 0);
         (void)WriteJson(stream, {{"v", 1}, {"type", "hello_ack"}, {"ok", false}, {"error", "rejected"}});
+        {
+          std::lock_guard lock(self->mu);
+          if (self->Phase() == CallMediaSessionPhase::HelloInbound) {
+            self->AfterInboundFailureLocked(CallMediaSessionEvent::HelloFail, params.call_id);
+          }
+        }
         CloseQuiet(stream);
         return;
       }
       if (!(WriteJson(stream, {{"v", 1}, {"type", "hello_ack"}, {"ok", true}}))) {
+        {
+          std::lock_guard lock(self->mu);
+          if (self->Phase() == CallMediaSessionPhase::HelloInbound) {
+            self->AfterInboundFailureLocked(CallMediaSessionEvent::HelloFail, params.call_id);
+          }
+        }
         CloseQuiet(stream);
         return;
       }
@@ -323,19 +505,29 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
       bool adopted = false;
       {
         std::lock_guard lock(self->mu);
+        if (self->Phase() != CallMediaSessionPhase::HelloInbound) {
+          CloseQuiet(stream);
+          return;
+        }
+        self->SetPhaseLocked(CallMediaSessionPhase::HelloInbound, CallMediaSessionEvent::HelloOk,
+                             params.call_id);
         adopted = self->TryAdoptStreamLocked(stream, params, std::move(cbs));
         if (adopted) {
           adopted_cbs = self->callbacks;
+        } else {
+          self->AfterInboundFailureLocked(CallMediaSessionEvent::AdoptLost, params.call_id);
         }
       }
       if (!adopted) {
-        self->log().info
-            << "Inbound call-media lost adopt race call_id=" << params.call_id;
+        self->log().info << "Inbound call-media lost adopt race call_id=" << params.call_id;
         CloseQuiet(stream);
         return;
       }
       self->StartMediaDuplex([self, adopted_cbs = std::move(adopted_cbs)]() {
-        self->CompleteConnectLocked({});
+        {
+          std::lock_guard lock(self->mu);
+          self->CompleteConnectLocked({});
+        }
         if (adopted_cbs.on_connected) {
           adopted_cbs.on_connected();
         }
@@ -380,6 +572,8 @@ void CallMediaDirectService::SetInboundHandler(
 void CallMediaDirectService::ClearInboundHandler() {
   std::lock_guard lock(impl_->mu);
   impl_->inbound_handler = {};
+  impl_->Log().info << "phase=" << CallMediaSessionPhaseName(impl_->Phase())
+                    << " event=" << CallMediaSessionEventName(CallMediaSessionEvent::HandlerCleared);
 }
 
 bool CallMediaDirectService::IsActive() const {
@@ -387,9 +581,13 @@ bool CallMediaDirectService::IsActive() const {
   return impl_->stream != nullptr;
 }
 
+CallMediaSessionPhase CallMediaDirectService::Phase() const {
+  return impl_->Phase();
+}
+
 void CallMediaDirectService::Detach() {
   std::lock_guard lock(impl_->mu);
-  impl_->DetachLocked(/*abort_connect=*/true);
+  impl_->DetachLocked(/*abort_connect=*/true, CallMediaSessionEvent::DetachRequested);
 }
 
 Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& params,
@@ -403,12 +601,6 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
   if (!sessions_.IsDialable(params.peer_key)) {
     return Error("call-media peer not dialable");
   }
-  {
-    std::lock_guard lock(impl_->mu);
-    if (impl_->stream) {
-      return {};
-    }
-  }
 
   const int wait_ms = (timeout_ms > 0 ? timeout_ms : 15000) + 1000;
 
@@ -417,7 +609,17 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
   auto result_future = result_promise->get_future();
   {
     std::lock_guard lock(impl_->mu);
-    // Replace any prior waiter (should not overlap; Detach clears).
+    // Already MediaReady with a stream — idempotent success (bridge may retry).
+    if (impl_->stream && impl_->Phase() == CallMediaSessionPhase::MediaReady) {
+      return {};
+    }
+    if (impl_->stream) {
+      return {};
+    }
+    // s1: Detach-then-Connect when a prior dial/hello is in flight.
+    if (impl_->Phase() != CallMediaSessionPhase::Idle) {
+      impl_->DetachLocked(/*abort_connect=*/true, CallMediaSessionEvent::ConnectSuperseded);
+    }
     if (impl_->connect_settled && !impl_->connect_settled->exchange(true)) {
       try {
         if (impl_->connect_promise) {
@@ -428,10 +630,12 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
     }
     impl_->connect_settled = settled;
     impl_->connect_promise = result_promise;
+    impl_->SetPhaseLocked(CallMediaSessionPhase::Dialing, CallMediaSessionEvent::ConnectRequested,
+                           params.call_id);
   }
 
   sessions_.OpenStream(params.peer_key, {ProtocolName{kCallMediaDirectProtocolId}},
-                       [impl = impl_, params, callbacks = std::move(callbacks), settled, result_promise](
+                       [impl = impl_, params, callbacks = std::move(callbacks), settled](
                            outcome::result<libp2p::StreamAndProtocol> stream_res) mutable {
                          if (settled->load(std::memory_order_acquire)) {
                            if (stream_res) {
@@ -446,20 +650,28 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                          // Normal lane — must not block Critical (Connect waiter + inbound key wait).
                          PostLibp2pWorker(*host, WorkerLane::Normal,
                                           [impl, params, callbacks = std::move(callbacks), settled,
-                                           result_promise, stream_res = std::move(stream_res)]() mutable {
+                                           stream_res = std::move(stream_res)]() mutable {
+                           // Outbound Connect may overlap inbound HelloInbound (dual-dial): do not
+                           // require Phase==Dialing exclusively. Key off settled/stream + offerer_glare.
                            auto finish = [&](Roe<void> value) {
-                             impl->outbound_hello_inflight.store(false, std::memory_order_release);
-                             if (!settled->exchange(true)) {
-                               try {
-                                 result_promise->set_value(std::move(value));
-                               } catch (const std::future_error&) {
+                             std::lock_guard lock(impl->mu);
+                             impl->offerer_glare = false;
+                             if (!value) {
+                               if (impl->Phase() == CallMediaSessionPhase::Dialing ||
+                                   impl->Phase() == CallMediaSessionPhase::HelloOutbound) {
+                                 impl->SetPhaseLocked(CallMediaSessionPhase::Idle,
+                                                      CallMediaSessionEvent::OpenStreamFail,
+                                                      params.call_id);
+                               }
+                             } else if (!impl->stream) {
+                               // Outbound done without adopt — only clear outbound phases.
+                               if (impl->Phase() == CallMediaSessionPhase::Dialing ||
+                                   impl->Phase() == CallMediaSessionPhase::HelloOutbound) {
+                                 impl->SetPhaseLocked(CallMediaSessionPhase::Idle,
+                                                      CallMediaSessionEvent::AdoptLost, params.call_id);
                                }
                              }
-                             std::lock_guard lock(impl->mu);
-                             if (impl->connect_settled == settled) {
-                               impl->connect_settled.reset();
-                               impl->connect_promise.reset();
-                             }
+                             impl->CompleteConnectLocked(std::move(value));
                            };
                            if (settled->load(std::memory_order_acquire)) {
                              if (stream_res) {
@@ -477,6 +689,39 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                                finish({});
                                return;
                              }
+                             // MediaReady/Adopting: inbound already won — complete Connect OK.
+                             if (impl->Phase() == CallMediaSessionPhase::MediaReady ||
+                                 impl->Phase() == CallMediaSessionPhase::Adopting) {
+                               if (stream_res) {
+                                 CloseQuiet(stream_res.value().stream);
+                               }
+                               finish({});
+                               return;
+                             }
+                             // Detaching: drop. Idle with no active waiter: drop. Idle with active
+                             // waiter: inbound hello failed and restored nothing useful — resume
+                             // outbound (bugfix: do not hang Connect until timeout).
+                             if (impl->Phase() == CallMediaSessionPhase::Detaching) {
+                               if (stream_res) {
+                                 CloseQuiet(stream_res.value().stream);
+                               }
+                               impl->IgnoreEventLocked(CallMediaSessionEvent::OpenStreamOk,
+                                                       "detaching");
+                               return;
+                             }
+                             if (impl->Phase() == CallMediaSessionPhase::Idle) {
+                               if (!impl->ConnectWaiterActiveLocked()) {
+                                 if (stream_res) {
+                                   CloseQuiet(stream_res.value().stream);
+                                 }
+                                 impl->IgnoreEventLocked(CallMediaSessionEvent::OpenStreamOk,
+                                                         "connect no longer active");
+                                 return;
+                               }
+                               impl->SetPhaseLocked(CallMediaSessionPhase::Dialing,
+                                                    CallMediaSessionEvent::OpenStreamOk,
+                                                    params.call_id);
+                             }
                            }
                            if (!stream_res) {
                              std::string detail = "call-media dial failed";
@@ -485,17 +730,15 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                                detail += stream_res.error().message();
                              } catch (...) {
                              }
-                             impl->Log().warning
-                                 << "Call-media OpenStream failed peer=" << params.peer_key
-                                 << " role=" << (params.offerer ? "offerer" : "answerer")
-                                 << " err=" << detail;
+                             impl->Log().warning << "Call-media OpenStream failed peer=" << params.peer_key
+                                                 << " role=" << (params.offerer ? "offerer" : "answerer")
+                                                 << " err=" << detail;
                              finish(Error(detail));
                              return;
                            }
-                           impl->Log().warning
-                               << "Call-media OpenStream ok peer=" << params.peer_key
-                               << " role=" << (params.offerer ? "offerer" : "answerer")
-                               << " call_id=" << params.call_id;
+                           impl->Log().warning << "Call-media OpenStream ok peer=" << params.peer_key
+                                               << " role=" << (params.offerer ? "offerer" : "answerer")
+                                               << " call_id=" << params.call_id;
                            auto stream = std::move(stream_res.value().stream);
                            {
                              std::lock_guard lock(impl->mu);
@@ -504,17 +747,44 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                                finish({});
                                return;
                              }
+                             // Prefer logging HelloOutbound when we still own Dialing; if inbound
+                             // already moved phase to HelloInbound, keep that and race on adopt.
+                             if (impl->Phase() == CallMediaSessionPhase::Dialing) {
+                               impl->SetPhaseLocked(CallMediaSessionPhase::HelloOutbound,
+                                                    CallMediaSessionEvent::OpenStreamOk, params.call_id);
+                             } else {
+                               impl->Log().info << "phase=" << CallMediaSessionPhaseName(impl->Phase())
+                                                << " event=" << CallMediaSessionEventName(
+                                                                   CallMediaSessionEvent::OpenStreamOk)
+                                                << " call_id=" << params.call_id
+                                                << " (outbound hello; inbound in flight)";
+                             }
+                             // Preserve dogfood glare: only offerer outbound rejects inbound.
+                             impl->offerer_glare = params.offerer;
                            }
-                           impl->outbound_hello_inflight.store(params.offerer, std::memory_order_release);
                            if (settled->load(std::memory_order_acquire)) {
-                             impl->outbound_hello_inflight.store(false, std::memory_order_release);
+                             {
+                               std::lock_guard lock(impl->mu);
+                               impl->offerer_glare = false;
+                               if (impl->Phase() == CallMediaSessionPhase::HelloOutbound ||
+                                   impl->Phase() == CallMediaSessionPhase::Dialing) {
+                                 impl->SetPhaseLocked(CallMediaSessionPhase::Idle,
+                                                      CallMediaSessionEvent::DetachRequested,
+                                                      params.call_id);
+                               }
+                             }
                              CloseQuiet(stream);
                              return;
                            }
                            {
                              std::lock_guard lock(impl->mu);
                              if (impl->stream) {
-                               impl->outbound_hello_inflight.store(false, std::memory_order_release);
+                               impl->offerer_glare = false;
+                               if (impl->Phase() == CallMediaSessionPhase::HelloOutbound ||
+                                   impl->Phase() == CallMediaSessionPhase::Dialing) {
+                                 impl->SetPhaseLocked(CallMediaSessionPhase::Idle,
+                                                      CallMediaSessionEvent::AdoptLost, params.call_id);
+                               }
                                CloseQuiet(stream);
                                finish({});
                                return;
@@ -526,9 +796,17 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                                                     {"call_id", params.call_id},
                                                     {"media_epoch", params.media_epoch},
                                                     {"role", role}}))) {
-                             impl->Log().warning
-                                 << "Call-media hello write failed peer=" << params.peer_key;
-                             finish(Error("call-media hello write failed"));
+                             impl->Log().warning << "Call-media hello write failed peer=" << params.peer_key;
+                             {
+                               std::lock_guard lock(impl->mu);
+                               impl->offerer_glare = false;
+                               if (impl->Phase() == CallMediaSessionPhase::HelloOutbound ||
+                                   impl->Phase() == CallMediaSessionPhase::Dialing) {
+                                 impl->SetPhaseLocked(CallMediaSessionPhase::Idle,
+                                                      CallMediaSessionEvent::HelloFail, params.call_id);
+                               }
+                               impl->CompleteConnectLocked(Error("call-media hello write failed"));
+                             }
                              CloseQuiet(stream);
                              return;
                            }
@@ -536,14 +814,17 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                              std::lock_guard lock(impl->mu);
                              if (impl->stream) {
                                // Inbound adopted during hello write — drop our dialed stream.
-                               impl->outbound_hello_inflight.store(false, std::memory_order_release);
+                               impl->offerer_glare = false;
                                CloseQuiet(stream);
                                finish({});
                                return;
                              }
                            }
                            auto ack = ReadJson(stream);
-                           impl->outbound_hello_inflight.store(false, std::memory_order_release);
+                           {
+                             std::lock_guard lock(impl->mu);
+                             impl->offerer_glare = false;
+                           }
                            if (settled->load(std::memory_order_acquire)) {
                              CloseQuiet(stream);
                              return;
@@ -555,14 +836,36 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                                finish({});
                                return;
                              }
+                             // Idle/Detaching: Connect was aborted; drop late hello.
+                             if (impl->Phase() == CallMediaSessionPhase::Idle ||
+                                 impl->Phase() == CallMediaSessionPhase::Detaching ||
+                                 impl->Phase() == CallMediaSessionPhase::MediaReady ||
+                                 impl->Phase() == CallMediaSessionPhase::Adopting) {
+                               CloseQuiet(stream);
+                               if (impl->Phase() == CallMediaSessionPhase::MediaReady ||
+                                   impl->Phase() == CallMediaSessionPhase::Adopting) {
+                                 finish({});
+                               } else {
+                                 impl->IgnoreEventLocked(CallMediaSessionEvent::HelloOk,
+                                                         "connect no longer active");
+                               }
+                               return;
+                             }
                            }
                            if (!ack || !ack->value("ok", false)) {
                              const std::string why =
                                  ack ? ack->value("error", "hello rejected") : ack.error().message;
-                             impl->Log().warning
-                                 << "Call-media hello rejected peer=" << params.peer_key
-                                 << " err=" << why;
-                             finish(Error(why));
+                             impl->Log().warning << "Call-media hello rejected peer=" << params.peer_key
+                                                 << " err=" << why;
+                             {
+                               std::lock_guard lock(impl->mu);
+                               if (impl->Phase() == CallMediaSessionPhase::HelloOutbound ||
+                                   impl->Phase() == CallMediaSessionPhase::Dialing) {
+                                 impl->SetPhaseLocked(CallMediaSessionPhase::Idle,
+                                                      CallMediaSessionEvent::HelloFail, params.call_id);
+                               }
+                               impl->CompleteConnectLocked(Error(why));
+                             }
                              CloseQuiet(stream);
                              return;
                            }
@@ -570,35 +873,41 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
                            bool adopted = false;
                            {
                              std::lock_guard lock(impl->mu);
+                             if (impl->stream || impl->Phase() == CallMediaSessionPhase::Idle ||
+                                 impl->Phase() == CallMediaSessionPhase::Detaching) {
+                               CloseQuiet(stream);
+                               if (impl->stream) {
+                                 finish({});
+                               }
+                               return;
+                             }
+                             if (impl->Phase() == CallMediaSessionPhase::HelloOutbound ||
+                                 impl->Phase() == CallMediaSessionPhase::Dialing) {
+                               impl->SetPhaseLocked(CallMediaSessionPhase::HelloOutbound,
+                                                    CallMediaSessionEvent::HelloOk, params.call_id);
+                             }
                              adopted = impl->TryAdoptStreamLocked(stream, params, std::move(callbacks));
                              if (adopted) {
                                adopted_cbs = impl->callbacks;
+                             } else if (impl->Phase() == CallMediaSessionPhase::HelloOutbound ||
+                                        impl->Phase() == CallMediaSessionPhase::Dialing) {
+                               impl->SetPhaseLocked(CallMediaSessionPhase::Idle,
+                                                    CallMediaSessionEvent::AdoptLost, params.call_id);
                              }
                            }
                            if (!adopted) {
-                             impl->Log().info
-                                 << "Call-media outbound lost adopt race call_id=" << params.call_id;
+                             impl->Log().info << "Call-media outbound lost adopt race call_id="
+                                              << params.call_id;
                              CloseQuiet(stream);
                              finish({});
                              return;
                            }
-                           impl->StartMediaDuplex([impl, adopted_cbs = std::move(adopted_cbs), settled,
-                                                   result_promise]() mutable {
+                           impl->StartMediaDuplex([impl, adopted_cbs = std::move(adopted_cbs)]() mutable {
                              if (adopted_cbs.on_connected) {
                                adopted_cbs.on_connected();
                              }
-                             impl->outbound_hello_inflight.store(false, std::memory_order_release);
-                             if (!settled->exchange(true)) {
-                               try {
-                                 result_promise->set_value(Roe<void>{});
-                               } catch (const std::future_error&) {
-                               }
-                             }
                              std::lock_guard lock(impl->mu);
-                             if (impl->connect_settled == settled) {
-                               impl->connect_settled.reset();
-                               impl->connect_promise.reset();
-                             }
+                             impl->CompleteConnectLocked(Roe<void>{});
                            });
                          });
                        });
@@ -617,7 +926,7 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
     }
     {
       std::lock_guard lock(impl_->mu);
-      if (impl_->stream != nullptr && impl_->session_ready.load(std::memory_order_acquire)) {
+      if (impl_->stream != nullptr && impl_->MediaReady()) {
         settled->store(true, std::memory_order_release);
         if (impl_->connect_settled == settled) {
           impl_->connect_settled.reset();
@@ -628,17 +937,23 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
     }
     if (std::chrono::steady_clock::now() >= deadline) {
       settled->exchange(true);
-      impl_->outbound_hello_inflight.store(false, std::memory_order_release);
-      bool active = false;
+      bool active_ready = false;
       {
         std::lock_guard lock(impl_->mu);
         if (impl_->connect_settled == settled) {
           impl_->connect_settled.reset();
           impl_->connect_promise.reset();
         }
-        active = impl_->stream != nullptr;
+        active_ready = impl_->stream != nullptr && impl_->MediaReady();
+        if (!active_ready && (impl_->Phase() == CallMediaSessionPhase::Dialing ||
+                              impl_->Phase() == CallMediaSessionPhase::HelloOutbound)) {
+          // Late OpenStreamOk / hello must be ignored once we leave these phases.
+          impl_->offerer_glare = false;
+          impl_->SetPhaseLocked(CallMediaSessionPhase::Idle, CallMediaSessionEvent::ConnectTimeout,
+                                params.call_id);
+        }
       }
-      if (active && impl_->session_ready.load(std::memory_order_acquire)) {
+      if (active_ready) {
         return {};
       }
       return Error("call-media connect timed out");
@@ -646,11 +961,12 @@ Roe<void> CallMediaDirectService::Connect(const CallMediaDirectConnectParams& pa
   }
 }
 
-Roe<void> CallMediaDirectService::SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark) {
+Roe<void> CallMediaDirectService::SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq,
+                                            uint8_t mark) {
   CallMediaDirectConnectParams params;
   {
     std::lock_guard lock(impl_->mu);
-    if (!impl_->stream) {
+    if (!impl_->stream || !impl_->MediaReady()) {
       return Error("call-media not connected");
     }
     params = impl_->active_params;

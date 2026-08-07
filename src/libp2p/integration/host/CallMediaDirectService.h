@@ -5,18 +5,47 @@
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
 
-#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
-#include <optional>
 #include <string>
 #include <vector>
 
 namespace pbr {
 
 inline constexpr const char* kCallMediaDirectProtocolId = "/pp-browser/call-media/1.0.0";
+
+/** Transport session phases for 1:1 call-media (V033). Product UX phases stay in CallLifecycle. */
+enum class CallMediaSessionPhase {
+  Idle = 0,
+  Dialing,
+  HelloOutbound,
+  HelloInbound,
+  Adopting,
+  MediaReady,
+  Detaching,
+};
+
+enum class CallMediaSessionEvent {
+  ConnectRequested = 0,
+  OpenStreamOk,
+  OpenStreamFail,
+  InboundStream,
+  HelloOk,
+  HelloFail,
+  AdoptWon,
+  AdoptLost,
+  DuplexStarted,
+  DuplexEof,
+  DuplexError,
+  DetachRequested,
+  ConnectTimeout,
+  HandlerCleared,
+  ConnectSuperseded,
+};
+
+const char* CallMediaSessionPhaseName(CallMediaSessionPhase phase);
+const char* CallMediaSessionEventName(CallMediaSessionEvent ev);
 
 struct CallMediaDirectConnectParams {
   std::string peer_key;
@@ -35,6 +64,7 @@ struct CallMediaDirectCallbacks {
 /**
  * 1:1 libp2p call-media transport (m1 / V026).
  * Opus payloads are AEAD-encrypted under the shared call media key before send.
+ * Session legality is an explicit phase machine (V033 / SESSION_MACHINES.md).
  */
 class CallMediaDirectService {
 public:
@@ -54,8 +84,10 @@ public:
   /** Drop handler so late protocol deliveries cannot touch a destroyed bridge. */
   void ClearInboundHandler();
 
-  /** Active outbound/inbound session. */
+  /** Active outbound/inbound session (adopted stream). */
   bool IsActive() const;
+  /** Diagnostics: current transport session phase. */
+  CallMediaSessionPhase Phase() const;
   /** Close stream / unblock Connect; does not clear inbound handler (retry uses Detach). */
   void Detach();
 

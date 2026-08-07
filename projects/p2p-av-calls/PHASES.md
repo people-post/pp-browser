@@ -113,8 +113,10 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 Robustness refactor for long-lived host media sessions. Spec: [SESSION_MACHINES.md](SESSION_MACHINES.md). Mesh attach twin: [MEDIA_RELAY_ATTACH.md](../p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026). **Do not start structural code until s1 open questions are frozen.**
 
 - [x] s0 — Design docs + [V033](DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm) (+ mesh N026)
-- [ ] s1 — Freeze open questions in SESSION_MACHINES; golden-scenario test skeletons (no behavior change)
-- [ ] s2 — `CallMediaDirectService` session SM (strangler); Android↔Android dogfood gate
+- [x] s1 — Freeze open questions in SESSION_MACHINES (mutex strand, blocking Connect, instant Failed→Idle, Detach-then-Connect)
+- [x] s2a — `CallMediaDirectService` session phases/events; glare + Detach via phase; loopback tests (`CallMediaDirectServiceTest`)
+- [ ] s2b — Android↔Android dogfood gate (phase logs triage Connecting stuck)
+- [ ] s2c — Delete remaining flag-equivalent leftovers if any; promote race homes in CALLS.md
 - [ ] s3 — media-relay attach SM (mesh N026); SoftMigrate / PreferLocal gate
 - [ ] s4 — Optional circuit bridge SM; point CALLS.md critical races at phase homes
 

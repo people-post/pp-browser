@@ -1,7 +1,7 @@
 # Call / host session machines
 
 **Tier:** project (design)  
-**Status:** Design — **no code refactor until s1 freeze**  
+**Status:** Design frozen (s1) — **s2 call-media SM implementing**  
 **ADR:** [V033](DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm)  
 **Code map:** [CALLS.md](../../docs/architecture/CALLS.md)  
 **Admit matrix:** [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md)  
@@ -251,12 +251,21 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 
 ---
 
-## Open questions (resolve in s1 before code)
+## s1 freeze (2026-08-07)
 
-1. **SM strand** — mutex on Impl (lean) vs serial Post queue?
-2. **Connect API** — keep blocking `Connect()` with SM-owned waiter for s2 (lean), async-only later?
-3. **Failed sticky vs instant Idle** — either OK if logged.
-4. **Second Connect while busy** — Detach-then-Connect (lean) vs reject?
+| Question | Decision |
+|----------|----------|
+| SM strand | **Mutex on `Impl`** for all `Apply` / phase transitions. Duplex start posts to host io without holding the lock across awaits. |
+| Connect API | Keep **blocking** bridge-facing `Connect()` for s2; waiter/timeout owned inside the SM. Fully async later. |
+| Failed phase | **Instant notify → Idle** (log failure event; do not stick in `Failed`). |
+| Second Connect while busy | **Detach-then-Connect** (abort prior waiter, then dial). |
+| Scope | **s2 = call-media only**; media-relay N026 after dogfood. |
+
+**Glare note (preserve dogfood):** Reject inbound only while outbound **offerer** hello is in flight (`offerer_glare`, set on outbound hello). Do **not** reject inbound during `Dialing` — answerer reverse-dial must still win while offerer `OpenStream` is outstanding.
+
+**Dual-dial concurrency:** A single process may have outbound `Dialing`/`HelloOutbound` overlapping inbound `HelloInbound` until one `AdoptWon`. Phase logs follow the latest transition; outbound callbacks must key off waiter/`stream`/`offerer_glare`, not exclusive `Phase==Dialing`.
+
+**Bug fix (s2):** If inbound hello fails while an outbound `Connect` waiter is still active, restore `Dialing` (do not force `Idle`) so OpenStream/hello can proceed — otherwise Connect hung until timeout.
 
 ---
 

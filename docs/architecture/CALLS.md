@@ -397,7 +397,7 @@ Product phases are owned by `CallLifecycle` above. Long-lived **host** sessions 
 | 1:1 call-media session (glare, adopt, Detach, timeout) | [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) | V033 |
 | `media_relay` quote/accept/attach per inbound stream | [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) | N026 |
 
-Do **not** introduce a host-wide inbound-request SM; leave chat/history/dial-back as procedures. Refactor only after design freeze — working dogfood first.
+Do **not** introduce a host-wide inbound-request SM; leave chat/history/dial-back as procedures. **s2a landed:** `CallMediaDirectService` emits `phase=` / `event=` logs; glare / Detach / connect-timeout are phase transitions. Dogfood gate (s2b) still open before calling s2 done.
 
 ---
 

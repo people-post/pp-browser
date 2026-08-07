@@ -59,15 +59,15 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 |------|-------|
 | **m1** desktop matrix | Android ↔ desktop voice without WebRTC; **Windows LAN mDNS** + **call-control `listen_multiaddrs`** on invite/accept for dial when mDNS misses — rebuild **both** ends |
 | Hop peerstore / circuit PeerId dial | media-hop **L1–L3** |
-| **Transport session SMs (V033)** | **Docs landed** — [SESSION_MACHINES.md](SESSION_MACHINES.md); code refactor **not started** (freeze s1 first) |
+| **Transport session SMs (V033)** | **s1 frozen; s2 in progress** — `CallMediaDirectService` phase/event logs + glare/Detach via session phase; loopback tests; dogfood gate still open |
 | Video on libp2p | Deferred |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
 | N≥3 unify engine on libp2p send/recv | N021 follow-on |
 
 ## Next agent — start here
 
-1. **m1** finish desktop dogfood (Android ↔ desktop libp2p voice).
-2. **V033 s1:** freeze open questions in [SESSION_MACHINES.md](SESSION_MACHINES.md); do **not** structurally edit `CallMediaDirectService` until then.
+1. **V033 s2b:** Android↔Android dogfood with `phase=` / `event=` logs (`adb logcat -s pp-browser:W`).
+2. **m1** finish desktop dogfood (Android ↔ desktop libp2p voice).
 3. **media-hop L1:** peer address book in vendored libp2p / `PeerSessionManager`.  
 4. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.  
 
