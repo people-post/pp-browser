@@ -126,7 +126,7 @@
 | Area | State |
 |------|-------|
 | Call consumer (a4) | Soft-migrate + V024 shared policy — [p2p-av-calls](../p2p-av-calls/) |
-| **media_relay attach SM (N026)** | **Design landed** — [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md); code after calls V033 s2 preference |
+| **media_relay attach SM (N026)** | **s3a landed** — inbound quote/accept/attach phases + logs; client attach SM / SoftMigrate dogfood still open — [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) |
 | Peer message_relay | Deferred (N017); HTTP Brief remains |
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |

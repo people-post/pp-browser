@@ -402,7 +402,7 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 ## N026 — `media_relay` per-stream attach state machine
 
 **Date:** 2026-08-07  
-**Status:** Accepted (design — **docs before code**; prefer after call-media SM [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm))  
+**Status:** Accepted (**s3a implementing** — inbound attach phases in code; client attach SM next; prefer after call-media [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm) s2a)  
 **Decision:** Formalize the inbound `media_relay` control handshake (`quote` → `accept` → `attach`) as a **per-inbound-stream** flat enum + `Apply(event)` state machine. Keep **`HostSession`** as a session object (participants, meters, fan-out) — do **not** model the entire QoS/fan-out graph as phases. Client outbound attach should gain a matching small event vocabulary so it does not remain on raw `settled` promises after the host path is cleaned up.
 
 | Rule | Detail |
