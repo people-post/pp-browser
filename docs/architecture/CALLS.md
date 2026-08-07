@@ -9,6 +9,7 @@
 **Open delivery work:** [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).  
 **Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (through **V032**).  
 **Host receive / QoS matrix:** [HOST_RECEIVE_POLICY.md](../../projects/p2p-av-calls/HOST_RECEIVE_POLICY.md) (V032).  
+**Transport session machines (design):** [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) (V033) · [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026) — docs before refactor.  
 **Wire controls:** [`contracts/WIRE_SCHEMAS.md`](../contracts/WIRE_SCHEMAS.md).  
 **Messaging carrier:** [`P2P_MESSAGING.md`](P2P_MESSAGING.md).  
 **SFU / mesh hop:** [`projects/p2p-mesh/`](../../projects/p2p-mesh/) (`media_relay`).  
@@ -385,7 +386,18 @@ These are architectural, not one-off hacks.
 | Accept on UI / ring stuck | Samsung frozen Accept dialog | CallLifecycle AcceptClicked + Dirty-only chrome; see [Ringing handling](#ringing-handling) |
 | Answerer media before `CallMediaKey` | Hello rejected / silent call | `MediaDeferred` → key → `MediaConnecting`; offerer dial retry |
 | N025 listen on UI tick | UI hitch; `/tcp/0` advertised | Late bind in fork; lifecycle desire; start listen on IO; mDNS after bound port |
-| Dual call-media dial (offerer fallback + late reverse-dial) | Connecting forever; Critical hello/ack deadlock; shutdown segfault | Offerer grace ≥ dial budget; handshake on Normal; one-stream adopt; reject inbound while outbound hello; `ClearInboundHandler` on teardown |
+| Dual call-media dial (offerer fallback + late reverse-dial) | Connecting forever; Critical hello/ack deadlock; shutdown segfault | Offerer grace ≥ dial budget; handshake on Normal; one-stream adopt; reject inbound while outbound hello; `ClearInboundHandler` on teardown — **target home:** call-media session SM phases ([SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) / V033) |
+
+### Transport session machines (design — not yet code)
+
+Product phases are owned by `CallLifecycle` above. Long-lived **host** sessions (`CallMediaDirectService`, `MediaRelayService` attach) still use ad-hoc flags / `settled` atomics. Intended end state:
+
+| Concern | Design home | ADR |
+|---------|-------------|-----|
+| 1:1 call-media session (glare, adopt, Detach, timeout) | [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) | V033 |
+| `media_relay` quote/accept/attach per inbound stream | [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) | N026 |
+
+Do **not** introduce a host-wide inbound-request SM; leave chat/history/dial-back as procedures. Refactor only after design freeze — working dogfood first.
 
 ---
 
@@ -437,4 +449,6 @@ Landed (behavior-preserving + who-picks fix):
 | [P2P_MESSAGING.md](P2P_MESSAGING.md) | Direct/group chat carrier under signaling |
 | [PLATFORMS.md](PLATFORMS.md) | Mic/camera/Local Network per OS |
 | [projects/p2p-av-calls/DESIGN.md](../../projects/p2p-av-calls/DESIGN.md) | Product design + entity model |
-| [projects/p2p-av-calls/DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) | V014–V025 ADRs |
+| [projects/p2p-av-calls/DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) | V014–V033 ADRs |
+| [projects/p2p-av-calls/SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) | Transport session SM design (call-media; V033) |
+| [projects/p2p-mesh/MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) | media-relay attach SM design (N026) |

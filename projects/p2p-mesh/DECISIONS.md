@@ -396,3 +396,25 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 **Alternatives:** Full mobile Node (rejected); forever Client-only (rejected for LAN PeerId goal); app `call_hop_addrs` (rejected — H007); listen on cellular always (rejected).  
 **Supersedes:** Absolute “never listen” wording in **N018** / **H006** — default remains no listen.  
 **Phase:** [nm](PHASES.md#nm--mobile-call-scoped-listen-n025).
+
+---
+
+## N026 — `media_relay` per-stream attach state machine
+
+**Date:** 2026-08-07  
+**Status:** Accepted (design — **docs before code**; prefer after call-media SM [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm))  
+**Decision:** Formalize the inbound `media_relay` control handshake (`quote` → `accept` → `attach`) as a **per-inbound-stream** flat enum + `Apply(event)` state machine. Keep **`HostSession`** as a session object (participants, meters, fan-out) — do **not** model the entire QoS/fan-out graph as phases. Client outbound attach should gain a matching small event vocabulary so it does not remain on raw `settled` promises after the host path is cleaned up.
+
+| Rule | Detail |
+|------|--------|
+| **Spec** | [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) |
+| **Style** | Same as calls V033 / `CallLifecycle` — no framework, INFO phase/event logs |
+| **Guards** | Encode [HOST_RECEIVE_POLICY](../p2p-av-calls/HOST_RECEIVE_POLICY.md) / V032 admit rows (contact/scope, max 4 sessions, max 8 participants, auth stub) |
+| **Non-goals** | Host-wide inbound SM; changing N021 framing; putting hop eligibility/pricing into the machine |
+| **Order** | Prefer call-media SM first (threading/waiter lessons), then this |
+
+**Rationale:** The `while (!session)` control loop is an implicit SM with attach/reattach races. Making phases explicit hardens SoftMigrate and PreferLocal without rewriting fan-out.
+
+**Alternatives rejected:** One giant HostSession hierarchical SM; SM per JSON op instance (lose multi-message stream context); bundling into CallLifecycle.
+
+**Cross-link:** N018–N021; V032 / V033; [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md).

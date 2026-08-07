@@ -64,6 +64,16 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [x] Message path may keep **HTTP Brief** without peer `message_relay`
 - [x] Align docs/UI copy with **N020** for media (closed set; not hardcoded stages)
 
+## n4-media-sm — `media_relay` attach SM (N026) — docs before code
+
+Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm) / [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md). Spec: [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md). Prefer after call-media SM lands.
+
+- [x] N026 + MEDIA_RELAY_ATTACH design doc
+- [ ] Freeze with calls V033 s1; golden attach/reattach scenarios
+- [ ] Replace inbound `while (!session)` with per-stream `Apply(event)` (strangler)
+- [ ] Client attach path shares event vocabulary (no raw `settled`-only waits)
+- [ ] SoftMigrate / PreferLocal dogfood gate
+
 ## n4-media — Blind media forwarder (N017–N021; unblocks a4)
 
 - [x] Homegrown **content-agnostic** forwarder — no media keys, no codec decode

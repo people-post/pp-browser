@@ -108,6 +108,16 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 - [ ] Freeze ADRs as superseded-by docs where appropriate
 - [ ] Update CURRENT_STATE / README status
 
+## sm — Transport session machines (V033) — docs before code
+
+Robustness refactor for long-lived host media sessions. Spec: [SESSION_MACHINES.md](SESSION_MACHINES.md). Mesh attach twin: [MEDIA_RELAY_ATTACH.md](../p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026). **Do not start structural code until s1 open questions are frozen.**
+
+- [x] s0 — Design docs + [V033](DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm) (+ mesh N026)
+- [ ] s1 — Freeze open questions in SESSION_MACHINES; golden-scenario test skeletons (no behavior change)
+- [ ] s2 — `CallMediaDirectService` session SM (strangler); Android↔Android dogfood gate
+- [ ] s3 — media-relay attach SM (mesh N026); SoftMigrate / PreferLocal gate
+- [ ] s4 — Optional circuit bridge SM; point CALLS.md critical races at phase homes
+
 ## Later horizons
 
 - [ ] Video on libp2p (after voice green)
