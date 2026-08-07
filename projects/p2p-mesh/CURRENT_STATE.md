@@ -38,7 +38,7 @@
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
 | Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait |
 | Dial-back | `/pp-browser/dial-back/1.0.0` (`DialBackService`) — seed probes client listen addrs |
-| Packaging | `packaging/pp-node/` systemd + Dockerfile sketches + config example |
+| Packaging | `packaging/pp-node/` systemd + Dockerfile; release CI → Linux tarball + GHCR (`scripts/pp_node_package_linux.sh`, Ubuntu 24.04) |
 | Tests | FailLoud candidates; two-host dial-back LAN probe |
 
 ## nr in code
