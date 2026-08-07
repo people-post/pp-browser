@@ -215,11 +215,11 @@ stateDiagram-v2
 
 1. Answerer reverse-dial wins → MediaReady; offerer inbound grace unused.
 2. Offerer fallback dial wins after grace → MediaReady; late reverse-dial closed (glare).
-3. Dual dial race → exactly one adopt; other closed; no Critical deadlock.
-4. Leave / Detach during Dialing or Hello* → Idle promptly; Connect unblocked (<15s hang).
-5. SoftMigrate ReleaseDirect → Detach without lifecycle ConnectFailed when SFU expected.
-6. Stop / ClearInboundHandler → late inbound no-ops.
-7. Connect timeout → Failed → Idle; late OpenStreamOk ignored.
+3. Dual dial race → exactly one adopt; other closed; no Critical deadlock. — **loopback:** `DualDialExactlyOneAdoptEachSide`
+4. Leave / Detach during Dialing or Hello* → Idle promptly; Connect unblocked (<15s hang). — **loopback:** `DetachUnblocksConnectWait`
+5. SoftMigrate ReleaseDirect → Detach without lifecycle ConnectFailed when SFU expected. — **loopback:** `FailAfterDetachDoesNotCallOnFailed` (bridge SoftMigrate suppress still dogfood)
+6. Stop / ClearInboundHandler → late inbound no-ops. — **loopback:** `ClearInboundHandlerRejectsLateInbound`
+7. Connect timeout → Failed → Idle; late OpenStreamOk ignored. — **loopback:** `ConnectTimeoutReturnsIdleAndIgnoresLateOpen`
 
 ---
 
