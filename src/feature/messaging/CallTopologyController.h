@@ -19,6 +19,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace pbr {
@@ -165,6 +166,18 @@ private:
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
   /** Apply deferred CallSfuAttach after SoftMigrate finishes (must run on UI). */
   void FlushPendingInboundSfuAttach();
+  void SubscribePublisherStream(uint32_t stream_id);
+  /** Learn publisher_stream_id from CallSfuAttach even when roster lacks that peer (dogfood). */
+  void NoteRemotePublisherFromAttach(const CallSfuAttachDetail& attach);
+  /** Fan-out our publisher stream so peers with incomplete Joined roster still subscribe. */
+  void AnnounceLocalPublisher(const std::string& call_id, const CallSfuAttachDetail& hop_attach);
+  /**
+   * Guest media-relay duplex died mid-call — re-AcceptAndAttach without restarting capture.
+   * UI-thread entry; work runs on a worker.
+   */
+  void OnGuestSfuTransportLost();
+  /** Quote + AcceptAndAttach + reader + subscribe; keeps existing StartSfu send path. */
+  Roe<void> ReattachGuestSfuTransport(const std::string& call_id, const CallSfuAttachDetail& attach);
 
   CallTopologyHost& host_;
   CallSessionStore& sessions_;
@@ -185,8 +198,16 @@ private:
   std::optional<CallSfuAttachDetail> pending_inbound_sfu_attach_;
   std::string pending_inbound_sfu_attach_call_id_;
   uint32_t local_publisher_stream_id_ = 0;
+  /** Remote publisher streams learned from CallSfuAttach (roster may lag). */
+  std::unordered_set<uint32_t> remote_publisher_stream_ids_;
   std::string sfu_attach_wait_call_id_;
   int64_t sfu_attach_wait_deadline_ms_ = 0;
+  /** Last successful remote-hop attach (guest reattach after duplex death). */
+  std::optional<CallSfuAttachDetail> active_guest_sfu_attach_;
+  std::string active_sfu_call_id_;
+  int sfu_guest_reattach_attempts_ = 0;
+  bool guest_reattach_in_flight_ = false;
+  static constexpr int kMaxGuestSfuReattachAttempts = 3;
 };
 
 } // namespace pbr

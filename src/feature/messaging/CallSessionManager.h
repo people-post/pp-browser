@@ -47,12 +47,20 @@ public:
   /** Local capability ads for invite/accept (V030). */
   using LocalPeerCapsFn = std::function<CallPeerCaps()>;
   void SetLocalPeerCapsProvider(LocalPeerCapsFn callback);
+  /** Local libp2p PeerId (base58) for invite/accept — PeerId→relay without contacts. */
+  using LocalLibp2pPeerIdFn = std::function<std::string()>;
+  void SetLocalLibp2pPeerIdProvider(LocalLibp2pPeerIdFn callback);
   /** Register peer listen multiaddrs from invite/accept into the dial registry. */
   using RegisterPeerListenMultiaddrsFn =
       std::function<void(const std::string& identity, const std::vector<std::string>& multiaddrs)>;
   void SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback);
   /** Cache media_relay ads from invite/accept caps (keyed by libp2p PeerId). */
   void NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay);
+  /**
+   * Remember libp2p PeerId ↔ relay: for call-media stream ids (contacts often lack PeerId —
+   * PreferLocal dogfood: Moto contact had only relay: so inbound hashed PeerId ≠ SFU stream).
+   */
+  void NoteLibp2pPeerIdForRelay(const std::string& relay_identity, const std::string& peer_id);
   bool PeerHasMediaRelayCap(const std::string& peer_id) const;
   std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
@@ -138,6 +146,8 @@ private:
   void P2pNotifyRingChanged() override;
   void P2pSetLastMediaError(std::string message) override;
   Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const override;
+  Roe<std::optional<std::string>> P2pRelayIdentityForLibp2pPeerId(const std::string& call_id,
+                                                                  const std::string& peer_id) const override;
   bool P2pIsAwaitingSfuRecovery() const override;
   bool P2pExpectGroupSfuMigration(const std::string& call_id) const override;
   void P2pNoteExpectSfuAttach(const std::string& call_id) override;
@@ -184,9 +194,12 @@ private:
   PrefetchPeerReachFn prefetch_reach_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   LocalPeerCapsFn local_peer_caps_;
+  LocalLibp2pPeerIdFn local_libp2p_peer_id_;
   RegisterPeerListenMultiaddrsFn register_peer_listen_multiaddrs_;
   /** PeerId → advertised media_relay (V030). Absent key = unknown / fail closed. */
   std::unordered_map<std::string, bool> peer_media_relay_caps_;
+  /** libp2p PeerId → relay: identity learned from CallAccept/Invite listen multiaddrs / mDNS. */
+  std::unordered_map<std::string, std::string> peer_id_to_relay_;
   std::optional<std::string> last_media_error_;
   std::string media_activity_;
 };

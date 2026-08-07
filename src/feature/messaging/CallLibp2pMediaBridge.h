@@ -53,6 +53,12 @@ public:
   void ReleaseDirectTransport();
 
   /**
+   * CallAccept/Invite taught PeerId→relay: (works for non-contacts). Rebind deferred inbound
+   * on_audio stream_id when it matches the pending inbound PeerId.
+   */
+  void NotePeerIdRelayMapping(const std::string& peer_id, const std::string& relay_identity);
+
+  /**
    * Abort in-flight Connect and wait until the worker exits (or timeout).
    * Must run before destroying this bridge / CallMediaDirectService / libp2p host.
    */
@@ -91,6 +97,8 @@ private:
   std::string media_call_id_;
   std::string pending_answerer_call_id_;
   std::string pending_answerer_peer_;
+  /** Inbound hello PeerId while stream_id deferred (non-contact / pre-Accept). */
+  std::string inbound_deferred_peer_id_;
   bool libp2p_connect_failed_ = false;
   bool libp2p_connect_missing_mic_ = false;
   /** Connect worker runs on Normal (not Critical) so hello/inbound are not starved. */
@@ -100,6 +108,8 @@ private:
   std::atomic<bool> stopping_{false};
   std::unordered_set<std::string> media_attempted_calls_;
   std::atomic<uint32_t> audio_seq_{0};
+  /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */
+  std::atomic<uint32_t> inbound_remote_stream_{0};
 };
 
 } // namespace pbr

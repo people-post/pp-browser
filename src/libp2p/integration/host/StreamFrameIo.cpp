@@ -1,10 +1,13 @@
 #include "libp2p/integration/host/StreamFrameIo.h"
 
+#include "common/Logger.h"
+
 #include <libp2p/basic/read.hpp>
 #include <libp2p/basic/write.hpp>
 
 #include <cstring>
 #include <future>
+#include <atomic>
 #include <utility>
 
 namespace pbr {
@@ -376,7 +379,7 @@ bool DuplexFrameSession::EnqueueOutbound(std::vector<uint8_t> body) {
 
 void DuplexFrameSession::BeginRead() {
   if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_) || !stream_) {
-    CloseSession();
+    CloseSession(IsCancelled(is_cancelled_) ? "cancelled" : "begin_read_idle");
     return;
   }
   if (read_inflight_) {
@@ -396,12 +399,12 @@ void DuplexFrameSession::BeginRead() {
 void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
   if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_)) {
     read_inflight_ = false;
-    CloseSession();
+    CloseSession("cancelled");
     return;
   }
   if (!result) {
     read_inflight_ = false;
-    CloseSession();
+    CloseSession("read_eof");
     return;
   }
   const uint64_t payload_len =
@@ -411,7 +414,7 @@ void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
     if (on_frame_) {
       on_frame_(Error("length-prefixed frame empty"));
     }
-    CloseSession();
+    CloseSession("empty_frame");
     return;
   }
   if (payload_len > config_.max_frame_bytes) {
@@ -419,7 +422,7 @@ void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
     if (on_frame_) {
       on_frame_(Error("length-prefixed frame too large"));
     }
-    CloseSession();
+    CloseSession("frame_too_large");
     return;
   }
   if (payload_len == 0) {
@@ -437,12 +440,12 @@ void DuplexFrameSession::OnReadHeader(outcome::result<void> result) {
 void DuplexFrameSession::OnReadBody(outcome::result<void> result) {
   if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_)) {
     read_inflight_ = false;
-    CloseSession();
+    CloseSession("cancelled");
     return;
   }
   if (!result) {
     read_inflight_ = false;
-    CloseSession();
+    CloseSession("read_eof");
     return;
   }
   DeliverFrame(std::vector<uint8_t>(payload_buf_.begin(), payload_buf_.end()));
@@ -455,7 +458,7 @@ void DuplexFrameSession::DeliverFrame(std::vector<uint8_t> body) {
     keep_open = on_frame_(std::move(body));
   }
   if (!keep_open || !running_.load(std::memory_order_acquire)) {
-    CloseSession();
+    CloseSession(keep_open ? "stopped" : "handler_close");
     return;
   }
   PumpWrite();
@@ -485,7 +488,24 @@ void DuplexFrameSession::PumpWrite() {
       return;
     }
     if (!result) {
-      self->CloseSession();
+      if (self->write_preferred_) {
+        // Downlink write failed — drop queued frames and keep reading uplink.
+        // Closing here removed hop participants mid-call while phones still TX'd.
+        static std::atomic<int> write_keep_log{0};
+        const int n = write_keep_log.fetch_add(1, std::memory_order_relaxed);
+        if (n < 8 || (n % 50) == 0) {
+          logging::getLogger("DuplexFrameSession").warning
+              << "write_failed_kept_open n=" << n;
+        }
+        self->outbound_.clear();
+        self->PublishBacklog();
+        if (self->on_outbound_drop_) {
+          self->on_outbound_drop_();
+        }
+        self->MaybeResumeRead();
+        return;
+      }
+      self->CloseSession("write_failed");
       return;
     }
     self->PumpWrite();
@@ -503,7 +523,7 @@ void DuplexFrameSession::MaybeResumeRead() {
   BeginRead();
 }
 
-void DuplexFrameSession::CloseSession() {
+void DuplexFrameSession::CloseSession(const char* reason) {
   // Keep alive across on_closed_ — CleanupParticipant may reset the last owning shared_ptr.
   std::shared_ptr<DuplexFrameSession> keep;
   try {
@@ -513,6 +533,8 @@ void DuplexFrameSession::CloseSession() {
   if (!running_.exchange(false, std::memory_order_acq_rel)) {
     return;
   }
+  const char* tag = (reason && reason[0]) ? reason : "unknown";
+  logging::getLogger("DuplexFrameSession").warning << "CloseSession reason=" << tag;
   read_inflight_ = false;
   write_inflight_ = false;
   outbound_.clear();
@@ -523,7 +545,7 @@ void DuplexFrameSession::CloseSession() {
   ClosedCallback cb;
   std::swap(cb, on_closed_);
   if (cb) {
-    cb();
+    cb(tag);
   }
 }
 

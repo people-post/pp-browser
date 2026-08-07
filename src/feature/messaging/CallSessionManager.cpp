@@ -34,7 +34,7 @@ void PrefetchReachForIdentities(const CallSessionManager::PrefetchPeerReachFn& f
 void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
                          const std::string& identity, const CallPeerCaps& caps,
                          const std::vector<std::string>& listen_multiaddrs) {
-  if (!caps.present) {
+  if (!caps.present && listen_multiaddrs.empty()) {
     return;
   }
   std::vector<std::string> peer_ids = PeerIdsFromListenMultiaddrs(listen_multiaddrs);
@@ -48,7 +48,12 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
     }
   }
   for (const std::string& peer_id : peer_ids) {
-    sessions.NotePeerMediaRelayCap(peer_id, caps.media_relay);
+    if (caps.present) {
+      sessions.NotePeerMediaRelayCap(peer_id, caps.media_relay);
+    }
+    if (!identity.empty() && identity.rfind("relay:", 0) == 0) {
+      sessions.NoteLibp2pPeerIdForRelay(identity, peer_id);
+    }
   }
 }
 
@@ -196,6 +201,10 @@ void CallSessionManager::SetLocalPeerCapsProvider(LocalPeerCapsFn callback) {
   local_peer_caps_ = std::move(callback);
 }
 
+void CallSessionManager::SetLocalLibp2pPeerIdProvider(LocalLibp2pPeerIdFn callback) {
+  local_libp2p_peer_id_ = std::move(callback);
+}
+
 void CallSessionManager::SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback) {
   register_peer_listen_multiaddrs_ = std::move(callback);
 }
@@ -221,6 +230,48 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
       }
     }
   }
+}
+
+void CallSessionManager::NoteLibp2pPeerIdForRelay(const std::string& relay_identity,
+                                                  const std::string& peer_id) {
+  if (relay_identity.empty() || peer_id.empty() || relay_identity.rfind("relay:", 0) != 0) {
+    return;
+  }
+  peer_id_to_relay_[peer_id] = relay_identity;
+  if (libp2p_bridge_) {
+    libp2p_bridge_->NotePeerIdRelayMapping(peer_id, relay_identity);
+  }
+  auto found = contacts_.FindByIdentity(relay_identity, ContactIdKind::RelayUser);
+  if (!found || !found->has_value()) {
+    // Non-contact call participants: in-memory map + bridge rebind is enough.
+    log().info << "NoteLibp2pPeerIdForRelay map-only (no contact) peer_id=" << peer_id
+               << " relay=" << relay_identity;
+    return;
+  }
+  Contact contact = **found;
+  if (PeerIdFromContact(contact) == peer_id) {
+    return;
+  }
+  bool has_peer = false;
+  for (const ContactId& id : contact.ids) {
+    if (id.kind == ContactIdKind::PeerId && id.value == peer_id) {
+      has_peer = true;
+      break;
+    }
+  }
+  if (has_peer) {
+    return;
+  }
+  contact.ids.push_back(ContactId{ContactIdKind::PeerId, peer_id, false});
+  contact.remote.ids = contact.ids;
+  PromoteFlatFieldsToNested(contact);
+  SyncContactMirrors(contact);
+  if (auto saved = contacts_.Upsert(contact); !saved) {
+    log().warning << "NoteLibp2pPeerIdForRelay contact upsert failed relay=" << relay_identity
+                  << " peer=" << peer_id << " err=" << saved.error().message;
+    return;
+  }
+  log().info << "NoteLibp2pPeerIdForRelay learned peer_id=" << peer_id << " relay=" << relay_identity;
 }
 
 bool CallSessionManager::PeerHasMediaRelayCap(const std::string& peer_id) const {
@@ -640,6 +691,15 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   if (local_listen_multiaddrs_) {
     invite.listen_multiaddrs = local_listen_multiaddrs_();
   }
+  if (local_libp2p_peer_id_) {
+    invite.libp2p_peer_id = local_libp2p_peer_id_();
+  }
+  if (invite.libp2p_peer_id.empty()) {
+    const auto ids = PeerIdsFromListenMultiaddrs(invite.listen_multiaddrs);
+    if (!ids.empty()) {
+      invite.libp2p_peer_id = ids.front();
+    }
+  }
   if (local_peer_caps_) {
     invite.caps = local_peer_caps_();
     invite.caps.present = true;
@@ -760,6 +820,15 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id) {
   accept.video_enabled = false;
   if (local_listen_multiaddrs_) {
     accept.listen_multiaddrs = local_listen_multiaddrs_();
+  }
+  if (local_libp2p_peer_id_) {
+    accept.libp2p_peer_id = local_libp2p_peer_id_();
+  }
+  if (accept.libp2p_peer_id.empty()) {
+    const auto ids = PeerIdsFromListenMultiaddrs(accept.listen_multiaddrs);
+    if (!ids.empty()) {
+      accept.libp2p_peer_id = ids.front();
+    }
   }
   if (local_peer_caps_) {
     accept.caps = local_peer_caps_();
@@ -1331,6 +1400,9 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     if (register_peer_listen_multiaddrs_ && !invite->listen_multiaddrs.empty()) {
       register_peer_listen_multiaddrs_(pending.inviter_identity, invite->listen_multiaddrs);
     }
+    if (!invite->libp2p_peer_id.empty()) {
+      NoteLibp2pPeerIdForRelay(pending.inviter_identity, invite->libp2p_peer_id);
+    }
     NoteCapsForIdentity(*this, contacts_, pending.inviter_identity, invite->caps,
                         invite->listen_multiaddrs);
     PrefetchReachForIdentity(prefetch_reach_, pending.inviter_identity);
@@ -1346,6 +1418,9 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     log().info << "Inbound CallAccept call_id=" << accept->call_id << " from=" << identity;
     if (register_peer_listen_multiaddrs_ && !accept->listen_multiaddrs.empty()) {
       register_peer_listen_multiaddrs_(identity, accept->listen_multiaddrs);
+    }
+    if (!accept->libp2p_peer_id.empty()) {
+      NoteLibp2pPeerIdForRelay(identity, accept->libp2p_peer_id);
     }
     NoteCapsForIdentity(*this, contacts_, identity, accept->caps, accept->listen_multiaddrs);
     CallParticipant participant;
@@ -1695,6 +1770,66 @@ Roe<std::optional<std::string>> CallSessionManager::P2pPeerIdentityForCall(const
   return PeerIdentityForCall(call_id);
 }
 
+Roe<std::optional<std::string>> CallSessionManager::P2pRelayIdentityForLibp2pPeerId(
+    const std::string& call_id, const std::string& peer_id) const {
+  if (peer_id.empty()) {
+    return std::optional<std::string>{};
+  }
+  if (const auto it = peer_id_to_relay_.find(peer_id); it != peer_id_to_relay_.end()) {
+    return std::optional<std::string>{it->second};
+  }
+  auto relay_from_contact = [](const Contact& contact) -> std::string {
+    for (const ContactId& id : contact.ids) {
+      if (id.kind == ContactIdKind::RelayUser && id.primary && !id.value.empty()) {
+        return id.value;
+      }
+    }
+    for (const ContactId& id : contact.ids) {
+      if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+        return id.value;
+      }
+    }
+    return {};
+  };
+  // Prefer a call participant whose contact PeerId matches the inbound stream peer.
+  if (!call_id.empty()) {
+    auto participants = sessions_.ListParticipants(call_id);
+    if (!participants) {
+      return participants.error();
+    }
+    for (const CallParticipant& row : *participants) {
+      if (row.identity.empty()) {
+        continue;
+      }
+      auto found = contacts_.FindByIdentity(row.identity, ContactIdKind::RelayUser);
+      if (!found) {
+        return found.error();
+      }
+      if (!found->has_value()) {
+        continue;
+      }
+      if (PeerIdFromContact(**found) == peer_id) {
+        return std::optional<std::string>{row.identity};
+      }
+    }
+  }
+  // Fallback: any contact with this PeerId (or /p2p/ PeerId in multiaddrs).
+  auto listed = contacts_.List();
+  if (!listed) {
+    return listed.error();
+  }
+  for (const Contact& contact : *listed) {
+    if (PeerIdFromContact(contact) != peer_id) {
+      continue;
+    }
+    const std::string relay = relay_from_contact(contact);
+    if (!relay.empty()) {
+      return std::optional<std::string>{relay};
+    }
+  }
+  return std::optional<std::string>{};
+}
+
 void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) {
   if (call_id.empty() || peer_identity.empty()) {
     return;
@@ -1732,7 +1867,20 @@ bool CallSessionManager::P2pExpectGroupSfuMigration(const std::string& call_id) 
   if (topology_.IsAwaitingSfuRecovery() || topology_.IsSfuAttached()) {
     return true;
   }
-  if (auto n = sessions_.CountJoined(call_id); n && *n >= 3) {
+  // SoftMigrate can start on the hop when Joined+Ringing+Invited ≥ 3 while a guest's
+  // CountJoined is still 2 (Samsung Accept not on roster yet). Treat that as expect.
+  if (auto all = sessions_.ListParticipants(call_id); all) {
+    size_t n_active = 0;
+    for (const CallParticipant& p : *all) {
+      if (p.state == CallParticipantState::Joined || p.state == CallParticipantState::Ringing ||
+          p.state == CallParticipantState::Invited) {
+        ++n_active;
+      }
+    }
+    if (n_active >= 3) {
+      return true;
+    }
+  } else if (auto n = sessions_.CountJoined(call_id); n && *n >= 3) {
     return true;
   }
   if (auto session = sessions_.LoadSession(call_id);

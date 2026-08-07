@@ -54,11 +54,22 @@ public:
   Roe<void> StartSfu(const std::string& call_id, SfuSendFn send);
   /** Inbound SFU payload (already demuxed to local subscribe; plaintext Opus). */
   void OnSfuPacket(const SfuPacket& packet);
+  /**
+   * Drop remote jitter/PLC tracks without stopping capture. SoftMigrate send-swap clears
+   * tracks internally; ReleaseDirect must not wipe live media_relay tracks.
+   */
+  void ClearRemoteAudioTracks();
   bool IsSfuMode() const;
   void Stop();
 
   void SetMuted(bool muted);
   bool IsMuted() const;
+
+  /**
+   * Reopen SDL capture/playback on the capture worker (Android speaker route / SoftMigrate).
+   * Safe while media is active; no-op if capture is not running.
+   */
+  void RequestAudioDeviceReopen();
 
   /** Apply V024 producer decision (camera gate + Opus target bps). */
   void ApplyAdaptation(const CallAdaptationDecision& decision);

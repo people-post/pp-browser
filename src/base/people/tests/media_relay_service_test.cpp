@@ -260,6 +260,64 @@ TEST_F(MediaRelayServiceTest, PreferLocalHopFanoutToGuest) {
   a_relay_->Detach();
 }
 
+// Dogfood: Samsung heard Moto via PreferLocal hop, but Linux (local hop owner) did not.
+// Guest uplink must Fanout into local_on_frame when the hop subscribed to that stream.
+TEST_F(MediaRelayServiceTest, PreferLocalHopFanoutGuestToLocal) {
+  auto hop_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(hop_id);
+  const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint("hop", hop_ma));
+
+  const std::string call_id = "call-local-hop-guest-to-local";
+  std::mutex mu;
+  std::condition_variable cv;
+  bool got = false;
+  MediaDataFrame received;
+  auto local = hop_relay_->AttachAsLocalHop(call_id, [&](MediaDataFrame frame) {
+    std::lock_guard<std::mutex> lock(mu);
+    received = std::move(frame);
+    got = true;
+    cv.notify_one();
+  });
+  ASSERT_TRUE(local) << local.error().message;
+  ASSERT_TRUE(local->ok) << local->error;
+  ASSERT_TRUE(hop_relay_->Subscribe(3272724854u, 0));
+
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+  auto qa = a_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qa) << qa.error().message;
+  ASSERT_TRUE(qa->ok) << qa->error;
+
+  auto attach_a = a_relay_->AcceptAndAttach(
+      "hop", qa->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000);
+  ASSERT_TRUE(attach_a) << attach_a.error().message;
+  ASSERT_TRUE(attach_a->ok) << attach_a->error;
+  a_relay_->StartClientFrameReader();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  MediaDataFrame sent;
+  sent.stream_id = 3272724854u;
+  sent.channel_id = 0;
+  sent.channel_type = MediaChannelType::ReliableOrdered;
+  sent.seq = 335;
+  sent.payload = {'m', 'o', 't', 'o'};
+  ASSERT_TRUE(a_relay_->SendFrame(sent));
+
+  {
+    std::unique_lock<std::mutex> lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return got; }))
+        << "PreferLocal hop owner must receive guest uplink (Moto→Linux)";
+  }
+  EXPECT_EQ(received.stream_id, 3272724854u);
+  EXPECT_EQ(received.seq, 335u);
+  EXPECT_EQ(received.payload, sent.payload);
+
+  hop_relay_->Detach();
+  a_relay_->Detach();
+}
+
 TEST_F(MediaRelayServiceTest, CallScopedAdmissionLocalHopUnlocksStranger) {
   auto hop_id = hop_host_.LocalPeerIdBase58();
   ASSERT_TRUE(hop_id);

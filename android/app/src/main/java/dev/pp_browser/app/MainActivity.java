@@ -8,6 +8,9 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -63,6 +66,8 @@ public class MainActivity extends SDLActivity {
     private HandlerThread mPixelCopyThread;
     private Handler mPixelCopyHandler;
     private final AtomicBoolean mThumbnailCapturedForPause = new AtomicBoolean(false);
+    private AudioFocusRequest mCallAudioFocusRequest;
+    private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = focusChange -> { };
 
     /** App appearance preference from native Theme ("system" / "light" / "dark"). */
     private volatile String mAppAppearance = "system";
@@ -229,31 +234,116 @@ public class MainActivity extends SDLActivity {
     /**
      * Called from native {@code CallAudioSession} when a VoIP call starts/ends.
      * Puts the device in communication mode so earpiece vs speakerphone routing works.
+     * Applied on the calling thread (not posted) so SDL open/reopen sees the new mode.
      */
     public void setCallAudioSessionActive(boolean active) {
-        runOnUiThread(() -> {
-            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-            if (am == null) {
-                return;
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am == null) {
+            return;
+        }
+        if (active) {
+            am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            requestCallAudioFocus(am);
+            // Media-stream volume keys don't drive VoIP; ensure voice-call stream isn't muted.
+            ensureVoiceCallVolumeFloor(am);
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                am.clearCommunicationDevice();
             }
-            if (active) {
-                am.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            } else {
-                am.setSpeakerphoneOn(false);
-                am.setMode(AudioManager.MODE_NORMAL);
-            }
-        });
+            am.setSpeakerphoneOn(false);
+            am.setMode(AudioManager.MODE_NORMAL);
+            abandonCallAudioFocus(am);
+        }
     }
 
-    /** Called from native {@code CallAudioSession} for in-call speaker / earpiece. */
+    /**
+     * Called from native {@code CallAudioSession} for in-call speaker / earpiece.
+     * Synchronous: ToggleSpeaker reopens SDL capture immediately after this returns.
+     */
     public void setCallSpeakerphoneOn(boolean on) {
-        runOnUiThread(() -> {
-            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-            if (am == null) {
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am == null) {
+            return;
+        }
+        // Speakerphone routing only works in communication mode; toggling without it
+        // can leave AudioRecord/SDL capture on a silent path (PreferLocal dogfood).
+        if (am.getMode() != AudioManager.MODE_IN_COMMUNICATION) {
+            am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            setCommunicationRoute(am, on);
+        }
+        am.setSpeakerphoneOn(on);
+        if (on) {
+            ensureVoiceCallVolumeFloor(am);
+        }
+    }
+
+    private void requestCallAudioFocus(AudioManager am) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            @SuppressWarnings("deprecation")
+            int ignored = am.requestAudioFocus(mCallAudioFocusListener, AudioManager.STREAM_VOICE_CALL,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+            return;
+        }
+        if (mCallAudioFocusRequest != null) {
+            return;
+        }
+        AudioAttributes attrs = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build();
+        mCallAudioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(attrs)
+                .setAcceptsDelayedFocusGain(true)
+                .setOnAudioFocusChangeListener(mCallAudioFocusListener)
+                .build();
+        am.requestAudioFocus(mCallAudioFocusRequest);
+    }
+
+    private void abandonCallAudioFocus(AudioManager am) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            @SuppressWarnings("deprecation")
+            int ignored = am.abandonAudioFocus(mCallAudioFocusListener);
+            return;
+        }
+        if (mCallAudioFocusRequest != null) {
+            am.abandonAudioFocusRequest(mCallAudioFocusRequest);
+            mCallAudioFocusRequest = null;
+        }
+    }
+
+    /** API 31+: prefer explicit communication device over deprecated speakerphone flag alone. */
+    private void setCommunicationRoute(AudioManager am, boolean speakerOn) {
+        final int wantType = speakerOn
+                ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE;
+        for (AudioDeviceInfo device : am.getAvailableCommunicationDevices()) {
+            if (device.getType() == wantType) {
+                if (!am.setCommunicationDevice(device)) {
+                    Log.w(TAG, "setCommunicationDevice failed type=" + wantType);
+                }
                 return;
             }
-            am.setSpeakerphoneOn(on);
-        });
+        }
+        Log.w(TAG, "No communication device for type=" + wantType);
+    }
+
+    /**
+     * If STREAM_VOICE_CALL is near mute, raise toward ~70% of max so speaker isn't whisper-quiet
+     * after routing to the voice-call volume path (user can still turn it down).
+     */
+    private void ensureVoiceCallVolumeFloor(AudioManager am) {
+        final int max = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+        if (max <= 0) {
+            return;
+        }
+        final int cur = am.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
+        final int floor = Math.max(1, (max * 7) / 10);
+        if (cur < floor) {
+            am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, floor, 0);
+            Log.i(TAG, "Raised STREAM_VOICE_CALL volume " + cur + " -> " + floor + " (max=" + max + ")");
+        }
     }
 
     /** Called from native NetworkConnectivity (N025 Wi‑Fi gate). */

@@ -24,6 +24,14 @@ enum class CallAudioAsymmetry {
   ReceivingOnly = 2,
 };
 
+/** Per remote publisher stream (decoded RX). */
+struct CallMediaStreamHealth {
+  uint32_t stream_id = 0;
+  uint64_t rx_frames = 0;
+  int64_t last_rx_ms = 0;
+  float peak_level = 0.f;
+};
+
 struct CallMediaEngineHealth {
   bool active = false;
   bool connected = false;
@@ -41,6 +49,8 @@ struct CallMediaEngineHealth {
   size_t stream_count = 0;
   float local_level = 0.f;
   float remote_level = 0.f;
+  /** Per remote publisher (PreferLocal multi-peer dogfood). */
+  std::vector<CallMediaStreamHealth> streams;
 };
 
 struct CallHopPeerHealth {

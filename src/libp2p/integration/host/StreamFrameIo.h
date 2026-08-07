@@ -103,16 +103,19 @@ private:
 
 /**
  * Serialized length-prefixed duplex on one Yamux stream (host io thread).
- * Default: never overlaps read and write.
+ * Default: never overlaps read and write; write failure closes the session.
  * write_preferred=true (call-media / media-relay): full-duplex — drain outbound
  * during reads and keep reading while a write is in flight (avoids downlink
- * backpressure stalling uplink fan-in on the hop).
+ * backpressure stalling uplink). A failed write drops the outbound queue and
+ * keeps reading; only read/cancel/handler-close tears the session down (so a
+ * stuck peer downlink cannot remove their uplink from the hop).
  */
 class DuplexFrameSession : public std::enable_shared_from_this<DuplexFrameSession> {
 public:
   /** Return false to close the session. */
   using FrameHandler = std::function<bool(Roe<std::vector<uint8_t>> body)>;
-  using ClosedCallback = std::function<void()>;
+  /** reason is a stable short tag (e.g. read_eof, framing, handler, write_failed, stop). */
+  using ClosedCallback = std::function<void(const char* reason)>;
 
   void Start(std::shared_ptr<libp2p::connection::Stream> stream, FrameHandler on_frame,
              StreamCancelCheck is_cancelled, LengthPrefixedFrameConfig config = {},
@@ -136,7 +139,7 @@ private:
   void DeliverFrame(std::vector<uint8_t> body);
   void PumpWrite();
   void MaybeResumeRead();
-  void CloseSession();
+  void CloseSession(const char* reason);
 
   std::shared_ptr<libp2p::connection::Stream> stream_;
   FrameHandler on_frame_;

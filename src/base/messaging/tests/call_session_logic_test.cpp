@@ -120,16 +120,19 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   invite.inviter_identity = "relay:alice";
   invite.invitee_identity = "relay:bob";
   invite.listen_multiaddrs = {"/ip4/192.168.1.10/tcp/18517/p2p/12D3KooWAlice"};
+  invite.libp2p_peer_id = "12D3KooWAlice";
   invite.caps.present = true;
   invite.caps.media_relay = true;
 
   auto encoded_invite = CallControlCodec::EncodeInvite(invite);
   ASSERT_TRUE(encoded_invite);
   EXPECT_NE(encoded_invite->find("\"caps\""), std::string::npos);
+  EXPECT_NE(encoded_invite->find("libp2p_peer_id"), std::string::npos);
   auto decoded_invite = CallControlCodec::DecodeInvite(*encoded_invite);
   ASSERT_TRUE(decoded_invite);
   ASSERT_EQ(decoded_invite->listen_multiaddrs.size(), 1u);
   EXPECT_EQ(decoded_invite->listen_multiaddrs[0], invite.listen_multiaddrs[0]);
+  EXPECT_EQ(decoded_invite->libp2p_peer_id, "12D3KooWAlice");
   EXPECT_TRUE(decoded_invite->caps.present);
   EXPECT_TRUE(decoded_invite->caps.media_relay);
 
@@ -137,6 +140,7 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   accept.call_id = "call:abc";
   accept.identity = "relay:bob";
   accept.listen_multiaddrs = {"/ip4/192.168.1.20/tcp/18517/p2p/12D3KooWBob"};
+  accept.libp2p_peer_id = "12D3KooWBob";
   accept.caps.present = true;
   accept.caps.media_relay = false;
   auto encoded_accept = CallControlCodec::EncodeAccept(accept);
@@ -145,6 +149,7 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   ASSERT_TRUE(decoded_accept);
   ASSERT_EQ(decoded_accept->listen_multiaddrs.size(), 1u);
   EXPECT_EQ(decoded_accept->listen_multiaddrs[0], accept.listen_multiaddrs[0]);
+  EXPECT_EQ(decoded_accept->libp2p_peer_id, "12D3KooWBob");
   EXPECT_TRUE(decoded_accept->caps.present);
   EXPECT_FALSE(decoded_accept->caps.media_relay);
 

@@ -111,6 +111,12 @@ public:
   void StartClientFrameReader();
 
   /**
+   * Guest duplex died unexpectedly (not Detach). Invoked on the libp2p io thread —
+   * callers should bounce to UI/worker before re-AcceptAndAttach.
+   */
+  void SetClientTransportLostHandler(std::function<void()> handler);
+
+  /**
    * In-call hop: join the local HostSession as a publisher without dialing self.
    * SoftMigrate PreferLocalMediaHop (or PreferInCall when hop=local) uses this path;
    * opening the session also unlocks call-scoped admission for stranger joiners.

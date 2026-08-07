@@ -998,6 +998,9 @@ void MessagingHub::RegisterCallPeerListenMultiaddrs(const std::string& identity,
         p2p_->RegisterPeerDirectEndpoint(peer_id, ma);
       }
     }
+    if (!peer_id.empty() && identity.rfind("relay:", 0) == 0 && call_sessions_) {
+      call_sessions_->NoteLibp2pPeerIdForRelay(identity, peer_id);
+    }
     log().info << "Call listen addr registered dial_key=" << identity << " ma=" << ma;
   }
 }
@@ -1077,6 +1080,15 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     AppRuntime::PostWorkerNormal([this, identity]() { PrefetchPeerReachability(identity); });
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetLocalLibp2pPeerIdProvider([this]() -> std::string {
+    if (!node_runtime_ || !node_runtime_->Host()) {
+      return {};
+    }
+    if (auto local = node_runtime_->Host()->LocalPeerIdBase58()) {
+      return *local;
+    }
+    return {};
+  });
   call_sessions_->SetLocalPeerCapsProvider([this]() {
     CallPeerCaps caps;
     caps.v = kCallPeerCapsVersion;
@@ -1165,6 +1177,15 @@ Roe<void> MessagingHub::BuildMessagingStack() {
     AppRuntime::PostWorkerNormal([this, identity]() { PrefetchPeerReachability(identity); });
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetLocalLibp2pPeerIdProvider([this]() -> std::string {
+    if (!node_runtime_ || !node_runtime_->Host()) {
+      return {};
+    }
+    if (auto local = node_runtime_->Host()->LocalPeerIdBase58()) {
+      return *local;
+    }
+    return {};
+  });
   call_sessions_->SetLocalPeerCapsProvider([this]() {
     CallPeerCaps caps;
     caps.v = kCallPeerCapsVersion;

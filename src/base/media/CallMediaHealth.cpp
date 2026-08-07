@@ -180,7 +180,20 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       << " hop_pressure=" << v.hop.path_pressure << " opus_bps=" << v.engine.opus_target_bps
       << " tx_drops=" << v.engine.outbound_drops << " hop_drops_rate=" << v.hop.drops_rate
       << " hop_drops_queue=" << v.hop.drops_queue << " hop_drops_ceiling=" << v.hop.drops_ceiling
-      << " rx_age_ms=" << rx_age;
+      << " rx_age_ms=" << rx_age << " mic_lvl=" << v.engine.local_level
+      << " peer_lvl=" << v.engine.remote_level;
+  if (!v.engine.streams.empty()) {
+    out << " rx_streams=";
+    for (size_t i = 0; i < v.engine.streams.size(); ++i) {
+      const auto& s = v.engine.streams[i];
+      if (i > 0) {
+        out << ',';
+      }
+      const int64_t age =
+          (s.last_rx_ms > 0 && now_ms >= s.last_rx_ms) ? (now_ms - s.last_rx_ms) : -1;
+      out << s.stream_id << ":n=" << s.rx_frames << "/age=" << age << "/lvl=" << s.peak_level;
+    }
+  }
   if (!v.hop.peers.empty()) {
     out << " hop_peers=";
     for (size_t i = 0; i < v.hop.peers.size(); ++i) {

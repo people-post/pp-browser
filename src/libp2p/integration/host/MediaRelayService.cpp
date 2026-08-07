@@ -208,6 +208,11 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   std::unordered_set<uint64_t> client_subscriptions;
   /** Bumped on Detach — stale duplex handlers exit. */
   std::atomic<uint64_t> client_reader_epoch{0};
+  /**
+   * Fired on unexpected client duplex death (read EOF / framing / handler), not intentional
+   * Detach/Stop. Topology re-AcceptAndAttach while the call is still SFU-live.
+   */
+  std::function<void()> client_transport_lost_handler;
 
   // In-call hop: local publisher joined into HostSession without dialing self
   std::shared_ptr<HostParticipant> local_hop_part;
@@ -341,7 +346,36 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
           },
           [cancelled]() { return cancelled && cancelled->load(std::memory_order_acquire); },
           MediaDataFrameConfig(),
-          []() {}, Libp2pExecutorLimits::kMaxMediaRelayClientOutboundFrames,
+          [self, epoch, cancelled](const char* reason) {
+            // Intentional Detach/Stop sets cancelled before Stop (on_closed cleared) or bumps epoch.
+            if (cancelled && cancelled->load(std::memory_order_acquire)) {
+              return;
+            }
+            if (self->client_reader_epoch.load(std::memory_order_acquire) != epoch) {
+              return;
+            }
+            std::function<void()> handler;
+            {
+              std::lock_guard<std::mutex> lock(self->mu);
+              if (self->client_reader_epoch.load(std::memory_order_relaxed) != epoch) {
+                return;
+              }
+              // Drop dead transport so IsAttached/SendFrame reflect reality; keep on_frame for reattach.
+              self->client_duplex.reset();
+              self->client_duplex_cancelled.reset();
+              self->client_stream.reset();
+              self->client_session_token.clear();
+              self->client_subscriptions.clear();
+              handler = self->client_transport_lost_handler;
+            }
+            logging::getLogger("MediaRelayService").warning
+                << "client duplex lost reason=" << (reason && reason[0] ? reason : "unknown")
+                << " will_notify=" << (handler ? 1 : 0);
+            if (handler) {
+              handler();
+            }
+          },
+          Libp2pExecutorLimits::kMaxMediaRelayClientOutboundFrames,
           []() {},
           /*write_preferred=*/true);
       done->set_value();
@@ -439,18 +473,18 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
     }
   }
 
-  /** Returns false when the participant session should end. */
+  /** Returns false when the participant session should end (explicit detach only). */
   bool ProcessParticipantFrame(const std::shared_ptr<HostSession>& session,
                                const std::shared_ptr<HostParticipant>& part,
                                const std::vector<uint8_t>& body) {
     if (body.empty()) {
-      return false;
+      return true; // skip; do not tear down
     }
     if (body[0] == '{') {
       nlohmann::json root =
           nlohmann::json::parse(std::string(body.begin(), body.end()), nullptr, false);
       if (root.is_discarded() || !root.is_object()) {
-        return false;
+        return true; // skip corrupt control; keep uplink
       }
       const std::string op = root.value("op", "");
       if (op == "subscribe") {
@@ -491,7 +525,8 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
 
     auto frame = DecodeMediaDataFrame(body);
     if (!frame) {
-      return false;
+      // Skip corrupt media; do not remove the participant (matches client duplex policy).
+      return true;
     }
     const int64_t nbytes = static_cast<int64_t>(body.size());
     const int64_t now_ms = util::NowUnixMs();
@@ -536,7 +571,13 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void CleanupParticipant(const std::shared_ptr<HostSession>& session,
-                          const std::shared_ptr<HostParticipant>& part) {
+                          const std::shared_ptr<HostParticipant>& part, const char* reason) {
+    logging::getLogger("MediaRelayService").warning
+        << "CleanupParticipant peer=" << (part ? part->peer_id : "(null)")
+        << " call=" << (session ? session->call_id : "")
+        << " reason=" << (reason && reason[0] ? reason : "unknown")
+        << " up=" << (part ? part->bytes_up : 0) << " dn=" << (part ? part->bytes_down : 0)
+        << " parts=" << (session ? session->participants.size() : 0);
     if (part->duplex_cancelled) {
       part->duplex_cancelled->store(true, std::memory_order_release);
     }
@@ -587,7 +628,9 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
             return self->ProcessParticipantFrame(session, part, *frame_res);
           },
           cancel_check, MediaDataFrameConfig(),
-          [self, session, part]() { self->CleanupParticipant(session, part); },
+          [self, session, part](const char* reason) {
+            self->CleanupParticipant(session, part, reason);
+          },
           Libp2pExecutorLimits::kMaxMediaRelayOutboundFrames,
           [self, session, part]() {
             std::lock_guard<std::mutex> lock(self->mu);
@@ -983,6 +1026,14 @@ void MediaRelayService::StartClientFrameReader() {
     return;
   }
   impl_->StartClientDuplex(impl_);
+}
+
+void MediaRelayService::SetClientTransportLostHandler(std::function<void()> handler) {
+  if (!impl_) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(impl_->mu);
+  impl_->client_transport_lost_handler = std::move(handler);
 }
 
 Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(

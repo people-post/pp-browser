@@ -211,7 +211,10 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
             return cancelled && cancelled->load(std::memory_order_acquire);
           },
           CallMediaFrameConfig(),
-          [self]() { self->Fail("call-media stream closed"); }, kMaxOutboundFrames, on_drop,
+          [self](const char* reason) {
+            self->Fail(std::string("call-media stream closed (") +
+                       (reason && reason[0] ? reason : "unknown") + ")");
+          }, kMaxOutboundFrames, on_drop,
           /*write_preferred=*/true);
       self->session_ready.store(true, std::memory_order_release);
       if (on_ready) {
@@ -280,6 +283,9 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
       params.call_id = hello->value("call_id", "");
       params.media_epoch = hello->value("media_epoch", 1u);
       params.offerer = hello->value("role", "") == "offerer";
+      if (auto peer = stream->remotePeerId()) {
+        params.peer_key = peer.value().toBase58();
+      }
 
       std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler;
       {
