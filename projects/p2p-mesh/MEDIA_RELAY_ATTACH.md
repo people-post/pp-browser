@@ -166,7 +166,7 @@ Same as [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md) / V033:
 1. quote → accept → attach → Attached; fan-out audio both ways.
 2. attach without quote when policy allows join-on-existing session (call-scoped stranger).
 3. Over max HostSessions / participants → Rejected with error JSON.
-4. SoftMigrate guest reattach after duplex loss → new stream Control→Attached; capture stays up.
+4. SoftMigrate guest reattach after duplex loss → new stream Control→Attached; capture stays up. *(loopback: `GuestDetachThenReattachFanout`, `PreferLocalGuestDetachThenReattachFanout`)*
 5. Service Stop cancels inflight control and active participants without hang.
 6. Corrupt control/media frame → skip; do not tear down Attached session.
 
