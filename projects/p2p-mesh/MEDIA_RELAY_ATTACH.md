@@ -1,7 +1,7 @@
 # media_relay attach session machine
 
 **Tier:** project (design)  
-**Status:** **s3a implementing** — inbound attach phases in `MediaRelayService::HandleInboundBody`  
+**Status:** **s3a+s3b done** — inbound `MediaRelayAttachPhase` + client `MediaRelayClientPhase`; SoftMigrate / PreferLocal dogfood next  
 
 **ADR:** [N026](DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)  
 **Calls overview:** [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md) (V033)  
@@ -144,7 +144,9 @@ InboundStreamSM (per stream)
 
 ## Client attach path (phone → hop)
 
-Outbound `RequestQuote` / `AcceptAndAttach` today uses `settled` atomics + blocking waits. s3 should give it a **small mirror SM** or the same event vocabulary (`Dialing → Quoted → Accepting → Attaching → Attached`) so timeout/cancel matches host inbound. Do not leave client path on raw promises while host is cleaned up.
+`AcceptAndAttach` uses **`MediaRelayClientPhase`**: `Idle → Dialing → Accepting → Attaching → Attached` (Detach → Idle). Waiter is owned by the service so **Detach aborts** in-flight attach (Leave / SoftMigrate). Late workers must not install `client_stream` after timeout/Detach settled.
+
+`RequestQuote` remains a short one-shot RPC (separate stream).
 
 ---
 

@@ -243,7 +243,8 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 | **s0** | This design + V033 / N026 (docs only) |
 | **s1** | Freeze open questions below; write behavior catalog / unit-test skeletons (no behavior change) |
 | **s2** | Call-media SM strangler in `CallMediaDirectService` — dogfood Android↔Android |
-| **s3** | Media-relay attach SM — SoftMigrate / PreferLocal path |
+| **s3a+s3b** | Media-relay inbound + client attach SM (**done**) |
+| **s3c** | SoftMigrate / PreferLocal dogfood gate |
 | **s4** | Optional circuit; promote race table homes into CALLS.md |
 
 **Strangler:** introduce phase enum beside flags → route new paths through `Apply` → delete flags when unused.  

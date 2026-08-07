@@ -59,7 +59,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 |------|-------|
 | **m1** desktop matrix | Android ↔ desktop voice without WebRTC; **Windows LAN mDNS** + **call-control `listen_multiaddrs`** on invite/accept for dial when mDNS misses — rebuild **both** ends |
 | Hop peerstore / circuit PeerId dial | media-hop **L1–L3** |
-| **Transport session SMs (V033 / N026)** | **s2a + s3a** — call-media phases + Fail-after-Detach ignore; media-relay inbound attach phases (`media_relay_attach phase=`); loopback tests green; dogfood gates open |
+| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** — call-media phases + Fail-after-Detach ignore; media-relay inbound + client attach phases; Detach aborts AcceptAndAttach; loopback tests green; Android / SoftMigrate dogfood gates open |
 | Video on libp2p | Deferred |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
 | N≥3 unify engine on libp2p send/recv | N021 follow-on |

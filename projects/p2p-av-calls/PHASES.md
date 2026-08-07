@@ -117,7 +117,9 @@ Robustness refactor for long-lived host media sessions. Spec: [SESSION_MACHINES.
 - [x] s2a — `CallMediaDirectService` session phases/events; glare + Detach via phase; loopback tests (`CallMediaDirectServiceTest`)
 - [ ] s2b — Android↔Android dogfood gate (phase logs triage Connecting stuck)
 - [ ] s2c — Delete remaining flag-equivalent leftovers if any; promote race homes in CALLS.md
-- [ ] s3 — media-relay attach SM (mesh N026); SoftMigrate / PreferLocal gate
+- [x] s3a — media-relay inbound attach SM (mesh N026)
+- [x] s3b — media-relay client `AcceptAndAttach` SM + Detach abort
+- [ ] s3c — SoftMigrate / PreferLocal dogfood gate
 - [ ] s4 — Optional circuit bridge SM; point CALLS.md critical races at phase homes
 
 ## Later horizons

@@ -71,8 +71,8 @@ Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-mac
 - [x] N026 + MEDIA_RELAY_ATTACH design doc
 - [x] Freeze with calls V033 s1; call-media s2a landed first
 - [x] s3a — Replace inbound `while (!session)` with per-stream phase + `media_relay_attach phase=` logs
-- [ ] Client attach path shares event vocabulary (no raw `settled`-only waits)
-- [ ] SoftMigrate / PreferLocal dogfood gate
+- [x] s3b — Client `AcceptAndAttach` phase machine; Detach aborts waiter; no late stream install after timeout
+- [ ] s3c — SoftMigrate / PreferLocal dogfood gate (loopback reattach covered; device dogfood open)
 
 ## n4-media — Blind media forwarder (N017–N021; unblocks a4)
 
