@@ -43,12 +43,11 @@ void PrintUsage(const char* argv0) {
       << "  --listen <multiaddr>  Override libp2p listen (or PP_NODE_LISTEN)\n"
       << "  --listen-fallback     Allow desktop-style port fallback (or PP_NODE_LISTEN_FALLBACK)\n"
       << "  --status              Print reachability JSON and exit (nr ops)\n"
-      << "  --status-addr <addr>  Loopback HTTP admin bind (default 127.0.0.1:18518).\n"
+      << "  --status-addr <addr>  HTTP admin bind (default 127.0.0.1:18518).\n"
+      << "                       Use 0.0.0.0:18518 (or a host IP) for console/probes.\n"
       << "                       Empty string disables. Env: PP_NODE_STATUS_ADDR\n"
       << "  --status-token <tok>  Optional Bearer token for /healthz and /status.\n"
       << "                       Env: PP_NODE_STATUS_TOKEN\n"
-      << "  --status-allow-non-loopback\n"
-      << "                       Allow binding status HTTP off loopback (dangerous)\n"
       << "  --pin <pin>           Profile PIN (or PP_BROWSER_PIN) — required\n"
       << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
       << "  --debug               Verbose logging\n"
@@ -56,11 +55,12 @@ void PrintUsage(const char* argv0) {
       << "\n"
       << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
       << "  PP_NODE_DATA_DIR, PP_NODE_LISTEN, PP_NODE_BOOTSTRAP_PEERS,\n"
-      << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY\n"
+      << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY,\n"
+      << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN\n"
       << "\n"
-      << "Live status (long-running mode) is loopback-only HTTP for DevOps, e.g.:\n"
-      << "  curl -sS http://127.0.0.1:18518/status\n"
-      << "  kubectl exec deploy/pp-node -- curl -sS http://127.0.0.1:18518/healthz\n";
+      << "Live status HTTP (long-running mode), e.g.:\n"
+      << "  curl -sS http://127.0.0.1:18518/healthz\n"
+      << "  curl -sS http://127.0.0.1:18518/status\n";
 }
 
 void ShutdownNode(pbr::NodeBootstrapResult& boot) {
@@ -124,7 +124,6 @@ int main(int argc, char** argv) {
     status_addr_spec = env_addr;
   }
   std::string status_token = EnvOrEmpty("PP_NODE_STATUS_TOKEN");
-  bool status_allow_non_loopback = false;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
@@ -137,8 +136,6 @@ int main(int argc, char** argv) {
       listen_fallback = true;
     } else if (std::strcmp(argv[i], "--status") == 0) {
       print_status = true;
-    } else if (std::strcmp(argv[i], "--status-allow-non-loopback") == 0) {
-      status_allow_non_loopback = true;
     } else if (std::strcmp(argv[i], "--status-addr") == 0 && i + 1 < argc) {
       status_addr_spec = argv[++i];
     } else if (std::strcmp(argv[i], "--status-token") == 0 && i + 1 < argc) {
@@ -193,9 +190,8 @@ int main(int argc, char** argv) {
     pbr::StatusHttpAuthConfig auth;
     auth.bearer_token = status_token;
     pbr::NodeBootstrapResult* boot_ptr = &(*boot);
-    if (auto started = status_http.Start(
-            *bind, std::move(auth),
-            [boot_ptr]() { return MakeSnapshot(*boot_ptr); }, status_allow_non_loopback);
+    if (auto started = status_http.Start(*bind, std::move(auth),
+                                         [boot_ptr]() { return MakeSnapshot(*boot_ptr); });
         !started) {
       root.error << "status HTTP failed: " << started.error().message;
       ShutdownNode(*boot);

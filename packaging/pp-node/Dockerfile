@@ -28,9 +28,10 @@ VOLUME ["/var/lib/pp-node"]
 # Peer-facing libp2p listen (often 443). Binding privileged ports needs
 # CAP_NET_BIND_SERVICE (Docker: --cap-add=NET_BIND_SERVICE;
 # Kubernetes: securityContext.capabilities.add: ["NET_BIND_SERVICE"]).
-# Do NOT EXPOSE / publish the loopback status port (18518); query via
-# docker/kubectl exec → curl http://127.0.0.1:18518/status
+# Status HTTP is separate (default loopback 18518). For console/probes:
+#   -e PP_NODE_STATUS_ADDR=0.0.0.0:18518 -p 18518:18518
 EXPOSE 443
+EXPOSE 18518
 
 # Provide secrets and deploy overlays via env — never bake a PIN into the image.
 # Precedence: CLI → env → this config file → defaults. See docs/ops/CONFIGURATION.md.
@@ -39,5 +40,6 @@ EXPOSE 443
 #   PP_NODE_DATA_DIR            e.g. /var/lib/pp-node
 #   PP_NODE_BOOTSTRAP_PEERS     comma-separated multiaddrs
 #   PP_NODE_CAP_CIRCUIT_RELAY / PP_NODE_CAP_MEDIA_RELAY
+#   PP_NODE_STATUS_ADDR         e.g. 0.0.0.0:18518 for console
 #   PP_NODE_STATUS_TOKEN        (optional Bearer for status HTTP)
 ENTRYPOINT ["/usr/local/bin/pp-node", "--config", "/etc/pp-node/config.json"]

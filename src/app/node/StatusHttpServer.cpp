@@ -128,16 +128,12 @@ std::string StatusHttpServer::BoundEndpoint() const {
 }
 
 Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConfig auth,
-                                  SnapshotFn snapshot, bool allow_non_loopback) {
+                                  SnapshotFn snapshot) {
   if (running_.load()) {
     return Error("status HTTP server already running");
   }
   if (!snapshot) {
     return Error("status HTTP snapshot callback required");
-  }
-  if (!allow_non_loopback && !IsLoopbackStatusBindHost(bind.host)) {
-    return Error("status HTTP bind host must be loopback (127.0.0.1 / ::1 / localhost); "
-                 "pass --status-allow-non-loopback to override");
   }
 
   auto impl = std::make_unique<Impl>();

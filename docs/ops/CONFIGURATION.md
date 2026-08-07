@@ -32,8 +32,8 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_CAP_MEDIA_RELAY` | `capabilities.media_relay` | Same bool forms |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
 | `PP_NODE_LISTEN_FALLBACK` | busy-port fallback | Or `--listen-fallback`; default fail-loud |
-| `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables |
-| `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional |
+| `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |
+| `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for both `/healthz` and `/status` |
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 

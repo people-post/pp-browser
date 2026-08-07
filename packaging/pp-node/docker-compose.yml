@@ -1,0 +1,37 @@
+# Local / dogfood deploy for pp-node (not production hardening).
+# Usage (from repo root after packaging):
+#   bash scripts/pp_node_package_linux.sh all
+#   docker compose -f packaging/pp-node/docker-compose.yml up -d --build
+#
+# Status HTTP (published on host; image has no curl):
+#   curl -sS http://127.0.0.1:18518/healthz
+#   curl -sS http://127.0.0.1:18518/status
+
+services:
+  pp-node:
+    build:
+      context: ../../dist/pp-node/docker
+      dockerfile: Dockerfile
+    image: pp-node:local
+    container_name: pp-node-local
+    restart: unless-stopped
+    environment:
+      PP_BROWSER_PIN: ${PP_BROWSER_PIN:-local-test-pin}
+      PP_NODE_LISTEN: ${PP_NODE_LISTEN:-/ip4/0.0.0.0/tcp/18517}
+      PP_NODE_DATA_DIR: /var/lib/pp-node
+      # Admin HTTP for console/probes (ADDR alone is enough to bind non-loopback).
+      PP_NODE_STATUS_ADDR: ${PP_NODE_STATUS_ADDR:-0.0.0.0:18518}
+      # Optional: PP_NODE_STATUS_TOKEN, PP_NODE_BOOTSTRAP_PEERS, PP_NODE_CAP_*
+    volumes:
+      - pp-node-data:/var/lib/pp-node
+    ports:
+      # Dev listen (avoid privileged 443). Override with PP_NODE_LISTEN + ports.
+      - "${PP_NODE_HOST_PORT:-18517}:18517"
+      - "${PP_NODE_STATUS_HOST_PORT:-18518}:18518"
+    # For /ip4/0.0.0.0/tcp/443 instead:
+    #   ports: ["443:443", "18518:18518"]
+    #   cap_add: [NET_BIND_SERVICE]
+    #   environment.PP_NODE_LISTEN: /ip4/0.0.0.0/tcp/443
+
+volumes:
+  pp-node-data:

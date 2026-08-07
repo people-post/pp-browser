@@ -133,14 +133,13 @@ cmake --build build -j --target pp-node
 - PIN via `--pin` or `PP_BROWSER_PIN` (required). Deploy overlays (`PP_NODE_LISTEN`, `PP_NODE_DATA_DIR`, caps, …) follow **CLI → env → config file**; see [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
 - Default listen is fail-loud on the configured port (often **443** for ops). Pass `--listen-fallback` / `PP_NODE_LISTEN_FALLBACK=1` only for local dogfood.
 - Dial-back protocol `/pp-browser/dial-back/1.0.0` is enabled for reachability probes (feeds phase **nr**).
-- **Loopback status HTTP** (long-running mode): default `127.0.0.1:18518` with `GET /healthz` and `GET /status` (JSON). Not on the libp2p listen port; do not publish this port on a Service/Ingress. Query from the host/container via `curl` or `kubectl exec`:
+- **Status HTTP** (long-running mode): default `127.0.0.1:18518` with `GET /healthz` and `GET /status` (JSON). Separate from the libp2p listen port. For console / probes, set `PP_NODE_STATUS_ADDR=0.0.0.0:18518` (ADDR alone is enough) and publish host port **18518**:
   ```bash
+  curl -sS http://127.0.0.1:18518/healthz
   curl -sS http://127.0.0.1:18518/status
-  kubectl exec deploy/pp-node -- curl -sS http://127.0.0.1:18518/healthz
   ```
-  - `--status-addr host:port` or `PP_NODE_STATUS_ADDR` (empty disables)
-  - `--status-token` / `PP_NODE_STATUS_TOKEN` optional Bearer auth
-  - Non-loopback bind requires `--status-allow-non-loopback` (off by default)
+  - `--status-addr host:port` or `PP_NODE_STATUS_ADDR` (empty disables; default loopback)
+  - `--status-token` / `PP_NODE_STATUS_TOKEN` optional Bearer auth (gates both endpoints)
   - One-shot `pp-node --status` still prints reachability JSON and exits (unchanged)
 - Sketches / release packaging: [`packaging/pp-node/`](../../packaging/pp-node/), [`scripts/pp_node_package_linux.sh`](../../scripts/pp_node_package_linux.sh).
 - **Release CI** builds `pp-node` on **Ubuntu 24.04** (same family as the runtime image `ubuntu:24.04`), attaches `pp-node-<ver>-linux-amd64.tar.gz` to the GitHub Release, and pushes `ghcr.io/<owner>/pp-node:<ver>`. See [RELEASE.md](RELEASE.md).

@@ -66,14 +66,16 @@ docker run --rm -it \
   -e PP_BROWSER_PIN=... \
   -e PP_NODE_LISTEN=/ip4/0.0.0.0/tcp/443 \
   -e PP_NODE_DATA_DIR=/var/lib/pp-node \
+  -e PP_NODE_STATUS_ADDR=0.0.0.0:18518 \
   -v pp-node-data:/var/lib/pp-node \
   -p 443:443 \
+  -p 18518:18518 \
   ghcr.io/people-post/pp-node:0.1.0
 ```
 
 Image ships a seed `config.json` (org caps); override per deploy with `PP_NODE_*` (CLI → env → file). See [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
 
-Status HTTP stays on loopback inside the container (`127.0.0.1:18518`); use `docker exec` / `kubectl exec` to query it. See [BUILD.md](BUILD.md#headless-mesh-node-pp-node).
+Status HTTP defaults to loopback; set `PP_NODE_STATUS_ADDR=0.0.0.0:18518` and publish **18518** for console/probes (`GET /healthz`, `GET /status`). Optional `PP_NODE_STATUS_TOKEN`. See [BUILD.md](BUILD.md#headless-mesh-node-pp-node).
 
 ## macOS code signing and notarization
 
