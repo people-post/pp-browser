@@ -1,3 +1,11 @@
+if(PP_BROWSER_HEADLESS)
+  pp_configure_status("Headless configure complete (pp-node only)")
+  if(NOT PP_BROWSER_IS_MOBILE)
+    add_subdirectory(node)
+  endif()
+  return()
+endif()
+
 set(PP_BROWSER_APP_SOURCES
   main.cpp
   Application.cpp

@@ -165,13 +165,22 @@ TEST_F(CallMediaDirectServiceTest, HelloAndEncryptedAudioRoundTrip) {
 
 TEST_F(CallMediaDirectServiceTest, DetachUnblocksConnectWait) {
   // B stalls inside inbound hello handler so A's Connect blocks in hello_ack read.
+  // release_b must always flip (RAII): a failed WaitUntil/ASSERT used to leave B's worker
+  // in the sleep loop and hang Libp2pHost::Stop → WorkerPool::Shutdown.
   const std::string call_id = "call-detach-wait";
   ByteVector media_key(32, 0x11);
   std::atomic<bool> release_b{false};
+  std::atomic<bool> b_stalled{false};
+  struct ReleaseB {
+    std::atomic<bool>* flag;
+    ~ReleaseB() { flag->store(true, std::memory_order_release); }
+  } release_guard{&release_b};
+
   b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
+    b_stalled.store(true, std::memory_order_release);
     while (!release_b.load(std::memory_order_acquire)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -190,15 +199,25 @@ TEST_F(CallMediaDirectServiceTest, DetachUnblocksConnectWait) {
     connect_result = a_call_media_->Connect(params, {}, 15000);
     connect_done.store(true, std::memory_order_release);
   });
+  struct JoinThread {
+    std::thread& t;
+    ~JoinThread() {
+      if (t.joinable()) {
+        t.join();
+      }
+    }
+  } join_guard{th};
 
-  WaitUntil([&] { return a_call_media_->Phase() == CallMediaSessionPhase::HelloOutbound; },
+  // Wait until hello was exchanged (B in stall ⇒ A has written hello and is in ack ReadJson).
+  WaitUntil([&] { return b_stalled.load(std::memory_order_acquire) &&
+                         a_call_media_->Phase() == CallMediaSessionPhase::HelloOutbound; },
             std::chrono::milliseconds(5000));
+  ASSERT_TRUE(b_stalled.load(std::memory_order_acquire));
   ASSERT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::HelloOutbound);
   ASSERT_FALSE(connect_done.load(std::memory_order_acquire));
 
   a_call_media_->Detach();
   th.join();
-  release_b.store(true, std::memory_order_release);
 
   ASSERT_TRUE(connect_done.load(std::memory_order_acquire));
   EXPECT_FALSE(connect_result);

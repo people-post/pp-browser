@@ -101,14 +101,27 @@ void Apply(XxxEvent ev, /* small context */);
 
 | Work | Thread | Rule |
 |------|--------|------|
-| `setProtocolHandler` entry | Host **io** | Hop immediately for blocking work |
-| Control handshake (hello / quote JSON) | Worker **Normal** | Never Critical (deadlock with Leave/Connect) |
+| `setProtocolHandler` entry | Host **io** | Hop immediately for any work that might block a pool thread |
+| Call-media hello/ack (stream R/W) | Host **io** (async) | **Never** `BlockingRead`/`BlockingWrite` on WorkerPool — peer may stall forever |
+| Inbound handler / key fill (app logic) | Worker **Normal** | May hop after async hello read; must not hold a live stream wait |
+| Other control RPC still on Blocking* (dial-back, some circuit/relay JSON) | Worker **Normal** | Never Critical; migrate to async+deadline when touched (see remaining work) |
 | SM `Apply` | **One strand per service** (mutex on Impl or serial queue) | All transitions enter there |
 | Duplex media R/W | Host **io** | Async pump; no BlockingWrite for fan-out |
 | Product callbacks | Posted off SM strand | SM never calls UI directly |
-| Detach / Stop / ClearInboundHandler | Same SM strand | Completes waiters; rejects further adopts |
+| Detach / Stop / ClearInboundHandler | Same SM strand | Completes waiters; **reset** streams; rejects further adopts |
 
-**Invariant:** waits arm a timeout **inside** the machine (or a generation token the machine owns). External stack `promise` + `wait_for` is a migration smell — eliminate per service as each SM lands.
+### Peer honesty rule (stream waits)
+
+Do **not** trust the remote peer to complete, FIN, or half-close promptly.
+
+1. **Non-blocking** — outstanding stream read/write runs on host `io_context` (async callbacks), not a parked WorkerPool thread.
+2. **Bounded** — every such wait arms a local deadline the SM owns (`handshake_timer` / Connect budget).
+3. **Hard cancel** — on expiry or Detach: set cancel flag **and** Yamux `reset()` (write half-close alone does **not** complete an in-flight read).
+4. **Ignore late completions** — after Idle/Detaching / settled, callbacks no-op.
+
+Cancel flags without `reset()` are insufficient while `libp2p::read`/`write` is outstanding.
+
+**Invariant:** waits arm a timeout **inside** the machine (or a generation token the machine owns). External stack `promise` + `wait_for` on the **caller** of `Connect()` remains for bridge compatibility (see remaining work) — that wait is local and bounded; it must still run full stream teardown on timeout.
 
 ---
 
@@ -124,11 +137,11 @@ void Apply(XxxEvent ev, /* small context */);
 |-------|---------|
 | `Idle` | No stream; may accept inbound or start Connect |
 | `Dialing` | Outbound `OpenStream` in flight |
-| `HelloOutbound` | Writing/reading hello/ack on outbound stream (`outbound_hello_inflight`) |
-| `HelloInbound` | Worker reading inbound hello; filling media key via handler |
+| `HelloOutbound` | Async hello write / ack read on host io + handshake deadline |
+| `HelloInbound` | Async hello read on host io + deadline; key fill may run on Normal |
 | `Adopting` | Won the race; about to start duplex (single-writer to active stream) |
 | `MediaReady` | Duplex pump running; `session_ready` |
-| `Detaching` | Closing stream, aborting waiters, stopping pump |
+| `Detaching` | Cancel handshake timer; **reset** streams; abort waiters; stop pump |
 | `Failed` | Terminal failure before MediaReady (then → Idle after notify) |
 
 `Failed` may be instantaneous (notify + transition to Idle) if we prefer fewer sticky phases — either is fine if logged.
@@ -140,7 +153,7 @@ void Apply(XxxEvent ev, /* small context */);
 | `ConnectRequested` | Bridge `Connect()` |
 | `OpenStreamOk` / `OpenStreamFail` | `PeerSessionManager::OpenStream` |
 | `InboundStream` | Protocol handler |
-| `HelloOk` / `HelloFail` | Control handshake on Normal worker |
+| `HelloOk` / `HelloFail` | Async hello/ack completion (io); handler hop is not the stream wait |
 | `AdoptWon` / `AdoptLost` | Single-active-session rule |
 | `DuplexStarted` | IO pump armed |
 | `DuplexEof` / `DuplexError` | IO read path |
@@ -189,12 +202,13 @@ stateDiagram-v2
 | Transition | Effects |
 |------------|---------|
 | → `Dialing` | Arm connect timeout; store params/callbacks |
-| → `HelloOutbound` | Set glare bit (phase itself); Post Normal hello write/read |
-| → `HelloInbound` | Post Normal read hello; invoke inbound handler for key |
-| → `Adopting` | `TryAdopt` under lock; only one winner |
+| → `HelloOutbound` | Set glare bit; async hello write/read on host io_context; arm handshake deadline (reset on expiry) |
+| → `HelloInbound` | Async hello read on io_context + handshake deadline; inbound handler may hop to Normal for key fill only |
+| → `Adopting` | `TryAdopt` under lock; only one winner; cancel handshake timer |
 | → `MediaReady` | Start IO duplex; `on_connected`; complete Connect waiter OK |
-| → `Failed` | `on_failed`; complete waiter error; close stream |
-| → `Detaching` | Stop pump; reset stream; complete waiter if any; then Idle |
+| → `Failed` | `on_failed`; complete waiter error; reset stream |
+| → `Detaching` | Stop pump; cancel handshake; **reset** stream (not write half-close); complete waiter if any; then Idle |
+| `ConnectTimeout` | TeardownTransport (reset handshake) + Idle — never leave async hello pinned after Connect returns |
 
 ### Collapses today’s flags
 
@@ -219,7 +233,17 @@ stateDiagram-v2
 4. Leave / Detach during Dialing or Hello* → Idle promptly; Connect unblocked (<15s hang). — **loopback:** `DetachUnblocksConnectWait`
 5. SoftMigrate ReleaseDirect → Detach without lifecycle ConnectFailed when SFU expected. — **loopback:** `FailAfterDetachDoesNotCallOnFailed`
 6. Stop / ClearInboundHandler → late inbound no-ops. — **loopback:** `ClearInboundHandlerRejectsLateInbound`
-7. Connect timeout → Failed → Idle; late OpenStreamOk ignored. — **loopback:** `ConnectTimeoutReturnsIdleAndIgnoresLateOpen`
+7. Connect timeout → Idle + handshake teardown (`reset`); late OpenStreamOk ignored. — **loopback:** `ConnectTimeoutReturnsIdleAndIgnoresLateOpen`
+
+### Remaining work (call-media / peer-honesty)
+
+| Item | Why not done yet |
+|------|------------------|
+| **Async `Connect(cb)` API** | Bridge (`CallLibp2pMediaBridge`) still uses blocking `Connect()` on a worker for retry loops. Sync wait is **local + bounded** (timeout + teardown); stream IO underneath is already async. Changing the bridge API is a larger strangler (s1 freeze kept blocking Connect for s2). |
+| **Inbound handler must not stall Normal** | Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream, but the handler itself is app code — needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
+| **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
+| **Other protocols still on `Blocking*`** | Dial-back, some circuit / media-relay attach JSON still use WorkerPool `BlockingRead`/`Write`. Migrate when those paths are edited — same peer-honesty rule. Not in call-media SM scope. |
+| **Dual-dial single `handshake_stream` slot** | Outbound+inbound overlap: one armed handshake owns the cancel/timer slot; the other path keys off `settled`/phase. Works with goldens; a second slot or generation list only if DualDial flakes under load. |
 
 ---
 
@@ -257,7 +281,7 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 | Question | Decision |
 |----------|----------|
 | SM strand | **Mutex on `Impl`** for all `Apply` / phase transitions. Duplex start posts to host io without holding the lock across awaits. |
-| Connect API | Keep **blocking** bridge-facing `Connect()` for s2; waiter/timeout owned inside the SM. Fully async later. |
+| Connect API | Keep **blocking** bridge-facing `Connect()` for s2; waiter/timeout owned inside the SM. Stream hello is async+deadline; **async Connect(cb)** deferred (bridge retry API). |
 | Failed phase | **Instant notify → Idle** (log failure event; do not stick in `Failed`). |
 | Second Connect while busy | **Detach-then-Connect** (abort prior waiter, then dial). |
 | Scope | **s2 = call-media only**; media-relay N026 after call-media SM. |

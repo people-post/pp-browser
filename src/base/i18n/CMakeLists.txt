@@ -1,9 +1,15 @@
+if(PP_BROWSER_HEADLESS)
+  set(_pp_i18n_platform_lib pp_base_platform_core)
+else()
+  set(_pp_i18n_platform_lib pp_base_platform)
+endif()
+
 pp_browser_add_base_library(pp_base_i18n
   SOURCES
     LocalizationService.cpp
     ScriptLanguageDetector.cpp
   PUBLIC_LIBS
-    pp_base_platform
+    ${_pp_i18n_platform_lib}
     pp_base_data
     nlohmann_json::nlohmann_json)
 

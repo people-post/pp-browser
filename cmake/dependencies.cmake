@@ -10,16 +10,21 @@ function(pp_require_vendored name)
   endif()
 endfunction()
 
-pp_require_vendored(freetype)
-pp_require_vendored(harfbuzz)
+# Always required for pp-node and the GUI app.
 pp_require_vendored(nlohmann_json)
-pp_require_vendored(curl)
-pp_require_vendored(sdl3)
-pp_require_vendored(sdl3_image)
-pp_require_vendored(lunasvg)
-pp_require_vendored(sqlite)
 pp_require_vendored(libsodium)
-pp_require_vendored(opus)
+
+# GUI / AI / messaging / A-V — not needed for headless pp-node.
+if(NOT PP_BROWSER_HEADLESS)
+  pp_require_vendored(freetype)
+  pp_require_vendored(harfbuzz)
+  pp_require_vendored(curl)
+  pp_require_vendored(sdl3)
+  pp_require_vendored(sdl3_image)
+  pp_require_vendored(lunasvg)
+  pp_require_vendored(sqlite)
+  pp_require_vendored(opus)
+endif()
 
 # libp2p deps (BoringSSL must be available before curl TLS on Linux)
 include(libp2p_dependencies)
@@ -36,6 +41,25 @@ if(NOT PP_BROWSER_IS_MOBILE)
 endif()
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+# nlohmann-json (header-only)
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+set(JSON_Install OFF CACHE BOOL "" FORCE)
+
+add_subdirectory("${PP_THIRD_PARTY_DIR}/nlohmann_json"
+                 "${CMAKE_BINARY_DIR}/third_party/nlohmann_json" EXCLUDE_FROM_ALL)
+
+# libsodium (e2e-message-crypto symmetric layer — base/crypto)
+set(SODIUM_MINIMAL OFF CACHE BOOL "" FORCE)
+add_subdirectory("${PP_THIRD_PARTY_DIR}/libsodium"
+                 "${CMAKE_BINARY_DIR}/third_party/libsodium" EXCLUDE_FROM_ALL)
+
+if(PP_BROWSER_HEADLESS)
+  pp_configure_status("Headless deps ready (json, sodium, libp2p); skipping GUI third_party")
+  return()
+endif()
+
+# --- GUI / full-app third_party below ---
 
 # FreeType (RmlUi font engine)
 set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
@@ -78,21 +102,9 @@ if(TARGET harfbuzz AND NOT TARGET harfbuzz::harfbuzz)
   add_library(harfbuzz::harfbuzz ALIAS harfbuzz)
 endif()
 
-# nlohmann-json (header-only)
-set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
-set(JSON_Install OFF CACHE BOOL "" FORCE)
-
-add_subdirectory("${PP_THIRD_PARTY_DIR}/nlohmann_json"
-                 "${CMAKE_BINARY_DIR}/third_party/nlohmann_json" EXCLUDE_FROM_ALL)
-
 # SQLite amalgamation (chat-storage SqliteThreadStore — pp_base, not libp2p fork)
 add_subdirectory("${PP_THIRD_PARTY_DIR}/sqlite"
                  "${CMAKE_BINARY_DIR}/third_party/sqlite" EXCLUDE_FROM_ALL)
-
-# libsodium (e2e-message-crypto symmetric layer — base/crypto)
-set(SODIUM_MINIMAL OFF CACHE BOOL "" FORCE)
-add_subdirectory("${PP_THIRD_PARTY_DIR}/libsodium"
-                 "${CMAKE_BINARY_DIR}/third_party/libsodium" EXCLUDE_FROM_ALL)
 
 # Opus (p2p-av-calls a2 voice)
 set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
@@ -159,12 +171,7 @@ endif()
 add_subdirectory("${PP_THIRD_PARTY_DIR}/curl"
                  "${CMAKE_BINARY_DIR}/third_party/curl" EXCLUDE_FROM_ALL)
 
-option(PP_BROWSER_HEADLESS "Build SDL3 without desktop video (compile-only, no GUI)" OFF)
-
-if(PP_BROWSER_HEADLESS)
-  set(SDL_UNIX_CONSOLE_BUILD ON CACHE BOOL "SDL console build without windowing" FORCE)
-  message(STATUS "pp-browser: PP_BROWSER_HEADLESS=ON (no GUI)")
-elseif(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set(SDL_UNIX_CONSOLE_BUILD OFF CACHE BOOL "SDL console build without windowing" FORCE)
   set(SDL_OPENGL OFF CACHE BOOL "Desktop OpenGL/GLX disabled on mobile" FORCE)
   set(SDL_OPENGLES ON CACHE BOOL "OpenGL ES for mobile SDL video" FORCE)
@@ -173,13 +180,13 @@ elseif(UNIX AND NOT APPLE)
     message(FATAL_ERROR
       "X11 development headers are required for the pp-browser GUI.\n"
       "  Debian/Ubuntu: sudo apt install libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev\n"
-      "  Or configure with -DPP_BROWSER_HEADLESS=ON for compile-only builds.")
+      "  Or configure with -DPP_BROWSER_HEADLESS=ON for pp-node / node-only builds.")
   endif()
   if(NOT EXISTS "/usr/include/GL/gl.h")
     message(FATAL_ERROR
       "OpenGL development headers are required (RmlUi uses OpenGL 3.3).\n"
       "  Debian/Ubuntu: sudo apt install libgl-dev\n"
-      "  Or configure with -DPP_BROWSER_HEADLESS=ON for compile-only builds.")
+      "  Or configure with -DPP_BROWSER_HEADLESS=ON for pp-node / node-only builds.")
   endif()
   set(SDL_UNIX_CONSOLE_BUILD OFF CACHE BOOL "SDL console build without windowing" FORCE)
   set(SDL_OPENGL ON CACHE BOOL "Include OpenGL/GLX in SDL3" FORCE)

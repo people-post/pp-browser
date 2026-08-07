@@ -103,14 +103,22 @@ void AsyncLengthPrefixedReader::Start(std::shared_ptr<Stream> stream, FrameCallb
 }
 
 void AsyncLengthPrefixedReader::Stop() {
+  // Do not clear on_frame_ here: Stop() is often called from inside on_frame_
+  // (one-shot AsyncReadStreamJson). Destroying std::function while it runs is UB.
   running_.store(false, std::memory_order_release);
   stream_.reset();
-  on_frame_ = {};
-  is_cancelled_ = {};
+}
+
+void AsyncLengthPrefixedReader::ReleaseCallbackIfStopped() {
+  if (!running_.load(std::memory_order_acquire) || !stream_) {
+    on_frame_ = {};
+    is_cancelled_ = {};
+  }
 }
 
 void AsyncLengthPrefixedReader::ReadHeader() {
   if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_) || !stream_) {
+    ReleaseCallbackIfStopped();
     return;
   }
   header_buf_.assign(8, 0);
@@ -119,6 +127,9 @@ void AsyncLengthPrefixedReader::ReadHeader() {
   libp2p::read(stream_, header_buf_, [self](outcome::result<void> result) {
     if (!self->running_.load(std::memory_order_acquire) || IsCancelled(self->is_cancelled_)) {
       self->phase_ = Phase::Idle;
+      // Not inside on_frame_ — safe to drop now (avoids reader↔callback cycle on cancel).
+      self->on_frame_ = {};
+      self->is_cancelled_ = {};
       return;
     }
     if (!result) {
@@ -127,6 +138,7 @@ void AsyncLengthPrefixedReader::ReadHeader() {
         self->on_frame_(Error(std::string("Failed to read length-prefixed frame header: ") +
                               result.error().message()));
       }
+      self->ReleaseCallbackIfStopped();
       return;
     }
     const uint64_t payload_len =
@@ -136,6 +148,7 @@ void AsyncLengthPrefixedReader::ReadHeader() {
       if (self->on_frame_) {
         self->on_frame_(Error("length-prefixed frame empty"));
       }
+      self->ReleaseCallbackIfStopped();
       return;
     }
     if (payload_len > self->config_.max_frame_bytes) {
@@ -143,6 +156,7 @@ void AsyncLengthPrefixedReader::ReadHeader() {
       if (self->on_frame_) {
         self->on_frame_(Error("length-prefixed frame too large"));
       }
+      self->ReleaseCallbackIfStopped();
       return;
     }
     self->ReadBody(payload_len);
@@ -152,14 +166,19 @@ void AsyncLengthPrefixedReader::ReadHeader() {
 void AsyncLengthPrefixedReader::ReadBody(uint64_t payload_len) {
   if (!running_.load(std::memory_order_acquire) || IsCancelled(is_cancelled_) || !stream_) {
     phase_ = Phase::Idle;
+    ReleaseCallbackIfStopped();
     return;
   }
   if (payload_len == 0) {
     phase_ = Phase::Idle;
     if (on_frame_) {
       on_frame_(std::vector<uint8_t>{});
-      ReadHeader();
     }
+    if (!running_.load(std::memory_order_acquire) || !stream_) {
+      ReleaseCallbackIfStopped();
+      return;
+    }
+    ReadHeader();
     return;
   }
 
@@ -169,6 +188,8 @@ void AsyncLengthPrefixedReader::ReadBody(uint64_t payload_len) {
   libp2p::read(stream_, payload_buf_, [self](outcome::result<void> result) {
     self->phase_ = Phase::Idle;
     if (!self->running_.load(std::memory_order_acquire) || IsCancelled(self->is_cancelled_)) {
+      self->on_frame_ = {};
+      self->is_cancelled_ = {};
       return;
     }
     if (!result) {
@@ -176,11 +197,17 @@ void AsyncLengthPrefixedReader::ReadBody(uint64_t payload_len) {
         self->on_frame_(Error(std::string("Failed to read length-prefixed frame body: ") +
                               result.error().message()));
       }
+      self->ReleaseCallbackIfStopped();
       return;
     }
     std::vector<uint8_t> body(self->payload_buf_.begin(), self->payload_buf_.end());
     if (self->on_frame_) {
       self->on_frame_(std::move(body));
+    }
+    // One-shot readers Stop() inside on_frame_; drop callback only after it returns.
+    if (!self->running_.load(std::memory_order_acquire) || !self->stream_) {
+      self->ReleaseCallbackIfStopped();
+      return;
     }
     self->ReadHeader();
   });

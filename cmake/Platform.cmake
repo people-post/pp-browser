@@ -1,5 +1,11 @@
 # Platform detection and mobile defaults for pp-browser.
 
+# Headless / node-only: skip SDL, RmlUi, and GUI platform (pp-node packaging).
+# Declared here so dependencies.cmake and all src/*/CMakeLists.txt can gate on it.
+option(PP_BROWSER_HEADLESS
+  "Headless/node-only build: skip SDL, RmlUi, and GUI modules (pp-node)"
+  OFF)
+
 set(PP_BROWSER_IS_ANDROID FALSE)
 set(PP_BROWSER_IS_IOS FALSE)
 set(PP_BROWSER_IS_MOBILE FALSE)
@@ -10,6 +16,14 @@ if(ANDROID)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set(PP_BROWSER_IS_IOS TRUE)
   set(PP_BROWSER_IS_MOBILE TRUE)
+endif()
+
+if(PP_BROWSER_HEADLESS)
+  add_compile_definitions(PP_BROWSER_HEADLESS=1)
+  message(STATUS "pp-browser: PP_BROWSER_HEADLESS=ON (node-only; no GUI deps)")
+  if(PP_BROWSER_IS_MOBILE)
+    message(FATAL_ERROR "PP_BROWSER_HEADLESS is for desktop pp-node builds only (not Android/iOS)")
+  endif()
 endif()
 
 option(PP_BROWSER_MOBILE "Target is a mobile platform (Android or iOS)" "${PP_BROWSER_IS_MOBILE}")
