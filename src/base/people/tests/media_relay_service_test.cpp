@@ -480,6 +480,150 @@ TEST_F(MediaRelayServiceTest, DetachUnblocksAcceptAndAttachWait) {
   EXPECT_FALSE(a_relay_->IsAttached());
 }
 
+// Golden #5: Service Stop cancels inflight AcceptAndAttach without hang.
+TEST_F(MediaRelayServiceTest, StopUnblocksAcceptAndAttachWait) {
+  auto peer_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(peer_id);
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint(
+      "blackhole-stop", "/ip4/192.0.2.1/tcp/4001/p2p/" + *peer_id));
+
+  std::atomic<bool> done{false};
+  Roe<MediaRelayAttachResult> result = Error("not run");
+  std::thread th([&] {
+    result = a_relay_->AcceptAndAttach("blackhole-stop", "q-missing", "call-stop-wait",
+                                       "call-stop-wait", [](MediaDataFrame) {}, 15000);
+    done.store(true, std::memory_order_release);
+  });
+
+  for (int i = 0; i < 100 && a_relay_->ClientPhase() == MediaRelayClientPhase::Idle; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  ASSERT_EQ(a_relay_->ClientPhase(), MediaRelayClientPhase::Dialing);
+  ASSERT_FALSE(done.load(std::memory_order_acquire));
+
+  a_relay_->Stop();
+  th.join();
+
+  ASSERT_TRUE(done.load(std::memory_order_acquire));
+  EXPECT_FALSE(result);
+  EXPECT_EQ(result.error().message, "media-relay attach aborted");
+  EXPECT_EQ(a_relay_->ClientPhase(), MediaRelayClientPhase::Idle);
+  EXPECT_FALSE(a_relay_->IsAttached());
+}
+
+// Golden #5: hop Stop tears down active participants without hanging Detach/Stop on clients.
+TEST_F(MediaRelayServiceTest, StopWithActiveParticipantsDoesNotHang) {
+  auto hop_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(hop_id);
+  const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint("hop", hop_ma));
+  ASSERT_TRUE(b_sessions_->RegisterEndpoint("hop", hop_ma));
+
+  const std::string call_id = "call-stop-active";
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+
+  auto qa = a_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qa) << qa.error().message;
+  ASSERT_TRUE(qa->ok) << qa->error;
+  auto qb = b_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qb) << qb.error().message;
+  ASSERT_TRUE(qb->ok) << qb->error;
+
+  ASSERT_TRUE(a_relay_->AcceptAndAttach("hop", qa->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000));
+  ASSERT_TRUE(b_relay_->AcceptAndAttach("hop", qb->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000));
+  a_relay_->StartClientFrameReader();
+  b_relay_->StartClientFrameReader();
+  EXPECT_TRUE(a_relay_->IsAttached());
+  EXPECT_TRUE(b_relay_->IsAttached());
+
+  hop_relay_->Stop();
+  EXPECT_FALSE(hop_relay_->IsStarted());
+
+  // Client Detach/Stop must complete promptly after hop teardown.
+  a_relay_->Detach();
+  b_relay_->Detach();
+  EXPECT_FALSE(a_relay_->IsAttached());
+  EXPECT_FALSE(b_relay_->IsAttached());
+}
+
+// Golden #6: corrupt media body is skipped; Attached stays up and next good frame delivers.
+TEST_F(MediaRelayServiceTest, CorruptMediaFrameKeepsAttachedAndDeliversNext) {
+  auto hop_id = hop_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(hop_id);
+  const std::string hop_ma = "/ip4/127.0.0.1/tcp/" + std::to_string(hop_port_) + "/p2p/" + *hop_id;
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint("hop", hop_ma));
+  ASSERT_TRUE(b_sessions_->RegisterEndpoint("hop", hop_ma));
+
+  const std::string call_id = "call-corrupt-frame";
+  MediaRelayQuoteRequest qreq;
+  qreq.call_id = call_id;
+  qreq.participants = 2;
+
+  auto qa = a_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qa) << qa.error().message;
+  ASSERT_TRUE(qa->ok) << qa->error;
+  auto qb = b_relay_->RequestQuote("hop", qreq, 5000);
+  ASSERT_TRUE(qb) << qb.error().message;
+  ASSERT_TRUE(qb->ok) << qb->error;
+
+  std::mutex mu;
+  std::condition_variable cv;
+  size_t good_frames = 0;
+  MediaDataFrame received;
+
+  ASSERT_TRUE(a_relay_->AcceptAndAttach("hop", qa->quote_id, call_id, call_id, [](MediaDataFrame) {}, 5000));
+  auto attach_b = b_relay_->AcceptAndAttach(
+      "hop", qb->quote_id, call_id, call_id,
+      [&](MediaDataFrame frame) {
+        std::lock_guard<std::mutex> lock(mu);
+        received = std::move(frame);
+        ++good_frames;
+        cv.notify_all();
+      },
+      5000);
+  ASSERT_TRUE(attach_b) << attach_b.error().message;
+  ASSERT_TRUE(attach_b->ok) << attach_b->error;
+
+  a_relay_->StartClientFrameReader();
+  b_relay_->StartClientFrameReader();
+  ASSERT_TRUE(b_relay_->Subscribe(1, 0));
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  // Truncated / wrong-version media body — hop ProcessParticipantFrame must skip, not Kick.
+  ASSERT_TRUE(a_relay_->EnqueueRawClientBodyForTest(std::vector<uint8_t>{0x01, 0x02, 0x03}));
+  // Corrupt control JSON (starts with '{') — same skip policy.
+  const std::string bad_ctrl = "{not-json";
+  ASSERT_TRUE(a_relay_->EnqueueRawClientBodyForTest(
+      std::vector<uint8_t>(bad_ctrl.begin(), bad_ctrl.end())));
+
+  EXPECT_EQ(a_relay_->ClientPhase(), MediaRelayClientPhase::Attached);
+  EXPECT_EQ(b_relay_->ClientPhase(), MediaRelayClientPhase::Attached);
+  EXPECT_TRUE(a_relay_->IsAttached());
+  EXPECT_TRUE(b_relay_->IsAttached());
+
+  MediaDataFrame sent;
+  sent.stream_id = 1;
+  sent.channel_id = 0;
+  sent.channel_type = MediaChannelType::LatestLossy;
+  sent.seq = 1;
+  sent.payload = {0xAA, 0xBB};
+  ASSERT_TRUE(a_relay_->SendFrame(sent));
+
+  {
+    std::unique_lock<std::mutex> lock(mu);
+    ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(3), [&] { return good_frames >= 1; }))
+        << "good frame after corrupt inject should still deliver";
+  }
+  EXPECT_EQ(received.payload, sent.payload);
+  EXPECT_EQ(a_relay_->ClientPhase(), MediaRelayClientPhase::Attached);
+  EXPECT_EQ(b_relay_->ClientPhase(), MediaRelayClientPhase::Attached);
+
+  a_relay_->Detach();
+  b_relay_->Detach();
+}
+
 // PreferLocal SoftMigrate-style: guest Detach → reattach while local hop owner stays; fan-out resumes.
 TEST_F(MediaRelayServiceTest, PreferLocalGuestDetachThenReattachFanout) {
   auto hop_id = hop_host_.LocalPeerIdBase58();

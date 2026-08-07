@@ -182,6 +182,12 @@ public:
   Roe<void> SendFrame(const MediaDataFrame& frame);
   void Detach();
 
+  /**
+   * Enqueue a raw client→hop body (length-prefixed by DuplexFrameSession).
+   * Loopback goldens only (corrupt-frame skip); not a product API.
+   */
+  Roe<void> EnqueueRawClientBodyForTest(std::vector<uint8_t> body);
+
   bool IsAttached() const;
   /** Diagnostics: client outbound attach phase (remote hop path). */
   MediaRelayClientPhase ClientPhase() const;

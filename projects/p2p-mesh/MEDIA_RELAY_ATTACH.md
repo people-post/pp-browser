@@ -7,7 +7,7 @@
 **Calls overview:** [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md) (V033)  
 **Admit / QoS:** [HOST_RECEIVE_POLICY.md](../p2p-av-calls/HOST_RECEIVE_POLICY.md) · [V032](../p2p-av-calls/DECISIONS.md#v032--media-qos-enforcement-playout-sfu-e2e)  
 **Framing:** [N021](DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types)  
-**Code today:** [`MediaRelayService`](../../src/libp2p/integration/host/MediaRelayService.cpp)
+**Code today:** [`MediaRelayService`](../../src/libp2p/integration/host/MediaRelayService.cpp) + internal [`MediaRelayServiceImpl.h`](../../src/libp2p/integration/host/MediaRelayServiceImpl.h)
 
 Design for the **inbound control handshake** (`quote` → `accept` → `attach`) and how it relates to `HostSession` / participant duplex — without turning fan-out QoS into a giant state machine.
 
@@ -165,12 +165,15 @@ Same as [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md) / V033:
 
 | File | Owns |
 |------|------|
-| `MediaRelayService.cpp` | Facade + `Impl` orchestration (fanout, duplex, inbound control loop, AcceptAndAttach) |
+| `MediaRelayService.h` / `.cpp` | Public façade (`Start`/`Stop`/`RequestQuote`/SendFrame/…) |
+| `MediaRelayServiceImpl.h` | Internal `Impl`, `HostSession` / `HostParticipant`, fanout + duplex helpers |
+| `MediaRelayHostInbound.cpp` | Inbound protocol handler (`HandleInbound` / `HandleInboundBody`) |
+| `MediaRelayClientAttach.cpp` | Client `AcceptAndAttach` |
 | `MediaRelayAttachSm.*` | Per-stream inbound attach phase SM (`Apply` / `SetPhase`) |
 | `MediaRelayLogic.*` | Pure client-phase table, auth stub, lossy drop, call-scoped admit, session/participant caps |
 | `MediaRelayFrames.*` | N021 encode/decode + wire constants |
 
-HostSession remains a map object inside `Impl` (not a hierarchical SM). Further TU splits for fanout/duplex need an internal `Impl` header — follow-up.
+HostSession remains a map object inside `Impl` (not a hierarchical SM). `Stop()` calls `Detach()` then `ShutdownHostSessions()` so hop teardown cancels participants.
 
 ## Golden scenarios (s3 gate)
 
@@ -178,8 +181,8 @@ HostSession remains a map object inside `Impl` (not a hierarchical SM). Further 
 2. attach without quote when policy allows join-on-existing session (call-scoped stranger). — **unit:** `MediaRelayAttachSmTest.AttachFromControlWithoutQuote` + call-scoped admit loopbacks
 3. Over max HostSessions / participants → Rejected with error JSON. — **unit:** `MediaRelayLogicTest.CallScopedAdmitAndCaps` (`MediaRelayCanOpenHostSession` / `CanAddParticipant`)
 4. SoftMigrate guest reattach after duplex loss → new stream Control→Attached; capture stays up. *(loopback: `GuestDetachThenReattachFanout`, `PreferLocalGuestDetachThenReattachFanout`)*
-5. Service Stop cancels inflight control and active participants without hang.
-6. Corrupt control/media frame → skip; do not tear down Attached session.
+5. Service Stop cancels inflight control and active participants without hang. — **loopback:** `StopUnblocksAcceptAndAttachWait`, `StopWithActiveParticipantsDoesNotHang`
+6. Corrupt control/media frame → skip; do not tear down Attached session. — **loopback:** `CorruptMediaFrameKeepsAttachedAndDeliversNext`
 
 ---
 
