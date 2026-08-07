@@ -537,14 +537,60 @@ struct CallMediaEngine::Impl {
    * (macOS TCC). Call only from the capture worker — never from UI, relay IO,
    * or the libp2p host thread (that freezes accept + peer signaling).
    */
+  /** Open DEFAULT_RECORDING; retries briefly — OEM speaker route (Moto) races AAudio open. */
+  bool TryOpenCaptureStream(const SDL_AudioSpec& want, SDL_AudioStream** out_stream,
+                            SDL_AudioDeviceID* out_dev) {
+    *out_stream = nullptr;
+    *out_dev = 0;
+#if defined(__ANDROID__)
+    constexpr int kAttempts = 4;
+    constexpr int kRetryDelayMs[] = {0, 80, 200, 400};
+#else
+    constexpr int kAttempts = 1;
+    constexpr int kRetryDelayMs[] = {0};
+#endif
+    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+      if (kRetryDelayMs[attempt] > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(kRetryDelayMs[attempt]));
+      }
+      if (!capture_running.load(std::memory_order_relaxed)) {
+        return false;
+      }
+      SDL_AudioStream* stream =
+          SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &want, nullptr, nullptr);
+      if (!stream) {
+        SDL_Log("CallMediaEngine: capture open failed (attempt %d/%d): %s", attempt + 1, kAttempts,
+                SDL_GetError());
+        continue;
+      }
+      const SDL_AudioDeviceID dev = SDL_GetAudioStreamDevice(stream);
+      if (!SDL_ResumeAudioDevice(dev)) {
+        SDL_Log("CallMediaEngine: capture resume failed (attempt %d/%d): %s", attempt + 1, kAttempts,
+                SDL_GetError());
+        SDL_DestroyAudioStream(stream);
+        continue;
+      }
+      *out_stream = stream;
+      *out_dev = dev;
+      return true;
+    }
+    return false;
+  }
+
   Roe<void> OpenAudioDevices() {
     if (auto ok = EnsureAudioSubsystem(); !ok) {
       return ok.error();
     }
 
 #if defined(__ANDROID__)
-    // Must be set before SDL opens AAudio streams (see third_party/sdl3 aaudio patch).
-    SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "1");
+    // Phones: VoIP usage so MODE_IN_COMMUNICATION doesn't duck MEDIA (see SDL_aaudio patch).
+    // Speaker-only tablets: leave default MEDIA — paired with MODE_NORMAL in MainActivity
+    // (API < 28 cannot set AAUDIO_USAGE_VOICE_COMMUNICATION; IN_COMMUNICATION+MEDIA is whisper-quiet).
+    if (CallAudioSession::SupportsSpeakerToggle()) {
+      SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "1");
+    } else {
+      SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "0");
+    }
 #endif
     CallAudioSession::ActivateForVoipCall();
 
@@ -553,19 +599,9 @@ struct CallMediaEngine::Impl {
     want.format = SDL_AUDIO_S16;
     want.channels = static_cast<Uint8>(kChannels);
 
-    SDL_AudioStream* new_capture = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &want, nullptr, nullptr);
+    SDL_AudioStream* new_capture = nullptr;
     SDL_AudioDeviceID new_capture_dev = 0;
-    bool new_capture_ok = false;
-    if (new_capture) {
-      new_capture_dev = SDL_GetAudioStreamDevice(new_capture);
-      if (SDL_ResumeAudioDevice(new_capture_dev)) {
-        new_capture_ok = true;
-      } else {
-        SDL_DestroyAudioStream(new_capture);
-        new_capture = nullptr;
-        new_capture_dev = 0;
-      }
-    }
+    const bool new_capture_ok = TryOpenCaptureStream(want, &new_capture, &new_capture_dev);
 
     SDL_AudioStream* new_playback = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
     if (!new_playback) {
@@ -616,6 +652,8 @@ struct CallMediaEngine::Impl {
       std::vector<int16_t> pending;
       pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
       std::vector<unsigned char> opus_buf(4000);
+      int64_t last_capture_pcm_ms = util::NowUnixMs();
+      int64_t last_capture_starve_reopen_ms = 0;
       while (capture_running.load()) {
         if (audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
           // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
@@ -624,12 +662,17 @@ struct CallMediaEngine::Impl {
             std::lock_guard lock(mutex);
             CloseAudioDevicesLocked();
           }
+#if defined(__ANDROID__)
+          // Let OEM speaker route settle (Moto MotSpeakerHelper safety ramp) before reopen.
+          std::this_thread::sleep_for(std::chrono::milliseconds(150));
+#endif
           SDL_Log("CallMediaEngine: reopening audio devices (speaker route / SoftMigrate)");
           if (auto audio = OpenAudioDevices(); !audio) {
             SDL_Log("CallMediaEngine: audio reopen failed: %s", audio.error().message.c_str());
           } else if (!capture_available) {
             SDL_Log("CallMediaEngine: audio reopen — no capture device; sending silence");
           }
+          last_capture_pcm_ms = util::NowUnixMs();
         }
         std::shared_ptr<SfuSendFn> send_fn;
         OpusEncoder* enc = nullptr;
@@ -642,37 +685,59 @@ struct CallMediaEngine::Impl {
             send_fn = sfu_send;
           }
         }
+        bool paced_silence_frame = false;
         if (capture_stream) {
           int16_t chunk[kFrameSamples];
           const int got = SDL_GetAudioStreamData(capture_stream, chunk, static_cast<int>(sizeof(chunk)));
           if (got > 0) {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
+            last_capture_pcm_ms = util::NowUnixMs();
           }
           if (pending.size() < static_cast<size_t>(kFrameSamples)) {
-            if (got <= 0) {
+            const int64_t now = util::NowUnixMs();
+            // Wedged capture (got<=0 after AAudio disconnect) used to spin without TX —
+            // peers saw "Your mic isn't sending". After ~500ms, encode silence and reopen.
+            constexpr int64_t kStarveMs = 500;
+            if (got <= 0 && (now - last_capture_pcm_ms) >= kStarveMs) {
               if (!muted.load(std::memory_order_relaxed)) {
                 SmoothLevel(local_input_level, 0.f);
               }
-              const int64_t now = util::NowUnixMs();
-              if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
-                SmoothLevel(remote_output_level, 0.f);
+              if (now - last_capture_starve_reopen_ms > 2000) {
+                last_capture_starve_reopen_ms = now;
+                SDL_Log("CallMediaEngine: capture starved %lldms — requesting reopen",
+                        static_cast<long long>(now - last_capture_pcm_ms));
+                audio_reopen_requested.store(true, std::memory_order_release);
               }
-              std::this_thread::sleep_for(std::chrono::milliseconds(2));
+              std::fill(pcm.begin(), pcm.end(), 0);
+              paced_silence_frame = true;
+              // Fall through to encode/send silence so tx_alive stays true.
+            } else {
+              if (got <= 0) {
+                if (!muted.load(std::memory_order_relaxed)) {
+                  SmoothLevel(local_input_level, 0.f);
+                }
+                if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
+                  SmoothLevel(remote_output_level, 0.f);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+              }
+              continue;
             }
-            continue;
-          }
-          std::copy_n(pending.begin(), kFrameSamples, pcm.begin());
-          pending.erase(pending.begin(), pending.begin() + kFrameSamples);
-          if (muted.load(std::memory_order_relaxed)) {
-            std::fill(pcm.begin(), pcm.end(), 0);
-            SmoothLevel(local_input_level, 0.f);
           } else {
-            SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
+            std::copy_n(pending.begin(), kFrameSamples, pcm.begin());
+            pending.erase(pending.begin(), pending.begin() + kFrameSamples);
+            if (muted.load(std::memory_order_relaxed)) {
+              std::fill(pcm.begin(), pcm.end(), 0);
+              SmoothLevel(local_input_level, 0.f);
+            } else {
+              SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
+            }
           }
         } else {
           std::fill(pcm.begin(), pcm.end(), 0);
           SmoothLevel(local_input_level, 0.f);
+          paced_silence_frame = true;
           if (!can_send) {
             const int64_t now = util::NowUnixMs();
             if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
@@ -709,7 +774,8 @@ struct CallMediaEngine::Impl {
           } catch (...) {
           }
         }
-        if (!capture_stream) {
+        // Pace silence / starved-capture TX to one Opus frame per period.
+        if (paced_silence_frame) {
           std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
         }
       }

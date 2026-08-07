@@ -237,9 +237,18 @@ static int AAUDIO_RecordDevice(SDL_AudioDevice *device, void *buffer, int buflen
     struct SDL_PrivateAudioData *hidden = device->hidden;
 
     // AAUDIO_dataCallback picks up our work and unblocks AAUDIO_WaitDevice. But make sure we didn't fail here.
-    if (SDL_GetAtomicInt(&hidden->error_callback_triggered)) {
+    // Playback recovers via RecoverAAudioDevice; recording used to return -1 forever after speaker
+    // route disconnect (AAUDIO_ERROR_DISCONNECTED), which leaves the call encoding silence / no PCM.
+    const aaudio_result_t err = (aaudio_result_t)SDL_GetAtomicInt(&hidden->error_callback_triggered);
+    if (err) {
+        SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "aaudio: Recording device triggered error %d (%s)", (int)err,
+                     ctx.AAudio_convertResultToText(err));
         SDL_SetAtomicInt(&hidden->error_callback_triggered, 0);
-        return -1;
+        if (!RecoverAAudioDevice(device)) {
+            return -1;
+        }
+        // Recover rebuilt the mixbuf; nothing to copy this period.
+        return 0;
     }
 
     SDL_assert(buflen == device->buffer_size);  // If this isn't true, we need to change semaphore trigger logic and account for wrapping copies here

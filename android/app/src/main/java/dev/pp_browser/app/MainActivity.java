@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.media.AudioAttributes;
@@ -233,8 +234,10 @@ public class MainActivity extends SDLActivity {
 
     /**
      * Called from native {@code CallAudioSession} when a VoIP call starts/ends.
-     * Puts the device in communication mode so earpiece vs speakerphone routing works.
-     * Applied on the calling thread (not posted) so SDL open/reopen sees the new mode.
+     * Phones: {@link AudioManager#MODE_IN_COMMUNICATION} for earpiece/speaker routing.
+     * Speaker-only tablets (no earpiece): stay in {@link AudioManager#MODE_NORMAL} so
+     * SDL AAudio MEDIA streams are not ducked (API &lt; 28 cannot set
+     * {@code AAUDIO_USAGE_VOICE_COMMUNICATION} — SM-T380 whisper-quiet dogfood).
      */
     public void setCallAudioSessionActive(boolean active) {
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
@@ -242,10 +245,18 @@ public class MainActivity extends SDLActivity {
             return;
         }
         if (active) {
-            am.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            requestCallAudioFocus(am);
-            // Media-stream volume keys don't drive VoIP; ensure voice-call stream isn't muted.
-            ensureVoiceCallVolumeFloor(am);
+            final boolean speakerOnly = !hasCallEarpieceRoute();
+            if (speakerOnly) {
+                am.setMode(AudioManager.MODE_NORMAL);
+                am.setSpeakerphoneOn(true);
+                requestCallAudioFocus(am, true);
+                ensureStreamVolumeFloor(am, AudioManager.STREAM_MUSIC);
+                Log.i(TAG, "Speaker-only call audio: MODE_NORMAL + STREAM_MUSIC floor");
+            } else {
+                am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                requestCallAudioFocus(am, false);
+                ensureStreamVolumeFloor(am, AudioManager.STREAM_VOICE_CALL);
+            }
         } else {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 am.clearCommunicationDevice();
@@ -257,6 +268,27 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
+     * Called from native {@code CallAudioSession.SupportsSpeakerToggle}.
+     * Phones expose {@link AudioDeviceInfo#TYPE_BUILTIN_EARPIECE}; tablets (e.g. SM-T380)
+     * only have the loudspeaker, so FORCE_SPEAKER vs FORCE_NONE is inaudible.
+     */
+    public boolean hasCallEarpieceRoute() {
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am == null) {
+            return false;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            for (AudioDeviceInfo device : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY);
+    }
+
+    /**
      * Called from native {@code CallAudioSession} for in-call speaker / earpiece.
      * Synchronous: ToggleSpeaker reopens SDL capture immediately after this returns.
      */
@@ -265,33 +297,56 @@ public class MainActivity extends SDLActivity {
         if (am == null) {
             return;
         }
+        // Speaker-only tablets: no earpiece route; keep MODE_NORMAL (see setCallAudioSessionActive).
+        if (!hasCallEarpieceRoute()) {
+            am.setSpeakerphoneOn(true);
+            ensureStreamVolumeFloor(am, AudioManager.STREAM_MUSIC);
+            return;
+        }
         // Speakerphone routing only works in communication mode; toggling without it
         // can leave AudioRecord/SDL capture on a silent path (PreferLocal dogfood).
-        if (am.getMode() != AudioManager.MODE_IN_COMMUNICATION) {
+        final boolean wasInComm = am.getMode() == AudioManager.MODE_IN_COMMUNICATION;
+        if (!wasInComm) {
             am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        }
+        // No-op when already on the requested route in communication mode. Re-applying
+        // setSpeakerphoneOn(true) during SoftMigrate/reopen retriggers OEM device changes
+        // (Moto MotSpeakerHelper) and races AAudio capture open → mic never comes back.
+        if (wasInComm && am.isSpeakerphoneOn() == on) {
+            if (on) {
+                ensureStreamVolumeFloor(am, AudioManager.STREAM_VOICE_CALL);
+            }
+            return;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             setCommunicationRoute(am, on);
         }
         am.setSpeakerphoneOn(on);
         if (on) {
-            ensureVoiceCallVolumeFloor(am);
+            ensureStreamVolumeFloor(am, AudioManager.STREAM_VOICE_CALL);
         }
     }
 
-    private void requestCallAudioFocus(AudioManager am) {
+    private void requestCallAudioFocus(AudioManager am, boolean mediaPath) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            final int stream = mediaPath ? AudioManager.STREAM_MUSIC : AudioManager.STREAM_VOICE_CALL;
             @SuppressWarnings("deprecation")
-            int ignored = am.requestAudioFocus(mCallAudioFocusListener, AudioManager.STREAM_VOICE_CALL,
+            int ignored = am.requestAudioFocus(mCallAudioFocusListener, stream,
                     AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
             return;
         }
         if (mCallAudioFocusRequest != null) {
             return;
         }
+        final int usage = mediaPath
+                ? AudioAttributes.USAGE_MEDIA
+                : AudioAttributes.USAGE_VOICE_COMMUNICATION;
+        final int content = mediaPath
+                ? AudioAttributes.CONTENT_TYPE_MUSIC
+                : AudioAttributes.CONTENT_TYPE_SPEECH;
         AudioAttributes attrs = new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .setUsage(usage)
+                .setContentType(content)
                 .build();
         mCallAudioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                 .setAudioAttributes(attrs)
@@ -330,19 +385,20 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * If STREAM_VOICE_CALL is near mute, raise toward ~70% of max so speaker isn't whisper-quiet
-     * after routing to the voice-call volume path (user can still turn it down).
+     * Raise a stream toward ~70% of max if near mute so call playout isn't whisper-quiet
+     * (user can still turn it down). Phones: STREAM_VOICE_CALL; speaker-only tablets: MUSIC.
      */
-    private void ensureVoiceCallVolumeFloor(AudioManager am) {
-        final int max = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
+    private void ensureStreamVolumeFloor(AudioManager am, int streamType) {
+        final int max = am.getStreamMaxVolume(streamType);
         if (max <= 0) {
             return;
         }
-        final int cur = am.getStreamVolume(AudioManager.STREAM_VOICE_CALL);
+        final int cur = am.getStreamVolume(streamType);
         final int floor = Math.max(1, (max * 7) / 10);
         if (cur < floor) {
-            am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, floor, 0);
-            Log.i(TAG, "Raised STREAM_VOICE_CALL volume " + cur + " -> " + floor + " (max=" + max + ")");
+            am.setStreamVolume(streamType, floor, 0);
+            Log.i(TAG, "Raised stream " + streamType + " volume " + cur + " -> " + floor
+                    + " (max=" + max + ")");
         }
     }
 
