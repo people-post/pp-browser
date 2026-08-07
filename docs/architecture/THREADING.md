@@ -176,7 +176,7 @@ Shared helpers: `StreamFrameIo` (`Blocking*` for control, `AsyncLengthPrefixedRe
 | Item | Location | Notes |
 |------|----------|-------|
 | c-ares DNS TXT | `src/libp2p/fork/.../cares.cpp` | `.detach()` per query — fork cannot link `pp_common`; defer until libp2p executor hook |
-| Call ringtone playback | `src/base/media/CallRingtone.cpp` | `.detach()` for SDL audio loop — media-specific |
+| Call ringtone playback | `src/base/media/CallRingtone.cpp` | Async `Stop` uses a joinable `joiner_` (Accept-safe); `StopAndJoin` before `SDL_Quit` |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
 

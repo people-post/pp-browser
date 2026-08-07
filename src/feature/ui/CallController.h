@@ -35,6 +35,8 @@ public:
   /** After inbox sync / call_wake — fetch pending invites and show ring if needed. */
   void RefreshPendingRing();
   void OnCallWake();
+  /** Join ringtone before Backend::Shutdown / SDL_Quit (accept-dialog quit hang). */
+  void PrepareForShutdown();
 
   bool StartVoiceCall(const std::string& thread_id);
   bool StartVideoCall(const std::string& thread_id);

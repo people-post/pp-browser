@@ -232,6 +232,19 @@ void CallController::ClearRing() {
   ringtone_.Stop();
 }
 
+void CallController::PrepareForShutdown() {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    log().warning << "PrepareForShutdown off UI thread";
+  }
+  ringing_call_id_.clear();
+  ring_started_ms_ = 0;
+  if (shell_call_chrome_.call_ring) {
+    shell_call_chrome_.call_ring() = {};
+  }
+  // Must join before SDL_Quit — async Stop leaves the playback worker holding the device.
+  ringtone_.StopAndJoin();
+}
+
 void CallController::ClearInCall() {
   active_call_id_.clear();
   chrome_mode_ = CallChromeMode::Expanded;

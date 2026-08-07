@@ -5,6 +5,7 @@
 #include <SDL3/SDL.h>
 
 #include <chrono>
+#include <utility>
 
 namespace pbr {
 namespace {
@@ -61,30 +62,20 @@ bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
 CallRingtone::CallRingtone() = default;
 
 CallRingtone::~CallRingtone() {
-  Stop(/*wait=*/true);
+  StopAndJoin();
 }
 
 void CallRingtone::Start() {
-  std::thread finishing;
   {
     std::lock_guard lock(mutex_);
     if (playing_.load()) {
       return;
     }
-    // A prior worker may still be tearing down audio. Never join it on the UI/SDL
-    // thread — device close can wait on that thread (Samsung Accept hang).
-    if (thread_.joinable()) {
-      stop_ = true;
-      finishing = std::move(thread_);
-    }
   }
-  if (finishing.joinable()) {
-    std::thread([t = std::move(finishing)]() mutable {
-      if (t.joinable()) {
-        t.join();
-      }
-    }).detach();
-  }
+  // A prior worker may still be tearing down audio. Never join it on the UI/SDL
+  // thread — device close can wait on that thread (Samsung Accept hang).
+  RequestStop(/*wait=*/false);
+
   std::lock_guard lock(mutex_);
   if (playing_.load()) {
     return;
@@ -99,7 +90,7 @@ void CallRingtone::Start() {
   thread_ = std::thread([this]() { RunLoop(); });
 }
 
-void CallRingtone::Stop(const bool wait) {
+void CallRingtone::RequestStop(const bool wait) {
   stop_ = true;
   std::thread finishing;
   {
@@ -109,24 +100,51 @@ void CallRingtone::Stop(const bool wait) {
       finishing = std::move(thread_);
     }
   }
+
+  if (wait) {
+    if (finishing.joinable()) {
+      finishing.join();
+    }
+    std::thread joiner;
+    {
+      std::lock_guard lock(mutex_);
+      if (joiner_.joinable()) {
+        joiner = std::move(joiner_);
+      }
+    }
+    if (joiner.joinable()) {
+      joiner.join();
+    }
+    return;
+  }
+
   if (!finishing.joinable()) {
     return;
   }
-  if (wait) {
-    finishing.join();
-    return;
-  }
-  // Never join the ringtone worker on the Accept/UI click path: that runs inside
-  // SDL/Rml event dispatch, and device close on the worker can wait on that thread.
-  std::thread([t = std::move(finishing)]() mutable {
-    if (t.joinable()) {
-      t.join();
+  // Chain onto joiner_ so StopAndJoin / destructor can still wait — never bare .detach().
+  std::thread previous;
+  {
+    std::lock_guard lock(mutex_);
+    if (joiner_.joinable()) {
+      previous = std::move(joiner_);
     }
-  }).detach();
+    joiner_ = std::thread([previous = std::move(previous), finishing = std::move(finishing)]() mutable {
+      if (previous.joinable()) {
+        previous.join();
+      }
+      if (finishing.joinable()) {
+        finishing.join();
+      }
+    });
+  }
 }
 
 void CallRingtone::Stop() {
-  Stop(/*wait=*/false);
+  RequestStop(/*wait=*/false);
+}
+
+void CallRingtone::StopAndJoin() {
+  RequestStop(/*wait=*/true);
 }
 
 void CallRingtone::RunLoop() {
@@ -161,8 +179,9 @@ void CallRingtone::RunLoop() {
   }
 
   SDL_ClearAudioStream(stream);
+  // Destroying a stream from SDL_OpenAudioDeviceStream also closes the device — do not
+  // SDL_CloseAudioDevice(device) afterward (double-close can hang quit on Android).
   SDL_DestroyAudioStream(stream);
-  SDL_CloseAudioDevice(device);
   playing_ = false;
 }
 

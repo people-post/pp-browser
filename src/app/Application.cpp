@@ -986,6 +986,13 @@ void Application::Shutdown() {
     }
     agent_session_.reset();
 
+    // Join ringtone before AbortCallMedia / SDL_Quit — accept-dialog quit left the playback
+    // worker holding the device (async Stop is Accept-safe and does not join).
+    if (call_) {
+      StartupPhase phase("Shutdown::CallRingtone");
+      call_->PrepareForShutdown();
+    }
+
     // Abort Connect / circuit waits, then join workers while MessagingHub still owns the bridge.
     // Destroying the hub first left AppRuntime::Shutdown joining a UAF Connect worker.
     if (messaging_) {
@@ -1021,6 +1028,9 @@ void Application::Shutdown() {
     initialized_ = false;
   } else {
     // Initialize may have failed after Bootstrap left hub/secrets open.
+    if (call_) {
+      call_->PrepareForShutdown();
+    }
     if (messaging_) {
       messaging_->AbortCallMediaForShutdown();
     }
