@@ -65,7 +65,7 @@ endif()
 
 set(PACKAGE_MANAGER vendored CACHE STRING "Dependency manager for qdrvm libs" FORCE)
 
-# --- zlib (before protobuf / lsquic) ---
+# --- zlib (before lsquic) ---
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 pp_libp2p_add_vendored(zlib)
 if(TARGET zlib)

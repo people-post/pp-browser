@@ -6,6 +6,7 @@
 #include "feature/messaging/MessagingShellPorts.h"
 #include "feature/ui/CallChromeSync.h"
 #include "feature/ui/ShellBottomSheetGesture.h"
+#include "feature/ui/ShellCallChromeGesture.h"
 #include "feature/ui/ShellGestureAxis.h"
 #include "feature/ui/ShellSwipeBackGesture.h"
 
@@ -76,6 +77,9 @@ public:
   static ShellHost& Instance();
 
   void BindShellMessaging(MessagingShellPorts ports);
+  void OpenStatusbarPopover();
+  void CloseStatusbarPopover();
+  void ToggleStatusbarPopover();
   void BindPinGate(PinGateController& pin_gate);
   void BindFlowCoordinator(FlowCoordinator& flow);
   void BindCallController(CallController& call);
@@ -186,9 +190,22 @@ public:
   static void CallCameraCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallSpeakerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void CallInviteCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallMinimizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallExpandCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallImmersiveCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallRestoreCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void CallDetailsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarMinimizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarToggleMaximizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarCloseCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ToggleStatusbarPopoverCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                             const Rml::VariantList& args);
+  static void DismissStatusbarPopoverCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                              const Rml::VariantList& args);
+  static void RetestStatusbarReachabilityCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                                  const Rml::VariantList& args);
+  static void OpenNetworkSettingsCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                          const Rml::VariantList& args);
 
   bool RegisterWindowModel(Rml::Context* context);
 
@@ -214,6 +231,8 @@ private:
   void DetachDismissGestures();
   void AttachSwipeBackGesture();
   void AttachAccountSheetGesture();
+  void DetachCallChromeGesture();
+  void AttachCallChromeGesture();
   void ApplyLayoutModeFromContext(Rml::Context* context);
   void OnLayoutModeChanged();
   int AllocatePaneId();
@@ -232,6 +251,11 @@ private:
   void RefreshStatusbarCluster();
   void ClearStatusbarCluster();
   bool ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap);
+  void ClearStatusbarPopover();
+  bool ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap);
+  void RefreshStatusbarPopover();
+  void PositionStatusbarPopover();
+  void DirtyStatusbarPopover();
   bool ChromeFrostEnabled() const;
   struct SafeAreaFromSdl {
     int top_dp = 0;
@@ -262,6 +286,7 @@ private:
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;
   ShellBottomSheetGesture account_sheet_gesture_;
+  ShellCallChromeGesture call_chrome_gesture_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(const std::string&)> on_transient_popped_;
@@ -271,6 +296,7 @@ private:
   std::function<void()> on_account_sheet_opened_;
   std::function<void()> on_account_sheet_closed_;
   MessagingShellPorts shell_messaging_ports_;
+  bool statusbar_popover_needs_position_ = false;
   PinGateController* pin_gate_ = nullptr;
   FlowCoordinator* flow_ = nullptr;
   CallController* call_ = nullptr;

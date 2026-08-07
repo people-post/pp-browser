@@ -1,13 +1,36 @@
 .btn {
   font-family: LatoLatin;
   font-size: 14dp;
-  padding: 8dp 12dp;
-  border-radius: 6dp;
+  min-height: 44dp;
+  padding: 0 16dp;
+  line-height: 44dp;
+  border-radius: 999dp;
   border: 0;
   cursor: pointer;
   margin-bottom: 0;
   width: auto;
   display: inline-block;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+/* Low-emphasis text action (PIN “Not now”, optional dismissals). */
+.btn-ghost {
+  background-color: transparent;
+}
+
+/* Icon + label modifier — layout only; size/color come from .btn + .btn-*. */
+.btn-icon {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6dp;
+  line-height: normal;
+}
+
+.btn-icon svg {
+  flex-shrink: 0;
 }
 
 .field {
@@ -440,12 +463,17 @@ select selectbox option {
   width: auto;
   font-family: LatoLatin;
   font-size: 13dp;
-  padding: 6dp 12dp;
+  height: 44dp;
+  min-height: 44dp;
+  padding: 0 16dp;
+  line-height: 44dp;
   margin-right: 8dp;
   margin-bottom: 4dp;
   border: 0;
-  border-radius: 16dp;
+  border-radius: 999dp;
   cursor: pointer;
+  box-sizing: border-box;
+  text-align: center;
   focus: none;
 }
 
@@ -906,6 +934,25 @@ select selectbox option {
   gap: 8dp;
   min-width: 0;
   overflow: hidden;
+  padding: 2dp 6dp;
+  margin-left: -6dp;
+  border-radius: 4dp;
+  cursor: pointer;
+}
+
+.shell-statusbar-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.shell-statusbar-divider {
+  width: 1dp;
+  height: 12dp;
+  flex-shrink: 0;
 }
 
 .shell-statusbar-slot {
@@ -915,46 +962,16 @@ select selectbox option {
   flex-shrink: 0;
 }
 
-.shell-statusbar-mesh-dot {
-  width: 8dp;
-  height: 8dp;
-  border-width: 1.5dp;
-  border-style: solid;
-  border-radius: 4dp;
-  box-sizing: border-box;
-}
-
-.shell-statusbar-reach-bars {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 2dp;
-  height: 12dp;
-}
-
-.shell-statusbar-reach-bar {
-  width: 3dp;
-  border-radius: 1dp;
-}
-
-.shell-statusbar-reach-bar--1 {
-  height: 5dp;
-}
-
-.shell-statusbar-reach-bar--2 {
-  height: 8dp;
-}
-
-.shell-statusbar-reach-bar--3 {
-  height: 12dp;
-}
-
-.shell-statusbar-help svg {
+.shell-statusbar-brief svg,
+.shell-statusbar-direct svg,
+.shell-statusbar-help svg,
+.shell-statusbar-inbound svg {
   width: 12dp;
   height: 12dp;
 }
 
 .shell-statusbar-label,
+.shell-statusbar-load,
 .shell-statusbar-activity {
   margin-top: 0;
   margin-bottom: 0;
@@ -963,13 +980,80 @@ select selectbox option {
 }
 
 .shell-statusbar-label {
-  margin-left: 2dp;
+  margin-left: 0;
+}
+
+.shell-statusbar-load {
+  flex-shrink: 0;
 }
 
 .shell-statusbar-activity {
   text-align: right;
   flex-shrink: 1;
   min-width: 0;
+}
+
+.shell-statusbar-popover-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 54;
+}
+
+.shell-statusbar-popover {
+  position: absolute;
+  left: 8dp;
+  bottom: 32dp;
+  width: 320dp;
+  max-width: 90%;
+  padding: 12dp;
+  gap: 8dp;
+  box-sizing: border-box;
+  border-width: 1dp;
+  border-style: solid;
+  border-radius: 8dp;
+  z-index: 55;
+}
+
+.shell-statusbar-popover-title {
+  margin-top: 0;
+  margin-bottom: 4dp;
+  font-weight: bold;
+}
+
+.shell-statusbar-popover-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12dp;
+}
+
+.shell-statusbar-popover-key {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6dp;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.shell-statusbar-popover-row p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.shell-statusbar-popover-actions {
+  margin-top: 4dp;
+  gap: 8dp;
+  flex-wrap: wrap;
+}
+
+.shell-statusbar-popover-actions .btn {
+  flex-grow: 1;
+  min-height: 36dp;
 }
 
 .shell-layer {
@@ -1555,18 +1639,15 @@ select selectbox option {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 360dp;
-  max-width: 90%;
-  margin-left: -180dp;
-  margin-top: -120dp;
+  width: 90%;
+  max-width: 360dp;
+  margin-left: 0;
+  margin-top: 0;
+  transform: translate(-50%, -50%);
   padding: 20dp;
   border-radius: 8dp;
   box-sizing: border-box;
   z-index: 51;
-}
-
-.shell-call-in-progress {
-  margin-top: -170dp;
 }
 
 .shell-dialog-title {
@@ -1679,6 +1760,62 @@ select selectbox option {
   max-width: 280dp;
 }
 
+.shell-call-debug-subtitle,
+.shell-call-quality-hint {
+  margin: 2dp 0 0 0;
+  max-width: 280dp;
+}
+
+.shell-call-quality {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6dp;
+  height: 32dp;
+  min-width: 0;
+  padding: 0 8dp;
+  border-width: 0;
+  background-color: transparent;
+  flex-shrink: 0;
+}
+
+.shell-call-quality--compact {
+  height: 28dp;
+  padding: 0 4dp;
+}
+
+.shell-call-quality-bars {
+  align-items: flex-end;
+  gap: 2dp;
+  height: 12dp;
+}
+
+.shell-call-quality-bar {
+  width: 3dp;
+  border-radius: 1dp;
+}
+
+.shell-call-quality-bar--1 {
+  height: 4dp;
+}
+
+.shell-call-quality-bar--2 {
+  height: 7dp;
+}
+
+.shell-call-quality-bar--3 {
+  height: 10dp;
+}
+
+.shell-call-quality-bar--4 {
+  height: 12dp;
+}
+
+.shell-call-quality-label {
+  margin: 0;
+  white-space: nowrap;
+}
+
 .shell-call-bar-meters {
   align-items: flex-start;
   justify-content: flex-start;
@@ -1787,17 +1924,211 @@ call-video-tile {
   min-width: 44dp;
 }
 
+.shell-call-minimize,
+.shell-call-immersive-btn,
+.shell-call-expand {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 22dp;
+  cursor: pointer;
+}
+
+.shell-call-minimize svg,
+.shell-call-immersive-btn svg,
+.shell-call-expand svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
+}
+
+.shell-call-chrome--dragging {
+  transition: none;
+}
+
+/* Minimized chip: mount layer must not steal hits; only the chip is interactive.
+   More specific than `.shell-call-chrome-mount .shell-layer { pointer-events: auto }`. */
+.shell-call-chrome-mount .shell-layer-call-minimized {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  pointer-events: none;
+}
+
+.shell-call-minimized-chip {
+  position: absolute;
+  pointer-events: auto;
+  align-items: center;
+  gap: 8dp;
+  min-width: 160dp;
+  max-width: 240dp;
+  padding: 10dp 12dp;
+  border-radius: 14dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.shell-call-minimized-chip--tr {
+  top: 12dp;
+  right: 12dp;
+}
+
+.shell-call-minimized-chip--tl {
+  top: 12dp;
+  left: 12dp;
+}
+
+.shell-call-minimized-chip--br {
+  bottom: 72dp;
+  right: 12dp;
+}
+
+.shell-call-minimized-chip--bl {
+  bottom: 72dp;
+  left: 12dp;
+}
+
+.shell-call-minimized-main {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.shell-call-minimized-title {
+  margin: 0;
+  font-size: 13dp;
+  font-weight: bold;
+}
+
+.shell-call-minimized-subtitle {
+  margin: 2dp 0 0 0;
+  font-size: 11dp;
+}
+
+.shell-call-mute--compact,
+.shell-call-leave--compact {
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  border-radius: 18dp;
+}
+
+/* Immersive: call is the primary surface (V031). */
+.shell-layer-call-immersive {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  pointer-events: auto;
+}
+
+.shell-call-immersive {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12dp 12dp 16dp 12dp;
+}
+
+.shell-call-immersive-header {
+  flex-shrink: 0;
+  padding-bottom: 8dp;
+}
+
+.shell-call-immersive-grabber {
+  width: 36dp;
+  height: 4dp;
+  border-radius: 2dp;
+  margin: 4dp auto 10dp auto;
+}
+
+.shell-call-immersive-roster {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 10dp;
+  padding: 4dp 0 12dp 0;
+}
+
+.shell-call-peer-card {
+  width: 46%;
+  min-width: 140dp;
+  flex-grow: 1;
+  padding: 16dp 12dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+  align-items: center;
+}
+
+.shell-call-peer-avatar {
+  width: 56dp;
+  height: 56dp;
+  border-radius: 28dp;
+  margin: 0 auto 10dp auto;
+}
+
+.shell-call-peer-name {
+  margin: 0;
+  text-align: center;
+  font-size: 14dp;
+  font-weight: bold;
+}
+
+.shell-call-peer-badges {
+  justify-content: center;
+  gap: 6dp;
+  margin-top: 8dp;
+  min-height: 16dp;
+}
+
+.shell-call-immersive-controls {
+  flex-shrink: 0;
+  padding-top: 8dp;
+}
+
+.shell-call-immersive-controls .shell-call-bar-actions {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
 .shell-call-ring-eyebrow {
   margin: 0 0 4dp 0;
   font-size: 12dp;
 }
 
-.shell-call-ring--pulse {
+/* Stable geometry: pulse only paints (border-color / Accept glow), never size. */
+.shell-call-ring {
   border-width: 2dp;
 }
 
-.shell-call-accept--pulse {
-  opacity: 1;
+.shell-call-ring .shell-dialog-actions {
+  justify-content: stretch;
+  gap: 10dp;
+}
+
+.shell-call-ring .btn {
+  flex-grow: 1;
+}
+
+.shell-call-accept {
+  font-weight: bold;
+  box-shadow: 0 0 0 0 #00000000;
 }
 
 .shell-dialog-checkbox {
@@ -1813,24 +2144,6 @@ call-video-tile {
   margin-top: 16dp;
 }
 
-.shell-dialog-cancel {
-  border: 0;
-  font-family: LatoLatin;
-  font-size: 14dp;
-  padding: 8dp 12dp;
-  border-radius: 6dp;
-  cursor: pointer;
-}
-
-.shell-dialog-ok {
-  border: 0;
-  font-family: LatoLatin;
-  font-size: 14dp;
-  padding: 8dp 12dp;
-  border-radius: 6dp;
-  cursor: pointer;
-}
-
 .shell-pin-gate-chooser {
   display: flex;
   flex-direction: column;
@@ -1838,13 +2151,10 @@ call-video-tile {
   margin-top: 16dp;
 }
 
-.shell-pin-gate-chooser .shell-dialog-ok,
-.shell-pin-gate-chooser .shell-dialog-cancel,
 .shell-pin-gate-chooser .btn {
   display: block;
   width: 100%;
   text-align: center;
-  box-sizing: border-box;
 }
 
 .shell-pin-gate-input {
@@ -2224,9 +2534,14 @@ call-video-tile {
   display: inline-block;
   margin-top: 8dp;
   margin-right: 8dp;
-  padding: 6dp 12dp;
-  border-radius: 16dp;
+  height: 44dp;
+  min-height: 44dp;
+  padding: 0 16dp;
+  line-height: 44dp;
+  border-radius: 999dp;
   font-size: 13dp;
+  box-sizing: border-box;
+  text-align: center;
   focus: none;
 }
 
@@ -2509,8 +2824,6 @@ call-video-tile {
   width: 100%;
   text-align: center;
   box-sizing: border-box;
-  padding-top: 12dp;
-  padding-bottom: 12dp;
 }
 
 /* Pre-confirm destructive action: soft tint, not solid fill. */
@@ -2758,23 +3071,6 @@ call-video-tile {
   margin-top: 4dp;
   gap: 8dp;
   flex-wrap: wrap;
-}
-
-.contacts-trust-btn {
-  font-size: 12dp;
-  padding: 6dp 10dp;
-}
-
-.btn-icon {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 6dp;
-}
-
-.btn-icon svg {
-  flex-shrink: 0;
 }
 
 .contacts-threads {

@@ -4,15 +4,33 @@
 
 namespace pbr {
 
+int64_t CallMediaAdaptation::AudioBpsForPressure(double path_pressure, int64_t comfort_bps) {
+  const int64_t comfort = std::clamp(comfort_bps, kMinAudioBps, kDefaultAudioBps);
+  const double p = std::clamp(path_pressure, 0.0, 1.0);
+  if (p <= 0.15) {
+    return comfort;
+  }
+  // Linear toward kMinAudioBps as pressure → 1.
+  const double t = (p - 0.15) / 0.85;
+  const double bps = static_cast<double>(comfort) * (1.0 - t) + static_cast<double>(kMinAudioBps) * t;
+  return std::max(kMinAudioBps, static_cast<int64_t>(bps));
+}
+
 CallAdaptationDecision CallMediaAdaptation::Evaluate(const CallAdaptationInput& in) {
   CallAdaptationDecision out;
   out.publish_audio = !in.muted;
-  out.target_audio_bps = kDefaultAudioBps;
+  out.target_audio_bps = AudioBpsForPressure(in.path_pressure, kComfortAudioBps);
   out.reason = "audio_priority";
 
   int64_t budget = in.per_user_up_bps;
   if (budget <= 0) {
     budget = kDefaultAudioBps + kDefaultVideoLoBps; // unbounded → treat as comfortable
+  }
+
+  // Cap audio by remaining uplink when budget is tight.
+  if (out.publish_audio && budget < out.target_audio_bps) {
+    out.target_audio_bps = std::max(kMinAudioBps, budget);
+    out.reason = "uplink_cap_audio";
   }
 
   const bool path_ok = in.path_pressure < 0.75;

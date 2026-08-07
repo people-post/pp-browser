@@ -112,6 +112,23 @@ struct CircuitRelayService::Impl {
     active_bridges.clear();
   }
 
+  void RemoveBridgeSessionLocked(const std::shared_ptr<ActiveBridgeSession>& session) {
+    active_bridges.erase(std::remove_if(active_bridges.begin(), active_bridges.end(),
+                                        [&](const std::shared_ptr<ActiveBridgeSession>& entry) {
+                                          return entry.get() == session.get();
+                                        }),
+                         active_bridges.end());
+  }
+
+  void PruneCancelledBridgesLocked() {
+    active_bridges.erase(std::remove_if(active_bridges.begin(), active_bridges.end(),
+                                        [](const std::shared_ptr<ActiveBridgeSession>& entry) {
+                                          return !entry || !entry->cancelled ||
+                                                 entry->cancelled->load(std::memory_order_acquire);
+                                        }),
+                         active_bridges.end());
+  }
+
   void StartBridgeSession(const std::shared_ptr<Stream>& client, const std::shared_ptr<Stream>& target) {
     if (!host) {
       return;
@@ -124,8 +141,19 @@ struct CircuitRelayService::Impl {
     host->Post([this, session, client, target, cancel_check]() {
       session->to_target = std::make_shared<StreamBridge>();
       session->to_client = std::make_shared<StreamBridge>();
-      session->to_target->Start(client, target, cancel_check, [] {});
-      session->to_client->Start(target, client, cancel_check, [] {});
+      auto removed = std::make_shared<std::atomic<bool>>(false);
+      auto on_closed = [this, session, removed]() {
+        if (removed->exchange(true, std::memory_order_acq_rel)) {
+          return;
+        }
+        if (session->cancelled) {
+          session->cancelled->store(true, std::memory_order_release);
+        }
+        std::lock_guard lock(bridges_mu);
+        RemoveBridgeSessionLocked(session);
+      };
+      session->to_target->Start(client, target, cancel_check, on_closed);
+      session->to_client->Start(target, client, cancel_check, on_closed);
       std::lock_guard lock(bridges_mu);
       active_bridges.push_back(session);
     });
@@ -302,6 +330,20 @@ void CircuitRelayService::Stop() {
   AbortInflightRequests();
   std::lock_guard lock(impl_->bridges_mu);
   impl_->CancelAllBridgesLocked();
+}
+
+CircuitRelayRuntimeStats CircuitRelayService::RuntimeStats() const {
+  CircuitRelayRuntimeStats out;
+  if (!started_ || !impl_) {
+    return out;
+  }
+  std::lock_guard lock(impl_->bridges_mu);
+  for (const auto& entry : impl_->active_bridges) {
+    if (entry && entry->cancelled && !entry->cancelled->load(std::memory_order_acquire)) {
+      ++out.active_bridges;
+    }
+  }
+  return out;
 }
 
 void CircuitRelayService::AbortInflightRequests() {

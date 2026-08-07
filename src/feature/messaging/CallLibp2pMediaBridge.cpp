@@ -1,8 +1,11 @@
 #include "feature/messaging/CallLibp2pMediaBridge.h"
 
+#include "base/i18n/LocalizationService.h"
+#include "base/messaging/SfuAttachFanout.h"
 #include "base/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
+#include <atomic>
 #include <chrono>
 #include <thread>
 
@@ -27,6 +30,9 @@ constexpr int kInboundMediaKeyWaitMs = 8000;
  */
 constexpr int64_t kOffererInboundGraceMs = 15000;
 
+/** Rate-limit PeerId→relay unknown drops (PreferLocal / non-contact dogfood). */
+std::atomic<uint32_t> g_inbound_unmapped_audio_drops{0};
+
 } // namespace
 
 CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionStore& sessions,
@@ -39,7 +45,8 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionSto
 
   direct_.SetInboundHandler([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     log().info << "Inbound call-media hello call_id=" << params.call_id
-                  << " epoch=" << params.media_epoch;
+                  << " epoch=" << params.media_epoch
+                  << " peer=" << (params.peer_key.empty() ? "(empty)" : params.peer_key);
     auto session = sessions_.LoadSession(params.call_id);
     if (!session || !session->has_value()) {
       log().warning << "Inbound call-media rejected: no session call_id=" << params.call_id;
@@ -66,7 +73,46 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionSto
     if (params.media_key.empty()) {
       log().info << "Inbound call-media hello before media key call_id=" << params.call_id;
     }
+    // Prefer call-roster relay: identity for PublisherStreamIdForIdentity. Inbound hello's
+    // peer_key is the libp2p PeerId (from remotePeerId); hashing that yields a different
+    // stream_id than SoftMigrate (relay:xaug…). Never use P2pPeerIdentityForCall here — with
+    // N≥2 remotes it returns an arbitrary peer (dogfood: Moto PeerId → Samsung relay stream).
+    const std::string inbound_peer_id = params.peer_key;
+    if (inbound_peer_id.rfind("relay:", 0) != 0) {
+      if (auto mapped = host_.P2pRelayIdentityForLibp2pPeerId(params.call_id, inbound_peer_id);
+          mapped && mapped->has_value() && !mapped->value().empty()) {
+        params.peer_key = mapped->value();
+      } else if (!media_peer_identity_.empty() && media_peer_identity_.rfind("relay:", 0) == 0) {
+        // Last resort for 1:1 before contacts hydrate — only when dialed peer is the sole remote.
+        if (auto sole = host_.P2pPeerIdentityForCall(params.call_id);
+            sole && sole->has_value() && sole->value() == media_peer_identity_) {
+          params.peer_key = media_peer_identity_;
+        }
+      } else if (!pending_answerer_peer_.empty() && pending_answerer_peer_.rfind("relay:", 0) == 0) {
+        params.peer_key = pending_answerer_peer_;
+      }
+    }
+    if (!params.peer_key.empty() && params.peer_key.rfind("relay:", 0) == 0) {
+      media_peer_identity_ = params.peer_key;
+      inbound_remote_stream_.store(PublisherStreamIdForIdentity(params.peer_key),
+                                   std::memory_order_release);
+    } else {
+      // Do not hash PeerId into a mixer track — SoftMigrate uses relay: stream ids. Defer until
+      // BeginSession / CallAccept teaches PeerId→relay (moto contact often lacks peer_id).
+      inbound_remote_stream_.store(0, std::memory_order_release);
+    }
+    if (params.peer_key.empty() || params.peer_key.rfind("relay:", 0) != 0) {
+      log().warning << "Inbound call-media stream identity not relay: peer_key="
+                    << (params.peer_key.empty() ? "(empty)" : params.peer_key)
+                    << " inbound_peer_id=" << (inbound_peer_id.empty() ? "(empty)" : inbound_peer_id)
+                    << " — deferring on_audio stream_id until relay identity known";
+    } else if (!inbound_peer_id.empty() && inbound_peer_id != params.peer_key) {
+      log().info << "Inbound call-media mapped PeerId→relay stream identity peer_id=" << inbound_peer_id
+                 << " relay=" << params.peer_key;
+    }
     const std::string call_id = params.call_id;
+    inbound_deferred_peer_id_ =
+        (inbound_peer_id.rfind("relay:", 0) == 0) ? std::string{} : inbound_peer_id;
     cbs.on_connected = [this, call_id]() {
       AppRuntime::PostUI([this, call_id]() {
         log().info << "Inbound call-media connected call_id=" << call_id;
@@ -78,7 +124,40 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionSto
         if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
           return;
         }
+        // SoftMigrate → media_relay: stop feeding 1:1 into the SFU mixer (stream_id=0/1 zombies).
+        if (host_.P2pIsSfuAttached()) {
+          return;
+        }
+        uint32_t remote_stream = inbound_remote_stream_.load(std::memory_order_acquire);
+        if (remote_stream == 0) {
+          std::string relay = media_peer_identity_;
+          const std::string deferred = inbound_deferred_peer_id_;
+          if (relay.rfind("relay:", 0) != 0 && !deferred.empty()) {
+            if (auto mapped = host_.P2pRelayIdentityForLibp2pPeerId(call_id, deferred);
+                mapped && mapped->has_value() && !mapped->value().empty()) {
+              relay = mapped->value();
+              media_peer_identity_ = relay;
+            }
+          }
+          if (relay.rfind("relay:", 0) == 0) {
+            remote_stream = PublisherStreamIdForIdentity(relay);
+            inbound_remote_stream_.store(remote_stream, std::memory_order_release);
+            log().info << "Inbound call-media rebound stream_id=" << remote_stream
+                       << " relay=" << relay << " call_id=" << call_id;
+          } else {
+            // Still unknown — drop rather than PeerId-hash zombie (one-way audio until mapping).
+            const uint32_t n = g_inbound_unmapped_audio_drops.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (n == 1 || (n % 50) == 0) {
+              log().warning << "Inbound call-media drop: PeerId→relay unknown"
+                            << " peer_id=" << (deferred.empty() ? "(empty)" : deferred)
+                            << " media_peer=" << (media_peer_identity_.empty() ? "(empty)" : media_peer_identity_)
+                            << " call_id=" << call_id << " drops=" << n;
+            }
+            return;
+          }
+        }
         CallMediaEngine::SfuPacket pkt;
+        pkt.stream_id = remote_stream;
         pkt.channel_id = 0;
         pkt.payload = opus;
         media_.OnSfuPacket(pkt);
@@ -103,10 +182,16 @@ CallLibp2pMediaBridge::CallLibp2pMediaBridge(CallMediaHost& host, CallSessionSto
           host_.P2pNotifyRingChanged();
           return;
         }
-        if (host_.P2pIsAwaitingSfuRecovery()) {
-          // Lost 1:1 while waiting for CallSfuAttach — keep InCall chrome and poll inbox hard.
+        // PreferLocal ReleaseDirect closes 1:1 while capture stays up; CallSfuAttach may still
+        // be in flight (dogfood: Moto ConnectFailed when attach lagged ReleaseDirect).
+        const bool soft_direct_close =
+            reason.find("read_eof") != std::string::npos ||
+            reason.find("stream closed") != std::string::npos;
+        if (host_.P2pIsAwaitingSfuRecovery() || host_.P2pExpectGroupSfuMigration(call_id) ||
+            (soft_direct_close && media_.IsActive() && media_.IsConnected())) {
           log().info << "Ignoring inbound call-media fail while awaiting SFU attach call_id="
                      << call_id << " reason=" << reason;
+          host_.P2pNoteExpectSfuAttach(call_id);
           direct_.Detach();
           ClearLibp2pConnectFailed();
           host_.P2pRequestInboxSync();
@@ -379,6 +464,10 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
   media_attempted_calls_.insert(call_id);
   media_call_id_ = call_id;
   media_peer_identity_ = peer_identity;
+  if (peer_identity.rfind("relay:", 0) == 0) {
+    const uint32_t stream = PublisherStreamIdForIdentity(peer_identity);
+    inbound_remote_stream_.store(stream, std::memory_order_release);
+  }
   audio_seq_.store(0);
   ClearLibp2pConnectFailed();
   if (!offerer) {
@@ -458,12 +547,17 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
       CommitDirectConnected(media_call_id_);
     });
   };
-  cbs.on_audio = [this, captured_call_id](const std::vector<uint8_t>& opus) {
-    AppRuntime::PostUI([this, captured_call_id, opus]() {
+  cbs.on_audio = [this, captured_call_id, remote_stream = PublisherStreamIdForIdentity(captured_peer)](
+                     const std::vector<uint8_t>& opus) {
+    AppRuntime::PostUI([this, captured_call_id, remote_stream, opus]() {
       if (!media_.IsActive() || media_.ActiveCallId() != captured_call_id) {
         return;
       }
+      if (host_.P2pIsSfuAttached()) {
+        return;
+      }
       CallMediaEngine::SfuPacket pkt;
+      pkt.stream_id = remote_stream;
       pkt.channel_id = 0;
       pkt.payload = opus;
       media_.OnSfuPacket(pkt);
@@ -491,9 +585,16 @@ Roe<void> CallLibp2pMediaBridge::BeginSession(const std::string& call_id, const 
         host_.P2pNotifyRingChanged();
         return;
       }
-      if (host_.P2pIsAwaitingSfuRecovery()) {
+      // PreferLocal ReleaseDirect closes 1:1 while capture stays up; CallSfuAttach may still
+      // be in flight (dogfood: Moto ConnectFailed when attach lagged ReleaseDirect).
+      const bool soft_direct_close =
+          reason.find("read_eof") != std::string::npos ||
+          reason.find("stream closed") != std::string::npos;
+      if (host_.P2pIsAwaitingSfuRecovery() || host_.P2pExpectGroupSfuMigration(captured_call_id) ||
+          (soft_direct_close && media_.IsActive() && media_.IsConnected())) {
         log().info << "Ignoring call-media fail while awaiting SFU attach call_id=" << captured_call_id
                    << " reason=" << reason;
+        host_.P2pNoteExpectSfuAttach(captured_call_id);
         direct_.Detach();
         ClearLibp2pConnectFailed();
         host_.P2pRequestInboxSync();
@@ -672,7 +773,23 @@ void CallLibp2pMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call
             }
           }
         }
-        log().warning << "Deferred MediaKey wait exhausted call_id=" << call_id;
+        // Surface failure — do not leave chrome stuck in MediaPending forever.
+        AppRuntime::PostUI([this, call_id]() {
+          if (pending_answerer_call_id_ != call_id) {
+            return; // key arrived, Leave, or superseding Accept
+          }
+          pending_answerer_call_id_.clear();
+          pending_answerer_peer_.clear();
+          const std::string err = Tr("call.error.media_key_timeout");
+          log().warning << "Deferred MediaKey wait exhausted call_id=" << call_id
+                        << " — ConnectFailed";
+          libp2p_connect_failed_ = true;
+          host_.P2pSetLastMediaError(err);
+          if (lifecycle_) {
+            lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+          }
+          host_.P2pNotifyRingChanged();
+        });
       });
       return;
     }
@@ -757,11 +874,31 @@ void CallLibp2pMediaBridge::ReleaseDirectTransport() {
   }
   direct_.Detach();
   media_peer_identity_.clear();
+  inbound_deferred_peer_id_.clear();
+  inbound_remote_stream_.store(0, std::memory_order_release);
+  // Do not ClearRemoteAudioTracks here — SoftMigrate+2s would wipe live media_relay tracks
+  // that already replaced 1:1 (dogfood: streams look healthy then Moto silent on PreferLocal).
+  // 1:1 on_audio is already ignored once P2pIsSfuAttached(); stream_id==1 is dropped in engine.
   ClearLibp2pConnectFailed();
   if (lifecycle_ && media_.IsActive() && media_.IsSfuMode()) {
     lifecycle_->Apply(CallLifecycleEvent::DirectConnected, media_.ActiveCallId());
   }
   host_.P2pNotifyRingChanged();
+}
+
+void CallLibp2pMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
+                                                   const std::string& relay_identity) {
+  if (peer_id.empty() || relay_identity.rfind("relay:", 0) != 0) {
+    return;
+  }
+  if (inbound_deferred_peer_id_.empty() || inbound_deferred_peer_id_ != peer_id) {
+    return;
+  }
+  media_peer_identity_ = relay_identity;
+  const uint32_t stream = PublisherStreamIdForIdentity(relay_identity);
+  inbound_remote_stream_.store(stream, std::memory_order_release);
+  log().info << "Inbound call-media mapping from CallAccept/Invite stream_id=" << stream
+             << " peer_id=" << peer_id << " relay=" << relay_identity;
 }
 
 void CallLibp2pMediaBridge::PrepareForTeardown(int timeout_ms) {

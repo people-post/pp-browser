@@ -45,13 +45,19 @@ selection {
   color: #111111;
 }
 
-.btn-primary {
+.btn-primary,
+.prompt-send-btn,
+.sidebar-new-chat,
+.contacts-find-btn {
   background-color: #4a6cf7;
   color: #ffffff;
 }
 
 .btn-primary:hover,
-.btn-primary:focus {
+.btn-primary:focus,
+.prompt-send-btn:hover,
+.sidebar-new-chat:hover,
+.contacts-find-btn:hover {
   background-color: #5a7cff;
 }
 
@@ -63,13 +69,15 @@ selection {
   image-color: #ffffff;
 }
 
-.btn-secondary {
+.btn-secondary,
+.chat-suggestion {
   background-color: #e8eaed;
   color: #1a1a1a;
 }
 
 .btn-secondary:hover,
-.btn-secondary:focus {
+.btn-secondary:focus,
+.chat-suggestion:hover {
   background-color: #d1d5db;
 }
 
@@ -94,6 +102,30 @@ selection {
   background-color: #fee2e2;
   color: #991b1b;
   border: 1dp #f87171;
+}
+
+.btn-danger svg {
+  image-color: #ffffff;
+}
+
+.btn-danger-soft svg {
+  image-color: #b91c1c;
+}
+
+.btn-danger-soft:hover svg,
+.btn-danger-soft:focus svg {
+  image-color: #991b1b;
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: #374151;
+}
+
+.btn-ghost:hover,
+.btn-ghost:focus {
+  background-color: #f3f4f6;
+  color: #1a1a1a;
 }
 
 .field {
@@ -155,27 +187,9 @@ select selectbox option:hover {
   box-shadow: 0 2dp 8dp #00000014;
 }
 
-.prompt-send-btn {
-  background-color: #4a6cf7;
-  color: #ffffff;
-}
-
-.prompt-send-btn:hover {
-  background-color: #5a7cff;
-}
-
 .code-block {
   background-color: #eef0f3;
   color: #1a1a1a;
-}
-
-.chat-suggestion {
-  background-color: #e8eaed;
-  color: #1a1a1a;
-}
-
-.chat-suggestion:hover {
-  background-color: #d8dce2;
 }
 
 .chat-jump-latest {
@@ -382,60 +396,107 @@ select selectbox option:hover {
   border-top-color: #e5e7eb;
 }
 
-.shell-statusbar-mesh-dot {
-  border-color: #9ca3af;
-  background-color: transparent;
+.shell-statusbar-cluster:hover {
+  background-color: #e2e8f0;
 }
 
-.shell-statusbar-mesh--ok .shell-statusbar-mesh-dot {
-  border-color: #6b7280;
-  background-color: #6b7280;
+.shell-statusbar-divider {
+  background-color: #cbd5e1;
 }
 
-.shell-statusbar-mesh--off .shell-statusbar-mesh-dot {
-  border-color: #9ca3af;
-  background-color: transparent;
+.shell-statusbar-brief--ok svg {
+  image-color: #4d7358;
 }
 
-.shell-statusbar-mesh--error .shell-statusbar-mesh-dot {
-  border-color: #dc2626;
-  background-color: #dc2626;
+.shell-statusbar-brief--failed svg {
+  image-color: #b86b6b;
 }
 
-.shell-statusbar-reach-bar {
+.shell-statusbar-brief--unknown svg {
+  image-color: #9ca3af;
+}
+
+.shell-statusbar-direct--ok svg {
+  image-color: #4d7358;
+}
+
+.shell-statusbar-direct--off svg {
+  image-color: #b88445;
+}
+
+.shell-statusbar-direct--error svg {
+  image-color: #b86b6b;
+}
+
+.shell-statusbar-direct--checking svg {
+  image-color: #9ca3af;
+}
+
+.shell-statusbar-inbound--ok svg {
+  image-color: #4d7358;
+}
+
+.shell-statusbar-inbound--off svg {
+  image-color: #b88445;
+}
+
+.shell-call-quality-bar {
   background-color: #d1d5db;
 }
 
-.shell-statusbar-reach-bar--on {
+.shell-call-quality-bar--on {
   background-color: #6b7280;
 }
 
-.shell-statusbar-reach--ok .shell-statusbar-reach-bar--on {
+.shell-call-quality--ok .shell-call-quality-bar--on {
   background-color: #6b7280;
 }
 
-.shell-statusbar-reach--warn .shell-statusbar-reach-bar--on {
+.shell-call-quality--warn .shell-call-quality-bar--on {
   background-color: #d97706;
 }
 
-.shell-statusbar-reach--error .shell-statusbar-reach-bar {
+.shell-call-quality--error .shell-call-quality-bar {
   background-color: #fecaca;
 }
 
-.shell-statusbar-reach--checking .shell-statusbar-reach-bar--on {
-  background-color: #9ca3af;
+.shell-call-quality--error .shell-call-quality-bar--on {
+  background-color: #dc2626;
 }
 
-.shell-statusbar-help svg {
-  image-color: #0d9488;
-}
-
-.shell-statusbar-label--warn {
+.shell-call-quality--warn .shell-call-quality-label,
+.shell-call-quality-hint {
   color: #b45309;
 }
 
-.shell-statusbar-label--error {
+.shell-call-quality--error .shell-call-quality-label {
   color: #dc2626;
+}
+
+.shell-call-debug-subtitle {
+  color: #6b7280;
+}
+
+.shell-statusbar-help svg {
+  image-color: #4a8f87;
+}
+
+.shell-statusbar-label--warn {
+  color: #a67c3a;
+}
+
+.shell-statusbar-label--error {
+  color: #b86b6b;
+}
+
+.shell-statusbar-popover {
+  background-color: #ffffff;
+  border-color: #e5e7eb;
+  box-shadow: 0 8dp 24dp #00000022;
+}
+
+.shell-statusbar-popover-scrim {
+  background-color: #00000001;
 }
 
 .shell-pane {
@@ -661,20 +722,6 @@ select selectbox option:hover {
   color: #374151;
 }
 
-.shell-dialog-cancel {
-  background-color: #e8eaed;
-  color: #1a1a1a;
-}
-
-.shell-dialog-ok {
-  background-color: #4a6cf7;
-  color: #ffffff;
-}
-
-.shell-dialog-ok:hover {
-  background-color: #5a7cff;
-}
-
 .shell-call-meter-label {
   color: #6b7280;
 }
@@ -773,6 +820,53 @@ select selectbox option:hover {
   image-color: #991b1b;
 }
 
+.shell-call-minimize,
+.shell-call-immersive-btn,
+.shell-call-expand {
+  background-color: #e8eaed;
+  color: #1a1a1a;
+}
+
+.shell-call-minimize svg,
+.shell-call-immersive-btn svg,
+.shell-call-expand svg {
+  image-color: #1a1a1a;
+}
+
+.shell-call-minimized-chip {
+  background-color: #ffffff;
+  border: 1dp #e5e7eb;
+}
+
+.shell-call-minimized-title {
+  color: #111111;
+}
+
+.shell-call-minimized-subtitle {
+  color: #6b7280;
+}
+
+.shell-call-immersive {
+  background-color: #f3f4f6;
+}
+
+.shell-call-immersive-grabber {
+  background-color: #d1d5db;
+}
+
+.shell-call-peer-card {
+  background-color: #ffffff;
+  border: 1dp #e5e7eb;
+}
+
+.shell-call-peer-avatar {
+  background-color: #e5e7eb;
+}
+
+.shell-call-peer-name {
+  color: #111111;
+}
+
 .shell-call-retry {
   background-color: #dbeafe;
   color: #1e40af;
@@ -803,12 +897,17 @@ select selectbox option:hover {
   color: #6b7280;
 }
 
+.shell-call-ring {
+  border-color: #c7d2fe;
+}
+
 .shell-call-ring--pulse {
   border-color: #4a6cf7;
 }
 
 .shell-call-accept--pulse {
   background-color: #5a7cff;
+  box-shadow: 0 0 0 4dp #4a6cf733, 0 4dp 14dp #4a6cf755;
 }
 
 .chat-empty {
@@ -818,15 +917,6 @@ select selectbox option:hover {
 
 .sidebar-header-title {
   color: #374151;
-}
-
-.sidebar-new-chat {
-  background-color: #4a6cf7;
-  color: #ffffff;
-}
-
-.sidebar-new-chat:hover {
-  background-color: #5a7cff;
 }
 
 .sidebar-session {
@@ -973,15 +1063,6 @@ select selectbox option:hover {
 
 .settings-row-chevron {
   image-color: #9ca3af;
-}
-
-.contacts-find-btn {
-  background-color: #4a6cf7;
-  color: #ffffff;
-}
-
-.contacts-find-btn:hover {
-  background-color: #5a7cff;
 }
 
 .contacts-row,

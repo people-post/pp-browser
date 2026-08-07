@@ -635,3 +635,93 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 **Cross-link:** V029; [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md) additive wire; mesh [PHASES ns](../p2p-mesh/PHASES.md).
 
 ---
+
+## V031 — Call chrome modes (Minimized / Expanded / Immersive)
+
+**Date:** 2026-08-05  
+**Status:** Accepted (implementing)  
+**Decision:** In-call UI has **three modes** with clear jobs — not arbitrary window sizes.
+
+| Mode | Job | Default |
+|------|-----|---------|
+| **Expanded** | Top call bar (+ stage when video); multitask under it | 1:1 on join |
+| **Immersive** | Call is primary surface; full participant grid (voice avatars now, video tiles later) | Group / `show_roster` on join |
+| **Minimized** | Ambient presence while using the app | Explicit collapse only |
+
+### Mode ladder
+
+```text
+Immersive  ↔  Expanded  ↔  Minimized
+```
+
+One-step transitions only (no Immersive → Minimized in one fling). Restore from Minimized returns to the last non-minimized mode.
+
+### Gestures (top-anchored chrome)
+
+| Mode | Gesture | Result |
+|------|---------|--------|
+| **Expanded** | Swipe **down** on call chrome (not on a button) | → Immersive |
+| **Expanded** | Swipe **up** on call chrome (not on a button) | → Minimized |
+| **Immersive** | Swipe / pull **down** on non-button chrome, **or** pull **down** starting in the people list when `scrollTop == 0` | → Expanded |
+| **Minimized** | **Tap** chip | Restore last Expanded/Immersive |
+| **Minimized** | **Drag** chip | Reposition; snap to corner |
+| **Minimized** | Swipe | **None** (avoids fighting drag) |
+
+**Hit-test model (Immersive):** button → control; scroll region (when not at top / not pulling down) → scroll; everything else → mode swipe. Same idea as `ShellBottomSheetGesture` (ignore buttons; scroll-at-top handoff).
+
+**Hard rules:** Ring stays modal. No gesture ends the call. Escape/back still does not hang up. Visible controls always mirror gestures (collapse / people / minimize). Mode changes remount `#shell-call-in-progress-mount` only (`RemountCallChrome`); re-attach gestures after remount.
+
+**Rationale:** Multitasking needs a true minimize; group voice needs everyone visible — Expanded cannot honestly show 8–16 peers. Three jobs beat three decorative sizes. Pull-down to leave Immersive matches list overscroll-at-top and reuses sheet gesture patterns.
+
+**Alternatives rejected:** Three free-floating resizable windows; pinch-to-mode-change; swipe-to-end; side-pad-only Immersive swipes as v1 layout; OS PiP / post-Present overlay (still V018).
+
+**Cross-link:** V018 (in-shell tiles); V019 (unified in-call); [WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md); [DESIGN.md](DESIGN.md) UI sketch.
+
+---
+
+## V032 — Media QoS enforcement, playout, SFU E2E
+
+**Date:** 2026-08-06  
+**Status:** Accepted (implementing)  
+**Decision:** Close the structural gaps between N019/N021/V024 **docs** and host/receiver **code** before further quality tuning. Policy matrix: [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md).
+
+| Area | Rule |
+|------|------|
+| **A↑ / A↓ enforcement** | Hop enforces with token buckets on Fanout ingress (publisher A↑) and egress (subscriber A↓). Sender also paces via Opus `target_audio_bps`. Quote fields are not decorative. |
+| **B↑ / B↓ + ceiling** | Session totals soft-cap fan-out; hard stop when `bytes_total > ceiling_bytes` (unchanged intent, still enforced). |
+| **Audio under pressure** | Never use LatestLossy skip-to-latest on audio. Extreme hop outbound backlog: **drop-oldest** (live preference). Receiver never skip-to-latest. |
+| **Host load admission** | Max **4** concurrent `HostSession`s; max **8** participants per session (matches eng call cap). Refuse quote/attach over limit. |
+| **Receiver delay** | Per-`stream_id` Opus decoder + jitter target **60 ms**, max **200 ms**, PLC on gap; mix to one playback device. Hop stays blind (no jitter buffering on hop). |
+| **Adaptation actuators** | `path_pressure` (playout underruns / hop drops) drives Opus bitrate within V024 ladder (`kMinAudioBps`…`kDefaultAudioBps`) and continues to gate video. |
+| **SFU E2E** | Encrypt/decrypt SFU payloads with the call media key (same AEAD family as 1:1). AAD includes `stream_id`. Hop never holds keys. |
+| **1:1** | Unchanged wire; already AEAD. Shares engine playout path (`stream_id` 0). |
+
+**Rationale:** Group voice degraded without per-stream decode/playout and without real ↑/↓ enforcement — budgets and adaptation existed as schema/policy only. Structure must land before constant-tuning the “goes silent” dogfood bug.
+
+**Alternatives rejected:** MCU mix on hop (breaks blindness); hop-side jitter buffer (wrong layer); shared single OpusDecoder for all publishers; defer SFU E2E indefinitely.
+
+**Cross-link:** V022 / V024; mesh N019 / N021; [CALLS.md](../../docs/architecture/CALLS.md); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md).
+
+---
+
+## V033 — Transport session machines (not host-wide inbound SM)
+
+**Date:** 2026-08-07  
+**Status:** Accepted (**s2a done** — call-media phases in code; media-relay N026 **s3a+s3b done**; circuit compose loopbacks green)  
+**Decision:** Introduce explicit **flat enum + `Apply(event)`** state machines for **long-lived** libp2p host media sessions — first **`CallMediaDirectService`** (one active 1:1 session), then **`MediaRelayService`** per-inbound-stream attach ([N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)). Do **not** build a host-wide “incoming request” state machine. Do **not** rewrite one-shot RPCs (chat, chat-history, dial-back) as SMs. Do **not** move product `CallPhase` / `CallLifecycle` into `libp2p/integration/host`.
+
+| Rule | Detail |
+|------|--------|
+| **Style** | Mirror `CallLifecycle` — phases, events, `Apply`, INFO `phase=` / `event=` logs. No SM framework. |
+| **Layer** | Transport SM in `CallMediaDirectService` (integration/host). Product ring/accept/InCall stays in `CallLifecycle`. Bridge/Topology decide *when* to Connect/Detach; SM owns stream session legality. |
+| **Threading** | Handler on host io → control handshake on worker **Normal** (never Critical). `Apply` on one strand per service. Duplex R/W on host io. Waiters/timeouts owned by the SM. |
+| **Migration** | Docs → freeze open questions → strangler one service at a time → loopback goldens. No wire bump required. No drive-by chat/history refactors in the same PR. |
+| **Spec** | [SESSION_MACHINES.md](SESSION_MACHINES.md) |
+
+**Rationale:** m1 call-media works but is held together by flags (`outbound_hello_inflight`, `settled` atomics) and comments (glare, SoftMigrate EOF). That knowledge belongs in an explicit machine before more patches. A blanket host inbound SM would add ceremony to simple RPCs and blur protocol differences.
+
+**Alternatives rejected:** Host-wide inbound SM; hierarchical/Harel frameworks; absorbing CallLifecycle into the host; big-bang rewrite of MessagingHub; SM-ifying chat/dial-back.
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md) (CallLifecycle + critical races); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); mesh [N026](../p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine); [THREADING.md](../../docs/architecture/THREADING.md).
+
+---

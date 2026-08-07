@@ -1,4 +1,5 @@
 #include "app/node/NodeBootstrap.h"
+#include "app/node/NodeEnvOverlay.h"
 
 #include "base/crypto/PinResolver.h"
 #include "base/crypto/ProfileSecretsService.h"
@@ -24,6 +25,8 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return config.error();
   }
 
+  // Env overlays (PP_NODE_*), then CLI listen override — CLI wins.
+  ApplyPpNodeConfigEnvOverlays(*config);
   if (!options.listen_override.empty()) {
     config->libp2p.listen_multiaddr = options.listen_override;
   }

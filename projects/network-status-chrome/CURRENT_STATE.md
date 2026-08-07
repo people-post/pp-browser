@@ -1,36 +1,34 @@
 # Network status chrome — current state
 
-**As of:** 2026-08-05  
-**Phase:** **s1 in progress** — ambient cluster landed in code; dogfood / polish remain
+**As of:** 2026-08-07  
+**Phase:** **s3 landed** — Load counts; **s4** polish next
 
 ## Decisions
 
-Product answers accepted and recorded as [S003–S010](DECISIONS.md). See [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+Product answers accepted and recorded as [S003–S011](DECISIONS.md). See [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 
-## What ships in tree (s1)
+## What ships in tree (s1–s3)
 
 | Piece | Behavior |
 |-------|----------|
-| Desktop status bar | 24dp, desktop + expanded only; **display-only** |
-| Left cluster | Mesh dot · Reach 3-bars · Help icon (Node) · sparse label |
-| Mesh | on / off / error from host running + last libp2p error |
-| Reach | `ReachabilitySnapshot` only ([S007](DECISIONS.md#s007--reach-uses-reachability-first-hop-relay-available-later-q5-db)) |
-| Help | Visible when `IsHelpNetworkEnabled()` (desktop Node) |
-| Labels | i18n: `shell.statusbar.direct_off`; settings parity for Outbound only / Blocked |
-| Right | Activity via `ShellHost::SetActivity` (unchanged) |
-| Ports | `MessagingShellPorts::statusbar_cluster` + `BuildStatusbarClusterSnapshot` |
-| Tests | `statusbar_cluster_test.cpp` |
+| Desktop status bar | 24dp, desktop + expanded only |
+| Left cluster | Brief · Direct · divider · Help · Inbound · Load pills · sparse label |
+| Brief / Direct / Help / Inbound | As s1 |
+| Load (s3) | Help on only; `circuit N` / `media N` when count > 0 (aggregates from `RelayRuntimeStats`) |
+| Popover | s2 inspect + Retest + deep-link; **Helper load** rows when helping under load |
+| Ports | `MessagingShellPorts` + `CircuitRelayService::RuntimeStats` / `MediaRelayService::RuntimeStats` |
+| Tests | `statusbar_cluster_test.cpp` (cluster + popover + load) |
 
 ## Still open for later phases
 
 | Gap | Phase |
 |-----|-------|
-| Click → hybrid popover + Retest | s2 |
-| Load counts (`RelayRuntimeStats`) | s3 |
-| Hop “relay available” Reach upgrade | post-s1 ([S007](DECISIONS.md#s007--reach-uses-reachability-first-hop-relay-available-later-q5-db)) |
-| Accessible names for icon-only states | s2/s4 |
-| Static HTML mock (optional) | s0 leftover |
+| Brief health beyond PollInbox | polish |
+| Hop “relay available” Direct enrichment | deferred |
+| Truncation / EN+zh-Hans width budget | s4 |
+| Transitional motion | s4 |
+| Throughput / delay | post-MVP |
 
 ## Next
 
-Dogfood s1 on Node desktop; then **s2** popover.
+**s4** polish (truncation / width budget, transitional motion, promote normative bits to `docs/ui/`).

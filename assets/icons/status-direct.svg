@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
+  <!-- Two nodes + link  Direct / libp2p dial-out -->
+  <circle cx="10" cy="20" r="5" stroke="#FFFFFF" stroke-width="3" fill="none"/>
+  <circle cx="30" cy="20" r="5" stroke="#FFFFFF" stroke-width="3" fill="none"/>
+  <path d="M15 20h10" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+</svg>

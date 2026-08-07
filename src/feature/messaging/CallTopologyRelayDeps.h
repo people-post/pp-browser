@@ -29,6 +29,11 @@ public:
       int timeout_ms = 8000) = 0;
   /** After AcceptAndAttach + StartSfu — begin inbound frame delivery. */
   virtual void StartClientFrameReader() = 0;
+  /**
+   * Unexpected guest duplex death (not Detach). Default no-op for fakes that never lose transport.
+   * Handler may be invoked on the libp2p io thread.
+   */
+  virtual void SetClientTransportLostHandler(std::function<void()> /*handler*/) {}
   /** In-call hop: join local HostSession without dialing self. */
   virtual Roe<MediaRelayAttachResult> AttachAsLocalHop(
       const std::string& call_id, std::function<void(MediaDataFrame)> on_frame) = 0;
@@ -37,6 +42,10 @@ public:
   virtual void Detach() = 0;
   virtual bool IsAttached() const = 0;
   virtual bool IsLocalHopAttached() const = 0;
+  /** Hop drop pressure 0..1 (V032); default 0 for fakes. */
+  virtual double PathPressure() const { return 0.0; }
+  /** Hop health counters (V032); default empty. */
+  virtual CallHopHealth HealthSnapshot() const { return {}; }
 };
 
 /** Dial registry surface for hop RegisterEndpoint / IsDialable. */
@@ -104,6 +113,12 @@ public:
     }
   }
 
+  void SetClientTransportLostHandler(std::function<void()> handler) override {
+    if (service_) {
+      service_->SetClientTransportLostHandler(std::move(handler));
+    }
+  }
+
   Roe<MediaRelayAttachResult> AttachAsLocalHop(const std::string& call_id,
                                                std::function<void(MediaDataFrame)> on_frame) override {
     if (!service_) {
@@ -138,6 +153,14 @@ public:
 
   bool IsLocalHopAttached() const override {
     return service_ && service_->IsLocalHopAttached();
+  }
+
+  double PathPressure() const override {
+    return service_ ? service_->PathPressure() : 0.0;
+  }
+
+  CallHopHealth HealthSnapshot() const override {
+    return service_ ? service_->HealthSnapshot() : CallHopHealth{};
   }
 
 private:

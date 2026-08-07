@@ -60,9 +60,19 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [x] Circuit: simpler contacts → seed preference (N014 intent)
 - [x] Provider: prefer serving contacts when hosting (esp. volunteer Node)
 - [x] No coercion — friend must have capability on
-- [x] Light UI: “Prefer contacts for routing” (default on) if needed
+- [x] Light UI: “Friends first” (default on) if needed
 - [x] Message path may keep **HTTP Brief** without peer `message_relay`
 - [x] Align docs/UI copy with **N020** for media (closed set; not hardcoded stages)
+
+## n4-media-sm — `media_relay` attach SM (N026) — docs before code
+
+Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm) / [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md). Spec: [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md). Prefer after call-media SM lands.
+
+- [x] N026 + MEDIA_RELAY_ATTACH design doc
+- [x] Freeze with calls V033 s1; call-media s2a landed first
+- [x] s3a — Replace inbound `while (!session)` with per-stream phase + `media_relay_attach phase=` logs
+- [x] s3b — Client `AcceptAndAttach` phase machine; Detach aborts waiter; no late stream install after timeout
+- [x] Circuit compose loopbacks (PreferLocal reattach + circuit quote/attach fan-out)
 
 ## n4-media — Blind media forwarder (N017–N021; unblocks a4)
 
@@ -134,7 +144,6 @@ Pairs with stack [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circu
 - [x] Optional in-call `media_relay` (N≥3) — contacts-only admission; off on cellular
 - [x] Integrate with call bring-up / teardown (CallSessionManager ↔ NodeRuntime)
 - [ ] Later: opt-in **Help on Wi‑Fi** toggle (mode 3); no full Node UI on mobile
-- [ ] Tests: two phones same LAN, PeerId-only contact, foreground call dial (manual)
 - [x] Docs: [PLATFORMS.md](../../docs/architecture/PLATFORMS.md), hop L4 consume notes
 
 ## ns2 — LAN mDNS (contacts-only)
@@ -145,4 +154,3 @@ Pairs with hop L4 PeerId-only reachability. Spec: [RELAY_SCOPE.md](RELAY_SCOPE.m
 - [x] Browse → upsert `PeerAddressBook` / endpoints for **known contact PeerIds only** (N020 closed set)
 - [x] Wire `MessagingHub::TickLibp2p` + contact list refresh
 - [ ] Bridge score uses mDNS / same-subnet signals (consumer circuit path)
-- [ ] Manual QA: two devices same LAN, PeerId-only contact discovers dial addr

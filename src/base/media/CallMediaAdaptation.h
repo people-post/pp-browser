@@ -44,13 +44,18 @@ struct CallAdaptationDecision {
  */
 class CallMediaAdaptation {
 public:
-  static constexpr int64_t kMinAudioBps = 24'000;
+  static constexpr int64_t kMinAudioBps = 16'000;
   static constexpr int64_t kDefaultAudioBps = 32'000;
+  /** Comfortable encode target when path is healthy (engine default before quote). */
+  static constexpr int64_t kComfortAudioBps = 24'000;
   static constexpr int64_t kDefaultVideoLoBps = 400'000;
   static constexpr int64_t kDefaultVideoHiBps = 1'200'000;
   static constexpr int64_t kMinVideoLoBps = 120'000;
 
   static CallAdaptationDecision Evaluate(const CallAdaptationInput& in);
+
+  /** Map path_pressure 0..1 → Opus target within [kMinAudioBps, comfort]. */
+  static int64_t AudioBpsForPressure(double path_pressure, int64_t comfort_bps = kComfortAudioBps);
 
   /** N021 mapping for SFU path. */
   static const char* ChannelTypeName(CallMediaRole role);

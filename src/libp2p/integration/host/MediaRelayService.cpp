@@ -1,630 +1,6 @@
-#include "libp2p/integration/host/MediaRelayService.h"
-
-#include "base/people/RelayScope.h"
-#include "common/Logger.h"
-#include "libp2p/integration/host/Libp2pWorker.h"
-#include "libp2p/integration/host/StreamFrameIo.h"
-#include "libp2p/integration/host/StreamJsonFrame.h"
-
-#include <libp2p/basic/read.hpp>
-#include <libp2p/basic/write.hpp>
-#include <libp2p/connection/stream.hpp>
-#include <libp2p/host/host.hpp>
-#include <libp2p/peer/protocol.hpp>
-
-#include <algorithm>
-#include <array>
-#include <atomic>
-#include <chrono>
-#include <cstring>
-#include <future>
-#include <memory>
-#include <mutex>
-#include <nlohmann/json.hpp>
-#include <unordered_map>
-#include <unordered_set>
+#include "libp2p/integration/host/MediaRelayServiceImpl.h"
 
 namespace pbr {
-
-namespace {
-
-using libp2p::Bytes;
-using libp2p::connection::Stream;
-using libp2p::peer::ProtocolName;
-
-constexpr uint8_t kMediaDataVersion = 1;
-constexpr size_t kMediaDataHeaderBytes = 1 + 4 + 2 + 1 + 4 + 1; // ver+stream+chan+type+seq+mark
-constexpr size_t kMaxMediaFrameBytes = 256 * 1024;
-
-/** Soft defaults when budget fields are 0 (unbounded / ops default). */
-constexpr int64_t kDefaultUserUpBps = 500'000;
-constexpr int64_t kDefaultUserDownBps = 2'000'000;
-constexpr int64_t kDefaultSessionUpBps = 4'000'000;
-constexpr int64_t kDefaultSessionDownBps = 16'000'000;
-constexpr int64_t kDefaultCeilingBytes = 50'000'000;
-
-LengthPrefixedFrameConfig MediaDataFrameConfig() {
-  LengthPrefixedFrameConfig config;
-  config.max_frame_bytes = kMaxMediaFrameBytes;
-  config.allow_empty_body = true;
-  return config;
-}
-
-Roe<std::vector<uint8_t>> ReadExactFrame(const std::shared_ptr<Stream>& stream) {
-  return BlockingReadLengthPrefixedFrame(stream, MediaDataFrameConfig());
-}
-
-Roe<void> WriteExactBody(const std::shared_ptr<Stream>& stream, const std::vector<uint8_t>& body) {
-  return BlockingWriteLengthPrefixedFrame(stream, body);
-}
-
-Roe<void> WriteJson(const std::shared_ptr<Stream>& stream, const nlohmann::json& root) {
-  return BlockingWriteStreamJson(stream, root.dump());
-}
-
-Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
-  auto json_utf8 = BlockingReadStreamJson(stream);
-  if (!json_utf8) {
-    return json_utf8.error();
-  }
-  nlohmann::json root = nlohmann::json::parse(*json_utf8, nullptr, false);
-  if (root.is_discarded() || !root.is_object()) {
-    return Error("invalid media-relay json");
-  }
-  return root;
-}
-
-int64_t OrDefault(int64_t configured, int64_t fallback) {
-  return configured > 0 ? configured : fallback;
-}
-
-std::string MakeId(const char* prefix) {
-  static std::atomic<uint64_t> seq{1};
-  return std::string(prefix) + std::to_string(seq.fetch_add(1));
-}
-
-uint64_t SubKey(uint32_t stream_id, uint16_t channel_id) {
-  return (static_cast<uint64_t>(stream_id) << 16) | channel_id;
-}
-
-struct HostParticipant {
-  std::string peer_id;
-  std::shared_ptr<Stream> stream;
-  /** Set for in-call hop local publisher (no network stream). */
-  std::function<void(MediaDataFrame)> local_on_frame;
-  std::shared_ptr<DuplexFrameSession> duplex;
-  std::shared_ptr<std::atomic<bool>> duplex_cancelled;
-  std::unordered_set<uint64_t> subscriptions;
-  std::unordered_map<uint64_t, uint32_t> last_lossy_seq;
-  int64_t a_up_bps = 0;
-  int64_t a_down_bps = 0;
-  int64_t bytes_up = 0;
-  int64_t bytes_down = 0;
-};
-
-struct HostSession {
-  std::string call_id;
-  std::string session_token;
-  int64_t b_up_bps = 0;
-  int64_t b_down_bps = 0;
-  int64_t ceiling_bytes = 0;
-  int64_t bytes_total = 0;
-  std::vector<std::shared_ptr<HostParticipant>> participants;
-};
-
-struct PendingQuote {
-  MediaRelayQuote quote;
-  std::string call_id;
-};
-
-} // namespace
-
-std::vector<uint8_t> EncodeMediaDataFrame(const MediaDataFrame& frame) {
-  std::vector<uint8_t> body(kMediaDataHeaderBytes + frame.payload.size());
-  size_t i = 0;
-  body[i++] = kMediaDataVersion;
-  auto put_u32 = [&](uint32_t v) {
-    body[i++] = static_cast<uint8_t>((v >> 24) & 0xff);
-    body[i++] = static_cast<uint8_t>((v >> 16) & 0xff);
-    body[i++] = static_cast<uint8_t>((v >> 8) & 0xff);
-    body[i++] = static_cast<uint8_t>(v & 0xff);
-  };
-  auto put_u16 = [&](uint16_t v) {
-    body[i++] = static_cast<uint8_t>((v >> 8) & 0xff);
-    body[i++] = static_cast<uint8_t>(v & 0xff);
-  };
-  put_u32(frame.stream_id);
-  put_u16(frame.channel_id);
-  body[i++] = static_cast<uint8_t>(frame.channel_type);
-  put_u32(frame.seq);
-  body[i++] = frame.mark;
-  if (!frame.payload.empty()) {
-    std::memcpy(body.data() + i, frame.payload.data(), frame.payload.size());
-  }
-  return body;
-}
-
-Roe<MediaDataFrame> DecodeMediaDataFrame(const std::vector<uint8_t>& body) {
-  if (body.size() < kMediaDataHeaderBytes) {
-    return Error("media data frame too short");
-  }
-  if (body[0] != kMediaDataVersion) {
-    return Error("unsupported media data version");
-  }
-  auto get_u32 = [&](size_t at) -> uint32_t {
-    return (static_cast<uint32_t>(body[at]) << 24) | (static_cast<uint32_t>(body[at + 1]) << 16) |
-           (static_cast<uint32_t>(body[at + 2]) << 8) | static_cast<uint32_t>(body[at + 3]);
-  };
-  auto get_u16 = [&](size_t at) -> uint16_t {
-    return static_cast<uint16_t>((static_cast<uint16_t>(body[at]) << 8) | body[at + 1]);
-  };
-  MediaDataFrame frame;
-  frame.stream_id = get_u32(1);
-  frame.channel_id = get_u16(5);
-  frame.channel_type = static_cast<MediaChannelType>(body[7]);
-  frame.seq = get_u32(8);
-  frame.mark = body[12];
-  frame.payload.assign(body.begin() + static_cast<std::ptrdiff_t>(kMediaDataHeaderBytes), body.end());
-  return frame;
-}
-
-struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
-  std::mutex mu;
-  Libp2pHost* host = nullptr;
-  PeerSessionManager* sessions = nullptr;
-  MediaRelayBudgetConfig budget;
-  RelayPricingConfig pricing;
-  MediaRelayAdmissionPolicy admission;
-
-  std::unordered_map<std::string, PendingQuote> quotes_by_id;
-  std::unordered_map<std::string, std::shared_ptr<HostSession>> sessions_by_token;
-  std::unordered_map<std::string, std::shared_ptr<HostSession>> sessions_by_call;
-
-  // Client attach state (remote hop dial)
-  std::shared_ptr<Stream> client_stream;
-  std::mutex client_write_mu; // Subscribe/SendFrame/Detach vs each other — sync path only
-  std::string client_session_token;
-  std::function<void(MediaDataFrame)> client_on_frame;
-  /** Bumped on Detach — stale readers exit without clearing a newer attach's epoch. */
-  std::atomic<uint64_t> client_reader_epoch{0};
-  std::atomic<uint64_t> client_reader_started_for{0};
-
-  // In-call hop: local publisher joined into HostSession without dialing self
-  std::shared_ptr<HostParticipant> local_hop_part;
-  std::shared_ptr<HostSession> local_hop_session;
-  std::string local_hop_peer_id;
-
-  bool AdmitPeer(const std::string& peer_id) {
-    return RelayAdmissionAllowsDialer(admission.serve_scope_mask, peer_id, admission.contact_peer_ids);
-  }
-
-  /**
-   * Call-scoped admission: first dialer for call_id must pass contact/scope admission.
-   * Once a HostSession exists for call_id (sponsor or local hop attached), further dialers
-   * for that call are admitted even if strangers to this hop.
-   */
-  bool AdmitPeerForCall(const std::string& peer_id, const std::string& call_id) {
-    if (!call_id.empty() && sessions_by_call.find(call_id) != sessions_by_call.end()) {
-      return true;
-    }
-    return AdmitPeer(peer_id);
-  }
-
-  MediaRelayQuote BuildQuote(const MediaRelayQuoteRequest& req) {
-    MediaRelayQuote q;
-    q.ok = true;
-    q.quote_id = MakeId("q");
-    q.a_up_bps = OrDefault(budget.default_per_user_up_bps, kDefaultUserUpBps);
-    q.a_down_bps = OrDefault(budget.default_per_user_down_bps, kDefaultUserDownBps);
-    q.b_up_bps = OrDefault(budget.max_session_up_bps, kDefaultSessionUpBps);
-    q.b_down_bps = OrDefault(budget.max_session_down_bps, kDefaultSessionDownBps);
-    if (req.want_up_bps > 0) {
-      q.a_up_bps = std::min(q.a_up_bps, req.want_up_bps);
-    }
-    if (req.want_down_bps > 0) {
-      q.a_down_bps = std::min(q.a_down_bps, req.want_down_bps);
-    }
-    q.pricing_mode = pricing.mode.empty() ? "volunteer" : pricing.mode;
-    q.rate = (q.pricing_mode == "volunteer") ? 0.0 : pricing.rate;
-    q.ceiling_bytes = kDefaultCeilingBytes;
-    q.ceiling_amount = 0.0;
-    return q;
-  }
-
-  void Fanout(const std::shared_ptr<HostSession>& session, const std::string& from_peer,
-              const MediaDataFrame& frame, const std::vector<uint8_t>& body) {
-    if (!host) {
-      return;
-    }
-    const uint64_t key = SubKey(frame.stream_id, frame.channel_id);
-    std::vector<std::shared_ptr<HostParticipant>> parts;
-    {
-      std::lock_guard<std::mutex> lock(mu);
-      parts = session->participants;
-    }
-    for (const auto& part : parts) {
-      if (!part || part->peer_id == from_peer) {
-        continue;
-      }
-      bool local = false;
-      bool subscribed = false;
-      bool over_ceiling = false;
-      std::function<void(MediaDataFrame)> on_frame;
-      std::shared_ptr<Stream> out_stream;
-      {
-        std::lock_guard<std::mutex> lock(mu);
-        local = static_cast<bool>(part->local_on_frame);
-        if (!local && !part->stream) {
-          continue;
-        }
-        subscribed = part->subscriptions.find(key) != part->subscriptions.end();
-        if (!subscribed) {
-          continue;
-        }
-        if (frame.channel_type == MediaChannelType::LatestLossy) {
-          auto it = part->last_lossy_seq.find(key);
-          if (it != part->last_lossy_seq.end() && frame.seq < it->second && frame.mark == 0) {
-            continue;
-          }
-          part->last_lossy_seq[key] = frame.seq;
-        }
-        part->bytes_down += static_cast<int64_t>(body.size());
-        session->bytes_total += static_cast<int64_t>(body.size());
-        over_ceiling = session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes;
-        if (local) {
-          on_frame = part->local_on_frame;
-        } else {
-          out_stream = part->stream;
-        }
-      }
-      if (over_ceiling) {
-        continue;
-      }
-      if (local) {
-        if (on_frame) {
-          on_frame(frame);
-        }
-        continue;
-      }
-      if (out_stream && host) {
-        PostLibp2pWorker(*host, WorkerLane::Normal, [out_stream, body]() {
-          (void)BlockingWriteLengthPrefixedFrame(out_stream, body);
-        });
-      }
-    }
-  }
-
-  /** Returns false when the participant session should end. */
-  bool ProcessParticipantFrame(const std::shared_ptr<HostSession>& session,
-                               const std::shared_ptr<HostParticipant>& part,
-                               const std::vector<uint8_t>& body) {
-    if (body.empty()) {
-      return false;
-    }
-    if (body[0] == '{') {
-      nlohmann::json root =
-          nlohmann::json::parse(std::string(body.begin(), body.end()), nullptr, false);
-      if (root.is_discarded() || !root.is_object()) {
-        return false;
-      }
-      const std::string op = root.value("op", "");
-      if (op == "subscribe") {
-        {
-          std::lock_guard<std::mutex> lock(mu);
-          part->subscriptions.insert(SubKey(root.value("stream_id", 0u),
-                                            static_cast<uint16_t>(root.value("channel_id", 0))));
-        }
-        logging::getLogger("MediaRelayService").info
-            << "hop subscribe peer=" << part->peer_id << " stream=" << root.value("stream_id", 0u)
-            << " ch=" << root.value("channel_id", 0) << " call=" << session->call_id
-            << " parts=" << session->participants.size();
-        if (part->duplex) {
-          const std::string json =
-              nlohmann::json({{"v", 1}, {"ok", true}, {"op", "subscribe"}}).dump();
-          part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
-        }
-      } else if (op == "unsubscribe") {
-        {
-          std::lock_guard<std::mutex> lock(mu);
-          part->subscriptions.erase(SubKey(root.value("stream_id", 0u),
-                                             static_cast<uint16_t>(root.value("channel_id", 0))));
-        }
-        if (part->duplex) {
-          const std::string json =
-              nlohmann::json({{"v", 1}, {"ok", true}, {"op", "unsubscribe"}}).dump();
-          part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
-        }
-      } else if (op == "detach") {
-        if (part->duplex) {
-          const std::string json = nlohmann::json({{"v", 1}, {"ok", true}, {"op", "detach"}}).dump();
-          part->duplex->EnqueueOutbound(std::vector<uint8_t>(json.begin(), json.end()));
-        }
-        return false;
-      }
-      return true;
-    }
-
-    auto frame = DecodeMediaDataFrame(body);
-    if (!frame) {
-      return false;
-    }
-    part->bytes_up += static_cast<int64_t>(body.size());
-    session->bytes_total += static_cast<int64_t>(body.size());
-    Fanout(session, part->peer_id, *frame, body);
-    return true;
-  }
-
-  void CleanupParticipant(const std::shared_ptr<HostSession>& session,
-                          const std::shared_ptr<HostParticipant>& part) {
-    if (part->duplex_cancelled) {
-      part->duplex_cancelled->store(true, std::memory_order_release);
-    }
-    if (part->duplex) {
-      part->duplex->Stop();
-      part->duplex.reset();
-    }
-    std::lock_guard<std::mutex> lock(mu);
-    session->participants.erase(std::remove_if(session->participants.begin(), session->participants.end(),
-                                               [&](const std::shared_ptr<HostParticipant>& p) {
-                                                 return p.get() == part.get();
-                                               }),
-                                session->participants.end());
-    if (part->stream) {
-      part->stream->close([](auto&&) {});
-    }
-  }
-
-  void InitParticipantAsyncSync(const std::shared_ptr<HostSession>& session,
-                                const std::shared_ptr<HostParticipant>& part) {
-    if (!host || !part->stream) {
-      return;
-    }
-    part->duplex = std::make_shared<DuplexFrameSession>();
-    part->duplex_cancelled = std::make_shared<std::atomic<bool>>(false);
-    auto done = std::make_shared<std::promise<void>>();
-    auto fut = done->get_future();
-    auto self = shared_from_this();
-    host->Post([self, session, part, done]() {
-      if (!part->duplex || !part->stream) {
-        done->set_value();
-        return;
-      }
-      const auto cancel_check = [cancelled = part->duplex_cancelled]() {
-        return cancelled && cancelled->load(std::memory_order_acquire);
-      };
-      part->duplex->Start(
-          part->stream,
-          [self, session, part](Roe<std::vector<uint8_t>> frame_res) {
-            if (!frame_res) {
-              return false;
-            }
-            return self->ProcessParticipantFrame(session, part, *frame_res);
-          },
-          cancel_check, MediaDataFrameConfig(),
-          [self, session, part]() { self->CleanupParticipant(session, part); });
-      done->set_value();
-    });
-    fut.wait();
-  }
-
-  void StartParticipantAsync(const std::shared_ptr<HostSession>& session,
-                             const std::shared_ptr<HostParticipant>& part) {
-    InitParticipantAsyncSync(session, part);
-  }
-
-  void HandleInbound(libp2p::StreamAndProtocol stream_and_protocol) {
-    if (!host) {
-      return;
-    }
-    auto stream = std::move(stream_and_protocol.stream);
-    auto self = shared_from_this();
-    PostLibp2pWorker(*host, WorkerLane::Normal, [self, stream = std::move(stream)]() mutable {
-      self->HandleInboundBody(std::move(stream));
-    });
-  }
-
-  void HandleInboundBody(std::shared_ptr<Stream> stream) {
-      std::string remote;
-      if (auto peer = stream->remotePeerId()) {
-        remote = peer.value().toBase58();
-      }
-
-      // Admission runs per control op (quote/accept/attach) with call_id so joiners can
-      // attach on a fresh stream after an admitted sponsor opened the session.
-      // Control handshake: quote → accept → attach (may be multi-message / multi-stream)
-      std::string accepted_quote_id;
-      std::string session_token;
-      std::shared_ptr<HostSession> session;
-
-      while (!session) {
-        auto root = ReadJson(stream);
-        if (!root) {
-          stream->close([](auto&&) {});
-          return;
-        }
-        const std::string op = root->value("op", "");
-        if (op == "quote") {
-          MediaRelayQuoteRequest req;
-          req.call_id = root->value("call_id", "");
-          req.participants = root->value("participants", 1);
-          req.want_up_bps = root->value("want_up_bps", static_cast<int64_t>(0));
-          req.want_down_bps = root->value("want_down_bps", static_cast<int64_t>(0));
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            if (!AdmitPeerForCall(remote, req.call_id)) {
-              (void)WriteJson(stream,
-                              {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
-              stream->close([](auto&&) {});
-              return;
-            }
-          }
-          MediaRelayQuote q = BuildQuote(req);
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            quotes_by_id[q.quote_id] = PendingQuote{q, req.call_id};
-          }
-          (void)WriteJson(stream, {{"v", 1},
-                                   {"ok", true},
-                                   {"op", "quote"},
-                                   {"quote_id", q.quote_id},
-                                   {"A_up", q.a_up_bps},
-                                   {"A_down", q.a_down_bps},
-                                   {"B_up", q.b_up_bps},
-                                   {"B_down", q.b_down_bps},
-                                   {"mode", q.pricing_mode},
-                                   {"rate", q.rate},
-                                   {"ceiling_bytes", q.ceiling_bytes},
-                                   {"ceiling_amount", q.ceiling_amount}});
-        } else if (op == "accept") {
-          const std::string quote_id = root->value("quote_id", "");
-          PendingQuote pending;
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            auto it = quotes_by_id.find(quote_id);
-            if (it == quotes_by_id.end()) {
-              (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "unknown quote"}});
-              stream->close([](auto&&) {});
-              return;
-            }
-            pending = it->second;
-            if (!AdmitPeerForCall(remote, pending.call_id)) {
-              (void)WriteJson(stream,
-                              {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
-              stream->close([](auto&&) {});
-              return;
-            }
-            quotes_by_id.erase(it);
-          }
-          accepted_quote_id = quote_id;
-          session_token = MakeId("s");
-          (void)WriteJson(stream, {{"v", 1},
-                                   {"ok", true},
-                                   {"op", "accept"},
-                                   {"session_token", session_token},
-                                   {"quote_id", accepted_quote_id}});
-        } else if (op == "attach") {
-          const std::string token = root->value("session_token", session_token);
-          const std::string call_id = root->value("call_id", "");
-          const std::string auth = root->value("auth", "");
-          if (token.empty() || call_id.empty()) {
-            (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "missing session_token or call_id"}});
-            stream->close([](auto&&) {});
-            return;
-          }
-          // Auth stub: non-empty auth required; must equal call_id for v1 dogfood.
-          if (auth.empty() || auth != call_id) {
-            (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "auth failed"}});
-            stream->close([](auto&&) {});
-            return;
-          }
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            if (!AdmitPeerForCall(remote, call_id)) {
-              (void)WriteJson(stream,
-                              {{"v", 1}, {"ok", false}, {"error", "prefer contacts: stranger refused"}});
-              stream->close([](auto&&) {});
-              return;
-            }
-          }
-
-          auto part = std::make_shared<HostParticipant>();
-          part->peer_id = remote;
-          part->stream = stream;
-
-          {
-            std::lock_guard<std::mutex> lock(mu);
-            auto it = sessions_by_call.find(call_id);
-            if (it != sessions_by_call.end()) {
-              session = it->second;
-            } else {
-              session = std::make_shared<HostSession>();
-              session->call_id = call_id;
-              session->session_token = token;
-              PendingQuote pending;
-              auto qit = quotes_by_id.find(accepted_quote_id);
-              if (!accepted_quote_id.empty()) {
-                // budgets from last accept path stored on session below
-              }
-              (void)qit;
-              session->b_up_bps = OrDefault(budget.max_session_up_bps, kDefaultSessionUpBps);
-              session->b_down_bps = OrDefault(budget.max_session_down_bps, kDefaultSessionDownBps);
-              session->ceiling_bytes = kDefaultCeilingBytes;
-              sessions_by_call[call_id] = session;
-              sessions_by_token[token] = session;
-            }
-            part->a_up_bps = OrDefault(budget.default_per_user_up_bps, kDefaultUserUpBps);
-            part->a_down_bps = OrDefault(budget.default_per_user_down_bps, kDefaultUserDownBps);
-            session->participants.push_back(part);
-          }
-
-          (void)WriteJson(stream, {{"v", 1}, {"ok", true}, {"op", "attach"}});
-          StartParticipantAsync(session, part);
-          return;
-        } else {
-          (void)WriteJson(stream, {{"v", 1}, {"ok", false}, {"error", "unsupported op"}});
-          stream->close([](auto&&) {});
-          return;
-        }
-      }
-  }
-
-  void StartClientReader(const std::shared_ptr<Impl>& self) {
-    if (!host) {
-      return;
-    }
-    const uint64_t epoch = client_reader_epoch.load(std::memory_order_acquire);
-    uint64_t started = client_reader_started_for.load(std::memory_order_acquire);
-    while (started != epoch) {
-      if (client_reader_started_for.compare_exchange_weak(started, epoch,
-                                                         std::memory_order_acq_rel,
-                                                         std::memory_order_acquire)) {
-        // Client inbound stays on worker (sync) — async hop pump only; avoids same-stream
-        // concurrent read/write on Yamux when SendFrame/Subscribe post from app threads.
-        PostLibp2pWorker(*host, WorkerLane::Normal,
-                         [self, epoch]() { self->RunClientReader(epoch); });
-        return;
-      }
-      if (started == epoch) {
-        return;
-      }
-      if (client_reader_epoch.load(std::memory_order_acquire) != epoch) {
-        return;
-      }
-    }
-  }
-
-  void RunClientReader(uint64_t epoch) {
-    while (client_reader_epoch.load(std::memory_order_acquire) == epoch) {
-      std::shared_ptr<Stream> stream;
-      std::function<void(MediaDataFrame)> cb;
-      {
-        std::lock_guard<std::mutex> lock(mu);
-        stream = client_stream;
-        cb = client_on_frame;
-      }
-      if (!stream) {
-        break;
-      }
-      auto body = ReadExactFrame(stream);
-      if (client_reader_epoch.load(std::memory_order_acquire) != epoch) {
-        break;
-      }
-      if (!body || body->empty()) {
-        break;
-      }
-      if ((*body)[0] == '{') {
-        continue;
-      }
-      auto frame = DecodeMediaDataFrame(*body);
-      if (!frame) {
-        break;
-      }
-      if (cb) {
-        cb(*frame);
-      }
-    }
-  }
-};
 
 MediaRelayService::MediaRelayService(Libp2pHost& host, PeerSessionManager& sessions)
     : impl_(std::make_shared<Impl>()), host_(host), sessions_(sessions) {
@@ -651,6 +27,25 @@ void MediaRelayService::Start() {
 void MediaRelayService::Stop() {
   started_ = false;
   Detach();
+  if (impl_) {
+    impl_->ShutdownHostSessions();
+  }
+}
+
+MediaRelayRuntimeStats MediaRelayService::RuntimeStats() const {
+  MediaRelayRuntimeStats out;
+  if (!started_ || !impl_) {
+    return out;
+  }
+  std::lock_guard<std::mutex> lock(impl_->mu);
+  for (const auto& [_, session] : impl_->sessions_by_call) {
+    if (!session || session->participants.empty()) {
+      continue;
+    }
+    ++out.active_sessions;
+    out.active_participants += session->participants.size();
+  }
+  return out;
 }
 
 void MediaRelayService::SetBudget(const MediaRelayBudgetConfig& budget) {
@@ -674,7 +69,7 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
   if (!host_.IsRunning()) {
     return Error("media-relay host not running");
   }
-  if (!sessions_.IsDialable(hop_peer_key)) {
+  if (!sessions_.IsReachableForProtocol(hop_peer_key, kMediaRelayProtocolId)) {
     return Error("hop peer endpoint not registered");
   }
 
@@ -689,7 +84,7 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
   auto result_future = result_promise->get_future();
   auto settled = std::make_shared<std::atomic<bool>>(false);
 
-  const bool circuit_backed = sessions_.IsCircuitBacked(hop_peer_key);
+  const bool circuit_backed = sessions_.IsCircuitBacked(hop_peer_key, kMediaRelayProtocolId);
 
   sessions_.OpenStream(hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
                        [req = std::move(req), result_promise, settled, circuit_backed, &host = host_](
@@ -747,98 +142,21 @@ Roe<MediaRelayQuote> MediaRelayService::RequestQuote(const std::string& hop_peer
   return result_future.get();
 }
 
-Roe<MediaRelayAttachResult> MediaRelayService::AcceptAndAttach(
-    const std::string& hop_peer_key, const std::string& quote_id, const std::string& call_id,
-    const std::string& auth_stub, std::function<void(MediaDataFrame)> on_frame, int timeout_ms) {
-  if (!host_.IsRunning()) {
-    return Error("media-relay host not running");
-  }
-  if (!sessions_.IsDialable(hop_peer_key)) {
-    return Error("hop peer endpoint not registered");
-  }
-  Detach();
 
-  auto result_promise = std::make_shared<std::promise<Roe<MediaRelayAttachResult>>>();
-  auto result_future = result_promise->get_future();
-  auto settled = std::make_shared<std::atomic<bool>>(false);
-  auto impl = impl_;
-
-  sessions_.OpenStream(
-      hop_peer_key, {ProtocolName{kMediaRelayProtocolId}},
-      [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise, settled, &host = host_](
-          libp2p::StreamAndProtocolOrError stream_res) mutable {
-        PostLibp2pWorker(host, WorkerLane::Normal,
-                                  [impl, quote_id, call_id, auth_stub, on_frame = std::move(on_frame), result_promise,
-                                   settled, stream_res = std::move(stream_res)]() mutable {
-          auto finish = [&](Roe<MediaRelayAttachResult> value) {
-            if (!settled->exchange(true)) {
-              result_promise->set_value(std::move(value));
-            }
-          };
-          if (!stream_res) {
-            const auto& ec = stream_res.error();
-            finish(Error(std::string("media-relay stream open failed: ") + ec.message()));
-            return;
-          }
-          auto stream = std::move(stream_res.value().stream);
-          if (!WriteJson(stream, {{"v", 1}, {"op", "accept"}, {"quote_id", quote_id}})) {
-            finish(Error("Failed to send accept"));
-            stream->close([](auto&&) {});
-            return;
-          }
-          auto accept_root = ReadJson(stream);
-          if (!accept_root || !accept_root->value("ok", false)) {
-            finish(Error(accept_root ? accept_root->value("error", "accept failed")
-                                     : accept_root.error().message));
-            stream->close([](auto&&) {});
-            return;
-          }
-          const std::string token = accept_root->value("session_token", "");
-          if (!WriteJson(stream, {{"v", 1},
-                                  {"op", "attach"},
-                                  {"session_token", token},
-                                  {"call_id", call_id},
-                                  {"auth", auth_stub}})) {
-            finish(Error("Failed to send attach"));
-            stream->close([](auto&&) {});
-            return;
-          }
-          auto attach_root = ReadJson(stream);
-          if (!attach_root || !attach_root->value("ok", false)) {
-            finish(Error(attach_root ? attach_root->value("error", "attach failed")
-                                     : attach_root.error().message));
-            stream->close([](auto&&) {});
-            return;
-          }
-
-          {
-            std::lock_guard<std::mutex> lock(impl->mu);
-            impl->client_stream = stream;
-            impl->client_session_token = token;
-            impl->client_on_frame = std::move(on_frame);
-          }
-          // Inbound reader starts later via StartClientFrameReader() after StartSfu.
-
-          MediaRelayAttachResult out;
-          out.ok = true;
-          out.session_token = token;
-          finish(out);
-        });
-      });
-
-  const int wait_ms = (timeout_ms > 0 ? timeout_ms : 8000) + 2000;
-  if (result_future.wait_for(std::chrono::milliseconds(wait_ms)) != std::future_status::ready) {
-    settled->exchange(true);
-    return Error(std::string("media-relay attach timed out (hop=") + hop_peer_key + ")");
-  }
-  return result_future.get();
-}
 
 void MediaRelayService::StartClientFrameReader() {
   if (!impl_) {
     return;
   }
-  impl_->StartClientReader(impl_);
+  impl_->StartClientDuplex(impl_);
+}
+
+void MediaRelayService::SetClientTransportLostHandler(std::function<void()> handler) {
+  if (!impl_) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(impl_->mu);
+  impl_->client_transport_lost_handler = std::move(handler);
 }
 
 Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
@@ -876,6 +194,7 @@ Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
   part->local_on_frame = std::move(on_frame);
   part->a_up_bps = OrDefault(impl_->budget.default_per_user_up_bps, kDefaultUserUpBps);
   part->a_down_bps = OrDefault(impl_->budget.default_per_user_down_bps, kDefaultUserDownBps);
+  MediaRelayService::Impl::ConfigureParticipantLimiters(*part);
 
   std::shared_ptr<HostSession> session;
   std::string token;
@@ -885,13 +204,27 @@ Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
     if (it != impl_->sessions_by_call.end()) {
       session = it->second;
       token = session->session_token;
+      // Count after replacing prior local hop for same peer.
+      size_t others = 0;
+      for (const auto& p : session->participants) {
+        if (p && !(p->peer_id == part->peer_id && p->local_on_frame)) {
+          ++others;
+        }
+      }
+      if (others >= MediaRelayService::kMaxParticipantsPerSession) {
+        return Error("session participant limit");
+      }
     } else {
+      if (!impl_->CanOpenNewHostSessionLocked()) {
+        return Error("host session limit");
+      }
       session = std::make_shared<HostSession>();
       session->call_id = call_id;
       session->session_token = MakeId("s");
       session->b_up_bps = OrDefault(impl_->budget.max_session_up_bps, kDefaultSessionUpBps);
       session->b_down_bps = OrDefault(impl_->budget.max_session_down_bps, kDefaultSessionDownBps);
       session->ceiling_bytes = kDefaultCeilingBytes;
+      MediaRelayService::Impl::ConfigureSessionLimiters(*session);
       token = session->session_token;
       impl_->sessions_by_call[call_id] = session;
       impl_->sessions_by_token[token] = session;
@@ -917,43 +250,59 @@ Roe<MediaRelayAttachResult> MediaRelayService::AttachAsLocalHop(
 }
 
 Roe<void> MediaRelayService::Subscribe(uint32_t stream_id, uint16_t channel_id) {
-  std::shared_ptr<Stream> stream;
+  const uint64_t key = SubKey(stream_id, channel_id);
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
     if (impl_->local_hop_part) {
-      impl_->local_hop_part->subscriptions.insert(SubKey(stream_id, channel_id));
+      if (!impl_->local_hop_part->subscriptions.insert(key).second) {
+        return {}; // already subscribed — avoid log/control spam
+      }
       logging::getLogger("MediaRelayService").info
           << "local-hop subscribe stream=" << stream_id << " ch=" << channel_id
           << " call=" << (impl_->local_hop_session ? impl_->local_hop_session->call_id : "");
       return {};
     }
-    stream = impl_->client_stream;
-  }
-  if (!stream) {
-    return Error("not attached");
+    if (impl_->client_subscriptions.count(key) != 0) {
+      return {}; // already sent on this attach
+    }
+    if (!impl_->client_duplex) {
+      return Error("not attached");
+    }
+    impl_->client_subscriptions.insert(key);
   }
   logging::getLogger("MediaRelayService").info
       << "client subscribe stream=" << stream_id << " ch=" << channel_id;
-  std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
-  return WriteJson(stream, {{"v", 1}, {"op", "subscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}});
+  const std::string json =
+      nlohmann::json({{"v", 1}, {"op", "subscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}})
+          .dump();
+  if (!impl_->EnqueueClientBody(std::vector<uint8_t>(json.begin(), json.end()))) {
+    std::lock_guard<std::mutex> lock(impl_->mu);
+    impl_->client_subscriptions.erase(key);
+    return Error("not attached");
+  }
+  return {};
 }
 
 Roe<void> MediaRelayService::Unsubscribe(uint32_t stream_id, uint16_t channel_id) {
-  std::shared_ptr<Stream> stream;
+  const uint64_t key = SubKey(stream_id, channel_id);
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
     if (impl_->local_hop_part) {
-      impl_->local_hop_part->subscriptions.erase(SubKey(stream_id, channel_id));
+      impl_->local_hop_part->subscriptions.erase(key);
       return {};
     }
-    stream = impl_->client_stream;
+    impl_->client_subscriptions.erase(key);
+    if (!impl_->client_duplex) {
+      return Error("not attached");
+    }
   }
-  if (!stream) {
+  const std::string json =
+      nlohmann::json({{"v", 1}, {"op", "unsubscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}})
+          .dump();
+  if (!impl_->EnqueueClientBody(std::vector<uint8_t>(json.begin(), json.end()))) {
     return Error("not attached");
   }
-  std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
-  return WriteJson(stream,
-                   {{"v", 1}, {"op", "unsubscribe"}, {"stream_id", stream_id}, {"channel_id", channel_id}});
+  return {};
 }
 
 Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
@@ -970,11 +319,26 @@ Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
   }
   if (session) {
     const std::vector<uint8_t> body = EncodeMediaDataFrame(frame);
+    const int64_t nbytes = static_cast<int64_t>(body.size());
+    const int64_t now_ms = util::NowUnixMs();
     {
       std::lock_guard<std::mutex> lock(impl_->mu);
       if (impl_->local_hop_part) {
-        impl_->local_hop_part->bytes_up += static_cast<int64_t>(body.size());
-        session->bytes_total += static_cast<int64_t>(body.size());
+        if (!impl_->local_hop_part->up_limiter.TryConsume(nbytes, now_ms) ||
+            !session->session_up_limiter.TryConsume(nbytes, now_ms)) {
+          ++impl_->local_hop_part->drops_rate;
+          ++session->drops_total;
+          ++session->drops_rate;
+          return {}; // drop excess uplink; keep session
+        }
+        if (session->ceiling_bytes > 0 && session->bytes_total > session->ceiling_bytes) {
+          ++session->drops_total;
+          ++session->drops_ceiling;
+          return {};
+        }
+        impl_->local_hop_part->bytes_up += nbytes;
+        session->bytes_total += nbytes;
+        session->bytes_up_window += nbytes;
       }
     }
     impl_->Fanout(session, from_peer, frame, body);
@@ -983,9 +347,17 @@ Roe<void> MediaRelayService::SendFrame(const MediaDataFrame& frame) {
   if (!stream) {
     return Error("not attached");
   }
-  const std::vector<uint8_t> encoded = EncodeMediaDataFrame(frame);
-  std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
-  return WriteExactBody(stream, encoded);
+  if (!impl_->EnqueueClientBody(EncodeMediaDataFrame(frame))) {
+    return Error("not attached");
+  }
+  return {};
+}
+
+Roe<void> MediaRelayService::EnqueueRawClientBodyForTest(std::vector<uint8_t> body) {
+  if (!impl_ || !impl_->EnqueueClientBody(std::move(body))) {
+    return Error("not attached");
+  }
+  return {};
 }
 
 void MediaRelayService::Detach() {
@@ -994,10 +366,19 @@ void MediaRelayService::Detach() {
   std::shared_ptr<HostSession> local_session;
   {
     std::lock_guard<std::mutex> lock(impl_->mu);
+    const MediaRelayClientPhase prev = impl_->ClientPhase();
+    if (prev != MediaRelayClientPhase::Idle) {
+      impl_->SetClientPhaseLocked(MediaRelayClientPhase::Detaching,
+                                  MediaRelayClientEvent::DetachRequested, impl_->client_call_id);
+    }
+    // Unblock AcceptAndAttach waiters (Leave / SoftMigrate / supersede).
+    impl_->CompleteClientAttachLocked(Error("media-relay attach aborted"));
+    impl_->StopClientDuplexLocked();
     stream = impl_->client_stream;
     impl_->client_stream.reset();
     impl_->client_session_token.clear();
     impl_->client_on_frame = nullptr;
+    impl_->client_subscriptions.clear();
     local = impl_->local_hop_part;
     local_session = impl_->local_hop_session;
     impl_->local_hop_part.reset();
@@ -1009,16 +390,18 @@ void MediaRelayService::Detach() {
     if (local && local_session) {
       local_session->participants.erase(
           std::remove_if(local_session->participants.begin(), local_session->participants.end(),
-                         [&](const std::shared_ptr<HostParticipant>& p) { return p.get() == local.get(); }),
+                         [&](const std::shared_ptr<HostParticipant>& p) {
+                           return p.get() == local.get();
+                         }),
           local_session->participants.end());
+    }
+    if (prev != MediaRelayClientPhase::Idle) {
+      impl_->SetClientPhaseLocked(MediaRelayClientPhase::Idle, MediaRelayClientEvent::DetachRequested);
     }
   }
   impl_->client_reader_epoch.fetch_add(1, std::memory_order_acq_rel);
   if (stream) {
-    {
-      std::lock_guard<std::mutex> wlock(impl_->client_write_mu);
-      (void)WriteJson(stream, {{"v", 1}, {"op", "detach"}});
-    }
+    // Close so in-flight async read/write complete and Leave can join capture.
     stream->close([](auto&&) {});
   }
 }
@@ -1028,9 +411,55 @@ bool MediaRelayService::IsAttached() const {
   return impl_->client_stream != nullptr || impl_->local_hop_part != nullptr;
 }
 
+MediaRelayClientPhase MediaRelayService::ClientPhase() const {
+  return impl_->ClientPhase();
+}
+
 bool MediaRelayService::IsLocalHopAttached() const {
   std::lock_guard<std::mutex> lock(impl_->mu);
   return impl_->local_hop_part != nullptr;
+}
+
+double MediaRelayService::PathPressure() const {
+  return HealthSnapshot().path_pressure;
+}
+
+CallHopHealth MediaRelayService::HealthSnapshot() const {
+  CallHopHealth h;
+  std::lock_guard<std::mutex> lock(impl_->mu);
+  h.attached = impl_->local_hop_part != nullptr || impl_->client_stream != nullptr;
+  const HostSession* session = nullptr;
+  if (impl_->local_hop_session) {
+    session = impl_->local_hop_session.get();
+  }
+  double max_fill = 0.0;
+  if (session) {
+    h.drops_total = session->drops_total;
+    h.drops_rate = session->drops_rate;
+    h.drops_queue = session->drops_queue;
+    h.drops_ceiling = session->drops_ceiling;
+    for (const auto& part : session->participants) {
+      if (!part || part->local_on_frame) {
+        continue;
+      }
+      CallHopPeerHealth peer;
+      peer.peer_id = part->peer_id;
+      peer.bytes_up = part->bytes_up;
+      peer.bytes_down = part->bytes_down;
+      peer.drops_queue = part->drops_queue;
+      peer.drops_rate = part->drops_rate;
+      if (part->duplex) {
+        peer.outbound_backlog = part->duplex->OutboundBacklog();
+      }
+      const double fill =
+          static_cast<double>(peer.outbound_backlog) / static_cast<double>(kMaxOutboundBacklog);
+      max_fill = std::max(max_fill, fill);
+      h.peers.push_back(std::move(peer));
+    }
+  }
+  // Instantaneous duplex backlog fill — not lifetime drops_total/N.
+  h.path_pressure = std::clamp(max_fill, 0.0, 1.0);
+  return h;
 }
 
 } // namespace pbr

@@ -125,7 +125,7 @@ TEST(WorkerPoolTest, PauseDefersQueuedWork) {
   std::atomic<int> ran{0};
   pool.Post(WorkerLane::Normal, [&]() { ran.fetch_add(1); });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_GE(pool.QueuedCount(WorkerLane::Normal), 1u);
   EXPECT_EQ(ran.load(), 0);
 
   pool.Resume();
@@ -177,7 +177,7 @@ TEST(WorkerPoolTest, PostAfterShutdownIsNoOp) {
 
   std::atomic<int> ran{0};
   pool.Post(WorkerLane::Critical, [&]() { ran.fetch_add(1); });
-  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  EXPECT_EQ(pool.TotalQueuedCount(), 0u);
   EXPECT_EQ(ran.load(), 0);
 }
 

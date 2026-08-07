@@ -76,6 +76,12 @@ public:
   Roe<void> RegisterEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
 
   bool IsDialable(const std::string& peer_relay_user_id) const;
+  /**
+   * Direct dial path or an established protocol-scoped circuit hop.
+   * Use before OpenStream for call-media / media_relay so circuit-only peers are eligible.
+   */
+  bool IsReachableForProtocol(const std::string& peer_relay_user_id,
+                              const std::string& target_protocol) const;
   bool IsConnected(const std::string& peer_relay_user_id) const;
   bool IsDialing(const std::string& peer_relay_user_id) const;
   PeerLinkSnapshot GetLinkSnapshot(const std::string& peer_relay_user_id) const;

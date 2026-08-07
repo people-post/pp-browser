@@ -1,6 +1,7 @@
 #include "base/media/CallMediaEngine.h"
 
 #include "base/media/CallAudioSession.h"
+#include "base/media/CallMediaPlayout.h"
 #include "base/media/CameraCaptureOrientation.h"
 #include "base/media/IVideoCodec.h"
 #include "base/media/VideoYuv.h"
@@ -18,6 +19,8 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace pbr {
@@ -157,15 +160,43 @@ struct CallMediaEngine::Impl {
   std::atomic<uint32_t> sfu_video_seq{0};
   std::atomic<bool> adaptation_camera_allowed{true};
   int64_t adaptation_target_video_bps = 0;
+  std::atomic<int64_t> adaptation_target_audio_bps{CallMediaAdaptation::kComfortAudioBps};
+  std::atomic<double> path_pressure{0.0};
+  std::atomic<uint64_t> outbound_drops{0};
+  std::atomic<uint64_t> playout_ticks{0};
+  std::atomic<uint64_t> rx_audio_frames{0};
+  std::atomic<uint64_t> tx_audio_frames{0};
+  std::atomic<uint64_t> playout_underruns_total{0};
+  std::atomic<uint64_t> plc_frames_total{0};
+  std::atomic<int64_t> last_rx_audio_ms{0};
+  std::atomic<int64_t> last_tx_audio_ms{0};
 
   bool capture_available = false;
 
   OpusEncoder* encoder = nullptr;
-  OpusDecoder* decoder = nullptr;
   SDL_AudioStream* capture_stream = nullptr;
   SDL_AudioStream* playback_stream = nullptr;
   SDL_AudioDeviceID capture_device = 0;
   SDL_AudioDeviceID playback_device = 0;
+
+  struct RemoteAudioTrack {
+    OpusDecoder* decoder = nullptr;
+    AudioJitterBuffer jitter;
+    uint64_t rx_frames = 0;
+    int64_t last_rx_ms = 0;
+    float peak_level = 0.f;
+    ~RemoteAudioTrack() {
+      if (decoder) {
+        opus_decoder_destroy(decoder);
+        decoder = nullptr;
+      }
+    }
+  };
+  /** Per publisher stream_id (V032). Guarded by mutex (decode + playout mix). */
+  std::unordered_map<uint32_t, std::unique_ptr<RemoteAudioTrack>> audio_tracks;
+  /** First OnSfuPacket log per stream; cleared on SoftMigrate send-swap / StartSfu. */
+  std::mutex sfu_rx_log_mu;
+  std::unordered_set<uint32_t> sfu_rx_logged_streams;
 
   std::unique_ptr<IVideoCodec> video_codec;
   SDL_Camera* camera = nullptr;
@@ -177,14 +208,15 @@ struct CallMediaEngine::Impl {
 
   std::thread capture_thread;
   std::thread video_thread;
+  std::thread playout_thread;
   std::atomic<bool> capture_running{false};
   std::atomic<bool> video_running{false};
+  std::atomic<bool> playout_running{false};
+  /** Capture worker closes+reopens SDL devices (speaker route / SoftMigrate). */
+  std::atomic<bool> audio_reopen_requested{false};
   std::atomic<float> local_input_level{0.f};
   std::atomic<float> remote_output_level{0.f};
   std::atomic<int64_t> remote_level_ms{0};
-
-  std::mutex playback_mutex;
-  std::deque<std::vector<int16_t>> playback_queue;
 
   mutable std::mutex video_frame_mutex;
   VideoTileFrame local_video_frame;
@@ -204,6 +236,11 @@ struct CallMediaEngine::Impl {
     const float cur = level.load(std::memory_order_relaxed);
     const float next = instant >= cur ? instant : (cur * 0.82f + instant * 0.18f);
     level.store(std::clamp(next, 0.f, 1.f), std::memory_order_relaxed);
+  }
+
+  static void SmoothLevel(float& level, float instant) {
+    const float next = instant >= level ? instant : (level * 0.82f + instant * 0.18f);
+    level = std::clamp(next, 0.f, 1.f);
   }
 
   /** Update connection fields only. Never invoke on_state_changed here — callers may
@@ -308,11 +345,12 @@ struct CallMediaEngine::Impl {
     }
   }
 
-  void TearDownAudioLocked() {
-    // Caller must not hold mutex across JoinCaptureThread — capture may call sfu_send /
-    // OnSfuPacket which need the same mutex (deadlock + SDL double-free on quit).
-    capture_running = false;
-    CloseCameraLocked();
+  void ClearAudioTracksLocked() {
+    audio_tracks.clear();
+  }
+
+  /** Close SDL streams/devices only — keep Opus, tracks, and VoIP session active. */
+  void CloseAudioDevicesLocked() {
     if (capture_stream) {
       SDL_DestroyAudioStream(capture_stream);
       capture_stream = nullptr;
@@ -329,28 +367,43 @@ struct CallMediaEngine::Impl {
       SDL_CloseAudioDevice(playback_device);
       playback_device = 0;
     }
+    capture_available = false;
+  }
+
+  void TearDownAudioLocked() {
+    // Caller must not hold mutex across JoinCaptureThread — capture may call sfu_send /
+    // OnSfuPacket which need the same mutex (deadlock + SDL double-free on quit).
+    capture_running = false;
+    playout_running = false;
+    audio_reopen_requested.store(false, std::memory_order_relaxed);
+    CloseCameraLocked();
+    CloseAudioDevicesLocked();
     if (encoder) {
       opus_encoder_destroy(encoder);
       encoder = nullptr;
     }
-    if (decoder) {
-      opus_decoder_destroy(decoder);
-      decoder = nullptr;
-    }
+    ClearAudioTracksLocked();
     if (video_codec) {
       video_codec->ResetEncoder();
       video_codec->ResetDecoder();
-    }
-    {
-      std::lock_guard lock(playback_mutex);
-      playback_queue.clear();
     }
     ClearVideoFrames();
     local_input_level.store(0.f, std::memory_order_relaxed);
     remote_output_level.store(0.f, std::memory_order_relaxed);
     remote_level_ms.store(0, std::memory_order_relaxed);
-    capture_available = false;
+    path_pressure.store(0.0, std::memory_order_relaxed);
+    outbound_drops.store(0, std::memory_order_relaxed);
+    playout_ticks.store(0, std::memory_order_relaxed);
+    rx_audio_frames.store(0, std::memory_order_relaxed);
+    tx_audio_frames.store(0, std::memory_order_relaxed);
+    playout_underruns_total.store(0, std::memory_order_relaxed);
+    plc_frames_total.store(0, std::memory_order_relaxed);
+    last_rx_audio_ms.store(0, std::memory_order_relaxed);
+    last_tx_audio_ms.store(0, std::memory_order_relaxed);
     CallAudioSession::Deactivate();
+#if defined(__ANDROID__)
+    SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "0");
+#endif
   }
 
   void JoinCaptureThread() {
@@ -358,6 +411,77 @@ struct CallMediaEngine::Impl {
     if (capture_thread.joinable()) {
       capture_thread.join();
     }
+  }
+
+  void JoinPlayoutThread() {
+    playout_running = false;
+    if (playout_thread.joinable()) {
+      playout_thread.join();
+    }
+  }
+
+  void StartPlayoutLoop() {
+    playout_running = true;
+    playout_thread = std::thread([this]() {
+      std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
+      while (playout_running.load(std::memory_order_relaxed)) {
+        const auto t0 = std::chrono::steady_clock::now();
+        std::fill(mix.begin(), mix.end(), 0);
+        bool any = false;
+        double pressure = 0.0;
+        uint64_t ticks = 0;
+        {
+          std::lock_guard lock(mutex);
+          ticks = playout_ticks.fetch_add(1, std::memory_order_relaxed) + 1;
+          for (auto& [id, track] : audio_tracks) {
+            (void)id;
+            if (!track) {
+              continue;
+            }
+            auto frame = track->jitter.PopForPlayout(true);
+            if (frame) {
+              MixPcmSat(mix, frame->pcm);
+              any = true;
+            } else {
+              playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
+              // PLC: opus_decode with null packet into a temp buffer, then mix.
+              if (track->decoder) {
+                std::vector<int16_t> plc(static_cast<size_t>(kFrameSamples), 0);
+                const int decoded =
+                    opus_decode(track->decoder, nullptr, 0, plc.data(), kFrameSamples, 0);
+                if (decoded > 0) {
+                  plc.resize(static_cast<size_t>(decoded));
+                  MixPcmSat(mix, plc);
+                  any = true;
+                  plc_frames_total.fetch_add(1, std::memory_order_relaxed);
+                }
+              }
+            }
+            pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
+          }
+          SDL_AudioStream* out = playback_stream;
+          if (out && any) {
+            SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
+            remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+            (void)SDL_PutAudioStreamData(out, mix.data(),
+                                         kFrameSamples * static_cast<int>(sizeof(int16_t)));
+          } else if (out && !audio_tracks.empty()) {
+            // Silent frame keeps SDL clock alive when all streams priming.
+            (void)SDL_PutAudioStreamData(out, mix.data(),
+                                         kFrameSamples * static_cast<int>(sizeof(int16_t)));
+          }
+        }
+        const double drop_p =
+            std::min(1.0, static_cast<double>(outbound_drops.load(std::memory_order_relaxed)) / 50.0);
+        path_pressure.store(std::clamp(std::max(pressure, drop_p * 0.5), 0.0, 1.0),
+                            std::memory_order_relaxed);
+        const auto elapsed = std::chrono::steady_clock::now() - t0;
+        const auto period = std::chrono::milliseconds(kFrameMs);
+        if (elapsed < period) {
+          std::this_thread::sleep_for(period - elapsed);
+        }
+      }
+    });
   }
 
   Roe<void> EnsureAudioSubsystem() {
@@ -379,24 +503,33 @@ struct CallMediaEngine::Impl {
   }
 
   Roe<void> EnsureOpusCodecs() {
-    if (encoder && decoder) {
+    if (encoder) {
       return {};
     }
     int err = 0;
-    if (!encoder) {
-      encoder = opus_encoder_create(kSampleRate, kChannels, OPUS_APPLICATION_VOIP, &err);
-      if (!encoder || err != OPUS_OK) {
-        return Error("opus_encoder_create failed");
-      }
-      opus_encoder_ctl(encoder, OPUS_SET_BITRATE(24000));
+    encoder = opus_encoder_create(kSampleRate, kChannels, OPUS_APPLICATION_VOIP, &err);
+    if (!encoder || err != OPUS_OK) {
+      return Error("opus_encoder_create failed");
     }
-    if (!decoder) {
-      decoder = opus_decoder_create(kSampleRate, kChannels, &err);
-      if (!decoder || err != OPUS_OK) {
-        return Error("opus_decoder_create failed");
-      }
-    }
+    const int64_t bps = adaptation_target_audio_bps.load(std::memory_order_relaxed);
+    opus_encoder_ctl(encoder, OPUS_SET_BITRATE(static_cast<int>(bps > 0 ? bps : 24000)));
     return {};
+  }
+
+  RemoteAudioTrack* EnsureRemoteTrackLocked(uint32_t stream_id) {
+    auto it = audio_tracks.find(stream_id);
+    if (it != audio_tracks.end() && it->second) {
+      return it->second.get();
+    }
+    auto track = std::make_unique<RemoteAudioTrack>();
+    int err = 0;
+    track->decoder = opus_decoder_create(kSampleRate, kChannels, &err);
+    if (!track->decoder || err != OPUS_OK) {
+      return nullptr;
+    }
+    RemoteAudioTrack* raw = track.get();
+    audio_tracks[stream_id] = std::move(track);
+    return raw;
   }
 
   /**
@@ -404,11 +537,61 @@ struct CallMediaEngine::Impl {
    * (macOS TCC). Call only from the capture worker — never from UI, relay IO,
    * or the libp2p host thread (that freezes accept + peer signaling).
    */
+  /** Open DEFAULT_RECORDING; retries briefly — OEM speaker route (Moto) races AAudio open. */
+  bool TryOpenCaptureStream(const SDL_AudioSpec& want, SDL_AudioStream** out_stream,
+                            SDL_AudioDeviceID* out_dev) {
+    *out_stream = nullptr;
+    *out_dev = 0;
+#if defined(__ANDROID__)
+    constexpr int kAttempts = 4;
+    constexpr int kRetryDelayMs[] = {0, 80, 200, 400};
+#else
+    constexpr int kAttempts = 1;
+    constexpr int kRetryDelayMs[] = {0};
+#endif
+    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+      if (kRetryDelayMs[attempt] > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(kRetryDelayMs[attempt]));
+      }
+      if (!capture_running.load(std::memory_order_relaxed)) {
+        return false;
+      }
+      SDL_AudioStream* stream =
+          SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &want, nullptr, nullptr);
+      if (!stream) {
+        SDL_Log("CallMediaEngine: capture open failed (attempt %d/%d): %s", attempt + 1, kAttempts,
+                SDL_GetError());
+        continue;
+      }
+      const SDL_AudioDeviceID dev = SDL_GetAudioStreamDevice(stream);
+      if (!SDL_ResumeAudioDevice(dev)) {
+        SDL_Log("CallMediaEngine: capture resume failed (attempt %d/%d): %s", attempt + 1, kAttempts,
+                SDL_GetError());
+        SDL_DestroyAudioStream(stream);
+        continue;
+      }
+      *out_stream = stream;
+      *out_dev = dev;
+      return true;
+    }
+    return false;
+  }
+
   Roe<void> OpenAudioDevices() {
     if (auto ok = EnsureAudioSubsystem(); !ok) {
       return ok.error();
     }
 
+#if defined(__ANDROID__)
+    // Phones: VoIP usage so MODE_IN_COMMUNICATION doesn't duck MEDIA (see SDL_aaudio patch).
+    // Speaker-only tablets: leave default MEDIA — paired with MODE_NORMAL in MainActivity
+    // (API < 28 cannot set AAUDIO_USAGE_VOICE_COMMUNICATION; IN_COMMUNICATION+MEDIA is whisper-quiet).
+    if (CallAudioSession::SupportsSpeakerToggle()) {
+      SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "1");
+    } else {
+      SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "0");
+    }
+#endif
     CallAudioSession::ActivateForVoipCall();
 
     SDL_AudioSpec want{};
@@ -416,26 +599,35 @@ struct CallMediaEngine::Impl {
     want.format = SDL_AUDIO_S16;
     want.channels = static_cast<Uint8>(kChannels);
 
-    capture_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &want, nullptr, nullptr);
-    capture_available = false;
-    if (capture_stream) {
-      capture_device = SDL_GetAudioStreamDevice(capture_stream);
-      if (SDL_ResumeAudioDevice(capture_device)) {
-        capture_available = true;
-      } else {
-        SDL_DestroyAudioStream(capture_stream);
-        capture_stream = nullptr;
-        capture_device = 0;
-      }
-    }
+    SDL_AudioStream* new_capture = nullptr;
+    SDL_AudioDeviceID new_capture_dev = 0;
+    const bool new_capture_ok = TryOpenCaptureStream(want, &new_capture, &new_capture_dev);
 
-    playback_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
-    if (!playback_stream) {
+    SDL_AudioStream* new_playback = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
+    if (!new_playback) {
+      if (new_capture) {
+        SDL_DestroyAudioStream(new_capture);
+      }
       return Error(std::string("SDL playback open failed: ") + SDL_GetError());
     }
-    playback_device = SDL_GetAudioStreamDevice(playback_stream);
-    if (!SDL_ResumeAudioDevice(playback_device)) {
+    SDL_AudioDeviceID new_playback_dev = SDL_GetAudioStreamDevice(new_playback);
+    if (!SDL_ResumeAudioDevice(new_playback_dev)) {
+      SDL_DestroyAudioStream(new_playback);
+      if (new_capture) {
+        SDL_DestroyAudioStream(new_capture);
+      }
       return Error(std::string("SDL playback resume failed: ") + SDL_GetError());
+    }
+
+    {
+      std::lock_guard lock(mutex);
+      // Reopen path already closed; first open should be empty. Drop any stale handles.
+      CloseAudioDevicesLocked();
+      capture_stream = new_capture;
+      capture_device = new_capture_dev;
+      capture_available = new_capture_ok;
+      playback_stream = new_playback;
+      playback_device = new_playback_dev;
     }
     return {};
   }
@@ -443,6 +635,7 @@ struct CallMediaEngine::Impl {
   void StartCaptureLoop() {
     // Precondition: capture_thread not joinable (JoinCaptureThread outside media mutex).
     capture_running = true;
+    audio_reopen_requested.store(false, std::memory_order_relaxed);
     capture_thread = std::thread([this]() {
       // Device open (and OS mic prompts) stay on this worker so CallAccept /
       // AcceptInvite can finish signaling without freezing UI or libp2p.
@@ -459,7 +652,28 @@ struct CallMediaEngine::Impl {
       std::vector<int16_t> pending;
       pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
       std::vector<unsigned char> opus_buf(4000);
+      int64_t last_capture_pcm_ms = util::NowUnixMs();
+      int64_t last_capture_starve_reopen_ms = 0;
       while (capture_running.load()) {
+        if (audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
+          // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
+          pending.clear();
+          {
+            std::lock_guard lock(mutex);
+            CloseAudioDevicesLocked();
+          }
+#if defined(__ANDROID__)
+          // Let OEM speaker route settle (Moto MotSpeakerHelper safety ramp) before reopen.
+          std::this_thread::sleep_for(std::chrono::milliseconds(150));
+#endif
+          SDL_Log("CallMediaEngine: reopening audio devices (speaker route / SoftMigrate)");
+          if (auto audio = OpenAudioDevices(); !audio) {
+            SDL_Log("CallMediaEngine: audio reopen failed: %s", audio.error().message.c_str());
+          } else if (!capture_available) {
+            SDL_Log("CallMediaEngine: audio reopen — no capture device; sending silence");
+          }
+          last_capture_pcm_ms = util::NowUnixMs();
+        }
         std::shared_ptr<SfuSendFn> send_fn;
         OpusEncoder* enc = nullptr;
         bool can_send = false;
@@ -471,37 +685,59 @@ struct CallMediaEngine::Impl {
             send_fn = sfu_send;
           }
         }
+        bool paced_silence_frame = false;
         if (capture_stream) {
           int16_t chunk[kFrameSamples];
           const int got = SDL_GetAudioStreamData(capture_stream, chunk, static_cast<int>(sizeof(chunk)));
           if (got > 0) {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
+            last_capture_pcm_ms = util::NowUnixMs();
           }
           if (pending.size() < static_cast<size_t>(kFrameSamples)) {
-            if (got <= 0) {
+            const int64_t now = util::NowUnixMs();
+            // Wedged capture (got<=0 after AAudio disconnect) used to spin without TX —
+            // peers saw "Your mic isn't sending". After ~500ms, encode silence and reopen.
+            constexpr int64_t kStarveMs = 500;
+            if (got <= 0 && (now - last_capture_pcm_ms) >= kStarveMs) {
               if (!muted.load(std::memory_order_relaxed)) {
                 SmoothLevel(local_input_level, 0.f);
               }
-              const int64_t now = util::NowUnixMs();
-              if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
-                SmoothLevel(remote_output_level, 0.f);
+              if (now - last_capture_starve_reopen_ms > 2000) {
+                last_capture_starve_reopen_ms = now;
+                SDL_Log("CallMediaEngine: capture starved %lldms — requesting reopen",
+                        static_cast<long long>(now - last_capture_pcm_ms));
+                audio_reopen_requested.store(true, std::memory_order_release);
               }
-              std::this_thread::sleep_for(std::chrono::milliseconds(2));
+              std::fill(pcm.begin(), pcm.end(), 0);
+              paced_silence_frame = true;
+              // Fall through to encode/send silence so tx_alive stays true.
+            } else {
+              if (got <= 0) {
+                if (!muted.load(std::memory_order_relaxed)) {
+                  SmoothLevel(local_input_level, 0.f);
+                }
+                if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
+                  SmoothLevel(remote_output_level, 0.f);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+              }
+              continue;
             }
-            continue;
-          }
-          std::copy_n(pending.begin(), kFrameSamples, pcm.begin());
-          pending.erase(pending.begin(), pending.begin() + kFrameSamples);
-          if (muted.load(std::memory_order_relaxed)) {
-            std::fill(pcm.begin(), pcm.end(), 0);
-            SmoothLevel(local_input_level, 0.f);
           } else {
-            SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
+            std::copy_n(pending.begin(), kFrameSamples, pcm.begin());
+            pending.erase(pending.begin(), pending.begin() + kFrameSamples);
+            if (muted.load(std::memory_order_relaxed)) {
+              std::fill(pcm.begin(), pcm.end(), 0);
+              SmoothLevel(local_input_level, 0.f);
+            } else {
+              SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
+            }
           }
         } else {
           std::fill(pcm.begin(), pcm.end(), 0);
           SmoothLevel(local_input_level, 0.f);
+          paced_silence_frame = true;
           if (!can_send) {
             const int64_t now = util::NowUnixMs();
             if (now - remote_level_ms.load(std::memory_order_relaxed) > 40) {
@@ -533,10 +769,13 @@ struct CallMediaEngine::Impl {
           try {
             std::lock_guard send_lock(sfu_send_call_mu);
             (*send_fn)(pkt);
+            tx_audio_frames.fetch_add(1, std::memory_order_relaxed);
+            last_tx_audio_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
           } catch (...) {
           }
         }
-        if (!capture_stream) {
+        // Pace silence / starved-capture TX to one Opus frame per period.
+        if (paced_silence_frame) {
           std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
         }
       }
@@ -641,22 +880,32 @@ struct CallMediaEngine::Impl {
     });
   }
 
-  void OnRemoteOpusFrame(const std::byte* data, size_t size) {
-    if (!decoder || size == 0) {
+  void OnRemoteOpusFrame(uint32_t stream_id, uint32_t seq, const std::byte* data, size_t size) {
+    if (size == 0) {
+      return;
+    }
+    RemoteAudioTrack* track = EnsureRemoteTrackLocked(stream_id);
+    if (!track || !track->decoder) {
       return;
     }
     std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
-    const int decoded = opus_decode(decoder, reinterpret_cast<const unsigned char*>(data),
+    const int decoded = opus_decode(track->decoder, reinterpret_cast<const unsigned char*>(data),
                                     static_cast<int>(size), pcm.data(), kFrameSamples, 0);
     if (decoded <= 0) {
       return;
     }
-    SmoothLevel(remote_output_level, FramePeakLevel(pcm.data(), decoded));
-    remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-    if (!playback_stream) {
-      return;
-    }
-    (void)SDL_PutAudioStreamData(playback_stream, pcm.data(), decoded * static_cast<int>(sizeof(int16_t)));
+    pcm.resize(static_cast<size_t>(decoded));
+    const int64_t recv_ms = util::NowUnixMs();
+    SmoothLevel(track->peak_level, FramePeakLevel(pcm.data(), decoded));
+    ++track->rx_frames;
+    track->last_rx_ms = recv_ms;
+    PlayoutPcmFrame frame;
+    frame.seq = seq;
+    frame.recv_ms = recv_ms;
+    frame.pcm = std::move(pcm);
+    track->jitter.Push(std::move(frame));
+    rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
+    last_rx_audio_ms.store(recv_ms, std::memory_order_relaxed);
   }
 
   void OnRemoteH264Frame(const std::byte* data, size_t size) {
@@ -819,11 +1068,26 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     // stream — otherwise SoftMigrate races into heap corruption.
     std::lock_guard drain(impl_->sfu_send_call_mu);
     abandoned_send = nullptr;
+    // 1:1 libp2p also uses StartSfu with stream_id=0 packets. SoftMigrate to media_relay must
+    // drop that zombie track or it PLC-underruns forever and confuses stream_count (dogfood).
+    {
+      std::lock_guard lock(impl_->mutex);
+      impl_->ClearAudioTracksLocked();
+      {
+        std::lock_guard lg(impl_->sfu_rx_log_mu);
+        impl_->sfu_rx_logged_streams.clear();
+      }
+    }
+    // Android speaker / communication-mode route changes around SoftMigrate can leave the open
+    // SDL recording device feeding zeros while encode still runs (mic_lvl→0, tx_frames rising).
+    RequestAudioDeviceReopen();
     return {};
   }
   abandoned_send = nullptr;
   if (need_rebuild) {
+    impl_->playout_running = false;
     impl_->JoinCaptureThread();
+    impl_->JoinPlayoutThread();
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
   }
@@ -845,12 +1109,23 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     impl_->muted.store(false, std::memory_order_relaxed);
     impl_->camera_enabled.store(false, std::memory_order_relaxed);
     impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
+    impl_->outbound_drops.store(0, std::memory_order_relaxed);
+    impl_->playout_ticks.store(0, std::memory_order_relaxed);
+    impl_->path_pressure.store(0.0, std::memory_order_relaxed);
+    impl_->ClearAudioTracksLocked();
+    {
+      std::lock_guard lg(impl_->sfu_rx_log_mu);
+      impl_->sfu_rx_logged_streams.clear();
+    }
     impl_->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
     impl_->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
     impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
     impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
     impl_->ApplyStateLocked("connected");
     impl_->StartCaptureLoop();
+    if (!impl_->playout_thread.joinable()) {
+      impl_->StartPlayoutLoop();
+    }
     state_cb = impl_->on_state_changed;
   }
   if (state_cb) {
@@ -866,19 +1141,37 @@ void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
   if (!impl_->active || !impl_->sfu_mode || packet.payload.empty()) {
     return;
   }
+  // PublisherStreamIdForIdentity("") == 1. Never a real media_relay publisher — only the
+  // inbound 1:1 path with a missing peer_key. Drop so SoftMigrate cannot leave a PLC zombie.
+  if (packet.stream_id == 1u) {
+    return;
+  }
   {
-    static std::atomic<int> sfu_rx_log{0};
-    const int n = sfu_rx_log.fetch_add(1, std::memory_order_relaxed);
-    if (n < 8) {
-      log().info << "OnSfuPacket #" << n << " ch=" << packet.channel_id << " seq=" << packet.seq
-                 << " bytes=" << packet.payload.size() << " call=" << impl_->call_id;
+    // Log the first packet per stream_id per process (PreferLocal multi-peer RX).
+    // Cleared on SoftMigrate StartSfu send-swap so post-migrate RX is visible again.
+    bool log_this = false;
+    {
+      std::lock_guard lg(impl_->sfu_rx_log_mu);
+      log_this = impl_->sfu_rx_logged_streams.insert(packet.stream_id).second;
+    }
+    if (log_this) {
+      log().info << "OnSfuPacket first stream=" << packet.stream_id << " ch=" << packet.channel_id
+                 << " seq=" << packet.seq << " bytes=" << packet.payload.size()
+                 << " call=" << impl_->call_id;
     }
   }
   if (packet.channel_id == 0) {
-    impl_->OnRemoteOpusFrame(reinterpret_cast<const std::byte*>(packet.payload.data()), packet.payload.size());
+    impl_->OnRemoteOpusFrame(packet.stream_id, packet.seq,
+                             reinterpret_cast<const std::byte*>(packet.payload.data()),
+                             packet.payload.size());
   } else if (packet.channel_id == 1) {
     impl_->OnRemoteH264Frame(reinterpret_cast<const std::byte*>(packet.payload.data()), packet.payload.size());
   }
+}
+
+void CallMediaEngine::ClearRemoteAudioTracks() {
+  std::lock_guard lock(impl_->mutex);
+  impl_->ClearAudioTracksLocked();
 }
 
 bool CallMediaEngine::IsSfuMode() const {
@@ -888,10 +1181,63 @@ bool CallMediaEngine::IsSfuMode() const {
 void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
   impl_->adaptation_camera_allowed.store(decision.camera_allowed, std::memory_order_relaxed);
   impl_->adaptation_target_video_bps = decision.target_video_lo_bps;
-  if (!decision.camera_allowed && impl_->camera_enabled.load(std::memory_order_relaxed)) {
+  const int64_t audio_bps =
+      decision.target_audio_bps > 0 ? decision.target_audio_bps : CallMediaAdaptation::kComfortAudioBps;
+  impl_->adaptation_target_audio_bps.store(audio_bps, std::memory_order_relaxed);
+  {
     std::lock_guard lock(impl_->mutex);
-    impl_->CloseCameraLocked();
+    if (impl_->encoder) {
+      opus_encoder_ctl(impl_->encoder, OPUS_SET_BITRATE(static_cast<int>(audio_bps)));
+    }
+    if (!decision.camera_allowed && impl_->camera_enabled.load(std::memory_order_relaxed)) {
+      impl_->CloseCameraLocked();
+    }
   }
+}
+
+double CallMediaEngine::PathPressure() const {
+  return impl_->path_pressure.load(std::memory_order_relaxed);
+}
+
+void CallMediaEngine::NoteOutboundDrop() {
+  impl_->outbound_drops.fetch_add(1, std::memory_order_relaxed);
+}
+
+CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
+  CallMediaEngineHealth h;
+  h.active = impl_->active.load(std::memory_order_relaxed);
+  h.connected = impl_->connected.load(std::memory_order_relaxed);
+  h.sfu_mode = impl_->sfu_mode;
+  h.muted = impl_->muted.load(std::memory_order_relaxed);
+  h.path_pressure = impl_->path_pressure.load(std::memory_order_relaxed);
+  h.opus_target_bps = impl_->adaptation_target_audio_bps.load(std::memory_order_relaxed);
+  h.outbound_drops = impl_->outbound_drops.load(std::memory_order_relaxed);
+  h.playout_underruns = impl_->playout_underruns_total.load(std::memory_order_relaxed);
+  h.plc_frames = impl_->plc_frames_total.load(std::memory_order_relaxed);
+  h.rx_audio_frames = impl_->rx_audio_frames.load(std::memory_order_relaxed);
+  h.tx_audio_frames = impl_->tx_audio_frames.load(std::memory_order_relaxed);
+  h.last_rx_audio_ms = impl_->last_rx_audio_ms.load(std::memory_order_relaxed);
+  h.last_tx_audio_ms = impl_->last_tx_audio_ms.load(std::memory_order_relaxed);
+  h.local_level = impl_->local_input_level.load(std::memory_order_relaxed);
+  h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
+  {
+    std::lock_guard lock(impl_->mutex);
+    h.stream_count = impl_->audio_tracks.size();
+    h.sfu_mode = impl_->sfu_mode;
+    h.streams.reserve(impl_->audio_tracks.size());
+    for (const auto& [id, track] : impl_->audio_tracks) {
+      if (!track) {
+        continue;
+      }
+      CallMediaStreamHealth s;
+      s.stream_id = id;
+      s.rx_frames = track->rx_frames;
+      s.last_rx_ms = track->last_rx_ms;
+      s.peak_level = track->peak_level;
+      h.streams.push_back(s);
+    }
+  }
+  return h;
 }
 
 void CallMediaEngine::Stop() {
@@ -911,9 +1257,15 @@ void CallMediaEngine::Stop() {
     impl_->sfu_send = nullptr;
     impl_->sfu_mode = false;
     impl_->capture_running = false;
+    impl_->playout_running = false;
   }
   abandoned_send = nullptr;
+  // Drain capture/video still inside (*sfu_send) after Detach unblocked BlockingWrite.
+  {
+    std::lock_guard drain(impl_->sfu_send_call_mu);
+  }
   impl_->JoinCaptureThread();
+  impl_->JoinPlayoutThread();
   {
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
@@ -935,6 +1287,13 @@ void CallMediaEngine::SetMuted(bool muted) {
 
 bool CallMediaEngine::IsMuted() const {
   return impl_->muted.load(std::memory_order_relaxed);
+}
+
+void CallMediaEngine::RequestAudioDeviceReopen() {
+  if (!impl_->capture_running.load(std::memory_order_relaxed)) {
+    return;
+  }
+  impl_->audio_reopen_requested.store(true, std::memory_order_release);
 }
 
 Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled) {

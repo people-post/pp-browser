@@ -68,7 +68,7 @@ Edit files under `src/libp2p/fork/` directly in pp-browser commits (except `src/
 - `security/noise/noise_connection.cpp` — `readSome` with empty `out` returns 0 without pulling another Noise frame
 - `protocol/identify/identify_push.*` — `pushUpdates()` to re-push self Identify after address-repo changes (L2)
 - `protocol/identify/identify_delta.cpp` — create `IdentifyDeltaWire` once when sending multiple added/removed protocols (was resetting delta each loop iteration)
-- **Handwritten protobuf wire** — `src/libp2p/fork/src/wire/` (`p2p_wire`): length-delimited messages encoded/decoded without `libprotobuf` or `protoc` (keys, Noise, Identify, SECIO, Plaintext, Kademlia, Gossip). `WireMessageReadWriter` replaces protobuf parse/serialize; `ProtobufMessageReadWriter` is a type alias. Vendored protobuf removed from `cmake/libp2p_dependencies.cmake`.
+- **Handwritten protobuf wire** — `src/libp2p/fork/src/wire/` (`p2p_wire`): length-delimited messages encoded/decoded without `libprotobuf` or `protoc` (keys, Noise, Identify, SECIO, Plaintext, Kademlia, Gossip). `WireMessageReadWriter` replaces protobuf parse/serialize; `ProtobufMessageReadWriter` is a type alias. Vendored `third_party/protobuf` removed; `.proto` files under `*/protobuf/` remain as wire-schema docs only.
 - `CMakeLists.txt` — add `PACKAGE_MANAGER=vendored`; skip Hunter init; standalone-only cxx20 toolchain; disable install when embedded
 - `cmake/dependencies.cmake` — vendored mode verifies parent-provided targets; GTest when testing/coverage
 - `test/CMakeLists.txt` — vendored `link_libraries` for acceptance/helper test targets (qtils, gmock, secp256k1)
@@ -82,6 +82,8 @@ Vendored dependency patches (in `third_party/`, not the libp2p fork):
 
 - `boringssl/CMakeLists.txt` — skip installing `bssl` on iOS (CMake requires `BUNDLE DESTINATION` for MACOSX_BUNDLE executables; app links `crypto`/`ssl` only)
 - `qtils/CMakeLists.txt`, `soralog/CMakeLists.txt` — accept `PACKAGE_MANAGER=vendored`; soralog uses `target_include_directories`
+- `qtils/outcome.hpp` — MSVC-safe `OUTCOME_TRY`: select and invoke the 1/2-arg overload inside one variadic `_OUTCOME_EXPAND` (traditional MSVC preprocessor breaks `EXPAND(name)(args)`)
+
 - `soralog/` — MSVC toolchain support; skip Unix-only `pthread`/`syslog` pieces on Windows/Android; `configurator_from_yaml.cpp` guards `SinkToSyslog` like Windows on Android; guard `sysexits.h` in `sink_to_file.cpp`; `util.hpp` uses generated thread names on Windows/Android; C++20 `atomic_flag` init, Clang-only sanitizer attrs, and MSVC `do/while` log macros; `level.hpp` undefs Windows `ERROR`/`DEBUG`/`IGNORE`/`min`/`max` macros before the `Level` enum and `std::min`/`std::max` (c-ares/Boost include `windows.h` first) and exposes `kLevelError`/`kLevelDebug` for call sites after `windows.h` redefines those macros; root `CMakeLists.txt` defines `NOMINMAX` for MSVC
 - libp2p tests/examples — use `soralog::kLevelError` / `kLevelDebug` instead of `Level::ERROR` / `Level::DEBUG` (MSVC: `wingdi.h` `ERROR` macro)
 - `boost/CMakeLists.txt` — pp-browser wrapper using Boost CMake superproject; unified `boost/` include for compiled libs

@@ -1,9 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <memory>
 #include <mutex>
-#include <string>
 #include <thread>
 #include <vector>
 
@@ -19,18 +17,22 @@ public:
   CallRingtone& operator=(const CallRingtone&) = delete;
 
   void Start();
-  /** Async by default (safe from UI/Accept). Destructor joins. */
+  /** Async (safe from UI/Accept). Does not join — use StopAndJoin before SDL_Quit. */
   void Stop();
+  /** Signal stop and join playback + any async joiner. Call on the UI thread before Backend::Shutdown. */
+  void StopAndJoin();
   bool IsPlaying() const { return playing_.load(); }
 
 private:
-  void Stop(bool wait);
+  void RequestStop(bool wait);
   void RunLoop();
 
   std::mutex mutex_;
   std::atomic<bool> playing_{false};
   std::atomic<bool> stop_{false};
   std::thread thread_;
+  /** Joins prior playback workers after async Stop/Start so Accept never blocks on SDL close. */
+  std::thread joiner_;
   std::vector<unsigned char> wav_pcm_;
   int wav_freq_ = 24000;
   int wav_channels_ = 1;

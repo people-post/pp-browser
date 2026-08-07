@@ -103,14 +103,19 @@ private:
 
 /**
  * Serialized length-prefixed duplex on one Yamux stream (host io thread).
- * Default: never overlaps read and write. write_preferred=true (call-media) drains
- * outbound even during an in-flight read, matching legacy PumpIo scheduling.
+ * Default: never overlaps read and write; write failure closes the session.
+ * write_preferred=true (call-media / media-relay): full-duplex — drain outbound
+ * during reads and keep reading while a write is in flight (avoids downlink
+ * backpressure stalling uplink). A failed write drops the outbound queue and
+ * keeps reading; only read/cancel/handler-close tears the session down (so a
+ * stuck peer downlink cannot remove their uplink from the hop).
  */
 class DuplexFrameSession : public std::enable_shared_from_this<DuplexFrameSession> {
 public:
   /** Return false to close the session. */
   using FrameHandler = std::function<bool(Roe<std::vector<uint8_t>> body)>;
-  using ClosedCallback = std::function<void()>;
+  /** reason is a stable short tag (e.g. read_eof, framing, handler, write_failed, stop). */
+  using ClosedCallback = std::function<void(const char* reason)>;
 
   void Start(std::shared_ptr<libp2p::connection::Stream> stream, FrameHandler on_frame,
              StreamCancelCheck is_cancelled, LengthPrefixedFrameConfig config = {},
@@ -121,14 +126,20 @@ public:
   /** Queue a frame body (length prefix added on write). Io-thread safe after Start. */
   bool EnqueueOutbound(std::vector<uint8_t> body);
 
+  /** Queued frames + in-flight write (0 if idle). Safe from any thread. */
+  size_t OutboundBacklog() const {
+    return outbound_backlog_.load(std::memory_order_relaxed);
+  }
+
 private:
+  void PublishBacklog();
   void BeginRead();
   void OnReadHeader(outcome::result<void> result);
   void OnReadBody(outcome::result<void> result);
   void DeliverFrame(std::vector<uint8_t> body);
   void PumpWrite();
   void MaybeResumeRead();
-  void CloseSession();
+  void CloseSession(const char* reason);
 
   std::shared_ptr<libp2p::connection::Stream> stream_;
   FrameHandler on_frame_;
@@ -139,6 +150,7 @@ private:
   std::function<void()> on_outbound_drop_;
   bool write_preferred_ = false;
   std::atomic<bool> running_{false};
+  std::atomic<size_t> outbound_backlog_{0};
   bool read_inflight_ = false;
   bool write_inflight_ = false;
   libp2p::Bytes header_buf_;

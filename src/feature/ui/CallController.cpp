@@ -4,11 +4,11 @@
 #include "base/i18n/LocalizationService.h"
 #include "base/media/CallAudioSession.h"
 #include "base/media/CallMediaEngine.h"
+#include "base/media/CallMediaHealth.h"
 #include "base/messaging/CallTypes.h"
 #include "base/people/ContactTypes.h"
 #include "base/runtime/AppRuntime.h"
 #include "base/platform/ILocalNotifier.h"
-#include "base/platform/Platform.h"
 #include "base/platform/PlatformUserHints.h"
 #include "base/runtime/ProductBranding.h"
 #include "base/ui/ShellTypes.h"
@@ -22,6 +22,9 @@
 #include "feature/ui/UserFeedback.h"
 
 #include "common/Utilities.h"
+
+#include <RmlUi/Core/Core.h>
+#include <RmlUi/Core/SystemInterface.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -71,6 +74,16 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_speaker = in_call.show_speaker,
       .in_call_participant_count = in_call.participant_count,
       .in_call_status_hint = in_call.status_hint.c_str(),
+      .in_call_mode = in_call.mode,
+      .in_call_minimized_corner = in_call.minimized_corner,
+      .in_call_quality_bars = in_call.quality_bars,
+      .in_call_quality_ok = in_call.quality_ok,
+      .in_call_quality_warn = in_call.quality_warn,
+      .in_call_quality_error = in_call.quality_error,
+      .in_call_quality_label = in_call.quality_label.c_str(),
+      .in_call_quality_hint = in_call.quality_hint.c_str(),
+      .in_call_show_debug_subtitle = in_call.show_debug_subtitle,
+      .in_call_debug_subtitle = in_call.debug_subtitle.c_str(),
   };
 }
 
@@ -219,8 +232,27 @@ void CallController::ClearRing() {
   ringtone_.Stop();
 }
 
+void CallController::PrepareForShutdown() {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    log().warning << "PrepareForShutdown off UI thread";
+  }
+  ringing_call_id_.clear();
+  ring_started_ms_ = 0;
+  if (shell_call_chrome_.call_ring) {
+    shell_call_chrome_.call_ring() = {};
+  }
+  // Must join before SDL_Quit — async Stop leaves the playback worker holding the device.
+  ringtone_.StopAndJoin();
+}
+
 void CallController::ClearInCall() {
   active_call_id_.clear();
+  chrome_mode_ = CallChromeMode::Expanded;
+  restore_mode_ = CallChromeMode::Expanded;
+  minimized_corner_ = 0;
+  chrome_mode_call_id_.clear();
+  last_media_health_log_ms_ = 0;
+  last_warned_quality_ = -1;
   if (shell_call_chrome_.call_in_progress) {
     shell_call_chrome_.call_in_progress() = {};
   }
@@ -232,6 +264,69 @@ void CallController::HideInCallChrome() {
     shell_call_chrome_.call_in_progress() = {};
   }
   CallVideoTileRenderer::Instance().Clear();
+}
+
+void CallController::ApplyChromeModeToState(CallInProgressState& in_call) {
+  in_call.mode = chrome_mode_;
+  in_call.mode_str = CallChromeModeName(chrome_mode_);
+  in_call.minimized_corner = minimized_corner_;
+}
+
+void CallController::SetChromeMode(CallChromeMode mode) {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this, mode]() { SetChromeMode(mode); });
+    return;
+  }
+  if (mode == CallChromeMode::Minimized) {
+    if (chrome_mode_ != CallChromeMode::Minimized) {
+      restore_mode_ = chrome_mode_ == CallChromeMode::Immersive ? CallChromeMode::Immersive
+                                                               : CallChromeMode::Expanded;
+    }
+  } else {
+    restore_mode_ = mode;
+  }
+  if (chrome_mode_ == mode) {
+    return;
+  }
+  chrome_mode_ = mode;
+  if (shell_call_chrome_.call_in_progress && shell_call_chrome_.call_in_progress().active) {
+    chrome_mode_call_id_ = shell_call_chrome_.call_in_progress().call_id.c_str();
+    ApplyChromeModeToState(shell_call_chrome_.call_in_progress());
+    SyncShellState();
+  }
+}
+
+void CallController::MinimizeChrome() {
+  SetChromeMode(CallChromeMode::Minimized);
+}
+
+void CallController::ExpandChrome() {
+  SetChromeMode(CallChromeMode::Expanded);
+}
+
+void CallController::ImmersiveChrome() {
+  SetChromeMode(CallChromeMode::Immersive);
+}
+
+void CallController::RestoreChromeFromMinimized() {
+  SetChromeMode(restore_mode_ == CallChromeMode::Immersive ? CallChromeMode::Immersive
+                                                          : CallChromeMode::Expanded);
+}
+
+void CallController::SetMinimizedCorner(int corner) {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this, corner]() { SetMinimizedCorner(corner); });
+    return;
+  }
+  const int clamped = std::clamp(corner, 0, 3);
+  if (minimized_corner_ == clamped) {
+    return;
+  }
+  minimized_corner_ = clamped;
+  if (shell_call_chrome_.call_in_progress && shell_call_chrome_.call_in_progress().active) {
+    shell_call_chrome_.call_in_progress().minimized_corner = minimized_corner_;
+    SyncShellState();
+  }
 }
 
 void CallController::SyncShellState() {
@@ -261,14 +356,8 @@ void CallController::SyncRingtone() {
     AppRuntime::PostUI([this]() { SyncRingtone(); });
     return;
   }
-  // Mobile: SDL playback teardown from a worker can stall the SDL thread during Accept.
-  // Skip ringtone until that path is safe; signaling/listen dogfood does not need it.
-  if (Platform::IsMobile()) {
-    if (ringtone_.IsPlaying()) {
-      ringtone_.Stop();
-    }
-    return;
-  }
+  // CallRingtone::Stop is async (never joins on Accept/UI) so mobile is safe — see
+  // CallRingtone.cpp Samsung Accept hang notes. Do not skip playback here.
   const bool should_ring = shell_call_chrome_.call_ring && shell_call_chrome_.call_ring().active;
   if (should_ring && !ringtone_.IsPlaying()) {
     ringtone_.Start();
@@ -515,6 +604,14 @@ void CallController::RefreshPendingRing() {
       in_call.show_invite = true;
       in_call.roster.clear();
     }
+
+    // V031: pick default once per call; preserve user mode across ticks.
+    if (chrome_mode_call_id_ != (*active)->call_id) {
+      chrome_mode_ = DefaultCallChromeMode(in_call.show_roster);
+      restore_mode_ = chrome_mode_;
+      chrome_mode_call_id_ = (*active)->call_id;
+    }
+    ApplyChromeModeToState(in_call);
 
     if (in_call.show_roster) {
       in_call.title = is_video ? Tr("call.title.group_video").c_str() : Tr("call.title.group_voice").c_str();
@@ -800,12 +897,10 @@ void CallController::LeaveActive() {
     SyncShellState();
     return;
   }
-  // Stop SDL/media on UI before LeaveCall worker (which must not CallMediaEngine::Stop off-UI)
-  // and before remounting away the Leave button.
+  // Detach SFU then stop SDL on UI before LeaveCall worker (must not Stop off-UI) and before
+  // remounting away the Leave button. Media().Stop alone deadlocks if capture is in BlockingWrite.
   if (auto* calls = Calls()) {
-    if (calls->Media().IsActive() && calls->Media().ActiveCallId() == call_id) {
-      calls->Media().Stop();
-    }
+    calls->StopCallMedia(call_id);
   }
   active_call_id_.clear();
   ClearInCall();
@@ -871,6 +966,9 @@ void CallController::ToggleSpeaker() {
   }
   const bool before = CallAudioSession::IsSpeakerphoneOn();
   CallAudioSession::SetSpeakerphoneOn(!before);
+  // Speaker = route only (not mute). Android AudioRecord often goes silent until SDL reopen.
+  calls->Media().RequestAudioDeviceReopen();
+  log().info << "ToggleSpeaker speaker_on=" << (!before ? 1 : 0) << " (reopen capture)";
   RefreshPendingRing();
 }
 
@@ -972,6 +1070,137 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
       in_call.subtitle = Tr("call.status.connected").c_str();
     }
   }
+
+  ApplyMediaHealth(media, calls, media_reconnect || p2p_failed);
+}
+
+CallMediaHealthView CallController::BuildMediaHealthView(CallMediaEngine& media, CallSessionManager* calls,
+                                                         const bool media_reconnect) const {
+  CallMediaHealthInput in;
+  in.engine = media.HealthSnapshot();
+  if (calls) {
+    in.hop = calls->HopHealth();
+  }
+  in.now_ms = util::NowUnixMs();
+  in.reconnecting = media_reconnect;
+  return EvaluateCallMediaHealth(in);
+}
+
+void CallController::ApplyMediaHealth(CallMediaEngine& media, CallSessionManager* calls,
+                                      const bool media_reconnect) {
+  if (!shell_call_chrome_.call_in_progress) {
+    return;
+  }
+  auto& in_call = shell_call_chrome_.call_in_progress();
+  if (!in_call.active) {
+    return;
+  }
+
+  const CallMediaHealthView view = BuildMediaHealthView(media, calls, media_reconnect);
+  const int64_t now_ms = util::NowUnixMs();
+
+  in_call.quality_bars = view.quality_bars;
+  in_call.quality_ok = view.quality <= CallPathQuality::Good;
+  in_call.quality_warn = view.quality == CallPathQuality::Fair;
+  in_call.quality_error =
+      view.quality == CallPathQuality::Poor || view.quality == CallPathQuality::NoAudio ||
+      view.quality == CallPathQuality::Reconnecting;
+
+  if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key && label_key[0]) {
+    in_call.quality_label = Tr(label_key).c_str();
+  } else {
+    in_call.quality_label = "";
+  }
+  if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+    in_call.quality_hint = Tr(hint_key).c_str();
+  } else {
+    in_call.quality_hint = "";
+  }
+
+  const bool diagnostics =
+      call_ports_.call_diagnostics_enabled && call_ports_.call_diagnostics_enabled();
+  in_call.show_debug_subtitle = diagnostics && media.IsActive();
+  if (in_call.show_debug_subtitle) {
+    in_call.debug_subtitle = FormatCallDebugSubtitle(view, now_ms).c_str();
+  } else {
+    in_call.debug_subtitle = "";
+  }
+
+  if (now_ms - last_media_health_log_ms_ >= 2000) {
+    last_media_health_log_ms_ = now_ms;
+    log().info << FormatMediaHealthLogLine(view, now_ms, active_call_id_);
+  }
+
+  const int q = static_cast<int>(view.quality);
+  if (q != last_warned_quality_ &&
+      (view.quality == CallPathQuality::NoAudio || view.quality == CallPathQuality::Poor ||
+       view.asymmetry != CallAudioAsymmetry::None)) {
+    last_warned_quality_ = q;
+    if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+      UserFeedback::Fail(Tr(hint_key));
+    } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key && label_key[0]) {
+      UserFeedback::Fail(Tr(label_key));
+    }
+  } else if (view.quality <= CallPathQuality::Good && view.asymmetry == CallAudioAsymmetry::None) {
+    last_warned_quality_ = q;
+  }
+}
+
+void CallController::ShowCallDetails() {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this]() { ShowCallDetails(); });
+    return;
+  }
+  BindToMessaging();
+  auto* calls = Calls();
+  if (!calls || !shell_call_chrome_.call_in_progress) {
+    return;
+  }
+  auto& in_call = shell_call_chrome_.call_in_progress();
+  if (!in_call.active) {
+    return;
+  }
+
+  auto& media = calls->Media();
+  const bool media_reconnect = !media.IsConnected() && media.IsActive();
+  const CallMediaHealthView view = BuildMediaHealthView(media, calls, media_reconnect);
+  const int64_t now_ms = util::NowUnixMs();
+  const bool diagnostics =
+      call_ports_.call_diagnostics_enabled && call_ports_.call_diagnostics_enabled();
+
+  CallDetailsCopy copy;
+  copy.elapsed = in_call.elapsed.empty() ? std::string(in_call.subtitle.c_str())
+                                         : std::string(in_call.elapsed.c_str());
+  copy.path_label = view.path_kind == "relay" ? Tr("call.details.path.relay")
+                                             : Tr("call.details.path.direct");
+  copy.quality_label = Tr(CallPathQualityDetailsLabelKey(view.quality));
+  copy.mic_label = LevelHint(in_call.mic_level, false, in_call.muted);
+  copy.incoming_label = LevelHint(in_call.peer_level, true, false);
+  if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+    copy.asymmetry_hint = Tr(hint_key);
+  }
+  copy.call_id = active_call_id_;
+  copy.duration_heading = Tr("call.details.duration");
+  copy.path_heading = Tr("call.details.path");
+  copy.quality_heading = Tr("call.details.quality");
+  copy.mic_heading = Tr("call.details.mic");
+  copy.incoming_heading = Tr("call.details.incoming");
+  copy.note_heading = Tr("call.details.note");
+  copy.diagnostics_heading = Tr("call.details.diagnostics");
+
+  const std::string body = FormatCallDetailsText(view, now_ms, diagnostics, copy);
+  UserFeedback::Confirm(
+      Tr("call.details.title"), body,
+      [body](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+          system->SetClipboardText(body.c_str());
+          UserFeedback::Ok(Tr("call.details.copied"));
+        }
+      },
+      Tr("call.details.copy"));
 }
 
 void CallController::RefreshCallLevels() {

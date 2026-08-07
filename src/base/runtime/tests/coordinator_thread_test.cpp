@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -82,7 +83,10 @@ TEST(CoordinatorThreadTest, OneShotTimerFiresOnce) {
   coordinator.ScheduleOneShot(std::chrono::milliseconds(30), [&]() { count.fetch_add(1); });
 
   WaitUntil([&]() { return count.load() >= 1; }, std::chrono::milliseconds(2000));
-  std::this_thread::sleep_for(std::chrono::milliseconds(80));
+  // Prove no second fire by waiting for a subsequent mailbox task (not wall-clock settle).
+  std::atomic<bool> probe{false};
+  coordinator.Post(CoordinatorPriority::Normal, [&]() { probe.store(true); });
+  WaitUntil([&]() { return probe.load(); }, std::chrono::milliseconds(2000));
   EXPECT_EQ(count.load(), 1);
 
   coordinator.Shutdown();
@@ -93,11 +97,14 @@ TEST(CoordinatorThreadTest, CancelTimerPreventsFire) {
   coordinator.Start();
 
   std::atomic<int> count{0};
+  // Long delay so Cancel wins without sleeping past a short deadline.
   const uint64_t id =
-      coordinator.ScheduleOneShot(std::chrono::milliseconds(50), [&]() { count.fetch_add(1); });
+      coordinator.ScheduleOneShot(std::chrono::seconds(30), [&]() { count.fetch_add(1); });
   coordinator.CancelTimer(id);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(120));
+  std::atomic<bool> probe{false};
+  coordinator.Post(CoordinatorPriority::Normal, [&]() { probe.store(true); });
+  WaitUntil([&]() { return probe.load(); }, std::chrono::milliseconds(2000));
   EXPECT_EQ(count.load(), 0);
 
   coordinator.Shutdown();

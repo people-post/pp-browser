@@ -1,6 +1,6 @@
 # Network status chrome
 
-**Status:** **s1 landed** — ambient cluster in tree; dogfood then **s2** popover  
+**Status:** **s3 landed** — Load counts in tree; **s4** polish next  
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md), [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md), [NETWORKING.md](../../docs/architecture/NETWORKING.md)  

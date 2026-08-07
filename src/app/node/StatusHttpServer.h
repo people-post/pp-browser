@@ -12,8 +12,8 @@
 namespace pbr {
 
 /**
- * Tiny loopback HTTP/1.1 admin server for pp-node ops (/healthz, /status).
- * Not peer-facing — bind loopback by default; non-loopback requires explicit allow.
+ * Tiny HTTP/1.1 admin server for pp-node ops (/healthz, /status).
+ * Not peer-facing — default bind is loopback; set STATUS_ADDR / --status-addr to expose.
  */
 class StatusHttpServer {
 public:
@@ -25,12 +25,8 @@ public:
   StatusHttpServer(const StatusHttpServer&) = delete;
   StatusHttpServer& operator=(const StatusHttpServer&) = delete;
 
-  /**
-   * Start accept loop on a background thread.
-   * Fails if bind host is not loopback unless `allow_non_loopback`.
-   */
-  Roe<void> Start(const StatusHttpBind& bind, StatusHttpAuthConfig auth, SnapshotFn snapshot,
-                  bool allow_non_loopback = false);
+  /** Start accept loop on a background thread. Binds whatever host the operator set. */
+  Roe<void> Start(const StatusHttpBind& bind, StatusHttpAuthConfig auth, SnapshotFn snapshot);
 
   void Stop();
 

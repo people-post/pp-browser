@@ -11,7 +11,6 @@
 #include <atomic>
 #include <chrono>
 #include <span>
-#include <thread>
 
 namespace pbr {
 namespace {
@@ -111,8 +110,8 @@ TEST_F(PeerAddressBookTest, PruneExpiredRemovesStalePeers) {
   const std::string ma = MakeMultiaddr("203.0.113.11", 4001);
 
   ASSERT_TRUE(book.Upsert(local_peer_id_, ma, PeerAddrSource::Manual));
-  std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  book.PruneExpired();
+  // Advance logical now past TTL — no wall-clock sleep.
+  book.PruneExpired(std::chrono::steady_clock::now() + std::chrono::milliseconds(50));
 
   EXPECT_FALSE(book.IsDialable(local_peer_id_));
   EXPECT_EQ(book.PeerCount(), 0u);

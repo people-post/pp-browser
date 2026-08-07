@@ -166,6 +166,25 @@ struct CallRosterParticipantState {
   bool is_local = false;
 };
 
+/** In-call chrome presentation mode (V031). */
+enum class CallChromeMode {
+  Expanded = 0,
+  Minimized = 1,
+  Immersive = 2,
+};
+
+inline const char* CallChromeModeName(CallChromeMode mode) {
+  switch (mode) {
+  case CallChromeMode::Minimized:
+    return "minimized";
+  case CallChromeMode::Immersive:
+    return "immersive";
+  case CallChromeMode::Expanded:
+  default:
+    return "expanded";
+  }
+}
+
 /** Active in-call chrome. */
 struct CallInProgressState {
   bool active = false;
@@ -184,6 +203,13 @@ struct CallInProgressState {
   bool show_retry = false;
   /** Phone-like devices: earpiece / speakerphone toggle. */
   bool show_speaker = false;
+  /** Expanded (top bar), Immersive (people grid), or Minimized (corner chip). */
+  CallChromeMode mode = CallChromeMode::Expanded;
+  /**
+   * Minimized chip corner: 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left.
+   * Applied when mode == Minimized.
+   */
+  int minimized_corner = 0;
   int participant_count = 0;
   std::vector<CallRosterParticipantState> roster;
   Rml::String call_id;
@@ -200,6 +226,21 @@ struct CallInProgressState {
   Rml::String mic_hint;
   Rml::String peer_hint;
   Rml::String remote_placeholder;
+  /** Bound mode name for data-model / tests (`expanded` / `minimized` / `immersive`). */
+  Rml::String mode_str = "expanded";
+  /**
+   * Path quality bars 0..4 (statusbar reach language). Label omitted when good
+   * (`quality_label` empty); Fair/Poor/NoAudio set a short status string.
+   */
+  int quality_bars = 4;
+  bool quality_ok = true;
+  bool quality_warn = false;
+  bool quality_error = false;
+  Rml::String quality_label;
+  Rml::String quality_hint;
+  /** Debug-only subtitle under elapsed (`SFU · 24k · …`). */
+  bool show_debug_subtitle = false;
+  Rml::String debug_subtitle;
 };
 
 struct PaneVisibility {
@@ -249,27 +290,56 @@ struct ShellState {
   /**
    * Desktop + expanded bottom status bar (read-only ambient chrome).
    * Hidden on compact layout and on mobile/tablet platforms.
-   * Left cluster: Mesh · Reach · Help (+ sparse label). Right: activity.
+   * Left cluster: Brief · Direct · [divider · Help · Inbound] (+ sparse label). Right: activity.
    * See projects/network-status-chrome/.
    */
   bool statusbar_visible = false;
-  bool statusbar_mesh_visible = false;
-  bool statusbar_mesh_ok = false;
-  bool statusbar_mesh_off = false;
-  bool statusbar_mesh_error = false;
-  bool statusbar_reach_visible = false;
-  bool statusbar_reach_ok = false;
-  bool statusbar_reach_warn = false;
-  bool statusbar_reach_error = false;
-  bool statusbar_reach_checking = false;
-  /** Reach strength bars 0–3 (call-meter style). */
-  int statusbar_reach_level = 0;
+  bool statusbar_brief_visible = false;
+  bool statusbar_brief_ok = false;
+  bool statusbar_brief_failed = false;
+  bool statusbar_brief_unknown = false;
+  bool statusbar_direct_visible = false;
+  bool statusbar_direct_ok = false;
+  bool statusbar_direct_off = false;
+  bool statusbar_direct_error = false;
+  bool statusbar_direct_checking = false;
   bool statusbar_help_visible = false;
+  bool statusbar_inbound_visible = false;
+  bool statusbar_inbound_ok = false;
+  bool statusbar_inbound_off = false;
+  bool statusbar_load_circuit_visible = false;
+  bool statusbar_load_media_visible = false;
+  Rml::String statusbar_load_circuit_label;
+  Rml::String statusbar_load_media_label;
+  Rml::String statusbar_load_circuit_title;
+  Rml::String statusbar_load_media_title;
   /** Sparse word for off/degraded states; empty when healthy. */
   Rml::String statusbar_label;
   bool statusbar_label_warn = false;
   bool statusbar_label_error = false;
   Rml::String statusbar_activity;
+  /** Accessible names for icon-only slots (data-attr-title). */
+  Rml::String statusbar_brief_title;
+  Rml::String statusbar_direct_title;
+  Rml::String statusbar_help_title;
+  Rml::String statusbar_inbound_title;
+  Rml::String statusbar_cluster_title;
+  /** Hybrid status popover (network-status-chrome s2). */
+  bool statusbar_popover_open = false;
+  Rml::String statusbar_popover_brief_label;
+  Rml::String statusbar_popover_direct_label;
+  Rml::String statusbar_popover_reach_label;
+  Rml::String statusbar_popover_reach_summary;
+  bool statusbar_popover_help_visible = false;
+  Rml::String statusbar_popover_help_label;
+  bool statusbar_popover_upnp_visible = false;
+  Rml::String statusbar_popover_upnp_label;
+  bool statusbar_popover_error_visible = false;
+  Rml::String statusbar_popover_error;
+  bool statusbar_popover_load_visible = false;
+  Rml::String statusbar_popover_circuit_load;
+  Rml::String statusbar_popover_media_sessions;
+  Rml::String statusbar_popover_media_participants;
 
   NavBadgeState nav_badges;
 

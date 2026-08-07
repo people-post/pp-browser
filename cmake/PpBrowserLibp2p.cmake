@@ -47,8 +47,14 @@ function(pp_browser_add_libp2p_integration)
     host/NatTraversal.cpp
     host/CircuitRelayService.cpp
     host/MediaRelayService.cpp
+    host/MediaRelayHostInbound.cpp
+    host/MediaRelayClientAttach.cpp
+    host/MediaRelayFrames.cpp
+    host/MediaRelayAttachSm.cpp
+    host/MediaRelayLogic.cpp
     host/LanMdnsDiscovery.cpp
     host/CallMediaDirectService.cpp
+    host/CallMediaSessionLogic.cpp
     host/CallMediaFrameCrypto.cpp
   )
   target_include_directories(pp_libp2p_integration PUBLIC

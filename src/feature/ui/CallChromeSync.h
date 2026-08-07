@@ -1,5 +1,7 @@
 #pragma once
 
+#include "base/ui/ShellTypes.h"
+
 #include <string>
 
 namespace pbr {
@@ -39,6 +41,16 @@ struct CallChromeLayer {
   bool in_call_show_speaker = false;
   int in_call_participant_count = 0;
   std::string in_call_status_hint;
+  CallChromeMode in_call_mode = CallChromeMode::Expanded;
+  int in_call_minimized_corner = 0;
+  int in_call_quality_bars = 4;
+  bool in_call_quality_ok = true;
+  bool in_call_quality_warn = false;
+  bool in_call_quality_error = false;
+  std::string in_call_quality_label;
+  std::string in_call_quality_hint;
+  bool in_call_show_debug_subtitle = false;
+  std::string in_call_debug_subtitle;
 };
 
 enum class CallChromeUpdate {
@@ -47,7 +59,10 @@ enum class CallChromeUpdate {
   Remount,   // layer appear / disappear / switch call_id → RemountCallChrome mounts
 };
 
-/** Pure gate: remount on layer identity / control presence / status kind; Dirty for icon toggles + meters. */
+/** Pure gate: remount on layer identity / control presence / mode / status kind; Dirty for icon toggles + meters. */
 CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const CallChromeLayer& next);
+
+/** Group / roster calls open Immersive; 1:1 opens Expanded (V031). */
+CallChromeMode DefaultCallChromeMode(bool show_roster);
 
 } // namespace pbr

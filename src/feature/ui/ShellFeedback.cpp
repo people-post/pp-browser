@@ -108,12 +108,12 @@ void ShellFeedback::ShowAlert(ShellState& state, const std::string& title, const
 }
 
 void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, const std::string& message,
-                                std::function<void(bool)> on_result) {
+                                std::function<void(bool)> on_result, const std::string& ok_label) {
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Confirm;
   state.dialog.title = Rml::String(title.c_str());
   state.dialog.message = Rml::String(message.c_str());
-  state.dialog.ok_label = {};
+  state.dialog.ok_label = Rml::String(ok_label.c_str());
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = false;
   state.dialog.checkbox_checked = false;

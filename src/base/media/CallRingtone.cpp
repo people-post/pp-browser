@@ -5,6 +5,7 @@
 #include <SDL3/SDL.h>
 
 #include <chrono>
+#include <utility>
 
 namespace pbr {
 namespace {
@@ -12,12 +13,14 @@ namespace {
 bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
   const std::string path = IAssetLocator::Instance().Resolve("sounds/call_ring.wav");
   if (path.empty()) {
+    SDL_Log("CallRingtone: empty path for sounds/call_ring.wav");
     return false;
   }
   SDL_AudioSpec spec{};
   Uint8* buf = nullptr;
   Uint32 len = 0;
   if (!SDL_LoadWAV(path.c_str(), &spec, &buf, &len) || !buf || len == 0) {
+    SDL_Log("CallRingtone: SDL_LoadWAV failed path=%s err=%s", path.c_str(), SDL_GetError());
     if (buf) {
       SDL_free(buf);
     }
@@ -41,6 +44,7 @@ bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
       SDL_ConvertAudioSamples(&spec, buf, static_cast<int>(len), &dst, &converted, &converted_len);
   SDL_free(buf);
   if (!ok || !converted || converted_len <= 0) {
+    SDL_Log("CallRingtone: convert failed err=%s", SDL_GetError());
     if (converted) {
       SDL_free(converted);
     }
@@ -58,30 +62,20 @@ bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
 CallRingtone::CallRingtone() = default;
 
 CallRingtone::~CallRingtone() {
-  Stop(/*wait=*/true);
+  StopAndJoin();
 }
 
 void CallRingtone::Start() {
-  std::thread finishing;
   {
     std::lock_guard lock(mutex_);
     if (playing_.load()) {
       return;
     }
-    // A prior worker may still be tearing down audio. Never join it on the UI/SDL
-    // thread — device close can wait on that thread (Samsung Accept hang).
-    if (thread_.joinable()) {
-      stop_ = true;
-      finishing = std::move(thread_);
-    }
   }
-  if (finishing.joinable()) {
-    std::thread([t = std::move(finishing)]() mutable {
-      if (t.joinable()) {
-        t.join();
-      }
-    }).detach();
-  }
+  // A prior worker may still be tearing down audio. Never join it on the UI/SDL
+  // thread — device close can wait on that thread (Samsung Accept hang).
+  RequestStop(/*wait=*/false);
+
   std::lock_guard lock(mutex_);
   if (playing_.load()) {
     return;
@@ -96,7 +90,7 @@ void CallRingtone::Start() {
   thread_ = std::thread([this]() { RunLoop(); });
 }
 
-void CallRingtone::Stop(const bool wait) {
+void CallRingtone::RequestStop(const bool wait) {
   stop_ = true;
   std::thread finishing;
   {
@@ -106,29 +100,57 @@ void CallRingtone::Stop(const bool wait) {
       finishing = std::move(thread_);
     }
   }
+
+  if (wait) {
+    if (finishing.joinable()) {
+      finishing.join();
+    }
+    std::thread joiner;
+    {
+      std::lock_guard lock(mutex_);
+      if (joiner_.joinable()) {
+        joiner = std::move(joiner_);
+      }
+    }
+    if (joiner.joinable()) {
+      joiner.join();
+    }
+    return;
+  }
+
   if (!finishing.joinable()) {
     return;
   }
-  if (wait) {
-    finishing.join();
-    return;
-  }
-  // Never join the ringtone worker on the Accept/UI click path: that runs inside
-  // SDL/Rml event dispatch, and device close on the worker can wait on that thread.
-  std::thread([t = std::move(finishing)]() mutable {
-    if (t.joinable()) {
-      t.join();
+  // Chain onto joiner_ so StopAndJoin / destructor can still wait — never bare .detach().
+  std::thread previous;
+  {
+    std::lock_guard lock(mutex_);
+    if (joiner_.joinable()) {
+      previous = std::move(joiner_);
     }
-  }).detach();
+    joiner_ = std::thread([previous = std::move(previous), finishing = std::move(finishing)]() mutable {
+      if (previous.joinable()) {
+        previous.join();
+      }
+      if (finishing.joinable()) {
+        finishing.join();
+      }
+    });
+  }
 }
 
 void CallRingtone::Stop() {
-  Stop(/*wait=*/false);
+  RequestStop(/*wait=*/false);
+}
+
+void CallRingtone::StopAndJoin() {
+  RequestStop(/*wait=*/true);
 }
 
 void CallRingtone::RunLoop() {
   if (!SDL_WasInit(SDL_INIT_AUDIO)) {
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+      SDL_Log("CallRingtone: SDL_InitSubSystem(AUDIO) failed: %s", SDL_GetError());
       playing_ = false;
       return;
     }
@@ -139,11 +161,14 @@ void CallRingtone::RunLoop() {
   want.channels = static_cast<Uint8>(wav_channels_);
   SDL_AudioStream* stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
   if (!stream) {
+    SDL_Log("CallRingtone: playback open failed: %s", SDL_GetError());
     playing_ = false;
     return;
   }
   const SDL_AudioDeviceID device = SDL_GetAudioStreamDevice(stream);
   (void)SDL_ResumeAudioDevice(device);
+  SDL_Log("CallRingtone: playing loop freq=%d ch=%d bytes=%zu", wav_freq_, wav_channels_,
+          wav_pcm_.size());
 
   while (!stop_.load()) {
     const int queued = SDL_GetAudioStreamQueued(stream);
@@ -154,8 +179,9 @@ void CallRingtone::RunLoop() {
   }
 
   SDL_ClearAudioStream(stream);
+  // Destroying a stream from SDL_OpenAudioDeviceStream also closes the device — do not
+  // SDL_CloseAudioDevice(device) afterward (double-close can hang quit on Android).
   SDL_DestroyAudioStream(stream);
-  SDL_CloseAudioDevice(device);
   playing_ = false;
 }
 

@@ -102,6 +102,45 @@ TEST(CallChromeSyncTest, GroupRosterPresenceRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
+TEST(CallChromeSyncTest, ModeChangeRemounts) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_mode = pbr::CallChromeMode::Expanded;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_mode = pbr::CallChromeMode::Immersive;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  next.in_call_mode = pbr::CallChromeMode::Minimized;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+}
+
+TEST(CallChromeSyncTest, MinimizedCornerRemounts) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_mode = pbr::CallChromeMode::Minimized;
+  synced.in_call_minimized_corner = 0;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_minimized_corner = 2;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+}
+
+TEST(CallChromeSyncTest, MuteUnderSameModeDirties) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_mode = pbr::CallChromeMode::Immersive;
+  synced.in_call_muted = false;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_muted = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
+TEST(CallChromeSyncTest, DefaultModeFromRoster) {
+  EXPECT_EQ(pbr::DefaultCallChromeMode(false), pbr::CallChromeMode::Expanded);
+  EXPECT_EQ(pbr::DefaultCallChromeMode(true), pbr::CallChromeMode::Immersive);
+}
+
 TEST(CallChromeSyncTest, RingConflictDirties) {
   pbr::CallChromeLayer synced;
   synced.ring_active = true;
@@ -115,6 +154,20 @@ TEST(CallChromeSyncTest, RingConflictDirties) {
   next.ring_conflict_hint = "Alice is calling you back. Answering ends your outgoing call.";
   next.ring_accept_label = "End & Accept";
   next.ring_decline_label = "Ignore";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
+TEST(CallChromeSyncTest, QualityChipDirties) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_quality_bars = 4;
+  synced.in_call_quality_ok = true;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_quality_bars = 1;
+  next.in_call_quality_ok = false;
+  next.in_call_quality_error = true;
+  next.in_call_quality_label = "Poor";
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 

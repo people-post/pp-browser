@@ -44,6 +44,7 @@ flowchart TB
 | How does the mesh work? | [DESIGN.md](DESIGN.md) |
 | Scope tags and bridge score | [RELAY_SCOPE.md](RELAY_SCOPE.md) |
 | Can we dial this hop PeerId? | [media-hop-reachability](../media-hop-reachability/DESIGN.md) |
+| How should `media_relay` attach be stated as a SM? | [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) (N026) |
 | What's in the repo today? | [CURRENT_STATE.md](CURRENT_STATE.md) |
 | What to build next, in what order? | [PHASES.md](PHASES.md) |
 | Why we chose X | [DECISIONS.md](DECISIONS.md) |
@@ -62,6 +63,7 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 |------|---------|
 | [DESIGN.md](DESIGN.md) | **Authoritative spec** — roles, capabilities, services, reachability, relay policy, config, packaging |
 | [RELAY_SCOPE.md](RELAY_SCOPE.md) | Connectivity domains, scope escalation, bridge score |
+| [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) | Per-stream attach SM design (N026) — docs before code |
 | [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md) | Multi-hop circuit plan — today single-hop |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
 | [PHASES.md](PHASES.md) | Checklists and delivery order |

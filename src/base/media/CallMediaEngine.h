@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base/media/CallMediaAdaptation.h"
+#include "base/media/CallMediaHealth.h"
 #include "common/Error.h"
 #include "common/Module.h"
 
@@ -40,6 +41,8 @@ public:
    * channel: 0 = audio (reliable_ordered), 1 = video_lo (latest_lossy).
    */
   struct SfuPacket {
+    /** Publisher stream id (N021); 0 for 1:1 direct. */
+    uint32_t stream_id = 0;
     uint16_t channel_id = 0;
     uint32_t seq = 0;
     uint8_t mark = 0;
@@ -49,16 +52,34 @@ public:
 
   /** Blind SFU backend: capture/encode → SfuSendFn (V021/V024). */
   Roe<void> StartSfu(const std::string& call_id, SfuSendFn send);
-  /** Inbound SFU payload (already demuxed to local subscribe). */
+  /** Inbound SFU payload (already demuxed to local subscribe; plaintext Opus). */
   void OnSfuPacket(const SfuPacket& packet);
+  /**
+   * Drop remote jitter/PLC tracks without stopping capture. SoftMigrate send-swap clears
+   * tracks internally; ReleaseDirect must not wipe live media_relay tracks.
+   */
+  void ClearRemoteAudioTracks();
   bool IsSfuMode() const;
   void Stop();
 
   void SetMuted(bool muted);
   bool IsMuted() const;
 
-  /** Apply V024 producer decision (camera gate + stored target bps). */
+  /**
+   * Reopen SDL capture/playback on the capture worker (Android speaker route / SoftMigrate).
+   * Safe while media is active; no-op if capture is not running.
+   */
+  void RequestAudioDeviceReopen();
+
+  /** Apply V024 producer decision (camera gate + Opus target bps). */
   void ApplyAdaptation(const CallAdaptationDecision& decision);
+
+  /** 0..1 receiver/path pressure for adaptation (V032). */
+  double PathPressure() const;
+  /** Hop/send path observed a drop — raises pressure (V032). */
+  void NoteOutboundDrop();
+  /** Snapshot for chrome / logs (V032 instrumentation). */
+  CallMediaEngineHealth HealthSnapshot() const;
 
   /** Open/close SDL camera + encode. Best-effort: fails without killing voice (V019). */
   Roe<void> SetCameraEnabled(bool enabled);

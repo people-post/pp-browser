@@ -1,13 +1,13 @@
 # P2P mesh — current state
 
-**Last updated:** 2026-08-01
+**Last updated:** 2026-08-07
 
 ## Landed
 
 | Area | State |
 |------|-------|
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
-| ADRs | N001–**N025** in [DECISIONS.md](DECISIONS.md) (N025 = mobile call-scoped listen — planned) |
+| ADRs | N001–**N026** in [DECISIONS.md](DECISIONS.md) (N026 = media-relay attach SM — **s3a+s3b code**) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |
 | Networking doctrine | [NETWORKING.md](../../docs/architecture/NETWORKING.md) — HTTP + libp2p; calls consume fabric (V026) |
 | **n1** | Role shell + bootstrap + Me → Network master toggle (see below) |
@@ -38,7 +38,7 @@
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
 | Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait |
 | Dial-back | `/pp-browser/dial-back/1.0.0` (`DialBackService`) — seed probes client listen addrs |
-| Packaging | `packaging/pp-node/` systemd + Dockerfile sketches + config example |
+| Packaging | Dual trains: app `v*` + `pp-node/v*` from `main`; tip on `develop`; L0/L1 smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md); L2 deferred) |
 | Tests | FailLoud candidates; two-host dial-back LAN probe |
 
 ## nr in code
@@ -67,7 +67,7 @@
 |------|-------|
 | Protocol | `/pp-browser/circuit-relay/1.0.0` stream bridge — **single-hop today**; multi-hop v2 planned ([MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)) |
 | Config | `libp2p.capabilities.circuit_relay` + JSON round-trip |
-| UI | **Circuit relay** checkbox under Node (hot refresh via `RefreshMeshCapabilities`) |
+| UI | **Help others connect** checkbox under Help the network (hot refresh via `RefreshMeshCapabilities`) |
 | Seed | `packaging/pp-node/config.json.example` enables `circuit_relay: true` |
 | Auto-route | **nf** — `MessagingHub::RequestCircuitBridgePreferred` |
 
@@ -79,7 +79,7 @@
 | Pick | `MeshHopPolicy` — contacts → seed for circuit (`OrderCircuitHops`) |
 | API | `MessagingHub::RequestCircuitBridgePreferred` |
 | Provider | Circuit (and media) admission prefers contacts on volunteer desktop when contacts known; org seed with empty contacts serves all |
-| UI | **Prefer contacts for routing** toggle |
+| UI | **Friends first** toggle |
 
 ## n4-media in code
 
@@ -126,16 +126,18 @@
 | Area | State |
 |------|-------|
 | Call consumer (a4) | Soft-migrate + V024 shared policy — [p2p-av-calls](../p2p-av-calls/) |
+| **media_relay attach SM (N026)** | **s3a+s3b landed** — inbound + client `AcceptAndAttach` phases + Detach abort; circuit compose loopbacks green — [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) |
 | Peer message_relay | Deferred (N017); HTTP Brief remains |
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
 | DHT | **n2** (later per N015) |
-| Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code; LAN manual QA pending |
+| Mobile call-scoped listen | **nm** — N025 gating + ephemeral listen in code |
 
 ## Next
 
-1. **a4** — group / ICE-fail via `media_relay`; shared V024 adaptation (single video layer OK)  
+1. **a4** / calls — keep `media_relay` consumer + circuit compose green  
 2. Curated public / paid regulation / **n2 DHT** later  
+3. **L3.5** multi-hop when single-hop cannot reach B
 
 ## Follow-ups
 

@@ -66,6 +66,8 @@ struct SettingsUiState {
   std::string language = "system";
   /** UI select value: `on` or `off` — disables backdrop frost on compact chrome. */
   std::string reduce_transparency = "off";
+  /** UI select value: `on` or `off` — call media diagnostics (V032). */
+  std::string call_diagnostics = "off";
   /** Display label for the language row / picker value. */
   std::string language_label = "System";
   std::string profile_label;

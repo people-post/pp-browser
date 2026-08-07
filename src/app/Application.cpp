@@ -543,7 +543,7 @@ bool Application::Initialize(const char* window_title) {
   chat_->BindMessagingUi(std::move(messaging_ui));
 
   contacts_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
-  call_->BindCallPorts(MakeMessagingCallPorts(messaging));
+  call_->BindCallPorts(MakeMessagingCallPorts(messaging, store_.IsInitialized() ? &store_ : nullptr));
   call_->BindShellCallChrome(MakeShellCallChromePorts(shell));
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   flow_->BindShellNavigation(shell_navigation);
@@ -630,7 +630,15 @@ bool Application::Initialize(const char* window_title) {
   unlock_gate_->BindPorts(std::move(unlock_ports));
 
   chat_->BindUnlockGate(*unlock_gate_);
-  shell_->BindShellMessaging(MakeMessagingShellPorts(messaging));
+  {
+    MessagingShellPorts shell_messaging = MakeMessagingShellPorts(messaging);
+    shell_messaging.open_network_settings = [this]() {
+      if (settings_) {
+        settings_->OpenNetworkSettings();
+      }
+    };
+    shell_->BindShellMessaging(std::move(shell_messaging));
+  }
   shell_->BindPinGate(*pin_gate_);
   shell_->BindFlowCoordinator(*flow_);
   shell_->BindCallController(*call_);
@@ -986,6 +994,13 @@ void Application::Shutdown() {
     }
     agent_session_.reset();
 
+    // Join ringtone before AbortCallMedia / SDL_Quit — accept-dialog quit left the playback
+    // worker holding the device (async Stop is Accept-safe and does not join).
+    if (call_) {
+      StartupPhase phase("Shutdown::CallRingtone");
+      call_->PrepareForShutdown();
+    }
+
     // Abort Connect / circuit waits, then join workers while MessagingHub still owns the bridge.
     // Destroying the hub first left AppRuntime::Shutdown joining a UAF Connect worker.
     if (messaging_) {
@@ -1021,6 +1036,9 @@ void Application::Shutdown() {
     initialized_ = false;
   } else {
     // Initialize may have failed after Bootstrap left hub/secrets open.
+    if (call_) {
+      call_->PrepareForShutdown();
+    }
     if (messaging_) {
       messaging_->AbortCallMediaForShutdown();
     }

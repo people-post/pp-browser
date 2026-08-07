@@ -1294,8 +1294,11 @@ void P2pMessagingService::SyncInboxFromWake(const bool /*force*/) {
       auto poll = relay_->PollInbox(identity->relay_user_id, cursor);
       if (!poll) {
         log().warning << "PollInbox failed: " << poll.error().message;
+        brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Failed),
+                                  std::memory_order_relaxed);
         continue;
       }
+      brief_relay_health_.store(static_cast<int>(BriefRelayHealthState::Ok), std::memory_order_relaxed);
       std::string next_cursor = poll->next_cursor;
       if (poll->messages.size() > kMaxPollBatchMessages) {
         log().warning << "PollInbox batch too large n=" << poll->messages.size() << " — skip advance";

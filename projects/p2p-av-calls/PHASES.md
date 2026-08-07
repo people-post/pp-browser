@@ -63,12 +63,12 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 - [x] Mesh gate: volunteer **`media_relay`** on org `pp-node` + desktop (default on) — n4-media / N021 framing
 - [x] Call consumer: N≥3 via forwarder; **1:1 stays P2P**; soft-migrate same `call_id`; re-pick (V021) — thin path
 - [x] **V024 adaptation:** shared policy module for **1:1 P2P and SFU** (audio ≫ lo ≫ hi; producer first); backends differ; a4 ships single video layer
-- [ ] App-layer E2E under call media key (relay never holds keys) — follow-on
-- [x] **↑/↓** budgets + **quote/ceiling** when hop used; initiator pays (V022 / N019) — volunteer quote path
+- [x] App-layer E2E under call media key on SFU path (V032; relay never holds keys)
+- [x] **↑/↓** budgets + **quote/ceiling** when hop used; initiator pays (V022 / N019) — volunteer quote path + **V032 hop token-bucket enforce**
 - [x] Hop pick: **contacts ∪ org seed** only (V023 / N020)
 - [ ] Multi-invite; mid-call guest invite — API yes; chrome polish pending
 - [x] Rotate media key on leave + overlapping epochs (V003) — existing a1 path
-- [ ] In-call roster (mute / camera / speaking if cheap) — mute/camera roster exists; speaking pending
+- [ ] In-call roster (mute / camera / speaking if cheap) — mute/camera roster exists; speaking pending; **Immersive people grid** (V031) landed for voice presence
 - [x] Reuse a3 Opus + H264 HW — **no** new device codec matrix in a4
 - [x] ICE-fail **1:1** stays P2P (V025) — timeout + Retry; N≥3 ICE-fail → SFU wired; no auto 1:1 SFU
 
@@ -87,12 +87,13 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 
 - [x] 1:1 Opus over libp2p direct (LAN dialable PeerId+ma) — `CallMediaDirectService` + `CallLibp2pMediaBridge`
 - [x] 1:1 undialable → hop / circuit (explicit; not ICE Retry) — `TryEnsureCallMediaReachable` + protocol-scoped circuit hops
+- [x] Loopback compose: circuit + call-media Opus (`CircuitCallMediaComposeTest`); circuit + media_relay fan-out (`CircuitMediaRelayComposeTest`)
 - [x] Mobile callee on Wi‑Fi: ephemeral listen during foreground call (V027 / nm)
 - [ ] N≥3 remains `media_relay`; unify engine on libp2p send/recv (N021)
-- [x] App AEAD under call media key on media frames (direct 1:1 path)
+- [x] App AEAD under call media key on media frames (direct 1:1 path + SFU V032)
+- [x] Receiver per-stream playout + hop load admission / A↑A↓ enforce (V032)
 - [x] Stop extending legacy WebRTC bridge; libp2p connect-fail UI hints via `PlatformUserHints`
 - [x] Dogfood: Android ↔ Android bidirectional voice on Wi‑Fi (moto g7 play ↔ SM-T380) — **OK 2026-08-02**; see [CURRENT_STATE.md](CURRENT_STATE.md)
-- [ ] Dogfood: Android ↔ desktop voice without WebRTC
 
 ## m2 — Teardown WebRTC product path
 
@@ -106,6 +107,19 @@ North star: [NETWORKING.md](../../docs/architecture/NETWORKING.md), [V026](DECIS
 - [ ] Wire / wake / media-key normative text → `docs/contracts/` (and push/mesh cross-links)
 - [ ] Freeze ADRs as superseded-by docs where appropriate
 - [ ] Update CURRENT_STATE / README status
+
+## sm — Transport session machines (V033) — docs before code
+
+Robustness refactor for long-lived host media sessions. Spec: [SESSION_MACHINES.md](SESSION_MACHINES.md). Mesh attach twin: [MEDIA_RELAY_ATTACH.md](../p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026). **Do not start structural code until s1 open questions are frozen.**
+
+- [x] s0 — Design docs + [V033](DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm) (+ mesh N026)
+- [x] s1 — Freeze open questions in SESSION_MACHINES (mutex strand, blocking Connect, instant Failed→Idle, Detach-then-Connect)
+- [x] s2a — `CallMediaDirectService` session phases/events; glare + Detach via phase; loopback tests (`CallMediaDirectServiceTest`)
+- [x] s2c — Flag soup collapsed to phase (+ `connect_settled` waiter / `offerer_glare`); race homes noted in SESSION_MACHINES / CALLS.md
+- [x] s3a — media-relay inbound attach SM (mesh N026)
+- [x] s3b — media-relay client `AcceptAndAttach` SM + Detach abort
+- [x] Circuit compose loopbacks — `CircuitCallMediaComposeTest` + `CircuitMediaRelayComposeTest`
+- [ ] s4 — Optional circuit bridge SM; point CALLS.md critical races at phase homes
 
 ## Later horizons
 

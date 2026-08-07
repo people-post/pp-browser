@@ -1,6 +1,6 @@
 # P2P A/V calls — current state
 
-**Last updated:** 2026-08-05
+**Last updated:** 2026-08-07
 
 **North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). **m2 done:** libdatachannel removed from build; wire-compat `call_sdp`/`call_ice` ignored.
 
@@ -15,8 +15,12 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **in-libp2p** (L1+); app `call_hop_addrs` **not** product |
-| **CallLifecycle orchestrator** | Phase machine owns ring/accept/media/listen desire; thin `CallController`; N025 from `WantEphemeralListen`; bridge reports MediaDeferred / DirectConnected / ConnectFailed |
+| **CallLifecycle orchestrator** | Phase machine owns ring/accept/media/listen desire; thin `CallController`; N025 from `WantEphemeralListen`; bridge reports MediaDeferred / DirectConnected / ConnectFailed; gtest `call_lifecycle_test` |
 | **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp-browser/call-media/1.0.0` — **dogfood OK 2026-08-02** |
+| **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |
+| **V032 media QoS structure** | Host receive policy doc; hop A↑/A↓ token buckets + session/participant caps; per-`stream_id` Opus + jitter playout; path_pressure → Opus bps; SFU AEAD under call media key |
+| **Call media health UI** | Quality bars + Fair/Poor/NoAudio labels on call chrome; Call details sheet; debug subtitle + rich diagnostics behind `call_diagnostics` pref / `--debug`; periodic `media_health` INFO logs |
+| **Circuit compose (loopback)** | A↛B partition via R: `CircuitCallMediaComposeTest` (1:1 call-media) + `CircuitMediaRelayComposeTest` (quote/attach/fan-out); shared `loopback_partition_fixture.h`; `IsReachableForProtocol` gates |
 
 ## a4 thin in code (still relevant under V026)
 
@@ -54,17 +58,19 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 
 | Area | State |
 |------|-------|
-| **m1** desktop matrix | Android ↔ desktop voice without WebRTC; **Windows LAN mDNS** + **call-control `listen_multiaddrs`** on invite/accept for dial when mDNS misses — rebuild **both** ends |
-| Hop peerstore / circuit PeerId dial | media-hop **L1–L3** |
+| **m1** desktop matrix | Android ↔ desktop voice; **Windows LAN mDNS** + **call-control `listen_multiaddrs`** on invite/accept when mDNS misses |
+| Hop peerstore / circuit | media-hop **L1–L3** + loopback compose landed; **L3.5 multi-hop** later (transitive R1↛B) |
+| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose loopbacks; optional s4 circuit SM if abort/leave hangs |
+| **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending) |
 | Video on libp2p | Deferred |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
 | N≥3 unify engine on libp2p send/recv | N021 follow-on |
 
 ## Next agent — start here
 
-1. **m1** finish desktop dogfood (Android ↔ desktop libp2p voice).
-2. **media-hop L1:** peer address book in vendored libp2p / `PeerSessionManager`.  
-3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.  
+1. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay`.
+2. **m1** desktop / mDNS dial gaps if they block ship.
+3. **L3.5 multi-hop** when single-hop circuit cannot reach B (transitive path needed).
 
 ## Agent traps
 
@@ -75,8 +81,11 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | SoftMigrate invents NAT | Stack dialable? then quote |
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
 | Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |
+| Host-wide inbound request SM / rewrite working call-media “while here” | V033 — targeted session SMs; [SESSION_MACHINES.md](SESSION_MACHINES.md) docs first |
+| Move `CallLifecycle` phases into `integration/host` | Product SM stays in feature; transport SM in host |
 | Always-mounted `data-if` + Dirty for Accept layer | Presence mount via `RemountCallChrome`; Dirty only for labels/pulse inside a mounted layer |
 | Recreate `CallLibp2pMediaBridge` on N025 sync | Only when `CallSessionManager*` changes |
 | Call-media `read`/`write` from a non-IO worker while pump runs | `Libp2pHost::Post` async pump only |
 | Hold a mutex across blocking stream read from capture | Enqueue + IO-thread write |
 | Put Accept / Connect / PollInbox on Browser IO | Dedicated workers / hop off IO |
+| 1:1 auto SoftMigrate to `media_relay` | Circuit only for undialable 1:1; SFU is N≥3 |

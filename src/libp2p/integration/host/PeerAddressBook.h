@@ -57,7 +57,8 @@ public:
   /** Merge addresses from libp2p peer repository (non-expired) into the book. */
   void SyncFromHost(Libp2pHost& host, const std::string& peer_id_base58);
 
-  void PruneExpired();
+  /** Drop expired entries. Pass `now` from tests to avoid wall-clock sleeps. */
+  void PruneExpired(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
   size_t PeerCount() const;
 
 private:

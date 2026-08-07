@@ -47,12 +47,20 @@ public:
   /** Local capability ads for invite/accept (V030). */
   using LocalPeerCapsFn = std::function<CallPeerCaps()>;
   void SetLocalPeerCapsProvider(LocalPeerCapsFn callback);
+  /** Local libp2p PeerId (base58) for invite/accept — PeerId→relay without contacts. */
+  using LocalLibp2pPeerIdFn = std::function<std::string()>;
+  void SetLocalLibp2pPeerIdProvider(LocalLibp2pPeerIdFn callback);
   /** Register peer listen multiaddrs from invite/accept into the dial registry. */
   using RegisterPeerListenMultiaddrsFn =
       std::function<void(const std::string& identity, const std::vector<std::string>& multiaddrs)>;
   void SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback);
   /** Cache media_relay ads from invite/accept caps (keyed by libp2p PeerId). */
   void NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay);
+  /**
+   * Remember libp2p PeerId ↔ relay: for call-media stream ids (contacts often lack PeerId —
+   * PreferLocal dogfood: Moto contact had only relay: so inbound hashed PeerId ≠ SFU stream).
+   */
+  void NoteLibp2pPeerIdForRelay(const std::string& relay_identity, const std::string& peer_id);
   bool PeerHasMediaRelayCap(const std::string& peer_id) const;
   std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
@@ -66,6 +74,8 @@ public:
   Roe<void> AcceptInvite(const std::string& call_id);
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id);
+  /** Detach SFU + stop SDL. UI thread only — call before LeaveCall worker / app quit. */
+  void StopCallMedia(const std::string& call_id);
 
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
 
@@ -101,6 +111,9 @@ public:
                                 std::optional<int64_t> relay_server_time_ms = std::nullopt);
 
   CallMediaEngine& Media();
+  /** Combined hop health when SFU attached (empty otherwise). */
+  CallHopHealth HopHealth() const;
+  bool IsSfuAttached() const;
 
   Roe<void> SetLocalAudioMuted(bool muted);
   Roe<void> SetLocalVideoEnabled(bool enabled);
@@ -133,7 +146,11 @@ private:
   void P2pNotifyRingChanged() override;
   void P2pSetLastMediaError(std::string message) override;
   Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const override;
+  Roe<std::optional<std::string>> P2pRelayIdentityForLibp2pPeerId(const std::string& call_id,
+                                                                  const std::string& peer_id) const override;
   bool P2pIsAwaitingSfuRecovery() const override;
+  bool P2pExpectGroupSfuMigration(const std::string& call_id) const override;
+  void P2pNoteExpectSfuAttach(const std::string& call_id) override;
   bool P2pIsSfuAttached() const override;
   void P2pClearAwaitingSfuRecovery() override;
   void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
@@ -162,6 +179,22 @@ private:
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
 
+  // Inbound call-control arms (CallInboundHandlers.cpp) — decode → store → one topology/bridge call.
+  Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
+                                const ThreadMessage& message, std::optional<int64_t> relay_created_at_ms,
+                                std::optional<int64_t> relay_server_time_ms, const std::string& local_identity);
+  Roe<void> HandleInboundAccept(const std::string& detail_json, const std::string& sender_identity,
+                                const std::string& local_identity);
+  Roe<void> HandleInboundDecline(const std::string& detail_json, const std::string& sender_identity);
+  Roe<void> HandleInboundLeave(const std::string& detail_json, const std::string& sender_identity,
+                               const std::string& local_identity);
+  Roe<void> HandleInboundRoster(const std::string& detail_json);
+  Roe<void> HandleInboundMediaKey(const std::string& detail_json, const std::string& sender_identity);
+  Roe<void> HandleInboundSfuAttach(const std::string& detail_json);
+  Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
+  Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
+  Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+
   IThreadStore& store_;
   ContactsStore& contacts_;
   IdentityStore& identity_;
@@ -177,9 +210,12 @@ private:
   PrefetchPeerReachFn prefetch_reach_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   LocalPeerCapsFn local_peer_caps_;
+  LocalLibp2pPeerIdFn local_libp2p_peer_id_;
   RegisterPeerListenMultiaddrsFn register_peer_listen_multiaddrs_;
   /** PeerId → advertised media_relay (V030). Absent key = unknown / fail closed. */
   std::unordered_map<std::string, bool> peer_media_relay_caps_;
+  /** libp2p PeerId → relay: identity learned from CallAccept/Invite listen multiaddrs / mDNS. */
+  std::unordered_map<std::string, std::string> peer_id_to_relay_;
   std::optional<std::string> last_media_error_;
   std::string media_activity_;
 };

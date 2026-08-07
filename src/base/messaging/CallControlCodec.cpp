@@ -121,6 +121,9 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
     json["wrapped_key_b64"] = detail.wrapped_key_b64;
   }
   WriteStringArray(json, "listen_multiaddrs", detail.listen_multiaddrs);
+  if (!detail.libp2p_peer_id.empty()) {
+    json["libp2p_peer_id"] = detail.libp2p_peer_id;
+  }
   WritePeerCaps(json, detail.caps);
   return json.dump();
 }
@@ -157,6 +160,7 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.media_key_id = OptString(json, "media_key_id").value_or("");
   detail.wrapped_key_b64 = OptString(json, "wrapped_key_b64").value_or("");
   detail.listen_multiaddrs = ReadStringArray(json, "listen_multiaddrs");
+  detail.libp2p_peer_id = OptString(json, "libp2p_peer_id").value_or("");
   detail.caps = ReadPeerCaps(json);
   return detail;
 }
@@ -167,6 +171,9 @@ Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) 
                       {"audio_muted", detail.audio_muted},
                       {"video_enabled", detail.video_enabled}};
   WriteStringArray(json, "listen_multiaddrs", detail.listen_multiaddrs);
+  if (!detail.libp2p_peer_id.empty()) {
+    json["libp2p_peer_id"] = detail.libp2p_peer_id;
+  }
   WritePeerCaps(json, detail.caps);
   return json.dump();
 }
@@ -182,6 +189,7 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.audio_muted = json.value("audio_muted", false);
   detail.video_enabled = json.value("video_enabled", false);
   detail.listen_multiaddrs = ReadStringArray(json, "listen_multiaddrs");
+  detail.libp2p_peer_id = OptString(json, "libp2p_peer_id").value_or("");
   detail.caps = ReadPeerCaps(json);
   return detail;
 }

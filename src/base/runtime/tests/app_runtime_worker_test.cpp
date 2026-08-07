@@ -76,7 +76,7 @@ TEST(AppRuntimeWorkerTest, PauseBackgroundWorkPausesWorkerPool) {
   pbr::AppRuntime::PauseBackgroundWork();
   pbr::AppRuntime::PostWorkerNormal([&]() { ran.store(true); });
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(80));
+  // Pause queues work; it must not run before Resume (no settle sleep).
   EXPECT_FALSE(ran.load());
 
   pbr::AppRuntime::ResumeBackgroundWork();

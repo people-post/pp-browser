@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -22,6 +23,17 @@ static int ProcessId() { return static_cast<int>(getpid()); }
 
 namespace pbr {
 namespace {
+
+void WaitUntil(const std::function<bool()>& predicate, const std::chrono::milliseconds timeout) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (predicate()) {
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  FAIL() << "Timed out waiting for condition";
+}
 
 class CallMediaDirectServiceTest : public ::testing::Test {
 protected:
@@ -143,6 +155,184 @@ TEST_F(CallMediaDirectServiceTest, HelloAndEncryptedAudioRoundTrip) {
     ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return got_audio; }));
   }
   EXPECT_EQ(received, opus);
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  a_call_media_->Detach();
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  EXPECT_FALSE(a_call_media_->IsActive());
+}
+
+TEST_F(CallMediaDirectServiceTest, DetachUnblocksConnectWait) {
+  // B stalls inside inbound hello handler so A's Connect blocks in hello_ack read.
+  const std::string call_id = "call-detach-wait";
+  ByteVector media_key(32, 0x11);
+  std::atomic<bool> release_b{false};
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    while (!release_b.load(std::memory_order_acquire)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  std::atomic<bool> connect_done{false};
+  Roe<void> connect_result = Error("not run");
+  std::thread th([&] {
+    connect_result = a_call_media_->Connect(params, {}, 15000);
+    connect_done.store(true, std::memory_order_release);
+  });
+
+  WaitUntil([&] { return a_call_media_->Phase() == CallMediaSessionPhase::HelloOutbound; },
+            std::chrono::milliseconds(5000));
+  ASSERT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::HelloOutbound);
+  ASSERT_FALSE(connect_done.load(std::memory_order_acquire));
+
+  a_call_media_->Detach();
+  th.join();
+  release_b.store(true, std::memory_order_release);
+
+  ASSERT_TRUE(connect_done.load(std::memory_order_acquire));
+  EXPECT_FALSE(connect_result);
+  EXPECT_EQ(connect_result.error().message, "call-media aborted");
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+}
+
+TEST_F(CallMediaDirectServiceTest, FailAfterDetachDoesNotCallOnFailed) {
+  const std::string call_id = "call-fail-after-detach";
+  ByteVector media_key(32, 0x33);
+  std::atomic<int> local_failed{0};
+
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    // Peer may see read_eof when we Detach — that is remote close, not this assertion.
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  CallMediaDirectCallbacks cbs;
+  cbs.on_failed = [&](const std::string&) { local_failed.fetch_add(1); };
+
+  ASSERT_TRUE(a_call_media_->Connect(params, std::move(cbs), 5000));
+  ASSERT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  // Intentional local Detach: late duplex EOF on this service must not notify on_failed.
+  // Sync on peer observing the close instead of a wall-clock settle sleep.
+  a_call_media_->Detach();
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  WaitUntil([&] { return !b_call_media_->IsActive(); }, std::chrono::milliseconds(5000));
+  EXPECT_EQ(local_failed.load(), 0);
+}
+
+TEST_F(CallMediaDirectServiceTest, ConnectTimeoutReturnsIdleAndIgnoresLateOpen) {
+  // SESSION_MACHINES golden #7 (loopback wiring). Stall-the-peer patterns leave an outbound
+  // hello ReadJson alive across TearDown and poison DualDial; dial a blackhole instead.
+  // Idle+late OpenStreamOk ignore is covered by CallMediaSessionLogicTest.
+  auto peer_id = b_host_.LocalPeerIdBase58();
+  ASSERT_TRUE(peer_id);
+  ASSERT_TRUE(a_sessions_->RegisterEndpoint(
+      "blackhole", "/ip4/192.0.2.1/tcp/4001/p2p/" + *peer_id));
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "blackhole";
+  params.call_id = "call-connect-timeout";
+  params.media_epoch = 1;
+  params.media_key = ByteVector(32, 0x44);
+  params.offerer = true;
+
+  auto result = a_call_media_->Connect(params, {}, 400);
+  EXPECT_FALSE(result);
+  EXPECT_TRUE(result.error().message == "call-media connect timed out" ||
+              result.error().message.find("call-media dial failed") != std::string::npos)
+      << result.error().message;
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  EXPECT_FALSE(a_call_media_->IsActive());
+}
+
+TEST_F(CallMediaDirectServiceTest, ClearInboundHandlerRejectsLateInbound) {
+  // SESSION_MACHINES golden #6: ClearInboundHandler → late inbound no-ops.
+  const std::string call_id = "call-handler-cleared";
+  ByteVector media_key(32, 0x55);
+
+  a_call_media_->ClearInboundHandler();
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "a";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  auto result = b_call_media_->Connect(params, {}, 3000);
+  EXPECT_FALSE(result);
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  EXPECT_FALSE(a_call_media_->IsActive());
+}
+
+TEST_F(CallMediaDirectServiceTest, DualDialExactlyOneAdoptEachSide) {
+  // SESSION_MACHINES golden #3: dual dial → one adopt per side; no hang.
+  const std::string call_id = "call-dual-dial";
+  ByteVector media_key(32, 0x66);
+
+  a_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+  });
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+  });
+
+  CallMediaDirectConnectParams a_params;
+  a_params.peer_key = "b";
+  a_params.call_id = call_id;
+  a_params.media_epoch = 1;
+  a_params.media_key = media_key;
+  a_params.offerer = true;
+
+  CallMediaDirectConnectParams b_params;
+  b_params.peer_key = "a";
+  b_params.call_id = call_id;
+  b_params.media_epoch = 1;
+  b_params.media_key = media_key;
+  b_params.offerer = true;
+
+  Roe<void> a_result = Error("not run");
+  Roe<void> b_result = Error("not run");
+  std::thread ta([&] { a_result = a_call_media_->Connect(a_params, {}, 8000); });
+  std::thread tb([&] { b_result = b_call_media_->Connect(b_params, {}, 8000); });
+  ta.join();
+  tb.join();
+
+  ASSERT_TRUE(a_result) << a_result.error().message;
+  ASSERT_TRUE(b_result) << b_result.error().message;
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_TRUE(a_call_media_->IsActive());
+  EXPECT_TRUE(b_call_media_->IsActive());
+
+  a_call_media_->Detach();
+  b_call_media_->Detach();
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  EXPECT_EQ(b_call_media_->Phase(), CallMediaSessionPhase::Idle);
 }
 
 } // namespace

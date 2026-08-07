@@ -1,5 +1,7 @@
 name: release
 
+# App installers only (macOS / Windows / Android). pp-node: release-pp-node.yml + pp-node/v* tags.
+
 on:
   push:
     tags:
@@ -12,7 +14,24 @@ env:
   INSTALL_PREFIX: ${{ github.workspace }}/install
 
 jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require tag commit on main (release line)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::App release tags (v*) must point at a commit on origin/main."
+            exit 1
+          fi
+
   macos:
+    needs: [guard]
     runs-on: macos-14
 
     steps:
@@ -137,6 +156,7 @@ jobs:
         run: ccache --show-stats || true
 
   windows:
+    needs: [guard]
     runs-on: windows-2022
 
     steps:
@@ -220,6 +240,7 @@ jobs:
         run: sccache --show-stats || true
 
   android:
+    needs: [guard]
     runs-on: ubuntu-24.04
     env:
       # Set before setup-java / Gradle daemon so native builds inherit ccache config.
@@ -383,3 +404,7 @@ jobs:
             dist/macos/*
             dist/windows/*
             dist/android/*
+          body: |
+            ## App release
+
+            macOS / Windows / Android installers. Headless **`pp-node`** ships on a separate train — tag `pp-node/v…` and see [RELEASE.md](https://github.com/${{ github.repository }}/blob/main/docs/ops/RELEASE.md).

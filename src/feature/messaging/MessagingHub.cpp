@@ -825,6 +825,10 @@ void MessagingHub::AbortCallMediaForShutdown() {
   if (circuit_relay_) {
     circuit_relay_->AbortInflightRequests();
   }
+  // Group SFU: close media_relay before LeaveCall joins capture (BlockingWrite hang on quit).
+  if (media_relay_) {
+    media_relay_->Detach();
+  }
   // Tell the peer the call ended (fire-and-forget relay Critical send) so they StopMedia /
   // leave Connecting instead of sitting on a half-open stream after we detach.
   if (call_sessions_) {
@@ -994,6 +998,9 @@ void MessagingHub::RegisterCallPeerListenMultiaddrs(const std::string& identity,
         p2p_->RegisterPeerDirectEndpoint(peer_id, ma);
       }
     }
+    if (!peer_id.empty() && identity.rfind("relay:", 0) == 0 && call_sessions_) {
+      call_sessions_->NoteLibp2pPeerIdForRelay(identity, peer_id);
+    }
     log().info << "Call listen addr registered dial_key=" << identity << " ma=" << ma;
   }
 }
@@ -1073,6 +1080,15 @@ Roe<void> MessagingHub::Initialize(const AppConfig& config, const std::string& p
     AppRuntime::PostWorkerNormal([this, identity]() { PrefetchPeerReachability(identity); });
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetLocalLibp2pPeerIdProvider([this]() -> std::string {
+    if (!node_runtime_ || !node_runtime_->Host()) {
+      return {};
+    }
+    if (auto local = node_runtime_->Host()->LocalPeerIdBase58()) {
+      return *local;
+    }
+    return {};
+  });
   call_sessions_->SetLocalPeerCapsProvider([this]() {
     CallPeerCaps caps;
     caps.v = kCallPeerCapsVersion;
@@ -1161,6 +1177,15 @@ Roe<void> MessagingHub::BuildMessagingStack() {
     AppRuntime::PostWorkerNormal([this, identity]() { PrefetchPeerReachability(identity); });
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetLocalLibp2pPeerIdProvider([this]() -> std::string {
+    if (!node_runtime_ || !node_runtime_->Host()) {
+      return {};
+    }
+    if (auto local = node_runtime_->Host()->LocalPeerIdBase58()) {
+      return *local;
+    }
+    return {};
+  });
   call_sessions_->SetLocalPeerCapsProvider([this]() {
     CallPeerCaps caps;
     caps.v = kCallPeerCapsVersion;

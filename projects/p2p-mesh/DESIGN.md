@@ -414,7 +414,7 @@ Hot-reload: role / capability / pricing changes reconfigure modules (`MessagingH
 | Connection card (reachability status + help) | When Node |
 | Capability checkboxes under Node | Per shipped capability |
 | Nested **Free / Paid** (+ rate) under billable caps | When billable capability ships |
-| **Prefer contacts for routing** toggle | Shipped |
+| **Friends first** toggle (`prefer_contacts_for_routing`) | Shipped |
 | **Accept paid jobs** checkbox | When marketplace exists |
 
 Surface **actual** listen multiaddr when Node.

@@ -459,6 +459,7 @@ void to_json(nlohmann::json& j, const ProfilePreferences& prefs) {
                      {"pin_is_default", prefs.pin_is_default},
                      {"auto_renew_registration", prefs.auto_renew_registration},
                      {"show_notifications", prefs.show_notifications},
+                     {"call_diagnostics", prefs.call_diagnostics},
                      {"group_invite_policy", prefs.group_invite_policy},
                      {"reduce_transparency", prefs.reduce_transparency},
                      {"compact_chrome_frost", prefs.compact_chrome_frost},
@@ -492,6 +493,11 @@ void from_json(const nlohmann::json& j, ProfilePreferences& prefs) {
     prefs.show_notifications = j["show_notifications"].get<bool>();
   } else {
     prefs.show_notifications = true;
+  }
+  if (j.contains("call_diagnostics") && j["call_diagnostics"].is_boolean()) {
+    prefs.call_diagnostics = j["call_diagnostics"].get<bool>();
+  } else {
+    prefs.call_diagnostics = false;
   }
   if (j.contains("group_invite_policy") && j["group_invite_policy"].is_string()) {
     prefs.group_invite_policy = j["group_invite_policy"].get<std::string>();

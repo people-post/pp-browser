@@ -5,6 +5,7 @@ endif()
 add_executable(pp-node
   main.cpp
   NodeBootstrap.cpp
+  NodeEnvOverlay.cpp
   StatusHttpProtocol.cpp
   StatusHttpServer.cpp
 )
@@ -33,10 +34,28 @@ endif()
 
 install(TARGETS pp-node RUNTIME DESTINATION bin)
 
+add_executable(pp-node-probe
+  probe/main.cpp
+)
+target_include_directories(pp-node-probe PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/src/libp2p/fork/include
+)
+target_link_libraries(pp-node-probe PRIVATE
+  pp_libp2p_integration
+  pp_common
+  Threads::Threads
+)
+if(TARGET OpenSSL::Crypto)
+  target_link_libraries(pp-node-probe PRIVATE OpenSSL::Crypto)
+endif()
+
 if(PP_BROWSER_BUILD_TESTS)
   add_executable(pp_browser_pp_node_test
     tests/status_http_protocol_test.cpp
+    tests/node_env_overlay_test.cpp
     StatusHttpProtocol.cpp
+    NodeEnvOverlay.cpp
   )
   target_include_directories(pp_browser_pp_node_test PRIVATE
     ${CMAKE_SOURCE_DIR}/src

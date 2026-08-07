@@ -4,6 +4,7 @@
 #include "base/media/CallMediaEngine.h"
 #include "base/messaging/CallControlCodec.h"
 #include "base/messaging/CallSessionStore.h"
+#include "base/messaging/SfuAttachFanout.h"
 #include "base/messaging/SoftMigrateLogic.h"
 #include "base/messaging/SqliteThreadStore.h"
 #include "base/people/ContactsStore.h"
@@ -11,6 +12,7 @@
 #include "common/Utilities.h"
 
 #include <filesystem>
+#include <functional>
 #include <gtest/gtest.h>
 #include <mutex>
 #include <thread>
@@ -161,6 +163,16 @@ public:
 
   void StartClientFrameReader() override { ++reader_starts; }
 
+  void SetClientTransportLostHandler(std::function<void()> handler) override {
+    transport_lost_handler = std::move(handler);
+  }
+
+  void FireTransportLost() {
+    if (transport_lost_handler) {
+      transport_lost_handler();
+    }
+  }
+
   Roe<MediaRelayAttachResult> AttachAsLocalHop(
       const std::string& /*call_id*/, std::function<void(MediaDataFrame)> /*on_frame*/) override {
     ++local_hop_calls;
@@ -175,7 +187,11 @@ public:
     return r;
   }
 
-  Roe<void> Subscribe(uint32_t /*stream_id*/, uint16_t /*channel_id*/) override { return {}; }
+  Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
+    subscribed_streams.push_back(stream_id);
+    subscribed_channels.push_back(channel_id);
+    return {};
+  }
   Roe<void> SendFrame(const MediaDataFrame& /*frame*/) override { return {}; }
   void Detach() override {
     attached_ = false;
@@ -201,6 +217,9 @@ public:
   std::string last_quote_hop;
   std::string last_quote_call_id;
   bool local_hop_attached_ = false;
+  std::vector<uint32_t> subscribed_streams;
+  std::vector<uint16_t> subscribed_channels;
+  std::function<void()> transport_lost_handler;
 
 private:
   bool attached_ = false;
@@ -586,6 +605,101 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
   EXPECT_TRUE(attached) << "FlushPendingInboundSfuAttach should attach after SoftMigrate";
   EXPECT_GE(relay_->attach_calls, 1);
   EXPECT_EQ(relay_->detach_calls, 0);
+
+  AppRuntime::Shutdown();
+  AppRuntime::ShutdownUI();
+}
+
+TEST_F(CallTopologyControllerTest, InboundAnnounceSubscribesWithoutRosterPeer) {
+  // Samsung dogfood: SyncSfuSubscriptions peers=1 (roster missing Moto) while Moto TX'd.
+  // Peer CallSfuAttach publisher_stream_id must still Subscribe.
+  const std::string call_id = "call:announce-sub";
+  SeedJoinedCall(call_id, {"relay:A", "relay:B"}, 1000); // only 2 Joined locally
+  host_->local_identity = "relay:B";
+  relay_->started = true;
+
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.prefer_local_as_hop = true;
+  deps.local_advertise_multiaddrs = {"/ip4/10.0.0.1/tcp/1/p2p/" + relay_->local_peer_id};
+  topo_->SetMediaRelayDeps(std::move(deps));
+
+  CallSfuAttachDetail self;
+  self.call_id = call_id;
+  self.hop_peer_id = relay_->local_peer_id;
+  self.hop_multiaddr = "/ip4/10.0.0.1/tcp/1/p2p/" + relay_->local_peer_id;
+  self.publisher_stream_id = PublisherStreamIdForIdentity("relay:A");
+  ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, self)) << "self hop attach";
+  ASSERT_TRUE(topo_->IsSfuAttached());
+
+  const uint32_t moto_stream = PublisherStreamIdForIdentity("relay:xaug44GAhFLCTTHR");
+  CallSfuAttachDetail announce;
+  announce.call_id = call_id;
+  announce.hop_peer_id = relay_->local_peer_id;
+  announce.hop_multiaddr = self.hop_multiaddr;
+  announce.publisher_stream_id = moto_stream;
+  ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, announce));
+
+  bool got_moto = false;
+  for (uint32_t s : relay_->subscribed_streams) {
+    if (s == moto_stream) {
+      got_moto = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(got_moto) << "must Subscribe announced publisher even when not in Joined roster";
+}
+
+TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
+  // Moto dogfood: mid-call hop CleanupParticipant left TX zombie / RX frozen with no recovery.
+  AppRuntime::Initialize();
+  AppRuntime::InitializeUI();
+
+  const std::string call_id = "call:guest-reattach";
+  SeedJoinedCall(call_id, {"relay:A", "relay:B", "relay:C"}, 1000);
+  host_->local_identity = "relay:B";
+  relay_->started = true;
+  relay_->local_peer_id = "12D3KooWLocalGuest";
+
+  const std::string hop = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  dial_->endpoints[hop] = "/ip4/1.2.3.4/tcp/443/p2p/" + hop;
+
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.prefer_local_as_hop = false;
+  topo_->SetMediaRelayDeps(std::move(deps));
+  ASSERT_TRUE(relay_->transport_lost_handler) << "SetMediaRelayDeps must arm transport-lost handler";
+
+  CallSfuAttachDetail attach;
+  attach.call_id = call_id;
+  attach.hop_peer_id = hop;
+  attach.hop_multiaddr = dial_->endpoints[hop];
+  ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, attach));
+  ASSERT_TRUE(topo_->IsSfuAttached());
+  const int attaches_after_first = relay_->attach_calls;
+  const int quotes_after_first = relay_->quote_calls;
+  EXPECT_GE(attaches_after_first, 1);
+  EXPECT_GE(relay_->reader_starts, 1);
+
+  relay_->FireTransportLost();
+  AppRuntime::RunUITasks();
+
+  bool reattached = false;
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUITasks();
+    if (relay_->attach_calls > attaches_after_first) {
+      reattached = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUITasks();
+  EXPECT_TRUE(reattached) << "guest duplex loss must re-AcceptAndAttach";
+  EXPECT_GT(relay_->quote_calls, quotes_after_first);
+  EXPECT_GT(relay_->reader_starts, 1);
+  EXPECT_TRUE(topo_->IsSfuAttached());
 
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();

@@ -108,7 +108,7 @@ Presenters push a **surface snapshot** upward (`*SurfaceNotifyPorts`). An **app-
 
 Call chrome stays special-cased (`CallController` + `CallChromeSync`). See [SHELL_CHROME_PROJECTION.md](../architecture/SHELL_CHROME_PROJECTION.md).
 
-Call ring / in-call overlays live in `#shell-call-ring-mount` / `#shell-call-in-progress-mount`. `CallController` classifies changes and notifies ShellHost via `apply_chrome_update` — it does **not** call grab-bag `DirtyWindow`. Show/hide remounts **only those mounts** via `RemountCallChrome` — never remount the full shell tree for call chrome (that destroyed chat panes and broke Accept hit-testing on Samsung). Control *presence* (stage / retry / invite / speaker button / roster) also remounts. Mute / speaker / camera icon toggles use `DirtyCallChrome` + single SVG `data-attr-src` (and `--on` class) — not remount/bake, and not dual `data-if` SVGs. Meter/pulse/elapsed ticks use `DirtyCallChrome` only.
+Call ring / in-call overlays live in `#shell-call-ring-mount` / `#shell-call-in-progress-mount`. `CallController` classifies changes and notifies ShellHost via `apply_chrome_update` — it does **not** call grab-bag `DirtyWindow`. Show/hide remounts **only those mounts** via `RemountCallChrome` — never remount the full shell tree for call chrome (that destroyed chat panes and broke Accept hit-testing on Samsung). Control *presence* (stage / retry / invite / speaker button / roster) and **chrome mode** (Expanded / Immersive / Minimized — V031) also remount. Mute / speaker / camera icon toggles use `DirtyCallChrome` + single SVG `data-attr-src` (and `--on` class) — not remount/bake, and not dual `data-if` SVGs. Meter/pulse/elapsed ticks use `DirtyCallChrome` only. After each in-call remount, `ShellCallChromeGesture` re-attaches to `#shell-call-chrome-root` (or the minimized chip).
 
 `RemountCallChrome` **defers** `MountInner` to the next UI turn (same reason as deferred `SyncLayout`): doing it inside an Rml Leave/Accept click destroys the event target mid-dispatch and can segfault. `SyncLayout` still fills mounts synchronously after the shell remount.
 
@@ -164,7 +164,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `dialog_ok()` / `dialog_cancel()` | Dialog buttons |
 | `titlebar_minimize()` / `titlebar_toggle_maximize()` / `titlebar_close()` | Desktop custom title bar window controls (macOS traffic lights or Win/Linux icon strip) |
 
-Desktop expanded status bar binds `statusbar_visible`, cluster fields (`statusbar_mesh_*`, `statusbar_reach_*`, `statusbar_help_visible`, `statusbar_label*`), and `statusbar_activity` (no click callbacks — display-only). Product work: [network-status-chrome](../../projects/network-status-chrome/).
+Desktop expanded status bar binds `statusbar_visible`, cluster fields (`statusbar_brief_*`, `statusbar_direct_*`, `statusbar_help_visible`, `statusbar_inbound_*`, `statusbar_label*`), and `statusbar_activity` (no click callbacks — display-only). Product work: [network-status-chrome](../../projects/network-status-chrome/).
 
 Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). `sessions_unread` is aggregate chat unread; `contacts_unread` is reserved for future contacts-tab queues (not chat unread — currently always 0). `me_attention` is a non-count dot for Me setup nudges (today: desktop Node outbound-only/blocked reachability until the user acks **Got it — use relay** in Me → Network, or inbound becomes reachable). On expanded, the Me attention dot is on the Me nav-rail tab; on compact, it is on the Home profile button. The Network settings row mirrors the same attention via `section.attention`. Refreshed by `BadgeAggregator` on messaging / reachability events.
 
@@ -243,10 +243,12 @@ On **desktop + expanded** layout (`Platform::IsDesktop() && layout_mode == Expan
 
 | Side | Content |
 |------|---------|
-| Left cluster | **Mesh** (dot: on/off/error) · **Reach** (3-bar strength from `ReachabilitySnapshot`) · **Help** (teal icon when Node / Help the network on) · sparse label for off/degraded (`Direct off`, `Outbound only`, `Blocked`) |
+| Left cluster | **Brief** · **Direct** · divider · **Help** · **Inbound** · **Load** pills (`circuit N` / `media N` when helping and count > 0) · sparse label. Click opens hybrid network-status popover. |
 | Right | `statusbar_activity` — ephemeral busy text (Thinking…, tool labels, Preparing…) via `ShellHost::SetActivity` |
 
-Data comes from `MessagingShellPorts::statusbar_cluster` (polled in `ShellHost::RefreshStatusbarCluster`). Adaptive: Client shows Mesh+Reach; Node adds Help. Load counts are deferred (s3). Still **display-only** (click → popover is s2).
+Data comes from `MessagingShellPorts::statusbar_cluster` (polled in `ShellHost::RefreshStatusbarCluster`). Adaptive: Client shows Brief+Direct; Node adds Help+Inbound; Load only when count > 0. Circuit/media aggregates from `RelayRuntimeStats` (`CircuitRelayService` / `MediaRelayService`).
+
+**Click → hybrid popover (s2):** Left cluster is a hit target (`toggle_statusbar_popover`). Opens `#shell-statusbar-popover` above the bar (inspect Brief/Direct/reachability summary, help echo, UPnP when helping, helper load aggregates, last libp2p error) with **Test again** and **Open Network settings…**. No capability toggles. Escape / scrim dismiss.
 
 `#shell-root` is inset with `bottom = statusbar_height_dp` while visible. Compact layout and mobile/tablet platforms omit the bar.
 

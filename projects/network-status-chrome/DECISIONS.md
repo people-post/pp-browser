@@ -89,18 +89,16 @@ Normative UX summary: [DESIGN.md](DESIGN.md).
 ## S007 — Reach uses reachability first; hop “relay available” later (Q5 D→B)
 
 **Date:** 2026-08-05  
-**Status:** Accepted  
+**Status:** Partially superseded by [S011](DECISIONS.md#s011--client-brief--direct-node-adds-inbound) for ambient Client slots / HTTP Brief exclusion. Hop enrichment clause still stands.
 
 **Decision:**
 
-1. **s1:** Slot B = `ReachabilitySnapshot` only (`Checking` / `Reachable` / `OutboundOnly` / `Blocked` / `Unknown`). No “Relayed because hop X exists” glyph until hop inventory is trustworthy.
-2. **Later:** Extend B with consumer **dialable circuit/media hop in policy set** (option B) as a path-quality upgrade — still a sub-signal of Reach, not a separate slot.
+1. **s1 (historical):** Slot B = `ReachabilitySnapshot` only (`Checking` / `Reachable` / `OutboundOnly` / `Blocked` / `Unknown`). No “Relayed because hop X exists” glyph until hop inventory is trustworthy.
+2. **Later:** Extend Direct/inbound with consumer **dialable circuit/media hop in policy set** (option B) as a path-quality upgrade — still not a separate Brief substitute.
 
 **Rationale:** Honest ambient UI; don’t invent relay availability.
 
-**Consequences:** DESIGN “Relayed” state is **reserved**, not s1. HTTP Brief reachability is **not** this signal.
-
----
+**Consequences:** DESIGN “Relayed” state is **reserved**. Ambient HTTP Brief is now slot A per S011 (this ADR’s “HTTP Brief is not this signal” applied only to the old Reach slot).
 
 ## S008 — Load MVP is active counts only (Q6 A)
 
@@ -147,3 +145,22 @@ Normative UX summary: [DESIGN.md](DESIGN.md).
 | **Q17 Dogfood** | Node desktop: Reachable + Helping idle visible; click → hybrid with Retest; under load show count pills (`circuit N` / `media N`). One LAN helper + one client is enough for s1/s2 |
 
 **Consequences:** Design-system icon inventory grows; a11y names for icon-only states land with s2/s4; no `pp-node` work in this project’s phases.
+
+---
+
+## S011 — Client Brief + Direct; Node adds inbound
+
+**Date:** 2026-08-06  
+**Status:** Accepted  
+**Supersedes:** Slot IA in [S007](DECISIONS.md#s007--reach-uses-reachability-first-hop-relay-available-later-q5-db) (HTTP Brief was excluded from ambient; mesh+NAT strength bars as Client primary). [S004](DECISIONS.md#s004--adaptive-persona--slots-q2-c) slot letters remapped.
+
+**Decision:**
+
+1. **Group 1 (all):** **Brief** (HTTP relay / `brief.global` poll health) + **Direct** (libp2p running and seed dial OK).
+2. **Group 2 (Help on):** divider · **Help** · **Inbound** binary (dial-back on/off). Outbound is not a separate glyph; Outbound-only shows Direct on + Inbound off + sparse label.
+3. Brief health = last `PollInbox` ok/fail (`Unknown` until first poll). Not a substitute for Me → Network detail.
+4. Remove 3-bar reach strength meter from the bar.
+
+**Rationale:** Client happiness is Brief messaging + P2P dial-out when needed. Inbound dialability is a Node/helper concern. Matches how the product actually works (HTTP relay + optional libp2p).
+
+**Consequences:** New icons `status-brief.svg`, `status-direct.svg`, `status-inbound.svg`; `P2pMessagingService` tracks brief poll health; shell bindings renamed from mesh/reach to brief/direct/inbound. Hop “relay available” upgrade (old S007 later clause) remains deferred as Direct/inbound enrichment, not a Brief substitute.
