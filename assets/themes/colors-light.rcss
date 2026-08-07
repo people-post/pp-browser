@@ -405,11 +405,11 @@ select selectbox option:hover {
 }
 
 .shell-statusbar-brief--ok svg {
-  image-color: #15803d;
+  image-color: #4d7358;
 }
 
 .shell-statusbar-brief--failed svg {
-  image-color: #dc2626;
+  image-color: #b86b6b;
 }
 
 .shell-statusbar-brief--unknown svg {
@@ -417,15 +417,15 @@ select selectbox option:hover {
 }
 
 .shell-statusbar-direct--ok svg {
-  image-color: #15803d;
+  image-color: #4d7358;
 }
 
 .shell-statusbar-direct--off svg {
-  image-color: #d97706;
+  image-color: #b88445;
 }
 
 .shell-statusbar-direct--error svg {
-  image-color: #dc2626;
+  image-color: #b86b6b;
 }
 
 .shell-statusbar-direct--checking svg {
@@ -433,11 +433,11 @@ select selectbox option:hover {
 }
 
 .shell-statusbar-inbound--ok svg {
-  image-color: #15803d;
+  image-color: #4d7358;
 }
 
 .shell-statusbar-inbound--off svg {
-  image-color: #d97706;
+  image-color: #b88445;
 }
 
 .shell-call-quality-bar {
@@ -478,15 +478,15 @@ select selectbox option:hover {
 }
 
 .shell-statusbar-help svg {
-  image-color: #0d9488;
+  image-color: #4a8f87;
 }
 
 .shell-statusbar-label--warn {
-  color: #b45309;
+  color: #a67c3a;
 }
 
 .shell-statusbar-label--error {
-  color: #dc2626;
+  color: #b86b6b;
 }
 
 .shell-statusbar-popover {

@@ -60,7 +60,7 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 - [x] Circuit: simpler contacts → seed preference (N014 intent)
 - [x] Provider: prefer serving contacts when hosting (esp. volunteer Node)
 - [x] No coercion — friend must have capability on
-- [x] Light UI: “Prefer contacts for routing” (default on) if needed
+- [x] Light UI: “Friends first” (default on) if needed
 - [x] Message path may keep **HTTP Brief** without peer `message_relay`
 - [x] Align docs/UI copy with **N020** for media (closed set; not hardcoded stages)
 

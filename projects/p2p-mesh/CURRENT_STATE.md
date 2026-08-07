@@ -67,7 +67,7 @@
 |------|-------|
 | Protocol | `/pp-browser/circuit-relay/1.0.0` stream bridge — **single-hop today**; multi-hop v2 planned ([MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)) |
 | Config | `libp2p.capabilities.circuit_relay` + JSON round-trip |
-| UI | **Circuit relay** checkbox under Node (hot refresh via `RefreshMeshCapabilities`) |
+| UI | **Help others connect** checkbox under Help the network (hot refresh via `RefreshMeshCapabilities`) |
 | Seed | `packaging/pp-node/config.json.example` enables `circuit_relay: true` |
 | Auto-route | **nf** — `MessagingHub::RequestCircuitBridgePreferred` |
 
@@ -79,7 +79,7 @@
 | Pick | `MeshHopPolicy` — contacts → seed for circuit (`OrderCircuitHops`) |
 | API | `MessagingHub::RequestCircuitBridgePreferred` |
 | Provider | Circuit (and media) admission prefers contacts on volunteer desktop when contacts known; org seed with empty contacts serves all |
-| UI | **Prefer contacts for routing** toggle |
+| UI | **Friends first** toggle |
 
 ## n4-media in code
 

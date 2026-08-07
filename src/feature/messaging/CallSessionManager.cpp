@@ -605,7 +605,7 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
       topology_.IsOnSfuForCall(call_id) ||
       ((*session)->sfu_hint && !(*session)->sfu_hint->empty());
   if (*joined >= 2 && !already_on_sfu && !topology_.HasMediaRelayHopCandidates()) {
-    return Error("Adding a guest needs a media relay hop (enable Media relay on a Node/seed)");
+    return Error("Adding a guest needs call hosting help (enable Help host calls on a computer that's helping the network)");
   }
 
   const int64_t now = util::NowUnixMs();

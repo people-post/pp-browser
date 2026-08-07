@@ -1026,9 +1026,18 @@ select selectbox option {
 .shell-statusbar-popover-row {
   display: flex;
   flex-direction: row;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12dp;
+}
+
+.shell-statusbar-popover-key {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6dp;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .shell-statusbar-popover-row p {

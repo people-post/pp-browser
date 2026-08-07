@@ -116,20 +116,51 @@
        data-if="statusbar_popover_open">
     <p class="text shell-statusbar-popover-title">{{i18n:shell.statusbar.popover.title}}</p>
     <div class="shell-statusbar-popover-row">
-      <p class="text-xs muted">{{i18n:shell.statusbar.popover.brief}}</p>
+      <div class="shell-statusbar-popover-key">
+        <div class="shell-statusbar-slot shell-statusbar-brief"
+             data-class-shell-statusbar-brief--ok="statusbar_brief_ok"
+             data-class-shell-statusbar-brief--failed="statusbar_brief_failed"
+             data-class-shell-statusbar-brief--unknown="statusbar_brief_unknown">
+          <svg src="../icons/status-brief.svg" width="12" height="12" crop-to-content="true"></svg>
+        </div>
+        <p class="text-xs muted">{{i18n:shell.statusbar.popover.brief}}</p>
+      </div>
       <p class="text-xs" data-rml="statusbar_popover_brief_label"></p>
     </div>
     <div class="shell-statusbar-popover-row">
-      <p class="text-xs muted">{{i18n:shell.statusbar.popover.direct}}</p>
+      <div class="shell-statusbar-popover-key">
+        <div class="shell-statusbar-slot shell-statusbar-direct"
+             data-class-shell-statusbar-direct--ok="statusbar_direct_ok"
+             data-class-shell-statusbar-direct--off="statusbar_direct_off"
+             data-class-shell-statusbar-direct--error="statusbar_direct_error"
+             data-class-shell-statusbar-direct--checking="statusbar_direct_checking">
+          <svg src="../icons/status-direct.svg" width="12" height="12" crop-to-content="true"></svg>
+        </div>
+        <p class="text-xs muted">{{i18n:shell.statusbar.popover.direct}}</p>
+      </div>
       <p class="text-xs" data-rml="statusbar_popover_direct_label"></p>
     </div>
     <div class="shell-statusbar-popover-row">
-      <p class="text-xs muted">{{i18n:shell.statusbar.popover.reachability}}</p>
+      <div class="shell-statusbar-popover-key">
+        <div class="shell-statusbar-slot shell-statusbar-inbound"
+             data-if="statusbar_inbound_visible"
+             data-class-shell-statusbar-inbound--ok="statusbar_inbound_ok"
+             data-class-shell-statusbar-inbound--off="statusbar_inbound_off">
+          <svg src="../icons/status-inbound.svg" width="12" height="12" crop-to-content="true"></svg>
+        </div>
+        <p class="text-xs muted">{{i18n:shell.statusbar.popover.reachability}}</p>
+      </div>
       <p class="text-xs" data-rml="statusbar_popover_reach_label"></p>
     </div>
     <p class="text-xs muted" data-rml="statusbar_popover_reach_summary"></p>
-    <p class="text-xs" data-if="statusbar_popover_help_visible"
-       data-rml="statusbar_popover_help_label"></p>
+    <div class="shell-statusbar-popover-row" data-if="statusbar_popover_help_visible">
+      <div class="shell-statusbar-popover-key">
+        <div class="shell-statusbar-slot shell-statusbar-help">
+          <svg src="../icons/status-help.svg" width="12" height="12" crop-to-content="true"></svg>
+        </div>
+        <p class="text-xs" data-rml="statusbar_popover_help_label"></p>
+      </div>
+    </div>
     <p class="text-xs muted" data-if="statusbar_popover_upnp_visible"
        data-rml="statusbar_popover_upnp_label"></p>
     <div class="stack" data-if="statusbar_popover_load_visible">
