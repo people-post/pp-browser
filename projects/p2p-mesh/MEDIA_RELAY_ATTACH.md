@@ -144,7 +144,7 @@ InboundStreamSM (per stream)
 
 ## Client attach path (phone → hop)
 
-`AcceptAndAttach` uses **`MediaRelayClientPhase`**: `Idle → Dialing → Accepting → Attaching → Attached` (Detach → Idle). Waiter is owned by the service so **Detach aborts** in-flight attach (Leave / SoftMigrate). Late workers must not install `client_stream` after timeout/Detach settled.
+`AcceptAndAttach` uses **`MediaRelayClientPhase`**: `Idle → Dialing → Accepting → Attaching → Attached` (Detach → Idle). Transitions go through **`ApplyClientLocked(event)`**; inbound control uses per-stream **`AttachSm::Apply`**. Waiter is owned by the service so **Detach aborts** in-flight attach (Leave / SoftMigrate). Late workers must not install `client_stream` after timeout/Detach settled.
 
 `RequestQuote` remains a short one-shot RPC (separate stream).
 
