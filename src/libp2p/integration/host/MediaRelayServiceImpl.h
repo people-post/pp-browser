@@ -40,7 +40,7 @@ using libp2p::Bytes;
 using libp2p::connection::Stream;
 using libp2p::peer::ProtocolName;
 
-auto MediaRelayLog() {
+inline auto MediaRelayLog() {
   return logging::getLogger("MediaRelayService");
 }
 
@@ -53,26 +53,26 @@ constexpr int64_t kDefaultCeilingBytes = 50'000'000;
 /** path_pressure denominator: queued(1) + in-flight(1) on DuplexFrameSession. */
 constexpr size_t kMaxOutboundBacklog = Libp2pExecutorLimits::kMaxMediaRelayOutboundFrames + 1;
 
-LengthPrefixedFrameConfig MediaDataFrameConfig() {
+inline LengthPrefixedFrameConfig MediaDataFrameConfig() {
   LengthPrefixedFrameConfig config;
   config.max_frame_bytes = kMaxMediaFrameBytes;
   config.allow_empty_body = true;
   return config;
 }
 
-Roe<std::vector<uint8_t>> ReadExactFrame(const std::shared_ptr<Stream>& stream) {
+inline Roe<std::vector<uint8_t>> ReadExactFrame(const std::shared_ptr<Stream>& stream) {
   return BlockingReadLengthPrefixedFrame(stream, MediaDataFrameConfig());
 }
 
-Roe<void> WriteExactBody(const std::shared_ptr<Stream>& stream, const std::vector<uint8_t>& body) {
+inline Roe<void> WriteExactBody(const std::shared_ptr<Stream>& stream, const std::vector<uint8_t>& body) {
   return BlockingWriteLengthPrefixedFrame(stream, body);
 }
 
-Roe<void> WriteJson(const std::shared_ptr<Stream>& stream, const nlohmann::json& root) {
+inline Roe<void> WriteJson(const std::shared_ptr<Stream>& stream, const nlohmann::json& root) {
   return BlockingWriteStreamJson(stream, root.dump());
 }
 
-Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
+inline Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
   auto json_utf8 = BlockingReadStreamJson(stream);
   if (!json_utf8) {
     return json_utf8.error();
@@ -84,8 +84,8 @@ Roe<nlohmann::json> ReadJson(const std::shared_ptr<Stream>& stream) {
   return root;
 }
 
-void RejectAndCloseAttach(MediaRelayAttachSm& sm, const std::shared_ptr<Stream>& s,
-                          const std::string& error, const MediaRelayAttachEvent ev) {
+inline void RejectAndCloseAttach(MediaRelayAttachSm& sm, const std::shared_ptr<Stream>& s,
+                                 const std::string& error, const MediaRelayAttachEvent ev) {
   (void)WriteJson(s, {{"v", 1}, {"ok", false}, {"error", error}});
   s->close([](auto&&) {});
   // Always terminal — do not rely on Apply guards (wrong-phase reject uses OpAccept etc.).
@@ -93,16 +93,16 @@ void RejectAndCloseAttach(MediaRelayAttachSm& sm, const std::shared_ptr<Stream>&
   sm.SetPhase(MediaRelayAttachPhase::Closed, ev);
 }
 
-int64_t OrDefault(int64_t configured, int64_t fallback) {
+inline int64_t OrDefault(int64_t configured, int64_t fallback) {
   return configured > 0 ? configured : fallback;
 }
 
-std::string MakeId(const char* prefix) {
+inline std::string MakeId(const char* prefix) {
   static std::atomic<uint64_t> seq{1};
   return std::string(prefix) + std::to_string(seq.fetch_add(1));
 }
 
-uint64_t SubKey(uint32_t stream_id, uint16_t channel_id) {
+inline uint64_t SubKey(uint32_t stream_id, uint16_t channel_id) {
   return (static_cast<uint64_t>(stream_id) << 16) | channel_id;
 }
 
