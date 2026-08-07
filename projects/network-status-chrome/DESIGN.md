@@ -1,7 +1,7 @@
 # Network status chrome — design
 
 **Status:** Product decisions locked ([DECISIONS.md](DECISIONS.md) S003–S010, **S011**).  
-**Execution order:** [PHASES.md](PHASES.md). **Today:** [CURRENT_STATE.md](CURRENT_STATE.md).
+**Execution order:** [PHASES.md](PHASES.md). **Today:** [CURRENT_STATE.md](CURRENT_STATE.md) — **s3 Load counts landed**.
 
 **Stable refs:** [WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md), [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md), [UI_FUNCTIONAL_BOUNDARY.md](../../docs/architecture/UI_FUNCTIONAL_BOUNDARY.md)
 

@@ -971,6 +971,7 @@ select selectbox option {
 }
 
 .shell-statusbar-label,
+.shell-statusbar-load,
 .shell-statusbar-activity {
   margin-top: 0;
   margin-bottom: 0;
@@ -982,10 +983,68 @@ select selectbox option {
   margin-left: 0;
 }
 
+.shell-statusbar-load {
+  flex-shrink: 0;
+}
+
 .shell-statusbar-activity {
   text-align: right;
   flex-shrink: 1;
   min-width: 0;
+}
+
+.shell-statusbar-popover-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 54;
+}
+
+.shell-statusbar-popover {
+  position: absolute;
+  left: 8dp;
+  bottom: 32dp;
+  width: 320dp;
+  max-width: 90%;
+  padding: 12dp;
+  gap: 8dp;
+  box-sizing: border-box;
+  border-width: 1dp;
+  border-style: solid;
+  border-radius: 8dp;
+  z-index: 55;
+}
+
+.shell-statusbar-popover-title {
+  margin-top: 0;
+  margin-bottom: 4dp;
+  font-weight: bold;
+}
+
+.shell-statusbar-popover-row {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12dp;
+}
+
+.shell-statusbar-popover-row p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.shell-statusbar-popover-actions {
+  margin-top: 4dp;
+  gap: 8dp;
+  flex-wrap: wrap;
+}
+
+.shell-statusbar-popover-actions .btn {
+  flex-grow: 1;
+  min-height: 36dp;
 }
 
 .shell-layer {

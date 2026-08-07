@@ -32,6 +32,22 @@ void MediaRelayService::Stop() {
   }
 }
 
+MediaRelayRuntimeStats MediaRelayService::RuntimeStats() const {
+  MediaRelayRuntimeStats out;
+  if (!started_ || !impl_) {
+    return out;
+  }
+  std::lock_guard<std::mutex> lock(impl_->mu);
+  for (const auto& [_, session] : impl_->sessions_by_call) {
+    if (!session || session->participants.empty()) {
+      continue;
+    }
+    ++out.active_sessions;
+    out.active_participants += session->participants.size();
+  }
+  return out;
+}
+
 void MediaRelayService::SetBudget(const MediaRelayBudgetConfig& budget) {
   std::lock_guard<std::mutex> lock(impl_->mu);
   impl_->budget = budget;

@@ -5,6 +5,7 @@
 #include "libp2p/integration/host/CircuitBridgeTarget.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
+#include "libp2p/integration/host/RelayRuntimeStats.h"
 
 #include <libp2p/connection/stream.hpp>
 #include <memory>
@@ -48,6 +49,9 @@ public:
   void Start();
   void Stop();
   bool IsStarted() const { return started_; }
+
+  /** Active inbound bridge count for status chrome (prunes cancelled sessions). */
+  CircuitRelayRuntimeStats RuntimeStats() const;
 
   /** Hot-update provider admission (MessagingHub feeds contact PeerIds). */
   void SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy);

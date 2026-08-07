@@ -630,7 +630,15 @@ bool Application::Initialize(const char* window_title) {
   unlock_gate_->BindPorts(std::move(unlock_ports));
 
   chat_->BindUnlockGate(*unlock_gate_);
-  shell_->BindShellMessaging(MakeMessagingShellPorts(messaging));
+  {
+    MessagingShellPorts shell_messaging = MakeMessagingShellPorts(messaging);
+    shell_messaging.open_network_settings = [this]() {
+      if (settings_) {
+        settings_->OpenNetworkSettings();
+      }
+    };
+    shell_->BindShellMessaging(std::move(shell_messaging));
+  }
   shell_->BindPinGate(*pin_gate_);
   shell_->BindFlowCoordinator(*flow_);
   shell_->BindCallController(*call_);

@@ -77,6 +77,9 @@ public:
   static ShellHost& Instance();
 
   void BindShellMessaging(MessagingShellPorts ports);
+  void OpenStatusbarPopover();
+  void CloseStatusbarPopover();
+  void ToggleStatusbarPopover();
   void BindPinGate(PinGateController& pin_gate);
   void BindFlowCoordinator(FlowCoordinator& flow);
   void BindCallController(CallController& call);
@@ -195,6 +198,14 @@ public:
   static void TitlebarMinimizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarToggleMaximizeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
   static void TitlebarCloseCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ToggleStatusbarPopoverCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                             const Rml::VariantList& args);
+  static void DismissStatusbarPopoverCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                              const Rml::VariantList& args);
+  static void RetestStatusbarReachabilityCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                                  const Rml::VariantList& args);
+  static void OpenNetworkSettingsCallback(Rml::DataModelHandle model, Rml::Event& ev,
+                                          const Rml::VariantList& args);
 
   bool RegisterWindowModel(Rml::Context* context);
 
@@ -240,6 +251,11 @@ private:
   void RefreshStatusbarCluster();
   void ClearStatusbarCluster();
   bool ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap);
+  void ClearStatusbarPopover();
+  bool ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap);
+  void RefreshStatusbarPopover();
+  void PositionStatusbarPopover();
+  void DirtyStatusbarPopover();
   bool ChromeFrostEnabled() const;
   struct SafeAreaFromSdl {
     int top_dp = 0;
@@ -280,6 +296,7 @@ private:
   std::function<void()> on_account_sheet_opened_;
   std::function<void()> on_account_sheet_closed_;
   MessagingShellPorts shell_messaging_ports_;
+  bool statusbar_popover_needs_position_ = false;
   PinGateController* pin_gate_ = nullptr;
   FlowCoordinator* flow_ = nullptr;
   CallController* call_ = nullptr;

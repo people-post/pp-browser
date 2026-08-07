@@ -26,18 +26,20 @@
 
 ## s2 — Click → hybrid popover
 
-- [ ] Hit target on left cluster
-- [ ] Anchored popover above bar ([S005](DECISIONS.md#s005--click--hybrid-popover--settings-link-q3-c))
-- [ ] Reach summary + Retest; last error; help/load echo ([S006](DECISIONS.md#s006--detail-inspect--retest-no-capability-toggles-q4-b))
-- [ ] “Open Network settings…” deep-link to Me → Network
-- [ ] No capability toggles in popover
-- [ ] Accessible names for icon-only healthy states
+- [x] Hit target on left cluster
+- [x] Anchored popover above bar ([S005](DECISIONS.md#s005--click--hybrid-popover--settings-link-q3-c))
+- [x] Reach summary + Retest; last error; help/load echo ([S006](DECISIONS.md#s006--detail-inspect--retest-no-capability-toggles-q4-b))
+- [x] “Open Network settings…” deep-link to Me → Network
+- [x] No capability toggles in popover
+- [x] Accessible names for icon-only healthy states
+- [ ] Desktop dogfood (Retest from popover; deep-link)
 
 ## s3 — Relay runtime stats (counts MVP)
 
-- [ ] `RelayRuntimeStats` (name TBD) snapshot from circuit + media services
-- [ ] Active counts in bar Load slot + popover ([S008](DECISIONS.md#s008--load-mvp-is-active-counts-only-q6-a), [S009](DECISIONS.md#s009--helper-privacy-aggregates-only-q7-a))
-- [ ] Hide zeros; aggregates only (no peer identities)
+- [x] `RelayRuntimeStats` snapshot from circuit + media services
+- [x] Active counts in bar Load slot + popover ([S008](DECISIONS.md#s008--load-mvp-is-active-counts-only-q6-a), [S009](DECISIONS.md#s009--helper-privacy-aggregates-only-q7-a))
+- [x] Hide zeros; aggregates only (no peer identities)
+- [ ] Desktop dogfood under load (circuit + media pills)
 - [ ] (Later / post-MVP) windowed throughput, then delay/RTT — detail first
 
 ## s4 — Polish & harden

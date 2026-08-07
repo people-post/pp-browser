@@ -678,6 +678,15 @@ struct MediaRelayService::Impl : std::enable_shared_from_this<Impl> {
                                                  return p.get() == part.get();
                                                }),
                                 session->participants.end());
+    if (session->participants.empty()) {
+      sessions_by_call.erase(session->call_id);
+      sessions_by_token.erase(session->session_token);
+      if (local_hop_session && local_hop_session.get() == session.get()) {
+        local_hop_session.reset();
+        local_hop_part.reset();
+        local_hop_peer_id.clear();
+      }
+    }
     if (part->stream) {
       part->stream->close([](auto&&) {});
     }

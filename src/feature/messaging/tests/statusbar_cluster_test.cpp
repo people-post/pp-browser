@@ -96,4 +96,91 @@ TEST_F(StatusbarClusterTest, CheckingMapsDirectChecking) {
   EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Checking);
   EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Hidden);
   EXPECT_TRUE(snap.label.empty());
+  EXPECT_FALSE(snap.direct_title.empty());
+}
+
+TEST_F(StatusbarClusterTest, PopoverClientSummary) {
+  const auto snap = pbr::BuildStatusbarPopoverSnapshot(
+      true, pbr::BriefRelayHealth::Ok, true, "", pbr::ReachabilityStatus::OutboundOnly, false, false,
+      false, false);
+  EXPECT_TRUE(snap.messaging_ready);
+  EXPECT_FALSE(snap.brief_label.empty());
+  EXPECT_FALSE(snap.direct_label.empty());
+  EXPECT_FALSE(snap.reachability_status_label.empty());
+  EXPECT_FALSE(snap.reachability_summary.empty());
+  EXPECT_FALSE(snap.help_visible);
+  EXPECT_FALSE(snap.show_upnp);
+  EXPECT_TRUE(snap.last_error.empty());
+}
+
+TEST_F(StatusbarClusterTest, PopoverNodeShowsHelpAndUpnp) {
+  const auto snap = pbr::BuildStatusbarPopoverSnapshot(
+      true, pbr::BriefRelayHealth::Ok, true, "dial failed", pbr::ReachabilityStatus::Reachable, true,
+      true, true, true);
+  EXPECT_TRUE(snap.help_visible);
+  EXPECT_FALSE(snap.help_label.empty());
+  EXPECT_TRUE(snap.show_upnp);
+  EXPECT_TRUE(snap.upnp_mapped);
+  EXPECT_FALSE(snap.upnp_label.empty());
+  EXPECT_EQ(snap.last_error, "dial failed");
+}
+
+TEST_F(StatusbarClusterTest, PopoverHiddenWhenMessagingNotReady) {
+  const auto snap = pbr::BuildStatusbarPopoverSnapshot(
+      false, pbr::BriefRelayHealth::Ok, true, "", pbr::ReachabilityStatus::Reachable, false, false,
+      false, false);
+  EXPECT_FALSE(snap.messaging_ready);
+  EXPECT_TRUE(snap.brief_label.empty());
+}
+
+TEST_F(StatusbarClusterTest, LoadPillsWhenHelpingWithCounts) {
+  pbr::RelayRuntimeStats load;
+  load.circuit_serving = true;
+  load.circuit.active_bridges = 2;
+  load.media_serving = true;
+  load.media.active_sessions = 1;
+  load.media.active_participants = 3;
+  const auto snap = pbr::BuildStatusbarClusterSnapshot(
+      true, pbr::BriefRelayHealth::Ok, true, false, pbr::ReachabilityStatus::Reachable, true, load);
+  EXPECT_TRUE(snap.load_circuit_visible);
+  EXPECT_TRUE(snap.load_media_visible);
+  EXPECT_FALSE(snap.load_circuit_label.empty());
+  EXPECT_FALSE(snap.load_media_label.empty());
+}
+
+TEST_F(StatusbarClusterTest, LoadHiddenWhenCountsZero) {
+  pbr::RelayRuntimeStats load;
+  load.circuit_serving = true;
+  load.media_serving = true;
+  const auto snap = pbr::BuildStatusbarClusterSnapshot(
+      true, pbr::BriefRelayHealth::Ok, true, false, pbr::ReachabilityStatus::Reachable, true, load);
+  EXPECT_FALSE(snap.load_circuit_visible);
+  EXPECT_FALSE(snap.load_media_visible);
+}
+
+TEST_F(StatusbarClusterTest, LoadHiddenForClientEvenWithCounts) {
+  pbr::RelayRuntimeStats load;
+  load.circuit_serving = true;
+  load.circuit.active_bridges = 2;
+  const auto snap = pbr::BuildStatusbarClusterSnapshot(
+      true, pbr::BriefRelayHealth::Ok, true, false, pbr::ReachabilityStatus::Reachable, false, load);
+  EXPECT_FALSE(snap.load_circuit_visible);
+  EXPECT_FALSE(snap.help_visible);
+}
+
+TEST_F(StatusbarClusterTest, PopoverShowsLoadAggregates) {
+  pbr::RelayRuntimeStats load;
+  load.circuit_serving = true;
+  load.circuit.active_bridges = 1;
+  load.media_serving = true;
+  load.media.active_sessions = 2;
+  load.media.active_participants = 4;
+  const auto snap = pbr::BuildStatusbarPopoverSnapshot(
+      true, pbr::BriefRelayHealth::Ok, true, "", pbr::ReachabilityStatus::Reachable, false, true, false,
+      true, load);
+  EXPECT_TRUE(snap.show_load);
+  EXPECT_EQ(snap.circuit_bridges, 1u);
+  EXPECT_EQ(snap.media_sessions, 2u);
+  EXPECT_EQ(snap.media_participants, 4u);
+  EXPECT_FALSE(snap.circuit_load_label.empty());
 }

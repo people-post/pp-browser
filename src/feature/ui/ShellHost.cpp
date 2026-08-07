@@ -209,10 +209,36 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.Bind("statusbar_inbound_visible", &host.state_.statusbar_inbound_visible);
     ctor.Bind("statusbar_inbound_ok", &host.state_.statusbar_inbound_ok);
     ctor.Bind("statusbar_inbound_off", &host.state_.statusbar_inbound_off);
+    ctor.Bind("statusbar_load_circuit_visible", &host.state_.statusbar_load_circuit_visible);
+    ctor.Bind("statusbar_load_media_visible", &host.state_.statusbar_load_media_visible);
+    ctor.Bind("statusbar_load_circuit_label", &host.state_.statusbar_load_circuit_label);
+    ctor.Bind("statusbar_load_media_label", &host.state_.statusbar_load_media_label);
+    ctor.Bind("statusbar_load_circuit_title", &host.state_.statusbar_load_circuit_title);
+    ctor.Bind("statusbar_load_media_title", &host.state_.statusbar_load_media_title);
     ctor.Bind("statusbar_label", &host.state_.statusbar_label);
     ctor.Bind("statusbar_label_warn", &host.state_.statusbar_label_warn);
     ctor.Bind("statusbar_label_error", &host.state_.statusbar_label_error);
     ctor.Bind("statusbar_activity", &host.state_.statusbar_activity);
+    ctor.Bind("statusbar_brief_title", &host.state_.statusbar_brief_title);
+    ctor.Bind("statusbar_direct_title", &host.state_.statusbar_direct_title);
+    ctor.Bind("statusbar_help_title", &host.state_.statusbar_help_title);
+    ctor.Bind("statusbar_inbound_title", &host.state_.statusbar_inbound_title);
+    ctor.Bind("statusbar_cluster_title", &host.state_.statusbar_cluster_title);
+    ctor.Bind("statusbar_popover_open", &host.state_.statusbar_popover_open);
+    ctor.Bind("statusbar_popover_brief_label", &host.state_.statusbar_popover_brief_label);
+    ctor.Bind("statusbar_popover_direct_label", &host.state_.statusbar_popover_direct_label);
+    ctor.Bind("statusbar_popover_reach_label", &host.state_.statusbar_popover_reach_label);
+    ctor.Bind("statusbar_popover_reach_summary", &host.state_.statusbar_popover_reach_summary);
+    ctor.Bind("statusbar_popover_help_visible", &host.state_.statusbar_popover_help_visible);
+    ctor.Bind("statusbar_popover_help_label", &host.state_.statusbar_popover_help_label);
+    ctor.Bind("statusbar_popover_upnp_visible", &host.state_.statusbar_popover_upnp_visible);
+    ctor.Bind("statusbar_popover_upnp_label", &host.state_.statusbar_popover_upnp_label);
+    ctor.Bind("statusbar_popover_error_visible", &host.state_.statusbar_popover_error_visible);
+    ctor.Bind("statusbar_popover_error", &host.state_.statusbar_popover_error);
+    ctor.Bind("statusbar_popover_load_visible", &host.state_.statusbar_popover_load_visible);
+    ctor.Bind("statusbar_popover_circuit_load", &host.state_.statusbar_popover_circuit_load);
+    ctor.Bind("statusbar_popover_media_sessions", &host.state_.statusbar_popover_media_sessions);
+    ctor.Bind("statusbar_popover_media_participants", &host.state_.statusbar_popover_media_participants);
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
     ctor.Bind("titlebar_traffic_lights", &host.state_.titlebar_traffic_lights);
     ctor.Bind("window_maximized", &host.state_.window_maximized);
@@ -267,6 +293,10 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
     ctor.BindEventCallback("titlebar_minimize", &ShellHost::TitlebarMinimizeCallback);
     ctor.BindEventCallback("titlebar_toggle_maximize", &ShellHost::TitlebarToggleMaximizeCallback);
     ctor.BindEventCallback("titlebar_close", &ShellHost::TitlebarCloseCallback);
+    ctor.BindEventCallback("toggle_statusbar_popover", &ShellHost::ToggleStatusbarPopoverCallback);
+    ctor.BindEventCallback("dismiss_statusbar_popover", &ShellHost::DismissStatusbarPopoverCallback);
+    ctor.BindEventCallback("retest_statusbar_reachability", &ShellHost::RetestStatusbarReachabilityCallback);
+    ctor.BindEventCallback("open_network_settings", &ShellHost::OpenNetworkSettingsCallback);
   });
 }
 
@@ -622,6 +652,10 @@ bool ShellHost::HandleDismiss() {
   if (ContextMenuHost::Instance().HandleDismiss()) {
     return true;
   }
+  if (state_.statusbar_popover_open) {
+    CloseStatusbarPopover();
+    return true;
+  }
   if (state_.dialog.active) {
     if (state_.dialog.show_cancel) {
       ShellFeedback::DialogCancel(state_);
@@ -742,14 +776,44 @@ void ShellHost::DirtyStatusChrome() {
   DataModelHost::Instance().Dirty("window", "statusbar_inbound_visible");
   DataModelHost::Instance().Dirty("window", "statusbar_inbound_ok");
   DataModelHost::Instance().Dirty("window", "statusbar_inbound_off");
+  DataModelHost::Instance().Dirty("window", "statusbar_load_circuit_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_load_media_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_load_circuit_label");
+  DataModelHost::Instance().Dirty("window", "statusbar_load_media_label");
+  DataModelHost::Instance().Dirty("window", "statusbar_load_circuit_title");
+  DataModelHost::Instance().Dirty("window", "statusbar_load_media_title");
   DataModelHost::Instance().Dirty("window", "statusbar_label");
   DataModelHost::Instance().Dirty("window", "statusbar_label_warn");
   DataModelHost::Instance().Dirty("window", "statusbar_label_error");
   DataModelHost::Instance().Dirty("window", "statusbar_activity");
+  DataModelHost::Instance().Dirty("window", "statusbar_brief_title");
+  DataModelHost::Instance().Dirty("window", "statusbar_direct_title");
+  DataModelHost::Instance().Dirty("window", "statusbar_help_title");
+  DataModelHost::Instance().Dirty("window", "statusbar_inbound_title");
+  DataModelHost::Instance().Dirty("window", "statusbar_cluster_title");
+  DirtyStatusbarPopover();
   DataModelHost::Instance().Dirty("window", "titlebar_visible");
   DataModelHost::Instance().Dirty("window", "titlebar_traffic_lights");
   DataModelHost::Instance().Dirty("window", "window_maximized");
   DataModelHost::Instance().Dirty("window", "fonts_ready");
+}
+
+void ShellHost::DirtyStatusbarPopover() {
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_open");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_brief_label");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_direct_label");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_reach_label");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_reach_summary");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_help_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_help_label");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_upnp_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_upnp_label");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_error_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_error");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_load_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_circuit_load");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_media_sessions");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_media_participants");
 }
 
 void ShellHost::DirtyWindow() {
@@ -1051,6 +1115,9 @@ void ShellHost::RefreshStatusbarVisibility() {
     return;
   }
   state_.statusbar_visible = visible;
+  if (!visible && state_.statusbar_popover_open) {
+    CloseStatusbarPopover();
+  }
   DirtyStatusChrome();
   ApplySafeAreaLayout();
 }
@@ -1069,9 +1136,20 @@ void ShellHost::ClearStatusbarCluster() {
   state_.statusbar_inbound_visible = false;
   state_.statusbar_inbound_ok = false;
   state_.statusbar_inbound_off = false;
+  state_.statusbar_load_circuit_visible = false;
+  state_.statusbar_load_media_visible = false;
+  state_.statusbar_load_circuit_label.clear();
+  state_.statusbar_load_media_label.clear();
+  state_.statusbar_load_circuit_title.clear();
+  state_.statusbar_load_media_title.clear();
   state_.statusbar_label.clear();
   state_.statusbar_label_warn = false;
   state_.statusbar_label_error = false;
+  state_.statusbar_brief_title.clear();
+  state_.statusbar_direct_title.clear();
+  state_.statusbar_help_title.clear();
+  state_.statusbar_inbound_title.clear();
+  state_.statusbar_cluster_title.clear();
 }
 
 bool ShellHost::ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap) {
@@ -1093,6 +1171,15 @@ bool ShellHost::ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap) {
   const Rml::String label = snap.label.c_str();
   const bool label_warn = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Warn;
   const bool label_error = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Error;
+  const Rml::String brief_title = snap.brief_title.c_str();
+  const Rml::String direct_title = snap.direct_title.c_str();
+  const Rml::String help_title = snap.help_title.c_str();
+  const Rml::String inbound_title = snap.inbound_title.c_str();
+  const Rml::String cluster_title = Tr("shell.statusbar.a11y.cluster").c_str();
+  const Rml::String load_circuit = snap.load_circuit_label.c_str();
+  const Rml::String load_media = snap.load_media_label.c_str();
+  const Rml::String load_circuit_title = snap.load_circuit_title.c_str();
+  const Rml::String load_media_title = snap.load_media_title.c_str();
 
   if (state_.statusbar_brief_visible == brief_visible && state_.statusbar_brief_ok == brief_ok &&
       state_.statusbar_brief_failed == brief_failed &&
@@ -1103,8 +1190,17 @@ bool ShellHost::ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap) {
       state_.statusbar_help_visible == snap.help_visible &&
       state_.statusbar_inbound_visible == inbound_visible &&
       state_.statusbar_inbound_ok == inbound_ok && state_.statusbar_inbound_off == inbound_off &&
+      state_.statusbar_load_circuit_visible == snap.load_circuit_visible &&
+      state_.statusbar_load_media_visible == snap.load_media_visible &&
+      state_.statusbar_load_circuit_label == load_circuit &&
+      state_.statusbar_load_media_label == load_media &&
+      state_.statusbar_load_circuit_title == load_circuit_title &&
+      state_.statusbar_load_media_title == load_media_title &&
       state_.statusbar_label == label && state_.statusbar_label_warn == label_warn &&
-      state_.statusbar_label_error == label_error) {
+      state_.statusbar_label_error == label_error && state_.statusbar_brief_title == brief_title &&
+      state_.statusbar_direct_title == direct_title && state_.statusbar_help_title == help_title &&
+      state_.statusbar_inbound_title == inbound_title &&
+      state_.statusbar_cluster_title == cluster_title) {
     return false;
   }
 
@@ -1121,20 +1217,190 @@ bool ShellHost::ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap) {
   state_.statusbar_inbound_visible = inbound_visible;
   state_.statusbar_inbound_ok = inbound_ok;
   state_.statusbar_inbound_off = inbound_off;
+  state_.statusbar_load_circuit_visible = snap.load_circuit_visible;
+  state_.statusbar_load_media_visible = snap.load_media_visible;
+  state_.statusbar_load_circuit_label = load_circuit;
+  state_.statusbar_load_media_label = load_media;
+  state_.statusbar_load_circuit_title = load_circuit_title;
+  state_.statusbar_load_media_title = load_media_title;
   state_.statusbar_label = label;
   state_.statusbar_label_warn = label_warn;
   state_.statusbar_label_error = label_error;
+  state_.statusbar_brief_title = brief_title;
+  state_.statusbar_direct_title = direct_title;
+  state_.statusbar_help_title = help_title;
+  state_.statusbar_inbound_title = inbound_title;
+  state_.statusbar_cluster_title = cluster_title;
   return true;
+}
+
+void ShellHost::ClearStatusbarPopover() {
+  state_.statusbar_popover_brief_label.clear();
+  state_.statusbar_popover_direct_label.clear();
+  state_.statusbar_popover_reach_label.clear();
+  state_.statusbar_popover_reach_summary.clear();
+  state_.statusbar_popover_help_visible = false;
+  state_.statusbar_popover_help_label.clear();
+  state_.statusbar_popover_upnp_visible = false;
+  state_.statusbar_popover_upnp_label.clear();
+  state_.statusbar_popover_error_visible = false;
+  state_.statusbar_popover_error.clear();
+  state_.statusbar_popover_load_visible = false;
+  state_.statusbar_popover_circuit_load.clear();
+  state_.statusbar_popover_media_sessions.clear();
+  state_.statusbar_popover_media_participants.clear();
+}
+
+bool ShellHost::ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap) {
+  const Rml::String brief = snap.brief_label.c_str();
+  const Rml::String direct = snap.direct_label.c_str();
+  const Rml::String reach = snap.reachability_status_label.c_str();
+  const Rml::String summary = snap.reachability_summary.c_str();
+  const Rml::String help = snap.help_label.c_str();
+  const Rml::String upnp = snap.upnp_label.c_str();
+  const Rml::String error = snap.last_error.c_str();
+  const bool error_visible = !snap.last_error.empty();
+  const Rml::String circuit_load = snap.circuit_load_label.c_str();
+  const Rml::String media_sessions = snap.media_sessions_label.c_str();
+  const Rml::String media_participants = snap.media_participants_label.c_str();
+
+  if (state_.statusbar_popover_brief_label == brief && state_.statusbar_popover_direct_label == direct &&
+      state_.statusbar_popover_reach_label == reach && state_.statusbar_popover_reach_summary == summary &&
+      state_.statusbar_popover_help_visible == snap.help_visible &&
+      state_.statusbar_popover_help_label == help &&
+      state_.statusbar_popover_upnp_visible == snap.show_upnp &&
+      state_.statusbar_popover_upnp_label == upnp &&
+      state_.statusbar_popover_error_visible == error_visible &&
+      state_.statusbar_popover_error == error &&
+      state_.statusbar_popover_load_visible == snap.show_load &&
+      state_.statusbar_popover_circuit_load == circuit_load &&
+      state_.statusbar_popover_media_sessions == media_sessions &&
+      state_.statusbar_popover_media_participants == media_participants) {
+    return false;
+  }
+
+  state_.statusbar_popover_brief_label = brief;
+  state_.statusbar_popover_direct_label = direct;
+  state_.statusbar_popover_reach_label = reach;
+  state_.statusbar_popover_reach_summary = summary;
+  state_.statusbar_popover_help_visible = snap.help_visible;
+  state_.statusbar_popover_help_label = help;
+  state_.statusbar_popover_upnp_visible = snap.show_upnp;
+  state_.statusbar_popover_upnp_label = upnp;
+  state_.statusbar_popover_error_visible = error_visible;
+  state_.statusbar_popover_error = error;
+  state_.statusbar_popover_load_visible = snap.show_load;
+  state_.statusbar_popover_circuit_load = circuit_load;
+  state_.statusbar_popover_media_sessions = media_sessions;
+  state_.statusbar_popover_media_participants = media_participants;
+  return true;
+}
+
+void ShellHost::RefreshStatusbarPopover() {
+  if (!state_.statusbar_popover_open) {
+    return;
+  }
+  StatusbarPopoverSnapshot snap;
+  if (shell_messaging_ports_.statusbar_popover) {
+    snap = shell_messaging_ports_.statusbar_popover();
+  }
+  if (ApplyStatusbarPopover(snap)) {
+    DirtyStatusbarPopover();
+  }
+}
+
+void ShellHost::OpenStatusbarPopover() {
+  if (!state_.statusbar_visible) {
+    return;
+  }
+  if (state_.statusbar_popover_open) {
+    return;
+  }
+  ContextMenuHost::Instance().Dismiss();
+  state_.statusbar_popover_open = true;
+  statusbar_popover_needs_position_ = true;
+  RefreshStatusbarPopover();
+  DirtyStatusbarPopover();
+}
+
+void ShellHost::CloseStatusbarPopover() {
+  if (!state_.statusbar_popover_open) {
+    return;
+  }
+  state_.statusbar_popover_open = false;
+  statusbar_popover_needs_position_ = false;
+  ClearStatusbarPopover();
+  DirtyStatusbarPopover();
+}
+
+void ShellHost::ToggleStatusbarPopover() {
+  if (state_.statusbar_popover_open) {
+    CloseStatusbarPopover();
+  } else {
+    OpenStatusbarPopover();
+  }
+}
+
+void ShellHost::PositionStatusbarPopover() {
+  if (!state_.statusbar_popover_open || !context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  Rml::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  Rml::Element* cluster = doc->GetElementById("shell-statusbar-cluster");
+  Rml::Element* panel = doc->GetElementById("shell-statusbar-popover");
+  if (!cluster || !panel) {
+    return;
+  }
+
+  doc->UpdateDocument();
+  const Rml::Vector2i dims = context_->GetDimensions();
+  const Rml::Vector2f cluster_offset = cluster->GetAbsoluteOffset(Rml::BoxArea::Border);
+  const Rml::Vector2f cluster_size = cluster->GetBox().GetSize(Rml::BoxArea::Border);
+  const Rml::Vector2f panel_size = panel->GetBox().GetSize(Rml::BoxArea::Border);
+  if (panel_size.x <= 0.f || panel_size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
+    return;
+  }
+
+  constexpr float kMarginPx = 8.f;
+  constexpr float kGapPx = 8.f;
+  float left = cluster_offset.x;
+  float top = cluster_offset.y - panel_size.y - kGapPx;
+  const float max_left = static_cast<float>(dims.x) - panel_size.x - kMarginPx;
+  if (left > max_left) {
+    left = max_left;
+  }
+  if (left < kMarginPx) {
+    left = kMarginPx;
+  }
+  if (top < kMarginPx) {
+    top = cluster_offset.y + cluster_size.y + kGapPx;
+  }
+  const float max_top = static_cast<float>(dims.y) - panel_size.y - kMarginPx;
+  if (top > max_top) {
+    top = std::max(kMarginPx, max_top);
+  }
+
+  panel->SetProperty("left", (std::to_string(static_cast<int>(left)) + "px").c_str());
+  panel->SetProperty("top", (std::to_string(static_cast<int>(top)) + "px").c_str());
+  panel->SetProperty("bottom", "auto");
+  statusbar_popover_needs_position_ = false;
 }
 
 void ShellHost::RefreshStatusbarCluster() {
   if (!state_.statusbar_visible) {
     const bool had_cluster = state_.statusbar_brief_visible || state_.statusbar_direct_visible ||
                              state_.statusbar_help_visible || state_.statusbar_inbound_visible ||
-                             !state_.statusbar_label.empty();
+                             state_.statusbar_load_circuit_visible ||
+                             state_.statusbar_load_media_visible || !state_.statusbar_label.empty();
     if (had_cluster) {
       ClearStatusbarCluster();
       DirtyStatusChrome();
+    }
+    if (state_.statusbar_popover_open) {
+      CloseStatusbarPopover();
     }
     return;
   }
@@ -1144,6 +1410,10 @@ void ShellHost::RefreshStatusbarCluster() {
   }
   if (ApplyStatusbarCluster(snap)) {
     DirtyStatusChrome();
+  }
+  RefreshStatusbarPopover();
+  if (statusbar_popover_needs_position_) {
+    PositionStatusbarPopover();
   }
 }
 
@@ -2369,6 +2639,35 @@ void ShellHost::TitlebarToggleMaximizeCallback(Rml::DataModelHandle /*model*/, R
 void ShellHost::TitlebarCloseCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                       const Rml::VariantList& /*args*/) {
   DesktopWindowChrome::Close();
+}
+
+void ShellHost::ToggleStatusbarPopoverCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                               const Rml::VariantList& /*args*/) {
+  Instance().ToggleStatusbarPopover();
+}
+
+void ShellHost::DismissStatusbarPopoverCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                const Rml::VariantList& /*args*/) {
+  Instance().CloseStatusbarPopover();
+}
+
+void ShellHost::RetestStatusbarReachabilityCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                                    const Rml::VariantList& /*args*/) {
+  auto& host = Instance();
+  if (host.shell_messaging_ports_.retest_reachability) {
+    host.shell_messaging_ports_.retest_reachability();
+  }
+  host.RefreshStatusbarPopover();
+  host.RefreshStatusbarCluster();
+}
+
+void ShellHost::OpenNetworkSettingsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
+                                            const Rml::VariantList& /*args*/) {
+  auto& host = Instance();
+  host.CloseStatusbarPopover();
+  if (host.shell_messaging_ports_.open_network_settings) {
+    host.shell_messaging_ports_.open_network_settings();
+  }
 }
 
 } // namespace pbr

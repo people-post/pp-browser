@@ -6,6 +6,7 @@
 #include "common/Error.h"
 #include "libp2p/integration/host/Libp2pHost.h"
 #include "libp2p/integration/host/PeerSessionManager.h"
+#include "libp2p/integration/host/RelayRuntimeStats.h"
 
 #include <cstdint>
 #include <functional>
@@ -139,6 +140,9 @@ public:
   void Start();
   void Stop();
   bool IsStarted() const { return started_; }
+
+  /** Active HostSession / participant aggregates for status chrome (S008/S009). */
+  MediaRelayRuntimeStats RuntimeStats() const;
 
   /** Local libp2p PeerId (base58); SoftMigrate PreferLocalMediaHop / AttachAsLocalHop. */
   Roe<std::string> LocalPeerIdBase58() const { return host_.LocalPeerIdBase58(); }

@@ -307,11 +307,39 @@ struct ShellState {
   bool statusbar_inbound_visible = false;
   bool statusbar_inbound_ok = false;
   bool statusbar_inbound_off = false;
+  bool statusbar_load_circuit_visible = false;
+  bool statusbar_load_media_visible = false;
+  Rml::String statusbar_load_circuit_label;
+  Rml::String statusbar_load_media_label;
+  Rml::String statusbar_load_circuit_title;
+  Rml::String statusbar_load_media_title;
   /** Sparse word for off/degraded states; empty when healthy. */
   Rml::String statusbar_label;
   bool statusbar_label_warn = false;
   bool statusbar_label_error = false;
   Rml::String statusbar_activity;
+  /** Accessible names for icon-only slots (data-attr-title). */
+  Rml::String statusbar_brief_title;
+  Rml::String statusbar_direct_title;
+  Rml::String statusbar_help_title;
+  Rml::String statusbar_inbound_title;
+  Rml::String statusbar_cluster_title;
+  /** Hybrid status popover (network-status-chrome s2). */
+  bool statusbar_popover_open = false;
+  Rml::String statusbar_popover_brief_label;
+  Rml::String statusbar_popover_direct_label;
+  Rml::String statusbar_popover_reach_label;
+  Rml::String statusbar_popover_reach_summary;
+  bool statusbar_popover_help_visible = false;
+  Rml::String statusbar_popover_help_label;
+  bool statusbar_popover_upnp_visible = false;
+  Rml::String statusbar_popover_upnp_label;
+  bool statusbar_popover_error_visible = false;
+  Rml::String statusbar_popover_error;
+  bool statusbar_popover_load_visible = false;
+  Rml::String statusbar_popover_circuit_load;
+  Rml::String statusbar_popover_media_sessions;
+  Rml::String statusbar_popover_media_participants;
 
   NavBadgeState nav_badges;
 

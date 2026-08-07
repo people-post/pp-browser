@@ -489,6 +489,16 @@ select selectbox option:hover {
   color: #dc2626;
 }
 
+.shell-statusbar-popover {
+  background-color: #ffffff;
+  border-color: #e5e7eb;
+  box-shadow: 0 8dp 24dp #00000022;
+}
+
+.shell-statusbar-popover-scrim {
+  background-color: #00000001;
+}
+
 .shell-pane {
   background-color: #f8f9fb;
 }

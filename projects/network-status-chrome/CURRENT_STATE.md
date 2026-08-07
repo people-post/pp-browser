@@ -1,37 +1,34 @@
 # Network status chrome — current state
 
-**As of:** 2026-08-06  
-**Phase:** **s1 polish** — Brief · Direct · Help · Inbound cluster; dogfood / s2 popover next
+**As of:** 2026-08-07  
+**Phase:** **s3 landed** — Load counts; dogfood / s4 polish next
 
 ## Decisions
 
 Product answers accepted and recorded as [S003–S011](DECISIONS.md). See [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 
-## What ships in tree (s1)
+## What ships in tree (s1–s3)
 
 | Piece | Behavior |
 |-------|----------|
-| Desktop status bar | 24dp, desktop + expanded only; **display-only** |
-| Left cluster | Brief cloud · Direct link · divider · Help · Inbound target · sparse label; green/yellow/red condition; teal Help |
-| Brief | Last HTTP `PollInbox` ok / fail / unknown |
-| Direct | libp2p running + seed dial (`On` / `Off` / `Checking` / `Error`) |
-| Help | Visible when `IsHelpNetworkEnabled()` (desktop Node) |
-| Inbound | Help on only: dial-back on/off |
-| Labels | i18n: `shell.statusbar.brief_offline`, `direct_off`; settings parity for Outbound only / Blocked |
-| Right | Activity via `ShellHost::SetActivity` (unchanged) |
-| Ports | `MessagingShellPorts::statusbar_cluster` + `BuildStatusbarClusterSnapshot` |
-| Tests | `statusbar_cluster_test.cpp` |
+| Desktop status bar | 24dp, desktop + expanded only |
+| Left cluster | Brief · Direct · divider · Help · Inbound · Load pills · sparse label |
+| Brief / Direct / Help / Inbound | As s1 |
+| Load (s3) | Help on only; `circuit N` / `media N` when count > 0 (aggregates from `RelayRuntimeStats`) |
+| Popover | s2 inspect + Retest + deep-link; **Helper load** rows when helping under load |
+| Ports | `MessagingShellPorts` + `CircuitRelayService::RuntimeStats` / `MediaRelayService::RuntimeStats` |
+| Tests | `statusbar_cluster_test.cpp` (cluster + popover + load) |
 
 ## Still open for later phases
 
 | Gap | Phase |
 |-----|-------|
-| Click → hybrid popover + Retest | s2 |
-| Load counts (`RelayRuntimeStats`) | s3 |
-| Brief health beyond PollInbox (compat ping / Send) | polish |
-| Hop “relay available” Direct enrichment | deferred ([S007](DECISIONS.md#s007--reach-uses-reachability-first-hop-relay-available-later-q5-db) / [S011](DECISIONS.md#s011--client-brief--direct-node-adds-inbound)) |
-| Accessible names for icon-only states | s2/s4 |
+| Brief health beyond PollInbox | polish |
+| Hop “relay available” Direct enrichment | deferred |
+| Truncation / EN+zh-Hans width budget | s4 |
+| Transitional motion | s4 |
+| Throughput / delay | post-MVP |
 
 ## Next
 
-Dogfood Client + Node desktop; then **s2** popover.
+Dogfood Node under load (circuit + media pills + popover aggregates); then **s4** polish.

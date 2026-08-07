@@ -78,6 +78,8 @@ public:
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
   void RefreshLocalizedChrome();
+  /** Deep-link: select Me (if needed) and open the Network section. */
+  void OpenNetworkSettings();
   /** Refresh reachability Connection card via SettingsCommands ports. */
   void SyncReachability();
   /** Persist skip/ack for the Me → Network reachability nudge (condition-keyed). */

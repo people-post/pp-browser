@@ -1290,6 +1290,19 @@ void SettingsController::RefreshLocalizedChrome() {
   DirtyAll();
 }
 
+void SettingsController::OpenNetworkSettings() {
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  if (chrome.nav_tab != NavTab::Me) {
+    if (shell_navigation_.select_nav_tab) {
+      shell_navigation_.select_nav_tab(NavTab::Me);
+    }
+    // OnNavTabActivated clears selection; open Network on the next UI turn.
+    AppRuntime::PostUI([this]() { OnSelectSection("network"); });
+    return;
+  }
+  OnSelectSection("network");
+}
+
 void SettingsController::OnIntegrationsFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
                                                             const Rml::VariantList& /*args*/) {
   Instance().MarkSectionDirty("integrations");
