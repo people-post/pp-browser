@@ -887,12 +887,17 @@ select selectbox option:hover {
   color: #6b7280;
 }
 
+.shell-call-ring {
+  border-color: #c7d2fe;
+}
+
 .shell-call-ring--pulse {
   border-color: #4a6cf7;
 }
 
 .shell-call-accept--pulse {
   background-color: #5a7cff;
+  box-shadow: 0 0 0 4dp #4a6cf733, 0 4dp 14dp #4a6cf755;
 }
 
 .chat-empty {
