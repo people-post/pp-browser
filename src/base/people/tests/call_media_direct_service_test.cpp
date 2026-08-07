@@ -195,5 +195,36 @@ TEST_F(CallMediaDirectServiceTest, DetachUnblocksConnectWait) {
   EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
 }
 
+TEST_F(CallMediaDirectServiceTest, FailAfterDetachDoesNotCallOnFailed) {
+  const std::string call_id = "call-fail-after-detach";
+  ByteVector media_key(32, 0x33);
+  std::atomic<int> local_failed{0};
+
+  b_call_media_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    // Peer may see read_eof when we Detach — that is remote close, not this assertion.
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  CallMediaDirectCallbacks cbs;
+  cbs.on_failed = [&](const std::string&) { local_failed.fetch_add(1); };
+
+  ASSERT_TRUE(a_call_media_->Connect(params, std::move(cbs), 5000));
+  ASSERT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  // Intentional local Detach: late duplex EOF on this service must not notify on_failed.
+  a_call_media_->Detach();
+  EXPECT_EQ(a_call_media_->Phase(), CallMediaSessionPhase::Idle);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  EXPECT_EQ(local_failed.load(), 0);
+}
+
 } // namespace
 } // namespace pbr

@@ -282,6 +282,11 @@ struct CallMediaDirectService::Impl : Module, std::enable_shared_from_this<Impl>
     CallMediaDirectCallbacks cbs;
     {
       std::lock_guard lock(mu);
+      // Intentional Detach / already torn down: ignore late duplex EOF (SoftMigrate ReleaseDirect).
+      if (Phase() == CallMediaSessionPhase::Idle || Phase() == CallMediaSessionPhase::Detaching) {
+        IgnoreEventLocked(ev, "already detaching or idle");
+        return;
+      }
       cbs = callbacks;
       // Instant Failed → Idle (s1 freeze): log via SetPhase path inside DetachLocked.
       DetachLocked(/*abort_connect=*/true, ev);

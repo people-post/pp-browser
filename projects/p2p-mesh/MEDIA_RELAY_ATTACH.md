@@ -1,7 +1,8 @@
 # media_relay attach session machine
 
 **Tier:** project (design)  
-**Status:** Design — **no code refactor until N026 freeze + call-media s2 preference**  
+**Status:** **s3a implementing** — inbound attach phases in `MediaRelayService::HandleInboundBody`  
+
 **ADR:** [N026](DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)  
 **Calls overview:** [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md) (V033)  
 **Admit / QoS:** [HOST_RECEIVE_POLICY.md](../p2p-av-calls/HOST_RECEIVE_POLICY.md) · [V032](../p2p-av-calls/DECISIONS.md#v032--media-qos-enforcement-playout-sfu-e2e)  

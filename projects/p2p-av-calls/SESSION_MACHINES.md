@@ -267,6 +267,8 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 
 **Bug fix (s2):** If inbound hello fails while an outbound `Connect` waiter is still active, restore `Dialing` (do not force `Idle`) so OpenStream/hello can proceed — otherwise Connect hung until timeout.
 
+**Bug fix (s2):** `Fail` / duplex EOF is ignored when phase is already `Detaching` or `Idle` so intentional `Detach` (SoftMigrate `ReleaseDirect`) does not fire `on_failed`.
+
 ---
 
 ## Success criteria

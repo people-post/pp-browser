@@ -69,8 +69,8 @@ Preferred order is **N015** as amended by **N017**: n1 → np → nr → nu → 
 Pairs with calls [V033](../p2p-av-calls/DECISIONS.md#v033--transport-session-machines-not-host-wide-inbound-sm) / [SESSION_MACHINES.md](../p2p-av-calls/SESSION_MACHINES.md). Spec: [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md). Prefer after call-media SM lands.
 
 - [x] N026 + MEDIA_RELAY_ATTACH design doc
-- [ ] Freeze with calls V033 s1; golden attach/reattach scenarios
-- [ ] Replace inbound `while (!session)` with per-stream `Apply(event)` (strangler)
+- [x] Freeze with calls V033 s1; call-media s2a landed first
+- [x] s3a — Replace inbound `while (!session)` with per-stream phase + `media_relay_attach phase=` logs
 - [ ] Client attach path shares event vocabulary (no raw `settled`-only waits)
 - [ ] SoftMigrate / PreferLocal dogfood gate
 
